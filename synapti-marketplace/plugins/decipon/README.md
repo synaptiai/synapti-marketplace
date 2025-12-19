@@ -89,19 +89,18 @@ Red team adversarial critique of a document or claim.
 ## Recommended Workflow
 
 1. **Quick triage**: `/decipon:score` - Get initial manipulation score
-2. **Full analysis**: `/decipon:analyze` - If score > 20
-3. **Fact-check**: `/decipon:verify` - If score > 40 or claims seem dubious
+2. **Full analysis**: `/decipon:analyze` - If score > 25 (Moderate or higher)
+3. **Fact-check**: `/decipon:verify` - If score > 50 (High or higher)
 4. **Document**: `/decipon:report` - For formal records
 
 ## Severity Scale
 
 | Score | Indicator | Risk Level |
 |-------|-----------|------------|
-| 0-20 | [✓] | Low - Normal consumption |
-| 21-40 | [!] | Moderate - Verify claims |
-| 41-60 | [!!] | Elevated - Cross-reference |
-| 61-80 | [!!!] | High - Strong skepticism |
-| 81-100 | [!!!!] | Severe - Likely manipulation |
+| 0-25 | [·] | Low - Normal consumption |
+| 26-50 | [!] | Moderate - Verify claims |
+| 51-75 | [!!] | High - Cross-reference, strong skepticism |
+| 76-100 | [!!!] | Severe - Likely manipulation |
 
 ## Key Features
 

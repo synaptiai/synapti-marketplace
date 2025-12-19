@@ -45,7 +45,7 @@ Get a rapid manipulation assessment when you need:
   NCI QUICK SCORE
 ═══════════════════════════════════════════════════
 
-  SCORE: 72/100 [!!!]
+  SCORE: 72/100 [!!]
 
   Severity: HIGH
   Confidence: 78%
@@ -65,11 +65,10 @@ Get a rapid manipulation assessment when you need:
 
 | Score | Indicator | Level | Quick Guidance |
 |-------|-----------|-------|----------------|
-| 0-20 | `[✓]` | LOW | Normal consumption |
-| 21-40 | `[!]` | MODERATE | Verify key claims |
-| 41-60 | `[!!]` | ELEVATED | Cross-reference sources |
-| 61-80 | `[!!!]` | HIGH | Strong skepticism warranted |
-| 81-100 | `[!!!!]` | SEVERE | Assume manipulation |
+| 0-25 | `[·]` | LOW | Normal consumption |
+| 26-50 | `[!]` | MODERATE | Verify key claims |
+| 51-75 | `[!!]` | HIGH | Cross-reference sources, strong skepticism |
+| 76-100 | `[!!!]` | SEVERE | Likely manipulation |
 
 ## Example Invocations
 
@@ -86,11 +85,11 @@ Get a rapid manipulation assessment when you need:
 ## When to Use Full Analysis
 
 After quick score, run `/decipon:analyze` when:
-- Score > 40 (elevated or higher)
+- Score > 40 (upper Moderate or higher)
 - Need evidence for the score
 - Want dual perspectives
 - Need to share/document findings
-- Score is borderline (35-45 range)
+- Score is borderline (40-55 range)
 
 ## Difference from /decipon:analyze
 

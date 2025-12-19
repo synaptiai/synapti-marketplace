@@ -223,12 +223,11 @@ NCI Protocol v1.0 - Pattern-based manipulation detection
 Deep Research: [Yes/No] - [N] claims verified
 ```
 
-**Severity Indicators:**
-- 0-20: `[✓]` Low manipulation risk
-- 21-40: `[!]` Moderate - some concerning patterns
-- 41-60: `[!!]` Elevated - notable manipulation indicators
-- 61-80: `[!!!]` High - strong manipulation patterns
-- 81-100: `[!!!!]` Severe - overwhelming manipulation signs
+**Severity Indicators (NCI Protocol v1.0):**
+- 0-25: `[·]` Low manipulation risk
+- 26-50: `[!]` Moderate - some concerning patterns
+- 51-75: `[!!]` High - strong manipulation patterns
+- 76-100: `[!!!]` Severe - overwhelming manipulation signs
 
 ## Integration with Deep Research
 
@@ -240,7 +239,7 @@ Deep research is recommended when NCI analysis shows:
 
 | Trigger | Threshold | Verification Focus |
 |---------|-----------|-------------------|
-| Overall NCI Score | > 40 | Verify key claims |
+| Overall NCI Score | > 40 (upper Moderate) | Verify key claims |
 | Suspicious Timing | > 3 | Correlate events, check timeline |
 | Authority Issues | > 3 | Verify credentials, expertise claims |
 | Cherry-Picking | > 3 | Find omitted context, full data |

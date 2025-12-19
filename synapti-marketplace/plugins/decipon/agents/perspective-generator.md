@@ -112,11 +112,10 @@ CONTEXT THAT MIGHT EXPLAIN PATTERNS:
 ### Manipulative Interpretation Confidence
 | Score Range | Confidence Guidance |
 |-------------|---------------------|
-| NCI 80-100 | 75-90% - Strong manipulation patterns |
-| NCI 60-79 | 55-74% - Notable patterns, some ambiguity |
-| NCI 40-59 | 40-54% - Mixed signals, uncertain |
-| NCI 20-39 | 20-39% - Weak patterns, likely not manipulative |
-| NCI 0-19 | 10-19% - Minimal indicators |
+| NCI 76-100 [!!!] | 75-95% - Strong manipulation patterns (max 95%) |
+| NCI 51-75 [!!] | 50-74% - Notable patterns, some ambiguity |
+| NCI 26-50 [!] | 25-49% - Mixed signals, uncertain |
+| NCI 0-25 [·] | 10-24% - Minimal indicators |
 
 ### Legitimate Interpretation Confidence
 Generally inverse to manipulative, but NOT simply 100 - manipulative:
@@ -184,7 +183,66 @@ Apply red team thinking from deep-research skill:
 **What Would Clarify:**
 - [Information that would resolve uncertainty]
 - [Verification steps user could take]
+
+---
+
+### Synthesis (When disagreement thresholds met)
+
+[Weighs both perspectives to identify dominant interpretation]
+
+**Perspective Disagreement:** [X] points (Moderate/High)
+**Dominant Perspective:** [Manipulative/Legitimate/Undetermined]
+**Synthesis Confidence:** [Z]%
+
+**Key Areas of Agreement:**
+- [What both perspectives agree on]
+
+**Key Areas of Disagreement:**
+- [Where perspectives diverge most]
+
+**Recommendation:** [Action based on synthesis]
 ```
+
+## Disagreement Detection
+
+### Thresholds
+
+The NCI Protocol defines disagreement between Red Team (manipulative) and Blue Team (legitimate) perspectives:
+
+| Disagreement Level | Point Difference | Action |
+|-------------------|------------------|--------|
+| Low | < 15 points | Perspectives largely aligned |
+| Moderate | ≥ 15 points | Flag for user attention, add synthesis |
+| High | ≥ 25 points | Strong conflict, synthesis required, additional verification recommended |
+
+### Calculation
+
+```
+Disagreement = |Manipulative_Confidence - Legitimate_Confidence|
+
+Example:
+- Manipulative confidence: 72%
+- Legitimate confidence: 45%
+- Disagreement: 27 points (HIGH - synthesis required)
+```
+
+### When High Disagreement Detected
+
+1. **Generate Synthesis perspective** weighing both sides
+2. **Identify dominant perspective** based on evidence weight
+3. **Note specific areas of conflict**
+4. **Recommend verification** for contested claims
+5. **Flag for user attention** with clear uncertainty markers
+
+### Dominant Perspective Identification
+
+The dominant perspective is determined by:
+- **Evidence weight**: Which interpretation has stronger evidentiary support
+- **Source quality**: Which claims are backed by more reliable sources
+- **Internal consistency**: Which interpretation better explains all observations
+- **External corroboration**: Which interpretation aligns with verifiable facts
+
+**Dominant does NOT mean certain.** Always communicate confidence levels clearly.
 
 ## Common Pitfalls
 

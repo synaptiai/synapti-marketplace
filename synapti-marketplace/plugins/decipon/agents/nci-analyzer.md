@@ -75,6 +75,14 @@ Confidence: [LOW/MED/HIGH]
 **Step 5-6: Calculations**
 Apply weighted formulas from scoring.md
 
+**IMPORTANT: Confidence Cap**
+Per NCI Protocol, confidence MUST NEVER exceed 95% (0.95). This applies to:
+- Overall confidence
+- Factor confidence
+- Perspective confidence
+
+Even with overwhelming evidence, cap at 95% to reflect inherent uncertainty in manipulation detection.
+
 **Step 7: Perspective Generation**
 Generate BOTH interpretations:
 ```
@@ -165,7 +173,7 @@ When user requests JSON output:
   "score": {
     "overall": N,
     "confidence": 0.XX,
-    "severity": "[LOW/MODERATE/ELEVATED/HIGH/SEVERE]"
+    "severity": "[LOW/MODERATE/HIGH/SEVERE]"
   },
   "composite_factors": { ... },
   "categories": { ... },

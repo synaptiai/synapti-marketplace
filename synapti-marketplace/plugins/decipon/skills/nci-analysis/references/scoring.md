@@ -203,9 +203,17 @@ Where:
 ```
 Overall_Confidence = min(
   Weighted_Average(Factor_Confidences),
-  0.95  # Never claim 100% certainty
+  0.95  # CRITICAL: Never claim 100% certainty (NCI Protocol requirement)
 )
 ```
+
+**Maximum Confidence Cap: 0.95 (95%)**
+
+The NCI Protocol explicitly requires that confidence never exceed 95%. This reflects:
+- Inherent uncertainty in manipulation detection
+- Possibility of sophisticated manipulation mimicking legitimacy
+- Epistemic humility about intent assessment
+- Recognition that even experts can be fooled
 
 ### Confidence Thresholds
 
@@ -357,11 +365,10 @@ NCI Protocol v1.0 - Pattern-based manipulation detection
 
 | Score Range | Indicator | Risk Level | Recommended Action |
 |-------------|-----------|------------|-------------------|
-| 0-20 | `[✓]` | Low | Normal consumption |
-| 21-40 | `[!]` | Moderate | Verify key claims |
-| 41-60 | `[!!]` | Elevated | Cross-reference sources |
-| 61-80 | `[!!!]` | High | Strong skepticism warranted |
-| 81-100 | `[!!!!]` | Severe | Likely manipulative content |
+| 0-25 | `[·]` | Low | Normal consumption |
+| 26-50 | `[!]` | Moderate | Verify key claims |
+| 51-75 | `[!!]` | High | Cross-reference sources, strong skepticism |
+| 76-100 | `[!!!]` | Severe | Likely manipulative content |
 
 ---
 

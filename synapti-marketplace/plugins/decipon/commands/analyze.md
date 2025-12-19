@@ -69,8 +69,7 @@ Perform full NCI (Narrative Credibility Index) manipulation analysis on content.
 
 | Score | Indicator | Risk |
 |-------|-----------|------|
-| 0-20 | [✓] | Low - Normal consumption |
-| 21-40 | [!] | Moderate - Verify claims |
-| 41-60 | [!!] | Elevated - Cross-reference |
-| 61-80 | [!!!] | High - Strong skepticism |
-| 81-100 | [!!!!] | Severe - Likely manipulation |
+| 0-25 | [·] | Low - Normal consumption |
+| 26-50 | [!] | Moderate - Verify claims |
+| 51-75 | [!!] | High - Cross-reference, strong skepticism |
+| 76-100 | [!!!] | Severe - Likely manipulation |
