@@ -12,9 +12,10 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 
 ### How to Use
 
-1. Browse the [Available Plugins](#available-plugins) below
-2. Install using `claude plugin install <path-or-url>`
-3. Use plugin commands with the `/plugin:command` syntax
+1. Add the marketplace: `claude plugin marketplace add synaptiai/synapti-marketplace`
+2. Browse the [Available Plugins](#available-plugins) below
+3. Install using `claude plugin install <plugin-name>`
+4. Use plugin commands with the `/plugin:command` syntax
 
 ---
 
@@ -22,7 +23,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 
 | Plugin | Category | Description | Version |
 |--------|----------|-------------|---------|
-| [Decipon](./synapti-marketplace/plugins/decipon/) | Security | NCI manipulation detection with deep research fact-checking | 1.3.1 |
+| [Decipon](./plugins/decipon/) | Security | NCI manipulation detection with deep research fact-checking | 1.3.1 |
 
 ---
 
@@ -37,11 +38,11 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 ### Installation
 
 ```bash
-# From local path
-claude plugin install ./synapti-marketplace/plugins/decipon
+# Add the marketplace (one-time setup)
+claude plugin marketplace add synaptiai/synapti-marketplace
 
-# From GitHub
-claude plugin install github:synaptiai/decipon-plugin
+# Install the plugin
+claude plugin install decipon
 ```
 
 ### Commands
@@ -86,33 +87,32 @@ Analyzes 20 manipulation categories across 5 composite factors:
 | Tribal Division | 15% | Us-vs-them framing, false dilemmas |
 | Missing Information | 20% | Context gaps, cherry-picking, logical fallacies |
 
-**[Full Decipon Documentation →](./synapti-marketplace/plugins/decipon/README.md)**
+**[Full Decipon Documentation →](./plugins/decipon/README.md)**
 
 ---
 
 ## Repository Structure
 
 ```
-agentic-harnesses/
+synapti-marketplace/
 ├── README.md                          # This file
-└── synapti-marketplace/
-    ├── .claude-plugin/
-    │   └── marketplace.json           # Marketplace configuration
-    └── plugins/
-        └── decipon/
-            ├── .claude-plugin/
-            │   └── plugin.json        # Plugin metadata
-            ├── README.md              # Full plugin documentation
-            ├── agents/                # 5 specialized AI agents
-            │   ├── nci-analyzer.md
-            │   ├── perspective-generator.md
-            │   ├── claim-verifier.md
-            │   ├── deep-researcher.md
-            │   └── fact-checker.md
-            ├── commands/              # 7 user-facing commands
-            └── skills/                # 2 methodology implementations
-                ├── nci-analysis/
-                └── deep-research/
+├── .claude-plugin/
+│   └── marketplace.json               # Marketplace configuration
+└── plugins/
+    └── decipon/
+        ├── .claude-plugin/
+        │   └── plugin.json            # Plugin metadata
+        ├── README.md                  # Full plugin documentation
+        ├── agents/                    # 5 specialized AI agents
+        │   ├── nci-analyzer.md
+        │   ├── perspective-generator.md
+        │   ├── claim-verifier.md
+        │   ├── deep-researcher.md
+        │   └── fact-checker.md
+        ├── commands/                  # 7 user-facing commands
+        └── skills/                    # 2 methodology implementations
+            ├── nci-analysis/
+            └── deep-research/
 ```
 
 ---
@@ -151,8 +151,8 @@ your-plugin/
 ### Submission Process
 
 1. Fork this repository
-2. Add your plugin to `synapti-marketplace/plugins/`
-3. Update `marketplace.json` with your plugin entry
+2. Add your plugin to `plugins/`
+3. Update `.claude-plugin/marketplace.json` with your plugin entry
 4. Submit a pull request with documentation
 
 ---
@@ -164,8 +164,10 @@ This project is licensed under the MIT License.
 ## Credits
 
 **Author:** Daniel Bentes
+
 **Organization:** [Synapti](https://synapti.ai)
-**Repository:** [github.com/synaptiai/agentic-harnesses](https://github.com/synaptiai/agentic-harnesses)
+
+**Repository:** [github.com/synaptiai/synapti-marketplace](https://github.com/synaptiai/synapti-marketplace)
 
 ---
 
