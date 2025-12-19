@@ -20,7 +20,7 @@
       "homepage": "https://github.com/synaptiai/synapti-marketplace",
       "repository": "https://github.com/synaptiai/synapti-marketplace",
       "license": "MIT",
-      "category": "security",
+      "category": "analysis",
       "keywords": [
         "manipulation-detection",
         "disinformation",
