@@ -23,7 +23,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 
 | Plugin | Category | Description | Version |
 |--------|----------|-------------|---------|
-| [Decipon](./plugins/decipon/) | Analysis | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.3.1 |
+| [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.3.1 |
 
 ---
 

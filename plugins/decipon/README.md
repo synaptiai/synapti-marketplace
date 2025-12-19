@@ -1,8 +1,13 @@
-# Decipon - NCI Manipulation Detection Plugin
+# Decipon - Content Analysis & Deep Research Plugin
 
-A Claude Code plugin implementing the NCI (Narrative Credibility Index) Protocol for detecting manipulation, propaganda, and disinformation patterns in content.
+A Claude Code plugin combining two powerful capabilities:
+
+1. **NCI Protocol** — Detects manipulation, propaganda, and disinformation patterns across 20 indicators
+2. **Deep Research** — Comprehensive research using Time-Tested Diffusion methodology with source verification
 
 ## Overview
+
+### NCI Analysis
 
 Decipon analyzes content (text or URLs) across 20 manipulation indicators grouped into 5 composite factors:
 
@@ -14,15 +19,22 @@ Decipon analyzes content (text or URLs) across 20 manipulation indicators groupe
 | Tribal Division | 15% | Us-vs-them framing, simplistic narratives, false dilemmas |
 | Missing Information | 20% | Context gaps, authority issues, dissent suppression, cherry-picking, fallacies, framing |
 
+### Deep Research
+
+Decipon also provides standalone deep research capabilities using Time-Tested Diffusion methodology:
+- Iterative refinement through critique → research → refine cycles
+- Source scoring with confidence levels (1-100)
+- Contradiction detection and resolution
+- Comprehensive reports with methodology transparency
+
 ## Installation
 
 ```bash
-claude plugin install /path/to/decipon
-```
+# Add the marketplace (one-time setup)
+claude plugin marketplace add synaptiai/synapti-marketplace
 
-Or from GitHub:
-```bash
-claude plugin install github:danielbentes/decipon
+# Install the plugin
+claude plugin install decipon
 ```
 
 ## Commands
@@ -108,7 +120,93 @@ Red team adversarial critique of a document or claim.
 - **Dual perspectives**: Generates both manipulative and legitimate interpretations
 - **Evidence-grounded**: Every score backed by specific quotes/patterns
 - **URL support**: Fetches and analyzes web content via WebFetch
-- **Deep research integration**: Built-in fact-checking with source evaluation and claim verification
+- **Deep research**: Comprehensive research with iterative refinement and source verification
+
+---
+
+## Deep Research Methodology
+
+Decipon includes a complete deep research capability using **Time-Tested Diffusion** — an iterative methodology that treats research like a diffusion process: start with noise (rough draft), apply guidance (research brief), and denoise through cycles of critique → research → refine.
+
+### When to Use Deep Research
+
+| Use Case | Command |
+|----------|---------|
+| Complex questions requiring multiple sources | `/decipon:deep-research` |
+| State-of-the-art surveys | `/decipon:deep-research` |
+| Due diligence investigations | `/decipon:deep-research` |
+| Quick factual verification | `/decipon:quick-research` |
+| Adversarial critique of documents | `/decipon:critique` |
+
+### The Deep Research Workflow
+
+```
+1. Clarify scope (if ambiguous)
+2. Write research brief (guidance signal)
+3. Generate initial draft from knowledge (noisy starting point)
+4. Red team critique (identify gaps and weaknesses)
+5. Targeted web search with reflection
+6. Score sources and track contradictions
+7. Refine draft (denoise)
+8. Evaluate quality (score < 7? repeat 4-7, max 3 cycles)
+9. Finalize report
+```
+
+### Key Principles
+
+**Think After Every Search**: After each search, pause and reflect:
+- What key facts did I find?
+- What gaps remain?
+- Do sources agree or conflict?
+- Is another search needed?
+
+**Source Scoring (1-100)**:
+| Source Type | Confidence Range |
+|-------------|------------------|
+| Peer-reviewed, official docs | 85-100 |
+| Government/institutional | 75-90 |
+| Major news (Reuters, AP) | 70-85 |
+| Industry publications | 50-75 |
+| Blogs, forums | 20-50 |
+
+**Contradiction Handling**:
+1. Note contradictions explicitly
+2. Check publication dates (prefer recent)
+3. Evaluate source authority
+4. Search for tie-breaker sources
+5. If unresolved, present both views with confidence levels
+
+### Output Format
+
+```markdown
+# Research Report
+
+## Executive Summary
+[Key findings in 2-3 paragraphs]
+
+## Findings
+[Organized by research questions, with inline citations]
+
+## Methodology
+[Sources consulted, confidence levels, unresolved contradictions]
+
+## Limitations
+[Gaps, uncertainties, disputed claims]
+
+## Sources
+[Numbered list with confidence indicators]
+```
+
+### Quick Research vs Deep Research
+
+| Aspect | Quick Research | Deep Research |
+|--------|----------------|---------------|
+| Search budget | 2-3 searches | 5-10 searches |
+| Iterations | Single pass | Up to 3 refinement cycles |
+| Use when | Simple verification | Complex multi-faceted questions |
+| Output | Brief answer with sources | Comprehensive report |
+
+---
 
 ## Agents
 
@@ -122,9 +220,9 @@ The plugin includes specialized agents that can be invoked for specific tasks:
 | `deep-researcher` | Comprehensive research using TTD methodology |
 | `fact-checker` | Verification specialist for claims |
 
-## Deep Research Integration
+## Deep Research + NCI Integration
 
-Decipon includes a complete deep research skill for fact-checking claims discovered during NCI analysis. Deep research is **built into the NCI workflow as Step 5**.
+Deep research integrates directly with NCI analysis for automated fact-checking. When analyzing content, deep research is **automatically triggered** based on NCI scores.
 
 ### Analysis Workflow (7 Steps)
 
@@ -240,4 +338,4 @@ Daniel Bentes
 
 ## Repository
 
-https://github.com/danielbentes/decipon
+https://github.com/synaptiai/synapti-marketplace
