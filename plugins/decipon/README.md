@@ -328,6 +328,57 @@ The NCI Protocol uses pattern recognition rather than truth evaluation:
 - High scores don't mean "false"
 - Focus is on HOW content persuades, not WHAT it claims
 
+## Examples
+
+The `examples/` folder contains real outputs demonstrating Decipon's capabilities:
+
+### Deep Research Report
+**[psyops-research-report-2025.md](examples/psyops-research-report-2025.md)**
+
+A comprehensive research report on the current state of psychological operations (PSYOP) techniques, produced using the `/decipon:deep-research` command. Demonstrates:
+- Time-Tested Diffusion methodology in action
+- Multi-source synthesis with confidence ratings
+- Balanced coverage of multiple state actors (Russia, China, Iran, US, Israel)
+- Structured findings with executive summary
+- Full source tracking with confidence levels (1-100)
+
+### Red Team Critique
+**[psyops-critique-2025.md](examples/psyops-critique-2025.md)**
+
+An adversarial critique of the research report above, produced using the `/decipon:critique` command. Demonstrates:
+- Systematic weakness identification across 4 categories (Logic, Evidence, Coverage, Accuracy)
+- Severity scoring (1-10) with prioritization
+- Actionable fix recommendations
+- Quality assurance for research outputs
+
+### NCI Manipulation Analysis
+**[psyops-research-report-2025-nci-analysis.md](examples/psyops-research-report-2025-nci-analysis.md)**
+
+A full NCI analysis of the PSYOP research report, produced using the `/decipon:analyze` command. Demonstrates:
+- Complete 20-category scoring with evidence for each category
+- Composite factor calculations with weighted formulas
+- Overall manipulation score: **11/100 [·]** (Low risk)
+- Dual perspective generation (manipulative vs legitimate interpretations)
+- Deep research trigger checking
+- Visual "Information Nutrition Label" format
+
+Key finding: The research report scored low for manipulation despite covering manipulation techniques, demonstrating the NCI's ability to distinguish educational content from propaganda.
+
+### Example Workflow
+
+```bash
+# 1. Generate comprehensive research
+/decipon:deep-research "Current state of psyops techniques"
+
+# 2. Red team the output for weaknesses
+/decipon:critique @research-report.md
+
+# 3. Analyze for manipulation patterns (meta-analysis)
+/decipon:analyze @research-report.md
+
+# 4. Iterate based on critique and analysis findings
+```
+
 ## License
 
 MIT License - See LICENSE file for details.
