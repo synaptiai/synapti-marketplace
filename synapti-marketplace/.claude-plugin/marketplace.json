@@ -1,0 +1,46 @@
+{
+  "name": "synapti-marketplace",
+  "owner": {
+    "name": "Daniel Bentes",
+    "email": "daniel.bentes@synapti.ai"
+  },
+  "metadata": {
+    "description": "Synapti plugin marketplace",
+    "version": "2.0.0"
+  },
+  "plugins": [
+    {
+      "name": "decipon",
+      "source": "./plugins/decipon",
+      "description": "NCI manipulation detection with deep research fact-checking - analyzes content for propaganda, disinformation, and manipulation patterns across 20 categories with integrated claim verification",
+      "version": "1.3.1",
+      "author": {
+        "name": "Daniel Bentes"
+      },
+      "homepage": "https://github.com/synaptiai/decipon-plugin",
+      "repository": "https://github.com/synaptiai/decipon-plugin",
+      "license": "MIT",
+      "category": "security",
+      "keywords": [
+        "manipulation-detection",
+        "disinformation",
+        "propaganda",
+        "fact-checking",
+        "deep-research",
+        "claim-verification",
+        "media-literacy",
+        "nci-protocol",
+        "narrative-credibility-index"
+      ],
+      "tags": [
+        "psyops",
+        "fact-checking",
+        "deep-research",
+        "claim-verification",
+        "media-literacy",
+        "nci-protocol",
+        "narrative-credibility-index"
+      ]
+    }
+  ]
+}

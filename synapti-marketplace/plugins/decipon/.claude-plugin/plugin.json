@@ -1,0 +1,21 @@
+{
+  "name": "decipon",
+  "version": "1.3.1",
+  "description": "NCI (Narrative Credibility Index) manipulation detection with integrated deep research fact-checking. Analyzes content for propaganda, disinformation, and manipulation patterns across 20 categories. Includes claim verification using deep research methodology.",
+  "author": {
+    "name": "Daniel Bentes"
+  },
+  "repository": "https://github.com/danielbentes/decipon",
+  "license": "MIT",
+  "keywords": [
+    "manipulation-detection",
+    "disinformation",
+    "propaganda",
+    "fact-checking",
+    "deep-research",
+    "claim-verification",
+    "media-literacy",
+    "nci-protocol",
+    "content-analysis"
+  ]
+}
