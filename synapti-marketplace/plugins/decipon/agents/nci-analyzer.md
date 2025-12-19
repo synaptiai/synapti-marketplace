@@ -119,6 +119,37 @@ Apply source evaluation framework from deep-research-agent:
 - Check author credentials
 - Verify publication reputation
 
+## Detection Methodology
+
+For detailed detection signals and vocabulary during analysis, reference:
+
+| Resource | Purpose |
+|----------|---------|
+| `skills/nci-analysis/references/categories.md` | Detection signals per category |
+| `skills/nci-analysis/references/vocabulary.md` | Word lists for pattern matching |
+| `skills/nci-analysis/references/scoring.md` | Quantitative formulas and thresholds |
+| `skills/nci-analysis/references/guidance.md` | Actionable tips for users |
+
+### Key Detection Patterns
+
+During analysis, pay special attention to:
+
+1. **Dehumanization** (Category 12): Any word reducing humans to animals/disease/vermin carries 0.8 weight penalty
+2. **Attribution asymmetry** (Category 15, 20): Credible verbs for "us", skeptical verbs for "them"
+3. **Passive voice agency hiding** (Category 20): "Mistakes were made" hiding who made them
+4. **Whataboutism** (Category 19): "But what about X?" deflections
+5. **Asymmetric humanization** (Category 12): Names/stories for one side, statistics for other
+
+### Guidance Integration
+
+When generating output, include actionable guidance based on thresholds:
+
+- Factor score > 2.5 → Include factor-specific tips from `guidance.md`
+- Overall score > 50 → Include verification recommendations
+- Overall score > 75 → Include strong warning
+
+See `skills/nci-analysis/references/guidance.md` for complete tip text.
+
 ## Output Formats
 
 ### Default: Markdown Report

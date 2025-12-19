@@ -8,6 +8,7 @@ Complete scoring calculations for the NCI Protocol.
 - [Composite Factor Calculation](#composite-factor-calculation)
 - [Overall Score Calculation](#overall-score-calculation)
 - [Confidence Calculation](#confidence-calculation)
+- [Quantitative Detection Formulas](#quantitative-detection-formulas)
 - [Output Formats](#output-formats)
 
 ---
@@ -223,6 +224,144 @@ The NCI Protocol explicitly requires that confidence never exceed 95%. This refl
 | 0.70-0.84 | Moderate | "Evidence indicates..." |
 | 0.50-0.69 | Low | "Some signals suggest..." |
 | Below 0.50 | Very Low | "Limited evidence, uncertain assessment..." |
+
+### Word Count Confidence Adjustment
+
+Longer content provides more evidence for reliable scoring:
+
+```
+base_confidence = 0.80
+word_count_adjustment = min((word_count / 500) × 0.05, max_adjustment)
+final_confidence = min(base_confidence + word_count_adjustment, 0.95)
+```
+
+| Analysis Type | Base | Max Adjustment | Max Final |
+|---------------|------|----------------|-----------|
+| Standard rule-based | 0.80 | +0.05 | 0.85 |
+| NLP-enhanced | 0.80 | +0.05 | 0.85 |
+| Text-only fallback | 0.70 | +0.05 | 0.75 |
+| Context-dependent (with external data) | 0.80 | +0.10 | 0.90 |
+| Context-dependent (no external data) | 0.45 | +0.10 | 0.55 |
+
+**Word count examples:**
+
+| Word Count | Adjustment | Typical Final Confidence |
+|------------|------------|--------------------------|
+| < 100 | +0.01 | 0.81 (show low confidence warning) |
+| 250 | +0.025 | 0.825 |
+| 500 | +0.05 | 0.85 |
+| 1000+ | +0.05 (capped) | 0.85 |
+
+**Short content warning:**
+
+When word_count < 100, include in report:
+> "Limited content length (< 100 words) may reduce scoring reliability. Results should be interpreted with caution."
+
+**Remember:** Maximum confidence is always capped at 0.95 per NCI Protocol - never claim 100% certainty.
+
+---
+
+## Quantitative Detection Formulas
+
+These formulas improve scoring reproducibility. Use as guidelines alongside qualitative assessment.
+
+### Emotional Trigger Density (Categories 1-5)
+
+```
+trigger_density = emotional_words / total_words
+```
+
+| Density | Score | Interpretation |
+|---------|-------|----------------|
+| < 0.02 | 1 | Minimal emotional language |
+| 0.02-0.05 | 2 | Low emotional content |
+| 0.05-0.10 | 3 | Moderate emotional content |
+| 0.10-0.15 | 4 | High emotional content |
+| > 0.15 | 5 | Overwhelming emotional language |
+
+### Intensity Detection
+
+```
+caps_ratio = ALL_CAPS_words / total_words
+exclamation_density = exclamation_marks / sentences
+```
+
+| Indicator | Threshold | Impact |
+|-----------|-----------|--------|
+| caps_ratio > 0.05 | Elevated | +0.5 to emotional scores |
+| caps_ratio > 0.20 | Maximum | +1.0 to emotional scores |
+| exclamation_density > 0.3 | Elevated | +0.5 to urgency score |
+| exclamation_density > 0.5 | High | +1.0 to urgency score |
+| Repeated punctuation (!!!, ???) | Present | Intensity marker |
+
+### Pronoun Ratio (Category 12: Tribal Division)
+
+```
+tribal_ratio = (we + us + our) / (they + them + their + 1)
+```
+
+| Ratio | Score Guidance | Interpretation |
+|-------|----------------|----------------|
+| < 1.5 | 1-2 | Balanced, inclusive language |
+| 1.5-3.0 | 2-3 | Mild tribal framing |
+| 3.0-5.0 | 3-4 | Notable tribal division |
+| > 5.0 | 4-5 | Strong us-vs-them dynamic |
+
+### Repetition Thresholds (Category 4)
+
+| Key Phrase Instances | Score |
+|---------------------|-------|
+| 0 | 1 |
+| 1-2 | 2 |
+| 3-5 | 3 |
+| 6-10 | 4 |
+| > 10 | 5 |
+
+### Context Completeness (Category 15)
+
+```
+Expected per 100 words:
+- 2 qualifier words (however, although, nevertheless, etc.)
+- 1 perspective phrase (critics say, supporters argue, etc.)
+
+completeness = (qualifiers + perspectives) / expected_count
+```
+
+| Completeness | Score | Interpretation |
+|--------------|-------|----------------|
+| > 80% | 1-2 | Comprehensive, balanced |
+| 50-80% | 2-3 | Adequate context |
+| 25-50% | 3-4 | Limited perspectives |
+| < 25% | 4-5 | One-sided presentation |
+
+### Dehumanization Penalty (Category 12)
+
+**CRITICAL: Heavy weight for dehumanizing language**
+
+```
+Each dehumanizing word detected: +0.8 to tribal division score
+```
+
+Examples triggering penalty:
+- animals, vermin, horde, savages, barbarians
+- filth, scum, disease, cancer, plague
+- cockroaches, rats, parasites, infestation
+
+A single instance can elevate the tribal division score by nearly one full point.
+
+### Attribution Asymmetry (Category 15, 20)
+
+```
+asymmetry_score = credible_verbs_for_us - credible_verbs_for_them
+```
+
+| Asymmetry | Impact |
+|-----------|--------|
+| Balanced (< 2 difference) | No penalty |
+| Moderate (2-4 difference) | +0.5 to framing score |
+| Strong (> 4 difference) | +1.0 to framing score |
+
+See `vocabulary.md` for credible vs. discrediting verb lists.
 
 ---
 

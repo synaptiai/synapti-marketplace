@@ -8,6 +8,37 @@ The goal is intellectual honesty: avoiding premature conclusions by seriously co
 1. **Manipulative interpretation**: How this content could be deliberate manipulation
 2. **Legitimate interpretation**: How this content could reflect genuine concerns
 
+## First Principles (NCI Protocol Foundation)
+
+Before generating perspectives, internalize these principles:
+
+### 1. Evidence Over Authority
+Evaluate patterns in the content itself, not source reputation. A prestigious outlet can use manipulation techniques; an unknown source can present information fairly. Judge the content, not the masthead.
+
+### 2. Steel-Man Interpretation
+Present the STRONGEST version of each perspective. Don't strawman the legitimate interpretation or understate the manipulative one. Give each interpretation its most compelling formulation.
+
+### 3. Atomic Decomposition
+Break claims into smallest verifiable units. "Experts say X causes Y" contains multiple claims: Who are the experts? What's their evidence? Is causation established? Decompose before evaluating.
+
+### 4. Source Agnosticism
+Apply identical standards regardless of political/ideological alignment. Manipulation techniques are manipulation techniques, regardless of who uses them. Your analysis should be indistinguishable across the political spectrum.
+
+### 5. Bidirectional Beneficiary Analysis
+Ask BOTH questions:
+- Who benefits if this narrative is **believed**?
+- Who benefits if this narrative is **dismissed**?
+
+Both directions reveal potential motivations for manipulation. One-sided beneficiary analysis is itself a form of bias.
+
+### 6. Pattern vs. Intent
+Focus primarily on detecting TECHNIQUES rather than assuming MOTIVES from patterns alone. We can identify manipulation patterns without claiming certainty about intent.
+
+**However:** Evidence gathered through deep research (beneficiary analysis, timing correlations, documented coordination, financial trails) CAN inform assessments of likely intent. When such evidence exists, incorporate it into perspective generation with appropriate confidence levels.
+
+- Pattern alone → Low confidence about intent
+- Pattern + corroborating evidence → Higher confidence about intent
+
 ## Core Principle
 
 **Steelman both sides.** Don't strawman the legitimate interpretation or understate the manipulative one. Give each perspective its strongest possible formulation.
@@ -128,6 +159,38 @@ Generally inverse to manipulative, but NOT simply 100 - manipulative:
 - **Both confidences should not both be >70%**: Contradictory
 - **Gap indicates clarity**: Larger gap = clearer assessment
 - **Close confidences indicate ambiguity**: Note for user
+
+## Execution Pattern
+
+For optimal performance, perspectives should be generated with this structure:
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   NCI Scores Ready                  │
+└─────────────────────┬───────────────────────────────┘
+                      │
+         ┌────────────┴────────────┐
+         ▼                         ▼
+┌─────────────────┐       ┌─────────────────┐
+│    Red Team     │       │    Blue Team    │
+│  (Manipulative) │       │   (Legitimate)  │
+│   [PARALLEL]    │       │   [PARALLEL]    │
+└────────┬────────┘       └────────┬────────┘
+         │                         │
+         └────────────┬────────────┘
+                      ▼
+            ┌─────────────────┐
+            │    Synthesis    │
+            │  [SEQUENTIAL]   │
+            │ (needs both)    │
+            └─────────────────┘
+```
+
+**Execution notes:**
+- Red Team and Blue Team can run simultaneously (no dependencies between them)
+- Synthesis MUST wait for both to complete (it weighs and compares their outputs)
+- If either perspective fails, Synthesis uses available data with reduced confidence
+- Total confidence cannot exceed 0.95 even with strong evidence
 
 ## Integration with Critique Framework
 

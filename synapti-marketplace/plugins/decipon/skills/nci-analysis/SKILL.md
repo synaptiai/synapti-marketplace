@@ -24,6 +24,19 @@ Pattern-based manipulation detection that identifies **how** content tries to in
 4. Note source metadata (publication, date, author)
 5. **If triggers met**: Use `fact-checker` agent to verify key claims
 
+## First Principles (Summary)
+
+The NCI Protocol is grounded in these principles (see `agents/perspective-generator.md` for full version):
+
+1. **Evidence over authority** - Evaluate patterns in content, not source reputation
+2. **Steel-man interpretation** - Present strongest version of each perspective
+3. **Atomic decomposition** - Break claims into smallest verifiable units
+4. **Source agnosticism** - Apply identical standards regardless of source alignment
+5. **Bidirectional beneficiary analysis** - Ask who benefits if believed AND if dismissed
+6. **Pattern vs. Intent** - Focus on techniques; deep research evidence can inform motives
+
+These principles ensure fair, consistent analysis across all content regardless of political or ideological alignment.
+
 ## Workflow
 
 ```
@@ -323,6 +336,8 @@ See [references/examples.md](references/examples.md) for historical case studies
 
 ## References
 
-- [references/categories.md](references/categories.md) - All 20 category definitions
-- [references/scoring.md](references/scoring.md) - Scoring methodology and weights
-- [references/examples.md](references/examples.md) - Historical case studies
+- [references/categories.md](references/categories.md) - All 20 category definitions with detection signals
+- [references/scoring.md](references/scoring.md) - Scoring methodology, weights, and quantitative formulas
+- [references/examples.md](references/examples.md) - Historical case studies for calibration
+- [references/vocabulary.md](references/vocabulary.md) - Detection vocabulary lists
+- [references/guidance.md](references/guidance.md) - Actionable tips per factor

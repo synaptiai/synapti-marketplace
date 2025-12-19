@@ -309,6 +309,24 @@ Us-vs-them dynamics and polarization.
 5: Extreme polarization, dehumanizing language
 ```
 
+#### Enhanced Detection Signals
+
+**Vocabulary references** (see vocabulary.md):
+- DEHUMANIZING_WORDS: animals, vermin, horde, savages, barbarians, filth, scum, disease, cancer, plague, cockroaches, rats, parasites
+- HUMANIZING_WORDS: families, children, names, stories, individuals
+- OTHERING_WORDS: enemy, threat, invader, outsider, foreigner
+- GROUP_IDENTITY_PHRASES: "us vs them", "with us or against us", "real patriots"
+
+**Critical patterns:**
+- **Dehumanization** (WEIGHT: 0.8 penalty each): Any word reducing humans to animals/disease/vermin
+- **Asymmetric humanization**: One side gets names/stories, other side gets statistics/collectives
+- **Pronoun imbalance**: High (we+us+our) / (they+them+their) ratio suggests tribal framing
+
+**Quantitative thresholds:**
+- Pronoun ratio > 3:1 suggests notable tribal framing
+- Any dehumanizing word = automatic score increase (+0.8)
+- Asymmetric humanization (names vs. statistics) = +1.0 to score
+
 ---
 
 ### Category 13: Simplistic Narratives
@@ -381,6 +399,25 @@ Omissions, suppression, and incomplete presentation.
 4: Major omissions, one-sided presentation
 5: Extreme omissions, critical context absent
 ```
+
+#### Enhanced Detection Signals
+
+**Vocabulary references** (see vocabulary.md):
+- CREDIBLE_ATTRIBUTION_VERBS: stated, confirmed, said, reported, announced, explained
+- DISCREDITING_ATTRIBUTION_VERBS: claimed, alleged, insisted, demanded, ranted, asserted
+- ONE_SIDED_SOURCE_PHRASES: "officials say", "sources say", "declined to comment"
+- PASSIVE_VOICE_INDICATORS: "was killed", "were destroyed", "mistakes were made"
+
+**Critical patterns:**
+- **Attribution asymmetry**: Credible verbs for "us" (stated, confirmed), skeptical verbs for "them" (claimed, alleged)
+- **One-sided sourcing**: Only certain perspectives quoted, others "declined to comment"
+- **Passive voice agency hiding**: "Mistakes were made" without identifying who made them
+- **Context stripping**: Key historical or situational context omitted
+
+**Quantitative thresholds:**
+- Context completeness: Expect 2 qualifiers + 1 perspective phrase per 100 words
+- Attribution asymmetry > 4 instances = +1.0 to score
+- "Declined to comment" without attempt to include perspective = +0.5
 
 ---
 
@@ -475,6 +512,26 @@ Omissions, suppression, and incomplete presentation.
 5: Pervasive fallacious reasoning throughout
 ```
 
+#### Enhanced Detection Signals
+
+**Vocabulary references** (see vocabulary.md):
+- WHATABOUTISM_PHRASES: "but what about", "what about when", "you also", "they did it too"
+- FALSE_EQUIVALENCE_PHRASES: "both sides", "equally responsible", "mutual", "reciprocal"
+- DEFLECTION_PHRASES: "that's not the real issue", "let's focus on", "the real problem is"
+- SMEAR_PHRASES: "known ties to", "funded by", "connected to" (without substantiation)
+
+**Critical patterns:**
+- **Whataboutism**: Deflecting criticism by pointing to others' actions ("But what about X?")
+- **Tu quoque**: Justifying behavior because others did it too
+- **False equivalence**: Creating false "both sides" symmetry when evidence is asymmetric
+- **Smears without evidence**: Association claims without substantiation ("known ties to")
+- **Symmetry forcing**: Misusing "mutual", "reciprocal", "bilateral" to imply equal responsibility
+
+**Detection guidance:**
+- Count distinct fallacy types (not just instances)
+- Smears require checking if substantiation is provided
+- False equivalence requires comparing actual evidence for each "side"
+
 ---
 
 ### Category 20: Framing Techniques
@@ -497,6 +554,25 @@ Omissions, suppression, and incomplete presentation.
 4: Strong framing, limited perspectives
 5: Extreme framing control, single perspective enforced
 ```
+
+#### Enhanced Detection Signals
+
+**Vocabulary references** (see vocabulary.md):
+- EUPHEMISM_WORDS: collateral damage, neutralized, enhanced interrogation, surgical strike, clashes, incident
+- PASSIVE_VOICE_INDICATORS: "was killed", "were destroyed", "situation escalated", "violence erupted"
+- AGENCY_OMISSION_PHRASES: "the situation deteriorated", "tensions rose", "conflict broke out"
+
+**Critical patterns:**
+- **Passive voice hiding agency**: "Workers were killed" vs "Company killed workers"
+- **Agency omission**: "Situation escalated" vs "Forces escalated situation"
+- **Euphemistic language**: "Collateral damage" vs "Civilian deaths", "Neutralized" vs "Killed"
+- **Violence softening**: "Incident", "altercation", "confrontation" vs accurate descriptions
+- **Comparative framing**: How similar actions are described for different actors
+
+**Detection guidance:**
+- Compare descriptions of similar actions by different parties
+- Check if passive voice consistently hides specific actors
+- Note euphemism patterns across the content
 
 ---
 
