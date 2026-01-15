@@ -223,3 +223,82 @@ Iteration 3: Comp 9, Acc 8 → Done ✓
 - [references/critique-framework.md](references/critique-framework.md) - Red team methodology
 - [references/source-evaluation.md](references/source-evaluation.md) - Confidence scoring, contradictions
 - [references/report-templates.md](references/report-templates.md) - Output formats
+
+## User Interaction
+
+Use the **AskUserQuestion tool** at key decision points throughout the deep research workflow:
+
+### When to Use
+
+- **Scope clarification (Step 1)**: Topic has multiple interpretations or unclear constraints
+- **Research direction (Step 3-4)**: Multiple valid approaches, prioritization needed
+- **Quality iteration (Step 8)**: Decide whether to continue refining or finalize
+- **Contradiction resolution (Step 6)**: Sources disagree and user judgment would help
+
+### Example Invocations
+
+**Scope clarification (Step 1):**
+```
+Topic: "Research renewable energy"
+→ Use AskUserQuestion tool:
+  Question: "Renewable energy is broad. What aspect should I focus on?"
+  Options:
+  - "Current technology comparison (solar, wind, etc.)"
+  - "Economic viability and cost trends"
+  - "Policy and regulatory landscape"
+  - "Specific geography or market"
+```
+
+**Research brief validation (Step 2):**
+```
+After drafting research brief
+→ Use AskUserQuestion tool:
+  Question: "Does this research brief capture your needs?"
+  Options:
+  - "Yes, proceed with research"
+  - "Adjust scope (I'll specify)"
+  - "Add specific questions to address"
+  - "Change constraints or focus"
+```
+
+**Quality iteration decision (Step 8):**
+```
+Iteration 2: Comprehensiveness 6, Accuracy 7, Avg 6.5
+→ Use AskUserQuestion tool:
+  Question: "Quality at 6.5/10 after 2 iterations. Continue or finalize?"
+  Options:
+  - "Continue to iteration 3 (target 7+)" (Recommended)
+  - "Good enough, finalize now"
+  - "Focus on specific gaps: [describe]"
+```
+
+**Source contradiction (Step 6):**
+```
+Major sources disagree: Source A (confidence 85) says X, Source B (confidence 80) says Y
+→ Use AskUserQuestion tool:
+  Question: "Authoritative sources conflict. How to resolve?"
+  Options:
+  - "Present both views with confidence levels"
+  - "Search for additional tiebreaker sources"
+  - "Favor more recent source"
+  - "Flag as unresolved, note in limitations"
+```
+
+**Report depth selection (Step 9):**
+```
+Research complete, ready for final report
+→ Use AskUserQuestion tool:
+  Question: "What level of detail in the final report?"
+  Options:
+  - "Full report with all methodology details"
+  - "Executive summary with key findings"
+  - "Detailed findings, minimal methodology"
+  - "Just the sources with confidence ratings"
+```
+
+### Benefits of Interactive Research
+
+- **Aligned scope**: Research matches user's actual needs
+- **Informed trade-offs**: User decides depth vs breadth
+- **Quality control**: User approves iteration decisions
+- **Transparent methodology**: User understands how conclusions reached

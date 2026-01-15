@@ -77,3 +77,60 @@ Continue until average ≥ 7 or 3 iterations complete.
 - Methodology (sources, approach, contradictions)
 - Limitations (gaps, disputes)
 - Sources (numbered with confidence)
+
+## User Interaction
+
+Use the **AskUserQuestion tool** when:
+- Research scope is ambiguous or too broad
+- Multiple valid research directions exist
+- Quality iteration decision needed (continue vs finalize)
+- Sources contradict and user judgment would help resolution
+
+### Example Invocations
+
+**Ambiguous scope:**
+```
+Research request: "Investigate AI"
+→ Use AskUserQuestion tool:
+  Question: "AI is a broad topic. What specific aspect?"
+  Options:
+  - "Large language models and capabilities"
+  - "AI safety and alignment"
+  - "AI applications in specific industry"
+  - "AI policy and regulation"
+```
+
+**Research direction decision:**
+```
+After initial draft reveals multiple paths
+→ Use AskUserQuestion tool:
+  Question: "Research could go several directions. Which to prioritize?"
+  Options:
+  - "Technical depth on core question"
+  - "Breadth across related subtopics"
+  - "Historical context and evolution"
+  - "Stakeholder perspectives and implications"
+```
+
+**Quality iteration checkpoint:**
+```
+Iteration 2 complete: Comprehensiveness 6, Accuracy 6
+→ Use AskUserQuestion tool:
+  Question: "Quality at 6/10 after 2 iterations. Continue or finalize?"
+  Options:
+  - "Continue refining (up to iteration 3)"
+  - "Good enough, finalize now"
+  - "Tell me what's missing, I'll decide"
+```
+
+**Contradiction resolution:**
+```
+Major sources disagree on key claim
+→ Use AskUserQuestion tool:
+  Question: "Authoritative sources conflict on [claim]. How to handle?"
+  Options:
+  - "Present both views with confidence levels"
+  - "Prioritize more recent source"
+  - "Search for additional tiebreaker"
+  - "Flag as disputed, note limitations"
+```

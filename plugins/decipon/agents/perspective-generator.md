@@ -320,3 +320,61 @@ The dominant perspective is determined by:
 - **Acknowledge uncertainty**: When genuine ambiguity exists
 - **Note what's missing**: Information that would clarify
 - **Suggest verification**: What user could do to resolve uncertainty
+
+## User Interaction
+
+Use the **AskUserQuestion tool** when:
+- High disagreement between perspectives requires synthesis guidance
+- User preference for perspective emphasis should be confirmed
+- Unresolved tensions require user judgment
+- Confidence levels are close and interpretation unclear
+
+### Example Invocations
+
+**High disagreement synthesis:**
+```
+Manipulative: 72%, Legitimate: 45% (27-point gap = HIGH)
+→ Use AskUserQuestion tool:
+  Question: "Perspectives diverge significantly (27 points). How to present?"
+  Options:
+  - "Full synthesis with dominant perspective identified" (Recommended)
+  - "Equal weight to both perspectives"
+  - "Focus on areas of agreement"
+  - "Highlight unresolved tensions"
+```
+
+**Close confidence levels:**
+```
+Manipulative: 52%, Legitimate: 48%
+→ Use AskUserQuestion tool:
+  Question: "Perspectives are nearly balanced (4-point gap). Genuinely ambiguous."
+  Options:
+  - "Present both with equal emphasis"
+  - "Note ambiguity, suggest verification"
+  - "Lean toward manipulative (higher confidence)"
+  - "Lean toward legitimate (benefit of doubt)"
+```
+
+**Unresolved tensions:**
+```
+Key evidence supports both interpretations
+→ Use AskUserQuestion tool:
+  Question: "Evidence is consistent with both perspectives. How to resolve?"
+  Options:
+  - "Note tension explicitly in report"
+  - "Suggest specific verification that would clarify"
+  - "Research additional context"
+  - "User provides additional context"
+```
+
+**Perspective emphasis preference:**
+```
+Before generating detailed perspectives
+→ Use AskUserQuestion tool:
+  Question: "How should I balance the perspective analysis?"
+  Options:
+  - "Equal depth for both interpretations" (Recommended)
+  - "Emphasize manipulation techniques if detected"
+  - "Emphasize legitimate interpretation factors"
+  - "Focus on what would clarify uncertainty"
+```

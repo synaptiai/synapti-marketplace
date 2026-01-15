@@ -258,3 +258,69 @@ Agent: [Performs full NCI analysis on provided text]
 User: Just give me the NCI score for this: [content]
 Agent: [Performs analysis, returns score with brief key findings]
 ```
+
+## User Interaction
+
+Use the **AskUserQuestion tool** when:
+- Input type cannot be determined (URL vs text vs file)
+- Content type is ambiguous (satire, opinion, news)
+- Score is borderline and next steps should be offered
+- Deep research triggers are met and user should confirm escalation
+
+### Example Invocations
+
+**Ambiguous input:**
+```
+User provides unclear input
+→ Use AskUserQuestion tool:
+  Question: "How should I interpret this input?"
+  Options:
+  - "Treat as URL to fetch"
+  - "Treat as direct text content"
+  - "Treat as file path to read"
+```
+
+**Content type ambiguity:**
+```
+Content appears to be satire or opinion
+→ Use AskUserQuestion tool:
+  Question: "This content appears to be [satire/opinion]. How to analyze?"
+  Options:
+  - "Analyze as-is (note content type in report)"
+  - "Analyze as if presented as news"
+  - "Skip NCI analysis (not suited for this content type)"
+```
+
+**Borderline score guidance:**
+```
+Analysis complete: Score 48/100 (Moderate)
+→ Use AskUserQuestion tool:
+  Question: "Score is 48 (Moderate). What would you like next?"
+  Options:
+  - "View full category breakdown with evidence"
+  - "Verify key claims with fact-checking" (Recommended)
+  - "Generate dual perspectives only"
+  - "Score is sufficient"
+```
+
+**Deep research trigger confirmation:**
+```
+Score > 40 and Authority Issues category > 3
+→ Use AskUserQuestion tool:
+  Question: "Analysis triggered deep research recommendation. Proceed?"
+  Options:
+  - "Yes, verify key claims" (Recommended)
+  - "No, current analysis is sufficient"
+  - "Show me which claims would be verified first"
+```
+
+**Output format selection:**
+```
+Analysis complete, ready to output
+→ Use AskUserQuestion tool:
+  Question: "Analysis complete. What output format?"
+  Options:
+  - "Markdown report (default)"
+  - "JSON for programmatic use"
+  - "Quick summary only"
+```

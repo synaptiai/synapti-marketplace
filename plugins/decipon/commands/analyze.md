@@ -73,3 +73,47 @@ Perform full NCI (Narrative Credibility Index) manipulation analysis on content.
 | 26-50 | [!] | Moderate - Verify claims |
 | 51-75 | [!!] | High - Cross-reference, strong skepticism |
 | 76-100 | [!!!] | Severe - Likely manipulation |
+
+## User Interaction
+
+Use the **AskUserQuestion tool** when:
+- Input is ambiguous (e.g., "analyze this" without content)
+- Content type is unclear (satire, opinion, news reporting)
+- User's goal is uncertain (triage vs. deep analysis vs. documentation)
+- Analysis reveals borderline scores requiring interpretation guidance
+
+### Example Invocations
+
+**Ambiguous input:**
+```
+User: /analyze this article
+→ Use AskUserQuestion tool:
+  Question: "What content would you like me to analyze?"
+  Options:
+  - "Provide a URL to fetch"
+  - "Paste text directly"
+  - "Specify a file path"
+```
+
+**Unclear analysis depth:**
+```
+User: /analyze https://example.com/article
+→ After initial score (45 - borderline), use AskUserQuestion tool:
+  Question: "This content scores 45/100 (Moderate). How would you like to proceed?"
+  Options:
+  - "Full 20-category breakdown with evidence" (Recommended)
+  - "Quick summary with top 3 findings"
+  - "Verify key claims with deep research"
+  - "Generate formal report for sharing"
+```
+
+**Content type ambiguity:**
+```
+User: /analyze [satirical article]
+→ Use AskUserQuestion tool:
+  Question: "This appears to be satirical content. How should I analyze it?"
+  Options:
+  - "Analyze as satire (note manipulation techniques used for effect)"
+  - "Analyze as if presented as news (ignore satirical intent)"
+  - "Skip analysis (satire not suited for NCI scoring)"
+```

@@ -192,3 +192,57 @@ See `skills/deep-research/SKILL.md` for full methodology.
 2. **Full analysis**: `/decipon:analyze` - If score > 20
 3. **Fact-check**: `/decipon:verify` - If score > 40 or claims seem dubious
 4. **Document**: `/decipon:report` - For formal records
+
+## User Interaction
+
+Use the **AskUserQuestion tool** when:
+- No content or claims are provided
+- Multiple claims exist and prioritization is needed
+- Verification reveals contradictions requiring user judgment
+- Resource constraints limit how many claims can be verified
+
+### Example Invocations
+
+**Missing content:**
+```
+User: /verify
+→ Use AskUserQuestion tool:
+  Question: "What would you like me to verify?"
+  Options:
+  - "Provide content (URL or text) to extract claims from"
+  - "Specify claims directly with --claims flag"
+  - "Verify claims from previous NCI analysis"
+```
+
+**Claim prioritization:**
+```
+User: /verify [content with 8 claims]
+→ Use AskUserQuestion tool:
+  Question: "Found 8 verifiable claims. How should I prioritize?"
+  Options:
+  - "Verify top 3-5 most impactful claims" (Recommended)
+  - "Verify all claims (takes longer)"
+  - "Let me select specific claims to verify"
+```
+
+**Contradictory sources:**
+```
+Verification found conflicting sources for: "90% of experts agree"
+→ Use AskUserQuestion tool:
+  Question: "Sources disagree on this claim (73% vs 90%). How to proceed?"
+  Options:
+  - "Mark as PARTIALLY VERIFIED with both figures noted"
+  - "Search for additional tiebreaker sources"
+  - "Present both perspectives without verdict"
+```
+
+**Unverifiable claims:**
+```
+After research, 3 claims remain UNVERIFIED
+→ Use AskUserQuestion tool:
+  Question: "3 claims could not be verified (no supporting sources). What next?"
+  Options:
+  - "Flag as UNVERIFIED and continue with report"
+  - "Expand search with different queries"
+  - "Note limitations and finalize"
+```

@@ -92,4 +92,60 @@ If average < 7: repeat critique → research → refine (max 3 cycles)
 [numbered with confidence]
 ```
 
+## User Interaction
+
+Use the **AskUserQuestion tool** when:
+- Topic is ambiguous or has multiple interpretations
+- Scope needs clarification (timeframe, geography, focus area)
+- Quality threshold preferences should be confirmed
+- Contradictions require user judgment to resolve
+
+### Example Invocations
+
+**Ambiguous topic:**
+```
+User: /deep-research AI
+→ Use AskUserQuestion tool:
+  Question: "AI research is broad. What aspect interests you?"
+  Options:
+  - "Current state of large language models"
+  - "AI safety and alignment research"
+  - "AI in a specific industry (healthcare, finance, etc.)"
+  - "AI regulation and policy developments"
+```
+
+**Scope clarification:**
+```
+User: /deep-research fusion energy
+→ Use AskUserQuestion tool:
+  Question: "What scope for fusion energy research?"
+  Options:
+  - "Current technical progress and milestones" (Recommended)
+  - "Commercial viability and timelines"
+  - "Comparison of approaches (tokamak, stellarator, etc.)"
+  - "Investment landscape and key players"
+```
+
+**Quality iteration decision:**
+```
+After iteration 2: Comprehensiveness 6, Accuracy 6, Avg 6.0
+→ Use AskUserQuestion tool:
+  Question: "Quality score is 6/10. Continue refining or finalize?"
+  Options:
+  - "Continue to iteration 3 for higher quality" (Recommended)
+  - "Finalize with current quality (good enough)"
+  - "Focus on specific gaps I'll identify"
+```
+
+**Source contradictions:**
+```
+Sources disagree on timeline: "2030 vs 2040 for commercial fusion"
+→ Use AskUserQuestion tool:
+  Question: "Expert sources disagree on fusion timeline. How to present?"
+  Options:
+  - "Present both estimates with source confidence"
+  - "Focus on the more conservative estimate"
+  - "Research additional sources to find consensus"
+```
+
 Begin now.

@@ -240,3 +240,58 @@ If verification budget exhausted:
 - Note unverified Medium/Low claims
 - Recommend follow-up if needed
 ```
+
+## User Interaction
+
+Use the **AskUserQuestion tool** when:
+- Many claims extracted and prioritization needed
+- NCI score adjustment decision requires user input
+- Contradictions found that affect manipulation assessment
+- Verification scope needs confirmation
+
+### Example Invocations
+
+**Claim prioritization:**
+```
+Extracted 7 claims from content
+→ Use AskUserQuestion tool:
+  Question: "Found 7 verifiable claims. How to prioritize verification?"
+  Options:
+  - "Critical and High priority only" (Recommended)
+  - "All claims (comprehensive)"
+  - "Let me select specific claims"
+  - "Claims affecting specific NCI categories"
+```
+
+**NCI score adjustment decision:**
+```
+Verification contradicted 2 claims, verified 3
+→ Use AskUserQuestion tool:
+  Question: "2 claims contradicted, 3 verified. Adjust NCI score?"
+  Options:
+  - "Yes, recalculate with verification results" (Recommended)
+  - "No, keep original score with verification notes"
+  - "Show me the specific category adjustments first"
+```
+
+**Contradiction affecting assessment:**
+```
+Key claim partially verified but with significant caveats
+→ Use AskUserQuestion tool:
+  Question: "Claim '[claim]' is partially true but exaggerated. Impact on assessment?"
+  Options:
+  - "Increase Authority Issues category (+1)"
+  - "Note caveat but don't adjust scores"
+  - "Research further before deciding"
+```
+
+**Scope confirmation:**
+```
+User requests verification without specifying depth
+→ Use AskUserQuestion tool:
+  Question: "How thorough should claim verification be?"
+  Options:
+  - "Standard verification (2-3 sources per claim)"
+  - "Deep verification (5+ sources, resolve contradictions)"
+  - "Quick check (1-2 sources, flag uncertainties)"
+```

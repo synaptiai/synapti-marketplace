@@ -341,3 +341,70 @@ See [references/examples.md](references/examples.md) for historical case studies
 - [references/examples.md](references/examples.md) - Historical case studies for calibration
 - [references/vocabulary.md](references/vocabulary.md) - Detection vocabulary lists
 - [references/guidance.md](references/guidance.md) - Actionable tips per factor
+
+## User Interaction
+
+Use the **AskUserQuestion tool** at key decision points throughout the NCI analysis workflow:
+
+### When to Use
+
+- **Input ambiguity**: Content type, source, or format unclear
+- **Score interpretation**: Borderline scores requiring next-step guidance
+- **Deep research triggers**: Confirmation before escalating to claim verification
+- **Perspective balance**: High disagreement requiring synthesis direction
+- **Output preferences**: Format, detail level, or focus area selection
+
+### Example Invocations
+
+**Content type clarification (Step 1):**
+```
+Content could be satire, opinion, or news
+→ Use AskUserQuestion tool:
+  Question: "Content type affects analysis interpretation. What is this?"
+  Options:
+  - "News reporting (analyze as factual claims)"
+  - "Opinion/editorial (note subjective framing)"
+  - "Satire (analyze technique, not truth claims)"
+  - "Unclear - analyze as presented"
+```
+
+**Deep research trigger (Step 5):**
+```
+NCI Score: 52, Authority Issues: 4, Cherry-Picking: 3
+→ Use AskUserQuestion tool:
+  Question: "Analysis triggers suggest claim verification. Proceed with deep research?"
+  Options:
+  - "Yes, verify key claims (recommended for score > 40)"
+  - "No, pattern analysis is sufficient"
+  - "Show me which claims would be verified first"
+```
+
+**Perspective disagreement (Step 6):**
+```
+Manipulative confidence: 68%, Legitimate confidence: 42%
+→ Use AskUserQuestion tool:
+  Question: "Perspectives diverge by 26 points (High). How to present?"
+  Options:
+  - "Full synthesis with dominant perspective highlighted"
+  - "Present both with equal emphasis"
+  - "Focus on what verification would clarify"
+```
+
+**Output format (Step 7):**
+```
+Analysis complete, ready for output
+→ Use AskUserQuestion tool:
+  Question: "How should I format the NCI report?"
+  Options:
+  - "Full markdown report with all categories"
+  - "Summary with key findings only"
+  - "JSON for programmatic use"
+  - "Information Nutrition Label visual format"
+```
+
+### Benefits of Interactive Analysis
+
+- **Clearer user intent**: Reduces misinterpretation of ambiguous requests
+- **Appropriate depth**: User controls triage vs deep analysis
+- **Informed escalation**: User decides when to invest in verification
+- **Transparent trade-offs**: Options present clear choices with implications

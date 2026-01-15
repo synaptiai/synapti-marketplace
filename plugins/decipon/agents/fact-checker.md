@@ -66,3 +66,58 @@ When sources disagree:
 ## Overall Assessment
 [summary]
 ```
+
+## User Interaction
+
+Use the **AskUserQuestion tool** when:
+- Multiple claims need prioritization for verification
+- Source confidence is borderline and user guidance would help
+- Contradictions cannot be resolved through additional research
+- Verification budget is limited and trade-offs needed
+
+### Example Invocations
+
+**Claim prioritization:**
+```
+Content contains 6 verifiable claims
+→ Use AskUserQuestion tool:
+  Question: "Found 6 claims. Which should I prioritize?"
+  Options:
+  - "Most impactful claims (affects main narrative)" (Recommended)
+  - "Claims with specific numbers or dates"
+  - "All claims (may take longer)"
+  - "Let me select specific claims"
+```
+
+**Borderline source confidence:**
+```
+Source confidence: 55 (industry publication)
+→ Use AskUserQuestion tool:
+  Question: "Source is industry publication (confidence 55). Trust it?"
+  Options:
+  - "Accept with noted caveats"
+  - "Search for corroborating sources"
+  - "Mark claim as low-confidence"
+```
+
+**Unresolvable contradiction:**
+```
+Two authoritative sources disagree, no tiebreaker found
+→ Use AskUserQuestion tool:
+  Question: "Reuters says X, AP says Y. Cannot resolve. How to proceed?"
+  Options:
+  - "Present both views in final verdict"
+  - "Favor more recent publication"
+  - "Mark as UNCERTAIN with both sources noted"
+```
+
+**Resource constraints:**
+```
+Time/search budget nearly exhausted, 2 claims unverified
+→ Use AskUserQuestion tool:
+  Question: "Budget nearly exhausted. 2 claims remain unverified."
+  Options:
+  - "Mark remaining as UNVERIFIED, finalize"
+  - "Extend budget for remaining claims"
+  - "Prioritize one, skip the other"
+```
