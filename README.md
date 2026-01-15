@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Plugin-orange.svg)](https://claude.com/claude-code)
-[![Plugins](https://img.shields.io/badge/Plugins-1-green.svg)](#available-plugins)
+[![Plugins](https://img.shields.io/badge/Plugins-2-green.svg)](#available-plugins)
 
 ## About the Marketplace
 
@@ -24,6 +24,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Plugin | Category | Description | Version |
 |--------|----------|-------------|---------|
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.3.1 |
+| [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.0.0 |
 
 ---
 
@@ -99,20 +100,29 @@ synapti-marketplace/
 ├── .claude-plugin/
 │   └── marketplace.json               # Marketplace configuration
 └── plugins/
-    └── decipon/
+    ├── decipon/                       # Content analysis plugin
+    │   ├── .claude-plugin/
+    │   │   └── plugin.json            # Plugin metadata
+    │   ├── README.md                  # Full plugin documentation
+    │   ├── agents/                    # 5 specialized AI agents
+    │   ├── commands/                  # 7 user-facing commands
+    │   └── skills/                    # 2 methodology implementations
+    │
+    └── gh-workflow/                   # GitHub workflow plugin
         ├── .claude-plugin/
         │   └── plugin.json            # Plugin metadata
         ├── README.md                  # Full plugin documentation
-        ├── agents/                    # 5 specialized AI agents
-        │   ├── nci-analyzer.md
-        │   ├── perspective-generator.md
-        │   ├── claim-verifier.md
-        │   ├── deep-researcher.md
-        │   └── fact-checker.md
-        ├── commands/                  # 7 user-facing commands
-        └── skills/                    # 2 methodology implementations
-            ├── nci-analysis/
-            └── deep-research/
+        ├── commands/                  # 7 workflow commands
+        │   ├── gh-issue.md            # Create issues
+        │   ├── gh-start.md            # Start work on issue
+        │   ├── gh-review.md           # Review PRs
+        │   ├── gh-address.md          # Address PR comments
+        │   ├── gh-merge.md            # Merge approved PRs
+        │   ├── gh-release.md          # Create releases
+        │   └── gh-setup.md            # Setup workflow config
+        ├── skills/                    # Dynamic configuration
+        │   └── repo-config/
+        └── templates/                 # Issue/PR templates
 ```
 
 ---
