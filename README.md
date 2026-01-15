@@ -26,6 +26,19 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.3.1 |
 | [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.0.0 |
 
+### When to Use Each Plugin
+
+| I want to... | Use |
+|--------------|-----|
+| Analyze articles, social media posts, or news for manipulation | [Decipon](#featured-decipon) `/decipon:analyze` |
+| Quickly triage content before deeper analysis | [Decipon](#featured-decipon) `/decipon:score` |
+| Research a complex topic with verified sources | [Decipon](#featured-decipon) `/decipon:deep-research` |
+| Fact-check claims in content | [Decipon](#featured-decipon) `/decipon:verify` |
+| Create well-structured GitHub issues | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-issue` |
+| Start implementing a GitHub issue | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-start` |
+| Review a pull request systematically | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-review` |
+| Create releases with changelogs | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-release` |
+
 ---
 
 ## Featured: Decipon
@@ -89,6 +102,68 @@ Analyzes 20 manipulation categories across 5 composite factors:
 | Missing Information | 20% | Context gaps, cherry-picking, logical fallacies |
 
 **[Full Decipon Documentation →](./plugins/decipon/README.md)**
+
+---
+
+## Featured: gh-workflow
+
+**gh-workflow** provides a complete GitHub development workflow — from issue creation through releases — that works with any repository without hardcoded configuration.
+
+### Why gh-workflow?
+
+Traditional approaches to GitHub automation often break when:
+- Repository settings change (branch renamed, labels modified)
+- Teams customize their workflow conventions
+- Commands assume specific project structures
+
+**gh-workflow solves this through dynamic detection** — every command discovers your repository's actual configuration at runtime.
+
+### Key Insight
+
+> Issues that specify implementation details ("add a component to src/views/") become obsolete when code is refactored. **Solution-agnostic issues** describe *what* should happen, not *how* — surviving any refactoring.
+
+### What Makes It Different
+
+| Feature | Benefit |
+|---------|---------|
+| **Dynamic Detection** | Auto-detects default branch, labels, and repo settings — no hardcoding |
+| **Solution-Agnostic Issues** | Issues describe requirements, not implementation — survives refactoring |
+| **Interactive Workflows** | Guided prompts at decision points prevent mistakes |
+| **Complete Lifecycle** | Single plugin covers issues → implementation → review → merge → release |
+
+### Commands
+
+| Command | What It Does |
+|---------|-------------|
+| `/gh-workflow:gh-issue` | Create issues that focus on requirements, not implementation |
+| `/gh-workflow:gh-start <N>` | Assign issue, create branch, implement, and create PR |
+| `/gh-workflow:gh-review <N>` | Systematic PR review with checklist and feedback |
+| `/gh-workflow:gh-address <N>` | Address review comments on a PR |
+| `/gh-workflow:gh-merge <N>` | Safely merge approved PRs |
+| `/gh-workflow:gh-release` | Create releases with automatic changelog generation |
+| `/gh-workflow:gh-setup` | Generate project-specific workflow configuration |
+
+### Installation
+
+```bash
+# Add the marketplace (one-time setup)
+claude plugin marketplace add synaptiai/synapti-marketplace
+
+# Install the plugin
+claude plugin install gh-workflow
+```
+
+### The Complete Development Cycle
+
+```
+/gh-issue → /gh-start → /gh-review → /gh-address → /gh-merge → /gh-release
+   │            │            │            │            │            │
+   ▼            ▼            ▼            ▼            ▼            ▼
+ Create      Branch +     Review      Address      Merge       Tag +
+ issue      implement      PR       comments       PR       changelog
+```
+
+**[Full gh-workflow Documentation →](./plugins/gh-workflow/README.md)**
 
 ---
 

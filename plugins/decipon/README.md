@@ -5,6 +5,68 @@ A Claude Code plugin combining two powerful capabilities:
 1. **NCI Protocol** — Detects manipulation, propaganda, and disinformation patterns across 20 indicators
 2. **Deep Research** — Comprehensive research using Time-Tested Diffusion methodology with source verification
 
+---
+
+## Why Decipon?
+
+### The Problem with Traditional Fact-Checking
+
+Most content evaluation tools ask: "Is this true or false?" But this binary framing misses crucial nuances:
+
+- **Factually accurate content can still manipulate** — statistics can be cherry-picked, context can be omitted, emotional triggers can be exploited, all while every claim is technically true
+- **False claims can be presented without manipulation** — genuine mistakes, outdated information, and honest errors aren't propaganda
+- **Truth verification is slow and often impossible** — by the time claims are verified, the narrative has already spread
+
+### What Decipon Does Differently
+
+Decipon asks a different question: **"How is this content trying to influence me?"**
+
+This pattern-based approach:
+- **Works instantly** — no external fact-checking databases required
+- **Catches sophisticated manipulation** — identifies techniques even when claims are true
+- **Provides actionable guidance** — severity levels with clear recommended actions
+- **Generates balanced perspectives** — shows both manipulative and legitimate interpretations
+
+### Who Benefits
+
+| Role | How Decipon Helps |
+|------|-------------------|
+| **Journalists** | Quick triage of sources, identify propaganda campaigns |
+| **Researchers** | Systematic analysis framework, reproducible methodology |
+| **Analysts** | Detect influence operations, track narrative patterns |
+| **Educators** | Teach media literacy with concrete examples |
+| **Anyone online** | Develop critical thinking about content consumption |
+
+---
+
+## Design Philosophy
+
+### Pattern Detection, Not Truth Arbitration
+
+Decipon deliberately avoids declaring content "true" or "false." Instead, it identifies **manipulation techniques** — the rhetorical and psychological methods used to influence audiences. This design choice reflects several principles:
+
+1. **Truth is often unknowable in real-time** — verification takes time; manipulation detection doesn't
+2. **Techniques reveal intent** — heavy use of manipulation patterns suggests persuasion goals beyond information sharing
+3. **Users make final judgments** — Decipon provides evidence and scores; users decide what to believe
+
+### Dual Perspectives by Default
+
+Every analysis generates two interpretations:
+- **Manipulative interpretation** — how this content could be designed to deceive
+- **Legitimate interpretation** — how this content could be genuine despite surface patterns
+
+This forces intellectual honesty. Content that scores "high risk" might still be legitimate; content that scores "low risk" might still mislead. The dual perspective prevents false certainty.
+
+### Tiered Depth for Different Needs
+
+Not every piece of content needs a 20-category deep dive:
+- **Quick triage** (`/score`) — 5 seconds, single number, rapid filtering
+- **Full analysis** (`/analyze`) — comprehensive breakdown when scores warrant attention
+- **Verification** (`/verify`) — fact-checking integration when claims need confirmation
+- **Formal report** (`/report`) — archival documentation for serious concerns
+
+---
+
 ## Overview
 
 ### NCI Analysis
@@ -48,6 +110,12 @@ Full NCI analysis with 20-category scoring and dual perspectives.
 /decipon:analyze "BREAKING: Shocking report reveals what they don't want you to know!"
 ```
 
+**What's Good About /analyze:**
+1. **Complete picture** — Scores all 20 manipulation categories with specific evidence from the content
+2. **Dual perspective generation** — Forces consideration of both manipulative and legitimate interpretations
+3. **Automatic deep research triggers** — When scores exceed thresholds, verification is recommended
+4. **Evidence-grounded** — Every score backed by specific quotes and patterns, not subjective impressions
+
 ### `/decipon:score <content>`
 
 Quick manipulation score (0-100) for rapid triage.
@@ -55,6 +123,12 @@ Quick manipulation score (0-100) for rapid triage.
 ```bash
 /decipon:score https://example.com/article
 ```
+
+**What's Good About /score:**
+1. **Instant filtering** — Get a single number in seconds to decide if deeper analysis is worthwhile
+2. **Batch processing** — Quickly triage multiple pieces of content before committing time
+3. **Clear thresholds** — Severity indicators ([·], [!], [!!], [!!!]) with recommended actions
+4. **Gateway to depth** — Low scores mean move on; high scores trigger full analysis
 
 ### `/decipon:verify <content>`
 
@@ -65,6 +139,12 @@ Verify factual claims using deep research methodology. Fact-checks key assertion
 /decipon:verify --claims "90% of experts agree" "Studies show..."
 ```
 
+**What's Good About /verify:**
+1. **Bridges patterns to facts** — Combines manipulation detection with truth verification
+2. **Automatic claim extraction** — Identifies key factual assertions without manual selection
+3. **Score adjustment** — Updates NCI scores based on verification findings
+4. **Source confidence tracking** — Shows reliability of verification sources (1-100 scale)
+
 ### `/decipon:report <content> [--format json|markdown] [--output filename]`
 
 Generate formal report for sharing/archiving.
@@ -72,6 +152,12 @@ Generate formal report for sharing/archiving.
 ```bash
 /decipon:report https://example.com/article --format json --output analysis.json
 ```
+
+**What's Good About /report:**
+1. **Archival quality** — Structured format suitable for records and evidence
+2. **Shareable** — Export to JSON for systems or Markdown for humans
+3. **Complete methodology** — Includes analysis parameters for reproducibility
+4. **Timestamped** — Documents when analysis was performed
 
 ### `/decipon:deep-research <topic>`
 
@@ -81,6 +167,13 @@ Conduct comprehensive research using Time-Tested Diffusion methodology.
 /decipon:deep-research "Current state of nuclear fusion energy"
 ```
 
+**What's Good About /deep-research:**
+1. **Iterative refinement** — Multiple cycles of critique → research → improve, like academic peer review
+2. **Contradiction tracking** — Explicitly identifies when sources disagree and attempts resolution
+3. **Source scoring** — Every fact tagged with confidence level and source type
+4. **Quality thresholds** — Continues refining until comprehensiveness and accuracy reach acceptable levels
+5. **Methodology transparency** — Report includes how research was conducted, not just conclusions
+
 ### `/decipon:quick-research <question>`
 
 Quick research with source verification (2-3 searches, lighter than deep-research).
@@ -88,6 +181,12 @@ Quick research with source verification (2-3 searches, lighter than deep-researc
 ```bash
 /decipon:quick-research "When did NIF achieve fusion ignition?"
 ```
+
+**What's Good About /quick-research:**
+1. **Right-sized for simple questions** — 2-3 searches instead of 5-10+
+2. **Still verifies sources** — Maintains confidence scoring even for quick lookups
+3. **Clear scope** — Single-pass research for factual questions, not complex analysis
+4. **Escalation path** — Easy to upgrade to deep-research if complexity warrants
 
 ### `/decipon:critique <content>`
 
@@ -97,6 +196,13 @@ Red team adversarial critique of a document or claim.
 /decipon:critique /path/to/document.md
 /decipon:critique "90% of experts agree that..."
 ```
+
+**What's Good About /critique:**
+1. **Adversarial by design** — Actively tries to find weaknesses, not confirm strengths
+2. **Systematic weakness categories** — Logic flaws, evidence gaps, missing perspectives, accuracy issues
+3. **Severity scoring** — Prioritizes which weaknesses matter most
+4. **Actionable fixes** — Suggests how to address each identified weakness
+5. **Quality assurance** — Use on your own research reports before sharing
 
 ## Recommended Workflow
 
@@ -293,7 +399,7 @@ Decipon leverages Claude Code's **forked context** feature for heavy analysis op
 
 ### Agents
 
-The plugin includes specialized agents with standardized frontmatter:
+The plugin includes specialized agents, each designed for a specific analytical task:
 
 | Agent | Tools | Skills | Purpose |
 |-------|-------|--------|---------|
@@ -302,6 +408,28 @@ The plugin includes specialized agents with standardized frontmatter:
 | `nci-analyzer` | Read, WebFetch, Grep, AskUserQuestion | `nci-manipulation-analysis` | Full NCI content analysis |
 | `claim-verifier` | Read, Grep, Glob, WebSearch, WebFetch, AskUserQuestion | `conducting-deep-research`, `nci-manipulation-analysis` | Verifies claims with both methodologies |
 | `perspective-generator` | Read, Grep, AskUserQuestion | `nci-manipulation-analysis` | Balanced dual perspectives |
+
+#### When to Use Each Agent
+
+| Scenario | Agent | Why |
+|----------|-------|-----|
+| "I need to understand a complex topic thoroughly" | `deep-researcher` | Multi-iteration research with source verification |
+| "Is this specific claim true?" | `fact-checker` | Focused verification with confidence scoring |
+| "How manipulative is this content?" | `nci-analyzer` | Full 20-category analysis with severity assessment |
+| "I want both pattern analysis AND fact verification" | `claim-verifier` | Combines NCI scoring with deep research |
+| "Give me both sides of this content" | `perspective-generator` | Balanced manipulative/legitimate interpretations |
+
+#### What Makes Each Agent Valuable
+
+**deep-researcher** — Goes beyond simple search by using iterative refinement. Each cycle: critique the current draft, research gaps, improve. Results in reports that have been stress-tested before delivery.
+
+**fact-checker** — Specializes in verification rather than discovery. When you already know what claims need checking, this agent focuses on finding authoritative sources that confirm or contradict.
+
+**nci-analyzer** — The core manipulation detection engine. Systematically evaluates content against 20 categories of manipulation techniques, generating quantified scores with specific evidence.
+
+**claim-verifier** — The hybrid specialist. Combines manipulation pattern detection with factual verification, useful when you need both "how is this trying to influence me?" and "are the claims actually true?"
+
+**perspective-generator** — Forces intellectual honesty by generating both charitable (legitimate) and critical (manipulative) interpretations of content, preventing confirmation bias in either direction.
 
 ### Agent Skill Auto-Loading
 
@@ -468,6 +596,72 @@ Key finding: The research report scored low for manipulation despite covering ma
 
 # 4. Iterate based on critique and analysis findings
 ```
+
+---
+
+## Real-World Scenarios
+
+### Scenario 1: News Article Triage
+
+**Situation:** A breaking news article is circulating on social media with alarming claims. You want to assess it quickly before sharing.
+
+```bash
+/decipon:score https://news-site.com/breaking-story
+
+# Output: 62/100 [!!] (High)
+# "Recommend: Cross-reference sources, strong skepticism"
+```
+
+**Next step:** The high score warrants deeper investigation.
+
+```bash
+/decipon:analyze https://news-site.com/breaking-story
+```
+
+**What you learn:** The article uses heavy emotional language (Category 1: 4/5), creates artificial urgency (Category 2: 4/5), and lacks source attribution (Category 16: 4/5). The dual perspective reveals the content could be legitimate reporting on an emotional topic, but the pattern of techniques suggests amplification for engagement.
+
+### Scenario 2: Due Diligence Research
+
+**Situation:** You're evaluating a company for investment and need comprehensive background research.
+
+```bash
+/decipon:deep-research "TechCorp Inc business history and reputation"
+```
+
+**What you get:**
+- Multi-source synthesis from news, regulatory filings, industry publications
+- Confidence scores for each finding (peer-reviewed sources: 85-100, industry blogs: 20-50)
+- Explicit tracking of contradictions between sources
+- Quality-checked output after up to 3 refinement cycles
+
+### Scenario 3: Content Creator Quality Check
+
+**Situation:** You've written a research report and want to ensure it's credible and doesn't inadvertently use manipulation techniques.
+
+```bash
+# First, critique for weaknesses
+/decipon:critique @my-research-report.md
+
+# Then, analyze for unintentional manipulation patterns
+/decipon:analyze @my-research-report.md
+```
+
+**What you learn:** The critique identifies logical gaps and missing perspectives. The NCI analysis confirms your report scores low for manipulation (educational content typically scores 5-20), but flags one area where emotional language crept in unintentionally.
+
+### Scenario 4: Viral Claim Investigation
+
+**Situation:** A specific claim is going viral: "Studies show that X causes Y in 90% of cases."
+
+```bash
+/decipon:verify "Studies show that X causes Y in 90% of cases"
+```
+
+**What you get:**
+- Automatic extraction of verifiable assertions
+- Deep research verification of each claim
+- Source confidence ratings
+- Status: VERIFIED / PARTIALLY TRUE / CONTRADICTED / UNVERIFIABLE
+- Adjustment to any existing NCI scores based on findings
 
 ## License
 
