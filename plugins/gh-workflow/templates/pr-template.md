@@ -1,0 +1,97 @@
+# Pull Request Template
+
+Use this structure when creating PRs with `/gh-workflow:gh-start`.
+
+---
+
+## Closes Issue
+
+closes #[ISSUE_NUMBER]
+
+## Summary
+<!-- Brief description of what was changed and why (2-3 sentences) -->
+
+[Describe what this PR does and why]
+
+## Changes
+<!-- List key changes made -->
+- [Change 1]
+- [Change 2]
+- [Change 3]
+
+## Verification
+<!-- How the changes were verified -->
+
+**Checks:**
+- [ ] Code/content reviewed
+- [ ] Tests pass (if applicable)
+- [ ] Links and references work
+- [ ] All acceptance criteria met
+
+## Acceptance Criteria
+<!-- Copy from issue and check off each item -->
+
+**From issue:**
+- [ ] [Criterion 1]
+- [ ] [Criterion 2]
+- [ ] [Criterion 3]
+
+## Files Changed
+<!-- List key files modified with brief description -->
+
+**Created:**
+- [file1] - [description]
+
+**Modified:**
+- [file2] - [description]
+
+**Deleted:**
+- None (or list files)
+
+## Breaking Changes
+<!-- Yes/No - If yes, describe the impact -->
+
+**Breaking**: No
+
+## Screenshots/Examples
+<!-- If applicable, add screenshots or example output -->
+
+## Checklist
+<!-- Final verification before requesting review -->
+- [ ] Commit messages follow conventional format
+- [ ] No uncommitted changes
+- [ ] All tests pass (if applicable)
+- [ ] Documentation updated (if needed)
+
+## Reviewer Notes
+<!-- Any special instructions for reviewers -->
+
+**Review Focus:**
+- [Key areas to review]
+
+---
+
+## Template Guidelines
+
+### Linking Issues
+
+- Use `closes #X` or `fixes #X` to auto-close the issue on merge
+- Use `#X` (without closes/fixes) if the issue should remain open
+
+### Commit Message Format
+
+Use conventional commits:
+- `feat:` - New features
+- `fix:` - Bug fixes
+- `docs:` - Documentation
+- `refactor:` - Code refactoring
+- `test:` - Test changes
+- `chore:` - Maintenance
+
+### Breaking Changes
+
+If this PR introduces breaking changes:
+1. Set **Breaking**: Yes
+2. Describe what breaks
+3. Provide migration instructions
+4. Consider a major version bump

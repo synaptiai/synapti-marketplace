@@ -1,0 +1,34 @@
+{
+  "name": "gh-workflow",
+  "version": "1.0.0",
+  "description": "Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings.",
+  "author": {
+    "name": "Synapti AI",
+    "url": "https://github.com/synaptiai"
+  },
+  "license": "MIT",
+  "keywords": [
+    "github",
+    "workflow",
+    "git",
+    "pr",
+    "pull-request",
+    "issue",
+    "code-review",
+    "release",
+    "automation"
+  ],
+  "repository": "https://github.com/synaptiai/synapti-marketplace",
+  "commands": [
+    "gh-issue",
+    "gh-start",
+    "gh-review",
+    "gh-address",
+    "gh-merge",
+    "gh-release",
+    "gh-setup"
+  ],
+  "skills": [
+    "repo-config"
+  ]
+}

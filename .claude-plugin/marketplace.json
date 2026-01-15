@@ -41,6 +41,37 @@
         "nci-protocol",
         "narrative-credibility-index"
       ]
+    },
+    {
+      "name": "gh-workflow",
+      "source": "./plugins/gh-workflow",
+      "description": "Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Daniel Bentes"
+      },
+      "homepage": "https://github.com/synaptiai/synapti-marketplace",
+      "repository": "https://github.com/synaptiai/synapti-marketplace",
+      "license": "MIT",
+      "category": "workflow",
+      "keywords": [
+        "github",
+        "workflow",
+        "git",
+        "pr",
+        "pull-request",
+        "issue",
+        "code-review",
+        "release",
+        "automation"
+      ],
+      "tags": [
+        "github",
+        "workflow",
+        "git",
+        "automation",
+        "development"
+      ]
     }
   ]
 }
