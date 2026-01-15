@@ -254,17 +254,61 @@ Decipon includes a complete deep research capability using **Time-Tested Diffusi
 
 ---
 
-## Agents
+## Architecture
 
-The plugin includes specialized agents that can be invoked for specific tasks:
+### Context Isolation
 
-| Agent | Purpose |
-|-------|---------|
-| `nci-analyzer` | Performs full NCI content analysis |
-| `perspective-generator` | Generates balanced dual perspectives |
-| `claim-verifier` | Verifies claims using deep research |
-| `deep-researcher` | Comprehensive research using TTD methodology |
-| `fact-checker` | Verification specialist for claims |
+Decipon leverages Claude Code's **forked context** feature for heavy analysis operations. Skills run in isolated sub-agent contexts, keeping the main conversation clean while performing multi-step analysis.
+
+```
+┌─────────────────────────────────────────────────┐
+│              Main Conversation                   │
+│  (stays clean, receives final results only)     │
+└──────────────────────┬──────────────────────────┘
+                       │ invokes
+          ┌────────────┴────────────┐
+          ▼                         ▼
+┌──────────────────┐      ┌──────────────────┐
+│  nci-analysis    │      │ deep-research    │
+│  skill (forked)  │      │ skill (forked)   │
+│                  │      │                  │
+│ - 20 categories  │      │ - Research brief │
+│ - Calculations   │      │ - 3 iterations   │
+│ - Perspectives   │      │ - Source scoring │
+└──────────────────┘      └──────────────────┘
+```
+
+### Benefits
+
+- **Reduced context usage** — Heavy analysis doesn't pollute main conversation
+- **Better isolation** — Skills do multi-step work independently
+- **Clean results** — Final reports returned without intermediate noise
+
+### Skills
+
+| Skill | Context | Agent | Purpose |
+|-------|---------|-------|---------|
+| `nci-manipulation-analysis` | `fork` | `general-purpose` | 20-category manipulation detection |
+| `conducting-deep-research` | `fork` | `general-purpose` | Time-Tested Diffusion methodology |
+
+### Agents
+
+The plugin includes specialized agents with standardized frontmatter:
+
+| Agent | Tools | Skills | Purpose |
+|-------|-------|--------|---------|
+| `deep-researcher` | Read, Write, Bash, Grep, Glob, WebSearch, WebFetch, AskUserQuestion | `conducting-deep-research` | Comprehensive research using TTD methodology |
+| `fact-checker` | Read, Bash, Grep, Glob, WebSearch, WebFetch, AskUserQuestion | `conducting-deep-research` | Verification specialist for claims |
+| `nci-analyzer` | Read, WebFetch, Grep, AskUserQuestion | `nci-manipulation-analysis` | Full NCI content analysis |
+| `claim-verifier` | Read, Grep, Glob, WebSearch, WebFetch, AskUserQuestion | `conducting-deep-research`, `nci-manipulation-analysis` | Verifies claims with both methodologies |
+| `perspective-generator` | Read, Grep, AskUserQuestion | `nci-manipulation-analysis` | Balanced dual perspectives |
+
+### Agent Skill Auto-Loading
+
+When an agent starts, it automatically loads its configured skills. This ensures:
+- **Consistent methodology** — Agents always have access to their skill workflows
+- **Reduced setup** — No manual skill invocation needed
+- **Cross-skill integration** — `claim-verifier` loads both skills for hybrid analysis
 
 ## Deep Research + NCI Integration
 

@@ -1,6 +1,8 @@
 ---
 name: conducting-deep-research
 description: Produces comprehensive, well-sourced research reports through iterative refinement using Time-Tested Diffusion methodology. Triggers on "deep research", "thorough analysis", "comprehensive report", "investigate", "due diligence", or when multiple sources are needed to answer complex questions.
+context: fork
+agent: general-purpose
 ---
 
 # Conducting Deep Research

@@ -1,12 +1,13 @@
 ---
 description: Conduct deep research using Time-Tested Diffusion methodology
 argument-hint: <research topic or question>
-model: opus
 ---
 
 # Deep Research: $ARGUMENTS
 
 Conduct comprehensive research using Time-Tested Diffusion (TTD) methodology.
+
+> **Context Isolation**: This command invokes the `conducting-deep-research` skill which runs in a forked context. Multiple research iterations, source evaluations, and draft refinements happen in isolation, preventing context pollution while delivering final results to the main conversation.
 
 ## Step 1: Research Brief
 

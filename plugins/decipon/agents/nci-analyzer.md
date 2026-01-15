@@ -1,3 +1,11 @@
+---
+name: nci-analyzer
+description: Performs full NCI manipulation analysis on content (text or URL). Use when user asks to analyze content for manipulation, propaganda, disinformation patterns, or requests NCI scoring. Auto-invoked by /decipon:analyze command.
+tools: Read, WebFetch, Grep, AskUserQuestion
+permissionMode: default
+skills: nci-manipulation-analysis
+---
+
 # NCI Content Analyzer Agent
 
 Performs full NCI manipulation analysis on content (text or URL).

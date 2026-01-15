@@ -6,6 +6,8 @@ description: Perform full NCI manipulation analysis on content (text or URL) wit
 
 Perform full NCI (Narrative Credibility Index) manipulation analysis on content.
 
+> **Context Isolation**: This command invokes the `nci-manipulation-analysis` skill which runs in a forked context. The heavy analysis work is performed in isolation, keeping the main conversation clean while still returning comprehensive results.
+
 ## Arguments
 
 `$ARGUMENTS`: The content to analyze - can be a URL, text, or file path.

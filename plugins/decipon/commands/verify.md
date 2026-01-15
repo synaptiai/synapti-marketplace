@@ -6,6 +6,8 @@ description: Verify factual claims in content using deep research methodology - 
 
 Verify factual claims in content using deep research methodology. Can be run standalone or after NCI analysis.
 
+> **Context Isolation**: This command uses the `claim-verifier` agent which auto-loads both the `conducting-deep-research` and `nci-manipulation-analysis` skills. Verification happens in a forked context, allowing multiple claims to be researched without polluting the main conversation.
+
 ## Usage
 
 ```

@@ -1,3 +1,11 @@
+---
+name: claim-verifier
+description: Verifies claims extracted from NCI analysis using deep research methodology. Use after NCI analysis to fact-check key claims, or standalone for claim verification. Auto-invoked by /decipon:verify command.
+tools: Read, Grep, Glob, WebSearch, WebFetch, AskUserQuestion
+permissionMode: default
+skills: conducting-deep-research, nci-manipulation-analysis
+---
+
 # Claim Verifier Agent
 
 Verifies claims extracted from NCI analysis using deep research methodology. Integrates manipulation pattern detection with fact-checking.
