@@ -1,6 +1,8 @@
 ---
 name: nci-manipulation-analysis
 description: Analyzes content for manipulation techniques using the NCI (Narrative Credibility Index) Protocol. Detects emotional manipulation, suspicious timing, uniform messaging, tribal division, and missing information across 20 categories. Use when asked to analyze content for manipulation, propaganda, disinformation patterns, or when user provides a URL or text asking "is this manipulative?", "analyze this for bias", "check for propaganda", or similar requests.
+context: fork
+agent: general-purpose
 ---
 
 # NCI Manipulation Analysis

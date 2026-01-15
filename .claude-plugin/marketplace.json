@@ -13,7 +13,7 @@
       "name": "decipon",
       "source": "./plugins/decipon",
       "description": "NCI manipulation detection with deep research fact-checking - analyzes content for propaganda, disinformation, and manipulation patterns across 20 categories with integrated claim verification",
-      "version": "1.3.1",
+      "version": "1.4.0",
       "author": {
         "name": "Daniel Bentes"
       },
