@@ -1,3 +1,8 @@
+---
+description: Analyze repository and generate workflow configuration
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
+---
+
 # Setup GitHub Workflow
 
 Analyze the current repository and generate customized GitHub workflow configuration.

@@ -1,3 +1,9 @@
+---
+description: Merge an approved pull request with safe defaults
+argument-hint: <pr-number>
+allowed-tools: Bash, AskUserQuestion
+---
+
 # Merge PR #$ARGUMENTS
 
 Merge an approved pull request with standardized settings.

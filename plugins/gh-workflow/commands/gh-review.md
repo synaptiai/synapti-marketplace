@@ -1,3 +1,9 @@
+---
+description: Review a pull request with checklist and approval workflow
+argument-hint: <pr-number>
+allowed-tools: Bash, Read, AskUserQuestion
+---
+
 # Review PR #$ARGUMENTS
 
 Review a pull request with proper branch checkout and convention checks.

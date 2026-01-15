@@ -1,3 +1,9 @@
+---
+description: Create a release with automatic changelog generation
+argument-hint: [patch|minor|major]
+allowed-tools: Bash, AskUserQuestion
+---
+
 # Create Release v$ARGUMENTS
 
 Create a new release with changelog generation.

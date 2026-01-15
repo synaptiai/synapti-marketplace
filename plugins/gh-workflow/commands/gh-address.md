@@ -1,3 +1,9 @@
+---
+description: Address review comments on a pull request
+argument-hint: <pr-number>
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
+---
+
 # Address PR #$ARGUMENTS Comments
 
 Systematically address review feedback on a pull request.

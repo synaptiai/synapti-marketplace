@@ -1,3 +1,8 @@
+---
+description: Create a new GitHub issue with solution-agnostic principles
+allowed-tools: Bash, Read, AskUserQuestion
+---
+
 # Create GitHub Issue
 
 Create a new GitHub issue following solution-agnostic principles.

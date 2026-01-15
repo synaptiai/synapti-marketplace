@@ -8,6 +8,8 @@ Generic GitHub workflow commands for Claude Code. Provides a complete developmen
 - **Interactive**: Uses the AskUserQuestion tool for guided workflows
 - **Portable**: Works with any GitHub repository without hardcoding
 - **Customizable**: `/gh-setup` generates project-specific configurations
+- **Quality Checks**: Detects tech stack and runs appropriate lint/test commands
+- **Safety Hooks**: Prevents irreversible actions without explicit user approval
 
 ## Commands
 
@@ -123,6 +125,23 @@ Provides dynamic repository configuration detection. Used internally by all comm
 - Detect default branch
 - Get repository info for API calls
 - Fetch available labels
+
+## Hooks
+
+The plugin includes safety hooks that:
+- **Pre-push verification**: Ensures user approval before irreversible git operations
+- **Post-commit reminders**: Reminds about running quality checks after commits
+
+## Tech Stack Detection
+
+The `/gh-setup` command detects your project's tech stack and generates appropriate quality checklists:
+
+| Stack | Detection | Quality Commands |
+|-------|-----------|-----------------|
+| Python | `pyproject.toml`, `ruff.toml` | `ruff check`, `pytest` |
+| TypeScript | `package.json`, `tsconfig.json` | `npm run lint`, `npm test` |
+| Go | `go.mod` | `go vet`, `go test` |
+| Ruby | `Gemfile`, `.rubocop.yml` | `rubocop`, `rspec` |
 
 ## Examples
 

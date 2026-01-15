@@ -1,6 +1,7 @@
 ---
 name: repo-config
-description: Detects and provides repository configuration for GitHub workflow commands. Auto-detects default branch, repository info, labels, and conventions. Use this skill to get dynamic repository settings instead of hardcoding values.
+description: This skill should be used when needing to "get the default branch", "detect repository settings", "fetch available labels", "get repo info for API calls", or when any gh-workflow command needs dynamic repository configuration instead of hardcoded values.
+version: 1.0.0
 ---
 
 # Repository Configuration

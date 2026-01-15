@@ -1,3 +1,9 @@
+---
+description: Start work on a GitHub issue - branch, implement, and create PR
+argument-hint: <issue-number>
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
+---
+
 # Start Work on Issue #$ARGUMENTS
 
 Complete workflow from issue to PR creation.
