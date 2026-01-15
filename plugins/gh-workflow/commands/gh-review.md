@@ -93,13 +93,32 @@ Review a pull request with proper branch checkout and convention checks.
 - [ ] `closes #X` links issue correctly (if applicable)
 - [ ] PR targets correct default branch
 
-### Content Quality
-- [ ] Code/content is correct and complete
-- [ ] No obvious bugs or errors
-- [ ] Formatting is correct and consistent
-- [ ] Links are valid and not broken
-- [ ] No typos or grammatical errors
-- [ ] Content is clear and well-organized
+### Code Quality
+- [ ] Logic is correct and handles edge cases
+- [ ] No obvious bugs or security vulnerabilities
+- [ ] Code style consistent with project conventions
+- [ ] No hardcoded secrets or credentials
+- [ ] Error handling is appropriate
+
+### Project-Specific Checks
+
+**IMPORTANT**: Check the project's `.claude/CLAUDE.md` for tech-stack-specific checklists. If available, apply those checks. Common patterns:
+
+**Python projects:**
+- [ ] `ruff check` passes (or equivalent linter)
+- [ ] Type hints properly defined
+- [ ] `pytest` passes
+
+**TypeScript projects:**
+- [ ] Types properly defined (no unnecessary `any`)
+- [ ] `npm run lint` passes
+- [ ] `npm test` passes
+
+**Go projects:**
+- [ ] `go vet ./...` passes
+- [ ] `go test ./...` passes
+
+Run the project's actual lint/test commands as defined in CLAUDE.md or package files.
 
 ### Documentation
 - [ ] README updated if user-facing changes

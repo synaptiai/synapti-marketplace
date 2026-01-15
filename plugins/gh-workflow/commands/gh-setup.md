@@ -43,7 +43,36 @@ This command analyzes your codebase and generates:
    git log --oneline -30
    ```
 
-## Phase 2: Detect Conventions
+## Phase 2: Detect Tech Stack & Conventions
+
+### Tech Stack Detection
+
+Analyze the codebase to detect languages and frameworks:
+
+```bash
+# Detect Python
+ls -la pyproject.toml setup.py requirements.txt 2>/dev/null
+ls -la ruff.toml .ruff.toml 2>/dev/null  # Linting
+ls -la pytest.ini pyproject.toml 2>/dev/null  # Testing
+
+# Detect TypeScript/JavaScript
+ls -la package.json tsconfig.json 2>/dev/null
+cat package.json 2>/dev/null | grep -E '"(eslint|prettier|jest|vitest)"'
+
+# Detect Go
+ls -la go.mod go.sum 2>/dev/null
+
+# Detect Rust
+ls -la Cargo.toml 2>/dev/null
+
+# Detect Ruby
+ls -la Gemfile .rubocop.yml 2>/dev/null
+
+# Detect existing CLAUDE.md for patterns
+cat .claude/CLAUDE.md 2>/dev/null | head -100
+```
+
+Based on detected stack, generate **project-specific review checklists** (see Phase 3).
 
 ### Branch Naming
 Analyze existing branches to detect patterns:
@@ -133,6 +162,73 @@ This project uses the gh-workflow plugin. Available commands:
 
 Available labels for this repository:
 {label-list}
+
+## Code Quality Checklist
+
+Use this checklist when reviewing PRs or before creating PRs.
+
+### General
+- [ ] Logic is correct and handles edge cases
+- [ ] No obvious bugs or security vulnerabilities
+- [ ] Code style consistent with project conventions
+- [ ] No hardcoded secrets or credentials
+
+{tech-stack-specific-checklist}
+
+### Testing
+- [ ] Tests pass
+- [ ] New functionality has tests
+- [ ] Edge cases considered
+
+### Documentation
+- [ ] PR description is complete and accurate
+- [ ] Code comments where logic isn't self-evident
+```
+
+### Tech Stack Specific Checklists
+
+Generate the `{tech-stack-specific-checklist}` based on detected stack:
+
+**If Python detected:**
+```markdown
+### Python
+- [ ] Follows PEP 8 style (use `ruff check`)
+- [ ] Type hints properly defined
+- [ ] Async/await used correctly (if applicable)
+- [ ] No N+1 query issues (if using ORM)
+- [ ] `ruff check src/` passes
+- [ ] `pytest` passes
+```
+
+**If TypeScript/JavaScript detected:**
+```markdown
+### TypeScript
+- [ ] Types properly defined (no `any` unless justified)
+- [ ] ESLint/Prettier passes
+- [ ] React hooks follow rules (if React)
+- [ ] No memory leaks in useEffect cleanup
+- [ ] `npm run lint` passes
+- [ ] `npm test` passes
+```
+
+**If Go detected:**
+```markdown
+### Go
+- [ ] Error handling follows conventions
+- [ ] No data races (use `go vet -race`)
+- [ ] Context properly propagated
+- [ ] `go vet ./...` passes
+- [ ] `go test ./...` passes
+```
+
+**If Ruby detected:**
+```markdown
+### Ruby
+- [ ] Follows Ruby style guide
+- [ ] RuboCop passes
+- [ ] Rails conventions followed (if Rails)
+- [ ] `bundle exec rubocop` passes
+- [ ] `bundle exec rspec` passes
 ```
 
 ### Local Command Overrides (Optional)

@@ -43,7 +43,37 @@ Complete workflow from issue to PR creation.
 - Review formatting for consistency
 - Make commits with conventional format as you work
 
-## Phase 3: Finalize & Create PR
+## Phase 3: Quality Checks
+
+Before creating PR, run project-specific quality checks:
+
+1. **Check `.claude/CLAUDE.md`** for project-specific lint/test commands
+
+2. **Run detected quality tools**:
+
+   **Python projects:**
+   ```bash
+   ruff check . 2>/dev/null || echo "Ruff not configured"
+   pytest 2>/dev/null || echo "Pytest not configured"
+   ```
+
+   **TypeScript projects:**
+   ```bash
+   npm run lint 2>/dev/null || echo "Lint not configured"
+   npm test 2>/dev/null || echo "Tests not configured"
+   ```
+
+   **Go projects:**
+   ```bash
+   go vet ./... 2>/dev/null || echo "Go vet not available"
+   go test ./... 2>/dev/null || echo "Go tests not available"
+   ```
+
+3. **If checks fail**: Fix issues before proceeding to PR creation
+
+4. **If no project-specific checks found**: Ask user if they want to skip quality checks
+
+## Phase 4: Finalize & Create PR
 
 1. **Verify** all acceptance criteria in the issue are met
 
@@ -164,7 +194,7 @@ closes #{X}
 - [Key areas to review]
 ```
 
-## Phase 4: Verification
+## Phase 5: Verification
 
 After PR creation, verify it was created correctly:
 
