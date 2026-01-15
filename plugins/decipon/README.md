@@ -121,6 +121,52 @@ Red team adversarial critique of a document or claim.
 - **Evidence-grounded**: Every score backed by specific quotes/patterns
 - **URL support**: Fetches and analyzes web content via WebFetch
 - **Deep research**: Comprehensive research with iterative refinement and source verification
+- **Interactive workflows**: Structured dialogues using AskUserQuestion tool for better collaboration
+
+---
+
+## Interactive User Experience
+
+All Decipon commands, agents, and skills use Claude Code's **AskUserQuestion tool** to enable structured, interactive dialogues at key decision points. This creates a better user experience through clear options with tradeoffs rather than open-ended questions.
+
+### When Interactive Dialogue Triggers
+
+| Trigger | Example |
+|---------|---------|
+| **Ambiguous input** | `/analyze` without content → asks for URL, text, or file |
+| **Borderline scores** | Score 35-55 → offers full analysis, verification, or accept |
+| **Multiple options** | 8 claims found → asks which to prioritize for verification |
+| **Contradictions** | Sources disagree → presents resolution options |
+| **Quality checkpoints** | After iteration 2 → continue refining or finalize? |
+
+### Example Interaction
+
+```
+User: /analyze https://example.com/article
+
+Claude: Analyzing content...
+
+Score: 48/100 [!] (Moderate)
+
+[Uses AskUserQuestion tool]
+Question: "This content scores 48 (Moderate) - in the borderline range. What next?"
+Options:
+  1. Run full analysis for detailed breakdown (Recommended)
+  2. Verify key claims with fact-checking
+  3. Generate formal report for sharing
+  4. Score is sufficient, no further action
+
+User selects: Option 2
+
+Claude: [Proceeds to verify claims using deep research methodology]
+```
+
+### Benefits
+
+- **Clearer user intent**: Reduces misinterpretation of ambiguous requests
+- **Informed decisions**: Users see tradeoffs for each option
+- **Appropriate depth**: User controls triage vs. comprehensive analysis
+- **Transparent workflows**: Users understand what's happening and why
 
 ---
 

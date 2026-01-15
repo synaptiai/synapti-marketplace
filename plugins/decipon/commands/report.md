@@ -233,3 +233,57 @@ When generating formal reports, consider:
 | `/decipon:score` | Quick score only | Triage |
 | `/decipon:analyze` | Console report | Investigation |
 | `/decipon:report` | Formal document | Sharing/archiving |
+
+## User Interaction
+
+Use the **AskUserQuestion tool** when:
+- No content is provided
+- Format preference is unclear
+- Output destination needs confirmation
+- Report customization options should be offered
+
+### Example Invocations
+
+**Missing content:**
+```
+User: /report
+→ Use AskUserQuestion tool:
+  Question: "What content would you like me to generate a report for?"
+  Options:
+  - "Provide a URL to analyze"
+  - "Paste text content"
+  - "Generate report from previous analysis"
+```
+
+**Format selection:**
+```
+User: /report https://example.com/article
+→ Use AskUserQuestion tool:
+  Question: "What format would you like for the report?"
+  Options:
+  - "Markdown (human-readable)" (Recommended)
+  - "JSON (machine-readable, for tools)"
+  - "Both formats"
+```
+
+**Output destination:**
+```
+User: /report https://example.com/article --format json
+→ Use AskUserQuestion tool:
+  Question: "Where should I save the report?"
+  Options:
+  - "Display in console only"
+  - "Save to file (specify filename)"
+  - "Both display and save"
+```
+
+**Report customization:**
+```
+After generating initial report
+→ Use AskUserQuestion tool:
+  Question: "Report ready. Any customizations needed?"
+  Options:
+  - "Include claim verification results"
+  - "Add executive summary for stakeholders"
+  - "Report is complete as-is"
+```
