@@ -98,9 +98,39 @@ Then **invoke the AskUserQuestion tool** with these options:
 1. **Update marketplace version** in `.claude-plugin/marketplace.json`:
    - Edit `metadata.version` field
 
-## Phase 3: Commit & Push
+## Phase 3: Package Desktop Skills
 
-1. **Commit version bump**:
+Generate Claude Desktop-compatible skill packages:
+
+1. **Run the packaging script**:
+   ```bash
+   ./scripts/package-desktop-skills.sh --verbose
+   ```
+
+2. **Verify packages were created**:
+   ```bash
+   ls -la dist/desktop/*/
+   ```
+
+   Expected output:
+   ```
+   dist/desktop/
+   └── {plugin-name}/
+       ├── skill-name.zip
+       └── another-skill.zip
+   ```
+
+3. **Each ZIP follows Claude Desktop structure**:
+   ```
+   skill-name.zip
+   └── skill-name/
+       ├── SKILL.md          (Code-specific fields stripped)
+       └── references/       (bundled reference files)
+   ```
+
+## Phase 4: Commit & Push
+
+1. **Commit version bump** (dist/ is gitignored, packages attached to release):
    ```bash
    git add .claude-plugin/marketplace.json plugins/*/.claude-plugin/plugin.json
    git commit -m "chore: bump version to X.Y.Z"
@@ -111,7 +141,7 @@ Then **invoke the AskUserQuestion tool** with these options:
    git push origin main
    ```
 
-## Phase 4: Create Tag & Release
+## Phase 5: Create Tag & Release
 
 1. **Create git tag**:
    ```bash
@@ -119,9 +149,10 @@ Then **invoke the AskUserQuestion tool** with these options:
    git push origin vX.Y.Z
    ```
 
-2. **Create GitHub Release**:
+2. **Create GitHub Release with Desktop skill packages**:
    ```bash
-   gh release create vX.Y.Z --title "vX.Y.Z" --notes "RELEASE_NOTES"
+   # Create release and attach Desktop skill packages as assets
+   gh release create vX.Y.Z --title "vX.Y.Z" --notes "RELEASE_NOTES" dist/desktop/*/*.zip
    ```
 
    Release notes format:
@@ -139,6 +170,13 @@ Then **invoke the AskUserQuestion tool** with these options:
 
    ### Other Changes
    - Description (#PR)
+
+   ## Claude Desktop Skills
+
+   Download the ZIP files below to use these skills in Claude Desktop:
+   - `skill-name.zip` - Brief description
+
+   **Installation**: Upload the ZIP file in Claude Desktop > Settings > Skills
 
    **Full Changelog**: https://github.com/synaptiai/synapti-marketplace/compare/vPREVIOUS...vX.Y.Z
    ```
@@ -182,7 +220,7 @@ Then **invoke the AskUserQuestion tool** with these options:
 # - Tag: v2.1.0
 ```
 
-## Phase 5: Verification
+## Phase 6: Verification
 
 After release creation, verify everything completed successfully:
 
@@ -191,9 +229,9 @@ After release creation, verify everything completed successfully:
    git tag -l "vX.Y.Z"
    ```
 
-2. **Check GitHub Release exists**:
+2. **Check GitHub Release exists with assets**:
    ```bash
-   gh release view vX.Y.Z --json tagName,name,publishedAt
+   gh release view vX.Y.Z --json tagName,name,publishedAt,assets
    ```
 
 3. **Verify version files updated**:
@@ -202,13 +240,19 @@ After release creation, verify everything completed successfully:
    cat plugins/*/.claude-plugin/plugin.json | grep '"version"'
    ```
 
-4. **Verify checklist**:
+4. **Verify Desktop skill packages attached**:
+   ```bash
+   gh release view vX.Y.Z --json assets --jq '.assets[].name'
+   ```
+
+5. **Verify checklist**:
    - [ ] Version files updated correctly
    - [ ] Git tag created and pushed
    - [ ] GitHub Release published
    - [ ] Release notes accurate
+   - [ ] Desktop skill packages attached as release assets
 
-5. **If verification fails**, report specific issue and remediation steps
+6. **If verification fails**, report specific issue and remediation steps
 
 ## Rules
 
@@ -231,8 +275,10 @@ Before completing, verify:
 - [ ] Commits since last release analyzed
 - [ ] Impact assessment shown and user approved
 - [ ] Version files updated correctly
+- [ ] Desktop skill packages generated
 - [ ] Changes committed and pushed
 - [ ] Git tag created and pushed
 - [ ] GitHub Release created with changelog
+- [ ] Desktop skill packages attached as release assets
 - [ ] All verifications passed
 - [ ] User informed of release URL

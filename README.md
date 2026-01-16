@@ -41,6 +41,38 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 
 ---
 
+## Claude Desktop Compatibility
+
+Skills from this marketplace are also available for **Claude Desktop** users. Desktop-compatible skill packages are attached to each [GitHub Release](https://github.com/synaptiai/synapti-marketplace/releases).
+
+### What's Different?
+
+| Feature | Claude Code | Claude Desktop |
+|---------|-------------|----------------|
+| Installation | `claude plugin install` | Upload ZIP in Settings |
+| Commands | Full `/plugin:command` syntax | Skills only |
+| Agents | Supported | Not supported |
+| Frontmatter | All fields | `name`, `description` only |
+
+### How to Install Desktop Skills
+
+1. Go to the [Releases page](https://github.com/synaptiai/synapti-marketplace/releases)
+2. Download the `.zip` file for the skill you want (e.g., `deep-research.zip`)
+3. Open Claude Desktop → Settings → Skills
+4. Upload the ZIP file
+
+### Available Desktop Skills
+
+| Skill | Plugin | Description |
+|-------|--------|-------------|
+| `deep-research.zip` | Decipon | Comprehensive research using Time-Tested Diffusion methodology |
+| `nci-analysis.zip` | Decipon | NCI Protocol for manipulation detection |
+| `repo-config.zip` | gh-workflow | Dynamic repository configuration |
+
+> **Note**: Desktop packages are automatically generated during releases. They contain the same skill content with Claude Code-specific frontmatter fields (`context`, `agent`, `hooks`, etc.) removed for compatibility.
+
+---
+
 ## Featured: Decipon
 
 **Decipon** implements the **NCI (Narrative Credibility Index) Protocol** — a pattern-based system for detecting manipulation, propaganda, and disinformation in content. Unlike fact-checkers, Decipon analyzes *how* content tries to influence people, not whether claims are true or false.
