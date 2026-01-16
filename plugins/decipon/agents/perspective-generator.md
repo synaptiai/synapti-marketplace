@@ -1,6 +1,8 @@
 ---
 name: perspective-generator
 description: Generates balanced dual perspectives for NCI analysis - both manipulative and legitimate interpretations. Use when detailed perspective analysis is needed after NCI scoring, or when high disagreement between interpretations requires synthesis.
+model: inherit
+color: magenta
 tools: Read, Grep, AskUserQuestion
 permissionMode: default
 skills: nci-manipulation-analysis

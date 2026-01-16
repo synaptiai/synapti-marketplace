@@ -1,6 +1,8 @@
 ---
 name: fact-checker
 description: Verification specialist for fact-checking claims and resolving contradictions. Use PROACTIVELY when claims need independent verification, sources disagree, or user asks to "verify", "fact-check", or "confirm".
+model: inherit
+color: green
 tools: Read, Bash, Grep, Glob, WebSearch, WebFetch, AskUserQuestion
 permissionMode: default
 skills: conducting-deep-research
