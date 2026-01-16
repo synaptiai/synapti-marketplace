@@ -68,9 +68,9 @@ Context: [Any user-provided context]
 
 **Step 3: Load Methodology**
 Read from skill files:
-- `.claude/skills/nci-analysis/SKILL.md` - Overview
-- `.claude/skills/nci-analysis/references/categories.md` - Category definitions
-- `.claude/skills/nci-analysis/references/scoring.md` - Calculation methods
+- `skills/nci-analysis/SKILL.md` - Overview
+- `skills/nci-analysis/references/categories.md` - Category definitions
+- `skills/nci-analysis/references/scoring.md` - Calculation methods
 
 **Step 4: Category Scoring**
 For each of 20 categories:
