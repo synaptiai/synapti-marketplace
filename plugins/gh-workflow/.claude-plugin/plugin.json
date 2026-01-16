@@ -19,18 +19,5 @@
     "automation"
   ],
   "repository": "https://github.com/synaptiai/synapti-marketplace",
-  "homepage": "https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/gh-workflow",
-  "commands": [
-    "gh-issue",
-    "gh-start",
-    "gh-review",
-    "gh-address",
-    "gh-merge",
-    "gh-release",
-    "gh-setup"
-  ],
-  "skills": [
-    "repo-config"
-  ],
-  "hooks": "./hooks/hooks.json"
+  "homepage": "https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/gh-workflow"
 }
