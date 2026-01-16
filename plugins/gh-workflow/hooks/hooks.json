@@ -1,4 +1,27 @@
 {
-  "description": "GitHub workflow hooks - currently empty as prompt-based hooks were too aggressive",
-  "hooks": {}
+  "description": "GitHub workflow safety hooks for truly irreversible actions",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash(git push:*)",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Before executing git push, verify user has approved pushing these changes. If not explicitly approved in this conversation, use AskUserQuestion to confirm.",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash(gh release create:*)",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Before creating a GitHub release, verify user has approved this release. If not explicitly approved in this conversation, use AskUserQuestion to confirm.",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
 }
