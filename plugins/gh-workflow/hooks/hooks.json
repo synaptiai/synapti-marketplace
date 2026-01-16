@@ -1,26 +1,29 @@
 {
-  "PreToolUse": [
-    {
-      "matcher": "Bash",
-      "hooks": [
-        {
-          "type": "prompt",
-          "prompt": "If this bash command involves git push or gh pr create, verify that the user has been asked for approval via AskUserQuestion before executing. Irreversible actions require explicit user consent.",
-          "timeout": 10
-        }
-      ]
-    }
-  ],
-  "PostToolUse": [
-    {
-      "matcher": "Bash",
-      "hooks": [
-        {
-          "type": "prompt",
-          "prompt": "If a git commit just succeeded, remind about running project-specific quality checks (lint/test) if they haven't been run yet in this session.",
-          "timeout": 10
-        }
-      ]
-    }
-  ]
+  "description": "GitHub workflow safety hooks for irreversible actions",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "If this bash command involves git push or gh pr create, verify that the user has been asked for approval via AskUserQuestion before executing. Irreversible actions require explicit user consent.",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "If a git commit just succeeded, remind about running project-specific quality checks (lint/test) if they haven't been run yet in this session.",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
 }
