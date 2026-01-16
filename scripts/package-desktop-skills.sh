@@ -13,6 +13,7 @@
 # Options:
 #   --output-dir DIR   Output directory (default: dist/desktop)
 #   --plugin NAME      Process only this plugin (default: all plugins)
+#   --clean            Remove existing output directory before packaging
 #   --dry-run          Show what would be done without creating files
 #   --verbose          Show detailed progress
 
@@ -21,6 +22,7 @@ set -euo pipefail
 # Default configuration
 OUTPUT_DIR="dist/desktop"
 PLUGIN_FILTER=""
+CLEAN=false
 DRY_RUN=false
 VERBOSE=false
 
@@ -64,6 +66,10 @@ while [[ $# -gt 0 ]]; do
             PLUGIN_FILTER="$2"
             shift 2
             ;;
+        --clean)
+            CLEAN=true
+            shift
+            ;;
         --dry-run)
             DRY_RUN=true
             shift
@@ -73,13 +79,14 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            echo "Usage: $0 [--output-dir DIR] [--plugin NAME] [--dry-run] [--verbose]"
+            echo "Usage: $0 [--output-dir DIR] [--plugin NAME] [--clean] [--dry-run] [--verbose]"
             echo ""
             echo "Package Claude Code skills for Claude Desktop compatibility."
             echo ""
             echo "Options:"
             echo "  --output-dir DIR   Output directory (default: dist/desktop)"
             echo "  --plugin NAME      Process only this plugin (default: all plugins)"
+            echo "  --clean            Remove existing output directory before packaging"
             echo "  --dry-run          Show what would be done without creating files"
             echo "  --verbose          Show detailed progress"
             echo "  -h, --help         Show this help message"
@@ -232,6 +239,18 @@ main() {
 
     if [ "$DRY_RUN" = true ]; then
         log_warning "DRY RUN MODE - No files will be created"
+    fi
+
+    # Clean output directory if requested
+    if [ "$CLEAN" = true ]; then
+        if [ -d "$OUTPUT_DIR" ]; then
+            if [ "$DRY_RUN" = true ]; then
+                log_info "[DRY RUN] Would remove: $OUTPUT_DIR"
+            else
+                log_info "Cleaning output directory: $OUTPUT_DIR"
+                rm -rf "$OUTPUT_DIR"
+            fi
+        fi
     fi
 
     # Find plugins directory
