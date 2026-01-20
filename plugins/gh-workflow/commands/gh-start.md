@@ -109,11 +109,30 @@ Before creating PR, run project-specific quality checks:
 
 5. **Preview PR and get approval using the AskUserQuestion tool**:
 
-   Show the PR title, body preview, and target branch, then ask:
+   **First**, display the complete PR preview:
+   ```
+   ## PR Preview
+
+   **Title:** feat: description (fixes #X)
+   **Target:** feature-branch → main
+   **Labels:** enhancement
+
+   ---
+   [Complete PR body rendered in markdown]
+   ---
+
+   **Files to be included:**
+   - file1.md (created)
+   - file2.md (modified)
+   ```
+
+   **Then, and only then**, invoke the AskUserQuestion tool with:
    - **Option 1**: "Create this PR" (Recommended)
    - **Option 2**: "Edit title or labels first"
    - **Option 3**: "Edit PR body first"
    - **Option 4**: "Cancel PR creation"
+
+   **IMPORTANT**: The user MUST see the complete PR preview (title, body, labels, files) BEFORE being asked to approve creation. Never ask for PR creation approval without first showing exactly what will be created.
 
    **Do not create the PR without explicit approval.**
 
@@ -235,6 +254,7 @@ After PR creation, verify it was created correctly:
 - Use `(#X)` in title if issue should remain open after merge
 - Commits must follow conventional format
 - **Always fetch labels dynamically** - never hardcode label lists
+- **ALWAYS display findings BEFORE asking questions** - users must see the complete PR preview before being asked to approve. Never invoke AskUserQuestion for approval without first showing exactly what will be created.
 - **Use the AskUserQuestion tool** at decision points:
   - Branch type selection (when ambiguous)
   - Label selection for PR

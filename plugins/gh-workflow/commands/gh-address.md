@@ -57,10 +57,30 @@ Systematically address review feedback on a pull request.
 
 7. **Preview response and get approval using the AskUserQuestion tool**:
 
-   Before pushing, show the summary of changes and response comment:
+   **First**, display a complete summary of what was done:
+   ```
+   ## Changes Summary
+
+   ### Feedback Addressed
+   | Comment | Action Taken | Status |
+   |---------|--------------|--------|
+   | [Reviewer comment 1] | [What you changed] | Fixed |
+   | [Reviewer comment 2] | [Explanation] | Discussed |
+
+   ### Commits Made
+   - `abc1234` - fix: description
+   - `def5678` - fix: description
+
+   ### Response Comment Preview
+   [Show the exact comment that will be posted]
+   ```
+
+   **Then, and only then**, invoke the AskUserQuestion tool with:
    - **Option 1**: "Push changes and post this response" (Recommended)
    - **Option 2**: "Edit response comment first"
    - **Option 3**: "Make additional changes before pushing"
+
+   **IMPORTANT**: The user MUST see the complete summary of changes and the response preview BEFORE being asked to approve. Never ask for approval without first showing what will be pushed and posted.
 
    **Do not push without explicit approval.**
 
@@ -150,6 +170,7 @@ git commit -m "updates"
 - Push all changes BEFORE posting the summary comment
 - Be professional and appreciative of feedback
 - **Always get repository info dynamically** - never hardcode owner/repo
+- **ALWAYS display findings BEFORE asking questions** - users must see what changes were made and the response preview before being asked to approve. Never invoke AskUserQuestion for approval without first showing the complete summary.
 - **Use the AskUserQuestion tool** at decision points:
   - Clarifying ambiguous feedback
   - Deciding whether to implement or push back on suggestions

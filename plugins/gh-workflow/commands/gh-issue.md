@@ -221,6 +221,7 @@ This separation ensures issues remain valid even when implementation details cha
 - Always preview before creating
 - Always verify after creation
 - **Always fetch labels dynamically** - never assume what labels exist
+- **ALWAYS display findings BEFORE asking questions** - users must see duplicate search results, validation findings, and issue previews before being asked to make decisions. Never invoke AskUserQuestion without first showing the relevant data.
 - **Use the AskUserQuestion tool** at every decision point:
   - Duplicate detection results
   - Implementation detail validation

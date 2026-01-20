@@ -52,6 +52,22 @@ Every command uses the **AskUserQuestion tool** at moments where your input matt
 
 This isn't just confirmation prompts — it's structured decision-making that prevents mistakes while keeping you in control.
 
+### Findings First, Questions Second
+
+**Critical principle:** Before asking for any decision, commands must display the findings that inform that decision.
+
+```
+❌ Wrong: "What review decision would you like to submit?"
+   (User hasn't seen what the review found)
+
+✅ Right: "Here are the review findings: [detailed list]
+          Now, what review decision would you like to submit?"
+```
+
+Users need to see the evidence before making decisions. Every decision prompt follows the pattern:
+1. **First**, display the complete findings/preview
+2. **Then**, invoke the AskUserQuestion tool with options
+
 ### Complete Lifecycle Coverage
 
 Rather than a collection of unrelated commands, gh-workflow provides an integrated workflow:
