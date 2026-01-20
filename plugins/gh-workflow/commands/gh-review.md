@@ -55,13 +55,40 @@ Review a pull request with proper branch checkout and convention checks.
    - Or was there a valid explanation for not fixing it?
    - Did the fix introduce any new issues?
 
-10. **Determine review decision using the AskUserQuestion tool**:
+10. **Present review findings to the user** (REQUIRED before any question):
 
-    After completing the review checklist, present findings and ask:
-    - **Option 1**: "Approve - PR meets all requirements"
+    **First**, display your complete findings in this format:
+    ```
+    ## Review Findings
+
+    ### Checklist Results
+    - [x] Commits follow conventional format
+    - [x] PR description follows template
+    - [ ] Issue linked correctly (ISSUE: missing closes #X)
+    ...
+
+    ### Issues Found
+
+    **Critical Issues:**
+    1. [Issue description] (`file:line`)
+
+    **Suggestions (non-blocking):**
+    1. [Suggestion description]
+
+    **Questions:**
+    1. [Any clarifying questions]
+
+    ### What Looks Good
+    - [Positive observations]
+    ```
+
+    **Then, and only then**, invoke the AskUserQuestion tool with:
+    - **Option 1**: "Approve - All requirements met"
     - **Option 2**: "Request changes - Critical issues found"
     - **Option 3**: "Comment only - Questions/suggestions, no blockers"
     - **Option 4**: "Need more context before deciding"
+
+    **IMPORTANT**: The user MUST see the detailed findings BEFORE being asked to make a decision. Never ask for a review decision without first showing what you found.
 
     If option 4, **use the AskUserQuestion tool** to ask specific clarifying questions.
 
@@ -213,6 +240,7 @@ When reviewing a PR that has previous reviews, use this structure:
 - Distinguish critical issues from suggestions
 - Return to original branch when done
 - **Always get repository info dynamically** - never hardcode owner/repo
+- **ALWAYS display findings BEFORE asking questions** - users must see the evidence before making decisions. Never invoke AskUserQuestion for a decision without first showing the data that informs it.
 - **Use the AskUserQuestion tool** at decision points:
   - Review decision (approve/request changes/comment)
   - Clarifying questions when findings are ambiguous
