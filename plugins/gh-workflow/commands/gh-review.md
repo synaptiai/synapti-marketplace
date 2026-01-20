@@ -71,16 +71,21 @@ Review a pull request with proper branch checkout and convention checks.
 
     **Critical Issues:**
     1. [Issue description] (`file:line`)
+    (or "None found." if all checks pass)
 
     **Suggestions (non-blocking):**
     1. [Suggestion description]
+    (or "None." if no suggestions)
 
     **Questions:**
     1. [Any clarifying questions]
+    (or "None." if no questions)
 
     ### What Looks Good
     - [Positive observations]
     ```
+
+    **Note**: When no issues are found, explicitly state "None found." in each section rather than omitting the section. This confirms to the user that you checked and found nothing, rather than forgot to check.
 
     **Then, and only then**, invoke the AskUserQuestion tool with:
     - **Option 1**: "Approve - All requirements met"

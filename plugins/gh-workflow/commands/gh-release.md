@@ -187,6 +187,7 @@ After release creation, verify everything completed successfully:
 - Always verify release after creation
 - Generate changelog automatically from commits
 - **Always detect default branch dynamically** - never assume `main` or `master`
+- **ALWAYS display findings BEFORE asking questions** - users must see the complete impact assessment (commits, version bump, breaking changes) before being asked to approve the release. Never invoke AskUserQuestion without first showing the release details.
 - **Use the AskUserQuestion tool** for:
   - Release type selection (when not specified)
   - Impact assessment approval (required before proceeding)
