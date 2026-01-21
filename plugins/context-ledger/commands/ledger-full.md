@@ -1,6 +1,6 @@
 ---
 description: Run the complete Context Ledger pipeline from brief to plan in one command
-argument-hint: "<brief>" --mode <optimizer|tokenburner|self-improver> [--max-iterations N]
+argument-hint: "<brief>" --mode <optimizer|tokenburner|ralph> [--self-improve] [--max-iterations N] [--completion-promise TEXT]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Task, WebSearch, WebFetch, AskUserQuestion
 ---
 
@@ -9,8 +9,6 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Task, WebSearch, WebFetch, A
 Run the complete Context Ledger pipeline end-to-end with a single command.
 
 ## The 5-Sentence Superprompt
-
-This is what you're executing:
 
 > **Build the Vault first.** Research every pillar this project depends on (market, users, tech, competitors, design, legal, ops, economics) in parallel, dumping evidence with confidence scores and assumptions into structured YAML files.
 >
@@ -26,19 +24,22 @@ This is what you're executing:
 
 `$ARGUMENTS`: The project brief — a text description of what you're building.
 
-**Required:**
-- `--mode <mode>` - Execution mode (see modes below)
+### Flags
 
-**Optional:**
-- `--max-iterations <n>` - Safety limit for self-improver mode (default: 10)
-- `--path <path>` - Custom workspace location (default: `./ledger/`)
-- `--pillars <list>` - Limit to specific pillars (comma-separated)
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--mode <mode>` | Execution mode: `optimizer`, `tokenburner`, or `ralph` | Required |
+| `--self-improve` | Enable gap analysis loops within the pipeline | Off |
+| `--max-iterations <n>` | Safety limit (required for `ralph` mode) | 50 |
+| `--completion-promise <text>` | Completion signal for `ralph` mode | `LEDGER_COMPLETE` |
+| `--path <path>` | Workspace location | `./ledger/` |
+| `--pillars <list>` | Limit to specific pillars (comma-separated) | All 8 |
 
 ## Execution Modes
 
-### `--mode optimizer` (Recommended for most use cases)
+### `--mode optimizer`
 
-**Sustainable overnight execution.** Balances thoroughness with resource efficiency.
+**Sustainable execution.** Balances thoroughness with resource efficiency.
 
 | Phase | Parallelism | Description |
 |-------|-------------|-------------|
@@ -46,7 +47,7 @@ This is what you're executing:
 | Synthesis | 3 pillar synthesizers | Sequential cross-synthesis |
 | Specs | 1 spec-architect | Constrained generation |
 
-```
+```bash
 /ledger-full "Build a task management app for remote teams" --mode optimizer
 ```
 
@@ -62,27 +63,81 @@ This is what you're executing:
 | Synthesis | 8 pillar synthesizers | Parallel cross-synthesis |
 | Specs | 3 spec-architects | Parallel PRD + Arch + Plan |
 
-```
+```bash
 /ledger-full "Enterprise SaaS platform" --mode tokenburner
 ```
 
 **Best for:** Hackathons, time-critical projects, exploration.
 
-### `--mode self-improver`
+### `--mode ralph`
 
-**Iterative refinement.** Analyzes gaps and loops until complete.
+**Fully autonomous execution** using Ralph Loop's stop hook mechanism.
 
 | Phase | Behavior | Description |
 |-------|----------|-------------|
-| Research | Gap detection | Finds missing evidence, researches more |
-| Synthesis | Conflict resolution | Iterates until contradictions resolved |
-| Specs | Constraint validation | Loops until all sections cite decisions |
+| All | Stop hook iteration | Same prompt re-fed on each exit |
+| Completion | Promise-based | Output `<promise>LEDGER_COMPLETE</promise>` when done |
+| Persistence | File-based | Previous work visible in files/git history |
 
-```
-/ledger-full "Complex regulated fintech app" --mode self-improver --max-iterations 15
+```bash
+/ledger-full "Healthcare patient portal with HIPAA compliance" --mode ralph --max-iterations 50
 ```
 
-**Best for:** Complex domains, regulated industries, high-stakes projects.
+**Best for:** Walk-away overnight runs, complex autonomous projects.
+
+## The `--self-improve` Flag
+
+Can be combined with **any mode** to enable within-pipeline gap analysis loops:
+
+- Analyzes research for missing evidence
+- Checks synthesis for unresolved contradictions
+- Validates spec constraint coverage
+- Loops back to appropriate phase when gaps found
+
+```bash
+# Optimizer with self-improvement
+/ledger-full "Task management app" --mode optimizer --self-improve
+
+# Tokenburner with self-improvement
+/ledger-full "AI assistant" --mode tokenburner --self-improve
+
+# Ralph with self-improvement (maximum autonomy)
+/ledger-full "Complex fintech app" --mode ralph --self-improve --max-iterations 100
+```
+
+## Ralph Mode Details
+
+### How It Works
+
+1. Creates state file at `.claude/ralph-loop.local.md`
+2. Runs the full pipeline with the specified parallelism
+3. On exit attempt, stop hook intercepts
+4. Same prompt re-fed with incremented iteration counter
+5. Claude sees previous work in modified files and git history
+6. Loops until `<promise>LEDGER_COMPLETE</promise>` output or max iterations reached
+
+### Completion Criteria
+
+Output `<promise>LEDGER_COMPLETE</promise>` **ONLY** when:
+- All evidence gates passed (≥5 per pillar)
+- All decision gates passed (≥2 evidence per decision)
+- All spec gates passed (all sections cite decisions)
+- PLAN.md generated successfully
+
+**CRITICAL:** Do not output the completion promise until the statement is completely and unequivocally TRUE. Do not output false promises to escape the loop.
+
+### Monitoring
+
+```bash
+# Check current iteration
+grep '^iteration:' .claude/ralph-loop.local.md
+
+# View full state
+head -10 .claude/ralph-loop.local.md
+
+# Cancel active loop
+/cancel-ralph
+```
 
 ## Workflow
 
@@ -102,6 +157,7 @@ This is what you're executing:
   - Explicit assumptions
   - Source traceability
 → Check evidence gate (minimum 5 per pillar)
+→ If --self-improve: analyze gaps and loop if needed
 ```
 
 ### Phase 3: Synthesize (Layered)
@@ -110,12 +166,12 @@ This is what you're executing:
 → Cross-pillar synthesis: connections, conflicts, emergent insights
 → Output: SYN-*.md files + CROSS-SYNTHESIS.md
 → Generate decision candidates
+→ If --self-improve: check for unresolved contradictions
 ```
 
-### Phase 4: Decide (Interactive)
+### Phase 4: Decide
 ```
 → Present each decision with evidence and trade-offs
-→ Get user decision via AskUserQuestion
 → Record to DECISIONS.yaml with:
   - Alternatives considered
   - Wins and loses
@@ -129,6 +185,7 @@ This is what you're executing:
 → Generate ARCHITECTURE.md — every choice cites DEC-*
 → Validate constraint gates
 → Cross-reference RISK-* entries
+→ If --self-improve: validate all constraints met
 ```
 
 ### Phase 6: Plan
@@ -139,48 +196,93 @@ This is what you're executing:
 → Output: PLAN.md
 ```
 
-### Self-Improver Loop (if enabled)
+### Ralph Mode Completion
 ```
-→ Analyze evidence for gaps
-→ Check synthesis for unresolved contradictions
-→ Validate spec constraint coverage
-→ If gaps found: loop back to appropriate phase
-→ Continue until complete or max iterations reached
+→ Verify all gates passed
+→ Output: <promise>LEDGER_COMPLETE</promise>
+→ Stop hook allows exit
 ```
+
+## User Interaction
+
+Use the **AskUserQuestion tool** ONLY for:
+
+### 1. Mode Selection (if not provided in arguments)
+```
+Question: "Which execution mode?"
+Options:
+- "optimizer - 3 agents/pillar, sustainable"
+- "tokenburner - 30+ agents/pillar, maximum speed"
+- "ralph - stop hook loops, fully autonomous"
+```
+
+### 2. Ralph Mode Settings (if ralph selected without flags)
+```
+Question: "Ralph mode settings:"
+Options:
+- "Default (max 50 iterations, promise: LEDGER_COMPLETE)"
+- "Conservative (max 20 iterations)"
+- "Aggressive (max 100 iterations)"
+- "Let me specify custom settings"
+```
+
+### 3. Decision Phase Only
+During the decide phase, present decisions with evidence for user choice.
+This is the **only interactive part** of the pipeline execution.
+
+**Do NOT use AskUserQuestion for:**
+- "Ready to run?" confirmations
+- Gate failure handling (auto-continue or flag-based)
+- Self-improve loop continuations
+- Progress updates
 
 ## Example Usage
 
-### Standard project (overnight run)
-```
-/ledger-full "Build a documentation tool for developer teams. Target: small teams (5-50). Must ship MVP in 6 weeks. Web-only, no mobile. Key goal: reduce documentation time by 30%." --mode optimizer
+```bash
+# Standard overnight run
+/ledger-full "Task management app for remote teams" --mode optimizer
+
+# With self-improvement loops
+/ledger-full "Task management app" --mode optimizer --self-improve
+
+# Maximum speed hackathon
+/ledger-full "AI code review assistant" --mode tokenburner
+
+# Fully autonomous (walk away overnight)
+/ledger-full "Healthcare portal with HIPAA" --mode ralph --max-iterations 50
+
+# Ralph + self-improve (maximum autonomy)
+/ledger-full "Complex fintech app" --mode ralph --self-improve --max-iterations 100
+
+# Focused research (specific pillars only)
+/ledger-full "Pricing strategy" --mode optimizer --pillars market,competitors,economics
+
+# Custom completion promise
+/ledger-full "Fintech app" --mode ralph --completion-promise "ALL_GATES_PASSED" --max-iterations 75
 ```
 
-### Rapid exploration (hackathon)
-```
-/ledger-full "AI-powered code review assistant for GitHub PRs" --mode tokenburner
-```
+## Mode Selection Guide
 
-### Complex regulated project
-```
-/ledger-full "Healthcare patient portal with HIPAA compliance, insurance integration, and telehealth scheduling" --mode self-improver --max-iterations 20
-```
-
-### Focused research (specific pillars only)
-```
-/ledger-full "Competitive pricing strategy for B2B SaaS" --mode optimizer --pillars market,competitors,economics
-```
+| Scenario | Recommended |
+|----------|-------------|
+| Standard project | `--mode optimizer` |
+| Hackathon / rapid prototyping | `--mode tokenburner` |
+| Walk-away overnight run | `--mode ralph --max-iterations 50` |
+| Complex regulated project | `--mode ralph --self-improve --max-iterations 100` |
+| Quick idea validation | `--mode tokenburner` |
+| High-stakes production planning | `--mode optimizer --self-improve` |
 
 ## Output
 
-After full pipeline completion:
+After pipeline completion:
 
 ```markdown
 ## Context Ledger Pipeline Complete
 
 ### Execution Summary
 - **Mode:** optimizer
-- **Duration:** [time]
-- **Iterations:** [n] (self-improver only)
+- **Self-improve:** enabled
+- **Iterations:** 3 (ralph mode only)
 
 ### Artifacts Generated
 | Directory | Files | Description |
@@ -203,74 +305,7 @@ After full pipeline completion:
 ### Traceability
 All specs trace to decisions → all decisions trace to evidence.
 Your product plan has receipts.
-
-### Next Steps
-1. Review DECISIONS.yaml for any provisional decisions
-2. Check RISKS.yaml mitigations
-3. Begin implementation from PLAN.md backlog
 ```
-
-## User Interaction
-
-Use the **AskUserQuestion tool** at key checkpoints:
-
-### Before starting
-```
-Question: "Ready to run full Context Ledger pipeline in [mode] mode?"
-Options:
-- "Yes, run full pipeline" (Recommended)
-- "Let me provide more context first"
-- "Change execution mode"
-```
-
-### Gate failures
-```
-Question: "[Pillar] has only [N] evidence (need 5). How to proceed?"
-Options:
-- "Continue researching this pillar"
-- "Accept partial and proceed"
-- "Deactivate this pillar"
-```
-
-### Decision points
-```
-Question: "Decision needed: [topic]. Evidence suggests [options]."
-Options:
-- "[Option A] - supported by [evidence summary]"
-- "[Option B] - supported by [evidence summary]"
-- "Need more information"
-```
-
-### Self-improver loop
-```
-Question: "Iteration [N]: Found [gaps]. Continue refining?"
-Options:
-- "Yes, continue loop"
-- "Accept current state"
-- "Focus on specific gaps"
-```
-
-## Integration with Ralph Loop
-
-For extended autonomous execution, combine with Ralph Loop:
-
-```bash
-# Run with Ralph-style iteration
-/ralph-loop "/ledger-full 'Your project brief' --mode self-improver" --max-iterations 50 --completion-promise "LEDGER_COMPLETE"
-```
-
-The self-improver mode will iterate internally, while Ralph Loop provides session-level persistence for overnight runs.
-
-## Mode Selection Guide
-
-| Scenario | Recommended Mode |
-|----------|------------------|
-| Standard project | `optimizer` |
-| Hackathon / rapid prototyping | `tokenburner` |
-| Regulated industry (healthcare, finance) | `self-improver` |
-| Overnight autonomous run | `optimizer` + Ralph Loop |
-| Complex multi-stakeholder project | `self-improver` |
-| Quick validation of idea | `tokenburner` |
 
 ## Quality Standards
 

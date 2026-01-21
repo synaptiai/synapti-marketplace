@@ -108,14 +108,20 @@ claude plugin install context-ledger
 | `/ledger-full` | **Run complete pipeline end-to-end** | All artifacts |
 
 ```bash
-# Standard project (overnight run)
+# Standard overnight run
 /ledger-full "Build a task management app for remote teams" --mode optimizer
 
-# Rapid exploration (hackathon)
+# With self-improvement loops
+/ledger-full "Task management app" --mode optimizer --self-improve
+
+# Maximum speed hackathon
 /ledger-full "AI code review assistant" --mode tokenburner
 
-# Complex regulated project
-/ledger-full "Healthcare patient portal with HIPAA compliance" --mode self-improver
+# Fully autonomous (walk away overnight)
+/ledger-full "Healthcare portal with HIPAA" --mode ralph --max-iterations 50
+
+# Ralph + self-improve (maximum autonomy)
+/ledger-full "Complex fintech app" --mode ralph --self-improve --max-iterations 100
 ```
 
 ### Individual Commands
@@ -134,33 +140,40 @@ claude plugin install context-ledger
 
 ## Execution Modes
 
-The `/ledger-full` command supports three execution modes:
+The `/ledger-full` command supports three modes + one flag:
 
-### `--mode optimizer` (Recommended)
+### `--mode optimizer`
 
-**Sustainable overnight execution.** 3 parallel agents per pillar, balanced throughput.
+**Sustainable execution.** 3 agents per pillar (24 total), balanced throughput.
 
 Best for: Standard projects, overnight runs, production use.
 
 ### `--mode tokenburner`
 
-**Maximum parallelism.** 30+ agents per pillar, burns through tokens fast.
+**Maximum parallelism.** 30+ agents per pillar (240+ total), burns through tokens fast.
 
 Best for: Hackathons, time-critical projects, rapid exploration.
 
-### `--mode self-improver`
+### `--mode ralph`
 
-**Iterative refinement.** Analyzes gaps, loops until complete.
+**Fully autonomous execution** using Ralph Loop's stop hook mechanism. Same prompt re-fed on each exit until `<promise>LEDGER_COMPLETE</promise>` is output.
 
-Best for: Complex domains, regulated industries, high-stakes projects.
+Best for: Walk-away overnight runs, complex autonomous projects.
 
-| Scenario | Recommended Mode |
-|----------|------------------|
-| Standard project | `optimizer` |
-| Hackathon / rapid prototyping | `tokenburner` |
-| Regulated industry (healthcare, finance) | `self-improver` |
-| Overnight autonomous run | `optimizer` |
-| Complex multi-stakeholder project | `self-improver` |
+### `--self-improve` (Flag)
+
+**Can combine with any mode.** Enables within-pipeline gap analysis loops:
+- Analyzes research for missing evidence
+- Checks synthesis for unresolved contradictions
+- Loops back when gaps found
+
+| Scenario | Recommended |
+|----------|-------------|
+| Standard project | `--mode optimizer` |
+| Hackathon / rapid prototyping | `--mode tokenburner` |
+| Walk-away overnight run | `--mode ralph --max-iterations 50` |
+| Complex regulated project | `--mode ralph --self-improve --max-iterations 100` |
+| High-stakes production planning | `--mode optimizer --self-improve` |
 
 ---
 
