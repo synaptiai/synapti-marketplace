@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Plugin-orange.svg)](https://claude.com/claude-code)
-[![Plugins](https://img.shields.io/badge/Plugins-2-green.svg)](#available-plugins)
+[![Plugins](https://img.shields.io/badge/Plugins-3-green.svg)](#available-plugins)
 
 ## About the Marketplace
 
@@ -23,13 +23,18 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 
 | Plugin | Category | Description | Version |
 |--------|----------|-------------|---------|
+| [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.3.1 |
-| [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.0.0 |
+| [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.0.2 |
 
 ### When to Use Each Plugin
 
 | I want to... | Use |
 |--------------|-----|
+| Build a product with evidence-backed decisions | [Context Ledger](#featured-context-ledger) `/ledger-full` |
+| Research all aspects of a product idea in parallel | [Context Ledger](#featured-context-ledger) `/ledger-research` |
+| Make explicit decisions with documented trade-offs | [Context Ledger](#featured-context-ledger) `/ledger-decide` |
+| Generate PRDs where every section traces to evidence | [Context Ledger](#featured-context-ledger) `/ledger-spec` |
 | Analyze articles, social media posts, or news for manipulation | [Decipon](#featured-decipon) `/decipon:analyze` |
 | Quickly triage content before deeper analysis | [Decipon](#featured-decipon) `/decipon:score` |
 | Research a complex topic with verified sources | [Decipon](#featured-decipon) `/decipon:deep-research` |
@@ -70,6 +75,78 @@ Skills from this marketplace are also available for **Claude Desktop** users. De
 | `repo-config.zip` | gh-workflow | Dynamic repository configuration |
 
 > **Note**: Desktop packages are automatically generated during releases. They contain the same skill content with Claude Code-specific frontmatter fields (`context`, `agent`, `hooks`, etc.) removed for compatibility.
+
+---
+
+## Featured: Context Ledger
+
+**Context Ledger** provides evidence-based product development — from initial research through implementation planning — where every requirement traces back to explicit decisions and documented evidence.
+
+### Why Context Ledger?
+
+Traditional product development starts with vibes and ends with specs that nobody trusts:
+- **Specs drift from reality** — PRDs reference decisions that were never formally made
+- **Assumptions hide in prose** — Trade-offs buried in paragraph 47 of a 200-page doc
+- **Evidence disappears** — "Studies show..." but which studies? From when?
+
+### Key Insight
+
+> If you can't trace every spec requirement back to evidence and an explicit decision, you're shipping guesswork. Context Ledger enforces traceability at every stage.
+
+### What Makes It Different
+
+| Feature | Benefit |
+|---------|---------|
+| **Evidence Objects** | Atomic, traceable research with confidence scores and assumptions |
+| **Decision Ledger** | Every decision documents alternatives, wins, loses, and risks created |
+| **Constrained Specs** | PRDs cannot exist without DEC-* references — no vibes allowed |
+| **Quality Gates** | Pipeline won't proceed until evidence and decision minimums are met |
+| **Impact Reports** | Updates show exactly what downstream artifacts need regeneration |
+
+### Commands
+
+| Command | What It Does |
+|---------|-------------|
+| `/ledger-full` | Run complete pipeline end-to-end with mode selection |
+| `/ledger-init` | Initialize workspace with brief and pillar map |
+| `/ledger-research` | Parallel evidence collection across 8 pillars |
+| `/ledger-synthesize` | Per-pillar + cross-pillar synthesis |
+| `/ledger-decide` | Make explicit decisions with trade-offs |
+| `/ledger-spec` | Generate constrained PRD + architecture |
+| `/ledger-plan` | Create implementation plan with milestones |
+| `/ledger-update` | Apply learnings with impact report |
+
+### Execution Modes
+
+| Mode | Parallelism | Best For |
+|------|-------------|----------|
+| `--mode optimizer` | 3 agents/pillar | Standard projects, overnight runs |
+| `--mode tokenburner` | 30+ agents/pillar | Hackathons, rapid exploration |
+| `--mode ralph` | Stop hook autonomous | Walk-away overnight execution |
+
+Add `--self-improve` to any mode for gap analysis loops.
+
+### Installation
+
+```bash
+# Add the marketplace (one-time setup)
+claude plugin marketplace add synaptiai/synapti-marketplace
+
+# Install the plugin
+claude plugin install context-ledger
+```
+
+### The Complete Pipeline
+
+```
+/ledger-init → /ledger-research → /ledger-synthesize → /ledger-decide → /ledger-spec → /ledger-plan
+     │              │                    │                   │               │             │
+     ▼              ▼                    ▼                   ▼               ▼             ▼
+  Brief +       Evidence            Synthesis           Decisions        PRD +          Plan
+  Pillars       Objects               Files              + Risks        Arch           + Tests
+```
+
+**[Full Context Ledger Documentation →](./plugins/context-ledger/README.md)**
 
 ---
 
@@ -207,6 +284,15 @@ synapti-marketplace/
 ├── .claude-plugin/
 │   └── marketplace.json               # Marketplace configuration
 └── plugins/
+    ├── context-ledger/                # Evidence-based product development
+    │   ├── .claude-plugin/
+    │   │   └── plugin.json            # Plugin metadata
+    │   ├── README.md                  # Full plugin documentation
+    │   ├── agents/                    # 5 specialized agents
+    │   ├── commands/                  # 8 pipeline commands
+    │   ├── skills/                    # 5 methodology skills
+    │   └── templates/                 # Evidence/decision templates
+    │
     ├── decipon/                       # Content analysis plugin
     │   ├── .claude-plugin/
     │   │   └── plugin.json            # Plugin metadata

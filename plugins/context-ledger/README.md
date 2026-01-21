@@ -103,9 +103,9 @@ claude plugin install context-ledger
 
 ### Full Pipeline (Recommended)
 
-| Command | Purpose | Output |
-|---------|---------|--------|
-| `/ledger-full` | **Run complete pipeline end-to-end** | All artifacts |
+#### `/ledger-full <brief>`
+
+Run the complete Context Ledger pipeline from brief to implementation plan in one command.
 
 ```bash
 # Standard overnight run
@@ -124,17 +124,129 @@ claude plugin install context-ledger
 /ledger-full "Complex fintech app" --mode ralph --self-improve --max-iterations 100
 ```
 
+**What's Good About /ledger-full:**
+1. **Single command, complete output** — Goes from idea to implementation plan without manual phase transitions
+2. **Mode flexibility** — Choose between sustainable (`optimizer`), fast (`tokenburner`), or autonomous (`ralph`) execution
+3. **Self-improvement loops** — Optional `--self-improve` flag fills evidence gaps and resolves contradictions automatically
+4. **Quality gate enforcement** — Cannot skip evidence, decision, or spec gates; ensures receipts at every stage
+5. **Walk-away capable** — Ralph mode with stop hooks enables overnight autonomous execution
+6. **Minimal interaction** — Only asks questions during decision phase; everything else runs autonomously
+
 ### Individual Commands
 
-| Command | Purpose | Output |
-|---------|---------|--------|
-| `/ledger-init` | Initialize workspace with brief + pillar map | `00-brief/`, `01-pillars/` |
-| `/ledger-research` | Parallel evidence collection (8 agents) | `02-evidence/<pillar>/EV-*.yaml` |
-| `/ledger-synthesize` | Per-pillar + cross-pillar synthesis | `03-synthesis/` |
-| `/ledger-decide` | Explicit decisions with trade-offs | `04-decisions/`, `05-risks/` |
-| `/ledger-spec` | Constrained PRD + architecture | `06-prd/`, `07-architecture/` |
-| `/ledger-plan` | Backlog + milestones + test plan | `08-plan/` |
-| `/ledger-update` | Apply learnings → diff + impact report | `IMPACT_REPORT.md` |
+#### `/ledger-init <brief>`
+
+Initialize a Context Ledger workspace with structured brief and pillar configuration.
+
+```bash
+/ledger-init Build a task management app for remote software teams with Slack integration
+```
+
+**What's Good About /ledger-init:**
+1. **Structured brief parsing** — Extracts goals, constraints, and target users from free-form input
+2. **Pillar prioritization** — Identifies which research areas matter most for your specific project
+3. **Directory scaffold** — Creates the complete 10-folder workspace structure automatically
+4. **Validation gates** — Won't proceed if brief lacks goals or constraints, ensuring quality from the start
+
+---
+
+#### `/ledger-research`
+
+Parallel evidence collection across 8 research pillars (market, users, tech, competitors, design, legal, ops, economics).
+
+```bash
+/ledger-research
+/ledger-research --pillars market,users,competitors
+```
+
+**What's Good About /ledger-research:**
+1. **True parallelism** — 8 agents research simultaneously, dramatically faster than sequential research
+2. **Atomic evidence objects** — Each finding is structured YAML with confidence scores and assumptions
+3. **Semantic IDs** — Evidence gets readable IDs like `EV-market-pricing-smb-wtp` that humans can reference
+4. **Quality gates** — Enforces minimum 5 evidence objects per pillar before proceeding
+5. **Source traceability** — Every claim links to its source with retrieval date
+
+---
+
+#### `/ledger-synthesize`
+
+Transform raw evidence into pillar syntheses, then cross-synthesize to identify conflicts and emergent insights.
+
+```bash
+/ledger-synthesize
+```
+
+**What's Good About /ledger-synthesize:**
+1. **Two-layer synthesis** — Per-pillar patterns first, then cross-pillar connections and conflicts
+2. **Contradiction surfacing** — Explicitly identifies where evidence disagrees, forcing resolution
+3. **Decision candidates** — Generates preliminary decisions from synthesis, not from vibes
+4. **Pattern recognition** — Identifies themes across evidence that individual pieces don't reveal
+
+---
+
+#### `/ledger-decide`
+
+Make explicit decisions with documented alternatives, trade-offs, and risk implications.
+
+```bash
+/ledger-decide
+```
+
+**What's Good About /ledger-decide:**
+1. **Forced alternatives** — Every decision must document what options were considered and rejected
+2. **Trade-off documentation** — Explicit wins and loses, not just the happy path
+3. **Risk linkage** — Decisions automatically create risk entries when they create new vulnerabilities
+4. **Evidence requirements** — Each decision must cite minimum 2 evidence IDs, preventing gut-feel choices
+5. **Interactive workflow** — Presents decisions with evidence for user approval, not autonomous guessing
+
+---
+
+#### `/ledger-spec`
+
+Generate constrained PRD and architecture documents where every section cites decisions.
+
+```bash
+/ledger-spec
+```
+
+**What's Good About /ledger-spec:**
+1. **Constraint enforcement** — PRD sections cannot exist without DEC-* references; no vibes allowed
+2. **Automatic validation** — Spec gate checks that all sections cite decisions before completing
+3. **Risk cross-referencing** — Architecture sections reference relevant RISK-* entries
+4. **Coverage tracking** — Reports which decisions are covered and which need spec sections
+5. **No drift** — Specs stay anchored to decisions, which stay anchored to evidence
+
+---
+
+#### `/ledger-plan`
+
+Generate implementation plan with backlog, milestones, and test plan linked to decisions and risks.
+
+```bash
+/ledger-plan
+```
+
+**What's Good About /ledger-plan:**
+1. **Decision-linked items** — Every backlog item traces to the decisions that require it
+2. **Risk-aware sequencing** — High-risk items get earlier attention and explicit mitigations
+3. **Test plan generation** — Acceptance criteria derived from decisions, not invented
+4. **Milestone structure** — Logical groupings based on decision dependencies
+
+---
+
+#### `/ledger-update <new-evidence>`
+
+Apply new learnings and generate impact report showing what needs regeneration.
+
+```bash
+/ledger-update "User interviews revealed onboarding completion rate of 23%"
+```
+
+**What's Good About /ledger-update:**
+1. **Impact analysis** — Shows exactly which decisions, specs, and plans are affected by new evidence
+2. **Diff generation** — Documents what changed, not silent rewrites
+3. **Regeneration guidance** — Identifies which artifacts need updates vs. which remain valid
+4. **Audit trail** — Maintains history of how understanding evolved over time
 
 ---
 
