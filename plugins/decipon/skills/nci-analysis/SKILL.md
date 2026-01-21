@@ -7,11 +7,11 @@ agent: general-purpose
 
 # NCI Manipulation Analysis
 
-I use pattern-based manipulation detection that identifies **how** content tries to influence you, not whether claims are factually true. Manipulation techniques leave fingerprints regardless of underlying accuracy.
+This skill uses pattern-based manipulation detection that identifies **how** content tries to influence the reader, not whether claims are factually true. Manipulation techniques leave fingerprints regardless of underlying accuracy.
 
-<required>
 Use TodoWrite to track these mandatory steps:
 
+<required>
 1. Input Processing (text or URL)
 2. Score all 20 categories (1-5 scale each)
 3. Calculate 5 composite factors
@@ -55,14 +55,14 @@ These principles ensure fair, consistent analysis across all content regardless 
 
 ### Step 1: Input Processing
 
-**For direct text, I record:**
+**For direct text, record:**
 ```
 INPUT TYPE: Text
 LENGTH: [word count]
 CONTEXT PROVIDED: [any user context]
 ```
 
-**For URLs, I:**
+**For URLs:**
 ```
 INPUT TYPE: URL
 URL: [url]
@@ -70,14 +70,14 @@ Fetching content with WebFetch...
 EXTRACTED: [article title, publication, date if available]
 ```
 
-When processing URLs, I also check:
+When processing URLs, also check:
 - Publication reputation
 - Author credentials (if available)
 - Publication date and timeliness
 
 ### Step 2: Score All 20 Categories
 
-For each category, I provide:
+For each category, provide:
 ```
 CATEGORY #[N]: [Name]
 Score: [1-5]
@@ -169,7 +169,7 @@ Proceed directly to Step 6 (Perspective Generation).
 
 ### Step 6: Generate Dual Perspectives
 
-**CRITICAL**: I always generate BOTH interpretations.
+**CRITICAL**: Always generate BOTH interpretations.
 
 ```
 MANIPULATIVE INTERPRETATION:
