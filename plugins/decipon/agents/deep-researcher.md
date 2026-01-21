@@ -1,6 +1,6 @@
 ---
 name: deep-researcher
-description: Deep research specialist using Time-Tested Diffusion methodology. Use PROACTIVELY for complex research questions requiring multiple sources, comparisons, due diligence, or thorough analysis. MUST BE USED when user asks for "deep research", "thorough analysis", "comprehensive report", or "investigate".
+description: Use PROACTIVELY for complex research questions requiring multiple sources, comparisons, due diligence, or thorough analysis. MUST BE USED when user asks for "deep research", "thorough analysis", "comprehensive report", or "investigate".
 model: inherit
 color: blue
 tools: Read, Write, Bash, Grep, Glob, WebSearch, WebFetch, AskUserQuestion
