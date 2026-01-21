@@ -101,6 +101,25 @@ claude plugin install context-ledger
 
 ## Commands
 
+### Full Pipeline (Recommended)
+
+| Command | Purpose | Output |
+|---------|---------|--------|
+| `/ledger-full` | **Run complete pipeline end-to-end** | All artifacts |
+
+```bash
+# Standard project (overnight run)
+/ledger-full "Build a task management app for remote teams" --mode optimizer
+
+# Rapid exploration (hackathon)
+/ledger-full "AI code review assistant" --mode tokenburner
+
+# Complex regulated project
+/ledger-full "Healthcare patient portal with HIPAA compliance" --mode self-improver
+```
+
+### Individual Commands
+
 | Command | Purpose | Output |
 |---------|---------|--------|
 | `/ledger-init` | Initialize workspace with brief + pillar map | `00-brief/`, `01-pillars/` |
@@ -110,6 +129,38 @@ claude plugin install context-ledger
 | `/ledger-spec` | Constrained PRD + architecture | `06-prd/`, `07-architecture/` |
 | `/ledger-plan` | Backlog + milestones + test plan | `08-plan/` |
 | `/ledger-update` | Apply learnings → diff + impact report | `IMPACT_REPORT.md` |
+
+---
+
+## Execution Modes
+
+The `/ledger-full` command supports three execution modes:
+
+### `--mode optimizer` (Recommended)
+
+**Sustainable overnight execution.** 3 parallel agents per pillar, balanced throughput.
+
+Best for: Standard projects, overnight runs, production use.
+
+### `--mode tokenburner`
+
+**Maximum parallelism.** 30+ agents per pillar, burns through tokens fast.
+
+Best for: Hackathons, time-critical projects, rapid exploration.
+
+### `--mode self-improver`
+
+**Iterative refinement.** Analyzes gaps, loops until complete.
+
+Best for: Complex domains, regulated industries, high-stakes projects.
+
+| Scenario | Recommended Mode |
+|----------|------------------|
+| Standard project | `optimizer` |
+| Hackathon / rapid prototyping | `tokenburner` |
+| Regulated industry (healthcare, finance) | `self-improver` |
+| Overnight autonomous run | `optimizer` |
+| Complex multi-stakeholder project | `self-improver` |
 
 ---
 
