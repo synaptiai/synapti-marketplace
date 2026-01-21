@@ -1,6 +1,6 @@
 ---
 name: fact-checker
-description: Verification specialist for fact-checking claims and resolving contradictions. Use PROACTIVELY when claims need independent verification, sources disagree, or user asks to "verify", "fact-check", or "confirm".
+description: Use PROACTIVELY when claims need independent verification, sources disagree, or user asks to "verify", "fact-check", or "confirm". Resolves contradictions across sources.
 model: inherit
 color: green
 tools: Read, Bash, Grep, Glob, WebSearch, WebFetch, AskUserQuestion

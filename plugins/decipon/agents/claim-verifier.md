@@ -1,6 +1,6 @@
 ---
 name: claim-verifier
-description: Verifies claims extracted from NCI analysis using deep research methodology. Use after NCI analysis to fact-check key claims, or standalone for claim verification. Auto-invoked by /decipon:verify command.
+description: Use after NCI analysis to fact-check key claims and update manipulation scores based on verification results. Auto-invoked by /decipon:verify command.
 model: inherit
 color: yellow
 tools: Read, Grep, Glob, WebSearch, WebFetch, AskUserQuestion
