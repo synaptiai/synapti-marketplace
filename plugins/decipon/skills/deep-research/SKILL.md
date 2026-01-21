@@ -1,32 +1,31 @@
 ---
 name: conducting-deep-research
-description: Produces comprehensive, well-sourced research reports through iterative refinement using Time-Tested Diffusion methodology. Triggers on "deep research", "thorough analysis", "comprehensive report", "investigate", "due diligence", or when multiple sources are needed to answer complex questions.
+description: Use when asked for "deep research", "thorough analysis", "comprehensive report", "investigate", "due diligence", or when multiple sources are needed to answer complex questions. Produces well-sourced research reports through iterative refinement.
 context: fork
 agent: general-purpose
 ---
 
 # Conducting Deep Research
 
-Iterative methodology treating research as a diffusion process: start with noise (rough draft), apply guidance (research brief), denoise through cycles of critique → research → refine until quality converges.
+I use an iterative methodology treating research as a diffusion process: start with noise (rough draft), apply guidance (research brief), denoise through cycles of critique → research → refine until quality converges.
 
-## Workflow
+<required>
+Use TodoWrite to track these mandatory steps:
 
-```
-Progress:
-- [ ] 1. Clarify scope (if ambiguous)
-- [ ] 2. Write research brief (guidance signal)
-- [ ] 3. Generate initial draft from knowledge (noisy starting point)
-- [ ] 4. Red team critique (identify noise)
-- [ ] 5. Targeted web_search with reflection
-- [ ] 6. Score sources and track contradictions
-- [ ] 7. Refine draft (denoise)
-- [ ] 8. Evaluate quality (score < 7? repeat 4-7, max 3 cycles)
-- [ ] 9. Finalize
-```
+1. Clarify scope (if ambiguous)
+2. Write research brief (guidance signal)
+3. Generate initial draft from knowledge (noisy starting point)
+4. Red team critique (identify noise)
+5. Targeted web_search with reflection
+6. Score sources and track contradictions
+7. Refine draft (denoise)
+8. Evaluate quality (score < 7? repeat 4-7, max 3 cycles)
+9. Finalize
+</required>
 
 ### Step 1: Clarify Scope
 
-Ask clarifying questions only if:
+I ask clarifying questions only if:
 - Topic has multiple interpretations
 - Key constraints missing (timeframe, geography, industry)
 - Success criteria unclear
@@ -49,7 +48,7 @@ Language: [Match user's language]
 
 ### Step 3: Initial Draft (Noisy Starting Point)
 
-Write from existing knowledge only. Mark gaps:
+I write from existing knowledge only, marking gaps:
 - `[NEEDS VERIFICATION]` - uncertain claims
 - `[RESEARCH NEEDED]` - missing information
 - `[CONFIDENCE: LOW/MED/HIGH]` - flag uncertainty levels
@@ -58,7 +57,7 @@ This draft intentionally contains "noise" - the refinement loop will denoise it.
 
 ### Step 4: Red Team Critique
 
-Attack your draft for:
+I attack my draft for:
 - **Logic**: Circular reasoning, false dichotomies, unsupported claims
 - **Gaps**: Missing perspectives, incomplete coverage
 - **Sources**: Unsourced claims, single-source reliance
@@ -72,7 +71,7 @@ Rate each issue 1-10 severity. See [references/critique-framework.md](references
 - Moderate topics: 3-5 searches  
 - Complex research: 5-10 searches
 
-**CRITICAL: Think after EVERY search.** After each `web_search`, pause and reflect:
+**CRITICAL: I think after EVERY search.** After each `web_search`, I pause and reflect:
 ```
 REFLECTION:
 - What key facts did I find?
@@ -81,7 +80,7 @@ REFLECTION:
 - Is another search needed, or do I have enough?
 ```
 
-**Parallel research triggers** - pursue multiple threads when:
+**Parallel research triggers** - I pursue multiple threads when:
 - Comparing alternatives (search each separately)
 - Multiple independent sub-questions exist
 - Different source types needed (academic vs news vs official)
@@ -90,7 +89,7 @@ See [references/search-patterns.md](references/search-patterns.md) for query tec
 
 ### Step 6: Source Scoring and Contradiction Handling
 
-**Score each source (1-100 confidence):**
+**I score each source (1-100 confidence):**
 
 | Source Type | Base Score |
 |-------------|------------|
@@ -102,7 +101,7 @@ See [references/search-patterns.md](references/search-patterns.md) for query tec
 
 Adjust based on: recency, author credentials, citation quality.
 
-**Track facts with attribution:**
+**I track facts with attribution:**
 ```
 FACT: [Statement]
 SOURCE: [URL]
@@ -110,7 +109,7 @@ CONFIDENCE: [1-100]
 DISPUTED: [Yes/No - conflicts with other sources?]
 ```
 
-**When sources contradict:**
+**When sources contradict, I:**
 1. Note the contradiction explicitly
 2. Check publication dates (prefer recent)
 3. Evaluate source authority
@@ -121,17 +120,18 @@ See [references/source-evaluation.md](references/source-evaluation.md) for detai
 
 ### Step 7: Refine Draft (Denoise)
 
-1. Replace `[NEEDS VERIFICATION]` with sourced facts
-2. Add inline citations with confidence: "According to [Source] (high confidence), ..."
-3. Qualify or remove unsupported claims
-4. Address contradictions explicitly
-5. Add counterarguments
+I refine by:
+1. Replacing `[NEEDS VERIFICATION]` with sourced facts
+2. Adding inline citations with confidence: "According to [Source] (high confidence), ..."
+3. Qualifying or removing unsupported claims
+4. Addressing contradictions explicitly
+5. Adding counterarguments
 
-**Context management:** If accumulating too much research, compress raw notes into key findings before continuing. Discard redundant/low-value information.
+**Context management:** If accumulating too much research, I compress raw notes into key findings before continuing. I discard redundant/low-value information.
 
 ### Step 8: Evaluate Quality
 
-Score 1-10 on:
+I score 1-10 on:
 - **Comprehensiveness**: All key questions addressed?
 - **Accuracy**: Claims well-sourced with appropriate confidence?
 

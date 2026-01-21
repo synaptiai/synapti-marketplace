@@ -1,13 +1,25 @@
 ---
 name: nci-manipulation-analysis
-description: Analyzes content for manipulation techniques using the NCI (Narrative Credibility Index) Protocol. Detects emotional manipulation, suspicious timing, uniform messaging, tribal division, and missing information across 20 categories. Use when asked to analyze content for manipulation, propaganda, disinformation patterns, or when user provides a URL or text asking "is this manipulative?", "analyze this for bias", "check for propaganda", or similar requests.
+description: Use when asked to analyze content for manipulation, propaganda, disinformation patterns, or when user provides a URL or text asking "is this manipulative?", "analyze this for bias", "check for propaganda", or similar requests. Detects emotional manipulation, suspicious timing, uniform messaging, tribal division, and missing information across 20 categories.
 context: fork
 agent: general-purpose
 ---
 
 # NCI Manipulation Analysis
 
-Pattern-based manipulation detection that identifies **how** content tries to influence you, not whether claims are factually true. Manipulation techniques leave fingerprints regardless of underlying accuracy.
+I use pattern-based manipulation detection that identifies **how** content tries to influence you, not whether claims are factually true. Manipulation techniques leave fingerprints regardless of underlying accuracy.
+
+<required>
+Use TodoWrite to track these mandatory steps:
+
+1. Input Processing (text or URL)
+2. Score all 20 categories (1-5 scale each)
+3. Calculate 5 composite factors
+4. Calculate overall score (0-100)
+5. Check deep research triggers
+6. Generate perspectives (manipulative + legitimate)
+7. Output report
+</required>
 
 ## Quick Start
 
@@ -41,27 +53,16 @@ These principles ensure fair, consistent analysis across all content regardless 
 
 ## Workflow
 
-```
-Progress:
-- [ ] 1. Input Processing (text or URL)
-- [ ] 2. Score all 20 categories (1-5 scale each)
-- [ ] 3. Calculate 5 composite factors
-- [ ] 4. Calculate overall score (0-100)
-- [ ] 5. Check deep research triggers (see Step 5)
-- [ ] 6. Generate perspectives (manipulative + legitimate)
-- [ ] 7. Output report
-```
-
 ### Step 1: Input Processing
 
-**For direct text:**
+**For direct text, I record:**
 ```
 INPUT TYPE: Text
 LENGTH: [word count]
 CONTEXT PROVIDED: [any user context]
 ```
 
-**For URLs:**
+**For URLs, I:**
 ```
 INPUT TYPE: URL
 URL: [url]
@@ -69,14 +70,14 @@ Fetching content with WebFetch...
 EXTRACTED: [article title, publication, date if available]
 ```
 
-When processing URLs, also check:
+When processing URLs, I also check:
 - Publication reputation
 - Author credentials (if available)
 - Publication date and timeliness
 
 ### Step 2: Score All 20 Categories
 
-For each category, provide:
+For each category, I provide:
 ```
 CATEGORY #[N]: [Name]
 Score: [1-5]
@@ -168,7 +169,7 @@ Proceed directly to Step 6 (Perspective Generation).
 
 ### Step 6: Generate Dual Perspectives
 
-**CRITICAL**: Always generate BOTH interpretations.
+**CRITICAL**: I always generate BOTH interpretations.
 
 ```
 MANIPULATIVE INTERPRETATION:
