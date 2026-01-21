@@ -1,12 +1,20 @@
 ---
 name: repo-config
-description: This skill should be used when needing to "get the default branch", "detect repository settings", "fetch available labels", "get repo info for API calls", or when any gh-workflow command needs dynamic repository configuration instead of hardcoded values.
+description: Use when needing to get the default branch, detect repository settings, fetch available labels, get repo info for API calls, or when any gh-workflow command needs dynamic repository configuration instead of hardcoded values.
 version: 1.0.0
 ---
 
 # Repository Configuration
 
-This skill provides dynamic repository configuration for all gh-workflow commands. It auto-detects settings so commands work in any repository without hardcoding.
+This skill provides dynamic repository configuration for all gh-workflow commands, auto-detecting settings so commands work in any repository without hardcoding.
+
+Use TodoWrite to track these mandatory steps:
+
+<required>
+1. Fetch default branch dynamically (never hardcode `main` or `master`)
+2. Fetch labels dynamically (never assume labels exist)
+3. Get repository owner/name for API calls (never hardcode)
+</required>
 
 ## Quick Reference
 
@@ -74,7 +82,7 @@ gh api repos/$REPO/pulls/123/comments
 
 ### Label Strategy
 
-**DO NOT hardcode labels.** Always fetch dynamically:
+**Never hardcode labels.** Always fetch dynamically:
 
 ```bash
 # Get available labels
@@ -135,25 +143,48 @@ gh issue create --label "selected-label"
 
 ## Best Practices
 
-1. **Never hardcode repository names** - Use `gh repo view --json nameWithOwner`
-2. **Never hardcode branch names** - Use `gh repo view --json defaultBranchRef`
-3. **Never hardcode labels** - Use `gh label list` and let user select
-4. **Detect conventions** - Analyze existing branches/commits before assuming
-5. **Provide sensible defaults** - If detection fails, use common conventions
+<good-example>
+1. **Never hardcode repository names** - use `gh repo view --json nameWithOwner`
+2. **Never hardcode branch names** - use `gh repo view --json defaultBranchRef`
+3. **Never hardcode labels** - use `gh label list` and let me select
+4. **Detect conventions** - analyze existing branches/commits before assuming
+5. **Provide sensible defaults** - if detection fails, use common conventions
+</good-example>
+
+<bad-example>
+- Hardcoding `main` or `master` as the default branch
+- Assuming labels like `bug`, `enhancement` exist without checking
+- Using fixed repository owner/name strings
+</bad-example>
 
 ## Integration Points
 
 All gh-workflow commands should:
-1. Read this skill for configuration patterns
+1. Reference this skill for configuration patterns
 2. Use dynamic detection instead of hardcoded values
 3. Fall back to sensible defaults if detection fails
 4. Use the **AskUserQuestion tool** when user input is needed
 
+## Grep Patterns
+
+To find configuration usage in the codebase:
+
+```bash
+# Find hardcoded branch references
+grep -r "main\|master" --include="*.md" plugins/
+
+# Find label references
+grep -r "label" --include="*.md" plugins/
+
+# Find gh repo commands
+grep -r "gh repo\|gh issue\|gh pr" --include="*.md" plugins/
+```
+
 ## Error Handling
 
-If `gh` commands fail:
-- Check if user is authenticated: `gh auth status`
-- Check if in a git repository: `git rev-parse --git-dir`
-- Check if repository has a GitHub remote: `git remote -v`
+If `gh` commands fail, check:
+- Is the user authenticated? `gh auth status`
+- Is this a git repository? `git rev-parse --git-dir`
+- Does the repository have a GitHub remote? `git remote -v`
 
 Report clear, actionable error messages.

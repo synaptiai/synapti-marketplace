@@ -1,32 +1,31 @@
 ---
 name: conducting-deep-research
-description: Produces comprehensive, well-sourced research reports through iterative refinement using Time-Tested Diffusion methodology. Triggers on "deep research", "thorough analysis", "comprehensive report", "investigate", "due diligence", or when multiple sources are needed to answer complex questions.
+description: Use when asked for "deep research", "thorough analysis", "comprehensive report", "investigate", "due diligence", or when multiple sources are needed to answer complex questions. Produces well-sourced research reports through iterative refinement.
 context: fork
 agent: general-purpose
 ---
 
 # Conducting Deep Research
 
-Iterative methodology treating research as a diffusion process: start with noise (rough draft), apply guidance (research brief), denoise through cycles of critique → research → refine until quality converges.
+This skill uses an iterative methodology treating research as a diffusion process: start with noise (rough draft), apply guidance (research brief), denoise through cycles of critique → research → refine until quality converges.
 
-## Workflow
+Use TodoWrite to track these mandatory steps:
 
-```
-Progress:
-- [ ] 1. Clarify scope (if ambiguous)
-- [ ] 2. Write research brief (guidance signal)
-- [ ] 3. Generate initial draft from knowledge (noisy starting point)
-- [ ] 4. Red team critique (identify noise)
-- [ ] 5. Targeted web_search with reflection
-- [ ] 6. Score sources and track contradictions
-- [ ] 7. Refine draft (denoise)
-- [ ] 8. Evaluate quality (score < 7? repeat 4-7, max 3 cycles)
-- [ ] 9. Finalize
-```
+<required>
+1. Clarify scope (if ambiguous)
+2. Write research brief (guidance signal)
+3. Generate initial draft from knowledge (noisy starting point)
+4. Red team critique (identify noise)
+5. Targeted web_search with reflection
+6. Score sources and track contradictions
+7. Refine draft (denoise)
+8. Evaluate quality (score < 7? repeat 4-7, max 3 cycles)
+9. Finalize
+</required>
 
 ### Step 1: Clarify Scope
 
-Ask clarifying questions only if:
+Ask me clarifying questions only if:
 - Topic has multiple interpretations
 - Key constraints missing (timeframe, geography, industry)
 - Success criteria unclear
@@ -49,7 +48,7 @@ Language: [Match user's language]
 
 ### Step 3: Initial Draft (Noisy Starting Point)
 
-Write from existing knowledge only. Mark gaps:
+Write from existing knowledge only, marking gaps:
 - `[NEEDS VERIFICATION]` - uncertain claims
 - `[RESEARCH NEEDED]` - missing information
 - `[CONFIDENCE: LOW/MED/HIGH]` - flag uncertainty levels
@@ -58,7 +57,7 @@ This draft intentionally contains "noise" - the refinement loop will denoise it.
 
 ### Step 4: Red Team Critique
 
-Attack your draft for:
+Attack the draft for:
 - **Logic**: Circular reasoning, false dichotomies, unsupported claims
 - **Gaps**: Missing perspectives, incomplete coverage
 - **Sources**: Unsourced claims, single-source reliance
@@ -121,11 +120,12 @@ See [references/source-evaluation.md](references/source-evaluation.md) for detai
 
 ### Step 7: Refine Draft (Denoise)
 
-1. Replace `[NEEDS VERIFICATION]` with sourced facts
-2. Add inline citations with confidence: "According to [Source] (high confidence), ..."
-3. Qualify or remove unsupported claims
-4. Address contradictions explicitly
-5. Add counterarguments
+Refine by:
+1. Replacing `[NEEDS VERIFICATION]` with sourced facts
+2. Adding inline citations with confidence: "According to [Source] (high confidence), ..."
+3. Qualifying or removing unsupported claims
+4. Addressing contradictions explicitly
+5. Adding counterarguments
 
 **Context management:** If accumulating too much research, compress raw notes into key findings before continuing. Discard redundant/low-value information.
 

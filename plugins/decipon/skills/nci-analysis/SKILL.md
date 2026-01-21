@@ -1,13 +1,25 @@
 ---
 name: nci-manipulation-analysis
-description: Analyzes content for manipulation techniques using the NCI (Narrative Credibility Index) Protocol. Detects emotional manipulation, suspicious timing, uniform messaging, tribal division, and missing information across 20 categories. Use when asked to analyze content for manipulation, propaganda, disinformation patterns, or when user provides a URL or text asking "is this manipulative?", "analyze this for bias", "check for propaganda", or similar requests.
+description: Use when asked to analyze content for manipulation, propaganda, disinformation patterns, or when user provides a URL or text asking "is this manipulative?", "analyze this for bias", "check for propaganda", or similar requests. Detects emotional manipulation, suspicious timing, uniform messaging, tribal division, and missing information across 20 categories.
 context: fork
 agent: general-purpose
 ---
 
 # NCI Manipulation Analysis
 
-Pattern-based manipulation detection that identifies **how** content tries to influence you, not whether claims are factually true. Manipulation techniques leave fingerprints regardless of underlying accuracy.
+This skill uses pattern-based manipulation detection that identifies **how** content tries to influence the reader, not whether claims are factually true. Manipulation techniques leave fingerprints regardless of underlying accuracy.
+
+Use TodoWrite to track these mandatory steps:
+
+<required>
+1. Input Processing (text or URL)
+2. Score all 20 categories (1-5 scale each)
+3. Calculate 5 composite factors
+4. Calculate overall score (0-100)
+5. Check deep research triggers
+6. Generate perspectives (manipulative + legitimate)
+7. Output report
+</required>
 
 ## Quick Start
 
@@ -41,20 +53,9 @@ These principles ensure fair, consistent analysis across all content regardless 
 
 ## Workflow
 
-```
-Progress:
-- [ ] 1. Input Processing (text or URL)
-- [ ] 2. Score all 20 categories (1-5 scale each)
-- [ ] 3. Calculate 5 composite factors
-- [ ] 4. Calculate overall score (0-100)
-- [ ] 5. Check deep research triggers (see Step 5)
-- [ ] 6. Generate perspectives (manipulative + legitimate)
-- [ ] 7. Output report
-```
-
 ### Step 1: Input Processing
 
-**For direct text:**
+**For direct text, record:**
 ```
 INPUT TYPE: Text
 LENGTH: [word count]
