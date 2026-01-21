@@ -6,7 +6,15 @@ version: 1.0.0
 
 # Repository Configuration
 
-I provide dynamic repository configuration for all gh-workflow commands. I auto-detect settings so commands work in any repository without hardcoding.
+This skill provides dynamic repository configuration for all gh-workflow commands, auto-detecting settings so commands work in any repository without hardcoding.
+
+Use TodoWrite to track these mandatory steps:
+
+<required>
+1. Fetch default branch dynamically (never hardcode `main` or `master`)
+2. Fetch labels dynamically (never assume labels exist)
+3. Get repository owner/name for API calls (never hardcode)
+</required>
 
 ## Quick Reference
 
@@ -74,7 +82,7 @@ gh api repos/$REPO/pulls/123/comments
 
 ### Label Strategy
 
-**I never hardcode labels.** I always fetch dynamically:
+**Never hardcode labels.** Always fetch dynamically:
 
 ```bash
 # Get available labels
@@ -136,11 +144,11 @@ gh issue create --label "selected-label"
 ## Best Practices
 
 <good-example>
-1. **I never hardcode repository names** - I use `gh repo view --json nameWithOwner`
-2. **I never hardcode branch names** - I use `gh repo view --json defaultBranchRef`
-3. **I never hardcode labels** - I use `gh label list` and let user select
-4. **I detect conventions** - I analyze existing branches/commits before assuming
-5. **I provide sensible defaults** - If detection fails, I use common conventions
+1. **Never hardcode repository names** - use `gh repo view --json nameWithOwner`
+2. **Never hardcode branch names** - use `gh repo view --json defaultBranchRef`
+3. **Never hardcode labels** - use `gh label list` and let me select
+4. **Detect conventions** - analyze existing branches/commits before assuming
+5. **Provide sensible defaults** - if detection fails, use common conventions
 </good-example>
 
 <bad-example>
@@ -174,9 +182,9 @@ grep -r "gh repo\|gh issue\|gh pr" --include="*.md" plugins/
 
 ## Error Handling
 
-If `gh` commands fail, I check:
-- Is user authenticated? `gh auth status`
-- Am I in a git repository? `git rev-parse --git-dir`
-- Does repository have a GitHub remote? `git remote -v`
+If `gh` commands fail, check:
+- Is the user authenticated? `gh auth status`
+- Is this a git repository? `git rev-parse --git-dir`
+- Does the repository have a GitHub remote? `git remote -v`
 
-I report clear, actionable error messages.
+Report clear, actionable error messages.
