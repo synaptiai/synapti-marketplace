@@ -7,11 +7,11 @@ agent: general-purpose
 
 # Conducting Deep Research
 
-I use an iterative methodology treating research as a diffusion process: start with noise (rough draft), apply guidance (research brief), denoise through cycles of critique → research → refine until quality converges.
+This skill uses an iterative methodology treating research as a diffusion process: start with noise (rough draft), apply guidance (research brief), denoise through cycles of critique → research → refine until quality converges.
 
-<required>
 Use TodoWrite to track these mandatory steps:
 
+<required>
 1. Clarify scope (if ambiguous)
 2. Write research brief (guidance signal)
 3. Generate initial draft from knowledge (noisy starting point)
@@ -25,7 +25,7 @@ Use TodoWrite to track these mandatory steps:
 
 ### Step 1: Clarify Scope
 
-I ask clarifying questions only if:
+Ask me clarifying questions only if:
 - Topic has multiple interpretations
 - Key constraints missing (timeframe, geography, industry)
 - Success criteria unclear
@@ -48,7 +48,7 @@ Language: [Match user's language]
 
 ### Step 3: Initial Draft (Noisy Starting Point)
 
-I write from existing knowledge only, marking gaps:
+Write from existing knowledge only, marking gaps:
 - `[NEEDS VERIFICATION]` - uncertain claims
 - `[RESEARCH NEEDED]` - missing information
 - `[CONFIDENCE: LOW/MED/HIGH]` - flag uncertainty levels
@@ -57,7 +57,7 @@ This draft intentionally contains "noise" - the refinement loop will denoise it.
 
 ### Step 4: Red Team Critique
 
-I attack my draft for:
+Attack the draft for:
 - **Logic**: Circular reasoning, false dichotomies, unsupported claims
 - **Gaps**: Missing perspectives, incomplete coverage
 - **Sources**: Unsourced claims, single-source reliance
@@ -71,7 +71,7 @@ Rate each issue 1-10 severity. See [references/critique-framework.md](references
 - Moderate topics: 3-5 searches  
 - Complex research: 5-10 searches
 
-**CRITICAL: I think after EVERY search.** After each `web_search`, I pause and reflect:
+**CRITICAL: Think after EVERY search.** After each `web_search`, pause and reflect:
 ```
 REFLECTION:
 - What key facts did I find?
@@ -80,7 +80,7 @@ REFLECTION:
 - Is another search needed, or do I have enough?
 ```
 
-**Parallel research triggers** - I pursue multiple threads when:
+**Parallel research triggers** - pursue multiple threads when:
 - Comparing alternatives (search each separately)
 - Multiple independent sub-questions exist
 - Different source types needed (academic vs news vs official)
@@ -89,7 +89,7 @@ See [references/search-patterns.md](references/search-patterns.md) for query tec
 
 ### Step 6: Source Scoring and Contradiction Handling
 
-**I score each source (1-100 confidence):**
+**Score each source (1-100 confidence):**
 
 | Source Type | Base Score |
 |-------------|------------|
@@ -101,7 +101,7 @@ See [references/search-patterns.md](references/search-patterns.md) for query tec
 
 Adjust based on: recency, author credentials, citation quality.
 
-**I track facts with attribution:**
+**Track facts with attribution:**
 ```
 FACT: [Statement]
 SOURCE: [URL]
@@ -109,7 +109,7 @@ CONFIDENCE: [1-100]
 DISPUTED: [Yes/No - conflicts with other sources?]
 ```
 
-**When sources contradict, I:**
+**When sources contradict:**
 1. Note the contradiction explicitly
 2. Check publication dates (prefer recent)
 3. Evaluate source authority
@@ -120,18 +120,18 @@ See [references/source-evaluation.md](references/source-evaluation.md) for detai
 
 ### Step 7: Refine Draft (Denoise)
 
-I refine by:
+Refine by:
 1. Replacing `[NEEDS VERIFICATION]` with sourced facts
 2. Adding inline citations with confidence: "According to [Source] (high confidence), ..."
 3. Qualifying or removing unsupported claims
 4. Addressing contradictions explicitly
 5. Adding counterarguments
 
-**Context management:** If accumulating too much research, I compress raw notes into key findings before continuing. I discard redundant/low-value information.
+**Context management:** If accumulating too much research, compress raw notes into key findings before continuing. Discard redundant/low-value information.
 
 ### Step 8: Evaluate Quality
 
-I score 1-10 on:
+Score 1-10 on:
 - **Comprehensiveness**: All key questions addressed?
 - **Accuracy**: Claims well-sourced with appropriate confidence?
 
