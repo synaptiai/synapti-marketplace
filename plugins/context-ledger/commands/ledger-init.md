@@ -8,7 +8,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, AskUserQuestion
 
 Create a new Context Ledger workspace for evidence-based product development.
 
-> **Context Isolation**: This command invokes the `ledger-initialization` skill which runs in a forked context. The initialization work is performed in isolation, keeping the main conversation clean.
+> **Context Isolation**: This command invokes the `initializing-ledger` skill which runs in a forked context. The initialization work is performed in isolation, keeping the main conversation clean.
 
 ## Arguments
 

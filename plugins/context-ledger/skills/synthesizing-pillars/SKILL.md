@@ -1,5 +1,5 @@
 ---
-name: pillar-synthesis
+name: synthesizing-pillars
 description: Use when evidence collection is complete for a pillar and need to extract actionable insights. Transforms raw evidence into structured synthesis with patterns and contradictions identified.
 context: fork
 agent: general-purpose

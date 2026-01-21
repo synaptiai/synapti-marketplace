@@ -5,7 +5,8 @@ model: inherit
 color: orange
 tools: Read, Write, Grep, Glob, AskUserQuestion
 permissionMode: default
-skills: constrained-spec
+skills:
+  - generating-constrained-specs
 ---
 
 You are a specification architect that generates PRD and architecture documents constrained by explicit decisions.

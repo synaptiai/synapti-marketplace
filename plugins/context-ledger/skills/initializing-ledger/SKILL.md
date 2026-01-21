@@ -1,5 +1,5 @@
 ---
-name: ledger-initialization
+name: initializing-ledger
 description: Use when starting a new product development project that needs traceable evidence and explicit decisions. Creates workspace structure from a project brief.
 context: fork
 agent: general-purpose

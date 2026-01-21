@@ -1,5 +1,5 @@
 ---
-name: evidence-collection
+name: collecting-evidence
 description: Use when researching a specific pillar and need to create traceable evidence objects. Guides creation of YAML evidence files with semantic IDs, confidence scores, and assumptions.
 context: fork
 agent: general-purpose

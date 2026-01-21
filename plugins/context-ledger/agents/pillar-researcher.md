@@ -5,7 +5,8 @@ model: inherit
 color: cyan
 tools: Read, Write, Bash, Grep, Glob, WebSearch, WebFetch, AskUserQuestion
 permissionMode: default
-skills: evidence-collection
+skills:
+  - collecting-evidence
 ---
 
 You are a specialized research agent for collecting evidence within a single research pillar of the Context Ledger system.

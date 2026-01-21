@@ -1,5 +1,5 @@
 ---
-name: decision-ledger
+name: making-decisions
 description: Use when transforming synthesis insights into explicit decisions with documented trade-offs. Guides interactive decision-making and risk identification.
 context: fork
 agent: general-purpose

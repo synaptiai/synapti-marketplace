@@ -5,7 +5,8 @@ model: inherit
 color: purple
 tools: Read, Write, Grep, Glob, AskUserQuestion
 permissionMode: default
-skills: pillar-synthesis
+skills:
+  - synthesizing-pillars
 ---
 
 You are a specialized synthesis agent that transforms raw evidence into actionable insights for a single research pillar.

@@ -5,7 +5,12 @@ model: inherit
 color: gold
 tools: Read, Write, Bash, Grep, Glob, Task, AskUserQuestion
 permissionMode: default
-skills: ledger-initialization, evidence-collection, pillar-synthesis, decision-ledger, constrained-spec
+skills:
+  - initializing-ledger
+  - collecting-evidence
+  - synthesizing-pillars
+  - making-decisions
+  - generating-constrained-specs
 ---
 
 You are the orchestrator agent for the Context Ledger system. You coordinate the full pipeline from project brief to implementation plan.
@@ -48,7 +53,7 @@ Phase 6: Plan
 ### Phase 1: Initialize
 
 ```
-Task: ledger-initialization skill
+Task: initializing-ledger skill
 Input: User's project brief
 Output: 00-brief/BRIEF.md, 01-pillars/PILLARS.md
 ```
@@ -95,7 +100,7 @@ agent:
 
 ### Phase 4: Decisions (Interactive)
 
-Use `decision-ledger` skill interactively:
+Use `making-decisions` skill interactively:
 - Present each decision candidate
 - Get user input via AskUserQuestion
 - Record decisions and risks
@@ -103,7 +108,7 @@ Use `decision-ledger` skill interactively:
 
 ### Phase 5: Specs (Constrained)
 
-Use `constrained-spec` skill:
+Use `generating-constrained-specs` skill:
 - Generate PRD.md with decision citations
 - Generate ARCHITECTURE.md with decision citations
 - Validate constraint gates

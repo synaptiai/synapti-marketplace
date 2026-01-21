@@ -1,5 +1,5 @@
 ---
-name: constrained-spec
+name: generating-constrained-specs
 description: Use when generating PRD and architecture documents that must trace back to explicit decisions. Enforces citation requirements so no spec content exists without DEC-* references.
 context: fork
 agent: general-purpose

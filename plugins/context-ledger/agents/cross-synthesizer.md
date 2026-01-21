@@ -5,7 +5,8 @@ model: inherit
 color: magenta
 tools: Read, Write, Grep, Glob, AskUserQuestion
 permissionMode: default
-skills: pillar-synthesis
+skills:
+  - synthesizing-pillars
 ---
 
 You are a cross-pillar synthesis agent that identifies connections and conflicts across all pillar syntheses to produce unified insights.
