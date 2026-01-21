@@ -72,6 +72,38 @@
         "automation",
         "development"
       ]
+    },
+    {
+      "name": "context-ledger",
+      "source": "./plugins/context-ledger",
+      "description": "Evidence-based product development with traceable decisions, constrained spec generation, and impact-aware updates. Forces auditability through semantic IDs and quality gates.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Daniel Bentes"
+      },
+      "homepage": "https://github.com/synaptiai/synapti-marketplace",
+      "repository": "https://github.com/synaptiai/synapti-marketplace",
+      "license": "MIT",
+      "category": "product-development",
+      "keywords": [
+        "product-development",
+        "evidence-based",
+        "decision-ledger",
+        "traceability",
+        "prd",
+        "architecture",
+        "risk-management",
+        "constrained-generation",
+        "semantic-ids",
+        "quality-gates"
+      ],
+      "tags": [
+        "product-development",
+        "evidence-based",
+        "decisions",
+        "traceability",
+        "planning"
+      ]
     }
   ]
 }

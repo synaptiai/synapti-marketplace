@@ -1,0 +1,22 @@
+{
+  "name": "context-ledger",
+  "version": "1.0.0",
+  "description": "Structured product development methodology with traceable evidence, explicit decisions, and constrained spec generation. Forces auditability through semantic IDs, quality gates, and impact-aware updates.",
+  "author": {
+    "name": "Daniel Bentes"
+  },
+  "repository": "https://github.com/synaptiai/synapti-marketplace",
+  "license": "MIT",
+  "keywords": [
+    "product-development",
+    "evidence-based",
+    "decision-ledger",
+    "traceability",
+    "prd",
+    "architecture",
+    "risk-management",
+    "constrained-generation",
+    "semantic-ids",
+    "quality-gates"
+  ]
+}
