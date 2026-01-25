@@ -4,3 +4,4 @@ docs/plans/
 
 # Generated Desktop skill packages (attached to releases, not committed)
 dist/
+.claude/audit.log
