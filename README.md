@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Plugin-orange.svg)](https://claude.com/claude-code)
-[![Plugins](https://img.shields.io/badge/Plugins-3-green.svg)](#available-plugins)
+[![Plugins](https://img.shields.io/badge/Plugins-4-green.svg)](#available-plugins)
 
 ## About the Marketplace
 
@@ -23,6 +23,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 
 | Plugin | Category | Description | Version |
 |--------|----------|-------------|---------|
+| [Agent Capability Standard](./plugins/agent-capability-standard/) | Standards, Agent Development | Technical specification for AI agents with structural reliability. 99 atomic capabilities across 8 layers with reference workflows and safety-by-construction patterns. | 1.0.0 |
 | [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.3.1 |
 | [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.0.2 |
@@ -31,6 +32,9 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 
 | I want to... | Use |
 |--------------|-----|
+| Design agents with formal capability contracts | [Agent Capability Standard](#featured-agent-capability-standard) |
+| Validate agent workflows for completeness | [Agent Capability Standard](#featured-agent-capability-standard) |
+| Ensure safety-by-construction patterns in agents | [Agent Capability Standard](#featured-agent-capability-standard) |
 | Build a product with evidence-backed decisions | [Context Ledger](#featured-context-ledger) `/ledger-full` |
 | Research all aspects of a product idea in parallel | [Context Ledger](#featured-context-ledger) `/ledger-research` |
 | Make explicit decisions with documented trade-offs | [Context Ledger](#featured-context-ledger) `/ledger-decide` |
@@ -276,6 +280,71 @@ claude plugin install gh-workflow
 
 ---
 
+## Featured: Agent Capability Standard
+
+**Agent Capability Standard** is a technical specification for building AI agents with structural reliability. It implements "Grounded Agency" — a framework ensuring agents operate with evidence-backed claims rather than hallucinations.
+
+> **External Repository**: This plugin is maintained at [synaptiai/agent-capability-standard](https://github.com/synaptiai/agent-capability-standard) and included as a git submodule.
+
+### Why Agent Capability Standard?
+
+Most AI agents today operate with:
+- **Hallucinated capabilities** — claiming skills they can't verify
+- **Opaque decision-making** — no audit trail for actions taken
+- **Brittle error handling** — mutations without rollback options
+- **Implicit contracts** — undefined inputs/outputs between components
+
+### Key Insight
+
+> If an agent can't prove it has a capability, it shouldn't claim to have it. Agent Capability Standard enforces grounded capabilities with explicit contracts and audit trails.
+
+### What Makes It Different
+
+| Feature | Benefit |
+|---------|---------|
+| **99 Atomic Capabilities** | Minimal, composable building blocks across 8 functional layers |
+| **Typed Contracts** | Explicit input/output schemas between capabilities |
+| **Safety-by-Construction** | Mutations require checkpoints; rollback always possible |
+| **Audit Trails** | Complete action lineage and provenance for every operation |
+| **Reference Workflows** | Battle-tested patterns for common agent tasks |
+
+### The 8 Capability Layers
+
+| Layer | Count | Purpose |
+|-------|-------|---------|
+| Perception | 4 | Inspection, searching, retrieval, reception |
+| Modeling | 45 | Detection, identification, estimation, forecasting |
+| Reasoning | 20 | Comparison, planning, decision-making, critique |
+| Action | 12 | Plan execution, generation, transformation |
+| Safety | 7 | Verification, checkpointing, rollback, auditing |
+| Meta | 6 | Discovery, prioritization |
+| Memory | 2 | Persistence, recall |
+| Coordination | 3 | Delegation, synchronization |
+
+### Reference Workflows
+
+| Workflow | Purpose |
+|----------|---------|
+| `debug_code_change` | Systematic debugging with evidence collection |
+| `world_model_build` | Construct grounded world models |
+| `capability_gap_analysis` | Identify missing capabilities |
+| `digital_twin_bootstrap` | Initialize agent mirrors |
+| `digital_twin_sync_loop` | Maintain synchronized state |
+
+### Installation
+
+```bash
+# Add the marketplace (one-time setup)
+claude plugin marketplace add synaptiai/synapti-marketplace
+
+# Install the plugin
+claude plugin install agent-capability-standard
+```
+
+**[Full Agent Capability Standard Documentation →](https://github.com/synaptiai/agent-capability-standard)**
+
+---
+
 ## Repository Structure
 
 ```
@@ -284,6 +353,13 @@ synapti-marketplace/
 ├── .claude-plugin/
 │   └── marketplace.json               # Marketplace configuration
 └── plugins/
+    ├── agent-capability-standard/     # AI agent standards (submodule)
+    │   ├── .claude-plugin/
+    │   │   └── plugin.json            # Plugin metadata
+    │   ├── README.md                  # Full specification
+    │   ├── spec/                      # YAML specifications
+    │   └── tools/                     # Validation scripts
+    │
     ├── context-ledger/                # Evidence-based product development
     │   ├── .claude-plugin/
     │   │   └── plugin.json            # Plugin metadata
