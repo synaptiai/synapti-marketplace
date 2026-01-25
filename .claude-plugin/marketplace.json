@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Synapti plugin marketplace",
-    "version": "2.4.0"
+    "version": "2.5.0"
   },
   "plugins": [
     {
@@ -103,6 +103,37 @@
         "decisions",
         "traceability",
         "planning"
+      ]
+    },
+    {
+      "name": "agent-capability-standard",
+      "source": "./plugins/agent-capability-standard",
+      "description": "Grounded Agency: 99 atomic capabilities with typed contracts, safety-by-construction, and grounded reasoning for reliable AI agents",
+      "version": "1.0.2",
+      "author": {
+        "name": "Daniel Bentes"
+      },
+      "homepage": "https://github.com/synaptiai/agent-capability-standard",
+      "repository": "https://github.com/synaptiai/agent-capability-standard",
+      "license": "Apache-2.0",
+      "category": "agent-framework",
+      "keywords": [
+        "ai-agents",
+        "capability-ontology",
+        "grounded-agency",
+        "workflow-dsl",
+        "safety",
+        "checkpoints",
+        "provenance",
+        "trust-model",
+        "world-modeling"
+      ],
+      "tags": [
+        "agents",
+        "safety",
+        "workflows",
+        "validation",
+        "grounded-agency"
       ]
     }
   ]

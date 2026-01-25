@@ -1,0 +1,3 @@
+[submodule "plugins/agent-capability-standard"]
+	path = plugins/agent-capability-standard
+	url = https://github.com/synaptiai/agent-capability-standard.git
