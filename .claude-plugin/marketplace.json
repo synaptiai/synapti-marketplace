@@ -109,7 +109,7 @@
       "name": "agent-capability-standard",
       "source": "./plugins/agent-capability-standard",
       "description": "Grounded Agency: 99 atomic capabilities with typed contracts, safety-by-construction, and grounded reasoning for reliable AI agents",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "author": {
         "name": "Daniel Bentes"
       },
