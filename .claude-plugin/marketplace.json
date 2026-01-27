@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Synapti plugin marketplace",
-    "version": "2.5.2"
+    "version": "2.6.0"
   },
   "plugins": [
     {
@@ -108,8 +108,8 @@
     {
       "name": "agent-capability-standard",
       "source": "./plugins/agent-capability-standard",
-      "description": "Grounded Agency: 99 atomic capabilities with typed contracts, safety-by-construction, and grounded reasoning for reliable AI agents",
-      "version": "1.0.4",
+      "description": "Grounded Agency: 36 atomic capabilities with typed contracts, safety-by-construction, and grounded reasoning for reliable AI agents",
+      "version": "1.1.1",
       "author": {
         "name": "Daniel Bentes"
       },
