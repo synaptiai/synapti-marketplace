@@ -1,5 +1,5 @@
 ---
-description: Create a release with automatic changelog generation
+description: Use when ready to release to create a git tag, generate changelog from merged PRs, and create GitHub release
 argument-hint: [patch|minor|major]
 allowed-tools: Bash, AskUserQuestion
 ---

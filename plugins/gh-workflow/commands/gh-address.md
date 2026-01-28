@@ -1,5 +1,5 @@
 ---
-description: Address review comments on a pull request
+description: Use after receiving PR review feedback to systematically address comments, verify fixes, and re-request review
 argument-hint: <pr-number>
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, TaskCreate, TaskList, TaskUpdate
 ---
@@ -322,11 +322,26 @@ git commit -m "updates"
 
 ## Request Re-Review (Optional)
 
-After addressing all feedback, optionally request re-review:
+After addressing all feedback, optionally request re-review.
 
-**Use the AskUserQuestion tool** to confirm:
-- **Option 1**: "Request re-review from original reviewers" (Recommended)
-- **Option 2**: "Just push changes, don't request re-review"
+### Reviewer Suggestion
+
+Use the **suggest-users skill** to suggest reviewers for re-review:
+
+**Scoring adjustments for re-review**:
+- Previous reviewer on this PR: +30 points
+- Comment count on this PR: +5 per comment
+- Original requester: +20 points
+
+```bash
+# Get previous reviewers
+gh pr view $ARGUMENTS --json reviews --jq '.reviews[].author.login' | sort | uniq
+```
+
+**Use the AskUserQuestion tool** with ranked suggestions:
+- **Option 1**: "@{original_reviewer}" (Recommended) - Previous reviewer
+- **Option 2**: "@{other_reviewer}" - Additional reviewer
+- **Option 3**: "Just push changes, don't request re-review"
 
 ```bash
 gh pr edit $ARGUMENTS --add-reviewer {reviewer-username}

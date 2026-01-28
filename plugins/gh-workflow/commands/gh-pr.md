@@ -1,5 +1,5 @@
 ---
-description: Create a pull request with full review, quality gates, and reviewer suggestions
+description: Use when ready to create a PR to run full code review, convention checks, and get reviewer suggestions before PR creation
 argument-hint: [title]
 allowed-tools: Bash, Read, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Skill
 ---

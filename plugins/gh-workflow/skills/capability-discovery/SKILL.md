@@ -1,7 +1,9 @@
 ---
 name: capability-discovery
 description: Use before workflow execution to discover available agents, skills, and quality commands in the project environment. Use when adapting gh-workflow commands to project-specific tooling.
-version: 1.0.0
+allowed-tools: Bash, Read, Glob, Grep
+context: fork
+agent: Explore
 ---
 
 # Capability Discovery

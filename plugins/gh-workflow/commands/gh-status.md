@@ -1,6 +1,8 @@
 ---
-description: Show workflow status overview - assigned issues, open PRs, review requests
+description: Use to get a quick overview of assigned issues, open PRs, and pending review requests
 allowed-tools: Bash
+context: fork
+agent: Explore
 ---
 
 # Workflow Status

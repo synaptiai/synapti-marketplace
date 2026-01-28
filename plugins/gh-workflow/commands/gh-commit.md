@@ -1,5 +1,5 @@
 ---
-description: Context-aware commits with change classification and multi-commit support
+description: Use after making changes to commit with context-aware classification that flags out-of-context modifications before committing
 argument-hint: [message]
 allowed-tools: Bash, Read, AskUserQuestion, TaskList, TaskGet
 ---

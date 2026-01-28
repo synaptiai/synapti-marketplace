@@ -1,5 +1,5 @@
 ---
-description: Review a pull request with checklist and approval workflow
+description: Use when assigned as reviewer or proactively reviewing PRs to perform multi-faceted code review with prioritized findings
 argument-hint: <pr-number>
 allowed-tools: Bash, Read, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Skill
 ---

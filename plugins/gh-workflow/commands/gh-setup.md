@@ -1,5 +1,5 @@
 ---
-description: Analyze repository and generate workflow configuration
+description: Use when first setting up gh-workflow in a repository to analyze tech stack, detect conventions, and generate customized workflow configuration
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 

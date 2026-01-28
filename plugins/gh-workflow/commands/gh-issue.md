@@ -1,5 +1,6 @@
 ---
-description: Create a new GitHub issue with solution-agnostic principles
+description: Use when needing to create a new GitHub issue to gather requirements, check for duplicates, and create solution-agnostic issues
+argument-hint: [description]
 allowed-tools: Bash, Read, AskUserQuestion
 ---
 

@@ -1,5 +1,5 @@
 ---
-description: Start work on a GitHub issue - branch, implement, and prepare for PR
+description: Use to start work on a GitHub issue - assigns issue, creates branch, guides implementation with task tracking, and prepares for PR
 argument-hint: <issue-number>
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Skill
 ---

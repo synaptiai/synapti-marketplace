@@ -1,7 +1,9 @@
 ---
 name: suggest-users
-description: Use when needing to suggest reviewers for PRs, assignees for issues, or collaborators based on GitHub data. Ranks users by CODEOWNERS, recent activity, file expertise, and workload.
-version: 1.0.0
+description: Use when creating PRs to suggest reviewers, when creating issues to suggest assignees, or when re-requesting review after addressing comments. Ranks users by CODEOWNERS match, file expertise, recent activity, and workload balancing.
+allowed-tools: Bash, Read
+context: fork
+agent: Explore
 ---
 
 # Suggest Users

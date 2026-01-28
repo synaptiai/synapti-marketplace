@@ -1,5 +1,5 @@
 ---
-description: Merge an approved pull request with safe defaults
+description: Use after PR is approved to merge with safe defaults, verification checks, and optional branch cleanup
 argument-hint: <pr-number>
 allowed-tools: Bash, AskUserQuestion
 ---
