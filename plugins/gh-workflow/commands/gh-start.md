@@ -17,19 +17,37 @@ Complete workflow from issue to PR creation.
    gh issue view $ARGUMENTS
    ```
 
-2. **Assign the issue to yourself**:
+2. **Fetch all issue comments for full context**:
+   ```bash
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+   gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '.[] | "---\n**@\(.user.login)** on \(.created_at):\n\(.body)\n"'
+   ```
+
+3. **Fetch issue timeline for related context**:
+   ```bash
+   gh api repos/$REPO/issues/$ARGUMENTS/timeline --jq '.[] | select(.event == "cross-referenced" or .event == "referenced") | "\(.event): \(.source.issue.title // .commit_id)"'
+   ```
+
+4. **Check for linked issues/PRs**:
+   ```bash
+   gh api repos/$REPO/issues/$ARGUMENTS --jq '.body' | grep -oE '#[0-9]+'
+   ```
+
+5. **Review all comments and linked issues** before confirming setup with user
+
+6. **Assign the issue to yourself**:
    ```bash
    gh issue edit $ARGUMENTS --add-assignee @me
    ```
 
-3. **Detect default branch and ensure on latest**:
+7. **Detect default branch and ensure on latest**:
    ```bash
    # Get default branch dynamically
    DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
    git checkout $DEFAULT_BRANCH && git pull origin $DEFAULT_BRANCH
    ```
 
-4. **Determine branch type** - If ambiguous, **use the AskUserQuestion tool**:
+8. **Determine branch type** - If ambiguous, **use the AskUserQuestion tool**:
 
    When issue type is unclear (could be feature or fix), ask:
    - **Option 1**: "feature/issue-{number}-{desc}" - New functionality
@@ -40,7 +58,7 @@ Complete workflow from issue to PR creation.
    git checkout -b {branch-name}
    ```
 
-5. **Confirm setup** with user before beginning implementation
+9. **Confirm setup** with user before beginning implementation
 
 ## Phase 2: Implementation
 

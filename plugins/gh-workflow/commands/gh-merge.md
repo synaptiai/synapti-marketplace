@@ -17,21 +17,42 @@ Merge an approved pull request with standardized settings.
    gh pr view $ARGUMENTS --json number,title,state,isDraft,headRefName,baseRefName,mergeable,reviewDecision,statusCheckRollup
    ```
 
-2. **Verify prerequisites**:
+2. **Check for unresolved conversations**:
+   ```bash
+   # Get owner/repo dynamically
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+   # Get review threads with pending status
+   gh api repos/$REPO/pulls/$ARGUMENTS/comments --jq '[.[] | select(.in_reply_to_id == null)] | length'
+   ```
+
+   **If unresolved threads exist**, warn user before proceeding.
+
+3. **Check for stale approval** (commits since last approval):
+   ```bash
+   # Check if PR was updated after last approval
+   gh pr view $ARGUMENTS --json reviews,commits --jq '{last_approval: [.reviews[] | select(.state == "APPROVED")] | last | .submittedAt, last_commit: .commits | last | .committedDate}'
+   ```
+
+   **If PR was updated since approval**, warn: "PR #X has been updated since last approval - may need re-review"
+
+4. **Verify prerequisites**:
    - PR state must be `OPEN`
    - PR must NOT be a draft (`isDraft: false`)
    - PR must be `MERGEABLE`
    - Review decision must be `APPROVED` (or no reviews required)
    - All status checks must pass
+   - All conversation threads resolved (or acknowledged)
 
-3. **If prerequisites not met**: Stop and report what's blocking the merge:
+5. **If prerequisites not met**: Stop and report what's blocking the merge:
    - Draft PR → "PR is a draft. Mark as ready for review first."
    - Not approved → "PR requires approval before merging"
    - Checks failing → "CI checks are failing: [list failed checks]"
    - Merge conflicts → "PR has merge conflicts that need to be resolved"
    - Already merged/closed → "PR is already [merged/closed]"
+   - Unresolved threads → "PR #X has N unresolved conversation threads"
+   - Stale approval → "PR #X has been updated since last approval - may need re-review"
 
-4. **Get merge approval using the AskUserQuestion tool**:
+6. **Get merge approval using the AskUserQuestion tool**:
 
    First, display the merge preview:
    ```
@@ -52,17 +73,17 @@ Merge an approved pull request with standardized settings.
 
    **Do not execute merge without explicit approval via the AskUserQuestion tool.**
 
-5. **Execute merge** (based on user choice):
+7. **Execute merge** (based on user choice):
    ```bash
    gh pr merge $ARGUMENTS --squash --delete-branch
    ```
 
-6. **Post-merge actions**:
+8. **Post-merge actions**:
    - Confirm successful merge
    - Report that branch was deleted
    - Suggest updating local branches if on the merged branch
 
-7. **Update local branches** (if user was on the merged branch):
+9. **Update local branches** (if user was on the merged branch):
    ```bash
    # Get default branch dynamically
    DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
@@ -80,6 +101,8 @@ Merge an approved pull request with standardized settings.
 | Mergeable | `MERGEABLE` | "PR #X has merge conflicts" |
 | Review | `APPROVED` or no reviews | "PR #X requires approval" |
 | Checks | All passing | "PR #X has failing checks: {list}" |
+| Threads | All resolved (or acknowledged) | "PR #X has N unresolved conversation threads" |
+| Stale approval | Not updated since approval | "PR #X has been updated since last approval - may need re-review" |
 
 ## Merge Settings
 

@@ -103,6 +103,7 @@ Irreversible actions (force push, branch deletion, release creation) require exp
 | `/gh-workflow:gh-address <N>` | Address review comments on PR #N |
 | `/gh-workflow:gh-merge <N>` | Merge approved PR #N |
 | `/gh-workflow:gh-release [type]` | Create a release (patch/minor/major) |
+| `/gh-workflow:gh-status` | Show workflow status overview (assigned issues, open PRs, review requests) |
 | `/gh-workflow:gh-setup` | Analyze repo and generate workflow configuration |
 
 ### Command Benefits
@@ -153,6 +154,14 @@ Irreversible actions (force push, branch deletion, release creation) require exp
 3. **Tag creation** — Creates git tag and GitHub release in one step
 4. **Version consistency** — Updates version numbers in project files if detected
 
+#### `/gh-status` — Workflow Overview
+
+**What's Good About /gh-status:**
+1. **Quick overview** — See all your assigned issues, open PRs, and review requests in one view
+2. **Attention flags** — Highlights PRs with unaddressed feedback or failing checks
+3. **No context switching** — Get status without leaving your terminal
+4. **Read-only** — Safe to run anytime, doesn't modify anything
+
 #### `/gh-setup` — Configure Workflow
 
 **What's Good About /gh-setup:**
@@ -182,6 +191,10 @@ Commands work without setup by auto-detecting your repository's settings:
 ## Workflow Overview
 
 ```
+┌─────────────────┐
+│  /gh-status     │ View assigned issues, PRs, review requests
+└────────┬────────┘
+         ▼
 ┌─────────────────┐
 │  /gh-issue      │ Create issue with context, objectives, criteria
 └────────┬────────┘
@@ -282,6 +295,12 @@ The `/gh-setup` command detects your project's tech stack and generates appropri
 | Ruby | `Gemfile`, `.rubocop.yml` | `rubocop`, `rspec` |
 
 ## Examples
+
+### Check Workflow Status
+
+```
+/gh-workflow:gh-status
+```
 
 ### Create an Issue
 

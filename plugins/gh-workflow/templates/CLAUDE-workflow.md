@@ -34,6 +34,7 @@ This project uses the gh-workflow plugin. Available commands:
 
 | Command | Purpose |
 |---------|---------|
+| `/gh-workflow:gh-status` | View workflow status (issues, PRs, reviews) |
 | `/gh-workflow:gh-issue` | Create a new GitHub issue |
 | `/gh-workflow:gh-start <issue>` | Start work on an issue |
 | `/gh-workflow:gh-review <pr>` | Review a pull request |

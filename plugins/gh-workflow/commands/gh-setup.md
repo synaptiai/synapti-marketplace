@@ -156,6 +156,7 @@ This project uses the gh-workflow plugin. Available commands:
 
 | Command | Purpose |
 |---------|---------|
+| `/gh-workflow:gh-status` | View workflow status (issues, PRs, reviews) |
 | `/gh-workflow:gh-issue` | Create a new GitHub issue |
 | `/gh-workflow:gh-start <issue>` | Start work on an issue |
 | `/gh-workflow:gh-review <pr>` | Review a pull request |
@@ -305,10 +306,12 @@ If user chooses option 2 or 3, create `.claude/commands/` with customized versio
 
 ### Next Steps
 1. Review the CLAUDE.md workflow section
-2. Try `/gh-workflow:gh-issue` to create your first issue
-3. Customize `.claude/CLAUDE.md` as needed for your project
+2. Try `/gh-workflow:gh-status` to view your current workflow state
+3. Try `/gh-workflow:gh-issue` to create your first issue
+4. Customize `.claude/CLAUDE.md` as needed for your project
 
 ### Available Commands
+- `/gh-workflow:gh-status` - View workflow status
 - `/gh-workflow:gh-issue` - Create issues
 - `/gh-workflow:gh-start <N>` - Start work on issue N
 - `/gh-workflow:gh-review <N>` - Review PR N

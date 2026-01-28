@@ -43,6 +43,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Quickly triage content before deeper analysis | [Decipon](#featured-decipon) `/decipon:score` |
 | Research a complex topic with verified sources | [Decipon](#featured-decipon) `/decipon:deep-research` |
 | Fact-check claims in content | [Decipon](#featured-decipon) `/decipon:verify` |
+| Check my workflow status (issues, PRs, reviews) | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-status` |
 | Create well-structured GitHub issues | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-issue` |
 | Start implementing a GitHub issue | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-start` |
 | Review a pull request systematically | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-review` |
@@ -248,6 +249,7 @@ Traditional approaches to GitHub automation often break when:
 
 | Command | What It Does |
 |---------|-------------|
+| `/gh-workflow:gh-status` | View workflow status (assigned issues, open PRs, review requests) |
 | `/gh-workflow:gh-issue` | Create issues that focus on requirements, not implementation |
 | `/gh-workflow:gh-start <N>` | Assign issue, create branch, implement, and create PR |
 | `/gh-workflow:gh-review <N>` | Systematic PR review with checklist and feedback |
@@ -269,11 +271,11 @@ claude plugin install gh-workflow
 ### The Complete Development Cycle
 
 ```
-/gh-issue → /gh-start → /gh-review → /gh-address → /gh-merge → /gh-release
-   │            │            │            │            │            │
-   ▼            ▼            ▼            ▼            ▼            ▼
- Create      Branch +     Review      Address      Merge       Tag +
- issue      implement      PR       comments       PR       changelog
+/gh-status → /gh-issue → /gh-start → /gh-review → /gh-address → /gh-merge → /gh-release
+     │            │            │            │            │            │            │
+     ▼            ▼            ▼            ▼            ▼            ▼            ▼
+  View        Create      Branch +     Review      Address      Merge       Tag +
+  status      issue      implement      PR       comments       PR       changelog
 ```
 
 **[Full gh-workflow Documentation →](./plugins/gh-workflow/README.md)**
@@ -381,7 +383,8 @@ synapti-marketplace/
         ├── .claude-plugin/
         │   └── plugin.json            # Plugin metadata
         ├── README.md                  # Full plugin documentation
-        ├── commands/                  # 7 workflow commands
+        ├── commands/                  # 8 workflow commands
+        │   ├── gh-status.md           # View workflow status
         │   ├── gh-issue.md            # Create issues
         │   ├── gh-start.md            # Start work on issue
         │   ├── gh-review.md           # Review PRs

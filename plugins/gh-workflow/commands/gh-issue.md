@@ -19,6 +19,16 @@ Create a new GitHub issue following solution-agnostic principles.
 
 2. **Extract keywords** from the user's description for duplicate detection
 
+3. **Check for milestones**:
+   ```bash
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+   gh api repos/$REPO/milestones --jq '.[] | "\(.number): \(.title)"'
+   ```
+
+   **If milestones exist, use AskUserQuestion tool**:
+   - **Option 1**: "No milestone"
+   - **Option 2**: "[Milestone name]" (for each active milestone)
+
 ## Phase 2: Search for Existing Issues
 
 Before creating a new issue, check for potential duplicates:
@@ -42,7 +52,12 @@ Before creating a new issue, check for potential duplicates:
 
    Include in the question: issue numbers, titles, and states of potential duplicates.
 
-4. **If no matches found**: Inform user and proceed to validation
+4. **If related issues found but not duplicates, use AskUserQuestion tool**:
+   - **Option 1**: "Create new issue, link as 'Related to #X'"
+   - **Option 2**: "Create new issue without linking"
+   - **Option 3**: "View related issue first"
+
+5. **If no matches found**: Inform user and proceed to validation
 
 ## Phase 3: Validate Solution-Agnostic Principles
 
@@ -116,8 +131,10 @@ If user chooses option 2 or 3, gather their changes and show updated preview, th
 After user approves (option 1):
 
 ```bash
-gh issue create --title "TITLE" --body "BODY" --label "label1" --label "label2"
+gh issue create --title "TITLE" --body "BODY" --label "label1" --label "label2" --milestone "milestone-title"
 ```
+
+Note: Omit `--milestone` if no milestone was selected.
 
 ## Phase 7: Verification
 
@@ -186,6 +203,10 @@ Why? Implementation details belong in the PR, not issues. Issues should survive 
 <!-- How do we know this is complete? Describe observable behavior, not file changes. -->
 - [ ] [Criterion 1]
 - [ ] [Criterion 2]
+
+## Related Issues
+<!-- Automatically added if user selected to link related issues -->
+- Related to #{X}
 
 ## Related
 <!-- Links to related issues, PRs, or discussions -->

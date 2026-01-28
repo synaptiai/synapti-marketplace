@@ -43,7 +43,40 @@ If no argument provided, analyze commits to suggest the appropriate bump type.
    - **Option 2**: "minor (X.Y.Z → X.Y+1.0)" - New features (Recommended if feat: commits)
    - **Option 3**: "major (X.Y.Z → X+1.0.0)" - Breaking changes
 
-## Phase 2: Version Calculation
+## Phase 2: Auto-Generate Release Notes
+
+1. **Get all PRs merged since last release**:
+   ```bash
+   gh pr list --state merged --base $DEFAULT_BRANCH --search "merged:>$(git log -1 --format=%aI $(git describe --tags --abbrev=0 2>/dev/null || echo 'HEAD~50'))" --json number,title,labels,author
+   ```
+
+2. **Categorize by type** (from PR title prefix or labels):
+   - `feat:` or `enhancement` label → New Features
+   - `fix:` or `bug` label → Bug Fixes
+   - `docs:` or `documentation` label → Documentation
+   - `refactor:` → Refactoring
+   - Other → Other Changes
+
+3. **Generate release notes draft**:
+   ```markdown
+   ## What's Changed
+
+   ### New Features
+   - {PR title} (#PR) @{author}
+
+   ### Bug Fixes
+   - {PR title} (#PR) @{author}
+
+   ### Documentation
+   - {PR title} (#PR) @{author}
+
+   ### Other Changes
+   - {PR title} (#PR) @{author}
+   ```
+
+4. **Use AskUserQuestion tool** to review/edit generated notes before release
+
+## Phase 3: Version Calculation
 
 1. **Get current version** from latest tag:
    ```bash
@@ -54,7 +87,7 @@ If no argument provided, analyze commits to suggest the appropriate bump type.
    - Parse CURRENT_VERSION into MAJOR.MINOR.PATCH
    - Apply bump: patch → PATCH+1, minor → MINOR+1 (PATCH=0), major → MAJOR+1 (MINOR=0, PATCH=0)
 
-## Phase 3: Impact Assessment & Approval
+## Phase 4: Impact Assessment & Approval
 
 Before making any changes, present a complete impact assessment, then **use the AskUserQuestion tool** to get explicit approval:
 
@@ -81,7 +114,7 @@ Then **invoke the AskUserQuestion tool** with these options:
 
 **Do not proceed without explicit approval via the AskUserQuestion tool.**
 
-## Phase 4: Create Tag & Release
+## Phase 5: Create Tag & Release
 
 1. **Create git tag**:
    ```bash
@@ -124,7 +157,7 @@ Then **invoke the AskUserQuestion tool** with these options:
 **Full Changelog**: https://github.com/{owner}/{repo}/compare/vPREVIOUS...vX.Y.Z
 ```
 
-## Phase 5: Verification
+## Phase 6: Verification
 
 After release creation, verify everything completed successfully:
 
