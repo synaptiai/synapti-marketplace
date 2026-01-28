@@ -92,6 +92,10 @@ Irreversible actions (force push, branch deletion, release creation) require exp
 - **Customizable**: `/gh-setup` generates project-specific configurations
 - **Quality Checks**: Detects tech stack and runs appropriate lint/test commands
 - **Safety Hooks**: Prevents irreversible actions without explicit user approval
+- **Task-Based Tracking**: Uses TaskCreate/TaskUpdate for implementation and review progress
+- **Multi-Faceted Review**: Structured review with P1/P2/P3 prioritization
+- **Capability Discovery**: Dynamically discovers available agents, skills, and quality commands
+- **Self-Review Gates**: Mandatory code and test review before PR creation
 
 ## Commands
 
@@ -123,6 +127,10 @@ Irreversible actions (force push, branch deletion, release creation) require exp
 2. **Branch naming conventions** — Enforces consistent naming (feature/issue-N, fix/issue-N, docs/issue-N)
 3. **PR auto-linking** — Automatically links PR to issue with `fixes #N` for auto-close on merge
 4. **Preview before creation** — Shows PR preview and requires explicit approval before creating
+5. **Task-based implementation** — Creates tasks from acceptance criteria and tracks progress
+6. **Capability discovery** — Discovers available agents and skills before implementation
+7. **Self-review gates** — Mandatory code review, test review, and pre-PR gate before creating PR
+8. **Parallel execution** — Maximizes efficiency with parallel API calls and file reads
 
 #### `/gh-review` — Review PRs
 
@@ -131,6 +139,10 @@ Irreversible actions (force push, branch deletion, release creation) require exp
 2. **Structured checklist** — Systematic review categories prevent overlooking important aspects
 3. **Interactive feedback** — Guides through approval, request changes, or comment-only decisions
 4. **Quality gates** — Detects tech stack and suggests appropriate lint/test commands to run
+5. **Multi-faceted review** — Creates tasks for each review facet (code quality, conventions, security, tests, requirements)
+6. **Prioritized findings** — Categorizes issues as P1 (critical), P2 (important), P3 (suggestions)
+7. **Finding synthesis** — Consolidates all findings into a structured summary with decision logic
+8. **Parallel execution** — Reads multiple files and creates tasks in parallel for efficiency
 
 #### `/gh-address` — Address Comments
 
@@ -138,6 +150,9 @@ Irreversible actions (force push, branch deletion, release creation) require exp
 1. **Comment aggregation** — Pulls all review comments into a single actionable list
 2. **Systematic resolution** — Track which comments have been addressed
 3. **Conversation continuity** — Maintains context of the review discussion
+4. **Task-based tracking** — Creates tasks for each feedback item and tracks resolution
+5. **Post-address review gate** — Re-runs code review and quality checks after fixes
+6. **Quality verification** — Ensures fixes don't introduce new issues before pushing
 
 #### `/gh-merge` — Merge PRs
 
@@ -178,7 +193,7 @@ Irreversible actions (force push, branch deletion, release creation) require exp
 /gh-workflow:gh-setup
 ```
 
-This analyzes your repository and generates a customized workflow configuration in your `.claude/CLAUDE.md`.
+This analyzes your repository and generates a customized workflow configuration in your `.claude/CLAUDE.md` or `CLAUDE.md` file.
 
 ### 2. Or Use Directly
 
@@ -268,6 +283,42 @@ The `templates/` directory contains:
 - Git repository with GitHub remote
 - Claude Code with plugin support
 
+## Agents
+
+The plugin includes specialized agents for different aspects of the workflow:
+
+### code-reviewer
+
+Generic code quality reviewer that analyzes:
+- Logic correctness and edge cases
+- Security patterns and vulnerabilities
+- Error handling assessment
+- Code quality and best practices
+
+### convention-checker
+
+Validates Git conventions including:
+- Commit message format (conventional commits)
+- Branch naming patterns
+- PR format compliance
+- Issue linkage verification
+
+### test-runner
+
+Discovers and executes project-specific quality commands:
+- Tech stack detection (Python, Node, Go, Rust)
+- Command discovery from CLAUDE.md
+- Lint, test, and type-check execution
+- Result reporting with failure details
+
+### implementation-planner
+
+Analyzes issues and creates task breakdowns:
+- Parses acceptance criteria from issues
+- Creates tasks using TaskCreate
+- Identifies dependencies between tasks
+- Tracks implementation progress
+
 ## Skills
 
 ### repo-config
@@ -276,6 +327,14 @@ Provides dynamic repository configuration detection. Used internally by all comm
 - Detect default branch
 - Get repository info for API calls
 - Fetch available labels
+
+### capability-discovery
+
+Discovers available capabilities in the user's environment:
+- Scans for custom agents and skills
+- Parses CLAUDE.md for quality commands
+- Detects tech stack
+- Enables dynamic workflow adaptation
 
 ## Hooks
 

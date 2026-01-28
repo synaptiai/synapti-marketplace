@@ -1,16 +1,25 @@
 ---
 description: Address review comments on a pull request
 argument-hint: <pr-number>
-allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, TaskCreate, TaskList, TaskUpdate
 ---
+
+<!--
+PARALLEL EXECUTION RULE:
+When performing multiple independent operations (reads, API calls, TaskCreate),
+invoke ALL relevant tools simultaneously in a single message rather than sequentially.
+Err on the side of maximizing parallel tool calls.
+-->
 
 # Address PR #$ARGUMENTS Comments
 
-Systematically address review feedback on a pull request.
+Systematically address review feedback on a pull request with task tracking and quality verification.
 
-**Tool Usage**: This workflow uses the **AskUserQuestion tool** to clarify ambiguous feedback, confirm proposed fixes, and get approval before pushing changes.
+**Tool Usage**: This workflow uses the **AskUserQuestion tool** to clarify ambiguous feedback, and **TaskCreate/TaskUpdate** tools to track feedback resolution.
 
-## Process
+## Phase 1: Gather Feedback
+
+**Execute in parallel** (single message, multiple tool calls):
 
 1. **Get repository info for API calls**:
    ```bash
@@ -44,28 +53,151 @@ Systematically address review feedback on a pull request.
    git checkout {headRefName}
    ```
 
-7. **Create checklist** of all feedback items to address
+## Phase 2: Create Feedback Tasks
 
-8. **For each comment**:
-   - Read and understand the feedback
-   - Read the relevant content context
+For each review comment/feedback item, create a tracking task:
 
-   **If feedback is ambiguous, use the AskUserQuestion tool** to clarify:
+```
+TaskCreate:
+  subject: "Address: [Brief summary of feedback]"
+  description: |
+    **Reviewer**: @{reviewer}
+    **Location**: {file}:{line}
+    **Comment**: {full comment text}
+
+    **Action needed**: [fix/discuss/clarify]
+  activeForm: "Addressing [feedback summary]"
+```
+
+Group related feedback into single tasks where appropriate.
+
+## Phase 3: Work Through Feedback
+
+For each feedback task:
+
+1. **Mark in progress**: `TaskUpdate: taskId={id}, status=in_progress`
+
+2. **Read and understand the feedback**
+
+3. **Read the relevant content context**
+
+4. **If feedback is ambiguous, use the AskUserQuestion tool** to clarify:
    - Quote the unclear comment
    - Present your interpretation options:
      - **Option 1**: "I interpret this as [interpretation A]"
      - **Option 2**: "I interpret this as [interpretation B]"
      - **Option 3**: "I need more context to understand"
 
-   **If you disagree with feedback, use the AskUserQuestion tool**:
+5. **If you disagree with feedback, use the AskUserQuestion tool**:
    - **Option 1**: "Implement the suggested change anyway"
    - **Option 2**: "Push back with explanation"
    - **Option 3**: "Discuss further before deciding"
 
-   - Make the necessary changes
-   - Commit with a descriptive message
+6. **Make the necessary changes**
 
-9. **Preview response and get approval using the AskUserQuestion tool**:
+7. **Commit with a descriptive message**:
+   ```bash
+   # Good - specific and clear
+   git commit -m "fix: correct broken link per review feedback"
+   git commit -m "fix: update validation logic as suggested"
+   ```
+
+8. **Mark task complete**: `TaskUpdate: taskId={id}, status=completed`
+
+## Phase 4: Quality Verification
+
+After addressing all feedback, verify changes don't introduce new issues:
+
+### Step 4.1: Run Quality Checks
+
+**Execute in parallel**:
+
+```bash
+# Based on detected tech stack
+ruff check . 2>/dev/null
+pytest 2>/dev/null
+
+# Or for Node/TypeScript
+npm run lint 2>/dev/null
+npm test 2>/dev/null
+
+# Or for Go
+go vet ./... 2>/dev/null
+go test ./... 2>/dev/null
+```
+
+### Step 4.2: Code Review on New Changes
+
+Review the diff since last push:
+
+```bash
+git diff HEAD~{n}..HEAD  # Where n = number of fix commits
+```
+
+**Check for**:
+- Did fixes introduce new issues?
+- Are fixes complete and correct?
+- Any unintended side effects?
+
+### Step 4.3: Verify All Tasks Complete
+
+```
+TaskList
+```
+
+All feedback tasks should be status=completed.
+
+## Phase 5: Post-Address Review Gate
+
+**MANDATORY before pushing**: Re-verify quality after all fixes.
+
+### Step 5.1: Code Review (Self-Review on Fixes)
+
+Review changes introduced by fix commits:
+
+```bash
+git log --oneline origin/{baseRef}..HEAD
+git diff origin/{baseRef}..HEAD
+```
+
+**Check**:
+- [ ] No new code duplication
+- [ ] No debug code left
+- [ ] Fix addresses the actual concern (not just surface symptom)
+- [ ] No placeholder or incomplete code
+
+### Step 5.2: Test Review (If Tests Changed)
+
+If tests were added or modified:
+- [ ] Tests cover the fixed behavior
+- [ ] Assertions are meaningful
+- [ ] No flaky test patterns
+
+### Step 5.3: Re-run Quality Checks
+
+```bash
+# All quality commands should pass
+ruff check . && pytest  # Python
+npm run lint && npm test  # Node
+go vet ./... && go test ./...  # Go
+```
+
+### Step 5.4: Final Verification
+
+- [ ] All tasks from TaskList are completed
+- [ ] All quality checks pass
+- [ ] No new issues introduced by fixes
+- [ ] Changes ready for re-review
+
+**If any check fails**:
+1. Create task for the failure
+2. Fix the issue
+3. Re-run this gate
+4. Only proceed when all pass
+
+## Phase 6: Prepare Response
+
+1. **Preview response and get approval using the AskUserQuestion tool**:
 
    **First**, display a complete summary of what was done:
    ```
@@ -81,6 +213,11 @@ Systematically address review feedback on a pull request.
    - `abc1234` - fix: description
    - `def5678` - fix: description
 
+   ### Quality Verification
+   - [x] Lint passes
+   - [x] Tests pass
+   - [x] Code review on fixes: no new issues
+
    ### Response Comment Preview
    [Show the exact comment that will be posted]
    ```
@@ -94,17 +231,17 @@ Systematically address review feedback on a pull request.
 
    **Do not push without explicit approval.**
 
-10. **Verify changes before pushing**:
+2. **Verify changes before pushing**:
    - Check formatting is correct
    - Verify links still work
    - Run any applicable tests
 
-11. **Push changes**:
+3. **Push changes**:
    ```bash
    git push
    ```
 
-12. **Post summary comment**:
+4. **Post summary comment**:
     ```bash
     gh pr comment $ARGUMENTS --body "RESPONSE"
     ```
@@ -137,6 +274,12 @@ Thanks for the review! Here's what I've addressed:
 ### Not Addressed (if any)
 
 - **[Item]**: [Reason - needs clarification / out of scope / disagree because X]
+
+### Verification
+
+- [x] All quality checks pass
+- [x] Self-reviewed fix commits
+- [x] No new issues introduced
 ```
 
 ## Commit Message Guidelines
@@ -157,12 +300,17 @@ git commit -m "updates"
 
 ## Handling Different Feedback Types
 
-### Critical Issues
+### Critical Issues (P1)
 - Must be fixed
 - Each fix should be a separate commit
 - Explain what was done in the response
 
-### Suggestions
+### Important Issues (P2)
+- Should be fixed
+- Group related fixes if appropriate
+- Explain approach taken
+
+### Suggestions (P3)
 - Consider carefully, implement if agreeable
 - If not implementing, explain why in the response
 - It's okay to respectfully disagree with reasoning
@@ -204,7 +352,9 @@ Include thread status in the response comment:
 - Push all changes BEFORE posting the summary comment
 - Be professional and appreciative of feedback
 - **Always get repository info dynamically** - never hardcode owner/repo
-- **ALWAYS display findings BEFORE asking questions** - users must see what changes were made and the response preview before being asked to approve. Never invoke AskUserQuestion for approval without first showing the complete summary.
+- **ALWAYS display findings BEFORE asking questions** - users must see what changes were made and the response preview before being asked to approve
+- **Run post-address review gate** before pushing - verify fixes don't introduce new issues
+- **Use parallel operations** when possible (API calls, quality checks)
 - **Use the AskUserQuestion tool** at decision points:
   - Clarifying ambiguous feedback
   - Deciding whether to implement or push back on suggestions

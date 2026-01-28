@@ -1,16 +1,25 @@
 ---
 description: Review a pull request with checklist and approval workflow
 argument-hint: <pr-number>
-allowed-tools: Bash, Read, AskUserQuestion
+allowed-tools: Bash, Read, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Skill
 ---
+
+<!--
+PARALLEL EXECUTION RULE:
+When performing multiple independent operations (reads, API calls, TaskCreate),
+invoke ALL relevant tools simultaneously in a single message rather than sequentially.
+Err on the side of maximizing parallel tool calls.
+-->
 
 # Review PR #$ARGUMENTS
 
-Review a pull request with proper branch checkout and convention checks.
+Review a pull request with multi-faceted analysis, task tracking, and prioritized findings.
 
-**Tool Usage**: This workflow uses the **AskUserQuestion tool** to confirm review decisions, clarify ambiguous findings, and get approval before submitting reviews.
+**Tool Usage**: This workflow uses the **AskUserQuestion tool** to confirm review decisions, and **TaskCreate/TaskUpdate** tools to track review facets.
 
-## Process
+## Phase 1: Context Gathering
+
+**Execute in parallel** (single message, multiple tool calls):
 
 1. **Save current branch**:
    ```bash
@@ -57,95 +66,208 @@ Review a pull request with proper branch checkout and convention checks.
    - Later verify each item was addressed (fixed or explained)
    - Note: You're still doing a FULL review - previous reviewers may have missed things
 
-8. **Checkout the PR branch** (CRITICAL - never review from wrong branch):
+## Phase 1.5: Review Capability Discovery
+
+Before detailed review, check for available review helpers:
+
+**Execute in parallel**:
+
+1. **Check for custom review agents**:
+   ```bash
+   ls .claude/agents/*review* plugins/*/agents/*review* 2>/dev/null
+   ls .claude/agents/*convention* plugins/*/agents/*convention* 2>/dev/null
+   ls .claude/agents/*test* plugins/*/agents/*test* 2>/dev/null
+   ```
+
+2. **Check for quality skills**:
+   ```bash
+   ls .claude/skills/*lint* .claude/skills/*test* plugins/*/skills/ 2>/dev/null
+   ```
+
+3. **Parse CLAUDE.md for quality commands**:
+   ```bash
+   grep -E "(lint|test|check)" .claude/CLAUDE.md 2>/dev/null
+   ```
+
+Note available capabilities for use in review facets.
+
+## Phase 2: Checkout and Diff Analysis
+
+1. **Checkout the PR branch** (CRITICAL - never review from wrong branch):
    ```bash
    git fetch origin {headRefName}
    git checkout {headRefName}
    ```
 
-9. **Get the full diff**:
+2. **Get the full diff**:
    ```bash
    gh pr diff $ARGUMENTS
    ```
 
-10. **Read all changed files** - use the Read tool on each modified file to understand the full context
+3. **Read all changed files in parallel** - use the Read tool on each modified file to understand the full context
 
-11. **Check conventions** (see checklist below)
+## Phase 3: Multi-Faceted Review
 
-12. **If this is a follow-up review**: For each previous comment, verify:
-   - Was the issue fixed in the content?
-   - Or was there a valid explanation for not fixing it?
-   - Did the fix introduce any new issues?
+### Step 3.1: Create Review Tasks
 
-13. **Present review findings to the user** (REQUIRED before any question):
+**Create all review facet tasks in parallel** (single message, multiple TaskCreate calls):
 
-    **First**, display your complete findings in this format:
-    ```
-    ## Review Findings
+```
+TaskCreate:
+  subject: "Review: Code Quality & Logic"
+  description: "Analyze logic correctness, edge cases, error handling, null checks"
+  activeForm: "Reviewing code quality"
 
-    ### Checklist Results
-    - [x] Commits follow conventional format
-    - [x] PR description follows template
-    - [ ] Issue linked correctly (ISSUE: missing closes #X)
-    ...
+TaskCreate:
+  subject: "Review: Conventions & Standards"
+  description: "Check commit messages, branch naming, PR format, issue linkage"
+  activeForm: "Checking conventions"
 
-    ### Issues Found
+TaskCreate:
+  subject: "Review: Security & Best Practices"
+  description: "Scan for security issues, hardcoded secrets, exposed credentials"
+  activeForm: "Security review"
 
-    **Critical Issues:**
-    1. [Issue description] (`file:line`)
-    (or "None found." if all checks pass)
+TaskCreate:
+  subject: "Review: Tests & Quality Commands"
+  description: "Run lint/test commands, verify coverage if applicable"
+  activeForm: "Running quality checks"
 
-    **Suggestions (non-blocking):**
-    1. [Suggestion description]
-    (or "None." if no suggestions)
+TaskCreate:
+  subject: "Review: Requirements Compliance"
+  description: "Verify all acceptance criteria from linked issue are addressed"
+  activeForm: "Checking requirements"
+```
 
-    **Questions:**
-    1. [Any clarifying questions]
-    (or "None." if no questions)
+### Step 3.2: Execute Review Facets
 
-    ### What Looks Good
-    - [Positive observations]
-    ```
+For each review task:
 
-    **Note**: When no issues are found, explicitly state "None found." in each section rather than omitting the section. This confirms to the user that you checked and found nothing, rather than forgot to check.
+1. **Mark in progress**: `TaskUpdate: taskId={id}, status=in_progress`
 
-    **Then, and only then**, invoke the AskUserQuestion tool with:
-    - **Option 1**: "Approve - All requirements met"
-    - **Option 2**: "Request changes - Critical issues found"
-    - **Option 3**: "Comment only - Questions/suggestions, no blockers"
-    - **Option 4**: "Need more context before deciding"
+2. **Execute the facet analysis**:
 
-    **IMPORTANT**: The user MUST see the detailed findings BEFORE being asked to make a decision. Never ask for a review decision without first showing what you found.
+   **Code Quality & Logic**:
+   - Logic correctness for all code paths
+   - Edge case handling (nulls, empty, boundaries)
+   - Error handling and recovery
+   - Resource management (memory, connections)
 
-    If option 4, **use the AskUserQuestion tool** to ask specific clarifying questions.
+   **Conventions & Standards**:
+   - Commits follow conventional format (`feat:`, `fix:`, etc.)
+   - Branch naming follows pattern (`feature/issue-N-desc`)
+   - PR description follows template
+   - Issue linked correctly (`closes #X`)
 
-14. **Preview review and get approval using the AskUserQuestion tool**:
+   **Security & Best Practices**:
+   - No hardcoded secrets or credentials
+   - Input validation present
+   - No SQL/command injection risks
+   - Sensitive data not logged
 
-    Show the review comment that will be submitted, then ask:
-    - **Option 1**: "Submit this review" (Recommended)
-    - **Option 2**: "Edit review content first"
-    - **Option 3**: "Cancel review submission"
+   **Tests & Quality Commands**:
+   ```bash
+   # Run based on detected tech stack
+   ruff check . 2>/dev/null || npm run lint 2>/dev/null || go vet ./... 2>/dev/null
+   pytest 2>/dev/null || npm test 2>/dev/null || go test ./... 2>/dev/null
+   ```
 
-    **Do not submit review without explicit approval.**
+   **Requirements Compliance**:
+   - Compare PR changes against issue acceptance criteria
+   - Verify each criterion is addressed
+   - Note any missing or partially implemented items
 
-15. **Submit review**:
-    ```bash
-    # Approve
-    gh pr review $ARGUMENTS --approve --body "REVIEW"
+3. **Record findings** with priority:
+   - **P1 (Critical)**: Blocks merge - security, data corruption, breaking changes
+   - **P2 (Important)**: Should fix - logic issues, missing edge cases
+   - **P3 (Suggestions)**: Nice to have - style, minor improvements
 
-    # Request changes
-    gh pr review $ARGUMENTS --request-changes --body "REVIEW"
+4. **Mark complete**: `TaskUpdate: taskId={id}, status=completed`
 
-    # Comment only
-    gh pr review $ARGUMENTS --comment --body "REVIEW"
-    ```
+## Phase 4: Finding Synthesis
 
-16. **Return to original branch**:
-    ```bash
-    git checkout {original-branch}
-    ```
+After all review tasks complete, consolidate findings:
 
-## Review Checklist
+```markdown
+## Review Findings Summary
+
+### P1 - Critical (Blocks Merge)
+| # | Category | Location | Issue | Suggested Fix |
+|---|----------|----------|-------|---------------|
+| 1 | Security | file:line | [issue] | [fix] |
+
+### P2 - Important (Should Fix)
+| # | Category | Location | Issue | Suggested Fix |
+|---|----------|----------|-------|---------------|
+
+### P3 - Suggestions (Nice to Have)
+| # | Category | Location | Issue | Suggested Fix |
+|---|----------|----------|-------|---------------|
+
+### Requirements Checklist
+| Criterion | Status | Notes |
+|-----------|--------|-------|
+| [From issue] | Met / Partial / Missing | [details] |
+
+### What Looks Good
+- [Positive observations]
+
+### Questions
+- [Any clarifying questions for the author]
+```
+
+**Note**: When no issues are found in a category, explicitly state "None found." rather than omitting the section. This confirms the check was performed.
+
+### Review Decision Logic
+
+Based on findings:
+- **0 P1 and 0 P2**: Recommend APPROVE
+- **0 P1 but some P2**: Recommend COMMENT with suggestions
+- **Any P1**: Recommend REQUEST CHANGES with required fixes
+
+## Phase 5: Review Submission
+
+1. **Present review findings to the user** (REQUIRED before any question):
+
+   **First**, display your complete findings using the synthesis format above.
+
+   **Then, and only then**, invoke the AskUserQuestion tool with:
+   - **Option 1**: "Approve - All requirements met"
+   - **Option 2**: "Request changes - Critical issues found"
+   - **Option 3**: "Comment only - Questions/suggestions, no blockers"
+   - **Option 4**: "Need more context before deciding"
+
+   **IMPORTANT**: The user MUST see the detailed findings BEFORE being asked to make a decision.
+
+   If option 4, **use the AskUserQuestion tool** to ask specific clarifying questions.
+
+2. **Preview review and get approval using the AskUserQuestion tool**:
+
+   Show the review comment that will be submitted, then ask:
+   - **Option 1**: "Submit this review" (Recommended)
+   - **Option 2**: "Edit review content first"
+   - **Option 3**: "Cancel review submission"
+
+   **Do not submit review without explicit approval.**
+
+3. **Submit review**:
+   ```bash
+   # Approve
+   gh pr review $ARGUMENTS --approve --body "REVIEW"
+
+   # Request changes
+   gh pr review $ARGUMENTS --request-changes --body "REVIEW"
+
+   # Comment only
+   gh pr review $ARGUMENTS --comment --body "REVIEW"
+   ```
+
+4. **Return to original branch**:
+   ```bash
+   git checkout {original-branch}
+   ```
+
+## Review Checklist (Quick Reference)
 
 ### Issue Requirements (if linked)
 - [ ] All acceptance criteria from issue are addressed
@@ -164,26 +286,6 @@ Review a pull request with proper branch checkout and convention checks.
 - [ ] Code style consistent with project conventions
 - [ ] No hardcoded secrets or credentials
 - [ ] Error handling is appropriate
-
-### Project-Specific Checks
-
-**IMPORTANT**: Check the project's `.claude/CLAUDE.md` for tech-stack-specific checklists. If available, apply those checks. Common patterns:
-
-**Python projects:**
-- [ ] `ruff check` passes (or equivalent linter)
-- [ ] Type hints properly defined
-- [ ] `pytest` passes
-
-**TypeScript projects:**
-- [ ] Types properly defined (no unnecessary `any`)
-- [ ] `npm run lint` passes
-- [ ] `npm test` passes
-
-**Go projects:**
-- [ ] `go vet ./...` passes
-- [ ] `go test ./...` passes
-
-Run the project's actual lint/test commands as defined in CLAUDE.md or package files.
 
 ### Documentation
 - [ ] README updated if user-facing changes
@@ -204,7 +306,7 @@ Use this structure for review comments:
 
 [1-2 sentence overall assessment]
 
-### Critical Issues (if any)
+### P1 - Critical Issues (Blocks Merge)
 
 **1. [Issue Title]** (`path/to/file:line`)
 
@@ -212,7 +314,11 @@ Use this structure for review comments:
 
 [Suggested fix or question]
 
-### Suggestions (non-blocking)
+### P2 - Important Issues (Should Fix)
+
+- [Issue description] (`file:line`)
+
+### P3 - Suggestions (Non-blocking)
 
 - [Suggestion 1]
 - [Suggestion 2]
@@ -258,21 +364,22 @@ When reviewing a PR that has previous reviews, use this structure:
 [Yes/No and brief explanation]
 ```
 
-## Severity Levels
+## Priority Definitions
 
-- **Critical**: Must fix before merge (broken functionality, security issues, blocking bugs)
-- **Suggestion**: Nice to have, non-blocking (style, minor improvements)
-- **Question**: Clarification needed, may or may not need changes
+- **P1 (Critical)**: Must fix before merge - security vulnerabilities, data corruption, breaking functionality, blocking bugs
+- **P2 (Important)**: Should fix - logic errors, missing edge cases, poor error handling, code smells
+- **P3 (Suggestion)**: Nice to have - style improvements, minor refactoring, documentation gaps
 
 ## Rules
 
 - ALWAYS checkout the PR branch before reviewing content
 - Read the actual files, don't just rely on the diff
 - Be constructive and specific in feedback
-- Distinguish critical issues from suggestions
+- Distinguish critical issues from suggestions using P1/P2/P3
 - Return to original branch when done
 - **Always get repository info dynamically** - never hardcode owner/repo
-- **ALWAYS display findings BEFORE asking questions** - users must see the evidence before making decisions. Never invoke AskUserQuestion for a decision without first showing the data that informs it.
+- **ALWAYS display findings BEFORE asking questions** - users must see the evidence before making decisions
+- **Use parallel operations** when possible (multiple file reads, TaskCreate calls)
 - **Use the AskUserQuestion tool** at decision points:
   - Review decision (approve/request changes/comment)
   - Clarifying questions when findings are ambiguous

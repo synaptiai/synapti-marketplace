@@ -1,16 +1,25 @@
 ---
 description: Start work on a GitHub issue - branch, implement, and create PR
 argument-hint: <issue-number>
-allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Skill
 ---
+
+<!--
+PARALLEL EXECUTION RULE:
+When performing multiple independent operations (reads, API calls, TaskCreate),
+invoke ALL relevant tools simultaneously in a single message rather than sequentially.
+Err on the side of maximizing parallel tool calls.
+-->
 
 # Start Work on Issue #$ARGUMENTS
 
-Complete workflow from issue to PR creation.
+Complete workflow from issue to PR creation with task-based implementation tracking.
 
-**Tool Usage**: This workflow uses the **AskUserQuestion tool** for interactive dialogues at key decision points. Use it to clarify requirements, confirm branch naming, and approve PR creation.
+**Tool Usage**: This workflow uses the **AskUserQuestion tool** for interactive dialogues at key decision points, and **TaskCreate/TaskUpdate** tools for tracking implementation progress.
 
 ## Phase 1: Setup
+
+**Execute these in parallel** (single message, multiple tool calls):
 
 1. **Fetch the issue**:
    ```bash
@@ -60,42 +69,296 @@ Complete workflow from issue to PR creation.
 
 9. **Confirm setup** with user before beginning implementation
 
-## Phase 2: Implementation
+## Phase 1.5: Capability Discovery
 
-- Work through the issue requirements systematically
-- Follow project guidelines (check CLAUDE.md if present)
-- Review formatting for consistency
-- Make commits with conventional format as you work
+Before implementation, discover available project capabilities:
 
-## Phase 3: Quality Checks
+**Execute these in parallel**:
 
-Before creating PR, run project-specific quality checks:
-
-1. **Check `.claude/CLAUDE.md`** for project-specific lint/test commands
-
-2. **Run detected quality tools**:
-
-   **Python projects:**
+1. **Check for custom skills** that could help:
    ```bash
-   ruff check . 2>/dev/null || echo "Ruff not configured"
-   pytest 2>/dev/null || echo "Pytest not configured"
+   ls .claude/skills/*/SKILL.md plugins/*/skills/*/SKILL.md 2>/dev/null
    ```
 
-   **TypeScript projects:**
+2. **Check for custom agents** available:
    ```bash
-   npm run lint 2>/dev/null || echo "Lint not configured"
-   npm test 2>/dev/null || echo "Tests not configured"
+   ls .claude/agents/*.md plugins/*/agents/*.md 2>/dev/null
    ```
 
-   **Go projects:**
+3. **Parse CLAUDE.md** for quality commands:
    ```bash
-   go vet ./... 2>/dev/null || echo "Go vet not available"
-   go test ./... 2>/dev/null || echo "Go tests not available"
+   grep -E "(lint|test|check|format|typecheck):" .claude/CLAUDE.md 2>/dev/null
+   grep -E "(ruff|pytest|npm run|go vet|cargo)" .claude/CLAUDE.md 2>/dev/null
    ```
 
-3. **If checks fail**: Fix issues before proceeding to PR creation
+4. **Detect tech stack**:
+   ```bash
+   ls pyproject.toml package.json tsconfig.json go.mod Cargo.toml 2>/dev/null
+   ```
 
-4. **If no project-specific checks found**: Ask user if they want to skip quality checks
+Note available capabilities for use in quality checks phase.
+
+## Phase 2: Task-Based Implementation
+
+### Step 2.1: Create Task Breakdown
+
+Parse issue acceptance criteria and create tasks using **TaskCreate**:
+
+For each acceptance criterion found in the issue:
+```
+TaskCreate:
+  subject: "[Criterion summary - imperative form]"
+  description: "[Full criterion text from issue]\n\nImplementation notes: [any technical context]"
+  activeForm: "Implementing [criterion]"
+```
+
+Example breakdown:
+- Issue says "Users can filter by date" → Task: "Add date filtering to search endpoint"
+- Issue says "Validation errors show helpful messages" → Task: "Implement validation error formatting"
+
+### Step 2.2: Work Through Tasks Systematically
+
+For each task from TaskList:
+
+1. **Mark task in progress**:
+   ```
+   TaskUpdate: taskId={id}, status=in_progress
+   ```
+
+2. **Implement the requirement**:
+   - Reference similar existing code patterns
+   - Follow project guidelines (CLAUDE.md)
+   - Write tests alongside implementation (if applicable)
+
+3. **Incremental commit** (when logical unit complete):
+   - Commit after each task or meaningful progress
+   - Use conventional commit format
+   - Reference task in commit if helpful
+
+4. **Mark task complete**:
+   ```
+   TaskUpdate: taskId={id}, status=completed
+   ```
+
+5. **Check progress**:
+   ```
+   TaskList
+   ```
+
+### Step 2.3: Progress Tracking
+
+After each task completion, show progress:
+```
+## Implementation Progress
+| Task | Status |
+|------|--------|
+| [task 1] | Completed |
+| [task 2] | In Progress |
+| [task 3] | Pending |
+
+Progress: 1/3 tasks completed
+```
+
+## Phase 3: Quality Checks (Dynamic Discovery)
+
+### Step 3.1: Discover Quality Tools
+
+In priority order:
+
+1. **Check CLAUDE.md** for explicit commands:
+   ```bash
+   grep -E "(lint|test|check)" .claude/CLAUDE.md 2>/dev/null
+   ```
+
+2. **Fallback to tech stack detection**:
+   | Indicator | Commands |
+   |-----------|----------|
+   | pyproject.toml | `ruff check .`, `pytest` |
+   | package.json | `npm run lint`, `npm test` |
+   | tsconfig.json | `tsc --noEmit` |
+   | go.mod | `go vet ./...`, `go test ./...` |
+   | Cargo.toml | `cargo clippy`, `cargo test` |
+
+### Step 3.2: Execute Quality Checks
+
+**Run in parallel** (all quality tools at once):
+
+```bash
+# Python
+ruff check . 2>/dev/null
+pytest 2>/dev/null
+
+# TypeScript/JavaScript
+npm run lint 2>/dev/null
+npm test 2>/dev/null
+
+# Go
+go vet ./... 2>/dev/null
+go test ./... 2>/dev/null
+```
+
+### Step 3.3: Handle Failures
+
+If checks fail, create tasks for fixes:
+```
+TaskCreate:
+  subject: "Fix: [failure type]"
+  description: "[Error message and location]"
+  activeForm: "Fixing [error]"
+```
+
+Work through fix tasks, then re-run checks.
+
+### Step 3.4: Verify All Tasks Complete
+
+```
+TaskList
+```
+
+If incomplete tasks remain, **use AskUserQuestion tool**:
+- "Complete remaining tasks before PR"
+- "Create PR noting partial implementation"
+- "Mark remaining as out-of-scope"
+
+## Phase 3.5: Code Review (Self-Review)
+
+Before creating PR, perform systematic code review on the diff:
+
+```bash
+# Get the diff to review
+git diff origin/$DEFAULT_BRANCH..HEAD
+```
+
+**Review Checklist** (only analyze new code in diff):
+
+1. **Unnecessary/Duplicate Code**
+   - Identify redundant logic
+   - Check for copy-paste duplication
+   - Look for dead code paths
+
+2. **Type Safety & Language Gotchas**
+   - TypeScript: proper typing, no unnecessary `any`
+   - Python: type hints, pyright compliance
+   - Watch for common footguns
+
+3. **Code Bloat**
+   - Remove unnecessary comments
+   - Delete debug code/console.logs
+   - Remove commented-out code
+
+4. **Complexity**
+   - Simplify overly complicated logic
+   - Extract complex conditions into named functions
+   - Reduce nesting depth
+
+5. **Naming**
+   - Variable names are clear and descriptive
+   - Function names describe what they do
+   - Consistent naming patterns
+
+6. **Pattern Consistency**
+   - Use established project patterns
+   - Don't introduce conflicting approaches
+   - Check CLAUDE.md for conventions
+
+7. **NO PLACEHOLDERS**
+   - No mocks, demo data, placeholder code, stubs in src
+   - All implementations must be production-ready
+
+**Output Format**:
+```
+## Code Review Findings
+
+### Issues Found
+| # | Type | Location | Issue | Fix |
+|---|------|----------|-------|-----|
+| 1 | Duplicate | file:line | [desc] | [fix] |
+
+### Fixes Applied
+- [x] Fixed: [description]
+```
+
+After identifying issues:
+1. Create tasks for each fix: `TaskCreate: subject="Fix: [issue]"`
+2. Implement fixes
+3. Re-run linters and type checkers
+4. Verify all issues resolved
+
+## Phase 3.6: Test Review (Self-Review)
+
+Review tests in the current diff:
+
+**Coverage Check**:
+- Missing tests for new behavior/branches?
+- Edge cases, boundary values, error paths?
+- Negative cases, invalid inputs, failure modes?
+
+**Assertion Quality**:
+- Checking behavior, not implementation details?
+- Weak assertions (too generic, no failure message)?
+- Over-asserting unimportant details?
+
+**Test Design**:
+- Descriptive names (given/when/then or AAA)?
+- Clear intent, minimal mental overhead?
+- Magic values → constants/factories/helpers?
+- Duplicated setup → fixtures/parametrized tests?
+
+**Output Format**:
+```
+## Test Review Findings
+
+### Missing Coverage
+| Behavior | Suggested Test |
+|----------|----------------|
+| [behavior] | [test name and approach] |
+
+### Issues Found
+| # | Type | Test | Issue | Fix |
+|---|------|------|-------|-----|
+| 1 | Weak assertion | test_foo | [desc] | [fix] |
+
+### Fixes Applied
+- [x] Added: test_edge_case_X
+- [x] Fixed: improved assertions in test_Y
+```
+
+After identifying issues:
+1. Create tasks for each improvement
+2. Implement new/improved tests
+3. Run test suite
+4. Verify all tests pass
+
+## Phase 3.7: Pre-PR Gate (Mandatory)
+
+Before proceeding to PR creation, verify ALL of the following:
+
+**Completeness Check**:
+```
+TaskList
+```
+- [ ] All tasks status=completed
+- [ ] No pending or in_progress tasks
+- [ ] If incomplete tasks exist → resolve or explicitly scope out
+
+**Quality Gate**:
+- [ ] Linter passes (zero errors)
+- [ ] Type checker passes (zero errors)
+- [ ] All tests pass
+- [ ] Code review issues addressed
+- [ ] Test review issues addressed
+
+**Production Readiness**:
+- [ ] No mocks/stubs/placeholders in src code
+- [ ] No TODO comments for shipped code
+- [ ] No debug/console output left
+- [ ] All implementations are complete
+
+**If ANY gate fails**:
+1. Create tasks for each failure
+2. Address all issues
+3. Re-run this gate
+4. Only proceed when all checks pass
 
 ## Phase 4: Finalize & Create PR
 
@@ -277,6 +540,8 @@ After PR creation, verify it was created correctly:
   - Branch type selection (when ambiguous)
   - Label selection for PR
   - PR creation approval
+- **Use TaskCreate/TaskUpdate** to track implementation progress
+- **Run parallel operations** when possible (multiple API calls, file reads)
 
 ## Success Criteria
 
@@ -284,6 +549,10 @@ Before completing, verify:
 - [ ] Issue assigned to user
 - [ ] Branch created from latest default branch
 - [ ] All acceptance criteria from issue addressed
+- [ ] All implementation tasks completed
+- [ ] Code review (self-review) passed
+- [ ] Test review (self-review) passed
+- [ ] Pre-PR gate passed (lint, tests, no placeholders)
 - [ ] PR created with correct target, labels, and assignee
 - [ ] PR verified to exist via `gh pr view`
 - [ ] User informed of PR URL and next steps
