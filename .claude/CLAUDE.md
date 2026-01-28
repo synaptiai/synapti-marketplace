@@ -41,7 +41,9 @@ Project-specific commands for GitHub workflow:
 | Command | Purpose |
 |---------|---------|
 | `/gh-issue` | Create a new GitHub issue |
-| `/gh-start <issue>` | Start work on an issue |
+| `/gh-start <issue>` | Start work on an issue (ends with PR options) |
+| `/gh-commit` | Context-aware commit with change classification |
+| `/gh-pr` | Create PR with full review and reviewer suggestions |
 | `/gh-review <pr>` | Review a pull request |
 | `/gh-address <pr>` | Address PR review comments |
 | `/gh-merge <pr>` | Merge an approved pull request |

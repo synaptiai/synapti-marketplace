@@ -102,7 +102,9 @@ Irreversible actions (force push, branch deletion, release creation) require exp
 | Command | Description |
 |---------|-------------|
 | `/gh-workflow:gh-issue` | Create a new GitHub issue with solution-agnostic principles |
-| `/gh-workflow:gh-start <N>` | Start work on issue #N (branch, implement, PR) |
+| `/gh-workflow:gh-start <N>` | Start work on issue #N (branch, implement, ready for PR) |
+| `/gh-workflow:gh-commit` | Context-aware commits with change classification |
+| `/gh-workflow:gh-pr` | Create PR with full review and reviewer suggestions |
 | `/gh-workflow:gh-review <N>` | Review PR #N with checklist and feedback |
 | `/gh-workflow:gh-address <N>` | Address review comments on PR #N |
 | `/gh-workflow:gh-merge <N>` | Merge approved PR #N |
@@ -123,14 +125,32 @@ Irreversible actions (force push, branch deletion, release creation) require exp
 #### `/gh-start` — Start Work
 
 **What's Good About /gh-start:**
-1. **Complete workflow** — One command handles: assign issue, pull latest main, create branch, implement, create PR
+1. **Complete workflow** — One command handles: assign issue, pull latest main, create branch, implement
 2. **Branch naming conventions** — Enforces consistent naming (feature/issue-N, fix/issue-N, docs/issue-N)
-3. **PR auto-linking** — Automatically links PR to issue with `fixes #N` for auto-close on merge
-4. **Preview before creation** — Shows PR preview and requires explicit approval before creating
-5. **Task-based implementation** — Creates tasks from acceptance criteria and tracks progress
-6. **Capability discovery** — Discovers available agents and skills before implementation
-7. **Self-review gates** — Mandatory code review, test review, and pre-PR gate before creating PR
-8. **Parallel execution** — Maximizes efficiency with parallel API calls and file reads
+3. **Task-based implementation** — Creates tasks from acceptance criteria and tracks progress
+4. **Capability discovery** — Discovers available agents and skills before implementation
+5. **Self-review gates** — Mandatory code review, test review, and pre-PR gate
+6. **Parallel execution** — Maximizes efficiency with parallel API calls and file reads
+7. **Flexible ending** — Choose to create PR immediately, defer to `/gh-pr`, or continue working
+
+#### `/gh-commit` — Context-Aware Commits
+
+**What's Good About /gh-commit:**
+1. **Change classification** — Automatically classifies changes as in-context, uncertain, or out-of-context
+2. **External change flagging** — Flags unrelated files (config, editor settings) before committing
+3. **Multiple commits support** — Groups related changes for atomic commits
+4. **Branch context awareness** — Uses branch name, linked issue, and active tasks for classification
+5. **Conventional commits** — Enforces commit message conventions (feat:, fix:, docs:, etc.)
+
+#### `/gh-pr` — Create Pull Request
+
+**What's Good About /gh-pr:**
+1. **Full code review** — Mandatory code review with P1/P2/P3 prioritized findings before PR
+2. **Convention check** — Validates commit messages and branch naming
+3. **Reviewer suggestions** — Suggests reviewers based on CODEOWNERS, file expertise, and workload
+4. **Quality gates** — Runs lint, test, and type-check commands before PR
+5. **Preview before creation** — Shows complete PR preview and requires explicit approval
+6. **Decoupled from gh-start** — Can be run independently after any commit workflow
 
 #### `/gh-review` — Review PRs
 
@@ -215,7 +235,15 @@ Commands work without setup by auto-detecting your repository's settings:
 └────────┬────────┘
          ▼
 ┌─────────────────┐
-│  /gh-start N    │ Assign issue, create branch, implement, create PR
+│  /gh-start N    │ Assign issue, create branch, implement
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│  /gh-commit     │ Context-aware commits (optional, can repeat)
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│  /gh-pr         │ Full review, reviewer suggestions, create PR
 └────────┬────────┘
          ▼
 ┌─────────────────┐
@@ -336,6 +364,14 @@ Discovers available capabilities in the user's environment:
 - Detects tech stack
 - Enables dynamic workflow adaptation
 
+### suggest-users
+
+Provides intelligent user suggestions for reviewers and assignees:
+- Matches CODEOWNERS file patterns
+- Analyzes recent PR activity and file contributors
+- Balances workload across team members
+- Used by `/gh-pr`, `/gh-review`, `/gh-address`, and `/gh-issue`
+
 ## Hooks
 
 The plugin includes safety hooks that:
@@ -400,17 +436,19 @@ The `/gh-setup` command detects your project's tech stack and generates appropri
 # 2. Start work (assigns issue, creates branch, begins implementation)
 /gh-workflow:gh-start 42
 
-# 3. After implementation, PR is created automatically
-# ... implementation happens ...
-# PR created: feature/issue-42-csv-export → main
+# 3. Commit changes as you work (context-aware)
+/gh-workflow:gh-commit
 
-# 4. Request review
+# 4. Create PR with full review and reviewer suggestions
+/gh-workflow:gh-pr
+
+# 5. Reviewer reviews the PR
 # (reviewer uses /gh-review 15)
 
-# 5. Address any feedback
+# 6. Address any feedback
 /gh-workflow:gh-address 15
 
-# 6. Merge when approved
+# 7. Merge when approved
 /gh-workflow:gh-merge 15
 ```
 

@@ -1,5 +1,5 @@
 ---
-description: Start work on a GitHub issue - branch, implement, and create PR
+description: Start work on a GitHub issue - branch, implement, and prepare for PR
 argument-hint: <issue-number>
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Skill
 ---
@@ -13,7 +13,7 @@ Err on the side of maximizing parallel tool calls.
 
 # Start Work on Issue #$ARGUMENTS
 
-Complete workflow from issue to PR creation with task-based implementation tracking.
+Complete workflow from issue assignment through implementation with task-based tracking. Ends with option to create PR via `/gh-pr` or continue working.
 
 **Tool Usage**: This workflow uses the **AskUserQuestion tool** for interactive dialogues at key decision points, and **TaskCreate/TaskUpdate** tools for tracking implementation progress.
 
@@ -360,168 +360,115 @@ TaskList
 3. Re-run this gate
 4. Only proceed when all checks pass
 
-## Phase 4: Finalize & Create PR
+## Phase 4: Ready for PR
 
-1. **Verify** all acceptance criteria in the issue are met
+**All quality gates passed.** Implementation is complete and ready for pull request.
 
-2. **Commit** with conventional format:
-   - `feat:` for features
-   - `fix:` for bug fixes
-   - `docs:` for documentation
-   - `refactor:` for refactoring
-   - `chore:` for maintenance
-   - `test:` for test changes
+### Step 4.1: Final Commit Check
 
-3. **Push**:
-   ```bash
-   git push -u origin {branch-name}
-   ```
+Ensure all changes are committed:
 
-4. **Select labels using the AskUserQuestion tool**:
-   ```bash
-   # Fetch labels dynamically - never hardcode
-   gh label list
-   ```
+```bash
+# Check for uncommitted changes
+git status --porcelain
 
-   Present recommended labels and **use the AskUserQuestion tool** to confirm:
-   - **Option 1**: "Apply suggested labels: [label1, label2]" (Recommended)
-   - **Option 2**: "Let me choose different labels"
-   - **Option 3**: "No labels needed"
-
-5. **Preview PR and get approval using the AskUserQuestion tool**:
-
-   **First**, display the complete PR preview:
-   ```
-   ## PR Preview
-
-   **Title:** feat: description (fixes #X)
-   **Target:** feature-branch → main
-   **Labels:** enhancement
-
-   ---
-   [Complete PR body rendered in markdown]
-   ---
-
-   **Files to be included:**
-   - file1.md (created)
-   - file2.md (modified)
-   ```
-
-   **Then, and only then**, invoke the AskUserQuestion tool with:
-   - **Option 1**: "Create this PR" (Recommended)
-   - **Option 2**: "Edit title or labels first"
-   - **Option 3**: "Edit PR body first"
-   - **Option 4**: "Cancel PR creation"
-
-   **IMPORTANT**: The user MUST see the complete PR preview (title, body, labels, files) BEFORE being asked to approve creation. Never ask for PR creation approval without first showing exactly what will be created.
-
-   **Do not create the PR without explicit approval.**
-
-6. **Get default branch for PR target**:
-   ```bash
-   DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
-   ```
-
-7. **Create PR**:
-   ```bash
-   gh pr create --base $DEFAULT_BRANCH --title "TYPE: description (fixes #ISSUE)" --body "..." --assignee @me --label "relevant-label"
-   ```
-   - Always assign to `@me`
-   - Add relevant labels (can use `--label` multiple times)
-   - Use `(fixes #X)` in title to auto-close the issue on merge (default)
-   - Use `(#X)` instead if the issue should remain open (partial work)
-
-## PR Template
-
-Use this structure for the PR body:
-
-```markdown
-## Closes Issue
-
-closes #{X}
-
-## Summary
-<!-- Brief description of what was changed and why (2-3 sentences) -->
-
-[SUMMARY]
-
-## Changes
-<!-- List key changes made -->
-- [Change 1]
-- [Change 2]
-- [Change 3]
-
-## Verification
-<!-- How the changes were verified -->
-
-**Checks:**
-- [x] Code/content reviewed
-- [x] Links and references work
-- [x] All acceptance criteria met
-
-## Acceptance Criteria
-<!-- Copy from issue and check off each item -->
-
-**From issue:**
-- [x] [Criterion 1]
-- [x] [Criterion 2]
-- [x] [Criterion 3]
-
-## Files Changed
-<!-- List key files modified with brief description -->
-
-**Created:**
-- [file1] - [description]
-
-**Modified:**
-- [file2] - [description]
-
-**Deleted:**
-- None (or list files)
-
-## Breaking Changes
-<!-- Yes/No - If yes, describe the impact -->
-
-**Breaking**: No
-
-## Screenshots/Examples
-<!-- If applicable, add screenshots or example output -->
-
-## Checklist
-<!-- Final verification before requesting review -->
-- [x] Commit messages follow conventional format
-- [x] No uncommitted changes
-- [x] All tests pass (if applicable)
-
-## Reviewer Notes
-<!-- Any special instructions for reviewers -->
-
-**Review Focus:**
-- [Key areas to review]
+# If uncommitted changes exist, prompt for action
 ```
 
-## Phase 5: Verification
+If uncommitted changes exist, **use AskUserQuestion tool**:
+- **Option 1**: "Run /gh-commit first" (Recommended) - Commit remaining changes
+- **Option 2**: "Continue without committing" - Changes will not be in PR
 
-After PR creation, verify it was created correctly:
+### Step 4.2: Display Summary
 
-1. **Fetch the PR** to confirm it exists:
-   ```bash
-   gh pr view {pr-number} --json number,title,body,labels,assignees
-   ```
+```markdown
+## Implementation Complete
 
-2. **Verify checklist**:
-   - [ ] PR exists and is in OPEN state
-   - [ ] PR targets correct default branch
-   - [ ] Labels applied correctly
-   - [ ] Issue linked in body (`closes #X`)
-   - [ ] Assigned to creator
+**Branch**: {branch-name}
+**Issue**: #{issue-number} - {issue-title}
+**Commits**: {N} commits ahead of {default-branch}
 
-3. **If verification fails**, report specific issue and how to fix it
+### Tasks Completed
+| Task | Status |
+|------|--------|
+| {task 1} | Completed |
+| {task 2} | Completed |
+| {task 3} | Completed |
 
-4. **Report success** with:
-   - PR URL
-   - PR number
-   - Next steps (request review, wait for CI, etc.)
+**Progress**: {M}/{M} tasks completed
+
+### Quality Gates
+- [x] All tasks completed
+- [x] Code review (self-review) passed
+- [x] Test review passed
+- [x] Linter passed
+- [x] Type checker passed
+- [x] All tests pass
+
+### Files Changed
+- {file1} (created)
+- {file2} (modified)
+- {file3} (modified)
+```
+
+### Step 4.3: Next Step Selection
+
+**Use the AskUserQuestion tool** to determine next action:
+
+- **Option 1**: "Create PR now" (Recommended) - Invoke `/gh-pr` workflow for full PR creation with reviewer suggestions
+- **Option 2**: "Defer to /gh-pr later" - End gh-start, create PR manually with `/gh-pr`
+- **Option 3**: "Make more changes first" - Continue working, commit with `/gh-commit` when ready
+
+### If Option 1 Selected (Create PR Now)
+
+Inform the user:
+```markdown
+**Creating PR...**
+
+Running `/gh-pr` workflow which includes:
+1. Full code review (with P1/P2/P3 findings)
+2. Convention compliance check
+3. Reviewer suggestions based on file expertise
+4. PR preview and creation
+
+Please follow the prompts in the `/gh-pr` workflow.
+```
+
+Then invoke the gh-pr workflow (the user should run `/gh-pr`).
+
+### If Option 2 Selected (Defer)
+
+```markdown
+## Implementation Ready
+
+Your changes are committed and ready for PR creation.
+
+**When you're ready**, run:
+```
+/gh-pr
+```
+
+This will:
+- Run full code review
+- Check conventions
+- Suggest reviewers
+- Create PR with your approval
+```
+
+### If Option 3 Selected (Continue Working)
+
+```markdown
+## Continue Working
+
+Make additional changes, then:
+1. Run `/gh-commit` to commit changes
+2. Run `/gh-pr` when ready to create PR
+
+**Current Status**:
+- Branch: {branch}
+- Commits: {N} ahead of {default-branch}
+- Tasks: {M}/{M} completed
+```
 
 ## Arguments
 
@@ -531,17 +478,15 @@ After PR creation, verify it was created correctly:
 ## Rules
 
 - **Always detect default branch dynamically** - never assume `main` or `master`
-- Use `(fixes #X)` in PR **title** to auto-close the issue on squash merge
-- Use `(#X)` in title if issue should remain open after merge
 - Commits must follow conventional format
-- **Always fetch labels dynamically** - never hardcode label lists
-- **ALWAYS display findings BEFORE asking questions** - users must see the complete PR preview before being asked to approve. Never invoke AskUserQuestion for approval without first showing exactly what will be created.
+- **ALWAYS display findings BEFORE asking questions** - users must see status and summaries before being asked for decisions
 - **Use the AskUserQuestion tool** at decision points:
   - Branch type selection (when ambiguous)
-  - Label selection for PR
-  - PR creation approval
+  - Incomplete tasks handling
+  - Next step selection (PR now / defer / continue)
 - **Use TaskCreate/TaskUpdate** to track implementation progress
 - **Run parallel operations** when possible (multiple API calls, file reads)
+- **Do not create PR directly** - offer choice to invoke `/gh-pr` or defer
 
 ## Success Criteria
 
@@ -553,6 +498,12 @@ Before completing, verify:
 - [ ] Code review (self-review) passed
 - [ ] Test review (self-review) passed
 - [ ] Pre-PR gate passed (lint, tests, no placeholders)
-- [ ] PR created with correct target, labels, and assignee
-- [ ] PR verified to exist via `gh pr view`
-- [ ] User informed of PR URL and next steps
+- [ ] User presented with next step options
+- [ ] User informed of how to proceed (create PR or continue)
+
+## Related Commands
+
+- **`/gh-commit`**: Context-aware commits with change classification
+- **`/gh-pr`**: Create PR with full review and reviewer suggestions
+- **`/gh-review`**: Review a pull request
+- **`/gh-address`**: Address PR review comments

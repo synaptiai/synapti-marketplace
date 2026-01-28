@@ -1,8 +1,8 @@
 # Start Work on Issue #$ARGUMENTS
 
-Complete workflow from issue to PR creation.
+Complete workflow from issue assignment through implementation. Ends with option to create PR via `/gh-pr` or continue working.
 
-**Tool Usage**: This workflow uses the **AskUserQuestion tool** for interactive dialogues at key decision points. Use it to clarify requirements, confirm branch naming, and approve PR creation.
+**Tool Usage**: This workflow uses the **AskUserQuestion tool** for interactive dialogues at key decision points.
 
 ## Phase 1: Setup
 
@@ -13,32 +13,21 @@ Complete workflow from issue to PR creation.
 
 2. **Fetch all issue comments for full context**:
    ```bash
-   gh api repos/{owner}/{repo}/issues/$ARGUMENTS/comments --jq '.[] | "---\n**@\(.user.login)** on \(.created_at):\n\(.body)\n"'
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+   gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '.[] | "---\n**@\(.user.login)** on \(.created_at):\n\(.body)\n"'
    ```
 
-3. **Fetch issue timeline for related context**:
-   ```bash
-   gh api repos/{owner}/{repo}/issues/$ARGUMENTS/timeline --jq '.[] | select(.event == "cross-referenced" or .event == "referenced") | "\(.event): \(.source.issue.title // .commit_id)"'
-   ```
-
-4. **Check for linked issues/PRs**:
-   ```bash
-   gh api repos/{owner}/{repo}/issues/$ARGUMENTS --jq '.body' | grep -oE '#[0-9]+'
-   ```
-
-5. **Review all comments and linked issues** before confirming setup with user
-
-6. **Assign the issue to yourself**:
+3. **Assign the issue to yourself**:
    ```bash
    gh issue edit $ARGUMENTS --add-assignee @me
    ```
 
-7. **Ensure on latest main**:
+4. **Ensure on latest main**:
    ```bash
    git checkout main && git pull origin main
    ```
 
-8. **Determine branch type** - If ambiguous, **use the AskUserQuestion tool**:
+5. **Determine branch type** - If ambiguous, **use the AskUserQuestion tool**:
 
    When issue type is unclear (could be feature or fix), ask:
    - **Option 1**: "feature/issue-{number}-{desc}" - New functionality
@@ -49,7 +38,7 @@ Complete workflow from issue to PR creation.
    git checkout -b {branch-name}
    ```
 
-9. **Confirm setup** with user before beginning implementation
+6. **Confirm setup** with user before beginning implementation
 
 ## Phase 2: Implementation
 
@@ -58,13 +47,12 @@ Complete workflow from issue to PR creation.
 - For plugin changes, ensure plugin.json and marketplace.json stay in sync
 - Review Markdown formatting for consistency
 
-## Phase 3: Finalize & Create PR
+## Phase 3: Quality Checks
 
 1. **Verify** all acceptance criteria in the issue are met
 
 2. **Run plugin validation** (if plugin files changed):
    ```bash
-   # Verify plugin structure
    ls plugins/*/  # Check plugin directories exist
    cat plugins/*/.claude-plugin/plugin.json  # Verify plugin.json valid
    ```
@@ -76,139 +64,46 @@ Complete workflow from issue to PR creation.
    - `refactor:` for refactoring
    - `chore:` for maintenance
 
-4. **Push**:
-   ```bash
-   git push -u origin {branch-name}
+## Phase 4: Ready for PR
+
+**All quality checks passed.** Implementation is complete and ready for pull request.
+
+1. **Display Summary**:
+   ```
+   ## Implementation Complete
+
+   **Branch**: {branch-name}
+   **Issue**: #{issue-number} - {issue-title}
+   **Commits**: {N} commits ahead of main
+
+   ### Files Changed
+   - {file1} (created)
+   - {file2} (modified)
    ```
 
-5. **Select labels using the AskUserQuestion tool**:
-   ```bash
-   gh label list
-   ```
+2. **Use the AskUserQuestion tool** for next step:
 
-   Present recommended labels and **use the AskUserQuestion tool** to confirm:
-   - **Option 1**: "Apply suggested labels: [label1, label2]" (Recommended)
-   - **Option 2**: "Let me choose different labels"
-   - **Option 3**: "No labels needed"
+   - **Option 1**: "Create PR now" (Recommended) - Run `/gh-pr` for full PR creation with reviewer suggestions
+   - **Option 2**: "Defer to /gh-pr later" - End now, create PR manually later
+   - **Option 3**: "Make more changes first" - Continue working, commit with `/gh-commit` when ready
 
-6. **Preview PR and get approval using the AskUserQuestion tool**:
+### If Option 1 Selected
 
-   Show the PR title, body preview, and target branch, then ask:
-   - **Option 1**: "Create this PR" (Recommended)
-   - **Option 2**: "Edit title or labels first"
-   - **Option 3**: "Edit PR body first"
-   - **Option 4**: "Cancel PR creation"
+Inform user to run `/gh-pr` which will:
+- Run full code review
+- Check conventions
+- Suggest reviewers
+- Create PR with approval
 
-   **Do not create the PR without explicit approval.**
+### If Option 2 or 3 Selected
 
-7. **Create PR** (target: `main`):
-   ```bash
-   gh pr create --base main --title "TYPE: description (fixes #ISSUE)" --body "..." --assignee @me --label "relevant-label"
-   ```
-   - Always assign to `@me`
-   - Add relevant labels from the available list (can use `--label` multiple times)
-   - Use `(fixes #X)` in title to auto-close the issue on merge (default)
-   - Use `(#X)` instead if the issue should remain open (partial work, related but not completing)
-
-## PR Template
-
-Use this structure for the PR body:
-
-```markdown
-## Closes Issue
-
-closes #{X}
-
-## Summary
-<!-- Brief description of what was changed and why (2-3 sentences) -->
-
-[SUMMARY]
-
-## Changes
-<!-- List key changes made -->
-- [Change 1]
-- [Change 2]
-- [Change 3]
-
-## Verification
-<!-- How the changes were verified -->
-
-**Checks:**
-- [x] Markdown files render correctly
-- [x] Plugin structure valid (if applicable)
-- [x] Links and references work
-- [x] All acceptance criteria met
-
-## Acceptance Criteria
-<!-- Copy from issue and check off each item -->
-
-**From issue:**
-- [x] [Criterion 1]
-- [x] [Criterion 2]
-- [x] [Criterion 3]
-
-## Files Changed
-<!-- List key files modified with brief description -->
-
-**Created:**
-- [file1] - [description]
-
-**Modified:**
-- [file2] - [description]
-
-**Deleted:**
-- None (or list files)
-
-## Plugin Updates
-<!-- If plugin files changed -->
-
-**Plugin**: [plugin-name] (or "N/A")
-**Version**: [version] (or "unchanged")
-
-## Breaking Changes
-<!-- Yes/No - If yes, describe the impact -->
-
-**Breaking**: No
-
-## Screenshots/Examples
-<!-- If applicable, add screenshots or example output -->
-
-## Checklist
-<!-- Final verification before requesting review -->
-- [x] Commit messages follow conventional format
-- [x] Content follows CLAUDE.md guidelines
-- [x] No uncommitted changes
-- [x] Plugin.json and marketplace.json in sync (if applicable)
-
-## Reviewer Notes
-<!-- Any special instructions for reviewers -->
-
-**Review Focus:**
-- [Key areas to review]
 ```
+## Ready for PR
 
-## Phase 4: Verification
-
-After PR creation, verify it was created correctly:
-
-1. **Fetch the PR** to confirm it exists:
-   ```bash
-   gh pr view {pr-number} --json number,title,body,labels,assignees
-   ```
-
-2. **Verify checklist**:
-   - [ ] PR exists and is in OPEN state
-   - [ ] PR targets `main` branch
-   - [ ] Labels applied correctly
-   - [ ] Issue linked in body (`closes #X`)
-   - [ ] Assigned to creator
-
-3. **If verification fails**, report specific issue and how to fix it
-
-4. **Report success** with:
-   - PR URL
-   - PR number
-   - Next steps (request review, wait for CI, etc.)
+When you're ready, run:
+- `/gh-commit` - Commit additional changes
+- `/gh-pr` - Create PR with full review
+```
 
 ## Arguments
 
@@ -217,15 +112,13 @@ After PR creation, verify it was created correctly:
 
 ## Rules
 
-- Default PR target is `main`
-- Use `(fixes #X)` in PR **title** to auto-close the issue on squash merge
-- Use `(#X)` in title if issue should remain open after merge
+- Default branch is `main` for this repository
 - Commits must follow conventional format
-- Always verify plugin structure before creating PR
+- Always verify plugin structure before finishing
 - **Use the AskUserQuestion tool** at decision points:
   - Branch type selection (when ambiguous)
-  - Label selection for PR
-  - PR creation approval
+  - Next step selection (PR now / defer / continue)
+- **Do not create PR directly** - offer choice to run `/gh-pr`
 
 ## Success Criteria
 
@@ -233,6 +126,11 @@ Before completing, verify:
 - [ ] Issue assigned to user
 - [ ] Branch created from latest `main`
 - [ ] All acceptance criteria from issue addressed
-- [ ] PR created with correct target, labels, and assignee
-- [ ] PR verified to exist via `gh pr view`
-- [ ] User informed of PR URL and next steps
+- [ ] User presented with next step options
+
+## Related Commands
+
+- **`/gh-commit`**: Context-aware commits with change classification
+- **`/gh-pr`**: Create PR with full review and reviewer suggestions
+- **`/gh-review`**: Review a pull request
+- **`/gh-address`**: Address PR review comments
