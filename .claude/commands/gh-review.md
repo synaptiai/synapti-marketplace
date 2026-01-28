@@ -17,33 +17,55 @@ Review a pull request with proper branch checkout and convention checks.
    gh api repos/synaptiai/synapti-marketplace/pulls/$ARGUMENTS/comments
    ```
 
-3. **If previous reviews or comments exist**: This is a follow-up review. You MUST:
+3. **Fetch PR conversation** (general discussion comments):
+   ```bash
+   gh api repos/{owner}/{repo}/issues/$ARGUMENTS/comments
+   ```
+
+4. **Extract and fetch linked issue**:
+   ```bash
+   # Extract issue number from PR body (looks for "closes #X", "fixes #X", etc.)
+   gh pr view $ARGUMENTS --json body --jq '.body' | grep -oiE '(closes|fixes|resolves)\s*#[0-9]+' | grep -oE '[0-9]+'
+   ```
+
+   If linked issue found:
+   ```bash
+   # Fetch full issue with acceptance criteria
+   gh issue view {linked-issue} --json title,body,comments
+
+   # Fetch all issue comments
+   gh api repos/{owner}/{repo}/issues/{linked-issue}/comments
+   ```
+
+5. **Cross-reference checklist**: Create a verification list from issue acceptance criteria to check against implementation
+
+6. **If previous reviews or comments exist**: This is a follow-up review. You MUST:
    - Read through ALL previous review comments
    - Track each piece of feedback that was given
    - Later verify each item was addressed (fixed or explained)
    - Note: You're still doing a FULL review - previous reviewers may have missed things
 
-4. **Checkout the PR branch** (CRITICAL - never review from wrong branch):
+7. **Checkout the PR branch** (CRITICAL - never review from wrong branch):
    ```bash
    git fetch origin {headRefName}
    git checkout {headRefName}
    ```
 
-5. **Get the full diff**:
+8. **Get the full diff**:
    ```bash
    gh pr diff $ARGUMENTS
    ```
 
-6. **Read all changed files** - use the Read tool on each modified file to understand the full context
+9. **Read all changed files** - use the Read tool on each modified file to understand the full context
 
-7. **Check conventions** (see checklist below)
+10. **Check conventions** (see checklist below)
 
-8. **If this is a follow-up review**: For each previous comment, verify:
+11. **If this is a follow-up review**: For each previous comment, verify:
    - Was the issue fixed in the content?
    - Or was there a valid explanation for not fixing it?
    - Did the fix introduce any new issues?
 
-9. **Determine review decision using the AskUserQuestion tool**:
+12. **Determine review decision using the AskUserQuestion tool**:
 
    After completing the review checklist, present findings and ask:
    - **Option 1**: "Approve - PR meets all requirements"
@@ -53,7 +75,7 @@ Review a pull request with proper branch checkout and convention checks.
 
    If option 4, **use the AskUserQuestion tool** to ask specific clarifying questions.
 
-10. **Preview review and get approval using the AskUserQuestion tool**:
+13. **Preview review and get approval using the AskUserQuestion tool**:
 
     Show the review comment that will be submitted, then ask:
     - **Option 1**: "Submit this review" (Recommended)
@@ -62,7 +84,7 @@ Review a pull request with proper branch checkout and convention checks.
 
     **Do not submit review without explicit approval.**
 
-11. **Submit review**:
+14. **Submit review**:
     ```bash
     # Approve
     gh pr review $ARGUMENTS --approve --body "REVIEW"
@@ -74,12 +96,17 @@ Review a pull request with proper branch checkout and convention checks.
     gh pr review $ARGUMENTS --comment --body "REVIEW"
     ```
 
-12. **Return to original branch**:
+15. **Return to original branch**:
     ```bash
     git checkout {original-branch}
     ```
 
 ## Review Checklist
+
+### Issue Requirements (if linked)
+- [ ] All acceptance criteria from issue are addressed
+- [ ] All tasks from issue checklist are completed
+- [ ] Implementation matches issue objective
 
 ### Conventions
 - [ ] Commits follow conventional format (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`)

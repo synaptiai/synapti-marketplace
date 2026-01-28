@@ -11,20 +11,30 @@ Systematically address review feedback on a pull request.
    gh pr view $ARGUMENTS --json title,headRefName,state,reviews
    ```
 
-2. **Fetch review comments**:
+2. **Fetch review comments** (inline code comments):
    ```bash
-   gh api repos/synaptiai/synapti-marketplace/pulls/$ARGUMENTS/comments
+   gh api repos/{owner}/{repo}/pulls/$ARGUMENTS/comments
    ```
 
-3. **Checkout PR branch** (if not already on it):
+3. **Fetch PR conversation** (general discussion comments):
+   ```bash
+   gh api repos/{owner}/{repo}/issues/$ARGUMENTS/comments
+   ```
+
+4. **Check for resolved/unresolved threads**:
+   ```bash
+   gh api repos/{owner}/{repo}/pulls/$ARGUMENTS/comments --jq '[.[] | select(.in_reply_to_id == null)] | length'
+   ```
+
+5. **Checkout PR branch** (if not already on it):
    ```bash
    git fetch origin {headRefName}
    git checkout {headRefName}
    ```
 
-4. **Create checklist** of all feedback items to address
+6. **Create checklist** of all feedback items to address
 
-5. **For each comment**:
+7. **For each comment**:
    - Read and understand the feedback
    - Read the relevant content context
 
@@ -43,7 +53,7 @@ Systematically address review feedback on a pull request.
    - Make the necessary changes
    - Commit with a descriptive message
 
-6. **Preview response and get approval using the AskUserQuestion tool**:
+8. **Preview response and get approval using the AskUserQuestion tool**:
 
    Before pushing, show the summary of changes and response comment:
    - **Option 1**: "Push changes and post this response" (Recommended)
@@ -52,17 +62,17 @@ Systematically address review feedback on a pull request.
 
    **Do not push without explicit approval.**
 
-7. **Verify changes before pushing**:
+9. **Verify changes before pushing**:
    - Check Markdown formatting is correct
    - Verify links still work
    - If plugin files changed, ensure JSON is valid
 
-8. **Push changes**:
+10. **Push changes**:
    ```bash
    git push
    ```
 
-9. **Post summary comment**:
+11. **Post summary comment**:
    ```bash
    gh pr comment $ARGUMENTS --body "RESPONSE"
    ```
@@ -129,6 +139,30 @@ git commit -m "updates"
 - Answer in the response comment
 - Make content changes if the answer reveals an issue
 - Clarify any misunderstandings
+
+## Request Re-Review (Optional)
+
+After addressing all feedback, optionally request re-review:
+
+**Use the AskUserQuestion tool** to confirm:
+- **Option 1**: "Request re-review from original reviewers" (Recommended)
+- **Option 2**: "Just push changes, don't request re-review"
+
+```bash
+gh pr edit $ARGUMENTS --add-reviewer {reviewer-username}
+```
+
+## Thread Status Tracking
+
+Include thread status in the response comment:
+
+```markdown
+### Thread Status
+
+| Thread | Status |
+|--------|--------|
+| [Comment summary] | Resolved / Addressed / Needs discussion |
+```
 
 ## Rules
 

@@ -82,7 +82,40 @@ Then **invoke the AskUserQuestion tool** with these options:
 
 **Do not proceed without explicit approval via the AskUserQuestion tool.**
 
-## Phase 2: Version Bump
+## Phase 2: Auto-Generate Release Notes
+
+1. **Get all PRs merged since last release**:
+   ```bash
+   gh pr list --state merged --base main --search "merged:>$(git log -1 --format=%aI $(git describe --tags --abbrev=0))" --json number,title,labels,author
+   ```
+
+2. **Categorize by type** (from PR title prefix or labels):
+   - `feat:` or `enhancement` label → New Features
+   - `fix:` or `bug` label → Bug Fixes
+   - `docs:` or `documentation` label → Documentation
+   - `refactor:` → Other Changes
+   - `plugin` label → Plugin Updates
+
+3. **Generate release notes draft**:
+   ```markdown
+   ## What's Changed
+
+   ### New Features
+   - {PR title} (#PR) @{author}
+
+   ### Bug Fixes
+   - {PR title} (#PR) @{author}
+
+   ### Documentation
+   - {PR title} (#PR) @{author}
+
+   ### Plugin Updates
+   - {plugin-name} v{version}: {summary}
+   ```
+
+4. **Use AskUserQuestion tool** to review/edit generated notes before release
+
+## Phase 3: Version Bump
 
 ### For Plugin Release
 
@@ -98,7 +131,7 @@ Then **invoke the AskUserQuestion tool** with these options:
 1. **Update marketplace version** in `.claude-plugin/marketplace.json`:
    - Edit `metadata.version` field
 
-## Phase 3: Package Desktop Skills
+## Phase 4: Package Desktop Skills
 
 Generate Claude Desktop-compatible skill packages:
 
@@ -128,7 +161,7 @@ Generate Claude Desktop-compatible skill packages:
        └── references/       (bundled reference files)
    ```
 
-## Phase 4: Commit & Push
+## Phase 5: Commit & Push
 
 1. **Commit version bump** (dist/ is gitignored, packages attached to release):
    ```bash
@@ -141,7 +174,7 @@ Generate Claude Desktop-compatible skill packages:
    git push origin main
    ```
 
-## Phase 5: Create Tag & Release
+## Phase 6: Create Tag & Release
 
 1. **Create git tag**:
    ```bash
@@ -220,7 +253,7 @@ Generate Claude Desktop-compatible skill packages:
 # - Tag: v2.1.0
 ```
 
-## Phase 6: Verification
+## Phase 7: Verification
 
 After release creation, verify everything completed successfully:
 

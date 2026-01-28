@@ -47,6 +47,7 @@ Project-specific commands for GitHub workflow:
 | `/gh-merge <pr>` | Merge an approved pull request |
 | `/gh-release <type>` | Create a release (patch/minor/major) |
 | `/gh-plugin [name]` | Validate plugin structure |
+| `/gh-status` | Show workflow status overview |
 
 ## Project Structure
 

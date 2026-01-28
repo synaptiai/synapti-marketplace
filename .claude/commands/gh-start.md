@@ -11,17 +11,34 @@ Complete workflow from issue to PR creation.
    gh issue view $ARGUMENTS
    ```
 
-2. **Assign the issue to yourself**:
+2. **Fetch all issue comments for full context**:
+   ```bash
+   gh api repos/{owner}/{repo}/issues/$ARGUMENTS/comments --jq '.[] | "---\n**@\(.user.login)** on \(.created_at):\n\(.body)\n"'
+   ```
+
+3. **Fetch issue timeline for related context**:
+   ```bash
+   gh api repos/{owner}/{repo}/issues/$ARGUMENTS/timeline --jq '.[] | select(.event == "cross-referenced" or .event == "referenced") | "\(.event): \(.source.issue.title // .commit_id)"'
+   ```
+
+4. **Check for linked issues/PRs**:
+   ```bash
+   gh api repos/{owner}/{repo}/issues/$ARGUMENTS --jq '.body' | grep -oE '#[0-9]+'
+   ```
+
+5. **Review all comments and linked issues** before confirming setup with user
+
+6. **Assign the issue to yourself**:
    ```bash
    gh issue edit $ARGUMENTS --add-assignee @me
    ```
 
-3. **Ensure on latest main**:
+7. **Ensure on latest main**:
    ```bash
    git checkout main && git pull origin main
    ```
 
-4. **Determine branch type** - If ambiguous, **use the AskUserQuestion tool**:
+8. **Determine branch type** - If ambiguous, **use the AskUserQuestion tool**:
 
    When issue type is unclear (could be feature or fix), ask:
    - **Option 1**: "feature/issue-{number}-{desc}" - New functionality
@@ -32,7 +49,7 @@ Complete workflow from issue to PR creation.
    git checkout -b {branch-name}
    ```
 
-5. **Confirm setup** with user before beginning implementation
+9. **Confirm setup** with user before beginning implementation
 
 ## Phase 2: Implementation
 

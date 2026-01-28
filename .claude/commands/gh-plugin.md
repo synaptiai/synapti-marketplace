@@ -92,23 +92,33 @@ cat .claude-plugin/marketplace.json
 
 For each Markdown file in agents/, commands/, skills/:
 
-**Agents** (`plugins/{name}/agents/*.md`):
-- [ ] Has clear title (# heading)
-- [ ] Describes agent purpose
-- [ ] Lists capabilities or responsibilities
-- [ ] No TODO or placeholder content
+#### Enhanced Agent Validation
 
-**Commands** (`plugins/{name}/commands/*.md`):
-- [ ] Has clear title
-- [ ] Describes what command does
-- [ ] Documents arguments/parameters
-- [ ] Includes usage examples
+For each agent file (`plugins/{name}/agents/*.md`):
+- [ ] Has `# Title` heading
+- [ ] Has `## Purpose` or `## Description` section
+- [ ] Has `## Instructions` or `## Process` section
+- [ ] Has `## Examples` section (if applicable)
+- [ ] No `TODO`, `FIXME`, or `[PLACEHOLDER]` markers
+- [ ] No broken internal links
 
-**Skills** (`plugins/{name}/skills/*/SKILL.md`):
-- [ ] Has clear title
-- [ ] Describes skill purpose
-- [ ] Includes implementation details
-- [ ] References are valid
+#### Enhanced Command Validation
+
+For each command file (`plugins/{name}/commands/*.md`):
+- [ ] Has `# Command Name` heading with `$ARGUMENTS` if parameterized
+- [ ] Has clear process/workflow section
+- [ ] Documents all `$ARGUMENTS` usage
+- [ ] Has `## Examples` section
+- [ ] Has `## Rules` section
+
+#### Enhanced Skill Validation
+
+For each skill (`plugins/{name}/skills/*/SKILL.md`):
+- [ ] Has `# Skill Name` heading
+- [ ] Has `description:` frontmatter or section
+- [ ] Has `## Instructions` section
+- [ ] All `references/` files exist and are valid
+- [ ] No duplicate reference files
 
 ### 5. Link Validation
 
@@ -116,6 +126,17 @@ Check all internal links resolve:
 - Links to other files in the plugin
 - References to agents/commands/skills
 - Image references (if any)
+
+**Link validation script**:
+```bash
+# Extract all markdown links and verify they resolve
+grep -oE '\[([^\]]+)\]\(([^)]+)\)' {file} | while read link; do
+  path=$(echo "$link" | grep -oE '\(([^)]+)\)' | tr -d '()')
+  if [[ "$path" != http* ]] && [[ ! -f "$path" ]]; then
+    echo "Broken link: $path"
+  fi
+done
+```
 
 ## Output Format
 
