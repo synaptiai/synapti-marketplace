@@ -26,7 +26,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | [Agent Capability Standard ↗](https://github.com/synaptiai/agent-capability-standard) | Standards, Agent Development | Technical specification for AI agents with structural reliability. 99 atomic capabilities across 8 layers with reference workflows and safety-by-construction patterns. | 1.0.0 |
 | [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.3.1 |
-| [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.0.2 |
+| [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.2.0 |
 
 ### When to Use Each Plugin
 
@@ -46,6 +46,8 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Check my workflow status (issues, PRs, reviews) | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-status` |
 | Create well-structured GitHub issues | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-issue` |
 | Start implementing a GitHub issue | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-start` |
+| Commit changes with context-aware classification | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-commit` |
+| Create a PR with full review and reviewer suggestions | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-pr` |
 | Review a pull request systematically | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-review` |
 | Create releases with changelogs | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-release` |
 
@@ -78,6 +80,7 @@ Skills from this marketplace are also available for **Claude Desktop** users. De
 | `deep-research.zip` | Decipon | Comprehensive research using Time-Tested Diffusion methodology |
 | `nci-analysis.zip` | Decipon | NCI Protocol for manipulation detection |
 | `repo-config.zip` | gh-workflow | Dynamic repository configuration |
+| `suggest-users.zip` | gh-workflow | Reviewer and assignee suggestions based on expertise |
 
 > **Note**: Desktop packages are automatically generated during releases. They contain the same skill content with Claude Code-specific frontmatter fields (`context`, `agent`, `hooks`, etc.) removed for compatibility.
 
@@ -251,7 +254,9 @@ Traditional approaches to GitHub automation often break when:
 |---------|-------------|
 | `/gh-workflow:gh-status` | View workflow status (assigned issues, open PRs, review requests) |
 | `/gh-workflow:gh-issue` | Create issues that focus on requirements, not implementation |
-| `/gh-workflow:gh-start <N>` | Assign issue, create branch, implement, and create PR |
+| `/gh-workflow:gh-start <N>` | Assign issue, create branch, implement with task tracking |
+| `/gh-workflow:gh-commit` | Context-aware commits with change classification |
+| `/gh-workflow:gh-pr` | Create PR with full review and reviewer suggestions |
 | `/gh-workflow:gh-review <N>` | Systematic PR review with checklist and feedback |
 | `/gh-workflow:gh-address <N>` | Address review comments on a PR |
 | `/gh-workflow:gh-merge <N>` | Safely merge approved PRs |
@@ -271,11 +276,12 @@ claude plugin install gh-workflow
 ### The Complete Development Cycle
 
 ```
-/gh-status → /gh-issue → /gh-start → /gh-review → /gh-address → /gh-merge → /gh-release
-     │            │            │            │            │            │            │
-     ▼            ▼            ▼            ▼            ▼            ▼            ▼
-  View        Create      Branch +     Review      Address      Merge       Tag +
-  status      issue      implement      PR       comments       PR       changelog
+/gh-status → /gh-issue → /gh-start → /gh-commit → /gh-pr → /gh-review → /gh-address → /gh-merge → /gh-release
+     │            │            │            │          │          │            │            │            │
+     ▼            ▼            ▼            ▼          ▼          ▼            ▼            ▼            ▼
+  View        Create      Branch +    Context-   Full PR    Review      Address      Merge       Tag +
+  status      issue      implement    aware      review       PR       comments       PR       changelog
+                                     commits    + suggest
 ```
 
 **[Full gh-workflow Documentation →](./plugins/gh-workflow/README.md)**
@@ -383,17 +389,26 @@ synapti-marketplace/
         ├── .claude-plugin/
         │   └── plugin.json            # Plugin metadata
         ├── README.md                  # Full plugin documentation
-        ├── commands/                  # 8 workflow commands
+        ├── agents/                    # 4 specialized agents
+        │   ├── code-reviewer.md       # Code quality review
+        │   ├── convention-checker.md  # Git convention validation
+        │   ├── implementation-planner.md # Task breakdown
+        │   └── test-runner.md         # Quality gate runner
+        ├── commands/                  # 10 workflow commands
         │   ├── gh-status.md           # View workflow status
         │   ├── gh-issue.md            # Create issues
         │   ├── gh-start.md            # Start work on issue
+        │   ├── gh-commit.md           # Context-aware commits
+        │   ├── gh-pr.md               # Create PR with review
         │   ├── gh-review.md           # Review PRs
         │   ├── gh-address.md          # Address PR comments
         │   ├── gh-merge.md            # Merge approved PRs
         │   ├── gh-release.md          # Create releases
         │   └── gh-setup.md            # Setup workflow config
         ├── skills/                    # Dynamic configuration
-        │   └── repo-config/
+        │   ├── repo-config/           # Repository settings
+        │   ├── capability-discovery/  # Environment detection
+        │   └── suggest-users/         # Reviewer/assignee suggestions
         └── templates/                 # Issue/PR templates
 ```
 
