@@ -23,7 +23,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 
 | Plugin | Category | Description | Version |
 |--------|----------|-------------|---------|
-| [Agent Capability Standard ↗](https://github.com/synaptiai/agent-capability-standard) | Standards, Agent Development | Technical specification for AI agents with structural reliability. 99 atomic capabilities across 8 layers with reference workflows and safety-by-construction patterns. | 1.0.0 |
+| [Agent Capability Standard ↗](https://github.com/synaptiai/agent-capability-standard) | Standards, Agent Development | Technical specification for AI agents with structural reliability. 36 atomic capabilities across 9 layers with reference workflows and safety-by-construction patterns. | 1.2.0 |
 | [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.3.1 |
 | [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.2.0 |
@@ -310,24 +310,25 @@ Most AI agents today operate with:
 
 | Feature | Benefit |
 |---------|---------|
-| **99 Atomic Capabilities** | Minimal, composable building blocks across 8 functional layers |
+| **36 Atomic Capabilities** | Minimal, composable building blocks across 9 cognitive layers |
 | **Typed Contracts** | Explicit input/output schemas between capabilities |
 | **Safety-by-Construction** | Mutations require checkpoints; rollback always possible |
 | **Audit Trails** | Complete action lineage and provenance for every operation |
 | **Reference Workflows** | Battle-tested patterns for common agent tasks |
 
-### The 8 Capability Layers
+### The 9 Capability Layers
 
 | Layer | Count | Purpose |
 |-------|-------|---------|
-| Perception | 4 | Inspection, searching, retrieval, reception |
-| Modeling | 45 | Detection, identification, estimation, forecasting |
-| Reasoning | 20 | Comparison, planning, decision-making, critique |
-| Action | 12 | Plan execution, generation, transformation |
-| Safety | 7 | Verification, checkpointing, rollback, auditing |
-| Meta | 6 | Discovery, prioritization |
-| Memory | 2 | Persistence, recall |
-| Coordination | 3 | Delegation, synchronization |
+| Perceive | 4 | Retrieval, searching, observation, reception |
+| Understand | 6 | Detection, classification, measurement, prediction |
+| Reason | 4 | Planning, decomposition, critique, explanation |
+| Model | 5 | State, transition, attribution, grounding, simulation |
+| Synthesize | 3 | Generation, transformation, integration |
+| Execute | 3 | Execution, mutation, sending |
+| Verify | 5 | Verification, checkpointing, rollback, auditing |
+| Remember | 2 | Persistence, recall |
+| Coordinate | 4 | Delegation, synchronization, invocation, inquiry |
 
 ### Reference Workflows
 
