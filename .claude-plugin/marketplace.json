@@ -46,7 +46,7 @@
       "name": "gh-workflow",
       "source": "./plugins/gh-workflow",
       "description": "Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings.",
-      "version": "1.5.0",
+      "version": "1.5.1",
       "author": {
         "name": "Daniel Bentes"
       },
