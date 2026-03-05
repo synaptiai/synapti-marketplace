@@ -26,7 +26,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | [Agent Capability Standard ↗](https://github.com/synaptiai/agent-capability-standard) | Standards, Agent Development | Technical specification for AI agents with structural reliability. 36 atomic capabilities across 9 layers with reference workflows and safety-by-construction patterns. | 1.2.0 |
 | [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.3.1 |
-| [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.2.0 |
+| [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.4.0 |
 
 ### When to Use Each Plugin
 
@@ -80,6 +80,8 @@ Skills from this marketplace are also available for **Claude Desktop** users. De
 | `deep-research.zip` | Decipon | Comprehensive research using Time-Tested Diffusion methodology |
 | `nci-analysis.zip` | Decipon | NCI Protocol for manipulation detection |
 | `repo-config.zip` | gh-workflow | Dynamic repository configuration |
+| `capability-discovery.zip` | gh-workflow | Environment and capability detection |
+| `runtime-verification.zip` | gh-workflow | Runtime verification (dev server, E2E, smoke tests) |
 | `suggest-users.zip` | gh-workflow | Reviewer and assignee suggestions based on expertise |
 
 > **Note**: Desktop packages are automatically generated during releases. They contain the same skill content with Claude Code-specific frontmatter fields (`context`, `agent`, `hooks`, etc.) removed for compatibility.
@@ -247,6 +249,10 @@ Traditional approaches to GitHub automation often break when:
 | **Solution-Agnostic Issues** | Issues describe requirements, not implementation — survives refactoring |
 | **Interactive Workflows** | Guided prompts at decision points prevent mistakes |
 | **Complete Lifecycle** | Single plugin covers issues → implementation → review → merge → release |
+| **Verification Loops** | Bounded fix-verify cycles (max 3 iterations) enforce "iterate until green" |
+| **Parallel Agent Pipeline** | Dispatches code-reviewer, convention-checker, and test-runner simultaneously |
+| **Runtime Verification** | Verifies implementation works when running (dev server, API, E2E tests) |
+| **Evidence-Based Assertions** | Requires file:line citations for code behavior claims |
 
 ### Commands
 
@@ -409,6 +415,7 @@ synapti-marketplace/
         ├── skills/                    # Dynamic configuration
         │   ├── repo-config/           # Repository settings
         │   ├── capability-discovery/  # Environment detection
+        │   ├── runtime-verification/  # Runtime verification (dev server, E2E)
         │   └── suggest-users/         # Reviewer/assignee suggestions
         └── templates/                 # Issue/PR templates
 ```
