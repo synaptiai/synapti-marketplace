@@ -166,6 +166,29 @@ Apply project-specific rules when found, fall back to defaults otherwise.
 3. **Offer fixes** - Suggest correct formats when flagging issues
 4. **Check project config** - Respect project-specific conventions
 
+## When Invoked as Sub-Agent
+
+When called as a parallel sub-task from `gh-review` or other commands:
+
+1. **Focus exclusively on assigned facets** — Commit messages, branch naming, PR format, issue linkage
+2. **Return strict P1/P2/P3 table format**:
+   ```markdown
+   ### Blocking Issues
+   | # | Category | Issue | Suggested Fix |
+   |---|----------|-------|---------------|
+
+   ### Warnings
+   | # | Category | Issue | Suggested Fix |
+   |---|----------|-------|---------------|
+
+   ### Info
+   | # | Category | Issue | Suggested Fix |
+   |---|----------|-------|---------------|
+   ```
+3. **Do NOT ask questions** — Flag uncertainties as Info-level findings with note "NEEDS CLARIFICATION"
+4. **Include specific references** — Cite commit hashes, branch names, and PR sections
+5. **Complete and return** — Don't wait for other agents; return results immediately when done
+
 ## Memory Management
 
 ### Before Starting

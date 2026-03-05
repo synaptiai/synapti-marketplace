@@ -93,6 +93,23 @@ grep -E "(go vet|go test|golangci-lint)" .claude/CLAUDE.md 2>/dev/null
 [ -f "Gemfile" ] && echo "ruby"
 ```
 
+### Step 6: Discover Verification Capabilities
+
+```bash
+# Check for runtime verification commands in CLAUDE.md
+grep -E "^(dev-server|verify|e2e|smoke|health):" .claude/CLAUDE.md 2>/dev/null
+
+# Check for verification scripts
+ls verify.sh scripts/verify* test-e2e.sh smoke-test.sh 2>/dev/null
+
+# Check for E2E frameworks
+ls playwright.config.* cypress.config.* 2>/dev/null
+grep -l "playwright\|cypress\|selenium" package.json pyproject.toml 2>/dev/null
+
+# Check for dev server patterns
+cat package.json 2>/dev/null | grep -E '"(dev|start|serve)"'
+```
+
 ## Output Format
 
 Report discovered capabilities in structured format:
@@ -125,6 +142,13 @@ Report discovered capabilities in structured format:
 ### Tech Stack Detected
 - Python (pyproject.toml found)
 - TypeScript (tsconfig.json found)
+
+### Verification Capabilities
+| Capability | Command | Source |
+|-----------|---------|--------|
+| Dev server | `npm run dev` | package.json scripts.dev |
+| E2E tests | `npx playwright test` | playwright.config.ts detected |
+| Health check | `curl localhost:3000/health` | CLAUDE.md |
 
 ### Recommended Workflow
 Based on capabilities:

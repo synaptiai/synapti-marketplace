@@ -49,6 +49,27 @@ Available labels for this repository:
 - `enhancement` - New feature or request
 - `documentation` - Documentation improvements
 
+## Verification
+
+### Quality Commands
+- Lint: `{lint_cmd}`
+- Test: `{test_cmd}`
+- Type check: `{typecheck_cmd}`
+
+### Runtime Verification
+- Dev server: `{dev_server_cmd}` (app at http://localhost:{port})
+- Health check: `curl http://localhost:{port}/health`
+- E2E tests: `{e2e_cmd}`
+- Smoke tests: `{smoke_cmd}` (or "N/A")
+
+### For any feature work:
+1. Add/extend unit tests first
+2. Implement code
+3. Run unit + lint + typecheck; fix until green
+4. Start dev server and verify new behavior works
+5. Run E2E tests if applicable
+6. For UI changes, verify visually or via browser automation
+
 ---
 
 ## Customization Notes

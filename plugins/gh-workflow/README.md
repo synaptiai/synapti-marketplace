@@ -95,6 +95,7 @@ Irreversible actions (force push, branch deletion, release creation) require exp
 - **Task-Based Tracking**: Uses TaskCreate/TaskUpdate for implementation and review progress
 - **Multi-Faceted Review**: Structured review with P1/P2/P3 prioritization
 - **Capability Discovery**: Dynamically discovers available agents, skills, and quality commands
+- **Runtime Verification**: Verifies implementation works when running (dev server, API, E2E)
 - **Self-Review Gates**: Mandatory code and test review before PR creation
 
 ## Commands
@@ -374,6 +375,15 @@ Discovers available capabilities in the user's environment:
 - Parses CLAUDE.md for quality commands
 - Detects tech stack
 - Enables dynamic workflow adaptation
+
+### runtime-verification
+
+Discovers and executes runtime verification for the implementation:
+- Dev server startup and health checks
+- API endpoint smoke testing
+- E2E test framework detection and execution
+- Acceptance criteria verification
+- Graceful degradation when capabilities are missing
 
 ### suggest-users
 

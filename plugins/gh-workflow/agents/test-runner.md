@@ -188,6 +188,27 @@ If no quality tools detected:
 4. **Cache awareness**: Note if tests are using cache
 5. **Coverage optional**: Only run coverage if explicitly requested
 
+## When Invoked as Sub-Agent
+
+When called as a parallel sub-task from `gh-review` or other commands:
+
+1. **Focus exclusively on assigned facets** — Lint, test, and typecheck execution
+2. **Return strict results table format**:
+   ```markdown
+   ### Quality Check Results
+   | Check | Command | Status | Issues |
+   |-------|---------|--------|--------|
+   | Lint | `{cmd}` | Pass/Fail | [details] |
+   | Tests | `{cmd}` | Pass/Fail | [X passed, Y failed] |
+   | Types | `{cmd}` | Pass/Fail | [details] |
+
+   ### Failures
+   [Detailed error output for any failures]
+   ```
+3. **Do NOT ask questions** — If no quality tools detected, report "No quality tools found" and return
+4. **Execute all quality commands in parallel** when possible (3 Bash tool calls in single message)
+5. **Complete and return** — Don't wait for other agents; return results immediately when done
+
 ## Memory Management
 
 ### Before Starting

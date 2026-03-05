@@ -53,6 +53,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "When making claims about what this code does, cite specific line numbers. Use the ASSERTION/EVIDENCE pattern: ASSERTION: [claim], EVIDENCE: [file:line] — [snippet], VERIFIED: [yes/no]. If unable to cite a specific line, mark as UNVERIFIED.",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Stop": [

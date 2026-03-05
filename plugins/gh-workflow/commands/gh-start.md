@@ -1,7 +1,7 @@
 ---
 description: Use to start work on a GitHub issue - assigns issue, creates branch, guides implementation with task tracking, and prepares for PR
 argument-hint: <issue-number>
-allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Skill
+allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Skill
 ---
 
 <!--
@@ -26,6 +26,7 @@ Complete workflow from issue assignment through implementation with task-based t
 - Never skip quality gates (lint, tests, code review, test review)
 - Never leave placeholder/mock/stub code in source files
 - All implementations must be production-ready before marking tasks complete
+- When asserting code behaves a certain way, cite the specific file:line. If unable to cite, mark as UNVERIFIED
 
 **FORMAT**: Task-based progress tracking using TaskCreate/TaskUpdate. Each acceptance criterion becomes a tracked task.
 
@@ -136,7 +137,16 @@ Before implementation, discover available project capabilities:
    ls pyproject.toml package.json tsconfig.json go.mod Cargo.toml 2>/dev/null
    ```
 
-Note available capabilities for use in quality checks phase.
+5. **Build parallel quality command set** for reuse throughout the workflow:
+
+   Based on CLAUDE.md commands or detected tech stack, compose three parallel commands:
+   ```
+   LINT_CMD="{detected lint command}"    # e.g., ruff check ., npm run lint, go vet ./...
+   TEST_CMD="{detected test command}"    # e.g., pytest, npm test, go test ./...
+   TYPECHECK_CMD="{detected typecheck}"  # e.g., pyright, tsc --noEmit, (skip if N/A)
+   ```
+
+   Store these for use in Phase 3.2 verification loop. If a command is not applicable (e.g., no type checker), note it as "N/A — skip".
 
 ## Phase 1.7: Impact Analysis
 
@@ -150,18 +160,28 @@ Before implementing, map the blast radius of planned changes:
    grep -rn "import.*{module}" --include="*.ts" --include="*.py" --include="*.go" . 2>/dev/null | head -20
    ```
 
-3. **Find existing tests** for affected modules:
+3. **Find tests that import or mock affected modules** (not just filename matching):
    ```bash
-   # Find test files for affected modules
-   find . -name "*test*" -path "*{module}*" -o -name "*{module}*" -path "*test*" 2>/dev/null
+   # For each module being changed, find ALL tests that depend on it
+   grep -rln "import.*{module}\|from.*{module}\|require.*{module}\|mock.*{module}\|jest\.mock.*{module}\|patch.*{module}" --include="*test*" --include="*spec*" . 2>/dev/null
+   grep -rln "import.*{module}\|from.*{module}\|require.*{module}" tests/ test/ __tests__/ spec/ 2>/dev/null
    ```
+   This catches tests in unrelated directories that import the module, which filename-pattern matching misses.
 
 4. **Check for middleware/interceptors/decorators** that might be affected:
    ```bash
    grep -rn "middleware\|interceptor\|decorator\|@app\.\|@router\." --include="*.py" --include="*.ts" . 2>/dev/null | head -10
    ```
 
-5. **Document impact** briefly:
+5. **Map test setup requirements** for each affected test file:
+   ```bash
+   # For each affected test file, extract setup patterns
+   head -30 {test_file}  # Check imports and fixtures
+   grep -n "setUp\|fixture\|beforeEach\|beforeAll\|@pytest.fixture\|conftest\|TestCase" {test_file} 2>/dev/null
+   ```
+   This prevents the pattern where tests break because they lack required setup (e.g., CSRF middleware added but test fixtures don't include it).
+
+6. **Document impact** with test impact map:
 
    ```markdown
    ## Impact Analysis
@@ -171,13 +191,26 @@ Before implementing, map the blast radius of planned changes:
    |--------|-----------|-------------|------|
    | [module] | [N files] | [yes/no] | [low/med/high] |
 
+   ### Test Impact Map
+   | Module Being Changed | Test Files That Import/Mock It | Test Setup Requirements |
+   |---------------------|-------------------------------|------------------------|
+   | [module] | [test_file1, test_file2] | [fixtures, middleware, env vars] |
+
+   ### Tests to Run After EACH Change
+   1. `{test_cmd} {specific_test_file_1}`
+   2. `{test_cmd} {specific_test_file_2}`
+   3. `{full_test_suite_cmd}`
+
+   ### Regression Guard
+   Before implementing, snapshot current test state:
+   ```bash
+   {test_cmd} 2>&1 | tail -5  # Record baseline pass/fail counts
+   ```
+   After each change, compare against baseline to catch regressions immediately.
+
    ### Potential Side Effects
    - [e.g., "Adding auth middleware will affect all POST handlers"]
    - [e.g., "Changing schema will require test fixture updates"]
-
-   ### Test Strategy
-   - Run these tests after each change: [list]
-   - Watch for breakage in: [list]
    ```
 
 This prevents the pattern of adding middleware (e.g., CSRF) that silently breaks downstream tests.
@@ -199,6 +232,27 @@ TaskCreate:
 Example breakdown:
 - Issue says "Users can filter by date" → Task: "Add date filtering to search endpoint"
 - Issue says "Validation errors show helpful messages" → Task: "Implement validation error formatting"
+
+### Step 2.1a: Identify Parallel Implementation Opportunities
+
+After creating the task breakdown, analyze the dependency graph to find tasks that can run in parallel:
+
+**Parallelism criteria** (ALL must be true):
+1. Tasks share the same dependency set (same `blockedBy` or no dependencies)
+2. Tasks modify **different files** (no file overlap)
+3. Tasks don't create code that the other imports (no cross-task dependencies)
+4. Each task produces a testable increment
+
+**If safe parallel groups found**:
+1. Dispatch **Agent tool calls in parallel** for each task in the group (using `isolation: "worktree"`)
+2. Each agent receives: task description, relevant file paths, project conventions from CLAUDE.md
+3. After agents complete → verify no file conflicts (`git diff --name-only` across worktrees)
+4. Run quality checks on merged result
+5. Mark parallel tasks as complete
+
+**If no safe parallel groups found** → fall back to sequential Step 2.2. This is the **default** — incorrect parallelism causes merge conflicts, so err on the side of sequential.
+
+**Example**: If Task 1 = "Add validation schema" and Task 2 = "Update API docs", and they touch different files with no imports between them, they can safely run in parallel. But if Task 2 imports from Task 1's output, they must be sequential.
 
 ### Step 2.2: Work Through Tasks Systematically
 
@@ -263,35 +317,34 @@ In priority order:
    | go.mod | `go vet ./...`, `go test ./...` |
    | Cargo.toml | `cargo clippy`, `cargo test` |
 
-### Step 3.2: Execute Quality Checks
+### Step 3.2: Quality Verification Loop (Bounded)
 
-**Run in parallel** (all quality tools at once):
+Execute a bounded fix-verify cycle. **Fix immediately — do not create tasks** for lint/test failures.
 
-```bash
-# Python
-ruff check . 2>/dev/null
-pytest 2>/dev/null
+**Iteration 1 (and up to 3 total):**
 
-# TypeScript/JavaScript
-npm run lint 2>/dev/null
-npm test 2>/dev/null
+1. **Run all quality commands in parallel** (3 Bash tool calls in a single message):
+   ```
+   Execute 3 Bash tool calls in a single message:
+   - Bash call 1: {lint_cmd}       # e.g., ruff check . 2>&1
+   - Bash call 2: {test_cmd}       # e.g., pytest 2>&1
+   - Bash call 3: {typecheck_cmd}  # e.g., tsc --noEmit 2>&1
+   ```
 
-# Go
-go vet ./... 2>/dev/null
-go test ./... 2>/dev/null
-```
+2. **If ALL pass** → proceed to Step 3.4
 
-### Step 3.3: Handle Failures
+3. **If ANY fail**:
+   - Parse error output to identify root cause (file, line, error type)
+   - Fix the issue inline immediately (Edit tool, not TaskCreate)
+   - Commit the fix: `git commit -m "fix: [what was fixed]"`
+   - Re-run ALL checks (go back to step 1)
 
-If checks fail, create tasks for fixes:
-```
-TaskCreate:
-  subject: "Fix: [failure type]"
-  description: "[Error message and location]"
-  activeForm: "Fixing [error]"
-```
+4. **Max 3 iterations**. After 3 failed iterations → escalate to user via **AskUserQuestion tool**:
+   - **Option 1**: "Show me the failures, I'll fix manually"
+   - **Option 2**: "Skip failing checks and proceed" — note which checks were skipped
+   - **Option 3**: "Abort — I need to investigate"
 
-Work through fix tasks, then re-run checks.
+**Key principle**: Tight fix-verify cycles. Tasks add overhead to what should be a quick lint/test fix.
 
 ### Step 3.4: Verify All Tasks Complete
 
@@ -303,6 +356,76 @@ If incomplete tasks remain, **use AskUserQuestion tool**:
 - "Complete remaining tasks before PR"
 - "Create PR noting partial implementation"
 - "Mark remaining as out-of-scope"
+
+## Phase 3.3: Runtime Verification
+
+After quality checks pass (lint/test/typecheck), verify the implementation actually works:
+
+### Step 3.3.1: Discover Verification Capabilities
+
+Check what runtime verification is available for this project:
+```bash
+# From CLAUDE.md
+grep -E "^(dev-server|verify|e2e|smoke|health):" .claude/CLAUDE.md 2>/dev/null
+
+# From project files
+ls verify.sh scripts/verify* 2>/dev/null
+ls playwright.config.* cypress.config.* 2>/dev/null
+cat package.json 2>/dev/null | grep -E '"(dev|start|serve|e2e|test:e2e)"'
+```
+
+### Step 3.3.2: Execute Available Verification
+
+**If dev server command found**:
+1. Start server in background
+2. Wait for ready signal (health endpoint or port availability, max 30s)
+3. Run smoke tests against new/modified endpoints
+4. Run E2E tests if framework detected
+5. Kill background server
+
+**If verify script found** (`verify.sh`, `scripts/verify.sh`):
+```bash
+bash verify.sh 2>&1
+```
+
+**If E2E framework found** (Playwright, Cypress, etc.):
+```bash
+{e2e_cmd} 2>&1
+```
+
+**If acceptance criteria can be verified programmatically**:
+For each criterion from the issue, attempt to verify it:
+- API endpoint → make request, check response
+- CLI command → run it, check output
+- Data transformation → verify input/output
+- Document result as VERIFIED or NEEDS_MANUAL_CHECK
+
+### Step 3.3.3: Report Results
+
+```markdown
+## Runtime Verification Results
+
+| Check | Status | Evidence |
+|-------|--------|----------|
+| Dev server starts | Pass/Fail/Skipped | [details] |
+| API endpoints respond | Pass/Fail/Skipped | [details] |
+| E2E tests | Pass/Fail/Skipped | [X passed, Y failed] |
+| Acceptance criteria | Pass/Partial/Skipped | [details per criterion] |
+
+### Items Requiring Manual Verification
+| Item | Why |
+|------|-----|
+| [criterion] | No automation available — verify visually |
+```
+
+### Step 3.3.4: Handle Failures
+
+Apply the verification loop pattern:
+- If runtime tests fail → analyze root cause, fix, re-run (max 3 iterations)
+- If dev server won't start → report error with logs, proceed to code review (not blocking)
+- If no verification capabilities detected → note "Runtime verification skipped — no dev server or E2E framework found" and proceed
+
+**IMPORTANT**: Runtime verification is additive, not blocking. If a project has no dev server or E2E framework, this phase completes with "skipped" status and the workflow continues. It should never prevent a PR from being created for projects that don't have runtime verification set up.
 
 ## Phase 3.5: Code Review (Self-Review)
 
@@ -439,10 +562,9 @@ TaskList
 - [ ] All implementations are complete
 
 **If ANY gate fails**:
-1. Create tasks for each failure
-2. Address all issues
-3. Re-run this gate
-4. Only proceed when all checks pass
+1. Apply the verification loop pattern (Step 3.2): fix inline immediately, re-run checks
+2. Max 3 iterations before escalating to user via AskUserQuestion
+3. Only proceed when all checks pass
 
 ## Phase 4: Ready for PR
 

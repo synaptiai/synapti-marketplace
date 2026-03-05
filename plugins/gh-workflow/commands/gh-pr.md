@@ -189,21 +189,40 @@ git diff --name-only $DEFAULT_BRANCH..HEAD | xargs grep -n "console\.log\|print(
 - Edge cases tested
 - Test assertions are meaningful
 
-### Step 3.4: Run Quality Commands
+### Step 3.4: Run Quality Commands (Parallel)
 
-Detect and run project quality commands:
+Detect quality commands from CLAUDE.md or tech stack, then execute **all in parallel** (3 Bash tool calls in a single message):
 
-```bash
-# Check CLAUDE.md for commands
-grep -E "(lint|test|check)" .claude/CLAUDE.md 2>/dev/null
-
-# Or detect from tech stack
-[ -f "pyproject.toml" ] && ruff check . 2>/dev/null
-[ -f "package.json" ] && npm run lint 2>/dev/null
-[ -f "go.mod" ] && go vet ./... 2>/dev/null
+```
+Execute 3 Bash tool calls in a single message:
+- Bash call 1: {lint_cmd}       # e.g., ruff check . 2>&1, npm run lint 2>&1
+- Bash call 2: {test_cmd}       # e.g., pytest 2>&1, npm test 2>&1
+- Bash call 3: {typecheck_cmd}  # e.g., pyright 2>&1, tsc --noEmit 2>&1
 ```
 
+If a command is not applicable (e.g., no type checker for the stack), skip that call. Each result is captured separately for clear error attribution.
+
+### Step 3.4a: Quality Verification Loop
+
+If any quality command fails, apply bounded verification:
+
+1. Parse error output to identify root cause
+2. Fix the issue inline immediately (no TaskCreate for lint/test failures)
+3. Re-run ALL quality commands in parallel
+4. **Max 3 iterations**. After 3 failures → include failures as P1 findings in Step 3.5 for user decision in Step 3.6
+
+### Step 3.4b: Runtime Verification (if available)
+
+If the project has runtime verification capabilities (dev server, E2E tests, verify script):
+1. Run runtime verification
+2. Include results in the findings synthesis
+3. Failed runtime tests are P2 findings (should fix before PR)
+
+If no runtime verification available → skip with note "No runtime verification configured"
+
 ### Step 3.5: Synthesize Findings
+
+If multiple review checks flagged the same issue, merge into a single finding with a "Flagged By" column indicating which checks identified it. Deduplicate by file:line — keep the higher priority version.
 
 ```markdown
 ## Code Review Findings

@@ -1,7 +1,7 @@
 ---
 description: Use when assigned as reviewer or proactively reviewing PRs to perform multi-faceted code review with prioritized findings
 argument-hint: <pr-number>
-allowed-tools: Bash, Read, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Skill
+allowed-tools: Bash, Read, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Skill
 ---
 
 <!--
@@ -24,6 +24,7 @@ Review a pull request with multi-faceted analysis, task tracking, and prioritize
 **CONSTRAINTS**:
 - Must checkout the PR branch and read actual files, not just analyze the diff
 - Must check all 5 review facets (code quality, conventions, security, tests, requirements)
+- When asserting code behaves a certain way, cite the specific file:line. If unable to cite, mark as UNVERIFIED
 - Always display findings BEFORE asking user for review decision
 - Never submit review without user approval
 
@@ -126,103 +127,105 @@ Note available capabilities for use in review facets.
 
 3. **Read all changed files in parallel** - use the Read tool on each modified file to understand the full context
 
-## Phase 3: Multi-Faceted Review
+## Phase 3: Multi-Faceted Review (Parallel Agent Pipeline)
 
-### Step 3.1: Create Review Tasks
+### Step 3.1: Dispatch Parallel Review Agents
 
-**Create all review facet tasks in parallel** (single message, multiple TaskCreate calls):
+Launch 3 specialized agents in parallel using the **Agent tool** (single message, 3 Agent tool calls):
+
+| Agent | Subagent Type | Facets | Focus |
+|-------|---------------|--------|-------|
+| code-reviewer | gh-workflow:code-reviewer | Code Quality + Security | Logic, edge cases, error handling, security scan |
+| convention-checker | gh-workflow:convention-checker | Conventions & Standards | Commit messages, branch naming, PR format, issue linkage |
+| test-runner | gh-workflow:test-runner | Tests & Quality Commands | Lint, test, typecheck execution |
+
+Each agent prompt should include:
+- The PR diff (or instructions to obtain it)
+- The PR branch name and number
+- Instruction to return findings in P1/P2/P3 table format with file:line citations
+- Instruction to operate as a sub-agent (see agent files for sub-agent protocol)
 
 ```
-TaskCreate:
-  subject: "Review: Code Quality & Logic"
-  description: "Analyze logic correctness, edge cases, error handling, null checks"
-  activeForm: "Reviewing code quality"
-
-TaskCreate:
-  subject: "Review: Conventions & Standards"
-  description: "Check commit messages, branch naming, PR format, issue linkage"
-  activeForm: "Checking conventions"
-
-TaskCreate:
-  subject: "Review: Security & Best Practices"
-  description: "Scan for security issues, hardcoded secrets, exposed credentials"
-  activeForm: "Security review"
-
-TaskCreate:
-  subject: "Review: Tests & Quality Commands"
-  description: "Run lint/test commands, verify coverage if applicable"
-  activeForm: "Running quality checks"
-
-TaskCreate:
-  subject: "Review: Requirements Compliance"
-  description: "Verify all acceptance criteria from linked issue are addressed"
-  activeForm: "Checking requirements"
+Execute 3 Agent tool calls in a single message:
+- Agent call 1: code-reviewer — "Review PR #{N} for code quality, logic, security, edge cases. Return P1/P2/P3 findings table."
+- Agent call 2: convention-checker — "Check PR #{N} conventions: commits, branch naming, PR format, issue linkage. Return findings."
+- Agent call 3: test-runner — "Run quality commands (lint/test/typecheck) for PR #{N}. Return results table."
 ```
 
-### Step 3.2: Execute Review Facets
+### Step 3.2: Requirements Compliance (Main Thread)
 
-For each review task:
+While agents run, execute Facet 5 in the main thread (requires issue context already gathered):
 
-1. **Mark in progress**: `TaskUpdate: taskId={id}, status=in_progress`
+- Compare PR changes against issue acceptance criteria
+- Verify each criterion is addressed
+- Note any missing or partially implemented items
+- Record findings with priority (P1/P2/P3)
 
-2. **Execute the facet analysis**:
+### Step 3.3: Collect Agent Results
 
-   **Code Quality & Logic**:
-   - Logic correctness for all code paths
-   - Edge case handling (nulls, empty, boundaries)
-   - Error handling and recovery
-   - Resource management (memory, connections)
+After all agents return:
+- Collect P1/P2/P3 findings from each agent
+- If any agent fails or times out → fall back to manual execution for that facet:
+  - code-reviewer fails → execute code quality + security review manually
+  - convention-checker fails → run convention checks via Bash
+  - test-runner fails → run quality commands directly via Bash
 
-   **Conventions & Standards**:
-   - Commits follow conventional format (`feat:`, `fix:`, etc.)
-   - Branch naming follows pattern (`feature/issue-N-desc`)
-   - PR description follows template
-   - Issue linked correctly (`closes #X`)
+### Step 3.4: Create Review Tasks (Tracking)
 
-   **Security & Best Practices**:
-   - No hardcoded secrets or credentials
-   - Input validation present
-   - No SQL/command injection risks
-   - Sensitive data not logged
+**Create tasks in parallel** to track completion of each facet:
 
-   **Tests & Quality Commands**:
-   ```bash
-   # Run based on detected tech stack
-   ruff check . 2>/dev/null || npm run lint 2>/dev/null || go vet ./... 2>/dev/null
-   pytest 2>/dev/null || npm test 2>/dev/null || go test ./... 2>/dev/null
-   ```
+```
+TaskCreate: subject="Review: Code Quality & Security", status based on agent result
+TaskCreate: subject="Review: Conventions & Standards", status based on agent result
+TaskCreate: subject="Review: Tests & Quality Commands", status based on agent result
+TaskCreate: subject="Review: Requirements Compliance", status based on main thread result
+```
 
-   **Requirements Compliance**:
-   - Compare PR changes against issue acceptance criteria
-   - Verify each criterion is addressed
-   - Note any missing or partially implemented items
-
-3. **Record findings** with priority:
-   - **P1 (Critical)**: Blocks merge - security, data corruption, breaking changes
-   - **P2 (Important)**: Should fix - logic issues, missing edge cases
-   - **P3 (Suggestions)**: Nice to have - style, minor improvements
-
-4. **Mark complete**: `TaskUpdate: taskId={id}, status=completed`
+Mark each task completed as its results are incorporated into the synthesis.
 
 ## Phase 4: Finding Synthesis
 
-After all review tasks complete, consolidate findings:
+After all review tasks/agents complete, merge findings through a structured process:
+
+### Step 4.1: Collect
+
+Gather raw findings from all review facets (or parallel agents if dispatched).
+
+### Step 4.2: Deduplicate
+
+- Same `file:line` or same issue described in different words → keep the **higher priority** version
+- Note all sources that flagged the issue (e.g., "Flagged by: code-reviewer, test-runner")
+- Identical findings from multiple sources = higher confidence
+
+### Step 4.3: Prioritize
+
+1. **P1 (Critical)**: Security findings first, then data corruption, then breaking changes
+2. **P2 (Important)**: Logic errors first, then missing edge cases, then error handling
+3. **P3 (Suggestions)**: Grouped by category (style, documentation, minor improvements)
+
+### Step 4.4: Confidence Assessment
+
+- Findings flagged by 2+ agents/facets independently = **high confidence**
+- Single-source P1 with no code citation = **verify before including** — downgrade to P2 or mark UNVERIFIED
+- Findings with `EVIDENCE: file:line` citations = higher confidence than inference-only
+
+### Step 4.5: Unified Report
 
 ```markdown
 ## Review Findings Summary
 
 ### P1 - Critical (Blocks Merge)
-| # | Category | Location | Issue | Suggested Fix |
-|---|----------|----------|-------|---------------|
-| 1 | Security | file:line | [issue] | [fix] |
+| # | Category | Location | Issue | Suggested Fix | Flagged By |
+|---|----------|----------|-------|---------------|------------|
+| 1 | Security | file:line | [issue] | [fix] | code-reviewer |
 
 ### P2 - Important (Should Fix)
-| # | Category | Location | Issue | Suggested Fix |
-|---|----------|----------|-------|---------------|
+| # | Category | Location | Issue | Suggested Fix | Flagged By |
+|---|----------|----------|-------|---------------|------------|
 
 ### P3 - Suggestions (Nice to Have)
-| # | Category | Location | Issue | Suggested Fix |
-|---|----------|----------|-------|---------------|
+| # | Category | Location | Issue | Suggested Fix | Flagged By |
+|---|----------|----------|-------|---------------|------------|
 
 ### Requirements Checklist
 | Criterion | Status | Notes |

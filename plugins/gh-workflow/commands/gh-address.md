@@ -137,23 +137,18 @@ For each feedback task:
 
 After addressing all feedback, verify changes don't introduce new issues:
 
-### Step 4.1: Run Quality Checks
+### Step 4.1: Run Quality Checks (Parallel)
 
-**Execute in parallel**:
+Execute **all quality commands in parallel** (3 Bash tool calls in a single message):
 
-```bash
-# Based on detected tech stack
-ruff check . 2>/dev/null
-pytest 2>/dev/null
-
-# Or for Node/TypeScript
-npm run lint 2>/dev/null
-npm test 2>/dev/null
-
-# Or for Go
-go vet ./... 2>/dev/null
-go test ./... 2>/dev/null
 ```
+Execute 3 Bash tool calls in a single message:
+- Bash call 1: {lint_cmd}       # e.g., ruff check . 2>&1, npm run lint 2>&1
+- Bash call 2: {test_cmd}       # e.g., pytest 2>&1, npm test 2>&1
+- Bash call 3: {typecheck_cmd}  # e.g., pyright 2>&1, tsc --noEmit 2>&1
+```
+
+Detect commands from CLAUDE.md or tech stack (pyproject.toml → Python, package.json → Node, go.mod → Go). Skip any command that is not applicable.
 
 ### Step 4.2: Code Review on New Changes
 
@@ -202,27 +197,33 @@ If tests were added or modified:
 - [ ] Assertions are meaningful
 - [ ] No flaky test patterns
 
-### Step 5.3: Re-run Quality Checks
+### Step 5.3: Quality Verification Loop
 
-```bash
-# All quality commands should pass
-ruff check . && pytest  # Python
-npm run lint && npm test  # Node
-go vet ./... && go test ./...  # Go
-```
+Merge quality checks and final verification into a bounded loop:
 
-### Step 5.4: Final Verification
+1. **Run all quality commands in parallel** (3 Bash tool calls in a single message):
+   ```
+   Execute 3 Bash tool calls in a single message:
+   - Bash call 1: {lint_cmd}       # e.g., ruff check . 2>&1
+   - Bash call 2: {test_cmd}       # e.g., pytest 2>&1
+   - Bash call 3: {typecheck_cmd}  # e.g., tsc --noEmit 2>&1
+   ```
 
-- [ ] All tasks from TaskList are completed
-- [ ] All quality checks pass
-- [ ] No new issues introduced by fixes
-- [ ] Changes ready for re-review
+2. **If ALL pass** → verify final checklist:
+   - [ ] All tasks from TaskList are completed
+   - [ ] All quality checks pass
+   - [ ] No new issues introduced by fixes
+   - [ ] Changes ready for re-review
+   → Proceed to Phase 6
 
-**If any check fails**:
-1. Create task for the failure
-2. Fix the issue
-3. Re-run this gate
-4. Only proceed when all pass
+3. **If ANY fail** → fix inline immediately (no TaskCreate), re-run ALL checks
+
+4. **Max 3 iterations**. After 3 failures → escalate to user via **AskUserQuestion tool**:
+   - **Option 1**: "Show me the failures, I'll fix manually"
+   - **Option 2**: "Push with known failures and note in response"
+   - **Option 3**: "Abort — I need to investigate"
+
+All quality commands must exit 0 before proceeding to Phase 6.
 
 ## Phase 6: Prepare Response
 

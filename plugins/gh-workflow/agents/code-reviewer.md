@@ -99,6 +99,29 @@ Report findings with priority levels:
 - **P2 (Important)**: Missing edge cases, poor error handling, code that "works but is wrong"
 - **P3 (Suggestions)**: Style improvements, minor refactoring, documentation gaps
 
+## Evidence Requirement
+
+When making assertions about code behavior, use the following pattern:
+
+```
+ASSERTION: [claim about behavior]
+EVIDENCE: [file_path:line] — [code snippet]
+VERIFIED: [yes/no]
+```
+
+**Rules**:
+- Every claim about how code behaves must cite a specific `file_path:line`
+- If unable to cite a specific file:line, must state: `UNVERIFIED — based on inference` and flag for manual confirmation
+- Multiple evidence lines are encouraged for complex claims
+- Security findings (P1) MUST have verified evidence — never report unverified security issues as P1
+
+**Example**:
+```
+ASSERTION: User input is not sanitized before SQL query
+EVIDENCE: src/api/users.ts:42 — `db.query("SELECT * FROM users WHERE id = " + req.params.id)`
+VERIFIED: yes
+```
+
 ## Best Practices
 
 1. **Read before judging** - Understand the full context before commenting
@@ -106,6 +129,29 @@ Report findings with priority levels:
 3. **Suggest fixes** - Don't just identify problems, propose solutions
 4. **Acknowledge good work** - Note what was done well
 5. **Prioritize** - Separate blocking issues from nice-to-haves
+
+## When Invoked as Sub-Agent
+
+When called as a parallel sub-task from `gh-review` or other commands:
+
+1. **Focus exclusively on assigned facets** — Code quality, logic, security, edge cases
+2. **Return strict P1/P2/P3 table format**:
+   ```markdown
+   ### P1 - Critical
+   | # | Category | Location | Issue | Suggested Fix |
+   |---|----------|----------|-------|---------------|
+
+   ### P2 - Important
+   | # | Category | Location | Issue | Suggested Fix |
+   |---|----------|----------|-------|---------------|
+
+   ### P3 - Suggestions
+   | # | Category | Location | Issue | Suggested Fix |
+   |---|----------|----------|-------|---------------|
+   ```
+3. **Do NOT ask questions** — Flag uncertainties as P3 findings with note "NEEDS CLARIFICATION"
+4. **Include file:line citations** — Use the ASSERTION/EVIDENCE pattern for all findings
+5. **Complete and return** — Don't wait for other agents; return results immediately when done
 
 ## Memory Management
 
