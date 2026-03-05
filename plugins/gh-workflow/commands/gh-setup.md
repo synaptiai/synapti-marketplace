@@ -1,17 +1,17 @@
 ---
-description: Use when first setting up gh-workflow in a repository to analyze tech stack, detect conventions, and generate customized workflow configuration
+description: Use to set up or update gh-workflow in a repository - analyzes tech stack, detects conventions, generates workflow configuration, and upgrades existing installations to latest version
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
-# Setup GitHub Workflow
+# Setup / Update GitHub Workflow
 
-Analyze the current repository and generate customized GitHub workflow configuration.
+Analyze the current repository and generate customized GitHub workflow configuration. If gh-workflow is already configured, detect the existing version and offer to update it with new commands and features while preserving customizations.
 
 **Tool Usage**: This workflow uses the **AskUserQuestion tool** extensively to gather preferences, confirm detected conventions, and approve generated configurations.
 
 ## Contract
 
-**GOAL**: Project-specific workflow configuration generated and applied based on detected tech stack and conventions. Testable: `.claude/CLAUDE.md` contains workflow section with correct branch/commit conventions.
+**GOAL**: Project-specific workflow configuration generated, applied, or updated based on detected tech stack and conventions. Testable: `.claude/CLAUDE.md` contains workflow section with correct branch/commit conventions, all current gh-workflow commands listed, and version marker reflecting current plugin version (1.4.0).
 
 **CONSTRAINTS**:
 - Never overwrite existing CLAUDE.md - merge or append the workflow section
@@ -25,6 +25,7 @@ Analyze the current repository and generate customized GitHub workflow configura
 - Wrong tech stack detected (e.g., Python project identified as Go)
 - Configuration applied without user preview and approval
 - Generated conventions conflict with existing project conventions
+- Existing customizations lost during update (branch naming, labels, checklists)
 
 ## Purpose
 
@@ -33,7 +34,105 @@ This command analyzes your codebase and generates:
 2. Optionally, local command overrides for project-specific customizations
 3. Recommendations for labels to create
 
-## Phase 1: Repository Analysis
+## Phase 0: Installation Detection
+
+Before performing any analysis, detect whether gh-workflow is already configured.
+
+1. **Check for existing gh-workflow configuration**:
+   ```bash
+   # Look for gh-workflow version marker
+   grep '<!-- gh-workflow:' .claude/CLAUDE.md 2>/dev/null || echo "No version marker found"
+
+   # Look for gh-workflow command table
+   grep 'gh-workflow:gh-' .claude/CLAUDE.md 2>/dev/null || echo "No gh-workflow commands found"
+
+   # Look for workflow section header
+   grep '## GitHub Workflow Commands' .claude/CLAUDE.md 2>/dev/null || echo "No workflow section found"
+   ```
+
+2. **Determine mode**:
+   - **Fresh install**: No CLAUDE.md exists, or it exists but contains no gh-workflow section → proceed to Phase 1
+   - **Update needed**: gh-workflow section exists → enter Phase 1U (Update Flow)
+   - **Already current**: Version marker shows current version (1.4.0) → inform user, ask if they want to re-run anyway
+
+3. **If update detected, extract existing version**:
+   ```bash
+   # Extract version from marker comment (portable)
+   sed -n 's/<!-- gh-workflow: \(.*\) -->/\1/p' .claude/CLAUDE.md 2>/dev/null || echo "pre-1.4.0"
+   ```
+
+4. **Use the AskUserQuestion tool** if existing installation detected:
+   - **Option 1**: "Update existing configuration to v1.4.0" (Recommended)
+   - **Option 2**: "Re-run full setup (preserves existing, generates fresh)"
+   - **Option 3**: "Cancel - keep existing configuration"
+
+## Phase 1U: Update Flow (Existing Installation)
+
+When an existing gh-workflow section is detected, perform a targeted update instead of full setup.
+
+1. **Parse existing configuration**:
+   ```bash
+   # Read the full CLAUDE.md to understand current state
+   cat .claude/CLAUDE.md
+   ```
+
+   Identify and note:
+   - Existing command table entries
+   - Custom branch naming (may differ from defaults)
+   - Custom labels (user may have added project-specific ones)
+   - Custom checklist items (user may have added project-specific items)
+   - Any sections that appear to be user-customized vs. template-generated
+
+2. **Compute diff between existing and current**:
+
+   Compare existing commands against the full v1.4.0 command list:
+   | Command | Check |
+   |---------|-------|
+   | `/gh-workflow:gh-status` | Present? |
+   | `/gh-workflow:gh-issue` | Present? |
+   | `/gh-workflow:gh-start <issue>` | Present? |
+   | `/gh-workflow:gh-commit` | NEW - likely missing |
+   | `/gh-workflow:gh-pr` | NEW - likely missing |
+   | `/gh-workflow:gh-review <pr>` | Present? |
+   | `/gh-workflow:gh-address <pr>` | Present? |
+   | `/gh-workflow:gh-merge <pr>` | Present? |
+   | `/gh-workflow:gh-release <type>` | Present? |
+   | `/gh-workflow:gh-security-review` | NEW - likely missing |
+   | `/gh-workflow:gh-setup` | NEW - likely missing |
+
+   Also check for missing sections:
+   - Plugin Capabilities (Agents, Skills, Safety Hooks)
+   - Version marker
+
+3. **Show update summary to user**:
+   Display what will change:
+   - New commands being added
+   - New sections being added (Plugin Capabilities)
+   - Version marker being added/updated
+   - Sections that will NOT be modified (preserved customizations)
+
+4. **Use the AskUserQuestion tool** for approval:
+   - **Option 1**: "Apply all updates" (Recommended)
+   - **Option 2**: "Select which updates to apply"
+   - **Option 3**: "Preview the full updated section first"
+   - **Option 4**: "Cancel update"
+
+5. **Create backup before modifying**:
+   ```bash
+   cp .claude/CLAUDE.md ".claude/CLAUDE.md.backup.$(date +%Y%m%d%H%M%S)"
+   ```
+
+6. **Apply updates**:
+   - Replace the command table with the full 11-command table
+   - Add Plugin Capabilities section (Agents, Skills, Safety Hooks) if not present
+   - Add or update the version marker comment (`<!-- gh-workflow: 1.4.0 -->`)
+   - Preserve all user-customized sections (branch naming, labels, checklists)
+
+7. **Proceed to Phase 5 (Verification)** — skip Phases 1-4 since conventions are already configured.
+
+## Phase 1: Repository Analysis (Fresh Install)
+
+> **Note**: This phase runs for fresh installations. For updates to existing installations, see Phase 1U above.
 
 1. **Verify GitHub repository**:
    ```bash
@@ -145,6 +244,8 @@ gh label list --json name,description
 Generate a workflow section for the project's CLAUDE.md:
 
 ```markdown
+<!-- gh-workflow: 1.4.0 -->
+
 ## Git Workflow
 
 ### Branching Strategy
@@ -175,11 +276,46 @@ This project uses the gh-workflow plugin. Available commands:
 |---------|---------|
 | `/gh-workflow:gh-status` | View workflow status (issues, PRs, reviews) |
 | `/gh-workflow:gh-issue` | Create a new GitHub issue |
-| `/gh-workflow:gh-start <issue>` | Start work on an issue |
-| `/gh-workflow:gh-review <pr>` | Review a pull request |
+| `/gh-workflow:gh-start <issue>` | Start work on an issue (branch, implement, track) |
+| `/gh-workflow:gh-commit` | Context-aware commits with change classification |
+| `/gh-workflow:gh-pr` | Create PR with full review and reviewer suggestions |
+| `/gh-workflow:gh-review <pr>` | Review a pull request with prioritized findings |
 | `/gh-workflow:gh-address <pr>` | Address PR review comments |
 | `/gh-workflow:gh-merge <pr>` | Merge an approved pull request |
 | `/gh-workflow:gh-release <type>` | Create a release (patch/minor/major) |
+| `/gh-workflow:gh-security-review` | Security review of branch changes |
+| `/gh-workflow:gh-setup` | Set up or update workflow configuration |
+
+## Plugin Capabilities
+
+### Agents
+The gh-workflow plugin includes specialized agents that are invoked automatically by commands:
+- **code-reviewer** - Code quality analysis with P1/P2/P3 prioritized findings
+- **convention-checker** - Validates commit messages, branch naming, PR format
+- **test-runner** - Discovers and runs project-specific lint/test/typecheck commands
+- **implementation-planner** - Creates task breakdowns from issue acceptance criteria
+
+### Skills
+Commands use these skills for dynamic adaptation:
+- **repo-config** - Auto-detects default branch, labels, and repository settings
+- **capability-discovery** - Discovers available agents, skills, and quality commands
+- **runtime-verification** - Verifies implementation works at runtime (dev server, API, E2E)
+- **suggest-users** - Suggests reviewers/assignees based on CODEOWNERS and activity
+
+### Safety Hooks
+The plugin includes safety hooks that activate automatically:
+- Pre-push verification before irreversible git operations
+- Pre-release verification before creating GitHub releases
+- Destructive operation guards (force push, hard reset, branch deletion)
+- Repository target verification before creating issues or PRs
+- Post-edit test file reminders
+- Workflow completion checks
+
+### Advanced Features
+- **Task-based tracking**: Implementation and review progress tracked via tasks
+- **Verification loops**: Self-review gates before PR creation (max 3 iterations)
+- **Parallel execution**: Commands maximize efficiency with parallel API calls
+- **Runtime verification**: Verifies implementation works when running (not just compiles)
 
 ## Labels
 
@@ -325,16 +461,57 @@ If user chooses option 2 or 3, create `.claude/commands/` with customized versio
 1. Review the CLAUDE.md workflow section
 2. Try `/gh-workflow:gh-status` to view your current workflow state
 3. Try `/gh-workflow:gh-issue` to create your first issue
-4. Customize `.claude/CLAUDE.md` as needed for your project
+4. Use `/gh-workflow:gh-commit` for context-aware commits
+5. Use `/gh-workflow:gh-pr` to create PRs with full review
+6. Customize `.claude/CLAUDE.md` as needed for your project
+7. Run `/gh-workflow:gh-setup` again after plugin updates to get new features
 
 ### Available Commands
 - `/gh-workflow:gh-status` - View workflow status
 - `/gh-workflow:gh-issue` - Create issues
 - `/gh-workflow:gh-start <N>` - Start work on issue N
+- `/gh-workflow:gh-commit` - Context-aware commits
+- `/gh-workflow:gh-pr` - Create PR with review
 - `/gh-workflow:gh-review <N>` - Review PR N
 - `/gh-workflow:gh-address <N>` - Address PR N comments
 - `/gh-workflow:gh-merge <N>` - Merge PR N
 - `/gh-workflow:gh-release [patch|minor|major]` - Create release
+- `/gh-workflow:gh-security-review` - Security review
+- `/gh-workflow:gh-setup` - Re-run setup or update
+```
+
+### Update Success
+```
+## GitHub Workflow Updated
+
+**Repository:** {owner}/{repo}
+**Previous Version:** {old_version}
+**Updated Version:** 1.4.0
+
+### Changes Applied
+- **New commands added:** {list of new commands}
+- **New sections added:** {Plugin Capabilities / Safety Hooks / etc.}
+- **Version marker:** Added/updated
+
+### Preserved
+- Branch naming conventions
+- Commit conventions
+- Labels
+- Code quality checklists
+- Custom project-specific additions
+
+### Available Commands
+- `/gh-workflow:gh-status` - View workflow status
+- `/gh-workflow:gh-issue` - Create issues
+- `/gh-workflow:gh-start <N>` - Start work on issue N
+- `/gh-workflow:gh-commit` - Context-aware commits
+- `/gh-workflow:gh-pr` - Create PR with review
+- `/gh-workflow:gh-review <N>` - Review PR N
+- `/gh-workflow:gh-address <N>` - Address PR N comments
+- `/gh-workflow:gh-merge <N>` - Merge PR N
+- `/gh-workflow:gh-release [patch|minor|major]` - Create release
+- `/gh-workflow:gh-security-review` - Security review
+- `/gh-workflow:gh-setup` - Re-run setup or update
 ```
 
 ### Not a Git Repository
@@ -355,7 +532,11 @@ If user chooses option 2 or 3, create `.claude/commands/` with customized versio
 - Always confirm detected patterns with user
 - Never overwrite existing CLAUDE.md - merge or append
 - Create backups before modifying existing files
+- Always include version marker (`<!-- gh-workflow: 1.4.0 -->`) in generated output
+- When updating, preserve user customizations (branch naming, labels, checklists)
+- When updating, show what's new before applying changes
 - **Use the AskUserQuestion tool** at every decision point:
+  - Fresh install vs. update mode selection
   - Branch naming convention
   - Commit convention
   - Label configuration
@@ -365,10 +546,15 @@ If user chooses option 2 or 3, create `.claude/commands/` with customized versio
 ## Success Criteria
 
 Before completing, verify:
-- [ ] Repository analyzed successfully
-- [ ] Conventions detected and confirmed with user
+- [ ] Repository analyzed successfully (or existing config detected)
+- [ ] Conventions detected and confirmed with user (fresh) OR preserved (update)
 - [ ] Configuration generated and approved
 - [ ] CLAUDE.md updated with workflow section
+- [ ] All 11 commands listed in command table
+- [ ] Version marker present (`<!-- gh-workflow: 1.4.0 -->`)
+- [ ] Plugin Capabilities section present (Agents, Skills, Safety Hooks)
 - [ ] Labels created (if requested)
 - [ ] Local commands created (if requested)
 - [ ] User informed of next steps
+- [ ] If update: backup created before modifications
+- [ ] If update: customizations preserved

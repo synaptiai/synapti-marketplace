@@ -45,16 +45,6 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "A source file was just modified. If the modified file is a source file (not a test/config/doc), check if corresponding test files likely exist for the changed module. If tests likely exist, remind yourself to run them before committing. Do NOT run tests now - just note which test files should be verified later.",
-            "timeout": 10
-          }
-        ]
-      },
-      {
         "matcher": "Read",
         "hooks": [
           {

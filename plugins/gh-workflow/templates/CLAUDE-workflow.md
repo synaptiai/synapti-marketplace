@@ -4,6 +4,8 @@ Copy this section into your project's `.claude/CLAUDE.md` file and customize as 
 
 ---
 
+<!-- gh-workflow: 1.4.0 -->
+
 ## Git Workflow
 
 ### Branching Strategy
@@ -36,11 +38,32 @@ This project uses the gh-workflow plugin. Available commands:
 |---------|---------|
 | `/gh-workflow:gh-status` | View workflow status (issues, PRs, reviews) |
 | `/gh-workflow:gh-issue` | Create a new GitHub issue |
-| `/gh-workflow:gh-start <issue>` | Start work on an issue |
-| `/gh-workflow:gh-review <pr>` | Review a pull request |
+| `/gh-workflow:gh-start <issue>` | Start work on an issue (branch, implement, track) |
+| `/gh-workflow:gh-commit` | Context-aware commits with change classification |
+| `/gh-workflow:gh-pr` | Create PR with full review and reviewer suggestions |
+| `/gh-workflow:gh-review <pr>` | Review a pull request with prioritized findings |
 | `/gh-workflow:gh-address <pr>` | Address PR review comments |
 | `/gh-workflow:gh-merge <pr>` | Merge an approved pull request |
 | `/gh-workflow:gh-release <type>` | Create a release (patch/minor/major) |
+| `/gh-workflow:gh-security-review` | Security review of branch changes |
+| `/gh-workflow:gh-setup` | Set up or update workflow configuration |
+
+## Plugin Capabilities
+
+### Agents
+- **code-reviewer** - Code quality analysis with P1/P2/P3 prioritized findings
+- **convention-checker** - Validates commit messages, branch naming, PR format
+- **test-runner** - Discovers and runs project-specific lint/test/typecheck commands
+- **implementation-planner** - Creates task breakdowns from issue acceptance criteria
+
+### Skills
+- **repo-config** - Auto-detects default branch, labels, and repository settings
+- **capability-discovery** - Discovers available agents, skills, and quality commands
+- **runtime-verification** - Verifies implementation works at runtime (dev server, API, E2E)
+- **suggest-users** - Suggests reviewers/assignees based on CODEOWNERS and activity
+
+### Safety Hooks
+Automatic safety guards: pre-push verification, pre-release checks, destructive operation warnings, repository target verification, post-edit test reminders, workflow completion checks, task completion verification.
 
 ## Labels
 
@@ -83,6 +106,9 @@ Add any project-specific workflow notes below the standard sections:
 - CI/CD pipeline information
 - Deployment process
 - Team conventions
+
+### Version Marker
+The `<!-- gh-workflow: X.Y.Z -->` comment at the top of the workflow section tracks which version of gh-workflow generated this configuration. Do not remove it -- it enables `/gh-setup` to detect and upgrade existing installations.
 
 ### Local Command Overrides
 If you need to customize commands beyond the plugin defaults:

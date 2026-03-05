@@ -199,13 +199,15 @@ Irreversible actions (force push, branch deletion, release creation) require exp
 3. **No context switching** — Get status without leaving your terminal
 4. **Read-only** — Safe to run anytime, doesn't modify anything
 
-#### `/gh-setup` — Configure Workflow
+#### `/gh-setup` — Configure & Update Workflow
 
 **What's Good About /gh-setup:**
-1. **One-time setup** — Analyzes your repo and generates project-specific configuration
+1. **Setup or update** — Works for both first-time setup and updating existing installations
 2. **Tech stack detection** — Identifies Python, TypeScript, Go, Ruby and configures appropriate quality commands
 3. **Template generation** — Creates customized issue/PR templates based on your conventions
 4. **Non-destructive** — Shows preview of changes before writing any files
+5. **Version-aware updates** — Detects installed version, shows what's new, preserves customizations
+6. **Backup safety** — Creates timestamped backups before modifying existing configurations
 
 #### `/gh-security-review` — Security Review
 
