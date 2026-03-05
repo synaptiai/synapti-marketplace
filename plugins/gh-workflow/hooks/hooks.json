@@ -3,54 +3,11 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash(git push *)",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "Before executing git push, verify user has approved pushing these changes. If not explicitly approved in this conversation, use AskUserQuestion to confirm.",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Bash(gh release create *)",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "Before creating a GitHub release, verify user has approved this release. If not explicitly approved in this conversation, use AskUserQuestion to confirm.",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Bash(git push*--force*|git push*-f *|git reset --hard*|git branch -D*)",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "DANGEROUS: This is a destructive git operation (force push, hard reset, or branch deletion). Verify the user has EXPLICITLY requested this specific destructive action. If not, suggest a safer alternative (--force-with-lease instead of --force, git stash instead of reset --hard).",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Bash(gh issue create *|gh pr create *)",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "Before creating a GitHub issue or PR, verify the target repository is correct. Run 'gh repo view --json nameWithOwner' mentally and confirm it matches the user's intended repository. If multiple repos exist in the org, confirm with user before proceeding.",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "When making claims about what this code does, cite specific line numbers. Use the ASSERTION/EVIDENCE pattern: ASSERTION: [claim], EVIDENCE: [file:line] — [snippet], VERIFIED: [yes/no]. If unable to cite a specific line, mark as UNVERIFIED.",
-            "timeout": 10
+            "prompt": "Evaluate if this Bash command should proceed. Context: $ARGUMENTS\n\nCheck if the command is a git push, gh release create, gh issue create, or gh pr create. If so, verify the user has explicitly approved this action in the conversation. For destructive operations (--force, -f, git reset --hard, git branch -D), suggest safer alternatives (--force-with-lease, git stash). For gh issue/pr create, verify the target repository is correct.\n\nRespond with JSON: {\"ok\": true} to allow, or {\"ok\": false, \"reason\": \"your explanation\"} to block."
           }
         ]
       }
@@ -60,8 +17,8 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "Before stopping, check if this was a multi-phase workflow (gh-start, gh-pr, gh-review, etc.). If so, verify all expected phases completed. If tasks were created via TaskCreate, check if any remain in_progress or pending. If incomplete work exists, warn the user about remaining items before stopping.",
-            "timeout": 10
+            "prompt": "You are evaluating whether Claude should stop working. Context: $ARGUMENTS\n\nCheck if this was a multi-phase gh-workflow (gh-start, gh-pr, gh-review, etc.). If so, verify all expected phases completed. Check if tasks were created via TaskCreate and if any remain in_progress or pending.\n\nRespond with JSON: {\"ok\": true} to allow stopping, or {\"ok\": false, \"reason\": \"your explanation\"} to continue working.",
+            "timeout": 30
           }
         ]
       }
@@ -71,8 +28,8 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "A task is being marked as completed. Verify: 1) The task's acceptance criteria have been met, 2) If the task involved code changes, relevant tests still pass, 3) No placeholder or TODO code remains. If any check fails, keep the task in_progress and explain what's missing.",
-            "timeout": 10
+            "prompt": "You are evaluating whether a task should be marked as completed. Context: $ARGUMENTS\n\nVerify: 1) The task's acceptance criteria have been met, 2) If the task involved code changes, no obvious issues remain, 3) No placeholder or TODO code remains.\n\nRespond with JSON: {\"ok\": true} to allow completion, or {\"ok\": false, \"reason\": \"your explanation\"} to keep the task in progress.",
+            "timeout": 30
           }
         ]
       }
