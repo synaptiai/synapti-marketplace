@@ -1,11 +1,6 @@
 ---
 name: suggest-users
-description: >-
-  WHEN: Creating PRs (gh-pr Phase 4) to suggest reviewers, creating issues (gh-issue) to suggest assignees,
-  or re-requesting review after addressing comments (gh-address). Ranks users by CODEOWNERS match,
-  file expertise, recent activity, and workload balancing.
-  WHEN NOT: Do not use for single-contributor repositories. Do not use when the user has already
-  specified a reviewer explicitly.
+description: Suggests reviewers for PRs and assignees for issues by ranking users based on CODEOWNERS match, file expertise, recent activity, and workload balancing. Use when creating PRs to suggest reviewers, creating issues to suggest assignees, or re-requesting review after addressing comments.
 allowed-tools: Bash, Read
 context: fork
 agent: Explore

@@ -1,11 +1,6 @@
 ---
 name: repo-config
-description: >-
-  WHEN: Any gh-workflow command needs to get the default branch, detect repository settings,
-  fetch available labels, or get repo info for API calls. Use instead of hardcoding branch names,
-  labels, or repository identifiers.
-  WHEN NOT: Do not use when repository info has already been fetched in the current session
-  and cached in variables. Do not use for non-GitHub repositories.
+description: Provides dynamic repository configuration patterns for gh-workflow agents. Use when an agent needs the default branch name for diffs, the repository owner/name for API calls, or branch naming and commit conventions for validation.
 allowed-tools: Bash, Read
 context: fork
 agent: Explore
@@ -13,95 +8,50 @@ agent: Explore
 
 # Repository Configuration
 
-This skill provides dynamic repository configuration for all gh-workflow commands, auto-detecting settings so commands work in any repository without hardcoding.
+Reference skill loaded into agent context via `skills: repo-config`. Provides patterns for dynamic repository detection so agents never hardcode branch names, repo identifiers, or conventions.
 
-Use TodoWrite to track these mandatory steps:
-
-<required>
-1. Fetch default branch dynamically (never hardcode `main` or `master`)
-2. Fetch labels dynamically (never assume labels exist)
-3. Get repository owner/name for API calls (never hardcode)
-</required>
-
-## Quick Reference
-
-### Get Repository Info
-
-```bash
-# Full repository details
-gh repo view --json name,owner,defaultBranchRef,url,description
-
-# Just the default branch
-gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'
-
-# Repository owner/name
-gh repo view --json nameWithOwner --jq '.nameWithOwner'
-```
-
-### Get Labels
-
-```bash
-# List all labels (always fetch dynamically, never hardcode)
-gh label list
-
-# Check if specific label exists
-gh label list --search "bug"
-```
-
-### Detect Branch Naming Convention
-
-```bash
-# Analyze existing branches for patterns
-git branch -r --list 'origin/feature/*' | head -5
-git branch -r --list 'origin/fix/*' | head -5
-
-# Check recent branch names
-git for-each-ref --sort=-committerdate --format='%(refname:short)' refs/remotes/origin/ | head -10
-```
-
-### Detect Commit Convention
-
-```bash
-# Analyze recent commits for patterns
-git log --oneline -20 | head -20
-```
-
-## Configuration Detection
+## Core Commands
 
 ### Default Branch
 
-Always detect dynamically:
+Used by code-reviewer for diff base and convention-checker for commit range:
+
 ```bash
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
+
+# Usage in agents:
+git diff origin/$DEFAULT_BRANCH..HEAD           # code-reviewer
+git log --oneline $DEFAULT_BRANCH..HEAD         # convention-checker
 ```
 
-Common values: `main`, `master`, `develop`
+### Repository Owner/Name
 
-### Repository Identification
+Used by implementation-planner for GitHub API calls:
 
 ```bash
-# Get owner/repo for API calls
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
-# Use in gh api calls
-gh api repos/$REPO/pulls/123/comments
+# Usage in agents:
+gh api repos/$REPO/issues/$ISSUE_NUMBER/comments
+gh api repos/$REPO/pulls/$PR_NUMBER/comments
 ```
 
-### Label Strategy
+### Combined Fetch
 
-**Never hardcode labels.** Always fetch dynamically:
+When multiple values are needed, minimize API calls:
 
 ```bash
-# Get available labels
-gh label list
-
-# Present to user with AskUserQuestion tool
-# Let user select from actual available labels
+gh repo view --json nameWithOwner,defaultBranchRef --jq '{
+  repo: .nameWithOwner,
+  default_branch: .defaultBranchRef.name
+}'
 ```
 
-### Branch Naming Patterns
+## Conventions
 
-Detect from existing branches or use defaults:
+Used by convention-checker to validate branch names and commit messages. Commands (gh-start, gh-commit) may override these with project-specific conventions from CLAUDE.md — always check CLAUDE.md first.
+
+### Branch Naming
 
 | Type | Pattern | Example |
 |------|---------|---------|
@@ -109,9 +59,7 @@ Detect from existing branches or use defaults:
 | Fix | `fix/issue-{N}-{desc}` | `fix/issue-13-typo` |
 | Docs | `docs/issue-{N}-{desc}` | `docs/issue-7-readme` |
 
-### Commit Conventions
-
-Detect or default to conventional commits:
+### Commit Prefixes
 
 | Prefix | Usage |
 |--------|-------|
@@ -122,76 +70,37 @@ Detect or default to conventional commits:
 | `test:` | Test changes |
 | `chore:` | Maintenance |
 
-## Usage in Commands
-
-### Before Any Repository Operation
+### Detecting Project-Specific Conventions
 
 ```bash
-# Step 1: Get repo info
-REPO_INFO=$(gh repo view --json nameWithOwner,defaultBranchRef)
-REPO=$(echo $REPO_INFO | jq -r '.nameWithOwner')
-DEFAULT_BRANCH=$(echo $REPO_INFO | jq -r '.defaultBranchRef.name')
+# Check CLAUDE.md first (preferred source)
+CLAUDE_MD=""
+[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
+[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
+[ -n "$CLAUDE_MD" ] && grep -A5 -E "(Branch|Commit|Convention)" "$CLAUDE_MD" 2>/dev/null
 
-# Step 2: Use detected values
-gh pr create --base $DEFAULT_BRANCH ...
-gh api repos/$REPO/pulls/123/comments
+# Fall back to inferring from existing patterns
+git for-each-ref --sort=-committerdate --format='%(refname:short)' refs/remotes/origin/ | head -10
+git log --oneline -20
 ```
 
-### For Label Operations
+## Agent Integration
 
-```bash
-# Step 1: Fetch available labels
-gh label list
+This skill is loaded into agent context via `skills: repo-config` in agent frontmatter:
 
-# Step 2: Use AskUserQuestion tool to let user select
-# Step 3: Apply selected labels
-gh issue create --label "selected-label"
-```
-
-## Best Practices
-
-<good-example>
-1. **Never hardcode repository names** - use `gh repo view --json nameWithOwner`
-2. **Never hardcode branch names** - use `gh repo view --json defaultBranchRef`
-3. **Never hardcode labels** - use `gh label list` and let me select
-4. **Detect conventions** - analyze existing branches/commits before assuming
-5. **Provide sensible defaults** - if detection fails, use common conventions
-</good-example>
-
-<bad-example>
-- Hardcoding `main` or `master` as the default branch
-- Assuming labels like `bug`, `enhancement` exist without checking
-- Using fixed repository owner/name strings
-</bad-example>
-
-## Integration Points
-
-All gh-workflow commands should:
-1. Reference this skill for configuration patterns
-2. Use dynamic detection instead of hardcoded values
-3. Fall back to sensible defaults if detection fails
-4. Use the **AskUserQuestion tool** when user input is needed
-
-## Grep Patterns
-
-To find configuration usage in the codebase:
-
-```bash
-# Find hardcoded branch references
-grep -r "main\|master" --include="*.md" plugins/
-
-# Find label references
-grep -r "label" --include="*.md" plugins/
-
-# Find gh repo commands
-grep -r "gh repo\|gh issue\|gh pr" --include="*.md" plugins/
-```
+| Agent | What it needs | Key commands |
+|-------|--------------|--------------|
+| code-reviewer | `DEFAULT_BRANCH` for diff base | `git diff origin/$DEFAULT_BRANCH..HEAD` |
+| convention-checker | `DEFAULT_BRANCH` for commit range, conventions for validation | `git log $DEFAULT_BRANCH..HEAD`, branch/commit patterns |
+| implementation-planner | `REPO` for GitHub API calls | `gh api repos/$REPO/issues/...` |
+| test-runner | Declared but not directly used | — |
 
 ## Error Handling
 
-If `gh` commands fail, check:
-- Is the user authenticated? `gh auth status`
-- Is this a git repository? `git rev-parse --git-dir`
-- Does the repository have a GitHub remote? `git remote -v`
+If `gh` commands fail:
 
-Report clear, actionable error messages.
+| Check | Command | Fix |
+|-------|---------|-----|
+| Authentication | `gh auth status` | Run `gh auth login` |
+| Git repository | `git rev-parse --git-dir` | Navigate to a git repo or run `git init` |
+| GitHub remote | `git remote -v` | Add with `git remote add origin <url>` |
