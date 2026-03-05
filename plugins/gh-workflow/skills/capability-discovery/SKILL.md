@@ -1,6 +1,10 @@
 ---
 name: capability-discovery
-description: Use before workflow execution to discover available agents, skills, and quality commands in the project environment. Use when adapting gh-workflow commands to project-specific tooling.
+description: >-
+  WHEN: Before starting implementation (gh-start Phase 3), before reviewing a PR (gh-review Phase 2),
+  or before addressing feedback (gh-address). Use to discover available agents, skills, quality commands,
+  and tech stack in the project environment.
+  WHEN NOT: Do not use mid-implementation or for runtime verification -- use runtime-verification skill instead.
 allowed-tools: Bash, Read, Glob, Grep
 context: fork
 agent: Explore
@@ -163,19 +167,19 @@ Based on capabilities:
 ### In gh-start
 
 ```markdown
-## Phase 1.5: Capability Discovery
+## Phase 3: Capability Discovery
 
 Before implementation:
 1. Invoke capability-discovery skill
 2. Note available agents for later review phases
-3. Note quality commands for Phase 3
+3. Note quality commands for Phase 6
 4. Store tech stack for appropriate tooling
 ```
 
 ### In gh-review
 
 ```markdown
-## Phase 1.5: Review Capability Discovery
+## Phase 2: Capability Discovery
 
 Before detailed review:
 1. Check for review-specific agents (code-reviewer, convention-checker)

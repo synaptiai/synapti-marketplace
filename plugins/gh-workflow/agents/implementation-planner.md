@@ -168,12 +168,13 @@ When acceptance criteria are unclear:
 
 ## Integration with gh-start
 
-When invoked from gh-start workflow:
+This agent is dispatched from **gh-start Phase 5 Step 5.1**. When invoked from gh-start:
 
-1. Planner creates task breakdown
-2. Each task is worked through systematically
-3. Progress tracked via TaskUpdate
-4. Final verification against original criteria
+1. **Issue context is pre-fetched** — the caller passes issue title, body, comments, linked issues, and impact analysis. Do NOT re-fetch the issue; use the provided context directly.
+2. Planner creates task breakdown with dependencies via TaskCreate
+3. Each task is worked through systematically by the caller
+4. Progress tracked via TaskUpdate
+5. Final verification against original criteria
 
 ## Best Practices
 

@@ -1,6 +1,11 @@
 ---
 name: runtime-verification
-description: Use after quality checks to verify the implementation actually works when running. Discovers and executes dev server startup, API smoke tests, E2E tests, and browser checks.
+description: >-
+  WHEN: After quality checks pass (lint/test/typecheck) in gh-start Phase 7 or gh-pr Phase 3 Step 3.5,
+  to verify the implementation actually works at runtime. Discovers and executes dev server startup,
+  API smoke tests, E2E tests, and browser checks.
+  WHEN NOT: Do not use for static analysis (lint/test/typecheck) -- those are handled by test-runner agent
+  or inline quality commands. Do not use if no dev server or E2E framework exists (skill handles this gracefully).
 allowed-tools: Bash, Read, Glob, Grep
 context: fork
 agent: Explore
@@ -151,7 +156,7 @@ kill %1 2>/dev/null  # or specific PID
 ## Integration Points
 
 This skill is invoked by:
-- `gh-start` — Phase 3.3 (after quality checks, before code review)
-- `gh-pr` — Step 3.4b (pre-PR runtime verification)
+- `gh-start` — Phase 7 (after quality checks, before code review)
+- `gh-pr` — Phase 3 Step 3.5 (pre-PR runtime verification)
 
 **IMPORTANT**: Runtime verification is additive, not blocking. If a project has no dev server or E2E framework, this skill completes with "skipped" status and the workflow continues.

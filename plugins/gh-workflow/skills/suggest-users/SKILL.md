@@ -1,6 +1,11 @@
 ---
 name: suggest-users
-description: Use when creating PRs to suggest reviewers, when creating issues to suggest assignees, or when re-requesting review after addressing comments. Ranks users by CODEOWNERS match, file expertise, recent activity, and workload balancing.
+description: >-
+  WHEN: Creating PRs (gh-pr Phase 4) to suggest reviewers, creating issues (gh-issue) to suggest assignees,
+  or re-requesting review after addressing comments (gh-address). Ranks users by CODEOWNERS match,
+  file expertise, recent activity, and workload balancing.
+  WHEN NOT: Do not use for single-contributor repositories. Do not use when the user has already
+  specified a reviewer explicitly.
 allowed-tools: Bash, Read
 context: fork
 agent: Explore
@@ -166,7 +171,7 @@ Then invoke AskUserQuestion:
 ### In gh-pr Command
 
 ```markdown
-## Phase 5: Reviewer Suggestion
+## Phase 4: Reviewer Suggestion
 
 1. Invoke suggest-users skill
 2. Get changed files from staged commits

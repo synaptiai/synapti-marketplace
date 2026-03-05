@@ -1,6 +1,11 @@
 ---
 name: repo-config
-description: Use when needing to get the default branch, detect repository settings, fetch available labels, get repo info for API calls, or when any gh-workflow command needs dynamic repository configuration instead of hardcoded values.
+description: >-
+  WHEN: Any gh-workflow command needs to get the default branch, detect repository settings,
+  fetch available labels, or get repo info for API calls. Use instead of hardcoding branch names,
+  labels, or repository identifiers.
+  WHEN NOT: Do not use when repository info has already been fetched in the current session
+  and cached in variables. Do not use for non-GitHub repositories.
 allowed-tools: Bash, Read
 context: fork
 agent: Explore
