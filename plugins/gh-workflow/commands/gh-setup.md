@@ -125,7 +125,7 @@ When an existing gh-workflow section is detected, perform a targeted update inst
 6. **Apply updates**:
    - Replace the command table with the full 11-command table
    - Add Plugin Capabilities section (Agents, Skills, Safety Hooks) if not present
-   - Add or update the version marker comment (`<!-- gh-workflow: 1.4.0 -->`)
+   - Add or update the version marker comment (`<!-- gh-workflow: 1.5.0 -->`)
    - Preserve all user-customized sections (branch naming, labels, checklists)
 
 7. **Proceed to Phase 5 (Verification)** — skip Phases 1-4 since conventions are already configured.
@@ -244,7 +244,7 @@ gh label list --json name,description
 Generate a workflow section for the project's CLAUDE.md:
 
 ```markdown
-<!-- gh-workflow: 1.4.0 -->
+<!-- gh-workflow: 1.5.0 -->
 
 ## Git Workflow
 
@@ -532,7 +532,7 @@ If user chooses option 2 or 3, create `.claude/commands/` with customized versio
 - Always confirm detected patterns with user
 - Never overwrite existing CLAUDE.md - merge or append
 - Create backups before modifying existing files
-- Always include version marker (`<!-- gh-workflow: 1.4.0 -->`) in generated output
+- Always include version marker (`<!-- gh-workflow: 1.5.0 -->`) in generated output
 - When updating, preserve user customizations (branch naming, labels, checklists)
 - When updating, show what's new before applying changes
 - **Use the AskUserQuestion tool** at every decision point:
@@ -551,7 +551,7 @@ Before completing, verify:
 - [ ] Configuration generated and approved
 - [ ] CLAUDE.md updated with workflow section
 - [ ] All 11 commands listed in command table
-- [ ] Version marker present (`<!-- gh-workflow: 1.4.0 -->`)
+- [ ] Version marker present (`<!-- gh-workflow: 1.5.0 -->`)
 - [ ] Plugin Capabilities section present (Agents, Skills, Safety Hooks)
 - [ ] Labels created (if requested)
 - [ ] Local commands created (if requested)

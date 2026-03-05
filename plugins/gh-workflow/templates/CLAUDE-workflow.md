@@ -4,7 +4,7 @@ Copy this section into your project's `.claude/CLAUDE.md` file and customize as 
 
 ---
 
-<!-- gh-workflow: 1.4.0 -->
+<!-- gh-workflow: 1.5.0 -->
 
 ## Git Workflow
 
