@@ -1,7 +1,7 @@
 ---
 description: Use to start work on a GitHub issue - assigns issue, creates branch, guides implementation with task tracking, and prepares for PR
-argument-hint: <issue-number>
-allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Skill
+argument-hint: <issue-number-or-url>
+allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Skill, Grep, Glob
 ---
 
 <!--
@@ -9,6 +9,12 @@ PARALLEL EXECUTION RULE:
 When performing multiple independent operations (reads, API calls, TaskCreate),
 invoke ALL relevant tools simultaneously in a single message rather than sequentially.
 Err on the side of maximizing parallel tool calls.
+
+VARIABLE PERSISTENCE NOTE:
+Bash variables (like DEFAULT_BRANCH, REPO) do NOT persist across separate tool calls.
+Each Bash invocation is an independent process. Store values mentally from output and
+substitute them in subsequent commands. When running parallel Bash calls, each must
+define any variables it needs inline.
 -->
 
 # Start Work on Issue #$ARGUMENTS
@@ -38,14 +44,13 @@ Complete workflow from issue assignment through implementation with task-based t
 - Tests not run before declaring implementation complete
 - User not presented with next-step options at completion
 
-## Phase 0: Project Context Handshake
+## Phase 1: Project Context Handshake
 
 Before any implementation work:
 
-1. **Read project CLAUDE.md** (if it exists):
-   ```bash
-   cat .claude/CLAUDE.md 2>/dev/null || cat CLAUDE.md 2>/dev/null || echo "No CLAUDE.md found"
-   ```
+1. **Read project CLAUDE.md** using the **Read tool** (not cat/Bash):
+   - Try `.claude/CLAUDE.md` first, then `CLAUDE.md`
+   - If neither exists, note this and proceed with auto-detected conventions
 
 2. **Extract and display project constraints** relevant to this implementation:
    - Tech stack requirements (languages, frameworks, libraries)
@@ -56,18 +61,31 @@ Before any implementation work:
 3. **Briefly confirm constraints** before proceeding:
    > "Project constraints detected: [list key ones]. Proceeding with implementation following these constraints."
 
-If no CLAUDE.md exists, note this and proceed with auto-detected conventions.
+## Phase 2: Setup
 
-## Phase 1: Setup
+### Step 2.1: Normalize Input
 
-**Execute these in parallel** (single message, multiple tool calls):
+`$ARGUMENTS` can be an issue number (e.g., `42`) or a full URL (e.g., `https://github.com/owner/repo/issues/42`). Extract the issue number for use throughout the workflow:
+
+```bash
+# Extract issue number from URL or use directly
+ISSUE_NUM=$(echo "$ARGUMENTS" | grep -oE '[0-9]+$')
+[[ -n "$ISSUE_NUM" ]] || { echo "ERROR: Could not extract issue number from: '$ARGUMENTS'"; exit 1; }
+echo "Issue number: $ISSUE_NUM"
+```
+
+Use the extracted `ISSUE_NUM` in all subsequent commands where `$ARGUMENTS` was previously referenced.
+
+### Step 2.2: Gather Context (Parallel)
+
+**Execute these in parallel** (single message, multiple Bash tool calls). Each call defines `REPO` independently since Bash variables don't persist across calls:
 
 1. **Fetch the issue**:
    ```bash
    gh issue view $ARGUMENTS
    ```
 
-2. **Fetch all issue comments for full context**:
+2. **Fetch all issue comments**:
    ```bash
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
    gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '.[] | "---\n**@\(.user.login)** on \(.created_at):\n\(.body)\n"'
@@ -75,31 +93,42 @@ If no CLAUDE.md exists, note this and proceed with auto-detected conventions.
 
 3. **Fetch issue timeline for related context**:
    ```bash
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
    gh api repos/$REPO/issues/$ARGUMENTS/timeline --jq '.[] | select(.event == "cross-referenced" or .event == "referenced") | "\(.event): \(.source.issue.title // .commit_id)"'
    ```
 
 4. **Check for linked issues/PRs**:
    ```bash
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
    gh api repos/$REPO/issues/$ARGUMENTS --jq '.body' | grep -oE '#[0-9]+'
    ```
 
-5. **Review all comments and linked issues** before confirming setup with user
-
-6. **Assign the issue to yourself**:
+5. **Assign the issue**:
    ```bash
    gh issue edit $ARGUMENTS --add-assignee @me
    ```
 
-7. **Detect default branch and ensure on latest**:
+**If issue not found** (gh issue view fails): Report error and stop:
+> "Issue #$ARGUMENTS not found. Verify the issue number and try again."
+
+### Step 2.3: Branch Setup (Sequential)
+
+These steps depend on each other and must run in order:
+
+1. **Review all comments and linked issues** from Step 2.2 before proceeding
+
+2. **Detect default branch and pull latest**:
    ```bash
-   # Get default branch dynamically
    DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
    git checkout $DEFAULT_BRANCH && git pull origin $DEFAULT_BRANCH
    ```
 
-8. **Determine branch type** - If ambiguous, **use the AskUserQuestion tool**:
+3. **Determine branch type** based on issue labels and context:
+   - Issue has `bug`/`defect` label → default to `fix/issue-{number}-{desc}`
+   - Issue has `documentation` label → default to `docs/issue-{number}-{desc}`
+   - Otherwise → default to `feature/issue-{number}-{desc}`
 
-   When issue type is unclear (could be feature or fix), ask:
+   **If ambiguous** (e.g., could be feature or fix), use the **AskUserQuestion tool**:
    - **Option 1**: "feature/issue-{number}-{desc}" - New functionality
    - **Option 2**: "fix/issue-{number}-{desc}" - Bug fix
    - **Option 3**: "docs/issue-{number}-{desc}" - Documentation only
@@ -108,25 +137,42 @@ If no CLAUDE.md exists, note this and proceed with auto-detected conventions.
    git checkout -b {branch-name}
    ```
 
-9. **Confirm setup** with user before beginning implementation
+4. **Confirm setup** with user before beginning implementation
 
-## Phase 1.5: Capability Discovery
+## Phase 3: Capability Discovery
 
-Before implementation, discover available project capabilities:
+Before implementation, discover available project capabilities by invoking the **capability-discovery** skill using the **Skill tool**.
+
+The skill runs in a forked context and returns:
+- Available agents and skills
+- Quality commands from CLAUDE.md
+- Tech stack detection
+- Verification capabilities
+
+**After skill returns**, extract and store for later phases:
+```
+LINT_CMD="{detected lint command}"    # e.g., ruff check ., npm run lint, go vet ./...
+TEST_CMD="{detected test command}"    # e.g., pytest, npm test, go test ./...
+TYPECHECK_CMD="{detected typecheck}"  # e.g., pyright, tsc --noEmit, (skip if N/A)
+```
+
+Store these for use in Phase 6 verification. If a command is not applicable (e.g., no type checker), note it as "N/A — skip".
+
+**Graceful fallback**: If the Skill tool invocation fails, discover capabilities inline:
 
 **Execute these in parallel**:
 
-1. **Check for custom skills** that could help:
+1. **Check for custom skills**:
    ```bash
    ls .claude/skills/*/SKILL.md plugins/*/skills/*/SKILL.md 2>/dev/null
    ```
 
-2. **Check for custom agents** available:
+2. **Check for custom agents**:
    ```bash
    ls .claude/agents/*.md plugins/*/agents/*.md 2>/dev/null
    ```
 
-3. **Parse CLAUDE.md** for quality commands:
+3. **Parse CLAUDE.md for quality commands**:
    ```bash
    grep -E "(lint|test|check|format|typecheck):" .claude/CLAUDE.md 2>/dev/null
    grep -E "(ruff|pytest|npm run|go vet|cargo)" .claude/CLAUDE.md 2>/dev/null
@@ -137,24 +183,17 @@ Before implementation, discover available project capabilities:
    ls pyproject.toml package.json tsconfig.json go.mod Cargo.toml 2>/dev/null
    ```
 
-5. **Build parallel quality command set** for reuse throughout the workflow:
+Build the quality command set from detected results.
 
-   Based on CLAUDE.md commands or detected tech stack, compose three parallel commands:
-   ```
-   LINT_CMD="{detected lint command}"    # e.g., ruff check ., npm run lint, go vet ./...
-   TEST_CMD="{detected test command}"    # e.g., pytest, npm test, go test ./...
-   TYPECHECK_CMD="{detected typecheck}"  # e.g., pyright, tsc --noEmit, (skip if N/A)
-   ```
+## Phase 4: Impact Analysis
 
-   Store these for use in Phase 3.2 verification loop. If a command is not applicable (e.g., no type checker), note it as "N/A — skip".
+**Skip if**: Issue is documentation-only, config-only change, or single-file modification with no downstream dependents.
 
-## Phase 1.7: Impact Analysis
-
-Before implementing, map the blast radius of planned changes:
+For multi-file or behavioral changes, map the blast radius of planned changes:
 
 1. **Identify modules to modify** from acceptance criteria
 
-2. **Find dependents** - files that import/reference modules being changed:
+2. **Find dependents** — files that import/reference modules being changed:
    ```bash
    # For each key module to be modified, find who depends on it
    grep -rn "import.*{module}" --include="*.ts" --include="*.py" --include="*.go" . 2>/dev/null | head -20
@@ -166,7 +205,6 @@ Before implementing, map the blast radius of planned changes:
    grep -rln "import.*{module}\|from.*{module}\|require.*{module}\|mock.*{module}\|jest\.mock.*{module}\|patch.*{module}" --include="*test*" --include="*spec*" . 2>/dev/null
    grep -rln "import.*{module}\|from.*{module}\|require.*{module}" tests/ test/ __tests__/ spec/ 2>/dev/null
    ```
-   This catches tests in unrelated directories that import the module, which filename-pattern matching misses.
 
 4. **Check for middleware/interceptors/decorators** that might be affected:
    ```bash
@@ -175,51 +213,60 @@ Before implementing, map the blast radius of planned changes:
 
 5. **Map test setup requirements** for each affected test file:
    ```bash
-   # For each affected test file, extract setup patterns
    head -30 {test_file}  # Check imports and fixtures
    grep -n "setUp\|fixture\|beforeEach\|beforeAll\|@pytest.fixture\|conftest\|TestCase" {test_file} 2>/dev/null
    ```
-   This prevents the pattern where tests break because they lack required setup (e.g., CSRF middleware added but test fixtures don't include it).
 
-6. **Document impact** with test impact map:
+6. **Document impact** — present as a summary table:
 
-   ```markdown
-   ## Impact Analysis
-
-   ### Modules to Modify
+```
    | Module | Dependents | Tests Exist | Risk |
    |--------|-----------|-------------|------|
    | [module] | [N files] | [yes/no] | [low/med/high] |
+```
 
-   ### Test Impact Map
-   | Module Being Changed | Test Files That Import/Mock It | Test Setup Requirements |
-   |---------------------|-------------------------------|------------------------|
-   | [module] | [test_file1, test_file2] | [fixtures, middleware, env vars] |
+   Also list tests to run after each change and note potential side effects (e.g., "Adding auth middleware will affect all POST handlers").
 
-   ### Tests to Run After EACH Change
-   1. `{test_cmd} {specific_test_file_1}`
-   2. `{test_cmd} {specific_test_file_2}`
-   3. `{full_test_suite_cmd}`
-
-   ### Regression Guard
-   Before implementing, snapshot current test state:
+7. **Snapshot current test state** before implementing:
    ```bash
    {test_cmd} 2>&1 | tail -5  # Record baseline pass/fail counts
    ```
-   After each change, compare against baseline to catch regressions immediately.
 
-   ### Potential Side Effects
-   - [e.g., "Adding auth middleware will affect all POST handlers"]
-   - [e.g., "Changing schema will require test fixture updates"]
-   ```
+## Phase 5: Task-Based Implementation
 
-This prevents the pattern of adding middleware (e.g., CSRF) that silently breaks downstream tests.
+### Step 5.1: Create Task Breakdown (via Implementation Planner)
 
-## Phase 2: Task-Based Implementation
+Dispatch the **implementation-planner** agent using the **Agent tool** to analyze the issue and create a structured task breakdown.
 
-### Step 2.1: Create Task Breakdown
+Pass the issue context already gathered in Phase 2 (issue body, comments, linked issues) so the agent doesn't re-fetch:
 
-Parse issue acceptance criteria and create tasks using **TaskCreate**:
+```
+Agent call: implementation-planner —
+  "Plan implementation for Issue #{ISSUE_NUM}.
+
+  Issue title: {title}
+  Issue body: {body}
+  Comments: {comments from Step 2.2}
+  Linked issues: {from Step 2.2}
+  Impact analysis: {from Phase 4, if performed}
+
+  Create TaskCreate entries for each acceptance criterion with:
+  - Dependencies between tasks (via addBlockedBy)
+  - Implementation notes with relevant file paths
+  - Suggested implementation order
+
+  Return the implementation plan with dependency graph and suggested order."
+```
+
+The agent returns:
+- Tasks created via TaskCreate with dependency chains
+- Dependency graph showing implementation order
+- Suggested parallel groups (if any)
+- Questions or assumptions that need user input
+
+**If agent flags ambiguities**, use the **AskUserQuestion tool** to clarify before proceeding.
+
+**Graceful fallback**: If the agent fails, create tasks inline:
 
 For each acceptance criterion found in the issue:
 ```
@@ -233,9 +280,9 @@ Example breakdown:
 - Issue says "Users can filter by date" → Task: "Add date filtering to search endpoint"
 - Issue says "Validation errors show helpful messages" → Task: "Implement validation error formatting"
 
-### Step 2.1a: Identify Parallel Implementation Opportunities
+### Step 5.1a: Identify Parallel Implementation Opportunities
 
-After creating the task breakdown, analyze the dependency graph to find tasks that can run in parallel:
+After the task breakdown is created (by agent or fallback), analyze the dependency graph to find tasks that can run in parallel:
 
 **Parallelism criteria** (ALL must be true):
 1. Tasks share the same dependency set (same `blockedBy` or no dependencies)
@@ -244,17 +291,15 @@ After creating the task breakdown, analyze the dependency graph to find tasks th
 4. Each task produces a testable increment
 
 **If safe parallel groups found**:
-1. Dispatch **Agent tool calls in parallel** for each task in the group (using `isolation: "worktree"`)
+1. Dispatch **Agent tool calls in parallel** for each task in the group (using `isolation: "worktree"` if available — this feature requires worktree support in the environment)
 2. Each agent receives: task description, relevant file paths, project conventions from CLAUDE.md
 3. After agents complete → verify no file conflicts (`git diff --name-only` across worktrees)
 4. Run quality checks on merged result
 5. Mark parallel tasks as complete
 
-**If no safe parallel groups found** → fall back to sequential Step 2.2. This is the **default** — incorrect parallelism causes merge conflicts, so err on the side of sequential.
+**If no safe parallel groups found** → fall back to sequential Step 5.2. This is the **default** — incorrect parallelism causes merge conflicts, so err on the side of sequential.
 
-**Example**: If Task 1 = "Add validation schema" and Task 2 = "Update API docs", and they touch different files with no imports between them, they can safely run in parallel. But if Task 2 imports from Task 1's output, they must be sequential.
-
-### Step 2.2: Work Through Tasks Systematically
+### Step 5.2: Work Through Tasks Systematically
 
 For each task from TaskList:
 
@@ -283,7 +328,7 @@ For each task from TaskList:
    TaskList
    ```
 
-### Step 2.3: Progress Tracking
+### Step 5.3: Progress Tracking
 
 After each task completion, show progress:
 ```
@@ -297,41 +342,32 @@ After each task completion, show progress:
 Progress: 1/3 tasks completed
 ```
 
-## Phase 3: Quality Checks (Dynamic Discovery)
+## Phase 6: Quality Checks
 
-### Step 3.1: Discover Quality Tools
+Use the quality commands discovered in Phase 3 (LINT_CMD, TEST_CMD, TYPECHECK_CMD). If Phase 3 was skipped, detect commands now from CLAUDE.md or tech stack:
 
-In priority order:
+| Indicator | Commands |
+|-----------|----------|
+| pyproject.toml | `ruff check .`, `pytest` |
+| package.json | `npm run lint`, `npm test` |
+| tsconfig.json | `tsc --noEmit` |
+| go.mod | `go vet ./...`, `go test ./...` |
+| Cargo.toml | `cargo clippy`, `cargo test` |
 
-1. **Check CLAUDE.md** for explicit commands:
-   ```bash
-   grep -E "(lint|test|check)" .claude/CLAUDE.md 2>/dev/null
-   ```
+### Step 6.1: Quality Verification Loop (Bounded)
 
-2. **Fallback to tech stack detection**:
-   | Indicator | Commands |
-   |-----------|----------|
-   | pyproject.toml | `ruff check .`, `pytest` |
-   | package.json | `npm run lint`, `npm test` |
-   | tsconfig.json | `tsc --noEmit` |
-   | go.mod | `go vet ./...`, `go test ./...` |
-   | Cargo.toml | `cargo clippy`, `cargo test` |
-
-### Step 3.2: Quality Verification Loop (Bounded)
-
-Execute a bounded fix-verify cycle. **Fix immediately — do not create tasks** for lint/test failures.
+Execute a bounded fix-verify cycle. **Fix immediately — do not create tasks** for lint/test failures. These are mechanical fixes.
 
 **Iteration 1 (and up to 3 total):**
 
 1. **Run all quality commands in parallel** (3 Bash tool calls in a single message):
    ```
-   Execute 3 Bash tool calls in a single message:
    - Bash call 1: {lint_cmd}       # e.g., ruff check . 2>&1
    - Bash call 2: {test_cmd}       # e.g., pytest 2>&1
    - Bash call 3: {typecheck_cmd}  # e.g., tsc --noEmit 2>&1
    ```
 
-2. **If ALL pass** → proceed to Step 3.4
+2. **If ALL pass** → proceed to Step 6.2
 
 3. **If ANY fail**:
    - Parse error output to identify root cause (file, line, error type)
@@ -344,199 +380,72 @@ Execute a bounded fix-verify cycle. **Fix immediately — do not create tasks** 
    - **Option 2**: "Skip failing checks and proceed" — note which checks were skipped
    - **Option 3**: "Abort — I need to investigate"
 
-**Key principle**: Tight fix-verify cycles. Tasks add overhead to what should be a quick lint/test fix.
-
-### Step 3.4: Verify All Tasks Complete
+### Step 6.2: Verify All Tasks Complete
 
 ```
 TaskList
 ```
 
-If incomplete tasks remain, **use AskUserQuestion tool**:
-- "Complete remaining tasks before PR"
-- "Create PR noting partial implementation"
-- "Mark remaining as out-of-scope"
+If incomplete tasks remain: **Complete remaining tasks before PR**
+If clarifications or decisions are needed before proceeding: **Use AskUserQuestion tool** with clear options.
 
-## Phase 3.3: Runtime Verification
+## Phase 7: Runtime Verification
 
-After quality checks pass (lint/test/typecheck), verify the implementation actually works:
+After quality checks pass, verify the implementation actually works at runtime.
 
-### Step 3.3.1: Discover Verification Capabilities
+Invoke the **runtime-verification** skill using the **Skill tool**. The skill runs in a forked context and:
+- Discovers verification capabilities (dev server, E2E frameworks, verify scripts)
+- Starts services and runs smoke tests
+- Executes E2E tests and visual verification of changes in the browser (if available)
+- Verifies acceptance criteria programmatically
+- Returns structured results table
 
-Check what runtime verification is available for this project:
+After the skill returns, incorporate results into the pre-PR gate assessment.
+
+**Graceful fallback**: If the Skill tool invocation fails, check inline:
 ```bash
-# From CLAUDE.md
+# Discover capabilities
 grep -E "^(dev-server|verify|e2e|smoke|health):" .claude/CLAUDE.md 2>/dev/null
-
-# From project files
-ls verify.sh scripts/verify* 2>/dev/null
-ls playwright.config.* cypress.config.* 2>/dev/null
+ls verify.sh scripts/verify* playwright.config.* cypress.config.* 2>/dev/null
 cat package.json 2>/dev/null | grep -E '"(dev|start|serve|e2e|test:e2e)"'
 ```
 
-### Step 3.3.2: Execute Available Verification
+If capabilities found, run them. If dev server discovered: start in background, wait for ready (max 30s), run smoke tests, kill server. If E2E framework found, run it. If nothing found, skip with note "Runtime verification skipped — no dev server or E2E framework found."
 
-**If dev server command found**:
-1. Start server in background
-2. Wait for ready signal (health endpoint or port availability, max 30s)
-3. Run smoke tests against new/modified endpoints
-4. Run E2E tests if framework detected
-5. Kill background server
+**Handle failures**: If runtime tests fail → analyze root cause, fix, re-run (max 3 iterations). If dev server won't start → report error with logs, proceed (not blocking).
 
-**If verify script found** (`verify.sh`, `scripts/verify.sh`):
-```bash
-bash verify.sh 2>&1
-```
+**IMPORTANT**: Runtime verification is additive, not blocking. If a project has no dev server or E2E framework, this phase completes with "skipped" status and the workflow continues.
 
-**If E2E framework found** (Playwright, Cypress, etc.):
-```bash
-{e2e_cmd} 2>&1
-```
+## Phase 8: Code Review (Self-Review)
 
-**If acceptance criteria can be verified programmatically**:
-For each criterion from the issue, attempt to verify it:
-- API endpoint → make request, check response
-- CLI command → run it, check output
-- Data transformation → verify input/output
-- Document result as VERIFIED or NEEDS_MANUAL_CHECK
+Before creating PR, perform systematic code review on the diff.
 
-### Step 3.3.3: Report Results
+Read the **code review checklist** from `references/code-review-checklist.md` (relative to the gh-workflow plugin directory) and follow its instructions. The checklist covers:
+- Agent-assisted review (preferred, using `code-reviewer` agent if available)
+- Manual review fallback with 7-point checklist
+- Output format for findings
 
-```markdown
-## Runtime Verification Results
+**Task creation policy for review findings**:
+- **P1/P2 findings** (design decisions needed): Create tasks via TaskCreate, implement fixes, re-run quality checks
+- **P3 findings** (straightforward fixes): Fix inline immediately, no task overhead needed
 
-| Check | Status | Evidence |
-|-------|--------|----------|
-| Dev server starts | Pass/Fail/Skipped | [details] |
-| API endpoints respond | Pass/Fail/Skipped | [details] |
-| E2E tests | Pass/Fail/Skipped | [X passed, Y failed] |
-| Acceptance criteria | Pass/Partial/Skipped | [details per criterion] |
+## Phase 9: Test Review (Self-Review)
 
-### Items Requiring Manual Verification
-| Item | Why |
-|------|-----|
-| [criterion] | No automation available — verify visually |
-```
+Review tests in the current diff.
 
-### Step 3.3.4: Handle Failures
-
-Apply the verification loop pattern:
-- If runtime tests fail → analyze root cause, fix, re-run (max 3 iterations)
-- If dev server won't start → report error with logs, proceed to code review (not blocking)
-- If no verification capabilities detected → note "Runtime verification skipped — no dev server or E2E framework found" and proceed
-
-**IMPORTANT**: Runtime verification is additive, not blocking. If a project has no dev server or E2E framework, this phase completes with "skipped" status and the workflow continues. It should never prevent a PR from being created for projects that don't have runtime verification set up.
-
-## Phase 3.5: Code Review (Self-Review)
-
-Before creating PR, perform systematic code review on the diff:
-
-```bash
-# Get the diff to review
-git diff origin/$DEFAULT_BRANCH..HEAD
-```
-
-**Review Checklist** (only analyze new code in diff):
-
-1. **Unnecessary/Duplicate Code**
-   - Identify redundant logic
-   - Check for copy-paste duplication
-   - Look for dead code paths
-
-2. **Type Safety & Language Gotchas**
-   - TypeScript: proper typing, no unnecessary `any`
-   - Python: type hints, pyright compliance
-   - Watch for common footguns
-
-3. **Code Bloat**
-   - Remove unnecessary comments
-   - Delete debug code/console.logs
-   - Remove commented-out code
-
-4. **Complexity**
-   - Simplify overly complicated logic
-   - Extract complex conditions into named functions
-   - Reduce nesting depth
-
-5. **Naming**
-   - Variable names are clear and descriptive
-   - Function names describe what they do
-   - Consistent naming patterns
-
-6. **Pattern Consistency**
-   - Use established project patterns
-   - Don't introduce conflicting approaches
-   - Check CLAUDE.md for conventions
-
-7. **NO PLACEHOLDERS**
-   - No mocks, demo data, placeholder code, stubs in src
-   - All implementations must be production-ready
-
-**Output Format**:
-```
-## Code Review Findings
-
-### Issues Found
-| # | Type | Location | Issue | Fix |
-|---|------|----------|-------|-----|
-| 1 | Duplicate | file:line | [desc] | [fix] |
-
-### Fixes Applied
-- [x] Fixed: [description]
-```
+Read the **test review checklist** from `references/test-review-checklist.md` (relative to the gh-workflow plugin directory) and follow its instructions. The checklist covers:
+- Coverage gaps (missing behavior, edge cases, error paths)
+- Assertion quality
+- Test design patterns
+- Output format for findings
 
 After identifying issues:
-1. Create tasks for each fix: `TaskCreate: subject="Fix: [issue]"`
-2. Implement fixes
-3. Re-run linters and type checkers
-4. Verify all issues resolved
-
-## Phase 3.6: Test Review (Self-Review)
-
-Review tests in the current diff:
-
-**Coverage Check**:
-- Missing tests for new behavior/branches?
-- Edge cases, boundary values, error paths?
-- Negative cases, invalid inputs, failure modes?
-
-**Assertion Quality**:
-- Checking behavior, not implementation details?
-- Weak assertions (too generic, no failure message)?
-- Over-asserting unimportant details?
-
-**Test Design**:
-- Descriptive names (given/when/then or AAA)?
-- Clear intent, minimal mental overhead?
-- Magic values → constants/factories/helpers?
-- Duplicated setup → fixtures/parametrized tests?
-
-**Output Format**:
-```
-## Test Review Findings
-
-### Missing Coverage
-| Behavior | Suggested Test |
-|----------|----------------|
-| [behavior] | [test name and approach] |
-
-### Issues Found
-| # | Type | Test | Issue | Fix |
-|---|------|------|-------|-----|
-| 1 | Weak assertion | test_foo | [desc] | [fix] |
-
-### Fixes Applied
-- [x] Added: test_edge_case_X
-- [x] Fixed: improved assertions in test_Y
-```
-
-After identifying issues:
-1. Create tasks for each improvement
+1. Create tasks for missing coverage and significant issues
 2. Implement new/improved tests
 3. Run test suite
 4. Verify all tests pass
 
-## Phase 3.7: Pre-PR Gate (Mandatory)
+## Phase 10: Pre-PR Gate (Mandatory)
 
 Before proceeding to PR creation, verify ALL of the following:
 
@@ -562,30 +471,27 @@ TaskList
 - [ ] All implementations are complete
 
 **If ANY gate fails**:
-1. Apply the verification loop pattern (Step 3.2): fix inline immediately, re-run checks
+1. Apply the verification loop pattern (Phase 6 Step 6.1): fix inline immediately, re-run checks
 2. Max 3 iterations before escalating to user via AskUserQuestion
 3. Only proceed when all checks pass
 
-## Phase 4: Ready for PR
+## Phase 11: Ready for PR
 
 **All quality gates passed.** Implementation is complete and ready for pull request.
 
-### Step 4.1: Final Commit Check
+### Step 11.1: Final Commit Check
 
 Ensure all changes are committed:
 
 ```bash
-# Check for uncommitted changes
 git status --porcelain
-
-# If uncommitted changes exist, prompt for action
 ```
 
 If uncommitted changes exist, **use AskUserQuestion tool**:
 - **Option 1**: "Run /gh-commit first" (Recommended) - Commit remaining changes
 - **Option 2**: "Continue without committing" - Changes will not be in PR
 
-### Step 4.2: Display Summary
+### Step 11.2: Display Summary
 
 ```markdown
 ## Implementation Complete
@@ -611,13 +517,27 @@ If uncommitted changes exist, **use AskUserQuestion tool**:
 - [x] Type checker passed
 - [x] All tests pass
 
+### Runtime Verification Results
+
+| Check | Status | Evidence |
+|-------|--------|----------|
+| Dev server starts | Pass/Fail/Skipped | [details] |
+| API endpoints respond | Pass/Fail/Skipped | [details] |
+| E2E tests | Pass/Fail/Skipped | [X passed, Y failed] |
+| Acceptance criteria | Pass/Partial/Skipped | [details per criterion] |
+
+#### Items Requiring Manual Verification
+| Item | Why |
+|------|-----|
+| [criterion] | No automation available — verify visually |
+```
 ### Files Changed
 - {file1} (created)
 - {file2} (modified)
 - {file3} (modified)
 ```
 
-### Step 4.3: Next Step Selection
+### Step 11.3: Next Step Selection
 
 **Use the AskUserQuestion tool** to determine next action:
 
@@ -677,7 +597,7 @@ Make additional changes, then:
 
 ## Arguments
 
-- `$ARGUMENTS`: Issue number (required)
+- `$ARGUMENTS`: Issue number or issue URL (required). Examples: `42`, `https://github.com/owner/repo/issues/42`
 - To override base branch: mention it in your message (e.g., "start 42, target release branch")
 
 ## Rules

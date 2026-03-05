@@ -1,7 +1,7 @@
 ---
 description: Use when ready to create a PR to run full code review, convention checks, and get reviewer suggestions before PR creation
 argument-hint: [title]
-allowed-tools: Bash, Read, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Skill
+allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Skill, Grep, Glob
 ---
 
 <!--
@@ -9,11 +9,17 @@ PARALLEL EXECUTION RULE:
 When performing multiple independent operations (reads, API calls, TaskCreate),
 invoke ALL relevant tools simultaneously in a single message rather than sequentially.
 Err on the side of maximizing parallel tool calls.
+
+VARIABLE PERSISTENCE NOTE:
+Bash variables (like DEFAULT_BRANCH, REPO, BRANCH) do NOT persist across separate tool calls.
+Each Bash invocation is an independent process. Store values mentally from output and
+substitute them in subsequent commands. When running parallel Bash calls, each must
+define any variables it needs inline.
 -->
 
 # Create Pull Request
 
-Decoupled PR creation workflow with full code review, convention checks, quality gates, and intelligent reviewer suggestions.
+Decoupled PR creation workflow with full code review, quality gates, and intelligent reviewer suggestions.
 
 **Tool Usage**: This workflow uses the **AskUserQuestion tool** for interactive decisions, **TaskCreate/TaskUpdate** for tracking review progress, and the **suggest-users skill** for reviewer recommendations.
 
@@ -28,7 +34,7 @@ Decoupled PR creation workflow with full code review, convention checks, quality
 - All P1 findings must be resolved OR explicitly acknowledged by user
 - Read CLAUDE.md before starting and follow all project conventions
 
-**FORMAT**: PR body follows the template in `templates/pr-template.md`. All findings displayed before asking user for decisions.
+**FORMAT**: PR body follows `templates/pr-template.md`. All findings displayed before asking user for decisions.
 
 **FAILURE CONDITIONS** (output is unacceptable if any apply):
 - PR created without running code review (Phase 3 skipped)
@@ -38,28 +44,51 @@ Decoupled PR creation workflow with full code review, convention checks, quality
 - PR targets wrong branch
 - Uncommitted changes silently ignored
 
-## Overview
+## Phase 1: Project Context & Capability Discovery
 
-This command creates a pull request after running comprehensive quality checks:
-1. Pre-flight verification
-2. Full code review (mandatory)
-3. Convention compliance check
-4. Reviewer suggestions based on file expertise
-5. PR creation with user approval
+### Step 1.1: Read Project Context
 
-## Phase 1: Pre-flight Verification
+Read CLAUDE.md using the **Read tool** (not cat/Bash):
+- Try `.claude/CLAUDE.md` first, then `CLAUDE.md`
+- Note quality commands, commit conventions, and project patterns
+- If neither exists, proceed with auto-detected conventions
+
+### Step 1.2: Capability Discovery
+
+Invoke the **capability-discovery** skill using the **Skill tool** to discover quality commands, agents, and tech stack.
+
+**After skill returns**, extract:
+```
+LINT_CMD="{detected lint command}"
+TEST_CMD="{detected test command}"
+TYPECHECK_CMD="{detected typecheck}"
+```
+
+Store for use in Phase 3. If a command is N/A, note as "N/A — skip".
+
+**Graceful fallback**: If skill fails, detect from tech stack:
+
+| Indicator | Commands |
+|-----------|----------|
+| pyproject.toml | `ruff check .`, `pytest` |
+| package.json | `npm run lint`, `npm test` |
+| tsconfig.json | `tsc --noEmit` |
+| go.mod | `go vet ./...`, `go test ./...` |
+| Cargo.toml | `cargo clippy`, `cargo test` |
+
+## Phase 2: Pre-flight Verification
 
 **Execute in parallel** (single message, multiple tool calls):
 
-1. **Verify current branch**:
+1. **Verify current branch and default branch**:
    ```bash
    BRANCH=$(git branch --show-current)
    DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
-
-   # Ensure not on default branch
    if [ "$BRANCH" = "$DEFAULT_BRANCH" ]; then
-     echo "ERROR: Cannot create PR from default branch"
+     echo "ERROR: Cannot create PR from default branch. Create a feature branch first."
+     exit 1
    fi
+   echo "Branch: $BRANCH, Default: $DEFAULT_BRANCH"
    ```
 
 2. **Check for uncommitted changes**:
@@ -67,74 +96,110 @@ This command creates a pull request after running comprehensive quality checks:
    git status --porcelain
    ```
 
-3. **Verify commits ahead of remote**:
+3. **Count commits ahead**:
    ```bash
-   # Check if branch tracks remote
-   git rev-parse --abbrev-ref @{upstream} 2>/dev/null
-
-   # Count commits ahead
-   git rev-list --count @{upstream}..HEAD 2>/dev/null || git rev-list --count $DEFAULT_BRANCH..HEAD
+   DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
+   git rev-list --count $DEFAULT_BRANCH..HEAD
    ```
 
-4. **Get repository info**:
+4. **Check for existing PR on this branch**:
    ```bash
-   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+   BRANCH=$(git branch --show-current)
+   gh pr list --head $BRANCH --json number,url,state
    ```
 
-### Pre-flight Decision
+5. **Get repository info**:
+   ```bash
+   gh repo view --json nameWithOwner --jq '.nameWithOwner'
+   ```
 
-If uncommitted changes detected, use **AskUserQuestion tool**:
+### Step 2.1: Pre-flight Decisions
+
+**If on default branch** → stop:
+> Cannot create PR from the default branch. Create a feature branch, make changes, commit, then run `/gh-pr`.
+
+**If PR already exists** for this branch:
+> PR already exists for branch `{branch}`: PR #{number} ({url}). Push new commits to update the existing PR, or close it first to create a new one.
+
+**If no commits ahead** → stop:
+> No commits to create PR from. Branch `{branch}` has no commits ahead of `{default_branch}`.
+
+**If uncommitted changes** detected, use **AskUserQuestion tool**:
 - **Option 1**: "Run /gh-commit first" (Recommended) - Commit changes before PR
 - **Option 2**: "Stash changes and continue" - Temporary save
 - **Option 3**: "Discard changes and continue" - Lose uncommitted work
 - **Option 4**: "Cancel PR creation" - Return to work
 
-If no commits ahead:
-```markdown
-**No commits to create PR from.**
-
-The branch `{branch}` has no commits ahead of `{default_branch}`.
-Make changes and commit before creating a PR.
-```
-
-## Phase 2: Issue Detection
-
-1. **Extract issue number from branch name**:
-   ```bash
-   # Pattern: feature/issue-{N}-desc, fix/issue-{N}-desc
-   ISSUE_NUM=$(echo $BRANCH | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-   ```
-
-2. **Fetch issue details** (if found):
-   ```bash
-   gh issue view $ISSUE_NUM --json title,body,labels
-   ```
-
-3. **Extract acceptance criteria** from issue body for verification
-
-4. **If no issue linked**, note for PR body:
-   ```markdown
-   **Note**: No linked issue detected from branch name `{branch}`.
-   Consider linking an issue in the PR body.
-   ```
-
 ## Phase 3: Full Code Review (Mandatory)
 
-This phase performs a comprehensive code review before PR creation.
+This is the core of gh-pr — comprehensive quality review before creating the PR.
 
-### Step 3.1: Get the Diff
+### Step 3.1: Issue Detection
 
 ```bash
-# Full diff against default branch
-git diff $DEFAULT_BRANCH..HEAD
+# Extract issue number from branch name
+BRANCH=$(git branch --show-current)
+ISSUE_NUM=$(echo $BRANCH | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+```
 
-# List of changed files
+If found, fetch issue details:
+```bash
+gh issue view $ISSUE_NUM --json title,body,labels
+```
+
+Extract acceptance criteria for verification. If no issue linked, note for PR body.
+
+### Step 3.2: Get the Diff
+
+```bash
+git diff $DEFAULT_BRANCH..HEAD
 git diff --name-only $DEFAULT_BRANCH..HEAD
 ```
 
-### Step 3.2: Create Review Tasks
+### Step 3.3: Dispatch Review Agents (Preferred)
 
-**Execute in parallel** (multiple TaskCreate calls):
+Launch 3 specialized agents in parallel using the **Agent tool** (single message, 3 Agent tool calls):
+
+| Agent | Focus |
+|-------|-------|
+| code-reviewer | Code quality, logic, security, edge cases, error handling |
+| convention-checker | Commit messages, branch naming, PR format, issue linkage |
+| test-runner | Lint, test, typecheck execution |
+
+```
+Execute 3 Agent tool calls in a single message:
+- Agent call 1: code-reviewer — "Pre-PR self-review. Analyze diff between $DEFAULT_BRANCH and HEAD. Return P1/P2/P3 findings table with file:line citations."
+- Agent call 2: convention-checker — "Pre-PR convention check. Verify commits, branch naming, and change organization. Return findings."
+- Agent call 3: test-runner — "Pre-PR quality gate. Run lint/test/typecheck commands. Return results table."
+```
+
+Each agent runs independently and returns structured findings.
+
+**Graceful fallback**: If any agent fails, fall back to inline execution for that facet:
+
+**Code review fallback**: Read `references/code-review-checklist.md` (relative to the gh-workflow plugin directory) and follow its instructions for manual review.
+
+**Convention fallback**:
+```bash
+# Commit messages
+git log $DEFAULT_BRANCH..HEAD --format="%s"
+# Check for conventional commit format: feat:, fix:, docs:, refactor:, test:, chore:
+
+# Branch naming
+git branch --show-current
+# Verify: feature/issue-{N}-{desc}, fix/issue-{N}-{desc}, docs/issue-{N}-{desc}
+```
+
+**Quality commands fallback**: Run quality commands from Phase 1 directly:
+```
+- Bash call 1: {lint_cmd}
+- Bash call 2: {test_cmd}
+- Bash call 3: {typecheck_cmd}
+```
+
+### Step 3.4: Create Review Tasks (Tracking)
+
+After agents return (or fallback execution completes), **create tasks in parallel** to track completion of each review facet. These ensure no facet is silently skipped:
 
 ```
 TaskCreate:
@@ -156,222 +221,121 @@ TaskCreate:
   subject: "Review: Test Coverage"
   description: "Verify tests exist for new functionality"
   activeForm: "Checking test coverage"
+
+TaskCreate:
+  subject: "Review: Conventions & Standards"
+  description: "Commit messages, branch naming, PR format, issue linkage"
+  activeForm: "Checking conventions"
 ```
 
-### Step 3.3: Execute Code Review
+Mark each task as completed when its corresponding agent results are collected and incorporated into the synthesis. If an agent covered multiple facets (e.g., code-reviewer handles both Code Quality and Security), mark each task individually based on whether findings were reported for that facet.
 
-For each review task, mark in_progress, execute analysis, record findings, mark completed.
+**Why track these separately**: Agents may focus on high-signal findings and skip lower-priority checks like TODO/debug cleanup or test coverage gaps. Individual tasks ensure each facet gets explicit attention — either confirmed clean or with findings recorded.
 
-**Code Quality & Logic**:
-- Logic correctness for all code paths
-- Edge case handling (nulls, empty, boundaries)
-- Error handling and recovery
-- Resource management
-- Unnecessary/duplicate code
+### Step 3.5: Quality Verification Loop
 
-**Security Scan**:
-- No hardcoded secrets or credentials
-- Input validation present
-- No SQL/command injection risks
-- Sensitive data not logged
-
-**TODO/Debug Check**:
-```bash
-# Find TODO/FIXME comments in changed files
-git diff --name-only $DEFAULT_BRANCH..HEAD | xargs grep -n "TODO\|FIXME\|XXX\|HACK" 2>/dev/null
-
-# Find debug statements
-git diff --name-only $DEFAULT_BRANCH..HEAD | xargs grep -n "console\.log\|print(\|debugger" 2>/dev/null
-```
-
-**Test Coverage**:
-- New functionality has tests
-- Edge cases tested
-- Test assertions are meaningful
-
-### Step 3.4: Run Quality Commands (Parallel)
-
-Detect quality commands from CLAUDE.md or tech stack, then execute **all in parallel** (3 Bash tool calls in a single message):
-
-```
-Execute 3 Bash tool calls in a single message:
-- Bash call 1: {lint_cmd}       # e.g., ruff check . 2>&1, npm run lint 2>&1
-- Bash call 2: {test_cmd}       # e.g., pytest 2>&1, npm test 2>&1
-- Bash call 3: {typecheck_cmd}  # e.g., pyright 2>&1, tsc --noEmit 2>&1
-```
-
-If a command is not applicable (e.g., no type checker for the stack), skip that call. Each result is captured separately for clear error attribution.
-
-### Step 3.4a: Quality Verification Loop
-
-If any quality command fails, apply bounded verification:
+If any quality command (from agent or fallback) failed, apply bounded verification:
 
 1. Parse error output to identify root cause
-2. Fix the issue inline immediately (no TaskCreate for lint/test failures)
-3. Re-run ALL quality commands in parallel
-4. **Max 3 iterations**. After 3 failures → include failures as P1 findings in Step 3.5 for user decision in Step 3.6
+2. Fix the issue inline immediately (Edit tool, not TaskCreate)
+3. Commit the fix: `git commit -m "fix: [what was fixed]"`
+4. Re-run ALL quality commands in parallel
+5. **Max 3 iterations**. After 3 failures → include failures as P1 findings in Step 3.8
 
-### Step 3.4b: Runtime Verification (if available)
+### Step 3.6: Runtime Verification (if available)
 
-If the project has runtime verification capabilities (dev server, E2E tests, verify script):
-1. Run runtime verification
-2. Include results in the findings synthesis
-3. Failed runtime tests are P2 findings (should fix before PR)
+Invoke the **runtime-verification** skill using the **Skill tool**.
 
-If no runtime verification available → skip with note "No runtime verification configured"
+Include results in findings synthesis:
+- Passed runtime tests = positive signals
+- Failed runtime tests = P2 findings
 
-### Step 3.5: Synthesize Findings
+**Graceful fallback**: If skill fails, check inline:
+```bash
+ls verify.sh scripts/verify* playwright.config.* cypress.config.* 2>/dev/null
+cat package.json 2>/dev/null | grep -E '"(dev|start|serve|e2e|test:e2e)"'
+```
+If capabilities found, run them. If nothing found, skip with note "No runtime verification configured."
 
-If multiple review checks flagged the same issue, merge into a single finding with a "Flagged By" column indicating which checks identified it. Deduplicate by file:line — keep the higher priority version.
+### Step 3.7: Synthesize Findings
+
+Before synthesizing, verify all review tasks from Step 3.4 are marked completed:
+```
+TaskList
+```
+Any incomplete tasks indicate a review facet that was not covered — address it before proceeding.
+
+Merge all findings from agents (or fallbacks). Deduplicate by file:line — keep the higher priority version. Add "Flagged By" when multiple sources found the same issue.
 
 ```markdown
 ## Code Review Findings
 
 ### P1 - Critical (Blocks PR)
-| # | Category | Location | Issue | Fix |
-|---|----------|----------|-------|-----|
-| 1 | Security | src/api.ts:42 | Hardcoded API key | Use environment variable |
+| # | Category | Location | Issue | Fix | Flagged By |
+|---|----------|----------|-------|-----|------------|
 
 ### P2 - Important (Should Fix)
-| # | Category | Location | Issue | Fix |
-|---|----------|----------|-------|-----|
-| 1 | Logic | src/util.ts:15 | Missing null check | Add guard clause |
+| # | Category | Location | Issue | Fix | Flagged By |
+|---|----------|----------|-------|-----|------------|
 
 ### P3 - Suggestions
-| # | Category | Location | Issue | Fix |
-|---|----------|----------|-------|-----|
-| 1 | Style | src/index.ts:8 | Console.log present | Remove before merge |
+| # | Category | Location | Issue | Fix | Flagged By |
+|---|----------|----------|-------|-----|------------|
 
 ### Quality Command Results
 | Command | Status | Details |
 |---------|--------|---------|
-| ruff check | Pass/Fail | {details} |
-| pytest | Pass/Fail | {details} |
 
-### TODO/Debug Items
-| File | Line | Content |
-|------|------|---------|
-| src/api.ts | 55 | // TODO: Add rate limiting |
+### Convention Compliance
+| Check | Status | Details |
+|-------|--------|---------|
+| Commit messages | Pass/Fail | [details] |
+| Branch naming | Pass/Fail | [details] |
 ```
 
-### Step 3.6: P1 Issue Decision
+When no issues are found in a category, state "None found."
+
+### Step 3.8: P1 Issue Decision
 
 If P1 (critical) issues found, use **AskUserQuestion tool**:
-- **Option 1**: "Fix issues now" (Recommended) - Address P1 before PR
+- **Option 1**: "Fix issues now" (Recommended) - Create tasks for each P1, fix, re-run checks
 - **Option 2**: "Proceed anyway" - Create PR with known issues
 - **Option 3**: "Cancel PR creation" - Return to fix issues
 
-**Note**: If user chooses "Fix issues now", create tasks for each P1 and return to implementation.
+## Phase 4: Reviewer Suggestion
 
-## Phase 4: Convention Check
+Invoke the **suggest-users** skill using the **Skill tool** to recommend reviewers based on file ownership, expertise, and workload.
 
-### Step 4.1: Commit Message Analysis
-
-```bash
-# Get all commit messages on this branch
-git log $DEFAULT_BRANCH..HEAD --format="%s"
-```
-
-Check for conventional commit format:
-- Starts with valid prefix (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`)
-- Subject is present and descriptive
-- No overly long subjects (>72 chars)
-
-### Step 4.2: Branch Naming Check
-
-Verify branch follows convention:
-- `feature/issue-{N}-{desc}`
-- `fix/issue-{N}-{desc}`
-- `docs/issue-{N}-{desc}`
-
-### Step 4.3: Convention Report
-
-```markdown
-## Convention Compliance
-
-### Commit Messages
-| Commit | Message | Status |
-|--------|---------|--------|
-| abc123 | feat: add validation | OK |
-| def456 | fixed bug | Missing prefix |
-
-### Branch Naming
-- Branch: `{branch}`
-- Pattern: {matches/does not match} expected format
-- Linked Issue: #{N} or "none detected"
-
-### Issues Found
-- {list of convention issues}
-```
-
-If convention issues found, warn but don't block:
-```markdown
-**Convention Warning**: {N} issues found. Consider fixing before merge.
-```
-
-## Phase 5: Reviewer Suggestion
-
-Invoke the **suggest-users skill** to recommend reviewers.
-
-### Step 5.1: Gather Signals
-
-**Execute in parallel**:
-
-```bash
-# Get changed files
-CHANGED_FILES=$(git diff --name-only $DEFAULT_BRANCH..HEAD)
-
-# Check CODEOWNERS
-gh api repos/$REPO/contents/.github/CODEOWNERS --jq '.content' 2>/dev/null | base64 -d
-
-# Get collaborators
-gh api repos/$REPO/collaborators --jq '.[] | select(.permissions.push) | .login'
-
-# Recent file contributors
-git log --format='%an' --since="30 days ago" -- $CHANGED_FILES | sort | uniq -c | sort -rn
-
-# Current review load
-gh pr list --state open --json reviews --jq '[.[].reviews[].author.login] | group_by(.) | map({user: .[0], count: length})'
-```
-
-### Step 5.2: Calculate Scores
-
-Apply suggest-users scoring algorithm:
-- CODEOWNERS match: +50
-- File commits: +10 per file
-- Recent reviews: +5 per review (max 25)
-- Open reviews: -3 per open review
-
-### Step 5.3: Present Suggestions
-
-```markdown
-## Suggested Reviewers
-
-Based on file ownership, expertise, and workload:
-
-| Rank | User | Score | Reasons |
-|------|------|-------|---------|
-| 1 | @alice | 75 | CODEOWNERS match, 2 file commits |
-| 2 | @bob | 45 | 4 recent reviews, low workload |
-| 3 | @carol | 30 | 3 commits to changed files |
-```
-
-Use **AskUserQuestion tool**:
-- **Option 1**: "@alice (Recommended)" - Top ranked
-- **Option 2**: "@bob" - Active reviewer
-- **Option 3**: "@carol" - File expertise
+The skill returns ranked suggestions with reasoning. Present them using the **AskUserQuestion tool**:
+- **Option 1**: "@{top_ranked} (Recommended)" - Top ranked reviewer
+- **Option 2**: "@{second_ranked}" - Second ranked
+- **Option 3**: "@{third_ranked}" - Third ranked
 - **Option 4**: "No reviewer" - Skip reviewer assignment
 
-## Phase 6: Push
+**Graceful fallback**: If skill fails, gather signals inline:
 
 ```bash
-# Push with upstream tracking
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+# CODEOWNERS
+gh api repos/$REPO/contents/.github/CODEOWNERS --jq '.content' 2>/dev/null | base64 -d
+# Collaborators
+gh api repos/$REPO/collaborators --jq '.[] | select(.permissions.push) | .login'
+# Recent contributors to changed files
+git log --format='%an' --since="30 days ago" -- $(git diff --name-only $DEFAULT_BRANCH..HEAD) | sort | uniq -c | sort -rn
+```
+
+Present ranked suggestions using the **AskUserQuestion tool**.
+
+## Phase 5: Push
+
+**Note**: Pushing before PR creation is required — GitHub needs the branch on the remote. If the user cancels PR creation later, the branch remains pushed (this is safe and normal).
+
+```bash
 git push -u origin $BRANCH
 ```
 
 If push fails due to remote changes:
 ```bash
-# Fetch and check for conflicts
 git fetch origin $BRANCH
 git log HEAD..origin/$BRANCH --oneline
 ```
@@ -381,10 +345,9 @@ Use **AskUserQuestion tool** if conflicts:
 - **Option 2**: "Force push" - Override remote (caution)
 - **Option 3**: "Cancel" - Resolve manually
 
-## Phase 7: Label Selection
+## Phase 6: Label Selection
 
 ```bash
-# Fetch available labels
 gh label list
 ```
 
@@ -398,64 +361,26 @@ Use **AskUserQuestion tool**:
 - **Option 2**: "Choose different labels"
 - **Option 3**: "No labels"
 
-## Phase 8: PR Preview & Creation
+## Phase 7: PR Preview & Creation
 
-### Step 8.1: Generate PR Content
+### Step 7.1: Generate PR Content
+
+Read `templates/pr-template.md` (relative to the gh-workflow plugin directory) and populate all sections from the review context:
+- **Issue**: Number and acceptance criteria from Phase 3 Step 3.1
+- **Summary**: 2–3 sentence description derived from commits and diff
+- **Changes**: Key changes list from diff analysis
+- **Review Summary**: Code review, convention, and quality results from Phase 3
+- **Verification**: Checklist of completed checks
+- **Files Changed**: From diff with brief descriptions
+- **Acceptance Criteria**: Checked off from issue
 
 **Title Format**:
 ```
 {type}: {description} (fixes #{issue})
 ```
-or
-```
-{type}: {description} (#{issue})
-```
-(Use `fixes` for auto-close, omit for linked-only)
+Use `fixes` for auto-close, or just `(#{issue})` for linked-only. If `$ARGUMENTS` was provided, use it as the title.
 
-**Body Template**:
-```markdown
-## Closes Issue
-
-closes #{issue}
-
-## Summary
-
-{2-3 sentence description of changes}
-
-## Changes
-
-- {Change 1}
-- {Change 2}
-- {Change 3}
-
-## Review Summary
-
-**Code Review**: {Passed / N issues found}
-**Convention Check**: {Passed / N warnings}
-**Quality Commands**: {Passed / Failed}
-
-### Findings Addressed
-{If any P1/P2 issues were fixed, list them}
-
-## Verification
-
-- [x] Code review completed
-- [x] Convention check completed
-- [x] Quality commands passed
-- [x] All acceptance criteria met
-
-## Files Changed
-
-{List of changed files with brief descriptions}
-
-## Checklist
-
-- [x] Commits follow conventional format
-- [x] No uncommitted changes
-- [x] Tests pass (if applicable)
-```
-
-### Step 8.2: Preview and Approval
+### Step 7.2: Preview and Approval
 
 **Display full preview FIRST**:
 
@@ -483,7 +408,7 @@ closes #{issue}
 - **Option 3**: "Edit body"
 - **Option 4**: "Cancel PR creation"
 
-### Step 8.3: Create PR
+### Step 7.3: Create PR
 
 ```bash
 gh pr create \
@@ -495,14 +420,10 @@ gh pr create \
   --label "{labels}"
 ```
 
-## Phase 9: Verification
+## Phase 8: Verification
 
 ```bash
-# Verify PR was created
 gh pr view --json number,title,url,state
-
-# Get PR number for reference
-PR_NUM=$(gh pr view --json number --jq '.number')
 ```
 
 ```markdown
@@ -538,44 +459,6 @@ PR_NUM=$(gh pr view --json number --jq '.number')
 - **Dynamic configuration** - Never hardcode branches, labels, or users
 - **Respect user choices** - Don't auto-proceed without approval
 - **No force push to default** - Block force push to main/master
-
-## Error Handling
-
-### No Commits
-
-```markdown
-**Cannot create PR**: No commits ahead of {default_branch}.
-
-Make changes and commit first, then run `/gh-pr`.
-```
-
-### On Default Branch
-
-```markdown
-**Cannot create PR from {default_branch}**.
-
-Create a feature branch first:
-1. `git checkout -b feature/issue-N-description`
-2. Make changes
-3. Commit
-4. Run `/gh-pr`
-```
-
-### PR Already Exists
-
-```bash
-# Check for existing PR
-gh pr list --head $BRANCH --json number,url
-```
-
-If PR exists:
-```markdown
-**PR already exists for branch {branch}**:
-- PR #{number}: {url}
-
-To update: push new commits and they'll appear in the existing PR.
-To create new: close existing PR first.
-```
 
 ## Integration
 
