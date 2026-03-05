@@ -17,6 +17,26 @@ Smart commit workflow that classifies changes, flags out-of-context modification
 
 **Tool Usage**: This workflow uses the **AskUserQuestion tool** for interactive decisions about change inclusion and commit grouping.
 
+## Contract
+
+**GOAL**: Atomic commits with conventional messages that accurately describe the actual changes. Testable: `git log -1 --pretty=%B` matches conventional format regex `^(feat|fix|docs|refactor|test|chore|style|perf|ci|build|revert)(\(.+\))?: .+`.
+
+**CONSTRAINTS**:
+- Never commit secrets (.env, credentials, API keys, tokens)
+- Never silently include out-of-context files without user awareness
+- Always show change classification before asking for decisions
+- Follow conventional commit format
+
+**FORMAT**: Classification table shown first, then commit preview with message, then execution.
+
+**FAILURE CONDITIONS** (output is unacceptable if any apply):
+- Secrets or credential files committed
+- Generic commit message ("update code", "fix stuff", "various changes")
+- Commit type doesn't match actual changes (says "feat:" but only refactoring)
+- Message references files or behaviors not in the diff
+- Out-of-context files silently included without flagging
+- Large binary files committed without warning
+
 ## Overview
 
 This command analyzes all staged and unstaged changes, classifies them based on the current context (branch, issue, tasks), and helps create well-organized commits.
@@ -222,12 +242,19 @@ For each commit group:
    ```
    ```
 
-2. **Get message approval** with AskUserQuestion:
+2. **Message Accuracy Check** — Before presenting to user, cross-check the suggested message against the actual diff:
+   - Does the type (`feat`/`fix`/`docs`/`refactor`/`test`/`chore`) match the actual nature of changes?
+   - Does the description accurately reflect what changed?
+   - Is anything in the message NOT reflected in the diff?
+   - Is anything significant in the diff NOT mentioned in the message?
+   - If inaccurate, revise the message before presenting to user
+
+3. **Get message approval** with AskUserQuestion:
    - **Option 1**: "Use this message" (Recommended)
    - **Option 2**: "Edit message"
    - **Option 3**: "Skip this group"
 
-3. **Stage and commit**:
+4. **Stage and commit**:
    ```bash
    git add {group_files}
    git commit -m "{message}"

@@ -17,6 +17,25 @@ Systematically address review feedback on a pull request with task tracking and 
 
 **Tool Usage**: This workflow uses the **AskUserQuestion tool** to clarify ambiguous feedback, and **TaskCreate/TaskUpdate** tools to track feedback resolution.
 
+## Contract
+
+**GOAL**: All review feedback items addressed with verification that fixes don't introduce new issues. Testable: each feedback item has a corresponding commit and response in the summary comment.
+
+**CONSTRAINTS**:
+- Address ALL comments (either fix or explain why not)
+- Each fix should be a separate, focused commit
+- Run post-address review gate before pushing
+- Never push without explicit user approval
+
+**FORMAT**: Summary comment posted on PR with feedback-to-action mapping table and verification checklist.
+
+**FAILURE CONDITIONS** (output is unacceptable if any apply):
+- Any feedback item silently ignored (not addressed or explained)
+- Changes pushed without running quality checks (tests, lint)
+- Fix commit modifies files not related to the feedback without user approval
+- Response posted before changes are pushed
+- User not shown changes summary and response preview before approval
+
 ## Phase 1: Gather Feedback
 
 **Execute in parallel** (single message, multiple tool calls):
@@ -72,6 +91,16 @@ TaskCreate:
 Group related feedback into single tasks where appropriate.
 
 ## Phase 3: Work Through Feedback
+
+### Surgical Change Principle
+
+When addressing each feedback item:
+- **Change ONLY what the feedback requires** - do not refactor adjacent code
+- **If you notice other issues** while fixing, create a separate task rather than fixing inline
+- **Verify scope** after each fix: `git diff --stat` should show only files directly related to the feedback
+- **One commit per feedback item** - keeps changes traceable and reversible
+
+**FAILURE CONDITION**: A fix commit that modifies files not mentioned in the feedback without explicit user approval.
 
 For each feedback task:
 

@@ -9,6 +9,21 @@ agent: Explore
 
 Quick overview of current GitHub workflow state.
 
+## Contract
+
+**GOAL**: Accurate, current read-only status overview of issues, PRs, and review requests. Testable: output shows categorized items with correct status indicators.
+
+**CONSTRAINTS**:
+- This command is strictly read-only (no modifications)
+- Always fetch live data from GitHub (never use cached/stale data)
+
+**FORMAT**: Grouped output by category (assigned issues, open PRs, awaiting review, needs attention) with status indicators.
+
+**FAILURE CONDITIONS** (output is unacceptable if any apply):
+- Stale or cached data shown instead of live GitHub data
+- API errors silently swallowed (show errors instead of empty sections)
+- Items from wrong user shown
+
 ## Process
 
 1. **Show assigned issues**:

@@ -4,6 +4,7 @@ description: Use when validating Git conventions including commit messages, bran
 model: inherit
 tools: Bash, Read
 skills: repo-config
+memory: project
 ---
 
 # Convention Checker Agent
@@ -164,3 +165,18 @@ Apply project-specific rules when found, fall back to defaults otherwise.
 2. **Explain why** - Help developers understand the purpose of conventions
 3. **Offer fixes** - Suggest correct formats when flagging issues
 4. **Check project config** - Respect project-specific conventions
+
+## Memory Management
+
+### Before Starting
+Check your memory for project-specific conventions:
+- Branch naming patterns used in this project
+- Commit message patterns and scopes commonly used
+- Project-specific PR template requirements
+- Known convention exceptions or overrides
+
+### After Completing
+Update your memory with new learnings:
+- Any project-specific convention variations discovered
+- Custom scopes used in this project's commits
+- Convention patterns that differ from defaults

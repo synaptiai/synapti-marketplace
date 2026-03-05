@@ -110,6 +110,7 @@ Irreversible actions (force push, branch deletion, release creation) require exp
 | `/gh-workflow:gh-merge <N>` | Merge approved PR #N |
 | `/gh-workflow:gh-release [type]` | Create a release (patch/minor/major) |
 | `/gh-workflow:gh-status` | Show workflow status overview (assigned issues, open PRs, review requests) |
+| `/gh-workflow:gh-security-review` | Security review of branch changes (secrets, injection, auth, deps) |
 | `/gh-workflow:gh-setup` | Analyze repo and generate workflow configuration |
 
 ### Command Benefits
@@ -204,6 +205,16 @@ Irreversible actions (force push, branch deletion, release creation) require exp
 2. **Tech stack detection** — Identifies Python, TypeScript, Go, Ruby and configures appropriate quality commands
 3. **Template generation** — Creates customized issue/PR templates based on your conventions
 4. **Non-destructive** — Shows preview of changes before writing any files
+
+#### `/gh-security-review` — Security Review
+
+**What's Good About /gh-security-review:**
+1. **Dedicated security scanning** — Focused review separate from general code review
+2. **CWE-referenced findings** — Every finding maps to a known vulnerability category
+3. **Six scan phases** — Secrets, injection, auth/authz, data exposure, dependency audit, remediation
+4. **Actionable output** — Every finding includes file:line location and suggested fix
+5. **Scoped scanning** — Can limit to specific categories (secrets, injection, auth, deps)
+6. **Dependency auditing** — Runs package-manager-specific audit tools when available
 
 ## Quick Start
 
@@ -376,7 +387,12 @@ Provides intelligent user suggestions for reviewers and assignees:
 
 The plugin includes safety hooks that:
 - **Pre-push verification**: Ensures user approval before irreversible git operations
-- **Post-commit reminders**: Reminds about running quality checks after commits
+- **Pre-release verification**: Ensures user approval before creating GitHub releases
+- **Destructive operation guard**: Warns before force push, hard reset, or branch deletion
+- **Repository target verification**: Confirms correct repo before creating issues or PRs
+- **Post-edit reminders**: Notes test files to verify after source file modifications
+- **Workflow completion check**: Verifies all phases completed before stopping
+- **Task completion verification**: Validates acceptance criteria met when marking tasks done
 
 ## Tech Stack Detection
 

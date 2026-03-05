@@ -10,6 +10,27 @@ Create a new GitHub issue following solution-agnostic principles.
 
 **Tool Usage**: This workflow uses the **AskUserQuestion tool** extensively for interactive dialogues. Use it to clarify ambiguity, offer choices with tradeoffs, and gather missing context.
 
+## Contract
+
+**GOAL**: Solution-agnostic issue created on the correct repository with labels and duplicate check completed. Testable: `gh issue view <N>` returns a valid open issue.
+
+**CONSTRAINTS**:
+- Issue must be solution-agnostic (no file paths, no code structures, no implementation details)
+- Acceptance criteria must describe observable behavior, not file changes
+- Always search for duplicates before creating
+- Always fetch labels dynamically - never assume what labels exist
+- Always verify the target repository before creation
+
+**FORMAT**: Issue body follows the template structure (Context, Current State, Objective, Acceptance Criteria).
+
+**FAILURE CONDITIONS** (output is unacceptable if any apply):
+- Issue body contains specific file paths or implementation details
+- Duplicate search not performed before creation
+- Issue created in wrong repository
+- Issue created without user preview and explicit approval
+- Labels hardcoded instead of dynamically fetched
+- Acceptance criteria describe implementation steps instead of observable behavior
+
 ## Phase 1: Gather Requirements
 
 1. **Use the AskUserQuestion tool** to gather missing information:

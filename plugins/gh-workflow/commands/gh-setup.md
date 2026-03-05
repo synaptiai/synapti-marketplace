@@ -9,6 +9,23 @@ Analyze the current repository and generate customized GitHub workflow configura
 
 **Tool Usage**: This workflow uses the **AskUserQuestion tool** extensively to gather preferences, confirm detected conventions, and approve generated configurations.
 
+## Contract
+
+**GOAL**: Project-specific workflow configuration generated and applied based on detected tech stack and conventions. Testable: `.claude/CLAUDE.md` contains workflow section with correct branch/commit conventions.
+
+**CONSTRAINTS**:
+- Never overwrite existing CLAUDE.md - merge or append the workflow section
+- Always create backup before modifying existing files
+- Always confirm detected patterns with user before applying
+
+**FORMAT**: Generated CLAUDE.md workflow section with branching strategy, commit conventions, commands table, and tech-stack-specific quality checklist.
+
+**FAILURE CONDITIONS** (output is unacceptable if any apply):
+- Existing CLAUDE.md overwritten without backup
+- Wrong tech stack detected (e.g., Python project identified as Go)
+- Configuration applied without user preview and approval
+- Generated conventions conflict with existing project conventions
+
 ## Purpose
 
 This command analyzes your codebase and generates:

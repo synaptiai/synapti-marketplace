@@ -10,6 +10,26 @@ Merge an approved pull request with standardized settings.
 
 **Tool Usage**: This workflow uses the **AskUserQuestion tool** to confirm merge options and get explicit approval before executing irreversible actions.
 
+## Contract
+
+**GOAL**: PR merged with all prerequisites verified and branch cleaned up. Testable: `gh pr view $ARGUMENTS --json state` shows `MERGED`.
+
+**CONSTRAINTS**:
+- Never force merge (skip checks)
+- Never merge without verifying all prerequisites
+- Always detect default branch dynamically
+- Always get explicit user approval before executing merge
+
+**FORMAT**: Merge preview shown first, then user approval, then execution with verification.
+
+**FAILURE CONDITIONS** (output is unacceptable if any apply):
+- Merged without checking approval status
+- Merged with failing CI checks
+- Merged with unresolved conversation threads (without acknowledgment)
+- Merge executed without explicit user approval via AskUserQuestion
+- Stale approval not flagged (PR updated since last approval)
+- Failed merge not detected or reported
+
 ## Process
 
 1. **Fetch PR details**:

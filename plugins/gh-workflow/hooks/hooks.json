@@ -1,9 +1,9 @@
 {
-  "description": "GitHub workflow safety hooks for truly irreversible actions",
+  "description": "GitHub workflow safety and quality hooks",
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash(git push:*)",
+        "matcher": "Bash(git push *)",
         "hooks": [
           {
             "type": "prompt",
@@ -13,11 +13,65 @@
         ]
       },
       {
-        "matcher": "Bash(gh release create:*)",
+        "matcher": "Bash(gh release create *)",
         "hooks": [
           {
             "type": "prompt",
             "prompt": "Before creating a GitHub release, verify user has approved this release. If not explicitly approved in this conversation, use AskUserQuestion to confirm.",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash(git push*--force*|git push*-f *|git reset --hard*|git branch -D*)",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "DANGEROUS: This is a destructive git operation (force push, hard reset, or branch deletion). Verify the user has EXPLICITLY requested this specific destructive action. If not, suggest a safer alternative (--force-with-lease instead of --force, git stash instead of reset --hard).",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash(gh issue create *|gh pr create *)",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Before creating a GitHub issue or PR, verify the target repository is correct. Run 'gh repo view --json nameWithOwner' mentally and confirm it matches the user's intended repository. If multiple repos exist in the org, confirm with user before proceeding.",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "A source file was just modified. If the modified file is a source file (not a test/config/doc), check if corresponding test files likely exist for the changed module. If tests likely exist, remind yourself to run them before committing. Do NOT run tests now - just note which test files should be verified later.",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Before stopping, check if this was a multi-phase workflow (gh-start, gh-pr, gh-review, etc.). If so, verify all expected phases completed. If tasks were created via TaskCreate, check if any remain in_progress or pending. If incomplete work exists, warn the user about remaining items before stopping.",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "A task is being marked as completed. Verify: 1) The task's acceptance criteria have been met, 2) If the task involved code changes, relevant tests still pass, 3) No placeholder or TODO code remains. If any check fails, keep the task in_progress and explain what's missing.",
             "timeout": 10
           }
         ]

@@ -4,6 +4,7 @@ description: Use to discover and run project-specific lint, test, and type-check
 model: inherit
 tools: Bash, Read, Glob
 skills: repo-config
+memory: project
 ---
 
 # Test Runner Agent
@@ -186,3 +187,19 @@ If no quality tools detected:
 3. **Full report option**: Run all and report everything
 4. **Cache awareness**: Note if tests are using cache
 5. **Coverage optional**: Only run coverage if explicitly requested
+
+## Memory Management
+
+### Before Starting
+Check your memory for project-specific quality commands:
+- Previously discovered quality commands and their reliability
+- Known flaky tests or unreliable checks
+- Custom test configurations (e.g., specific pytest markers, test directories)
+- Commands that need special environment setup
+
+### After Completing
+Update your memory with new learnings:
+- Quality commands that work for this project
+- Commands that failed or were unavailable
+- Test suite characteristics (run time, flaky tests, coverage gaps)
+- Any special environment requirements discovered

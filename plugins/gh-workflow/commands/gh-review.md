@@ -17,6 +17,26 @@ Review a pull request with multi-faceted analysis, task tracking, and prioritize
 
 **Tool Usage**: This workflow uses the **AskUserQuestion tool** to confirm review decisions, and **TaskCreate/TaskUpdate** tools to track review facets.
 
+## Contract
+
+**GOAL**: Comprehensive review with prioritized findings and an explicit review decision. Testable: review comment posted via `gh pr review` with structured P1/P2/P3 findings.
+
+**CONSTRAINTS**:
+- Must checkout the PR branch and read actual files, not just analyze the diff
+- Must check all 5 review facets (code quality, conventions, security, tests, requirements)
+- Always display findings BEFORE asking user for review decision
+- Never submit review without user approval
+
+**FORMAT**: Findings synthesized into P1/P2/P3 priority table with file:line references. Review decision based on: 0 P1+P2 = Approve, 0 P1 = Comment, Any P1 = Request Changes.
+
+**FAILURE CONDITIONS** (output is unacceptable if any apply):
+- Review submitted without reading the actual diff
+- Review skips any of the 5 review facets
+- P1 security issue missed (hardcoded secrets, injection vectors)
+- Review posted without user explicitly approving the decision
+- Findings shown after asking for decision (violates findings-first rule)
+- Forgot to return to original branch after review
+
 ## Phase 1: Context Gathering
 
 **Execute in parallel** (single message, multiple tool calls):

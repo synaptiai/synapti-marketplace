@@ -10,6 +10,25 @@ Create a new release with changelog generation.
 
 **Tool Usage**: This workflow uses the **AskUserQuestion tool** extensively to determine release type, confirm version bumps, and get explicit approval before creating irreversible releases.
 
+## Contract
+
+**GOAL**: Tagged release with auto-generated changelog published on GitHub. Testable: `gh release view vX.Y.Z` returns a valid release.
+
+**CONSTRAINTS**:
+- Always show complete impact assessment before creating release
+- Never create tag or release without explicit user approval
+- Always detect default branch dynamically
+- Changelog must be generated from actual merged PRs/commits
+
+**FORMAT**: Impact assessment with version calculation, commit list, and breaking changes shown before approval.
+
+**FAILURE CONDITIONS** (output is unacceptable if any apply):
+- Wrong version calculated (e.g., major bump for a patch-only release)
+- Tag created without user approval via AskUserQuestion
+- Changelog missing or does not reflect actual changes
+- Release created from non-default branch without explicit intent
+- Partial failure not cleaned up (tag pushed but release creation failed)
+
 ## Arguments
 
 - `$ARGUMENTS`: Version bump type - `patch`, `minor`, or `major`

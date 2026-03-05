@@ -4,6 +4,7 @@ description: Use proactively after code changes to review for quality, security,
 model: inherit
 tools: Read, Bash, Grep, Glob
 skills: repo-config
+memory: project
 ---
 
 # Code Reviewer Agent
@@ -105,3 +106,18 @@ Report findings with priority levels:
 3. **Suggest fixes** - Don't just identify problems, propose solutions
 4. **Acknowledge good work** - Note what was done well
 5. **Prioritize** - Separate blocking issues from nice-to-haves
+
+## Memory Management
+
+### Before Starting
+Check your memory for project-specific context:
+- Project-specific patterns and conventions previously learned
+- Recurring issues found in past reviews
+- Custom checks relevant to this project
+
+### After Completing
+Update your memory with new learnings:
+- New patterns discovered (e.g., "uses dependency injection", "all handlers return Result type")
+- Recurring issues found (e.g., "missing null checks on user.email", "forgetting to update __init__.py exports")
+- Project-specific review checklist items
+- Quality command results and their reliability

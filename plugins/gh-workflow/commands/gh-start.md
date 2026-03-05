@@ -17,6 +17,46 @@ Complete workflow from issue assignment through implementation with task-based t
 
 **Tool Usage**: This workflow uses the **AskUserQuestion tool** for interactive dialogues at key decision points, and **TaskCreate/TaskUpdate** tools for tracking implementation progress.
 
+## Contract
+
+**GOAL**: All acceptance criteria from issue #$ARGUMENTS have corresponding completed tasks with passing tests. Testable: `TaskList` shows all tasks completed, quality gates passed.
+
+**CONSTRAINTS**:
+- Read CLAUDE.md before starting implementation and follow all project conventions
+- Never skip quality gates (lint, tests, code review, test review)
+- Never leave placeholder/mock/stub code in source files
+- All implementations must be production-ready before marking tasks complete
+
+**FORMAT**: Task-based progress tracking using TaskCreate/TaskUpdate. Each acceptance criterion becomes a tracked task.
+
+**FAILURE CONDITIONS** (output is unacceptable if any apply):
+- Tasks not created from acceptance criteria (jumped straight to coding)
+- Implementation started without reading CLAUDE.md
+- Quality gates skipped or deferred
+- Placeholder, mock, or TODO code left in source files
+- Tests not run before declaring implementation complete
+- User not presented with next-step options at completion
+
+## Phase 0: Project Context Handshake
+
+Before any implementation work:
+
+1. **Read project CLAUDE.md** (if it exists):
+   ```bash
+   cat .claude/CLAUDE.md 2>/dev/null || cat CLAUDE.md 2>/dev/null || echo "No CLAUDE.md found"
+   ```
+
+2. **Extract and display project constraints** relevant to this implementation:
+   - Tech stack requirements (languages, frameworks, libraries)
+   - Testing requirements and quality commands
+   - Any "do not" or "always" rules
+   - Coding conventions and patterns
+
+3. **Briefly confirm constraints** before proceeding:
+   > "Project constraints detected: [list key ones]. Proceeding with implementation following these constraints."
+
+If no CLAUDE.md exists, note this and proceed with auto-detected conventions.
+
 ## Phase 1: Setup
 
 **Execute these in parallel** (single message, multiple tool calls):
@@ -97,6 +137,50 @@ Before implementation, discover available project capabilities:
    ```
 
 Note available capabilities for use in quality checks phase.
+
+## Phase 1.7: Impact Analysis
+
+Before implementing, map the blast radius of planned changes:
+
+1. **Identify modules to modify** from acceptance criteria
+
+2. **Find dependents** - files that import/reference modules being changed:
+   ```bash
+   # For each key module to be modified, find who depends on it
+   grep -rn "import.*{module}" --include="*.ts" --include="*.py" --include="*.go" . 2>/dev/null | head -20
+   ```
+
+3. **Find existing tests** for affected modules:
+   ```bash
+   # Find test files for affected modules
+   find . -name "*test*" -path "*{module}*" -o -name "*{module}*" -path "*test*" 2>/dev/null
+   ```
+
+4. **Check for middleware/interceptors/decorators** that might be affected:
+   ```bash
+   grep -rn "middleware\|interceptor\|decorator\|@app\.\|@router\." --include="*.py" --include="*.ts" . 2>/dev/null | head -10
+   ```
+
+5. **Document impact** briefly:
+
+   ```markdown
+   ## Impact Analysis
+
+   ### Modules to Modify
+   | Module | Dependents | Tests Exist | Risk |
+   |--------|-----------|-------------|------|
+   | [module] | [N files] | [yes/no] | [low/med/high] |
+
+   ### Potential Side Effects
+   - [e.g., "Adding auth middleware will affect all POST handlers"]
+   - [e.g., "Changing schema will require test fixture updates"]
+
+   ### Test Strategy
+   - Run these tests after each change: [list]
+   - Watch for breakage in: [list]
+   ```
+
+This prevents the pattern of adding middleware (e.g., CSRF) that silently breaks downstream tests.
 
 ## Phase 2: Task-Based Implementation
 
@@ -421,20 +505,19 @@ If uncommitted changes exist, **use AskUserQuestion tool**:
 
 ### If Option 1 Selected (Create PR Now)
 
-Inform the user:
+Seamlessly continue into PR creation by invoking the gh-pr skill:
+
 ```markdown
 **Creating PR...**
 
-Running `/gh-pr` workflow which includes:
+Invoking `/gh-pr` workflow which includes:
 1. Full code review (with P1/P2/P3 findings)
 2. Convention compliance check
 3. Reviewer suggestions based on file expertise
 4. PR preview and creation
-
-Please follow the prompts in the `/gh-pr` workflow.
 ```
 
-Then invoke the gh-pr workflow (the user should run `/gh-pr`).
+Use the **Skill tool** to invoke `gh-pr` — this continues the workflow without requiring the user to type a separate command. The PR creation inherits all context from the current implementation session.
 
 ### If Option 2 Selected (Defer)
 

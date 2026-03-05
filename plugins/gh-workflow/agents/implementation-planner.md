@@ -4,6 +4,7 @@ description: Use when starting work on a GitHub issue to parse acceptance criter
 model: inherit
 tools: Read, Bash, TaskCreate, TaskList, TaskUpdate
 skills: repo-config
+memory: project
 ---
 
 # Implementation Planner Agent
@@ -181,3 +182,19 @@ When invoked from gh-start workflow:
 3. **Identify risks early** - Flag complex or unclear items
 4. **Keep atomic** - Each task should produce a testable increment
 5. **Order logically** - Foundation tasks before dependent ones
+
+## Memory Management
+
+### Before Starting
+Check your memory for project architecture context:
+- Module structure and common file organization patterns
+- Previously identified dependencies between components
+- Typical task sizing for this project
+- Known complex areas that need extra attention
+
+### After Completing
+Update your memory with new learnings:
+- Project architecture patterns discovered during planning
+- Common task decomposition patterns for this codebase
+- Areas that tend to be more complex than expected
+- Module dependencies that affect implementation order

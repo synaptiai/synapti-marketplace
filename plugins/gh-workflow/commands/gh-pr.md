@@ -17,6 +17,27 @@ Decoupled PR creation workflow with full code review, convention checks, quality
 
 **Tool Usage**: This workflow uses the **AskUserQuestion tool** for interactive decisions, **TaskCreate/TaskUpdate** for tracking review progress, and the **suggest-users skill** for reviewer recommendations.
 
+## Contract
+
+**GOAL**: Create an open PR on GitHub that passes all quality checks with an assigned reviewer. Testable: `gh pr view --json number,state` returns a valid open PR number.
+
+**CONSTRAINTS**:
+- Never create PR from the default branch
+- Never force push to default branch
+- Never skip the code review phase (Phase 3 is mandatory)
+- All P1 findings must be resolved OR explicitly acknowledged by user
+- Read CLAUDE.md before starting and follow all project conventions
+
+**FORMAT**: PR body follows the template in `templates/pr-template.md`. All findings displayed before asking user for decisions.
+
+**FAILURE CONDITIONS** (output is unacceptable if any apply):
+- PR created without running code review (Phase 3 skipped)
+- PR body is empty or uses generic placeholder text
+- PR description does not match actual changes (misleading)
+- PR created without user approval via AskUserQuestion
+- PR targets wrong branch
+- Uncommitted changes silently ignored
+
 ## Overview
 
 This command creates a pull request after running comprehensive quality checks:
