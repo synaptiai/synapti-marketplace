@@ -308,7 +308,7 @@ The agent returns:
 
 **If agent flags ambiguities**, use the **AskUserQuestion tool** to clarify before proceeding.
 
-### Step 5.1b: Decision Logging & Gate Check
+### Step 5.1a: Decision Logging & Gate Check
 
 After the task breakdown is finalized, invoke the **decision-journal** skill in `log` mode using the **Skill tool**:
 
@@ -360,7 +360,7 @@ Example breakdown:
 - Issue says "Users can filter by date" → Task: "Add date filtering to search endpoint"
 - Issue says "Validation errors show helpful messages" → Task: "Implement validation error formatting"
 
-### Step 5.1a: Identify Parallel Implementation Opportunities
+### Step 5.1b: Identify Parallel Implementation Opportunities
 
 After the task breakdown is created (by agent or fallback), analyze the dependency graph to find tasks that can run in parallel:
 

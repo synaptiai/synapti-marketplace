@@ -107,7 +107,7 @@ gh-workflow is designed for fully AI-driven development where humans define inte
 | Component | Purpose |
 |-----------|---------|
 | **Decision Journal** | Records significant decisions post-hoc from diffs at `.decisions/issue-{N}.md` |
-| **Human Gates** | Configurable pauses at high-stakes decisions (new deps, security, schema changes) |
+| **Human Gates** | Configurable pauses at high-stakes decisions via decision-journal skill (new deps, security, schema changes) |
 | **Comprehension Report** | Architecture narratives embedded in PR bodies with requirements adherence |
 | **Interactive Q&A** | `/gh-explain` loads full context for conversational exploration |
 

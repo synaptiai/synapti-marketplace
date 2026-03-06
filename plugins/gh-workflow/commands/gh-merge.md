@@ -85,10 +85,11 @@ Merge an approved pull request with standardized settings.
 
    ```markdown
    ### Knowledge Checkpoint
-   - Requirements coverage: {N}/{M} criteria fully met
+   - Decision journal: {N} entries ({M} gates triggered, {K} bypassed)
+   - Requirements: {X}/{Y} fully met, {Z} interpreted
    - Interpreted criteria: {list — these reflect AI's interpretation, not explicit requirements}
    - Partially met criteria: {list — these have gaps}
-   - Decision journal entries: {count} ({gated count} human-approved)
+   - Comprehension report: {present / absent / stale}
    ```
 
    **Options:**
