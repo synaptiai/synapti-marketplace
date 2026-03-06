@@ -159,6 +159,50 @@ For each changed file, apply the classification algorithm:
 - **Out-of-context**: {K} files
 ```
 
+### Step 2.4: First-Touch Flagging (Conditional)
+
+**Check configuration** — read `gh-commit-first-touch` from CLAUDE.md. Default: `true`. If `false`, skip this step.
+
+Analyze commit patterns on the current branch to flag first-touch and AI-pattern files:
+
+```bash
+# For each file in the staged changes, check commit history on this branch
+BRANCH=$(git branch --show-current)
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
+for FILE in $(git diff --cached --name-only); do
+  COMMITS=$(git log "$DEFAULT_BRANCH"..HEAD --oneline -- "$FILE" | wc -l | tr -d ' ')
+  echo "$FILE: $COMMITS commits on branch"
+done
+```
+
+For files with **0 prior commits on this branch** (first touch) that also have **large additions** (50+ lines added in a single diff), flag as potential AI-pattern:
+
+```markdown
+### Comprehension Confidence
+| File | Commits on Branch | First Touch? | AI-Pattern? |
+|------|-------------------|--------------|-------------|
+| src/api/users.ts | 4 | No | No |
+| src/middleware/auth.ts | 0 | Yes | Yes |
+```
+
+**If any files flagged as first-touch + AI-pattern**, use the **AskUserQuestion tool**:
+- **Option 1**: "I understand these changes well enough to debug them" (Proceed)
+- **Option 2**: "Let me review these files before committing" (list flagged files)
+- **Option 3**: "Proceed anyway — I'll study these later"
+
+### Step 2.5: Decision Logging
+
+Invoke the **decision-journal** skill in `log` mode using the **Skill tool**:
+
+```
+Skill: decision-journal —
+  "Mode: log
+   Phase: staged changes for commit
+   Description: Changes staged for commit on branch {BRANCH}"
+```
+
+The skill returns decision entries and gate triggers. Append entries to `.decisions/issue-{ISSUE_NUM}.md`. If gate triggers fire with config `on`, present them via **AskUserQuestion** using the gate format (see `references/gate-configuration.md`).
+
 ## Phase 3: Interactive Planning
 
 **IMPORTANT**: Display the classification table BEFORE asking for decisions.

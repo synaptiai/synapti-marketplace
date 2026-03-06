@@ -288,6 +288,42 @@ After identifying issues:
 
 **Skip if**: No tests were added or modified during Phase 4.
 
+## Phase 7b: Decision Logging & Report Refresh
+
+### Step 7b.1: Log Decisions from Feedback
+
+After all feedback is addressed, invoke the **decision-journal** skill in `log` mode using the **Skill tool**:
+
+```
+Skill: decision-journal —
+  "Mode: log
+   Phase: addressed review feedback
+   Description: Decisions made while addressing PR #{PR_NUM} review feedback"
+```
+
+The skill analyzes the fix commits and captures decisions about trade-offs (when choosing between competing reviewer suggestions), scope changes (when feedback requires scope adjustments), and implementation changes (when feedback alters the approach).
+
+Append returned entries to `.decisions/issue-{ISSUE_NUM}.md`. Present any gate triggers via **AskUserQuestion** (see `references/gate-configuration.md`).
+
+### Step 7b.2: Stale Report Detection
+
+Check if the PR body contains a Comprehension Report that is now stale (diff has changed since the report was generated):
+
+```bash
+# Get current diff stats
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
+CURRENT_FILES=$(git diff --name-only "$DEFAULT_BRANCH"...HEAD | wc -l | tr -d ' ')
+echo "Current files changed: $CURRENT_FILES"
+```
+
+If the fix commits added/modified files not covered in the existing report, regenerate by invoking the **comprehension-report** skill and update the PR body:
+
+```bash
+gh pr edit $PR_NUM --body "{updated body with new report}"
+```
+
+**Skip if**: No comprehension report exists in the PR body (nothing to refresh).
+
 ## Phase 8: Pre-Push Gate (Mandatory)
 
 Before proceeding to response preparation, verify ALL of the following. This gate exists because pushing incomplete or broken fixes means another review cycle — the whole point of `/gh-address` is to resolve feedback definitively.

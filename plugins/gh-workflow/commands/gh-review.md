@@ -29,7 +29,7 @@ Review a pull request with multi-faceted analysis, task tracking, and prioritize
 
 **CONSTRAINTS**:
 - Must checkout the PR branch and read actual files, not just analyze the diff
-- Must check all 5 review facets: (1) Code Quality, (2) Security, (3) Conventions, (4) Tests, (5) Requirements
+- Must check all 6 review facets: (1) Code Quality, (2) Security, (3) Conventions, (4) Tests, (5) Requirements, (6) Comprehension Assessment
 - When asserting code behaves a certain way, cite the specific file:line. If unable to cite, mark as UNVERIFIED
 - Always display findings BEFORE asking user for review decision
 - Never submit review without user approval
@@ -39,7 +39,7 @@ Review a pull request with multi-faceted analysis, task tracking, and prioritize
 
 **FAILURE CONDITIONS** (output is unacceptable if any apply):
 - Review submitted without reading the actual diff
-- Review skips any of the 5 review facets
+- Review skips any of the 6 review facets
 - P1 security issue missed (hardcoded secrets, injection vectors)
 - Review posted without user explicitly approving the decision
 - Findings shown after asking for decision (violates findings-first rule)
@@ -194,6 +194,29 @@ While agents run, execute the requirements review in the main thread (requires i
 - Note any missing or partially implemented items
 - Record findings with priority (P1 for missing requirements, P2 for partial, P3 for suggestions)
 
+### Step 4.2b: Comprehension Assessment — Facet (6), Main Thread
+
+**Check configuration** — read `gh-review-comprehension-check` from CLAUDE.md. Default: `true`. If `false`, skip this facet.
+
+While agents run, also evaluate comprehension signals:
+
+1. **Check PR body for Comprehension Report section**:
+   - If present: Verify Requirements Adherence table against actual acceptance criteria. Flag mismatches between claimed status and diff evidence (e.g., criterion marked "Met" but no matching code found → P2 finding).
+   - If absent: Add P2 finding: "PR lacks comprehension report — consider regenerating with `/gh-pr`"
+
+2. **Select comprehension review questions**: Read `references/comprehension-review-questions.md` and select 2-3 targeted questions based on the diff's complexity areas. Match question categories to code patterns in the diff (new modules → "New Module Creation" questions, new dependencies → "Dependency / Library Integration" questions, etc.).
+
+3. **Add questions as P3 findings** in the synthesis:
+
+```markdown
+### Comprehension Assessment
+| Area | Report Status | Questions |
+|------|--------------|-----------|
+| {area from diff} | {Present/Missing/Mismatch} | "{selected question}" |
+```
+
+**Key design choice**: Comprehension questions are always P3 (suggestions). They cannot block a merge.
+
 ### Step 4.3: Collect Agent Results
 
 After all agents return:
@@ -212,6 +235,7 @@ TaskCreate: subject="Review: Code Quality & Security", status based on agent res
 TaskCreate: subject="Review: Conventions & Standards", status based on agent result
 TaskCreate: subject="Review: Tests & Quality Commands", status based on agent result
 TaskCreate: subject="Review: Requirements Compliance", status based on main thread result
+TaskCreate: subject="Review: Comprehension Assessment", status based on Step 4.2b result
 ```
 
 Mark each task completed as its results are incorporated into the synthesis.

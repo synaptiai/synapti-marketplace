@@ -156,24 +156,30 @@ git diff $DEFAULT_BRANCH..HEAD
 git diff --name-only $DEFAULT_BRANCH..HEAD
 ```
 
-### Step 3.3: Dispatch Review Agents (Preferred)
+### Step 3.3: Dispatch Review Agents & Comprehension Skills (Preferred)
 
-Launch 3 specialized agents in parallel using the **Agent tool** (single message, 3 Agent tool calls):
+Launch 3 specialized agents **and** 2 comprehension skills in parallel using the **Agent tool** and **Skill tool** (single message, 5 tool calls):
 
-| Agent | Focus |
-|-------|-------|
-| code-reviewer | Code quality, logic, security, edge cases, error handling |
-| convention-checker | Commit messages, branch naming, PR format, issue linkage |
-| test-runner | Lint, test, typecheck execution |
+| Tool | Focus |
+|------|-------|
+| Agent: code-reviewer | Code quality, logic, security, edge cases, error handling |
+| Agent: convention-checker | Commit messages, branch naming, PR format, issue linkage |
+| Agent: test-runner | Lint, test, typecheck execution |
+| Skill: decision-journal | Summarize mode — condense journal for PR body |
+| Skill: comprehension-report | Generate architecture narrative from diff + journal + issue |
 
 ```
-Execute 3 Agent tool calls in a single message:
+Execute 5 tool calls in a single message:
 - Agent call 1: code-reviewer — "Pre-PR self-review. Analyze diff between $DEFAULT_BRANCH and HEAD. Return P1/P2/P3 findings table with file:line citations."
 - Agent call 2: convention-checker — "Pre-PR convention check. Verify commits, branch naming, and change organization. Return findings."
 - Agent call 3: test-runner — "Pre-PR quality gate. Run lint/test/typecheck commands. Return results table."
+- Skill call 4: decision-journal — "Mode: summarize. Path: .decisions/issue-{ISSUE_NUM}.md. Sensitivity filter: redact internal entries."
+- Skill call 5: comprehension-report — "Generate comprehension report for Issue #{ISSUE_NUM}."
 ```
 
-Each agent runs independently and returns structured findings.
+Each agent/skill runs independently and returns structured output.
+
+**If no decision journal exists** (standalone gh-pr without gh-start): The comprehension-report skill generates an ad-hoc report from diff and issue alone. The decision-journal skill returns "No decision journal found" — include a notice in the PR body instead of the Decision Summary section.
 
 **Graceful fallback**: If any agent fails, fall back to inline execution for that facet:
 
@@ -369,10 +375,14 @@ Read `templates/pr-template.md` (relative to the gh-workflow plugin directory) a
 - **Issue**: Number and acceptance criteria from Phase 3 Step 3.1
 - **Summary**: 2–3 sentence description derived from commits and diff
 - **Changes**: Key changes list from diff analysis
+- **Comprehension Report**: Output from comprehension-report skill (Step 3.3, Skill call 5)
+- **Decision Summary**: Output from decision-journal summarize mode (Step 3.3, Skill call 4)
 - **Review Summary**: Code review, convention, and quality results from Phase 3
 - **Verification**: Checklist of completed checks
 - **Files Changed**: From diff with brief descriptions
 - **Acceptance Criteria**: Checked off from issue
+
+**Check configuration** — read `gh-pr-comprehension-report` and `gh-pr-decision-summary` from CLAUDE.md. Default: `true`. If `false`, omit the respective section from the PR body.
 
 **Title Format**:
 ```

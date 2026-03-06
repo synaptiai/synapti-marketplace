@@ -72,7 +72,35 @@ Merge an approved pull request with standardized settings.
    - Unresolved threads → "PR #X has N unresolved conversation threads"
    - Stale approval → "PR #X has been updated since last approval - may need re-review"
 
-6. **Get merge approval using the AskUserQuestion tool**:
+6. **Knowledge Checkpoint** (before merge approval):
+
+   **Check configuration** — read `gh-merge-knowledge-checkpoint` from CLAUDE.md. Default: `true`. If `false`, skip this step.
+
+   Extract the Comprehension Report from the PR body:
+   ```bash
+   gh pr view $ARGUMENTS --json body --jq '.body'
+   ```
+
+   Parse the Requirements Adherence table. If any criteria have status **"Interpreted"** or **"Partially Met"**, present a knowledge checkpoint using the **AskUserQuestion tool**:
+
+   ```markdown
+   ### Knowledge Checkpoint
+   - Requirements coverage: {N}/{M} criteria fully met
+   - Interpreted criteria: {list — these reflect AI's interpretation, not explicit requirements}
+   - Partially met criteria: {list — these have gaps}
+   - Decision journal entries: {count} ({gated count} human-approved)
+   ```
+
+   **Options:**
+   - **Option 1**: "Merge — acceptable knowledge coverage" (Recommended)
+   - **Option 2**: "I want to understand the interpreted criteria first" (display details)
+   - **Option 3**: "Cancel — request clarification on partial criteria"
+
+   If Option 2: show the interpreted/partial criteria details from the comprehension report, then re-present the merge options.
+
+   If no Comprehension Report found in PR body, skip this step with note: "No comprehension report in PR body — skipping knowledge checkpoint."
+
+7. **Get merge approval using the AskUserQuestion tool**:
 
    First, display the merge preview:
    ```
@@ -93,17 +121,17 @@ Merge an approved pull request with standardized settings.
 
    **Do not execute merge without explicit approval via the AskUserQuestion tool.**
 
-7. **Execute merge** (based on user choice):
+8. **Execute merge** (based on user choice):
    ```bash
    gh pr merge $ARGUMENTS --squash --delete-branch
    ```
 
-8. **Post-merge actions**:
+9. **Post-merge actions**:
    - Confirm successful merge
    - Report that branch was deleted
    - Suggest updating local branches if on the merged branch
 
-9. **Update local branches** (if user was on the merged branch):
+10. **Update local branches** (if user was on the merged branch):
    ```bash
    # Get default branch dynamically
    DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')

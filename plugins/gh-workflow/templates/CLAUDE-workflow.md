@@ -4,7 +4,7 @@ Copy this section into your project's `.claude/CLAUDE.md` file and customize as 
 
 ---
 
-<!-- gh-workflow: 1.5.0 -->
+<!-- gh-workflow: 1.7.0 -->
 
 ## Git Workflow
 
@@ -45,6 +45,7 @@ This project uses the gh-workflow plugin. Available commands:
 | `/gh-workflow:gh-address <pr>` | Address PR review comments |
 | `/gh-workflow:gh-merge <pr>` | Merge an approved pull request |
 | `/gh-workflow:gh-release <type>` | Create a release (patch/minor/major) |
+| `/gh-workflow:gh-explain <issue>` | Explore what AI built — interactive Q&A |
 | `/gh-workflow:gh-security-review` | Security review of branch changes |
 | `/gh-workflow:gh-setup` | Set up or update workflow configuration |
 
@@ -61,6 +62,8 @@ This project uses the gh-workflow plugin. Available commands:
 - **capability-discovery** - Discovers available agents, skills, and quality commands
 - **runtime-verification** - Verifies implementation works at runtime (dev server, API, E2E)
 - **suggest-users** - Suggests reviewers/assignees based on CODEOWNERS and activity
+- **decision-journal** - Captures decisions from diffs, detects human gate triggers
+- **comprehension-report** - Generates architecture narratives for PR bodies
 
 ### Safety Hooks
 Automatic safety guards: pre-push verification, pre-release checks, destructive operation warnings, repository target verification, post-edit test reminders, workflow completion checks, task completion verification.
@@ -92,6 +95,28 @@ Available labels for this repository:
 4. Start dev server and verify new behavior works
 5. Run E2E tests if applicable
 6. For UI changes, verify visually or via browser automation
+
+## Comprehension Layer
+
+### Gates
+- gate-new-dependencies: on
+- gate-security-changes: on
+- gate-schema-changes: on
+- gate-api-surface-changes: on
+- gate-scope-deviations: on
+- gate-ambiguous-requirements: on
+
+### Decision Journal
+- journal-dir: .decisions
+- journal-sensitivity-default: public
+
+### Per-Command Toggles
+- gh-start-familiarity-prompt: true
+- gh-commit-first-touch: true
+- gh-pr-comprehension-report: true
+- gh-pr-decision-summary: true
+- gh-review-comprehension-check: true
+- gh-merge-knowledge-checkpoint: true
 
 ---
 

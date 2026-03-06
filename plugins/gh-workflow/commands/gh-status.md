@@ -46,6 +46,12 @@ Quick overview of current GitHub workflow state.
    gh pr list --author @me --search "review:changes_requested" --json number,title
    ```
 
+5. **Show comprehension health** for your open PRs:
+   ```bash
+   # For each open PR, check if PR body contains Comprehension Report section
+   gh pr list --author @me --state open --json number,title,body --jq '.[] | {number, title, has_report: (.body | test("## Comprehension Report"))}'
+   ```
+
 ## Output Format
 
 ```
@@ -64,6 +70,10 @@ Quick overview of current GitHub workflow state.
 
 ### Needs Attention (N)
 - #22 Has unaddressed review feedback
+
+### Comprehension Health
+- #20 PR title — Comprehension report: yes
+- #22 PR title — Comprehension report: MISSING
 ```
 
 ## Status Indicators
