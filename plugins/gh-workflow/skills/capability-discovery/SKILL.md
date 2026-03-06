@@ -21,78 +21,65 @@ Before executing workflows, discover what tools are available so commands can:
 ## Discovery Process
 
 <!--
-PARALLEL EXECUTION: Steps 1-6 are fully independent. Execute ALL steps
+PARALLEL EXECUTION: Steps 1-5 are fully independent. Execute ALL five
 simultaneously in a single message with parallel tool calls.
+Step 6 is conditional — only execute if Steps 4-5 detected a tech stack
+or quality commands (see Early Exit section).
 -->
 
 ### Step 1: Scan for Custom Agents
 
-List agent files and extract their `description` from YAML frontmatter:
+Find agent files and extract their `description` from YAML frontmatter.
 
-```bash
-# Project-level agents
-for f in .claude/agents/*.md; do
-  [ -f "$f" ] || continue
-  agent=$(basename "$f" .md)
-  desc=$(sed -n '/^---$/,/^---$/{ /^description:/{ s/^description: *//; p; } }' "$f")
-  echo "project:$agent|$desc"
-done
+**1a.** Use **Glob** (two parallel calls) to find agent files:
+- `Glob: pattern=".claude/agents/*.md"` — project-level agents
+- `Glob: pattern="plugins/*/agents/*.md"` — plugin agents
 
-# Plugin agents
-for f in plugins/*/agents/*.md; do
-  [ -f "$f" ] || continue
-  plugin=$(echo "$f" | cut -d'/' -f2)
-  agent=$(basename "$f" .md)
-  desc=$(sed -n '/^---$/,/^---$/{ /^description:/{ s/^description: *//; p; } }' "$f")
-  echo "$plugin:$agent|$desc"
-done
-```
+**1b.** Use **Grep** on discovered files to extract descriptions:
+- `Grep: pattern="^description:" path="{file}" output_mode="content"`
+
+Parse each result:
+- **Source**: `project` (from `.claude/agents/`) or plugin name (from `plugins/{name}/agents/`)
+- **Agent name**: filename without `.md` extension
+- **Description**: text after `description: ` on the matched line
+
+If no files found by Glob, report "No custom agents found" and continue.
 
 ### Step 2: Scan for Custom Skills
 
-List skill directories and extract their `description` from SKILL.md frontmatter:
+Find skill files and extract their `description` from SKILL.md frontmatter.
 
-```bash
-# Project-level skills
-for f in .claude/skills/*/SKILL.md; do
-  [ -f "$f" ] || continue
-  skill=$(basename "$(dirname "$f")")
-  desc=$(sed -n '/^---$/,/^---$/{ /^description:/{ s/^description: *//; p; } }' "$f")
-  echo "project:$skill|$desc"
-done
+**2a.** Use **Glob** (two parallel calls) to find skill files:
+- `Glob: pattern=".claude/skills/*/SKILL.md"` — project-level skills
+- `Glob: pattern="plugins/*/skills/*/SKILL.md"` — plugin skills
 
-# Plugin skills
-for f in plugins/*/skills/*/SKILL.md; do
-  [ -f "$f" ] || continue
-  plugin=$(echo "$f" | cut -d'/' -f2)
-  skill=$(basename "$(dirname "$f")")
-  desc=$(sed -n '/^---$/,/^---$/{ /^description:/{ s/^description: *//; p; } }' "$f")
-  echo "$plugin:$skill|$desc"
-done
-```
+**2b.** Use **Grep** on discovered files to extract descriptions:
+- `Grep: pattern="^description:" path="{file}" output_mode="content"`
+
+Parse each result:
+- **Source**: `project` (from `.claude/skills/`) or plugin name (from `plugins/{name}/skills/`)
+- **Skill name**: parent directory of the SKILL.md file
+- **Description**: text after `description: ` on the matched line
+
+If no files found by Glob, report "No custom skills found" and continue.
 
 ### Step 3: Scan for Custom Commands
 
-List command files and extract their `description` from YAML frontmatter:
+Find command files and extract their `description` from YAML frontmatter.
 
-```bash
-# Project-level commands
-for f in .claude/commands/*.md; do
-  [ -f "$f" ] || continue
-  cmd=$(basename "$f" .md)
-  desc=$(sed -n '/^---$/,/^---$/{ /^description:/{ s/^description: *//; p; } }' "$f")
-  echo "project:$cmd|$desc"
-done
+**3a.** Use **Glob** (two parallel calls) to find command files:
+- `Glob: pattern=".claude/commands/*.md"` — project-level commands
+- `Glob: pattern="plugins/*/commands/*.md"` — plugin commands
 
-# Plugin commands
-for f in plugins/*/commands/*.md; do
-  [ -f "$f" ] || continue
-  plugin=$(echo "$f" | cut -d'/' -f2)
-  cmd=$(basename "$f" .md)
-  desc=$(sed -n '/^---$/,/^---$/{ /^description:/{ s/^description: *//; p; } }' "$f")
-  echo "$plugin:$cmd|$desc"
-done
-```
+**3b.** Use **Grep** on discovered files to extract descriptions:
+- `Grep: pattern="^description:" path="{file}" output_mode="content"`
+
+Parse each result:
+- **Source**: `project` (from `.claude/commands/`) or plugin name (from `plugins/{name}/commands/`)
+- **Command name**: filename without `.md` extension
+- **Description**: text after `description: ` on the matched line
+
+If no files found by Glob, report "No custom commands found" and continue.
 
 ### Step 4: Parse CLAUDE.md for Quality Commands
 
@@ -142,6 +129,16 @@ fi
 [ -f "Gemfile" ] && echo "ruby"
 [ -f "Makefile" ] && echo "makefile" && grep -E '^(lint|test|check|format|build|dev|serve):' Makefile 2>/dev/null
 ```
+
+### Early Exit: Markdown-Only Projects
+
+If Step 5 detected **no tech stack files** (none of pyproject.toml, package.json, tsconfig.json, go.mod, Cargo.toml, Gemfile, Makefile) and Step 4 found **no quality commands** in CLAUDE.md:
+
+**Skip Step 6** and produce the output with:
+- Quality Commands: "No code-related quality commands applicable"
+- Tech Stack: "Markdown-only project (no code runtime detected)"
+- Verification Capabilities: "N/A for markdown-only project"
+- Recommended Workflow: Focus on agent/skill dispatch only, omit quality command recommendations
 
 ### Step 6: Discover Verification Capabilities
 

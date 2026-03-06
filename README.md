@@ -26,7 +26,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | [Agent Capability Standard ↗](https://github.com/synaptiai/agent-capability-standard) | Standards, Agent Development | Technical specification for AI agents with structural reliability. 36 atomic capabilities across 9 layers with reference workflows and safety-by-construction patterns. | 1.2.0 |
 | [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.3.1 |
-| [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.4.0 |
+| [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.7.0 |
 
 ### When to Use Each Plugin
 

@@ -127,6 +127,16 @@ Store these for Phase 5. If a command is not applicable, note as "N/A — skip".
 
 ## Phase 3: Create Feedback Tasks
 
+### Pre-Creation Verification
+
+Before creating a task for each feedback item, **verify it still applies**:
+
+1. Use **Grep** or **Read** to check the current file at the referenced location
+2. If the issue is already fixed in the current version, skip task creation and note as "Pre-resolved" in the Phase 9 summary
+3. Only create tasks for findings confirmed to still exist
+
+This prevents wasted work on stale findings from earlier review rounds.
+
 For each review comment/feedback item, create a tracking task:
 
 ```
@@ -165,7 +175,10 @@ For each feedback task:
 
 2. **Read and understand the feedback**
 
-3. **Read the relevant content context**
+3. **Read the relevant content context** — Do NOT trust line numbers from review comments; they shift after edits. Instead:
+   - Use **Grep** to find the specific text or code pattern quoted in the feedback
+   - If the feedback references a function/section name, search for that identifier
+   - Only use line numbers if the file has not been modified since the review
 
 4. **If feedback is ambiguous, use the AskUserQuestion tool** to clarify:
    - Quote the unclear comment
@@ -287,6 +300,58 @@ After identifying issues:
 4. Verify all tests pass
 
 **Skip if**: No tests were added or modified during Phase 4.
+
+## Phase 7b: Decision Logging & Report Refresh
+
+### Step 7b.0: Extract Issue Number
+
+Extract the issue number from the PR branch name for journal file operations:
+
+```bash
+BRANCH=$(git branch --show-current)
+ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+echo "Issue number: $ISSUE_NUM"
+```
+
+If no issue number found from branch name, extract from the PR body:
+
+```bash
+gh pr view $PR_NUM --json body --jq '.body' | grep -oiE '(closes|fixes|resolves)\s*#[0-9]+' | grep -oE '[0-9]+' | head -1
+```
+
+### Step 7b.1: Log Decisions from Feedback
+
+After all feedback is addressed, invoke the **decision-journal** skill in `log` mode using the **Skill tool**:
+
+```
+Skill: decision-journal —
+  "Mode: log
+   Phase: addressed review feedback
+   Description: Decisions made while addressing PR #{PR_NUM} review feedback"
+```
+
+The skill analyzes the fix commits and captures decisions about trade-offs (when choosing between competing reviewer suggestions), scope changes (when feedback requires scope adjustments), and implementation changes (when feedback alters the approach).
+
+Append returned entries to `{journal-dir}/issue-{ISSUE_NUM}.md` (where `journal-dir` is returned by the skill, default `.decisions`). Present any gate triggers via **AskUserQuestion** (see `references/gate-configuration.md`).
+
+### Step 7b.2: Stale Report Detection
+
+Check if the PR body contains a Comprehension Report that is now stale (diff has changed since the report was generated):
+
+```bash
+# Get current diff stats
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
+CURRENT_FILES=$(git diff --name-only "$DEFAULT_BRANCH"...HEAD | wc -l | tr -d ' ')
+echo "Current files changed: $CURRENT_FILES"
+```
+
+If the fix commits added/modified files not covered in the existing report, regenerate by invoking the **comprehension-report** skill and update the PR body:
+
+```bash
+gh pr edit $PR_NUM --body "{updated body with new report}"
+```
+
+**Skip if**: No comprehension report exists in the PR body (nothing to refresh).
 
 ## Phase 8: Pre-Push Gate (Mandatory)
 

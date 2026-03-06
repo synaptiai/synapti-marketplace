@@ -46,6 +46,27 @@ Quick overview of current GitHub workflow state.
    gh pr list --author @me --search "review:changes_requested" --json number,title
    ```
 
+5. **Show comprehension health** for your open PRs:
+   ```bash
+   # For each open PR, check comprehension report and decision journal status
+   gh pr list --author @me --state open --json number,title,body,headRefName --jq '.[] | {number, title, has_report: (.body | test("## Comprehension Report")), headRefName}'
+   ```
+
+   Read `journal-dir` from settings (default `.decisions`):
+   ```bash
+   # Read journal directory from settings (local > project > user > default)
+   JOURNAL_DIR=$(jq -r '.journal.dir // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+   [ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=$(jq -r '.journal.dir // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+   [ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=$(jq -r '.journal.dir // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+   [ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=".decisions"
+   ```
+
+   For each open PR:
+   - Check if PR body contains `## Comprehension Report` section
+   - Check for decision journal entries: `git log --all --oneline -- "$JOURNAL_DIR/issue-*.md" | head -1` on the PR branch
+   - Count journal entries: `git show {headRefName}:"$JOURNAL_DIR/issue-"*.md 2>/dev/null | grep -c "^### "` (use `git show` to read from PR branch without checkout)
+   - Detect stale reports: compare the PR body's report generation timestamp against the latest commit date on the branch
+
 ## Output Format
 
 ```
@@ -64,6 +85,11 @@ Quick overview of current GitHub workflow state.
 
 ### Needs Attention (N)
 - #22 Has unaddressed review feedback
+
+### Comprehension Health
+- #20 Feature title — Report: yes, Decisions: 5 entries, Gates: 2/2 approved
+- #22 Fix title — Report: MISSING, Decisions: none
+- #25 Feature title — Report: yes (STALE — updated after report), Decisions: 8 entries
 ```
 
 ## Status Indicators

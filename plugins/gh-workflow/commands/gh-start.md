@@ -111,6 +111,27 @@ Use the extracted `ISSUE_NUM` in all subsequent commands where `$ARGUMENTS` was 
 **If issue not found** (gh issue view fails): Report error and stop:
 > "Issue #$ARGUMENTS not found. Verify the issue number and try again."
 
+### Step 2.2b: Familiarity Prompt (Conditional)
+
+**Check configuration** — read `.commands.ghStartFamiliarityPrompt` from settings. Default: `true`. If `false`, skip this step.
+
+After gathering the issue context (Step 2.2), present a lightweight familiarity baseline using the **AskUserQuestion tool**:
+
+> "Before implementing, how familiar are you with the areas this issue touches?"
+
+**Options:**
+1. "I know this code well — I've written or modified it before"
+2. "I've read it but haven't changed it"
+3. "I've never seen the relevant code"
+4. "Skip — proceed to implementation"
+
+**Behavior by response:**
+- Options 1-2: Record familiarity level and proceed
+- Option 3: Suggest reading the key files identified in the issue before implementing (non-blocking — list files and proceed)
+- Option 4: Proceed without recording
+
+The familiarity level is recorded for reference during the implementation session.
+
 ### Step 2.3: Branch Setup (Sequential)
 
 These steps depend on each other and must run in order:
@@ -138,6 +159,28 @@ These steps depend on each other and must run in order:
    ```
 
 4. **Confirm setup** with user before beginning implementation
+
+### Step 2.4: Initialize Decision Journal
+
+After branch creation, invoke the **decision-journal** skill in `init` mode using the **Skill tool**:
+
+```
+Skill: decision-journal —
+  "Mode: init
+   Issue number: {ISSUE_NUM}
+   Branch name: {branch-name}
+   Issue title: {title}
+   Issue body: {body}"
+```
+
+The skill returns a journal header and the resolved journal directory (from `.journal.dir` in settings, default `.decisions`). Write the header to `{journal-dir}/issue-{ISSUE_NUM}.md`:
+
+```bash
+# Use the journal directory returned by the skill (default: .decisions)
+mkdir -p {journal-dir}
+```
+
+Use the **Write tool** to create `{journal-dir}/issue-{ISSUE_NUM}.md` with the returned header content.
 
 ## Phase 3: Capability Discovery
 
@@ -266,6 +309,44 @@ The agent returns:
 
 **If agent flags ambiguities**, use the **AskUserQuestion tool** to clarify before proceeding.
 
+### Step 5.1a: Decision Logging & Gate Check
+
+After the task breakdown is finalized, invoke the **decision-journal** skill in `log` mode using the **Skill tool**:
+
+```
+Skill: decision-journal —
+  "Mode: log
+   Phase: task breakdown complete
+   Description: Task breakdown for Issue #{ISSUE_NUM} — planning phase decisions"
+```
+
+The skill returns:
+1. **Decision entries** — append these to `{journal-dir}/issue-{ISSUE_NUM}.md` using the **Edit tool** (where `journal-dir` is returned by the skill, default `.decisions`)
+2. **Gate triggers** — if any gates fired with config `on`:
+
+Present each gate trigger using the **AskUserQuestion tool** in this format:
+
+```
+COMPREHENSION GATE: {category}
+
+{Context explaining what triggered the gate}
+
+{Findings / decision details}
+
+Options:
+1. "Approve: {recommended approach}" (Recommended)
+2. "Alternative: {alternative A}" — {trade-off}
+3. "I need more information"
+4. "Proceed anyway — skip this gate"
+```
+
+Log the human's response back to the journal:
+- Options 1-2: `Gate: Yes — human approved`
+- Option 3: Provide additional context, then re-present
+- Option 4: `Gate: Bypassed — human chose to skip`
+
+If no gate triggers returned, proceed without interruption.
+
 **Graceful fallback**: If the agent fails, create tasks inline:
 
 For each acceptance criterion found in the issue:
@@ -280,7 +361,7 @@ Example breakdown:
 - Issue says "Users can filter by date" → Task: "Add date filtering to search endpoint"
 - Issue says "Validation errors show helpful messages" → Task: "Implement validation error formatting"
 
-### Step 5.1a: Identify Parallel Implementation Opportunities
+### Step 5.1b: Identify Parallel Implementation Opportunities
 
 After the task breakdown is created (by agent or fallback), analyze the dependency graph to find tasks that can run in parallel:
 
