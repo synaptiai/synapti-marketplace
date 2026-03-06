@@ -130,7 +130,7 @@ After gathering the issue context (Step 2.2), present a lightweight familiarity 
 - Option 3: Suggest reading the key files identified in the issue before implementing (non-blocking — list files and proceed)
 - Option 4: Proceed without recording
 
-The familiarity baseline is used later by `gh-pr` to compare against the comprehension report.
+The familiarity level is recorded for reference during the implementation session.
 
 ### Step 2.3: Branch Setup (Sequential)
 
