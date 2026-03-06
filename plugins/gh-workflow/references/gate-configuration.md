@@ -123,6 +123,7 @@ Comma-separated glob patterns. Any file matching these patterns triggers a gate 
 | Key | Default | Options | Purpose |
 |-----|---------|---------|---------|
 | `explain-session-save` | `ask` | `always` / `ask` / `never` | Session save behavior |
+| `explain-include-diff` | `true` | `true` / `false` | Load diff into context automatically |
 
 ### Per-Command Toggles
 
@@ -134,6 +135,7 @@ Disable specific comprehension features per command:
 | `gh-commit-first-touch` | `true` | Flag first-touch files |
 | `gh-pr-comprehension-report` | `true` | Generate comprehension report |
 | `gh-review-comprehension-check` | `true` | Verify comprehension report in reviews |
+| `gh-pr-decision-summary` | `true` | Include decision summary in PR body |
 | `gh-merge-knowledge-checkpoint` | `true` | Show knowledge checkpoint before merge |
 
 ## Reading Configuration
