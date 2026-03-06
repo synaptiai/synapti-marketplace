@@ -127,6 +127,16 @@ Store these for Phase 5. If a command is not applicable, note as "N/A — skip".
 
 ## Phase 3: Create Feedback Tasks
 
+### Pre-Creation Verification
+
+Before creating a task for each feedback item, **verify it still applies**:
+
+1. Use **Grep** or **Read** to check the current file at the referenced location
+2. If the issue is already fixed in the current version, skip task creation and note as "Pre-resolved" in the Phase 9 summary
+3. Only create tasks for findings confirmed to still exist
+
+This prevents wasted work on stale findings from earlier review rounds.
+
 For each review comment/feedback item, create a tracking task:
 
 ```
@@ -165,7 +175,10 @@ For each feedback task:
 
 2. **Read and understand the feedback**
 
-3. **Read the relevant content context**
+3. **Read the relevant content context** — Do NOT trust line numbers from review comments; they shift after edits. Instead:
+   - Use **Grep** to find the specific text or code pattern quoted in the feedback
+   - If the feedback references a function/section name, search for that identifier
+   - Only use line numbers if the file has not been modified since the review
 
 4. **If feedback is ambiguous, use the AskUserQuestion tool** to clarify:
    - Quote the unclear comment
