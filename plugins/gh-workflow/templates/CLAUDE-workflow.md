@@ -4,7 +4,7 @@ Copy this section into your project's `.claude/CLAUDE.md` file and customize as 
 
 ---
 
-<!-- gh-workflow: 1.7.0 -->
+<!-- gh-workflow: {PLUGIN_VERSION} -->
 
 ## Git Workflow
 

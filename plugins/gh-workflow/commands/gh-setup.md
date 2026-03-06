@@ -11,7 +11,7 @@ Analyze the current repository and generate customized GitHub workflow configura
 
 ## Contract
 
-**GOAL**: Project-specific workflow configuration generated, applied, or updated based on detected tech stack and conventions. Testable: `.claude/CLAUDE.md` contains workflow section with correct branch/commit conventions, all current gh-workflow commands listed, and version marker reflecting current plugin version (1.4.0).
+**GOAL**: Project-specific workflow configuration generated, applied, or updated based on detected tech stack and conventions. Testable: `.claude/CLAUDE.md` contains workflow section with correct branch/commit conventions, all current gh-workflow commands listed, and version marker reflecting current plugin version (`$PLUGIN_VERSION` from `plugin.json`).
 
 **CONSTRAINTS**:
 - Never overwrite existing CLAUDE.md - merge or append the workflow section
@@ -36,7 +36,27 @@ This command analyzes your codebase and generates:
 
 ## Phase 0: Installation Detection
 
-Before performing any analysis, detect whether gh-workflow is already configured.
+Before performing any analysis, read the plugin version and detect whether gh-workflow is already configured.
+
+0. **Read plugin version** (single source of truth):
+   ```bash
+   # Try common plugin locations
+   PLUGIN_VERSION=""
+   for P in \
+     "plugins/gh-workflow/.claude-plugin/plugin.json" \
+     "$HOME/.claude/plugins/cache/gh-workflow/.claude-plugin/plugin.json"; do
+     [ -f "$P" ] && { PLUGIN_VERSION=$(jq -r '.version' "$P"); break; }
+   done
+   # Fallback: search for it
+   if [ -z "$PLUGIN_VERSION" ]; then
+     PJ=$(find "$HOME/.claude" -path "*/gh-workflow/.claude-plugin/plugin.json" -maxdepth 6 2>/dev/null | head -1)
+     [ -n "$PJ" ] && PLUGIN_VERSION=$(jq -r '.version' "$PJ")
+   fi
+   [ -z "$PLUGIN_VERSION" ] && PLUGIN_VERSION="unknown"
+   echo "gh-workflow version: $PLUGIN_VERSION"
+   ```
+
+   Use `$PLUGIN_VERSION` for all version references in the steps below.
 
 1. **Check for existing gh-workflow configuration**:
    ```bash
@@ -53,7 +73,7 @@ Before performing any analysis, detect whether gh-workflow is already configured
 2. **Determine mode**:
    - **Fresh install**: No CLAUDE.md exists, or it exists but contains no gh-workflow section → proceed to Phase 1
    - **Update needed**: gh-workflow section exists → enter Phase 1U (Update Flow)
-   - **Already current**: Version marker shows current version (1.4.0) → inform user, ask if they want to re-run anyway
+   - **Already current**: Version marker shows current version (`$PLUGIN_VERSION`) → inform user, ask if they want to re-run anyway
 
 3. **If update detected, extract existing version**:
    ```bash
@@ -62,7 +82,7 @@ Before performing any analysis, detect whether gh-workflow is already configured
    ```
 
 4. **Use the AskUserQuestion tool** if existing installation detected:
-   - **Option 1**: "Update existing configuration to v1.4.0" (Recommended)
+   - **Option 1**: "Update existing configuration to v$PLUGIN_VERSION" (Recommended)
    - **Option 2**: "Re-run full setup (preserves existing, generates fresh)"
    - **Option 3**: "Cancel - keep existing configuration"
 
@@ -85,7 +105,7 @@ When an existing gh-workflow section is detected, perform a targeted update inst
 
 2. **Compute diff between existing and current**:
 
-   Compare existing commands against the full v1.4.0 command list:
+   Compare existing commands against the full v$PLUGIN_VERSION command list:
    | Command | Check |
    |---------|-------|
    | `/gh-workflow:gh-status` | Present? |
@@ -125,7 +145,7 @@ When an existing gh-workflow section is detected, perform a targeted update inst
 6. **Apply updates**:
    - Replace the command table with the full 11-command table
    - Add Plugin Capabilities section (Agents, Skills, Safety Hooks) if not present
-   - Add or update the version marker comment (`<!-- gh-workflow: 1.5.0 -->`)
+   - Add or update the version marker comment (`<!-- gh-workflow: $PLUGIN_VERSION -->`)
    - Preserve all user-customized sections (branch naming, labels, checklists)
 
 7. **Proceed to Phase 5 (Verification)** — skip Phases 1-4 since conventions are already configured.
@@ -244,7 +264,7 @@ gh label list --json name,description
 Generate a workflow section for the project's CLAUDE.md:
 
 ```markdown
-<!-- gh-workflow: 1.5.0 -->
+<!-- gh-workflow: {PLUGIN_VERSION} -->
 
 ## Git Workflow
 
@@ -486,7 +506,7 @@ If user chooses option 2 or 3, create `.claude/commands/` with customized versio
 
 **Repository:** {owner}/{repo}
 **Previous Version:** {old_version}
-**Updated Version:** 1.4.0
+**Updated Version:** {PLUGIN_VERSION}
 
 ### Changes Applied
 - **New commands added:** {list of new commands}
@@ -532,7 +552,7 @@ If user chooses option 2 or 3, create `.claude/commands/` with customized versio
 - Always confirm detected patterns with user
 - Never overwrite existing CLAUDE.md - merge or append
 - Create backups before modifying existing files
-- Always include version marker (`<!-- gh-workflow: 1.5.0 -->`) in generated output
+- Always include version marker (`<!-- gh-workflow: $PLUGIN_VERSION -->`) in generated output
 - When updating, preserve user customizations (branch naming, labels, checklists)
 - When updating, show what's new before applying changes
 - **Use the AskUserQuestion tool** at every decision point:
@@ -551,7 +571,7 @@ Before completing, verify:
 - [ ] Configuration generated and approved
 - [ ] CLAUDE.md updated with workflow section
 - [ ] All 11 commands listed in command table
-- [ ] Version marker present (`<!-- gh-workflow: 1.5.0 -->`)
+- [ ] Version marker present (`<!-- gh-workflow: $PLUGIN_VERSION -->`)
 - [ ] Plugin Capabilities section present (Agents, Skills, Safety Hooks)
 - [ ] Labels created (if requested)
 - [ ] Local commands created (if requested)
