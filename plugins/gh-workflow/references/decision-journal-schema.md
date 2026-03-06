@@ -8,7 +8,7 @@ Reference for the decision journal file format used by the comprehension layer.
 {journal-dir}/issue-{N}.md
 ```
 
-Where `{N}` is the GitHub issue number. One journal file per issue/branch. The directory defaults to `.decisions/` and is configurable via the `journal-dir` key in CLAUDE.md (see `gate-configuration.md` for details).
+Where `{N}` is the GitHub issue number. One journal file per issue/branch. The directory defaults to `.decisions/` and is configurable via `.journal.dir` in settings (see `gate-configuration.md` for details).
 
 ## File Structure
 

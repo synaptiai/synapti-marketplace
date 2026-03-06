@@ -55,24 +55,26 @@ If no issue number found from branch or arguments, ask via **AskUserQuestion too
 
 ### Step 1.2: Load Context (Parallel)
 
-**First**, read journal directory and explain config from CLAUDE.md:
+**First**, read journal directory and explain config from settings:
 
 ```bash
-CLAUDE_MD=""
-[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
-[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
+# Read explain config from settings (local > project > user > default)
+GHW_CONFIG=$(jq -n '
+  def defaults: {
+    journal: { dir:".decisions" },
+    explain: { sessionSave:"ask", includeDiff:true }
+  };
+  defaults
+    * (try input catch {})
+    * (try input catch {})
+    * (try input catch {})
+' "$HOME/.claude/settings.gh-workflow.json" \
+  ".claude/settings.gh-workflow.json" \
+  ".claude/settings.gh-workflow.local.json" 2>/dev/null)
 
-JOURNAL_DIR=".decisions"
-INCLUDE_DIFF="true"
-SESSION_SAVE="ask"
-if [ -n "$CLAUDE_MD" ]; then
-  DIR_VAL=$(grep -iE "^\s*-?\s*journal-dir:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
-  [ -n "$DIR_VAL" ] && JOURNAL_DIR="$DIR_VAL"
-  DIFF_VAL=$(grep -iE "^\s*-?\s*explain-include-diff:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
-  [ -n "$DIFF_VAL" ] && INCLUDE_DIFF="$DIFF_VAL"
-  SAVE_VAL=$(grep -iE "^\s*-?\s*explain-session-save:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
-  [ -n "$SAVE_VAL" ] && SESSION_SAVE="$SAVE_VAL"
-fi
+JOURNAL_DIR=$(echo "$GHW_CONFIG" | jq -r '.journal.dir')
+INCLUDE_DIFF=$(echo "$GHW_CONFIG" | jq -r '.explain.includeDiff')
+SESSION_SAVE=$(echo "$GHW_CONFIG" | jq -r '.explain.sessionSave')
 echo "Journal directory: $JOURNAL_DIR"
 echo "Include diff: $INCLUDE_DIFF"
 echo "Session save: $SESSION_SAVE"
@@ -90,7 +92,7 @@ echo "Session save: $SESSION_SAVE"
    gh issue view "$ISSUE_NUM" --json title,body,labels,comments 2>/dev/null
    ```
 
-3. **Read diff** — check `explain-include-diff` config (read from CLAUDE.md in Step 1.2 config block). Default: `true`. If `false`, skip the diff loading and note "Diff loading disabled by config.":
+3. **Read diff** — check `explain.includeDiff` config (read from settings in Step 1.2 config block). Default: `true`. If `false`, skip the diff loading and note "Diff loading disabled by config.":
    ```bash
    DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
    git diff "$DEFAULT_BRANCH"...HEAD --stat
@@ -163,7 +165,7 @@ Let Claude's natural conversational ability handle the Q&A. The command's value 
 
 ## Phase 4: Session Save
 
-**Check configuration** — use the `SESSION_SAVE` value read from CLAUDE.md in Step 1.2. Default: `ask`.
+**Check configuration** — use the `SESSION_SAVE` value read from settings in Step 1.2. Default: `ask`.
 
 | Config | Behavior |
 |--------|----------|
@@ -171,7 +173,7 @@ Let Claude's natural conversational ability handle the Q&A. The command's value 
 | `ask` | Use **AskUserQuestion tool**: "Save this Q&A session?" with options: "Yes" / "No" |
 | `never` | Skip save |
 
-Save location: `{journal-dir}/explain-issue-{N}-{YYYYMMDD-HHMM}.md` (where `journal-dir` is read from CLAUDE.md config, default `.decisions`)
+Save location: `{journal-dir}/explain-issue-{N}-{YYYYMMDD-HHMM}.md` (where `journal-dir` is read from settings via `.journal.dir`, default `.decisions`)
 
 **Path safety**: The issue number `{N}` must be a bare integer (no path separators, no special characters). Validate before constructing the path: `echo "$ISSUE_NUM" | grep -qE '^[0-9]+$' || { echo "ERROR: Invalid issue number"; exit 1; }`.
 

@@ -39,16 +39,11 @@ Read the mode from the invocation prompt and execute only that mode's instructio
 ### Step 1: Read Configuration
 
 ```bash
-# Read journal directory from CLAUDE.md
-CLAUDE_MD=""
-[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
-[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
-
-JOURNAL_DIR=".decisions"
-if [ -n "$CLAUDE_MD" ]; then
-  DIR_VAL=$(grep -iE "^\s*-?\s*journal-dir:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
-  [ -n "$DIR_VAL" ] && JOURNAL_DIR="$DIR_VAL"
-fi
+# Read journal directory from settings (local > project > user > default)
+JOURNAL_DIR=$(jq -r '.journal.dir // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=$(jq -r '.journal.dir // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=$(jq -r '.journal.dir // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=".decisions"
 echo "Journal directory: $JOURNAL_DIR"
 ```
 
@@ -66,7 +61,7 @@ Generate the journal file header:
 ---
 ```
 
-**Output:** Return the header markdown and the resolved journal directory (from `journal-dir` config, default `.decisions`). The calling command writes it to `{journal-dir}/issue-{N}.md`.
+**Output:** Return the header markdown and the resolved journal directory (from `.journal.dir` in settings, default `.decisions`). The calling command writes it to `{journal-dir}/issue-{N}.md`.
 
 ## Mode: log
 
@@ -87,19 +82,27 @@ DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@
 ```
 
 ```bash
-# Read journal configuration from CLAUDE.md
-CLAUDE_MD=""
-[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
-[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
+# Read all comprehension config from settings (local > project > user > default)
+# Single merge for both journal and gates — used in Steps 1-3
+GHW_CONFIG=$(jq -n '
+  def defaults: {
+    gates: {
+      newDependencies:"on", securityChanges:"on", schemaChanges:"on",
+      apiSurfaceChanges:"on", scopeDeviations:"on", ambiguousRequirements:"on",
+      customTriggers:[], customTriggersMode:"on"
+    },
+    journal: { dir:".decisions", sensitivityDefault:"public" }
+  };
+  defaults
+    * (try input catch {})
+    * (try input catch {})
+    * (try input catch {})
+' "$HOME/.claude/settings.gh-workflow.json" \
+  ".claude/settings.gh-workflow.json" \
+  ".claude/settings.gh-workflow.local.json" 2>/dev/null)
 
-JOURNAL_DIR=".decisions"
-SENSITIVITY_DEFAULT="public"
-if [ -n "$CLAUDE_MD" ]; then
-  DIR_VAL=$(grep -iE "^\s*-?\s*journal-dir:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
-  [ -n "$DIR_VAL" ] && JOURNAL_DIR="$DIR_VAL"
-  SENS_VAL=$(grep -iE "^\s*-?\s*journal-sensitivity-default:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
-  [ -n "$SENS_VAL" ] && SENSITIVITY_DEFAULT="$SENS_VAL"
-fi
+JOURNAL_DIR=$(echo "$GHW_CONFIG" | jq -r '.journal.dir')
+SENSITIVITY_DEFAULT=$(echo "$GHW_CONFIG" | jq -r '.journal.sensitivityDefault')
 echo "Journal directory: $JOURNAL_DIR"
 echo "Default sensitivity: $SENSITIVITY_DEFAULT"
 ```
@@ -150,17 +153,11 @@ For each significant decision found, generate a journal entry:
 
 ### Step 3: Evaluate Gate Triggers
 
-Read gate configuration from CLAUDE.md:
+Extract gate configuration from the `$GHW_CONFIG` loaded in Step 1:
 
 ```bash
-# Check for gate configuration (handles both bulleted and bare formats)
-CLAUDE_MD=""
-[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
-[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
-
-if [ -n "$CLAUDE_MD" ]; then
-  grep -iE "^\s*-?\s*gate-" "$CLAUDE_MD" 2>/dev/null
-fi
+# Extract gates from the config already loaded in Step 1
+echo "$GHW_CONFIG" | jq '.gates'
 ```
 
 If no configuration found, all gates default to `on`.
@@ -169,12 +166,12 @@ Check the diff against these gate detection heuristics:
 
 | Trigger | Detection Method | Config Key |
 |---------|-----------------|------------|
-| New dependency | New entries in `package.json`, `requirements.txt`, `Gemfile`, `go.mod`, `Cargo.toml`, or new git submodule | `gate-new-dependencies` |
-| Security changes | Files matching `*auth*`, `*security*`, `*permission*`, `*token*`, `*secret*`, `*crypto*`, `*session*`; changes to `.env*`, CORS/TLS config | `gate-security-changes` |
-| Schema changes | Database migration files, changes to `schema.*`, `*model*` definitions, API type definitions | `gate-schema-changes` |
-| API surface changes | New route/endpoint definitions, changed function signatures in public modules, new command/skill files | `gate-api-surface-changes` |
-| Scope deviations | Files modified outside the expected impact area from the issue | `gate-scope-deviations` |
-| Ambiguous requirements | Acceptance criteria containing vague terms ("should be fast", "user-friendly", "appropriate"), contradictory criteria | `gate-ambiguous-requirements` |
+| New dependency | New entries in `package.json`, `requirements.txt`, `Gemfile`, `go.mod`, `Cargo.toml`, or new git submodule | `.gates.newDependencies` |
+| Security changes | Files matching `*auth*`, `*security*`, `*permission*`, `*token*`, `*secret*`, `*crypto*`, `*session*`; changes to `.env*`, CORS/TLS config | `.gates.securityChanges` |
+| Schema changes | Database migration files, changes to `schema.*`, `*model*` definitions, API type definitions | `.gates.schemaChanges` |
+| API surface changes | New route/endpoint definitions, changed function signatures in public modules, new command/skill files | `.gates.apiSurfaceChanges` |
+| Scope deviations | Files modified outside the expected impact area from the issue | `.gates.scopeDeviations` |
+| Ambiguous requirements | Acceptance criteria containing vague terms ("should be fast", "user-friendly", "appropriate"), contradictory criteria | `.gates.ambiguousRequirements` |
 
 ```bash
 # Example detection for new dependencies
@@ -207,7 +204,7 @@ For each trigger that fires:
 
 | Category | Trigger | Reason | Recommended Action | Alternatives |
 |----------|---------|--------|--------------------|-------------|
-| security-changes | gate-security-changes | Modified auth middleware | Review security implications | Proceed without review |
+| security-changes | gates.securityChanges | Modified auth middleware | Review security implications | Proceed without review |
 
 {If no gates fired:}
 
@@ -232,16 +229,11 @@ The calling command:
 # Example invocation: "Mode: summarize. Issue number: 42. Sensitivity filter: redact internal entries."
 # Parse the issue number from the prompt text.
 
-# Read journal-dir from CLAUDE.md (same as log mode Step 1)
-CLAUDE_MD=""
-[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
-[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
-
-JOURNAL_DIR=".decisions"
-if [ -n "$CLAUDE_MD" ]; then
-  DIR_VAL=$(grep -iE "^\s*-?\s*journal-dir:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
-  [ -n "$DIR_VAL" ] && JOURNAL_DIR="$DIR_VAL"
-fi
+# Read journal-dir from settings (local > project > user > default)
+JOURNAL_DIR=$(jq -r '.journal.dir // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=$(jq -r '.journal.dir // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=$(jq -r '.journal.dir // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=".decisions"
 
 # Read the specific journal file using the issue number from the invocation prompt
 cat "$JOURNAL_DIR/issue-{ISSUE_NUM}.md" 2>/dev/null
@@ -299,7 +291,7 @@ All modes return structured markdown. The calling command handles file I/O.
 
 | Missing Capability | Fallback |
 |-------------------|----------|
-| No CLAUDE.md gate config | All gates default to `on` |
+| No gate config in settings | All gates default to `on` |
 | No issue context (gh issue view fails) | Extract decisions from diff only, skip requirement comparison |
 | No existing journal file (for summarize) | Return "No decision journal found" notice |
 | Empty diff | Return "No changes to analyze" with no entries |
@@ -313,4 +305,4 @@ This skill is invoked by:
 - `gh-pr` — Phase 3 (`summarize` mode)
 - `gh-address` — After feedback aggregation (`log` mode)
 
-The calling command handles all file persistence (Write/Edit to `{journal-dir}/issue-{N}.md`, where `journal-dir` is read from CLAUDE.md config, default `.decisions`) and AskUserQuestion presentation for gate triggers.
+The calling command handles all file persistence (Write/Edit to `{journal-dir}/issue-{N}.md`, where `journal-dir` is read from settings via `.journal.dir`, default `.decisions`) and AskUserQuestion presentation for gate triggers.

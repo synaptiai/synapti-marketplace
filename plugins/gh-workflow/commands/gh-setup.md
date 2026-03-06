@@ -421,10 +421,73 @@ Generate the `{tech-stack-specific-checklist}` based on detected stack:
 
 If user chooses option 2 or 3, create `.claude/commands/` with customized versions.
 
+## Phase 3b: Generate Comprehension Layer Config
+
+Generate `.claude/settings.gh-workflow.json` with schema defaults:
+
+```bash
+# Check if config file already exists
+[ -f ".claude/settings.gh-workflow.json" ] && echo "Config file exists" || echo "No config file"
+```
+
+If no config file exists, generate one with all defaults:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/synaptiai/synapti-marketplace/main/plugins/gh-workflow/schema.json",
+  "gates": {
+    "newDependencies": "on",
+    "securityChanges": "on",
+    "schemaChanges": "on",
+    "apiSurfaceChanges": "on",
+    "scopeDeviations": "on",
+    "ambiguousRequirements": "on",
+    "customTriggers": [],
+    "customTriggersMode": "on"
+  },
+  "journal": {
+    "dir": ".decisions",
+    "sensitivityDefault": "public"
+  },
+  "report": {
+    "thresholdFull": 100
+  },
+  "explain": {
+    "sessionSave": "ask",
+    "includeDiff": true
+  },
+  "commands": {
+    "ghStartFamiliarityPrompt": true,
+    "ghCommitFirstTouch": true,
+    "ghPrComprehensionReport": true,
+    "ghPrDecisionSummary": true,
+    "ghReviewComprehensionCheck": true,
+    "ghMergeKnowledgeCheckpoint": true
+  }
+}
+```
+
+**Use the AskUserQuestion tool** for gate preferences:
+- **Option 1**: "All gates on (interactive development)" (Recommended)
+- **Option 2**: "CI mode — only security gates pause, others log"
+- **Option 3**: "Minimal — only security and schema gates"
+- **Option 4**: "Custom — let me choose per gate"
+
+Adjust gate values in the generated config based on user choice.
+
+Ensure `.claude/settings.gh-workflow.local.json` is in `.gitignore`:
+
+```bash
+# Add local config to .gitignore if not already present
+grep -qF 'settings.gh-workflow.local.json' .gitignore 2>/dev/null || echo '.claude/settings.gh-workflow.local.json' >> .gitignore
+```
+
+If config file already exists, show the user the current values and ask if they want to reset to defaults or keep as-is.
+
 ## Phase 4: Apply Configuration
 
 1. **Preview generated content**:
-   Show the CLAUDE.md section that will be added/updated
+   Show the CLAUDE.md section and the settings.gh-workflow.json that will be created/updated
 
 2. **Use the AskUserQuestion tool** for approval:
    - **Option 1**: "Apply this configuration" (Recommended)
@@ -434,6 +497,7 @@ If user chooses option 2 or 3, create `.claude/commands/` with customized versio
 3. **Apply changes**:
    - Create `.claude/` directory if needed
    - Add/update CLAUDE.md with workflow section
+   - Write `.claude/settings.gh-workflow.json` with comprehension layer config
    - Create local command files if requested
    - Optionally create recommended labels
 
@@ -450,12 +514,18 @@ If user chooses option 2 or 3, create `.claude/commands/` with customized versio
    ```bash
    ls -la .claude/
    cat .claude/CLAUDE.md | head -50
+   cat .claude/settings.gh-workflow.json 2>/dev/null
    ```
 
-2. **Test a command**:
+2. **Validate config against schema** (if jq available):
+   ```bash
+   jq . .claude/settings.gh-workflow.json >/dev/null 2>&1 && echo "Valid JSON" || echo "Invalid JSON"
+   ```
+
+3. **Test a command**:
    Suggest user run `/gh-workflow:gh-issue` to verify setup
 
-3. **Report completion**:
+4. **Report completion**:
    - List what was created/updated
    - Provide next steps
 
@@ -471,6 +541,7 @@ If user chooses option 2 or 3, create `.claude/commands/` with customized versio
 ### Configuration Applied
 
 **CLAUDE.md:** Updated with workflow section
+**Settings:** `.claude/settings.gh-workflow.json` generated with comprehension layer config
 **Labels:** [Created N new labels / Using existing labels]
 **Local Commands:** [None / Created in .claude/commands/]
 
@@ -481,12 +552,13 @@ If user chooses option 2 or 3, create `.claude/commands/` with customized versio
 
 ### Next Steps
 1. Review the CLAUDE.md workflow section
-2. Try `/gh-workflow:gh-status` to view your current workflow state
-3. Try `/gh-workflow:gh-issue` to create your first issue
-4. Use `/gh-workflow:gh-commit` for context-aware commits
-5. Use `/gh-workflow:gh-pr` to create PRs with full review
-6. Customize `.claude/CLAUDE.md` as needed for your project
-7. Run `/gh-workflow:gh-setup` again after plugin updates to get new features
+2. Review `.claude/settings.gh-workflow.json` for gate and comprehension settings
+3. Try `/gh-workflow:gh-status` to view your current workflow state
+4. Try `/gh-workflow:gh-issue` to create your first issue
+5. Use `/gh-workflow:gh-commit` for context-aware commits
+6. Use `/gh-workflow:gh-pr` to create PRs with full review
+7. Customize settings as needed for your project
+8. Run `/gh-workflow:gh-setup` again after plugin updates to get new features
 
 ### Available Commands
 - `/gh-workflow:gh-status` - View workflow status
@@ -572,11 +644,13 @@ Before completing, verify:
 - [ ] Conventions detected and confirmed with user (fresh) OR preserved (update)
 - [ ] Configuration generated and approved
 - [ ] CLAUDE.md updated with workflow section
+- [ ] `.claude/settings.gh-workflow.json` generated with valid JSON
 - [ ] All 11 commands listed in command table
 - [ ] Version marker present (`<!-- gh-workflow: $PLUGIN_VERSION -->`)
 - [ ] Plugin Capabilities section present (Agents, Skills, Safety Hooks)
 - [ ] Labels created (if requested)
 - [ ] Local commands created (if requested)
+- [ ] `.gitignore` includes `settings.gh-workflow.local.json`
 - [ ] User informed of next steps
 - [ ] If update: backup created before modifications
 - [ ] If update: customizations preserved

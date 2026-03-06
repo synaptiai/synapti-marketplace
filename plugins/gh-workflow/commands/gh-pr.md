@@ -382,7 +382,7 @@ Read `templates/pr-template.md` (relative to the gh-workflow plugin directory) a
 - **Files Changed**: From diff with brief descriptions
 - **Acceptance Criteria**: Checked off from issue
 
-**Check configuration** — read `gh-pr-comprehension-report` and `gh-pr-decision-summary` from CLAUDE.md. Default: `true`. If `false`, omit the respective section from the PR body.
+**Check configuration** — read `.commands.ghPrComprehensionReport` and `.commands.ghPrDecisionSummary` from settings. Default: `true`. If `false`, omit the respective section from the PR body.
 
 **Title Format**:
 ```

@@ -113,7 +113,7 @@ Use the extracted `ISSUE_NUM` in all subsequent commands where `$ARGUMENTS` was 
 
 ### Step 2.2b: Familiarity Prompt (Conditional)
 
-**Check configuration** — read `gh-start-familiarity-prompt` from CLAUDE.md. Default: `true`. If `false`, skip this step.
+**Check configuration** — read `.commands.ghStartFamiliarityPrompt` from settings. Default: `true`. If `false`, skip this step.
 
 After gathering the issue context (Step 2.2), present a lightweight familiarity baseline using the **AskUserQuestion tool**:
 
@@ -173,7 +173,7 @@ Skill: decision-journal —
    Issue body: {body}"
 ```
 
-The skill returns a journal header and the resolved journal directory (from `journal-dir` config, default `.decisions`). Write the header to `{journal-dir}/issue-{ISSUE_NUM}.md`:
+The skill returns a journal header and the resolved journal directory (from `.journal.dir` in settings, default `.decisions`). Write the header to `{journal-dir}/issue-{ISSUE_NUM}.md`:
 
 ```bash
 # Use the journal directory returned by the skill (default: .decisions)

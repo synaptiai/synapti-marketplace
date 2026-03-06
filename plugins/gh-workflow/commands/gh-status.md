@@ -52,16 +52,13 @@ Quick overview of current GitHub workflow state.
    gh pr list --author @me --state open --json number,title,body,headRefName --jq '.[] | {number, title, has_report: (.body | test("## Comprehension Report")), headRefName}'
    ```
 
-   Read `journal-dir` from CLAUDE.md config (default `.decisions`):
+   Read `journal-dir` from settings (default `.decisions`):
    ```bash
-   CLAUDE_MD=""
-   [ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
-   [ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
-   JOURNAL_DIR=".decisions"
-   if [ -n "$CLAUDE_MD" ]; then
-     DIR_VAL=$(grep -iE "^\s*-?\s*journal-dir:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
-     [ -n "$DIR_VAL" ] && JOURNAL_DIR="$DIR_VAL"
-   fi
+   # Read journal directory from settings (local > project > user > default)
+   JOURNAL_DIR=$(jq -r '.journal.dir // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+   [ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=$(jq -r '.journal.dir // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+   [ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=$(jq -r '.journal.dir // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+   [ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=".decisions"
    ```
 
    For each open PR:

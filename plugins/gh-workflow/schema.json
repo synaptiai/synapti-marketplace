@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/synaptiai/synapti-marketplace/plugins/gh-workflow/schema.json",
+  "title": "gh-workflow Configuration",
+  "description": "Configuration schema for the gh-workflow plugin comprehension layer and per-command settings.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference for IDE validation"
+    },
+    "gates": {
+      "type": "object",
+      "description": "Human gate triggers for high-stakes decisions during AI-driven workflow execution",
+      "properties": {
+        "newDependencies": {
+          "type": "string",
+          "enum": ["on", "log", "off"],
+          "default": "on",
+          "description": "Gate for new entries in dependency files (package.json, requirements.txt, Gemfile, go.mod, Cargo.toml, .gitmodules)"
+        },
+        "securityChanges": {
+          "type": "string",
+          "enum": ["on", "log", "off"],
+          "default": "on",
+          "description": "Gate for changes to security-related files (*auth*, *security*, *permission*, *token*, *secret*, *crypto*, *session*, .env*)"
+        },
+        "schemaChanges": {
+          "type": "string",
+          "enum": ["on", "log", "off"],
+          "default": "on",
+          "description": "Gate for data model or schema changes (migrations, schema files, model definitions)"
+        },
+        "apiSurfaceChanges": {
+          "type": "string",
+          "enum": ["on", "log", "off"],
+          "default": "on",
+          "description": "Gate for public interface changes (routes, function signatures, command/skill/agent files)"
+        },
+        "scopeDeviations": {
+          "type": "string",
+          "enum": ["on", "log", "off"],
+          "default": "on",
+          "description": "Gate for changes outside the expected impact area from the issue"
+        },
+        "ambiguousRequirements": {
+          "type": "string",
+          "enum": ["on", "log", "off"],
+          "default": "on",
+          "description": "Gate for acceptance criteria requiring interpretation (vague terms, contradictions)"
+        },
+        "customTriggers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Glob patterns that trigger custom gates (e.g., [\"*.proto\", \"**/migrations/*\", \"config/deploy/*\"])"
+        },
+        "customTriggersMode": {
+          "type": "string",
+          "enum": ["on", "log", "off"],
+          "default": "on",
+          "description": "Behavior for custom trigger gates"
+        }
+      },
+      "additionalProperties": false
+    },
+    "journal": {
+      "type": "object",
+      "description": "Decision journal settings",
+      "properties": {
+        "dir": {
+          "type": "string",
+          "default": ".decisions",
+          "description": "Directory for decision journal files (relative to project root)"
+        },
+        "sensitivityDefault": {
+          "type": "string",
+          "enum": ["public", "internal"],
+          "default": "public",
+          "description": "Default sensitivity for new journal entries. 'public' entries appear in PR bodies; 'internal' entries are redacted."
+        }
+      },
+      "additionalProperties": false
+    },
+    "report": {
+      "type": "object",
+      "description": "Comprehension report settings",
+      "properties": {
+        "thresholdFull": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 100,
+          "description": "Diff size (lines changed) that triggers a full report instead of minimal"
+        }
+      },
+      "additionalProperties": false
+    },
+    "explain": {
+      "type": "object",
+      "description": "gh-explain command settings",
+      "properties": {
+        "sessionSave": {
+          "type": "string",
+          "enum": ["always", "ask", "never"],
+          "default": "ask",
+          "description": "Whether to save Q&A session transcripts after gh-explain"
+        },
+        "includeDiff": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to load the diff into context automatically during gh-explain"
+        }
+      },
+      "additionalProperties": false
+    },
+    "commands": {
+      "type": "object",
+      "description": "Per-command feature toggles for comprehension layer features",
+      "properties": {
+        "ghStartFamiliarityPrompt": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show code familiarity question during gh-start"
+        },
+        "ghCommitFirstTouch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Flag first-touch files during gh-commit"
+        },
+        "ghPrComprehensionReport": {
+          "type": "boolean",
+          "default": true,
+          "description": "Generate comprehension report during gh-pr"
+        },
+        "ghPrDecisionSummary": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include decision summary in PR body during gh-pr"
+        },
+        "ghReviewComprehensionCheck": {
+          "type": "boolean",
+          "default": true,
+          "description": "Verify comprehension report during gh-review"
+        },
+        "ghMergeKnowledgeCheckpoint": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show knowledge checkpoint before gh-merge"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

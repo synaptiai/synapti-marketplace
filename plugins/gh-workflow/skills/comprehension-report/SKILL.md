@@ -27,7 +27,7 @@ The report scales based on diff complexity. Complexity is determined from `git d
 | < threshold lines, single area, docs/config only | **Minimal** — Summary + Requirements Adherence | 2 sections |
 | threshold+ lines or multi-area or new modules | **Full** — All sections | 5 sections |
 
-The threshold is configurable via `report-threshold-full` in CLAUDE.md. Default: `100` lines changed.
+The threshold is configurable via `.report.thresholdFull` in settings. Default: `100` lines changed.
 
 ## Process
 
@@ -60,16 +60,11 @@ gh issue view "$ISSUE_NUM" --json title,body,labels 2>/dev/null
 ```
 
 ```bash
-# Read journal directory from CLAUDE.md config
-CLAUDE_MD=""
-[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
-[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
-
-JOURNAL_DIR=".decisions"
-if [ -n "$CLAUDE_MD" ]; then
-  DIR_VAL=$(grep -iE "^\s*-?\s*journal-dir:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
-  [ -n "$DIR_VAL" ] && JOURNAL_DIR="$DIR_VAL"
-fi
+# Read journal directory from settings (local > project > user > default)
+JOURNAL_DIR=$(jq -r '.journal.dir // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=$(jq -r '.journal.dir // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=$(jq -r '.journal.dir // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=".decisions"
 
 # Read decision journal if it exists
 cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md" 2>/dev/null
@@ -78,13 +73,10 @@ cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md" 2>/dev/null
 ### Step 2: Read Report Configuration
 
 ```bash
-CLAUDE_MD=""
-[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
-[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
-
-if [ -n "$CLAUDE_MD" ]; then
-  THRESHOLD=$(grep -iE "^\s*-?\s*report-threshold-full:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
-fi
+# Read report threshold from settings (local > project > user > default)
+THRESHOLD=$(jq -r '.report.thresholdFull // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$THRESHOLD" ] && THRESHOLD=$(jq -r '.report.thresholdFull // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$THRESHOLD" ] && THRESHOLD=$(jq -r '.report.thresholdFull // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
 [ -z "$THRESHOLD" ] && THRESHOLD=100
 ```
 
@@ -200,7 +192,7 @@ Return the complete report markdown. The calling command (gh-pr) includes it in 
 | No issue context (gh issue view fails) | Generate report from diff only, skip requirements adherence |
 | Empty diff | Return "No changes to analyze" notice |
 | Branch has no issue number | Use branch name as context, skip issue-specific sections |
-| Report threshold config missing | Default to 100 lines |
+| Report threshold not configured | Default to 100 lines |
 
 ## Integration Points
 

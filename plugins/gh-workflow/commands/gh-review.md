@@ -29,7 +29,7 @@ Review a pull request with multi-faceted analysis, task tracking, and prioritize
 
 **CONSTRAINTS**:
 - Must checkout the PR branch and read actual files, not just analyze the diff
-- Must check 5 core review facets: (1) Code Quality, (2) Security, (3) Conventions, (4) Tests, (5) Requirements — plus (6) Comprehension Assessment if enabled via `gh-review-comprehension-check` config (default: `true`)
+- Must check 5 core review facets: (1) Code Quality, (2) Security, (3) Conventions, (4) Tests, (5) Requirements — plus (6) Comprehension Assessment if enabled via `.commands.ghReviewComprehensionCheck` in settings (default: `true`)
 - When asserting code behaves a certain way, cite the specific file:line. If unable to cite, mark as UNVERIFIED
 - Always display findings BEFORE asking user for review decision
 - Never submit review without user approval
@@ -196,7 +196,7 @@ While agents run, execute the requirements review in the main thread (requires i
 
 ### Step 4.2b: Comprehension Assessment — Facet (6), Main Thread
 
-**Check configuration** — read `gh-review-comprehension-check` from CLAUDE.md. Default: `true`. If `false`, skip this facet.
+**Check configuration** — read `.commands.ghReviewComprehensionCheck` from settings. Default: `true`. If `false`, skip this facet.
 
 While agents run, also evaluate comprehension signals:
 

@@ -161,7 +161,7 @@ For each changed file, apply the classification algorithm:
 
 ### Step 2.4: First-Touch Flagging (Conditional)
 
-**Check configuration** — read `gh-commit-first-touch` from CLAUDE.md. Default: `true`. If `false`, skip this step.
+**Check configuration** — read `.commands.ghCommitFirstTouch` from settings. Default: `true`. If `false`, skip this step.
 
 Analyze commit patterns on the current branch to flag first-touch and AI-pattern files:
 

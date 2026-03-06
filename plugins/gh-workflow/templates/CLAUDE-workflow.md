@@ -98,32 +98,7 @@ Available labels for this repository:
 
 ## Comprehension Layer
 
-### Gates
-- gate-new-dependencies: on
-- gate-security-changes: on
-- gate-schema-changes: on
-- gate-api-surface-changes: on
-- gate-scope-deviations: on
-- gate-ambiguous-requirements: on
-
-### Decision Journal
-- journal-dir: .decisions
-- journal-sensitivity-default: public
-
-### Report
-- report-threshold-full: 100
-
-### Explain
-- explain-include-diff: true
-- explain-session-save: ask
-
-### Per-Command Toggles
-- gh-start-familiarity-prompt: true
-- gh-commit-first-touch: true
-- gh-pr-comprehension-report: true
-- gh-pr-decision-summary: true
-- gh-review-comprehension-check: true
-- gh-merge-knowledge-checkpoint: true
+Configuration for gates, decision journal, comprehension reports, and per-command toggles is managed in `.claude/settings.gh-workflow.json`. See `references/gate-configuration.md` for all options and examples. Run `/gh-workflow:gh-setup` to generate a config file with defaults.
 
 ---
 

@@ -74,21 +74,18 @@ Merge an approved pull request with standardized settings.
 
 6. **Knowledge Checkpoint** (before merge approval):
 
-   **Check configuration** — read `gh-merge-knowledge-checkpoint` from CLAUDE.md. Default: `true`. If `false`, skip this step.
+   **Check configuration** — read `.commands.ghMergeKnowledgeCheckpoint` from settings. Default: `true`. If `false`, skip this step.
 
    ```bash
-   CLAUDE_MD=""
-   [ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
-   [ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
-
-   KNOWLEDGE_CHECKPOINT="true"
-   if [ -n "$CLAUDE_MD" ]; then
-     KC_VAL=$(grep -iE "^\s*-?\s*gh-merge-knowledge-checkpoint:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
-     [ -n "$KC_VAL" ] && KNOWLEDGE_CHECKPOINT="$KC_VAL"
-   fi
+   # Read knowledge checkpoint config from settings (local > project > user > default)
+   # jq -r renders booleans as "true"/"false" strings
+   KNOWLEDGE_CHECKPOINT=$(jq -r '.commands.ghMergeKnowledgeCheckpoint // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+   [ -z "$KNOWLEDGE_CHECKPOINT" ] && KNOWLEDGE_CHECKPOINT=$(jq -r '.commands.ghMergeKnowledgeCheckpoint // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+   [ -z "$KNOWLEDGE_CHECKPOINT" ] && KNOWLEDGE_CHECKPOINT=$(jq -r '.commands.ghMergeKnowledgeCheckpoint // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+   [ -z "$KNOWLEDGE_CHECKPOINT" ] && KNOWLEDGE_CHECKPOINT="true"
    ```
 
-   If `$KNOWLEDGE_CHECKPOINT` is `false`, skip to Step 7.
+   If `$KNOWLEDGE_CHECKPOINT` is the string `"false"`, skip to Step 7.
 
    Extract the Comprehension Report from the PR body:
    ```bash
