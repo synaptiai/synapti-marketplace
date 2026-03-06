@@ -290,6 +290,22 @@ After identifying issues:
 
 ## Phase 7b: Decision Logging & Report Refresh
 
+### Step 7b.0: Extract Issue Number
+
+Extract the issue number from the PR branch name for journal file operations:
+
+```bash
+BRANCH=$(git branch --show-current)
+ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+echo "Issue number: $ISSUE_NUM"
+```
+
+If no issue number found from branch name, extract from the PR body:
+
+```bash
+gh pr view $PR_NUM --json body --jq '.body' | grep -oiE '(closes|fixes|resolves)\s*#[0-9]+' | grep -oE '[0-9]+' | head -1
+```
+
 ### Step 7b.1: Log Decisions from Feedback
 
 After all feedback is addressed, invoke the **decision-journal** skill in `log` mode using the **Skill tool**:
