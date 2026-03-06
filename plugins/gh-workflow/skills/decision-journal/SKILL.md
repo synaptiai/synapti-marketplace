@@ -48,7 +48,7 @@ Read the mode from the invocation prompt and execute only that mode's instructio
 ---
 ```
 
-**Output:** Return the header markdown. The calling command writes it to `.decisions/issue-{N}.md`.
+**Output:** Return the header markdown and the resolved journal directory (from `journal-dir` config, default `.decisions`). The calling command writes it to `{journal-dir}/issue-{N}.md`.
 
 ## Mode: log
 
@@ -67,6 +67,26 @@ ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
 DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(git rev-parse --verify origin/main >/dev/null 2>&1 && echo "main" || echo "master")
 ```
+
+```bash
+# Read journal configuration from CLAUDE.md
+CLAUDE_MD=""
+[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
+[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
+
+JOURNAL_DIR=".decisions"
+SENSITIVITY_DEFAULT="public"
+if [ -n "$CLAUDE_MD" ]; then
+  DIR_VAL=$(grep -iE "^\s*-?\s*journal-dir:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
+  [ -n "$DIR_VAL" ] && JOURNAL_DIR="$DIR_VAL"
+  SENS_VAL=$(grep -iE "^\s*-?\s*journal-sensitivity-default:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
+  [ -n "$SENS_VAL" ] && SENSITIVITY_DEFAULT="$SENS_VAL"
+fi
+echo "Journal directory: $JOURNAL_DIR"
+echo "Default sensitivity: $SENSITIVITY_DEFAULT"
+```
+
+Use `$JOURNAL_DIR` instead of `.decisions` for all journal file paths in this mode. Use `$SENSITIVITY_DEFAULT` as the default sensitivity for new entries.
 
 ```bash
 # Get the diff to analyze (staged changes for commit, or branch diff for other phases)
@@ -106,7 +126,7 @@ For each significant decision found, generate a journal entry:
 **Categories**: `architecture`, `requirements`, `trade-off`, `implementation`, `risk`, `scope`
 
 **Sensitivity rules:**
-- Default: `public`
+- Default: Use the `$SENSITIVITY_DEFAULT` value from Step 1 config (falls back to `public` if not configured)
 - Use `internal` for decisions involving: security rationale, credential/secret handling, vulnerability remediation, access control logic
 - Never document specific vulnerability details, exploitation vectors, previous insecure states, or secret values/locations — even in `internal` entries
 
@@ -183,14 +203,26 @@ The calling command:
 
 ## Mode: summarize
 
-**Input** (from invocation prompt): Path to the journal file, sensitivity filter preference.
+**Input** (from invocation prompt): Issue number (or path to the journal file), sensitivity filter preference.
 
 **Process:**
 
-1. Read the full journal file:
+1. Read journal configuration and the journal file:
 
 ```bash
-cat .decisions/issue-*.md 2>/dev/null
+# Read journal-dir from CLAUDE.md (same as log mode Step 1)
+CLAUDE_MD=""
+[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
+[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
+
+JOURNAL_DIR=".decisions"
+if [ -n "$CLAUDE_MD" ]; then
+  DIR_VAL=$(grep -iE "^\s*-?\s*journal-dir:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
+  [ -n "$DIR_VAL" ] && JOURNAL_DIR="$DIR_VAL"
+fi
+
+# Read the specific journal file (use issue number from invocation, NOT a glob)
+cat "$JOURNAL_DIR/issue-${ISSUE_NUM}.md" 2>/dev/null
 ```
 
 2. Parse entries by splitting on `---` separators
@@ -257,4 +289,4 @@ This skill is invoked by:
 - `gh-pr` — Phase 3 (`summarize` mode)
 - `gh-address` — After feedback aggregation (`log` mode)
 
-The calling command handles all file persistence (Write/Edit to `.decisions/issue-{N}.md`) and AskUserQuestion presentation for gate triggers.
+The calling command handles all file persistence (Write/Edit to `{journal-dir}/issue-{N}.md`, where `journal-dir` defaults to `.decisions`) and AskUserQuestion presentation for gate triggers.
