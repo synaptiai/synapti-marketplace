@@ -1,6 +1,6 @@
 # Pull Request Template
 
-Use this structure when creating PRs with `/gh-workflow:gh-start`.
+Use this structure when creating PRs with `/gh-workflow:gh-pr`.
 
 ---
 

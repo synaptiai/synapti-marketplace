@@ -70,6 +70,8 @@ GATE_SECURITY=$(echo "$GHW_CONFIG" | jq -r '.gates.securityChanges')
 # ... etc
 ```
 
+**Error handling**: Each `try input catch {}` expression handles missing or invalid files gracefully — if a file doesn't exist or contains invalid JSON, it falls back to an empty object `{}`, leaving the defaults intact. No config files need to exist for the merge to succeed.
+
 ## Zero-Config Behavior
 
 All defaults are embedded in the bulk merge pattern. If no config files exist at any scope, every key resolves to its schema default. No configuration is required for the plugin to function.
