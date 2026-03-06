@@ -119,6 +119,7 @@ When an existing gh-workflow section is detected, perform a targeted update inst
    | `/gh-workflow:gh-address <pr>` | Present? |
    | `/gh-workflow:gh-merge <pr>` | Present? |
    | `/gh-workflow:gh-release <type>` | Present? |
+   | `/gh-workflow:gh-explain <issue>` | NEW - likely missing |
    | `/gh-workflow:gh-security-review` | NEW - likely missing |
    | `/gh-workflow:gh-setup` | NEW - likely missing |
 
@@ -145,7 +146,7 @@ When an existing gh-workflow section is detected, perform a targeted update inst
    ```
 
 6. **Apply updates**:
-   - Replace the command table with the full 11-command table
+   - Replace the command table with the full 12-command table
    - Add Plugin Capabilities section (Agents, Skills, Safety Hooks) if not present
    - Add or update the version marker comment (`<!-- gh-workflow: $PLUGIN_VERSION -->`)
    - Preserve all user-customized sections (branch naming, labels, checklists)
@@ -305,6 +306,7 @@ This project uses the gh-workflow plugin. Available commands:
 | `/gh-workflow:gh-address <pr>` | Address PR review comments |
 | `/gh-workflow:gh-merge <pr>` | Merge an approved pull request |
 | `/gh-workflow:gh-release <type>` | Create a release (patch/minor/major) |
+| `/gh-workflow:gh-explain <issue>` | Explore issue context with interactive Q&A |
 | `/gh-workflow:gh-security-review` | Security review of branch changes |
 | `/gh-workflow:gh-setup` | Set up or update workflow configuration |
 
@@ -570,6 +572,7 @@ If config file already exists, show the user the current values and ask if they 
 - `/gh-workflow:gh-address <N>` - Address PR N comments
 - `/gh-workflow:gh-merge <N>` - Merge PR N
 - `/gh-workflow:gh-release [patch|minor|major]` - Create release
+- `/gh-workflow:gh-explain <N>` - Explore issue context with Q&A
 - `/gh-workflow:gh-security-review` - Security review
 - `/gh-workflow:gh-setup` - Re-run setup or update
 ```
@@ -604,6 +607,7 @@ If config file already exists, show the user the current values and ask if they 
 - `/gh-workflow:gh-address <N>` - Address PR N comments
 - `/gh-workflow:gh-merge <N>` - Merge PR N
 - `/gh-workflow:gh-release [patch|minor|major]` - Create release
+- `/gh-workflow:gh-explain <N>` - Explore issue context with Q&A
 - `/gh-workflow:gh-security-review` - Security review
 - `/gh-workflow:gh-setup` - Re-run setup or update
 ```
@@ -645,7 +649,7 @@ Before completing, verify:
 - [ ] Configuration generated and approved
 - [ ] CLAUDE.md updated with workflow section
 - [ ] `.claude/settings.gh-workflow.json` generated with valid JSON
-- [ ] All 11 commands listed in command table
+- [ ] All 12 commands listed in command table
 - [ ] Version marker present (`<!-- gh-workflow: $PLUGIN_VERSION -->`)
 - [ ] Plugin Capabilities section present (Agents, Skills, Safety Hooks)
 - [ ] Labels created (if requested)
