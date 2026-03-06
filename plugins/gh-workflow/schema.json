@@ -70,8 +70,10 @@
       "properties": {
         "dir": {
           "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/]",
           "default": ".decisions",
-          "description": "Directory for decision journal files (relative to project root)"
+          "description": "Directory for decision journal files (relative to project root). Must be a non-empty relative path."
         },
         "sensitivityDefault": {
           "type": "string",
