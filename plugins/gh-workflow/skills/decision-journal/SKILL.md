@@ -36,7 +36,25 @@ Read the mode from the invocation prompt and execute only that mode's instructio
 
 **Process:**
 
-1. Generate the journal file header:
+### Step 1: Read Configuration
+
+```bash
+# Read journal directory from CLAUDE.md
+CLAUDE_MD=""
+[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
+[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
+
+JOURNAL_DIR=".decisions"
+if [ -n "$CLAUDE_MD" ]; then
+  DIR_VAL=$(grep -iE "^\s*-?\s*journal-dir:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
+  [ -n "$DIR_VAL" ] && JOURNAL_DIR="$DIR_VAL"
+fi
+echo "Journal directory: $JOURNAL_DIR"
+```
+
+### Step 2: Generate Header
+
+Generate the journal file header:
 
 ```markdown
 # Decision Journal: Issue #{N} — {issue title}
