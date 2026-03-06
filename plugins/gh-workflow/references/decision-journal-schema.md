@@ -5,10 +5,10 @@ Reference for the decision journal file format used by the comprehension layer.
 ## File Location
 
 ```
-.decisions/issue-{N}.md
+{journal-dir}/issue-{N}.md
 ```
 
-Where `{N}` is the GitHub issue number. One journal file per issue/branch.
+Where `{N}` is the GitHub issue number. One journal file per issue/branch. The directory defaults to `.decisions/` and is configurable via the `journal-dir` key in CLAUDE.md (see `gate-configuration.md` for details).
 
 ## File Structure
 
@@ -103,7 +103,7 @@ To extract entries programmatically:
 Q&A sessions from `gh-explain` are saved as:
 
 ```
-.decisions/explain-issue-{N}-{YYYYMMDD-HHMM}.md
+{journal-dir}/explain-issue-{N}-{YYYYMMDD-HHMM}.md
 ```
 
 These are free-form markdown transcripts, not structured journal entries.
