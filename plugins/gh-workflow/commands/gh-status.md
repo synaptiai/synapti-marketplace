@@ -64,7 +64,7 @@ Quick overview of current GitHub workflow state.
    For each open PR:
    - Check if PR body contains `## Comprehension Report` section
    - Check for decision journal entries: `git log --all --oneline -- "$JOURNAL_DIR/issue-*.md" | head -1` on the PR branch
-   - Count journal entries: `grep -c "^### " "$JOURNAL_DIR/issue-"*.md 2>/dev/null` (checkout PR branch or use `git show`)
+   - Count journal entries: `git show {headRefName}:"$JOURNAL_DIR/issue-"*.md 2>/dev/null | grep -c "^### "` (use `git show` to read from PR branch without checkout)
    - Detect stale reports: compare the PR body's report generation timestamp against the latest commit date on the branch
 
 ## Output Format
