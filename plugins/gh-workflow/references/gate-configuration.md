@@ -101,7 +101,19 @@ Add project-specific file patterns that should trigger gates:
 - gate-custom-triggers: *.proto, **/migrations/*, config/deploy/*
 ```
 
-Comma-separated glob patterns. Any file matching these patterns triggers a gate (uses the `gate-new-dependencies` config value for on/log/off behavior).
+Comma-separated glob patterns. Any file matching these patterns triggers a gate.
+
+**Behavior control**: Custom triggers use a separate config key for on/log/off:
+
+```markdown
+- gate-custom-triggers-mode: on
+```
+
+| Value | Behavior |
+|-------|----------|
+| `on` | Pause for approval (default) |
+| `log` | Record without pausing |
+| `off` | Skip custom triggers entirely |
 
 ## Additional Configuration
 
