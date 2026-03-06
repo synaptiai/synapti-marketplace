@@ -246,7 +246,7 @@ If any quality command (from agent or fallback) failed, apply bounded verificati
 2. Fix the issue inline immediately (Edit tool, not TaskCreate)
 3. Commit the fix: `git commit -m "fix: [what was fixed]"`
 4. Re-run ALL quality commands in parallel
-5. **Max 3 iterations**. After 3 failures → include failures as P1 findings in Step 3.8
+5. **Max iterations** (read `.timeouts.qualityCheckMaxIterations` from settings, default: 3). After max iterations → include failures as P1 findings in Step 3.8
 
 ### Step 3.6: Runtime Verification (if available)
 

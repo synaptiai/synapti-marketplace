@@ -465,6 +465,34 @@ If no config file exists, generate one with all defaults:
     "ghPrDecisionSummary": true,
     "ghReviewComprehensionCheck": true,
     "ghMergeKnowledgeCheckpoint": true
+  },
+  "merge": {
+    "strategy": "squash",
+    "deleteBranch": true
+  },
+  "conventions": {
+    "commitSubjectMaxLength": 72,
+    "commitTypes": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build", "revert"],
+    "branchPatterns": {
+      "feature": "feature/issue-{N}-{desc}",
+      "fix": "fix/issue-{N}-{desc}",
+      "docs": "docs/issue-{N}-{desc}"
+    },
+    "additionalBranchTypes": {}
+  },
+  "release": {
+    "tagPrefix": "v"
+  },
+  "timeouts": {
+    "devServerStartup": 30,
+    "e2eTest": 120,
+    "verificationScript": 180,
+    "qualityCheckMaxIterations": 3
+  },
+  "review": {
+    "firstTouchLineThreshold": 50,
+    "activityLookbackDays": 30,
+    "activityFallbackDays": 90
   }
 }
 ```
@@ -476,6 +504,20 @@ If no config file exists, generate one with all defaults:
 - **Option 4**: "Custom — let me choose per gate"
 
 Adjust gate values in the generated config based on user choice.
+
+**Use the AskUserQuestion tool** for merge strategy:
+- **Option 1**: "Squash merge (single commit per PR)" (Recommended)
+- **Option 2**: "Merge commit (preserve full history)"
+- **Option 3**: "Rebase (linear history)"
+
+Adjust `merge.strategy` based on user choice.
+
+**Use the AskUserQuestion tool** for branch naming:
+- **Option 1**: "Use default patterns (feature/issue-{N}-{desc})" (Recommended)
+- **Option 2**: "Customize branch patterns" — ask for feature, fix, and docs patterns
+- **Option 3**: "Add extra branch types" — ask for additional types (refactor, chore, etc.)
+
+Adjust `conventions.branchPatterns` and `conventions.additionalBranchTypes` based on user choice.
 
 Ensure `.claude/settings.gh-workflow.local.json` is in `.gitignore`:
 

@@ -32,6 +32,21 @@ Merge an approved pull request with standardized settings.
 
 ## Process
 
+0. **Read merge settings**:
+   ```bash
+   # Read merge.strategy (local > project > user > default)
+   MERGE_STRATEGY=$(jq -r '.merge.strategy // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+   [ -z "$MERGE_STRATEGY" ] && MERGE_STRATEGY=$(jq -r '.merge.strategy // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+   [ -z "$MERGE_STRATEGY" ] && MERGE_STRATEGY=$(jq -r '.merge.strategy // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+   [ -z "$MERGE_STRATEGY" ] && MERGE_STRATEGY="squash"
+
+   # Read merge.deleteBranch
+   DELETE_BRANCH=$(jq -r '.merge.deleteBranch // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+   [ -z "$DELETE_BRANCH" ] && DELETE_BRANCH=$(jq -r '.merge.deleteBranch // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+   [ -z "$DELETE_BRANCH" ] && DELETE_BRANCH=$(jq -r '.merge.deleteBranch // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+   [ -z "$DELETE_BRANCH" ] && DELETE_BRANCH="true"
+   ```
+
 1. **Fetch PR details**:
    ```bash
    gh pr view $ARGUMENTS --json number,title,state,isDraft,headRefName,baseRefName,mergeable,reviewDecision,statusCheckRollup
@@ -109,22 +124,25 @@ Merge an approved pull request with standardized settings.
 
    Title: {title}
    Branch: {headRefName} → {baseRefName}
-   Strategy: Squash merge
-   Branch deletion: Yes
+   Strategy: {MERGE_STRATEGY} merge
+   Branch deletion: {DELETE_BRANCH}
 
    Linked issue: #{issue} (will auto-close if using "fixes #X")
    ```
 
    Then **invoke the AskUserQuestion tool** with these options:
-   - **Option 1**: "Merge and delete branch" (Recommended)
-   - **Option 2**: "Merge but keep branch"
+   - **Option 1**: "Merge with {MERGE_STRATEGY} strategy" (Recommended) — includes branch deletion if `DELETE_BRANCH` is `true`
+   - **Option 2**: "Merge but change strategy or keep branch" — present sub-options for strategy and branch deletion
    - **Option 3**: "Cancel - I need to make changes first"
 
    **Do not execute merge without explicit approval via the AskUserQuestion tool.**
 
 8. **Execute merge** (based on user choice):
    ```bash
-   gh pr merge $ARGUMENTS --squash --delete-branch
+   # Build merge flags from settings
+   MERGE_FLAGS="--$MERGE_STRATEGY"
+   [ "$DELETE_BRANCH" = "true" ] && MERGE_FLAGS="$MERGE_FLAGS --delete-branch"
+   gh pr merge $ARGUMENTS $MERGE_FLAGS
    ```
 
 9. **Post-merge actions**:
@@ -155,13 +173,15 @@ Merge an approved pull request with standardized settings.
 
 ## Merge Settings
 
+Configurable via `.merge.strategy` and `.merge.deleteBranch` in `settings.gh-workflow.json`.
+
 | Strategy | Delete Branch | When to Use |
 |----------|---------------|-------------|
-| `--squash` | Yes (default) | Clean history, single commit per feature/fix |
-| `--merge` | Optional | Preserve full commit history |
-| `--rebase` | Optional | Linear history without merge commits |
+| `--squash` (default) | Configurable (default: yes) | Clean history, single commit per feature/fix |
+| `--merge` | Configurable | Preserve full commit history |
+| `--rebase` | Configurable | Linear history without merge commits |
 
-Default: Squash merge with branch deletion for clean history.
+Default: Squash merge with branch deletion for clean history. Override in settings for team preference.
 
 ## Output Format
 
@@ -171,7 +191,7 @@ Default: Squash merge with branch deletion for clean history.
 
 **Title:** {title}
 **Branch:** {headRefName} → {baseRefName}
-**Strategy:** Squash merge
+**Strategy:** {MERGE_STRATEGY} merge
 
 Branch `{headRefName}` has been deleted.
 
@@ -237,7 +257,7 @@ After merge execution, verify it completed successfully:
 ## Rules
 
 - ALWAYS verify prerequisites before merging
-- Use squash merge and delete source branch by default
+- Use configured merge strategy and branch deletion preference (defaults: squash, delete branch)
 - NEVER force merge (skip checks)
 - Provide clear, actionable feedback on failures
 - ALWAYS verify merge completed successfully

@@ -155,6 +155,47 @@ Disable specific comprehension features per command:
 | `.commands.ghPrDecisionSummary` | `true` | Include decision summary in PR body |
 | `.commands.ghMergeKnowledgeCheckpoint` | `true` | Show knowledge checkpoint before merge |
 
+### Merge
+
+| Key | Default | Options | Purpose |
+|-----|---------|---------|---------|
+| `.merge.strategy` | `squash` | `squash` / `merge` / `rebase` | Default merge strategy for PRs |
+| `.merge.deleteBranch` | `true` | `true` / `false` | Delete source branch after merge |
+
+### Conventions
+
+| Key | Default | Options | Purpose |
+|-----|---------|---------|---------|
+| `.conventions.commitSubjectMaxLength` | `72` | Integer (30-200) | Max commit subject line length |
+| `.conventions.commitTypes` | `["feat","fix",...]` | Array of strings | Valid conventional commit type prefixes |
+| `.conventions.branchPatterns.feature` | `feature/issue-{N}-{desc}` | String with `{N}`, `{desc}` | Feature branch pattern |
+| `.conventions.branchPatterns.fix` | `fix/issue-{N}-{desc}` | String with `{N}`, `{desc}` | Fix branch pattern |
+| `.conventions.branchPatterns.docs` | `docs/issue-{N}-{desc}` | String with `{N}`, `{desc}` | Docs branch pattern |
+| `.conventions.additionalBranchTypes` | `{}` | Object of patterns | Extra branch types (e.g., `{"refactor": "refactor/issue-{N}-{desc}"}`) |
+
+### Release
+
+| Key | Default | Options | Purpose |
+|-----|---------|---------|---------|
+| `.release.tagPrefix` | `v` | Any string | Prefix for version tags (`v1.2.3` or `1.2.3`) |
+
+### Timeouts
+
+| Key | Default | Options | Purpose |
+|-----|---------|---------|---------|
+| `.timeouts.devServerStartup` | `30` | Integer (5-300) seconds | Dev server readiness wait |
+| `.timeouts.e2eTest` | `120` | Integer (30-600) seconds | E2E test suite timeout |
+| `.timeouts.verificationScript` | `180` | Integer (30-600) seconds | Verification script timeout |
+| `.timeouts.qualityCheckMaxIterations` | `3` | Integer (1-10) | Max lint/test/typecheck fix cycles |
+
+### Review
+
+| Key | Default | Options | Purpose |
+|-----|---------|---------|---------|
+| `.review.firstTouchLineThreshold` | `50` | Integer (10-500) lines | First-touch AI pattern detection threshold |
+| `.review.activityLookbackDays` | `30` | Integer (7-365) days | Reviewer suggestion activity window |
+| `.review.activityFallbackDays` | `90` | Integer (30-365) days | Extended lookback when no recent activity |
+
 ## Reading Configuration
 
 See `references/config-reading.md` for the canonical config reading patterns and full JSON path reference.

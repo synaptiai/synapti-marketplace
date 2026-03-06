@@ -49,17 +49,23 @@ gh repo view --json nameWithOwner,defaultBranchRef --jq '{
 
 ## Conventions
 
-Used by convention-checker to validate branch names and commit messages. Commands (gh-start, gh-commit) may override these with project-specific conventions from CLAUDE.md — always check CLAUDE.md first.
+Used by convention-checker to validate branch names and commit messages. These defaults are configurable via `settings.gh-workflow.json` (see `conventions.*` keys in `schema.json`). Commands may also override with project-specific conventions from CLAUDE.md — check CLAUDE.md first, then settings, then these defaults.
 
 ### Branch Naming
 
-| Type | Pattern | Example |
-|------|---------|---------|
+Configurable via `.conventions.branchPatterns` and `.conventions.additionalBranchTypes` in settings.
+
+| Type | Default Pattern | Example |
+|------|----------------|---------|
 | Feature | `feature/issue-{N}-{desc}` | `feature/issue-42-add-login` |
 | Fix | `fix/issue-{N}-{desc}` | `fix/issue-13-typo` |
 | Docs | `docs/issue-{N}-{desc}` | `docs/issue-7-readme` |
 
+Additional branch types can be added via `.conventions.additionalBranchTypes` (e.g., `{"refactor": "refactor/issue-{N}-{desc}", "chore": "chore/issue-{N}-{desc}"}`).
+
 ### Commit Prefixes
+
+Configurable via `.conventions.commitTypes` in settings. Subject line max length configurable via `.conventions.commitSubjectMaxLength` (default: 72).
 
 | Prefix | Usage |
 |--------|-------|

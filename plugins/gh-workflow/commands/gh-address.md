@@ -229,7 +229,7 @@ Execute a bounded fix-verify cycle. **Fix immediately — do not create tasks** 
    - Commit the fix: `git commit -m "fix: [what was fixed]"`
    - Re-run ALL checks (go back to step 1)
 
-4. **Max 3 iterations**. After 3 failed iterations → escalate to user via **AskUserQuestion tool**:
+4. **Max iterations** (read `.timeouts.qualityCheckMaxIterations` from settings, default: 3). After max iterations → escalate to user via **AskUserQuestion tool**:
    - **Option 1**: "Show me the failures, I'll fix manually"
    - **Option 2**: "Push with known failures and note in response"
    - **Option 3**: "Abort — I need to investigate"
@@ -281,7 +281,7 @@ If any fixes were made during review, re-run ALL quality commands in parallel to
 - Bash call 3: {typecheck_cmd}
 ```
 
-If failures → apply the same bounded loop from Phase 5 Step 5.1 (max 3 iterations).
+If failures → apply the same bounded loop from Phase 5 Step 5.1 (max iterations from settings, default: 3).
 
 ## Phase 7: Test Review (Self-Review on Fixes)
 
@@ -381,7 +381,7 @@ TaskList
 
 **If ANY gate fails**:
 1. Fix inline immediately, re-run checks
-2. Max 3 iterations before escalating to user via AskUserQuestion
+2. Max iterations (from `.timeouts.qualityCheckMaxIterations` setting, default: 3) before escalating to user via AskUserQuestion
 3. Only proceed when all checks pass
 
 ## Phase 9: Prepare Response

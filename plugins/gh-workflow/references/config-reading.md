@@ -53,6 +53,26 @@ GHW_CONFIG=$(jq -n '
       ghStartFamiliarityPrompt:true, ghCommitFirstTouch:true,
       ghPrComprehensionReport:true, ghPrDecisionSummary:true,
       ghReviewComprehensionCheck:true, ghMergeKnowledgeCheckpoint:true
+    },
+    merge: { strategy:"squash", deleteBranch:true },
+    conventions: {
+      commitSubjectMaxLength:72,
+      commitTypes:["feat","fix","docs","style","refactor","test","chore","perf","ci","build","revert"],
+      branchPatterns: {
+        feature:"feature/issue-{N}-{desc}",
+        fix:"fix/issue-{N}-{desc}",
+        docs:"docs/issue-{N}-{desc}"
+      },
+      additionalBranchTypes:{}
+    },
+    release: { tagPrefix:"v" },
+    timeouts: {
+      devServerStartup:30, e2eTest:120,
+      verificationScript:180, qualityCheckMaxIterations:3
+    },
+    review: {
+      firstTouchLineThreshold:50,
+      activityLookbackDays:30, activityFallbackDays:90
     }
   };
   defaults
@@ -99,3 +119,19 @@ All defaults are embedded in the bulk merge pattern. If no config files exist at
 | `.commands.ghPrDecisionSummary` | `boolean` | `true` | Decision summary |
 | `.commands.ghReviewComprehensionCheck` | `boolean` | `true` | Comprehension check |
 | `.commands.ghMergeKnowledgeCheckpoint` | `boolean` | `true` | Knowledge checkpoint |
+| `.merge.strategy` | `"squash"\|"merge"\|"rebase"` | `"squash"` | Default merge strategy |
+| `.merge.deleteBranch` | `boolean` | `true` | Delete branch after merge |
+| `.conventions.commitSubjectMaxLength` | `integer` | `72` | Max commit subject length |
+| `.conventions.commitTypes` | `string[]` | `["feat","fix",...]` | Valid commit type prefixes |
+| `.conventions.branchPatterns.feature` | `string` | `"feature/issue-{N}-{desc}"` | Feature branch pattern |
+| `.conventions.branchPatterns.fix` | `string` | `"fix/issue-{N}-{desc}"` | Fix branch pattern |
+| `.conventions.branchPatterns.docs` | `string` | `"docs/issue-{N}-{desc}"` | Docs branch pattern |
+| `.conventions.additionalBranchTypes` | `object` | `{}` | Extra branch type patterns |
+| `.release.tagPrefix` | `string` | `"v"` | Version tag prefix |
+| `.timeouts.devServerStartup` | `integer` | `30` | Dev server wait (seconds) |
+| `.timeouts.e2eTest` | `integer` | `120` | E2E test timeout (seconds) |
+| `.timeouts.verificationScript` | `integer` | `180` | Verification script timeout (seconds) |
+| `.timeouts.qualityCheckMaxIterations` | `integer` | `3` | Max quality fix-verify cycles |
+| `.review.firstTouchLineThreshold` | `integer` | `50` | First-touch AI pattern threshold (lines) |
+| `.review.activityLookbackDays` | `integer` | `30` | Reviewer activity lookback (days) |
+| `.review.activityFallbackDays` | `integer` | `90` | Extended lookback fallback (days) |

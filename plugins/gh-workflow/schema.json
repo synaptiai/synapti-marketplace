@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/synaptiai/synapti-marketplace/plugins/gh-workflow/schema.json",
   "title": "gh-workflow Configuration",
-  "description": "Configuration schema for the gh-workflow plugin comprehension layer and per-command settings.",
+  "description": "Configuration schema for the gh-workflow plugin — comprehension layer, merge behavior, Git conventions, release settings, timeouts, and review parameters.",
   "type": "object",
   "properties": {
     "$schema": {
@@ -148,6 +148,148 @@
           "type": "boolean",
           "default": true,
           "description": "Show knowledge checkpoint before gh-merge"
+        }
+      },
+      "additionalProperties": false
+    },
+    "merge": {
+      "type": "object",
+      "description": "Merge behavior settings for gh-merge",
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["squash", "merge", "rebase"],
+          "default": "squash",
+          "description": "Default merge strategy for PRs"
+        },
+        "deleteBranch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Delete source branch after merge"
+        }
+      },
+      "additionalProperties": false
+    },
+    "conventions": {
+      "type": "object",
+      "description": "Git conventions for branch naming, commit messages, and validation",
+      "properties": {
+        "commitSubjectMaxLength": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 200,
+          "default": 72,
+          "description": "Maximum character length for commit subject lines"
+        },
+        "commitTypes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "default": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build", "revert"],
+          "description": "Valid conventional commit type prefixes"
+        },
+        "branchPatterns": {
+          "type": "object",
+          "description": "Branch naming templates. Use {N} for issue number and {desc} for kebab-case description.",
+          "properties": {
+            "feature": {
+              "type": "string",
+              "default": "feature/issue-{N}-{desc}",
+              "description": "Branch pattern for new features"
+            },
+            "fix": {
+              "type": "string",
+              "default": "fix/issue-{N}-{desc}",
+              "description": "Branch pattern for bug fixes"
+            },
+            "docs": {
+              "type": "string",
+              "default": "docs/issue-{N}-{desc}",
+              "description": "Branch pattern for documentation changes"
+            }
+          },
+          "additionalProperties": false
+        },
+        "additionalBranchTypes": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "default": {},
+          "description": "Additional branch type patterns beyond the core three. Keys are type names, values are templates with {N} and {desc} placeholders. Example: {\"refactor\": \"refactor/issue-{N}-{desc}\", \"chore\": \"chore/issue-{N}-{desc}\"}"
+        }
+      },
+      "additionalProperties": false
+    },
+    "release": {
+      "type": "object",
+      "description": "Release and tagging settings for gh-release",
+      "properties": {
+        "tagPrefix": {
+          "type": "string",
+          "default": "v",
+          "description": "Prefix for version tags (e.g., 'v' produces 'v1.2.3', empty string produces '1.2.3')"
+        }
+      },
+      "additionalProperties": false
+    },
+    "timeouts": {
+      "type": "object",
+      "description": "Timeout and iteration limits for verification and quality checks",
+      "properties": {
+        "devServerStartup": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 300,
+          "default": 30,
+          "description": "Seconds to wait for dev server to become ready"
+        },
+        "e2eTest": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 600,
+          "default": 120,
+          "description": "Timeout in seconds for E2E test suite execution"
+        },
+        "verificationScript": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 600,
+          "default": 180,
+          "description": "Timeout in seconds for verification script execution"
+        },
+        "qualityCheckMaxIterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 3,
+          "description": "Maximum fix-verify iterations for lint/test/typecheck before escalating to user"
+        }
+      },
+      "additionalProperties": false
+    },
+    "review": {
+      "type": "object",
+      "description": "Code review and reviewer suggestion settings",
+      "properties": {
+        "firstTouchLineThreshold": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 500,
+          "default": 50,
+          "description": "Lines added in a single diff that flags a file as first-touch AI pattern"
+        },
+        "activityLookbackDays": {
+          "type": "integer",
+          "minimum": 7,
+          "maximum": 365,
+          "default": 30,
+          "description": "Days to look back for contributor activity when suggesting reviewers"
+        },
+        "activityFallbackDays": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 365,
+          "default": 90,
+          "description": "Extended lookback window when no activity found within activityLookbackDays"
         }
       },
       "additionalProperties": false
