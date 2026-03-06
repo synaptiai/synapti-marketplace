@@ -40,18 +40,20 @@ Before performing any analysis, read the plugin version and detect whether gh-wo
 
 0. **Read plugin version** (single source of truth):
    ```bash
-   # Try common plugin locations
+   # Try known plugin locations (marketplace source, then cache, then local dev)
    PLUGIN_VERSION=""
-   for P in \
-     "plugins/gh-workflow/.claude-plugin/plugin.json" \
-     "$HOME/.claude/plugins/cache/gh-workflow/.claude-plugin/plugin.json"; do
-     [ -f "$P" ] && { PLUGIN_VERSION=$(jq -r '.version' "$P"); break; }
+   # Marketplace source (unversioned, always matches installed version)
+   for MARKET in "$HOME/.claude/plugins/marketplaces"/*/plugins/gh-workflow/.claude-plugin/plugin.json; do
+     [ -f "$MARKET" ] && { PLUGIN_VERSION=$(jq -r '.version' "$MARKET"); break; }
    done
-   # Fallback: search for it
+   # Cache (versioned dirs — take the latest)
    if [ -z "$PLUGIN_VERSION" ]; then
-     PJ=$(find "$HOME/.claude" -path "*/gh-workflow/.claude-plugin/plugin.json" -maxdepth 6 2>/dev/null | head -1)
-     [ -n "$PJ" ] && PLUGIN_VERSION=$(jq -r '.version' "$PJ")
+     LATEST=$(ls -d "$HOME/.claude/plugins/cache"/*/gh-workflow/*/.claude-plugin/plugin.json 2>/dev/null | sort -V | tail -1)
+     [ -n "$LATEST" ] && PLUGIN_VERSION=$(jq -r '.version' "$LATEST")
    fi
+   # Local development (running from marketplace repo)
+   [ -z "$PLUGIN_VERSION" ] && [ -f "plugins/gh-workflow/.claude-plugin/plugin.json" ] && \
+     PLUGIN_VERSION=$(jq -r '.version' "plugins/gh-workflow/.claude-plugin/plugin.json")
    [ -z "$PLUGIN_VERSION" ] && PLUGIN_VERSION="unknown"
    echo "gh-workflow version: $PLUGIN_VERSION"
    ```
