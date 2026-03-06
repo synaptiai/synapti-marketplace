@@ -1,7 +1,7 @@
 ---
 description: Explore what AI built — loads decision journal, diff, and issue context for interactive Q&A
 argument-hint: [issue-or-pr-number]
-allowed-tools: Bash, Read, Grep, Glob, AskUserQuestion
+allowed-tools: Bash, Read, Write, Grep, Glob, AskUserQuestion
 ---
 
 <!--

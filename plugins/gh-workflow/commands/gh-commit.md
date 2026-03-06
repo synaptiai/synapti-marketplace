@@ -1,7 +1,7 @@
 ---
 description: Use after making changes to commit with context-aware classification that flags out-of-context modifications before committing
 argument-hint: [message]
-allowed-tools: Bash, Read, AskUserQuestion, TaskList, TaskGet
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, TaskList, TaskGet, Skill
 ---
 
 <!--
