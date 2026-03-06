@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/synaptiai/synapti-marketplace/main/plugins/gh-workflow/schema.json",
+  "gates": {
+    "newDependencies": "on",
+    "securityChanges": "on",
+    "schemaChanges": "on",
+    "apiSurfaceChanges": "on",
+    "scopeDeviations": "on",
+    "ambiguousRequirements": "on",
+    "customTriggers": [],
+    "customTriggersMode": "on"
+  },
+  "journal": {
+    "dir": ".decisions",
+    "sensitivityDefault": "public"
+  },
+  "report": {
+    "thresholdFull": 100
+  },
+  "explain": {
+    "sessionSave": "ask",
+    "includeDiff": true
+  },
+  "commands": {
+    "ghStartFamiliarityPrompt": true,
+    "ghCommitFirstTouch": true,
+    "ghPrComprehensionReport": true,
+    "ghPrDecisionSummary": true,
+    "ghReviewComprehensionCheck": true,
+    "ghMergeKnowledgeCheckpoint": true
+  }
+}
