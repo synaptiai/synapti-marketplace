@@ -303,7 +303,7 @@ Skill: decision-journal —
 
 The skill analyzes the fix commits and captures decisions about trade-offs (when choosing between competing reviewer suggestions), scope changes (when feedback requires scope adjustments), and implementation changes (when feedback alters the approach).
 
-Append returned entries to `.decisions/issue-{ISSUE_NUM}.md`. Present any gate triggers via **AskUserQuestion** (see `references/gate-configuration.md`).
+Append returned entries to `{journal-dir}/issue-{ISSUE_NUM}.md` (where `journal-dir` is returned by the skill, default `.decisions`). Present any gate triggers via **AskUserQuestion** (see `references/gate-configuration.md`).
 
 ### Step 7b.2: Stale Report Detection
 

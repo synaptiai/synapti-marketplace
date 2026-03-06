@@ -52,10 +52,22 @@ Quick overview of current GitHub workflow state.
    gh pr list --author @me --state open --json number,title,body,headRefName --jq '.[] | {number, title, has_report: (.body | test("## Comprehension Report")), headRefName}'
    ```
 
+   Read `journal-dir` from CLAUDE.md config (default `.decisions`):
+   ```bash
+   CLAUDE_MD=""
+   [ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
+   [ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
+   JOURNAL_DIR=".decisions"
+   if [ -n "$CLAUDE_MD" ]; then
+     DIR_VAL=$(grep -iE "^\s*-?\s*journal-dir:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
+     [ -n "$DIR_VAL" ] && JOURNAL_DIR="$DIR_VAL"
+   fi
+   ```
+
    For each open PR:
    - Check if PR body contains `## Comprehension Report` section
-   - Check for decision journal entries: `git log --all --oneline -- ".decisions/issue-*.md" | head -1` on the PR branch
-   - Count journal entries: `grep -c "^### " .decisions/issue-*.md 2>/dev/null` (checkout PR branch or use `git show`)
+   - Check for decision journal entries: `git log --all --oneline -- "$JOURNAL_DIR/issue-*.md" | head -1` on the PR branch
+   - Count journal entries: `grep -c "^### " "$JOURNAL_DIR/issue-"*.md 2>/dev/null` (checkout PR branch or use `git show`)
    - Detect stale reports: compare the PR body's report generation timestamp against the latest commit date on the branch
 
 ## Output Format

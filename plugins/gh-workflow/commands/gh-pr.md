@@ -173,7 +173,7 @@ Execute 5 tool calls in a single message:
 - Agent call 1: code-reviewer — "Pre-PR self-review. Analyze diff between $DEFAULT_BRANCH and HEAD. Return P1/P2/P3 findings table with file:line citations."
 - Agent call 2: convention-checker — "Pre-PR convention check. Verify commits, branch naming, and change organization. Return findings."
 - Agent call 3: test-runner — "Pre-PR quality gate. Run lint/test/typecheck commands. Return results table."
-- Skill call 4: decision-journal — "Mode: summarize. Path: .decisions/issue-{ISSUE_NUM}.md. Sensitivity filter: redact internal entries."
+- Skill call 4: decision-journal — "Mode: summarize. Issue number: {ISSUE_NUM}. Sensitivity filter: redact internal entries."
 - Skill call 5: comprehension-report — "Generate comprehension report for Issue #{ISSUE_NUM}."
 ```
 

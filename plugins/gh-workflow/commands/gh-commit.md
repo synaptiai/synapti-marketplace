@@ -201,7 +201,7 @@ Skill: decision-journal —
    Description: Changes staged for commit on branch {BRANCH}"
 ```
 
-The skill returns decision entries and gate triggers. Append entries to `.decisions/issue-{ISSUE_NUM}.md`. If gate triggers fire with config `on`, present them via **AskUserQuestion** using the gate format (see `references/gate-configuration.md`).
+The skill returns decision entries, gate triggers, and the resolved journal directory. Append entries to `{journal-dir}/issue-{ISSUE_NUM}.md` (where `journal-dir` is returned by the skill, default `.decisions`). If gate triggers fire with config `on`, present them via **AskUserQuestion** using the gate format (see `references/gate-configuration.md`).
 
 ## Phase 3: Interactive Planning
 

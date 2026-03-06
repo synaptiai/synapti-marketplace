@@ -49,11 +49,26 @@ If no issue number found from branch or arguments, ask via **AskUserQuestion too
 
 ### Step 1.2: Load Context (Parallel)
 
+**First**, read journal directory from CLAUDE.md config:
+
+```bash
+CLAUDE_MD=""
+[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
+[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
+
+JOURNAL_DIR=".decisions"
+if [ -n "$CLAUDE_MD" ]; then
+  DIR_VAL=$(grep -iE "^\s*-?\s*journal-dir:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
+  [ -n "$DIR_VAL" ] && JOURNAL_DIR="$DIR_VAL"
+fi
+echo "Journal directory: $JOURNAL_DIR"
+```
+
 **Execute in parallel** (single message, multiple tool calls):
 
 1. **Read decision journal**:
    ```bash
-   cat .decisions/issue-"$ISSUE_NUM".md 2>/dev/null
+   cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md" 2>/dev/null
    ```
 
 2. **Read issue details**:
@@ -76,7 +91,7 @@ If no issue number found from branch or arguments, ask via **AskUserQuestion too
 
 5. **Check for Q&A session history**:
    ```bash
-   ls .decisions/explain-issue-"$ISSUE_NUM"-*.md 2>/dev/null
+   ls "$JOURNAL_DIR/explain-issue-$ISSUE_NUM-"*.md 2>/dev/null
    ```
 
 ### Step 1.3: Read Key Source Files
@@ -142,7 +157,7 @@ Let Claude's natural conversational ability handle the Q&A. The command's value 
 | `ask` | Use **AskUserQuestion tool**: "Save this Q&A session?" with options: "Yes" / "No" |
 | `never` | Skip save |
 
-Save location: `.decisions/explain-issue-{N}-{YYYYMMDD-HHMM}.md`
+Save location: `{journal-dir}/explain-issue-{N}-{YYYYMMDD-HHMM}.md` (where `journal-dir` is read from CLAUDE.md config, default `.decisions`)
 
 The saved file is a free-form markdown transcript of the Q&A, not a structured journal entry.
 

@@ -60,8 +60,19 @@ gh issue view "$ISSUE_NUM" --json title,body,labels 2>/dev/null
 ```
 
 ```bash
+# Read journal directory from CLAUDE.md config
+CLAUDE_MD=""
+[ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
+[ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
+
+JOURNAL_DIR=".decisions"
+if [ -n "$CLAUDE_MD" ]; then
+  DIR_VAL=$(grep -iE "^\s*-?\s*journal-dir:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
+  [ -n "$DIR_VAL" ] && JOURNAL_DIR="$DIR_VAL"
+fi
+
 # Read decision journal if it exists
-cat .decisions/issue-"$ISSUE_NUM".md 2>/dev/null
+cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md" 2>/dev/null
 ```
 
 ### Step 2: Read Report Configuration
@@ -132,6 +143,8 @@ Evaluate diff complexity:
 ### Architecture Decisions
 
 {Key structural choices extracted from the decision journal. For each significant decision:}
+
+{**Sensitivity filtering**: Parse each journal entry's `Sensitivity:` field. Only include entries with `Sensitivity: public`. For entries with `Sensitivity: internal`, emit: `- **[Internal decision]** — [See decision journal for details]`. Never include internal decision details, rationale, or context in the PR body.}
 
 - **{Decision title}** — {What was decided and why}. Risk: {risk level}. {If alternatives were considered, mention them briefly.}
 

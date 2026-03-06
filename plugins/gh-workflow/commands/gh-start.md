@@ -173,13 +173,14 @@ Skill: decision-journal —
    Issue body: {body}"
 ```
 
-The skill returns a journal header. Write it to `.decisions/issue-{ISSUE_NUM}.md`:
+The skill returns a journal header and the resolved journal directory (from `journal-dir` config, default `.decisions`). Write the header to `{journal-dir}/issue-{ISSUE_NUM}.md`:
 
 ```bash
-mkdir -p .decisions
+# Use the journal directory returned by the skill (default: .decisions)
+mkdir -p {journal-dir}
 ```
 
-Use the **Write tool** to create `.decisions/issue-{ISSUE_NUM}.md` with the returned header content.
+Use the **Write tool** to create `{journal-dir}/issue-{ISSUE_NUM}.md` with the returned header content.
 
 ## Phase 3: Capability Discovery
 
@@ -320,7 +321,7 @@ Skill: decision-journal —
 ```
 
 The skill returns:
-1. **Decision entries** — append these to `.decisions/issue-{ISSUE_NUM}.md` using the **Edit tool**
+1. **Decision entries** — append these to `{journal-dir}/issue-{ISSUE_NUM}.md` using the **Edit tool** (where `journal-dir` is returned by the skill, default `.decisions`)
 2. **Gate triggers** — if any gates fired with config `on`:
 
 Present each gate trigger using the **AskUserQuestion tool** in this format:

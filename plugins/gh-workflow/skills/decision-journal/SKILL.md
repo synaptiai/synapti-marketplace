@@ -197,7 +197,7 @@ No gate triggers detected.
 ```
 
 The calling command:
-- Appends decision entries to `.decisions/issue-{N}.md`
+- Appends decision entries to `{journal-dir}/issue-{N}.md` (using the resolved `$JOURNAL_DIR` from Step 1)
 - If gate triggers are present, presents AskUserQuestion with the gate format
 - Logs gate responses (approved/bypassed) back to the journal
 
@@ -289,4 +289,4 @@ This skill is invoked by:
 - `gh-pr` — Phase 3 (`summarize` mode)
 - `gh-address` — After feedback aggregation (`log` mode)
 
-The calling command handles all file persistence (Write/Edit to `{journal-dir}/issue-{N}.md`, where `journal-dir` defaults to `.decisions`) and AskUserQuestion presentation for gate triggers.
+The calling command handles all file persistence (Write/Edit to `{journal-dir}/issue-{N}.md`, where `journal-dir` is read from CLAUDE.md config, default `.decisions`) and AskUserQuestion presentation for gate triggers.
