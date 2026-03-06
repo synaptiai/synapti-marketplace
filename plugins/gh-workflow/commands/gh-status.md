@@ -48,9 +48,15 @@ Quick overview of current GitHub workflow state.
 
 5. **Show comprehension health** for your open PRs:
    ```bash
-   # For each open PR, check if PR body contains Comprehension Report section
-   gh pr list --author @me --state open --json number,title,body --jq '.[] | {number, title, has_report: (.body | test("## Comprehension Report"))}'
+   # For each open PR, check comprehension report and decision journal status
+   gh pr list --author @me --state open --json number,title,body,headRefName --jq '.[] | {number, title, has_report: (.body | test("## Comprehension Report")), headRefName}'
    ```
+
+   For each open PR:
+   - Check if PR body contains `## Comprehension Report` section
+   - Check for decision journal entries: `git log --all --oneline -- ".decisions/issue-*.md" | head -1` on the PR branch
+   - Count journal entries: `grep -c "^### " .decisions/issue-*.md 2>/dev/null` (checkout PR branch or use `git show`)
+   - Detect stale reports: compare the PR body's report generation timestamp against the latest commit date on the branch
 
 ## Output Format
 
@@ -72,8 +78,9 @@ Quick overview of current GitHub workflow state.
 - #22 Has unaddressed review feedback
 
 ### Comprehension Health
-- #20 PR title — Comprehension report: yes
-- #22 PR title — Comprehension report: MISSING
+- #20 Feature title — Report: yes, Decisions: 5 entries, Gates: 2/2 approved
+- #22 Fix title — Report: MISSING, Decisions: none
+- #25 Feature title — Report: yes (STALE — updated after report), Decisions: 8 entries
 ```
 
 ## Status Indicators
