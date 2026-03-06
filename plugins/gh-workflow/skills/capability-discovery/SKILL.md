@@ -21,8 +21,10 @@ Before executing workflows, discover what tools are available so commands can:
 ## Discovery Process
 
 <!--
-PARALLEL EXECUTION: Steps 1-6 are fully independent. Execute ALL steps
+PARALLEL EXECUTION: Steps 1-5 are fully independent. Execute ALL five
 simultaneously in a single message with parallel tool calls.
+Step 6 is conditional — only execute if Steps 4-5 detected a tech stack
+or quality commands (see Early Exit section).
 -->
 
 ### Step 1: Scan for Custom Agents
