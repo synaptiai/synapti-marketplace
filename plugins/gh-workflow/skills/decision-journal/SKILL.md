@@ -183,6 +183,19 @@ git diff "$DEFAULT_BRANCH"...HEAD --name-only | grep -E "(package\.json|requirem
 git diff "$DEFAULT_BRANCH"...HEAD --name-only | grep -iE "(auth|security|permission|token|secret|crypto|session|\.env)" 2>/dev/null
 ```
 
+```bash
+# Evaluate custom trigger patterns (glob patterns from config)
+CUSTOM_TRIGGERS=$(echo "$GHW_CONFIG" | jq -r '.gates.customTriggers[]' 2>/dev/null)
+if [ -n "$CUSTOM_TRIGGERS" ]; then
+  CHANGED_FILES=$(git diff "$DEFAULT_BRANCH"...HEAD --name-only)
+  echo "$CUSTOM_TRIGGERS" | while read -r pattern; do
+    echo "$CHANGED_FILES" | grep -E "$pattern" 2>/dev/null
+  done
+fi
+```
+
+Custom trigger matches use the `.gates.customTriggersMode` config key (`on`/`log`/`off`), following the same behavior as the named gates.
+
 For each trigger that fires:
 1. Check the corresponding config key
 2. If `on` — include in gate trigger output
