@@ -236,10 +236,10 @@ JOURNAL_DIR=$(jq -r '.journal.dir // empty' .claude/settings.gh-workflow.local.j
 [ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=".decisions"
 
 # Read the specific journal file using the issue number from the invocation prompt
-cat "$JOURNAL_DIR/issue-{ISSUE_NUM}.md" 2>/dev/null
+cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md" 2>/dev/null
 ```
 
-**Note**: `{ISSUE_NUM}` is the issue number provided by the calling command in the invocation prompt (e.g., `"Mode: summarize. Issue number: 42."`). If not provided, fall back to branch detection: `echo "$(git branch --show-current)" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+'`.
+**Note**: `$ISSUE_NUM` should be set from the issue number provided by the calling command in the invocation prompt (e.g., `"Mode: summarize. Issue number: 42."`). If not provided, fall back to branch detection: `ISSUE_NUM=$(git branch --show-current | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')`.
 
 2. Parse entries by splitting on `---` separators
 3. For each entry:
