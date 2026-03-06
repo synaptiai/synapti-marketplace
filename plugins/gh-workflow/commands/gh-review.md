@@ -29,7 +29,7 @@ Review a pull request with multi-faceted analysis, task tracking, and prioritize
 
 **CONSTRAINTS**:
 - Must checkout the PR branch and read actual files, not just analyze the diff
-- Must check all 6 review facets: (1) Code Quality, (2) Security, (3) Conventions, (4) Tests, (5) Requirements, (6) Comprehension Assessment
+- Must check 5 core review facets: (1) Code Quality, (2) Security, (3) Conventions, (4) Tests, (5) Requirements — plus (6) Comprehension Assessment if enabled via `gh-review-comprehension-check` config (default: `true`)
 - When asserting code behaves a certain way, cite the specific file:line. If unable to cite, mark as UNVERIFIED
 - Always display findings BEFORE asking user for review decision
 - Never submit review without user approval
@@ -39,7 +39,7 @@ Review a pull request with multi-faceted analysis, task tracking, and prioritize
 
 **FAILURE CONDITIONS** (output is unacceptable if any apply):
 - Review submitted without reading the actual diff
-- Review skips any of the 6 review facets
+- Review skips any of the 5 core review facets (or Facet 6 when enabled)
 - P1 security issue missed (hardcoded secrets, injection vectors)
 - Review posted without user explicitly approving the decision
 - Findings shown after asking for decision (violates findings-first rule)

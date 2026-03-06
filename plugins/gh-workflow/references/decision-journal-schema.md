@@ -78,7 +78,7 @@ Entries are separated by `---` (horizontal rule). The header is the first sectio
 | Level | When to Use | PR Summary Behavior |
 |-------|------------|-------------------|
 | `public` | Default. General technical decisions | Included verbatim in PR body |
-| `internal` | Security rationale, credential handling, vulnerability remediation, access control | Redacted to `[Internal decision — see .decisions/ file for details]` |
+| `internal` | Security rationale, credential handling, vulnerability remediation, access control | Redacted to `[Internal decision — see decision journal for details]` |
 
 **Never include in any entry (even `internal`):**
 - Specific vulnerability details or exploitation vectors

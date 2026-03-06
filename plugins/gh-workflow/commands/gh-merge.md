@@ -76,6 +76,20 @@ Merge an approved pull request with standardized settings.
 
    **Check configuration** — read `gh-merge-knowledge-checkpoint` from CLAUDE.md. Default: `true`. If `false`, skip this step.
 
+   ```bash
+   CLAUDE_MD=""
+   [ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
+   [ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
+
+   KNOWLEDGE_CHECKPOINT="true"
+   if [ -n "$CLAUDE_MD" ]; then
+     KC_VAL=$(grep -iE "^\s*-?\s*gh-merge-knowledge-checkpoint:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
+     [ -n "$KC_VAL" ] && KNOWLEDGE_CHECKPOINT="$KC_VAL"
+   fi
+   ```
+
+   If `$KNOWLEDGE_CHECKPOINT` is `false`, skip to Step 7.
+
    Extract the Comprehension Report from the PR body:
    ```bash
    gh pr view $ARGUMENTS --json body --jq '.body'

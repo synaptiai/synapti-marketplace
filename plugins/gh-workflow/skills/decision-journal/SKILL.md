@@ -28,7 +28,7 @@ This skill operates in one of three modes. The calling command specifies the mod
 | `log` | gh-start, gh-commit, gh-address after changes | Extracts decisions from diff + evaluates gate triggers |
 | `summarize` | gh-pr during PR content generation | Condenses journal for PR body |
 
-Read the mode from the invocation prompt and execute only that mode's instructions.
+Read the mode from the invocation prompt and execute only that mode's instructions. If the mode is not one of `init`, `log`, or `summarize`, return an error: `"Unknown mode: {mode}. Expected one of: init, log, summarize."`
 
 ## Mode: init
 
@@ -203,13 +203,17 @@ The calling command:
 
 ## Mode: summarize
 
-**Input** (from invocation prompt): Issue number (or path to the journal file), sensitivity filter preference.
+**Input** (from invocation prompt): Issue number, sensitivity filter preference.
 
 **Process:**
 
-1. Read journal configuration and the journal file:
+1. Extract the issue number from the invocation prompt and read journal configuration:
 
 ```bash
+# Extract issue number from invocation prompt (the calling command provides this)
+# Example invocation: "Mode: summarize. Issue number: 42. Sensitivity filter: redact internal entries."
+# Parse the issue number from the prompt text.
+
 # Read journal-dir from CLAUDE.md (same as log mode Step 1)
 CLAUDE_MD=""
 [ -f ".claude/CLAUDE.md" ] && CLAUDE_MD=".claude/CLAUDE.md"
@@ -221,14 +225,16 @@ if [ -n "$CLAUDE_MD" ]; then
   [ -n "$DIR_VAL" ] && JOURNAL_DIR="$DIR_VAL"
 fi
 
-# Read the specific journal file (use issue number from invocation, NOT a glob)
-cat "$JOURNAL_DIR/issue-${ISSUE_NUM}.md" 2>/dev/null
+# Read the specific journal file using the issue number from the invocation prompt
+cat "$JOURNAL_DIR/issue-{ISSUE_NUM}.md" 2>/dev/null
 ```
+
+**Note**: `{ISSUE_NUM}` is the issue number provided by the calling command in the invocation prompt (e.g., `"Mode: summarize. Issue number: 42."`). If not provided, fall back to branch detection: `echo "$(git branch --show-current)" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+'`.
 
 2. Parse entries by splitting on `---` separators
 3. For each entry:
    - If `Sensitivity: public` — include full entry in summary
-   - If `Sensitivity: internal` — replace with: `[Internal decision — see .decisions/ file for details]`
+   - If `Sensitivity: internal` — replace with: `[Internal decision — see decision journal for details]`
 4. Condense into a summary format:
 
 **Output format:**
@@ -254,7 +260,7 @@ cat "$JOURNAL_DIR/issue-${ISSUE_NUM}.md" 2>/dev/null
 
 {For internal entries:}
 
-**{Category}: [Internal decision]** — [See .decisions/ file for details]
+**{Category}: [Internal decision]** — [See decision journal for details]
 
 ### Gate Activity
 

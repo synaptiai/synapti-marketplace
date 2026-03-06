@@ -110,6 +110,13 @@ Available labels for this repository:
 - journal-dir: .decisions
 - journal-sensitivity-default: public
 
+### Report
+- report-threshold-full: 100
+
+### Explain
+- explain-include-diff: true
+- explain-session-save: ask
+
 ### Per-Command Toggles
 - gh-start-familiarity-prompt: true
 - gh-commit-first-touch: true

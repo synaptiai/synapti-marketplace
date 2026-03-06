@@ -37,7 +37,13 @@ Context loader for interactive Q&A about what AI built on your behalf. Loads the
 
 ### Step 1.1: Determine Target
 
-If `$ARGUMENTS` is provided, use it as the issue or PR number. Otherwise, detect from current branch:
+If `$ARGUMENTS` is provided, normalize it to a numeric issue/PR number:
+
+```bash
+ISSUE_NUM=$(echo "$ARGUMENTS" | grep -oE '[0-9]+$')
+```
+
+If `$ARGUMENTS` is not provided, detect from current branch:
 
 ```bash
 BRANCH=$(git branch --show-current)
@@ -49,7 +55,7 @@ If no issue number found from branch or arguments, ask via **AskUserQuestion too
 
 ### Step 1.2: Load Context (Parallel)
 
-**First**, read journal directory from CLAUDE.md config:
+**First**, read journal directory and explain config from CLAUDE.md:
 
 ```bash
 CLAUDE_MD=""
@@ -57,11 +63,19 @@ CLAUDE_MD=""
 [ -z "$CLAUDE_MD" ] && [ -f "CLAUDE.md" ] && CLAUDE_MD="CLAUDE.md"
 
 JOURNAL_DIR=".decisions"
+INCLUDE_DIFF="true"
+SESSION_SAVE="ask"
 if [ -n "$CLAUDE_MD" ]; then
   DIR_VAL=$(grep -iE "^\s*-?\s*journal-dir:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
   [ -n "$DIR_VAL" ] && JOURNAL_DIR="$DIR_VAL"
+  DIFF_VAL=$(grep -iE "^\s*-?\s*explain-include-diff:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
+  [ -n "$DIFF_VAL" ] && INCLUDE_DIFF="$DIFF_VAL"
+  SAVE_VAL=$(grep -iE "^\s*-?\s*explain-session-save:" "$CLAUDE_MD" 2>/dev/null | sed 's/.*:\s*//' | tr -d ' ')
+  [ -n "$SAVE_VAL" ] && SESSION_SAVE="$SAVE_VAL"
 fi
 echo "Journal directory: $JOURNAL_DIR"
+echo "Include diff: $INCLUDE_DIFF"
+echo "Session save: $SESSION_SAVE"
 ```
 
 **Execute in parallel** (single message, multiple tool calls):
@@ -76,7 +90,7 @@ echo "Journal directory: $JOURNAL_DIR"
    gh issue view "$ISSUE_NUM" --json title,body,labels,comments 2>/dev/null
    ```
 
-3. **Read diff** (check `explain-include-diff` config, default: `true`):
+3. **Read diff** — check `explain-include-diff` config (read from CLAUDE.md in Step 1.2 config block). Default: `true`. If `false`, skip the diff loading and note "Diff loading disabled by config.":
    ```bash
    DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
    git diff "$DEFAULT_BRANCH"...HEAD --stat
@@ -149,7 +163,7 @@ Let Claude's natural conversational ability handle the Q&A. The command's value 
 
 ## Phase 4: Session Save
 
-**Check configuration** — read `explain-session-save` from CLAUDE.md. Default: `ask`.
+**Check configuration** — use the `SESSION_SAVE` value read from CLAUDE.md in Step 1.2. Default: `ask`.
 
 | Config | Behavior |
 |--------|----------|
@@ -158,6 +172,8 @@ Let Claude's natural conversational ability handle the Q&A. The command's value 
 | `never` | Skip save |
 
 Save location: `{journal-dir}/explain-issue-{N}-{YYYYMMDD-HHMM}.md` (where `journal-dir` is read from CLAUDE.md config, default `.decisions`)
+
+**Path safety**: The issue number `{N}` must be a bare integer (no path separators, no special characters). Validate before constructing the path: `echo "$ISSUE_NUM" | grep -qE '^[0-9]+$' || { echo "ERROR: Invalid issue number"; exit 1; }`.
 
 The saved file is a free-form markdown transcript of the Q&A, not a structured journal entry.
 
