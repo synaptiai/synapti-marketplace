@@ -242,11 +242,19 @@ Mark each task as completed when its corresponding agent results are collected a
 
 If any quality command (from agent or fallback) failed, apply bounded verification:
 
+Read max iterations from settings:
+```bash
+MAX_ITERATIONS=$(jq -r '.timeouts.qualityCheckMaxIterations // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$MAX_ITERATIONS" ] && MAX_ITERATIONS=$(jq -r '.timeouts.qualityCheckMaxIterations // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$MAX_ITERATIONS" ] && MAX_ITERATIONS=$(jq -r '.timeouts.qualityCheckMaxIterations // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$MAX_ITERATIONS" ] && MAX_ITERATIONS="3"
+```
+
 1. Parse error output to identify root cause
 2. Fix the issue inline immediately (Edit tool, not TaskCreate)
 3. Commit the fix: `git commit -m "fix: [what was fixed]"`
 4. Re-run ALL quality commands in parallel
-5. **Max iterations** (read `.timeouts.qualityCheckMaxIterations` from settings, default: 3). After max iterations → include failures as P1 findings in Step 3.8
+5. **After MAX_ITERATIONS failed iterations** → include failures as P1 findings in Step 3.8
 
 ### Step 3.6: Runtime Verification (if available)
 

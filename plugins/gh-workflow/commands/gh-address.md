@@ -212,7 +212,15 @@ Use the quality commands discovered in Phase 2 (LINT_CMD, TEST_CMD, TYPECHECK_CM
 
 Execute a bounded fix-verify cycle. **Fix immediately — do not create tasks** for lint/test failures. These are mechanical fixes.
 
-**Iteration 1 (and up to 3 total):**
+Read max iterations from settings:
+```bash
+MAX_ITERATIONS=$(jq -r '.timeouts.qualityCheckMaxIterations // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$MAX_ITERATIONS" ] && MAX_ITERATIONS=$(jq -r '.timeouts.qualityCheckMaxIterations // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$MAX_ITERATIONS" ] && MAX_ITERATIONS=$(jq -r '.timeouts.qualityCheckMaxIterations // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$MAX_ITERATIONS" ] && MAX_ITERATIONS="3"
+```
+
+**Iteration 1 (and up to MAX_ITERATIONS total):**
 
 1. **Run all quality commands in parallel** (3 Bash tool calls in a single message):
    ```
@@ -229,7 +237,7 @@ Execute a bounded fix-verify cycle. **Fix immediately — do not create tasks** 
    - Commit the fix: `git commit -m "fix: [what was fixed]"`
    - Re-run ALL checks (go back to step 1)
 
-4. **Max iterations** (read `.timeouts.qualityCheckMaxIterations` from settings, default: 3). After max iterations → escalate to user via **AskUserQuestion tool**:
+4. **After MAX_ITERATIONS failed iterations** → escalate to user via **AskUserQuestion tool**:
    - **Option 1**: "Show me the failures, I'll fix manually"
    - **Option 2**: "Push with known failures and note in response"
    - **Option 3**: "Abort — I need to investigate"
