@@ -82,34 +82,34 @@ Use the extracted `ISSUE_NUM` in all subsequent commands where `$ARGUMENTS` was 
 
 1. **Fetch the issue**:
    ```bash
-   gh issue view $ARGUMENTS
+   gh issue view $ISSUE_NUM
    ```
 
 2. **Fetch all issue comments**:
    ```bash
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-   gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '.[] | "---\n**@\(.user.login)** on \(.created_at):\n\(.body)\n"'
+   gh api repos/$REPO/issues/$ISSUE_NUM/comments --jq '.[] | "---\n**@\(.user.login)** on \(.created_at):\n\(.body)\n"'
    ```
 
 3. **Fetch issue timeline for related context**:
    ```bash
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-   gh api repos/$REPO/issues/$ARGUMENTS/timeline --jq '.[] | select(.event == "cross-referenced" or .event == "referenced") | "\(.event): \(.source.issue.title // .commit_id)"'
+   gh api repos/$REPO/issues/$ISSUE_NUM/timeline --jq '.[] | select(.event == "cross-referenced" or .event == "referenced") | "\(.event): \(.source.issue.title // .commit_id)"'
    ```
 
 4. **Check for linked issues/PRs**:
    ```bash
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-   gh api repos/$REPO/issues/$ARGUMENTS --jq '.body' | grep -oE '#[0-9]+'
+   gh api repos/$REPO/issues/$ISSUE_NUM --jq '.body' | grep -oE '#[0-9]+'
    ```
 
 5. **Assign the issue**:
    ```bash
-   gh issue edit $ARGUMENTS --add-assignee @me
+   gh issue edit $ISSUE_NUM --add-assignee @me
    ```
 
 **If issue not found** (gh issue view fails): Report error and stop:
-> "Issue #$ARGUMENTS not found. Verify the issue number and try again."
+> "Issue #$ISSUE_NUM not found. Verify the issue number and try again."
 
 ### Step 2.2b: Familiarity Prompt (Conditional)
 
