@@ -4,12 +4,15 @@
 
 set -euo pipefail
 
+# Graceful: if jq unavailable, skip learning
+command -v jq &>/dev/null || exit 0
+
 INPUT=$(cat)
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 
 # Determine journal directory
 JOURNAL_DIR=".decisions"
-for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json"; do
+for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
   if [ -f "$SETTINGS_FILE" ]; then
     DIR=$(jq -r '.journal.dir // empty' "$SETTINGS_FILE" 2>/dev/null)
     [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
@@ -18,7 +21,7 @@ done
 
 # Check if learning is enabled
 LEARNING_ENABLED="true"
-for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json"; do
+for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
   if [ -f "$SETTINGS_FILE" ]; then
     ENABLED=$(jq -r '.learning.enabled // empty' "$SETTINGS_FILE" 2>/dev/null)
     [ -n "$ENABLED" ] && LEARNING_ENABLED="$ENABLED" && break

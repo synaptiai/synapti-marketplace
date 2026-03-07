@@ -35,7 +35,8 @@ SKILL LIBRARY (14 skills)
       ├── feedback-resolution
       ├── merge-and-release
       ├── runtime-verification
-      └── team-coordination
+      ├── team-coordination
+      └── learned/ (promoted from proposals)
 
 AGENTS (5)
   ├── implementation-planner (task decomposition)

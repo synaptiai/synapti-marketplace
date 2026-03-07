@@ -4,6 +4,9 @@
 
 set -euo pipefail
 
+# Graceful: if jq unavailable, skip verification
+command -v jq &>/dev/null || exit 0
+
 INPUT=$(cat)
 TASK_SUBJECT=$(echo "$INPUT" | jq -r '.task.subject // empty')
 TASK_DESC=$(echo "$INPUT" | jq -r '.task.description // empty')

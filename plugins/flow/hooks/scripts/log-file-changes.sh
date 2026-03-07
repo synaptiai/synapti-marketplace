@@ -4,6 +4,9 @@
 
 set -euo pipefail
 
+# Graceful: if jq unavailable, skip logging
+command -v jq &>/dev/null || exit 0
+
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
@@ -13,7 +16,7 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 
 # Determine journal directory from settings
 JOURNAL_DIR=".decisions"
-for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json"; do
+for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
   if [ -f "$SETTINGS_FILE" ]; then
     DIR=$(jq -r '.journal.dir // empty' "$SETTINGS_FILE" 2>/dev/null)
     [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break

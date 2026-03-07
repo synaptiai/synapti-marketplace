@@ -36,7 +36,8 @@ Hard to reverse or high-impact. Always require human confirmation.
 |--------|-----------|-------------------|
 | PR merge | Changes default branch | Revert commit |
 | Release creation | Public artifact | Delete release + tag |
-| Force push | Overwrites remote | Very difficult |
+| Force push (`--force`) | Overwrites remote | Very difficult |
+| Force push (`--force-with-lease`) | Safe remote-aware push | Tier 2 (journal) — not blocked |
 | Branch deletion (force) | Loses unmerged work | Reflog only |
 
 ## Configuration

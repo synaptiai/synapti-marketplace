@@ -4,6 +4,12 @@
 
 set -euo pipefail
 
+# Fail-safe: if jq unavailable, block rather than allow
+if ! command -v jq &>/dev/null; then
+  echo "BLOCKED: jq not available — cannot verify command safety. Install jq to proceed." >&2
+  exit 2
+fi
+
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
