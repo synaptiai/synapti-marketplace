@@ -40,6 +40,9 @@ Merge an approved pull request with standardized settings.
    [ -z "$MERGE_STRATEGY" ] && MERGE_STRATEGY=$(jq -r '.merge.strategy // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
    [ -z "$MERGE_STRATEGY" ] && MERGE_STRATEGY="squash"
 
+   # Validate merge strategy (prevent command injection)
+   case "$MERGE_STRATEGY" in squash|merge|rebase) ;; *) echo "ERROR: Invalid merge strategy: $MERGE_STRATEGY"; exit 1;; esac
+
    # Read merge.deleteBranch (boolean — use 'has' check to preserve false)
    DELETE_BRANCH=$(jq -r 'if .merge | has("deleteBranch") then .merge.deleteBranch else empty end' .claude/settings.gh-workflow.local.json 2>/dev/null)
    [ -z "$DELETE_BRANCH" ] && DELETE_BRANCH=$(jq -r 'if .merge | has("deleteBranch") then .merge.deleteBranch else empty end' .claude/settings.gh-workflow.json 2>/dev/null)
