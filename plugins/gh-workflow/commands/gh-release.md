@@ -42,10 +42,11 @@ If no argument provided, analyze commits to suggest the appropriate bump type.
 
 ```bash
 # Read tag prefix (local > project > user > default)
-TAG_PREFIX=$(jq -r '.release.tagPrefix // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
-[ -z "$TAG_PREFIX" ] && TAG_PREFIX=$(jq -r '.release.tagPrefix // empty' .claude/settings.gh-workflow.json 2>/dev/null)
-[ -z "$TAG_PREFIX" ] && TAG_PREFIX=$(jq -r '.release.tagPrefix // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
-[ -z "$TAG_PREFIX" ] && TAG_PREFIX="v"
+# Uses 'has' check to allow empty string "" for unprefixed tags
+TAG_PREFIX=$(jq -r 'if .release | has("tagPrefix") then .release.tagPrefix else "UNSET" end' .claude/settings.gh-workflow.local.json 2>/dev/null || echo "UNSET")
+[ "$TAG_PREFIX" = "UNSET" ] && TAG_PREFIX=$(jq -r 'if .release | has("tagPrefix") then .release.tagPrefix else "UNSET" end' .claude/settings.gh-workflow.json 2>/dev/null || echo "UNSET")
+[ "$TAG_PREFIX" = "UNSET" ] && TAG_PREFIX=$(jq -r 'if .release | has("tagPrefix") then .release.tagPrefix else "UNSET" end' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null || echo "UNSET")
+[ "$TAG_PREFIX" = "UNSET" ] && TAG_PREFIX="v"
 ```
 
 Use `$TAG_PREFIX` throughout instead of hardcoded `v` prefix.
