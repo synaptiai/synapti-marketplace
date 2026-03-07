@@ -28,5 +28,33 @@
     "ghPrDecisionSummary": true,
     "ghReviewComprehensionCheck": true,
     "ghMergeKnowledgeCheckpoint": true
+  },
+  "merge": {
+    "strategy": "squash",
+    "deleteBranch": true
+  },
+  "conventions": {
+    "commitSubjectMaxLength": 72,
+    "commitTypes": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build", "revert"],
+    "branchPatterns": {
+      "feature": "feature/issue-{N}-{desc}",
+      "fix": "fix/issue-{N}-{desc}",
+      "docs": "docs/issue-{N}-{desc}"
+    },
+    "additionalBranchTypes": {}
+  },
+  "release": {
+    "tagPrefix": "v"
+  },
+  "timeouts": {
+    "devServerStartup": 30,
+    "e2eTest": 120,
+    "verificationScript": 180,
+    "qualityCheckMaxIterations": 3
+  },
+  "review": {
+    "firstTouchLineThreshold": 50,
+    "activityLookbackDays": 30,
+    "activityFallbackDays": 90
   }
 }
