@@ -12,7 +12,7 @@ Create a new release with changelog generation.
 
 ## Contract
 
-**GOAL**: Tagged release with auto-generated changelog published on GitHub. Testable: `gh release view vX.Y.Z` returns a valid release.
+**GOAL**: Tagged release with auto-generated changelog published on GitHub. Testable: `gh release view ${TAG_PREFIX}X.Y.Z` returns a valid release.
 
 **CONSTRAINTS**:
 - Always show complete impact assessment before creating release
@@ -37,6 +37,19 @@ Create a new release with changelog generation.
   - `major` (1.2.0 → 2.0.0): Breaking changes
 
 If no argument provided, analyze commits to suggest the appropriate bump type.
+
+## Phase 0: Read Release Settings
+
+```bash
+# Read tag prefix (local > project > user > default)
+# Uses 'has' check to allow empty string "" for unprefixed tags
+TAG_PREFIX=$(jq -r 'if .release | has("tagPrefix") then .release.tagPrefix else "UNSET" end' .claude/settings.gh-workflow.local.json 2>/dev/null || echo "UNSET")
+[ "$TAG_PREFIX" = "UNSET" ] && TAG_PREFIX=$(jq -r 'if .release | has("tagPrefix") then .release.tagPrefix else "UNSET" end' .claude/settings.gh-workflow.json 2>/dev/null || echo "UNSET")
+[ "$TAG_PREFIX" = "UNSET" ] && TAG_PREFIX=$(jq -r 'if .release | has("tagPrefix") then .release.tagPrefix else "UNSET" end' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null || echo "UNSET")
+[ "$TAG_PREFIX" = "UNSET" ] && TAG_PREFIX="v"
+```
+
+Use `$TAG_PREFIX` throughout instead of hardcoded `v` prefix.
 
 ## Phase 1: Preparation
 
@@ -99,7 +112,7 @@ If no argument provided, analyze commits to suggest the appropriate bump type.
 
 1. **Get current version** from latest tag:
    ```bash
-   CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+   CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | { read tag; echo "${tag#$TAG_PREFIX}"; } || echo "0.0.0")
    ```
 
 2. **Calculate new version** based on bump type:
@@ -115,8 +128,8 @@ First, display the assessment:
 **Release Impact Assessment**
 
 Release type: [patch/minor/major]
-Current version: vX.Y.Z
-New version: vX.Y.Z (calculated)
+Current version: {TAG_PREFIX}X.Y.Z
+New version: {TAG_PREFIX}X.Y.Z (calculated)
 
 **Commits included in this release:**
 - abc1234 feat: add new capability
@@ -137,8 +150,8 @@ Then **invoke the AskUserQuestion tool** with these options:
 
 1. **Create git tag**:
    ```bash
-   git tag -a vX.Y.Z -m "Release vX.Y.Z"
-   git push origin vX.Y.Z
+   git tag -a ${TAG_PREFIX}X.Y.Z -m "Release ${TAG_PREFIX}X.Y.Z"
+   git push origin ${TAG_PREFIX}X.Y.Z
    ```
 
 2. **Generate release notes** from commits:
@@ -153,7 +166,7 @@ Then **invoke the AskUserQuestion tool** with these options:
 
 3. **Create GitHub Release**:
    ```bash
-   gh release create vX.Y.Z --title "vX.Y.Z" --notes "RELEASE_NOTES"
+   gh release create ${TAG_PREFIX}X.Y.Z --title "${TAG_PREFIX}X.Y.Z" --notes "RELEASE_NOTES"
    ```
 
 ## Release Notes Format
@@ -173,7 +186,7 @@ Then **invoke the AskUserQuestion tool** with these options:
 ### Other Changes
 - Description (#PR)
 
-**Full Changelog**: https://github.com/{owner}/{repo}/compare/vPREVIOUS...vX.Y.Z
+**Full Changelog**: https://github.com/{owner}/{repo}/compare/{TAG_PREFIX}PREVIOUS...{TAG_PREFIX}X.Y.Z
 ```
 
 ## Phase 6: Verification
@@ -182,12 +195,12 @@ After release creation, verify everything completed successfully:
 
 1. **Check tag exists**:
    ```bash
-   git tag -l "vX.Y.Z"
+   git tag -l "${TAG_PREFIX}X.Y.Z"
    ```
 
 2. **Check GitHub Release exists**:
    ```bash
-   gh release view vX.Y.Z --json tagName,name,publishedAt
+   gh release view ${TAG_PREFIX}X.Y.Z --json tagName,name,publishedAt
    ```
 
 3. **Verify checklist**:
@@ -201,13 +214,13 @@ After release creation, verify everything completed successfully:
 
 ### Success
 ```
-## Released vX.Y.Z
+## Released {TAG_PREFIX}X.Y.Z
 
-**Previous version:** vX.Y.Z-1
-**New version:** vX.Y.Z
+**Previous version:** {TAG_PREFIX}X.Y.Z-1
+**New version:** {TAG_PREFIX}X.Y.Z
 **Release type:** [patch/minor/major]
 
-**Release URL:** https://github.com/{owner}/{repo}/releases/tag/vX.Y.Z
+**Release URL:** https://github.com/{owner}/{repo}/releases/tag/{TAG_PREFIX}X.Y.Z
 
 ### What's Included
 - N commits
@@ -229,12 +242,12 @@ After release creation, verify everything completed successfully:
 {actionable steps}
 
 ### Cleanup (if partial failure)
-- Delete tag: `git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z`
+- Delete tag: `git tag -d ${TAG_PREFIX}X.Y.Z && git push origin :refs/tags/${TAG_PREFIX}X.Y.Z`
 ```
 
 ## Rules
 
-- Tag format: `vX.Y.Z` (with 'v' prefix)
+- Tag format: `${TAG_PREFIX}X.Y.Z` (configurable via `.release.tagPrefix`, default: `v`)
 - Always show impact assessment before making changes
 - Always verify release after creation
 - Generate changelog automatically from commits

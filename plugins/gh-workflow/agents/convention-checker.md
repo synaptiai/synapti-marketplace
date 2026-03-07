@@ -20,6 +20,45 @@ You are a Git convention validator. Your task is to verify adherence to reposito
 
 ## Validation Process
 
+### Step 0: Read Convention Settings
+
+Before validating, read configurable conventions from settings (local > project > user > schema defaults):
+
+```bash
+# Read conventions using Pattern A (cascading reads)
+COMMIT_MAX_LENGTH=$(jq -r '.conventions.commitSubjectMaxLength // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$COMMIT_MAX_LENGTH" ] && COMMIT_MAX_LENGTH=$(jq -r '.conventions.commitSubjectMaxLength // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$COMMIT_MAX_LENGTH" ] && COMMIT_MAX_LENGTH=$(jq -r '.conventions.commitSubjectMaxLength // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$COMMIT_MAX_LENGTH" ] && COMMIT_MAX_LENGTH="72"
+
+COMMIT_TYPES=$(jq -r '.conventions.commitTypes // empty | join("|")' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$COMMIT_TYPES" ] && COMMIT_TYPES=$(jq -r '.conventions.commitTypes // empty | join("|")' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$COMMIT_TYPES" ] && COMMIT_TYPES=$(jq -r '.conventions.commitTypes // empty | join("|")' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$COMMIT_TYPES" ] && COMMIT_TYPES="feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert"
+
+# Read branch patterns (merge all tiers: defaults < user < project < local)
+# Each tier contributes both branchPatterns and additionalBranchTypes
+BRANCH_PATTERNS=$(jq -rn '
+  {feature:"feature/issue-{N}-{desc}", fix:"fix/issue-{N}-{desc}", docs:"docs/issue-{N}-{desc}"}
+    * (try (input | (.conventions.additionalBranchTypes // {}) * (.conventions.branchPatterns // {})) catch {})
+    * (try (input | (.conventions.additionalBranchTypes // {}) * (.conventions.branchPatterns // {})) catch {})
+    * (try (input | (.conventions.additionalBranchTypes // {}) * (.conventions.branchPatterns // {})) catch {})
+  | to_entries[] | "\(.key)=\(.value)"
+' "$HOME/.claude/settings.gh-workflow.json" \
+  ".claude/settings.gh-workflow.json" \
+  ".claude/settings.gh-workflow.local.json" 2>/dev/null)
+[ -z "$BRANCH_PATTERNS" ] && BRANCH_PATTERNS="feature=feature/issue-{N}-{desc}
+fix=fix/issue-{N}-{desc}
+docs=docs/issue-{N}-{desc}"
+```
+
+Default branch patterns (when no settings file exists):
+- `feature=feature/issue-{N}-{desc}`
+- `fix=fix/issue-{N}-{desc}`
+- `docs=docs/issue-{N}-{desc}`
+
+Then check CLAUDE.md for project-specific overrides (CLAUDE.md takes precedence over settings).
+
 ### Step 1: Branch Name Check
 
 ```bash
@@ -28,12 +67,11 @@ BRANCH=$(git branch --show-current)
 echo "Branch: $BRANCH"
 ```
 
-Valid patterns:
-- `feature/issue-{N}-{description}` - New features
-- `fix/issue-{N}-{description}` - Bug fixes
-- `docs/issue-{N}-{description}` - Documentation
-- `refactor/issue-{N}-{description}` - Code refactoring
-- `chore/issue-{N}-{description}` - Maintenance
+Valid patterns (from settings or defaults, merged with `additionalBranchTypes`):
+- `feature/issue-{N}-{description}` - New features (default)
+- `fix/issue-{N}-{description}` - Bug fixes (default)
+- `docs/issue-{N}-{description}` - Documentation (default)
+- Plus any patterns from `conventions.additionalBranchTypes` (e.g., `refactor/`, `chore/`)
 
 **Issues to flag**:
 - Missing issue number
@@ -58,15 +96,15 @@ type(scope): description
 [optional footer]
 ```
 
-**Valid types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`, `ci`, `build`, `revert`
+**Valid types**: Use configured `COMMIT_TYPES` from Step 0 (default: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`, `ci`, `build`, `revert`)
 
 **Issues to flag**:
 - Missing type prefix
-- Invalid type
+- Invalid type (not in configured list)
 - No colon after type/scope
 - Description starts with capital letter
 - Description ends with period
-- Line exceeds 72 characters (subject)
+- Line exceeds `COMMIT_MAX_LENGTH` characters (default: 72)
 
 ### Step 3: PR Format Check
 

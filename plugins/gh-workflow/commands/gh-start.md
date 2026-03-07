@@ -82,34 +82,34 @@ Use the extracted `ISSUE_NUM` in all subsequent commands where `$ARGUMENTS` was 
 
 1. **Fetch the issue**:
    ```bash
-   gh issue view $ARGUMENTS
+   gh issue view $ISSUE_NUM
    ```
 
 2. **Fetch all issue comments**:
    ```bash
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-   gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '.[] | "---\n**@\(.user.login)** on \(.created_at):\n\(.body)\n"'
+   gh api repos/$REPO/issues/$ISSUE_NUM/comments --jq '.[] | "---\n**@\(.user.login)** on \(.created_at):\n\(.body)\n"'
    ```
 
 3. **Fetch issue timeline for related context**:
    ```bash
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-   gh api repos/$REPO/issues/$ARGUMENTS/timeline --jq '.[] | select(.event == "cross-referenced" or .event == "referenced") | "\(.event): \(.source.issue.title // .commit_id)"'
+   gh api repos/$REPO/issues/$ISSUE_NUM/timeline --jq '.[] | select(.event == "cross-referenced" or .event == "referenced") | "\(.event): \(.source.issue.title // .commit_id)"'
    ```
 
 4. **Check for linked issues/PRs**:
    ```bash
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-   gh api repos/$REPO/issues/$ARGUMENTS --jq '.body' | grep -oE '#[0-9]+'
+   gh api repos/$REPO/issues/$ISSUE_NUM --jq '.body' | grep -oE '#[0-9]+'
    ```
 
 5. **Assign the issue**:
    ```bash
-   gh issue edit $ARGUMENTS --add-assignee @me
+   gh issue edit $ISSUE_NUM --add-assignee @me
    ```
 
 **If issue not found** (gh issue view fails): Report error and stop:
-> "Issue #$ARGUMENTS not found. Verify the issue number and try again."
+> "Issue #$ISSUE_NUM not found. Verify the issue number and try again."
 
 ### Step 2.2b: Familiarity Prompt (Conditional)
 
@@ -144,15 +144,46 @@ These steps depend on each other and must run in order:
    git checkout $DEFAULT_BRANCH && git pull origin $DEFAULT_BRANCH
    ```
 
-3. **Determine branch type** based on issue labels and context:
-   - Issue has `bug`/`defect` label → default to `fix/issue-{number}-{desc}`
-   - Issue has `documentation` label → default to `docs/issue-{number}-{desc}`
-   - Otherwise → default to `feature/issue-{number}-{desc}`
+3. **Read branch patterns from settings** (local > project > user > defaults):
+   ```bash
+   # Read configured branch patterns + additional types
+   FEATURE_PATTERN=$(jq -r '.conventions.branchPatterns.feature // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+   [ -z "$FEATURE_PATTERN" ] && FEATURE_PATTERN=$(jq -r '.conventions.branchPatterns.feature // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+   [ -z "$FEATURE_PATTERN" ] && FEATURE_PATTERN=$(jq -r '.conventions.branchPatterns.feature // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+   [ -z "$FEATURE_PATTERN" ] && FEATURE_PATTERN="feature/issue-{N}-{desc}"
 
-   **If ambiguous** (e.g., could be feature or fix), use the **AskUserQuestion tool**:
-   - **Option 1**: "feature/issue-{number}-{desc}" - New functionality
-   - **Option 2**: "fix/issue-{number}-{desc}" - Bug fix
-   - **Option 3**: "docs/issue-{number}-{desc}" - Documentation only
+   FIX_PATTERN=$(jq -r '.conventions.branchPatterns.fix // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+   [ -z "$FIX_PATTERN" ] && FIX_PATTERN=$(jq -r '.conventions.branchPatterns.fix // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+   [ -z "$FIX_PATTERN" ] && FIX_PATTERN=$(jq -r '.conventions.branchPatterns.fix // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+   [ -z "$FIX_PATTERN" ] && FIX_PATTERN="fix/issue-{N}-{desc}"
+
+   DOCS_PATTERN=$(jq -r '.conventions.branchPatterns.docs // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+   [ -z "$DOCS_PATTERN" ] && DOCS_PATTERN=$(jq -r '.conventions.branchPatterns.docs // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+   [ -z "$DOCS_PATTERN" ] && DOCS_PATTERN=$(jq -r '.conventions.branchPatterns.docs // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+   [ -z "$DOCS_PATTERN" ] && DOCS_PATTERN="docs/issue-{N}-{desc}"
+
+   # Read additional branch types (merge all tiers: user < project < local)
+   ADDITIONAL_TYPES=$(jq -rn '
+     (try (input | .conventions.additionalBranchTypes // {}) catch {})
+       * (try (input | .conventions.additionalBranchTypes // {}) catch {})
+       * (try (input | .conventions.additionalBranchTypes // {}) catch {})
+     | to_entries[] | "\(.key)=\(.value)"
+   ' "$HOME/.claude/settings.gh-workflow.json" \
+     ".claude/settings.gh-workflow.json" \
+     ".claude/settings.gh-workflow.local.json" 2>/dev/null)
+   ```
+
+   **Determine branch type** based on issue labels and context:
+   - Issue has `bug`/`defect` label → use `FIX_PATTERN`
+   - Issue has `documentation` label → use `DOCS_PATTERN`
+   - If `ADDITIONAL_TYPES` contains a key matching an issue label (e.g., `refactor`, `chore`) → use that pattern
+   - Otherwise → use `FEATURE_PATTERN`
+
+   **If ambiguous** (e.g., could be feature or fix), use the **AskUserQuestion tool** with configured patterns:
+   - **Option 1**: "{FEATURE_PATTERN}" - New functionality
+   - **Option 2**: "{FIX_PATTERN}" - Bug fix
+   - **Option 3**: "{DOCS_PATTERN}" - Documentation only
+   - Plus any additional branch types from settings
 
    ```bash
    git checkout -b {branch-name}
@@ -439,7 +470,15 @@ Use the quality commands discovered in Phase 3 (LINT_CMD, TEST_CMD, TYPECHECK_CM
 
 Execute a bounded fix-verify cycle. **Fix immediately — do not create tasks** for lint/test failures. These are mechanical fixes.
 
-**Iteration 1 (and up to 3 total):**
+Read max iterations from settings:
+```bash
+MAX_ITERATIONS=$(jq -r '.timeouts.qualityCheckMaxIterations // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$MAX_ITERATIONS" ] && MAX_ITERATIONS=$(jq -r '.timeouts.qualityCheckMaxIterations // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$MAX_ITERATIONS" ] && MAX_ITERATIONS=$(jq -r '.timeouts.qualityCheckMaxIterations // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$MAX_ITERATIONS" ] && MAX_ITERATIONS="3"
+```
+
+**Iteration 1 (and up to MAX_ITERATIONS total):**
 
 1. **Run all quality commands in parallel** (3 Bash tool calls in a single message):
    ```
@@ -456,7 +495,7 @@ Execute a bounded fix-verify cycle. **Fix immediately — do not create tasks** 
    - Commit the fix: `git commit -m "fix: [what was fixed]"`
    - Re-run ALL checks (go back to step 1)
 
-4. **Max 3 iterations**. After 3 failed iterations → escalate to user via **AskUserQuestion tool**:
+4. **Max MAX_ITERATIONS** (default: 3). After MAX_ITERATIONS failed iterations → escalate to user via **AskUserQuestion tool**:
    - **Option 1**: "Show me the failures, I'll fix manually"
    - **Option 2**: "Skip failing checks and proceed" — note which checks were skipped
    - **Option 3**: "Abort — I need to investigate"
@@ -491,9 +530,9 @@ ls verify.sh scripts/verify* playwright.config.* cypress.config.* 2>/dev/null
 cat package.json 2>/dev/null | grep -E '"(dev|start|serve|e2e|test:e2e)"'
 ```
 
-If capabilities found, run them. If dev server discovered: start in background, wait for ready (max 30s), run smoke tests, kill server. If E2E framework found, run it. If nothing found, skip with note "Runtime verification skipped — no dev server or E2E framework found."
+If capabilities found, run them. If dev server discovered: start in background, wait for ready (timeout from `.timeouts.devServerStartup`, default: 30s), run smoke tests, kill server. If E2E framework found, run it (timeout from `.timeouts.e2eTest`, default: 120s). If nothing found, skip with note "Runtime verification skipped — no dev server or E2E framework found."
 
-**Handle failures**: If runtime tests fail → analyze root cause, fix, re-run (max 3 iterations). If dev server won't start → report error with logs, proceed (not blocking).
+**Handle failures**: If runtime tests fail → analyze root cause, fix, re-run (max iterations from settings, default: 3). If dev server won't start → report error with logs, proceed (not blocking).
 
 **IMPORTANT**: Runtime verification is additive, not blocking. If a project has no dev server or E2E framework, this phase completes with "skipped" status and the workflow continues.
 
@@ -553,7 +592,7 @@ TaskList
 
 **If ANY gate fails**:
 1. Apply the verification loop pattern (Phase 6 Step 6.1): fix inline immediately, re-run checks
-2. Max 3 iterations before escalating to user via AskUserQuestion
+2. Max iterations (from settings, default: 3) before escalating to user via AskUserQuestion
 3. Only proceed when all checks pass
 
 ## Phase 11: Ready for PR

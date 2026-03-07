@@ -33,6 +33,30 @@ JOURNAL_DIR=$(jq -r '.journal.dir // empty' .claude/settings.gh-workflow.local.j
 [ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=".decisions"
 ```
 
+### Pattern A (Boolean Variant)
+
+Use for boolean keys where `false` is a valid value. The standard `// empty` operator treats `false` as falsy, so we check key existence with `has` instead:
+
+```bash
+# Read a boolean config value (local > project > user > default)
+DELETE_BRANCH=$(jq -r 'if .merge | has("deleteBranch") then .merge.deleteBranch else empty end' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$DELETE_BRANCH" ] && DELETE_BRANCH=$(jq -r 'if .merge | has("deleteBranch") then .merge.deleteBranch else empty end' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$DELETE_BRANCH" ] && DELETE_BRANCH=$(jq -r 'if .merge | has("deleteBranch") then .merge.deleteBranch else empty end' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$DELETE_BRANCH" ] && DELETE_BRANCH="true"
+```
+
+### Pattern A (Optional-String Variant)
+
+Use for string keys where empty string `""` is a valid value (e.g., `tagPrefix: ""` for unprefixed tags). Uses a sentinel value instead of emptiness checks:
+
+```bash
+# Read a string config value where "" is valid (local > project > user > default)
+TAG_PREFIX=$(jq -r 'if .release | has("tagPrefix") then .release.tagPrefix else "UNSET" end' .claude/settings.gh-workflow.local.json 2>/dev/null || echo "UNSET")
+[ "$TAG_PREFIX" = "UNSET" ] && TAG_PREFIX=$(jq -r 'if .release | has("tagPrefix") then .release.tagPrefix else "UNSET" end' .claude/settings.gh-workflow.json 2>/dev/null || echo "UNSET")
+[ "$TAG_PREFIX" = "UNSET" ] && TAG_PREFIX=$(jq -r 'if .release | has("tagPrefix") then .release.tagPrefix else "UNSET" end' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null || echo "UNSET")
+[ "$TAG_PREFIX" = "UNSET" ] && TAG_PREFIX="v"
+```
+
 ### Pattern B — Bulk Merge
 
 Use when a skill reads many keys. Merges all layers with schema defaults in one pass:
@@ -53,7 +77,28 @@ GHW_CONFIG=$(jq -n '
       ghStartFamiliarityPrompt:true, ghCommitFirstTouch:true,
       ghPrComprehensionReport:true, ghPrDecisionSummary:true,
       ghReviewComprehensionCheck:true, ghMergeKnowledgeCheckpoint:true
-    }
+    },
+    merge: { strategy:"squash", deleteBranch:true },
+    conventions: {
+      commitSubjectMaxLength:72,
+      commitTypes:["feat","fix","docs","style","refactor","test","chore","perf","ci","build","revert"],
+      branchPatterns: {
+        feature:"feature/issue-{N}-{desc}",
+        fix:"fix/issue-{N}-{desc}",
+        docs:"docs/issue-{N}-{desc}"
+      },
+      additionalBranchTypes:{}
+    },
+    release: { tagPrefix:"v" },
+    timeouts: {
+      devServerStartup:30, e2eTest:120,
+      verificationScript:180, qualityCheckMaxIterations:3
+    },
+    review: {
+      firstTouchLineThreshold:50,
+      activityLookbackDays:30, activityFallbackDays:90
+    },
+    automation: { maxReviewIterations:5 }
   };
   defaults
     * (try input catch {})
@@ -99,3 +144,20 @@ All defaults are embedded in the bulk merge pattern. If no config files exist at
 | `.commands.ghPrDecisionSummary` | `boolean` | `true` | Decision summary |
 | `.commands.ghReviewComprehensionCheck` | `boolean` | `true` | Comprehension check |
 | `.commands.ghMergeKnowledgeCheckpoint` | `boolean` | `true` | Knowledge checkpoint |
+| `.merge.strategy` | `"squash"\|"merge"\|"rebase"` | `"squash"` | Default merge strategy |
+| `.merge.deleteBranch` | `boolean` | `true` | Delete branch after merge |
+| `.conventions.commitSubjectMaxLength` | `integer` | `72` | Max commit subject length |
+| `.conventions.commitTypes` | `string[]` | `["feat","fix",...]` | Valid commit type prefixes |
+| `.conventions.branchPatterns.feature` | `string` | `"feature/issue-{N}-{desc}"` | Feature branch pattern |
+| `.conventions.branchPatterns.fix` | `string` | `"fix/issue-{N}-{desc}"` | Fix branch pattern |
+| `.conventions.branchPatterns.docs` | `string` | `"docs/issue-{N}-{desc}"` | Docs branch pattern |
+| `.conventions.additionalBranchTypes` | `object` | `{}` | Extra branch type patterns |
+| `.release.tagPrefix` | `string` | `"v"` | Version tag prefix |
+| `.timeouts.devServerStartup` | `integer` | `30` | Dev server wait (seconds) |
+| `.timeouts.e2eTest` | `integer` | `120` | E2E test timeout (seconds) |
+| `.timeouts.verificationScript` | `integer` | `180` | Verification script timeout (seconds) |
+| `.timeouts.qualityCheckMaxIterations` | `integer` | `3` | Max quality fix-verify cycles |
+| `.review.firstTouchLineThreshold` | `integer` | `50` | First-touch AI pattern threshold (lines) |
+| `.review.activityLookbackDays` | `integer` | `30` | Reviewer activity lookback (days) |
+| `.review.activityFallbackDays` | `integer` | `90` | Extended lookback fallback (days) |
+| `.automation.maxReviewIterations` | `integer` | `5` | Max review-fix loop iterations |

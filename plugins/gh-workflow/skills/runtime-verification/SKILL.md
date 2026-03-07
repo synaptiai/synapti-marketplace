@@ -19,6 +19,27 @@ Quality checks (lint, test, typecheck) answer "does it compile?" This skill answ
 - Visually verifying UI changes in the browser
 - Verifying acceptance criteria programmatically
 
+## Read Timeout Settings
+
+Before running verifications, read timeout configuration (local > project > user > defaults):
+
+```bash
+DEV_STARTUP_TIMEOUT=$(jq -r '.timeouts.devServerStartup // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$DEV_STARTUP_TIMEOUT" ] && DEV_STARTUP_TIMEOUT=$(jq -r '.timeouts.devServerStartup // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$DEV_STARTUP_TIMEOUT" ] && DEV_STARTUP_TIMEOUT=$(jq -r '.timeouts.devServerStartup // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$DEV_STARTUP_TIMEOUT" ] && DEV_STARTUP_TIMEOUT="30"
+
+E2E_TIMEOUT=$(jq -r '.timeouts.e2eTest // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$E2E_TIMEOUT" ] && E2E_TIMEOUT=$(jq -r '.timeouts.e2eTest // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$E2E_TIMEOUT" ] && E2E_TIMEOUT=$(jq -r '.timeouts.e2eTest // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$E2E_TIMEOUT" ] && E2E_TIMEOUT="120"
+
+VERIFICATION_TIMEOUT=$(jq -r '.timeouts.verificationScript // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$VERIFICATION_TIMEOUT" ] && VERIFICATION_TIMEOUT=$(jq -r '.timeouts.verificationScript // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$VERIFICATION_TIMEOUT" ] && VERIFICATION_TIMEOUT=$(jq -r '.timeouts.verificationScript // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$VERIFICATION_TIMEOUT" ] && VERIFICATION_TIMEOUT="180"
+```
+
 ## Quick Verification Fast Path
 
 Before running the full discovery process, check for an existing verification script. Many mature projects already wire everything up in one command — if one exists, run it and skip the rest.
@@ -33,7 +54,7 @@ grep -E "^(verify|e2e|smoke|integration-test):" Makefile 2>/dev/null
 
 If found, run it with a timeout:
 ```bash
-timeout 180 ./verify.sh 2>&1  # or make verify, etc.
+timeout $VERIFICATION_TIMEOUT ./verify.sh 2>&1  # or make verify, etc.
 ```
 
 If it passes, skip to Output Format. If it fails or no script exists, continue with full discovery.
@@ -118,7 +139,7 @@ If a dev server command is discovered:
 2. Wait for ready signal — try common health paths, fall back to port check:
    ```bash
    PORT={detected_port:-3000}
-   for i in {1..30}; do
+   for i in $(seq 1 $DEV_STARTUP_TIMEOUT); do
      curl -sf http://localhost:$PORT/ > /dev/null 2>&1 && break
      curl -sf http://localhost:$PORT/health > /dev/null 2>&1 && break
      curl -sf http://localhost:$PORT/healthz > /dev/null 2>&1 && break
@@ -128,7 +149,7 @@ If a dev server command is discovered:
    done
    ```
 
-3. If server doesn't start within 30s, report as verification failure with the last few lines of output
+3. If server doesn't start within ${DEV_STARTUP_TIMEOUT}s (default: 30s, configurable via `.timeouts.devServerStartup`), report as verification failure with the last few lines of output
 
 ### Step 2: Smoke Tests
 
@@ -151,18 +172,18 @@ For each discovered endpoint:
 
 Run discovered E2E test command with a timeout to prevent hanging:
 ```bash
-timeout 120 npx playwright test 2>&1  # or
-timeout 120 npx cypress run 2>&1       # or
-timeout 120 pytest tests/e2e/ 2>&1     # etc.
+timeout $E2E_TIMEOUT npx playwright test 2>&1  # or
+timeout $E2E_TIMEOUT npx cypress run 2>&1       # or
+timeout $E2E_TIMEOUT pytest tests/e2e/ 2>&1     # etc.
 ```
 
 If the full suite is too large, run only tests related to changed files:
 ```bash
 # Playwright: run specific test file
-timeout 120 npx playwright test tests/e2e/changed-feature.spec.ts 2>&1
+timeout $E2E_TIMEOUT npx playwright test tests/e2e/changed-feature.spec.ts 2>&1
 
 # Pytest: run tests matching changed module names
-timeout 120 pytest tests/e2e/ -k "changed_module" 2>&1
+timeout $E2E_TIMEOUT pytest tests/e2e/ -k "changed_module" 2>&1
 ```
 
 ### Step 4: Visual Verification (if UI changes detected)

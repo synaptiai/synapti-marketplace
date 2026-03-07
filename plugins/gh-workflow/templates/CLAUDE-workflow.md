@@ -39,6 +39,7 @@ This project uses the gh-workflow plugin. Available commands:
 | `/gh-workflow:gh-status` | View workflow status (issues, PRs, reviews) |
 | `/gh-workflow:gh-issue` | Create a new GitHub issue |
 | `/gh-workflow:gh-start <issue>` | Start work on an issue (branch, implement, track) |
+| `/gh-workflow:gh-start-auto <issue>` | Autonomous issue-to-PR pipeline with iterative review-fix loops |
 | `/gh-workflow:gh-commit` | Context-aware commits with change classification |
 | `/gh-workflow:gh-pr` | Create PR with full review and reviewer suggestions |
 | `/gh-workflow:gh-review <pr>` | Review a pull request with prioritized findings |
@@ -96,9 +97,18 @@ Available labels for this repository:
 5. Run E2E tests if applicable
 6. For UI changes, verify visually or via browser automation
 
-## Comprehension Layer
+## Workflow Configuration
 
-Configuration for gates, decision journal, comprehension reports, and per-command toggles is managed in `.claude/settings.gh-workflow.json`. See `references/gate-configuration.md` for all options and examples. Run `/gh-workflow:gh-setup` to generate a config file with defaults.
+All settings are managed in `.claude/settings.gh-workflow.json` and validated against `schema.json`:
+- **Gates** — Human pause points for high-stakes decisions (security, dependencies, scope)
+- **Merge** — Strategy (squash/merge/rebase) and branch deletion preferences
+- **Conventions** — Branch naming patterns, commit types, subject line limits
+- **Release** — Tag prefix format
+- **Timeouts** — Dev server, E2E, verification script, and quality check iteration limits
+- **Review** — First-touch thresholds and reviewer suggestion activity windows
+- **Comprehension** — Decision journal, report thresholds, per-command toggles
+
+See `references/gate-configuration.md` for all options and examples. Run `/gh-workflow:gh-setup` to generate a config file with defaults.
 
 ---
 

@@ -18,6 +18,21 @@ Instead of manually picking reviewers or assignees, this skill analyzes:
 - File-specific commit history for expertise
 - Current review load to balance workload
 
+## Configuration
+
+Read activity lookback settings (local > project > user > defaults):
+```bash
+LOOKBACK_DAYS=$(jq -r '.review.activityLookbackDays // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$LOOKBACK_DAYS" ] && LOOKBACK_DAYS=$(jq -r '.review.activityLookbackDays // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$LOOKBACK_DAYS" ] && LOOKBACK_DAYS=$(jq -r '.review.activityLookbackDays // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$LOOKBACK_DAYS" ] && LOOKBACK_DAYS="30"
+
+FALLBACK_DAYS=$(jq -r '.review.activityFallbackDays // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$FALLBACK_DAYS" ] && FALLBACK_DAYS=$(jq -r '.review.activityFallbackDays // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$FALLBACK_DAYS" ] && FALLBACK_DAYS=$(jq -r '.review.activityFallbackDays // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$FALLBACK_DAYS" ] && FALLBACK_DAYS="90"
+```
+
 ## Quick Reference
 
 ### Get Suggested Reviewers for a PR
@@ -39,7 +54,7 @@ gh api repos/$REPO/collaborators --jq '.[] | select(.permissions.push) | .login'
 gh pr list --state merged --limit 20 --json author,reviews --jq '.[].author.login, .[].reviews[].author.login' | sort | uniq -c | sort -rn
 
 # 6. Get file-specific contributors (last 30 days)
-git log --format='%an' --since="30 days ago" -- {changed_files} | sort | uniq -c | sort -rn
+git log --format='%an' --since="$LOOKBACK_DAYS days ago" -- {changed_files} | sort | uniq -c | sort -rn
 ```
 
 ### Get Suggested Assignees for an Issue
@@ -65,7 +80,7 @@ gh api repos/$REPO/teams --jq '.[].slug' 2>/dev/null
 | Signal | Points | Rationale |
 |--------|--------|-----------|
 | CODEOWNERS match | +50 | Explicit ownership declaration |
-| Commits to changed files (last 30d) | +10 per match | File-level expertise |
+| Commits to changed files (last LOOKBACK_DAYS) | +10 per match | File-level expertise |
 | Recent PR reviews | +5 per review (max 25) | Active reviewer |
 | Recent PR authorship | +3 per PR (max 15) | Active contributor |
 | Same team membership | +10 | Team context |
@@ -133,7 +148,7 @@ For each potential reviewer/assignee:
 | Signal | Value | Points |
 |--------|-------|--------|
 | CODEOWNERS match | Yes/No | +50/0 |
-| File commits (30d) | {N} files | +{N*10} |
+| File commits (LOOKBACK_DAYS d) | {N} files | +{N*10} |
 | Recent reviews | {M} PRs | +{min(M*5, 25)} |
 | Open reviews | {K} PRs | -{K*3} |
 | **Total** | | **{sum}** |
@@ -260,8 +275,8 @@ Fall back to:
 
 ### No Recent Activity
 
-If no commits or PRs in last 30 days:
-1. Extend window to 90 days
+If no commits or PRs in last LOOKBACK_DAYS (default: 30):
+1. Extend window to FALLBACK_DAYS (default: 90)
 2. Fall back to all collaborators
 
 ### Private Repository / API Limits

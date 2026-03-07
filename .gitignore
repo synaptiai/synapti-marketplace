@@ -5,3 +5,5 @@ docs/plans/
 # Generated Desktop skill packages (attached to releases, not committed)
 dist/
 .claude/audit.log
+.claude/settings.gh-workflow.local.json
+.claude/agent-memory/

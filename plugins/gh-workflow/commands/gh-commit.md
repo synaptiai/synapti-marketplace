@@ -175,7 +175,15 @@ for FILE in $(git diff --cached --name-only); do
 done
 ```
 
-For files with **0 prior commits on this branch** (first touch) that also have **large additions** (50+ lines added in a single diff), flag as potential AI-pattern:
+Read the first-touch threshold from settings (default: 50):
+```bash
+FIRST_TOUCH_THRESHOLD=$(jq -r '.review.firstTouchLineThreshold // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$FIRST_TOUCH_THRESHOLD" ] && FIRST_TOUCH_THRESHOLD=$(jq -r '.review.firstTouchLineThreshold // empty' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$FIRST_TOUCH_THRESHOLD" ] && FIRST_TOUCH_THRESHOLD=$(jq -r '.review.firstTouchLineThreshold // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$FIRST_TOUCH_THRESHOLD" ] && FIRST_TOUCH_THRESHOLD="50"
+```
+
+For files with **0 prior commits on this branch** (first touch) that also have **large additions** (FIRST_TOUCH_THRESHOLD+ lines added in a single diff), flag as potential AI-pattern:
 
 ```markdown
 ### Comprehension Confidence
