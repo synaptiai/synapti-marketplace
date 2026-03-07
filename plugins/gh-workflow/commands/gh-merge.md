@@ -40,10 +40,10 @@ Merge an approved pull request with standardized settings.
    [ -z "$MERGE_STRATEGY" ] && MERGE_STRATEGY=$(jq -r '.merge.strategy // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
    [ -z "$MERGE_STRATEGY" ] && MERGE_STRATEGY="squash"
 
-   # Read merge.deleteBranch
-   DELETE_BRANCH=$(jq -r '.merge.deleteBranch // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
-   [ -z "$DELETE_BRANCH" ] && DELETE_BRANCH=$(jq -r '.merge.deleteBranch // empty' .claude/settings.gh-workflow.json 2>/dev/null)
-   [ -z "$DELETE_BRANCH" ] && DELETE_BRANCH=$(jq -r '.merge.deleteBranch // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+   # Read merge.deleteBranch (boolean — use 'has' check to preserve false)
+   DELETE_BRANCH=$(jq -r 'if .merge | has("deleteBranch") then .merge.deleteBranch else empty end' .claude/settings.gh-workflow.local.json 2>/dev/null)
+   [ -z "$DELETE_BRANCH" ] && DELETE_BRANCH=$(jq -r 'if .merge | has("deleteBranch") then .merge.deleteBranch else empty end' .claude/settings.gh-workflow.json 2>/dev/null)
+   [ -z "$DELETE_BRANCH" ] && DELETE_BRANCH=$(jq -r 'if .merge | has("deleteBranch") then .merge.deleteBranch else empty end' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
    [ -z "$DELETE_BRANCH" ] && DELETE_BRANCH="true"
    ```
 

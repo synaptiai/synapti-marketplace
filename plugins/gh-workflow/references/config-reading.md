@@ -33,6 +33,30 @@ JOURNAL_DIR=$(jq -r '.journal.dir // empty' .claude/settings.gh-workflow.local.j
 [ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=".decisions"
 ```
 
+### Pattern A (Boolean Variant)
+
+Use for boolean keys where `false` is a valid value. The standard `// empty` operator treats `false` as falsy, so we check key existence with `has` instead:
+
+```bash
+# Read a boolean config value (local > project > user > default)
+DELETE_BRANCH=$(jq -r 'if .merge | has("deleteBranch") then .merge.deleteBranch else empty end' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$DELETE_BRANCH" ] && DELETE_BRANCH=$(jq -r 'if .merge | has("deleteBranch") then .merge.deleteBranch else empty end' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$DELETE_BRANCH" ] && DELETE_BRANCH=$(jq -r 'if .merge | has("deleteBranch") then .merge.deleteBranch else empty end' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$DELETE_BRANCH" ] && DELETE_BRANCH="true"
+```
+
+### Pattern A (Optional-String Variant)
+
+Use for string keys where empty string `""` is a valid value (e.g., `tagPrefix: ""` for unprefixed tags). Uses a sentinel value instead of emptiness checks:
+
+```bash
+# Read a string config value where "" is valid (local > project > user > default)
+TAG_PREFIX=$(jq -r 'if .release | has("tagPrefix") then .release.tagPrefix else "UNSET" end' .claude/settings.gh-workflow.local.json 2>/dev/null || echo "UNSET")
+[ "$TAG_PREFIX" = "UNSET" ] && TAG_PREFIX=$(jq -r 'if .release | has("tagPrefix") then .release.tagPrefix else "UNSET" end' .claude/settings.gh-workflow.json 2>/dev/null || echo "UNSET")
+[ "$TAG_PREFIX" = "UNSET" ] && TAG_PREFIX=$(jq -r 'if .release | has("tagPrefix") then .release.tagPrefix else "UNSET" end' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null || echo "UNSET")
+[ "$TAG_PREFIX" = "UNSET" ] && TAG_PREFIX="v"
+```
+
 ### Pattern B — Bulk Merge
 
 Use when a skill reads many keys. Merges all layers with schema defaults in one pass:
