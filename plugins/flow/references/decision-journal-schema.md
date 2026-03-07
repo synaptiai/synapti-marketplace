@@ -37,7 +37,7 @@ Written by skills (e.g., `autonomous-workflow`, `change-classification`).
 ### [Category] Title
 
 **Timestamp**: YYYY-MM-DD HH:MM
-**Sensitivity**: public | team | private
+**Sensitivity**: public | internal
 
 **Decision**: What was decided.
 
@@ -65,8 +65,7 @@ Written by skills (e.g., `autonomous-workflow`, `change-classification`).
 | Level | Meaning | Default |
 |-------|---------|---------|
 | `public` | Safe for anyone to see | Yes (configurable via `journal.sensitivityDefault`) |
-| `team` | Internal team visibility | |
-| `private` | Individual developer only | |
+| `internal` | Internal team visibility only | |
 
 ## Journal Directory
 

@@ -90,7 +90,7 @@ If a teammate crashes or returns an error:
 
 The `nudge-idle-teammate.sh` hook handles idle teammates:
 - After 60s idle: "Check task list for unclaimed tasks"
-- The hook sends feedback via exit code 2
+- The hook sends feedback via stderr output (exits 0; exit code 2 has no defined semantics for TeammateIdle)
 
 ## Implementation Team Protocol
 

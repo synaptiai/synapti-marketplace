@@ -18,7 +18,7 @@ ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
 
 # 2. Decision journal
 JOURNAL_DIR=".decisions"
-for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json"; do
+for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
   [ -f "$SETTINGS" ] && DIR=$(jq -r '.journal.dir // empty' "$SETTINGS" 2>/dev/null) && [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
 done
 [ -n "$ISSUE_NUM" ] && cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md" 2>/dev/null

@@ -12,13 +12,13 @@ Analyze the decision journal for recurring patterns and generate skill proposals
 ```bash
 # Read journal directory
 JOURNAL_DIR=".decisions"
-for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json"; do
+for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
   [ -f "$SETTINGS" ] && DIR=$(jq -r '.journal.dir // empty' "$SETTINGS" 2>/dev/null) && [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
 done
 
 # Read proposal directory
 PROPOSAL_DIR="$HOME/.claude/flow-proposals"
-for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json"; do
+for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
   [ -f "$SETTINGS" ] && DIR=$(jq -r '.learning.proposalDir // empty' "$SETTINGS" 2>/dev/null) && [ -n "$DIR" ] && PROPOSAL_DIR="$DIR" && break
 done
 

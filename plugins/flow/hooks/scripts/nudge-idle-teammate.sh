@@ -1,6 +1,6 @@
 #!/bin/bash
 # [flow] TeammateIdle hook: Nudge idle teammates toward unclaimed tasks
-# Exit 2 sends feedback to the idle teammate
+# Feedback delivered via stderr output (exit 0 always — exit 2 has no semantics here)
 
 set -euo pipefail
 

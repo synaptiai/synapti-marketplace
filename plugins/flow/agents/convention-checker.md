@@ -18,7 +18,7 @@ You are a Git convention validator for the flow plugin. Verify adherence to repo
 ```bash
 # Read convention settings (cascading: local > project > user > defaults)
 COMMIT_TYPES="feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert"
-for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json"; do
+for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
   [ -f "$SETTINGS" ] && TYPES=$(jq -r '.conventions.commitTypes // empty | join("|")' "$SETTINGS" 2>/dev/null) && [ -n "$TYPES" ] && COMMIT_TYPES="$TYPES" && break
 done
 echo "Commit types: $COMMIT_TYPES"
