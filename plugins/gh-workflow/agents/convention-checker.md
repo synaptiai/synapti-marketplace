@@ -38,7 +38,7 @@ COMMIT_TYPES=$(jq -r '.conventions.commitTypes // empty | join("|")' .claude/set
 
 # Read branch patterns (merge all tiers: defaults < user < project < local)
 # Each tier contributes both branchPatterns and additionalBranchTypes
-BRANCH_PATTERNS=$(jq -n '
+BRANCH_PATTERNS=$(jq -rn '
   {feature:"feature/issue-{N}-{desc}", fix:"fix/issue-{N}-{desc}", docs:"docs/issue-{N}-{desc}"}
     * (try (input | (.conventions.additionalBranchTypes // {}) * (.conventions.branchPatterns // {})) catch {})
     * (try (input | (.conventions.additionalBranchTypes // {}) * (.conventions.branchPatterns // {})) catch {})
