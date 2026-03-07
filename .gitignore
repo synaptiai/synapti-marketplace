@@ -6,3 +6,4 @@ docs/plans/
 dist/
 .claude/audit.log
 .claude/settings.gh-workflow.local.json
+.claude/agent-memory/
