@@ -176,9 +176,8 @@ These steps depend on each other and must run in order:
    **Determine branch type** based on issue labels and context:
    - Issue has `bug`/`defect` label → use `FIX_PATTERN`
    - Issue has `documentation` label → use `DOCS_PATTERN`
+   - If `ADDITIONAL_TYPES` contains a key matching an issue label (e.g., `refactor`, `chore`) → use that pattern
    - Otherwise → use `FEATURE_PATTERN`
-
-   Also check `conventions.additionalBranchTypes` for extra types (e.g., `refactor/`, `chore/`). If found, include them as options.
 
    **If ambiguous** (e.g., could be feature or fix), use the **AskUserQuestion tool** with configured patterns:
    - **Option 1**: "{FEATURE_PATTERN}" - New functionality

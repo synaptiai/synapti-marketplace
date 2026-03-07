@@ -214,7 +214,7 @@
           "type": "object",
           "additionalProperties": { "type": "string" },
           "default": {},
-          "description": "Additional branch type patterns beyond the core three. Keys are type names, values are templates with {N} and {desc} placeholders. Example: {\"refactor\": \"refactor/issue-{N}-{desc}\", \"chore\": \"chore/issue-{N}-{desc}\"}"
+          "description": "Additional branch type patterns beyond the core three (feature, fix, docs). Keys must not duplicate core branchPatterns keys. Values are templates with {N} and {desc} placeholders. Example: {\"refactor\": \"refactor/issue-{N}-{desc}\", \"chore\": \"chore/issue-{N}-{desc}\"}"
         }
       },
       "additionalProperties": false
