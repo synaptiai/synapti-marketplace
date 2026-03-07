@@ -37,9 +37,12 @@ COMMIT_TYPES=$(jq -r '.conventions.commitTypes // empty | join("|")' .claude/set
 [ -z "$COMMIT_TYPES" ] && COMMIT_TYPES="feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert"
 
 # Read branch patterns (core + additional)
-BRANCH_PATTERNS=$(jq -r '(.conventions.branchPatterns // {}) * (.conventions.additionalBranchTypes // {}) | to_entries[] | "\(.key)=\(.value)"' .claude/settings.gh-workflow.local.json 2>/dev/null)
-[ -z "$BRANCH_PATTERNS" ] && BRANCH_PATTERNS=$(jq -r '(.conventions.branchPatterns // {}) * (.conventions.additionalBranchTypes // {}) | to_entries[] | "\(.key)=\(.value)"' .claude/settings.gh-workflow.json 2>/dev/null)
-[ -z "$BRANCH_PATTERNS" ] && BRANCH_PATTERNS=$(jq -r '(.conventions.branchPatterns // {}) * (.conventions.additionalBranchTypes // {}) | to_entries[] | "\(.key)=\(.value)"' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+BRANCH_PATTERNS=$(jq -r '(.conventions.additionalBranchTypes // {}) * (.conventions.branchPatterns // {}) | to_entries[] | "\(.key)=\(.value)"' .claude/settings.gh-workflow.local.json 2>/dev/null)
+[ -z "$BRANCH_PATTERNS" ] && BRANCH_PATTERNS=$(jq -r '(.conventions.additionalBranchTypes // {}) * (.conventions.branchPatterns // {}) | to_entries[] | "\(.key)=\(.value)"' .claude/settings.gh-workflow.json 2>/dev/null)
+[ -z "$BRANCH_PATTERNS" ] && BRANCH_PATTERNS=$(jq -r '(.conventions.additionalBranchTypes // {}) * (.conventions.branchPatterns // {}) | to_entries[] | "\(.key)=\(.value)"' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+[ -z "$BRANCH_PATTERNS" ] && BRANCH_PATTERNS="feature=feature/issue-{N}-{desc}
+fix=fix/issue-{N}-{desc}
+docs=docs/issue-{N}-{desc}"
 ```
 
 Default branch patterns (when no settings file exists):
