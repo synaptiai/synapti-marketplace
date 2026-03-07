@@ -39,6 +39,7 @@ This project uses the gh-workflow plugin. Available commands:
 | `/gh-workflow:gh-status` | View workflow status (issues, PRs, reviews) |
 | `/gh-workflow:gh-issue` | Create a new GitHub issue |
 | `/gh-workflow:gh-start <issue>` | Start work on an issue (branch, implement, track) |
+| `/gh-workflow:gh-start-auto <issue>` | Autonomous issue-to-PR pipeline with iterative review-fix loops |
 | `/gh-workflow:gh-commit` | Context-aware commits with change classification |
 | `/gh-workflow:gh-pr` | Create PR with full review and reviewer suggestions |
 | `/gh-workflow:gh-review <pr>` | Review a pull request with prioritized findings |
@@ -47,7 +48,6 @@ This project uses the gh-workflow plugin. Available commands:
 | `/gh-workflow:gh-release <type>` | Create a release (patch/minor/major) |
 | `/gh-workflow:gh-explain <issue>` | Explore what AI built — interactive Q&A |
 | `/gh-workflow:gh-security-review` | Security review of branch changes |
-| `/gh-workflow:gh-start-auto <issue>` | Autonomous issue-to-PR pipeline with iterative review-fix loops |
 | `/gh-workflow:gh-setup` | Set up or update workflow configuration |
 
 ## Plugin Capabilities
