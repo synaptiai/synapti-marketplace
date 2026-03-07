@@ -56,5 +56,8 @@
     "firstTouchLineThreshold": 50,
     "activityLookbackDays": 30,
     "activityFallbackDays": 90
+  },
+  "automation": {
+    "maxReviewIterations": 5
   }
 }
