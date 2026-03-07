@@ -196,6 +196,12 @@ Disable specific comprehension features per command:
 | `.review.activityLookbackDays` | `30` | Integer (7-365) days | Reviewer suggestion activity window |
 | `.review.activityFallbackDays` | `90` | Integer (30-365) days | Extended lookback when no recent activity |
 
+### Automation
+
+| Key | Default | Options | Purpose |
+|-----|---------|---------|---------|
+| `.automation.maxReviewIterations` | `5` | Integer (1-20) | Max review-fix iterations in gh-start-auto before escalating to user |
+
 ## Reading Configuration
 
 See `references/config-reading.md` for the canonical config reading patterns and full JSON path reference.
