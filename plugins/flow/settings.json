@@ -1,0 +1,39 @@
+{
+  "agentTeams": false,
+  "tiers": {
+    "push": "journal",
+    "prCreate": "journal",
+    "issueAssign": "journal",
+    "merge": "confirm",
+    "release": "confirm"
+  },
+  "timeouts": {
+    "devServerStartup": 30,
+    "e2eTest": 120,
+    "qualityCheckMaxIterations": 3,
+    "teammateTimeout": 300
+  },
+  "conventions": {
+    "commitTypes": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build", "revert"],
+    "branchPatterns": {
+      "feature": "feature/issue-{N}-{desc}",
+      "fix": "fix/issue-{N}-{desc}",
+      "docs": "docs/issue-{N}-{desc}"
+    }
+  },
+  "merge": {
+    "strategy": "squash",
+    "deleteBranch": true
+  },
+  "release": {
+    "tagPrefix": "v"
+  },
+  "learning": {
+    "enabled": true,
+    "proposalDir": "~/.claude/flow-proposals"
+  },
+  "journal": {
+    "dir": ".decisions",
+    "sensitivityDefault": "public"
+  }
+}

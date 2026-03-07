@@ -1,0 +1,25 @@
+{
+  "name": "flow",
+  "version": "1.0.0",
+  "description": "Skill-driven workflow plugin for GitHub development. Encodes team knowledge as composable skills, enforces safety through hooks, and compounds learning across sessions. Alternative to gh-workflow with autonomous execution and agent team support.",
+  "author": {
+    "name": "Synapti AI",
+    "url": "https://github.com/synaptiai"
+  },
+  "license": "MIT",
+  "keywords": [
+    "github",
+    "workflow",
+    "skills",
+    "autonomous",
+    "agent-teams",
+    "hooks",
+    "learning",
+    "development"
+  ],
+  "repository": "https://github.com/synaptiai/synapti-marketplace",
+  "homepage": "https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/flow",
+  "conflicts": [
+    "gh-workflow"
+  ]
+}

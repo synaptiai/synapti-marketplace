@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Flow Plugin Settings",
+  "type": "object",
+  "properties": {
+    "agentTeams": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enable agent team support for adversarial review and parallel implementation"
+    },
+    "tiers": {
+      "type": "object",
+      "description": "Safety tier classification for actions",
+      "properties": {
+        "push": { "enum": ["autonomous", "journal", "confirm"], "default": "journal" },
+        "prCreate": { "enum": ["autonomous", "journal", "confirm"], "default": "journal" },
+        "issueAssign": { "enum": ["autonomous", "journal", "confirm"], "default": "journal" },
+        "merge": { "enum": ["autonomous", "journal", "confirm"], "default": "confirm" },
+        "release": { "enum": ["autonomous", "journal", "confirm"], "default": "confirm" }
+      },
+      "additionalProperties": { "enum": ["autonomous", "journal", "confirm"] }
+    },
+    "timeouts": {
+      "type": "object",
+      "properties": {
+        "devServerStartup": { "type": "integer", "default": 30, "minimum": 5 },
+        "e2eTest": { "type": "integer", "default": 120, "minimum": 10 },
+        "qualityCheckMaxIterations": { "type": "integer", "default": 3, "minimum": 1, "maximum": 10 },
+        "teammateTimeout": { "type": "integer", "default": 300, "minimum": 60 }
+      }
+    },
+    "conventions": {
+      "type": "object",
+      "properties": {
+        "commitTypes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build", "revert"]
+        },
+        "branchPatterns": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "merge": {
+      "type": "object",
+      "properties": {
+        "strategy": { "enum": ["merge", "squash", "rebase"], "default": "squash" },
+        "deleteBranch": { "type": "boolean", "default": true }
+      }
+    },
+    "release": {
+      "type": "object",
+      "properties": {
+        "tagPrefix": { "type": "string", "default": "v" }
+      }
+    },
+    "learning": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "proposalDir": { "type": "string", "default": "~/.claude/flow-proposals" }
+      }
+    },
+    "journal": {
+      "type": "object",
+      "properties": {
+        "dir": { "type": "string", "default": ".decisions" },
+        "sensitivityDefault": { "enum": ["public", "internal"], "default": "public" }
+      }
+    }
+  },
+  "additionalProperties": false
+}
