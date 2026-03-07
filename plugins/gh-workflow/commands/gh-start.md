@@ -161,6 +161,16 @@ These steps depend on each other and must run in order:
    [ -z "$DOCS_PATTERN" ] && DOCS_PATTERN=$(jq -r '.conventions.branchPatterns.docs // empty' .claude/settings.gh-workflow.json 2>/dev/null)
    [ -z "$DOCS_PATTERN" ] && DOCS_PATTERN=$(jq -r '.conventions.branchPatterns.docs // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
    [ -z "$DOCS_PATTERN" ] && DOCS_PATTERN="docs/issue-{N}-{desc}"
+
+   # Read additional branch types (merge all tiers: user < project < local)
+   ADDITIONAL_TYPES=$(jq -rn '
+     (try (input | .conventions.additionalBranchTypes // {}) catch {})
+       * (try (input | .conventions.additionalBranchTypes // {}) catch {})
+       * (try (input | .conventions.additionalBranchTypes // {}) catch {})
+     | to_entries[] | "\(.key)=\(.value)"
+   ' "$HOME/.claude/settings.gh-workflow.json" \
+     ".claude/settings.gh-workflow.json" \
+     ".claude/settings.gh-workflow.local.json" 2>/dev/null)
    ```
 
    **Determine branch type** based on issue labels and context:

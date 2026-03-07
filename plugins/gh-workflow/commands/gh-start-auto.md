@@ -140,11 +140,22 @@ These steps run sequentially:
    [ -z "$DOCS_PATTERN" ] && DOCS_PATTERN=$(jq -r '.conventions.branchPatterns.docs // empty' .claude/settings.gh-workflow.json 2>/dev/null)
    [ -z "$DOCS_PATTERN" ] && DOCS_PATTERN=$(jq -r '.conventions.branchPatterns.docs // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
    [ -z "$DOCS_PATTERN" ] && DOCS_PATTERN="docs/issue-{N}-{desc}"
+
+   # Read additional branch types (merge all tiers: user < project < local)
+   ADDITIONAL_TYPES=$(jq -rn '
+     (try (input | .conventions.additionalBranchTypes // {}) catch {})
+       * (try (input | .conventions.additionalBranchTypes // {}) catch {})
+       * (try (input | .conventions.additionalBranchTypes // {}) catch {})
+     | to_entries[] | "\(.key)=\(.value)"
+   ' "$HOME/.claude/settings.gh-workflow.json" \
+     ".claude/settings.gh-workflow.json" \
+     ".claude/settings.gh-workflow.local.json" 2>/dev/null)
    ```
 
 3. **Auto-detect branch type from issue labels** (no prompt):
    - Issue has `bug`/`defect` label → use `FIX_PATTERN`
    - Issue has `documentation` label → use `DOCS_PATTERN`
+   - If `ADDITIONAL_TYPES` contains a key matching an issue label (e.g., `refactor`, `chore`) → use that pattern
    - Default (including ambiguous cases) → use `FEATURE_PATTERN`
 
    ```bash
