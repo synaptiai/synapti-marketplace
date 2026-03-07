@@ -289,7 +289,7 @@
           "minimum": 30,
           "maximum": 365,
           "default": 90,
-          "description": "Extended lookback window when no activity found within activityLookbackDays"
+          "description": "Extended lookback window when no activity found within activityLookbackDays (should be >= activityLookbackDays)"
         }
       },
       "additionalProperties": false
