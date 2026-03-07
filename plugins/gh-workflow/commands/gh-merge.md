@@ -135,7 +135,9 @@ Merge an approved pull request with standardized settings.
 
    Then **invoke the AskUserQuestion tool** with these options:
    - **Option 1**: "Merge with {MERGE_STRATEGY} strategy" (Recommended) — includes branch deletion if `DELETE_BRANCH` is `true`
-   - **Option 2**: "Merge but change strategy or keep branch" — present sub-options for strategy and branch deletion
+   - **Option 2**: "Merge but change strategy or keep branch" — present sub-options:
+     - Strategy: squash / merge / rebase
+     - Branch: delete / keep
    - **Option 3**: "Cancel - I need to make changes first"
 
    **Do not execute merge without explicit approval via the AskUserQuestion tool.**
