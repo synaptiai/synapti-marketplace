@@ -36,10 +36,17 @@ COMMIT_TYPES=$(jq -r '.conventions.commitTypes // empty | join("|")' .claude/set
 [ -z "$COMMIT_TYPES" ] && COMMIT_TYPES=$(jq -r '.conventions.commitTypes // empty | join("|")' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
 [ -z "$COMMIT_TYPES" ] && COMMIT_TYPES="feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert"
 
-# Read branch patterns (core + additional)
-BRANCH_PATTERNS=$(jq -r '(.conventions.additionalBranchTypes // {}) * (.conventions.branchPatterns // {}) | to_entries[] | "\(.key)=\(.value)"' .claude/settings.gh-workflow.local.json 2>/dev/null)
-[ -z "$BRANCH_PATTERNS" ] && BRANCH_PATTERNS=$(jq -r '(.conventions.additionalBranchTypes // {}) * (.conventions.branchPatterns // {}) | to_entries[] | "\(.key)=\(.value)"' .claude/settings.gh-workflow.json 2>/dev/null)
-[ -z "$BRANCH_PATTERNS" ] && BRANCH_PATTERNS=$(jq -r '(.conventions.additionalBranchTypes // {}) * (.conventions.branchPatterns // {}) | to_entries[] | "\(.key)=\(.value)"' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
+# Read branch patterns (merge all tiers: defaults < user < project < local)
+# Each tier contributes both branchPatterns and additionalBranchTypes
+BRANCH_PATTERNS=$(jq -n '
+  {feature:"feature/issue-{N}-{desc}", fix:"fix/issue-{N}-{desc}", docs:"docs/issue-{N}-{desc}"}
+    * (try (input | (.conventions.additionalBranchTypes // {}) * (.conventions.branchPatterns // {})) catch {})
+    * (try (input | (.conventions.additionalBranchTypes // {}) * (.conventions.branchPatterns // {})) catch {})
+    * (try (input | (.conventions.additionalBranchTypes // {}) * (.conventions.branchPatterns // {})) catch {})
+  | to_entries[] | "\(.key)=\(.value)"
+' "$HOME/.claude/settings.gh-workflow.json" \
+  ".claude/settings.gh-workflow.json" \
+  ".claude/settings.gh-workflow.local.json" 2>/dev/null)
 [ -z "$BRANCH_PATTERNS" ] && BRANCH_PATTERNS="feature=feature/issue-{N}-{desc}
 fix=fix/issue-{N}-{desc}
 docs=docs/issue-{N}-{desc}"
