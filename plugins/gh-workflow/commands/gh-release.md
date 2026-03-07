@@ -112,7 +112,7 @@ Use `$TAG_PREFIX` throughout instead of hardcoded `v` prefix.
 
 1. **Get current version** from latest tag:
    ```bash
-   CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed "s/^${TAG_PREFIX}//" || echo "0.0.0")
+   CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | { read tag; echo "${tag#$TAG_PREFIX}"; } || echo "0.0.0")
    ```
 
 2. **Calculate new version** based on bump type:
