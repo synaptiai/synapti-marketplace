@@ -73,7 +73,8 @@ GHW_CONFIG=$(jq -n '
     review: {
       firstTouchLineThreshold:50,
       activityLookbackDays:30, activityFallbackDays:90
-    }
+    },
+    automation: { maxReviewIterations:5 }
   };
   defaults
     * (try input catch {})
@@ -135,3 +136,4 @@ All defaults are embedded in the bulk merge pattern. If no config files exist at
 | `.review.firstTouchLineThreshold` | `integer` | `50` | First-touch AI pattern threshold (lines) |
 | `.review.activityLookbackDays` | `integer` | `30` | Reviewer activity lookback (days) |
 | `.review.activityFallbackDays` | `integer` | `90` | Extended lookback fallback (days) |
+| `.automation.maxReviewIterations` | `integer` | `5` | Max review-fix loop iterations |

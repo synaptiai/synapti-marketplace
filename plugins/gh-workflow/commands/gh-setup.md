@@ -113,6 +113,7 @@ When an existing gh-workflow section is detected, perform a targeted update inst
    | `/gh-workflow:gh-status` | Present? |
    | `/gh-workflow:gh-issue` | Present? |
    | `/gh-workflow:gh-start <issue>` | Present? |
+   | `/gh-workflow:gh-start-auto <issue>` | NEW - likely missing |
    | `/gh-workflow:gh-commit` | NEW - likely missing |
    | `/gh-workflow:gh-pr` | NEW - likely missing |
    | `/gh-workflow:gh-review <pr>` | Present? |
@@ -146,7 +147,7 @@ When an existing gh-workflow section is detected, perform a targeted update inst
    ```
 
 6. **Apply updates**:
-   - Replace the command table with the full 12-command table
+   - Replace the command table with the full 13-command table
    - Add Plugin Capabilities section (Agents, Skills, Safety Hooks) if not present
    - Add or update the version marker comment (`<!-- gh-workflow: $PLUGIN_VERSION -->`)
    - Preserve all user-customized sections (branch naming, labels, checklists)
@@ -300,6 +301,7 @@ This project uses the gh-workflow plugin. Available commands:
 | `/gh-workflow:gh-status` | View workflow status (issues, PRs, reviews) |
 | `/gh-workflow:gh-issue` | Create a new GitHub issue |
 | `/gh-workflow:gh-start <issue>` | Start work on an issue (branch, implement, track) |
+| `/gh-workflow:gh-start-auto <issue>` | Autonomous issue-to-PR pipeline with iterative review-fix loops |
 | `/gh-workflow:gh-commit` | Context-aware commits with change classification |
 | `/gh-workflow:gh-pr` | Create PR with full review and reviewer suggestions |
 | `/gh-workflow:gh-review <pr>` | Review a pull request with prioritized findings |
@@ -493,6 +495,9 @@ If no config file exists, generate one with all defaults:
     "firstTouchLineThreshold": 50,
     "activityLookbackDays": 30,
     "activityFallbackDays": 90
+  },
+  "automation": {
+    "maxReviewIterations": 5
   }
 }
 ```
@@ -608,6 +613,7 @@ If config file already exists, show the user the current values and ask if they 
 - `/gh-workflow:gh-status` - View workflow status
 - `/gh-workflow:gh-issue` - Create issues
 - `/gh-workflow:gh-start <N>` - Start work on issue N
+- `/gh-workflow:gh-start-auto <N>` - Autonomous issue-to-PR pipeline
 - `/gh-workflow:gh-commit` - Context-aware commits
 - `/gh-workflow:gh-pr` - Create PR with review
 - `/gh-workflow:gh-review <N>` - Review PR N
@@ -643,6 +649,7 @@ If config file already exists, show the user the current values and ask if they 
 - `/gh-workflow:gh-status` - View workflow status
 - `/gh-workflow:gh-issue` - Create issues
 - `/gh-workflow:gh-start <N>` - Start work on issue N
+- `/gh-workflow:gh-start-auto <N>` - Autonomous issue-to-PR pipeline
 - `/gh-workflow:gh-commit` - Context-aware commits
 - `/gh-workflow:gh-pr` - Create PR with review
 - `/gh-workflow:gh-review <N>` - Review PR N
@@ -691,7 +698,7 @@ Before completing, verify:
 - [ ] Configuration generated and approved
 - [ ] CLAUDE.md updated with workflow section
 - [ ] `.claude/settings.gh-workflow.json` generated with valid JSON
-- [ ] All 12 commands listed in command table
+- [ ] All 13 commands listed in command table
 - [ ] Version marker present (`<!-- gh-workflow: $PLUGIN_VERSION -->`)
 - [ ] Plugin Capabilities section present (Agents, Skills, Safety Hooks)
 - [ ] Labels created (if requested)

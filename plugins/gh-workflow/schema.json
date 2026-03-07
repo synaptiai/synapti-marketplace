@@ -293,6 +293,20 @@
         }
       },
       "additionalProperties": false
+    },
+    "automation": {
+      "type": "object",
+      "description": "Settings for autonomous workflow commands like gh-start-auto",
+      "properties": {
+        "maxReviewIterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 5,
+          "description": "Maximum review-fix iterations in gh-start-auto before escalating to user"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false
