@@ -11,6 +11,12 @@ disable-model-invocation: true
 
 Domain skill for merge and release operations. Both are Tier 3 — **always require human confirmation**, even in autonomous mode. This is non-negotiable.
 
+## Iron Law
+
+**MERGE IS IRREVERSIBLE IN PRACTICE. Treat every merge as permanent. Every prerequisite must be verified with fresh evidence, not memory.**
+
+Reverting a merge is possible in git but disruptive in practice. Prevention is the only reliable strategy.
+
 ## Merge Prerequisites
 
 Before merging, verify ALL of these:
@@ -36,6 +42,12 @@ gh pr view $PR_NUM --json reviewThreads --jq '[.reviewThreads[] | select(.isReso
 | Mergeable | No merge conflicts | `mergeable == "MERGEABLE"` |
 | Conversations | All review threads resolved | Unresolved count == 0 |
 | Stale approval | No commits after last approval | Compare approval date vs last commit |
+
+### Merge Stop Conditions
+
+- ANY prerequisite fails — stop, do not ask "merge anyway?"
+- Stale approval detected — stop, request re-review
+- Unresolved conversations > 0 — stop, resolve first
 
 ### Stale Approval Detection
 

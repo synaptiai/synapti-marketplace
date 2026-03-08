@@ -1,5 +1,5 @@
 ---
-description: "[flow] Universal workflow entry point. Use /flow <verb> <target> for skill-driven GitHub development. Verbs: start, commit, pr, review, address, merge, release, status, learn, setup, explain."
+description: "[flow] Universal workflow entry point. Use /flow <verb> <target> for skill-driven GitHub development. Verbs: start, commit, pr, review, address, merge, release, status, learn, setup, explain, debug, design, brainstorm."
 argument-hint: <verb> [target]
 allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Grep, Glob
 ---
@@ -31,12 +31,15 @@ Each verb requires specific domain skills. The dispatcher invokes these determin
 | learn | (none — analysis only) | /flow:learn |
 | setup | capability-discovery | /flow:setup |
 | explain | (none — read-only) | /flow:explain |
+| debug | debugging-patterns, change-classification | /flow:debug |
+| design | architecture-patterns, capability-discovery | /flow:design |
+| brainstorm | brainstorming, capability-discovery | /flow:brainstorm |
 
 ## Routing Logic
 
 Parse `$ARGUMENTS` to extract verb and target:
 
-1. **Extract verb**: First word of arguments (start, commit, pr, review, address, merge, release, status, learn, setup, explain)
+1. **Extract verb**: First word of arguments (start, commit, pr, review, address, merge, release, status, learn, setup, explain, debug, design, brainstorm)
 2. **Extract target**: Remaining arguments (issue number, PR number, version type, etc.)
 3. **Route**: Invoke the corresponding sub-command via Skill tool with the target as arguments
 
@@ -48,6 +51,9 @@ Parse `$ARGUMENTS` to extract verb and target:
 - `/flow review 15` → Skill: flow:review, args: "15"
 - `/flow merge 15` → Skill: flow:merge, args: "15"
 - `/flow release patch` → Skill: flow:release, args: "patch"
+- `/flow debug "TypeError in auth module"` → Skill: flow:debug, args: "TypeError in auth module"
+- `/flow design 42` → Skill: flow:design, args: "42"
+- `/flow brainstorm "caching strategy"` → Skill: flow:brainstorm, args: "caching strategy"
 
 ## Bare `/flow` (No Arguments)
 
@@ -76,6 +82,9 @@ If the verb doesn't match any known command, attempt to infer intent:
 - "create an issue about..." → route to start (after issue creation)
 - "what's happening" → route to status
 - "ship it" → route to pr
+- "something is broken" / "why is this failing" → route to debug
+- "how should we build" / "what approach" → route to brainstorm
+- "design this" / "architecture" → route to design
 
 Confirm the inferred intent with the user before executing.
 

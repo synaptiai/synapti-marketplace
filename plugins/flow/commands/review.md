@@ -50,6 +50,7 @@ TaskCreate("Code quality review", "Logic correctness, edge cases, error handling
 TaskCreate("Convention review", "Commit format, branch naming, code patterns")
 TaskCreate("Test review", "Run quality commands, assess test coverage")
 TaskCreate("Requirements review", "Map acceptance criteria to implementation")
+TaskCreate("Error handling review", "Check for unhandled exceptions, silent failures, missing edge cases")
 ```
 
 ## Phase 3: CODE (Review Execution)
@@ -82,6 +83,10 @@ Agent(convention-checker):
 
 Agent(test-runner):
   "Run quality commands for PR #$ARGUMENTS branch."
+
+Agent(error-handler-inspector):
+  "Inspect changed files in PR #$ARGUMENTS for error handling gaps,
+   silent failures, unhandled exceptions. Return P1/P2/P3 findings."
 ```
 
 **Main thread**: Requirements compliance — map acceptance criteria to implementation.

@@ -10,6 +10,21 @@ agent: general-purpose
 
 Domain skill for starting work: branch setup, context loading, and task decomposition.
 
+## Iron Law
+
+**NO CODE BEFORE CONTEXT. Read the issue, load the history, understand the scope — then create the branch.**
+
+Starting a branch without loading issue context leads to misaligned implementations and wasted effort.
+
+## Pre-Conditions
+
+Before creating a branch, confirm:
+
+1. Issue exists and is open (not already closed/resolved)
+2. Issue has acceptance criteria (if not, ask the user or create them)
+3. No existing branch already addresses this issue
+4. You've read the full issue body AND comments (not just the title)
+
 ## Branch Creation
 
 Follow project conventions from settings or CLAUDE.md:
@@ -90,24 +105,15 @@ If agent teams are enabled and >5 acceptance criteria with independent file sets
 
 ## Decision Journal Init
 
-Create journal at branch creation:
-
-```bash
-JOURNAL_DIR=".decisions"
-mkdir -p "$JOURNAL_DIR"
-```
-
-Write header to `{JOURNAL_DIR}/issue-{N}.md`:
+Create `{JOURNAL_DIR}/issue-{N}.md` (journal dir defaults to `.decisions/`):
 
 ```markdown
 # Decision Journal: Issue #{N} — {title}
-
-**Issue**: #{N}
-**Branch**: {branch-name}
-**Started**: {YYYY-MM-DD}
-
+**Issue**: #{N} | **Branch**: {branch-name} | **Started**: {YYYY-MM-DD}
 ---
 ```
+
+The autonomous-workflow skill governs ongoing journal entry format (Init/Log/Summarize).
 
 ## Verification
 

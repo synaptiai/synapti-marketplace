@@ -10,6 +10,12 @@ agent: Explore
 
 Domain skill for validating git conventions across the development workflow.
 
+## Iron Law
+
+**CONVENTIONS ARE NOT OPTIONAL. A commit that violates project conventions is a defective commit, regardless of code quality.**
+
+History that violates conventions is history that every future contributor must question and work around.
+
 ## Convention Sources (Priority Order)
 
 1. **CLAUDE.md** — Project-specific overrides (highest priority)
@@ -115,3 +121,10 @@ Report all violations with severity:
 | Wrong branch naming | P3 | Note only (too late to rename) |
 | Missing issue linkage | P2 | Add `Closes #N` to PR body |
 | Missing PR labels | P3 | Add during PR creation |
+
+## Rationalization Prevention
+
+| Excuse | Response |
+|--------|----------|
+| "The convention doesn't apply to this type of change" | Check the config. If the convention is configured, it applies. |
+| "I'll fix the commit message later" | Later doesn't exist in git history. Fix it now. |

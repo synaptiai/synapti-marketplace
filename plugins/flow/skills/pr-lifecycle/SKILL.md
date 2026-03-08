@@ -10,6 +10,12 @@ agent: general-purpose
 
 Domain skill for the full PR creation process.
 
+## Iron Law
+
+**NO PR WITHOUT VERIFICATION. Every PR must have proof that quality checks pass. "I think it works" is not a PR description.**
+
+If you can't show test results, lint output, or verification evidence in the PR body, the PR is not ready.
+
 ## Pre-Flight Checks
 
 All checks run in parallel:
@@ -70,19 +76,25 @@ Closes #{issue_number}
 {Grouped by area with brief description per group}
 ```
 
+## Verification Gate
+
+Before creating the PR, confirm ALL of these. If any fail, stop:
+
+1. All quality commands (lint, test, typecheck) pass — show output
+2. Self-review completed (code-quality-principles checklist)
+3. Change classification shows no out-of-context files
+4. Every acceptance criterion has a "Met" or "Interpreted" status with evidence
+5. No P1 findings remain from code review
+
+This gate is mandatory. Skipping it to "get the PR up quickly" creates reviewer burden.
+
 ## Reviewer Suggestion
 
-Algorithm for suggesting reviewers:
-
-1. **CODEOWNERS match**: Check `.github/CODEOWNERS` for changed paths
-2. **File expertise**: `git log --format='%an' -- {changed-files}` → most frequent authors
-3. **Recent activity**: Contributors active in last 30 days
-4. **Workload balancing**: Prefer reviewers with fewer open review requests
+Algorithm: CODEOWNERS match → file expertise → recent activity → workload balancing.
 
 ```bash
 # Get contributors for changed files
 git log --format='%an' --since='30 days ago' -- $(git diff --name-only $DEFAULT_BRANCH...HEAD) | sort | uniq -c | sort -rn | head -5
-
 # Check CODEOWNERS
 cat .github/CODEOWNERS 2>/dev/null
 ```
@@ -108,3 +120,12 @@ gh pr view --json number,url,state,title
 ```
 
 Display PR URL and suggest: `/flow:review {number}` for self-review or share with team.
+
+## Rationalization Prevention
+
+| Excuse | Response |
+|--------|----------|
+| "I'll fix it after the PR is up" | Fix it now. Draft PRs accumulate, they don't improve. |
+| "The reviewer will catch any issues" | You are the first reviewer. Don't outsource your job. |
+| "It's a small change, no need for full pre-flight" | Small changes, same process. |
+| "CI will validate it" | CI validates what it tests. Pre-flight validates what it doesn't. |

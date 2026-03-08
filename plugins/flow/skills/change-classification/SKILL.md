@@ -10,6 +10,12 @@ agent: Explore
 
 Domain skill for analyzing and classifying code changes before committing.
 
+## Iron Law
+
+**CLASSIFY BEFORE COMMITTING. Every changed file gets a classification. Unclassified files do not get staged.**
+
+Committing without classification is how out-of-context changes, secrets, and unintended modifications reach the repository.
+
 ## Classification Algorithm
 
 For each changed file, evaluate signals to classify as: **in-context**, **uncertain**, or **out-of-context**.
@@ -72,6 +78,14 @@ After classification, group in-context files into atomic commits:
 3. **By directory**: When in doubt, group by top-level directory
 
 Each group gets one conventional commit with an accurate message.
+
+## Rationalization Prevention
+
+| Excuse | Response |
+|--------|----------|
+| "It's obviously in-context" | Then classification takes 2 seconds. Do it. |
+| "I only changed one file" | One file, same process. One-file commits have leaked secrets. |
+| "The lock file changed automatically" | Automatic changes still need classification. Verify intentional. |
 
 ## Integration
 

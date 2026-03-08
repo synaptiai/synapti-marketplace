@@ -10,6 +10,12 @@ agent: Explore
 
 Discovers available capabilities in the user's environment for dynamic workflow adaptation.
 
+## Iron Law
+
+**DISCOVER BEFORE ASSUMING. Never hardcode tool availability. Always scan the environment first.**
+
+Assuming a tool exists leads to runtime failures. Assuming it doesn't leads to missing capabilities.
+
 ## Discovery Process
 
 Steps 1-5 are independent — execute ALL simultaneously with parallel tool calls.

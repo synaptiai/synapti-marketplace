@@ -10,6 +10,12 @@ agent: Explore
 
 Domain skill for creating high-quality GitHub issues that describe what should happen without prescribing how.
 
+## Iron Law
+
+**ISSUES DESCRIBE OUTCOMES, NEVER IMPLEMENTATIONS. If the issue says "how," rewrite it.**
+
+The moment an issue prescribes a method, it constrains the solution space and biases the implementer.
+
 ## Solution-Agnostic Principles
 
 Issues must describe outcomes, not implementations:
@@ -21,6 +27,15 @@ Acceptance criteria must be verifiable without knowing the code:
 
 - **Good**: "Resetting a password with a valid token changes the stored password"
 - **Bad**: "The `reset!` method updates the `password_digest` column"
+
+## Anti-Patterns in Issue Writing
+
+Do NOT:
+- Include file paths, function names, or class names in acceptance criteria
+- Write acceptance criteria that can only be verified by reading code
+- Create issues without checking for duplicates first
+- Use vague criteria like "improve performance" or "make it better"
+- Bundle unrelated changes into a single issue
 
 ## Requirements Gathering
 

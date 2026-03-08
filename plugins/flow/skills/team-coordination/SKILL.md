@@ -13,6 +13,12 @@ Domain skill for orchestrating agent teams. Only relevant when `agentTeams: true
 
 Requires: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` environment variable.
 
+## Iron Law
+
+**INDEPENDENT ANALYSIS BEFORE SHARED CONCLUSIONS. Teammates who see each other's findings are contaminated reviewers.**
+
+The value of a team is independent perspectives. Sharing findings before independent analysis destroys that value.
+
 ## When to Spawn Teams
 
 | Scenario | Recommendation | Rationale |
@@ -68,6 +74,11 @@ Lead synthesizes results:
 - **Consensus findings**: Both reviewers agree → highest confidence
 - **Disputed findings**: Reviewers disagree → flag for human review
 - **Unique findings**: Only one reviewer found it → include with lower confidence
+
+### Cognitive Bias Awareness
+
+- **Anchoring**: First reviewer's findings bias subsequent reviewers. This is why Phase 1 is independent.
+- **Groupthink**: If all reviewers agree too easily, the review lacked rigor. Disputed findings are healthy.
 
 ## Teammate Health Protocol
 

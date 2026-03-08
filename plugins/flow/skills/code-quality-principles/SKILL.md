@@ -1,12 +1,28 @@
 ---
 name: code-quality-principles
-description: "[flow] Code quality principles for surgical, safe development. Only change what's needed. No secrets in commits. Solution-agnostic thinking. No mocks/stubs/TODOs in production. Parallel quality execution."
+description: "[flow] Code quality principles for surgical, safe development. Only change what's needed. No secrets in commits. Anti-pattern awareness. No mocks/stubs/TODOs in production. Parallel quality execution."
 allowed-tools: Bash, Read, Grep, Glob
 ---
 
 # Code Quality Principles
 
 Foundation skill governing code quality standards during autonomous development.
+
+## Iron Law
+
+**EVERY CHANGE MUST BE INTENTIONAL. If you can't explain why a line changed, revert it.**
+
+No drive-by refactors. No "while I'm here" improvements. No formatting changes in files you aren't modifying for the task.
+
+## Before You Write Code
+
+Answer these questions first. If you can't, return to EXPLORE:
+
+1. What is the specific task/criterion this code serves?
+2. What files will be modified and why each one?
+3. What existing patterns does this project use for this type of change?
+4. What could go wrong? (error cases, edge cases, security)
+5. How will you verify this works?
 
 ## Surgical Changes
 
@@ -26,15 +42,6 @@ Never commit secrets, credentials, or sensitive values:
 - Reference secrets by name, never by value
 - If you spot a hardcoded secret, flag it as P1 immediately
 
-## Solution-Agnostic Thinking
-
-When crafting issues and acceptance criteria:
-
-- Describe **what** should happen, not **how** to implement it
-- Write criteria that can be verified without knowing the implementation
-- Avoid prescribing specific libraries, patterns, or architectures in requirements
-- The implementation phase decides the "how"
-
 ## Production Code Standards
 
 Code that ships must be complete:
@@ -47,22 +54,16 @@ Code that ships must be complete:
 
 ## Quality Command Execution
 
-Run quality checks in parallel when possible:
+Run independent quality commands (lint, test, typecheck) as parallel Bash calls, never chained with `&&`. After quality checks: P1 failures fix immediately, P2 fix before PR, P3 note and proceed.
 
-```
-# Good: parallel independent commands
-Bash: npm run lint
-Bash: npm run test
-Bash: npm run typecheck
+## Anti-Patterns
 
-# Bad: sequential when independent
-Bash: npm run lint && npm run test && npm run typecheck
-```
-
-After quality checks:
-- P1 failures: fix immediately
-- P2 failures: fix before PR
-- P3 warnings: note and proceed
+Do NOT:
+- Modify imports/formatting in files you aren't changing for the task
+- Add "improvements" discovered during review into the same PR
+- Commit generated files without verifying they're correct
+- Copy-paste code instead of extracting a shared function
+- Catch exceptions silently (`catch {}` / `rescue nil`)
 
 ## First-Touch Awareness
 
@@ -91,3 +92,13 @@ Before marking any task complete:
 3. New code follows existing patterns in the project?
 4. Edge cases considered (null, empty, boundary values)?
 5. Error messages are helpful and specific?
+
+## Rationalization Prevention
+
+| Excuse | Response |
+|--------|----------|
+| "I'll clean this up while I'm here" | Log it. Don't fix it. Surgical changes only. |
+| "This TODO is temporary" | TODOs in commits are permanent. Create an issue instead. |
+| "The tests pass, it's fine" | Tests passing is necessary, not sufficient. Run the self-review checklist. |
+| "This debug log helps with development" | Remove it. Development aids don't ship. |
+| "It's just a small formatting fix" | If it's not in your task, it's not in your commit. |

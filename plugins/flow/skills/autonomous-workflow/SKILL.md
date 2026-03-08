@@ -8,6 +8,12 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, TaskCreate, TaskList,
 
 Foundation skill governing how Claude executes development workflows autonomously.
 
+## Iron Law
+
+**NO SKIPPING PHASES. Explore before Plan, Plan before Code, Code before Verify. Every phase produces an artifact.**
+
+Jumping to code without exploration is the #1 cause of rework. Jumping to "done" without verification is the #1 cause of bugs reaching review.
+
 ## Explore > Plan > Code > Verify
 
 Every multi-step workflow follows this loop:
@@ -67,6 +73,15 @@ Quality check loops have max iterations from `settings.json`:
 3. After `qualityCheckMaxIterations` (default 3), escalate to user
 4. Never loop indefinitely
 
+## Stop Conditions
+
+| Trigger | Action |
+|---------|--------|
+| 3+ verification failures on the same issue | Stop fixing forward. Return to EXPLORE — the problem is architectural. |
+| Plan has >10 tasks for a single issue | Decompose the issue first. One PR should not span 10 tasks. |
+| EXPLORE phase yields contradictory signals | Stop. Ask the user for clarification before planning. |
+| >5 files modified without staging or committing | Stop. What you have should be committable. If not, the tasks are too large. |
+
 ## Sensitivity Classification
 
 - **public**: Safe for PR bodies, comments, logs
@@ -75,9 +90,18 @@ Quality check loops have max iterations from `settings.json`:
 
 ## Graceful Degradation
 
-When capabilities are missing, fall back gracefully:
+| Missing | Fallback |
+|---------|----------|
+| No agent teams | Single-session sequential |
+| No quality commands | Skip with note |
+| No gh CLI | Warn, continue with git-only |
+| No decision journal | Proceed without logging, note in PR |
 
-- No agent teams → single-session sequential
-- No quality commands → skip with note
-- No gh CLI → warn and continue with git-only operations
-- No decision journal → proceed without logging, note in PR
+## Rationalization Prevention
+
+| Excuse | Response |
+|--------|----------|
+| "I already know what to do, skip EXPLORE" | Then exploring should take 10 seconds. Do it. |
+| "The plan is obvious, no need to TaskCreate" | Untracked work is invisible work. Create the tasks. |
+| "Just one more fix, then I'll verify" | Verify now. The loop exists because one-more-fix never ends. |
+| "This is too simple for the full loop" | Simple tasks, same phases. Just faster. |

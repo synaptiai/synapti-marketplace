@@ -10,6 +10,12 @@ agent: general-purpose
 
 Domain skill for systematically addressing PR review comments.
 
+## Iron Law
+
+**EVERY FIX TRACES TO A SPECIFIC REVIEW COMMENT. Untraceable changes during feedback resolution are out-of-context changes.**
+
+If you can't point to the review comment that motivated a change, the change doesn't belong in this round.
+
 ## Surgical Change Principle
 
 When addressing feedback, only change what the feedback requires:
@@ -27,24 +33,13 @@ Fetch all review feedback:
 PR_NUM=$ARGUMENTS
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
-# Get review comments
-gh api repos/$REPO/pulls/$PR_NUM/comments --jq '.[] | {
-  id: .id,
-  path: .path,
-  line: .line,
-  body: .body,
-  author: .user.login,
-  created: .created_at
-}'
+# Review comments with file:line context
+gh api repos/$REPO/pulls/$PR_NUM/comments --jq '.[] | {id: .id, path: .path, line: .line, body: .body, author: .user.login}'
 
-# Get review summaries
-gh pr view $PR_NUM --json reviews --jq '.reviews[] | {
-  state: .state,
-  body: .body,
-  author: .author.login
-}'
+# Review summaries and states
+gh pr view $PR_NUM --json reviews --jq '.reviews[] | {state: .state, body: .body, author: .author.login}'
 
-# Get conversation threads
+# Root conversation threads (for grouping replies)
 gh api repos/$REPO/pulls/$PR_NUM/comments --jq '.[] | select(.in_reply_to_id == null) | .id'
 ```
 
@@ -103,6 +98,14 @@ It's acceptable to push back on feedback when:
 - The suggested change would introduce a regression
 
 Always explain the reasoning when pushing back. Never ignore feedback silently.
+
+## Rationalization Prevention
+
+| Excuse | Response |
+|--------|----------|
+| "While fixing this, I noticed something else to improve" | Log it. Don't fix it. Surgical changes only. |
+| "The reviewer probably meant this broader change" | Don't guess. Address the literal comment. Clarify if unsure. |
+| "I'll batch all fixes into one commit" | One commit per feedback item. Traceability requires it. |
 
 ## Re-Review Request
 
