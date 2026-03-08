@@ -35,5 +35,21 @@
   "journal": {
     "dir": ".decisions",
     "sensitivityDefault": "public"
+  },
+  "testing": {
+    "tddMode": "suggest"
+  },
+  "debugging": {
+    "maxHypotheses": 3
+  },
+  "visualVerification": {
+    "enabled": true,
+    "screenshotDir": ".screenshots",
+    "viewports": [
+      { "name": "desktop", "width": 1280, "height": 720 },
+      { "name": "tablet", "width": 768, "height": 1024 },
+      { "name": "mobile", "width": 375, "height": 812 }
+    ],
+    "maxIterations": 3
   }
 }

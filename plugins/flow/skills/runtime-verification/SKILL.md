@@ -1,7 +1,7 @@
 ---
 name: runtime-verification
 description: "[flow] Verifies implementation works at runtime by discovering and executing dev server startup, API smoke tests, E2E tests, and browser checks. Use after quality checks pass to confirm the code actually runs."
-allowed-tools: Bash, Read, Glob
+allowed-tools: Bash, Read, Glob, Grep, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: Explore
 ---
@@ -9,6 +9,12 @@ agent: Explore
 # Runtime Verification
 
 Domain skill for verifying code works at runtime, beyond static analysis and unit tests.
+
+## Iron Law
+
+**NO COMPLETION CLAIMS WITHOUT FRESH RUNTIME EVIDENCE. Static analysis and unit tests prove code compiles. Runtime verification proves code works.**
+
+A green test suite is necessary but not sufficient. If the acceptance criteria describe runtime behavior, verify at runtime.
 
 ## Fast-Path Verification
 
@@ -72,6 +78,90 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:$PORT/health 2>/dev/null
 curl -s -o /dev/null -w "%{http_code}" http://localhost:$PORT/ 2>/dev/null
 ```
 
+## Visual Verification
+
+Screenshot-analyze-verify workflow for UI-facing changes. Conditional — only activates when relevant.
+
+### UI Relevance Detection
+
+Check whether visual verification applies:
+
+```bash
+# Check diff for UI file extensions
+git diff --name-only HEAD~1..HEAD | grep -iE '\.(tsx|jsx|vue|html|css|scss|svelte)$'
+```
+
+Also check acceptance criteria text for UI keywords: `UI`, `page`, `display`, `render`, `visual`, `layout`, `responsive`, `component`, `style`.
+
+If neither signal fires → skip visual verification with note: "No UI-relevant changes detected."
+
+### Browser Tool Discovery
+
+Priority cascade — use the first available:
+
+1. **Playwright MCP** (`browser_navigate`, `browser_take_screenshot`) — full capability: navigation, screenshots, console logs, DOM inspection
+2. **Chrome DevTools MCP** — screenshot + console + DOM inspection
+3. **CLI fallback**: `npx playwright screenshot http://localhost:$PORT/ $SCREENSHOT_DIR/page.png`
+4. **No tools available** → skip visual verification, note limitation in output
+
+### Screenshot-Analyze-Verify Loop
+
+Bounded by `settings.json` → `visualVerification.maxIterations` (default: 3).
+
+```
+For each page URL (dev server root + key pages from routes):
+  1. Navigate to page URL
+  2. Take screenshot → save to $SCREENSHOT_DIR/{page}-{viewport}-{timestamp}.png
+  3. Read screenshot with Read tool (Claude analyzes visually)
+  4. Check for:
+     - Blank page (P1 — blocks completion)
+     - Layout breaks / broken grid (P2)
+     - Missing content that should be visible (P2)
+     - Console errors blocking render (P1)
+     - Minor styling issues (P3)
+  5. If MCP available: also check browser_console_logs for JS errors
+  6. Record screenshot path as evidence
+```
+
+### Responsive Verification
+
+For each viewport in `settings.json` → `visualVerification.viewports`, resize browser and repeat screenshot analysis:
+
+- Desktop (1280×720), Tablet (768×1024), Mobile (375×812) by default
+- Check for: content cut off, nav broken at breakpoint, horizontal scroll on mobile
+
+### Task Tracking
+
+Create tasks before starting, update status throughout:
+
+```
+# Setup — create all visual verification tasks upfront
+TaskCreate("Visual verification", "Screenshot-analyze-verify for UI-facing changes")
+TaskCreate("Browser tool discovery", "Detect available browser automation (Playwright MCP, Chrome DevTools, CLI)")
+TaskCreate("Responsive check", "Verify UI across configured viewports (desktop, tablet, mobile)")
+
+# Browser tool discovery
+TaskUpdate(browserToolTaskId, status: "in_progress")
+# ... detect tools ...
+TaskUpdate(browserToolTaskId, status: "completed", result: "{tool} detected")
+
+# If not applicable (no UI files, no UI criteria):
+TaskUpdate(visualVerificationTaskId, status: "completed", result: "SKIP — no UI-relevant changes")
+TaskUpdate(responsiveTaskId, status: "completed", result: "SKIP")
+
+# Screenshot-analyze-verify loop
+TaskUpdate(visualVerificationTaskId, status: "in_progress")
+# ... for each page: screenshot → analyze → record findings ...
+TaskUpdate(visualVerificationTaskId, status: "completed", result: "PASS/FAIL — {pages} checked, P1:{n} P2:{n} P3:{n}")
+
+# Responsive verification
+TaskUpdate(responsiveTaskId, status: "in_progress")
+# ... for each viewport: resize → screenshot → analyze ...
+TaskUpdate(responsiveTaskId, status: "completed", result: "PASS/FAIL — {viewports} tested, findings: {summary}")
+```
+
+Use `TaskList` after all visual verification completes to confirm all sub-tasks resolved.
+
 ## Acceptance Criteria Verification
 
 Map each acceptance criterion to a verification method:
@@ -79,9 +169,20 @@ Map each acceptance criterion to a verification method:
 | Criterion Type | Verification |
 |---------------|-------------|
 | API behavior | curl/fetch endpoint, check response |
-| UI rendering | Dev server + browser check |
+| UI rendering | Screenshot-analyze-verify loop (see Visual Verification) |
+| UI responsive | Multi-viewport screenshot verification |
 | Data processing | Run with test data, check output |
 | Configuration | Verify config loads without error |
+
+## Completion Gate
+
+Runtime verification is complete only when:
+
+- Every testable acceptance criterion has a verification result (Pass/Fail/N/A with reason)
+- "N/A" is justified (e.g., no dev server for a CLI tool), never used as a shortcut
+- Failed checks are reported as P1 findings, not silently noted
+
+If the dev server won't start, that IS the finding. Report it.
 
 ## Output Format
 
@@ -94,6 +195,13 @@ Map each acceptance criterion to a verification method:
 | Health check | {Pass/Fail/N/A} | HTTP {status} |
 | E2E tests | {Pass/Fail/N/A} | {framework} |
 | Smoke tests | {Pass/Fail/N/A} | {details} |
+| Visual check | {Pass/Fail/Skip/N/A} | {pages checked, findings} |
+| Responsive | {Pass/Fail/Skip/N/A} | {viewports tested} |
+| Console errors | {Pass/Fail/Skip/N/A} | {error count} |
+
+### Visual Evidence
+| Page | Viewport | Screenshot | Status | Findings |
+|------|----------|------------|--------|----------|
 
 ### Acceptance Criteria Verification
 | # | Criterion | Verified | Method |
@@ -105,6 +213,7 @@ Map each acceptance criterion to a verification method:
 From `settings.json`:
 - `timeouts.devServerStartup`: Max seconds to wait for dev server (default: 30)
 - `timeouts.e2eTest`: Max seconds for E2E suite (default: 120)
+- `visualVerification.maxIterations`: Max screenshot-analyze-fix cycles (default: 3)
 
 ## Graceful Degradation
 
@@ -114,3 +223,7 @@ From `settings.json`:
 | No E2E framework | Skip E2E, rely on unit tests |
 | Server won't start | Report error, don't block workflow |
 | Port already in use | Try alternative ports |
+| No Playwright MCP | Try Chrome DevTools MCP |
+| No Chrome DevTools MCP | Try CLI screenshot (npx playwright screenshot) |
+| No browser tools at all | Skip visual verification, note in output |
+| Non-UI project | Skip visual verification (no UI files or criteria detected) |

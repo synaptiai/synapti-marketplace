@@ -27,7 +27,13 @@ This command operates with these domain skills loaded:
 
 ## Phase 1: EXPLORE
 
-Gather all context before planning. Execute these in parallel:
+Gather all context before planning.
+
+**Bug issue detection**: If issue labels include `bug`:
+- Load `debugging-patterns` skill knowledge
+- Phase 3 becomes: reproduce → isolate root cause → write failing test → fix → verify
+
+Execute these in parallel:
 
 **Parallel Bash calls:**
 
@@ -99,6 +105,10 @@ Display task plan. Proceed unless user objects.
 
 ## Phase 3: CODE
 
+**TDD guidance**: Apply `tdd-patterns` knowledge during implementation:
+- For each task: write failing test → implement → verify test passes → refactor
+- Check `settings.json` → `testing.tddMode` for enforcement level
+
 Execute tasks following the task-driven loop:
 
 ```
@@ -138,10 +148,22 @@ Prove everything works:
    ```
 3. **TaskList** — confirm all tasks show status: completed
 4. **Runtime verification** — if runtime-verification skill available, invoke it
-5. **Display summary**:
+5. **Visual verification** — if UI-relevant changes detected (changed .tsx/.jsx/.vue/.html/.css/.scss files OR acceptance criteria mention UI/page/render/display):
+   ```
+   TaskCreate("Visual verification", "Screenshot-analyze-verify for UI-facing changes")
+   TaskCreate("Browser tool discovery", "Detect available browser automation tools")
+   TaskCreate("Responsive check", "Verify UI across configured viewports")
+   ```
+   - `TaskUpdate(browserToolTaskId, status: "in_progress")` → detect browser tools → `TaskUpdate(browserToolTaskId, status: "completed", result: "{tool or SKIP}")`
+   - `TaskUpdate(visualVerificationTaskId, status: "in_progress")` → take screenshots of affected pages at configured viewports → analyze visually → record findings (P1 blocks completion, P2 noted) → save screenshot evidence to `visualVerification.screenshotDir` → `TaskUpdate(visualVerificationTaskId, status: "completed", result: "PASS/FAIL — {summary}")`
+   - `TaskUpdate(responsiveTaskId, status: "in_progress")` → test each viewport → `TaskUpdate(responsiveTaskId, status: "completed", result: "{viewports tested}")`
+   - If not applicable (no UI files): `TaskUpdate` all three as completed with result "SKIP"
+   - `TaskList` — confirm all visual verification tasks resolved
+6. **Display summary**:
    - Tasks completed: N/N
    - Quality checks: pass/fail
    - Self-review findings: P1: X, P2: Y, P3: Z
+   - Visual verification: pass/fail/skip
    - Branch: ready for PR
 
 ## Completion

@@ -66,6 +66,11 @@ TaskCreate("Quality commands", "Run lint, test, typecheck")
 TaskCreate("Requirements compliance", "Map acceptance criteria to implementation")
 ```
 
+If the diff includes UI-relevant files (`.tsx`, `.jsx`, `.vue`, `.html`, `.css`, `.scss`):
+```
+TaskCreate("Visual verification", "Verify UI renders correctly with screenshot analysis")
+```
+
 Get the diff for review:
 
 ```bash
@@ -100,22 +105,40 @@ After agents return, TaskUpdate each review task with findings.
 ## Phase 4: VERIFY
 
 1. **Synthesize findings**: Deduplicate by file:line, prioritize P1 > P2 > P3
-2. **TaskList**: Confirm all review tasks complete
-3. **Display findings** (finding-first pattern):
+2. **Integration verification** — dispatch Agent(integration-verifier):
+   ```
+   Agent(integration-verifier):
+     "Verify runtime behavior for this branch. Run E2E tests if available,
+      smoke test endpoints, validate acceptance criteria at runtime.
+      If UI files changed, run visual verification with screenshot analysis.
+      Return verification results table."
+   ```
+   After agent returns:
+   - If visual verification task was created in Phase 2: `TaskUpdate(visualVerificationTaskId, status: "completed", result: "{agent's visual verification findings}")`
+   - Record screenshot paths from agent results as evidence
+3. **TaskList**: Confirm all review tasks complete (including visual verification if created)
+4. **Display findings** (finding-first pattern):
    - P1 findings → must fix before PR
    - P2 findings → should fix, ask user
    - P3 findings → note in PR body
-4. **If P1 findings**: Fix them, re-run review
-5. **Generate PR body** from template + findings + journal + comprehension report
-6. **Push** (Tier 2: journal-and-proceed):
+5. **If P1 findings**: Fix them, re-run review
+6. **Generate PR body** from template + findings + journal + comprehension report.
+   If visual verification ran, include visual evidence section:
+   ```markdown
+   ## Visual Verification
+   | Page | Viewport | Status | Screenshot |
+   |------|----------|--------|------------|
+   ```
+   Note: screenshots are local files; for remote visibility, mention "verified locally"
+7. **Push** (Tier 2: journal-and-proceed):
    ```bash
    git push -u origin $BRANCH
    ```
-7. **Create PR** (Tier 2):
+8. **Create PR** (Tier 2):
    ```bash
    gh pr create --title "$TITLE" --body "$BODY"
    ```
-8. **Suggest reviewers** using pr-lifecycle skill algorithm
-9. **Verify**: `gh pr view --json number,url`
+9. **Suggest reviewers** using pr-lifecycle skill algorithm
+10. **Verify**: `gh pr view --json number,url`
 
 Display PR URL and next steps.

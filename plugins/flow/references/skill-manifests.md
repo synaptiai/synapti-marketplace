@@ -27,6 +27,9 @@ These three skills are always active when the flow plugin is enabled:
 | `/flow learn` | (none) | 0 |
 | `/flow setup` | capability-discovery | 1 |
 | `/flow explain` | (none) | 0 |
+| `/flow debug` | debugging-patterns, change-classification | 2 |
+| `/flow design` | architecture-patterns, capability-discovery | 2 |
+| `/flow brainstorm` | brainstorming, capability-discovery | 2 |
 
 ## Domain Skills Inventory
 
@@ -41,8 +44,12 @@ These three skills are always active when the flow plugin is enabled:
 | pr-lifecycle | domain | context: fork | PR creation, reviewer suggestion |
 | feedback-resolution | domain | context: fork | Surgical feedback fixes |
 | merge-and-release | domain | disable-model-invocation | Merge prereqs, release process |
-| runtime-verification | domain | context: fork | Dev server, E2E, smoke tests |
+| runtime-verification | domain | context: fork | Dev server, E2E, smoke tests, visual verification |
 | team-coordination | domain | disable-model-invocation | Agent team orchestration |
+| debugging-patterns | domain | context: fork | Root cause methodology, hypothesis testing |
+| architecture-patterns | domain | context: fork | C4 design, coupling analysis |
+| tdd-patterns | domain | context: fork | Red-Green-Refactor, test quality |
+| brainstorming | domain | context: fork | Multi-option exploration |
 
 ## Context Window Budget
 
