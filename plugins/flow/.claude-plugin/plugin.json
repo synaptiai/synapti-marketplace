@@ -18,8 +18,5 @@
     "development"
   ],
   "repository": "https://github.com/synaptiai/synapti-marketplace",
-  "homepage": "https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/flow",
-  "conflicts": [
-    "gh-workflow"
-  ]
+  "homepage": "https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/flow"
 }
