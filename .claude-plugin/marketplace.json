@@ -106,6 +106,38 @@
       ]
     },
     {
+      "name": "flow",
+      "source": "./plugins/flow",
+      "description": "Skill-driven workflow plugin for GitHub development. Encodes team knowledge as composable skills, enforces safety through hooks, and compounds learning across sessions.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Daniel Bentes"
+      },
+      "homepage": "https://github.com/synaptiai/synapti-marketplace",
+      "repository": "https://github.com/synaptiai/synapti-marketplace",
+      "license": "MIT",
+      "category": "workflow",
+      "keywords": [
+        "github",
+        "workflow",
+        "skills",
+        "autonomous",
+        "agent-teams",
+        "hooks",
+        "learning",
+        "development",
+        "code-review",
+        "safety"
+      ],
+      "tags": [
+        "github",
+        "workflow",
+        "skills",
+        "autonomous",
+        "development"
+      ]
+    },
+    {
       "name": "agent-capability-standard",
       "source": "./plugins/agent-capability-standard",
       "description": "Grounded Agency: 36 atomic capabilities with typed contracts, safety-by-construction, and grounded reasoning for reliable AI agents",
