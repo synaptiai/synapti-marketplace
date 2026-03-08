@@ -53,6 +53,21 @@ gh api repos/$REPO/pulls/$ARGUMENTS/comments --jq 'group_by(.path) | .[] | {file
 
 **Skill(capability-discovery)**: Discover quality commands for verification.
 
+## Review Cycle Tracking
+
+Before planning, determine the current review cycle:
+
+```bash
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+CYCLE_COUNT=$(gh pr view $ARGUMENTS --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length')
+echo "REVIEW_CYCLE=$CYCLE_COUNT"
+```
+
+**Escalating strategy by cycle:**
+- **Cycle 1**: Targeted fixes + Boy Scout cleanup in modified files
+- **Cycle 2**: Targeted fixes + whole-file scan of all modified files for P1/P2
+- **Cycle 3+**: Comprehensive fix-all + full self-review before re-requesting
+
 ## Phase 2: PLAN
 
 Categorize feedback and create tasks:
@@ -87,60 +102,77 @@ For each feedback task (in priority order):
 3. Context recovery: find current code location (don't trust line numbers)
    - Search for quoted code snippets
    - Read the file at the mentioned path
-4. Implement the minimal surgical fix
+4. Implement the fix
 5. Verify the fix addresses the specific feedback
 6. Commit: git commit -m "fix(scope): address review — {summary}"
 7. TaskUpdate(taskId, status: "completed")
 ```
 
+**Boy Scout pass** — after all feedback fixes:
+- Scan all modified files for lint/format/obvious issues that pass the proximity test
+- If cycle >= 2, also scan the entire file for P1/P2 issues
+- Fix any proximity-test-passing issues found
+- Boy Scout fixes get separate `improve:` commits
+
 For **Question** items: prepare a response comment (no code change needed).
 
 For **Pushback** items: explain reasoning in response comment.
 
-For **Out-of-scope** items (valid finding but not appropriate for this PR):
+For **Out-of-scope** items — only items that FAIL the proximity test are out-of-scope:
 
-If a finding is valid but fixing it would violate the surgical change principle, or if the reviewer explicitly marks something as out-of-scope:
+A finding in a file the PR already modifies is NOT out-of-scope if it passes the proximity test — it should be fixed under the Boy Scout Rule.
 
-1. Use the AskUserQuestion tool with contextual options: "This finding is valid but out-of-scope. Create a follow-up issue to track it?"
+If a finding truly fails the proximity test (untouched files, architecture changes, new tests required):
+
+1. Use the AskUserQuestion tool with contextual options: "This finding is valid but out-of-scope (fails proximity test). Create a follow-up issue to track it?"
 2. If yes, create a GitHub issue using issue-crafting skill knowledge:
    - Title: concise, solution-agnostic description
-   - Body: use the issue body template structure:
-     - **Context**: "Discovered during review of PR #$ARGUMENTS ({PR title}). Reviewer: @{author}"
-     - **Current State**: the finding with file:line citation
-     - **Objective**: outcome description (solution-agnostic)
-     - **Acceptance Criteria**: verifiable behaviors
+   - Body: Context, Current State (file:line), Objective, Acceptance Criteria
    - Labels: from repo label set
    - Issue creation is Tier 2 (journal-and-proceed)
    ```bash
    gh issue create --title "{title}" --body "{body}" --label "{labels}"
    ```
-3. Reference the created issue in the resolution comment:
-   ```bash
-   gh pr comment $ARGUMENTS --body "Created follow-up issue #{N} for: {finding summary}"
-   ```
+3. Reference the created issue in the resolution comment
 4. TaskUpdate the feedback task as completed with result: "follow-up issue #{N}"
 
-## Phase 4: VERIFY
+## Phase 4: VERIFY (Convergence Check)
 
 1. **Quality commands** (parallel): lint, test, typecheck
-2. **Self-review** — Agent(code-reviewer): verify fixes are surgical, no regressions
-3. **Change classification** — verify no out-of-context changes introduced
-4. **TaskList**: Confirm all feedback tasks complete
-5. **Push** (Tier 2: journal-and-proceed):
+2. **Comprehensive self-review** of ALL files touched on the branch:
+   ```
+   Agent(code-reviewer):
+     "Review ALL files modified on this branch against $DEFAULT_BRANCH.
+      Check for: logic errors, security issues, missing edge cases.
+      Return P1/P2/P3 findings with file:line."
+   ```
+3. **Convergence check** (max 3 self-review-fix iterations):
+   - Self-review finds P1 → fix NOW (don't re-request with known P1s)
+   - P2 in touched files → fix NOW
+   - P3 → note only
+   - After fixes: re-run quality commands, re-review changed files
+4. **Verify Boy Scout cleanup** passes proximity test (no scope creep)
+5. **Change classification** — verify no out-of-context changes introduced
+6. **TaskList**: Confirm all feedback tasks complete
+7. **Push** (Tier 2: journal-and-proceed):
    ```bash
    git push
    ```
-6. **Post resolution comments**:
+8. **Post resolution comments**:
    ```bash
    gh pr comment $ARGUMENTS --body "Addressed review feedback:
    - {P1 fix 1}
    - {P2 fix 2}
+   - {Boy Scout improvements}
    - {Question response}
    - Follow-up issues created: #{N1}, #{N2} (if any)"
    ```
-7. **Re-request review**:
-   ```bash
-   gh pr edit $ARGUMENTS --add-reviewer @{reviewer}
-   ```
+9. **Conditional re-request review**:
+   - If self-review found 0 findings → do NOT re-request (nothing changed that needs re-review beyond the feedback fixes)
+   - If cycle < `reviewCycleLimit` (default 3) → re-request normally:
+     ```bash
+     gh pr edit $ARGUMENTS --add-reviewer @{reviewer}
+     ```
+   - If cycle >= `reviewCycleLimit` → use the AskUserQuestion tool: "Review cycle {N}. Options: re-request same reviewer, request fresh reviewer, or merge as-is?"
 
-Display summary: fixes applied, questions answered, pushback items.
+Display summary: fixes applied, Boy Scout improvements, questions answered, pushback items, cycle count.

@@ -12,9 +12,9 @@ Domain skill for verifying code works at runtime, beyond static analysis and uni
 
 ## Iron Law
 
-**NO COMPLETION CLAIMS WITHOUT FRESH RUNTIME EVIDENCE. Static analysis and unit tests prove code compiles. Runtime verification proves code works.**
+**NO COMPLETION UNTIL THE CODE BUILDS, RUNS, AND BEHAVES CORRECTLY. If you cannot verify it yourself, build the infrastructure to verify it.**
 
-A green test suite is necessary but not sufficient. If the acceptance criteria describe runtime behavior, verify at runtime.
+A green test suite is necessary but not sufficient. Runtime verification proves code actually works. "No test framework" is a problem to solve, not a reason to skip.
 
 ## Fast-Path Verification
 
@@ -26,6 +26,55 @@ Check for a project-level verify script first:
 ```
 
 If found, run it and return results. Skip remaining steps.
+
+## Build Verification
+
+**Mandatory build step for all project types.** Build failure IS the finding — do NOT skip to runtime checks.
+
+```bash
+# Node.js / TypeScript
+[ -f "package.json" ] && npm run build 2>&1
+
+# Python
+[ -f "setup.py" ] || [ -f "pyproject.toml" ] && pip install -e . 2>&1
+
+# Go
+[ -f "go.mod" ] && go build ./... 2>&1
+
+# Rust
+[ -f "Cargo.toml" ] && cargo build 2>&1
+
+# Ruby
+[ -f "Gemfile" ] && bundle install 2>&1
+```
+
+If build fails → iterate: read errors, fix, rebuild (up to `closedLoop.maxBuildIterations`, default 5). Do NOT proceed until the build passes.
+
+## Ad-Hoc Verification
+
+For projects without formal test frameworks, verify by running the code:
+
+| Project Type | Verification Approach |
+|-------------|----------------------|
+| Backend/API | Start server, curl endpoints, verify responses, check logs |
+| CLI tools | Build, run with --help, run with sample input, check exit codes |
+| Libraries | Write temporary test script, exercise public API, verify outputs, delete script |
+| Static sites | Build, serve locally, verify pages load |
+| Config-only | Validate config syntax, apply dry-run if supported |
+
+"No test framework" is a problem to solve, not a reason to skip verification.
+
+## Iterative Debug Loop
+
+When any verification fails:
+1. Read the FULL error message and stack trace — don't skim
+2. Identify root cause (not just the symptom)
+3. Fix the root cause
+4. Re-verify
+
+If the same error persists after a fix attempt: re-read code paths, try a different approach. Max `closedLoop.maxDebugIterations` (default 5) iterations, then escalate to user.
+
+**The user should NEVER have to provide logs or tell you what went wrong.** You have access to the same errors — read them yourself.
 
 ## Dev Server Discovery
 
@@ -215,15 +264,17 @@ From `settings.json`:
 - `timeouts.e2eTest`: Max seconds for E2E suite (default: 120)
 - `visualVerification.maxIterations`: Max screenshot-analyze-fix cycles (default: 3)
 
-## Graceful Degradation
+## Active Problem Solving
 
-| Missing | Fallback |
-|---------|----------|
-| No dev server | Skip runtime checks, note in output |
-| No E2E framework | Skip E2E, rely on unit tests |
-| Server won't start | Report error, don't block workflow |
+Do NOT silently skip verification. Actively solve problems:
+
+| Problem | Action |
+|---------|--------|
+| No dev server | Attempt to start one. Report P1 if no start command exists and no alternative verification is possible. |
+| No E2E framework | Run ad-hoc smoke tests (curl endpoints, run CLI, exercise API) |
+| Server won't start | Read the error, fix the code, retry (up to `closedLoop.maxServerRetries`, default 3) |
 | Port already in use | Try alternative ports |
 | No Playwright MCP | Try Chrome DevTools MCP |
-| No Chrome DevTools MCP | Try CLI screenshot (npx playwright screenshot) |
+| No Chrome DevTools MCP | Try `npx playwright install chromium && npx playwright screenshot` |
 | No browser tools at all | Skip visual verification, note in output |
 | Non-UI project | Skip visual verification (no UI files or criteria detected) |

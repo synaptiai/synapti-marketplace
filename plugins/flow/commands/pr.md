@@ -71,6 +71,11 @@ If the diff includes UI-relevant files (`.tsx`, `.jsx`, `.vue`, `.html`, `.css`,
 TaskCreate("Visual verification", "Verify UI renders correctly with screenshot analysis")
 ```
 
+Add runtime verification task:
+```
+TaskCreate("Runtime verification", "Build, start, and smoke test before PR creation")
+```
+
 Get the diff for review:
 
 ```bash
@@ -117,11 +122,12 @@ After agents return, TaskUpdate each review task with findings.
    - If visual verification task was created in Phase 2: `TaskUpdate(visualVerificationTaskId, status: "completed", result: "{agent's visual verification findings}")`
    - Record screenshot paths from agent results as evidence
 3. **TaskList**: Confirm all review tasks complete (including visual verification if created)
-4. **Display findings** (finding-first pattern):
+4. **Runtime verification**: If integration-verifier returns SKIP without justification, run runtime verification directly (build, start, smoke test). Runtime verification must pass before PR creation.
+5. **Display findings** (finding-first pattern):
    - P1 findings → must fix before PR
-   - P2 findings → should fix, ask user
+   - P2 findings → fix before PR (max 2 fix iterations; after 2, remaining P2 become "Known issues" in PR body)
    - P3 findings → note in PR body
-5. **If P1 findings**: Fix them, re-run review
+6. **If P1 findings**: Fix them, re-run review
 6. **Generate PR body** from template + findings + journal + comprehension report.
    If visual verification ran, include visual evidence section:
    ```markdown

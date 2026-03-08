@@ -58,6 +58,7 @@ For each changed file, evaluate:
 2. **Primary signals** — branch diff, issue keywords, task match
 3. **Secondary signals** — sibling files, test companions
 4. **First-touch detection** — new files with large additions
+5. **Boy Scout detection** — if changes are cleanup-only (lint, format, typo, obvious bug fix) in files already on the branch diff, classify as `boy-scout` subtype of in-context
 
 ## Phase 3: DISPLAY (Finding-First)
 
@@ -82,7 +83,8 @@ Use the AskUserQuestion tool with contextual options to ask: "Some files are unc
 For each commit group:
 
 1. **Generate commit message** following conventional format:
-   - Type: inferred from changes (feat, fix, refactor, test, docs, chore)
+   - Type: inferred from changes (feat, fix, refactor, test, docs, chore, improve)
+   - For Boy Scout cleanup changes, use `improve(<scope>): <summary>`
    - Scope: top-level directory or module
    - Subject: imperative, ≤72 chars, describes what and why
    - If `$ARGUMENTS` provided, use as message (validate format first)

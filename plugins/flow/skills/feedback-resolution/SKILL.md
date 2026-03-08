@@ -1,6 +1,6 @@
 ---
 name: feedback-resolution
-description: "[flow] Use when addressing PR review feedback. Guides surgical change principle, feedback context recovery, ambiguity handling, pushback criteria, and re-review request patterns."
+description: "[flow] Use when addressing PR review feedback. Guides focused change principle with Boy Scout Rule, feedback context recovery, ambiguity handling, pushback criteria, and re-review request patterns."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob
 context: fork
 agent: general-purpose
@@ -12,18 +12,19 @@ Domain skill for systematically addressing PR review comments.
 
 ## Iron Law
 
-**EVERY FIX TRACES TO A SPECIFIC REVIEW COMMENT. Untraceable changes during feedback resolution are out-of-context changes.**
+**EVERY FIX TRACES TO A SPECIFIC REVIEW COMMENT OR THE BOY SCOUT RULE. Untraceable changes that fail the proximity test are out-of-context changes.**
 
-If you can't point to the review comment that motivated a change, the change doesn't belong in this round.
+If you can't point to the review comment or the Boy Scout proximity test that motivated a change, the change doesn't belong in this round.
 
-## Surgical Change Principle
+## Focused Change Principle
 
-When addressing feedback, only change what the feedback requires:
+When addressing feedback, fix what the feedback requires — and apply the Boy Scout Rule to files you're already modifying:
 
-- Don't refactor adjacent code while fixing a review comment
+- Each feedback fix should be traceable to a specific review comment
 - Don't add features while addressing feedback
 - Don't change formatting in files not mentioned in feedback
-- Each fix should be traceable to a specific review comment
+- Boy Scout cleanup in files being modified for feedback is allowed if it passes the proximity test (see `code-quality-principles`)
+- Boy Scout fixes get separate `improve:` commits, never mixed with feedback fixes
 
 ## Feedback Collection
 
@@ -103,7 +104,7 @@ Always explain the reasoning when pushing back. Never ignore feedback silently.
 
 | Excuse | Response |
 |--------|----------|
-| "While fixing this, I noticed something else to improve" | Log it. Don't fix it. Surgical changes only. Create a follow-up issue with `/flow:issue` if it's worth tracking. |
+| "While fixing this, I noticed something else to improve" | Does it pass the proximity test? If yes, fix it in a separate `improve:` commit. If no, create a follow-up issue with `/flow:issue`. |
 | "The reviewer probably meant this broader change" | Don't guess. Address the literal comment. Clarify if unsure. |
 | "I'll batch all fixes into one commit" | One commit per feedback item. Traceability requires it. |
 

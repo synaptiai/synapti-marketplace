@@ -113,24 +113,37 @@ TaskUpdate each review task as agents complete.
 |---|-----------|--------|----------|
 ```
 
-4. **Review decision**:
+4. **Determine review mode** — compare PR author vs current user:
+
+   ```bash
+   PR_AUTHOR=$(gh pr view $ARGUMENTS --json author --jq '.author.login')
+   CURRENT_USER=$(gh api user --jq '.login')
+   ```
+
+5. **Self-review (own PR — PR_AUTHOR == CURRENT_USER)**:
+
+   Fix-forward approach (max `fixForwardMaxIterations`, default 2):
+   - P1 findings → fix immediately
+   - P2 findings → fix immediately
+   - P3 findings → fix if contained (<10 lines, same file)
+   - After fixes: run targeted re-review of only changed files
+   - No follow-up issue creation for fixable items — just fix them
+   - If self-review fixed everything, suggest `/flow:pr` to update the PR
+
+6. **External review (someone else's PR — PR_AUTHOR != CURRENT_USER)**:
+
    - P1 findings → `gh pr review $ARGUMENTS --request-changes --body "$BODY"`
-   - P2 only → `gh pr review $ARGUMENTS --comment --body "$BODY"`
-   - Clean → `gh pr review $ARGUMENTS --approve --body "$BODY"`
+   - P2 in already-touched files → include fix suggestion in review comment
+   - P2/P3 in untouched files → follow-up issue workflow:
 
-5. **Follow-up issues for out-of-scope findings**:
+   Issues in files the PR already modifies are NOT out-of-scope — they should have been fixed under the Boy Scout Rule. Only flag them as informational.
 
-   If P2 or P3 findings are valid but out-of-scope for this PR (pre-existing issues, architectural concerns, or improvements unrelated to the PR's objective):
-
+   For findings in untouched files that warrant follow-up:
    Present the out-of-scope findings and use the AskUserQuestion tool with contextual options: "These findings are valid but out-of-scope for this PR. Which ones should become follow-up issues?"
 
    For each selected finding, create a GitHub issue using issue-crafting skill knowledge:
    - Title: concise, solution-agnostic description of the finding
-   - Body: use the issue body template structure:
-     - **Context**: "Discovered during review of PR #$ARGUMENTS ({PR title})"
-     - **Current State**: the finding description with file:line citation
-     - **Objective**: what should be achieved (outcome, not method)
-     - **Acceptance Criteria**: observable behaviors that prove the fix
+   - Body: Context, Current State (file:line), Objective, Acceptance Criteria
    - Labels: select from repo labels based on finding category
    - Issue creation is Tier 2 (journal-and-proceed)
 
@@ -138,11 +151,10 @@ TaskUpdate each review task as agents complete.
    gh issue create --title "{title}" --body "{body}" --label "{labels}"
    ```
 
-   Verify each created issue:
-   ```bash
-   gh issue view <N> --json number,title,state,labels
-   ```
+   Include created issue numbers in the review comment body.
 
-   Include created issue numbers in the review comment body so they are linked to the PR.
+   - Clean → `gh pr review $ARGUMENTS --approve --body "$BODY"`
 
-6. **Post-review**: Suggest `/flow:address $ARGUMENTS` for the PR author.
+   **Note**: Reviewers should recognize `improve:` commits as legitimate Boy Scout cleanup — approve if they pass the proximity test.
+
+7. **Post-review**: If self-review fixed everything, suggest `/flow:pr`. If external review, suggest `/flow:address $ARGUMENTS` for the PR author.

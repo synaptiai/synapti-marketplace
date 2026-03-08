@@ -15,7 +15,7 @@
     "teammateTimeout": 300
   },
   "conventions": {
-    "commitTypes": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build", "revert"],
+    "commitTypes": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build", "revert", "improve"],
     "branchPatterns": {
       "feature": "feature/issue-{N}-{desc}",
       "fix": "fix/issue-{N}-{desc}",
@@ -42,6 +42,15 @@
   },
   "debugging": {
     "maxHypotheses": 3
+  },
+  "reviewCycleLimit": 3,
+  "fixForwardMaxIterations": 2,
+  "closedLoop": {
+    "enabled": true,
+    "maxBuildIterations": 5,
+    "maxServerRetries": 3,
+    "maxDebugIterations": 5,
+    "requireRuntimeVerification": true
   },
   "visualVerification": {
     "enabled": true,

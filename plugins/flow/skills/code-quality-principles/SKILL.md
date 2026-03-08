@@ -1,6 +1,6 @@
 ---
 name: code-quality-principles
-description: "[flow] Code quality principles for surgical, safe development. Only change what's needed. No secrets in commits. Anti-pattern awareness. No mocks/stubs/TODOs in production. Parallel quality execution."
+description: "[flow] Code quality principles with Boy Scout Rule. Leave code better than you found it in files you touch. No secrets in commits. Anti-pattern awareness. No mocks/stubs/TODOs in production. Parallel quality execution."
 allowed-tools: Bash, Read, Grep, Glob
 ---
 
@@ -12,7 +12,7 @@ Foundation skill governing code quality standards during autonomous development.
 
 **EVERY CHANGE MUST BE INTENTIONAL. If you can't explain why a line changed, revert it.**
 
-No drive-by refactors. No "while I'm here" improvements. No formatting changes in files you aren't modifying for the task.
+Always leave code better than you found it. Fix issues in files you are already modifying — but only changes that pass the proximity test.
 
 ## Before You Write Code
 
@@ -24,14 +24,25 @@ Answer these questions first. If you can't, return to EXPLORE:
 4. What could go wrong? (error cases, edge cases, security)
 5. How will you verify this works?
 
-## Surgical Changes
+## Boy Scout Rule
 
-Only modify what the task requires. Measure every edit against: "Does this directly serve the current task?"
+Leave every file you touch better than you found it. Apply the **proximity test** to decide if a cleanup belongs:
 
-- Don't refactor adjacent code while fixing a bug
-- Don't add features while addressing review feedback
-- Don't update formatting in files you're not changing
-- If you notice something worth improving, log it — don't fix it now
+**A cleanup PASSES the proximity test if ALL true:**
+1. The file is already being modified for the current task
+2. The fix is self-evidently correct (lint, format, typo, obvious bug, missing error handling)
+3. The fix is small (under ~10 lines of cleanup)
+4. The fix does not change public API signatures or behavior semantics
+5. The fix needs no explanation beyond "Boy Scout cleanup"
+
+**A cleanup FAILS the proximity test if ANY true:**
+1. Requires modifying files NOT already touched by the task
+2. Changes architecture, module boundaries, or public APIs
+3. Requires new tests to validate
+4. Would need its own issue to explain motivation
+5. Is a subjective style preference, not objective improvement
+
+Passing cleanups use `improve:` commits. Failing cleanups get logged as follow-up issues.
 
 ## No Secrets in Code
 
@@ -60,7 +71,7 @@ Run independent quality commands (lint, test, typecheck) as parallel Bash calls,
 
 Do NOT:
 - Modify imports/formatting in files you aren't changing for the task
-- Add "improvements" discovered during review into the same PR
+- Add improvements that fail the proximity test into the same PR
 - Commit generated files without verifying they're correct
 - Copy-paste code instead of extracting a shared function
 - Catch exceptions silently (`catch {}` / `rescue nil`)
@@ -97,8 +108,8 @@ Before marking any task complete:
 
 | Excuse | Response |
 |--------|----------|
-| "I'll clean this up while I'm here" | Log it. Don't fix it. Surgical changes only. |
+| "I'll clean this up while I'm here" | Does it pass the proximity test? If yes, fix it with an `improve:` commit. If no, log it. |
 | "This TODO is temporary" | TODOs in commits are permanent. Create an issue instead. |
 | "The tests pass, it's fine" | Tests passing is necessary, not sufficient. Run the self-review checklist. |
 | "This debug log helps with development" | Remove it. Development aids don't ship. |
-| "It's just a small formatting fix" | If it's not in your task, it's not in your commit. |
+| "It's just a small formatting fix" | If the file is already touched for the task and the fix passes the proximity test, use an `improve:` commit. Otherwise, it's not in your commit. |

@@ -1,6 +1,6 @@
 ---
 name: debugging-patterns
-description: "[flow] Use when investigating bugs or unexpected behavior. Guides root cause isolation through log analysis, hypothesis testing, and fix validation. Prevents symptom-fixing and tunnel vision."
+description: "[flow] Applied automatically when any verification step fails, not just for bug issues. Guides root cause isolation through log analysis, hypothesis testing, and fix validation. Prevents symptom-fixing and tunnel vision."
 allowed-tools: Bash, Read, Grep, Glob, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: general-purpose
@@ -83,6 +83,19 @@ TaskUpdate("Fix validation", status: "in_progress")
 
 TaskUpdate("Fix validation", status: "completed") after all tests pass.
 Use TaskList to confirm all hypotheses resolved and fix validated.
+
+## Verification Failure Mode
+
+This skill activates automatically when ANY verification step fails — not just for `bug`-labeled issues:
+
+- **Build failure**: Read error output, fix, rebuild
+- **Test failure**: Read test output, trace to root cause, fix
+- **Server start failure**: Read logs, fix configuration or code, retry
+- **Smoke test failure**: Read response, trace to handler, fix
+- **E2E failure**: Read failure screenshot/logs, trace to root cause, fix
+- **Visual verification failure**: Read screenshot, identify rendering issue, fix
+
+Streamlined investigation: read error fully, form 1-2 hypotheses, fix and re-verify. No elaborate investigation needed for clear error messages — just fix and move on.
 
 ## Log-First Methodology
 

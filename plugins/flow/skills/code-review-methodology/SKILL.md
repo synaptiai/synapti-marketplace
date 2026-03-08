@@ -98,10 +98,24 @@ Only P1 findings with High confidence should block merge.
 
 **Noise filter**: If a finding cannot be explained with a file:line citation and a concrete scenario where it causes harm, it is noise. Drop it.
 
+## Boy Scout Recognition
+
+When reviewing, recognize `improve:` commits as legitimate Boy Scout cleanup:
+- **APPROVE** `improve:` commits that pass the proximity test (file already modified, self-evidently correct, <10 lines, no API change, no explanation needed)
+- **Flag as P2 "scope creep"** only if the cleanup fails the proximity test (untouched files, architecture changes, new tests required, subjective style)
+
+## Review Cycle Awareness
+
+Check review history to understand cycle count:
+- Count CHANGES_REQUESTED reviews to determine cycle number
+- Focus on delta since last review — findings on unchanged code from prior cycles are noise
+- On 3rd+ cycle: only flag NEW P1 findings, note persistent P2s, suggest synchronous discussion for unresolved items
+- Note convergence signal if findings are shrinking each cycle — this is healthy progress
+
 ## Review Stop Conditions
 
 - Stage 1 finds >3 unmet acceptance criteria — REQUEST_CHANGES immediately, skip Stage 2
-- PR modifies files unrelated to the issue — flag as out-of-context, ask for split
+- PR modifies files unrelated to the issue — flag as out-of-context, ask for split (but `improve:` commits in already-modified files are NOT out-of-context)
 - Diff is >500 lines with no test changes — flag as P1 "untested large change"
 
 ## Review Decision

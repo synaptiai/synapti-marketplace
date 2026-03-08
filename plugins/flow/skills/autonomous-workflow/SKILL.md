@@ -21,7 +21,10 @@ Every multi-step workflow follows this loop:
 1. **EXPLORE**: Gather context. Use Agent(Explore) subagents for unfamiliar code. Parallel Bash for independent queries (git status, issue details, task list). Read referenced files.
 2. **PLAN**: Decompose work. TaskCreate for each deliverable. Set dependencies with addBlockedBy. Display the plan for visibility.
 3. **CODE**: Execute tasks. TaskUpdate(in_progress) before starting. Implement. Commit incrementally (Tier 1). TaskUpdate(completed) after verification.
-4. **VERIFY**: Prove it works. Run quality commands (lint, test, typecheck) in parallel. Use Agent(code-reviewer) for self-review. TaskList to confirm completion. Display summary.
+4. **VERIFY**: Prove it works. Three mandatory verification layers:
+   a. **Static**: Run quality commands (lint, test, typecheck) in parallel.
+   b. **Runtime**: Build the project, start it, verify at runtime. If anything fails, enter the debug-fix-retest loop (bounded by `closedLoop.maxDebugIterations`).
+   c. **Review**: Self-review with fix-forward — fix P1/P2 findings immediately, don't just report them.
 
 ## Task-Driven Progress
 
@@ -92,12 +95,25 @@ Quality check loops have max iterations from `settings.json`:
 - **internal**: Security rationale, credential handling, vulnerability details
 - Never include internal details in public-facing outputs
 
+## Closed-Loop Mandate
+
+The debug-fix-retest loop is mandatory — do NOT report failures and move on, DO fix them yourself.
+
+**Minimum verification by project type:**
+- **Web apps**: Build + start dev server + smoke test endpoints
+- **CLI tools**: Build + run with --help + run with sample input
+- **Libraries**: Build + run public API against sample data
+- **Static sites**: Build + serve locally + verify pages load
+- **Config/markdown-only**: Static checks only (explicit justification required)
+
+The loop is bounded by `closedLoop.maxDebugIterations` (default 5). After max iterations, escalate to user — never silently skip.
+
 ## Graceful Degradation
 
 | Missing | Fallback |
 |---------|----------|
 | No agent teams | Single-session sequential |
-| No quality commands | Skip with note |
+| No quality commands | Attempt to discover them first (`Skill(capability-discovery)`), then proceed with runtime verification only |
 | No gh CLI | Warn, continue with git-only |
 | No decision journal | Proceed without logging, note in PR |
 
@@ -109,3 +125,6 @@ Quality check loops have max iterations from `settings.json`:
 | "The plan is obvious, no need to TaskCreate" | Untracked work is invisible work. Create the tasks. |
 | "Just one more fix, then I'll verify" | Verify now. The loop exists because one-more-fix never ends. |
 | "This is too simple for the full loop" | Simple tasks, same phases. Just faster. |
+| "Runtime verification isn't possible" | It is, for any project that does something. Build it, run it, check it. |
+| "Tests pass, so it works" | Tests verify what's tested. Runtime verifies what's real. |
+| "I can't start the server" | Fix why. Server startup failure IS a bug. |

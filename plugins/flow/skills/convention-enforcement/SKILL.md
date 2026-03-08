@@ -42,7 +42,7 @@ CLAUDE_MD=""
 
 ### Rules
 
-- **Type**: Must be one of configured `conventions.commitTypes` (default: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert)
+- **Type**: Must be one of configured `conventions.commitTypes` (default: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert, improve)
 - **Scope**: Optional, parenthesized, lowercase
 - **Subject**: Imperative mood, no period, max 72 chars (configurable via `conventions.commitSubjectMaxLength`)
 - **Body**: Separated by blank line, wraps at 72 chars
@@ -56,7 +56,7 @@ git log --format="%s" "$DEFAULT_BRANCH"..HEAD
 ```
 
 Check each commit subject against the format regex:
-`^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: .{1,72}$`
+`^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert|improve)(\(.+\))?: .{1,72}$`
 
 ## Branch Naming Validation
 

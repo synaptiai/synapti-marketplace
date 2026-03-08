@@ -218,7 +218,7 @@ When invoked as a parallel sub-agent:
 - TaskUpdate each task: `in_progress` when starting, `completed` with result when done
 - Return verification results table
 - Do NOT ask questions
-- If server won't start, report SKIP (not FAIL) and continue with other checks
+- If server won't start, read the error and attempt to diagnose. Report the error details (not just SKIP) so the caller can fix and retry.
 - Save screenshots as evidence when visual verification runs
 - Visual verification bounded by `visualVerification.maxIterations`
 - Report SKIP (not FAIL) if no browser tools available — TaskUpdate as completed with "SKIP" result

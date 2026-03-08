@@ -24,14 +24,16 @@ This command operates with these domain skills loaded:
 - `branch-and-task-management` — branch creation, task decomposition
 - `change-classification` — change context awareness
 - `capability-discovery` — detect available quality tools
+- `debugging-patterns` — activates on-demand for ALL issues when any verification step fails (not gated on `bug` label)
 
 ## Phase 1: EXPLORE
 
 Gather all context before planning.
 
 **Bug issue detection**: If issue labels include `bug`:
-- Load `debugging-patterns` skill knowledge
 - Phase 3 becomes: reproduce → isolate root cause → write failing test → fix → verify
+
+**Note**: `debugging-patterns` activates automatically for ALL issues when any verification step fails (build, test, server start, smoke test). No `bug` label required.
 
 Execute these in parallel:
 
@@ -134,20 +136,37 @@ $TYPECHECK_CMD
 
 If failures: fix and re-run. After max iterations, escalate to user.
 
+**Build-and-run verification** (before proceeding to Phase 4):
+
+1. **Build the project** → if build fails, apply debugging-patterns: read errors, fix, rebuild (up to `closedLoop.maxBuildIterations`)
+2. **Start dev server** (if applicable) → if won't start, read logs, fix, retry (up to `closedLoop.maxServerRetries`)
+3. **Smoke test** → hit key endpoints or run the CLI with sample input
+4. If any step fails → enter debug-fix-retest loop. Do NOT proceed to Phase 4 until code builds and runs.
+
+Only skip for config-only or markdown-only changes with explicit justification.
+
 ## Phase 4: VERIFY
 
-Prove everything works:
+Prove everything works with fix-forward:
 
 1. **Run full quality suite** (parallel Bash calls for lint, test, typecheck)
-2. **Self-review** — dispatch Agent(code-reviewer):
+2. **Runtime verification** (MANDATORY — not conditional on skill availability):
+   - Build the project if not already built in Phase 3
+   - Start dev server if applicable, smoke test endpoints
+   - Only skip for markdown-only or config-only projects with explicit justification
+3. **Self-review with fix-forward** — dispatch Agent(code-reviewer):
    ```
    Agent(code-reviewer):
      "Review the diff on this branch against $DEFAULT_BRANCH.
       Check for: logic errors, security issues, missing edge cases,
       convention violations. Return P1/P2/P3 findings with file:line."
    ```
-3. **TaskList** — confirm all tasks show status: completed
-4. **Runtime verification** — if runtime-verification skill available, invoke it
+   **Fix-forward** (max `fixForwardMaxIterations`, default 2):
+   - P1 findings → fix immediately (you just wrote this code, no "pre-existing" excuse)
+   - P2 findings → fix immediately
+   - P3 findings → fix if contained (<10 lines, same file), otherwise note for PR body
+   - After fixes: re-run quality commands, then targeted re-review on files changed by fixes
+4. **TaskList** — confirm all tasks show status: completed
 5. **Visual verification** — if UI-relevant changes detected (changed .tsx/.jsx/.vue/.html/.css/.scss files OR acceptance criteria mention UI/page/render/display):
    ```
    TaskCreate("Visual verification", "Screenshot-analyze-verify for UI-facing changes")
@@ -159,10 +178,16 @@ Prove everything works:
    - `TaskUpdate(responsiveTaskId, status: "in_progress")` → test each viewport → `TaskUpdate(responsiveTaskId, status: "completed", result: "{viewports tested}")`
    - If not applicable (no UI files): `TaskUpdate` all three as completed with result "SKIP"
    - `TaskList` — confirm all visual verification tasks resolved
-6. **Display summary**:
+6. **Completion gate**: ALL of:
+   - All quality checks pass
+   - Runtime verification passed (or justified N/A for config/markdown-only)
+   - No unresolved P1 findings
+   - All tasks completed
+7. **Display summary**:
    - Tasks completed: N/N
    - Quality checks: pass/fail
-   - Self-review findings: P1: X, P2: Y, P3: Z
+   - Self-review findings: P1: X, P2: Y, P3: Z (all P1/P2 fixed via fix-forward)
+   - Runtime verification: pass/fail/skip
    - Visual verification: pass/fail/skip
    - Branch: ready for PR
 
@@ -170,8 +195,8 @@ Prove everything works:
 
 Present next steps:
 
+- `/flow:pr` — create pull request (primary suggestion — fix-forward should have committed everything)
 - `/flow:commit` — if uncommitted changes remain
-- `/flow:pr` — create pull request
 - Continue working — keep implementing
 
 ## Tier Classification

@@ -51,7 +51,19 @@ grep -rn "except:" --include="*.py" | grep -v "except\s\+\w"
 - Check if nullable returns are handled by callers
 - Look for optional chaining gaps (`.foo` where `?.foo` is needed)
 
-### Step 3: Read Changed Files
+### Step 3: Scope Classification
+
+For each finding, classify its scope:
+
+| Scope | Definition | Priority Cap |
+|-------|-----------|--------------|
+| **Introduced** | New code error handling gaps in added/modified code | Full P1/P2/P3 |
+| **Pre-existing** | Error handling gaps in unchanged lines of touched files | P3 max, prefix with "pre-existing" |
+| **Adjacent** | Error handling gaps in untouched files | Do not report |
+
+Only report findings in **Introduced** and **Pre-existing** scope.
+
+### Step 4: Read Changed Files
 
 Use Read to examine each changed file in full. Understand:
 - What errors can each function throw?
@@ -59,7 +71,7 @@ Use Read to examine each changed file in full. Understand:
 - Do callers handle errors from the functions they call?
 - Are error messages informative (not generic "something went wrong")?
 
-### Step 4: Classify Findings
+### Step 5: Classify Findings
 
 | Priority | Criteria |
 |----------|----------|
@@ -67,7 +79,7 @@ Use Read to examine each changed file in full. Understand:
 | **P2** | Silent failure hiding bugs, missing error propagation, empty catch blocks |
 | **P3** | Generic error messages, missing error logging, inconsistent error patterns |
 
-### Step 5: Report
+### Step 6: Report
 
 ```markdown
 ## Error Handling Inspection

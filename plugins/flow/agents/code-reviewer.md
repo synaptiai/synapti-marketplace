@@ -26,7 +26,19 @@ git diff "origin/$DEFAULT_BRANCH"..HEAD
 
 Use the Read tool to read each changed file in full. Understand the context, not just the diff.
 
-### Step 3: Review
+### Step 3: Scope Classification
+
+For each finding, classify its scope:
+
+| Scope | Definition | Priority Cap |
+|-------|-----------|--------------|
+| **Introduced** | Code added or modified on this branch | Full P1/P2/P3 |
+| **Pre-existing** | Issue in unchanged lines of touched files | P3 max, prefix with "pre-existing" |
+| **Adjacent** | Issue in untouched files | Do not report |
+
+Only report findings in **Introduced** and **Pre-existing** scope. Never report issues in files the branch hasn't touched.
+
+### Step 4: Review
 
 For each changed file, analyze:
 
@@ -55,7 +67,7 @@ For each changed file, analyze:
 - Cleanup on failure?
 - Async error handling?
 
-### Step 4: Report
+### Step 5: Report
 
 Use the ASSERTION/EVIDENCE/VERIFIED pattern for non-trivial findings.
 

@@ -50,6 +50,8 @@ Complete reference for the change-classification skill's signal evaluation.
 | 0.3 - 0.69 | **uncertain** — present to user |
 | < 0.3 | **out-of-context** — flag prominently |
 
+**Boy Scout Exception**: Changes that pass the proximity test (see `code-quality-principles`) in files already classified as in-context are always in-context, regardless of signal score. They use the `improve` commit type.
+
 ## First-Touch Indicators
 
 A file is first-touch when ALL of:
@@ -70,3 +72,4 @@ First-touch files always get noted regardless of classification.
 | Documentation only | `docs` |
 | Config/build only | `chore` or `ci` |
 | Mixed (feat + test) | `feat` (tests support the feature) |
+| Cleanup in already-modified file | `improve` (Boy Scout Rule) |
