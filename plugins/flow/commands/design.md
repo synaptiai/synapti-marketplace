@@ -158,6 +158,6 @@ ENTRY
 
 Present next steps:
 
-- `/flow start <issue>` — begin implementation
-- `/flow brainstorm` — explore more options before deciding
+- `/flow:start <issue>` — begin implementation
+- `/flow:brainstorm` — explore more options before deciding
 - Continue designing — refine the architecture further

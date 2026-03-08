@@ -97,6 +97,29 @@ For **Question** items: prepare a response comment (no code change needed).
 
 For **Pushback** items: explain reasoning in response comment.
 
+For **Out-of-scope** items (valid finding but not appropriate for this PR):
+
+If a finding is valid but fixing it would violate the surgical change principle, or if the reviewer explicitly marks something as out-of-scope:
+
+1. Use the AskUserQuestion tool with contextual options: "This finding is valid but out-of-scope. Create a follow-up issue to track it?"
+2. If yes, create a GitHub issue using issue-crafting skill knowledge:
+   - Title: concise, solution-agnostic description
+   - Body: use the issue body template structure:
+     - **Context**: "Discovered during review of PR #$ARGUMENTS ({PR title}). Reviewer: @{author}"
+     - **Current State**: the finding with file:line citation
+     - **Objective**: outcome description (solution-agnostic)
+     - **Acceptance Criteria**: verifiable behaviors
+   - Labels: from repo label set
+   - Issue creation is Tier 2 (journal-and-proceed)
+   ```bash
+   gh issue create --title "{title}" --body "{body}" --label "{labels}"
+   ```
+3. Reference the created issue in the resolution comment:
+   ```bash
+   gh pr comment $ARGUMENTS --body "Created follow-up issue #{N} for: {finding summary}"
+   ```
+4. TaskUpdate the feedback task as completed with result: "follow-up issue #{N}"
+
 ## Phase 4: VERIFY
 
 1. **Quality commands** (parallel): lint, test, typecheck
@@ -112,7 +135,8 @@ For **Pushback** items: explain reasoning in response comment.
    gh pr comment $ARGUMENTS --body "Addressed review feedback:
    - {P1 fix 1}
    - {P2 fix 2}
-   - {Question response}"
+   - {Question response}
+   - Follow-up issues created: #{N1}, #{N2} (if any)"
    ```
 7. **Re-request review**:
    ```bash

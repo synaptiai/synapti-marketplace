@@ -151,6 +151,6 @@ ENTRY
 
 Present next steps:
 
-- `/flow start <issue>` — begin implementation with chosen approach
-- `/flow design` — dive deeper into architecture for the chosen approach
+- `/flow:start <issue>` — begin implementation with chosen approach
+- `/flow:design` — dive deeper into architecture for the chosen approach
 - Continue brainstorming — refine or explore sub-decisions

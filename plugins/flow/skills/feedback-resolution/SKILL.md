@@ -103,7 +103,7 @@ Always explain the reasoning when pushing back. Never ignore feedback silently.
 
 | Excuse | Response |
 |--------|----------|
-| "While fixing this, I noticed something else to improve" | Log it. Don't fix it. Surgical changes only. |
+| "While fixing this, I noticed something else to improve" | Log it. Don't fix it. Surgical changes only. Create a follow-up issue with `/flow:issue` if it's worth tracking. |
 | "The reviewer probably meant this broader change" | Don't guess. Address the literal comment. Clarify if unsure. |
 | "I'll batch all fixes into one commit" | One commit per feedback item. Traceability requires it. |
 

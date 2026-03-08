@@ -16,20 +16,21 @@ These three skills are always active when the flow plugin is enabled:
 
 | Command | Required Domain Skills | Max Concurrent |
 |---------|----------------------|----------------|
-| `/flow start` | branch-and-task-management, change-classification, capability-discovery | 3 |
-| `/flow commit` | change-classification, convention-enforcement | 2 |
-| `/flow pr` | pr-lifecycle, code-review-methodology, capability-discovery | 3 |
-| `/flow review` | code-review-methodology | 1 |
-| `/flow address` | feedback-resolution, change-classification, capability-discovery | 3 |
-| `/flow merge` | merge-and-release | 1 |
-| `/flow release` | merge-and-release | 1 |
-| `/flow status` | (none) | 0 |
-| `/flow learn` | (none) | 0 |
-| `/flow setup` | capability-discovery | 1 |
-| `/flow explain` | (none) | 0 |
-| `/flow debug` | debugging-patterns, change-classification | 2 |
-| `/flow design` | architecture-patterns, capability-discovery | 2 |
-| `/flow brainstorm` | brainstorming, capability-discovery | 2 |
+| `/flow:start` | branch-and-task-management, change-classification, capability-discovery | 3 |
+| `/flow:commit` | change-classification, convention-enforcement | 2 |
+| `/flow:pr` | pr-lifecycle, code-review-methodology, capability-discovery | 3 |
+| `/flow:review` | code-review-methodology | 1 |
+| `/flow:address` | feedback-resolution, change-classification, capability-discovery | 3 |
+| `/flow:merge` | merge-and-release | 1 |
+| `/flow:release` | merge-and-release | 1 |
+| `/flow:status` | (none) | 0 |
+| `/flow:learn` | (none) | 0 |
+| `/flow:setup` | capability-discovery | 1 |
+| `/flow:explain` | (none) | 0 |
+| `/flow:debug` | debugging-patterns, change-classification | 2 |
+| `/flow:design` | architecture-patterns, capability-discovery | 2 |
+| `/flow:brainstorm` | brainstorming, capability-discovery | 2 |
+| `/flow:issue` | issue-crafting | 1 |
 
 ## Domain Skills Inventory
 

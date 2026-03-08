@@ -134,6 +134,6 @@ For each hypothesis (highest confidence first):
 
 Present next steps:
 
-- `/flow commit` — commit the fix with context
-- `/flow pr` — create pull request
+- `/flow:commit` — commit the fix with context
+- `/flow:pr` — create pull request
 - Continue investigating — if more issues remain

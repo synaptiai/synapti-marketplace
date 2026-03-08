@@ -26,6 +26,7 @@ Team-visible but recoverable. Execute and log to decision journal.
 | Git push | Visible to team | Force push or revert |
 | PR creation | Visible, closeable | Close PR |
 | Issue assignment | Visible, reassignable | Unassign |
+| Issue creation | Visible, closeable | Close issue |
 | PR comment | Visible, deletable | Delete comment |
 
 ### Tier 3: Confirm-Before-Execute
@@ -50,6 +51,7 @@ Tiers are configurable in `settings.json` under `tiers`:
     "push": "journal",
     "prCreate": "journal",
     "issueAssign": "journal",
+    "issueCreate": "journal",
     "merge": "confirm",
     "release": "confirm"
   }

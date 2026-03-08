@@ -4,6 +4,7 @@
     "push": "journal",
     "prCreate": "journal",
     "issueAssign": "journal",
+    "issueCreate": "journal",
     "merge": "confirm",
     "release": "confirm"
   },

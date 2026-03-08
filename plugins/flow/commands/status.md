@@ -75,11 +75,11 @@ JOURNAL_DIR=".decisions"
 
 | State | Suggestion |
 |-------|-----------|
-| On default branch, no assigned issues | "Assign an issue or `/flow start <N>`" |
-| On default branch, has assigned issue | "`/flow start {first-issue-number}`" |
-| On feature branch, uncommitted changes | "`/flow commit`" |
-| On feature branch, commits ahead, no PR | "`/flow pr`" |
-| Has PR with review comments | "`/flow address {pr-number}`" |
-| Has PR approved | "`/flow merge {pr-number}`" |
-| PRs awaiting review | "`/flow review {first-pr-number}`" |
-| Learning pending | "`/flow learn`" |
+| On default branch, no assigned issues | "Assign an issue or `/flow:start <N>`" |
+| On default branch, has assigned issue | "`/flow:start {first-issue-number}`" |
+| On feature branch, uncommitted changes | "`/flow:commit`" |
+| On feature branch, commits ahead, no PR | "`/flow:pr`" |
+| Has PR with review comments | "`/flow:address {pr-number}`" |
+| Has PR approved | "`/flow:merge {pr-number}`" |
+| PRs awaiting review | "`/flow:review {first-pr-number}`" |
+| Learning pending | "`/flow:learn`" |

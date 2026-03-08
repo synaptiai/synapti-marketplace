@@ -78,4 +78,4 @@ git checkout $DEFAULT_BRANCH
 git pull origin $DEFAULT_BRANCH
 ```
 
-Suggest: `/flow release {type}` if this completes a milestone.
+Suggest: `/flow:release {type}` if this completes a milestone.

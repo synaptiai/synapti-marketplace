@@ -19,6 +19,7 @@ Settings are read in cascading order (first found wins):
     "push": "journal",
     "prCreate": "journal",
     "issueAssign": "journal",
+    "issueCreate": "journal",
     "merge": "confirm",
     "release": "confirm"
   }
@@ -40,6 +41,7 @@ Settings are read in cascading order (first found wins):
 | `push` | journal | `git push` to remote |
 | `prCreate` | journal | `gh pr create` |
 | `issueAssign` | journal | `gh issue edit --add-assignee` |
+| `issueCreate` | journal | `gh issue create` |
 | `merge` | confirm | `gh pr merge` |
 | `release` | confirm | `gh release create` |
 

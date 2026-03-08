@@ -6,17 +6,18 @@ This project uses the [flow](https://github.com/synaptiai/synapti-marketplace/tr
 
 | Command | Purpose |
 |---------|---------|
-| `/flow start <issue>` | Start work on a GitHub issue |
-| `/flow commit` | Classify changes and create atomic commits |
-| `/flow pr` | Create PR with full review pipeline |
-| `/flow review <pr>` | Multi-faceted PR review |
-| `/flow address <pr>` | Address review feedback surgically |
-| `/flow merge <pr>` | Merge approved PR (requires confirmation) |
-| `/flow release <type>` | Create release (requires confirmation) |
-| `/flow status` | Workflow overview |
-| `/flow learn` | Analyze decision patterns |
-| `/flow setup` | Initialize flow for this repo |
-| `/flow explain` | Q&A about decisions |
+| `/flow:start <issue>` | Start work on a GitHub issue |
+| `/flow:commit` | Classify changes and create atomic commits |
+| `/flow:pr` | Create PR with full review pipeline |
+| `/flow:review <pr>` | Multi-faceted PR review |
+| `/flow:address <pr>` | Address review feedback surgically |
+| `/flow:merge <pr>` | Merge approved PR (requires confirmation) |
+| `/flow:release <type>` | Create release (requires confirmation) |
+| `/flow:issue [topic]` | Create well-crafted GitHub issues |
+| `/flow:status` | Workflow overview |
+| `/flow:learn` | Analyze decision patterns |
+| `/flow:setup` | Initialize flow for this repo |
+| `/flow:explain` | Q&A about decisions |
 
 ### Safety Model
 

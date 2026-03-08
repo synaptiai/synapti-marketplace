@@ -101,7 +101,7 @@ Display:
 - Commits created (hash + message)
 - Files committed per group
 - Any excluded files and why
-- Suggested next step: `/flow pr` if ready, or continue working
+- Suggested next step: `/flow:pr` if ready, or continue working
 
 ## Edge Cases
 

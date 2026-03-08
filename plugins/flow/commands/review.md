@@ -118,4 +118,31 @@ TaskUpdate each review task as agents complete.
    - P2 only → `gh pr review $ARGUMENTS --comment --body "$BODY"`
    - Clean → `gh pr review $ARGUMENTS --approve --body "$BODY"`
 
-5. **Post-review**: Suggest `/flow:address $ARGUMENTS` for the PR author.
+5. **Follow-up issues for out-of-scope findings**:
+
+   If P2 or P3 findings are valid but out-of-scope for this PR (pre-existing issues, architectural concerns, or improvements unrelated to the PR's objective):
+
+   Present the out-of-scope findings and use the AskUserQuestion tool with contextual options: "These findings are valid but out-of-scope for this PR. Which ones should become follow-up issues?"
+
+   For each selected finding, create a GitHub issue using issue-crafting skill knowledge:
+   - Title: concise, solution-agnostic description of the finding
+   - Body: use the issue body template structure:
+     - **Context**: "Discovered during review of PR #$ARGUMENTS ({PR title})"
+     - **Current State**: the finding description with file:line citation
+     - **Objective**: what should be achieved (outcome, not method)
+     - **Acceptance Criteria**: observable behaviors that prove the fix
+   - Labels: select from repo labels based on finding category
+   - Issue creation is Tier 2 (journal-and-proceed)
+
+   ```bash
+   gh issue create --title "{title}" --body "{body}" --label "{labels}"
+   ```
+
+   Verify each created issue:
+   ```bash
+   gh issue view <N> --json number,title,state,labels
+   ```
+
+   Include created issue numbers in the review comment body so they are linked to the PR.
+
+6. **Post-review**: Suggest `/flow:address $ARGUMENTS` for the PR author.

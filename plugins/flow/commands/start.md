@@ -170,8 +170,8 @@ Prove everything works:
 
 Present next steps:
 
-- `/flow commit` — if uncommitted changes remain
-- `/flow pr` — create pull request
+- `/flow:commit` — if uncommitted changes remain
+- `/flow:pr` — create pull request
 - Continue working — keep implementing
 
 ## Tier Classification

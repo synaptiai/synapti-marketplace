@@ -56,7 +56,7 @@ enable one at a time to avoid hook conflicts.
 
 Commands use different prefixes:
 - gh-workflow: `/gh-start`, `/gh-commit`, `/gh-pr`
-- flow: `/flow start`, `/flow commit`, `/flow pr`
+- flow: `/flow:start`, `/flow:commit`, `/flow:pr`
 ```
 
 ## Phase 4: CLAUDE.md Integration
@@ -80,17 +80,17 @@ If yes, append the workflow section from `templates/CLAUDE-flow.md` to the exist
 ### Commands Available
 | Command | Purpose |
 |---------|---------|
-| `/flow start <issue>` | Start work on an issue |
-| `/flow commit` | Classify and commit changes |
-| `/flow pr` | Create pull request |
-| `/flow review <pr>` | Review a pull request |
-| `/flow address <pr>` | Address review feedback |
-| `/flow merge <pr>` | Merge approved PR |
-| `/flow release <type>` | Create release |
-| `/flow status` | Workflow overview |
-| `/flow learn` | Analyze patterns |
+| `/flow:start <issue>` | Start work on an issue |
+| `/flow:commit` | Classify and commit changes |
+| `/flow:pr` | Create pull request |
+| `/flow:review <pr>` | Review a pull request |
+| `/flow:address <pr>` | Address review feedback |
+| `/flow:merge <pr>` | Merge approved PR |
+| `/flow:release <type>` | Create release |
+| `/flow:status` | Workflow overview |
+| `/flow:learn` | Analyze patterns |
 
 ### Next Steps
-- Assign an issue and run `/flow start <number>`
-- Or run `/flow status` to see current state
+- Assign an issue and run `/flow:start <number>`
+- Or run `/flow:status` to see current state
 ```

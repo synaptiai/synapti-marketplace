@@ -9,10 +9,10 @@ A Claude Code plugin that replaces command-driven GitHub workflow automation wit
 claude plugins add ./plugins/flow
 
 # Initialize for your repository
-/flow setup
+/flow:setup
 
 # Start working on an issue
-/flow start 42
+/flow:start 42
 ```
 
 ## Architecture
@@ -51,9 +51,9 @@ AGENTS (7)
   ├── error-handler-inspector (error handling analysis)
   └── integration-verifier (integration validation)
 
-COMMANDS (15)
+COMMANDS (16)
   ├── flow (universal dispatcher)
-  ├── start, commit, pr
+  ├── start, commit, pr, issue
   ├── review, address
   ├── merge, release
   ├── status, learn
@@ -71,20 +71,21 @@ HOOKS (10 scripts)
 
 | Command | Purpose |
 |---------|---------|
-| `/flow start <issue>` | Assign issue, create branch, decompose tasks, implement |
-| `/flow commit` | Classify changes, flag anomalies, create atomic commits |
-| `/flow pr` | Full review pipeline + PR creation |
-| `/flow review <pr>` | Multi-faceted code review (single or team) |
-| `/flow address <pr>` | Systematic feedback resolution |
-| `/flow merge <pr>` | Merge with prerequisite verification (Tier 3) |
-| `/flow release <type>` | Changelog + semantic version release (Tier 3) |
-| `/flow status` | Read-only workflow overview |
-| `/flow learn` | Analyze decision patterns, propose new skills |
-| `/flow setup` | Initialize flow for a repository |
-| `/flow explain` | Interactive Q&A about decisions |
-| `/flow brainstorm [topic]` | Explore approaches before implementation |
-| `/flow debug [error]` | Structured debugging with root cause analysis |
-| `/flow design [feature]` | Architecture discussion and design validation |
+| `/flow:start <issue>` | Assign issue, create branch, decompose tasks, implement |
+| `/flow:commit` | Classify changes, flag anomalies, create atomic commits |
+| `/flow:pr` | Full review pipeline + PR creation |
+| `/flow:review <pr>` | Multi-faceted code review (single or team) |
+| `/flow:address <pr>` | Systematic feedback resolution |
+| `/flow:merge <pr>` | Merge with prerequisite verification (Tier 3) |
+| `/flow:release <type>` | Changelog + semantic version release (Tier 3) |
+| `/flow:status` | Read-only workflow overview |
+| `/flow:learn` | Analyze decision patterns, propose new skills |
+| `/flow:setup` | Initialize flow for a repository |
+| `/flow:explain` | Interactive Q&A about decisions |
+| `/flow:issue [topic]` | Create well-crafted GitHub issues |
+| `/flow:brainstorm [topic]` | Explore approaches before implementation |
+| `/flow:debug [error]` | Structured debugging with root cause analysis |
+| `/flow:design [feature]` | Architecture discussion and design validation |
 
 ## Safety Model
 
@@ -102,14 +103,14 @@ Hooks provide structural enforcement — they block dangerous operations even if
 
 Enable with `"agentTeams": true` in settings. Requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`.
 
-When enabled, `/flow review` spawns an adversarial review team where independent reviewers challenge each other's findings. Falls back to single-session mode gracefully.
+When enabled, `/flow:review` spawns an adversarial review team where independent reviewers challenge each other's findings. Falls back to single-session mode gracefully.
 
 ## Learning Loop
 
 Flow captures development decisions in a journal (`.decisions/`) and analyzes them for patterns:
 
 1. **During work**: PostToolUse hooks auto-log file changes and commits
-2. **After work**: `/flow learn` identifies recurring patterns
+2. **After work**: `/flow:learn` identifies recurring patterns
 3. **Proposals**: Generates skill proposals in `~/.claude/flow-proposals/`
 4. **Promotion**: Human reviews and promotes proposals to active skills
 

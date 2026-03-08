@@ -59,4 +59,4 @@ For each question:
 If no decision journal or no branch context:
 - "No decision context available for the current branch."
 - Offer to explain based on diff analysis alone
-- Or suggest running `/flow start` first to generate context
+- Or suggest running `/flow:start` first to generate context
