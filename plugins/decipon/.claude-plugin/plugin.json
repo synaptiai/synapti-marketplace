@@ -3,9 +3,11 @@
   "version": "1.5.0",
   "description": "NCI (Narrative Credibility Index) manipulation detection with integrated deep research fact-checking. Analyzes content for propaganda, disinformation, and manipulation patterns across 20 categories. Includes claim verification using deep research methodology.",
   "author": {
-    "name": "Daniel Bentes"
+    "name": "Synapti AI",
+    "url": "https://github.com/synaptiai"
   },
   "repository": "https://github.com/synaptiai/synapti-marketplace",
+  "homepage": "https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/decipon",
   "license": "MIT",
   "keywords": [
     "manipulation-detection",
