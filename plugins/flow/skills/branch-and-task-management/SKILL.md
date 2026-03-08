@@ -3,7 +3,7 @@ name: branch-and-task-management
 description: "[flow] Use when starting work on an issue. Guides branch creation with naming conventions, issue context loading, impact analysis, task decomposition from acceptance criteria, and parallel task detection."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, TaskCreate, TaskList, TaskUpdate, TaskGet
 context: fork
-agent: Explore
+agent: general-purpose
 ---
 
 # Branch and Task Management

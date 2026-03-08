@@ -3,7 +3,7 @@ name: feedback-resolution
 description: "[flow] Use when addressing PR review feedback. Guides surgical change principle, feedback context recovery, ambiguity handling, pushback criteria, and re-review request patterns."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob
 context: fork
-agent: Explore
+agent: general-purpose
 ---
 
 # Feedback Resolution

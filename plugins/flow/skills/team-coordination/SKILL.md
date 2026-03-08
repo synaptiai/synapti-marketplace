@@ -3,6 +3,7 @@ name: team-coordination
 description: "[flow] Use when coordinating agent teams for adversarial review or parallel implementation. Guides when to spawn teams, task sizing, adversarial review protocol, and teammate health monitoring. Only loaded when agentTeams is enabled."
 allowed-tools: Bash, Read, TaskCreate, TaskList, TaskUpdate
 context: fork
+agent: general-purpose
 disable-model-invocation: true
 ---
 
