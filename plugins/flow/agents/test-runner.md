@@ -2,7 +2,8 @@
 name: test-runner
 description: "[flow] Discovers and runs project-specific lint, test, and type-check commands. Reports structured results with pass/fail status. Execute quality commands in parallel when possible."
 model: inherit
-tools: Bash, Read, Glob
+tools: Bash, Read, Glob, Grep
+skills: capability-discovery, evidence-based-development
 memory: project
 ---
 

@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Plugin-orange.svg)](https://claude.com/claude-code)
-[![Plugins](https://img.shields.io/badge/Plugins-4-green.svg)](#available-plugins)
+[![Plugins](https://img.shields.io/badge/Plugins-5-green.svg)](#available-plugins)
 
 ## About the Marketplace
 
@@ -26,6 +26,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | [Agent Capability Standard ↗](https://github.com/synaptiai/agent-capability-standard) | Standards, Agent Development | Technical specification for AI agents with structural reliability. 36 atomic capabilities across 9 layers with reference workflows and safety-by-construction patterns. | 1.2.0 |
 | [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.3.1 |
+| [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development. Composable skills, safety hooks, agent teams, and learning loop. | 1.0.0 |
 | [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.7.0 |
 
 ### When to Use Each Plugin
@@ -43,6 +44,11 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Quickly triage content before deeper analysis | [Decipon](#featured-decipon) `/decipon:score` |
 | Research a complex topic with verified sources | [Decipon](#featured-decipon) `/decipon:deep-research` |
 | Fact-check claims in content | [Decipon](#featured-decipon) `/decipon:verify` |
+| Start implementing a GitHub issue (autonomous, with learning) | [Flow](#featured-flow) `/flow start` |
+| Create PRs with parallel review agents | [Flow](#featured-flow) `/flow pr` |
+| Debug with structured root cause analysis | [Flow](#featured-flow) `/flow debug` |
+| Brainstorm approaches before implementing | [Flow](#featured-flow) `/flow brainstorm` |
+| Design architecture with C4 model thinking | [Flow](#featured-flow) `/flow design` |
 | Check my workflow status (issues, PRs, reviews) | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-status` |
 | Create well-structured GitHub issues | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-issue` |
 | Start implementing a GitHub issue | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-start` |
@@ -294,6 +300,68 @@ claude plugin install gh-workflow
 
 ---
 
+## Featured: Flow
+
+**Flow** replaces command-driven GitHub workflow automation with a **skill-driven** approach. Instead of encoding logic in commands, Flow composes reusable skills that compound team knowledge across sessions.
+
+### Key Insight
+
+> Commands tell agents *what to do*. Skills teach agents *how to think*. When knowledge lives in composable skills instead of monolithic commands, it compounds — every session makes the next one better.
+
+### What Makes It Different
+
+| Feature | Benefit |
+|---------|---------|
+| **Composable Skills** | 18 reusable skills (3 foundation + 15 domain) — commands compose skills, not duplicate logic |
+| **Three-Tier Safety** | Hook-enforced tiers: autonomous (commits), journal (push/PR), confirm (merge/release) |
+| **Learning Loop** | Decision journal captures patterns; `/flow learn` proposes new skills from experience |
+| **Agent Teams** | Parallel + adversarial review teams where reviewers challenge each other's findings |
+| **Visual Verification** | Screenshot-based runtime verification for UI changes |
+
+### Commands
+
+| Command | What It Does |
+|---------|-------------|
+| `/flow start <issue>` | Assign issue, create branch, decompose tasks, implement |
+| `/flow commit` | Classify changes, flag anomalies, create atomic commits |
+| `/flow pr` | Full review pipeline + PR creation |
+| `/flow review <pr>` | Multi-faceted code review (single or team) |
+| `/flow address <pr>` | Systematic feedback resolution |
+| `/flow merge <pr>` | Merge with prerequisite verification (Tier 3) |
+| `/flow release <type>` | Changelog + semantic version release (Tier 3) |
+| `/flow status` | Read-only workflow overview |
+| `/flow learn` | Analyze decision patterns, propose new skills |
+| `/flow setup` | Initialize flow for a repository |
+| `/flow explain` | Interactive Q&A about decisions |
+| `/flow brainstorm [topic]` | Explore approaches before implementation |
+| `/flow debug [error]` | Structured debugging with root cause analysis |
+| `/flow design [feature]` | Architecture discussion and design validation |
+
+### Installation
+
+```bash
+# Add the marketplace (one-time setup)
+claude plugin marketplace add synaptiai/synapti-marketplace
+
+# Install the plugin
+claude plugin install flow
+```
+
+### The Complete Development Cycle
+
+```
+/flow start → /flow commit → /flow pr → /flow review → /flow address → /flow merge → /flow release
+     │             │             │            │              │              │              │
+     ▼             ▼             ▼            ▼              ▼              ▼              ▼
+  Branch +     Classify +    Review +     Quality       Resolve        Merge +        Tag +
+  implement    atomic        agents       check         feedback       cleanup       changelog
+               commits       + PR                                     (Tier 3)
+```
+
+**[Full Flow Documentation →](./plugins/flow/README.md)**
+
+---
+
 ## Featured: Agent Capability Standard
 
 **Agent Capability Standard** is a technical specification for building AI agents with structural reliability. It implements "Grounded Agency" — a framework ensuring agents operate with evidence-backed claims rather than hallucinations.
@@ -391,6 +459,17 @@ synapti-marketplace/
     │   ├── agents/                    # 5 specialized AI agents
     │   ├── commands/                  # 7 user-facing commands
     │   └── skills/                    # 2 methodology implementations
+    │
+    ├── flow/                          # Skill-driven workflow
+    │   ├── .claude-plugin/
+    │   │   └── plugin.json
+    │   ├── README.md
+    │   ├── agents/                   # 7 specialized agents
+    │   ├── commands/                 # 15 workflow commands
+    │   ├── hooks/                    # Safety hook definitions
+    │   ├── skills/                   # 18 composable skills (3 foundation + 15 domain)
+    │   ├── templates/                # PR, issue, skill proposal templates
+    │   └── references/               # Safety tiers, checklists, manifests
     │
     └── gh-workflow/                   # GitHub workflow plugin
         ├── .claude-plugin/

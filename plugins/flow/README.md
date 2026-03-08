@@ -18,7 +18,7 @@ claude plugins add ./plugins/flow
 ## Architecture
 
 ```
-SKILL LIBRARY (14 skills)
+SKILL LIBRARY (18 skills)
   ├── Foundation (always loaded, <=100 lines each)
   │   ├── evidence-based-development
   │   ├── autonomous-workflow
@@ -36,22 +36,29 @@ SKILL LIBRARY (14 skills)
       ├── merge-and-release
       ├── runtime-verification
       ├── team-coordination
+      ├── architecture-patterns
+      ├── brainstorming
+      ├── debugging-patterns
+      ├── tdd-patterns
       └── learned/ (promoted from proposals)
 
-AGENTS (5)
+AGENTS (7)
   ├── implementation-planner (task decomposition)
   ├── test-runner (quality commands)
   ├── code-reviewer (quality + security)
   ├── convention-checker (git conventions)
-  └── security-reviewer (OWASP, secrets, auth)
+  ├── security-reviewer (OWASP, secrets, auth)
+  ├── error-handler-inspector (error handling analysis)
+  └── integration-verifier (integration validation)
 
-COMMANDS (12)
+COMMANDS (15)
   ├── flow (universal dispatcher)
   ├── start, commit, pr
   ├── review, address
   ├── merge, release
   ├── status, learn
-  └── setup, explain
+  ├── setup, explain
+  └── brainstorm, debug, design
 
 HOOKS (10 scripts)
   ├── Safety: block-force-push, block-destructive, block-secrets
@@ -75,6 +82,9 @@ HOOKS (10 scripts)
 | `/flow learn` | Analyze decision patterns, propose new skills |
 | `/flow setup` | Initialize flow for a repository |
 | `/flow explain` | Interactive Q&A about decisions |
+| `/flow brainstorm [topic]` | Explore approaches before implementation |
+| `/flow debug [error]` | Structured debugging with root cause analysis |
+| `/flow design [feature]` | Architecture discussion and design validation |
 
 ## Safety Model
 
@@ -113,7 +123,10 @@ Settings in `.claude/settings.flow.json`:
   "tiers": { "push": "journal", "merge": "confirm", "release": "confirm" },
   "conventions": { "commitTypes": ["feat", "fix", "docs", "..."] },
   "merge": { "strategy": "squash", "deleteBranch": true },
-  "learning": { "enabled": true }
+  "learning": { "enabled": true },
+  "visualVerification": { "enabled": false, "screenshotOnVerify": true },
+  "debugging": { "maxIterations": 5, "rootCauseFirst": true },
+  "testing": { "tddMode": false, "parallelExecution": true }
 }
 ```
 

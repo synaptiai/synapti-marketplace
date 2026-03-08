@@ -1,7 +1,7 @@
 ---
 description: "[flow] Classify changes and create atomic commits with conventional messages. Flags out-of-context modifications and red-flag patterns before committing."
 argument-hint: [message]
-allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, Skill, TaskList, TaskGet
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, Skill, Grep, Glob
 ---
 
 <!--
@@ -44,10 +44,10 @@ ISSUE_NUM=$(echo $BRANCH | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
 # 5. Recent commits (for style)
 git log --oneline -10
 
-# 6. Active tasks
+# 6. Task-related context from branch or issue
 ```
 
-**TaskList** — get active tasks for context matching.
+**Grep** — search branch diff and issue body for task-related context.
 
 ## Phase 2: CLASSIFY
 
