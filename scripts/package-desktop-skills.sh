@@ -214,15 +214,18 @@ create_skill_package() {
     fi
 
     # Create ZIP package
-    local zip_file="$output_plugin_dir/$skill_name.zip"
+    # Use plugin-prefixed filename to avoid collisions when uploading
+    # to GitHub releases (which flatten the directory structure)
+    local zip_filename="${plugin_name}--${skill_name}.zip"
+    local zip_file="$output_plugin_dir/$zip_filename"
     log_verbose "  Creating ZIP package..."
 
     if [ "$DRY_RUN" = true ]; then
         log_info "  [DRY RUN] Would create: $zip_file"
     else
         # Create ZIP with skill folder at root (Claude Desktop requirement)
-        (cd "$temp_dir" && zip -r "$skill_name.zip" "$skill_name" -x "*.DS_Store" > /dev/null)
-        mv "$temp_dir/$skill_name.zip" "$zip_file"
+        (cd "$temp_dir" && zip -r "$zip_filename" "$skill_name" -x "*.DS_Store" > /dev/null)
+        mv "$temp_dir/$zip_filename" "$zip_file"
         log_success "Created: $zip_file"
     fi
 
