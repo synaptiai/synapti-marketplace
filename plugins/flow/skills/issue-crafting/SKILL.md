@@ -39,7 +39,7 @@ Do NOT:
 
 ## Requirements Gathering
 
-Collect these four elements. Use AskUserQuestion for any gaps:
+Collect these four elements. For any missing context, use the AskUserQuestion tool with contextual options to ask about the specific gap (e.g., "What's the current behavior?").
 
 1. **Context**: Background and motivation — why is this needed?
 2. **Current State**: What's happening now? What's the problem?

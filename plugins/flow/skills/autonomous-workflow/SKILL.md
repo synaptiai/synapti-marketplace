@@ -47,6 +47,10 @@ Tasks have clear subjects (imperative form) and descriptions with acceptance cri
 
 Tier configuration is in `settings.json` under `tiers`. Actions can be promoted (journal→confirm) but never demoted (confirm→journal).
 
+## AskUserQuestion Tool Enforcement
+
+When a command or skill says "use the AskUserQuestion tool", you MUST invoke the AskUserQuestion tool — do not substitute plain text output. The tool provides structured selectable options that plain text cannot replicate. Supply contextual options appropriate to the situation.
+
 ## Decision Journal Protocol
 
 - **Init**: Create `{journal-dir}/issue-{N}.md` at branch creation

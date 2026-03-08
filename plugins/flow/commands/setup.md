@@ -61,7 +61,7 @@ Commands use different prefixes:
 
 ## Phase 4: CLAUDE.md Integration
 
-Use AskUserQuestion: "Add flow workflow section to CLAUDE.md?"
+Use the AskUserQuestion tool with contextual options to ask: "Add flow workflow section to CLAUDE.md?"
 
 If yes, append the workflow section from `templates/CLAUDE-flow.md` to the existing CLAUDE.md.
 

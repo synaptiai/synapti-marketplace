@@ -46,13 +46,7 @@ git diff --stat "$DEFAULT_BRANCH"...HEAD
 
 ## Phase 3: Interactive Q&A
 
-Use AskUserQuestion to offer question categories:
-
-- "Why was {approach} chosen over alternatives?"
-- "What does {file/module} do in this implementation?"
-- "What are the risks of this approach?"
-- "What would need to change if {requirement changed}?"
-- "Ask a custom question"
+Use the AskUserQuestion tool with contextual options to ask: "What would you like to understand about this implementation?"
 
 For each question:
 1. Search the decision journal for relevant entries

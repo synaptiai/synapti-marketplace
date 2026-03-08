@@ -47,10 +47,7 @@ Agent(Explore):
 
 **Clarify the goal:**
 
-If `$ARGUMENTS` is vague or ambiguous, use `AskUserQuestion`:
-- What outcome are you trying to achieve?
-- What constraints should we consider?
-- What have you already considered or ruled out?
+If `$ARGUMENTS` is vague or ambiguous, use the AskUserQuestion tool with contextual options to get clarifications from the user with the question "The topic needs clarification. What outcome are you trying to achieve?"
 
 ## Phase 2: GENERATE
 
@@ -129,8 +126,7 @@ TaskUpdate("Compare trade-offs", status: "completed")
 
 TaskUpdate("Select approach", status: "in_progress")
 
-1. **AskUserQuestion**: Present the recommendation and ask the user to choose:
-   - "I recommend Approach {N} because {rationale}. Which approach would you like to go with?"
+Use the AskUserQuestion tool with contextual options to ask: "I recommend Approach {N} because {rationale}. Which approach would you like to go with?"
 
 2. **Log decision** to decision journal if on a feature branch:
 

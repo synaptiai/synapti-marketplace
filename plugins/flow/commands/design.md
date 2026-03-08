@@ -134,7 +134,7 @@ TaskUpdate("Coupling and convention review", status: "completed")
 
 TaskUpdate("Design decision", status: "in_progress")
 
-1. **AskUserQuestion**: Present the design recommendation and ask for approval
+Use the AskUserQuestion tool with contextual options to ask: "Recommended design: {approach}. {rationale}. Approve?"
 2. **Log decision** to decision journal if on a feature branch:
 
 ```bash

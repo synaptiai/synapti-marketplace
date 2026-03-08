@@ -54,13 +54,9 @@ If any check fails, explain what needs to be fixed and suggest actions.
 
 ## Phase 3: Confirm and Execute
 
-**Use AskUserQuestion**: "PR #$ARGUMENTS is ready to merge. Proceed?"
+Use the AskUserQuestion tool with contextual options to confirm: "PR #$ARGUMENTS is ready to merge. Proceed with squash merge and branch deletion?"
 
-Options:
-- "Merge" — execute merge
-- "Cancel" — abort
-
-Only after explicit confirmation:
+Only after the user confirms via the tool:
 
 ```bash
 # Read merge settings
@@ -69,8 +65,6 @@ DELETE_FLAG="--delete-branch"  # or from settings
 
 gh pr merge $ARGUMENTS --$STRATEGY $DELETE_FLAG
 ```
-
-Note: The `gate-merge.sh` PreToolUse hook provides a backstop — it will block `gh pr merge` and require confirmation even if this command somehow bypasses the AskUserQuestion step.
 
 ## Phase 4: Post-Merge
 

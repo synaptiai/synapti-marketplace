@@ -86,7 +86,7 @@ If the verb doesn't match any known command, attempt to infer intent:
 - "how should we build" / "what approach" → route to brainstorm
 - "design this" / "architecture" → route to design
 
-Confirm the inferred intent with the user before executing.
+Use the AskUserQuestion tool with contextual options to confirm: "I understood your request as '{inferred verb}'. Is that correct?"
 
 ## Foundation Skills
 

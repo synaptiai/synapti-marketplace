@@ -73,10 +73,7 @@ Show classification table BEFORE any action:
 
 **If uncertain or out-of-context files exist:**
 
-Use AskUserQuestion:
-- "Include uncertain files in commit?"
-- "Separate out-of-context files into a different commit?"
-- "Exclude out-of-context files?"
+Use the AskUserQuestion tool with contextual options to ask: "Some files are uncertain or out-of-context. How should they be handled?"
 
 ## Phase 4: COMMIT
 

@@ -67,17 +67,15 @@ This ensures safety is never accidentally reduced.
 
 ## Hook Enforcement
 
-Hooks provide backstop enforcement for Tier 3:
+Hooks provide structural enforcement for dangerous operations:
 
 | Hook | Action | Behavior |
 |------|--------|----------|
-| `gate-merge.sh` | `gh pr merge` | Exit 2 (block) |
-| `gate-release.sh` | `gh release create` | Exit 2 (block) |
 | `block-force-push.sh` | `git push --force` | Exit 2 (block) |
 | `block-destructive.sh` | `rm -rf`, `git reset --hard` | Exit 2 (block) |
 | `block-secrets.sh` | Inline credentials | Exit 2 (block) |
 
-These hooks fire even if the command logic fails to check — they are the last line of defense.
+Merge and release confirmation is handled at the command level via AskUserQuestion (see `/flow:merge` and `/flow:release`).
 
 ## Decision Journal Integration
 

@@ -83,8 +83,6 @@ Then ask user to confirm. Only after explicit "yes":
 gh pr merge $PR_NUM --{strategy} --delete-branch
 ```
 
-The `gate-merge.sh` hook provides a backstop — even if the command forgets to ask, the hook will block.
-
 ## Release Process
 
 ### Changelog Generation
@@ -113,8 +111,6 @@ git tag -a "$TAG" -m "Release $TAG"
 git push origin "$TAG"
 gh release create "$TAG" --title "$TAG" --notes "$CHANGELOG"
 ```
-
-The `gate-release.sh` hook provides a backstop.
 
 ## Post-Merge/Release
 

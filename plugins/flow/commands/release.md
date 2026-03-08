@@ -87,13 +87,9 @@ Display:
 {generated changelog}
 ```
 
-**Use AskUserQuestion**: "Create release {tag}? This will create a git tag and GitHub release."
+Use the AskUserQuestion tool with contextual options to confirm: "Create release {tag}? This will create a git tag and GitHub release."
 
-Options:
-- "Create release" — proceed
-- "Cancel" — abort
-
-Only after confirmation:
+Only after the user confirms via the tool:
 
 ```bash
 TAG="${TAG_PREFIX}${VERSION}"
@@ -101,8 +97,6 @@ git tag -a "$TAG" -m "Release $TAG"
 git push origin "$TAG"
 gh release create "$TAG" --title "$TAG" --notes "$CHANGELOG"
 ```
-
-Note: `gate-release.sh` hook provides backstop.
 
 ## Phase 5: Post-Release
 
