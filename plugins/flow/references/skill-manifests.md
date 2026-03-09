@@ -40,12 +40,12 @@ These three skills are always active when the flow plugin is enabled:
 | branch-and-task-management | domain | context: fork | Branch creation, task decomposition |
 | change-classification | domain | context: fork | Signal-based change analysis |
 | convention-enforcement | domain | context: fork | Commit/branch validation |
-| capability-discovery | domain | context: fork | Environment detection |
+| capability-discovery | domain | context: fork | Environment detection, LSP capability probing |
 | code-review-methodology | domain | context: fork | 5-facet review, finding synthesis |
 | pr-lifecycle | domain | context: fork | PR creation, reviewer suggestion |
 | feedback-resolution | domain | context: fork | Surgical feedback fixes |
 | merge-and-release | domain | disable-model-invocation | Merge prereqs, release process |
-| runtime-verification | domain | context: fork | Dev server, E2E, smoke tests, visual verification |
+| runtime-verification | domain | context: fork | Dev server, E2E, smoke tests, visual verification, LSP diagnostics |
 | team-coordination | domain | disable-model-invocation | Agent team orchestration |
 | debugging-patterns | domain | context: fork | Root cause methodology, hypothesis testing |
 | architecture-patterns | domain | context: fork | C4 design, coupling analysis |

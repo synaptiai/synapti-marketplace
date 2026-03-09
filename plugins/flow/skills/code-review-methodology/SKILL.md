@@ -92,6 +92,8 @@ Only P1 findings with High confidence should block merge.
 | Signal Type | Confidence | Include In Review? |
 |-------------|-----------|-------------------|
 | Verified by running code/test | High | Always |
+| LSP diagnostic (error/warning from language server) | High | Always — language server has full project context |
+| LSP find-references (verified all callers handled) | High | Always for P1/P2 — semantic, not text-based |
 | Verified by reading code path | Medium | Always for P1/P2 |
 | Pattern-match only (looks like a bug) | Low | Only if P1, flag as "needs investigation" |
 | Style preference | N/A | Only as P3, never blocks merge |

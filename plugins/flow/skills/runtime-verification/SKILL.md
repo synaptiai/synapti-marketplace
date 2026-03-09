@@ -1,7 +1,7 @@
 ---
 name: runtime-verification
-description: "[flow] Verifies implementation works at runtime by discovering and executing dev server startup, API smoke tests, E2E tests, and browser checks. Use after quality checks pass to confirm the code actually runs."
-allowed-tools: Bash, Read, Glob, Grep, TaskCreate, TaskList, TaskUpdate
+description: "[flow] Verifies implementation works at runtime by discovering and executing dev server startup, API smoke tests, E2E tests, browser checks, and LSP diagnostics. Use after quality checks pass to confirm the code actually runs."
+allowed-tools: Bash, Read, Glob, Grep, LSP, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: Explore
 ---
@@ -49,6 +49,43 @@ If found, run it and return results. Skip remaining steps.
 ```
 
 If build fails → iterate: read errors, fix, rebuild (up to `closedLoop.maxBuildIterations`, default 5). Do NOT proceed until the build passes.
+
+## LSP Diagnostics Verification
+
+**Pre-check**: Read `lsp.enabled` from settings (default `true`). If `false`, skip this section entirely.
+
+When LSP is available and `lsp.diagnosticsAsQuality` is enabled in settings, collect language server diagnostics as an additional quality signal. This complements — never replaces — CLI-based quality commands.
+
+### Process
+
+1. Identify all files changed on the branch:
+   ```bash
+   git diff --name-only origin/$DEFAULT_BRANCH..HEAD
+   ```
+
+2. For each changed source file, use `LSP(documentSymbol)` to confirm the language server recognizes the file, then collect any diagnostics reported.
+
+3. Map diagnostics to findings:
+
+   | LSP Severity | Finding Priority | Action |
+   |-------------|-----------------|--------|
+   | Error | P1 | Must fix before proceeding |
+   | Warning | P2 | Should fix |
+   | Information/Hint | P3 | Consider |
+
+4. Deduplicate against CLI tool output — if the same issue is reported by both LSP and a CLI tool (e.g., `tsc` and TypeScript LSP), keep only one entry.
+
+### Timeout Handling
+
+Each LSP operation must complete within `lsp.timeout` (default 5000ms from settings). If an operation times out:
+- Mark that file's LSP check as "Timeout — skipped"
+- Continue with remaining files
+- Note timeout in output table
+- Never block the workflow on a slow LSP server
+
+### Graceful Fallback
+
+If no LSP server is available, skip this section entirely with note: "LSP diagnostics: N/A — no language server configured." This is not an error and does not affect the verification outcome.
 
 ## Ad-Hoc Verification
 
@@ -244,6 +281,7 @@ If the dev server won't start, that IS the finding. Report it.
 | Health check | {Pass/Fail/N/A} | HTTP {status} |
 | E2E tests | {Pass/Fail/N/A} | {framework} |
 | Smoke tests | {Pass/Fail/N/A} | {details} |
+| LSP diagnostics | {Pass/Fail/Skip/N/A} | {errors: N, warnings: N, files checked: N} |
 | Visual check | {Pass/Fail/Skip/N/A} | {pages checked, findings} |
 | Responsive | {Pass/Fail/Skip/N/A} | {viewports tested} |
 | Console errors | {Pass/Fail/Skip/N/A} | {error count} |

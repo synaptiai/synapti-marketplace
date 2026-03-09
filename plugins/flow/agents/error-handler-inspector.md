@@ -2,7 +2,7 @@
 name: error-handler-inspector
 description: "[flow] Inspects code for unhandled errors, missing edge cases, silent failures, and exception handling gaps. Returns P1/P2/P3 findings with file:line citations."
 model: inherit
-tools: Read, Bash, Grep, Glob
+tools: Read, Bash, Grep, Glob, LSP
 skills: debugging-patterns, evidence-based-development
 memory: project
 ---
@@ -50,6 +50,26 @@ grep -rn "except:" --include="*.py" | grep -v "except\s\+\w"
 - Read function signatures and trace call sites
 - Check if nullable returns are handled by callers
 - Look for optional chaining gaps (`.foo` where `?.foo` is needed)
+
+### Step 2b: LSP Diagnostics Collection
+
+When the LSP tool is available, collect diagnostics from the language server for each changed file:
+
+1. Use `LSP(documentSymbol)` on each changed file to enumerate all symbols
+2. Use `LSP(hover)` on function signatures to check for type errors or missing return type annotations
+3. Collect any diagnostics the language server reports (errors, warnings, hints)
+
+**Priority mapping for LSP diagnostics:**
+
+| LSP Severity | Finding Priority | Rationale |
+|-------------|-----------------|-----------|
+| Error | P1 | Language server confirms code will fail |
+| Warning | P2 | Potential issue the compiler/interpreter flags |
+| Information/Hint | P3 | Suggestion for improvement |
+
+LSP diagnostics provide higher confidence than pattern matching because they come from the project's actual language tooling.
+
+**Fallback**: If LSP is unavailable, skip this step — the grep-based pattern scanning in Step 2 continues to provide coverage.
 
 ### Step 3: Scope Classification
 

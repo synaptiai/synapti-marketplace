@@ -25,6 +25,16 @@ This project uses the [flow](https://github.com/synaptiai/synapti-marketplace/tr
 - **Tier 2** (Journal): push, PR creation, issue assignment
 - **Tier 3** (Confirm): merge, release
 
+### LSP Code Intelligence
+
+Flow leverages LSP servers when available for semantic code understanding:
+- **EXPLORE**: `goToDefinition` and `findReferences` for code path tracing and impact analysis
+- **CODE**: `hover` for type info and signatures
+- **VERIFY**: LSP diagnostics as complementary quality signals (errors→P1, warnings→P2)
+- **REVIEW**: `findReferences` and `incomingCalls` for caller verification
+
+Run `/flow:setup` to detect and install LSP servers for your tech stack.
+
 ### Conventions
 
 - Commit format: `<type>(<scope>): <subject>`

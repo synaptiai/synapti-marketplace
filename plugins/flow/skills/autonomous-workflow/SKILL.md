@@ -18,11 +18,11 @@ Jumping to code without exploration is the #1 cause of rework. Jumping to "done"
 
 Every multi-step workflow follows this loop:
 
-1. **EXPLORE**: Gather context. Use Agent(Explore) subagents for unfamiliar code. Parallel Bash for independent queries (git status, issue details, task list). Read referenced files.
+1. **EXPLORE**: Gather context. Use Agent(Explore) subagents for unfamiliar code. Parallel Bash for independent queries (git status, issue details, task list). Read referenced files. When LSP is available: use `goToDefinition` to trace code paths from issue keywords to implementation, and `findReferences` to assess the impact of planned changes — this enhances text-based grep searches with semantic understanding.
 2. **PLAN**: Decompose work. TaskCreate for each deliverable. Set dependencies with addBlockedBy. Display the plan for visibility.
-3. **CODE**: Execute tasks. TaskUpdate(in_progress) before starting. Implement. Commit incrementally (Tier 1). TaskUpdate(completed) after verification.
+3. **CODE**: Execute tasks. TaskUpdate(in_progress) before starting. Implement. Commit incrementally (Tier 1). TaskUpdate(completed) after verification. When LSP is available: use `hover` to understand types and signatures of existing code before modifying it.
 4. **VERIFY**: Prove it works. Three mandatory verification layers:
-   a. **Static**: Run quality commands (lint, test, typecheck) in parallel.
+   a. **Static**: Run quality commands (lint, test, typecheck) in parallel. When LSP diagnostics are available (`lsp.diagnosticsAsQuality`), collect them as an additional quality signal — errors are P1, warnings are P2. LSP diagnostics complement, never replace, CLI-based checks.
    b. **Runtime**: Build the project, start it, verify at runtime. If anything fails, enter the debug-fix-retest loop (bounded by `closedLoop.maxDebugIterations`).
    c. **Review**: Self-review with fix-forward — fix P1/P2 findings immediately, don't just report them.
 
@@ -114,6 +114,7 @@ The loop is bounded by `closedLoop.maxDebugIterations` (default 5). After max it
 |---------|----------|
 | No agent teams | Single-session sequential |
 | No quality commands | Attempt to discover them first (`Skill(capability-discovery)`), then proceed with runtime verification only |
+| No LSP server | Fall back to grep-based references and CLI-only diagnostics. No error — LSP is additive. |
 | No gh CLI | Warn, continue with git-only |
 | No decision journal | Proceed without logging, note in PR |
 
