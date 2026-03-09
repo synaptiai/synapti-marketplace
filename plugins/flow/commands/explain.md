@@ -27,8 +27,7 @@ done
 [ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body 2>/dev/null
 
 # 4. Branch diff summary
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH="main"
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
 git diff --stat "$DEFAULT_BRANCH"...HEAD
 ```
 

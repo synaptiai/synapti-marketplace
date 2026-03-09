@@ -27,8 +27,7 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 ```bash
 # 1. Pre-flight checks
 BRANCH=$(git branch --show-current)
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH="main"
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
 [ "$BRANCH" = "$DEFAULT_BRANCH" ] && echo "ERROR: Cannot create PR from default branch" && exit 1
 echo "BRANCH=$BRANCH DEFAULT=$DEFAULT_BRANCH"
 

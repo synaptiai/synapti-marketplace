@@ -17,8 +17,7 @@ git branch --show-current
 git status --short | head -20
 
 # 2. Commits ahead of default branch
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH="main"
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
 git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || echo "0"
 
 # 3. Assigned issues

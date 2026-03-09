@@ -48,8 +48,7 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '.[] | "---\n@\(.user.login):\n\(.body)\n"'
 
 # 3. Default branch and repo info
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH="main"
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
 echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
 
 # 4. Current git state

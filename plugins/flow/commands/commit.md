@@ -30,8 +30,7 @@ git status --porcelain
 
 # 2. Branch context
 BRANCH=$(git branch --show-current)
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH="main"
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
 echo "BRANCH=$BRANCH DEFAULT=$DEFAULT_BRANCH"
 
 # 3. Files already on branch

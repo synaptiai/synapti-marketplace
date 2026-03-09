@@ -73,7 +73,7 @@ gh pr merge $ARGUMENTS --$STRATEGY $DELETE_FLAG
 gh pr view $ARGUMENTS --json state --jq '.state'
 
 # Switch to default branch
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
 git checkout $DEFAULT_BRANCH
 git pull origin $DEFAULT_BRANCH
 ```

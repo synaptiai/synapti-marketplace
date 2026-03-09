@@ -23,7 +23,7 @@ All checks run in parallel:
 ```bash
 # 1. Not on default branch
 BRANCH=$(git branch --show-current)
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
 [ "$BRANCH" = "$DEFAULT_BRANCH" ] && echo "ERROR: On default branch" && exit 1
 
 # 2. Commits ahead
