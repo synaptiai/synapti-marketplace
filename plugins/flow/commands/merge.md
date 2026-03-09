@@ -23,8 +23,11 @@ gh pr view $ARGUMENTS --json reviewDecision,statusCheckRollup,mergeable,mergeSta
 # 2. Reviews
 gh pr view $ARGUMENTS --json reviews --jq '.reviews[] | "\(.state) by \(.author.login) at \(.submittedAt)"'
 
-# 3. Unresolved conversations
-gh pr view $ARGUMENTS --json reviewThreads --jq '[.reviewThreads[] | select(.isResolved == false)] | length'
+# 3. Unresolved conversations (reviewThreads requires GraphQL API)
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+OWNER=$(echo $REPO | cut -d/ -f1)
+NAME=$(echo $REPO | cut -d/ -f2)
+gh api graphql -f query="query { repository(owner: \"$OWNER\", name: \"$NAME\") { pullRequest(number: $ARGUMENTS) { reviewThreads(first: 100) { nodes { isResolved } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length'
 
 # 4. Stale approval check
 gh pr view $ARGUMENTS --json reviews,commits --jq '{

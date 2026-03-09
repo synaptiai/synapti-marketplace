@@ -29,8 +29,11 @@ gh pr view $PR_NUM --json reviewDecision,statusCheckRollup,mergeable,mergeStateS
 # Review status
 gh pr view $PR_NUM --json reviews --jq '.reviews[] | "\(.state) by \(.author.login)"'
 
-# Unresolved conversations
-gh pr view $PR_NUM --json reviewThreads --jq '[.reviewThreads[] | select(.isResolved == false)] | length'
+# Unresolved conversations (reviewThreads requires GraphQL API)
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+OWNER=$(echo $REPO | cut -d/ -f1)
+NAME=$(echo $REPO | cut -d/ -f2)
+gh api graphql -f query="query { repository(owner: \"$OWNER\", name: \"$NAME\") { pullRequest(number: $PR_NUM) { reviewThreads(first: 100) { nodes { isResolved } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length'
 ```
 
 ### Prerequisite Checklist
