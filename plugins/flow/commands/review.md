@@ -128,9 +128,18 @@ TaskUpdate each review task as agents complete.
    - P3 findings → fix if contained (<10 lines, same file)
    - After fixes: run targeted re-review of only changed files
    - No follow-up issue creation for fixable items — just fix them
+   - TaskCreate("Post self-review comment", "Post review findings summary to PR via gh pr review --comment")
+   - Post self-review summary using the template structure from `templates/self-review-comment.md`:
+     ```bash
+     gh pr review $ARGUMENTS --comment --body "$BODY"
+     ```
+   - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — self-review comment posted")
    - If self-review fixed everything, suggest `/flow:pr` to update the PR
 
 6. **External review (someone else's PR — PR_AUTHOR != CURRENT_USER)**:
+
+   - TaskCreate("Post review comment", "Post structured review findings to PR via gh pr review")
+   - Build `$BODY` using the template structure from `templates/review-comment.md`
 
    - P1 findings → `gh pr review $ARGUMENTS --request-changes --body "$BODY"`
    - P2 in already-touched files → include fix suggestion in review comment
@@ -154,6 +163,7 @@ TaskUpdate each review task as agents complete.
    Include created issue numbers in the review comment body.
 
    - Clean → `gh pr review $ARGUMENTS --approve --body "$BODY"`
+   - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — review posted as {approve/request-changes/comment}")
 
    **Note**: Reviewers should recognize `improve:` commits as legitimate Boy Scout cleanup — approve if they pass the proximity test.
 

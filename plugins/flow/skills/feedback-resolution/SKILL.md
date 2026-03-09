@@ -112,10 +112,14 @@ Always explain the reasoning when pushing back. Never ignore feedback silently.
 
 After all feedback is addressed:
 
-```bash
-# Post resolution summary as comment
-gh pr comment $PR_NUM --body "Addressed review feedback: {summary}"
+Post structured resolution summary using the template structure from `templates/resolution-comment.md`:
 
+```bash
+# Post resolution comment
+gh pr comment $PR_NUM --body "$BODY"
+```
+
+```bash
 # Re-request review
 gh pr edit $PR_NUM --add-reviewer @{reviewer}
 ```

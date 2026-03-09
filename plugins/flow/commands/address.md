@@ -73,6 +73,11 @@ echo "REVIEW_CYCLE=$CYCLE_COUNT"
 Categorize feedback and create tasks:
 
 ```
+TaskCreate(
+  subject: "Post resolution comment",
+  description: "Post structured feedback resolution summary to PR via gh pr comment"
+)
+
 For each feedback item:
   TaskCreate(
     subject: "Address: {feedback summary}",
@@ -158,15 +163,11 @@ If a finding truly fails the proximity test (untouched files, architecture chang
    ```bash
    git push
    ```
-8. **Post resolution comments**:
+8. **Post resolution comment** using the template structure from `templates/resolution-comment.md`:
    ```bash
-   gh pr comment $ARGUMENTS --body "Addressed review feedback:
-   - {P1 fix 1}
-   - {P2 fix 2}
-   - {Boy Scout improvements}
-   - {Question response}
-   - Follow-up issues created: #{N1}, #{N2} (if any)"
+   gh pr comment $ARGUMENTS --body "$BODY"
    ```
+   - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
 9. **Conditional re-request review**:
    - If self-review found 0 findings → do NOT re-request (nothing changed that needs re-review beyond the feedback fixes)
    - If cycle < `reviewCycleLimit` (default 3) → re-request normally:
