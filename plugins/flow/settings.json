@@ -65,6 +65,7 @@
       { "name": "tablet", "width": 768, "height": 1024 },
       { "name": "mobile", "width": 375, "height": 812 }
     ],
-    "maxIterations": 3
+    "maxIterations": 3,
+    "requireVisualVerification": false
   }
 }

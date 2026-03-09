@@ -188,7 +188,9 @@ Priority cascade — use the first available:
 1. **Playwright MCP** (`browser_navigate`, `browser_take_screenshot`) — full capability: navigation, screenshots, console logs, DOM inspection
 2. **Chrome DevTools MCP** — screenshot + console + DOM inspection
 3. **CLI fallback**: `npx playwright screenshot http://localhost:$PORT/ $SCREENSHOT_DIR/page.png`
-4. **No tools available** → skip visual verification, note limitation in output
+4. **Skill fallback**: `Skill(compound-engineering:test-browser)` — if available in environment
+5. **Skill fallback**: `Skill(compound-engineering:agent-browser)` — if available in environment
+6. **No tools available** → SKIP_WARN or BLOCKED based on `visualVerification.requireVisualVerification` setting (see below)
 
 ### Screenshot-Analyze-Verify Loop
 
@@ -231,11 +233,20 @@ TaskUpdate(browserToolTaskId, status: "in_progress")
 # ... detect tools ...
 TaskUpdate(browserToolTaskId, status: "completed", result: "{tool} detected")
 
-# If not applicable (no UI files, no UI criteria):
+# If not applicable (no UI files, no UI criteria) — legitimate skip:
 TaskUpdate(visualVerificationTaskId, status: "completed", result: "SKIP — no UI-relevant changes")
 TaskUpdate(responsiveTaskId, status: "completed", result: "SKIP")
 
-# Screenshot-analyze-verify loop
+# If no browser tools found — check requireVisualVerification setting:
+#   requireVisualVerification: false (default) → SKIP_WARN
+TaskUpdate(visualVerificationTaskId, status: "completed", result: "SKIP_WARN — no browser tools. Install Playwright MCP or use /flow:setup.")
+TaskUpdate(responsiveTaskId, status: "completed", result: "SKIP_WARN — no browser tools")
+
+#   requireVisualVerification: true → BLOCKED (command-level escalation)
+TaskUpdate(visualVerificationTaskId, status: "completed", result: "BLOCKED — requireVisualVerification is true but no browser tools available")
+TaskUpdate(responsiveTaskId, status: "completed", result: "BLOCKED")
+
+# Screenshot-analyze-verify loop (when tools ARE available)
 TaskUpdate(visualVerificationTaskId, status: "in_progress")
 # ... for each page: screenshot → analyze → record findings ...
 TaskUpdate(visualVerificationTaskId, status: "completed", result: "PASS/FAIL — {pages} checked, P1:{n} P2:{n} P3:{n}")
@@ -245,6 +256,18 @@ TaskUpdate(responsiveTaskId, status: "in_progress")
 # ... for each viewport: resize → screenshot → analyze ...
 TaskUpdate(responsiveTaskId, status: "completed", result: "PASS/FAIL — {viewports} tested, findings: {summary}")
 ```
+
+### Result Vocabulary
+
+| Result | Meaning | Passes Completion Gate? |
+|--------|---------|------------------------|
+| `PASS` | Ran and passed | Yes |
+| `FAIL` | Ran and found P1 issues | No |
+| `SKIP` | No UI files changed (legitimate) | Yes |
+| `SKIP_WARN` | UI files changed, no tools, `requireVisualVerification` is false | Yes (with warning) |
+| `SKIP_USER_APPROVED` | User explicitly chose to skip | Yes |
+| `MANUAL` | User committed to manual verification | Yes |
+| `BLOCKED` | Awaiting user decision (`requireVisualVerification` is true) | No — requires command-level escalation |
 
 Use `TaskList` after all visual verification completes to confirm all sub-tasks resolved.
 
@@ -314,5 +337,6 @@ Do NOT silently skip verification. Actively solve problems:
 | Port already in use | Try alternative ports |
 | No Playwright MCP | Try Chrome DevTools MCP |
 | No Chrome DevTools MCP | Try `npx playwright install chromium && npx playwright screenshot` |
-| No browser tools at all | Skip visual verification, note in output |
+| No npx playwright | Try `Skill(compound-engineering:test-browser)` or `Skill(compound-engineering:agent-browser)` |
+| No browser tools at all | If `requireVisualVerification` is true, return BLOCKED for command-level escalation. Otherwise, SKIP_WARN with tool installation guidance. |
 | Non-UI project | Skip visual verification (no UI files or criteria detected) |

@@ -176,18 +176,35 @@ Prove everything works with fix-forward:
    - `TaskUpdate(visualVerificationTaskId, status: "in_progress")` → take screenshots of affected pages at configured viewports → analyze visually → record findings (P1 blocks completion, P2 noted) → save screenshot evidence to `visualVerification.screenshotDir` → `TaskUpdate(visualVerificationTaskId, status: "completed", result: "PASS/FAIL — {summary}")`
    - `TaskUpdate(responsiveTaskId, status: "in_progress")` → test each viewport → `TaskUpdate(responsiveTaskId, status: "completed", result: "{viewports tested}")`
    - If not applicable (no UI files): `TaskUpdate` all three as completed with result "SKIP"
+   - If browser tools not found and `requireVisualVerification: false`: result is "SKIP_WARN"
+   - If browser tools not found and `requireVisualVerification: true`: result is "BLOCKED"
    - `TaskList` — confirm all visual verification tasks resolved
 6. **Completion gate**: ALL of:
    - All quality checks pass
    - Runtime verification passed (or justified N/A for config/markdown-only)
    - No unresolved P1 findings
    - All tasks completed
+   - Visual verification: no BLOCKED results (see escalation below)
+
+   **Visual verification escalation**: If any visual verification task has result containing "BLOCKED", use `AskUserQuestion`:
+   > Visual verification is required (`requireVisualVerification: true`) but no browser tools are available.
+   > UI files changed: {list of changed .tsx/.jsx/.vue/.html/.css/.scss files}
+   >
+   > Options:
+   > 1. Skip visual verification for this change (will be noted in PR body)
+   > 2. I will verify visually myself (manual verification)
+   > 3. Help me install browser tools (Playwright MCP recommended)
+
+   Based on response:
+   - Option 1 → `TaskUpdate` visual tasks with result "SKIP_USER_APPROVED"
+   - Option 2 → `TaskUpdate` visual tasks with result "MANUAL — user will verify"
+   - Option 3 → Provide Playwright MCP installation guidance, then retry browser tool cascade
 7. **Display summary**:
    - Tasks completed: N/N
    - Quality checks: pass/fail
    - Self-review findings: P1: X, P2: Y, P3: Z (all P1/P2 fixed via fix-forward)
    - Runtime verification: pass/fail/skip
-   - Visual verification: pass/fail/skip
+   - Visual verification: PASS / FAIL / SKIP / SKIP_WARN / SKIP_USER_APPROVED / MANUAL
    - Branch: ready for PR
 
 ## Completion

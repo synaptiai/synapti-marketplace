@@ -143,9 +143,27 @@
           "minimum": 1,
           "maximum": 10,
           "description": "Max screenshot-analyze-fix cycles before escalating"
+        },
+        "requireVisualVerification": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, visual verification cannot be silently skipped for UI changes. SKIP results require user confirmation before the completion gate passes."
         }
       }
-    }
+    },
+    "closedLoop": {
+      "type": "object",
+      "description": "Closed-loop verification settings",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "maxBuildIterations": { "type": "integer", "default": 5, "minimum": 1 },
+        "maxServerRetries": { "type": "integer", "default": 3, "minimum": 1 },
+        "maxDebugIterations": { "type": "integer", "default": 5, "minimum": 1 },
+        "requireRuntimeVerification": { "type": "boolean", "default": true }
+      }
+    },
+    "reviewCycleLimit": { "type": "integer", "default": 3, "minimum": 1 },
+    "fixForwardMaxIterations": { "type": "integer", "default": 2, "minimum": 1 }
   },
   "additionalProperties": false
 }

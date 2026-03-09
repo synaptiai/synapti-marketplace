@@ -121,17 +121,28 @@ TaskUpdate(browserToolTaskId, status: "in_progress")
 1. Playwright MCP (`browser_navigate`, `browser_take_screenshot`)
 2. Chrome DevTools MCP
 3. CLI fallback: `npx playwright screenshot`
-4. No tools → report SKIP (not FAIL)
+4. Skill fallback: `Skill(compound-engineering:test-browser)` — if available
+5. Skill fallback: `Skill(compound-engineering:agent-browser)` — if available
+6. No tools → SKIP_WARN or BLOCKED based on `requireVisualVerification` setting
 
 ```
-TaskUpdate(browserToolTaskId, status: "completed", result: "{tool found or SKIP}")
+TaskUpdate(browserToolTaskId, status: "completed", result: "{tool found or SKIP_WARN or BLOCKED}")
 ```
 
-If no tools found:
+If no tools found, read `visualVerification.requireVisualVerification` from settings (default: `false`):
+
+**When `requireVisualVerification: false` (default):**
 ```
-TaskUpdate(visualVerificationTaskId, status: "completed", result: "SKIP — no browser tools available")
-TaskUpdate(responsiveTaskId, status: "completed", result: "SKIP — no browser tools available")
+TaskUpdate(visualVerificationTaskId, status: "completed", result: "SKIP_WARN — no browser tools. Install Playwright MCP or use /flow:setup.")
+TaskUpdate(responsiveTaskId, status: "completed", result: "SKIP_WARN — no browser tools")
 ```
+
+**When `requireVisualVerification: true`:**
+```
+TaskUpdate(visualVerificationTaskId, status: "completed", result: "BLOCKED — requireVisualVerification is true but no browser tools available")
+TaskUpdate(responsiveTaskId, status: "completed", result: "BLOCKED")
+```
+
 Skip to Step 7.
 
 **Screenshot-analyze-verify loop:**
@@ -221,6 +232,6 @@ When invoked as a parallel sub-agent:
 - If server won't start, read the error and attempt to diagnose. Report the error details (not just SKIP) so the caller can fix and retry.
 - Save screenshots as evidence when visual verification runs
 - Visual verification bounded by `visualVerification.maxIterations`
-- Report SKIP (not FAIL) if no browser tools available — TaskUpdate as completed with "SKIP" result
+- If no browser tools available: report SKIP_WARN (when `requireVisualVerification` is false) or BLOCKED (when true) — never raw SKIP for UI-relevant changes
 - TaskList before returning to confirm all verification tasks resolved
 - Complete and return immediately

@@ -122,12 +122,16 @@ After agents return, TaskUpdate each review task with findings.
    - Record screenshot paths from agent results as evidence
 3. **TaskList**: Confirm all review tasks complete (including visual verification if created)
 4. **Runtime verification**: If integration-verifier returns SKIP without justification, run runtime verification directly (build, start, smoke test). Runtime verification must pass before PR creation.
-5. **Display findings** (finding-first pattern):
+5. **Visual verification enforcement**: If `visualVerification.requireVisualVerification` is `true` and integration-verifier returned visual verification as BLOCKED:
+   - Use `AskUserQuestion` with options: (1) Skip visual verification — noted in PR body, (2) I will verify visually myself — marked as MANUAL, (3) Help me install browser tools
+   - Based on response → `TaskUpdate` visual tasks to SKIP_USER_APPROVED or MANUAL, or provide installation guidance and retry
+   - The PR body should note whether visual verification was PASS, MANUAL, SKIP_USER_APPROVED, or SKIP_WARN
+6. **Display findings** (finding-first pattern):
    - P1 findings → must fix before PR
    - P2 findings → fix before PR (max 2 fix iterations; after 2, remaining P2 become "Known issues" in PR body)
    - P3 findings → note in PR body
-6. **If P1 findings**: Fix them, re-run review
-6. **Generate PR body** from template + findings + journal + comprehension report.
+7. **If P1 findings**: Fix them, re-run review
+8. **Generate PR body** from template + findings + journal + comprehension report.
    If visual verification ran, include visual evidence section:
    ```markdown
    ## Visual Verification
@@ -135,15 +139,15 @@ After agents return, TaskUpdate each review task with findings.
    |------|----------|--------|------------|
    ```
    Note: screenshots are local files; for remote visibility, mention "verified locally"
-7. **Push** (Tier 2: journal-and-proceed):
+9. **Push** (Tier 2: journal-and-proceed):
    ```bash
    git push -u origin $BRANCH
    ```
-8. **Create PR** (Tier 2):
-   ```bash
-   gh pr create --title "$TITLE" --body "$BODY"
-   ```
-9. **Suggest reviewers** using pr-lifecycle skill algorithm
-10. **Verify**: `gh pr view --json number,url`
+10. **Create PR** (Tier 2):
+    ```bash
+    gh pr create --title "$TITLE" --body "$BODY"
+    ```
+11. **Suggest reviewers** using pr-lifecycle skill algorithm
+12. **Verify**: `gh pr view --json number,url`
 
 Display PR URL and next steps.
