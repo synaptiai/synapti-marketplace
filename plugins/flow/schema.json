@@ -82,6 +82,29 @@
         "maxHypotheses": { "type": "integer", "default": 3, "minimum": 1, "maximum": 5 }
       }
     },
+    "lsp": {
+      "type": "object",
+      "description": "LSP code intelligence integration settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable LSP code intelligence during workflow phases (EXPLORE, CODE, VERIFY)"
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 5000,
+          "minimum": 1000,
+          "maximum": 30000,
+          "description": "Per-operation timeout in milliseconds for LSP requests"
+        },
+        "diagnosticsAsQuality": {
+          "type": "boolean",
+          "default": true,
+          "description": "Consume LSP diagnostics as a quality signal during VERIFY phase (errors→P1, warnings→P2)"
+        }
+      }
+    },
     "visualVerification": {
       "type": "object",
       "description": "Visual verification settings for UI-facing changes",

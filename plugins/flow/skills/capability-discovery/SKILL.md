@@ -1,7 +1,7 @@
 ---
 name: capability-discovery
-description: "[flow] Discovers available agents, skills, quality commands (lint, test, typecheck), and tech stack in the project environment. Use when starting implementation, creating PRs, reviewing PRs, or addressing feedback to determine which agents to dispatch and which quality commands to run."
-allowed-tools: Bash, Read, Glob, Grep
+description: "[flow] Discovers available agents, skills, quality commands (lint, test, typecheck), tech stack, and LSP code intelligence capabilities in the project environment. Use when starting implementation, creating PRs, reviewing PRs, or addressing feedback to determine which agents to dispatch and which quality commands to run."
+allowed-tools: Bash, Read, Glob, Grep, LSP
 context: fork
 agent: Explore
 ---
@@ -77,6 +77,39 @@ If no tech stack files found and no quality commands in CLAUDE.md, report:
 ls verify.sh scripts/verify* playwright.config.* cypress.config.* 2>/dev/null
 ```
 
+### Step 7: Discover LSP Capabilities
+
+Probe for available LSP code intelligence features. Find a representative source file in the project (use the first file matching the detected tech stack — e.g., `.ts`, `.py`, `.go`, `.rs`, `.rb`), then test each LSP operation against it.
+
+**LSP feature probes** (run each, catch failures individually):
+
+| Operation | Test | Capability |
+|-----------|------|-----------|
+| `documentSymbol` | List symbols in the file | Symbol navigation |
+| `hover` | Hover on first symbol (line 1, char 1) | Type info / docs |
+| `goToDefinition` | Definition lookup on an import or reference | Definition tracing |
+| `findReferences` | Find references to a symbol | Impact analysis |
+| `goToImplementation` | Find implementations | Interface resolution |
+
+**Process:**
+
+1. Find a representative source file:
+   ```bash
+   # Pick first source file matching detected tech stack
+   find . -maxdepth 3 -name "*.ts" -o -name "*.py" -o -name "*.go" -o -name "*.rs" -o -name "*.rb" 2>/dev/null | head -1
+   ```
+
+2. For each operation, attempt an LSP call against the file. Record success or failure:
+   - Success → feature is available
+   - Error "no LSP server" → LSP not configured for this file type
+   - Error/timeout → feature not supported by this server
+
+3. Read `lsp.timeout` from settings (default 5000ms). If an operation doesn't respond within this timeout, mark it as unavailable.
+
+4. Report results in the LSP Capabilities output table.
+
+**Graceful degradation**: If no source files exist (markdown-only project) or no LSP server is configured, report "No LSP server available — using CLI-only analysis" and skip. This is not an error.
+
 ## Output Format
 
 ```markdown
@@ -98,6 +131,16 @@ ls verify.sh scripts/verify* playwright.config.* cypress.config.* 2>/dev/null
 ### Verification Capabilities
 | Capability | Command | Source |
 |-----------|---------|--------|
+
+### LSP Capabilities
+| Feature | Status | Use Case |
+|---------|--------|----------|
+| documentSymbol | {Available/Unavailable} | Symbol navigation in files |
+| hover | {Available/Unavailable} | Type info and documentation during CODE phase |
+| goToDefinition | {Available/Unavailable} | Trace code paths during EXPLORE phase |
+| findReferences | {Available/Unavailable} | Impact analysis during EXPLORE, caller verification during REVIEW |
+| goToImplementation | {Available/Unavailable} | Interface resolution |
+| diagnostics | {Available/Unavailable} | Quality signal during VERIFY phase (errors→P1, warnings→P2) |
 ```
 
 ## Graceful Degradation
@@ -107,6 +150,7 @@ ls verify.sh scripts/verify* playwright.config.* cypress.config.* 2>/dev/null
 | No agents | Use built-in review checklist |
 | No CLAUDE.md commands | Detect from tech stack |
 | No tech stack | Ask user for commands |
+| No LSP server | CLI-only analysis (grep/glob for references, CLI tools for diagnostics) |
 
 ## Caching
 

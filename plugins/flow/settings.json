@@ -52,6 +52,11 @@
     "maxDebugIterations": 5,
     "requireRuntimeVerification": true
   },
+  "lsp": {
+    "enabled": true,
+    "timeout": 5000,
+    "diagnosticsAsQuality": true
+  },
   "visualVerification": {
     "enabled": true,
     "screenshotDir": ".screenshots",

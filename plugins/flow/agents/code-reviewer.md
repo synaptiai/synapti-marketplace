@@ -2,7 +2,7 @@
 name: code-reviewer
 description: "[flow] Reviews code changes for quality, logic correctness, edge cases, security, and error handling. Returns P1/P2/P3 findings with file:line citations. Uses ASSERTION/EVIDENCE/VERIFIED pattern."
 model: inherit
-tools: Read, Bash, Grep, Glob
+tools: Read, Bash, Grep, Glob, LSP
 skills: code-review-methodology, evidence-based-development
 memory: project
 ---
@@ -25,6 +25,18 @@ git diff "origin/$DEFAULT_BRANCH"..HEAD
 ### Step 2: Read Changed Files
 
 Use the Read tool to read each changed file in full. Understand the context, not just the diff.
+
+### Step 2b: LSP-Enhanced Caller Verification
+
+When the LSP tool is available with `findReferences` support, use it to verify that all callers of modified functions are handled:
+
+1. For each modified function/method in the diff, use `LSP(findReferences)` at the function definition to find all call sites
+2. Read each caller to verify it handles any new parameters, changed return types, or modified error behavior
+3. If `goToDefinition` is available, trace imports and dependencies to understand the full call chain
+
+This provides semantic accuracy that grep-based searches cannot — it resolves aliases, re-exports, and indirect references.
+
+**Fallback**: If LSP is unavailable, continue with grep-based reference search (existing Step 2 behavior). LSP enhances but never replaces the review.
 
 ### Step 3: Scope Classification
 
