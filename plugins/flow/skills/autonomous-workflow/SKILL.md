@@ -18,7 +18,7 @@ Jumping to code without exploration is the #1 cause of rework. Jumping to "done"
 
 Every multi-step workflow follows this loop:
 
-1. **EXPLORE**: Gather context. Use Agent(Explore) subagents for unfamiliar code. Parallel Bash for independent queries (git status, issue details, task list). Read referenced files. When LSP is available: use `goToDefinition` to trace code paths from issue keywords to implementation, and `findReferences` to assess the impact of planned changes — this replaces text-based grep searches with semantic understanding.
+1. **EXPLORE**: Gather context. Use Agent(Explore) subagents for unfamiliar code. Parallel Bash for independent queries (git status, issue details, task list). Read referenced files. When LSP is available: use `goToDefinition` to trace code paths from issue keywords to implementation, and `findReferences` to assess the impact of planned changes — this enhances text-based grep searches with semantic understanding.
 2. **PLAN**: Decompose work. TaskCreate for each deliverable. Set dependencies with addBlockedBy. Display the plan for visibility.
 3. **CODE**: Execute tasks. TaskUpdate(in_progress) before starting. Implement. Commit incrementally (Tier 1). TaskUpdate(completed) after verification. When LSP is available: use `hover` to understand types and signatures of existing code before modifying it.
 4. **VERIFY**: Prove it works. Three mandatory verification layers:

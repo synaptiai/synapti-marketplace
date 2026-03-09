@@ -79,6 +79,8 @@ ls verify.sh scripts/verify* playwright.config.* cypress.config.* 2>/dev/null
 
 ### Step 7: Discover LSP Capabilities
 
+**Pre-check**: Read `lsp.enabled` from settings (default `true`). If `false`, skip this step and report all LSP features as "Disabled" in the output table.
+
 Probe for available LSP code intelligence features. Find a representative source file in the project (use the first file matching the detected tech stack — e.g., `.ts`, `.py`, `.go`, `.rs`, `.rb`), then test each LSP operation against it.
 
 **LSP feature probes** (run each, catch failures individually):
@@ -91,13 +93,13 @@ Probe for available LSP code intelligence features. Find a representative source
 | `findReferences` | Find references to a symbol | Impact analysis |
 | `goToImplementation` | Find implementations | Interface resolution |
 
+**Diagnostics inference**: LSP diagnostics are not a discrete operation to probe — they are reported by the language server when it processes a file. If `documentSymbol` succeeds, the LSP server is active and diagnostics are available. Record diagnostics as "Available" when `documentSymbol` succeeds, "Unavailable" otherwise.
+
 **Process:**
 
-1. Find a representative source file:
-   ```bash
-   # Pick first source file matching detected tech stack
-   find . -maxdepth 3 -name "*.ts" -o -name "*.py" -o -name "*.go" -o -name "*.rs" -o -name "*.rb" 2>/dev/null | head -1
-   ```
+1. Find a representative source file using Glob (consistent with Steps 1-3):
+   - `Glob: "**/*.ts"` or `"**/*.py"` or `"**/*.go"` or `"**/*.rs"` or `"**/*.rb"` (match detected tech stack)
+   - Use the first result as the probe target
 
 2. For each operation, attempt an LSP call against the file. Record success or failure:
    - Success → feature is available

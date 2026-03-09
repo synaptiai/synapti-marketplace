@@ -52,6 +52,8 @@ If build fails → iterate: read errors, fix, rebuild (up to `closedLoop.maxBuil
 
 ## LSP Diagnostics Verification
 
+**Pre-check**: Read `lsp.enabled` from settings (default `true`). If `false`, skip this section entirely.
+
 When LSP is available and `lsp.diagnosticsAsQuality` is enabled in settings, collect language server diagnostics as an additional quality signal. This complements — never replaces — CLI-based quality commands.
 
 ### Process

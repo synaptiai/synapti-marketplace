@@ -30,9 +30,9 @@ Use the Read tool to read each changed file in full. Understand the context, not
 
 When the LSP tool is available with `findReferences` support, use it to verify that all callers of modified functions are handled:
 
-1. For each modified function/method in the diff, use `LSP(findReferences)` at the function definition to find all call sites
+1. For each modified function/method in the diff, use `LSP(findReferences)` at the function definition to find all call sites. Alternatively, use `LSP(incomingCalls)` for a more direct call hierarchy — it returns only callers (not type references or re-exports), making it more precise for verifying caller impact.
 2. Read each caller to verify it handles any new parameters, changed return types, or modified error behavior
-3. If `goToDefinition` is available, trace imports and dependencies to understand the full call chain
+3. If `goToDefinition` is available, trace imports and dependencies to understand the full call chain. Use `LSP(outgoingCalls)` to map what a modified function calls, verifying downstream dependencies are compatible.
 
 This provides semantic accuracy that grep-based searches cannot — it resolves aliases, re-exports, and indirect references.
 
