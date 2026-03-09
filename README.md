@@ -25,9 +25,9 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 |--------|----------|-------------|---------|
 | [Agent Capability Standard ↗](https://github.com/synaptiai/agent-capability-standard) | Standards, Agent Development | Technical specification for AI agents with structural reliability. 36 atomic capabilities across 9 layers with reference workflows and safety-by-construction patterns. | 1.2.0 |
 | [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
-| [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.3.1 |
-| [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development. Composable skills, safety hooks, agent teams, and learning loop. | 1.0.0 |
-| [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.7.0 |
+| [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.5.0 |
+| [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development. Composable skills, safety hooks, agent teams, LSP code intelligence, and learning loop. | 1.1.0 |
+| [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.8.0 |
 
 ### When to Use Each Plugin
 
@@ -316,6 +316,7 @@ claude plugin install gh-workflow
 | **Three-Tier Safety** | Hook-enforced tiers: autonomous (commits), journal (push/PR), confirm (merge/release) |
 | **Learning Loop** | Decision journal captures patterns; `/flow learn` proposes new skills from experience |
 | **Agent Teams** | Parallel + adversarial review teams where reviewers challenge each other's findings |
+| **LSP Code Intelligence** | Leverages language server go-to-definition, find-references, hover, and diagnostics across EXPLORE, CODE, VERIFY, and REVIEW phases |
 | **Visual Verification** | Screenshot-based runtime verification for UI changes |
 
 ### Commands
@@ -465,7 +466,7 @@ synapti-marketplace/
     │   │   └── plugin.json
     │   ├── README.md
     │   ├── agents/                   # 7 specialized agents
-    │   ├── commands/                 # 15 workflow commands
+    │   ├── commands/                 # 16 workflow commands
     │   ├── hooks/                    # Safety hook definitions
     │   ├── skills/                   # 18 composable skills (3 foundation + 15 domain)
     │   ├── templates/                # PR, issue, skill proposal templates

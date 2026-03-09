@@ -29,7 +29,7 @@ SKILL LIBRARY (18 skills)
       ├── branch-and-task-management
       ├── change-classification
       ├── convention-enforcement
-      ├── capability-discovery
+      ├── capability-discovery (+ LSP probing)
       ├── code-review-methodology
       ├── pr-lifecycle
       ├── feedback-resolution
@@ -45,10 +45,10 @@ SKILL LIBRARY (18 skills)
 AGENTS (7)
   ├── implementation-planner (task decomposition)
   ├── test-runner (quality commands)
-  ├── code-reviewer (quality + security)
+  ├── code-reviewer (quality + security + LSP references)
   ├── convention-checker (git conventions)
   ├── security-reviewer (OWASP, secrets, auth)
-  ├── error-handler-inspector (error handling analysis)
+  ├── error-handler-inspector (error handling + LSP diagnostics)
   └── integration-verifier (integration validation)
 
 COMMANDS (16)
@@ -99,6 +99,19 @@ Three-tier action classification:
 
 Hooks provide structural enforcement — they block dangerous operations even if command logic fails.
 
+## LSP Code Intelligence
+
+When LSP servers are available, Flow leverages language server capabilities across workflow phases:
+
+| Phase | LSP Feature | Benefit |
+|-------|------------|---------|
+| **EXPLORE** | `goToDefinition`, `findReferences` | Semantic code path tracing and impact analysis |
+| **CODE** | `hover` | Type info and signatures for existing code |
+| **VERIFY** | Diagnostics | Errors→P1, warnings→P2 as complementary quality signals |
+| **REVIEW** | `findReferences`, `incomingCalls` | Verify all callers of modified functions are handled |
+
+LSP is additive — all phases fall back to grep/CLI-based analysis when no LSP server is configured. Configure via `lsp.enabled`, `lsp.timeout`, and `lsp.diagnosticsAsQuality` in settings.
+
 ## Agent Teams (Opt-In)
 
 Enable with `"agentTeams": true` in settings. Requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`.
@@ -125,9 +138,10 @@ Settings in `.claude/settings.flow.json`:
   "conventions": { "commitTypes": ["feat", "fix", "docs", "..."] },
   "merge": { "strategy": "squash", "deleteBranch": true },
   "learning": { "enabled": true },
-  "visualVerification": { "enabled": false, "screenshotOnVerify": true },
-  "debugging": { "maxIterations": 5, "rootCauseFirst": true },
-  "testing": { "tddMode": false, "parallelExecution": true }
+  "lsp": { "enabled": true, "timeout": 5000, "diagnosticsAsQuality": true },
+  "visualVerification": { "enabled": true, "screenshotDir": ".screenshots", "maxIterations": 3 },
+  "debugging": { "maxHypotheses": 3 },
+  "testing": { "tddMode": "suggest" }
 }
 ```
 
