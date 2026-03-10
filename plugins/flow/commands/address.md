@@ -18,6 +18,7 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 - `feedback-resolution` — surgical changes, context recovery, pushback criteria
 - `change-classification` — verify no out-of-context changes
 - `capability-discovery` — quality commands for verification
+- `tdd-patterns` — test-first for fixes, test quality standards
 
 ## Phase 1: EXPLORE
 
@@ -84,6 +85,11 @@ For each feedback item:
     description: "Reviewer: @{author}\nFile: {path}:{line}\nFeedback: {body}\nPriority: {P1|P2|P3|Question}",
     activeForm: "Fixing {short description}"
   )
+
+TaskCreate(
+  subject: "Test coverage for fixes",
+  description: "Write or update tests for each feedback fix. At minimum one test per fix that would have caught the issue."
+)
 ```
 
 Group related feedback. Set dependencies for sequential fixes.
@@ -108,9 +114,14 @@ For each feedback task (in priority order):
    - Search for quoted code snippets
    - Read the file at the mentioned path
 4. Implement the fix
-5. Verify the fix addresses the specific feedback
-6. Commit: git commit -m "fix(scope): address review — {summary}"
-7. TaskUpdate(taskId, status: "completed")
+5. Write or update tests that verify the fix:
+   - Follow existing test patterns (co-located files, same framework)
+   - At minimum, write a test that would have caught the issue
+   - Test the specific edge case, not just the happy path
+   - Only modify the fix target and its test file
+6. Verify the fix addresses the specific feedback and tests pass
+7. Commit: git commit -m "fix(scope): address review — {summary}"
+8. TaskUpdate(taskId, status: "completed")
 ```
 
 **Boy Scout pass** — after all feedback fixes:
@@ -118,6 +129,8 @@ For each feedback task (in priority order):
 - If cycle >= 2, also scan the entire file for P1/P2 issues
 - Fix any proximity-test-passing issues found
 - Boy Scout fixes get separate `improve:` commits
+
+TaskUpdate(testCoverageTaskId, status: "completed", result: "Tests written/updated for {N} fixes")
 
 For **Question** items: prepare a response comment (no code change needed).
 

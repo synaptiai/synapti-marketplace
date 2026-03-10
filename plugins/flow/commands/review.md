@@ -126,7 +126,10 @@ TaskUpdate each review task as agents complete.
    - P1 findings → fix immediately
    - P2 findings → fix immediately
    - P3 findings → fix if contained (<10 lines, same file)
+   - TaskCreate("Test coverage for fix-forward", "Write or update tests for each P1/P2 fix applied during self-review")
+   - For each fix: write or update a test that covers the fixed behavior
    - After fixes: run targeted re-review of only changed files
+   - TaskUpdate(testCoverageTaskId, status: "completed", result: "Tests written/updated for {N} fixes")
    - No follow-up issue creation for fixable items — just fix them
    - TaskCreate("Post self-review comment", "Post review findings summary to PR via gh pr review --comment")
    - Post self-review summary using the template structure from `templates/self-review-comment.md`:

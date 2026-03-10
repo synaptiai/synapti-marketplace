@@ -102,6 +102,12 @@ Agent(implementation-planner):
    Return: task list, dependency graph, suggested order."
 ```
 
+For each implementation task, also create a corresponding test task:
+```
+TaskCreate("Test: {behavior}", "Write or update tests verifying {behavior}. Follow existing test patterns.")
+```
+Set dependency: test task is blocked by its implementation task.
+
 Display task plan. Proceed unless user objects.
 
 ## Phase 3: CODE
@@ -117,9 +123,15 @@ For each task (in dependency order):
   1. TaskUpdate(taskId, status: "in_progress")
   2. Read relevant files (follow existing patterns)
   3. Implement the change
-  4. Run related tests if available
-  5. Incremental commit (Tier 1: autonomous)
-  6. TaskUpdate(taskId, status: "completed")
+  4. Write or update tests that verify the change:
+     - Follow existing test patterns (co-located files, same framework)
+     - At minimum, one test per acceptance criterion or behavior
+     - Test edge cases, not just the happy path
+     - For bug fixes: write a test that would have caught the original bug
+  5. Run related tests — new tests must pass, existing tests must not break
+  6. TaskUpdate(testTaskId, status: "completed")
+  7. Incremental commit (Tier 1: autonomous)
+  8. TaskUpdate(taskId, status: "completed")
 ```
 
 **Parallel task detection**: If tasks have no overlapping files and agent teams are enabled, suggest parallel execution via agent team.

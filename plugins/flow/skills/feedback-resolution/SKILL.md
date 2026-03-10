@@ -77,8 +77,13 @@ For each feedback item (as TaskCreate):
 1. **Read** the review comment carefully
 2. **Find** the current code location (context recovery)
 3. **Implement** the minimal fix
-4. **Verify** the fix addresses the specific feedback
-5. **Commit** with reference: `fix(scope): address review — {summary}`
+4. **Test** — write or update tests that verify the fix:
+   - Follow existing test patterns (co-located files, same framework)
+   - At minimum, write a test that would have caught the issue
+   - Test the specific edge case, not just the happy path
+   - Only modify the fix target and its test file
+5. **Verify** the fix addresses the specific feedback and tests pass
+6. **Commit** with reference: `fix(scope): address review — {summary}`
 
 ## Ambiguity Handling
 
