@@ -1,5 +1,5 @@
 ---
-description: "[flow] Review a pull request with multi-faceted analysis. Supports both single-session parallel review and agent team adversarial review."
+description: "Review a pull request with multi-faceted analysis. Supports both single-session parallel review and agent team adversarial review."
 argument-hint: <pr-number>
 allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Skill, Grep, Glob
 ---

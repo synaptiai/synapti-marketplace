@@ -1,6 +1,6 @@
 ---
 name: preflight-checks
-description: "[flow] Pure bash pre-flight validation before starting work. Checks: clean git state, issue exists, gh CLI authenticated, remote accessible. Fails fast before LLM planning. No LLM calls."
+description: "Validate environment prerequisites including clean git state, issue existence, gh CLI authentication, and remote accessibility using fast bash checks with no LLM calls. Use when starting any workflow to fail fast before planning begins."
 allowed-tools: Bash
 context: fork
 agent: general-purpose

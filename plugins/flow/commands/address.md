@@ -1,5 +1,5 @@
 ---
-description: "[flow] Address PR review feedback systematically. Categorizes feedback, implements surgical fixes, verifies changes, and re-requests review."
+description: "Address PR review feedback systematically. Categorizes feedback, implements surgical fixes, verifies changes, and re-requests review."
 argument-hint: <pr-number>
 allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Skill, Grep, Glob
 ---

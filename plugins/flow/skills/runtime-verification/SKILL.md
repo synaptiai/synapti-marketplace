@@ -1,6 +1,6 @@
 ---
 name: runtime-verification
-description: "[flow] Verifies implementation works at runtime by discovering and executing dev server startup, API smoke tests, E2E tests, browser checks, and LSP diagnostics. Use after quality checks pass to confirm the code actually runs."
+description: "Verify implementation works at runtime by discovering and executing dev server startup, API smoke tests, E2E tests, browser checks, and LSP diagnostics. Use after quality checks pass to confirm the code actually runs."
 allowed-tools: Bash, Read, Glob, Grep, LSP, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: Explore

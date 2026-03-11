@@ -1,6 +1,6 @@
 ---
 name: branch-and-task-management
-description: "[flow] Use when starting work on an issue. Guides branch creation with naming conventions, issue context loading, impact analysis, task decomposition from acceptance criteria, and parallel task detection."
+description: "Create branches with naming conventions, load issue context, perform impact analysis, and decompose acceptance criteria into parallel tasks. Use when starting work on a GitHub issue."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, TaskCreate, TaskList, TaskUpdate, TaskGet
 context: fork
 agent: general-purpose

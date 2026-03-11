@@ -1,5 +1,5 @@
 ---
-description: "[flow] Analyze decision journal for learnable patterns and generate skill proposals. Identifies repeated corrections, common patterns, and potential new skills from session activity."
+description: "Analyze the decision journal for learnable patterns and generate skill proposals from repeated corrections and common patterns. Use when reviewing session activity to extract reusable knowledge."
 allowed-tools: Bash, Read, Write, Grep, Glob
 ---
 

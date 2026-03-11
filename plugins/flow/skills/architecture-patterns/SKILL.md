@@ -1,6 +1,6 @@
 ---
 name: architecture-patterns
-description: "[flow] Use when designing systems, evaluating structural changes, or reviewing architecture decisions. Guides design-from-functionality, coupling analysis, and C4 model thinking."
+description: "Guide system design decisions including design-from-functionality, coupling analysis, and C4 model thinking. Use when designing systems, evaluating structural changes, or reviewing architecture decisions."
 allowed-tools: Read, Bash, Grep, Glob, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: Explore

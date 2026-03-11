@@ -1,6 +1,6 @@
 ---
 name: debugging-patterns
-description: "[flow] Applied automatically when any verification step fails, not just for bug issues. Guides root cause isolation through log analysis, hypothesis testing, and fix validation. Prevents symptom-fixing and tunnel vision."
+description: "Isolate root causes through structured log analysis, hypothesis testing, and fix validation to prevent symptom-fixing and tunnel vision. Use when any verification step fails, tests break, or debugging a reported bug."
 allowed-tools: Bash, Read, Grep, Glob, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: general-purpose

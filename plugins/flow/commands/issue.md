@@ -1,5 +1,5 @@
 ---
-description: "[flow] Create a well-crafted GitHub issue. Guides solution-agnostic requirements gathering, duplicate detection, label discovery, and verifiable acceptance criteria."
+description: "Create a well-crafted GitHub issue. Guides solution-agnostic requirements gathering, duplicate detection, label discovery, and verifiable acceptance criteria."
 argument-hint: [description-or-topic]
 allowed-tools: Bash, Read, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Skill, Grep, Glob
 ---

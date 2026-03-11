@@ -1,6 +1,6 @@
 ---
 name: autonomous-workflow
-description: "[flow] Autonomous development workflow principles. Defines Explore>Plan>Code>Verify loop, task-driven progress tracking with TaskCreate/TaskUpdate/TaskList, three-tier action classification, decision journaling, parallel execution, and bounded verification loops."
+description: "Govern autonomous development execution through the Explore-Plan-Code-Verify loop, task-driven progress tracking, three-tier action classification, decision journaling, and bounded verification. Use when executing any development workflow autonomously or orchestrating multi-step implementation tasks."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, TaskCreate, TaskList, TaskUpdate, TaskGet, AskUserQuestion
 ---
 

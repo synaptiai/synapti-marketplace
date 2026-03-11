@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: "[flow] Use when exploring approaches before committing to implementation. Guides multi-option exploration, trade-off analysis, and approach selection with user collaboration."
+description: "Explore multiple approaches through structured option generation, trade-off analysis, and collaborative approach selection. Use when evaluating alternatives before committing to an implementation strategy."
 allowed-tools: Read, Bash, Grep, Glob, AskUserQuestion, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: Explore

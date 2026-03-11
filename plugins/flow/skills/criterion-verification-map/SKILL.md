@@ -1,6 +1,6 @@
 ---
 name: criterion-verification-map
-description: "[flow] Maps each acceptance criterion to a specific verification method, collects evidence during verification, and produces a structured evidence bundle for the verdict judge."
+description: "Map each acceptance criterion to a specific verification method, collect evidence during verification, and produce a structured evidence bundle for the verdict judge. Use when verifying implementation completeness against issue acceptance criteria."
 allowed-tools: Bash, Read, Grep, Glob, TaskCreate, TaskList, TaskUpdate, TaskGet
 context: fork
 agent: general-purpose

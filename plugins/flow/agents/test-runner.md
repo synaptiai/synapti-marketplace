@@ -1,6 +1,6 @@
 ---
 name: test-runner
-description: "[flow] Discovers and runs project-specific lint, test, and type-check commands. Reports structured results with pass/fail status. Execute quality commands in parallel when possible."
+description: "Discover and run project-specific lint, test, and type-check commands, reporting structured results with pass/fail status. Execute quality commands in parallel when possible. Use when running quality gates or verifying code changes."
 model: inherit
 tools: Bash, Read, Glob, Grep
 skills: capability-discovery, evidence-based-development

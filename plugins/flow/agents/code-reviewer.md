@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: "[flow] Reviews code changes for quality, logic correctness, edge cases, security, and error handling. Returns P1/P2/P3 findings with file:line citations. Uses ASSERTION/EVIDENCE/VERIFIED pattern."
+description: "Review code changes for quality, logic correctness, edge cases, security, and error handling. Return P1/P2/P3 findings with file:line citations using the ASSERTION/EVIDENCE/VERIFIED pattern."
 model: inherit
 tools: Read, Bash, Grep, Glob, LSP
 skills: code-review-methodology, evidence-based-development

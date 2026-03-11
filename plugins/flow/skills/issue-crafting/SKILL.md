@@ -1,6 +1,6 @@
 ---
 name: issue-crafting
-description: "[flow] Use when creating GitHub issues. Guides solution-agnostic requirements gathering, duplicate detection, label discovery, and acceptance criteria that describe observable behavior — not implementation details."
+description: "Craft well-structured GitHub issues with solution-agnostic requirements, duplicate detection, label discovery, and acceptance criteria describing observable behavior rather than implementation details. Use when creating new GitHub issues."
 allowed-tools: Bash, Read, AskUserQuestion
 context: fork
 agent: Explore

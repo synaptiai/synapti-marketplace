@@ -1,5 +1,5 @@
 ---
-description: "[flow] Design or review architecture for a feature or system. Analyzes existing patterns, evaluates coupling, and produces design decisions."
+description: "Design or review architecture for a feature or system. Analyzes existing patterns, evaluates coupling, and produces design decisions."
 argument-hint: [feature-description-or-issue-number]
 allowed-tools: Bash, Read, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Grep, Glob
 ---

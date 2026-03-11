@@ -1,6 +1,6 @@
 ---
 name: implementation-planner
-description: "[flow] Parses acceptance criteria from issues and creates task breakdowns with dependencies. Uses TaskCreate/TaskUpdate for structured progress tracking. Identifies parallel execution opportunities."
+description: "Parse acceptance criteria from issues and create task breakdowns with dependencies and parallel execution opportunities. Use when decomposing an issue into trackable implementation tasks."
 model: inherit
 tools: Read, Bash, TaskCreate, TaskList, TaskUpdate, Grep, Glob
 skills: branch-and-task-management

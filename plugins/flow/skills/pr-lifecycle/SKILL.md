@@ -1,6 +1,6 @@
 ---
 name: pr-lifecycle
-description: "[flow] Use when creating pull requests. Guides pre-flight verification, PR body generation, reviewer suggestion, comprehension narrative, and label selection. Handles push (Tier 2) and PR creation (Tier 2)."
+description: "Create pull requests with pre-flight verification, PR body generation, reviewer suggestion, comprehension narrative, and label selection. Handle push and PR creation as Tier 2 operations. Use when preparing or creating a pull request."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob
 context: fork
 agent: general-purpose

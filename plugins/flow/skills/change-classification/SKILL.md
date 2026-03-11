@@ -1,6 +1,6 @@
 ---
 name: change-classification
-description: "[flow] Use when classifying code changes for commits. Applies primary and secondary signals to determine if changes are in-context, uncertain, or out-of-context relative to the current branch/issue/tasks. Flags first-touch files and red-flag patterns."
+description: "Classify code changes as in-context, uncertain, or out-of-context by applying primary and secondary signals relative to the current branch, issue, and tasks. Flag first-touch files and red-flag patterns. Use when preparing commits or reviewing staged changes."
 allowed-tools: Bash, Read, Grep
 context: fork
 agent: Explore

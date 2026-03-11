@@ -1,6 +1,6 @@
 ---
 name: capability-discovery
-description: "[flow] Discovers available agents, skills, quality commands (lint, test, typecheck), tech stack, and LSP code intelligence capabilities in the project environment. Use when starting implementation, creating PRs, reviewing PRs, or addressing feedback to determine which agents to dispatch and which quality commands to run."
+description: "Discover available agents, skills, quality commands (lint, test, typecheck), tech stack, and LSP code intelligence capabilities in the project environment. Use when starting implementation, creating PRs, reviewing PRs, or addressing feedback to determine which agents to dispatch and which quality commands to run."
 allowed-tools: Bash, Read, Glob, Grep, LSP
 context: fork
 agent: Explore

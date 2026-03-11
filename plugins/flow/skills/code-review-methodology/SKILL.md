@@ -1,6 +1,6 @@
 ---
 name: code-review-methodology
-description: "[flow] Use when reviewing code changes for quality, security, conventions, tests, and requirements. Guides 5-facet review with P1/P2/P3 finding synthesis, deduplication by file:line, and requirements compliance mapping."
+description: "Conduct 5-facet code review covering quality, security, conventions, tests, and requirements with P1/P2/P3 finding synthesis, deduplication by file:line, and requirements compliance mapping. Use when reviewing code changes or pull requests."
 allowed-tools: Read, Bash, Grep, Glob
 context: fork
 agent: Explore

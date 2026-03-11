@@ -1,5 +1,5 @@
 ---
-description: "[flow] Merge an approved pull request. Verifies prerequisites (approval, checks, conversations), displays assessment, and requires explicit human confirmation. Tier 3 — never autonomous."
+description: "Merge an approved pull request. Verifies prerequisites (approval, checks, conversations), displays assessment, and requires explicit human confirmation. Tier 3 — never autonomous."
 argument-hint: <pr-number>
 allowed-tools: Bash, Read, AskUserQuestion
 ---

@@ -1,5 +1,5 @@
 ---
-description: "[flow] Create a release with changelog generation from merged PRs. Calculates semantic version, requires human confirmation. Tier 3 — never autonomous."
+description: "Create a release with changelog generation from merged PRs. Calculates semantic version, requires human confirmation. Tier 3 — never autonomous."
 argument-hint: <patch|minor|major>
 allowed-tools: Bash, Read, AskUserQuestion
 ---

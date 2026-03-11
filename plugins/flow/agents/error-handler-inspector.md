@@ -1,6 +1,6 @@
 ---
 name: error-handler-inspector
-description: "[flow] Inspects code for unhandled errors, missing edge cases, silent failures, and exception handling gaps. Returns P1/P2/P3 findings with file:line citations."
+description: "Inspect code for unhandled errors, missing edge cases, silent failures, and exception handling gaps. Return P1/P2/P3 findings with file:line citations."
 model: inherit
 tools: Read, Bash, Grep, Glob, LSP
 skills: debugging-patterns, evidence-based-development

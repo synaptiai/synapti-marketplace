@@ -1,5 +1,5 @@
 ---
-description: "[flow] Interactive Q&A about architecture decisions, implementation rationale, and trade-offs. Loads decision journal and diff context for the current branch/issue."
+description: "Answer questions about architecture decisions, implementation rationale, and trade-offs by loading the decision journal and diff context for the current branch or issue. Use when seeking to understand what was built and why."
 allowed-tools: Bash, Read, AskUserQuestion, Grep, Glob
 ---
 

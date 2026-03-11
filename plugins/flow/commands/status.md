@@ -1,5 +1,5 @@
 ---
-description: "[flow] Quick read-only overview of workflow state. Shows assigned issues, open PRs, pending reviews, branch state, and decision journal health."
+description: "Display a read-only overview of workflow state including assigned issues, open PRs, pending reviews, branch state, and decision journal health. Use when checking current development status."
 allowed-tools: Bash, Read
 ---
 

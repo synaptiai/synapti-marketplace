@@ -1,6 +1,6 @@
 ---
 name: tdd-patterns
-description: "[flow] Use when implementing features or fixing bugs. Guides Red-Green-Refactor cycle, test quality standards, and test runner discipline. Enforces test-first when tddMode is 'enforce'."
+description: "Guide test-driven development through the Red-Green-Refactor cycle, test quality standards, and test runner discipline. Enforce test-first when tddMode is 'enforce'. Use when implementing features or fixing bugs."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: general-purpose

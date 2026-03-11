@@ -1,6 +1,6 @@
 ---
 name: code-quality-principles
-description: "[flow] Code quality principles with Boy Scout Rule. Leave code better than you found it in files you touch. No secrets in commits. Anti-pattern awareness. No mocks/stubs/TODOs in production. Parallel quality execution."
+description: "Enforce code quality standards including the Boy Scout Rule, secret-free commits, anti-pattern detection, and prohibition of mocks/stubs/TODOs in production code. Use when writing, modifying, or reviewing code to ensure quality gates are met."
 allowed-tools: Bash, Read, Grep, Glob
 ---
 

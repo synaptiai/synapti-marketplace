@@ -1,5 +1,5 @@
 ---
-description: "[flow] Initialize flow for a repository. Detects tech stack, generates settings, configures LSP servers, optionally adds CLAUDE.md sections, and warns about plugin coexistence."
+description: "Initialize flow for a repository. Detects tech stack, generates settings, configures LSP servers, optionally adds CLAUDE.md sections, and warns about plugin coexistence."
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, Skill, Glob, Grep, LSP
 ---
 

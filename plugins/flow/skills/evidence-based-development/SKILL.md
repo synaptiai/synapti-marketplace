@@ -1,6 +1,6 @@
 ---
 name: evidence-based-development
-description: "[flow] Core principles for evidence-based development. Always show evidence before making decisions. Cite file:line references. Prioritize findings as P1/P2/P3. Use ASSERTION/EVIDENCE/VERIFIED pattern. Display findings first, then recommendations."
+description: "Enforce evidence-based decision-making by requiring file:line citations, P1/P2/P3 finding prioritization, and the ASSERTION/EVIDENCE/VERIFIED pattern before any recommendation. Use when gathering evidence, presenting findings, or making development decisions."
 allowed-tools: Bash, Read, Grep, Glob
 ---
 

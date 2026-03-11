@@ -1,6 +1,6 @@
 ---
 name: integration-verifier
-description: "[flow] Verifies end-to-end functionality beyond unit tests. Starts dev servers, runs E2E suites, performs smoke tests, and validates acceptance criteria at runtime."
+description: "Verify end-to-end functionality beyond unit tests. Start dev servers, run E2E suites, perform smoke tests, and validate acceptance criteria at runtime."
 model: inherit
 tools: Bash, Read, Glob, Grep, TaskCreate, TaskList, TaskUpdate
 skills: runtime-verification, evidence-based-development

@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: "[flow] Specialized security review agent for OWASP top 10, secrets detection, auth/authz verification, input validation, and dependency vulnerabilities. Designed for agent team adversarial review."
+description: "Review code for security vulnerabilities including OWASP top 10, secrets detection, auth/authz verification, input validation, and dependency vulnerabilities. Use when performing security-focused code review or agent team adversarial review."
 model: inherit
 tools: Read, Bash, Grep, Glob
 skills: code-review-methodology, evidence-based-development

@@ -1,5 +1,5 @@
 ---
-description: "[flow] Universal workflow entry point. Use /flow <verb> <target> for skill-driven GitHub development. Verbs: start, commit, pr, review, address, merge, release, status, learn, setup, explain, debug, design, brainstorm, issue."
+description: "Universal workflow entry point. Use /flow <verb> <target> for skill-driven GitHub development. Verbs: start, commit, pr, review, address, merge, release, status, learn, setup, explain, debug, design, brainstorm, issue."
 argument-hint: <verb> [target]
 allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Grep, Glob
 ---

@@ -1,6 +1,6 @@
 ---
 name: convention-enforcement
-description: "[flow] Use when validating git conventions including commit messages, branch naming, PR format, and issue linkage. Detects project-specific conventions from CLAUDE.md and settings. Use before PR creation or during review."
+description: "Validate git conventions including commit messages, branch naming, PR format, and issue linkage by detecting project-specific rules from CLAUDE.md and settings. Use when creating commits, preparing PRs, or reviewing for convention compliance."
 allowed-tools: Bash, Read
 context: fork
 agent: Explore

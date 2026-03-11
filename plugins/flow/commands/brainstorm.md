@@ -1,5 +1,5 @@
 ---
-description: "[flow] Explore approaches before committing to implementation. Generates options, analyzes trade-offs, and helps select the best approach collaboratively."
+description: "Explore approaches before committing to implementation. Generates options, analyzes trade-offs, and helps select the best approach collaboratively."
 argument-hint: [topic-or-issue-number]
 allowed-tools: Bash, Read, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Grep, Glob
 ---

@@ -1,6 +1,6 @@
 ---
 name: feedback-resolution
-description: "[flow] Use when addressing PR review feedback. Guides focused change principle with Boy Scout Rule, feedback context recovery, ambiguity handling, pushback criteria, and re-review request patterns."
+description: "Address PR review feedback through focused surgical changes with Boy Scout Rule, feedback context recovery, ambiguity handling, pushback criteria, and re-review request patterns. Use when resolving reviewer comments on a pull request."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob
 context: fork
 agent: general-purpose

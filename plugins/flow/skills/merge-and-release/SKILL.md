@@ -1,6 +1,6 @@
 ---
 name: merge-and-release
-description: "[flow] Use when merging PRs or creating releases. Guides merge prerequisites (approval, checks, resolved conversations), semantic versioning, changelog generation, and release notes. Tier 3 — always requires human confirmation."
+description: "Guide PR merges and releases through prerequisite verification (approval, checks, resolved conversations), semantic versioning, changelog generation, and release notes. Tier 3 — always requires human confirmation. Use when merging PRs or creating releases."
 allowed-tools: Bash, Read
 context: fork
 agent: Explore

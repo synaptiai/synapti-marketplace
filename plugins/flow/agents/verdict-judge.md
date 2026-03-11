@@ -1,6 +1,6 @@
 ---
 name: verdict-judge
-description: "[flow] Independent verification judge. Receives acceptance criteria and evidence bundle, never code-writing rationale. Returns per-criterion verdict: PASS, FAIL, or NEEDS-HUMAN-REVIEW."
+description: "Judge implementation completeness by receiving acceptance criteria and an evidence bundle, then returning per-criterion verdicts of PASS, FAIL, or NEEDS-HUMAN-REVIEW. Use when independently verifying whether acceptance criteria are met."
 model: inherit
 tools: Read, Bash, Grep
 skills: evidence-based-development
