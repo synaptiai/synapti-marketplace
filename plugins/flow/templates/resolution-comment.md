@@ -1,4 +1,13 @@
-## Addressed Review Feedback
+## Addressed Review Feedback — Cycle {N}
+
+### Review Cycle Summary
+
+| Metric | Count |
+|--------|-------|
+| Received | {total_feedback_items} |
+| Fixed | {fixed_count} |
+| Discussed | {discussed_count} |
+| Deferred | {deferred_count} |
 
 ### Changes Made
 
@@ -19,9 +28,9 @@
 
 ### Thread Status
 
-| Thread | Status |
-|--------|--------|
-| {Comment summary} | {Resolved / Addressed / Needs discussion} |
+| Comment ID | Thread | Status |
+|------------|--------|--------|
+| {comment_id} | {Comment summary} | {Resolved / Addressed / Needs discussion} |
 
 ### Verification
 
@@ -29,3 +38,5 @@
 - [x] Self-reviewed fix commits
 - [x] No new issues introduced
 - [x] Boy Scout improvements pass proximity test
+
+<!-- FLOW_RESOLUTION_CYCLE:{N} RESOLVED:[{F1},{F2}] DEFERRED:[{F3}] DISPUTED:[] -->

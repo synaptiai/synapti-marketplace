@@ -42,6 +42,27 @@ gh pr diff $ARGUMENTS --name-only
 
 Check for previous reviews — if this is a follow-up review, focus on changes since last review.
 
+6. **Parse structured findings from previous review/resolution cycles** (follow-up reviews only):
+
+```bash
+# Parse previous review findings
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '
+  [.[] | select(.body | test("FLOW_REVIEW_CYCLE")) | {
+    cycle: (.body | capture("FLOW_REVIEW_CYCLE:(?<n>[0-9]+)") | .n),
+    findings: (.body | capture("FINDINGS:\\[(?<f>[^\\]]+)\\]") | .f)
+  }]'
+
+# Parse previous resolution outcomes
+gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '
+  [.[] | select(.body | test("FLOW_RESOLUTION_CYCLE")) | {
+    cycle: (.body | capture("FLOW_RESOLUTION_CYCLE:(?<n>[0-9]+)") | .n),
+    resolved: (.body | capture("RESOLVED:\\[(?<r>[^\\]]*?)\\]") | .r)
+  }]'
+```
+
+If previous cycles exist, build a **Previous Feedback Status** table and cross-reference each finding's location against `git diff` to verify resolution.
+
 ## Phase 2: PLAN
 
 ```
@@ -95,6 +116,8 @@ TaskUpdate each review task as agents complete.
 
 ## Phase 4: VERIFY
 
+**CRITICAL: Posting review findings to the PR is MANDATORY. NEVER skip posting. The review is not complete until `gh pr review` has been executed and TaskUpdate confirms the post task is completed. Do not suggest next steps until posting is verified.**
+
 1. **TaskList**: Confirm all review facets complete
 2. **Synthesize findings**: Deduplicate by file:line, prioritize P1/P2/P3
 3. **Display findings** (finding-first pattern):
@@ -132,19 +155,10 @@ TaskUpdate each review task as agents complete.
    - TaskUpdate(testCoverageTaskId, status: "completed", result: "Tests written/updated for {N} fixes")
    - No follow-up issue creation for fixable items — just fix them
    - TaskCreate("Post self-review comment", "Post review findings summary to PR via gh pr review --comment")
-   - Post self-review summary using the template structure from `templates/self-review-comment.md`:
-     ```bash
-     gh pr review $ARGUMENTS --comment --body "$BODY"
-     ```
-   - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — self-review comment posted")
-   - If self-review fixed everything, suggest `/flow:pr` to update the PR
 
 6. **External review (someone else's PR — PR_AUTHOR != CURRENT_USER)**:
 
    - TaskCreate("Post review comment", "Post structured review findings to PR via gh pr review")
-   - Build `$BODY` using the template structure from `templates/review-comment.md`
-
-   - P1 findings → `gh pr review $ARGUMENTS --request-changes --body "$BODY"`
    - P2 in already-touched files → include fix suggestion in review comment
    - P2/P3 in untouched files → follow-up issue workflow:
 
@@ -165,9 +179,29 @@ TaskUpdate each review task as agents complete.
 
    Include created issue numbers in the review comment body.
 
-   - Clean → `gh pr review $ARGUMENTS --approve --body "$BODY"`
-   - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — review posted as {approve/request-changes/comment}")
-
    **Note**: Reviewers should recognize `improve:` commits as legitimate Boy Scout cleanup — approve if they pass the proximity test.
 
-7. **Post-review**: If self-review fixed everything, suggest `/flow:pr`. If external review, suggest `/flow:address $ARGUMENTS` for the PR author.
+7. **Post review findings** (MANDATORY — applies to both self-review and external review):
+
+   For follow-up reviews, include the **Previous Feedback Status** table:
+   ```markdown
+   ### Previous Feedback Status
+   | Cycle | Finding | Priority | Claimed Status | Verified |
+   |-------|---------|----------|----------------|----------|
+   ```
+   Cross-reference each prior finding's location against `git diff` to verify resolution.
+
+   Build `$BODY` using the appropriate template:
+   - Self-review: `templates/self-review-comment.md`
+   - External review: `templates/review-comment.md`
+
+   Post the review:
+   - Self-review → `gh pr review $ARGUMENTS --comment --body "$BODY"`
+   - External + P1 findings → `gh pr review $ARGUMENTS --request-changes --body "$BODY"`
+   - External + Clean → `gh pr review $ARGUMENTS --approve --body "$BODY"`
+
+   TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — review posted as {approve/request-changes/comment}")
+
+8. **Verify posting**: TaskList — confirm "Post review comment" or "Post self-review comment" task is completed. Do NOT proceed to step 9 until this is verified.
+
+9. **Post-review**: If self-review fixed everything, suggest `/flow:pr`. If external review, suggest `/flow:address $ARGUMENTS` for the PR author.

@@ -114,6 +114,42 @@ Check review history to understand cycle count:
 - On 3rd+ cycle: only flag NEW P1 findings, note persistent P2s, suggest synchronous discussion for unresolved items
 - Note convergence signal if findings are shrinking each cycle — this is healthy progress
 
+### Structured Cycle Parsing
+
+Parse `FLOW_REVIEW_CYCLE` and `FLOW_RESOLUTION_CYCLE` markers from prior PR comments to build cycle context:
+
+```bash
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+
+# Parse prior review findings
+gh api repos/$REPO/issues/$PR_NUM/comments --jq '
+  [.[] | select(.body | test("FLOW_REVIEW_CYCLE")) | {
+    cycle: (.body | capture("FLOW_REVIEW_CYCLE:(?<n>[0-9]+)") | .n),
+    findings: (.body | capture("FINDINGS:\\[(?<f>[^\\]]+)\\]") | .f)
+  }]'
+
+# Parse prior resolution outcomes
+gh api repos/$REPO/issues/$PR_NUM/comments --jq '
+  [.[] | select(.body | test("FLOW_RESOLUTION_CYCLE")) | {
+    cycle: (.body | capture("FLOW_RESOLUTION_CYCLE:(?<n>[0-9]+)") | .n),
+    resolved: (.body | capture("RESOLVED:\\[(?<r>[^\\]]*?)\\]") | .r),
+    deferred: (.body | capture("DEFERRED:\\[(?<d>[^\\]]*?)\\]") | .d)
+  }]'
+```
+
+Cross-reference for each prior finding:
+1. Was it marked as resolved in a resolution comment?
+2. Has the code at that location changed in `git diff`?
+3. Build a **Previous Feedback Status** table:
+
+```markdown
+### Previous Feedback Status
+| Cycle | Finding | Priority | Claimed Status | Verified |
+|-------|---------|----------|----------------|----------|
+```
+
+If a finding was claimed resolved but the code at that location is unchanged, flag it as "Not verified — code unchanged".
+
 ## Review Stop Conditions
 
 - Stage 1 finds >3 unmet acceptance criteria — REQUEST_CHANGES immediately, skip Stage 2

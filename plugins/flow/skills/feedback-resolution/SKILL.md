@@ -124,6 +124,8 @@ Post structured resolution summary using the template structure from `templates/
 gh pr comment $PR_NUM --body "$BODY"
 ```
 
+**BLOCKING**: The resolution comment MUST be posted before re-requesting review. Push + resolution comment + re-request review is an atomic sequence — never skip the middle step.
+
 ```bash
 # Re-request review
 gh pr edit $PR_NUM --add-reviewer @{reviewer}

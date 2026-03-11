@@ -44,6 +44,10 @@ Closes #{issue_number}
 | P2 | {Y} | {Summary} |
 | P3 | {Z} | {Summary} |
 
+### Review Cycle History
+<!-- Updated by /flow:address -->
+_No review cycles completed yet._
+
 ## Verification
 
 - [ ] Quality checks pass (lint, test, typecheck)

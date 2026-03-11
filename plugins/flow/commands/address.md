@@ -156,6 +156,8 @@ If a finding truly fails the proximity test (untouched files, architecture chang
 
 ## Phase 4: VERIFY (Convergence Check)
 
+**CRITICAL: The resolution comment and inline replies are MANDATORY. NEVER skip posting. Push without posting is incomplete — the reviewer cannot see what was addressed. Do not re-request review until the resolution comment is posted and TaskUpdate confirms completion.**
+
 1. **Quality commands** (parallel): lint, test, typecheck
 2. **Comprehensive self-review** of ALL files touched on the branch:
    ```
@@ -171,22 +173,42 @@ If a finding truly fails the proximity test (untouched files, architecture chang
    - After fixes: re-run quality commands, re-review changed files
 4. **Verify Boy Scout cleanup** passes proximity test (no scope creep)
 5. **Change classification** — verify no out-of-context changes introduced
-6. **TaskList**: Confirm all feedback tasks complete
-7. **Push** (Tier 2: journal-and-proceed):
+6. **Push** (Tier 2: journal-and-proceed):
    ```bash
    git push
    ```
-8. **Post resolution comment** using the template structure from `templates/resolution-comment.md`:
+7. **Reply to individual review comments** inline:
+   ```bash
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+   # For each fixed item, reply to the original review comment:
+   gh api repos/$REPO/pulls/$ARGUMENTS/comments \
+     -f body="Addressed in \`{SHA}\`. {brief description of fix}" \
+     -F in_reply_to_id={comment_id}
+
+   # For Question/Pushback items, reply with the response:
+   gh api repos/$REPO/pulls/$ARGUMENTS/comments \
+     -f body="{response text}" \
+     -F in_reply_to_id={comment_id}
+   ```
+8. **Post resolution comment** (MANDATORY) using the template structure from `templates/resolution-comment.md`:
    ```bash
    gh pr comment $ARGUMENTS --body "$BODY"
    ```
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
-9. **Conditional re-request review**:
-   - If self-review found 0 findings → do NOT re-request (nothing changed that needs re-review beyond the feedback fixes)
-   - If cycle < `reviewCycleLimit` (default 3) → re-request normally:
-     ```bash
-     gh pr edit $ARGUMENTS --add-reviewer @{reviewer}
-     ```
-   - If cycle >= `reviewCycleLimit` → use the AskUserQuestion tool: "Review cycle {N}. Options: re-request same reviewer, request fresh reviewer, or merge as-is?"
+9. **Update PR body review cycle state**:
+   - Fetch current body: `gh pr view $ARGUMENTS --json body --jq '.body'`
+   - Replace content between `### Review Cycle History` and the next `##` heading
+   - Add/update review cycle history table with cycle metrics (received/fixed/discussed/deferred)
+   - Update: `gh pr edit $ARGUMENTS --body "$UPDATED_BODY"`
+10. **TaskList**: Confirm ALL tasks complete including "Post resolution comment". Do NOT proceed until verified.
+11. **Conditional re-request review**:
+
+    ONLY after TaskList confirms "Post resolution comment" is completed:
+    - If self-review found 0 findings → do NOT re-request (nothing changed that needs re-review beyond the feedback fixes)
+    - If cycle < `reviewCycleLimit` (default 3) → re-request normally:
+      ```bash
+      gh pr edit $ARGUMENTS --add-reviewer @{reviewer}
+      ```
+    - If cycle >= `reviewCycleLimit` → use the AskUserQuestion tool: "Review cycle {N}. Options: re-request same reviewer, request fresh reviewer, or merge as-is?"
 
 Display summary: fixes applied, Boy Scout improvements, questions answered, pushback items, cycle count.
