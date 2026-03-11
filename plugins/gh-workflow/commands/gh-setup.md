@@ -473,7 +473,6 @@ If no config file exists, generate one with all defaults:
     "deleteBranch": true
   },
   "conventions": {
-    "commitSubjectMaxLength": 72,
     "commitTypes": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build", "revert"],
     "branchPatterns": {
       "feature": "feature/issue-{N}-{desc}",

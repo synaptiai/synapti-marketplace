@@ -80,7 +80,6 @@ GHW_CONFIG=$(jq -n '
     },
     merge: { strategy:"squash", deleteBranch:true },
     conventions: {
-      commitSubjectMaxLength:72,
       commitTypes:["feat","fix","docs","style","refactor","test","chore","perf","ci","build","revert"],
       branchPatterns: {
         feature:"feature/issue-{N}-{desc}",
@@ -146,7 +145,6 @@ All defaults are embedded in the bulk merge pattern. If no config files exist at
 | `.commands.ghMergeKnowledgeCheckpoint` | `boolean` | `true` | Knowledge checkpoint |
 | `.merge.strategy` | `"squash"\|"merge"\|"rebase"` | `"squash"` | Default merge strategy |
 | `.merge.deleteBranch` | `boolean` | `true` | Delete branch after merge |
-| `.conventions.commitSubjectMaxLength` | `integer` | `72` | Max commit subject length |
 | `.conventions.commitTypes` | `string[]` | `["feat","fix",...]` | Valid commit type prefixes |
 | `.conventions.branchPatterns.feature` | `string` | `"feature/issue-{N}-{desc}"` | Feature branch pattern |
 | `.conventions.branchPatterns.fix` | `string` | `"fix/issue-{N}-{desc}"` | Fix branch pattern |

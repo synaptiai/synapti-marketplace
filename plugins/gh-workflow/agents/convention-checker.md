@@ -26,11 +26,6 @@ Before validating, read configurable conventions from settings (local > project 
 
 ```bash
 # Read conventions using Pattern A (cascading reads)
-COMMIT_MAX_LENGTH=$(jq -r '.conventions.commitSubjectMaxLength // empty' .claude/settings.gh-workflow.local.json 2>/dev/null)
-[ -z "$COMMIT_MAX_LENGTH" ] && COMMIT_MAX_LENGTH=$(jq -r '.conventions.commitSubjectMaxLength // empty' .claude/settings.gh-workflow.json 2>/dev/null)
-[ -z "$COMMIT_MAX_LENGTH" ] && COMMIT_MAX_LENGTH=$(jq -r '.conventions.commitSubjectMaxLength // empty' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
-[ -z "$COMMIT_MAX_LENGTH" ] && COMMIT_MAX_LENGTH="72"
-
 COMMIT_TYPES=$(jq -r '.conventions.commitTypes // empty | join("|")' .claude/settings.gh-workflow.local.json 2>/dev/null)
 [ -z "$COMMIT_TYPES" ] && COMMIT_TYPES=$(jq -r '.conventions.commitTypes // empty | join("|")' .claude/settings.gh-workflow.json 2>/dev/null)
 [ -z "$COMMIT_TYPES" ] && COMMIT_TYPES=$(jq -r '.conventions.commitTypes // empty | join("|")' "$HOME/.claude/settings.gh-workflow.json" 2>/dev/null)
@@ -104,7 +99,6 @@ type(scope): description
 - No colon after type/scope
 - Description starts with capital letter
 - Description ends with period
-- Line exceeds `COMMIT_MAX_LENGTH` characters (default: 72)
 
 ### Step 3: PR Format Check
 

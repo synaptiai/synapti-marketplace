@@ -65,7 +65,7 @@ Additional branch types can be added via `.conventions.additionalBranchTypes` (e
 
 ### Commit Prefixes
 
-Configurable via `.conventions.commitTypes` in settings. Subject line max length configurable via `.conventions.commitSubjectMaxLength` (default: 72).
+Configurable via `.conventions.commitTypes` in settings.
 
 | Prefix | Usage |
 |--------|-------|

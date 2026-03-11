@@ -85,7 +85,7 @@ For each commit group:
    - Type: inferred from changes (feat, fix, refactor, test, docs, chore, improve)
    - For Boy Scout cleanup changes, use `improve(<scope>): <summary>`
    - Scope: top-level directory or module
-   - Subject: imperative, ≤72 chars, describes what and why
+   - Subject: imperative, describes what and why
    - If `$ARGUMENTS` provided, use as message (validate format first)
 
 2. **Stage and commit** (Tier 1 — autonomous):

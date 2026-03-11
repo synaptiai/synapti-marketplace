@@ -166,7 +166,6 @@ Disable specific comprehension features per command:
 
 | Key | Default | Options | Purpose |
 |-----|---------|---------|---------|
-| `.conventions.commitSubjectMaxLength` | `72` | Integer (30-200) | Max commit subject line length |
 | `.conventions.commitTypes` | `["feat","fix",...]` | Array of strings | Valid conventional commit type prefixes |
 | `.conventions.branchPatterns.feature` | `feature/issue-{N}-{desc}` | String with `{N}`, `{desc}` | Feature branch pattern |
 | `.conventions.branchPatterns.fix` | `fix/issue-{N}-{desc}` | String with `{N}`, `{desc}` | Fix branch pattern |

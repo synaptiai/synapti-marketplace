@@ -174,13 +174,6 @@
       "type": "object",
       "description": "Git conventions for branch naming, commit messages, and validation",
       "properties": {
-        "commitSubjectMaxLength": {
-          "type": "integer",
-          "minimum": 30,
-          "maximum": 200,
-          "default": 72,
-          "description": "Maximum character length for commit subject lines"
-        },
         "commitTypes": {
           "type": "array",
           "items": { "type": "string" },

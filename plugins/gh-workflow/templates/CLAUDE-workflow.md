@@ -102,7 +102,7 @@ Available labels for this repository:
 All settings are managed in `.claude/settings.gh-workflow.json` and validated against `schema.json`:
 - **Gates** — Human pause points for high-stakes decisions (security, dependencies, scope)
 - **Merge** — Strategy (squash/merge/rebase) and branch deletion preferences
-- **Conventions** — Branch naming patterns, commit types, subject line limits
+- **Conventions** — Branch naming patterns, commit types
 - **Release** — Tag prefix format
 - **Timeouts** — Dev server, E2E, verification script, and quality check iteration limits
 - **Review** — First-touch thresholds and reviewer suggestion activity windows
