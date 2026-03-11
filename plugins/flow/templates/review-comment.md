@@ -26,7 +26,4 @@
 #### Follow-Up Issues
 - #{issue_number}: {title} — {if any out-of-scope issues were created}
 
-<!-- FLOW_REVIEW_CYCLE:{cycle_number} FINDINGS:[
-{F1}|{priority}|{category}|{file:line}|{open}
-{F2}|{priority}|{category}|{file:line}|{open}
-] -->
+<!-- FLOW_REVIEW_CYCLE:{cycle_number} FINDINGS:[{F1}|{priority}|{category}|{file:line}|{open},{F2}|{priority}|{category}|{file:line}|{open}] -->

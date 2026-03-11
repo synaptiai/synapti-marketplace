@@ -121,14 +121,14 @@ Parse `FLOW_REVIEW_CYCLE` and `FLOW_RESOLUTION_CYCLE` markers from prior PR comm
 ```bash
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
-# Parse prior review findings
-gh api repos/$REPO/issues/$PR_NUM/comments --jq '
+# Parse prior review findings (from review bodies)
+gh api repos/$REPO/pulls/$PR_NUM/reviews --jq '
   [.[] | select(.body | test("FLOW_REVIEW_CYCLE")) | {
     cycle: (.body | capture("FLOW_REVIEW_CYCLE:(?<n>[0-9]+)") | .n),
     findings: (.body | capture("FINDINGS:\\[(?<f>[^\\]]+)\\]") | .f)
   }]'
 
-# Parse prior resolution outcomes
+# Parse prior resolution outcomes (from issue comments posted via gh pr comment)
 gh api repos/$REPO/issues/$PR_NUM/comments --jq '
   [.[] | select(.body | test("FLOW_RESOLUTION_CYCLE")) | {
     cycle: (.body | capture("FLOW_RESOLUTION_CYCLE:(?<n>[0-9]+)") | .n),

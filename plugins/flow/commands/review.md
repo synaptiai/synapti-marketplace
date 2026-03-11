@@ -42,22 +42,23 @@ gh pr diff $ARGUMENTS --name-only
 
 Check for previous reviews — if this is a follow-up review, focus on changes since last review.
 
-6. **Parse structured findings from previous review/resolution cycles** (follow-up reviews only):
+**Parse structured findings from previous review/resolution cycles** (follow-up reviews only):
 
 ```bash
-# Parse previous review findings
+# Parse previous review findings (from review bodies)
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '
+gh api repos/$REPO/pulls/$ARGUMENTS/reviews --jq '
   [.[] | select(.body | test("FLOW_REVIEW_CYCLE")) | {
     cycle: (.body | capture("FLOW_REVIEW_CYCLE:(?<n>[0-9]+)") | .n),
     findings: (.body | capture("FINDINGS:\\[(?<f>[^\\]]+)\\]") | .f)
   }]'
 
-# Parse previous resolution outcomes
+# Parse previous resolution outcomes (from issue comments posted via gh pr comment)
 gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '
   [.[] | select(.body | test("FLOW_RESOLUTION_CYCLE")) | {
     cycle: (.body | capture("FLOW_RESOLUTION_CYCLE:(?<n>[0-9]+)") | .n),
-    resolved: (.body | capture("RESOLVED:\\[(?<r>[^\\]]*?)\\]") | .r)
+    resolved: (.body | capture("RESOLVED:\\[(?<r>[^\\]]*?)\\]") | .r),
+    deferred: (.body | capture("DEFERRED:\\[(?<d>[^\\]]*?)\\]") | .d)
   }]'
 ```
 
@@ -198,7 +199,8 @@ TaskUpdate each review task as agents complete.
    Post the review:
    - Self-review → `gh pr review $ARGUMENTS --comment --body "$BODY"`
    - External + P1 findings → `gh pr review $ARGUMENTS --request-changes --body "$BODY"`
-   - External + Clean → `gh pr review $ARGUMENTS --approve --body "$BODY"`
+   - External + P2 only (no P1) → `gh pr review $ARGUMENTS --comment --body "$BODY"`
+   - External + Clean (P3 only or none) → `gh pr review $ARGUMENTS --approve --body "$BODY"`
 
    TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — review posted as {approve/request-changes/comment}")
 

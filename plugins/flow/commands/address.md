@@ -181,24 +181,22 @@ If a finding truly fails the proximity test (untouched files, architecture chang
    ```bash
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
    # For each fixed item, reply to the original review comment:
-   gh api repos/$REPO/pulls/$ARGUMENTS/comments \
-     -f body="Addressed in \`{SHA}\`. {brief description of fix}" \
-     -F in_reply_to_id={comment_id}
+   gh api repos/$REPO/pulls/$ARGUMENTS/comments/{comment_id}/replies \
+     -f body="Addressed in \`{SHA}\`. {brief description of fix}"
 
    # For Question/Pushback items, reply with the response:
-   gh api repos/$REPO/pulls/$ARGUMENTS/comments \
-     -f body="{response text}" \
-     -F in_reply_to_id={comment_id}
+   gh api repos/$REPO/pulls/$ARGUMENTS/comments/{comment_id}/replies \
+     -f body="{response text}"
    ```
 8. **Post resolution comment** (MANDATORY) using the template structure from `templates/resolution-comment.md`:
    ```bash
    gh pr comment $ARGUMENTS --body "$BODY"
    ```
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
-9. **Update PR body review cycle state**:
+9. **Update PR body review cycle state** (if `### Review Cycle History` exists in the PR body):
    - Fetch current body: `gh pr view $ARGUMENTS --json body --jq '.body'`
-   - Replace content between `### Review Cycle History` and the next `##` heading
-   - Add/update review cycle history table with cycle metrics (received/fixed/discussed/deferred)
+   - If the body contains `### Review Cycle History`, replace content between that heading and the next `##` heading with the cycle metrics table (received/fixed/discussed/deferred)
+   - If the heading does not exist, append a `### Review Cycle History` section under `## Review Findings`
    - Update: `gh pr edit $ARGUMENTS --body "$UPDATED_BODY"`
 10. **TaskList**: Confirm ALL tasks complete including "Post resolution comment". Do NOT proceed until verified.
 11. **Conditional re-request review**:
