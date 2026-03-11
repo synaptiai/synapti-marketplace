@@ -15,6 +15,7 @@
         "push": { "enum": ["autonomous", "journal", "confirm"], "default": "journal" },
         "prCreate": { "enum": ["autonomous", "journal", "confirm"], "default": "journal" },
         "issueAssign": { "enum": ["autonomous", "journal", "confirm"], "default": "journal" },
+        "issueCreate": { "enum": ["autonomous", "journal", "confirm"], "default": "journal" },
         "merge": { "enum": ["autonomous", "journal", "confirm"], "default": "confirm" },
         "release": { "enum": ["autonomous", "journal", "confirm"], "default": "confirm" }
       },
@@ -35,7 +36,7 @@
         "commitTypes": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build", "revert"]
+          "default": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build", "revert", "improve"]
         },
         "branchPatterns": {
           "type": "object",
@@ -68,6 +69,39 @@
       "properties": {
         "dir": { "type": "string", "default": ".decisions" },
         "sensitivityDefault": { "enum": ["public", "internal"], "default": "public" }
+      }
+    },
+    "specFirst": {
+      "type": "object",
+      "description": "Spec-first enforcement settings. Requires acceptance criteria before starting work.",
+      "properties": {
+        "requireAcceptanceCriteria": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true, issues must have acceptance criteria before work starts. Without AC, autonomous verification cannot determine if the work is correct."
+        },
+        "allowSpecFreeLabels": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["documentation", "chore"],
+          "description": "Issue labels that allow proceeding without acceptance criteria (e.g., docs-only changes)"
+        }
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "description": "Independent verdict judge settings. Evaluates acceptance criteria against collected evidence.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true, dispatches an independent verdict-judge agent during VERIFY phase that evaluates acceptance criteria against evidence. The judge has no access to code-writing rationale."
+        },
+        "requireAllPass": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, ALL criteria must PASS for the completion gate. When false, NEEDS-HUMAN-REVIEW verdicts can be user-approved."
+        }
       }
     },
     "testing": {

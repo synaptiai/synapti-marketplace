@@ -2,6 +2,27 @@
 
 Performed self-review with fix-forward.
 
+### Verdict Summary
+
+{If verdict.enabled:}
+
+| Overall | Criteria Passed | Criteria Failed | Human Review |
+|---------|----------------|-----------------|--------------|
+| {PASS/FAIL/NEEDS-HUMAN-REVIEW} | {N} | {N} | {N} |
+
+{If any FAIL or NEEDS-HUMAN-REVIEW — show failures first:}
+
+**Requires attention:**
+| # | Criterion | Verdict | Rationale |
+|---|-----------|---------|-----------|
+{Only FAIL and NEEDS-HUMAN-REVIEW rows}
+
+{If all PASS:}
+All criteria verified independently.
+
+{If not verdict.enabled:}
+Verdict: N/A (independent verdict not enabled)
+
 ### Findings Found & Fixed
 | # | Priority | Location | Issue | Fix Applied |
 |---|----------|----------|-------|-------------|

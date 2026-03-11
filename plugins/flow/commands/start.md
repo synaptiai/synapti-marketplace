@@ -25,6 +25,42 @@ This command operates with these domain skills loaded:
 - `change-classification` — change context awareness
 - `capability-discovery` — detect available quality tools
 - `debugging-patterns` — activates on-demand for ALL issues when any verification step fails (not gated on `bug` label)
+- `preflight-checks` — pure bash pre-flight validation (Phase 0)
+- `criterion-verification-map` — per-criterion evidence collection (Phase 2 + Phase 4)
+
+## Phase 0: PRE-FLIGHT
+
+Pure bash validation. No LLM calls. Fail fast before spending tokens.
+
+```bash
+ERRORS=0
+WARNINGS=0
+
+# 1. Clean git state
+[ -n "$(git status --porcelain)" ] && echo "PREFLIGHT FAIL: Uncommitted changes" && ERRORS=$((ERRORS+1))
+
+# 2. Not detached HEAD
+git symbolic-ref HEAD >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: Detached HEAD"; ERRORS=$((ERRORS+1)); }
+
+# 3. gh CLI authenticated
+gh auth status >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: gh CLI not authenticated"; ERRORS=$((ERRORS+1)); }
+
+# 4. Issue exists and is open
+ISSUE_STATE=$(gh issue view $ARGUMENTS --json state --jq '.state' 2>/dev/null)
+[ "$ISSUE_STATE" != "OPEN" ] && echo "PREFLIGHT FAIL: Issue #$ARGUMENTS not found or not open (state: ${ISSUE_STATE:-not found})" && ERRORS=$((ERRORS+1))
+
+# 5. Remote accessible
+git ls-remote --exit-code origin >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: Cannot reach remote 'origin'"; ERRORS=$((ERRORS+1)); }
+
+# 6. Already on feature branch (warning only)
+git branch --show-current | grep -q "issue-$ARGUMENTS" && echo "PREFLIGHT WARN: Already on branch for issue #$ARGUMENTS" && WARNINGS=$((WARNINGS+1))
+
+echo "PREFLIGHT: $ERRORS error(s), $WARNINGS warning(s)"
+[ $ERRORS -gt 0 ] && echo "PREFLIGHT: BLOCKED" && exit 1
+echo "PREFLIGHT: PASSED"
+```
+
+If pre-flight fails, stop. Do not proceed to EXPLORE.
 
 ## Phase 1: EXPLORE
 
@@ -60,6 +96,35 @@ git branch --show-current
 
 - `Agent(Explore)`: "Read CLAUDE.md (.claude/CLAUDE.md or CLAUDE.md). Identify tech stack, testing commands, coding conventions, and any project-specific rules. Also search for code related to the issue keywords to understand affected modules."
 - `Skill(capability-discovery)`: Discover available agents, quality commands, and tech stack.
+
+**Spec-first validation** (after issue details are fetched):
+
+Parse the issue body for acceptance criteria:
+- Look for `## Acceptance Criteria` section with `- [ ]` items
+- Look for numbered requirement lists
+- Look for task lists in the body
+
+If zero acceptance criteria found and `specFirst.requireAcceptanceCriteria` is `true` (default), use `AskUserQuestion`:
+
+> No acceptance criteria found in issue #$ARGUMENTS. Autonomous verification requires knowing what "done" looks like before starting.
+>
+> Options:
+> 1. Add acceptance criteria now (I'll help you write them)
+> 2. Spec-free task (docs/config only) — proceed without AC
+> 3. Cancel — I'll update the issue first
+
+- Option 1: Use `Skill(issue-crafting)` to help write ACs, then update the issue via `gh issue edit`
+- Option 2: Only available if issue labels include any of `specFirst.allowSpecFreeLabels` (default: `documentation`, `chore`). Log to decision journal: "Spec-free task: {justification}"
+- Option 3: Stop workflow
+
+If acceptance criteria are found, output a **Spec Validation Table**:
+
+```markdown
+### Spec Validation
+| # | Acceptance Criterion | Verification Method |
+|---|---------------------|-------------------|
+| 1 | {criterion text} | {test/curl/visual/manual} |
+```
 
 **Assign the issue:**
 
@@ -107,6 +172,18 @@ For each implementation task, also create a corresponding test task:
 TaskCreate("Test: {behavior}", "Write or update tests verifying {behavior}. Follow existing test patterns.")
 ```
 Set dependency: test task is blocked by its implementation task.
+
+**Verification task creation** — for each acceptance criterion, create a verification task using `criterion-verification-map` classification:
+
+```
+TaskCreate(
+  subject: "Verify: {criterion short description}",
+  description: "Criterion: {full criterion text}\n\nVerification method: {type}\nVerification command: {specific command}\nExpected evidence: {what success looks like}",
+  activeForm: "Verifying {short description}"
+)
+```
+
+Verification tasks execute during Phase 4 (VERIFY), not during CODE. They are separate from implementation and test tasks.
 
 Display task plan. Proceed unless user objects.
 
@@ -177,8 +254,43 @@ Prove everything works with fix-forward:
    - P2 findings → fix immediately
    - P3 findings → fix if contained (<10 lines, same file), otherwise note for PR body
    - After fixes: re-run quality commands, then targeted re-review on files changed by fixes
-4. **TaskList** — confirm all tasks show status: completed
-5. **Visual verification** — if UI-relevant changes detected (changed .tsx/.jsx/.vue/.html/.css/.scss files OR acceptance criteria mention UI/page/render/display):
+4. **Per-criterion evidence collection** — execute verification tasks created in Phase 2:
+   ```
+   For each "Verify: ..." task:
+     1. TaskUpdate(verifyTaskId, status: "in_progress")
+     2. Run the verification command from the task description
+     3. Capture output as evidence
+     4. TaskUpdate(verifyTaskId, status: "completed", result: "EVIDENCE_COLLECTED")
+   ```
+   Assemble evidence bundle (see `criterion-verification-map` skill for format).
+5. **Independent verdict** — if `verdict.enabled` is `true` (default), dispatch Agent(verdict-judge):
+   ```
+   Agent(verdict-judge):
+     "Evaluate whether acceptance criteria are met based on evidence.
+
+      Acceptance Criteria:
+      {list of ACs from issue body}
+
+      Evidence Bundle:
+      {assembled evidence from step 4}"
+   ```
+   The verdict-judge receives ONLY the acceptance criteria and evidence bundle.
+   It does NOT receive: the diff, decision journal, planning rationale, or self-review findings.
+
+   **Handle verdicts:**
+   - **All PASS** → proceed to completion gate
+   - **Any FAIL** → enter fix loop: fix the failing criterion, re-collect evidence, re-judge (bounded by `fixForwardMaxIterations`). After max iterations, escalate remaining FAIL verdicts to user via `AskUserQuestion`.
+   - **NEEDS-HUMAN-REVIEW** (no FAILs):
+     - If `verdict.requireAllPass` is `true` → treat as FAIL (enter fix loop to produce definitive evidence)
+     - If `verdict.requireAllPass` is `false` (default) → present verdict table to user via `AskUserQuestion`:
+       > The verdict judge could not determine pass/fail for some criteria.
+       > {verdict table}
+       > Options:
+       > 1. Approve — these criteria are met (I've reviewed the evidence)
+       > 2. Reject — fix these criteria before proceeding
+     - Based on response: proceed or enter fix loop
+6. **TaskList** — confirm all tasks show status: completed
+7. **Visual verification** — if UI-relevant changes detected (changed .tsx/.jsx/.vue/.html/.css/.scss files OR acceptance criteria mention UI/page/render/display):
    ```
    TaskCreate("Visual verification", "Screenshot-analyze-verify for UI-facing changes")
    TaskCreate("Browser tool discovery", "Detect available browser automation tools")
@@ -191,11 +303,12 @@ Prove everything works with fix-forward:
    - If browser tools not found and `requireVisualVerification: false`: result is "SKIP_WARN"
    - If browser tools not found and `requireVisualVerification: true`: result is "BLOCKED"
    - `TaskList` — confirm all visual verification tasks resolved
-6. **Completion gate**: ALL of:
+8. **Completion gate**: ALL of:
    - All quality checks pass
    - Runtime verification passed (or justified N/A for config/markdown-only)
    - No unresolved P1 findings
-   - All tasks completed
+   - All tasks completed (including verification tasks)
+   - Verdict: all criteria PASS or user-approved (when `verdict.enabled`)
    - Visual verification: no BLOCKED results (see escalation below)
 
    **Visual verification escalation**: If any visual verification task has result containing "BLOCKED", use `AskUserQuestion`:
@@ -211,10 +324,11 @@ Prove everything works with fix-forward:
    - Option 1 → `TaskUpdate` visual tasks with result "SKIP_USER_APPROVED"
    - Option 2 → `TaskUpdate` visual tasks with result "MANUAL — user will verify"
    - Option 3 → Provide Playwright MCP installation guidance, then retry browser tool cascade
-7. **Display summary**:
+9. **Display summary**:
    - Tasks completed: N/N
    - Quality checks: pass/fail
    - Self-review findings: P1: X, P2: Y, P3: Z (all P1/P2 fixed via fix-forward)
+   - Verdict: PASS (N/N criteria) / FAIL / NEEDS-HUMAN-REVIEW / N/A (spec-free task)
    - Runtime verification: pass/fail/skip
    - Visual verification: PASS / FAIL / SKIP / SKIP_WARN / SKIP_USER_APPROVED / MANUAL
    - Branch: ready for PR

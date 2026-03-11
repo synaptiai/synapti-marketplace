@@ -21,10 +21,11 @@ Every multi-step workflow follows this loop:
 1. **EXPLORE**: Gather context. Use Agent(Explore) subagents for unfamiliar code. Parallel Bash for independent queries (git status, issue details, task list). Read referenced files. When LSP is available: use `goToDefinition` to trace code paths from issue keywords to implementation, and `findReferences` to assess the impact of planned changes — this enhances text-based grep searches with semantic understanding.
 2. **PLAN**: Decompose work. TaskCreate for each deliverable. Set dependencies with addBlockedBy. Display the plan for visibility.
 3. **CODE**: Execute tasks. TaskUpdate(in_progress) before starting. Implement. Commit incrementally (Tier 1). TaskUpdate(completed) after verification. When LSP is available: use `hover` to understand types and signatures of existing code before modifying it.
-4. **VERIFY**: Prove it works. Three mandatory verification layers:
+4. **VERIFY**: Prove it works. Four mandatory verification layers:
    a. **Static**: Run quality commands (lint, test, typecheck) in parallel. When LSP diagnostics are available (`lsp.diagnosticsAsQuality`), collect them as an additional quality signal — errors are P1, warnings are P2. LSP diagnostics complement, never replace, CLI-based checks.
    b. **Runtime**: Build the project, start it, verify at runtime. If anything fails, enter the debug-fix-retest loop (bounded by `closedLoop.maxDebugIterations`).
    c. **Review**: Self-review with fix-forward — fix P1/P2 findings immediately, don't just report them.
+   d. **Verdict**: Independent judgment — dispatch verdict-judge agent (when `verdict.enabled`) with acceptance criteria + evidence bundle. The judge has no access to code-writing rationale, diff, or decision journal. It evaluates outcomes, not process. Each criterion receives PASS/FAIL/NEEDS-HUMAN-REVIEW. FAIL verdicts trigger fix loops; NEEDS-HUMAN-REVIEW escalates to user.
 
 ## Task-Driven Progress
 
@@ -129,3 +130,5 @@ The loop is bounded by `closedLoop.maxDebugIterations` (default 5). After max it
 | "Runtime verification isn't possible" | It is, for any project that does something. Build it, run it, check it. |
 | "Tests pass, so it works" | Tests verify what's tested. Runtime verifies what's real. |
 | "I can't start the server" | Fix why. Server startup failure IS a bug. |
+| "Self-review is enough" | Self-review checks code quality. The verdict checks requirements. Both are needed. |
+| "I wrote the tests, so the criteria are met" | Tests prove the code does what you thought was wanted. The verdict proves it does what was actually wanted. |

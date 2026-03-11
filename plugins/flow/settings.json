@@ -37,6 +37,14 @@
     "dir": ".decisions",
     "sensitivityDefault": "public"
   },
+  "specFirst": {
+    "requireAcceptanceCriteria": true,
+    "allowSpecFreeLabels": ["documentation", "chore"]
+  },
+  "verdict": {
+    "enabled": true,
+    "requireAllPass": false
+  },
   "testing": {
     "tddMode": "suggest"
   },

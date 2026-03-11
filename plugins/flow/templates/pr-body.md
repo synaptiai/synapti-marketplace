@@ -51,6 +51,32 @@ Closes #{issue_number}
 - [ ] Runtime verification (if applicable)
 - [ ] All tasks completed
 
+## Verification Verdict
+
+{If verdict.enabled and acceptance criteria exist:}
+
+{If all PASS:}
+All {N} acceptance criteria verified independently by verdict-judge. No human review required.
+
+{If any FAIL or NEEDS-HUMAN-REVIEW:}
+### Requires Attention ({X} of {N} criteria)
+
+| # | Criterion | Verdict | Evidence | Action Needed |
+|---|-----------|---------|----------|--------------|
+{Only FAIL and NEEDS-HUMAN-REVIEW rows}
+
+### Passed ({Y} of {N} criteria)
+<details>
+<summary>Click to expand passing criteria</summary>
+
+| # | Criterion | Evidence Summary |
+|---|-----------|-----------------|
+{PASS rows — collapsed by default so humans review only failures}
+</details>
+
+{If spec-free task:}
+Spec-free task — no acceptance criteria to verify.
+
 ## Files Changed
 
 {Grouped by top-level directory with counts:}

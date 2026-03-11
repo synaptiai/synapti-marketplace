@@ -23,6 +23,19 @@ Extract acceptance criteria from the issue body. Look for:
 - Task lists in the body
 - Key requirements mentioned in comments
 
+**Spec-first validation**: If zero acceptance criteria can be extracted, return a structured error:
+
+```markdown
+## PLANNING BLOCKED: No Acceptance Criteria
+
+Could not extract any acceptance criteria from issue #{N}.
+Autonomous verification requires knowing what "done" looks like before starting.
+
+The calling command should prompt the user to add acceptance criteria.
+```
+
+Do NOT proceed with empty criteria — the calling command handles the user interaction.
+
 ### Step 2: Analyze Requirements
 
 For each criterion:
@@ -45,6 +58,7 @@ TaskCreate(
 
 Guidelines:
 - One task per acceptance criterion (minimum)
+- Each task `description` must include a `Verification method:` line mapping to a concrete check type (unit test, integration test, curl, visual, manual)
 - Add infrastructure tasks if needed (migrations, config, dependencies)
 - Add a final "Run quality checks and self-review" task
 - Keep task count between 3-10 (more suggests the issue is too large)
