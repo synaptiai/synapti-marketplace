@@ -270,6 +270,7 @@ This skill is invoked by:
 - `gh-pr` — Phase 1 Step 1.2 (before PR creation)
 - `gh-review` — Phase 2 (before code review)
 - `gh-address` — Phase 2 (before addressing feedback)
+- `gh-resolve` — Step 2c (quality command discovery for post-resolution verification)
 
 Results inform:
 - Which agents to delegate to (code-reviewer, convention-checker, test-runner, implementation-planner)

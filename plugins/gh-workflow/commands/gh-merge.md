@@ -1,7 +1,7 @@
 ---
 description: Use after PR is approved to merge with safe defaults, verification checks, and optional branch cleanup
 argument-hint: <pr-number>
-allowed-tools: Bash, AskUserQuestion
+allowed-tools: Bash, AskUserQuestion, Skill
 ---
 
 # Merge PR #$ARGUMENTS
@@ -85,10 +85,21 @@ Merge an approved pull request with standardized settings.
    - Draft PR → "PR is a draft. Mark as ready for review first."
    - Not approved → "PR requires approval before merging"
    - Checks failing → "CI checks are failing: [list failed checks]"
-   - Merge conflicts → "PR has merge conflicts that need to be resolved"
+   - Merge conflicts → invoke conflict resolution path (see below)
    - Already merged/closed → "PR is already [merged/closed]"
    - Unresolved threads → "PR #X has N unresolved conversation threads"
    - Stale approval → "PR #X has been updated since last approval - may need re-review"
+
+### Conflict Resolution Path
+
+If the Mergeable check fails (PR has merge conflicts):
+
+Use the **AskUserQuestion tool**: "PR #$ARGUMENTS has merge conflicts. Would you like to resolve them now?"
+
+- **Option 1**: "Resolve conflicts now" — suggest the user run `/gh-resolve $ARGUMENTS` to resolve conflicts
+- **Option 2**: "Cancel merge — I'll resolve conflicts manually"
+
+If Option 1: after the user runs `/gh-resolve` and resolution completes, re-run Step 1 to verify PR is now mergeable, then continue from Step 4.
 
 6. **Knowledge Checkpoint** (before merge approval):
 
@@ -170,7 +181,7 @@ Merge an approved pull request with standardized settings.
 |-------|-------------|---------------|
 | State | `OPEN` | "PR #X is already {state}" |
 | Draft | `isDraft: false` | "PR #X is a draft. Mark as ready for review first." |
-| Mergeable | `MERGEABLE` | "PR #X has merge conflicts" |
+| Mergeable | `MERGEABLE` | "PR #X has merge conflicts — offering resolution" |
 | Review | `APPROVED` or no reviews | "PR #X requires approval" |
 | Checks | All passing | "PR #X has failing checks: {list}" |
 | Threads | All resolved (or acknowledged) | "PR #X has N unresolved conversation threads" |
