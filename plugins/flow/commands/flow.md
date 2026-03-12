@@ -1,5 +1,5 @@
 ---
-description: "Universal workflow entry point. Use /flow <verb> <target> for skill-driven GitHub development. Verbs: start, commit, pr, review, address, merge, release, status, learn, setup, explain, debug, design, brainstorm, issue."
+description: "Universal workflow entry point. Use /flow <verb> <target> for skill-driven GitHub development. Verbs: start, commit, pr, review, address, merge, resolve, release, status, learn, setup, explain, debug, design, brainstorm, issue."
 argument-hint: <verb> [target]
 allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Grep, Glob
 ---
@@ -26,6 +26,7 @@ Each verb requires specific domain skills. The dispatcher invokes these determin
 | review | code-review-methodology | /flow:review |
 | address | feedback-resolution, change-classification, capability-discovery | /flow:address |
 | merge | merge-and-release | /flow:merge |
+| resolve | merge-conflict-resolution, capability-discovery | /flow:resolve |
 | release | merge-and-release | /flow:release |
 | status | (none — read-only) | /flow:status |
 | learn | (none — analysis only) | /flow:learn |
@@ -40,7 +41,7 @@ Each verb requires specific domain skills. The dispatcher invokes these determin
 
 Parse `$ARGUMENTS` to extract verb and target:
 
-1. **Extract verb**: First word of arguments (start, commit, pr, review, address, merge, release, status, learn, setup, explain, debug, design, brainstorm, issue)
+1. **Extract verb**: First word of arguments (start, commit, pr, review, address, merge, resolve, release, status, learn, setup, explain, debug, design, brainstorm, issue)
 2. **Extract target**: Remaining arguments (issue number, PR number, version type, etc.)
 3. **Route**: Invoke the corresponding sub-command via Skill tool with the target as arguments
 
@@ -51,6 +52,7 @@ Parse `$ARGUMENTS` to extract verb and target:
 - `/flow:pr` → Skill: flow:pr
 - `/flow:review 15` → Skill: flow:review, args: "15"
 - `/flow:merge 15` → Skill: flow:merge, args: "15"
+- `/flow:resolve 15` → Skill: flow:resolve, args: "15"
 - `/flow:release patch` → Skill: flow:release, args: "patch"
 - `/flow:debug "TypeError in auth module"` → Skill: flow:debug, args: "TypeError in auth module"
 - `/flow:design 42` → Skill: flow:design, args: "42"
@@ -75,6 +77,7 @@ gh pr list --author @me --state open --limit 5
    - On default branch with no open PRs → "Try `/flow:start <issue>`"
    - On feature branch with uncommitted changes → "Try `/flow:commit`"
    - On feature branch with commits ahead → "Try `/flow:pr`"
+   - On feature branch with merge conflicts → "Try `/flow:resolve`"
    - With open PRs needing review → "Try `/flow:review <pr>`"
 
 ## Natural Language Fallback
@@ -85,6 +88,7 @@ If the verb doesn't match any known command, attempt to infer intent:
 - "what's happening" → route to status
 - "ship it" → route to pr
 - "something is broken" / "why is this failing" → route to debug
+- "fix conflicts" / "resolve conflicts" / "there are merge conflicts" → route to resolve
 - "how should we build" / "what approach" → route to brainstorm
 - "design this" / "architecture" → route to design
 

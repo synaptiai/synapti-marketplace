@@ -1,7 +1,7 @@
 ---
 description: "Merge an approved pull request. Verifies prerequisites (approval, checks, conversations), displays assessment, and requires explicit human confirmation. Tier 3 — never autonomous."
 argument-hint: <pr-number>
-allowed-tools: Bash, Read, AskUserQuestion
+allowed-tools: Bash, Read, AskUserQuestion, Skill
 ---
 
 # Merge PR #$ARGUMENTS
@@ -54,6 +54,16 @@ gh pr view $ARGUMENTS --json reviews,commits --jq '{
 ```
 
 If any check fails, explain what needs to be fixed and suggest actions.
+
+### Conflict Resolution Path
+
+If the Mergeable check fails (has conflicts):
+
+Use the AskUserQuestion tool: "PR #$ARGUMENTS has merge conflicts. Would you like to resolve them now?"
+- Option 1: "Resolve conflicts now" — invokes Skill flow:resolve with $ARGUMENTS
+- Option 2: "Cancel merge"
+
+If Option 1: after resolution completes, re-run Phase 1 to verify PR is now mergeable.
 
 ## Phase 3: Confirm and Execute
 

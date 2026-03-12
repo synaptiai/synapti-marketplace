@@ -57,6 +57,23 @@
         "tagPrefix": { "type": "string", "default": "v" }
       }
     },
+    "conflictResolution": {
+      "type": "object",
+      "description": "Merge conflict resolution settings",
+      "properties": {
+        "autoResolveTrivial": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically resolve trivial conflicts (non-overlapping changes) without asking"
+        },
+        "maxConflictFiles": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 1,
+          "description": "Maximum conflicting files before suggesting alternative approach"
+        }
+      }
+    },
     "learning": {
       "type": "object",
       "properties": {

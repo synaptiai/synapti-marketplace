@@ -26,6 +26,10 @@
     "strategy": "squash",
     "deleteBranch": true
   },
+  "conflictResolution": {
+    "autoResolveTrivial": true,
+    "maxConflictFiles": 20
+  },
   "release": {
     "tagPrefix": "v"
   },
