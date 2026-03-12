@@ -1,6 +1,6 @@
 {
   "name": "gh-workflow",
-  "version": "1.8.1",
+  "version": "1.9.0",
   "description": "Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings.",
   "author": {
     "name": "Synapti AI",
