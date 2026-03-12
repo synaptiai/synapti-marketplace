@@ -1,7 +1,7 @@
 ---
 name: merge-conflict-resolution
 description: Detect, classify, and resolve git merge conflicts through structured analysis of conflict markers, per-file strategy selection, and post-resolution verification. Use when a branch has conflicts with its merge target, when rebasing onto an updated base, or when gh-merge detects an unmergeable PR.
-allowed-tools: Bash, Read, Write, Edit, Grep, Glob, TaskCreate, TaskList, TaskUpdate, AskUserQuestion
+allowed-tools: Bash, Read, Write, Edit, Grep, Glob
 context: fork
 agent: Explore
 ---
@@ -90,7 +90,7 @@ After resolving all conflicts, run these checks in order:
 
 ```bash
 # Must return zero results
-grep -rn '<<<<<<<\|=======\|>>>>>>>' --include='*' . 2>/dev/null | grep -v '.git/' | grep -v 'node_modules/'
+grep -rn '^<<<<<<<\|^=======\|^>>>>>>>' . 2>/dev/null | grep -v '.git/' | grep -v 'node_modules/'
 ```
 
 If any markers remain, resolution is incomplete. Fix before proceeding.

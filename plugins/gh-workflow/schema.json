@@ -182,6 +182,7 @@
         "maxConflictFiles": {
           "type": "integer",
           "minimum": 1,
+          "maximum": 100,
           "default": 20,
           "description": "Maximum number of conflicting files before suggesting an alternative approach (e.g., rebasing in smaller steps)"
         }

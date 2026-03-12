@@ -251,6 +251,15 @@ Before addressing feedback:
 3. Note available agents for Phase 6 code review
 ```
 
+### In gh-resolve (Step 2.2)
+
+```markdown
+Before post-resolution verification:
+1. Invoke capability-discovery skill
+2. Extract LINT_CMD, TEST_CMD, TYPECHECK_CMD for Phase 5
+3. If skill fails, fall back to tech-stack detection table
+```
+
 ## Graceful Degradation
 
 When capabilities are not found:
