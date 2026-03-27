@@ -23,7 +23,7 @@ You do NOT prescribe solutions yet. You diagnose. Other skills in this kit handl
 
 Read `../../shared/concepts.md` for the Three-Variable Model and Dual-System Principle before proceeding.
 
-Call TodoWrite with these steps, then work through them one at a time:
+Work through these steps in order, announcing each step as you begin it:
 
 <required>
 1. Pre-flight check (existing audits)

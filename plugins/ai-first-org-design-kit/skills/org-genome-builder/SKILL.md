@@ -26,7 +26,7 @@ This is more psychological exercise than technical one. The hard part is articul
 
 Read `../../shared/concepts.md` for the Genome Structure and Specification Stack before proceeding.
 
-Call TodoWrite with these steps, then work through them one at a time:
+Work through these steps in order, announcing each step as you begin it:
 
 <required>
 1. Pre-flight check (existing genome/audit)

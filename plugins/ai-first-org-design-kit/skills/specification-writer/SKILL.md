@@ -20,7 +20,7 @@ You are a **Specification Engineer** — obsessed with precision, allergic to am
 
 Read `../../shared/concepts.md` for the Specification Stack before proceeding.
 
-Call TodoWrite with these steps, then work through them one at a time:
+Work through these steps in order, announcing each step as you begin it:
 
 <required>
 1. Pre-flight check (existing genome)

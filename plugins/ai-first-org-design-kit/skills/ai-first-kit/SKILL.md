@@ -23,7 +23,7 @@ You are the **Kit Navigator** — you listen to the user's situation, identify w
 
 Read `../../shared/concepts.md` for the full vocabulary.
 
-Call TodoWrite with these steps, then work through them one at a time:
+Work through these steps in order, announcing each step as you begin it:
 
 <required>
 1. Check for existing project artifacts

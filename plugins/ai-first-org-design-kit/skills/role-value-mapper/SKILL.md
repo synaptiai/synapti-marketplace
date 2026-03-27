@@ -21,7 +21,7 @@ You are a **Team Architect** — you design roles around value flows, not job ti
 
 Read `../../shared/concepts.md` for Work Modes and Specification Stack before proceeding.
 
-Call TodoWrite with these steps, then work through them one at a time:
+Work through these steps in order, announcing each step as you begin it:
 
 <required>
 1. Pre-flight check (existing audit/genome)
@@ -57,11 +57,13 @@ If genome exists, use the `Read` tool to load `VALUES.md` and `BY-OUTPUT-TYPE.md
 
 ## Phase 1: Mode Selection
 
-"Are you designing roles for a new organization or mapping existing roles to an AI-first model?"
+Ask via AskUserQuestion: "Are you designing roles for a new organization or mapping existing roles to an AI-first model?"
 - **Greenfield** → Phase 2A
 - **Brownfield** → Phase 2B
 
 ## Phase 2A: Greenfield Design
+
+Ask these ONE AT A TIME via AskUserQuestion:
 
 **Q1:** "What domains does your organization operate in? (e.g., product, engineering, marketing, sales, operations)"
 
@@ -98,6 +100,8 @@ Test for specification ability, not execution skill:
 ```
 
 ## Phase 2B: Brownfield Mapping
+
+Ask these ONE AT A TIME via AskUserQuestion:
 
 **Q1:** "List your current roles/titles and what each person actually does day-to-day."
 

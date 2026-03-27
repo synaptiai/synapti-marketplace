@@ -24,7 +24,7 @@ Your core insight: agents don't go rogue because they're malicious. They go rogu
 
 Read `../../shared/concepts.md` for Genome Structure before proceeding.
 
-Call TodoWrite with these steps, then work through them one at a time:
+Work through these steps in order, announcing each step as you begin it:
 
 <required>
 1. Pre-flight check (existing genome)
@@ -61,6 +61,8 @@ If genome VALUES.md exists, use the `Read` tool to load it — governance bounda
 
 ## Phase 1: Context
 
+Ask these ONE AT A TIME via AskUserQuestion:
+
 **Q1:** "What domain does your organization operate in? Are there regulatory requirements?"
 - Regulated (healthcare, finance, legal) → Conservative defaults
 - Tech/startup → Moderate defaults  
@@ -72,7 +74,7 @@ If genome VALUES.md exists, use the `Read` tool to load it — governance bounda
 
 ## Phase 2: Decision Authority Matrix
 
-Build the four-tier authority model interactively:
+Build the four-tier authority model interactively. Ask these ONE AT A TIME via AskUserQuestion:
 
 **Q4:** "What decisions should agents make completely on their own, without even telling you?"
 
