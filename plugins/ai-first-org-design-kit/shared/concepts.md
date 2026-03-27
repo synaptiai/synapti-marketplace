@@ -14,7 +14,16 @@ Organizational time is NOT planning vs. execution. It's three variables:
 
 AI changes each differently: Execution → agents do it. Coordination → gets encoded into infrastructure. Specification → becomes the primary human activity.
 
-**Target AI-first allocation (human time):** 40-50% specification, 15-20% coordination design, 10-15% execution oversight, 15-20% system evolution.
+**Target AI-first allocation (human time only — agent work is separate):**
+
+| Activity | % of Human Time | What It Means |
+|----------|----------------|---------------|
+| Specification | 40-50% | Defining what should exist and what "good" looks like |
+| Coordination design | 15-20% | Designing the infrastructure that replaces meetings/approvals |
+| Execution oversight | 10-15% | Monitoring agent output, handling edge cases |
+| System evolution | 15-20% | Updating genome, governance, and specs as the org learns |
+
+These ranges overlap intentionally — allocation varies by org maturity. Early AI-first orgs skew toward specification; mature ones shift toward evolution.
 
 ## The Specification Stack
 
@@ -63,40 +72,67 @@ Not career levels — modes you move between within a single day:
 
 ## Organizational Genome Structure
 
-The foundational identity specification. Structure:
+The foundational identity specification. Built in two phases:
 
+**Phase 1 — Created by `org-genome-builder`:**
 ```
-organizational-genome/
+genome/
 ├── 00-identity/
 │   ├── MISSION.md           — Why we exist (operational, not marketing)
 │   ├── VALUES.md            — Values as decision rules
 │   └── VOICE.md             — Communication norms with examples
 ├── 01-decision-architecture/
 │   ├── AUTHORITY-MATRIX.md  — What gets decided by whom/what
-│   ├── TRADEOFF-RULES.md    — When values conflict, which wins
-│   └── ESCALATION-PROTOCOLS.md — When and how to escalate
-├── 02-quality-standards/
-│   ├── BY-OUTPUT-TYPE.md    — What "good" looks like per output type
-│   └── ANTI-PATTERNS.md     — Explicit examples of what's not acceptable
-├── 03-governance/
-│   ├── BOUNDARIES.md        — What agents must never do autonomously
-│   ├── POLICY-GENERATION.md — How new policies get proposed and approved
-│   └── DECISION-LEDGER.md   — How decisions are recorded
-└── 04-evolution/
-    ├── REVIEW-CYCLE.md      — When and how the genome gets updated
-    └── CHANGE-LOG.md        — History of genome modifications
+│   └── TRADEOFF-RULES.md    — When values conflict, which wins
+└── 02-quality-standards/
+    ├── BY-OUTPUT-TYPE.md    — What "good" looks like per output type
+    └── ANTI-PATTERNS.md     — Explicit examples of what's not acceptable
 ```
+
+**Phase 2 — Created by `governance-architect`:**
+```
+governance/
+├── AUTHORITY-MATRIX.md       — Extended decision authority (4-tier)
+├── HARD-BOUNDARIES.md        — What agents must never do autonomously
+├── ESCALATION-PROTOCOLS.md   — When and how to escalate
+├── POLICY-GENERATION.md      — How new policies get proposed and approved
+├── DECISION-LEDGER-SPEC.md   — How decisions are recorded
+└── LEARNING-LOOP.md          — How governance evolves from failures
+```
+
+The genome (Phase 1) encodes identity. Governance (Phase 2) encodes operational boundaries. Together they form the complete organizational specification.
 
 ## Artifact Handoff Convention
 
-All skills save outputs to `~/.ai-first-kit/projects/{slug}/` for downstream skill discovery. Each skill checks for upstream artifacts before starting.
+All skills save outputs to `~/.ai-first-kit/projects/{slug}/` for downstream skill discovery. Each skill checks for upstream artifacts before starting and **reads their content** to maintain consistency.
 
-| Skill | Reads From | Writes To |
-|-------|-----------|----------|
-| coordination-audit | (nothing) | `audit-{date}.md` |
-| org-genome-builder | audit (optional) | `genome/` directory |
-| specification-writer | genome (optional) | `specs/{name}.md` |
-| quality-gate-designer | audit, genome | `gates/{name}.md` |
-| governance-architect | genome | `governance/` directory |
-| role-value-mapper | audit, genome | `roles-{date}.md` |
-| political-navigator | audit (optional) | `political-map-{date}.md` |
+| Skill | Reads From | Writes To | Blocks Without |
+|-------|-----------|----------|----------------|
+| coordination-audit | (nothing) | `audit-{date}.md` | — |
+| org-genome-builder | audit (optional) | `genome/` directory | — |
+| specification-writer | genome VALUES.md, BY-OUTPUT-TYPE.md | `specs/{name}.md` | — |
+| quality-gate-designer | audit, genome | `gates/{name}.md` | — |
+| governance-architect | genome VALUES.md | `governance/` directory | genome (required) |
+| role-value-mapper | audit, genome | `roles-{date}.md` | — |
+| political-navigator | audit (optional) | `political-map-{date}.md` | — |
+
+## Skill Dependency Map
+
+```
+coordination-audit ──────────────────────┐
+       │ (optional)                      │ (optional)
+       ▼                                 ▼
+org-genome-builder ─────────┬──── political-navigator
+       │ (required by some) │
+       ├────────────────────┤
+       ▼                    ▼
+specification-writer  governance-architect
+       │                    │
+       ▼                    │
+quality-gate-designer ◄─────┘
+       │
+       ▼
+role-value-mapper
+```
+
+Skills marked "optional" degrade gracefully without upstream artifacts. Skills marked "required" halt with a clear message if the dependency is missing.

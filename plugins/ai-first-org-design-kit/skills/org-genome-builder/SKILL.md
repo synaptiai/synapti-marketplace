@@ -13,6 +13,7 @@ description: >
   encode culture for AI systems, or create a foundational document that both
   humans and agents can operate from. Use BEFORE specification-writer,
   governance-architect, or quality-gate-designer — this is the foundation.
+allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose
 ---
@@ -25,7 +26,7 @@ This is more psychological exercise than technical one. The hard part is articul
 
 Read `../../shared/concepts.md` for the Genome Structure and Specification Stack before proceeding.
 
-Use TodoWrite to track these mandatory steps:
+Call TodoWrite with these steps, then work through them one at a time:
 
 <required>
 1. Pre-flight check (existing genome/audit)
@@ -55,11 +56,13 @@ echo "Project: $SLUG"
 AUDIT=$(ls -t ~/.ai-first-kit/projects/$SLUG/audit-*.md 2>/dev/null | head -1)
 [ -n "$AUDIT" ] && echo "Audit found: $AUDIT" || echo "No prior audit"
 # Check for existing genome
-GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/MISSION.md 2>/dev/null)
-[ -n "$GENOME" ] && echo "Existing genome found" || echo "No existing genome"
+GENOME_FILES=$(ls ~/.ai-first-kit/projects/$SLUG/genome/*.md 2>/dev/null | head -5)
+[ -n "$GENOME_FILES" ] && echo "Existing genome found: $GENOME_FILES" || echo "No existing genome"
 ```
 
-If audit exists, read it for context. If genome exists, ask: "I found an existing genome. Should we revise it or start fresh?"
+If audit exists, use the `Read` tool to load its contents — extract organization profile, workflow findings, and encoding candidates to inform the interview.
+
+If genome exists, use the `Read` tool to load existing genome files, then ask via AskUserQuestion: "I found an existing genome. Should we revise it or start fresh?"
 
 ## Phase 1: Mode Selection
 
@@ -139,6 +142,8 @@ For each output type the org produces, capture:
 
 Build the genome document structure. For each section, show the user what you've encoded and ask: "Does this capture it? What's missing or wrong?"
 
+**Validation process:** After drafting each genome section, present it to the user inline (not as a file). Use AskUserQuestion to confirm: "Does this capture your intent? What's missing or wrong?" Only write files after the user confirms each section. This prevents saving unvalidated output.
+
 Create these files in `~/.ai-first-kit/projects/$SLUG/genome/`:
 
 ### 00-identity/MISSION.md
@@ -203,6 +208,37 @@ Save all files to the genome directory. The genome is read by every downstream s
 - **Never invent values.** Only encode what the user actually demonstrates. If they say they value "work-life balance" but describe 80-hour weeks, note the tension.
 - **This is v1, not final.** The genome evolves. Mark areas as "[DRAFT]" when the user can't fully articulate yet.
 - **Respect that this is hard.** Articulating taste and judgment is genuinely difficult. Acknowledge it.
+
+## Iron Law
+
+**ENCODE WHAT EXISTS, NOT WHAT SOUNDS GOOD. Every value, every quality standard, every communication norm must come from the user's real experience — not from what you think an organization should be.**
+
+If the user can't give a concrete example of a value in action, it's aspirational, not operational. Mark it as "[ASPIRATIONAL]" and move on.
+
+| Excuse | Response |
+|--------|----------|
+| "Let's just use standard best practices" | Best practices are generic. Your genome must be yours, not a template. |
+| "We value everything on this list" | Values only matter when they conflict. Which one wins? |
+| "I'll fill in the examples later" | Examples ARE the genome. Without them, values are wall posters. |
+| "This is taking too long" | Encoding 30 years of tacit knowledge takes time. Rushing produces a genome agents can't use. |
+
+## Graceful Degradation
+
+| Missing | Fallback |
+|---------|----------|
+| Bash unavailable | Skip artifact check, create genome files in current directory |
+| No prior audit | Proceed without audit context — genome interview covers all needed ground |
+| User can't articulate a value | Ask for a story: "Tell me about a hard decision. What guided it?" Extract the value from the story. |
+| User gives marketing-speak answers | Push back once: "That's the website version. What's the real version?" If still vague, mark as [DRAFT]. |
+
+## Integration Points
+
+This skill is typically invoked:
+- As the first skill in the **Greenfield path** (new organizations)
+- After `coordination-audit` in the **Brownfield path**
+- When the router identifies identity encoding as the starting point
+
+Downstream skills that read this genome: `specification-writer` (VALUES.md, BY-OUTPUT-TYPE.md), `governance-architect` (VALUES.md — required), `quality-gate-designer`, `role-value-mapper`.
 
 ## References
 

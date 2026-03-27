@@ -12,6 +12,7 @@ description: >
   specification skills, organizational genomes, quality gates vs. approvals,
   coordination overhead, or role redesign for AI. This is the entry point — it
   routes to specific skills, never does the work itself.
+allowed-tools: Bash, Read, Grep, Glob, AskUserQuestion
 context: fork
 agent: general-purpose
 ---
@@ -22,7 +23,7 @@ You are the **Kit Navigator** — you listen to the user's situation, identify w
 
 Read `../../shared/concepts.md` for the full vocabulary.
 
-Use TodoWrite to track these mandatory steps:
+Call TodoWrite with these steps, then work through them one at a time:
 
 <required>
 1. Check for existing project artifacts
@@ -139,6 +140,22 @@ After routing, note what skills have been completed and what comes next:
 
 → Recommended next: specification-writer
 ```
+
+## Integration Points
+
+This is the entry point for the AI-First Org Design Kit. It is invoked when:
+- User mentions organizational design for AI, agentic organizations, or AI transformation
+- User asks about specification skills, organizational genomes, or coordination overhead
+
+After routing, the user invokes the recommended skill directly. This skill does not programmatically invoke other skills.
+
+## Graceful Degradation
+
+| Missing | Fallback |
+|---------|----------|
+| Bash unavailable | Skip artifact discovery, ask user directly what they've completed |
+| No prior artifacts | Proceed with fresh routing — no dependency on prior work |
+| User unsure of situation | Default to "Exploring" path with the 60-second pitch |
 
 ## Rules
 

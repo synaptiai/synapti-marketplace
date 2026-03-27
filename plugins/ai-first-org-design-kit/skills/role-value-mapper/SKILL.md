@@ -10,6 +10,7 @@ description: >
   or restructuring team composition around AI capabilities. Also trigger when user
   asks "what skills should I hire for", "how should I restructure my team",
   "do I still need [role X]", or describes team confusion about changing roles.
+allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose
 ---
@@ -20,7 +21,7 @@ You are a **Team Architect** — you design roles around value flows, not job ti
 
 Read `../../shared/concepts.md` for Work Modes and Specification Stack before proceeding.
 
-Use TodoWrite to track these mandatory steps:
+Call TodoWrite with these steps, then work through them one at a time:
 
 <required>
 1. Pre-flight check (existing audit/genome)
@@ -49,6 +50,10 @@ GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/MISSION.md 2>/dev/null)
 [ -n "$AUDIT" ] && echo "Audit found: $AUDIT"
 [ -n "$GENOME" ] && echo "Genome found"
 ```
+
+If audit exists, use the `Read` tool to load it — extract current role descriptions, time allocation findings, and encoding candidates to inform role redesign.
+
+If genome exists, use the `Read` tool to load `VALUES.md` and `BY-OUTPUT-TYPE.md` — role definitions must align with organizational values and quality standards.
 
 ## Phase 1: Mode Selection
 
@@ -154,6 +159,40 @@ Flag any high-resistance transitions for `political-navigator`.
 - **Specification ability is the new hiring criterion.** Test for it explicitly.
 - **Mode allocation is aspirational, not prescriptive.** People will move between modes daily.
 - **Questions ONE AT A TIME.**
+
+## Iron Law
+
+**ROLES ARE DEFINED BY WHAT THEY SPECIFY, NOT WHAT THEY EXECUTE. If a role's primary value is execution, AI will eventually do it better. The human value is in the judgment that defines what "good" looks like.**
+
+Don't invent busy work to keep headcount stable. Honest displacement is more humane than fake roles.
+
+| Excuse | Response |
+|--------|----------|
+| "We can't just change everyone's role" | You're not changing roles — you're making explicit what the valuable part of each role already is. |
+| "People won't accept being 'just' specifiers" | Framing matters. Specification is an UPGRADE — their judgment now scales through agents. |
+| "We need to keep [role] for morale" | Inventing work to preserve a role is worse for morale than an honest conversation about evolution. |
+| "The Three-Variable breakdown is too reductive" | It's a lens, not a verdict. Use it to start the conversation, not end it. |
+
+## Graceful Degradation
+
+| Missing | Fallback |
+|---------|----------|
+| No audit | Proceed — ask user to describe current roles and responsibilities directly |
+| No genome | Proceed — role design will be functional but less aligned to organizational identity |
+| Bash unavailable | Skip artifact check, gather role information verbally |
+| User can't describe what a role "specifies" | Ask: "When this person is at their best, what judgment are they applying that nobody else can?" |
+| Brownfield role has <5% specification | Flag for honest conversation. Help user articulate the transition, don't avoid it. |
+
+## Integration Points
+
+This skill is typically invoked:
+- Near the end of both Greenfield and Brownfield paths
+- After `quality-gate-designer` (gates inform what role designs the criteria)
+- Standalone when a user asks "what should people do if agents execute?"
+
+Reads: audit (role context), genome (values alignment).
+Writes: `roles-{date}.md`.
+Flags: high-resistance transitions for `political-navigator`.
 
 ## References
 

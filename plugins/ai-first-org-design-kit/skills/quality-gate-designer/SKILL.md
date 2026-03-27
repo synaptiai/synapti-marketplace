@@ -10,6 +10,7 @@ description: >
   trigger when user mentions approval bottlenecks, review cycles slowing work
   down, or wanting agents to self-validate output quality. Use AFTER
   coordination-audit identifies specific approval chains to convert.
+allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose
 ---
@@ -20,7 +21,7 @@ You are a **Validation Architect** — you turn subjective human approval into o
 
 Read `../../shared/concepts.md` for the Dual-System Principle before proceeding.
 
-Use TodoWrite to track these mandatory steps:
+Call TodoWrite with these steps, then work through them one at a time:
 
 <required>
 1. Pre-flight check (existing audit/genome)
@@ -50,6 +51,10 @@ AUDIT=$(ls -t ~/.ai-first-kit/projects/$SLUG/audit-*.md 2>/dev/null | head -1)
 GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/MISSION.md 2>/dev/null)
 [ -n "$GENOME" ] && echo "Genome found" || echo "No genome"
 ```
+
+If audit exists, use the `Read` tool to load it — extract approval chains and coordination findings to pre-populate Phase 1.
+
+If genome exists, use the `Read` tool to load `VALUES.md` and `BY-OUTPUT-TYPE.md` — quality gates must reflect organizational quality standards.
 
 ## Phase 1: Approval Chain Mapping
 
@@ -133,7 +138,9 @@ Ask: "Is this person likely to see this as an upgrade or a threat?" Flag for pol
 
 ## Phase 6: Save
 
-Save each gate specification to `~/.ai-first-kit/projects/$SLUG/gates/`.
+Save each gate specification to `~/.ai-first-kit/projects/$SLUG/gates/{gate-name}.md` using the Write tool. Each file follows the gate template from Phase 3 (Name, What It Replaces, Pass Criteria, Holdout Scenarios, Satisfaction Metric, On Fail, Escalation Package).
+
+Also save a summary index: `~/.ai-first-kit/projects/$SLUG/gates/INDEX.md` listing all gates, their architecture (parallel/sequential/blocking), and the original approval holders mapped to Quality Architect roles.
 
 ## Rules
 
@@ -142,6 +149,38 @@ Save each gate specification to `~/.ai-first-kit/projects/$SLUG/gates/`.
 - **Satisfaction, not boolean.** Real quality is probabilistic, not pass/fail.
 - **Flag political risk explicitly.** Don't pretend power dynamics don't exist.
 - **Questions ONE AT A TIME.**
+
+## Iron Law
+
+**NEVER REMOVE AN APPROVAL WITHOUT UNDERSTANDING ITS FULL FUNCTION. Every approval gate serves both coordination AND culture. Strip one without replacing the other and you create a vacuum.**
+
+If you can't articulate what the approval was really doing (beyond its stated function), you haven't decomposed it enough.
+
+| Excuse | Response |
+|--------|----------|
+| "This approval is obviously just bureaucracy" | Dig deeper. 'Bureaucracy' usually means the real function is invisible to you. |
+| "We can add holdout scenarios later" | Holdout scenarios are the difference between a gate and a checkbox. Add them now. |
+| "The approval holder won't care" | They will. Flag for political-navigator before proceeding. |
+
+## Graceful Degradation
+
+| Missing | Fallback |
+|---------|----------|
+| No audit | Ask user to walk through approval chains manually (Phase 1 questions cover this) |
+| No genome | Proceed — gates will be functional but may not reflect organizational quality standards |
+| Bash unavailable | Skip artifact check, work from user-provided approval chain descriptions |
+| User can't describe what approval checks for | Ask: "What's the worst thing that would happen if this approval didn't exist?" Reverse-engineer the function. |
+
+## Integration Points
+
+This skill is typically invoked:
+- After `specification-writer` in the Greenfield path
+- After `org-genome-builder` in the Brownfield path
+- Standalone when a user identifies specific approval bottlenecks
+
+Reads: audit findings, genome quality standards.
+Writes: `gates/` directory with individual gate specs + INDEX.md.
+Flags: high-resistance transitions for `political-navigator`.
 
 ## References
 

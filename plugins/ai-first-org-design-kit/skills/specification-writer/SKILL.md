@@ -9,6 +9,7 @@ description: >
   defining any work for autonomous agent execution. Also trigger when user describes
   wanting to document a repeatable process, create reusable agent prompts, or turn
   a one-off task into a template. Use AFTER org-genome-builder for consistency.
+allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose
 ---
@@ -19,7 +20,7 @@ You are a **Specification Engineer** — obsessed with precision, allergic to am
 
 Read `../../shared/concepts.md` for the Specification Stack before proceeding.
 
-Use TodoWrite to track these mandatory steps:
+Call TodoWrite with these steps, then work through them one at a time:
 
 <required>
 1. Pre-flight check (existing genome)
@@ -48,7 +49,7 @@ GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/MISSION.md 2>/dev/null)
 [ -n "$GENOME" ] && echo "Genome found — will use for consistency" || echo "No genome (specs may lack organizational context)"
 ```
 
-If genome exists, read `VALUES.md` and `BY-OUTPUT-TYPE.md` for quality standard alignment.
+If genome exists, use the `Read` tool to load `~/.ai-first-kit/projects/$SLUG/genome/00-identity/VALUES.md` and `~/.ai-first-kit/projects/$SLUG/genome/02-quality-standards/BY-OUTPUT-TYPE.md`. Reference these during specification drafting to ensure specs align with organizational values and quality standards.
 
 ## Phase 1: Layer Selection
 
@@ -194,6 +195,37 @@ DATE=$(date +%Y-%m-%d)
 - **Edge cases matter more than happy path.** The happy path is easy. Edge cases are where specs break.
 - **Link to genome when available.** Quality standards and values should reference the organizational genome for consistency.
 - **Questions ONE AT A TIME.**
+
+## Iron Law
+
+**EVERY SPEC MUST PASS THE STRANGER TEST. If you can't hand it to someone with zero context and get acceptable output back, the spec is not done.**
+
+Vague specs produce vague output. The Stranger Test is not optional — it's the quality gate that separates specifications from wishes.
+
+| Excuse | Response |
+|--------|----------|
+| "The executor will figure it out" | Then you haven't specified. You've delegated. |
+| "It's obvious what good looks like" | Write it down anyway. What's obvious to you is invisible to an agent. |
+| "Adding examples takes too long" | One success example and one failure example. Two minutes. Saves hours of iteration. |
+| "Edge cases are rare" | Edge cases are where specs break. Address the top 3. |
+
+## Graceful Degradation
+
+| Missing | Fallback |
+|---------|----------|
+| No genome | Proceed without organizational context — specs will be functional but may lack identity alignment. Note this in spec header. |
+| Bash unavailable | Skip artifact check, ask user for any relevant quality standards verbally |
+| User can't describe success | Ask: "Show me something similar that you liked. What made it good?" Reverse-engineer criteria. |
+| User picks Identity layer | Redirect to `org-genome-builder` — identity specs are genomes, not task specs |
+
+## Integration Points
+
+This skill is typically invoked:
+- After `org-genome-builder` in both Greenfield and Brownfield paths
+- Standalone when a user needs to define a specific task or workflow for agents
+- When another skill (e.g., `quality-gate-designer`) needs specs to design gates against
+
+Downstream: `quality-gate-designer` uses specs to design validation criteria.
 
 ## References
 

@@ -11,6 +11,7 @@ description: >
   trigger when user describes agents going rogue, making unauthorized decisions,
   or needing better control over autonomous systems. Use AFTER org-genome-builder
   — governance should be grounded in organizational values.
+allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose
 ---
@@ -23,7 +24,7 @@ Your core insight: agents don't go rogue because they're malicious. They go rogu
 
 Read `../../shared/concepts.md` for Genome Structure before proceeding.
 
-Use TodoWrite to track these mandatory steps:
+Call TodoWrite with these steps, then work through them one at a time:
 
 <required>
 1. Pre-flight check (existing genome)
@@ -53,6 +54,10 @@ mkdir -p ~/.ai-first-kit/projects/$SLUG/governance
 GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/VALUES.md 2>/dev/null)
 [ -n "$GENOME" ] && echo "Genome found — governance will align to values" || echo "WARNING: No genome. Governance without values foundation is fragile."
 ```
+
+If genome VALUES.md exists, use the `Read` tool to load it — governance boundaries must align with organizational values.
+
+**If no genome exists:** Use AskUserQuestion: "Governance needs to be grounded in organizational values, but no genome was found. Would you like to run `org-genome-builder` first (recommended), or proceed with governance design without a values foundation?" If user chooses to proceed, note this as a risk throughout the output.
 
 ## Phase 1: Context
 
@@ -197,6 +202,23 @@ The ledger supports:
 - Novel situation frequency (should decrease over time)
 ```
 
+## Validation
+
+Before saving, present the complete governance ecosystem to the user. Show how the six documents connect:
+
+```
+AUTHORITY-MATRIX → defines WHO decides
+HARD-BOUNDARIES → defines what NEVER happens
+ESCALATION-PROTOCOLS → defines WHEN to escalate
+POLICY-GENERATION → defines HOW governance GROWS
+DECISION-LEDGER-SPEC → defines HOW decisions are RECORDED
+LEARNING-LOOP → defines HOW governance EVOLVES
+```
+
+Use AskUserQuestion: "Does this governance system cover your nightmare scenario from Q3? What gaps remain?"
+
+Only write files after the user confirms the system is coherent.
+
 ## Phase 8: Save
 
 Save governance documents to `~/.ai-first-kit/projects/$SLUG/governance/`:
@@ -213,6 +235,38 @@ Save governance documents to `~/.ai-first-kit/projects/$SLUG/governance/`:
 - **Start permissive, tighten with evidence.** Over-restrictive governance kills adoption.
 - **The learning loop is the most important part.** Static governance becomes irrelevant.
 - **Questions ONE AT A TIME.**
+
+## Iron Law
+
+**GOVERNANCE IS AN ECOSYSTEM, NOT A CHECKLIST. Every component connects to every other. A boundary without an escalation path is a wall. An escalation without a learning loop is a bandaid.**
+
+Static governance becomes either obsolete (agents work around it) or oppressive (blocks legitimate work). The learning loop is the most important part.
+
+| Excuse | Response |
+|--------|----------|
+| "We'll add the learning loop later" | Without the loop, governance fossilizes. It's not optional. |
+| "Just tell me what the boundaries should be" | Boundaries must come from YOUR nightmare scenarios, not generic best practices. |
+| "This is too complex for our stage" | Start with Phase 2 (authority matrix) and Phase 3 (hard boundaries). Add the rest as you grow. |
+| "Agents will follow the rules" | Agents follow rules they can interpret. Ambiguous governance produces ambiguous behavior. |
+
+## Graceful Degradation
+
+| Missing | Fallback |
+|---------|----------|
+| No genome | Warn user, proceed if they choose — but flag governance as "values-ungrounded" in output |
+| Bash unavailable | Skip artifact check, ask user about their values verbally |
+| User can't articulate nightmare scenario | Offer examples: "An agent emails a client with wrong info", "An agent commits $50k without approval", "An agent deletes production data" |
+| User wants minimal governance | Deliver Phase 2 (authority matrix) + Phase 3 (hard boundaries) only, defer rest |
+
+## Integration Points
+
+This skill is typically invoked:
+- After `org-genome-builder` in the Greenfield path
+- After `quality-gate-designer` in the Brownfield path
+- When a user needs to establish boundaries before deploying agents
+
+Reads: genome VALUES.md (required for alignment).
+Writes: `governance/` directory with 6 documents.
 
 ## References
 

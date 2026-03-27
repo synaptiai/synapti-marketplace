@@ -10,6 +10,7 @@ description: >
   current state before AI transformation. Also trigger when user mentions excessive
   meetings, approval bottlenecks, handoff friction, or slow decision-making in the
   context of organizational efficiency or AI readiness.
+allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose
 ---
@@ -22,7 +23,7 @@ You do NOT prescribe solutions yet. You diagnose. Other skills in this kit handl
 
 Read `../../shared/concepts.md` for the Three-Variable Model and Dual-System Principle before proceeding.
 
-Use TodoWrite to track these mandatory steps:
+Call TodoWrite with these steps, then work through them one at a time:
 
 <required>
 1. Pre-flight check (existing audits)
@@ -54,7 +55,7 @@ EXISTING=$(ls -t ~/.ai-first-kit/projects/$SLUG/audit-*.md 2>/dev/null | head -1
 [ -n "$EXISTING" ] && echo "Prior audit found: $EXISTING" || echo "No prior audit"
 ```
 
-If a prior audit exists, ask: "I found a previous audit. Should we update it or start fresh?"
+If a prior audit exists, use the `Read` tool to load its contents and understand previous findings. Then ask via AskUserQuestion: "I found a previous audit. Should we update it or start fresh?"
 
 ## Phase 1: Intake (Interactive)
 
@@ -166,7 +167,38 @@ DATE=$(date +%Y-%m-%d)
 # Save to ~/.ai-first-kit/projects/$SLUG/audit-$DATE.md
 ```
 
-Format as a clean markdown document with all findings, tables, and recommendations. This artifact is read by downstream skills.
+Format as a structured markdown document using this template:
+
+```markdown
+# Coordination Audit — {Organization Name}
+Date: {YYYY-MM-DD}
+
+## Organization Profile
+{Summary from Q1}
+
+## Time Allocation
+Specification: {X}% | Coordination: {Y}% | Execution: {Z}%
+
+## Workflow Analysis
+{Three-Variable breakdown tables from Phase 2A}
+
+## Dual-System Classification
+{Tables from Phase 2B}
+
+## Encoding Candidates (Ranked by ROI)
+{Ranked list from Phase 2C}
+
+## Quick Wins
+{3 immediate actions}
+
+## Cultural Red Flags
+{Structures where encoding risks cultural vacuum}
+
+## Recommended Next Skill
+{Routing recommendation}
+```
+
+Write this to `~/.ai-first-kit/projects/$SLUG/audit-$DATE.md` using the Write tool. This artifact is read by downstream skills.
 
 ## Rules
 
@@ -175,6 +207,36 @@ Format as a clean markdown document with all findings, tables, and recommendatio
 - **Always check cultural function.** Every structure serves someone's sense of identity or belonging. Acknowledge it.
 - **Use the user's language.** If they say "standup" don't say "daily synchronization ceremony."
 - **Be honest about uncertainty.** If you can't estimate allocation from description alone, say so and ask for more detail on that specific workflow.
+
+## Iron Law
+
+**DIAGNOSE BEFORE PRESCRIBING. Every finding must cite a specific process the user described. No generic observations, no assumed problems.**
+
+If you catch yourself writing "many organizations struggle with..." — stop. This skill diagnoses THIS organization, not organizations in general.
+
+| Excuse | Response |
+|--------|----------|
+| "I can see the problems already, skip the interview" | You're pattern-matching, not diagnosing. Ask the questions. |
+| "Five questions is too many" | Each question reveals a different dimension. Shallow intake produces shallow audit. |
+| "The user already told me what's wrong" | What users report and what's actually happening are often different. Verify. |
+
+## Graceful Degradation
+
+| Missing | Fallback |
+|---------|----------|
+| Bash unavailable | Skip artifact check, ask user directly about prior audits |
+| User can't answer a question | Note the gap, continue with available data, flag it in the audit |
+| User gives vague answers | Ask one follow-up for specificity, then work with what you have |
+| No prior audit exists | Proceed as fresh audit — this is the normal case |
+
+## Integration Points
+
+This skill is typically invoked:
+- As the first skill in the **Brownfield path** (existing organizations)
+- When the router (`ai-first-kit`) identifies coordination overhead as the starting point
+- Standalone when a user wants to understand their current state
+
+Downstream skills that read this audit: `org-genome-builder`, `quality-gate-designer`, `role-value-mapper`, `political-navigator`.
 
 ## References
 
