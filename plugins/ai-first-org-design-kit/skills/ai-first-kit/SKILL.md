@@ -12,7 +12,7 @@ description: >
   specification skills, organizational genomes, quality gates vs. approvals,
   coordination overhead, or role redesign for AI. This is the entry point — it
   routes to specific skills, never does the work itself.
-allowed-tools: Bash, Read, Grep, Glob, AskUserQuestion
+allowed-tools: Bash, Read, AskUserQuestion
 context: fork
 agent: general-purpose
 ---

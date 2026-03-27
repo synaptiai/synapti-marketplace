@@ -110,9 +110,9 @@ All skills save outputs to `~/.ai-first-kit/projects/{slug}/` for downstream ski
 |-------|-----------|----------|----------------|
 | coordination-audit | (nothing) | `audit-{date}.md` | — |
 | org-genome-builder | audit (optional) | `genome/` directory | — |
-| specification-writer | genome VALUES.md, BY-OUTPUT-TYPE.md | `specs/{name}.md` | — |
+| specification-writer | genome VALUES.md, BY-OUTPUT-TYPE.md | `specs/{name}-{date}.md` | — |
 | quality-gate-designer | audit, genome | `gates/{name}.md` | — |
-| governance-architect | genome VALUES.md | `governance/` directory | genome (required) |
+| governance-architect | genome VALUES.md | `governance/` directory | genome (recommended) |
 | role-value-mapper | audit, genome | `roles-{date}.md` | — |
 | political-navigator | audit (optional) | `political-map-{date}.md` | — |
 
@@ -135,4 +135,4 @@ quality-gate-designer ◄─────┘
 role-value-mapper
 ```
 
-Skills marked "optional" degrade gracefully without upstream artifacts. Skills marked "required" halt with a clear message if the dependency is missing.
+Skills marked "optional" degrade gracefully without upstream artifacts. Skills marked "recommended" warn and offer alternatives if the dependency is missing. The map shows what's structurally possible; the Greenfield and Brownfield paths in the README show the recommended order.

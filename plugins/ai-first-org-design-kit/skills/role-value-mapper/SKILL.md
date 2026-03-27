@@ -46,7 +46,7 @@ SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
 [ -z "$SLUG" ] && SLUG="default"
 mkdir -p ~/.ai-first-kit/projects/$SLUG
 AUDIT=$(ls -t ~/.ai-first-kit/projects/$SLUG/audit-*.md 2>/dev/null | head -1)
-GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/MISSION.md 2>/dev/null)
+GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/00-identity/MISSION.md 2>/dev/null)
 [ -n "$AUDIT" ] && echo "Audit found: $AUDIT"
 [ -n "$GENOME" ] && echo "Genome found"
 ```

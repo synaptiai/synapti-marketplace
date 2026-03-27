@@ -56,7 +56,7 @@ echo "Project: $SLUG"
 AUDIT=$(ls -t ~/.ai-first-kit/projects/$SLUG/audit-*.md 2>/dev/null | head -1)
 [ -n "$AUDIT" ] && echo "Audit found: $AUDIT" || echo "No prior audit"
 # Check for existing genome
-GENOME_FILES=$(ls ~/.ai-first-kit/projects/$SLUG/genome/*.md 2>/dev/null | head -5)
+GENOME_FILES=$(ls ~/.ai-first-kit/projects/$SLUG/genome/00-identity/*.md 2>/dev/null | head -5)
 [ -n "$GENOME_FILES" ] && echo "Existing genome found: $GENOME_FILES" || echo "No existing genome"
 ```
 

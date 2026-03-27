@@ -45,7 +45,7 @@ Call TodoWrite with these steps, then work through them one at a time:
 SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
 [ -z "$SLUG" ] && SLUG="default"
 mkdir -p ~/.ai-first-kit/projects/$SLUG/specs
-GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/MISSION.md 2>/dev/null)
+GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/00-identity/MISSION.md 2>/dev/null)
 [ -n "$GENOME" ] && echo "Genome found — will use for consistency" || echo "No genome (specs may lack organizational context)"
 ```
 
@@ -186,6 +186,8 @@ If the spec is too specific to one instance, abstract it. If it's too generic to
 DATE=$(date +%Y-%m-%d)
 # Save to ~/.ai-first-kit/projects/$SLUG/specs/[spec-name]-$DATE.md
 ```
+
+Write the specification to `~/.ai-first-kit/projects/$SLUG/specs/{spec-name}-$DATE.md` using the Write tool. Derive `{spec-name}` from the specification's title in kebab-case (e.g., `client-proposal-review-2026-03-27.md`).
 
 ## Rules
 

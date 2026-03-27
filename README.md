@@ -142,13 +142,11 @@ claude plugin install ai-first-org-design-kit
 
 ### The Organizational Design Process
 
-```
-coordination-audit → org-genome-builder → specification-writer → quality-gate-designer → governance-architect → role-value-mapper → political-navigator
-       │                    │                    │                       │                      │                     │                    │
-       ▼                    ▼                    ▼                       ▼                      ▼                     ▼                    ▼
-   Diagnose             Encode              Specify                 Validate               Govern                Staff               Navigate
-   time splits          identity            for agents             with gates             boundaries            roles               politics
-```
+**Greenfield** (new orgs): `org-genome-builder → specification-writer → governance-architect → quality-gate-designer → role-value-mapper`
+
+**Brownfield** (existing orgs): `coordination-audit → political-navigator → org-genome-builder → quality-gate-designer → specification-writer → role-value-mapper → governance-architect`
+
+The brownfield path runs `political-navigator` early — before technical redesign, not after. 70% of transformations fail because of people, not technology.
 
 **[Full AI-First Org Design Kit Documentation →](./plugins/ai-first-org-design-kit/README.md)**
 

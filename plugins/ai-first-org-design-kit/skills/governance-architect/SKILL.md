@@ -51,7 +51,7 @@ Call TodoWrite with these steps, then work through them one at a time:
 SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
 [ -z "$SLUG" ] && SLUG="default"
 mkdir -p ~/.ai-first-kit/projects/$SLUG/governance
-GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/VALUES.md 2>/dev/null)
+GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/00-identity/VALUES.md 2>/dev/null)
 [ -n "$GENOME" ] && echo "Genome found — governance will align to values" || echo "WARNING: No genome. Governance without values foundation is fragile."
 ```
 
