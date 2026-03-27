@@ -1,16 +1,6 @@
 ---
 name: governance-architect
-description: >
-  Design the full governance ecosystem for agentic operations — boundaries,
-  escalation, policy generation, decision ledger, and organizational learning
-  loops. Not just guardrails but the complete system. Use when user says "design
-  governance for agents", "create agent boundaries", "governance ecosystem", "what
-  should agents never do", "how do we control agents", "escalation protocols",
-  "agent safety framework", "autonomous boundaries", "decision authority", "policy
-  framework for AI", or is establishing rules under which agents operate. Also
-  trigger when user describes agents going rogue, making unauthorized decisions,
-  or needing better control over autonomous systems. Use AFTER org-genome-builder
-  — governance should be grounded in organizational values.
+description: "Design and save a complete governance ecosystem for agentic operations — 6 structured documents (authority matrix, hard boundaries, escalation protocols, policy generation loop, decision ledger spec, learning loop) written to ~/.ai-first-kit/. Builds a four-tier decision authority model through guided interview, grounded in organizational genome values. Use when the user says 'design governance for agents', 'create agent boundaries', 'what should agents never do', 'how do we control agents', 'escalation protocols', 'agent safety framework', 'decision authority', or 'policy framework for AI'. Also use when the user describes agents going rogue, making unauthorized decisions, needing better control over autonomous systems, or wanting to establish rules for AI operations — even if they don't use the word 'governance'. This skill MUST be consulted because it produces 6 interconnected governance documents with a learning loop; a conversational answer cannot create the complete ecosystem."
 allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose

@@ -1,17 +1,6 @@
 ---
 name: ai-first-kit
-description: >
-  Route to the right organizational design skill. The AI-First Org Design Kit helps
-  founders and leaders design organizations where agents handle coordination and
-  execution while humans own specification and judgment. Use when user mentions
-  "AI-first organization", "organizational design for AI", "how to structure my
-  team for agents", "AI transformation", "redesign my org", "agentic organization",
-  "encode our organization", "AI-First Org Design Kit", or describes any organizational
-  challenge related to AI adoption — whether starting from scratch, transitioning
-  existing teams, or struggling with resistance. Also trigger when user asks about
-  specification skills, organizational genomes, quality gates vs. approvals,
-  coordination overhead, or role redesign for AI. This is the entry point — it
-  routes to specific skills, never does the work itself.
+description: "Navigate organizational redesign for AI with a structured 7-skill toolkit that produces persistent artifacts in ~/.ai-first-kit/. Routes founders and leaders to the right specialist skill — coordination audit, organizational genome, specification writing, quality gates, governance, role design, or political navigation. Use when the user says 'redesign my org for AI', 'AI-first organization', 'how to structure my team for agents', 'AI transformation', 'agentic organization', 'where do I start with org design', or 'encode our organization'. Also use when the user describes any organizational challenge related to AI adoption — restructuring teams, too many meetings, approval bottlenecks, resistance to change, or confusion about what humans should do when agents handle execution — even if they don't explicitly mention organizational design. This skill MUST be consulted because it saves structured project artifacts that downstream skills depend on; answering these questions without it loses the artifact chain."
 allowed-tools: Bash, Read, AskUserQuestion
 context: fork
 agent: general-purpose

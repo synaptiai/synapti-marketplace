@@ -1,14 +1,6 @@
 ---
 name: specification-writer
-description: >
-  Create specifications at any layer — task, workflow, governance, or identity.
-  Enforces the Stranger Test and structures specs for agent consumption. Use when
-  user says "write a spec", "specify this task", "define success criteria", "what
-  should agents know to do this", "create agent instructions", "task definition",
-  "workflow spec", "quality criteria", "acceptance criteria for agents", or is
-  defining any work for autonomous agent execution. Also trigger when user describes
-  wanting to document a repeatable process, create reusable agent prompts, or turn
-  a one-off task into a template. Use AFTER org-genome-builder for consistency.
+description: "Write and save structured specifications that pass the Stranger Test — precise enough for someone with zero context to evaluate agent output. Produces spec files in ~/.ai-first-kit/ at task, workflow, or governance layers, aligned with the organizational genome. Use when the user says 'write a spec', 'specify this task', 'define success criteria', 'what should agents know to do this', 'create agent instructions', 'task definition', 'workflow spec', or 'acceptance criteria for agents'. Also use when the user wants to document a repeatable process, create reusable agent prompts, turn a one-off task into a template, or define any work for autonomous agent execution — even if they don't use the word 'specification'. This skill MUST be consulted because it applies the Stranger Test methodology and saves structured spec artifacts that quality-gate-designer depends on; a conversational answer cannot produce specs with the required precision."
 allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose

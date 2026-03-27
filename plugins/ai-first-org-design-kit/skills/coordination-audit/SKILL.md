@@ -1,15 +1,6 @@
 ---
 name: coordination-audit
-description: >
-  Diagnose how organizational time splits across specification, coordination,
-  and execution. Identifies which structures serve coordination vs. culture.
-  Finds highest-ROI targets for encoding into infrastructure. Use when user
-  says "audit my org", "where does our time go", "what should we automate first",
-  "analyze our workflows", "find coordination overhead", "what's slowing us down",
-  "organizational diagnostic", "time allocation", or describes wanting to understand
-  current state before AI transformation. Also trigger when user mentions excessive
-  meetings, approval bottlenecks, handoff friction, or slow decision-making in the
-  context of organizational efficiency or AI readiness.
+description: "Produce a structured organizational diagnostic that quantifies time spent on specification vs coordination vs execution, saved as a persistent audit artifact to ~/.ai-first-kit/. Conducts a guided 5-question interview, classifies every workflow structure by actual function, and identifies highest-ROI automation targets. Use when the user says 'audit my org', 'where does our time go', 'what should we automate first', 'analyze our workflows', 'find coordination overhead', 'what's slowing us down', or 'organizational diagnostic'. Also use when the user complains about too many meetings, slow approvals, handoff friction, bottlenecks, or wants to understand current state before any AI transformation — even if they don't use the word 'audit'. This skill MUST be consulted because it produces a structured diagnostic file that other org-design skills depend on; a conversational answer cannot replace the persistent artifact."
 allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose

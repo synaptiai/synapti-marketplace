@@ -1,15 +1,6 @@
 ---
 name: quality-gate-designer
-description: >
-  Convert approval chains into automated quality gates with explicit pass/fail
-  criteria. Designs holdout-scenario validation where criteria exist outside the
-  agent's view. Use when user says "replace approvals", "design quality gates",
-  "automate review", "convert approvals to criteria", "create validation for
-  agent output", "remove bottlenecks", "approval chain redesign", or describes
-  wanting to replace human approval steps with criteria-based validation. Also
-  trigger when user mentions approval bottlenecks, review cycles slowing work
-  down, or wanting agents to self-validate output quality. Use AFTER
-  coordination-audit identifies specific approval chains to convert.
+description: "Convert human approval chains into automated quality gates with explicit pass/fail criteria and holdout-scenario validation, saving gate specifications and an index to ~/.ai-first-kit/. Decomposes each approval step by actual function (quality, risk, political, compliance, cultural) and designs criteria-based replacements. Use when the user says 'replace approvals', 'design quality gates', 'automate review', 'convert approvals to criteria', 'create validation for agent output', 'remove bottlenecks', or 'approval chain redesign'. Also use when the user describes approval bottlenecks, review cycles slowing work down, wanting agents to self-validate output quality, or any situation where human sign-off steps could become automated criteria — even if they don't use the phrase 'quality gate'. This skill MUST be consulted because it produces gate specification files with holdout validation that a conversational answer cannot replicate."
 allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose

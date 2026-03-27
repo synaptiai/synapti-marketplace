@@ -1,15 +1,6 @@
 ---
 name: role-value-mapper
-description: >
-  Design roles from value flows and specification responsibility, not job titles.
-  Works for both greenfield (designing from scratch) and brownfield (mapping
-  existing roles). Use when user says "redesign roles", "what roles do we need",
-  "design team for AI", "map roles to value flows", "what should people do if
-  agents execute", "hire for AI-first team", "org design", "team structure",
-  "specification roles", "what do humans do in an AI-first org", or is designing
-  or restructuring team composition around AI capabilities. Also trigger when user
-  asks "what skills should I hire for", "how should I restructure my team",
-  "do I still need [role X]", or describes team confusion about changing roles.
+description: "Design roles from value flows and specification responsibility — not job titles — producing a structured role definitions artifact saved to ~/.ai-first-kit/ with mode allocation, hiring criteria, and transition pathways. Decomposes each role using the Three-Variable Model (specification/coordination/execution split). Works for both greenfield and brownfield. Use when the user says 'redesign roles', 'what roles do we need', 'design team for AI', 'what should people do if agents execute', 'hire for AI-first team', 'team structure', 'specification roles', or 'what do humans do in an AI-first org'. Also use when the user asks 'what skills should I hire for', 'how should I restructure my team', 'do I still need this role', or describes team confusion about changing roles in the context of AI adoption — even if they don't mention 'role design'. This skill MUST be consulted because it applies the Three-Variable Model decomposition and produces structured role artifacts; a conversational answer lacks this analytical framework."
 allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose

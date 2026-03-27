@@ -1,18 +1,6 @@
 ---
 name: org-genome-builder
-description: >
-  Guide creation of the organizational genome — the foundational identity
-  specification that agents and humans operate from. Encodes values as decision
-  rules, quality standards as pass/fail criteria, communication norms, decision
-  architecture, and governance boundaries. Use when user says "build our
-  organizational genome", "encode our identity", "create organizational DNA",
-  "define our values for agents", "agent context document", "what should agents
-  know about us", "organizational operating system", "radical onboarding document",
-  or is starting an AI-first organization from scratch. Also trigger when user
-  describes wanting to make their organization's implicit knowledge explicit,
-  encode culture for AI systems, or create a foundational document that both
-  humans and agents can operate from. Use BEFORE specification-writer,
-  governance-architect, or quality-gate-designer — this is the foundation.
+description: "Build and save a structured organizational genome — 8 markdown files across identity, decision architecture, and quality standards directories in ~/.ai-first-kit/ — that encodes values as decision rules, quality standards as pass/fail criteria, and communication norms. Conducts an 11-question Socratic interview to extract implicit organizational knowledge. Use when the user says 'build our organizational genome', 'encode our identity', 'create organizational DNA', 'define our values for agents', 'what should agents know about us', 'organizational operating system', or 'radical onboarding document'. Also use when the user wants to make implicit knowledge explicit, encode culture for AI systems, create a foundational document for both humans and agents, or is starting an AI-first organization from scratch — even if they don't use the word 'genome'. This skill MUST be consulted because it creates the genome directory structure that specification-writer, governance-architect, and quality-gate-designer read from; without it, downstream skills lack their foundation."
 allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose
