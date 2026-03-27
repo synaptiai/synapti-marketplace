@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Plugin-orange.svg)](https://claude.com/claude-code)
-[![Plugins](https://img.shields.io/badge/Plugins-5-green.svg)](#available-plugins)
+[![Plugins](https://img.shields.io/badge/Plugins-6-green.svg)](#available-plugins)
 
 ## About the Marketplace
 
@@ -24,15 +24,21 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Plugin | Category | Description | Version |
 |--------|----------|-------------|---------|
 | [Agent Capability Standard ↗](https://github.com/synaptiai/agent-capability-standard) | Standards, Agent Development | Technical specification for AI agents with structural reliability. 36 atomic capabilities across 9 layers with reference workflows and safety-by-construction patterns. | 1.2.0 |
+| [AI-First Org Design Kit](./plugins/ai-first-org-design-kit/) | Organizational Design | Seven opinionated skills for designing AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, architect governance, redesign roles, and navigate politics. | 1.0.0 |
 | [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.5.0 |
-| [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development. Composable skills, safety hooks, agent teams, LSP code intelligence, and learning loop. | 1.1.0 |
-| [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.8.0 |
+| [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development. Composable skills, safety hooks, agent teams, LSP code intelligence, and learning loop. | 1.5.0 |
+| [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.9.0 |
 
 ### When to Use Each Plugin
 
 | I want to... | Use |
 |--------------|-----|
+| Diagnose where organizational time goes (coordination vs. execution) | [AI-First Org Design Kit](#featured-ai-first-org-design-kit) |
+| Encode organizational identity for AI agents | [AI-First Org Design Kit](#featured-ai-first-org-design-kit) |
+| Convert approval chains into automated quality gates | [AI-First Org Design Kit](#featured-ai-first-org-design-kit) |
+| Design governance ecosystems for agentic operations | [AI-First Org Design Kit](#featured-ai-first-org-design-kit) |
+| Navigate political resistance to AI transformation | [AI-First Org Design Kit](#featured-ai-first-org-design-kit) |
 | Design agents with formal capability contracts | [Agent Capability Standard](#featured-agent-capability-standard) |
 | Validate agent workflows for completeness | [Agent Capability Standard](#featured-agent-capability-standard) |
 | Ensure safety-by-construction patterns in agents | [Agent Capability Standard](#featured-agent-capability-standard) |
@@ -91,6 +97,60 @@ Skills from this marketplace are also available for **Claude Desktop** users. De
 | `suggest-users.zip` | gh-workflow | Reviewer and assignee suggestions based on expertise |
 
 > **Note**: Desktop packages are automatically generated during releases. They contain the same skill content with Claude Code-specific frontmatter fields (`context`, `agent`, `hooks`, etc.) removed for compatibility.
+
+---
+
+## Featured: AI-First Org Design Kit
+
+**AI-First Org Design Kit** provides seven opinionated skills that guide founders and leaders through designing organizations where agents handle coordination and execution while humans own specification and judgment.
+
+### Key Insight
+
+> Every organizational structure is a fossil — a response to constraints (scarce expertise, finite attention, expensive execution) that AI has fundamentally altered. Organizations are specification machines that pretended to be execution machines. The value was always in defining *what should exist*. AI just proved it.
+
+### What Makes It Different
+
+| Feature | Benefit |
+|---------|---------|
+| **Opinionated Personas** | Each skill has a distinct specialist persona — not generic assistants but diagnosticians, architects, and strategists |
+| **One Question at a Time** | Sequential questioning produces specification-grade depth; batch questions produce shallow answers |
+| **Artifact Handoff** | Skills save outputs to `~/.ai-first-kit/projects/{slug}/` and auto-discover upstream artifacts |
+| **Dual Pathways** | Greenfield (founders) and brownfield (leaders) paths through the same skill set |
+| **Political Realism** | The political navigator addresses why 70% of transformations fail — people, not technology |
+
+### Skills
+
+| Skill | Specialist | What It Does |
+|-------|-----------|-------------|
+| `coordination-audit` | Organizational Diagnostician | Diagnose where time goes — specification vs. coordination vs. execution |
+| `org-genome-builder` | Org Psychologist + Systems Architect | Encode values as decision rules, quality standards, communication norms |
+| `specification-writer` | Specification Engineer | Create specs precise enough for autonomous agent execution |
+| `quality-gate-designer` | Validation Architect | Convert approval chains into criteria-based quality gates |
+| `governance-architect` | Governance Systems Designer | Design boundaries, escalation, policy generation, decision ledger, learning loops |
+| `role-value-mapper` | Team Architect | Design roles from value flows and specification responsibility |
+| `political-navigator` | Power Dynamics Strategist | Map power structures, classify resistance, sequence change |
+
+### Installation
+
+```bash
+# Add the marketplace (one-time setup)
+claude plugin marketplace add synaptiai/synapti-marketplace
+
+# Install the plugin
+claude plugin install ai-first-org-design-kit
+```
+
+### The Organizational Design Process
+
+```
+coordination-audit → org-genome-builder → specification-writer → quality-gate-designer → governance-architect → role-value-mapper → political-navigator
+       │                    │                    │                       │                      │                     │                    │
+       ▼                    ▼                    ▼                       ▼                      ▼                     ▼                    ▼
+   Diagnose             Encode              Specify                 Validate               Govern                Staff               Navigate
+   time splits          identity            for agents             with gates             boundaries            roles               politics
+```
+
+**[Full AI-First Org Design Kit Documentation →](./plugins/ai-first-org-design-kit/README.md)**
 
 ---
 
@@ -443,6 +503,22 @@ synapti-marketplace/
     │   ├── README.md                  # Full specification
     │   ├── spec/                      # YAML specifications
     │   └── tools/                     # Validation scripts
+    │
+    ├── ai-first-org-design-kit/       # Organizational design for AI
+    │   ├── .claude-plugin/
+    │   │   └── plugin.json            # Plugin metadata
+    │   ├── README.md                  # Full plugin documentation
+    │   ├── shared/                    # Foundational concepts
+    │   │   └── concepts.md            # Vocabulary all skills reference
+    │   └── skills/                    # 7 organizational design skills + router
+    │       ├── ai-first-kit/          # Router (entry point)
+    │       ├── coordination-audit/    # Diagnose time allocation
+    │       ├── org-genome-builder/    # Encode organizational identity
+    │       ├── specification-writer/  # Create agent-ready specs
+    │       ├── quality-gate-designer/ # Convert approvals to gates
+    │       ├── governance-architect/  # Design governance ecosystem
+    │       ├── role-value-mapper/     # Design specification-first roles
+    │       └── political-navigator/   # Navigate change resistance
     │
     ├── context-ledger/                # Evidence-based product development
     │   ├── .claude-plugin/

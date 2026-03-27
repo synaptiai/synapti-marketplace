@@ -1,0 +1,25 @@
+{
+  "name": "ai-first-org-design-kit",
+  "version": "1.0.0",
+  "description": "Seven opinionated skills that guide founders and leaders through designing organizations where agents handle coordination and execution while humans own specification and judgment. Diagnose coordination overhead, encode organizational identity, write agent-ready specifications, convert approvals into quality gates, architect governance ecosystems, redesign roles around value flows, and navigate political dynamics.",
+  "author": {
+    "name": "Synapti AI",
+    "url": "https://github.com/synaptiai"
+  },
+  "repository": "https://github.com/synaptiai/synapti-marketplace",
+  "homepage": "https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/ai-first-org-design-kit",
+  "license": "MIT",
+  "keywords": [
+    "organizational-design",
+    "ai-first",
+    "agentic-organizations",
+    "coordination-audit",
+    "organizational-genome",
+    "specification-writing",
+    "quality-gates",
+    "governance",
+    "role-design",
+    "change-management",
+    "ai-transformation"
+  ]
+}
