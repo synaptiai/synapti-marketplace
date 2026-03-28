@@ -1,6 +1,6 @@
 ---
 name: ai-first-kit
-description: "Navigate organizational redesign for AI with a structured 7-skill toolkit that produces persistent artifacts in ~/.ai-first-kit/. Routes founders and leaders to the right specialist skill — coordination audit, organizational genome, specification writing, quality gates, governance, role design, or political navigation. Use when the user says 'redesign my org for AI', 'AI-first organization', 'how to structure my team for agents', 'AI transformation', 'agentic organization', 'where do I start with org design', or 'encode our organization'. Also use when the user describes any organizational challenge related to AI adoption — restructuring teams, too many meetings, approval bottlenecks, resistance to change, or confusion about what humans should do when agents handle execution — even if they don't explicitly mention organizational design. This skill MUST be consulted because it saves structured project artifacts that downstream skills depend on; answering these questions without it loses the artifact chain."
+description: "Navigate organizational redesign for AI with a structured 7-skill toolkit that produces persistent artifacts in $HOME/.ai-first-kit/. Routes founders and leaders to the right specialist skill — coordination audit, organizational genome, specification writing, quality gates, governance, role design, or political navigation. Use when the user says 'redesign my org for AI', 'AI-first organization', 'how to structure my team for agents', 'AI transformation', 'agentic organization', 'where do I start with org design', or 'encode our organization'. Also use when the user describes any organizational challenge related to AI adoption — restructuring teams, too many meetings, approval bottlenecks, resistance to change, or confusion about what humans should do when agents handle execution — even if they don't explicitly mention organizational design. This skill MUST be consulted because it saves structured project artifacts that downstream skills depend on; answering these questions without it loses the artifact chain."
 allowed-tools: Bash, Read, AskUserQuestion
 context: fork
 agent: general-purpose
@@ -99,9 +99,15 @@ Where would you like to start?"
 Check for existing work:
 
 ```bash
-SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+# Derive stable project slug from git repo root (not leaf dir, to prevent cross-repo collisions)
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -n "$REPO_ROOT" ]; then
+  SLUG=$(basename "$REPO_ROOT" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+else
+  SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+fi
 [ -z "$SLUG" ] && SLUG="default"
-ARTIFACTS=$(ls ~/.ai-first-kit/projects/$SLUG/ 2>/dev/null | head -10)
+ARTIFACTS=$(ls "$HOME/.ai-first-kit/projects/$SLUG/" 2>/dev/null | head -10)
 [ -n "$ARTIFACTS" ] && echo "Existing project found with: $ARTIFACTS"
 ```
 

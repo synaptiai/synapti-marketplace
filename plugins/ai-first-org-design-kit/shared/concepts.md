@@ -104,17 +104,23 @@ The genome (Phase 1) encodes identity. Governance (Phase 2) encodes operational 
 
 ## Artifact Handoff Convention
 
-All skills save outputs to `~/.ai-first-kit/projects/{slug}/` for downstream skill discovery. Each skill checks for upstream artifacts before starting and **reads their content** to maintain consistency.
+All skills save outputs to `$HOME/.ai-first-kit/projects/{slug}/` for downstream skill discovery. Each skill checks for upstream artifacts before starting and **reads their content** to maintain consistency.
+
+**Slug derivation:** The project slug is derived from the git repository root directory name (via `git rev-parse --show-toplevel`), not the current working directory leaf. This prevents cross-repo collisions when different repos happen to share a directory name. Falls back to `${PWD##*/}` in non-git contexts.
+
+**Security:** The `$HOME/.ai-first-kit/` directory is created with `chmod 700` on first use. Skills save sensitive organizational data (approval chains, political maps, stakeholder analysis) that should not be world-readable.
+
+**Date format:** All date-stamped filenames use `YYYY-MM-DD-HHMM` (includes hours and minutes) to prevent same-day overwrites from multiple runs.
 
 | Skill | Reads From | Writes To | Blocks Without |
 |-------|-----------|----------|----------------|
-| coordination-audit | (nothing) | `audit-{date}.md` | — |
-| org-genome-builder | audit (optional) | `genome/` directory | — |
-| specification-writer | genome VALUES.md, BY-OUTPUT-TYPE.md | `specs/{name}-{date}.md` | — |
-| quality-gate-designer | audit, genome | `gates/{name}.md` | — |
+| coordination-audit | (nothing) | `audit-{datetime}.md` | — |
+| org-genome-builder | audit (optional) | `genome/` directory (3 subdirs) | — |
+| specification-writer | genome VALUES.md, BY-OUTPUT-TYPE.md | `specs/{name}-{datetime}.md` | — |
+| quality-gate-designer | audit, genome | `gates/{name}.md` + `gates/.holdouts/` | — |
 | governance-architect | genome VALUES.md | `governance/` directory | genome (recommended) |
-| role-value-mapper | audit, genome | `roles-{date}.md` | — |
-| political-navigator | audit (optional) | `political-map-{date}.md` | — |
+| role-value-mapper | audit, genome | `roles-{datetime}.md` | — |
+| political-navigator | audit (optional) | `political-map-{datetime}.md` | — |
 
 ## Skill Dependency Map
 

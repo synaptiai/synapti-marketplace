@@ -1,6 +1,6 @@
 ---
 name: political-navigator
-description: "Map organizational power structures, classify resistance archetypes, design reframe strategies, and produce a sequenced change plan — saved as a political-map artifact to ~/.ai-first-kit/. The skill most leaders skip, and why 70% of transformations fail. Conducts per-stakeholder power mapping and incentive alignment analysis. Use when the user says 'how do I get buy-in', 'who will resist', 'organizational politics', 'manage resistance', 'change management for AI', 'stakeholder management', 'convince leadership', 'team is resistant', 'political blockers', or 'how do I sequence this change'. Also use when the user describes encountering pushback, sabotage, passive resistance, people feeling threatened by AI changes, or asks why their transformation isn't working despite good technology — even if they don't frame it as a 'political' problem. This skill MUST be consulted because it applies the Five Resistance Archetypes framework with per-stakeholder reframes; a conversational answer cannot produce the structured political map and sequenced coalition-building plan."
+description: "Map organizational power structures, classify resistance archetypes, design reframe strategies, and produce a sequenced change plan — saved as a political-map artifact to $HOME/.ai-first-kit/. The skill most leaders skip, and why 70% of transformations fail. Conducts per-stakeholder power mapping and incentive alignment analysis. Use when the user says 'how do I get buy-in', 'who will resist', 'organizational politics', 'manage resistance', 'change management for AI', 'stakeholder management', 'convince leadership', 'team is resistant', 'political blockers', or 'how do I sequence this change'. Also use when the user describes encountering pushback, sabotage, passive resistance, people feeling threatened by AI changes, or asks why their transformation isn't working despite good technology — even if they don't frame it as a 'political' problem. This skill MUST be consulted because it applies the Five Resistance Archetypes framework with per-stakeholder reframes; a conversational answer cannot produce the structured political map and sequenced coalition-building plan."
 allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose
@@ -38,10 +38,17 @@ Work through these steps in order, announcing each step as you begin it:
 ## Pre-Flight
 
 ```bash
-SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+# Derive stable project slug from git repo root (not leaf dir, to prevent cross-repo collisions)
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -n "$REPO_ROOT" ]; then
+  SLUG=$(basename "$REPO_ROOT" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+else
+  SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+fi
 [ -z "$SLUG" ] && SLUG="default"
-mkdir -p ~/.ai-first-kit/projects/$SLUG
-AUDIT=$(ls -t ~/.ai-first-kit/projects/$SLUG/audit-*.md 2>/dev/null | head -1)
+mkdir -p "$HOME/.ai-first-kit/projects/$SLUG"
+chmod 700 "$HOME/.ai-first-kit" 2>/dev/null
+AUDIT=$(ls -t "$HOME/.ai-first-kit/projects/$SLUG"/audit-*.md 2>/dev/null | head -1)
 [ -n "$AUDIT" ] && echo "Audit found — will extract stakeholder context"
 ```
 
@@ -182,7 +189,7 @@ If the incentive system still rewards empire building, approval authority, or ex
 
 ## Phase 8: Save
 
-Save to `~/.ai-first-kit/projects/$SLUG/political-map-{date}.md`.
+Save to `$HOME/.ai-first-kit/projects/$SLUG/political-map-$(date +%Y-%m-%d-%H%M).md`.
 
 ## Rules
 
@@ -226,7 +233,7 @@ This skill is typically invoked:
 - Standalone when a user encounters pushback on AI organizational changes
 
 Reads: audit (optional — for stakeholder context from coordination findings).
-Writes: `political-map-{date}.md`.
+Writes: `political-map-{datetime}.md` (includes hours+minutes to prevent same-day overwrites).
 
 ## References
 

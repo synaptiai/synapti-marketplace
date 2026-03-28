@@ -36,13 +36,20 @@ Work through these steps in order, announcing each step as you begin it:
 ## Pre-Flight
 
 ```bash
-mkdir -p ~/.ai-first-kit/projects
-SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+# Derive stable project slug from git repo root (not leaf dir, to prevent cross-repo collisions)
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -n "$REPO_ROOT" ]; then
+  SLUG=$(basename "$REPO_ROOT" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+else
+  SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+fi
 [ -z "$SLUG" ] && SLUG="default"
-mkdir -p ~/.ai-first-kit/projects/$SLUG
+# Create project directory with restricted permissions (contains sensitive org data)
+mkdir -p "$HOME/.ai-first-kit/projects/$SLUG"
+chmod 700 "$HOME/.ai-first-kit" 2>/dev/null
 echo "Project: $SLUG"
 # Check for existing audits
-EXISTING=$(ls -t ~/.ai-first-kit/projects/$SLUG/audit-*.md 2>/dev/null | head -1)
+EXISTING=$(ls -t "$HOME/.ai-first-kit/projects/$SLUG"/audit-*.md 2>/dev/null | head -1)
 [ -n "$EXISTING" ] && echo "Prior audit found: $EXISTING" || echo "No prior audit"
 ```
 
@@ -154,8 +161,8 @@ Based on findings, recommend which skill to use next:
 Save the complete audit to the project directory:
 
 ```bash
-DATE=$(date +%Y-%m-%d)
-# Save to ~/.ai-first-kit/projects/$SLUG/audit-$DATE.md
+DATE=$(date +%Y-%m-%d-%H%M)
+# Save to $HOME/.ai-first-kit/projects/$SLUG/audit-$DATE.md (includes time to prevent same-day overwrites)
 ```
 
 Format as a structured markdown document using this template:
@@ -189,7 +196,7 @@ Specification: {X}% | Coordination: {Y}% | Execution: {Z}%
 {Routing recommendation}
 ```
 
-Write this to `~/.ai-first-kit/projects/$SLUG/audit-$DATE.md` using the Write tool. This artifact is read by downstream skills.
+Write this to `$HOME/.ai-first-kit/projects/$SLUG/audit-$DATE.md` using the Write tool. This artifact is read by downstream skills.
 
 ## Rules
 

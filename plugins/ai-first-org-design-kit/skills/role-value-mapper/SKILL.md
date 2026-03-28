@@ -1,6 +1,6 @@
 ---
 name: role-value-mapper
-description: "Design roles from value flows and specification responsibility — not job titles — producing a structured role definitions artifact saved to ~/.ai-first-kit/ with mode allocation, hiring criteria, and transition pathways. Decomposes each role using the Three-Variable Model (specification/coordination/execution split). Works for both greenfield and brownfield. Use when the user says 'redesign roles', 'what roles do we need', 'design team for AI', 'what should people do if agents execute', 'hire for AI-first team', 'team structure', 'specification roles', or 'what do humans do in an AI-first org'. Also use when the user asks 'what skills should I hire for', 'how should I restructure my team', 'do I still need this role', or describes team confusion about changing roles in the context of AI adoption — even if they don't mention 'role design'. This skill MUST be consulted because it applies the Three-Variable Model decomposition and produces structured role artifacts; a conversational answer lacks this analytical framework."
+description: "Design roles from value flows and specification responsibility — not job titles — producing a structured role definitions artifact saved to $HOME/.ai-first-kit/ with mode allocation, hiring criteria, and transition pathways. Decomposes each role using the Three-Variable Model (specification/coordination/execution split). Works for both greenfield and brownfield. Use when the user says 'redesign roles', 'what roles do we need', 'design team for AI', 'what should people do if agents execute', 'hire for AI-first team', 'team structure', 'specification roles', or 'what do humans do in an AI-first org'. Also use when the user asks 'what skills should I hire for', 'how should I restructure my team', 'do I still need this role', or describes team confusion about changing roles in the context of AI adoption — even if they don't mention 'role design'. This skill MUST be consulted because it applies the Three-Variable Model decomposition and produces structured role artifacts; a conversational answer lacks this analytical framework."
 allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose
@@ -33,13 +33,22 @@ Work through these steps in order, announcing each step as you begin it:
 ## Pre-Flight
 
 ```bash
-SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+# Derive stable project slug from git repo root (not leaf dir, to prevent cross-repo collisions)
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -n "$REPO_ROOT" ]; then
+  SLUG=$(basename "$REPO_ROOT" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+else
+  SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+fi
 [ -z "$SLUG" ] && SLUG="default"
-mkdir -p ~/.ai-first-kit/projects/$SLUG
-AUDIT=$(ls -t ~/.ai-first-kit/projects/$SLUG/audit-*.md 2>/dev/null | head -1)
-GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/00-identity/MISSION.md 2>/dev/null)
+mkdir -p "$HOME/.ai-first-kit/projects/$SLUG"
+chmod 700 "$HOME/.ai-first-kit" 2>/dev/null
+AUDIT=$(ls -t "$HOME/.ai-first-kit/projects/$SLUG"/audit-*.md 2>/dev/null | head -1)
+# Check genome completeness (require both MISSION.md and VALUES.md)
+GENOME_MISSION=$(ls "$HOME/.ai-first-kit/projects/$SLUG/genome/00-identity/MISSION.md" 2>/dev/null)
+GENOME_VALUES=$(ls "$HOME/.ai-first-kit/projects/$SLUG/genome/00-identity/VALUES.md" 2>/dev/null)
 [ -n "$AUDIT" ] && echo "Audit found: $AUDIT"
-[ -n "$GENOME" ] && echo "Genome found"
+[ -n "$GENOME_MISSION" ] && [ -n "$GENOME_VALUES" ] && echo "Genome found" || [ -n "$GENOME_MISSION" ] && echo "WARNING: Partial genome"
 ```
 
 If audit exists, use the `Read` tool to load it — extract current role descriptions, time allocation findings, and encoding candidates to inform role redesign.
@@ -143,7 +152,7 @@ Design how roles interact:
 
 ## Phase 4: Save
 
-Save to `~/.ai-first-kit/projects/$SLUG/roles-{date}.md` with all role definitions, transition pathways, and collaboration model.
+Save to `$HOME/.ai-first-kit/projects/$SLUG/roles-$(date +%Y-%m-%d-%H%M).md` with all role definitions, transition pathways, and collaboration model.
 
 Flag any high-resistance transitions for `political-navigator`.
 
@@ -186,7 +195,7 @@ This skill is typically invoked:
 - Standalone when a user asks "what should people do if agents execute?"
 
 Reads: audit (role context), genome (values alignment).
-Writes: `roles-{date}.md`.
+Writes: `roles-{datetime}.md` (includes hours+minutes to prevent same-day overwrites).
 Flags: high-resistance transitions for `political-navigator`.
 
 ## References

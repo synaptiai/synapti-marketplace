@@ -34,14 +34,29 @@ Work through these steps in order, announcing each step as you begin it:
 ## Pre-Flight
 
 ```bash
-SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+# Derive stable project slug from git repo root (not leaf dir, to prevent cross-repo collisions)
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -n "$REPO_ROOT" ]; then
+  SLUG=$(basename "$REPO_ROOT" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+else
+  SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+fi
 [ -z "$SLUG" ] && SLUG="default"
-mkdir -p ~/.ai-first-kit/projects/$SLUG/specs
-GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/00-identity/MISSION.md 2>/dev/null)
-[ -n "$GENOME" ] && echo "Genome found — will use for consistency" || echo "No genome (specs may lack organizational context)"
+mkdir -p "$HOME/.ai-first-kit/projects/$SLUG/specs"
+chmod 700 "$HOME/.ai-first-kit" 2>/dev/null
+# Check genome completeness (require both MISSION.md and VALUES.md to avoid partial-state reads)
+GENOME_MISSION=$(ls "$HOME/.ai-first-kit/projects/$SLUG/genome/00-identity/MISSION.md" 2>/dev/null)
+GENOME_VALUES=$(ls "$HOME/.ai-first-kit/projects/$SLUG/genome/00-identity/VALUES.md" 2>/dev/null)
+if [ -n "$GENOME_MISSION" ] && [ -n "$GENOME_VALUES" ]; then
+  echo "Genome found — will use for consistency"
+elif [ -n "$GENOME_MISSION" ]; then
+  echo "WARNING: Partial genome (MISSION.md exists but VALUES.md missing) — specs may lack value alignment"
+else
+  echo "No genome (specs may lack organizational context)"
+fi
 ```
 
-If genome exists, use the `Read` tool to load `~/.ai-first-kit/projects/$SLUG/genome/00-identity/VALUES.md` and `~/.ai-first-kit/projects/$SLUG/genome/02-quality-standards/BY-OUTPUT-TYPE.md`. Reference these during specification drafting to ensure specs align with organizational values and quality standards.
+If genome is complete, use the `Read` tool to load `$HOME/.ai-first-kit/projects/$SLUG/genome/00-identity/VALUES.md` and `$HOME/.ai-first-kit/projects/$SLUG/genome/02-quality-standards/BY-OUTPUT-TYPE.md`. Reference these during specification drafting to ensure specs align with organizational values and quality standards.
 
 ## Phase 1: Layer Selection
 
@@ -175,11 +190,11 @@ If the spec is too specific to one instance, abstract it. If it's too generic to
 ## Phase 6: Save
 
 ```bash
-DATE=$(date +%Y-%m-%d)
-# Save to ~/.ai-first-kit/projects/$SLUG/specs/[spec-name]-$DATE.md
+DATE=$(date +%Y-%m-%d-%H%M)
+# Save to $HOME/.ai-first-kit/projects/$SLUG/specs/[spec-name]-$DATE.md
 ```
 
-Write the specification to `~/.ai-first-kit/projects/$SLUG/specs/{spec-name}-$DATE.md` using the Write tool. Derive `{spec-name}` from the specification's title in kebab-case (e.g., `client-proposal-review-2026-03-27.md`).
+Write the specification to `$HOME/.ai-first-kit/projects/$SLUG/specs/{spec-name}-$DATE.md` using the Write tool. Derive `{spec-name}` from the specification's title in kebab-case (e.g., `client-proposal-review-2026-03-27.md`).
 
 ## Rules
 

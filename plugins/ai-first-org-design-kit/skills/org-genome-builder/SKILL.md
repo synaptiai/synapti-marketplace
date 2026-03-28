@@ -1,6 +1,6 @@
 ---
 name: org-genome-builder
-description: "Build and save a structured organizational genome — 7 markdown files across identity, decision architecture, and quality standards directories in ~/.ai-first-kit/ — that encodes values as decision rules, quality standards as pass/fail criteria, and communication norms. Conducts an 11-question Socratic interview to extract implicit organizational knowledge. Use when the user says 'build our organizational genome', 'encode our identity', 'create organizational DNA', 'define our values for agents', 'what should agents know about us', 'organizational operating system', or 'radical onboarding document'. Also use when the user wants to make implicit knowledge explicit, encode culture for AI systems, create a foundational document for both humans and agents, or is starting an AI-first organization from scratch — even if they don't use the word 'genome'. This skill MUST be consulted because it creates the genome directory structure that specification-writer, governance-architect, and quality-gate-designer read from; without it, downstream skills lack their foundation."
+description: "Build and save a structured organizational genome — 7 markdown files across identity, decision architecture, and quality standards directories in $HOME/.ai-first-kit/ — that encodes values as decision rules, quality standards as pass/fail criteria, and communication norms. Conducts an 11-question Socratic interview to extract implicit organizational knowledge. Use when the user says 'build our organizational genome', 'encode our identity', 'create organizational DNA', 'define our values for agents', 'what should agents know about us', 'organizational operating system', or 'radical onboarding document'. Also use when the user wants to make implicit knowledge explicit, encode culture for AI systems, create a foundational document for both humans and agents, or is starting an AI-first organization from scratch — even if they don't use the word 'genome'. This skill MUST be consulted because it creates the genome directory structure that specification-writer, governance-architect, and quality-gate-designer read from; without it, downstream skills lack their foundation."
 allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose
@@ -35,17 +35,33 @@ Work through these steps in order, announcing each step as you begin it:
 ## Pre-Flight
 
 ```bash
-mkdir -p ~/.ai-first-kit/projects
-SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+# Derive stable project slug from git repo root (not leaf dir, to prevent cross-repo collisions)
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -n "$REPO_ROOT" ]; then
+  SLUG=$(basename "$REPO_ROOT" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+else
+  SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+fi
 [ -z "$SLUG" ] && SLUG="default"
-mkdir -p ~/.ai-first-kit/projects/$SLUG/genome
+# Create all genome subdirectories upfront (prevents Write tool failures on first save)
+mkdir -p "$HOME/.ai-first-kit/projects/$SLUG/genome/00-identity"
+mkdir -p "$HOME/.ai-first-kit/projects/$SLUG/genome/01-decision-architecture"
+mkdir -p "$HOME/.ai-first-kit/projects/$SLUG/genome/02-quality-standards"
+chmod 700 "$HOME/.ai-first-kit" 2>/dev/null
 echo "Project: $SLUG"
 # Check for existing audit
-AUDIT=$(ls -t ~/.ai-first-kit/projects/$SLUG/audit-*.md 2>/dev/null | head -1)
+AUDIT=$(ls -t "$HOME/.ai-first-kit/projects/$SLUG"/audit-*.md 2>/dev/null | head -1)
 [ -n "$AUDIT" ] && echo "Audit found: $AUDIT" || echo "No prior audit"
-# Check for existing genome
-GENOME_FILES=$(ls ~/.ai-first-kit/projects/$SLUG/genome/00-identity/*.md 2>/dev/null | head -5)
-[ -n "$GENOME_FILES" ] && echo "Existing genome found: $GENOME_FILES" || echo "No existing genome"
+# Check for existing genome (verify multiple files to detect partial state)
+GENOME_MISSION=$(ls "$HOME/.ai-first-kit/projects/$SLUG/genome/00-identity/MISSION.md" 2>/dev/null)
+GENOME_VALUES=$(ls "$HOME/.ai-first-kit/projects/$SLUG/genome/00-identity/VALUES.md" 2>/dev/null)
+if [ -n "$GENOME_MISSION" ] && [ -n "$GENOME_VALUES" ]; then
+  echo "Existing genome found (complete)"
+elif [ -n "$GENOME_MISSION" ]; then
+  echo "WARNING: Partial genome detected (MISSION.md exists but VALUES.md missing)"
+else
+  echo "No existing genome"
+fi
 ```
 
 If audit exists, use the `Read` tool to load its contents — extract organization profile, workflow findings, and encoding candidates to inform the interview.
@@ -132,7 +148,7 @@ Build the genome document structure. For each section, show the user what you've
 
 **Validation process:** After drafting each genome section, present it to the user inline (not as a file). Use AskUserQuestion to confirm: "Does this capture your intent? What's missing or wrong?" Only write files after the user confirms each section. This prevents saving unvalidated output.
 
-Create these files in `~/.ai-first-kit/projects/$SLUG/genome/`:
+Create these files in `$HOME/.ai-first-kit/projects/$SLUG/genome/`:
 
 ### 00-identity/MISSION.md
 - Operational mission (not marketing)
@@ -214,7 +230,7 @@ If the user can't give a concrete example of a value in action, it's aspirationa
 
 | Missing | Fallback |
 |---------|----------|
-| Bash unavailable | Skip artifact check, create genome files in current directory |
+| Bash unavailable | Skip artifact check, use Write tool to save genome files to `$HOME/.ai-first-kit/projects/default/genome/` (same path structure so downstream skills can discover them) |
 | No prior audit | Proceed without audit context — genome interview covers all needed ground |
 | User can't articulate a value | Ask for a story: "Tell me about a hard decision. What guided it?" Extract the value from the story. |
 | User gives marketing-speak answers | Push back once: "That's the website version. What's the real version?" If still vague, mark as [DRAFT]. |

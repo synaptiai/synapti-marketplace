@@ -68,7 +68,7 @@ All skills share a foundational vocabulary (see `shared/concepts.md`):
 
 ## Artifact Handoff
 
-Skills save outputs to `~/.ai-first-kit/projects/{slug}/` and automatically discover upstream artifacts. The coordination audit feeds into four other skills. The genome is referenced by everything downstream.
+Skills save outputs to `$HOME/.ai-first-kit/projects/{slug}/` (chmod 700) and automatically discover upstream artifacts. The slug is derived from the git repo root name for cross-project isolation. The coordination audit feeds into four other skills. The genome is referenced by everything downstream.
 
 ## Installation
 

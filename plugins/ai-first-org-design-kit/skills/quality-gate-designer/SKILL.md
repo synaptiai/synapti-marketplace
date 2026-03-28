@@ -1,6 +1,6 @@
 ---
 name: quality-gate-designer
-description: "Convert human approval chains into automated quality gates with explicit pass/fail criteria and holdout-scenario validation, saving gate specifications and an index to ~/.ai-first-kit/. Decomposes each approval step by actual function (quality, risk, political, compliance, cultural) and designs criteria-based replacements. Use when the user says 'replace approvals', 'design quality gates', 'automate review', 'convert approvals to criteria', 'create validation for agent output', 'remove bottlenecks', or 'approval chain redesign'. Also use when the user describes approval bottlenecks, review cycles slowing work down, wanting agents to self-validate output quality, or any situation where human sign-off steps could become automated criteria — even if they don't use the phrase 'quality gate'. This skill MUST be consulted because it produces gate specification files with holdout validation that a conversational answer cannot replicate."
+description: "Convert human approval chains into automated quality gates with explicit pass/fail criteria and holdout-scenario validation, saving gate specifications and an index to $HOME/.ai-first-kit/. Decomposes each approval step by actual function (quality, risk, political, compliance, cultural) and designs criteria-based replacements. Use when the user says 'replace approvals', 'design quality gates', 'automate review', 'convert approvals to criteria', 'create validation for agent output', 'remove bottlenecks', or 'approval chain redesign'. Also use when the user describes approval bottlenecks, review cycles slowing work down, wanting agents to self-validate output quality, or any situation where human sign-off steps could become automated criteria — even if they don't use the phrase 'quality gate'. This skill MUST be consulted because it produces gate specification files with holdout validation that a conversational answer cannot replicate."
 allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose
@@ -34,18 +34,34 @@ Work through these steps in order, announcing each step as you begin it:
 ## Pre-Flight
 
 ```bash
-SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+# Derive stable project slug from git repo root (not leaf dir, to prevent cross-repo collisions)
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -n "$REPO_ROOT" ]; then
+  SLUG=$(basename "$REPO_ROOT" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+else
+  SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+fi
 [ -z "$SLUG" ] && SLUG="default"
-mkdir -p ~/.ai-first-kit/projects/$SLUG/gates
-AUDIT=$(ls -t ~/.ai-first-kit/projects/$SLUG/audit-*.md 2>/dev/null | head -1)
+mkdir -p "$HOME/.ai-first-kit/projects/$SLUG/gates"
+mkdir -p "$HOME/.ai-first-kit/projects/$SLUG/gates/.holdouts"
+chmod 700 "$HOME/.ai-first-kit" 2>/dev/null
+AUDIT=$(ls -t "$HOME/.ai-first-kit/projects/$SLUG"/audit-*.md 2>/dev/null | head -1)
 [ -n "$AUDIT" ] && echo "Audit found: $AUDIT" || echo "No audit — will need approval chain details"
-GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/00-identity/MISSION.md 2>/dev/null)
-[ -n "$GENOME" ] && echo "Genome found" || echo "No genome"
+# Check genome completeness (require both MISSION.md and VALUES.md)
+GENOME_MISSION=$(ls "$HOME/.ai-first-kit/projects/$SLUG/genome/00-identity/MISSION.md" 2>/dev/null)
+GENOME_VALUES=$(ls "$HOME/.ai-first-kit/projects/$SLUG/genome/00-identity/VALUES.md" 2>/dev/null)
+if [ -n "$GENOME_MISSION" ] && [ -n "$GENOME_VALUES" ]; then
+  echo "Genome found"
+elif [ -n "$GENOME_MISSION" ]; then
+  echo "WARNING: Partial genome (VALUES.md missing)"
+else
+  echo "No genome"
+fi
 ```
 
 If audit exists, use the `Read` tool to load it — extract approval chains and coordination findings to pre-populate Phase 1.
 
-If genome exists, use the `Read` tool to load `VALUES.md` and `BY-OUTPUT-TYPE.md` — quality gates must reflect organizational quality standards.
+If genome is complete, use the `Read` tool to load `VALUES.md` and `BY-OUTPUT-TYPE.md` — quality gates must reflect organizational quality standards.
 
 ## Phase 1: Approval Chain Mapping
 
@@ -87,11 +103,11 @@ For each Quality/Risk function, design the replacement gate:
 2. [Criterion 2]
 3. [Criterion 3]
 
-## Holdout Scenarios (invisible to executing agent)
-Stored separately. Agent cannot see these during execution.
-Used by evaluation layer to validate output independently.
-1. [Scenario: given X input, output must satisfy Y]
-2. [Scenario: edge case Z must be handled by doing W]
+## Holdout Scenarios
+**IMPORTANT:** Do NOT include holdout scenarios in this gate file.
+Save them separately to `gates/.holdouts/{gate-name}-holdouts.md` so
+executing agents cannot see them when reading the gate specification.
+Used by the evaluation layer to validate output independently.
 
 ## Satisfaction Metric
 Not boolean. Probabilistic: "Of all observed trajectories through
@@ -129,9 +145,13 @@ Ask: "Is this person likely to see this as an upgrade or a threat?" Flag for pol
 
 ## Phase 6: Save
 
-Save each gate specification to `~/.ai-first-kit/projects/$SLUG/gates/{gate-name}.md` using the Write tool. Each file follows the gate template from Phase 3 (Name, What It Replaces, Pass Criteria, Holdout Scenarios, Satisfaction Metric, On Fail, Escalation Package).
+For each gate, sanitize the gate name for filesystem safety: lowercase, replace spaces with hyphens, remove special characters, truncate to 50 chars. Example: "Content Review Chain" → `content-review-chain`.
 
-Also save a summary index: `~/.ai-first-kit/projects/$SLUG/gates/INDEX.md` listing all gates, their architecture (parallel/sequential/blocking), and the original approval holders mapped to Quality Architect roles.
+Save each gate specification to `$HOME/.ai-first-kit/projects/$SLUG/gates/{sanitized-gate-name}.md` using the Write tool. Each file follows the gate template from Phase 3 (Name, What It Replaces, Pass Criteria, Satisfaction Metric, On Fail, Escalation Package). Do NOT include holdout scenarios in this file.
+
+Save holdout scenarios separately to `$HOME/.ai-first-kit/projects/$SLUG/gates/.holdouts/{sanitized-gate-name}-holdouts.md`. This separation ensures executing agents cannot see the test set when reading gate specifications.
+
+Also save a summary index: `$HOME/.ai-first-kit/projects/$SLUG/gates/INDEX.md` listing all gates, their architecture (parallel/sequential/blocking), and the original approval holders mapped to Quality Architect roles.
 
 ## Rules
 

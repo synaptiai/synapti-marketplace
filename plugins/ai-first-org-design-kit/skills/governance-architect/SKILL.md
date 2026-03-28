@@ -1,6 +1,6 @@
 ---
 name: governance-architect
-description: "Design and save a complete governance ecosystem for agentic operations — 6 structured documents (authority matrix, hard boundaries, escalation protocols, policy generation loop, decision ledger spec, learning loop) written to ~/.ai-first-kit/. Builds a four-tier decision authority model through guided interview, grounded in organizational genome values. Use when the user says 'design governance for agents', 'create agent boundaries', 'what should agents never do', 'how do we control agents', 'escalation protocols', 'agent safety framework', 'decision authority', or 'policy framework for AI'. Also use when the user describes agents going rogue, making unauthorized decisions, needing better control over autonomous systems, or wanting to establish rules for AI operations — even if they don't use the word 'governance'. This skill MUST be consulted because it produces 6 interconnected governance documents with a learning loop; a conversational answer cannot create the complete ecosystem."
+description: "Design and save a complete governance ecosystem for agentic operations — 6 structured documents (authority matrix, hard boundaries, escalation protocols, policy generation loop, decision ledger spec, learning loop) written to $HOME/.ai-first-kit/. Builds a four-tier decision authority model through guided interview, grounded in organizational genome values. Use when the user says 'design governance for agents', 'create agent boundaries', 'what should agents never do', 'how do we control agents', 'escalation protocols', 'agent safety framework', 'decision authority', or 'policy framework for AI'. Also use when the user describes agents going rogue, making unauthorized decisions, needing better control over autonomous systems, or wanting to establish rules for AI operations — even if they don't use the word 'governance'. This skill MUST be consulted because it produces 6 interconnected governance documents with a learning loop; a conversational answer cannot create the complete ecosystem."
 allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose
@@ -38,11 +38,19 @@ Work through these steps in order, announcing each step as you begin it:
 ## Pre-Flight
 
 ```bash
-SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+# Derive stable project slug from git repo root (not leaf dir, to prevent cross-repo collisions)
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -n "$REPO_ROOT" ]; then
+  SLUG=$(basename "$REPO_ROOT" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+else
+  SLUG=$(echo "${PWD##*/}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | head -c 40)
+fi
 [ -z "$SLUG" ] && SLUG="default"
-mkdir -p ~/.ai-first-kit/projects/$SLUG/governance
-GENOME=$(ls ~/.ai-first-kit/projects/$SLUG/genome/00-identity/VALUES.md 2>/dev/null)
-[ -n "$GENOME" ] && echo "Genome found — governance will align to values" || echo "WARNING: No genome. Governance without values foundation is fragile."
+mkdir -p "$HOME/.ai-first-kit/projects/$SLUG/governance"
+chmod 700 "$HOME/.ai-first-kit" 2>/dev/null
+# Check VALUES.md specifically (governance must align to values, not just identity)
+GENOME_VALUES=$(ls "$HOME/.ai-first-kit/projects/$SLUG/genome/00-identity/VALUES.md" 2>/dev/null)
+[ -n "$GENOME_VALUES" ] && echo "Genome found — governance will align to values" || echo "WARNING: No genome. Governance without values foundation is fragile."
 ```
 
 If genome VALUES.md exists, use the `Read` tool to load it — governance boundaries must align with organizational values.
@@ -213,7 +221,7 @@ Only write files after the user confirms the system is coherent.
 
 ## Phase 8: Save
 
-Save governance documents to `~/.ai-first-kit/projects/$SLUG/governance/`:
+Save governance documents to `$HOME/.ai-first-kit/projects/$SLUG/governance/`:
 - `AUTHORITY-MATRIX.md`
 - `HARD-BOUNDARIES.md`
 - `ESCALATION-PROTOCOLS.md`
