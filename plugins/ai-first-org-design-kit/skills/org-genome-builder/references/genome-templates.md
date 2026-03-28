@@ -113,6 +113,41 @@ If unsure which level applies → treat as one level higher.
 If time-sensitive and human unavailable → see time-bound defaults in escalation protocols.
 ```
 
+## TRADEOFF-RULES.md Template
+
+```markdown
+# Value Conflict Resolution Rules
+
+When organizational values conflict, use these rules to decide.
+
+## Rule: [Value A] vs [Value B]
+
+**When they conflict:** [Describe the scenario where both apply but pull in different directions]
+
+**Default winner:** [Which value takes priority]
+
+**Exception:** [When the other value wins instead]
+
+**Example:**
+> [Concrete scenario showing the tradeoff in action]
+> Decision: [What we chose and why]
+
+## Priority Ordering
+
+When multiple values apply simultaneously:
+1. [Highest priority value] — always wins unless...
+2. [Second priority] — wins when [condition]
+3. [Third priority] — the tiebreaker
+
+## Agent Instructions
+
+When facing a value conflict:
+1. Identify which values are in tension
+2. Check this document for a specific rule
+3. If no rule exists → escalate to human with both options clearly stated
+4. Log the conflict and resolution for future rule creation
+```
+
 ## BY-OUTPUT-TYPE.md Template
 
 ```markdown
