@@ -114,7 +114,7 @@ Skills from this marketplace are also available for **Claude Desktop** users. De
 |---------|---------|
 | **Opinionated Personas** | Each skill has a distinct specialist persona — not generic assistants but diagnosticians, architects, and strategists |
 | **One Question at a Time** | Sequential questioning produces specification-grade depth; batch questions produce shallow answers |
-| **Artifact Handoff** | Skills save outputs to `~/.ai-first-kit/projects/{slug}/` and auto-discover upstream artifacts |
+| **Artifact Handoff** | Skills save outputs to `$HOME/.ai-first-kit/projects/{slug}/` and auto-discover upstream artifacts |
 | **Dual Pathways** | Greenfield (founders) and brownfield (leaders) paths through the same skill set |
 | **Political Realism** | The political navigator addresses why 70% of transformations fail — people, not technology |
 
