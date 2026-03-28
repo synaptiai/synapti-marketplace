@@ -167,6 +167,38 @@
         "validation",
         "grounded-agency"
       ]
+    },
+    {
+      "name": "ai-first-org-design-kit",
+      "source": "./plugins/ai-first-org-design-kit",
+      "description": "Seven opinionated skills for designing AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, architect governance, redesign roles, and navigate politics.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Daniel Bentes"
+      },
+      "homepage": "https://github.com/synaptiai/synapti-marketplace",
+      "repository": "https://github.com/synaptiai/synapti-marketplace",
+      "license": "MIT",
+      "category": "organizational-design",
+      "keywords": [
+        "organizational-design",
+        "ai-first",
+        "agentic-organizations",
+        "coordination-audit",
+        "organizational-genome",
+        "specification-writing",
+        "quality-gates",
+        "governance",
+        "role-design",
+        "change-management"
+      ],
+      "tags": [
+        "organizational-design",
+        "ai-transformation",
+        "governance",
+        "specification",
+        "change-management"
+      ]
     }
   ]
 }
