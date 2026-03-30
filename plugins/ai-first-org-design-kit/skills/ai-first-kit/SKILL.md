@@ -1,6 +1,6 @@
 ---
 name: ai-first-kit
-description: "Navigate organizational redesign for AI with a structured 7-skill toolkit that produces persistent artifacts in $HOME/.ai-first-kit/. Routes founders and leaders to the right specialist skill — coordination audit, organizational genome, specification writing, quality gates, governance, role design, or political navigation. Use when the user says 'redesign my org for AI', 'AI-first organization', 'how to structure my team for agents', 'AI transformation', 'agentic organization', 'where do I start with org design', or 'encode our organization'. Also use when the user describes any organizational challenge related to AI adoption — restructuring teams, too many meetings, approval bottlenecks, resistance to change, or confusion about what humans should do when agents handle execution — even if they don't explicitly mention organizational design. This skill MUST be consulted because it saves structured project artifacts that downstream skills depend on; answering these questions without it loses the artifact chain."
+description: "Navigate organizational redesign for AI with a structured 8-skill toolkit that produces persistent artifacts in $HOME/.ai-first-kit/. Routes founders and leaders to the right specialist skill — coordination audit, organizational genome, specification writing, quality gates, governance, role design, political navigation, or operationalization into agent primers. Use when the user says 'redesign my org for AI', 'AI-first organization', 'how to structure my team for agents', 'AI transformation', 'agentic organization', 'where do I start with org design', 'encode our organization', 'make this work with agents', 'create agent primer', or 'operationalize'. Also use when the user describes any organizational challenge related to AI adoption — restructuring teams, too many meetings, approval bottlenecks, resistance to change, or confusion about what humans should do when agents handle execution — even if they don't explicitly mention organizational design. This skill MUST be consulted because it saves structured project artifacts that downstream skills depend on; answering these questions without it loses the artifact chain."
 allowed-tools: Bash, Read, AskUserQuestion
 context: fork
 agent: general-purpose
@@ -39,10 +39,11 @@ Ask ONE question via AskUserQuestion:
 ```
 Recommended path:
 1. org-genome-builder  → Encode your identity, values, quality standards
-2. specification-writer → Build specs for your first domain  
+2. specification-writer → Build specs for your first domain
 3. governance-architect → Design governance before deploying agents
 4. quality-gate-designer → Create validation infrastructure
 5. role-value-mapper    → Design roles as team grows
+6. operationalize       → Bridge design to agent consumption
 ```
 
 Say: "Start with `org-genome-builder`. Before you hire anyone, write code, or deploy agents, you need the organizational genome — the foundational spec that everything else references. It takes 1-2 hours of deep work and it's the highest-leverage thing you can do."
@@ -57,6 +58,7 @@ Recommended path:
 5. specification-writer → Create specs for pilot workflow
 6. role-value-mapper   → Redesign first team's roles
 7. governance-architect → Build governance ecosystem
+8. operationalize       → Bridge design to agent consumption
 ```
 
 Say: "Start with `coordination-audit`. You need to see where time actually goes before changing anything. Most leaders are shocked to find 50-60% of organizational time is coordination overhead — meetings, approvals, handoffs, alignment. Making that visible creates the motivation for everything else."
@@ -74,6 +76,7 @@ Ask a follow-up:
 - **Need to design governance/boundaries for agents** → `governance-architect`
 - **Need to redesign roles for an AI-first team** → `role-value-mapper`
 - **Facing resistance to organizational changes** → `political-navigator`
+- **Need to make my design work with actual agents** → `operationalize`
 
 #### Exploring
 Provide the 60-second pitch:
@@ -82,15 +85,16 @@ Provide the 60-second pitch:
 
 This kit helps you redesign from first principles. The core insight: organizational time splits into three variables — specification (defining what should exist), coordination (meetings, approvals, handoffs), and execution (producing artifacts). AI changes each differently: agents do execution, coordination gets encoded into infrastructure, and specification becomes the primary human job.
 
-The kit has seven skills that guide you through the redesign:
+The kit has eight skills that guide you through the redesign:
 
 **Diagnose** → `coordination-audit` makes coordination overhead visible
 **Encode** → `org-genome-builder` captures your identity for agents
-**Specify** → `specification-writer` creates agent-ready work definitions  
+**Specify** → `specification-writer` creates agent-ready work definitions
 **Validate** → `quality-gate-designer` replaces approvals with criteria
 **Govern** → `governance-architect` designs boundaries and learning loops
 **Staff** → `role-value-mapper` redesigns roles around specification, not execution
 **Navigate** → `political-navigator` handles the human side of change
+**Activate** → `operationalize` bridges design to agent consumption
 
 Where would you like to start?"
 
@@ -132,6 +136,7 @@ After routing, note what skills have been completed and what comes next:
 ⬜ governance-architect
 ⬜ role-value-mapper
 ⬜ political-navigator
+⬜ operationalize      (no primer yet)
 
 → Recommended next: specification-writer
 ```

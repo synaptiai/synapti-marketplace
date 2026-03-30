@@ -171,8 +171,8 @@
     {
       "name": "ai-first-org-design-kit",
       "source": "./plugins/ai-first-org-design-kit",
-      "description": "Seven opinionated skills for designing AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, architect governance, redesign roles, and navigate politics.",
-      "version": "1.0.0",
+      "description": "Eight opinionated skills for designing AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, architect governance, redesign roles, navigate politics, and operationalize designs into agent-consumable primers.",
+      "version": "1.1.0",
       "author": {
         "name": "Daniel Bentes"
       },
@@ -190,14 +190,18 @@
         "quality-gates",
         "governance",
         "role-design",
-        "change-management"
+        "change-management",
+        "operationalize",
+        "agent-primer",
+        "agent-instructions"
       ],
       "tags": [
         "organizational-design",
         "ai-transformation",
         "governance",
         "specification",
-        "change-management"
+        "change-management",
+        "operationalize"
       ]
     }
   ]

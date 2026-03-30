@@ -24,7 +24,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Plugin | Category | Description | Version |
 |--------|----------|-------------|---------|
 | [Agent Capability Standard ↗](https://github.com/synaptiai/agent-capability-standard) | Standards, Agent Development | Technical specification for AI agents with structural reliability. 36 atomic capabilities across 9 layers with reference workflows and safety-by-construction patterns. | 1.2.0 |
-| [AI-First Org Design Kit](./plugins/ai-first-org-design-kit/) | Organizational Design | Seven opinionated skills for designing AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, architect governance, redesign roles, and navigate politics. | 1.0.0 |
+| [AI-First Org Design Kit](./plugins/ai-first-org-design-kit/) | Organizational Design | Eight opinionated skills for designing AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, architect governance, redesign roles, navigate politics, and operationalize designs into agent-consumable primers. | 1.1.0 |
 | [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.5.0 |
 | [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development. Composable skills, safety hooks, agent teams, LSP code intelligence, and learning loop. | 1.5.0 |
@@ -39,6 +39,8 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Convert approval chains into automated quality gates | [AI-First Org Design Kit](#featured-ai-first-org-design-kit) |
 | Design governance ecosystems for agentic operations | [AI-First Org Design Kit](#featured-ai-first-org-design-kit) |
 | Navigate political resistance to AI transformation | [AI-First Org Design Kit](#featured-ai-first-org-design-kit) |
+| Make org design artifacts work with actual agents | [AI-First Org Design Kit](#featured-ai-first-org-design-kit) |
+| Export organizational design as a single reference document | [AI-First Org Design Kit](#featured-ai-first-org-design-kit) |
 | Design agents with formal capability contracts | [Agent Capability Standard](#featured-agent-capability-standard) |
 | Validate agent workflows for completeness | [Agent Capability Standard](#featured-agent-capability-standard) |
 | Ensure safety-by-construction patterns in agents | [Agent Capability Standard](#featured-agent-capability-standard) |
@@ -102,7 +104,7 @@ Skills from this marketplace are also available for **Claude Desktop** users. De
 
 ## Featured: AI-First Org Design Kit
 
-**AI-First Org Design Kit** provides seven opinionated skills that guide founders and leaders through designing organizations where agents handle coordination and execution while humans own specification and judgment.
+**AI-First Org Design Kit** provides eight opinionated skills that guide founders and leaders through designing organizations where agents handle coordination and execution while humans own specification and judgment.
 
 ### Key Insight
 
@@ -129,6 +131,7 @@ Skills from this marketplace are also available for **Claude Desktop** users. De
 | `governance-architect` | Governance Systems Designer | Design boundaries, escalation, policy generation, decision ledger, learning loops |
 | `role-value-mapper` | Team Architect | Design roles from value flows and specification responsibility |
 | `political-navigator` | Power Dynamics Strategist | Map power structures, classify resistance, sequence change |
+| `operationalize` | Operational Bridge | Distill all design artifacts into an agent primer (AGENT-PRIMER.md) and optionally merge governance into CLAUDE.md |
 
 ### Installation
 
@@ -142,9 +145,9 @@ claude plugin install ai-first-org-design-kit
 
 ### The Organizational Design Process
 
-**Greenfield** (new orgs): `org-genome-builder → specification-writer → governance-architect → quality-gate-designer → role-value-mapper`
+**Greenfield** (new orgs): `org-genome-builder → specification-writer → governance-architect → quality-gate-designer → role-value-mapper → operationalize`
 
-**Brownfield** (existing orgs): `coordination-audit → political-navigator → org-genome-builder → quality-gate-designer → specification-writer → role-value-mapper → governance-architect`
+**Brownfield** (existing orgs): `coordination-audit → political-navigator → org-genome-builder → quality-gate-designer → specification-writer → role-value-mapper → governance-architect → operationalize`
 
 The brownfield path runs `political-navigator` early — before technical redesign, not after. 70% of transformations fail because of people, not technology.
 
@@ -508,7 +511,7 @@ synapti-marketplace/
     │   ├── README.md                  # Full plugin documentation
     │   ├── shared/                    # Foundational concepts
     │   │   └── concepts.md            # Vocabulary all skills reference
-    │   └── skills/                    # 7 organizational design skills + router
+    │   └── skills/                    # 8 organizational design skills + router
     │       ├── ai-first-kit/          # Router (entry point)
     │       ├── coordination-audit/    # Diagnose time allocation
     │       ├── org-genome-builder/    # Encode organizational identity
@@ -516,7 +519,8 @@ synapti-marketplace/
     │       ├── quality-gate-designer/ # Convert approvals to gates
     │       ├── governance-architect/  # Design governance ecosystem
     │       ├── role-value-mapper/     # Design specification-first roles
-    │       └── political-navigator/   # Navigate change resistance
+    │       ├── political-navigator/   # Navigate change resistance
+    │       └── operationalize/        # Bridge design to agent consumption
     │
     ├── context-ledger/                # Evidence-based product development
     │   ├── .claude-plugin/
