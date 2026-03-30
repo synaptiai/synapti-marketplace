@@ -1,8 +1,8 @@
 # AI-First Org Design Kit
 
-> **Version:** 1.0.0 | **License:** MIT | **Category:** Organizational Design
+> **Version:** 1.1.0 | **License:** MIT | **Category:** Organizational Design
 
-Seven opinionated skills that guide founders and leaders through designing organizations where agents handle coordination and execution while humans own specification and judgment.
+Eight opinionated skills that guide founders and leaders through designing organizations where agents handle coordination and execution while humans own specification and judgment.
 
 **This is not about adopting AI tools.** It's about re-engineering the operating model.
 
@@ -24,17 +24,17 @@ Organizations are specification machines that pretended to be execution machines
 Skills run in sequence. Each feeds into the next.
 
 ```
-Diagnose → Encode Identity → Specify → Design Gates → Architect Governance → Map Roles → Navigate Politics
+Diagnose → Encode Identity → Specify → Design Gates → Architect Governance → Map Roles → Navigate Politics → Operationalize
 ```
 
 ### Greenfield Path (Founders)
 ```
-org-genome-builder → specification-writer → governance-architect → quality-gate-designer → role-value-mapper
+org-genome-builder → specification-writer → governance-architect → quality-gate-designer → role-value-mapper → operationalize
 ```
 
 ### Brownfield Path (Leaders)
 ```
-coordination-audit → political-navigator → org-genome-builder → quality-gate-designer → specification-writer → role-value-mapper → governance-architect
+coordination-audit → political-navigator → org-genome-builder → quality-gate-designer → specification-writer → role-value-mapper → governance-architect → operationalize
 ```
 
 ### Quick Start
@@ -53,6 +53,7 @@ All skills live under `skills/` and follow the standard plugin SKILL.md format.
 | `skills/governance-architect` | **Governance Systems Designer** | Designs the full governance ecosystem — boundaries, escalation, policy generation, decision ledger, learning loops |
 | `skills/role-value-mapper` | **Team Architect** | Designs roles from value flows and specification responsibility, not job titles |
 | `skills/political-navigator` | **Power Dynamics Strategist** | Maps power structures, identifies resistance, creates reframes, sequences change |
+| `skills/operationalize` | **Operational Bridge** | Distills all design artifacts into an agent-consumable primer (AGENT-PRIMER.md) and optionally merges governance into project CLAUDE.md |
 
 The router skill (`skills/ai-first-kit`) is the entry point — it diagnoses the user's situation and routes to the appropriate skill.
 
@@ -86,7 +87,7 @@ cp -Rf path/to/synapti-marketplace/plugins/ai-first-org-design-kit .claude/plugi
 ## What This Kit Does NOT Cover
 
 - **Tool selection.** Which LLM, which agent framework. Tools are endpoints.
-- **Technical architecture.** How to build agent infrastructure.
+- **Technical architecture.** The kit bridges to agent consumption via AGENT-PRIMER.md, but does not build agent infrastructure.
 - **Legal/compliance.** The governance skill helps design governance, not legal advice.
 - **Culture building.** The kit identifies where culture needs design. What your culture should be is your job.
 

@@ -121,6 +121,7 @@ All skills save outputs to `$HOME/.ai-first-kit/projects/{slug}/` for downstream
 | governance-architect | genome VALUES.md | `governance/` directory | genome (recommended) |
 | role-value-mapper | audit, genome | `roles-{datetime}.md` | — |
 | political-navigator | audit (optional) | `political-map-{datetime}.md` | — |
+| operationalize | genome/ (required), governance/, gates/, specs/ | `AGENT-PRIMER.md`, optionally `.claude/CLAUDE.md` | genome (required) |
 
 ## Skill Dependency Map
 
@@ -139,6 +140,11 @@ quality-gate-designer ◄─────┘
        │
        ▼
 role-value-mapper
+       │
+       ▼
+operationalize ◄─── reads ALL upstream artifacts (genome required, rest optional)
 ```
 
 Skills marked "optional" degrade gracefully without upstream artifacts. Skills marked "recommended" warn and offer alternatives if the dependency is missing. The map shows what's structurally possible; the Greenfield and Brownfield paths in the README show the recommended order.
+
+The `operationalize` skill is the final step — it reads all produced artifacts and distills them into an agent-consumable primer (AGENT-PRIMER.md). It gracefully handles partial completion (only genome required).
