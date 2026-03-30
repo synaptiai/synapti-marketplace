@@ -15,12 +15,12 @@ Read `../../shared/concepts.md` for the full vocabulary and artifact handoff con
 Work through these steps in order, announcing each step as you begin it:
 
 <required>
-1. Pre-flight (artifact inventory + change detection)
-2. Target selection
-3. Artifact ingestion and distillation
-4. Primer validation with user
-5. Output generation (AGENT-PRIMER.md + optionally CLAUDE.md)
-6. Summary and next steps
+0. Pre-flight (artifact inventory + change detection)
+1. Target selection
+2. Artifact ingestion and distillation (or 2B: dump)
+3. Primer validation with user (skipped for dumps)
+4. Output generation (AGENT-PRIMER.md + optionally CLAUDE.md)
+5. Summary and next steps
 </required>
 
 ## Persona
@@ -30,7 +30,7 @@ Work through these steps in order, announcing each step as you begin it:
 - **Security-aware.** Never expose holdout scenarios or political maps.
 - **Platform-agnostic.** The primer works in any agent framework. The CLAUDE.md section is optional.
 
-## Pre-Flight
+## Phase 0: Pre-Flight
 
 ```bash
 # Derive stable project slug from git repo root (not leaf dir, to prevent cross-repo collisions)
@@ -71,7 +71,9 @@ else
 fi
 ```
 
-If no genome found, halt: "The genome is the minimum requirement for operationalization. Run `org-genome-builder` first to encode your organizational identity."
+If no genome found and the user selected a primer target (AGENT-PRIMER.md or CLAUDE.md), halt: "The genome is the minimum requirement for primer distillation. Run `org-genome-builder` first to encode your organizational identity."
+
+If no genome found but the user selected "Full artifact dump", proceed — the dump concatenates whatever artifacts exist. It will contain only non-genome sections, which may still be useful for archival.
 
 If existing AGENT-PRIMER.md found, check for changes:
 
@@ -201,7 +203,8 @@ Proceed directly to Phase 5 (Summary).
 Ask via AskUserQuestion: "Does this primer capture your essential operating rules? What's missing or wrong?"
 
 Apply feedback. Then perform a size check:
-- If primer exceeds 300 lines, flag: "The primer is [N] lines. Target is 150-250 for optimal agent context usage. Would you like me to tighten it further?"
+- If primer exceeds 250 lines, flag: "The primer is [N] lines. Target is 150-250 for optimal agent context usage. Would you like me to tighten it further?"
+- If primer is 100-149 lines, note: "The primer is compact. This is fine if most sections are present — verify no sections were accidentally omitted."
 - If primer is under 100 lines, flag: "The primer seems thin — are there artifacts we haven't produced yet that should enrich it?"
 
 ## Phase 4: Output Generation
@@ -230,7 +233,7 @@ Use the template from [references/claude-md-template.md](references/claude-md-te
 
 2. If CLAUDE.md found, check for existing section:
    - Search for `<!-- ai-first-kit-operationalize:` marker
-   - If both opening and closing markers found → replace content between markers using `Edit` tool
+   - If both opening and closing markers found → compare the new section content (excluding the timestamp) with the existing content. If identical, skip: "CLAUDE.md section is already up to date." If different, replace content between markers using `Edit` tool.
    - If only one marker found (malformed) → warn the user: "Malformed section markers detected in CLAUDE.md. Remove the existing partial markers manually, then re-run." Do not attempt partial replacement.
    - If no markers found → append section at end of file using `Edit` tool
 
@@ -241,7 +244,7 @@ The CLAUDE.md section includes:
 - Hard boundaries inline (name + one-line prohibition per boundary)
 - Boundary priority hierarchy
 - Value decision rules (one line per value)
-- Pointer to full AGENT-PRIMER.md path
+- Pointer to full AGENT-PRIMER.md path (omit if no AGENT-PRIMER.md was generated and none exists)
 - Pointer to gates/INDEX.md path
 - Closing marker: `<!-- /ai-first-kit-operationalize -->`
 
@@ -264,8 +267,9 @@ Present:
 ## Rules
 
 - **Distill, don't dump.** 200-line primer with decision rules > 1400 lines of theory.
-- **Never include holdout scenarios.** Not in the primer, not in CLAUDE.md, not anywhere agents can read.
-- **Never include political maps.** Sensitive human dynamics are never for agent consumption.
+- **Never READ holdout scenarios.** Do not open `gates/.holdouts/*` files during primer distillation. Not reading them is the primary defense — not including them is the secondary defense.
+- **Never READ political maps.** Do not open `political-map-*.md` files during primer distillation. Sensitive human dynamics are never for agent consumption.
+- **Never include holdouts or political maps** in the primer or CLAUDE.md section — not anywhere agents can read.
 - **The Stranger Test applies.** Could an agent operate effectively from this primer alone?
 - **Questions ONE AT A TIME.**
 - **Re-runnable.** Detect existing primer, overwrite cleanly. CLAUDE.md sections use version markers.
@@ -297,7 +301,7 @@ The value of this skill is compression. Anyone can copy files. The hard part is 
 | Bash unavailable | Skip artifact discovery. Ask user to confirm which artifacts exist via AskUserQuestion. |
 | CLAUDE.md not found | Generate the section as a code block for manual pasting. |
 | Existing primer found, no changes | Skip regeneration: "Your primer is up to date with all source artifacts." |
-| Dump script not found | Fall back to manual concatenation using Read tool per references/dump-template.md |
+| Dump script not found | Fall back to manual concatenation using Read tool per references/dump-template.md. Script may not be found if plugin is installed outside `$HOME/.claude/` — the search path covers standard installations. |
 | No artifacts for a dump section | Section skipped — the script handles this automatically |
 
 ## Integration Points

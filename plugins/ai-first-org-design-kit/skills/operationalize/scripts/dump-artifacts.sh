@@ -211,7 +211,12 @@ section() {
 # Report to stderr so it doesn't pollute stdout output
 if [ "$OUTPUT" != "/dev/stdout" ]; then
   LINES=$(wc -l < "$OUTPUT" | tr -d ' ')
-  echo "Dump written to: $OUTPUT ($LINES lines)" >&2
+  # Header is ~7 lines; if total is near that, the dump has no real content
+  if [ "$LINES" -le 10 ]; then
+    echo "WARNING: Dump is effectively empty — no artifacts found in any category" >&2
+  else
+    echo "Dump written to: $OUTPUT ($LINES lines)" >&2
+  fi
   if [ "$INCLUDE_CONFIDENTIAL" = true ]; then
     echo "WARNING: Dump includes confidential sections (holdouts, political maps)" >&2
   fi

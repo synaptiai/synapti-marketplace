@@ -87,7 +87,7 @@ cp -Rf path/to/synapti-marketplace/plugins/ai-first-org-design-kit .claude/plugi
 ## What This Kit Does NOT Cover
 
 - **Tool selection.** Which LLM, which agent framework. Tools are endpoints.
-- **Technical architecture.** The kit bridges to agent consumption via AGENT-PRIMER.md, but does not build agent infrastructure.
+- **Technical architecture.** The kit bridges to agent consumption, not infrastructure.
 - **Legal/compliance.** The governance skill helps design governance, not legal advice.
 - **Culture building.** The kit identifies where culture needs design. What your culture should be is your job.
 
