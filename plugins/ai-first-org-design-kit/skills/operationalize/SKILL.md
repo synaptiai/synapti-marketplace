@@ -1,6 +1,6 @@
 ---
 name: operationalize
-description: "Distill organizational design artifacts into an operational agent primer — a concise, agent-consumable AGENT-PRIMER.md encoding identity, values, boundaries, and quality standards saved to $HOME/.ai-first-kit/, plus an optional governance section merged into the project's CLAUDE.md. Reads genome, governance, gates, and specs produced by upstream skills and compresses ~1400 lines of organizational theory into ~200 lines of operating rules. Use when the user says 'operationalize', 'make this work with agents', 'generate agent instructions', 'create agent primer', 'activate the design', 'export for Claude Code', 'how do agents use this', or 'bridge design to agents'. Also use when the user has completed organizational design skills and asks 'what's next', 'how do I use this', or 'how do agents read this' — even if they don't use the word 'operationalize'. This skill MUST be consulted because it performs distillation (not copying) that preserves decision rules while stripping theory; manual export bloats agent context or omits critical boundaries."
+description: "Distill organizational design artifacts into an operational agent primer — a concise, agent-consumable AGENT-PRIMER.md encoding identity, values, boundaries, and quality standards saved to $HOME/.ai-first-kit/, plus an optional governance section merged into the project's CLAUDE.md. Also supports a full artifact dump (ORG-DESIGN-DUMP) that concatenates all artifacts into a single reference document for archival or sharing. Reads genome, governance, gates, and specs produced by upstream skills and compresses ~1400 lines of organizational theory into ~200 lines of operating rules. Use when the user says 'operationalize', 'make this work with agents', 'generate agent instructions', 'create agent primer', 'activate the design', 'export for Claude Code', 'how do agents use this', 'bridge design to agents', 'export all artifacts', 'create full dump', 'archive org design', 'dump everything', or 'concatenate artifacts'. Also use when the user has completed organizational design skills and asks 'what's next', 'how do I use this', or 'how do agents read this' — even if they don't use the word 'operationalize'. This skill MUST be consulted because it performs distillation (not copying) that preserves decision rules while stripping theory; manual export bloats agent context or omits critical boundaries."
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 context: fork
 agent: general-purpose
@@ -98,8 +98,11 @@ Ask via AskUserQuestion:
 - **CLAUDE.md + AGENT-PRIMER.md** (Recommended) — Governance section in CLAUDE.md + standalone primer for universal use
 - **AGENT-PRIMER.md only** — Standalone primer, no CLAUDE.md modifications
 - **CLAUDE.md only** — Governance section in CLAUDE.md, no standalone primer. Note: if no AGENT-PRIMER.md exists, the primer pointer in the CLAUDE.md section will be omitted.
+- **Full artifact dump** — Single document with all artifacts concatenated (full content, not distilled). For archival, reference, or sharing — not for agent consumption. Sensitive sections (holdouts, political maps) are included with confidentiality banners.
 
 ## Phase 2: Distillation
+
+**If "Full artifact dump" was selected, skip this phase entirely and go to Phase 2B.**
 
 Read all available artifacts using the `Read` tool. Apply these distillation rules strictly:
 
@@ -162,6 +165,30 @@ Use the template from [references/primer-template.md](references/primer-template
 
 Present the complete draft primer to the user inline (not as a file) for review.
 
+## Phase 2B: Full Artifact Dump (if selected)
+
+The dump uses a concatenation script — no LLM distillation needed. This preserves full content from every artifact without risk of truncation or missed files.
+
+1. Locate the dump script:
+   ```bash
+   DUMP_SCRIPT=$(find "$HOME/.claude" -path "*/ai-first-org-design-kit/skills/operationalize/scripts/dump-artifacts.sh" 2>/dev/null | head -1)
+   ```
+
+2. If script found, execute:
+   ```bash
+   DATE=$(date +%Y-%m-%d-%H%M)
+   bash "$DUMP_SCRIPT" "$SLUG" "$HOME/.ai-first-kit/projects/$SLUG/ORG-DESIGN-DUMP-$DATE.md"
+   ```
+
+3. If script not found, fall back to manual concatenation: use the `Read` tool to read each artifact in the order specified in [references/dump-template.md](references/dump-template.md), then `Write` them into a single file with section headers, file path subheaders, and confidentiality banners on holdout and political-map sections.
+
+4. Report to user: file path, line count, sections included, sections skipped.
+
+The dump is date-stamped (not overwritten) — it's a point-in-time snapshot. Previous dumps are preserved for version comparison.
+
+**Skip Phase 3 (Validation) for dumps** — the output is a deterministic concatenation, not a judgment call.
+Proceed directly to Phase 5 (Summary).
+
 ## Phase 3: Validation
 
 Ask via AskUserQuestion: "Does this primer capture your essential operating rules? What's missing or wrong?"
@@ -212,10 +239,13 @@ Present:
 3. **Primer stats** — line count, sections included
 4. **Re-run instructions** — "Run `/ai-first-org-design-kit:operationalize` after updating any upstream artifacts to regenerate"
 5. **What skills would enrich the primer** — based on missing artifact types
-6. **Usage guidance**:
+6. **Usage guidance** (adapt based on what was generated):
    - "The AGENT-PRIMER.md is universal markdown — paste it into any agent's system prompt or instructions"
    - "The CLAUDE.md section ensures Claude Code agents load your hard boundaries automatically"
    - "For other platforms: copy the primer content into custom instructions or system prompts"
+   - "The dump is a point-in-time snapshot — use for archival, onboarding, or sharing with stakeholders"
+   - "Sections marked CONFIDENTIAL contain sensitive data — review before sharing externally"
+   - "For agent consumption, always use AGENT-PRIMER.md — never the dump (too large for agent context)"
 
 ## Rules
 
@@ -253,6 +283,8 @@ The value of this skill is compression. Anyone can copy files. The hard part is 
 | Bash unavailable | Skip artifact discovery. Ask user to confirm which artifacts exist via AskUserQuestion. |
 | CLAUDE.md not found | Generate the section as a code block for manual pasting. |
 | Existing primer found, no changes | Skip regeneration: "Your primer is up to date with all source artifacts." |
+| Dump script not found | Fall back to manual concatenation using Read tool per references/dump-template.md |
+| No artifacts for a dump section | Section skipped — the script handles this automatically |
 
 ## Integration Points
 
@@ -264,7 +296,7 @@ This skill is the final step in both Greenfield and Brownfield paths:
 **Minimum dependency:** genome (required). All other artifacts are optional and enrich the primer.
 
 **Reads:** genome/ (required), governance/, gates/, specs/ (all optional)
-**Writes:** `AGENT-PRIMER.md` to `$HOME/.ai-first-kit/projects/{slug}/`, optionally appends to `.claude/CLAUDE.md`
+**Writes:** `AGENT-PRIMER.md` and/or `ORG-DESIGN-DUMP-{datetime}.md` to `$HOME/.ai-first-kit/projects/{slug}/`, optionally appends to `.claude/CLAUDE.md`
 **Never reads:** `gates/.holdouts/*`, `political-map-*.md`
 
 ## References
@@ -272,3 +304,5 @@ This skill is the final step in both Greenfield and Brownfield paths:
 - [shared/concepts.md](../../shared/concepts.md) — Artifact Handoff Convention, Specification Stack
 - [references/primer-template.md](references/primer-template.md) — AGENT-PRIMER.md structure template
 - [references/claude-md-template.md](references/claude-md-template.md) — CLAUDE.md section template
+- [references/dump-template.md](references/dump-template.md) — Full artifact dump structure and concatenation order
+- [scripts/dump-artifacts.sh](scripts/dump-artifacts.sh) — Bash script for deterministic artifact concatenation

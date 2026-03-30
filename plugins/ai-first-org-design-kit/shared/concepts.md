@@ -121,7 +121,7 @@ All skills save outputs to `$HOME/.ai-first-kit/projects/{slug}/` for downstream
 | governance-architect | genome VALUES.md | `governance/` directory | genome (recommended) |
 | role-value-mapper | audit, genome | `roles-{datetime}.md` | — |
 | political-navigator | audit (optional) | `political-map-{datetime}.md` | — |
-| operationalize | genome/ (required), governance/, gates/, specs/ | `AGENT-PRIMER.md`, optionally `.claude/CLAUDE.md` | genome (required) |
+| operationalize | genome/ (required), governance/, gates/, specs/ | `AGENT-PRIMER.md`, `ORG-DESIGN-DUMP-{datetime}.md`, optionally `.claude/CLAUDE.md` | genome (required) |
 
 ## Skill Dependency Map
 
