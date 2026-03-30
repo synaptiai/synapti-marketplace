@@ -190,14 +190,18 @@
         "quality-gates",
         "governance",
         "role-design",
-        "change-management"
+        "change-management",
+        "operationalize",
+        "agent-primer",
+        "agent-instructions"
       ],
       "tags": [
         "organizational-design",
         "ai-transformation",
         "governance",
         "specification",
-        "change-management"
+        "change-management",
+        "operationalize"
       ]
     }
   ]

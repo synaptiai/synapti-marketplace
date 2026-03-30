@@ -50,3 +50,4 @@ before presenting work. See `$HOME/.ai-first-kit/projects/{slug}/gates/INDEX.md`
 - **Everything else by reference:** Keeps the CLAUDE.md lean (~30-40 lines added).
 - **Version markers:** Enable clean re-runs without manual editing.
 - **$HOME path references:** Uses `$HOME` for portability across machines.
+- **Conditional primer pointer:** If the user selected "CLAUDE.md only" and no AGENT-PRIMER.md exists, omit the "Full Operating Primer" subsection to avoid referencing a nonexistent file.

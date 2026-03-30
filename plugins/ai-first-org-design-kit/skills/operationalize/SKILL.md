@@ -61,11 +61,11 @@ PRIMER=$(ls "$HOME/.ai-first-kit/projects/$SLUG/AGENT-PRIMER.md" 2>/dev/null)
 
 # Determine completeness tier
 if [ -n "$GENOME" ] && [ -n "$GOVERNANCE" ] && [ -n "$GATES" ]; then
-  echo "TIER: 4 (full)"
+  echo "TIER: 3 (full)"
 elif [ -n "$GENOME" ] && [ -n "$GOVERNANCE" ]; then
-  echo "TIER: 3 (governance)"
+  echo "TIER: 2 (governance)"
 elif [ -n "$GENOME" ]; then
-  echo "TIER: 2 (identity)"
+  echo "TIER: 1 (identity)"
 else
   echo "TIER: 0 (no genome — cannot proceed)"
 fi
@@ -97,7 +97,7 @@ Ask via AskUserQuestion:
 "What output targets do you need?"
 - **CLAUDE.md + AGENT-PRIMER.md** (Recommended) — Governance section in CLAUDE.md + standalone primer for universal use
 - **AGENT-PRIMER.md only** — Standalone primer, no CLAUDE.md modifications
-- **CLAUDE.md only** — Governance section in CLAUDE.md, no standalone primer
+- **CLAUDE.md only** — Governance section in CLAUDE.md, no standalone primer. Note: if no AGENT-PRIMER.md exists, the primer pointer in the CLAUDE.md section will be omitted.
 
 ## Phase 2: Distillation
 
@@ -246,8 +246,8 @@ The value of this skill is compression. Anyone can copy files. The hard part is 
 | Missing | Fallback |
 |---------|----------|
 | No genome | Cannot proceed. Route to `org-genome-builder`. Genome is the minimum requirement. |
-| No governance | Generate Tier 2 primer (identity only). Flag: "No governance artifacts found — agents will operate without hard boundaries. Run `governance-architect` to add safety." |
-| No gates | Generate Tier 3 primer. Note: "No quality gates defined — agents cannot self-review against gate criteria." |
+| No governance | Generate Tier 1 primer (identity only). Flag: "No governance artifacts found — agents will operate without hard boundaries. Run `governance-architect` to add safety." |
+| No gates | Generate Tier 2 primer (governance). Note: "No quality gates defined — agents cannot self-review against gate criteria." |
 | No specs | Primer is complete without specs. Specs are task-specific references, not standing instructions. |
 | No roles/audit/political-map | These are never included in the primer. No degradation. |
 | Bash unavailable | Skip artifact discovery. Ask user to confirm which artifacts exist via AskUserQuestion. |

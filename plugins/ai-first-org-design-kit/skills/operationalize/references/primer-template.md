@@ -4,7 +4,7 @@
 
 ```markdown
 # Agent Operating Primer — {Project Name}
-<!-- Generated: {YYYY-MM-DD-HHMM} | Tier: {1-4} -->
+<!-- Generated: {YYYY-MM-DD-HHMM} | Tier: {1-3} -->
 <!-- Source: $HOME/.ai-first-kit/projects/{slug}/ -->
 <!-- Regenerate: /ai-first-org-design-kit:operationalize -->
 
@@ -154,13 +154,13 @@ for the full stage workflow with stage-specific quality gates and execution mode
 
 ## Tier Variations
 
-### Tier 2 (Identity Only — genome, no governance/gates)
+### Tier 1 (Identity Only — genome, no governance/gates)
 Omit: Hard Boundaries section, Escalation section, Time-Bound Defaults, Quality Gates section.
 Add advisory: "This primer lacks governance boundaries. Agents operate without hard limits. Run `governance-architect` to add safety."
 
-### Tier 3 (Governance — genome + governance, no gates)
+### Tier 2 (Governance — genome + governance, no gates)
 Omit: Quality Gates section.
 Add advisory: "No quality gates defined. Agents cannot self-review against gate criteria. Run `quality-gate-designer` to add validation."
 
-### Tier 4 (Full — all artifacts)
+### Tier 3 (Full — all artifacts)
 Include all sections. No advisories needed.
