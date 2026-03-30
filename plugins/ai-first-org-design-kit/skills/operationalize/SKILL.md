@@ -98,13 +98,15 @@ Ask via AskUserQuestion:
 - **CLAUDE.md + AGENT-PRIMER.md** (Recommended) — Governance section in CLAUDE.md + standalone primer for universal use
 - **AGENT-PRIMER.md only** — Standalone primer, no CLAUDE.md modifications
 - **CLAUDE.md only** — Governance section in CLAUDE.md, no standalone primer. Note: if no AGENT-PRIMER.md exists, the primer pointer in the CLAUDE.md section will be omitted.
-- **Full artifact dump** — Single document with all artifacts concatenated (full content, not distilled). For archival, reference, or sharing — not for agent consumption. Sensitive sections (holdouts, political maps) are included with confidentiality banners.
+- **Full artifact dump** — Single document with all artifacts concatenated (full content, not distilled). For archival, reference, or sharing — not for agent consumption. Confidential sections (holdouts, political maps) are excluded by default; ask the user if they want to include them.
 
 ## Phase 2: Distillation
 
 **If "Full artifact dump" was selected, skip this phase entirely and go to Phase 2B.**
 
 Read all available artifacts using the `Read` tool. Apply these distillation rules strictly:
+
+**IMPORTANT: Do NOT read any files in `gates/.holdouts/` or matching `political-map-*.md`. If artifact discovery reveals these files, skip them entirely — do not open them. Reading them creates a leakage risk even if the intent is to exclude them from the primer.**
 
 ### What Goes Into the Primer
 
@@ -169,6 +171,10 @@ Present the complete draft primer to the user inline (not as a file) for review.
 
 The dump uses a concatenation script — no LLM distillation needed. This preserves full content from every artifact without risk of truncation or missed files.
 
+**Confidential sections:** Ask via AskUserQuestion: "Include confidential sections (holdout scenarios, political maps) in the dump? These are excluded by default for security."
+- **Exclude** (Recommended) — Safer for sharing. Holdouts and political maps omitted.
+- **Include with banners** — Full archive with confidentiality warnings on sensitive sections.
+
 1. Locate the dump script:
    ```bash
    DUMP_SCRIPT=$(find "$HOME/.claude" -path "*/ai-first-org-design-kit/skills/operationalize/scripts/dump-artifacts.sh" 2>/dev/null | head -1)
@@ -177,10 +183,11 @@ The dump uses a concatenation script — no LLM distillation needed. This preser
 2. If script found, execute:
    ```bash
    DATE=$(date +%Y-%m-%d-%H%M)
-   bash "$DUMP_SCRIPT" "$SLUG" "$HOME/.ai-first-kit/projects/$SLUG/ORG-DESIGN-DUMP-$DATE.md"
+   # Add --include-confidential only if user chose to include sensitive sections
+   bash "$DUMP_SCRIPT" "$SLUG" "$HOME/.ai-first-kit/projects/$SLUG/ORG-DESIGN-DUMP-$DATE.md" [--include-confidential]
    ```
 
-3. If script not found, fall back to manual concatenation: use the `Read` tool to read each artifact in the order specified in [references/dump-template.md](references/dump-template.md), then `Write` them into a single file with section headers, file path subheaders, and confidentiality banners on holdout and political-map sections.
+3. If script not found, fall back to manual concatenation: use the `Read` tool to read each artifact in the order specified in [references/dump-template.md](references/dump-template.md), then `Write` them into a single file with section headers and file path subheaders. **Skip holdout and political-map files unless the user explicitly chose to include them.**
 
 4. Report to user: file path, line count, sections included, sections skipped.
 
@@ -209,16 +216,23 @@ If an existing primer exists, it is overwritten (the primer is a derived artifac
 
 Use the template from [references/claude-md-template.md](references/claude-md-template.md).
 
-1. Detect existing CLAUDE.md:
+1. Detect existing CLAUDE.md (`.claude/CLAUDE.md` takes precedence):
    ```bash
-   [ -f ".claude/CLAUDE.md" ] && echo "CLAUDE_MD=.claude/CLAUDE.md"
-   [ -f "CLAUDE.md" ] && echo "CLAUDE_MD=CLAUDE.md"
+   if [ -f ".claude/CLAUDE.md" ]; then
+     CLAUDE_MD=".claude/CLAUDE.md"
+   elif [ -f "CLAUDE.md" ]; then
+     CLAUDE_MD="CLAUDE.md"
+   else
+     CLAUDE_MD=""
+   fi
+   echo "CLAUDE_MD=$CLAUDE_MD"
    ```
 
 2. If CLAUDE.md found, check for existing section:
    - Search for `<!-- ai-first-kit-operationalize:` marker
-   - If found → replace content between opening and closing markers using `Edit` tool
-   - If not found → append section at end of file using `Edit` tool
+   - If both opening and closing markers found → replace content between markers using `Edit` tool
+   - If only one marker found (malformed) → warn the user: "Malformed section markers detected in CLAUDE.md. Remove the existing partial markers manually, then re-run." Do not attempt partial replacement.
+   - If no markers found → append section at end of file using `Edit` tool
 
 3. If no CLAUDE.md found, present the section as a code block: "No CLAUDE.md found in this project. Here's the section to add manually when you create one:"
 
@@ -297,7 +311,7 @@ This skill is the final step in both Greenfield and Brownfield paths:
 
 **Reads:** genome/ (required), governance/, gates/, specs/ (all optional)
 **Writes:** `AGENT-PRIMER.md` and/or `ORG-DESIGN-DUMP-{datetime}.md` to `$HOME/.ai-first-kit/projects/{slug}/`, optionally appends to `.claude/CLAUDE.md`
-**Never reads:** `gates/.holdouts/*`, `political-map-*.md`
+**Never reads (for primer distillation):** `gates/.holdouts/*`, `political-map-*.md`. The dump script may include these with `--include-confidential` flag, but the LLM agent must never read them directly.
 
 ## References
 

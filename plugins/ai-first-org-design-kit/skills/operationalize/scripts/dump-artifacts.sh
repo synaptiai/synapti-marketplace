@@ -1,36 +1,77 @@
 #!/usr/bin/env bash
 # dump-artifacts.sh — Concatenate all ai-first-kit artifacts into a single document
-# Usage: dump-artifacts.sh <project-slug> [output-file]
+# Usage: dump-artifacts.sh <project-slug> [output-file] [--include-confidential]
 # If output-file omitted, writes to stdout
+# Confidential sections (holdouts, political maps) are EXCLUDED by default.
+# Pass --include-confidential to include them with warning banners.
 
 set -eo pipefail
+shopt -s nullglob
 
-SLUG="${1:?Usage: dump-artifacts.sh <project-slug> [output-file]}"
+# --- Argument parsing ---
+SLUG=""
+OUTPUT="/dev/stdout"
+INCLUDE_CONFIDENTIAL=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --include-confidential) INCLUDE_CONFIDENTIAL=true ;;
+    *)
+      if [ -z "$SLUG" ]; then
+        SLUG="$arg"
+      elif [ "$OUTPUT" = "/dev/stdout" ]; then
+        OUTPUT="$arg"
+      fi
+      ;;
+  esac
+done
+
+[ -z "$SLUG" ] && { echo "Usage: dump-artifacts.sh <project-slug> [output-file] [--include-confidential]" >&2; exit 1; }
+
+# --- Validation ---
+[ -z "$HOME" ] && { echo "ERROR: \$HOME is not set" >&2; exit 1; }
+[[ "$SLUG" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo "ERROR: Invalid slug: $SLUG" >&2; exit 1; }
+
 BASE="$HOME/.ai-first-kit/projects/$SLUG"
-OUTPUT="${2:-/dev/stdout}"
 DATE=$(date +%Y-%m-%d-%H%M)
 
-[ ! -d "$BASE" ] && echo "ERROR: No artifacts found at $BASE" >&2 && exit 1
+[ ! -d "$BASE" ] && { echo "ERROR: No artifacts found at $BASE" >&2; exit 1; }
 
-# Helper: append file with H3 header showing source path
+# Validate output directory if writing to file
+if [ "$OUTPUT" != "/dev/stdout" ]; then
+  OUTPUT_DIR=$(dirname "$OUTPUT")
+  [ ! -d "$OUTPUT_DIR" ] && { echo "ERROR: Output directory $OUTPUT_DIR does not exist" >&2; exit 1; }
+  [ ! -w "$OUTPUT_DIR" ] && { echo "ERROR: Output directory $OUTPUT_DIR is not writable" >&2; exit 1; }
+fi
+
+# --- Helpers ---
+
+# Append file with H3 header showing source path
 append_file() {
   local file="$1"
   local relative="${file#$BASE/}"
-  if [ -f "$file" ]; then
+  if [ -f "$file" ] && [ -r "$file" ]; then
     echo ""
     echo "### $relative"
     echo ""
     cat "$file"
     echo ""
     echo "---"
+  elif [ -f "$file" ]; then
+    echo ""
+    echo "### $relative"
+    echo ""
+    echo "(ERROR: file exists but is not readable)"
+    echo ""
+    echo "---"
   fi
 }
 
-# Helper: append confidential file with warning banner
+# Append confidential file with warning banner
 append_confidential() {
   local file="$1"
   local relative="${file#$BASE/}"
-  if [ -f "$file" ]; then
+  if [ -f "$file" ] && [ -r "$file" ]; then
     echo ""
     echo "### $relative"
     echo ""
@@ -40,10 +81,17 @@ append_confidential() {
     cat "$file"
     echo ""
     echo "---"
+  elif [ -f "$file" ]; then
+    echo ""
+    echo "### $relative"
+    echo ""
+    echo "(ERROR: file exists but is not readable)"
+    echo ""
+    echo "---"
   fi
 }
 
-# Helper: section header
+# Section header
 section() {
   echo ""
   echo "## $1"
@@ -57,7 +105,11 @@ section() {
   echo "<!-- Source: \$HOME/.ai-first-kit/projects/$SLUG/ -->"
   echo "<!-- This is a reference document, not agent instructions. -->"
   echo "<!-- For agent consumption, use AGENT-PRIMER.md instead. -->"
-  echo "<!-- Sections marked with CONFIDENTIAL contain sensitive data. -->"
+  if [ "$INCLUDE_CONFIDENTIAL" = true ]; then
+    echo "<!-- Sections marked with CONFIDENTIAL contain sensitive data. -->"
+  else
+    echo "<!-- Confidential sections (holdouts, political maps) excluded. Use --include-confidential to include. -->"
+  fi
   echo ""
 
   # 1. Identity
@@ -94,12 +146,11 @@ section() {
   fi
 
   # 5. Specifications
-  if ls "$BASE/specs/"*.md >/dev/null 2>&1; then
-    section "Specifications"
-    for f in "$BASE/specs/"*.md; do
-      append_file "$f"
-    done
-  fi
+  for f in "$BASE/specs/"*.md; do
+    # nullglob ensures this loop is skipped when no matches
+    [ -z "${_specs_header_printed:-}" ] && { section "Specifications"; _specs_header_printed=1; }
+    append_file "$f"
+  done
 
   # 6. Quality Gates (excluding holdouts)
   if [ -d "$BASE/gates" ]; then
@@ -111,14 +162,17 @@ section() {
     done
   fi
 
-  # 7. Quality Gate Holdouts (CONFIDENTIAL)
-  if ls "$BASE/gates/.holdouts/"*.md >/dev/null 2>&1; then
-    section "Quality Gate Holdouts"
-    echo ""
-    echo "> **⚠️ CONFIDENTIAL** — Holdout scenarios are used to validate agent output."
-    echo "> Never expose to executing agents. For internal review only."
-    echo ""
+  # 7. Quality Gate Holdouts (CONFIDENTIAL — only with --include-confidential)
+  if [ "$INCLUDE_CONFIDENTIAL" = true ]; then
     for f in "$BASE/gates/.holdouts/"*.md; do
+      [ -z "${_holdouts_header_printed:-}" ] && {
+        section "Quality Gate Holdouts"
+        echo ""
+        echo "> **⚠️ CONFIDENTIAL** — Holdout scenarios are used to validate agent output."
+        echo "> Never expose to executing agents. For internal review only."
+        echo ""
+        _holdouts_header_printed=1
+      }
       append_confidential "$f"
     done
   fi
@@ -130,11 +184,13 @@ section() {
     append_file "$ROLES"
   fi
 
-  # 9. Political Map (CONFIDENTIAL)
-  POLMAP=$(find "$BASE" -maxdepth 1 -name "political-map-*.md" -print 2>/dev/null | sort -r | head -1)
-  if [ -n "${POLMAP:-}" ]; then
-    section "Political Map"
-    append_confidential "$POLMAP"
+  # 9. Political Map (CONFIDENTIAL — only with --include-confidential)
+  if [ "$INCLUDE_CONFIDENTIAL" = true ]; then
+    POLMAP=$(find "$BASE" -maxdepth 1 -name "political-map-*.md" -print 2>/dev/null | sort -r | head -1)
+    if [ -n "${POLMAP:-}" ]; then
+      section "Political Map"
+      append_confidential "$POLMAP"
+    fi
   fi
 
   # 10. Audit
@@ -156,4 +212,7 @@ section() {
 if [ "$OUTPUT" != "/dev/stdout" ]; then
   LINES=$(wc -l < "$OUTPUT" | tr -d ' ')
   echo "Dump written to: $OUTPUT ($LINES lines)" >&2
+  if [ "$INCLUDE_CONFIDENTIAL" = true ]; then
+    echo "WARNING: Dump includes confidential sections (holdouts, political maps)" >&2
+  fi
 fi

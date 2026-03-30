@@ -30,9 +30,9 @@ Sections are skipped if no artifacts exist for that category.
 | 4 | Governance | `governance/AUTHORITY-MATRIX.md`, `HARD-BOUNDARIES.md`, `ESCALATION-PROTOCOLS.md`, `POLICY-GENERATION.md`, `DECISION-LEDGER-SPEC.md`, `LEARNING-LOOP.md` | No |
 | 5 | Specifications | `specs/*.md` (all spec files) | No |
 | 6 | Quality Gates | `gates/INDEX.md` + `gates/*.md` (excluding holdouts) | No |
-| 7 | Quality Gate Holdouts | `gates/.holdouts/*.md` | **Yes** |
+| 7 | Quality Gate Holdouts | `gates/.holdouts/*.md` | **Yes — SKIP by default. Only include if user explicitly requests confidential sections.** |
 | 8 | Roles | `roles-*.md` (most recent) | No |
-| 9 | Political Map | `political-map-*.md` (most recent, if exists) | **Yes** |
+| 9 | Political Map | `political-map-*.md` (most recent, if exists) | **Yes — SKIP by default. Only include if user explicitly requests confidential sections.** |
 | 10 | Coordination Audit | `audit-*.md` (most recent, if exists) | No |
 | 11 | Agent Primer | `AGENT-PRIMER.md` (if exists) | No |
 
