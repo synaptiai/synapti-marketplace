@@ -125,6 +125,9 @@ Read all available artifacts using the `Read` tool. Apply these distillation rul
 | `governance/AUTHORITY-MATRIX.md` | Yes | Agent-type tier tables. If substantially different from genome version, include both; otherwise reference genome version |
 | `governance/ESCALATION-PROTOCOLS.md` | Yes | Trigger categories + information package template + time-bound defaults table. **Strip** anti-pattern explanations |
 | `gates/INDEX.md` + individual gate files | Yes | Gate name + type (blocking/advisory, autonomous/human-gated) + pass criteria. **Strip** satisfaction metrics and escalation packages |
+| `governance/POLICY-GENERATION.md` | Yes | Novel situation protocol only: recognize → draft candidate policy (template pointer) → include draft in escalation. **Strip** promotion path details, retirement rules, expansion principles |
+| `governance/DECISION-LEDGER-SPEC.md` | Yes | Decision recording instruction: for Autonomous+Notify and above, append entry to `evolution/decision-ledger.md` per format (pointer to spec). **Strip** full format details — pointer to spec is sufficient |
+| `governance/LEARNING-LOOP.md` | Yes | Failure classification only: on failure, classify root cause (spec gap, gate gap, authority gap, boundary violation, novel situation) before escalating. **Strip** health metrics, audit cadence, governance review theory |
 
 ### What NEVER Goes Into the Primer
 
@@ -133,9 +136,6 @@ Read all available artifacts using the `Read` tool. Apply these distillation rul
 | `gates/.holdouts/*` | **Security.** Holdout scenarios exist to test agents — exposing them defeats the purpose |
 | `political-map-*.md` | **Sensitivity.** Contains human power dynamics analysis — never for agent consumption |
 | `audit-*.md` | Diagnostic data, not operating instructions |
-| `governance/POLICY-GENERATION.md` | Meta-governance process — how governance grows, not how agents behave |
-| `governance/DECISION-LEDGER-SPEC.md` | Infrastructure specification, not agent behavior |
-| `governance/LEARNING-LOOP.md` | Organizational evolution theory, not agent operating rules |
 | `roles-*.md` | Human role definitions, not agent behavior |
 | `specs/*.md` | Task-specific — referenced actively, not inlined |
 
