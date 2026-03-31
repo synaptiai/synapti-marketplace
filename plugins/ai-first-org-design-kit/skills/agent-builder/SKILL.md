@@ -47,7 +47,7 @@ else
 fi
 [ -z "$SLUG" ] && SLUG="default"
 mkdir -p "$HOME/.ai-first-kit/projects/$SLUG/agents"
-chmod 700 "$HOME/.ai-first-kit" 2>/dev/null
+chmod 700 "$HOME/.ai-first-kit" "$HOME/.ai-first-kit/projects" "$HOME/.ai-first-kit/projects/$SLUG" "$HOME/.ai-first-kit/projects/$SLUG/agents" 2>/dev/null
 echo "Project: $SLUG"
 
 # Check required artifacts

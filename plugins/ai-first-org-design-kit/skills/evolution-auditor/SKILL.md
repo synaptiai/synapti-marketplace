@@ -47,7 +47,7 @@ else
 fi
 [ -z "$SLUG" ] && SLUG="default"
 mkdir -p "$HOME/.ai-first-kit/projects/$SLUG/evolution"
-chmod 700 "$HOME/.ai-first-kit" 2>/dev/null
+chmod 700 "$HOME/.ai-first-kit" "$HOME/.ai-first-kit/projects" "$HOME/.ai-first-kit/projects/$SLUG" "$HOME/.ai-first-kit/projects/$SLUG/evolution" 2>/dev/null
 echo "Project: $SLUG"
 
 # Check required artifacts
@@ -282,7 +282,16 @@ Previous audit: {path or "first audit"}
 {Recommended order: address P1 findings first, then P2, then regenerate primer}
 ```
 
-Present the audit summary to the user inline before saving. Ask via AskUserQuestion: "Does this audit capture what you're seeing? Any findings missing or miscategorized?"
+Present the audit summary to the user inline before saving.
+
+**Holdout content self-review (defense-in-depth):** Before saving, scan the draft audit for holdout leakage. Verify that:
+- No holdout scenario names, descriptions, or test case specifics appear anywhere in the audit
+- The Gate Effectiveness section contains only metric values (rates, counts, dates) — never scenario content
+- No phrases like "the holdout for..." or "scenario X tests..." appear in any section
+
+If any holdout content is detected, remove it and replace with metric-only language before proceeding.
+
+Ask via AskUserQuestion: "Does this audit capture what you're seeing? Any findings missing or miscategorized?"
 
 Apply feedback, then save.
 
@@ -338,7 +347,9 @@ This skill is invoked:
 
 **Routes to:** `org-genome-builder` (genome revisions), `quality-gate-designer` (gate revisions, holdout refresh), `specification-writer` (spec revisions), `governance-architect` (governance updates), `operationalize` (primer regeneration after revisions are complete).
 
-**Security:** This skill reads `gates/.holdouts/` for evaluation purposes — the same privilege level as `quality-gate-designer` which creates them. It NEVER exposes holdout content in output artifacts. It NEVER reads `political-map-*.md`.
+**Security:** This skill reads `gates/.holdouts/` for evaluation purposes — the same privilege level as `quality-gate-designer` which creates them. It NEVER exposes holdout content in output artifacts (enforced by the holdout content self-review in Phase 8). It NEVER reads `political-map-*.md`.
+
+**Data sensitivity:** The decision ledger (`evolution/decision-ledger.md`) is append-only and cumulative — it grows with each audit cycle, accumulating operational evidence (incidents, failures, value conflicts, authority calibration data). Unlike point-in-time audit artifacts, the ledger's sensitivity increases over time. The `chmod 700` applied to the `evolution/` directory restricts access, but organizations with compliance requirements should consider additional access controls or encryption for this file.
 
 ## References
 
