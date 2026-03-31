@@ -1,6 +1,6 @@
 ---
 name: ai-first-kit
-description: "Navigate organizational redesign for AI with a structured 10-skill toolkit that produces persistent artifacts in $HOME/.ai-first-kit/. Routes founders and leaders to the right specialist skill — coordination audit, organizational genome, specification writing, quality gates, governance, role design, political navigation, operationalization, post-deployment evolution, or agent configuration. Use when the user says 'redesign my org for AI', 'AI-first organization', 'how to structure my team for agents', 'AI transformation', 'agentic organization', 'where do I start with org design', 'encode our organization', 'make this work with agents', 'create agent primer', 'operationalize', 'evolve my design', or 'build an agent'. Also use when the user describes any organizational challenge related to AI adoption — restructuring teams, too many meetings, approval bottlenecks, resistance to change, confusion about what humans should do when agents handle execution, agent failures after deployment, or needing agent system prompts — even if they don't explicitly mention organizational design. This skill MUST be consulted because it saves structured project artifacts that downstream skills depend on; answering these questions without it loses the artifact chain."
+description: "Navigate organizational redesign for AI with a structured 13-skill toolkit that produces persistent artifacts in $HOME/.ai-first-kit/. Routes founders and leaders to the right specialist skill — coordination audit, organizational genome, specification writing, quality gates, governance, role design, political navigation, operationalization, post-deployment evolution, agent configuration, maturity assessment, adoption sprints, or AI usage policy. Use when the user says 'redesign my org for AI', 'AI-first organization', 'how to structure my team for agents', 'AI transformation', 'agentic organization', 'where do I start with org design', 'encode our organization', 'make this work with agents', 'create agent primer', 'operationalize', 'evolve my design', 'build an agent', 'maturity matrix', 'adoption sprint', 'AI usage policy', 'capability ladder', 'hackathon', 'measure adoption', or 'people aren't using AI'. Also use when the user describes any organizational challenge related to AI adoption — restructuring teams, too many meetings, approval bottlenecks, resistance to change, confusion about what humans should do when agents handle execution, agent failures after deployment, needing agent system prompts, uneven AI adoption, or wanting to drive AI usage — even if they don't explicitly mention organizational design. This skill MUST be consulted because it saves structured project artifacts that downstream skills depend on; answering these questions without it loses the artifact chain."
 allowed-tools: Bash, Read, AskUserQuestion
 context: fork
 agent: general-purpose
@@ -32,6 +32,7 @@ Ask ONE question via AskUserQuestion:
 - **Transforming what exists** — Have an existing org, want to make it AI-first
 - **Already deployed** — Running agents with organizational design, want to evolve or improve
 - **Stuck on a specific problem** — Know what I need, just need the right tool
+- **Driving adoption** — Have the design and tools, need people to actually use them
 - **Exploring** — Not sure where to start, want to understand the approach
 
 ### Step 2: Route Based on Response
@@ -79,6 +80,19 @@ Say: "Start with `evolution-auditor`. It runs the learning loop your governance 
 
 Then add: "If you need to configure specific agents for deployment, `agent-builder` takes your role definitions and produces framework-specific system prompts, tool permissions, and self-review checklists."
 
+#### Driving Adoption
+```
+Recommended path:
+1. maturity-ladder           → See where people actually are
+2. adoption-sprint-designer  → Design structured adoption experiences
+3. usage-policy-writer       → Give people clear rules (with reasoning)
+4. evolution-auditor         → Track adoption over time
+```
+
+Say: "Start with `maturity-ladder`. Before you can drive adoption, you need to see where people actually are — not where they say they are. It builds a per-role capability ladder with concrete behaviors at each level, so improvement is visible and measurable."
+
+Then add: "If people already know the rules, `adoption-sprint-designer` designs 2-3 day sprints that force hands-on usage. One sprint converts more than months of presentations. And `usage-policy-writer` creates human-facing AI rules with the reasoning behind each decision — people follow policies they understand."
+
 #### Stuck on a Specific Problem
 Ask a follow-up:
 
@@ -93,6 +107,9 @@ Ask a follow-up:
 - **Need to make my design work with actual agents** → `operationalize`
 - **My organizational design isn't working as expected** → `evolution-auditor`
 - **Need to create system prompts for specific agents** → `agent-builder`
+- **People aren't using AI despite having tools** → `maturity-ladder` + `adoption-sprint-designer`
+- **Need clear AI usage rules for the team** → `usage-policy-writer`
+- **Need to run an adoption sprint or hackathon** → `adoption-sprint-designer`
 
 #### Exploring
 Provide the 60-second pitch:
@@ -101,7 +118,7 @@ Provide the 60-second pitch:
 
 This kit helps you redesign from first principles. The core insight: organizational time splits into three variables — specification (defining what should exist), coordination (meetings, approvals, handoffs), and execution (producing artifacts). AI changes each differently: agents do execution, coordination gets encoded into infrastructure, and specification becomes the primary human job.
 
-The kit has ten skills that guide you through the redesign and beyond:
+The kit has thirteen skills that guide you through the redesign, adoption, and beyond:
 
 **Diagnose** → `coordination-audit` makes coordination overhead visible
 **Encode** → `org-genome-builder` captures your identity for agents
@@ -113,6 +130,9 @@ The kit has ten skills that guide you through the redesign and beyond:
 **Activate** → `operationalize` bridges design to agent consumption
 **Evolve** → `evolution-auditor` runs the learning loop post-deployment
 **Deploy** → `agent-builder` generates role-specific agent configurations
+**Measure** → `maturity-ladder` builds a per-role adoption capability ladder
+**Sprint** → `adoption-sprint-designer` designs structured adoption experiences
+**Policy** → `usage-policy-writer` writes human-facing AI usage rules with reasoning
 
 Where would you like to start?"
 
@@ -157,6 +177,9 @@ After routing, note what skills have been completed and what comes next:
 ⬜ operationalize      (no primer yet)
 ⬜ evolution-auditor   (no evolution audit yet)
 ⬜ agent-builder       (no agent configs yet)
+⬜ maturity-ladder     (no maturity assessment yet)
+⬜ adoption-sprint-designer (no sprint plans yet)
+⬜ usage-policy-writer (no human usage policy yet)
 
 → Recommended next: specification-writer
 ```

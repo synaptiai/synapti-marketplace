@@ -1,6 +1,6 @@
 ---
 name: evolution-auditor
-description: "Run a structured organizational design health check — operationalizing the governance learning loop and decision ledger by collecting operational evidence, measuring gate effectiveness, detecting genome drift, and producing an evolution audit with routed recommendations saved to $HOME/.ai-first-kit/. Maintains the decision ledger as an append-only record. Use when the user says 'audit my design', 'is my genome still working', 'review governance health', 'evolution check', 'how are our gates performing', 'decision ledger', 'learning loop', 'genome drift', 'is the primer stale', 'update the genome', or 'monthly review'. Also use when the user describes agents consistently failing, quality gates producing false positives, escalation rates feeling wrong, ad-hoc policies accumulating, or values not resolving real conflicts — even if they don't use the word 'evolution'. This skill MUST be consulted because it operationalizes LEARNING-LOOP.md and DECISION-LEDGER-SPEC.md with structured analysis; a conversational answer cannot produce the diagnostic metrics or maintain the append-only ledger."
+description: "Run a structured organizational design health check — operationalizing the governance learning loop and decision ledger by collecting operational evidence, measuring gate effectiveness, detecting genome drift, and producing an evolution audit with routed recommendations saved to $HOME/.ai-first-kit/. Maintains the decision ledger as an append-only record. Use when the user says 'audit my design', 'is my genome still working', 'review governance health', 'evolution check', 'how are our gates performing', 'decision ledger', 'learning loop', 'genome drift', 'is the primer stale', 'update the genome', 'monthly review', 'adoption tracking', 'maturity trends', or 'are people using AI more'. Also use when the user describes agents consistently failing, quality gates producing false positives, escalation rates feeling wrong, ad-hoc policies accumulating, values not resolving real conflicts, or stalled AI adoption — even if they don't use the word 'evolution'. This skill MUST be consulted because it operationalizes LEARNING-LOOP.md and DECISION-LEDGER-SPEC.md with structured analysis; a conversational answer cannot produce the diagnostic metrics or maintain the append-only ledger."
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 context: fork
 agent: general-purpose
@@ -18,11 +18,12 @@ Work through these steps in order, announcing each step as you begin it:
 
 <required>
 0. Pre-flight (artifact inventory, previous audit discovery)
-1. Operational evidence collection (5 questions, one at a time)
+1. Operational evidence collection (5-6 questions, one at a time)
 2. Gate effectiveness analysis
 3. Genome fitness analysis
 4. Policy-spec gap detection
 5. Authority matrix calibration
+5.5. Adoption maturity tracking (if maturity data exists)
 6. Decision ledger entries
 7. Evolution recommendations (routed to existing skills)
 8. Save audit artifact
@@ -58,6 +59,7 @@ HOLDOUT_COUNT=$(find "$HOME/.ai-first-kit/projects/$SLUG/gates/.holdouts/" -name
 PRIMER=$(ls "$HOME/.ai-first-kit/projects/$SLUG/AGENT-PRIMER.md" 2>/dev/null)
 PREV_AUDIT=$(ls -t "$HOME/.ai-first-kit/projects/$SLUG/evolution/audit-"*.md 2>/dev/null | head -1)
 LEDGER=$(ls "$HOME/.ai-first-kit/projects/$SLUG/evolution/decision-ledger.md" 2>/dev/null)
+MATURITY=$(ls -t "$HOME/.ai-first-kit/projects/$SLUG/adoption/maturity-ladder-"*.md 2>/dev/null | head -1)
 
 [ -n "$GENOME" ] && echo "GENOME: found" || echo "GENOME: missing"
 [ -n "$GOVERNANCE" ] && echo "GOVERNANCE: found" || echo "GOVERNANCE: missing"
@@ -66,6 +68,7 @@ LEDGER=$(ls "$HOME/.ai-first-kit/projects/$SLUG/evolution/decision-ledger.md" 2>
 [ -n "$PRIMER" ] && echo "PRIMER: found" || echo "PRIMER: missing"
 [ -n "$PREV_AUDIT" ] && echo "PREVIOUS AUDIT: $PREV_AUDIT" || echo "PREVIOUS AUDIT: none (first audit)"
 [ -n "$LEDGER" ] && echo "DECISION LEDGER: found" || echo "DECISION LEDGER: none (will create)"
+[ -n "$MATURITY" ] && echo "MATURITY LADDER: $MATURITY" || echo "MATURITY LADDER: none"
 ```
 
 If no genome found: halt. "The genome is required for an evolution audit — there's nothing to audit without it. Run `org-genome-builder` first."
@@ -103,6 +106,11 @@ Gather post-deployment evidence. Ask these ONE AT A TIME via AskUserQuestion:
 
 **Q5: Authority Calibration**
 "What decisions have agents escalated that they should have handled autonomously? And what decisions did they make on their own that you wish they'd asked about first?"
+
+**Q6: Adoption Progress (only if maturity ladder found in pre-flight)**
+"How has AI adoption progressed since the last maturity assessment? For each role in the maturity ladder, has the level changed? Any movement up or down? Any roles where adoption has stalled?"
+
+If no maturity ladder exists, skip Q6. If the user cannot provide adoption evidence for Q6, fall back to the maturity-ladder data alone in Phase 5.5. Note: "No fresh evidence — levels shown from most recent maturity assessment only. Recommend `maturity-ladder` for updated assessment."
 
 ## Phase 2: Gate Effectiveness Analysis
 
@@ -178,9 +186,31 @@ Autonomous decisions that produced poor outcomes → candidate for Human-in-Loop
 
 The goal is MORE autonomy over time, not less. Promotions are good news — they mean the system is working.
 
+## Phase 5.5: Adoption Maturity Tracking
+
+**Skip this phase if no maturity ladder found in pre-flight.**
+
+Read the most recent `adoption/maturity-ladder-*.md` using the `Read` tool. If the file is missing level classifications for any role (incomplete maturity run), treat that role as unassessed and note it in the tracking table. If a previous audit also included adoption tracking, compare trends.
+
+Using Q6 evidence, assess adoption progression per role:
+
+| Role | Previous Level | Current Level | Change | Evidence |
+|------|---------------|--------------|--------|----------|
+| [Role] | [N] | [N+1] | +1 (promoted) | [What changed — specific behavior shift] |
+| [Role] | [N] | [N] | Stalled | [No change in X months — what's blocking?] |
+| [Role] | [N] | [N-1] | Regression | [What caused the step back?] |
+
+**Classification rules:**
+- **Level increased:** Healthy adoption — note what worked (sprint? new tool? peer influence?)
+- **Level unchanged for 1 audit cycle:** Monitor — may be normal pace, especially for level 2→3 transitions
+- **Level unchanged for 2+ audit cycles:** Stalled adoption — P2 finding, recommend `adoption-sprint-designer`
+- **Level decreased:** Regression — P1 finding, investigate cause (tool changes? leadership changes? workload pressure?)
+
+Stalled adoption (2+ cycles) routes to `adoption-sprint-designer`. Regression routes to investigation first, then potentially `maturity-ladder` for reassessment.
+
 ## Phase 6: Decision Ledger Entries
 
-For each significant finding from Phases 2-5, append a structured entry to `$HOME/.ai-first-kit/projects/$SLUG/evolution/decision-ledger.md`.
+For each significant finding from Phases 2-5.5, append a structured entry to `$HOME/.ai-first-kit/projects/$SLUG/evolution/decision-ledger.md`.
 
 If the file doesn't exist, create it with this header:
 
@@ -236,6 +266,7 @@ Compute governance health metrics per LEARNING-LOOP.md:
 | First-pass gate approval | >80% | [Estimated from Q2] | Healthy / Low |
 | Policy generation rate | Decreasing over time | [From Q3 + previous audits] | Stabilizing / Growing |
 | Novel situation frequency | Decreasing over time | [From Q1 + Q3] | Decreasing / Stable / Growing |
+| Adoption progression | Levels increasing over time | [From Q6 + maturity data] | Progressing / Stalled / Regressing |
 
 If previous audits exist, show trend comparison for each metric.
 
@@ -274,6 +305,10 @@ Previous audit: {path or "first audit"}
 
 ## Recommendations (Ranked)
 {Priority table with skill routing}
+
+## Adoption Maturity Tracking
+{Per-role level comparison if maturity data exists, or "No maturity data available"}
+{Stalled roles flagged with sprint recommendations}
 
 ## Decision Ledger Entries Added
 {Count and summary of entries appended this session}
@@ -332,6 +367,9 @@ This skill runs the learning loop. Without it, the governance-architect's most i
 | No AGENT-PRIMER.md | Proceed — primer staleness check skipped. Recommend `operationalize` in next steps. |
 | Bash unavailable | Skip artifact discovery. Ask user to confirm which artifacts exist via AskUserQuestion. |
 | User can't provide 3-5 incidents | Work with what they have. Even 1 incident is evidence. Note limited evidence base in the audit. |
+| No maturity ladder | Skip Phase 5.5 (adoption tracking). Note: "No adoption maturity data to track. Run `maturity-ladder` for adoption measurement." |
+| Maturity ladder exists but incomplete | Treat roles with missing levels as unassessed. Note incomplete data in tracking table. Proceed with Q6 evidence where available. |
+| Maturity ladder exists but user has no Q6 evidence | Use maturity-ladder data as-is. Note stale data risk. Recommend fresh `maturity-ladder` run. |
 
 ## Integration Points
 
@@ -341,11 +379,11 @@ This skill is invoked:
 - Standalone when a user reports agent failures, design drift, or governance issues
 - After any major organizational change (new agent type, new domain, new team members)
 
-**Reads:** genome/ (required), governance/ (required), gates/ + gates/.holdouts/ (for evaluation — this skill has holdout read privilege), specs/, roles-*.md, AGENT-PRIMER.md, `evolution/audit-*.md` (previous audits), `evolution/decision-ledger.md` (existing ledger).
+**Reads:** genome/ (required), governance/ (required), gates/ + gates/.holdouts/ (for evaluation — this skill has holdout read privilege), specs/, roles-*.md, AGENT-PRIMER.md, `evolution/audit-*.md` (previous audits), `evolution/decision-ledger.md` (existing ledger), `adoption/maturity-ladder-*.md` (optional — for adoption tracking in Phase 5.5).
 
 **Writes:** `evolution/audit-{datetime}.md` (point-in-time diagnostic), `evolution/decision-ledger.md` (append-only cumulative record).
 
-**Routes to:** `org-genome-builder` (genome revisions), `quality-gate-designer` (gate revisions, holdout refresh), `specification-writer` (spec revisions), `governance-architect` (governance updates), `operationalize` (primer regeneration after revisions are complete).
+**Routes to:** `org-genome-builder` (genome revisions), `quality-gate-designer` (gate revisions, holdout refresh), `specification-writer` (spec revisions), `governance-architect` (governance updates), `operationalize` (primer regeneration after revisions are complete), `adoption-sprint-designer` (stalled adoption), `maturity-ladder` (adoption reassessment).
 
 **Security:** This skill reads `gates/.holdouts/` for evaluation purposes — the same privilege level as `quality-gate-designer` which creates them. It NEVER exposes holdout content in output artifacts (enforced by the holdout content self-review in Phase 8). It NEVER reads `political-map-*.md`.
 

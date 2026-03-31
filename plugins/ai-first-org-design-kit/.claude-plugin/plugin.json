@@ -1,7 +1,7 @@
 {
   "name": "ai-first-org-design-kit",
-  "version": "1.2.0",
-  "description": "Ten opinionated skills that guide founders and leaders through designing, deploying, and evolving organizations where agents handle coordination and execution while humans own specification and judgment. Diagnose coordination overhead, encode organizational identity, write agent-ready specifications, convert approvals into quality gates, architect governance ecosystems, redesign roles around value flows, navigate political dynamics, operationalize designs into agent-consumable primers, run post-deployment evolution audits, and generate role-specific agent configurations for any framework.",
+  "version": "1.3.0",
+  "description": "Thirteen opinionated skills that guide founders and leaders through designing, deploying, adopting, and evolving organizations where agents handle coordination and execution while humans own specification and judgment. Diagnose coordination overhead, encode organizational identity, write agent-ready specifications, convert approvals into quality gates, architect governance ecosystems, redesign roles around value flows, navigate political dynamics, operationalize designs into agent-consumable primers, run post-deployment evolution audits, generate role-specific agent configurations, build per-role AI maturity matrices, design structured adoption sprints, and write human-facing AI usage policies with risk model reasoning.",
   "author": {
     "name": "Synapti AI",
     "url": "https://github.com/synaptiai"
@@ -29,6 +29,12 @@
     "decision-ledger",
     "agent-builder",
     "agent-config",
-    "system-prompt-generation"
+    "system-prompt-generation",
+    "maturity-matrix",
+    "capability-ladder",
+    "adoption-sprint",
+    "hackathon",
+    "ai-usage-policy",
+    "adoption-measurement"
   ]
 }

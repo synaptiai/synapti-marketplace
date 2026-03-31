@@ -60,6 +60,21 @@ Not career levels — modes you move between within a single day:
 | **Designer** | Creating reusable workflows | Am I solving for a *class* of challenges? |
 | **Architect** | Encoding intent and judgment | Am I optimizing for the right future? |
 
+## AI Adoption Maturity Model
+
+Four levels of AI adoption, measured by observable behavior (not self-report):
+
+| Level | Name | Behavioral Test | Identity Frame |
+|-------|------|-----------------|----------------|
+| 0 | Not Engaged | No AI-assisted work tasks in the past 30 days | "I do my job without AI" |
+| 1 | Capable | Uses AI for 3+ distinct tasks/week, reviews all output, follows usage policy | "AI is a useful tool" |
+| 2 | Adoptive | Has designed at least 1 reusable AI workflow, delegates execution to AI by default | "I specify, AI executes" |
+| 3 | Transformative | Has built or extended an AI tool/skill/workflow that others now use | "I create new capabilities" |
+
+**Key design principle:** Level 3 is "invents new tools" not "uses AI the most." The identity shifts from "I don't need AI" to "I'm the one who creates new capabilities." This is an upgrade, not a replacement.
+
+The `maturity-ladder` skill produces per-role customizations of this model with organization-specific behaviors per cell. The `adoption-sprint-designer` designs structured experiences that move people between levels. The `evolution-auditor` tracks level changes over time.
+
 ## The Five Resistance Archetypes
 
 | Archetype | Power Source | Reframe To |
@@ -135,6 +150,11 @@ All skills save outputs to `$HOME/.ai-first-kit/projects/{slug}/` for downstream
 | operationalize | genome/ (required), governance/, gates/, specs/ | `AGENT-PRIMER.md`, `ORG-DESIGN-DUMP-{datetime}.md`, optionally `.claude/CLAUDE.md` | genome (required) |
 | evolution-auditor | genome/ (req), governance/ (req), gates/ incl. .holdouts/ (for evaluation), specs/, roles-*.md, AGENT-PRIMER.md, previous evolution audits, evolution/decision-ledger.md | `evolution/audit-{datetime}.md`, `evolution/decision-ledger.md` (append-only) | genome + governance (both required) |
 | agent-builder | roles-*.md (req), genome/ (req), governance/, gates/, specs/, AGENT-PRIMER.md | `agents/{role-slug}/` directory, `agents/INDEX.md` | roles + genome (both required) |
+| maturity-ladder | roles-*.md (optional), genome (optional), audit-*.md (coordination audit, optional), previous maturity assessments | `adoption/maturity-ladder-{datetime}.md`, `adoption/maturity-visibility.md` | — |
+| adoption-sprint-designer | adoption/maturity-ladder (optional), roles-*.md (optional), genome (optional), governance/HUMAN-USAGE-POLICY.md (optional), previous sprint plans | `adoption/sprint-{name}-{datetime}.md`, `adoption/sprint-measurement.md` | — |
+| usage-policy-writer | governance/HARD-BOUNDARIES.md (optional), genome VALUES.md (optional), genome VOICE.md (optional), existing HUMAN-USAGE-POLICY.md (update detection) | `governance/HUMAN-USAGE-POLICY.md` | — |
+
+**Note:** `adoption-sprint-designer` checks for `political-map-*.md` existence (count only via `find | wc -l`) but NEVER reads content. This is not a "read" dependency — it's an existence check that triggers a security note in pre-flight output.
 
 ## Skill Dependency Map
 
@@ -146,27 +166,28 @@ org-genome-builder ─────────┬──── political-navigato
        │ (required by some) │
        ├────────────────────┤
        ▼                    ▼
-specification-writer  governance-architect
-       │                    │
-       ▼                    │
-quality-gate-designer ◄─────┘
-       │
-       ▼
-role-value-mapper
-       │
-       ▼
-operationalize ◄─── reads ALL upstream artifacts (genome required, rest optional)
-       │
-       ├────────────────────┐
-       ▼                    ▼
+specification-writer  governance-architect ──► usage-policy-writer
+       │                    │                  (human-facing policy)
+       ▼                    │                        │ (optional)
+quality-gate-designer ◄─────┘                        │
+       │                                             │
+       ▼                                             │
+role-value-mapper                                    │
+       │                                             │
+       ├──────────────────────────────┐              │
+       ▼                              ▼              │
+operationalize              maturity-ladder (optional)
+       │                              │              │
+       ├────────────────────┐         ▼              │
+       ▼                    ▼   adoption-sprint-designer ◄───┘
 evolution-auditor     agent-builder
 (post-deployment)     (agent configs)
        │
        └──► routes to upstream skills for revision
 ```
 
-Skills marked "optional" degrade gracefully without upstream artifacts. Skills marked "recommended" warn and offer alternatives if the dependency is missing. The map shows what's structurally possible; the Greenfield and Brownfield paths in the README show the recommended order.
+Skills marked "optional" degrade gracefully without upstream artifacts. Skills marked "recommended" warn and offer alternatives if the dependency is missing. The map shows what's structurally possible; the Greenfield, Brownfield, and Adoption paths in the README show the recommended order.
 
 The `operationalize` skill distills all produced artifacts into an agent-consumable primer (AGENT-PRIMER.md). It gracefully handles partial completion (only genome required).
 
-Post-deployment, two additional skills extend the lifecycle: `evolution-auditor` runs the learning loop and decision ledger to evolve the design from operational evidence, and `agent-builder` generates role-specific agent configurations for any framework. The `evolution-auditor` requires the genome and governance to exist; `agent-builder` requires role definitions and the genome at minimum. Both benefit from but do not require `operationalize` to have run.
+Post-deployment, five additional skills extend the lifecycle: `evolution-auditor` runs the learning loop and decision ledger, `agent-builder` generates role-specific agent configurations, `maturity-ladder` assesses adoption levels per role, `adoption-sprint-designer` creates structured adoption experiences, and `usage-policy-writer` produces human-facing AI usage policies. The adoption skills have soft dependencies — they benefit from upstream artifacts but can run standalone. The `evolution-auditor` tracks adoption maturity trends when maturity data exists.

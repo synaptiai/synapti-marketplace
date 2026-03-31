@@ -265,6 +265,9 @@ Present:
    - "For agent consumption, always use AGENT-PRIMER.md — never the dump (too large for agent context)"
 7. **Post-deployment evolution** — "Run `evolution-auditor` periodically (recommended: monthly) to check organizational design health. It operationalizes the learning loop and decision ledger from your governance documents."
 8. **Agent deployment** — "Run `agent-builder` to generate role-specific system prompts for agents filling the roles defined in your roles file. Supports Claude Code, OpenAI Agents SDK, Anthropic Agent SDK, CrewAI, and custom frameworks."
+9. **Adoption measurement** — "Run `maturity-ladder` to build a per-role AI adoption capability ladder. It measures where people actually are (not where they say they are) and creates visible progression paths."
+10. **Adoption sprints** — "Run `adoption-sprint-designer` to create structured 2-3 day sprints that force hands-on AI usage. One sprint converts more than months of presentations."
+11. **Human usage policy** — "Run `usage-policy-writer` to create a human-facing AI usage policy with approved tools, data classification, and the reasoning behind each decision."
 
 ## Rules
 

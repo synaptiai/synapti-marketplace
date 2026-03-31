@@ -1,8 +1,8 @@
 # AI-First Org Design Kit
 
-> **Version:** 1.2.0 | **License:** MIT | **Category:** Organizational Design
+> **Version:** 1.3.0 | **License:** MIT | **Category:** Organizational Design
 
-Ten opinionated skills that guide founders and leaders through designing, deploying, and evolving organizations where agents handle coordination and execution while humans own specification and judgment.
+Thirteen opinionated skills that guide founders and leaders through designing, deploying, adopting, and evolving organizations where agents handle coordination and execution while humans own specification and judgment.
 
 **This is not about adopting AI tools.** It's about re-engineering the operating model.
 
@@ -24,17 +24,27 @@ Organizations are specification machines that pretended to be execution machines
 Skills run in sequence. Each feeds into the next.
 
 ```
-Diagnose → Encode Identity → Specify → Design Gates → Architect Governance → Map Roles → Navigate Politics → Operationalize → Evolve → Deploy Agents
+Diagnose → Encode Identity → Specify → Design Gates → Architect Governance → Map Roles → Navigate Politics → Operationalize → Measure Adoption → Sprint → Deploy Agents → Evolve
 ```
 
 ### Greenfield Path (Founders)
 ```
-org-genome-builder → specification-writer → governance-architect → quality-gate-designer → role-value-mapper → operationalize → [optional] agent-builder → [ongoing] evolution-auditor
+org-genome-builder → specification-writer → governance-architect → quality-gate-designer → role-value-mapper → operationalize → [optional] maturity-ladder → adoption-sprint-designer → agent-builder → [ongoing] evolution-auditor
 ```
 
 ### Brownfield Path (Leaders)
 ```
-coordination-audit → political-navigator → org-genome-builder → quality-gate-designer → specification-writer → role-value-mapper → governance-architect → operationalize → [optional] agent-builder → [ongoing] evolution-auditor
+coordination-audit → political-navigator → org-genome-builder → quality-gate-designer → specification-writer → role-value-mapper → governance-architect → operationalize → [optional] maturity-ladder → adoption-sprint-designer → usage-policy-writer → agent-builder → [ongoing] evolution-auditor
+```
+
+### Already Deployed Path
+```
+evolution-auditor → (revision skills based on findings) → operationalize → agent-builder
+```
+
+### Driving Adoption Path
+```
+maturity-ladder → adoption-sprint-designer → usage-policy-writer → [ongoing] evolution-auditor
 ```
 
 ### Quick Start
@@ -56,6 +66,9 @@ All skills live under `skills/` and follow the standard plugin SKILL.md format.
 | `skills/operationalize` | **Operational Bridge** | Distills all design artifacts into an agent-consumable primer (AGENT-PRIMER.md) and optionally merges governance into project CLAUDE.md |
 | `skills/evolution-auditor` | **Organizational Fitness Auditor** | Runs the learning loop post-deployment: gate effectiveness, genome fitness, authority calibration, decision ledger |
 | `skills/agent-builder` | **Agent Configuration Engineer** | Generates role-specific agent system prompts, tool permissions, and framework configs from organizational design artifacts |
+| `skills/maturity-ladder` | **Adoption Diagnostician** | Builds per-role AI maturity matrix with observable behaviors, current assessment, and visibility infrastructure |
+| `skills/adoption-sprint-designer` | **Sprint Architect** | Designs structured adoption sprints with objectives, buddy pairing, demo format, and activity-based measurement |
+| `skills/usage-policy-writer` | **AI Policy Architect** | Generates human-facing AI usage policy with approved tools, data classification, risk model reasoning, and exceptions |
 
 The router skill (`skills/ai-first-kit`) is the entry point — it diagnoses the user's situation and routes to the appropriate skill.
 
@@ -92,6 +105,14 @@ Once operational, two additional skills maintain and extend the design:
 
 - **`evolution-auditor`** — Monthly health check that runs the governance learning loop. Measures gate effectiveness, checks genome fitness against real decisions, calibrates the authority matrix, maintains the decision ledger, and routes findings to existing skills for revision.
 - **`agent-builder`** — Generates role-specific agent configurations from your organizational design artifacts. Produces system prompts, tool permissions, and self-review checklists. Supports Claude Code, OpenAI Agents SDK, Anthropic Agent SDK, CrewAI, and custom frameworks.
+
+## Adoption
+
+Three skills address the human side of AI adoption:
+
+- **`maturity-ladder`** — Builds a per-role capability ladder with 4 levels (Not Engaged → Capable → Adoptive → Transformative). Measures actual behavior, not self-assessment. Creates visible progression paths that motivate through social proof.
+- **`adoption-sprint-designer`** — Designs structured 2-3 day sprints (hackathons) that force hands-on AI usage. Includes buddy pairing, demo format, activity-based measurement, and leadership sequencing. One sprint converts more than months of presentations.
+- **`usage-policy-writer`** — Generates a human-facing AI usage policy explaining what tools are approved, data classification, and the reasoning behind each decision. Addresses the "I don't know what I'm allowed to do" barrier that kills adoption.
 
 ## What This Kit Does NOT Cover
 
