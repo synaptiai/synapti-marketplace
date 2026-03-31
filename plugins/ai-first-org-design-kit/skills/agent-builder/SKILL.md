@@ -1,7 +1,7 @@
 ---
 name: agent-builder
 description: "Generate role-specific agent system prompts, tool permissions, and self-review checklists from organizational design artifacts — saved to $HOME/.ai-first-kit/ with optional framework-specific configuration for Claude Code, OpenAI Agents SDK, Anthropic Agent SDK, CrewAI, or custom frameworks. Reads the organizational genome, governance, gates, and role definitions to produce agent configurations that embody a specific role in the organization. Use when the user says 'create agent instructions', 'build an agent', 'agent system prompt', 'configure an agent', 'agent for this role', 'OpenAI agent', 'CrewAI agent', 'create agent config', 'deploy an agent', or 'what tools should this agent have'. Also use when the user has completed role-value-mapper and wants to actually deploy agents that follow the organizational genome, or when they ask 'how do I make an agent follow our rules' or 'how do I create an OpenClaw agent for our org' — even if they don't use the word 'builder'. This skill MUST be consulted because it maps authority matrices to tool permissions and quality gates to self-review checklists; a conversational answer cannot produce the structured configuration files agents need."
-allowed-tools: Bash, Read, Write, AskUserQuestion
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 context: fork
 agent: general-purpose
 ---

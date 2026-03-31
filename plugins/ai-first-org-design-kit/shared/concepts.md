@@ -70,6 +70,17 @@ Not career levels — modes you move between within a single day:
 | Empire Builder | Headcount/budget | **Leverage Maximizer** — measured by output-per-person × scope |
 | Process Owner | Built current system | **Workflow Designer** — translates process knowledge into agent-native specs |
 
+## Governance Health Metrics
+
+Track these to assess whether the governance system is healthy. The `evolution-auditor` skill computes these during each audit cycle.
+
+| Metric | Healthy Range | Too Low Means | Too High Means |
+|--------|-------------|---------------|----------------|
+| Escalation rate | 5-15% of decisions | Agents may be overstepping authority | Governance too restrictive |
+| First-pass gate approval | >80% | Agents not self-reviewing effectively | Gates may be too lenient |
+| Policy generation rate | Decreasing over time | System stabilized (good) OR agents avoiding novel situations (bad) | Governance has gaps |
+| Novel situation frequency | Decreasing over time | Coverage expanding (good) | Agents encountering unfamiliar territory |
+
 ## Organizational Genome Structure
 
 The foundational identity specification. Built in two phases:
@@ -123,7 +134,7 @@ All skills save outputs to `$HOME/.ai-first-kit/projects/{slug}/` for downstream
 | political-navigator | audit (optional) | `political-map-{datetime}.md` | — |
 | operationalize | genome/ (required), governance/, gates/, specs/ | `AGENT-PRIMER.md`, `ORG-DESIGN-DUMP-{datetime}.md`, optionally `.claude/CLAUDE.md` | genome (required) |
 | evolution-auditor | genome/ (req), governance/ (req), gates/ incl. .holdouts/ (for evaluation), specs/, roles-*.md, AGENT-PRIMER.md, previous evolution audits | `evolution/audit-{datetime}.md`, `evolution/decision-ledger.md` (append-only) | genome + governance (both required) |
-| agent-builder | roles-*.md (req), genome/ (req), governance/ (req), gates/, specs/, AGENT-PRIMER.md | `agents/{role-slug}/` directory, `agents/INDEX.md` | roles + genome (both required) |
+| agent-builder | roles-*.md (req), genome/ (req), governance/, gates/, specs/, AGENT-PRIMER.md | `agents/{role-slug}/` directory, `agents/INDEX.md` | roles + genome (both required) |
 
 ## Skill Dependency Map
 

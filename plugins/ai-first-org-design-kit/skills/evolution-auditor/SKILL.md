@@ -123,7 +123,7 @@ For each gate, estimate effectiveness based on user evidence from Q1 and Q2:
 **Classification rules:**
 - False positive rate >20%: gate criteria too strict → recommend `quality-gate-designer` revision
 - Escape rate >10%: gate criteria too lenient OR holdout scenarios stale → recommend holdout refresh
-- Holdouts not updated in >90 days: flag staleness per LEARNING-LOOP.md anti-fossilization rule (line 77-79)
+- Holdouts not updated in >90 days: flag staleness per LEARNING-LOOP.md anti-fossilization rule
 - No incidents related to this gate: Healthy (but note limited evidence)
 
 ## Phase 3: Genome Fitness Analysis
