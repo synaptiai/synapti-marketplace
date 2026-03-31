@@ -23,7 +23,7 @@ AI changes each differently: Execution → agents do it. Coordination → gets e
 | Execution oversight | 10-15% | Monitoring agent output, handling edge cases |
 | System evolution | 15-20% | Updating genome, governance, and specs as the org learns |
 
-These ranges overlap intentionally — allocation varies by org maturity. Early AI-first orgs skew toward specification; mature ones shift toward evolution.
+These ranges overlap intentionally — allocation varies by org maturity. Early AI-first orgs skew toward specification; mature ones shift toward evolution. The `evolution-auditor` skill operationalizes this "system evolution" time allocation. Recommended cadence: monthly.
 
 ## The Specification Stack
 
@@ -122,6 +122,8 @@ All skills save outputs to `$HOME/.ai-first-kit/projects/{slug}/` for downstream
 | role-value-mapper | audit, genome | `roles-{datetime}.md` | — |
 | political-navigator | audit (optional) | `political-map-{datetime}.md` | — |
 | operationalize | genome/ (required), governance/, gates/, specs/ | `AGENT-PRIMER.md`, `ORG-DESIGN-DUMP-{datetime}.md`, optionally `.claude/CLAUDE.md` | genome (required) |
+| evolution-auditor | genome/ (req), governance/ (req), gates/ incl. .holdouts/ (for evaluation), specs/, roles-*.md, AGENT-PRIMER.md, previous evolution audits | `evolution/audit-{datetime}.md`, `evolution/decision-ledger.md` (append-only) | genome + governance (both required) |
+| agent-builder | roles-*.md (req), genome/ (req), governance/ (req), gates/, specs/, AGENT-PRIMER.md | `agents/{role-slug}/` directory, `agents/INDEX.md` | roles + genome (both required) |
 
 ## Skill Dependency Map
 
@@ -143,8 +145,17 @@ role-value-mapper
        │
        ▼
 operationalize ◄─── reads ALL upstream artifacts (genome required, rest optional)
+       │
+       ├────────────────────┐
+       ▼                    ▼
+evolution-auditor     agent-builder
+(post-deployment)     (agent configs)
+       │
+       └──► routes to upstream skills for revision
 ```
 
 Skills marked "optional" degrade gracefully without upstream artifacts. Skills marked "recommended" warn and offer alternatives if the dependency is missing. The map shows what's structurally possible; the Greenfield and Brownfield paths in the README show the recommended order.
 
-The `operationalize` skill is the final step — it reads all produced artifacts and distills them into an agent-consumable primer (AGENT-PRIMER.md). It gracefully handles partial completion (only genome required).
+The `operationalize` skill distills all produced artifacts into an agent-consumable primer (AGENT-PRIMER.md). It gracefully handles partial completion (only genome required).
+
+Post-deployment, two additional skills extend the lifecycle: `evolution-auditor` runs the learning loop and decision ledger to evolve the design from operational evidence, and `agent-builder` generates role-specific agent configurations for any framework. Both require `operationalize` to have run (or at minimum, the genome to exist).
