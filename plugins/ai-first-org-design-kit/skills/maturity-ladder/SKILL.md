@@ -95,7 +95,7 @@ The default maturity framework (from `shared/concepts.md`):
 | 2 | Adoptive | Has designed at least 1 reusable AI workflow, delegates execution to AI by default | "I specify, AI executes" |
 | 3 | Transformative | Has built or extended an AI tool/skill/workflow that others now use | "I create new capabilities" |
 
-**The critical design principle:** Level 3 is "invents new tools" — NOT "uses AI the most." The highest maturity level is about BUILDING capabilities that amplify others, not maximizing personal AI usage. This reframes the identity from "I don't need AI" to "I'm the one who makes the AI dangerous."
+**The critical design principle:** Level 3 is "invents new tools" — NOT "uses AI the most." The highest maturity level is about BUILDING capabilities that amplify others, not maximizing personal AI usage. This reframes the identity from "I don't need AI" to "I'm the one who creates new capabilities."
 
 For EACH role, ask ONE question via AskUserQuestion:
 
@@ -310,7 +310,7 @@ This skill is invoked:
 - Standalone when a user wants to assess AI readiness
 - Periodically (quarterly recommended) to track progression
 
-**Reads:** roles-*.md (recommended), genome/ (optional), audit-*.md (optional), previous `adoption/maturity-ladder-*.md` (trend comparison).
+**Reads:** roles-*.md (recommended), genome/ (optional), audit-*.md (coordination audit, optional — for workflow context), previous `adoption/maturity-ladder-*.md` (trend comparison).
 
 **Writes:** `adoption/maturity-ladder-{datetime}.md` (point-in-time assessment), `adoption/maturity-visibility.md` (visibility infrastructure design).
 

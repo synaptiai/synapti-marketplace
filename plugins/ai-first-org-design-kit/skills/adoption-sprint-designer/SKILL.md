@@ -400,6 +400,7 @@ The sprint works because it compresses the adoption journey into a structured ex
 | Fewer than 6 participants | Fine — even 2 people can sprint. Adjust buddy pairing (one pair instead of groups). |
 | No leadership participation | Proceed without Sprint 0. Note tradeoff: adoption relies entirely on peer motivation. |
 | Previous sprint exists | Read it. Build on lessons learned. Don't repeat what didn't work. |
+| Previous sprint exists but is incomplete | Note what's present, disregard missing sections. Design the new sprint from scratch for any section not captured in the previous plan. |
 
 ## Integration Points
 

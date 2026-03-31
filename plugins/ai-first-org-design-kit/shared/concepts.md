@@ -150,9 +150,11 @@ All skills save outputs to `$HOME/.ai-first-kit/projects/{slug}/` for downstream
 | operationalize | genome/ (required), governance/, gates/, specs/ | `AGENT-PRIMER.md`, `ORG-DESIGN-DUMP-{datetime}.md`, optionally `.claude/CLAUDE.md` | genome (required) |
 | evolution-auditor | genome/ (req), governance/ (req), gates/ incl. .holdouts/ (for evaluation), specs/, roles-*.md, AGENT-PRIMER.md, previous evolution audits, evolution/decision-ledger.md | `evolution/audit-{datetime}.md`, `evolution/decision-ledger.md` (append-only) | genome + governance (both required) |
 | agent-builder | roles-*.md (req), genome/ (req), governance/, gates/, specs/, AGENT-PRIMER.md | `agents/{role-slug}/` directory, `agents/INDEX.md` | roles + genome (both required) |
-| maturity-ladder | roles-*.md (optional), genome (optional), audit-*.md (optional), previous maturity assessments | `adoption/maturity-ladder-{datetime}.md`, `adoption/maturity-visibility.md` | — |
+| maturity-ladder | roles-*.md (optional), genome (optional), audit-*.md (coordination audit, optional), previous maturity assessments | `adoption/maturity-ladder-{datetime}.md`, `adoption/maturity-visibility.md` | — |
 | adoption-sprint-designer | adoption/maturity-ladder (optional), roles-*.md (optional), genome (optional), governance/HUMAN-USAGE-POLICY.md (optional), previous sprint plans | `adoption/sprint-{name}-{datetime}.md`, `adoption/sprint-measurement.md` | — |
 | usage-policy-writer | governance/HARD-BOUNDARIES.md (optional), genome VALUES.md (optional), genome VOICE.md (optional), existing HUMAN-USAGE-POLICY.md (update detection) | `governance/HUMAN-USAGE-POLICY.md` | — |
+
+**Note:** `adoption-sprint-designer` checks for `political-map-*.md` existence (count only via `find | wc -l`) but NEVER reads content. This is not a "read" dependency — it's an existence check that triggers a security note in pre-flight output.
 
 ## Skill Dependency Map
 
@@ -164,20 +166,20 @@ org-genome-builder ─────────┬──── political-navigato
        │ (required by some) │
        ├────────────────────┤
        ▼                    ▼
-specification-writer  governance-architect
-       │                    │         │
-       ▼                    │         ▼
-quality-gate-designer ◄─────┘   usage-policy-writer
-       │                         (human-facing policy)
-       ▼                              │ (optional)
-role-value-mapper                     │
-       │                              │
-       ├──────────────────────────────┐
-       ▼                              ▼
-operationalize                  maturity-ladder
-       │                              │ (optional)
-       ├────────────────────┐         ▼
-       ▼                    ▼   adoption-sprint-designer ◄── usage-policy-writer (optional)
+specification-writer  governance-architect ──► usage-policy-writer
+       │                    │                  (human-facing policy)
+       ▼                    │                        │ (optional)
+quality-gate-designer ◄─────┘                        │
+       │                                             │
+       ▼                                             │
+role-value-mapper                                    │
+       │                                             │
+       ├──────────────────────────────┐              │
+       ▼                              ▼              │
+operationalize              maturity-ladder (optional)
+       │                              │              │
+       ├────────────────────┐         ▼              │
+       ▼                    ▼   adoption-sprint-designer ◄───┘
 evolution-auditor     agent-builder
 (post-deployment)     (agent configs)
        │

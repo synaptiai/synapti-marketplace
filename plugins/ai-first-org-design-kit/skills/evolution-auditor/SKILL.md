@@ -110,7 +110,7 @@ Gather post-deployment evidence. Ask these ONE AT A TIME via AskUserQuestion:
 **Q6: Adoption Progress (only if maturity ladder found in pre-flight)**
 "How has AI adoption progressed since the last maturity assessment? For each role in the maturity ladder, has the level changed? Any movement up or down? Any roles where adoption has stalled?"
 
-If no maturity ladder exists, skip Q6.
+If no maturity ladder exists, skip Q6. If the user cannot provide adoption evidence for Q6, fall back to the maturity-ladder data alone in Phase 5.5. Note: "No fresh evidence — levels shown from most recent maturity assessment only. Recommend `maturity-ladder` for updated assessment."
 
 ## Phase 2: Gate Effectiveness Analysis
 
@@ -190,7 +190,7 @@ The goal is MORE autonomy over time, not less. Promotions are good news — they
 
 **Skip this phase if no maturity ladder found in pre-flight.**
 
-Read the most recent `adoption/maturity-ladder-*.md` using the `Read` tool. If a previous audit also included adoption tracking, compare trends.
+Read the most recent `adoption/maturity-ladder-*.md` using the `Read` tool. If the file is missing level classifications for any role (incomplete maturity run), treat that role as unassessed and note it in the tracking table. If a previous audit also included adoption tracking, compare trends.
 
 Using Q6 evidence, assess adoption progression per role:
 
@@ -368,6 +368,8 @@ This skill runs the learning loop. Without it, the governance-architect's most i
 | Bash unavailable | Skip artifact discovery. Ask user to confirm which artifacts exist via AskUserQuestion. |
 | User can't provide 3-5 incidents | Work with what they have. Even 1 incident is evidence. Note limited evidence base in the audit. |
 | No maturity ladder | Skip Phase 5.5 (adoption tracking). Note: "No adoption maturity data to track. Run `maturity-ladder` for adoption measurement." |
+| Maturity ladder exists but incomplete | Treat roles with missing levels as unassessed. Note incomplete data in tracking table. Proceed with Q6 evidence where available. |
+| Maturity ladder exists but user has no Q6 evidence | Use maturity-ladder data as-is. Note stale data risk. Recommend fresh `maturity-ladder` run. |
 
 ## Integration Points
 
