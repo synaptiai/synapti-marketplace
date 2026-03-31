@@ -9,6 +9,8 @@ Generate this skill at `.claude/skills/org-values-check/SKILL.md` in the target 
 name: org-values-check
 description: "Check a decision against organizational values and tradeoff rules. Use when values conflict, when making decisions that affect quality vs speed, simplicity vs completeness, or autonomy vs asking first."
 allowed-tools: Read
+context: fork
+agent: general-purpose
 ---
 <!-- generated-by: ai-first-kit v{VERSION} -->
 

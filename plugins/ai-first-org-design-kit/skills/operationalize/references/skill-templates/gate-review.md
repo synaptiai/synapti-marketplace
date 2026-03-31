@@ -10,6 +10,8 @@ name: org-gate-review
 description: "Self-review against a specific quality gate before presenting work. Use before submitting code for review, publishing content, creating releases, or presenting any work output."
 argument-hint: "[gate-name]"
 allowed-tools: Read
+context: fork
+agent: general-purpose
 ---
 <!-- generated-by: ai-first-kit v{VERSION} -->
 

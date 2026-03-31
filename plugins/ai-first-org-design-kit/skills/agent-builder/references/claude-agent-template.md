@@ -88,4 +88,4 @@ When generating, first check if `.claude/agents/{ROLE_SLUG}.md` already exists:
 - The `memory: project` field creates `.claude/agent-memory/{ROLE_SLUG}/MEMORY.md` on first run
 - Skills listed in `skills:` have their FULL content injected at agent startup
 - The `<!-- generated-by -->` comment enables version tracking and update detection
-- Agents do NOT get CLAUDE.md automatically — but the project's CLAUDE.md with @imports handles foundation context for the main session
+- Sub-agents receive the project's CLAUDE.md context through the normal message flow at session start. The @imports in CLAUDE.md provide foundation context (values, boundaries) to all agents without needing to inline it in the agent file. The agent's system prompt (markdown body) adds role-specific instructions on top of that foundation.
