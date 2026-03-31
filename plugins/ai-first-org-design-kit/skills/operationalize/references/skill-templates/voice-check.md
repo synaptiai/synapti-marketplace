@@ -9,10 +9,10 @@ Generate this skill at `.claude/skills/org-voice-check/SKILL.md` in the target p
 name: org-voice-check
 description: "Review content against organizational voice norms before publishing. Use before publishing articles, documentation, external communications, or any content visible to people outside the organization."
 allowed-tools: Read
-context: fork
+context: fork  # Runs in isolated context — voice review should not pollute main conversation
 agent: general-purpose
-<!-- generated-by: ai-first-kit v{VERSION} -->
 ---
+<!-- generated-by: ai-first-kit v{VERSION} -->
 
 # Voice Check
 

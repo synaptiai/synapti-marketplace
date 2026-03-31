@@ -9,8 +9,8 @@ Generate this skill at `.claude/skills/org-values-check/SKILL.md` in the target 
 name: org-values-check
 description: "Check a decision against organizational values and tradeoff rules. Use when values conflict, when making decisions that affect quality vs speed, simplicity vs completeness, or autonomy vs asking first."
 allowed-tools: Read
-<!-- generated-by: ai-first-kit v{VERSION} -->
 ---
+<!-- generated-by: ai-first-kit v{VERSION} -->
 
 # Values Check
 
@@ -59,7 +59,7 @@ Evaluate a decision or proposed action against organizational values and tradeof
 
 ## Rules
 - Always read the FULL VALUES.md and TRADEOFF-RULES.md — don't rely on memory
-- The priority ordering is authoritative: Quality > Simplicity > Autonomy > Observation
+- The priority ordering from TRADEOFF-RULES.md is authoritative (default: Quality > Simplicity > Autonomy > Observation — verify against your genome)
 - Audience breaks ties: building for self → quality wins; building for others → simplicity gates
 - If no tradeoff rule covers this specific conflict → flag as novel and recommend escalation
 - This skill evaluates, it doesn't decide — present the assessment, let the human or agent decide

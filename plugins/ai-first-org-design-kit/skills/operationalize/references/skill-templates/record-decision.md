@@ -9,8 +9,8 @@ Generate this skill at `.claude/skills/org-record-decision/SKILL.md` in the targ
 name: org-record-decision
 description: "Record a decision to the organizational decision ledger. Use when making Autonomous+Notify decisions or above, logging architectural choices, documenting policy decisions, or recording any significant judgment call."
 allowed-tools: Read, Write, Edit
-<!-- generated-by: ai-first-kit v{VERSION} -->
 ---
+<!-- generated-by: ai-first-kit v{VERSION} -->
 
 # Record Decision
 

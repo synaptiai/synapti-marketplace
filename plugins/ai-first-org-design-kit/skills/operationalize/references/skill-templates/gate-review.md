@@ -10,8 +10,8 @@ name: org-gate-review
 description: "Self-review against a specific quality gate before presenting work. Use before submitting code for review, publishing content, creating releases, or presenting any work output."
 argument-hint: "[gate-name]"
 allowed-tools: Read
-<!-- generated-by: ai-first-kit v{VERSION} -->
 ---
+<!-- generated-by: ai-first-kit v{VERSION} -->
 
 # Gate Self-Review
 
@@ -25,7 +25,7 @@ Run a structured self-review against a quality gate's pass criteria.
      `$HOME/.ai-first-kit/projects/{SLUG}/gates/INDEX.md`
 
 2. Read the gate file:
-   `$HOME/.ai-first-kit/projects/{SLUG}/gates/$0.md`
+   `$HOME/.ai-first-kit/projects/{SLUG}/gates/$ARGUMENTS.md`
 
 3. Extract the **Pass Criteria** section from the gate file.
 

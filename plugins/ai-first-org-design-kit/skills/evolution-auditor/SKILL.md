@@ -76,7 +76,7 @@ for AGENT_FILE in .claude/agents/*.md; do
     STALE=$(find "$HOME/.ai-first-kit/projects/$SLUG" -name "*.md" \
       -not -path "*.holdouts*" -not -path "*political-map*" \
       -newer "$AGENT_FILE" 2>/dev/null | wc -l | tr -d ' ')
-    [ "$STALE" -gt 0 ] 2>/dev/null && echo "STALE AGENT: $(basename $AGENT_FILE) — $STALE upstream artifacts newer" || echo "AGENT OK: $(basename $AGENT_FILE)"
+    [ "$STALE" -gt 0 ] 2>/dev/null && echo "STALE AGENT: $(basename "$AGENT_FILE") — $STALE upstream artifacts newer" || echo "AGENT OK: $(basename "$AGENT_FILE")"
   fi
 done 2>/dev/null
 ```

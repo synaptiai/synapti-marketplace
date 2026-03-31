@@ -363,7 +363,7 @@ Read the agent template from `references/claude-agent-template.md` for the full 
 1. **Map fields:**
    - `name:` → `{ROLE_SLUG}` from Phase 1
    - `description:` → One-sentence from role specification + "Use proactively for {top tasks}"
-   - `tools:` → Map from tool-permissions.md to Claude Code tool names (Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, AskUserQuestion, Agent)
+   - `tools:` → Comma-separated Claude Code tool names on a single line (e.g., `tools: Read, Write, Edit, Bash`). Map from tool-permissions.md using: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, AskUserQuestion, Agent
    - `memory: project` → Always set for persistent agent learning
    - `skills:` → Map governance skills based on agent type:
      - Development agents: `org-record-decision`, `org-novel-situation`, `org-gate-review`

@@ -9,8 +9,8 @@ Generate this skill at `.claude/skills/org-novel-situation/SKILL.md` in the targ
 name: org-novel-situation
 description: "Handle a novel situation with no existing governance policy. Use when encountering a scenario the authority matrix and policies don't cover, when governance has a gap, or when a new type of decision needs a policy."
 allowed-tools: Read, Write, AskUserQuestion
-<!-- generated-by: ai-first-kit v{VERSION} -->
 ---
+<!-- generated-by: ai-first-kit v{VERSION} -->
 
 # Novel Situation Handler
 
