@@ -1,6 +1,6 @@
 # AI-First Org Design Kit
 
-> **Version:** 1.3.0 | **License:** MIT | **Category:** Organizational Design
+> **Version:** 1.4.0 | **License:** MIT | **Category:** Organizational Design
 
 Thirteen opinionated skills that guide founders and leaders through designing, deploying, adopting, and evolving organizations where agents handle coordination and execution while humans own specification and judgment.
 
@@ -113,6 +113,16 @@ Three skills address the human side of AI adoption:
 - **`maturity-ladder`** — Builds a per-role capability ladder with 4 levels (Not Engaged → Capable → Adoptive → Transformative). Measures actual behavior, not self-assessment. Creates visible progression paths that motivate through social proof.
 - **`adoption-sprint-designer`** — Designs structured 2-3 day sprints (hackathons) that force hands-on AI usage. Includes buddy pairing, demo format, activity-based measurement, and leadership sequencing. One sprint converts more than months of presentations.
 - **`usage-policy-writer`** — Generates a human-facing AI usage policy explaining what tools are approved, data classification, and the reasoning behind each decision. Addresses the "I don't know what I'm allowed to do" barrier that kills adoption.
+
+## Claude Code Integration
+
+The `operationalize` and `agent-builder` skills can generate Claude Code-native primitives:
+
+- **CLAUDE.md @imports** — Import genome foundation (MISSION, VALUES, HARD-BOUNDARIES) directly into your project's CLAUDE.md. Always in context, auto-updates when source files change.
+- **Governance skills** — Five `/org-*` commands generated in `.claude/skills/`: record decisions, handle novel situations, check voice, review gates, evaluate values.
+- **Sub-agents** — Register configured agents as Claude Code sub-agents in `.claude/agents/`. Invokable via `@agent-name`. Preload governance skills for immediate availability.
+
+Skills are dynamic (read source files at invocation — auto-update). Agents are static (inlined prompts — need regeneration via `agent-builder` when upstream changes). The `evolution-auditor` detects stale agents.
 
 ## What This Kit Does NOT Cover
 

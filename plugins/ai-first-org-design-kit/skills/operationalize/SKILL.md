@@ -16,10 +16,11 @@ Work through these steps in order, announcing each step as you begin it:
 
 <required>
 0. Pre-flight (artifact inventory + change detection)
-1. Target selection
+1. Target selection (+ optional Claude Code skill generation)
 2. Artifact ingestion and distillation (or 2B: dump)
 3. Primer validation with user (skipped for dumps)
 4. Output generation (AGENT-PRIMER.md + optionally CLAUDE.md)
+4.5. Generate Claude Code skills (if selected in Phase 1)
 5. Summary and next steps
 </required>
 
@@ -58,6 +59,12 @@ PRIMER=$(ls "$HOME/.ai-first-kit/projects/$SLUG/AGENT-PRIMER.md" 2>/dev/null)
 [ -n "$SPECS" ] && echo "SPECS: found" || echo "SPECS: missing"
 [ -n "$ROLES" ] && echo "ROLES: found" || echo "ROLES: missing"
 [ -n "$PRIMER" ] && echo "EXISTING PRIMER: found" || echo "EXISTING PRIMER: none"
+
+# Check for Claude Code integration
+CC_SKILLS=$(ls .claude/skills/org-*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+CC_AGENTS=$(ls .claude/agents/*.md 2>/dev/null | wc -l | tr -d ' ')
+[ "$CC_SKILLS" -gt 0 ] 2>/dev/null && echo "CLAUDE CODE SKILLS: $CC_SKILLS governance skills" || echo "CLAUDE CODE SKILLS: none"
+[ "$CC_AGENTS" -gt 0 ] 2>/dev/null && echo "CLAUDE CODE AGENTS: $CC_AGENTS registered agents" || echo "CLAUDE CODE AGENTS: none"
 
 # Determine completeness tier
 if [ -n "$GENOME" ] && [ -n "$GOVERNANCE" ] && [ -n "$GATES" ]; then
@@ -98,9 +105,16 @@ Ask via AskUserQuestion:
 
 "What output targets do you need?"
 - **CLAUDE.md + AGENT-PRIMER.md** (Recommended) — Governance section in CLAUDE.md + standalone primer for universal use
+- **CLAUDE.md with @imports + AGENT-PRIMER.md** — Uses `@path/to/file` imports in CLAUDE.md for always-loaded genome foundation (MISSION, VALUES, HARD-BOUNDARIES). Leaner CLAUDE.md, content stays in sync automatically.
 - **AGENT-PRIMER.md only** — Standalone primer, no CLAUDE.md modifications
 - **CLAUDE.md only** — Governance section in CLAUDE.md, no standalone primer. Note: if no AGENT-PRIMER.md exists, the primer pointer in the CLAUDE.md section will be omitted.
 - **Full artifact dump** — Single document with all artifacts concatenated (full content, not distilled). For archival, reference, or sharing — not for agent consumption. Confidential sections (holdouts, political maps) are excluded by default; ask the user if they want to include them.
+
+After target selection, ask a follow-up via AskUserQuestion:
+
+"Generate Claude Code governance skills? These create invokable `/org-*` commands (voice check, gate review, decision recording, values check, novel situation handling) in your project's `.claude/skills/`."
+- **Yes** — Generate 5 governance operation skills as Claude Code skills
+- **No** — Skip skill generation
 
 ## Phase 2: Distillation
 
@@ -248,6 +262,70 @@ The CLAUDE.md section includes:
 - Pointer to gates/INDEX.md path
 - Closing marker: `<!-- /ai-first-kit-operationalize -->`
 
+If "@imports" was selected in Phase 1, use this format instead of inline content:
+
+```markdown
+<!-- ai-first-kit-operationalize: {YYYY-MM-DD-HHMM} -->
+## Organizational Governance
+
+@$HOME/.ai-first-kit/projects/{slug}/genome/00-identity/MISSION.md
+@$HOME/.ai-first-kit/projects/{slug}/governance/HARD-BOUNDARIES.md
+
+### Values (Decision Rules)
+@$HOME/.ai-first-kit/projects/{slug}/genome/00-identity/VALUES.md
+
+### Full Operating Primer
+For complete operating instructions: read `$HOME/.ai-first-kit/projects/{slug}/AGENT-PRIMER.md`
+
+### Quality Gates
+Self-review against gate criteria: read `$HOME/.ai-first-kit/projects/{slug}/gates/INDEX.md`
+<!-- /ai-first-kit-operationalize -->
+```
+
+The @import format (`@path/to/file`) expands file content in-place at session start. This means MISSION, VALUES, and HARD-BOUNDARIES are always in context without inlining — and they auto-update when the source files change.
+
+## Phase 4.5: Generate Claude Code Skills (Optional)
+
+**Skip this phase if the user chose "No" for skill generation in Phase 1.**
+
+Generate 5 governance operation skills in the target project's `.claude/skills/` directory.
+
+Read the skill templates from `references/skill-templates/` using the `Read` tool. For each template:
+
+1. Read the template (e.g., `references/skill-templates/record-decision.md`)
+2. Extract the SKILL.md content from the template's code block
+3. Replace `{SLUG}` with the project slug
+4. Replace `{VERSION}` with the current plugin version
+5. Write to `.claude/skills/{skill-name}/SKILL.md`
+
+**Skills to generate:**
+
+| Skill | Template | Target Path |
+|-------|----------|-------------|
+| org-record-decision | `references/skill-templates/record-decision.md` | `.claude/skills/org-record-decision/SKILL.md` |
+| org-novel-situation | `references/skill-templates/novel-situation.md` | `.claude/skills/org-novel-situation/SKILL.md` |
+| org-voice-check | `references/skill-templates/voice-check.md` | `.claude/skills/org-voice-check/SKILL.md` |
+| org-gate-review | `references/skill-templates/gate-review.md` | `.claude/skills/org-gate-review/SKILL.md` |
+| org-values-check | `references/skill-templates/values-check.md` | `.claude/skills/org-values-check/SKILL.md` |
+
+**Update detection:** Before writing each skill:
+1. Check if `.claude/skills/{skill-name}/SKILL.md` already exists
+2. If exists, check the `<!-- generated-by: ai-first-kit v{X} -->` comment for version
+3. If same version → skip: "Skill {name} already exists and is current (v{X})"
+4. If different version → ask: "Skill {name} exists (v{old}). Update to v{new}?"
+5. If doesn't exist → create the directory and write the file
+
+```bash
+# Create skill directories
+mkdir -p .claude/skills/org-record-decision
+mkdir -p .claude/skills/org-novel-situation
+mkdir -p .claude/skills/org-voice-check
+mkdir -p .claude/skills/org-gate-review
+mkdir -p .claude/skills/org-values-check
+```
+
+After generating, report: "Generated N governance skills in `.claude/skills/`. Available commands: `/org-record-decision`, `/org-novel-situation`, `/org-voice-check`, `/org-gate-review [gate-name]`, `/org-values-check`."
+
 ## Phase 5: Summary
 
 Present:
@@ -268,6 +346,7 @@ Present:
 9. **Adoption measurement** — "Run `maturity-ladder` to build a per-role AI adoption capability ladder. It measures where people actually are (not where they say they are) and creates visible progression paths."
 10. **Adoption sprints** — "Run `adoption-sprint-designer` to create structured 2-3 day sprints that force hands-on AI usage. One sprint converts more than months of presentations."
 11. **Human usage policy** — "Run `usage-policy-writer` to create a human-facing AI usage policy with approved tools, data classification, and the reasoning behind each decision."
+12. **Claude Code integration** (if skills were generated) — "Your governance operations are now available as Claude Code skills (`/org-record-decision`, `/org-voice-check`, etc.). Skills read source files dynamically and stay current when upstream artifacts change. Run `agent-builder` with the 'Register as Claude Code sub-agent' option to make your configured agents invokable via `@agent-name`."
 
 ## Rules
 

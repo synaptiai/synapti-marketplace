@@ -193,3 +193,20 @@ The `operationalize` skill distills all produced artifacts into an agent-consuma
 Post-deployment, five additional skills extend the lifecycle: `evolution-auditor` runs the learning loop and decision ledger, `agent-builder` generates role-specific agent configurations, `maturity-ladder` assesses adoption levels per role, `adoption-sprint-designer` creates structured adoption experiences, and `usage-policy-writer` produces human-facing AI usage policies. The adoption skills have soft dependencies — they benefit from upstream artifacts but can run standalone. The `evolution-auditor` tracks adoption maturity trends when maturity data exists.
 
 Three governance mechanisms are operationalized in the AGENT-PRIMER.md (via `operationalize` distillation): agents draft candidate policies for novel situations (from POLICY-GENERATION.md), record decisions to the append-only ledger for Autonomous+Notify and above (from DECISION-LEDGER-SPEC.md), and classify failure root causes before escalating (from LEARNING-LOOP.md). These are lightweight operational instructions, not full governance theory — agents read the full governance documents when needed via active references.
+
+## Claude Code Integration
+
+The `operationalize` and `agent-builder` skills can generate Claude Code-native primitives in three layers:
+
+**Layer 1 — CLAUDE.md @imports:** The `operationalize` skill can use `@path/to/file` syntax to import MISSION.md, VALUES.md, and HARD-BOUNDARIES.md directly into the project's CLAUDE.md. These expand at session start and auto-update when source files change.
+
+**Layer 2 — Project skills:** The `operationalize` skill can generate five governance operation skills in `.claude/skills/org-*/`:
+- `/org-record-decision` — Append to decision ledger
+- `/org-novel-situation` — Draft candidate policy for novel situations
+- `/org-voice-check` — Review content against voice norms
+- `/org-gate-review` — Self-review against a quality gate
+- `/org-values-check` — Check decision against values and tradeoff rules
+
+Skills read source files dynamically at invocation — they auto-update when upstream artifacts change without regeneration.
+
+**Layer 3 — Project sub-agents:** The `agent-builder` skill can register configured agents as Claude Code sub-agents in `.claude/agents/`. Agents preload governance skills via the `skills:` frontmatter field and use `memory: project` for persistent learning. Agent system prompts are inlined (static) — they need regeneration via `agent-builder` when upstream artifacts change. The `evolution-auditor` detects stale agents and recommends re-runs.
