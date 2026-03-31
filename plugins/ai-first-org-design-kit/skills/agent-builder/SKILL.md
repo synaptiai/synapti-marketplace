@@ -348,10 +348,12 @@ Iterate based on feedback. Common gaps to watch for:
 
 ## Phase 8: Save
 
-Sanitize role name for filesystem: lowercase, replace spaces with hyphens, remove special characters, truncate to 50 chars.
+Sanitize role name for filesystem safety:
 
 ```bash
-ROLE_SLUG="[sanitized role name]"
+# Sanitize: lowercase, replace spaces with hyphens, strip non-alphanumeric, truncate
+ROLE_SLUG=$(echo "[role name from Phase 1]" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | sed 's/[^a-z0-9-]//g' | head -c 50)
+[ -z "$ROLE_SLUG" ] && ROLE_SLUG="unnamed-agent"
 mkdir -p "$HOME/.ai-first-kit/projects/$SLUG/agents/$ROLE_SLUG"
 ```
 

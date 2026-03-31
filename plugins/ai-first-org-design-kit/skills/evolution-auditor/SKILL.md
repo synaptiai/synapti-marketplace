@@ -54,7 +54,7 @@ echo "Project: $SLUG"
 GENOME=$(ls "$HOME/.ai-first-kit/projects/$SLUG/genome/00-identity/VALUES.md" 2>/dev/null)
 GOVERNANCE=$(ls "$HOME/.ai-first-kit/projects/$SLUG/governance/LEARNING-LOOP.md" 2>/dev/null)
 GATES=$(ls "$HOME/.ai-first-kit/projects/$SLUG/gates/INDEX.md" 2>/dev/null)
-HOLDOUTS=$(ls "$HOME/.ai-first-kit/projects/$SLUG/gates/.holdouts/"*.md 2>/dev/null | head -5)
+HOLDOUT_COUNT=$(find "$HOME/.ai-first-kit/projects/$SLUG/gates/.holdouts/" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
 PRIMER=$(ls "$HOME/.ai-first-kit/projects/$SLUG/AGENT-PRIMER.md" 2>/dev/null)
 PREV_AUDIT=$(ls -t "$HOME/.ai-first-kit/projects/$SLUG/evolution/audit-"*.md 2>/dev/null | head -1)
 LEDGER=$(ls "$HOME/.ai-first-kit/projects/$SLUG/evolution/decision-ledger.md" 2>/dev/null)
@@ -62,7 +62,7 @@ LEDGER=$(ls "$HOME/.ai-first-kit/projects/$SLUG/evolution/decision-ledger.md" 2>
 [ -n "$GENOME" ] && echo "GENOME: found" || echo "GENOME: missing"
 [ -n "$GOVERNANCE" ] && echo "GOVERNANCE: found" || echo "GOVERNANCE: missing"
 [ -n "$GATES" ] && echo "GATES: found" || echo "GATES: missing"
-[ -n "$HOLDOUTS" ] && echo "HOLDOUTS: found" || echo "HOLDOUTS: missing"
+[ "$HOLDOUT_COUNT" -gt 0 ] 2>/dev/null && echo "HOLDOUTS: $HOLDOUT_COUNT files" || echo "HOLDOUTS: missing"
 [ -n "$PRIMER" ] && echo "PRIMER: found" || echo "PRIMER: missing"
 [ -n "$PREV_AUDIT" ] && echo "PREVIOUS AUDIT: $PREV_AUDIT" || echo "PREVIOUS AUDIT: none (first audit)"
 [ -n "$LEDGER" ] && echo "DECISION LEDGER: found" || echo "DECISION LEDGER: none (will create)"
