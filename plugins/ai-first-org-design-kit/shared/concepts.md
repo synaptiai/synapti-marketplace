@@ -133,7 +133,7 @@ All skills save outputs to `$HOME/.ai-first-kit/projects/{slug}/` for downstream
 | role-value-mapper | audit, genome | `roles-{datetime}.md` | — |
 | political-navigator | audit (optional) | `political-map-{datetime}.md` | — |
 | operationalize | genome/ (required), governance/, gates/, specs/ | `AGENT-PRIMER.md`, `ORG-DESIGN-DUMP-{datetime}.md`, optionally `.claude/CLAUDE.md` | genome (required) |
-| evolution-auditor | genome/ (req), governance/ (req), gates/ incl. .holdouts/ (for evaluation), specs/, roles-*.md, AGENT-PRIMER.md, previous evolution audits | `evolution/audit-{datetime}.md`, `evolution/decision-ledger.md` (append-only) | genome + governance (both required) |
+| evolution-auditor | genome/ (req), governance/ (req), gates/ incl. .holdouts/ (for evaluation), specs/, roles-*.md, AGENT-PRIMER.md, previous evolution audits, evolution/decision-ledger.md | `evolution/audit-{datetime}.md`, `evolution/decision-ledger.md` (append-only) | genome + governance (both required) |
 | agent-builder | roles-*.md (req), genome/ (req), governance/, gates/, specs/, AGENT-PRIMER.md | `agents/{role-slug}/` directory, `agents/INDEX.md` | roles + genome (both required) |
 
 ## Skill Dependency Map
@@ -169,4 +169,4 @@ Skills marked "optional" degrade gracefully without upstream artifacts. Skills m
 
 The `operationalize` skill distills all produced artifacts into an agent-consumable primer (AGENT-PRIMER.md). It gracefully handles partial completion (only genome required).
 
-Post-deployment, two additional skills extend the lifecycle: `evolution-auditor` runs the learning loop and decision ledger to evolve the design from operational evidence, and `agent-builder` generates role-specific agent configurations for any framework. Both require `operationalize` to have run (or at minimum, the genome to exist).
+Post-deployment, two additional skills extend the lifecycle: `evolution-auditor` runs the learning loop and decision ledger to evolve the design from operational evidence, and `agent-builder` generates role-specific agent configurations for any framework. The `evolution-auditor` requires the genome and governance to exist; `agent-builder` requires role definitions and the genome at minimum. Both benefit from but do not require `operationalize` to have run.
