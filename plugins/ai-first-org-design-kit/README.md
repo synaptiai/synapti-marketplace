@@ -1,8 +1,8 @@
 # AI-First Org Design Kit
 
-> **Version:** 1.1.0 | **License:** MIT | **Category:** Organizational Design
+> **Version:** 1.2.0 | **License:** MIT | **Category:** Organizational Design
 
-Eight opinionated skills that guide founders and leaders through designing organizations where agents handle coordination and execution while humans own specification and judgment.
+Ten opinionated skills that guide founders and leaders through designing, deploying, and evolving organizations where agents handle coordination and execution while humans own specification and judgment.
 
 **This is not about adopting AI tools.** It's about re-engineering the operating model.
 
@@ -24,17 +24,17 @@ Organizations are specification machines that pretended to be execution machines
 Skills run in sequence. Each feeds into the next.
 
 ```
-Diagnose → Encode Identity → Specify → Design Gates → Architect Governance → Map Roles → Navigate Politics → Operationalize
+Diagnose → Encode Identity → Specify → Design Gates → Architect Governance → Map Roles → Navigate Politics → Operationalize → Evolve → Deploy Agents
 ```
 
 ### Greenfield Path (Founders)
 ```
-org-genome-builder → specification-writer → governance-architect → quality-gate-designer → role-value-mapper → operationalize
+org-genome-builder → specification-writer → governance-architect → quality-gate-designer → role-value-mapper → operationalize → [optional] agent-builder → [ongoing] evolution-auditor
 ```
 
 ### Brownfield Path (Leaders)
 ```
-coordination-audit → political-navigator → org-genome-builder → quality-gate-designer → specification-writer → role-value-mapper → governance-architect → operationalize
+coordination-audit → political-navigator → org-genome-builder → quality-gate-designer → specification-writer → role-value-mapper → governance-architect → operationalize → [optional] agent-builder → [ongoing] evolution-auditor
 ```
 
 ### Quick Start
@@ -54,6 +54,8 @@ All skills live under `skills/` and follow the standard plugin SKILL.md format.
 | `skills/role-value-mapper` | **Team Architect** | Designs roles from value flows and specification responsibility, not job titles |
 | `skills/political-navigator` | **Power Dynamics Strategist** | Maps power structures, identifies resistance, creates reframes, sequences change |
 | `skills/operationalize` | **Operational Bridge** | Distills all design artifacts into an agent-consumable primer (AGENT-PRIMER.md) and optionally merges governance into project CLAUDE.md |
+| `skills/evolution-auditor` | **Organizational Fitness Auditor** | Runs the learning loop post-deployment: gate effectiveness, genome fitness, authority calibration, decision ledger |
+| `skills/agent-builder` | **Agent Configuration Engineer** | Generates role-specific agent system prompts, tool permissions, and framework configs from organizational design artifacts |
 
 The router skill (`skills/ai-first-kit`) is the entry point — it diagnoses the user's situation and routes to the appropriate skill.
 
@@ -83,6 +85,13 @@ claude plugin install ./synapti-marketplace/plugins/ai-first-org-design-kit
 ```bash
 cp -Rf path/to/synapti-marketplace/plugins/ai-first-org-design-kit .claude/plugins/ai-first-org-design-kit
 ```
+
+## Post-Deployment
+
+Once operational, two additional skills maintain and extend the design:
+
+- **`evolution-auditor`** — Monthly health check that runs the governance learning loop. Measures gate effectiveness, checks genome fitness against real decisions, calibrates the authority matrix, maintains the decision ledger, and routes findings to existing skills for revision.
+- **`agent-builder`** — Generates role-specific agent configurations from your organizational design artifacts. Produces system prompts, tool permissions, and self-review checklists. Supports Claude Code, OpenAI Agents SDK, Anthropic Agent SDK, CrewAI, and custom frameworks.
 
 ## What This Kit Does NOT Cover
 

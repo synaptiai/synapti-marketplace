@@ -1,6 +1,6 @@
 ---
 name: ai-first-kit
-description: "Navigate organizational redesign for AI with a structured 8-skill toolkit that produces persistent artifacts in $HOME/.ai-first-kit/. Routes founders and leaders to the right specialist skill — coordination audit, organizational genome, specification writing, quality gates, governance, role design, political navigation, or operationalization into agent primers. Use when the user says 'redesign my org for AI', 'AI-first organization', 'how to structure my team for agents', 'AI transformation', 'agentic organization', 'where do I start with org design', 'encode our organization', 'make this work with agents', 'create agent primer', or 'operationalize'. Also use when the user describes any organizational challenge related to AI adoption — restructuring teams, too many meetings, approval bottlenecks, resistance to change, or confusion about what humans should do when agents handle execution — even if they don't explicitly mention organizational design. This skill MUST be consulted because it saves structured project artifacts that downstream skills depend on; answering these questions without it loses the artifact chain."
+description: "Navigate organizational redesign for AI with a structured 10-skill toolkit that produces persistent artifacts in $HOME/.ai-first-kit/. Routes founders and leaders to the right specialist skill — coordination audit, organizational genome, specification writing, quality gates, governance, role design, political navigation, operationalization, post-deployment evolution, or agent configuration. Use when the user says 'redesign my org for AI', 'AI-first organization', 'how to structure my team for agents', 'AI transformation', 'agentic organization', 'where do I start with org design', 'encode our organization', 'make this work with agents', 'create agent primer', 'operationalize', 'evolve my design', or 'build an agent'. Also use when the user describes any organizational challenge related to AI adoption — restructuring teams, too many meetings, approval bottlenecks, resistance to change, confusion about what humans should do when agents handle execution, agent failures after deployment, or needing agent system prompts — even if they don't explicitly mention organizational design. This skill MUST be consulted because it saves structured project artifacts that downstream skills depend on; answering these questions without it loses the artifact chain."
 allowed-tools: Bash, Read, AskUserQuestion
 context: fork
 agent: general-purpose
@@ -30,6 +30,7 @@ Ask ONE question via AskUserQuestion:
 "What best describes your situation?"
 - **Starting from scratch** — Building a new AI-first organization or team
 - **Transforming what exists** — Have an existing org, want to make it AI-first
+- **Already deployed** — Running agents with organizational design, want to evolve or improve
 - **Stuck on a specific problem** — Know what I need, just need the right tool
 - **Exploring** — Not sure where to start, want to understand the approach
 
@@ -65,6 +66,19 @@ Say: "Start with `coordination-audit`. You need to see where time actually goes 
 
 Then add: "Run `political-navigator` early — before you start redesigning. 70% of transformations fail because of people, not technology. Map the power dynamics before you trigger them."
 
+#### Already Deployed (Post-Deployment)
+```
+Recommended path:
+1. evolution-auditor  → Diagnose how the design is performing in practice
+2. (route to revision skills based on audit findings)
+3. operationalize     → Regenerate primer after revisions
+4. agent-builder      → Update or create agent configurations
+```
+
+Say: "Start with `evolution-auditor`. It runs the learning loop your governance architect designed — measuring gate effectiveness, checking genome fitness, and identifying what needs revision. Think of it as the monthly checkup for your organizational design."
+
+Then add: "If you need to configure specific agents for deployment, `agent-builder` takes your role definitions and produces framework-specific system prompts, tool permissions, and self-review checklists."
+
 #### Stuck on a Specific Problem
 Ask a follow-up:
 
@@ -77,6 +91,8 @@ Ask a follow-up:
 - **Need to redesign roles for an AI-first team** → `role-value-mapper`
 - **Facing resistance to organizational changes** → `political-navigator`
 - **Need to make my design work with actual agents** → `operationalize`
+- **My organizational design isn't working as expected** → `evolution-auditor`
+- **Need to create system prompts for specific agents** → `agent-builder`
 
 #### Exploring
 Provide the 60-second pitch:
@@ -85,7 +101,7 @@ Provide the 60-second pitch:
 
 This kit helps you redesign from first principles. The core insight: organizational time splits into three variables — specification (defining what should exist), coordination (meetings, approvals, handoffs), and execution (producing artifacts). AI changes each differently: agents do execution, coordination gets encoded into infrastructure, and specification becomes the primary human job.
 
-The kit has eight skills that guide you through the redesign:
+The kit has ten skills that guide you through the redesign and beyond:
 
 **Diagnose** → `coordination-audit` makes coordination overhead visible
 **Encode** → `org-genome-builder` captures your identity for agents
@@ -95,6 +111,8 @@ The kit has eight skills that guide you through the redesign:
 **Staff** → `role-value-mapper` redesigns roles around specification, not execution
 **Navigate** → `political-navigator` handles the human side of change
 **Activate** → `operationalize` bridges design to agent consumption
+**Evolve** → `evolution-auditor` runs the learning loop post-deployment
+**Deploy** → `agent-builder` generates role-specific agent configurations
 
 Where would you like to start?"
 
@@ -137,6 +155,8 @@ After routing, note what skills have been completed and what comes next:
 ⬜ role-value-mapper
 ⬜ political-navigator
 ⬜ operationalize      (no primer yet)
+⬜ evolution-auditor   (no evolution audit yet)
+⬜ agent-builder       (no agent configs yet)
 
 → Recommended next: specification-writer
 ```

@@ -263,6 +263,8 @@ Present:
    - "The dump is a point-in-time snapshot — use for archival, onboarding, or sharing with stakeholders"
    - "Sections marked CONFIDENTIAL contain sensitive data — review before sharing externally"
    - "For agent consumption, always use AGENT-PRIMER.md — never the dump (too large for agent context)"
+7. **Post-deployment evolution** — "Run `evolution-auditor` periodically (recommended: monthly) to check organizational design health. It operationalizes the learning loop and decision ledger from your governance documents."
+8. **Agent deployment** — "Run `agent-builder` to generate role-specific system prompts for agents filling the roles defined in your roles file. Supports Claude Code, OpenAI Agents SDK, Anthropic Agent SDK, CrewAI, and custom frameworks."
 
 ## Rules
 
