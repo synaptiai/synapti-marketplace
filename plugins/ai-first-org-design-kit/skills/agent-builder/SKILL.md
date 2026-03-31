@@ -293,6 +293,24 @@ From `roles-*.md` collaboration model + `governance/ESCALATION-PROTOCOLS.md`:
 ### Escalation
 [Role-specific escalation triggers — subset of general protocol]
 [Escalation format from ESCALATION-PROTOCOLS.md]
+
+### Governance Operations
+[From governance/POLICY-GENERATION.md, DECISION-LEDGER-SPEC.md, LEARNING-LOOP.md — role-scoped:]
+
+**Novel situations:** When you encounter a situation with no existing policy,
+draft a candidate policy (read POLICY-GENERATION.md for the template) and
+include it in your escalation. [Scope to this role's domain — development
+agents encounter code/architecture novel situations, assistant agents
+encounter content/strategic novel situations.]
+
+**Decision recording:** For decisions at Autonomous+Notify or above, append
+an entry to `evolution/decision-ledger.md` per DECISION-LEDGER-SPEC.md.
+[Scope: development agents record architectural decisions, assistant agents
+record content/strategic decisions.]
+
+**Failure classification:** When a failure occurs, classify the root cause
+(spec gap, gate gap, authority gap, boundary violation, novel situation)
+before escalating. Include classification in escalation package.
 ```
 
 ## Phase 6: Framework-Specific Export (Optional)

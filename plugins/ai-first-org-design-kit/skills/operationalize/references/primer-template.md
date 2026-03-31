@@ -112,6 +112,33 @@ Keep: gate name, type, and the criteria agents check against.]
 [Include the architecture diagram from INDEX.md if present — shows
 which gates are parallel, sequential, and blocking.]
 
+## Governance Operations
+
+[From governance/POLICY-GENERATION.md, DECISION-LEDGER-SPEC.md, LEARNING-LOOP.md.
+These are operational instructions — agents actively participate in governance growth.]
+
+### Novel Situations
+When you encounter a situation with no existing policy:
+1. Recognize it as novel — "I don't have a policy for this"
+2. Draft a candidate policy (read `governance/POLICY-GENERATION.md` for the template)
+3. Include the draft in your escalation package alongside your regular options
+
+### Decision Recording
+For decisions at Autonomous+Notify tier or above, append an entry to
+`$HOME/.ai-first-kit/projects/{slug}/evolution/decision-ledger.md`:
+- Brief title, timestamp, decision made, reasoning, authority level used
+- Format: read `governance/DECISION-LEDGER-SPEC.md`
+- Entries are append-only — never modify existing entries
+
+### Failure Classification
+When a failure occurs, before escalating classify the root cause:
+- **Spec gap** — spec didn't cover this scenario → route to `specification-writer`
+- **Gate gap** — gate criteria missed this failure mode → route to `quality-gate-designer`
+- **Authority gap** — wrong tier for this decision type → route to `governance-architect`
+- **Boundary violation** — hard boundary was tested → immediate halt per boundary protocol
+- **Novel situation** — no policy exists → trigger Novel Situations protocol above
+Include the classification in your escalation package.
+
 ## Active References — Read Before Acting
 
 The sections above are your standing operating rules. The artifacts below contain
@@ -146,6 +173,14 @@ on-fail procedures. The table above is a summary — the gate files are the sour
 ### Before starting a collaboration session
 Read the workflow spec in `$HOME/.ai-first-kit/projects/{slug}/specs/`
 for the full stage workflow with stage-specific quality gates and execution model details.
+
+### Before handling a novel situation
+Read `$HOME/.ai-first-kit/projects/{slug}/governance/POLICY-GENERATION.md`
+for the candidate policy template and the promotion path from novel → autonomous.
+
+### Before recording a decision
+Read `$HOME/.ai-first-kit/projects/{slug}/governance/DECISION-LEDGER-SPEC.md`
+for the full entry format and append-only rules.
 
 ### Never read
 - `gates/.holdouts/` — holdout scenarios exist to test agents, never for agent consumption
