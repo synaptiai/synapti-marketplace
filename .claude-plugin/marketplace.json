@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Synapti plugin marketplace",
-    "version": "3.8.0"
+    "version": "3.9.0"
   },
   "plugins": [
     {
@@ -172,7 +172,7 @@
       "name": "ai-first-org-design-kit",
       "source": "./plugins/ai-first-org-design-kit",
       "description": "Thirteen opinionated skills for designing, deploying, adopting, and evolving AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, architect governance, redesign roles, navigate politics, operationalize designs into agent-consumable primers, run evolution audits, generate agent configurations, build per-role maturity matrices, design adoption sprints, and write human-facing AI usage policies.",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "author": {
         "name": "Daniel Bentes"
       },

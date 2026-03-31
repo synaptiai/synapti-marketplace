@@ -70,6 +70,10 @@ AGENT_INDEX=$(ls "$HOME/.ai-first-kit/projects/$SLUG/agents/INDEX.md" 2>/dev/nul
 [ -n "$SPECS" ] && echo "SPECS: found" || echo "SPECS: missing"
 [ -n "$PRIMER" ] && echo "PRIMER: found" || echo "PRIMER: missing"
 [ -n "$AGENT_INDEX" ] && echo "EXISTING AGENTS: found" || echo "EXISTING AGENTS: none"
+
+# Check for registered Claude Code agents
+CC_AGENT_COUNT=$(ls .claude/agents/*.md 2>/dev/null | wc -l | tr -d ' ')
+[ "$CC_AGENT_COUNT" -gt 0 ] 2>/dev/null && echo "CLAUDE CODE AGENTS: $CC_AGENT_COUNT registered" || echo "CLAUDE CODE AGENTS: none"
 ```
 
 If no roles-*.md found: halt. "Role definitions are required to build an agent configuration. Run `role-value-mapper` first to define the roles agents will fill."
@@ -346,8 +350,35 @@ Ask via AskUserQuestion: "Do you want framework-specific configuration files in 
   allow_delegation: true/false
   ```
 - **Custom** — Ask the user to describe their framework's configuration format. Adapt the system prompt accordingly.
+- **Register as Claude Code sub-agent** — Generates a `.claude/agents/{role-slug}.md` file that registers this agent as a Claude Code sub-agent. The agent becomes invokable via `@"{role-slug} (agent)"` or automatic delegation.
 
 For each selected framework, produce a `config-{framework}.md` (or `.json`/`.yaml` as appropriate) file.
+
+### Claude Code Sub-Agent Registration
+
+If "Register as Claude Code sub-agent" was selected:
+
+Read the agent template from `references/claude-agent-template.md` for the full specification.
+
+1. **Map fields:**
+   - `name:` → `{ROLE_SLUG}` from Phase 1
+   - `description:` → One-sentence from role specification + "Use proactively for {top tasks}"
+   - `tools:` → Comma-separated Claude Code tool names on a single line (e.g., `tools: Read, Write, Edit, Bash`). Map from tool-permissions.md using: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, AskUserQuestion, Agent
+   - `memory: project` → Always set for persistent agent learning
+   - `skills:` → Map governance skills based on agent type:
+     - Development agents: `org-record-decision`, `org-novel-situation`, `org-gate-review`
+     - Content/voice agents: `org-voice-check`, `org-record-decision`, `org-gate-review`
+     - Research/strategy agents: `org-record-decision`, `org-values-check`
+
+2. **Inline system prompt:** Copy the full system prompt from Phase 5 into the markdown body. Include a generation metadata comment: `<!-- generated-by: ai-first-kit v{VERSION} | generated: {TIMESTAMP} -->`
+
+3. **Update detection:** Before writing, check if `.claude/agents/{ROLE_SLUG}.md` already exists:
+   - If exists: read it, compare system prompt content (ignore timestamp)
+   - If identical: "Agent '{role}' is already registered and up to date."
+   - If different: show summary of what changed, ask "Update the registered agent?"
+   - If doesn't exist: create `.claude/agents/` directory if needed, write the file
+
+4. **Write:** `mkdir -p .claude/agents && Write to .claude/agents/{ROLE_SLUG}.md`
 
 ## Phase 7: Validation
 

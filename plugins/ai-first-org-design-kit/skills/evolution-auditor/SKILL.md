@@ -69,6 +69,16 @@ MATURITY=$(ls -t "$HOME/.ai-first-kit/projects/$SLUG/adoption/maturity-ladder-"*
 [ -n "$PREV_AUDIT" ] && echo "PREVIOUS AUDIT: $PREV_AUDIT" || echo "PREVIOUS AUDIT: none (first audit)"
 [ -n "$LEDGER" ] && echo "DECISION LEDGER: found" || echo "DECISION LEDGER: none (will create)"
 [ -n "$MATURITY" ] && echo "MATURITY LADDER: $MATURITY" || echo "MATURITY LADDER: none"
+
+# Check for stale Claude Code agents
+for AGENT_FILE in .claude/agents/*.md; do
+  if [ -f "$AGENT_FILE" ]; then
+    STALE=$(find "$HOME/.ai-first-kit/projects/$SLUG" -name "*.md" \
+      -not -path "*.holdouts*" -not -path "*political-map*" \
+      -newer "$AGENT_FILE" 2>/dev/null | wc -l | tr -d ' ')
+    [ "$STALE" -gt 0 ] 2>/dev/null && echo "STALE AGENT: $(basename "$AGENT_FILE") — $STALE upstream artifacts newer" || echo "AGENT OK: $(basename "$AGENT_FILE")"
+  fi
+done 2>/dev/null
 ```
 
 If no genome found: halt. "The genome is required for an evolution audit — there's nothing to audit without it. Run `org-genome-builder` first."
@@ -256,7 +266,7 @@ Synthesize all findings into a ranked recommendation list:
 **Priority classification:**
 - **P1:** Hard boundary was tested, gate missed a significant failure, value failed to resolve a conflict
 - **P2:** Gate false positive rate >20%, spec being patched by policies, authority tier miscalibrated
-- **P3:** Anti-pattern discovered but rare, holdouts approaching staleness, minor drift
+- **P3:** Anti-pattern discovered but rare, holdouts approaching staleness, minor drift, stale Claude Code agents
 
 Compute governance health metrics per LEARNING-LOOP.md:
 
@@ -383,7 +393,7 @@ This skill is invoked:
 
 **Writes:** `evolution/audit-{datetime}.md` (point-in-time diagnostic), `evolution/decision-ledger.md` (append-only cumulative record).
 
-**Routes to:** `org-genome-builder` (genome revisions), `quality-gate-designer` (gate revisions, holdout refresh), `specification-writer` (spec revisions), `governance-architect` (governance updates), `operationalize` (primer regeneration after revisions are complete), `adoption-sprint-designer` (stalled adoption), `maturity-ladder` (adoption reassessment).
+**Routes to:** `org-genome-builder` (genome revisions), `quality-gate-designer` (gate revisions, holdout refresh), `specification-writer` (spec revisions), `governance-architect` (governance updates), `operationalize` (primer regeneration after revisions are complete), `adoption-sprint-designer` (stalled adoption), `maturity-ladder` (adoption reassessment), `agent-builder` (stale Claude Code agents).
 
 **Security:** This skill reads `gates/.holdouts/` for evaluation purposes — the same privilege level as `quality-gate-designer` which creates them. It NEVER exposes holdout content in output artifacts (enforced by the holdout content self-review in Phase 8). It NEVER reads `political-map-*.md`.
 

@@ -1,6 +1,6 @@
 # AI-First Org Design Kit
 
-> **Version:** 1.3.0 | **License:** MIT | **Category:** Organizational Design
+> **Version:** 1.4.0 | **License:** MIT | **Category:** Organizational Design
 
 Thirteen opinionated skills that guide founders and leaders through designing, deploying, adopting, and evolving organizations where agents handle coordination and execution while humans own specification and judgment.
 
@@ -113,6 +113,63 @@ Three skills address the human side of AI adoption:
 - **`maturity-ladder`** — Builds a per-role capability ladder with 4 levels (Not Engaged → Capable → Adoptive → Transformative). Measures actual behavior, not self-assessment. Creates visible progression paths that motivate through social proof.
 - **`adoption-sprint-designer`** — Designs structured 2-3 day sprints (hackathons) that force hands-on AI usage. Includes buddy pairing, demo format, activity-based measurement, and leadership sequencing. One sprint converts more than months of presentations.
 - **`usage-policy-writer`** — Generates a human-facing AI usage policy explaining what tools are approved, data classification, and the reasoning behind each decision. Addresses the "I don't know what I'm allowed to do" barrier that kills adoption.
+
+## Claude Code Integration
+
+The `operationalize` and `agent-builder` skills can generate Claude Code-native primitives in three layers:
+
+### Layer 1: CLAUDE.md @imports (Always-Loaded Foundation)
+
+Select "CLAUDE.md with @imports" in `operationalize` to import genome foundation files directly:
+
+```markdown
+@$HOME/.ai-first-kit/projects/{slug}/genome/00-identity/MISSION.md
+@$HOME/.ai-first-kit/projects/{slug}/governance/HARD-BOUNDARIES.md
+@$HOME/.ai-first-kit/projects/{slug}/genome/00-identity/VALUES.md
+```
+
+Content expands at session start and auto-updates when source files change. Always in context for every conversation.
+
+### Layer 2: Governance Skills (On-Demand Operations)
+
+Select "Generate Claude Code governance skills" in `operationalize` to create five project-level skills:
+
+| Skill | Command | What It Does |
+|-------|---------|-------------|
+| `org-record-decision` | `/org-record-decision` | Append to the organizational decision ledger |
+| `org-novel-situation` | `/org-novel-situation` | Draft a candidate policy for novel situations |
+| `org-voice-check` | `/org-voice-check` | Review content against voice norms |
+| `org-gate-review` | `/org-gate-review [gate]` | Self-review against a specific quality gate |
+| `org-values-check` | `/org-values-check` | Check a decision against values and tradeoff rules |
+
+Skills read source files dynamically at invocation — they auto-update when upstream artifacts change without regeneration.
+
+Review skills (`org-voice-check`, `org-gate-review`, `org-values-check`) run in forked context to avoid polluting the main conversation. Action skills (`org-record-decision`, `org-novel-situation`) run inline because they modify project files.
+
+### Layer 3: Sub-Agents (Role-Specific Agents)
+
+Select "Register as Claude Code sub-agent" in `agent-builder` to create project-level agents:
+
+```bash
+# After registration, invoke via:
+@"specification-architect (agent)" implement this feature
+@"community-voice-guardian (agent)" review this article
+```
+
+Registered agents get:
+- `memory: project` — Persistent learning across sessions (stored in `.claude/agent-memory/`)
+- Preloaded governance skills via `skills:` field — governance operations available at startup
+- Full system prompt inlined — self-contained, no file reads needed
+
+### Update Detection
+
+| Primitive | Auto-Updates? | Regeneration Trigger |
+|-----------|:---:|---|
+| CLAUDE.md @imports | Yes | Never (points to source files) |
+| Governance skills | Mostly | Only on plugin version change (structural updates) |
+| Sub-agents | No | Run `agent-builder` when roles, genome, or governance change |
+
+The `evolution-auditor` detects stale agents (upstream files newer than agent file) and recommends `agent-builder` re-runs.
 
 ## What This Kit Does NOT Cover
 
