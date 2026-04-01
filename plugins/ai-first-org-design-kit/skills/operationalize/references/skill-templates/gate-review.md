@@ -14,6 +14,7 @@ context: fork
 agent: general-purpose
 ---
 <!-- generated-by: ai-first-kit v{VERSION} -->
+<!-- v1.4.2: added Agent tool + Phase 2 holdout evaluation. Regenerate if upgrading from earlier versions. -->
 
 # Gate Self-Review
 

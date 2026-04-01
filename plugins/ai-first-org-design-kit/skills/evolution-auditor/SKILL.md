@@ -311,13 +311,13 @@ Synthesize all findings into a ranked recommendation list:
 
 Compute governance health metrics per LEARNING-LOOP.md:
 
-| Metric | Target | Actual | Status |
-|--------|--------|--------|--------|
-| Escalation rate | 5-15% | [Estimated from Q5] | Healthy / Too Low / Too High |
-| First-pass gate approval | >80% | [Estimated from Q2] | Healthy / Low |
-| Policy generation rate | Decreasing over time | [From Q3 + previous audits] | Stabilizing / Growing |
-| Novel situation frequency | Decreasing over time | [From Q1 + Q3] | Decreasing / Stable / Growing |
-| Adoption progression | Levels increasing over time | [From Q6 + maturity data] | Progressing / Stalled / Regressing |
+| Metric | Target | Actual | Data Source | Status |
+|--------|--------|--------|-------------|--------|
+| Escalation rate | 5-15% | [Estimated from Q5] | Interview | Healthy / Too Low / Too High |
+| First-pass gate approval | >80% | [From telemetry or Q2] | Telemetry (preferred) / Interview | Healthy / Low |
+| Policy generation rate | Decreasing over time | [From Q3 + previous audits] | Interview | Stabilizing / Growing |
+| Novel situation frequency | Decreasing over time | [From Q1 + Q3] | Interview | Decreasing / Stable / Growing |
+| Adoption progression | Levels increasing over time | [From Q6 + maturity data] | Interview + maturity data | Progressing / Stalled / Regressing |
 
 If previous audits exist, show trend comparison for each metric.
 
