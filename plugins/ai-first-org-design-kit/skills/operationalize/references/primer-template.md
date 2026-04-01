@@ -89,14 +89,19 @@ is enough for pattern recognition.]
 
 **Profile:** [One-line voice description from "Voice Profile" field]
 
-**Words we use:** [comma-separated list]
-**Words we never use:** [comma-separated list]
+**Tone:** [Tone description from "External Communication > Tone" field.
+This is the core instruction — how to think, reason, and write.
+If no explicit tone section exists, distill one from the voice profile.]
 
 **Formality gradient:**
-[Include the formality gradient table as-is]
+[Include the formality gradient table as-is, with all columns including Example]
 
-[If agent communication standards exist, include them — these directly
-instruct agent behavior.]
+**Vocabulary:**
+**Use:** [comma-separated list from "Words We Use"]
+**Avoid:** [comma-separated list from "Words We Never Use"]
+
+[If agent communication standards exist, include them under
+"**Agent communication standards:**" — these directly instruct agent behavior.]
 
 ## Quality Gates
 [From gates/INDEX.md + individual gate files. For each gate:]

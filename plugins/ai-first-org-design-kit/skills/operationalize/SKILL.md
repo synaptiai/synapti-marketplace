@@ -130,7 +130,7 @@ Read all available artifacts using the `Read` tool. Apply these distillation rul
 |--------|---------|----------------|
 | `genome/00-identity/MISSION.md` | Yes | Operational mission + who we serve (3-5 lines) |
 | `genome/00-identity/VALUES.md` | Yes | Per value: one-line decision rule + agent instruction. **Strip** examples, history, "what we sacrifice" |
-| `genome/00-identity/VOICE.md` | Yes | Words we use/never use + formality gradient table |
+| `genome/00-identity/VOICE.md` | Yes | Tone (how to communicate) + formality gradient table (with Example column) + vocabulary lists |
 | `genome/01-decision-architecture/AUTHORITY-MATRIX.md` | Yes | Compact 4-tier table + failure handling protocol |
 | `genome/01-decision-architecture/TRADEOFF-RULES.md` | Yes | Priority ordering + one-line per rule. **Strip** examples and full scenarios |
 | `genome/02-quality-standards/BY-OUTPUT-TYPE.md` | Yes | Pass criteria per type. **Strip** examples of good/bad output |
