@@ -64,7 +64,7 @@ POLITICAL_MAP=$(find "$HOME/.ai-first-kit/projects/$SLUG/" -maxdepth 1 -name "po
 [ "$POLITICAL_MAP" -gt 0 ] 2>/dev/null && echo "POLITICAL MAP: exists (not reading — sensitive)" || echo "POLITICAL MAP: none"
 ```
 
-If maturity ladder exists: read it using the `Read` tool. Use the current levels, gap analysis, and barrier data to inform participant selection (Phase 2) and objective targeting (Phase 1). The maturity ladder assesses human roles — use participant names and human job titles, not agent role definitions.
+If maturity ladder exists: read it using the `Read` tool. Use the current levels and gap analysis to inform participant selection (Phase 2) and objective targeting (Phase 1). If barrier data is present (look for "Primary adoption barrier" per role), use it to inform sprint framing. If barrier data is absent (older assessment), proceed without it — populate the Barrier column with "—". The maturity ladder assesses human roles — use participant names and human job titles, not agent role definitions.
 
 If usage policy exists: note it as pre-reading material for sprint participants.
 
@@ -390,6 +390,7 @@ The sprint works because it compresses the adoption journey into a structured ex
 | Missing | Fallback |
 |---------|----------|
 | No maturity-ladder | Design sprint without targeting data. Recommend `maturity-ladder` for better participant selection next time. |
+| Maturity ladder exists but has no barrier data | Populate Barrier column with "—" for all participants. Note: "Maturity assessment predates barrier analysis. Run `maturity-ladder` for barrier-informed targeting." |
 | No genome | Proceed — sprints don't require organizational identity. |
 | No usage policy | Warn: participants won't have clear human usage rules. Recommend `usage-policy-writer` as pre-work. |
 | No political-map | Fine — sprint design does not use political data. |

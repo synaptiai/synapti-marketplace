@@ -136,6 +136,8 @@ The default maturity framework (from `shared/concepts.md`):
 
 **The critical design principle:** Level 3 is "invents new tools" — NOT "uses AI the most." The highest maturity level is about BUILDING capabilities that amplify others, not maximizing personal AI usage. This reframes the identity from "I don't need AI" to "I'm the one who creates new capabilities."
 
+**Solo founder note on Level 3:** The default Level 3 test is "built something others now use." For a solo founder (team size = 1), reinterpret "others" as: reused across operational modes (a skill built for Development that you also use in Product), published externally (open source, marketplace), or designed for future team use. The behavioral test adapts to: "Has built something reusable beyond its original context."
+
 For EACH role/mode, ask ONE question via AskUserQuestion:
 
 **Team/small team:** "For the **[ROLE]** role — what specific, observable behaviors would distinguish each level? Here's the default framework:
@@ -418,7 +420,7 @@ The maturity ladder doesn't work through mandates. It works through social proof
 
 | Missing | Fallback |
 |---------|----------|
-| Solo founder (team size 1) | Assess by operational modes — the different "hats" the founder wears. |
+| Solo founder (team size 1) | Assess by operational modes — the different "hats" the founder wears. Level 3 test adapts: "reusable beyond its original context" instead of "others now use." |
 | No genome | Proceed — maturity assessment doesn't require organizational identity. Recommend `org-genome-builder` for deeper alignment. |
 | No audit | Proceed — audit provides context but isn't required for maturity assessment. |
 | No previous assessment | First assessment. No trend comparison available. Note: "Establishing baseline." |

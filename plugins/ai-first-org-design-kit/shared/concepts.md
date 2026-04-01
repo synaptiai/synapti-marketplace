@@ -97,7 +97,7 @@ Four psychological barriers to AI adoption, identified by Trail of Bits as the r
 |---------|----------------------|---------------------|---------------------|
 | Self-enhancing bias | "I'm already good enough — AI can't match my judgment" | Execution Expert | Make the gap visible: measurable evidence, visible ladder, social proof |
 | Identity threat | "AI is replacing who I am and what I've built" | Process Owner | Encode expertise, don't replace it: first AI project captures THEIR judgment |
-| Opacity | "I don't understand or trust how it decides" | Information Broker, Gate Holder | Write the rules: clear boundaries, visible reasoning, human-governed policy |
+| Opacity | "I don't understand or trust how it decides" | Information Broker, Approval Gate Holder | Write the rules: clear boundaries, visible reasoning, human-governed policy |
 | Authority threat | "I'm losing my scope, headcount, or decision power" | Empire Builder | Redefine leverage: output-per-person × scope, not headcount |
 
 **Why these matter for maturity assessment:** A level 1 Engineer stuck on "self-enhancing bias" needs a different progression path than one stuck on "identity threat." The first needs evidence of the gap. The second needs their first AI project to encode their own expertise. Without identifying the barrier, progression paths are generic and less effective.
@@ -193,9 +193,8 @@ quality-gate-designer ◄─────┘                        │
        ▼                                             │
 role-value-mapper                                    │
        │                                             │
-       ├──────────────────────────────┐              │
-       ▼                              ▼              │
-operationalize              maturity-ladder (optional)
+       ▼                                             │
+operationalize              maturity-ladder (standalone)
        │                              │              │
        ├────────────────────┐         ▼              │
        ▼                    ▼   adoption-sprint-designer ◄───┘
