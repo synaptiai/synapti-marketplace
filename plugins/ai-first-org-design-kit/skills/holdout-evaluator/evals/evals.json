@@ -1,0 +1,65 @@
+{
+  "skill_name": "holdout-evaluator",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Evaluate this plan against the plan-readiness gate. The gate file is at evals/fixtures/gates/plan-readiness.md. The holdout scenarios are at evals/fixtures/gates/.holdouts/plan-readiness-holdouts.md. The work output (the plan) is at evals/fixtures/work-output/bad-plan.md. The self-review evidence is at evals/fixtures/evidence/bad-plan-evidence.md. Run the full holdout evaluation following your SKILL.md phases. Skip the pre-flight bash (no real project slug needed) and telemetry writing. Just produce the per-scenario verdicts and mapped feedback.",
+      "expected_output": "Multiple holdout scenarios should FAIL. The plan has unresolved assumptions ('should work with', 'assuming', 'probably needs'), vague acceptance criteria ('works correctly', 'can log in'), references 'the usual approach' without explanation, no verification strategy beyond 'tests will be written', and hidden dependencies (Phase 4 requires Phase 3 but doesn't say so). Mapped feedback should reference visible criteria numbers (1, 2, 4, 5, 7) without naming any holdout scenario.",
+      "files": [
+        "evals/fixtures/gates/plan-readiness.md",
+        "evals/fixtures/gates/.holdouts/plan-readiness-holdouts.md",
+        "evals/fixtures/work-output/bad-plan.md",
+        "evals/fixtures/evidence/bad-plan-evidence.md"
+      ],
+      "expectations": [
+        "Output contains FAIL verdicts for scenario-1 (unresolved assumptions like 'assuming', 'should work with', 'probably needs' present in the plan)",
+        "Output contains FAIL verdict for scenario-2 (vague acceptance criteria like 'works correctly' and 'can log in' present)",
+        "Output contains FAIL verdict for scenario-4 (plan references 'the usual approach' without encoding what it means)",
+        "Output contains FAIL verdict for scenario-3 (verification says 'tests will be written' without specifying what kind)",
+        "Mapped feedback references criterion numbers (1, 2, 4, 5, or 7) rather than holdout scenario names",
+        "Mapped feedback does NOT contain any of: 'Assumption Bomb', 'Vague Acceptance', 'Stranger Test Failure', 'Missing Verification', 'Hidden Dependency'",
+        "Output cross-references the self-review evidence against the actual plan content — notes that the evidence table claims PASS on all criteria despite obvious issues in the plan"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Evaluate this plan against the plan-readiness gate. The gate file is at evals/fixtures/gates/plan-readiness.md. The holdout scenarios are at evals/fixtures/gates/.holdouts/plan-readiness-holdouts.md. The work output (the plan) is at evals/fixtures/work-output/good-plan.md. The self-review evidence is at evals/fixtures/evidence/good-plan-evidence.md. Run the full holdout evaluation following your SKILL.md phases. Skip the pre-flight bash and telemetry writing. Produce per-scenario verdicts and mapped feedback.",
+      "expected_output": "All or nearly all holdout scenarios should PASS. The plan has verified assumptions with links, explicit acceptance criteria with specific technical details, defined verification methods per phase, explicit dependencies between phases, and passes the Stranger Test with no references to prior work.",
+      "files": [
+        "evals/fixtures/gates/plan-readiness.md",
+        "evals/fixtures/gates/.holdouts/plan-readiness-holdouts.md",
+        "evals/fixtures/work-output/good-plan.md",
+        "evals/fixtures/evidence/good-plan-evidence.md"
+      ],
+      "expectations": [
+        "Output contains PASS verdicts for at least 4 of 5 scenarios",
+        "Scenario-1 (assumptions) passes — the plan verifies assumptions with doc links",
+        "Scenario-2 (acceptance criteria) passes — each phase has specific, testable criteria",
+        "Scenario-4 (Stranger Test) passes — no references to 'usual approach' or assumed context",
+        "Mapped feedback does NOT contain holdout scenario names or descriptions",
+        "Output notes that the self-review evidence is consistent with the plan content (genuine evidence, not bare assertions)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Evaluate this plan against the plan-readiness gate. The gate file is at evals/fixtures/gates/plan-readiness.md. The holdout scenarios are at evals/fixtures/gates/.holdouts/plan-readiness-holdouts.md. The work output (the plan) is at evals/fixtures/work-output/bad-plan.md. The self-review evidence is at evals/fixtures/evidence/bad-plan-evidence.md. Focus specifically on: (1) Does your mapped feedback ever reveal holdout scenario names or descriptions? (2) Does the telemetry record use scenario IDs (scenario-1, scenario-2) rather than scenario names? (3) Could someone reading only the mapped feedback reconstruct which specific holdout scenarios triggered failures? Run the security self-check from Phase 4 of your SKILL.md.",
+      "expected_output": "The evaluator should produce mapped feedback that references only criterion numbers and generic weakness descriptions. No holdout scenario names appear. The telemetry schema uses scenario-1, scenario-2, etc. The security self-check should confirm that the feedback cannot be used to reconstruct specific holdout scenarios.",
+      "files": [
+        "evals/fixtures/gates/plan-readiness.md",
+        "evals/fixtures/gates/.holdouts/plan-readiness-holdouts.md",
+        "evals/fixtures/work-output/bad-plan.md",
+        "evals/fixtures/evidence/bad-plan-evidence.md"
+      ],
+      "expectations": [
+        "Output does NOT contain 'Assumption Bomb' anywhere",
+        "Output does NOT contain 'Vague Acceptance Criteria' anywhere",
+        "Output does NOT contain 'Missing Verification Strategy' anywhere",
+        "Output does NOT contain 'Stranger Test Failure' anywhere",
+        "Output does NOT contain 'Hidden Dependency' anywhere",
+        "Any telemetry example uses 'scenario-1', 'scenario-2' format (not scenario names)",
+        "The evaluator explicitly performs the security self-check: asks whether someone could reconstruct holdout scenarios from the feedback",
+        "Weakness descriptions are generic enough that they could apply to any plan with similar issues, not specific to the holdout scenario wording"
+      ]
+    }
+  ]
+}
