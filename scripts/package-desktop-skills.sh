@@ -176,8 +176,8 @@ create_skill_package() {
     local skill_md="$skill_dir/SKILL.md"
 
     if [ ! -f "$skill_md" ]; then
-        log_warning "No SKILL.md found in $skill_dir, skipping"
-        return 1
+        log_verbose "No SKILL.md found in $skill_dir, skipping (empty skill directory)"
+        return 2
     fi
 
     # Create temporary directory for packaging
@@ -264,6 +264,7 @@ main() {
 
     # Track statistics
     local skills_processed=0
+    local skills_skipped=0
     local skills_failed=0
     local packages_created=0
 
@@ -291,11 +292,13 @@ main() {
             if [ -d "$skill_dir" ]; then
                 skills_processed=$((skills_processed + 1))
 
-                if create_skill_package "$skill_dir" "$plugin_name"; then
-                    packages_created=$((packages_created + 1))
-                else
-                    skills_failed=$((skills_failed + 1))
-                fi
+                local result=0
+                create_skill_package "$skill_dir" "$plugin_name" || result=$?
+                case $result in
+                    0) packages_created=$((packages_created + 1)) ;;
+                    2) skills_skipped=$((skills_skipped + 1)) ;;
+                    *) skills_failed=$((skills_failed + 1)) ;;
+                esac
             fi
         done
     done
@@ -306,6 +309,10 @@ main() {
     log_info "Summary:"
     log_info "  Skills processed: $skills_processed"
     log_info "  Packages created: $packages_created"
+
+    if [ "$skills_skipped" -gt 0 ]; then
+        log_info "  Skills skipped: $skills_skipped (empty directories)"
+    fi
 
     if [ "$skills_failed" -gt 0 ]; then
         log_warning "  Skills failed: $skills_failed"
