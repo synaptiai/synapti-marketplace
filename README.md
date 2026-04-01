@@ -24,7 +24,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Plugin | Category | Description | Version |
 |--------|----------|-------------|---------|
 | [Agent Capability Standard ↗](https://github.com/synaptiai/agent-capability-standard) | Standards, Agent Development | Technical specification for AI agents with structural reliability. 36 atomic capabilities across 9 layers with reference workflows and safety-by-construction patterns. | 1.2.0 |
-| [AI-First Org Design Kit](./plugins/ai-first-org-design-kit/) | Organizational Design | Thirteen opinionated skills for designing, deploying, adopting, and evolving AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, architect governance, redesign roles, navigate politics, operationalize, run evolution audits, generate agent configs, build maturity matrices, design adoption sprints, and write human-facing AI usage policies. | 1.4.0 |
+| [AI-First Org Design Kit](./plugins/ai-first-org-design-kit/) | Organizational Design | Thirteen opinionated skills for designing, deploying, adopting, and evolving AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, architect governance, redesign roles, navigate politics, operationalize, run evolution audits, generate agent configs, build maturity matrices, design adoption sprints, and write human-facing AI usage policies. | 1.4.1 |
 | [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.5.0 |
 | [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development. Composable skills, safety hooks, agent teams, LSP code intelligence, and learning loop. | 1.5.0 |
@@ -139,8 +139,8 @@ Skills from this marketplace are also available for **Claude Desktop** users. De
 | `operationalize` | Operational Bridge | Distill all design artifacts into an agent primer (AGENT-PRIMER.md) and optionally merge governance into CLAUDE.md |
 | `evolution-auditor` | Organizational Fitness Auditor | Run the learning loop post-deployment: gate effectiveness, genome fitness, authority calibration, decision ledger |
 | `agent-builder` | Agent Configuration Engineer | Generate role-specific agent system prompts, tool permissions, and framework configs from organizational design artifacts |
-| `maturity-ladder` | Adoption Diagnostician | Build per-role AI maturity matrix with observable behaviors, current assessment, and visibility infrastructure |
-| `adoption-sprint-designer` | Sprint Architect | Design structured adoption sprints with objectives, buddy pairing, demo format, and activity-based measurement |
+| `maturity-ladder` | Adoption Diagnostician | Build per-role human AI maturity matrix using job titles or solo-founder operational modes, with barrier-informed progression paths and visibility infrastructure |
+| `adoption-sprint-designer` | Sprint Architect | Design structured adoption sprints with barrier-informed objectives, buddy pairing, flexible scheduling, demo format, and activity-based measurement |
 | `usage-policy-writer` | AI Policy Architect | Generate human-facing AI usage policy with approved tools, data classification, risk model reasoning, and exceptions |
 
 ### Installation

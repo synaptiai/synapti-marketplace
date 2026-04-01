@@ -1,6 +1,6 @@
 # AI-First Org Design Kit
 
-> **Version:** 1.4.0 | **License:** MIT | **Category:** Organizational Design
+> **Version:** 1.4.1 | **License:** MIT | **Category:** Organizational Design
 
 Thirteen opinionated skills that guide founders and leaders through designing, deploying, adopting, and evolving organizations where agents handle coordination and execution while humans own specification and judgment.
 
@@ -66,8 +66,8 @@ All skills live under `skills/` and follow the standard plugin SKILL.md format.
 | `skills/operationalize` | **Operational Bridge** | Distills all design artifacts into an agent-consumable primer (AGENT-PRIMER.md) and optionally merges governance into project CLAUDE.md |
 | `skills/evolution-auditor` | **Organizational Fitness Auditor** | Runs the learning loop post-deployment: gate effectiveness, genome fitness, authority calibration, decision ledger |
 | `skills/agent-builder` | **Agent Configuration Engineer** | Generates role-specific agent system prompts, tool permissions, and framework configs from organizational design artifacts |
-| `skills/maturity-ladder` | **Adoption Diagnostician** | Builds per-role AI maturity matrix with observable behaviors, current assessment, and visibility infrastructure |
-| `skills/adoption-sprint-designer` | **Sprint Architect** | Designs structured adoption sprints with objectives, buddy pairing, demo format, and activity-based measurement |
+| `skills/maturity-ladder` | **Adoption Diagnostician** | Builds per-role human AI maturity matrix using job titles or solo-founder operational modes, with barrier identification and barrier-informed progression paths |
+| `skills/adoption-sprint-designer` | **Sprint Architect** | Designs structured adoption sprints with barrier-informed objectives, buddy pairing, flexible scheduling, demo format, and activity-based measurement |
 | `skills/usage-policy-writer` | **AI Policy Architect** | Generates human-facing AI usage policy with approved tools, data classification, risk model reasoning, and exceptions |
 
 The router skill (`skills/ai-first-kit`) is the entry point — it diagnoses the user's situation and routes to the appropriate skill.
@@ -110,8 +110,8 @@ Once operational, two additional skills maintain and extend the design:
 
 Three skills address the human side of AI adoption:
 
-- **`maturity-ladder`** — Builds a per-role capability ladder with 4 levels (Not Engaged → Capable → Adoptive → Transformative). Measures actual behavior, not self-assessment. Creates visible progression paths that motivate through social proof.
-- **`adoption-sprint-designer`** — Designs structured 2-3 day sprints (hackathons) that force hands-on AI usage. Includes buddy pairing, demo format, activity-based measurement, and leadership sequencing. One sprint converts more than months of presentations.
+- **`maturity-ladder`** — Builds a per-role human AI maturity ladder with 4 levels (Not Engaged → Capable → Adoptive → Transformative) using human job titles or solo-founder operational modes — not agent definitions. Identifies the psychological barrier blocking each role and produces barrier-informed progression paths. Evidence-based assessment, not self-report.
+- **`adoption-sprint-designer`** — Designs structured adoption sprints (2-3 day blocks or spread across a week) with barrier-informed objectives, buddy pairing, demo format, activity-based measurement, and leadership sequencing. When barrier data exists, selects the sprint objective that best addresses the dominant barrier. One sprint converts more than months of presentations.
 - **`usage-policy-writer`** — Generates a human-facing AI usage policy explaining what tools are approved, data classification, and the reasoning behind each decision. Addresses the "I don't know what I'm allowed to do" barrier that kills adoption.
 
 ## Claude Code Integration
