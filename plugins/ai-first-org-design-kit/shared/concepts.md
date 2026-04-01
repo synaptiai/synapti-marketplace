@@ -62,7 +62,7 @@ Not career levels — modes you move between within a single day:
 
 ## AI Adoption Maturity Model
 
-Four levels of AI adoption, measured by observable behavior (not self-report):
+Four levels of **human** AI adoption, measured by observable behavior (not self-report):
 
 | Level | Name | Behavioral Test | Identity Frame |
 |-------|------|-----------------|----------------|
@@ -72,6 +72,10 @@ Four levels of AI adoption, measured by observable behavior (not self-report):
 | 3 | Transformative | Has built or extended an AI tool/skill/workflow that others now use | "I create new capabilities" |
 
 **Key design principle:** Level 3 is "invents new tools" not "uses AI the most." The identity shifts from "I don't need AI" to "I'm the one who creates new capabilities." This is an upgrade, not a replacement.
+
+**What this model measures:** Human adoption of AI tools — how people in the organization work differently. The role inventory for maturity assessment uses human job titles or operational modes, not agent role definitions from `roles-*.md`. An assessment says "Backend Engineer at Level 2" or "Daniel's adoption in Development mode: Level 3" — never "Specification Architect at Level 3."
+
+**What this model does NOT measure:** Agent capability or performance. Agent roles defined by `role-value-mapper` describe how work is specified for agents. They are consumed by `agent-builder`, not by `maturity-ladder`.
 
 The `maturity-ladder` skill produces per-role customizations of this model with organization-specific behaviors per cell. The `adoption-sprint-designer` designs structured experiences that move people between levels. The `evolution-auditor` tracks level changes over time.
 
@@ -84,6 +88,21 @@ The `maturity-ladder` skill produces per-role customizations of this model with 
 | Execution Expert | Best at doing X | **Specification Authority** — defines the quality bar agents must meet |
 | Empire Builder | Headcount/budget | **Leverage Maximizer** — measured by output-per-person × scope |
 | Process Owner | Built current system | **Workflow Designer** — translates process knowledge into agent-native specs |
+
+## Adoption Barriers
+
+Four psychological barriers to AI adoption — the root causes of resistance. Each maps to one or more resistance archetypes — same underlying framework, different application. The `political-navigator` uses archetypes for power structure analysis. The `maturity-ladder` uses barriers to customize progression paths.
+
+| Barrier | What the person feels | Related Archetype(s) | Progression Strategy |
+|---------|----------------------|---------------------|---------------------|
+| Self-enhancing bias | "I'm already good enough — AI can't match my judgment" | Execution Expert | Make the gap visible: measurable evidence, visible ladder, social proof |
+| Identity threat | "AI is replacing who I am and what I've built" | Process Owner | Encode expertise, don't replace it: first AI project captures THEIR judgment |
+| Opacity | "I don't understand or trust how it decides" | Information Broker, Approval Gate Holder | Write the rules: clear boundaries, visible reasoning, human-governed policy |
+| Authority threat | "I'm losing my scope, headcount, or decision power" | Empire Builder | Redefine leverage: output-per-person × scope, not headcount |
+
+**Why these matter for maturity assessment:** A level 1 Engineer stuck on "self-enhancing bias" needs a different progression path than one stuck on "identity threat." The first needs evidence of the gap. The second needs their first AI project to encode their own expertise. Without identifying the barrier, progression paths are generic and less effective.
+
+**Solo founders** may experience multiple barriers across different operational modes — e.g., high adoption in development (where evidence is immediate) but low in sales (where identity is more personal).
 
 ## Governance Health Metrics
 
@@ -150,11 +169,11 @@ All skills save outputs to `$HOME/.ai-first-kit/projects/{slug}/` for downstream
 | operationalize | genome/ (required), governance/, gates/, specs/ | `AGENT-PRIMER.md`, `ORG-DESIGN-DUMP-{datetime}.md`, optionally `.claude/CLAUDE.md` | genome (required) |
 | evolution-auditor | genome/ (req), governance/ (req), gates/ incl. .holdouts/ (for evaluation), specs/, roles-*.md, AGENT-PRIMER.md, previous evolution audits, evolution/decision-ledger.md | `evolution/audit-{datetime}.md`, `evolution/decision-ledger.md` (append-only) | genome + governance (both required) |
 | agent-builder | roles-*.md (req), genome/ (req), governance/, gates/, specs/, AGENT-PRIMER.md | `agents/{role-slug}/` directory, `agents/INDEX.md` | roles + genome (both required) |
-| maturity-ladder | roles-*.md (optional), genome (optional), audit-*.md (coordination audit, optional), previous maturity assessments | `adoption/maturity-ladder-{datetime}.md`, `adoption/maturity-visibility.md` | — |
-| adoption-sprint-designer | adoption/maturity-ladder (optional), roles-*.md (optional), genome (optional), governance/HUMAN-USAGE-POLICY.md (optional), previous sprint plans | `adoption/sprint-{name}-{datetime}.md`, `adoption/sprint-measurement.md` | — |
+| maturity-ladder | genome (optional), audit-*.md (coordination audit, optional), previous maturity assessments | `adoption/maturity-ladder-{datetime}.md`, `adoption/maturity-visibility.md` | — |
+| adoption-sprint-designer | adoption/maturity-ladder (optional), genome (optional), governance/HUMAN-USAGE-POLICY.md (optional), previous sprint plans | `adoption/sprint-{name}-{datetime}.md`, `adoption/sprint-measurement.md` | — |
 | usage-policy-writer | governance/HARD-BOUNDARIES.md (optional), genome VALUES.md (optional), genome VOICE.md (optional), existing HUMAN-USAGE-POLICY.md (update detection) | `governance/HUMAN-USAGE-POLICY.md` | — |
 
-**Note:** `adoption-sprint-designer` checks for `political-map-*.md` existence (count only via `find | wc -l`) but NEVER reads content. This is not a "read" dependency — it's an existence check that triggers a security note in pre-flight output.
+**Note:** Both `adoption-sprint-designer` and `maturity-ladder` check for `political-map-*.md` existence (count only via `find | wc -l`) but NEVER read content. This is not a "read" dependency — it's an existence check. Neither skill reads `roles-*.md` — those are agent role definitions consumed by `agent-builder`, not human role inventories for adoption measurement.
 
 ## Skill Dependency Map
 
@@ -174,9 +193,8 @@ quality-gate-designer ◄─────┘                        │
        ▼                                             │
 role-value-mapper                                    │
        │                                             │
-       ├──────────────────────────────┐              │
-       ▼                              ▼              │
-operationalize              maturity-ladder (optional)
+       ▼                                             │
+operationalize              maturity-ladder (standalone)
        │                              │              │
        ├────────────────────┐         ▼              │
        ▼                    ▼   adoption-sprint-designer ◄───┘
