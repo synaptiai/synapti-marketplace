@@ -82,7 +82,14 @@ Ask via AskUserQuestion:
 - **Level 1 → 2 deepening** (deepening focus — move users from assistance to delegation)
 - **Custom objective** (describe your specific goal)"
 
-If maturity data exists, recommend the objective that targets the biggest gap from the maturity analysis.
+If maturity data exists, recommend the objective that targets the biggest gap from the maturity analysis. If barrier data is present, use it to select the most effective objective:
+
+| Barrier | Best Objective Fit | Why |
+|---------|-------------------|-----|
+| Self-enhancing bias | Build something you couldn't do manually | Forces confrontation with the gap — "AI produced a result I couldn't have" |
+| Identity threat | Encode your expertise as a reusable skill | Frames AI as amplifying identity, not replacing it |
+| Opacity | Write the rules for AI in your domain | Restores agency through governance design |
+| Authority threat | Expand your scope with an AI-augmented workflow | Demonstrates AI as leverage multiplier, not headcount replacement |
 
 Frame the objective as an identity upgrade: "After this sprint, participants will be able to [capability they don't have now]." Not "participants will have used AI" — that's compliance, not capability.
 

@@ -60,7 +60,7 @@ POLITICAL_MAP=$(find "$HOME/.ai-first-kit/projects/$SLUG/" -maxdepth 1 -name "po
 [ -n "$GENOME" ] && echo "GENOME: found" || echo "GENOME: missing"
 [ -n "$AUDIT" ] && echo "AUDIT: $AUDIT" || echo "AUDIT: none"
 [ -n "$PREV_MATURITY" ] && echo "PREVIOUS ASSESSMENT: $PREV_MATURITY" || echo "PREVIOUS ASSESSMENT: none (first assessment)"
-[ "$POLITICAL_MAP" -gt 0 ] 2>/dev/null && echo "POLITICAL MAP: exists (not reading — barrier framework available)" || echo "POLITICAL MAP: none"
+[ "$POLITICAL_MAP" -gt 0 ] 2>/dev/null && echo "POLITICAL MAP: exists (not reading — sensitive)" || echo "POLITICAL MAP: none"
 ```
 
 **Do NOT read `roles-*.md`.** It contains agent role definitions (Specification Architect, Voice Guardian, Opportunity Scout) — these describe how work is specified for agents, not the human roles that the maturity ladder measures. The role inventory comes from the user interview in Phase 2.
@@ -83,7 +83,7 @@ Then ask via AskUserQuestion:
 
 This determines the assessment mode:
 - **Solo founder (1 person):** Assessed by operational modes — the different "hats" you wear. The maturity ladder measures YOUR adoption across each mode.
-- **Small team (2-3 people):** Assessed per person with their primary role.
+- **Small team (2-3 people):** Assessed per person with their primary role. If one person fills multiple functions (e.g., a founder with one contractor), use operational-mode assessment for that person and per-person for the rest.
 - **Team (4+ people):** Assessed by human job title/function (3-7 distinct roles).
 
 ## Phase 2: Role Inventory
@@ -153,7 +153,12 @@ What would you change for **[ROLE]**? Engineering level 2 looks different from S
 
 **Solo founder:** "For your **[MODE]** work — what specific, observable behaviors would distinguish each level?
 
-[same table]
+| Level | Default Behavior |
+|-------|-----------------|
+| 0 (Not Engaged) | No AI-assisted work in 30 days |
+| 1 (Capable) | Uses AI for 3+ tasks/week, reviews all output |
+| 2 (Adoptive) | Designed a reusable AI workflow, delegates execution by default |
+| 3 (Transformative) | Built something reusable beyond its original context |
 
 What would you change for your **[MODE]** work? Your Development mode level 2 probably looks different from your Sales mode level 2."
 
@@ -249,28 +254,28 @@ The person believes their current approach is optimal. Telling them "AI will mak
 - Make the gap visible with evidence: "Here's what peers at level [N+1] produce. Here's the measurable difference."
 - Use the maturity matrix visibility (Phase 7) as the mechanism — when they see others ahead, the gap becomes undeniable
 - First project should produce a result they couldn't have achieved manually, not just a faster version of what they already do
-- Trail of Bits: "Nobody likes being told they're level 1. But you can't argue you're already good enough when there's a visible ladder."
+- Trail of Bits found that nobody likes being told they're level 1 — but you can't argue you're already good enough when there's a visible ladder.
 
 **Identity threat ("AI threatens what I built"):**
 The person sees AI as replacing what they've built or who they are. Engineers hear "AI will write code better." Auditors hear "AI will find bugs better."
 - Frame as encoding expertise, not replacing it: "Write a skill that captures how YOU evaluate [their domain]"
 - First AI project should make their expertise permanent and scalable — an identity upgrade
 - Level 3 framing is critical here: "invents new capabilities" means their expertise becomes infrastructure
-- Trail of Bits: "When a senior auditor writes a constant-time analysis skill, they're not being replaced. Their expertise is encoded and reusable."
+- Trail of Bits demonstrated this: when a senior auditor writes a constant-time analysis skill, they're not being replaced — their expertise is encoded and reusable.
 
 **Opacity ("I don't trust what I can't control"):**
 The person needs to understand how the system works before trusting it. They hold specialized knowledge and distrust what they can't inspect.
 - Start with transparent, controllable tools: visible chain-of-thought, clear input/output boundaries
 - Write the rules that govern AI in their domain — usage policy, quality gates, boundaries
 - Their progression to level 2 should involve designing the *governance* for AI in their area, not just using AI
-- Trail of Bits: "We wrote an AI Handbook that explained the risk model behind each decision — 'here's our reasoning' beats 'trust this.'"
+- Trail of Bits addressed this by writing an AI Handbook that explains the risk model behind each decision — "here's our reasoning" beats "trust this."
 
 **Authority threat ("I'm losing scope"):**
 The person fears losing headcount, budget, or decision-making scope. "Do more with less" triggers existential anxiety.
 - Redefine leverage: output-per-person × scope of impact
 - Position AI as expanding their reach, not shrinking their team
 - Their path to the next level should demonstrably increase their scope or influence
-- Trail of Bits: "Sales team averages $8M revenue per rep against an industry benchmark of $2-4M. Same team size, 4x the output."
+- Trail of Bits reported their sales team averaging $8M revenue per rep against an industry benchmark of $2-4M — same team size, 4x the output.
 
 **No barrier / unknown:**
 Use the standard progression path without barrier customization. Focus on creating structured opportunities: adoption sprints, projects with clear scope, or pairing with someone at the next level.

@@ -204,16 +204,16 @@ Read the most recent `adoption/maturity-ladder-*.md` using the `Read` tool. The 
 
 Using Q6 evidence, assess adoption progression per role:
 
-| Role | Previous Level | Current Level | Change | Evidence |
-|------|---------------|--------------|--------|----------|
-| [Role] | [N] | [N+1] | +1 (promoted) | [What changed — specific behavior shift] |
-| [Role] | [N] | [N] | Stalled | [No change in X months — what's blocking?] |
-| [Role] | [N] | [N-1] | Regression | [What caused the step back?] |
+| Role | Previous Level | Current Level | Change | Barrier | Evidence |
+|------|---------------|--------------|--------|---------|----------|
+| [Role] | [N] | [N+1] | +1 (promoted) | [From maturity data or —] | [What changed — specific behavior shift] |
+| [Role] | [N] | [N] | Stalled | [barrier informs remedy] | [No change in X months — what's blocking?] |
+| [Role] | [N] | [N-1] | Regression | [barrier informs investigation] | [What caused the step back?] |
 
 **Classification rules:**
 - **Level increased:** Healthy adoption — note what worked (sprint? new tool? peer influence?)
 - **Level unchanged for 1 audit cycle:** Monitor — may be normal pace, especially for level 2→3 transitions
-- **Level unchanged for 2+ audit cycles:** Stalled adoption — P2 finding, recommend `adoption-sprint-designer`
+- **Level unchanged for 2+ audit cycles:** Stalled adoption — P2 finding, recommend `adoption-sprint-designer` with barrier context if available (e.g., "stalled at level 1, barrier: self-enhancing bias → sprint should make the gap visible")
 - **Level decreased:** Regression — P1 finding, investigate cause (tool changes? leadership changes? workload pressure?)
 
 Stalled adoption (2+ cycles) routes to `adoption-sprint-designer`. Regression routes to investigation first, then potentially `maturity-ladder` for reassessment.
