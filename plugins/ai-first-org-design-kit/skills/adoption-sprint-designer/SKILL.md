@@ -52,21 +52,19 @@ echo "Project: $SLUG"
 
 # Check artifacts
 MATURITY=$(ls -t "$HOME/.ai-first-kit/projects/$SLUG/adoption/maturity-ladder-"*.md 2>/dev/null | head -1)
-ROLES=$(ls -t "$HOME/.ai-first-kit/projects/$SLUG"/roles-*.md 2>/dev/null | head -1)
 GENOME=$(ls "$HOME/.ai-first-kit/projects/$SLUG/genome/00-identity/VALUES.md" 2>/dev/null)
 USAGE_POLICY=$(ls "$HOME/.ai-first-kit/projects/$SLUG/governance/HUMAN-USAGE-POLICY.md" 2>/dev/null)
 PREV_SPRINT=$(ls -t "$HOME/.ai-first-kit/projects/$SLUG/adoption/sprint-"*.md 2>/dev/null | head -1)
 POLITICAL_MAP=$(find "$HOME/.ai-first-kit/projects/$SLUG/" -maxdepth 1 -name "political-map-*.md" 2>/dev/null | wc -l | tr -d ' ')
 
 [ -n "$MATURITY" ] && echo "MATURITY LADDER: $MATURITY" || echo "MATURITY LADDER: none"
-[ -n "$ROLES" ] && echo "ROLES: $ROLES" || echo "ROLES: missing"
 [ -n "$GENOME" ] && echo "GENOME: found" || echo "GENOME: missing"
 [ -n "$USAGE_POLICY" ] && echo "USAGE POLICY: found" || echo "USAGE POLICY: missing"
 [ -n "$PREV_SPRINT" ] && echo "PREVIOUS SPRINT: $PREV_SPRINT" || echo "PREVIOUS SPRINT: none"
 [ "$POLITICAL_MAP" -gt 0 ] 2>/dev/null && echo "POLITICAL MAP: exists (not reading — sensitive)" || echo "POLITICAL MAP: none"
 ```
 
-If maturity ladder exists: read it using the `Read` tool. Use the current levels and gap analysis to inform participant selection (Phase 2) and objective targeting (Phase 1).
+If maturity ladder exists: read it using the `Read` tool. Use the current levels, gap analysis, and barrier data to inform participant selection (Phase 2) and objective targeting (Phase 1). The maturity ladder assesses human roles — use participant names and human job titles, not agent role definitions.
 
 If usage policy exists: note it as pre-reading material for sprint participants.
 
@@ -92,7 +90,7 @@ Frame the objective as an identity upgrade: "After this sprint, participants wil
 
 Ask via AskUserQuestion:
 
-"Who should participate? I recommend starting with 6-12 people. If you have maturity data, I'll suggest targeting people closest to leveling up (highest ROI)."
+"Who should participate? List people by name and their role (human job title, not agent definition). I recommend 6-12 people. If maturity data exists, I'll suggest targeting people closest to leveling up (highest ROI)."
 
 If maturity data exists: recommend participants at the threshold of the next level. People at level 0.5 (tried AI once, didn't stick) benefit most from a structured sprint. People already at the target level don't need the sprint.
 
@@ -296,9 +294,9 @@ Previous sprint: {path or "first sprint"}
 After this sprint, participants will be able to: {capability statement}
 
 ## Participants
-| Person/Role | Current Level | Buddy | Sprint Goal |
-|-------------|--------------|-------|-------------|
-| [Name] | [Level from maturity data or "unknown"] | [Buddy name] | [Specific goal] |
+| Person | Human Role | Current Level | Barrier | Buddy | Sprint Goal |
+|--------|-----------|--------------|---------|-------|-------------|
+| [Name] | [Human job title] | [Level from maturity data or "unknown"] | [From maturity data or "—"] | [Buddy name] | [Specific goal] |
 
 ## Sprint 0 (Leadership)
 {Who participates, when, schedule — or "Not planned" with noted tradeoff}
@@ -392,7 +390,6 @@ The sprint works because it compresses the adoption journey into a structured ex
 | Missing | Fallback |
 |---------|----------|
 | No maturity-ladder | Design sprint without targeting data. Recommend `maturity-ladder` for better participant selection next time. |
-| No roles-*.md | Gather participant roles via interview. |
 | No genome | Proceed — sprints don't require organizational identity. |
 | No usage policy | Warn: participants won't have clear human usage rules. Recommend `usage-policy-writer` as pre-work. |
 | No political-map | Fine — sprint design does not use political data. |
@@ -410,7 +407,7 @@ This skill is invoked:
 - Standalone when a user wants to run a hackathon or onboarding event
 - Periodically to design recurring sprint programs
 
-**Reads:** adoption/maturity-ladder-*.md (recommended — participant targeting), roles-*.md (recommended), genome/ (optional), previous sprint plans (lessons learned), governance/HUMAN-USAGE-POLICY.md (optional — participant pre-reading).
+**Reads:** adoption/maturity-ladder-*.md (recommended — participant targeting, human roles, barrier data), genome/ (optional), previous sprint plans (lessons learned), governance/HUMAN-USAGE-POLICY.md (optional — participant pre-reading).
 
 **Writes:** `adoption/sprint-{name}-{datetime}.md` (complete sprint plan), `adoption/sprint-measurement.md` (reusable measurement template).
 

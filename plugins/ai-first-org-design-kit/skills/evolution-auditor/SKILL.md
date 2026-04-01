@@ -200,7 +200,7 @@ The goal is MORE autonomy over time, not less. Promotions are good news — they
 
 **Skip this phase if no maturity ladder found in pre-flight.**
 
-Read the most recent `adoption/maturity-ladder-*.md` using the `Read` tool. If the file is missing level classifications for any role (incomplete maturity run), treat that role as unassessed and note it in the tracking table. If a previous audit also included adoption tracking, compare trends.
+Read the most recent `adoption/maturity-ladder-*.md` using the `Read` tool. The maturity ladder assesses human roles (job titles or solo-founder operational modes), not agent definitions. If the file is missing level classifications for any role (incomplete maturity run), treat that role as unassessed and note it in the tracking table. If a previous audit also included adoption tracking, compare trends.
 
 Using Q6 evidence, assess adoption progression per role:
 
