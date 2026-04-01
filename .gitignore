@@ -7,3 +7,6 @@ dist/
 .claude/audit.log
 .claude/settings.gh-workflow.local.json
 .claude/agent-memory/
+ai-first-kit-workspace/*
+.claude/agents/*
+.claude/skills/*
