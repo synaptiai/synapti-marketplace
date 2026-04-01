@@ -146,6 +146,10 @@ Read the corresponding holdout files in `gates/.holdouts/` to understand the val
 If `evolution/gate-telemetry.jsonl` exists and has 10+ entries for a gate, compute
 empirical metrics from the telemetry data instead of estimating from interviews:
 
+These patterns assume compact single-line JSON (no whitespace between keys and
+values). The holdout-evaluator writes compact JSONL by design — do not
+pretty-print the telemetry file.
+
 ```bash
 # Example: count entries and compute pass rate for a gate
 GATE_NAME="plan-readiness"
@@ -156,7 +160,7 @@ echo "$GATE_NAME: $PASSED/$TOTAL passed"
 
 Compute per gate:
 - **Satisfaction rate**: (overall_result PASS count) / (total evaluations) — compare against gate target
-- **Self-review accuracy**: (self_review_result matches holdout_result) / total — measures how well self-review correlates with holdout evaluation
+- **Self-review concordance**: (self_review_result matches holdout_result) / total — measures agreement between self-review and holdout evaluation (both PASS or both FAIL count as concordant)
 - **Gaming indicator**: (self_review PASS + holdout FAIL) / total — high rate signals agents checking boxes without genuine understanding
 - **Scenario effectiveness**: Which scenario IDs appear most often in failed_scenarios — identifies which holdout scenarios are catching real failures
 - **Trend**: Compare recent 10 evaluations against prior 10 — improving, declining, or stable

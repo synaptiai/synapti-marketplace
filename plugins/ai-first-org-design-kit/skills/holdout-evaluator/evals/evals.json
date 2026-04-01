@@ -16,6 +16,7 @@
         "Output contains FAIL verdict for scenario-2 (vague acceptance criteria like 'works correctly' and 'can log in' present)",
         "Output contains FAIL verdict for scenario-4 (plan references 'the usual approach' without encoding what it means)",
         "Output contains FAIL verdict for scenario-3 (verification says 'tests will be written' without specifying what kind)",
+        "Output contains FAIL verdict for scenario-5 (Phase 4 depends on Phase 3 output but dependencies are not explicitly mapped)",
         "Mapped feedback references criterion numbers (1, 2, 4, 5, or 7) rather than holdout scenario names",
         "Mapped feedback does NOT contain any of: 'Assumption Bomb', 'Vague Acceptance', 'Stranger Test Failure', 'Missing Verification', 'Hidden Dependency'",
         "Output cross-references the self-review evidence against the actual plan content — notes that the evidence table claims PASS on all criteria despite obvious issues in the plan"

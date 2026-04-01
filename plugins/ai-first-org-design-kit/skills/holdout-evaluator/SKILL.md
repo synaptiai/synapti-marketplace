@@ -87,7 +87,7 @@ Read two files:
 
 2. **Holdout scenarios** (hidden): `$HOME/.ai-first-kit/projects/$SLUG/gates/.holdouts/{gate-name}-holdouts.md`
    - Extract each scenario: name, description, expected gate result, what a good agent does
-   - Assign each scenario an ID (scenario-1, scenario-2, etc.) — use IDs, not names, in telemetry
+   - Assign each scenario an ID (scenario-1, scenario-2, etc.) by document order — use IDs, not names, in telemetry. Note: IDs are positional. If holdout scenarios are reordered, prior telemetry IDs become incoherent.
 
 If the holdout file doesn't exist for the specified gate: halt. "No holdout scenarios found for gate `{gate-name}`. Run `quality-gate-designer` to create them."
 
@@ -191,6 +191,9 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
   `failed_scenarios` array — never substitute scenario names as a "helpful" gloss
 
 Write the JSON as a single line (no pretty-printing) to maintain JSONL format.
+If multiple gate reviews run in parallel (e.g., gates 3+4), each writes its own
+telemetry record. Single-line JSONL append is effectively atomic on POSIX
+filesystems for short lines.
 
 ## Phase 6: Return Results
 

@@ -1,3 +1,6 @@
+<!-- Test fixture for evals. Real holdout scenarios live in
+     $HOME/.ai-first-kit/projects/{slug}/gates/.holdouts/ and are project-specific. -->
+
 # Holdout Scenarios: Plan Readiness
 
 ## Scenario 1: The Assumption Bomb
