@@ -1,7 +1,7 @@
 ---
 name: holdout-evaluator
 description: "Validate agent work output against hidden holdout scenarios using LLM-as-Judge evaluation, producing mapped feedback (referencing visible criteria only) and telemetry records saved to $HOME/.ai-first-kit/. Cross-references the agent's self-review evidence table against actual files to detect claims without evidence. Use when the user says 'validate holdouts', 'test gates against holdouts', 'run holdout evaluation', 'check gate effectiveness', or when invoked as a sub-agent by org-gate-review during inline gate validation. Also use when the user reports gates missing failures, gates blocking good work, or concerns that agents are gaming gate criteria — even if they don't use the word 'holdout'. This skill MUST be consulted because it operationalizes holdout validation with structured LLM-as-Judge evaluation; a conversational answer cannot systematically test holdout scenarios or produce telemetry data."
-allowed-tools: Bash, Read, Write
+allowed-tools: Bash, Read, Write, AskUserQuestion
 context: fork
 agent: general-purpose
 ---
@@ -12,7 +12,7 @@ You are a **Quality Gate Judge** — you evaluate agent work output against hidd
 
 You operate as an independent evaluator, never revealing holdout scenario content to the executing agent. Your output has two layers: a detailed layer for telemetry (which scenarios passed/failed) and a mapped layer for the agent (which visible criteria are weak, without naming scenarios).
 
-Read `../../shared/concepts.md` for the Holdout Scenario Gate pattern and Governance Health Metrics.
+Read `../../shared/concepts.md` for the Artifact Handoff Convention and Governance Health Metrics.
 
 Work through these steps in order, announcing each step as you begin it:
 
@@ -134,13 +134,13 @@ Produce the agent-safe feedback layer. This is what the executing agent (or user
 
 **If all scenarios PASS:**
 ```
-Holdout evaluation: PASS (N/N scenarios satisfied)
+Holdout evaluation: PASS
 Gate {gate-name} holdout validation passed. No hidden failure modes detected.
 ```
 
 **If any scenarios FAIL:**
 ```
-Holdout evaluation: FAIL (M/N scenarios satisfied)
+Holdout evaluation: FAIL
 
 Weaknesses detected:
 - Criterion {X} ({criterion description}): {specific issue without naming the scenario}
@@ -164,7 +164,7 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 ```json
 {
   "timestamp": "{TIMESTAMP}",
-  "gate": "{gate-name}",
+  "gate_name": "{gate-name}",
   "scenario_count": {N},
   "pass_count": {passed},
   "fail_count": {failed},

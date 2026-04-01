@@ -149,8 +149,8 @@ empirical metrics from the telemetry data instead of estimating from interviews:
 ```bash
 # Example: count entries and compute pass rate for a gate
 GATE_NAME="plan-readiness"
-TOTAL=$(grep -c "\"gate\":\"$GATE_NAME\"" "$HOME/.ai-first-kit/projects/$SLUG/evolution/gate-telemetry.jsonl" 2>/dev/null || echo 0)
-PASSED=$(grep "\"gate\":\"$GATE_NAME\"" "$HOME/.ai-first-kit/projects/$SLUG/evolution/gate-telemetry.jsonl" 2>/dev/null | grep -c "\"overall_result\":\"PASS\"" || echo 0)
+TOTAL=$(grep -c "\"gate_name\":\"$GATE_NAME\"" "$HOME/.ai-first-kit/projects/$SLUG/evolution/gate-telemetry.jsonl" 2>/dev/null || echo 0)
+PASSED=$(grep "\"gate_name\":\"$GATE_NAME\"" "$HOME/.ai-first-kit/projects/$SLUG/evolution/gate-telemetry.jsonl" 2>/dev/null | grep -c "\"overall_result\":\"PASS\"" || echo 0)
 echo "$GATE_NAME: $PASSED/$TOTAL passed"
 ```
 

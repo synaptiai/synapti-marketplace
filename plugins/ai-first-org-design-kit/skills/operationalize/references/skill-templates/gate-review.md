@@ -55,9 +55,10 @@ validated by an independent holdout evaluator.
 
 After completing Phase 1, spawn the holdout evaluator for independent validation.
 
-1. **Check availability**: Determine if the holdout-evaluator skill is registered
-   in the current project. If not available, skip to Phase 3 with:
-   "Holdout validation skipped — evaluator not registered. Self-review only."
+1. **Check availability**: Attempt to invoke the holdout-evaluator via the Agent
+   tool. If the Agent tool reports the skill is not found or the invocation fails,
+   skip to Phase 3 with:
+   "Holdout validation skipped — evaluator not available. Self-review only."
 
 2. **Prepare inputs**:
    - Gate name from Phase 1
