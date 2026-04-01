@@ -218,7 +218,7 @@ Record the barrier per role/mode. This feeds Phase 6 (progression paths).
 
 **If the user selects "Not sure" for all roles:** Skip barrier-informed progression. Note: "Barrier analysis skipped — using default progression paths in Phase 6."
 
-**Why these four barriers:** They map to the Adoption Barriers framework in `shared/concepts.md`, derived from Trail of Bits's research on what actually blocks adoption. Each barrier has a specific remedy — generic "just use AI more" advice doesn't work.
+**Why these four barriers:** They map to the Adoption Barriers framework in `shared/concepts.md`. Each barrier has a specific remedy — generic "just use AI more" advice doesn't work.
 
 **Why ask fresh (not read from political-map):** Barriers may have changed since the political map was created. A person classified as an "Empire Builder" 6 months ago may now be an ally. Fresh assessment is more accurate. And the political map contains sensitive stakeholder analysis that the maturity ladder should never access.
 
@@ -254,28 +254,28 @@ The person believes their current approach is optimal. Telling them "AI will mak
 - Make the gap visible with evidence: "Here's what peers at level [N+1] produce. Here's the measurable difference."
 - Use the maturity matrix visibility (Phase 7) as the mechanism — when they see others ahead, the gap becomes undeniable
 - First project should produce a result they couldn't have achieved manually, not just a faster version of what they already do
-- Trail of Bits found that nobody likes being told they're level 1 — but you can't argue you're already good enough when there's a visible ladder.
+- Nobody likes being told they're level 1 — but you can't argue you're already good enough when there's a visible ladder.
 
 **Identity threat ("AI threatens what I built"):**
 The person sees AI as replacing what they've built or who they are. Engineers hear "AI will write code better." Auditors hear "AI will find bugs better."
 - Frame as encoding expertise, not replacing it: "Write a skill that captures how YOU evaluate [their domain]"
 - First AI project should make their expertise permanent and scalable — an identity upgrade
 - Level 3 framing is critical here: "invents new capabilities" means their expertise becomes infrastructure
-- Trail of Bits demonstrated this: when a senior auditor writes a constant-time analysis skill, they're not being replaced — their expertise is encoded and reusable.
+- When a senior auditor writes a constant-time analysis skill, they're not being replaced — their expertise is encoded and reusable.
 
 **Opacity ("I don't trust what I can't control"):**
 The person needs to understand how the system works before trusting it. They hold specialized knowledge and distrust what they can't inspect.
 - Start with transparent, controllable tools: visible chain-of-thought, clear input/output boundaries
 - Write the rules that govern AI in their domain — usage policy, quality gates, boundaries
 - Their progression to level 2 should involve designing the *governance* for AI in their area, not just using AI
-- Trail of Bits addressed this by writing an AI Handbook that explains the risk model behind each decision — "here's our reasoning" beats "trust this."
+- An AI Handbook that explains the risk model behind each decision works — "here's our reasoning" beats "trust this."
 
 **Authority threat ("I'm losing scope"):**
 The person fears losing headcount, budget, or decision-making scope. "Do more with less" triggers existential anxiety.
 - Redefine leverage: output-per-person × scope of impact
 - Position AI as expanding their reach, not shrinking their team
 - Their path to the next level should demonstrably increase their scope or influence
-- Trail of Bits reported their sales team averaging $8M revenue per rep against an industry benchmark of $2-4M — same team size, 4x the output.
+- Companies with mature AI adoption report sales teams at $8M revenue per rep against industry benchmarks of $2-4M — same team size, 4x the output.
 
 **No barrier / unknown:**
 Use the standard progression path without barrier customization. Focus on creating structured opportunities: adoption sprints, projects with clear scope, or pairing with someone at the next level.

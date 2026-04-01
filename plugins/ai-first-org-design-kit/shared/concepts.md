@@ -91,7 +91,7 @@ The `maturity-ladder` skill produces per-role customizations of this model with 
 
 ## Adoption Barriers
 
-Four psychological barriers to AI adoption, identified by Trail of Bits as the root causes of resistance. Each maps to one or more resistance archetypes — same underlying framework, different application. The `political-navigator` uses archetypes for power structure analysis. The `maturity-ladder` uses barriers to customize progression paths.
+Four psychological barriers to AI adoption — the root causes of resistance. Each maps to one or more resistance archetypes — same underlying framework, different application. The `political-navigator` uses archetypes for power structure analysis. The `maturity-ladder` uses barriers to customize progression paths.
 
 | Barrier | What the person feels | Related Archetype(s) | Progression Strategy |
 |---------|----------------------|---------------------|---------------------|
