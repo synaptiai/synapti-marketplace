@@ -1,0 +1,30 @@
+name: Package Desktop Skills
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  package-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Package desktop skills
+        run: bash scripts/package-desktop-skills.sh --clean
+
+      - name: Upload assets to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          COUNT=0
+          for zip in dist/desktop/**/*.zip; do
+            gh release upload "$TAG" "$zip" --clobber
+            COUNT=$((COUNT + 1))
+          done
+          echo "Uploaded $COUNT desktop skill packages to $TAG"
