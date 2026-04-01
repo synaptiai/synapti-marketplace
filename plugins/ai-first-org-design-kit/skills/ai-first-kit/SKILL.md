@@ -118,7 +118,7 @@ Provide the 60-second pitch:
 
 This kit helps you redesign from first principles. The core insight: organizational time splits into three variables — specification (defining what should exist), coordination (meetings, approvals, handoffs), and execution (producing artifacts). AI changes each differently: agents do execution, coordination gets encoded into infrastructure, and specification becomes the primary human job.
 
-The kit has thirteen skills that guide you through the redesign, adoption, and beyond:
+The kit has fourteen skills that guide you through the redesign, adoption, and beyond:
 
 **Diagnose** → `coordination-audit` makes coordination overhead visible
 **Encode** → `org-genome-builder` captures your identity for agents
@@ -128,6 +128,7 @@ The kit has thirteen skills that guide you through the redesign, adoption, and b
 **Staff** → `role-value-mapper` redesigns roles around specification, not execution
 **Navigate** → `political-navigator` handles the human side of change
 **Activate** → `operationalize` bridges design to agent consumption
+**Validate** → `holdout-evaluator` tests agent output against hidden holdout scenarios
 **Evolve** → `evolution-auditor` runs the learning loop post-deployment
 **Deploy** → `agent-builder` generates role-specific agent configurations
 **Measure** → `maturity-ladder` builds a per-role adoption capability ladder
