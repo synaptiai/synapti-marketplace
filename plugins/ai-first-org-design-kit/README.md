@@ -2,7 +2,7 @@
 
 > **Version:** 1.4.1 | **License:** MIT | **Category:** Organizational Design
 
-Thirteen opinionated skills that guide founders and leaders through designing, deploying, adopting, and evolving organizations where agents handle coordination and execution while humans own specification and judgment.
+Fourteen opinionated skills that guide founders and leaders through designing, deploying, adopting, and evolving organizations where agents handle coordination and execution while humans own specification and judgment.
 
 **This is not about adopting AI tools.** It's about re-engineering the operating model.
 
@@ -39,7 +39,7 @@ coordination-audit → political-navigator → org-genome-builder → quality-ga
 
 ### Already Deployed Path
 ```
-evolution-auditor → (revision skills based on findings) → operationalize → agent-builder
+holdout-evaluator → evolution-auditor → (revision skills based on findings) → operationalize → agent-builder
 ```
 
 ### Driving Adoption Path
@@ -64,6 +64,7 @@ All skills live under `skills/` and follow the standard plugin SKILL.md format.
 | `skills/role-value-mapper` | **Team Architect** | Designs roles from value flows and specification responsibility, not job titles |
 | `skills/political-navigator` | **Power Dynamics Strategist** | Maps power structures, identifies resistance, creates reframes, sequences change |
 | `skills/operationalize` | **Operational Bridge** | Distills all design artifacts into an agent-consumable primer (AGENT-PRIMER.md) and optionally merges governance into project CLAUDE.md |
+| `skills/holdout-evaluator` | **Quality Gate Judge** | Validates agent work against hidden holdout scenarios using LLM-as-Judge, producing mapped feedback and gate telemetry |
 | `skills/evolution-auditor` | **Organizational Fitness Auditor** | Runs the learning loop post-deployment: gate effectiveness, genome fitness, authority calibration, decision ledger |
 | `skills/agent-builder` | **Agent Configuration Engineer** | Generates role-specific agent system prompts, tool permissions, and framework configs from organizational design artifacts |
 | `skills/maturity-ladder` | **Adoption Diagnostician** | Builds per-role human AI maturity matrix using job titles or solo-founder operational modes, with barrier identification and barrier-informed progression paths |

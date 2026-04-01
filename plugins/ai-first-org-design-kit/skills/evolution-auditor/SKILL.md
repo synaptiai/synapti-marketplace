@@ -70,6 +70,15 @@ MATURITY=$(ls -t "$HOME/.ai-first-kit/projects/$SLUG/adoption/maturity-ladder-"*
 [ -n "$LEDGER" ] && echo "DECISION LEDGER: found" || echo "DECISION LEDGER: none (will create)"
 [ -n "$MATURITY" ] && echo "MATURITY LADDER: $MATURITY" || echo "MATURITY LADDER: none"
 
+# Check for gate telemetry (holdout evaluation data)
+TELEMETRY=$(ls "$HOME/.ai-first-kit/projects/$SLUG/evolution/gate-telemetry.jsonl" 2>/dev/null)
+if [ -n "$TELEMETRY" ]; then
+  TELEMETRY_COUNT=$(wc -l < "$TELEMETRY" | tr -d ' ')
+  echo "GATE TELEMETRY: found ($TELEMETRY_COUNT entries)"
+else
+  echo "GATE TELEMETRY: none (will use interview-based estimation)"
+fi
+
 # Check for stale Claude Code agents
 for AGENT_FILE in .claude/agents/*.md; do
   if [ -f "$AGENT_FILE" ]; then
@@ -132,17 +141,45 @@ Read the corresponding holdout files in `gates/.holdouts/` to understand the val
 
 **SECURITY RULE: Read holdout files for evaluation purposes ONLY. NEVER include holdout scenario content, descriptions, or specifics in the audit report. Report metrics only — rates, staleness, status.**
 
-For each gate, estimate effectiveness based on user evidence from Q1 and Q2:
+### 2a: Telemetry-Based Metrics (when available)
 
-| Gate | Est. False Positive Rate | Est. Escape Rate | Holdout Staleness | Status |
-|------|--------------------------|-------------------|-------------------|--------|
-| [Gate name] | [%] good work blocked | [%] bad work passed | [Days since last holdout update] | Healthy / Needs Review / Critical |
+If `evolution/gate-telemetry.jsonl` exists and has 10+ entries for a gate, compute
+empirical metrics from the telemetry data instead of estimating from interviews:
+
+```bash
+# Example: count entries and compute pass rate for a gate
+GATE_NAME="plan-readiness"
+TOTAL=$(grep -c "\"gate\":\"$GATE_NAME\"" "$HOME/.ai-first-kit/projects/$SLUG/evolution/gate-telemetry.jsonl" 2>/dev/null || echo 0)
+PASSED=$(grep "\"gate\":\"$GATE_NAME\"" "$HOME/.ai-first-kit/projects/$SLUG/evolution/gate-telemetry.jsonl" 2>/dev/null | grep -c "\"overall_result\":\"PASS\"" || echo 0)
+echo "$GATE_NAME: $PASSED/$TOTAL passed"
+```
+
+Compute per gate:
+- **Satisfaction rate**: (overall_result PASS count) / (total evaluations) — compare against gate target
+- **Self-review accuracy**: (self_review_result matches holdout_result) / total — measures how well self-review correlates with holdout evaluation
+- **Gaming indicator**: (self_review PASS + holdout FAIL) / total — high rate signals agents checking boxes without genuine understanding
+- **Scenario effectiveness**: Which scenario IDs appear most often in failed_scenarios — identifies which holdout scenarios are catching real failures
+- **Trend**: Compare recent 10 evaluations against prior 10 — improving, declining, or stable
+
+When telemetry has sufficient data (10+ entries per gate), prefer telemetry metrics over interview-based estimation. When telemetry is insufficient (<10 entries), supplement with user evidence from Q1 and Q2.
+
+### 2b: Interview-Based Estimation (fallback)
+
+When telemetry is unavailable or insufficient, estimate effectiveness based on user evidence from Q1 and Q2:
+
+For each gate, produce the effectiveness table:
+
+| Gate | Satisfaction Rate | Gaming Indicator | Holdout Staleness | Data Source | Status |
+|------|-------------------|-------------------|-------------------|-------------|--------|
+| [Gate name] | [%] or est. [%] | [%] or N/A | [Days since last holdout update] | Telemetry / Interview / Insufficient | Healthy / Needs Review / Critical |
 
 **Classification rules:**
+- Satisfaction rate below target: gate criteria may be too strict or agents not self-reviewing effectively
+- Gaming indicator >15%: agents passing self-review but failing holdouts → criteria may be too surface-level
 - False positive rate >20%: gate criteria too strict → recommend `quality-gate-designer` revision
 - Escape rate >10%: gate criteria too lenient OR holdout scenarios stale → recommend holdout refresh
 - Holdouts not updated in >90 days: flag staleness per LEARNING-LOOP.md anti-fossilization rule
-- No incidents related to this gate: Healthy (but note limited evidence)
+- No incidents and no telemetry: Healthy (but note limited evidence)
 
 ## Phase 3: Genome Fitness Analysis
 
