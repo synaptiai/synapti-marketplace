@@ -117,6 +117,24 @@ Keep: gate name, type, and the criteria agents check against.]
 [Include the architecture diagram from INDEX.md if present — shows
 which gates are parallel, sequential, and blocking.]
 
+### When to Trigger Gate Review
+
+Run `/org-gate-review {gate-name}` at these checkpoints — do not present work
+without passing the relevant gate:
+
+| Checkpoint | Gate | Trigger |
+|------------|------|---------|
+| Plan complete | `plan-readiness` | Before presenting a plan to the user. Run after finalizing tasks and acceptance criteria. |
+| Implementation complete | `implementation-completeness` | Before declaring code/feature done. Run after all acceptance criteria are implemented. |
+| Verification complete | `runtime-verification` | After testing. Run once all tests pass and runtime evidence is collected. |
+| Content ready | `content-authenticity` | Before publishing or presenting written content. Run after drafting is complete. |
+| Release ready | `release-readiness` | Before any release, publish, or deploy. Always escalates to human. |
+
+Gates 1-4 are agent-autonomous: self-review, fix, and re-run until passing. Only
+escalate after 2 self-review passes with documented improvements.
+Gate 5 always requires the human — present the escalation package.
+Gates 3+4 run in parallel when output includes both code and content.
+
 ## Governance Operations
 
 [From governance/POLICY-GENERATION.md, DECISION-LEDGER-SPEC.md, LEARNING-LOOP.md.

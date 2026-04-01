@@ -167,11 +167,12 @@ All skills save outputs to `$HOME/.ai-first-kit/projects/{slug}/` for downstream
 | role-value-mapper | audit, genome | `roles-{datetime}.md` | — |
 | political-navigator | audit (optional) | `political-map-{datetime}.md` | — |
 | operationalize | genome/ (required), governance/, gates/, specs/ | `AGENT-PRIMER.md`, `ORG-DESIGN-DUMP-{datetime}.md`, optionally `.claude/CLAUDE.md` | genome (required) |
-| evolution-auditor | genome/ (req), governance/ (req), gates/ incl. .holdouts/ (for evaluation), specs/, roles-*.md, AGENT-PRIMER.md, previous evolution audits, evolution/decision-ledger.md | `evolution/audit-{datetime}.md`, `evolution/decision-ledger.md` (append-only) | genome + governance (both required) |
+| evolution-auditor | genome/ (req), governance/ (req), gates/ incl. .holdouts/ (for evaluation), specs/, roles-*.md, AGENT-PRIMER.md, previous evolution audits, evolution/decision-ledger.md, evolution/gate-telemetry.jsonl (optional, from holdout-evaluator) | `evolution/audit-{datetime}.md`, `evolution/decision-ledger.md` (append-only) | genome + governance (both required) |
 | agent-builder | roles-*.md (req), genome/ (req), governance/, gates/, specs/, AGENT-PRIMER.md | `agents/{role-slug}/` directory, `agents/INDEX.md` | roles + genome (both required) |
 | maturity-ladder | genome (optional), audit-*.md (coordination audit, optional), previous maturity assessments | `adoption/maturity-ladder-{datetime}.md`, `adoption/maturity-visibility.md` | — |
 | adoption-sprint-designer | adoption/maturity-ladder (optional), genome (optional), governance/HUMAN-USAGE-POLICY.md (optional), previous sprint plans | `adoption/sprint-{name}-{datetime}.md`, `adoption/sprint-measurement.md` | — |
 | usage-policy-writer | governance/HARD-BOUNDARIES.md (optional), genome VALUES.md (optional), genome VOICE.md (optional), existing HUMAN-USAGE-POLICY.md (update detection) | `governance/HUMAN-USAGE-POLICY.md` | — |
+| holdout-evaluator | gates/{name}.md, gates/.holdouts/{name}-holdouts.md, work output files, self-review evidence | `evolution/gate-telemetry.jsonl` (append-only) | gates (required) |
 
 **Note:** Both `adoption-sprint-designer` and `maturity-ladder` check for `political-map-*.md` existence (count only via `find | wc -l`) but NEVER read content. This is not a "read" dependency — it's an existence check. Neither skill reads `roles-*.md` — those are agent role definitions consumed by `agent-builder`, not human role inventories for adoption measurement.
 
@@ -198,17 +199,20 @@ operationalize              maturity-ladder (standalone)
        │                              │              │
        ├────────────────────┐         ▼              │
        ▼                    ▼   adoption-sprint-designer ◄───┘
-evolution-auditor     agent-builder
-(post-deployment)     (agent configs)
-       │
-       └──► routes to upstream skills for revision
+evolution-auditor     agent-builder     holdout-evaluator
+(post-deployment)     (agent configs)   (gate validation)
+       │                                       │
+       ├──► routes to upstream skills          │
+       │    for revision                       │
+       ◄───────────────────────────────────────┘
+       (reads gate-telemetry.jsonl)
 ```
 
 Skills marked "optional" degrade gracefully without upstream artifacts. Skills marked "recommended" warn and offer alternatives if the dependency is missing. The map shows what's structurally possible; the Greenfield, Brownfield, and Adoption paths in the README show the recommended order.
 
 The `operationalize` skill distills all produced artifacts into an agent-consumable primer (AGENT-PRIMER.md). It gracefully handles partial completion (only genome required).
 
-Post-deployment, five additional skills extend the lifecycle: `evolution-auditor` runs the learning loop and decision ledger, `agent-builder` generates role-specific agent configurations, `maturity-ladder` assesses adoption levels per role, `adoption-sprint-designer` creates structured adoption experiences, and `usage-policy-writer` produces human-facing AI usage policies. The adoption skills have soft dependencies — they benefit from upstream artifacts but can run standalone. The `evolution-auditor` tracks adoption maturity trends when maturity data exists.
+Post-deployment, six additional skills extend the lifecycle: `evolution-auditor` runs the learning loop and decision ledger, `agent-builder` generates role-specific agent configurations, `holdout-evaluator` validates gate effectiveness against hidden test scenarios, `maturity-ladder` assesses adoption levels per role, `adoption-sprint-designer` creates structured adoption experiences, and `usage-policy-writer` produces human-facing AI usage policies. The adoption skills have soft dependencies — they benefit from upstream artifacts but can run standalone. The `evolution-auditor` tracks adoption maturity trends when maturity data exists, and reads gate telemetry from `holdout-evaluator` for empirical gate health metrics.
 
 Three governance mechanisms are operationalized in the AGENT-PRIMER.md (via `operationalize` distillation): agents draft candidate policies for novel situations (from POLICY-GENERATION.md), record decisions to the append-only ledger for Autonomous+Notify and above (from DECISION-LEDGER-SPEC.md), and classify failure root causes before escalating (from LEARNING-LOOP.md). These are lightweight operational instructions, not full governance theory — agents read the full governance documents when needed via active references.
 
