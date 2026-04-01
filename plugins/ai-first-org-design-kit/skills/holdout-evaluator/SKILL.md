@@ -153,6 +153,12 @@ of the criteria, not just the letter. Provide specific evidence for each claim.
 **Security check before outputting:**
 Scan the mapped feedback for any holdout scenario names, descriptions, or specifics. If found, rewrite to reference only visible criteria. The mapped feedback must pass this test: "Could someone reading this feedback determine which specific holdout scenario triggered the failure?" If yes, it's too revealing — generalize further.
 
+**CRITICAL: When performing this security check, NEVER write out holdout scenario names
+to demonstrate their absence.** Do not write "The Assumption Bomb — NOT present" or
+similar. Instead, confirm the check by referencing scenario IDs only:
+"Verified: scenario-1 through scenario-N — no scenario names or descriptions appear
+in mapped feedback." The self-check itself must not become the leak vector.
+
 ## Phase 5: Write Telemetry Record
 
 Append a single JSON line to `$HOME/.ai-first-kit/projects/$SLUG/evolution/gate-telemetry.jsonl`:
@@ -181,6 +187,8 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 - Do NOT include holdout scenario content in telemetry
 - Do NOT include the detailed reasoning in telemetry — only verdicts
 - The `mapped_criteria` field references visible criterion numbers only
+- When showing telemetry examples in output, use ONLY scenario IDs in the
+  `failed_scenarios` array — never substitute scenario names as a "helpful" gloss
 
 Write the JSON as a single line (no pretty-printing) to maintain JSONL format.
 
@@ -212,6 +220,7 @@ If invoked standalone, also show:
 | Temptation | Response |
 |------------|----------|
 | "I'll just mention the scenario name for clarity" | Never. Use criterion numbers and generic descriptions only. |
+| "I'll list the names to prove they're absent from feedback" | This IS the leak. Verify absence using scenario IDs: "scenario-1 through scenario-N checked, no names present." |
 | "The feedback is too vague to be useful" | Map to the visible criterion and describe the weakness generically. The agent has the full gate criteria to work from. |
 | "This scenario doesn't apply to this type of work" | Still evaluate it. Some failure modes are latent — they only manifest in certain contexts. |
 | "The agent clearly passed, I'll skip detailed evaluation" | Evaluate every scenario. Thoroughness is the point. |
