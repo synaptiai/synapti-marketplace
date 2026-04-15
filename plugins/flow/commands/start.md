@@ -387,7 +387,7 @@ Prove everything works with fix-forward:
    - `TaskList` — confirm all visual verification tasks resolved
 8. **Completion gate**: ALL of:
    - All quality checks pass
-   - Runtime verification passed (or justified N/A for config/markdown-only)
+   - Runtime verification passed (or skipped under one of the three enumerated whitelist categories in the `runtime-verification` skill: `markdown-only`, `config-only`, `dependency-bump-only`)
    - No unresolved P1 findings
    - All tasks completed (including verification tasks)
    - Verdict: all criteria PASS or user-approved (when `verdict.enabled`)
