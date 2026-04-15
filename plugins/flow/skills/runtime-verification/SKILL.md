@@ -16,6 +16,63 @@ Domain skill for verifying code works at runtime, beyond static analysis and uni
 
 A green test suite is necessary but not sufficient. Runtime verification proves code actually works. "No test framework" is a problem to solve, not a reason to skip.
 
+## Skip Whitelist (Enumerated — No Subjective Exemptions)
+
+Runtime verification is **MANDATORY** for every change. The only permitted skips are the three categories below. Any skip outside this whitelist is forbidden and must be escalated via the Proactive-Autonomy protocol (see below).
+
+| Skip Category | Definition | Required Evidence to Claim |
+|---------------|------------|----------------------------|
+| `markdown-only` | The diff touches **only** `.md`, `.markdown`, `.txt`, or `.rst` files. Zero code, config, or data files. | `git diff --name-only origin/$DEFAULT_BRANCH..HEAD` output showing only doc extensions. |
+| `config-only` | The diff touches **only** configuration files (`.json`, `.yaml`, `.yml`, `.toml`, `.ini`, `.env.example`, dotfiles) with no executable code path changes. Config syntax must still be validated (lint/schema check, dry-run apply). | Full file list plus syntax validation output. |
+| `dependency-bump-only` | The diff touches **only** lockfiles and manifest version strings (e.g., `package.json` version fields, `package-lock.json`, `poetry.lock`, `Gemfile.lock`, `go.sum`, `Cargo.lock`) with no source code, no config semantics, and no new dependencies. Build must still succeed. | Full file list plus successful build output. |
+
+**If the diff mixes any whitelisted category with anything else (a single `.py` or `.ts` file, a new dependency, a config value change that alters behavior), the skip is disallowed. Run full runtime verification.**
+
+### If In Doubt, Run It
+
+**If you are uncertain whether the change qualifies for a whitelist skip — run runtime verification.** Uncertainty is never a reason to skip. The cost of an extra verification run is small; the cost of shipping unverified code is large. When the category is unclear, default to running.
+
+Explicitly forbidden reasoning patterns (do NOT use these to justify skipping):
+- "This is a small change."
+- "This only touches the CI workflow, it won't affect runtime."
+- "The tests already cover this."
+- "I read the diff and it looks safe."
+- "This is just a refactor."
+- "The markdown includes a code snippet but the snippet isn't executed."
+- "The config change is obvious."
+
+None of those are whitelist categories. If your reasoning for skipping does not map cleanly to `markdown-only`, `config-only`, or `dependency-bump-only` with the evidence shown above, you MUST run verification.
+
+### Escalation Protocol for Out-of-Whitelist Skips
+
+If you genuinely believe a skip outside the whitelist is warranted (e.g., infrastructure-only change, generated-code-only change, or something the whitelist does not yet cover), you MUST NOT proceed silently. Raise a Proactive-Autonomy escalation to the user using this six-field structure:
+
+```markdown
+### Proactive-Autonomy Escalation: Runtime Verification Skip Request
+
+**Situation**
+{What the change is, which files changed, why the standard whitelist does not cover it.}
+
+**Tried**
+{What you already attempted to verify the change through the standard paths — fast-path verify script, build, smoke tests — and why each was insufficient or inapplicable.}
+
+**Options**
+1. {Option A — e.g., run a custom ad-hoc verification despite no framework. Reasoning.}
+2. {Option B — e.g., skip with explicit user approval. Reasoning.}
+3. {Option C — e.g., block and ask for a new whitelist category. Reasoning.}
+
+**Recommendation**
+{Your preferred option and why. Be specific.}
+
+**Time sensitivity**
+{Is this blocking a release? How long will verification take? How long will a skip review take?}
+
+**Risk**
+{What breaks if the skip is wrong? What is the blast radius of shipping unverified?}
+```
+
+The escalation MUST be presented via `AskUserQuestion` and MUST receive an explicit approval before proceeding. Blanket "always skip for this repo" authorization is never valid — each out-of-whitelist skip requires its own escalation.
+
 ## Fast-Path Verification
 
 Check for a project-level verify script first:
