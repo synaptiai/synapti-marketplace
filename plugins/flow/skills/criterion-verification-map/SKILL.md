@@ -65,7 +65,7 @@ During VERIFY phase, for each atomic task's verification command:
 
 ## Evidence Bundle Format
 
-After all verification commands have run, assemble the evidence bundle — a structured text document that the verdict-judge agent receives:
+After all verification commands have run, assemble the evidence bundle — a structured text document that the verdict-judge agent receives. Every criterion block MUST include all fields below. The "Does NOT promise" field is captured at plan time; the three completeness subsections (What was NOT tested, Known limitations, Negative/adversarial cases covered) are populated at verify time and may not be omitted — they force the implementer to state the shape of the evidence honestly so the judge can reason about gaps.
 
 ```markdown
 ## Evidence Bundle for Issue #{N}
@@ -86,6 +86,9 @@ Commits: {count} since branch creation
   - {non-goal 2 — e.g. "does not cover the admin flow"}
   - {non-goal 3 — e.g. "does not handle concurrent writes"}
 - **Screenshot**: {path, if UI type — otherwise omit}
+- **What was NOT tested**: {Explicit list of related behaviors, inputs, code paths, environments, or configurations that this evidence does not cover. Never "N/A" — if you cannot think of anything, you have not thought hard enough. State at minimum: untested environments, untested edge inputs, untested concurrency/scale conditions, untested integrations.}
+- **Known limitations of this evidence**: {How the evidence could be misleading even though it looks positive. Examples: "test uses a mocked external API," "smoke test only hits the happy path," "screenshot was taken at desktop viewport only," "timing numbers taken on an idle machine, not under load." If the verification command is self-reported (agent-run test output), state that explicitly.}
+- **Negative/adversarial cases covered**: {List the specific failure modes, invalid inputs, and abuse cases this evidence demonstrates the system rejects or handles safely. Examples: "rejects empty email with 400," "returns 401 on expired token," "displays error state on network failure." If none were tested, state "none" — do not leave blank — and expect the verdict-judge to treat this as a gap.}
 
 ### Criterion 2: {full criterion text}
 - **Type**: {type}
@@ -96,8 +99,11 @@ Commits: {count} since branch creation
   ```
 - **What the criterion does NOT promise**:
   - {non-goal items}
+- **What was NOT tested**: {as above}
+- **Known limitations of this evidence**: {as above}
+- **Negative/adversarial cases covered**: {as above}
 
-{repeat for all criteria}
+{repeat for all criteria — every criterion MUST have all four subsections}
 ```
 
 ### Why "Does NOT Promise" Is a First-Class Field
@@ -109,12 +115,14 @@ Populate this field at **plan time** from the non-goals captured in the EXPLORE 
 <!--
 SECTION BOUNDARY — VERIFY-TIME EXTENSIONS
 
-Issue #42 (verify phase evidence completeness) will extend this file
-below this boundary with verify-time evidence completeness fields such
-as "What was NOT tested", "Known limitations", and "Negative cases
-covered". Keep the plan-time contract above this line stable. Do not
-inline verify-time fields into the plan-time sections above.
+The three verify-time completeness subsections below were added by
+Issue #42. They are populated at verify time, not plan time. The
+plan-time contract above this line remains stable.
 -->
+
+### Completeness Subsections Are Mandatory
+
+The verdict-judge treats any criterion missing "Does NOT promise" or any of the three completeness subsections ("What was NOT tested", "Known limitations of this evidence", "Negative/adversarial cases covered") as having incomplete evidence and will FAIL that criterion. Do not omit them. If a subsection is genuinely empty (e.g., no adversarial cases tested), write "none" explicitly rather than removing the heading.
 
 ## What the Evidence Bundle Does NOT Include
 
