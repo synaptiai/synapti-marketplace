@@ -28,9 +28,18 @@ Verdict: N/A (independent verdict not enabled)
 |---|----------|----------|-------|-------------|
 | {n} | {P1/P2/P3} | {file:line} | {issue} | {fix description} |
 
-### Remaining Items
-- P3 noted but not fixed: {list, or 'None'}
+### Escalated for Human Judgment
+{Only populated if findings could not be fixed in-PR. Each escalation uses the six-field Proactive-Autonomy structure.}
+
+**{Item summary}**
+- **Situation**: {what, file:line}
+- **Tried**: {what was considered, why it didn't resolve in-PR}
+- **Options**: {2–3 concrete paths}
+- **Recommendation**: {recommended option}
+- **Time sensitivity**: {blocking / urgent / safe to wait}
+- **Risk**: {consequence of deferring}
 
 ### Verification
 - [x] Quality commands pass after fixes
 - [x] No new issues introduced
+- [x] All P1/P2/P3 findings in touched files fixed in-PR or escalated
