@@ -212,37 +212,59 @@ Write journal header to `.decisions/issue-$ARGUMENTS.md`.
 
 **Task decomposition** — dispatch implementation-planner agent:
 
+Each implementation task is an **atomic unit** that bundles three responsibilities, not three separate tasks:
+
+1. **Implementation** — the code change
+2. **Test** — the test(s) that verify the behavior the code change introduces
+3. **Verification-evidence collection** — the exact command that will be run in Phase 4 to prove this task's acceptance criterion is met, and the captured output that becomes evidence
+
+A task is not "done" until all three are complete. Splitting them into three sibling tasks (one for code, one for test, one for verify) is explicitly prohibited — it causes implementation to ship before tests catch up and verification to happen after the author has lost context.
+
 ```
 Agent(implementation-planner):
-  "Parse acceptance criteria from issue #$ARGUMENTS and create tasks.
+  "Parse acceptance criteria from issue #$ARGUMENTS and create atomic tasks.
    Issue context: {pre-fetched issue title, body, comments}
+   Specification (from EXPLORE): {non-goals, failure modes, interface contracts}
+   Spec Validation Gate results: {criterion -> verification command mapping}
 
-   For each acceptance criterion, use TaskCreate with:
-   - subject: imperative description
-   - description: criterion text + likely files + verification method
+   For each acceptance criterion, use TaskCreate with a single atomic task:
+   - subject: imperative description of the behavior
+   - description: |
+       Criterion: {full criterion text}
+       Non-goals touched: {which non-goals this task must respect}
+       Failure modes covered: {which failure modes this task implements handling for}
+       Interface contract: {schema/signature this task must honor}
+       Implementation outline: {files + approach}
+       Test plan: {test file + cases + assertions}
+       Verification command: {exact command from Spec Validation Gate}
+       Expected evidence: {what success output looks like}
 
    Set dependencies with TaskUpdate(addBlockedBy).
    Identify parallel execution opportunities.
    Return: task list, dependency graph, suggested order."
 ```
 
-For each implementation task, also create a corresponding test task:
-```
-TaskCreate("Test: {behavior}", "Write or update tests verifying {behavior}. Follow existing test patterns.")
-```
-Set dependency: test task is blocked by its implementation task.
+Each atomic task flows through implementation → test → evidence collection within the same task lifecycle in Phase 3 (CODE). Phase 4 (VERIFY) still runs the full evidence bundle assembly and independent verdict judge, but per-task evidence is captured at the moment the task completes, not weeks after the author has context-switched.
 
-**Verification task creation** — for each acceptance criterion, create a verification task using `criterion-verification-map` classification:
+**Stranger Test check** (mandatory PLAN gate):
 
-```
-TaskCreate(
-  subject: "Verify: {criterion short description}",
-  description: "Criterion: {full criterion text}\n\nVerification method: {type}\nVerification command: {specific command}\nExpected evidence: {what success looks like}",
-  activeForm: "Verifying {short description}"
-)
-```
+Before proceeding to Phase 3 (CODE), the agent MUST run the Stranger Test against the assembled plan:
 
-Verification tasks execute during Phase 4 (VERIFY), not during CODE. They are separate from implementation and test tasks.
+> **Could a zero-context agent — one that has never seen this repo, this issue, or this plan conversation — execute every task in this plan and produce acceptable output?**
+
+Check each task for these failure modes:
+
+- **Implicit file references** — "update the auth module" without the path
+- **Undefined terms** — uses project jargon without definition
+- **Missing preconditions** — assumes setup, env vars, or state that is not written down
+- **Vague success criteria** — "make it work", "fix the issue", "handle it correctly"
+- **Unspecified verification command** — a zero-context agent would not know what to run to prove the task is done
+- **Missing interface contracts** — schema/signature/shape is not written in the task
+- **Missing failure-mode coverage** — the task does not reference which failure modes it must handle
+
+If ANY task fails the Stranger Test, the plan is incomplete. The agent must either rewrite the task to close the gap, or issue a Proactive-Autonomy escalation asking the user to fill in the missing context. Only after every task passes the Stranger Test can the workflow proceed to Phase 3.
+
+Record the Stranger Test result to `.decisions/issue-$ARGUMENTS.md` under a `## Stranger Test` heading with either "PASS — {N} tasks reviewed" or "BLOCK — {task id}: {failure mode}".
 
 Display task plan. Proceed unless user objects.
 
