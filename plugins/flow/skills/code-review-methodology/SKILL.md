@@ -133,7 +133,7 @@ gh api repos/$REPO/issues/$PR_NUM/comments --jq '
   [.[] | select(.body | test("FLOW_RESOLUTION_CYCLE")) | {
     cycle: (.body | capture("FLOW_RESOLUTION_CYCLE:(?<n>[0-9]+)") | .n),
     resolved: (.body | capture("RESOLVED:\\[(?<r>[^\\]]*?)\\]") | .r),
-    deferred: (.body | capture("DEFERRED:\\[(?<d>[^\\]]*?)\\]") | .d)
+    escalated: (.body | capture("ESCALATED:\\[(?<e>[^\\]]*?)\\]") | .e)
   }]'
 ```
 
@@ -161,9 +161,11 @@ If a finding was claimed resolved but the code at that location is unchanged, fl
 | Findings | Decision |
 |----------|----------|
 | P1 findings (any) | REQUEST_CHANGES |
-| P2 findings only | COMMENT (suggest fixes) |
-| P3 findings only | APPROVE with comments |
+| P2 findings (any) | REQUEST_CHANGES |
+| P3 findings only | COMMENT (fix-expected — author must fix in-PR or file a six-field Proactive-Autonomy escalation; P3 is not a free pass) |
 | No findings | APPROVE |
+
+Note: P3 → COMMENT is NOT "approve with nits." The PR author is expected to fix every P3 in-PR unless they file an escalation justifying deferral. Reviewers should not approve PRs with unaddressed P3s.
 
 ## Adversarial Protocol (Agent Teams)
 
