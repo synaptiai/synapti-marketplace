@@ -136,13 +136,24 @@ For **Question** items: prepare a response comment (no code change needed).
 
 For **Pushback** items: explain reasoning in response comment.
 
-For **Out-of-scope** items — only items that FAIL the proximity test are out-of-scope:
+For **Out-of-scope** items — the proximity test is NOT a deferral mechanism for P1/P2 findings:
 
-A finding in a file the PR already modifies is NOT out-of-scope if it passes the proximity test — it should be fixed under the Boy Scout Rule.
+A finding in a file the PR already modifies is NEVER out-of-scope — it must be fixed in this PR (Boy Scout Rule + ownership of known defects in touched files).
 
-If a finding truly fails the proximity test (untouched files, architecture changes, new tests required):
+Only **cosmetic P3 findings in truly untouched files** may become follow-up issues by default. P1 or P2 findings in untouched files must either:
 
-1. Use the AskUserQuestion tool with contextual options: "This finding is valid but out-of-scope (fails proximity test). Create a follow-up issue to track it?"
+1. Be addressed in-PR (expand scope with an `improve:` commit if the fix is bounded), OR
+2. Be filed as a six-field Proactive-Autonomy escalation:
+   - **Situation**: what the finding is and where (file:line)
+   - **Tried**: what you considered and why it didn't resolve in-PR
+   - **Options**: 2–3 concrete paths forward with trade-offs
+   - **Recommendation**: your recommended option with reasoning
+   - **Time sensitivity**: is this blocking? urgent? safe to wait?
+   - **Risk**: what happens if we defer, and to whom
+
+For cosmetic P3 findings in untouched files that the team agrees to track separately:
+
+1. Use the AskUserQuestion tool with contextual options: "This cosmetic P3 finding is in an untouched file. Create a follow-up issue to track it?"
 2. If yes, create a GitHub issue using issue-crafting skill knowledge:
    - Title: concise, solution-agnostic description
    - Body: Context, Current State (file:line), Objective, Acceptance Criteria
@@ -169,7 +180,8 @@ If a finding truly fails the proximity test (untouched files, architecture chang
 3. **Convergence check** (max 3 self-review-fix iterations):
    - Self-review finds P1 → fix NOW (don't re-request with known P1s)
    - P2 in touched files → fix NOW
-   - P3 → note only
+   - P3 in touched files → fix NOW (same disposition as P1/P2 — the proximity test is not a deferral mechanism)
+   - Only truly cosmetic P3 findings in untouched files may become follow-up issues; P1/P2 in untouched files must be addressed in-PR or filed as a six-field Proactive-Autonomy escalation (Situation / Tried / Options / Recommendation / Time sensitivity / Risk)
    - After fixes: re-run quality commands, re-review changed files
 4. **Verify Boy Scout cleanup** passes proximity test (no scope creep)
 5. **Change classification** — verify no out-of-context changes introduced
@@ -195,7 +207,7 @@ If a finding truly fails the proximity test (untouched files, architecture chang
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
 9. **Update PR body review cycle state** (if `### Review Cycle History` exists in the PR body):
    - Fetch current body: `gh pr view $ARGUMENTS --json body --jq '.body'`
-   - If the body contains `### Review Cycle History`, replace content between that heading and the next `##` heading with the cycle metrics table (received/fixed/discussed/deferred)
+   - If the body contains `### Review Cycle History`, replace content between that heading and the next `##` heading with the cycle metrics table (received/fixed/discussed/escalated)
    - If the heading does not exist, append a `### Review Cycle History` section under `## Review Findings`
    - Update: `gh pr edit $ARGUMENTS --body "$UPDATED_BODY"`
 10. **TaskList**: Confirm ALL tasks complete including "Post resolution comment". Do NOT proceed until verified.

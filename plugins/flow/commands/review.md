@@ -58,7 +58,7 @@ gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '
   [.[] | select(.body | test("FLOW_RESOLUTION_CYCLE")) | {
     cycle: (.body | capture("FLOW_RESOLUTION_CYCLE:(?<n>[0-9]+)") | .n),
     resolved: (.body | capture("RESOLVED:\\[(?<r>[^\\]]*?)\\]") | .r),
-    deferred: (.body | capture("DEFERRED:\\[(?<d>[^\\]]*?)\\]") | .d)
+    escalated: (.body | capture("ESCALATED:\\[(?<e>[^\\]]*?)\\]") | .e)
   }]'
 ```
 
@@ -149,24 +149,26 @@ TaskUpdate each review task as agents complete.
    Fix-forward approach (max `fixForwardMaxIterations`, default 2):
    - P1 findings → fix immediately
    - P2 findings → fix immediately
-   - P3 findings → fix if contained (<10 lines, same file)
-   - TaskCreate("Test coverage for fix-forward", "Write or update tests for each P1/P2 fix applied during self-review")
+   - P3 findings → fix immediately (the proximity test is not a deferral mechanism — P3 in touched files gets the same disposition as P1/P2)
+   - TaskCreate("Test coverage for fix-forward", "Write or update tests for each P1/P2/P3 fix applied during self-review")
    - For each fix: write or update a test that covers the fixed behavior
    - After fixes: run targeted re-review of only changed files
    - TaskUpdate(testCoverageTaskId, status: "completed", result: "Tests written/updated for {N} fixes")
    - No follow-up issue creation for fixable items — just fix them
+   - If any P1/P2 finding cannot be fixed in-PR, file a six-field Proactive-Autonomy escalation (Situation / Tried / Options / Recommendation / Time sensitivity / Risk) rather than deferring silently
    - TaskCreate("Post self-review comment", "Post review findings summary to PR via gh pr review --comment")
 
 6. **External review (someone else's PR — PR_AUTHOR != CURRENT_USER)**:
 
    - TaskCreate("Post review comment", "Post structured review findings to PR via gh pr review")
-   - P2 in already-touched files → include fix suggestion in review comment
-   - P2/P3 in untouched files → follow-up issue workflow:
+   - P1/P2/P3 in already-touched files → REQUEST_CHANGES (P1/P2) or COMMENT with fix-expected language (P3) — the author must fix or file an escalation
+   - Cosmetic P3 in untouched files → follow-up issue workflow
+   - P1/P2 in untouched files → REQUEST_CHANGES; author must address in-PR or file a six-field Proactive-Autonomy escalation
 
-   Issues in files the PR already modifies are NOT out-of-scope — they should have been fixed under the Boy Scout Rule. Only flag them as informational.
+   Findings in files the PR already modifies are NEVER out-of-scope — the author owns the known defects in any file they touch. Do NOT flag them as informational; flag them as blocking.
 
-   For findings in untouched files that warrant follow-up:
-   Present the out-of-scope findings and use the AskUserQuestion tool with contextual options: "These findings are valid but out-of-scope for this PR. Which ones should become follow-up issues?"
+   For cosmetic P3 findings in untouched files that warrant follow-up:
+   Present the findings and use the AskUserQuestion tool with contextual options: "These cosmetic P3 findings are in untouched files. Which ones should become follow-up issues?"
 
    For each selected finding, create a GitHub issue using issue-crafting skill knowledge:
    - Title: concise, solution-agnostic description of the finding
@@ -199,8 +201,9 @@ TaskUpdate each review task as agents complete.
    Post the review:
    - Self-review → `gh pr review $ARGUMENTS --comment --body "$BODY"`
    - External + P1 findings → `gh pr review $ARGUMENTS --request-changes --body "$BODY"`
-   - External + P2 only (no P1) → `gh pr review $ARGUMENTS --comment --body "$BODY"`
-   - External + Clean (P3 only or none) → `gh pr review $ARGUMENTS --approve --body "$BODY"`
+   - External + P2 findings (no P1) → `gh pr review $ARGUMENTS --request-changes --body "$BODY"`
+   - External + P3 only → `gh pr review $ARGUMENTS --comment --body "$BODY"` (fix-expected, not approve-with-nits)
+   - External + No findings → `gh pr review $ARGUMENTS --approve --body "$BODY"`
 
    TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — review posted as {approve/request-changes/comment}")
 
