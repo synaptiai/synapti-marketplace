@@ -117,14 +117,73 @@ If zero acceptance criteria found and `specFirst.requireAcceptanceCriteria` is `
 - Option 2: Only available if issue labels include any of `specFirst.allowSpecFreeLabels` (default: `documentation`, `chore`). Log to decision journal: "Spec-free task: {justification}"
 - Option 3: Stop workflow
 
-If acceptance criteria are found, output a **Spec Validation Table**:
+**Specification capture** (before Spec Validation Gate):
+
+Acceptance criteria alone do not describe the full specification. Before building the Spec Validation Gate, the agent MUST extract or author three additional specification elements. If the issue body states them, extract verbatim. If the issue does not state them, the agent proposes them and confirms with the user via `AskUserQuestion` before proceeding.
+
+Capture all three into the decision journal under a `## Specification` heading:
+
+1. **Non-goals** — what this change explicitly does NOT do. Scope fences that prevent the implementation from sprawling. Example: "Does not add retry logic", "Does not change the public API", "Does not touch the auth flow".
+
+2. **Failure modes** — how the change is expected to behave under failure conditions. Minimum coverage:
+   - **Timeouts** — what happens when an upstream call takes longer than expected?
+   - **Partial failures** — what happens when some operations succeed and others fail?
+   - **Invalid input** — what happens when input violates the contract (wrong type, missing field, out of range)?
+   - **Missing context** — what happens when required config/env/state is absent?
+   For each, record the expected behavior (error type, fallback, user-visible message, log signal).
+
+3. **Interface contracts** — concrete schemas, types, or tool APIs that the change must honor or produce. Examples: request/response JSON shape, function signature, CLI flags, event payload schema, database column types. If the change is internal-only, record the internal module boundary contract.
+
+**When the issue is silent on any of these three**, use `AskUserQuestion`:
+
+> Issue #$ARGUMENTS does not specify {non-goals | failure modes | interface contracts}. I need these before planning so the implementation has a clear fence.
+>
+> Proposed {element}:
+> {agent-drafted proposal of 3-5 items based on issue context}
+>
+> Options:
+> 1. Accept proposal as written
+> 2. Accept with edits (I will prompt you for changes)
+> 3. Reject — specification is incomplete, update the issue first
+
+Only proceed to the Spec Validation Gate once all three specification elements are captured. Log the captured specification to `.decisions/issue-$ARGUMENTS.md` so downstream phases can reference it.
+
+**Spec Validation Gate** (blocking):
+
+If acceptance criteria are found, build a **Spec Validation Table** and treat it as a gate, NOT a display. Every criterion MUST map to a concrete automated verification command before proceeding to Phase 2 (PLAN). This gate blocks progression when any criterion is vague, untestable, or marked `manual` without proper escalation.
 
 ```markdown
-### Spec Validation
-| # | Acceptance Criterion | Verification Method |
-|---|---------------------|-------------------|
-| 1 | {criterion text} | {test/curl/visual/manual} |
+### Spec Validation Gate
+| # | Acceptance Criterion | Verification Command | Gate Status |
+|---|---------------------|----------------------|-------------|
+| 1 | {criterion text} | `{exact command, e.g. npm test -- --grep "auth"}` | PASS |
+| 2 | {vague criterion} | (none — cannot automate) | BLOCK |
 ```
+
+**Gate rules:**
+
+- **PASS** — criterion has a concrete, runnable verification command (test command, curl, script invocation, build check, lint rule). The command must be specific enough that a zero-context agent could run it and collect evidence without further interpretation.
+- **BLOCK** — criterion is vague ("handle errors gracefully", "improve performance", "be user-friendly"), has no automatable check, or the verification method is unknown. Progression to PLAN is blocked.
+- **MANUAL (escalation only)** — `manual` verification is ONLY permitted when flagged as a Proactive-Autonomy escalation with the full six-field structure. Default behavior treats `manual` as BLOCK.
+
+**When any criterion BLOCKS**, the agent MUST NOT proceed to PLAN. Instead, issue a Proactive-Autonomy escalation via `AskUserQuestion` with all six fields:
+
+> **Situation** — Criterion #{n} "{vague text}" has no automatable verification. Shipping with this criterion means the plan cannot define what "done" looks like.
+>
+> **Tried** — I attempted to classify the criterion via `criterion-verification-map`. No verification type matched. Searched the codebase for existing tests covering similar behavior: {found|not found}.
+>
+> **Options**:
+> 1. Rewrite criterion as "{concrete measurable rewording}" with verification command `{specific command}`
+> 2. Rewrite criterion as "{alternative measurable rewording}" with verification command `{alternative command}`
+> 3. Mark as `manual` — I (the user) will verify this step myself at VERIFY phase. The plan will record manual evidence collection.
+>
+> **Recommendation** — Option {1|2} — measurable criteria produce better verdicts and prevent vague implementations.
+>
+> **Time sensitivity** — Blocks planning. Must resolve before Phase 2.
+>
+> **Risk** — Choosing Option 3 (`manual`) means no automated verdict for this criterion and requires a human-in-the-loop at VERIFY phase.
+
+Only after every criterion shows PASS or user-approved MANUAL can the workflow proceed to Phase 2.
 
 **Assign the issue:**
 
