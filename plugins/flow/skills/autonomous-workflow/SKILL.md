@@ -149,3 +149,48 @@ The loop is bounded by `closedLoop.maxDebugIterations` (default 5). After max it
 | "I can't start the server" | Fix why. Server startup failure IS a bug. |
 | "Self-review is enough" | Self-review checks code quality. The verdict checks requirements. Both are needed. |
 | "I wrote the tests, so the criteria are met" | Tests prove the code does what you thought was wanted. The verdict proves it does what was actually wanted. |
+
+## Proactive Autonomy with Prepared Escalation
+
+Agents are teammates, not tools waiting for instructions. The operating principle is:
+
+1. **Try first** — attempt to resolve ambiguity yourself using available context, codebase search, and reasoning before involving a human.
+2. **Present options, not questions** — when you genuinely cannot resolve, present 2-3 concrete options with trade-offs and a recommendation. Never ask "what should I do?" or "how should we proceed?"
+3. **Irreversible actions always ask** — Tier 3 operations (merge, release, force operations) require human confirmation regardless of confidence.
+4. **Reversible actions just execute** — Tier 1 actions (commits, branch creation, file edits) and Tier 2 actions (push, PR creation) proceed autonomously or with journal logging.
+
+### Six-Field Escalation Template
+
+Every escalation to a human MUST follow this structure. Omitting fields is not permitted.
+
+| Field | Purpose |
+|-------|---------|
+| **Situation** | What happened — the specific state or finding that requires a decision |
+| **What I tried** | What you attempted before escalating — research, alternatives considered, commands run |
+| **Options** | 2-3 concrete paths forward, each with trade-offs. Label one "(Recommended)" |
+| **My recommendation** | Which option you recommend and why — never leave this blank |
+| **Time sensitivity** | Is this blocking? Urgent? Safe to defer? |
+| **Risk if wrong** | What happens if the chosen option turns out to be the wrong call, and who is affected |
+
+### When Escalation IS Required
+
+- **Irreversible actions** — merge, release, force-push, data deletion, production deploys
+- **Genuinely ambiguous preference decisions** — two valid approaches where the trade-off depends on user priorities the agent cannot infer
+- **Out-of-whitelist runtime skip requests** — skipping verification for a category not in the `markdown-only`, `config-only`, or `dependency-bump-only` whitelist
+- **Repeated verification failures** — after `maxDebugIterations` or `fixForwardMaxIterations` exhausted
+
+### When Escalation is NOT Needed
+
+- **Reversible local actions** — file edits, commits, branch creation, staging (Tier 1)
+- **Actions within the three-tier safety framework** — Tier 1 and Tier 2 actions that are already classified as autonomous or journal-and-proceed
+- **Decisions with clear policy** — the skill, command, or governance framework already specifies the correct action
+- **Fixing your own findings** — P1/P2 findings from self-review are your responsibility to fix, not escalate
+
+## Anti-Patterns
+
+| Anti-Pattern | Description | The Right Way |
+|-------------|-------------|---------------|
+| **Lazy Verification** | Tests pass does not equal works. "Theoretically works" is not "actually works." The proof is running it — build it, start it, hit the endpoint, check the output. | Run the code. Capture the output. Show the evidence. |
+| **Lazy Escalation** | Asking the user without trying first. Open-ended questions with no research, no options, no recommendation. "What should I do?" is never acceptable. | Try to resolve it yourself. If you still need input, use the six-field template with your recommendation. |
+| **Punt-to-User** | "What should I do?" or "How should we proceed?" without options. Agents are teammates, not tools waiting for instructions. Every escalation must include 2-3 options with a recommended path. | Present structured options. Label one "(Recommended)." Explain the trade-offs. |
+| **Silent Deferral** | Downgrading findings to avoid escalation. P3 "note only" was the old way — the new way is fix or escalate with the six-field structure. A finding that matters enough to mention matters enough to act on. | Fix it (if within scope) or file a six-field escalation. Never silently downgrade. |
