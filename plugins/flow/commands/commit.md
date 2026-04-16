@@ -75,7 +75,22 @@ Show classification table BEFORE any action:
 
 **If uncertain or out-of-context files exist:**
 
-Use the AskUserQuestion tool with contextual options to ask: "Some files are uncertain or out-of-context. How should they be handled?"
+Use the AskUserQuestion tool with a Proactive-Autonomy escalation:
+
+> **Situation** — {N} files are classified as uncertain or out-of-context for this branch.
+>
+> **What I tried** — Applied change-classification signals (branch diff, issue keywords, sibling detection). These files did not match any primary signal.
+>
+> **Options**:
+> 1. Include in this commit with a separate `improve:` or `chore:` commit (Recommended if changes are Boy Scout cleanup)
+> 2. Exclude from this commit — leave unstaged for a future branch
+> 3. Create a follow-up issue to track these changes separately
+>
+> **Recommendation** — Option {1|2} based on whether the changes are cleanup (include) or genuinely unrelated (exclude).
+>
+> **Time sensitivity** — Not blocking. These files can be committed later.
+>
+> **Risk** — Including out-of-context changes clutters the branch history. Excluding them risks forgetting the changes.
 
 ## Phase 4: COMMIT
 

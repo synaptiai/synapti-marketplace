@@ -123,9 +123,21 @@ If any check fails, explain what needs to be fixed and suggest actions.
 
 If the Mergeable check fails (has conflicts):
 
-Use the AskUserQuestion tool: "PR #$ARGUMENTS has merge conflicts. Would you like to resolve them now?"
-- Option 1: "Resolve conflicts now" — invokes Skill flow:resolve with $ARGUMENTS
-- Option 2: "Cancel merge"
+Use the AskUserQuestion tool with a Proactive-Autonomy escalation:
+
+> **Situation** — PR #$ARGUMENTS has merge conflicts that prevent merging.
+>
+> **What I tried** — Checked mergeable status via `gh pr view`. Conflicts exist between the PR branch and the base branch.
+>
+> **Options**:
+> 1. Resolve conflicts now — invokes `Skill(flow:resolve)` with $ARGUMENTS (Recommended)
+> 2. Cancel merge — address conflicts manually or rebase first
+>
+> **Recommendation** — Option 1. Automated conflict resolution handles most cases and re-verifies after resolution.
+>
+> **Time sensitivity** — Blocks merge. Must resolve before proceeding.
+>
+> **Risk** — Option 1 may produce incorrect resolution for semantic conflicts (caught by post-resolution verification). Option 2 delays merge.
 
 If Option 1: after resolution completes, re-run Phase 1 to verify PR is now mergeable.
 
