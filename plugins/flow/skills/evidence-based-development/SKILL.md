@@ -30,7 +30,7 @@ Every claim about code must include a file:line reference. No exceptions.
 
 ## Finding Prioritization
 
-All findings, review comments, and issues use P1/P2/P3 classification:
+All findings, review comments, and issues use P1/P2/P3 classification. This priority system operationalizes the organizational hard boundary **"No Ungrounded Claims"** — every finding must carry evidence (file:line citation, test output, runtime observation) proportional to its priority, and no recommendation may be made without verification against current sources.
 
 | Priority | Meaning | Action |
 |----------|---------|--------|
