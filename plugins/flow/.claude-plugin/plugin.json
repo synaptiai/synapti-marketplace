@@ -1,7 +1,7 @@
 {
   "name": "flow",
-  "version": "1.5.0",
-  "description": "Skill-driven workflow plugin for GitHub development. Encodes team knowledge as composable skills, enforces safety through hooks, and compounds learning across sessions. Alternative to gh-workflow with autonomous execution and agent team support.",
+  "version": "2.0.0",
+  "description": "Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Encodes team knowledge as composable skills, enforces safety through hooks, and compounds learning across sessions. Strict TDD, Stranger Test, holdout validation, and evidence-based verification built in.",
   "author": {
     "name": "Synapti AI",
     "url": "https://github.com/synaptiai"
