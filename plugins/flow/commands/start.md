@@ -27,6 +27,7 @@ This command operates with these domain skills loaded:
 - `debugging-patterns` — activates on-demand for ALL issues when any verification step fails (not gated on `bug` label)
 - `preflight-checks` — pure bash pre-flight validation (Phase 0)
 - `criterion-verification-map` — per-criterion evidence collection (Phase 2 + Phase 4)
+- `holdout-validation` — cross-reference self-review claims against file state (Phase 4)
 
 ## Phase 0: PRE-FLIGHT
 
@@ -362,7 +363,22 @@ Prove everything works with fix-forward:
    - P2 findings → fix immediately
    - P3 findings → fix if contained (<10 lines, same file), otherwise note for PR body
    - After fixes: re-run quality commands, then targeted re-review on files changed by fixes
-4. **Per-criterion evidence collection** — execute verification tasks created in Phase 2:
+4. **Holdout validation** — invoke `holdout-validation` skill to cross-reference self-review claims against actual file state:
+   ```
+   Skill(holdout-validation):
+     Inputs:
+     - Self-review findings: {P1/P2/P3 findings from step 3}
+     - Evidence bundle draft: {per-criterion evidence collected so far}
+     - File list: {all files modified/created on this branch}
+   ```
+   **Blocking treatment:**
+   - P1/P2 findings from holdout-validation → fix immediately before proceeding (same fix-forward loop as step 3)
+   - After fixes: re-run holdout-validation to confirm the conflict is resolved
+   - P3 findings → note for PR body, do not block
+   - Only proceed to step 5 when holdout-validation returns PASS or P3-only
+
+   The holdout-validation output is passed to the verdict-judge in step 6 as a required input.
+5. **Per-criterion evidence collection** — execute verification tasks created in Phase 2:
    ```
    For each "Verify: ..." task:
      1. TaskUpdate(verifyTaskId, status: "in_progress")
@@ -371,7 +387,7 @@ Prove everything works with fix-forward:
      4. TaskUpdate(verifyTaskId, status: "completed", result: "EVIDENCE_COLLECTED")
    ```
    Assemble evidence bundle (see `criterion-verification-map` skill for format).
-5. **Independent verdict** — if `verdict.enabled` is `true` (default), dispatch Agent(verdict-judge):
+6. **Independent verdict** — if `verdict.enabled` is `true` (default), dispatch Agent(verdict-judge):
    ```
    Agent(verdict-judge):
      "Evaluate whether acceptance criteria are met based on evidence.
@@ -380,9 +396,12 @@ Prove everything works with fix-forward:
       {list of ACs from issue body}
 
       Evidence Bundle:
-      {assembled evidence from step 4}"
+      {assembled evidence from step 5}
+
+      Holdout Validation Output:
+      {findings from step 4 — P1/P2/P3 with file:line citations}"
    ```
-   The verdict-judge receives ONLY the acceptance criteria and evidence bundle.
+   The verdict-judge receives ONLY the acceptance criteria, evidence bundle, and holdout-validation output.
    It does NOT receive: the diff, decision journal, planning rationale, or self-review findings.
 
    **Handle verdicts:**
@@ -397,8 +416,8 @@ Prove everything works with fix-forward:
        > 1. Approve — these criteria are met (I've reviewed the evidence)
        > 2. Reject — fix these criteria before proceeding
      - Based on response: proceed or enter fix loop
-6. **TaskList** — confirm all tasks show status: completed
-7. **Visual verification** — if UI-relevant changes detected (changed .tsx/.jsx/.vue/.html/.css/.scss files OR acceptance criteria mention UI/page/render/display):
+7. **TaskList** — confirm all tasks show status: completed
+8. **Visual verification** — if UI-relevant changes detected (changed .tsx/.jsx/.vue/.html/.css/.scss files OR acceptance criteria mention UI/page/render/display):
    ```
    TaskCreate("Visual verification", "Screenshot-analyze-verify for UI-facing changes")
    TaskCreate("Browser tool discovery", "Detect available browser automation tools")
@@ -411,10 +430,11 @@ Prove everything works with fix-forward:
    - If browser tools not found and `requireVisualVerification: false`: result is "SKIP_WARN"
    - If browser tools not found and `requireVisualVerification: true`: result is "BLOCKED"
    - `TaskList` — confirm all visual verification tasks resolved
-8. **Completion gate**: ALL of:
+9. **Completion gate**: ALL of:
    - All quality checks pass
    - Runtime verification passed (or skipped under one of the three enumerated whitelist categories in the `runtime-verification` skill: `markdown-only`, `config-only`, `dependency-bump-only`)
    - No unresolved P1 findings
+   - Holdout validation: PASS or P3-only (no unresolved P1/P2 conflicts)
    - All tasks completed (including verification tasks)
    - Verdict: all criteria PASS or user-approved (when `verdict.enabled`)
    - Visual verification: no BLOCKED results (see escalation below)
@@ -432,10 +452,11 @@ Prove everything works with fix-forward:
    - Option 1 → `TaskUpdate` visual tasks with result "SKIP_USER_APPROVED"
    - Option 2 → `TaskUpdate` visual tasks with result "MANUAL — user will verify"
    - Option 3 → Provide Playwright MCP installation guidance, then retry browser tool cascade
-9. **Display summary**:
+10. **Display summary**:
    - Tasks completed: N/N
    - Quality checks: pass/fail
    - Self-review findings: P1: X, P2: Y, P3: Z (all P1/P2 fixed via fix-forward)
+   - Holdout validation: PASS / FINDINGS (P1: X, P2: Y, P3: Z — all P1/P2 fixed)
    - Verdict: PASS (N/N criteria) / FAIL / NEEDS-HUMAN-REVIEW / N/A (spec-free task)
    - Runtime verification: pass/fail/skip
    - Visual verification: PASS / FAIL / SKIP / SKIP_WARN / SKIP_USER_APPROVED / MANUAL
