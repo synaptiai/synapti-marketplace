@@ -219,6 +219,21 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
       ```bash
       gh pr edit $ARGUMENTS --add-reviewer @{reviewer}
       ```
-    - If cycle >= `reviewCycleLimit` → use the AskUserQuestion tool: "Review cycle {N}. Options: re-request same reviewer, request fresh reviewer, or merge as-is?"
+    - If cycle >= `reviewCycleLimit` → use the AskUserQuestion tool with the following Proactive-Autonomy escalation:
+
+      **Situation**: Review cycle {N} reached the configured limit (`reviewCycleLimit`). {remaining_count} finding(s) remain unresolved.
+      **Tried**: {N} cycles of review-and-address with the current reviewer.
+      **Options**:
+        1. Re-request the same reviewer for another cycle
+        2. Request a fresh reviewer for an independent perspective
+        3. Explicit override — accept risk of open findings (requires written justification that will be recorded in the PR)
+      **Recommendation**: Option 2 (fresh reviewer) — breaks potential deadlock while maintaining quality gate integrity.
+      **Time sensitivity**: Blocking — PR cannot merge until findings are resolved or explicitly overridden with justification.
+      **Risk**: Merging with unresolved findings violates the "no incomplete shipments" hard boundary. Open findings become production defects owned by the team.
+
+      Present via AskUserQuestion: "Review cycle {N} has reached the limit with {remaining_count} unresolved finding(s). Choose a path forward:"
+        - Option 1: "Re-request same reviewer"
+        - Option 2: "Request fresh reviewer"
+        - Option 3: "Override with written risk acceptance (will be recorded on PR)"
 
 Display summary: fixes applied, Boy Scout improvements, questions answered, pushback items, cycle count.
