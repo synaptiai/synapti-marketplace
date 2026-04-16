@@ -121,6 +121,33 @@ gh pr view --json number,url,state,title
 
 Display PR URL and suggest: `/flow:review {number}` for self-review or share with team.
 
+## Merge Prerequisite: Finding-Ledger Check
+
+Before a PR can be merged via `/flow:merge`, the finding ledger is checked to ensure all review findings have been resolved.
+
+### What it does
+
+Parses PR comments for `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` markers:
+
+- **`FLOW_REVIEW_CYCLE:{N} FINDINGS:[...]`** — the finding IDs emitted during review
+- **`FLOW_RESOLUTION_CYCLE:{N} RESOLVED:[...] ESCALATED:[...] DISPUTED:[...]`** — the disposition of each finding after `/flow:address`
+
+The check extracts the latest of each marker and compares them.
+
+### What triggers a block
+
+1. **Non-empty ESCALATED array** — `ESCALATED:[F3]` means at least one finding was escalated but not resolved. The merge gate blocks until every escalated item is resolved or the ESCALATED array is empty.
+2. **Unmatched FINDINGS** — any finding ID present in `FLOW_REVIEW_CYCLE:FINDINGS` that has no corresponding entry in `FLOW_RESOLUTION_CYCLE:RESOLVED` is considered unresolved. The merge gate blocks until every finding has a matching RESOLVED entry.
+
+### How to resolve
+
+1. Run `/flow:address {pr_number}` to address remaining findings
+2. Fix or respond to each unresolved finding until all are in the RESOLVED array
+3. Ensure the ESCALATED array is empty in the latest resolution comment
+4. Re-run `/flow:merge {pr_number}`
+
+This gate enforces the "no incomplete shipments" hard boundary from organizational governance.
+
 ## Rationalization Prevention
 
 | Excuse | Response |
