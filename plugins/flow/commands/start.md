@@ -117,14 +117,73 @@ If zero acceptance criteria found and `specFirst.requireAcceptanceCriteria` is `
 - Option 2: Only available if issue labels include any of `specFirst.allowSpecFreeLabels` (default: `documentation`, `chore`). Log to decision journal: "Spec-free task: {justification}"
 - Option 3: Stop workflow
 
-If acceptance criteria are found, output a **Spec Validation Table**:
+**Specification capture** (before Spec Validation Gate):
+
+Acceptance criteria alone do not describe the full specification. Before building the Spec Validation Gate, the agent MUST extract or author three additional specification elements. If the issue body states them, extract verbatim. If the issue does not state them, the agent proposes them and confirms with the user via `AskUserQuestion` before proceeding.
+
+Capture all three into the decision journal under a `## Specification` heading:
+
+1. **Non-goals** — what this change explicitly does NOT do. Scope fences that prevent the implementation from sprawling. Example: "Does not add retry logic", "Does not change the public API", "Does not touch the auth flow".
+
+2. **Failure modes** — how the change is expected to behave under failure conditions. Minimum coverage:
+   - **Timeouts** — what happens when an upstream call takes longer than expected?
+   - **Partial failures** — what happens when some operations succeed and others fail?
+   - **Invalid input** — what happens when input violates the contract (wrong type, missing field, out of range)?
+   - **Missing context** — what happens when required config/env/state is absent?
+   For each, record the expected behavior (error type, fallback, user-visible message, log signal).
+
+3. **Interface contracts** — concrete schemas, types, or tool APIs that the change must honor or produce. Examples: request/response JSON shape, function signature, CLI flags, event payload schema, database column types. If the change is internal-only, record the internal module boundary contract.
+
+**When the issue is silent on any of these three**, use `AskUserQuestion`:
+
+> Issue #$ARGUMENTS does not specify {non-goals | failure modes | interface contracts}. I need these before planning so the implementation has a clear fence.
+>
+> Proposed {element}:
+> {agent-drafted proposal of 3-5 items based on issue context}
+>
+> Options:
+> 1. Accept proposal as written
+> 2. Accept with edits (I will prompt you for changes)
+> 3. Reject — specification is incomplete, update the issue first
+
+Only proceed to the Spec Validation Gate once all three specification elements are captured. Log the captured specification to `.decisions/issue-$ARGUMENTS.md` so downstream phases can reference it.
+
+**Spec Validation Gate** (blocking):
+
+If acceptance criteria are found, build a **Spec Validation Table** and treat it as a gate, NOT a display. Every criterion MUST map to a concrete automated verification command before proceeding to Phase 2 (PLAN). This gate blocks progression when any criterion is vague, untestable, or marked `manual` without proper escalation.
 
 ```markdown
-### Spec Validation
-| # | Acceptance Criterion | Verification Method |
-|---|---------------------|-------------------|
-| 1 | {criterion text} | {test/curl/visual/manual} |
+### Spec Validation Gate
+| # | Acceptance Criterion | Verification Command | Gate Status |
+|---|---------------------|----------------------|-------------|
+| 1 | {criterion text} | `{exact command, e.g. npm test -- --grep "auth"}` | PASS |
+| 2 | {vague criterion} | (none — cannot automate) | BLOCK |
 ```
+
+**Gate rules:**
+
+- **PASS** — criterion has a concrete, runnable verification command (test command, curl, script invocation, build check, lint rule). The command must be specific enough that a zero-context agent could run it and collect evidence without further interpretation.
+- **BLOCK** — criterion is vague ("handle errors gracefully", "improve performance", "be user-friendly"), has no automatable check, or the verification method is unknown. Progression to PLAN is blocked.
+- **MANUAL (escalation only)** — `manual` verification is ONLY permitted when flagged as a Proactive-Autonomy escalation with the full six-field structure. Default behavior treats `manual` as BLOCK.
+
+**When any criterion BLOCKS**, the agent MUST NOT proceed to PLAN. Instead, issue a Proactive-Autonomy escalation via `AskUserQuestion` with all six fields:
+
+> **Situation** — Criterion #{n} "{vague text}" has no automatable verification. Shipping with this criterion means the plan cannot define what "done" looks like.
+>
+> **Tried** — I attempted to classify the criterion via `criterion-verification-map`. No verification type matched. Searched the codebase for existing tests covering similar behavior: {found|not found}.
+>
+> **Options**:
+> 1. Rewrite criterion as "{concrete measurable rewording}" with verification command `{specific command}`
+> 2. Rewrite criterion as "{alternative measurable rewording}" with verification command `{alternative command}`
+> 3. Mark as `manual` — I (the user) will verify this step myself at VERIFY phase. The plan will record manual evidence collection.
+>
+> **Recommendation** — Option {1|2} — measurable criteria produce better verdicts and prevent vague implementations.
+>
+> **Time sensitivity** — Blocks planning. Must resolve before Phase 2.
+>
+> **Risk** — Choosing Option 3 (`manual`) means no automated verdict for this criterion and requires a human-in-the-loop at VERIFY phase.
+
+Only after every criterion shows PASS or user-approved MANUAL can the workflow proceed to Phase 2.
 
 **Assign the issue:**
 
@@ -153,37 +212,59 @@ Write journal header to `.decisions/issue-$ARGUMENTS.md`.
 
 **Task decomposition** — dispatch implementation-planner agent:
 
+Each implementation task is an **atomic unit** that bundles three responsibilities, not three separate tasks:
+
+1. **Implementation** — the code change
+2. **Test** — the test(s) that verify the behavior the code change introduces
+3. **Verification-evidence collection** — the exact command that will be run in Phase 4 to prove this task's acceptance criterion is met, and the captured output that becomes evidence
+
+A task is not "done" until all three are complete. Splitting them into three sibling tasks (one for code, one for test, one for verify) is explicitly prohibited — it causes implementation to ship before tests catch up and verification to happen after the author has lost context.
+
 ```
 Agent(implementation-planner):
-  "Parse acceptance criteria from issue #$ARGUMENTS and create tasks.
+  "Parse acceptance criteria from issue #$ARGUMENTS and create atomic tasks.
    Issue context: {pre-fetched issue title, body, comments}
+   Specification (from EXPLORE): {non-goals, failure modes, interface contracts}
+   Spec Validation Gate results: {criterion -> verification command mapping}
 
-   For each acceptance criterion, use TaskCreate with:
-   - subject: imperative description
-   - description: criterion text + likely files + verification method
+   For each acceptance criterion, use TaskCreate with a single atomic task:
+   - subject: imperative description of the behavior
+   - description: |
+       Criterion: {full criterion text}
+       Non-goals touched: {which non-goals this task must respect}
+       Failure modes covered: {which failure modes this task implements handling for}
+       Interface contract: {schema/signature this task must honor}
+       Implementation outline: {files + approach}
+       Test plan: {test file + cases + assertions}
+       Verification command: {exact command from Spec Validation Gate}
+       Expected evidence: {what success output looks like}
 
    Set dependencies with TaskUpdate(addBlockedBy).
    Identify parallel execution opportunities.
    Return: task list, dependency graph, suggested order."
 ```
 
-For each implementation task, also create a corresponding test task:
-```
-TaskCreate("Test: {behavior}", "Write or update tests verifying {behavior}. Follow existing test patterns.")
-```
-Set dependency: test task is blocked by its implementation task.
+Each atomic task flows through implementation → test → evidence collection within the same task lifecycle in Phase 3 (CODE). Phase 4 (VERIFY) still runs the full evidence bundle assembly and independent verdict judge, but per-task evidence is captured at the moment the task completes, not weeks after the author has context-switched.
 
-**Verification task creation** — for each acceptance criterion, create a verification task using `criterion-verification-map` classification:
+**Stranger Test check** (mandatory PLAN gate):
 
-```
-TaskCreate(
-  subject: "Verify: {criterion short description}",
-  description: "Criterion: {full criterion text}\n\nVerification method: {type}\nVerification command: {specific command}\nExpected evidence: {what success looks like}",
-  activeForm: "Verifying {short description}"
-)
-```
+Before proceeding to Phase 3 (CODE), the agent MUST run the Stranger Test against the assembled plan:
 
-Verification tasks execute during Phase 4 (VERIFY), not during CODE. They are separate from implementation and test tasks.
+> **Could a zero-context agent — one that has never seen this repo, this issue, or this plan conversation — execute every task in this plan and produce acceptable output?**
+
+Check each task for these failure modes:
+
+- **Implicit file references** — "update the auth module" without the path
+- **Undefined terms** — uses project jargon without definition
+- **Missing preconditions** — assumes setup, env vars, or state that is not written down
+- **Vague success criteria** — "make it work", "fix the issue", "handle it correctly"
+- **Unspecified verification command** — a zero-context agent would not know what to run to prove the task is done
+- **Missing interface contracts** — schema/signature/shape is not written in the task
+- **Missing failure-mode coverage** — the task does not reference which failure modes it must handle
+
+If ANY task fails the Stranger Test, the plan is incomplete. The agent must either rewrite the task to close the gap, or issue a Proactive-Autonomy escalation asking the user to fill in the missing context. Only after every task passes the Stranger Test can the workflow proceed to Phase 3.
+
+Record the Stranger Test result to `.decisions/issue-$ARGUMENTS.md` under a `## Stranger Test` heading with either "PASS — {N} tasks reviewed" or "BLOCK — {task id}: {failure mode}".
 
 Display task plan. Proceed unless user objects.
 

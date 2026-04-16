@@ -91,6 +91,49 @@ UI → Application → Domain → Infrastructure
 
 TaskUpdate("Coupling analysis", status: "completed")
 
+## Failure Modes and Non-Goals
+
+Architecture decisions are incomplete without an explicit fence. Every design proposal MUST capture failure modes and non-goals alongside the happy-path component diagram. A design that only describes the success path is a design that will fail under the first unexpected condition.
+
+### Non-Goals (What This Design Does NOT Do)
+
+Non-goals are scope fences. They prevent the design from sprawling into adjacent problems and prevent reviewers from rejecting the design because it "doesn't handle X" when X was never its job. Capture non-goals as a bulleted list in the decision record:
+
+- What this design explicitly does NOT cover (features, flows, or actors out of scope)
+- What it does NOT guarantee (consistency levels, durability, isolation, ordering)
+- What it does NOT replace (existing components that stay untouched)
+- What it does NOT optimize for (latency, throughput, cost, developer ergonomics — pick what matters and name what is deprioritized)
+
+Non-goals must be written as declarative negations, not hedges. "Does not support multi-region writes" is a non-goal. "May eventually support multi-region writes" is a hedge and is not useful.
+
+### Failure Modes (How This Design Behaves Under Failure)
+
+Every component in the design must have documented behavior for at least these failure modes:
+
+| Failure Mode | Design Question | Record |
+|--------------|-----------------|--------|
+| **Timeouts** | What happens when a downstream call exceeds the deadline? | Error type, fallback, caller-visible outcome |
+| **Partial failures** | What happens when some operations in a batch succeed and others fail? | Rollback / compensate / surface partial result / retry policy |
+| **Invalid input** | What happens when input violates the contract (wrong type, missing field, out of range)? | Validation boundary, error shape, rejection vs. coercion |
+| **Missing context** | What happens when required config, env vars, or upstream state is absent? | Fail-fast at startup / degrade gracefully / specific error |
+| **Dependency outage** | What happens when a required external service is unreachable? | Circuit break / cache / queue / hard fail |
+| **Resource exhaustion** | What happens under memory pressure, connection-pool exhaustion, or rate limits? | Backpressure / shed load / error shape |
+
+Record each failure mode's expected behavior in the decision record. If the design has no answer for a failure mode, that is a gap to close before proceeding — not a detail to defer to implementation.
+
+### Integration With the Decision Record
+
+Extend the Decision Framework table (below) with two new fields when documenting architectural decisions:
+
+- **Non-goals** — bulleted list of what this decision does NOT do
+- **Failure modes** — table of failure mode → expected behavior for each component touched
+
+These fields are NOT optional. A decision record missing them is incomplete and should not ship.
+
+### Why This Belongs at Design Time
+
+Failure modes discovered at implementation time force backtracking: the author has to redesign mid-build to handle a case the design ignored. Failure modes discovered at verify time force fix-forward loops or rework. Failure modes captured at design time become test cases, verification commands, and explicit non-goals that prevent scope creep. The cost of capturing them early is minutes; the cost of discovering them late is days.
+
 ## Decision Framework
 
 TaskUpdate("Decision documentation", status: "in_progress")
