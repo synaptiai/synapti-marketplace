@@ -83,7 +83,7 @@ claude plugins add ./plugins/flow
 ## Architecture
 
 ```
-SKILL LIBRARY (18 skills)
+SKILL LIBRARY (22 skills)
   ├── Foundation (always loaded, <=100 lines each)
   │   ├── evidence-based-development
   │   ├── autonomous-workflow
@@ -96,9 +96,13 @@ SKILL LIBRARY (18 skills)
       ├── convention-enforcement
       ├── capability-discovery (+ LSP probing)
       ├── code-review-methodology
+      ├── criterion-verification-map
       ├── pr-lifecycle
+      ├── preflight-checks
       ├── feedback-resolution
+      ├── holdout-validation
       ├── merge-and-release
+      ├── merge-conflict-resolution
       ├── runtime-verification
       ├── team-coordination
       ├── architecture-patterns
@@ -107,20 +111,21 @@ SKILL LIBRARY (18 skills)
       ├── tdd-patterns
       └── learned/ (promoted from proposals)
 
-AGENTS (7)
+AGENTS (8)
   ├── implementation-planner (task decomposition)
   ├── test-runner (quality commands)
   ├── code-reviewer (quality + security + LSP references)
   ├── convention-checker (git conventions)
   ├── security-reviewer (OWASP, secrets, auth)
   ├── error-handler-inspector (error handling + LSP diagnostics)
-  └── integration-verifier (integration validation)
+  ├── integration-verifier (integration validation)
+  └── verdict-judge (independent acceptance criteria evaluation)
 
-COMMANDS (16)
+COMMANDS (17)
   ├── flow (universal dispatcher)
   ├── start, commit, pr, issue
   ├── review, address
-  ├── merge, release
+  ├── merge, release, resolve
   ├── status, learn
   ├── setup, explain
   └── brainstorm, debug, design

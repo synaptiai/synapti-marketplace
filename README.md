@@ -27,7 +27,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | [AI-First Org Design Kit](./plugins/ai-first-org-design-kit/) | Organizational Design | Fourteen opinionated skills for designing, deploying, adopting, and evolving AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, validate gates against hidden holdout scenarios, architect governance, redesign roles, navigate politics, operationalize, run evolution audits, generate agent configs, build maturity matrices, design adoption sprints, and write human-facing AI usage policies. | 1.5.0 |
 | [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.5.0 |
-| [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development. Composable skills, safety hooks, agent teams, LSP code intelligence, and learning loop. | 1.5.0 |
+| [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Composable skills, safety hooks, agent teams, LSP code intelligence, holdout validation, and learning loop. | 2.0.0 |
 | [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.9.0 |
 
 ### When to Use Each Plugin
@@ -387,7 +387,7 @@ claude plugin install gh-workflow
 
 | Feature | Benefit |
 |---------|---------|
-| **Composable Skills** | 18 reusable skills (3 foundation + 15 domain) — commands compose skills, not duplicate logic |
+| **Composable Skills** | 22 reusable skills (3 foundation + 19 domain) — commands compose skills, not duplicate logic |
 | **Three-Tier Safety** | Hook-enforced tiers: autonomous (commits), journal (push/PR), confirm (merge/release) |
 | **Learning Loop** | Decision journal captures patterns; `/flow learn` proposes new skills from experience |
 | **Agent Teams** | Parallel + adversarial review teams where reviewers challenge each other's findings |
@@ -562,10 +562,10 @@ synapti-marketplace/
     │   ├── .claude-plugin/
     │   │   └── plugin.json
     │   ├── README.md
-    │   ├── agents/                   # 7 specialized agents
-    │   ├── commands/                 # 16 workflow commands
+    │   ├── agents/                   # 8 specialized agents
+    │   ├── commands/                 # 17 workflow commands
     │   ├── hooks/                    # Safety hook definitions
-    │   ├── skills/                   # 18 composable skills (3 foundation + 15 domain)
+    │   ├── skills/                   # 22 composable skills (3 foundation + 19 domain)
     │   ├── templates/                # PR, issue, skill proposal templates
     │   └── references/               # Safety tiers, checklists, manifests
     │
