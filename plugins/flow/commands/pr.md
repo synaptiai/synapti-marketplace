@@ -123,7 +123,21 @@ After agents return, TaskUpdate each review task with findings.
 3. **TaskList**: Confirm all review tasks complete (including visual verification if created)
 4. **Runtime verification**: If integration-verifier returns SKIP without justification, run runtime verification directly (build, start, smoke test). Runtime verification must pass before PR creation.
 5. **Visual verification enforcement**: If `visualVerification.requireVisualVerification` is `true` and integration-verifier returned visual verification as BLOCKED:
-   - Use `AskUserQuestion` with options: (1) Skip visual verification — noted in PR body, (2) I will verify visually myself — marked as MANUAL, (3) Help me install browser tools
+   - Use `AskUserQuestion` with a Proactive-Autonomy escalation:
+     > **Situation** — Visual verification is required (`requireVisualVerification: true`) but no browser tools are available. UI files changed: {list}.
+     >
+     > **What I tried** — Checked for Playwright MCP, headless browser tools, and gstack. None available.
+     >
+     > **Options**:
+     > 1. Skip visual verification — noted in PR body (Recommended if changes are minor CSS/copy)
+     > 2. I will verify visually myself — marked as MANUAL in PR body
+     > 3. Help me install browser tools — I'll provide Playwright MCP installation guidance and retry
+     >
+     > **Recommendation** — Option {1|2|3} based on scope of UI changes.
+     >
+     > **Time sensitivity** — Blocks PR creation if `requireVisualVerification: true`.
+     >
+     > **Risk** — Skipping may miss visual regressions. Manual verification depends on user follow-through.
    - Based on response → `TaskUpdate` visual tasks to SKIP_USER_APPROVED or MANUAL, or provide installation guidance and retry
    - The PR body should note whether visual verification was PASS, MANUAL, SKIP_USER_APPROVED, or SKIP_WARN
 6. **Display findings** (finding-first pattern):
