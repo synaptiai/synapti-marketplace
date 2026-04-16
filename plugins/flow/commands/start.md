@@ -270,27 +270,53 @@ Display task plan. Proceed unless user objects.
 
 ## Phase 3: CODE
 
-**TDD guidance**: Apply `tdd-patterns` knowledge during implementation:
-- For each task: write failing test → implement → verify test passes → refactor
-- Check `settings.json` → `testing.tddMode` for enforcement level
+**TDD enforcement**: Check `settings.json` → `testing.tddMode`:
+- `enforce` (default) — write a failing test FIRST. Implementation without a preceding RED test is blocked.
+- `suggest` — recommend TDD but allow override. Only active when `testing.tddModeOptOut` is `true`.
+- `off` — no TDD guidance; tests still run in verification.
 
-Execute tasks following the task-driven loop:
+Execute tasks following the per-task verification gate loop:
 
 ```
 For each task (in dependency order):
   1. TaskUpdate(taskId, status: "in_progress")
   2. Read relevant files (follow existing patterns)
-  3. Implement the change
-  4. Write or update tests that verify the change:
-     - Follow existing test patterns (co-located files, same framework)
+  3. TDD enforcement (when tddMode=enforce):
+     a. RED: Write the failing test FIRST — the test MUST fail before any implementation
+     b. Verify it fails for the right reason (not syntax error, not wrong import)
+  4. GREEN: Implement the change — simplest code to make the test pass
+     - Follow existing patterns (co-located files, same framework)
      - At minimum, one test per acceptance criterion or behavior
      - Test edge cases, not just the happy path
      - For bug fixes: write a test that would have caught the original bug
-  5. Run related tests — new tests must pass, existing tests must not break
-  6. TaskUpdate(testTaskId, status: "completed")
-  7. Incremental commit (Tier 1: autonomous)
-  8. TaskUpdate(taskId, status: "completed")
+  5. Run tests (existing + new):
+     IF tests FAIL → enter debug-fix-retest loop:
+       - Read failure output, identify root cause
+       - Fix the failing code (not the test, unless the test is wrong)
+       - Re-run tests
+       - Repeat until all tests pass (bounded by closedLoop.maxDebugIterations)
+       - Do NOT proceed to step 6. Do NOT call TaskUpdate(completed).
+       - After max iterations without resolution, escalate to user via AskUserQuestion.
+     IF tests PASS → continue to step 6
+  6. REFACTOR: Clean up implementation and tests. Re-run tests — they must still pass.
+  7. Capture verification evidence:
+     - Run the verification command from the task description
+     - Record the output as evidence for this task's acceptance criterion
+     - IF verification command fails → enter debug-fix-retest loop (same rules as step 5)
+  8. Per-task change classification:
+     - Classify all files modified during this task using change-classification signals
+     - Flag any out-of-context files NOW — do not accumulate until commit time
+     - If out-of-context files found, use AskUserQuestion to resolve before proceeding
+  9. Incremental commit (Tier 1: autonomous)
+  10. ONLY after ALL of the following are true may TaskUpdate(completed) be called:
+      - All tests pass (existing + new)
+      - Verification evidence captured for this task's acceptance criterion
+      - No unresolved out-of-context files from this task
+      - TDD cycle completed (RED → GREEN → REFACTOR) when tddMode=enforce
+      TaskUpdate(taskId, status: "completed")
 ```
+
+**Critical gate**: Step 5 is a HARD GATE. If tests fail, the task CANNOT be marked completed. The loop stays on the current task until tests pass or the user is escalated to. Skipping ahead to the next task with failing tests is explicitly prohibited.
 
 **Parallel task detection**: If tasks have no overlapping files and agent teams are enabled, suggest parallel execution via agent team.
 

@@ -41,6 +41,23 @@ Use Task tools as first-class workflow primitives:
 
 Tasks have clear subjects (imperative form) and descriptions with acceptance criteria.
 
+## Per-Task Verification Gate
+
+A task may NOT be marked completed (`TaskUpdate(taskId, status: "completed")`) until ALL of the following conditions are met:
+
+1. **All tests pass** — both existing tests and any new tests written for this task. If any test fails, the task enters the debug-fix-retest loop and remains `in_progress` until tests pass or the user is escalated to.
+
+2. **Verification evidence captured** — the verification command from the task description has been run and its output recorded as evidence for this task's acceptance criterion. Evidence must be collected at task-completion time, not deferred to VERIFY phase.
+
+3. **No out-of-context files** — all files modified during this task have been classified. Any out-of-context files must be resolved (moved to a separate commit, removed, or explicitly approved by the user) before the task completes.
+
+4. **TDD cycle completed** — when `settings.json` → `testing.tddMode` is `enforce` (the default), the full RED-GREEN-REFACTOR cycle must be observed:
+   - RED: A failing test was written before implementation
+   - GREEN: The simplest code was written to make the test pass
+   - REFACTOR: Code was cleaned up with tests still passing
+
+If any condition is not met, `TaskUpdate(completed)` is blocked. The workflow must not advance to the next task. This gate is the primary quality enforcement point — the VERIFY phase provides independent confirmation, not first-pass verification.
+
 ## Three-Tier Action Classification
 
 | Tier | Actions | Behavior |

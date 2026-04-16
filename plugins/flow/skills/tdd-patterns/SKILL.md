@@ -123,11 +123,26 @@ Test names should read as specifications:
 
 Check `settings.json` → `testing.tddMode`:
 
-| Mode | Behavior |
-|------|----------|
-| `enforce` | Block implementation without a failing test. No exceptions. |
-| `suggest` (default) | Recommend TDD. Allow override with explicit user decision. |
-| `off` | No TDD guidance. Tests still run in verification. |
+| Mode | Default? | Behavior |
+|------|----------|----------|
+| `enforce` | **Yes** | Block implementation without a failing test. No exceptions. The RED phase must produce a failing test before any production code is written. |
+| `suggest` | No (opt-in) | Recommend TDD. Allow override with explicit user decision. |
+| `off` | No (opt-in) | No TDD guidance. Tests still run in verification. |
+
+### Opt-out mechanism
+
+`enforce` is the default because skipping the RED phase is the #1 source of tests that pass for the wrong reason. Teams that need the old `suggest` behavior can opt out:
+
+```json
+{
+  "testing": {
+    "tddMode": "suggest",
+    "tddModeOptOut": true
+  }
+}
+```
+
+Set `testing.tddModeOptOut` to `true` in `settings.json` to switch `tddMode` back to `suggest`. When `tddModeOptOut` is `false` (the default), `tddMode` must remain `enforce`. This two-field design ensures the opt-out is an explicit, auditable decision rather than a silent default change.
 
 ## Coverage Targets
 

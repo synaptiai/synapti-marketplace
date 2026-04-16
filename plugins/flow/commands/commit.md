@@ -48,7 +48,9 @@ git log --oneline -10
 
 **Grep** — search branch diff and issue body for task-related context.
 
-## Phase 2: CLASSIFY
+## Phase 2: CLASSIFY (cross-check)
+
+**Note**: When running after `/flow:start`, per-task change classification already happened during the CODE phase (step 8 of the per-task verification gate). Commit-time classification is a **final cross-check**, not the primary gate. Out-of-context files should have been flagged and resolved during CODE. If new out-of-context files appear here, it indicates a gap in the per-task gate that should be investigated.
 
 Apply change-classification skill knowledge:
 
