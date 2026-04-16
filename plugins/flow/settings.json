@@ -47,10 +47,11 @@
   },
   "verdict": {
     "enabled": true,
-    "requireAllPass": false
+    "requireAllPass": true
   },
   "testing": {
-    "tddMode": "suggest"
+    "tddMode": "enforce",
+    "tddModeOptOut": false
   },
   "debugging": {
     "maxHypotheses": 3
