@@ -74,11 +74,13 @@ LSP diagnostics provide higher confidence than pattern matching because they com
 
 For each finding, classify its scope:
 
-| Scope | Definition | Priority Cap |
-|-------|-----------|--------------|
-| **Introduced** | New code error handling gaps in added/modified code | Full P1/P2/P3 |
-| **Pre-existing** | Error handling gaps in unchanged lines of touched files | P3 max, prefix with "pre-existing" |
+| Scope | Definition | Priority |
+|-------|-----------|----------|
+| **Introduced** | New code error handling gaps in added/modified code | Natural P1/P2/P3 based on impact |
+| **Pre-existing** | Error handling gaps in unchanged lines of touched files | Natural P1/P2/P3 based on impact, prefix description with "pre-existing" |
 | **Adjacent** | Error handling gaps in untouched files | Do not report |
+
+Pre-existing findings keep their natural priority. An unhandled exception that crashes the process is P1 whether it was introduced on this branch or already living in the file — the "pre-existing" prefix labels provenance, it does not cap severity. Touching a file means owning its known defects.
 
 Only report findings in **Introduced** and **Pre-existing** scope.
 

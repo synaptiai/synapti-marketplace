@@ -26,23 +26,27 @@ Answer these questions first. If you can't, return to EXPLORE:
 
 ## Boy Scout Rule
 
-Leave every file you touch better than you found it. Apply the **proximity test** to decide if a cleanup belongs:
+Leave every file you touch better than you found it. Fixing known defects in touched files is not optional scope creep — it is the baseline of Quality-First Completionism. Touching a file means owning its known issues.
 
-**A cleanup PASSES the proximity test if ALL true:**
+**The proximity test is NOT a deferral mechanism for P1/P2 findings.** It decides *how* a cleanup is committed (alongside the feature fix vs. as a separate `improve:` commit), not *whether* it gets fixed. If a P1 or P2 finding exists in a file the PR modifies, it is fixed in this PR, full stop.
+
+**A cleanup is committed as a standalone `improve:` commit when ALL true:**
 1. The file is already being modified for the current task
 2. The fix is self-evidently correct (lint, format, typo, obvious bug, missing error handling)
 3. The fix is small (under ~10 lines of cleanup)
 4. The fix does not change public API signatures or behavior semantics
 5. The fix needs no explanation beyond "Boy Scout cleanup"
 
-**A cleanup FAILS the proximity test if ANY true:**
+**A finding requires expanded scope (still fixed, but may need a design note or additional tests) when ANY true:**
 1. Requires modifying files NOT already touched by the task
 2. Changes architecture, module boundaries, or public APIs
 3. Requires new tests to validate
-4. Would need its own issue to explain motivation
-5. Is a subjective style preference, not objective improvement
+4. Would benefit from its own issue to explain motivation
+5. Is a subjective style preference (in which case it is P3 at most, not a fix-blocker)
 
-Passing cleanups use `improve:` commits. Failing cleanups get logged as follow-up issues.
+For P1/P2 findings that fall into the "expanded scope" bucket: fix them in-PR with an appropriate commit message, or file a six-field Proactive-Autonomy escalation (Situation / Tried / Options / Recommendation / Time sensitivity / Risk) to escalate the decision. "Disagree to fix" is not an option — the escalation forces a human judgment call.
+
+Only **cosmetic P3 findings in truly untouched files** may be logged as follow-up issues by default.
 
 ## No Secrets in Code
 
@@ -65,7 +69,7 @@ Code that ships must be complete:
 
 ## Quality Command Execution
 
-Run independent quality commands (lint, test, typecheck) as parallel Bash calls, never chained with `&&`. After quality checks: P1 failures fix immediately, P2 fix before PR, P3 note and proceed.
+Run independent quality commands (lint, test, typecheck) as parallel Bash calls, never chained with `&&`. After quality checks: P1 failures fix immediately, P2 fix before PR, P3 fix in-PR unless a six-field Proactive-Autonomy escalation is filed.
 
 ## Anti-Patterns
 
@@ -108,8 +112,8 @@ Before marking any task complete:
 
 | Excuse | Response |
 |--------|----------|
-| "I'll clean this up while I'm here" | Does it pass the proximity test? If yes, fix it with an `improve:` commit. If no, log it. |
+| "I'll clean this up while I'm here" | If it's a P1/P2 in a touched file, you must fix it. If it's small and self-evident, use an `improve:` commit. If it's cosmetic and in an untouched file, you may log it. |
 | "This TODO is temporary" | TODOs in commits are permanent. Create an issue instead. |
 | "The tests pass, it's fine" | Tests passing is necessary, not sufficient. Run the self-review checklist. |
 | "This debug log helps with development" | Remove it. Development aids don't ship. |
-| "It's just a small formatting fix" | If the file is already touched for the task and the fix passes the proximity test, use an `improve:` commit. Otherwise, it's not in your commit. |
+| "It's just a small formatting fix" | If the file is already touched for the task and the fix is self-evident, use an `improve:` commit. If the file is untouched and the fix is cosmetic, log it as a follow-up issue. |

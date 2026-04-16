@@ -41,11 +41,13 @@ This provides semantic accuracy that grep-based searches cannot — it resolves 
 
 For each finding, classify its scope:
 
-| Scope | Definition | Priority Cap |
-|-------|-----------|--------------|
-| **Introduced** | Code added or modified on this branch | Full P1/P2/P3 |
-| **Pre-existing** | Issue in unchanged lines of touched files | P3 max, prefix with "pre-existing" |
+| Scope | Definition | Priority |
+|-------|-----------|----------|
+| **Introduced** | Code added or modified on this branch | Natural P1/P2/P3 based on impact |
+| **Pre-existing** | Issue in unchanged lines of touched files | Natural P1/P2/P3 based on impact, prefix description with "pre-existing" |
 | **Adjacent** | Issue in untouched files | Do not report |
+
+Pre-existing findings keep their natural priority. A SQL injection in unchanged code of a touched file is P1, not P3 — the "pre-existing" prefix labels the source, it does not cap severity. If you're modifying a file, you own the known defects in it: excellence means fixing them, not shipping them forward.
 
 Only report findings in **Introduced** and **Pre-existing** scope. Never report issues in files the branch hasn't touched.
 

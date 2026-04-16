@@ -96,14 +96,15 @@ When feedback is unclear:
 
 ## Pushback Criteria
 
-It's acceptable to push back on feedback when:
+Pushback is a narrow, evidence-backed response — not a general "I disagree" escape hatch. Pushback is valid only when one of the following holds, and the response must cite the specific evidence:
 
-- The suggestion would break existing tests
-- The suggested approach contradicts project conventions (cite CLAUDE.md)
-- The feedback is based on a misunderstanding of the requirements
-- The suggested change would introduce a regression
+- **Factually incorrect feedback** — the reviewer's claim about the code is wrong. Response must cite `file:line` showing the current state and explain why the feedback does not apply.
+- **Would break existing tests** — the suggested change would cause a regression. Response must show the failing test (name and `file:line`) that the suggestion would break.
+- **Contradicts a CLAUDE.md rule** — the suggestion violates a project convention documented in CLAUDE.md. Response must quote the rule and cite its location in CLAUDE.md.
 
-Always explain the reasoning when pushing back. Never ignore feedback silently.
+"I disagree" alone is NOT valid pushback. Subjective preference differences resolve in favor of the reviewer — if you don't have factual evidence, a broken test, or a CLAUDE.md citation, apply the fix.
+
+Always explain the reasoning when pushing back. Never ignore feedback silently. If pushback would require a judgment call beyond the three valid categories above, file a six-field Proactive-Autonomy escalation instead (Situation / Tried / Options / Recommendation / Time sensitivity / Risk).
 
 ## Rationalization Prevention
 
