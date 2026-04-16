@@ -16,6 +16,7 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 ## Required Skills
 
 - `code-review-methodology` — 5-facet review, finding synthesis, adversarial protocol
+- `holdout-validation` — cross-reference self-review claims against file state (Phase 3)
 
 ## Phase 1: EXPLORE
 
@@ -73,6 +74,7 @@ TaskCreate("Convention review", "Commit format, branch naming, code patterns")
 TaskCreate("Test review", "Run quality commands, assess test coverage")
 TaskCreate("Requirements review", "Map acceptance criteria to implementation")
 TaskCreate("Error handling review", "Check for unhandled exceptions, silent failures, missing edge cases")
+TaskCreate("Holdout validation", "Cross-reference self-review claims against actual file state using holdout scenarios")
 ```
 
 ## Phase 3: CODE (Review Execution)
@@ -109,6 +111,12 @@ Agent(test-runner):
 Agent(error-handler-inspector):
   "Inspect changed files in PR #$ARGUMENTS for error handling gaps,
    silent failures, unhandled exceptions. Return P1/P2/P3 findings."
+
+Skill(holdout-validation):
+  Inputs:
+  - Self-review findings: {P1/P2/P3 findings from code-reviewer agent}
+  - Evidence bundle draft: {per-criterion evidence from requirements review}
+  - File list: {all files changed in this PR}
 ```
 
 **Main thread**: Requirements compliance — map acceptance criteria to implementation.

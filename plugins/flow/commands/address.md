@@ -19,6 +19,7 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 - `change-classification` — verify no out-of-context changes
 - `capability-discovery` — quality commands for verification
 - `tdd-patterns` — test-first for fixes, test quality standards
+- `holdout-validation` — cross-reference self-review claims against file state (Phase 4)
 
 ## Phase 1: EXPLORE
 
@@ -177,19 +178,32 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
       Check for: logic errors, security issues, missing edge cases.
       Return P1/P2/P3 findings with file:line."
    ```
-3. **Convergence check** (max 3 self-review-fix iterations):
+3. **Holdout validation** — after self-review, invoke `holdout-validation` to cross-reference claims against file state:
+   ```
+   Skill(holdout-validation):
+     Inputs:
+     - Self-review findings: {P1/P2/P3 findings from step 2}
+     - Evidence bundle draft: {per-criterion evidence from feedback fixes}
+     - File list: {all files modified on this branch}
+   ```
+   **Blocking treatment** (same as start.md):
+   - P1/P2 holdout findings → fix immediately before proceeding
+   - After fixes: re-run holdout-validation to confirm resolution
+   - P3 findings → note, do not block
+4. **Convergence check** (max 3 self-review-fix iterations):
    - Self-review finds P1 → fix NOW (don't re-request with known P1s)
+   - Holdout-validation finds P1/P2 → fix NOW (same blocking treatment as self-review P1)
    - P2 in touched files → fix NOW
    - P3 in touched files → fix NOW (same disposition as P1/P2 — the proximity test is not a deferral mechanism)
    - Only truly cosmetic P3 findings in untouched files may become follow-up issues; P1/P2 in untouched files must be addressed in-PR or filed as a six-field Proactive-Autonomy escalation (Situation / Tried / Options / Recommendation / Time sensitivity / Risk)
-   - After fixes: re-run quality commands, re-review changed files
-4. **Verify Boy Scout cleanup** passes proximity test (no scope creep)
-5. **Change classification** — verify no out-of-context changes introduced
-6. **Push** (Tier 2: journal-and-proceed):
+   - After fixes: re-run quality commands, re-review changed files, re-run holdout-validation
+5. **Verify Boy Scout cleanup** passes proximity test (no scope creep)
+6. **Change classification** — verify no out-of-context changes introduced
+7. **Push** (Tier 2: journal-and-proceed):
    ```bash
    git push
    ```
-7. **Reply to individual review comments** inline:
+8. **Reply to individual review comments** inline:
    ```bash
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
    # For each fixed item, reply to the original review comment:
@@ -200,18 +214,18 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
    gh api repos/$REPO/pulls/$ARGUMENTS/comments/{comment_id}/replies \
      -f body="{response text}"
    ```
-8. **Post resolution comment** (MANDATORY) using the template structure from `templates/resolution-comment.md`:
+9. **Post resolution comment** (MANDATORY) using the template structure from `templates/resolution-comment.md`:
    ```bash
    gh pr comment $ARGUMENTS --body "$BODY"
    ```
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
-9. **Update PR body review cycle state** (if `### Review Cycle History` exists in the PR body):
+10. **Update PR body review cycle state** (if `### Review Cycle History` exists in the PR body):
    - Fetch current body: `gh pr view $ARGUMENTS --json body --jq '.body'`
    - If the body contains `### Review Cycle History`, replace content between that heading and the next `##` heading with the cycle metrics table (received/fixed/discussed/escalated)
    - If the heading does not exist, append a `### Review Cycle History` section under `## Review Findings`
    - Update: `gh pr edit $ARGUMENTS --body "$UPDATED_BODY"`
-10. **TaskList**: Confirm ALL tasks complete including "Post resolution comment". Do NOT proceed until verified.
-11. **Conditional re-request review**:
+11. **TaskList**: Confirm ALL tasks complete including "Post resolution comment". Do NOT proceed until verified.
+12. **Conditional re-request review**:
 
     ONLY after TaskList confirms "Post resolution comment" is completed:
     - If self-review found 0 findings → do NOT re-request (nothing changed that needs re-review beyond the feedback fixes)
