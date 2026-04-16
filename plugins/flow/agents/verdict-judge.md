@@ -47,15 +47,16 @@ Execute the scan in this exact order:
    ```markdown
    ### Coverage Scan
 
-   | # | Criterion | Evidence Entry Present? | Completeness Subsections Present? |
-   |---|-----------|-------------------------|-----------------------------------|
-   | 1 | {criterion text} | Yes / NO | Yes / NO ({which are missing}) |
+   | # | Criterion | Evidence Entry Present? | "Does NOT promise" Present? | Completeness Subsections Present? |
+   |---|-----------|-------------------------|-----------------------------|-----------------------------------|
+   | 1 | {criterion text} | Yes / NO | Yes / NO | Yes / NO ({which are missing}) |
    ```
 
-   The "Completeness Subsections Present?" column checks that the evidence block contains all three mandatory subsections: "What was NOT tested", "Known limitations of this evidence", and "Negative/adversarial cases covered".
+   The "Does NOT promise Present?" column checks for the plan-time non-goals field. The "Completeness Subsections Present?" column checks that the evidence block contains all three mandatory verify-time subsections: "What was NOT tested", "Known limitations of this evidence", and "Negative/adversarial cases covered".
 
 5. **Automatic FAIL rules** — apply these BEFORE per-criterion evaluation and record the result:
    - Any criterion with no evidence entry at all → **automatic FAIL** with rationale "no evidence — missing-criterion scan". Do NOT attempt to infer, do NOT give NEEDS-HUMAN-REVIEW, do NOT skip it. FAIL it.
+   - Any criterion whose evidence entry is missing "Does NOT promise" → **automatic FAIL** with rationale "incomplete evidence — missing non-goals field ('Does NOT promise')".
    - Any criterion whose evidence entry is missing one or more of the three mandatory completeness subsections → **automatic FAIL** with rationale "incomplete evidence — missing {list of absent subsections}".
    - Any evidence entry in the bundle that does not correspond to any acceptance criterion → note it in the scan output as "orphan evidence" but do not use it to pass anything.
 
@@ -63,12 +64,13 @@ Execute the scan in this exact order:
 
 ### Step 2: Evaluate Each Remaining Criterion
 
-For each acceptance criterion that survived the coverage scan (i.e., has an evidence entry with all three completeness subsections):
+For each acceptance criterion that survived the coverage scan (i.e., has an evidence entry with "Does NOT promise" and all three completeness subsections):
 
 1. Read the criterion carefully — what specific behavior does it require?
 2. Find the corresponding evidence in the bundle
-3. Read the "What was NOT tested", "Known limitations of this evidence", and "Negative/adversarial cases covered" subsections. Factor them into your verdict — if the limitations invalidate the positive evidence, or if the criterion implies adversarial coverage that none was provided for, downgrade accordingly.
-4. Determine: does the evidence **prove** the criterion is met?
+3. Read "Does NOT promise" first. If the non-goals field scopes out behavior that the positive evidence appears to cover, do not credit the coverage as full — the evidence may be testing beyond the criterion's intended scope.
+4. Read the "What was NOT tested", "Known limitations of this evidence", and "Negative/adversarial cases covered" subsections. Factor them into your verdict — if the limitations invalidate the positive evidence, or if the criterion implies adversarial coverage that none was provided for, downgrade accordingly.
+5. Determine: does the evidence **prove** the criterion is met?
 
 **Evaluation rules:**
 - Evidence must **directly confirm** the criterion, not merely be consistent with it
@@ -87,9 +89,9 @@ Return the coverage scan output FIRST, then the verdict table.
 ## Verification Verdict
 
 ### Coverage Scan
-| # | Criterion | Evidence Entry Present? | Completeness Subsections Present? |
-|---|-----------|-------------------------|-----------------------------------|
-| 1 | {criterion text} | Yes / NO | Yes / NO ({missing}) |
+| # | Criterion | Evidence Entry Present? | "Does NOT promise" Present? | Completeness Subsections Present? |
+|---|-----------|-------------------------|-----------------------------|-----------------------------------|
+| 1 | {criterion text} | Yes / NO | Yes / NO | Yes / NO ({missing}) |
 
 Orphan evidence entries (evidence with no matching criterion): {list or "none"}
 
