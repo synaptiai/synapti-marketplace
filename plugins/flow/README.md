@@ -2,6 +2,71 @@
 
 A Claude Code plugin that replaces command-driven GitHub workflow automation with a skill-driven, agent-team-powered approach. Skills encode reusable team knowledge that compounds across sessions.
 
+## Excellence Principles
+
+Flow v2.0 enforces six guiding principles that shift the quality bar from "good enough" to "provably correct." These principles emerged from observed failure patterns in agent-driven development and are now structural defaults.
+
+### 1. Stranger Test
+
+Every plan must be executable by someone with zero prior context. If an instruction requires unstated assumptions, implicit knowledge, or "you know what I mean" reasoning, it fails the Stranger Test and the PLAN phase blocks until rewritten.
+
+### 2. Spec-as-Eval-Suite
+
+Acceptance criteria are not documentation -- they are the eval suite. Each criterion must have a concrete, automated verification command defined before the PLAN phase begins. Vague criteria like "works correctly" are rejected by the Spec Validation Gate.
+
+### 3. Proactive Autonomy
+
+Agents resolve ambiguity themselves first. When escalation is unavoidable, it follows a structured six-field format (context, options considered, tradeoffs, recommendation, risk of inaction, decision needed) -- never open-ended questions. Anti-patterns like "what should I do?" are blocked.
+
+### 4. Quality > Speed
+
+TDD mode defaults to `enforce`, meaning tests must exist and pass before task completion. The verdict judge requires all acceptance criteria to pass (`verdict.requireAllPass: true`). P3 findings are no longer deferrable -- they must be fixed in the PR or escalated with a Proactive Autonomy structure.
+
+### 5. No Lazy Verification
+
+Evidence bundles must include "What was NOT tested," "Known limitations," and "Negative/adversarial cases" for every criterion. The missing-criterion scan (verdict-judge Step 1) checks that every acceptance criterion has evidence before evaluation begins. Holdout validation cross-references self-review claims against actual file state.
+
+### 6. No Incomplete Shipments
+
+Pre-existing findings in touched files keep their natural priority (no longer capped at P3). The finding-ledger merge gate blocks merges when `FLOW_RESOLUTION_CYCLE` markers contain unresolved or escalated items. "DEFERRED" markers have been renamed to "ESCALATED" to signal that deferral is not an option.
+
+### Strict Defaults
+
+| Setting | Old Default | New Default |
+|---------|-------------|-------------|
+| `testing.tddMode` | `"suggest"` | `"enforce"` |
+| `verdict.requireAllPass` | `false` | `true` |
+
+### Opting Out
+
+Teams not ready for strict defaults can restore previous behavior:
+
+```json
+{
+  "testing": {
+    "tddMode": "suggest",
+    "tddModeOptOut": true
+  },
+  "verdict": {
+    "requireAllPass": false
+  }
+}
+```
+
+Set these in `.claude/settings.flow.json` or `.claude/settings.flow.local.json`.
+
+### What Changed (Summary)
+
+- Pre-existing findings keep natural priority instead of being capped at P3
+- P3 findings are fix-or-escalate, no longer deferrable
+- Merge gate blocks on unresolved findings in `FLOW_RESOLUTION_CYCLE` markers
+- Plans must pass the Stranger Test before exiting PLAN phase
+- Evidence bundles require completeness subsections (not tested, limitations, adversarial cases)
+- Holdout validation runs inline during VERIFY, review, and address phases
+- Spec Validation Gate requires automated verification commands for every acceptance criterion
+
+See [gate-configuration.md](references/gate-configuration.md) for full gate details.
+
 ## Quick Start
 
 ```bash
@@ -141,7 +206,8 @@ Settings in `.claude/settings.flow.json`:
   "lsp": { "enabled": true, "timeout": 5000, "diagnosticsAsQuality": true },
   "visualVerification": { "enabled": true, "screenshotDir": ".screenshots", "maxIterations": 3 },
   "debugging": { "maxHypotheses": 3 },
-  "testing": { "tddMode": "suggest" }
+  "testing": { "tddMode": "enforce", "tddModeOptOut": false },
+  "verdict": { "requireAllPass": true }
 }
 ```
 
