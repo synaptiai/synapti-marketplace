@@ -312,7 +312,7 @@ If failures: fix and re-run. After max iterations, escalate to user.
 3. **Smoke test** → hit key endpoints or run the CLI with sample input
 4. If any step fails → enter debug-fix-retest loop. Do NOT proceed to Phase 4 until code builds and runs.
 
-Only skip for config-only or markdown-only changes with explicit justification.
+Skipping the build-and-run step is ONLY permitted if the change falls into one of the three enumerated whitelist categories defined in the `runtime-verification` skill: `markdown-only`, `config-only`, or `dependency-bump-only`. Any other skip requires a Proactive-Autonomy escalation — see the skill for the required six-field structure. If in doubt, run it.
 
 ## Phase 4: VERIFY
 
@@ -322,7 +322,8 @@ Prove everything works with fix-forward:
 2. **Runtime verification** (MANDATORY — not conditional on skill availability):
    - Build the project if not already built in Phase 3
    - Start dev server if applicable, smoke test endpoints
-   - Only skip for markdown-only or config-only projects with explicit justification
+   - Skips are permitted ONLY for the three enumerated whitelist categories defined in the `runtime-verification` skill: `markdown-only`, `config-only`, or `dependency-bump-only`. Each requires the specific evidence listed in the skill (file-list proof plus any required syntax or build validation).
+   - Any other skip is forbidden without an approved Proactive-Autonomy escalation (Situation / Tried / Options / Recommendation / Time sensitivity / Risk) via `AskUserQuestion`. Blanket or subjective justifications are not valid. If in doubt, run it.
 3. **Self-review with fix-forward** — dispatch Agent(code-reviewer):
    ```
    Agent(code-reviewer):
@@ -386,7 +387,7 @@ Prove everything works with fix-forward:
    - `TaskList` — confirm all visual verification tasks resolved
 8. **Completion gate**: ALL of:
    - All quality checks pass
-   - Runtime verification passed (or justified N/A for config/markdown-only)
+   - Runtime verification passed (or skipped under one of the three enumerated whitelist categories in the `runtime-verification` skill: `markdown-only`, `config-only`, `dependency-bump-only`)
    - No unresolved P1 findings
    - All tasks completed (including verification tasks)
    - Verdict: all criteria PASS or user-approved (when `verdict.enabled`)

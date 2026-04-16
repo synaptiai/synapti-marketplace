@@ -105,7 +105,7 @@ The debug-fix-retest loop is mandatory — do NOT report failures and move on, D
 - **CLI tools**: Build + run with --help + run with sample input
 - **Libraries**: Build + run public API against sample data
 - **Static sites**: Build + serve locally + verify pages load
-- **Config/markdown-only**: Static checks only (explicit justification required)
+- **Whitelisted skip categories** (`markdown-only`, `config-only`, `dependency-bump-only` — see `runtime-verification` skill): Static checks only, with the specific evidence the whitelist requires. Any other skip requires a Proactive-Autonomy escalation.
 
 The loop is bounded by `closedLoop.maxDebugIterations` (default 5). After max iterations, escalate to user — never silently skip.
 
