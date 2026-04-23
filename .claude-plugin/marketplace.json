@@ -169,6 +169,44 @@
       ]
     },
     {
+      "name": "prompt-decorators",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/synaptiai/prompt-decorators.git",
+        "path": "claude-code-plugin",
+        "ref": "main"
+      },
+      "description": "Automatically enhance prompts with composable, categorized decorators (143 across 14 categories - reasoning, structure, tone, verification, minimal, meta, and eight developer categories). Inline `::Name` / `+++Name` syntax, always-on config, and an opt-in Haiku-powered auto-selector using a two-pass (keyword filter + small-model) selector.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Daniel Bentes",
+        "email": "promptdecorators@synapti.ai"
+      },
+      "homepage": "https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin",
+      "repository": "https://github.com/synaptiai/prompt-decorators",
+      "license": "Apache-2.0",
+      "category": "prompt-engineering",
+      "keywords": [
+        "prompt-engineering",
+        "decorators",
+        "reasoning",
+        "structure",
+        "tone",
+        "verification",
+        "auto-decorate",
+        "haiku-selector",
+        "user-prompt-submit",
+        "composable-prompts"
+      ],
+      "tags": [
+        "prompts",
+        "decorators",
+        "enhancement",
+        "reasoning",
+        "auto"
+      ]
+    },
+    {
       "name": "ai-first-org-design-kit",
       "source": "./plugins/ai-first-org-design-kit",
       "description": "Fourteen opinionated skills for designing, deploying, adopting, and evolving AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, validate gates against hidden holdout scenarios, architect governance, redesign roles, navigate politics, operationalize designs into agent-consumable primers, run evolution audits, generate agent configurations, build per-role maturity matrices, design adoption sprints, and write human-facing AI usage policies.",

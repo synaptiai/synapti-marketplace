@@ -29,6 +29,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.5.0 |
 | [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Composable skills, safety hooks, agent teams, LSP code intelligence, holdout validation, and learning loop. | 2.0.0 |
 | [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.9.0 |
+| [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) | Prompt Engineering | Enhance prompts automatically with composable decorators (143 across 14 categories — reasoning, structure, tone, verification, and eight developer categories). Inline `::Name`/`+++Name` syntax, always-on config, and an opt-in Haiku-powered auto-selector that picks 0-3 decorators per prompt. | 0.1.0 |
 
 ### When to Use Each Plugin
 
@@ -69,6 +70,10 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Create a PR with full review and reviewer suggestions | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-pr` |
 | Review a pull request systematically | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-review` |
 | Create releases with changelogs | [gh-workflow](#featured-gh-workflow) `/gh-workflow:gh-release` |
+| Enhance every prompt with reasoning or structure decorators automatically | [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) `/decorate always add <Name>` |
+| Inline a one-off behavior tweak (`::Concise`, `::StepByStep`, `::TreeOfThought`) | [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) `::Name` sigil |
+| Let a fast model pick the right decorators per prompt for me | [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) `/decorate auto on` |
+| Browse or preview the 143-decorator catalogue | [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) `/decorate list` / `preview` |
 
 ---
 
