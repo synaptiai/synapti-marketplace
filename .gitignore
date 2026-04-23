@@ -10,6 +10,3 @@ dist/
 ai-first-kit-workspace/*
 .claude/agents/*
 .claude/skills/*
-# Python bytecode from the prompt-decorators plugin
-**/__pycache__/
-*.pyc
