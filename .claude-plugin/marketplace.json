@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Synapti plugin marketplace",
-    "version": "4.1.0"
+    "version": "4.1.1"
   },
   "plugins": [
     {
@@ -177,7 +177,7 @@
         "ref": "main"
       },
       "description": "Automatically enhance prompts with composable, categorized decorators (143 across 14 categories - reasoning, structure, tone, verification, minimal, meta, and eight developer categories). Inline `::Name` / `+++Name` syntax, always-on config, and an opt-in Haiku-powered auto-selector using a two-pass (keyword filter + small-model) selector.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "Daniel Bentes",
         "email": "promptdecorators@synapti.ai"
