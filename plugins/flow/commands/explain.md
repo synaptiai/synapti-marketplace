@@ -7,6 +7,10 @@ allowed-tools: Bash, Read, AskUserQuestion, Grep, Glob
 
 Interactive Q&A mode for understanding what was built and why. Read-only — no changes made.
 
+## Required Skills
+
+_None — explanatory Q&A over journal and diff context. No skill invocations._
+
 ## Phase 1: Load Context
 
 **Parallel operations:**

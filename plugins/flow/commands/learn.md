@@ -7,6 +7,10 @@ allowed-tools: Bash, Read, Write, Grep, Glob
 
 Analyze the decision journal for recurring patterns and generate skill proposals.
 
+## Required Skills
+
+_None — retrospective pattern analysis over the decision journal. No skill invocations._
+
 ## Phase 1: Gather Journal Entries
 
 ```bash
