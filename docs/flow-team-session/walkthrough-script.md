@@ -133,8 +133,8 @@ A reviewer (a second persona, off-screen) drops two comments:
 # Scratch dir — do not record from inside the marketplace repo
 mkdir -p /tmp/flow-demo && cd /tmp/flow-demo
 
-# 1. Plugin installed and active
-claude plugins list | grep -q "^flow " || { echo "FAIL: flow not installed"; exit 1; }
+# 1. Plugin installed and active (real output format: "  ❯ flow@<source>")
+claude plugins list 2>&1 | grep -qE 'flow@' || { echo "FAIL: flow not installed"; exit 1; }
 
 # 2. Demo repo prepared
 test -d sync-cli || git clone <synthetic-sync-cli-repo> sync-cli
@@ -147,7 +147,11 @@ gh auth status >/dev/null 2>&1 || { echo "FAIL: gh not authenticated"; exit 1; }
 asciinema --version >/dev/null 2>&1 || { echo "FAIL: asciinema missing"; exit 1; }
 
 # 5. Stub remote for AC2 auth-failure scenario reachable
-curl -sf http://localhost:9999/health || { echo "FAIL: stub server not running"; exit 1; }
+#    (Set up separately — provision a small local HTTP server returning 401 for
+#    `/sync` and 200 for `/health`. Any tool works: `python -m http.server` with a
+#    reverse proxy, or a 30-line Express/Bottle/Flask script. Document the chosen
+#    setup at recordings/stub-server-README.md before recording day.)
+curl -sf http://localhost:9999/health || { echo "FAIL: stub server not running — see recordings/stub-server-README.md"; exit 1; }
 
 # 6. Dry-run /flow:setup and /flow:status from cold (per hands-on slide)
 /flow:setup

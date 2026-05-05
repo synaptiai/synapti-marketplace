@@ -282,7 +282,7 @@ Skills, agents, commands. Different containers, different reuse profiles.
 ```
 [ASCII]  (source: plugins/flow/README.md lines 86–112)
 
-FOUNDATION (always loaded, ≤100 lines each)
+FOUNDATION (always loaded, stable shape)
 ├── evidence-based-development      ── citations, P1/P2/P3, ASSERTION/EVIDENCE/VERIFIED
 ├── autonomous-workflow             ── EPCV, tiers, six-field escalation
 └── code-quality-principles         ── Boy Scout, no mocks/TODOs in prod
@@ -728,46 +728,69 @@ Everyone runs `/flow:setup` and `/flow:status` now. Five minutes. We don't move 
 ## `/flow:setup` — what to expect
 
 ```
-[MOCKUP]
+[MOCKUP]  (matches commands/setup.md flow)
 
 > /flow:setup
-flow: detecting tech stack...
+Phase 1 — detecting environment...
   • language: TypeScript (tsconfig.json found)
-  • test runner: jest (package.json scripts.test)
-  • lint: eslint (eslint.config.js)
-  • type check: tsc --noEmit
-flow: LSP servers available — typescript-language-server (auto-configured)
-flow: writing .claude/settings.flow.json with detected commands
-flow: warning — gh-workflow plugin also installed; commands coexist, see HANDBOOK §12
+  • test/lint/typecheck: jest, eslint, tsc --noEmit
+  • CLAUDE.md: present
+  • gh-workflow plugin also installed (commands coexist; see HANDBOOK §12)
+
+Phase 2 — generating .claude/settings.flow.json (merge with existing if present)
+
+Phase 3 — LSP setup
+  ⚠ INTERACTIVE: setup will ask:
+    1. Which LSP servers to install for your stack? (all / pick / skip)
+    2. Register the Piebald-AI/claude-code-lsps marketplace? (yes / skip)
+    3. ENABLE_LSP_TOOL not set — add to ~/.claude/settings.json? (yes / no)
+
 flow: setup complete. Try /flow:status next.
 ```
 
-Re-run is idempotent. Won't overwrite an existing settings.flow.json without confirmation.
+**Heads-up for hands-on**: the LSP phase is interactive — accept defaults to keep moving. Re-run is safe (won't overwrite settings without confirmation).
 
 ---
 
 ## `/flow:status` — what to expect
 
 ```
-[MOCKUP]
+[MOCKUP]  (matches commands/status.md output structure)
 
 > /flow:status
-ASSIGNED ISSUES
-  #142  Add JSON output to /sync command           [feature/issue-142-...]
-  #156  Investigate flaky session test             [unassigned branch]
 
-OPEN PRS (mine)
-  #43   feat: rate-limit middleware     ✅ approved · checks ✓ · ready to merge
+## Flow Status
 
-PENDING REVIEWS
-  #44   ⏳ requested 6 hours ago
+### Current Branch
+- Branch: feature/issue-142-sync-json-flag
+- Commits ahead: 4 ahead of main
+- Uncommitted changes: 0 files
 
-JOURNAL HEALTH
-  .decisions/issue-142.md  — 12 entries, last 14:32 (1h ago)
-  ~/.claude/flow-proposals/ — 3 unreviewed proposals
+### My Issues (Open)
+| #   | Title                                   | Labels       |
+|-----|-----------------------------------------|--------------|
+| 142 | Add JSON output to /sync command        | enhancement  |
+| 156 | Investigate flaky session test          | bug          |
+
+### My PRs
+| #  | Title                       | Status      | Checks |
+|----|-----------------------------|-------------|--------|
+| 43 | feat: rate-limit middleware | APPROVED    | passed |
+
+### Awaiting My Review
+| #  | Title                  | Author     |
+|----|------------------------|------------|
+| 44 | refactor session store | @teammate  |
+
+### Decision Journal
+- Journals: 1 active
+- Learning: 3 proposals pending in ~/.claude/flow-proposals/
+
+### Suggested Next Action
+PR #43 is approved with passing checks → `/flow:merge 43`
 ```
 
-Read-only. Safe to run anywhere, anytime.
+Read-only. Safe to run anywhere, anytime. The "Suggested Next Action" line picks the most useful next command from the table in `commands/status.md`.
 
 ---
 

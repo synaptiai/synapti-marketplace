@@ -234,7 +234,7 @@ The verdict-judge is structurally different: it's the only agent whose value dep
 
 22 named skills + a `learned/` directory (promotion area for proposals from `/flow:learn`). Source: `plugins/flow/skills/*/SKILL.md`.
 
-### Foundation (always loaded, ≤100 lines each)
+### Foundation (always loaded; smaller and stable)
 
 | Skill | What it enforces |
 |-------|------------------|
@@ -384,7 +384,7 @@ The full schema is in `plugins/flow/schema.json`. Defaults are in `plugins/flow/
 
 ## 12. Migrating from gh-workflow
 
-The `gh-workflow` plugin (v1.7.0) is the predecessor. Comparison from `plugins/flow/README.md` lines 222–230:
+The `gh-workflow` plugin (v1.7.0) is the predecessor. Comparison from `plugins/flow/README.md` lines 223–230:
 
 | Aspect | gh-workflow | flow |
 |--------|------------|------|
@@ -400,7 +400,7 @@ The `gh-workflow` plugin (v1.7.0) is the predecessor. Comparison from `plugins/f
 1. The two plugins coexist at the marketplace level. `/flow:setup` warns if both are installed.
 2. Commit-message vocabulary, branch patterns, and reviewer routing carry over — those are decisions, not implementations.
 3. `/gh-start` ↔ `/flow:start`, `/gh-commit` ↔ `/flow:commit`, `/gh-pr` ↔ `/flow:pr`, etc. The verbs are the same; the autonomy is different.
-4. If you preferred gh-workflow's interactive style, set `tddMode: suggest`, `verdict.requireAllPass: false`, and promote more tiers to `confirm`. Strict defaults can be opted out of (`README.md` lines 41–54).
+4. If you preferred gh-workflow's interactive style, set `tddMode: suggest`, `verdict.requireAllPass: false`, and promote more tiers to `confirm`. Strict defaults can be opted out of (`README.md` lines 40–56).
 
 ---
 

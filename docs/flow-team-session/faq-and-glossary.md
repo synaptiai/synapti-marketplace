@@ -8,7 +8,7 @@ Anticipated questions from a mixed audience (engineering + PM/design) and a quic
 
 ### Why a 90-min workshop instead of a doc?
 
-We tried docs first. The mental model — particularly the verdict-judge isolation — needs to be **shown**, not described. The recording solves the "demos break in front of audiences" problem; the live narration lets the room interrupt at the right moments.
+Docs alone don't land the mental model — particularly the verdict-judge isolation, which needs to be **shown**, not described. The recording solves the "demos break in front of audiences" problem; the live narration lets the room interrupt at the right moments.
 
 ### "TDD enforce" means I can't write code without a test?
 
@@ -26,7 +26,7 @@ This is the answer to the most common PM/design question. It's worth landing twi
 
 It returns `NEEDS-HUMAN-REVIEW` for ambiguous cases. The judge doesn't have authority to ship — the human always does. The judge has authority to **block**, and that's enough to prevent silent regressions.
 
-If you think the judge is systematically wrong, that's a bug — file an issue, attach the AC + evidence + verdict, and we'll examine the prompt construction.
+If you think the judge is systematically wrong, that's a bug — file an issue, attach the AC + evidence + verdict, and the prompt construction can be examined against the failure case.
 
 ### "Spec Validation Gate" — does this mean we need rigorous specs for every issue?
 
@@ -46,11 +46,11 @@ Note: `debugging-patterns` skill activates **automatically** when any verificati
 
 ### Can I disable individual hooks?
 
-Yes — edit `plugins/flow/hooks/hooks.json` or shadow it via local override. But seriously consider: the hooks exist *because* commands occasionally have bugs. `block-force-push` saved one of us last quarter when a custom command tried to push --force from a script. Don't disable them lightly.
+Yes — edit `plugins/flow/hooks/hooks.json` or shadow it via local override. But seriously consider: the hooks exist as a structural backstop for command bugs. `block-force-push` is what catches the recovery attempt when a command-level guard fails. Don't disable them lightly.
 
 ### Why is the recording synthetic instead of using our real codebase?
 
-Two reasons. First, the lifecycle stays visible — nobody drags the demo into "but how does this apply to *our* auth service." Second, the recording is reusable — we can hire a new engineer in six months and the demo will still make sense.
+Two reasons. First, the lifecycle stays visible — nobody drags the demo into "but how does this apply to *our* auth service." Second, the recording is reusable — a new hire six months from now can still follow the demo without it being repo-specific.
 
 If you want a session against the real codebase, run one — but plan more time and accept that it'll be tangent-prone.
 
