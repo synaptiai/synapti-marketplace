@@ -1,14 +1,14 @@
 ---
 name: pr-lifecycle
-description: "Create pull requests with pre-flight verification, PR body generation, reviewer suggestion, comprehension narrative, and label selection. Handle push and PR creation as Tier 2 operations. Use when preparing or creating a pull request."
-allowed-tools: Bash, Read, Write, Edit, Grep, Glob
+description: "Reference for the pull-request lifecycle policy: pre-flight gates, body structure, reviewer-suggestion algorithm, verification gate, finding-ledger merge prerequisite, and rationalization prevention. Use to understand the rules that PR creation enforces."
+allowed-tools: Read
 context: fork
 agent: general-purpose
 ---
 
 # PR Lifecycle
 
-Domain skill for the full PR creation process.
+Reference document for the PR creation and pre-merge policy. The executable bash lives in `plugins/flow/commands/pr.md` (full creation flow) and `plugins/flow/commands/merge.md` (finding-ledger check). This skill describes **what those commands enforce and why**, so reviewers can audit the policy without reading shell.
 
 ## Iron Law
 
@@ -16,143 +16,109 @@ Domain skill for the full PR creation process.
 
 If you can't show test results, lint output, or verification evidence in the PR body, the PR is not ready.
 
-## Pre-Flight Checks
+## Pre-Flight Gate
 
-All checks run in parallel:
+Before any PR is created, four conditions are verified:
 
-```bash
-# 1. Not on default branch
-BRANCH=$(git branch --show-current)
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-[ "$BRANCH" = "$DEFAULT_BRANCH" ] && echo "ERROR: On default branch" && exit 1
+| # | Condition | Failure handling |
+|---|-----------|------------------|
+| 1 | Not on the default branch | Hard error — PRs are made from feature branches, never from `main` |
+| 2 | At least one commit ahead of the default branch | Hard error — empty PRs are noise |
+| 3 | No uncommitted changes | Warning — offer to commit first via `/flow:commit` |
+| 4 | No existing open PR for this branch | Hard error — update the existing PR instead of creating a duplicate |
 
-# 2. Commits ahead
-git rev-list --count "$DEFAULT_BRANCH"..HEAD
-
-# 3. No uncommitted changes
-git status --porcelain
-
-# 4. No existing PR
-gh pr list --head "$BRANCH" --state open --json number
-```
-
-Fail if: on default branch, no commits ahead, or PR already exists.
-
-Warn if: uncommitted changes (offer to commit first).
-
-## PR Body Structure
-
-Generate from template + review findings + decision journal:
-
-```markdown
-## Summary
-{2-3 sentence description of what changed and why}
-
-Closes #{issue_number}
-
-## Changes
-{Bullet list of key changes, grouped by area}
-
-## Comprehension Report
-{Generated narrative: what was built, why, architecture decisions}
-
-### Requirements Adherence
-| # | Criterion | Status | Evidence |
-|---|-----------|--------|----------|
-| 1 | {criterion} | Met | {file:line} |
-
-### Key Decisions
-{From decision journal — public entries only, internal redacted}
-
-## Review Findings
-{P1/P2/P3 summary from code review}
-
-## Verification
-- [ ] Quality checks pass (lint, test, typecheck)
-- [ ] Self-review completed
-- [ ] Runtime verification (if applicable)
-
-## Files Changed
-{Grouped by area with brief description per group}
-```
+The runnable checks are in `plugins/flow/commands/pr.md` Phase 1 (EXPLORE). The command is the single source of truth.
 
 ## Verification Gate
 
-Before creating the PR, confirm ALL of these. If any fail, stop:
+Before the PR is created, every one of the following must hold. If any fail, stop:
 
-1. All quality commands (lint, test, typecheck) pass — show output
-2. Self-review completed (code-quality-principles checklist)
+1. All quality commands (lint, test, typecheck) pass — output captured for the PR body
+2. Self-review completed against the `code-quality-principles` checklist
 3. Change classification shows no out-of-context files
-4. Every acceptance criterion has a "Met" or "Interpreted" status with evidence
+4. Every acceptance criterion has a "Met" or "Interpreted" status with concrete evidence
 5. No P1 findings remain from code review
 
-This gate is mandatory. Skipping it to "get the PR up quickly" creates reviewer burden.
+This gate is **mandatory**. Skipping it to "get the PR up quickly" creates reviewer burden and shifts the verification cost to whoever reads the PR.
 
-## Reviewer Suggestion
+## PR Body Structure
 
-Algorithm: CODEOWNERS match → file expertise → recent activity → workload balancing.
+The PR body is generated from a fixed template plus review findings plus the decision journal. Sections, in order:
 
-```bash
-# Get contributors for changed files
-git log --format='%an' --since='30 days ago' -- $(git diff --name-only $DEFAULT_BRANCH...HEAD) | sort | uniq -c | sort -rn | head -5
-# Check CODEOWNERS
-cat .github/CODEOWNERS 2>/dev/null
-```
+- **Summary** — 2-3 sentence description of what changed and why
+- **Closes** — issue link
+- **Changes** — bulleted list of key changes, grouped by area
+- **Comprehension Report** — what was built, why, architecture decisions
+- **Requirements Adherence** — table mapping each acceptance criterion to status and evidence (file:line)
+- **Key Decisions** — public entries from the decision journal; internal redacted
+- **Review Findings** — P1/P2/P3 summary from code review
+- **Verification** — checklist confirming quality checks, self-review, runtime verification
+- **Files Changed** — grouped by area with a brief description per group
 
-Present top 2-3 suggestions with rationale.
+Why this shape: reviewers should be able to skim **Summary → Requirements Adherence → Verification** in under thirty seconds and decide whether to do a deep read. A PR body that buries the acceptance-criterion mapping or omits verification evidence forces every reviewer to reconstruct context the author already had.
 
-## Push and Create
+## Reviewer Suggestion Algorithm
 
-Both are Tier 2 (journal-and-proceed):
+Reviewer selection follows this priority cascade:
 
-```bash
-# Push (Tier 2)
-git push -u origin $BRANCH
+1. **CODEOWNERS match** — if the file paths in the diff have CODEOWNERS entries, those owners are first-priority candidates.
+2. **File expertise** — recent contributors (last 30 days) to the same files in the diff.
+3. **Recent activity** — contributors who have shipped to adjacent areas of the codebase recently.
+4. **Workload balancing** — among equally-qualified candidates, prefer the one with fewer outstanding review requests.
 
-# Create PR (Tier 2)
-gh pr create --title "$TITLE" --body "$BODY" --label "$LABELS"
-```
+The PR command surfaces the top 2-3 candidates with a one-line rationale per candidate. The author makes the final call.
 
-## Post-Creation Verification
+## Push and Create — Tier 2
 
-```bash
-gh pr view --json number,url,state,title
-```
+Both `git push -u origin <branch>` and `gh pr create` are **Tier 2** (journal-and-proceed): the agent executes them and logs the action, but does not require explicit human confirmation each time. This tier classification is recorded in `plugins/flow/commands/pr.md`.
 
-Display PR URL and suggest: `/flow:review {number}` for self-review or share with team.
+After creation, the command verifies the PR exists via `gh pr view --json number,url,state,title` and surfaces the PR URL plus a suggested next step (`/flow:review {number}`).
 
 ## Merge Prerequisite: Finding-Ledger Check
 
-Before a PR can be merged via `/flow:merge`, the finding ledger is checked to ensure all review findings have been resolved.
+Before a PR can be merged via `/flow:merge`, the **finding ledger** is checked to ensure all review findings have been resolved. The runnable parser lives in `plugins/flow/commands/merge.md` Phase 1 (Finding-Ledger Check).
 
-### What it does
+### What the ledger tracks
 
-Parses PR comments for `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` markers:
+PR comments carry two markers:
 
-- **`FLOW_REVIEW_CYCLE:{N} FINDINGS:[...]`** — the finding IDs emitted during review
+- **`FLOW_REVIEW_CYCLE:{N} FINDINGS:[...]`** — the finding IDs emitted during review cycle N
 - **`FLOW_RESOLUTION_CYCLE:{N} RESOLVED:[...] ESCALATED:[...] DISPUTED:[...]`** — the disposition of each finding after `/flow:address`
 
-The check extracts the latest of each marker and compares them.
+The latest comment of each kind is parsed and compared.
 
-### What triggers a block
+### What blocks a merge
 
-1. **Non-empty ESCALATED array** — `ESCALATED:[F3]` means at least one finding was escalated but not resolved. The merge gate blocks until every escalated item is resolved or the ESCALATED array is empty.
-2. **Unmatched FINDINGS** — any finding ID present in `FLOW_REVIEW_CYCLE:FINDINGS` that has no corresponding entry in `FLOW_RESOLUTION_CYCLE:RESOLVED` is considered unresolved. The merge gate blocks until every finding has a matching RESOLVED entry.
+1. **Non-empty `ESCALATED` array** — `ESCALATED:[F3]` means at least one finding was escalated but not resolved. The merge gate blocks until every escalated item is resolved or the array is empty.
+2. **Unmatched `FINDINGS`** — any finding ID present in `FLOW_REVIEW_CYCLE:FINDINGS` that has no corresponding entry in `FLOW_RESOLUTION_CYCLE:RESOLVED` is considered unresolved. The merge gate blocks until every finding has a matching `RESOLVED` entry.
 
-### How to resolve
+### How to clear the gate
 
 1. Run `/flow:address {pr_number}` to address remaining findings
-2. Fix or respond to each unresolved finding until all are in the RESOLVED array
-3. Ensure the ESCALATED array is empty in the latest resolution comment
+2. Fix or respond to each unresolved finding until all appear in the `RESOLVED` array
+3. Ensure the `ESCALATED` array is empty in the latest resolution comment
 4. Re-run `/flow:merge {pr_number}`
 
-This gate enforces the "no incomplete shipments" hard boundary from organizational governance.
+This gate enforces the **"no incomplete shipments"** hard boundary from organizational governance. Merging with unresolved findings is a violation, not a judgment call.
 
 ## Rationalization Prevention
+
+The PR pipeline blocks these recurring excuses by structure, not by exhortation:
 
 | Excuse | Response |
 |--------|----------|
 | "I'll fix it after the PR is up" | Fix it now. Draft PRs accumulate, they don't improve. |
 | "The reviewer will catch any issues" | You are the first reviewer. Don't outsource your job. |
-| "It's a small change, no need for full pre-flight" | Small changes, same process. |
-| "CI will validate it" | CI validates what it tests. Pre-flight validates what it doesn't. |
+| "It's a small change, no need for full pre-flight" | Small changes, same process. The cost of pre-flight is small; the cost of a malformed PR is reviewer time. |
+| "CI will validate it" | CI validates what it tests. Pre-flight validates what CI doesn't. |
+
+## Where the Bash Lives
+
+This skill is reference-only. The runnable implementations are:
+
+- **Pre-flight checks**: `plugins/flow/commands/pr.md` Phase 1 (EXPLORE)
+- **PR body assembly + push + create**: `plugins/flow/commands/pr.md` Phase 4 (VERIFY)
+- **Reviewer suggestion**: `plugins/flow/commands/pr.md` Phase 4 step 11
+- **Finding-ledger merge gate**: `plugins/flow/commands/merge.md` Phase 1
+
+When the policy needs to change — a new pre-flight check, a new PR body section, a new ledger marker — update the command and update this reference together. Keeping the bash and the rationale in lockstep prevents the silent drift that motivated this consolidation.

@@ -1,6 +1,6 @@
 # Flow: Skill-Driven Workflow Plugin
 
-A Claude Code plugin that replaces command-driven GitHub workflow automation with a skill-driven, agent-team-powered approach. Skills encode reusable team knowledge that compounds across sessions.
+A Claude Code plugin that replaces command-driven GitHub workflow automation with a skill-driven, agent-team-powered approach. Skills encode reusable team knowledge — policy, philosophy, and rationale — as reference documents that compound across sessions; commands carry the executable bash that runs at workflow time.
 
 ## Excellence Principles
 
