@@ -42,7 +42,9 @@ For a single PR, after reading the **latest** marker of each kind:
 | `escalated` | ID appears in `ESCALATED` |
 | `disputed` | ID appears in `DISPUTED` |
 | `in_fix_forward` | ID appears in `FINDINGS` but in none of the resolution arrays |
-| `unknown_priority` | ID appears in a resolution array but is missing from `FINDINGS` (defensive — log, do not error) |
+| `malformed` | Row in `FINDINGS` doesn't conform to `ID|P[1-3]|...` schema (legacy/experimental marker formats — emit `LEDGER_WARN` to stderr and skip) |
+
+**Precedence** when the same ID appears in multiple resolution arrays: `RESOLVED` > `ESCALATED` > `DISPUTED`. Resolution wins; the finding is treated as fully closed.
 
 ## Canonical Queries
 
@@ -65,7 +67,9 @@ REVIEW_BODY=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" \
   --jq '[.[] | select(.body | test("FLOW_REVIEW_CYCLE:"))] | last | .body // ""')
 # Portable extraction (POSIX grep + sed — works on BSD/macOS and GNU/Linux).
 # Avoids `grep -P` / `\K` which BSD grep does not support.
-FINDINGS_RAW=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//' || echo "")
+# Empty input + grep no-match still produces empty stdout (sed exits 0 on empty),
+# so no `|| echo ""` fallback is needed here.
+FINDINGS_RAW=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//')
 # FINDINGS_RAW like: F1|P1|security|src/auth.ts:42|open,F2|P2|correctness|src/api.ts:88|open
 ```
 
@@ -75,9 +79,11 @@ FINDINGS_RAW=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FIND
 RESOLUTION_BODY=$(gh api "repos/$REPO/issues/$PR_NUM/comments" \
   --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:"))] | last | .body // ""')
 
-RESOLVED=$(echo "$RESOLUTION_BODY"  | grep -o 'RESOLVED:\[[^]]*\]'  | sed 's/^RESOLVED:\[//;s/\]$//'  || echo "")
-ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' || echo "")
-DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DISPUTED:\[//;s/\]$//'  || echo "")
+# Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match the
+# `,F1,` containment check used in classification.
+RESOLVED=$(echo "$RESOLUTION_BODY"  | grep -o 'RESOLVED:\[[^]]*\]'  | sed 's/^RESOLVED:\[//;s/\]$//'  | tr -d ' ')
+ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
+DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DISPUTED:\[//;s/\]$//'  | tr -d ' ')
 ```
 
 ### 4. Aggregate counts by priority and state
@@ -93,10 +99,14 @@ DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DI
 
 echo "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY CAT LOC STATUS; do
   [ -z "$ID" ] && continue
-  # Defensive: skip rows that don't conform to ID|P[1-3]|... schema (older or
-  # experimental marker formats from prior workflow versions).
-  case "$PRIORITY" in P1|P2|P3) ;; *) continue ;; esac
-  case ",$RESOLVED," in *",$ID,"*) continue ;; esac   # resolved -> skip
+  # Surface non-conforming rows to stderr so consumers see them without
+  # corrupting the tally; legacy/experimental marker formats land here.
+  case "$PRIORITY" in
+    P1|P2|P3) ;;
+    *) echo "LEDGER_WARN: PR#$PR_NUM finding '$ID' has malformed priority '$PRIORITY'" >&2; continue ;;
+  esac
+  # Precedence: RESOLVED > ESCALATED > DISPUTED > in_fix_forward.
+  case ",$RESOLVED," in *",$ID,"*) continue ;; esac
   case ",$ESCALATED," in *",$ID,"*) STATE=escalated ;;
        *) case ",$DISPUTED," in *",$ID,"*) STATE=disputed ;; *) STATE=in_fix_forward ;; esac ;;
   esac
@@ -111,24 +121,27 @@ done
 | `gh` API timeout / unauthenticated | Skip ledger; render "Findings Ledger unavailable" with one-line cause |
 | PR with no review markers | Contributes zero findings; not an error |
 | Malformed marker (regex match fails) | Skip that PR; do not error |
-| Resolution arrays reference IDs missing from FINDINGS | Counted as `unknown_priority`; log and continue |
+| FINDINGS row missing pipe-delimited priority field | Emit `LEDGER_WARN` to stderr; skip that row |
+| Resolution arrays reference IDs missing from FINDINGS | Not iterated (loop walks FINDINGS only); resolution-only IDs are silently inert |
 | No open PRs for user | Render "No open findings" empty state |
 
 ## Render Format
 
-The Findings Ledger section uses a single-line summary that matches `docs/flow-team-session/slides.md` lines 802-810:
+The Findings Ledger section uses a single-line summary that matches the slide mockup in `docs/flow-team-session/slides.md`:
 
 ```
-P1: {n}    P2: {n} (in fix-forward)    P3: {n} (ESCALATED — awaiting reviewer accept)
+P1: {n}    P2: {n} (in fix-forward)    P3: {n} (ESCALATED)
 ```
 
 Annotation rules:
 
-- Bare `P{n}: 0` — no findings at this priority.
+- Bare `P{n}: 0` — no findings at this priority (no annotation).
 - `P{n}: K (in fix-forward)` — K findings raised but not yet resolved or escalated.
-- `P{n}: K (ESCALATED — {short context})` — K findings sitting in `ESCALATED`.
+- `P{n}: K (ESCALATED)` — K findings sitting in `ESCALATED`.
 - `P{n}: K (DISPUTED)` — K findings in `DISPUTED`.
 - Multiple states at one priority combine with `; ` separator: `P2: 3 (2 in fix-forward; 1 ESCALATED)`.
+
+The marker schema carries no per-finding context string, so trailing free-text annotations (e.g., "— awaiting reviewer accept") are not part of the contract — adding them requires a schema extension.
 
 Empty state (no PRs or no findings across all PRs):
 

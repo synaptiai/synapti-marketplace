@@ -49,34 +49,43 @@ Aggregate review findings across the user's open PRs (author OR assignee). See [
 ME=$(gh api user --jq '.login')
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
-# Enumerate PRs (author OR assignee)
-LEDGER_PRS=$(gh pr list --state open --limit 100 --json number,author,assignees 2>/dev/null \
-  | jq -r --arg me "$ME" \
-      '[.[] | select(.author.login == $me or (.assignees[].login? == $me))] | .[].number' \
-  2>/dev/null || echo "LEDGER_UNAVAILABLE")
+# Enumerate PRs (author OR assignee). Capture gh exit code separately so a
+# silent gh failure (auth, network) doesn't masquerade as "no PRs".
+LEDGER_PRS_RAW=$(gh pr list --state open --limit 100 --json number,author,assignees 2>/dev/null)
+GH_EXIT=$?
+if [ $GH_EXIT -ne 0 ] || [ -z "$LEDGER_PRS_RAW" ]; then
+  LEDGER_PRS="LEDGER_UNAVAILABLE"
+else
+  LEDGER_PRS=$(echo "$LEDGER_PRS_RAW" | jq -r --arg me "$ME" \
+    '[.[] | select(.author.login == $me or (.assignees[].login? == $me))] | .[].number' 2>/dev/null || echo "LEDGER_UNAVAILABLE")
+fi
 
 if [ "$LEDGER_PRS" = "LEDGER_UNAVAILABLE" ]; then
   echo "LEDGER: unavailable (gh API failed)"
 else
-  # Counters keyed by priority (P1/P2/P3) and state (in_fix_forward/escalated/disputed)
-  declare -A LEDGER
-  TOTAL_FINDINGS=0
   for PR_NUM in $LEDGER_PRS; do
     REVIEW_BODY=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" \
       --jq '[.[] | select(.body | test("FLOW_REVIEW_CYCLE:"))] | last | .body // ""' 2>/dev/null)
-    FINDINGS_RAW=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//' || echo "")
+    FINDINGS_RAW=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//')
     [ -z "$FINDINGS_RAW" ] && continue
 
     RESOLUTION_BODY=$(gh api "repos/$REPO/issues/$PR_NUM/comments" \
       --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:"))] | last | .body // ""' 2>/dev/null)
-    RESOLVED=$(echo "$RESOLUTION_BODY" | grep -o 'RESOLVED:\[[^]]*\]' | sed 's/^RESOLVED:\[//;s/\]$//' || echo "")
-    ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' || echo "")
-    DISPUTED=$(echo "$RESOLUTION_BODY" | grep -o 'DISPUTED:\[[^]]*\]' | sed 's/^DISPUTED:\[//;s/\]$//' || echo "")
+    # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
+    RESOLVED=$(echo "$RESOLUTION_BODY"  | grep -o 'RESOLVED:\[[^]]*\]'  | sed 's/^RESOLVED:\[//;s/\]$//'  | tr -d ' ')
+    ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
+    DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DISPUTED:\[//;s/\]$//'  | tr -d ' ')
 
     echo "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY CAT LOC STATUS; do
       [ -z "$ID" ] && continue
-      # Defensive: skip entries that don't conform to ID|P[1-3]|... schema
-      case "$PRIORITY" in P1|P2|P3) ;; *) continue ;; esac
+      # Defensive: surface non-conforming rows to stderr (visible without breaking
+      # the tally), then skip. Older marker formats produced findings without
+      # P{1-3} priority fields.
+      case "$PRIORITY" in
+        P1|P2|P3) ;;
+        *) echo "LEDGER_WARN: PR#$PR_NUM finding '$ID' has malformed priority '$PRIORITY'" >&2; continue ;;
+      esac
+      # Precedence: RESOLVED > ESCALATED > DISPUTED > in_fix_forward.
       case ",$RESOLVED," in *",$ID,"*) continue ;; esac
       case ",$ESCALATED," in *",$ID,"*) STATE=escalated ;;
         *) case ",$DISPUTED," in *",$ID,"*) STATE=disputed ;;
@@ -128,7 +137,7 @@ Use this to render the Findings Ledger line per priority. If the loop produces n
 - **Learning**: {pending/none}
 
 ### Findings Ledger
-{single line: `P1: {n}    P2: {n} (annotation)    P3: {n} (annotation)` — see render rules below}
+{single line: `P1: {n}[ (annotation)]    P2: {n}[ (annotation)]    P3: {n}[ (annotation)]` — annotations are omitted when count is 0; see render rules below}
 
 ### Suggested Next Action
 {Based on state, suggest the most useful /flow command}
@@ -156,7 +165,7 @@ Edge cases:
 - `LEDGER_PRS` non-empty but tally empty (no markers yet) → `No open findings.`
 - `LEDGER_UNAVAILABLE` (gh API failed) → `Findings Ledger unavailable — gh API failed.` (one-line cause).
 
-Format matches the workshop slide mockup at `docs/flow-team-session/slides.md` lines 802-810.
+Format matches the workshop slide mockup in `docs/flow-team-session/slides.md` (`/flow:status — what to expect` section, Findings Ledger row).
 
 ## Suggestions Logic
 

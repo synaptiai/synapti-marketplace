@@ -802,6 +802,9 @@ flow: setup complete. Try /flow:status next.
 - Journals: 1 active
 - Learning: 3 proposals pending in ~/.claude/flow-proposals/
 
+### Findings Ledger
+P1: 0    P2: 1 (in fix-forward)    P3: 1 (ESCALATED)
+
 ### Suggested Next Action
 PR #43 is approved with passing checks → `/flow:merge 43`
 ```

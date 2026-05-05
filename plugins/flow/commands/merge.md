@@ -45,23 +45,23 @@ COMMENTS=$(gh api "repos/$REPO/issues/$ARGUMENTS/comments" --jq '.[] | select(.b
 Parse the latest `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` comments to verify all findings are resolved before merge. Marker schemas and the canonical extraction queries are documented in [`references/finding-ledger-parser.md`](../references/finding-ledger-parser.md); this command applies the merge-blocking subset (ESCALATED non-empty, FINDINGS without matching RESOLVED).
 
 ```bash
-# Extract the latest FLOW_RESOLUTION_CYCLE comment
+# Extract the latest FLOW_RESOLUTION_CYCLE comment (issue/PR conversation)
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 RESOLUTION_BODY=$(gh api "repos/$REPO/issues/$ARGUMENTS/comments" \
   --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:"))] | last | .body // ""')
 
-# Extract ESCALATED array contents
-ESCALATED=$(echo "$RESOLUTION_BODY" | grep -oP 'ESCALATED:\[\K[^\]]*' || echo "")
+# Extract ESCALATED array contents (portable POSIX grep+sed; BSD grep has no -P)
+ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//')
 
-# Extract the latest FLOW_REVIEW_CYCLE comment
-REVIEW_BODY=$(gh api "repos/$REPO/issues/$ARGUMENTS/comments" \
+# Extract the latest FLOW_REVIEW_CYCLE — emitted in PR review bodies, not issue comments
+REVIEW_BODY=$(gh api "repos/$REPO/pulls/$ARGUMENTS/reviews" \
   --jq '[.[] | select(.body | test("FLOW_REVIEW_CYCLE:"))] | last | .body // ""')
 
 # Extract all finding IDs from FINDINGS array (comma-separated, pipe-delimited fields, first field is the ID)
-REVIEW_FINDINGS=$(echo "$REVIEW_BODY" | grep -oP 'FINDINGS:\[\K[^\]]*' | tr ',' '\n' | sed 's/|.*//' | sort || echo "")
+REVIEW_FINDINGS=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//' | tr ',' '\n' | sed 's/|.*//' | sort)
 
 # Extract RESOLVED finding IDs from resolution comment
-RESOLVED_FINDINGS=$(echo "$RESOLUTION_BODY" | grep -oP 'RESOLVED:\[\K[^\]]*' | tr ',' '\n' | sort || echo "")
+RESOLVED_FINDINGS=$(echo "$RESOLUTION_BODY" | grep -o 'RESOLVED:\[[^]]*\]' | sed 's/^RESOLVED:\[//;s/\]$//' | tr ',' '\n' | sort)
 
 # Check 1: ESCALATED must be empty
 if [ -n "$ESCALATED" ]; then
