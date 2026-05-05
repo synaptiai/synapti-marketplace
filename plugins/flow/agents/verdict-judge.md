@@ -2,7 +2,7 @@
 name: verdict-judge
 description: "Judge implementation completeness by receiving acceptance criteria and an evidence bundle, then returning per-criterion verdicts of PASS, FAIL, or NEEDS-HUMAN-REVIEW. Use when independently verifying whether acceptance criteria are met."
 model: inherit
-tools: Read, Bash, Grep
+tools: Read
 skills: evidence-based-development
 memory: none
 ---
