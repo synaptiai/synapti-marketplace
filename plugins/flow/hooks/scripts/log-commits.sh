@@ -38,12 +38,14 @@ if [ -d "$JOURNAL_DIR" ] && [ -f "$JOURNAL_FILE" ]; then
   TIMESTAMP=$(date +"%Y-%m-%d %H:%M")
   LAST_MSG=$(git log -1 --format="%s" 2>/dev/null || echo "unknown")
 
-  # Guard 1: skip housekeeping commits to break the auto-log -> commit -> auto-log loop
+  # Guard 1: skip explicit housekeeping commits ("chore(decisions): ...")
   case "$LAST_MSG" in
-    *auto-log*|"chore(decisions):"*) exit 0 ;;
+    "chore(decisions):"*) exit 0 ;;
   esac
 
-  # Guard 2: skip if the most recent commit only touched the journal file itself
+  # Guard 2: skip if the most recent commit only touched the journal file itself.
+  # Both $CHANGED (from git diff-tree) and $JOURNAL_FILE are repo-relative, so
+  # exact equality is sufficient as long as JOURNAL_DIR stays relative.
   CHANGED=$(git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null || echo "")
   if [ "$CHANGED" = "$JOURNAL_FILE" ]; then
     exit 0
