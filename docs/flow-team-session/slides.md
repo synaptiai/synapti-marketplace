@@ -816,7 +816,7 @@ Read-only. Safe to run anywhere, anytime. The "Suggested Next Action" line picks
 
 1. **`gh` CLI not authenticated** — preflight fails. Fix: `gh auth login`.
 2. **Dirty worktree on `/flow:start`** — preflight fails. Fix: stash or commit before starting.
-3. **CLAUDE.md present** — `/flow:setup` offers to append the workflow section from `templates/CLAUDE-flow.md` to your existing `CLAUDE.md`. If no `CLAUDE.md` exists, setup skips this step — create one first or copy the template manually.
+3. **`/flow:setup` doesn't add a CLAUDE.md section** — setup only appends to an *existing* `CLAUDE.md`. If you have none, setup skips the integration step. Create `CLAUDE.md` first (or copy `templates/CLAUDE-flow.md` manually) and re-run.
 4. **`block-force-push` blocks a legitimate rebase push** — use `--force-with-lease`. Allowed and journaled (`three-tier-safety.md` line 41).
 5. **Auto-log seems to duplicate commits** — `log-commits.sh` is idempotent: it skips lines that already carry the `auto-log` marker. If you see duplication, your `plugin.json` is out of date — `claude plugins update flow`.
 
