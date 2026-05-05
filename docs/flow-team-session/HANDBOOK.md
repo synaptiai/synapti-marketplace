@@ -430,7 +430,7 @@ If you've used the `gh-workflow` plugin, the verbs carry over; the autonomy does
 | `/gh-commit` | `/flow:commit` | Same vocabulary; classification + journal auto-log |
 | `/gh-pr` | `/flow:pr` | 6-facet parallel agent review before PR creation |
 | `/gh-review` | `/flow:review` | Adversarial team option (`agentTeams: true`) |
-| `/gh-address` | `/flow:address` | 6-facet re-review + `FLOW_RESOLUTION_CYCLE` ledger |
+| `/gh-address` | `/flow:address` | 5-facet re-review (drops `security-reviewer`) + `FLOW_RESOLUTION_CYCLE` ledger |
 | `/gh-merge` | `/flow:merge` | Both Tier 3; flow's prereq check is structural |
 | `/gh-release` | `/flow:release` | Both Tier 3; flow generates changelog from merged PRs |
 

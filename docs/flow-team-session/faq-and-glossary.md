@@ -117,7 +117,7 @@ The plugin gets better when the team tells it where it failed.
 - **P3** — fix-or-escalate. Style, optimization, future improvements. Not a free pass.
 - **ASSERTION / EVIDENCE / VERIFIED** — the citation pattern from `evidence-based-development`. No claim without a file:line cite.
 - **Boy Scout Rule** — leave the campsite cleaner than you found it. Recognized in commit type `improve:`.
-- **Parallel review fan-out** — `/flow:pr` Phase 3 and `/flow:review` Path B dispatch 6 facets in parallel: `code-reviewer`, `convention-checker`, `test-runner`, `security-reviewer`, `error-handler-inspector`, `holdout-validation`. `/flow:address` Phase 4 drops `security-reviewer`, leaving 5. (The `code-review-methodology` skill in source describes a separate 5-pillar review frame.)
+- **Parallel review fan-out** — `/flow:pr` Phase 3 and `/flow:review` Path B dispatch 6 facets in parallel: `code-reviewer`, `convention-checker`, `test-runner`, `security-reviewer`, `error-handler-inspector`, `holdout-validation`. `/flow:address` Phase 4 drops `security-reviewer`, leaving 5. (Aligned with the `code-review-methodology` skill in source — see issue #82.)
 - **Adversarial review** — opt-in (`agentTeams: true`). Reviewers challenge each other's findings before consolidating.
 
 ### Acceptance criteria and evidence
