@@ -43,3 +43,5 @@ Single atomic task — see TaskList.
 <!-- auto-log: 2026-05-05 15:19 commit "chore: bump marketplace to 4.1.1" -->
 
 <!-- auto-log: 2026-05-05 15:20 commit "fix(flow): prevent log-commits.sh PostToolUse infinite append loop" -->
+
+<!-- auto-log: 2026-05-05 15:21 commit "chore(decisions): auto-log entry for issue-55" -->
