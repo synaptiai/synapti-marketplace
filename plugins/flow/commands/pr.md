@@ -17,7 +17,7 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 ## Required Skills
 
 - `pr-lifecycle` — pre-flight, PR body, reviewer suggestion
-- `code-review-methodology` — 5-facet review synthesis
+- `code-review-methodology` — 6-facet review synthesis
 - `capability-discovery` — detect quality commands and agents
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 3)
 

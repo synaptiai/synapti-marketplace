@@ -1,6 +1,6 @@
 ---
 name: code-review-methodology
-description: "Conduct 5-facet code review covering quality, security, conventions, tests, and requirements with P1/P2/P3 finding synthesis, deduplication by file:line, and requirements compliance mapping. Use when reviewing code changes or pull requests."
+description: "Conduct 6-facet code review covering security, quality, conventions, tests, error handling, and claim verification with P1/P2/P3 finding synthesis, deduplication by file:line, and requirements compliance mapping (Stage 1). Use when reviewing code changes or pull requests."
 allowed-tools: Read, Bash, Grep, Glob
 context: fork
 agent: Explore
@@ -28,17 +28,20 @@ Spec compliance is Stage 1. Code quality is Stage 2. Reviewing style on broken l
 
 Do NOT flag maintainability issues if security or correctness issues exist. Fix the important things first.
 
-## 5-Facet Review
+## 6-Facet Review
 
 Every review evaluates these facets (parallelizable):
 
-| Facet | Focus | Agent |
-|-------|-------|-------|
+| Facet | Focus | Agent / Skill |
+|-------|-------|---------------|
 | **Security** | OWASP top 10, secrets, auth/authz, input validation | security-reviewer |
-| **Quality** | Logic correctness, edge cases, error handling | code-reviewer |
+| **Quality** | Logic correctness, edge cases | code-reviewer |
 | **Conventions** | Commit format, branch naming, PR structure, patterns | convention-checker |
 | **Tests** | Coverage, quality commands pass, test quality | test-runner |
-| **Requirements** | Acceptance criteria compliance | main thread |
+| **Error handling** | Unhandled errors, silent failures, missing edge cases in error paths | error-handler-inspector |
+| **Claim verification** | Self-review claims cross-referenced against actual file state | holdout-validation (skill) |
+
+Requirements compliance is Stage 1 (Spec Compliance) of the Two-Stage Review section above, not a parallel facet — it runs first on the main thread before the 6 facets fan out.
 
 ## Finding Synthesis
 
@@ -177,6 +180,6 @@ When agent teams are enabled, use adversarial synthesis from team-coordination s
 |--------|----------|
 | "It looks correct to me" | Looking is not verifying. Trace the data flow. |
 | "This is just a style issue" | Then it's P3 at most. Don't flag it as P2. |
-| "I don't have time for all 5 facets" | Then prioritize: Security > Correctness > the rest. Never skip security. |
+| "I don't have time for all 6 facets" | Then prioritize: Security > Correctness > the rest. Never skip security. |
 | "The tests pass so the logic is fine" | Tests prove what's tested. Review proves what's not. |
 | "This is too small to review thoroughly" | Small changes, same process. Small bugs cause big outages. |

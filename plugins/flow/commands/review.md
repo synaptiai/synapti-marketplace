@@ -15,7 +15,7 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 
 ## Required Skills
 
-- `code-review-methodology` — 5-facet review, finding synthesis, adversarial protocol
+- `code-review-methodology` — 6-facet review, finding synthesis, adversarial protocol
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 3)
 
 ## Phase 1: EXPLORE
