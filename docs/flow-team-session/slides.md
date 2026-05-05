@@ -218,6 +218,19 @@ Three-tier safety + Explore-Plan-Code-Verify. Tiers are the *consequence* of the
 
 ---
 
+## What each phase leaves behind
+
+| Phase | Artifact you can open afterwards |
+|-------|----------------------------------|
+| **EXPLORE** | `.decisions/issue-N.md` with `## Specification` (non-goals, failure modes, contracts) + Spec Validation Gate mapping each AC to a verification command |
+| **PLAN** | Atomic TaskList (impl + test + verify cmd + expected evidence per task) + feature branch + Stranger Test result in the journal |
+| **CODE** | Per-task commits (impl + test + captured evidence) + `<!-- auto-log: ... -->` journal entries + Per-Task Gate satisfied per task |
+| **VERIFY** | Evidence bundle (per-AC: `Does NOT promise` + 3 completeness subsections) + holdout output + verdict-judge PASS/FAIL/NEEDS-HUMAN-REVIEW |
+
+Sources: `autonomous-workflow/SKILL.md`, `criterion-verification-map/SKILL.md`, `commands/start.md`.
+
+---
+
 ## VERIFY — the four layers
 
 ```
@@ -482,7 +495,7 @@ Confirmation here is structural. The user has to say yes.
 /flow:start <issue>     ─── EXPLORE → PLAN → branch + tasks
 /flow:commit            ─── classify → atomic conventional commit
 /flow:pr                ─── push → parallel agent review → PR with body
-/flow:review <pr>       ─── 5-facet review (or adversarial team)
+/flow:review <pr>       ─── 6-facet parallel review (or adversarial team)
 /flow:address <pr>      ─── categorize comments → surgical fix → re-request
 ```
 
@@ -738,7 +751,7 @@ Phase 1 — detecting environment...
   • language: TypeScript (tsconfig.json found)
   • test/lint/typecheck: jest, eslint, tsc --noEmit
   • CLAUDE.md: present
-  • gh-workflow plugin also installed (commands coexist; see HANDBOOK §12)
+  • gh-workflow plugin also installed (commands coexist; see HANDBOOK Appendix A)
 
 Phase 2 — generating .claude/settings.flow.json (merge with existing if present)
 
@@ -885,7 +898,7 @@ Verb mapping:
 | `/gh-review` | `/flow:review` | flow supports adversarial teams (opt-in) |
 | `/gh-merge` | `/flow:merge` | both Tier 3 |
 
-If you preferred gh-workflow's interactive style: opt out of strict defaults (HANDBOOK §12). Don't fight the plugin — configure it.
+If you preferred gh-workflow's interactive style: opt out of strict defaults (HANDBOOK Appendix A). Don't fight the plugin — configure it.
 
 ---
 
@@ -905,7 +918,7 @@ If you preferred gh-workflow's interactive style: opt out of strict defaults (HA
 
 We expect at least one of these. If not, we'll seed it.
 
-- "Can we keep using gh-workflow for legacy repos?" — yes, they coexist. See HANDBOOK §12.
+- "Can we keep using gh-workflow for legacy repos?" — yes, they coexist. See HANDBOOK Appendix A.
 - "What if `/flow:setup` doesn't detect our build?" — file an issue with the project's `package.json` / `pyproject.toml`. Setup is heuristic.
 - "What if I disagree with a P3?" — rewrite it as a six-field escalation in the PR. Reviewer accepts/rejects.
 - "Can we customize the verdict-judge?" — no. Independence is the feature, not a constraint.

@@ -17,7 +17,9 @@ Long-form reference for the team. The slide deck (`slides.md`) is the room-facin
 9. Holdout validation and the verdict-judge
 10. Configuration cascade
 11. Failure modes and where to look
-12. Migrating from gh-workflow
+
+Appendix A — Coming from `gh-workflow`?
+Appendix B — File paths quick reference
 
 ---
 
@@ -129,6 +131,13 @@ Source: `plugins/flow/skills/autonomous-workflow/SKILL.md`.
 | **CODE** | Execute tasks. TaskUpdate(in_progress) → implement → commit → TaskUpdate(completed) only after Per-Task Verification Gate. | Working code, journal entries |
 | **VERIFY** | Four mandatory layers (below). | Evidence bundle, verdict |
 
+**What each phase leaves behind** (concrete artifacts a reader can open):
+
+- **EXPLORE → Artifact**: a populated `.decisions/issue-N.md` with a `## Specification` heading (non-goals, failure modes, interface contracts) and the Spec Validation Gate result mapping each AC to its runnable verification command. Source: `commands/start.md` lines 122–126, 229.
+- **PLAN → Artifact**: an atomic TaskList where each task bundles implementation + test + verification command + expected evidence shape; a feature branch off the default branch; the Stranger Test result recorded in the journal under `## Stranger Test` as PASS or BLOCK. Source: `commands/start.md` lines 232–269; `criterion-verification-map/SKILL.md` lines 43–55.
+- **CODE → Artifact**: per-task commits, each containing implementation + test + the verification evidence captured at task-completion time (not deferred); `<!-- auto-log: ... -->` entries in the journal for every Edit/Write and commit; the Per-Task Verification Gate satisfied for each task. Source: `autonomous-workflow/SKILL.md` lines 23, 44–59.
+- **VERIFY → Artifact**: an evidence bundle (one block per AC with `Does NOT promise` + the three completeness subsections), the holdout-validation output, and the verdict-judge agent's PASS/FAIL/NEEDS-HUMAN-REVIEW per criterion — fed only the evidence bundle + ACs + holdout output. Source: `criterion-verification-map/SKILL.md` lines 68–106, 137–139; `autonomous-workflow/SKILL.md` lines 24–28.
+
 **The four VERIFY layers** (`autonomous-workflow/SKILL.md` lines 24–28):
 
 | Layer | What | Tool |
@@ -225,15 +234,18 @@ Rare / bootstrap:
 
 Three commands dispatch a parallel review fan-out. Knowing which agents run where is useful when reading PR-body findings tables and re-review comments.
 
-A note on counting: `code-review-methodology` describes a **5-facet methodology** (quality, security, conventions, tests, requirements) — that's the conceptual review frame. The **fan-out below dispatches more than five agents in parallel** because `holdout-validation` runs alongside the five methodology facets to cross-reference self-review claims against file state. So "5-facet methodology" and "6-agent parallel dispatch" are both correct — they describe different things.
+`/flow:pr` Phase 3 dispatches six review facets in parallel: `code-reviewer`, `convention-checker`, `test-runner`, `security-reviewer`, `error-handler-inspector`, and `holdout-validation`. The same six run in `/flow:review` Path B; `/flow:address` Phase 4 drops `security-reviewer` (re-review of fix commits doesn't re-test architectural threat surface), leaving five.
 
-| Command / Phase | Agents dispatched in parallel | Notes |
-|-----------------|-------------------------------|-------|
-| `/flow:pr` Phase 3 | `code-reviewer`, `convention-checker`, `test-runner`, `security-reviewer`, `error-handler-inspector`, `holdout-validation` | Six facets in one shot before PR creation. `integration-verifier` follows in Phase 4 (post-parallel). |
-| `/flow:review` Path B | `code-reviewer`, `convention-checker`, `test-runner`, `security-reviewer`, `error-handler-inspector`, `holdout-validation` | Same six facets as `/flow:pr`. Spawned during multi-faceted review on an existing PR. |
-| `/flow:address` Phase 4 | `code-reviewer`, `convention-checker`, `test-runner`, `error-handler-inspector`, `holdout-validation` | Five facets — security re-review is not re-run on an address pass; the original `/flow:pr` covered it and the diff is narrow. |
+| Facet | One-line purpose |
+|-------|------------------|
+| `code-reviewer` | Quality + correctness review, P1/P2/P3 with file:line citations |
+| `convention-checker` | Git convention compliance — commit messages, branch naming, PR shape |
+| `test-runner` | Lint, test, typecheck — structured pass/fail report |
+| `security-reviewer` | OWASP-style review — secrets, auth/authz, input validation, dep vulns. Not re-run by `/flow:address` |
+| `error-handler-inspector` | Unhandled errors, missing edge cases, silent failures |
+| `holdout-validation` | Cross-reference self-review claims against actual file state via hidden scenarios |
 
-The fan-out runs all agents in a single dispatch — they do not see each other's findings, which keeps each agent's signal independent. The command consolidates afterwards, deduplicating findings by `file:line`.
+The fan-out runs all agents in a single dispatch — they do not see each other's findings, which keeps each agent's signal independent. The command consolidates afterwards, deduplicating findings by `file:line`. (The `code-review-methodology` skill describes a separate 5-pillar review frame in source — the workshop count above is the dispatch-side count, since that's what runs.)
 
 ---
 
@@ -408,29 +420,25 @@ The full schema is in `plugins/flow/schema.json`. Defaults are in `plugins/flow/
 
 ---
 
-## 12. Migrating from gh-workflow
+## Appendix A — Coming from `gh-workflow`?
 
-The `gh-workflow` plugin coexists in the marketplace. Comparison from `plugins/flow/README.md` lines 246–255:
+If you've used the `gh-workflow` plugin, the verbs carry over; the autonomy doesn't. The two plugins coexist at the marketplace level — `/flow:setup` warns when both are installed.
 
-| Aspect | gh-workflow | flow |
-|--------|------------|------|
-| Paradigm | Command-driven | Skill-driven |
-| Interaction | ~40 decision points | Autonomous with journal |
-| Learning | None across sessions | Decision journal + skill proposals |
-| Review | Sequential agents | Parallel + adversarial (team option) |
-| Safety | Interactive gates | Hook-enforced tiers |
-| Knowledge | Locked in commands | Composable, reusable skills |
+| gh-workflow | flow equivalent | What's different |
+|-------------|-----------------|------------------|
+| `/gh-start` | `/flow:start` | Adds Phase 0 preflight + Spec Validation Gate |
+| `/gh-commit` | `/flow:commit` | Same vocabulary; classification + journal auto-log |
+| `/gh-pr` | `/flow:pr` | 6-facet parallel agent review before PR creation |
+| `/gh-review` | `/flow:review` | Adversarial team option (`agentTeams: true`) |
+| `/gh-address` | `/flow:address` | 5-facet re-review + `FLOW_RESOLUTION_CYCLE` ledger |
+| `/gh-merge` | `/flow:merge` | Both Tier 3; flow's prereq check is structural |
+| `/gh-release` | `/flow:release` | Both Tier 3; flow generates changelog from merged PRs |
 
-**Practical migration**:
-
-1. The two plugins coexist at the marketplace level. `/flow:setup` warns if both are installed.
-2. Commit-message vocabulary, branch patterns, and reviewer routing carry over — those are decisions, not implementations.
-3. `/gh-start` ↔ `/flow:start`, `/gh-commit` ↔ `/flow:commit`, `/gh-pr` ↔ `/flow:pr`, etc. The verbs are the same; the autonomy is different.
-4. If your team prefers a more interactive style, set `tddMode: suggest`, `verdict.requireAllPass: false`, and promote more tiers to `confirm`. Strict defaults are opt-out (`plugins/flow/README.md` lines 40–56).
+Migration is a config decision, not a code change: commit-message vocabulary, branch patterns, and reviewer routing carry over. If your team prefers a more interactive style, set `tddMode: suggest`, `verdict.requireAllPass: false`, and promote more tiers to `confirm` — strict defaults are opt-out (`plugins/flow/README.md` lines 40–56). See also: `plugins/flow/references/comparison-with-gh-workflow.md`.
 
 ---
 
-## Appendix — file paths quick reference
+## Appendix B — file paths quick reference
 
 ```
 plugins/flow/

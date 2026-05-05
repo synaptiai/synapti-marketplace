@@ -11,7 +11,7 @@ One page. Pin to the wall. Detail in `HANDBOOK.md`.
 | `/flow:start <issue>` | Begin work — preflight, EXPLORE, PLAN with verification commands, branch + tasks |
 | `/flow:commit` | Atomic conventional commits with change classification |
 | `/flow:pr` | Push, parallel agent review, PR with comprehension report |
-| `/flow:review <pr>` | 5-facet review (or adversarial team if `agentTeams: true`) |
+| `/flow:review <pr>` | 6-facet parallel review (or adversarial team if `agentTeams: true`) |
 | `/flow:address <pr>` | Categorize comments, surgical fixes, re-request review |
 
 ## Tier 3 — always confirms
