@@ -77,3 +77,7 @@ The grep also finds 5-facet references in `commands/pr.md:20`, `commands/review.
 <!-- auto-log: 2026-05-05 23:34 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/code-review-methodology/SKILL.md -->
 
 <!-- auto-log: 2026-05-05 23:34 commit "fix-forward: replace brittle (line 21) with content-addressable ref" -->
+
+<!-- auto-log: 2026-05-05 23:47 Edit /Users/danielbentes/synapti-marketplace/docs/flow-team-session/faq-and-glossary.md -->
+
+<!-- auto-log: 2026-05-05 23:47 commit "fix-forward(faq): remove issue #82 reference per content-policy directive" -->
