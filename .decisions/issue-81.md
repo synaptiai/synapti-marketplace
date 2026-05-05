@@ -43,3 +43,5 @@ Single change: edit `plugins/flow/agents/verdict-judge.md` line 5 from `tools: R
 <!-- auto-log: 2026-05-06 00:00 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-81.md -->
 
 <!-- auto-log: 2026-05-06 00:00 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/agents/verdict-judge.md -->
+
+<!-- auto-log: 2026-05-06 00:01 commit "fix(verdict-judge): tighten tool budget to Read-only" -->
