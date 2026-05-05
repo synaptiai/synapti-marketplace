@@ -103,3 +103,9 @@ Tasks are independent (no shared file beyond hooks.json which is touched only by
 <!-- auto-log: 2026-05-06 00:46 T2 push -->
 
 <!-- auto-log: 2026-05-06 00:46 commit "feat(journal): add tier tagging to auto-log hooks" -->
+
+<!-- auto-log: 2026-05-06 00:46 commit "fix-forward: address self-review P2 findings on tier-tagging hooks" -->
+
+<!-- auto-log: 2026-05-06 00:47 commit "fix-forward: address self-review P2 findings on tier-tagging hooks" -->
+
+<!-- auto-log: 2026-05-06 00:50 commit "fix-forward: address self-review P2 findings on tier-tagging hooks" -->
