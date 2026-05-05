@@ -41,3 +41,5 @@ Single atomic task — see TaskList.
 <!-- auto-log: 2026-05-05 15:19 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/log-commits.sh -->
 
 <!-- auto-log: 2026-05-05 15:19 commit "chore: bump marketplace to 4.1.1" -->
+
+<!-- auto-log: 2026-05-05 15:20 commit "fix(flow): prevent log-commits.sh PostToolUse infinite append loop" -->
