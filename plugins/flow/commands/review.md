@@ -95,7 +95,7 @@ Adversarial protocol:
 
 ### Path B: Single Session (default)
 
-**Parallel Agent dispatch** — 3 agents in single message:
+**Parallel Agent dispatch** — 5 agents in single message:
 
 ```
 Agent(code-reviewer):
@@ -111,6 +111,10 @@ Agent(test-runner):
 Agent(error-handler-inspector):
   "Inspect changed files in PR #$ARGUMENTS for error handling gaps,
    silent failures, unhandled exceptions. Return P1/P2/P3 findings."
+
+Agent(security-reviewer):
+  "Review PR #$ARGUMENTS diff for OWASP Top 10, secrets, auth/authz,
+   input validation, dependency vulnerabilities. Return P1/P2/P3 with file:line."
 
 Skill(holdout-validation):
   Inputs:
