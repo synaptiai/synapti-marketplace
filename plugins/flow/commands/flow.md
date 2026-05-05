@@ -14,6 +14,10 @@ simultaneously in a single message rather than sequentially.
 
 Universal dispatcher for the flow plugin. Parses intent from `$ARGUMENTS` and routes to the appropriate sub-command with required skills.
 
+## Required Skills
+
+_None — dispatcher only. Sub-commands declare their own Required Skills (see Skill Manifests below)._
+
 ## Skill Manifests
 
 Each verb requires specific domain skills. The dispatcher invokes these deterministically:

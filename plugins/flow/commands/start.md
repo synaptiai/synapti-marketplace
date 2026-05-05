@@ -28,6 +28,7 @@ This command operates with these domain skills loaded:
 - `preflight-checks` — pure bash pre-flight validation (Phase 0)
 - `criterion-verification-map` — per-criterion evidence collection (Phase 2 + Phase 4)
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 4)
+- `issue-crafting` — invoked when the issue body is missing acceptance criteria or needs reframing
 
 ## Phase 0: PRE-FLIGHT
 

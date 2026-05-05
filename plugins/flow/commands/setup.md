@@ -7,6 +7,10 @@ allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, Skill, Glob, Grep, LSP
 
 Initialize the flow plugin for the current repository. On re-run, detects changes and offers to update settings and install missing LSP servers.
 
+## Required Skills
+
+- `capability-discovery` — detect tech stack, quality commands, existing agents/skills, and LSP capabilities (Phase 1)
+
 ## Phase 1: Detect Environment
 
 **Parallel operations:**

@@ -139,6 +139,22 @@ HOOKS (8 scripts)
   AskUserQuestion (see references/three-tier-safety.md), not as hooks.
 ```
 
+### Required Skills vs Skill() invocation convention
+
+Commands declare their skill dependencies in two complementary ways:
+
+- **`## Required Skills`** (declarative) — skills that inform the WHOLE command. Loaded as context at the start, applied throughout. Example: `code-review-methodology` for `/flow:review`.
+- **`Skill(X)`** (imperative) — explicit forks at specific phase boundaries where the command hands off to a skill for a discrete sub-task. Example: `Skill(capability-discovery)` invoked once during Phase 1 detection.
+
+Rules:
+
+1. Every command either has a `## Required Skills` section, or an explicit `_None — {reason}_` marker so the absence is intentional.
+2. Every `Skill(X)` invocation in a command body must resolve cleanly: `X` MUST also appear in that command's `## Required Skills` list. Invocation is a phase-specific call; the Required Skills list is the canonical dependency manifest, so all skill dependencies are visible in one place.
+3. A skill listed as Required does NOT need an explicit `Skill()` invocation — the command operates with it loaded as ambient context.
+4. Read-only / dispatcher commands (`status`, `learn`, `explain`, `flow`) typically have no domain skills and use the `_None_` marker.
+
+When auditing: grep for `Skill(` in command bodies and confirm each name appears in Required Skills.
+
 ## Commands
 
 | Command | Purpose |

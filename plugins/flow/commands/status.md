@@ -7,6 +7,10 @@ allowed-tools: Bash, Read
 
 Read-only overview of the current development state. No skills needed — pure observation.
 
+## Required Skills
+
+_None — read-only status command. No skill invocations._
+
 ## Gather State
 
 Execute all queries in parallel:
