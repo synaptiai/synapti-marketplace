@@ -136,6 +136,7 @@ The bundle is passed to the verdict-judge agent, which must judge independently.
 The judge receives ONLY:
 1. The acceptance criteria (from the issue)
 2. The evidence bundle (from this skill)
+3. The holdout-validation output (from the holdout-validation skill — added in v2.0 to detect self-review claims that don't match file state)
 
 ## Verification Method Examples
 

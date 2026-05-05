@@ -84,7 +84,7 @@ claude plugins add ./plugins/flow
 
 ```
 SKILL LIBRARY (22 skills)
-  ├── Foundation (always loaded, <=100 lines each)
+  ├── Foundation (always loaded, stable shape)
   │   ├── evidence-based-development
   │   ├── autonomous-workflow
   │   └── code-quality-principles
@@ -130,11 +130,13 @@ COMMANDS (17)
   ├── setup, explain
   └── brainstorm, debug, design
 
-HOOKS (10 scripts)
+HOOKS (8 scripts)
   ├── Safety: block-force-push, block-destructive, block-secrets
-  ├── Gates: gate-merge, gate-release
   ├── Audit: log-file-changes, log-commits
   └── Experimental: verify-task-completion, nudge-idle-teammate, session-end-learn
+
+  Note: merge/release confirmation gates run at the COMMAND level via
+  AskUserQuestion (see references/three-tier-safety.md), not as hooks.
 ```
 
 ## Commands
