@@ -111,3 +111,11 @@ PASS — single task: edit `commands/status.md` to add the Findings Ledger secti
 <!-- auto-log: 2026-05-06 01:38 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-84.md -->
 
 <!-- auto-log: 2026-05-06 01:39 commit "fix(flow): harden Findings Ledger and align merge.md with parser doc" -->
+
+<!-- auto-log: 2026-05-06 01:47 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-06 01:48 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
+
+<!-- auto-log: 2026-05-06 01:48 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-06 01:50 commit "fix(flow): cycle-2 hardening — ID validation and merge fail-closed" -->
