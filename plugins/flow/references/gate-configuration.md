@@ -128,16 +128,16 @@ Tests must pass and evidence must be captured before `TaskUpdate(completed)` is 
 
 ### 4. Runtime Verification Whitelist (VERIFY phase)
 
-Executes dev server startup, API smoke tests, E2E tests, and browser checks. Only whitelisted commands are allowed to run. Diagnostics from LSP servers are treated as quality signals (errors -> P1, warnings -> P2).
+Runtime verification (dev server startup, API smoke tests, E2E tests, browser checks) is mandatory for every change. The only permitted skips are three enumerated categories: `markdown-only`, `config-only`, and `dependency-bump-only`. Any skip outside this whitelist requires a Proactive-Autonomy escalation. Diagnostics from LSP servers are treated as quality signals (errors -> P1, warnings -> P2) when `lsp.diagnosticsAsQuality` is true.
 
 **Blocks:** VERIFY phase completion
-**Configuration:** `verification.whitelist` in settings, `lsp.diagnosticsAsQuality`
+**Configuration:** `lsp.diagnosticsAsQuality`. Skip categories are enumerated in `runtime-verification/SKILL.md` (not user-configurable).
 
 ### 5. Evidence Completeness (VERIFY phase)
 
-Every criterion's evidence bundle must include three completeness subsections: "What was NOT tested," "Known limitations," and "Negative/adversarial cases." Missing subsections block the evidence bundle from being submitted to the verdict judge.
+Every criterion's evidence bundle must include three completeness subsections: "What was NOT tested," "Known limitations," and "Negative/adversarial cases." The verdict-judge FAILs any criterion whose evidence is missing these subsections.
 
-**Blocks:** Evidence bundle submission
+**Blocks:** PASS verdict on the affected criterion (judge-side, not pre-submission)
 **Override:** None. Add the missing subsections.
 
 ### 6. Missing-Criterion Scan (verdict-judge)
@@ -169,7 +169,7 @@ Scans for `FLOW_RESOLUTION_CYCLE` markers in the codebase. Blocks merge when the
 | 2 | Stranger Test | PLAN | CODE transition |
 | 3 | Per-Task Verification | CODE | Task completion |
 | 4 | Runtime Verification | VERIFY | Phase completion |
-| 5 | Evidence Completeness | VERIFY | Evidence submission |
+| 5 | Evidence Completeness | VERIFY | PASS verdict (judge-side) |
 | 6 | Missing-Criterion Scan | Verdict | Verdict evaluation |
 | 7 | Holdout Validation | VERIFY/review/address | Self-review acceptance |
 | 8 | Finding-Ledger Merge | Merge | PR merge |
