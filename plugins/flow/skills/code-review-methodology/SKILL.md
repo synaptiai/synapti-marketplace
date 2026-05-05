@@ -41,7 +41,7 @@ Every review evaluates these facets (parallelizable):
 | **Error handling** | Unhandled errors, silent failures, missing edge cases in error paths | error-handler-inspector |
 | **Claim verification** | Self-review claims cross-referenced against actual file state | holdout-validation (skill) |
 
-Requirements compliance is Stage 1 (Spec Compliance) of Two-Stage Review (line 21), not a parallel facet — it runs first on the main thread before the 6 facets fan out.
+Requirements compliance is Stage 1 (Spec Compliance) of the Two-Stage Review section above, not a parallel facet — it runs first on the main thread before the 6 facets fan out.
 
 ## Finding Synthesis
 
