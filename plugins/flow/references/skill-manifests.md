@@ -41,7 +41,7 @@ These three skills are always active when the flow plugin is enabled:
 | change-classification | domain | context: fork | Signal-based change analysis |
 | convention-enforcement | domain | context: fork | Commit/branch validation |
 | capability-discovery | domain | context: fork | Environment detection, LSP capability probing |
-| code-review-methodology | domain | context: fork | 5-facet review, finding synthesis |
+| code-review-methodology | domain | context: fork | 6-facet review, finding synthesis |
 | pr-lifecycle | domain | context: fork | PR creation, reviewer suggestion |
 | feedback-resolution | domain | context: fork | Surgical feedback fixes |
 | merge-and-release | domain | disable-model-invocation | Merge prereqs, release process |
