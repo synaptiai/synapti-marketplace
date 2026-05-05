@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.1 (2026-05-05)
+
+### Bug Fixes
+
+- `log-commits.sh` PostToolUse hook no longer leaves the worktree permanently dirty. Two idempotency guards added: skip when the last commit message starts with `chore(decisions):`, and skip when the most recent commit only modified the journal file itself. The `auto-log → commit → auto-log` infinite append loop is now bounded. (#56, closes #55)
+
 ## 2.0.0 (2026-04-16)
 
 ### Breaking Changes
