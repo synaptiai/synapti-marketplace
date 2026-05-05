@@ -19,7 +19,7 @@ style: |
 
 # Flow Plugin Team Workshop
 
-A 90-min walkthrough of `/flow` v2.0.1 — for engineers, PMs, and designers.
+A 90-min walkthrough of the `/flow` plugin — for engineers, PMs, and designers.
 
 By the end of this session: you'll share a mental model, you'll have voted on 10 conventions, and you'll have the plugin running.
 
@@ -115,14 +115,14 @@ The six-field escalation template (`plugins/flow/skills/autonomous-workflow/SKIL
 
 ## Principle 4 — Quality > Speed
 
-Strict defaults (`plugins/flow/README.md` lines 35–39):
+Strict defaults (source: `plugins/flow/settings.json`):
 
-| Setting | Old Default | New Default |
-|---------|-------------|-------------|
-| `testing.tddMode` | `"suggest"` | `"enforce"` |
-| `verdict.requireAllPass` | `false` | `true` |
+| Setting | Default | Why |
+|---------|---------|-----|
+| `testing.tddMode` | `"enforce"` | Catches test-first violations at write-time, which is cheaper than catching them at review-time. RED-GREEN-REFACTOR is observed before a task can complete. |
+| `verdict.requireAllPass` | `true` | The judge must return PASS for every acceptance criterion or the verdict is FAIL. Partial coverage is a FAIL, not a "mostly done." |
 
-**P3 findings are no longer deferrable** — fix in-PR or file a six-field escalation.
+**P3 findings are fix-or-escalate** — fix in this PR or file a six-field escalation. They are not a polite note you can ignore.
 
 **Failure mode**: "tests pass" treated as proof of correctness when only the happy path was tested.
 
@@ -144,11 +144,11 @@ The verdict-judge FAILs any criterion missing these subsections. Don't omit them
 
 ## Principle 6 — No Incomplete Shipments
 
-From `plugins/flow/CHANGELOG.md` v2.0.0:
+Three rules hold the line (source: `plugins/flow/README.md` lines 29–31):
 
-- Pre-existing findings keep natural priority — no longer capped at P3.
-- Merge gate blocks when `FLOW_RESOLUTION_CYCLE` markers contain unresolved or escalated items.
-- **"DEFERRED" markers renamed to "ESCALATED"** to signal that deferral is not an option.
+- Pre-existing findings in touched files keep their natural priority — they are not capped at P3 just because they were already there.
+- The merge gate blocks when `FLOW_RESOLUTION_CYCLE` markers contain unresolved or escalated items.
+- The lifecycle uses **ESCALATED** (not "deferred"). The word choice is the policy: a P3 either gets fixed in this PR or it gets escalated through the six-field structure. Silent deferral is not an option.
 
 If a finding matters enough to mention, it matters enough to act on.
 
@@ -196,7 +196,7 @@ Three-tier safety + Explore-Plan-Code-Verify. Tiers are the *consequence* of the
 /flow:release ─ CHANGELOG ─── ASK USER (T3) ─── tag + release
 ```
 
-**Important**: merge/release confirmation is in the **command** files via `AskUserQuestion`. There is no `gate-merge` or `gate-release` hook script. Hooks block force-push, destructive ops, and inline secrets at the Bash layer (`three-tier-safety.md` line 80).
+**Important**: merge/release confirmation is in the **command** files via `AskUserQuestion`. There is no `gate-merge` or `gate-release` hook script — Tier 3 confirmation is a structural prompt at command time, not a hook. Hooks block force-push, destructive ops, and inline secrets at the Bash layer (`three-tier-safety.md` line 80).
 
 ---
 
@@ -258,22 +258,25 @@ Skills, agents, commands. Different containers, different reuse profiles.
 
          ┌────── COMMANDS ──────┐    "things you type"
          │  17 entry points     │    /flow:start  /flow:pr  ...
-         │  drive workflow phase│
+         │  carry executable    │    bash blocks live here, not in skills
+         │  bash + workflow     │
          └──────┬───────────────┘
                 │ dispatches
                 ▼
          ┌────── AGENTS ────────┐    "specialists you hire"
          │  8 forked contexts   │    verdict-judge, security-reviewer
-         │  narrow tool budgets │    (own context, own memory none)
+         │  narrow tool budgets │    (own context, memory: none)
          └──────┬───────────────┘
                 │ load
                 ▼
-         ┌────── SKILLS ────────┐    "playbooks Claude reads"
+         ┌────── SKILLS ────────┐    "reference docs Claude reads"
          │  22 + learned/       │    autonomous-workflow,
-         │  reusable knowledge  │    criterion-verification-map, ...
-         │  iron laws + protocols│
+         │  policy + philosophy │    criterion-verification-map, ...
+         │  iron laws + rationale│
          └──────────────────────┘
 ```
+
+**Design choice**: skills are reference documents — they encode policy, philosophy, and rationale that compounds across sessions. Commands carry the executable bash that runs at workflow time. Keeping these separate means a skill can be re-read by a new command without forking logic, and a command can change its bash without rewriting team knowledge (`plugins/flow/README.md` line 3).
 
 ---
 
@@ -380,7 +383,7 @@ TeammateIdle (any)  nudge-idle-teammate.sh      experimental, agent-teams
 SessionEnd   (any)  session-end-learn.sh        feeds learning loop
 ```
 
-**Note**: `gate-merge` / `gate-release` are not wired and don't exist as scripts. Merge/release confirmation is at the **command** level via `AskUserQuestion` (`plugins/flow/README.md` lines 138–139). README's HOOKS box correctly counts 8 scripts and matches `hooks.json`.
+**Note**: `gate-merge` / `gate-release` are not hook scripts. Merge and release confirmation runs at the **command** level via `AskUserQuestion` (`plugins/flow/README.md` lines 138–139). The hook layer (Bash exit-2 blocks) catches the dangerous primitives — `git push --force`, `rm -rf`, inline credentials — that any recovery attempt would have to use.
 
 ---
 
@@ -447,7 +450,7 @@ If your evidence doesn't prove the AC, the judge will say FAIL — and that's th
 
 `FLOW_RESOLUTION_CYCLE` marker — the finding-ledger.
 
-DEFERRED is gone. ESCALATED is what's left. P3 used to be a polite note you could ignore. Now it's fix in this PR or file a six-field escalation. The merge gate enforces it.
+The lifecycle has two states for a P3: **resolved** or **escalated**. Both are auditable; neither is silent. Escalation means the engineer wrote the six-field structure into the PR comment and the reviewer accepted it. The merge gate reads this marker — unresolved or unaccompanied items block merge.
 
 ---
 
@@ -489,7 +492,7 @@ Every other command exists to *not* interrupt the daily five. If you find yourse
 
 ## `/flow:start` — Phase 0 preflight
 
-[QUOTE] `plugins/flow/commands/start.md` lines 36–62 (verbatim):
+[QUOTE] `plugins/flow/commands/start.md` lines 38–62 (verbatim):
 
 ```bash
 ERRORS=0
@@ -800,7 +803,7 @@ Read-only. Safe to run anywhere, anytime. The "Suggested Next Action" line picks
 2. **Dirty worktree on `/flow:start`** — preflight fails. Fix: stash or commit before starting.
 3. **No `CLAUDE.md`** — `/flow:setup` will offer to add a `CLAUDE-flow.md` section. Accept it or compose your own.
 4. **`block-force-push` blocks a legitimate rebase push** — use `--force-with-lease`. Allowed and journaled (`three-tier-safety.md` line 41).
-5. **Auto-log seems to duplicate commits** — make sure `plugin.json` shows `2.0.1`. The fix landed in v2.0.1.
+5. **Auto-log seems to duplicate commits** — `log-commits.sh` is idempotent: it skips lines that already carry the `auto-log` marker. If you see duplication, your `plugin.json` is out of date — `claude plugins update flow`.
 
 ---
 
@@ -889,7 +892,7 @@ If you preferred gh-workflow's interactive style: opt out of strict defaults (HA
 ## Glossary
 
 - **P1 / P2 / P3** — finding priority. P1 blocks merge; P2 fix-in-PR; P3 fix-or-escalate.
-- **ESCALATED** — was "DEFERRED" pre-v2.0. Means: a P3 escalated via the six-field structure, not silently dropped.
+- **ESCALATED** — a P3 escalated via the six-field structure into `FLOW_RESOLUTION_CYCLE`. Auditable; not silently dropped.
 - **FLOW_RESOLUTION_CYCLE** — marker in PR comments capturing per-cycle resolved + escalated findings. The merge gate's substrate.
 - **Holdout** — a hidden test scenario the executing agent never sees. Used by `holdout-validation` to verify self-review claims.
 - **Stranger Test** — the gate at end of PLAN. Plan must be executable by someone with zero prior context.

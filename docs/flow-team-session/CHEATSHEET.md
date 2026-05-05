@@ -63,7 +63,7 @@ Promote tiers (autonomous → journal → confirm). Never demote.
 ```
 PreToolUse  Bash    block-force-push   block-destructive   block-secrets
 PostToolUse Edit    log-file-changes
-PostToolUse Bash    log-commits        (idempotent since v2.0.1)
+PostToolUse Bash    log-commits        (idempotent — skips lines already auto-logged)
 TaskCompleted       verify-task-completion
 TeammateIdle        nudge-idle-teammate           (experimental)
 SessionEnd          session-end-learn             (experimental)
@@ -86,6 +86,8 @@ trace       Stranger   journal
 ```
 
 **Iron law**: NO SKIPPING PHASES. (`autonomous-workflow/SKILL.md` line 13)
+
+**Fix-forward** (REVIEW layer): the agent fixes P1/P2 findings inline during self-review rather than reporting them as work-for-the-reviewer. Bounded by `fixForwardMaxIterations` to prevent loops.
 
 ---
 
@@ -139,11 +141,11 @@ plugins/flow/settings.json     ←  plugin defaults
 .claude/settings.flow.local.json ← project local (gitignored)
 ```
 
-Strict defaults you might want to flip:
-- `testing.tddMode` (`enforce` → `suggest` if not yet ready)
-- `verdict.requireAllPass` (`true` → `false` if rolling out gradually)
+Strict defaults and why they're strict:
+- `testing.tddMode = enforce` — RED-GREEN-REFACTOR is observed before a task can complete (catches test-first violations at write-time). Flip to `suggest` if your team prefers test-after.
+- `verdict.requireAllPass = true` — every AC must PASS or the verdict is FAIL. Flip to `false` if rolling out gradually and willing to accept soft passes on `NEEDS-HUMAN-REVIEW`.
 
-To opt out fully: see `plugins/flow/README.md` lines 41–54.
+Opt-out template: `plugins/flow/README.md` lines 41–54.
 
 ---
 
@@ -155,6 +157,6 @@ To opt out fully: see `plugins/flow/README.md` lines 41–54.
 | Verdict FAIL feels wrong | Check evidence-bundle completeness subsections |
 | Hooks not firing | `~/.claude/logs/` |
 | Force push blocked | Use `--force-with-lease` (allowed + journaled) |
-| Auto-log loop | Confirm `plugin.json` shows `2.0.1` |
+| Auto-log loop | Restore `<!-- auto-log: ... -->` markers; `claude plugins update flow` |
 
 When in doubt: `/flow:status` first.

@@ -58,7 +58,7 @@ What to show:
 
 ### Phase B — `/flow:start <issue-N>` (02:30–06:30)
 
-- 02:30 — Phase 0 PRE-FLIGHT bash block runs (the exact one quoted on slide 33, from `plugins/flow/commands/start.md` lines 36–62). Show clean `PREFLIGHT: PASSED`.
+- 02:30 — Phase 0 PRE-FLIGHT bash block runs (the exact one quoted on slide 33, from `plugins/flow/commands/start.md` lines 38–62). Show clean `PREFLIGHT: PASSED`.
 - 03:00 — EXPLORE: parallel `gh issue view`, `gh issue ... comments`, `git status`, `Skill(capability-discovery)`. Output stacks fast — let it scroll.
 - 03:40 — PLAN: `Skill(criterion-verification-map)` produces, for each AC, a `Verification command` and an `Expected evidence` shape. Highlight one row on screen.
 - 04:30 — TaskCreate × 4 (one per criterion). TaskList renders.
@@ -114,7 +114,7 @@ A reviewer (a second persona, off-screen) drops two comments:
 - 17:50 — `feedback-resolution` skill drafts a re-review request comment.
 - 18:15 — Reviewer is re-requested. FLOW_RESOLUTION_CYCLE marker visible in the PR body.
 
-**Pause beat 3** (live narration, ~60 sec): pause on the FLOW_RESOLUTION_CYCLE marker. Open `plugins/flow/CHANGELOG.md` v2.0.0 in a side window. "DEFERRED is gone. ESCALATED is what's left. P3 used to be a polite note you could ignore. Now it's fix in this PR or file a six-field escalation. The merge gate enforces it."
+**Pause beat 3** (live narration, ~60 sec): pause on the FLOW_RESOLUTION_CYCLE marker. "Two states for any P3: resolved or escalated. Both are auditable; neither is silent. Escalation means the engineer wrote the six-field structure into the PR comment and the reviewer accepted it. The merge gate reads this marker — unresolved or unaccepted items block merge. That's the policy: a finding worth mentioning is a finding worth acting on."
 
 ### Phase G — `/flow:merge` (18:30–20:00)
 

@@ -1,6 +1,6 @@
 # Flow Plugin Team Workshop — docs
 
-A 90-minute mixed-audience (engineering + PM/design) workshop for the `/flow` plugin v2.0.1. Mental model + lifecycle walkthrough + 10 conventions decided live.
+A 90-minute mixed-audience (engineering + PM/design) workshop for the `/flow` plugin. Mental model + lifecycle walkthrough + 10 conventions decided live.
 
 ## What's in here
 

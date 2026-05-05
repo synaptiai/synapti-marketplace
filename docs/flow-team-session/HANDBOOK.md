@@ -2,7 +2,6 @@
 
 Long-form reference for the team. The slide deck (`slides.md`) is the room-facing view; this handbook is what you read when something doesn't make sense afterwards.
 
-**Plugin version**: 2.0.1 (`plugins/flow/.claude-plugin/plugin.json`)
 **Source of truth**: `plugins/flow/` in this repo. When this handbook and the source disagree, the source wins — file an issue.
 
 ## Table of contents
@@ -24,7 +23,7 @@ Long-form reference for the team. The slide deck (`slides.md`) is the room-facin
 
 ## 1. The 6 Excellence Principles
 
-Flow v2.0 enforces six principles. They are the answer to "why does this plugin block me?". Source: `plugins/flow/README.md` lines 5–66.
+Flow enforces six principles. They are the answer to "why does this plugin block me?". Source: `plugins/flow/README.md` lines 5–66.
 
 ### 1. Stranger Test
 
@@ -60,14 +59,14 @@ The six fields (`autonomous-workflow/SKILL.md` lines 162–173):
 
 ### 4. Quality > Speed
 
-TDD mode defaults to `enforce`. The verdict judge requires all acceptance criteria to pass. P3 findings are no longer deferrable.
+TDD mode defaults to `enforce`. The verdict judge requires all acceptance criteria to pass. P3 findings are fix-or-escalate.
 
-| Setting | Old Default | New Default |
-|---------|-------------|-------------|
-| `testing.tddMode` | `"suggest"` | `"enforce"` |
-| `verdict.requireAllPass` | `false` | `true` |
+| Setting | Default | Why |
+|---------|---------|-----|
+| `testing.tddMode` | `"enforce"` | Catching test-first violations at write-time is cheaper than catching them at review-time. The Per-Task Verification Gate observes RED-GREEN-REFACTOR before letting a task complete. Teams that prefer test-after can flip to `"suggest"` (decision 1 in the conventions worksheet) and document the rationale. |
+| `verdict.requireAllPass` | `true` | The verdict judge must return PASS for every acceptance criterion or the verdict is FAIL. Partial coverage is a FAIL, not "mostly done." Teams that allow a soft pass on `NEEDS-HUMAN-REVIEW` can set this to `false` and accept the trade-off. |
 
-(`plugins/flow/README.md` lines 35–39)
+(`plugins/flow/settings.json`)
 
 **Failure mode it prevents**: "tests pass" treated as proof of correctness when only the happy path was tested.
 
@@ -85,7 +84,7 @@ The verdict-judge treats any criterion missing these subsections as having incom
 
 ### 6. No Incomplete Shipments
 
-Pre-existing findings in touched files keep their natural priority (no longer capped at P3). The finding-ledger merge gate blocks merges when `FLOW_RESOLUTION_CYCLE` markers contain unresolved or escalated items. **"DEFERRED" markers have been renamed to "ESCALATED"** to signal that deferral is not an option (`plugins/flow/CHANGELOG.md` v2.0.0).
+Pre-existing findings in touched files keep their natural priority — they are not capped at P3 just because they were already there when you opened the file. The finding-ledger merge gate blocks merges when `FLOW_RESOLUTION_CYCLE` markers contain unresolved or escalated items. The lifecycle uses **ESCALATED** as its terminal state for any finding the engineer chooses not to fix in-PR — and ESCALATED is auditable (six-field structure required, reviewer must accept). The vocabulary is the policy: there is no silent deferral.
 
 **Failure mode it prevents**: P3 backlog that grows forever and nothing ever gets fixed.
 
@@ -149,15 +148,28 @@ If you only remember three definitions, remember these.
 
 | Concept | What it is | Plural noun for | Example |
 |---------|-----------|-----------------|---------|
-| **Command** | An entry point — a `/flow:*` invocation that drives a workflow phase | "things you type" | `/flow:start 42` |
+| **Command** | An entry point — a `/flow:*` invocation that drives a workflow phase. Carries the executable bash. | "things you type" | `/flow:start 42` |
 | **Agent** | A subagent dispatched by a command, with its own context and a narrow tool budget | "specialists you hire" | `verdict-judge` |
-| **Skill** | A reusable knowledge unit loaded into the active context, applied autonomously | "playbooks Claude reads" | `criterion-verification-map` |
+| **Skill** | A reference document — policy, philosophy, rationale — loaded into the active context | "reference docs Claude reads" | `criterion-verification-map` |
 
 The same knowledge lives in different containers depending on how it's reused:
 
-- A **command** runs once per workflow step and re-reads itself each session.
+- A **command** runs once per workflow step and re-reads itself each session. It owns the bash blocks and the phase ordering.
 - An **agent** runs in a forked context with isolated tools — useful for independent judgment (verdict-judge sees no diff) or parallel review.
 - A **skill** is invoked from anywhere — commands, other skills, agents — and contributes its iron laws + protocols to whatever workflow needs them.
+
+**Why skills carry no executable bash**: skills are policy and rationale that compounds across sessions. Bash that runs at workflow time belongs in commands, where it can be audited and version-controlled per phase. Splitting the responsibility this way means a skill can be re-read by a new command without forking logic, and a command can change its bash without rewriting team knowledge.
+
+### Required Skills vs `Skill()` invocation
+
+Commands declare skill dependencies in two complementary ways (`plugins/flow/README.md` lines 142–156):
+
+- **`## Required Skills`** (declarative) — skills that inform the WHOLE command. Loaded as ambient context at the start, applied throughout. Example: `code-review-methodology` for `/flow:review`.
+- **`Skill(X)`** (imperative) — explicit forks at specific phase boundaries where the command hands off to a skill for a discrete sub-task. Example: `Skill(capability-discovery)` invoked once during EXPLORE.
+
+Two rules govern usage. First: every command either has a `## Required Skills` section, or an explicit `_None — {reason}_` marker so absence is intentional. Second: every `Skill(X)` invocation in a command body must also appear in that command's `## Required Skills` list. The Required Skills list is the canonical dependency manifest; invocations are phase-specific calls.
+
+Why both: a skill listed as Required is loaded as ambient context; an explicit `Skill()` call is useful when a phase needs the skill's full protocol re-anchored at a specific point. Read-only / dispatcher commands (`status`, `learn`, `explain`, `flow`) typically use the `_None_` marker.
 
 A skill becoming popular enough across commands → it's the right shape. A command duplicating logic from another command → that logic should be a skill.
 
@@ -208,6 +220,20 @@ Rare / bootstrap:
 | `/flow:flow` | Universal dispatcher — `/flow <verb> <target>` |
 
 **Command-level tier-3 prompts**: `/flow:merge` and `/flow:release` invoke `AskUserQuestion` for confirmation. There is no `gate-merge` or `gate-release` hook — the structural gate is in the command file itself plus the Bash hooks for the underlying dangerous operations.
+
+### Parallel agent fan-out — which command, which agents
+
+Three commands dispatch a parallel review fan-out. Knowing which agents run where is useful when reading PR-body findings tables and re-review comments.
+
+A note on counting: `code-review-methodology` describes a **5-facet methodology** (quality, security, conventions, tests, requirements) — that's the conceptual review frame. The **fan-out below dispatches more than five agents in parallel** because `holdout-validation` runs alongside the five methodology facets to cross-reference self-review claims against file state. So "5-facet methodology" and "6-agent parallel dispatch" are both correct — they describe different things.
+
+| Command / Phase | Agents dispatched in parallel | Notes |
+|-----------------|-------------------------------|-------|
+| `/flow:pr` Phase 3 | `code-reviewer`, `convention-checker`, `test-runner`, `security-reviewer`, `error-handler-inspector`, `holdout-validation` | Six facets in one shot before PR creation. `integration-verifier` follows in Phase 4 (post-parallel). |
+| `/flow:review` Path B | `code-reviewer`, `convention-checker`, `test-runner`, `security-reviewer`, `error-handler-inspector`, `holdout-validation` | Same six facets as `/flow:pr`. Spawned during multi-faceted review on an existing PR. |
+| `/flow:address` Phase 4 | `code-reviewer`, `convention-checker`, `test-runner`, `error-handler-inspector`, `holdout-validation` | Five facets — security re-review is not re-run on an address pass; the original `/flow:pr` covered it and the diff is narrow. |
+
+The fan-out runs all agents in a single dispatch — they do not see each other's findings, which keeps each agent's signal independent. The command consolidates afterwards, deduplicating findings by `file:line`.
 
 ---
 
@@ -279,7 +305,7 @@ Source of truth: `plugins/flow/hooks/hooks.json`.
 | PreToolUse | Bash | `block-destructive.sh` | Exit 2 on `rm -rf`, `git reset --hard`, etc. |
 | PreToolUse | Bash | `block-secrets.sh` | Exit 2 on inline credentials |
 | PostToolUse | Edit\|Write | `log-file-changes.sh` | Append `<!-- auto-log: ... -->` entry to journal |
-| PostToolUse | Bash | `log-commits.sh` | Append commit auto-log entry. Idempotency guards added in v2.0.1 (`CHANGELOG.md`) prevent the auto-log infinite loop |
+| PostToolUse | Bash | `log-commits.sh` | Append commit auto-log entry. The script is idempotent — it skips lines already carrying the `auto-log` marker, so a journal commit cannot trigger another append. |
 | TaskCompleted | (any) | `verify-task-completion.sh` | Per-Task Verification Gate enforcement |
 | TeammateIdle | (any) | `nudge-idle-teammate.sh` | Experimental — used with agent teams |
 | SessionEnd | (any) | `session-end-learn.sh` | Experimental — feeds the learning loop |
@@ -374,7 +400,7 @@ The full schema is in `plugins/flow/schema.json`. Defaults are in `plugins/flow/
 | "Why did the plan get blocked?" | `.decisions/issue-N.md` for the most recent entry. Search for "Stranger Test" or "Spec Validation Gate." |
 | "The verdict is FAIL but the code works" | `criterion-verification-map/SKILL.md` — check completeness subsections in the evidence bundle. Missing one = automatic FAIL. |
 | "Hooks aren't firing" | `plugins/flow/hooks/hooks.json` — confirm matcher and trigger. Check `~/.claude/logs/` for hook stderr. |
-| "Auto-log is duplicating commits" | Was supposed to be fixed in v2.0.1. Confirm `plugin.json` shows `"version": "2.0.1"`. If you see it on 2.0.0 or earlier, upgrade. |
+| "Auto-log is duplicating commits" | The script is idempotent only when the marker is intact. If the journal file's `<!-- auto-log: ... -->` lines were edited out, append loops can resurface — restore the markers or run `claude plugins update flow` to refresh the script. |
 | "/flow:learn isn't proposing skills" | `~/.claude/flow-proposals/` for proposals; ensure `learning.enabled: true` and `journal.dir` is populated. |
 | "Agent teams not spawning" | Both `agentTeams: true` AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var must be set. |
 | "Tier 3 prompt isn't appearing" | Check `tiers.merge` and `tiers.release` in your settings cascade. Promoted to `confirm` is the default. |
@@ -384,7 +410,7 @@ The full schema is in `plugins/flow/schema.json`. Defaults are in `plugins/flow/
 
 ## 12. Migrating from gh-workflow
 
-The `gh-workflow` plugin (v1.7.0) is the predecessor. Comparison from `plugins/flow/README.md` lines 223–230:
+The `gh-workflow` plugin coexists in the marketplace. Comparison from `plugins/flow/README.md` lines 246–255:
 
 | Aspect | gh-workflow | flow |
 |--------|------------|------|
@@ -400,7 +426,7 @@ The `gh-workflow` plugin (v1.7.0) is the predecessor. Comparison from `plugins/f
 1. The two plugins coexist at the marketplace level. `/flow:setup` warns if both are installed.
 2. Commit-message vocabulary, branch patterns, and reviewer routing carry over — those are decisions, not implementations.
 3. `/gh-start` ↔ `/flow:start`, `/gh-commit` ↔ `/flow:commit`, `/gh-pr` ↔ `/flow:pr`, etc. The verbs are the same; the autonomy is different.
-4. If you preferred gh-workflow's interactive style, set `tddMode: suggest`, `verdict.requireAllPass: false`, and promote more tiers to `confirm`. Strict defaults can be opted out of (`README.md` lines 40–56).
+4. If your team prefers a more interactive style, set `tddMode: suggest`, `verdict.requireAllPass: false`, and promote more tiers to `confirm`. Strict defaults are opt-out (`plugins/flow/README.md` lines 40–56).
 
 ---
 
@@ -409,7 +435,7 @@ The `gh-workflow` plugin (v1.7.0) is the predecessor. Comparison from `plugins/f
 ```
 plugins/flow/
 ├── README.md                                   ← Excellence Principles + skill tree
-├── CHANGELOG.md                                ← v2.0 breaking changes, v2.0.1 fix
+├── CHANGELOG.md                                ← release history (versioning reference)
 ├── settings.json                               ← all defaults
 ├── schema.json                                 ← full config schema
 ├── .claude-plugin/plugin.json                  ← version

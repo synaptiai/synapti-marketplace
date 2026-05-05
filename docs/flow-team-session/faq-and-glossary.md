@@ -133,7 +133,7 @@ The plugin gets better when the team tells it where it failed.
 
 - **FLOW_REVIEW_CYCLE** — marker in PR review bodies; captures findings per cycle.
 - **FLOW_RESOLUTION_CYCLE** — marker in PR comments; captures resolved + escalated findings per cycle. Merge gate's substrate.
-- **ESCALATED** — was "DEFERRED" pre-v2.0. P3 escalated via the six-field structure, not silently dropped.
+- **ESCALATED** — terminal state for a P3 finding the engineer chose not to fix in-PR. Requires a six-field escalation in the PR comment, accepted by the reviewer. Auditable; not silently dropped.
 - **Per-Task Verification Gate** — a task can't move to `completed` until tests pass, evidence captured, no out-of-context files, TDD cycle observed. (`autonomous-workflow/SKILL.md` lines 44–59)
 
 ### Decision journal
