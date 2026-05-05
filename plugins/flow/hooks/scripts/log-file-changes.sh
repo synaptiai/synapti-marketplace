@@ -38,7 +38,7 @@ fi
 if [ -d "$JOURNAL_DIR" ] && [ -f "$JOURNAL_FILE" ]; then
   TIMESTAMP=$(date +"%Y-%m-%d %H:%M")
   echo "" >> "$JOURNAL_FILE"
-  echo "<!-- auto-log: $TIMESTAMP $TOOL_NAME $FILE_PATH -->" >> "$JOURNAL_FILE"
+  echo "<!-- auto-log: $TIMESTAMP T1 $TOOL_NAME $FILE_PATH -->" >> "$JOURNAL_FILE"
 fi
 
 exit 0

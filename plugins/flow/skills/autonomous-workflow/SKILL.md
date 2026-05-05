@@ -75,11 +75,30 @@ When a command or skill says "use the AskUserQuestion tool", you MUST invoke the
 ## Decision Journal Protocol
 
 - **Init**: Create `{journal-dir}/issue-{N}.md` at branch creation
-- **Log**: PostToolUse hooks auto-log file changes and commits
+- **Log**: PostToolUse hooks auto-log file changes, commits, and tier-2/tier-3 events
 - **Structured entries**: Skills add timestamped entries with category, decision, rationale, risk
 - **Summarize**: Condense journal for PR body (public entries only, internal redacted)
 
 Journal dir defaults to `.decisions/`, configurable in settings.
+
+### Tier tag convention
+
+Auto-log entries carry an explicit tier tag so downstream consumers (e.g. `/flow:status` Tier Summary) can aggregate by tier:
+
+```
+<!-- auto-log: YYYY-MM-DD HH:MM T{1,2,3} {action} {target} -->
+```
+
+| Tier | Source | Actions tagged |
+|------|--------|----------------|
+| **T1** | `log-file-changes.sh` (PostToolUse Edit/Write) | `Edit`, `Write` |
+| **T1** | `log-commits.sh` (PostToolUse Bash, matches `git commit`) | `commit` |
+| **T2** | `log-tier-events.sh` (PostToolUse Bash) | `push`, `pr-create`, `issue-assign` |
+| **T3** | `log-tier-events.sh` (PostToolUse Bash) | `merge`, `release` |
+
+**Manual journal writes** that record actions taken outside the hook coverage (rare — most actions go through the hooks) MUST follow the same format and pick the tier that matches the underlying action's classification (see Three-Tier Action Classification above).
+
+**Backwards compatibility**: older journal entries that predate this convention have no tier tag (e.g. `<!-- auto-log: TS Edit /path -->`). Downstream consumers MUST treat un-tagged entries as `T1` for compatibility — only T1 actions were tracked before tier tagging shipped.
 
 ## Parallel Execution
 

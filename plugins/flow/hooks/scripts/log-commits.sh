@@ -52,7 +52,7 @@ if [ -d "$JOURNAL_DIR" ] && [ -f "$JOURNAL_FILE" ]; then
   fi
 
   echo "" >> "$JOURNAL_FILE"
-  echo "<!-- auto-log: $TIMESTAMP commit \"$LAST_MSG\" -->" >> "$JOURNAL_FILE"
+  echo "<!-- auto-log: $TIMESTAMP T1 commit \"$LAST_MSG\" -->" >> "$JOURNAL_FILE"
 fi
 
 exit 0
