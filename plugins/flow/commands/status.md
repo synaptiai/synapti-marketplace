@@ -76,14 +76,31 @@ else
     ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
     DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DISPUTED:\[//;s/\]$//'  | tr -d ' ')
 
+    # Sanitize attacker-controlled fields before display/echo: cap length and
+    # strip non-printable bytes so a hostile review-body can't inject ANSI
+    # escapes into LEDGER_WARN output.
+    safe() { printf '%s' "$1" | tr -cd '[:print:]' | cut -c1-64; }
     echo "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY CAT LOC STATUS; do
       [ -z "$ID" ] && continue
-      # Defensive: surface non-conforming rows to stderr (visible without breaking
-      # the tally), then skip. Older marker formats produced findings without
-      # P{1-3} priority fields.
+      # Reject IDs containing case-glob metacharacters (`*`, `?`, `[`, `]`) —
+      # IDs are template-issued and should match [A-Za-z][A-Za-z0-9_-]*.
+      # Without this, a hostile finding ID of `*` would always match the
+      # `case ",$RESOLVED," in *",$ID,"*)` containment check and silently
+      # disappear from the tally.
+      case "$ID" in
+        [A-Za-z]*) ;;
+        *) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;;
+      esac
+      case "$ID" in *[!A-Za-z0-9_-]*)
+        echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2
+        continue ;;
+      esac
+      # Defensive: surface non-conforming priority rows to stderr (visible
+      # without breaking the tally), then skip. Older marker formats produced
+      # findings without P{1-3} priority fields.
       case "$PRIORITY" in
         P1|P2|P3) ;;
-        *) echo "LEDGER_WARN: PR#$PR_NUM finding '$ID' has malformed priority '$PRIORITY'" >&2; continue ;;
+        *) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' has malformed priority '$(safe "$PRIORITY")'" >&2; continue ;;
       esac
       # Precedence: RESOLVED > ESCALATED > DISPUTED > in_fix_forward.
       case ",$RESOLVED," in *",$ID,"*) continue ;; esac

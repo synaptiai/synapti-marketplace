@@ -45,23 +45,34 @@ COMMENTS=$(gh api "repos/$REPO/issues/$ARGUMENTS/comments" --jq '.[] | select(.b
 Parse the latest `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` comments to verify all findings are resolved before merge. Marker schemas and the canonical extraction queries are documented in [`references/finding-ledger-parser.md`](../references/finding-ledger-parser.md); this command applies the merge-blocking subset (ESCALATED non-empty, FINDINGS without matching RESOLVED).
 
 ```bash
-# Extract the latest FLOW_RESOLUTION_CYCLE comment (issue/PR conversation)
+# Extract the latest FLOW_RESOLUTION_CYCLE comment (issue/PR conversation).
+# Capture gh exit code: a silent gh failure (auth, network) must fail the gate
+# CLOSED, not pass it open.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 RESOLUTION_BODY=$(gh api "repos/$REPO/issues/$ARGUMENTS/comments" \
-  --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:"))] | last | .body // ""')
+  --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:"))] | last | .body // ""' 2>/dev/null)
+GH_EXIT_RES=$?
 
-# Extract ESCALATED array contents (portable POSIX grep+sed; BSD grep has no -P)
-ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//')
+# Extract ESCALATED array contents (portable POSIX grep+sed; BSD grep has no -P).
+# Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
+ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
 
 # Extract the latest FLOW_REVIEW_CYCLE — emitted in PR review bodies, not issue comments
 REVIEW_BODY=$(gh api "repos/$REPO/pulls/$ARGUMENTS/reviews" \
-  --jq '[.[] | select(.body | test("FLOW_REVIEW_CYCLE:"))] | last | .body // ""')
+  --jq '[.[] | select(.body | test("FLOW_REVIEW_CYCLE:"))] | last | .body // ""' 2>/dev/null)
+GH_EXIT_REV=$?
+
+# Fail closed if either gh call failed — better to block a legitimate merge
+# than silently let a regression through when the gate state is unknowable.
+if [ $GH_EXIT_RES -ne 0 ] || [ $GH_EXIT_REV -ne 0 ]; then
+  echo "FINDING_LEDGER_BLOCK: gh API unavailable — cannot verify finding ledger (resolution exit=$GH_EXIT_RES, review exit=$GH_EXIT_REV)"
+fi
 
 # Extract all finding IDs from FINDINGS array (comma-separated, pipe-delimited fields, first field is the ID)
-REVIEW_FINDINGS=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//' | tr ',' '\n' | sed 's/|.*//' | sort)
+REVIEW_FINDINGS=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//' | tr ',' '\n' | sed 's/|.*//' | tr -d ' ' | sort)
 
 # Extract RESOLVED finding IDs from resolution comment
-RESOLVED_FINDINGS=$(echo "$RESOLUTION_BODY" | grep -o 'RESOLVED:\[[^]]*\]' | sed 's/^RESOLVED:\[//;s/\]$//' | tr ',' '\n' | sort)
+RESOLVED_FINDINGS=$(echo "$RESOLUTION_BODY" | grep -o 'RESOLVED:\[[^]]*\]' | sed 's/^RESOLVED:\[//;s/\]$//' | tr ',' '\n' | tr -d ' ' | sort)
 
 # Check 1: ESCALATED must be empty
 if [ -n "$ESCALATED" ]; then

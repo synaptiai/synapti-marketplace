@@ -97,13 +97,19 @@ DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DI
 # Empty FINDINGS_RAW (no markers on this PR) contributes zero.
 # Empty RESOLUTION arrays mean every finding is in_fix_forward.
 
+# Sanitize attacker-controlled fields before logging (strip non-printable
+# bytes, cap length) so hostile review-body content can't inject ANSI escapes.
+safe() { printf '%s' "$1" | tr -cd '[:print:]' | cut -c1-64; }
 echo "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY CAT LOC STATUS; do
   [ -z "$ID" ] && continue
-  # Surface non-conforming rows to stderr so consumers see them without
-  # corrupting the tally; legacy/experimental marker formats land here.
+  # Reject IDs that don't match [A-Za-z][A-Za-z0-9_-]*. Required because the
+  # containment checks below use POSIX `case` glob — an ID of `*` would
+  # spuriously match every RESOLVED list and silently disappear from the tally.
+  case "$ID" in [A-Za-z]*) ;; *) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;; esac
+  case "$ID" in *[!A-Za-z0-9_-]*) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;; esac
   case "$PRIORITY" in
     P1|P2|P3) ;;
-    *) echo "LEDGER_WARN: PR#$PR_NUM finding '$ID' has malformed priority '$PRIORITY'" >&2; continue ;;
+    *) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' has malformed priority '$(safe "$PRIORITY")'" >&2; continue ;;
   esac
   # Precedence: RESOLVED > ESCALATED > DISPUTED > in_fix_forward.
   case ",$RESOLVED," in *",$ID,"*) continue ;; esac
