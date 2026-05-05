@@ -171,12 +171,26 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
 **CRITICAL: The resolution comment and inline replies are MANDATORY. NEVER skip posting. Push without posting is incomplete — the reviewer cannot see what was addressed. Do not re-request review until the resolution comment is posted and TaskUpdate confirms completion.**
 
 1. **Quality commands** (parallel): lint, test, typecheck
-2. **Comprehensive self-review** of ALL files touched on the branch:
+2. **Comprehensive self-review** of ALL files touched on the branch — parallel agent dispatch matching `/flow:pr` Phase 3 fan-out so fix commits don't slip convention/test/error-handling regressions past automated re-review:
    ```
    Agent(code-reviewer):
-     "Review ALL files modified on this branch against $DEFAULT_BRANCH.
+     "Review the fix commits since the last review against $DEFAULT_BRANCH.
       Check for: logic errors, security issues, missing edge cases.
       Return P1/P2/P3 findings with file:line."
+
+   Agent(convention-checker):
+     "Validate convention compliance for the fix commits since the last review.
+      Check commit messages, branch naming, and code conventions against
+      project standards. Return findings."
+
+   Agent(test-runner):
+     "Run quality commands (lint, test, typecheck); verify regressions
+      haven't been introduced by the fix commits since the last review.
+      Return structured results table."
+
+   Agent(error-handler-inspector):
+     "Check error handling in the changed scope of the fix commits since
+      the last review. Return P1/P2/P3 findings with file:line."
    ```
 3. **Holdout validation** — after self-review, invoke `holdout-validation` to cross-reference claims against file state:
    ```
