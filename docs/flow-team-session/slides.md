@@ -330,7 +330,7 @@ DOMAIN (contextually invoked, max 3 concurrent)
 ## Verdict-judge — information isolation
 
 ```
-[ASCII]  (source: plugins/flow/skills/criterion-verification-map/SKILL.md lines 127–138)
+[ASCII]  (source: plugins/flow/skills/criterion-verification-map/SKILL.md lines 127–139)
 
          INPUTS                                  NOT INPUTS
          ──────                                  ──────────
@@ -380,7 +380,7 @@ TeammateIdle (any)  nudge-idle-teammate.sh      experimental, agent-teams
 SessionEnd   (any)  session-end-learn.sh        feeds learning loop
 ```
 
-**Note**: `gate-merge` / `gate-release` are not wired and don't exist as scripts. Merge/release confirmation is at the **command** level via `AskUserQuestion`. README's "10 hooks" is stale; the wired count is 8.
+**Note**: `gate-merge` / `gate-release` are not wired and don't exist as scripts. Merge/release confirmation is at the **command** level via `AskUserQuestion` (`plugins/flow/README.md` lines 138–139). README's HOOKS box correctly counts 8 scripts and matches `hooks.json`.
 
 ---
 

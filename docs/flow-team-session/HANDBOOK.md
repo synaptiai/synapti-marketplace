@@ -115,7 +115,7 @@ Source: `plugins/flow/references/three-tier-safety.md`.
 | `block-destructive.sh` | `rm -rf`, `git reset --hard` | Exit 2 (block) |
 | `block-secrets.sh` | Inline credentials | Exit 2 (block) |
 
-**Important**: merge and release confirmation is handled at the **command level** via AskUserQuestion (see `/flow:merge` and `/flow:release`), not by a `gate-merge` or `gate-release` hook script (`three-tier-safety.md` line 80). The README mentions those names — they are not wired. The eight wired hook scripts are listed in §7.
+**Important**: merge and release confirmation is handled at the **command level** via AskUserQuestion (see `/flow:merge` and `/flow:release`), not by a `gate-merge` or `gate-release` hook script (`three-tier-safety.md` line 80). The eight wired hook scripts are listed in §7.
 
 ### 2b. Explore-Plan-Code-Verify (EPCV)
 
@@ -284,7 +284,7 @@ Source of truth: `plugins/flow/hooks/hooks.json`.
 | TeammateIdle | (any) | `nudge-idle-teammate.sh` | Experimental — used with agent teams |
 | SessionEnd | (any) | `session-end-learn.sh` | Experimental — feeds the learning loop |
 
-That's eight scripts. The README mentions `gate-merge` and `gate-release` — those are not wired and don't exist as scripts. Merge/release confirmation is in the **command** files via AskUserQuestion.
+That's eight scripts — matching `plugins/flow/README.md` lines 133–139. There is no `gate-merge` or `gate-release` hook script; merge/release confirmation is in the **command** files via AskUserQuestion.
 
 ---
 

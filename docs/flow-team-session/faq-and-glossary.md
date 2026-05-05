@@ -54,9 +54,9 @@ Two reasons. First, the lifecycle stays visible — nobody drags the demo into "
 
 If you want a session against the real codebase, run one — but plan more time and accept that it'll be tangent-prone.
 
-### The README mentions `gate-merge.sh` and `gate-release.sh` — where are they?
+### Are `gate-merge.sh` and `gate-release.sh` hook scripts?
 
-They don't exist. The README's "Hooks (10 scripts)" section is stale. Eight scripts are wired (see `plugins/flow/hooks/hooks.json`). Merge and release confirmation is at the **command** level via `AskUserQuestion` (see `plugins/flow/references/three-tier-safety.md` line 80). This is mentioned on slide 24 and again in HANDBOOK §7.
+No — and they aren't supposed to be. Eight scripts are wired (see `plugins/flow/hooks/hooks.json` and the matching `HOOKS (8 scripts)` box in `plugins/flow/README.md` lines 133–139). Merge and release confirmation lives at the **command** level via `AskUserQuestion` (see `plugins/flow/references/three-tier-safety.md` line 80). This is mentioned on slide 24 and again in HANDBOOK §7.
 
 ### Is the marketplace `gh-workflow` plugin going away?
 
