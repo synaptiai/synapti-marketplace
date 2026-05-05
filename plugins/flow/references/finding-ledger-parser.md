@@ -97,6 +97,8 @@ DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DI
 # Empty FINDINGS_RAW (no markers on this PR) contributes zero.
 # Empty RESOLUTION arrays mean every finding is in_fix_forward.
 
+# NOTE: this snippet expects the caller to have set $PR_NUM (PR number being
+# processed) in scope; LEDGER_WARN messages reference it for traceability.
 # Sanitize attacker-controlled fields before logging (strip non-printable
 # bytes, cap length) so hostile review-body content can't inject ANSI escapes.
 safe() { printf '%s' "$1" | tr -cd '[:print:]' | cut -c1-64; }

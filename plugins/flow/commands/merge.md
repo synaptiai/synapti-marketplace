@@ -95,6 +95,7 @@ PR #$ARGUMENTS cannot be merged — the finding ledger has unresolved items.
 
 | Issue | Details |
 |-------|---------|
+| gh API unavailable | {if either GH_EXIT_RES or GH_EXIT_REV is non-zero, list both exit codes; else "N/A"} |
 | Non-empty ESCALATED | {list of escalated finding IDs, if any} |
 | Unmatched FINDINGS | {list of finding IDs with no RESOLVED entry, if any} |
 

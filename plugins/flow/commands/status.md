@@ -63,6 +63,10 @@ fi
 if [ "$LEDGER_PRS" = "LEDGER_UNAVAILABLE" ]; then
   echo "LEDGER: unavailable (gh API failed)"
 else
+  # Sanitize attacker-controlled fields before display/echo: cap length and
+  # strip non-printable bytes so a hostile review-body can't inject ANSI
+  # escapes into LEDGER_WARN output. Defined once for the whole loop.
+  safe() { printf '%s' "$1" | tr -cd '[:print:]' | cut -c1-64; }
   for PR_NUM in $LEDGER_PRS; do
     REVIEW_BODY=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" \
       --jq '[.[] | select(.body | test("FLOW_REVIEW_CYCLE:"))] | last | .body // ""' 2>/dev/null)
@@ -76,10 +80,6 @@ else
     ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
     DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DISPUTED:\[//;s/\]$//'  | tr -d ' ')
 
-    # Sanitize attacker-controlled fields before display/echo: cap length and
-    # strip non-printable bytes so a hostile review-body can't inject ANSI
-    # escapes into LEDGER_WARN output.
-    safe() { printf '%s' "$1" | tr -cd '[:print:]' | cut -c1-64; }
     echo "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY CAT LOC STATUS; do
       [ -z "$ID" ] && continue
       # Reject IDs containing case-glob metacharacters (`*`, `?`, `[`, `]`) —
