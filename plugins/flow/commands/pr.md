@@ -83,7 +83,7 @@ git diff "$DEFAULT_BRANCH"...HEAD
 
 ## Phase 3: CODE (Review Execution)
 
-**Parallel Agent dispatch** — 3 agents in a single message:
+**Parallel Agent dispatch** — 4 agents in a single message:
 
 ```
 Agent(code-reviewer):
@@ -98,6 +98,11 @@ Agent(convention-checker):
 Agent(test-runner):
   "Discover and run quality commands (lint, test, typecheck).
    Return structured results table."
+
+Agent(security-reviewer):
+  "Review the branch diff against $DEFAULT_BRANCH for OWASP Top 10,
+   secrets, auth/authz, input validation, dependency vulnerabilities.
+   Return P1/P2/P3 findings with file:line."
 ```
 
 **Main thread** (while agents run in parallel if using background agents, or after if foreground):
