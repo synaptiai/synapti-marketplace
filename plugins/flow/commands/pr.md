@@ -19,6 +19,7 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 - `pr-lifecycle` — pre-flight, PR body, reviewer suggestion
 - `code-review-methodology` — 5-facet review synthesis
 - `capability-discovery` — detect quality commands and agents
+- `holdout-validation` — cross-reference self-review claims against file state (Phase 3)
 
 ## Phase 1: EXPLORE
 
@@ -63,6 +64,8 @@ TaskCreate("Security scan", "Check for OWASP top 10, secrets, auth issues")
 TaskCreate("Convention check", "Validate commits, branch naming, patterns")
 TaskCreate("Quality commands", "Run lint, test, typecheck")
 TaskCreate("Requirements compliance", "Map acceptance criteria to implementation")
+TaskCreate("Error handling review", "Check for unhandled exceptions, silent failures, missing edge cases")
+TaskCreate("Holdout validation", "Cross-reference self-review claims against actual file state using holdout scenarios")
 ```
 
 If the diff includes UI-relevant files (`.tsx`, `.jsx`, `.vue`, `.html`, `.css`, `.scss`):
@@ -83,7 +86,7 @@ git diff "$DEFAULT_BRANCH"...HEAD
 
 ## Phase 3: CODE (Review Execution)
 
-**Parallel Agent dispatch** — 4 agents in a single message:
+**Parallel Agent dispatch** — 5 agents and skill in a single message (parity with `/flow:review` Path B):
 
 ```
 Agent(code-reviewer):
@@ -103,6 +106,16 @@ Agent(security-reviewer):
   "Review the branch diff against $DEFAULT_BRANCH for OWASP Top 10,
    secrets, auth/authz, input validation, dependency vulnerabilities.
    Return P1/P2/P3 findings with file:line."
+
+Agent(error-handler-inspector):
+  "Inspect changed files for error handling gaps, silent failures,
+   unhandled exceptions. Return P1/P2/P3 findings."
+
+Skill(holdout-validation):
+  Inputs:
+  - Self-review findings: {P1/P2/P3 from code-reviewer}
+  - Evidence bundle draft: {requirements compliance map}
+  - File list: {all files changed since branch creation}
 ```
 
 **Main thread** (while agents run in parallel if using background agents, or after if foreground):
