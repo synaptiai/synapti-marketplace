@@ -4,12 +4,12 @@ Configuration reference for flow's safety gates and tier settings.
 
 ## Settings File Locations
 
-Settings are read in cascading order (first found wins):
+Settings cascade in priority order; later layers override earlier ones:
 
-1. `.claude/settings.flow.local.json` — local overrides (gitignored)
-2. `.claude/settings.flow.json` — project settings (committed)
-3. `~/.claude/settings.flow.json` — user defaults
-4. `plugins/flow/settings.json` — plugin defaults
+1. `plugins/flow/settings.json` — plugin defaults
+2. `~/.claude/settings.flow.json` — user defaults
+3. `.claude/settings.flow.json` — project settings (committed)
+4. `.claude/settings.flow.local.json` — local overrides (gitignored, highest priority)
 
 ## Tier Settings
 

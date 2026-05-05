@@ -69,12 +69,14 @@ Written by skills (e.g., `autonomous-workflow`, `change-classification`).
 
 ## Journal Directory
 
-Configurable in settings cascade:
+Configurable in the settings cascade (later layers override earlier ones):
 
-1. `.claude/settings.flow.local.json`
-2. `.claude/settings.flow.json`
-3. `~/.claude/settings.flow.json`
-4. `plugins/flow/settings.json`
+1. `plugins/flow/settings.json`
+2. `~/.claude/settings.flow.json`
+3. `.claude/settings.flow.json`
+4. `.claude/settings.flow.local.json` (highest priority)
+
+See [gate-configuration.md](gate-configuration.md#settings-file-locations) for the canonical cascade reference.
 
 ```json
 {

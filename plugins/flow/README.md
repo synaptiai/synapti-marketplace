@@ -199,7 +199,14 @@ Flow captures development decisions in a journal (`.decisions/`) and analyzes th
 
 ## Configuration
 
-Settings in `.claude/settings.flow.json`:
+Settings cascade in priority order; later layers override earlier ones:
+
+1. `plugins/flow/settings.json` — plugin defaults
+2. `~/.claude/settings.flow.json` — user defaults
+3. `.claude/settings.flow.json` — project settings (committed)
+4. `.claude/settings.flow.local.json` — local overrides (gitignored, highest priority)
+
+Example project settings in `.claude/settings.flow.json`:
 
 ```json
 {
