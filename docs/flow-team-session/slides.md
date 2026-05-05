@@ -495,7 +495,7 @@ Confirmation here is structural. The user has to say yes.
 /flow:start <issue>     ─── EXPLORE → PLAN → branch + tasks
 /flow:commit            ─── classify → atomic conventional commit
 /flow:pr                ─── push → parallel agent review → PR with body
-/flow:review <pr>       ─── 6-facet parallel review (adversarial team: roadmap v2.2)
+/flow:review <pr>       ─── 6-facet parallel review (adversarial team: not yet implemented)
 /flow:address <pr>      ─── categorize comments → surgical fix → re-request
 ```
 
@@ -653,7 +653,7 @@ If you vote anything non-default, that vote lands in #3 as part of the post-sess
 
 **Forcing question**: do we want `/flow:review` to spawn an adversarial team where reviewers challenge each other's findings? Higher signal, higher cost.
 
-**Status**: the `agentTeams` flag is present today, but the reviewer-vs-reviewer challenge protocol is roadmap (planned for v2.2). Voting `true` today sets the flag; behavior changes once the build lands.
+**Status**: the `agentTeams` flag is present today, but the reviewer-vs-reviewer challenge protocol is not yet implemented. Voting `true` today sets the flag; behavior changes once the build lands.
 
 ---
 
@@ -897,7 +897,7 @@ Verb mapping:
 | `/gh-start` | `/flow:start` | flow has Phase 0 preflight + Spec Validation Gate |
 | `/gh-commit` | `/flow:commit` | same vocabulary, different autonomy |
 | `/gh-pr` | `/flow:pr` | flow runs parallel agent review |
-| `/gh-review` | `/flow:review` | flow ships parallel multi-facet review; adversarial teams are roadmap (v2.2) |
+| `/gh-review` | `/flow:review` | flow ships parallel multi-facet review; adversarial teams are not yet implemented |
 | `/gh-merge` | `/flow:merge` | both Tier 3 |
 
 If you preferred gh-workflow's interactive style: opt out of strict defaults (HANDBOOK Appendix A). Don't fight the plugin — configure it.
