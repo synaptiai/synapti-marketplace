@@ -16,25 +16,36 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 # Skip if no command
 [ -z "$COMMAND" ] && exit 0
 
-# Detect tier and action — first match wins (mixed-tier commands log only the leading action)
+# Strip quoted strings so trigger words inside commit messages or echo args don't false-match.
+# Order matters: handle escaped quotes within strings minimally — the goal is to remove the
+# bulk of quoted content so it can't appear as a "command" in pattern matching.
+UNQUOTED=$(printf '%s' "$COMMAND" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")
+
+# Detect tier and action. T3 checked first (highest tier wins on mixed-tier commands like
+# `gh pr merge && git push`). Anchor patterns require keyword to follow a command boundary
+# (BOL, whitespace, ;, |, &, (, \`) and to be terminated by whitespace, end-of-string, or
+# another non-word char excluding hyphens — avoids matching `git push-foo`, `gh pr-merge`.
+ANCHOR='(^|[[:space:];|&(`])'
+END='([[:space:]]|$|[^a-zA-Z0-9_-])'
+
 TIER=""
 ACTION=""
 
-# Tier 3 (most consequential — check first so a `gh pr merge` masquerading as a push lands as T3)
-if echo "$COMMAND" | grep -qE '(^|[[:space:];|&])gh\s+pr\s+merge\b'; then
+# Tier 3
+if echo "$UNQUOTED" | grep -qE "${ANCHOR}gh[[:space:]]+pr[[:space:]]+merge${END}"; then
   TIER="T3"
   ACTION="merge"
-elif echo "$COMMAND" | grep -qE '(^|[[:space:];|&])gh\s+release\s+create\b'; then
+elif echo "$UNQUOTED" | grep -qE "${ANCHOR}gh[[:space:]]+release[[:space:]]+create${END}"; then
   TIER="T3"
   ACTION="release"
 # Tier 2
-elif echo "$COMMAND" | grep -qE '(^|[[:space:];|&])gh\s+pr\s+create\b'; then
+elif echo "$UNQUOTED" | grep -qE "${ANCHOR}gh[[:space:]]+pr[[:space:]]+create${END}"; then
   TIER="T2"
   ACTION="pr-create"
-elif echo "$COMMAND" | grep -qE '(^|[[:space:];|&])gh\s+issue\s+edit\b' && echo "$COMMAND" | grep -qE -- '--add-assignee\b'; then
+elif echo "$UNQUOTED" | grep -qE "${ANCHOR}gh[[:space:]]+issue[[:space:]]+edit${END}" && echo "$UNQUOTED" | grep -qE -- '(^|[[:space:]])--add-assignee([[:space:]]|=|$)'; then
   TIER="T2"
   ACTION="issue-assign"
-elif echo "$COMMAND" | grep -qE '(^|[[:space:];|&])git\s+push\b'; then
+elif echo "$UNQUOTED" | grep -qE "${ANCHOR}git[[:space:]]+push${END}"; then
   # git push is T2 even when --force-with-lease (the lease variant is journal-allowed; plain --force is hook-blocked elsewhere)
   TIER="T2"
   ACTION="push"

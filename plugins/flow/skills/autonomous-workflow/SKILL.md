@@ -100,6 +100,14 @@ Auto-log entries carry an explicit tier tag so downstream consumers (e.g. `/flow
 
 **Backwards compatibility**: older journal entries that predate this convention have no tier tag (e.g. `<!-- auto-log: TS Edit /path -->`). Downstream consumers MUST treat un-tagged entries as `T1` for compatibility — only T1 actions were tracked before tier tagging shipped.
 
+**Parser pattern for both formats** — the optional tier group lets one regex match both:
+
+```
+<!-- auto-log: ([0-9-]+ [0-9:]+) (?:(T[123]) )?(.+) -->
+```
+
+Capture groups: `[1]` = timestamp, `[2]` = tier (empty for old entries → default to `T1`), `[3]` = action+target. A consumer that splits on whitespace MUST first check whether field [3] matches `T[123]` and shift accordingly.
+
 ## Parallel Execution
 
 Dispatch independent operations in a single message:

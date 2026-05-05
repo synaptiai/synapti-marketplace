@@ -10,8 +10,12 @@ command -v jq &>/dev/null || exit 0
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
-# Only process git commit commands
-echo "$COMMAND" | grep -qE 'git\s+commit' || exit 0
+# Strip quoted strings so trigger words inside echo args or comments don't false-match.
+UNQUOTED=$(printf '%s' "$COMMAND" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")
+
+# Only process git commit commands. Anchor on command boundary; require word-end after `commit`
+# so `git commit-mock` or similar doesn't match.
+echo "$UNQUOTED" | grep -qE '(^|[[:space:];|&(`])git[[:space:]]+commit([[:space:]]|$|[^a-zA-Z0-9_-])' || exit 0
 
 # Determine journal directory from settings
 JOURNAL_DIR=".decisions"

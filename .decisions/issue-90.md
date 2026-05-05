@@ -85,3 +85,21 @@ Tasks are independent (no shared file beyond hooks.json which is touched only by
 <!-- auto-log: 2026-05-06 00:41 commit "fix(verdict-judge): tighten tool budget to Read-only (#89)" -->
 
 <!-- auto-log: 2026-05-06 00:41 T3 merge -->
+
+<!-- auto-log: 2026-05-06 00:42 commit "feat(journal): add tier tagging to auto-log hooks" -->
+
+<!-- auto-log: 2026-05-06 00:43 commit "feat(journal): add tier tagging to auto-log hooks" -->
+
+<!-- auto-log: 2026-05-06 00:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/log-tier-events.sh -->
+
+<!-- auto-log: 2026-05-06 00:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/log-commits.sh -->
+
+<!-- auto-log: 2026-05-06 00:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/autonomous-workflow/SKILL.md -->
+
+<!-- auto-log: 2026-05-06 00:46 T1 commit "feat(journal): add tier tagging to auto-log hooks" -->
+
+<!-- auto-log: 2026-05-06 00:46 T3 merge -->
+
+<!-- auto-log: 2026-05-06 00:46 T2 push -->
+
+<!-- auto-log: 2026-05-06 00:46 commit "feat(journal): add tier tagging to auto-log hooks" -->
