@@ -495,7 +495,7 @@ Confirmation here is structural. The user has to say yes.
 /flow:start <issue>     ─── EXPLORE → PLAN → branch + tasks
 /flow:commit            ─── classify → atomic conventional commit
 /flow:pr                ─── push → parallel agent review → PR with body
-/flow:review <pr>       ─── 6-facet parallel review (or adversarial team)
+/flow:review <pr>       ─── 6-facet parallel review (adversarial team: roadmap v2.2)
 /flow:address <pr>      ─── categorize comments → surgical fix → re-request
 ```
 
@@ -652,6 +652,8 @@ If you vote anything non-default, that vote lands in #3 as part of the post-sess
 **Lands in**: `settings.flow.json` → `agentTeams` + env
 
 **Forcing question**: do we want `/flow:review` to spawn an adversarial team where reviewers challenge each other's findings? Higher signal, higher cost.
+
+**Status**: the `agentTeams` flag is present today, but the reviewer-vs-reviewer challenge protocol is roadmap (planned for v2.2). Voting `true` today sets the flag; behavior changes once the build lands.
 
 ---
 
@@ -814,7 +816,7 @@ Read-only. Safe to run anywhere, anytime. The "Suggested Next Action" line picks
 
 1. **`gh` CLI not authenticated** — preflight fails. Fix: `gh auth login`.
 2. **Dirty worktree on `/flow:start`** — preflight fails. Fix: stash or commit before starting.
-3. **No `CLAUDE.md`** — `/flow:setup` will offer to add a `CLAUDE-flow.md` section. Accept it or compose your own.
+3. **CLAUDE.md present** — `/flow:setup` offers to append the workflow section from `templates/CLAUDE-flow.md` to your existing `CLAUDE.md`. If no `CLAUDE.md` exists, setup skips this step — create one first or copy the template manually.
 4. **`block-force-push` blocks a legitimate rebase push** — use `--force-with-lease`. Allowed and journaled (`three-tier-safety.md` line 41).
 5. **Auto-log seems to duplicate commits** — `log-commits.sh` is idempotent: it skips lines that already carry the `auto-log` marker. If you see duplication, your `plugin.json` is out of date — `claude plugins update flow`.
 
@@ -895,7 +897,7 @@ Verb mapping:
 | `/gh-start` | `/flow:start` | flow has Phase 0 preflight + Spec Validation Gate |
 | `/gh-commit` | `/flow:commit` | same vocabulary, different autonomy |
 | `/gh-pr` | `/flow:pr` | flow runs parallel agent review |
-| `/gh-review` | `/flow:review` | flow supports adversarial teams (opt-in) |
+| `/gh-review` | `/flow:review` | flow ships parallel multi-facet review; adversarial teams are roadmap (v2.2) |
 | `/gh-merge` | `/flow:merge` | both Tier 3 |
 
 If you preferred gh-workflow's interactive style: opt out of strict defaults (HANDBOOK Appendix A). Don't fight the plugin — configure it.

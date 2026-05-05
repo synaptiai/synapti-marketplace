@@ -10,3 +10,6 @@ dist/
 ai-first-kit-workspace/*
 .claude/agents/*
 .claude/skills/*
+
+# Workshop slide renders (regenerate via Marp from .md sources)
+docs/flow-team-session/*.pdf
