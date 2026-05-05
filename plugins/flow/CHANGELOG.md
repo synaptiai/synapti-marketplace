@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.1.0 (2026-05-05)
+
+### New Features
+
+- `/flow:address` re-review now matches `/flow:pr` fan-out parity, running the full reviewer set on resolved feedback (#64, #75)
+- `/flow:pr` and `/flow:review` default fan-out now wires `security-reviewer` for security-aware coverage on every PR (#61, #70)
+
+### Bug Fixes
+
+- `/flow:pr` review depth brought to parity with `/flow:review` (#62, #71)
+- Skill bodies that duplicated command bash are now deduped; commands stay the canonical source (#65, #67)
+- Three inaccurate gate descriptions in `gate-configuration.md` corrected (#60, #69)
+- `schema.json` defaults synced with post-v2.0 settings (#59, #68)
+
+### Documentation
+
+- Required Skills vs `Skill()` invocation convention documented (#66, #74)
+- Settings cascade direction unified across all docs (#63, #73)
+- Three source-of-truth drifts in README and `criterion-verification-map` corrected (#58, #72)
+- Flow plugin team workshop materials added (#57)
+
 ## 2.0.1 (2026-05-05)
 
 ### Bug Fixes
