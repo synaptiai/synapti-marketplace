@@ -37,6 +37,18 @@ fi
 if [ -d "$JOURNAL_DIR" ] && [ -f "$JOURNAL_FILE" ]; then
   TIMESTAMP=$(date +"%Y-%m-%d %H:%M")
   LAST_MSG=$(git log -1 --format="%s" 2>/dev/null || echo "unknown")
+
+  # Guard 1: skip housekeeping commits to break the auto-log -> commit -> auto-log loop
+  case "$LAST_MSG" in
+    *auto-log*|"chore(decisions):"*) exit 0 ;;
+  esac
+
+  # Guard 2: skip if the most recent commit only touched the journal file itself
+  CHANGED=$(git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null || echo "")
+  if [ "$CHANGED" = "$JOURNAL_FILE" ]; then
+    exit 0
+  fi
+
   echo "" >> "$JOURNAL_FILE"
   echo "<!-- auto-log: $TIMESTAMP commit \"$LAST_MSG\" -->" >> "$JOURNAL_FILE"
 fi
