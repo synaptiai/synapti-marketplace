@@ -116,7 +116,7 @@
         },
         "requireAllPass": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "When true, ALL criteria must PASS for the completion gate. When false, NEEDS-HUMAN-REVIEW verdicts can be user-approved."
         }
       }
@@ -124,7 +124,12 @@
     "testing": {
       "type": "object",
       "properties": {
-        "tddMode": { "enum": ["enforce", "suggest", "off"], "default": "suggest" }
+        "tddMode": { "enum": ["enforce", "suggest", "off"], "default": "enforce" },
+        "tddModeOptOut": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true with tddMode=suggest, suppresses warnings about missing tests."
+        }
       }
     },
     "debugging": {
