@@ -95,7 +95,7 @@ All four layers from `autonomous-workflow/SKILL.md` lines 24–28.
 ### Phase E — `/flow:pr` (13:30–16:00)
 
 - 13:30 — `/flow:pr`. Push happens (Tier 2 — journal entry, no prompt).
-- 13:50 — Parallel agent fan-out: `code-reviewer`, `security-reviewer`, `convention-checker`, `error-handler-inspector`, `integration-verifier`, plus a re-run of `holdout-validation`.
+- 13:50 — Parallel agent fan-out (Phase 3): `code-reviewer`, `convention-checker`, `test-runner`, `security-reviewer`, `error-handler-inspector`, plus a re-run of `holdout-validation`.
 - 14:30 — Agents return. Findings table renders, sorted P1 → P2 → P3.
 - 15:00 — One P3 surfaces: "missing example in README." Agent fixes inline (P3 fix-or-escalate — Excellence Principle #6).
 - 15:30 — PR body assembled from `plugins/flow/templates/pr-body.md` + public journal entries. URL visible.

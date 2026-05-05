@@ -530,12 +530,12 @@ Pure bash. No LLM calls. Fails fast before spending tokens.
 
 push (T2)
    ↓
-parallel agent fan-out:
+parallel agent fan-out (Phase 3):
    ├── code-reviewer         (quality + correctness)
-   ├── security-reviewer     (OWASP, secrets, auth)
    ├── convention-checker    (commit format, branch, PR shape)
+   ├── test-runner           (lint, test, typecheck)
+   ├── security-reviewer     (OWASP, secrets, auth)
    ├── error-handler-inspector  (unhandled, silent failures)
-   ├── integration-verifier  (E2E smoke)
    └── holdout-validation    (claim verification)
    ↓
 findings deduplicated by file:line, sorted P1 → P3
