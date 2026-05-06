@@ -1,6 +1,6 @@
 ---
 name: architecture-patterns
-description: "Guide system design decisions including design-from-functionality, coupling analysis, and C4 model thinking. Use when designing systems, evaluating structural changes, or reviewing architecture decisions."
+description: "Document system design decisions with mapped user flows, coupling analysis, failure modes, and explicit non-goals, proving the architecture can survive under unexpected conditions. Use when designing systems, evaluating structural changes, or reviewing architecture decisions. Proactively suggest when coupling analysis reveals circular dependencies, god objects, or hidden shared state."
 allowed-tools: Read, Bash, Grep, Glob, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: Explore

@@ -1,6 +1,6 @@
 ---
 name: evidence-based-development
-description: "Enforce evidence-based decision-making by requiring file:line citations, P1/P2/P3 finding prioritization, and the ASSERTION/EVIDENCE/VERIFIED pattern before any recommendation. Use when gathering evidence, presenting findings, or making development decisions."
+description: "Enforce evidence-based claims through file:line citations, P1/P2/P3 prioritization proportional to evidence, and the ASSERTION/EVIDENCE/VERIFIED pattern for behavioral claims before any recommendation. Use when gathering evidence, presenting findings, or making development decisions. This skill MUST be consulted because confidence is not evidence, and ungrounded claims cause incorrect development decisions."
 allowed-tools: Bash, Read, Grep, Glob
 ---
 

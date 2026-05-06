@@ -188,10 +188,20 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
       haven't been introduced by the fix commits since the last review.
       Return structured results table."
 
+   Agent(security-reviewer):
+     "Review the fix commits since the last review against $DEFAULT_BRANCH
+      for OWASP Top 10, secrets, auth/authz, input validation, and dependency
+      vulnerabilities. Return P1/P2/P3 findings with file:line."
+
    Agent(error-handler-inspector):
      "Check error handling in the changed scope of the fix commits since
       the last review. Return P1/P2/P3 findings with file:line."
    ```
+
+   This dispatch is the canonical re-review fan-out — exactly the same five
+   reviewer agents `/flow:pr` Phase 3 dispatches. Keeping the agent list
+   explicit here (rather than referencing pr.md by name) makes parity locally
+   verifiable and prevents silent drift if either command's roster changes.
 3. **Holdout validation** — after self-review, invoke `holdout-validation` to cross-reference claims against file state:
    ```
    Skill(holdout-validation):

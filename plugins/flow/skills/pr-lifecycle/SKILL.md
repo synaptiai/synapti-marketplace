@@ -1,6 +1,6 @@
 ---
 name: pr-lifecycle
-description: "Reference for the pull-request lifecycle policy: pre-flight gates, body structure, reviewer-suggestion algorithm, verification gate, finding-ledger merge prerequisite, and rationalization prevention. Use to understand the rules that PR creation enforces."
+description: "Reference document describing PR lifecycle: pre-flight gates (4 conditions), verification gate (5 conditions), body structure (7 sections), reviewer-suggestion algorithm (CODEOWNERS → file expertise → recent activity → workload balance), and finding-ledger merge prerequisite. Reference only (policy document; consumed by `/flow:pr` and `/flow:merge`)."
 allowed-tools: Read
 context: fork
 agent: general-purpose
@@ -40,6 +40,8 @@ Before the PR is created, every one of the following must hold. If any fail, sto
 5. No P1 findings remain from code review
 
 This gate is **mandatory**. Skipping it to "get the PR up quickly" creates reviewer burden and shifts the verification cost to whoever reads the PR.
+
+For the canonical map of all eight quality gates flow enforces — Spec Validation, Stranger Test, Per-Task Verification, Runtime Verification, Evidence Completeness, Missing-Criterion Scan, Holdout Validation, and Finding-Ledger Merge — see [`gate-configuration.md`](../../references/gate-configuration.md#quality-gates).
 
 ## PR Body Structure
 

@@ -1,6 +1,6 @@
 ---
 name: convention-enforcement
-description: "Validate git conventions including commit messages, branch naming, PR format, and issue linkage by detecting project-specific rules from CLAUDE.md and settings. Use when creating commits, preparing PRs, or reviewing for convention compliance."
+description: "Validate git conventions (commit messages, branch naming, PR format, issue linkage) by detecting project-specific rules from CLAUDE.md and settings, inferring patterns from recent history. Use when creating commits, preparing PRs, or reviewing for convention compliance. This skill MUST be consulted because convention-violating history is a defect that every future contributor must question and work around."
 allowed-tools: Bash, Read
 context: fork
 agent: Explore

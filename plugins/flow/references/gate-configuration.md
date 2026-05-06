@@ -84,8 +84,7 @@ Settings cascade in priority order; later layers override earlier ones:
 ```json
 {
   "journal": {
-    "dir": ".decisions",
-    "sensitivityDefault": "public"
+    "dir": ".decisions"
   }
 }
 ```

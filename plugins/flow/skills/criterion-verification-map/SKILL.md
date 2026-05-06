@@ -1,6 +1,6 @@
 ---
 name: criterion-verification-map
-description: "Treat each acceptance criterion as an eval source that produces a runnable verification command at plan time, then collect evidence and assemble a structured bundle for the verdict judge at verify time. Use when planning implementation against issue acceptance criteria and when verifying completeness."
+description: "Transform acceptance criteria into plan-time runnable verification commands (behavioral, API, UI, error, config, data, contract types) with expected evidence shapes, then execute at verify time and assemble evidence bundles with honest completeness subsections (untested paths, known limitations, adversarial cases covered). Use when planning implementation against issue acceptance criteria or verifying completeness. This skill MUST be consulted because deferring verification to later causes incomplete PRs, and suppressing evidence gaps prevents the verdict judge from reasoning about gaps."
 allowed-tools: Bash, Read, Grep, Glob, TaskCreate, TaskList, TaskUpdate, TaskGet
 context: fork
 agent: general-purpose

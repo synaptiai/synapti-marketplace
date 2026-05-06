@@ -1,6 +1,11 @@
 #!/bin/bash
 # [flow] TaskCompleted hook: Verify task acceptance criteria before marking complete
 # Exit 2 blocks task completion with feedback
+#
+# Compatibility: requires Claude Code v2.1.33+ (TaskCompleted event was introduced
+# alongside agent-team support). The JSON payload schema is not officially documented,
+# so the hook treats `.task.subject` and `.task.description` as best-effort fields and
+# exits 0 silently when they are absent rather than blocking on schema drift.
 
 set -euo pipefail
 

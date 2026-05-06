@@ -1,6 +1,6 @@
 ---
 name: preflight-checks
-description: "Reference for the pre-flight validation policy: clean git state, issue existence, gh CLI authentication, and remote accessibility — all enforced via fast bash with no LLM calls. Use to understand why pre-flight exists and what each check protects."
+description: "Reference document describing six pre-flight checks (clean git state, not detached HEAD, gh auth, issue exists and OPEN, remote reachable, duplicate-branch warning) as pure bash exit codes with no LLM calls. Reference only (policy document; consumed by `/flow:start` Phase 0)."
 allowed-tools: Read
 context: fork
 agent: general-purpose

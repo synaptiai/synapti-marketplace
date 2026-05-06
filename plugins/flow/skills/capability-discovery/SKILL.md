@@ -1,6 +1,6 @@
 ---
 name: capability-discovery
-description: "Discover available agents, skills, quality commands (lint, test, typecheck), tech stack, and LSP code intelligence capabilities in the project environment. Use when starting implementation, creating PRs, reviewing PRs, or addressing feedback to determine which agents to dispatch and which quality commands to run."
+description: "Discover available agents, skills, quality commands (lint, test, typecheck), tech stack, verification capabilities, and LSP code intelligence features via parallel environment scanning. Use when starting implementation, creating PRs, reviewing PRs, or addressing feedback. This skill MUST be consulted because assuming tools exist causes runtime failures, and assuming they do not causes missing capabilities."
 allowed-tools: Bash, Read, Glob, Grep, LSP
 context: fork
 agent: Explore

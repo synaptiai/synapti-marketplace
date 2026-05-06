@@ -1,6 +1,6 @@
 ---
 name: feedback-resolution
-description: "Address PR review feedback through focused surgical changes with Boy Scout Rule, feedback context recovery, ambiguity handling, pushback criteria, and re-review request patterns. Use when resolving reviewer comments on a pull request."
+description: "Address PR review feedback through surgical fixes traceable to specific comments, apply the Boy Scout Rule only to already-modified files (separate `improve:` commits), recover context by code snippet rather than line number, and enforce pushback only when factually incorrect, test-breaking, or CLAUDE.md-violating. Use when resolving reviewer comments on a pull request. This skill MUST be consulted because every untraceable change is out-of-context, and pushback without evidence is just disagreement."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob
 context: fork
 agent: general-purpose

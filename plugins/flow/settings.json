@@ -41,8 +41,7 @@
     "proposalDir": "~/.claude/flow-proposals"
   },
   "journal": {
-    "dir": ".decisions",
-    "sensitivityDefault": "public"
+    "dir": ".decisions"
   },
   "specFirst": {
     "requireAcceptanceCriteria": true,

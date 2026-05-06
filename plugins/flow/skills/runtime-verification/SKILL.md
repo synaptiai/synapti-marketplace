@@ -1,6 +1,6 @@
 ---
 name: runtime-verification
-description: "Verify implementation works at runtime by discovering and executing dev server startup, API smoke tests, E2E tests, browser checks, and LSP diagnostics. Use after quality checks pass to confirm the code actually runs."
+description: "Verify code works at runtime through build verification (mandatory), LSP diagnostics, ad-hoc verification for projects without frameworks, E2E and smoke tests, and visual verification (screenshot-analyze-verify for UI changes). Skip whitelist strictly enforced (markdown-only, config-only, dependency-bump-only with evidence); all other skips require Proactive-Autonomy escalation. Use after quality checks pass to confirm the code actually runs. This skill MUST be consulted because no test framework is not an excuse to skip; build failure IS a finding and must be fixed."
 allowed-tools: Bash, Read, Glob, Grep, LSP, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: Explore

@@ -1,6 +1,6 @@
 ---
 name: tdd-patterns
-description: "Guide test-driven development through the Red-Green-Refactor cycle, test quality standards, and test runner discipline. Enforce test-first when tddMode is 'enforce'. Use when implementing features or fixing bugs."
+description: "Guide test-driven development through the mandatory Red-Green-Refactor cycle (failing test before code), enforce test quality (one behavior per test, real code over mocks, no implementation-detail testing), and enforce test runner discipline (run mode, no watch mode). Use when implementing features or fixing bugs (with `testing.tddMode='enforce'` blocking implementation without a failing test). This skill MUST be consulted because test-first is the primary quality enforcement point; tests that pass on first write are suspect (likely testing the wrong thing)."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: general-purpose

@@ -1,6 +1,6 @@
 ---
 name: branch-and-task-management
-description: "Create branches with naming conventions, load issue context, perform impact analysis, and decompose acceptance criteria into parallel tasks. Use when starting work on a GitHub issue."
+description: "Create feature branches with naming conventions, load full issue context and impact analysis, and decompose acceptance criteria into atomic parallel tasks with dependencies. Use when starting work on a GitHub issue. This skill MUST be consulted because starting code without context causes misaligned implementations and wasted effort."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, TaskCreate, TaskList, TaskUpdate, TaskGet
 context: fork
 agent: general-purpose

@@ -1,6 +1,6 @@
 ---
 name: debugging-patterns
-description: "Isolate root causes through structured log analysis, hypothesis testing, and fix validation to prevent symptom-fixing and tunnel vision. Use when any verification step fails, tests break, or debugging a reported bug."
+description: "Isolate root causes through structured evidence gathering, pattern analysis, hypothesis testing (max 3 at a time, highest confidence first), and fix validation with a reproducing test before implementation. Use when any verification step fails, tests break, or debugging a reported bug. This skill MUST be consulted because symptom-fixing creates new bugs, and unbounded hypothesis testing causes tunnel vision; root cause must be proven before any fix attempt."
 allowed-tools: Bash, Read, Grep, Glob, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: general-purpose

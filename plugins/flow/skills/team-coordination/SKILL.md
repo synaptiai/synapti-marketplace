@@ -1,6 +1,6 @@
 ---
 name: team-coordination
-description: "Coordinate agent teams for adversarial review or parallel implementation, including team spawning, task sizing, review protocol, and teammate health monitoring. Only loaded when agentTeams is enabled. Use when dispatching multi-agent work or adversarial review."
+description: "Coordinate agent teams for adversarial review (paired skeptic/verifier per facet, challenge round with disposition vocabulary, consolidated findings with confidence) or parallel implementation (task sizing 5-6 per teammate, non-overlapping files). Enforces independent analysis before shared conclusions. Reference only (`disable-model-invocation: true`); loaded only when `agentTeams: true` in settings."
 allowed-tools: Bash, Read, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: general-purpose
