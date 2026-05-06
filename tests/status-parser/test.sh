@@ -149,5 +149,6 @@ echo ""
 echo "============================================"
 echo "RESULT: $PASS passed, $FAIL failed"
 echo "============================================"
+[ "$PASS" -eq 0 ] && { echo "FAIL: no assertions ran — harness regression" >&2; exit 1; }
 [ "$FAIL" -gt 0 ] && exit 1
 exit 0

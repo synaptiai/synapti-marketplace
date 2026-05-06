@@ -68,5 +68,10 @@ echo ""
 echo "============================================"
 echo "RESULT: $PASS passed, $FAIL failed"
 echo "============================================"
+# Guard against a no-op run masquerading as success: if not a single assert
+# fired, the test harness itself is broken (e.g., a python helper raised
+# before the loop ran). With set -uo pipefail (no -e) and PASS+FAIL accumulators,
+# only this final check distinguishes "no assertions" from "all assertions ok".
+[ "$PASS" -eq 0 ] && { echo "FAIL: no assertions ran — harness regression" >&2; exit 1; }
 [ "$FAIL" -gt 0 ] && exit 1
 exit 0
