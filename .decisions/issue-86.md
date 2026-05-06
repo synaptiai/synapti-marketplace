@@ -217,6 +217,20 @@ User answered all four open questions in a single batch:
 
 Composite design is now frozen. RFC sub-issue #94 will be updated with a comment recording these resolutions so the implementation sub-issue inherits a fully-decided contract.
 
+### 2026-05-06 — Scope expanded: implementation folded into PR #95
+
+User redirected: "We keep creating new issues and PRs! Let's just use the same PR and start the implementation sub-issue in the current PR." No new sub-issue filed; implementation lands in this PR alongside the RFC journal.
+
+Phases shipped (in this same branch):
+
+1. **Phase 1 — marker schema docs** (commit `ac869eb`): `references/finding-ledger-parser.md` documents the optional 7-field FLOW_REVIEW_CYCLE form with the controlled disposition vocabulary (`consensus|validated|refined|kept|unchallenged`). Existing parsers tolerate variable field count without modification.
+2. **Phase 2 — team-coordination/SKILL.md** (commit `b834c7c`): replaces the vague 4-phase adversarial protocol with the concrete paired-reviewer + challenge protocol (skeptic + verifier variants, AGREE/DISAGREE/REFINE dispositions, consolidation table, fallback semantics, ≈4× cost expectation).
+3. **Phase 3 — commands/review.md Path A** (commit `b834c7c`): replaces the 12-line stub with structured A.1–A.6 sub-phases (gate check, parallel paired dispatch, auto-consensus detection, parallel challenge round, consolidation, per-facet fallback, marker emission). Phase 4 step 7 documents which marker form to emit.
+4. **Phase 4 — verification fixture** (commit `fff03bc`): `tests/issue-86/` ships synthetic 5-field and 7-field markers + `verify.sh` (16 assertions, all green) proving status.md and merge.md parsers tolerate both forms. LLM-side end-to-end is documented as a manual step requiring `agentTeams: true` against a synthetic PR.
+5. **Phase 5 — slides update**: deferred (covered by separate slides PRs #87 and the slides reframe issue #80; will reframe slides-v2 once #95 merges).
+
+Closes the parser side of #86 AC #6. ACs #2-#5 (skill/review/marker/fallback) shipped in this PR. AC #6 LLM-side requires runtime verification on a real PR with the flag enabled — recorded as MANUAL evidence below.
+
 <!-- auto-log: 2026-05-06 03:03 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-86.md -->
 
 <!-- auto-log: 2026-05-06 03:04 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-86.md -->
@@ -224,3 +238,33 @@ Composite design is now frozen. RFC sub-issue #94 will be updated with a comment
 <!-- auto-log: 2026-05-06 03:30 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-86.md -->
 
 <!-- auto-log: 2026-05-06 03:30 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-86.md -->
+
+<!-- auto-log: 2026-05-06 03:36 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
+
+<!-- auto-log: 2026-05-06 03:37 commit "feat(parser): document FLOW_REVIEW_CYCLE confidence/disposition extension" -->
+
+<!-- auto-log: 2026-05-06 03:39 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/team-coordination/SKILL.md -->
+
+<!-- auto-log: 2026-05-06 03:41 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-06 03:41 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/templates/review-comment.md -->
+
+<!-- auto-log: 2026-05-06 03:41 commit "feat(team-coordination): paired-reviewer + challenge-round protocol" -->
+
+<!-- auto-log: 2026-05-06 03:42 Write /Users/danielbentes/synapti-marketplace/tests/issue-86/README.md -->
+
+<!-- auto-log: 2026-05-06 03:42 Write /Users/danielbentes/synapti-marketplace/tests/issue-86/markers/legacy-5-field.txt -->
+
+<!-- auto-log: 2026-05-06 03:42 Write /Users/danielbentes/synapti-marketplace/tests/issue-86/markers/extended-7-field.txt -->
+
+<!-- auto-log: 2026-05-06 03:42 Write /Users/danielbentes/synapti-marketplace/tests/issue-86/markers/mixed-cycles.txt -->
+
+<!-- auto-log: 2026-05-06 03:42 Write /Users/danielbentes/synapti-marketplace/tests/issue-86/markers/with-resolution.txt -->
+
+<!-- auto-log: 2026-05-06 03:43 Write /Users/danielbentes/synapti-marketplace/tests/issue-86/verify.sh -->
+
+<!-- auto-log: 2026-05-06 03:44 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-06 03:44 commit "feat(tests): add parser-tolerance fixture for FLOW_REVIEW_CYCLE schema" -->
+
+<!-- auto-log: 2026-05-06 03:44 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-86.md -->
