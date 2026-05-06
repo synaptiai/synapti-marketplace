@@ -23,16 +23,32 @@ Two HTML-comment markers carry the finding state. They are emitted by review and
 Source: `templates/review-comment.md`. Lists all findings raised in cycle `N` with their priority and location.
 
 ```
-<!-- FLOW_REVIEW_CYCLE:{N} FINDINGS:[{ID}|{priority}|{category}|{file:line}|{status},{ID}|{priority}|{category}|{file:line}|{status}] -->
+<!-- FLOW_REVIEW_CYCLE:{N} FINDINGS:[{ID}|{priority}|{category}|{file:line}|{status}[|{confidence}|{disposition}],...] -->
 ```
 
-| Field | Values |
-|-------|--------|
-| `ID` | Finding identifier (e.g., `F1`, `F12`) |
-| `priority` | `P1` \| `P2` \| `P3` |
-| `category` | Free text (e.g., `security`, `correctness`, `convention`) |
-| `file:line` | Location citation |
-| `status` | `open` at review time |
+| Field | Values | Required |
+|-------|--------|----------|
+| `ID` | Finding identifier (e.g., `F1`, `F12`) | yes |
+| `priority` | `P1` \| `P2` \| `P3` | yes |
+| `category` | Free text (e.g., `security`, `correctness`, `convention`) | yes |
+| `file:line` | Location citation | yes |
+| `status` | `open` at review time | yes |
+| `confidence` | `HIGH` \| `MEDIUM` \| `LOW` | no — paired-reviewer mode only |
+| `disposition` | `consensus` \| `validated` \| `refined` \| `kept` \| `unchallenged` | no — paired-reviewer mode only |
+
+**Backwards-compat rule (mandatory for parsers):** Readers MUST tolerate variable field count. The legacy 5-field row `ID|P1|category|file:line|open` and the extended 7-field row `ID|P1|category|file:line|open|HIGH|consensus` MUST both parse successfully. Trailing fields beyond the parser's known set are silently ignored (or surfaced for display when the parser knows them).
+
+The 7-field form is emitted only when `commands/review.md` runs Path A (paired-reviewer + challenge protocol, gated on `agentTeams: true` AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`). All other emitters continue to produce the 5-field form.
+
+**Disposition vocabulary is fixed (no free text)** — the field is parsed positionally and must not contain commas (the row delimiter) or pipes (the field delimiter). The five values above are the complete v1 vocabulary; new values require a schema bump.
+
+**Vocabulary enforcement is consumer-side, not emitter-side.** No emitter pre-validates the disposition string before posting a marker. If a trusted reviewer (the only kind whose markers reach parsing — see Trust Boundary above) hand-edits a posted marker and inserts an out-of-vocabulary disposition or injects extra rows via embedded `]`/`,`, the consumer parsers degrade safely:
+
+- `grep -o 'FINDINGS:\[[^]]*\]'` (used by `status.md`, `merge.md`, `tests/issue-86/verify.sh`) terminates at the first unescaped `]`, truncating any row containing one. The truncated row then fails the consumer's ID/priority allowlist (`[A-Za-z][A-Za-z0-9_-]*` for IDs, `P1|P2|P3` for priority) and is rejected with a `LEDGER_WARN` to stderr.
+- A comma in disposition splits into a phantom row that is similarly caught by the ID/priority allowlists.
+- Out-of-vocabulary dispositions parse without error but carry no semantic meaning to consumers (the field is currently display-only — only `ID` and `PRIORITY` reach merge-gate logic).
+
+This means the closed-vocabulary contract is enforced by the consumer's allowlist + grep-truncation behavior, not by an explicit validator. Adding emitter-side validation would defense-in-depth this; the current architecture is safe but documented for transparency.
 
 ### FLOW_RESOLUTION_CYCLE — emitted in PR comments
 
