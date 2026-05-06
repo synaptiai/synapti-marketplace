@@ -6,6 +6,7 @@ docs/plans/
 dist/
 .claude/audit.log
 .claude/settings.gh-workflow.local.json
+.claude/settings.flow.local.json
 .claude/agent-memory/
 ai-first-kit-workspace/*
 .claude/agents/*

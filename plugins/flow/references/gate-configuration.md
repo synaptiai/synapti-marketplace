@@ -161,6 +161,12 @@ Scans for `FLOW_RESOLUTION_CYCLE` markers in the codebase. Blocks merge when the
 **Blocks:** `gh pr merge` / `/flow:merge`
 **Override:** Resolve all findings or complete Proactive Autonomy escalation for each.
 
+**Marker trust filter:** Both `/flow:merge` and `/flow:status` filter markers by GitHub `author_association` before honoring them — see the Trust Boundary section of [`finding-ledger-parser.md`](finding-ledger-parser.md) for the threat model.
+
+| Setting | Default | Notes |
+|---------|---------|-------|
+| `merge.markerTrust.allowedAssociations` | `["OWNER","MEMBER","COLLABORATOR"]` | **Read from `plugins/flow/settings.json` ONLY** — does NOT use the cascade above (security pin: a hostile fork PR could otherwise commit `.claude/settings.flow.local.json` with a permissive trust list and disable the forgery defense after `gh pr checkout`). |
+
 ## Gate Summary
 
 | # | Gate | Phase | Blocks |
