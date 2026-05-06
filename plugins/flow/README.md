@@ -139,6 +139,18 @@ HOOKS (8 scripts)
 
   Note: merge/release confirmation gates run at the COMMAND level via
   AskUserQuestion (see references/three-tier-safety.md), not as hooks.
+
+BIN/ HELPER SCRIPTS (Landing 3)
+  ├── flow-escalate.sh      — formats canonical six-field escalation prompts
+  ├── validate-skill-input.sh — validates skill inputs against JSON Schemas in tests/skills/
+  ├── journal-record.sh     — atomically updates the YAML manifest in .decisions/issue-{N}.md
+  └── promote-proposal.sh   — promotes /flow:learn proposals to learned skills via draft PR
+
+TESTS (repo-level, exercised by every PR series)
+  ├── tests/issue-86/         — FLOW_REVIEW_CYCLE marker parser fixtures (Landing 0)
+  ├── tests/skills/*/         — JSON Schema input contracts per skill (Landing 3)
+  ├── tests/finding-schema/   — canonical finding row validator + fixtures (Landing 3)
+  └── tests/status-parser/    — status.md ↔ merge.md ledger parser parity (Landing 3)
 ```
 
 ### Required Skills vs Skill() invocation convention
@@ -176,6 +188,18 @@ Plus the existing references documenting policy, parser rules, and configuration
 - [`skill-manifests.md`](references/skill-manifests.md) — command → required-skill mapping (kept in lockstep with command files)
 - [`test-review-checklist.md`](references/test-review-checklist.md), [`code-review-checklist.md`](references/code-review-checklist.md) — runnable checklists for review facets
 - [`classification-signals.md`](references/classification-signals.md) — `change-classification` skill heuristics
+
+## Tier Classification (every command)
+
+Every command in `plugins/flow/commands/` ships with a `## Tier Classification` section at the bottom listing the actions it takes and the tier (1 / 2 / 3) for each. The tier vocabulary:
+
+| Tier | Behavior |
+|---|---|
+| 1 (Autonomous) | File edits, branches, commits — execute without asking |
+| 2 (Journal) | Push, PR creation, posting reviews / resolution comments — execute and log |
+| 3 (Confirm) | Merge, release — always ask via `AskUserQuestion` |
+
+Per-command tier tables make the safety boundary explicit at the point of use. Reviewers can audit a command's behavior without reading the full prose; users can see what a command will do before invoking it. Verification: `grep -L "^## Tier Classification" plugins/flow/commands/*.md` returns nothing.
 
 ## Commands
 
