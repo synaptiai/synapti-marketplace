@@ -139,6 +139,19 @@ HOOKS (8 scripts)
   AskUserQuestion (see references/three-tier-safety.md), not as hooks.
 ```
 
+### Hook Compatibility
+
+| Event | Wired Script | Min. Claude Code | Notes |
+|-------|--------------|------------------|-------|
+| `PreToolUse` (Bash) | `block-force-push`, `block-destructive`, `block-secrets` | All current | Documented event |
+| `PostToolUse` (Edit\|Write) | `log-file-changes` | All current | Documented event |
+| `PostToolUse` (Bash) | `log-commits` | All current | Documented event |
+| `SessionEnd` | `session-end-learn` | All current | Documented event |
+| `TaskCompleted` | `verify-task-completion` | **v2.1.33+** | See note below |
+| `TeammateIdle` | `nudge-idle-teammate` | **v2.1.33+** | See note below |
+
+`TaskCompleted` and `TeammateIdle` were added in Claude Code v2.1.33 as part of agent-team support and are not currently listed in the public hooks documentation at https://code.claude.com/docs/en/hooks (see anthropics/claude-code#23545). The events DO fire today; the JSON payload schema for both is undocumented, so the hooks treat their expected fields (`.task.subject`, `.task.description`, `.teammate.id`, `.idle_seconds`) as best-effort and exit 0 silently when those fields are absent rather than blocking on schema drift. The `v2.1.33+` floor only matters for installs running an older Claude Code build.
+
 ### Required Skills vs Skill() invocation convention
 
 Commands declare their skill dependencies in two complementary ways:
