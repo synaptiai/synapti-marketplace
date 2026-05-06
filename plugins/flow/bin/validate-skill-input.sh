@@ -24,6 +24,17 @@
 
 set -euo pipefail
 
+# Disable adding the current working directory to sys.path inside every
+# python3 invocation below. Without this, after `gh pr checkout` of a hostile
+# fork the attacker-controlled repo root could ship `./jsonschema.py` (or any
+# other module name our inline scripts import) and Python would import the
+# attacker's module first — full RCE under the user's UID. PYTHONSAFEPATH=1
+# (Python 3.11+) and python3 -P both prevent this; the env var is portable
+# across the inline `python3 -c "import jsonschema"` probe and the
+# `python3 - <<'PYTHON'` heredoc. On Python <3.11 the env var is ignored;
+# the inline heredocs apply a defensive `sys.path` filter as a fallback.
+export PYTHONSAFEPATH=1
+
 if [ $# -lt 2 ]; then
   cat <<'USAGE' >&2
 Usage: validate-skill-input.sh <skill-name> '<json-input>'
@@ -66,6 +77,11 @@ fi
 python3 - "$SCHEMA" "$INPUT" <<'PYTHON'
 import json
 import sys
+
+# Defensive sys.path filter for Python <3.11 where PYTHONSAFEPATH is ignored.
+# Removes the empty-string entry (CWD) and any "." entries so a hostile fork's
+# `./jsonschema.py` cannot shadow the real package on `import jsonschema` below.
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 schema_path = sys.argv[1]
 input_str = sys.argv[2]

@@ -225,7 +225,8 @@ When the consumer also invokes `Skill(visual-verification)`, the visual rows (Vi
 From `settings.json`:
 - `timeouts.devServerStartup`: Max seconds to wait for dev server (default: 30)
 - `timeouts.e2eTest`: Max seconds for E2E suite (default: 120)
-- `visualVerification.maxIterations`: Max screenshot-analyze-fix cycles (default: 3)
+
+`visualVerification.*` settings (including `maxIterations`) are owned by `Skill(visual-verification)`; see that skill's documentation when both run together.
 
 ## Active Problem Solving
 

@@ -35,6 +35,15 @@
 
 set -euo pipefail
 
+# Disable adding the current working directory to sys.path inside every
+# python3 invocation below. After `gh pr checkout` of a hostile fork, an
+# attacker-shipped `./yaml.py` at the repo root would shadow the real
+# PyYAML on the `import yaml` probe and the inline heredoc — full RCE
+# under the user's UID before any of our defenses run. PYTHONSAFEPATH=1
+# (Python 3.11+) covers this; older Pythons rely on the inline heredoc's
+# defensive `sys.path` filter as a fallback.
+export PYTHONSAFEPATH=1
+
 ISSUE=""
 TYPE=""
 METADATA=()
@@ -43,7 +52,21 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --issue)    ISSUE="$2"; shift 2 ;;
     --type)     TYPE="$2"; shift 2 ;;
-    --metadata) METADATA+=("$2"); shift 2 ;;
+    --metadata)
+      # Reject newline/CR in metadata pairs upfront. A value containing a
+      # literal newline would let `yaml.safe_dump` emit a multi-line block
+      # scalar that downstream readers (markdown renderers, future schema
+      # validators) would surprise on; worse, a crafted key containing `:`
+      # and a newline could collide with a sibling artifact field by
+      # re-parsing as multiple keys. (Bash strings cannot contain NUL, so
+      # there is no NUL case to handle.)
+      case "$2" in
+        *$'\n'*|*$'\r'*)
+          echo "journal-record.sh: metadata pair contains a newline/CR — refusing for safety" >&2
+          exit 1
+          ;;
+      esac
+      METADATA+=("$2"); shift 2 ;;
     -h|--help)
       sed -n '2,28p' "$0" | sed 's/^# \?//'
       exit 0
@@ -92,60 +115,64 @@ if ! python3 -c "import yaml" >/dev/null 2>&1; then
   exit 2
 fi
 
-# Concurrency guard. Two parallel invocations (e.g., reviewer-team dispatch
-# under /flow:review Path A) without a lock would both read the manifest,
-# both append in-memory, and the second `rename` would clobber the first
-# writer's append. Lock on a per-journal lockfile so writes to different
-# issues stay parallel; serialize only same-issue writes.
+# Lock acquisition + journal read + write are all done in Python so we can
+# use O_NOFOLLOW for atomic symlink rejection. Bash-level [ -L ] + exec 9>
+# had a TOCTOU window where an attacker (or fork PR after `gh pr checkout`)
+# could plant a symlink between the check and the redirect; Python's
+# os.open(O_NOFOLLOW) refuses with ELOOP atomically. Same defense applies
+# to the journal file itself — a pre-staged `.decisions/issue-N.md` symlink
+# to `~/.ssh/id_rsa` (or any user-readable file) would otherwise be read
+# into the new journal body and committed.
 LOCKFILE="$JOURNAL.lock"
-# Defense-in-depth: refuse to use a lockfile that's already a symlink. The
-# journal directory is no longer attacker-controlled (cascade trim above),
-# but a fork PR could still ship a `.decisions/issue-N.md.lock` pointing at
-# a privileged path. `exec 9>` would then truncate the symlink target. The
-# `[ -e ]` test follows symlinks; `[ -L ]` does not — combine to detect a
-# dangling-or-pointing symlink either way.
-if [ -L "$LOCKFILE" ]; then
-  echo "journal-record.sh: refusing to use lockfile — $LOCKFILE is a symlink (potential redirect attack)" >&2
-  exit 2
-fi
-if command -v flock >/dev/null 2>&1; then
-  exec 9>"$LOCKFILE"
-  flock 9
-elif command -v shlock >/dev/null 2>&1; then
-  # macOS without coreutils. shlock is BSD-style PID-locking (advisory).
-  # Spin up to 30s with 0.2s polls; matches typical YAML write latency budget.
-  TRIES=150
-  while [ $TRIES -gt 0 ] && ! shlock -p $$ -f "$LOCKFILE" >/dev/null 2>&1; do
-    sleep 0.2
-    TRIES=$((TRIES - 1))
-  done
-  if [ $TRIES -eq 0 ]; then
-    echo "journal-record.sh: could not acquire lock at $LOCKFILE within 30s" >&2
-    exit 2
-  fi
-  trap 'rm -f "$LOCKFILE"' EXIT
-else
-  # Best-effort: warn once and continue. Race window is tiny (read+write of
-  # a small YAML file) but real; document the gap rather than silently risk it.
-  echo "journal-record.sh: WARN — neither flock nor shlock available; concurrent writers may race" >&2
-fi
 
-python3 - "$JOURNAL" "$ISSUE" "$TYPE" "${METADATA[@]:-}" <<'PYTHON'
+python3 - "$JOURNAL" "$LOCKFILE" "$ISSUE" "$TYPE" "${METADATA[@]:-}" <<'PYTHON'
+import errno
+import fcntl
 import os
 import sys
 import tempfile
 import datetime
 
+# Defensive sys.path filter for Python <3.11 where PYTHONSAFEPATH is ignored.
+# Removes the empty-string entry (CWD) and any "." entries so a hostile fork's
+# `./yaml.py` cannot shadow the real PyYAML on `import yaml` below.
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+
 import yaml
 
 journal = sys.argv[1]
-issue = int(sys.argv[2])
-artifact_type = sys.argv[3]
+lockfile = sys.argv[2]
+issue = int(sys.argv[3])
+artifact_type = sys.argv[4]
+metadata_args = sys.argv[5:]
 
-# Parse metadata key=value pairs (sys.argv[4:]). The empty-string sentinel from
-# the bash `${METADATA[@]:-}` substitution is filtered out.
+# Acquire an exclusive lock atomically without TOCTOU. O_NOFOLLOW makes
+# os.open fail with ELOOP if `lockfile` is a symlink; O_CREAT creates the
+# file if it does not exist; the open is a single syscall so an attacker
+# cannot win a race between a check and a follow-up open. Mode 0o600 keeps
+# the lockfile owner-only on shared hosts.
+try:
+    lock_fd = os.open(lockfile, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+except OSError as e:
+    if e.errno in (errno.ELOOP, errno.EMLINK):
+        print(f"journal-record.sh: refusing — lockfile {lockfile} is a symlink", file=sys.stderr)
+        sys.exit(2)
+    print(f"journal-record.sh: cannot open lockfile {lockfile}: {e}", file=sys.stderr)
+    sys.exit(2)
+
+# fcntl.flock is advisory but cooperative; all our writers go through this
+# script so cooperation is guaranteed. LOCK_EX serializes same-issue writes
+# while letting different-issue writes proceed in parallel.
+try:
+    fcntl.flock(lock_fd, fcntl.LOCK_EX)
+except OSError as e:
+    print(f"journal-record.sh: cannot acquire flock on {lockfile}: {e}", file=sys.stderr)
+    sys.exit(2)
+
+# Parse metadata key=value pairs. The empty-string sentinel from the bash
+# `${METADATA[@]:-}` substitution is filtered out.
 metadata = {}
-for pair in sys.argv[4:]:
+for pair in metadata_args:
     if not pair:
         continue
     if "=" not in pair:
@@ -169,11 +196,23 @@ for pair in sys.argv[4:]:
 
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-# Read existing journal, parse frontmatter if present
+# Read existing journal, parse frontmatter if present. Use O_NOFOLLOW so a
+# pre-staged symlink at `$JOURNAL_DIR/issue-N.md` (e.g., pointing at
+# `~/.ssh/id_rsa` or `~/.aws/credentials`) cannot be read into the journal
+# body and exfiltrated via a later commit/push. Python's `open()` follows
+# symlinks; only `os.open(O_NOFOLLOW)` rejects them atomically.
 manifest = None
 body = ""
-if os.path.exists(journal):
-    with open(journal, "r", encoding="utf-8") as f:
+if os.path.lexists(journal):
+    try:
+        journal_fd = os.open(journal, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as e:
+        if e.errno in (errno.ELOOP, errno.EMLINK):
+            print(f"journal-record.sh: refusing — journal {journal} is a symlink", file=sys.stderr)
+            sys.exit(2)
+        print(f"journal-record.sh: cannot read journal {journal}: {e}", file=sys.stderr)
+        sys.exit(2)
+    with os.fdopen(journal_fd, "r", encoding="utf-8") as f:
         content = f.read()
     if content.startswith("---\n"):
         end_marker = content.find("\n---\n", 4)
@@ -227,8 +266,11 @@ front = yaml.safe_dump(manifest, sort_keys=False, default_flow_style=False, allo
 new_content = f"---\n{front}---\n{body}"
 
 # Atomic write via temp file + rename. The temp file lives in the same
-# directory so the rename is on the same filesystem (POSIX-atomic). If the
-# write fails partway, the original journal is untouched.
+# directory so the rename is on the same filesystem (POSIX-atomic). fsync
+# the file before rename so a power loss between rename and durable-write
+# cannot leave a zero-length journal behind; fsync the directory after so
+# the rename itself is durable. If the write fails partway, the original
+# journal is untouched.
 journal_dir = os.path.dirname(journal) or "."
 fd, tmp = tempfile.mkstemp(
     dir=journal_dir,
@@ -238,7 +280,19 @@ fd, tmp = tempfile.mkstemp(
 try:
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(new_content)
+        f.flush()
+        os.fsync(f.fileno())
     os.rename(tmp, journal)
+    # Durably persist the rename (best-effort — not all filesystems require it,
+    # and EINVAL on platforms that disallow fsync of directory FDs is benign).
+    try:
+        dir_fd = os.open(journal_dir, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError:
+        pass
 except Exception as e:
     if os.path.exists(tmp):
         os.unlink(tmp)

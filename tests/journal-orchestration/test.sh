@@ -222,6 +222,60 @@ PYTHON
 )
 assert "manifest has 2 review-cycle artifacts after second record" 2 "$CYCLE_COUNT"
 
+# === Security regressions (cycle 2) ===
+
+# SEC-2: journal file as a symlink must be rejected with exit 2. After
+# `gh pr checkout` of a hostile fork, an attacker-staged `issue-N.md`
+# pointing at `~/.ssh/id_rsa` would otherwise be read into the new journal
+# body and committed. Defense is `os.open(O_NOFOLLOW)` in the Python block.
+SEC2_DIR=$(mktemp -d -t flow-sec2.XXXXXX)
+mkdir -p "$SEC2_DIR/.decisions"
+echo "sentinel-content-do-not-leak" > "$SEC2_DIR/secret.txt"
+ln -sf "$SEC2_DIR/secret.txt" "$SEC2_DIR/.decisions/issue-777.md"
+( cd "$SEC2_DIR" && "$HELPER" --issue 777 --type specification --metadata by=test 2>/dev/null )
+assert "SEC-2: journal symlink rejected with exit 2" 2 $?
+# Confirm the symlink target was NOT read into a new journal body.
+SEC2_LEAK=$(grep -l "sentinel-content-do-not-leak" "$SEC2_DIR/.decisions/" 2>/dev/null | head -1)
+assert "SEC-2: secret content NOT exfiltrated to journal" "" "$SEC2_LEAK"
+rm -rf "$SEC2_DIR"
+
+# F1 (TOCTOU upgrade): lockfile as a symlink must be rejected with exit 2.
+# Defense moved from bash `[ -L ]` (TOCTOU window) to Python
+# `os.open(O_NOFOLLOW | O_CREAT)` (atomic ELOOP).
+F1_DIR=$(mktemp -d -t flow-f1.XXXXXX)
+mkdir -p "$F1_DIR/.decisions"
+ln -sf /etc/passwd "$F1_DIR/.decisions/issue-778.md.lock"
+( cd "$F1_DIR" && "$HELPER" --issue 778 --type specification --metadata by=test 2>/dev/null )
+assert "F1: lockfile symlink rejected atomically" 2 $?
+rm -rf "$F1_DIR"
+
+# SEC-8: metadata pair containing a literal newline must be rejected. A
+# crafted value would otherwise emit a YAML block scalar that downstream
+# readers would surprise on (or, with a `:` in the value, parse as
+# multiple keys).
+SEC8_DIR=$(mktemp -d -t flow-sec8.XXXXXX)
+( cd "$SEC8_DIR" && "$HELPER" --issue 779 --type specification --metadata $'evil=line1\nline2' 2>/dev/null )
+assert "SEC-8: metadata newline rejected with exit 1" 1 $?
+rm -rf "$SEC8_DIR"
+
+# SEC-1: PYTHONSAFEPATH must be exported, preventing CWD-shadow imports.
+# Without this, an attacker-shipped `./yaml.py` at the repo root after
+# `gh pr checkout` would be loaded by the inline `import yaml` (full RCE).
+SEC1_DIR=$(mktemp -d -t flow-sec1.XXXXXX)
+cat > "$SEC1_DIR/yaml.py" <<'PYEOF'
+import sys
+print("ATTACKER-YAML-LOADED", file=sys.stderr)
+sys.exit(99)
+PYEOF
+( cd "$SEC1_DIR" && "$HELPER" --issue 780 --type specification --metadata by=test 2>"$SEC1_DIR/stderr.log" )
+SEC1_RC=$?
+# `grep -c` exits 1 when 0 matches found; capture stdout count without the
+# error path so the assertion compares a single integer.
+SEC1_LEAK=$(grep -c "ATTACKER-YAML-LOADED" "$SEC1_DIR/stderr.log" 2>/dev/null) || SEC1_LEAK=0
+assert "SEC-1: attacker yaml.py NOT loaded via sys.path" 0 "$SEC1_LEAK"
+assert "SEC-1: journal-record completed normally despite attacker yaml.py" 0 "$SEC1_RC"
+rm -rf "$SEC1_DIR"
+
 echo ""
 echo "============================================"
 echo "RESULT: $PASS passed, $FAIL failed"

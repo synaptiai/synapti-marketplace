@@ -2,6 +2,34 @@
 
 ## 2.3.0 (2026-05-06)
 
+### Post-review hardening — cycle 2 (PR #99 `/flow:review` second pass)
+
+A second adversarial review (parallel `code-reviewer` + `security-reviewer` + `convention-checker` + cross-reference auditor) found four reproducible exploit primitives the cycle-0 and cycle-1 passes missed, all post-`gh pr checkout`-of-hostile-fork. Reproduced inline; fixes shipped here.
+
+- **SEC-1: sys.path injection (RCE).** `python3 -c "import yaml"` and `python3 - <<'PYTHON'` heredocs in `bin/journal-record.sh`, `bin/promote-proposal.sh`, and `bin/validate-skill-input.sh` had `sys.path[0] = ''` (CWD). After `gh pr checkout` of a hostile fork, an attacker-shipped `./yaml.py` (or `./jsonschema.py`) at the repo root would shadow the real package on import — full RCE under the user's UID before any of our other defenses ran. Fix: `export PYTHONSAFEPATH=1` near the top of each script (Python 3.11+ honors the env var), plus a defensive `sys.path[:] = [p for p in sys.path if p not in ("", ".")]` filter inside every inline heredoc as a fallback for older Pythons.
+- **SEC-2: journal-file symlink read (file exfiltration).** Cycle 1 added `[ -L "$LOCKFILE" ]` defense on the lockfile but the journal file itself was opened with Python's `open()`, which follows symlinks. Attacker pre-stages `.decisions/issue-N.md` → symlink to `~/.ssh/id_rsa` (or `~/.aws/credentials`, `~/.config/gh/hosts.yml`); user runs `/flow:start N`; secret content is read into the new journal body and committed/pushed. Fix: read via `os.open(O_RDONLY | O_NOFOLLOW)` in the inline Python block — open fails atomically with ELOOP if the path is a symlink.
+- **SEC-3: hook symlink append (file tampering).** `hooks/scripts/log-commits.sh` and `log-file-changes.sh` write auto-log lines via `>> "$JOURNAL_FILE"`; bash `>>` follows symlinks. Attacker pre-stages `.decisions/issue-N.md` → symlink to `~/.bashrc` or any user-writable file; PostToolUse fires after every Edit/Write/git-commit Claude makes; each invocation appends `<!-- auto-log: ... -->` to the symlink target. Fix: `[ -L "$JOURNAL_FILE" ] && exit 0` before each `>>` redirect in both hooks.
+- **F1: lockfile TOCTOU (regression in cycle-1 fix).** The cycle-1 lockfile defense was `[ -L "$LOCKFILE" ]` followed by `exec 9>"$LOCKFILE"` — a TOCTOU window an attacker could exploit by planting a symlink between the check and the redirect. Fix: move the lockfile open into Python and use `os.open(LOCKFILE, O_RDWR | O_CREAT | O_NOFOLLOW, 0o600)` for atomic ELOOP rejection; use `fcntl.flock` on the resulting fd. The bash-layer `[ -L ]` check is now redundant and removed.
+
+Defense-in-depth and quality fixes shipped alongside:
+
+- **SEC-7: HTML-comment injection via attacker-controlled commit subject.** `hooks/scripts/log-commits.sh` interpolated `$LAST_MSG` (latest commit subject from a hostile fork) into an `<!-- auto-log: ... -->` comment. A subject containing `-->` would close the comment early; subsequent markdown would land in the journal that `/flow:explain` and `/flow:review` later feed back to Claude — prompt injection. Same pattern in `log-file-changes.sh` for `$TOOL_NAME` and `$FILE_PATH`. Fix: substitute `-->` → `-- >` and `<!--` → `< !--` before embedding in both hooks.
+- **SEC-5: `bin/promote-proposal.sh` dangling-symlink write.** `[ -e "$TARGET" ]` follows symlinks, so a *dangling* attacker-pre-staged symlink at `plugins/flow/skills/learned/<name>/SKILL.md` passes the existence check; subsequent `cp` writes through to an arbitrary user-writable path. Fix: explicit `[ -L "$TARGET" ]` check before the existence check, refusing both states.
+- **SEC-8: YAML newline injection in journal metadata.** `bin/journal-record.sh --metadata key=$'value\nline2'` would let `yaml.safe_dump` emit a multi-line block scalar; with a `:` in the value, downstream readers could re-parse as multiple keys. Fix: bash-level `case` to reject newline/CR in metadata pairs at parse time, with a corresponding regression test.
+- **F1 atomic-write durability (related).** Added `f.flush() + os.fsync(f.fileno())` before `os.rename` and a best-effort directory `os.fsync` after, so a power loss between rename and durable write cannot leave a zero-length journal behind. Comment updated to match.
+- **F2: `runtime-verification` documentation orphan.** `visualVerification.maxIterations` was documented in both `runtime-verification/SKILL.md` and `visual-verification/SKILL.md`. Removed from the runtime skill (which delegates to visual when both run together); single source of truth restored.
+- **F4: trimmed-cascade keys not documented.** Added a "Trimmed-Cascade Settings Keys" subsection to `references/gate-configuration.md` listing `journal.dir`, `learning.proposalDir`, and `conventions.commitTypes` with their threat models — the same treatment `merge.markerTrust` already had.
+- **F6: `commands/status.md` cascade-coverage gap.** `JOURNAL_DIR` was hardcoded `.decisions`. Now reads the same trimmed cascade as the other eight consumers; users with a non-default `journal.dir` will see correct counts.
+
+### New regression tests (cycle 2)
+
+- `tests/journal-orchestration/test.sh` grew 16 → 22 assertions covering SEC-1 (attacker yaml.py at CWD does not load), SEC-2 (journal symlink rejected with secret-content non-leak verified), SEC-8 (newline metadata rejected), and F1 (lockfile symlink rejected atomically).
+- `tests/hooks-symlink/test.sh` (new, 6 assertions) covers SEC-3 (both hooks refuse symlink writes; symlink target content unchanged) and SEC-7 (`-->` neutralized in commit subject before journal embedding).
+
+### Test totals
+
+89 assertions across 8 suites (cycle 0: 75; cycle 1: 77; cycle 2: 89). All pass. The cycle-2 totals replace earlier "75" and "77" references in the PR body.
+
 ### New helper scripts (`plugins/flow/bin/`)
 
 - `flow-escalate.sh` — CLI utility that formats canonical six-field Proactive-Autonomy escalations (Situation, What I tried, Options, Recommendation, Time sensitivity, Risk) per `references/escalation-format.md`. Output is a markdown body suitable for `AskUserQuestion`. Validates required fields and option grammar (`<n>: <text>`); exits 0/1/2 with clear stderr. Available for ad-hoc human use; commands continue to inline the escalation prose so the structure stays inspectable in each command body.

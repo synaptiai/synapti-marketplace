@@ -27,6 +27,12 @@
 
 set -euo pipefail
 
+# Disable adding the current working directory to sys.path inside every
+# python3 invocation below — see bin/validate-skill-input.sh for the
+# threat-model rationale. Without this, an attacker-shipped `./yaml.py`
+# at the repo root would shadow the real PyYAML on `import yaml` below.
+export PYTHONSAFEPATH=1
+
 PROPOSAL=""
 DRY_RUN=0
 
@@ -72,6 +78,10 @@ fi
 # stderr. Validation failure exits 1; infra failure exits 2.
 PROPOSAL_NAME=$(python3 - "$PROPOSAL" <<'PYTHON'
 import sys
+
+# Defensive sys.path filter — see bin/validate-skill-input.sh for rationale.
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+
 import yaml
 
 proposal = sys.argv[1]
@@ -143,6 +153,15 @@ fi
 
 TARGET_DIR="$LEARNED_DIR/$PROPOSAL_NAME"
 TARGET="$TARGET_DIR/SKILL.md"
+# `[ -e ]` follows symlinks: a *dangling* attacker-pre-staged symlink at
+# $TARGET would pass `[ -e ]` (false) but the subsequent `cp "$PROPOSAL"
+# "$TARGET"` would write through the symlink to an arbitrary user-writable
+# path. Refuse if $TARGET is a symlink in either state. Same defense
+# pattern as the lockfile check in bin/journal-record.sh.
+if [ -L "$TARGET" ]; then
+  echo "promote-proposal.sh: refusing — $TARGET is a symlink (potential redirect attack)" >&2
+  exit 1
+fi
 if [ -e "$TARGET" ]; then
   echo "promote-proposal.sh: refusing to overwrite existing learned skill at $TARGET" >&2
   echo "promote-proposal.sh: resolve by editing the existing skill OR renaming the proposal" >&2
@@ -224,6 +243,9 @@ TARGET_WRITTEN=1
 python3 - "$TARGET" <<'PYTHON'
 import datetime
 import sys
+
+# Defensive sys.path filter — see bin/validate-skill-input.sh for rationale.
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 import yaml
 
