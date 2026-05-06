@@ -17,11 +17,15 @@ FAIL=0
 # Sanitize attacker-controlled fields before display: cap length and strip
 # non-printable bytes so a hostile fixture (e.g., a PR-modified marker file)
 # can't inject ANSI escapes into PASS/FAIL output. Mirrors the helper in
-# plugins/flow/commands/status.md and plugins/flow/commands/merge.md.
-safe() { printf '%s' "${1:-}" | tr -cd '[:print:]' | cut -c1-128; }
+# plugins/flow/commands/status.md (cap matches that helper at 64 chars).
+# Note: tr -cd '[:print:]' intentionally collapses newlines too — diagnostic
+# display only, not data integrity. If a future test passes multi-line content
+# to assert_eq, expect single-line collapsed output in FAIL diagnostics.
+safe() { printf '%s' "${1:-}" | tr -cd '[:print:]' | cut -c1-64; }
 
 # Pre-flight: every fixture file must exist before we run any test, so a
-# missing fixture surfaces as a clear FATAL rather than 12 spurious FAILs.
+# missing fixture surfaces as a clear FATAL rather than every downstream
+# assertion failing. NOTE: this list is hard-coded; add new fixtures here too.
 for f in legacy-5-field.txt extended-7-field.txt mixed-cycles.txt with-resolution.txt; do
   if [ ! -f "$FIXTURE_DIR/$f" ]; then
     echo "FATAL: missing fixture $FIXTURE_DIR/$f" >&2
@@ -32,6 +36,9 @@ done
 assert_eq() {
   local label="$1" expected="$2" actual="$3" context="${4:-}"
   if [ "$expected" = "$actual" ]; then
+    # label is a hard-coded operator string at every call site; no need to
+    # sanitize. Attacker-controlled fields are sanitized only in the FAIL
+    # branch where they actually reach the terminal.
     echo "PASS: $label"
     PASS=$((PASS + 1))
   else

@@ -81,7 +81,7 @@ TaskCreate("Holdout validation", "Cross-reference self-review claims against act
 
 ### Path A: Agent Teams (when `agentTeams: true` AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is set)
 
-Implements the paired-reviewer + challenge-round protocol frozen in `.decisions/issue-86.md`. Invoke `team-coordination` skill for the protocol contract.
+Implements the paired-reviewer + challenge-round protocol. The `team-coordination` skill (`plugins/flow/skills/team-coordination/SKILL.md`) is the protocol contract.
 
 **Path A gate check** (mandatory before paired dispatch — runs before A.1):
 
@@ -94,31 +94,52 @@ Implements the paired-reviewer + challenge-round protocol frozen in `.decisions/
 # var) rather than a one-key threat. The env var alone (set by the user, not
 # the repo) cannot enable Path A unless the plugin default also permits it.
 USE_PATH_A=0
+PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "WARN: jq not installed; Path A unavailable, using Path B (single-session)" >&2
-elif [ ! -f plugins/flow/settings.json ]; then
-  echo "WARN: plugins/flow/settings.json not found; Path A unavailable, using Path B" >&2
+elif [ ! -f "$PLUGIN_SETTINGS" ]; then
+  echo "WARN: $PLUGIN_SETTINGS not found; Path A unavailable, using Path B" >&2
 else
-  AGENT_TEAMS=$(jq -r '.agentTeams // false' plugins/flow/settings.json 2>/dev/null)
-  case "$AGENT_TEAMS" in
-    true)
-      if [ -z "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" ]; then
-        echo "WARN: agentTeams enabled but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS env var unset; using single-reviewer fallback (Path B)" >&2
-      else
-        USE_PATH_A=1
-      fi
-      ;;
-    false)
-      echo "Path A skipped: agentTeams=false. Using Path B (single-session)."
-      ;;
-    *)
-      # Non-canonical value (e.g., string "true"/"True", "1", "yes"). Surface
-      # it rather than silently coerce — a typo here means a user explicitly
-      # opted into paired review and got single-session anyway.
-      echo "WARN: agentTeams=$AGENT_TEAMS is not the JSON boolean true/false; treating as false. Use \"agentTeams\": true (no quotes)." >&2
-      ;;
-  esac
+  # Capture jq stderr/exit separately so a parse error doesn't silently fall
+  # through as an empty AGENT_TEAMS into the * case branch. Merge stderr into
+  # stdout for the diagnostic capture; on success jq emits only the field
+  # value to stdout, on failure it emits the parse error message there.
+  JQ_OUT=$(jq -r '.agentTeams // false' "$PLUGIN_SETTINGS" 2>&1)
+  JQ_EXIT=$?
+  if [ $JQ_EXIT -ne 0 ]; then
+    JQ_ERR=$(printf '%s' "$JQ_OUT" | tr '\n' ' ' | cut -c1-200)
+    echo "WARN: failed to parse $PLUGIN_SETTINGS (jq exit=$JQ_EXIT, error: $JQ_ERR); using Path B" >&2
+  else
+    AGENT_TEAMS="$JQ_OUT"
+    case "$AGENT_TEAMS" in
+      true)
+        if [ -z "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" ]; then
+          echo "WARN: agentTeams enabled but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS env var unset; using single-reviewer fallback (Path B)" >&2
+        else
+          USE_PATH_A=1
+        fi
+        ;;
+      false)
+        echo "Path A skipped: agentTeams=false. Using Path B (single-session)."
+        ;;
+      "")
+        # jq returned empty but exit=0 (shouldn't happen with `// false`, but
+        # defensive). Distinguish from the * branch so the WARN text is
+        # actionable.
+        echo "WARN: agentTeams field returned empty value from $PLUGIN_SETTINGS; treating as false and using Path B" >&2
+        ;;
+      *)
+        # Non-canonical value (e.g., string "true"/"True", "1", "yes", or a
+        # multi-line object/array). Surface it rather than silently coerce —
+        # a typo here means a user explicitly opted into paired review and
+        # got single-session anyway. Collapse multi-line values for log
+        # scrapability.
+        AGENT_TEAMS_DISPLAY=$(printf '%s' "$AGENT_TEAMS" | tr '\n' ' ' | cut -c1-80)
+        echo "WARN: agentTeams=$AGENT_TEAMS_DISPLAY is not the JSON boolean true/false; treating as false. Use \"agentTeams\": true (no quotes)." >&2
+        ;;
+    esac
+  fi
 fi
 ```
 
@@ -190,7 +211,9 @@ Skill(holdout-validation):
 
 Each returns a structured finding list. Index returned findings by facet for the challenge round: `findings[facet][variant] = [F1, F2, ...]`.
 
-**Note on holdout-validation challenge participation**: the two `Skill(holdout-validation)` invocations contribute findings to A.2 auto-consensus matching but **do NOT participate in the A.3 challenge round** — there is no defined Skill-as-challenger prompt pattern (Skills don't accept the structured `[challenge mode]` invocation that Agents do). Holdout-validation findings that match between lenses get `consensus`; non-matching findings carry `unchallenged` confidence MEDIUM by default. This is why the cost table in `team-coordination/SKILL.md` lists 12 challenge calls rather than 14 — the holdout-validation pair is excluded from Phase 3.
+**Note on holdout-validation challenge participation**: the two `Skill(holdout-validation)` invocations contribute findings to A.2 auto-consensus matching but **do NOT participate in the A.3 challenge round** — there is no defined Skill-as-challenger prompt pattern (Skills don't accept the structured `[challenge mode]` invocation that Agents do). Holdout-validation findings that match between lenses get `consensus`; non-matching findings carry `unchallenged` confidence MEDIUM by default. This is why the cost table in `team-coordination/SKILL.md` lists 10 challenge calls rather than 12 — the holdout-validation pair is excluded from Phase 3.
+
+**Post-condition on returned IDs**: each variant's findings must have IDs matching `^[A-Za-z][A-Za-z0-9_-]*$` before A.2 consumes them — the same allowlist that downstream consumers (`status.md:104-117`, `merge.md`) enforce. IDs that fail validation are skipped at A.2 with a `LEDGER_WARN: PR#{N} A.1 rejected non-conforming ID '{safe-id}' from {variant}` to stderr. This avoids producing markers that get silently dropped downstream and makes the A.2 lexicographic tiebreaker safe against pathological IDs.
 
 #### A.2 — Auto-consensus detection
 
@@ -198,9 +221,15 @@ Before dispatching the challenge round, detect findings that BOTH variants raise
 
 ```bash
 # Pseudocode (apply per facet, deterministic — see helpers below).
-# for finding_a in findings[facet][skeptic]:
+# Iterate skeptic findings in lexicographic ID order so the loop itself is
+# deterministic. paired_b = set() tracks verifier findings already paired in
+# this facet — once paired, a finding cannot be paired again.
+# paired_b = set()
+# for finding_a in sorted(findings[facet][skeptic], key=lambda a: a.id):
 #   candidates = []
 #   for finding_b in findings[facet][verifier]:
+#     if finding_b.id in paired_b: continue            # skip already-paired
+#     if (line(finding_a) > 0) != (line(finding_b) > 0): continue  # see C10
 #     if same_file(finding_a, finding_b) AND
 #        abs(line(finding_a) - line(finding_b)) <= 2 AND
 #        priority_distance(finding_a.priority, finding_b.priority) <= 1:
@@ -215,14 +244,15 @@ Before dispatching the challenge round, detect findings that BOTH variants raise
 #       b.id
 #     ))
 #     mark (finding_a, finding_b) as auto-consensus -> confidence=HIGH, disposition=consensus
-#     remove both from challenge candidates
+#     paired_b.add(finding_b.id)
+#     remove finding_a and finding_b from challenge candidates for this facet
 ```
 
 **Helper definitions** (specified to remove implementer ambiguity):
 
 | Helper | Definition |
 |--------|------------|
-| `line(finding)` | Integer parsed from the first `:N` group in `file:line`. For ranges (`file:42-50`), use the low end (`42`). For file-level findings (no line), treat as line `0` and require exact-zero match in the helper's caller. |
+| `line(finding)` | Integer parsed from the first `:N` group in `file:line`. For ranges (`file:42-50`), use the low end (`42`). For file-level findings (no line citation), treat as line `0`. The pseudocode above explicitly skips pairs where one side is line-bearing (`>0`) and the other is file-level (`==0`) — see the second `continue` in the loop — so file-level findings only ever match other file-level findings on the same file. |
 | `same_file(a, b)` | Compare normalized paths: strip leading `./`, resolve `..` segments, lowercase only on case-insensitive filesystems. Returns true on equality. |
 | `priority_distance(p1, p2)` | `0` if equal, `1` for P1↔P2 or P2↔P3, `2` for P1↔P3. The match window threshold is `≤ 1` so P1↔P3 NEVER match. |
 
@@ -281,7 +311,7 @@ If any of A.1's variants failed (timeout, error, did-not-spawn), apply the fallb
 | Both variants failed for facet F | Re-dispatch single Agent for that facet using the Path B prompt. Note in output: `facet F: re-dispatched as single-reviewer (both variants failed)`. |
 | Challenge round failed for a facet | Skip A.3 for that facet; keep A.1 findings as `unchallenged`. Note in output: `facet F: challenge skipped (challenge prompt failed)`. |
 | A.2 auto-consensus matching errored on finding F (e.g., malformed `file:line`) | Skip auto-consensus for F; route F through A.3 challenge as if non-consensus. Log `LEDGER_WARN: PR#{N} A.2 skipped F:<id> due to <reason>` to stderr. |
-| A.4 consolidation lookup missing for finding F (e.g., orphaned challenge response) | Emit F as `unchallenged` MEDIUM. Log to journal under `## Consolidation gaps (PR #{N}, cycle {N})` with the orphan reason. |
+| A.4 consolidation lookup missing for finding F (e.g., orphaned challenge response) | Emit F as `unchallenged` MEDIUM. Append to `.decisions/issue-{N}.md` (where N = the issue this PR addresses) under a `## Consolidation gaps (PR #$ARGUMENTS, cycle {N})` heading with the orphan reason. Create the journal file with frontmatter if it does not exist. |
 
 #### A.6 — Emit consolidated output
 

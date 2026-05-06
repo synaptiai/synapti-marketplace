@@ -64,7 +64,7 @@ For each facet, dispatch **two** subagents with orthogonal prompt lenses. Both r
 | **skeptic** | "Assume the diff is broken until proven otherwise. Flag every behavior you cannot prove correct from the code as written." |
 | **verifier** | "Assume the diff is correct as a baseline. Look only for missed edge cases, undocumented contract assumptions, or invariants that aren't enforced." |
 
-Default 6-facet pairs (12 subagents in one parallel dispatch):
+Default 6-facet topology (12 invocations in one parallel dispatch — 5 Agent pairs and 2 Skill calls):
 
 ```
 Agent(security-reviewer-skeptic) | Agent(security-reviewer-verifier)
@@ -72,14 +72,16 @@ Agent(code-reviewer-skeptic) | Agent(code-reviewer-verifier)
 Agent(convention-checker-skeptic) | Agent(convention-checker-verifier)
 Agent(test-runner-skeptic) | Agent(test-runner-verifier)
 Agent(error-handler-inspector-skeptic) | Agent(error-handler-inspector-verifier)
-Agent(holdout-validation-skeptic) | Agent(holdout-validation-verifier)
+Skill(holdout-validation) [skeptic lens] | Skill(holdout-validation) [verifier lens]
 ```
+
+The holdout-validation pair is dispatched as Skills (not Agents) because the project does not define a `holdout-validation` agent — the skill is the contract. As a consequence, the holdout-validation pair contributes findings to A.2 auto-consensus matching but is **excluded from the Phase 3 challenge round** (Skills do not accept the structured `[challenge mode]` invocation that Agents do). See `commands/review.md` A.1 note for the implementation rule.
 
 Each returns P1/P2/P3 findings with `file:line` citations and a category. **No challenge information is included in this phase** — outputs are independent.
 
 ### Phase 2: Share Findings
 
-Lead collects all 12 finding sets. No LLM call. Indexes findings by facet for the per-facet challenge round.
+Lead collects all 12 finding sets (10 Agent + 2 Skill). No LLM call. Indexes findings by facet for the per-facet challenge round. Holdout-validation findings are indexed for A.2 auto-consensus matching only and bypass Phase 3.
 
 ### Phase 3: Challenge (disposition-only, no diff re-read)
 
@@ -108,11 +110,11 @@ Findings to challenge:
 {list of the OTHER reviewer's findings: ID, file:line, priority, category}
 ```
 
-12 challenge prompts run in parallel.
+10 challenge prompts run in parallel (5 agent facets × 2 directions; the holdout-validation Skill pair is excluded — see A.1 note).
 
 ### Phase 4: Synthesize (consolidation rules)
 
-Lead applies the consolidation table from `.decisions/issue-86.md` §Q3 to each finding:
+Lead applies the consolidation table to each finding:
 
 | Origin | Other reviewer's disposition | Consolidated confidence | Disposition vocab |
 |--------|------------------------------|-------------------------|-------------------|
