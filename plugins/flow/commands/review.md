@@ -369,6 +369,11 @@ TaskUpdate each review task as agents complete.
    - Self-review: `templates/self-review-comment.md`
    - External review: `templates/review-comment.md`
 
+   **Marker form selection** (FLOW_REVIEW_CYCLE):
+   - If Path A produced the findings (paired-reviewer mode), emit the **7-field** marker with Confidence + Disposition fields per finding. Render the Confidence + Disposition columns in the P1/P2/P3 tables.
+   - If Path B produced the findings (single-session, fallback, or `agentTeams: false`), emit the legacy **5-field** marker. Omit the Confidence + Disposition columns.
+   - When Path A had per-facet fallbacks, individual findings from fallback facets carry `unchallenged` disposition with MEDIUM confidence — emit them in the 7-field form alongside the rest. Mixed-form rows within a single marker are NOT permitted (parsers tolerate variable field count, but emitting both forms in one row list would be confusing); pad fallback findings to 7 fields with `MEDIUM|unchallenged`.
+
    Post the review:
    - Self-review → `gh pr review $ARGUMENTS --comment --body "$BODY"`
    - External + P1 findings → `gh pr review $ARGUMENTS --request-changes --body "$BODY"`
