@@ -1,8 +1,6 @@
 # Skill Contracts (machine-checkable input schemas)
 
-Reference document. The canonical source of truth for what JSON shape each skill expects on its inputs, and how the validator (`plugins/flow/bin/validate-skill-input.sh`) and per-skill test fixtures (`tests/skills/<name>/`) enforce those shapes.
-
-This document exists because pre-Landing-3 the skills documented their inputs in prose ("the skill receives self-review findings, evidence bundle, and file list") with no machine-checkable shape. Producers and consumers had to agree by convention; silent format mismatches produced silent skill failures. With JSON Schemas + a validator + test fixtures, drift becomes detectable at PR-review time rather than at runtime in someone's workflow.
+Reference document. The canonical source of truth for what JSON shape each skill expects on its inputs, and how the validator (`plugins/flow/bin/validate-skill-input.sh`) and per-skill test fixtures (`tests/skills/<name>/`) enforce those shapes. JSON Schemas + the validator + the test fixtures make producer/consumer drift detectable at PR-review time rather than at runtime in someone's workflow.
 
 ## Scope
 
@@ -14,7 +12,7 @@ Not every skill has an input contract — many skills (`brainstorming`, `archite
 | `criterion-verification-map` | Receives parsed acceptance criteria from `commands/start.md` Phase 1. The criterion structure flows through PLAN, CODE, and VERIFY phases; a malformed input here corrupts the entire downstream chain. |
 | `specification-capture` | Receives issue context, journal path, and invocation reason from start/design/brainstorm. The invocation reason controls per-invoker scope (start needs all three elements; design needs two; brainstorm needs one) — a wrong reason produces wrong-scope captures. |
 
-Other skills may add contracts in future landings as integration points solidify.
+Other skills may add contracts as integration points solidify.
 
 ## Schema location
 
@@ -41,7 +39,7 @@ When a schema declares `type` as an array of allowed types (e.g. `"type": ["stri
 
 Fallback accepts `"X"` (matches `string`, but `minLength` and `enum` skipped). Full `jsonschema` correctly rejects it.
 
-None of the contracts shipped in Landing 3 use `type: [...]`, so the gap is latent today. If you author a contract that needs nullable-with-constraints, install `jsonschema` in CI and document the dependency in the test, OR refactor the schema to use single-type sub-schemas wrapped in `oneOf` (also requires full `jsonschema`). Avoid `type: [...]` in fallback-only deployments.
+None of the current contracts use `type: [...]`, so the gap is latent today. If you author a contract that needs nullable-with-constraints, install `jsonschema` in CI and document the dependency in the test, OR refactor the schema to use single-type sub-schemas wrapped in `oneOf` (also requires full `jsonschema`). Avoid `type: [...]` in fallback-only deployments.
 
 ## The validator
 
@@ -141,3 +139,5 @@ When in doubt: if the key isn't in the table above, it's probably unrecognized. 
 The skill input schemas reference the row shape from `references/finding-schema.md` (e.g., `selfReviewFindings` items are findings with the canonical 6-field structure). When `finding-schema.md` evolves, the JSON Schemas here MUST be updated to match. The `tests/finding-schema/validate.sh` test exercises the row shape independently as a sanity check.
 
 Similarly, `evidence-bundle-format.md` defines the `evidenceBundle` shape; `escalation-format.md` defines the format `bin/flow-escalate.sh` outputs. The contracts here are downstream consumers of those reference docs.
+
+`bin/flow-escalate.sh` itself is a CLI utility for ad-hoc human use — it lets a reviewer or maintainer render the canonical escalation shape from the terminal. Commands continue to inline the escalation prose so each command's escalation paths stay inspectable in the command body rather than hidden behind a helper invocation.

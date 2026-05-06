@@ -2,11 +2,9 @@
 
 ## 2.3.0 (2026-05-06)
 
-Structural-enforcement landing. Closes Approach C of the comprehensive review by introducing four `bin/` helper scripts, three new repo-level test suites with 41 passing assertions, machine-checkable input contracts for three skills, a YAML frontmatter manifest schema for the decision journal, the `/flow:learn` promotion path that closes the learning loop, tier classification tables on every command, and the formal vendor-or-document decision for the `compound-engineering` visual-verification dependency. After Landing 3, every plugin boundary has either a runnable test fixture or an explicit policy document; drift becomes detectable at PR-review time rather than at runtime.
-
 ### New helper scripts (`plugins/flow/bin/`)
 
-- `flow-escalate.sh` — formats canonical six-field Proactive-Autonomy escalations (Situation, What I tried, Options, Recommendation, Time sensitivity, Risk) per `references/escalation-format.md`. Output is a markdown body suitable for `AskUserQuestion`. Validates required fields and option grammar (`<n>: <text>`); exits 0/1/2 with clear stderr.
+- `flow-escalate.sh` — CLI utility that formats canonical six-field Proactive-Autonomy escalations (Situation, What I tried, Options, Recommendation, Time sensitivity, Risk) per `references/escalation-format.md`. Output is a markdown body suitable for `AskUserQuestion`. Validates required fields and option grammar (`<n>: <text>`); exits 0/1/2 with clear stderr. Available for ad-hoc human use; commands continue to inline the escalation prose so the structure stays inspectable in each command body.
 - `validate-skill-input.sh` — validates a skill's input payload against its JSON Schema at `tests/skills/<name>/input-schema.json`. Tries `import jsonschema` for full Draft-07 validation; falls back to a shape-check (required, types, enums, patterns, minItems, minLength) implemented in the standard library so the script works on any Python 3.x install. Exits 0 (valid), 1 (validation failure with path + reason), or 2 (infrastructure error).
 - `journal-record.sh` — atomically updates the YAML frontmatter manifest in `.decisions/issue-{N}.md` with a new artifact entry (specification, stranger-test, review-cycle, dropped-finding, design-decision, brainstorm-decision, verdict, escalation-resolved). Idempotent across runs; preserves legacy bodies when the journal lacks a manifest. Atomic via temp file + rename.
 - `promote-proposal.sh` — promotes a `/flow:learn` proposal to an active skill at `plugins/flow/skills/learned/{name}/SKILL.md` via a **draft** PR. Validates frontmatter (required fields, status=proposal, kebab-case name) and body sections (`## Pattern Detected`, `## Knowledge`, `## Evidence`, `## Verification`, `## Promotion Checklist`). Tier 2 by design: opens a draft PR and never marks it ready or merges. `--dry-run` flag for non-mutating validation.
@@ -20,7 +18,7 @@ Structural-enforcement landing. Closes Approach C of the comprehensive review by
 ### New canonical reference documents
 
 - `references/skill-contracts.md` — explains what JSON Schema input contracts exist, the validator strategy (jsonschema if installed, shape-check fallback), the test-fixture convention, and how to add a contract for a new skill.
-- `references/decision-journal-schema.md` — extended with the **YAML frontmatter manifest schema** (Landing 3). Documents the required top-level fields, the artifact-type vocabulary (specification, stranger-test, review-cycle, dropped-finding, etc.), per-type required metadata, compatibility with the legacy structured-entry format, and the tradeoff between YAML and JSON for the manifest.
+- `references/decision-journal-schema.md` — extended with the **YAML frontmatter manifest schema**. Documents the required top-level fields, the artifact-type vocabulary (specification, stranger-test, review-cycle, dropped-finding, etc.), per-type required metadata, compatibility with the legacy structured-entry format, and the tradeoff between YAML and JSON for the manifest.
 
 ### Tier classification (gate 19 of the plan)
 
@@ -41,20 +39,7 @@ Every command in `plugins/flow/commands/` now carries a `## Tier Classification`
 
 ### Verification
 
-All Landing 3 verification gates from the plan (13–21) pass:
-
-| Gate | Result |
-|---|---|
-| 13. `bin/validate-skill-input.sh` accepts valid input + rejects malformed | PASS |
-| 14. All three `tests/skills/<name>/test.sh` exit 0 | PASS (18/18 assertions) |
-| 15. `tests/finding-schema/validate.sh` exits 0 | PASS (13/13) |
-| 16. `tests/status-parser/test.sh` exits 0 | PASS (10/10) |
-| 18. `bin/promote-proposal.sh --dry-run` smoke test exits 0 | PASS |
-| 19. Every command has `## Tier Classification` | PASS (17/17) |
-| 20. `compound-engineering` decision documented | PASS |
-| 21. Full regression (issue-86 + 3 skill IO + finding-schema + status-parser) | PASS (16 + 18 + 13 + 10 = 57 assertions) |
-
-Gate 17 (synthetic issue end-to-end with manifest in journal) is a manual integration test — the helper scripts are unit-tested above; the end-to-end journey requires a real GitHub issue and is exercised by maintainers running `/flow:start` in their own work after this PR lands.
+Test totals on this release: 57 assertions across `tests/issue-86/` (16), `tests/skills/{holdout-validation,criterion-verification-map,specification-capture}/` (18), `tests/finding-schema/` (13), and `tests/status-parser/` (10). All pass. The synthetic-issue end-to-end manifest journey is a manual integration check exercised by maintainers running `/flow:start` after the helper scripts ship.
 
 ## 2.2.0 (2026-05-06)
 

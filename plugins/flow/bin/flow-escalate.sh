@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # [flow] Canonical six-field Proactive-Autonomy escalation formatter
 #
-# Formats the six-field structure documented in
-# `plugins/flow/references/escalation-format.md` as a markdown prompt body
+# CLI utility for ad-hoc human use. Formats the six-field structure documented
+# in `plugins/flow/references/escalation-format.md` as a markdown prompt body
 # suitable for use as the `question:` field of `AskUserQuestion`. The script
-# does NOT call AskUserQuestion itself — that is an LLM-side tool. The script
-# guarantees that every command produces escalation prompts with identical
-# structure so reviewers can verify the format mechanically and the user sees
-# a consistent shape across the plugin.
+# does NOT call AskUserQuestion itself — that is an LLM-side tool.
+#
+# Pipeline integration status: commands currently inline the escalation prose
+# so the structure stays inspectable in each command body. This script is
+# available for hand-running (terminal use, scripted previews, format checks)
+# and lets reviewers verify the canonical shape mechanically without parsing
+# command-specific text.
 #
 # Usage:
 #   flow-escalate.sh \

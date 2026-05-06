@@ -140,17 +140,17 @@ HOOKS (8 scripts)
   Note: merge/release confirmation gates run at the COMMAND level via
   AskUserQuestion (see references/three-tier-safety.md), not as hooks.
 
-BIN/ HELPER SCRIPTS (Landing 3)
-  ├── flow-escalate.sh      — formats canonical six-field escalation prompts
+BIN/ HELPER SCRIPTS
+  ├── flow-escalate.sh      — formats canonical six-field escalation prompts (CLI utility)
   ├── validate-skill-input.sh — validates skill inputs against JSON Schemas in tests/skills/
   ├── journal-record.sh     — atomically updates the YAML manifest in .decisions/issue-{N}.md
   └── promote-proposal.sh   — promotes /flow:learn proposals to learned skills via draft PR
 
 TESTS (repo-level, exercised by every PR series)
-  ├── tests/issue-86/         — FLOW_REVIEW_CYCLE marker parser fixtures (Landing 0)
-  ├── tests/skills/*/         — JSON Schema input contracts per skill (Landing 3)
-  ├── tests/finding-schema/   — canonical finding row validator + fixtures (Landing 3)
-  └── tests/status-parser/    — status.md ↔ merge.md ledger parser parity (Landing 3)
+  ├── tests/issue-86/         — FLOW_REVIEW_CYCLE marker parser fixtures
+  ├── tests/skills/*/         — JSON Schema input contracts per skill
+  ├── tests/finding-schema/   — canonical finding row validator + fixtures
+  └── tests/status-parser/    — status.md ↔ merge.md ledger parser parity
 ```
 
 ### Required Skills vs Skill() invocation convention

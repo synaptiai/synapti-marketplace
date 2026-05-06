@@ -86,7 +86,7 @@ See [gate-configuration.md](gate-configuration.md#settings-file-locations) for t
 }
 ```
 
-## Manifest Frontmatter (Landing 3)
+## Manifest Frontmatter
 
 Journal files MAY include a YAML frontmatter manifest at the top of the file. The manifest lists every artifact captured during the work — specification, Stranger Test result, review cycles, dropped findings, design decisions, brainstorm decisions, and so on. The manifest enables tooling (and human readers) to query the journal's contents without reading the full markdown body.
 
@@ -124,7 +124,7 @@ Adding a new artifact type means adding the row above and using the matching `--
 
 ### Compatibility with the legacy structured entry format
 
-Files written before Landing 3 use the structured entry format (`### [Category] Title` blocks) without YAML frontmatter. The new manifest is **additive**: when `bin/journal-record.sh` is invoked on a legacy file, it inserts a manifest block at the top and preserves the existing body verbatim. Legacy entries remain readable; the manifest summarizes what kinds of artifacts the body contains so tooling does not need to parse the freeform sections.
+Journal files that pre-date the manifest use the structured entry format (`### [Category] Title` blocks) without YAML frontmatter. The manifest is **additive**: when `bin/journal-record.sh` is invoked on a manifest-less file, it inserts a manifest block at the top and preserves the existing body verbatim. Legacy entries remain readable; the manifest summarizes what kinds of artifacts the body contains so tooling does not need to parse the freeform sections.
 
 ### Reading the manifest
 

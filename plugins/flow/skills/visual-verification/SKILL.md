@@ -181,7 +181,7 @@ Do NOT silently skip visual verification. Actively solve tooling problems:
 
 ## External dependency: compound-engineering (optional, documented)
 
-The browser-tool cascade includes two entries from the `compound-engineering` plugin (`compound-engineering:test-browser`, `compound-engineering:agent-browser`) as fallback positions 4 and 5. **The decision (Landing 3): document, do not vendor.** Rationale:
+The browser-tool cascade includes two entries from the `compound-engineering` plugin (`compound-engineering:test-browser`, `compound-engineering:agent-browser`) as fallback positions 4 and 5. **Decision: document, do not vendor.** Rationale:
 
 - The cascade gracefully handles the absence of these external skills. Playwright MCP, Chrome DevTools MCP, and the CLI fallback (`npx playwright screenshot`) are all viable for the production loop; the external skills exist as additional fallbacks for environments where neither Playwright MCP nor a working npx setup is available.
 - Vendoring the logic from `compound-engineering` would fork the behavior — the upstream plugin may evolve its browser-tool surface, and a vendored copy would silently diverge. The flow plugin would inherit maintenance for code it did not author.
