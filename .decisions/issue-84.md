@@ -119,3 +119,65 @@ PASS — single task: edit `commands/status.md` to add the Findings Ledger secti
 <!-- auto-log: 2026-05-06 01:48 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
 
 <!-- auto-log: 2026-05-06 01:50 commit "fix(flow): cycle-2 hardening — ID validation and merge fail-closed" -->
+
+<!-- auto-log: 2026-05-06 01:55 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-06 01:56 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-06 01:56 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-06 01:56 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
+
+<!-- auto-log: 2026-05-06 01:56 commit "chore(flow): cycle-3 polish — gh-unavailable BLOCKED row, hoist safe()" -->
+
+<!-- auto-log: 2026-05-06 02:26 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/settings.json -->
+
+<!-- auto-log: 2026-05-06 02:27 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-06 02:27 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-06 02:27 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-06 02:27 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-06 02:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
+
+<!-- auto-log: 2026-05-06 02:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
+
+<!-- auto-log: 2026-05-06 02:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
+
+<!-- auto-log: 2026-05-06 02:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
+
+<!-- auto-log: 2026-05-06 02:29 commit "feat(flow): trust filter for FLOW_RESOLUTION/REVIEW_CYCLE markers" -->
+
+<!-- auto-log: 2026-05-06 02:39 Edit /Users/danielbentes/synapti-marketplace/.gitignore -->
+
+<!-- auto-log: 2026-05-06 02:40 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-06 02:40 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-06 02:40 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-06 02:41 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
+
+<!-- auto-log: 2026-05-06 02:41 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
+
+<!-- auto-log: 2026-05-06 02:41 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
+
+<!-- auto-log: 2026-05-06 02:41 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/gate-configuration.md -->
+
+<!-- auto-log: 2026-05-06 02:44 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-06 02:44 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-06 02:44 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-06 02:44 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-06 02:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-06 02:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-06 02:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
+
+<!-- auto-log: 2026-05-06 02:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
