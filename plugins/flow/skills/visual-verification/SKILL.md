@@ -4,6 +4,16 @@ description: "Verify UI-facing changes by running a screenshot-analyze-verify lo
 allowed-tools: Bash, Read, Glob, Grep, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: Explore
+paths:
+  - "**/*.tsx"
+  - "**/*.jsx"
+  - "**/*.vue"
+  - "**/*.svelte"
+  - "**/*.html"
+  - "**/*.css"
+  - "**/*.scss"
+  - "**/*.sass"
+  - "**/*.less"
 ---
 
 # Visual Verification
@@ -169,9 +179,21 @@ Do NOT silently skip visual verification. Actively solve tooling problems:
 | No browser tools at all | If `requireVisualVerification` is true, return BLOCKED for command-level escalation per `references/escalation-format.md`. Otherwise, SKIP_WARN with tool installation guidance. |
 | Dev server not running | Coordinate with `runtime-verification` skill — it owns dev-server lifecycle. Visual verification cannot run without a server URL. |
 
-## Compatibility note: external dependency
+## External dependency: compound-engineering (optional, documented)
 
-The browser-tool cascade includes two external skills (`compound-engineering:test-browser`, `compound-engineering:agent-browser`) from the `compound-engineering` plugin. These are optional fallbacks — visual-verification works without them when Playwright MCP, Chrome DevTools MCP, or the CLI fallback is available. The `compound-engineering` dependency is documented as optional in the plugin README; the decision to vendor or replace these external entries is deferred to Landing 3 (per the comprehensive review plan).
+The browser-tool cascade includes two entries from the `compound-engineering` plugin (`compound-engineering:test-browser`, `compound-engineering:agent-browser`) as fallback positions 4 and 5. **The decision (Landing 3): document, do not vendor.** Rationale:
+
+- The cascade gracefully handles the absence of these external skills. Playwright MCP, Chrome DevTools MCP, and the CLI fallback (`npx playwright screenshot`) are all viable for the production loop; the external skills exist as additional fallbacks for environments where neither Playwright MCP nor a working npx setup is available.
+- Vendoring the logic from `compound-engineering` would fork the behavior — the upstream plugin may evolve its browser-tool surface, and a vendored copy would silently diverge. The flow plugin would inherit maintenance for code it did not author.
+- The `compound-engineering` plugin is part of the same Synapti marketplace and is recommended for installation alongside flow when visual verification is critical to the workflow. The cascade documentation makes the dependency relationship explicit so users in tooling-constrained environments can install it as a remediation step rather than discovering the absence at verification time.
+
+### What this means in practice
+
+- **Without `compound-engineering` installed**: visual verification works through positions 1-3 of the cascade (Playwright MCP, Chrome DevTools MCP, CLI fallback). Positions 4-5 are skipped silently.
+- **With `compound-engineering` installed**: positions 4-5 become available as fallbacks if positions 1-3 are unavailable.
+- **`requireVisualVerification: true` configured but no browser tools at all** (none of positions 1-5 succeed): the skill returns BLOCKED, which the consumer escalates per `references/escalation-format.md` with three options (skip with note, manual verification by user, install browser tools).
+
+The README documents `compound-engineering` as a recommended companion plugin in the Hook Compatibility / Dependencies section.
 
 ## Integration with runtime-verification
 

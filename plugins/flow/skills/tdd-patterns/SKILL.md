@@ -4,6 +4,17 @@ description: "Guide test-driven development through the Red-Green-Refactor cycle
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: general-purpose
+paths:
+  - "**/*.test.{js,jsx,ts,tsx,mjs,cjs}"
+  - "**/*.spec.{js,jsx,ts,tsx,mjs,cjs}"
+  - "**/__tests__/**"
+  - "**/test_*.py"
+  - "**/*_test.py"
+  - "**/tests/**.py"
+  - "**/spec/**.rb"
+  - "**/*_spec.rb"
+  - "**/*_test.go"
+  - "**/test_*.rs"
 ---
 
 # TDD Patterns

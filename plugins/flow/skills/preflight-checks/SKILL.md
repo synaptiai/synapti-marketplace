@@ -4,6 +4,7 @@ description: "Reference for the pre-flight validation policy: clean git state, i
 allowed-tools: Read
 context: fork
 agent: general-purpose
+disable-model-invocation: true
 ---
 
 # Pre-flight Checks

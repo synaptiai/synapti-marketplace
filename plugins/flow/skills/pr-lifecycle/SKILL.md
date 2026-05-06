@@ -4,6 +4,7 @@ description: "Reference for the pull-request lifecycle policy: pre-flight gates,
 allowed-tools: Read
 context: fork
 agent: general-purpose
+disable-model-invocation: true
 ---
 
 # PR Lifecycle
