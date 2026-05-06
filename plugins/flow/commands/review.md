@@ -308,6 +308,21 @@ Apply the consolidation table from `team-coordination/SKILL.md` Phase 4. For eac
 
 **DROPPED findings** are logged to `.decisions/issue-{N}.md` (where N = the issue this PR addresses) under a `## Dropped after challenge (PR #$ARGUMENTS, cycle {N})` heading with the finding details and both DISAGREE reasons. They never appear in the rendered tables or the FLOW_REVIEW_CYCLE marker.
 
+**Manifest emit** — for each DROPPED finding, append a `dropped-finding` artifact to the journal manifest so `/flow:learn` can detect repeated drop reasons across cycles (a recurring drop reason is a learnable signal):
+
+```bash
+"${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+  --issue $ISSUE \
+  --type dropped-finding \
+  --metadata cycle=$CYCLE \
+  --metadata finding_id=$FINDING_ID \
+  --metadata facet=$FACET \
+  --metadata reason="$REASON" \
+  --metadata pr=$ARGUMENTS
+```
+
+Repeat once per dropped finding. The freeform `## Dropped after challenge` section preserves the verbose details (both DISAGREE reasons, file:line); the manifest entry is the queryable index.
+
 #### A.5 — Per-facet fallback application
 
 If any of A.1's variants failed (timeout, error, did-not-spawn), apply the fallback semantics from `team-coordination/SKILL.md` per facet — never block the review:
@@ -318,7 +333,7 @@ If any of A.1's variants failed (timeout, error, did-not-spawn), apply the fallb
 | Both variants failed for facet F | Re-dispatch single Agent for that facet using the Path B prompt. Note in output: `facet F: re-dispatched as single-reviewer (both variants failed)`. |
 | Challenge round failed for a facet | Skip A.3 for that facet; keep A.1 findings as `unchallenged`. Note in output: `facet F: challenge skipped (challenge prompt failed)`. |
 | A.2 auto-consensus matching errored on finding F (e.g., malformed `file:line`) | Skip auto-consensus for F; route F through A.3 challenge as if non-consensus. Log `LEDGER_WARN: PR#{N} A.2 skipped F:<id> due to <reason>` to stderr. |
-| A.4 consolidation lookup missing for finding F (e.g., orphaned challenge response) | Emit F as `unchallenged` MEDIUM. Append to `.decisions/issue-{N}.md` (where N = the issue this PR addresses) under a `## Consolidation gaps (PR #$ARGUMENTS, cycle {N})` heading with the orphan reason. Create the journal file with frontmatter if it does not exist. |
+| A.4 consolidation lookup missing for finding F (e.g., orphaned challenge response) | Emit F as `unchallenged` MEDIUM. Append to `.decisions/issue-{N}.md` (where N = the issue this PR addresses) under a `## Consolidation gaps (PR #$ARGUMENTS, cycle {N})` heading with the orphan reason. Create the journal file with frontmatter if it does not exist. **Also emit `--type consolidation-gap`** via `bin/journal-record.sh` with `cycle`, `finding_id`, `reason`, and `pr` metadata so the manifest carries a machine-readable trail of fallback fires. |
 
 #### A.6 — Emit consolidated output
 
@@ -462,6 +477,23 @@ TaskUpdate each review task as agents complete.
    - External + No findings → `gh pr review $ARGUMENTS --approve --body "$BODY"`
 
    TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — review posted as {approve/request-changes/comment}")
+
+   **Manifest emit** — record the review-cycle artifact in the issue's journal manifest. Use the issue number associated with this PR (parse from PR body: `gh pr view $ARGUMENTS --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#'`):
+
+   ```bash
+   ISSUE=$(gh pr view $ARGUMENTS --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+   if [ -n "$ISSUE" ]; then
+     "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+       --issue $ISSUE \
+       --type review-cycle \
+       --metadata cycle=$CYCLE_NUMBER \
+       --metadata path={A|B} \
+       --metadata findings_count=$TOTAL \
+       --metadata pr=$ARGUMENTS
+   fi
+   ```
+
+   The `path` value is `A` when paired-reviewer mode produced the findings (7-field marker), `B` when Path B (5-field marker) produced them. `findings_count` is the total across P1+P2+P3 in the cycle. If the PR body does not link an issue, skip the emit (the marker on the PR comment is sufficient for that PR's own state; the manifest is keyed by issue, not PR).
 
 8. **Verify posting**: TaskList — confirm "Post review comment" or "Post self-review comment" task is completed. Do NOT proceed to step 9 until this is verified.
 
