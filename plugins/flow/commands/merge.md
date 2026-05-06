@@ -49,9 +49,28 @@ Parse the latest `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` comments to ver
 # Capture gh exit code: a silent gh failure (auth, network) must fail the gate
 # CLOSED, not pass it open.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+
+# Read trust list from settings cascade (default: OWNER, MEMBER, COLLABORATOR).
+# Markers from non-trusted authors are not counted — see issue #92 background:
+# without this filter, any GitHub user with comment access could forge a
+# resolution comment and bypass the merge gate.
+TRUST_LIST_DEFAULT='["OWNER","MEMBER","COLLABORATOR"]'
+TRUST_LIST="$TRUST_LIST_DEFAULT"
+for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
+  if [ -f "$SETTINGS_FILE" ]; then
+    LIST=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_FILE" 2>/dev/null)
+    [ -n "$LIST" ] && [ "$LIST" != "null" ] && TRUST_LIST="$LIST" && break
+  fi
+done
+TRUST_REGEX=$(echo "$TRUST_LIST" | jq -r '. | join("|")')
+
 RESOLUTION_BODY=$(gh api "repos/$REPO/issues/$ARGUMENTS/comments" \
-  --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:"))] | last | .body // ""' 2>/dev/null)
+  --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\")) and (.body | test(\"FLOW_RESOLUTION_CYCLE:\")))] | last | .body // \"\"" 2>/dev/null)
 GH_EXIT_RES=$?
+# Count untrusted markers so we can surface a clear "no trusted markers" block
+# rather than silently passing when only forged markers exist.
+RES_UNTRUSTED=$(gh api "repos/$REPO/issues/$ARGUMENTS/comments" \
+  --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\") | not) and (.body | test(\"FLOW_RESOLUTION_CYCLE:\")))] | length" 2>/dev/null)
 
 # Extract ESCALATED array contents (portable POSIX grep+sed; BSD grep has no -P).
 # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
@@ -59,13 +78,24 @@ ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ES
 
 # Extract the latest FLOW_REVIEW_CYCLE — emitted in PR review bodies, not issue comments
 REVIEW_BODY=$(gh api "repos/$REPO/pulls/$ARGUMENTS/reviews" \
-  --jq '[.[] | select(.body | test("FLOW_REVIEW_CYCLE:"))] | last | .body // ""' 2>/dev/null)
+  --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\")) and (.body | test(\"FLOW_REVIEW_CYCLE:\")))] | last | .body // \"\"" 2>/dev/null)
 GH_EXIT_REV=$?
+REV_UNTRUSTED=$(gh api "repos/$REPO/pulls/$ARGUMENTS/reviews" \
+  --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\") | not) and (.body | test(\"FLOW_REVIEW_CYCLE:\")))] | length" 2>/dev/null)
 
 # Fail closed if either gh call failed — better to block a legitimate merge
 # than silently let a regression through when the gate state is unknowable.
 if [ $GH_EXIT_RES -ne 0 ] || [ $GH_EXIT_REV -ne 0 ]; then
   echo "FINDING_LEDGER_BLOCK: gh API unavailable — cannot verify finding ledger (resolution exit=$GH_EXIT_RES, review exit=$GH_EXIT_REV)"
+fi
+
+# Surface "untrusted-only" markers as a block reason rather than silently
+# treating them as no markers at all. This is the #92 forgery defense.
+if [ -z "$RESOLUTION_BODY" ] && [ "${RES_UNTRUSTED:-0}" != "0" ]; then
+  echo "FINDING_LEDGER_BLOCK: $RES_UNTRUSTED FLOW_RESOLUTION_CYCLE marker(s) found but none from trusted authors ($TRUST_REGEX)"
+fi
+if [ -z "$REVIEW_BODY" ] && [ "${REV_UNTRUSTED:-0}" != "0" ]; then
+  echo "FINDING_LEDGER_BLOCK: $REV_UNTRUSTED FLOW_REVIEW_CYCLE marker(s) found but none from trusted authors ($TRUST_REGEX)"
 fi
 
 # Extract all finding IDs from FINDINGS array (comma-separated, pipe-delimited fields, first field is the ID)
@@ -96,6 +126,7 @@ PR #$ARGUMENTS cannot be merged — the finding ledger has unresolved items.
 | Issue | Details |
 |-------|---------|
 | gh API unavailable | {if either GH_EXIT_RES or GH_EXIT_REV is non-zero, list both exit codes; else "N/A"} |
+| Untrusted markers only | {if RES_UNTRUSTED or REV_UNTRUSTED is non-zero AND no trusted markers found, list counts} |
 | Non-empty ESCALATED | {list of escalated finding IDs, if any} |
 | Unmatched FINDINGS | {list of finding IDs with no RESOLVED entry, if any} |
 

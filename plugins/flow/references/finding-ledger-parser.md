@@ -2,9 +2,17 @@
 
 Canonical reference for extracting and classifying review findings across one or more pull requests. Used by `/flow:status` (Findings Ledger section) and `/flow:merge` (merge-blocking finding-ledger check).
 
+## Trust Boundary
+
+Markers are extracted from PR reviews and PR conversation comments. Both surfaces are reachable by **any GitHub user with comment access** on a public repo — drive-by accounts can submit `COMMENT`-state reviews, and anyone can post issue comments. A forged `<!-- FLOW_RESOLUTION_CYCLE:N RESOLVED:[F1,F2,...] ESCALATED:[] DISPUTED:[] -->` from an untrusted account would otherwise let an attacker bypass the merge gate.
+
+To prevent this, both consumers (`/flow:status` and `/flow:merge`) filter markers by GitHub's `author_association` field before honoring them. The default trust list is `["OWNER", "MEMBER", "COLLABORATOR"]`, configurable via `settings.json` → `merge.markerTrust.allowedAssociations`.
+
+`/flow:merge` additionally surfaces an explicit `FINDING_LEDGER_BLOCK: ... no trusted authors` reason when markers exist but none come from trusted sources, rather than silently treating the PR as marker-free (which would fail open).
+
 ## Marker Schemas
 
-Two HTML-comment markers carry the finding state. They are emitted by review and resolution templates and are the only ledger source-of-truth.
+Two HTML-comment markers carry the finding state. They are emitted by review and resolution templates and are the only ledger source-of-truth. Markers from untrusted authors are ignored — see Trust Boundary above.
 
 ### FLOW_REVIEW_CYCLE — emitted in PR review bodies
 
@@ -61,10 +69,13 @@ PRS=$(gh pr list --state open --limit 100 --json number,author,assignees \
 
 ### 2. Extract latest FLOW_REVIEW_CYCLE FINDINGS for one PR
 
+Trust filter applied: only reviews from authors in the configured trust list count. Without this, anyone able to submit a `COMMENT`-state review could forge findings.
+
 ```bash
 PR_NUM=42
+# TRUST_REGEX="OWNER|MEMBER|COLLABORATOR" (built from settings; see consumers).
 REVIEW_BODY=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" \
-  --jq '[.[] | select(.body | test("FLOW_REVIEW_CYCLE:"))] | last | .body // ""')
+  --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\")) and (.body | test(\"FLOW_REVIEW_CYCLE:\")))] | last | .body // \"\"")
 # Portable extraction (POSIX grep + sed — works on BSD/macOS and GNU/Linux).
 # Avoids `grep -P` / `\K` which BSD grep does not support.
 # Empty input + grep no-match still produces empty stdout (sed exits 0 on empty),
@@ -77,7 +88,7 @@ FINDINGS_RAW=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FIND
 
 ```bash
 RESOLUTION_BODY=$(gh api "repos/$REPO/issues/$PR_NUM/comments" \
-  --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:"))] | last | .body // ""')
+  --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\")) and (.body | test(\"FLOW_RESOLUTION_CYCLE:\")))] | last | .body // \"\"")
 
 # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match the
 # `,F1,` containment check used in classification.
@@ -128,6 +139,7 @@ done
 |-----------|----------|
 | `gh` API timeout / unauthenticated | Skip ledger; render "Findings Ledger unavailable" with one-line cause |
 | PR with no review markers | Contributes zero findings; not an error |
+| PR with markers but none from trusted authors | `/flow:status`: contributes zero (display only). `/flow:merge`: emits `FINDING_LEDGER_BLOCK: ... no trusted authors` to fail closed. |
 | Malformed marker (regex match fails) | Skip that PR; do not error |
 | FINDINGS row missing pipe-delimited priority field | Emit `LEDGER_WARN` to stderr; skip that row |
 | Resolution arrays reference IDs missing from FINDINGS | Not iterated (loop walks FINDINGS only); resolution-only IDs are silently inert |

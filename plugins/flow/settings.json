@@ -24,7 +24,10 @@
   },
   "merge": {
     "strategy": "squash",
-    "deleteBranch": true
+    "deleteBranch": true,
+    "markerTrust": {
+      "allowedAssociations": ["OWNER", "MEMBER", "COLLABORATOR"]
+    }
   },
   "conflictResolution": {
     "autoResolveTrivial": true,

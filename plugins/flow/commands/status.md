@@ -49,6 +49,19 @@ Aggregate review findings across the user's open PRs (author OR assignee). See [
 ME=$(gh api user --jq '.login')
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
+# Read trust list from settings cascade (default: OWNER, MEMBER, COLLABORATOR).
+# Untrusted markers do not count toward the ledger — see /flow:merge for the
+# full forgery-defense rationale.
+TRUST_LIST_DEFAULT='["OWNER","MEMBER","COLLABORATOR"]'
+TRUST_LIST="$TRUST_LIST_DEFAULT"
+for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
+  if [ -f "$SETTINGS_FILE" ]; then
+    LIST=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_FILE" 2>/dev/null)
+    [ -n "$LIST" ] && [ "$LIST" != "null" ] && TRUST_LIST="$LIST" && break
+  fi
+done
+TRUST_REGEX=$(echo "$TRUST_LIST" | jq -r '. | join("|")')
+
 # Enumerate PRs (author OR assignee). Capture gh exit code separately so a
 # silent gh failure (auth, network) doesn't masquerade as "no PRs".
 LEDGER_PRS_RAW=$(gh pr list --state open --limit 100 --json number,author,assignees 2>/dev/null)
@@ -69,12 +82,12 @@ else
   safe() { printf '%s' "$1" | tr -cd '[:print:]' | cut -c1-64; }
   for PR_NUM in $LEDGER_PRS; do
     REVIEW_BODY=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" \
-      --jq '[.[] | select(.body | test("FLOW_REVIEW_CYCLE:"))] | last | .body // ""' 2>/dev/null)
+      --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\")) and (.body | test(\"FLOW_REVIEW_CYCLE:\")))] | last | .body // \"\"" 2>/dev/null)
     FINDINGS_RAW=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//')
     [ -z "$FINDINGS_RAW" ] && continue
 
     RESOLUTION_BODY=$(gh api "repos/$REPO/issues/$PR_NUM/comments" \
-      --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:"))] | last | .body // ""' 2>/dev/null)
+      --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\")) and (.body | test(\"FLOW_RESOLUTION_CYCLE:\")))] | last | .body // \"\"" 2>/dev/null)
     # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
     RESOLVED=$(echo "$RESOLUTION_BODY"  | grep -o 'RESOLVED:\[[^]]*\]'  | sed 's/^RESOLVED:\[//;s/\]$//'  | tr -d ' ')
     ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
