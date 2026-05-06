@@ -1,8 +1,6 @@
 # Finding Schema (canonical reviewer output)
 
-Reference document. The canonical shape every reviewer agent emits, and the canonical row shape that flows into `FLOW_REVIEW_CYCLE` markers.
-
-This schema exists because pre-Landing-2 the four reviewer agents (`code-reviewer`, `error-handler-inspector`, `security-reviewer`, `integration-verifier`) each emitted slightly different table columns, and the orchestrator had to natural-language-parse 4+ formats during synthesis. With the canonical schema below, synthesis is a structured operation: same column set per facet, same ID grammar, same priority/category/confidence vocabulary.
+Reference document. The canonical shape every reviewer agent emits, and the canonical row shape that flows into `FLOW_REVIEW_CYCLE` markers. Synthesis across the four reviewer agents (`code-reviewer`, `error-handler-inspector`, `security-reviewer`, `integration-verifier`) is a structured operation against this schema: same column set per facet, same ID grammar, same priority/category/confidence vocabulary.
 
 `convention-checker` is intentionally NOT migrated to this schema. Convention findings (commit-message format, branch-name pattern, PR template adherence) have a different shape than file:line code findings — they are rule-vs-artifact comparisons, not bugs in code. `convention-checker` keeps its own per-rule output, and the orchestrator either surfaces convention violations separately or maps them into the canonical schema with `category=conventions` and `location=<commit-sha>` / `location=<branch-name>` when they need to live in the same finding ledger as code findings.
 

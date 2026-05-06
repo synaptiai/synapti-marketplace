@@ -10,12 +10,10 @@ agent: general-purpose
 
 You capture three specification elements that complement an issue's acceptance criteria, and you persist them to the decision journal so every downstream phase (PLAN, CODE, VERIFY) and every related command (`/flow:design`, `/flow:brainstorm`) can read from the same source of truth.
 
-This skill exists because pre-Landing-2 specification capture was inline prose in `commands/start.md` Phase 1 (lines 122–151). Two problems followed:
+This skill owns the capture lifecycle and the journal contract — every consumer (`/flow:start`, `/flow:design`, `/flow:brainstorm`) invokes the skill instead of re-implementing it. Two failure modes the skill prevents:
 
-1. **No persistence-side check** — the prose said "capture all three into the decision journal" but no postcondition verified that the elements actually made it into the journal, so a partial capture could silently flow into PLAN.
-2. **No shared source of truth** — `commands/design.md` and `commands/brainstorm.md` independently addressed overlapping elements (non-goals especially) without reading from or writing to the same `.decisions/` artifact, so a user running `/flow:design` first and `/flow:start` second would get duplicate or contradictory specifications.
-
-This skill owns the capture lifecycle and the journal contract. Every consumer invokes the skill instead of re-implementing it.
+1. **No persistence-side check** — without a single owner, a command can claim "captured all three" while writing only a partial set to the journal, and the gap silently flows into PLAN.
+2. **No shared source of truth** — `commands/design.md` and `commands/brainstorm.md` would otherwise address overlapping elements (non-goals especially) without reading from or writing to the same `.decisions/` artifact, so a user running `/flow:design` first and `/flow:start` second would get duplicate or contradictory specifications.
 
 ## Iron Law
 

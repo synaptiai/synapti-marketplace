@@ -171,7 +171,7 @@ Do NOT silently skip visual verification. Actively solve tooling problems:
 
 ## Compatibility note: external dependency
 
-The browser-tool cascade includes two external skills (`compound-engineering:test-browser`, `compound-engineering:agent-browser`) from the `compound-engineering` plugin. These are optional fallbacks — visual-verification works without them when Playwright MCP, Chrome DevTools MCP, or the CLI fallback is available. The `compound-engineering` dependency is documented as optional in the plugin README; the decision to vendor or replace these external entries is deferred to Landing 3 (per the comprehensive review plan).
+The browser-tool cascade includes two external skills (`compound-engineering:test-browser`, `compound-engineering:agent-browser`) from the `compound-engineering` plugin. These are optional fallbacks — visual-verification works without them when Playwright MCP, Chrome DevTools MCP, or the CLI fallback is available. The `compound-engineering` dependency is documented as optional in the plugin README; the vendor-or-document decision is tracked separately.
 
 ## Integration with runtime-verification
 

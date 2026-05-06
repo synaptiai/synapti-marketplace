@@ -1,8 +1,6 @@
 # Evidence Bundle Format (verdict-judge input contract)
 
-Reference document. The canonical markdown shape that `agents/verdict-judge.md` consumes when evaluating whether an implementation satisfies the issue's acceptance criteria.
-
-This format exists because pre-Landing-2 the verdict-judge had auto-FAIL rules ("missing 'Does NOT promise' field" → FAIL, "missing one of three completeness subsections" → FAIL) but no published schema for the document those rules check against. Producers (`commands/start.md` Phase 4, the `criterion-verification-map` skill) and consumer (verdict-judge) had to agree by convention. This document is the convention, frozen.
+Reference document. The canonical markdown shape that `agents/verdict-judge.md` consumes when evaluating whether an implementation satisfies the issue's acceptance criteria. Producers (`commands/start.md` Phase 4, the `criterion-verification-map` skill) and the consumer (`verdict-judge`) both cite this document so the auto-FAIL rules ("missing `Does NOT promise` field" → FAIL, "missing one of three completeness subsections" → FAIL) check against a published schema rather than an implicit convention.
 
 ## Shape
 

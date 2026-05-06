@@ -2,8 +2,6 @@
 
 ## 2.2.0 (2026-05-06)
 
-Vision-alignment landing. Closes the structural P1 gaps surfaced by the comprehensive review: reviewer output fragmentation, verdict-judge contract opacity, escalation field-name drift, specification-capture lifecycle drift, runtime-verification scope creep, and the `/flow:review` Path A holdout asymmetry. Three new canonical reference documents and one new skill (specification-capture) plus one extracted skill (visual-verification) make the plugin's cross-cutting contracts auditable as published documents instead of inline prose.
-
 ### New Reference Documents
 
 - `references/finding-schema.md` — canonical 6-field reviewer output row (`ID | Category | Location | Problem | Suggested Fix | Confidence`) plus the marker-only `status` and `disposition` fields. Compatible with the existing `FLOW_REVIEW_CYCLE` 7-field marker grammar.

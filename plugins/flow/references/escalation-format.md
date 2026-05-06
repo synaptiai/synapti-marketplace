@@ -1,8 +1,6 @@
 # Escalation Format (canonical six-field structure)
 
-Reference document. The canonical structure every command and agent uses when it must escalate a decision to the user.
-
-This format exists because pre-Landing-2 the six-field escalation was inlined as prose into every command that escalated, with mild but meaningful drift in field names. The vision article uses one set of names; the implementation uses another. This document adopts the implementation set (already 4× consistent across `commands/start.md`, `commands/merge.md`, `commands/pr.md`, `commands/commit.md`) and makes it the single source of truth.
+Reference document. The canonical structure every command and agent uses when it must escalate a decision to the user. Every command that escalates cites this file rather than inlining the field names, so the format stays consistent across the plugin.
 
 ## When escalation IS required
 
