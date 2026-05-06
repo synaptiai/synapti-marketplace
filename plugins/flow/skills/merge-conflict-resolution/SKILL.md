@@ -1,6 +1,6 @@
 ---
 name: merge-conflict-resolution
-description: "Detect, classify, and resolve git merge conflicts through structured analysis of conflict markers, per-file strategy selection, and post-resolution verification. Use when a branch has conflicts with its merge target or when rebasing onto an updated base."
+description: "Detect, classify (porcelain status; complexity: trivial, semantic, structural, delete-modify), and resolve git merge conflicts through per-file strategy selection (accept-ours, accept-theirs, manual-merge, rebase), manual conflict hunk parsing, and post-resolution verification (orphaned markers, build, tests). Use when a branch has conflicts with its merge target or when rebasing onto an updated base. This skill MUST be consulted because silently dropping changes is non-negotiable; every conflict resolution must account for both sides."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, TaskCreate, TaskList, TaskUpdate, AskUserQuestion
 context: fork
 agent: general-purpose

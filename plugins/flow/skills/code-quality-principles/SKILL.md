@@ -1,6 +1,6 @@
 ---
 name: code-quality-principles
-description: "Enforce code quality standards including the Boy Scout Rule, secret-free commits, anti-pattern detection, and prohibition of mocks/stubs/TODOs in production code. Use when writing, modifying, or reviewing code to ensure quality gates are met."
+description: "Enforce code quality through the Boy Scout Rule (leave code better than found), secret-free commits, production-ready code (no TODOs, console.log, mocks, or commented code), and self-review against an atomic-commits checklist. Use when writing, modifying, or reviewing code. This skill MUST be consulted because production code without these standards causes quality regressions and operational incidents."
 allowed-tools: Bash, Read, Grep, Glob
 ---
 

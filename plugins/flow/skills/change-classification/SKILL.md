@@ -1,6 +1,6 @@
 ---
 name: change-classification
-description: "Classify code changes as in-context, uncertain, or out-of-context by applying primary and secondary signals relative to the current branch, issue, and tasks. Flag first-touch files and red-flag patterns. Use when preparing commits or reviewing staged changes."
+description: "Classify code changes as in-context, uncertain, or out-of-context using primary signals (branch diff, issue keywords, active tasks), secondary signals (directory proximity, test naming), and red-flag patterns (secrets, large binaries). Use when preparing commits or reviewing staged changes. This skill MUST be consulted because committing without classification is how out-of-context changes, secrets, and unintended modifications reach the repository."
 allowed-tools: Bash, Read, Grep
 context: fork
 agent: Explore

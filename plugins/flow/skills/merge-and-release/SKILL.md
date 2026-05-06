@@ -1,6 +1,6 @@
 ---
 name: merge-and-release
-description: "Reference for the merge and release policy: prerequisite checklist (approval, checks, mergeable, conversations, stale approval), Tier 3 confirmation requirement, semantic versioning rules, and changelog generation. Use to understand why merges and releases are non-autonomous."
+description: "Reference document describing merge prerequisites (approval, CI checks, mergeable, conversations resolved, stale approval), release versioning (semantic semver), and changelog generation. Explains why Tier 3 confirmation is structural: merge and release cost is borne by downstream people. Reference only (`disable-model-invocation: true`); consumed by `/flow:merge` and `/flow:release`."
 allowed-tools: Read
 context: fork
 agent: Explore
