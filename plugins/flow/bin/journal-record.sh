@@ -126,20 +126,27 @@ if os.path.exists(journal):
     if content.startswith("---\n"):
         end_marker = content.find("\n---\n", 4)
         if end_marker == -1:
-            # Malformed frontmatter (opening --- but no closing). Treat the whole
-            # thing as body — the next render will produce a fresh manifest.
-            body = content
-        else:
-            try:
-                manifest = yaml.safe_load(content[4:end_marker])
-            except yaml.YAMLError as e:
-                print(f"journal-record.sh: existing frontmatter is invalid YAML: {e}", file=sys.stderr)
-                print("journal-record.sh: refusing to overwrite — fix manually", file=sys.stderr)
-                sys.exit(2)
-            body = content[end_marker + 5:]
-            if not isinstance(manifest, dict):
-                manifest = None
-                body = content
+            # Opening `---` with no closing fence. Refusing here is consistent with
+            # the YAMLError branch below: a fresh-render fallback would prepend a
+            # new frontmatter to a body that itself starts with `---`, producing
+            # a doubly-fenced file that parses correctly but ships the old
+            # malformed content into the new body — silent corruption.
+            print("journal-record.sh: existing journal has unclosed frontmatter "
+                  "(opening `---` with no closing fence)", file=sys.stderr)
+            print("journal-record.sh: refusing to overwrite — fix manually", file=sys.stderr)
+            sys.exit(2)
+        try:
+            manifest = yaml.safe_load(content[4:end_marker])
+        except yaml.YAMLError as e:
+            print(f"journal-record.sh: existing frontmatter is invalid YAML: {e}", file=sys.stderr)
+            print("journal-record.sh: refusing to overwrite — fix manually", file=sys.stderr)
+            sys.exit(2)
+        body = content[end_marker + 5:]
+        if not isinstance(manifest, dict):
+            print("journal-record.sh: existing frontmatter is not a YAML mapping",
+                  file=sys.stderr)
+            print("journal-record.sh: refusing to overwrite — fix manually", file=sys.stderr)
+            sys.exit(2)
     else:
         body = content
 
