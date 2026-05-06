@@ -2,8 +2,6 @@
 
 ## 2.1.1 (2026-05-06)
 
-Surgical cleanup landing — descriptions, parity, dead code. No behavior changes; existing tests untouched. Pre-work for the structural overhaul (Landings 2 and 3).
-
 ### Documentation
 
 - All 22 skill descriptions rewritten to lead with the artifact, name 2-3 specific triggers, and add either "MUST be consulted because…" (verification, safety, and gate-enforcing skills) or "Proactively suggest when…" (creative and exploratory skills) — bringing the active skills into the same trigger pattern that drove `holdout-validation`'s invocation rate from ~0% to the high 90s.

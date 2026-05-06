@@ -2,12 +2,11 @@
 # [flow] TeammateIdle hook: Nudge idle teammates toward unclaimed tasks
 # Feedback delivered via stderr output (exit 0 always — exit 2 has no semantics here)
 #
-# Compatibility: requires Claude Code v2.1.33+ (TeammateIdle event was added there;
-# see https://github.com/anthropics/claude-code/issues/23545). The exact JSON payload
-# schema for this event is not officially documented today, so the hook treats
-# `.teammate.id` and `.idle_seconds` as best-effort fields. When `.idle_seconds` is
-# missing the default of 0 fails the >=60s threshold and the hook exits silently
-# rather than producing noisy nudges.
+# Compatibility: requires Claude Code v2.1.33+ (TeammateIdle event was introduced
+# alongside agent-team support). The JSON payload schema is not officially documented,
+# so the hook treats `.teammate.id` and `.idle_seconds` as best-effort fields. When
+# `.idle_seconds` is missing the default of 0 fails the >=60s threshold and the hook
+# exits silently rather than producing noisy nudges.
 
 set -euo pipefail
 
