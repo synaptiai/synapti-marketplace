@@ -31,6 +31,18 @@ Each contract lives at `tests/skills/<skill-name>/input-schema.json`. Schemas us
 
 Schemas may declare other Draft-07 keywords (`oneOf`, `allOf`, `format`, `additionalProperties`, etc.); those are honored when `jsonschema` is installed but ignored by the fallback validator. Use them only when full validation in CI is set up.
 
+### Fallback caveat: `type` declared as a list
+
+When a schema declares `type` as an array of allowed types (e.g. `"type": ["string", "null"]`), the fallback validator currently checks only that the data matches *one* of the allowed types — it does NOT then re-enter constraint validation for the matched subtype. Concretely, this schema:
+
+```json
+{ "type": ["string", "null"], "minLength": 5, "enum": ["alpha", "beta"] }
+```
+
+Fallback accepts `"X"` (matches `string`, but `minLength` and `enum` skipped). Full `jsonschema` correctly rejects it.
+
+None of the contracts shipped in Landing 3 use `type: [...]`, so the gap is latent today. If you author a contract that needs nullable-with-constraints, install `jsonschema` in CI and document the dependency in the test, OR refactor the schema to use single-type sub-schemas wrapped in `oneOf` (also requires full `jsonschema`). Avoid `type: [...]` in fallback-only deployments.
+
 ## The validator
 
 `plugins/flow/bin/validate-skill-input.sh <skill-name> '<json-input>'` validates the input against the skill's schema. Exit codes:
@@ -95,6 +107,34 @@ A regression in any contract fails the loop with the offending test's name in th
 The plugin runs in environments where `pip install jsonschema` is not always practical (corporate Python sandboxes, slim CI images, untrusted-network installs). The fallback validator uses only the standard library — guaranteed to work on any Python 3.x install. The trade-off is that it covers only the Draft-07 subset listed above, not the full spec.
 
 Schema authors should write contracts that the fallback can enforce. If a contract requires `oneOf` or `format: email` validation, document that fallback validation will skip those checks and recommend installing `jsonschema` in CI.
+
+## SKILL.md frontmatter schema
+
+The contracts above govern *runtime payloads* a skill receives. The skill itself is a markdown file with YAML frontmatter, and that frontmatter has its own (Claude-Code-native) schema. Documenting it here so contributors editing skills know which keys are recognized and which are accidental drift.
+
+| Key | Type | Required | Purpose |
+|---|---|---|---|
+| `name` | string | yes | Stable skill identifier. Kebab-case by convention. Used by orchestration code (`Skill(<name>)`) and by `tests/skills/<name>/`. |
+| `description` | string | yes | One-line trigger description. The string Claude sees when deciding whether to invoke. Lead with the artifact and include either a "MUST be consulted" or "Use when…" clause (per the description-trigger memory at `feedback_skill_descriptions`). |
+| `allowed-tools` | string list | no | Tool whitelist. When present, restricts the skill to a specific tool set (e.g. `[Read, Grep, Bash(grep:*), Bash(rg:*)]`). Omit to inherit the parent's tool budget. Narrowing is preferred over expanding. |
+| `disable-model-invocation` | boolean | no | When `true`, Claude Code will NOT autonomously invoke this skill — only an orchestrator (a command's prompt) can call it via `Skill(<name>)`. Use for reference docs that are not standalone entry points (e.g. `pr-lifecycle`, `preflight-checks`). |
+| `paths` | string list | no | Restricts the skill's *automatic* invocation to files matching one or more glob patterns. Skills with `paths:` only fire when the conversation context references a matching file. Use when a skill applies only to a specific subsystem (e.g. `tdd-patterns: paths: ["**/*test*", "**/spec/**"]`). |
+
+### Schema rules
+
+- `name` and `description` are required. A SKILL.md without both will not register.
+- `disable-model-invocation: true` and `paths: [...]` are mutually compatible: `disable-model-invocation` blocks model-side invocation entirely, `paths` narrows the *file context* under which it would otherwise fire.
+- Unknown frontmatter keys are silently ignored by Claude Code. They do not error — but they also have no effect. Contributors adding fields should either document them here or remove them.
+- The `description` field is matched by the trigger model character-for-character; cosmetic edits (rewording, capitalization) materially change invocation rate. The `feedback_skill_descriptions` memory entry captures the empirical impact.
+
+### Conventional fields not in this schema
+
+These appear in some plugins but are NOT recognized by Claude Code itself — they are documentation-only for human contributors:
+
+- `version`, `last-updated`, `author`, `tags` — all unrecognized; either inline them in the body or delete.
+- `agent: <name>` — used by some compound-engineering skills to declare a preferred sub-agent. Honored by orchestration code that reads it; not by Claude Code's native skill resolver.
+
+When in doubt: if the key isn't in the table above, it's probably unrecognized. Document it inline if it carries meaning to the orchestrator that uses the skill.
 
 ## Compatibility with the canonical references
 
