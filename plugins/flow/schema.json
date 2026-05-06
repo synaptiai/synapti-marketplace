@@ -48,7 +48,21 @@
       "type": "object",
       "properties": {
         "strategy": { "enum": ["merge", "squash", "rebase"], "default": "squash" },
-        "deleteBranch": { "type": "boolean", "default": true }
+        "deleteBranch": { "type": "boolean", "default": true },
+        "markerTrust": {
+          "type": "object",
+          "description": "Trust filter for FLOW_REVIEW_CYCLE / FLOW_RESOLUTION_CYCLE markers honored by /flow:merge and /flow:status. SECURITY PIN: read from plugins/flow/settings.json ONLY (does NOT use the standard cascade) so a hostile fork PR cannot ship a permissive trust list via .claude/settings.flow.local.json after gh pr checkout. See references/gate-configuration.md for the threat model.",
+          "properties": {
+            "allowedAssociations": {
+              "type": "array",
+              "items": {
+                "enum": ["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "MANNEQUIN", "NONE"]
+              },
+              "default": ["OWNER", "MEMBER", "COLLABORATOR"],
+              "description": "GitHub author_association values whose marker comments are honored. Lower-trust associations (CONTRIBUTOR, NONE) are excluded by default to prevent forgery from forks."
+            }
+          }
+        }
       }
     },
     "release": {
@@ -84,8 +98,7 @@
     "journal": {
       "type": "object",
       "properties": {
-        "dir": { "type": "string", "default": ".decisions" },
-        "sensitivityDefault": { "enum": ["public", "internal"], "default": "public" }
+        "dir": { "type": "string", "default": ".decisions" }
       }
     },
     "specFirst": {

@@ -64,8 +64,10 @@ Written by skills (e.g., `autonomous-workflow`, `change-classification`).
 
 | Level | Meaning | Default |
 |-------|---------|---------|
-| `public` | Safe for anyone to see | Yes (configurable via `journal.sensitivityDefault`) |
+| `public` | Safe for anyone to see | Yes |
 | `internal` | Internal team visibility only | |
+
+The default applies when an entry omits the `Sensitivity:` line. Skills that author entries can declare `Sensitivity: internal` explicitly when the entry should not be shared outside the team.
 
 ## Journal Directory
 
@@ -81,8 +83,7 @@ See [gate-configuration.md](gate-configuration.md#settings-file-locations) for t
 ```json
 {
   "journal": {
-    "dir": ".decisions",
-    "sensitivityDefault": "public"
+    "dir": ".decisions"
   }
 }
 ```
