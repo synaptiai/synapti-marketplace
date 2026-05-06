@@ -190,14 +190,46 @@ echo "OK: promoted '$PROPOSAL_NAME' → $TARGET"
 cd "$REPO_ROOT"
 BRANCH="feature/learn-promote-$PROPOSAL_NAME"
 DEFAULT=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
+ORIGINAL_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# Cleanup trap covers two windows that can leave partial state:
+#   1. After `git checkout -b` and before `git push` — if push fails (network,
+#      auth, branch protection), the user is stranded on a new branch with a
+#      committed change and no automatic recovery.
+#   2. After `mktemp` — TMP_BODY and (post-sed) TMP_BODY.bak can survive an
+#      abort mid-substitution if --debug or unexpected disk-full hits.
+# The trap fires on any non-zero exit. We capture rc first so cleanup commands
+# don't mask the original failure code propagated to the caller.
+BRANCH_CREATED=0
+TMP_BODY=""
+cleanup_promote() {
+  local rc=$?
+  if [ "$rc" -ne 0 ] && [ "$BRANCH_CREATED" -eq 1 ]; then
+    echo "promote-proposal.sh: cleanup — restoring '$ORIGINAL_BRANCH', dropping partial branch '$BRANCH'" >&2
+    git checkout "$ORIGINAL_BRANCH" >/dev/null 2>&1 || true
+    git branch -D "$BRANCH" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$TMP_BODY" ]; then
+    rm -f "$TMP_BODY" "$TMP_BODY.bak" 2>/dev/null || true
+  fi
+  exit "$rc"
+}
+trap cleanup_promote EXIT
 
 if git show-ref --quiet "refs/heads/$BRANCH"; then
   echo "promote-proposal.sh: branch $BRANCH already exists locally — refusing to clobber" >&2
   exit 1
 fi
 
-git fetch origin "$DEFAULT" >/dev/null 2>&1
+# Keep stderr surfaced — a failed fetch otherwise produces a confusing
+# "pathspec 'origin/main' did not match" error from the next command instead
+# of the actual root cause.
+if ! git fetch origin "$DEFAULT" >/dev/null; then
+  echo "promote-proposal.sh: cannot fetch origin/$DEFAULT — check remote and network" >&2
+  exit 2
+fi
 git checkout -b "$BRANCH" "origin/$DEFAULT"
+BRANCH_CREATED=1
 
 git add "$TARGET"
 git commit -m "feat(flow): promote learned skill — $PROPOSAL_NAME
@@ -218,7 +250,8 @@ git push -u origin "$BRANCH"
 # temp-file approach (with sed substitution for placeholders) is unambiguous
 # and matches gh's recommended `--body-file` pattern for multi-line bodies.
 TMP_BODY=$(mktemp -t flow-promote-body.XXXXXX)
-trap 'rm -f "$TMP_BODY"' EXIT
+# (TMP_BODY cleanup is handled by the cleanup_promote trap registered above
+#  alongside branch rollback — a single trap covers both partial-state windows.)
 
 cat > "$TMP_BODY" <<'BODYEOF'
 Auto-generated draft PR by `bin/promote-proposal.sh` for the learned-skill promotion of **__NAME__**.
