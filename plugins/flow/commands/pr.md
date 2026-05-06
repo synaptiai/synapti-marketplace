@@ -190,6 +190,26 @@ After agents return, TaskUpdate each review task with findings.
     ```
 11. **Suggest reviewers** using pr-lifecycle skill algorithm
 12. **Verify**: `gh pr view --json number,url`
+13. **Manifest emit** — record the review-cycle artifact for the parallel-review pass that ran during PR creation. Same emit shape as `commands/review.md` Phase 4 step 7 — the PR-creation flow runs an inline review and is morally a cycle:
+
+    ```bash
+    PR_NUMBER=$(gh pr view --json number --jq '.number')
+    ISSUE=$(gh issue list --state open --search "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+    if [ -z "$ISSUE" ]; then
+      ISSUE=$(echo "$BRANCH" | grep -oE 'issue-([0-9]+)' | head -1 | sed 's/issue-//')
+    fi
+    if [ -n "$ISSUE" ]; then
+      "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+        --issue $ISSUE \
+        --type review-cycle \
+        --metadata cycle=1 \
+        --metadata path=B \
+        --metadata findings_count=$TOTAL_FINDINGS \
+        --metadata pr=$PR_NUMBER
+    fi
+    ```
+
+    The emit is best-effort — if the issue cannot be inferred from the branch name, skip rather than fail. PR-creation flow uses Path B (single-session 5-agent dispatch); subsequent `/flow:review` invocations may re-emit with `path=A` if paired-reviewer mode is enabled.
 
 Display PR URL and next steps.
 

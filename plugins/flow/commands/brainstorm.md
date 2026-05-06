@@ -164,6 +164,19 @@ JOURNAL_DIR=".decisions"
 ENTRY
 ```
 
+   **Manifest emit** — append the brainstorm-decision artifact to the journal manifest alongside the freeform `## Brainstorm Decision` section:
+
+   ```bash
+   if [ -n "$ISSUE_NUM" ]; then
+     "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+       --issue $ISSUE_NUM \
+       --type brainstorm-decision \
+       --metadata topic="$TOPIC" \
+       --metadata chosen="$CHOSEN_APPROACH" \
+       --metadata options_considered=$N_OPTIONS
+   fi
+   ```
+
 3. TaskUpdate("Select approach", status: "completed")
 4. **TaskList** — confirm all brainstorming tasks show status: completed
 5. **Display summary**: Decision made, approaches considered, next steps.

@@ -221,6 +221,22 @@ git checkout $DEFAULT_BRANCH
 git pull origin $DEFAULT_BRANCH
 ```
 
+**Manifest emit** — if this merge resolved any escalations (a Proactive-Autonomy escalation surfaced via `AskUserQuestion` during Phase 1's finding-ledger check, Phase 2's stale-approval warning, or the conflict-resolution path closed because the user provided one of the six canonical fields), record an `escalation-resolved` artifact for each:
+
+```bash
+ISSUE=$(gh pr view $ARGUMENTS --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+if [ -n "$ISSUE" ]; then
+  # Repeat once per escalation that closed during this merge run.
+  "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+    --issue $ISSUE \
+    --type escalation-resolved \
+    --metadata escalation_field={situation|tried|options|recommendation|time-sensitivity|risk} \
+    --metadata outcome="$USER_RESPONSE_SUMMARY"
+fi
+```
+
+The emit is conditional — most merges run cleanly without escalations, in which case skip this step. When it does fire, the manifest captures both *that* an escalation closed and *which canonical field* was the gate, enabling `/flow:learn` to detect recurring escalation patterns (e.g., the same field gating multiple merges → process or tooling improvement opportunity).
+
 Suggest: `/flow:release {type}` if this completes a milestone.
 
 ## Tier Classification
