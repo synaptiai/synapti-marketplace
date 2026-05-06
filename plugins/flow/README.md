@@ -83,7 +83,7 @@ claude plugins add ./plugins/flow
 ## Architecture
 
 ```
-SKILL LIBRARY (22 skills)
+SKILL LIBRARY (24 skills)
   ├── Foundation (always loaded, stable shape)
   │   ├── evidence-based-development
   │   ├── autonomous-workflow
@@ -95,6 +95,7 @@ SKILL LIBRARY (22 skills)
       ├── change-classification
       ├── convention-enforcement
       ├── capability-discovery (+ LSP probing)
+      ├── specification-capture (non-goals, failure modes, interface contracts)
       ├── code-review-methodology
       ├── criterion-verification-map
       ├── pr-lifecycle
@@ -103,7 +104,8 @@ SKILL LIBRARY (22 skills)
       ├── holdout-validation
       ├── merge-and-release
       ├── merge-conflict-resolution
-      ├── runtime-verification
+      ├── runtime-verification (build, dev server, smoke, E2E, LSP diagnostics)
+      ├── visual-verification (screenshot-analyze-verify loop, responsive checks)
       ├── team-coordination
       ├── architecture-patterns
       ├── brainstorming
@@ -154,6 +156,26 @@ Rules:
 4. Read-only / dispatcher commands (`status`, `learn`, `explain`, `flow`) typically have no domain skills and use the `_None_` marker.
 
 When auditing: grep for `Skill(` in command bodies and confirm each name appears in Required Skills.
+
+## Canonical Reference Documents
+
+The plugin ships three canonical reference documents (under `plugins/flow/references/`) that are the single source of truth for cross-cutting contracts. Every command and agent that touches these contracts cites the relevant document instead of duplicating it inline:
+
+| Reference | What it canonicalizes | Primary consumers |
+|---|---|---|
+| [`finding-schema.md`](references/finding-schema.md) | Reviewer output: 6-field row shape (ID, Category, Location, Problem, Suggested Fix, Confidence) plus the marker-only `status` and `disposition` fields. Compatible with the existing `FLOW_REVIEW_CYCLE` 7-field marker schema. | All 4 reviewer agents (`code-reviewer`, `security-reviewer`, `error-handler-inspector`, `integration-verifier`); orchestrators (`commands/review.md`, `commands/pr.md`, `commands/address.md`) |
+| [`escalation-format.md`](references/escalation-format.md) | Six-field Proactive-Autonomy escalation structure (Situation, What I tried, Options, Recommendation, Time sensitivity, Risk). Delivered via `AskUserQuestion`, never inline text. | All 6 escalating commands (`start`, `pr`, `merge`, `commit`, `address`, `resolve`); reviewer agents that surface NEEDS-HUMAN-REVIEW |
+| [`evidence-bundle-format.md`](references/evidence-bundle-format.md) | Markdown shape verdict-judge consumes: per-criterion sections with mandatory `### Does NOT promise` plus three completeness subsections. `none` is a valid positive-statement answer; bare blank triggers auto-FAIL. | `commands/start.md` Phase 4 (producer), `agents/verdict-judge.md` Step 1 (consumer); `criterion-verification-map` skill (plan-time inputs) |
+
+Plus the existing references documenting policy, parser rules, and configuration:
+
+- [`finding-ledger-parser.md`](references/finding-ledger-parser.md) — `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE` marker grammar
+- [`gate-configuration.md`](references/gate-configuration.md) — the eight quality gates flow enforces
+- [`decision-journal-schema.md`](references/decision-journal-schema.md) — `.decisions/` file format
+- [`three-tier-safety.md`](references/three-tier-safety.md) — Tier 1/2/3 action classification
+- [`skill-manifests.md`](references/skill-manifests.md) — command → required-skill mapping (kept in lockstep with command files)
+- [`test-review-checklist.md`](references/test-review-checklist.md), [`code-review-checklist.md`](references/code-review-checklist.md) — runnable checklists for review facets
+- [`classification-signals.md`](references/classification-signals.md) — `change-classification` skill heuristics
 
 ## Commands
 
