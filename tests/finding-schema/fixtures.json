@@ -114,6 +114,14 @@
       "category": "security",
       "location": "src/auth.ts:42",
       "problem": "any"
+    },
+    {
+      "_why": "ID has trailing newline (Python `re` accepts this with `$` but rejects with `\\Z` — guards against marker-grammar corruption)",
+      "id": "F1\n",
+      "priority": "P1",
+      "category": "security",
+      "location": "src/auth.ts:42",
+      "problem": "any"
     }
   ]
 }

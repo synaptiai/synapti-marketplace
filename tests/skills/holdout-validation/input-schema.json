@@ -15,8 +15,8 @@
         "properties": {
           "id": {
             "type": "string",
-            "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
-            "description": "Stable identifier (e.g. F1, SEC-1). Must match the canonical ID grammar."
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]*\\Z",
+            "description": "Stable identifier (e.g. F1, SEC-1). Must match the canonical ID grammar. Uses `\\Z` rather than `$` so Python `re` does not silently accept a trailing newline (which would corrupt pipe/comma marker grammar in merge.md)."
           },
           "priority": {
             "type": "string",

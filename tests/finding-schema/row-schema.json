@@ -8,8 +8,8 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
-      "description": "Stable reviewer-assigned identifier. The pattern is enforced by commands/review.md A.1 post-condition. Recommended prefixes: F (code-reviewer), SEC- (security-reviewer), ERR- (error-handler-inspector), INT- (integration-verifier)."
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*\\Z",
+      "description": "Stable reviewer-assigned identifier. The pattern is enforced by commands/review.md A.1 post-condition. Recommended prefixes: F (code-reviewer), SEC- (security-reviewer), ERR- (error-handler-inspector), INT- (integration-verifier). The `\\Z` anchor (rather than `$`) rejects a trailing newline that Python `re` would otherwise accept in default mode — required because the pipe/comma marker grammar in merge.md treats `\\n` as a separator."
     },
     "priority": {
       "type": "string",

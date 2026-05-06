@@ -48,9 +48,21 @@ assert_exit "missing fileList fails validation" 1 $?
 "$VALIDATE" holdout-validation 'not json' >/dev/null 2>&1
 assert_exit "non-JSON input exits 2 (infra error)" 2 $?
 
-# Test 6: empty arrays for all required fields are still valid (skill handles empty inputs)
+# Test 6: empty arrays for all required fields satisfy the schema. Whether the
+# skill should be invoked on empty inputs is the caller's call; the schema
+# permits the shape.
 "$VALIDATE" holdout-validation '{"selfReviewFindings":[],"evidenceBundle":[],"fileList":[]}' >/dev/null 2>&1
-assert_exit "all-empty-arrays payload validates (skill accepts)" 0 $?
+assert_exit "all-empty-arrays payload validates (schema permits empty)" 0 $?
+
+# Test 7: ID with trailing newline must fail. Python `re` accepts `\n` before
+# `$` in default mode; the schema uses `\Z` to reject. Regression guard for
+# the marker-grammar corruption vector (FINDINGS:[F1\n|P1|...] in merge.md).
+"$VALIDATE" holdout-validation '{
+  "selfReviewFindings":[{"id":"F1\n","priority":"P1","category":"security","location":"src/x.ts:1","problem":"any"}],
+  "evidenceBundle":[],
+  "fileList":[]
+}' >/dev/null 2>&1
+assert_exit "ID with trailing newline rejected (\\Z anchor)" 1 $?
 
 echo ""
 echo "============================================"
