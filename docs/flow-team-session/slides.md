@@ -318,7 +318,7 @@ DOMAIN (contextually invoked, max 3 concurrent)
 ├── merge-and-release               ── Tier 3 prereq verification
 ├── merge-conflict-resolution       ── classify + resolve + verify
 ├── runtime-verification            ── build, run, smoke test
-├── team-coordination               ── adversarial review (opt-in)
+├── team-coordination               ── adversarial review (opt-in, active)
 ├── architecture-patterns           ── design-from-functionality, C4
 ├── brainstorming                   ── option generation, trade-off analysis
 ├── debugging-patterns              ── on any verification failure (not bug-only)
@@ -495,7 +495,7 @@ Confirmation here is structural. The user has to say yes.
 /flow:start <issue>     ─── EXPLORE → PLAN → branch + tasks
 /flow:commit            ─── classify → atomic conventional commit
 /flow:pr                ─── push → parallel agent review → PR with body
-/flow:review <pr>       ─── 6-facet parallel review (adversarial team: not yet implemented)
+/flow:review <pr>       ─── 6-facet parallel review (adversarial team: opt-in via agentTeams)
 /flow:address <pr>      ─── categorize comments → surgical fix → re-request
 ```
 
@@ -653,7 +653,7 @@ If you vote anything non-default, that vote lands in #3 as part of the post-sess
 
 **Forcing question**: do we want `/flow:review` to spawn an adversarial team where reviewers challenge each other's findings? Higher signal, higher cost.
 
-**Status**: the `agentTeams` flag is present today, but the reviewer-vs-reviewer challenge protocol is not yet implemented. Voting `true` today sets the flag; behavior changes once the build lands.
+**Status (2026-05-06)**: paired-reviewer dispatch + challenge round shipped in PR #95. Voting `true` enables the protocol when `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set: 5 agent facets dispatch as skeptic + verifier pairs, the variants challenge each other's findings (AGREE/DISAGREE/REFINE), and the consolidated output emits a 7-field `FLOW_REVIEW_CYCLE` marker with `Confidence` + `Disposition` columns. Cost is ≈3.8× a single-session review; opt-in only.
 
 ---
 
@@ -816,7 +816,7 @@ Read-only. Safe to run anywhere, anytime. The "Suggested Next Action" line picks
 
 1. **`gh` CLI not authenticated** — preflight fails. Fix: `gh auth login`.
 2. **Dirty worktree on `/flow:start`** — preflight fails. Fix: stash or commit before starting.
-3. **`/flow:setup` doesn't add a CLAUDE.md section** — setup only appends to an *existing* `CLAUDE.md`. If you have none, setup skips the integration step. Create `CLAUDE.md` first (or copy `templates/CLAUDE-flow.md` manually) and re-run.
+3. **`CLAUDE.md` integration depends on file existence** — `/flow:setup` Phase 5 asks via AskUserQuestion whether to add the flow section. If you say yes, it appends `templates/CLAUDE-flow.md` to your existing `CLAUDE.md`. If `CLAUDE.md` doesn't exist yet, create it first (or copy the template manually) before answering yes.
 4. **`block-force-push` blocks a legitimate rebase push** — use `--force-with-lease`. Allowed and journaled (`three-tier-safety.md` line 41).
 5. **Auto-log seems to duplicate commits** — `log-commits.sh` is idempotent: it skips lines that already carry the `auto-log` marker. If you see duplication, your `plugin.json` is out of date — `claude plugins update flow`.
 
@@ -897,7 +897,7 @@ Verb mapping:
 | `/gh-start` | `/flow:start` | flow has Phase 0 preflight + Spec Validation Gate |
 | `/gh-commit` | `/flow:commit` | same vocabulary, different autonomy |
 | `/gh-pr` | `/flow:pr` | flow runs parallel agent review |
-| `/gh-review` | `/flow:review` | flow ships parallel multi-facet review; adversarial teams are not yet implemented |
+| `/gh-review` | `/flow:review` | flow ships parallel multi-facet review (adversarial teams opt-in) |
 | `/gh-merge` | `/flow:merge` | both Tier 3 |
 
 If you preferred gh-workflow's interactive style: opt out of strict defaults (HANDBOOK Appendix A). Don't fight the plugin — configure it.
