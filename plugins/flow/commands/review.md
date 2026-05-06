@@ -466,3 +466,15 @@ TaskUpdate each review task as agents complete.
 8. **Verify posting**: TaskList — confirm "Post review comment" or "Post self-review comment" task is completed. Do NOT proceed to step 9 until this is verified.
 
 9. **Post-review**: If self-review fixed everything, suggest `/flow:pr`. If external review, suggest `/flow:address $ARGUMENTS` for the PR author.
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| `gh pr checkout` | 1 | Autonomous |
+| Read PR diff / files / previous reviews | 1 | Autonomous, read-only |
+| Multi-agent dispatch (Path B: 5 agents + holdout) or paired-reviewer dispatch (Path A: 12 invocations + 10 challenge) | 1 | Autonomous; Tasks tracked |
+| Holdout validation (skill, parallel) | 1 | Autonomous |
+| Self-review fix-forward (when reviewing own PR) | 1 | File edits + commits autonomous; push is Tier 2 |
+| `gh pr review --comment / --request-changes / --approve` | 2 | Journal-and-proceed |
+| Follow-up issue creation (cosmetic P3 in untouched files, external PR review only) | 2 | Journal-and-proceed |

@@ -137,3 +137,13 @@ Present next steps:
 - `/flow:commit` — commit the fix with context
 - `/flow:pr` — create pull request
 - Continue investigating — if more issues remain
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read logs / stack traces / recent changes | 1 | Autonomous, read-only |
+| Hypothesis tracking (max 3 at a time) | 1 | Autonomous |
+| Write reproducing test (RED phase) | 1 | Autonomous |
+| File edits (fix root cause) | 1 | Autonomous |
+| Commits (`fix:`) | 1 | Autonomous, logged by hook |

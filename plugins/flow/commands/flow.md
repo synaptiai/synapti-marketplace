@@ -104,3 +104,7 @@ All flow commands operate under three always-loaded foundation skills:
 - **evidence-based-development**: Show evidence, cite file:line, P1/P2/P3
 - **autonomous-workflow**: Explore>Plan>Code>Verify, Task tools, three-tier safety
 - **code-quality-principles**: Surgical changes, no secrets, atomic commits
+
+## Tier Classification
+
+`/flow:flow` is a dispatcher — it routes the user to a specific subcommand. Tier classification is **deferred to the dispatched subcommand**. See each subcommand's `## Tier Classification` section for its specific actions and tiers (e.g., `/flow:start` is mostly Tier 1 with Tier 2 push; `/flow:merge` is Tier 3; `/flow:release` is Tier 3).

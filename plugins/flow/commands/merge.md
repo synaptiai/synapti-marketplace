@@ -222,3 +222,15 @@ git pull origin $DEFAULT_BRANCH
 ```
 
 Suggest: `/flow:release {type}` if this completes a milestone.
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read PR status / reviews / comments / threads | 1 | Autonomous |
+| Finding-ledger gate check (parses `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE`) | 1 | Autonomous; blocks on failure |
+| Stale-approval check | 1 | Autonomous; warns on stale |
+| Conflict-resolution escalation (`Skill(flow:resolve)` invocation) | 2 | Journal-and-proceed if user accepts; otherwise blocked |
+| `gh pr merge` | 3 | **Confirm** — always asks via `AskUserQuestion` |
+| Branch deletion (per `merge.deleteBranch` setting, default `true`) | 3 | **Confirm** — bundled into the merge prompt |
+| `git checkout <default-branch> && git pull` (post-merge cleanup) | 1 | Autonomous |

@@ -182,3 +182,13 @@ Present next steps:
 - `/flow:start <issue>` — begin implementation
 - `/flow:brainstorm` — explore more options before deciding
 - Continue designing — refine the architecture further
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read codebase / architecture | 1 | Autonomous, read-only |
+| Read existing specification from journal | 1 | Autonomous, read-only |
+| Invoke `Skill(specification-capture)` if missing elements | 1 | Autonomous (writes journal) |
+| `AskUserQuestion` (design decision) | n/a | User-driven decision point |
+| Write to decision journal | 1 | Autonomous, file edit |

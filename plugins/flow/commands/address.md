@@ -270,3 +270,16 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
         - Option 3: "Override with written risk acceptance (will be recorded on PR)"
 
 Display summary: fixes applied, Boy Scout improvements, questions answered, pushback items, cycle count.
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read PR comments / inline reviews | 1 | Autonomous |
+| File edits (fix per feedback item) | 1 | Autonomous |
+| Commits (`fix:` and `improve:` Boy Scout) | 1 | Autonomous, logged by hook |
+| Push | 2 | Journal-and-proceed |
+| Post resolution comment | 2 | Journal-and-proceed |
+| Inline replies to review comments | 2 | Journal-and-proceed |
+| Re-request review | 2 | Journal-and-proceed |
+| Follow-up issue creation (cosmetic P3 in untouched files only) | 2 | Journal-and-proceed |

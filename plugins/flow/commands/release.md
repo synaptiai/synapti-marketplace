@@ -108,3 +108,17 @@ gh release view "$TAG"
 Display release URL and summary.
 
 If plugin version files need updating (plugin.json, marketplace.json), note them as follow-up tasks.
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read git history / merged PRs / current version | 1 | Autonomous, read-only |
+| Calculate next version | 1 | Autonomous |
+| Generate changelog from PR titles | 1 | Autonomous |
+| `git tag -a <tag> -m <msg>` | 3 | **Confirm** — bundled into release prompt |
+| `git push origin <tag>` | 3 | **Confirm** — bundled into release prompt |
+| `gh release create <tag>` | 3 | **Confirm** — bundled into release prompt |
+| Post-release verification (`gh release view`) | 1 | Autonomous |
+
+`/flow:release` is **fully Tier 3** for the publish path: tag, push tag, and `gh release create` are non-negotiably gated behind a single `AskUserQuestion` confirmation. The cost of an unwanted release (downstream consumers pulling a broken version, false notifications) is borne by people downstream, which is the Tier 3 criterion.

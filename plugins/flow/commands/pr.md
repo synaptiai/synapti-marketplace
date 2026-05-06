@@ -192,3 +192,16 @@ After agents return, TaskUpdate each review task with findings.
 12. **Verify**: `gh pr view --json number,url`
 
 Display PR URL and next steps.
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Pre-flight checks (branch, commits, PR existence) | 1 | Autonomous; blocks on failure |
+| Multi-agent review fan-out (5 reviewers + holdout-validation) | 1 | Autonomous; Tasks tracked |
+| `Skill(integration-verifier)` runtime + visual verification | 1 | Autonomous |
+| File edits (fix-forward for P1/P2 findings) | 1 | Autonomous |
+| Commits (`fix:` from fix-forward) | 1 | Autonomous, logged by hook |
+| `git push -u origin <branch>` | 2 | Journal-and-proceed |
+| `gh pr create` | 2 | Journal-and-proceed |
+| Visual-verification BLOCKED escalation (when `requireVisualVerification: true`) | 2 | Asks via `AskUserQuestion`; outcome journaled |

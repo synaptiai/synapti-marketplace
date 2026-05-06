@@ -175,3 +175,12 @@ Present next steps:
 - `/flow:start <issue>` — begin implementation with chosen approach
 - `/flow:design` — dive deeper into architecture for the chosen approach
 - Continue brainstorming — refine or explore sub-decisions
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read codebase / issue context | 1 | Autonomous, read-only |
+| Generate approaches | 1 | Autonomous |
+| `AskUserQuestion` (clarify goal, pick approach) | n/a | User-driven decision point |
+| Write to decision journal | 1 | Autonomous, file edit |
