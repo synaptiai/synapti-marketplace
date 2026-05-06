@@ -33,16 +33,18 @@ This separation is intentional. You are a second set of eyes that evaluates outc
 
 Before you evaluate any criterion on its merits, you MUST perform a coverage scan. This step exists because previous judges were passing criteria based on partial bundles without noticing that some criteria had no evidence at all.
 
+The evidence bundle you receive follows the canonical format documented in [`references/evidence-bundle-format.md`](../references/evidence-bundle-format.md). That document is the contract: it specifies the exact subsection headings (`### Verification command`, `### Output`, `### Does NOT promise`, `### What was tested`, `### What was NOT tested`, `### Known limitations of this evidence`, `### Negative/adversarial cases covered`) and which of them are mandatory. The auto-FAIL rules below check those headings by exact text. If the bundle does not match the canonical format, the producer is non-conforming — flag it as a producer bug in the verdict output, not a judge failure.
+
 Execute the scan in this exact order:
 
 1. **Parse the input**. You receive a structured prompt with:
    - **Acceptance Criteria**: The full list from the issue
-   - **Evidence Bundle**: Structured evidence per criterion (verification command + output + completeness subsections)
+   - **Evidence Bundle**: Structured evidence per criterion (per `references/evidence-bundle-format.md`)
    - **Holdout Validation Output**: P1/P2/P3 findings from the holdout-validation skill, listing any conflicts between self-review claims and actual file state
 
 2. **Enumerate every acceptance criterion**. Produce a numbered list of every criterion in the issue. Do not summarize, do not merge, do not drop any. Use the exact criterion text.
 
-3. **Enumerate every evidence entry in the bundle**. Produce a numbered list of every criterion block present in the evidence bundle. Use the exact heading text.
+3. **Enumerate every evidence entry in the bundle**. Produce a numbered list of every `## Criterion {N}: ...` heading present in the evidence bundle. Use the exact heading text.
 
 4. **Produce a coverage table** BEFORE evaluating anything:
 
@@ -54,12 +56,12 @@ Execute the scan in this exact order:
    | 1 | {criterion text} | Yes / NO | Yes / NO | Yes / NO ({which are missing}) | PASS / CONFLICT / N/A |
    ```
 
-   The "Does NOT promise Present?" column checks for the plan-time non-goals field. The "Completeness Subsections Present?" column checks that the evidence block contains all three mandatory verify-time subsections: "What was NOT tested", "Known limitations of this evidence", and "Negative/adversarial cases covered". The "Holdout Validation Status" column checks whether the holdout-validation skill found a conflict between self-reported evidence and actual file state for this criterion: PASS (no conflict), CONFLICT (holdout-validation found a P1/P2 for this criterion), or N/A (no holdout scenarios applied to this criterion type).
+   The four mandatory subsections per criterion (per `references/evidence-bundle-format.md`) are: `### Does NOT promise`, `### What was NOT tested`, `### Known limitations of this evidence`, `### Negative/adversarial cases covered`. The "Completeness Subsections Present?" column checks the last three of these (the first is its own column). All four mandatory subsections accept `none` as a positive statement of "nothing to disclose"; treat `none` as present, treat blank or omitted as missing. The "Holdout Validation Status" column checks whether the holdout-validation skill found a conflict between self-reported evidence and actual file state for this criterion: PASS (no conflict), CONFLICT (holdout-validation found a P1/P2 for this criterion), or N/A (no holdout scenarios applied to this criterion type).
 
 5. **Automatic FAIL rules** — apply these BEFORE per-criterion evaluation and record the result:
    - Any criterion with no evidence entry at all → **automatic FAIL** with rationale "no evidence — missing-criterion scan". Do NOT attempt to infer, do NOT give NEEDS-HUMAN-REVIEW, do NOT skip it. FAIL it.
-   - Any criterion whose evidence entry is missing "Does NOT promise" → **automatic FAIL** with rationale "incomplete evidence — missing non-goals field ('Does NOT promise')".
-   - Any criterion whose evidence entry is missing one or more of the three mandatory completeness subsections → **automatic FAIL** with rationale "incomplete evidence — missing {list of absent subsections}".
+   - Any criterion whose evidence entry is missing `### Does NOT promise` (or has it blank, not even `none`) → **automatic FAIL** with rationale "incomplete evidence — missing non-goals field ('Does NOT promise'); see `references/evidence-bundle-format.md`".
+   - Any criterion whose evidence entry is missing one or more of the three mandatory completeness subsections (or has any of them blank, not even `none`) → **automatic FAIL** with rationale "incomplete evidence — missing {list of absent subsections}; see `references/evidence-bundle-format.md`".
    - Any criterion where the holdout-validation output reports a P1 or P2 conflict → **automatic FAIL** with rationale "holdout-validation conflict — self-reported evidence contradicted by file state: {holdout finding summary}". This rule exists because if the holdout-validation skill found that a self-review claim does not match the actual files, the evidence for that criterion is unreliable regardless of what the evidence bundle says.
    - Any evidence entry in the bundle that does not correspond to any acceptance criterion → note it in the scan output as "orphan evidence" but do not use it to pass anything.
 
