@@ -23,16 +23,24 @@ Two HTML-comment markers carry the finding state. They are emitted by review and
 Source: `templates/review-comment.md`. Lists all findings raised in cycle `N` with their priority and location.
 
 ```
-<!-- FLOW_REVIEW_CYCLE:{N} FINDINGS:[{ID}|{priority}|{category}|{file:line}|{status},{ID}|{priority}|{category}|{file:line}|{status}] -->
+<!-- FLOW_REVIEW_CYCLE:{N} FINDINGS:[{ID}|{priority}|{category}|{file:line}|{status}[|{confidence}|{disposition}],...] -->
 ```
 
-| Field | Values |
-|-------|--------|
-| `ID` | Finding identifier (e.g., `F1`, `F12`) |
-| `priority` | `P1` \| `P2` \| `P3` |
-| `category` | Free text (e.g., `security`, `correctness`, `convention`) |
-| `file:line` | Location citation |
-| `status` | `open` at review time |
+| Field | Values | Required |
+|-------|--------|----------|
+| `ID` | Finding identifier (e.g., `F1`, `F12`) | yes |
+| `priority` | `P1` \| `P2` \| `P3` | yes |
+| `category` | Free text (e.g., `security`, `correctness`, `convention`) | yes |
+| `file:line` | Location citation | yes |
+| `status` | `open` at review time | yes |
+| `confidence` | `HIGH` \| `MEDIUM` \| `LOW` | no — paired-reviewer mode only |
+| `disposition` | `consensus` \| `validated` \| `refined` \| `kept` \| `unchallenged` | no — paired-reviewer mode only |
+
+**Backwards-compat rule (mandatory for parsers):** Readers MUST tolerate variable field count. The legacy 5-field row `ID|P1|category|file:line|open` and the extended 7-field row `ID|P1|category|file:line|open|HIGH|consensus` MUST both parse successfully. Trailing fields beyond the parser's known set are silently ignored (or surfaced for display when the parser knows them).
+
+The 7-field form is emitted only when `commands/review.md` runs Path A (paired-reviewer + challenge protocol, gated on `agentTeams: true` AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`). All other emitters continue to produce the 5-field form.
+
+**Disposition vocabulary is fixed (no free text)** — the field is parsed positionally and must not contain commas (the row delimiter) or pipes (the field delimiter). The five values above are the complete v1 vocabulary; new values require a schema bump.
 
 ### FLOW_RESOLUTION_CYCLE — emitted in PR comments
 
