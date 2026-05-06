@@ -49,18 +49,17 @@ Aggregate review findings across the user's open PRs (author OR assignee). See [
 ME=$(gh api user --jq '.login')
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
-# Read trust list from settings cascade (default: OWNER, MEMBER, COLLABORATOR).
-# Untrusted markers do not count toward the ledger — see /flow:merge for the
-# full forgery-defense rationale.
-TRUST_LIST_DEFAULT='["OWNER","MEMBER","COLLABORATOR"]'
-TRUST_LIST="$TRUST_LIST_DEFAULT"
-for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
-  if [ -f "$SETTINGS_FILE" ]; then
-    LIST=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_FILE" 2>/dev/null)
-    [ -n "$LIST" ] && [ "$LIST" != "null" ] && TRUST_LIST="$LIST" && break
+# Read trust list from plugin settings ONLY (NOT cascade) — same architectural
+# pin as /flow:merge, see the rationale comment there.
+TRUST_DEFAULT='["OWNER","MEMBER","COLLABORATOR"]'
+TRUST_LIST="$TRUST_DEFAULT"
+PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"
+if [ -f "$PLUGIN_SETTINGS" ]; then
+  CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$PLUGIN_SETTINGS" 2>/dev/null)
+  if [ -n "$CONFIGURED" ] && echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
+    TRUST_LIST="$CONFIGURED"
   fi
-done
-TRUST_REGEX=$(echo "$TRUST_LIST" | jq -r '. | join("|")')
+fi
 
 # Enumerate PRs (author OR assignee). Capture gh exit code separately so a
 # silent gh failure (auth, network) doesn't masquerade as "no PRs".
@@ -81,13 +80,15 @@ else
   # escapes into LEDGER_WARN output. Defined once for the whole loop.
   safe() { printf '%s' "$1" | tr -cd '[:print:]' | cut -c1-64; }
   for PR_NUM in $LEDGER_PRS; do
-    REVIEW_BODY=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" \
-      --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\")) and (.body | test(\"FLOW_REVIEW_CYCLE:\")))] | last | .body // \"\"" 2>/dev/null)
+    REVIEW_BODY=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null \
+      | jq -s -r --argjson trust "$TRUST_LIST" \
+          'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_REVIEW_CYCLE:")))] | last | .body // ""')
     FINDINGS_RAW=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//')
     [ -z "$FINDINGS_RAW" ] && continue
 
-    RESOLUTION_BODY=$(gh api "repos/$REPO/issues/$PR_NUM/comments" \
-      --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\")) and (.body | test(\"FLOW_RESOLUTION_CYCLE:\")))] | last | .body // \"\"" 2>/dev/null)
+    RESOLUTION_BODY=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null \
+      | jq -s -r --argjson trust "$TRUST_LIST" \
+          'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | last | .body // ""')
     # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
     RESOLVED=$(echo "$RESOLUTION_BODY"  | grep -o 'RESOLVED:\[[^]]*\]'  | sed 's/^RESOLVED:\[//;s/\]$//'  | tr -d ' ')
     ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')

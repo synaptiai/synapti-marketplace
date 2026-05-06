@@ -50,38 +50,45 @@ Parse the latest `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` comments to ver
 # CLOSED, not pass it open.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
-# Read trust list from settings cascade (default: OWNER, MEMBER, COLLABORATOR).
-# Markers from non-trusted authors are not counted — see issue #92 background:
-# without this filter, any GitHub user with comment access could forge a
-# resolution comment and bypass the merge gate.
-TRUST_LIST_DEFAULT='["OWNER","MEMBER","COLLABORATOR"]'
-TRUST_LIST="$TRUST_LIST_DEFAULT"
-for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
-  if [ -f "$SETTINGS_FILE" ]; then
-    LIST=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_FILE" 2>/dev/null)
-    [ -n "$LIST" ] && [ "$LIST" != "null" ] && TRUST_LIST="$LIST" && break
+# Read trust list from plugin settings ONLY — NOT cascade. A hostile fork PR
+# could otherwise commit `.claude/settings.flow.local.json` with a permissive
+# trust list; after `gh pr checkout`, the cascade would honor the attacker's
+# file and disable the forgery defense. Same architectural pattern as PR #91's
+# symlink-TOCTOU on attacker-controlled `journal.dir`.
+TRUST_DEFAULT='["OWNER","MEMBER","COLLABORATOR"]'
+TRUST_LIST="$TRUST_DEFAULT"
+PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"
+if [ -f "$PLUGIN_SETTINGS" ]; then
+  CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$PLUGIN_SETTINGS" 2>/dev/null)
+  if [ -n "$CONFIGURED" ] && echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
+    TRUST_LIST="$CONFIGURED"
+  elif [ -n "$CONFIGURED" ]; then
+    echo "FINDING_LEDGER_BLOCK: invalid markerTrust configuration in $PLUGIN_SETTINGS (must be non-empty JSON array of strings)"
   fi
-done
-TRUST_REGEX=$(echo "$TRUST_LIST" | jq -r '. | join("|")')
+fi
 
-RESOLUTION_BODY=$(gh api "repos/$REPO/issues/$ARGUMENTS/comments" \
-  --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\")) and (.body | test(\"FLOW_RESOLUTION_CYCLE:\")))] | last | .body // \"\"" 2>/dev/null)
+# Trust filter applied via jq's `index()` exact-match (no regex surface).
+# `--paginate` keeps fetching pages so a noisy thread can't hide forgeries.
+RESOLUTION_BODY=$(gh api --paginate "repos/$REPO/issues/$ARGUMENTS/comments" 2>/dev/null \
+  | jq -s -r --argjson trust "$TRUST_LIST" \
+      'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | last | .body // ""')
 GH_EXIT_RES=$?
-# Count untrusted markers so we can surface a clear "no trusted markers" block
-# rather than silently passing when only forged markers exist.
-RES_UNTRUSTED=$(gh api "repos/$REPO/issues/$ARGUMENTS/comments" \
-  --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\") | not) and (.body | test(\"FLOW_RESOLUTION_CYCLE:\")))] | length" 2>/dev/null)
+RES_UNTRUSTED=$(gh api --paginate "repos/$REPO/issues/$ARGUMENTS/comments" 2>/dev/null \
+  | jq -s -r --argjson trust "$TRUST_LIST" \
+      'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | length')
 
 # Extract ESCALATED array contents (portable POSIX grep+sed; BSD grep has no -P).
 # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
 ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
 
 # Extract the latest FLOW_REVIEW_CYCLE — emitted in PR review bodies, not issue comments
-REVIEW_BODY=$(gh api "repos/$REPO/pulls/$ARGUMENTS/reviews" \
-  --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\")) and (.body | test(\"FLOW_REVIEW_CYCLE:\")))] | last | .body // \"\"" 2>/dev/null)
+REVIEW_BODY=$(gh api --paginate "repos/$REPO/pulls/$ARGUMENTS/reviews" 2>/dev/null \
+  | jq -s -r --argjson trust "$TRUST_LIST" \
+      'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_REVIEW_CYCLE:")))] | last | .body // ""')
 GH_EXIT_REV=$?
-REV_UNTRUSTED=$(gh api "repos/$REPO/pulls/$ARGUMENTS/reviews" \
-  --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\") | not) and (.body | test(\"FLOW_REVIEW_CYCLE:\")))] | length" 2>/dev/null)
+REV_UNTRUSTED=$(gh api --paginate "repos/$REPO/pulls/$ARGUMENTS/reviews" 2>/dev/null \
+  | jq -s -r --argjson trust "$TRUST_LIST" \
+      'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("FLOW_REVIEW_CYCLE:")))] | length')
 
 # Fail closed if either gh call failed — better to block a legitimate merge
 # than silently let a regression through when the gate state is unknowable.

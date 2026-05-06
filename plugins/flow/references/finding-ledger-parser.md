@@ -6,9 +6,13 @@ Canonical reference for extracting and classifying review findings across one or
 
 Markers are extracted from PR reviews and PR conversation comments. Both surfaces are reachable by **any GitHub user with comment access** on a public repo — drive-by accounts can submit `COMMENT`-state reviews, and anyone can post issue comments. A forged `<!-- FLOW_RESOLUTION_CYCLE:N RESOLVED:[F1,F2,...] ESCALATED:[] DISPUTED:[] -->` from an untrusted account would otherwise let an attacker bypass the merge gate.
 
-To prevent this, both consumers (`/flow:status` and `/flow:merge`) filter markers by GitHub's `author_association` field before honoring them. The default trust list is `["OWNER", "MEMBER", "COLLABORATOR"]`, configurable via `settings.json` → `merge.markerTrust.allowedAssociations`.
+To prevent this, both consumers (`/flow:status` and `/flow:merge`) filter markers by GitHub's `author_association` field before honoring them. The default trust list is `["OWNER", "MEMBER", "COLLABORATOR"]`, configurable via `plugins/flow/settings.json` → `merge.markerTrust.allowedAssociations`.
+
+**Pinned to plugin tier — does NOT use the standard settings cascade.** A hostile fork PR could otherwise commit `.claude/settings.flow.local.json` with a permissive trust list; after `gh pr checkout`, the cascade would honor the attacker's file and disable this defense. Settings cascade for non-security keys is documented in `gate-configuration.md`.
 
 `/flow:merge` additionally surfaces an explicit `FINDING_LEDGER_BLOCK: ... no trusted authors` reason when markers exist but none come from trusted sources, rather than silently treating the PR as marker-free (which would fail open).
+
+This filter trusts the configured association levels uniformly. It does not protect against malicious or compromised accounts already inside the trust boundary; rely on GitHub branch protection and CODEOWNERS to constrain who can review. `author_association` is also evaluated at read time, not write time — comments from a former MEMBER who has since been removed will still show MEMBER.
 
 ## Marker Schemas
 
@@ -69,13 +73,15 @@ PRS=$(gh pr list --state open --limit 100 --json number,author,assignees \
 
 ### 2. Extract latest FLOW_REVIEW_CYCLE FINDINGS for one PR
 
-Trust filter applied: only reviews from authors in the configured trust list count. Without this, anyone able to submit a `COMMENT`-state review could forge findings.
+Trust filter applied via jq's `index()` exact-match (no regex injection surface). `--paginate` keeps fetching pages so a noisy thread can't hide forgeries past the default 30-item cutoff.
 
 ```bash
 PR_NUM=42
-# TRUST_REGEX="OWNER|MEMBER|COLLABORATOR" (built from settings; see consumers).
-REVIEW_BODY=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" \
-  --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\")) and (.body | test(\"FLOW_REVIEW_CYCLE:\")))] | last | .body // \"\"")
+# TRUST_LIST is a JSON array like ["OWNER","MEMBER","COLLABORATOR"], read by
+# the consumer from plugin settings.
+REVIEW_BODY=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" \
+  | jq -s -r --argjson trust "$TRUST_LIST" \
+      'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_REVIEW_CYCLE:")))] | last | .body // ""')
 # Portable extraction (POSIX grep + sed — works on BSD/macOS and GNU/Linux).
 # Avoids `grep -P` / `\K` which BSD grep does not support.
 # Empty input + grep no-match still produces empty stdout (sed exits 0 on empty),
@@ -87,8 +93,9 @@ FINDINGS_RAW=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FIND
 ### 3. Extract latest FLOW_RESOLUTION_CYCLE arrays for one PR
 
 ```bash
-RESOLUTION_BODY=$(gh api "repos/$REPO/issues/$PR_NUM/comments" \
-  --jq "[.[] | select((.author_association | test(\"^($TRUST_REGEX)\$\")) and (.body | test(\"FLOW_RESOLUTION_CYCLE:\")))] | last | .body // \"\"")
+RESOLUTION_BODY=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" \
+  | jq -s -r --argjson trust "$TRUST_LIST" \
+      'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | last | .body // ""')
 
 # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match the
 # `,F1,` containment check used in classification.
