@@ -147,6 +147,18 @@ After the skill returns, verify per the skill's "Verification gates" section:
 
 If any check fails, halt and re-invoke the skill with the failure noted. Do NOT proceed to the Spec Validation Gate with a partial specification — the Stranger Test at end-of-PLAN will fail downstream.
 
+**Manifest emit** — record the specification artifact in the journal manifest so downstream tooling and `/flow:status` can see it without parsing the freeform `## Specification` body:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+  --issue $ARGUMENTS \
+  --type specification \
+  --metadata by=specification-capture \
+  --metadata elements=non-goals,failure-modes,interface-contracts
+```
+
+If the helper exits non-zero, halt — a missing manifest entry breaks downstream artifact discovery (`/flow:status`, the `verdict-judge` evidence-bundle assembly). The emit is required even when the skill returned an existing-spec verbatim from the journal-first path: the freeform section may already be present, but the manifest entry is the audit trail of *this* invocation.
+
 Once the captured specification is in the journal, downstream phases reference it: `implementation-planner` agent receives it as the `Specification` field in its dispatch (Phase 2); the Phase 4 evidence-bundle producer pulls `Non-goals` into each criterion's `### Does NOT promise` subsection (per `references/evidence-bundle-format.md`).
 
 **Spec Validation Gate** (blocking):
@@ -266,6 +278,18 @@ Check each task for these failure modes:
 If ANY task fails the Stranger Test, the plan is incomplete. The agent must either rewrite the task to close the gap, or issue a Proactive-Autonomy escalation asking the user to fill in the missing context. Only after every task passes the Stranger Test can the workflow proceed to Phase 3.
 
 Record the Stranger Test result to `.decisions/issue-$ARGUMENTS.md` under a `## Stranger Test` heading with either "PASS — {N} tasks reviewed" or "BLOCK — {task id}: {failure mode}".
+
+**Manifest emit** — append the stranger-test artifact (alongside the freeform `## Stranger Test` section) so the manifest captures the gate's outcome:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+  --issue $ARGUMENTS \
+  --type stranger-test \
+  --metadata result={PASS|BLOCK} \
+  --metadata task_count=$N
+```
+
+Add `--metadata failed_task=$TASK_ID` when result is BLOCK (the task ID that failed the gate, so downstream readers can locate the offending task without re-parsing the body).
 
 Display task plan. Proceed unless user objects.
 
@@ -416,6 +440,17 @@ Prove everything works with fix-forward:
        > 1. Approve — these criteria are met (I've reviewed the evidence)
        > 2. Reject — fix these criteria before proceeding
      - Based on response: proceed or enter fix loop
+   **Manifest emit** — record the verdict artifact after the verdict-judge returns (and any fix-loop iterations have settled):
+
+   ```bash
+   "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+     --issue $ARGUMENTS \
+     --type verdict \
+     --metadata result={PASS|FAIL|NEEDS-HUMAN-REVIEW}
+   ```
+
+   Add `--metadata pr=$PR_NUMBER` when a PR exists (Phase 4 may run before or after PR creation depending on the workflow). When the verdict is FAIL after the fix loop exhausted iterations, add `--metadata failures=criterion-1,criterion-2` listing the criteria that did not converge — the manifest then carries enough context for `/flow:status` to surface the open verdicts without re-running the judge.
+
 7. **TaskList** — confirm all tasks show status: completed
 8. **Visual verification** — when UI-relevant changes detected (changed `.tsx`/`.jsx`/`.vue`/`.html`/`.css`/`.scss`/`.svelte` files OR acceptance criteria mention UI/page/render/display/visual/layout/responsive/component/style):
 
