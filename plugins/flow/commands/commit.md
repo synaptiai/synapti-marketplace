@@ -18,6 +18,10 @@ Classify changes, flag anomalies, and create atomic conventional commits. Follow
 - `change-classification` — signal-based change analysis
 - `convention-enforcement` — commit message validation
 
+## References
+
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 3's uncertain/out-of-context-files escalation
+
 ## Phase 1: EXPLORE
 
 Execute these in parallel:

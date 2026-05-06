@@ -21,6 +21,11 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 - `capability-discovery` — detect quality commands and agents
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 3)
 
+## References
+
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 4's visual-verification BLOCKED escalation and any other Proactive-Autonomy escalation surfaced during PR creation
+- [`references/finding-schema.md`](../references/finding-schema.md) — canonical row shape every reviewer agent dispatched in Phase 3 emits
+
 ## Phase 1: EXPLORE
 
 **Parallel operations:**
@@ -130,10 +135,14 @@ After agents return, TaskUpdate each review task with findings.
 2. **Integration verification** — dispatch Agent(integration-verifier):
    ```
    Agent(integration-verifier):
-     "Verify runtime behavior for this branch. Run E2E tests if available,
-      smoke test endpoints, validate acceptance criteria at runtime.
-      If UI files changed, run visual verification with screenshot analysis.
-      Return verification results table."
+     "Verify runtime behavior for this branch. Invoke Skill(runtime-verification)
+      for build, dev-server, smoke, E2E, and LSP diagnostics. If UI files changed,
+      ALSO invoke Skill(visual-verification) in parallel for the screenshot-
+      analyze-verify loop and responsive checks. Validate acceptance criteria at
+      runtime. Return the verification results table per `skills/runtime-
+      verification/SKILL.md` plus the visual table per `skills/visual-
+      verification/SKILL.md`. Emit any findings using the canonical schema in
+      `references/finding-schema.md`."
    ```
    After agent returns:
    - If visual verification task was created in Phase 2: `TaskUpdate(visualVerificationTaskId, status: "completed", result: "{agent's visual verification findings}")`

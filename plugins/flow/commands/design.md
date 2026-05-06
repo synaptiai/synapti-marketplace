@@ -19,6 +19,11 @@ Architecture discussion and design validation. Follows Explore > Plan > Review >
 This command operates with these domain skills loaded:
 - `architecture-patterns` — C4 design, coupling analysis, decision framework
 - `capability-discovery` — detect available agents and tech stack
+- `specification-capture` — read existing specification from journal or capture missing elements (Phase 1)
+
+## References
+
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure for any Proactive-Autonomy escalation surfaced during design
 
 ## Phase 1: EXPLORE
 
@@ -60,6 +65,22 @@ Skill(capability-discovery):
 - What user actions relate to this feature?
 - What system flows are affected?
 - What existing components are involved?
+
+**Read or capture specification** (when an issue is in scope):
+
+Architecture decisions need a fence — the same `## Specification` (non-goals, failure modes, interface contracts) that `commands/start.md` captures. Before proposing the design, invoke the `specification-capture` skill to read existing specification from the journal or capture missing elements. The skill is idempotent: if `commands/start.md` already captured the spec for this issue, the skill returns it verbatim; otherwise it captures non-goals + interface contracts (failure modes are optional during design but recommended).
+
+```
+Skill(specification-capture):
+  Inputs:
+  - Issue context: {pre-fetched issue title, body, comments, labels}
+  - Journal path: .decisions/issue-$ISSUE_NUM.md
+  - Invocation reason: design
+```
+
+If `$ISSUE_NUM` is empty (design is exploratory, not tied to an issue), skip this step — there is no journal to write to. The design discussion proceeds without a frozen fence; the user is responsible for capturing the spec when the design lands in an issue.
+
+After the skill returns, surface the non-goals and interface contracts in the design discussion explicitly: every architecture decision must be reasoned against these constraints. A design that violates a captured non-goal is a scope mismatch, not a candidate.
 
 ## Phase 2: PLAN
 

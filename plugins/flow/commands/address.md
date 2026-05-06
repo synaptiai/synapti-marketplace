@@ -21,6 +21,11 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 - `tdd-patterns` — test-first for fixes, test quality standards
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 4)
 
+## References
+
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 3's out-of-scope-finding escalation, Phase 4's review-cycle-limit escalation, and any Proactive-Autonomy escalation surfaced during feedback resolution
+- [`references/finding-schema.md`](../references/finding-schema.md) — canonical row shape every reviewer agent dispatched in the Phase 4 re-review fan-out emits
+
 ## Phase 1: EXPLORE
 
 **Parallel operations:**

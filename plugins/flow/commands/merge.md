@@ -12,6 +12,10 @@ Tier 3 operation — **always requires human confirmation**. This is non-negotia
 
 - `merge-and-release` — prerequisite verification, merge execution
 
+## References
+
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 2's conflict-resolution escalation and Phase 3's merge-confirm prompt
+
 ## Phase 1: Verify Prerequisites
 
 **Parallel checks:**
