@@ -1,0 +1,16 @@
+{
+  "acceptanceCriteria": [
+    {
+      "text": "Login endpoint rejects requests after 5 failures within 60 seconds with HTTP 429",
+      "type": "api"
+    },
+    {
+      "text": "New auth.rateLimit.windowSeconds config key is documented and validated",
+      "type": "config"
+    },
+    {
+      "text": "Failed login attempts increment the per-account counter atomically across concurrent requests"
+    }
+  ],
+  "issueNumber": 142
+}

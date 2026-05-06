@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/synaptiai/synapti-marketplace/tests/skills/specification-capture/input-schema.json",
+  "title": "specification-capture input contract",
+  "description": "Input contract for the specification-capture skill. The skill captures non-goals, failure modes, and interface contracts for an issue and persists them to the decision journal. See plugins/flow/skills/specification-capture/SKILL.md for the skill's full process.",
+  "type": "object",
+  "required": ["issueContext", "journalPath", "invocationReason"],
+  "properties": {
+    "issueContext": {
+      "type": "object",
+      "required": ["title"],
+      "description": "The issue context the skill parses for prior specification statements.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body": {
+          "type": "string",
+          "description": "The full issue body. The skill scans this for non-goals/failure-modes/interface-contracts cues."
+        },
+        "comments": {
+          "type": "array",
+          "description": "All comments on the issue in chronological order.",
+          "items": {
+            "type": "object"
+          }
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "journalPath": {
+      "type": "string",
+      "pattern": "^.+\\.md$",
+      "description": "Path to the decision journal file where the captured specification is persisted. Typically `.decisions/issue-{N}.md`."
+    },
+    "invocationReason": {
+      "type": "string",
+      "enum": ["start", "design", "brainstorm"],
+      "description": "Which command invoked the skill. Used to scope which elements the skill focuses on (start needs all three; design needs non-goals + interface contracts; brainstorm needs non-goals only)."
+    }
+  }
+}

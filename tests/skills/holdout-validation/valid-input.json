@@ -1,0 +1,33 @@
+{
+  "selfReviewFindings": [
+    {
+      "id": "F1",
+      "priority": "P1",
+      "category": "security",
+      "location": "src/auth.ts:42",
+      "problem": "SQL injection via string interpolation",
+      "suggested_fix": "Use parameterized query ($1, $2)",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F2",
+      "priority": "P2",
+      "category": "error-handling",
+      "location": "src/api.ts:88",
+      "problem": "Async fetch in try/catch swallows network failures",
+      "suggested_fix": "Re-throw or log with context"
+    }
+  ],
+  "evidenceBundle": [
+    {
+      "criterion": "Login endpoint rejects requests after 5 failures within 60 seconds with HTTP 429",
+      "verificationCommand": "npm test -- --grep 'rate limit login'",
+      "output": "PASS  src/auth/__tests__/rate-limit.test.ts (3 tests, 1.4s)\n  ✓ allows 5 login attempts within 60s\n  ✓ rejects 6th attempt with 429 and Retry-After: 60\n  ✓ resets counter after 60s elapses"
+    }
+  ],
+  "fileList": [
+    "src/auth.ts",
+    "src/auth/__tests__/rate-limit.test.ts",
+    "src/api.ts"
+  ]
+}
