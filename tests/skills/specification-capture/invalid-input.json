@@ -1,0 +1,7 @@
+{
+  "issueContext": {
+    "body": "Missing title in issueContext"
+  },
+  "journalPath": "/tmp/issue-99.txt",
+  "invocationReason": "release"
+}

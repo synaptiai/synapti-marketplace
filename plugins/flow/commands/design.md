@@ -171,6 +171,18 @@ JOURNAL_DIR=".decisions"
 ENTRY
 ```
 
+   **Manifest emit** — append the design-decision artifact to the journal manifest alongside the freeform `## Design Decision` section:
+
+   ```bash
+   if [ -n "$ISSUE_NUM" ]; then
+     "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+       --issue $ISSUE_NUM \
+       --type design-decision \
+       --metadata decision="$DECISION_TITLE" \
+       --metadata category=architecture
+   fi
+   ```
+
 3. TaskUpdate("Design decision", status: "completed")
 4. **TaskList** — confirm all design tasks show status: completed
 5. **Display summary**: Decision made, next steps available
@@ -182,3 +194,13 @@ Present next steps:
 - `/flow:start <issue>` — begin implementation
 - `/flow:brainstorm` — explore more options before deciding
 - Continue designing — refine the architecture further
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read codebase / architecture | 1 | Autonomous, read-only |
+| Read existing specification from journal | 1 | Autonomous, read-only |
+| Invoke `Skill(specification-capture)` if missing elements | 1 | Autonomous (writes journal) |
+| `AskUserQuestion` (design decision) | n/a | User-driven decision point |
+| Write to decision journal | 1 | Autonomous, file edit |

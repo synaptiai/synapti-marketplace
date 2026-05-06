@@ -4,6 +4,7 @@ description: "Reference document describing six pre-flight checks (clean git sta
 allowed-tools: Read
 context: fork
 agent: general-purpose
+disable-model-invocation: true
 ---
 
 # Pre-flight Checks

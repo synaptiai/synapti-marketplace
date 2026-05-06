@@ -63,3 +63,12 @@ If no decision journal or no branch context:
 - "No decision context available for the current branch."
 - Offer to explain based on diff analysis alone
 - Or suggest running `/flow:start` first to generate context
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read decision journal / commits / PR history | 1 | Autonomous, read-only |
+| `AskUserQuestion` (clarify scope) | n/a | User-driven |
+
+`/flow:explain` is read-only. It never modifies files, never pushes, never creates issues or PRs. The only user-facing surface is the Q&A response.

@@ -4,6 +4,7 @@ description: "Reference document describing PR lifecycle: pre-flight gates (4 co
 allowed-tools: Read
 context: fork
 agent: general-purpose
+disable-model-invocation: true
 ---
 
 # PR Lifecycle

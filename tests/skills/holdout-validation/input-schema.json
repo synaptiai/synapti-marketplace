@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/synaptiai/synapti-marketplace/tests/skills/holdout-validation/input-schema.json",
+  "title": "holdout-validation input contract",
+  "description": "Input contract for the holdout-validation skill. The skill receives self-review findings from the code-reviewer agent (or equivalent), the evidence bundle draft assembled so far, and the list of files modified on the branch. It cross-references the agent's claims against the actual file state using hidden holdout scenarios. See plugins/flow/skills/holdout-validation/SKILL.md for the skill's full process; this schema is the machine-checkable shape of its inputs.",
+  "type": "object",
+  "required": ["selfReviewFindings", "evidenceBundle", "fileList"],
+  "properties": {
+    "selfReviewFindings": {
+      "type": "array",
+      "description": "P1/P2/P3 findings from the self-review pass — what the agent claims about the implementation. Each finding follows the canonical 6-field shape from references/finding-schema.md.",
+      "items": {
+        "type": "object",
+        "required": ["id", "priority", "category", "location", "problem"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]*\\Z",
+            "description": "Stable identifier (e.g. F1, SEC-1). Must match the canonical ID grammar. Uses `\\Z` rather than `$` so Python `re` does not silently accept a trailing newline (which would corrupt pipe/comma marker grammar in merge.md)."
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["P1", "P2", "P3"]
+          },
+          "category": {"type": "string"},
+          "location": {"type": "string"},
+          "problem": {"type": "string"},
+          "suggested_fix": {"type": "string"},
+          "confidence": {
+            "type": "string",
+            "enum": ["HIGH", "MEDIUM", "LOW"]
+          }
+        }
+      }
+    },
+    "evidenceBundle": {
+      "type": "array",
+      "description": "Per-criterion evidence collected so far during VERIFY phase. Each entry corresponds to one acceptance criterion. Full bundle shape is documented in references/evidence-bundle-format.md; this schema captures the minimum input contract.",
+      "items": {
+        "type": "object",
+        "required": ["criterion", "verificationCommand", "output"],
+        "properties": {
+          "criterion": {"type": "string", "minLength": 1},
+          "verificationCommand": {"type": "string", "minLength": 1},
+          "output": {"type": "string"}
+        }
+      }
+    },
+    "fileList": {
+      "type": "array",
+      "description": "Paths to all files modified or created on the branch. The skill reads these to verify self-review claims against actual file state.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}
