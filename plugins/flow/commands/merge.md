@@ -102,11 +102,16 @@ fi
 
 # Surface "untrusted-only" markers as a block reason rather than silently
 # treating them as no markers at all. This is the #92 forgery defense.
+# Render the trust list as a comma-separated string for the user-facing
+# message — the `$TRUST_REGEX` variable used to appear here was a leftover
+# from PR #93 and never assigned, producing the empty-parens string
+# "trusted authors ()" in messages or aborting under `set -u`.
+TRUST_LIST_DISPLAY=$(echo "$TRUST_LIST" | jq -r 'join(",")' 2>/dev/null || echo "OWNER,MEMBER,COLLABORATOR")
 if [ -z "$RESOLUTION_BODY" ] && [ "${RES_UNTRUSTED:-0}" != "0" ]; then
-  echo "FINDING_LEDGER_BLOCK: $RES_UNTRUSTED FLOW_RESOLUTION_CYCLE marker(s) found but none from trusted authors ($TRUST_REGEX)"
+  echo "FINDING_LEDGER_BLOCK: $RES_UNTRUSTED FLOW_RESOLUTION_CYCLE marker(s) found but none from trusted authors ($TRUST_LIST_DISPLAY)"
 fi
 if [ -z "$REVIEW_BODY" ] && [ "${REV_UNTRUSTED:-0}" != "0" ]; then
-  echo "FINDING_LEDGER_BLOCK: $REV_UNTRUSTED FLOW_REVIEW_CYCLE marker(s) found but none from trusted authors ($TRUST_REGEX)"
+  echo "FINDING_LEDGER_BLOCK: $REV_UNTRUSTED FLOW_REVIEW_CYCLE marker(s) found but none from trusted authors ($TRUST_LIST_DISPLAY)"
 fi
 
 # Extract all finding IDs from FINDINGS array (comma-separated, pipe-delimited fields, first field is the ID)

@@ -1,6 +1,6 @@
 # Skill Contracts (machine-checkable input schemas)
 
-Reference document. The canonical source of truth for what JSON shape each skill expects on its inputs, and how the validator (`plugins/flow/bin/validate-skill-input.sh`) and per-skill test fixtures (`tests/skills/<name>/`) enforce those shapes. JSON Schemas + the validator + the test fixtures make producer/consumer drift detectable at PR-review time rather than at runtime in someone's workflow.
+Reference document. The canonical source of truth for what JSON shape each skill expects on its inputs, and how the validator (`plugins/flow/bin/validate-skill-input.sh`), the schemas (`plugins/flow/schemas/<name>/input-schema.json`, ship in the plugin payload), and the per-skill test fixtures (`tests/skills/<name>/`, repo-only) enforce those shapes. JSON Schemas + the validator + the test fixtures make producer/consumer drift detectable at PR-review time rather than at runtime in someone's workflow.
 
 ## Scope
 
@@ -16,7 +16,7 @@ Other skills may add contracts as integration points solidify.
 
 ## Schema location
 
-Each contract lives at `tests/skills/<skill-name>/input-schema.json`. Schemas use JSON Schema Draft-07. The relevant subset of the spec the validator enforces:
+Each contract lives at `plugins/flow/schemas/<skill-name>/input-schema.json` (resolved at runtime as `${CLAUDE_PLUGIN_ROOT}/schemas/<skill-name>/input-schema.json`). Schemas live inside the plugin payload so end-users who install the marketplace plugin get them at install time — runtime callers can invoke the validator without depending on the marketplace's `tests/` directory. Schemas use JSON Schema Draft-07. The relevant subset of the spec the validator enforces:
 
 - `type` (object, array, string, integer, boolean) — required at every level
 - `required` (object) — list of required field names
@@ -25,7 +25,7 @@ Each contract lives at `tests/skills/<skill-name>/input-schema.json`. Schemas us
 - `minItems` (array)
 - `minLength` (string)
 - `enum` (any) — closed value list
-- `pattern` (string) — regex applied via `re.search` (anchor with `^`/`$` for full-match)
+- `pattern` (string) — regex applied via `re.search`. Anchor with `^` and `$`. To reject a trailing newline (Python `re` accepts `\n` before `$` in default mode), use a `(?!\n)$` lookahead — portable across Python `re` and ECMA-262 validators (ajv etc.); the legacy `\Z` anchor is Python-only and breaks Node/Rust validators.
 
 Schemas may declare other Draft-07 keywords (`oneOf`, `allOf`, `format`, `additionalProperties`, etc.); those are honored when `jsonschema` is installed but ignored by the fallback validator. Use them only when full validation in CI is set up.
 
@@ -68,11 +68,13 @@ Skills that read their input via the prompt (LLM-side) cannot run the validator 
 
 ## Test fixtures
 
-Each skill's test directory contains:
+The schema ships in the plugin payload; the fixtures and harness stay at repo level (they are not part of the install set):
 
 ```
+plugins/flow/schemas/<name>/
+└── input-schema.json   # the contract (Draft-07 JSON Schema), shipped to consumers
+
 tests/skills/<name>/
-├── input-schema.json   # the contract (Draft-07 JSON Schema)
 ├── valid-input.json    # canonical example that MUST validate
 ├── invalid-input.json  # canonical counter-example that MUST fail
 └── test.sh             # asserts {valid → exit 0, invalid → exit 1, edge cases}
@@ -93,10 +95,10 @@ A regression in any contract fails the loop with the offending test's name in th
 
 ## Adding a contract for a new skill
 
-1. Create `tests/skills/<name>/input-schema.json` with the Draft-07 schema. Document every property (`description` field). Mark required fields explicitly. Use enums for closed value lists (do NOT use free-form strings where the skill only accepts a fixed set).
-2. Create `valid-input.json` with a canonical example. This doubles as documentation — the example shows the shape the skill expects.
-3. Create `invalid-input.json` that violates at least three different rules (missing required field, type mismatch, out-of-enum value). The validator should reject it with one of the three errors; which one doesn't matter as long as it rejects.
-4. Create `test.sh` that asserts: valid → exit 0, invalid → exit 1, missing required → exit 1, non-JSON → exit 2, plus any skill-specific edge cases.
+1. Create `plugins/flow/schemas/<name>/input-schema.json` with the Draft-07 schema. Document every property (`description` field). Mark required fields explicitly. Use enums for closed value lists (do NOT use free-form strings where the skill only accepts a fixed set).
+2. Create `tests/skills/<name>/valid-input.json` with a canonical example. This doubles as documentation — the example shows the shape the skill expects.
+3. Create `tests/skills/<name>/invalid-input.json` that violates at least three different rules (missing required field, type mismatch, out-of-enum value). The validator should reject it with one of the three errors; which one doesn't matter as long as it rejects.
+4. Create `tests/skills/<name>/test.sh` that asserts: valid → exit 0, invalid → exit 1, missing required → exit 1, non-JSON → exit 2, plus any skill-specific edge cases.
 5. Add the skill to the table in this document.
 6. Update the consuming command(s) to call `bin/validate-skill-input.sh` before invoking the skill.
 
@@ -112,7 +114,7 @@ The contracts above govern *runtime payloads* a skill receives. The skill itself
 
 | Key | Type | Required | Purpose |
 |---|---|---|---|
-| `name` | string | yes | Stable skill identifier. Kebab-case by convention. Used by orchestration code (`Skill(<name>)`) and by `tests/skills/<name>/`. |
+| `name` | string | yes | Stable skill identifier. Kebab-case by convention. Used by orchestration code (`Skill(<name>)`), by `plugins/flow/schemas/<name>/` (the shipped schema), and by `tests/skills/<name>/` (fixtures and harness). |
 | `description` | string | yes | One-line trigger description. The string Claude sees when deciding whether to invoke. Lead with the artifact and include either a "MUST be consulted" or "Use when…" clause (per the description-trigger memory at `feedback_skill_descriptions`). |
 | `allowed-tools` | string list | no | Tool whitelist. When present, restricts the skill to a specific tool set (e.g. `[Read, Grep, Bash(grep:*), Bash(rg:*)]`). Omit to inherit the parent's tool budget. Narrowing is preferred over expanding. |
 | `disable-model-invocation` | boolean | no | When `true`, Claude Code will NOT autonomously invoke this skill — only an orchestrator (a command's prompt) can call it via `Skill(<name>)`. Use for reference docs that are not standalone entry points (e.g. `pr-lifecycle`, `preflight-checks`). |

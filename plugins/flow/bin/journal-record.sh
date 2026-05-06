@@ -2,8 +2,13 @@
 # [flow] Record an artifact in the decision-journal manifest.
 #
 # Updates the YAML frontmatter on `.decisions/issue-{N}.md` (or the configured
-# journal directory) with a new artifact entry. Idempotent and atomic — uses
-# a temp file + rename so a crash mid-write cannot corrupt the journal.
+# journal directory) with a new artifact entry. Append-only: re-running with
+# identical args produces a duplicate `artifacts[]` entry rather than a no-op
+# (callers that need uniqueness MUST dedupe before invoking). Atomic per-record
+# via temp file + rename so a crash mid-write cannot corrupt the journal, and
+# concurrency-safe via a per-journal `flock` so two concurrent invocations
+# (e.g. parallel reviewer dispatch under Path A) cannot read+rename in a way
+# that loses one writer's append.
 #
 # Usage:
 #   journal-record.sh \
@@ -56,10 +61,19 @@ if ! echo "$ISSUE" | grep -qE '^[0-9]+$'; then
   exit 1
 fi
 
-# Discover journal directory via the settings cascade (matches log-commits.sh)
+# Discover journal directory via a TRIMMED cascade. The repo-local sources
+# `.claude/settings.flow.local.json` and `.claude/settings.flow.json` are
+# intentionally EXCLUDED — they are checked into the repo and become
+# attacker-controlled after `gh pr checkout` of a hostile fork PR. A
+# permissive `journal.dir` from a fork could redirect every hook write to
+# `/tmp/attacker` or via path traversal. Same threat model as PR #93's
+# defense for `merge.markerTrust` and the `agentTeams` plugin pin in
+# review.md. The user-global file (`$HOME/.claude/settings.flow.json`) is
+# safe — it is set by the user, not by the repo. The plugin default is also
+# safe.
 JOURNAL_DIR=".decisions"
 if command -v jq >/dev/null 2>&1; then
-  for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
+  for SETTINGS in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
     if [ -f "$SETTINGS" ]; then
       DIR=$(jq -r '.journal.dir // empty' "$SETTINGS" 2>/dev/null || true)
       [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
@@ -76,6 +90,34 @@ JOURNAL="$JOURNAL_DIR/issue-$ISSUE.md"
 if ! python3 -c "import yaml" >/dev/null 2>&1; then
   echo "journal-record.sh: PyYAML not installed (apt install python3-yaml / pip install pyyaml)" >&2
   exit 2
+fi
+
+# Concurrency guard. Two parallel invocations (e.g., reviewer-team dispatch
+# under /flow:review Path A) without a lock would both read the manifest,
+# both append in-memory, and the second `rename` would clobber the first
+# writer's append. Lock on a per-journal lockfile so writes to different
+# issues stay parallel; serialize only same-issue writes.
+LOCKFILE="$JOURNAL.lock"
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$LOCKFILE"
+  flock 9
+elif command -v shlock >/dev/null 2>&1; then
+  # macOS without coreutils. shlock is BSD-style PID-locking (advisory).
+  # Spin up to 30s with 0.2s polls; matches typical YAML write latency budget.
+  TRIES=150
+  while [ $TRIES -gt 0 ] && ! shlock -p $$ -f "$LOCKFILE" >/dev/null 2>&1; do
+    sleep 0.2
+    TRIES=$((TRIES - 1))
+  done
+  if [ $TRIES -eq 0 ]; then
+    echo "journal-record.sh: could not acquire lock at $LOCKFILE within 30s" >&2
+    exit 2
+  fi
+  trap 'rm -f "$LOCKFILE"' EXIT
+else
+  # Best-effort: warn once and continue. Race window is tiny (read+write of
+  # a small YAML file) but real; document the gap rather than silently risk it.
+  echo "journal-record.sh: WARN — neither flock nor shlock available; concurrent writers may race" >&2
 fi
 
 python3 - "$JOURNAL" "$ISSUE" "$TYPE" "${METADATA[@]:-}" <<'PYTHON'

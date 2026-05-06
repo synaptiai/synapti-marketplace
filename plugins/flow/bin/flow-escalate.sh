@@ -82,10 +82,14 @@ if [ ${#MISSING[@]} -gt 0 ]; then
   exit 1
 fi
 
-# Format options (semicolon-separated → numbered markdown list)
+# Format options (semicolon-separated → numbered markdown list).
 # Each item in OPTIONS is `N: text`. Validate that each non-empty entry has the
 # `N: text` shape; reject empty/malformed items rather than render placeholders.
+# We strip the user-supplied `<n>:` prefix and re-number sequentially with
+# Markdown's `N.` syntax so the rendered output is a real numbered list rather
+# than a bullet whose label happens to start with a digit.
 OPTIONS_BLOCK=""
+SEEN_NUMS=""
 IFS=';' read -r -a OPTION_ARRAY <<< "$OPTIONS"
 for option in "${OPTION_ARRAY[@]}"; do
   # Trim leading/trailing whitespace
@@ -96,6 +100,16 @@ for option in "${OPTION_ARRAY[@]}"; do
     echo "flow-escalate.sh: malformed option '$option' — must match '<n>: <text>'" >&2
     exit 2
   fi
+  # Reject duplicate option numbers — `1: A;1: B` is almost always a typo
+  # and renders confusingly even with the `N.` re-numbering below.
+  NUM=$(echo "$option" | grep -oE '^[0-9]+')
+  case " $SEEN_NUMS " in
+    *" $NUM "*)
+      echo "flow-escalate.sh: duplicate option number '$NUM' — each option must be unique" >&2
+      exit 2
+      ;;
+  esac
+  SEEN_NUMS="$SEEN_NUMS $NUM"
   OPTIONS_BLOCK="${OPTIONS_BLOCK}${option}"$'\n'
 done
 
@@ -106,14 +120,17 @@ fi
 
 # Render the canonical six-field body. The output is plain markdown so the
 # caller can pass it as-is to AskUserQuestion's `question:` parameter. The
-# headings match references/escalation-format.md exactly.
+# headings match references/escalation-format.md exactly. Options are rendered
+# as a real Markdown numbered list (`1. ...`) — preserving the user-supplied
+# `<n>:` would have produced a bullet with the digit embedded in the text and
+# rendered identically regardless of count.
 cat <<BODY
 **Situation** — $SITUATION
 
 **What I tried** — $TRIED
 
 **Options**:
-$(printf '%s' "$OPTIONS_BLOCK" | awk 'NF { print "- " $0 }')
+$(printf '%s' "$OPTIONS_BLOCK" | awk 'NF { sub(/^[0-9]+:[[:space:]]*/, ""); print NR ". " $0 }')
 
 **Recommendation** — $RECOMMENDATION
 

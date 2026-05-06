@@ -4,8 +4,11 @@
 # Usage:
 #   validate-skill-input.sh <skill-name> '<json-input>'
 #
-# Looks up the schema at `tests/skills/<skill-name>/input-schema.json`
-# (relative to the repo root, discovered via `git rev-parse --show-toplevel`).
+# Looks up the schema at `${CLAUDE_PLUGIN_ROOT}/schemas/<skill-name>/input-schema.json`
+# (with `${CLAUDE_PLUGIN_ROOT}` defaulting to `plugins/flow` for in-repo callers).
+# Schemas ship inside the plugin payload so they are available at runtime to
+# end-users who install the marketplace plugin via Claude Code — the previous
+# `tests/skills/...` location was repo-only and not part of the install set.
 #
 # Exits:
 #   0 — input validates against the schema
@@ -25,7 +28,7 @@ if [ $# -lt 2 ]; then
   cat <<'USAGE' >&2
 Usage: validate-skill-input.sh <skill-name> '<json-input>'
 
-Validates the JSON payload against tests/skills/<skill-name>/input-schema.json.
+Validates the JSON payload against ${CLAUDE_PLUGIN_ROOT}/schemas/<skill-name>/input-schema.json.
 USAGE
   exit 2
 fi
@@ -33,8 +36,15 @@ fi
 SKILL="$1"
 INPUT="$2"
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-SCHEMA="$REPO_ROOT/tests/skills/$SKILL/input-schema.json"
+# Resolve the schema from inside the plugin payload (so it ships to end-users),
+# then fall back to the repo-root layout for in-repo callers that pre-date the
+# move (and to keep a single resolution surface across script versions).
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
+if [ -z "$PLUGIN_ROOT" ]; then
+  REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  PLUGIN_ROOT="$REPO_ROOT/plugins/flow"
+fi
+SCHEMA="$PLUGIN_ROOT/schemas/$SKILL/input-schema.json"
 
 if [ ! -f "$SCHEMA" ]; then
   echo "validate-skill-input.sh: schema not found at $SCHEMA" >&2

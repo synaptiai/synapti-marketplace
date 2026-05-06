@@ -142,15 +142,19 @@ HOOKS (8 scripts)
 
 BIN/ HELPER SCRIPTS
   ├── flow-escalate.sh      — formats canonical six-field escalation prompts (CLI utility)
-  ├── validate-skill-input.sh — validates skill inputs against JSON Schemas in tests/skills/
+  ├── validate-skill-input.sh — validates skill inputs against JSON Schemas in plugins/flow/schemas/
   ├── journal-record.sh     — atomically updates the YAML manifest in .decisions/issue-{N}.md
   └── promote-proposal.sh   — promotes /flow:learn proposals to learned skills via draft PR
 
-TESTS (repo-level, exercised by every PR series)
-  ├── tests/issue-86/         — FLOW_REVIEW_CYCLE marker parser fixtures
-  ├── tests/skills/*/         — JSON Schema input contracts per skill
-  ├── tests/finding-schema/   — canonical finding row validator + fixtures
-  └── tests/status-parser/    — status.md ↔ merge.md ledger parser parity
+SCHEMAS/ (ship inside the plugin payload, available at runtime)
+  └── schemas/<skill>/input-schema.json — JSON Schema Draft-07 input contract per skill
+
+TESTS (repo-level, exercised by every PR series — not part of the plugin install)
+  ├── tests/issue-86/                  — FLOW_REVIEW_CYCLE marker parser fixtures
+  ├── tests/skills/*/                  — fixtures (valid-input.json, invalid-input.json) + test.sh per skill
+  ├── tests/finding-schema/            — canonical finding row validator + fixtures
+  ├── tests/status-parser/             — status.md ↔ merge.md ledger parser parity
+  └── tests/journal-orchestration/     — full bin/journal-record.sh lifecycle (synthetic issue)
 ```
 
 ### Hook Compatibility

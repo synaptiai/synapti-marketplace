@@ -116,7 +116,7 @@
       "problem": "any"
     },
     {
-      "_why": "ID has trailing newline (Python `re` accepts this with `$` but rejects with `\\Z` — guards against marker-grammar corruption)",
+      "_why": "ID has trailing newline (Python `re` accepts this with bare `$` but rejects with `(?!\\n)$` lookahead — guards against marker-grammar corruption; lookahead is portable across Python and ECMA-262 validators)",
       "id": "F1\n",
       "priority": "P1",
       "category": "security",

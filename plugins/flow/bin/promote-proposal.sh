@@ -45,6 +45,17 @@ done
 [ -z "$PROPOSAL" ] && { echo "promote-proposal.sh: --proposal is required" >&2; exit 1; }
 [ ! -f "$PROPOSAL" ] && { echo "promote-proposal.sh: proposal file not found: $PROPOSAL" >&2; exit 2; }
 
+# Reject newline-bearing paths upfront. The PR-body sed substitution at the
+# end of this script cannot escape literal newlines in `$PROPOSAL` cleanly,
+# and by the time we reach that step we have already pushed a remote branch.
+# A failed sed there would strand the remote branch with no PR. Catch it now.
+case "$PROPOSAL" in
+  *$'\n'*|*$'\r'*)
+    echo "promote-proposal.sh: --proposal path contains a newline/carriage-return; refusing for safety" >&2
+    exit 1
+    ;;
+esac
+
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   echo "promote-proposal.sh: not inside a git repository" >&2
   exit 2
@@ -158,9 +169,45 @@ if ! gh auth status >/dev/null 2>&1; then
   exit 2
 fi
 
+# Register cleanup BEFORE the first mutating step. Three partial-state windows
+# can leak otherwise:
+#   1. mkdir+cp+python rewrite (TARGET_DIR populated, no branch yet) — without
+#      cleanup, a python failure leaves an orphan SKILL.md in the working tree.
+#   2. After `git checkout -b` and before `git push` — push failure (network,
+#      auth, branch protection) strands the user on a new branch with a
+#      committed change and no automatic recovery.
+#   3. After `mktemp` — TMP_BODY and (post-sed) TMP_BODY.bak can survive an
+#      abort mid-substitution.
+# The trap fires on any non-zero exit. We capture rc first so cleanup commands
+# don't mask the original failure code propagated to the caller.
+TARGET_WRITTEN=0
+BRANCH_CREATED=0
+TMP_BODY=""
+cleanup_promote() {
+  local rc=$?
+  if [ "$rc" -ne 0 ] && [ "$TARGET_WRITTEN" -eq 1 ] && [ "$BRANCH_CREATED" -eq 0 ]; then
+    # Pre-branch failure — drop the orphan target so a retry sees a clean tree.
+    echo "promote-proposal.sh: cleanup — removing orphan $TARGET_DIR (pre-branch failure)" >&2
+    rm -rf "$TARGET_DIR" 2>/dev/null || true
+  fi
+  if [ "$rc" -ne 0 ] && [ "$BRANCH_CREATED" -eq 1 ]; then
+    echo "promote-proposal.sh: cleanup — restoring '$ORIGINAL_BRANCH', dropping partial branch '$BRANCH'" >&2
+    git checkout "$ORIGINAL_BRANCH" >/dev/null 2>&1 || true
+    git branch -D "$BRANCH" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$TMP_BODY" ]; then
+    rm -f "$TMP_BODY" "$TMP_BODY.bak" 2>/dev/null || true
+  fi
+  exit "$rc"
+}
+ORIGINAL_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+BRANCH="feature/learn-promote-$PROPOSAL_NAME"
+trap cleanup_promote EXIT
+
 # Copy the proposal into the learned/ directory
 mkdir -p "$TARGET_DIR"
 cp "$PROPOSAL" "$TARGET"
+TARGET_WRITTEN=1
 
 # Rewrite frontmatter status: proposal → promoted, add `promoted: <date>`
 python3 - "$TARGET" <<'PYTHON'
@@ -188,33 +235,7 @@ PYTHON
 echo "OK: promoted '$PROPOSAL_NAME' → $TARGET"
 
 cd "$REPO_ROOT"
-BRANCH="feature/learn-promote-$PROPOSAL_NAME"
 DEFAULT=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-ORIGINAL_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-
-# Cleanup trap covers two windows that can leave partial state:
-#   1. After `git checkout -b` and before `git push` — if push fails (network,
-#      auth, branch protection), the user is stranded on a new branch with a
-#      committed change and no automatic recovery.
-#   2. After `mktemp` — TMP_BODY and (post-sed) TMP_BODY.bak can survive an
-#      abort mid-substitution if --debug or unexpected disk-full hits.
-# The trap fires on any non-zero exit. We capture rc first so cleanup commands
-# don't mask the original failure code propagated to the caller.
-BRANCH_CREATED=0
-TMP_BODY=""
-cleanup_promote() {
-  local rc=$?
-  if [ "$rc" -ne 0 ] && [ "$BRANCH_CREATED" -eq 1 ]; then
-    echo "promote-proposal.sh: cleanup — restoring '$ORIGINAL_BRANCH', dropping partial branch '$BRANCH'" >&2
-    git checkout "$ORIGINAL_BRANCH" >/dev/null 2>&1 || true
-    git branch -D "$BRANCH" >/dev/null 2>&1 || true
-  fi
-  if [ -n "$TMP_BODY" ]; then
-    rm -f "$TMP_BODY" "$TMP_BODY.bak" 2>/dev/null || true
-  fi
-  exit "$rc"
-}
-trap cleanup_promote EXIT
 
 if git show-ref --quiet "refs/heads/$BRANCH"; then
   echo "promote-proposal.sh: branch $BRANCH already exists locally — refusing to clobber" >&2

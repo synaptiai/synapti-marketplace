@@ -15,8 +15,8 @@
         "properties": {
           "id": {
             "type": "string",
-            "pattern": "^[A-Za-z][A-Za-z0-9_-]*\\Z",
-            "description": "Stable identifier (e.g. F1, SEC-1). Must match the canonical ID grammar. Uses `\\Z` rather than `$` so Python `re` does not silently accept a trailing newline (which would corrupt pipe/comma marker grammar in merge.md)."
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]*(?!\\n)$",
+            "description": "Stable identifier (e.g. F1, SEC-1). Must match the canonical ID grammar. Uses `(?!\\n)$` rather than bare `$` so Python `re` does not silently accept a trailing newline (which would corrupt pipe/comma marker grammar in merge.md). The `(?!\\n)$` lookahead is portable across Python `re` and ECMA-262 validators (ajv, etc.); the legacy `\\Z` anchor is Python-only and breaks Node/Rust validators."
           },
           "priority": {
             "type": "string",
