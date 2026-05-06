@@ -1,0 +1,119 @@
+{
+  "valid": [
+    {
+      "id": "F1",
+      "priority": "P1",
+      "category": "security",
+      "location": "src/auth.ts:42",
+      "problem": "SQL injection via string interpolation",
+      "suggested_fix": "Use parameterized query ($1, $2)",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "SEC-12",
+      "priority": "P2",
+      "category": "security",
+      "location": "src/api.ts:88-93",
+      "problem": "Missing auth check on admin endpoint",
+      "suggested_fix": "Add @requires_auth decorator",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "ERR-3",
+      "priority": "P2",
+      "category": "error-handling",
+      "location": "src/queue.ts:120",
+      "problem": "Async retry swallows the underlying exception, making root-cause invisible to ops",
+      "suggested_fix": "Re-raise after the final retry; log with context",
+      "confidence": "MEDIUM"
+    },
+    {
+      "id": "INT-1",
+      "priority": "P1",
+      "category": "runtime",
+      "location": "dist/server.js:1",
+      "problem": "Build succeeds but server crashes on start: TypeError: Cannot read property listen of undefined",
+      "suggested_fix": "Add null check on app import in src/server.ts:14",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "INT-2",
+      "priority": "P2",
+      "category": "visual",
+      "location": "http://localhost:3000/login",
+      "problem": "Layout breaks at mobile viewport (375x812): submit button overflows form container",
+      "suggested_fix": "Add `max-width: 100%` to .submit-btn or move to flex layout",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F2",
+      "priority": "P3",
+      "category": "correctness",
+      "location": "src/utils/format.ts:7",
+      "problem": "Off-by-one in week-of-year calculation for first week of January",
+      "suggested_fix": "Use ISO 8601 week numbering (luxon's `weekNumber`) instead of homebrew arithmetic"
+    },
+    {
+      "id": "F3-with-marker-fields",
+      "priority": "P1",
+      "category": "security",
+      "location": "src/session.ts:55",
+      "problem": "Session cookie missing HttpOnly flag",
+      "suggested_fix": "Set httpOnly: true in cookie config",
+      "confidence": "HIGH",
+      "status": "open",
+      "disposition": "consensus"
+    }
+  ],
+  "invalid": [
+    {
+      "_why": "ID starts with digit (violates ^[A-Za-z][A-Za-z0-9_-]*$ pattern)",
+      "id": "1F",
+      "priority": "P1",
+      "category": "security",
+      "location": "src/auth.ts:42",
+      "problem": "any"
+    },
+    {
+      "_why": "priority P4 not in enum",
+      "id": "F1",
+      "priority": "P4",
+      "category": "security",
+      "location": "src/auth.ts:42",
+      "problem": "any"
+    },
+    {
+      "_why": "missing required field 'location'",
+      "id": "F1",
+      "priority": "P1",
+      "category": "security",
+      "problem": "any"
+    },
+    {
+      "_why": "confidence 'maybe' not in enum",
+      "id": "F1",
+      "priority": "P1",
+      "category": "security",
+      "location": "src/auth.ts:42",
+      "problem": "any",
+      "confidence": "maybe"
+    },
+    {
+      "_why": "disposition 'controversial' not in enum",
+      "id": "F1",
+      "priority": "P1",
+      "category": "security",
+      "location": "src/auth.ts:42",
+      "problem": "any",
+      "disposition": "controversial"
+    },
+    {
+      "_why": "ID contains a slash (not in allowed character set)",
+      "id": "F1/badchar",
+      "priority": "P1",
+      "category": "security",
+      "location": "src/auth.ts:42",
+      "problem": "any"
+    }
+  ]
+}
