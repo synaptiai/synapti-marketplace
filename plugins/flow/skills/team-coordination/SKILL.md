@@ -75,7 +75,11 @@ Agent(error-handler-inspector-skeptic) | Agent(error-handler-inspector-verifier)
 Skill(holdout-validation) [skeptic lens] | Skill(holdout-validation) [verifier lens]
 ```
 
-The holdout-validation pair is dispatched as Skills (not Agents) because the project does not define a `holdout-validation` agent — the skill is the contract. As a consequence, the holdout-validation pair contributes findings to A.2 auto-consensus matching but is **excluded from the Phase 3 challenge round** (Skills do not accept the structured `[challenge mode]` invocation that Agents do). See `commands/review.md` A.1 note for the implementation rule.
+The holdout-validation pair is dispatched as Skills (not Agents) because the project does not define a `holdout-validation` agent — the skill IS the contract. The holdout-validation pair contributes findings to A.2 auto-consensus matching but is **excluded from the Phase 3 challenge round** by design, not because Skills lack a challenger prompt pattern.
+
+The principled rationale: adversarial challenge (AGREE/DISAGREE/REFINE) exists for findings where reviewers can hold legitimately different subjective opinions about priority, severity, or category. Holdout findings are categorically different — they are objective claim-verification (file state vs self-reported claim). The file state is the arbiter, so DISAGREE is not a meaningful disposition. Including holdout in challenge would produce vacuous AGREE responses (re-check confirms what we already established) or confuse the protocol (DISAGREE based on what?). See `commands/review.md` A.1 for the full rationale.
+
+Holdout findings carry their own confidence model: `consensus` when both lenses raised the same finding independently, `unchallenged` when only one lens raised it (signal: the lenses parsed the same claim differently or weighted scenario priority differently). They NEVER carry `validated` / `refined` / `kept` — those dispositions are challenge-round outputs.
 
 Each returns P1/P2/P3 findings with `file:line` citations and a category. **No challenge information is included in this phase** — outputs are independent.
 
@@ -110,7 +114,7 @@ Findings to challenge:
 {list of the OTHER reviewer's findings: ID, file:line, priority, category}
 ```
 
-10 challenge prompts run in parallel (5 agent facets × 2 directions; the holdout-validation Skill pair is excluded — see A.1 note).
+10 challenge prompts run in parallel (5 agent facets × 2 directions; the holdout-validation Skill pair is excluded by design — see A.1 note for the principled rationale: holdout is objective claim-verification, not subjective judgment, so AGREE/DISAGREE/REFINE doesn't apply).
 
 ### Phase 4: Synthesize (consolidation rules)
 

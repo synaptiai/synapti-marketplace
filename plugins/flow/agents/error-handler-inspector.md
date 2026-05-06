@@ -102,26 +102,31 @@ Use Read to examine each changed file in full. Understand:
 
 ### Step 6: Report
 
+Emit findings using the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md). Each finding row has six fields in this order: `ID | Category | Location | Problem | Suggested Fix | Confidence`. Assign IDs with the `ERR-` prefix (`ERR-1`, `ERR-2`, ...). Use `category=error-handling` for the obvious cases; sub-types (`unhandled-exception`, `silent-failure`, `swallowed-rescue`, `missing-fallback`) can be carried in the cell when useful. LSP-derived findings (Step 2b) carry HIGH confidence; pattern-matched findings (Step 2 grep scans) carry MEDIUM at best.
+
 ```markdown
 ## Error Handling Inspection
 
-### P1 - Critical
-| # | Category | Location | Issue | Suggested Fix |
-|---|----------|----------|-------|---------------|
+### P1 — Critical (Blocks Merge)
+| ID | Category | Location | Problem | Suggested Fix | Confidence |
+|----|----------|----------|---------|---------------|------------|
+| ERR-1 | error-handling | src/api.ts:88 | Async fetch in try/catch swallows network failures (empty catch block) | Re-throw or log with context | HIGH |
 
-### P2 - Should Fix
-| # | Category | Location | Issue | Suggested Fix |
-|---|----------|----------|-------|---------------|
+### P2 — Should Fix
+| ID | Category | Location | Problem | Suggested Fix | Confidence |
+|----|----------|----------|---------|---------------|------------|
 
-### P3 - Consider
-| # | Category | Location | Issue | Suggested Fix |
-|---|----------|----------|-------|---------------|
+### P3 — Consider
+| ID | Category | Location | Problem | Suggested Fix | Confidence |
+|----|----------|----------|---------|---------------|------------|
 
 ### Summary
 - Files inspected: {N}
 - Total findings: P1: {X}, P2: {Y}, P3: {Z}
 - Error handling coverage: {assessment}
 ```
+
+Empty priority sections SHOULD be retained as-is (header + table header with no rows). The summary counts MUST match the row counts in the tables.
 
 ## Sub-Agent Mode
 

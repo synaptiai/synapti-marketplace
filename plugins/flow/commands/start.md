@@ -29,6 +29,12 @@ This command operates with these domain skills loaded:
 - `criterion-verification-map` — per-criterion evidence collection (Phase 2 + Phase 4)
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 4)
 - `issue-crafting` — invoked when the issue body is missing acceptance criteria or needs reframing
+- `specification-capture` — capture non-goals, failure modes, and interface contracts to the decision journal (Phase 1, before Spec Validation Gate)
+
+## References
+
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by every Proactive-Autonomy escalation in this command (Spec Validation Gate, NEEDS-HUMAN-REVIEW verdict, visual verification BLOCKED, runtime verification skip request)
+- [`references/evidence-bundle-format.md`](../references/evidence-bundle-format.md) — canonical bundle shape Phase 4 step 5 produces and `Agent(verdict-judge)` consumes
 
 ## Phase 0: PRE-FLIGHT
 
@@ -121,34 +127,27 @@ If zero acceptance criteria found and `specFirst.requireAcceptanceCriteria` is `
 
 **Specification capture** (before Spec Validation Gate):
 
-Acceptance criteria alone do not describe the full specification. Before building the Spec Validation Gate, the agent MUST extract or author three additional specification elements. If the issue body states them, extract verbatim. If the issue does not state them, the agent proposes them and confirms with the user via `AskUserQuestion` before proceeding.
+Acceptance criteria alone do not describe the full specification. Before building the Spec Validation Gate, capture three additional specification elements (non-goals, failure modes, interface contracts) and persist them to the decision journal under a `## Specification` heading. The capture lifecycle is owned by the `specification-capture` skill — do NOT inline the prompts or the journal write. The skill handles journal-first detection, issue-body extraction, per-element user confirmation via `AskUserQuestion` (with the canonical six-field structure from `references/escalation-format.md`), and the journal write.
 
-Capture all three into the decision journal under a `## Specification` heading:
+```
+Skill(specification-capture):
+  Inputs:
+  - Issue context: {pre-fetched issue title, body, comments, labels}
+  - Journal path: .decisions/issue-$ARGUMENTS.md
+  - Invocation reason: start
+```
 
-1. **Non-goals** — what this change explicitly does NOT do. Scope fences that prevent the implementation from sprawling. Example: "Does not add retry logic", "Does not change the public API", "Does not touch the auth flow".
+The skill returns the captured specification (non-goals, failure modes, interface contracts). It writes them to the journal and verifies the write before returning.
 
-2. **Failure modes** — how the change is expected to behave under failure conditions. Minimum coverage:
-   - **Timeouts** — what happens when an upstream call takes longer than expected?
-   - **Partial failures** — what happens when some operations succeed and others fail?
-   - **Invalid input** — what happens when input violates the contract (wrong type, missing field, out of range)?
-   - **Missing context** — what happens when required config/env/state is absent?
-   For each, record the expected behavior (error type, fallback, user-visible message, log signal).
+After the skill returns, verify per the skill's "Verification gates" section:
 
-3. **Interface contracts** — concrete schemas, types, or tool APIs that the change must honor or produce. Examples: request/response JSON shape, function signature, CLI flags, event payload schema, database column types. If the change is internal-only, record the internal module boundary contract.
+1. The journal `.decisions/issue-$ARGUMENTS.md` contains a `## Specification` heading
+2. All three element subsections (`### Non-goals`, `### Failure modes`, `### Interface contracts`) are present and non-empty (or `none — {reason}` for failure-mode categories that don't apply)
+3. The returned payload matches the journal contents
 
-**When the issue is silent on any of these three**, use `AskUserQuestion`:
+If any check fails, halt and re-invoke the skill with the failure noted. Do NOT proceed to the Spec Validation Gate with a partial specification — the Stranger Test at end-of-PLAN will fail downstream.
 
-> Issue #$ARGUMENTS does not specify {non-goals | failure modes | interface contracts}. I need these before planning so the implementation has a clear fence.
->
-> Proposed {element}:
-> {agent-drafted proposal of 3-5 items based on issue context}
->
-> Options:
-> 1. Accept proposal as written
-> 2. Accept with edits (I will prompt you for changes)
-> 3. Reject — specification is incomplete, update the issue first
-
-Only proceed to the Spec Validation Gate once all three specification elements are captured. Log the captured specification to `.decisions/issue-$ARGUMENTS.md` so downstream phases can reference it.
+Once the captured specification is in the journal, downstream phases reference it: `implementation-planner` agent receives it as the `Specification` field in its dispatch (Phase 2); the Phase 4 evidence-bundle producer pulls `Non-goals` into each criterion's `### Does NOT promise` subsection (per `references/evidence-bundle-format.md`).
 
 **Spec Validation Gate** (blocking):
 
@@ -348,10 +347,10 @@ Prove everything works with fix-forward:
 
 1. **Run full quality suite** (parallel Bash calls for lint, test, typecheck)
 2. **Runtime verification** (MANDATORY — not conditional on skill availability):
-   - Build the project if not already built in Phase 3
-   - Start dev server if applicable, smoke test endpoints
-   - Skips are permitted ONLY for the three enumerated whitelist categories defined in the `runtime-verification` skill: `markdown-only`, `config-only`, or `dependency-bump-only`. Each requires the specific evidence listed in the skill (file-list proof plus any required syntax or build validation).
-   - Any other skip is forbidden without an approved Proactive-Autonomy escalation (Situation / Tried / Options / Recommendation / Time sensitivity / Risk) via `AskUserQuestion`. Blanket or subjective justifications are not valid. If in doubt, run it.
+
+   Invoke `Skill(runtime-verification)` for build, dev-server, smoke, E2E, and LSP-diagnostics checks. The skill owns the skip whitelist (the three enumerated categories `markdown-only`, `config-only`, `dependency-bump-only` with their required evidence) and the escalation protocol for out-of-whitelist skips per [`references/escalation-format.md`](../references/escalation-format.md). Any skip outside the whitelist requires an approved Proactive-Autonomy escalation surfaced via `AskUserQuestion` — blanket or subjective justifications are not valid. If in doubt, run it.
+
+   When the diff is UI-relevant (UI file extensions OR acceptance criteria with UI keywords — see the visual-verification skill for the exact detection rules), invoke `Skill(visual-verification)` in parallel. The two skills coordinate via the dev server URL: if `runtime-verification` cannot start the dev server, `visual-verification` returns SKIP with that reason and the completion gate treats the dev-server failure as the primary finding.
 3. **Self-review with fix-forward** — dispatch Agent(code-reviewer):
    ```
    Agent(code-reviewer):
@@ -387,7 +386,7 @@ Prove everything works with fix-forward:
      3. Capture output as evidence
      4. TaskUpdate(verifyTaskId, status: "completed", result: "EVIDENCE_COLLECTED")
    ```
-   Assemble evidence bundle (see `criterion-verification-map` skill for format).
+   Assemble the evidence bundle following the canonical format in [`references/evidence-bundle-format.md`](../references/evidence-bundle-format.md). For every acceptance criterion, the bundle MUST include: `### Verification command` (the exact command from the Spec Validation Gate), `### Output` (captured stdout/stderr verbatim), `### Does NOT promise` (non-goals — pulled from the Phase 1 specification capture), `### What was tested` (informational), and the three mandatory completeness subsections `### What was NOT tested`, `### Known limitations of this evidence`, `### Negative/adversarial cases covered`. All four mandatory subsections (`Does NOT promise` plus the three completeness ones) accept `none` as a positive statement when the producer can affirmatively say there is nothing to disclose; bare blank is NOT permitted and triggers the verdict-judge auto-FAIL. If a mandatory subsection cannot be filled, escalate via `references/escalation-format.md` rather than emitting a blank field — the gap surfaces with better context than waiting for the auto-FAIL downstream.
 6. **Independent verdict** — if `verdict.enabled` is `true` (default), dispatch Agent(verdict-judge):
    ```
    Agent(verdict-judge):
@@ -418,19 +417,11 @@ Prove everything works with fix-forward:
        > 2. Reject — fix these criteria before proceeding
      - Based on response: proceed or enter fix loop
 7. **TaskList** — confirm all tasks show status: completed
-8. **Visual verification** — if UI-relevant changes detected (changed .tsx/.jsx/.vue/.html/.css/.scss files OR acceptance criteria mention UI/page/render/display):
-   ```
-   TaskCreate("Visual verification", "Screenshot-analyze-verify for UI-facing changes")
-   TaskCreate("Browser tool discovery", "Detect available browser automation tools")
-   TaskCreate("Responsive check", "Verify UI across configured viewports")
-   ```
-   - `TaskUpdate(browserToolTaskId, status: "in_progress")` → detect browser tools → `TaskUpdate(browserToolTaskId, status: "completed", result: "{tool or SKIP}")`
-   - `TaskUpdate(visualVerificationTaskId, status: "in_progress")` → take screenshots of affected pages at configured viewports → analyze visually → record findings (P1 blocks completion, P2 noted) → save screenshot evidence to `visualVerification.screenshotDir` → `TaskUpdate(visualVerificationTaskId, status: "completed", result: "PASS/FAIL — {summary}")`
-   - `TaskUpdate(responsiveTaskId, status: "in_progress")` → test each viewport → `TaskUpdate(responsiveTaskId, status: "completed", result: "{viewports tested}")`
-   - If not applicable (no UI files): `TaskUpdate` all three as completed with result "SKIP"
-   - If browser tools not found and `requireVisualVerification: false`: result is "SKIP_WARN"
-   - If browser tools not found and `requireVisualVerification: true`: result is "BLOCKED"
-   - `TaskList` — confirm all visual verification tasks resolved
+8. **Visual verification** — when UI-relevant changes detected (changed `.tsx`/`.jsx`/`.vue`/`.html`/`.css`/`.scss`/`.svelte` files OR acceptance criteria mention UI/page/render/display/visual/layout/responsive/component/style):
+
+   This step is normally already covered by step 2's parallel `Skill(visual-verification)` invocation. If step 2 returned `SKIP` because the dev server was unavailable, retry it here once `runtime-verification` has had a chance to fix the dev server failure. Otherwise, this step is a no-op confirmation — read the visual-verification result tasks from step 2 and confirm they reached a terminal state (PASS, FAIL, SKIP, SKIP_WARN, SKIP_USER_APPROVED, MANUAL, or BLOCKED).
+
+   The visual-verification skill owns task creation, browser-tool cascade, screenshot-analyze-verify loop, responsive checks, and result vocabulary. Do not re-implement those steps inline — delegate via `Skill(visual-verification)` per `skills/visual-verification/SKILL.md`. Read its Output Format section to know what to expect in the consolidated output.
 9. **Completion gate**: ALL of:
    - All quality checks pass
    - Runtime verification passed (or skipped under one of the three enumerated whitelist categories in the `runtime-verification` skill: `markdown-only`, `config-only`, `dependency-bump-only`)

@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: "Review code changes for quality, logic correctness, edge cases, security, and error handling. Return P1/P2/P3 findings with file:line citations using the ASSERTION/EVIDENCE/VERIFIED pattern."
+description: "Review code changes for quality, logic correctness, edge cases, security, and error handling. Return P1/P2/P3 findings using the canonical row shape from `references/finding-schema.md` (ID | Category | Location | Problem | Suggested Fix | Confidence)."
 model: inherit
 tools: Read, Bash, Grep, Glob, LSP
 skills: code-review-methodology, evidence-based-development
@@ -82,28 +82,33 @@ For each changed file, analyze:
 
 ### Step 5: Report
 
-Use the ASSERTION/EVIDENCE/VERIFIED pattern for non-trivial findings.
+Emit findings using the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md). Each finding row has six fields in this order: `ID | Category | Location | Problem | Suggested Fix | Confidence`. Assign IDs with the `F` prefix (`F1`, `F2`, `F3`) per the schema's recommended provenance convention.
+
+The Problem column is a one-line description. When a finding needs a paragraph of context (e.g., to explain a trade-off the suggested fix introduces), append it below the table as `**F{n} context:** ...` rather than inflating the table cell — wide cells are unreadable in PR comments and break the marker schema.
 
 ```markdown
 ## Code Review Findings
 
-### P1 - Critical (Blocks Merge)
-| # | Category | Location | Issue | Suggested Fix |
-|---|----------|----------|-------|---------------|
+### P1 — Critical (Blocks Merge)
+| ID | Category | Location | Problem | Suggested Fix | Confidence |
+|----|----------|----------|---------|---------------|------------|
+| F1 | security | src/auth.ts:42 | SQL injection via string interpolation | Use parameterized query (`$1`, `$2`) | HIGH |
 
-### P2 - Should Fix
-| # | Category | Location | Issue | Suggested Fix |
-|---|----------|----------|-------|---------------|
+### P2 — Should Fix
+| ID | Category | Location | Problem | Suggested Fix | Confidence |
+|----|----------|----------|---------|---------------|------------|
 
-### P3 - Consider
-| # | Category | Location | Issue | Suggested Fix |
-|---|----------|----------|-------|---------------|
+### P3 — Consider
+| ID | Category | Location | Problem | Suggested Fix | Confidence |
+|----|----------|----------|---------|---------------|------------|
 
 ### Summary
 - Files reviewed: {N}
 - Total findings: P1: {X}, P2: {Y}, P3: {Z}
 - Recommendation: {APPROVE | COMMENT | REQUEST_CHANGES}
 ```
+
+Empty priority sections SHOULD be retained as-is (header + table header with no rows) so the synthesizer can tell "no findings at this priority" apart from "this priority section was forgotten". The summary counts MUST match the row counts in the tables.
 
 ## Sub-Agent Mode
 

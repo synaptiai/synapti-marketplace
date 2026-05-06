@@ -83,108 +83,26 @@ curl -sf -o /dev/null -w "%{http_code}" http://localhost:3000/ | grep -q "200\|3
 grep -rn "get\|post\|put\|delete" config/routes.rb routes/*.ts 2>/dev/null | head -5
 ```
 
-### Step 6: Visual Verification (Conditional)
+### Step 6: Visual Verification (delegated to skills/visual-verification)
 
-Skip this step if: no dev server running, no UI files changed, no UI-related acceptance criteria.
-
-**Task setup:**
+Visual verification is owned by the `visual-verification` skill (`skills/visual-verification/SKILL.md`). Do NOT re-implement the screenshot-analyze-verify loop, browser-tool cascade, responsive checks, or task tracking inline — invoke the skill instead.
 
 ```
-TaskCreate("Visual verification", "Screenshot-analyze-verify for UI-facing changes")
-TaskCreate("Browser tool discovery", "Detect available browser automation tools")
-TaskCreate("Responsive check", "Verify UI across configured viewports")
+Skill(visual-verification):
+  Inputs:
+  - Branch diff: {file list from git diff --name-only HEAD~1..HEAD}
+  - Acceptance criteria: {criteria list from issue body, if applicable}
+  - Dev server URL: {URL from Step 3, or "unavailable" if Step 3 failed}
 ```
 
-**Applicability check:**
+The skill returns:
+- A telemetry table (visual check / responsive / console errors with PASS/FAIL/SKIP statuses)
+- A findings table emitted using the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md) with `category=visual` and the `INT-` prefix on IDs (this agent's prefix)
+- Visual evidence (screenshot paths)
 
-```bash
-# Check for UI file changes in the diff
-git diff --name-only HEAD~1..HEAD | grep -iE '\.(tsx|jsx|vue|html|css|scss|svelte)$'
-```
+If the dev server was unavailable in Step 3, the skill returns `SKIP` with reason "dev server unavailable" — the integration-verifier reports the dev-server failure as the primary P1 finding, not the visual SKIP.
 
-Also check acceptance criteria for UI keywords (`UI`, `page`, `display`, `render`, `visual`, `layout`, `responsive`).
-
-If not applicable:
-```
-TaskUpdate(visualVerificationTaskId, status: "completed", result: "SKIP — no UI-relevant changes detected")
-TaskUpdate(browserToolTaskId, status: "completed", result: "SKIP")
-TaskUpdate(responsiveTaskId, status: "completed", result: "SKIP")
-```
-Skip to Step 7.
-
-**Browser tool detection** (priority cascade):
-
-```
-TaskUpdate(browserToolTaskId, status: "in_progress")
-```
-
-1. Playwright MCP (`browser_navigate`, `browser_take_screenshot`)
-2. Chrome DevTools MCP
-3. CLI fallback: `npx playwright screenshot`
-4. Skill fallback: `Skill(compound-engineering:test-browser)` — if available
-5. Skill fallback: `Skill(compound-engineering:agent-browser)` — if available
-6. No tools → SKIP_WARN or BLOCKED based on `requireVisualVerification` setting
-
-```
-TaskUpdate(browserToolTaskId, status: "completed", result: "{tool found or SKIP_WARN or BLOCKED}")
-```
-
-If no tools found, read `visualVerification.requireVisualVerification` from settings (default: `false`):
-
-**When `requireVisualVerification: false` (default):**
-```
-TaskUpdate(visualVerificationTaskId, status: "completed", result: "SKIP_WARN — no browser tools. Install Playwright MCP or use /flow:setup.")
-TaskUpdate(responsiveTaskId, status: "completed", result: "SKIP_WARN — no browser tools")
-```
-
-**When `requireVisualVerification: true`:**
-```
-TaskUpdate(visualVerificationTaskId, status: "completed", result: "BLOCKED — requireVisualVerification is true but no browser tools available")
-TaskUpdate(responsiveTaskId, status: "completed", result: "BLOCKED")
-```
-
-Skip to Step 7.
-
-**Screenshot-analyze-verify loop:**
-
-```
-TaskUpdate(visualVerificationTaskId, status: "in_progress")
-```
-
-**With Playwright/Chrome DevTools MCP:**
-1. Navigate to dev server root + key pages from routes
-2. Take screenshots at each configured viewport (`settings.json` → `visualVerification.viewports`)
-3. Check `browser_console_logs` for JS errors
-4. Analyze screenshots visually (blank page, layout, content, styling)
-5. Save screenshots to `visualVerification.screenshotDir`
-6. Classify findings: P1 (blank page, render-blocking errors), P2 (layout breaks, missing content), P3 (minor styling)
-
-**With CLI fallback:**
-```bash
-npx playwright screenshot http://localhost:$PORT/ $SCREENSHOT_DIR/page.png
-```
-Then Read the PNG to analyze visually.
-
-```
-TaskUpdate(visualVerificationTaskId, status: "completed", result: "PASS/FAIL — {pages checked}, P1:{n} P2:{n} P3:{n}")
-```
-
-**Responsive verification:**
-
-```
-TaskUpdate(responsiveTaskId, status: "in_progress")
-```
-
-For each viewport in `settings.json` → `visualVerification.viewports`:
-1. Resize browser to viewport dimensions
-2. Take screenshot → save with viewport name in filename
-3. Analyze for: content cut off, nav broken at breakpoint, horizontal scroll on mobile
-
-```
-TaskUpdate(responsiveTaskId, status: "completed", result: "PASS/FAIL — {viewports tested}, findings: {summary}")
-```
-
-Bounded by `settings.json` → `visualVerification.maxIterations` (default: 3).
+The skill owns the result vocabulary (PASS / FAIL / SKIP / SKIP_WARN / SKIP_USER_APPROVED / MANUAL / BLOCKED) and the escalation behavior when `visualVerification.requireVisualVerification: true` and no browser tools are available — read its Output Format section to know what to expect.
 
 ### Step 7: Map Acceptance Criteria
 
@@ -200,9 +118,12 @@ For UI-related criteria, reference screenshot paths from Step 6 as evidence.
 
 ### Step 8: Report
 
+Integration-verifier produces TWO output artifacts: (1) the per-check **results table** below (PASS/FAIL/SKIP per verification activity — this is verification telemetry, not findings) and (2) a **findings table** when verification surfaces issues that need to enter the finding ledger (e.g., a console error from visual verification, a smoke-test failure that maps to a missing input check). The findings table follows the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md). Assign IDs with the `INT-` prefix (`INT-1`, `INT-2`, ...). Use `category=runtime` for backend/build failures and `category=visual` for UI render issues.
+
 ```markdown
 ## Integration Verification Results
 
+### Verification Telemetry
 | Check | Status | Details |
 |-------|--------|---------|
 | E2E suite | PASS/FAIL/SKIP | {framework, test count, failures} |
@@ -211,6 +132,22 @@ For UI-related criteria, reference screenshot paths from Step 6 as evidence.
 | Visual check | PASS/FAIL/SKIP | {pages checked, P1/P2/P3 counts} |
 | Console errors | PASS/FAIL/SKIP | {error count} |
 | Acceptance criteria | {X}/{Y} verified | {summary} |
+
+### Findings (when verification surfaced issues)
+
+#### P1 — Critical (Blocks Merge)
+| ID | Category | Location | Problem | Suggested Fix | Confidence |
+|----|----------|----------|---------|---------------|------------|
+| INT-1 | runtime | dist/server.js:1 | Build succeeds but server crashes on start: `TypeError: Cannot read property 'listen' of undefined` | Add null check on `app` import in `src/server.ts:14` | HIGH |
+| INT-2 | visual | http://localhost:3000/ | Console error on page load: `Uncaught ReferenceError: GA_TRACKING_ID is not defined` (screenshot evidence) | Stub `window.GA_TRACKING_ID` in dev or guard the analytics call | HIGH |
+
+#### P2 — Should Fix
+| ID | Category | Location | Problem | Suggested Fix | Confidence |
+|----|----------|----------|---------|---------------|------------|
+
+#### P3 — Consider
+| ID | Category | Location | Problem | Suggested Fix | Confidence |
+|----|----------|----------|---------|---------------|------------|
 
 ### Visual Evidence
 (Include when screenshots were captured)
@@ -221,6 +158,8 @@ For UI-related criteria, reference screenshot paths from Step 6 as evidence.
 ### Overall: PASS / FAIL / PARTIAL
 {Summary and recommendations}
 ```
+
+Empty Findings priority sections SHOULD be retained as-is. When all telemetry checks PASS and no findings emerge, the Findings section can be a single line: `_No integration findings — all verification activities passed._` This makes the absence of findings explicit (matching `none`-as-positive-statement discipline elsewhere in the plugin).
 
 ## Sub-Agent Mode
 
