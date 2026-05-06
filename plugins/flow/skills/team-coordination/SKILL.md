@@ -46,10 +46,12 @@ Per `/flow:review` run with default 6-facet fan-out:
 
 | Phase | LLM calls |
 |-------|-----------|
-| Phase 1 — Independent Analysis (6 facets × 2 paired reviewers) | 12 |
-| Phase 3 — Challenge (each reviewer challenges the other's findings, 6 × 2) | 12 |
+| Phase 1 — Independent Analysis (5 agent facets × 2 + 2 holdout-validation Skill calls) | 12 |
+| Phase 2 — Share findings (lead-only orchestration; no LLM call) | 0 |
+| Phase 3 — Challenge (each Agent reviewer challenges the other's findings, 5 × 2; holdout-validation excluded — see review.md A.1 note) | 10 |
 | Phase 4 — Synthesize (main agent, 1 consolidation pass) | 1 |
-| **Total** | **≈25 calls** (≈4× single-session baseline of 6) |
+| Phase 5 — Emit consolidated output (lead-only; no LLM call) | 0 |
+| **Total** | **≈23 calls** (≈3.8× single-session baseline of 6) |
 
 Wall-clock: ≈1.5–2× single-session via parallel dispatch within each phase. The cost is opt-in (`agentTeams: false` by default) and gated behind `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`.
 
@@ -137,10 +139,10 @@ Lead writes the per-priority finding tables with two new columns:
 | F2 | correctness | src/api.ts:88 | ... | ... | LOW | kept (B disagreed: "off-by-one is intentional") |
 ```
 
-And the extended `FLOW_REVIEW_CYCLE` marker (7 fields per row):
+And the extended `FLOW_REVIEW_CYCLE` marker (7 fields per row; example exercises three disposition values):
 
 ```
-<!-- FLOW_REVIEW_CYCLE:{N} FINDINGS:[F1|P1|security|src/auth.ts:42|open|HIGH|consensus,F2|P1|correctness|src/api.ts:88|open|LOW|kept] -->
+<!-- FLOW_REVIEW_CYCLE:{N} FINDINGS:[F1|P1|security|src/auth.ts:42|open|HIGH|validated,F2|P2|correctness|src/api.ts:88|open|MEDIUM|refined,F3|P1|race|src/job.ts:17|open|LOW|kept] -->
 ```
 
 DROPPED findings do NOT appear in the marker; they are logged in the decision journal under `## Dropped after challenge` for traceability.
@@ -157,7 +159,7 @@ A failure in the paired/challenge mechanism **never blocks `/flow:review`**. Per
 
 | Condition | Behavior |
 |-----------|----------|
-| `agentTeams: false` | Skip paired protocol entirely. Use single-reviewer dispatch (the `commands/review.md` Path B fallback). |
+| `agentTeams: false` | Skip paired protocol entirely. Emit `Path A skipped: agentTeams=false. Using Path B (single-session).` to stdout and use single-reviewer dispatch (the `commands/review.md` Path B fallback). |
 | `agentTeams: true` AND env var `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` unset | Single-line `WARN` to stderr: `agentTeams enabled but env var unset; using single-reviewer fallback`. Use Path B. |
 | `agentTeams: true` AND env var set, but one variant (skeptic OR verifier) fails to spawn for one facet | That facet uses single-reviewer fallback (the responding variant). Other facets continue paired. Note in output: `facet {facet}: single-reviewer fallback (verifier failed to spawn)`. |
 | Variant times out (`timeouts.teammateTimeout`) | Use the responding variant's findings only for that facet. Mark each finding as `unchallenged` (MEDIUM confidence). |

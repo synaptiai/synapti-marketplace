@@ -2,6 +2,15 @@
 
 Verification fixtures for the marker-schema extension that paired-reviewer mode introduces (`FLOW_REVIEW_CYCLE` gains optional `Confidence|Disposition` trailing fields). Tests run on the same shell pipelines that `commands/status.md` and `commands/merge.md` use against PR markers, so a regression in either consumer's tolerance is caught here.
 
+## Why this lives at the repo root, not under `plugins/flow/tests/`
+
+The convention in this repo is plugin-scoped tests (`plugins/<name>/tests/`). This fixture is intentionally an exception:
+
+- The parser-tolerance contract spans **multiple consumers** in `plugins/flow/commands/` (`status.md`, `merge.md`, plus the `templates/` and `references/` parser docs). Scoping it under one of those plugins would imply ownership by that plugin alone.
+- The fixture is also expected to expand later to verify cross-cutting concerns (e.g., trust-filter behavior from PR #93). A repo-root location reads as "shared verification" rather than "feature-X tests."
+
+If a future contributor adds plugin-internal tests, they should live under `plugins/flow/tests/`. This one stays here.
+
 ## What's NOT covered
 
 This fixture verifies the **parser/marker side** of issue #86 ACs only. It does NOT verify:

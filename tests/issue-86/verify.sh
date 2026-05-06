@@ -3,8 +3,10 @@
 # introduced by issue #86. Mirrors the shell pipelines used by
 # plugins/flow/commands/status.md and plugins/flow/commands/merge.md.
 #
-# Exits 0 on pass, 1 on first failure. POSIX-portable bash (works on
-# macOS BSD tools and Linux GNU tools).
+# Exits 0 on pass, 1 on first failure, 2 on infrastructure error
+# (missing fixtures). Bash 3.2+ portable (macOS BSD tools and Linux GNU
+# tools). NOT POSIX `sh`-portable due to `pipefail` and process
+# substitution (`<( ... )`).
 
 set -uo pipefail
 
@@ -12,28 +14,46 @@ FIXTURE_DIR="$(cd "$(dirname "$0")" && pwd)/markers"
 PASS=0
 FAIL=0
 
+# Sanitize attacker-controlled fields before display: cap length and strip
+# non-printable bytes so a hostile fixture (e.g., a PR-modified marker file)
+# can't inject ANSI escapes into PASS/FAIL output. Mirrors the helper in
+# plugins/flow/commands/status.md and plugins/flow/commands/merge.md.
+safe() { printf '%s' "${1:-}" | tr -cd '[:print:]' | cut -c1-128; }
+
+# Pre-flight: every fixture file must exist before we run any test, so a
+# missing fixture surfaces as a clear FATAL rather than 12 spurious FAILs.
+for f in legacy-5-field.txt extended-7-field.txt mixed-cycles.txt with-resolution.txt; do
+  if [ ! -f "$FIXTURE_DIR/$f" ]; then
+    echo "FATAL: missing fixture $FIXTURE_DIR/$f" >&2
+    exit 2
+  fi
+done
+
 assert_eq() {
-  local label="$1" expected="$2" actual="$3"
+  local label="$1" expected="$2" actual="$3" context="${4:-}"
   if [ "$expected" = "$actual" ]; then
     echo "PASS: $label"
     PASS=$((PASS + 1))
   else
-    echo "FAIL: $label"
-    echo "  expected: $expected"
-    echo "  actual:   $actual"
+    echo "FAIL: $(safe "$label")"
+    echo "  expected: $(safe "$expected")"
+    echo "  actual:   $(safe "$actual")"
+    [ -n "$context" ] && echo "  context:  $(safe "$context")"
     FAIL=$((FAIL + 1))
   fi
 }
 
 # status.md-style parser: extracts FINDINGS rows then reads ID|PRIORITY via IFS.
-# Trailing fields are lumped into STATUS (or whatever the last variable is); the
-# parser doesn't care about them, which is what makes the schema extension safe.
+# Trailing fields are lumped into the last `read` variable (STATUS); the parser
+# doesn't care about them, which is what makes the schema extension safe.
+# Variable name `STATUS` is identical to the production parser at
+# plugins/flow/commands/status.md:97 — keeping the name aligned makes drift
+# easier to spot.
 status_parse() {
   local body="$1"
   local raw
   raw=$(echo "$body" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//' | tr ',' '\n')
-  local count=0
-  echo "$raw" | while IFS='|' read -r ID PRIORITY CAT LOC STATUS_AND_REST; do
+  echo "$raw" | while IFS='|' read -r ID PRIORITY CAT LOC STATUS; do
     [ -z "$ID" ] && continue
     case "$PRIORITY" in
       P1|P2|P3) echo "${PRIORITY}|${ID}" ;;

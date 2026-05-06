@@ -83,22 +83,42 @@ TaskCreate("Holdout validation", "Cross-reference self-review claims against act
 
 Implements the paired-reviewer + challenge-round protocol frozen in `.decisions/issue-86.md`. Invoke `team-coordination` skill for the protocol contract.
 
-**Gate check** (mandatory before paired dispatch):
+**Path A gate check** (mandatory before paired dispatch — runs before A.1):
 
 ```bash
-# Read agentTeams from settings (cascade: project < user < plugin defaults).
-# Note: agentTeams is NOT pinned to plugin tier — it's a feature flag, not a
-# security key like markerTrust. Cascade is appropriate here.
-AGENT_TEAMS=$(jq -r '.agentTeams // false' plugins/flow/settings.json 2>/dev/null)
+# Read agentTeams from plugin settings ONLY (no cascade). This is the same
+# defense pattern as merge.markerTrust (PR #93): a hostile fork PR could ship
+# .claude/settings.flow.local.json with agentTeams=true and the user's env
+# var would be the only remaining gate. Treating agentTeams as plugin-tier-
+# pinned makes cost-amplification a two-key threat (hostile setting AND env
+# var) rather than a one-key threat. The env var alone (set by the user, not
+# the repo) cannot enable Path A unless the plugin default also permits it.
+USE_PATH_A=0
 
-if [ "$AGENT_TEAMS" != "true" ]; then
-  echo "Path A skipped: agentTeams=false. Using Path B (single-session)."
-  USE_PATH_A=0
-elif [ -z "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" ]; then
-  echo "WARN: agentTeams enabled but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS env var unset; using single-reviewer fallback (Path B)" >&2
-  USE_PATH_A=0
+if ! command -v jq >/dev/null 2>&1; then
+  echo "WARN: jq not installed; Path A unavailable, using Path B (single-session)" >&2
+elif [ ! -f plugins/flow/settings.json ]; then
+  echo "WARN: plugins/flow/settings.json not found; Path A unavailable, using Path B" >&2
 else
-  USE_PATH_A=1
+  AGENT_TEAMS=$(jq -r '.agentTeams // false' plugins/flow/settings.json 2>/dev/null)
+  case "$AGENT_TEAMS" in
+    true)
+      if [ -z "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" ]; then
+        echo "WARN: agentTeams enabled but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS env var unset; using single-reviewer fallback (Path B)" >&2
+      else
+        USE_PATH_A=1
+      fi
+      ;;
+    false)
+      echo "Path A skipped: agentTeams=false. Using Path B (single-session)."
+      ;;
+    *)
+      # Non-canonical value (e.g., string "true"/"True", "1", "yes"). Surface
+      # it rather than silently coerce — a typo here means a user explicitly
+      # opted into paired review and got single-session anyway.
+      echo "WARN: agentTeams=$AGENT_TEAMS is not the JSON boolean true/false; treating as false. Use \"agentTeams\": true (no quotes)." >&2
+      ;;
+  esac
 fi
 ```
 
@@ -106,7 +126,7 @@ If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.
 
 #### A.1 — Independent Analysis (paired reviewers, parallel dispatch)
 
-Dispatch **12 subagents** in a single parallel Agent block — 6 facets × {skeptic, verifier}. Each variant carries an orthogonal lens; both run with no awareness of each other.
+Dispatch **12 invocations** (10 `Agent(...)` + 2 `Skill(holdout-validation)`) in a single parallel block — 5 agent facets × {skeptic, verifier} plus the holdout-validation skill in both lenses. Each variant carries an orthogonal lens; both run with no awareness of each other.
 
 ```
 Agent(security-reviewer-skeptic):
@@ -170,26 +190,47 @@ Skill(holdout-validation):
 
 Each returns a structured finding list. Index returned findings by facet for the challenge round: `findings[facet][variant] = [F1, F2, ...]`.
 
+**Note on holdout-validation challenge participation**: the two `Skill(holdout-validation)` invocations contribute findings to A.2 auto-consensus matching but **do NOT participate in the A.3 challenge round** — there is no defined Skill-as-challenger prompt pattern (Skills don't accept the structured `[challenge mode]` invocation that Agents do). Holdout-validation findings that match between lenses get `consensus`; non-matching findings carry `unchallenged` confidence MEDIUM by default. This is why the cost table in `team-coordination/SKILL.md` lists 12 challenge calls rather than 14 — the holdout-validation pair is excluded from Phase 3.
+
 #### A.2 — Auto-consensus detection
 
 Before dispatching the challenge round, detect findings that BOTH variants raised independently. The match window is hard-coded for v1: same facet AND same file AND lines within ±2 AND priority within ±1 (P1↔P2 counts; P1↔P3 does not).
 
 ```bash
-# Pseudocode (apply per facet):
+# Pseudocode (apply per facet, deterministic — see helpers below).
 # for finding_a in findings[facet][skeptic]:
+#   candidates = []
 #   for finding_b in findings[facet][verifier]:
 #     if same_file(finding_a, finding_b) AND
 #        abs(line(finding_a) - line(finding_b)) <= 2 AND
 #        priority_distance(finding_a.priority, finding_b.priority) <= 1:
-#       mark both as auto-consensus -> confidence=HIGH, disposition=consensus
-#       remove both from challenge candidates
+#       candidates.append(finding_b)
+#   if candidates:
+#     # Deterministic tiebreaker: smallest line distance, then smallest priority
+#     # distance, then lexicographic ID. Required so re-runs of the same review
+#     # produce the same consensus pairing.
+#     finding_b = min(candidates, key=lambda b: (
+#       abs(line(finding_a) - line(b)),
+#       priority_distance(finding_a.priority, b.priority),
+#       b.id
+#     ))
+#     mark (finding_a, finding_b) as auto-consensus -> confidence=HIGH, disposition=consensus
+#     remove both from challenge candidates
 ```
+
+**Helper definitions** (specified to remove implementer ambiguity):
+
+| Helper | Definition |
+|--------|------------|
+| `line(finding)` | Integer parsed from the first `:N` group in `file:line`. For ranges (`file:42-50`), use the low end (`42`). For file-level findings (no line), treat as line `0` and require exact-zero match in the helper's caller. |
+| `same_file(a, b)` | Compare normalized paths: strip leading `./`, resolve `..` segments, lowercase only on case-insensitive filesystems. Returns true on equality. |
+| `priority_distance(p1, p2)` | `0` if equal, `1` for P1↔P2 or P2↔P3, `2` for P1↔P3. The match window threshold is `≤ 1` so P1↔P3 NEVER match. |
 
 Auto-consensus findings skip the challenge round (no need — both reviewers already agreed independently).
 
 #### A.3 — Challenge Round (disposition-only, parallel)
 
-For findings NOT in auto-consensus, dispatch each variant to challenge the OTHER variant's findings. **Variants do NOT re-read the diff.** Up to 12 challenge prompts run in parallel (6 facets × 2 directions).
+For findings NOT in auto-consensus, dispatch each variant to challenge the OTHER variant's findings. **Variants do NOT re-read the diff.** Up to 10 challenge prompts run in parallel (5 agent facets × 2 directions; holdout-validation excluded — see A.1 note).
 
 ```
 Agent(security-reviewer-skeptic) [challenge mode]:
@@ -239,16 +280,18 @@ If any of A.1's variants failed (timeout, error, did-not-spawn), apply the fallb
 | One variant failed for facet F | Use the responding variant's findings only; mark each as `unchallenged` (MEDIUM). Note in output: `facet F: single-reviewer fallback (skeptic failed)`. |
 | Both variants failed for facet F | Re-dispatch single Agent for that facet using the Path B prompt. Note in output: `facet F: re-dispatched as single-reviewer (both variants failed)`. |
 | Challenge round failed for a facet | Skip A.3 for that facet; keep A.1 findings as `unchallenged`. Note in output: `facet F: challenge skipped (challenge prompt failed)`. |
+| A.2 auto-consensus matching errored on finding F (e.g., malformed `file:line`) | Skip auto-consensus for F; route F through A.3 challenge as if non-consensus. Log `LEDGER_WARN: PR#{N} A.2 skipped F:<id> due to <reason>` to stderr. |
+| A.4 consolidation lookup missing for finding F (e.g., orphaned challenge response) | Emit F as `unchallenged` MEDIUM. Log to journal under `## Consolidation gaps (PR #{N}, cycle {N})` with the orphan reason. |
 
 #### A.6 — Emit consolidated output
 
-Use the synthesized findings (with confidence + disposition) for steps in Phase 4 below. The FLOW_REVIEW_CYCLE marker emitted in Phase 4.7 uses the 7-field form when paired-reviewer mode produced the findings:
+Use the synthesized findings (with confidence + disposition) for steps in Phase 4 below. The FLOW_REVIEW_CYCLE marker emitted in Phase 4 step 7 uses the 7-field form when paired-reviewer mode produced the findings (example exercises three disposition values):
 
 ```
-<!-- FLOW_REVIEW_CYCLE:{N} FINDINGS:[F1|P1|security|src/auth.ts:42|open|HIGH|consensus,F2|P1|correctness|src/api.ts:88|open|LOW|kept] -->
+<!-- FLOW_REVIEW_CYCLE:{N} FINDINGS:[F1|P1|security|src/auth.ts:42|open|HIGH|consensus,F2|P2|correctness|src/api.ts:88|open|MEDIUM|refined,F3|P1|race|src/job.ts:17|open|LOW|kept] -->
 ```
 
-The 5-field form is preserved for Path B (single-session) and for any per-facet fallback that produced findings without challenge data.
+When Path A is the orchestrator, the marker is **uniformly 7-field** — including for findings produced by per-facet fallbacks (which carry `MEDIUM|unchallenged`). The 5-field form is preserved ONLY for full Path B runs (gate failed at the top of this section). Mixing 5-field and 7-field rows within a single marker is forbidden — pad fallback findings to 7 fields with `MEDIUM|unchallenged` so all rows match. This rule is restated at Phase 4 step 7.
 
 After A.6 completes, jump to Phase 4 with the consolidated finding set.
 

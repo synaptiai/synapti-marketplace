@@ -42,6 +42,14 @@ The 7-field form is emitted only when `commands/review.md` runs Path A (paired-r
 
 **Disposition vocabulary is fixed (no free text)** — the field is parsed positionally and must not contain commas (the row delimiter) or pipes (the field delimiter). The five values above are the complete v1 vocabulary; new values require a schema bump.
 
+**Vocabulary enforcement is consumer-side, not emitter-side.** No emitter pre-validates the disposition string before posting a marker. If a trusted reviewer (the only kind whose markers reach parsing — see Trust Boundary above) hand-edits a posted marker and inserts an out-of-vocabulary disposition or injects extra rows via embedded `]`/`,`, the consumer parsers degrade safely:
+
+- `grep -o 'FINDINGS:\[[^]]*\]'` (used by `status.md`, `merge.md`, `tests/issue-86/verify.sh`) terminates at the first unescaped `]`, truncating any row containing one. The truncated row then fails the consumer's ID/priority allowlist (`[A-Za-z][A-Za-z0-9_-]*` for IDs, `P1|P2|P3` for priority) and is rejected with a `LEDGER_WARN` to stderr.
+- A comma in disposition splits into a phantom row that is similarly caught by the ID/priority allowlists.
+- Out-of-vocabulary dispositions parse without error but carry no semantic meaning to consumers (the field is currently display-only — only `ID` and `PRIORITY` reach merge-gate logic).
+
+This means the closed-vocabulary contract is enforced by the consumer's allowlist + grep-truncation behavior, not by an explicit validator. Adding emitter-side validation would defense-in-depth this; the current architecture is safe but documented for transparency.
+
 ### FLOW_RESOLUTION_CYCLE — emitted in PR comments
 
 Source: `templates/resolution-comment.md`. Reports the disposition of cycle `N`'s findings.
