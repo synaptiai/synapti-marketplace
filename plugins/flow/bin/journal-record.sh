@@ -98,6 +98,16 @@ fi
 # writer's append. Lock on a per-journal lockfile so writes to different
 # issues stay parallel; serialize only same-issue writes.
 LOCKFILE="$JOURNAL.lock"
+# Defense-in-depth: refuse to use a lockfile that's already a symlink. The
+# journal directory is no longer attacker-controlled (cascade trim above),
+# but a fork PR could still ship a `.decisions/issue-N.md.lock` pointing at
+# a privileged path. `exec 9>` would then truncate the symlink target. The
+# `[ -e ]` test follows symlinks; `[ -L ]` does not — combine to detect a
+# dangling-or-pointing symlink either way.
+if [ -L "$LOCKFILE" ]; then
+  echo "journal-record.sh: refusing to use lockfile — $LOCKFILE is a symlink (potential redirect attack)" >&2
+  exit 2
+fi
 if command -v flock >/dev/null 2>&1; then
   exec 9>"$LOCKFILE"
   flock 9

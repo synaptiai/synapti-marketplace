@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/synaptiai/synapti-marketplace/tests/skills/criterion-verification-map/input-schema.json",
+  "$id": "https://github.com/synaptiai/synapti-marketplace/plugins/flow/schemas/criterion-verification-map/input-schema.json",
   "title": "criterion-verification-map input contract",
   "description": "Input contract for the criterion-verification-map skill. The skill receives the parsed acceptance criteria (extracted from the issue body in commands/start.md Phase 1) and produces, per criterion, a runnable verification command and the expected evidence shape. See plugins/flow/skills/criterion-verification-map/SKILL.md for the skill's full process.",
   "type": "object",

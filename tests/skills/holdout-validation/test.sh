@@ -55,14 +55,31 @@ assert_exit "non-JSON input exits 2 (infra error)" 2 $?
 assert_exit "all-empty-arrays payload validates (schema permits empty)" 0 $?
 
 # Test 7: ID with trailing newline must fail. Python `re` accepts `\n` before
-# `$` in default mode; the schema uses `\Z` to reject. Regression guard for
-# the marker-grammar corruption vector (FINDINGS:[F1\n|P1|...] in merge.md).
+# bare `$` in default mode; the schema uses a `(?!\n)$` lookahead to reject
+# (lookahead form is portable across Python `re` and ECMA-262 validators
+# like ajv, where the legacy Python-only `\Z` anchor is invalid). Regression
+# guard for the marker-grammar corruption vector (FINDINGS:[F1\n|P1|...]
+# in merge.md).
 "$VALIDATE" holdout-validation '{
   "selfReviewFindings":[{"id":"F1\n","priority":"P1","category":"security","location":"src/x.ts:1","problem":"any"}],
   "evidenceBundle":[],
   "fileList":[]
 }' >/dev/null 2>&1
-assert_exit "ID with trailing newline rejected (\\Z anchor)" 1 $?
+assert_exit "ID with trailing newline rejected ((?!\\n)\$ lookahead)" 1 $?
+
+# Test 8: skill name with path-traversal characters must be rejected with
+# exit 2 (infrastructure error — not a validation failure). The validator
+# interpolates $SKILL directly into the schema path; an unsanitized value
+# could resolve outside `<plugin>/schemas/` and, combined with jsonschema's
+# default $ref resolver, become a local-file-read primitive. The script
+# enforces a kebab-case charset guard upfront — same pattern as
+# bin/promote-proposal.sh's PROPOSAL_NAME check.
+"$VALIDATE" '../../etc/passwd' '{}' >/dev/null 2>&1
+assert_exit "path-traversal skill name rejected (charset guard, exit 2)" 2 $?
+
+# Test 9: skill name with uppercase/spaces also rejected by charset guard.
+"$VALIDATE" 'Holdout Validation' '{}' >/dev/null 2>&1
+assert_exit "non-kebab-case skill name rejected (charset guard, exit 2)" 2 $?
 
 echo ""
 echo "============================================"

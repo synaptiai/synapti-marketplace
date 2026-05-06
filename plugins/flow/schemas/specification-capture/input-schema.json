@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/synaptiai/synapti-marketplace/tests/skills/specification-capture/input-schema.json",
+  "$id": "https://github.com/synaptiai/synapti-marketplace/plugins/flow/schemas/specification-capture/input-schema.json",
   "title": "specification-capture input contract",
   "description": "Input contract for the specification-capture skill. The skill captures non-goals, failure modes, and interface contracts for an issue and persists them to the decision journal. See plugins/flow/skills/specification-capture/SKILL.md for the skill's full process.",
   "type": "object",

@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/synaptiai/synapti-marketplace/tests/skills/holdout-validation/input-schema.json",
+  "$id": "https://github.com/synaptiai/synapti-marketplace/plugins/flow/schemas/holdout-validation/input-schema.json",
   "title": "holdout-validation input contract",
   "description": "Input contract for the holdout-validation skill. The skill receives self-review findings from the code-reviewer agent (or equivalent), the evidence bundle draft assembled so far, and the list of files modified on the branch. It cross-references the agent's claims against the actual file state using hidden holdout scenarios. See plugins/flow/skills/holdout-validation/SKILL.md for the skill's full process; this schema is the machine-checkable shape of its inputs.",
   "type": "object",

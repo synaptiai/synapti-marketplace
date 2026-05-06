@@ -20,9 +20,11 @@ _None — explanatory Q&A over journal and diff context. No skill invocations._
 BRANCH=$(git branch --show-current)
 ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
 
-# 2. Decision journal
+# 2. Decision journal. Cascade trimmed to user-global + plugin only;
+# repo-local sources are excluded as a hostile-fork defense (same
+# pattern as merge.markerTrust + agentTeams + the .sh hook scripts).
 JOURNAL_DIR=".decisions"
-for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
+for SETTINGS in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
   [ -f "$SETTINGS" ] && DIR=$(jq -r '.journal.dir // empty' "$SETTINGS" 2>/dev/null) && [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
 done
 [ -n "$ISSUE_NUM" ] && cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md" 2>/dev/null

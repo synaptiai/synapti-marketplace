@@ -14,15 +14,21 @@ _None — retrospective pattern analysis over the decision journal. No skill inv
 ## Phase 1: Gather Journal Entries
 
 ```bash
-# Read journal directory
+# Read journal directory. Cascade trimmed to user-global + plugin only;
+# repo-local sources (.claude/settings.flow.{local.,}json) are excluded
+# because they become attacker-controlled after `gh pr checkout` of a
+# hostile fork — same defense pattern as merge.markerTrust + agentTeams.
 JOURNAL_DIR=".decisions"
-for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
+for SETTINGS in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
   [ -f "$SETTINGS" ] && DIR=$(jq -r '.journal.dir // empty' "$SETTINGS" 2>/dev/null) && [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
 done
 
-# Read proposal directory
+# Read proposal directory. Same trimmed cascade — a fork PR could
+# otherwise plant `.claude/settings.flow.local.json` with a
+# `learning.proposalDir` pointing at /tmp/attacker, then plant proposal
+# files there for /flow:learn to pick up and feed to bin/promote-proposal.sh.
 PROPOSAL_DIR="$HOME/.claude/flow-proposals"
-for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
+for SETTINGS in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
   [ -f "$SETTINGS" ] && DIR=$(jq -r '.learning.proposalDir // empty' "$SETTINGS" 2>/dev/null) && [ -n "$DIR" ] && PROPOSAL_DIR="$DIR" && break
 done
 

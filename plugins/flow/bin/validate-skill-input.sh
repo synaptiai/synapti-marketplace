@@ -36,6 +36,18 @@ fi
 SKILL="$1"
 INPUT="$2"
 
+# Reject anything that isn't a kebab-case skill name. $SKILL flows directly
+# into the SCHEMA path, and an unsanitized value like `../../../etc/passwd`
+# would resolve to `<plugin>/schemas/../../../etc/passwd/input-schema.json`
+# — combined with `jsonschema`'s default `$ref` resolver (which honors
+# `file://` URLs in `$ref`), a malicious schema reachable that way could
+# be used as a local-file-read primitive in error messages. Same charset
+# guard as bin/promote-proposal.sh's PROPOSAL_NAME check.
+if ! printf '%s' "$SKILL" | grep -qE '^[a-z][a-z0-9-]*$'; then
+  echo "validate-skill-input.sh: invalid skill name '$SKILL' — must match kebab-case ^[a-z][a-z0-9-]*$" >&2
+  exit 2
+fi
+
 # Resolve the schema from inside the plugin payload (so it ships to end-users),
 # then fall back to the repo-root layout for in-repo callers that pre-date the
 # move (and to keep a single resolution surface across script versions).

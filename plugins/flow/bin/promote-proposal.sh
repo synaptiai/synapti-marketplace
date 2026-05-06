@@ -148,6 +148,17 @@ if [ -e "$TARGET" ]; then
   echo "promote-proposal.sh: resolve by editing the existing skill OR renaming the proposal" >&2
   exit 1
 fi
+# If the target directory already exists with ANY content (even without
+# SKILL.md), refuse rather than mkdir-into-it. The cleanup trap below
+# `rm -rf`s `$TARGET_DIR` on pre-branch failure to roll back this run's
+# partial state — without this guard, a contributor's half-finished
+# hand-promotion (e.g., `references/foo.md` placed manually before
+# adding SKILL.md) would be silently wiped on a python rewrite failure.
+if [ -d "$TARGET_DIR" ] && [ -n "$(ls -A "$TARGET_DIR" 2>/dev/null)" ]; then
+  echo "promote-proposal.sh: $TARGET_DIR exists and is non-empty — refusing to clobber" >&2
+  echo "promote-proposal.sh: clear the directory or rename the proposal before retrying" >&2
+  exit 1
+fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "DRY-RUN: validation passed for '$PROPOSAL_NAME'"
@@ -253,16 +264,28 @@ git checkout -b "$BRANCH" "origin/$DEFAULT"
 BRANCH_CREATED=1
 
 git add "$TARGET"
-git commit -m "feat(flow): promote learned skill — $PROPOSAL_NAME
 
-Promoted from proposal: $PROPOSAL
-Status: proposal → promoted ($(date -u +%Y-%m-%d))
-
-Validation passed by bin/promote-proposal.sh:
-- Frontmatter: required fields present, status=proposal
-- Body sections: Pattern Detected, Knowledge, Evidence, Verification, Promotion Checklist all present
-- Name: matches kebab-case pattern ^[a-z][a-z0-9-]*\$
-- Target: plugins/flow/skills/learned/$PROPOSAL_NAME/SKILL.md did not exist before promotion"
+# Read the commit message from stdin via `git commit -F -` instead of `-m`.
+# `-m` interpolates `$PROPOSAL` (a user-supplied path) into a double-quoted
+# bash string, which means a path containing backticks or `$(...)` would be
+# evaluated as a command substitution at message-construction time. The
+# upfront newline/CR rejection earlier in this script does not cover those
+# metacharacters; switching to `-F -` removes the risk by construction —
+# the heredoc is single-quoted-delimited (`'COMMITMSG'` would also work,
+# but a here-string with `printf` keeps the substitution explicit) and git
+# reads the message from stdin without re-evaluating it.
+COMMIT_DATE=$(date -u +%Y-%m-%d)
+{
+  printf 'feat(flow): promote learned skill — %s\n\n' "$PROPOSAL_NAME"
+  printf 'Promoted from proposal: %s\n' "$PROPOSAL"
+  printf 'Status: proposal → promoted (%s)\n\n' "$COMMIT_DATE"
+  printf 'Validation passed by bin/promote-proposal.sh:\n'
+  printf '%s\n' \
+    '- Frontmatter: required fields present, status=proposal' \
+    '- Body sections: Pattern Detected, Knowledge, Evidence, Verification, Promotion Checklist all present' \
+    '- Name: matches kebab-case pattern ^[a-z][a-z0-9-]*$' \
+    "- Target: plugins/flow/skills/learned/$PROPOSAL_NAME/SKILL.md did not exist before promotion"
+} | git commit -F -
 
 git push -u origin "$BRANCH"
 

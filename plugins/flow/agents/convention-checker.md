@@ -16,9 +16,13 @@ You are a Git convention validator for the flow plugin. Verify adherence to repo
 ### Step 1: Read Settings
 
 ```bash
-# Read convention settings (cascading: local > project > user > defaults)
+# Read convention settings. Cascade trimmed to user-global + plugin
+# only; repo-local sources (.claude/settings.flow.{local.,}json) are
+# excluded because a hostile fork could otherwise relax conventions
+# to `.*` after `gh pr checkout`, defeating commit-message validation.
+# Same defense pattern as merge.markerTrust + agentTeams plugin pin.
 COMMIT_TYPES="feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert"
-for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
+for SETTINGS in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
   [ -f "$SETTINGS" ] && TYPES=$(jq -r '.conventions.commitTypes // empty | join("|")' "$SETTINGS" 2>/dev/null) && [ -n "$TYPES" ] && COMMIT_TYPES="$TYPES" && break
 done
 echo "Commit types: $COMMIT_TYPES"
