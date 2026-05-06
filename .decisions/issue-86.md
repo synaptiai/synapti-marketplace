@@ -179,12 +179,14 @@ Performance: paired reviewers run in parallel (one parallel Agent dispatch with 
 4. **End-to-end test** — synthetic PR with `agentTeams: true`; assert paired reviewer outputs, challenge round summary, consolidated table with confidence annotations, and that fallback to single-reviewer occurs when env var is unset.
 5. **Slides reframe** — once #2 and #4 land, close issue #80 (slides reframe) and update slides-v2 to mark the feature as available with `agentTeams: true`.
 
-### Open questions for reviewers
+### Resolved questions (2026-05-06)
 
-1. **Pairing variant count (Q1 sub-q)** — start with 2 prompt variants per facet (skeptic + verifier) or 3 (skeptic + verifier + boy-scout)? 3 is more rigorous but pushes cost to 6×.
-2. **Match window tunability (Q3)** — should ±2 lines / ±1 priority be settings (`agentTeams.matchWindow.lines` / `agentTeams.matchWindow.priority`) or hard-coded for v1?
-3. **Marker schema migration timing (Q4)** — ship the schema extension as a separate PR before implementation, or in the same PR as `commands/review.md` Path A?
-4. **Challenger-as-third-agent (Q2 Option 3)** — defer to v2, or worth the experiment now?
+| # | Question | Resolution |
+|---|---|---|
+| 1 | Pairing variant count | **2 — skeptic + verifier**. v1 ships with 2 variants per facet. 3-variant (boy-scout) deferred until usage data justifies the 6× cost. |
+| 2 | Match window tunability | **Hard-code for v1**. ±2 lines / ±1 priority baked into consolidation logic. If false-positive/negative rates demand tuning post-launch, expose as settings in a follow-up. |
+| 3 | Marker schema migration timing | **Bundle with Path A rewrite**. Single PR introduces both the marker extension and the writers/readers. Larger review surface but atomic behavior change. |
+| 4 | Challenger-as-third-agent / role of main agent | **Keep original disposition-only mechanism (Q2 Option 1)**. Each paired reviewer challenges the OTHER's findings via AGREE/DISAGREE/REFINE labels. No third-agent challenger; main agent remains pure orchestrator (no challenge or adjudication role). Cost stays at ≈4× baseline. Rationale: preserves the team-coordination iron law strictly — main agent is not a teammate, third-agent would dominate as central judge, paired-reviewers-challenge-each-other keeps the independence boundary cleanest. |
 
 ### Scope explicitly out of this RFC
 
@@ -204,6 +206,21 @@ User selected "Use #86 as the RFC drafting work" (from /flow:start 86 escalation
 
 Filed via `gh issue create` with body mirroring §RFC of this journal. URL: https://github.com/synaptiai/synapti-marketplace/issues/94. Issue #86 receives a follow-up comment noting the split: AC#1 is satisfied by the existence and approval of #94; ACs #2–#6 are blocked-by #94 and will be addressed in implementation sub-issues created after #94 closes.
 
+### 2026-05-06 — Open questions resolved (user input via AskUserQuestion)
+
+User answered all four open questions in a single batch:
+
+- **Q1 (variant count)** → 2 (skeptic + verifier).
+- **Q2 (match window)** → hard-code ±2 lines / ±1 priority for v1.
+- **Q3 (schema timing)** → bundle marker schema with Path A rewrite (single PR).
+- **Q4 (challenger role)** → keep original disposition-only mechanism. User initially asked "shouldn't the main agent perform the challenger?"; after considering main-agent-as-challenger as a new Option 4, opted to retain the strictest independence boundary: paired reviewers challenge each other, no central judge (main agent or third-agent).
+
+Composite design is now frozen. RFC sub-issue #94 will be updated with a comment recording these resolutions so the implementation sub-issue inherits a fully-decided contract.
+
 <!-- auto-log: 2026-05-06 03:03 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-86.md -->
 
 <!-- auto-log: 2026-05-06 03:04 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-86.md -->
+
+<!-- auto-log: 2026-05-06 03:30 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-86.md -->
+
+<!-- auto-log: 2026-05-06 03:30 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-86.md -->
