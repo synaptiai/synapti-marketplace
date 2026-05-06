@@ -1,6 +1,6 @@
 ---
 name: autonomous-workflow
-description: "Govern autonomous development execution through the Explore-Plan-Code-Verify loop, task-driven progress tracking, three-tier action classification, decision journaling, and bounded verification. Use when executing any development workflow autonomously or orchestrating multi-step implementation tasks."
+description: "Execute development workflows through Explore-Plan-Code-Verify phases with task-driven tracking, Tier 1/2/3 action classification, decision journaling, and bounded debug loops. Use when executing any development workflow autonomously or orchestrating multi-step implementation tasks. This skill MUST be consulted because skipping phases causes rework, and unbounded verification loops cause agents to loop forever on unsolvable problems."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, TaskCreate, TaskList, TaskUpdate, TaskGet, AskUserQuestion
 ---
 

@@ -1,0 +1,15 @@
+{
+  "issueContext": {
+    "title": "Add per-account rate limiting to login endpoint",
+    "body": "## Background\n\nLogin endpoint is currently unrestricted, allowing brute-force attempts.\n\n## Acceptance Criteria\n\n- [ ] Login endpoint rejects requests after 5 failures within 60 seconds with HTTP 429\n- [ ] Counter resets after 60-second window elapses\n\n## Non-goals\n\n- Does not rate-limit by IP\n- Does not rate-limit other auth endpoints",
+    "comments": [
+      {
+        "user": "alice",
+        "body": "Should this also send a security alert?"
+      }
+    ],
+    "labels": ["enhancement", "security"]
+  },
+  "journalPath": ".decisions/issue-142.md",
+  "invocationReason": "start"
+}

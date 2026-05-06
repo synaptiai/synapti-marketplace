@@ -20,6 +20,10 @@ simultaneously in a single message rather than sequentially.
 - `capability-discovery` — discover build/test/lint commands
 - `debugging-patterns` — on-demand if resolution breaks the build
 
+## References
+
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by the max-conflict-files escalation (Phase 1) and any semantic/structural/delete-modify escalation surfaced during resolution
+
 ## Phase 0: Pre-Flight
 
 Determine invocation mode from `$ARGUMENTS`:

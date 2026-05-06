@@ -78,22 +78,27 @@ Read each changed file and check for:
 
 ### Step 5: Report
 
+Emit security findings using the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md). Each finding row has six fields in this order: `ID | Category | Location | Problem | Suggested Fix | Confidence`. Assign IDs with the `SEC-` prefix (`SEC-1`, `SEC-2`, ...) per the schema's recommended provenance convention. Use `category=security` for OWASP and code-level findings; the `category` cell can carry sub-types (`auth`, `injection`, `xss`, `idor`, `secrets`) when useful.
+
+The dependency-audit table below is a SEPARATE artifact from the canonical findings table — dependency vulnerabilities don't have a `file:line` location, they have a package version, so they don't fit the canonical schema. Keep them in their own table; the orchestrator surfaces them alongside but does not merge them into the FLOW_REVIEW_CYCLE marker.
+
 ```markdown
 ## Security Review Findings
 
-### P1 - Critical Security Issues
-| # | Category | Location | Vulnerability | Fix | Confidence |
-|---|----------|----------|--------------|-----|------------|
+### P1 — Critical Security Issues (Blocks Merge)
+| ID | Category | Location | Problem | Suggested Fix | Confidence |
+|----|----------|----------|---------|---------------|------------|
+| SEC-1 | security | src/auth.ts:42 | SQL injection via string interpolation | Use parameterized query | HIGH |
 
-### P2 - Security Concerns
-| # | Category | Location | Issue | Recommendation |
-|---|----------|----------|-------|---------------|
+### P2 — Security Concerns
+| ID | Category | Location | Problem | Suggested Fix | Confidence |
+|----|----------|----------|---------|---------------|------------|
 
-### P3 - Security Improvements
-| # | Category | Location | Suggestion |
-|---|----------|----------|-----------|
+### P3 — Security Improvements
+| ID | Category | Location | Problem | Suggested Fix | Confidence |
+|----|----------|----------|---------|---------------|------------|
 
-### Dependency Audit
+### Dependency Audit (separate from finding schema — no file:line)
 | Package | Severity | Advisory | Fix |
 |---------|----------|---------|-----|
 
@@ -102,6 +107,8 @@ Read each changed file and check for:
 - Dependency vulnerabilities: {N}
 - Overall risk: {Low | Medium | High | Critical}
 ```
+
+Empty priority sections SHOULD be retained as-is (header + table header with no rows). The summary counts MUST match the row counts in the tables.
 
 ## Adversarial Mode
 

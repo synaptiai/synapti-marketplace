@@ -21,6 +21,11 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 - `capability-discovery` — detect quality commands and agents
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 3)
 
+## References
+
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 4's visual-verification BLOCKED escalation and any other Proactive-Autonomy escalation surfaced during PR creation
+- [`references/finding-schema.md`](../references/finding-schema.md) — canonical row shape every reviewer agent dispatched in Phase 3 emits
+
 ## Phase 1: EXPLORE
 
 **Parallel operations:**
@@ -130,10 +135,14 @@ After agents return, TaskUpdate each review task with findings.
 2. **Integration verification** — dispatch Agent(integration-verifier):
    ```
    Agent(integration-verifier):
-     "Verify runtime behavior for this branch. Run E2E tests if available,
-      smoke test endpoints, validate acceptance criteria at runtime.
-      If UI files changed, run visual verification with screenshot analysis.
-      Return verification results table."
+     "Verify runtime behavior for this branch. Invoke Skill(runtime-verification)
+      for build, dev-server, smoke, E2E, and LSP diagnostics. If UI files changed,
+      ALSO invoke Skill(visual-verification) in parallel for the screenshot-
+      analyze-verify loop and responsive checks. Validate acceptance criteria at
+      runtime. Return the verification results table per `skills/runtime-
+      verification/SKILL.md` plus the visual table per `skills/visual-
+      verification/SKILL.md`. Emit any findings using the canonical schema in
+      `references/finding-schema.md`."
    ```
    After agent returns:
    - If visual verification task was created in Phase 2: `TaskUpdate(visualVerificationTaskId, status: "completed", result: "{agent's visual verification findings}")`
@@ -181,5 +190,38 @@ After agents return, TaskUpdate each review task with findings.
     ```
 11. **Suggest reviewers** using pr-lifecycle skill algorithm
 12. **Verify**: `gh pr view --json number,url`
+13. **Manifest emit** — record the review-cycle artifact for the parallel-review pass that ran during PR creation. Same emit shape as `commands/review.md` Phase 4 step 7 — the PR-creation flow runs an inline review and is morally a cycle:
+
+    ```bash
+    PR_NUMBER=$(gh pr view --json number --jq '.number')
+    ISSUE=$(gh issue list --state open --search "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+    if [ -z "$ISSUE" ]; then
+      ISSUE=$(echo "$BRANCH" | grep -oE 'issue-([0-9]+)' | head -1 | sed 's/issue-//')
+    fi
+    if [ -n "$ISSUE" ]; then
+      "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+        --issue $ISSUE \
+        --type review-cycle \
+        --metadata cycle=1 \
+        --metadata path=B \
+        --metadata findings_count=$TOTAL_FINDINGS \
+        --metadata pr=$PR_NUMBER
+    fi
+    ```
+
+    The emit is best-effort — if the issue cannot be inferred from the branch name, skip rather than fail. PR-creation flow uses Path B (single-session 5-agent dispatch); subsequent `/flow:review` invocations may re-emit with `path=A` if paired-reviewer mode is enabled.
 
 Display PR URL and next steps.
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Pre-flight checks (branch, commits, PR existence) | 1 | Autonomous; blocks on failure |
+| Multi-agent review fan-out (5 reviewers + holdout-validation) | 1 | Autonomous; Tasks tracked |
+| `Skill(integration-verifier)` runtime + visual verification | 1 | Autonomous |
+| File edits (fix-forward for P1/P2 findings) | 1 | Autonomous |
+| Commits (`fix:` from fix-forward) | 1 | Autonomous, logged by hook |
+| `git push -u origin <branch>` | 2 | Journal-and-proceed |
+| `gh pr create` | 2 | Journal-and-proceed |
+| Visual-verification BLOCKED escalation (when `requireVisualVerification: true`) | 2 | Asks via `AskUserQuestion`; outcome journaled |

@@ -13,9 +13,12 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 # Only process git commit commands
 echo "$COMMAND" | grep -qE 'git\s+commit' || exit 0
 
-# Determine journal directory from settings
+# Determine journal directory. Excludes repo-local settings sources to keep
+# a hostile fork PR from redirecting hook writes after `gh pr checkout` —
+# same defense pattern as merge.markerTrust + agentTeams. User-global and
+# plugin defaults only.
 JOURNAL_DIR=".decisions"
-for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
+for SETTINGS_FILE in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
   if [ -f "$SETTINGS_FILE" ]; then
     DIR=$(jq -r '.journal.dir // empty' "$SETTINGS_FILE" 2>/dev/null)
     [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
@@ -35,6 +38,14 @@ fi
 
 # Only log if journal exists
 if [ -d "$JOURNAL_DIR" ] && [ -f "$JOURNAL_FILE" ]; then
+  # Refuse if the journal path is a symlink. After `gh pr checkout` of a
+  # hostile fork, attacker-staged `.decisions/issue-N.md` could be a symlink
+  # to `~/.bashrc`, `~/.ssh/authorized_keys`, etc.; bash `>>` follows
+  # symlinks and would append our auto-log lines (with a partially
+  # attacker-controlled commit subject) to the symlink target. Skip silently
+  # — this hook is best-effort journal logging, not a security boundary.
+  [ -L "$JOURNAL_FILE" ] && exit 0
+
   TIMESTAMP=$(date +"%Y-%m-%d %H:%M")
   LAST_MSG=$(git log -1 --format="%s" 2>/dev/null || echo "unknown")
 
@@ -51,8 +62,16 @@ if [ -d "$JOURNAL_DIR" ] && [ -f "$JOURNAL_FILE" ]; then
     exit 0
   fi
 
+  # Sanitize the commit subject before embedding it inside an HTML comment.
+  # An attacker-supplied subject containing `-->` would close the comment
+  # early; subsequent text would land in the journal as renderable markdown,
+  # which `/flow:explain` and `/flow:review` later feed back to Claude as
+  # context — a prompt-injection vector against future sessions.
+  LAST_MSG_SAFE=${LAST_MSG//-->/-- >}
+  LAST_MSG_SAFE=${LAST_MSG_SAFE//<!--/< !--}
+
   echo "" >> "$JOURNAL_FILE"
-  echo "<!-- auto-log: $TIMESTAMP commit \"$LAST_MSG\" -->" >> "$JOURNAL_FILE"
+  echo "<!-- auto-log: $TIMESTAMP commit \"$LAST_MSG_SAFE\" -->" >> "$JOURNAL_FILE"
 fi
 
 exit 0

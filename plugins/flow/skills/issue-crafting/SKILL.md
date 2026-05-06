@@ -1,6 +1,6 @@
 ---
 name: issue-crafting
-description: "Craft well-structured GitHub issues with solution-agnostic requirements, duplicate detection, label discovery, and acceptance criteria describing observable behavior rather than implementation details. Use when creating new GitHub issues."
+description: "Craft well-structured GitHub issues with solution-agnostic outcomes, duplicate detection (open and closed), dynamically-discovered labels, and acceptance criteria describing observable behavior without implementation details. Use when creating new GitHub issues. Proactively suggest when an issue prescribes a method instead of describing an outcome."
 allowed-tools: Bash, Read, AskUserQuestion
 context: fork
 agent: Explore

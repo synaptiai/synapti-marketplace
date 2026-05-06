@@ -279,3 +279,14 @@ If yes, append the workflow section from `templates/CLAUDE-flow.md` to the exist
 - Assign an issue and run `/flow:start <number>`
 - Or run `/flow:status` to see current state
 ```
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Detect environment, tech stack, build commands | 1 | Autonomous, read-only |
+| Probe LSP capabilities | 1 | Autonomous, read-only |
+| Write `.claude/settings.flow.json` (project settings) | 1 | Autonomous, project file |
+| Write `.claude/CLAUDE.md` flow integration block | 1 | Autonomous, project file |
+| Install LSP servers (when user opts in) | 2 | Journal-and-proceed (touches user environment outside repo) |
+| `mkdir -p .decisions/` | 1 | Autonomous |

@@ -14,15 +14,21 @@ _None — retrospective pattern analysis over the decision journal. No skill inv
 ## Phase 1: Gather Journal Entries
 
 ```bash
-# Read journal directory
+# Read journal directory. Cascade trimmed to user-global + plugin only;
+# repo-local sources (.claude/settings.flow.{local.,}json) are excluded
+# because they become attacker-controlled after `gh pr checkout` of a
+# hostile fork — same defense pattern as merge.markerTrust + agentTeams.
 JOURNAL_DIR=".decisions"
-for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
+for SETTINGS in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
   [ -f "$SETTINGS" ] && DIR=$(jq -r '.journal.dir // empty' "$SETTINGS" 2>/dev/null) && [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
 done
 
-# Read proposal directory
+# Read proposal directory. Same trimmed cascade — a fork PR could
+# otherwise plant `.claude/settings.flow.local.json` with a
+# `learning.proposalDir` pointing at /tmp/attacker, then plant proposal
+# files there for /flow:learn to pick up and feed to bin/promote-proposal.sh.
 PROPOSAL_DIR="$HOME/.claude/flow-proposals"
-for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
+for SETTINGS in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
   [ -f "$SETTINGS" ] && DIR=$(jq -r '.learning.proposalDir // empty' "$SETTINGS" 2>/dev/null) && [ -n "$DIR" ] && PROPOSAL_DIR="$DIR" && break
 done
 
@@ -94,10 +100,32 @@ Write each proposal to `$PROPOSAL_DIR/YYYY-MM-DD-{topic}.md` using the skill-pro
 | 1 | {skill name} | {proposal file path} |
 
 ### Promotion Workflow
-To promote a proposal to an active skill:
-1. Review the proposal file
-2. Copy to `plugins/flow/skills/learned/{name}/SKILL.md`
-3. Commit and create PR
+
+To promote a proposal to an active skill, use the canonical helper:
+
+```bash
+${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/promote-proposal.sh \
+  --proposal ~/.claude/flow-proposals/YYYY-MM-DD-{topic}.md
+```
+
+The script:
+1. Validates the proposal frontmatter (required fields, status: proposal, kebab-case name)
+2. Validates the body (must contain `## Pattern Detected`, `## Knowledge`, `## Evidence`, `## Verification`, `## Promotion Checklist` sections per `templates/skill-proposal.md`)
+3. Refuses to overwrite an existing learned skill at the target name
+4. Copies the proposal to `plugins/flow/skills/learned/{name}/SKILL.md`, rewriting `status: proposal` -> `status: promoted` with today's date
+5. Creates a feature branch `feature/learn-promote-{name}`, commits, pushes, and opens a **draft** PR for human review
+
+The PR is **always draft** — `bin/promote-proposal.sh` is Tier 2 (journal-and-proceed) and never marks the PR ready or merges it. A human reviewer must mark the PR ready and merge it explicitly. This prevents `/flow:learn` from autonomously reshaping Claude's behavior without explicit consent.
+
+Use `--dry-run` to validate a proposal without filesystem effects:
+
+```bash
+${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/promote-proposal.sh \
+  --proposal ~/.claude/flow-proposals/YYYY-MM-DD-{topic}.md \
+  --dry-run
+```
+
+The dry-run reports validation results and the planned filesystem/git actions without executing them.
 ```
 
 ## Phase 6: Clear Pending
@@ -111,3 +139,14 @@ rm -f "$HOME/.claude/flow-learn-pending"
 If no journal entries found:
 - "No decision journal entries found. Journal entries are created automatically during `/flow:start`, `/flow:commit`, and `/flow:address` workflows."
 - Suggest running a workflow first.
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read decision journal | 1 | Autonomous, read-only |
+| Pattern detection across journal entries | 1 | Autonomous |
+| Write skill proposals to `~/.claude/flow-proposals/` | 1 | Autonomous, user-scoped files (outside repo) |
+| Clear `~/.claude/flow-learn-pending` flag | 1 | Autonomous |
+
+Promotion of a proposal to an active skill (`plugins/flow/skills/learned/`) is **separate** and is owned by `bin/promote-proposal.sh`, which opens a draft PR (Tier 2 — never auto-merges). Learning analysis itself is Tier 1; promotion is Tier 2.

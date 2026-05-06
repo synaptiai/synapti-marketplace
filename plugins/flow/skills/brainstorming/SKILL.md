@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description: "Explore multiple approaches through structured option generation, trade-off analysis, and collaborative approach selection. Use when evaluating alternatives before committing to an implementation strategy."
+description: "Generate 2-4 distinct approaches with trade-off analysis across simplicity, flexibility, performance, effort, and risk, driving collaborative decision-making before implementation. Use when evaluating alternatives before committing to an implementation strategy. Proactively suggest when the team defaults to the first idea without exploring competitors."
 allowed-tools: Read, Bash, Grep, Glob, AskUserQuestion, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: Explore

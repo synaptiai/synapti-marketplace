@@ -1,6 +1,6 @@
 ---
 name: code-review-methodology
-description: "Conduct 6-facet code review covering security, quality, conventions, tests, error handling, and claim verification with P1/P2/P3 finding synthesis, deduplication by file:line, and requirements compliance mapping (Stage 1). Use when reviewing code changes or pull requests."
+description: "Conduct two-stage code review: Stage 1 verifies spec compliance (criterion-to-code mapping), Stage 2 evaluates security, correctness, performance, and maintainability across 6 parallel facets with P1/P2/P3 synthesis and deduplication by file:line. Use when reviewing code changes or pull requests. This skill MUST be consulted because reviewing quality on broken logic is wasted effort, and unmet acceptance criteria must block merge."
 allowed-tools: Read, Bash, Grep, Glob
 context: fork
 agent: Explore
@@ -42,6 +42,8 @@ Every review evaluates these facets (parallelizable):
 | **Claim verification** | Self-review claims cross-referenced against actual file state | holdout-validation (skill) |
 
 Requirements compliance is Stage 1 (Spec Compliance) of the Two-Stage Review section above, not a parallel facet — it runs first on the main thread before the 6 facets fan out.
+
+For the **Tests** facet specifically, see [`test-review-checklist.md`](../../references/test-review-checklist.md) for a runnable checklist of coverage, quality, and integration-test signals reviewers can flag with citations.
 
 ## Finding Synthesis
 

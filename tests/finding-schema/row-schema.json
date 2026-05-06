@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/synaptiai/synapti-marketplace/tests/finding-schema/row-schema.json",
+  "title": "Canonical finding row (per references/finding-schema.md)",
+  "description": "Validates a single finding row in the JSON form that downstream tooling parses out of the markdown tables emitted by reviewer agents. The marker schema (FLOW_REVIEW_CYCLE pipe-delimited form) adds `status` and `disposition` fields stamped on by commands/review.md Phase 4 step 7; this row schema covers the agent-emitted shape (6 fields) and accepts the marker-only fields when present.",
+  "type": "object",
+  "required": ["id", "priority", "category", "location", "problem"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*(?!\\n)$",
+      "description": "Stable reviewer-assigned identifier. The pattern is enforced by commands/review.md A.1 post-condition. Recommended prefixes: F (code-reviewer), SEC- (security-reviewer), ERR- (error-handler-inspector), INT- (integration-verifier). The `(?!\\n)$` lookahead rejects a trailing newline that Python `re` would otherwise accept with bare `$` in default mode — required because the pipe/comma marker grammar in merge.md treats `\\n` as a separator. Lookahead form is portable across Python `re` and ECMA-262 validators (ajv etc.); the legacy `\\Z` anchor is Python-only."
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["P1", "P2", "P3"]
+    },
+    "category": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Domain tag. The recommended controlled list (see references/finding-schema.md): security, correctness, edge-case, error-handling, performance, tests, runtime, visual, conventions, claim-verification. Free-form values are permitted but reduce searchability."
+    },
+    "location": {
+      "type": "string",
+      "minLength": 1,
+      "description": "file:line, file:line-range, file (file-level), or URL (visual findings). The schema does not enforce a regex because the universe of valid locations spans paths, URLs, commit SHAs, branch names, and package@version."
+    },
+    "problem": {
+      "type": "string",
+      "minLength": 1
+    },
+    "suggested_fix": {
+      "type": "string",
+      "description": "May be empty (use '—') when the fix is non-obvious; agent should append a paragraph below the table in that case."
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["HIGH", "MEDIUM", "LOW"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["open", "resolved", "escalated", "disputed"],
+      "description": "Marker-only field added by commands/review.md Phase 4 step 7. Default is `open`."
+    },
+    "disposition": {
+      "type": "string",
+      "enum": ["consensus", "validated", "refined", "kept", "unchallenged"],
+      "description": "Marker-only field added by commands/review.md Phase 4 step 7 (Path A) or omitted (Path B 5-field marker)."
+    }
+  }
+}

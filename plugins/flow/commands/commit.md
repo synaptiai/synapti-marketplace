@@ -18,6 +18,10 @@ Classify changes, flag anomalies, and create atomic conventional commits. Follow
 - `change-classification` — signal-based change analysis
 - `convention-enforcement` — commit message validation
 
+## References
+
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 3's uncertain/out-of-context-files escalation
+
 ## Phase 1: EXPLORE
 
 Execute these in parallel:
@@ -127,3 +131,13 @@ Display:
 - **Only untracked files**: Ask whether to include
 - **All out-of-context**: Warn and require explicit confirmation
 - **Mixed types**: Create separate commits per type (feat + test)
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read git status / branch / changed files | 1 | Autonomous, read-only |
+| Classify changes via `change-classification` skill | 1 | Autonomous |
+| `AskUserQuestion` for uncertain/out-of-context files | n/a | User-driven escalation per `references/escalation-format.md` |
+| `git add <specific-files>` (per-group atomic staging) | 1 | Autonomous |
+| `git commit -m "<conventional-message>"` | 1 | Autonomous, logged by `log-commits.sh` PostToolUse hook |

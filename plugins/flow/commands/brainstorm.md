@@ -19,6 +19,11 @@ Multi-option exploration before committing to an approach. Follows Explore > Gen
 This command operates with these domain skills loaded:
 - `brainstorming` — multi-option exploration, trade-off analysis
 - `capability-discovery` — detect available agents and tech stack
+- `specification-capture` — read existing specification from journal or capture non-goals (Phase 1)
+
+## References
+
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure for any Proactive-Autonomy escalation surfaced during brainstorming
 
 ## Phase 1: EXPLORE
 
@@ -44,6 +49,22 @@ Agent(Explore):
    How does the project currently handle similar problems?
    Report: existing patterns, relevant files, conventions."
 ```
+
+**Read or capture non-goals** (when an issue is in scope):
+
+A brainstorm without explicit non-goals sprawls — every approach starts looking equally appealing because there is no scope fence to filter against. Before generating approaches, invoke the `specification-capture` skill to read existing non-goals from the journal or capture them now. The skill is idempotent: if `commands/start.md` or `commands/design.md` already captured non-goals for this issue, the skill returns them; otherwise it prompts for non-goals only (failure modes and interface contracts are not required at brainstorm time).
+
+```
+Skill(specification-capture):
+  Inputs:
+  - Issue context: {pre-fetched issue title, body, comments, labels}
+  - Journal path: .decisions/issue-$ISSUE_NUM.md
+  - Invocation reason: brainstorm
+```
+
+If `$ISSUE_NUM` is empty (the brainstorm is not tied to an issue — e.g., `/flow:brainstorm "what should our auth strategy be?"`), skip this step. The brainstorm proceeds without a journal-backed fence; the user can capture decisions later via `/flow:design` or `/flow:start`.
+
+After the skill returns, treat the non-goals as a hard filter when generating approaches: an approach that violates a non-goal is out of scope and should not appear in the comparison table at all.
 
 **Clarify the goal:**
 
@@ -143,6 +164,19 @@ JOURNAL_DIR=".decisions"
 ENTRY
 ```
 
+   **Manifest emit** — append the brainstorm-decision artifact to the journal manifest alongside the freeform `## Brainstorm Decision` section:
+
+   ```bash
+   if [ -n "$ISSUE_NUM" ]; then
+     "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+       --issue $ISSUE_NUM \
+       --type brainstorm-decision \
+       --metadata topic="$TOPIC" \
+       --metadata chosen="$CHOSEN_APPROACH" \
+       --metadata options_considered=$N_OPTIONS
+   fi
+   ```
+
 3. TaskUpdate("Select approach", status: "completed")
 4. **TaskList** — confirm all brainstorming tasks show status: completed
 5. **Display summary**: Decision made, approaches considered, next steps.
@@ -154,3 +188,12 @@ Present next steps:
 - `/flow:start <issue>` — begin implementation with chosen approach
 - `/flow:design` — dive deeper into architecture for the chosen approach
 - Continue brainstorming — refine or explore sub-decisions
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read codebase / issue context | 1 | Autonomous, read-only |
+| Generate approaches | 1 | Autonomous |
+| `AskUserQuestion` (clarify goal, pick approach) | n/a | User-driven decision point |
+| Write to decision journal | 1 | Autonomous, file edit |

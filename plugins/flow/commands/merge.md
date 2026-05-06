@@ -12,6 +12,10 @@ Tier 3 operation — **always requires human confirmation**. This is non-negotia
 
 - `merge-and-release` — prerequisite verification, merge execution
 
+## References
+
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 2's conflict-resolution escalation and Phase 3's merge-confirm prompt
+
 ## Phase 1: Verify Prerequisites
 
 **Parallel checks:**
@@ -98,11 +102,16 @@ fi
 
 # Surface "untrusted-only" markers as a block reason rather than silently
 # treating them as no markers at all. This is the #92 forgery defense.
+# Render the trust list as a comma-separated string for the user-facing
+# message — the `$TRUST_REGEX` variable used to appear here was a leftover
+# from PR #93 and never assigned, producing the empty-parens string
+# "trusted authors ()" in messages or aborting under `set -u`.
+TRUST_LIST_DISPLAY=$(echo "$TRUST_LIST" | jq -r 'join(",")' 2>/dev/null || echo "OWNER,MEMBER,COLLABORATOR")
 if [ -z "$RESOLUTION_BODY" ] && [ "${RES_UNTRUSTED:-0}" != "0" ]; then
-  echo "FINDING_LEDGER_BLOCK: $RES_UNTRUSTED FLOW_RESOLUTION_CYCLE marker(s) found but none from trusted authors ($TRUST_REGEX)"
+  echo "FINDING_LEDGER_BLOCK: $RES_UNTRUSTED FLOW_RESOLUTION_CYCLE marker(s) found but none from trusted authors ($TRUST_LIST_DISPLAY)"
 fi
 if [ -z "$REVIEW_BODY" ] && [ "${REV_UNTRUSTED:-0}" != "0" ]; then
-  echo "FINDING_LEDGER_BLOCK: $REV_UNTRUSTED FLOW_REVIEW_CYCLE marker(s) found but none from trusted authors ($TRUST_REGEX)"
+  echo "FINDING_LEDGER_BLOCK: $REV_UNTRUSTED FLOW_REVIEW_CYCLE marker(s) found but none from trusted authors ($TRUST_LIST_DISPLAY)"
 fi
 
 # Extract all finding IDs from FINDINGS array (comma-separated, pipe-delimited fields, first field is the ID)
@@ -217,4 +226,32 @@ git checkout $DEFAULT_BRANCH
 git pull origin $DEFAULT_BRANCH
 ```
 
+**Manifest emit** — if this merge resolved any escalations (a Proactive-Autonomy escalation surfaced via `AskUserQuestion` during Phase 1's finding-ledger check, Phase 2's stale-approval warning, or the conflict-resolution path closed because the user provided one of the six canonical fields), record an `escalation-resolved` artifact for each:
+
+```bash
+ISSUE=$(gh pr view $ARGUMENTS --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+if [ -n "$ISSUE" ]; then
+  # Repeat once per escalation that closed during this merge run.
+  "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+    --issue $ISSUE \
+    --type escalation-resolved \
+    --metadata escalation_field={situation|tried|options|recommendation|time-sensitivity|risk} \
+    --metadata outcome="$USER_RESPONSE_SUMMARY"
+fi
+```
+
+The emit is conditional — most merges run cleanly without escalations, in which case skip this step. When it does fire, the manifest captures both *that* an escalation closed and *which canonical field* was the gate, enabling `/flow:learn` to detect recurring escalation patterns (e.g., the same field gating multiple merges → process or tooling improvement opportunity).
+
 Suggest: `/flow:release {type}` if this completes a milestone.
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read PR status / reviews / comments / threads | 1 | Autonomous |
+| Finding-ledger gate check (parses `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE`) | 1 | Autonomous; blocks on failure |
+| Stale-approval check | 1 | Autonomous; warns on stale |
+| Conflict-resolution escalation (`Skill(flow:resolve)` invocation) | 2 | Journal-and-proceed if user accepts; otherwise blocked |
+| `gh pr merge` | 3 | **Confirm** — always asks via `AskUserQuestion` |
+| Branch deletion (per `merge.deleteBranch` setting, default `true`) | 3 | **Confirm** — bundled into the merge prompt |
+| `git checkout <default-branch> && git pull` (post-merge cleanup) | 1 | Autonomous |

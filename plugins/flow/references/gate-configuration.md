@@ -84,8 +84,7 @@ Settings cascade in priority order; later layers override earlier ones:
 ```json
 {
   "journal": {
-    "dir": ".decisions",
-    "sensitivityDefault": "public"
+    "dir": ".decisions"
   }
 }
 ```
@@ -166,6 +165,18 @@ Scans for `FLOW_RESOLUTION_CYCLE` markers in the codebase. Blocks merge when the
 | Setting | Default | Notes |
 |---------|---------|-------|
 | `merge.markerTrust.allowedAssociations` | `["OWNER","MEMBER","COLLABORATOR"]` | **Read from `plugins/flow/settings.json` ONLY** — does NOT use the cascade above (security pin: a hostile fork PR could otherwise commit `.claude/settings.flow.local.json` with a permissive trust list and disable the forgery defense after `gh pr checkout`). |
+
+### Trimmed-Cascade Settings Keys
+
+The following keys read from `$HOME/.claude/settings.flow.json` and `${CLAUDE_PLUGIN_ROOT}/settings.json` ONLY — they intentionally exclude the repo-local sources `.claude/settings.flow.json` and `.claude/settings.flow.local.json`. Same threat model as `merge.markerTrust`: after `gh pr checkout` of a hostile fork those files are attacker-controlled, so a permissive override could redirect hook writes, relax commit-type validation, or repoint the proposal directory.
+
+| Setting | Consumers | Threat if cascaded from repo-local |
+|---------|-----------|------------------------------------|
+| `journal.dir` | `bin/journal-record.sh`, `hooks/scripts/{session-end-learn,log-commits,log-file-changes}.sh`, `commands/{learn,explain,status}.md` | Redirects every journal/hook write to an attacker-controlled path (e.g., `/tmp/attacker`, or a path-traversal target). |
+| `learning.proposalDir` | `commands/learn.md` | Redirects `/flow:learn` proposals into an attacker-controlled directory; subsequent `bin/promote-proposal.sh` runs would then promote the attacker's content as a "learned skill." |
+| `conventions.commitTypes` | `agents/convention-checker.md` | Relaxes the allowed-commit-types list (e.g., to `.*`), defeating commit-message validation in PR review. |
+
+If you need to override one of these for local development, set it in `$HOME/.claude/settings.flow.json` (your user-global file) — that source is honored by all consumers above.
 
 ## Gate Summary
 

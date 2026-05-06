@@ -14,9 +14,12 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 # Skip if no file path
 [ -z "$FILE_PATH" ] && exit 0
 
-# Determine journal directory from settings
+# Determine journal directory. Excludes repo-local settings sources to keep
+# a hostile fork PR from redirecting hook writes after `gh pr checkout` —
+# same defense pattern as merge.markerTrust + agentTeams. User-global and
+# plugin defaults only.
 JOURNAL_DIR=".decisions"
-for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$HOME/.claude/settings.flow.json" "plugins/flow/settings.json"; do
+for SETTINGS_FILE in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
   if [ -f "$SETTINGS_FILE" ]; then
     DIR=$(jq -r '.journal.dir // empty' "$SETTINGS_FILE" 2>/dev/null)
     [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
@@ -36,9 +39,20 @@ fi
 
 # Only log if journal directory exists (init creates it)
 if [ -d "$JOURNAL_DIR" ] && [ -f "$JOURNAL_FILE" ]; then
+  # Refuse if the journal path is a symlink — see log-commits.sh for the
+  # threat model. Both hooks share the same risk surface.
+  [ -L "$JOURNAL_FILE" ] && exit 0
+
   TIMESTAMP=$(date +"%Y-%m-%d %H:%M")
+  # Sanitize tool-name and file-path before embedding in the HTML comment;
+  # `-->` would close the comment early and inject arbitrary markdown into
+  # the journal that `/flow:explain` later feeds back to Claude.
+  TOOL_NAME_SAFE=${TOOL_NAME//-->/-- >}
+  TOOL_NAME_SAFE=${TOOL_NAME_SAFE//<!--/< !--}
+  FILE_PATH_SAFE=${FILE_PATH//-->/-- >}
+  FILE_PATH_SAFE=${FILE_PATH_SAFE//<!--/< !--}
   echo "" >> "$JOURNAL_FILE"
-  echo "<!-- auto-log: $TIMESTAMP $TOOL_NAME $FILE_PATH -->" >> "$JOURNAL_FILE"
+  echo "<!-- auto-log: $TIMESTAMP $TOOL_NAME_SAFE $FILE_PATH_SAFE -->" >> "$JOURNAL_FILE"
 fi
 
 exit 0

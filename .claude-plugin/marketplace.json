@@ -109,7 +109,7 @@
       "name": "flow",
       "source": "./plugins/flow",
       "description": "Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Encodes team knowledge as composable skills, enforces safety through hooks, and compounds learning across sessions.",
-      "version": "2.1.0",
+      "version": "2.3.0",
       "author": {
         "name": "Daniel Bentes"
       },

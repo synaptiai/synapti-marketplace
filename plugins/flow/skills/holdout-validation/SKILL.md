@@ -157,3 +157,23 @@ This skill is invoked by:
 
 Reads: `templates/holdout-scenarios/*.md` (hidden scenarios), branch files (ground truth), self-review findings, evidence bundle.
 Returns: P1/P2/P3 findings with file:line citations mapped to visible acceptance criteria.
+
+## Behavior in Path A (paired-reviewer mode)
+
+When `commands/review.md` runs Path A (paired-reviewer protocol with `agentTeams: true`), this skill is dispatched **twice in parallel** with different lens prompts:
+
+- **Skeptic lens** — assume self-review claims are unsupported until proven; aggressively flag any claim where the file evidence is thin or could be parsed multiple ways
+- **Verifier lens** — assume self-review claims are supported as a baseline; look only for missed cross-references the skeptic might overlook (e.g., the test exists but only covers the happy path; the error handler exists but doesn't propagate the cause)
+
+Both lenses read the same files and the same self-review claims. They differ in priority calibration and in which thin-evidence cases get flagged.
+
+Path A's A.4 consolidator treats holdout findings differently from agent findings:
+
+| Lens behavior | Marker disposition |
+|---|---|
+| Both lenses raise the same finding (same file, line ±2, priority ±1) | `consensus` (HIGH confidence) |
+| Only one lens raises the finding | `unchallenged` (MEDIUM confidence) — the lens divergence is itself a signal that the claim is ambiguously evidenced |
+
+Holdout findings NEVER receive `validated`, `refined`, or `kept` dispositions because those are outputs of the A.3 challenge round, which holdout findings do not participate in. The reason is principled, not tooling: adversarial challenge (AGREE/DISAGREE/REFINE) exists for subjective judgment about priority/severity. Holdout findings are objective claim-verification — the file state is the arbiter, not reviewer opinion. Asking a challenger to DISAGREE with "the file does not contain test X" produces either vacuous AGREE responses (re-check confirms what we already established) or confused DISAGREE responses (based on what?). See `commands/review.md` A.1 and `skills/team-coordination/SKILL.md` Phase 3 for the full rationale.
+
+In Path B (single-session, default), this skill is invoked once with no lens prompt and emits findings with `unchallenged` disposition by default — there is no second lens to consensus against.

@@ -21,6 +21,11 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 - `tdd-patterns` — test-first for fixes, test quality standards
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 4)
 
+## References
+
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 3's out-of-scope-finding escalation, Phase 4's review-cycle-limit escalation, and any Proactive-Autonomy escalation surfaced during feedback resolution
+- [`references/finding-schema.md`](../references/finding-schema.md) — canonical row shape every reviewer agent dispatched in the Phase 4 re-review fan-out emits
+
 ## Phase 1: EXPLORE
 
 **Parallel operations:**
@@ -188,10 +193,20 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
       haven't been introduced by the fix commits since the last review.
       Return structured results table."
 
+   Agent(security-reviewer):
+     "Review the fix commits since the last review against $DEFAULT_BRANCH
+      for OWASP Top 10, secrets, auth/authz, input validation, and dependency
+      vulnerabilities. Return P1/P2/P3 findings with file:line."
+
    Agent(error-handler-inspector):
      "Check error handling in the changed scope of the fix commits since
       the last review. Return P1/P2/P3 findings with file:line."
    ```
+
+   This dispatch is the canonical re-review fan-out — exactly the same five
+   reviewer agents `/flow:pr` Phase 3 dispatches. Keeping the agent list
+   explicit here (rather than referencing pr.md by name) makes parity locally
+   verifiable and prevents silent drift if either command's roster changes.
 3. **Holdout validation** — after self-review, invoke `holdout-validation` to cross-reference claims against file state:
    ```
    Skill(holdout-validation):
@@ -265,3 +280,16 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
         - Option 3: "Override with written risk acceptance (will be recorded on PR)"
 
 Display summary: fixes applied, Boy Scout improvements, questions answered, pushback items, cycle count.
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read PR comments / inline reviews | 1 | Autonomous |
+| File edits (fix per feedback item) | 1 | Autonomous |
+| Commits (`fix:` and `improve:` Boy Scout) | 1 | Autonomous, logged by hook |
+| Push | 2 | Journal-and-proceed |
+| Post resolution comment | 2 | Journal-and-proceed |
+| Inline replies to review comments | 2 | Journal-and-proceed |
+| Re-request review | 2 | Journal-and-proceed |
+| Follow-up issue creation (cosmetic P3 in untouched files only) | 2 | Journal-and-proceed |

@@ -33,8 +33,23 @@ gh pr list --author @me --state open --json number,title,state,reviewDecision,st
 # 5. PRs needing my review
 gh pr list --search "review-requested:@me" --state open --json number,title,author
 
-# 6. Decision journal health
+# 6. Decision journal health.
+# Use the SAME trimmed cascade as the four .sh consumers (bin/journal-record.sh,
+# hooks/scripts/{session-end-learn,log-commits,log-file-changes}.sh) and the
+# two markdown command-bash sites (commands/learn.md, commands/explain.md):
+# user-global + plugin only. Excludes repo-local `.claude/settings.flow.json`
+# and `.claude/settings.flow.local.json` because after `gh pr checkout` of a
+# hostile fork those become attacker-controlled — same defense pattern as
+# merge.markerTrust and the agentTeams plugin pin.
 JOURNAL_DIR=".decisions"
+if command -v jq >/dev/null 2>&1; then
+  for SETTINGS in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
+    if [ -f "$SETTINGS" ]; then
+      DIR=$(jq -r '.journal.dir // empty' "$SETTINGS" 2>/dev/null || true)
+      [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
+    fi
+  done
+fi
 [ -d "$JOURNAL_DIR" ] && ls -la "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l || echo "0"
 
 # 7. Learning pending
@@ -210,3 +225,16 @@ Format matches the workshop slide mockup in `docs/flow-team-session/slides.md` (
 | Has PR approved | "`/flow:merge {pr-number}`" |
 | PRs awaiting review | "`/flow:review {first-pr-number}`" |
 | Learning pending | "`/flow:learn`" |
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read git state / branch / commits-ahead | 1 | Autonomous, read-only |
+| `gh issue list` / `gh pr list` (assigned + reviewing) | 1 | Autonomous, read-only |
+| Read `.decisions/` journal directory | 1 | Autonomous, read-only |
+| Read `~/.claude/flow-learn-pending` flag | 1 | Autonomous, read-only |
+| Findings-ledger aggregation across open PRs (`gh api` paginated) | 1 | Autonomous, read-only |
+| Render status tables | 1 | Autonomous, output-only |
+
+`/flow:status` makes **zero mutations**. It cannot create branches, commit files, push, post comments, create issues, or change settings. Every action is a read; every output is a render.
