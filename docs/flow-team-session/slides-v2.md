@@ -12,6 +12,12 @@ style: |
   pre { font-size: 18px; }
   table { font-size: 20px; }
   blockquote { border-left: 6px solid #888; padding-left: 12px; color: #444; }
+  /* Dense slides — overrides for tables and code that need more vertical room */
+  section.dense { font-size: 18px; }
+  section.dense h1 { font-size: 28px; }
+  section.dense table { font-size: 14px; }
+  section.dense pre { font-size: 14px; }
+  section.dense code { font-size: 14px; }
 ---
 
 <!-- _class: lead -->
@@ -434,13 +440,15 @@ for personal preferences that shouldn't be forced on the team.
 
 ---
 
+<!-- _class: dense -->
+
 ## Key settings and how to override them
 
 | Setting | Default | What it controls | To relax |
 |---------|---------|------------------|----------|
-| `testing.tddMode` | `"enforce"` | RED-GREEN-REFACTOR required per task | Set to `"suggest"` — test-first is recommended but not enforced |
+| `testing.tddMode` | `"enforce"` | RED-GREEN-REFACTOR required per task | Set to `"suggest"` — recommended but not enforced |
 | `verdict.requireAllPass` | `true` | All ACs must PASS or verdict is FAIL | Set to `false` — allows soft pass on `NEEDS-HUMAN-REVIEW` |
-| `agentTeams` | `false` | Adversarial review (reviewers challenge each other) | Set to `true` + env `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` |
+| `agentTeams` | `false` | Paired-reviewer + challenge protocol (see slide 35) | Set to `true` + env `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. ≈3.8× LLM cost. Plugin-tier-pinned. |
 | `merge.strategy` | `"squash"` | How PRs merge | `"merge"` or `"rebase"` |
 | `merge.deleteBranch` | `true` | Auto-delete branch after merge | Set to `false` |
 | `journal.sensitivityDefault` | `"public"` | Journal entries included in PR body | Set to `"internal"` for redacted entries |
@@ -482,6 +490,8 @@ the team needs to know *why* the default was overridden.
 
 ---
 
+<!-- _class: dense -->
+
 ## Daily five
 
 | Command | When to use it | Tier mix |
@@ -489,7 +499,7 @@ the team needs to know *why* the default was overridden.
 | `/flow:start <issue>` | Begin work on an issue — preflight, EXPLORE, PLAN with verification commands, branch + tasks, implementation | T1 (branch, commits, tests) + T2 (issue assign) |
 | `/flow:commit` | Classify changes, flag out-of-context files, create atomic conventional commits | T1 (commit) |
 | `/flow:pr` | Push, 6-facet parallel agent review, PR body with comprehension report + findings table | T2 (push, PR create) + T1 (review agents) |
-| `/flow:review <pr>` | Multi-faceted code review (single agent or adversarial team if `agentTeams: true`) | T1 (review) |
+| `/flow:review <pr>` | Multi-faceted code review — Path B (single-session, default) or Path A (paired skeptic+verifier + challenge round, gated on `agentTeams: true` + env var) | T1 (review) |
 | `/flow:address <pr>` | Categorize reviewer comments by P1/P2/P3, apply surgical fixes, re-request review | T1 (commits) + T2 (push, re-request) |
 
 **Pattern**: the daily five keep you in Tier 1 territory 80% of the time.
@@ -544,18 +554,22 @@ Tier 3 is reserved for the two irreversible actions: merge and release.
 
 ---
 
+<!-- _class: dense -->
+
 ## The 8 agents — independent roles
 
 | Agent | Role | Tool budget | Dispatched by |
 |-------|------|-------------|---------------|
-| **implementation-planner** | Parse ACs, decompose into atomic tasks, identify parallel work | read, write, task tools | `/flow:start` (PLAN phase) |
-| **test-runner** | Run lint/test/typecheck in parallel, return structured pass/fail | bash only | `/flow:start` (VERIFY static), `/flow:pr` |
-| **code-reviewer** | Quality + correctness, P1/P2/P3 findings with file:line citations | read, bash | `/flow:pr`, `/flow:review` |
-| **convention-checker** | Git conventions — commit messages, branch names, PR format | read, bash | `/flow:pr`, `/flow:review` |
-| **security-reviewer** | OWASP Top 10, secrets, auth, input validation, dependency audit | read, bash | `/flow:pr`, `/flow:review` |
-| **error-handler-inspector** | Error propagation, panic recovery, error message quality | read | `/flow:pr`, `/flow:review` |
-| **holdout-validation** | Hidden scenario execution — catches "test added" claims that aren't true | read, bash, write | `/flow:pr`, `/flow:review` |
-| **verdict-judge** | Independent PASS/FAIL/NEEDS-HUMAN-REVIEW per AC | read only | `/flow:start` (VERIFY verdict) |
+| **implementation-planner** | Parse ACs, decompose into atomic tasks, identify parallel work | `Read, Bash, TaskCreate, TaskList, TaskUpdate, Grep, Glob` | `/flow:start` (PLAN phase) |
+| **test-runner** | Run lint/test/typecheck in parallel, return structured pass/fail | `Bash, Read, Glob, Grep` | `/flow:start` (VERIFY static), `/flow:pr` |
+| **code-reviewer** | Quality + correctness, P1/P2/P3 findings with file:line citations | `Read, Bash, Grep, Glob, LSP` | `/flow:pr`, `/flow:review` |
+| **convention-checker** | Git conventions — commit messages, branch names, PR format | `Bash, Read` | `/flow:pr`, `/flow:review` |
+| **security-reviewer** | OWASP Top 10, secrets, auth, input validation, dependency audit | `Read, Bash, Grep, Glob` | `/flow:pr`, `/flow:review` |
+| **error-handler-inspector** | Error propagation, panic recovery, error message quality | `Read, Bash, Grep, Glob, LSP` | `/flow:pr`, `/flow:review` |
+| **integration-verifier** | E2E runtime verification — build, start, smoke test, visual checks | `Bash, Read, Glob, Grep, TaskCreate, TaskList, TaskUpdate` | `/flow:pr` (Phase 4 verify) |
+| **verdict-judge** | Independent PASS/FAIL/NEEDS-HUMAN-REVIEW per AC | `Read` only | `/flow:start` (VERIFY verdict) |
+
+**Note**: `holdout-validation` is a **Skill**, not an Agent — it loads into the orchestrator's context to cross-reference self-review claims against file state. Skills don't get their own subagent spawn.
 
 ---
 
@@ -623,33 +637,43 @@ if the code is "obviously correct."
 
 ---
 
-## Adversarial reviewers — when `agentTeams: true`
+<!-- _class: dense -->
+
+## Adversarial reviewers — when `agentTeams: true` AND env var set
 
 When agent teams are enabled, the `/flow:pr` and `/flow:review` fan-out
-changes from parallel-solo to adversarial:
+changes from parallel-solo to adversarial paired-reviewer:
 
 ```
-Normal mode:                  Adversarial mode (agentTeams: true):
+Normal mode:                    Adversarial mode (agentTeams: true):
 
-code-reviewer ───→ findings    code-reviewer-A  ─┐
-                               code-reviewer-B  ─┤
-convention-checker ───→        convention-checker-A ─┤
-                               convention-checker-B ─┤
-                                                     ├──→ challenge phase
-test-runner ───→ pass/fail     test-runner-A   ─┤    │   (reviewers critique
-                               test-runner-B   ─┤    │    each other's findings)
-                                                     │
-                                                     ▼
-                                          consolidated findings
-                                          (higher confidence,
-                                           fewer false positives)
+code-reviewer ───→ findings     code-reviewer-skeptic    ─┐
+                                code-reviewer-verifier   ─┤
+convention-checker ─→           convention-checker-S     ─┤
+                                convention-checker-V     ─┤
+test-runner ──→ pass/fail       test-runner-S            ─┤
+                                test-runner-V            ─┤   ├─→ A.2 auto-consensus
+                                error-handler-S          ─┤   │   (file ±2 lines, priority ±1)
+                                error-handler-V          ─┤   │
+                                security-S               ─┤   │
+                                security-V               ─┘   │
+                                                              │
+                            non-consensus findings ─→ A.3 challenge round
+                                                       (AGREE/DISAGREE/REFINE,
+                                                        no diff re-read)
+                                                              │
+                                                              ▼
+                                                consolidated 7-field marker
+                                                (Confidence + Disposition columns)
 ```
 
-**The challenge phase**: before findings are consolidated, each reviewer
-can challenge another reviewer's findings. A finding that survives challenge
-from a peer is more reliable than one that doesn't.
+**The challenge phase** (disposition-only): each variant labels the OTHER's findings
+as `AGREE` / `DISAGREE` / `REFINE`. No central judge — preserves independence.
+Survives → `consensus` / `validated` (HIGH); challenged-but-kept → `kept` (LOW).
 
-**Cost**: 2× agent invocations per facet. Worth it for critical PRs.
+**Two gates**: `agentTeams: true` AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`.
+Either alone routes to single-session. **Cost**: ≈3.8× baseline (23 vs 6 calls).
+Holdout-validation participates in A.2 only — Skills can't be challenged.
 
 ---
 
@@ -722,24 +746,28 @@ Risk if wrong:
 
 ---
 
+<!-- _class: dense -->
+
 ## `/flow:setup` — step by step
 
-Run once per repository. What happens under the hood:
+Run once per repository. The command has **6 phases** in `commands/setup.md`:
 
-| Step | Action | What you see |
-|------|--------|--------------|
-| 1. Pre-flight | Check `gh` CLI authenticated, `git` available, repo root detected | `PREFLIGHT: PASSED` or specific failure message |
-| 2. Tech stack detection | Read `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, etc. | Detected stack: Node.js 20 + TypeScript + Jest |
-| 3. LSP configuration | Probe available language servers, configure diagnostics | `LSP: typescript-language-server detected` |
-| 4. Build command detection | Find `build`, `test`, `lint` scripts from package manifests | `build: npm run build` / `test: npx jest` / `lint: npx eslint` |
-| 5. Settings generation | Write `.claude/settings.flow.json` with detected values | File created with stack-specific defaults |
-| 6. Journal init | Create `.decisions/` directory, seed `.gitkeep` | Directory created |
-| 7. Validation | Run `/flow:status` to confirm everything wired correctly | Status dashboard |
+| Phase | Action | What you see |
+|-------|--------|--------------|
+| 1. Detect Environment | Pre-flight (`gh` CLI, `git`, repo root) + tech stack (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`) + build/test/lint command detection | `PREFLIGHT: PASSED` + detected stack: Node.js 20 + TypeScript + Jest |
+| 2. Generate Settings | Write `.claude/settings.flow.json` with detected build/test/lint commands and stack-specific defaults | File created with detected values |
+| 3. LSP Server Setup | Probe available language servers, write LSP config to settings | `LSP: typescript-language-server detected` |
+| 4. Coexistence Warning | If both `flow` and `gh-workflow` plugins are installed, emit a one-time advisory (commands overlap; pick one as primary) | Advisory printed (or skipped if only one plugin) |
+| 5. CLAUDE.md Integration | `AskUserQuestion` — offer to append the flow workflow section from `templates/CLAUDE-flow.md` to your existing `CLAUDE.md` (no auto-create if missing) | Append confirmation, decline, or skip |
+| 6. Summary | Print configured values, suggested next step (`/flow:status`) | Status dashboard invocation |
 
 **If detection fails**: the fallback is manual. Populate `.claude/settings.flow.json`
-with build/test/lint commands by hand and re-run.
+with `build`, `test`, `lint` commands by hand and re-run. Journal directory
+(`.decisions/`) is created lazily on first `/flow:start` — no separate init phase.
 
 ---
+
+<!-- _class: dense -->
 
 ## `/flow:status` — step by step
 
@@ -784,6 +812,8 @@ What it displays:
 
 ---
 
+<!-- _class: dense -->
+
 ## Migration checklist — for teams coming from other workflow tools
 
 | # | Step | Done? |
@@ -801,6 +831,8 @@ What it displays:
 
 ---
 
+<!-- _class: dense -->
+
 ## Troubleshooting common issues
 
 | Symptom | First place to look |
@@ -815,6 +847,8 @@ What it displays:
 | Merge gate keeps blocking | Open the PR. Find the `FLOW_RESOLUTION_CYCLE` marker. Every item must be RESOLVED or have a six-field escalation. ESCALATED is not "deferred." |
 
 ---
+
+<!-- _class: dense -->
 
 ## Security roles of hooks — preventing destructive operations
 
@@ -835,17 +869,27 @@ destructive action, the hook catches it at the Bash tool boundary.
 Merge/release confirmation is at the command level via `AskUserQuestion`.
 Hooks block the *underlying git operations*, not the workflow decisions.
 
-**The other five wired hooks**:
+---
+
+<!-- _class: dense -->
+
+## The other five wired hooks
+
+Beyond the three security backstops, five more hooks handle observability and journaling — they don't block actions, they observe and annotate:
 
 | Hook | Trigger | Behavior |
 |------|---------|----------|
-| `log-commits` | `PostToolUse` on Bash (commit) | Appends `<!-- auto-log -->` entry to journal |
-| `log-file-changes` | `PostToolUse` on Edit/Write | Appends `<!-- auto-log -->` entry to journal |
+| `log-commits` | `PostToolUse` on Bash (commit) | Appends `<!-- auto-log -->` entry to the decision journal |
+| `log-file-changes` | `PostToolUse` on Edit/Write | Appends `<!-- auto-log -->` entry to the decision journal |
 | `nudge-idle-teammate` | `Stop` (idle 60s) | Reminds idle teammate to check task list |
 | `validate-marker` | `PreToolUse` on PR comment posting | Checks `FLOW_REVIEW_CYCLE` schema before post |
 | `journal-tier-tag` | `PostToolUse` on Bash | Tags journal entries with Tier 1/2/3 derived from tool name |
 
+The auto-log markers (`<!-- auto-log: ... -->`) are what `/flow:learn` mines for skill proposals.
+
 ---
+
+<!-- _class: dense -->
 
 ## Hook enforcement — the defense in depth
 
@@ -885,6 +929,8 @@ past the Bash filter (hook layer). If either fails, the other catches it.
 # Summary
 
 ---
+
+<!-- _class: dense -->
 
 ## What to remember
 
