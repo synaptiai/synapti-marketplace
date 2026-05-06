@@ -79,19 +79,178 @@ TaskCreate("Holdout validation", "Cross-reference self-review claims against act
 
 ## Phase 3: CODE (Review Execution)
 
-### Path A: Agent Teams (when `agentTeams: true`)
+### Path A: Agent Teams (when `agentTeams: true` AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is set)
 
-Invoke `team-coordination` skill. Spawn 3 teammates:
+Implements the paired-reviewer + challenge-round protocol frozen in `.decisions/issue-86.md`. Invoke `team-coordination` skill for the protocol contract.
 
-- **security-reviewer**: Independent security analysis
-- **code-reviewer**: Quality and logic focus
-- **convention-checker**: Convention validation
+**Gate check** (mandatory before paired dispatch):
 
-Adversarial protocol:
-1. Each reviews independently
-2. Share findings
-3. Challenge each other's findings
-4. Synthesize consensus + disputed items
+```bash
+# Read agentTeams from settings (cascade: project < user < plugin defaults).
+# Note: agentTeams is NOT pinned to plugin tier — it's a feature flag, not a
+# security key like markerTrust. Cascade is appropriate here.
+AGENT_TEAMS=$(jq -r '.agentTeams // false' plugins/flow/settings.json 2>/dev/null)
+
+if [ "$AGENT_TEAMS" != "true" ]; then
+  echo "Path A skipped: agentTeams=false. Using Path B (single-session)."
+  USE_PATH_A=0
+elif [ -z "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" ]; then
+  echo "WARN: agentTeams enabled but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS env var unset; using single-reviewer fallback (Path B)" >&2
+  USE_PATH_A=0
+else
+  USE_PATH_A=1
+fi
+```
+
+If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.
+
+#### A.1 — Independent Analysis (paired reviewers, parallel dispatch)
+
+Dispatch **12 subagents** in a single parallel Agent block — 6 facets × {skeptic, verifier}. Each variant carries an orthogonal lens; both run with no awareness of each other.
+
+```
+Agent(security-reviewer-skeptic):
+  "You are reviewing PR #$ARGUMENTS as the SKEPTIC variant. Assume the diff is
+   broken until proven otherwise. Flag every security behavior you cannot prove
+   correct from the code as written: OWASP Top 10, secrets, auth/authz, input
+   validation, dependency vulnerabilities. Return P1/P2/P3 findings with
+   file:line citations and category. Do NOT include challenge information —
+   another reviewer will challenge your findings later."
+
+Agent(security-reviewer-verifier):
+  "You are reviewing PR #$ARGUMENTS as the VERIFIER variant. Assume the diff is
+   correct as a baseline. Look only for missed security edge cases, undocumented
+   contract assumptions, or invariants that aren't enforced. Return P1/P2/P3
+   findings with file:line citations and category."
+
+Agent(code-reviewer-skeptic):
+  "PR #$ARGUMENTS as SKEPTIC. Assume broken; flag logic/quality/edge-case
+   issues you cannot prove correct. P1/P2/P3 + file:line + category."
+
+Agent(code-reviewer-verifier):
+  "PR #$ARGUMENTS as VERIFIER. Assume correct; look only for missed edge cases
+   and unenforced invariants. P1/P2/P3 + file:line + category."
+
+Agent(convention-checker-skeptic):
+  "PR #$ARGUMENTS as SKEPTIC. Flag every convention violation (commits, branch
+   naming, code patterns) you cannot prove conformant. P1/P2/P3 + file:line."
+
+Agent(convention-checker-verifier):
+  "PR #$ARGUMENTS as VERIFIER. Look for convention drift the skeptic might miss
+   (e.g., subtle stylistic divergence). P1/P2/P3 + file:line."
+
+Agent(test-runner-skeptic):
+  "PR #$ARGUMENTS as SKEPTIC. Run quality commands (lint, test, typecheck) and
+   flag every failure or warning. Return findings with command output."
+
+Agent(test-runner-verifier):
+  "PR #$ARGUMENTS as VERIFIER. Run quality commands and flag missing test
+   coverage or weak assertions in passing tests. Return findings."
+
+Agent(error-handler-inspector-skeptic):
+  "PR #$ARGUMENTS as SKEPTIC. Flag every error-handling gap, silent failure,
+   or unhandled exception you cannot prove handled. P1/P2/P3 + file:line."
+
+Agent(error-handler-inspector-verifier):
+  "PR #$ARGUMENTS as VERIFIER. Look for missed error contracts and unenforced
+   exception invariants. P1/P2/P3 + file:line."
+
+Skill(holdout-validation):
+  Inputs (skeptic lens):
+  - Self-review findings: {existing P1/P2/P3 findings}
+  - Evidence bundle draft: {requirements compliance map}
+  - File list: {all files changed in this PR}
+  - Lens: SKEPTIC — assume claims are unsupported until proven
+
+Skill(holdout-validation):
+  Inputs (verifier lens):
+  - Same inputs
+  - Lens: VERIFIER — assume claims are supported; look for missed cross-references
+```
+
+Each returns a structured finding list. Index returned findings by facet for the challenge round: `findings[facet][variant] = [F1, F2, ...]`.
+
+#### A.2 — Auto-consensus detection
+
+Before dispatching the challenge round, detect findings that BOTH variants raised independently. The match window is hard-coded for v1: same facet AND same file AND lines within ±2 AND priority within ±1 (P1↔P2 counts; P1↔P3 does not).
+
+```bash
+# Pseudocode (apply per facet):
+# for finding_a in findings[facet][skeptic]:
+#   for finding_b in findings[facet][verifier]:
+#     if same_file(finding_a, finding_b) AND
+#        abs(line(finding_a) - line(finding_b)) <= 2 AND
+#        priority_distance(finding_a.priority, finding_b.priority) <= 1:
+#       mark both as auto-consensus -> confidence=HIGH, disposition=consensus
+#       remove both from challenge candidates
+```
+
+Auto-consensus findings skip the challenge round (no need — both reviewers already agreed independently).
+
+#### A.3 — Challenge Round (disposition-only, parallel)
+
+For findings NOT in auto-consensus, dispatch each variant to challenge the OTHER variant's findings. **Variants do NOT re-read the diff.** Up to 12 challenge prompts run in parallel (6 facets × 2 directions).
+
+```
+Agent(security-reviewer-skeptic) [challenge mode]:
+  "You are reviewer-A (skeptic) for facet 'security'. Reviewer-B (verifier)
+   raised the following findings on the same diff you reviewed independently.
+   For each finding, respond with exactly one line:
+
+     {finding-id} AGREE
+     {finding-id} DISAGREE: {one-line reason}
+     {finding-id} REFINE: priority={P1|P2|P3} category={text}
+
+   Do NOT re-read the diff. Decide based on your prior independent analysis only.
+
+   Findings to challenge:
+   {list of verifier's non-auto-consensus findings: ID, file:line, priority, category}"
+
+Agent(security-reviewer-verifier) [challenge mode]:
+  "Same instructions, reversed: challenge the skeptic's non-auto-consensus
+   findings for facet 'security'."
+
+[... repeat for the other 5 facets in parallel ...]
+```
+
+Each challenge call returns a list of `{finding-id, disposition, optional reason/refinement}`.
+
+#### A.4 — Consolidation
+
+Apply the consolidation table from `team-coordination/SKILL.md` Phase 4. For each finding, look up its origin and the other variant's disposition:
+
+| Origin | Other variant's disposition | Confidence | Marker disposition vocab |
+|--------|------------------------------|------------|--------------------------|
+| Auto-consensus (A.2) | n/a | **HIGH** | `consensus` |
+| One raised, other AGREE | AGREE | **HIGH** | `validated` |
+| One raised, other REFINE | REFINE | **MEDIUM** | `refined` (use REFINE'd priority/category) |
+| One raised, other DISAGREE | DISAGREE | **LOW** | `kept` (record reason) |
+| One raised, other timed out / errored | none | **MEDIUM** | `unchallenged` |
+| Both raised, both DISAGREE'd | n/a | **DROPPED** | excluded from output, logged below |
+
+**DROPPED findings** are logged to `.decisions/issue-{N}.md` (where N = the issue this PR addresses) under a `## Dropped after challenge (PR #$ARGUMENTS, cycle {N})` heading with the finding details and both DISAGREE reasons. They never appear in the rendered tables or the FLOW_REVIEW_CYCLE marker.
+
+#### A.5 — Per-facet fallback application
+
+If any of A.1's variants failed (timeout, error, did-not-spawn), apply the fallback semantics from `team-coordination/SKILL.md` per facet — never block the review:
+
+| Failure | Action |
+|---------|--------|
+| One variant failed for facet F | Use the responding variant's findings only; mark each as `unchallenged` (MEDIUM). Note in output: `facet F: single-reviewer fallback (skeptic failed)`. |
+| Both variants failed for facet F | Re-dispatch single Agent for that facet using the Path B prompt. Note in output: `facet F: re-dispatched as single-reviewer (both variants failed)`. |
+| Challenge round failed for a facet | Skip A.3 for that facet; keep A.1 findings as `unchallenged`. Note in output: `facet F: challenge skipped (challenge prompt failed)`. |
+
+#### A.6 — Emit consolidated output
+
+Use the synthesized findings (with confidence + disposition) for steps in Phase 4 below. The FLOW_REVIEW_CYCLE marker emitted in Phase 4.7 uses the 7-field form when paired-reviewer mode produced the findings:
+
+```
+<!-- FLOW_REVIEW_CYCLE:{N} FINDINGS:[F1|P1|security|src/auth.ts:42|open|HIGH|consensus,F2|P1|correctness|src/api.ts:88|open|LOW|kept] -->
+```
+
+The 5-field form is preserved for Path B (single-session) and for any per-facet fallback that produced findings without challenge data.
+
+After A.6 completes, jump to Phase 4 with the consolidated finding set.
 
 ### Path B: Single Session (default)
 
