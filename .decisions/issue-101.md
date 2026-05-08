@@ -21,6 +21,12 @@ artifacts:
   path: B
   findings_count: 8
   pr: 102
+- type: review-cycle
+  captured_at: '2026-05-08T17:16:49Z'
+  cycle: 1
+  path: B
+  findings_count: 21
+  pr: 102
 created: '2026-05-08T15:46:09Z'
 ---
 
