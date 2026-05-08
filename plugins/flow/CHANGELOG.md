@@ -1,5 +1,66 @@
 # Changelog
 
+## 2.3.1 (2026-05-08)
+
+### Bug fixes
+
+- **Plugin settings cascade unified to standard Claude Code precedence (#101).** Originally reported as "Path A paired-reviewer gate unreachable for marketplace installs": `commands/review.md`'s `agentTeams` gate read `${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json` only, and `CLAUDE_PLUGIN_ROOT` is not exported into the bash subshell that runs the gate, so the fallback resolved to a directory that doesn't exist in the user's repo. The same broken single-source pattern was present in five other consumer sites (`commands/merge.md`, `commands/status.md`, `bin/journal-record.sh`, three hook scripts, and `agents/convention-checker.md`).
+
+  The original threat model justifying the "trimmed cascade" — a hostile fork PR committing `.claude/settings.flow.json` to escalate gates after `gh pr checkout` — was overengineered. Claude Code's standard convention is to honor the full settings cascade and let reviewers see settings changes in the PR diff like any other repo file. The fix replaces the trimmed-cascade pattern with the standard Claude Code precedence (highest first):
+
+  1. `.claude/settings.flow.local.json` — project-local, gitignored (your machine-local pin)
+  2. `.claude/settings.flow.json` — project-shared, committed (team defaults)
+  3. `$HOME/.claude/settings.flow.json` — user-global, cross-project default
+  4. `${CLAUDE_PLUGIN_ROOT}/settings.json` — plugin default
+
+  First non-empty value wins. Applies uniformly to every flow setting — no special-cased exclusion for any key.
+
+  Files updated: `commands/review.md` (agentTeams gate), `commands/merge.md` (markerTrust gate), `commands/status.md` (markerTrust + journal.dir), `commands/learn.md` (journal.dir + learning.proposalDir), `commands/explain.md` (journal.dir), `agents/convention-checker.md` (conventions.commitTypes), `bin/journal-record.sh` (journal.dir), `hooks/scripts/{log-commits,log-file-changes,session-end-learn}.sh` (journal.dir + learning.enabled).
+
+  The two-key gate for `agentTeams` is preserved at the env-var layer: enabling Path A still requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` set in the user's shell on top of `agentTeams: true` from any source. The env var alone (no `agentTeams: true` anywhere) cannot enable Path A.
+
+  `agentTeams` gate gained a three-state diagnostic distinguishing (a) plugin not installed, (b) `CLAUDE_PLUGIN_ROOT` set but pointing at a missing path, (c) all four cascade files exist but none sets the key. Each variant names the exact paths checked.
+
+  `merge.md` and `status.md` markerTrust gates now surface JSON parse errors per-source (matching the agentTeams gate pattern) — `WARN: failed to parse $SETTINGS_PATH (jq exit=$JQ_EXIT, error: ...)` rather than silently swallowing parse errors and treating them identically to "key absent."
+
+- **`commands/setup.md` rewritten to align with the standard cascade.** Previous setup wrote `agentTeams` and `conventions.commitTypes` into the project-shared file but then those keys were excluded by the trimmed-cascade pattern. With the cascade unified, all flow keys are valid in `.claude/settings.flow.json` and team-shareable. Phase 2 now writes the full default set including `agentTeams: false`, `conventions.commitTypes`, `merge.markerTrust.allowedAssociations`, `journal.dir`, and `learning.proposalDir`. Phase 6 summary describes the four-tier override hierarchy users can use to customize.
+
+- **`${HOME:-/nonexistent}` defensive default** applied at every USER_SETTINGS construction site (15+ loops across .md commands, .sh hooks, and bin/ scripts). Catches `set -u` / `env -i` invocations where `$HOME` could otherwise abort the gate with "unbound variable" instead of degrading to the safe "user-tier file does not exist" path.
+
+### Documentation
+
+- `references/gate-configuration.md` — replaced the "Trimmed-Cascade Settings Keys" section with a "Settings Cascade" section documenting the standard four-tier precedence. The `merge.markerTrust.allowedAssociations` row in the gate config table updated. New worked examples for "Persistent personal opt-in" (using `.local.json` or `$HOME`) and "Team-wide opt-in" (using committed `.json`).
+
+### P3 cleanup (cycle 2 review pass — pre-merge)
+
+Address the P3 findings raised during the cycle-2 self-review before landing:
+
+- **F4/ERR-8 — `agentTeams: null` semantic.** A user writing `"agentTeams": null` likely means "use the default", not "definitively no". The gate now treats `null` as absent (falls through to next source) rather than triggering the `non-canonical value` WARN. New test S7b verifies this.
+- **F5 — gate-configuration.md ordering inconsistency.** The "Settings File Locations" section listed cascade with plugin first / local last; the new "Settings Cascade" section uses highest-first ordering. Aligned both to the highest-first form so the document is internally consistent.
+- **F6 — three-state diagnostic gap.** When `CLAUDE_PLUGIN_ROOT` was set to a missing path AND user-tier files existed without the key, the gate fell into the catchall message and never named the broken plugin root. Now tracks `PLUGIN_ROOT_BROKEN` explicitly and emits a WARN naming the path even when user-tier files are present. New test S9 verifies this.
+- **SEC-1 — high-risk markerTrust values warn at gate time.** When the resolved trust list contains `NONE`, `FIRST_TIMER`, `FIRST_TIME_CONTRIBUTOR`, or `MANNEQUIN`, the gate emits `LEDGER_WARN: trust list ... includes high-risk values [...]` on stderr at every merge attempt. PR-diff visibility remains the primary defense; the WARN raises the signal so a maintainer cannot accidentally miss it. New test S4b verifies this.
+- **SEC-3/ERR-6 — `journal.dir` path-traversal warn.** When the resolved `journal.dir` contains `..` path segments, `bin/journal-record.sh` emits a WARN to stderr. Defense-in-depth — the cascade visibility is the primary defense, but a `journal.dir: "../../tmp/x"` value would silently write artifacts outside the repo without this WARN.
+- **ERR-5 — `gh api` exit-code coverage in `commands/merge.md`.** The untrusted-counting `gh api` calls didn't capture their exit codes via `${PIPESTATUS[0]}`. A network blip during those secondary calls would silently treat as "no untrusted markers" rather than failing closed. Now captures `GH_EXIT_RES_U` and `GH_EXIT_REV_U` and includes them in the fail-closed condition.
+- **ERR-9 — `commitTypes` array type-check.** `agents/convention-checker.md` previously crashed jq's `join("|")` step if `commitTypes` was a non-array (e.g., string typo). Now wraps in `if type == "array" then join("|") else empty end` so non-array values silently fall through to the next cascade source.
+- **ERR-4 — extracted shared cascade-resolve helper.** New `plugins/flow/bin/cascade-resolve.sh` (with 12 regression tests at `tests/cascade-resolve/test.sh`) reads any settings key from the standard cascade with parse-error WARN surfacing on stderr. Refactored 9 simple cascade-loop sites (3 markdown commands, 1 agent, 1 bin script, 3 hook scripts, 1 hooks site reading two keys) to call the helper. The 2 security-critical gate sites (`commands/review.md` agentTeams gate, `commands/merge.md` markerTrust gate) keep their inline implementations because they need source-tracking and specialized boolean handling. Removes the diagnostic asymmetry where 9 sites silently swallowed parse errors via `2>/dev/null` while the gate sites surfaced them.
+
+### Self-review fix-forward (cycle 2 review pass)
+
+- **P1 — `commands/merge.md` markerTrust fall-through emitted `FINDING_LEDGER_BLOCK:` on stdout.** When one tier had an invalid `markerTrust.allowedAssociations` (e.g., empty array) AND the gate fell through to a valid lower tier with a working trust list, the gate still printed `FINDING_LEDGER_BLOCK:` on stdout. The downstream merge gate scans stdout for that prefix and would treat this as a hard block — even though the cascade fall-through resolved a valid trust list. Fixed: emit `LEDGER_WARN:` on stderr instead of `FINDING_LEDGER_BLOCK:` on stdout when fall-through succeeds. The `FINDING_LEDGER_BLOCK:` prefix is now reserved for cases where the merge gate genuinely cannot proceed (gh API down, ESCALATED markers, untrusted-only markers).
+- **P2 — `commands/review.md` agentTeams gate used `jq -r`** which strips JSON string quotes. A typo like `{"agentTeams": "true"}` (quoted string instead of boolean) would silently match the `case true)` arm and enable Path A. Fixed: use `jq -c` so the quoted string remains `"true"` and routes to the catchall `*)` WARN. Updated test S8 verifies this.
+- **P2 — `commands/setup.md` did not add `.claude/settings.flow.local.json` to `.gitignore`.** A downstream user running `/flow:setup` in a fresh repo would create their personal-pin file at the documented location and have it staged for commit by default — defeating the cascade's "project-local is gitignored, your machine-local pin" property. Fixed: setup now appends the entry to `.gitignore` (idempotent — only if missing).
+- **P2 — `commands/setup.md` could silently override user-global preferences.** Under the unified cascade, project-shared overrides user-global. Setup writing `agentTeams: false` (or any other key matching the plugin default) would silently override a user's `$HOME/.claude/settings.flow.json` preference. Fixed: setup reads user-global first and surfaces conflicts via `AskUserQuestion` before writing, with three options (skip the key / write team baseline anyway / cancel).
+
+### New regression tests
+
+- `tests/agentteams-gate/test.sh` (new, 20 assertions) extracts the gate body from `commands/review.md` via `# AGENTTEAMS_GATE_BEGIN` / `# AGENTTEAMS_GATE_END` markers and runs it against scenarios for: marketplace install with `$HOME` override, upgrade survival, project-tier overrides plugin default (S3), project-local overrides project-shared (S3b), full precedence chain (S3c), three-state diagnostic, malformed-HOME fall-through, env-var double-key requirement, and JSON-string vs boolean coercion (S8). The harness runs `bash -n` against the extracted body so a corrupted END marker FATALs instead of silently partial-eval'ing.
+- `tests/markertrust-gate/test.sh` (new, 15 assertions) covers the same scenarios for `merge.markerTrust.allowedAssociations`, including project-local-overrides-project-shared precedence and the empty-array fall-through. S4 specifically asserts the gate emits `LEDGER_WARN` on stderr (not `FINDING_LEDGER_BLOCK` on stdout) when an invalid array falls through to a valid lower tier. S4b verifies the high-risk-trust-value WARN.
+- `tests/cascade-resolve/test.sh` (new, 12 assertions) verifies the four-tier cascade behavior, parse-error WARN surfacing, default-value handling, and compact-vs-raw output mode of the new `bin/cascade-resolve.sh` helper.
+
+### Test totals
+
+110 assertions across 9 suites (was 89 in 2.3.0). The cycle-2 cascade work added two new gate-test suites (24 + 15 = 39 assertions) and the new cascade-resolve test suite (12 assertions); the older suites kept their counts.
+
 ## 2.3.0 (2026-05-06)
 
 ### Post-review hardening — cycle 2 (PR #99 `/flow:review` second pass)

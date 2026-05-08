@@ -14,17 +14,13 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 # Skip if no file path
 [ -z "$FILE_PATH" ] && exit 0
 
-# Determine journal directory. Excludes repo-local settings sources to keep
-# a hostile fork PR from redirecting hook writes after `gh pr checkout` —
-# same defense pattern as merge.markerTrust + agentTeams. User-global and
-# plugin defaults only.
+# Determine journal directory via bin/cascade-resolve.sh. Gracefully fall back
+# to the default when the helper is unreachable — hooks run from arbitrary
+# CWDs and CLAUDE_PLUGIN_ROOT may not always be set (e.g., in test harnesses
+# that exercise the hook standalone).
+HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
-for SETTINGS_FILE in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
-  if [ -f "$SETTINGS_FILE" ]; then
-    DIR=$(jq -r '.journal.dir // empty' "$SETTINGS_FILE" 2>/dev/null)
-    [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
-  fi
-done
+[ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty' 2>/dev/null)
 
 # Get current branch and issue number
 BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")

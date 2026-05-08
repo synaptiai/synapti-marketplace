@@ -84,25 +84,17 @@ if ! echo "$ISSUE" | grep -qE '^[0-9]+$'; then
   exit 1
 fi
 
-# Discover journal directory via a TRIMMED cascade. The repo-local sources
-# `.claude/settings.flow.local.json` and `.claude/settings.flow.json` are
-# intentionally EXCLUDED — they are checked into the repo and become
-# attacker-controlled after `gh pr checkout` of a hostile fork PR. A
-# permissive `journal.dir` from a fork could redirect every hook write to
-# `/tmp/attacker` or via path traversal. Same threat model as PR #93's
-# defense for `merge.markerTrust` and the `agentTeams` plugin pin in
-# review.md. The user-global file (`$HOME/.claude/settings.flow.json`) is
-# safe — it is set by the user, not by the repo. The plugin default is also
-# safe.
-JOURNAL_DIR=".decisions"
-if command -v jq >/dev/null 2>&1; then
-  for SETTINGS in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
-    if [ -f "$SETTINGS" ]; then
-      DIR=$(jq -r '.journal.dir // empty' "$SETTINGS" 2>/dev/null || true)
-      [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
-    fi
-  done
-fi
+# Discover journal directory via bin/cascade-resolve.sh.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+JOURNAL_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty')
+
+# Defense-in-depth: warn (not block) when journal.dir contains ".." path
+# segments. The cascade visibility is the primary defense (settings changes
+# appear in PR diffs), but a path-traversal value would cause writes to
+# attacker-chosen locations outside the repo.
+case "$JOURNAL_DIR" in
+  *..*) echo "journal-record.sh: WARN: journal.dir='$JOURNAL_DIR' contains '..' path segment — writes will land outside the repo. Verify this is intentional." >&2 ;;
+esac
 
 mkdir -p "$JOURNAL_DIR" || { echo "journal-record.sh: cannot create $JOURNAL_DIR" >&2; exit 2; }
 JOURNAL="$JOURNAL_DIR/issue-$ISSUE.md"

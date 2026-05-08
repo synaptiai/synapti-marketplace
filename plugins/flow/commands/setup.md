@@ -35,19 +35,43 @@ gh auth status 2>&1 | head -3
 
 ## Phase 2: Generate Settings
 
-Based on detection, create `settings.flow.json` with sensible defaults:
+Based on detection, create `.claude/settings.flow.json` (project-shared, committed with team) with sensible defaults:
 
 ```bash
 mkdir -p .claude
 ```
 
+**Ensure `.claude/settings.flow.local.json` is gitignored** (idempotent — adds the line only if missing). Without this, a downstream user creating a personal-pin file as documented in Phase 6 below would commit it accidentally, leaking their machine-local preferences and weakening the project-local override layer:
+
+```bash
+if [ -f .gitignore ] && ! grep -qxF '.claude/settings.flow.local.json' .gitignore; then
+  echo '.claude/settings.flow.local.json' >> .gitignore
+elif [ ! -f .gitignore ]; then
+  echo '.claude/settings.flow.local.json' > .gitignore
+fi
+```
+
+Flow settings follow the standard Claude Code cascade — `local > project > user > plugin default`. Setup writes the project-shared file, which gives the whole team a baseline. Any user can then override locally via `.claude/settings.flow.local.json` (gitignored), set cross-project preferences in `$HOME/.claude/settings.flow.json`, or rely on the plugin's bundled defaults.
+
+**Before writing**, read `$HOME/.claude/settings.flow.json` (if present) and skip writing any key that the user has already set there with a non-default value. Under the unified cascade, project-shared overrides user-global, so writing a key that matches the plugin default would silently override a user's existing personal preference for it. The intent of `/flow:setup` is to establish a team baseline, not to override individual user choices. Use `AskUserQuestion` if any conflict is detected:
+
+> Your `$HOME/.claude/settings.flow.json` already sets `{key}` to `{user-value}`. The team baseline would set it to `{baseline-value}`, which would override your user-global preference because the project-shared tier wins.
+>
+> Options:
+> 1. Skip this key in the project-shared file (your user-global preference remains active here too) — Recommended
+> 2. Write the team baseline anyway (overrides your user-global preference for this repo only; you can re-override locally via `.claude/settings.flow.local.json`)
+> 3. Cancel — let me edit my user-global file first
+
 Write `.claude/settings.flow.json` with:
-- Quality commands discovered from tech stack
-- Branch patterns matching existing repository conventions
-- Commit types matching existing commit history
-- Agent teams disabled by default
-- Learning enabled by default
+
+- Quality commands discovered from tech stack (`qualityCheckMaxIterations`, `closedLoop.*`, etc.)
+- `conventions.branchPatterns` and `conventions.commitTypes` matching existing repository conventions
+- `agentTeams: false` (paired-reviewer mode opt-in; users enable per their preference, also requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var)
+- `merge.markerTrust.allowedAssociations` at the secure default `["OWNER","MEMBER","COLLABORATOR"]`
+- `learning.enabled: true`, `learning.proposalDir` (default `~/.claude/flow-proposals`)
+- `journal.dir` (default `.decisions`)
 - LSP settings (`lsp.enabled: true`, `lsp.timeout: 5000`, `lsp.diagnosticsAsQuality: true`)
+- Tier classification (`tiers.*`), timeouts, debugging settings, verdict settings, testing settings, visualVerification settings
 
 **On re-run** (existing settings detected): Read current settings and merge — preserve user customizations, only add new keys that don't exist yet.
 
@@ -245,11 +269,20 @@ If yes, append the workflow section from `templates/CLAUDE-flow.md` to the exist
 ## Flow Setup Complete
 
 ### Settings
-- File: `.claude/settings.flow.json`
+
+**Project-shared** (`.claude/settings.flow.json` — committed with team):
 - Tech stack: {detected}
 - Quality commands: {lint}, {test}, {typecheck}
-- Agent teams: disabled (enable with `agentTeams: true`)
-- Learning: enabled
+- Branch patterns, commit types, tiers, timeouts, LSP, learning, journal, etc.
+- Agent teams: disabled. To enable paired review, set `agentTeams: true` (in this file for team-wide, or in `.claude/settings.flow.local.json` for personal-pin) AND `export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in your shell.
+
+**Override layers** (standard Claude Code cascade — highest precedence first):
+1. `.claude/settings.flow.local.json` — gitignored, your machine-local pin
+2. `.claude/settings.flow.json` — committed, team-shared (the file just written)
+3. `$HOME/.claude/settings.flow.json` — your cross-project default
+4. Plugin default — bundled in flow
+
+Any key set at a higher layer overrides lower layers. See [`references/gate-configuration.md`](../references/gate-configuration.md) for the per-key reference.
 
 ### LSP Code Intelligence
 | Language | Server | Status | Capabilities |
@@ -286,7 +319,7 @@ If yes, append the workflow section from `templates/CLAUDE-flow.md` to the exist
 |---|---|---|
 | Detect environment, tech stack, build commands | 1 | Autonomous, read-only |
 | Probe LSP capabilities | 1 | Autonomous, read-only |
-| Write `.claude/settings.flow.json` (project settings) | 1 | Autonomous, project file |
+| Write `.claude/settings.flow.json` (project-shared settings) | 1 | Autonomous, project file |
 | Write `.claude/CLAUDE.md` flow integration block | 1 | Autonomous, project file |
 | Install LSP servers (when user opts in) | 2 | Journal-and-proceed (touches user environment outside repo) |
 | `mkdir -p .decisions/` | 1 | Autonomous |

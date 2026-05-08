@@ -33,23 +33,10 @@ gh pr list --author @me --state open --json number,title,state,reviewDecision,st
 # 5. PRs needing my review
 gh pr list --search "review-requested:@me" --state open --json number,title,author
 
-# 6. Decision journal health.
-# Use the SAME trimmed cascade as the four .sh consumers (bin/journal-record.sh,
-# hooks/scripts/{session-end-learn,log-commits,log-file-changes}.sh) and the
-# two markdown command-bash sites (commands/learn.md, commands/explain.md):
-# user-global + plugin only. Excludes repo-local `.claude/settings.flow.json`
-# and `.claude/settings.flow.local.json` because after `gh pr checkout` of a
-# hostile fork those become attacker-controlled — same defense pattern as
-# merge.markerTrust and the agentTeams plugin pin.
+# 6. Decision journal health. Resolved via bin/cascade-resolve.sh.
+HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
-if command -v jq >/dev/null 2>&1; then
-  for SETTINGS in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
-    if [ -f "$SETTINGS" ]; then
-      DIR=$(jq -r '.journal.dir // empty' "$SETTINGS" 2>/dev/null || true)
-      [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
-    fi
-  done
-fi
+[ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
 [ -d "$JOURNAL_DIR" ] && ls -la "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l || echo "0"
 
 # 7. Learning pending
@@ -64,17 +51,35 @@ Aggregate review findings across the user's open PRs (author OR assignee). See [
 ME=$(gh api user --jq '.login')
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
-# Read trust list from plugin settings ONLY (NOT cascade) — same architectural
-# pin as /flow:merge, see the rationale comment there.
+# MARKERTRUST_GATE_BEGIN
+# Resolve trust list from the standard Claude Code settings cascade — same
+# precedence as /flow:merge. See commands/merge.md for the full rationale.
 TRUST_DEFAULT='["OWNER","MEMBER","COLLABORATOR"]'
 TRUST_LIST="$TRUST_DEFAULT"
+LOCAL_SETTINGS=".claude/settings.flow.local.json"
+PROJECT_SETTINGS=".claude/settings.flow.json"
+USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
 PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"
-if [ -f "$PLUGIN_SETTINGS" ]; then
-  CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$PLUGIN_SETTINGS" 2>/dev/null)
-  if [ -n "$CONFIGURED" ] && echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
-    TRUST_LIST="$CONFIGURED"
+for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
+  [ -f "$SETTINGS_PATH" ] || continue
+  CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_PATH" 2>&1)
+  JQ_EXIT=$?
+  if [ $JQ_EXIT -ne 0 ]; then
+    JQ_ERR=$(printf '%s' "$CONFIGURED" | tr '\n' ' ' | cut -c1-200)
+    echo "WARN: failed to parse $SETTINGS_PATH (jq exit=$JQ_EXIT, error: $JQ_ERR); skipping this source" >&2
+    continue
   fi
-fi
+  [ -z "$CONFIGURED" ] && continue
+  if echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
+    TRUST_LIST="$CONFIGURED"
+    break
+  fi
+  # Invalid (non-array, empty array, non-string elements) — fall through to
+  # next source rather than block /flow:status (an aggregator command). The
+  # /flow:merge gate is the authoritative validator and emits FINDING_LEDGER_BLOCK
+  # for the same input, so the user sees the right error in the right place.
+done
+# MARKERTRUST_GATE_END
 
 # Enumerate PRs (author OR assignee). Capture gh exit code separately so a
 # silent gh failure (auth, network) doesn't masquerade as "no PRs".

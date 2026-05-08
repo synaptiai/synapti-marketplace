@@ -86,48 +86,101 @@ Implements the paired-reviewer + challenge-round protocol. The `team-coordinatio
 **Path A gate check** (mandatory before paired dispatch — runs before A.1):
 
 ```bash
-# Read agentTeams from plugin settings ONLY (no cascade). This is the same
-# defense pattern as merge.markerTrust (PR #93): a hostile fork PR could ship
-# .claude/settings.flow.local.json with agentTeams=true and the user's env
-# var would be the only remaining gate. Treating agentTeams as plugin-tier-
-# pinned makes cost-amplification a two-key threat (hostile setting AND env
-# var) rather than a one-key threat. The env var alone (set by the user, not
-# the repo) cannot enable Path A unless the plugin default also permits it.
+# AGENTTEAMS_GATE_BEGIN
+# Resolve agentTeams from the standard Claude Code settings cascade.
+# Precedence (highest first — first non-empty value wins):
+#   1. .claude/settings.flow.local.json — project-local override; gitignored
+#      so a hostile fork PR via `gh pr checkout` cannot inject it (it's the
+#      user's machine-local pin).
+#   2. .claude/settings.flow.json — project-shared; committed with team
+#      preferences. Visible in PR review like any other repo file.
+#   3. $HOME/.claude/settings.flow.json — user-global default across projects.
+#   4. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json — plugin default.
+# Two-key gate is preserved at the env-var layer: enabling Path A still
+# requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS in the user's shell on top
+# of agentTeams: true from any tier. The env var alone (no agentTeams:true
+# anywhere) cannot enable Path A.
 USE_PATH_A=0
+LOCAL_SETTINGS=".claude/settings.flow.local.json"
+PROJECT_SETTINGS=".claude/settings.flow.json"
+USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
 PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"
+AGENT_TEAMS=""
+SOURCE_USED=""
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "WARN: jq not installed; Path A unavailable, using Path B (single-session)" >&2
-elif [ ! -f "$PLUGIN_SETTINGS" ]; then
-  echo "WARN: $PLUGIN_SETTINGS not found; Path A unavailable, using Path B" >&2
 else
-  # Capture jq stderr/exit separately so a parse error doesn't silently fall
-  # through as an empty AGENT_TEAMS into the * case branch. Merge stderr into
-  # stdout for the diagnostic capture; on success jq emits only the field
-  # value to stdout, on failure it emits the parse error message there.
-  JQ_OUT=$(jq -r '.agentTeams // false' "$PLUGIN_SETTINGS" 2>&1)
-  JQ_EXIT=$?
-  if [ $JQ_EXIT -ne 0 ]; then
-    JQ_ERR=$(printf '%s' "$JQ_OUT" | tr '\n' ' ' | cut -c1-200)
-    echo "WARN: failed to parse $PLUGIN_SETTINGS (jq exit=$JQ_EXIT, error: $JQ_ERR); using Path B" >&2
+  for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
+    [ -f "$SETTINGS_PATH" ] || continue
+    # `// empty` so absent fields fall through to the next source. A parse
+    # error is per-source: WARN names the failing file and the loop continues
+    # so a typo in $HOME does not silently disable Path A when plugin tier
+    # has a definitive value.
+    # `if has("agentTeams") then .agentTeams else empty end` distinguishes
+    # "key absent" (fall through to next source) from "key set to false"
+    # (definitive, stop here). `// empty` would not work: jq treats `false`
+    # as falsy and would fall through, so a user-tier opt-OUT would be
+    # silently overridden by the plugin default.
+    # `jq -c` (NOT `-r`) preserves JSON quoting so a quoted string value like
+    # `{"agentTeams": "true"}` (typo: user wrote a string instead of a
+    # boolean) shows up as `"true"` rather than `true`. The case arm below
+    # then matches the bare boolean `true` for valid input and routes the
+    # quoted-string typo to the catchall WARN. `-r` would strip the quotes
+    # and silently enable Path A from a malformed config.
+    # JSON `null` is treated as "absent" (fall through to next source) — same
+    # semantic as a missing key. A user writing `"agentTeams": null` likely
+    # means "use the default", not "definitively no" — we honor that intent.
+    JQ_OUT=$(jq -c 'if has("agentTeams") and .agentTeams != null then .agentTeams else empty end' "$SETTINGS_PATH" 2>&1)
+    JQ_EXIT=$?
+    if [ $JQ_EXIT -ne 0 ]; then
+      JQ_ERR=$(printf '%s' "$JQ_OUT" | tr '\n' ' ' | cut -c1-200)
+      echo "WARN: failed to parse $SETTINGS_PATH (jq exit=$JQ_EXIT, error: $JQ_ERR); skipping this source" >&2
+      continue
+    fi
+    if [ -n "$JQ_OUT" ]; then
+      AGENT_TEAMS="$JQ_OUT"
+      SOURCE_USED="$SETTINGS_PATH"
+      break
+    fi
+  done
+
+  if [ -z "$SOURCE_USED" ]; then
+    # Diagnostic states — surface what the user can act on:
+    # (a) Plugin install missing/broken (CLAUDE_PLUGIN_ROOT path doesn't exist)
+    # (b) Files exist but no agentTeams key set
+    # State (a) is always WARN-worthy regardless of whether user-tier files exist
+    # because the user expected the plugin to be reachable. State (b) is just
+    # informational ("you haven't opted in yet").
+    PLUGIN_ROOT_BROKEN=0
+    if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ ! -f "$PLUGIN_SETTINGS" ]; then
+      PLUGIN_ROOT_BROKEN=1
+    fi
+    ANY_USER_FILE_EXISTS=0
+    [ -f "$LOCAL_SETTINGS" ] && ANY_USER_FILE_EXISTS=1
+    [ -f "$PROJECT_SETTINGS" ] && ANY_USER_FILE_EXISTS=1
+    [ -f "$USER_SETTINGS" ] && ANY_USER_FILE_EXISTS=1
+
+    if [ $PLUGIN_ROOT_BROKEN -eq 1 ]; then
+      # Always WARN about broken plugin root — even when user-tier files exist
+      # without the key, the broken root is still actionable info.
+      echo "WARN: CLAUDE_PLUGIN_ROOT=$CLAUDE_PLUGIN_ROOT but $PLUGIN_SETTINGS does not exist — plugin install may be corrupted. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
+    elif [ $ANY_USER_FILE_EXISTS -eq 0 ] && [ ! -f "$PLUGIN_SETTINGS" ]; then
+      echo "WARN: agentTeams not set in any cascade source. CLAUDE_PLUGIN_ROOT is unset and $PLUGIN_SETTINGS does not exist — flow plugin may not be installed in this CWD. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
+    else
+      echo "Path A skipped: agentTeams not declared in any cascade source ($LOCAL_SETTINGS, $PROJECT_SETTINGS, $USER_SETTINGS, $PLUGIN_SETTINGS). Add \"agentTeams\": true to any of them to opt in."
+    fi
   else
-    AGENT_TEAMS="$JQ_OUT"
     case "$AGENT_TEAMS" in
       true)
         if [ -z "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" ]; then
-          echo "WARN: agentTeams enabled but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS env var unset; using single-reviewer fallback (Path B)" >&2
+          echo "WARN: agentTeams=true (from $SOURCE_USED) but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS env var unset; using single-reviewer fallback (Path B)" >&2
         else
           USE_PATH_A=1
         fi
         ;;
       false)
-        echo "Path A skipped: agentTeams=false. Using Path B (single-session)."
-        ;;
-      "")
-        # jq returned empty but exit=0 (shouldn't happen with `// false`, but
-        # defensive). Distinguish from the * branch so the WARN text is
-        # actionable.
-        echo "WARN: agentTeams field returned empty value from $PLUGIN_SETTINGS; treating as false and using Path B" >&2
+        echo "Path A skipped: agentTeams=false (from $SOURCE_USED). Using Path B (single-session)."
         ;;
       *)
         # Non-canonical value (e.g., string "true"/"True", "1", "yes", or a
@@ -136,11 +189,12 @@ else
         # got single-session anyway. Collapse multi-line values for log
         # scrapability.
         AGENT_TEAMS_DISPLAY=$(printf '%s' "$AGENT_TEAMS" | tr '\n' ' ' | cut -c1-80)
-        echo "WARN: agentTeams=$AGENT_TEAMS_DISPLAY is not the JSON boolean true/false; treating as false. Use \"agentTeams\": true (no quotes)." >&2
+        echo "WARN: agentTeams=$AGENT_TEAMS_DISPLAY (from $SOURCE_USED) is not the JSON boolean true/false; treating as false. Use \"agentTeams\": true (no quotes)." >&2
         ;;
     esac
   fi
 fi
+# AGENTTEAMS_GATE_END
 ```
 
 If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.

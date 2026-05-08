@@ -54,32 +54,73 @@ Parse the latest `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` comments to ver
 # CLOSED, not pass it open.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
-# Read trust list from plugin settings ONLY — NOT cascade. A hostile fork PR
-# could otherwise commit `.claude/settings.flow.local.json` with a permissive
-# trust list; after `gh pr checkout`, the cascade would honor the attacker's
-# file and disable the forgery defense. Same architectural pattern as PR #91's
-# symlink-TOCTOU on attacker-controlled `journal.dir`.
+# MARKERTRUST_GATE_BEGIN
+# Resolve trust list from the standard Claude Code settings cascade.
+# Precedence (highest first — first valid value wins):
+#   1. .claude/settings.flow.local.json — project-local; gitignored
+#   2. .claude/settings.flow.json — project-shared; committed (visible in PR review)
+#   3. $HOME/.claude/settings.flow.json — user-global default
+#   4. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json — plugin default
+# Reviewers of a fork PR will see any change to .claude/settings.flow.json in
+# the diff like any other repo file; defense moves from "plugin refuses to
+# read" to "maintainer review notices the change."
 TRUST_DEFAULT='["OWNER","MEMBER","COLLABORATOR"]'
 TRUST_LIST="$TRUST_DEFAULT"
+LOCAL_SETTINGS=".claude/settings.flow.local.json"
+PROJECT_SETTINGS=".claude/settings.flow.json"
+USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
 PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"
-if [ -f "$PLUGIN_SETTINGS" ]; then
-  CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$PLUGIN_SETTINGS" 2>/dev/null)
-  if [ -n "$CONFIGURED" ] && echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
+for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
+  [ -f "$SETTINGS_PATH" ] || continue
+  # Capture jq stderr/exit so a parse error in $HOME does not silently mask
+  # a typo as "fall through to plugin default" — same pattern as the
+  # agentTeams gate in commands/review.md.
+  CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_PATH" 2>&1)
+  JQ_EXIT=$?
+  if [ $JQ_EXIT -ne 0 ]; then
+    JQ_ERR=$(printf '%s' "$CONFIGURED" | tr '\n' ' ' | cut -c1-200)
+    echo "WARN: failed to parse $SETTINGS_PATH (jq exit=$JQ_EXIT, error: $JQ_ERR); skipping this source" >&2
+    continue
+  fi
+  [ -z "$CONFIGURED" ] && continue
+  if echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
     TRUST_LIST="$CONFIGURED"
-  elif [ -n "$CONFIGURED" ]; then
-    echo "FINDING_LEDGER_BLOCK: invalid markerTrust configuration in $PLUGIN_SETTINGS (must be non-empty JSON array of strings)"
+    TRUST_SOURCE="$SETTINGS_PATH"
+    break
+  else
+    # Fall through to next source. Emit on stderr (NOT stdout) so the
+    # downstream "If the finding-ledger check fails" gate that scans stdout
+    # for FINDING_LEDGER_BLOCK does not treat this as a block — a typo at
+    # one tier should not block merge when a lower tier resolves correctly.
+    # If no tier resolves, TRUST_LIST stays at TRUST_DEFAULT (initialized
+    # above), which is the safe minimum trust list.
+    echo "LEDGER_WARN: invalid markerTrust configuration in $SETTINGS_PATH (must be non-empty JSON array of strings); falling through" >&2
+  fi
+done
+
+# Defense-in-depth: warn (not block) when the resolved trust list contains
+# high-risk values that would let a forked-PR author forge their own resolution
+# markers. The cascade visibility (settings changes appear in PR diffs) is the
+# primary defense; this WARN raises the signal at every merge attempt so a
+# maintainer cannot accidentally miss it during a quick diff scan.
+if [ -n "${TRUST_SOURCE:-}" ]; then
+  HIGH_RISK=$(echo "$TRUST_LIST" | jq -r '.[] | select(. == "NONE" or . == "FIRST_TIMER" or . == "FIRST_TIME_CONTRIBUTOR" or . == "MANNEQUIN")' 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+  if [ -n "$HIGH_RISK" ]; then
+    echo "LEDGER_WARN: trust list (from $TRUST_SOURCE) includes high-risk values [$HIGH_RISK]. Forked-PR contributors with these author_associations could forge FLOW_RESOLUTION_CYCLE markers. Verify this is intentional before merging." >&2
   fi
 fi
+# MARKERTRUST_GATE_END
 
 # Trust filter applied via jq's `index()` exact-match (no regex surface).
 # `--paginate` keeps fetching pages so a noisy thread can't hide forgeries.
 RESOLUTION_BODY=$(gh api --paginate "repos/$REPO/issues/$ARGUMENTS/comments" 2>/dev/null \
   | jq -s -r --argjson trust "$TRUST_LIST" \
       'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | last | .body // ""')
-GH_EXIT_RES=$?
+GH_EXIT_RES=${PIPESTATUS[0]}
 RES_UNTRUSTED=$(gh api --paginate "repos/$REPO/issues/$ARGUMENTS/comments" 2>/dev/null \
   | jq -s -r --argjson trust "$TRUST_LIST" \
       'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | length')
+GH_EXIT_RES_U=${PIPESTATUS[0]}
 
 # Extract ESCALATED array contents (portable POSIX grep+sed; BSD grep has no -P).
 # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
@@ -89,15 +130,19 @@ ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ES
 REVIEW_BODY=$(gh api --paginate "repos/$REPO/pulls/$ARGUMENTS/reviews" 2>/dev/null \
   | jq -s -r --argjson trust "$TRUST_LIST" \
       'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_REVIEW_CYCLE:")))] | last | .body // ""')
-GH_EXIT_REV=$?
+GH_EXIT_REV=${PIPESTATUS[0]}
 REV_UNTRUSTED=$(gh api --paginate "repos/$REPO/pulls/$ARGUMENTS/reviews" 2>/dev/null \
   | jq -s -r --argjson trust "$TRUST_LIST" \
       'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("FLOW_REVIEW_CYCLE:")))] | length')
+GH_EXIT_REV_U=${PIPESTATUS[0]}
 
-# Fail closed if either gh call failed — better to block a legitimate merge
-# than silently let a regression through when the gate state is unknowable.
-if [ $GH_EXIT_RES -ne 0 ] || [ $GH_EXIT_REV -ne 0 ]; then
-  echo "FINDING_LEDGER_BLOCK: gh API unavailable — cannot verify finding ledger (resolution exit=$GH_EXIT_RES, review exit=$GH_EXIT_REV)"
+# Fail closed if any of the four gh calls failed — better to block a legitimate
+# merge than silently let a regression through when the gate state is unknowable.
+# Includes the untrusted-counting calls (RES_UNTRUSTED, REV_UNTRUSTED) — without
+# their exit codes a network blip during the secondary call would silently
+# treat as "no untrusted markers" rather than failing closed.
+if [ $GH_EXIT_RES -ne 0 ] || [ $GH_EXIT_REV -ne 0 ] || [ $GH_EXIT_RES_U -ne 0 ] || [ $GH_EXIT_REV_U -ne 0 ]; then
+  echo "FINDING_LEDGER_BLOCK: gh API unavailable — cannot verify finding ledger (resolution exit=$GH_EXIT_RES, review exit=$GH_EXIT_REV, res-untrusted exit=$GH_EXIT_RES_U, rev-untrusted exit=$GH_EXIT_REV_U)"
 fi
 
 # Surface "untrusted-only" markers as a block reason rather than silently
