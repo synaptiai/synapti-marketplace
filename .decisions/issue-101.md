@@ -201,3 +201,9 @@ PASS — 6 tasks reviewed. Each task contains: explicit file paths (with line ra
 <!-- auto-log: 2026-05-08 18:42 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/CHANGELOG.md -->
 
 <!-- auto-log: 2026-05-08 18:43 commit "fix(flow): unify settings cascade to standard Claude Code precedence (#101)" -->
+
+<!-- auto-log: 2026-05-08 18:51 Write /Users/danielbentes/synapti-marketplace/.claude/settings.flow.json -->
+
+<!-- auto-log: 2026-05-08 18:52 Write /Users/danielbentes/synapti-marketplace/.claude/settings.flow.local.json -->
+
+<!-- auto-log: 2026-05-08 18:55 commit "chore(flow): add project-shared settings via /flow:setup (#101)" -->
