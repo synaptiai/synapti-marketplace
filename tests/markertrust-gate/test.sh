@@ -209,14 +209,15 @@ S3B_RESULT=$(run_gate "$S3B_CWD" "$S3B_HOME" "set" "$S3B_CACHE" "$S3B_STDOUT" "$
 assert_eq "S3b: project-local overrides project-shared → TRUST_LIST=default" "$DEFAULT_TRUST" "$S3B_RESULT"
 
 # ============================================================================
-# S4: HOME=invalid (empty array) → FINDING_LEDGER_BLOCK
-# Empty array is the existing rejection criterion. HOME has empty array,
-# plugin tier has valid default.
-# Expected: FINDING_LEDGER_BLOCK emitted naming HOME, AND falls through to
-# plugin default (so the merge can still proceed if user fixes HOME later).
+# S4: HOME=invalid (empty array) → LEDGER_WARN on stderr, fall through to plugin
+# When a tier has an invalid markerTrust array, the gate must NOT emit
+# FINDING_LEDGER_BLOCK on stdout (which would block merge in the downstream
+# gate that scans stdout for that prefix). Instead, emit LEDGER_WARN on
+# stderr and fall through to the next valid tier so the merge proceeds with
+# a safe trust list.
 # ============================================================================
 S4_DIR="$(mktemp -d -t markertrust-s4.XXXXXX)"
-trap 'rm -rf "$S1_DIR" "$S2_DIR" "$S3_DIR" "$S4_DIR"' EXIT
+trap 'rm -rf "$S1_DIR" "$S2_DIR" "$S3_DIR" "$S3B_DIR" "$S4_DIR"' EXIT
 S4_HOME="$S4_DIR/home"
 S4_CWD="$S4_DIR/cwd"
 S4_CACHE="$S4_DIR/cache"
@@ -227,8 +228,10 @@ S4_STDOUT="$S4_DIR/stdout"
 S4_STDERR="$S4_DIR/stderr"
 
 S4_RESULT=$(run_gate "$S4_CWD" "$S4_HOME" "set" "$S4_CACHE" "$S4_STDOUT" "$S4_STDERR")
-assert_contains "S4: empty array in HOME triggers FINDING_LEDGER_BLOCK" "FINDING_LEDGER_BLOCK" "$S4_STDOUT"
-assert_contains "S4: FINDING_LEDGER_BLOCK names HOME path" "settings.flow.json" "$S4_STDOUT"
+assert_eq "S4: empty array in HOME falls through to plugin default → TRUST_LIST=default" "$DEFAULT_TRUST" "$S4_RESULT"
+assert_not_contains "S4: NO FINDING_LEDGER_BLOCK on stdout (would block merge)" "FINDING_LEDGER_BLOCK" "$S4_STDOUT"
+assert_contains "S4: LEDGER_WARN on stderr names settings.flow.json source" "LEDGER_WARN" "$S4_STDERR"
+assert_contains "S4: LEDGER_WARN names settings.flow.json" "settings.flow.json" "$S4_STDERR"
 
 # ============================================================================
 # S5: no sources, defaults preserved

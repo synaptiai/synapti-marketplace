@@ -41,7 +41,26 @@ Based on detection, create `.claude/settings.flow.json` (project-shared, committ
 mkdir -p .claude
 ```
 
+**Ensure `.claude/settings.flow.local.json` is gitignored** (idempotent — adds the line only if missing). Without this, a downstream user creating a personal-pin file as documented in Phase 6 below would commit it accidentally, leaking their machine-local preferences and weakening the project-local override layer:
+
+```bash
+if [ -f .gitignore ] && ! grep -qxF '.claude/settings.flow.local.json' .gitignore; then
+  echo '.claude/settings.flow.local.json' >> .gitignore
+elif [ ! -f .gitignore ]; then
+  echo '.claude/settings.flow.local.json' > .gitignore
+fi
+```
+
 Flow settings follow the standard Claude Code cascade — `local > project > user > plugin default`. Setup writes the project-shared file, which gives the whole team a baseline. Any user can then override locally via `.claude/settings.flow.local.json` (gitignored), set cross-project preferences in `$HOME/.claude/settings.flow.json`, or rely on the plugin's bundled defaults.
+
+**Before writing**, read `$HOME/.claude/settings.flow.json` (if present) and skip writing any key that the user has already set there with a non-default value. Under the unified cascade, project-shared overrides user-global, so writing a key that matches the plugin default would silently override a user's existing personal preference for it. The intent of `/flow:setup` is to establish a team baseline, not to override individual user choices. Use `AskUserQuestion` if any conflict is detected:
+
+> Your `$HOME/.claude/settings.flow.json` already sets `{key}` to `{user-value}`. The team baseline would set it to `{baseline-value}`, which would override your user-global preference because the project-shared tier wins.
+>
+> Options:
+> 1. Skip this key in the project-shared file (your user-global preference remains active here too) — Recommended
+> 2. Write the team baseline anyway (overrides your user-global preference for this repo only; you can re-override locally via `.claude/settings.flow.local.json`)
+> 3. Cancel — let me edit my user-global file first
 
 Write `.claude/settings.flow.json` with:
 

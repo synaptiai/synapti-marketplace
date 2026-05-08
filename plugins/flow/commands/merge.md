@@ -87,9 +87,13 @@ for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PL
     TRUST_LIST="$CONFIGURED"
     break
   else
-    echo "FINDING_LEDGER_BLOCK: invalid markerTrust configuration in $SETTINGS_PATH (must be non-empty JSON array of strings)"
-    # Don't break — fall through to next source so a typo in $HOME does not
-    # block merge when the plugin default is still valid.
+    # Fall through to next source. Emit on stderr (NOT stdout) so the
+    # downstream "If the finding-ledger check fails" gate that scans stdout
+    # for FINDING_LEDGER_BLOCK does not treat this as a block — a typo at
+    # one tier should not block merge when a lower tier resolves correctly.
+    # If no tier resolves, TRUST_LIST stays at TRUST_DEFAULT (initialized
+    # above), which is the safe minimum trust list.
+    echo "LEDGER_WARN: invalid markerTrust configuration in $SETTINGS_PATH (must be non-empty JSON array of strings); falling through" >&2
   fi
 done
 # MARKERTRUST_GATE_END

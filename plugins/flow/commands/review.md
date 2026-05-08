@@ -117,12 +117,18 @@ else
     # error is per-source: WARN names the failing file and the loop continues
     # so a typo in $HOME does not silently disable Path A when plugin tier
     # has a definitive value.
-    # `has("agentTeams") | if . then $value else empty end` — distinguishes
+    # `if has("agentTeams") then .agentTeams else empty end` distinguishes
     # "key absent" (fall through to next source) from "key set to false"
     # (definitive, stop here). `// empty` would not work: jq treats `false`
     # as falsy and would fall through, so a user-tier opt-OUT would be
     # silently overridden by the plugin default.
-    JQ_OUT=$(jq -r 'if has("agentTeams") then .agentTeams else empty end' "$SETTINGS_PATH" 2>&1)
+    # `jq -c` (NOT `-r`) preserves JSON quoting so a quoted string value like
+    # `{"agentTeams": "true"}` (typo: user wrote a string instead of a
+    # boolean) shows up as `"true"` rather than `true`. The case arm below
+    # then matches the bare boolean `true` for valid input and routes the
+    # quoted-string typo to the catchall WARN. `-r` would strip the quotes
+    # and silently enable Path A from a malformed config.
+    JQ_OUT=$(jq -c 'if has("agentTeams") then .agentTeams else empty end' "$SETTINGS_PATH" 2>&1)
     JQ_EXIT=$?
     if [ $JQ_EXIT -ne 0 ]; then
       JQ_ERR=$(printf '%s' "$JQ_OUT" | tr '\n' ' ' | cut -c1-200)

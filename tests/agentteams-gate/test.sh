@@ -389,6 +389,26 @@ assert_eq "S7: agentTeams:true but env var unset → USE_PATH_A=0" "0" "$S7_RESU
 assert_stderr_contains "S7: WARN about env var" "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" "$S7_STDERR"
 
 # ============================================================================
+# Scenario 8: JSON string vs boolean coercion
+# {"agentTeams": "true"} (a JSON string, e.g. user typed quotes around the
+# value) MUST NOT silently enable Path A. The gate uses `jq -c` (not `-r`)
+# so the quoted string remains "true" (with quotes preserved as JSON) and
+# the case arm matches the catchall *) → WARN + USE_PATH_A=0.
+# ============================================================================
+S8_DIR="$(mktemp -d -t agentteams-s8.XXXXXX)"
+trap 'rm -rf "$S1_DIR" "$S2_DIR" "$S3_DIR" "$S3B_DIR" "$S3C_DIR" "$S4A_DIR" "$S4B_DIR" "$S4C_DIR" "$S5_DIR" "$S6_DIR" "$S7_DIR" "$S8_DIR"' EXIT
+S8_HOME="$S8_DIR/home"
+S8_CWD="$S8_DIR/cwd"
+mkdir -p "$S8_HOME/.claude" "$S8_CWD"
+write_settings "$S8_HOME/.claude/settings.flow.json" '{"agentTeams": "true"}'
+S8_STDERR="$S8_DIR/stderr"
+S8_STDOUT="$S8_DIR/stdout"
+
+S8_RESULT=$(run_gate "$S8_CWD" "$S8_HOME" "unset" "" "set" "$S8_STDERR" "$S8_STDOUT")
+assert_eq "S8: JSON string \"true\" does NOT enable Path A → USE_PATH_A=0" "0" "$S8_RESULT" "$S8_STDERR"
+assert_stderr_contains "S8: WARN about non-canonical value" "is not the JSON boolean true/false" "$S8_STDERR"
+
+# ============================================================================
 echo ""
 echo "========================================"
 echo "Total: $PASS PASS / $FAIL FAIL"
