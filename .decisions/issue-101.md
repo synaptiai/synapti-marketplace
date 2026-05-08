@@ -147,3 +147,5 @@ PASS — 6 tasks reviewed. Each task contains: explicit file paths (with line ra
 <!-- auto-log: 2026-05-08 18:16 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/setup.md -->
 
 <!-- auto-log: 2026-05-08 18:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/CHANGELOG.md -->
+
+<!-- auto-log: 2026-05-08 18:18 commit "fix(flow): symmetric trimmed-cascade + parse-error surfacing for #101" -->
