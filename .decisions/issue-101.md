@@ -15,6 +15,12 @@ artifacts:
   captured_at: '2026-05-08T15:47:15Z'
   result: PASS
   task_count: 6
+- type: review-cycle
+  captured_at: '2026-05-08T16:19:23Z'
+  cycle: 1
+  path: B
+  findings_count: 8
+  pr: 102
 created: '2026-05-08T15:46:09Z'
 ---
 
@@ -149,3 +155,47 @@ PASS — 6 tasks reviewed. Each task contains: explicit file paths (with line ra
 <!-- auto-log: 2026-05-08 18:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/CHANGELOG.md -->
 
 <!-- auto-log: 2026-05-08 18:18 commit "fix(flow): symmetric trimmed-cascade + parse-error surfacing for #101" -->
+
+<!-- auto-log: 2026-05-08 18:36 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-08 18:36 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-08 18:36 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-08 18:36 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-08 18:36 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-08 18:37 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/learn.md -->
+
+<!-- auto-log: 2026-05-08 18:37 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/explain.md -->
+
+<!-- auto-log: 2026-05-08 18:37 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/agents/convention-checker.md -->
+
+<!-- auto-log: 2026-05-08 18:37 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/journal-record.sh -->
+
+<!-- auto-log: 2026-05-08 18:37 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/log-file-changes.sh -->
+
+<!-- auto-log: 2026-05-08 18:37 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/log-commits.sh -->
+
+<!-- auto-log: 2026-05-08 18:38 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/session-end-learn.sh -->
+
+<!-- auto-log: 2026-05-08 18:38 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-08 18:39 Edit /Users/danielbentes/synapti-marketplace/tests/agentteams-gate/test.sh -->
+
+<!-- auto-log: 2026-05-08 18:39 Edit /Users/danielbentes/synapti-marketplace/tests/markertrust-gate/test.sh -->
+
+<!-- auto-log: 2026-05-08 18:40 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/setup.md -->
+
+<!-- auto-log: 2026-05-08 18:40 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/setup.md -->
+
+<!-- auto-log: 2026-05-08 18:40 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/setup.md -->
+
+<!-- auto-log: 2026-05-08 18:41 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/gate-configuration.md -->
+
+<!-- auto-log: 2026-05-08 18:41 Edit /Users/danielbentes/synapti-marketplace/tests/markertrust-gate/test.sh -->
+
+<!-- auto-log: 2026-05-08 18:41 Edit /Users/danielbentes/synapti-marketplace/tests/agentteams-gate/test.sh -->
+
+<!-- auto-log: 2026-05-08 18:42 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/CHANGELOG.md -->

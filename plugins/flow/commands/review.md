@@ -87,22 +87,22 @@ Implements the paired-reviewer + challenge-round protocol. The `team-coordinatio
 
 ```bash
 # AGENTTEAMS_GATE_BEGIN
-# Resolve agentTeams from a trimmed cascade — same defense pattern as
-# merge.markerTrust + the journal.dir / learning.proposalDir / commitTypes
-# cascade documented in references/gate-configuration.md. Trusted sources,
-# in precedence order:
-#   1. $HOME/.claude/settings.flow.json — user-tier override; lives outside
-#      the repo, so a hostile fork PR via `gh pr checkout` cannot inject it.
-#      First non-empty agentTeams value wins (true | false). This is the
-#      supported way to opt INTO paired review and have it survive plugin
-#      upgrades (the plugin cache gets replaced; $HOME does not).
-#   2. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json — plugin default.
-# Project-tier (.claude/settings.flow.json / .claude/settings.flow.local.json)
-# is INTENTIONALLY EXCLUDED. The two-key gate stays intact: enabling Path A
-# requires (env var set by user) AND (agentTeams: true from a trusted source
-# the user controls). Project-tier files are fork-controllable, so they are
-# NOT a trusted source for this key — issue #101.
+# Resolve agentTeams from the standard Claude Code settings cascade.
+# Precedence (highest first — first non-empty value wins):
+#   1. .claude/settings.flow.local.json — project-local override; gitignored
+#      so a hostile fork PR via `gh pr checkout` cannot inject it (it's the
+#      user's machine-local pin).
+#   2. .claude/settings.flow.json — project-shared; committed with team
+#      preferences. Visible in PR review like any other repo file.
+#   3. $HOME/.claude/settings.flow.json — user-global default across projects.
+#   4. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json — plugin default.
+# Two-key gate is preserved at the env-var layer: enabling Path A still
+# requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS in the user's shell on top
+# of agentTeams: true from any tier. The env var alone (no agentTeams:true
+# anywhere) cannot enable Path A.
 USE_PATH_A=0
+LOCAL_SETTINGS=".claude/settings.flow.local.json"
+PROJECT_SETTINGS=".claude/settings.flow.json"
 USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
 PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"
 AGENT_TEAMS=""
@@ -111,7 +111,7 @@ SOURCE_USED=""
 if ! command -v jq >/dev/null 2>&1; then
   echo "WARN: jq not installed; Path A unavailable, using Path B (single-session)" >&2
 else
-  for SETTINGS_PATH in "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
+  for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
     [ -f "$SETTINGS_PATH" ] || continue
     # `// empty` so absent fields fall through to the next source. A parse
     # error is per-source: WARN names the failing file and the loop continues
@@ -139,18 +139,21 @@ else
   if [ -z "$SOURCE_USED" ]; then
     # Three-state diagnostic — distinguish (a) plugin not installed,
     # (b) CLAUDE_PLUGIN_ROOT pointed at a path that does not exist,
-    # (c) files exist but no agentTeams key, so the user can take the right
-    # next step without re-running with debug instrumentation.
-    if [ ! -f "$USER_SETTINGS" ] && [ ! -f "$PLUGIN_SETTINGS" ]; then
+    # (c) all four files (local, project, user, plugin) exist but no agentTeams
+    # key, so the user can take the right next step without re-running with
+    # debug instrumentation.
+    ANY_USER_FILE_EXISTS=0
+    [ -f "$LOCAL_SETTINGS" ] && ANY_USER_FILE_EXISTS=1
+    [ -f "$PROJECT_SETTINGS" ] && ANY_USER_FILE_EXISTS=1
+    [ -f "$USER_SETTINGS" ] && ANY_USER_FILE_EXISTS=1
+    if [ $ANY_USER_FILE_EXISTS -eq 0 ] && [ ! -f "$PLUGIN_SETTINGS" ]; then
       if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-        echo "WARN: agentTeams not set in any trusted source. CLAUDE_PLUGIN_ROOT is unset and $PLUGIN_SETTINGS does not exist — flow plugin may not be installed in this CWD. Add \"agentTeams\": true to $USER_SETTINGS to enable Path A; using Path B." >&2
+        echo "WARN: agentTeams not set in any cascade source. CLAUDE_PLUGIN_ROOT is unset and $PLUGIN_SETTINGS does not exist — flow plugin may not be installed in this CWD. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
       else
-        echo "WARN: agentTeams not set in any trusted source. CLAUDE_PLUGIN_ROOT=$CLAUDE_PLUGIN_ROOT but $PLUGIN_SETTINGS does not exist — plugin install may be corrupted or env var pointing wrong place. Add \"agentTeams\": true to $USER_SETTINGS to enable Path A; using Path B." >&2
+        echo "WARN: agentTeams not set in any cascade source. CLAUDE_PLUGIN_ROOT=$CLAUDE_PLUGIN_ROOT but $PLUGIN_SETTINGS does not exist — plugin install may be corrupted or env var pointing wrong place. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
       fi
-    elif [ ! -f "$USER_SETTINGS" ]; then
-      echo "Path A skipped: agentTeams not declared in $PLUGIN_SETTINGS. Add \"agentTeams\": true to $USER_SETTINGS to opt in (survives plugin upgrades)."
     else
-      echo "Path A skipped: agentTeams not declared in $USER_SETTINGS or $PLUGIN_SETTINGS. Add \"agentTeams\": true to $USER_SETTINGS to opt in."
+      echo "Path A skipped: agentTeams not declared in any cascade source ($LOCAL_SETTINGS, $PROJECT_SETTINGS, $USER_SETTINGS, $PLUGIN_SETTINGS). Add \"agentTeams\": true to any of them to opt in."
     fi
   else
     case "$AGENT_TEAMS" in

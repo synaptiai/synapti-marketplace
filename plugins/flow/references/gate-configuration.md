@@ -164,26 +164,45 @@ Scans for `FLOW_RESOLUTION_CYCLE` markers in the codebase. Blocks merge when the
 
 | Setting | Default | Notes |
 |---------|---------|-------|
-| `merge.markerTrust.allowedAssociations` | `["OWNER","MEMBER","COLLABORATOR"]` | Read from the trimmed cascade below — `$HOME/.claude/settings.flow.json` overrides the plugin default. Project-tier files remain excluded (security pin: a hostile fork PR could otherwise commit `.claude/settings.flow.local.json` with a permissive trust list and disable the forgery defense after `gh pr checkout`). |
+| `merge.markerTrust.allowedAssociations` | `["OWNER","MEMBER","COLLABORATOR"]` | Read from the standard cascade (see "Settings Cascade" below). Used by `commands/merge.md` and `commands/status.md` to filter forgeable `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE` markers by GitHub `author_association`. |
 
-### Trimmed-Cascade Settings Keys
+### Settings Cascade
 
-The following keys read from `$HOME/.claude/settings.flow.json` and `${CLAUDE_PLUGIN_ROOT}/settings.json` ONLY — they intentionally exclude the repo-local sources `.claude/settings.flow.json` and `.claude/settings.flow.local.json`. Same threat model: after `gh pr checkout` of a hostile fork those files are attacker-controlled, so a permissive override could redirect hook writes, relax commit-type validation, repoint the proposal directory, escalate paired-reviewer mode (cost amplification), or disable the marker-forgery defense.
+Flow follows the standard Claude Code settings precedence (highest first):
 
-| Setting | Consumers | Threat if cascaded from repo-local |
-|---------|-----------|------------------------------------|
-| `journal.dir` | `bin/journal-record.sh`, `hooks/scripts/{session-end-learn,log-commits,log-file-changes}.sh`, `commands/{learn,explain,status}.md` | Redirects every journal/hook write to an attacker-controlled path (e.g., `/tmp/attacker`, or a path-traversal target). |
-| `learning.proposalDir` | `commands/learn.md` | Redirects `/flow:learn` proposals into an attacker-controlled directory; subsequent `bin/promote-proposal.sh` runs would then promote the attacker's content as a "learned skill." |
-| `conventions.commitTypes` | `agents/convention-checker.md` | Relaxes the allowed-commit-types list (e.g., to `.*`), defeating commit-message validation in PR review. |
-| `agentTeams` | `commands/review.md` (Path A gate) | Enables paired-reviewer + challenge-round mode (≈1.5–2× single-session cost). Combined with the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var requirement, this is a two-key opt-in. Allowing project-tier override would let a hostile fork PR pair-fan reviews and amplify cost or pollute the consolidated finding output. |
-| `merge.markerTrust.allowedAssociations` | `commands/merge.md`, `commands/status.md` | Defines which `author_association` values are trusted for `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE` markers. A permissive project-tier list (e.g., adding `NONE`) would let a forked-PR author forge their own resolution markers and bypass the finding ledger merge gate. |
+1. `.claude/settings.flow.local.json` — project-local; gitignored. Personal pins for this project that should not be shared with the team.
+2. `.claude/settings.flow.json` — project-shared; committed. Team-wide defaults.
+3. `$HOME/.claude/settings.flow.json` — user-global; cross-project defaults across all repositories.
+4. `${CLAUDE_PLUGIN_ROOT}/settings.json` — plugin default; bundled with the plugin.
 
-#### Persistent opt-in (supported)
+**First non-empty value wins.** A user setting `agentTeams: true` in `.claude/settings.flow.local.json` overrides the same key in `.claude/settings.flow.json`, which overrides `$HOME/.claude/settings.flow.json`, which overrides the plugin default.
 
-To enable a setting from this list in a way that survives plugin upgrades, write it to your user-global file:
+The cascade applies uniformly to every flow setting — there is no special-cased exclusion for security-sensitive keys. The threat model relies on Claude Code's standard review surface: changes to `.claude/settings.flow.json` appear in the PR diff like any other repo file, and reviewers can spot a permissive `merge.markerTrust.allowedAssociations` or a flipped `agentTeams: true` in normal review.
+
+#### Persistent personal opt-in
+
+To enable a setting just for yourself (not committed to the team's project file), write it to either:
+
+- `.claude/settings.flow.local.json` — applies only to this repository, gitignored
+- `$HOME/.claude/settings.flow.json` — applies across all your projects
+
+Example: enabling Path A paired-reviewer mode for yourself in this project only:
 
 ```json
-// $HOME/.claude/settings.flow.json
+// .claude/settings.flow.local.json (gitignored)
+{
+  "agentTeams": true
+}
+```
+
+(Note: `agentTeams: true` also requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` set in your shell environment — the env var is the user-side opt-in for the experimental feature.)
+
+#### Team-wide opt-in
+
+To enable a setting for the whole team via the committed project-shared file:
+
+```json
+// .claude/settings.flow.json (committed)
 {
   "agentTeams": true,
   "merge": {
@@ -194,9 +213,7 @@ To enable a setting from this list in a way that survives plugin upgrades, write
 }
 ```
 
-`$HOME/.claude/settings.flow.json` is read FIRST and overrides the plugin default. It lives outside the repo, so `gh pr checkout` of a hostile fork cannot inject or modify it. Editing the plugin cache (`~/.claude/plugins/cache/.../flow/<version>/settings.json`) directly is NOT supported — those edits are lost on the next plugin upgrade.
-
-For `agentTeams` specifically, the env var `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` must also be set in your shell environment — the two-key gate stays intact: enabling Path A requires a trusted-source `agentTeams: true` AND the env var.
+Reviewers will see the change in the PR diff. Anyone can override with their own `.claude/settings.flow.local.json` or `$HOME` setting if they don't want the team-wide value.
 
 ## Gate Summary
 

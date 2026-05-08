@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # merge.markerTrust.allowedAssociations source-resolution test (issue #101).
 #
-# The gate at plugins/flow/commands/merge.md must apply the same trimmed-cascade
-# pattern used by the agentTeams gate in review.md:
-#   1. $HOME/.claude/settings.flow.json (user-tier override)
-#   2. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json (plugin default)
-#   project-tier (.claude/settings.flow*.json) is excluded.
+# The gate at plugins/flow/commands/merge.md must apply the standard Claude Code
+# settings cascade (highest precedence first):
+#   1. .claude/settings.flow.local.json (project-local; gitignored)
+#   2. .claude/settings.flow.json (project-shared; committed)
+#   3. ${HOME:-/nonexistent}/.claude/settings.flow.json (user-global)
+#   4. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json (plugin default)
 #
 # Extraction: gate body is delimited by # MARKERTRUST_GATE_BEGIN / # MARKERTRUST_GATE_END
 # in plugins/flow/commands/merge.md.
@@ -169,9 +170,9 @@ assert_eq "S2a: pre-upgrade with HOME override → TRUST_LIST=permissive" "$PERM
 assert_eq "S2b: post-upgrade with HOME override → TRUST_LIST=permissive" "$PERMISSIVE_TRUST" "$S2_RESULT_B"
 
 # ============================================================================
-# S3: project-tier-bypass-attempt
-# Project-tier has permissive trust list, plugin tier has default.
-# HOME absent. Expected: plugin default wins (project-tier ignored).
+# S3: project-tier overrides plugin default (standard Claude Code cascade)
+# Project-tier has permissive trust list, plugin tier has default. HOME absent.
+# Expected: project-tier wins → TRUST_LIST=permissive.
 # ============================================================================
 S3_DIR="$(mktemp -d -t markertrust-s3.XXXXXX)"
 trap 'rm -rf "$S1_DIR" "$S2_DIR" "$S3_DIR"' EXIT
@@ -180,15 +181,32 @@ S3_CWD="$S3_DIR/cwd"
 S3_CACHE="$S3_DIR/cache"
 mkdir -p "$S3_HOME" "$S3_CWD/.claude" "$S3_CACHE"
 write_settings "$S3_CWD/.claude/settings.flow.json" "{\"merge\":{\"markerTrust\":{\"allowedAssociations\":$PERMISSIVE_TRUST}}}"
-write_settings "$S3_CWD/.claude/settings.flow.local.json" "{\"merge\":{\"markerTrust\":{\"allowedAssociations\":$PERMISSIVE_TRUST}}}"
 write_settings "$S3_CACHE/settings.json" "{\"merge\":{\"markerTrust\":{\"allowedAssociations\":$DEFAULT_TRUST}}}"
 S3_STDOUT="$S3_DIR/stdout"
 S3_STDERR="$S3_DIR/stderr"
 
 S3_RESULT=$(run_gate "$S3_CWD" "$S3_HOME" "set" "$S3_CACHE" "$S3_STDOUT" "$S3_STDERR")
-assert_eq "S3: project-tier permissive ignored → TRUST_LIST=default" "$DEFAULT_TRUST" "$S3_RESULT"
-assert_not_contains "S3: project-tier path NOT in stderr" ".claude/settings.flow.json" "$S3_STDERR"
-assert_not_contains "S3: project-tier path NOT in stdout" ".claude/settings.flow.json" "$S3_STDOUT"
+assert_eq "S3: project-tier permissive overrides plugin default → TRUST_LIST=permissive" "$PERMISSIVE_TRUST" "$S3_RESULT"
+
+# ============================================================================
+# S3b: project-local overrides project-shared
+# project-local has DEFAULT_TRUST; project-shared has PERMISSIVE_TRUST.
+# Expected: project-local wins → TRUST_LIST=default (the strictest list).
+# ============================================================================
+S3B_DIR="$(mktemp -d -t markertrust-s3b.XXXXXX)"
+trap 'rm -rf "$S1_DIR" "$S2_DIR" "$S3_DIR" "$S3B_DIR"' EXIT
+S3B_HOME="$S3B_DIR/empty-home"
+S3B_CWD="$S3B_DIR/cwd"
+S3B_CACHE="$S3B_DIR/cache"
+mkdir -p "$S3B_HOME" "$S3B_CWD/.claude" "$S3B_CACHE"
+write_settings "$S3B_CWD/.claude/settings.flow.local.json" "{\"merge\":{\"markerTrust\":{\"allowedAssociations\":$DEFAULT_TRUST}}}"
+write_settings "$S3B_CWD/.claude/settings.flow.json" "{\"merge\":{\"markerTrust\":{\"allowedAssociations\":$PERMISSIVE_TRUST}}}"
+write_settings "$S3B_CACHE/settings.json" "{\"merge\":{\"markerTrust\":{\"allowedAssociations\":$PERMISSIVE_TRUST}}}"
+S3B_STDOUT="$S3B_DIR/stdout"
+S3B_STDERR="$S3B_DIR/stderr"
+
+S3B_RESULT=$(run_gate "$S3B_CWD" "$S3B_HOME" "set" "$S3B_CACHE" "$S3B_STDOUT" "$S3B_STDERR")
+assert_eq "S3b: project-local overrides project-shared → TRUST_LIST=default" "$DEFAULT_TRUST" "$S3B_RESULT"
 
 # ============================================================================
 # S4: HOME=invalid (empty array) → FINDING_LEDGER_BLOCK

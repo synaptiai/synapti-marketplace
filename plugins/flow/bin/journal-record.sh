@@ -84,19 +84,11 @@ if ! echo "$ISSUE" | grep -qE '^[0-9]+$'; then
   exit 1
 fi
 
-# Discover journal directory via a TRIMMED cascade. The repo-local sources
-# `.claude/settings.flow.local.json` and `.claude/settings.flow.json` are
-# intentionally EXCLUDED — they are checked into the repo and become
-# attacker-controlled after `gh pr checkout` of a hostile fork PR. A
-# permissive `journal.dir` from a fork could redirect every hook write to
-# `/tmp/attacker` or via path traversal. Same threat model as PR #93's
-# defense for `merge.markerTrust` and the `agentTeams` plugin pin in
-# review.md. The user-global file (`$HOME/.claude/settings.flow.json`) is
-# safe — it is set by the user, not by the repo. The plugin default is also
-# safe.
+# Discover journal directory from the standard Claude Code settings cascade
+# (highest precedence first): project-local → project-shared → user-global → plugin default.
 JOURNAL_DIR=".decisions"
 if command -v jq >/dev/null 2>&1; then
-  for SETTINGS in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
+  for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "${HOME:-/nonexistent}/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
     if [ -f "$SETTINGS" ]; then
       DIR=$(jq -r '.journal.dir // empty' "$SETTINGS" 2>/dev/null || true)
       [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break

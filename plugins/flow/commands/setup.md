@@ -33,80 +33,28 @@ gh auth status 2>&1 | head -3
 
 **Skill(capability-discovery)**: Detect tech stack, quality commands, existing agents/skills, and LSP capabilities.
 
-## Phase 2: Generate Project-Tier Settings
+## Phase 2: Generate Settings
 
-Based on detection, create `.claude/settings.flow.json` (project-tier, shared with team via git) with sensible defaults:
+Based on detection, create `.claude/settings.flow.json` (project-shared, committed with team) with sensible defaults:
 
 ```bash
 mkdir -p .claude
 ```
 
-Write `.claude/settings.flow.json` with **only** the keys that read from the project-tier source. Trimmed-cascade keys (see Phase 2.5) MUST NOT be written here — they would be silently ignored by their consumers and mislead the user into thinking the setting is active. Allowed project-tier keys for setup to write:
+Flow settings follow the standard Claude Code cascade — `local > project > user > plugin default`. Setup writes the project-shared file, which gives the whole team a baseline. Any user can then override locally via `.claude/settings.flow.local.json` (gitignored), set cross-project preferences in `$HOME/.claude/settings.flow.json`, or rely on the plugin's bundled defaults.
+
+Write `.claude/settings.flow.json` with:
 
 - Quality commands discovered from tech stack (`qualityCheckMaxIterations`, `closedLoop.*`, etc.)
-- `conventions.branchPatterns` matching existing repository conventions (note: `conventions.commitTypes` is trimmed-cascade — see Phase 2.5)
-- `learning.enabled: true` (note: `learning.proposalDir` is trimmed-cascade — see Phase 2.5)
+- `conventions.branchPatterns` and `conventions.commitTypes` matching existing repository conventions
+- `agentTeams: false` (paired-reviewer mode opt-in; users enable per their preference, also requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var)
+- `merge.markerTrust.allowedAssociations` at the secure default `["OWNER","MEMBER","COLLABORATOR"]`
+- `learning.enabled: true`, `learning.proposalDir` (default `~/.claude/flow-proposals`)
+- `journal.dir` (default `.decisions`)
 - LSP settings (`lsp.enabled: true`, `lsp.timeout: 5000`, `lsp.diagnosticsAsQuality: true`)
 - Tier classification (`tiers.*`), timeouts, debugging settings, verdict settings, testing settings, visualVerification settings
 
-Do NOT write `agentTeams`, `merge.markerTrust.*`, `conventions.commitTypes`, `journal.dir`, or `learning.proposalDir` to this file. They live in `$HOME/.claude/settings.flow.json` per Phase 2.5.
-
-**On re-run** (existing settings detected): Read current settings and merge — preserve user customizations, only add new keys that don't exist yet. If the existing project-tier file contains any trimmed-cascade keys (an artifact of pre-issue-#101 setup runs), surface them to the user via `AskUserQuestion`:
-
-> Found trimmed-cascade keys in `.claude/settings.flow.json` that are silently ignored: `{list}`. These belong in `$HOME/.claude/settings.flow.json` (Phase 2.5).
->
-> Options:
-> 1. Migrate them to `$HOME/.claude/settings.flow.json` (Recommended)
-> 2. Leave as-is (they will continue to be ignored)
-> 3. Delete them from project-tier (clean state, re-add via Phase 2.5)
-
-## Phase 2.5: Generate User-Tier Settings (Trimmed-Cascade Keys)
-
-Some flow settings are read from a **trimmed cascade** — `$HOME/.claude/settings.flow.json` (user-tier override) and `${CLAUDE_PLUGIN_ROOT}/settings.json` (plugin default) only. They intentionally exclude project-tier files because a hostile fork PR could otherwise commit `.claude/settings.flow.json` / `.local.json` and bypass the relevant security gate after `gh pr checkout`. See [`references/gate-configuration.md`](../references/gate-configuration.md) for the full threat model.
-
-Trimmed-cascade keys:
-
-| Key | Used by | Default | Why trimmed |
-|-----|---------|---------|-------------|
-| `agentTeams` | `commands/review.md` Path A gate | `false` | Cost amplification — a hostile fork enabling paired review fans out reviewers and inflates token cost |
-| `merge.markerTrust.allowedAssociations` | `commands/{merge,status}.md` | `["OWNER","MEMBER","COLLABORATOR"]` | A permissive list lets a forked-PR author forge their own resolution markers and bypass the merge gate |
-| `conventions.commitTypes` | `agents/convention-checker.md` | `["feat","fix","docs","style","refactor","test","chore","perf","ci","build","revert","improve"]` | A relaxed list (e.g. `[".*"]`) defeats commit-message validation in PR review |
-| `journal.dir` | `bin/journal-record.sh` + several hooks | `.decisions` | Redirects every journal/hook write to an attacker-controlled path |
-| `learning.proposalDir` | `commands/learn.md` | `~/.claude/flow-proposals` | Redirects `/flow:learn` proposals; subsequent `bin/promote-proposal.sh` could promote attacker content as a "learned skill" |
-
-### Step 2.5.1: Check existing user-tier file
-
-```bash
-USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
-[ -f "$USER_SETTINGS" ] && echo "USER_SETTINGS_EXISTS=true" || echo "USER_SETTINGS_EXISTS=false"
-```
-
-### Step 2.5.2: Offer to create or update
-
-Use `AskUserQuestion` (3 options):
-
-> Configure user-tier flow settings at `$HOME/.claude/settings.flow.json`?
->
-> This file persists across plugin upgrades and is the supported location for the trimmed-cascade keys above.
->
-> Options:
-> 1. Create with minimal opt-in surface — just `agentTeams: false` and `merge.markerTrust.allowedAssociations` defaults documented (Recommended for new installs; you can edit `agentTeams: true` later when you want paired review)
-> 2. Create with all five trimmed-cascade keys at their defaults — explicit baseline you can edit
-> 3. Skip — you'll create or edit the file manually later
-
-If user chooses option 1 or 2, merge the chosen keys into the existing file (or create it). Do NOT overwrite an existing user-tier file blindly — read it first, write only keys that are missing, and surface any conflicts via `AskUserQuestion`.
-
-For `agentTeams: true` specifically, also remind the user that they need `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in their shell environment for Path A to activate (two-key gate). Setup does NOT modify the user's shell profile — it only documents the requirement.
-
-### Step 2.5.3: Verify
-
-```bash
-if [ -f "$USER_SETTINGS" ] && jq -e '.' "$USER_SETTINGS" >/dev/null 2>&1; then
-  echo "USER_SETTINGS: ready ($USER_SETTINGS)"
-else
-  echo "USER_SETTINGS: not configured"
-fi
-```
+**On re-run** (existing settings detected): Read current settings and merge — preserve user customizations, only add new keys that don't exist yet.
 
 ## Phase 3: LSP Server Setup
 
@@ -303,20 +251,19 @@ If yes, append the workflow section from `templates/CLAUDE-flow.md` to the exist
 
 ### Settings
 
-**Project-tier** (`.claude/settings.flow.json` — shared with team):
+**Project-shared** (`.claude/settings.flow.json` — committed with team):
 - Tech stack: {detected}
 - Quality commands: {lint}, {test}, {typecheck}
-- Branch patterns, tiers, timeouts, LSP, learning.enabled, etc.
+- Branch patterns, commit types, tiers, timeouts, LSP, learning, journal, etc.
+- Agent teams: disabled. To enable paired review, set `agentTeams: true` (in this file for team-wide, or in `.claude/settings.flow.local.json` for personal-pin) AND `export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in your shell.
 
-**User-tier** (`$HOME/.claude/settings.flow.json` — trimmed-cascade keys):
-{If Phase 2.5 ran:}
-- Status: configured
-- agentTeams: {value} — to enable paired review, set `agentTeams: true` here AND `export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in your shell (two-key gate)
-- merge.markerTrust.allowedAssociations: {value}
-- conventions.commitTypes, journal.dir, learning.proposalDir: {value or "default"}
+**Override layers** (standard Claude Code cascade — highest precedence first):
+1. `.claude/settings.flow.local.json` — gitignored, your machine-local pin
+2. `.claude/settings.flow.json` — committed, team-shared (the file just written)
+3. `$HOME/.claude/settings.flow.json` — your cross-project default
+4. Plugin default — bundled in flow
 
-{If user skipped Phase 2.5:}
-- Status: not configured. To enable trimmed-cascade keys (agentTeams, merge.markerTrust, etc.), re-run `/flow:setup` or create the file manually. See [`references/gate-configuration.md`](../references/gate-configuration.md).
+Any key set at a higher layer overrides lower layers. See [`references/gate-configuration.md`](../references/gate-configuration.md) for the per-key reference.
 
 ### LSP Code Intelligence
 | Language | Server | Status | Capabilities |
@@ -353,9 +300,7 @@ If yes, append the workflow section from `templates/CLAUDE-flow.md` to the exist
 |---|---|---|
 | Detect environment, tech stack, build commands | 1 | Autonomous, read-only |
 | Probe LSP capabilities | 1 | Autonomous, read-only |
-| Write `.claude/settings.flow.json` (project settings) | 1 | Autonomous, project file |
-| Write `$HOME/.claude/settings.flow.json` (user-tier trimmed-cascade keys, Phase 2.5) | 2 | Asks via `AskUserQuestion` first; touches user environment outside repo |
-| Migrate trimmed-cascade keys out of project-tier (Phase 2 re-run path) | 2 | Asks via `AskUserQuestion`; deletes/relocates only with confirmation |
+| Write `.claude/settings.flow.json` (project-shared settings) | 1 | Autonomous, project file |
 | Write `.claude/CLAUDE.md` flow integration block | 1 | Autonomous, project file |
 | Install LSP servers (when user opts in) | 2 | Journal-and-proceed (touches user environment outside repo) |
 | `mkdir -p .decisions/` | 1 | Autonomous |

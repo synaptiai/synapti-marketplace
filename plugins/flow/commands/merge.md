@@ -55,22 +55,22 @@ Parse the latest `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` comments to ver
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
 # MARKERTRUST_GATE_BEGIN
-# Resolve trust list from a trimmed cascade — same pattern as the agentTeams
-# gate in review.md and the journal.dir / learning.proposalDir / commitTypes
-# trimmed cascade documented in references/gate-configuration.md. Trusted
-# sources, in precedence order:
-#   1. $HOME/.claude/settings.flow.json — user-tier override; lives outside
-#      the repo, so a hostile fork PR via `gh pr checkout` cannot inject it.
-#   2. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json — plugin default.
-# Project-tier (.claude/settings.flow.json / .claude/settings.flow.local.json)
-# is INTENTIONALLY EXCLUDED. After `gh pr checkout` of a hostile fork, those
-# files would be attacker-controlled and a permissive trust list could
-# disable the forgery defense — issue #101 / PR #93 threat model.
+# Resolve trust list from the standard Claude Code settings cascade.
+# Precedence (highest first — first valid value wins):
+#   1. .claude/settings.flow.local.json — project-local; gitignored
+#   2. .claude/settings.flow.json — project-shared; committed (visible in PR review)
+#   3. $HOME/.claude/settings.flow.json — user-global default
+#   4. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json — plugin default
+# Reviewers of a fork PR will see any change to .claude/settings.flow.json in
+# the diff like any other repo file; defense moves from "plugin refuses to
+# read" to "maintainer review notices the change."
 TRUST_DEFAULT='["OWNER","MEMBER","COLLABORATOR"]'
 TRUST_LIST="$TRUST_DEFAULT"
+LOCAL_SETTINGS=".claude/settings.flow.local.json"
+PROJECT_SETTINGS=".claude/settings.flow.json"
 USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
 PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"
-for SETTINGS_PATH in "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
+for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
   [ -f "$SETTINGS_PATH" ] || continue
   # Capture jq stderr/exit so a parse error in $HOME does not silently mask
   # a typo as "fall through to plugin default" — same pattern as the

@@ -14,12 +14,10 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 # Skip if no file path
 [ -z "$FILE_PATH" ] && exit 0
 
-# Determine journal directory. Excludes repo-local settings sources to keep
-# a hostile fork PR from redirecting hook writes after `gh pr checkout` —
-# same defense pattern as merge.markerTrust + agentTeams. User-global and
-# plugin defaults only.
+# Determine journal directory from the standard Claude Code settings cascade
+# (highest first): project-local → project-shared → user-global → plugin default.
 JOURNAL_DIR=".decisions"
-for SETTINGS_FILE in "$HOME/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
+for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "${HOME:-/nonexistent}/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
   if [ -f "$SETTINGS_FILE" ]; then
     DIR=$(jq -r '.journal.dir // empty' "$SETTINGS_FILE" 2>/dev/null)
     [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break

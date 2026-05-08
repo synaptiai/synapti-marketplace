@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Path A gate source-resolution test (issue #101).
 #
-# The gate at plugins/flow/commands/review.md must:
-#   1. Read $HOME/.claude/settings.flow.json first (user-tier override)
-#   2. Fall through to ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json
-#   3. Never read project-tier .claude/settings.flow*.json (security pin)
-#   4. Emit a three-state diagnostic when no source resolves a value
+# The gate at plugins/flow/commands/review.md must apply the standard Claude Code
+# settings cascade (highest precedence first):
+#   1. .claude/settings.flow.local.json (project-local; gitignored)
+#   2. .claude/settings.flow.json (project-shared; committed)
+#   3. ${HOME:-/nonexistent}/.claude/settings.flow.json (user-global)
+#   4. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json (plugin default)
+# Plus emit a three-state diagnostic when no source resolves a value.
 #
 # Extraction: gate body is delimited by # AGENTTEAMS_GATE_BEGIN / # AGENTTEAMS_GATE_END
 # in plugins/flow/commands/review.md so the test verifies the actual code.
@@ -190,11 +192,11 @@ assert_eq "S2a: pre-upgrade with HOME override → USE_PATH_A=1" "1" "$S2_RESULT
 assert_eq "S2b: post-upgrade with HOME override → USE_PATH_A=1" "1" "$S2_RESULT_B" "$S2_STDERR_B"
 
 # ============================================================================
-# Scenario 3: project-tier-bypass-attempt
+# Scenario 3: project-tier overrides plugin default (standard Claude Code cascade)
 # Project-tier .claude/settings.flow.json has agentTeams:true. $HOME absent.
 # Plugin tier has agentTeams:false. Env var set.
-# Expected: USE_PATH_A=0; project-tier path NEVER appears in any diagnostic.
-# Maps to AC3 (security pin preserved).
+# Expected: USE_PATH_A=1 (project-tier wins, env var also set).
+# Maps to standard Claude Code precedence: local > project > user > plugin.
 # ============================================================================
 S3_DIR="$(mktemp -d -t agentteams-s3.XXXXXX)"
 trap 'rm -rf "$S1_DIR" "$S2_DIR" "$S3_DIR"' EXIT
@@ -203,25 +205,55 @@ S3_CWD="$S3_DIR/cwd"
 S3_CACHE="$S3_DIR/cache"
 mkdir -p "$S3_HOME" "$S3_CWD/.claude" "$S3_CACHE"
 write_settings "$S3_CWD/.claude/settings.flow.json" '{"agentTeams": true}'
-write_settings "$S3_CWD/.claude/settings.flow.local.json" '{"agentTeams": true}'
 write_settings "$S3_CACHE/settings.json" '{"agentTeams": false}'
 S3_STDERR="$S3_DIR/stderr"
 S3_STDOUT="$S3_DIR/stdout"
 
 S3_RESULT=$(run_gate "$S3_CWD" "$S3_HOME" "set" "$S3_CACHE" "set" "$S3_STDERR" "$S3_STDOUT")
-assert_eq "S3: project-tier agentTeams:true is ignored → USE_PATH_A=0" "0" "$S3_RESULT" "$S3_STDERR"
-assert_stderr_not_contains "S3: project-tier path .claude/settings.flow.json NOT in stderr" ".claude/settings.flow.json" "$S3_STDERR"
-assert_stderr_not_contains "S3: project-tier .local path NOT in stderr" ".claude/settings.flow.local.json" "$S3_STDERR"
-# Same check on stdout — project-tier paths must never appear in any output
-if grep -qF ".claude/settings.flow.json" "$S3_STDOUT"; then
-  echo "FAIL: S3: project-tier path .claude/settings.flow.json appeared in stdout"
-  echo "  stdout:"
-  sed 's/^/    /' "$S3_STDOUT"
-  FAIL=$((FAIL + 1))
-else
-  echo "PASS: S3: project-tier path .claude/settings.flow.json NOT in stdout"
-  PASS=$((PASS + 1))
-fi
+assert_eq "S3: project-tier agentTeams:true overrides plugin → USE_PATH_A=1" "1" "$S3_RESULT" "$S3_STDERR"
+
+# ============================================================================
+# Scenario 3b: project-local overrides project-shared
+# .claude/settings.flow.local.json has agentTeams:true; .claude/settings.flow.json
+# has agentTeams:false. Env var set.
+# Expected: USE_PATH_A=1 (project-local wins as highest precedence).
+# ============================================================================
+S3B_DIR="$(mktemp -d -t agentteams-s3b.XXXXXX)"
+trap 'rm -rf "$S1_DIR" "$S2_DIR" "$S3_DIR" "$S3B_DIR"' EXIT
+S3B_HOME="$S3B_DIR/empty-home"
+S3B_CWD="$S3B_DIR/cwd"
+S3B_CACHE="$S3B_DIR/cache"
+mkdir -p "$S3B_HOME" "$S3B_CWD/.claude" "$S3B_CACHE"
+write_settings "$S3B_CWD/.claude/settings.flow.local.json" '{"agentTeams": true}'
+write_settings "$S3B_CWD/.claude/settings.flow.json" '{"agentTeams": false}'
+write_settings "$S3B_CACHE/settings.json" '{"agentTeams": false}'
+S3B_STDERR="$S3B_DIR/stderr"
+S3B_STDOUT="$S3B_DIR/stdout"
+
+S3B_RESULT=$(run_gate "$S3B_CWD" "$S3B_HOME" "set" "$S3B_CACHE" "set" "$S3B_STDERR" "$S3B_STDOUT")
+assert_eq "S3b: project-local agentTeams:true overrides project-shared:false → USE_PATH_A=1" "1" "$S3B_RESULT" "$S3B_STDERR"
+
+# ============================================================================
+# Scenario 3c: full precedence chain (local > project > user > plugin)
+# Each tier sets a different agentTeams value. Confirm local wins.
+# ============================================================================
+S3C_DIR="$(mktemp -d -t agentteams-s3c.XXXXXX)"
+trap 'rm -rf "$S1_DIR" "$S2_DIR" "$S3_DIR" "$S3B_DIR" "$S3C_DIR"' EXIT
+S3C_HOME="$S3C_DIR/home"
+S3C_CWD="$S3C_DIR/cwd"
+S3C_CACHE="$S3C_DIR/cache"
+mkdir -p "$S3C_HOME/.claude" "$S3C_CWD/.claude" "$S3C_CACHE"
+# Reverse order: plugin says true, user says false, project says true, local says false.
+# If precedence is correct, local (false) wins → USE_PATH_A=0.
+write_settings "$S3C_CWD/.claude/settings.flow.local.json" '{"agentTeams": false}'
+write_settings "$S3C_CWD/.claude/settings.flow.json" '{"agentTeams": true}'
+write_settings "$S3C_HOME/.claude/settings.flow.json" '{"agentTeams": false}'
+write_settings "$S3C_CACHE/settings.json" '{"agentTeams": true}'
+S3C_STDERR="$S3C_DIR/stderr"
+S3C_STDOUT="$S3C_DIR/stdout"
+
+S3C_RESULT=$(run_gate "$S3C_CWD" "$S3C_HOME" "set" "$S3C_CACHE" "set" "$S3C_STDERR" "$S3C_STDOUT")
+assert_eq "S3c: full precedence chain — local:false wins over all → USE_PATH_A=0" "0" "$S3C_RESULT" "$S3C_STDERR"
 
 # ============================================================================
 # Scenario 4a: diagnostic state (a) — plugin not installed
