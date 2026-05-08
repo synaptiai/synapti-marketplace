@@ -273,3 +273,5 @@ PASS — 6 tasks reviewed. Each task contains: explicit file paths (with line ra
 <!-- auto-log: 2026-05-08 19:36 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/CHANGELOG.md -->
 
 <!-- auto-log: 2026-05-08 19:36 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/CHANGELOG.md -->
+
+<!-- auto-log: 2026-05-08 19:37 commit "refactor(flow): cycle-2 P3 cleanup + cascade-resolve helper (#101)" -->
