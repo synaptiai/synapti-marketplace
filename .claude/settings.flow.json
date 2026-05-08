@@ -1,0 +1,84 @@
+{
+  "agentTeams": false,
+  "tiers": {
+    "push": "journal",
+    "prCreate": "journal",
+    "issueAssign": "journal",
+    "issueCreate": "journal",
+    "merge": "confirm",
+    "release": "confirm"
+  },
+  "timeouts": {
+    "devServerStartup": 30,
+    "e2eTest": 120,
+    "qualityCheckMaxIterations": 3,
+    "teammateTimeout": 300
+  },
+  "conventions": {
+    "commitTypes": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build", "revert", "improve"],
+    "branchPatterns": {
+      "feature": "feature/issue-{N}-{desc}",
+      "fix": "fix/issue-{N}-{desc}",
+      "docs": "docs/issue-{N}-{desc}"
+    }
+  },
+  "merge": {
+    "strategy": "squash",
+    "deleteBranch": true,
+    "markerTrust": {
+      "allowedAssociations": ["OWNER", "MEMBER", "COLLABORATOR"]
+    }
+  },
+  "conflictResolution": {
+    "autoResolveTrivial": true,
+    "maxConflictFiles": 20
+  },
+  "release": {
+    "tagPrefix": "v"
+  },
+  "learning": {
+    "enabled": true,
+    "proposalDir": "~/.claude/flow-proposals"
+  },
+  "journal": {
+    "dir": ".decisions"
+  },
+  "specFirst": {
+    "requireAcceptanceCriteria": true,
+    "allowSpecFreeLabels": ["documentation", "chore"]
+  },
+  "verdict": {
+    "enabled": true,
+    "requireAllPass": true
+  },
+  "testing": {
+    "tddMode": "enforce",
+    "tddModeOptOut": false
+  },
+  "debugging": {
+    "maxHypotheses": 3
+  },
+  "reviewCycleLimit": 5,
+  "fixForwardMaxIterations": 5,
+  "closedLoop": {
+    "enabled": true,
+    "maxBuildIterations": 5,
+    "maxServerRetries": 3,
+    "maxDebugIterations": 5,
+    "requireRuntimeVerification": true
+  },
+  "lsp": {
+    "enabled": true,
+    "timeout": 5000,
+    "diagnosticsAsQuality": false
+  },
+  "visualVerification": {
+    "enabled": false,
+    "screenshotDir": ".screenshots",
+    "viewports": [
+      { "name": "desktop", "width": 1280, "height": 720 }
+    ],
+    "maxIterations": 3,
+    "requireVisualVerification": false
+  }
+}
