@@ -199,3 +199,5 @@ PASS — 6 tasks reviewed. Each task contains: explicit file paths (with line ra
 <!-- auto-log: 2026-05-08 18:41 Edit /Users/danielbentes/synapti-marketplace/tests/agentteams-gate/test.sh -->
 
 <!-- auto-log: 2026-05-08 18:42 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/CHANGELOG.md -->
+
+<!-- auto-log: 2026-05-08 18:43 commit "fix(flow): unify settings cascade to standard Claude Code precedence (#101)" -->
