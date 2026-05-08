@@ -84,17 +84,17 @@ if ! echo "$ISSUE" | grep -qE '^[0-9]+$'; then
   exit 1
 fi
 
-# Discover journal directory from the standard Claude Code settings cascade
-# (highest precedence first): project-local → project-shared → user-global → plugin default.
-JOURNAL_DIR=".decisions"
-if command -v jq >/dev/null 2>&1; then
-  for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "${HOME:-/nonexistent}/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
-    if [ -f "$SETTINGS" ]; then
-      DIR=$(jq -r '.journal.dir // empty' "$SETTINGS" 2>/dev/null || true)
-      [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
-    fi
-  done
-fi
+# Discover journal directory via bin/cascade-resolve.sh.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+JOURNAL_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty')
+
+# Defense-in-depth: warn (not block) when journal.dir contains ".." path
+# segments. The cascade visibility is the primary defense (settings changes
+# appear in PR diffs), but a path-traversal value would cause writes to
+# attacker-chosen locations outside the repo.
+case "$JOURNAL_DIR" in
+  *..*) echo "journal-record.sh: WARN: journal.dir='$JOURNAL_DIR' contains '..' path segment — writes will land outside the repo. Verify this is intentional." >&2 ;;
+esac
 
 mkdir -p "$JOURNAL_DIR" || { echo "journal-record.sh: cannot create $JOURNAL_DIR" >&2; exit 2; }
 JOURNAL="$JOURNAL_DIR/issue-$ISSUE.md"

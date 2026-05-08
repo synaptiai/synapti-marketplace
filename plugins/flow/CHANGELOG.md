@@ -31,6 +31,19 @@
 
 - `references/gate-configuration.md` — replaced the "Trimmed-Cascade Settings Keys" section with a "Settings Cascade" section documenting the standard four-tier precedence. The `merge.markerTrust.allowedAssociations` row in the gate config table updated. New worked examples for "Persistent personal opt-in" (using `.local.json` or `$HOME`) and "Team-wide opt-in" (using committed `.json`).
 
+### P3 cleanup (cycle 2 review pass — pre-merge)
+
+Address the P3 findings raised during the cycle-2 self-review before landing:
+
+- **F4/ERR-8 — `agentTeams: null` semantic.** A user writing `"agentTeams": null` likely means "use the default", not "definitively no". The gate now treats `null` as absent (falls through to next source) rather than triggering the `non-canonical value` WARN. New test S7b verifies this.
+- **F5 — gate-configuration.md ordering inconsistency.** The "Settings File Locations" section listed cascade with plugin first / local last; the new "Settings Cascade" section uses highest-first ordering. Aligned both to the highest-first form so the document is internally consistent.
+- **F6 — three-state diagnostic gap.** When `CLAUDE_PLUGIN_ROOT` was set to a missing path AND user-tier files existed without the key, the gate fell into the catchall message and never named the broken plugin root. Now tracks `PLUGIN_ROOT_BROKEN` explicitly and emits a WARN naming the path even when user-tier files are present. New test S9 verifies this.
+- **SEC-1 — high-risk markerTrust values warn at gate time.** When the resolved trust list contains `NONE`, `FIRST_TIMER`, `FIRST_TIME_CONTRIBUTOR`, or `MANNEQUIN`, the gate emits `LEDGER_WARN: trust list ... includes high-risk values [...]` on stderr at every merge attempt. PR-diff visibility remains the primary defense; the WARN raises the signal so a maintainer cannot accidentally miss it. New test S4b verifies this.
+- **SEC-3/ERR-6 — `journal.dir` path-traversal warn.** When the resolved `journal.dir` contains `..` path segments, `bin/journal-record.sh` emits a WARN to stderr. Defense-in-depth — the cascade visibility is the primary defense, but a `journal.dir: "../../tmp/x"` value would silently write artifacts outside the repo without this WARN.
+- **ERR-5 — `gh api` exit-code coverage in `commands/merge.md`.** The untrusted-counting `gh api` calls didn't capture their exit codes via `${PIPESTATUS[0]}`. A network blip during those secondary calls would silently treat as "no untrusted markers" rather than failing closed. Now captures `GH_EXIT_RES_U` and `GH_EXIT_REV_U` and includes them in the fail-closed condition.
+- **ERR-9 — `commitTypes` array type-check.** `agents/convention-checker.md` previously crashed jq's `join("|")` step if `commitTypes` was a non-array (e.g., string typo). Now wraps in `if type == "array" then join("|") else empty end` so non-array values silently fall through to the next cascade source.
+- **ERR-4 — extracted shared cascade-resolve helper.** New `plugins/flow/bin/cascade-resolve.sh` (with 12 regression tests at `tests/cascade-resolve/test.sh`) reads any settings key from the standard cascade with parse-error WARN surfacing on stderr. Refactored 9 simple cascade-loop sites (3 markdown commands, 1 agent, 1 bin script, 3 hook scripts, 1 hooks site reading two keys) to call the helper. The 2 security-critical gate sites (`commands/review.md` agentTeams gate, `commands/merge.md` markerTrust gate) keep their inline implementations because they need source-tracking and specialized boolean handling. Removes the diagnostic asymmetry where 9 sites silently swallowed parse errors via `2>/dev/null` while the gate sites surfaced them.
+
 ### Self-review fix-forward (cycle 2 review pass)
 
 - **P1 — `commands/merge.md` markerTrust fall-through emitted `FINDING_LEDGER_BLOCK:` on stdout.** When one tier had an invalid `markerTrust.allowedAssociations` (e.g., empty array) AND the gate fell through to a valid lower tier with a working trust list, the gate still printed `FINDING_LEDGER_BLOCK:` on stdout. The downstream merge gate scans stdout for that prefix and would treat this as a hard block — even though the cascade fall-through resolved a valid trust list. Fixed: emit `LEDGER_WARN:` on stderr instead of `FINDING_LEDGER_BLOCK:` on stdout when fall-through succeeds. The `FINDING_LEDGER_BLOCK:` prefix is now reserved for cases where the merge gate genuinely cannot proceed (gh API down, ESCALATED markers, untrusted-only markers).
@@ -41,7 +54,12 @@
 ### New regression tests
 
 - `tests/agentteams-gate/test.sh` (new, 20 assertions) extracts the gate body from `commands/review.md` via `# AGENTTEAMS_GATE_BEGIN` / `# AGENTTEAMS_GATE_END` markers and runs it against scenarios for: marketplace install with `$HOME` override, upgrade survival, project-tier overrides plugin default (S3), project-local overrides project-shared (S3b), full precedence chain (S3c), three-state diagnostic, malformed-HOME fall-through, env-var double-key requirement, and JSON-string vs boolean coercion (S8). The harness runs `bash -n` against the extracted body so a corrupted END marker FATALs instead of silently partial-eval'ing.
-- `tests/markertrust-gate/test.sh` (new, 11 assertions) covers the same scenarios for `merge.markerTrust.allowedAssociations`, including project-local-overrides-project-shared precedence and the empty-array fall-through. S4 specifically asserts the gate emits `LEDGER_WARN` on stderr (not `FINDING_LEDGER_BLOCK` on stdout) when an invalid array falls through to a valid lower tier.
+- `tests/markertrust-gate/test.sh` (new, 15 assertions) covers the same scenarios for `merge.markerTrust.allowedAssociations`, including project-local-overrides-project-shared precedence and the empty-array fall-through. S4 specifically asserts the gate emits `LEDGER_WARN` on stderr (not `FINDING_LEDGER_BLOCK` on stdout) when an invalid array falls through to a valid lower tier. S4b verifies the high-risk-trust-value WARN.
+- `tests/cascade-resolve/test.sh` (new, 12 assertions) verifies the four-tier cascade behavior, parse-error WARN surfacing, default-value handling, and compact-vs-raw output mode of the new `bin/cascade-resolve.sh` helper.
+
+### Test totals
+
+110 assertions across 9 suites (was 89 in 2.3.0). The cycle-2 cascade work added two new gate-test suites (24 + 15 = 39 assertions) and the new cascade-resolve test suite (12 assertions); the older suites kept their counts.
 
 ## 2.3.0 (2026-05-06)
 

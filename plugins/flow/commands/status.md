@@ -33,20 +33,10 @@ gh pr list --author @me --state open --json number,title,state,reviewDecision,st
 # 5. PRs needing my review
 gh pr list --search "review-requested:@me" --state open --json number,title,author
 
-# 6. Decision journal health.
-# Standard Claude Code settings cascade (highest first): project-local →
-# project-shared → user-global → plugin default. Same precedence as the
-# .sh consumers (bin/journal-record.sh, hooks/scripts/*.sh) and the
-# markdown command-bash sites (commands/{learn,explain}.md).
+# 6. Decision journal health. Resolved via bin/cascade-resolve.sh.
+HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
-if command -v jq >/dev/null 2>&1; then
-  for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "${HOME:-/nonexistent}/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
-    if [ -f "$SETTINGS" ]; then
-      DIR=$(jq -r '.journal.dir // empty' "$SETTINGS" 2>/dev/null || true)
-      [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
-    fi
-  done
-fi
+[ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
 [ -d "$JOURNAL_DIR" ] && ls -la "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l || echo "0"
 
 # 7. Learning pending

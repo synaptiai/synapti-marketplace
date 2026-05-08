@@ -85,6 +85,7 @@ for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PL
   [ -z "$CONFIGURED" ] && continue
   if echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
     TRUST_LIST="$CONFIGURED"
+    TRUST_SOURCE="$SETTINGS_PATH"
     break
   else
     # Fall through to next source. Emit on stderr (NOT stdout) so the
@@ -96,6 +97,18 @@ for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PL
     echo "LEDGER_WARN: invalid markerTrust configuration in $SETTINGS_PATH (must be non-empty JSON array of strings); falling through" >&2
   fi
 done
+
+# Defense-in-depth: warn (not block) when the resolved trust list contains
+# high-risk values that would let a forked-PR author forge their own resolution
+# markers. The cascade visibility (settings changes appear in PR diffs) is the
+# primary defense; this WARN raises the signal at every merge attempt so a
+# maintainer cannot accidentally miss it during a quick diff scan.
+if [ -n "${TRUST_SOURCE:-}" ]; then
+  HIGH_RISK=$(echo "$TRUST_LIST" | jq -r '.[] | select(. == "NONE" or . == "FIRST_TIMER" or . == "FIRST_TIME_CONTRIBUTOR" or . == "MANNEQUIN")' 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+  if [ -n "$HIGH_RISK" ]; then
+    echo "LEDGER_WARN: trust list (from $TRUST_SOURCE) includes high-risk values [$HIGH_RISK]. Forked-PR contributors with these author_associations could forge FLOW_RESOLUTION_CYCLE markers. Verify this is intentional before merging." >&2
+  fi
+fi
 # MARKERTRUST_GATE_END
 
 # Trust filter applied via jq's `index()` exact-match (no regex surface).
@@ -103,10 +116,11 @@ done
 RESOLUTION_BODY=$(gh api --paginate "repos/$REPO/issues/$ARGUMENTS/comments" 2>/dev/null \
   | jq -s -r --argjson trust "$TRUST_LIST" \
       'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | last | .body // ""')
-GH_EXIT_RES=$?
+GH_EXIT_RES=${PIPESTATUS[0]}
 RES_UNTRUSTED=$(gh api --paginate "repos/$REPO/issues/$ARGUMENTS/comments" 2>/dev/null \
   | jq -s -r --argjson trust "$TRUST_LIST" \
       'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | length')
+GH_EXIT_RES_U=${PIPESTATUS[0]}
 
 # Extract ESCALATED array contents (portable POSIX grep+sed; BSD grep has no -P).
 # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
@@ -116,15 +130,19 @@ ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ES
 REVIEW_BODY=$(gh api --paginate "repos/$REPO/pulls/$ARGUMENTS/reviews" 2>/dev/null \
   | jq -s -r --argjson trust "$TRUST_LIST" \
       'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_REVIEW_CYCLE:")))] | last | .body // ""')
-GH_EXIT_REV=$?
+GH_EXIT_REV=${PIPESTATUS[0]}
 REV_UNTRUSTED=$(gh api --paginate "repos/$REPO/pulls/$ARGUMENTS/reviews" 2>/dev/null \
   | jq -s -r --argjson trust "$TRUST_LIST" \
       'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("FLOW_REVIEW_CYCLE:")))] | length')
+GH_EXIT_REV_U=${PIPESTATUS[0]}
 
-# Fail closed if either gh call failed — better to block a legitimate merge
-# than silently let a regression through when the gate state is unknowable.
-if [ $GH_EXIT_RES -ne 0 ] || [ $GH_EXIT_REV -ne 0 ]; then
-  echo "FINDING_LEDGER_BLOCK: gh API unavailable — cannot verify finding ledger (resolution exit=$GH_EXIT_RES, review exit=$GH_EXIT_REV)"
+# Fail closed if any of the four gh calls failed — better to block a legitimate
+# merge than silently let a regression through when the gate state is unknowable.
+# Includes the untrusted-counting calls (RES_UNTRUSTED, REV_UNTRUSTED) — without
+# their exit codes a network blip during the secondary call would silently
+# treat as "no untrusted markers" rather than failing closed.
+if [ $GH_EXIT_RES -ne 0 ] || [ $GH_EXIT_REV -ne 0 ] || [ $GH_EXIT_RES_U -ne 0 ] || [ $GH_EXIT_REV_U -ne 0 ]; then
+  echo "FINDING_LEDGER_BLOCK: gh API unavailable — cannot verify finding ledger (resolution exit=$GH_EXIT_RES, review exit=$GH_EXIT_REV, res-untrusted exit=$GH_EXIT_RES_U, rev-untrusted exit=$GH_EXIT_REV_U)"
 fi
 
 # Surface "untrusted-only" markers as a block reason rather than silently

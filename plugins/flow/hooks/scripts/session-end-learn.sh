@@ -17,24 +17,15 @@ command -v jq &>/dev/null || exit 0
 INPUT=$(cat)
 : "${INPUT:=}"  # silence "unused" warnings under set -u without dropping the drain
 
-# Determine journal directory from the standard Claude Code settings cascade
-# (highest first): project-local → project-shared → user-global → plugin default.
+# Determine journal directory + learning.enabled via bin/cascade-resolve.sh.
+# Gracefully fall back to defaults when the helper is unreachable.
+HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
-for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "${HOME:-/nonexistent}/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
-  if [ -f "$SETTINGS_FILE" ]; then
-    DIR=$(jq -r '.journal.dir // empty' "$SETTINGS_FILE" 2>/dev/null)
-    [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
-  fi
-done
-
-# Check if learning is enabled. Same standard cascade.
 LEARNING_ENABLED="true"
-for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "${HOME:-/nonexistent}/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
-  if [ -f "$SETTINGS_FILE" ]; then
-    ENABLED=$(jq -r '.learning.enabled // empty' "$SETTINGS_FILE" 2>/dev/null)
-    [ -n "$ENABLED" ] && LEARNING_ENABLED="$ENABLED" && break
-  fi
-done
+if [ -x "$HELPER" ]; then
+  JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty' 2>/dev/null)
+  LEARNING_ENABLED=$("$HELPER" --default "true" '.learning.enabled // empty' 2>/dev/null)
+fi
 
 [ "$LEARNING_ENABLED" != "true" ] && exit 0
 

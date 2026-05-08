@@ -128,7 +128,10 @@ else
     # then matches the bare boolean `true` for valid input and routes the
     # quoted-string typo to the catchall WARN. `-r` would strip the quotes
     # and silently enable Path A from a malformed config.
-    JQ_OUT=$(jq -c 'if has("agentTeams") then .agentTeams else empty end' "$SETTINGS_PATH" 2>&1)
+    # JSON `null` is treated as "absent" (fall through to next source) — same
+    # semantic as a missing key. A user writing `"agentTeams": null` likely
+    # means "use the default", not "definitively no" — we honor that intent.
+    JQ_OUT=$(jq -c 'if has("agentTeams") and .agentTeams != null then .agentTeams else empty end' "$SETTINGS_PATH" 2>&1)
     JQ_EXIT=$?
     if [ $JQ_EXIT -ne 0 ]; then
       JQ_ERR=$(printf '%s' "$JQ_OUT" | tr '\n' ' ' | cut -c1-200)
@@ -143,21 +146,27 @@ else
   done
 
   if [ -z "$SOURCE_USED" ]; then
-    # Three-state diagnostic — distinguish (a) plugin not installed,
-    # (b) CLAUDE_PLUGIN_ROOT pointed at a path that does not exist,
-    # (c) all four files (local, project, user, plugin) exist but no agentTeams
-    # key, so the user can take the right next step without re-running with
-    # debug instrumentation.
+    # Diagnostic states — surface what the user can act on:
+    # (a) Plugin install missing/broken (CLAUDE_PLUGIN_ROOT path doesn't exist)
+    # (b) Files exist but no agentTeams key set
+    # State (a) is always WARN-worthy regardless of whether user-tier files exist
+    # because the user expected the plugin to be reachable. State (b) is just
+    # informational ("you haven't opted in yet").
+    PLUGIN_ROOT_BROKEN=0
+    if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ ! -f "$PLUGIN_SETTINGS" ]; then
+      PLUGIN_ROOT_BROKEN=1
+    fi
     ANY_USER_FILE_EXISTS=0
     [ -f "$LOCAL_SETTINGS" ] && ANY_USER_FILE_EXISTS=1
     [ -f "$PROJECT_SETTINGS" ] && ANY_USER_FILE_EXISTS=1
     [ -f "$USER_SETTINGS" ] && ANY_USER_FILE_EXISTS=1
-    if [ $ANY_USER_FILE_EXISTS -eq 0 ] && [ ! -f "$PLUGIN_SETTINGS" ]; then
-      if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-        echo "WARN: agentTeams not set in any cascade source. CLAUDE_PLUGIN_ROOT is unset and $PLUGIN_SETTINGS does not exist — flow plugin may not be installed in this CWD. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
-      else
-        echo "WARN: agentTeams not set in any cascade source. CLAUDE_PLUGIN_ROOT=$CLAUDE_PLUGIN_ROOT but $PLUGIN_SETTINGS does not exist — plugin install may be corrupted or env var pointing wrong place. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
-      fi
+
+    if [ $PLUGIN_ROOT_BROKEN -eq 1 ]; then
+      # Always WARN about broken plugin root — even when user-tier files exist
+      # without the key, the broken root is still actionable info.
+      echo "WARN: CLAUDE_PLUGIN_ROOT=$CLAUDE_PLUGIN_ROOT but $PLUGIN_SETTINGS does not exist — plugin install may be corrupted. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
+    elif [ $ANY_USER_FILE_EXISTS -eq 0 ] && [ ! -f "$PLUGIN_SETTINGS" ]; then
+      echo "WARN: agentTeams not set in any cascade source. CLAUDE_PLUGIN_ROOT is unset and $PLUGIN_SETTINGS does not exist — flow plugin may not be installed in this CWD. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
     else
       echo "Path A skipped: agentTeams not declared in any cascade source ($LOCAL_SETTINGS, $PROJECT_SETTINGS, $USER_SETTINGS, $PLUGIN_SETTINGS). Add \"agentTeams\": true to any of them to opt in."
     fi

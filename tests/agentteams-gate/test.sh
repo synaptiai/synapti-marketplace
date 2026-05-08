@@ -389,6 +389,27 @@ assert_eq "S7: agentTeams:true but env var unset → USE_PATH_A=0" "0" "$S7_RESU
 assert_stderr_contains "S7: WARN about env var" "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" "$S7_STDERR"
 
 # ============================================================================
+# Scenario 7b: agentTeams: null is treated as absent (falls through)
+# A user writing `"agentTeams": null` likely means "use the default" — we
+# honor that intent rather than treating null as a definitive non-canonical
+# value. The cascade falls through to the next source with the key set.
+# ============================================================================
+S7B_DIR="$(mktemp -d -t agentteams-s7b.XXXXXX)"
+trap 'rm -rf "$S1_DIR" "$S2_DIR" "$S3_DIR" "$S3B_DIR" "$S3C_DIR" "$S4A_DIR" "$S4B_DIR" "$S4C_DIR" "$S5_DIR" "$S6_DIR" "$S7_DIR" "$S7B_DIR"' EXIT
+S7B_HOME="$S7B_DIR/home"
+S7B_CWD="$S7B_DIR/cwd"
+S7B_CACHE="$S7B_DIR/cache"
+mkdir -p "$S7B_HOME/.claude" "$S7B_CWD" "$S7B_CACHE"
+write_settings "$S7B_HOME/.claude/settings.flow.json" '{"agentTeams": null}'
+write_settings "$S7B_CACHE/settings.json" '{"agentTeams": true}'
+S7B_STDERR="$S7B_DIR/stderr"
+S7B_STDOUT="$S7B_DIR/stdout"
+
+S7B_RESULT=$(run_gate "$S7B_CWD" "$S7B_HOME" "set" "$S7B_CACHE" "set" "$S7B_STDERR" "$S7B_STDOUT")
+assert_eq "S7b: HOME=null falls through to plugin=true → USE_PATH_A=1" "1" "$S7B_RESULT" "$S7B_STDERR"
+assert_stderr_not_contains "S7b: no 'non-canonical value' WARN for null" "is not the JSON boolean" "$S7B_STDERR"
+
+# ============================================================================
 # Scenario 8: JSON string vs boolean coercion
 # {"agentTeams": "true"} (a JSON string, e.g. user typed quotes around the
 # value) MUST NOT silently enable Path A. The gate uses `jq -c` (not `-r`)
@@ -407,6 +428,29 @@ S8_STDOUT="$S8_DIR/stdout"
 S8_RESULT=$(run_gate "$S8_CWD" "$S8_HOME" "unset" "" "set" "$S8_STDERR" "$S8_STDOUT")
 assert_eq "S8: JSON string \"true\" does NOT enable Path A → USE_PATH_A=0" "0" "$S8_RESULT" "$S8_STDERR"
 assert_stderr_contains "S8: WARN about non-canonical value" "is not the JSON boolean true/false" "$S8_STDERR"
+
+# ============================================================================
+# Scenario 9: Broken CLAUDE_PLUGIN_ROOT WARNs even when user-tier file exists
+# A user with a valid $HOME/.claude/settings.flow.json (no agentTeams key) but
+# CLAUDE_PLUGIN_ROOT set to a missing path should still see the broken-plugin
+# WARN — the plugin install issue is actionable info regardless of user-tier
+# state. Was previously hidden by the catchall "Path A skipped" message.
+# ============================================================================
+S9_DIR="$(mktemp -d -t agentteams-s9.XXXXXX)"
+trap 'rm -rf "$S1_DIR" "$S2_DIR" "$S3_DIR" "$S3B_DIR" "$S3C_DIR" "$S4A_DIR" "$S4B_DIR" "$S4C_DIR" "$S5_DIR" "$S6_DIR" "$S7_DIR" "$S7B_DIR" "$S8_DIR" "$S9_DIR"' EXIT
+S9_HOME="$S9_DIR/home"
+S9_CWD="$S9_DIR/cwd"
+S9_BAD_PLUGIN_ROOT="$S9_DIR/missing-plugin-cache"
+mkdir -p "$S9_HOME/.claude" "$S9_CWD"
+# User-tier file exists but does NOT have agentTeams key. CLAUDE_PLUGIN_ROOT
+# points at a path with no settings.json.
+write_settings "$S9_HOME/.claude/settings.flow.json" '{"otherKey": "value"}'
+S9_STDERR="$S9_DIR/stderr"
+S9_STDOUT="$S9_DIR/stdout"
+
+S9_RESULT=$(run_gate "$S9_CWD" "$S9_HOME" "set" "$S9_BAD_PLUGIN_ROOT" "set" "$S9_STDERR" "$S9_STDOUT")
+assert_eq "S9: broken plugin root + user file → USE_PATH_A=0" "0" "$S9_RESULT" "$S9_STDERR"
+assert_stderr_contains "S9: WARN names broken CLAUDE_PLUGIN_ROOT path even with user file present" "$S9_BAD_PLUGIN_ROOT" "$S9_STDERR"
 
 # ============================================================================
 echo ""

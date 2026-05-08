@@ -213,3 +213,63 @@ PASS — 6 tasks reviewed. Each task contains: explicit file paths (with line ra
 <!-- auto-log: 2026-05-08 18:52 Write /Users/danielbentes/synapti-marketplace/.claude/settings.flow.local.json -->
 
 <!-- auto-log: 2026-05-08 18:55 commit "chore(flow): add project-shared settings via /flow:setup (#101)" -->
+
+<!-- auto-log: 2026-05-08 19:24 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-08 19:24 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-08 19:25 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-08 19:25 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/agents/convention-checker.md -->
+
+<!-- auto-log: 2026-05-08 19:25 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/gate-configuration.md -->
+
+<!-- auto-log: 2026-05-08 19:26 Edit /Users/danielbentes/synapti-marketplace/tests/agentteams-gate/test.sh -->
+
+<!-- auto-log: 2026-05-08 19:26 Edit /Users/danielbentes/synapti-marketplace/tests/agentteams-gate/test.sh -->
+
+<!-- auto-log: 2026-05-08 19:26 Edit /Users/danielbentes/synapti-marketplace/tests/markertrust-gate/test.sh -->
+
+<!-- auto-log: 2026-05-08 19:27 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-08 19:27 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-08 19:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/journal-record.sh -->
+
+<!-- auto-log: 2026-05-08 19:31 Write /Users/danielbentes/synapti-marketplace/plugins/flow/bin/cascade-resolve.sh -->
+
+<!-- auto-log: 2026-05-08 19:32 Write /Users/danielbentes/synapti-marketplace/tests/cascade-resolve/test.sh -->
+
+<!-- auto-log: 2026-05-08 19:32 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/learn.md -->
+
+<!-- auto-log: 2026-05-08 19:32 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/explain.md -->
+
+<!-- auto-log: 2026-05-08 19:33 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-08 19:33 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/agents/convention-checker.md -->
+
+<!-- auto-log: 2026-05-08 19:33 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/journal-record.sh -->
+
+<!-- auto-log: 2026-05-08 19:33 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/log-commits.sh -->
+
+<!-- auto-log: 2026-05-08 19:33 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/log-file-changes.sh -->
+
+<!-- auto-log: 2026-05-08 19:33 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/session-end-learn.sh -->
+
+<!-- auto-log: 2026-05-08 19:35 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/log-commits.sh -->
+
+<!-- auto-log: 2026-05-08 19:35 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/log-file-changes.sh -->
+
+<!-- auto-log: 2026-05-08 19:35 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/session-end-learn.sh -->
+
+<!-- auto-log: 2026-05-08 19:35 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/learn.md -->
+
+<!-- auto-log: 2026-05-08 19:35 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/explain.md -->
+
+<!-- auto-log: 2026-05-08 19:35 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-08 19:35 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/agents/convention-checker.md -->
+
+<!-- auto-log: 2026-05-08 19:36 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/CHANGELOG.md -->
+
+<!-- auto-log: 2026-05-08 19:36 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/CHANGELOG.md -->

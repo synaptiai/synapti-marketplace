@@ -234,6 +234,31 @@ assert_contains "S4: LEDGER_WARN on stderr names settings.flow.json source" "LED
 assert_contains "S4: LEDGER_WARN names settings.flow.json" "settings.flow.json" "$S4_STDERR"
 
 # ============================================================================
+# S4b: high-risk trust value (NONE) triggers LEDGER_WARN on stderr
+# Defense-in-depth: trust list containing NONE/FIRST_TIMER/etc. is structurally
+# valid (non-empty array of strings) so the gate accepts it, but emits a WARN
+# at every merge attempt so a maintainer cannot accidentally miss the high-risk
+# value during a PR diff scan.
+# ============================================================================
+S4B_DIR="$(mktemp -d -t markertrust-s4b.XXXXXX)"
+trap 'rm -rf "$S1_DIR" "$S2_DIR" "$S3_DIR" "$S3B_DIR" "$S4_DIR" "$S4B_DIR"' EXIT
+S4B_HOME="$S4B_DIR/home"
+S4B_CWD="$S4B_DIR/cwd"
+S4B_CACHE="$S4B_DIR/cache"
+mkdir -p "$S4B_HOME/.claude" "$S4B_CWD" "$S4B_CACHE"
+HIGH_RISK_TRUST='["OWNER","MEMBER","COLLABORATOR","NONE"]'
+write_settings "$S4B_HOME/.claude/settings.flow.json" "{\"merge\":{\"markerTrust\":{\"allowedAssociations\":$HIGH_RISK_TRUST}}}"
+write_settings "$S4B_CACHE/settings.json" "{\"merge\":{\"markerTrust\":{\"allowedAssociations\":$DEFAULT_TRUST}}}"
+S4B_STDOUT="$S4B_DIR/stdout"
+S4B_STDERR="$S4B_DIR/stderr"
+
+S4B_RESULT=$(run_gate "$S4B_CWD" "$S4B_HOME" "set" "$S4B_CACHE" "$S4B_STDOUT" "$S4B_STDERR")
+assert_eq "S4b: high-risk trust list IS used (defense-in-depth, not block) → TRUST_LIST=high-risk" "$HIGH_RISK_TRUST" "$S4B_RESULT"
+assert_contains "S4b: LEDGER_WARN about high-risk values on stderr" "high-risk" "$S4B_STDERR"
+assert_contains "S4b: WARN names NONE specifically" "NONE" "$S4B_STDERR"
+assert_not_contains "S4b: NO FINDING_LEDGER_BLOCK on stdout (warn-not-block)" "FINDING_LEDGER_BLOCK" "$S4B_STDOUT"
+
+# ============================================================================
 # S5: no sources, defaults preserved
 # Neither HOME nor plugin tier exist. Expected: TRUST_LIST defaults to
 # the existing default ['OWNER','MEMBER','COLLABORATOR'] (existing behavior).

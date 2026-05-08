@@ -16,12 +16,14 @@ You are a Git convention validator for the flow plugin. Verify adherence to repo
 ### Step 1: Read Settings
 
 ```bash
-# Read convention settings from the standard Claude Code cascade
-# (highest first): project-local → project-shared → user-global → plugin default.
-COMMIT_TYPES="feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert"
-for SETTINGS in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "${HOME:-/nonexistent}/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
-  [ -f "$SETTINGS" ] && TYPES=$(jq -r '.conventions.commitTypes // empty | join("|")' "$SETTINGS" 2>/dev/null) && [ -n "$TYPES" ] && COMMIT_TYPES="$TYPES" && break
-done
+# Read convention settings via bin/cascade-resolve.sh. The jq expression
+# defends against non-array values (e.g., user typo'd a string instead of
+# an array) — those return empty from the filter and the helper falls
+# through to the next source.
+DEFAULT_TYPES="feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert"
+HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+COMMIT_TYPES="$DEFAULT_TYPES"
+[ -x "$HELPER" ] && COMMIT_TYPES=$("$HELPER" --default "$DEFAULT_TYPES" '.conventions.commitTypes // empty | if type == "array" then join("|") else empty end')
 echo "Commit types: $COMMIT_TYPES"
 ```
 

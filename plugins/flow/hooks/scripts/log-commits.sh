@@ -13,15 +13,13 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 # Only process git commit commands
 echo "$COMMAND" | grep -qE 'git\s+commit' || exit 0
 
-# Determine journal directory from the standard Claude Code settings cascade
-# (highest first): project-local → project-shared → user-global → plugin default.
+# Determine journal directory via bin/cascade-resolve.sh. Gracefully fall back
+# to the default when the helper is unreachable — hooks run from arbitrary
+# CWDs and CLAUDE_PLUGIN_ROOT may not always be set (e.g., in test harnesses
+# that exercise the hook standalone).
+HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
-for SETTINGS_FILE in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "${HOME:-/nonexistent}/.claude/settings.flow.json" "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"; do
-  if [ -f "$SETTINGS_FILE" ]; then
-    DIR=$(jq -r '.journal.dir // empty' "$SETTINGS_FILE" 2>/dev/null)
-    [ -n "$DIR" ] && JOURNAL_DIR="$DIR" && break
-  fi
-done
+[ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty' 2>/dev/null)
 
 # Get current branch and issue number
 BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
