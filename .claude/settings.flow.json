@@ -1,5 +1,5 @@
 {
-  "agentTeams": false,
+  "agentTeams": true,
   "tiers": {
     "push": "journal",
     "prCreate": "journal",
