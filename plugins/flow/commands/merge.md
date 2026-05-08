@@ -54,22 +54,38 @@ Parse the latest `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` comments to ver
 # CLOSED, not pass it open.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
-# Read trust list from plugin settings ONLY — NOT cascade. A hostile fork PR
-# could otherwise commit `.claude/settings.flow.local.json` with a permissive
-# trust list; after `gh pr checkout`, the cascade would honor the attacker's
-# file and disable the forgery defense. Same architectural pattern as PR #91's
-# symlink-TOCTOU on attacker-controlled `journal.dir`.
+# MARKERTRUST_GATE_BEGIN
+# Resolve trust list from a trimmed cascade — same pattern as the agentTeams
+# gate in review.md and the journal.dir / learning.proposalDir / commitTypes
+# trimmed cascade documented in references/gate-configuration.md. Trusted
+# sources, in precedence order:
+#   1. $HOME/.claude/settings.flow.json — user-tier override; lives outside
+#      the repo, so a hostile fork PR via `gh pr checkout` cannot inject it.
+#   2. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json — plugin default.
+# Project-tier (.claude/settings.flow.json / .claude/settings.flow.local.json)
+# is INTENTIONALLY EXCLUDED. After `gh pr checkout` of a hostile fork, those
+# files would be attacker-controlled and a permissive trust list could
+# disable the forgery defense — issue #101 / PR #93 threat model.
 TRUST_DEFAULT='["OWNER","MEMBER","COLLABORATOR"]'
 TRUST_LIST="$TRUST_DEFAULT"
+USER_SETTINGS="$HOME/.claude/settings.flow.json"
 PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"
-if [ -f "$PLUGIN_SETTINGS" ]; then
-  CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$PLUGIN_SETTINGS" 2>/dev/null)
-  if [ -n "$CONFIGURED" ] && echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
-    TRUST_LIST="$CONFIGURED"
-  elif [ -n "$CONFIGURED" ]; then
-    echo "FINDING_LEDGER_BLOCK: invalid markerTrust configuration in $PLUGIN_SETTINGS (must be non-empty JSON array of strings)"
+for SETTINGS_PATH in "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
+  [ -f "$SETTINGS_PATH" ] || continue
+  CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_PATH" 2>/dev/null)
+  if [ -z "$CONFIGURED" ]; then
+    continue
   fi
-fi
+  if echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
+    TRUST_LIST="$CONFIGURED"
+    break
+  else
+    echo "FINDING_LEDGER_BLOCK: invalid markerTrust configuration in $SETTINGS_PATH (must be non-empty JSON array of strings)"
+    # Don't break — fall through to next source so a typo in $HOME does not
+    # block merge when the plugin default is still valid.
+  fi
+done
+# MARKERTRUST_GATE_END
 
 # Trust filter applied via jq's `index()` exact-match (no regex surface).
 # `--paginate` keeps fetching pages so a noisy thread can't hide forgeries.

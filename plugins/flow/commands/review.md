@@ -86,48 +86,83 @@ Implements the paired-reviewer + challenge-round protocol. The `team-coordinatio
 **Path A gate check** (mandatory before paired dispatch — runs before A.1):
 
 ```bash
-# Read agentTeams from plugin settings ONLY (no cascade). This is the same
-# defense pattern as merge.markerTrust (PR #93): a hostile fork PR could ship
-# .claude/settings.flow.local.json with agentTeams=true and the user's env
-# var would be the only remaining gate. Treating agentTeams as plugin-tier-
-# pinned makes cost-amplification a two-key threat (hostile setting AND env
-# var) rather than a one-key threat. The env var alone (set by the user, not
-# the repo) cannot enable Path A unless the plugin default also permits it.
+# AGENTTEAMS_GATE_BEGIN
+# Resolve agentTeams from a trimmed cascade — same defense pattern as
+# merge.markerTrust + the journal.dir / learning.proposalDir / commitTypes
+# cascade documented in references/gate-configuration.md. Trusted sources,
+# in precedence order:
+#   1. $HOME/.claude/settings.flow.json — user-tier override; lives outside
+#      the repo, so a hostile fork PR via `gh pr checkout` cannot inject it.
+#      First non-empty agentTeams value wins (true | false). This is the
+#      supported way to opt INTO paired review and have it survive plugin
+#      upgrades (the plugin cache gets replaced; $HOME does not).
+#   2. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json — plugin default.
+# Project-tier (.claude/settings.flow.json / .claude/settings.flow.local.json)
+# is INTENTIONALLY EXCLUDED. The two-key gate stays intact: enabling Path A
+# requires (env var set by user) AND (agentTeams: true from a trusted source
+# the user controls). Project-tier files are fork-controllable, so they are
+# NOT a trusted source for this key — issue #101.
 USE_PATH_A=0
+USER_SETTINGS="$HOME/.claude/settings.flow.json"
 PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"
+AGENT_TEAMS=""
+SOURCE_USED=""
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "WARN: jq not installed; Path A unavailable, using Path B (single-session)" >&2
-elif [ ! -f "$PLUGIN_SETTINGS" ]; then
-  echo "WARN: $PLUGIN_SETTINGS not found; Path A unavailable, using Path B" >&2
 else
-  # Capture jq stderr/exit separately so a parse error doesn't silently fall
-  # through as an empty AGENT_TEAMS into the * case branch. Merge stderr into
-  # stdout for the diagnostic capture; on success jq emits only the field
-  # value to stdout, on failure it emits the parse error message there.
-  JQ_OUT=$(jq -r '.agentTeams // false' "$PLUGIN_SETTINGS" 2>&1)
-  JQ_EXIT=$?
-  if [ $JQ_EXIT -ne 0 ]; then
-    JQ_ERR=$(printf '%s' "$JQ_OUT" | tr '\n' ' ' | cut -c1-200)
-    echo "WARN: failed to parse $PLUGIN_SETTINGS (jq exit=$JQ_EXIT, error: $JQ_ERR); using Path B" >&2
+  for SETTINGS_PATH in "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
+    [ -f "$SETTINGS_PATH" ] || continue
+    # `// empty` so absent fields fall through to the next source. A parse
+    # error is per-source: WARN names the failing file and the loop continues
+    # so a typo in $HOME does not silently disable Path A when plugin tier
+    # has a definitive value.
+    # `has("agentTeams") | if . then $value else empty end` — distinguishes
+    # "key absent" (fall through to next source) from "key set to false"
+    # (definitive, stop here). `// empty` would not work: jq treats `false`
+    # as falsy and would fall through, so a user-tier opt-OUT would be
+    # silently overridden by the plugin default.
+    JQ_OUT=$(jq -r 'if has("agentTeams") then .agentTeams else empty end' "$SETTINGS_PATH" 2>&1)
+    JQ_EXIT=$?
+    if [ $JQ_EXIT -ne 0 ]; then
+      JQ_ERR=$(printf '%s' "$JQ_OUT" | tr '\n' ' ' | cut -c1-200)
+      echo "WARN: failed to parse $SETTINGS_PATH (jq exit=$JQ_EXIT, error: $JQ_ERR); skipping this source" >&2
+      continue
+    fi
+    if [ -n "$JQ_OUT" ]; then
+      AGENT_TEAMS="$JQ_OUT"
+      SOURCE_USED="$SETTINGS_PATH"
+      break
+    fi
+  done
+
+  if [ -z "$SOURCE_USED" ]; then
+    # Three-state diagnostic — distinguish (a) plugin not installed,
+    # (b) CLAUDE_PLUGIN_ROOT pointed at a path that does not exist,
+    # (c) files exist but no agentTeams key, so the user can take the right
+    # next step without re-running with debug instrumentation.
+    if [ ! -f "$USER_SETTINGS" ] && [ ! -f "$PLUGIN_SETTINGS" ]; then
+      if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+        echo "WARN: agentTeams not set in any trusted source. CLAUDE_PLUGIN_ROOT is unset and $PLUGIN_SETTINGS does not exist — flow plugin may not be installed in this CWD. Add \"agentTeams\": true to $USER_SETTINGS to enable Path A; using Path B." >&2
+      else
+        echo "WARN: agentTeams not set in any trusted source. CLAUDE_PLUGIN_ROOT=$CLAUDE_PLUGIN_ROOT but $PLUGIN_SETTINGS does not exist — plugin install may be corrupted or env var pointing wrong place. Add \"agentTeams\": true to $USER_SETTINGS to enable Path A; using Path B." >&2
+      fi
+    elif [ ! -f "$USER_SETTINGS" ]; then
+      echo "Path A skipped: agentTeams not declared in $PLUGIN_SETTINGS. Add \"agentTeams\": true to $USER_SETTINGS to opt in (survives plugin upgrades)."
+    else
+      echo "Path A skipped: agentTeams not declared in $USER_SETTINGS or $PLUGIN_SETTINGS. Add \"agentTeams\": true to $USER_SETTINGS to opt in."
+    fi
   else
-    AGENT_TEAMS="$JQ_OUT"
     case "$AGENT_TEAMS" in
       true)
         if [ -z "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" ]; then
-          echo "WARN: agentTeams enabled but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS env var unset; using single-reviewer fallback (Path B)" >&2
+          echo "WARN: agentTeams=true (from $SOURCE_USED) but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS env var unset; using single-reviewer fallback (Path B)" >&2
         else
           USE_PATH_A=1
         fi
         ;;
       false)
-        echo "Path A skipped: agentTeams=false. Using Path B (single-session)."
-        ;;
-      "")
-        # jq returned empty but exit=0 (shouldn't happen with `// false`, but
-        # defensive). Distinguish from the * branch so the WARN text is
-        # actionable.
-        echo "WARN: agentTeams field returned empty value from $PLUGIN_SETTINGS; treating as false and using Path B" >&2
+        echo "Path A skipped: agentTeams=false (from $SOURCE_USED). Using Path B (single-session)."
         ;;
       *)
         # Non-canonical value (e.g., string "true"/"True", "1", "yes", or a
@@ -136,11 +171,12 @@ else
         # got single-session anyway. Collapse multi-line values for log
         # scrapability.
         AGENT_TEAMS_DISPLAY=$(printf '%s' "$AGENT_TEAMS" | tr '\n' ' ' | cut -c1-80)
-        echo "WARN: agentTeams=$AGENT_TEAMS_DISPLAY is not the JSON boolean true/false; treating as false. Use \"agentTeams\": true (no quotes)." >&2
+        echo "WARN: agentTeams=$AGENT_TEAMS_DISPLAY (from $SOURCE_USED) is not the JSON boolean true/false; treating as false. Use \"agentTeams\": true (no quotes)." >&2
         ;;
     esac
   fi
 fi
+# AGENTTEAMS_GATE_END
 ```
 
 If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.

@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.3.1 (2026-05-08)
+
+### Bug fixes
+
+- **Path A paired-reviewer gate unreachable for marketplace installs (#101).** `commands/review.md`'s `agentTeams` gate read `${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json` only. Two failure modes combined to make Path A effectively unreachable for users who installed flow via marketplace: (1) `CLAUDE_PLUGIN_ROOT` is not exported into the bash subshell that runs the gate, so the fallback path resolved to a directory that doesn't exist in the user's repo; (2) the plugin-bundled `settings.json` ships with `agentTeams: false`, and editing the cached file (`~/.claude/plugins/cache/.../flow/<version>/settings.json`) loses the override on the next plugin upgrade. Same root cause and same fix for the `merge.markerTrust.allowedAssociations` gate in `commands/merge.md` (the issue cites this as the precedent the broken pattern was copied from).
+
+  Fix: both gates now apply the trimmed-cascade pattern already used by `journal.dir` / `learning.proposalDir` / `conventions.commitTypes`. Trusted sources, in precedence order: `$HOME/.claude/settings.flow.json` (user-tier override; outside the repo, untouched by `gh pr checkout`) then `${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json` (plugin default). Project-tier (`.claude/settings.flow.json` / `.claude/settings.flow.local.json`) remains excluded for both keys — the two-key threat model is preserved (env var + trusted-source `agentTeams: true`; permissive markerTrust override needs the user-tier file the fork PR cannot write).
+
+  The `agentTeams` gate also gained a three-state diagnostic: (a) plugin not installed at all, (b) `CLAUDE_PLUGIN_ROOT` set but pointing at a missing path, (c) both files exist but neither sets the key. Each variant names the exact paths checked so users can debug without re-running with instrumentation.
+
+  Persistent opt-in is now documented in `references/gate-configuration.md` under "Persistent opt-in (supported)" with a worked `$HOME/.claude/settings.flow.json` example covering both `agentTeams` and `merge.markerTrust.allowedAssociations`.
+
+### New regression tests
+
+- `tests/agentteams-gate/test.sh` (new, 19 assertions) extracts the gate body from `commands/review.md` via `# AGENTTEAMS_GATE_BEGIN` / `# AGENTTEAMS_GATE_END` markers and runs it against scenarios for marketplace install, upgrade survival, project-tier bypass attempts, three-state diagnostic, HOME-overrides-plugin precedence (including opt-OUT semantics), malformed-HOME fall-through to plugin tier, and the env-var double-key requirement.
+- `tests/markertrust-gate/test.sh` (new, 10 assertions) extracts the gate body from `commands/merge.md` via `# MARKERTRUST_GATE_BEGIN` / `# MARKERTRUST_GATE_END` markers and covers the same scenarios for `merge.markerTrust.allowedAssociations`, including the empty-array `FINDING_LEDGER_BLOCK` fall-through behavior.
+
 ## 2.3.0 (2026-05-06)
 
 ### Post-review hardening — cycle 2 (PR #99 `/flow:review` second pass)
