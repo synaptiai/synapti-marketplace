@@ -127,3 +127,5 @@ PASS — 6 tasks reviewed. Each task contains: explicit file paths (with line ra
 <!-- auto-log: 2026-05-08 17:59 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/.claude-plugin/plugin.json -->
 
 <!-- auto-log: 2026-05-08 17:59 Edit /Users/danielbentes/synapti-marketplace/.claude-plugin/marketplace.json -->
+
+<!-- auto-log: 2026-05-08 18:01 commit "fix(flow): resolve plugin-settings path for marketplace installs (#101)" -->
