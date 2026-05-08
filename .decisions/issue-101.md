@@ -129,3 +129,21 @@ PASS — 6 tasks reviewed. Each task contains: explicit file paths (with line ra
 <!-- auto-log: 2026-05-08 17:59 Edit /Users/danielbentes/synapti-marketplace/.claude-plugin/marketplace.json -->
 
 <!-- auto-log: 2026-05-08 18:01 commit "fix(flow): resolve plugin-settings path for marketplace installs (#101)" -->
+
+<!-- auto-log: 2026-05-08 18:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-08 18:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-08 18:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-08 18:12 Edit /Users/danielbentes/synapti-marketplace/tests/agentteams-gate/test.sh -->
+
+<!-- auto-log: 2026-05-08 18:12 Edit /Users/danielbentes/synapti-marketplace/tests/markertrust-gate/test.sh -->
+
+<!-- auto-log: 2026-05-08 18:16 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/setup.md -->
+
+<!-- auto-log: 2026-05-08 18:16 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/setup.md -->
+
+<!-- auto-log: 2026-05-08 18:16 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/setup.md -->
+
+<!-- auto-log: 2026-05-08 18:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/CHANGELOG.md -->

@@ -45,6 +45,15 @@ if [ -z "$GATE_BODY" ]; then
   exit 2
 fi
 
+# Sanity check: extracted body must be syntactically valid bash (catches END-marker
+# corruption that leaves a partial body capturing prose / closing fences).
+if ! bash -n <(printf '%s' "$GATE_BODY") 2>/dev/null; then
+  echo "FATAL: extracted gate body fails 'bash -n' syntax check." >&2
+  echo "       Marker block in $MERGE_MD may be corrupted (END marker moved or removed)." >&2
+  bash -n <(printf '%s' "$GATE_BODY") 2>&1 | sed 's/^/       /' >&2
+  exit 2
+fi
+
 # Run the gate in an isolated subshell. The gate sets TRUST_LIST and may emit
 # FINDING_LEDGER_BLOCK messages. Captures TRUST_LIST + stdout + stderr.
 # Args: $1 sandbox dir, $2 HOME path, $3 plugin_root_state {set,unset},

@@ -103,7 +103,7 @@ Implements the paired-reviewer + challenge-round protocol. The `team-coordinatio
 # the user controls). Project-tier files are fork-controllable, so they are
 # NOT a trusted source for this key — issue #101.
 USE_PATH_A=0
-USER_SETTINGS="$HOME/.claude/settings.flow.json"
+USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
 PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"
 AGENT_TEAMS=""
 SOURCE_USED=""

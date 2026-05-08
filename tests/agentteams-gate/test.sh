@@ -47,6 +47,18 @@ if [ -z "$GATE_BODY" ]; then
   exit 2
 fi
 
+# Sanity check: extracted body must be syntactically valid bash. If a linter
+# reformats the markdown such that the END marker moves and capture runs to EOF,
+# the body would still be non-empty but contain prose / closing fences / other
+# bash blocks. `bash -n` catches that loudly instead of letting partial-eval
+# silently set USE_PATH_A then crash mid-execution.
+if ! bash -n <(printf '%s' "$GATE_BODY") 2>/dev/null; then
+  echo "FATAL: extracted gate body fails 'bash -n' syntax check." >&2
+  echo "       Marker block in $REVIEW_MD may be corrupted (END marker moved or removed)." >&2
+  bash -n <(printf '%s' "$GATE_BODY") 2>&1 | sed 's/^/       /' >&2
+  exit 2
+fi
+
 # Run the gate in an isolated subshell with controlled HOME, CWD, and env.
 # Captures gate stdout, stderr, and USE_PATH_A separately so assertions are
 # unambiguous. Returns USE_PATH_A as the function's stdout (single line).

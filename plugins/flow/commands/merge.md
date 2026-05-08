@@ -68,14 +68,21 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 # disable the forgery defense — issue #101 / PR #93 threat model.
 TRUST_DEFAULT='["OWNER","MEMBER","COLLABORATOR"]'
 TRUST_LIST="$TRUST_DEFAULT"
-USER_SETTINGS="$HOME/.claude/settings.flow.json"
+USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
 PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json"
 for SETTINGS_PATH in "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
   [ -f "$SETTINGS_PATH" ] || continue
-  CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_PATH" 2>/dev/null)
-  if [ -z "$CONFIGURED" ]; then
+  # Capture jq stderr/exit so a parse error in $HOME does not silently mask
+  # a typo as "fall through to plugin default" — same pattern as the
+  # agentTeams gate in commands/review.md.
+  CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_PATH" 2>&1)
+  JQ_EXIT=$?
+  if [ $JQ_EXIT -ne 0 ]; then
+    JQ_ERR=$(printf '%s' "$CONFIGURED" | tr '\n' ' ' | cut -c1-200)
+    echo "WARN: failed to parse $SETTINGS_PATH (jq exit=$JQ_EXIT, error: $JQ_ERR); skipping this source" >&2
     continue
   fi
+  [ -z "$CONFIGURED" ] && continue
   if echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
     TRUST_LIST="$CONFIGURED"
     break
