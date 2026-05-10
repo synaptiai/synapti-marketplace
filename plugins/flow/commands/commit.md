@@ -1,12 +1,14 @@
 ---
 description: "Classify changes and create atomic commits with conventional messages. Flags out-of-context modifications and red-flag patterns before committing."
 argument-hint: [message]
-allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, Skill, Grep, Glob
+allowed-tools: Bash(git status *) Bash(git branch *) Bash(git diff *) Bash(git log *) Bash(git add *) Bash(git commit *) Bash(gh repo view *) Bash(gh issue view *) Read Write Edit AskUserQuestion Skill Grep Glob
 ---
 
 <!--
-PARALLEL EXECUTION RULE:
-Execute all independent queries in a single message with parallel tool calls.
+EXECUTION MODEL:
+Phase 1 EXPLORE bash is pre-executed via the `!` prefix at command load — no
+Bash tool round-trip. Phase 4 COMMIT bash (git add/commit) stays inline because
+values are LLM-classified per group and must run conditionally.
 -->
 
 # Context-Aware Commit
@@ -24,11 +26,10 @@ Classify changes, flag anomalies, and create atomic conventional commits. Follow
 
 ## Phase 1: EXPLORE
 
-Execute these in parallel:
+Pre-executed at command load (`!` prefix injects output before the LLM reads
+the prompt — no Bash tool round-trip required).
 
-**Parallel Bash calls:**
-
-```bash
+```!
 # 1. All changes
 git status --porcelain
 
