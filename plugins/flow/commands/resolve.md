@@ -1,13 +1,17 @@
 ---
 description: "Resolve merge conflicts on the current branch or for a pull request. Detects conflict types, analyzes both sides, applies per-file resolution strategies, and verifies the result compiles and passes tests."
 argument-hint: [pr-number-or-branch]
-allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Grep, Glob
+allowed-tools: Bash(git diff *) Bash(git status *) Bash(git merge *) Bash(git fetch *) Bash(git checkout *) Bash(git commit *) Bash(git rebase *) Bash(git add *) Bash(gh pr view *) Bash(gh auth *) Bash(grep *) Bash(echo *) Read Write Edit Agent Skill AskUserQuestion TaskCreate TaskList TaskUpdate TaskGet Grep Glob
 ---
 
 <!--
-PARALLEL EXECUTION RULE:
-When performing multiple independent operations, invoke ALL relevant tools
-simultaneously in a single message rather than sequentially.
+EXECUTION MODEL:
+Phase 0 conflict-state detection and Phase 1 conflict enumeration are
+pre-executed via the `!` prefix at command load — no Bash tool round-trip.
+Mutating bash (PR-mode setup with `git fetch`/`checkout`/`merge`, per-file
+`git add`, the orphan-marker audit, and `git commit --no-edit` /
+`git rebase --continue`) stays inline because it must run conditionally
+based on Claude's per-file resolution decisions.
 -->
 
 # Resolve Merge Conflicts
@@ -32,21 +36,37 @@ Determine invocation mode from `$ARGUMENTS`:
 2. **PR number** → fetch PR, attempt merge against base, resolve conflicts
 3. **Branch name** → resolve conflicts for that branch against default branch
 
-### Validation
+### Validation + Conflict Enumeration
 
-```bash
-# Check for active merge/rebase state
+Pre-executed at command load (`!` prefix). Combines Phase 0 active-conflict
+detection with Phase 1a (conflicted file list) and Phase 1b (hunk count per
+file) so all read-only context arrives in one shot.
+
+```!
+# Phase 0: active merge/rebase state
 if [ -f .git/MERGE_HEAD ] || [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
   echo "ACTIVE_CONFLICT"
 else
   echo "NO_ACTIVE_CONFLICT"
 fi
+
+# Phase 1a: conflicted files + status type codes
+git diff --name-only --diff-filter=U
+git status --porcelain | grep "^[UAD][UAD] " || true
+
+# Phase 1b: conflict hunks per file
+git diff --name-only --diff-filter=U | while IFS= read -r f; do
+  [ -f "$f" ] && echo "$f: $(grep -c '<<<<<<<' "$f") hunks"
+done
 ```
 
-- If mode is PR: verify `gh auth status` succeeds
+- If mode is PR: verify `gh auth status` succeeds (run inline as needed)
 - Warn if there are uncommitted changes (`git status --porcelain` is non-empty and no active conflict)
 
 ### PR Mode Setup
+
+Mutating — runs as inline Bash tool calls, only in PR mode (when `$ARGUMENTS`
+is a PR number):
 
 ```bash
 # Fetch PR details and attempt merge
@@ -60,22 +80,8 @@ If `mergeable == "MERGEABLE"` (no conflicts), report "No conflicts found" and ex
 
 ## Phase 1: EXPLORE
 
-Run these in parallel:
-
-**1a. List conflicted files and classify types:**
-
-```bash
-git diff --name-only --diff-filter=U
-git status --porcelain | grep "^[UAD][UAD] "
-```
-
-**1b. Count conflict hunks per file:**
-
-```bash
-git diff --name-only --diff-filter=U | while IFS= read -r f; do
-  echo "$f: $(grep -c '<<<<<<<' "$f") hunks"
-done
-```
+Phase 1a and 1b context (file list + hunk counts) is already loaded by the
+Phase 0 `!` block above. Remaining Phase 1 steps:
 
 **1c. Discover build/test commands** via capability-discovery skill.
 
