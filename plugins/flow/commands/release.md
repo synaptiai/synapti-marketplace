@@ -1,8 +1,17 @@
 ---
 description: "Create a release with changelog generation from merged PRs. Calculates semantic version, requires human confirmation. Tier 3 — never autonomous."
 argument-hint: <patch|minor|major>
-allowed-tools: Bash, Read, AskUserQuestion
+allowed-tools: Bash(git describe *) Bash(git log *) Bash(git tag *) Bash(git push *) Bash(gh pr list *) Bash(gh release create *) Bash(gh release view *) Read AskUserQuestion
 ---
+
+<!--
+EXECUTION MODEL:
+Phase 1 context-gathering bash is pre-executed via the `!` prefix at command
+load — no Bash tool round-trip. Phase 4 publish actions (tag, push tag,
+gh release create) and Phase 5 verification stay inline because they require
+explicit user confirmation via AskUserQuestion (Tier 3) and depend on
+LLM-computed values.
+-->
 
 # Create Release v$ARGUMENTS
 
@@ -14,9 +23,10 @@ Tier 3 operation — **always requires human confirmation**.
 
 ## Phase 1: Gather Context
 
-**Parallel operations:**
+Pre-executed at command load (`!` prefix injects output before the LLM reads
+the prompt — no Bash tool round-trip required).
 
-```bash
+```!
 # 1. Current version (latest tag)
 LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
 echo "Current version: $LAST_TAG"
@@ -39,6 +49,10 @@ else
   git log --oneline -20
 fi
 ```
+
+**If Phase 1 output is empty or contains `gh` auth errors, halt before
+Phase 2** — without a current-version baseline and merged-PR list, version
+calculation and changelog generation cannot be trusted.
 
 ## Phase 2: Calculate Version
 
