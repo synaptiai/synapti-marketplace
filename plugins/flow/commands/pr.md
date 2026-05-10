@@ -1,13 +1,15 @@
 ---
 description: "Create a pull request with full code review, quality gates, comprehension report, and reviewer suggestions. Runs parallel agent review before PR creation."
 argument-hint: [title]
-allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Skill, Grep, Glob
+allowed-tools: Bash(git branch *) Bash(git status *) Bash(git rev-list *) Bash(git diff *) Bash(git push *) Bash(git log *) Bash(gh repo view *) Bash(gh issue view *) Bash(gh issue list *) Bash(gh pr list *) Bash(gh pr view *) Bash(gh pr create *) Bash(gh pr edit *) Bash(cat *) Bash(bash *) Bash(grep *) Bash(echo *) Bash(sed *) Read Write Edit Agent AskUserQuestion TaskCreate TaskList TaskUpdate Skill Grep Glob
 ---
 
 <!--
-PARALLEL EXECUTION RULE:
-When performing multiple independent operations, invoke ALL relevant tools
-simultaneously in a single message rather than sequentially.
+EXECUTION MODEL:
+Phase 1 EXPLORE bash is pre-executed via the `!` prefix at command load — no
+Bash tool round-trip. Phase 2 `git diff` and Phase 4 actions (push, gh pr
+create, journal-record emit) stay inline because the diff can be huge and the
+actions depend on LLM-generated values + user confirmation.
 -->
 
 # Create Pull Request
@@ -28,9 +30,10 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 
 ## Phase 1: EXPLORE
 
-**Parallel operations:**
+Pre-executed at command load (`!` prefix injects output before the LLM reads
+the prompt — no Bash tool round-trip required).
 
-```bash
+```!
 # 1. Pre-flight checks
 BRANCH=$(git branch --show-current)
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
@@ -53,6 +56,9 @@ gh pr list --head "$BRANCH" --state open --json number,url
 JOURNAL_DIR=".decisions"
 [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ] && cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
 ```
+
+**If pre-flight emitted `ERROR: Cannot create PR from default branch`, halt
+without proceeding to Phase 2.**
 
 **Skill invocation:** `Skill(capability-discovery)` — detect quality commands.
 
