@@ -1,17 +1,26 @@
 ---
 description: "Address PR review feedback systematically. Categorizes feedback, implements surgical fixes, verifies changes, and re-requests review."
 argument-hint: <pr-number>
-allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Skill, Grep, Glob
+allowed-tools: Bash(git push *) Bash(git commit *) Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git branch *) Bash(gh pr view *) Bash(gh pr checkout *) Bash(gh pr comment *) Bash(gh pr edit *) Bash(gh repo view *) Bash(gh api *) Bash(gh issue create *) Read Write Edit Agent AskUserQuestion TaskCreate TaskList TaskUpdate TaskGet Skill Grep Glob
 ---
 
 <!--
-PARALLEL EXECUTION RULE:
-Execute independent operations simultaneously.
+EXECUTION MODEL:
+Phase 1 read-only fetches (PR details, comments, reviews, threads) and the
+Review Cycle Tracking query are pre-executed via the `!` prefix at command
+load — no Bash tool round-trip. Mutating bash (`gh pr checkout`, fix commits,
+`git push`, `gh api … /replies`, `gh pr comment`, `gh pr edit`,
+`gh issue create`) stays inline because Claude must decide when to run them.
 -->
 
 # Address Review Feedback for PR #$ARGUMENTS
 
 Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
+
+**Pre-flight guard**: if `$ARGUMENTS` is empty (no PR number provided), the
+pre-executed `gh pr view` call below will emit `gh: argument required` style
+errors. Halt with the usage message `Usage: /flow:address <pr-number>` and do
+NOT proceed.
 
 ## Required Skills
 
@@ -28,12 +37,13 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 
 ## Phase 1: EXPLORE
 
-**Parallel operations:**
+Read-only fetches are pre-executed at command load (`!` prefix injects output
+before the LLM reads the prompt). The mutating `gh pr checkout` runs as a
+separate inline Bash tool call AFTER Claude has reviewed the fetched context.
 
-```bash
-# 1. PR details and branch
+```!
+# 1. PR details
 gh pr view $ARGUMENTS --json headRefName,baseRefName,title,body
-gh pr checkout $ARGUMENTS
 
 # 2. Review comments (inline)
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
@@ -56,15 +66,22 @@ gh pr view $ARGUMENTS --json reviews --jq '.reviews[] | {
 gh api repos/$REPO/pulls/$ARGUMENTS/comments --jq 'group_by(.path) | .[] | {file: .[0].path, comments: [.[] | {body: .body, author: .user.login}]}'
 ```
 
+After reviewing the fetched context, switch to the PR branch (mutating —
+remains an inline Bash tool call):
+
+```bash
+gh pr checkout $ARGUMENTS
+```
+
 **Agent(Explore)**: "Pre-resolve check — for each review comment, verify the feedback still applies to the current code. Some comments may already be addressed by later commits."
 
 **Skill(capability-discovery)**: Discover quality commands for verification.
 
 ## Review Cycle Tracking
 
-Before planning, determine the current review cycle:
+Pre-executed at command load alongside Phase 1:
 
-```bash
+```!
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 CYCLE_COUNT=$(gh pr view $ARGUMENTS --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length')
 echo "REVIEW_CYCLE=$CYCLE_COUNT"
