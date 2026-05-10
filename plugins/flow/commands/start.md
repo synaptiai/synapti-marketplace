@@ -1,17 +1,22 @@
 ---
 description: "Start work on a GitHub issue. Assigns issue, creates branch, decomposes tasks from acceptance criteria, and guides implementation with autonomous execution."
 argument-hint: <issue-number-or-url>
-allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Grep, Glob
+allowed-tools: Bash(git status *) Bash(git symbolic-ref *) Bash(git branch *) Bash(git ls-remote *) Bash(git fetch *) Bash(git checkout *) Bash(git push *) Bash(git commit *) Bash(gh auth *) Bash(gh issue view *) Bash(gh issue edit *) Bash(gh repo view *) Bash(gh api *) Bash(grep *) Bash(echo *) Bash(mkdir *) Bash(bash *) Read Write Edit Agent Skill AskUserQuestion TaskCreate TaskList TaskUpdate TaskGet Grep Glob
 ---
 
 <!--
-PARALLEL EXECUTION RULE:
-When performing multiple independent operations (reads, API calls, TaskCreate),
-invoke ALL relevant tools simultaneously in a single message rather than sequentially.
+EXECUTION MODEL:
+Phase 0 PRE-FLIGHT and Phase 1 EXPLORE bash are pre-executed via the `!`
+prefix at command load — no Bash tool round-trip. Mutating bash (issue
+assignment, branch creation, journal manifest emit, quality loop) stays
+inline because it depends on Claude's classification + user confirmation.
 
 VARIABLE PERSISTENCE NOTE:
-Bash variables do NOT persist across separate tool calls. Each Bash invocation
-is independent. Store values mentally and substitute in subsequent commands.
+Variables set inside one `!` block do NOT persist into a later block or into
+inline ```bash``` blocks — each is its own subshell. The `!` blocks below
+emit literal `KEY=value` echo lines (e.g. `DEFAULT_BRANCH=main`,
+`REPO=owner/repo`) so Claude can substitute them into Phase 2's inline
+branch-creation commands.
 -->
 
 # Start Work on Issue #$ARGUMENTS
@@ -39,8 +44,9 @@ This command operates with these domain skills loaded:
 ## Phase 0: PRE-FLIGHT
 
 Pure bash validation. No LLM calls. Fail fast before spending tokens.
+Pre-executed at command load (`!` prefix).
 
-```bash
+```!
 ERRORS=0
 WARNINGS=0
 
@@ -68,7 +74,7 @@ echo "PREFLIGHT: $ERRORS error(s), $WARNINGS warning(s)"
 echo "PREFLIGHT: PASSED"
 ```
 
-If pre-flight fails, stop. Do not proceed to EXPLORE.
+**If pre-flight fails (BLOCKED), stop.** Do not proceed to EXPLORE.
 
 ## Phase 1: EXPLORE
 
@@ -79,16 +85,17 @@ Gather all context before planning.
 
 **Note**: `debugging-patterns` activates automatically for ALL issues when any verification step fails (build, test, server start, smoke test). No `bug` label required.
 
-Execute these in parallel:
+Pre-executed at command load alongside Phase 0 (`!` prefix). Variables
+`REPO` and `DEFAULT_BRANCH` are echoed as literal `KEY=value` lines so
+Claude can substitute them into Phase 2's inline branch-creation commands.
 
-**Parallel Bash calls:**
-
-```bash
+```!
 # 1. Issue details
 gh issue view $ARGUMENTS --json title,body,labels,assignees,milestone
 
 # 2. Issue comments
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+echo "REPO=$REPO"
 gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '.[] | "---\n@\(.user.login):\n\(.body)\n"'
 
 # 3. Default branch and repo info
