@@ -1,7 +1,18 @@
 ---
 description: "Analyze the decision journal for learnable patterns and generate skill proposals from repeated corrections and common patterns. Use when reviewing session activity to extract reusable knowledge."
-allowed-tools: Bash, Read, Write, Grep, Glob
+allowed-tools: Bash(ls *) Bash(wc *) Bash(mkdir *) Bash(rm *) Bash(bash *) Read Write Grep Glob
 ---
+
+<!--
+EXECUTION MODEL:
+Phase 1 directory resolution + listing is pre-executed via the `!` prefix at
+command load — no Bash tool round-trip. Phase 4 (`mkdir` for proposal dir)
+and Phase 6 (`rm -f` for the pending flag) stay inline because they mutate
+state and run conditionally on Phase 2/3 outcomes.
+
+The `Bash(rm *)` allowance is intentionally narrow: this command only ever
+removes one known path, `$HOME/.claude/flow-learn-pending` (Phase 6).
+-->
 
 # Learn from Decisions
 
@@ -13,7 +24,11 @@ _None — retrospective pattern analysis over the decision journal. No skill inv
 
 ## Phase 1: Gather Journal Entries
 
-```bash
+Pre-executed at command load (`!` prefix). Resolved directory paths are
+echoed as literal `KEY=value` lines so Claude can substitute them into
+Phase 4's inline `mkdir` and Phase 6's inline `rm -f`.
+
+```!
 # Read journal directory and proposal directory via bin/cascade-resolve.sh.
 # The helper iterates project-local → project-shared → user-global → plugin
 # default and surfaces parse errors on stderr. Gracefully fall back to defaults
@@ -25,6 +40,8 @@ if [ -x "$HELPER" ]; then
   JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
   PROPOSAL_DIR=$("$HELPER" --default "$HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
 fi
+echo "JOURNAL_DIR=$JOURNAL_DIR"
+echo "PROPOSAL_DIR=$PROPOSAL_DIR"
 
 # List journal files
 ls -la "$JOURNAL_DIR"/*.md 2>/dev/null
