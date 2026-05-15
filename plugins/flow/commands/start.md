@@ -41,16 +41,23 @@ This command operates with these domain skills loaded:
 Pure bash validation. Pre-executed at command load (`!` prefix) so the agent sees PASS/BLOCKED in the prompt and fails fast before spending tokens.
 
 ```!
-# Take the first whitespace-separated token as the issue number;
-# the rest of $ARGUMENTS is free-form context for the agent.
-# (Users often invoke as `/flow:start 42 (the search bar bug)`.)
-ISSUE_NUM="${ARGUMENTS%% *}"
+# Take the first whitespace-separated token; accept only if it is all digits.
+# A non-numeric token (e.g., "foo42" or "evil;rm") is rejected with empty
+# ISSUE_NUM so it never reaches the prompt context or any downstream shell
+# (notably `git checkout -b "feature/issue-${ISSUE_NUM}-..."`). Users can still
+# invoke as `/flow:start 42 (the search bar bug)` — the trailing prose is
+# stripped by the first-token extraction.
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) ISSUE_NUM="" ;;
+  *) ISSUE_NUM="$ARG1" ;;
+esac
 
 ERRORS=0
 WARNINGS=0
 
-# 0. Issue number required
-[ -z "$ISSUE_NUM" ] && echo "PREFLIGHT FAIL: Issue number required" && ERRORS=$((ERRORS+1))
+# 0. Issue number required (all-digit; non-digit input is rejected above)
+[ -z "$ISSUE_NUM" ] && echo "PREFLIGHT FAIL: Issue number required (all-digit)" && ERRORS=$((ERRORS+1))
 
 # 1. Clean git state
 [ -n "$(git status --porcelain)" ] && echo "PREFLIGHT FAIL: Uncommitted changes" && ERRORS=$((ERRORS+1))
@@ -71,6 +78,11 @@ fi
 git ls-remote --exit-code origin >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: Cannot reach remote 'origin'"; ERRORS=$((ERRORS+1)); }
 
 # 6. Already on feature branch (warning only)
+# Short-circuits silently if not on a matching branch — the chain is a single
+# statement, so failure of any link (no ISSUE_NUM, no match, etc.) just skips
+# the warn without aborting the block. Symmetric in spirit with line 67's
+# `[ "$ISSUE_STATE" != "OPEN" ] && ...` ERRORS chain — both rely on `set -e`
+# being off (which it is, here) plus the implicit truthy semantics of `&&`.
 [ -n "$ISSUE_NUM" ] && git branch --show-current | grep -q "issue-$ISSUE_NUM" && echo "PREFLIGHT WARN: Already on branch for issue #$ISSUE_NUM" && WARNINGS=$((WARNINGS+1))
 
 echo "ISSUE_NUM=$ISSUE_NUM"
@@ -98,16 +110,21 @@ Gather all context before planning.
 Pre-executed at command load (`!` prefix) — issue details, comments, default branch, and git state all reach the agent as prompt context.
 
 ```!
-ISSUE_NUM="${ARGUMENTS%% *}"
+# Digit-validate ISSUE_NUM (matches Phase 0 block).
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) ISSUE_NUM="" ;;
+  *) ISSUE_NUM="$ARG1" ;;
+esac
 
 if [ -z "$ISSUE_NUM" ]; then
-  echo "ERROR: issue number required (Phase 0 PRE-FLIGHT carries the authoritative BLOCKED signal)"
+  echo "ERROR: issue number required (all-digit; Phase 0 PRE-FLIGHT carries the authoritative BLOCKED signal)"
 else
   # 1. Issue details
-  gh issue view "$ISSUE_NUM" --json title,body,labels,assignees,milestone
+  gh issue view "$ISSUE_NUM" --json title,body,labels,assignees,milestone 2>/dev/null
 
   # 2. Issue comments
-  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   gh api "repos/$REPO/issues/$ISSUE_NUM/comments" --jq '.[] | "---\n@\(.user.login):\n\(.body)\n"' 2>/dev/null
 
   # 3. Default branch and repo info
