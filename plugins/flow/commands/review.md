@@ -20,47 +20,69 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 
 ## Phase 1: EXPLORE
 
-**Parallel operations:**
+Pre-executed at command load (`!` prefix) — PR details, linked issue, previous reviews, and diff-name listing all reach the agent as prompt context. `gh pr checkout` stays inline below (mutating working tree).
+
+```!
+# Take the first whitespace-separated token as the PR number; the rest of
+# $ARGUMENTS is free-form context for the agent.
+PR_NUM="${ARGUMENTS%% *}"
+
+if [ -z "$PR_NUM" ]; then
+  echo "ERROR: PR number required. Usage: /flow:review <pr-number>"
+else
+  echo "PR_NUM=$PR_NUM"
+
+  # 1. PR details
+  gh pr view "$PR_NUM" --json title,body,headRefName,baseRefName,changedFiles,additions,deletions,labels,author,reviews
+
+  # 2. Linked issue
+  gh pr view "$PR_NUM" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#'
+
+  # 3. Previous reviews (follow-up detection)
+  gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | "\(.state) by \(.author.login)"'
+
+  # 4. Diff
+  gh pr diff "$PR_NUM" --name-only
+fi
+
+true
+```
+
+Then check out the PR branch (mutating, runs inline):
 
 ```bash
-# 1. PR details
-gh pr view $ARGUMENTS --json title,body,headRefName,baseRefName,changedFiles,additions,deletions,labels,author,reviews
-
-# 2. Linked issue
-gh pr view $ARGUMENTS --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#'
-
-# 3. Previous reviews (follow-up detection)
-gh pr view $ARGUMENTS --json reviews --jq '.reviews[] | "\(.state) by \(.author.login)"'
-
-# 4. Checkout PR branch
-gh pr checkout $ARGUMENTS
-
-# 5. Diff
-gh pr diff $ARGUMENTS --name-only
+gh pr checkout "$PR_NUM"
 ```
 
 **Agent(Explore)**: "Read the changed files in this PR and understand the context. What modules are affected? What patterns are being followed or changed?"
 
 Check for previous reviews — if this is a follow-up review, focus on changes since last review.
 
-**Parse structured findings from previous review/resolution cycles** (follow-up reviews only):
+**Parse structured findings from previous review/resolution cycles** (follow-up reviews only). Pre-executed at command load (`!` prefix).
 
-```bash
-# Parse previous review findings (from review bodies)
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-gh api repos/$REPO/pulls/$ARGUMENTS/reviews --jq '
-  [.[] | select(.body | test("FLOW_REVIEW_CYCLE")) | {
-    cycle: (.body | capture("FLOW_REVIEW_CYCLE:(?<n>[0-9]+)") | .n),
-    findings: (.body | capture("FINDINGS:\\[(?<f>[^\\]]+)\\]") | .f)
-  }]'
+```!
+# Parse previous review findings + resolution outcomes
+PR_NUM="${ARGUMENTS%% *}"
 
-# Parse previous resolution outcomes (from issue comments posted via gh pr comment)
-gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '
-  [.[] | select(.body | test("FLOW_RESOLUTION_CYCLE")) | {
-    cycle: (.body | capture("FLOW_RESOLUTION_CYCLE:(?<n>[0-9]+)") | .n),
-    resolved: (.body | capture("RESOLVED:\\[(?<r>[^\\]]*?)\\]") | .r),
-    escalated: (.body | capture("ESCALATED:\\[(?<e>[^\\]]*?)\\]") | .e)
-  }]'
+if [ -z "$PR_NUM" ]; then
+  echo "ERROR: PR number required"
+else
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+  gh api "repos/$REPO/pulls/$PR_NUM/reviews" --jq '
+    [.[] | select(.body | test("FLOW_REVIEW_CYCLE")) | {
+      cycle: (.body | capture("FLOW_REVIEW_CYCLE:(?<n>[0-9]+)") | .n),
+      findings: (.body | capture("FINDINGS:\\[(?<f>[^\\]]+)\\]") | .f)
+    }]' 2>/dev/null
+
+  gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '
+    [.[] | select(.body | test("FLOW_RESOLUTION_CYCLE")) | {
+      cycle: (.body | capture("FLOW_RESOLUTION_CYCLE:(?<n>[0-9]+)") | .n),
+      resolved: (.body | capture("RESOLVED:\\[(?<r>[^\\]]*?)\\]") | .r),
+      escalated: (.body | capture("ESCALATED:\\[(?<e>[^\\]]*?)\\]") | .e)
+    }]' 2>/dev/null
+fi
+
+true
 ```
 
 If previous cycles exist, build a **Previous Feedback Status** table and cross-reference each finding's location against `git diff` to verify resolution.
@@ -83,9 +105,9 @@ TaskCreate("Holdout validation", "Cross-reference self-review claims against act
 
 Implements the paired-reviewer + challenge-round protocol. The `team-coordination` skill (`plugins/flow/skills/team-coordination/SKILL.md`) is the protocol contract.
 
-**Path A gate check** (mandatory before paired dispatch — runs before A.1):
+**Path A gate check** (mandatory before paired dispatch — runs before A.1). Pre-executed at command load (`!` prefix) — the resolved `USE_PATH_A` flag reaches the agent as prompt context.
 
-```bash
+```!
 # AGENTTEAMS_GATE_BEGIN
 # Resolve agentTeams from the standard Claude Code settings cascade.
 # Precedence (highest first — first non-empty value wins):
@@ -195,6 +217,9 @@ else
   fi
 fi
 # AGENTTEAMS_GATE_END
+echo "USE_PATH_A=$USE_PATH_A"
+
+true
 ```
 
 If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.
@@ -360,7 +385,7 @@ Apply the consolidation table from `team-coordination/SKILL.md` Phase 4. For eac
 | One raised, other timed out / errored | none | **MEDIUM** | `unchallenged` |
 | Both raised, both DISAGREE'd | n/a | **DROPPED** | excluded from output, logged below |
 
-**DROPPED findings** are logged to `.decisions/issue-{N}.md` (where N = the issue this PR addresses) under a `## Dropped after challenge (PR #$ARGUMENTS, cycle {N})` heading with the finding details and both DISAGREE reasons. They never appear in the rendered tables or the FLOW_REVIEW_CYCLE marker.
+**DROPPED findings** are logged to `.decisions/issue-{N}.md` (where N = the issue this PR addresses) under a `## Dropped after challenge (PR #$PR_NUM, cycle {N})` heading with the finding details and both DISAGREE reasons. They never appear in the rendered tables or the FLOW_REVIEW_CYCLE marker.
 
 **Manifest emit** — for each DROPPED finding, append a `dropped-finding` artifact to the journal manifest so `/flow:learn` can detect repeated drop reasons across cycles (a recurring drop reason is a learnable signal):
 
@@ -372,7 +397,7 @@ Apply the consolidation table from `team-coordination/SKILL.md` Phase 4. For eac
   --metadata finding_id=$FINDING_ID \
   --metadata facet=$FACET \
   --metadata reason="$REASON" \
-  --metadata pr=$ARGUMENTS
+  --metadata pr="$PR_NUM"
 ```
 
 Repeat once per dropped finding. The freeform `## Dropped after challenge` section preserves the verbose details (both DISAGREE reasons, file:line); the manifest entry is the queryable index.
@@ -387,7 +412,7 @@ If any of A.1's variants failed (timeout, error, did-not-spawn), apply the fallb
 | Both variants failed for facet F | Re-dispatch single Agent for that facet using the Path B prompt. Note in output: `facet F: re-dispatched as single-reviewer (both variants failed)`. |
 | Challenge round failed for a facet | Skip A.3 for that facet; keep A.1 findings as `unchallenged`. Note in output: `facet F: challenge skipped (challenge prompt failed)`. |
 | A.2 auto-consensus matching errored on finding F (e.g., malformed `file:line`) | Skip auto-consensus for F; route F through A.3 challenge as if non-consensus. Log `LEDGER_WARN: PR#{N} A.2 skipped F:<id> due to <reason>` to stderr. |
-| A.4 consolidation lookup missing for finding F (e.g., orphaned challenge response) | Emit F as `unchallenged` MEDIUM. Append to `.decisions/issue-{N}.md` (where N = the issue this PR addresses) under a `## Consolidation gaps (PR #$ARGUMENTS, cycle {N})` heading with the orphan reason. Create the journal file with frontmatter if it does not exist. **Also emit `--type consolidation-gap`** via `bin/journal-record.sh` with `cycle`, `finding_id`, `reason`, and `pr` metadata so the manifest carries a machine-readable trail of fallback fires. |
+| A.4 consolidation lookup missing for finding F (e.g., orphaned challenge response) | Emit F as `unchallenged` MEDIUM. Append to `.decisions/issue-{N}.md` (where N = the issue this PR addresses) under a `## Consolidation gaps (PR #$PR_NUM, cycle {N})` heading with the orphan reason. Create the journal file with frontmatter if it does not exist. **Also emit `--type consolidation-gap`** via `bin/journal-record.sh` with `cycle`, `finding_id`, `reason`, and `pr` metadata so the manifest carries a machine-readable trail of fallback fires. |
 
 #### A.6 — Emit consolidated output
 
@@ -444,7 +469,7 @@ TaskUpdate each review task as agents complete.
 3. **Display findings** (finding-first pattern):
 
 ```markdown
-## Review Summary for PR #$ARGUMENTS
+## Review Summary for PR #$PR_NUM
 
 ### Findings: P1: {X}, P2: {Y}, P3: {Z}
 
@@ -460,7 +485,7 @@ TaskUpdate each review task as agents complete.
 4. **Determine review mode** — compare PR author vs current user:
 
    ```bash
-   PR_AUTHOR=$(gh pr view $ARGUMENTS --json author --jq '.author.login')
+   PR_AUTHOR=$(gh pr view "$PR_NUM" --json author --jq '.author.login')
    CURRENT_USER=$(gh api user --jq '.login')
    ```
 
@@ -524,18 +549,18 @@ TaskUpdate each review task as agents complete.
    - When Path A had per-facet fallbacks, individual findings from fallback facets carry `unchallenged` disposition with MEDIUM confidence — emit them in the 7-field form alongside the rest. Mixed-form rows within a single marker are NOT permitted (parsers tolerate variable field count, but emitting both forms in one row list would be confusing); pad fallback findings to 7 fields with `MEDIUM|unchallenged`.
 
    Post the review:
-   - Self-review → `gh pr review $ARGUMENTS --comment --body "$BODY"`
-   - External + P1 findings → `gh pr review $ARGUMENTS --request-changes --body "$BODY"`
-   - External + P2 findings (no P1) → `gh pr review $ARGUMENTS --request-changes --body "$BODY"`
-   - External + P3 only → `gh pr review $ARGUMENTS --comment --body "$BODY"` (fix-expected, not approve-with-nits)
-   - External + No findings → `gh pr review $ARGUMENTS --approve --body "$BODY"`
+   - Self-review → `gh pr review "$PR_NUM" --comment --body "$BODY"`
+   - External + P1 findings → `gh pr review "$PR_NUM" --request-changes --body "$BODY"`
+   - External + P2 findings (no P1) → `gh pr review "$PR_NUM" --request-changes --body "$BODY"`
+   - External + P3 only → `gh pr review "$PR_NUM" --comment --body "$BODY"` (fix-expected, not approve-with-nits)
+   - External + No findings → `gh pr review "$PR_NUM" --approve --body "$BODY"`
 
    TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — review posted as {approve/request-changes/comment}")
 
-   **Manifest emit** — record the review-cycle artifact in the issue's journal manifest. Use the issue number associated with this PR (parse from PR body: `gh pr view $ARGUMENTS --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#'`):
+   **Manifest emit** — record the review-cycle artifact in the issue's journal manifest. Use the issue number associated with this PR (parse from PR body: `gh pr view "$PR_NUM" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#'`):
 
    ```bash
-   ISSUE=$(gh pr view $ARGUMENTS --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+   ISSUE=$(gh pr view "$PR_NUM" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
    if [ -n "$ISSUE" ]; then
      "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
        --issue $ISSUE \
@@ -543,7 +568,7 @@ TaskUpdate each review task as agents complete.
        --metadata cycle=$CYCLE_NUMBER \
        --metadata path={A|B} \
        --metadata findings_count=$TOTAL \
-       --metadata pr=$ARGUMENTS
+       --metadata pr="$PR_NUM"
    fi
    ```
 
@@ -551,7 +576,7 @@ TaskUpdate each review task as agents complete.
 
 8. **Verify posting**: TaskList — confirm "Post review comment" or "Post self-review comment" task is completed. Do NOT proceed to step 9 until this is verified.
 
-9. **Post-review**: If self-review fixed everything, suggest `/flow:pr`. If external review, suggest `/flow:address $ARGUMENTS` for the PR author.
+9. **Post-review**: If self-review fixed everything, suggest `/flow:pr`. If external review, suggest `/flow:address $PR_NUM` for the PR author.
 
 ## Tier Classification
 
