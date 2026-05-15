@@ -50,8 +50,8 @@ true
 Aggregate review findings across the user's open PRs (author OR assignee). See [`references/finding-ledger-parser.md`](../references/finding-ledger-parser.md) for the canonical marker schemas, queries, and state classification — the bash below applies that contract. Pre-executed at command load (`!` prefix).
 
 ```!
-ME=$(gh api user --jq '.login')
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+ME=$(gh api user --jq '.login' 2>/dev/null)
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 
 # MARKERTRUST_GATE_BEGIN
 # Resolve trust list from the standard Claude Code settings cascade — same
@@ -73,6 +73,14 @@ for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PL
   fi
   [ -z "$CONFIGURED" ] && continue
   if echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
+    # Warn (don't block) when an element falls outside the known GitHub
+    # `author_association` vocabulary — same defense-in-depth check as
+    # commands/merge.md, mirrored here so a typo surfaces during the
+    # aggregator pass too (matches the /flow:status read-only contract).
+    UNKNOWN_VALUES=$(echo "$CONFIGURED" | jq -r '.[] | select(. != "OWNER" and . != "MEMBER" and . != "COLLABORATOR" and . != "CONTRIBUTOR" and . != "FIRST_TIME_CONTRIBUTOR" and . != "FIRST_TIMER" and . != "MANNEQUIN" and . != "NONE")' 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+    if [ -n "$UNKNOWN_VALUES" ]; then
+      echo "LEDGER_WARN: markerTrust in $SETTINGS_PATH contains values [$UNKNOWN_VALUES] not in the GitHub author_association vocabulary (OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, MANNEQUIN, NONE). These elements will match no authors — check for typos." >&2
+    fi
     TRUST_LIST="$CONFIGURED"
     break
   fi
@@ -116,7 +124,11 @@ else
     ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
     DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DISPUTED:\[//;s/\]$//'  | tr -d ' ')
 
-    echo "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY CAT LOC STATUS; do
+    # CAT and LOC are parsed but unused inside this loop — drop them with `_`
+    # so future code additions can't accidentally interpolate attacker-controlled
+    # fields without first applying `safe()` sanitization. If a future change
+    # needs them, replace `_ _` with named vars AND wrap each use with `safe()`.
+    echo "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY _ _ STATUS; do
       [ -z "$ID" ] && continue
       # Reject IDs containing case-glob metacharacters (`*`, `?`, `[`, `]`) —
       # IDs are template-issued and should match [A-Za-z][A-Za-z0-9_-]*.
