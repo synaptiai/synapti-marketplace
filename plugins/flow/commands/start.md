@@ -1,6 +1,6 @@
 ---
 description: "Start work on a GitHub issue. Assigns issue, creates branch, decomposes tasks from acceptance criteria, and guides implementation with autonomous execution."
-argument-hint: <issue-number-or-url>
+argument-hint: <issue-number-or-url> [free-form context]
 allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Grep, Glob
 ---
 
