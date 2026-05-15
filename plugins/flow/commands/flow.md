@@ -68,13 +68,15 @@ Parse `$ARGUMENTS` to extract verb and target:
 When invoked without arguments, show help and current status:
 
 1. Display available verbs with one-line descriptions
-2. Run a quick status check:
+2. Pre-executed at command load (`!` prefix) — quick state queries reach the agent as prompt context:
 
-```bash
+```!
 # Parallel: current state queries
 git branch --show-current
 gh issue list --assignee @me --state open --limit 5
 gh pr list --author @me --state open --limit 5
+
+true
 ```
 
 3. Suggest next action based on state:
