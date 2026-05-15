@@ -13,12 +13,13 @@ _None — explanatory Q&A over journal and diff context. No skill invocations._
 
 ## Phase 1: Load Context
 
-**Parallel operations:**
+Pre-executed at command load (`!` prefix) — branch, journal contents, issue details, and branch diff all reach the agent as prompt context.
 
-```bash
+```!
 # 1. Current branch and issue
 BRANCH=$(git branch --show-current)
 ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+echo "BRANCH=$BRANCH ISSUE_NUM=$ISSUE_NUM"
 
 # 2. Decision journal. Resolved via bin/cascade-resolve.sh.
 HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
@@ -32,6 +33,8 @@ JOURNAL_DIR=".decisions"
 # 4. Branch diff summary
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
 git diff --stat "$DEFAULT_BRANCH"...HEAD
+
+true
 ```
 
 ## Phase 2: Present Context
