@@ -27,6 +27,14 @@
 #   0 — always (errors are surfaced via LEDGER: unavailable on stdout or
 #       LEDGER_WARN on stderr; this is an aggregator and must not break
 #       /flow:status when one source is bad).
+#
+# Rate-limit cost:
+#   For a user with N open PRs, the script makes up to 2*N gh API calls
+#   (one /reviews and one /comments per PR, each potentially paginated).
+#   GitHub's secondary rate limit kicks in around 60 req/min. A circuit
+#   breaker stops the loop after 5 consecutive per-PR failures and emits
+#   `LEDGER: partial` so /flow:status renders the available rows with a
+#   caveat rather than producing a fully partial tally.
 
 set -uo pipefail
 
@@ -125,13 +133,35 @@ trap 'rm -f "$PARTIAL_FLAG" 2>/dev/null' EXIT
 # warning text. Defined once for the whole loop.
 safe() { printf '%s' "$1" | tr -cd '[:print:]' | tr -d '`$\\' | cut -c1-64; }
 
+# Rate-limit circuit breaker. /flow:status with N open PRs makes 2N gh API
+# calls (reviews + comments per PR). GitHub's secondary rate limit kicks in
+# around 60 req/min; after 5 consecutive per-PR failures we stop trying and
+# surface the partial state, so the user gets a usable (if incomplete)
+# ledger instead of a long stream of LEDGER_WARN lines and a fully partial
+# tally. The threshold is intentionally low — once we've hit one rate
+# limit, subsequent PRs in the same window will likely fail too.
+CONSECUTIVE_FAILURES=0
+CIRCUIT_BREAK_THRESHOLD=5
+
 for PR_NUM in $LEDGER_PRS; do
-  REVIEW_RAW=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null)
-  if [ $? -ne 0 ]; then
-    echo "LEDGER_WARN: PR#$PR_NUM reviews fetch failed (gh API error)" >&2
+  if [ $CONSECUTIVE_FAILURES -ge $CIRCUIT_BREAK_THRESHOLD ]; then
+    echo "LEDGER_WARN: circuit breaker tripped after $CONSECUTIVE_FAILURES consecutive failures; skipping remaining PRs" >&2
     : > "$PARTIAL_FLAG"
+    break
+  fi
+  REVIEW_RAW=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null)
+  GH_EXIT=$?
+  # Also treat exit 0 + empty body as a failure — observed on partial
+  # rate-limit responses where gh returns {} with success exit. An honest
+  # "no reviews" response would still emit `[]`, so empty is anomalous.
+  if [ $GH_EXIT -ne 0 ] || [ -z "$REVIEW_RAW" ]; then
+    echo "LEDGER_WARN: PR#$PR_NUM reviews fetch failed (gh exit=$GH_EXIT, body $([ -z "$REVIEW_RAW" ] && echo empty || echo present))" >&2
+    : > "$PARTIAL_FLAG"
+    CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
     continue
   fi
+  # Successful fetch — reset the circuit breaker.
+  CONSECUTIVE_FAILURES=0
   REVIEW_BODY=$(printf '%s' "$REVIEW_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
         'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_REVIEW_CYCLE:")))] | last | .body // ""' 2>/dev/null)
   # Scope marker extraction to the FLOW_REVIEW_CYCLE HTML comment only.
@@ -144,14 +174,17 @@ for PR_NUM in $LEDGER_PRS; do
   [ -z "$FINDINGS_RAW" ] && continue
 
   RESOLUTION_RAW=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null)
-  if [ $? -ne 0 ]; then
-    echo "LEDGER_WARN: PR#$PR_NUM comments fetch failed (gh API error)" >&2
+  GH_EXIT=$?
+  if [ $GH_EXIT -ne 0 ] || [ -z "$RESOLUTION_RAW" ]; then
+    echo "LEDGER_WARN: PR#$PR_NUM comments fetch failed (gh exit=$GH_EXIT, body $([ -z "$RESOLUTION_RAW" ] && echo empty || echo present))" >&2
     : > "$PARTIAL_FLAG"
+    CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
     # Continue with empty RESOLUTION_BODY so findings still tally as in_fix_forward
     RESOLUTION_BODY=""
   else
     RESOLUTION_BODY=$(printf '%s' "$RESOLUTION_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
         'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | last | .body // ""' 2>/dev/null)
+    CONSECUTIVE_FAILURES=0
   fi
   # Same scoping for the resolution marker: only parse fields inside the
   # FLOW_RESOLUTION_CYCLE HTML comment, not from prose elsewhere in the body

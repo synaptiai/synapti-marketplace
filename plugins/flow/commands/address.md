@@ -106,12 +106,31 @@ Pre-executed at command load alongside Phase 1:
 # Reuses the PR_NUM validation from the Phase 1 block above — if that block
 # emitted ERROR and exited, this block runs in a fresh subshell where
 # $ARGUMENTS is still set; validate again to keep this block self-contained.
+# Symmetric with Phase 1 — same `exit 1` + sentinel if Phase 1 ever
+# decouples from this block. Defense-in-depth.
 case "${ARGUMENTS:-}" in
-  '' | *[!0-9]*) echo "REVIEW_CYCLE=unavailable"; exit 0 ;;
+  '') echo "REVIEW_CYCLE=unavailable (no PR number)"; exit 1 ;;
+  *[!0-9]*) echo "REVIEW_CYCLE=unavailable (non-numeric PR number)"; exit 1 ;;
 esac
 PR_NUM="$ARGUMENTS"
-CYCLE_COUNT=$(gh pr view "$PR_NUM" --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length' 2>/dev/null || echo "unavailable")
+
+# Count only CHANGES_REQUESTED reviews that are NEWER than the latest
+# APPROVED review (or all of them, if no APPROVED review exists). This
+# distinguishes "user is on cycle 3 of an active back-and-forth" from
+# "user had 2 review cycles weeks ago that were resolved, then a new
+# review cycle started today" — the latter should report cycle 1, not 3.
+# The naive `length` over all CHANGES_REQUESTED reviews was triggering
+# the "Cycle 3+ comprehensive fix-all" escalation prematurely.
+CYCLE_COUNT=$(gh pr view "$PR_NUM" --json reviews --jq '
+  (.reviews // []) as $all
+  | ($all | map(select(.state == "APPROVED")) | last) as $last_approved
+  | $all
+  | map(select(.state == "CHANGES_REQUESTED"))
+  | if $last_approved == null then . else map(select(.submittedAt > $last_approved.submittedAt)) end
+  | length
+' 2>/dev/null || echo "unavailable")
 echo "REVIEW_CYCLE=$CYCLE_COUNT"
+true
 ```
 
 **Escalating strategy by cycle:**

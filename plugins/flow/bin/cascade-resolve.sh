@@ -19,12 +19,21 @@
 #
 # Output:
 #   stdout: the resolved value (one line; the default if provided and no
-#           source resolved; otherwise empty). In raw mode (the default),
-#           a leading `~` or `~/` is expanded to `$HOME` so downstream
-#           bash `mkdir -p $VAR` etc. work — bash tilde expansion is
-#           parse-time and does not apply to variable values. With
-#           `--compact` (JSON output), no tilde expansion is performed.
-#   stderr: per-source `cascade-resolve: WARN: ...` for parse errors
+#           source resolved; otherwise empty).
+#
+#           Tilde expansion contract (raw mode only):
+#             Any raw-mode result starting with `~` or `~/` is expanded to
+#             `$HOME` or `$HOME/...`. This is unconditional — settings
+#             authors must use `~/` ONLY for paths. If $HOME is unset or
+#             empty, `~` expands to `/nonexistent` (a sentinel that will
+#             fail downstream `mkdir`/`ls` with a clear error rather than
+#             silently writing to the filesystem root). With `--compact`
+#             (JSON output), no tilde expansion is performed.
+#
+#   stderr: per-source `cascade-resolve: WARN: ...` for parse errors. Also
+#           emits a `cascade-resolve: WARN: HOME unset ...` warning at
+#           startup in raw mode so the user knows tilde expansion will
+#           produce the `/nonexistent` sentinel.
 #
 # Exit:
 #   0 — resolved a value (or returned the default; both are normal)
@@ -75,6 +84,15 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 0
   fi
   exit 2
+fi
+
+# Warn on empty HOME in raw mode — tilde expansion will fall back to the
+# `/nonexistent` sentinel, which produces a clear mkdir/ls error rather
+# than silently writing to the filesystem root. Better to surface the
+# misconfiguration at expansion time than to chase a confusing "Permission
+# denied: /nonexistent" later.
+if [ "$MODE" = "-r" ] && [ -z "${HOME:-}" ]; then
+  echo "cascade-resolve: WARN: HOME env unset; ~/ paths will expand to /nonexistent/" >&2
 fi
 
 LOCAL_SETTINGS=".claude/settings.flow.local.json"

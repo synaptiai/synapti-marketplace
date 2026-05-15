@@ -82,7 +82,9 @@ case "$ARGUMENTS" in
 esac
 gh pr view "$ARGUMENTS" --json headRefName,baseRefName,mergeable,title
 git fetch origin
-git checkout <headRefName>
+# Disambiguate ref vs path — `git checkout <name>` can resolve to a file
+# path that matches the ref name. The `--` form forces ref interpretation.
+git checkout "refs/heads/<headRefName>" 2>/dev/null || git checkout "<headRefName>" --
 git merge "origin/<baseRefName>" --no-commit --no-ff
 ```
 

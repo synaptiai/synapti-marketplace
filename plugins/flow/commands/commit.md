@@ -41,9 +41,10 @@ echo "BRANCH=$BRANCH DEFAULT=$DEFAULT_BRANCH"
 # 3. Files already on branch
 git diff --name-only $DEFAULT_BRANCH...HEAD
 
-# 4. Issue context
-ISSUE_NUM=$(echo $BRANCH | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-[ -n "$ISSUE_NUM" ] && gh issue view $ISSUE_NUM --json title,body 2>/dev/null
+# 4. Issue context. Cap at 7 digits to reject pathological branch names
+#    like `issue-12345678901234567890-…` from polluting the journal path.
+ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]{1,7}' | grep -oE '[0-9]+')
+[ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body 2>/dev/null
 
 # 5. Recent commits (for style)
 git log --oneline -10

@@ -104,8 +104,11 @@ Claude can substitute them into Phase 2's inline branch-creation commands.
 # Reuses ISSUE_NUM from Phase 0. Re-validate since this block is a fresh
 # subshell — if Phase 0 emitted BLOCKED, Claude must halt before this block
 # matters, but the local-block invariant is preserved either way.
+# Symmetric with Phase 0 — same `exit 1` + BLOCKED marker if Phase 1 were
+# ever decoupled from Phase 0. Today Phase 0 should already have halted on
+# invalid args, but defense-in-depth keeps the block self-contained.
 case "${ARGUMENTS:-}" in
-  '' | *[!0-9]*) echo "EXPLORE: skipped (invalid issue number)"; exit 0 ;;
+  '' | *[!0-9]*) echo "EXPLORE: BLOCKED (invalid issue number)"; exit 1 ;;
 esac
 ISSUE_NUM="$ARGUMENTS"
 

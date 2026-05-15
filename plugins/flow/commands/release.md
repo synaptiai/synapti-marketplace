@@ -27,14 +27,29 @@ Pre-executed at command load (`!` prefix injects output before the LLM reads
 the prompt — no Bash tool round-trip required).
 
 ```!
-# 1. Current version (latest tag)
+# 1. Current version (latest tag).
 LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
 echo "Current version: $LAST_TAG"
 
-# 2. Release tag prefix from settings
+# 2. Release tag prefix from settings.
 TAG_PREFIX="v"  # default, read from settings.release.tagPrefix
 
-# 3. Merged PRs since last release
+# 3. Ancestry sanity check. If LAST_TAG isn't an ancestor of HEAD (e.g.,
+#    LAST_TAG was placed on a divergent hotfix branch), `$LAST_TAG..HEAD`
+#    produces misleading output — `git log` shows commits unique to HEAD
+#    only, omitting anything on the LAST_TAG branch the user might also
+#    want released. Surface the divergence as TAG_ANCESTOR=no so the
+#    LLM (and the user) know not to trust the changelog without manual
+#    review of the ancestry.
+if [ "$LAST_TAG" != "none" ]; then
+  if git merge-base --is-ancestor "$LAST_TAG" HEAD 2>/dev/null; then
+    echo "TAG_ANCESTOR=yes"
+  else
+    echo "TAG_ANCESTOR=no ($LAST_TAG is not in HEAD's ancestry — changelog may be incomplete)"
+  fi
+fi
+
+# 4. Merged PRs since last release.
 if [ "$LAST_TAG" != "none" ]; then
   SINCE=$(git log -1 --format=%aI "$LAST_TAG")
   gh pr list --state merged --search "merged:>=$SINCE" --json number,title,labels --limit 50
@@ -42,7 +57,7 @@ else
   gh pr list --state merged --json number,title,labels --limit 20
 fi
 
-# 4. Commits since last release
+# 5. Commits since last release.
 if [ "$LAST_TAG" != "none" ]; then
   git log --oneline "$LAST_TAG"..HEAD
 else
@@ -51,6 +66,11 @@ fi
 
 true  # explicit success
 ```
+
+**If `TAG_ANCESTOR=no`** appears, halt and surface a six-field
+Proactive-Autonomy escalation (see `references/escalation-format.md`)
+before computing the version bump — the changelog will not faithfully
+represent what's between the prior tag and HEAD.
 
 **If Phase 1 output is empty or contains `gh` auth errors, halt before
 Phase 2** — without a current-version baseline and merged-PR list, version
