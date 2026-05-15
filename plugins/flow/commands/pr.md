@@ -4,6 +4,8 @@ argument-hint: [title]
 allowed-tools: Bash(git branch *) Bash(git status *) Bash(git rev-list *) Bash(git diff *) Bash(git push *) Bash(git log *) Bash(gh repo view *) Bash(gh issue view *) Bash(gh issue list *) Bash(gh pr list *) Bash(gh pr view *) Bash(gh pr create *) Bash(gh pr edit *) Bash(cat *) Bash(${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh:*) Bash(grep *) Bash(echo *) Bash(sed *) Read Write Edit Agent AskUserQuestion TaskCreate TaskList TaskUpdate Skill Grep Glob
 ---
 
+<!-- Authoring patterns: plugins/flow/references/command-patterns.md -->
+
 <!--
 EXECUTION MODEL:
 Phase 1 EXPLORE bash is pre-executed via the `!` prefix at command load — no

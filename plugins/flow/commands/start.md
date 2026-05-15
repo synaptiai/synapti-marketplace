@@ -4,6 +4,8 @@ argument-hint: <issue-number-or-url>
 allowed-tools: Bash(git status *) Bash(git symbolic-ref *) Bash(git branch *) Bash(git ls-remote *) Bash(git fetch *) Bash(git checkout *) Bash(git push *) Bash(git commit *) Bash(gh auth *) Bash(gh issue view *) Bash(gh issue edit *) Bash(gh repo view *) Bash(gh api repos/*) Bash(grep *) Bash(echo *) Bash(mkdir *) Bash(${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh:*) Read Write Edit Agent Skill AskUserQuestion TaskCreate TaskList TaskUpdate TaskGet Grep Glob
 ---
 
+<!-- Authoring patterns: plugins/flow/references/command-patterns.md -->
+
 <!--
 EXECUTION MODEL:
 Phase 0 PRE-FLIGHT and Phase 1 EXPLORE bash are pre-executed via the `!`

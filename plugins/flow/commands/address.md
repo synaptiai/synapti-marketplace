@@ -4,6 +4,8 @@ argument-hint: <pr-number>
 allowed-tools: Bash(git push *) Bash(git commit *) Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git branch *) Bash(gh pr view *) Bash(gh pr checkout *) Bash(gh pr comment *) Bash(gh pr edit *) Bash(gh repo view *) Bash(gh api repos/*) Bash(gh issue create *) Read Write Edit Agent AskUserQuestion TaskCreate TaskList TaskUpdate TaskGet Skill Grep Glob
 ---
 
+<!-- Authoring patterns: plugins/flow/references/command-patterns.md -->
+
 <!--
 EXECUTION MODEL:
 Phase 1 read-only fetches (PR details, comments, reviews, threads) and the

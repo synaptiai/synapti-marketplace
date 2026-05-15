@@ -3,6 +3,8 @@ description: "Display a read-only overview of workflow state including assigned 
 allowed-tools: Bash(git branch *) Bash(git status *) Bash(git rev-list *) Bash(git rev-parse *) Bash(find *) Bash(wc *) Bash(tr *) Bash(gh repo view *) Bash(gh issue list *) Bash(gh pr list *) Bash(gh api repos/*) Bash(gh auth *) Bash(ls *) Bash(cat *) Bash(${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/aggregate-findings-ledger.sh:*) Bash(${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh:*) Bash(jq *) Read
 ---
 
+<!-- Authoring patterns: plugins/flow/references/command-patterns.md -->
+
 # Workflow Status
 
 Read-only overview of the current development state. No skills needed — pure observation.

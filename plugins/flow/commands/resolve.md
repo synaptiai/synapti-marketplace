@@ -4,6 +4,8 @@ argument-hint: [pr-number-or-branch]
 allowed-tools: Bash(git diff *) Bash(git status *) Bash(git merge *) Bash(git fetch *) Bash(git checkout *) Bash(git commit *) Bash(git rebase *) Bash(git add *) Bash(gh pr view *) Bash(gh auth *) Bash(grep *) Bash(echo *) Read Write Edit Agent Skill AskUserQuestion TaskCreate TaskList TaskUpdate TaskGet Grep Glob
 ---
 
+<!-- Authoring patterns: plugins/flow/references/command-patterns.md -->
+
 <!--
 EXECUTION MODEL:
 Phase 0 conflict-state detection and Phase 1 conflict enumeration are

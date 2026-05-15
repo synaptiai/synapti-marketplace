@@ -3,6 +3,8 @@ description: "Analyze the decision journal for learnable patterns and generate s
 allowed-tools: Bash(ls *) Bash(wc *) Bash(mkdir *) Bash(rm *) Bash(${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh:*) Bash(${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/promote-proposal.sh:*) Read Write Grep Glob
 ---
 
+<!-- Authoring patterns: plugins/flow/references/command-patterns.md -->
+
 <!--
 EXECUTION MODEL:
 Phase 1 directory resolution + listing is pre-executed via the `!` prefix at

@@ -4,6 +4,8 @@ argument-hint: [message]
 allowed-tools: Bash(git status *) Bash(git branch *) Bash(git diff *) Bash(git log *) Bash(git add *) Bash(git commit *) Bash(gh repo view *) Bash(gh issue view *) Read Write Edit AskUserQuestion Skill Grep Glob
 ---
 
+<!-- Authoring patterns: plugins/flow/references/command-patterns.md -->
+
 <!--
 EXECUTION MODEL:
 Phase 1 EXPLORE bash is pre-executed via the `!` prefix at command load — no
