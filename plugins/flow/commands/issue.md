@@ -22,9 +22,9 @@ Skill-driven issue creation. Follows the Explore > Plan > Code > Verify loop wit
 
 Gather context before formulating the issue.
 
-**Parallel Bash calls:**
+Pre-executed at command load (`!` prefix) — repo and branch context reach the agent as prompt context.
 
-```bash
+```!
 # 1. Repo info
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 echo "REPO=$REPO"
@@ -32,6 +32,8 @@ echo "REPO=$REPO"
 # 2. Current git state (branch context for cross-references)
 git branch --show-current
 git status --short
+
+true
 ```
 
 **Branch context extraction**: If on a feature branch matching `feature/issue-{N}-*` or `fix/issue-{N}-*`, extract the issue number — the new issue may be related.
