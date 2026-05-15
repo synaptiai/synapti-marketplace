@@ -19,7 +19,11 @@
 #
 # Output:
 #   stdout: the resolved value (one line; the default if provided and no
-#           source resolved; otherwise empty)
+#           source resolved; otherwise empty). In raw mode (the default),
+#           a leading `~` or `~/` is expanded to `$HOME` so downstream
+#           bash `mkdir -p $VAR` etc. work — bash tilde expansion is
+#           parse-time and does not apply to variable values. With
+#           `--compact` (JSON output), no tilde expansion is performed.
 #   stderr: per-source `cascade-resolve: WARN: ...` for parse errors
 #
 # Exit:
@@ -97,6 +101,16 @@ for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_
   rm -f "$STDERR_TMP" 2>/dev/null
 
   if [ -n "$RESULT" ]; then
+    # Raw-mode tilde expansion: bash applies tilde expansion at parse time
+    # only, so `mkdir -p $VAR` with VAR='~/path' creates a literal `./~/path`
+    # directory under cwd. Settings files often contain `~/...` (user-readable);
+    # expand here so consumers don't have to remember to normalize.
+    if [ "$MODE" = "-r" ]; then
+      case "$RESULT" in
+        '~') RESULT="${HOME:-/nonexistent}" ;;
+        '~/'*) RESULT="${HOME:-/nonexistent}/${RESULT#\~/}" ;;
+      esac
+    fi
     printf '%s\n' "$RESULT"
     exit 0
   fi
@@ -104,6 +118,14 @@ done
 
 # No source resolved a non-empty value
 if [ $DEFAULT_SET -eq 1 ]; then
+  # Also normalize the default in raw mode for consistency — callers usually
+  # pre-expand with `$HOME`, but defensive against future regressions.
+  if [ "$MODE" = "-r" ]; then
+    case "$DEFAULT_VALUE" in
+      '~') DEFAULT_VALUE="${HOME:-/nonexistent}" ;;
+      '~/'*) DEFAULT_VALUE="${HOME:-/nonexistent}/${DEFAULT_VALUE#\~/}" ;;
+    esac
+  fi
   printf '%s\n' "$DEFAULT_VALUE"
 fi
 exit 0
