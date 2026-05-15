@@ -24,9 +24,9 @@ This command operates with these domain skills loaded:
 
 Gather all evidence before theorizing. Execute in parallel:
 
-**Parallel Bash calls:**
+Pre-executed at command load (`!` prefix) — recent git history, diff stat, and current state all reach the agent as prompt context.
 
-```bash
+```!
 # 1. Recent changes that might have introduced the bug
 git log --oneline -10
 
@@ -36,6 +36,8 @@ git diff HEAD~3..HEAD --stat
 # 3. Current state
 git status --short
 git branch --show-current
+
+true
 ```
 
 **Parallel searches:**
