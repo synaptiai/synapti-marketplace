@@ -1,7 +1,7 @@
 ---
 description: "Start work on a GitHub issue. Assigns issue, creates branch, decomposes tasks from acceptance criteria, and guides implementation with autonomous execution."
 argument-hint: <issue-number-or-url>
-allowed-tools: Bash(git status *) Bash(git symbolic-ref *) Bash(git branch *) Bash(git ls-remote *) Bash(git fetch *) Bash(git checkout *) Bash(git push *) Bash(git commit *) Bash(gh auth *) Bash(gh issue view *) Bash(gh issue edit *) Bash(gh repo view *) Bash(gh api repos/*) Bash(grep *) Bash(echo *) Bash(mkdir *) Bash(bash plugins/flow/bin/*) Read Write Edit Agent Skill AskUserQuestion TaskCreate TaskList TaskUpdate TaskGet Grep Glob
+allowed-tools: Bash(git status *) Bash(git symbolic-ref *) Bash(git branch *) Bash(git ls-remote *) Bash(git fetch *) Bash(git checkout *) Bash(git push *) Bash(git commit *) Bash(gh auth *) Bash(gh issue view *) Bash(gh issue edit *) Bash(gh repo view *) Bash(gh api repos/*) Bash(grep *) Bash(echo *) Bash(mkdir *) Bash(${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh:*) Read Write Edit Agent Skill AskUserQuestion TaskCreate TaskList TaskUpdate TaskGet Grep Glob
 ---
 
 <!--
@@ -127,6 +127,8 @@ echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
 # 4. Current git state
 git status --short
 git branch --show-current
+
+true  # explicit success — block exit reflects intent
 ```
 
 **Parallel Agent + Skill calls:**

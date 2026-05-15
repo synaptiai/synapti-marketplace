@@ -1,6 +1,6 @@
 ---
 description: "Analyze the decision journal for learnable patterns and generate skill proposals from repeated corrections and common patterns. Use when reviewing session activity to extract reusable knowledge."
-allowed-tools: Bash(ls *) Bash(wc *) Bash(mkdir *) Bash(rm *) Bash(bash plugins/flow/bin/*) Read Write Grep Glob
+allowed-tools: Bash(ls *) Bash(wc *) Bash(mkdir *) Bash(rm *) Bash(${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh:*) Bash(${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/promote-proposal.sh:*) Read Write Grep Glob
 ---
 
 <!--

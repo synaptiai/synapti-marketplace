@@ -83,8 +83,11 @@ esac
 gh pr view "$ARGUMENTS" --json headRefName,baseRefName,mergeable,title
 git fetch origin
 # Disambiguate ref vs path — `git checkout <name>` can resolve to a file
-# path that matches the ref name. The `--` form forces ref interpretation.
-git checkout "refs/heads/<headRefName>" 2>/dev/null || git checkout "<headRefName>" --
+# path that happens to match the ref name. Use refs/heads/ prefix to force
+# ref interpretation; if the local branch doesn't exist yet (PR mode after
+# fresh fetch), fall through to creating one tracking the remote.
+git checkout "refs/heads/<headRefName>" 2>/dev/null \
+  || git checkout -b "<headRefName>" "origin/<headRefName>"
 git merge "origin/<baseRefName>" --no-commit --no-ff
 ```
 

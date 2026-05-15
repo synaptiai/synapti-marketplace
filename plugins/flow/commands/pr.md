@@ -1,7 +1,7 @@
 ---
 description: "Create a pull request with full code review, quality gates, comprehension report, and reviewer suggestions. Runs parallel agent review before PR creation."
 argument-hint: [title]
-allowed-tools: Bash(git branch *) Bash(git status *) Bash(git rev-list *) Bash(git diff *) Bash(git push *) Bash(git log *) Bash(gh repo view *) Bash(gh issue view *) Bash(gh issue list *) Bash(gh pr list *) Bash(gh pr view *) Bash(gh pr create *) Bash(gh pr edit *) Bash(cat *) Bash(bash plugins/flow/bin/*) Bash(grep *) Bash(echo *) Bash(sed *) Read Write Edit Agent AskUserQuestion TaskCreate TaskList TaskUpdate Skill Grep Glob
+allowed-tools: Bash(git branch *) Bash(git status *) Bash(git rev-list *) Bash(git diff *) Bash(git push *) Bash(git log *) Bash(gh repo view *) Bash(gh issue view *) Bash(gh issue list *) Bash(gh pr list *) Bash(gh pr view *) Bash(gh pr create *) Bash(gh pr edit *) Bash(cat *) Bash(${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh:*) Bash(grep *) Bash(echo *) Bash(sed *) Read Write Edit Agent AskUserQuestion TaskCreate TaskList TaskUpdate Skill Grep Glob
 ---
 
 <!--
