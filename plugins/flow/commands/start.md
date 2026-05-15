@@ -38,11 +38,19 @@ This command operates with these domain skills loaded:
 
 ## Phase 0: PRE-FLIGHT
 
-Pure bash validation. No LLM calls. Fail fast before spending tokens.
+Pure bash validation. Pre-executed at command load (`!` prefix) so the agent sees PASS/BLOCKED in the prompt and fails fast before spending tokens.
 
-```bash
+```!
+# Take the first whitespace-separated token as the issue number;
+# the rest of $ARGUMENTS is free-form context for the agent.
+# (Users often invoke as `/flow:start 42 (the search bar bug)`.)
+ISSUE_NUM="${ARGUMENTS%% *}"
+
 ERRORS=0
 WARNINGS=0
+
+# 0. Issue number required
+[ -z "$ISSUE_NUM" ] && echo "PREFLIGHT FAIL: Issue number required" && ERRORS=$((ERRORS+1))
 
 # 1. Clean git state
 [ -n "$(git status --porcelain)" ] && echo "PREFLIGHT FAIL: Uncommitted changes" && ERRORS=$((ERRORS+1))
@@ -54,18 +62,26 @@ git symbolic-ref HEAD >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: Detached HEAD";
 gh auth status >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: gh CLI not authenticated"; ERRORS=$((ERRORS+1)); }
 
 # 4. Issue exists and is open
-ISSUE_STATE=$(gh issue view $ARGUMENTS --json state --jq '.state' 2>/dev/null)
-[ "$ISSUE_STATE" != "OPEN" ] && echo "PREFLIGHT FAIL: Issue #$ARGUMENTS not found or not open (state: ${ISSUE_STATE:-not found})" && ERRORS=$((ERRORS+1))
+if [ -n "$ISSUE_NUM" ]; then
+  ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state --jq '.state' 2>/dev/null)
+  [ "$ISSUE_STATE" != "OPEN" ] && echo "PREFLIGHT FAIL: Issue #$ISSUE_NUM not found or not open (state: ${ISSUE_STATE:-not found})" && ERRORS=$((ERRORS+1))
+fi
 
 # 5. Remote accessible
 git ls-remote --exit-code origin >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: Cannot reach remote 'origin'"; ERRORS=$((ERRORS+1)); }
 
 # 6. Already on feature branch (warning only)
-git branch --show-current | grep -q "issue-$ARGUMENTS" && echo "PREFLIGHT WARN: Already on branch for issue #$ARGUMENTS" && WARNINGS=$((WARNINGS+1))
+[ -n "$ISSUE_NUM" ] && git branch --show-current | grep -q "issue-$ISSUE_NUM" && echo "PREFLIGHT WARN: Already on branch for issue #$ISSUE_NUM" && WARNINGS=$((WARNINGS+1))
 
+echo "ISSUE_NUM=$ISSUE_NUM"
 echo "PREFLIGHT: $ERRORS error(s), $WARNINGS warning(s)"
-[ $ERRORS -gt 0 ] && echo "PREFLIGHT: BLOCKED" && exit 1
-echo "PREFLIGHT: PASSED"
+if [ $ERRORS -gt 0 ]; then
+  echo "PREFLIGHT: BLOCKED"
+else
+  echo "PREFLIGHT: PASSED"
+fi
+
+true
 ```
 
 If pre-flight fails, stop. Do not proceed to EXPLORE.
@@ -79,17 +95,18 @@ Gather all context before planning.
 
 **Note**: `debugging-patterns` activates automatically for ALL issues when any verification step fails (build, test, server start, smoke test). No `bug` label required.
 
-Execute these in parallel:
+Pre-executed at command load (`!` prefix) — issue details, comments, default branch, and git state all reach the agent as prompt context.
 
-**Parallel Bash calls:**
+```!
+ISSUE_NUM="${ARGUMENTS%% *}"
+[ -z "$ISSUE_NUM" ] && { echo "ERROR: issue number required"; exit 1; }
 
-```bash
 # 1. Issue details
-gh issue view $ARGUMENTS --json title,body,labels,assignees,milestone
+gh issue view "$ISSUE_NUM" --json title,body,labels,assignees,milestone
 
 # 2. Issue comments
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '.[] | "---\n@\(.user.login):\n\(.body)\n"'
+gh api "repos/$REPO/issues/$ISSUE_NUM/comments" --jq '.[] | "---\n@\(.user.login):\n\(.body)\n"'
 
 # 3. Default branch and repo info
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
@@ -98,6 +115,8 @@ echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
 # 4. Current git state
 git status --short
 git branch --show-current
+
+true
 ```
 
 **Parallel Agent + Skill calls:**
