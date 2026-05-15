@@ -29,16 +29,22 @@ This command operates with these domain skills loaded:
 
 Understand the goal before generating options. Execute in parallel:
 
-**Parallel Bash calls:**
+Pre-executed at command load (`!` prefix) — extracted ISSUE_NUM, issue context, and project state all reach the agent as prompt context.
 
-```bash
-# 1. If issue number given, load context
-ISSUE_NUM=$(echo "$ARGUMENTS" | grep -oE '[0-9]+')
-[ -n "$ISSUE_NUM" ] && gh issue view $ISSUE_NUM --json title,body,labels
+```!
+# 1. If issue number given, load context. Take the first whitespace-separated
+# token as the candidate issue ref; extract digits. Supports usage like
+# /flow:brainstorm 42 (alternative auth strategies).
+ARG1="${ARGUMENTS%% *}"
+ISSUE_NUM=$(echo "$ARG1" | grep -oE '[0-9]+')
+echo "ISSUE_NUM=$ISSUE_NUM"
+[ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body,labels 2>/dev/null
 
 # 2. Current project state
 git branch --show-current
 git log --oneline -5
+
+true
 ```
 
 **Parallel searches:**
