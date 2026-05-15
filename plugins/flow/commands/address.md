@@ -17,10 +17,16 @@ load — no Bash tool round-trip. Mutating bash (`gh pr checkout`, fix commits,
 
 Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 
-**Pre-flight guard**: if `$ARGUMENTS` is empty (no PR number provided), the
-pre-executed `gh pr view` call below will emit `gh: argument required` style
-errors. Halt with the usage message `Usage: /flow:address <pr-number>` and do
-NOT proceed.
+**Pre-flight guard**: the `!` block below validates `$ARGUMENTS` is a numeric
+PR number BEFORE invoking gh. Empty or non-numeric `$ARGUMENTS` causes the
+block to emit `ERROR: ...` and `exit 1` — halt with the usage message
+`Usage: /flow:address <pr-number>` and do NOT proceed.
+
+Why an explicit check: `gh pr view --json ...` with no positional arg
+silently returns the CURRENT BRANCH's PR (exit 0), so relying on gh to
+error is unsafe. The numeric check also pins `$ARGUMENTS` to a sanitized
+`PR_NUM` value that downstream commands reference via `${PR_NUM}` — defensive
+against any future change in Claude Code's `$ARGUMENTS` substitution model.
 
 ## Required Skills
 
@@ -42,12 +48,24 @@ before the LLM reads the prompt). The mutating `gh pr checkout` runs as a
 separate inline Bash tool call AFTER Claude has reviewed the fetched context.
 
 ```!
+# 0. Validate $ARGUMENTS is a numeric PR number. `gh pr view --json ...` with
+#    no positional arg silently returns the CURRENT branch's PR — relying on
+#    gh to error is unsafe. Pin sanitized value to PR_NUM and echo for
+#    cross-block reuse (! blocks don't share shell state).
+case "${ARGUMENTS:-}" in
+  '') echo "ERROR: PR number required. Usage: /flow:address <pr-number>"; exit 1 ;;
+  *[!0-9]*) echo "ERROR: PR number must be numeric, got: $(printf '%s' "$ARGUMENTS" | tr -cd '[:print:]' | cut -c1-32)"; exit 1 ;;
+esac
+PR_NUM="$ARGUMENTS"
+echo "PR_NUM=$PR_NUM"
+
 # 1. PR details
-gh pr view $ARGUMENTS --json headRefName,baseRefName,title,body
+gh pr view "$PR_NUM" --json headRefName,baseRefName,title,body
 
 # 2. Review comments (inline)
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-gh api repos/$REPO/pulls/$ARGUMENTS/comments --jq '.[] | {
+echo "REPO=$REPO"
+gh api "repos/$REPO/pulls/$PR_NUM/comments" --jq '.[] | {
   id: .id,
   path: .path,
   line: .line,
@@ -56,21 +74,24 @@ gh api repos/$REPO/pulls/$ARGUMENTS/comments --jq '.[] | {
 }'
 
 # 3. Review summaries
-gh pr view $ARGUMENTS --json reviews --jq '.reviews[] | {
+gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | {
   state: .state,
   body: .body,
   author: .author.login
 }'
 
 # 4. Conversation threads
-gh api repos/$REPO/pulls/$ARGUMENTS/comments --jq 'group_by(.path) | .[] | {file: .[0].path, comments: [.[] | {body: .body, author: .user.login}]}'
+gh api "repos/$REPO/pulls/$PR_NUM/comments" --jq 'group_by(.path) | .[] | {file: .[0].path, comments: [.[] | {body: .body, author: .user.login}]}'
+
+true  # block exits 0 on success — explicit so a trailing conditional doesn't leak non-zero
 ```
 
 After reviewing the fetched context, switch to the PR branch (mutating —
-remains an inline Bash tool call):
+remains an inline Bash tool call; substitute the `PR_NUM` value emitted
+above):
 
 ```bash
-gh pr checkout $ARGUMENTS
+gh pr checkout $PR_NUM
 ```
 
 **Agent(Explore)**: "Pre-resolve check — for each review comment, verify the feedback still applies to the current code. Some comments may already be addressed by later commits."
@@ -82,8 +103,14 @@ gh pr checkout $ARGUMENTS
 Pre-executed at command load alongside Phase 1:
 
 ```!
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-CYCLE_COUNT=$(gh pr view $ARGUMENTS --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length')
+# Reuses the PR_NUM validation from the Phase 1 block above — if that block
+# emitted ERROR and exited, this block runs in a fresh subshell where
+# $ARGUMENTS is still set; validate again to keep this block self-contained.
+case "${ARGUMENTS:-}" in
+  '' | *[!0-9]*) echo "REVIEW_CYCLE=unavailable"; exit 0 ;;
+esac
+PR_NUM="$ARGUMENTS"
+CYCLE_COUNT=$(gh pr view "$PR_NUM" --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length' 2>/dev/null || echo "unavailable")
 echo "REVIEW_CYCLE=$CYCLE_COUNT"
 ```
 
@@ -249,27 +276,27 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
    ```bash
    git push
    ```
-8. **Reply to individual review comments** inline:
+8. **Reply to individual review comments** inline (substitute the validated `PR_NUM` value emitted by the Phase 1 `!` block):
    ```bash
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
    # For each fixed item, reply to the original review comment:
-   gh api repos/$REPO/pulls/$ARGUMENTS/comments/{comment_id}/replies \
+   gh api "repos/$REPO/pulls/$PR_NUM/comments/{comment_id}/replies" \
      -f body="Addressed in \`{SHA}\`. {brief description of fix}"
 
    # For Question/Pushback items, reply with the response:
-   gh api repos/$REPO/pulls/$ARGUMENTS/comments/{comment_id}/replies \
+   gh api "repos/$REPO/pulls/$PR_NUM/comments/{comment_id}/replies" \
      -f body="{response text}"
    ```
 9. **Post resolution comment** (MANDATORY) using the template structure from `templates/resolution-comment.md`:
    ```bash
-   gh pr comment $ARGUMENTS --body "$BODY"
+   gh pr comment "$PR_NUM" --body "$BODY"
    ```
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
 10. **Update PR body review cycle state** (if `### Review Cycle History` exists in the PR body):
-   - Fetch current body: `gh pr view $ARGUMENTS --json body --jq '.body'`
+   - Fetch current body: `gh pr view "$PR_NUM" --json body --jq '.body'`
    - If the body contains `### Review Cycle History`, replace content between that heading and the next `##` heading with the cycle metrics table (received/fixed/discussed/escalated)
    - If the heading does not exist, append a `### Review Cycle History` section under `## Review Findings`
-   - Update: `gh pr edit $ARGUMENTS --body "$UPDATED_BODY"`
+   - Update: `gh pr edit "$PR_NUM" --body "$UPDATED_BODY"`
 11. **TaskList**: Confirm ALL tasks complete including "Post resolution comment". Do NOT proceed until verified.
 12. **Conditional re-request review**:
 
@@ -277,7 +304,7 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
     - If self-review found 0 findings → do NOT re-request (nothing changed that needs re-review beyond the feedback fixes)
     - If cycle < `reviewCycleLimit` (default 3) → re-request normally:
       ```bash
-      gh pr edit $ARGUMENTS --add-reviewer @{reviewer}
+      gh pr edit "$PR_NUM" --add-reviewer @{reviewer}
       ```
     - If cycle >= `reviewCycleLimit` → use the AskUserQuestion tool with the following Proactive-Autonomy escalation:
 

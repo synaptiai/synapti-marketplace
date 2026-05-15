@@ -47,6 +47,16 @@ Pure bash validation. No LLM calls. Fail fast before spending tokens.
 Pre-executed at command load (`!` prefix).
 
 ```!
+# 0. Validate $ARGUMENTS is a numeric issue number. Pin to ISSUE_NUM so
+#    downstream blocks reference the sanitized value (! blocks don't share
+#    shell state — emit as KEY=value below).
+case "${ARGUMENTS:-}" in
+  '') echo "PREFLIGHT FAIL: Issue number required. Usage: /flow:start <issue-number>"; echo "PREFLIGHT: BLOCKED"; exit 1 ;;
+  *[!0-9]*) echo "PREFLIGHT FAIL: Issue number must be numeric, got: $(printf '%s' "$ARGUMENTS" | tr -cd '[:print:]' | cut -c1-32)"; echo "PREFLIGHT: BLOCKED"; exit 1 ;;
+esac
+ISSUE_NUM="$ARGUMENTS"
+echo "ISSUE_NUM=$ISSUE_NUM"
+
 ERRORS=0
 WARNINGS=0
 
@@ -60,18 +70,19 @@ git symbolic-ref HEAD >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: Detached HEAD";
 gh auth status >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: gh CLI not authenticated"; ERRORS=$((ERRORS+1)); }
 
 # 4. Issue exists and is open
-ISSUE_STATE=$(gh issue view $ARGUMENTS --json state --jq '.state' 2>/dev/null)
-[ "$ISSUE_STATE" != "OPEN" ] && echo "PREFLIGHT FAIL: Issue #$ARGUMENTS not found or not open (state: ${ISSUE_STATE:-not found})" && ERRORS=$((ERRORS+1))
+ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state --jq '.state' 2>/dev/null)
+[ "$ISSUE_STATE" != "OPEN" ] && echo "PREFLIGHT FAIL: Issue #$ISSUE_NUM not found or not open (state: ${ISSUE_STATE:-not found})" && ERRORS=$((ERRORS+1))
 
 # 5. Remote accessible
 git ls-remote --exit-code origin >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: Cannot reach remote 'origin'"; ERRORS=$((ERRORS+1)); }
 
 # 6. Already on feature branch (warning only)
-git branch --show-current | grep -q "issue-$ARGUMENTS" && echo "PREFLIGHT WARN: Already on branch for issue #$ARGUMENTS" && WARNINGS=$((WARNINGS+1))
+git branch --show-current | grep -q "issue-$ISSUE_NUM" && echo "PREFLIGHT WARN: Already on branch for issue #$ISSUE_NUM" && WARNINGS=$((WARNINGS+1))
 
 echo "PREFLIGHT: $ERRORS error(s), $WARNINGS warning(s)"
 [ $ERRORS -gt 0 ] && echo "PREFLIGHT: BLOCKED" && exit 1
 echo "PREFLIGHT: PASSED"
+true  # explicit success — guard guards against trailing-conditional leak
 ```
 
 **If pre-flight fails (BLOCKED), stop.** Do not proceed to EXPLORE.
@@ -90,13 +101,21 @@ Pre-executed at command load alongside Phase 0 (`!` prefix). Variables
 Claude can substitute them into Phase 2's inline branch-creation commands.
 
 ```!
+# Reuses ISSUE_NUM from Phase 0. Re-validate since this block is a fresh
+# subshell — if Phase 0 emitted BLOCKED, Claude must halt before this block
+# matters, but the local-block invariant is preserved either way.
+case "${ARGUMENTS:-}" in
+  '' | *[!0-9]*) echo "EXPLORE: skipped (invalid issue number)"; exit 0 ;;
+esac
+ISSUE_NUM="$ARGUMENTS"
+
 # 1. Issue details
-gh issue view $ARGUMENTS --json title,body,labels,assignees,milestone
+gh issue view "$ISSUE_NUM" --json title,body,labels,assignees,milestone
 
 # 2. Issue comments
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 echo "REPO=$REPO"
-gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '.[] | "---\n@\(.user.login):\n\(.body)\n"'
+gh api "repos/$REPO/issues/$ISSUE_NUM/comments" --jq '.[] | "---\n@\(.user.login):\n\(.body)\n"'
 
 # 3. Default branch and repo info
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
@@ -158,7 +177,7 @@ If any check fails, halt and re-invoke the skill with the failure noted. Do NOT 
 
 ```bash
 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
-  --issue $ARGUMENTS \
+  --issue "$ISSUE_NUM" \
   --type specification \
   --metadata by=specification-capture \
   --metadata elements=non-goals,failure-modes,interface-contracts
@@ -208,7 +227,7 @@ Only after every criterion shows PASS or user-approved MANUAL can the workflow p
 **Assign the issue:**
 
 ```bash
-gh issue edit $ARGUMENTS --add-assignee @me
+gh issue edit "$ISSUE_NUM" --add-assignee @me
 ```
 
 ## Phase 2: PLAN
@@ -218,8 +237,8 @@ Create branch and decompose tasks.
 **Branch creation** (Tier 1 — autonomous):
 
 ```bash
-git fetch origin $DEFAULT_BRANCH
-git checkout -b "feature/issue-$ARGUMENTS-{kebab-desc}" "origin/$DEFAULT_BRANCH"
+git fetch origin "$DEFAULT_BRANCH"
+git checkout -b "feature/issue-${ISSUE_NUM}-{kebab-desc}" "origin/$DEFAULT_BRANCH"
 ```
 
 **Initialize decision journal:**
@@ -290,7 +309,7 @@ Record the Stranger Test result to `.decisions/issue-$ARGUMENTS.md` under a `## 
 
 ```bash
 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
-  --issue $ARGUMENTS \
+  --issue "$ISSUE_NUM" \
   --type stranger-test \
   --metadata result={PASS|BLOCK} \
   --metadata task_count=$N
@@ -451,7 +470,7 @@ Prove everything works with fix-forward:
 
    ```bash
    "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
-     --issue $ARGUMENTS \
+     --issue "$ISSUE_NUM" \
      --type verdict \
      --metadata result={PASS|FAIL|NEEDS-HUMAN-REVIEW}
    ```

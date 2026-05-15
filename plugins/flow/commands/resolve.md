@@ -69,11 +69,17 @@ Mutating — runs as inline Bash tool calls, only in PR mode (when `$ARGUMENTS`
 is a PR number):
 
 ```bash
-# Fetch PR details and attempt merge
-gh pr view $ARGUMENTS --json headRefName,baseRefName,mergeable,title
+# Fetch PR details and attempt merge. Validate $ARGUMENTS is numeric (PR mode)
+# or a safe branch name before substitution — defensive against shell
+# metacharacters in $ARGUMENTS.
+case "$ARGUMENTS" in
+  '') echo "ERROR: PR number or branch name required in PR/branch mode"; exit 1 ;;
+  *[!A-Za-z0-9._/-]*) echo "ERROR: invalid characters in argument"; exit 1 ;;
+esac
+gh pr view "$ARGUMENTS" --json headRefName,baseRefName,mergeable,title
 git fetch origin
 git checkout <headRefName>
-git merge origin/<baseRefName> --no-commit --no-ff
+git merge "origin/<baseRefName>" --no-commit --no-ff
 ```
 
 If `mergeable == "MERGEABLE"` (no conflicts), report "No conflicts found" and exit.

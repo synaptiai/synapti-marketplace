@@ -45,9 +45,10 @@ git rev-list --count "$DEFAULT_BRANCH"..HEAD
 git status --porcelain
 git diff --stat "$DEFAULT_BRANCH"...HEAD
 
-# 3. Issue context
-ISSUE_NUM=$(echo $BRANCH | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-[ -n "$ISSUE_NUM" ] && gh issue view $ISSUE_NUM --json title,body,labels
+# 3. Issue context (branch name is git-validated, but quote defensively)
+ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+[ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body,labels
+echo "ISSUE_NUM=$ISSUE_NUM"
 
 # 4. Existing PR check
 gh pr list --head "$BRANCH" --state open --json number,url
@@ -55,6 +56,8 @@ gh pr list --head "$BRANCH" --state open --json number,url
 # 5. Decision journal
 JOURNAL_DIR=".decisions"
 [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ] && cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+
+true  # explicit success — block exit reflects block intent, not the trailing optional conditional
 ```
 
 **If pre-flight emitted `ERROR: Cannot create PR from default branch`, halt
