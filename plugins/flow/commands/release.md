@@ -14,9 +14,9 @@ Tier 3 operation — **always requires human confirmation**.
 
 ## Phase 1: Gather Context
 
-**Parallel operations:**
+Pre-executed at command load (`!` prefix) — current tag, merged PRs, and recent commits all reach the agent as prompt context. Phase 2 version calculation and Phase 4 publish steps stay inline (they depend on $ARGUMENTS classification and user confirmation).
 
-```bash
+```!
 # 1. Current version (latest tag)
 LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
 echo "Current version: $LAST_TAG"
@@ -38,6 +38,8 @@ if [ "$LAST_TAG" != "none" ]; then
 else
   git log --oneline -20
 fi
+
+true
 ```
 
 ## Phase 2: Calculate Version
