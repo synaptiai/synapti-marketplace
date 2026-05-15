@@ -134,7 +134,13 @@ for PR_NUM in $LEDGER_PRS; do
   fi
   REVIEW_BODY=$(printf '%s' "$REVIEW_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
         'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_REVIEW_CYCLE:")))] | last | .body // ""' 2>/dev/null)
-  FINDINGS_RAW=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//')
+  # Scope marker extraction to the FLOW_REVIEW_CYCLE HTML comment only.
+  # Without this, prose mentions of `FINDINGS:[…]` elsewhere in the review
+  # body (e.g. an example row in a markdown table) would be parsed as data
+  # and poison the tally. Match the last occurrence in case multiple
+  # cycle markers exist (older cycles preserved in body).
+  REVIEW_MARKER=$(echo "$REVIEW_BODY" | grep -oE '<!--[^>]*FLOW_REVIEW_CYCLE:[^>]*-->' | tail -1)
+  FINDINGS_RAW=$(echo "$REVIEW_MARKER" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//')
   [ -z "$FINDINGS_RAW" ] && continue
 
   RESOLUTION_RAW=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null)
@@ -147,10 +153,16 @@ for PR_NUM in $LEDGER_PRS; do
     RESOLUTION_BODY=$(printf '%s' "$RESOLUTION_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
         'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | last | .body // ""' 2>/dev/null)
   fi
+  # Same scoping for the resolution marker: only parse fields inside the
+  # FLOW_RESOLUTION_CYCLE HTML comment, not from prose elsewhere in the body
+  # (a resolution-comment narrative section mentioning `RESOLVED:[…]` as a
+  # reference would otherwise be picked up by the bare `grep -o RESOLVED:`
+  # pattern and pollute the RESOLVED set with non-marker text).
+  RESOLUTION_MARKER=$(echo "$RESOLUTION_BODY" | grep -oE '<!--[^>]*FLOW_RESOLUTION_CYCLE:[^>]*-->' | tail -1)
   # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
-  RESOLVED=$(echo "$RESOLUTION_BODY"  | grep -o 'RESOLVED:\[[^]]*\]'  | sed 's/^RESOLVED:\[//;s/\]$//'  | tr -d ' ')
-  ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
-  DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DISPUTED:\[//;s/\]$//'  | tr -d ' ')
+  RESOLVED=$(echo "$RESOLUTION_MARKER"  | grep -o 'RESOLVED:\[[^]]*\]'  | sed 's/^RESOLVED:\[//;s/\]$//'  | tr -d ' ')
+  ESCALATED=$(echo "$RESOLUTION_MARKER" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
+  DISPUTED=$(echo "$RESOLUTION_MARKER"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DISPUTED:\[//;s/\]$//'  | tr -d ' ')
 
   echo "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY CAT LOC STATUS; do
     [ -z "$ID" ] && continue
