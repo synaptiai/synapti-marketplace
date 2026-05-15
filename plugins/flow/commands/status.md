@@ -13,9 +13,9 @@ _None — read-only status command. No skill invocations._
 
 ## Gather State
 
-Execute all queries in parallel:
+Pre-executed at command load (`!` prefix) — the agent receives this output as part of the prompt, no Bash tool round-trip.
 
-```bash
+```!
 # 1. Current branch and uncommitted changes
 git branch --show-current
 git status --short | head -20
@@ -41,13 +41,15 @@ JOURNAL_DIR=".decisions"
 
 # 7. Learning pending
 [ -f "$HOME/.claude/flow-learn-pending" ] && echo "LEARNING PENDING: $(cat $HOME/.claude/flow-learn-pending)" || echo "No pending learning"
+
+true
 ```
 
 ## Gather Findings Ledger
 
-Aggregate review findings across the user's open PRs (author OR assignee). See [`references/finding-ledger-parser.md`](../references/finding-ledger-parser.md) for the canonical marker schemas, queries, and state classification — the bash below applies that contract.
+Aggregate review findings across the user's open PRs (author OR assignee). See [`references/finding-ledger-parser.md`](../references/finding-ledger-parser.md) for the canonical marker schemas, queries, and state classification — the bash below applies that contract. Pre-executed at command load (`!` prefix).
 
-```bash
+```!
 ME=$(gh api user --jq '.login')
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
@@ -146,6 +148,8 @@ else
     done
   done | sort | uniq -c
 fi
+
+true
 ```
 
 The output of the loop is a tally like:
