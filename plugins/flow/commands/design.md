@@ -29,19 +29,25 @@ This command operates with these domain skills loaded:
 
 Map existing architecture before proposing anything. Execute in parallel:
 
-**Parallel Bash calls:**
+Pre-executed at command load (`!` prefix) — project structure, extracted ISSUE_NUM, issue context, and branch state all reach the agent as prompt context.
 
-```bash
+```!
 # 1. Project structure
 ls -la src/ app/ lib/ packages/ 2>/dev/null || ls -la
 
-# 2. If issue number given, load issue context
-ISSUE_NUM=$(echo "$ARGUMENTS" | grep -oE '[0-9]+')
-[ -n "$ISSUE_NUM" ] && gh issue view $ISSUE_NUM --json title,body,labels
+# 2. If issue number given, load issue context. Take the first whitespace-
+# separated token as the candidate issue ref; extract digits. Supports usage
+# like /flow:design 42 (decoupled auth service architecture).
+ARG1="${ARGUMENTS%% *}"
+ISSUE_NUM=$(echo "$ARG1" | grep -oE '[0-9]+')
+echo "ISSUE_NUM=$ISSUE_NUM"
+[ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body,labels 2>/dev/null
 
 # 3. Current branch context
 git branch --show-current
 git log --oneline -5
+
+true
 ```
 
 **Parallel Agent + Skill calls:**
