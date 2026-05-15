@@ -34,33 +34,36 @@ Pre-executed at command load (`!` prefix) — PR details, review comments, revie
 # Take the first whitespace-separated token as the PR number;
 # the rest of $ARGUMENTS is free-form context for the agent.
 PR_NUM="${ARGUMENTS%% *}"
-[ -z "$PR_NUM" ] && { echo "ERROR: PR number required. Usage: /flow:address <pr-number>"; exit 1; }
 
-# 1. PR details
-gh pr view "$PR_NUM" --json headRefName,baseRefName,title,body
+if [ -z "$PR_NUM" ]; then
+  echo "ERROR: PR number required. Usage: /flow:address <pr-number>"
+else
+  # 1. PR details
+  gh pr view "$PR_NUM" --json headRefName,baseRefName,title,body
 
-# 2. Review comments (inline)
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-gh api "repos/$REPO/pulls/$PR_NUM/comments" --jq '.[] | {
-  id: .id,
-  path: .path,
-  line: .line,
-  body: .body,
-  author: .user.login
-}'
+  # 2. Review comments (inline)
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+  gh api "repos/$REPO/pulls/$PR_NUM/comments" --jq '.[] | {
+    id: .id,
+    path: .path,
+    line: .line,
+    body: .body,
+    author: .user.login
+  }'
 
-# 3. Review summaries
-gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | {
-  state: .state,
-  body: .body,
-  author: .author.login
-}'
+  # 3. Review summaries
+  gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | {
+    state: .state,
+    body: .body,
+    author: .author.login
+  }'
 
-# 4. Conversation threads
-gh api "repos/$REPO/pulls/$PR_NUM/comments" --jq 'group_by(.path) | .[] | {file: .[0].path, comments: [.[] | {body: .body, author: .user.login}]}'
+  # 4. Conversation threads
+  gh api "repos/$REPO/pulls/$PR_NUM/comments" --jq 'group_by(.path) | .[] | {file: .[0].path, comments: [.[] | {body: .body, author: .user.login}]}'
 
-# 5. Echo for downstream phases (inline blocks consume $PR_NUM, not $ARGUMENTS).
-echo "PR_NUM=$PR_NUM"
+  # 5. Echo for downstream phases (inline blocks consume $PR_NUM, not $ARGUMENTS).
+  echo "PR_NUM=$PR_NUM"
+fi
 
 true
 ```
@@ -81,10 +84,14 @@ Pre-executed at command load (`!` prefix) — cycle count reaches the agent as p
 
 ```!
 PR_NUM="${ARGUMENTS%% *}"
-[ -z "$PR_NUM" ] && { echo "ERROR: PR number required"; exit 1; }
-CYCLE_COUNT=$(gh pr view "$PR_NUM" --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length')
-echo "PR_NUM=$PR_NUM"
-echo "REVIEW_CYCLE=$CYCLE_COUNT"
+
+if [ -z "$PR_NUM" ]; then
+  echo "ERROR: PR number required"
+else
+  CYCLE_COUNT=$(gh pr view "$PR_NUM" --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length')
+  echo "PR_NUM=$PR_NUM"
+  echo "REVIEW_CYCLE=$CYCLE_COUNT"
+fi
 
 true
 ```

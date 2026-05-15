@@ -34,24 +34,27 @@ Pre-executed at command load (`!` prefix) — pre-flight, branch context, commit
 # 1. Pre-flight checks
 BRANCH=$(git branch --show-current)
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-[ "$BRANCH" = "$DEFAULT_BRANCH" ] && echo "ERROR: Cannot create PR from default branch" && exit 1
 echo "BRANCH=$BRANCH DEFAULT=$DEFAULT_BRANCH"
 
-# 2. Commits and changes
-git rev-list --count "$DEFAULT_BRANCH"..HEAD
-git status --porcelain
-git diff --stat "$DEFAULT_BRANCH"...HEAD
+if [ "$BRANCH" = "$DEFAULT_BRANCH" ]; then
+  echo "ERROR: Cannot create PR from default branch"
+else
+  # 2. Commits and changes
+  git rev-list --count "$DEFAULT_BRANCH"..HEAD
+  git status --porcelain
+  git diff --stat "$DEFAULT_BRANCH"...HEAD
 
-# 3. Issue context
-ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-[ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body,labels
+  # 3. Issue context
+  ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+  [ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body,labels 2>/dev/null
 
-# 4. Existing PR check
-gh pr list --head "$BRANCH" --state open --json number,url
+  # 4. Existing PR check
+  gh pr list --head "$BRANCH" --state open --json number,url
 
-# 5. Decision journal
-JOURNAL_DIR=".decisions"
-[ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ] && cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+  # 5. Decision journal
+  JOURNAL_DIR=".decisions"
+  [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ] && cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+fi
 
 true
 ```
