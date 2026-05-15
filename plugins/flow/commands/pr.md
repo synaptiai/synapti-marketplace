@@ -28,9 +28,9 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 
 ## Phase 1: EXPLORE
 
-**Parallel operations:**
+Pre-executed at command load (`!` prefix) — pre-flight, branch context, commits/diff, issue context, existing-PR check, and journal entry all reach the agent as prompt context.
 
-```bash
+```!
 # 1. Pre-flight checks
 BRANCH=$(git branch --show-current)
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
@@ -43,8 +43,8 @@ git status --porcelain
 git diff --stat "$DEFAULT_BRANCH"...HEAD
 
 # 3. Issue context
-ISSUE_NUM=$(echo $BRANCH | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-[ -n "$ISSUE_NUM" ] && gh issue view $ISSUE_NUM --json title,body,labels
+ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+[ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body,labels
 
 # 4. Existing PR check
 gh pr list --head "$BRANCH" --state open --json number,url
@@ -52,6 +52,8 @@ gh pr list --head "$BRANCH" --state open --json number,url
 # 5. Decision journal
 JOURNAL_DIR=".decisions"
 [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ] && cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+
+true
 ```
 
 **Skill invocation:** `Skill(capability-discovery)` — detect quality commands.
