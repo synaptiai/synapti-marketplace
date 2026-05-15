@@ -1,6 +1,6 @@
 ---
 description: "Resolve merge conflicts on the current branch or for a pull request. Detects conflict types, analyzes both sides, applies per-file resolution strategies, and verifies the result compiles and passes tests."
-argument-hint: [pr-number-or-branch]
+argument-hint: [pr-number-or-branch] [free-form context]
 allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Grep, Glob
 ---
 
@@ -37,6 +37,19 @@ Determine invocation mode from `$ARGUMENTS`:
 Pre-executed at command load (`!` prefix) — conflict state reaches the agent as prompt context.
 
 ```!
+# Take the first whitespace-separated token; accept only if it matches the
+# safe set [a-zA-Z0-9._/-] (covers digit-only PR numbers AND typical branch
+# names like `feature/foo-bar.v2`). A token containing shell metacharacters
+# (`;`, `|`, `$`, spaces, etc.) is rejected with empty RESOLVE_TARGET so the
+# trailing context can't reach downstream shell. Trailing prose after the
+# first whitespace is fine.
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!a-zA-Z0-9._/-]*) RESOLVE_TARGET="" ;;
+  *) RESOLVE_TARGET="$ARG1" ;;
+esac
+echo "RESOLVE_TARGET=$RESOLVE_TARGET"
+
 # Check for active merge/rebase state
 if [ -f .git/MERGE_HEAD ] || [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
   echo "ACTIVE_CONFLICT"
@@ -53,8 +66,9 @@ true
 ### PR Mode Setup
 
 ```bash
-# Fetch PR details and attempt merge
-gh pr view $ARGUMENTS --json headRefName,baseRefName,mergeable,title
+# Fetch PR details and attempt merge. Uses $RESOLVE_TARGET extracted by the
+# Phase 0 `!` block above (digit-or-safe-branch-name; trailing context stripped).
+gh pr view "$RESOLVE_TARGET" --json headRefName,baseRefName,mergeable,title
 git fetch origin
 git checkout <headRefName>
 git merge origin/<baseRefName> --no-commit --no-ff
