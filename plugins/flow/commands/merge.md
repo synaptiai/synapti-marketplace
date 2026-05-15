@@ -1,6 +1,6 @@
 ---
 description: "Merge an approved pull request. Verifies prerequisites (approval, checks, conversations), displays assessment, and requires explicit human confirmation. Tier 3 — never autonomous."
-argument-hint: <pr-number>
+argument-hint: <pr-number> [free-form context]
 allowed-tools: Bash, Read, AskUserQuestion, Skill
 ---
 
@@ -21,35 +21,42 @@ Tier 3 operation — **always requires human confirmation**. This is non-negotia
 Pre-executed at command load (`!` prefix) — PR status, reviews, unresolved conversations, stale approval check, and finding-ledger seed all reach the agent as prompt context.
 
 ```!
-# Take the first whitespace-separated token as the PR number; the rest of
-# $ARGUMENTS is free-form context for the agent.
-PR_NUM="${ARGUMENTS%% *}"
+# Take the first whitespace-separated token; accept only if it is all digits.
+# Trailing context (e.g., "104 (verify ledger gate)") is fine — first-token
+# extraction handles it. A non-numeric token (e.g., "foo42" or "evil;rm") is
+# rejected with empty PR_NUM so it never reaches the prompt context or any
+# downstream shell. Matches the pattern in brainstorm.md / design.md.
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) PR_NUM="" ;;
+  *) PR_NUM="$ARG1" ;;
+esac
 
 if [ -z "$PR_NUM" ]; then
-  echo "ERROR: PR number required. Usage: /flow:merge <pr-number>"
+  echo "ERROR: PR number required (all-digit). Usage: /flow:merge <pr-number>"
 else
   echo "PR_NUM=$PR_NUM"
 
   # 1. PR status
-  gh pr view "$PR_NUM" --json reviewDecision,statusCheckRollup,mergeable,mergeStateStatus,title,headRefName
+  gh pr view "$PR_NUM" --json reviewDecision,statusCheckRollup,mergeable,mergeStateStatus,title,headRefName 2>/dev/null
 
   # 2. Reviews
-  gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | "\(.state) by \(.author.login) at \(.submittedAt)"'
+  gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | "\(.state) by \(.author.login) at \(.submittedAt)"' 2>/dev/null
 
   # 3. Unresolved conversations (reviewThreads requires GraphQL API)
-  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   OWNER=$(echo "$REPO" | cut -d/ -f1)
   NAME=$(echo "$REPO" | cut -d/ -f2)
-  gh api graphql -f query="query { repository(owner: \"$OWNER\", name: \"$NAME\") { pullRequest(number: $PR_NUM) { reviewThreads(first: 100) { nodes { isResolved } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length'
+  gh api graphql -f query="query { repository(owner: \"$OWNER\", name: \"$NAME\") { pullRequest(number: $PR_NUM) { reviewThreads(first: 100) { nodes { isResolved } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' 2>/dev/null
 
   # 4. Stale approval check
   gh pr view "$PR_NUM" --json reviews,commits --jq '{
     last_approval: [.reviews[] | select(.state == "APPROVED")] | sort_by(.submittedAt) | last | .submittedAt,
     last_commit: .commits | last | .committedDate
-  }'
+  }' 2>/dev/null
 
   # 5. Finding-ledger seed (full ledger gate runs in next ! block)
-  gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '.[] | select(.body | test("FLOW_RESOLUTION_CYCLE|FLOW_REVIEW_CYCLE")) | {id: .id, body: .body}'
+  gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '.[] | select(.body | test("FLOW_RESOLUTION_CYCLE|FLOW_REVIEW_CYCLE")) | {id: .id, body: .body}' 2>/dev/null
 fi
 
 true
@@ -62,14 +69,19 @@ Parse the latest `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` comments to ver
 ```!
 # Extract the latest FLOW_RESOLUTION_CYCLE comment (issue/PR conversation).
 # Capture gh exit code: a silent gh failure (auth, network) must fail the gate
-# CLOSED, not pass it open.
-PR_NUM="${ARGUMENTS%% *}"
+# CLOSED, not pass it open. PR_NUM is digit-validated (matches Phase 1 block);
+# a non-digit token rejects rather than reaching downstream shell or echo.
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) PR_NUM="" ;;
+  *) PR_NUM="$ARG1" ;;
+esac
 
 if [ -z "$PR_NUM" ]; then
-  echo "FINDING_LEDGER_BLOCK: PR number required"
+  echo "FINDING_LEDGER_BLOCK: PR number required (all-digit)"
 else
 
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 
 # MARKERTRUST_GATE_BEGIN
 # Resolve trust list from the standard Claude Code settings cascade.
@@ -101,6 +113,17 @@ for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PL
   fi
   [ -z "$CONFIGURED" ] && continue
   if echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
+    # Warn (don't block) when an element falls outside the known GitHub
+    # `author_association` vocabulary. A typo such as `"owner"` (lowercase)
+    # or `"MAINTAINER"` (not a real value) passes the type check above but
+    # would match no real author, silently disabling trust for the typo'd
+    # entry. Use the same WARN-and-continue pattern as the HIGH_RISK check
+    # below — the gate already fails closed via the "untrusted-only"
+    # branch when nothing matches.
+    UNKNOWN_VALUES=$(echo "$CONFIGURED" | jq -r '.[] | select(. != "OWNER" and . != "MEMBER" and . != "COLLABORATOR" and . != "CONTRIBUTOR" and . != "FIRST_TIME_CONTRIBUTOR" and . != "FIRST_TIMER" and . != "MANNEQUIN" and . != "NONE")' 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+    if [ -n "$UNKNOWN_VALUES" ]; then
+      echo "LEDGER_WARN: markerTrust in $SETTINGS_PATH contains values [$UNKNOWN_VALUES] not in the GitHub author_association vocabulary (OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, MANNEQUIN, NONE). These elements will match no authors — check for typos." >&2
+    fi
     TRUST_LIST="$CONFIGURED"
     TRUST_SOURCE="$SETTINGS_PATH"
     break
@@ -130,36 +153,41 @@ fi
 
 # Trust filter applied via jq's `index()` exact-match (no regex surface).
 # `--paginate` keeps fetching pages so a noisy thread can't hide forgeries.
-RESOLUTION_BODY=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null \
-  | jq -s -r --argjson trust "$TRUST_LIST" \
-      'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | last | .body // ""')
-GH_EXIT_RES=${PIPESTATUS[0]}
-RES_UNTRUSTED=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null \
-  | jq -s -r --argjson trust "$TRUST_LIST" \
-      'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | length')
-GH_EXIT_RES_U=${PIPESTATUS[0]}
+#
+# Fetch each endpoint once; reuse the cached JSON for both filter passes
+# (trusted + untrusted-counting). Capturing `gh`'s exit code via `$?` directly
+# after the command substitution is the only reliable way to detect a silent
+# gh failure: `VAR=$(gh ... | jq ...)` then `${PIPESTATUS[0]}` does NOT capture
+# gh's inner exit — bash resets PIPESTATUS to reflect only the outer assignment
+# (verified: `X=$(false | true); echo ${PIPESTATUS[0]}` → 0). Without the cache
+# split, a gh stderr-only failure with empty stdout would let `jq -s 'add //
+# empty'` succeed on null input and the gate would pass open.
+GH_RES_RAW=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null)
+GH_EXIT_RES=$?
+RESOLUTION_BODY=$(printf '%s' "$GH_RES_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
+    'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | last | .body // ""')
+RES_UNTRUSTED=$(printf '%s' "$GH_RES_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
+    'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | length')
 
 # Extract ESCALATED array contents (portable POSIX grep+sed; BSD grep has no -P).
 # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
 ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
 
 # Extract the latest FLOW_REVIEW_CYCLE — emitted in PR review bodies, not issue comments
-REVIEW_BODY=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null \
-  | jq -s -r --argjson trust "$TRUST_LIST" \
-      'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_REVIEW_CYCLE:")))] | last | .body // ""')
-GH_EXIT_REV=${PIPESTATUS[0]}
-REV_UNTRUSTED=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null \
-  | jq -s -r --argjson trust "$TRUST_LIST" \
-      'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("FLOW_REVIEW_CYCLE:")))] | length')
-GH_EXIT_REV_U=${PIPESTATUS[0]}
+GH_REV_RAW=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null)
+GH_EXIT_REV=$?
+REVIEW_BODY=$(printf '%s' "$GH_REV_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
+    'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_REVIEW_CYCLE:")))] | last | .body // ""')
+REV_UNTRUSTED=$(printf '%s' "$GH_REV_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
+    'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("FLOW_REVIEW_CYCLE:")))] | length')
 
-# Fail closed if any of the four gh calls failed — better to block a legitimate
-# merge than silently let a regression through when the gate state is unknowable.
-# Includes the untrusted-counting calls (RES_UNTRUSTED, REV_UNTRUSTED) — without
-# their exit codes a network blip during the secondary call would silently
-# treat as "no untrusted markers" rather than failing closed.
-if [ $GH_EXIT_RES -ne 0 ] || [ $GH_EXIT_REV -ne 0 ] || [ $GH_EXIT_RES_U -ne 0 ] || [ $GH_EXIT_REV_U -ne 0 ]; then
-  echo "FINDING_LEDGER_BLOCK: gh API unavailable — cannot verify finding ledger (resolution exit=$GH_EXIT_RES, review exit=$GH_EXIT_REV, res-untrusted exit=$GH_EXIT_RES_U, rev-untrusted exit=$GH_EXIT_REV_U)"
+# Fail closed if either gh call failed — better to block a legitimate merge
+# than silently let a regression through when the gate state is unknowable.
+# Both `_UNTRUSTED` counting calls share the same gh exit code as their primary
+# (they re-filter the cached JSON), so a single per-endpoint exit check covers
+# all four filter passes.
+if [ $GH_EXIT_RES -ne 0 ] || [ $GH_EXIT_REV -ne 0 ]; then
+  echo "FINDING_LEDGER_BLOCK: gh API unavailable — cannot verify finding ledger (resolution exit=$GH_EXIT_RES, review exit=$GH_EXIT_REV)"
 fi
 
 # Surface "untrusted-only" markers as a block reason rather than silently
@@ -168,7 +196,14 @@ fi
 # message — the `$TRUST_REGEX` variable used to appear here was a leftover
 # from PR #93 and never assigned, producing the empty-parens string
 # "trusted authors ()" in messages or aborting under `set -u`.
-TRUST_LIST_DISPLAY=$(echo "$TRUST_LIST" | jq -r 'join(",")' 2>/dev/null || echo "OWNER,MEMBER,COLLABORATOR")
+#
+# Derive the fallback from $TRUST_DEFAULT rather than hard-coding the value:
+# if $TRUST_DEFAULT changes (e.g., adding CONTRIBUTOR), the display string
+# stays in lockstep instead of silently lying.
+TRUST_LIST_DISPLAY=$(echo "$TRUST_LIST" | jq -r 'join(",")' 2>/dev/null)
+if [ -z "$TRUST_LIST_DISPLAY" ]; then
+  TRUST_LIST_DISPLAY=$(echo "$TRUST_DEFAULT" | jq -r 'join(",")' 2>/dev/null)
+fi
 if [ -z "$RESOLUTION_BODY" ] && [ "${RES_UNTRUSTED:-0}" != "0" ]; then
   echo "FINDING_LEDGER_BLOCK: $RES_UNTRUSTED FLOW_RESOLUTION_CYCLE marker(s) found but none from trusted authors ($TRUST_LIST_DISPLAY)"
 fi
