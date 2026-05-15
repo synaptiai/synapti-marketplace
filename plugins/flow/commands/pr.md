@@ -49,7 +49,7 @@ else
   [ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body,labels 2>/dev/null
 
   # 4. Existing PR check
-  gh pr list --head "$BRANCH" --state open --json number,url
+  gh pr list --head "$BRANCH" --state open --json number,url 2>/dev/null
 
   # 5. Decision journal
   JOURNAL_DIR=".decisions"

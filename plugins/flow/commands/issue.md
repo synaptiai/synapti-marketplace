@@ -26,8 +26,9 @@ Pre-executed at command load (`!` prefix) — repo and branch context reach the 
 
 ```!
 # 1. Repo info
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 echo "REPO=$REPO"
+[ -z "$REPO" ] && echo "WARN: cannot resolve repo (gh auth or non-repo CWD?)" >&2
 
 # 2. Current git state (branch context for cross-references)
 git branch --show-current

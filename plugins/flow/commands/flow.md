@@ -71,10 +71,12 @@ When invoked without arguments, show help and current status:
 2. Pre-executed at command load (`!` prefix) — quick state queries reach the agent as prompt context:
 
 ```!
-# Parallel: current state queries
+# Parallel: current state queries. Bare `/flow` runs in any CWD, including
+# non-repos and offline shells, so stderr from gh is suppressed (otherwise
+# "could not determine repository" leaks into the prompt as data).
 git branch --show-current
-gh issue list --assignee @me --state open --limit 5
-gh pr list --author @me --state open --limit 5
+gh issue list --assignee @me --state open --limit 5 2>/dev/null
+gh pr list --author @me --state open --limit 5 2>/dev/null
 
 true
 ```
