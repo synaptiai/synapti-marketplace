@@ -24,11 +24,9 @@ Classify changes, flag anomalies, and create atomic conventional commits. Follow
 
 ## Phase 1: EXPLORE
 
-Execute these in parallel:
+Pre-executed at command load (`!` prefix) — the agent receives branch, status, diff, and issue context as part of the prompt, no Bash tool round-trip.
 
-**Parallel Bash calls:**
-
-```bash
+```!
 # 1. All changes
 git status --porcelain
 
@@ -38,16 +36,16 @@ DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.na
 echo "BRANCH=$BRANCH DEFAULT=$DEFAULT_BRANCH"
 
 # 3. Files already on branch
-git diff --name-only $DEFAULT_BRANCH...HEAD
+git diff --name-only "$DEFAULT_BRANCH"...HEAD
 
 # 4. Issue context
-ISSUE_NUM=$(echo $BRANCH | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-[ -n "$ISSUE_NUM" ] && gh issue view $ISSUE_NUM --json title,body 2>/dev/null
+ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+[ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body 2>/dev/null
 
 # 5. Recent commits (for style)
 git log --oneline -10
 
-# 6. Task-related context from branch or issue
+true
 ```
 
 **Grep** — search branch diff and issue body for task-related context.
