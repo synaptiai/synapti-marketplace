@@ -18,40 +18,57 @@ Tier 3 operation — **always requires human confirmation**. This is non-negotia
 
 ## Phase 1: Verify Prerequisites
 
-**Parallel checks:**
+Pre-executed at command load (`!` prefix) — PR status, reviews, unresolved conversations, stale approval check, and finding-ledger seed all reach the agent as prompt context.
 
-```bash
-# 1. PR status
-gh pr view $ARGUMENTS --json reviewDecision,statusCheckRollup,mergeable,mergeStateStatus,title,headRefName
+```!
+# Take the first whitespace-separated token as the PR number; the rest of
+# $ARGUMENTS is free-form context for the agent.
+PR_NUM="${ARGUMENTS%% *}"
 
-# 2. Reviews
-gh pr view $ARGUMENTS --json reviews --jq '.reviews[] | "\(.state) by \(.author.login) at \(.submittedAt)"'
+if [ -z "$PR_NUM" ]; then
+  echo "ERROR: PR number required. Usage: /flow:merge <pr-number>"
+else
+  echo "PR_NUM=$PR_NUM"
 
-# 3. Unresolved conversations (reviewThreads requires GraphQL API)
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-OWNER=$(echo $REPO | cut -d/ -f1)
-NAME=$(echo $REPO | cut -d/ -f2)
-gh api graphql -f query="query { repository(owner: \"$OWNER\", name: \"$NAME\") { pullRequest(number: $ARGUMENTS) { reviewThreads(first: 100) { nodes { isResolved } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length'
+  # 1. PR status
+  gh pr view "$PR_NUM" --json reviewDecision,statusCheckRollup,mergeable,mergeStateStatus,title,headRefName
 
-# 4. Stale approval check
-gh pr view $ARGUMENTS --json reviews,commits --jq '{
-  last_approval: [.reviews[] | select(.state == "APPROVED")] | sort_by(.submittedAt) | last | .submittedAt,
-  last_commit: .commits | last | .committedDate
-}'
+  # 2. Reviews
+  gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | "\(.state) by \(.author.login) at \(.submittedAt)"'
 
-# 5. Finding-ledger check
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-COMMENTS=$(gh api "repos/$REPO/issues/$ARGUMENTS/comments" --jq '.[] | select(.body | test("FLOW_RESOLUTION_CYCLE|FLOW_REVIEW_CYCLE")) | {id: .id, body: .body}')
+  # 3. Unresolved conversations (reviewThreads requires GraphQL API)
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+  OWNER=$(echo "$REPO" | cut -d/ -f1)
+  NAME=$(echo "$REPO" | cut -d/ -f2)
+  gh api graphql -f query="query { repository(owner: \"$OWNER\", name: \"$NAME\") { pullRequest(number: $PR_NUM) { reviewThreads(first: 100) { nodes { isResolved } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length'
+
+  # 4. Stale approval check
+  gh pr view "$PR_NUM" --json reviews,commits --jq '{
+    last_approval: [.reviews[] | select(.state == "APPROVED")] | sort_by(.submittedAt) | last | .submittedAt,
+    last_commit: .commits | last | .committedDate
+  }'
+
+  # 5. Finding-ledger seed (full ledger gate runs in next ! block)
+  gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '.[] | select(.body | test("FLOW_RESOLUTION_CYCLE|FLOW_REVIEW_CYCLE")) | {id: .id, body: .body}'
+fi
+
+true
 ```
 
 ### Finding-Ledger Check
 
-Parse the latest `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` comments to verify all findings are resolved before merge. Marker schemas and the canonical extraction queries are documented in [`references/finding-ledger-parser.md`](../references/finding-ledger-parser.md); this command applies the merge-blocking subset (ESCALATED non-empty, FINDINGS without matching RESOLVED).
+Parse the latest `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` comments to verify all findings are resolved before merge. Marker schemas and the canonical extraction queries are documented in [`references/finding-ledger-parser.md`](../references/finding-ledger-parser.md); this command applies the merge-blocking subset (ESCALATED non-empty, FINDINGS without matching RESOLVED). Pre-executed at command load (`!` prefix).
 
-```bash
+```!
 # Extract the latest FLOW_RESOLUTION_CYCLE comment (issue/PR conversation).
 # Capture gh exit code: a silent gh failure (auth, network) must fail the gate
 # CLOSED, not pass it open.
+PR_NUM="${ARGUMENTS%% *}"
+
+if [ -z "$PR_NUM" ]; then
+  echo "FINDING_LEDGER_BLOCK: PR number required"
+else
+
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
 # MARKERTRUST_GATE_BEGIN
@@ -113,11 +130,11 @@ fi
 
 # Trust filter applied via jq's `index()` exact-match (no regex surface).
 # `--paginate` keeps fetching pages so a noisy thread can't hide forgeries.
-RESOLUTION_BODY=$(gh api --paginate "repos/$REPO/issues/$ARGUMENTS/comments" 2>/dev/null \
+RESOLUTION_BODY=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null \
   | jq -s -r --argjson trust "$TRUST_LIST" \
       'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | last | .body // ""')
 GH_EXIT_RES=${PIPESTATUS[0]}
-RES_UNTRUSTED=$(gh api --paginate "repos/$REPO/issues/$ARGUMENTS/comments" 2>/dev/null \
+RES_UNTRUSTED=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null \
   | jq -s -r --argjson trust "$TRUST_LIST" \
       'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | length')
 GH_EXIT_RES_U=${PIPESTATUS[0]}
@@ -127,11 +144,11 @@ GH_EXIT_RES_U=${PIPESTATUS[0]}
 ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
 
 # Extract the latest FLOW_REVIEW_CYCLE — emitted in PR review bodies, not issue comments
-REVIEW_BODY=$(gh api --paginate "repos/$REPO/pulls/$ARGUMENTS/reviews" 2>/dev/null \
+REVIEW_BODY=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null \
   | jq -s -r --argjson trust "$TRUST_LIST" \
       'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_REVIEW_CYCLE:")))] | last | .body // ""')
 GH_EXIT_REV=${PIPESTATUS[0]}
-REV_UNTRUSTED=$(gh api --paginate "repos/$REPO/pulls/$ARGUMENTS/reviews" 2>/dev/null \
+REV_UNTRUSTED=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null \
   | jq -s -r --argjson trust "$TRUST_LIST" \
       'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("FLOW_REVIEW_CYCLE:")))] | length')
 GH_EXIT_REV_U=${PIPESTATUS[0]}
@@ -175,6 +192,10 @@ UNRESOLVED=$(comm -23 <(echo "$REVIEW_FINDINGS") <(echo "$RESOLVED_FINDINGS") | 
 if [ -n "$UNRESOLVED" ]; then
   echo "FINDING_LEDGER_BLOCK: Unresolved findings: $UNRESOLVED"
 fi
+
+fi  # /if [ -z "$PR_NUM" ]
+
+true
 ```
 
 **If the finding-ledger check fails**, stop immediately and display:
@@ -182,7 +203,7 @@ fi
 ```markdown
 ## BLOCKED: Unresolved Findings
 
-PR #$ARGUMENTS cannot be merged — the finding ledger has unresolved items.
+PR #$PR_NUM cannot be merged — the finding ledger has unresolved items.
 
 | Issue | Details |
 |-------|---------|
@@ -193,10 +214,10 @@ PR #$ARGUMENTS cannot be merged — the finding ledger has unresolved items.
 
 ### Remediation
 
-1. Run `/flow:address $ARGUMENTS` to resolve remaining findings
+1. Run `/flow:address $PR_NUM` to resolve remaining findings
 2. Ensure every finding in `FLOW_REVIEW_CYCLE:FINDINGS` has a matching `RESOLVED` entry in `FLOW_RESOLUTION_CYCLE`
 3. Ensure `ESCALATED:[]` is empty (all escalated items must be resolved or have explicit human override)
-4. Re-run `/flow:merge $ARGUMENTS`
+4. Re-run `/flow:merge $PR_NUM`
 
 This gate enforces the "no incomplete shipments" hard boundary.
 ```
@@ -206,7 +227,7 @@ Do NOT proceed to Phase 2. Exit here.
 ## Phase 2: Display Assessment
 
 ```markdown
-## Merge Assessment for PR #$ARGUMENTS
+## Merge Assessment for PR #$PR_NUM
 
 | Check | Status | Details |
 |-------|--------|---------|
@@ -229,12 +250,12 @@ If the Mergeable check fails (has conflicts):
 
 Use the AskUserQuestion tool with a Proactive-Autonomy escalation:
 
-> **Situation** — PR #$ARGUMENTS has merge conflicts that prevent merging.
+> **Situation** — PR #$PR_NUM has merge conflicts that prevent merging.
 >
 > **What I tried** — Checked mergeable status via `gh pr view`. Conflicts exist between the PR branch and the base branch.
 >
 > **Options**:
-> 1. Resolve conflicts now — invokes `Skill(flow:resolve)` with $ARGUMENTS (Recommended)
+> 1. Resolve conflicts now — invokes `Skill(flow:resolve)` with $PR_NUM (Recommended)
 > 2. Cancel merge — address conflicts manually or rebase first
 >
 > **Recommendation** — Option 1. Automated conflict resolution handles most cases and re-verifies after resolution.
@@ -247,7 +268,7 @@ If Option 1: after resolution completes, re-run Phase 1 to verify PR is now merg
 
 ## Phase 3: Confirm and Execute
 
-Use the AskUserQuestion tool with contextual options to confirm: "PR #$ARGUMENTS is ready to merge. Proceed with squash merge and branch deletion?"
+Use the AskUserQuestion tool with contextual options to confirm: "PR #$PR_NUM is ready to merge. Proceed with squash merge and branch deletion?"
 
 Only after the user confirms via the tool:
 
@@ -256,14 +277,14 @@ Only after the user confirms via the tool:
 STRATEGY="squash"  # or from settings
 DELETE_FLAG="--delete-branch"  # or from settings
 
-gh pr merge $ARGUMENTS --$STRATEGY $DELETE_FLAG
+gh pr merge "$PR_NUM" --$STRATEGY $DELETE_FLAG
 ```
 
 ## Phase 4: Post-Merge
 
 ```bash
 # Verify merge
-gh pr view $ARGUMENTS --json state --jq '.state'
+gh pr view "$PR_NUM" --json state --jq '.state'
 
 # Switch to default branch
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
@@ -274,7 +295,7 @@ git pull origin $DEFAULT_BRANCH
 **Manifest emit** — if this merge resolved any escalations (a Proactive-Autonomy escalation surfaced via `AskUserQuestion` during Phase 1's finding-ledger check, Phase 2's stale-approval warning, or the conflict-resolution path closed because the user provided one of the six canonical fields), record an `escalation-resolved` artifact for each:
 
 ```bash
-ISSUE=$(gh pr view $ARGUMENTS --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+ISSUE=$(gh pr view "$PR_NUM" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
 if [ -n "$ISSUE" ]; then
   # Repeat once per escalation that closed during this merge run.
   "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
