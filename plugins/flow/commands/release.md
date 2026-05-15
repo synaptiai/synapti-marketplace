@@ -2,7 +2,19 @@
 description: "Create a release with changelog generation from merged PRs. Calculates semantic version, requires human confirmation. Tier 3 — never autonomous."
 argument-hint: <patch|minor|major>
 allowed-tools: Bash(git describe *) Bash(git log *) Bash(git tag *) Bash(git push *) Bash(gh pr list *) Bash(gh release create *) Bash(gh release view *) Read AskUserQuestion
+disable-model-invocation: true
 ---
+
+<!--
+TIER 3 — `disable-model-invocation: true` prevents the Claude Code
+`SlashCommand` tool from programmatically invoking this command. The
+AskUserQuestion gate at Phase 4 is the human-confirmation contract for
+typed-in invocations; this frontmatter field is the equivalent contract
+against autonomous agents. See `plugins/flow/references/command-patterns.md`
+§Decision: disable-model-invocation for the full rationale.
+-->
+<!-- Authoring patterns: plugins/flow/references/command-patterns.md -->
+
 
 <!--
 EXECUTION MODEL:

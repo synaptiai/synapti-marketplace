@@ -2,7 +2,19 @@
 description: "Merge an approved pull request. Verifies prerequisites (approval, checks, conversations), displays assessment, and requires explicit human confirmation. Tier 3 — never autonomous."
 argument-hint: <pr-number>
 allowed-tools: Bash, Read, AskUserQuestion, Skill
+disable-model-invocation: true
 ---
+
+<!--
+TIER 3 — `disable-model-invocation: true` prevents the Claude Code
+`SlashCommand` tool from programmatically invoking this command. The
+AskUserQuestion gate is the human-confirmation contract for typed-in
+invocations; this frontmatter field is the equivalent contract against
+autonomous agents. See `plugins/flow/references/command-patterns.md`
+§Decision: disable-model-invocation for the full rationale.
+-->
+<!-- Authoring patterns: plugins/flow/references/command-patterns.md -->
+
 
 # Merge PR #$ARGUMENTS
 
