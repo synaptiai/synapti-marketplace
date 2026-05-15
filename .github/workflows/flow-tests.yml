@@ -1,0 +1,32 @@
+name: Flow plugin tests
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/flow/bin/**'
+      - 'plugins/flow/commands/**'
+      - 'plugins/flow/tests/**'
+      - '.github/workflows/flow-tests.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugins/flow/bin/**'
+      - 'plugins/flow/commands/**'
+      - 'plugins/flow/tests/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify required tools
+        run: |
+          command -v jq
+          command -v bash
+          command -v gh
+
+      - name: Run flow plugin tests
+        run: plugins/flow/tests/run.sh
