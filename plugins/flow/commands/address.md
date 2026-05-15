@@ -31,35 +31,40 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 Pre-executed at command load (`!` prefix) — PR details, review comments, review summaries, and conversation threads all reach the agent as prompt context. `gh pr checkout` stays inline (mutating).
 
 ```!
-# Take the first whitespace-separated token as the PR number;
-# the rest of $ARGUMENTS is free-form context for the agent.
-PR_NUM="${ARGUMENTS%% *}"
+# Take the first whitespace-separated token; accept only if it is all digits.
+# A non-numeric token (e.g., "foo42" or "evil;rm") is rejected with empty
+# PR_NUM so it never reaches the prompt context or any downstream shell.
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) PR_NUM="" ;;
+  *) PR_NUM="$ARG1" ;;
+esac
 
 if [ -z "$PR_NUM" ]; then
-  echo "ERROR: PR number required. Usage: /flow:address <pr-number>"
+  echo "ERROR: PR number required (all-digit). Usage: /flow:address <pr-number>"
 else
   # 1. PR details
-  gh pr view "$PR_NUM" --json headRefName,baseRefName,title,body
+  gh pr view "$PR_NUM" --json headRefName,baseRefName,title,body 2>/dev/null
 
   # 2. Review comments (inline)
-  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   gh api "repos/$REPO/pulls/$PR_NUM/comments" --jq '.[] | {
     id: .id,
     path: .path,
     line: .line,
     body: .body,
     author: .user.login
-  }'
+  }' 2>/dev/null
 
   # 3. Review summaries
   gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | {
     state: .state,
     body: .body,
     author: .author.login
-  }'
+  }' 2>/dev/null
 
   # 4. Conversation threads
-  gh api "repos/$REPO/pulls/$PR_NUM/comments" --jq 'group_by(.path) | .[] | {file: .[0].path, comments: [.[] | {body: .body, author: .user.login}]}'
+  gh api "repos/$REPO/pulls/$PR_NUM/comments" --jq 'group_by(.path) | .[] | {file: .[0].path, comments: [.[] | {body: .body, author: .user.login}]}' 2>/dev/null
 
   # 5. Echo for downstream phases (inline blocks consume $PR_NUM, not $ARGUMENTS).
   echo "PR_NUM=$PR_NUM"
@@ -83,12 +88,17 @@ gh pr checkout "$PR_NUM"
 Pre-executed at command load (`!` prefix) — cycle count reaches the agent as prompt context for choosing the right strategy below.
 
 ```!
-PR_NUM="${ARGUMENTS%% *}"
+# Digit-validate PR_NUM (matches Phase 1 block).
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) PR_NUM="" ;;
+  *) PR_NUM="$ARG1" ;;
+esac
 
 if [ -z "$PR_NUM" ]; then
-  echo "ERROR: PR number required"
+  echo "ERROR: PR number required (all-digit)"
 else
-  CYCLE_COUNT=$(gh pr view "$PR_NUM" --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length')
+  CYCLE_COUNT=$(gh pr view "$PR_NUM" --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length' 2>/dev/null)
   echo "PR_NUM=$PR_NUM"
   echo "REVIEW_CYCLE=$CYCLE_COUNT"
 fi
