@@ -54,10 +54,14 @@ fi
 git diff --name-only --diff-filter=U
 git status --porcelain | grep "^[UAD][UAD] " || true
 
-# Phase 1b: conflict hunks per file
+# Phase 1b: conflict hunks per file. `|| true` per-line so a missing file
+# (delete-modify, codes UD/DU) or a zero-match grep doesn't terminate the
+# loop with non-zero exit.
 git diff --name-only --diff-filter=U | while IFS= read -r f; do
-  [ -f "$f" ] && echo "$f: $(grep -c '<<<<<<<' "$f") hunks"
+  [ -f "$f" ] && echo "$f: $(grep -c '<<<<<<<' "$f" || echo 0) hunks" || true
 done
+
+true  # explicit success — block exit reflects intent, not the trailing pipeline
 ```
 
 - If mode is PR: verify `gh auth status` succeeds (run inline as needed)

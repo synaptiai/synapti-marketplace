@@ -1,6 +1,6 @@
 ---
 description: "Analyze the decision journal for learnable patterns and generate skill proposals from repeated corrections and common patterns. Use when reviewing session activity to extract reusable knowledge."
-allowed-tools: Bash(ls *) Bash(wc *) Bash(mkdir *) Bash(rm *) Bash(bash *) Read Write Grep Glob
+allowed-tools: Bash(ls *) Bash(wc *) Bash(mkdir *) Bash(rm *) Bash(bash plugins/flow/bin/*) Read Write Grep Glob
 ---
 
 <!--
@@ -33,6 +33,9 @@ Phase 4's inline `mkdir` and Phase 6's inline `rm -f`.
 # The helper iterates project-local → project-shared → user-global → plugin
 # default and surfaces parse errors on stderr. Gracefully fall back to defaults
 # when the helper is unreachable (hardens against unusual cwd / env states).
+# Note: cascade-resolve.sh now expands leading `~` to $HOME in raw mode so
+# the values printed below are usable directly in `mkdir -p $VAR` etc. —
+# bash tilde expansion is parse-time and does NOT apply to variable values.
 HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
 PROPOSAL_DIR="$HOME/.claude/flow-proposals"
@@ -40,6 +43,11 @@ if [ -x "$HELPER" ]; then
   JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
   PROPOSAL_DIR=$("$HELPER" --default "$HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
 fi
+# Defensive: if helper emitted empty stdout (no setting AND no --default
+# match — should never happen since --default is always set, but
+# defense-in-depth against future regressions), restore the safe defaults.
+[ -z "$JOURNAL_DIR" ] && JOURNAL_DIR=".decisions"
+[ -z "$PROPOSAL_DIR" ] && PROPOSAL_DIR="$HOME/.claude/flow-proposals"
 echo "JOURNAL_DIR=$JOURNAL_DIR"
 echo "PROPOSAL_DIR=$PROPOSAL_DIR"
 
@@ -48,6 +56,8 @@ ls -la "$JOURNAL_DIR"/*.md 2>/dev/null
 
 # Count existing proposals
 ls -la "$PROPOSAL_DIR"/*.md 2>/dev/null | wc -l
+
+true  # explicit success — wc -l returns 0 on empty input, but be explicit
 ```
 
 Read all journal files from the current session (today's entries).

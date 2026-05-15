@@ -48,6 +48,8 @@ if [ "$LAST_TAG" != "none" ]; then
 else
   git log --oneline -20
 fi
+
+true  # explicit success
 ```
 
 **If Phase 1 output is empty or contains `gh` auth errors, halt before

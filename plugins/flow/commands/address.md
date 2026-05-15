@@ -1,7 +1,7 @@
 ---
 description: "Address PR review feedback systematically. Categorizes feedback, implements surgical fixes, verifies changes, and re-requests review."
 argument-hint: <pr-number>
-allowed-tools: Bash(git push *) Bash(git commit *) Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git branch *) Bash(gh pr view *) Bash(gh pr checkout *) Bash(gh pr comment *) Bash(gh pr edit *) Bash(gh repo view *) Bash(gh api *) Bash(gh issue create *) Read Write Edit Agent AskUserQuestion TaskCreate TaskList TaskUpdate TaskGet Skill Grep Glob
+allowed-tools: Bash(git push *) Bash(git commit *) Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git branch *) Bash(gh pr view *) Bash(gh pr checkout *) Bash(gh pr comment *) Bash(gh pr edit *) Bash(gh repo view *) Bash(gh api repos/*) Bash(gh issue create *) Read Write Edit Agent AskUserQuestion TaskCreate TaskList TaskUpdate TaskGet Skill Grep Glob
 ---
 
 <!--

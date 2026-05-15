@@ -1,6 +1,6 @@
 ---
 description: "Display a read-only overview of workflow state including assigned issues, open PRs, pending reviews, branch state, and decision journal health. Use when checking current development status."
-allowed-tools: Bash(git branch *) Bash(git status *) Bash(git rev-list *) Bash(gh repo view *) Bash(gh issue list *) Bash(gh pr list *) Bash(gh api *) Bash(gh auth *) Bash(ls *) Bash(cat *) Bash(bash *) Bash(jq *) Read
+allowed-tools: Bash(git branch *) Bash(git status *) Bash(git rev-list *) Bash(git rev-parse *) Bash(gh repo view *) Bash(gh issue list *) Bash(gh pr list *) Bash(gh api repos/*) Bash(gh auth *) Bash(ls *) Bash(cat *) Bash(bash plugins/flow/bin/*) Bash(jq *) Read
 ---
 
 # Workflow Status
@@ -21,10 +21,17 @@ the prompt — no Bash tool round-trip required).
 git branch --show-current
 git status --short | head -20
 
-# 2. Commits ahead of default branch
+# 2. Commits ahead of default branch. Distinguish "0 commits ahead" from
+#    "default branch not locally fetched" (false-negative 0 was confusing
+#    offline contributors). Probe with rev-parse first; emit `unknown` if
+#    the branch ref is missing rather than collapsing to 0.
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
 echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
-git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || echo "0"
+if git rev-parse --verify "$DEFAULT_BRANCH" >/dev/null 2>&1; then
+  echo "COMMITS_AHEAD=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || echo 0)"
+else
+  echo "COMMITS_AHEAD=unknown ($DEFAULT_BRANCH not fetched locally)"
+fi
 
 # 3. Assigned issues
 gh issue list --assignee @me --state open --limit 10 --json number,title,labels
@@ -80,7 +87,7 @@ render `No open findings`.
 
 ### Current Branch
 - **Branch**: {branch name}
-- **Commits ahead**: {N} ahead of {default branch}
+- **Commits ahead**: {N} ahead of {default branch}, OR `unknown ({default-branch} not fetched locally)` when the COMMITS_AHEAD value emitted by the `!` block starts with `unknown`
 - **Uncommitted changes**: {count} files
 
 ### My Issues (Open)

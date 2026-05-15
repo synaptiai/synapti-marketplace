@@ -49,6 +49,7 @@ ISSUE_NUM=$(echo $BRANCH | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
 git log --oneline -10
 
 # 6. Task-related context from branch or issue
+true  # explicit success — block exit reflects intent
 ```
 
 **Grep** — search branch diff and issue body for task-related context.
