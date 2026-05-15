@@ -152,7 +152,7 @@ Acceptance criteria alone do not describe the full specification. Before buildin
 Skill(specification-capture):
   Inputs:
   - Issue context: {pre-fetched issue title, body, comments, labels}
-  - Journal path: .decisions/issue-$ARGUMENTS.md
+  - Journal path: .decisions/issue-$ISSUE_NUM.md
   - Invocation reason: start
 ```
 
@@ -160,7 +160,7 @@ The skill returns the captured specification (non-goals, failure modes, interfac
 
 After the skill returns, verify per the skill's "Verification gates" section:
 
-1. The journal `.decisions/issue-$ARGUMENTS.md` contains a `## Specification` heading
+1. The journal `.decisions/issue-$ISSUE_NUM.md` contains a `## Specification` heading
 2. All three element subsections (`### Non-goals`, `### Failure modes`, `### Interface contracts`) are present and non-empty (or `none — {reason}` for failure-mode categories that don't apply)
 3. The returned payload matches the journal contents
 
@@ -170,7 +170,7 @@ If any check fails, halt and re-invoke the skill with the failure noted. Do NOT 
 
 ```bash
 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
-  --issue $ARGUMENTS \
+  --issue "$ISSUE_NUM" \
   --type specification \
   --metadata by=specification-capture \
   --metadata elements=non-goals,failure-modes,interface-contracts
@@ -220,7 +220,7 @@ Only after every criterion shows PASS or user-approved MANUAL can the workflow p
 **Assign the issue:**
 
 ```bash
-gh issue edit $ARGUMENTS --add-assignee @me
+gh issue edit "$ISSUE_NUM" --add-assignee @me
 ```
 
 ## Phase 2: PLAN
@@ -231,7 +231,7 @@ Create branch and decompose tasks.
 
 ```bash
 git fetch origin $DEFAULT_BRANCH
-git checkout -b "feature/issue-$ARGUMENTS-{kebab-desc}" "origin/$DEFAULT_BRANCH"
+git checkout -b "feature/issue-${ISSUE_NUM}-{kebab-desc}" "origin/$DEFAULT_BRANCH"
 ```
 
 **Initialize decision journal:**
@@ -240,7 +240,7 @@ git checkout -b "feature/issue-$ARGUMENTS-{kebab-desc}" "origin/$DEFAULT_BRANCH"
 mkdir -p .decisions
 ```
 
-Write journal header to `.decisions/issue-$ARGUMENTS.md`.
+Write journal header to `.decisions/issue-$ISSUE_NUM.md`.
 
 **Task decomposition** — dispatch implementation-planner agent:
 
@@ -254,7 +254,7 @@ A task is not "done" until all three are complete. Splitting them into three sib
 
 ```
 Agent(implementation-planner):
-  "Parse acceptance criteria from issue #$ARGUMENTS and create atomic tasks.
+  "Parse acceptance criteria from issue #$ISSUE_NUM and create atomic tasks.
    Issue context: {pre-fetched issue title, body, comments}
    Specification (from EXPLORE): {non-goals, failure modes, interface contracts}
    Spec Validation Gate results: {criterion -> verification command mapping}
@@ -296,13 +296,13 @@ Check each task for these failure modes:
 
 If ANY task fails the Stranger Test, the plan is incomplete. The agent must either rewrite the task to close the gap, or issue a Proactive-Autonomy escalation asking the user to fill in the missing context. Only after every task passes the Stranger Test can the workflow proceed to Phase 3.
 
-Record the Stranger Test result to `.decisions/issue-$ARGUMENTS.md` under a `## Stranger Test` heading with either "PASS — {N} tasks reviewed" or "BLOCK — {task id}: {failure mode}".
+Record the Stranger Test result to `.decisions/issue-$ISSUE_NUM.md` under a `## Stranger Test` heading with either "PASS — {N} tasks reviewed" or "BLOCK — {task id}: {failure mode}".
 
 **Manifest emit** — append the stranger-test artifact (alongside the freeform `## Stranger Test` section) so the manifest captures the gate's outcome:
 
 ```bash
 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
-  --issue $ARGUMENTS \
+  --issue "$ISSUE_NUM" \
   --type stranger-test \
   --metadata result={PASS|BLOCK} \
   --metadata task_count=$N
@@ -463,7 +463,7 @@ Prove everything works with fix-forward:
 
    ```bash
    "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
-     --issue $ARGUMENTS \
+     --issue "$ISSUE_NUM" \
      --type verdict \
      --metadata result={PASS|FAIL|NEEDS-HUMAN-REVIEW}
    ```
