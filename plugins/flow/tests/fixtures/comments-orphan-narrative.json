@@ -1,0 +1,1 @@
+[{"author_association":"OWNER","body":"## Resolution cycle 1\n\nFor reference, an earlier marker said RESOLVED:[F2] but we're not actually using that. The real resolution is:\n\n<!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->\n\nNote: this comment also mentions RESOLVED:[F3] in narrative form, but that should be IGNORED."}]
