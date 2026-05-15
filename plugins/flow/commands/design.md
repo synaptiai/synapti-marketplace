@@ -36,10 +36,16 @@ Pre-executed at command load (`!` prefix) — project structure, extracted ISSUE
 ls -la src/ app/ lib/ packages/ 2>/dev/null || ls -la
 
 # 2. If issue number given, load issue context. Take the first whitespace-
-# separated token as the candidate issue ref; extract digits. Supports usage
-# like /flow:design 42 (decoupled auth service architecture).
+# separated token; accept only if it is *all* digits. Inputs like
+# "foo42 strategy" (where greedy digit-extraction would otherwise pluck
+# `42` and fire `gh issue view 42` on an unrelated issue) are rejected to
+# empty ISSUE_NUM. Supports usage like /flow:design 42 (decoupled auth
+# service architecture).
 ARG1="${ARGUMENTS%% *}"
-ISSUE_NUM=$(echo "$ARG1" | grep -oE '[0-9]+')
+case "$ARG1" in
+  ''|*[!0-9]*) ISSUE_NUM="" ;;
+  *) ISSUE_NUM="$ARG1" ;;
+esac
 echo "ISSUE_NUM=$ISSUE_NUM"
 [ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body,labels 2>/dev/null
 
