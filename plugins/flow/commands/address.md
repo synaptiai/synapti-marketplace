@@ -28,16 +28,20 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 
 ## Phase 1: EXPLORE
 
-**Parallel operations:**
+Pre-executed at command load (`!` prefix) — PR details, review comments, review summaries, and conversation threads all reach the agent as prompt context. `gh pr checkout` stays inline (mutating).
 
-```bash
-# 1. PR details and branch
-gh pr view $ARGUMENTS --json headRefName,baseRefName,title,body
-gh pr checkout $ARGUMENTS
+```!
+# Take the first whitespace-separated token as the PR number;
+# the rest of $ARGUMENTS is free-form context for the agent.
+PR_NUM="${ARGUMENTS%% *}"
+[ -z "$PR_NUM" ] && { echo "ERROR: PR number required. Usage: /flow:address <pr-number>"; exit 1; }
+
+# 1. PR details
+gh pr view "$PR_NUM" --json headRefName,baseRefName,title,body
 
 # 2. Review comments (inline)
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-gh api repos/$REPO/pulls/$ARGUMENTS/comments --jq '.[] | {
+gh api "repos/$REPO/pulls/$PR_NUM/comments" --jq '.[] | {
   id: .id,
   path: .path,
   line: .line,
@@ -46,14 +50,22 @@ gh api repos/$REPO/pulls/$ARGUMENTS/comments --jq '.[] | {
 }'
 
 # 3. Review summaries
-gh pr view $ARGUMENTS --json reviews --jq '.reviews[] | {
+gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | {
   state: .state,
   body: .body,
   author: .author.login
 }'
 
 # 4. Conversation threads
-gh api repos/$REPO/pulls/$ARGUMENTS/comments --jq 'group_by(.path) | .[] | {file: .[0].path, comments: [.[] | {body: .body, author: .user.login}]}'
+gh api "repos/$REPO/pulls/$PR_NUM/comments" --jq 'group_by(.path) | .[] | {file: .[0].path, comments: [.[] | {body: .body, author: .user.login}]}'
+
+true
+```
+
+Then check out the PR branch (mutating, runs inline):
+
+```bash
+gh pr checkout "$PR_NUM"
 ```
 
 **Agent(Explore)**: "Pre-resolve check — for each review comment, verify the feedback still applies to the current code. Some comments may already be addressed by later commits."
@@ -62,12 +74,15 @@ gh api repos/$REPO/pulls/$ARGUMENTS/comments --jq 'group_by(.path) | .[] | {file
 
 ## Review Cycle Tracking
 
-Before planning, determine the current review cycle:
+Pre-executed at command load (`!` prefix) — cycle count reaches the agent as prompt context for choosing the right strategy below.
 
-```bash
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-CYCLE_COUNT=$(gh pr view $ARGUMENTS --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length')
+```!
+PR_NUM="${ARGUMENTS%% *}"
+[ -z "$PR_NUM" ] && { echo "ERROR: PR number required"; exit 1; }
+CYCLE_COUNT=$(gh pr view "$PR_NUM" --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length')
 echo "REVIEW_CYCLE=$CYCLE_COUNT"
+
+true
 ```
 
 **Escalating strategy by cycle:**
