@@ -13,11 +13,10 @@ _None — retrospective pattern analysis over the decision journal. No skill inv
 
 ## Phase 1: Gather Journal Entries
 
-```bash
+Pre-executed at command load (`!` prefix) — the agent receives directory paths and counts as part of the prompt, no Bash tool round-trip.
+
+```!
 # Read journal directory and proposal directory via bin/cascade-resolve.sh.
-# The helper iterates project-local → project-shared → user-global → plugin
-# default and surfaces parse errors on stderr. Gracefully fall back to defaults
-# when the helper is unreachable (hardens against unusual cwd / env states).
 HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
 PROPOSAL_DIR="$HOME/.claude/flow-proposals"
@@ -25,12 +24,16 @@ if [ -x "$HELPER" ]; then
   JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
   PROPOSAL_DIR=$("$HELPER" --default "$HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
 fi
+echo "JOURNAL_DIR=$JOURNAL_DIR"
+echo "PROPOSAL_DIR=$PROPOSAL_DIR"
 
 # List journal files
 ls -la "$JOURNAL_DIR"/*.md 2>/dev/null
 
 # Count existing proposals
 ls -la "$PROPOSAL_DIR"/*.md 2>/dev/null | wc -l
+
+true
 ```
 
 Read all journal files from the current session (today's entries).
