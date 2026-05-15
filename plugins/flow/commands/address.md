@@ -59,6 +59,9 @@ gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | {
 # 4. Conversation threads
 gh api "repos/$REPO/pulls/$PR_NUM/comments" --jq 'group_by(.path) | .[] | {file: .[0].path, comments: [.[] | {body: .body, author: .user.login}]}'
 
+# 5. Echo for downstream phases (inline blocks consume $PR_NUM, not $ARGUMENTS).
+echo "PR_NUM=$PR_NUM"
+
 true
 ```
 
@@ -80,6 +83,7 @@ Pre-executed at command load (`!` prefix) — cycle count reaches the agent as p
 PR_NUM="${ARGUMENTS%% *}"
 [ -z "$PR_NUM" ] && { echo "ERROR: PR number required"; exit 1; }
 CYCLE_COUNT=$(gh pr view "$PR_NUM" --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length')
+echo "PR_NUM=$PR_NUM"
 echo "REVIEW_CYCLE=$CYCLE_COUNT"
 
 true
@@ -251,23 +255,23 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
    ```bash
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
    # For each fixed item, reply to the original review comment:
-   gh api repos/$REPO/pulls/$ARGUMENTS/comments/{comment_id}/replies \
+   gh api "repos/$REPO/pulls/$PR_NUM/comments/{comment_id}/replies" \
      -f body="Addressed in \`{SHA}\`. {brief description of fix}"
 
    # For Question/Pushback items, reply with the response:
-   gh api repos/$REPO/pulls/$ARGUMENTS/comments/{comment_id}/replies \
+   gh api "repos/$REPO/pulls/$PR_NUM/comments/{comment_id}/replies" \
      -f body="{response text}"
    ```
 9. **Post resolution comment** (MANDATORY) using the template structure from `templates/resolution-comment.md`:
    ```bash
-   gh pr comment $ARGUMENTS --body "$BODY"
+   gh pr comment "$PR_NUM" --body "$BODY"
    ```
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
 10. **Update PR body review cycle state** (if `### Review Cycle History` exists in the PR body):
-   - Fetch current body: `gh pr view $ARGUMENTS --json body --jq '.body'`
+   - Fetch current body: `gh pr view "$PR_NUM" --json body --jq '.body'`
    - If the body contains `### Review Cycle History`, replace content between that heading and the next `##` heading with the cycle metrics table (received/fixed/discussed/escalated)
    - If the heading does not exist, append a `### Review Cycle History` section under `## Review Findings`
-   - Update: `gh pr edit $ARGUMENTS --body "$UPDATED_BODY"`
+   - Update: `gh pr edit "$PR_NUM" --body "$UPDATED_BODY"`
 11. **TaskList**: Confirm ALL tasks complete including "Post resolution comment". Do NOT proceed until verified.
 12. **Conditional re-request review**:
 
@@ -275,7 +279,7 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
     - If self-review found 0 findings → do NOT re-request (nothing changed that needs re-review beyond the feedback fixes)
     - If cycle < `reviewCycleLimit` (default 3) → re-request normally:
       ```bash
-      gh pr edit $ARGUMENTS --add-reviewer @{reviewer}
+      gh pr edit "$PR_NUM" --add-reviewer @{reviewer}
       ```
     - If cycle >= `reviewCycleLimit` → use the AskUserQuestion tool with the following Proactive-Autonomy escalation:
 
