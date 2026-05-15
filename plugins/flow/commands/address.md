@@ -28,7 +28,7 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 
 ## Phase 1: EXPLORE
 
-Pre-executed at command load (`!` prefix) — PR details, review comments, review summaries, and conversation threads all reach the agent as prompt context. `gh pr checkout` stays inline (mutating).
+`gh pr checkout` stays inline (mutating); read-only context-gathering is in the `!` block below.
 
 ```!
 # Take the first whitespace-separated token; accept only if it is all digits.
@@ -84,8 +84,6 @@ gh pr checkout "$PR_NUM"
 **Skill(capability-discovery)**: Discover quality commands for verification.
 
 ## Review Cycle Tracking
-
-Pre-executed at command load (`!` prefix) — cycle count reaches the agent as prompt context for choosing the right strategy below.
 
 ```!
 # Digit-validate PR_NUM (matches Phase 1 block).

@@ -28,8 +28,6 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 
 ## Phase 1: EXPLORE
 
-Pre-executed at command load (`!` prefix) — pre-flight, branch context, commits/diff, issue context, existing-PR check, and journal entry all reach the agent as prompt context.
-
 ```!
 # 1. Pre-flight checks
 BRANCH=$(git branch --show-current)

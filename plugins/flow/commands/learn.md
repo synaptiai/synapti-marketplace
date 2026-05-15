@@ -13,8 +13,6 @@ _None — retrospective pattern analysis over the decision journal. No skill inv
 
 ## Phase 1: Gather Journal Entries
 
-Pre-executed at command load (`!` prefix) — the agent receives directory paths and counts as part of the prompt, no Bash tool round-trip.
-
 ```!
 # Read journal directory and proposal directory via bin/cascade-resolve.sh.
 HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"

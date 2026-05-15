@@ -13,8 +13,6 @@ _None — explanatory Q&A over journal and diff context. No skill invocations._
 
 ## Phase 1: Load Context
 
-Pre-executed at command load (`!` prefix) — branch, journal contents, issue details, and branch diff all reach the agent as prompt context.
-
 ```!
 # 1. Current branch and issue
 BRANCH=$(git branch --show-current)

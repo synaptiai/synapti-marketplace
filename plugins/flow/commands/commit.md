@@ -24,8 +24,6 @@ Classify changes, flag anomalies, and create atomic conventional commits. Follow
 
 ## Phase 1: EXPLORE
 
-Pre-executed at command load (`!` prefix) — the agent receives branch, status, diff, and issue context as part of the prompt, no Bash tool round-trip.
-
 ```!
 # 1. All changes
 git status --porcelain

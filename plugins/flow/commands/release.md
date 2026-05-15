@@ -14,7 +14,7 @@ Tier 3 operation — **always requires human confirmation**.
 
 ## Phase 1: Gather Context
 
-Pre-executed at command load (`!` prefix) — current tag, merged PRs, and recent commits all reach the agent as prompt context. Phase 2 version calculation and Phase 4 publish steps stay inline (they depend on $ARGUMENTS classification and user confirmation).
+Phase 2 version calculation and Phase 4 publish steps stay inline (they depend on $ARGUMENTS classification and user confirmation).
 
 ```!
 # 1. Current version (latest tag)

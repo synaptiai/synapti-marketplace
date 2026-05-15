@@ -34,8 +34,6 @@ Determine invocation mode from `$ARGUMENTS`:
 
 ### Validation
 
-Pre-executed at command load (`!` prefix) — conflict state reaches the agent as prompt context.
-
 ```!
 # Take the first whitespace-separated token; accept only if it matches the
 # safe set [a-zA-Z0-9._/-] (covers digit-only PR numbers AND typical branch

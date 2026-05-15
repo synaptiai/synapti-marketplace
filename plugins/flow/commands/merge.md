@@ -18,8 +18,6 @@ Tier 3 operation — **always requires human confirmation**. This is non-negotia
 
 ## Phase 1: Verify Prerequisites
 
-Pre-executed at command load (`!` prefix) — PR status, reviews, unresolved conversations, stale approval check, and finding-ledger seed all reach the agent as prompt context.
-
 ```!
 # Take the first whitespace-separated token; accept only if it is all digits.
 # Trailing context (e.g., "104 (verify ledger gate)") is fine — first-token
@@ -64,7 +62,7 @@ true
 
 ### Finding-Ledger Check
 
-Parse the latest `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` comments to verify all findings are resolved before merge. Marker schemas and the canonical extraction queries are documented in [`references/finding-ledger-parser.md`](../references/finding-ledger-parser.md); this command applies the merge-blocking subset (ESCALATED non-empty, FINDINGS without matching RESOLVED). Pre-executed at command load (`!` prefix).
+Parse the latest `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` comments to verify all findings are resolved before merge. Marker schemas and the canonical extraction queries are documented in [`references/finding-ledger-parser.md`](../references/finding-ledger-parser.md); this command applies the merge-blocking subset (ESCALATED non-empty, FINDINGS without matching RESOLVED).
 
 ```!
 # Extract the latest FLOW_RESOLUTION_CYCLE comment (issue/PR conversation).

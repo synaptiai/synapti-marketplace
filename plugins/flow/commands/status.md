@@ -13,8 +13,6 @@ _None — read-only status command. No skill invocations._
 
 ## Gather State
 
-Pre-executed at command load (`!` prefix) — the agent receives this output as part of the prompt, no Bash tool round-trip.
-
 ```!
 # 1. Current branch and uncommitted changes
 git branch --show-current
@@ -47,7 +45,7 @@ true
 
 ## Gather Findings Ledger
 
-Aggregate review findings across the user's open PRs (author OR assignee). See [`references/finding-ledger-parser.md`](../references/finding-ledger-parser.md) for the canonical marker schemas, queries, and state classification — the bash below applies that contract. Pre-executed at command load (`!` prefix).
+Aggregate review findings across the user's open PRs (author OR assignee). See [`references/finding-ledger-parser.md`](../references/finding-ledger-parser.md) for the canonical marker schemas, queries, and state classification — the bash below applies that contract.
 
 ```!
 ME=$(gh api user --jq '.login' 2>/dev/null)

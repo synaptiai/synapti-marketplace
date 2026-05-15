@@ -68,7 +68,7 @@ Parse `$ARGUMENTS` to extract verb and target:
 When invoked without arguments, show help and current status:
 
 1. Display available verbs with one-line descriptions
-2. Pre-executed at command load (`!` prefix) — quick state queries reach the agent as prompt context:
+2. Quick state queries (read-only):
 
 ```!
 # Parallel: current state queries. Bare `/flow` runs in any CWD, including

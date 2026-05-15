@@ -29,8 +29,6 @@ This command operates with these domain skills loaded:
 
 Map existing architecture before proposing anything. Execute in parallel:
 
-Pre-executed at command load (`!` prefix) — project structure, extracted ISSUE_NUM, issue context, and branch state all reach the agent as prompt context.
-
 ```!
 # 1. Project structure
 ls -la src/ app/ lib/ packages/ 2>/dev/null || ls -la

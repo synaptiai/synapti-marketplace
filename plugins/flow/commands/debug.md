@@ -24,8 +24,6 @@ This command operates with these domain skills loaded:
 
 Gather all evidence before theorizing. Execute in parallel:
 
-Pre-executed at command load (`!` prefix) — recent git history, diff stat, and current state all reach the agent as prompt context.
-
 ```!
 # 1. Recent changes that might have introduced the bug
 git log --oneline -10

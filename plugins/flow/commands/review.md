@@ -20,7 +20,7 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 
 ## Phase 1: EXPLORE
 
-Pre-executed at command load (`!` prefix) — PR details, linked issue, previous reviews, and diff-name listing all reach the agent as prompt context. `gh pr checkout` stays inline below (mutating working tree).
+`gh pr checkout` stays inline below (mutating working tree); read-only context-gathering is in the `!` block.
 
 ```!
 # Take the first whitespace-separated token; accept only if it is all digits.
@@ -63,7 +63,7 @@ gh pr checkout "$PR_NUM"
 
 Check for previous reviews — if this is a follow-up review, focus on changes since last review.
 
-**Parse structured findings from previous review/resolution cycles** (follow-up reviews only). Pre-executed at command load (`!` prefix).
+**Parse structured findings from previous review/resolution cycles** (follow-up reviews only).
 
 ```!
 # Parse previous review findings + resolution outcomes. PR_NUM is digit-validated
@@ -115,7 +115,7 @@ TaskCreate("Holdout validation", "Cross-reference self-review claims against act
 
 Implements the paired-reviewer + challenge-round protocol. The `team-coordination` skill (`plugins/flow/skills/team-coordination/SKILL.md`) is the protocol contract.
 
-**Path A gate check** (mandatory before paired dispatch — runs before A.1). Pre-executed at command load (`!` prefix) — the resolved `USE_PATH_A` flag reaches the agent as prompt context.
+**Path A gate check** (mandatory before paired dispatch — runs before A.1).
 
 ```!
 # AGENTTEAMS_GATE_BEGIN

@@ -38,7 +38,7 @@ This command operates with these domain skills loaded:
 
 ## Phase 0: PRE-FLIGHT
 
-Pure bash validation. Pre-executed at command load (`!` prefix) so the agent sees PASS/BLOCKED in the prompt and fails fast before spending tokens.
+Pure bash validation — fails fast before any agent reasoning.
 
 ```!
 # Take the first whitespace-separated token; accept only if it is all digits.
@@ -106,8 +106,6 @@ Gather all context before planning.
 - Phase 3 becomes: reproduce → isolate root cause → write failing test → fix → verify
 
 **Note**: `debugging-patterns` activates automatically for ALL issues when any verification step fails (build, test, server start, smoke test). No `bug` label required.
-
-Pre-executed at command load (`!` prefix) — issue details, comments, default branch, and git state all reach the agent as prompt context.
 
 ```!
 # Digit-validate ISSUE_NUM (matches Phase 0 block).

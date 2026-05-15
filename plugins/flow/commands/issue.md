@@ -22,8 +22,6 @@ Skill-driven issue creation. Follows the Explore > Plan > Code > Verify loop wit
 
 Gather context before formulating the issue.
 
-Pre-executed at command load (`!` prefix) — repo and branch context reach the agent as prompt context.
-
 ```!
 # 1. Repo info
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)

@@ -29,8 +29,6 @@ This command operates with these domain skills loaded:
 
 Understand the goal before generating options. Execute in parallel:
 
-Pre-executed at command load (`!` prefix) — extracted ISSUE_NUM, issue context, and project state all reach the agent as prompt context.
-
 ```!
 # 1. If issue number given, load context. Take the first whitespace-separated
 # token; accept only if it is *all* digits. Inputs like "foo42 strategy"
