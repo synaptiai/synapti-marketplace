@@ -34,13 +34,17 @@ Determine invocation mode from `$ARGUMENTS`:
 
 ### Validation
 
-```bash
+Pre-executed at command load (`!` prefix) — conflict state reaches the agent as prompt context.
+
+```!
 # Check for active merge/rebase state
 if [ -f .git/MERGE_HEAD ] || [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
   echo "ACTIVE_CONFLICT"
 else
   echo "NO_ACTIVE_CONFLICT"
 fi
+
+true
 ```
 
 - If mode is PR: verify `gh auth status` succeeds
@@ -62,19 +66,23 @@ If `mergeable == "MERGEABLE"` (no conflicts), report "No conflicts found" and ex
 
 Run these in parallel:
 
-**1a. List conflicted files and classify types:**
+**1a. List conflicted files and classify types** (pre-executed via `!`):
 
-```bash
+```!
 git diff --name-only --diff-filter=U
-git status --porcelain | grep "^[UAD][UAD] "
+git status --porcelain | grep "^[UAD][UAD] " || true
+
+true
 ```
 
-**1b. Count conflict hunks per file:**
+**1b. Count conflict hunks per file** (pre-executed via `!`):
 
-```bash
+```!
 git diff --name-only --diff-filter=U | while IFS= read -r f; do
-  echo "$f: $(grep -c '<<<<<<<' "$f") hunks"
+  [ -f "$f" ] && echo "$f: $(grep -c '<<<<<<<' "$f" || echo 0) hunks" || true
 done
+
+true
 ```
 
 **1c. Discover build/test commands** via capability-discovery skill.
