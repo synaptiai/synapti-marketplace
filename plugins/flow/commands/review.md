@@ -1,6 +1,6 @@
 ---
 description: "Review a pull request with multi-faceted analysis. Supports both single-session parallel review and agent team adversarial review."
-argument-hint: <pr-number>
+argument-hint: <pr-number> [free-form context]
 allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Skill, Grep, Glob
 ---
 
@@ -23,26 +23,31 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 Pre-executed at command load (`!` prefix) — PR details, linked issue, previous reviews, and diff-name listing all reach the agent as prompt context. `gh pr checkout` stays inline below (mutating working tree).
 
 ```!
-# Take the first whitespace-separated token as the PR number; the rest of
-# $ARGUMENTS is free-form context for the agent.
-PR_NUM="${ARGUMENTS%% *}"
+# Take the first whitespace-separated token; accept only if it is all digits.
+# A non-numeric token (e.g., "foo42" or "evil;rm") is rejected with empty
+# PR_NUM so it never reaches the prompt context or any downstream shell.
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) PR_NUM="" ;;
+  *) PR_NUM="$ARG1" ;;
+esac
 
 if [ -z "$PR_NUM" ]; then
-  echo "ERROR: PR number required. Usage: /flow:review <pr-number>"
+  echo "ERROR: PR number required (all-digit). Usage: /flow:review <pr-number>"
 else
   echo "PR_NUM=$PR_NUM"
 
   # 1. PR details
-  gh pr view "$PR_NUM" --json title,body,headRefName,baseRefName,changedFiles,additions,deletions,labels,author,reviews
+  gh pr view "$PR_NUM" --json title,body,headRefName,baseRefName,changedFiles,additions,deletions,labels,author,reviews 2>/dev/null
 
   # 2. Linked issue
-  gh pr view "$PR_NUM" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#'
+  gh pr view "$PR_NUM" --json body --jq '.body' 2>/dev/null | grep -oE '#[0-9]+' | head -1 | tr -d '#'
 
   # 3. Previous reviews (follow-up detection)
-  gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | "\(.state) by \(.author.login)"'
+  gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | "\(.state) by \(.author.login)"' 2>/dev/null
 
   # 4. Diff
-  gh pr diff "$PR_NUM" --name-only
+  gh pr diff "$PR_NUM" --name-only 2>/dev/null
 fi
 
 true
@@ -61,13 +66,18 @@ Check for previous reviews — if this is a follow-up review, focus on changes s
 **Parse structured findings from previous review/resolution cycles** (follow-up reviews only). Pre-executed at command load (`!` prefix).
 
 ```!
-# Parse previous review findings + resolution outcomes
-PR_NUM="${ARGUMENTS%% *}"
+# Parse previous review findings + resolution outcomes. PR_NUM is digit-validated
+# (matches Phase 1 block); a non-digit token rejects rather than reaching shell.
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) PR_NUM="" ;;
+  *) PR_NUM="$ARG1" ;;
+esac
 
 if [ -z "$PR_NUM" ]; then
-  echo "ERROR: PR number required"
+  echo "ERROR: PR number required (all-digit)"
 else
-  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   gh api "repos/$REPO/pulls/$PR_NUM/reviews" --jq '
     [.[] | select(.body | test("FLOW_REVIEW_CYCLE")) | {
       cycle: (.body | capture("FLOW_REVIEW_CYCLE:(?<n>[0-9]+)") | .n),
