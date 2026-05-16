@@ -29,29 +29,68 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 ## Phase 1: EXPLORE
 
 ```!
-# 1. Pre-flight checks
-BRANCH=$(git branch --show-current)
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`. STATE=blocked when on default branch
+# (can't create a PR from main); STATE=ok otherwise.
+
+echo "### Branch Context"
+BRANCH=$(git branch --show-current 2>/dev/null)
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-echo "BRANCH=$BRANCH DEFAULT=$DEFAULT_BRANCH"
+echo "BRANCH=$BRANCH"
+echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
 
 if [ "$BRANCH" = "$DEFAULT_BRANCH" ]; then
-  echo "ERROR: Cannot create PR from default branch"
+  echo "STATE=blocked"
+  echo "ERROR=Cannot create PR from default branch"
 else
-  # 2. Commits and changes
-  git rev-list --count "$DEFAULT_BRANCH"..HEAD
-  git status --porcelain
-  git diff --stat "$DEFAULT_BRANCH"...HEAD
+  echo "STATE=ok"
 
-  # 3. Issue context
+  # Section: Branch Delta vs Default
+  echo ""
+  echo "### Branch Delta"
+  echo "COMMITS_AHEAD=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || echo "0")"
+  echo "UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  [ "$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
+  echo ""
+  echo "#### Diff stat"
+  git diff --stat "$DEFAULT_BRANCH"...HEAD 2>/dev/null
+
+  # Section: Issue Context (extracted from branch name `feature/issue-N-...`)
+  echo ""
+  echo "### Issue Context"
   ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-  [ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body,labels 2>/dev/null
+  echo "ISSUE_NUM=${ISSUE_NUM:-(none)}"
+  if [ -n "$ISSUE_NUM" ]; then
+    gh issue view "$ISSUE_NUM" --json title,body,labels --jq '
+      "ISSUE_TITLE=\"\(.title)\"\nISSUE_LABELS=\([.labels[].name] | join(","))\nISSUE_BODY_LENGTH=\(.body | length)"
+    ' 2>/dev/null
+  fi
 
-  # 4. Existing PR check
-  gh pr list --head "$BRANCH" --state open --json number,url 2>/dev/null
+  # Section: Existing PR Check
+  echo ""
+  echo "### Existing PR Check"
+  EXISTING=$(gh pr list --head "$BRANCH" --state open --json number,url 2>/dev/null)
+  EXISTING_COUNT=$(echo "$EXISTING" | jq 'length' 2>/dev/null || echo "0")
+  echo "EXISTING_PR_COUNT=$EXISTING_COUNT"
+  if [ "$EXISTING_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    echo "$EXISTING" | jq -r '.[] | "EXISTING_PR=number=\(.number) url=\(.url)"' 2>/dev/null
+  fi
 
-  # 5. Decision journal
+  # Section: Decision Journal
+  echo ""
+  echo "### Decision Journal"
   JOURNAL_DIR=".decisions"
-  [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ] && cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+  if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
+    echo "JOURNAL_FILE=$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+    echo "JOURNAL_BYTES=$(wc -c < "$JOURNAL_DIR/issue-$ISSUE_NUM.md" | tr -d ' ')"
+    echo ""
+    echo "#### Journal contents"
+    cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+  else
+    echo "STATE=empty"
+  fi
 fi
 
 true

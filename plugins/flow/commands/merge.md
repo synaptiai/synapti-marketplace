@@ -24,37 +24,82 @@ Tier 3 operation — **always requires human confirmation**. This is non-negotia
 # extraction handles it. A non-numeric token (e.g., "foo42" or "evil;rm") is
 # rejected with empty PR_NUM so it never reaches the prompt context or any
 # downstream shell. Matches the pattern in brainstorm.md / design.md.
+#
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`. STATE=blocked on bad input;
+# downstream Phase 2 reads each named field directly.
 ARG1="${ARGUMENTS%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) PR_NUM="" ;;
   *) PR_NUM="$ARG1" ;;
 esac
 
+echo "### PR Reference"
 if [ -z "$PR_NUM" ]; then
-  echo "ERROR: PR number required (all-digit). Usage: /flow:merge <pr-number>"
+  echo "STATE=blocked"
+  echo "ERROR=PR number required (all-digit). Usage: /flow:merge <pr-number>"
 else
+  echo "STATE=ok"
   echo "PR_NUM=$PR_NUM"
 
-  # 1. PR status
-  gh pr view "$PR_NUM" --json reviewDecision,statusCheckRollup,mergeable,mergeStateStatus,title,headRefName 2>/dev/null
+  # Section: PR Status
+  echo ""
+  echo "### PR Status"
+  gh pr view "$PR_NUM" --json reviewDecision,statusCheckRollup,mergeable,mergeStateStatus,title,headRefName --jq '
+    [.statusCheckRollup[]? | select(.__typename == "CheckRun")] as $checks |
+    (if (.reviewDecision // "") == "" then "(none)" else .reviewDecision end) as $review |
+    "TITLE=\"\(.title)\"\nHEAD_BRANCH=\(.headRefName)\nMERGEABLE=\(.mergeable)\nMERGE_STATE_STATUS=\(.mergeStateStatus)\nREVIEW_DECISION=\($review)\nCHECKS_PASSED=\($checks | map(select(.conclusion == "SUCCESS")) | length)\nCHECKS_FAILED=\($checks | map(select(.conclusion == "FAILURE")) | length)\nCHECKS_TOTAL=\($checks | length)"
+  ' 2>/dev/null
 
-  # 2. Reviews
-  gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | "\(.state) by \(.author.login) at \(.submittedAt)"' 2>/dev/null
+  # Section: Reviews — one labeled line per review
+  echo ""
+  echo "### Reviews"
+  REVIEWS_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null)
+  REVIEW_COUNT=$(echo "$REVIEWS_JSON" | jq 'length' 2>/dev/null || echo "0")
+  echo "REVIEW_COUNT=$REVIEW_COUNT"
+  if [ "$REVIEW_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    echo "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.author.login) at=\(.submittedAt)"' 2>/dev/null
+  fi
 
-  # 3. Unresolved conversations (reviewThreads requires GraphQL API)
+  # Section: Unresolved Conversations (GraphQL — reviewThreads not in REST)
+  echo ""
+  echo "### Unresolved Conversations"
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   OWNER=$(echo "$REPO" | cut -d/ -f1)
   NAME=$(echo "$REPO" | cut -d/ -f2)
-  gh api graphql -f query="query { repository(owner: \"$OWNER\", name: \"$NAME\") { pullRequest(number: $PR_NUM) { reviewThreads(first: 100) { nodes { isResolved } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' 2>/dev/null
+  UNRESOLVED_COUNT=$(gh api graphql -f query="query { repository(owner: \"$OWNER\", name: \"$NAME\") { pullRequest(number: $PR_NUM) { reviewThreads(first: 100) { nodes { isResolved } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' 2>/dev/null)
+  echo "UNRESOLVED_COUNT=${UNRESOLVED_COUNT:-unavailable}"
 
-  # 4. Stale approval check
-  gh pr view "$PR_NUM" --json reviews,commits --jq '{
-    last_approval: [.reviews[] | select(.state == "APPROVED")] | sort_by(.submittedAt) | last | .submittedAt,
-    last_commit: .commits | last | .committedDate
-  }' 2>/dev/null
+  # Section: Stale Approval Check
+  echo ""
+  echo "### Stale Approval Check"
+  gh pr view "$PR_NUM" --json reviews,commits --jq '
+    ([.reviews[] | select(.state == "APPROVED")] | sort_by(.submittedAt) | last | .submittedAt // "none") as $la |
+    (.commits | last | .committedDate) as $lc |
+    "LAST_APPROVAL=\($la)\nLAST_COMMIT=\($lc)\nSTALE=\(if $la == "none" then "n/a" elif $la < $lc then "true" else "false" end)"
+  ' 2>/dev/null
 
-  # 5. Finding-ledger seed (full ledger gate runs in next ! block)
-  gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '.[] | select(.body | test("FLOW_RESOLUTION_CYCLE|FLOW_REVIEW_CYCLE")) | {id: .id, body: .body}' 2>/dev/null
+  # Section: Finding-ledger seed (full gate runs in next ! block)
+  echo ""
+  echo "### Finding-Ledger Seed"
+  SEED_JSON=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE|FLOW_REVIEW_CYCLE")) | {id, body}]' 2>/dev/null)
+  SEED_COUNT=$(echo "$SEED_JSON" | jq 'length' 2>/dev/null || echo "0")
+  echo "SEED_MARKER_COUNT=$SEED_COUNT"
+  if [ "$SEED_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    # `scan` is a generator that yields each match; wrap in `[...]` to collect
+    # all matches into an array, then take `last` (the actual marker —
+    # typically in an HTML comment at end-of-body — earlier occurrences are
+    # usually prose references). Two capture groups (kind, cycle) so each
+    # element is `[kind, cycle]`.
+    echo "$SEED_JSON" | jq -r '.[] | (
+      ([.body | scan("FLOW_(RESOLUTION|REVIEW)_CYCLE:([0-9]+)")] | last // ["?","?"]) as $last |
+      "SEED=id=\(.id) kind=\($last[0]) cycle=\($last[1])"
+    )' 2>/dev/null
+  fi
 fi
 
 true
@@ -75,9 +120,16 @@ case "$ARG1" in
   *) PR_NUM="$ARG1" ;;
 esac
 
+echo "### Finding-Ledger Gate"
 if [ -z "$PR_NUM" ]; then
+  echo "LEDGER_GATE_STATE=blocked"
   echo "FINDING_LEDGER_BLOCK: PR number required (all-digit)"
 else
+
+# Tracks whether any FINDING_LEDGER_BLOCK has been emitted. Final
+# LEDGER_GATE_STATE is decided after all gate checks have run.
+LEDGER_GATE_BLOCKED=0
+emit_block() { LEDGER_GATE_BLOCKED=1; echo "FINDING_LEDGER_BLOCK: $1"; }
 
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 
@@ -185,7 +237,7 @@ REV_UNTRUSTED=$(printf '%s' "$GH_REV_RAW" | jq -s -r --argjson trust "$TRUST_LIS
 # (they re-filter the cached JSON), so a single per-endpoint exit check covers
 # all four filter passes.
 if [ $GH_EXIT_RES -ne 0 ] || [ $GH_EXIT_REV -ne 0 ]; then
-  echo "FINDING_LEDGER_BLOCK: gh API unavailable — cannot verify finding ledger (resolution exit=$GH_EXIT_RES, review exit=$GH_EXIT_REV)"
+  emit_block "gh API unavailable — cannot verify finding ledger (resolution exit=$GH_EXIT_RES, review exit=$GH_EXIT_REV)"
 fi
 
 # Surface "untrusted-only" markers as a block reason rather than silently
@@ -203,10 +255,10 @@ if [ -z "$TRUST_LIST_DISPLAY" ]; then
   TRUST_LIST_DISPLAY=$(echo "$TRUST_DEFAULT" | jq -r 'join(",")' 2>/dev/null)
 fi
 if [ -z "$RESOLUTION_BODY" ] && [ "${RES_UNTRUSTED:-0}" != "0" ]; then
-  echo "FINDING_LEDGER_BLOCK: $RES_UNTRUSTED FLOW_RESOLUTION_CYCLE marker(s) found but none from trusted authors ($TRUST_LIST_DISPLAY)"
+  emit_block "$RES_UNTRUSTED FLOW_RESOLUTION_CYCLE marker(s) found but none from trusted authors ($TRUST_LIST_DISPLAY)"
 fi
 if [ -z "$REVIEW_BODY" ] && [ "${REV_UNTRUSTED:-0}" != "0" ]; then
-  echo "FINDING_LEDGER_BLOCK: $REV_UNTRUSTED FLOW_REVIEW_CYCLE marker(s) found but none from trusted authors ($TRUST_LIST_DISPLAY)"
+  emit_block "$REV_UNTRUSTED FLOW_REVIEW_CYCLE marker(s) found but none from trusted authors ($TRUST_LIST_DISPLAY)"
 fi
 
 # Extract all finding IDs from FINDINGS array (comma-separated, pipe-delimited fields, first field is the ID)
@@ -217,13 +269,23 @@ RESOLVED_FINDINGS=$(echo "$RESOLUTION_BODY" | grep -o 'RESOLVED:\[[^]]*\]' | sed
 
 # Check 1: ESCALATED must be empty
 if [ -n "$ESCALATED" ]; then
-  echo "FINDING_LEDGER_BLOCK: ESCALATED array is non-empty: [$ESCALATED]"
+  emit_block "ESCALATED array is non-empty: [$ESCALATED]"
 fi
 
 # Check 2: Every finding in REVIEW_FINDINGS must have a matching RESOLVED entry
 UNRESOLVED=$(comm -23 <(echo "$REVIEW_FINDINGS") <(echo "$RESOLVED_FINDINGS") | grep -v '^$' || true)
 if [ -n "$UNRESOLVED" ]; then
-  echo "FINDING_LEDGER_BLOCK: Unresolved findings: $UNRESOLVED"
+  emit_block "Unresolved findings: $UNRESOLVED"
+fi
+
+# Emit the final gate state sentinel. The agent dispatches off this:
+#   ok      → proceed to Phase 2 Display Assessment
+#   blocked → halt, render the "BLOCKED: Unresolved Findings" template
+#             (one FINDING_LEDGER_BLOCK line per reason was emitted above)
+if [ $LEDGER_GATE_BLOCKED -eq 1 ]; then
+  echo "LEDGER_GATE_STATE=blocked"
+else
+  echo "LEDGER_GATE_STATE=ok"
 fi
 
 fi  # /if [ -z "$PR_NUM" ]

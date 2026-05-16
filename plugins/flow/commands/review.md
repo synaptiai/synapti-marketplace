@@ -26,28 +26,57 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 # Take the first whitespace-separated token; accept only if it is all digits.
 # A non-numeric token (e.g., "foo42" or "evil;rm") is rejected with empty
 # PR_NUM so it never reaches the prompt context or any downstream shell.
+#
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`. STATE=blocked on bad input.
 ARG1="${ARGUMENTS%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) PR_NUM="" ;;
   *) PR_NUM="$ARG1" ;;
 esac
 
+echo "### PR Reference"
 if [ -z "$PR_NUM" ]; then
-  echo "ERROR: PR number required (all-digit). Usage: /flow:review <pr-number>"
+  echo "STATE=blocked"
+  echo "ERROR=PR number required (all-digit). Usage: /flow:review <pr-number>"
 else
+  echo "STATE=ok"
   echo "PR_NUM=$PR_NUM"
 
-  # 1. PR details
-  gh pr view "$PR_NUM" --json title,body,headRefName,baseRefName,changedFiles,additions,deletions,labels,author,reviews 2>/dev/null
+  # Section: PR Details
+  echo ""
+  echo "### PR Details"
+  gh pr view "$PR_NUM" --json title,headRefName,baseRefName,changedFiles,additions,deletions,labels,author,reviews --jq '"TITLE=\"\(.title)\"\nHEAD_BRANCH=\(.headRefName)\nBASE_BRANCH=\(.baseRefName)\nAUTHOR=@\(.author.login)\nCHANGED_FILES=\(.changedFiles)\nADDITIONS=\(.additions)\nDELETIONS=\(.deletions)\nLABELS=\([.labels[].name] | join(","))\nREVIEW_COUNT=\(.reviews | length)"' 2>/dev/null
 
-  # 2. Linked issue
-  gh pr view "$PR_NUM" --json body --jq '.body' 2>/dev/null | grep -oE '#[0-9]+' | head -1 | tr -d '#'
+  # Section: Linked Issue (parsed from PR body)
+  echo ""
+  echo "### Linked Issue"
+  LINKED=$(gh pr view "$PR_NUM" --json body --jq '.body' 2>/dev/null | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+  echo "LINKED_ISSUE=${LINKED:-none}"
 
-  # 3. Previous reviews (follow-up detection)
-  gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | "\(.state) by \(.author.login)"' 2>/dev/null
+  # Section: Previous Reviews (follow-up detection)
+  echo ""
+  echo "### Previous Reviews"
+  PREV_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null)
+  PREV_COUNT=$(echo "$PREV_JSON" | jq 'length' 2>/dev/null || echo "0")
+  echo "REVIEW_COUNT=$PREV_COUNT"
+  if [ "$PREV_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    echo "$PREV_JSON" | jq -r '.[] | "REVIEW=state=\(.state) by=@\(.author.login) at=\(.submittedAt)"' 2>/dev/null
+  fi
 
-  # 4. Diff
-  gh pr diff "$PR_NUM" --name-only 2>/dev/null
+  # Section: Diff Files
+  echo ""
+  echo "### Diff Files"
+  DIFF_FILES=$(gh pr diff "$PR_NUM" --name-only 2>/dev/null)
+  DIFF_FILE_COUNT=$(printf '%s\n' "$DIFF_FILES" | grep -c '.' || echo "0")
+  echo "DIFF_FILE_COUNT=$DIFF_FILE_COUNT"
+  if [ "$DIFF_FILE_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    printf '%s\n' "$DIFF_FILES" | sed 's/^/DIFF_FILE=/'
+  fi
 fi
 
 true
@@ -74,22 +103,46 @@ case "$ARG1" in
   *) PR_NUM="$ARG1" ;;
 esac
 
+echo "### Previous Review Cycles"
 if [ -z "$PR_NUM" ]; then
-  echo "ERROR: PR number required (all-digit)"
+  echo "STATE=blocked"
+  echo "ERROR=PR number required (all-digit)"
 else
+  echo "STATE=ok"
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-  gh api "repos/$REPO/pulls/$PR_NUM/reviews" --jq '
+
+  # Sub-section: review-cycle markers (in PR review bodies)
+  echo ""
+  echo "#### Review-cycle markers"
+  REVIEW_CYCLES=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" --jq '
     [.[] | select(.body | test("FLOW_REVIEW_CYCLE")) | {
       cycle: (.body | capture("FLOW_REVIEW_CYCLE:(?<n>[0-9]+)") | .n),
       findings: (.body | capture("FINDINGS:\\[(?<f>[^\\]]+)\\]") | .f)
-    }]' 2>/dev/null
+    }]' 2>/dev/null)
+  REVIEW_CYCLE_COUNT=$(echo "$REVIEW_CYCLES" | jq 'length' 2>/dev/null || echo "0")
+  echo "REVIEW_CYCLE_COUNT=$REVIEW_CYCLE_COUNT"
+  if [ "$REVIEW_CYCLE_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    echo "$REVIEW_CYCLES" | jq -r '.[] | "REVIEW_CYCLE=cycle=\(.cycle) findings=\"\(.findings)\""' 2>/dev/null
+  fi
 
-  gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '
+  # Sub-section: resolution-cycle markers (in PR/issue comments)
+  echo ""
+  echo "#### Resolution-cycle markers"
+  RESOLUTION_CYCLES=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '
     [.[] | select(.body | test("FLOW_RESOLUTION_CYCLE")) | {
       cycle: (.body | capture("FLOW_RESOLUTION_CYCLE:(?<n>[0-9]+)") | .n),
       resolved: (.body | capture("RESOLVED:\\[(?<r>[^\\]]*?)\\]") | .r),
       escalated: (.body | capture("ESCALATED:\\[(?<e>[^\\]]*?)\\]") | .e)
-    }]' 2>/dev/null
+    }]' 2>/dev/null)
+  RESOLUTION_CYCLE_COUNT=$(echo "$RESOLUTION_CYCLES" | jq 'length' 2>/dev/null || echo "0")
+  echo "RESOLUTION_CYCLE_COUNT=$RESOLUTION_CYCLE_COUNT"
+  if [ "$RESOLUTION_CYCLE_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    echo "$RESOLUTION_CYCLES" | jq -r '.[] | "RESOLUTION_CYCLE=cycle=\(.cycle) resolved=\"\(.resolved // "")\" escalated=\"\(.escalated // "")\""' 2>/dev/null
+  fi
 fi
 
 true
@@ -118,6 +171,7 @@ Implements the paired-reviewer + challenge-round protocol. The `team-coordinatio
 **Path A gate check** (mandatory before paired dispatch — runs before A.1).
 
 ```!
+echo "### Path A Gate"
 # AGENTTEAMS_GATE_BEGIN
 # Resolve agentTeams from the standard Claude Code settings cascade.
 # Precedence (highest first — first non-empty value wins):
@@ -228,6 +282,15 @@ else
 fi
 # AGENTTEAMS_GATE_END
 echo "USE_PATH_A=$USE_PATH_A"
+# Dispatch signal: enabled when both keys passed (agentTeams + env var);
+# disabled otherwise. The agent reads PATH_A_STATE for the section dispatch
+# and USE_PATH_A for the raw 0/1 flag (preserved for backward compat with
+# downstream prose referencing it).
+if [ "$USE_PATH_A" = "1" ]; then
+  echo "PATH_A_STATE=enabled"
+else
+  echo "PATH_A_STATE=disabled"
+fi
 
 true
 ```

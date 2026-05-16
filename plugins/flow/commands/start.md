@@ -47,6 +47,10 @@ Pure bash validation — fails fast before any agent reasoning.
 # (notably `git checkout -b "feature/issue-${ISSUE_NUM}-..."`). Users can still
 # invoke as `/flow:start 42 (the search bar bug)` — the trailing prose is
 # stripped by the first-token extraction.
+#
+# Output: `### Pre-Flight` heading + PREFLIGHT_FAIL=/PREFLIGHT_WARN= lines
+# per check + final PREFLIGHT_STATE=PASSED|BLOCKED sentinel. See
+# `references/command-output-format.md`.
 ARG1="${ARGUMENTS%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) ISSUE_NUM="" ;;
@@ -55,48 +59,55 @@ esac
 
 ERRORS=0
 WARNINGS=0
+FAIL_REASONS=""
+WARN_REASONS=""
+fail() { FAIL_REASONS="${FAIL_REASONS}PREFLIGHT_FAIL=$1"$'\n'; ERRORS=$((ERRORS+1)); }
+warn() { WARN_REASONS="${WARN_REASONS}PREFLIGHT_WARN=$1"$'\n'; WARNINGS=$((WARNINGS+1)); }
 
 # 0. Issue number required (all-digit; non-digit input is rejected above)
-[ -z "$ISSUE_NUM" ] && echo "PREFLIGHT FAIL: Issue number required (all-digit)" && ERRORS=$((ERRORS+1))
+[ -z "$ISSUE_NUM" ] && fail "Issue number required (all-digit)"
 
 # 1. Clean git state
-[ -n "$(git status --porcelain)" ] && echo "PREFLIGHT FAIL: Uncommitted changes" && ERRORS=$((ERRORS+1))
+[ -n "$(git status --porcelain)" ] && fail "Uncommitted changes"
 
 # 2. Not detached HEAD
-git symbolic-ref HEAD >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: Detached HEAD"; ERRORS=$((ERRORS+1)); }
+git symbolic-ref HEAD >/dev/null 2>&1 || fail "Detached HEAD"
 
 # 3. gh CLI authenticated
-gh auth status >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: gh CLI not authenticated"; ERRORS=$((ERRORS+1)); }
+gh auth status >/dev/null 2>&1 || fail "gh CLI not authenticated"
 
 # 4. Issue exists and is open
 if [ -n "$ISSUE_NUM" ]; then
   ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state --jq '.state' 2>/dev/null)
-  [ "$ISSUE_STATE" != "OPEN" ] && echo "PREFLIGHT FAIL: Issue #$ISSUE_NUM not found or not open (state: ${ISSUE_STATE:-not found})" && ERRORS=$((ERRORS+1))
+  [ "$ISSUE_STATE" != "OPEN" ] && fail "Issue #$ISSUE_NUM not found or not open (state: ${ISSUE_STATE:-not found})"
 fi
 
 # 5. Remote accessible
-git ls-remote --exit-code origin >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: Cannot reach remote 'origin'"; ERRORS=$((ERRORS+1)); }
+git ls-remote --exit-code origin >/dev/null 2>&1 || fail "Cannot reach remote 'origin'"
 
 # 6. Already on feature branch (warning only)
 # Short-circuits silently if not on a matching branch — the chain is a single
 # statement, so failure of any link (no ISSUE_NUM, no match, etc.) just skips
-# the warn without aborting the block. Symmetric in spirit with line 67's
-# `[ "$ISSUE_STATE" != "OPEN" ] && ...` ERRORS chain — both rely on `set -e`
-# being off (which it is, here) plus the implicit truthy semantics of `&&`.
-[ -n "$ISSUE_NUM" ] && git branch --show-current | grep -q "issue-$ISSUE_NUM" && echo "PREFLIGHT WARN: Already on branch for issue #$ISSUE_NUM" && WARNINGS=$((WARNINGS+1))
+# the warn without aborting the block.
+[ -n "$ISSUE_NUM" ] && git branch --show-current | grep -q "issue-$ISSUE_NUM" && warn "Already on branch for issue #$ISSUE_NUM"
 
+echo "### Pre-Flight"
 echo "ISSUE_NUM=$ISSUE_NUM"
-echo "PREFLIGHT: $ERRORS error(s), $WARNINGS warning(s)"
+echo "PREFLIGHT_ERRORS=$ERRORS"
+echo "PREFLIGHT_WARNINGS=$WARNINGS"
 if [ $ERRORS -gt 0 ]; then
-  echo "PREFLIGHT: BLOCKED"
+  echo "PREFLIGHT_STATE=BLOCKED"
 else
-  echo "PREFLIGHT: PASSED"
+  echo "PREFLIGHT_STATE=PASSED"
 fi
+# Emit collected reasons (one per line, may be empty)
+printf '%s' "$FAIL_REASONS"
+printf '%s' "$WARN_REASONS"
 
 true
 ```
 
-If pre-flight fails, stop. Do not proceed to EXPLORE.
+If `PREFLIGHT_STATE=BLOCKED`, stop. Do not proceed to EXPLORE. The `PREFLIGHT_FAIL=` lines under the section enumerate the reasons.
 
 ## Phase 1: EXPLORE
 
@@ -115,23 +126,48 @@ case "$ARG1" in
   *) ISSUE_NUM="$ARG1" ;;
 esac
 
+echo "### Issue Reference"
 if [ -z "$ISSUE_NUM" ]; then
-  echo "ERROR: issue number required (all-digit; Phase 0 PRE-FLIGHT carries the authoritative BLOCKED signal)"
+  echo "STATE=blocked"
+  echo "ERROR=issue number required (all-digit; Phase 0 PRE-FLIGHT carries the authoritative BLOCKED signal)"
 else
-  # 1. Issue details
-  gh issue view "$ISSUE_NUM" --json title,body,labels,assignees,milestone 2>/dev/null
+  echo "STATE=ok"
+  echo "ISSUE_NUM=$ISSUE_NUM"
 
-  # 2. Issue comments
+  # Section: Issue Details
+  echo ""
+  echo "### Issue Details"
+  gh issue view "$ISSUE_NUM" --json title,body,labels,assignees,milestone --jq '
+    "TITLE=\"\(.title)\"\nLABELS=\([.labels[].name] | join(","))\nASSIGNEES=\([.assignees[].login] | map("@" + .) | join(","))\nMILESTONE=\(.milestone.title // "(none)")\nBODY_LENGTH=\(.body | length)"
+  ' 2>/dev/null
+  # Issue body is variable-length; emit it under a sub-heading so the agent
+  # can locate and read it as prose rather than parse it as fields.
+  echo ""
+  echo "#### Issue Body"
+  gh issue view "$ISSUE_NUM" --json body --jq '.body' 2>/dev/null
+
+  # Section: Issue Comments
+  echo ""
+  echo "### Issue Comments"
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-  gh api "repos/$REPO/issues/$ISSUE_NUM/comments" --jq '.[] | "---\n@\(.user.login):\n\(.body)\n"' 2>/dev/null
+  COMMENT_COUNT=$(gh api "repos/$REPO/issues/$ISSUE_NUM/comments" --jq 'length' 2>/dev/null || echo "0")
+  echo "COMMENT_COUNT=$COMMENT_COUNT"
+  if [ "$COMMENT_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    gh api "repos/$REPO/issues/$ISSUE_NUM/comments" --jq '.[] | "COMMENT=author=@\(.user.login) at=\(.created_at) length=\(.body | length)"' 2>/dev/null
+  fi
 
-  # 3. Default branch and repo info
+  # Section: Repo Context
+  echo ""
+  echo "### Repo Context"
   DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
+  echo "REPO=$REPO"
   echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
-
-  # 4. Current git state
-  git status --short
-  git branch --show-current
+  echo "CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)"
+  STATUS_LINES=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  echo "UNCOMMITTED_COUNT=$STATUS_LINES"
+  [ "$STATUS_LINES" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
 fi
 
 true

@@ -34,40 +34,66 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 # Take the first whitespace-separated token; accept only if it is all digits.
 # A non-numeric token (e.g., "foo42" or "evil;rm") is rejected with empty
 # PR_NUM so it never reaches the prompt context or any downstream shell.
+#
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`. STATE=blocked on bad input.
 ARG1="${ARGUMENTS%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) PR_NUM="" ;;
   *) PR_NUM="$ARG1" ;;
 esac
 
+echo "### PR Reference"
 if [ -z "$PR_NUM" ]; then
-  echo "ERROR: PR number required (all-digit). Usage: /flow:address <pr-number>"
+  echo "STATE=blocked"
+  echo "ERROR=PR number required (all-digit). Usage: /flow:address <pr-number>"
 else
-  # 1. PR details
-  gh pr view "$PR_NUM" --json headRefName,baseRefName,title,body 2>/dev/null
-
-  # 2. Review comments (inline)
-  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-  gh api "repos/$REPO/pulls/$PR_NUM/comments" --jq '.[] | {
-    id: .id,
-    path: .path,
-    line: .line,
-    body: .body,
-    author: .user.login
-  }' 2>/dev/null
-
-  # 3. Review summaries
-  gh pr view "$PR_NUM" --json reviews --jq '.reviews[] | {
-    state: .state,
-    body: .body,
-    author: .author.login
-  }' 2>/dev/null
-
-  # 4. Conversation threads
-  gh api "repos/$REPO/pulls/$PR_NUM/comments" --jq 'group_by(.path) | .[] | {file: .[0].path, comments: [.[] | {body: .body, author: .user.login}]}' 2>/dev/null
-
-  # 5. Echo for downstream phases (inline blocks consume $PR_NUM, not $ARGUMENTS).
+  echo "STATE=ok"
   echo "PR_NUM=$PR_NUM"
+
+  # Section: PR Details
+  echo ""
+  echo "### PR Details"
+  gh pr view "$PR_NUM" --json headRefName,baseRefName,title,body --jq '
+    "TITLE=\"\(.title)\"\nHEAD_BRANCH=\(.headRefName)\nBASE_BRANCH=\(.baseRefName)\nBODY_LENGTH=\(.body | length)"
+  ' 2>/dev/null
+
+  # Section: Inline Review Comments
+  echo ""
+  echo "### Inline Review Comments"
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+  INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUM/comments" 2>/dev/null)
+  INLINE_COUNT=$(echo "$INLINE_JSON" | jq 'length' 2>/dev/null || echo "0")
+  echo "INLINE_COUNT=$INLINE_COUNT"
+  if [ "$INLINE_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    # One record per comment; full body lives in the JSON cache for the agent
+    # to fetch on demand. The summary line carries the routing fields.
+    echo "$INLINE_JSON" | jq -r '.[] | "INLINE_COMMENT=id=\(.id) author=@\(.user.login) path=\(.path) line=\(.line // "?") length=\(.body | length)"' 2>/dev/null
+  fi
+
+  # Section: Review Summaries
+  echo ""
+  echo "### Review Summaries"
+  REVIEWS_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null)
+  REVIEW_COUNT=$(echo "$REVIEWS_JSON" | jq 'length' 2>/dev/null || echo "0")
+  echo "REVIEW_COUNT=$REVIEW_COUNT"
+  if [ "$REVIEW_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    echo "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.author.login) at=\(.submittedAt) length=\(.body | length)"' 2>/dev/null
+  fi
+
+  # Section: Conversation Threads (grouped by file path)
+  echo ""
+  echo "### Conversation Threads"
+  THREADS=$(echo "$INLINE_JSON" | jq -r 'group_by(.path) | .[] | "THREAD=file=\(.[0].path) count=\(length)"' 2>/dev/null)
+  if [ -z "$THREADS" ]; then
+    echo "STATE=empty"
+  else
+    echo "$THREADS"
+  fi
 fi
 
 true
@@ -93,9 +119,12 @@ case "$ARG1" in
   *) PR_NUM="$ARG1" ;;
 esac
 
+echo "### Review Cycle"
 if [ -z "$PR_NUM" ]; then
-  echo "ERROR: PR number required (all-digit)"
+  echo "STATE=blocked"
+  echo "ERROR=PR number required (all-digit)"
 else
+  echo "STATE=ok"
   CYCLE_COUNT=$(gh pr view "$PR_NUM" --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length' 2>/dev/null)
   echo "PR_NUM=$PR_NUM"
   echo "REVIEW_CYCLE=$CYCLE_COUNT"
