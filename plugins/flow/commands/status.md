@@ -14,31 +14,80 @@ _None — read-only status command. No skill invocations._
 ## Gather State
 
 ```!
-# 1. Current branch and uncommitted changes
-git branch --show-current
-git status --short | head -20
+# Output contract: `###`-headed sections mirroring the Display template below
+# (Current Branch / My Issues (Open) / My PRs / Awaiting My Review /
+# Decision Journal). Scalars use KEY=value; records use one labeled line per
+# entity (ISSUE=… / PR=…). Empty list-sections emit `STATE=empty` as a
+# positive sentinel — the agent matches a closed vocabulary, not silence.
+# See `references/command-output-format.md` for the canonical pattern.
 
-# 2. Commits ahead of default branch
+# Section: Current Branch
+echo "### Current Branch"
+BRANCH=$(git branch --show-current 2>/dev/null)
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || echo "0"
+COMMITS_AHEAD=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || echo "0")
+UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+echo "BRANCH=$BRANCH"
+echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
+echo "COMMITS_AHEAD=$COMMITS_AHEAD"
+echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
+[ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
 
-# 3. Assigned issues
-gh issue list --assignee @me --state open --limit 10 --json number,title,labels
+# Section: My Issues (Open)
+echo ""
+echo "### My Issues (Open)"
+ASSIGNED_JSON=$(gh issue list --assignee @me --state open --limit 10 --json number,title,labels 2>/dev/null)
+ASSIGNED_COUNT=$(echo "$ASSIGNED_JSON" | jq 'length' 2>/dev/null || echo "0")
+echo "ASSIGNED_COUNT=$ASSIGNED_COUNT"
+if [ "$ASSIGNED_COUNT" = "0" ]; then
+  echo "STATE=empty"
+else
+  echo "$ASSIGNED_JSON" | jq -r '.[] | "ISSUE=\(.number) labels=\"\([.labels[].name] | join(","))\" title=\"\(.title)\""' 2>/dev/null
+fi
 
-# 4. Open PRs (authored)
-gh pr list --author @me --state open --json number,title,state,reviewDecision,statusCheckRollup
+# Section: My PRs (authored)
+echo ""
+echo "### My PRs"
+AUTHORED_JSON=$(gh pr list --author @me --state open --json number,title,state,reviewDecision,statusCheckRollup 2>/dev/null)
+AUTHORED_COUNT=$(echo "$AUTHORED_JSON" | jq 'length' 2>/dev/null || echo "0")
+echo "AUTHORED_COUNT=$AUTHORED_COUNT"
+if [ "$AUTHORED_COUNT" = "0" ]; then
+  echo "STATE=empty"
+else
+  echo "$AUTHORED_JSON" | jq -r '.[] | (
+    [.statusCheckRollup[]? | select(.__typename == "CheckRun")] as $checks |
+    "PR=\(.number) state=\(.state) review=\(.reviewDecision // "(none)") checks=\($checks | map(select(.conclusion == "SUCCESS")) | length)/\($checks | length) title=\"\(.title)\""
+  )' 2>/dev/null
+fi
 
-# 5. PRs needing my review
-gh pr list --search "review-requested:@me" --state open --json number,title,author
+# Section: Awaiting My Review
+echo ""
+echo "### Awaiting My Review"
+REVIEW_JSON=$(gh pr list --search "review-requested:@me" --state open --json number,title,author 2>/dev/null)
+REVIEW_REQUESTED_COUNT=$(echo "$REVIEW_JSON" | jq 'length' 2>/dev/null || echo "0")
+echo "REVIEW_REQUESTED_COUNT=$REVIEW_REQUESTED_COUNT"
+if [ "$REVIEW_REQUESTED_COUNT" = "0" ]; then
+  echo "STATE=empty"
+else
+  echo "$REVIEW_JSON" | jq -r '.[] | "PR=\(.number) author=@\(.author.login) title=\"\(.title)\""' 2>/dev/null
+fi
 
-# 6. Decision journal health. Resolved via bin/cascade-resolve.sh.
+# Section: Decision Journal + Learning state
+# `JOURNAL_DIR` is resolved via the standard settings cascade (bin/cascade-resolve.sh).
+echo ""
+echo "### Decision Journal"
 HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
 [ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
-[ -d "$JOURNAL_DIR" ] && ls -la "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l || echo "0"
-
-# 7. Learning pending
-[ -f "$HOME/.claude/flow-learn-pending" ] && echo "LEARNING PENDING: $(cat $HOME/.claude/flow-learn-pending)" || echo "No pending learning"
+JOURNAL_FILES=0
+[ -d "$JOURNAL_DIR" ] && JOURNAL_FILES=$(ls "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
+echo "JOURNAL_DIR=$JOURNAL_DIR"
+echo "JOURNAL_FILES=$JOURNAL_FILES"
+if [ -f "$HOME/.claude/flow-learn-pending" ]; then
+  echo "LEARNING_PENDING=$(cat "$HOME/.claude/flow-learn-pending")"
+else
+  echo "LEARNING_PENDING=none"
+fi
 
 true
 ```
@@ -100,14 +149,26 @@ else
     '[.[] | select(.author.login == $me or (.assignees[].login? == $me))] | .[].number' 2>/dev/null || echo "LEDGER_UNAVAILABLE")
 fi
 
+echo "### Findings Ledger"
 if [ "$LEDGER_PRS" = "LEDGER_UNAVAILABLE" ]; then
-  echo "LEDGER: unavailable (gh API failed)"
+  echo "LEDGER_STATE=unavailable"
+elif [ -z "$LEDGER_PRS" ]; then
+  echo "LEDGER_STATE=no_open_prs"
 else
   # Sanitize attacker-controlled fields before display/echo: cap length and
   # strip non-printable bytes so a hostile review-body can't inject ANSI
   # escapes into LEDGER_WARN output. Defined once for the whole loop.
   safe() { printf '%s' "$1" | tr -cd '[:print:]' | cut -c1-64; }
-  for PR_NUM in $LEDGER_PRS; do
+  # Generate the PRIORITY|STATE tally to a variable so we can distinguish
+  # "no markers" (empty TALLY) from "findings present" (non-empty) and emit
+  # the right LEDGER_STATE sentinel for each.
+  #
+  # Wrapped in a function because bash's `$(...)` paren-matching collides
+  # with the `*)` patterns in the nested `case` statements below — the outer
+  # substitution would close on the first case-arm paren. Function isolation
+  # gives the case statements their own parse scope.
+  _collect_tally() {
+    for PR_NUM in $LEDGER_PRS; do
     REVIEW_BODY=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null \
       | jq -s -r --argjson trust "$TRUST_LIST" \
           'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_REVIEW_CYCLE:")))] | last | .body // ""')
@@ -156,21 +217,39 @@ else
       esac
       echo "${PRIORITY}|${STATE}"
     done
-  done | sort | uniq -c
+    done | sort | uniq -c
+  }
+  TALLY=$(_collect_tally)
+
+  if [ -z "$TALLY" ]; then
+    echo "LEDGER_STATE=no_markers"
+  else
+    echo "LEDGER_STATE=findings"
+    # Emit one TALLY_<PRIORITY>_<STATE>=COUNT line per row. The agent sums
+    # across STATE for each priority to render the Findings Ledger line per
+    # the rules in `## Render Rules` below.
+    echo "$TALLY" | while read -r count rest; do
+      ROW_PRIORITY="${rest%%|*}"
+      ROW_STATE="${rest#*|}"
+      echo "TALLY_${ROW_PRIORITY}_${ROW_STATE}=$count"
+    done
+  fi
 fi
 
 true
 ```
 
-The output of the loop is a tally like:
+The block emits one of four `LEDGER_STATE=` values, followed (only when `LEDGER_STATE=findings`) by one `TALLY_<PRIORITY>_<STATE>=<count>` line per `(priority, state)` row in the tally:
 
 ```
-   2 P1|in_fix_forward
-   1 P2|escalated
-   3 P3|in_fix_forward
+### Findings Ledger
+LEDGER_STATE=findings
+TALLY_P1_in_fix_forward=2
+TALLY_P2_escalated=1
+TALLY_P3_in_fix_forward=3
 ```
 
-Use this to render the Findings Ledger line per priority. If the loop produces no rows AND `LEDGER_PRS` was non-empty, the user has open PRs but no review markers yet — render `No open findings`.
+State values: `unavailable` (gh API failed) | `no_open_prs` (user has no open PRs) | `no_markers` (open PRs exist but no review markers parsed) | `findings` (at least one tally row follows). Render rules below convert the `TALLY_` lines into the single-line Findings Ledger output.
 
 ## Display
 
@@ -210,25 +289,27 @@ Use this to render the Findings Ledger line per priority. If the loop produces n
 
 ## Render Rules — Findings Ledger
 
-Convert the `PRIORITY|STATE` tally from the gather step into one line. Per-priority rules:
+Convert the `TALLY_<PRIORITY>_<STATE>=<count>` lines from the gather step into one Findings Ledger line. For each priority P1, P2, P3:
 
-- `0` findings at this priority → `P{n}: 0` (bare).
-- All findings at this priority share one state → `P{n}: K (state-label)`.
-- Multiple states at this priority → `P{n}: K (a STATE_A; b STATE_B)`.
+1. Sum all `TALLY_P{n}_*` counts. Call this `K`.
+2. `K == 0` → emit `P{n}: 0` (bare).
+3. `K > 0` and only one `TALLY_P{n}_*` row present → emit `P{n}: K (state-label)`.
+4. `K > 0` and multiple `TALLY_P{n}_*` rows → emit `P{n}: K (a STATE_A; b STATE_B)`, where `a, b` are the per-state counts.
 
-State labels:
+State labels (the `STATE` portion of the `TALLY_` key, mapped to a human-readable label):
 
-| State | Label |
+| State (key suffix) | Label |
 |-------|-------|
 | `in_fix_forward` | `in fix-forward` |
 | `escalated` | `ESCALATED` |
 | `disputed` | `DISPUTED` |
 
-Edge cases:
+Edge cases (driven by `LEDGER_STATE=`, NOT by silence):
 
-- `LEDGER_PRS` empty (no open PRs for user) → `No open findings.`
-- `LEDGER_PRS` non-empty but tally empty (no markers yet) → `No open findings.`
-- `LEDGER_UNAVAILABLE` (gh API failed) → `Findings Ledger unavailable — gh API failed.` (one-line cause).
+- `LEDGER_STATE=unavailable` → `Findings Ledger unavailable — gh API failed.`
+- `LEDGER_STATE=no_open_prs` → `No open findings.`
+- `LEDGER_STATE=no_markers` → `No open findings.`
+- `LEDGER_STATE=findings` → apply the per-priority rules above.
 
 Format matches the workshop slide mockup in `docs/flow-team-session/slides.md` (`/flow:status — what to expect` section, Findings Ledger row).
 
