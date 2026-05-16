@@ -25,15 +25,22 @@ This command operates with these domain skills loaded:
 Gather all evidence before theorizing. Execute in parallel:
 
 ```!
-# 1. Recent changes that might have introduced the bug
-git log --oneline -10
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
 
-# 2. Recent diff
-git diff HEAD~3..HEAD --stat
+echo "### Recent History"
+git log --oneline -10 2>/dev/null | sed 's/^/COMMIT=/'
 
-# 3. Current state
-git status --short
-git branch --show-current
+echo ""
+echo "### Recent Diff (last 3 commits)"
+git diff HEAD~3..HEAD --stat 2>/dev/null
+
+echo ""
+echo "### Current State"
+echo "BRANCH=$(git branch --show-current 2>/dev/null)"
+UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
+[ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
 
 true
 ```

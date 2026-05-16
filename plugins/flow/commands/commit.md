@@ -25,23 +25,47 @@ Classify changes, flag anomalies, and create atomic conventional commits. Follow
 ## Phase 1: EXPLORE
 
 ```!
-# 1. All changes
-git status --porcelain
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
 
-# 2. Branch context
-BRANCH=$(git branch --show-current)
+echo "### Branch Context"
+BRANCH=$(git branch --show-current 2>/dev/null)
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-echo "BRANCH=$BRANCH DEFAULT=$DEFAULT_BRANCH"
+echo "BRANCH=$BRANCH"
+echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
 
-# 3. Files already on branch
-git diff --name-only "$DEFAULT_BRANCH"...HEAD
+echo ""
+echo "### Uncommitted Changes"
+UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
+if [ "$UNCOMMITTED_COUNT" = "0" ]; then
+  echo "STATE=empty"
+else
+  git status --porcelain 2>/dev/null | sed 's/^/UNCOMMITTED_LINE=/'
+fi
 
-# 4. Issue context
+echo ""
+echo "### Branch Files (vs default)"
+BRANCH_FILES=$(git diff --name-only "$DEFAULT_BRANCH"...HEAD 2>/dev/null)
+BRANCH_FILE_COUNT=$(printf '%s\n' "$BRANCH_FILES" | grep -c '.' || echo "0")
+echo "BRANCH_FILE_COUNT=$BRANCH_FILE_COUNT"
+if [ "$BRANCH_FILE_COUNT" = "0" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$BRANCH_FILES" | sed 's/^/BRANCH_FILE=/'
+fi
+
+echo ""
+echo "### Issue Context"
 ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-[ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body 2>/dev/null
+echo "ISSUE_NUM=${ISSUE_NUM:-(none)}"
+if [ -n "$ISSUE_NUM" ]; then
+  gh issue view "$ISSUE_NUM" --json title,body --jq '"ISSUE_TITLE=\"\(.title)\"\nISSUE_BODY_LENGTH=\(.body | length)"' 2>/dev/null
+fi
 
-# 5. Recent commits (for style)
-git log --oneline -10
+echo ""
+echo "### Recent Commits (for style)"
+git log --oneline -10 2>/dev/null | sed 's/^/COMMIT=/'
 
 true
 ```

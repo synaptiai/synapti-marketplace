@@ -14,23 +14,47 @@ _None — explanatory Q&A over journal and diff context. No skill invocations._
 ## Phase 1: Load Context
 
 ```!
-# 1. Current branch and issue
-BRANCH=$(git branch --show-current)
-ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-echo "BRANCH=$BRANCH ISSUE_NUM=$ISSUE_NUM"
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
 
-# 2. Decision journal. Resolved via bin/cascade-resolve.sh.
+echo "### Branch & Issue"
+BRANCH=$(git branch --show-current 2>/dev/null)
+ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+echo "BRANCH=$BRANCH"
+echo "ISSUE_NUM=${ISSUE_NUM:-(none)}"
+
+echo ""
+echo "### Decision Journal"
 HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
 [ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
-[ -n "$ISSUE_NUM" ] && cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md" 2>/dev/null
+echo "JOURNAL_DIR=$JOURNAL_DIR"
+if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
+  echo "JOURNAL_FILE=$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+  echo "JOURNAL_BYTES=$(wc -c < "$JOURNAL_DIR/issue-$ISSUE_NUM.md" | tr -d ' ')"
+  echo ""
+  echo "#### Journal contents"
+  cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+else
+  echo "STATE=empty"
+fi
 
-# 3. Issue details
-[ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body 2>/dev/null
+echo ""
+echo "### Issue Details"
+if [ -n "$ISSUE_NUM" ]; then
+  gh issue view "$ISSUE_NUM" --json title,body --jq '"TITLE=\"\(.title)\"\nBODY_LENGTH=\(.body | length)"' 2>/dev/null
+  echo ""
+  echo "#### Issue body"
+  gh issue view "$ISSUE_NUM" --json body --jq '.body' 2>/dev/null
+else
+  echo "STATE=empty"
+fi
 
-# 4. Branch diff summary
+echo ""
+echo "### Branch Diff Summary"
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-git diff --stat "$DEFAULT_BRANCH"...HEAD
+echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
+git diff --stat "$DEFAULT_BRANCH"...HEAD 2>/dev/null
 
 true
 ```

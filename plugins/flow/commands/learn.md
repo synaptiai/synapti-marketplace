@@ -14,7 +14,11 @@ _None — retrospective pattern analysis over the decision journal. No skill inv
 ## Phase 1: Gather Journal Entries
 
 ```!
-# Read journal directory and proposal directory via bin/cascade-resolve.sh.
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
+
+echo "### Resolved Paths"
+# JOURNAL_DIR and PROPOSAL_DIR resolve via the standard settings cascade.
 HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
 PROPOSAL_DIR="$HOME/.claude/flow-proposals"
@@ -25,11 +29,27 @@ fi
 echo "JOURNAL_DIR=$JOURNAL_DIR"
 echo "PROPOSAL_DIR=$PROPOSAL_DIR"
 
-# List journal files
-ls -la "$JOURNAL_DIR"/*.md 2>/dev/null
+echo ""
+echo "### Journal Files"
+JOURNAL_FILES=0
+[ -d "$JOURNAL_DIR" ] && JOURNAL_FILES=$(ls "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
+echo "JOURNAL_FILE_COUNT=$JOURNAL_FILES"
+if [ "$JOURNAL_FILES" = "0" ]; then
+  echo "STATE=empty"
+else
+  ls "$JOURNAL_DIR"/*.md 2>/dev/null | sed 's/^/JOURNAL_FILE=/'
+fi
 
-# Count existing proposals
-ls -la "$PROPOSAL_DIR"/*.md 2>/dev/null | wc -l
+echo ""
+echo "### Proposal Files"
+PROPOSAL_FILES=0
+[ -d "$PROPOSAL_DIR" ] && PROPOSAL_FILES=$(ls "$PROPOSAL_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
+echo "PROPOSAL_FILE_COUNT=$PROPOSAL_FILES"
+if [ "$PROPOSAL_FILES" = "0" ]; then
+  echo "STATE=empty"
+else
+  ls "$PROPOSAL_DIR"/*.md 2>/dev/null | sed 's/^/PROPOSAL_FILE=/'
+fi
 
 true
 ```

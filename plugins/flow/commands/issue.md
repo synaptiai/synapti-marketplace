@@ -23,14 +23,25 @@ Skill-driven issue creation. Follows the Explore > Plan > Code > Verify loop wit
 Gather context before formulating the issue.
 
 ```!
-# 1. Repo info
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-echo "REPO=$REPO"
-[ -z "$REPO" ] && echo "WARN: cannot resolve repo (gh auth or non-repo CWD?)" >&2
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
 
-# 2. Current git state (branch context for cross-references)
-git branch --show-current
-git status --short
+echo "### Repo Context"
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+if [ -z "$REPO" ]; then
+  echo "STATE=unavailable"
+  echo "ERROR=cannot resolve repo (gh auth or non-repo CWD?)"
+else
+  echo "STATE=ok"
+  echo "REPO=$REPO"
+fi
+
+echo ""
+echo "### Git State"
+echo "BRANCH=$(git branch --show-current 2>/dev/null)"
+UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
+[ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
 
 true
 ```

@@ -41,18 +41,21 @@ Determine invocation mode from `$ARGUMENTS`:
 # (`;`, `|`, `$`, spaces, etc.) is rejected with empty RESOLVE_TARGET so the
 # trailing context can't reach downstream shell. Trailing prose after the
 # first whitespace is fine.
+#
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
 ARG1="${ARGUMENTS%% *}"
 case "$ARG1" in
   ''|*[!a-zA-Z0-9._/-]*) RESOLVE_TARGET="" ;;
   *) RESOLVE_TARGET="$ARG1" ;;
 esac
-echo "RESOLVE_TARGET=$RESOLVE_TARGET"
 
-# Check for active merge/rebase state
+echo "### Resolve Mode"
+echo "RESOLVE_TARGET=${RESOLVE_TARGET:-(none — in-progress merge mode)}"
 if [ -f .git/MERGE_HEAD ] || [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
-  echo "ACTIVE_CONFLICT"
+  echo "CONFLICT_STATE=active"
 else
-  echo "NO_ACTIVE_CONFLICT"
+  echo "CONFLICT_STATE=inactive"
 fi
 
 true
@@ -81,8 +84,22 @@ Run these in parallel:
 **1a. List conflicted files and classify types** (pre-executed via `!`):
 
 ```!
-git diff --name-only --diff-filter=U
-git status --porcelain | grep "^[UAD][UAD] " || true
+# Output: `###`-headed section + labeled records per
+# `references/command-output-format.md`.
+
+echo "### Conflicted Files"
+CONFLICTED=$(git diff --name-only --diff-filter=U 2>/dev/null)
+CONFLICTED_COUNT=$(printf '%s\n' "$CONFLICTED" | grep -c '.' || echo "0")
+echo "CONFLICTED_COUNT=$CONFLICTED_COUNT"
+if [ "$CONFLICTED_COUNT" = "0" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$CONFLICTED" | sed 's/^/CONFLICTED_FILE=/'
+fi
+
+echo ""
+echo "#### Status filter (UU/UD/AU types)"
+git status --porcelain 2>/dev/null | grep "^[UAD][UAD] " | sed 's/^/STATUS=/' || true
 
 true
 ```
@@ -90,9 +107,19 @@ true
 **1b. Count conflict hunks per file** (pre-executed via `!`):
 
 ```!
-git diff --name-only --diff-filter=U | while IFS= read -r f; do
-  [ -f "$f" ] && echo "$f: $(grep -c '<<<<<<<' "$f" || echo 0) hunks" || true
+# Output: `###`-headed section + one record per file per
+# `references/command-output-format.md`.
+
+echo "### Hunks Per Conflicted File"
+ANY=0
+git diff --name-only --diff-filter=U 2>/dev/null | while IFS= read -r f; do
+  if [ -f "$f" ]; then
+    HUNKS=$(grep -c '<<<<<<<' "$f" 2>/dev/null || echo 0)
+    echo "HUNKS=file=$f count=$HUNKS"
+    ANY=1
+  fi
 done
+[ "$ANY" = "0" ] && echo "STATE=empty"
 
 true
 ```

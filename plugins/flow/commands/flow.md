@@ -71,12 +71,34 @@ When invoked without arguments, show help and current status:
 2. Quick state queries (read-only):
 
 ```!
-# Parallel: current state queries. Bare `/flow` runs in any CWD, including
-# non-repos and offline shells, so stderr from gh is suppressed (otherwise
-# "could not determine repository" leaks into the prompt as data).
-git branch --show-current
-gh issue list --assignee @me --state open --limit 5 2>/dev/null
-gh pr list --author @me --state open --limit 5 2>/dev/null
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`. Bare `/flow` runs in any CWD,
+# including non-repos / offline shells, so gh stderr is suppressed.
+
+echo "### Branch"
+echo "BRANCH=$(git branch --show-current 2>/dev/null)"
+
+echo ""
+echo "### Assigned Issues"
+ASSIGNED_JSON=$(gh issue list --assignee @me --state open --limit 5 --json number,title 2>/dev/null)
+ASSIGNED_COUNT=$(echo "$ASSIGNED_JSON" | jq 'length' 2>/dev/null || echo "0")
+echo "ASSIGNED_COUNT=$ASSIGNED_COUNT"
+if [ "$ASSIGNED_COUNT" = "0" ]; then
+  echo "STATE=empty"
+else
+  echo "$ASSIGNED_JSON" | jq -r '.[] | "ISSUE=\(.number) title=\"\(.title)\""' 2>/dev/null
+fi
+
+echo ""
+echo "### My PRs"
+AUTHORED_JSON=$(gh pr list --author @me --state open --limit 5 --json number,title 2>/dev/null)
+AUTHORED_COUNT=$(echo "$AUTHORED_JSON" | jq 'length' 2>/dev/null || echo "0")
+echo "AUTHORED_COUNT=$AUTHORED_COUNT"
+if [ "$AUTHORED_COUNT" = "0" ]; then
+  echo "STATE=empty"
+else
+  echo "$AUTHORED_JSON" | jq -r '.[] | "PR=\(.number) title=\"\(.title)\""' 2>/dev/null
+fi
 
 true
 ```

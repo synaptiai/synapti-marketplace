@@ -30,26 +30,43 @@ This command operates with these domain skills loaded:
 Map existing architecture before proposing anything. Execute in parallel:
 
 ```!
-# 1. Project structure
-ls -la src/ app/ lib/ packages/ 2>/dev/null || ls -la
-
-# 2. If issue number given, load issue context. Take the first whitespace-
-# separated token; accept only if it is *all* digits. Inputs like
-# "foo42 strategy" (where greedy digit-extraction would otherwise pluck
-# `42` and fire `gh issue view 42` on an unrelated issue) are rejected to
-# empty ISSUE_NUM. Supports usage like /flow:design 42 (decoupled auth
-# service architecture).
+# Take the first whitespace-separated token; accept only if it is *all*
+# digits. Inputs like "foo42 strategy" (greedy digit-extraction would pluck
+# `42` and fire `gh issue view 42` on an unrelated issue) are rejected.
+# Supports usage like /flow:design 42 (decoupled auth service architecture).
+#
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
 ARG1="${ARGUMENTS%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) ISSUE_NUM="" ;;
   *) ISSUE_NUM="$ARG1" ;;
 esac
-echo "ISSUE_NUM=$ISSUE_NUM"
-[ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json title,body,labels 2>/dev/null
 
-# 3. Current branch context
-git branch --show-current
-git log --oneline -5
+echo "### Project Structure"
+ls -la src/ app/ lib/ packages/ 2>/dev/null || ls -la
+
+echo ""
+echo "### Issue Reference"
+echo "ISSUE_NUM=${ISSUE_NUM:-(none — exploratory design)}"
+
+echo ""
+echo "### Issue Context"
+if [ -n "$ISSUE_NUM" ]; then
+  gh issue view "$ISSUE_NUM" --json title,body,labels --jq '"TITLE=\"\(.title)\"\nLABELS=\([.labels[].name] | join(","))\nBODY_LENGTH=\(.body | length)"' 2>/dev/null
+  echo ""
+  echo "#### Issue body"
+  gh issue view "$ISSUE_NUM" --json body --jq '.body' 2>/dev/null
+else
+  echo "STATE=empty"
+fi
+
+echo ""
+echo "### Branch Context"
+echo "BRANCH=$(git branch --show-current 2>/dev/null)"
+echo ""
+echo "#### Recent commits"
+git log --oneline -5 2>/dev/null | sed 's/^/COMMIT=/'
 
 true
 ```
