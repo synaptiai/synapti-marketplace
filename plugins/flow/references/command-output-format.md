@@ -56,7 +56,19 @@ KEY=value                        # only when STATE=ok
 | `STATE=blocked` | input validation failed; section cannot proceed | use after permissive-arg-extraction rejects a non-digit `$PR_NUM`, missing required positional, etc. |
 | `STATE=unavailable` | infrastructure failure; cannot determine state | use when `gh` exits non-zero, the network is unreachable, or a required helper is missing |
 
-Per-section state variables (e.g., `LEDGER_STATE=`, `PREFLIGHT_STATE=`) follow the same vocabulary but with a domain prefix when the section name disambiguates the meaning.
+Per-section state variables (e.g., `LEDGER_STATE=`, `PREFLIGHT_STATE=`) follow the same vocabulary when they signal the same conditions (`ok`, `empty`, `blocked`, `unavailable`). The bare `STATE=` variable is always restricted to the four sentinels above.
+
+### Domain-specific state vocabularies
+
+A section MAY define a richer state vocabulary by introducing a `<DOMAIN>_STATE=` variable distinct from `STATE=`. This is allowed when the domain has more than four mutually exclusive outcomes that downstream rendering rules need to distinguish. The domain vocabulary MUST be:
+
+- Closed (enumerated explicitly at the consumer site — no free-text values).
+- Documented inline next to the consumer's Render Rules so the agent knows which values are valid.
+- Distinct from the bare `STATE=` sentinel — never shadow or extend `STATE=`'s four-value set.
+
+The canonical example is `LEDGER_STATE=`, defined by `/flow:status`'s Findings-Ledger section: `{findings, no_markers, no_open_prs, unavailable}`. The Render Rules in `commands/status.md` enumerate the four values and the per-value template. Without this extension the section would have to collapse "no markers yet" and "no open PRs" into the same `empty` sentinel, losing useful diagnostic information.
+
+When in doubt, prefer the four-value `STATE=` and add diagnostic detail in a separate `ERROR=` / `<KEY>=` line rather than extending the closed vocabulary.
 
 ## Worked example — `/flow:status` ! block #1
 
