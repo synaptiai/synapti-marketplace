@@ -49,17 +49,27 @@ else
   echo ""
   echo "### Branch Delta"
   echo "COMMITS_AHEAD=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || echo "0")"
-  echo "UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
-  [ "$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
+  # Cache the porcelain count once — previously invoked twice in adjacent
+  # lines (count + gate on the UNCOMMITTED_LINE listing).
+  UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
+  [ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
   echo ""
   echo "#### Diff stat"
-  git diff --stat "$DEFAULT_BRANCH"...HEAD 2>/dev/null
+  DIFF_STAT=$(git diff --stat "$DEFAULT_BRANCH"...HEAD 2>/dev/null)
+  if [ -z "$DIFF_STAT" ]; then
+    echo "STATE=empty"
+  else
+    printf '%s\n' "$DIFF_STAT" | sed 's/^/DIFF_STAT=/'
+  fi
 
   # Section: Issue Context (extracted from branch name `feature/issue-N-...`)
   echo ""
   echo "### Issue Context"
   ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-  echo "ISSUE_NUM=${ISSUE_NUM:-(none)}"
+  # Quote parenthesized fallback per command-output-format.md rule 2 (values
+  # with whitespace/parens must be double-quoted scalars).
+  echo "ISSUE_NUM=${ISSUE_NUM:-\"(none)\"}"
   if [ -n "$ISSUE_NUM" ]; then
     gh issue view "$ISSUE_NUM" --json title,body,labels --jq '
       "ISSUE_TITLE=\"\(.title)\"\nISSUE_LABELS=\([.labels[].name] | join(","))\nISSUE_BODY_LENGTH=\(.body | length)"

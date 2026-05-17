@@ -44,7 +44,9 @@ case "$ARG1" in
 esac
 
 echo "### Issue Reference"
-echo "ISSUE_NUM=${ISSUE_NUM:-(none — exploratory brainstorm)}"
+# Quote parenthesized fallback per command-output-format.md rule 2 (values
+# with whitespace/parens must be double-quoted scalars).
+echo "ISSUE_NUM=${ISSUE_NUM:-\"(none — exploratory brainstorm)\"}"
 
 echo ""
 echo "### Issue Context"

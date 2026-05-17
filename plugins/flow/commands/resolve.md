@@ -51,7 +51,8 @@ case "$ARG1" in
 esac
 
 echo "### Resolve Mode"
-echo "RESOLVE_TARGET=${RESOLVE_TARGET:-(none — in-progress merge mode)}"
+# Quote parenthesized fallback per command-output-format.md rule 2.
+echo "RESOLVE_TARGET=${RESOLVE_TARGET:-\"(none — in-progress merge mode)\"}"
 if [ -f .git/MERGE_HEAD ] || [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
   echo "CONFLICT_STATE=active"
 else

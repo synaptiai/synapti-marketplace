@@ -78,8 +78,15 @@ else
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   OWNER=$(echo "$REPO" | cut -d/ -f1)
   NAME=$(echo "$REPO" | cut -d/ -f2)
-  UNRESOLVED_COUNT=$(gh api graphql -f query="query { repository(owner: \"$OWNER\", name: \"$NAME\") { pullRequest(number: $PR_NUM) { reviewThreads(first: 100) { nodes { isResolved } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' 2>/dev/null)
-  echo "UNRESOLVED_COUNT=${UNRESOLVED_COUNT:-unavailable}"
+  UNRESOLVED_COUNT=$(gh api graphql -f query="query { repository(owner: \"$OWNER\", name: \"$NAME\") { pullRequest(number: $PR_NUM) { reviewThreads(first: 100) { nodes { isResolved } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' 2>/dev/null); GH_EXIT=$?
+  # Closed-vocab contract: emit STATE=unavailable as a separate sentinel rather
+  # than encoding unavailability as the value of UNRESOLVED_COUNT.
+  if [ $GH_EXIT -ne 0 ] || [ -z "$UNRESOLVED_COUNT" ]; then
+    echo "UNRESOLVED_COUNT=0"
+    echo "STATE=unavailable"
+  else
+    echo "UNRESOLVED_COUNT=$UNRESOLVED_COUNT"
+  fi
 
   # Section: Stale Approval Check
   echo ""

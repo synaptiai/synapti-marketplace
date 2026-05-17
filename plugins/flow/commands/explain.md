@@ -21,7 +21,8 @@ echo "### Branch & Issue"
 BRANCH=$(git branch --show-current 2>/dev/null)
 ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
 echo "BRANCH=$BRANCH"
-echo "ISSUE_NUM=${ISSUE_NUM:-(none)}"
+# Quote parenthesized fallback per command-output-format.md rule 2.
+echo "ISSUE_NUM=${ISSUE_NUM:-\"(none)\"}"
 
 echo ""
 echo "### Decision Journal"

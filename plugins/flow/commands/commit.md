@@ -64,7 +64,8 @@ fi
 echo ""
 echo "### Issue Context"
 ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-echo "ISSUE_NUM=${ISSUE_NUM:-(none)}"
+# Quote parenthesized fallback per command-output-format.md rule 2.
+echo "ISSUE_NUM=${ISSUE_NUM:-\"(none)\"}"
 if [ -n "$ISSUE_NUM" ]; then
   gh issue view "$ISSUE_NUM" --json title,body --jq '"ISSUE_TITLE=\"\(.title)\"\nISSUE_BODY_LENGTH=\(.body | length)"' 2>/dev/null
 fi

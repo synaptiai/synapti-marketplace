@@ -48,7 +48,8 @@ ls -la src/ app/ lib/ packages/ 2>/dev/null || ls -la
 
 echo ""
 echo "### Issue Reference"
-echo "ISSUE_NUM=${ISSUE_NUM:-(none — exploratory design)}"
+# Quote parenthesized fallback per command-output-format.md rule 2.
+echo "ISSUE_NUM=${ISSUE_NUM:-\"(none — exploratory design)\"}"
 
 echo ""
 echo "### Issue Context"
