@@ -70,7 +70,13 @@ else
   echo ""
   echo "### Diff Files"
   DIFF_FILES=$(gh pr diff "$PR_NUM" --name-only 2>/dev/null)
-  DIFF_FILE_COUNT=$(printf '%s\n' "$DIFF_FILES" | grep -c '.' || echo "0")
+  # `grep -c '.' || echo 0` produces multi-line `0\n0` on empty input — use
+  # explicit empty-check.
+  if [ -z "$DIFF_FILES" ]; then
+    DIFF_FILE_COUNT=0
+  else
+    DIFF_FILE_COUNT=$(printf '%s\n' "$DIFF_FILES" | wc -l | tr -d ' ')
+  fi
   echo "DIFF_FILE_COUNT=$DIFF_FILE_COUNT"
   if [ "$DIFF_FILE_COUNT" = "0" ]; then
     echo "STATE=empty"

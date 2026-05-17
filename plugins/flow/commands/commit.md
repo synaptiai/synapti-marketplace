@@ -47,7 +47,13 @@ fi
 echo ""
 echo "### Branch Files (vs default)"
 BRANCH_FILES=$(git diff --name-only "$DEFAULT_BRANCH"...HEAD 2>/dev/null)
-BRANCH_FILE_COUNT=$(printf '%s\n' "$BRANCH_FILES" | grep -c '.' || echo "0")
+# `grep -c '.' || echo 0` produces multi-line `0\n0` on empty input (grep
+# exits 1, the `||` ALSO fires). Use explicit empty-check.
+if [ -z "$BRANCH_FILES" ]; then
+  BRANCH_FILE_COUNT=0
+else
+  BRANCH_FILE_COUNT=$(printf '%s\n' "$BRANCH_FILES" | wc -l | tr -d ' ')
+fi
 echo "BRANCH_FILE_COUNT=$BRANCH_FILE_COUNT"
 if [ "$BRANCH_FILE_COUNT" = "0" ]; then
   echo "STATE=empty"

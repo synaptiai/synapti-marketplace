@@ -56,7 +56,8 @@ if [ "$AUTHORED_COUNT" = "0" ]; then
 else
   echo "$AUTHORED_JSON" | jq -r '.[] | (
     [.statusCheckRollup[]? | select(.__typename == "CheckRun")] as $checks |
-    "PR=\(.number) state=\(.state) review=\(.reviewDecision // "(none)") checks=\($checks | map(select(.conclusion == "SUCCESS")) | length)/\($checks | length) title=\"\(.title)\""
+    (if (.reviewDecision // "") == "" then "(none)" else .reviewDecision end) as $review |
+    "PR=\(.number) state=\(.state) review=\($review) checks=\($checks | map(select(.conclusion == "SUCCESS")) | length)/\($checks | length) title=\"\(.title)\""
   )' 2>/dev/null
 fi
 
