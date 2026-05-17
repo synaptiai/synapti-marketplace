@@ -53,10 +53,17 @@ fi
 
 echo ""
 echo "### Commits Since Last Release"
+# Capture so an empty range (right after a release) emits STATE=empty
+# rather than a silent heading.
 if [ "$LAST_TAG" != "none" ]; then
-  git log --oneline "$LAST_TAG"..HEAD 2>/dev/null | sed 's/^/COMMIT=/'
+  COMMITS_RANGE=$(git log --oneline "$LAST_TAG"..HEAD 2>/dev/null)
 else
-  git log --oneline -20 2>/dev/null | sed 's/^/COMMIT=/'
+  COMMITS_RANGE=$(git log --oneline -20 2>/dev/null)
+fi
+if [ -z "$COMMITS_RANGE" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$COMMITS_RANGE" | sed 's/^/COMMIT=/'
 fi
 
 true

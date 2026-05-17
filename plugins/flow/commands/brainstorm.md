@@ -64,7 +64,12 @@ echo "### Project State"
 echo "BRANCH=$(git branch --show-current 2>/dev/null)"
 echo ""
 echo "#### Recent commits"
-git log --oneline -5 2>/dev/null | sed 's/^/COMMIT=/'
+RECENT_COMMITS=$(git log --oneline -5 2>/dev/null)
+if [ -z "$RECENT_COMMITS" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$RECENT_COMMITS" | sed 's/^/COMMIT=/'
+fi
 
 true
 ```

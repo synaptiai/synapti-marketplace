@@ -44,7 +44,16 @@ case "$ARG1" in
 esac
 
 echo "### Project Structure"
-ls -la src/ app/ lib/ packages/ 2>/dev/null || ls -la
+# Prefix each entry with ENTRY= per command-output-format.md (raw `ls -la`
+# rows have no KEY= label). Try the conventional source roots first; fall
+# back to repo root if none exist. Use `printf` so an empty ls produces a
+# detectable empty var rather than a silent heading.
+STRUCTURE=$(ls -la src/ app/ lib/ packages/ 2>/dev/null || ls -la 2>/dev/null)
+if [ -z "$STRUCTURE" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$STRUCTURE" | sed 's/^/ENTRY=/'
+fi
 
 echo ""
 echo "### Issue Reference"
@@ -67,7 +76,12 @@ echo "### Branch Context"
 echo "BRANCH=$(git branch --show-current 2>/dev/null)"
 echo ""
 echo "#### Recent commits"
-git log --oneline -5 2>/dev/null | sed 's/^/COMMIT=/'
+RECENT_COMMITS=$(git log --oneline -5 2>/dev/null)
+if [ -z "$RECENT_COMMITS" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$RECENT_COMMITS" | sed 's/^/COMMIT=/'
+fi
 
 true
 ```

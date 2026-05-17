@@ -72,7 +72,14 @@ fi
 
 echo ""
 echo "### Recent Commits (for style)"
-git log --oneline -10 2>/dev/null | sed 's/^/COMMIT=/'
+# Capture so an empty log (new repo) emits STATE=empty rather than silent
+# heading.
+RECENT_COMMITS=$(git log --oneline -10 2>/dev/null)
+if [ -z "$RECENT_COMMITS" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$RECENT_COMMITS" | sed 's/^/COMMIT=/'
+fi
 
 true
 ```

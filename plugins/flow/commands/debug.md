@@ -29,11 +29,24 @@ Gather all evidence before theorizing. Execute in parallel:
 # `references/command-output-format.md`.
 
 echo "### Recent History"
-git log --oneline -10 2>/dev/null | sed 's/^/COMMIT=/'
+# Capture into a var so an empty result emits an explicit STATE=empty
+# sentinel rather than a silent heading.
+RECENT_LOG=$(git log --oneline -10 2>/dev/null)
+if [ -z "$RECENT_LOG" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$RECENT_LOG" | sed 's/^/COMMIT=/'
+fi
 
 echo ""
 echo "### Recent Diff (last 3 commits)"
-git diff HEAD~3..HEAD --stat 2>/dev/null
+RECENT_DIFF=$(git diff HEAD~3..HEAD --stat 2>/dev/null)
+if [ -z "$RECENT_DIFF" ]; then
+  echo "STATE=empty"
+else
+  # Prefix raw stat lines with DIFF_STAT= per command-output-format.md.
+  printf '%s\n' "$RECENT_DIFF" | sed 's/^/DIFF_STAT=/'
+fi
 
 echo ""
 echo "### Current State"

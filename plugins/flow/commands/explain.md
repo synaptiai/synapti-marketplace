@@ -55,7 +55,14 @@ echo ""
 echo "### Branch Diff Summary"
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
 echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
-git diff --stat "$DEFAULT_BRANCH"...HEAD 2>/dev/null
+# Capture so an empty stat (e.g., on the default branch) emits STATE=empty
+# rather than a silent heading; prefix raw stat lines with DIFF_STAT=.
+DIFF_STAT=$(git diff --stat "$DEFAULT_BRANCH"...HEAD 2>/dev/null)
+if [ -z "$DIFF_STAT" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$DIFF_STAT" | sed 's/^/DIFF_STAT=/'
+fi
 
 true
 ```
