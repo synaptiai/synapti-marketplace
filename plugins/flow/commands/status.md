@@ -34,43 +34,67 @@ echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
 [ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
 
 # Section: My Issues (Open)
+# Capture gh exit separately across all three sections below: gh failure
+# (auth, network, non-repo CWD) returns "" with non-zero exit; jq on empty
+# input produces no output + exit 0 (jq 1.8), so `|| echo "0"` doesn't fire
+# and the section silently leaks `<KEY>_COUNT=` (bare empty). Distinguish
+# `STATE=unavailable` (gh failed) from `STATE=empty` (gh ok, no records) per
+# `references/command-output-format.md` closed-vocab contract.
 echo ""
 echo "### My Issues (Open)"
-ASSIGNED_JSON=$(gh issue list --assignee @me --state open --limit 10 --json number,title,labels 2>/dev/null)
-ASSIGNED_COUNT=$(echo "$ASSIGNED_JSON" | jq 'length' 2>/dev/null || echo "0")
-echo "ASSIGNED_COUNT=$ASSIGNED_COUNT"
-if [ "$ASSIGNED_COUNT" = "0" ]; then
-  echo "STATE=empty"
+ASSIGNED_JSON=$(gh issue list --assignee @me --state open --limit 10 --json number,title,labels 2>/dev/null); GH_EXIT=$?
+if [ $GH_EXIT -ne 0 ]; then
+  echo "ASSIGNED_COUNT=0"
+  echo "STATE=unavailable"
 else
-  echo "$ASSIGNED_JSON" | jq -r '.[] | "ISSUE=\(.number) labels=\"\([.labels[].name] | join(","))\" title=\"\(.title)\""' 2>/dev/null
+  ASSIGNED_COUNT=$(echo "$ASSIGNED_JSON" | jq 'length' 2>/dev/null)
+  [ -z "$ASSIGNED_COUNT" ] && ASSIGNED_COUNT=0
+  echo "ASSIGNED_COUNT=$ASSIGNED_COUNT"
+  if [ "$ASSIGNED_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    echo "$ASSIGNED_JSON" | jq -r '.[] | "ISSUE=\(.number) labels=\"\([.labels[].name] | join(","))\" title=\"\(.title)\""' 2>/dev/null
+  fi
 fi
 
 # Section: My PRs (authored)
 echo ""
 echo "### My PRs"
-AUTHORED_JSON=$(gh pr list --author @me --state open --json number,title,state,reviewDecision,statusCheckRollup 2>/dev/null)
-AUTHORED_COUNT=$(echo "$AUTHORED_JSON" | jq 'length' 2>/dev/null || echo "0")
-echo "AUTHORED_COUNT=$AUTHORED_COUNT"
-if [ "$AUTHORED_COUNT" = "0" ]; then
-  echo "STATE=empty"
+AUTHORED_JSON=$(gh pr list --author @me --state open --json number,title,state,reviewDecision,statusCheckRollup 2>/dev/null); GH_EXIT=$?
+if [ $GH_EXIT -ne 0 ]; then
+  echo "AUTHORED_COUNT=0"
+  echo "STATE=unavailable"
 else
-  echo "$AUTHORED_JSON" | jq -r '.[] | (
-    [.statusCheckRollup[]? | select(.__typename == "CheckRun")] as $checks |
-    (if (.reviewDecision // "") == "" then "(none)" else .reviewDecision end) as $review |
-    "PR=\(.number) state=\(.state) review=\($review) checks=\($checks | map(select(.conclusion == "SUCCESS")) | length)/\($checks | length) title=\"\(.title)\""
-  )' 2>/dev/null
+  AUTHORED_COUNT=$(echo "$AUTHORED_JSON" | jq 'length' 2>/dev/null)
+  [ -z "$AUTHORED_COUNT" ] && AUTHORED_COUNT=0
+  echo "AUTHORED_COUNT=$AUTHORED_COUNT"
+  if [ "$AUTHORED_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    echo "$AUTHORED_JSON" | jq -r '.[] | (
+      [.statusCheckRollup[]? | select(.__typename == "CheckRun")] as $checks |
+      (if (.reviewDecision // "") == "" then "(none)" else .reviewDecision end) as $review |
+      "PR=\(.number) state=\(.state) review=\($review) checks=\($checks | map(select(.conclusion == "SUCCESS")) | length)/\($checks | length) title=\"\(.title)\""
+    )' 2>/dev/null
+  fi
 fi
 
 # Section: Awaiting My Review
 echo ""
 echo "### Awaiting My Review"
-REVIEW_JSON=$(gh pr list --search "review-requested:@me" --state open --json number,title,author 2>/dev/null)
-REVIEW_REQUESTED_COUNT=$(echo "$REVIEW_JSON" | jq 'length' 2>/dev/null || echo "0")
-echo "REVIEW_REQUESTED_COUNT=$REVIEW_REQUESTED_COUNT"
-if [ "$REVIEW_REQUESTED_COUNT" = "0" ]; then
-  echo "STATE=empty"
+REVIEW_JSON=$(gh pr list --search "review-requested:@me" --state open --json number,title,author 2>/dev/null); GH_EXIT=$?
+if [ $GH_EXIT -ne 0 ]; then
+  echo "REVIEW_REQUESTED_COUNT=0"
+  echo "STATE=unavailable"
 else
-  echo "$REVIEW_JSON" | jq -r '.[] | "PR=\(.number) author=@\(.author.login) title=\"\(.title)\""' 2>/dev/null
+  REVIEW_REQUESTED_COUNT=$(echo "$REVIEW_JSON" | jq 'length' 2>/dev/null)
+  [ -z "$REVIEW_REQUESTED_COUNT" ] && REVIEW_REQUESTED_COUNT=0
+  echo "REVIEW_REQUESTED_COUNT=$REVIEW_REQUESTED_COUNT"
+  if [ "$REVIEW_REQUESTED_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    echo "$REVIEW_JSON" | jq -r '.[] | "PR=\(.number) author=@\(.author.login) title=\"\(.title)\""' 2>/dev/null
+  fi
 fi
 
 # Section: Decision Journal + Learning state

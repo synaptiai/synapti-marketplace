@@ -57,13 +57,23 @@ else
   # Section: Previous Reviews (follow-up detection)
   echo ""
   echo "### Previous Reviews"
-  PREV_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null)
-  PREV_COUNT=$(echo "$PREV_JSON" | jq 'length' 2>/dev/null || echo "0")
-  echo "REVIEW_COUNT=$PREV_COUNT"
-  if [ "$PREV_COUNT" = "0" ]; then
-    echo "STATE=empty"
+  # Capture gh exit separately. Without this, `jq 'length' | echo "0"` on a
+  # failed gh call (auth, network) produces no output (jq 1.8 empty-input
+  # ⇒ exit 0) so `||` doesn't fire, COUNT stays empty, and the section
+  # silently leaks `REVIEW_COUNT=` (bare empty).
+  PREV_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
+  if [ $GH_EXIT -ne 0 ]; then
+    echo "REVIEW_COUNT=0"
+    echo "STATE=unavailable"
   else
-    echo "$PREV_JSON" | jq -r '.[] | "REVIEW=state=\(.state) by=@\(.author.login) at=\(.submittedAt)"' 2>/dev/null
+    PREV_COUNT=$(echo "$PREV_JSON" | jq 'length' 2>/dev/null)
+    [ -z "$PREV_COUNT" ] && PREV_COUNT=0
+    echo "REVIEW_COUNT=$PREV_COUNT"
+    if [ "$PREV_COUNT" = "0" ]; then
+      echo "STATE=empty"
+    else
+      echo "$PREV_JSON" | jq -r '.[] | "REVIEW=state=\(.state) by=@\(.author.login) at=\(.submittedAt)"' 2>/dev/null
+    fi
   fi
 
   # Section: Diff Files

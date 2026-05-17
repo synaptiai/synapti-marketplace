@@ -54,13 +54,22 @@ else
   # Section: Reviews — one labeled line per review
   echo ""
   echo "### Reviews"
-  REVIEWS_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null)
-  REVIEW_COUNT=$(echo "$REVIEWS_JSON" | jq 'length' 2>/dev/null || echo "0")
-  echo "REVIEW_COUNT=$REVIEW_COUNT"
-  if [ "$REVIEW_COUNT" = "0" ]; then
-    echo "STATE=empty"
+  # Capture gh exit separately; gh failure must surface as STATE=unavailable
+  # rather than collapse to STATE=empty (the merge gate must close, not open,
+  # when reviews can't be read).
+  REVIEWS_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
+  if [ $GH_EXIT -ne 0 ]; then
+    echo "REVIEW_COUNT=0"
+    echo "STATE=unavailable"
   else
-    echo "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.author.login) at=\(.submittedAt)"' 2>/dev/null
+    REVIEW_COUNT=$(echo "$REVIEWS_JSON" | jq 'length' 2>/dev/null)
+    [ -z "$REVIEW_COUNT" ] && REVIEW_COUNT=0
+    echo "REVIEW_COUNT=$REVIEW_COUNT"
+    if [ "$REVIEW_COUNT" = "0" ]; then
+      echo "STATE=empty"
+    else
+      echo "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.author.login) at=\(.submittedAt)"' 2>/dev/null
+    fi
   fi
 
   # Section: Unresolved Conversations (GraphQL — reviewThreads not in REST)
@@ -84,21 +93,30 @@ else
   # Section: Finding-ledger seed (full gate runs in next ! block)
   echo ""
   echo "### Finding-Ledger Seed"
-  SEED_JSON=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE|FLOW_REVIEW_CYCLE")) | {id, body}]' 2>/dev/null)
-  SEED_COUNT=$(echo "$SEED_JSON" | jq 'length' 2>/dev/null || echo "0")
-  echo "SEED_MARKER_COUNT=$SEED_COUNT"
-  if [ "$SEED_COUNT" = "0" ]; then
-    echo "STATE=empty"
+  # Capture gh exit separately. Same reason as the Reviews section: the merge
+  # gate must close (STATE=unavailable) rather than open (STATE=empty) when
+  # markers can't be read.
+  SEED_JSON=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE|FLOW_REVIEW_CYCLE")) | {id, body}]' 2>/dev/null); GH_EXIT=$?
+  if [ $GH_EXIT -ne 0 ]; then
+    echo "SEED_MARKER_COUNT=0"
+    echo "STATE=unavailable"
   else
-    # `scan` is a generator that yields each match; wrap in `[...]` to collect
-    # all matches into an array, then take `last` (the actual marker —
-    # typically in an HTML comment at end-of-body — earlier occurrences are
-    # usually prose references). Two capture groups (kind, cycle) so each
-    # element is `[kind, cycle]`.
-    echo "$SEED_JSON" | jq -r '.[] | (
-      ([.body | scan("FLOW_(RESOLUTION|REVIEW)_CYCLE:([0-9]+)")] | last // ["?","?"]) as $last |
-      "SEED=id=\(.id) kind=\($last[0]) cycle=\($last[1])"
-    )' 2>/dev/null
+    SEED_COUNT=$(echo "$SEED_JSON" | jq 'length' 2>/dev/null)
+    [ -z "$SEED_COUNT" ] && SEED_COUNT=0
+    echo "SEED_MARKER_COUNT=$SEED_COUNT"
+    if [ "$SEED_COUNT" = "0" ]; then
+      echo "STATE=empty"
+    else
+      # `scan` is a generator that yields each match; wrap in `[...]` to collect
+      # all matches into an array, then take `last` (the actual marker —
+      # typically in an HTML comment at end-of-body — earlier occurrences are
+      # usually prose references). Two capture groups (kind, cycle) so each
+      # element is `[kind, cycle]`.
+      echo "$SEED_JSON" | jq -r '.[] | (
+        ([.body | scan("FLOW_(RESOLUTION|REVIEW)_CYCLE:([0-9]+)")] | last // ["?","?"]) as $last |
+        "SEED=id=\(.id) kind=\($last[0]) cycle=\($last[1])"
+      )' 2>/dev/null
+    fi
   fi
 fi
 

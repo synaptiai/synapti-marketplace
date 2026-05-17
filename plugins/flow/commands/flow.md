@@ -80,24 +80,40 @@ echo "BRANCH=$(git branch --show-current 2>/dev/null)"
 
 echo ""
 echo "### Assigned Issues"
-ASSIGNED_JSON=$(gh issue list --assignee @me --state open --limit 5 --json number,title 2>/dev/null)
-ASSIGNED_COUNT=$(echo "$ASSIGNED_JSON" | jq 'length' 2>/dev/null || echo "0")
-echo "ASSIGNED_COUNT=$ASSIGNED_COUNT"
-if [ "$ASSIGNED_COUNT" = "0" ]; then
-  echo "STATE=empty"
+# Capture gh exit code separately: gh success with no records returns `[]` exit 0;
+# gh failure (auth, network, non-repo CWD) returns "" with non-zero exit and jq
+# 1.8 on empty input produces NO output and exits 0 — so `|| echo 0` doesn't
+# fire and COUNT stays empty, leaking a bare `ASSIGNED_COUNT=` line.
+ASSIGNED_JSON=$(gh issue list --assignee @me --state open --limit 5 --json number,title 2>/dev/null); GH_EXIT=$?
+if [ $GH_EXIT -ne 0 ]; then
+  echo "ASSIGNED_COUNT=0"
+  echo "STATE=unavailable"
 else
-  echo "$ASSIGNED_JSON" | jq -r '.[] | "ISSUE=\(.number) title=\"\(.title)\""' 2>/dev/null
+  ASSIGNED_COUNT=$(echo "$ASSIGNED_JSON" | jq 'length' 2>/dev/null)
+  [ -z "$ASSIGNED_COUNT" ] && ASSIGNED_COUNT=0
+  echo "ASSIGNED_COUNT=$ASSIGNED_COUNT"
+  if [ "$ASSIGNED_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    echo "$ASSIGNED_JSON" | jq -r '.[] | "ISSUE=\(.number) title=\"\(.title)\""' 2>/dev/null
+  fi
 fi
 
 echo ""
 echo "### My PRs"
-AUTHORED_JSON=$(gh pr list --author @me --state open --limit 5 --json number,title 2>/dev/null)
-AUTHORED_COUNT=$(echo "$AUTHORED_JSON" | jq 'length' 2>/dev/null || echo "0")
-echo "AUTHORED_COUNT=$AUTHORED_COUNT"
-if [ "$AUTHORED_COUNT" = "0" ]; then
-  echo "STATE=empty"
+AUTHORED_JSON=$(gh pr list --author @me --state open --limit 5 --json number,title 2>/dev/null); GH_EXIT=$?
+if [ $GH_EXIT -ne 0 ]; then
+  echo "AUTHORED_COUNT=0"
+  echo "STATE=unavailable"
 else
-  echo "$AUTHORED_JSON" | jq -r '.[] | "PR=\(.number) title=\"\(.title)\""' 2>/dev/null
+  AUTHORED_COUNT=$(echo "$AUTHORED_JSON" | jq 'length' 2>/dev/null)
+  [ -z "$AUTHORED_COUNT" ] && AUTHORED_COUNT=0
+  echo "AUTHORED_COUNT=$AUTHORED_COUNT"
+  if [ "$AUTHORED_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    echo "$AUTHORED_JSON" | jq -r '.[] | "PR=\(.number) title=\"\(.title)\""' 2>/dev/null
+  fi
 fi
 
 true

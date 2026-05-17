@@ -29,18 +29,26 @@ echo ""
 echo "### Merged PRs Since Last Release"
 if [ "$LAST_TAG" != "none" ]; then
   SINCE=$(git log -1 --format=%aI "$LAST_TAG" 2>/dev/null)
-  MERGED_JSON=$(gh pr list --state merged --search "merged:>=$SINCE" --json number,title,labels --limit 50 2>/dev/null)
+  MERGED_JSON=$(gh pr list --state merged --search "merged:>=$SINCE" --json number,title,labels --limit 50 2>/dev/null); GH_EXIT=$?
   echo "SINCE=$SINCE"
 else
-  MERGED_JSON=$(gh pr list --state merged --json number,title,labels --limit 20 2>/dev/null)
-  echo "SINCE=(first release — using 20 most recent merged PRs)"
+  MERGED_JSON=$(gh pr list --state merged --json number,title,labels --limit 20 2>/dev/null); GH_EXIT=$?
+  # Quote: value contains parens, whitespace, em-dash (rule 2 of
+  # references/command-output-format.md).
+  echo "SINCE=\"(first release — using 20 most recent merged PRs)\""
 fi
-MERGED_COUNT=$(echo "$MERGED_JSON" | jq 'length' 2>/dev/null || echo "0")
-echo "MERGED_PR_COUNT=$MERGED_COUNT"
-if [ "$MERGED_COUNT" = "0" ]; then
-  echo "STATE=empty"
+if [ $GH_EXIT -ne 0 ]; then
+  echo "MERGED_PR_COUNT=0"
+  echo "STATE=unavailable"
 else
-  echo "$MERGED_JSON" | jq -r '.[] | "MERGED_PR=number=\(.number) labels=\"\([.labels[].name] | join(","))\" title=\"\(.title)\""' 2>/dev/null
+  MERGED_COUNT=$(echo "$MERGED_JSON" | jq 'length' 2>/dev/null)
+  [ -z "$MERGED_COUNT" ] && MERGED_COUNT=0
+  echo "MERGED_PR_COUNT=$MERGED_COUNT"
+  if [ "$MERGED_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    echo "$MERGED_JSON" | jq -r '.[] | "MERGED_PR=number=\(.number) labels=\"\([.labels[].name] | join(","))\" title=\"\(.title)\""' 2>/dev/null
+  fi
 fi
 
 echo ""

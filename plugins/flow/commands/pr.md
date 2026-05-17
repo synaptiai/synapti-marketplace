@@ -69,13 +69,24 @@ else
   # Section: Existing PR Check
   echo ""
   echo "### Existing PR Check"
-  EXISTING=$(gh pr list --head "$BRANCH" --state open --json number,url 2>/dev/null)
-  EXISTING_COUNT=$(echo "$EXISTING" | jq 'length' 2>/dev/null || echo "0")
-  echo "EXISTING_PR_COUNT=$EXISTING_COUNT"
-  if [ "$EXISTING_COUNT" = "0" ]; then
-    echo "STATE=empty"
+  # Capture gh exit separately. The `|| echo "0"` fallback fails to fire when
+  # gh succeeds but returns "" (impossible here — gh returns [] for empty
+  # success) OR when jq receives empty input from a failed gh call (jq 1.8
+  # produces no output + exit 0, so `||` doesn't trigger and the section
+  # silently leaks `EXISTING_PR_COUNT=`).
+  EXISTING=$(gh pr list --head "$BRANCH" --state open --json number,url 2>/dev/null); GH_EXIT=$?
+  if [ $GH_EXIT -ne 0 ]; then
+    echo "EXISTING_PR_COUNT=0"
+    echo "STATE=unavailable"
   else
-    echo "$EXISTING" | jq -r '.[] | "EXISTING_PR=number=\(.number) url=\(.url)"' 2>/dev/null
+    EXISTING_COUNT=$(echo "$EXISTING" | jq 'length' 2>/dev/null)
+    [ -z "$EXISTING_COUNT" ] && EXISTING_COUNT=0
+    echo "EXISTING_PR_COUNT=$EXISTING_COUNT"
+    if [ "$EXISTING_COUNT" = "0" ]; then
+      echo "STATE=empty"
+    else
+      echo "$EXISTING" | jq -r '.[] | "EXISTING_PR=number=\(.number) url=\(.url)"' 2>/dev/null
+    fi
   fi
 
   # Section: Decision Journal

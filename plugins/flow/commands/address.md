@@ -62,27 +62,44 @@ else
   echo ""
   echo "### Inline Review Comments"
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-  INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUM/comments" 2>/dev/null)
-  INLINE_COUNT=$(echo "$INLINE_JSON" | jq 'length' 2>/dev/null || echo "0")
-  echo "INLINE_COUNT=$INLINE_COUNT"
-  if [ "$INLINE_COUNT" = "0" ]; then
-    echo "STATE=empty"
+  # Capture gh exit separately. gh failure ⇒ "" + non-zero exit; jq on empty
+  # stdin produces no output + exit 0, so `|| echo "0"` doesn't fire and the
+  # block silently emits a bare `INLINE_COUNT=` line. Distinguish unavailable
+  # (gh failed) from empty (gh ok, no records).
+  INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUM/comments" 2>/dev/null); GH_EXIT=$?
+  if [ $GH_EXIT -ne 0 ]; then
+    echo "INLINE_COUNT=0"
+    echo "STATE=unavailable"
+    INLINE_JSON="[]"  # neutral fallback so the Conversation Threads section below also degrades gracefully
   else
-    # One record per comment; full body lives in the JSON cache for the agent
-    # to fetch on demand. The summary line carries the routing fields.
-    echo "$INLINE_JSON" | jq -r '.[] | "INLINE_COMMENT=id=\(.id) author=@\(.user.login) path=\(.path) line=\(.line // "?") length=\(.body | length)"' 2>/dev/null
+    INLINE_COUNT=$(echo "$INLINE_JSON" | jq 'length' 2>/dev/null)
+    [ -z "$INLINE_COUNT" ] && INLINE_COUNT=0
+    echo "INLINE_COUNT=$INLINE_COUNT"
+    if [ "$INLINE_COUNT" = "0" ]; then
+      echo "STATE=empty"
+    else
+      # One record per comment; full body lives in the JSON cache for the agent
+      # to fetch on demand. The summary line carries the routing fields.
+      echo "$INLINE_JSON" | jq -r '.[] | "INLINE_COMMENT=id=\(.id) author=@\(.user.login) path=\(.path) line=\(.line // "?") length=\(.body | length)"' 2>/dev/null
+    fi
   fi
 
   # Section: Review Summaries
   echo ""
   echo "### Review Summaries"
-  REVIEWS_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null)
-  REVIEW_COUNT=$(echo "$REVIEWS_JSON" | jq 'length' 2>/dev/null || echo "0")
-  echo "REVIEW_COUNT=$REVIEW_COUNT"
-  if [ "$REVIEW_COUNT" = "0" ]; then
-    echo "STATE=empty"
+  REVIEWS_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
+  if [ $GH_EXIT -ne 0 ]; then
+    echo "REVIEW_COUNT=0"
+    echo "STATE=unavailable"
   else
-    echo "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.author.login) at=\(.submittedAt) length=\(.body | length)"' 2>/dev/null
+    REVIEW_COUNT=$(echo "$REVIEWS_JSON" | jq 'length' 2>/dev/null)
+    [ -z "$REVIEW_COUNT" ] && REVIEW_COUNT=0
+    echo "REVIEW_COUNT=$REVIEW_COUNT"
+    if [ "$REVIEW_COUNT" = "0" ]; then
+      echo "STATE=empty"
+    else
+      echo "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.author.login) at=\(.submittedAt) length=\(.body | length)"' 2>/dev/null
+    fi
   fi
 
   # Section: Conversation Threads (grouped by file path)
