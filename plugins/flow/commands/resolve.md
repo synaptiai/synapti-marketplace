@@ -89,7 +89,13 @@ Run these in parallel:
 
 echo "### Conflicted Files"
 CONFLICTED=$(git diff --name-only --diff-filter=U 2>/dev/null)
-CONFLICTED_COUNT=$(printf '%s\n' "$CONFLICTED" | grep -c '.' || echo "0")
+# Note: `grep -c '.' || echo 0` produces a multi-line `0\n0` on empty input
+# (grep exits 1, the `||` ALSO fires) — use explicit empty-check instead.
+if [ -z "$CONFLICTED" ]; then
+  CONFLICTED_COUNT=0
+else
+  CONFLICTED_COUNT=$(printf '%s\n' "$CONFLICTED" | wc -l | tr -d ' ')
+fi
 echo "CONFLICTED_COUNT=$CONFLICTED_COUNT"
 if [ "$CONFLICTED_COUNT" = "0" ]; then
   echo "STATE=empty"
@@ -99,7 +105,14 @@ fi
 
 echo ""
 echo "#### Status filter (UU/UD/AU types)"
-git status --porcelain 2>/dev/null | grep "^[UAD][UAD] " | sed 's/^/STATUS=/' || true
+# Capture into a var so an empty match emits an explicit STATE=empty sentinel
+# rather than a silent heading.
+STATUS_LINES=$(git status --porcelain 2>/dev/null | grep "^[UAD][UAD] " || true)
+if [ -z "$STATUS_LINES" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$STATUS_LINES" | sed 's/^/STATUS=/'
+fi
 
 true
 ```
@@ -111,15 +124,25 @@ true
 # `references/command-output-format.md`.
 
 echo "### Hunks Per Conflicted File"
-ANY=0
-git diff --name-only --diff-filter=U 2>/dev/null | while IFS= read -r f; do
-  if [ -f "$f" ]; then
-    HUNKS=$(grep -c '<<<<<<<' "$f" 2>/dev/null || echo 0)
-    echo "HUNKS=file=$f count=$HUNKS"
-    ANY=1
-  fi
-done
-[ "$ANY" = "0" ] && echo "STATE=empty"
+# Capture into a var so the loop runs in the parent shell (no subshell pipe).
+# Previous form `git diff … | while … done; [ "$ANY" = "0" ] && …` ran the
+# loop in a subshell so `ANY=1` never propagated and `STATE=empty` ALWAYS
+# fired even when HUNKS records were just emitted (contradictory output).
+CONFLICTED_LIST=$(git diff --name-only --diff-filter=U 2>/dev/null)
+ANY_EXISTING=0
+if [ -n "$CONFLICTED_LIST" ]; then
+  while IFS= read -r f; do
+    if [ -f "$f" ]; then
+      # `grep -c` always prints a number; the `|| echo 0` form would ALSO
+      # fire on grep's exit 1 (no matches) and produce a multi-line `0\n0`.
+      HUNKS=$(grep -c '<<<<<<<' "$f" 2>/dev/null || true)
+      [ -z "$HUNKS" ] && HUNKS=0
+      echo "HUNKS=file=$f count=$HUNKS"
+      ANY_EXISTING=1
+    fi
+  done <<< "$CONFLICTED_LIST"
+fi
+[ "$ANY_EXISTING" = "0" ] && echo "STATE=empty"
 
 true
 ```
