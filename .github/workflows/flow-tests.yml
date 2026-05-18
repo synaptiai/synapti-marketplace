@@ -1,0 +1,38 @@
+name: flow plugin tests
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/flow/bin/**'
+      - 'plugins/flow/commands/**'
+      - 'plugins/flow/skills/**'
+      - 'plugins/flow/tests/**'
+      - '.github/workflows/flow-tests.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugins/flow/bin/**'
+      - 'plugins/flow/commands/**'
+      - 'plugins/flow/skills/**'
+      - 'plugins/flow/tests/**'
+      - '.github/workflows/flow-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify test prerequisites
+        run: |
+          bash --version | head -1
+          jq --version
+          awk --version 2>/dev/null | head -1 || echo "awk: BSD/POSIX (no --version)"
+
+      - name: Run flow tests
+        run: plugins/flow/tests/run.sh
