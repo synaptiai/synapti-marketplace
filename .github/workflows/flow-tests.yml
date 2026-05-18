@@ -31,11 +31,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install Python prerequisites
+        # journal-record.test.sh and promote-proposal.test.sh exercise the
+        # PyYAML-using helpers; validate-skill-input.test.sh exercises the
+        # jsonschema fallback. The helper scripts themselves skip-PASS when
+        # PyYAML is absent, but in CI we always want the strict path.
+        run: |
+          python3 --version
+          pip install --quiet pyyaml jsonschema
+
       - name: Verify test prerequisites
         run: |
           bash --version | head -1
           jq --version
           awk --version 2>/dev/null | head -1 || echo "awk: BSD/POSIX (no --version)"
+          python3 -c "import yaml; print('PyYAML', yaml.__version__)"
+          python3 -c "import jsonschema; print('jsonschema', jsonschema.__version__)"
 
       - name: Run flow tests
         run: plugins/flow/tests/run.sh
