@@ -33,12 +33,22 @@ trap _cleanup_all EXIT
 # Defensive mktemp wrapper: empty SCRATCH_ROOT would later cascade into
 # `mkdir -p "/.claude"` at filesystem root, which is exactly the kind of
 # pathological failure the harness should never produce. Fail fast instead.
+#
+# Important: callers invoke this via `DIR=$(_mktemp_or_die ...)` — command
+# substitution runs the function in a SUBSHELL. A bare `exit 2` from inside
+# would only kill the subshell, leaving the caller with DIR="" and the test
+# continuing against the wrong paths. We `kill -INT $$` to deliver SIGINT to
+# the OUTER shell process (the sourced test), which run.sh's per-file
+# subshell will then propagate as a non-zero exit, surfaced as "no SUMMARY
+# line" by the runner. The `exit 2` after `kill` is belt-and-suspenders for
+# the unlikely case where SIGINT is masked.
 _mktemp_or_die() {
   local kind="$1"; shift
   local out
   out=$(mktemp "$@" 2>/dev/null)
   if [ -z "$out" ] || [ ! -e "$out" ]; then
     echo "cascade-resolve.test.sh: mktemp failed for $kind" >&2
+    kill -INT $$ 2>/dev/null
     exit 2
   fi
   CLEANUP_PATHS+=("$out")

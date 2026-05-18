@@ -51,9 +51,14 @@ assert_exit 2 "$EXIT" "exit 2"
 assert_contains "schema not found" "$ERR" "stderr names the missing schema"
 
 # --- Test 4: input is not valid JSON → exit 2
+# Note: `CLAUDE_PLUGIN_ROOT=...` MUST be inside the `$(...)` so it scopes to
+# the helper invocation. Putting it on a line preceding `ERR=$(...)` makes
+# it a parallel parent-shell assignment instead of a one-shot exec-env
+# (because `ERR=$(...)` is itself an assignment, not a command), and the
+# helper would only find the schema via the git-rev-parse fallback — testing
+# the wrong code path.
 _flow_test_begin "non-JSON input → exit 2"
-CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" \
-  ERR=$("$HELPER" "$EXISTING_SKILL" 'not json at all' 2>&1 >/dev/null)
+ERR=$(CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" "$HELPER" "$EXISTING_SKILL" 'not json at all' 2>&1 >/dev/null)
 EXIT=$?
 assert_exit 2 "$EXIT" "exit 2"
 assert_contains "not valid JSON" "$ERR" "stderr names the JSON parse failure"

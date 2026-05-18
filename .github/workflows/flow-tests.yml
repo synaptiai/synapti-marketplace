@@ -36,9 +36,24 @@ jobs:
         # PyYAML-using helpers; validate-skill-input.test.sh exercises the
         # jsonschema fallback. The helper scripts themselves skip-PASS when
         # PyYAML is absent, but in CI we always want the strict path.
+        #
+        # Hardening notes:
+        # - `python3 -m pip` guarantees the install targets the same
+        #   interpreter the helpers will use (avoids the case where bare
+        #   `pip` resolves to a different Python on the runner image).
+        # - Versions are pinned to known-good releases so a CI run cannot
+        #   be silently affected by an upstream regression or a hostile
+        #   PyPI release. Bump intentionally when refreshing.
+        # - `--break-system-packages` is defensive against future runner
+        #   images that enforce PEP 668 "externally-managed-environment"
+        #   on the system Python (Ubuntu 24.04+). On current runners the
+        #   flag is a no-op; on PEP 668 systems it preserves the same
+        #   install path without requiring a venv setup step.
         run: |
           python3 --version
-          pip install --quiet pyyaml jsonschema
+          python3 -m pip install --quiet --break-system-packages \
+            'pyyaml==6.0.2' \
+            'jsonschema==4.23.0'
 
       - name: Verify test prerequisites
         run: |

@@ -28,11 +28,17 @@ _jr_cleanup() {
 }
 trap _jr_cleanup EXIT
 
+# See cascade-resolve.test.sh `_mktemp_or_die` for the kill-INT rationale —
+# the caller invokes this via `DIR=$(_jr_mktemp_dir)` which puts us in a
+# command-substitution subshell; a bare `exit 2` would only kill the subshell
+# and let the test continue against an empty $DIR, writing the helper's
+# output into REPO_ROOT instead of a scratch dir.
 _jr_mktemp_dir() {
   local out
   out=$(mktemp -d -t journal-record.tests.XXXXXX 2>/dev/null)
   if [ -z "$out" ] || [ ! -d "$out" ]; then
     echo "journal-record.test.sh: mktemp -d failed" >&2
+    kill -INT $$ 2>/dev/null
     exit 2
   fi
   JR_CLEANUP_PATHS+=("$out")

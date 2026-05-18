@@ -39,8 +39,20 @@ assert_contains "1. First option"  "$OUT" "Option 1 rendered as numbered list"
 assert_contains "2. Second option" "$OUT" "Option 2 rendered as numbered list"
 
 # --- Test 2: missing each required field → exit 1
-# Loop the six fields, drop each in turn, assert exit 1 + usage on stderr.
+# Loop the six fields, drop each in turn, assert exit 1 + the per-field error
+# line on stderr. The "missing required fields: $DROP" form is significant —
+# the helper's usage block also lists every flag name, so a plain
+# `assert_contains "$DROP"` would pass even if the helper emitted "bad
+# input" (the usage block's flag enumeration would satisfy the check).
+# Anchor on the literal "missing required fields:" string so we catch a
+# regression that drops the per-field reporting.
 _flow_test_begin "missing required field → exit 1"
+# Precondition: ALL_ARGS must be even-length pairs so the inner `i+1`
+# subscript never overflows under `set -u`. Catches a future maintainer
+# adding a 7th flag without its value.
+if [ $(( ${#ALL_ARGS[@]} % 2 )) -ne 0 ]; then
+  _flow_assert_fail "ALL_ARGS has odd length ${#ALL_ARGS[@]}; cannot iterate as pairs"
+fi
 FIELDS=(--situation --tried --options --recommendation --time-sensitivity --risk)
 for DROP in "${FIELDS[@]}"; do
   ARGS=()
@@ -53,10 +65,21 @@ for DROP in "${FIELDS[@]}"; do
     ARGS+=("${ALL_ARGS[$i]}" "${ALL_ARGS[$((i+1))]}")
     i=$((i + 2))
   done
-  ERR=$("$HELPER" "${ARGS[@]}" 2>&1 >/dev/null)
+  # Capture stdout and stderr separately so we can also assert nothing
+  # leaked to stdout on the failure path (a happy-path stdout leak would be
+  # caught by Test 1; this catches the inverse).
+  STDOUT_TMP=$(mktemp -t flow-escalate.test.so.XXXXXX 2>/dev/null) || {
+    _flow_assert_fail "mktemp failed for stdout capture"
+    continue
+  }
+  ERR=$("$HELPER" "${ARGS[@]}" 2>&1 1>"$STDOUT_TMP")
   EXIT=$?
+  OUT=$(cat "$STDOUT_TMP"); rm -f "$STDOUT_TMP"
   assert_exit 1 "$EXIT" "exit 1 when $DROP missing"
-  assert_contains "$DROP" "$ERR" "stderr names missing field $DROP"
+  # Anchored substring — distinguishes the per-field error line from the
+  # usage-block enumeration that also contains every flag name.
+  assert_contains "missing required fields: $DROP" "$ERR" "stderr emits 'missing required fields: $DROP'"
+  assert_equal "" "$OUT" "no stdout output on failure path for $DROP"
 done
 
 # --- Test 3: malformed option (no `N:` prefix) → exit 2

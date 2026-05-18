@@ -25,11 +25,15 @@ _pp_cleanup() {
 }
 trap _pp_cleanup EXIT
 
+# See cascade-resolve.test.sh `_mktemp_or_die` for the kill-INT rationale —
+# bare `exit 2` would only kill the command-substitution subshell, leaving
+# the test running against an empty DIR.
 _pp_mktemp_dir() {
   local out
   out=$(mktemp -d -t promote-proposal.tests.XXXXXX 2>/dev/null)
   if [ -z "$out" ] || [ ! -d "$out" ]; then
     echo "promote-proposal.test.sh: mktemp -d failed" >&2
+    kill -INT $$ 2>/dev/null
     exit 2
   fi
   PP_CLEANUP_PATHS+=("$out")
@@ -209,15 +213,24 @@ EXIT=$?
 assert_exit 1 "$EXIT" "exit 1"
 assert_contains "missing required body sections" "$ERR" "stderr names the missing sections"
 
-# --- Test 10: path containing newline → exit 1 (safety guard)
-_flow_test_begin "path with newline → exit 1"
+# --- Test 10: plain-ASCII path passes the newline-rejection safety check
+# The helper's newline/CR rejection branch (bin/promote-proposal.sh:58-63)
+# guards against programmatically-built $PROPOSAL paths containing embedded
+# newlines (POSIX permits `\n` in filenames; bash CAN pass them via array
+# expansion). Directly testing the rejection branch via a shell-arg-passed
+# newline-bearing path is awkward because the bash command line accepts the
+# newline, then the script's `[ ! -f "$PROPOSAL" ]` check at line 52 fires
+# FIRST when the test fixture creates a file with a `\n` in its name (the
+# subsequent open hits the kernel's path-resolution which usually rejects).
+#
+# DELIBERATE GAP: the rejection branch is not directly exercised here. This
+# test instead verifies the inverse — that a plain-ASCII path does NOT
+# false-positive — which is the regression direction most likely to matter
+# (a future tightening of the guard breaking innocent paths). A direct
+# rejection-branch test would need the helper to expose the guard as a
+# function, sourceable from a unit test; that refactor is out of scope.
+_flow_test_begin "plain-ASCII path does not trigger newline-rejection guard"
 DIR=$(_pp_mktemp_dir)
-# bash can't actually pass a literal newline through standard file paths;
-# the script's safety check is for the case where $PROPOSAL is built from
-# a programmatic source. Simulate by creating a real file then passing a
-# path with a $'\n' in it. mktemp won't create that file, so the script
-# will hit the file-not-found branch instead. We instead test the inverse:
-# a file whose path is plain ASCII passes the safety check (no false-positive).
 PROP="$DIR/plain.md"
 _write_valid_proposal "$PROP"
 OUT=$("$HELPER" --proposal "$PROP" --dry-run 2>&1)
