@@ -28,30 +28,93 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 
 ## Phase 1: EXPLORE
 
-**Parallel operations:**
+```!
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`. STATE=blocked when on default branch
+# (can't create a PR from main); STATE=ok otherwise.
 
-```bash
-# 1. Pre-flight checks
-BRANCH=$(git branch --show-current)
+echo "### Branch Context"
+BRANCH=$(git branch --show-current 2>/dev/null)
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-[ "$BRANCH" = "$DEFAULT_BRANCH" ] && echo "ERROR: Cannot create PR from default branch" && exit 1
-echo "BRANCH=$BRANCH DEFAULT=$DEFAULT_BRANCH"
+echo "BRANCH=$BRANCH"
+echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
 
-# 2. Commits and changes
-git rev-list --count "$DEFAULT_BRANCH"..HEAD
-git status --porcelain
-git diff --stat "$DEFAULT_BRANCH"...HEAD
+if [ "$BRANCH" = "$DEFAULT_BRANCH" ]; then
+  echo "STATE=blocked"
+  echo "ERROR=Cannot create PR from default branch"
+else
+  echo "STATE=ok"
 
-# 3. Issue context
-ISSUE_NUM=$(echo $BRANCH | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-[ -n "$ISSUE_NUM" ] && gh issue view $ISSUE_NUM --json title,body,labels
+  # Section: Branch Delta vs Default
+  echo ""
+  echo "### Branch Delta"
+  echo "COMMITS_AHEAD=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || echo "0")"
+  # Cache the porcelain count once — previously invoked twice in adjacent
+  # lines (count + gate on the UNCOMMITTED_LINE listing).
+  UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
+  [ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
+  echo ""
+  echo "#### Diff stat"
+  DIFF_STAT=$(git diff --stat "$DEFAULT_BRANCH"...HEAD 2>/dev/null)
+  if [ -z "$DIFF_STAT" ]; then
+    echo "STATE=empty"
+  else
+    printf '%s\n' "$DIFF_STAT" | sed 's/^/DIFF_STAT=/'
+  fi
 
-# 4. Existing PR check
-gh pr list --head "$BRANCH" --state open --json number,url
+  # Section: Issue Context (extracted from branch name `feature/issue-N-...`)
+  echo ""
+  echo "### Issue Context"
+  ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+  # Quote parenthesized fallback per command-output-format.md rule 2 (values
+  # with whitespace/parens must be double-quoted scalars).
+  echo "ISSUE_NUM=${ISSUE_NUM:-\"(none)\"}"
+  if [ -n "$ISSUE_NUM" ]; then
+    gh issue view "$ISSUE_NUM" --json title,body,labels --jq '
+      "ISSUE_TITLE=\"\(.title)\"\nISSUE_LABELS=\([.labels[].name] | join(","))\nISSUE_BODY_LENGTH=\(.body | length)"
+    ' 2>/dev/null
+  fi
 
-# 5. Decision journal
-JOURNAL_DIR=".decisions"
-[ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ] && cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+  # Section: Existing PR Check
+  echo ""
+  echo "### Existing PR Check"
+  # Capture gh exit separately. The `|| echo "0"` fallback fails to fire when
+  # gh succeeds but returns "" (impossible here — gh returns [] for empty
+  # success) OR when jq receives empty input from a failed gh call (jq 1.8
+  # produces no output + exit 0, so `||` doesn't trigger and the section
+  # silently leaks `EXISTING_PR_COUNT=`).
+  EXISTING=$(gh pr list --head "$BRANCH" --state open --json number,url 2>/dev/null); GH_EXIT=$?
+  if [ $GH_EXIT -ne 0 ]; then
+    echo "EXISTING_PR_COUNT=0"
+    echo "STATE=unavailable"
+  else
+    EXISTING_COUNT=$(echo "$EXISTING" | jq 'length' 2>/dev/null)
+    [ -z "$EXISTING_COUNT" ] && EXISTING_COUNT=0
+    echo "EXISTING_PR_COUNT=$EXISTING_COUNT"
+    if [ "$EXISTING_COUNT" = "0" ]; then
+      echo "STATE=empty"
+    else
+      echo "$EXISTING" | jq -r '.[] | "EXISTING_PR=number=\(.number) url=\(.url)"' 2>/dev/null
+    fi
+  fi
+
+  # Section: Decision Journal
+  echo ""
+  echo "### Decision Journal"
+  JOURNAL_DIR=".decisions"
+  if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
+    echo "JOURNAL_FILE=$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+    echo "JOURNAL_BYTES=$(wc -c < "$JOURNAL_DIR/issue-$ISSUE_NUM.md" | tr -d ' ')"
+    echo ""
+    echo "#### Journal contents"
+    cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+  else
+    echo "STATE=empty"
+  fi
+fi
+
+true
 ```
 
 **Skill invocation:** `Skill(capability-discovery)` — detect quality commands.

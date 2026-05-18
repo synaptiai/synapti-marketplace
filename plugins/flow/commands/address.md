@@ -1,6 +1,6 @@
 ---
 description: "Address PR review feedback systematically. Categorizes feedback, implements surgical fixes, verifies changes, and re-requests review."
-argument-hint: <pr-number>
+argument-hint: <pr-number> [free-form context]
 allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Skill, Grep, Glob
 ---
 
@@ -28,32 +28,98 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 
 ## Phase 1: EXPLORE
 
-**Parallel operations:**
+`gh pr checkout` stays inline (mutating); read-only context-gathering is in the `!` block below.
+
+```!
+# Take the first whitespace-separated token; accept only if it is all digits.
+# A non-numeric token (e.g., "foo42" or "evil;rm") is rejected with empty
+# PR_NUM so it never reaches the prompt context or any downstream shell.
+#
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`. STATE=blocked on bad input.
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) PR_NUM="" ;;
+  *) PR_NUM="$ARG1" ;;
+esac
+
+echo "### PR Reference"
+if [ -z "$PR_NUM" ]; then
+  echo "STATE=blocked"
+  echo "ERROR=PR number required (all-digit). Usage: /flow:address <pr-number>"
+else
+  echo "STATE=ok"
+  echo "PR_NUM=$PR_NUM"
+
+  # Section: PR Details
+  echo ""
+  echo "### PR Details"
+  gh pr view "$PR_NUM" --json headRefName,baseRefName,title,body --jq '
+    "TITLE=\"\(.title)\"\nHEAD_BRANCH=\(.headRefName)\nBASE_BRANCH=\(.baseRefName)\nBODY_LENGTH=\(.body | length)"
+  ' 2>/dev/null
+
+  # Section: Inline Review Comments
+  echo ""
+  echo "### Inline Review Comments"
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+  # Capture gh exit separately. gh failure ⇒ "" + non-zero exit; jq on empty
+  # stdin produces no output + exit 0, so `|| echo "0"` doesn't fire and the
+  # block silently emits a bare `INLINE_COUNT=` line. Distinguish unavailable
+  # (gh failed) from empty (gh ok, no records).
+  INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUM/comments" 2>/dev/null); GH_EXIT=$?
+  if [ $GH_EXIT -ne 0 ]; then
+    echo "INLINE_COUNT=0"
+    echo "STATE=unavailable"
+    INLINE_JSON="[]"  # neutral fallback so the Conversation Threads section below also degrades gracefully
+  else
+    INLINE_COUNT=$(echo "$INLINE_JSON" | jq 'length' 2>/dev/null)
+    [ -z "$INLINE_COUNT" ] && INLINE_COUNT=0
+    echo "INLINE_COUNT=$INLINE_COUNT"
+    if [ "$INLINE_COUNT" = "0" ]; then
+      echo "STATE=empty"
+    else
+      # One record per comment; full body lives in the JSON cache for the agent
+      # to fetch on demand. The summary line carries the routing fields.
+      echo "$INLINE_JSON" | jq -r '.[] | "INLINE_COMMENT=id=\(.id) author=@\(.user.login) path=\(.path) line=\(.line // "?") length=\(.body | length)"' 2>/dev/null
+    fi
+  fi
+
+  # Section: Review Summaries
+  echo ""
+  echo "### Review Summaries"
+  REVIEWS_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
+  if [ $GH_EXIT -ne 0 ]; then
+    echo "REVIEW_COUNT=0"
+    echo "STATE=unavailable"
+  else
+    REVIEW_COUNT=$(echo "$REVIEWS_JSON" | jq 'length' 2>/dev/null)
+    [ -z "$REVIEW_COUNT" ] && REVIEW_COUNT=0
+    echo "REVIEW_COUNT=$REVIEW_COUNT"
+    if [ "$REVIEW_COUNT" = "0" ]; then
+      echo "STATE=empty"
+    else
+      echo "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.author.login) at=\(.submittedAt) length=\(.body | length)"' 2>/dev/null
+    fi
+  fi
+
+  # Section: Conversation Threads (grouped by file path)
+  echo ""
+  echo "### Conversation Threads"
+  THREADS=$(echo "$INLINE_JSON" | jq -r 'group_by(.path) | .[] | "THREAD=file=\(.[0].path) count=\(length)"' 2>/dev/null)
+  if [ -z "$THREADS" ]; then
+    echo "STATE=empty"
+  else
+    echo "$THREADS"
+  fi
+fi
+
+true
+```
+
+Then check out the PR branch (mutating, runs inline):
 
 ```bash
-# 1. PR details and branch
-gh pr view $ARGUMENTS --json headRefName,baseRefName,title,body
-gh pr checkout $ARGUMENTS
-
-# 2. Review comments (inline)
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-gh api repos/$REPO/pulls/$ARGUMENTS/comments --jq '.[] | {
-  id: .id,
-  path: .path,
-  line: .line,
-  body: .body,
-  author: .user.login
-}'
-
-# 3. Review summaries
-gh pr view $ARGUMENTS --json reviews --jq '.reviews[] | {
-  state: .state,
-  body: .body,
-  author: .author.login
-}'
-
-# 4. Conversation threads
-gh api repos/$REPO/pulls/$ARGUMENTS/comments --jq 'group_by(.path) | .[] | {file: .[0].path, comments: [.[] | {body: .body, author: .user.login}]}'
+gh pr checkout "$PR_NUM"
 ```
 
 **Agent(Explore)**: "Pre-resolve check — for each review comment, verify the feedback still applies to the current code. Some comments may already be addressed by later commits."
@@ -62,12 +128,26 @@ gh api repos/$REPO/pulls/$ARGUMENTS/comments --jq 'group_by(.path) | .[] | {file
 
 ## Review Cycle Tracking
 
-Before planning, determine the current review cycle:
+```!
+# Digit-validate PR_NUM (matches Phase 1 block).
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) PR_NUM="" ;;
+  *) PR_NUM="$ARG1" ;;
+esac
 
-```bash
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-CYCLE_COUNT=$(gh pr view $ARGUMENTS --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length')
-echo "REVIEW_CYCLE=$CYCLE_COUNT"
+echo "### Review Cycle"
+if [ -z "$PR_NUM" ]; then
+  echo "STATE=blocked"
+  echo "ERROR=PR number required (all-digit)"
+else
+  echo "STATE=ok"
+  CYCLE_COUNT=$(gh pr view "$PR_NUM" --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length' 2>/dev/null)
+  echo "PR_NUM=$PR_NUM"
+  echo "REVIEW_CYCLE=$CYCLE_COUNT"
+fi
+
+true
 ```
 
 **Escalating strategy by cycle:**
@@ -236,23 +316,23 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
    ```bash
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
    # For each fixed item, reply to the original review comment:
-   gh api repos/$REPO/pulls/$ARGUMENTS/comments/{comment_id}/replies \
+   gh api "repos/$REPO/pulls/$PR_NUM/comments/{comment_id}/replies" \
      -f body="Addressed in \`{SHA}\`. {brief description of fix}"
 
    # For Question/Pushback items, reply with the response:
-   gh api repos/$REPO/pulls/$ARGUMENTS/comments/{comment_id}/replies \
+   gh api "repos/$REPO/pulls/$PR_NUM/comments/{comment_id}/replies" \
      -f body="{response text}"
    ```
 9. **Post resolution comment** (MANDATORY) using the template structure from `templates/resolution-comment.md`:
    ```bash
-   gh pr comment $ARGUMENTS --body "$BODY"
+   gh pr comment "$PR_NUM" --body "$BODY"
    ```
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
 10. **Update PR body review cycle state** (if `### Review Cycle History` exists in the PR body):
-   - Fetch current body: `gh pr view $ARGUMENTS --json body --jq '.body'`
+   - Fetch current body: `gh pr view "$PR_NUM" --json body --jq '.body'`
    - If the body contains `### Review Cycle History`, replace content between that heading and the next `##` heading with the cycle metrics table (received/fixed/discussed/escalated)
    - If the heading does not exist, append a `### Review Cycle History` section under `## Review Findings`
-   - Update: `gh pr edit $ARGUMENTS --body "$UPDATED_BODY"`
+   - Update: `gh pr edit "$PR_NUM" --body "$UPDATED_BODY"`
 11. **TaskList**: Confirm ALL tasks complete including "Post resolution comment". Do NOT proceed until verified.
 12. **Conditional re-request review**:
 
@@ -260,7 +340,7 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
     - If self-review found 0 findings → do NOT re-request (nothing changed that needs re-review beyond the feedback fixes)
     - If cycle < `reviewCycleLimit` (default 3) → re-request normally:
       ```bash
-      gh pr edit $ARGUMENTS --add-reviewer @{reviewer}
+      gh pr edit "$PR_NUM" --add-reviewer @{reviewer}
       ```
     - If cycle >= `reviewCycleLimit` → use the AskUserQuestion tool with the following Proactive-Autonomy escalation:
 

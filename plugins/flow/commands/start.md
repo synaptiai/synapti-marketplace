@@ -1,6 +1,6 @@
 ---
 description: "Start work on a GitHub issue. Assigns issue, creates branch, decomposes tasks from acceptance criteria, and guides implementation with autonomous execution."
-argument-hint: <issue-number-or-url>
+argument-hint: <issue-number-or-url> [free-form context]
 allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Grep, Glob
 ---
 
@@ -38,37 +38,76 @@ This command operates with these domain skills loaded:
 
 ## Phase 0: PRE-FLIGHT
 
-Pure bash validation. No LLM calls. Fail fast before spending tokens.
+Pure bash validation — fails fast before any agent reasoning.
 
-```bash
+```!
+# Take the first whitespace-separated token; accept only if it is all digits.
+# A non-numeric token (e.g., "foo42" or "evil;rm") is rejected with empty
+# ISSUE_NUM so it never reaches the prompt context or any downstream shell
+# (notably `git checkout -b "feature/issue-${ISSUE_NUM}-..."`). Users can still
+# invoke as `/flow:start 42 (the search bar bug)` — the trailing prose is
+# stripped by the first-token extraction.
+#
+# Output: `### Pre-Flight` heading + PREFLIGHT_FAIL=/PREFLIGHT_WARN= lines
+# per check + final PREFLIGHT_STATE=PASSED|BLOCKED sentinel. See
+# `references/command-output-format.md`.
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) ISSUE_NUM="" ;;
+  *) ISSUE_NUM="$ARG1" ;;
+esac
+
 ERRORS=0
 WARNINGS=0
+FAIL_REASONS=""
+WARN_REASONS=""
+fail() { FAIL_REASONS="${FAIL_REASONS}PREFLIGHT_FAIL=$1"$'\n'; ERRORS=$((ERRORS+1)); }
+warn() { WARN_REASONS="${WARN_REASONS}PREFLIGHT_WARN=$1"$'\n'; WARNINGS=$((WARNINGS+1)); }
+
+# 0. Issue number required (all-digit; non-digit input is rejected above)
+[ -z "$ISSUE_NUM" ] && fail "Issue number required (all-digit)"
 
 # 1. Clean git state
-[ -n "$(git status --porcelain)" ] && echo "PREFLIGHT FAIL: Uncommitted changes" && ERRORS=$((ERRORS+1))
+[ -n "$(git status --porcelain)" ] && fail "Uncommitted changes"
 
 # 2. Not detached HEAD
-git symbolic-ref HEAD >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: Detached HEAD"; ERRORS=$((ERRORS+1)); }
+git symbolic-ref HEAD >/dev/null 2>&1 || fail "Detached HEAD"
 
 # 3. gh CLI authenticated
-gh auth status >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: gh CLI not authenticated"; ERRORS=$((ERRORS+1)); }
+gh auth status >/dev/null 2>&1 || fail "gh CLI not authenticated"
 
 # 4. Issue exists and is open
-ISSUE_STATE=$(gh issue view $ARGUMENTS --json state --jq '.state' 2>/dev/null)
-[ "$ISSUE_STATE" != "OPEN" ] && echo "PREFLIGHT FAIL: Issue #$ARGUMENTS not found or not open (state: ${ISSUE_STATE:-not found})" && ERRORS=$((ERRORS+1))
+if [ -n "$ISSUE_NUM" ]; then
+  ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state --jq '.state' 2>/dev/null)
+  [ "$ISSUE_STATE" != "OPEN" ] && fail "Issue #$ISSUE_NUM not found or not open (state: ${ISSUE_STATE:-not found})"
+fi
 
 # 5. Remote accessible
-git ls-remote --exit-code origin >/dev/null 2>&1 || { echo "PREFLIGHT FAIL: Cannot reach remote 'origin'"; ERRORS=$((ERRORS+1)); }
+git ls-remote --exit-code origin >/dev/null 2>&1 || fail "Cannot reach remote 'origin'"
 
 # 6. Already on feature branch (warning only)
-git branch --show-current | grep -q "issue-$ARGUMENTS" && echo "PREFLIGHT WARN: Already on branch for issue #$ARGUMENTS" && WARNINGS=$((WARNINGS+1))
+# Short-circuits silently if not on a matching branch — the chain is a single
+# statement, so failure of any link (no ISSUE_NUM, no match, etc.) just skips
+# the warn without aborting the block.
+[ -n "$ISSUE_NUM" ] && git branch --show-current | grep -q "issue-$ISSUE_NUM" && warn "Already on branch for issue #$ISSUE_NUM"
 
-echo "PREFLIGHT: $ERRORS error(s), $WARNINGS warning(s)"
-[ $ERRORS -gt 0 ] && echo "PREFLIGHT: BLOCKED" && exit 1
-echo "PREFLIGHT: PASSED"
+echo "### Pre-Flight"
+echo "ISSUE_NUM=$ISSUE_NUM"
+echo "PREFLIGHT_ERRORS=$ERRORS"
+echo "PREFLIGHT_WARNINGS=$WARNINGS"
+if [ $ERRORS -gt 0 ]; then
+  echo "PREFLIGHT_STATE=BLOCKED"
+else
+  echo "PREFLIGHT_STATE=PASSED"
+fi
+# Emit collected reasons (one per line, may be empty)
+printf '%s' "$FAIL_REASONS"
+printf '%s' "$WARN_REASONS"
+
+true
 ```
 
-If pre-flight fails, stop. Do not proceed to EXPLORE.
+If `PREFLIGHT_STATE=BLOCKED`, stop. Do not proceed to EXPLORE. The `PREFLIGHT_FAIL=` lines under the section enumerate the reasons.
 
 ## Phase 1: EXPLORE
 
@@ -79,25 +118,59 @@ Gather all context before planning.
 
 **Note**: `debugging-patterns` activates automatically for ALL issues when any verification step fails (build, test, server start, smoke test). No `bug` label required.
 
-Execute these in parallel:
+```!
+# Digit-validate ISSUE_NUM (matches Phase 0 block).
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) ISSUE_NUM="" ;;
+  *) ISSUE_NUM="$ARG1" ;;
+esac
 
-**Parallel Bash calls:**
+echo "### Issue Reference"
+if [ -z "$ISSUE_NUM" ]; then
+  echo "STATE=blocked"
+  echo "ERROR=issue number required (all-digit; Phase 0 PRE-FLIGHT carries the authoritative BLOCKED signal)"
+else
+  echo "STATE=ok"
+  echo "ISSUE_NUM=$ISSUE_NUM"
 
-```bash
-# 1. Issue details
-gh issue view $ARGUMENTS --json title,body,labels,assignees,milestone
+  # Section: Issue Details
+  echo ""
+  echo "### Issue Details"
+  gh issue view "$ISSUE_NUM" --json title,body,labels,assignees,milestone --jq '
+    "TITLE=\"\(.title)\"\nLABELS=\([.labels[].name] | join(","))\nASSIGNEES=\([.assignees[].login] | map("@" + .) | join(","))\nMILESTONE=\(.milestone.title // "(none)")\nBODY_LENGTH=\(.body | length)"
+  ' 2>/dev/null
+  # Issue body is variable-length; emit it under a sub-heading so the agent
+  # can locate and read it as prose rather than parse it as fields.
+  echo ""
+  echo "#### Issue Body"
+  gh issue view "$ISSUE_NUM" --json body --jq '.body' 2>/dev/null
 
-# 2. Issue comments
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-gh api repos/$REPO/issues/$ARGUMENTS/comments --jq '.[] | "---\n@\(.user.login):\n\(.body)\n"'
+  # Section: Issue Comments
+  echo ""
+  echo "### Issue Comments"
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+  COMMENT_COUNT=$(gh api "repos/$REPO/issues/$ISSUE_NUM/comments" --jq 'length' 2>/dev/null || echo "0")
+  echo "COMMENT_COUNT=$COMMENT_COUNT"
+  if [ "$COMMENT_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    gh api "repos/$REPO/issues/$ISSUE_NUM/comments" --jq '.[] | "COMMENT=author=@\(.user.login) at=\(.created_at) length=\(.body | length)"' 2>/dev/null
+  fi
 
-# 3. Default branch and repo info
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
+  # Section: Repo Context
+  echo ""
+  echo "### Repo Context"
+  DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
+  echo "REPO=$REPO"
+  echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
+  echo "CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)"
+  STATUS_LINES=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  echo "UNCOMMITTED_COUNT=$STATUS_LINES"
+  [ "$STATUS_LINES" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
+fi
 
-# 4. Current git state
-git status --short
-git branch --show-current
+true
 ```
 
 **Parallel Agent + Skill calls:**
@@ -133,7 +206,7 @@ Acceptance criteria alone do not describe the full specification. Before buildin
 Skill(specification-capture):
   Inputs:
   - Issue context: {pre-fetched issue title, body, comments, labels}
-  - Journal path: .decisions/issue-$ARGUMENTS.md
+  - Journal path: .decisions/issue-$ISSUE_NUM.md
   - Invocation reason: start
 ```
 
@@ -141,7 +214,7 @@ The skill returns the captured specification (non-goals, failure modes, interfac
 
 After the skill returns, verify per the skill's "Verification gates" section:
 
-1. The journal `.decisions/issue-$ARGUMENTS.md` contains a `## Specification` heading
+1. The journal `.decisions/issue-$ISSUE_NUM.md` contains a `## Specification` heading
 2. All three element subsections (`### Non-goals`, `### Failure modes`, `### Interface contracts`) are present and non-empty (or `none — {reason}` for failure-mode categories that don't apply)
 3. The returned payload matches the journal contents
 
@@ -151,7 +224,7 @@ If any check fails, halt and re-invoke the skill with the failure noted. Do NOT 
 
 ```bash
 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
-  --issue $ARGUMENTS \
+  --issue "$ISSUE_NUM" \
   --type specification \
   --metadata by=specification-capture \
   --metadata elements=non-goals,failure-modes,interface-contracts
@@ -201,7 +274,7 @@ Only after every criterion shows PASS or user-approved MANUAL can the workflow p
 **Assign the issue:**
 
 ```bash
-gh issue edit $ARGUMENTS --add-assignee @me
+gh issue edit "$ISSUE_NUM" --add-assignee @me
 ```
 
 ## Phase 2: PLAN
@@ -212,7 +285,7 @@ Create branch and decompose tasks.
 
 ```bash
 git fetch origin $DEFAULT_BRANCH
-git checkout -b "feature/issue-$ARGUMENTS-{kebab-desc}" "origin/$DEFAULT_BRANCH"
+git checkout -b "feature/issue-${ISSUE_NUM}-{kebab-desc}" "origin/$DEFAULT_BRANCH"
 ```
 
 **Initialize decision journal:**
@@ -221,7 +294,7 @@ git checkout -b "feature/issue-$ARGUMENTS-{kebab-desc}" "origin/$DEFAULT_BRANCH"
 mkdir -p .decisions
 ```
 
-Write journal header to `.decisions/issue-$ARGUMENTS.md`.
+Write journal header to `.decisions/issue-$ISSUE_NUM.md`.
 
 **Task decomposition** — dispatch implementation-planner agent:
 
@@ -235,7 +308,7 @@ A task is not "done" until all three are complete. Splitting them into three sib
 
 ```
 Agent(implementation-planner):
-  "Parse acceptance criteria from issue #$ARGUMENTS and create atomic tasks.
+  "Parse acceptance criteria from issue #$ISSUE_NUM and create atomic tasks.
    Issue context: {pre-fetched issue title, body, comments}
    Specification (from EXPLORE): {non-goals, failure modes, interface contracts}
    Spec Validation Gate results: {criterion -> verification command mapping}
@@ -277,13 +350,13 @@ Check each task for these failure modes:
 
 If ANY task fails the Stranger Test, the plan is incomplete. The agent must either rewrite the task to close the gap, or issue a Proactive-Autonomy escalation asking the user to fill in the missing context. Only after every task passes the Stranger Test can the workflow proceed to Phase 3.
 
-Record the Stranger Test result to `.decisions/issue-$ARGUMENTS.md` under a `## Stranger Test` heading with either "PASS — {N} tasks reviewed" or "BLOCK — {task id}: {failure mode}".
+Record the Stranger Test result to `.decisions/issue-$ISSUE_NUM.md` under a `## Stranger Test` heading with either "PASS — {N} tasks reviewed" or "BLOCK — {task id}: {failure mode}".
 
 **Manifest emit** — append the stranger-test artifact (alongside the freeform `## Stranger Test` section) so the manifest captures the gate's outcome:
 
 ```bash
 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
-  --issue $ARGUMENTS \
+  --issue "$ISSUE_NUM" \
   --type stranger-test \
   --metadata result={PASS|BLOCK} \
   --metadata task_count=$N
@@ -444,7 +517,7 @@ Prove everything works with fix-forward:
 
    ```bash
    "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
-     --issue $ARGUMENTS \
+     --issue "$ISSUE_NUM" \
      --type verdict \
      --metadata result={PASS|FAIL|NEEDS-HUMAN-REVIEW}
    ```

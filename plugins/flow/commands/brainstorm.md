@@ -29,16 +29,49 @@ This command operates with these domain skills loaded:
 
 Understand the goal before generating options. Execute in parallel:
 
-**Parallel Bash calls:**
+```!
+# Take the first whitespace-separated token; accept only if it is *all*
+# digits. Inputs like "foo42 strategy" (greedy digit-extraction would pluck
+# `42` from `foo42` and fire `gh issue view 42` on an unrelated issue) are
+# rejected. Supports usage like /flow:brainstorm 42 (alternative auth strategies).
+#
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) ISSUE_NUM="" ;;
+  *) ISSUE_NUM="$ARG1" ;;
+esac
 
-```bash
-# 1. If issue number given, load context
-ISSUE_NUM=$(echo "$ARGUMENTS" | grep -oE '[0-9]+')
-[ -n "$ISSUE_NUM" ] && gh issue view $ISSUE_NUM --json title,body,labels
+echo "### Issue Reference"
+# Quote parenthesized fallback per command-output-format.md rule 2 (values
+# with whitespace/parens must be double-quoted scalars).
+echo "ISSUE_NUM=${ISSUE_NUM:-\"(none — exploratory brainstorm)\"}"
 
-# 2. Current project state
-git branch --show-current
-git log --oneline -5
+echo ""
+echo "### Issue Context"
+if [ -n "$ISSUE_NUM" ]; then
+  gh issue view "$ISSUE_NUM" --json title,body,labels --jq '"TITLE=\"\(.title)\"\nLABELS=\([.labels[].name] | join(","))\nBODY_LENGTH=\(.body | length)"' 2>/dev/null
+  echo ""
+  echo "#### Issue body"
+  gh issue view "$ISSUE_NUM" --json body --jq '.body' 2>/dev/null
+else
+  echo "STATE=empty"
+fi
+
+echo ""
+echo "### Project State"
+echo "BRANCH=$(git branch --show-current 2>/dev/null)"
+echo ""
+echo "#### Recent commits"
+RECENT_COMMITS=$(git log --oneline -5 2>/dev/null)
+if [ -z "$RECENT_COMMITS" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$RECENT_COMMITS" | sed 's/^/COMMIT=/'
+fi
+
+true
 ```
 
 **Parallel searches:**

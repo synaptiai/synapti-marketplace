@@ -1,6 +1,6 @@
 ---
 description: "Resolve merge conflicts on the current branch or for a pull request. Detects conflict types, analyzes both sides, applies per-file resolution strategies, and verifies the result compiles and passes tests."
-argument-hint: [pr-number-or-branch]
+argument-hint: [pr-number-or-branch] [free-form context]
 allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Grep, Glob
 ---
 
@@ -34,13 +34,32 @@ Determine invocation mode from `$ARGUMENTS`:
 
 ### Validation
 
-```bash
-# Check for active merge/rebase state
+```!
+# Take the first whitespace-separated token; accept only if it matches the
+# safe set [a-zA-Z0-9._/-] (covers digit-only PR numbers AND typical branch
+# names like `feature/foo-bar.v2`). A token containing shell metacharacters
+# (`;`, `|`, `$`, spaces, etc.) is rejected with empty RESOLVE_TARGET so the
+# trailing context can't reach downstream shell. Trailing prose after the
+# first whitespace is fine.
+#
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!a-zA-Z0-9._/-]*) RESOLVE_TARGET="" ;;
+  *) RESOLVE_TARGET="$ARG1" ;;
+esac
+
+echo "### Resolve Mode"
+# Quote parenthesized fallback per command-output-format.md rule 2.
+echo "RESOLVE_TARGET=${RESOLVE_TARGET:-\"(none — in-progress merge mode)\"}"
 if [ -f .git/MERGE_HEAD ] || [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
-  echo "ACTIVE_CONFLICT"
+  echo "CONFLICT_STATE=active"
 else
-  echo "NO_ACTIVE_CONFLICT"
+  echo "CONFLICT_STATE=inactive"
 fi
+
+true
 ```
 
 - If mode is PR: verify `gh auth status` succeeds
@@ -49,8 +68,9 @@ fi
 ### PR Mode Setup
 
 ```bash
-# Fetch PR details and attempt merge
-gh pr view $ARGUMENTS --json headRefName,baseRefName,mergeable,title
+# Fetch PR details and attempt merge. Uses $RESOLVE_TARGET extracted by the
+# Phase 0 `!` block above (digit-or-safe-branch-name; trailing context stripped).
+gh pr view "$RESOLVE_TARGET" --json headRefName,baseRefName,mergeable,title
 git fetch origin
 git checkout <headRefName>
 git merge origin/<baseRefName> --no-commit --no-ff
@@ -62,19 +82,70 @@ If `mergeable == "MERGEABLE"` (no conflicts), report "No conflicts found" and ex
 
 Run these in parallel:
 
-**1a. List conflicted files and classify types:**
+**1a. List conflicted files and classify types** (pre-executed via `!`):
 
-```bash
-git diff --name-only --diff-filter=U
-git status --porcelain | grep "^[UAD][UAD] "
+```!
+# Output: `###`-headed section + labeled records per
+# `references/command-output-format.md`.
+
+echo "### Conflicted Files"
+CONFLICTED=$(git diff --name-only --diff-filter=U 2>/dev/null)
+# Note: `grep -c '.' || echo 0` produces a multi-line `0\n0` on empty input
+# (grep exits 1, the `||` ALSO fires) — use explicit empty-check instead.
+if [ -z "$CONFLICTED" ]; then
+  CONFLICTED_COUNT=0
+else
+  CONFLICTED_COUNT=$(printf '%s\n' "$CONFLICTED" | wc -l | tr -d ' ')
+fi
+echo "CONFLICTED_COUNT=$CONFLICTED_COUNT"
+if [ "$CONFLICTED_COUNT" = "0" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$CONFLICTED" | sed 's/^/CONFLICTED_FILE=/'
+fi
+
+echo ""
+echo "#### Status filter (UU/UD/AU types)"
+# Capture into a var so an empty match emits an explicit STATE=empty sentinel
+# rather than a silent heading.
+STATUS_LINES=$(git status --porcelain 2>/dev/null | grep "^[UAD][UAD] " || true)
+if [ -z "$STATUS_LINES" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$STATUS_LINES" | sed 's/^/STATUS=/'
+fi
+
+true
 ```
 
-**1b. Count conflict hunks per file:**
+**1b. Count conflict hunks per file** (pre-executed via `!`):
 
-```bash
-git diff --name-only --diff-filter=U | while IFS= read -r f; do
-  echo "$f: $(grep -c '<<<<<<<' "$f") hunks"
-done
+```!
+# Output: `###`-headed section + one record per file per
+# `references/command-output-format.md`.
+
+echo "### Hunks Per Conflicted File"
+# Capture into a var so the loop runs in the parent shell (no subshell pipe).
+# Previous form `git diff … | while … done; [ "$ANY" = "0" ] && …` ran the
+# loop in a subshell so `ANY=1` never propagated and `STATE=empty` ALWAYS
+# fired even when HUNKS records were just emitted (contradictory output).
+CONFLICTED_LIST=$(git diff --name-only --diff-filter=U 2>/dev/null)
+ANY_EXISTING=0
+if [ -n "$CONFLICTED_LIST" ]; then
+  while IFS= read -r f; do
+    if [ -f "$f" ]; then
+      # `grep -c` always prints a number; the `|| echo 0` form would ALSO
+      # fire on grep's exit 1 (no matches) and produce a multi-line `0\n0`.
+      HUNKS=$(grep -c '<<<<<<<' "$f" 2>/dev/null || true)
+      [ -z "$HUNKS" ] && HUNKS=0
+      echo "HUNKS=file=$f count=$HUNKS"
+      ANY_EXISTING=1
+    fi
+  done <<< "$CONFLICTED_LIST"
+fi
+[ "$ANY_EXISTING" = "0" ] && echo "STATE=empty"
+
+true
 ```
 
 **1c. Discover build/test commands** via capability-discovery skill.

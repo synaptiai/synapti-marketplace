@@ -14,30 +14,59 @@ Tier 3 operation — **always requires human confirmation**.
 
 ## Phase 1: Gather Context
 
-**Parallel operations:**
+Phase 2 version calculation and Phase 4 publish steps stay inline (they depend on $ARGUMENTS classification and user confirmation).
 
-```bash
-# 1. Current version (latest tag)
+```!
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
+
+echo "### Current Version"
 LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
-echo "Current version: $LAST_TAG"
+echo "LAST_TAG=$LAST_TAG"
+echo "TAG_PREFIX=v"   # default; settings.release.tagPrefix may override at Phase 2
 
-# 2. Release tag prefix from settings
-TAG_PREFIX="v"  # default, read from settings.release.tagPrefix
-
-# 3. Merged PRs since last release
+echo ""
+echo "### Merged PRs Since Last Release"
 if [ "$LAST_TAG" != "none" ]; then
-  SINCE=$(git log -1 --format=%aI "$LAST_TAG")
-  gh pr list --state merged --search "merged:>=$SINCE" --json number,title,labels --limit 50
+  SINCE=$(git log -1 --format=%aI "$LAST_TAG" 2>/dev/null)
+  MERGED_JSON=$(gh pr list --state merged --search "merged:>=$SINCE" --json number,title,labels --limit 50 2>/dev/null); GH_EXIT=$?
+  echo "SINCE=$SINCE"
 else
-  gh pr list --state merged --json number,title,labels --limit 20
+  MERGED_JSON=$(gh pr list --state merged --json number,title,labels --limit 20 2>/dev/null); GH_EXIT=$?
+  # Quote: value contains parens, whitespace, em-dash (rule 2 of
+  # references/command-output-format.md).
+  echo "SINCE=\"(first release — using 20 most recent merged PRs)\""
+fi
+if [ $GH_EXIT -ne 0 ]; then
+  echo "MERGED_PR_COUNT=0"
+  echo "STATE=unavailable"
+else
+  MERGED_COUNT=$(echo "$MERGED_JSON" | jq 'length' 2>/dev/null)
+  [ -z "$MERGED_COUNT" ] && MERGED_COUNT=0
+  echo "MERGED_PR_COUNT=$MERGED_COUNT"
+  if [ "$MERGED_COUNT" = "0" ]; then
+    echo "STATE=empty"
+  else
+    echo "$MERGED_JSON" | jq -r '.[] | "MERGED_PR=number=\(.number) labels=\"\([.labels[].name] | join(","))\" title=\"\(.title)\""' 2>/dev/null
+  fi
 fi
 
-# 4. Commits since last release
+echo ""
+echo "### Commits Since Last Release"
+# Capture so an empty range (right after a release) emits STATE=empty
+# rather than a silent heading.
 if [ "$LAST_TAG" != "none" ]; then
-  git log --oneline "$LAST_TAG"..HEAD
+  COMMITS_RANGE=$(git log --oneline "$LAST_TAG"..HEAD 2>/dev/null)
 else
-  git log --oneline -20
+  COMMITS_RANGE=$(git log --oneline -20 2>/dev/null)
 fi
+if [ -z "$COMMITS_RANGE" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$COMMITS_RANGE" | sed 's/^/COMMIT=/'
+fi
+
+true
 ```
 
 ## Phase 2: Calculate Version

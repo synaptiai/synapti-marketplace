@@ -13,24 +13,60 @@ _None — retrospective pattern analysis over the decision journal. No skill inv
 
 ## Phase 1: Gather Journal Entries
 
-```bash
-# Read journal directory and proposal directory via bin/cascade-resolve.sh.
-# The helper iterates project-local → project-shared → user-global → plugin
-# default and surfaces parse errors on stderr. Gracefully fall back to defaults
-# when the helper is unreachable (hardens against unusual cwd / env states).
+```!
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
+
+echo "### Resolved Paths"
+# JOURNAL_DIR and PROPOSAL_DIR resolve via the standard settings cascade.
+# settings.json may store paths with a leading `~` (literal — JSON has no
+# tilde-expansion semantics). The cascade helper returns the value verbatim
+# without expansion, so downstream tools that don't auto-expand tildes
+# (Read/Write/Edit, Python os.path) would fail. Manually expand `~` to
+# $HOME so the agent always receives an absolute path.
 HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
 PROPOSAL_DIR="$HOME/.claude/flow-proposals"
 if [ -x "$HELPER" ]; then
   JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
   PROPOSAL_DIR=$("$HELPER" --default "$HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
+  echo "STATE=ok"
+else
+  # Helper missing or non-executable — using compile-time defaults. Surface
+  # so the agent knows resolution was best-effort and config might be ignored.
+  echo "STATE=unavailable"
+  echo "ERROR=cascade-resolve.sh missing or non-executable; using built-in defaults"
+fi
+# Expand leading `~` to $HOME so downstream Read/Write/Edit tools (which
+# don't tilde-expand) receive absolute paths.
+JOURNAL_DIR="${JOURNAL_DIR/#\~/$HOME}"
+PROPOSAL_DIR="${PROPOSAL_DIR/#\~/$HOME}"
+echo "JOURNAL_DIR=$JOURNAL_DIR"
+echo "PROPOSAL_DIR=$PROPOSAL_DIR"
+
+echo ""
+echo "### Journal Files"
+JOURNAL_FILES=0
+[ -d "$JOURNAL_DIR" ] && JOURNAL_FILES=$(ls "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
+echo "JOURNAL_FILE_COUNT=$JOURNAL_FILES"
+if [ "$JOURNAL_FILES" = "0" ]; then
+  echo "STATE=empty"
+else
+  ls "$JOURNAL_DIR"/*.md 2>/dev/null | sed 's/^/JOURNAL_FILE=/'
 fi
 
-# List journal files
-ls -la "$JOURNAL_DIR"/*.md 2>/dev/null
+echo ""
+echo "### Proposal Files"
+PROPOSAL_FILES=0
+[ -d "$PROPOSAL_DIR" ] && PROPOSAL_FILES=$(ls "$PROPOSAL_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
+echo "PROPOSAL_FILE_COUNT=$PROPOSAL_FILES"
+if [ "$PROPOSAL_FILES" = "0" ]; then
+  echo "STATE=empty"
+else
+  ls "$PROPOSAL_DIR"/*.md 2>/dev/null | sed 's/^/PROPOSAL_FILE=/'
+fi
 
-# Count existing proposals
-ls -la "$PROPOSAL_DIR"/*.md 2>/dev/null | wc -l
+true
 ```
 
 Read all journal files from the current session (today's entries).

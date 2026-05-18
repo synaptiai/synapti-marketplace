@@ -24,30 +24,64 @@ Classify changes, flag anomalies, and create atomic conventional commits. Follow
 
 ## Phase 1: EXPLORE
 
-Execute these in parallel:
+```!
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
 
-**Parallel Bash calls:**
-
-```bash
-# 1. All changes
-git status --porcelain
-
-# 2. Branch context
-BRANCH=$(git branch --show-current)
+echo "### Branch Context"
+BRANCH=$(git branch --show-current 2>/dev/null)
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-echo "BRANCH=$BRANCH DEFAULT=$DEFAULT_BRANCH"
+echo "BRANCH=$BRANCH"
+echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
 
-# 3. Files already on branch
-git diff --name-only $DEFAULT_BRANCH...HEAD
+echo ""
+echo "### Uncommitted Changes"
+UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
+if [ "$UNCOMMITTED_COUNT" = "0" ]; then
+  echo "STATE=empty"
+else
+  git status --porcelain 2>/dev/null | sed 's/^/UNCOMMITTED_LINE=/'
+fi
 
-# 4. Issue context
-ISSUE_NUM=$(echo $BRANCH | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-[ -n "$ISSUE_NUM" ] && gh issue view $ISSUE_NUM --json title,body 2>/dev/null
+echo ""
+echo "### Branch Files (vs default)"
+BRANCH_FILES=$(git diff --name-only "$DEFAULT_BRANCH"...HEAD 2>/dev/null)
+# `grep -c '.' || echo 0` produces multi-line `0\n0` on empty input (grep
+# exits 1, the `||` ALSO fires). Use explicit empty-check.
+if [ -z "$BRANCH_FILES" ]; then
+  BRANCH_FILE_COUNT=0
+else
+  BRANCH_FILE_COUNT=$(printf '%s\n' "$BRANCH_FILES" | wc -l | tr -d ' ')
+fi
+echo "BRANCH_FILE_COUNT=$BRANCH_FILE_COUNT"
+if [ "$BRANCH_FILE_COUNT" = "0" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$BRANCH_FILES" | sed 's/^/BRANCH_FILE=/'
+fi
 
-# 5. Recent commits (for style)
-git log --oneline -10
+echo ""
+echo "### Issue Context"
+ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+# Quote parenthesized fallback per command-output-format.md rule 2.
+echo "ISSUE_NUM=${ISSUE_NUM:-\"(none)\"}"
+if [ -n "$ISSUE_NUM" ]; then
+  gh issue view "$ISSUE_NUM" --json title,body --jq '"ISSUE_TITLE=\"\(.title)\"\nISSUE_BODY_LENGTH=\(.body | length)"' 2>/dev/null
+fi
 
-# 6. Task-related context from branch or issue
+echo ""
+echo "### Recent Commits (for style)"
+# Capture so an empty log (new repo) emits STATE=empty rather than silent
+# heading.
+RECENT_COMMITS=$(git log --oneline -10 2>/dev/null)
+if [ -z "$RECENT_COMMITS" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$RECENT_COMMITS" | sed 's/^/COMMIT=/'
+fi
+
+true
 ```
 
 **Grep** — search branch diff and issue body for task-related context.

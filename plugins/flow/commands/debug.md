@@ -24,18 +24,38 @@ This command operates with these domain skills loaded:
 
 Gather all evidence before theorizing. Execute in parallel:
 
-**Parallel Bash calls:**
+```!
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
 
-```bash
-# 1. Recent changes that might have introduced the bug
-git log --oneline -10
+echo "### Recent History"
+# Capture into a var so an empty result emits an explicit STATE=empty
+# sentinel rather than a silent heading.
+RECENT_LOG=$(git log --oneline -10 2>/dev/null)
+if [ -z "$RECENT_LOG" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$RECENT_LOG" | sed 's/^/COMMIT=/'
+fi
 
-# 2. Recent diff
-git diff HEAD~3..HEAD --stat
+echo ""
+echo "### Recent Diff (last 3 commits)"
+RECENT_DIFF=$(git diff HEAD~3..HEAD --stat 2>/dev/null)
+if [ -z "$RECENT_DIFF" ]; then
+  echo "STATE=empty"
+else
+  # Prefix raw stat lines with DIFF_STAT= per command-output-format.md.
+  printf '%s\n' "$RECENT_DIFF" | sed 's/^/DIFF_STAT=/'
+fi
 
-# 3. Current state
-git status --short
-git branch --show-current
+echo ""
+echo "### Current State"
+echo "BRANCH=$(git branch --show-current 2>/dev/null)"
+UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
+[ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
+
+true
 ```
 
 **Parallel searches:**

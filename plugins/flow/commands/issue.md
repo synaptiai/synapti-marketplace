@@ -22,16 +22,28 @@ Skill-driven issue creation. Follows the Explore > Plan > Code > Verify loop wit
 
 Gather context before formulating the issue.
 
-**Parallel Bash calls:**
+```!
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
 
-```bash
-# 1. Repo info
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-echo "REPO=$REPO"
+echo "### Repo Context"
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+if [ -z "$REPO" ]; then
+  echo "STATE=unavailable"
+  echo "ERROR=cannot resolve repo (gh auth or non-repo CWD?)"
+else
+  echo "STATE=ok"
+  echo "REPO=$REPO"
+fi
 
-# 2. Current git state (branch context for cross-references)
-git branch --show-current
-git status --short
+echo ""
+echo "### Git State"
+echo "BRANCH=$(git branch --show-current 2>/dev/null)"
+UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
+[ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
+
+true
 ```
 
 **Branch context extraction**: If on a feature branch matching `feature/issue-{N}-*` or `fix/issue-{N}-*`, extract the issue number — the new issue may be related.

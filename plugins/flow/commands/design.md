@@ -29,19 +29,66 @@ This command operates with these domain skills loaded:
 
 Map existing architecture before proposing anything. Execute in parallel:
 
-**Parallel Bash calls:**
+```!
+# Take the first whitespace-separated token; accept only if it is *all*
+# digits. Inputs like "foo42 strategy" (greedy digit-extraction would pluck
+# `42` and fire `gh issue view 42` on an unrelated issue) are rejected.
+# Supports usage like /flow:design 42 (decoupled auth service architecture).
+#
+# Output: `###`-headed sections + KEY=value per
+# `references/command-output-format.md`.
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) ISSUE_NUM="" ;;
+  *) ISSUE_NUM="$ARG1" ;;
+esac
 
-```bash
-# 1. Project structure
-ls -la src/ app/ lib/ packages/ 2>/dev/null || ls -la
+echo "### Project Structure"
+# Prefix each entry with ENTRY= per command-output-format.md (raw `ls -la`
+# rows have no KEY= label). Each row contains whitespace (permission bits,
+# owner, size, date, name), so values are double-quoted per rule 2.
+# Try the conventional source roots first; fall back to repo root if none
+# exist. Use `printf` so an empty ls produces a detectable empty var
+# rather than a silent heading.
+STRUCTURE=$(ls -la src/ app/ lib/ packages/ 2>/dev/null || ls -la 2>/dev/null)
+if [ -z "$STRUCTURE" ]; then
+  echo "STATE=empty"
+else
+  # Quote each row so values containing whitespace remain a single scalar
+  # under one KEY=. Embedded double-quotes (rare in ls output) are escaped
+  # with sed before wrapping.
+  printf '%s\n' "$STRUCTURE" | sed 's/"/\\"/g; s/^/ENTRY="/; s/$/"/'
+fi
 
-# 2. If issue number given, load issue context
-ISSUE_NUM=$(echo "$ARGUMENTS" | grep -oE '[0-9]+')
-[ -n "$ISSUE_NUM" ] && gh issue view $ISSUE_NUM --json title,body,labels
+echo ""
+echo "### Issue Reference"
+# Quote parenthesized fallback per command-output-format.md rule 2.
+echo "ISSUE_NUM=${ISSUE_NUM:-\"(none — exploratory design)\"}"
 
-# 3. Current branch context
-git branch --show-current
-git log --oneline -5
+echo ""
+echo "### Issue Context"
+if [ -n "$ISSUE_NUM" ]; then
+  gh issue view "$ISSUE_NUM" --json title,body,labels --jq '"TITLE=\"\(.title)\"\nLABELS=\([.labels[].name] | join(","))\nBODY_LENGTH=\(.body | length)"' 2>/dev/null
+  echo ""
+  echo "#### Issue body"
+  gh issue view "$ISSUE_NUM" --json body --jq '.body' 2>/dev/null
+else
+  echo "STATE=empty"
+fi
+
+echo ""
+echo "### Branch Context"
+echo "BRANCH=$(git branch --show-current 2>/dev/null)"
+echo ""
+echo "#### Recent commits"
+RECENT_COMMITS=$(git log --oneline -5 2>/dev/null)
+if [ -z "$RECENT_COMMITS" ]; then
+  echo "STATE=empty"
+else
+  printf '%s\n' "$RECENT_COMMITS" | sed 's/^/COMMIT=/'
+fi
+
+true
 ```
 
 **Parallel Agent + Skill calls:**
