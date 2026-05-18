@@ -1,0 +1,67 @@
+name: Flow Plugin Tests
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/flow/bin/**'
+      - 'plugins/flow/commands/**'
+      - 'plugins/flow/references/**'
+      - 'plugins/flow/skills/**'
+      - 'plugins/flow/tests/**'
+      - '.github/workflows/flow-tests.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugins/flow/bin/**'
+      - 'plugins/flow/commands/**'
+      - 'plugins/flow/references/**'
+      - 'plugins/flow/skills/**'
+      - 'plugins/flow/tests/**'
+      - '.github/workflows/flow-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Python prerequisites
+        # journal-record.test.sh and promote-proposal.test.sh exercise the
+        # PyYAML-using helpers; validate-skill-input.test.sh exercises the
+        # jsonschema fallback. The helper scripts themselves skip-PASS when
+        # PyYAML is absent, but in CI we always want the strict path.
+        #
+        # Hardening notes:
+        # - `python3 -m pip` guarantees the install targets the same
+        #   interpreter the helpers will use (avoids the case where bare
+        #   `pip` resolves to a different Python on the runner image).
+        # - Versions are pinned to known-good releases so a CI run cannot
+        #   be silently affected by an upstream regression or a hostile
+        #   PyPI release. Bump intentionally when refreshing.
+        # - `--break-system-packages` is defensive against future runner
+        #   images that enforce PEP 668 "externally-managed-environment"
+        #   on the system Python (Ubuntu 24.04+). On current runners the
+        #   flag is a no-op; on PEP 668 systems it preserves the same
+        #   install path without requiring a venv setup step.
+        run: |
+          python3 --version
+          python3 -m pip install --quiet --break-system-packages \
+            'pyyaml==6.0.2' \
+            'jsonschema==4.23.0'
+
+      - name: Verify test prerequisites
+        run: |
+          bash --version | head -1
+          jq --version
+          awk --version 2>/dev/null | head -1 || echo "awk: BSD/POSIX (no --version)"
+          python3 -c "import yaml; print('PyYAML', yaml.__version__)"
+          python3 -c "import jsonschema; print('jsonschema', jsonschema.__version__)"
+
+      - name: Run flow tests
+        run: plugins/flow/tests/run.sh
