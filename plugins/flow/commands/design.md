@@ -45,14 +45,19 @@ esac
 
 echo "### Project Structure"
 # Prefix each entry with ENTRY= per command-output-format.md (raw `ls -la`
-# rows have no KEY= label). Try the conventional source roots first; fall
-# back to repo root if none exist. Use `printf` so an empty ls produces a
-# detectable empty var rather than a silent heading.
+# rows have no KEY= label). Each row contains whitespace (permission bits,
+# owner, size, date, name), so values are double-quoted per rule 2.
+# Try the conventional source roots first; fall back to repo root if none
+# exist. Use `printf` so an empty ls produces a detectable empty var
+# rather than a silent heading.
 STRUCTURE=$(ls -la src/ app/ lib/ packages/ 2>/dev/null || ls -la 2>/dev/null)
 if [ -z "$STRUCTURE" ]; then
   echo "STATE=empty"
 else
-  printf '%s\n' "$STRUCTURE" | sed 's/^/ENTRY=/'
+  # Quote each row so values containing whitespace remain a single scalar
+  # under one KEY=. Embedded double-quotes (rare in ls output) are escaped
+  # with sed before wrapping.
+  printf '%s\n' "$STRUCTURE" | sed 's/"/\\"/g; s/^/ENTRY="/; s/$/"/'
 fi
 
 echo ""
