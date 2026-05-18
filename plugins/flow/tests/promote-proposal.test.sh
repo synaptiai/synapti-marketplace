@@ -255,3 +255,46 @@ assert_exit 0 "$EXIT" "exit 0 for dry-run with valid never-before-seen name"
 assert_contains "DRY-RUN: validation passed for '$UNIQUE_NAME'" "$OUT" "dry-run prints the validated name"
 assert_contains "would copy" "$OUT" "dry-run describes the next step"
 assert_contains "feature/learn-promote-$UNIQUE_NAME" "$OUT" "dry-run names the planned branch"
+
+# --- Test 12: target SKILL.md already exists → exit 1 (refuse to overwrite)
+# bin/promote-proposal.sh:161-169 refuses when the target SKILL.md exists.
+# Pre-create the target inside REPO_ROOT/plugins/flow/skills/learned/<NAME>/
+# and verify the refusal. Cleanup the target via CLEANUP_PATHS so the test
+# is re-runnable.
+_flow_test_begin "target SKILL.md exists → exit 1 (refuse to overwrite)"
+DIR=$(_pp_mktemp_dir)
+NAME_EXISTS="test-fake-target-exists-$(date +%s)-$$-$RANDOM"
+PROP="$DIR/valid-exists.md"
+_write_valid_proposal "$PROP" "$NAME_EXISTS"
+# Pre-stage the target as if a prior promotion already landed.
+TARGET_DIR="$REPO_ROOT/plugins/flow/skills/learned/$NAME_EXISTS"
+mkdir -p "$TARGET_DIR"
+echo "pre-existing skill content" > "$TARGET_DIR/SKILL.md"
+PP_CLEANUP_PATHS+=("$TARGET_DIR")
+ERR=$("$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null)
+EXIT=$?
+assert_exit 1 "$EXIT" "exit 1 when target SKILL.md exists"
+assert_contains "refusing to overwrite" "$ERR" "stderr names the refusal"
+# Confirm the existing SKILL.md was not touched.
+assert_equal "pre-existing skill content" "$(cat "$TARGET_DIR/SKILL.md")" "existing SKILL.md was not overwritten"
+
+# --- Test 13: target dir exists and is non-empty → exit 1 (refuse to clobber)
+# bin/promote-proposal.sh:176-180 refuses when TARGET_DIR exists with any
+# content other than the expected SKILL.md. This protects an in-progress
+# hand-promotion (e.g., references/foo.md placed manually before SKILL.md)
+# from being wiped on a python rewrite failure.
+_flow_test_begin "target dir non-empty (no SKILL.md) → exit 1 (refuse to clobber)"
+DIR=$(_pp_mktemp_dir)
+NAME_DIRTY="test-fake-dirty-dir-$(date +%s)-$$-$RANDOM"
+PROP="$DIR/valid-dirty.md"
+_write_valid_proposal "$PROP" "$NAME_DIRTY"
+TARGET_DIR="$REPO_ROOT/plugins/flow/skills/learned/$NAME_DIRTY"
+mkdir -p "$TARGET_DIR/references"
+echo "stray content" > "$TARGET_DIR/references/foo.md"
+PP_CLEANUP_PATHS+=("$TARGET_DIR")
+ERR=$("$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null)
+EXIT=$?
+assert_exit 1 "$EXIT" "exit 1 when target dir is non-empty"
+assert_contains "exists and is non-empty" "$ERR" "stderr names the clobber refusal"
+# Confirm the stray content was not touched.
+assert_equal "stray content" "$(cat "$TARGET_DIR/references/foo.md")" "stray content preserved"

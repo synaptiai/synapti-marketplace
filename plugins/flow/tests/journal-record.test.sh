@@ -187,3 +187,122 @@ assert_exit 2 "$EXIT" "exit 2 when journal is a symlink"
 assert_contains "symlink" "$ERR" "stderr names the symlink refusal"
 # Confirm the redirect target was NOT written to.
 assert_equal "untouched" "$(cat "$TARGET_FILE")" "redirect target was not overwritten"
+# Inverse check (SV2_3): the symlink itself was not replaced by a real file.
+LINK_DEST=$(readlink "$DIR/.decisions/issue-99.md")
+assert_equal "$TARGET_FILE" "$LINK_DEST" "symlink at journal path was not rewritten"
+
+# --- Test 10: symlink rejection on LOCKFILE path (parallel O_NOFOLLOW guard)
+# journal-record.sh:147 also opens the lockfile with O_NOFOLLOW. A regression
+# removing it from the lockfile-open path would not be caught by Test 9
+# (which only stages a symlink at the journal file itself, not at the .lock
+# sibling). Mirror Test 9 for the lockfile.
+_flow_test_begin "symlink at lockfile path → exit 2 (O_NOFOLLOW)"
+DIR=$(_jr_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+TARGET_FILE="$DIR/lock-redirect-target.md"
+echo "untouched-lock-target" > "$TARGET_FILE"
+ln -s "$TARGET_FILE" "$DIR/.decisions/issue-200.md.lock"
+ERR=$(_run_journal "$DIR" --issue 200 --type test 2>&1 >/dev/null)
+EXIT=$?
+assert_exit 2 "$EXIT" "exit 2 when lockfile is a symlink"
+assert_contains "lockfile" "$ERR" "stderr names the lockfile refusal"
+assert_contains "symlink" "$ERR" "stderr names the symlink reason"
+assert_equal "untouched-lock-target" "$(cat "$TARGET_FILE")" "lockfile-redirect target was not overwritten"
+
+# --- Test 11: existing journal with unclosed frontmatter → exit 2 (refusal)
+# journal-record.sh:211-220 explicitly refuses to overwrite when the existing
+# journal has an opening `---` with no closing fence — a rewrite would
+# silently corrupt the body that itself starts with `---`. Pre-stage and verify.
+_flow_test_begin "existing journal with unclosed frontmatter → exit 2 (refuse to overwrite)"
+DIR=$(_jr_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+cat > "$DIR/.decisions/issue-201.md" <<'BAD'
+---
+issue: 201
+created: '2026-01-01T00:00:00Z'
+artifacts: []
+no closing fence here
+BAD
+ORIGINAL=$(cat "$DIR/.decisions/issue-201.md")
+ERR=$(_run_journal "$DIR" --issue 201 --type test 2>&1 >/dev/null)
+EXIT=$?
+assert_exit 2 "$EXIT" "exit 2 on unclosed frontmatter"
+assert_contains "unclosed frontmatter" "$ERR" "stderr names the unclosed-fence reason"
+assert_equal "$ORIGINAL" "$(cat "$DIR/.decisions/issue-201.md")" "existing journal was not overwritten"
+
+# --- Test 12: existing journal with malformed YAML → exit 2 (refusal)
+# journal-record.sh:221-226 catches yaml.YAMLError and refuses. Same regression
+# class as Test 11 but a different rejection branch.
+_flow_test_begin "existing journal with malformed YAML → exit 2 (refuse to overwrite)"
+DIR=$(_jr_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+cat > "$DIR/.decisions/issue-202.md" <<'BAD'
+---
+issue: 202
+artifacts: [unclosed-list
+created: bad
+---
+
+body
+BAD
+ORIGINAL=$(cat "$DIR/.decisions/issue-202.md")
+ERR=$(_run_journal "$DIR" --issue 202 --type test 2>&1 >/dev/null)
+EXIT=$?
+assert_exit 2 "$EXIT" "exit 2 on malformed YAML"
+assert_contains "invalid YAML" "$ERR" "stderr names the YAML parse failure"
+assert_equal "$ORIGINAL" "$(cat "$DIR/.decisions/issue-202.md")" "existing journal was not overwritten"
+
+# --- Test 13: existing journal with non-mapping frontmatter → exit 2 (refusal)
+# journal-record.sh:228-232 refuses when safe_load returns something other
+# than a dict (e.g., a top-level scalar or list). Without this guard the
+# `manifest.setdefault(...)` calls below would AttributeError.
+_flow_test_begin "existing journal with non-mapping frontmatter → exit 2 (refuse to overwrite)"
+DIR=$(_jr_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+cat > "$DIR/.decisions/issue-203.md" <<'BAD'
+---
+- this
+- is
+- a
+- list
+---
+
+body
+BAD
+ORIGINAL=$(cat "$DIR/.decisions/issue-203.md")
+ERR=$(_run_journal "$DIR" --issue 203 --type test 2>&1 >/dev/null)
+EXIT=$?
+assert_exit 2 "$EXIT" "exit 2 on non-mapping frontmatter"
+assert_contains "not a YAML mapping" "$ERR" "stderr names the shape mismatch"
+assert_equal "$ORIGINAL" "$(cat "$DIR/.decisions/issue-203.md")" "existing journal was not overwritten"
+
+# --- Test 14: flock concurrency contract — two concurrent invocations
+# journal-record.sh:155-159 uses fcntl.LOCK_EX to serialize same-issue writes.
+# A regression that demotes LOCK_EX → LOCK_SH, drops flock entirely, or moves
+# writes outside the lock would let two concurrent appends race on the
+# read-modify-write of artifacts[], potentially losing one writer's entry.
+# Verify by backgrounding two invocations with distinct metadata, waiting
+# for both, then asserting artifacts[] contains both entries.
+_flow_test_begin "concurrent invocations both append to artifacts[]"
+DIR=$(_jr_mktemp_dir)
+# Background two appends targeting the same --issue.
+_run_journal "$DIR" --issue 204 --type test --metadata writer=alpha >/dev/null 2>&1 &
+PID_A=$!
+_run_journal "$DIR" --issue 204 --type test --metadata writer=beta >/dev/null 2>&1 &
+PID_B=$!
+wait "$PID_A"; EXIT_A=$?
+wait "$PID_B"; EXIT_B=$?
+assert_exit 0 "$EXIT_A" "first concurrent invocation exits 0"
+assert_exit 0 "$EXIT_B" "second concurrent invocation exits 0"
+# Both writers' metadata must be present — neither lost to a read-modify-write race.
+WRITERS=$(python3 - "$DIR/.decisions/issue-204.md" <<'PYEOF'
+import sys, yaml
+with open(sys.argv[1]) as f:
+    c = f.read()
+end = c.find("\n---\n", 4)
+fm = yaml.safe_load(c[4:end])
+writers = sorted(a.get("writer", "") for a in fm["artifacts"])
+print(",".join(writers))
+PYEOF
+)
+assert_equal "alpha,beta" "$WRITERS" "both writers' artifacts persisted (no flock race)"
