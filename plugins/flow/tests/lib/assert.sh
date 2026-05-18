@@ -30,7 +30,21 @@ _flow_assert_pass() {
 
 _flow_assert_fail() {
   FLOW_TEST_FAIL=$((FLOW_TEST_FAIL + 1))
-  local where="${BASH_SOURCE[2]##*/}:${BASH_LINENO[1]}"
+  # Depth-aware citation. Two call shapes exist:
+  #   (a) assert_equal/match/contains/... wraps _flow_assert_fail
+  #       → BASH_SOURCE[2] is the test file (one wrapper between us and caller)
+  #   (b) test body calls _flow_assert_fail directly (used by the static
+  #       lints in command-frontmatter.test.sh)
+  #       → BASH_SOURCE[1] is the test file (no wrapper)
+  # Picking the wrong depth produces citations like [run.sh:80] — the line
+  # in run.sh that sourced the test, not the assertion line. Detect by
+  # checking whether [1] is assert.sh.
+  local where
+  if [ "${BASH_SOURCE[1]##*/}" = "assert.sh" ]; then
+    where="${BASH_SOURCE[2]##*/}:${BASH_LINENO[1]}"
+  else
+    where="${BASH_SOURCE[1]##*/}:${BASH_LINENO[0]}"
+  fi
   printf 'FAIL %s — %s [%s]\n' "$FLOW_TEST_CURRENT" "$1" "$where"
 }
 

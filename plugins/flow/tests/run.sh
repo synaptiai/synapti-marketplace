@@ -12,7 +12,11 @@
 # Exit:
 #   0 — all assertions passed
 #   1 — at least one assertion failed
-#   2 — runner-level error (missing test file, etc.)
+#   2 — runner-level error (missing test file, missing prerequisites, cd failed)
+#
+# Notes on flag choice: `set -uo pipefail` is used WITHOUT `-e` on purpose —
+# the runner must keep iterating across test files even if one of them fails
+# its assertions. Per-step exit codes are checked explicitly where they matter.
 
 set -uo pipefail
 
@@ -24,13 +28,24 @@ if [ ! -f "$LIB" ]; then
   exit 2
 fi
 
+# Prerequisite check: surface a single clear message at the runner level
+# rather than letting individual tests produce cryptic per-tool errors.
+for tool in awk grep sed mktemp; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "run.sh: missing prerequisite: $tool" >&2
+    exit 2
+  fi
+done
+
 # repo root is two levels up from tests/ (plugins/flow/tests -> plugins/flow -> repo).
 REPO_ROOT="$(cd "$TESTS_DIR/../../.." && pwd)"
 
 # Tests run from REPO_ROOT so relative paths in commands/ (e.g.,
 # `.claude/settings.flow.local.json`) resolve against the same directory the
-# actual command bash blocks would resolve them in.
-cd "$REPO_ROOT"
+# actual command bash blocks would resolve them in. Fail loudly if the cd
+# fails — silently running from the caller's cwd would make every test that
+# uses a relative path report misleading results.
+cd "$REPO_ROOT" || { echo "run.sh: cannot cd to $REPO_ROOT" >&2; exit 2; }
 
 if [ $# -gt 0 ]; then
   TEST_FILES=("$@")
@@ -49,6 +64,10 @@ fi
 TOTAL_PASS=0
 TOTAL_FAIL=0
 FAILED_FILES=()
+# Tracked separately from assertion failures: a runner-level error (missing
+# test file, malformed SUMMARY) is NOT the same as a test failure. The exit
+# code distinguishes 1 (assertions failed) from 2 (runner error).
+RUNNER_ERR=0
 
 for TEST_FILE in "${TEST_FILES[@]}"; do
   # Resolve relative arg against TESTS_DIR.
@@ -57,14 +76,18 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
   fi
   if [ ! -f "$TEST_FILE" ]; then
     echo "run.sh: $TEST_FILE not found" >&2
-    TOTAL_FAIL=$((TOTAL_FAIL + 1))
+    RUNNER_ERR=1
     FAILED_FILES+=("$TEST_FILE")
     continue
   fi
 
   echo "=== $(basename "$TEST_FILE") ==="
-  # Capture each file's output AND its summary line so the runner can
-  # extract counts. Run in a subshell so counter state doesn't leak.
+  # Capture stdout AND stderr together: stderr from awk/grep/jq inside test
+  # bodies otherwise interleaves out-of-order with the SUMMARY extraction
+  # below and is invisible to CI artifact capture (T4/EV2). Also capture the
+  # subshell's exit code so a `set -u` unbound-var abort or explicit `exit`
+  # inside a test body surfaces with diagnostic context rather than just a
+  # bare "no SUMMARY line".
   OUTPUT=$(
     set +e
     # shellcheck source=lib/assert.sh
@@ -72,19 +95,38 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
     # shellcheck disable=SC1090
     source "$TEST_FILE"
     _flow_test_summary
-  )
+  2>&1)
+  RC=$?
   printf '%s\n' "$OUTPUT"
-  # Extract last SUMMARY line — robust against tests that themselves print
-  # the word "SUMMARY" in PASS messages.
-  SUMMARY=$(printf '%s\n' "$OUTPUT" | grep -E '^SUMMARY pass=[0-9]+ fail=[0-9]+$' | tail -1)
+  # Extract last SUMMARY line — tolerate trailing whitespace and CR (a stray
+  # CRLF in a test file used to make the anchored regex reject the line).
+  SUMMARY=$(printf '%s\n' "$OUTPUT" | tr -d '\r' | grep -E '^SUMMARY pass=[0-9]+ fail=[0-9]+[[:space:]]*$' | tail -1)
   if [ -z "$SUMMARY" ]; then
-    echo "run.sh: WARN no SUMMARY line from $(basename "$TEST_FILE"); counting as 1 failure" >&2
+    echo "run.sh: WARN no SUMMARY line from $(basename "$TEST_FILE") (subshell exit=$RC); last lines:" >&2
+    printf '%s\n' "$OUTPUT" | tail -10 >&2
     TOTAL_FAIL=$((TOTAL_FAIL + 1))
     FAILED_FILES+=("$(basename "$TEST_FILE")")
     continue
   fi
   FILE_PASS=$(printf '%s' "$SUMMARY" | sed -E 's/.*pass=([0-9]+).*/\1/')
   FILE_FAIL=$(printf '%s' "$SUMMARY" | sed -E 's/.*fail=([0-9]+).*/\1/')
+  # Defensive: a future SUMMARY format that emits non-numeric values would
+  # break the arithmetic that follows. Catch and route to a clear error.
+  if ! [[ "$FILE_PASS" =~ ^[0-9]+$ ]] || ! [[ "$FILE_FAIL" =~ ^[0-9]+$ ]]; then
+    echo "run.sh: WARN malformed SUMMARY from $(basename "$TEST_FILE"): '$SUMMARY'" >&2
+    TOTAL_FAIL=$((TOTAL_FAIL + 1))
+    FAILED_FILES+=("$(basename "$TEST_FILE")")
+    continue
+  fi
+  # Zero-assertion files are a hazard, not a clean PASS: a future test that
+  # accidentally comments out every assertion would otherwise silently
+  # report green. Treat as a runner-level error.
+  if [ "$FILE_PASS" = "0" ] && [ "$FILE_FAIL" = "0" ]; then
+    echo "run.sh: WARN $(basename "$TEST_FILE") executed no assertions; counting as failure" >&2
+    RUNNER_ERR=1
+    FAILED_FILES+=("$(basename "$TEST_FILE")")
+    continue
+  fi
   TOTAL_PASS=$((TOTAL_PASS + FILE_PASS))
   TOTAL_FAIL=$((TOTAL_FAIL + FILE_FAIL))
   if [ "$FILE_FAIL" != "0" ]; then
@@ -95,8 +137,16 @@ done
 
 echo "=== overall ==="
 echo "TOTAL pass=$TOTAL_PASS fail=$TOTAL_FAIL"
-if [ "$TOTAL_FAIL" != "0" ]; then
+if [ "${#FAILED_FILES[@]}" -gt 0 ]; then
   echo "FAILED files: ${FAILED_FILES[*]}"
+fi
+# Exit code precedence: runner errors (exit 2) beat assertion failures
+# (exit 1) beat success (exit 0). The two are reported separately above so
+# CI can tell "you broke the harness" apart from "a real test failed".
+if [ "$RUNNER_ERR" != "0" ]; then
+  exit 2
+fi
+if [ "$TOTAL_FAIL" != "0" ]; then
   exit 1
 fi
 exit 0
