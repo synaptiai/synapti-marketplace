@@ -167,10 +167,10 @@ If a finding was claimed resolved but the code at that location is unchanged, fl
 |----------|----------|
 | P1 findings (any) | REQUEST_CHANGES |
 | P2 findings (any) | REQUEST_CHANGES |
-| P3 findings only | COMMENT (fix-expected — author must fix in-PR or file a six-field Proactive-Autonomy escalation; P3 is not a free pass) |
+| P3 findings only | COMMENT (fix-expected — author must fix in-PR; P3 is not a free pass) |
 | No findings | APPROVE |
 
-Note: P3 → COMMENT is NOT "approve with nits." The PR author is expected to fix every P3 in-PR unless they file an escalation justifying deferral. Reviewers should not approve PRs with unaddressed P3s.
+Note: P3 → COMMENT is NOT "approve with nits." The PR author is expected to fix every P3 in-PR. Finding triage is NEVER a valid escalation trigger (see `skills/llm-operator-principles/SKILL.md` and `references/escalation-format.md`) — reviewers should not approve PRs with unaddressed P3s, and authors should not file escalations to ask whether to fix them.
 
 ## Adversarial Protocol (Agent Teams)
 

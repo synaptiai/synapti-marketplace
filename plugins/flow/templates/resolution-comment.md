@@ -30,7 +30,7 @@ For each item the author believes requires a judgment call beyond autonomous res
 - **Tried**: {what was considered and why it did not resolve in-PR}
 - **Options**: {2–3 concrete paths forward with trade-offs}
 - **Recommendation**: {recommended option and reasoning}
-- **Time sensitivity**: {blocking / urgent / safe to wait — with justification}
+- **Blocking?**: {yes / soft / no — no calendar-time language}
 - **Risk**: {what happens if we defer, and to whom}
 - Follow-up issue (if created): #{issue_number}
 

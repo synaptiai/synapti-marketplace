@@ -1,3 +1,12 @@
+<!--
+PR body anti-estimation guard:
+This template MUST NOT include calendar-time estimates (weeks, days, hours, sprints,
+ETAs, "by Friday," etc.) in any field. If size context is necessary, use t-shirt
+sizing (S/M/L) and only when the user explicitly asked for it. The flow plugin
+runs under an LLM operator; calendar-time framings invite incorrect estimates that
+anchor downstream deferral. See `skills/llm-operator-principles/SKILL.md`.
+-->
+
 ## Summary
 
 {2-3 sentence description of what changed and why}
@@ -43,6 +52,10 @@ Closes #{issue_number}
 | P1 | {X} | {All resolved before PR creation} |
 | P2 | {Y} | {Summary} |
 | P3 | {Z} | {Summary} |
+
+### Known cosmetic notes
+
+{Cosmetic P3 findings in untouched files that the agent determined were not bounded enough to fix in-PR (>10 lines) — listed as `file:line — one-line description`. Empty if all P3 were fixed or no cosmetic-P3-in-untouched findings surfaced. NEVER use this section to defer fixable P1/P2 findings or any finding in a touched file; those MUST be fixed before PR creation per `skills/llm-operator-principles/SKILL.md`.}
 
 ### Review Cycle History
 <!-- Updated by /flow:address -->

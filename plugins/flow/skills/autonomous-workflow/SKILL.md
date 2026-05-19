@@ -81,6 +81,8 @@ When a command or skill says "use the AskUserQuestion tool", you MUST invoke the
 
 Journal dir defaults to `.decisions/`, configurable in settings.
 
+**Anti-estimation guard for journal entries:** journal entries MUST NOT include calendar-time estimates (weeks, days, hours, sprints, ETAs, "by Friday"). Use t-shirt sizing (S/M/L) only when the user has explicitly asked for size context. Describe work in terms of artifacts and tool calls, not wall-clock duration. See `skills/llm-operator-principles/SKILL.md`. This guard exists because journal entries are the most common surface where calendar-time framings leak through and anchor downstream deferral.
+
 ## Parallel Execution
 
 Dispatch independent operations in a single message:
@@ -91,18 +93,19 @@ Dispatch independent operations in a single message:
 
 ## Bounded Verification
 
-Quality check loops have max iterations from `settings.json`:
+Quality check loops have max iterations from `settings.json`. These ceilings are safety nets against true infinite loops, NOT planned stop points — see `skills/llm-operator-principles/SKILL.md`:
 
 1. Run quality commands
 2. If failures, fix and re-run
-3. After `qualityCheckMaxIterations` (default 3), escalate to user
-4. Never loop indefinitely
+3. Approaching `qualityCheckMaxIterations` without convergence is a signal to re-check understanding (are two findings in tension? are you fixing the wrong thing?), not a budget to stop at. Continue iterating until convergence.
+4. Only halt for **genuine non-convergence**: the same failure persists across the last 3 iterations with no progress AND the ceiling is actually reached. In that case, file a six-field Proactive-Autonomy escalation citing "genuinely ambiguous architecture decision" — NOT finding-triage.
+5. Never loop indefinitely past the ceiling without surfacing the non-convergence diagnostic.
 
 ## Stop Conditions
 
 | Trigger | Action |
 |---------|--------|
-| 3+ verification failures on the same issue | Stop fixing forward. Return to EXPLORE — the problem is architectural. |
+| Genuine non-convergence (same findings persist 3+ iterations AND ceiling reached) | File a six-field Proactive-Autonomy escalation per `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence. Do NOT silently exit the loop. |
 | Plan has >10 tasks for a single issue | Decompose the issue first. One PR should not span 10 tasks. |
 | EXPLORE phase yields contradictory signals | Stop. Ask the user for clarification before planning. |
 | >5 files modified without staging or committing | Stop. What you have should be committable. If not, the tasks are too large. |
@@ -169,22 +172,23 @@ Every escalation to a human MUST follow this structure. Omitting fields is not p
 | **What I tried** | What you attempted before escalating — research, alternatives considered, commands run |
 | **Options** | 2-3 concrete paths forward, each with trade-offs. Label one "(Recommended)" |
 | **My recommendation** | Which option you recommend and why — never leave this blank |
-| **Time sensitivity** | Is this blocking? Urgent? Safe to defer? |
+| **Blocking?** | Yes (blocks the current command), Soft (advisory), or No (informational). Do NOT use calendar-time language. |
 | **Risk if wrong** | What happens if the chosen option turns out to be the wrong call, and who is affected |
 
 ### When Escalation IS Required
 
 - **Irreversible actions** — merge, release, force-push, data deletion, production deploys
-- **Genuinely ambiguous preference decisions** — two valid approaches where the trade-off depends on user priorities the agent cannot infer
+- **Genuinely ambiguous preference decisions** — two valid approaches where the trade-off depends on user priorities the agent cannot infer (product/architecture decisions only, NOT finding triage)
 - **Out-of-whitelist runtime skip requests** — skipping verification for a category not in the `markdown-only`, `config-only`, or `dependency-bump-only` whitelist
-- **Repeated verification failures** — after `maxDebugIterations` or `fixForwardMaxIterations` exhausted
+- **Verification ceilings exceeded after re-checking understanding** — only after `maxDebugIterations` or `fixForwardMaxIterations` have been fully exhausted AND the agent has re-checked whether findings are in tension or being misunderstood. Approaching a ceiling is not a trigger; the ceiling is a safety net, not a budget. See `skills/llm-operator-principles/SKILL.md`.
 
 ### When Escalation is NOT Needed
 
 - **Reversible local actions** — file edits, commits, branch creation, staging (Tier 1)
 - **Actions within the three-tier safety framework** — Tier 1 and Tier 2 actions that are already classified as autonomous or journal-and-proceed
 - **Decisions with clear policy** — the skill, command, or governance framework already specifies the correct action
-- **Fixing your own findings** — P1/P2 findings from self-review are your responsibility to fix, not escalate
+- **Fixing any findings (P1/P2/P3)** — finding triage is NEVER a valid escalation trigger. Findings are work, not decisions. Fix in this PR by default. See `skills/llm-operator-principles/SKILL.md` and `references/escalation-format.md`.
+- **Approaching but not exceeding an iteration ceiling** — `fixForwardMaxIterations`, `reviewCycleLimit`, `qualityCheckMaxIterations` are safety nets, not budgets. Iteration 7 of 10 is the middle of the safety margin, not "the ceiling."
 
 ## Anti-Patterns
 
@@ -193,4 +197,7 @@ Every escalation to a human MUST follow this structure. Omitting fields is not p
 | **Lazy Verification** | Tests pass does not equal works. "Theoretically works" is not "actually works." The proof is running it — build it, start it, hit the endpoint, check the output. | Run the code. Capture the output. Show the evidence. |
 | **Lazy Escalation** | Asking the user without trying first. Open-ended questions with no research, no options, no recommendation. "What should I do?" is never acceptable. | Try to resolve it yourself. If you still need input, use the six-field template with your recommendation. |
 | **Punt-to-User** | "What should I do?" or "How should we proceed?" without options. Agents are teammates, not tools waiting for instructions. Every escalation must include 2-3 options with a recommended path. | Present structured options. Label one "(Recommended)." Explain the trade-offs. |
-| **Silent Deferral** | Downgrading findings to avoid escalation. P3 "note only" was the old way — the new way is fix or escalate with the six-field structure. A finding that matters enough to mention matters enough to act on. | Fix it (if within scope) or file a six-field escalation. Never silently downgrade. |
+| **Silent Deferral** | Downgrading findings to avoid escalation, or routing findings to follow-up issues instead of fixing them. A finding that matters enough to mention matters enough to act on. | Fix it. Finding triage is NEVER a valid escalation trigger; see `skills/llm-operator-principles/SKILL.md`. Default mode does not create follow-up issues for findings. |
+| **Triage Escalation** | Drafting a six-field escalation about a P1/P2/P3 finding to ask whether to fix it. | Stop. Fix the finding. Escalations are for true decisions (product, architecture, irreversible actions), not for work the agent can do. |
+| **Convergence Surrender** | "We hit iteration 3 of fix-forward, escalating remaining findings." | Continue iterating. Iteration ceilings are safety nets, not budgets. The default ceilings (10) are designed to make the LLM converge well before the ceiling, not to stop at it. |
+| **Calendar Anchoring** | "Multi-week effort," "defer to next sprint," "ETA: end of quarter." | Re-frame in tool calls. The LLM operator does not have weeks or sprints. Use t-shirt sizing (S/M/L) only when the user explicitly asks for size. |

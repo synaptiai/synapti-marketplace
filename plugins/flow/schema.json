@@ -231,8 +231,28 @@
         "requireRuntimeVerification": { "type": "boolean", "default": true }
       }
     },
-    "reviewCycleLimit": { "type": "integer", "default": 3, "minimum": 1 },
-    "fixForwardMaxIterations": { "type": "integer", "default": 2, "minimum": 1 }
+    "reviewCycleLimit": {
+      "type": "integer",
+      "default": 10,
+      "minimum": 1,
+      "description": "Maximum review-and-address cycles between code-reviewer and code-author roles. Defaults to 10 because the ceiling is a safety net against true infinite loops, not a planned stop point — LLM operators iterate cheaply. See skills/llm-operator-principles/SKILL.md."
+    },
+    "fixForwardMaxIterations": {
+      "type": "integer",
+      "default": 10,
+      "minimum": 1,
+      "description": "Maximum fix-forward iterations on self-review or holdout-validation findings. Defaults to 10 because the ceiling is a safety net, not a budget — convergence means zero findings, not exhausted budget. See skills/llm-operator-principles/SKILL.md."
+    },
+    "autonomous": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, the agent does NOT use AskUserQuestion for decisions the agent can resolve under the llm-operator-principles skill. AskUserQuestion is reserved for Tier 3 confirmations (merge, release) and true product/architecture decisions. Recommended for sole-maintainer repositories. See skills/llm-operator-principles/SKILL.md."
+    },
+    "minimalScope": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, restores the original deferral behavior for cosmetic P3 in untouched files only: the 'Create a follow-up issue?' AskUserQuestion is re-enabled, and Boy Scout expansion is softened. All other principles still apply (P1/P2 fix in-PR, no calendar estimates, fix-forward unbounded). Use when the user has deliberately constrained scope. See skills/llm-operator-principles/SKILL.md."
+    }
   },
   "additionalProperties": false
 }

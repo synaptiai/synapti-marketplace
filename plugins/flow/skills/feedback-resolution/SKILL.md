@@ -104,13 +104,13 @@ Pushback is a narrow, evidence-backed response — not a general "I disagree" es
 
 "I disagree" alone is NOT valid pushback. Subjective preference differences resolve in favor of the reviewer — if you don't have factual evidence, a broken test, or a CLAUDE.md citation, apply the fix.
 
-Always explain the reasoning when pushing back. Never ignore feedback silently. If pushback would require a judgment call beyond the three valid categories above, file a six-field Proactive-Autonomy escalation instead (Situation / Tried / Options / Recommendation / Time sensitivity / Risk).
+Always explain the reasoning when pushing back. Never ignore feedback silently. If pushback would require a judgment call beyond the three valid categories above, file a six-field Proactive-Autonomy escalation per `references/escalation-format.md` — but only if this is a genuine product/architecture decision. Finding triage (P1/P2/P3 disposition) is NEVER a valid escalation trigger; see `skills/llm-operator-principles/SKILL.md`.
 
 ## Rationalization Prevention
 
 | Excuse | Response |
 |--------|----------|
-| "While fixing this, I noticed something else to improve" | Does it pass the proximity test? If yes, fix it in a separate `improve:` commit. If no, create a follow-up issue with `/flow:issue`. |
+| "While fixing this, I noticed something else to improve" | Does it pass the proximity test? If yes, fix it in a separate `improve:` commit. If no AND it is cosmetic P3 in an untouched file: fix-if-bounded or document inline (default mode) — only create a follow-up issue under `minimalScope` mode. For P1/P2 anywhere: fix in this PR. |
 | "The reviewer probably meant this broader change" | Don't guess. Address the literal comment. Clarify if unsure. |
 | "I'll batch all fixes into one commit" | One commit per feedback item. Traceability requires it. |
 

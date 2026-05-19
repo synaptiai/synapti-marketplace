@@ -18,7 +18,7 @@
 #     --tried "..." \
 #     --options "1: First option;2: Second option;3: Third option" \
 #     --recommendation "..." \
-#     --time-sensitivity "blocking|urgent|low|deadline:YYYY-MM-DD" \
+#     --blocking "yes|soft|no" \
 #     --risk "..."
 #
 # Options are semicolon-separated to keep the CLI single-shot. Each option
@@ -39,10 +39,11 @@ Usage: flow-escalate.sh \
          --tried TEXT \
          --options "1: A;2: B[;3: C]" \
          --recommendation TEXT \
-         --time-sensitivity TEXT \
+         --blocking TEXT \
          --risk TEXT
 
 All six fields are required. Options are semicolon-separated (each `<n>: <text>`).
+The --blocking flag should be "yes", "soft", or "no" (no calendar-time language).
 See plugins/flow/references/escalation-format.md for field semantics.
 USAGE
 }
@@ -51,36 +52,62 @@ SITUATION=""
 TRIED=""
 OPTIONS=""
 RECOMMENDATION=""
-TIME_SENSITIVITY=""
+BLOCKING=""
 RISK=""
+
+# Distinguishes "flag passed without a value" (e.g., trailing `--blocking`) from
+# "flag absent." Without this guard, a trailing flag consumes its own slot via
+# `${2:-}` and the user gets a misleading "missing required fields" message.
+require_value() {
+  if [ "$2" -lt 2 ]; then
+    echo "flow-escalate.sh: $1 requires a value" >&2
+    exit 1
+  fi
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --situation)         SITUATION="${2:-}"; shift 2 ;;
-    --tried)             TRIED="${2:-}"; shift 2 ;;
-    --options)           OPTIONS="${2:-}"; shift 2 ;;
-    --recommendation)    RECOMMENDATION="${2:-}"; shift 2 ;;
-    --time-sensitivity)  TIME_SENSITIVITY="${2:-}"; shift 2 ;;
-    --risk)              RISK="${2:-}"; shift 2 ;;
-    -h|--help)           usage; exit 0 ;;
-    *)                   echo "flow-escalate.sh: unknown argument: $1" >&2; usage; exit 1 ;;
+    --situation)      require_value "$1" "$#"; SITUATION="$2"; shift 2 ;;
+    --tried)          require_value "$1" "$#"; TRIED="$2"; shift 2 ;;
+    --options)        require_value "$1" "$#"; OPTIONS="$2"; shift 2 ;;
+    --recommendation) require_value "$1" "$#"; RECOMMENDATION="$2"; shift 2 ;;
+    --blocking)       require_value "$1" "$#"; BLOCKING="$2"; shift 2 ;;
+    --risk)           require_value "$1" "$#"; RISK="$2"; shift 2 ;;
+    -h|--help)        usage; exit 0 ;;
+    *)                echo "flow-escalate.sh: unknown argument: $1" >&2; usage; exit 1 ;;
   esac
 done
 
 # Required-field check
 MISSING=()
-[ -z "$SITUATION" ]        && MISSING+=("--situation")
-[ -z "$TRIED" ]            && MISSING+=("--tried")
-[ -z "$OPTIONS" ]          && MISSING+=("--options")
-[ -z "$RECOMMENDATION" ]   && MISSING+=("--recommendation")
-[ -z "$TIME_SENSITIVITY" ] && MISSING+=("--time-sensitivity")
-[ -z "$RISK" ]             && MISSING+=("--risk")
+[ -z "$SITUATION" ]      && MISSING+=("--situation")
+[ -z "$TRIED" ]          && MISSING+=("--tried")
+[ -z "$OPTIONS" ]        && MISSING+=("--options")
+[ -z "$RECOMMENDATION" ] && MISSING+=("--recommendation")
+[ -z "$BLOCKING" ]       && MISSING+=("--blocking")
+[ -z "$RISK" ]           && MISSING+=("--risk")
 
 if [ ${#MISSING[@]} -gt 0 ]; then
   echo "flow-escalate.sh: missing required fields: ${MISSING[*]}" >&2
   usage
   exit 1
 fi
+
+# Value-space validation for --blocking: the rename from --time-sensitivity
+# only matters if the actual values are constrained. Without this check, a
+# caller passing `--blocking "by Friday"` defeats the calendar-time framing
+# the rename was designed to eliminate. Case-insensitive on input so canonical
+# prose examples ("Yes."/"Soft."/"No.") work without normalization, normalized
+# to lowercase on render. See references/escalation-format.md.
+case "$BLOCKING" in
+  yes|Yes|YES) BLOCKING="yes" ;;
+  soft|Soft|SOFT) BLOCKING="soft" ;;
+  no|No|NO) BLOCKING="no" ;;
+  *)
+    echo "flow-escalate.sh: --blocking must be 'yes', 'soft', or 'no' (case-insensitive; got: '$BLOCKING')" >&2
+    exit 2
+    ;;
+esac
 
 # Format options (semicolon-separated → numbered markdown list).
 # Each item in OPTIONS is `N: text`. Validate that each non-empty entry has the
@@ -134,7 +161,7 @@ $(printf '%s' "$OPTIONS_BLOCK" | awk 'NF { sub(/^[0-9]+:[[:space:]]*/, ""); prin
 
 **Recommendation** — $RECOMMENDATION
 
-**Time sensitivity** — $TIME_SENSITIVITY
+**Blocking?** — $BLOCKING
 
 **Risk** — $RISK
 BODY

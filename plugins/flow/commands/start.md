@@ -21,6 +21,7 @@ Skill-driven workflow from issue assignment through implementation. Follows the 
 ## Required Skills
 
 This command operates with these domain skills loaded:
+- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
 - `branch-and-task-management` — branch creation, task decomposition
 - `change-classification` — change context awareness
 - `capability-discovery` — detect available quality tools
@@ -265,7 +266,7 @@ If acceptance criteria are found, build a **Spec Validation Table** and treat it
 >
 > **Recommendation** — Option {1|2} — measurable criteria produce better verdicts and prevent vague implementations.
 >
-> **Time sensitivity** — Blocks planning. Must resolve before Phase 2.
+> **Blocking?** — Yes. Blocks planning; Phase 2 cannot proceed until this resolves.
 >
 > **Risk** — Choosing Option 3 (`manual`) means no automated verdict for this criterion and requires a human-in-the-loop at VERIFY phase.
 
@@ -330,7 +331,7 @@ Agent(implementation-planner):
    Return: task list, dependency graph, suggested order."
 ```
 
-Each atomic task flows through implementation → test → evidence collection within the same task lifecycle in Phase 3 (CODE). Phase 4 (VERIFY) still runs the full evidence bundle assembly and independent verdict judge, but per-task evidence is captured at the moment the task completes, not weeks after the author has context-switched.
+Each atomic task flows through implementation → test → evidence collection within the same task lifecycle in Phase 3 (CODE). Phase 4 (VERIFY) still runs the full evidence bundle assembly and independent verdict judge, but per-task evidence is captured at the moment the task completes, not in a bulk pass after all tasks have completed and context is fragmented.
 
 **Stranger Test check** (mandatory PLAN gate):
 
@@ -394,7 +395,7 @@ For each task (in dependency order):
        - Re-run tests
        - Repeat until all tests pass (bounded by closedLoop.maxDebugIterations)
        - Do NOT proceed to step 6. Do NOT call TaskUpdate(completed).
-       - After max iterations without resolution, escalate to user via AskUserQuestion.
+       - Approaching `closedLoop.maxDebugIterations` is a signal to re-check whether you're fixing the wrong layer or whether two test failures are in tension — not a budget to stop at. Only halt for genuine non-convergence (same failure persists 3+ iterations with no progress AND the ceiling is reached); in that case file a six-field Proactive-Autonomy escalation per `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence.
      IF tests PASS → continue to step 6
   6. REFACTOR: Clean up implementation and tests. Re-run tests — they must still pass.
   7. Capture verification evidence:
@@ -427,7 +428,7 @@ $TEST_CMD
 $TYPECHECK_CMD
 ```
 
-If failures: fix and re-run. After max iterations, escalate to user.
+If failures: fix and re-run. The iteration ceiling is a safety net against true infinite loops, not a budget — approaching it is a signal to re-check understanding, not to escalate. Only halt for genuine non-convergence per `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence.
 
 **Build-and-run verification** (before proceeding to Phase 4):
 
@@ -455,11 +456,12 @@ Prove everything works with fix-forward:
       Check for: logic errors, security issues, missing edge cases,
       convention violations. Return P1/P2/P3 findings with file:line."
    ```
-   **Fix-forward** (max `fixForwardMaxIterations`, default 2):
+   **Fix-forward** (bounded by `fixForwardMaxIterations`, default 10 — safety net against true infinite loops, NOT a planned stop point; see `skills/llm-operator-principles/SKILL.md`):
    - P1 findings → fix immediately (you just wrote this code, no "pre-existing" excuse)
    - P2 findings → fix immediately
-   - P3 findings → fix if contained (<10 lines, same file), otherwise note for PR body
+   - P3 findings → fix immediately (same disposition as P1/P2 — the proximity test is not a deferral mechanism). Cosmetic P3 in untouched files only: fix if bounded (<10 lines) or document inline in the PR body under `### Known cosmetic notes`. Finding triage is NEVER a valid escalation trigger.
    - After fixes: re-run quality commands, then targeted re-review on files changed by fixes
+   - Approaching the iteration ceiling without convergence is a signal to re-check understanding (are two findings in tension? are you fixing the wrong thing?), not to escalate the remaining findings. See `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence for the one terminal case.
 4. **Holdout validation** — invoke `holdout-validation` skill to cross-reference self-review claims against actual file state:
    ```
    Skill(holdout-validation):
@@ -471,8 +473,8 @@ Prove everything works with fix-forward:
    **Blocking treatment:**
    - P1/P2 findings from holdout-validation → fix immediately before proceeding (same fix-forward loop as step 3)
    - After fixes: re-run holdout-validation to confirm the conflict is resolved
-   - P3 findings → note for PR body, do not block
-   - Only proceed to step 5 when holdout-validation returns PASS or P3-only
+   - P3 findings → fix in-PR as part of the same convergence loop. Only cosmetic P3 in untouched files may be documented inline in the PR body under `### Known cosmetic notes` instead of fixed. Do NOT defer fixable P3 to the PR body.
+   - Only proceed to step 5 when holdout-validation returns PASS or no fixable findings remain
 
    The holdout-validation output is passed to the verdict-judge in step 6 as a required input.
 5. **Per-criterion evidence collection** — execute verification tasks created in Phase 2:
@@ -503,7 +505,7 @@ Prove everything works with fix-forward:
 
    **Handle verdicts:**
    - **All PASS** → proceed to completion gate
-   - **Any FAIL** → enter fix loop: fix the failing criterion, re-collect evidence, re-judge (bounded by `fixForwardMaxIterations`). After max iterations, escalate remaining FAIL verdicts to user via `AskUserQuestion`.
+   - **Any FAIL** → enter fix loop: fix the failing criterion, re-collect evidence, re-judge (bounded by `fixForwardMaxIterations` as a safety net, not a budget — see `skills/llm-operator-principles/SKILL.md`). FAIL on an acceptance criterion is a genuine escalation case (failing acceptance criteria is a product-level decision, not finding-triage) — but only escalate after genuine non-convergence (same criterion fails 3+ iterations with no progress AND the ceiling is reached).
    - **NEEDS-HUMAN-REVIEW** (no FAILs):
      - If `verdict.requireAllPass` is `true` → treat as FAIL (enter fix loop to produce definitive evidence)
      - If `verdict.requireAllPass` is `false` (default) → present verdict table to user via `AskUserQuestion`:

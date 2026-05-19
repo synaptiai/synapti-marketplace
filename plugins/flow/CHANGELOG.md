@@ -1,5 +1,66 @@
 # Changelog
 
+## 2.4.0 (2026-05-19)
+
+### Behavior change — LLM Operator Principles
+
+The flow plugin now treats Claude as an LLM operator that does not tire. Three structural shifts close the deferral and time-estimation patterns observed in v2.3.x usage despite the existing "P3 not deferrable" policy.
+
+#### New skill: `llm-operator-principles`
+
+A new foundational skill at `skills/llm-operator-principles/SKILL.md` is consulted by every `/flow:*` command. It encodes:
+
+- **Convergence = zero findings, not exhausted budget.** Iteration ceilings are safety nets, not budgets.
+- **In-PR fix by default for all findings.** Finding triage (P1/P2/P3 disposition) is NEVER a valid escalation trigger.
+- **Calendar-time estimates prohibited.** PR bodies, decision-journal entries, escalations, and resolution comments MUST NOT include weeks/days/hours/sprints/ETAs.
+- **Multi-PR sequencing is the user's call.** Default to one PR that resolves all findings.
+
+#### Settings changes
+
+- `fixForwardMaxIterations` default raised from `2` to `10`
+- `reviewCycleLimit` default raised from `3` to `10`
+- New flag `autonomous` (default `false`) — when `true`, removes `AskUserQuestion` interruptions for any decision the agent can resolve under the operator principles. Recommended for sole-maintainer repositories.
+- New flag `minimalScope` (default `false`) — when `true`, restores the original follow-up-issue workflow for cosmetic P3 in untouched files only. P1/P2 findings still fix in-PR even in this mode.
+
+#### Command changes
+
+- `commands/address.md`, `commands/review.md`: the "Create a follow-up issue?" `AskUserQuestion` prompts are removed in default mode. Cosmetic P3 in untouched files is fix-if-bounded (<10 lines) or documented inline in the PR body. `minimalScope: true` restores the original workflow.
+- `commands/pr.md`: removed the "after 2 fix iterations, remaining P2 become Known issues" deferral path. P2s are fixed until zero remain.
+- All six commands (`start`, `address`, `pr`, `review`, `commit`, `merge`) reference `llm-operator-principles` as the first required skill.
+
+#### Reference changes
+
+- `references/escalation-format.md`: the `Time sensitivity` field is replaced by a `Blocking?` field (yes/soft/no, no calendar verbs). Finding triage is explicitly added under "When escalation IS NOT required."
+- The same anti-deferral and anti-estimation language is propagated to `skills/code-quality-principles`, `skills/feedback-resolution`, `skills/code-review-methodology`, `skills/evidence-based-development`, `skills/autonomous-workflow`, `skills/specification-capture`, and `commands/commit.md`.
+
+#### Template changes
+
+- `templates/pr-body.md`: HTML-comment guard forbids calendar-time estimates in any field.
+
+#### Migration
+
+**Behavior change for unpinned configs.** Existing `.claude/settings.flow.json` files that explicitly pinned `fixForwardMaxIterations` or `reviewCycleLimit` to the old defaults (2 / 3) keep their pinned values — the cascade honors local settings. Configs that did not pin these keys (relying on plugin defaults) will see the new 10 / 10 ceilings on first run. Review against the new safety-net framing: ceilings are no longer planned stop points; reaching them is the signal that you have hit **genuine non-convergence** (see `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence).
+
+To restore v2.3.x behavior, set in `.claude/settings.flow.json`:
+
+```json
+{
+  "fixForwardMaxIterations": 2,
+  "reviewCycleLimit": 3,
+  "minimalScope": true
+}
+```
+
+#### Additional changes from in-PR self-review (fix-forward on PR #107)
+
+The first run of `/flow:review` under the new operator principles surfaced five findings; all were fixed in-PR per the new defaults (no deferral). Notable additions:
+
+- `bin/flow-escalate.sh` — `--blocking` now enforces a `yes|soft|no` value space. Without this guard, a caller passing `--blocking "by Friday"` would defeat the calendar-time-rename's purpose. Test 8 covers the enforcement (5 invalid + 3 valid values).
+- `bin/flow-escalate.sh` — trailing-flag detection via `require_value` helper. A trailing flag like `flow-escalate.sh ... --blocking` (no value following) now produces "`--blocking requires a value`" instead of the misleading missing-fields message. Test 9 covers this path.
+- `skills/llm-operator-principles/SKILL.md` and `commands/address.md` — new "Genuine non-convergence" guidance defining the ONE case where an iteration ceiling becomes a stop point: same findings persist 3 iterations in a row AND `fixForwardMaxIterations` is reached. Closes the silent-failure gap where the LLM could either silently exceed the ceiling or exit with unresolved findings.
+
+Closes #106.
+
 ## 2.3.1 (2026-05-08)
 
 ### Bug fixes

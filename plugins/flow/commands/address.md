@@ -15,6 +15,7 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 
 ## Required Skills
 
+- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
 - `feedback-resolution` — surgical changes, context recovery, pushback criteria
 - `change-classification` — verify no out-of-context changes
 - `capability-discovery` — quality commands for verification
@@ -222,22 +223,15 @@ For **Question** items: prepare a response comment (no code change needed).
 
 For **Pushback** items: explain reasoning in response comment.
 
-For **Out-of-scope** items — the proximity test is NOT a deferral mechanism for P1/P2 findings:
+For **Out-of-scope** items — finding triage is NEVER a valid escalation trigger; the default action for every finding is fix in this PR:
 
 A finding in a file the PR already modifies is NEVER out-of-scope — it must be fixed in this PR (Boy Scout Rule + ownership of known defects in touched files).
 
-Only **cosmetic P3 findings in truly untouched files** may become follow-up issues by default. P1 or P2 findings in untouched files must either:
+P1 or P2 findings in untouched files must be addressed in-PR (expand scope with an `improve:` commit if the fix is bounded). They MUST NOT be filed as a six-field Proactive-Autonomy escalation — finding triage is not a decision, it is work. See `skills/llm-operator-principles/SKILL.md`.
 
-1. Be addressed in-PR (expand scope with an `improve:` commit if the fix is bounded), OR
-2. Be filed as a six-field Proactive-Autonomy escalation:
-   - **Situation**: what the finding is and where (file:line)
-   - **Tried**: what you considered and why it didn't resolve in-PR
-   - **Options**: 2–3 concrete paths forward with trade-offs
-   - **Recommendation**: your recommended option with reasoning
-   - **Time sensitivity**: is this blocking? urgent? safe to wait?
-   - **Risk**: what happens if we defer, and to whom
+**Default mode (no `minimalScope` set):** cosmetic P3 findings in truly untouched files are fixed if bounded (<10 lines) or documented inline in the PR body under a `### Known cosmetic notes` section. Do NOT create follow-up issues, do NOT use AskUserQuestion to ask whether to defer.
 
-For cosmetic P3 findings in untouched files that the team agrees to track separately:
+**Minimal-scope mode (`settings.json` → `minimalScope: true`, or user said "minimal scope" in-conversation):** for cosmetic P3 findings in truly untouched files only, the original follow-up workflow is restored:
 
 1. Use the AskUserQuestion tool with contextual options: "This cosmetic P3 finding is in an untouched file. Create a follow-up issue to track it?"
 2. If yes, create a GitHub issue using issue-crafting skill knowledge:
@@ -250,6 +244,8 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
    ```
 3. Reference the created issue in the resolution comment
 4. TaskUpdate the feedback task as completed with result: "follow-up issue #{N}"
+
+Even in minimal-scope mode, P1 and P2 findings in untouched files are always fixed in-PR.
 
 ## Phase 4: VERIFY (Convergence Check)
 
@@ -299,13 +295,16 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
    - P1/P2 holdout findings → fix immediately before proceeding
    - After fixes: re-run holdout-validation to confirm resolution
    - P3 findings → note, do not block
-4. **Convergence check** (max 3 self-review-fix iterations):
+4. **Convergence check** (bounded by `fixForwardMaxIterations`, default 10 — this is a safety net against true infinite loops, NOT a planned stop point; see `skills/llm-operator-principles/SKILL.md`):
    - Self-review finds P1 → fix NOW (don't re-request with known P1s)
    - Holdout-validation finds P1/P2 → fix NOW (same blocking treatment as self-review P1)
    - P2 in touched files → fix NOW
    - P3 in touched files → fix NOW (same disposition as P1/P2 — the proximity test is not a deferral mechanism)
-   - Only truly cosmetic P3 findings in untouched files may become follow-up issues; P1/P2 in untouched files must be addressed in-PR or filed as a six-field Proactive-Autonomy escalation (Situation / Tried / Options / Recommendation / Time sensitivity / Risk)
+   - P1/P2 in untouched files → fix in-PR (expand scope with `improve:` commits). Finding triage is NEVER a valid escalation trigger.
+   - Cosmetic P3 in untouched files → fix if bounded (<10 lines) or document inline in PR body. Default mode does not create follow-up issues. (Only `minimalScope` mode restores the follow-up workflow for this case.)
    - After fixes: re-run quality commands, re-review changed files, re-run holdout-validation
+   - Approaching the iteration ceiling without convergence is a signal to re-check your understanding (are two findings in tension? are you fixing the wrong thing?), not to escalate the remaining findings.
+   - **Genuine non-convergence** (terminal case): iteration `fixForwardMaxIterations` is reached AND the same findings persist across the last 3 iterations with no progress (or fixes oscillate — fix A flags B, fix B flags A). Halt the loop, do not silently exceed the ceiling, do not push with known unresolved P1/P2. File a six-field Proactive-Autonomy escalation citing the **"genuinely ambiguous architecture decision"** trigger (NOT finding-triage), naming the specific finding(s) in irreconcilable tension. See `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence and `references/escalation-format.md`.
 5. **Verify Boy Scout cleanup** passes proximity test (no scope creep)
 6. **Change classification** — verify no out-of-context changes introduced
 7. **Push** (Tier 2: journal-and-proceed):
@@ -338,20 +337,20 @@ For cosmetic P3 findings in untouched files that the team agrees to track separa
 
     ONLY after TaskList confirms "Post resolution comment" is completed:
     - If self-review found 0 findings → do NOT re-request (nothing changed that needs re-review beyond the feedback fixes)
-    - If cycle < `reviewCycleLimit` (default 3) → re-request normally:
+    - If cycle < `reviewCycleLimit` (default 10) → re-request normally:
       ```bash
       gh pr edit "$PR_NUM" --add-reviewer @{reviewer}
       ```
-    - If cycle >= `reviewCycleLimit` → use the AskUserQuestion tool with the following Proactive-Autonomy escalation:
+    - If cycle >= `reviewCycleLimit` → this signals genuine review deadlock (not a finding-triage decision). Use the AskUserQuestion tool with the following Proactive-Autonomy escalation:
 
-      **Situation**: Review cycle {N} reached the configured limit (`reviewCycleLimit`). {remaining_count} finding(s) remain unresolved.
+      **Situation**: Review cycle {N} reached the configured limit (`reviewCycleLimit`). {remaining_count} finding(s) remain unresolved across {N} review-and-address cycles — this is a deadlock between reviewer and author, not a finding-triage question.
       **Tried**: {N} cycles of review-and-address with the current reviewer.
       **Options**:
         1. Re-request the same reviewer for another cycle
         2. Request a fresh reviewer for an independent perspective
         3. Explicit override — accept risk of open findings (requires written justification that will be recorded in the PR)
       **Recommendation**: Option 2 (fresh reviewer) — breaks potential deadlock while maintaining quality gate integrity.
-      **Time sensitivity**: Blocking — PR cannot merge until findings are resolved or explicitly overridden with justification.
+      **Blocking?**: Yes — PR cannot merge until findings are resolved or explicitly overridden with justification.
       **Risk**: Merging with unresolved findings violates the "no incomplete shipments" hard boundary. Open findings become production defects owned by the team.
 
       Present via AskUserQuestion: "Review cycle {N} has reached the limit with {remaining_count} unresolved finding(s). Choose a path forward:"

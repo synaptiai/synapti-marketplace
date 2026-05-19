@@ -36,7 +36,7 @@ Verdict: N/A (independent verdict not enabled)
 - **Tried**: {what was considered, why it didn't resolve in-PR}
 - **Options**: {2–3 concrete paths}
 - **Recommendation**: {recommended option}
-- **Time sensitivity**: {blocking / urgent / safe to wait}
+- **Blocking?**: {yes / soft / no — no calendar-time language}
 - **Risk**: {consequence of deferring}
 
 ### Verification
