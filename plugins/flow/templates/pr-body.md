@@ -53,6 +53,10 @@ Closes #{issue_number}
 | P2 | {Y} | {Summary} |
 | P3 | {Z} | {Summary} |
 
+### Known cosmetic notes
+
+{Cosmetic P3 findings in untouched files that the agent determined were not bounded enough to fix in-PR (>10 lines) — listed as `file:line — one-line description`. Empty if all P3 were fixed or no cosmetic-P3-in-untouched findings surfaced. NEVER use this section to defer fixable P1/P2 findings or any finding in a touched file; those MUST be fixed before PR creation per `skills/llm-operator-principles/SKILL.md`.}
+
 ### Review Cycle History
 <!-- Updated by /flow:address -->
 _No review cycles completed yet._

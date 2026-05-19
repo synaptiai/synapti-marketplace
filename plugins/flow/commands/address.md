@@ -304,6 +304,7 @@ Even in minimal-scope mode, P1 and P2 findings in untouched files are always fix
    - Cosmetic P3 in untouched files → fix if bounded (<10 lines) or document inline in PR body. Default mode does not create follow-up issues. (Only `minimalScope` mode restores the follow-up workflow for this case.)
    - After fixes: re-run quality commands, re-review changed files, re-run holdout-validation
    - Approaching the iteration ceiling without convergence is a signal to re-check your understanding (are two findings in tension? are you fixing the wrong thing?), not to escalate the remaining findings.
+   - **Genuine non-convergence** (terminal case): iteration `fixForwardMaxIterations` is reached AND the same findings persist across the last 3 iterations with no progress (or fixes oscillate — fix A flags B, fix B flags A). Halt the loop, do not silently exceed the ceiling, do not push with known unresolved P1/P2. File a six-field Proactive-Autonomy escalation citing the **"genuinely ambiguous architecture decision"** trigger (NOT finding-triage), naming the specific finding(s) in irreconcilable tension. See `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence and `references/escalation-format.md`.
 5. **Verify Boy Scout cleanup** passes proximity test (no scope creep)
 6. **Change classification** — verify no out-of-context changes introduced
 7. **Push** (Tier 2: journal-and-proceed):

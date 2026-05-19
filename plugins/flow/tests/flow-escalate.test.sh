@@ -131,3 +131,47 @@ ERR=$("$HELPER" -h 2>&1 >/dev/null)
 EXIT=$?
 assert_exit 0 "$EXIT" "exit 0"
 assert_contains "All six fields are required" "$ERR" "usage text on stderr"
+
+# --- Test 8: --blocking with calendar-time value → exit 2 (value-space guard)
+# The rename from --time-sensitivity only matters if the value space is
+# constrained. Without this guard, a caller passing calendar-time language
+# defeats the rename's purpose. Verify the three valid values are accepted
+# and any other value is rejected.
+_flow_test_begin "--blocking value-space enforced"
+for INVALID in "by Friday" "urgent" "1-2 weeks" "ETA: end of week" "blocking"; do
+  ARGS=(
+    --situation S --tried T
+    --options "1: First option"
+    --recommendation R --blocking "$INVALID" --risk R
+  )
+  ERR=$("$HELPER" "${ARGS[@]}" 2>&1 >/dev/null)
+  EXIT=$?
+  assert_exit 2 "$EXIT" "exit 2 on --blocking '$INVALID'"
+  assert_contains "must be 'yes', 'soft', or 'no'" "$ERR" "stderr names the value-space constraint for '$INVALID'"
+done
+# Positive: each of the three valid values must succeed, in any case.
+# Mixed-case acceptance lets canonical prose ("Blocking? — Yes.") flow through
+# without normalization. The renderer always emits lowercase for uniformity.
+for VALID in "yes" "soft" "no" "Yes" "Soft" "No" "YES" "SOFT" "NO"; do
+  ARGS=(
+    --situation S --tried T
+    --options "1: First option"
+    --recommendation R --blocking "$VALID" --risk R
+  )
+  OUT=$("$HELPER" "${ARGS[@]}" 2>/dev/null)
+  EXIT=$?
+  EXPECTED_LOWER="$(echo "$VALID" | tr '[:upper:]' '[:lower:]')"
+  assert_exit 0 "$EXIT" "exit 0 on --blocking '$VALID'"
+  assert_contains "**Blocking?** — $EXPECTED_LOWER" "$OUT" "body renders --blocking '$VALID' normalized to lowercase"
+done
+
+# --- Test 9: trailing flag without value → exit 1 with clear message
+# Without the require_value guard, a trailing `--blocking` (no value following)
+# consumes its own slot via `${2:-}` and produces a misleading
+# "missing required fields: --blocking" message. With the guard, the user
+# gets the actual cause.
+_flow_test_begin "trailing flag without value → exit 1 with clear message"
+ERR=$("$HELPER" --situation S --tried T --options "1: A" --recommendation R --risk R --blocking 2>&1 >/dev/null)
+EXIT=$?
+assert_exit 1 "$EXIT" "exit 1 on trailing flag without value"
+assert_contains "--blocking requires a value" "$ERR" "stderr names the missing-value cause, not generic missing-fields"

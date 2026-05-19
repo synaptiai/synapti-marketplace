@@ -39,6 +39,8 @@ A new foundational skill at `skills/llm-operator-principles/SKILL.md` is consult
 
 #### Migration
 
+**Behavior change for unpinned configs.** Existing `.claude/settings.flow.json` files that explicitly pinned `fixForwardMaxIterations` or `reviewCycleLimit` to the old defaults (2 / 3) keep their pinned values — the cascade honors local settings. Configs that did not pin these keys (relying on plugin defaults) will see the new 10 / 10 ceilings on first run. Review against the new safety-net framing: ceilings are no longer planned stop points; reaching them is the signal that you have hit **genuine non-convergence** (see `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence).
+
 To restore v2.3.x behavior, set in `.claude/settings.flow.json`:
 
 ```json
@@ -48,6 +50,14 @@ To restore v2.3.x behavior, set in `.claude/settings.flow.json`:
   "minimalScope": true
 }
 ```
+
+#### Additional changes from in-PR self-review (fix-forward on PR #107)
+
+The first run of `/flow:review` under the new operator principles surfaced five findings; all were fixed in-PR per the new defaults (no deferral). Notable additions:
+
+- `bin/flow-escalate.sh` — `--blocking` now enforces a `yes|soft|no` value space. Without this guard, a caller passing `--blocking "by Friday"` would defeat the calendar-time-rename's purpose. Test 8 covers the enforcement (5 invalid + 3 valid values).
+- `bin/flow-escalate.sh` — trailing-flag detection via `require_value` helper. A trailing flag like `flow-escalate.sh ... --blocking` (no value following) now produces "`--blocking requires a value`" instead of the misleading missing-fields message. Test 9 covers this path.
+- `skills/llm-operator-principles/SKILL.md` and `commands/address.md` — new "Genuine non-convergence" guidance defining the ONE case where an iteration ceiling becomes a stop point: same findings persist 3 iterations in a row AND `fixForwardMaxIterations` is reached. Closes the silent-failure gap where the LLM could either silently exceed the ceiling or exit with unresolved findings.
 
 Closes #106.
 

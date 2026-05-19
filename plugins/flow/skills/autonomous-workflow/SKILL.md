@@ -93,18 +93,19 @@ Dispatch independent operations in a single message:
 
 ## Bounded Verification
 
-Quality check loops have max iterations from `settings.json`:
+Quality check loops have max iterations from `settings.json`. These ceilings are safety nets against true infinite loops, NOT planned stop points — see `skills/llm-operator-principles/SKILL.md`:
 
 1. Run quality commands
 2. If failures, fix and re-run
-3. After `qualityCheckMaxIterations` (default 3), escalate to user
-4. Never loop indefinitely
+3. Approaching `qualityCheckMaxIterations` without convergence is a signal to re-check understanding (are two findings in tension? are you fixing the wrong thing?), not a budget to stop at. Continue iterating until convergence.
+4. Only halt for **genuine non-convergence**: the same failure persists across the last 3 iterations with no progress AND the ceiling is actually reached. In that case, file a six-field Proactive-Autonomy escalation citing "genuinely ambiguous architecture decision" — NOT finding-triage.
+5. Never loop indefinitely past the ceiling without surfacing the non-convergence diagnostic.
 
 ## Stop Conditions
 
 | Trigger | Action |
 |---------|--------|
-| 3+ verification failures on the same issue | Stop fixing forward. Return to EXPLORE — the problem is architectural. |
+| Genuine non-convergence (same findings persist 3+ iterations AND ceiling reached) | File a six-field Proactive-Autonomy escalation per `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence. Do NOT silently exit the loop. |
 | Plan has >10 tasks for a single issue | Decompose the issue first. One PR should not span 10 tasks. |
 | EXPLORE phase yields contradictory signals | Stop. Ask the user for clarification before planning. |
 | >5 files modified without staging or committing | Stop. What you have should be committable. If not, the tasks are too large. |

@@ -27,6 +27,8 @@ When you find yourself reasoning "this is a multi-week effort" or "we should def
 
 ## Calendar-Time Estimates Are Prohibited
 
+The examples in this section quote calendar units ONLY to illustrate the prior they replace — they are anti-patterns, not templates. Do not propagate any calendar-unit phrase from these examples into your own output.
+
 Never write, suggest, or imply estimates in calendar units:
 
 - ❌ "This will take 2-3 weeks"
@@ -89,6 +91,21 @@ These are safety nets, not budgets. If you reach iteration 7 of fix-forward with
 4. Continue iterating — do not escalate solely because the ceiling is approaching
 
 You only escalate when you cannot progress at all, not because a budget is "running low."
+
+### Genuine non-convergence
+
+The Iron Law says convergence is zero findings, not exhausted budget — and the ceilings exist as a safety net for the case where the LLM genuinely cannot reach zero. This case is real but rare. Recognize it by two diagnostic signals:
+
+1. **Stuck signal**: the same findings reappear across the last 3 iterations with no progress (or worse, fixes oscillate — fix A flags B, fix B flags A).
+2. **Reach-limit signal**: the iteration count actually equals `fixForwardMaxIterations` (or `reviewCycleLimit`) with one or more findings still open.
+
+When **both** signals fire, this is genuine non-convergence — the ONE case where the ceiling becomes a stop point. Take this action:
+
+- Halt the fix-forward loop (do not silently exceed the ceiling, do not push with known unresolved P1/P2).
+- File a six-field Proactive-Autonomy escalation per `references/escalation-format.md`, citing the valid trigger **"genuinely ambiguous architecture decision"** (NOT finding-triage). The Situation must name the specific finding(s) in irreconcilable tension or the specific finding you cannot reproduce/understand.
+- The escalation's Options should describe concrete paths the user can choose — typically (a) accept one of the conflicting fixes and explicitly waive the other, (b) request user clarification on a finding the LLM cannot interpret, or (c) revert the divergent attempts and approach the problem differently.
+
+This is the ONLY case where an iteration ceiling becomes a stop point. In every other situation — iteration 9 of 10, partial progress, single finding remaining — you continue iterating.
 
 ## The Six-Field Escalation Is For Decisions, Not Findings
 
