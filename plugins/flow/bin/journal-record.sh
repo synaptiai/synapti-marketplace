@@ -117,179 +117,44 @@ fi
 # into the new journal body and committed.
 LOCKFILE="$JOURNAL.lock"
 
-python3 - "$JOURNAL" "$LOCKFILE" "$ISSUE" "$TYPE" "${METADATA[@]:-}" <<'PYTHON'
-import errno
-import fcntl
-import os
-import sys
-import tempfile
-import datetime
+# Hand off to Python — the atomicity primitives (O_NOFOLLOW, flock, atomic
+# rename, fsync) live in bin/_journal_atomic.py so they can be shared by
+# flow-record-activity.sh / flow-record-evidence.sh / flow-goal-record.sh
+# without triplicating ~180 lines of security-sensitive code.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Defensive sys.path filter for Python <3.11 where PYTHONSAFEPATH is ignored.
-# Removes the empty-string entry (CWD) and any "." entries so a hostile fork's
-# `./yaml.py` cannot shadow the real PyYAML on `import yaml` below.
+python3 - "$SCRIPT_DIR" "$JOURNAL" "$LOCKFILE" "$ISSUE" "$TYPE" "${METADATA[@]:-}" <<'PYTHON'
+import sys
+
+# Defense-in-depth: harden sys.path before importing the module, in case
+# PYTHONSAFEPATH is ignored (Python <3.11). The module re-runs this filter
+# but doing it here too prevents `./yaml.py` shadowing on the module import.
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
-import yaml
+script_dir = sys.argv[1]
+sys.path.insert(0, script_dir)
 
-journal = sys.argv[1]
-lockfile = sys.argv[2]
-issue = int(sys.argv[3])
-artifact_type = sys.argv[4]
-metadata_args = sys.argv[5:]
+import datetime
+from _journal_atomic import record_artifact, JournalAtomicError
 
-# Acquire an exclusive lock atomically without TOCTOU. O_NOFOLLOW makes
-# os.open fail with ELOOP if `lockfile` is a symlink; O_CREAT creates the
-# file if it does not exist; the open is a single syscall so an attacker
-# cannot win a race between a check and a follow-up open. Mode 0o600 keeps
-# the lockfile owner-only on shared hosts.
-try:
-    lock_fd = os.open(lockfile, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-except OSError as e:
-    if e.errno in (errno.ELOOP, errno.EMLINK):
-        print(f"journal-record.sh: refusing — lockfile {lockfile} is a symlink", file=sys.stderr)
-        sys.exit(2)
-    print(f"journal-record.sh: cannot open lockfile {lockfile}: {e}", file=sys.stderr)
-    sys.exit(2)
-
-# fcntl.flock is advisory but cooperative; all our writers go through this
-# script so cooperation is guaranteed. LOCK_EX serializes same-issue writes
-# while letting different-issue writes proceed in parallel.
-try:
-    fcntl.flock(lock_fd, fcntl.LOCK_EX)
-except OSError as e:
-    print(f"journal-record.sh: cannot acquire flock on {lockfile}: {e}", file=sys.stderr)
-    sys.exit(2)
-
-# Parse metadata key=value pairs. The empty-string sentinel from the bash
-# `${METADATA[@]:-}` substitution is filtered out.
-metadata = {}
-for pair in metadata_args:
-    if not pair:
-        continue
-    if "=" not in pair:
-        print(f"journal-record.sh: invalid metadata '{pair}' — must be key=value", file=sys.stderr)
-        sys.exit(1)
-    key, raw = pair.split("=", 1)
-    key = key.strip()
-    if not key:
-        print(f"journal-record.sh: metadata key cannot be empty (in '{pair}')", file=sys.stderr)
-        sys.exit(1)
-    # Type-coerce known shapes: int, bool, comma-list, otherwise string.
-    if "," in raw:
-        value = [v.strip() for v in raw.split(",") if v.strip()]
-    elif raw.isdigit():
-        value = int(raw)
-    elif raw.lower() in ("true", "false"):
-        value = raw.lower() == "true"
-    else:
-        value = raw
-    metadata[key] = value
+journal = sys.argv[2]
+lockfile = sys.argv[3]
+issue = int(sys.argv[4])
+artifact_type = sys.argv[5]
+metadata_args = sys.argv[6:]
 
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-# Read existing journal, parse frontmatter if present. Use O_NOFOLLOW so a
-# pre-staged symlink at `$JOURNAL_DIR/issue-N.md` (e.g., pointing at
-# `~/.ssh/id_rsa` or `~/.aws/credentials`) cannot be read into the journal
-# body and exfiltrated via a later commit/push. Python's `open()` follows
-# symlinks; only `os.open(O_NOFOLLOW)` rejects them atomically.
-manifest = None
-body = ""
-if os.path.lexists(journal):
-    try:
-        journal_fd = os.open(journal, os.O_RDONLY | os.O_NOFOLLOW)
-    except OSError as e:
-        if e.errno in (errno.ELOOP, errno.EMLINK):
-            print(f"journal-record.sh: refusing — journal {journal} is a symlink", file=sys.stderr)
-            sys.exit(2)
-        print(f"journal-record.sh: cannot read journal {journal}: {e}", file=sys.stderr)
-        sys.exit(2)
-    with os.fdopen(journal_fd, "r", encoding="utf-8") as f:
-        content = f.read()
-    if content.startswith("---\n"):
-        end_marker = content.find("\n---\n", 4)
-        if end_marker == -1:
-            # Opening `---` with no closing fence. Refusing here is consistent with
-            # the YAMLError branch below: a fresh-render fallback would prepend a
-            # new frontmatter to a body that itself starts with `---`, producing
-            # a doubly-fenced file that parses correctly but ships the old
-            # malformed content into the new body — silent corruption.
-            print("journal-record.sh: existing journal has unclosed frontmatter "
-                  "(opening `---` with no closing fence)", file=sys.stderr)
-            print("journal-record.sh: refusing to overwrite — fix manually", file=sys.stderr)
-            sys.exit(2)
-        try:
-            manifest = yaml.safe_load(content[4:end_marker])
-        except yaml.YAMLError as e:
-            print(f"journal-record.sh: existing frontmatter is invalid YAML: {e}", file=sys.stderr)
-            print("journal-record.sh: refusing to overwrite — fix manually", file=sys.stderr)
-            sys.exit(2)
-        body = content[end_marker + 5:]
-        if not isinstance(manifest, dict):
-            print("journal-record.sh: existing frontmatter is not a YAML mapping",
-                  file=sys.stderr)
-            print("journal-record.sh: refusing to overwrite — fix manually", file=sys.stderr)
-            sys.exit(2)
-    else:
-        body = content
-
-if manifest is None:
-    manifest = {
-        "issue": issue,
-        "created": now,
-        "artifacts": [],
-    }
-
-# Make sure the manifest has the required top-level fields even if a partial
-# manifest existed (e.g., a hand-edited file with just `issue:` declared).
-manifest.setdefault("issue", issue)
-manifest.setdefault("created", now)
-manifest.setdefault("artifacts", [])
-
-# Build the new artifact entry. captured_at goes second so it's the obvious
-# field after type when reading top-down; per-type fields follow.
-artifact = {"type": artifact_type, "captured_at": now}
-artifact.update(metadata)
-manifest["artifacts"].append(artifact)
-
-# Render. sort_keys=False preserves the order we set above so manifests are
-# diff-friendly across runs.
-front = yaml.safe_dump(manifest, sort_keys=False, default_flow_style=False, allow_unicode=True)
-new_content = f"---\n{front}---\n{body}"
-
-# Atomic write via temp file + rename. The temp file lives in the same
-# directory so the rename is on the same filesystem (POSIX-atomic). fsync
-# the file before rename so a power loss between rename and durable-write
-# cannot leave a zero-length journal behind; fsync the directory after so
-# the rename itself is durable. If the write fails partway, the original
-# journal is untouched.
-journal_dir = os.path.dirname(journal) or "."
-fd, tmp = tempfile.mkstemp(
-    dir=journal_dir,
-    prefix=os.path.basename(journal) + ".",
-    suffix=".tmp",
-)
 try:
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(new_content)
-        f.flush()
-        os.fsync(f.fileno())
-    os.rename(tmp, journal)
-    # Durably persist the rename (best-effort — not all filesystems require it,
-    # and EINVAL on platforms that disallow fsync of directory FDs is benign).
-    try:
-        dir_fd = os.open(journal_dir, os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
-    except OSError:
-        pass
-except Exception as e:
-    if os.path.exists(tmp):
-        os.unlink(tmp)
-    print(f"journal-record.sh: write failed: {e}", file=sys.stderr)
-    sys.exit(2)
+    record_artifact(journal, lockfile, issue, artifact_type, metadata_args, now)
+except JournalAtomicError as e:
+    print(f"journal-record.sh: {e}", file=sys.stderr)
+    if e.refuse:
+        # Match the original two-line stderr shape on frontmatter-class refusals
+        # (unclosed fence, invalid YAML, non-mapping). Single-line for symlink
+        # and write-failure errors — consistent with the original code.
+        print("journal-record.sh: refusing to overwrite — fix manually", file=sys.stderr)
+    sys.exit(e.exit_code)
 
 print(f"journal-record.sh: recorded {artifact_type} in {journal}", file=sys.stderr)
 PYTHON

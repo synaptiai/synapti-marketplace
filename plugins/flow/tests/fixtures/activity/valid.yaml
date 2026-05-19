@@ -1,0 +1,27 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowActivity
+metadata:
+  id: task-ac1
+  run_id: 2026-05-20T143000Z-issue-42
+  workflow: start-issue
+  phase: code
+activity:
+  type: task
+  name: 'Implement AC1: exact-match search returns the match'
+  status: passed
+  started_at: '2026-05-20T14:35:00Z'
+  completed_at: '2026-05-20T14:42:00Z'
+inputs:
+  acceptance_criterion: AC1
+  verification_command: 'npm test -- --grep search'
+outputs:
+  evidence_refs:
+    - '.flow/runs/2026-05-20T143000Z-issue-42/evidence/AC1-test.evidence.yaml'
+  files_changed:
+    - 'src/search/index.ts'
+    - 'tests/search/exact-match.test.ts'
+  command_exit_code: 0
+  stdout_tail: '3 passed (47ms)'
+result:
+  summary: 'Implemented exact-match path; tests pass.'
+  confidence: high

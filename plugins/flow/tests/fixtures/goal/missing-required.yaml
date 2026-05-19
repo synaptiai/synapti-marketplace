@@ -1,0 +1,10 @@
+# Negative fixture: missing required top-level fields (objective, evaluator, lifecycle).
+# Expected: jsonschema validation FAILS with "required property" error.
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-42
+  created_at: '2026-05-20T14:30:00Z'
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-42-search-fix

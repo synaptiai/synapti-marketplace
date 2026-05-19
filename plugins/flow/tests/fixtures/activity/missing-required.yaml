@@ -1,0 +1,9 @@
+# Negative fixture: missing required `activity` top-level object (which holds type+status).
+# Expected: jsonschema validation FAILS with "required property 'activity'" error.
+apiVersion: flow.synapti.ai/v1
+kind: FlowActivity
+metadata:
+  id: task-ac1
+  run_id: 2026-05-20T143000Z-issue-42
+  workflow: start-issue
+  phase: code

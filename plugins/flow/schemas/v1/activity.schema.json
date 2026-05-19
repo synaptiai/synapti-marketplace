@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synapti.ai/schemas/flow/v1/activity.schema.json",
+  "title": "FlowActivity",
+  "description": "A bounded unit of work within a FlowRun. Written by flow-record-activity.sh (M1 helper) at phase boundaries. Immutable once written — re-running an activity creates a new sequence-numbered file.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "activity"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "flow.synapti.ai/v1"
+    },
+    "kind": {
+      "const": "FlowActivity"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["id", "run_id"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "description": "Activity identifier within its FlowRun. Lowercase + digits + underscore/hyphen. Sequence number is in the filename, not here."
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "workflow": {
+          "type": "string",
+          "description": "Workflow definition that scheduled this activity."
+        },
+        "phase": {
+          "type": "string",
+          "description": "Phase id within the workflow (e.g., 'preflight', 'explore', 'plan', 'code', 'verify')."
+        }
+      }
+    },
+    "activity": {
+      "type": "object",
+      "required": ["type", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "enum": [
+            "bash",
+            "skill",
+            "agent",
+            "task",
+            "gate",
+            "evaluation",
+            "external"
+          ]
+        },
+        "name": { "type": "string" },
+        "status": {
+          "enum": ["pending", "running", "passed", "failed", "skipped", "blocked"]
+        },
+        "started_at": { "type": "string", "format": "date-time" },
+        "completed_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "description": "Inputs that shape this activity's behavior. Free-form per activity type.",
+      "additionalProperties": true
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "evidence_refs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Relative paths to FlowEvidence sidecars (under .flow/runs/<id>/evidence/)."
+        },
+        "files_changed": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "command_exit_code": { "type": "integer" },
+        "stdout_tail": { "type": "string" },
+        "stderr_tail": { "type": "string" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "summary": { "type": "string" },
+        "confidence": {
+          "enum": ["high", "medium", "low"]
+        }
+      }
+    }
+  }
+}

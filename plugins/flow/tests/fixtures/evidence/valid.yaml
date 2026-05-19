@@ -1,0 +1,21 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowEvidence
+metadata:
+  id: evidence-ac1-test
+  goal: issue-42
+  run_id: 2026-05-20T143000Z-issue-42
+  activity_id: task-ac1
+  created_at: '2026-05-20T14:42:00Z'
+evidence:
+  type: command_result
+  command: 'npm test -- --grep search'
+  exit_code: 0
+  output_ref: '.flow/runs/2026-05-20T143000Z-issue-42/evidence/AC1-test.txt'
+  proves:
+    - AC1
+  limitations:
+    - 'Does not verify behavior with non-ASCII queries (separate AC).'
+    - 'Does not verify rendering — only API result shape.'
+  negative_cases:
+    - 'empty query string'
+    - 'query containing only whitespace'
