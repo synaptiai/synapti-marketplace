@@ -58,8 +58,10 @@
   "debugging": {
     "maxHypotheses": 3
   },
-  "reviewCycleLimit": 3,
-  "fixForwardMaxIterations": 2,
+  "reviewCycleLimit": 10,
+  "fixForwardMaxIterations": 10,
+  "autonomous": false,
+  "minimalScope": false,
   "closedLoop": {
     "enabled": true,
     "maxBuildIterations": 5,

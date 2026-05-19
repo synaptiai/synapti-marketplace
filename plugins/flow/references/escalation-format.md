@@ -18,6 +18,8 @@ Do NOT escalate when ANY of these apply:
 - The decision is reversible and small (Tier 1 actions: file edits, branches, commits).
 - A reasonable default exists and the cost of asking exceeds the cost of being wrong.
 - The agent is asking permission for an already-authorized action ("can I commit?" — yes, that's Tier 1).
+- **The decision is about how to dispose of a code-review finding (P1/P2/P3 triage).** Finding triage is NEVER a valid escalation trigger — findings are work, not decisions. The default action for every finding is to fix it in this PR (see `skills/llm-operator-principles/SKILL.md`). If you find yourself drafting a Situation/Tried/Options block about a P1/P2/P3, stop and fix the finding instead.
+- **The agent is approaching but has not exceeded an iteration ceiling** (`fixForwardMaxIterations`, `reviewCycleLimit`, `qualityCheckMaxIterations`). Ceilings are safety nets against true infinite loops, not budgets — approaching one is a signal to re-check understanding, not to escalate the remaining work.
 
 The Iron Law: **resolve what can be resolved locally, escalate only when there is a real decision to make**. An agent that escalates too eagerly trains the user to ignore escalations.
 
@@ -52,11 +54,13 @@ The agent's preferred option, with one-sentence reasoning. The user can accept, 
 
 > **Recommendation** — Option 1. Snapshot tests are the lowest-friction way to lock the shape; the maintenance cost is paid only when the schema legitimately evolves.
 
-### 5. Time sensitivity
+### 5. Blocking?
 
-Whether the decision is blocking, urgent, or safe to wait. If a deadline applies, name it. The user uses this to triage when to read.
+Whether the decision blocks the current command. Three values: **Yes** (blocks — the command cannot proceed until this resolves), **Soft** (advisory — the command can continue with a default but the user should know), or **No** (informational only).
 
-> **Time sensitivity** — Blocks the Spec Validation Gate. PLAN cannot proceed until this resolves.
+Do NOT use calendar-time language ("urgent," "by Friday," "this week," "ASAP," "ETA"). The flow plugin is an LLM operator — calendar-time framings invite incorrect estimates that anchor deferral behavior. See `skills/llm-operator-principles/SKILL.md`.
+
+> **Blocking?** — Yes. Blocks the Spec Validation Gate; PLAN cannot proceed until this resolves.
 
 ### 6. Risk
 
@@ -77,7 +81,7 @@ AskUserQuestion(
   **Situation** — {full situation paragraph}
   **What I tried** — {tried paragraph}
   **Recommendation** — {one-sentence recommendation}
-  **Time sensitivity** — {blocking/urgent/safe}
+  **Blocking?** — {yes/soft/no}
   **Risk** — {risk paragraph}",
   options: [
     {label: "Option 1: ...", description: "{trade-off}"},
@@ -99,7 +103,7 @@ The vision article (`flow_plugin_medium_article_grounded.md`) uses a slightly di
 | Options considered | (combined with Tried + Options) | The vision treats "options considered" as a single field; the canonical split separates "what I tried (and why those didn't work)" from "what I am offering as paths forward" because users frequently need to see the failed attempts before they trust the offered options |
 | Tradeoffs | (one-line trade-offs in each Option) | Inlined per option for brevity |
 | Recommendation | Recommendation | Same |
-| Risk of inaction | Time sensitivity + Risk | The vision combines these; the canonical split separates "when does this matter" (Time sensitivity) from "what breaks if wrong" (Risk) because they answer different triage questions |
+| Risk of inaction | Blocking? + Risk | The vision combines these; the canonical split separates "does this block the current command" (Blocking?) from "what breaks if wrong" (Risk). The Blocking? field replaced an older "Time sensitivity" field to remove calendar-time framings that anchored deferral. |
 | Decision needed | (implicit in the AskUserQuestion options array) | The structured tool surfaces this naturally |
 
 Both shapes carry the same information. The canonical six-field structure is preferred for new commands and agents because it maps cleanly onto `AskUserQuestion`, which is the only delivery channel the project endorses.
@@ -111,3 +115,5 @@ Both shapes carry the same information. The canonical six-field structure is pre
 - **Asking permission for Tier 1 actions** — file edits, commits, branches do not require escalation. See `references/three-tier-safety.md` for the tier definitions.
 - **Compound questions** — escalate one decision at a time. If the user must make decisions A AND B, file two escalations or design a single decision that covers both.
 - **Recommending "you decide"** — every escalation must include a Recommendation. "I have no preference" is rarely true and signals the agent didn't do the analysis.
+- **Finding-triage escalation** — drafting a six-field block to ask the user whether to fix a P1/P2/P3 finding. Findings are work, not decisions. Fix the finding instead. See `skills/llm-operator-principles/SKILL.md`.
+- **Calendar-time framings in any field** — "urgent," "by Friday," "1-2 weeks," "ETA." Use the Blocking? field's yes/soft/no values instead.

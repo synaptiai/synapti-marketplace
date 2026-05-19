@@ -36,6 +36,29 @@ Pre-existing findings in touched files keep their natural priority (no longer ca
 |---------|-------------|-------------|
 | `testing.tddMode` | `"suggest"` | `"enforce"` |
 | `verdict.requireAllPass` | `false` | `true` |
+| `fixForwardMaxIterations` | `2` | `10` |
+| `reviewCycleLimit` | `3` | `10` |
+| `autonomous` | _(new)_ | `false` |
+| `minimalScope` | _(new)_ | `false` |
+
+### LLM Operator Principles (v2.4)
+
+Flow v2.4 introduces the `llm-operator-principles` foundational skill that frames Claude as an LLM operator that does not tire. This skill is consulted by every `/flow:*` command and shifts default behavior in three ways:
+
+1. **Convergence = zero findings, not exhausted budget.** Iteration ceilings (`fixForwardMaxIterations`, `reviewCycleLimit`) defaulted to 10 because the ceiling is a safety net against true infinite loops, not a planned stop point. Approaching the ceiling without convergence is a signal to re-check understanding, not to escalate.
+2. **In-PR fix by default for all findings.** P1/P2/P3 findings are fixed in the current PR. Finding triage is NEVER a valid escalation trigger — escalations are reserved for true product/architecture/irreversible-action decisions. Default mode does NOT create follow-up issues; cosmetic P3 in untouched files is fix-if-bounded or document inline.
+3. **Calendar-time estimates prohibited.** PR bodies, decision-journal entries, escalations, and resolution comments MUST NOT include weeks/days/hours/sprints/ETAs. The old escalation "Time sensitivity" field is replaced by a "Blocking?" field with yes/soft/no values.
+
+See [`skills/llm-operator-principles/SKILL.md`](skills/llm-operator-principles/SKILL.md) for the full operating frame.
+
+### Modes
+
+Two opt-in modes complement the LLM-operator defaults:
+
+- `autonomous: true` — removes `AskUserQuestion` interruptions for any decision the agent can resolve under the operator principles. Reserves `AskUserQuestion` for Tier 3 confirmations (merge, release) and true product/architecture decisions. Recommended for sole-maintainer repositories.
+- `minimalScope: true` — restores the original follow-up-issue workflow for cosmetic P3 in untouched files only. Use when scope is deliberately constrained (e.g., a one-line hotfix that should not expand into a refactor). P1/P2 findings still fix in-PR even in this mode.
+
+Both can be toggled in settings or in-conversation ("autonomous mode on", "minimal scope on").
 
 ### Opting Out
 
@@ -49,7 +72,10 @@ Teams not ready for strict defaults can restore previous behavior:
   },
   "verdict": {
     "requireAllPass": false
-  }
+  },
+  "fixForwardMaxIterations": 2,
+  "reviewCycleLimit": 3,
+  "minimalScope": true
 }
 ```
 
@@ -64,6 +90,7 @@ Set these in `.claude/settings.flow.json` or `.claude/settings.flow.local.json`.
 - Evidence bundles require completeness subsections (not tested, limitations, adversarial cases)
 - Holdout validation runs inline during VERIFY, review, and address phases
 - Spec Validation Gate requires automated verification commands for every acceptance criterion
+- (v2.4) `llm-operator-principles` skill introduced; iteration ceilings raised to 10; follow-up-issue workflow now opt-in via `minimalScope`; calendar-time estimates prohibited; escalation "Time sensitivity" field renamed to "Blocking?"
 
 See [gate-configuration.md](references/gate-configuration.md) for full gate details.
 
@@ -193,7 +220,7 @@ The plugin ships three canonical reference documents (under `plugins/flow/refere
 | Reference | What it canonicalizes | Primary consumers |
 |---|---|---|
 | [`finding-schema.md`](references/finding-schema.md) | Reviewer output: 6-field row shape (ID, Category, Location, Problem, Suggested Fix, Confidence) plus the marker-only `status` and `disposition` fields. Compatible with the existing `FLOW_REVIEW_CYCLE` 7-field marker schema. | All 4 reviewer agents (`code-reviewer`, `security-reviewer`, `error-handler-inspector`, `integration-verifier`); orchestrators (`commands/review.md`, `commands/pr.md`, `commands/address.md`) |
-| [`escalation-format.md`](references/escalation-format.md) | Six-field Proactive-Autonomy escalation structure (Situation, What I tried, Options, Recommendation, Time sensitivity, Risk). Delivered via `AskUserQuestion`, never inline text. | All 6 escalating commands (`start`, `pr`, `merge`, `commit`, `address`, `resolve`); reviewer agents that surface NEEDS-HUMAN-REVIEW |
+| [`escalation-format.md`](references/escalation-format.md) | Six-field Proactive-Autonomy escalation structure (Situation, What I tried, Options, Recommendation, Blocking?, Risk). Delivered via `AskUserQuestion`, never inline text. | All 6 escalating commands (`start`, `pr`, `merge`, `commit`, `address`, `resolve`); reviewer agents that surface NEEDS-HUMAN-REVIEW |
 | [`evidence-bundle-format.md`](references/evidence-bundle-format.md) | Markdown shape verdict-judge consumes: per-criterion sections with mandatory `### Does NOT promise` plus three completeness subsections. `none` is a valid positive-statement answer; bare blank triggers auto-FAIL. | `commands/start.md` Phase 4 (producer), `agents/verdict-judge.md` Step 1 (consumer); `criterion-verification-map` skill (plan-time inputs) |
 
 Plus the existing references documenting policy, parser rules, and configuration:

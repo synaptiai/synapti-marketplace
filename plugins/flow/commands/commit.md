@@ -15,6 +15,7 @@ Classify changes, flag anomalies, and create atomic conventional commits. Follow
 
 ## Required Skills
 
+- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
 - `change-classification` — signal-based change analysis
 - `convention-enforcement` — commit message validation
 
@@ -121,14 +122,13 @@ Use the AskUserQuestion tool with a Proactive-Autonomy escalation:
 >
 > **Options**:
 > 1. Include in this commit with a separate `improve:` or `chore:` commit (Recommended if changes are Boy Scout cleanup)
-> 2. Exclude from this commit — leave unstaged for a future branch
-> 3. Create a follow-up issue to track these changes separately
+> 2. Exclude from this commit — leave unstaged for a separate branch
 >
 > **Recommendation** — Option {1|2} based on whether the changes are cleanup (include) or genuinely unrelated (exclude).
 >
-> **Time sensitivity** — Not blocking. These files can be committed later.
+> **Blocking?** — Soft. The commit cannot proceed until these files are classified, but no external state depends on the outcome.
 >
-> **Risk** — Including out-of-context changes clutters the branch history. Excluding them risks forgetting the changes.
+> **Risk** — Including out-of-context changes clutters the branch history. Excluding them leaves the work unstaged on the worktree until you address it.
 
 ## Phase 4: COMMIT
 

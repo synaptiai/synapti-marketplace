@@ -44,9 +44,11 @@ Leave every file you touch better than you found it. Fixing known defects in tou
 4. Would benefit from its own issue to explain motivation
 5. Is a subjective style preference (in which case it is P3 at most, not a fix-blocker)
 
-For P1/P2 findings that fall into the "expanded scope" bucket: fix them in-PR with an appropriate commit message, or file a six-field Proactive-Autonomy escalation (Situation / Tried / Options / Recommendation / Time sensitivity / Risk) to escalate the decision. "Disagree to fix" is not an option — the escalation forces a human judgment call.
+For P1/P2 findings that fall into the "expanded scope" bucket: fix them in-PR with an appropriate commit message. Finding triage is NEVER a valid escalation trigger — do NOT file a six-field Proactive-Autonomy escalation to ask whether to fix a finding (see `skills/llm-operator-principles/SKILL.md` and `references/escalation-format.md`). "Disagree to fix" is not an option; "ask the user whether to fix" is also not an option.
 
-Only **cosmetic P3 findings in truly untouched files** may be logged as follow-up issues by default.
+**Default mode:** cosmetic P3 findings in truly untouched files are fixed if bounded (<10 lines) or documented inline in the PR body. Do NOT create follow-up issues for them.
+
+**Minimal-scope mode (`settings.json` → `minimalScope: true`):** the original follow-up issue workflow for cosmetic P3 in untouched files is restored.
 
 ## No Secrets in Code
 
@@ -69,7 +71,7 @@ Code that ships must be complete:
 
 ## Quality Command Execution
 
-Run independent quality commands (lint, test, typecheck) as parallel Bash calls, never chained with `&&`. After quality checks: P1 failures fix immediately, P2 fix before PR, P3 fix in-PR unless a six-field Proactive-Autonomy escalation is filed.
+Run independent quality commands (lint, test, typecheck) as parallel Bash calls, never chained with `&&`. After quality checks: P1 failures fix immediately, P2 fix before PR, P3 fix in-PR by default. Finding triage is NEVER a valid escalation trigger (see `references/escalation-format.md`).
 
 ## Anti-Patterns
 
@@ -112,8 +114,8 @@ Before marking any task complete:
 
 | Excuse | Response |
 |--------|----------|
-| "I'll clean this up while I'm here" | If it's a P1/P2 in a touched file, you must fix it. If it's small and self-evident, use an `improve:` commit. If it's cosmetic and in an untouched file, you may log it. |
+| "I'll clean this up while I'm here" | If it's a P1/P2 in a touched file, you must fix it. If it's small and self-evident, use an `improve:` commit. If it's cosmetic and in an untouched file, fix-if-bounded or document inline (default) — only log as a follow-up issue under `minimalScope` mode. |
 | "This TODO is temporary" | TODOs in commits are permanent. Create an issue instead. |
 | "The tests pass, it's fine" | Tests passing is necessary, not sufficient. Run the self-review checklist. |
 | "This debug log helps with development" | Remove it. Development aids don't ship. |
-| "It's just a small formatting fix" | If the file is already touched for the task and the fix is self-evident, use an `improve:` commit. If the file is untouched and the fix is cosmetic, log it as a follow-up issue. |
+| "It's just a small formatting fix" | If the file is already touched for the task and the fix is self-evident, use an `improve:` commit. If the file is untouched and the fix is cosmetic, fix-if-bounded (<10 lines) or document inline in the PR body (default) — only log as a follow-up issue under `minimalScope` mode. |

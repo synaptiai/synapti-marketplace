@@ -16,6 +16,7 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 
 ## Required Skills
 
+- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
 - `pr-lifecycle` — pre-flight, PR body, reviewer suggestion
 - `code-review-methodology` — 6-facet review synthesis
 - `capability-discovery` — detect quality commands and agents
@@ -225,16 +226,16 @@ After agents return, TaskUpdate each review task with findings.
      >
      > **Recommendation** — Option {1|2|3} based on scope of UI changes.
      >
-     > **Time sensitivity** — Blocks PR creation if `requireVisualVerification: true`.
+     > **Blocking?** — Yes if `requireVisualVerification: true`; otherwise soft.
      >
      > **Risk** — Skipping may miss visual regressions. Manual verification depends on user follow-through.
    - Based on response → `TaskUpdate` visual tasks to SKIP_USER_APPROVED or MANUAL, or provide installation guidance and retry
    - The PR body should note whether visual verification was PASS, MANUAL, SKIP_USER_APPROVED, or SKIP_WARN
-6. **Display findings** (finding-first pattern):
+6. **Display findings** (finding-first pattern; fix-forward bounded by `fixForwardMaxIterations`, default 10 — safety net, not a budget; see `skills/llm-operator-principles/SKILL.md`):
    - P1 findings → must fix before PR
-   - P2 findings → fix before PR (max 2 fix iterations; after 2, remaining P2 become "Known issues" in PR body)
-   - P3 findings → note in PR body
-7. **If P1 findings**: Fix them, re-run review
+   - P2 findings → fix before PR (continue iterating until zero remain; finding triage is NEVER a valid escalation trigger)
+   - P3 findings → fix in-PR by default. Cosmetic P3 in untouched files only: fix if bounded (<10 lines) or document inline in the PR body under `### Known cosmetic notes`. Do NOT add a "Known issues" section that defers fixable P2s.
+7. **If P1 or P2 findings**: Fix them, re-run review
 8. **Generate PR body** from template + findings + journal + comprehension report.
    If visual verification ran, include visual evidence section:
    ```markdown

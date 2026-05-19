@@ -18,7 +18,7 @@
 #     --tried "..." \
 #     --options "1: First option;2: Second option;3: Third option" \
 #     --recommendation "..." \
-#     --time-sensitivity "blocking|urgent|low|deadline:YYYY-MM-DD" \
+#     --blocking "yes|soft|no" \
 #     --risk "..."
 #
 # Options are semicolon-separated to keep the CLI single-shot. Each option
@@ -39,10 +39,11 @@ Usage: flow-escalate.sh \
          --tried TEXT \
          --options "1: A;2: B[;3: C]" \
          --recommendation TEXT \
-         --time-sensitivity TEXT \
+         --blocking TEXT \
          --risk TEXT
 
 All six fields are required. Options are semicolon-separated (each `<n>: <text>`).
+The --blocking flag should be "yes", "soft", or "no" (no calendar-time language).
 See plugins/flow/references/escalation-format.md for field semantics.
 USAGE
 }
@@ -51,7 +52,7 @@ SITUATION=""
 TRIED=""
 OPTIONS=""
 RECOMMENDATION=""
-TIME_SENSITIVITY=""
+BLOCKING=""
 RISK=""
 
 while [ $# -gt 0 ]; do
@@ -60,7 +61,7 @@ while [ $# -gt 0 ]; do
     --tried)             TRIED="${2:-}"; shift 2 ;;
     --options)           OPTIONS="${2:-}"; shift 2 ;;
     --recommendation)    RECOMMENDATION="${2:-}"; shift 2 ;;
-    --time-sensitivity)  TIME_SENSITIVITY="${2:-}"; shift 2 ;;
+    --blocking)          BLOCKING="${2:-}"; shift 2 ;;
     --risk)              RISK="${2:-}"; shift 2 ;;
     -h|--help)           usage; exit 0 ;;
     *)                   echo "flow-escalate.sh: unknown argument: $1" >&2; usage; exit 1 ;;
@@ -69,12 +70,12 @@ done
 
 # Required-field check
 MISSING=()
-[ -z "$SITUATION" ]        && MISSING+=("--situation")
-[ -z "$TRIED" ]            && MISSING+=("--tried")
-[ -z "$OPTIONS" ]          && MISSING+=("--options")
-[ -z "$RECOMMENDATION" ]   && MISSING+=("--recommendation")
-[ -z "$TIME_SENSITIVITY" ] && MISSING+=("--time-sensitivity")
-[ -z "$RISK" ]             && MISSING+=("--risk")
+[ -z "$SITUATION" ]      && MISSING+=("--situation")
+[ -z "$TRIED" ]          && MISSING+=("--tried")
+[ -z "$OPTIONS" ]        && MISSING+=("--options")
+[ -z "$RECOMMENDATION" ] && MISSING+=("--recommendation")
+[ -z "$BLOCKING" ]       && MISSING+=("--blocking")
+[ -z "$RISK" ]           && MISSING+=("--risk")
 
 if [ ${#MISSING[@]} -gt 0 ]; then
   echo "flow-escalate.sh: missing required fields: ${MISSING[*]}" >&2
@@ -134,7 +135,7 @@ $(printf '%s' "$OPTIONS_BLOCK" | awk 'NF { sub(/^[0-9]+:[[:space:]]*/, ""); prin
 
 **Recommendation** — $RECOMMENDATION
 
-**Time sensitivity** — $TIME_SENSITIVITY
+**Blocking?** — $BLOCKING
 
 **Risk** — $RISK
 BODY

@@ -21,6 +21,7 @@ Skill-driven workflow from issue assignment through implementation. Follows the 
 ## Required Skills
 
 This command operates with these domain skills loaded:
+- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
 - `branch-and-task-management` — branch creation, task decomposition
 - `change-classification` — change context awareness
 - `capability-discovery` — detect available quality tools
@@ -265,7 +266,7 @@ If acceptance criteria are found, build a **Spec Validation Table** and treat it
 >
 > **Recommendation** — Option {1|2} — measurable criteria produce better verdicts and prevent vague implementations.
 >
-> **Time sensitivity** — Blocks planning. Must resolve before Phase 2.
+> **Blocking?** — Yes. Blocks planning; Phase 2 cannot proceed until this resolves.
 >
 > **Risk** — Choosing Option 3 (`manual`) means no automated verdict for this criterion and requires a human-in-the-loop at VERIFY phase.
 

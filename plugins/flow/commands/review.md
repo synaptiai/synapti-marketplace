@@ -15,6 +15,7 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 
 ## Required Skills
 
+- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
 - `code-review-methodology` — 6-facet review, finding synthesis, adversarial protocol
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 3)
 
@@ -580,7 +581,7 @@ TaskUpdate each review task as agents complete.
 
 5. **Self-review (own PR — PR_AUTHOR == CURRENT_USER)**:
 
-   Fix-forward approach (max `fixForwardMaxIterations`, default 2):
+   Fix-forward approach (bounded by `fixForwardMaxIterations`, default 10 — a safety net against true infinite loops, not a budget; see `skills/llm-operator-principles/SKILL.md`):
    - P1 findings → fix immediately
    - P2 findings → fix immediately
    - P3 findings → fix immediately (the proximity test is not a deferral mechanism — P3 in touched files gets the same disposition as P1/P2)
@@ -588,20 +589,23 @@ TaskUpdate each review task as agents complete.
    - For each fix: write or update a test that covers the fixed behavior
    - After fixes: run targeted re-review of only changed files
    - TaskUpdate(testCoverageTaskId, status: "completed", result: "Tests written/updated for {N} fixes")
-   - No follow-up issue creation for fixable items — just fix them
-   - If any P1/P2 finding cannot be fixed in-PR, file a six-field Proactive-Autonomy escalation (Situation / Tried / Options / Recommendation / Time sensitivity / Risk) rather than deferring silently
+   - No follow-up issue creation for fixable items — finding triage is NEVER a valid escalation trigger; fix in this PR
+   - Approaching the iteration ceiling without convergence is a signal to re-check the findings (are two findings in tension? misunderstood scope?), not to escalate
    - TaskCreate("Post self-review comment", "Post review findings summary to PR via gh pr review --comment")
 
 6. **External review (someone else's PR — PR_AUTHOR != CURRENT_USER)**:
 
    - TaskCreate("Post review comment", "Post structured review findings to PR via gh pr review")
-   - P1/P2/P3 in already-touched files → REQUEST_CHANGES (P1/P2) or COMMENT with fix-expected language (P3) — the author must fix or file an escalation
-   - Cosmetic P3 in untouched files → follow-up issue workflow
-   - P1/P2 in untouched files → REQUEST_CHANGES; author must address in-PR or file a six-field Proactive-Autonomy escalation
+   - P1/P2/P3 in already-touched files → REQUEST_CHANGES (P1/P2) or COMMENT with fix-expected language (P3) — the author must fix
+   - Cosmetic P3 in untouched files → COMMENT with fix-if-bounded-or-document-inline language (default mode) OR follow-up issue workflow (only when `minimalScope: true` or the PR author has explicitly invoked minimal scope)
+   - P1/P2 in untouched files → REQUEST_CHANGES; author must address in-PR (finding triage is NEVER a valid escalation trigger; see `skills/llm-operator-principles/SKILL.md`)
 
    Findings in files the PR already modifies are NEVER out-of-scope — the author owns the known defects in any file they touch. Do NOT flag them as informational; flag them as blocking.
 
-   For cosmetic P3 findings in untouched files that warrant follow-up:
+   **Default mode (no `minimalScope` set):** for cosmetic P3 findings in untouched files, do NOT create follow-up issues and do NOT present an AskUserQuestion asking the author to defer. Recommend "fix if bounded (<10 lines) or document inline in the PR body" in the review comment.
+
+   **Minimal-scope mode (`settings.json` → `minimalScope: true`):** for cosmetic P3 findings in untouched files only, the original follow-up workflow is restored:
+
    Present the findings and use the AskUserQuestion tool with contextual options: "These cosmetic P3 findings are in untouched files. Which ones should become follow-up issues?"
 
    For each selected finding, create a GitHub issue using issue-crafting skill knowledge:

@@ -2,7 +2,7 @@
 #
 # Contract (from the helper's header):
 #   - Six required fields: --situation, --tried, --options, --recommendation,
-#     --time-sensitivity, --risk.
+#     --blocking, --risk.
 #   - Options are semicolon-separated, each `<n>: <text>`.
 #   - Exit 0: prints formatted body to stdout.
 #   - Exit 1: missing required field. Usage printed to stderr.
@@ -19,7 +19,7 @@ ALL_ARGS=(
   --tried "Tried thing A and B"
   --options "1: First option;2: Second option"
   --recommendation "Pick option 1"
-  --time-sensitivity "blocking"
+  --blocking "yes"
   --risk "Defer means service stays broken"
 )
 
@@ -32,7 +32,7 @@ assert_contains "**Situation** — Test situation"           "$OUT" "Situation s
 assert_contains "**What I tried** — Tried thing A and B"   "$OUT" "What I tried section present"
 assert_contains "**Options**:"                             "$OUT" "Options heading present"
 assert_contains "**Recommendation** — Pick option 1"       "$OUT" "Recommendation section present"
-assert_contains "**Time sensitivity** — blocking"          "$OUT" "Time sensitivity section present"
+assert_contains "**Blocking?** — yes"                       "$OUT" "Blocking? section present"
 assert_contains "**Risk** — Defer means service stays broken" "$OUT" "Risk section present"
 # Options must be re-numbered as a Markdown numbered list.
 assert_contains "1. First option"  "$OUT" "Option 1 rendered as numbered list"
@@ -53,7 +53,7 @@ _flow_test_begin "missing required field → exit 1"
 if [ $(( ${#ALL_ARGS[@]} % 2 )) -ne 0 ]; then
   _flow_assert_fail "ALL_ARGS has odd length ${#ALL_ARGS[@]}; cannot iterate as pairs"
 fi
-FIELDS=(--situation --tried --options --recommendation --time-sensitivity --risk)
+FIELDS=(--situation --tried --options --recommendation --blocking --risk)
 for DROP in "${FIELDS[@]}"; do
   ARGS=()
   i=0
@@ -87,7 +87,7 @@ _flow_test_begin "malformed option → exit 2"
 ARGS=(
   --situation S --tried T
   --options "no-number-here"
-  --recommendation R --time-sensitivity blocking --risk R
+  --recommendation R --blocking yes --risk R
 )
 ERR=$("$HELPER" "${ARGS[@]}" 2>&1 >/dev/null)
 EXIT=$?
@@ -99,7 +99,7 @@ _flow_test_begin "duplicate option number → exit 2"
 ARGS=(
   --situation S --tried T
   --options "1: First;1: Also first"
-  --recommendation R --time-sensitivity blocking --risk R
+  --recommendation R --blocking yes --risk R
 )
 ERR=$("$HELPER" "${ARGS[@]}" 2>&1 >/dev/null)
 EXIT=$?
@@ -111,7 +111,7 @@ _flow_test_begin "empty options → exit 2"
 ARGS=(
   --situation S --tried T
   --options ";;"
-  --recommendation R --time-sensitivity blocking --risk R
+  --recommendation R --blocking yes --risk R
 )
 ERR=$("$HELPER" "${ARGS[@]}" 2>&1 >/dev/null)
 EXIT=$?

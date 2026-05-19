@@ -36,7 +36,7 @@ All findings, review comments, and issues use P1/P2/P3 classification. This prio
 |----------|---------|--------|
 | **P1** | Must fix — blocks merge, security issue, data loss risk, broken functionality | Fix before proceeding |
 | **P2** | Should fix — logic error, missing edge case, test gap, convention violation | Fix in this PR |
-| **P3** | Consider — style preference, optimization opportunity, future improvement | Fix in-PR unless a Proactive-Autonomy escalation is filed (six-field structure: Situation / Tried / Options / Recommendation / Time sensitivity / Risk) |
+| **P3** | Consider — style preference, optimization opportunity | Fix in-PR by default. Cosmetic P3 in untouched files: fix-if-bounded or document inline (default) / follow-up issue (`minimalScope` mode only). Finding triage is NEVER a valid escalation trigger — see `skills/llm-operator-principles/SKILL.md`. |
 
 ## ASSERTION/EVIDENCE/VERIFIED Pattern
 

@@ -10,6 +10,7 @@ Tier 3 operation — **always requires human confirmation**. This is non-negotia
 
 ## Required Skills
 
+- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
 - `merge-and-release` — prerequisite verification, merge execution
 
 ## References
@@ -380,7 +381,7 @@ Use the AskUserQuestion tool with a Proactive-Autonomy escalation:
 >
 > **Recommendation** — Option 1. Automated conflict resolution handles most cases and re-verifies after resolution.
 >
-> **Time sensitivity** — Blocks merge. Must resolve before proceeding.
+> **Blocking?** — Yes. Blocks merge; the workflow cannot proceed until conflicts resolve.
 >
 > **Risk** — Option 1 may produce incorrect resolution for semantic conflicts (caught by post-resolution verification). Option 2 delays merge.
 
@@ -421,7 +422,7 @@ if [ -n "$ISSUE" ]; then
   "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
     --issue $ISSUE \
     --type escalation-resolved \
-    --metadata escalation_field={situation|tried|options|recommendation|time-sensitivity|risk} \
+    --metadata escalation_field={situation|tried|options|recommendation|blocking|risk} \
     --metadata outcome="$USER_RESPONSE_SUMMARY"
 fi
 ```

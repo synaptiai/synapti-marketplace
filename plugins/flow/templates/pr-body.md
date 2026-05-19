@@ -1,3 +1,12 @@
+<!--
+PR body anti-estimation guard:
+This template MUST NOT include calendar-time estimates (weeks, days, hours, sprints,
+ETAs, "by Friday," etc.) in any field. If size context is necessary, use t-shirt
+sizing (S/M/L) and only when the user explicitly asked for it. The flow plugin
+runs under an LLM operator; calendar-time framings invite incorrect estimates that
+anchor downstream deferral. See `skills/llm-operator-principles/SKILL.md`.
+-->
+
 ## Summary
 
 {2-3 sentence description of what changed and why}

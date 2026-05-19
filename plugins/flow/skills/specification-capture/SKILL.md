@@ -70,7 +70,7 @@ For each element that is still missing after Steps 1 and 2, draft a 3-5 item pro
 - **What I tried** — Read issue body and {N} comments. Searched for cues ({list of cues from the table above}). No prior statement found.
 - **Options** — (1) Accept the agent's proposal as written. (2) Accept with edits (the agent will prompt for changes). (3) Reject — the specification is incomplete and the issue should be updated first.
 - **Recommendation** — Option {1|2} based on the proposal's specificity. Option 3 only when the agent cannot produce a credible proposal from the issue context.
-- **Time sensitivity** — Blocks PLAN. The Spec Validation Gate cannot proceed until this resolves.
+- **Blocking?** — Yes. Blocks PLAN; the Spec Validation Gate cannot proceed until this resolves.
 - **Risk** — Choosing Option 1 with a wrong proposal locks the implementation into the wrong fence; the agent will surface a Stranger Test failure later but the user will have wasted PLAN cycles. Choosing Option 3 means the issue must be updated before re-running the workflow.
 
 Surface ONE escalation per missing element. Do not bundle (a compound prompt forces the user to make multiple decisions in one click; see `references/escalation-format.md` anti-patterns).
