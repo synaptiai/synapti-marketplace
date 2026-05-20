@@ -2,6 +2,27 @@
 
 A Claude Code plugin that replaces command-driven GitHub workflow automation with a skill-driven, agent-team-powered approach. Skills encode reusable team knowledge — policy, philosophy, and rationale — as reference documents that compound across sessions; commands carry the executable bash that runs at workflow time.
 
+## Flow v3 Runtime Layer (new in 3.0.0)
+
+Flow v3 introduces a **runtime layer** at `.flow/` on top of the existing skill + command framework. Six new primitives give the plugin durable goals, inspectable workflows, declarative triggers, and resumable execution:
+
+- **FlowGoal** — `.flow/goals/<id>.goal.yaml`, durable completion contracts (`/flow:goal status | create | inspect | evaluate | pause | resume | clear`).
+- **FlowWorkflow** — `plugins/flow/workflows/*.workflow.yaml`, machine-readable process contracts for every `/flow:*` command (`/flow:workflow list | inspect | validate | graph`).
+- **FlowTrigger** — `.flow/triggers/<id>.trigger.yaml`, wake-up intent contracts (`/flow:trigger`, `/flow:watch`, `/flow:run`). v3.0 supports `manual | hook | loop_prompt`.
+- **FlowRun + FlowActivity** — `.flow/runs/<ISO-id>/`, durable execution ledger (`/flow:resume`).
+- **FlowEvidence** — `.evidence.yaml` sidecars proving acceptance criteria.
+
+Flow does NOT invoke native Claude Code `/goal` or `/loop` — those are session-only built-ins and not exposed to plugins. Flow implements its own file-backed goal layer and uses Stop hooks for post-turn enforcement. The `/flow:watch` command generates a `/loop` prompt file the user invokes manually.
+
+**Default behavior is preserved** from v2.x: `flow.goals.requireGoalForStart` defaults to `false`, so `/flow:start` does NOT auto-create goals. Users opt in via `/flow:goal create`. See [`references/migration-v2-to-v3.md`](references/migration-v2-to-v3.md) for the full migration guide.
+
+Key references:
+- [`references/flow-goals.md`](references/flow-goals.md) — FlowGoal model
+- [`references/flow-runtime-state.md`](references/flow-runtime-state.md) — `.flow/` directory layout
+- [`references/flow-workflows.md`](references/flow-workflows.md) — FlowWorkflow contracts
+- [`references/flow-triggers.md`](references/flow-triggers.md) — FlowTrigger model
+- [`references/stop-hook-goal-enforcement.md`](references/stop-hook-goal-enforcement.md) — Stop hook architecture
+
 ## Excellence Principles
 
 Flow v2.0 enforces six guiding principles that shift the quality bar from "good enough" to "provably correct." These principles emerged from observed failure patterns in agent-driven development and are now structural defaults.

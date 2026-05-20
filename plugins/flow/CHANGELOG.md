@@ -1,5 +1,97 @@
 # Changelog
 
+## 3.0.0 (2026-05-20)
+
+### New: Flow v3 runtime layer — goals, workflows, triggers
+
+Flow v3.0 introduces a **runtime layer** at `.flow/` on top of the existing v2 plugin. Six new primitives — FlowGoal, FlowWorkflow, FlowTrigger, FlowRun, FlowActivity, FlowEvidence — give the plugin durable goals (completion contracts), inspectable workflows (process contracts), declarative triggers (wake-up intent), and resumable execution records.
+
+**The non-negotiable constraint** (verified): Claude Code plugins cannot invoke native `/goal`, `/loop`, `/schedule`, or any built-in slash command. Flow v3 replicates the *contract* via project-local artifacts and runs its own loop via the `Stop` hook.
+
+#### New primitives
+
+- **FlowGoal** (M1+M2) — `.flow/goals/<id>.goal.yaml`, schema-validated completion contracts with outcome, AC, verification commands, constraints, evaluator binding, and lifecycle state (`draft → active → {waiting_for_user, waiting_for_ci, blocked} → {achieved, failed, cancelled}`). Lifecycle transitions go through `bin/flow-goal-record.sh` (atomic via `_journal_atomic.py`).
+- **FlowWorkflow** (M4) — `plugins/flow/workflows/<id>.workflow.yaml`, machine-readable process contracts for `/flow:start`, `/flow:review`, `/flow:address`, `/flow:merge`, `/flow:release`, `/flow:debug`, `/flow:design`. Validated by `/flow:workflow validate`.
+- **FlowTrigger** (M5) — `.flow/triggers/<id>.trigger.yaml`, wake-up intent contracts. v3.0 supports `manual | hook | loop_prompt`; v3.1+ adds `github_actions | local_cron | local_daemon`. Hard requirement: `merge` and `release` MUST be in every trigger's `policy.forbidden_actions`.
+- **FlowRun + FlowActivity** (M3+M1) — `.flow/runs/<ISO-timestamp-id>/` with `run.yaml`, sequence-numbered `activities/<NNN>-<name>.yaml`, and `events.jsonl`. Powers `/flow:resume`.
+- **FlowEvidence** (M1) — `.evidence.yaml` sidecars + raw output captures under `.flow/runs/<id>/evidence/`.
+
+#### New commands
+
+- `/flow:goal` (M2) — `status | create | inspect | evaluate | pause | resume | clear | history`
+- `/flow:resume` (M3) — informational; reads interrupted FlowRun state, suggests next safe action
+- `/flow:workflow` (M4) — `list | inspect | validate | graph`
+- `/flow:trigger` (M5) — `list | inspect | enable | disable | run | delete`
+- `/flow:watch` (M5) — `pr <N> | ci | issue <N> | branch`; creates trigger + generates `.claude/flow-loop-<id>.md` for manual `/loop` invocation
+- `/flow:run` (M5) — `trigger <id>`; single-shot trigger executor
+
+#### New skills (7)
+
+- `goal-contract-capture` — extends `specification-capture` as 5th invoker; writes goal YAMLs
+- `goal-evaluator` — wraps `criterion-verification-map`; runs deterministic checks + optional judge dispatch
+- `goal-evidence-ledger` — wraps `evidence-based-development`; file-backed sidecars
+- `goal-lifecycle` — state machine enforcement; every transition writes journal artifact
+- `run-state-management` — owns FlowRun mutations; wraps `autonomous-workflow`
+- `workflow-validation` — schema + cross-reference checks
+- `trigger-policy` — Tier 3 absolute deny + recursion deny enforcement
+
+#### New agent
+
+- `goal-evaluator-judge` — specializes `verdict-judge`. Same Independence Protocol; output adds `confidence`, `delta`, `next_step_hint`. Used in evaluator-loop Stop mode and `/flow:goal evaluate`.
+
+#### New hooks
+
+- `flow-goal-stop.sh` (M2) — Stop hook in three modes: `warn` (default, $0/turn), `block`, `evaluator-loop` (opt-in, Haiku subprocess ~$0.001/turn).
+- `flow-goal-evaluator.sh` (M2) — Active evaluator-loop mode. Recursion guarded via `CLAUDE_HOOK_GOAL_JUDGE_MODE` env var; throttled to 3 continuations/5min/session.
+- `flow-run-deterministic-checks.sh` (M2) — Shared deterministic checks runner.
+- `session-end-state.sh` (M3) — Annotates active FlowRuns at session end.
+
+#### Refactored
+
+- `bin/journal-record.sh` lines 120-295 (Python heredoc) extracted into `bin/_journal_atomic.py` as a shared module. All 14 existing tests in `journal-record.test.sh` pass unchanged. Security defenses (PYTHONSAFEPATH, O_NOFOLLOW, fcntl.flock, tempfile+rename+fsync, hostile-fork RCE mitigations) preserved verbatim.
+
+#### Settings additions
+
+All under `flow.*` namespace, cascade-resolved via `bin/cascade-resolve.sh`:
+- `flow.runtime.*` — master switch + state dir + retention
+- `flow.goals.*` — feature flag + auto-create flag + Stop hook posture + judge model
+- `flow.workflows.*` — feature flag (M4; default `false`)
+- `flow.triggers.*` — feature flag + allowed types + concurrency + recursion deny
+
+#### Behavior defaults (preserve v2.x UX)
+
+- `flow.goals.requireGoalForStart: false` — `/flow:start` does NOT auto-create goals by default. Users opt in via `/flow:goal create`. Integration into existing commands is deferred to a follow-up PR.
+- `flow.goals.stopHookEnforcement: warn` — Stop hook is silent for users without active goals.
+- `flow.workflows.enabled: false` — `/flow:workflow` opt-in.
+- `flow.triggers.enabled: false` — `/flow:trigger` and `/flow:watch` opt-in.
+
+To disable the v3 runtime layer entirely (rollback): set `flow.runtime.enabled: false` and `flow.goals.enabled: false`.
+
+#### File-tree additions
+
+- `plugins/flow/schemas/v1/` — 6 schemas (goal, run, activity, evidence, workflow, trigger)
+- `plugins/flow/workflows/` — 7 workflow YAMLs
+- `plugins/flow/triggers/templates/` — 3 trigger templates
+- `plugins/flow/references/` — 6 new references (flow-goals, stop-hook-goal-enforcement, flow-runtime-state, flow-workflows, flow-triggers, migration-v2-to-v3)
+- Root `.gitignore` — `.flow/runs/`, `.flow/evidence/`, `.flow/triggers/*.local.yaml` gitignored; `.flow/goals/`, `.flow/workflows/`, non-`.local` triggers tracked
+
+#### Migration
+
+See `plugins/flow/references/migration-v2-to-v3.md` for the full guide. TL;DR: v3.0 is **purely additive**. Existing v2.x users see no breaking changes when M1-M5 ship; opting into v3 features is a settings flag.
+
+#### Test totals
+
+255-259 assertions pass, 0 fail. New tests in M1 (schemas, atomic helpers, refactor verification) and M2 (Stop hook). M3-M5 ship inline schema validation; per-skill / per-command unit tests deferred to follow-up.
+
+#### What's deferred
+
+- Integration into existing commands (`start.md`, `debug.md`, `address.md`, `review.md`, `pr.md`, `merge.md`, `release.md`) — i.e., wiring FlowRun + FlowGoal auto-creation into the existing workflow.
+- `/flow:status` and `/flow:learn` extensions to read from `.flow/`.
+- Polyglot Windows wrapper for hook scripts (separate cleanup PR).
+- Per-skill / per-command unit tests for M3-M5 deliverables.
+
+---
+
 ## 2.4.0 (2026-05-19)
 
 ### Behavior change — LLM Operator Principles
