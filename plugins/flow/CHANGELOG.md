@@ -60,12 +60,31 @@ All under `flow.*` namespace, cascade-resolved via `bin/cascade-resolve.sh`:
 
 #### Behavior defaults (preserve v2.x UX)
 
-- `flow.goals.requireGoalForStart: false` — `/flow:start` does NOT auto-create goals by default. Users opt in via `/flow:goal create`. Integration into existing commands is deferred to a follow-up PR.
+- `flow.goals.requireGoalForStart: false` — `/flow:start` does NOT auto-create goals by default. Users opt in via `/flow:goal create` OR via the first-run consent prompt below.
 - `flow.goals.stopHookEnforcement: warn` — Stop hook is silent for users without active goals.
 - `flow.workflows.enabled: false` — `/flow:workflow` opt-in.
 - `flow.triggers.enabled: false` — `/flow:trigger` and `/flow:watch` opt-in.
 
 To disable the v3 runtime layer entirely (rollback): set `flow.runtime.enabled: false` and `flow.goals.enabled: false`.
+
+#### First-run consent prompt + integration into `/flow:start`
+
+To close the "feature ships dormant" usability gap surfaced by the post-cycle-8 review, `/flow:start` now wires v3 into the workflow surface and prompts new users to opt in:
+
+- **Phase 0.5 onboarding** — when both `.claude/settings.flow.json` AND `.flow/` are absent (fresh-install signal), `/flow:start` fires a single `AskUserQuestion` consent prompt with three options: enable v3 (recommended for new projects), skip and keep v2 behavior, or read the quickstart first. The user's answer is persisted to `.claude/settings.flow.json` so the prompt fires exactly once per project. v2 projects upgrading (with any existing settings file) never see the prompt.
+- **Phase 1 goal auto-creation** — after the Spec Validation Gate passes, `/flow:start` checks `flow.goals.requireGoalForStart`. When `true`, it invokes `Skill(goal-contract-capture)` + `Skill(goal-lifecycle)` to create `.flow/goals/issue-<N>.goal.yaml` and transition to `active`, then echoes `FlowGoal created: issue-<N> at <path> (status: active)`. When the goal already exists, it surfaces the path without overwriting.
+- **`/flow:goal evaluate` hint** — when ACs return `last_result.reason: not_executed` (deterministic checks skipped because `flow.goals.executeVerificationCommands: false`), the evaluator output now includes the settings hint to flip the flag, replacing the previous silent skip behavior.
+
+#### New documentation (post-cycle-8)
+
+- `references/flow-goals-quickstart.md` — 5-minute Hello-FlowGoal walkthrough on a synthetic issue (enable → start → inspect → evaluate → verdict)
+- `references/migration-v2-to-v3.md` — step-by-step v2 → v3 opt-in across the four independent feature flags (goals, Stop-hook posture, workflows, triggers), with rollback path
+- `references/flow-goals.md` — new "Enabling v3 in your project" section with copy-pasteable JSON for `.claude/settings.flow.json`
+- `README.md` — new "Get started with v3" link block pointing at the quickstart and migration guide
+
+#### New test
+
+`tests/flow-start-onboarding.test.sh` covers the onboarding detection logic (fresh / settings present / `.flow/` present / both present), the idempotency of both `enable` and `skip` arms (settings file written + re-detection returns `skip`), and the FlowGoal auto-creation gate (create / exists / skip-when-disabled / skip-on-missing-or-invalid issue number). 19 new assertions.
 
 #### File-tree additions
 
@@ -92,12 +111,15 @@ Iterative paired-reviewer self-review converged the 3.0.0 surface against:
 
 #### Test totals
 
-433 assertions pass, 0 fail (initial v3 baseline 259 → 433 after iterative self-review). Tests cover JSON schemas, atomic write helpers, Stop hook behavior, and the integration harness (full `claude` mock for evaluator-loop active mode). Per-skill / per-command unit tests deferred to follow-up.
+452 assertions pass, 0 fail (initial v3 baseline 259 → 433 after iterative self-review → 452 after post-cycle-8 onboarding + docs). Tests cover JSON schemas, atomic write helpers, Stop hook behavior, the integration harness (full `claude` mock for evaluator-loop active mode), and the new fresh-install onboarding detection. Per-skill / per-command unit tests deferred to follow-up.
 
 #### What's deferred
 
-- Integration into existing commands (`start.md`, `debug.md`, `address.md`, `review.md`, `pr.md`, `merge.md`, `release.md`) — i.e., wiring FlowRun + FlowGoal auto-creation into the existing workflow.
+- Integration of FlowRun creation + FlowGoal auto-creation into the remaining commands (`debug.md`, `address.md`, `review.md`, `pr.md`, `merge.md`, `release.md`). `start.md` is wired (see "First-run consent prompt + integration into `/flow:start`" above).
 - `/flow:status` and `/flow:learn` extensions to read from `.flow/`.
+- Recovery / stuck-goal documentation (`references/recovering-stuck-goals.md`).
+- Consolidated cost-comparison table for the three Stop-hook modes in a single page.
+- `/flow:watch` post-creation `AskUserQuestion` confirmation step.
 - Polyglot Windows wrapper for hook scripts (separate cleanup PR).
 - Per-skill / per-command unit tests for workflow / run-state / trigger surfaces.
 
