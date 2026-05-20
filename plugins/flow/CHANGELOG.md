@@ -81,7 +81,7 @@ See `plugins/flow/references/migration-v2-to-v3.md` for the full guide. TL;DR: v
 
 #### Test totals
 
-255-259 assertions pass, 0 fail. New tests in M1 (schemas, atomic helpers, refactor verification) and M2 (Stop hook). M3-M5 ship inline schema validation; per-skill / per-command unit tests deferred to follow-up.
+408 assertions pass, 0 fail (M6 GA baseline 259 → cycle 1: 276 → cycle 2: 295 → cycle 3: 330 → cycle 4: 358 → cycle 5: 408). New tests in M1 (schemas, atomic helpers, refactor verification), M2 (Stop hook), and cycle 5 (full `claude` mock harness for evaluator-loop active mode). M3-M5 ship inline schema validation; per-skill / per-command unit tests deferred to follow-up.
 
 #### What's deferred
 

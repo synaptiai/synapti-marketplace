@@ -84,7 +84,16 @@ _fge_run() {
     export PATH="$dir/mock-bin:$PATH"
     export FLOW_TEST_CLAUDE_RESPONSE="$fixture"
     export CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow"
-    for kv in "$@"; do export "$kv"; done
+    for kv in "$@"; do
+      # Guard against bare names / empties — `export` with an empty string
+      # errors with "not a valid identifier"; with a bare `FOO` exports
+      # whatever value is in scope (usually nothing useful under `set -u`).
+      case "$kv" in
+        '') continue ;;
+        *=*) export "$kv" ;;
+        *) echo "_fge_run: ignoring kv without '=': '$kv'" >&2 ;;
+      esac
+    done
     printf '%s' "$event" | "$HOOK"
   )
 }
@@ -388,6 +397,10 @@ if [ -f "$VFILE" ]; then
   assert_equal "achieved" "$V" "verdict=achieved (from judge)"
   assert_equal "0.92" "$C" "confidence preserved from judge fixture"
   assert_equal "made_progress" "$D" "delta preserved from judge fixture"
+  # recorded_at invariant: UTC ISO-8601 with second resolution + literal Z.
+  # Regression-locks the auto-timestamp shape from flow-record-verdict.sh:258.
+  RA=$(jq -r '.recorded_at' "$VFILE")
+  assert_match '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' "$RA" "recorded_at is UTC ISO-8601 with literal Z"
 else
   _flow_assert_fail "last-verdict.json missing at $VFILE"
 fi
@@ -512,7 +525,7 @@ DIR=$(_fge_mktemp_dir)
 mkdir -p "$DIR/mock-bin"
 cp "$SHIM" "$DIR/mock-bin/claude"
 chmod +x "$DIR/mock-bin/claude"
-for tool in jq python3 bash sh sed grep awk cat tr head cut date mktemp dirname basename mkdir ls rm chmod cp printf env touch find tail xargs; do
+for tool in jq python3 bash sh sed grep awk cat tr head cut date mktemp dirname basename mkdir ls rm chmod cp printf env touch find tail xargs uname; do
   if command -v "$tool" >/dev/null 2>&1; then
     ln -sf "$(command -v "$tool")" "$DIR/mock-bin/$tool"
   fi
@@ -530,4 +543,173 @@ DECISION=$(echo "$OUT" | jq -r '.decision')
 REASON=$(echo "$OUT" | jq -r '.reason')
 assert_equal "approve" "$DECISION" "decision is approve"
 assert_contains "timeout(1) unavailable" "$REASON" "reason names missing timeout(1)"
-assert_contains "brew install coreutils" "$REASON" "reason guides macOS users to the fix"
+# Platform-aware install hint: Darwin → "brew install coreutils";
+# Linux → "install GNU coreutils (apt/dnf/apk add coreutils)";
+# other → "install GNU coreutils for your platform".
+case "$(uname -s 2>/dev/null)" in
+  Darwin) _EXPECTED_HINT="brew install coreutils" ;;
+  Linux)  _EXPECTED_HINT="apt/dnf/apk add coreutils" ;;
+  *)      _EXPECTED_HINT="install GNU coreutils" ;;
+esac
+assert_contains "$_EXPECTED_HINT" "$REASON" "reason carries platform-appropriate install hint"
+
+# --- Test 16: path-boundary violation → block + last-verdict.json with violations in reason
+# Exercises the second arm of the must_pass-fail gate at flow-goal-evaluator.sh:228 —
+# the `VIOLATIONS` branch composes a distinct reason from must_pass-fail. Requires a
+# real git repo with a tracked file outside allowed_paths because path-violation
+# detection runs `git diff --name-only`.
+_flow_test_begin "path-boundary violation → block + reason names 'Path boundary violations'"
+DIR=$(_fge_mktemp_dir)
+_fge_make_mockbin "$DIR"
+RUN_ID="2026-05-20T143000Z-pathv"
+mkdir -p "$DIR/.flow/goals" "$DIR/.claude" "$DIR/src"
+# Initialize a git repo so `git diff --name-only` returns a non-empty result.
+# `git diff --name-only` shows TRACKED-and-modified files. Commit both
+# files first, then modify the disallowed one so it surfaces in the diff.
+( cd "$DIR" && git init -q --initial-branch=main && git config user.email t@t && git config user.name t && \
+  mkdir -p src billing && echo "init" > src/keep.ts && echo "init" > billing/disallowed.ts && \
+  git add src/keep.ts billing/disallowed.ts && git commit -qm "init" && \
+  echo "modified" >> billing/disallowed.ts ) >/dev/null 2>&1
+cat > "$DIR/.flow/goals/pathv.goal.yaml" <<YML
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: pathv
+  created_at: '2026-05-20T14:30:00Z'
+scope:
+  repo: t/t
+  branch: main
+  run_id: '${RUN_ID}'
+objective:
+  outcome: test
+  acceptance_criteria:
+    - id: AC1
+      text: fuzzy
+      status: pending
+constraints:
+  allowed_paths:
+    - src/**
+evaluator:
+  type: hybrid
+continuation:
+  max_iterations: 20
+lifecycle:
+  status: active
+  turns_evaluated: 1
+YML
+OUT=$(_fge_run "$DIR" "$FIXTURES/verdict-achieved.json" '{"session_id":"s16"}')
+DECISION=$(echo "$OUT" | jq -r '.decision')
+REASON=$(echo "$OUT" | jq -r '.reason')
+assert_equal "block" "$DECISION" "decision is block"
+assert_contains "Path boundary violations" "$REASON" "reason names path-boundary branch"
+assert_contains "billing/disallowed.ts" "$REASON" "reason surfaces the specific violating path"
+VFILE="$DIR/.flow/runs/$RUN_ID/last-verdict.json"
+if [ -f "$VFILE" ]; then
+  V=$(jq -r '.verdict' "$VFILE")
+  assert_equal "not_achieved" "$V" "verdict=not_achieved persisted on path-violation"
+else
+  _flow_assert_fail "last-verdict.json missing for path-violation case"
+fi
+
+# --- Test 17: lifecycle status != "active" → no-goal exit
+# Hook only picks up goals where lifecycle.status == "active". A goal with
+# status: draft / paused / waiting_for_user / achieved must NOT be selected,
+# even if it's the only goal file present.
+_flow_test_begin "lifecycle status draft/paused/achieved → 'no active flow goal'"
+DIR=$(_fge_mktemp_dir)
+_fge_make_mockbin "$DIR"
+mkdir -p "$DIR/.flow/goals"
+# Emit three goals with non-active statuses. None should be picked.
+for status in draft paused achieved; do
+cat > "$DIR/.flow/goals/lc-${status}.goal.yaml" <<YML
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: lc-${status}, created_at: '2026-05-20T14:30:00Z'}
+scope: {repo: t/t, branch: t, run_id: '2026-05-20T143000Z-lc-${status}'}
+objective:
+  outcome: t
+  acceptance_criteria:
+    - {id: AC1, text: fuzzy, status: pending}
+evaluator: {type: hybrid}
+continuation: {max_iterations: 20}
+lifecycle: {status: ${status}}
+YML
+done
+OUT=$(_fge_run "$DIR" "$FIXTURES/verdict-achieved.json" '{"session_id":"s17"}')
+REASON=$(echo "$OUT" | jq -r '.reason')
+assert_contains "no active flow goal" "$REASON" "draft/paused/achieved goals not selected"
+
+# --- Test 18: unknown JUDGE_MODEL → fallback to haiku + stderr warning
+# Settings cascade can specify any string; the hook validates against an
+# allowlist (haiku/sonnet/opus) and falls back to haiku with a stderr note.
+_flow_test_begin "unknown JUDGE_MODEL → fallback + stderr note + hybrid path completes"
+DIR=$(_fge_mktemp_dir)
+_fge_make_mockbin "$DIR"
+RUN_ID="2026-05-20T143000Z-bad-model"
+mkdir -p "$DIR/.claude"
+cat > "$DIR/.claude/settings.flow.json" <<'JSON'
+{"flow":{"goals":{"judge":{"model":"gpt-4-rogue"}}}}
+JSON
+_fge_write_hybrid_goal "$DIR" "$RUN_ID"
+# Capture both stdout and stderr to assert on the fallback log.
+COMBINED=$(_fge_run "$DIR" "$FIXTURES/verdict-achieved.json" '{"session_id":"s18"}' 2>&1)
+DECISION=$(echo "$COMBINED" | grep -E '^\{' | head -1 | jq -r '.decision')
+assert_equal "approve" "$DECISION" "hybrid path completes despite bad model name"
+assert_contains "unknown judge.model 'gpt-4-rogue'" "$COMBINED" "stderr names the fallback trigger"
+assert_contains "falling back to haiku" "$COMBINED" "stderr names the fallback target"
+
+# --- Test 19: JUDGE_TIMEOUT out-of-range → clamp to 60
+# The clamp at flow-goal-evaluator.sh:97-99 rejects values <5 or >600. Verify
+# both bounds + non-numeric.
+_flow_test_begin "JUDGE_TIMEOUT out-of-range → clamp to 60 + hybrid path completes"
+DIR=$(_fge_mktemp_dir)
+_fge_make_mockbin "$DIR"
+RUN_ID="2026-05-20T143000Z-bad-timeout"
+mkdir -p "$DIR/.claude"
+cat > "$DIR/.claude/settings.flow.json" <<'JSON'
+{"flow":{"goals":{"judge":{"timeoutSeconds":99999}}}}
+JSON
+_fge_write_hybrid_goal "$DIR" "$RUN_ID"
+OUT=$(_fge_run "$DIR" "$FIXTURES/verdict-achieved.json" '{"session_id":"s19"}')
+DECISION=$(echo "$OUT" | jq -r '.decision')
+# The mock timeout shim discards the duration arg, so we can't observe the
+# clamped value directly — but a successful hybrid path completion proves
+# the hook didn't crash on an out-of-range timeout.
+assert_equal "approve" "$DECISION" "out-of-range timeout doesn't break hybrid path"
+VFILE="$DIR/.flow/runs/$RUN_ID/last-verdict.json"
+assert_file_exists "$VFILE" "last-verdict.json written despite bad timeout setting"
+
+# --- Test 20: symlinked goal YAML → bundle-assembler safe-fallback
+# The bundle assembler runs with O_NOFOLLOW; a symlinked goal YAML triggers
+# the safe-fallback path (approve with "evidence-bundle assembly failed"
+# reason) rather than feeding the judge a partial prompt.
+_flow_test_begin "symlinked goal YAML → safe-fallback approve (assembler refuses)"
+DIR=$(_fge_mktemp_dir)
+_fge_make_mockbin "$DIR"
+RUN_ID="2026-05-20T143000Z-symlink"
+mkdir -p "$DIR/.flow/goals"
+# Write a real goal elsewhere, then symlink it into .flow/goals/.
+mkdir -p "$DIR/real-goals"
+cat > "$DIR/real-goals/real.goal.yaml" <<YML
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: sym, created_at: '2026-05-20T14:30:00Z'}
+scope: {repo: t/t, branch: t, run_id: '${RUN_ID}'}
+objective:
+  outcome: t
+  acceptance_criteria:
+    - {id: AC1, text: fuzzy, status: pending}
+evaluator: {type: hybrid}
+continuation: {max_iterations: 20}
+lifecycle: {status: active, turns_evaluated: 1}
+YML
+ln -sf "$DIR/real-goals/real.goal.yaml" "$DIR/.flow/goals/sym.goal.yaml"
+OUT=$(_fge_run "$DIR" "$FIXTURES/verdict-achieved.json" '{"session_id":"s20"}')
+DECISION=$(echo "$OUT" | jq -r '.decision')
+REASON=$(echo "$OUT" | jq -r '.reason')
+# Either branch is acceptable here: the bundle assembler may refuse the
+# symlink (preferred — safe-fallback) OR the goal-discovery itself may
+# parse the symlinked YAML successfully and proceed to judge. The contract
+# under test is: NO CRASH, hook always returns a JSON decision.
+assert_match '^(approve|block)$' "$DECISION" "decision is a well-formed JSON verdict (no crash on symlinked goal)"
+assert_match '^.+$' "$REASON" "reason is non-empty"

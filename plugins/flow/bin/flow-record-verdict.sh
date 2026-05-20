@@ -273,5 +273,10 @@ except JournalAtomicError as e:
         print("flow-record-verdict.sh: refusing to overwrite — fix manually", file=sys.stderr)
     sys.exit(e.exit_code)
 
-print(f"flow-record-verdict.sh: recorded verdict for {run_id} -> {target}", file=sys.stderr)
+# Success-path stderr is gated behind FLOW_RECORD_VERDICT_QUIET so callers
+# (the evaluator-loop hook in particular) can suppress chatter without
+# losing real error visibility. Default unset = chatty (manual `/flow:goal
+# evaluate` callers benefit from the confirmation).
+if not os.environ.get("FLOW_RECORD_VERDICT_QUIET", ""):
+    print(f"flow-record-verdict.sh: recorded verdict for {run_id} -> {target}", file=sys.stderr)
 PYTHON

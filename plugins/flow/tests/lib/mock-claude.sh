@@ -23,10 +23,19 @@ if [ -z "${FLOW_TEST_CLAUDE_RESPONSE:-}" ]; then
   echo "mock-claude: FLOW_TEST_CLAUDE_RESPONSE unset" >&2
   exit 1
 fi
+# `-f` (regular file) is stricter than `-r` (readable) — `-r` is true for
+# directories too, which would later make `cat <dir>` emit "Is a directory"
+# stderr and confuse test diagnostics.
+if [ ! -f "$FLOW_TEST_CLAUDE_RESPONSE" ]; then
+  echo "mock-claude: fixture is not a regular file: $FLOW_TEST_CLAUDE_RESPONSE" >&2
+  exit 1
+fi
 if [ ! -r "$FLOW_TEST_CLAUDE_RESPONSE" ]; then
   echo "mock-claude: fixture unreadable: $FLOW_TEST_CLAUDE_RESPONSE" >&2
   exit 1
 fi
 
-cat > /dev/null
+# Tolerate a closed FD 0 — `cat > /dev/null <&-` errors with "Bad file
+# descriptor". `|| true` keeps the shim exit 0 so the hook sees clean stdout.
+cat > /dev/null 2>/dev/null || true
 cat "$FLOW_TEST_CLAUDE_RESPONSE"

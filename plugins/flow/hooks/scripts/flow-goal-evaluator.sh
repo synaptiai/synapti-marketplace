@@ -43,13 +43,21 @@ python3 -c "import yaml" >/dev/null 2>&1 || { echo '{"decision":"approve","reaso
 # ship it by default — `brew install coreutils` provides `gtimeout`. Without
 # either, an unbounded `claude --print` call could hang the Stop hook
 # indefinitely; degrade with a clear message instead of running unbounded.
-# Discovered by tests/flow-goal-evaluator.test.sh integration coverage.
 if command -v timeout >/dev/null 2>&1; then
   TIMEOUT_BIN="timeout"
 elif command -v gtimeout >/dev/null 2>&1; then
   TIMEOUT_BIN="gtimeout"
 else
-  echo '{"decision":"approve","reason":"timeout(1) unavailable; evaluator-loop requires it (brew install coreutils on macOS)"}'
+  # Platform-aware install guidance so Linux container users aren't pointed
+  # at brew. coreutils ships everywhere GNU userland is supported; only the
+  # package name varies.
+  case "$(uname -s 2>/dev/null)" in
+    Darwin) _INSTALL_HINT="brew install coreutils" ;;
+    Linux)  _INSTALL_HINT="install GNU coreutils (apt/dnf/apk add coreutils)" ;;
+    *)      _INSTALL_HINT="install GNU coreutils for your platform" ;;
+  esac
+  jq -nc --arg h "$_INSTALL_HINT" \
+    '{decision:"approve", reason:("timeout(1) unavailable; evaluator-loop requires it — " + $h)}'
   exit 0
 fi
 
@@ -214,9 +222,12 @@ _record_verdict() {
     return 0
   fi
   # Run-dir may not exist yet; helper does mkdir -p but only if RUN_ID
-  # looks valid. Surface the helper's stderr so failure modes are observable.
-  "${PLUGIN_ROOT}/bin/flow-record-verdict.sh" --run-id "$RUN_ID" --verdict-file "$vtmp" \
-    >/dev/null \
+  # looks valid. Suppress the helper's success-stderr chatter — it lands in
+  # CI logs and looks like an error to readers — but PRESERVE failure
+  # diagnostics by re-emitting our own message on non-zero exit.
+  FLOW_RECORD_VERDICT_QUIET=1 "${PLUGIN_ROOT}/bin/flow-record-verdict.sh" \
+    --run-id "$RUN_ID" --verdict-file "$vtmp" \
+    >/dev/null 2>/dev/null \
     || echo "flow-goal-evaluator: last-verdict.json write failed (delta computation on next turn will fall back to 'unchanged')" >&2
 }
 

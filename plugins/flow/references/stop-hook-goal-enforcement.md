@@ -112,10 +112,27 @@ fi
 `flow-goal-evaluator.sh` sets this env var when invoking the judge:
 
 ```bash
-CLAUDE_HOOK_GOAL_JUDGE_MODE=true timeout 60 claude --print ...
+CLAUDE_HOOK_GOAL_JUDGE_MODE=true "$TIMEOUT_BIN" 60 claude --print ...
 ```
 
+where `$TIMEOUT_BIN` resolves to whichever of `timeout` / `gtimeout` is available (see Prerequisites below).
+
 The judge's own Stop hook sees the env var and short-circuits. No recursion possible.
+
+## Prerequisites (evaluator-loop mode)
+
+Evaluator-loop mode requires the following on PATH; the hook degrades to `{"decision":"approve",…}` with a clear reason when any is missing:
+
+| Tool | Why | Install (macOS) | Install (Linux) |
+|---|---|---|---|
+| `jq` | parse Stop event + verdict JSON | `brew install jq` | `apt/dnf/apk install jq` |
+| `python3` + PyYAML | read goal YAML | (preinstalled) + `pip3 install pyyaml` | `apt/dnf/apk install python3 python3-yaml` |
+| `claude` CLI | invoke the judge | per Claude Code install docs | per Claude Code install docs |
+| `timeout(1)` (GNU coreutils) | bound judge subprocess; refuses to spawn unbounded | `brew install coreutils` (provides `gtimeout`) | (preinstalled in `coreutils`) |
+
+Warn mode (`flow.goals.stopHookEnforcement=warn`, the default) needs only `jq`, `python3`, and PyYAML — no `claude`, no `timeout`. Users who never enable evaluator-loop never hit the active-mode prereqs.
+
+On judge timeout, empty response, or unparseable JSON, the hook emits a single `block` decision with `FLOW_GOAL_CONTINUATION` and does **not** retry — retry would amplify cost and could deadlock against the 3/5min throttle. The next turn naturally re-invokes the judge.
 
 ## Throttling
 
