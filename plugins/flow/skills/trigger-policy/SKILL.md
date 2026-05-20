@@ -2,7 +2,6 @@
 name: trigger-policy
 description: "Enforce FlowTrigger safety rules — no autonomous merge, no recursive trigger creation, max active triggers, allowed_actions / forbidden_actions ACLs. Validates trigger YAMLs at `.flow/triggers/*.trigger.yaml` against `schemas/v1/trigger.schema.json` AND cross-checks policy.forbidden_actions includes merge + release; refuses triggers that grant Tier 3 autonomy. Use when /flow:trigger create, /flow:trigger run, or /flow:watch is invoked. This skill MUST be consulted because triggers can fire without user supervision — a trigger granting merge autonomy is the single fastest path to an untrusted-merge incident, and recursive trigger creation is the loop-bomb shape of the runtime layer."
 allowed-tools: Bash, Read
-context: fork
 agent: general-purpose
 ---
 

@@ -2,7 +2,6 @@
 name: preflight-checks
 description: "Reference document describing six pre-flight checks (clean git state, not detached HEAD, gh auth, issue exists and OPEN, remote reachable, duplicate-branch warning) as pure bash exit codes with no LLM calls. Reference only (policy document; consumed by `/flow:start` Phase 0)."
 allowed-tools: Read
-context: fork
 agent: general-purpose
 disable-model-invocation: true
 ---

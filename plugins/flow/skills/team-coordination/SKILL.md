@@ -2,7 +2,6 @@
 name: team-coordination
 description: "Coordinate agent teams for adversarial review (paired skeptic/verifier per facet, challenge round with disposition vocabulary, consolidated findings with confidence) or parallel implementation (task sizing 5-6 per teammate, non-overlapping files). Enforces independent analysis before shared conclusions. Reference only (`disable-model-invocation: true`); loaded only when `agentTeams: true` in settings."
 allowed-tools: Bash, Read, TaskCreate, TaskList, TaskUpdate
-context: fork
 agent: general-purpose
 disable-model-invocation: true
 ---

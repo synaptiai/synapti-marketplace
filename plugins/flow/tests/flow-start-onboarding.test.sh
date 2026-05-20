@@ -288,16 +288,40 @@ fi
 
 _flow_test_begin "skills invoked from command Inputs blocks do not use context: fork"
 
-# Cycle-10 regression fix: skills with `context: fork` lose their parent's
-# context when invoked from command markdown via `Skill(X):\n  Inputs: ...`.
-# The forked subprocess receives "what would you like me to do?" instead of
-# the structured Inputs from the calling command. The 3 skills below were
-# the user-reported failure cases; their frontmatter must NOT carry the
-# `context: fork` field.
+# Cycle-10 + cycle-11 regression fix: skills with `context: fork` lose their
+# parent's context when invoked from command markdown. Per Claude Code docs
+# (https://code.claude.com/docs/en/skills.md): "context: fork only makes
+# sense for skills with explicit instructions ... If your skill contains
+# guidelines like 'use these API conventions' without a task, the subagent
+# receives the guidelines but no actionable prompt, and returns without
+# meaningful output." None of the skills below use $ARGUMENTS as a task
+# input, so fork is documented misuse for all of them.
+#
+# Three groups:
+#   - cycle-10 fixes (3): user-reported failure cases — structured Inputs
+#     invocation from command markdown.
+#   - cycle-11 Pattern A fixes (8): invoked via Skill(X) from command
+#     markdown; 5 of them explicitly say "invoking command MUST pass" in
+#     body, which fork drops.
+#   - cycle-11 disable-invoke fixes (4): have disable-model-invocation:
+#     true so fork is dormant anyway — cosmetic cleanup.
+#
+# 13 remaining ambient-only skills (architecture-patterns, brainstorming,
+# branch-and-task-management, change-classification, code-review-methodology,
+# convention-enforcement, criterion-verification-map, debugging-patterns,
+# feedback-resolution, goal-evidence-ledger, merge-conflict-resolution,
+# run-state-management, tdd-patterns) retain `context: fork` until each
+# body is individually audited as task-directive-with-$ARGUMENTS vs
+# reference-only. Deferred to follow-up issue.
 
 REPO_ROOT_FOR_LINT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 
-for skill in specification-capture holdout-validation runtime-verification; do
+# 15 skills must NOT carry context: fork
+for skill in \
+  specification-capture holdout-validation runtime-verification \
+  capability-discovery goal-contract-capture goal-evaluator goal-lifecycle \
+  issue-crafting trigger-policy visual-verification workflow-validation \
+  merge-and-release pr-lifecycle preflight-checks team-coordination; do
   SKILL_PATH="$REPO_ROOT_FOR_LINT/plugins/flow/skills/$skill/SKILL.md"
   if [ -f "$SKILL_PATH" ]; then
     if grep -q "^context: fork" "$SKILL_PATH"; then
@@ -309,6 +333,22 @@ for skill in specification-capture holdout-validation runtime-verification; do
     _flow_assert_fail "skill file missing: $SKILL_PATH"
   fi
 done
+
+# Sanity: the 13 deferred ambient skills should STILL carry context: fork.
+# This documents the deferred-audit scope and catches accidental removals.
+DEFERRED_AMBIENT=(architecture-patterns brainstorming branch-and-task-management \
+                  change-classification code-review-methodology convention-enforcement \
+                  criterion-verification-map debugging-patterns feedback-resolution \
+                  goal-evidence-ledger merge-conflict-resolution run-state-management \
+                  tdd-patterns)
+DEFERRED_CARRYING_FORK=0
+for skill in "${DEFERRED_AMBIENT[@]}"; do
+  SKILL_PATH="$REPO_ROOT_FOR_LINT/plugins/flow/skills/$skill/SKILL.md"
+  if [ -f "$SKILL_PATH" ] && grep -q "^context: fork" "$SKILL_PATH"; then
+    DEFERRED_CARRYING_FORK=$((DEFERRED_CARRYING_FORK + 1))
+  fi
+done
+assert_equal "13" "$DEFERRED_CARRYING_FORK" "13 ambient-only skills carry context: fork as deferred audit scope"
 
 
 _flow_test_begin "partial-settings merge: jq preserves v2 keys when enabling v3"

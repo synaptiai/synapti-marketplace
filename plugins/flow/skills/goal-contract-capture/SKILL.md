@@ -2,7 +2,6 @@
 name: goal-contract-capture
 description: "Capture a FlowGoal contract as a project-local `.flow/goals/<id>.goal.yaml` file with outcome, acceptance criteria (with verification commands), specification elements (non-goals, failure modes, interface contracts), constraints, evaluator binding, continuation policy, and lifecycle frontmatter. Use when /flow:start passes the Spec Validation Gate, when /flow:goal create is invoked, or when /flow:review and /flow:address need a completion contract for a PR. This skill MUST be consulted because acceptance criteria alone do not constitute a contract — without an evaluator binding, boundaries, and lifecycle state, downstream phases cannot detect premature completion, the Stop hook cannot enforce evidence, and goals cannot resume across sessions."
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
-context: fork
 agent: general-purpose
 ---
 

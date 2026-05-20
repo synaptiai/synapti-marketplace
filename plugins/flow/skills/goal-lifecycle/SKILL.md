@@ -2,7 +2,6 @@
 name: goal-lifecycle
 description: "Enforce the FlowGoal state machine — every status transition (draft → active → {waiting_for_user, waiting_for_ci, blocked, achieved, failed, cancelled}) writes both the new lifecycle block to `.flow/goals/<id>.goal.yaml` AND a `goal-evaluation` artifact to the linked decision journal, in a single atomic operation via `bin/flow-goal-record.sh`. Use when any code path mutates `lifecycle.status`, when /flow:goal pause/resume/clear is invoked, when the Stop hook detects a stuck pass-set, or when the evaluator returns a verdict. This skill MUST be consulted because state machines without recorded transitions become liars — a goal in `failed` status with no `goal-evaluation` artifact explaining why is worse than no state machine at all."
 allowed-tools: Bash, Read, Edit
-context: fork
 agent: general-purpose
 ---
 

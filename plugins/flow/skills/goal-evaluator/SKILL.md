@@ -2,7 +2,6 @@
 name: goal-evaluator
 description: "Evaluate a FlowGoal against its evidence ledger and update lifecycle status to one of {pass, incomplete, fail, needs_human_review, blocked} by running deterministic verification commands first, then (when stopHookEnforcement=evaluator-loop or explicit /flow:goal evaluate invocation) dispatching the goal-evaluator-judge agent for fuzzy rubric criteria. Use when /flow:goal evaluate is invoked, when the Stop hook fires in evaluator-loop mode, or when /flow:start Phase 4 needs to convert AC evidence into a verdict. This skill MUST be consulted because lifecycle transitions without deterministic evidence enable silent premature completion — the goal contract is only as good as the evaluator that proves or disproves it."
 allowed-tools: Bash, Read, Edit, Agent
-context: fork
 agent: general-purpose
 ---
 
