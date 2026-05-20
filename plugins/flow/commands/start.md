@@ -110,6 +110,72 @@ true
 
 If `PREFLIGHT_STATE=BLOCKED`, stop. Do not proceed to EXPLORE. The `PREFLIGHT_FAIL=` lines under the section enumerate the reasons.
 
+## Phase 0.5: FLOW V3 ONBOARDING
+
+Detects whether this is the first `/flow:start` in a project that has neither been configured nor produced any v3 runtime state. Fires the consent prompt once; subsequent invocations see the persisted answer and skip.
+
+```!
+# Onboarding detection: both signals absent → fresh install
+if [ ! -f .claude/settings.flow.json ] && [ ! -d .flow ]; then
+  echo "FLOW_V3_ONBOARDING=needed"
+else
+  echo "FLOW_V3_ONBOARDING=skip"
+fi
+
+true
+```
+
+If `FLOW_V3_ONBOARDING=needed`, use `AskUserQuestion` exactly once with this prompt:
+
+> **Enable Flow v3 runtime layer for this project?**
+>
+> Flow v3 adds durable completion contracts (FlowGoal), inspectable workflows, and resumable execution records under `.flow/`. Acceptance criteria with `verification_command` auto-validate via `/flow:goal evaluate`. See `references/flow-goals-quickstart.md` for a walkthrough.
+>
+> Options:
+> 1. **Enable v3 (recommended for new projects)** — auto-create goals on `/flow:start`, run verification commands during evaluate
+> 2. **Skip — keep v2 behavior** — `/flow:start` proceeds without goals; v3 surfaces remain reachable via explicit `/flow:goal create`
+> 3. **Tell me more** — open the quickstart, decide on the next invocation
+
+Persist the answer to `.claude/settings.flow.json` so this prompt does not re-fire:
+
+```bash
+mkdir -p .claude
+case "$ONBOARDING_ANSWER" in
+  enable)
+    cat > .claude/settings.flow.json <<'JSON'
+{
+  "flow": {
+    "goals": {
+      "requireGoalForStart": true,
+      "executeVerificationCommands": true
+    }
+  }
+}
+JSON
+    echo "Flow v3 enabled. Settings written to .claude/settings.flow.json."
+    ;;
+  skip)
+    cat > .claude/settings.flow.json <<'JSON'
+{
+  "flow": {
+    "goals": {
+      "requireGoalForStart": false,
+      "executeVerificationCommands": false
+    }
+  }
+}
+JSON
+    echo "Flow v3 left disabled. Settings written to .claude/settings.flow.json (you can re-enable later by editing the file)."
+    ;;
+  more)
+    echo "Open plugins/flow/references/flow-goals-quickstart.md, then re-run /flow:start when ready."
+    exit 0
+    ;;
+esac
+```
+
+`Option 3 (Tell me more)` exits without writing the settings file, so the next `/flow:start` will re-prompt — by design. Options 1 and 2 both write the file (with opposing flag values) so the prompt fires exactly once per project.
+
 ## Phase 1: EXPLORE
 
 Gather all context before planning.
@@ -277,6 +343,55 @@ Only after every criterion shows PASS or user-approved MANUAL can the workflow p
 ```bash
 gh issue edit "$ISSUE_NUM" --add-assignee @me
 ```
+
+**FlowGoal auto-creation (gated by `flow.goals.requireGoalForStart`):**
+
+```!
+REQUIRE_GOAL=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" \
+  --default "false" '.flow.goals.requireGoalForStart // empty' 2>/dev/null)
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) ISSUE_NUM="" ;;
+  *) ISSUE_NUM="$ARG1" ;;
+esac
+
+if [ "$REQUIRE_GOAL" = "true" ] && [ -n "$ISSUE_NUM" ]; then
+  GOAL_ID="issue-$ISSUE_NUM"
+  GOAL_PATH=".flow/goals/${GOAL_ID}.goal.yaml"
+  if [ -f "$GOAL_PATH" ]; then
+    echo "FLOW_GOAL_STATE=exists"
+    echo "GOAL_PATH=$GOAL_PATH"
+  else
+    echo "FLOW_GOAL_STATE=create"
+    echo "GOAL_ID=$GOAL_ID"
+    echo "GOAL_PATH=$GOAL_PATH"
+  fi
+else
+  echo "FLOW_GOAL_STATE=skip"
+fi
+
+true
+```
+
+If `FLOW_GOAL_STATE=create`:
+
+1. Invoke `Skill(goal-contract-capture)` with inputs:
+   - `goal id` = the `GOAL_ID` from the block above
+   - `scope` = `repo` (current repo), `branch` (will be set after Phase 2 branch creation), `issue` = `$ISSUE_NUM`
+   - `source` = pre-fetched issue body + Spec Validation Gate output
+   - `invocation reason` = `start`
+2. After the skill writes the YAML, invoke `Skill(goal-lifecycle)` to transition `draft → active`.
+3. Emit the visibility line so the user knows a contract was persisted:
+   ```
+   FlowGoal created: <GOAL_ID> at <GOAL_PATH> (status: active)
+   ```
+
+If `FLOW_GOAL_STATE=exists`, do not overwrite. Print:
+```
+FlowGoal already exists: <GOAL_PATH> — resuming. Use /flow:goal inspect <GOAL_ID> to review.
+```
+
+If `FLOW_GOAL_STATE=skip`, proceed without goal creation (v2 behavior preserved).
 
 ## Phase 2: PLAN
 
