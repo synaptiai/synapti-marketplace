@@ -2,7 +2,6 @@
 name: holdout-validation
 description: "Cross-reference agent self-review claims against actual file state using hidden holdout scenarios, producing mapped P1/P2/P3 findings that reference visible acceptance criteria only. Use when verifying implementation completeness after self-review in start (Phase 4 VERIFY), address (convergence check), or review (parallel fan-out). Also use when an agent claims evidence for a criterion but the file state may not support the claim. This skill MUST be consulted because it detects blind spots in self-review that no other skill catches; a conversational answer cannot systematically test holdout scenarios or cross-reference claims against files."
 allowed-tools: Bash, Read, Grep, Glob
-context: fork
 agent: general-purpose
 ---
 

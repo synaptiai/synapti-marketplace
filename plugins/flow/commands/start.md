@@ -115,8 +115,38 @@ If `PREFLIGHT_STATE=BLOCKED`, stop. Do not proceed to EXPLORE. The `PREFLIGHT_FA
 Detects whether this is the first `/flow:start` in a project that has neither been configured nor produced any v3 runtime state. Fires the consent prompt once; subsequent invocations see the persisted answer and skip.
 
 ```!
-# Onboarding detection: both signals absent → fresh install
-if [ ! -f .claude/settings.flow.json ] && [ ! -d .flow ]; then
+# Onboarding detection. Three branches, evaluated in order:
+#
+# 1. `.flow/` directory exists — user already has v3 runtime state, skip
+#    regardless of settings file state.
+# 2. No settings file AND no `.flow/` — fresh install, prompt.
+# 3. Settings file exists but lacks `flow.goals` block — partial-file
+#    bypass (the user has never answered the v3 onboarding question; an
+#    unrelated v2 setting like `agentTeams` doesn't count as opting in
+#    either way). Prompt.
+#
+# Otherwise (settings file with `flow.goals` block present, regardless of
+# the block's contents) → skip; the user has answered.
+NEEDS_ONBOARDING=0
+
+if [ -d .flow ]; then
+  NEEDS_ONBOARDING=0
+elif [ ! -f .claude/settings.flow.json ]; then
+  NEEDS_ONBOARDING=1
+else
+  if command -v jq >/dev/null 2>&1; then
+    # `jq -e` exits non-zero on null/false/missing, which redirects
+    # HAS_GOALS to empty. Parse errors also produce empty output.
+    HAS_GOALS=$(jq -e '.flow.goals // empty' .claude/settings.flow.json 2>/dev/null)
+    [ -z "$HAS_GOALS" ] && NEEDS_ONBOARDING=1
+  fi
+  # If jq is unavailable we conservatively skip — a v2 user with a
+  # carefully configured settings file should not be re-prompted on every
+  # /flow:start just because we cannot parse the file. Onboarding is
+  # still reachable via /flow:goal create or manual settings edit.
+fi
+
+if [ "$NEEDS_ONBOARDING" = "1" ]; then
   echo "FLOW_V3_ONBOARDING=needed"
 else
   echo "FLOW_V3_ONBOARDING=skip"
@@ -136,36 +166,42 @@ If `FLOW_V3_ONBOARDING=needed`, use `AskUserQuestion` exactly once with this pro
 > 2. **Skip — keep v2 behavior** — `/flow:start` proceeds without goals; v3 surfaces remain reachable via explicit `/flow:goal create`
 > 3. **Tell me more** — open the quickstart, decide on the next invocation
 
-Persist the answer to `.claude/settings.flow.json` so this prompt does not re-fire:
+Persist the answer to `.claude/settings.flow.json` so this prompt does not re-fire. When the file already exists with a partial shape (e.g., the user committed `{"agentTeams": false}` from `/flow:setup` before v3 onboarding), the new keys are MERGED via `jq` so unrelated v2 settings are preserved. When the file is absent, a fresh JSON document is written:
 
 ```bash
 mkdir -p .claude
+SETTINGS=.claude/settings.flow.json
+
+set_flow_goals() {
+  # Args: $1=requireGoalForStart $2=executeVerificationCommands
+  if [ -f "$SETTINGS" ] && command -v jq >/dev/null 2>&1; then
+    # Merge: preserve every existing top-level key, set the two goal flags.
+    jq --argjson req "$1" --argjson exe "$2" \
+       '.flow.goals.requireGoalForStart = $req | .flow.goals.executeVerificationCommands = $exe' \
+       "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
+  else
+    # Fresh file (or jq missing — write minimal JSON).
+    cat > "$SETTINGS" <<JSON
+{
+  "flow": {
+    "goals": {
+      "requireGoalForStart": $1,
+      "executeVerificationCommands": $2
+    }
+  }
+}
+JSON
+  fi
+}
+
 case "$ONBOARDING_ANSWER" in
   enable)
-    cat > .claude/settings.flow.json <<'JSON'
-{
-  "flow": {
-    "goals": {
-      "requireGoalForStart": true,
-      "executeVerificationCommands": true
-    }
-  }
-}
-JSON
-    echo "Flow v3 enabled. Settings written to .claude/settings.flow.json."
+    set_flow_goals true true
+    echo "Flow v3 enabled. Settings written to $SETTINGS."
     ;;
   skip)
-    cat > .claude/settings.flow.json <<'JSON'
-{
-  "flow": {
-    "goals": {
-      "requireGoalForStart": false,
-      "executeVerificationCommands": false
-    }
-  }
-}
-JSON
-    echo "Flow v3 left disabled. Settings written to .claude/settings.flow.json (you can re-enable later by editing the file)."
+    set_flow_goals false false
+    echo "Flow v3 left disabled. Settings written to $SETTINGS (you can re-enable later by editing the file)."
     ;;
   more)
     echo "Open plugins/flow/references/flow-goals-quickstart.md, then re-run /flow:start when ready."
@@ -174,7 +210,7 @@ JSON
 esac
 ```
 
-`Option 3 (Tell me more)` exits without writing the settings file, so the next `/flow:start` will re-prompt — by design. Options 1 and 2 both write the file (with opposing flag values) so the prompt fires exactly once per project.
+`Option 3 (Tell me more)` exits without writing the settings file, so the next `/flow:start` will re-prompt — by design. Options 1 and 2 both write/merge the file (with opposing flag values) so the prompt fires exactly once per project.
 
 ## Phase 1: EXPLORE
 

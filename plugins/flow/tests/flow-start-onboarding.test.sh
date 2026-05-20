@@ -24,7 +24,18 @@ TMP_DIR=$(mktemp -d -t flow-onboard.XXXXXX)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 ONBOARDING_BLOCK='
-if [ ! -f .claude/settings.flow.json ] && [ ! -d .flow ]; then
+NEEDS_ONBOARDING=0
+if [ -d .flow ]; then
+  NEEDS_ONBOARDING=0
+elif [ ! -f .claude/settings.flow.json ]; then
+  NEEDS_ONBOARDING=1
+else
+  if command -v jq >/dev/null 2>&1; then
+    HAS_GOALS=$(jq -e ".flow.goals // empty" .claude/settings.flow.json 2>/dev/null)
+    [ -z "$HAS_GOALS" ] && NEEDS_ONBOARDING=1
+  fi
+fi
+if [ "$NEEDS_ONBOARDING" = "1" ]; then
   echo "FLOW_V3_ONBOARDING=needed"
 else
   echo "FLOW_V3_ONBOARDING=skip"
@@ -184,3 +195,147 @@ _flow_test_begin "goal auto-creation gate: non-digit ARGUMENTS -> skip"
 
 OUT=$(cd "$TMP_DIR" && REQUIRE_GOAL=true ARGUMENTS="abc" bash -c "$GOAL_GATE_BLOCK")
 assert_equal "FLOW_GOAL_STATE=skip" "$OUT" "non-digit ARGUMENTS -> skip (matches Phase 0 validation)"
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Partial-settings detection (cycle-10 regression fix — field-feedback bug)
+#
+# Before cycle 10, the onboarding gate only checked file existence. A user
+# who committed `.claude/settings.flow.json` with v2-only keys (e.g.,
+# `agentTeams`) silently bypassed the v3 onboarding prompt forever — the
+# file existed, so the gate skipped, but the user had never answered the
+# v3 question. Cycle 10 closes the bypass by checking for the `flow.goals`
+# block via jq.
+# ────────────────────────────────────────────────────────────────────────────
+
+_flow_test_begin "partial-settings detection: empty {} -> needed"
+
+if command -v jq >/dev/null 2>&1; then
+  EMPTY_DIR="$TMP_DIR/partial-empty"
+  mkdir -p "$EMPTY_DIR/.claude"
+  echo '{}' > "$EMPTY_DIR/.claude/settings.flow.json"
+  OUT=$(cd "$EMPTY_DIR" && bash -c "$ONBOARDING_BLOCK")
+  assert_equal "FLOW_V3_ONBOARDING=needed" "$OUT" "empty {} bypassed pre-cycle-10; now correctly prompts"
+else
+  _flow_assert_pass "skip: jq unavailable — partial detection requires jq"
+fi
+
+
+_flow_test_begin "partial-settings detection: v2-only keys (no flow) -> needed"
+
+if command -v jq >/dev/null 2>&1; then
+  V2_DIR="$TMP_DIR/partial-v2"
+  mkdir -p "$V2_DIR/.claude"
+  echo '{"agentTeams": false}' > "$V2_DIR/.claude/settings.flow.json"
+  OUT=$(cd "$V2_DIR" && bash -c "$ONBOARDING_BLOCK")
+  assert_equal "FLOW_V3_ONBOARDING=needed" "$OUT" "v2 settings without flow block -> prompt (this is the user's reported bug shape)"
+else
+  _flow_assert_pass "skip: jq unavailable"
+fi
+
+
+_flow_test_begin "partial-settings detection: flow block but no goals subkey -> needed"
+
+if command -v jq >/dev/null 2>&1; then
+  NO_GOALS_DIR="$TMP_DIR/partial-no-goals"
+  mkdir -p "$NO_GOALS_DIR/.claude"
+  echo '{"flow": {"agentTeams": false}}' > "$NO_GOALS_DIR/.claude/settings.flow.json"
+  OUT=$(cd "$NO_GOALS_DIR" && bash -c "$ONBOARDING_BLOCK")
+  assert_equal "FLOW_V3_ONBOARDING=needed" "$OUT" "flow block without goals subkey -> prompt"
+else
+  _flow_assert_pass "skip: jq unavailable"
+fi
+
+
+_flow_test_begin "partial-settings detection: empty flow.goals block -> skip (user has answered)"
+
+if command -v jq >/dev/null 2>&1; then
+  EMPTY_GOALS_DIR="$TMP_DIR/partial-empty-goals"
+  mkdir -p "$EMPTY_GOALS_DIR/.claude"
+  echo '{"flow": {"goals": {}}}' > "$EMPTY_GOALS_DIR/.claude/settings.flow.json"
+  OUT=$(cd "$EMPTY_GOALS_DIR" && bash -c "$ONBOARDING_BLOCK")
+  assert_equal "FLOW_V3_ONBOARDING=skip" "$OUT" "empty flow.goals -> skip (presence of block signals user has engaged with v3)"
+else
+  _flow_assert_pass "skip: jq unavailable"
+fi
+
+
+_flow_test_begin "partial-settings detection: .flow/ overrides partial settings (user is using v3)"
+
+if command -v jq >/dev/null 2>&1; then
+  OVERRIDE_DIR="$TMP_DIR/partial-with-flow-dir"
+  mkdir -p "$OVERRIDE_DIR/.claude" "$OVERRIDE_DIR/.flow/goals"
+  echo '{"agentTeams": false}' > "$OVERRIDE_DIR/.claude/settings.flow.json"
+  OUT=$(cd "$OVERRIDE_DIR" && bash -c "$ONBOARDING_BLOCK")
+  assert_equal "FLOW_V3_ONBOARDING=skip" "$OUT" ".flow/ dir signals active v3 use even with partial settings"
+else
+  _flow_assert_pass "skip: jq unavailable"
+fi
+
+
+_flow_test_begin "partial-settings detection: malformed JSON -> needed"
+
+if command -v jq >/dev/null 2>&1; then
+  BAD_DIR="$TMP_DIR/partial-malformed"
+  mkdir -p "$BAD_DIR/.claude"
+  echo '{ this is not valid json' > "$BAD_DIR/.claude/settings.flow.json"
+  OUT=$(cd "$BAD_DIR" && bash -c "$ONBOARDING_BLOCK")
+  assert_equal "FLOW_V3_ONBOARDING=needed" "$OUT" "malformed JSON -> prompt (jq parse failure signals user hasn't successfully opted in)"
+else
+  _flow_assert_pass "skip: jq unavailable"
+fi
+
+
+_flow_test_begin "skills invoked from command Inputs blocks do not use context: fork"
+
+# Cycle-10 regression fix: skills with `context: fork` lose their parent's
+# context when invoked from command markdown via `Skill(X):\n  Inputs: ...`.
+# The forked subprocess receives "what would you like me to do?" instead of
+# the structured Inputs from the calling command. The 3 skills below were
+# the user-reported failure cases; their frontmatter must NOT carry the
+# `context: fork` field.
+
+REPO_ROOT_FOR_LINT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+
+for skill in specification-capture holdout-validation runtime-verification; do
+  SKILL_PATH="$REPO_ROOT_FOR_LINT/plugins/flow/skills/$skill/SKILL.md"
+  if [ -f "$SKILL_PATH" ]; then
+    if grep -q "^context: fork" "$SKILL_PATH"; then
+      _flow_assert_fail "skill $skill has context: fork in frontmatter (regression)"
+    else
+      _flow_assert_pass "skill $skill frontmatter does not carry context: fork"
+    fi
+  else
+    _flow_assert_fail "skill file missing: $SKILL_PATH"
+  fi
+done
+
+
+_flow_test_begin "partial-settings merge: jq preserves v2 keys when enabling v3"
+
+if command -v jq >/dev/null 2>&1; then
+  MERGE_DIR="$TMP_DIR/partial-merge"
+  mkdir -p "$MERGE_DIR/.claude"
+  echo '{"agentTeams": false, "tiers": {"merge": "confirm"}}' > "$MERGE_DIR/.claude/settings.flow.json"
+
+  # Simulate the set_flow_goals helper from start.md
+  (
+    cd "$MERGE_DIR"
+    SETTINGS=.claude/settings.flow.json
+    jq --argjson req true --argjson exe true \
+       '.flow.goals.requireGoalForStart = $req | .flow.goals.executeVerificationCommands = $exe' \
+       "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
+  )
+
+  AGENT_TEAMS=$(jq -r '.agentTeams' "$MERGE_DIR/.claude/settings.flow.json")
+  TIER_MERGE=$(jq -r '.tiers.merge' "$MERGE_DIR/.claude/settings.flow.json")
+  REQ_GOAL=$(jq -r '.flow.goals.requireGoalForStart' "$MERGE_DIR/.claude/settings.flow.json")
+  EXE_COMMANDS=$(jq -r '.flow.goals.executeVerificationCommands' "$MERGE_DIR/.claude/settings.flow.json")
+
+  assert_equal "false" "$AGENT_TEAMS" "merge: agentTeams preserved"
+  assert_equal "confirm" "$TIER_MERGE" "merge: tiers.merge preserved"
+  assert_equal "true" "$REQ_GOAL" "merge: requireGoalForStart written"
+  assert_equal "true" "$EXE_COMMANDS" "merge: executeVerificationCommands written"
+else
+  _flow_assert_pass "skip: jq unavailable — merge requires jq"
+fi
