@@ -399,10 +399,10 @@ assert_contains "AC1: no sidecar — judge MUST mark as incomplete" "$OUT" "AC1 
 assert_contains "AC2: no sidecar — judge MUST mark as incomplete" "$OUT" "AC2 incomplete marker"
 
 # --- Test 13: schema enum coverage — classifier must cover every evidence.type
-# Cycle-4 regression guard for the enum-drift bug: cycle-3 listed only 5 of
-# 15 schema types as deterministic, silently classifying lint_result /
-# typecheck_result / ci_status etc. as "no sidecar" and breaking the
-# cross-judge defense for legitimate evidence types.
+# Regression guard: if any evidence.type in the schema is not bucketed into
+# DETERMINISTIC or JUDGE, sidecars of that type silently classify as "no
+# sidecar" and the cross-judge defense breaks for legitimate evidence
+# (e.g., lint_result, typecheck_result, ci_status).
 _flow_test_begin "every evidence.type in schema is classified (no fall-through)"
 SCHEMA="$REPO_ROOT/plugins/flow/schemas/v1/evidence.schema.json"
 UNCLASSIFIED=$(PYTHONSAFEPATH=1 python3 -c "

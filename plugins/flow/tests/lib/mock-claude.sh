@@ -39,3 +39,10 @@ fi
 # descriptor". `|| true` keeps the shim exit 0 so the hook sees clean stdout.
 cat > /dev/null 2>/dev/null || true
 cat "$FLOW_TEST_CLAUDE_RESPONSE"
+# Optionally exit with a non-zero code (real `claude --print` can return
+# a partial-JSON stdout with a non-zero exit on network/model errors).
+# Used by tests that exercise the hook's "non-empty RESP regardless of
+# exit code" contract.
+if [ -n "${FLOW_TEST_CLAUDE_EXIT:-}" ]; then
+  exit "$FLOW_TEST_CLAUDE_EXIT"
+fi

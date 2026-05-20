@@ -1,11 +1,11 @@
 """Atomic YAML/JSON writes with security defenses for the flow plugin.
 
-Extracted from journal-record.sh:120-295 (M1 of flow v3). Shared by:
-  - journal-record.sh           (manifest append; existing semantics preserved)
+Shared by:
+  - journal-record.sh           (manifest append)
   - flow-record-activity.sh     (FlowActivity standalone YAML writes)
   - flow-record-evidence.sh     (FlowEvidence sidecar + raw output writes)
-  - flow-goal-record.sh         (FlowGoal contract + lifecycle writes; M2)
-  - flow-record-verdict.sh      (FlowRun last-verdict.json writes; cycle-3)
+  - flow-goal-record.sh         (FlowGoal contract + lifecycle writes)
+  - flow-record-verdict.sh      (FlowRun last-verdict.json writes)
 
 Surface:
   - record_artifact()   — journal manifest append (frontmatter + body)

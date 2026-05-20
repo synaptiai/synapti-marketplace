@@ -72,7 +72,7 @@ When in doubt, prefer the four-value `STATE=` and add diagnostic detail in a sep
 
 ## Worked example — `/flow:status` ! block #1
 
-Before (cycle-1 raw output — 8 unlabeled lines):
+Before (raw output — 8 unlabeled lines):
 
 ```
 feature/flow-bang-prefix-context

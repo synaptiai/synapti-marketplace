@@ -298,10 +298,10 @@ _SAFE_AC_ID_RE = re.compile(r"[^A-Za-z0-9_-]")
 def _safe_ac_id(ac_id: str) -> str:
     """Render an AC id as a safe markdown token.
 
-    Schema enforces `^[A-Z]+[0-9]+$` but schema validation is optional
-    (cycle-1 SEC-6). A hostile/malformed goal could ship an AC id with
-    a newline that would break out of the coverage header's list-item
-    context, or markdown that confuses the judge. Strip anything outside
+    Schema enforces `^[A-Z]+[0-9]+$` but schema validation is optional.
+    A hostile/malformed goal could ship an AC id with a newline that
+    would break out of the coverage header's list-item context, or
+    markdown that confuses the judge. Strip anything outside
     [A-Za-z0-9_-]; cap at 64 chars to bound prompt size. The resulting
     token may differ from the on-disk id, but that's preferable to
     embedding raw markdown into the coverage header.
@@ -484,7 +484,7 @@ def _assemble_previous_verdict_section(run_dir: str) -> str:
 
     # Parse + project. A corrupt/truncated file is treated as "no previous
     # verdict" (empty string) rather than embedding broken JSON into the
-    # prompt — that would defeat the cycle-3 delta-computation purpose.
+    # prompt — that would defeat the delta-computation purpose.
     import json as _json
     try:
         data = _json.loads(text)

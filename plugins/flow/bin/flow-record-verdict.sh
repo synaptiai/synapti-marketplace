@@ -50,7 +50,7 @@ fi
 # PyYAML is imported transitively by _journal_atomic.py — check here so
 # callers see a clear message instead of a Python traceback. Matches the
 # graceful-degradation pattern used by flow-record-evidence.sh and
-# flow-record-activity.sh (cycle-4 fix for asymmetric degradation).
+# flow-record-activity.sh.
 if ! python3 -c "import yaml" >/dev/null 2>&1; then
   echo "flow-record-verdict.sh: PyYAML required (apt install python3-yaml / pip install pyyaml)" >&2
   exit 2
@@ -189,7 +189,7 @@ if verdict_data["delta"] not in valid_deltas:
 
 confidence = verdict_data.get("confidence")
 # isinstance(True, int) is True in Python — explicitly reject bools to
-# preserve the "must be a number" contract (cycle-4 SEC-4).
+# preserve the "must be a number" contract.
 if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not (0.0 <= float(confidence) <= 1.0):
     print(
         f"flow-record-verdict.sh: confidence must be a number in [0.0, 1.0], got {confidence!r}",
@@ -197,10 +197,10 @@ if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or n
     )
     sys.exit(1)
 
-# Validate optional fields (cycle-4 P2 fix). Producers writing untrusted
-# content (e.g., judge subprocess output) can ship strings that would
-# survive into the next-turn UNTRUSTED_PREVIOUS_VERDICT fence. The fence
-# is the primary defense; this is belt-and-suspenders bounding.
+# Validate optional fields. Producers writing untrusted content (e.g.,
+# judge subprocess output) can ship strings that would survive into the
+# next-turn UNTRUSTED_PREVIOUS_VERDICT fence. The fence is the primary
+# defense; this is belt-and-suspenders bounding.
 _OPTIONAL_STRING_CAPS = {
     "reason": 2048,
     "next_step_hint": 500,

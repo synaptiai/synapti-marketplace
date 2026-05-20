@@ -713,3 +713,161 @@ REASON=$(echo "$OUT" | jq -r '.reason')
 # under test is: NO CRASH, hook always returns a JSON decision.
 assert_match '^(approve|block)$' "$DECISION" "decision is a well-formed JSON verdict (no crash on symlinked goal)"
 assert_match '^.+$' "$REASON" "reason is non-empty"
+
+# --- Test 21: must_pass=false failing-tolerated AC → hybrid path (judge spawn)
+# A failing verification_command with must_pass:false should NOT trigger the
+# must_pass-fail block branch; it should route through hybrid path to the
+# judge. Closes the gate-logic coverage gap at flow-goal-evaluator.sh:231-233.
+_flow_test_begin "must_pass=false failing AC → hybrid path completes (no block)"
+DIR=$(_fge_mktemp_dir)
+_fge_make_mockbin "$DIR"
+RUN_ID="2026-05-20T143000Z-soft-fail"
+mkdir -p "$DIR/.flow/goals" "$DIR/.claude"
+cat > "$DIR/.claude/settings.flow.json" <<'JSON'
+{"flow":{"goals":{"executeVerificationCommands":true}}}
+JSON
+cat > "$DIR/.flow/goals/soft-fail.goal.yaml" <<YML
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: soft-fail
+  created_at: '2026-05-20T14:30:00Z'
+scope: {repo: t/t, branch: t, run_id: '${RUN_ID}'}
+objective:
+  outcome: t
+  acceptance_criteria:
+    - id: AC1
+      text: failing-tolerated AC
+      verification_command: 'false'
+      must_pass: false
+      status: pending
+evaluator: {type: hybrid}
+continuation: {max_iterations: 20}
+lifecycle: {status: active, turns_evaluated: 1}
+YML
+OUT=$(_fge_run "$DIR" "$FIXTURES/verdict-achieved.json" '{"session_id":"s21"}')
+DECISION=$(echo "$OUT" | jq -r '.decision')
+REASON=$(echo "$OUT" | jq -r '.reason')
+# Tolerated failure → INCOMPLETE empty, FAILING non-empty, HAS_MUST_PASS_FAIL
+# empty (because must_pass: false). Hook routes to hybrid → judge → achieved.
+assert_equal "approve" "$DECISION" "soft-fail routes to judge, not must_pass-fail block"
+assert_contains "judge verdict: achieved" "$REASON" "reason carries judge verdict (proves hybrid path)"
+
+# --- Test 22: mixed-AC state (passing must_pass + incomplete fuzzy) → hybrid
+# Multi-AC goal exercises the gate logic's interaction between passing[],
+# failing[], and incomplete_acs[]. The hook must route to judge because
+# at least one fuzzy AC remains (INCOMPLETE non-empty), even though the
+# must_pass AC passed.
+_flow_test_begin "mixed AC (passing must_pass + incomplete fuzzy) → hybrid path"
+DIR=$(_fge_mktemp_dir)
+_fge_make_mockbin "$DIR"
+RUN_ID="2026-05-20T143000Z-mixed"
+mkdir -p "$DIR/.flow/goals" "$DIR/.claude"
+cat > "$DIR/.claude/settings.flow.json" <<'JSON'
+{"flow":{"goals":{"executeVerificationCommands":true}}}
+JSON
+cat > "$DIR/.flow/goals/mixed.goal.yaml" <<YML
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: mixed
+  created_at: '2026-05-20T14:30:00Z'
+scope: {repo: t/t, branch: t, run_id: '${RUN_ID}'}
+objective:
+  outcome: t
+  acceptance_criteria:
+    - id: AC1
+      text: deterministic that passes
+      verification_command: 'true'
+      must_pass: true
+      status: pending
+    - id: AC2
+      text: fuzzy criterion (no verification_command)
+      status: pending
+evaluator: {type: hybrid}
+continuation: {max_iterations: 20}
+lifecycle: {status: active, turns_evaluated: 1}
+YML
+OUT=$(_fge_run "$DIR" "$FIXTURES/verdict-achieved.json" '{"session_id":"s22"}')
+DECISION=$(echo "$OUT" | jq -r '.decision')
+REASON=$(echo "$OUT" | jq -r '.reason')
+assert_equal "approve" "$DECISION" "mixed-AC routes to judge (fuzzy AC remains)"
+assert_contains "judge verdict" "$REASON" "reason carries judge verdict (proves hybrid path)"
+
+# --- Test 23: non-zero claude exit + non-empty stdout → RESP zeroed, catch-all block
+# `RESP=$(... 2>/dev/null) || RESP=""` triggers on ANY non-zero subshell
+# exit, including the case where claude exits non-zero with non-empty
+# stdout. The hook's documented contract treats non-zero exit as "judge
+# unavailable" regardless of stdout content. This test locks that in so
+# a future "treat stdout as authoritative" refactor doesn't slip through.
+_flow_test_begin "non-zero claude exit + non-empty stdout → block + no last-verdict.json (RESP zeroed)"
+DIR=$(_fge_mktemp_dir)
+_fge_make_mockbin "$DIR"
+RUN_ID="2026-05-20T143000Z-nonzero"
+_fge_write_hybrid_goal "$DIR" "$RUN_ID"
+# Shim emits the achieved fixture AND exits 2 — simulates claude returning
+# parseable JSON but with a non-zero exit (e.g., model API warning).
+OUT=$(_fge_run "$DIR" "$FIXTURES/verdict-achieved.json" '{"session_id":"s23"}' "FLOW_TEST_CLAUDE_EXIT=2")
+DECISION=$(echo "$OUT" | jq -r '.decision')
+assert_equal "block" "$DECISION" "non-zero exit zeros RESP, falls through to catch-all block"
+VFILE="$DIR/.flow/runs/$RUN_ID/last-verdict.json"
+if [ ! -f "$VFILE" ]; then
+  _flow_assert_pass "last-verdict.json NOT written (RESP empty path, prior verdict preserved)"
+else
+  _flow_assert_fail "last-verdict.json unexpectedly written on non-zero claude exit"
+fi
+
+# --- Test 24: oversized next_step_hint → soft-truncated with ellipsis marker
+# flow-record-verdict.sh:204-230 caps next_step_hint at 500 bytes. The
+# producer truncates with "…" rather than reject, so a verbose judge
+# doesn't break the next-turn delta. Verifies the soft-cap branch.
+_flow_test_begin "oversized next_step_hint → truncated with ellipsis at 500B cap"
+DIR=$(_fge_mktemp_dir)
+_fge_make_mockbin "$DIR"
+RUN_ID="2026-05-20T143000Z-oversize"
+_fge_write_hybrid_goal "$DIR" "$RUN_ID"
+OUT=$(_fge_run "$DIR" "$FIXTURES/verdict-oversized-hint.json" '{"session_id":"s24"}' 2>/dev/null)
+DECISION=$(echo "$OUT" | jq -r '.decision')
+assert_equal "block" "$DECISION" "decision is block (verdict=not_achieved)"
+VFILE="$DIR/.flow/runs/$RUN_ID/last-verdict.json"
+if [ -f "$VFILE" ]; then
+  HINT=$(jq -r '.next_step_hint' "$VFILE")
+  # Expected: 500 chars of content + "…" trailing marker = 501 chars + UTF-8
+  # byte-count for ellipsis (3 bytes for "…"). awk emits character count.
+  HINT_LEN=$(printf '%s' "$HINT" | awk '{print length}')
+  # 501 characters (500 of content + 1 ellipsis char) — assert <= 510 to
+  # allow for UTF-8 counting variance across awk implementations.
+  if [ "$HINT_LEN" -le 510 ] && [ "$HINT_LEN" -ge 500 ]; then
+    _flow_assert_pass "next_step_hint length ($HINT_LEN) within soft-cap window [500, 510]"
+  else
+    _flow_assert_fail "next_step_hint length ($HINT_LEN) outside soft-cap window"
+  fi
+  case "$HINT" in
+    *…) _flow_assert_pass "next_step_hint ends with ellipsis marker (truncation evidence)" ;;
+    *) _flow_assert_fail "next_step_hint missing trailing ellipsis marker" ;;
+  esac
+else
+  _flow_assert_fail "last-verdict.json missing for oversized-hint case"
+fi
+
+# --- Test 25: malformed throttle file → defensive parse zeros counter, proceeds
+# flow-goal-evaluator.sh:118-119 coerces non-numeric throttle fields to 0
+# via `case [!0-9]*`. A corrupt throttle file (binary, single field, etc.)
+# should NOT crash the hook; the worst case is a dropped throttle increment.
+_flow_test_begin "malformed throttle file → defensive parse zeros counter, proceeds"
+DIR=$(_fge_mktemp_dir)
+_fge_make_mockbin "$DIR"
+THROTTLE_DIR="$DIR/.claude/flow-goal-throttle"
+mkdir -p "$THROTTLE_DIR"
+# Write garbage: non-numeric count, non-numeric time, no colon separator.
+printf 'NaN:not-a-time\nbinary-garbage' > "$THROTTLE_DIR/s25"
+# No active goal so we exit cleanly past the throttle gate — that's the
+# proof point. A crash inside throttle parsing would surface as a non-JSON
+# OUT or a missing reason.
+OUT=$(_fge_run "$DIR" "$FIXTURES/verdict-achieved.json" \
+  '{"session_id":"s25","stop_hook_active":true}')
+DECISION=$(echo "$OUT" | jq -r '.decision')
+REASON=$(echo "$OUT" | jq -r '.reason')
+assert_equal "approve" "$DECISION" "decision is approve (hook proceeded past throttle gate)"
+assert_contains "no active flow goal" "$REASON" "reason proves throttle gate passed"
+assert_not_contains "throttled" "$REASON" "reason does NOT name throttle (defensive parse zeroed counter)"

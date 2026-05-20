@@ -22,17 +22,18 @@
 set -uo pipefail
 export PYTHONSAFEPATH=1
 
-# Top-level cleanup — tempfiles created by _record_verdict are tracked
-# here and removed on any exit (including SIGTERM/SIGINT) so we don't
-# leak files into $TMPDIR across many evaluator-loop turns.
-_VTMP_LIST=()
-_flow_cleanup_vtmps() {
+# Top-level cleanup — ephemeral tempfiles (per-turn verdict tempfiles and
+# per-turn judge prompt files) are tracked here and removed on any exit
+# (including SIGTERM/SIGINT) so we don't leak files into $TMPDIR or the
+# per-user judge dir across many evaluator-loop turns.
+_TMP_FILES=()
+_flow_cleanup_tmpfiles() {
   local f
-  for f in "${_VTMP_LIST[@]:-}"; do
+  for f in "${_TMP_FILES[@]:-}"; do
     [ -n "$f" ] && rm -f "$f" 2>/dev/null
   done
 }
-trap _flow_cleanup_vtmps EXIT INT TERM
+trap _flow_cleanup_tmpfiles EXIT INT TERM
 
 command -v jq      >/dev/null 2>&1 || { echo '{"decision":"approve","reason":"jq unavailable"}'; exit 0; }
 command -v python3 >/dev/null 2>&1 || { echo '{"decision":"approve","reason":"python3 unavailable"}'; exit 0; }
@@ -188,11 +189,9 @@ except Exception:
 PYEOF
 )
 
-# Shared verdict-persistence helper. Cycle-4 fix: previously only the
-# hybrid (judge-spawned) path wrote last-verdict.json; the deterministic-
-# all-pass and must_pass-fail early-returns skipped persistence, leaving
-# the next-turn delta computation broken for those paths. This helper
-# centralizes the write so EVERY exit path persists a verdict.
+# Shared verdict-persistence helper. EVERY exit path must persist a verdict
+# so the next turn's delta computation has memory; centralizing here keeps
+# the deterministic and judge-spawned paths from diverging.
 #
 # Args: $1=verdict, $2=confidence, $3=delta, $4=reason, $5=next_step_hint, $6=source
 # Best-effort: failures are logged to stderr but do not abort the hook.
@@ -208,7 +207,7 @@ _record_verdict() {
   vtmp=$(mktemp -t flow-verdict.XXXXXX.json 2>/dev/null) || return 0
   # Register in the global cleanup list so the top-level EXIT/INT/TERM
   # trap removes the tempfile even if SIGTERM kills us mid-helper-call.
-  _VTMP_LIST+=("$vtmp")
+  _TMP_FILES+=("$vtmp")
   if ! jq -n \
         --arg v "$v" \
         --argjson c "$c" \
@@ -239,8 +238,13 @@ INCOMPLETE=$(echo "$REPORT" | jq -r '.incomplete_acs[]?' 2>/dev/null)
 VIOLATIONS=$(echo "$REPORT" | jq -r '.path_violations[]?' 2>/dev/null)
 
 # Deterministic gate: any must_pass FAIL with no recoverable path → BLOCK.
+# `.must_pass // true` is wrong here — jq's `//` triggers on null AND false,
+# so it would treat an explicit `must_pass: false` as a defaulted-to-true
+# AC, blocking on tolerated failures. The deterministic-checks helper
+# always emits `must_pass` (defaulted Python-side to True when absent), so
+# the field is reliably present in `.checked[]` — compare exactly to true.
 HAS_MUST_PASS_FAIL=$(echo "$REPORT" | jq -r '
-  .checked[]? | select((.must_pass // true) == true and (.exit_code // 1) != 0) | .id
+  .checked[]? | select(.must_pass == true and (.exit_code // 1) != 0) | .id
 ' 2>/dev/null | head -1)
 
 if [ -n "$HAS_MUST_PASS_FAIL" ] || [ -n "$VIOLATIONS" ]; then
@@ -270,10 +274,9 @@ PYEOF
 )
   jq -nc --arg r "$REASON" '{decision:"block", reason:$r}'
 
-  # Persist verdict so next-turn delta computation has memory. Cycle-4
-  # fix: this branch previously skipped the verdict write, breaking the
-  # cycle-3 promise. Confidence 1.0 because the deterministic must_pass
-  # failure is unambiguous evidence of `not_achieved`.
+  # Persist verdict so next-turn delta computation has memory. Confidence
+  # 1.0 because the deterministic must_pass failure is unambiguous
+  # evidence of `not_achieved`.
   _record_verdict "not_achieved" "1.0" "unchanged" \
     "must_pass criterion failed deterministically" "" "evaluator-loop-must-pass-fail"
 
@@ -290,7 +293,6 @@ if [ -z "$INCOMPLETE" ] && [ -z "$FAILING" ]; then
   # status).
   echo '{"decision":"approve","reason":"goal evidence complete and all deterministic checks pass; run /flow:goal evaluate to finalize the achieved verdict"}'
 
-  # Persist verdict (cycle-4 fix — was previously skipped on this path).
   _record_verdict "achieved" "1.0" "made_progress" \
     "all deterministic checks pass, no fuzzy criteria remain" "" "evaluator-loop-deterministic-all-pass"
 
@@ -320,6 +322,10 @@ if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
 fi
 
 PROMPT_FILE="${EVAL_DIR}/prompt-${SESSION_ID}-${NOW}.txt"
+# Register the prompt file for trap-cleanup so the per-user judge dir
+# doesn't accumulate stale per-turn prompt files containing goal contract
+# + evidence ledger across many evaluator-loop sessions.
+_TMP_FILES+=("$PROMPT_FILE")
 # Assemble the bundle via the dedicated Python module. If it fails (e.g.,
 # symlinked goal, malformed YAML, OSError), the hook falls back to a safe
 # `needs_human_review` verdict rather than feeding the judge a partial

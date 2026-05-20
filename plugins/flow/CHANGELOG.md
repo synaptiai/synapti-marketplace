@@ -79,9 +79,20 @@ To disable the v3 runtime layer entirely (rollback): set `flow.runtime.enabled: 
 
 See `plugins/flow/references/migration-v2-to-v3.md` for the full guide. TL;DR: v3.0 is **purely additive**. Existing v2.x users see no breaking changes when M1-M5 ship; opting into v3 features is a settings flag.
 
+#### Pre-GA hardening (during PR #109 self-review)
+
+Iterative paired-reviewer self-review converged the 3.0.0 surface against:
+
+- **Independence Protocol enforcement** — new `bin/_flow_evidence_bundle.py` assembles the judge prompt from goal contract + deterministic report + evidence sidecars only; the conversation transcript is never read. All untrusted content is wrapped in `<<<UNTRUSTED_*>>>` fences; the judge's `--disallowedTools '*'` plus `tools: []` in the agent spec is the security boundary.
+- **`last-verdict.json` producer + cross-judge enforcement** — `bin/flow-record-verdict.sh` is invoked from every verdict-producing site (evaluator-loop hook on all 3 exit paths; `/flow:goal evaluate` after the skill produces a verdict). Assembler emits `### Evidence coverage analysis` headers with per-AC classification (`deterministic | mixed | judge_only | none`); judge-only ACs are flagged `CROSS-CHECK REQUIRED`.
+- **Schema enum coverage + `_safe_ac_id` + orphan-AC + malformed-AC surfacing** in the assembler.
+- **Symlink defenses everywhere** — `O_NOFOLLOW` on every file read and tempfile write; `-L` directory checks before+after `mkdir -p`; rejected symlinked goal YAMLs trigger safe-fallback.
+- **`timeout(1)` detection** for evaluator-loop mode — hook detects `timeout` or `gtimeout` and degrades with platform-aware install guidance (`brew install coreutils` on Darwin; `apt/dnf/apk add coreutils` on Linux) when neither exists.
+- **Integration harness** for evaluator-loop active mode — `tests/lib/mock-claude.sh` PATH-shim, 6 verdict fixtures, 25 test cases covering every documented exit path.
+
 #### Test totals
 
-408 assertions pass, 0 fail (M6 GA baseline 259 → cycle 1: 276 → cycle 2: 295 → cycle 3: 330 → cycle 4: 358 → cycle 5: 408). New tests in M1 (schemas, atomic helpers, refactor verification), M2 (Stop hook), and cycle 5 (full `claude` mock harness for evaluator-loop active mode). M3-M5 ship inline schema validation; per-skill / per-command unit tests deferred to follow-up.
+421 assertions pass, 0 fail (M6 GA baseline 259 → 421 after 6 self-review cycles). New tests in M1 (schemas, atomic helpers, refactor verification), M2 (Stop hook), and the integration harness (full `claude` mock for evaluator-loop active mode). M3-M5 ship inline schema validation; per-skill / per-command unit tests deferred to follow-up.
 
 #### What's deferred
 
