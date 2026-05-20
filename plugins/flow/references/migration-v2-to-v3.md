@@ -149,6 +149,18 @@ Test additions for per-skill, per-command, and full workflow integration are def
 - Per-skill / per-command unit tests for M3-M5 deliverables.
 - Polyglot Windows wrapper for hook scripts (existing tech debt; separate cleanup PR).
 - `/flow:status` and `/flow:learn` extensions to read from `.flow/`.
+- `last-verdict.json` write path in `/flow:goal evaluate` — the assembler reads it when present; persistence comes in a separate PR.
+
+## Cycle-2 follow-on to PR #109 (Independence Protocol enforcement)
+
+After the M1-M6 commits, a self-review cycle on PR #109 surfaced an Independence Protocol violation in the evaluator-loop Stop hook. Cycle-2 ships a fix that is purely additive and changes nothing about the user-visible feature set:
+
+- New module `bin/_flow_evidence_bundle.py` assembles the judge prompt from the goal contract + deterministic report + evidence sidecars. Replaces the old inline shell prompt-builder that embedded `tail -n 4 $TRANSCRIPT`. The transcript is no longer read by any hook code path.
+- Every section in the bundle is wrapped in `<<<UNTRUSTED_*>>>` fences. The judge's system prompt instructs the model to treat fenced content as data, never instructions — defense against prompt injection inside hostile goal YAML fields.
+- `agents/goal-evaluator-judge.md` updated to declare `tools: []` (was `tools: Read`). The spec now agrees with `--disallowedTools '*'` in the invocation; the judge cannot Read files, and the spec doesn't claim otherwise.
+- 19 new test assertions in `flow-evidence-bundle.test.sh` cover the bundle structure, prompt-injection containment, raw-output truncation, path-traversal refusal, symlink defense, and a regression guard that asserts the transcript content NEVER leaks into the bundle.
+
+No user action required. The change is internal to evaluator-loop mode (opt-in via `flow.goals.stopHookEnforcement: evaluator-loop`); warn-mode behavior is unchanged.
 
 ## Critical references
 
