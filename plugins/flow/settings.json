@@ -96,6 +96,7 @@
       "requireGoalForStart": false,
       "stopHookEnforcement": "warn",
       "failAfterStuckTurns": 3,
+      "executeVerificationCommands": false,
       "judge": {
         "model": "haiku",
         "timeoutSeconds": 60

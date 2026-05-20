@@ -108,7 +108,11 @@ assert_equal "approve" "$DECISION" "decision is approve"
 # --- Test 4: active goal with passing AC (verification_command exits 0)
 _flow_test_begin "active goal, AC verification_command exits 0 → approve (evidence complete)"
 DIR=$(_fgs_mktemp_dir)
-mkdir -p "$DIR/.flow/goals"
+mkdir -p "$DIR/.claude" "$DIR/.flow/goals"
+# Opt in to verification_command execution. Default is false (security gate).
+cat > "$DIR/.claude/settings.flow.json" <<'JSON'
+{"flow":{"goals":{"executeVerificationCommands":true}}}
+JSON
 cat > "$DIR/.flow/goals/pass.goal.yaml" <<'YML'
 apiVersion: flow.synapti.ai/v1
 kind: FlowGoal
@@ -140,7 +144,10 @@ assert_contains "evidence complete" "$REASON" "reason names evidence-complete st
 # --- Test 5: active goal with failing AC → warn (still approve)
 _flow_test_begin "active goal, AC verification_command exits non-zero → warn approve"
 DIR=$(_fgs_mktemp_dir)
-mkdir -p "$DIR/.flow/goals"
+mkdir -p "$DIR/.claude" "$DIR/.flow/goals"
+cat > "$DIR/.claude/settings.flow.json" <<'JSON'
+{"flow":{"goals":{"executeVerificationCommands":true}}}
+JSON
 cat > "$DIR/.flow/goals/fail.goal.yaml" <<'YML'
 apiVersion: flow.synapti.ai/v1
 kind: FlowGoal
@@ -196,3 +203,107 @@ DECISION=$(echo "$OUT" | jq -r '.decision')
 REASON=$(echo "$OUT" | jq -r '.reason')
 assert_equal "approve" "$DECISION" "judge mode short-circuits to approve"
 assert_contains "judge mode" "$REASON" "reason confirms recursion guard"
+
+# --- Test 7: Python source-injection defense (hostile AC ID with quote chars)
+# An AC with id containing triple-quotes used to escape the Python heredoc and
+# execute arbitrary Python in flow-goal-stop.sh. Argv-passing prevents this.
+_flow_test_begin "warn mode tolerates hostile AC IDs with quote characters"
+DIR=$(_fgs_mktemp_dir)
+mkdir -p "$DIR/.flow/goals"
+cat > "$DIR/.flow/goals/hostile.goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: hostile
+  created_at: '2026-05-20T14:30:00Z'
+scope: {repo: test/test, branch: test}
+objective:
+  outcome: test
+  acceptance_criteria:
+    - id: "AC1'''; __import__('os').system('touch /tmp/flow-injection-pwn'); '''"
+      text: hostile AC id with triple-quote injection attempt
+      status: pending
+evaluator:
+  type: flow_verdict_judge
+lifecycle:
+  status: active
+YML
+rm -f /tmp/flow-injection-pwn 2>/dev/null
+OUT=$(_run_hook "$DIR" '{"session_id":"test"}')
+DECISION=$(echo "$OUT" | jq -r '.decision')
+assert_equal "approve" "$DECISION" "warn mode survives hostile AC ID (no crash)"
+if [ -e /tmp/flow-injection-pwn ]; then
+  _flow_assert_fail "RCE via hostile AC ID — file /tmp/flow-injection-pwn was created"
+  rm -f /tmp/flow-injection-pwn
+else
+  _flow_assert_pass "no RCE via hostile AC ID"
+fi
+
+# --- Test 8b: executeVerificationCommands default false → no auto-exec
+# Default-deny security gate: a goal with verification_command MUST NOT run
+# its command unless the user opts in. Drop a sentinel marker; if the command
+# ran, the file appears; assert it does NOT.
+_flow_test_begin "executeVerificationCommands defaults false → verification_command NOT executed"
+DIR=$(_fgs_mktemp_dir)
+mkdir -p "$DIR/.flow/goals"
+SENTINEL="$DIR/should-not-exist"
+cat > "$DIR/.flow/goals/exec-test.goal.yaml" <<YML
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: exec-test
+  created_at: '2026-05-20T14:30:00Z'
+scope: {repo: test/test, branch: test}
+objective:
+  outcome: security gate test
+  acceptance_criteria:
+    - id: AC1
+      text: should not execute
+      verification_command: 'touch ${SENTINEL}'
+      must_pass: true
+      status: pending
+evaluator:
+  type: flow_verdict_judge
+lifecycle:
+  status: active
+YML
+OUT=$(_run_hook "$DIR" '{"session_id":"test"}')
+DECISION=$(echo "$OUT" | jq -r '.decision')
+REASON=$(echo "$OUT" | jq -r '.reason')
+assert_equal "approve" "$DECISION" "default-deny: decision is approve"
+if [ -e "$SENTINEL" ]; then
+  _flow_assert_fail "SECURITY GATE BREACH: verification_command ran without opt-in (sentinel exists)"
+  rm -f "$SENTINEL"
+else
+  _flow_assert_pass "verification_command not executed without opt-in"
+fi
+assert_contains "FLOW_GOAL_INCOMPLETE" "$REASON" "AC reported as incomplete when not executed"
+
+# --- Test 8: Unknown stopHookEnforcement value falls through to warn (not silent approve)
+_flow_test_begin "unknown stopHookEnforcement value → falls back to warn (not silent)"
+DIR=$(_fgs_mktemp_dir)
+mkdir -p "$DIR/.claude" "$DIR/.flow/goals"
+cat > "$DIR/.claude/settings.flow.json" <<'JSON'
+{"flow":{"goals":{"stopHookEnforcement":"warning"}}}
+JSON
+cat > "$DIR/.flow/goals/any.goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: any
+  created_at: '2026-05-20T14:30:00Z'
+scope: {repo: test/test, branch: test}
+objective:
+  outcome: test
+  acceptance_criteria:
+    - {id: AC1, text: failing, status: pending, verification_command: "false", must_pass: true}
+evaluator:
+  type: flow_verdict_judge
+lifecycle:
+  status: active
+YML
+OUT=$(_run_hook "$DIR" '{"session_id":"test"}' 2>/dev/null)
+DECISION=$(echo "$OUT" | jq -r '.decision')
+REASON=$(echo "$OUT" | jq -r '.reason')
+assert_equal "approve" "$DECISION" "unknown mode: decision is approve (warn fallback)"
+assert_contains "FALLBACK_WARN" "$REASON" "reason signals fallback (not silent)"

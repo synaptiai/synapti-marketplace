@@ -39,6 +39,7 @@ MODE=""
 GOAL_FILE=""
 GOAL_ID=""
 LIFECYCLE_FILE=""
+FROM_STATUS=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -47,6 +48,7 @@ while [ $# -gt 0 ]; do
     --goal-file)         GOAL_FILE="$2"; shift 2 ;;
     --goal-id)           GOAL_ID="$2"; shift 2 ;;
     --lifecycle-file)    LIFECYCLE_FILE="$2"; shift 2 ;;
+    --from-status)       FROM_STATUS="$2"; shift 2 ;;
     -h|--help)
       sed -n '2,25p' "$0" | sed 's/^# \?//'
       exit 0
@@ -80,7 +82,7 @@ esac
 
 mkdir -p .flow/goals
 
-python3 - "$SCRIPT_DIR" "$MODE" "$GOAL_FILE" "$GOAL_ID" "$LIFECYCLE_FILE" <<'PYTHON'
+python3 - "$SCRIPT_DIR" "$MODE" "$GOAL_FILE" "$GOAL_ID" "$LIFECYCLE_FILE" "$FROM_STATUS" <<'PYTHON'
 import sys
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
@@ -92,7 +94,6 @@ import yaml
 from _journal_atomic import (
     JournalAtomicError,
     acquire_lock,
-    parse_frontmatter,
     write_yaml_file,
     _read_with_no_follow,
     _atomic_write,
@@ -102,6 +103,20 @@ mode = sys.argv[2]
 goal_file_arg = sys.argv[3]
 goal_id_arg = sys.argv[4]
 lifecycle_file_arg = sys.argv[5]
+from_status_arg = sys.argv[6] if len(sys.argv) > 6 else ""
+
+# Lifecycle state-machine table. Source-of-truth: goal-lifecycle/SKILL.md.
+# Terminal states are not present as keys — any transition out of them is
+# rejected. blocked → achieved direct is rejected (must go through active).
+LIFECYCLE_TRANSITIONS = {
+    "draft":              {"active", "cancelled"},
+    "active":             {"waiting_for_user", "waiting_for_ci", "blocked", "achieved", "failed", "cancelled"},
+    "waiting_for_user":   {"active", "cancelled"},
+    "waiting_for_ci":     {"active", "cancelled"},
+    "blocked":            {"active", "cancelled", "failed"},
+    # terminal: achieved, failed, cancelled — no outgoing transitions
+}
+TERMINAL_STATES = {"achieved", "failed", "cancelled"}
 
 # Optional schema validation. Skipped when jsonschema is absent.
 def _validate_goal(goal):
@@ -155,13 +170,13 @@ if mode == "create":
     lockfile = target + ".lock"
 
     # Pre-flight: refuse to overwrite a non-terminal goal. The skill should
-    # have caught this; second line of defense against TOCTOU.
+    # have caught this; second line of defense against TOCTOU. Goal YAML
+    # files are pure YAML (no frontmatter), so we parse directly with
+    # safe_load — no parse_frontmatter branch needed.
     if os.path.lexists(target):
         try:
             existing_content = _read_with_no_follow(target)
-            existing_manifest, _ = parse_frontmatter(existing_content) if existing_content.startswith("---\n") else (yaml.safe_load(existing_content), "")
-            # goal.yaml files are pure YAML (no frontmatter); use safe_load directly
-            existing = yaml.safe_load(existing_content) if not existing_content.startswith("---\n") else existing_manifest
+            existing = yaml.safe_load(existing_content)
             if isinstance(existing, dict):
                 existing_status = (existing.get("lifecycle") or {}).get("status")
                 if existing_status in ("draft", "active", "waiting_for_user", "waiting_for_ci", "blocked"):
@@ -171,10 +186,14 @@ if mode == "create":
                     )
                     print("flow-goal-record.sh: use /flow:goal clear to cancel before re-creating", file=sys.stderr)
                     sys.exit(1)
-        except (JournalAtomicError, yaml.YAMLError):
-            # If we can't read the existing file, error path will surface
-            # via the write call below.
-            pass
+        except (JournalAtomicError, yaml.YAMLError) as e:
+            # If we can't read the existing file, REFUSE rather than fall
+            # through and overwrite — we can't determine the on-disk status.
+            print(
+                f"flow-goal-record.sh: refusing to overwrite — existing goal at {target} is unreadable ({type(e).__name__}: {e}); investigate manually.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
 
     try:
         write_yaml_file(target, lockfile, goal)
@@ -215,9 +234,41 @@ elif mode == "update-lifecycle":
             print(f"flow-goal-record.sh: existing goal {target} is not a valid YAML mapping", file=sys.stderr)
             sys.exit(1)
 
-        # Merge the new lifecycle block into the existing goal. Caller passes
-        # the complete `lifecycle:` block; we replace, not deep-merge, so the
-        # caller has full control over the final shape.
+        # Enforce the lifecycle transition table BEFORE merging. Terminal
+        # states are immutable; out-of-table transitions are refused. If
+        # --from-status was provided, also assert it matches the on-disk
+        # state (race detection for concurrent updates).
+        current_status = (existing.get("lifecycle") or {}).get("status")
+        new_status = (lifecycle_fragment.get("lifecycle") or {}).get("status")
+
+        if from_status_arg and from_status_arg != current_status:
+            print(
+                f"flow-goal-record.sh: race detected — observed lifecycle.status='{current_status}', "
+                f"caller expected '{from_status_arg}'. Refusing to overwrite.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        if current_status in TERMINAL_STATES:
+            print(
+                f"flow-goal-record.sh: refusing — lifecycle.status='{current_status}' is terminal; "
+                f"terminal goals are immutable per goal-lifecycle/SKILL.md.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        if current_status is not None and new_status is not None:
+            allowed = LIFECYCLE_TRANSITIONS.get(current_status, set())
+            if new_status not in allowed and new_status != current_status:
+                print(
+                    f"flow-goal-record.sh: refusing — '{current_status}' → '{new_status}' is not a permitted transition. "
+                    f"Allowed from '{current_status}': {sorted(allowed) or 'none (terminal)'}.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+        # Merge the validated lifecycle block. We replace (not deep-merge)
+        # so the caller has full control over the final shape.
         existing["lifecycle"] = lifecycle_fragment["lifecycle"]
 
         try:

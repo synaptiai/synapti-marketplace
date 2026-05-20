@@ -255,7 +255,7 @@
     },
     "flow": {
       "type": "object",
-      "description": "Flow v3 runtime layer — goals, workflows, triggers. M2 wires goals into hooks + commands. See plugins/flow/references/flow-goals.md and references/stop-hook-goal-enforcement.md.",
+      "description": "Flow v3 runtime layer — goals, workflows, triggers. v3.0 wires goals into hooks + commands. See plugins/flow/references/flow-goals.md and references/stop-hook-goal-enforcement.md.",
       "properties": {
         "runtime": {
           "type": "object",
@@ -274,7 +274,7 @@
               "type": "integer",
               "default": 30,
               "minimum": 1,
-              "description": "How many days of FlowRun records to keep under .flow/runs/ before a future cleanup helper prunes them. M3+ adds the cleanup script; M2 only reads this for documentation."
+              "description": "How many days of FlowRun records to keep under .flow/runs/ before a future cleanup helper prunes them. v3.0 reads this for documentation; a future minor release adds the prune script."
             }
           },
           "additionalProperties": false
@@ -290,7 +290,7 @@
             "requireGoalForStart": {
               "type": "boolean",
               "default": false,
-              "description": "When true, /flow:start automatically creates a FlowGoal after the Spec Validation Gate. M2 ships default false so /flow:start UX is byte-identical to v2.4.0; teams flip to true after one release cycle of opt-in usage."
+              "description": "When true, /flow:start automatically creates a FlowGoal after the Spec Validation Gate. v3.0 ships default false so /flow:start UX is byte-identical to v2.4.0; teams flip to true after one release cycle of opt-in usage."
             },
             "stopHookEnforcement": {
               "enum": ["warn", "block", "evaluator-loop"],
@@ -303,11 +303,16 @@
               "minimum": 1,
               "description": "In evaluator-loop mode, the Stop hook transitions the goal to 'failed' if the pass-set hash is unchanged for this many consecutive turns. Prevents infinite churn on goals that can't make forward progress."
             },
+            "executeVerificationCommands": {
+              "type": "boolean",
+              "default": false,
+              "description": "Security gate: when false (default), the Stop hook does NOT execute goal verification_command strings — ACs are reported as 'incomplete_acs' with reason 'not_executed'. When true, the hook runs each AC's verification_command via `bash -c` with a 30s timeout. Default-deny: a hostile repo's goal YAML cannot auto-execute commands on first turn after checkout."
+            },
             "judge": {
               "type": "object",
               "properties": {
                 "model": {
-                  "type": "string",
+                  "enum": ["haiku", "sonnet", "opus"],
                   "default": "haiku",
                   "description": "Claude model used by the evaluator-loop judge subprocess. Haiku is the cost-effective default (~$0.001/eval); sonnet/opus available for harder rubrics."
                 },
@@ -329,7 +334,7 @@
             "enabled": {
               "type": "boolean",
               "default": false,
-              "description": "Master switch for the FlowWorkflow feature. M4 enables this when the workflow YAML definitions ship; M2 default is false."
+              "description": "Master switch for the FlowWorkflow feature. v3.0 ships this opt-in (default false); projects flip to true once they want machine-readable workflow definitions in /flow:workflow."
             }
           },
           "additionalProperties": false
@@ -340,7 +345,7 @@
             "enabled": {
               "type": "boolean",
               "default": false,
-              "description": "Master switch for the FlowTrigger feature. M5 enables this when /flow:trigger and /flow:watch ship; M2 default is false."
+              "description": "Master switch for the FlowTrigger feature. v3.0 ships this opt-in (default false); projects flip to true once they want /flow:trigger and /flow:watch enabled."
             },
             "allowedTypes": {
               "type": "array",

@@ -1,5 +1,6 @@
 ---
-description: "Manage FlowGoal completion contracts — create, inspect, evaluate, pause/resume/clear. Use /flow:goal <subcommand> [args]; subcommands: status (default, no args), create <kind> [id], inspect <id>, evaluate <id>, pause <id>, resume <id>, clear <id>, history. Flow plugins cannot invoke native Claude /goal; this command is the project-local replacement."
+description: "Manage FlowGoal completion contracts — create, inspect, evaluate, pause/resume/clear. Subcommands: status (default), create <kind> [id], inspect <id>, evaluate <id>, pause <id>, resume <id>, clear <id>, history. Flow plugins cannot invoke native Claude /goal; this command is the project-local replacement."
+argument-hint: "[subcommand] [args]"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, Skill, Agent
 ---
 

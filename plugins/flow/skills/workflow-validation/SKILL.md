@@ -73,11 +73,11 @@ Walk `phases[].activities[]`. For each activity with a `skill` field, repeat the
 ### Step 5: Tier classification check
 
 In `tier_classification`, verify:
-- `merge` is `confirm` (Tier 3 — hard requirement)
-- `release` is `confirm` (Tier 3 — hard requirement)
-- `tag_push` is `confirm` when present
+- `merge` is `confirm` (Tier 3 — Iron Law, hard fail)
+- `release` is `confirm` (Tier 3 — Iron Law, hard fail)
+- `tag_push` is `confirm` when present (Iron Law, hard fail)
 
-Any `merge` or `release` set to `autonomous` or `journal` → `tier_warnings.append({"action": ..., "value": ..., "expected": "confirm"})`. This is a warning rather than a hard error because future hooks may add legitimate Tier 3 exceptions — but the default expectation is confirm.
+Any of `merge`, `release`, or `tag_push` set to `autonomous` or `journal` → `tier3_violations.append({"action": ..., "value": ..., "expected": "confirm"})`. **Hard fail** (exit 1). This matches `trigger-policy/SKILL.md` Step 2 — the project's "No Irreversible Actions Without Approval" boundary is non-negotiable; a workflow that downgrades Tier 3 is broken by construction, not "legitimately overriding."
 
 ### Step 6: No-native-slash check
 
@@ -93,14 +93,14 @@ For each entry in `completion_gate.requires[]`, verify it maps to at least one a
 |---|---|
 | schema fails | `schema_invalid` (exit 2) |
 | any `native_slash_violations` | `native_slash_present` (exit 1) |
+| any `tier3_violations` | `tier3_invalid` (exit 1 — Iron Law) |
 | any `cross_reference_errors` | `cross_reference_failed` (exit 1) |
-| any `tier_warnings` | `tier_warnings` (exit 0 — soft fail) |
 | else | `pass` (exit 0) |
 
 ## Anti-patterns
 
 - ❌ Treating schema-valid as cross-reference-valid. Schema only catches shape; references catch identity.
-- ❌ Treating `tier_warnings` as hard fail. A future workflow may legitimately override (with documented rationale).
+- ❌ Treating Tier 3 downgrade as a soft warning. The "No Irreversible Actions Without Approval" boundary is non-negotiable.
 - ❌ Accepting workflows that reference native `/goal`. Per the v3 non-goals — plugins cannot invoke native slash commands.
 
 ## Reuse map

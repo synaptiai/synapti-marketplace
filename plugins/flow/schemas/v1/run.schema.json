@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://synapti.ai/schemas/flow/v1/run.schema.json",
   "title": "FlowRun",
-  "description": "One execution attempt of a FlowWorkflow against a target (issue, PR, ad-hoc goal). Provides local auditability and resumability — NOT exactly-once execution or deterministic replay. M3 writes run.yaml; M1 schema fixes the contract so future writers conform.",
+  "description": "One execution attempt of a FlowWorkflow against a target (issue, PR, ad-hoc goal). Provides local auditability and resumability — NOT exactly-once execution or deterministic replay.",
   "type": "object",
   "required": ["apiVersion", "kind", "metadata", "context", "state"],
   "additionalProperties": false,
@@ -25,7 +25,7 @@
         },
         "workflow": {
           "type": "string",
-          "description": "Workflow definition this run executes (e.g., 'start-issue', 'review-pr'). M4 fills these out."
+          "description": "Workflow definition this run executes (e.g., 'start-issue', 'review-pr')."
         },
         "workflow_version": {
           "type": "integer",

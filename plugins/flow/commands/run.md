@@ -1,5 +1,6 @@
 ---
-description: "Execute a FlowTrigger target ONCE. Subcommands: trigger <id>. Does NOT schedule future execution. Use /flow:run trigger <id>."
+description: "Execute a FlowTrigger target ONCE. Subcommands: trigger <id>. Does NOT schedule future execution."
+argument-hint: "trigger <id>"
 allowed-tools: Bash, Read, Skill, AskUserQuestion
 ---
 

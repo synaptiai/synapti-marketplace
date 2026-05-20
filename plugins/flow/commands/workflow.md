@@ -1,5 +1,6 @@
 ---
-description: "Inspect and validate FlowWorkflow YAMLs at plugins/flow/workflows/. Subcommands: list, inspect <id>, validate <id>, graph <id>. Use /flow:workflow <subcommand>."
+description: "Inspect and validate FlowWorkflow YAMLs at plugins/flow/workflows/. Subcommands: list, inspect <id>, validate <id>, graph <id>."
+argument-hint: "<subcommand> [id]"
 allowed-tools: Bash, Read, Skill
 ---
 

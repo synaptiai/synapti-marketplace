@@ -133,3 +133,67 @@ assert_equal "ok" "$RESULT" "evidence/valid.yaml validates"
 _flow_test_begin "evidence/missing-required.yaml is rejected"
 RESULT=$(_validate_fixture "$SCHEMA_DIR/evidence.schema.json" "$FIXTURE_DIR/evidence/missing-required.yaml")
 assert_contains "fail" "$RESULT" "missing evidence block rejected"
+
+# --- Test 11: FlowWorkflow positive
+_flow_test_begin "workflow/valid.yaml validates against workflow.schema.json"
+RESULT=$(_validate_fixture "$SCHEMA_DIR/workflow.schema.json" "$FIXTURE_DIR/workflow/valid.yaml")
+assert_equal "ok" "$RESULT" "workflow/valid.yaml validates"
+
+# --- Test 12: FlowWorkflow negative
+_flow_test_begin "workflow/missing-required.yaml is rejected"
+RESULT=$(_validate_fixture "$SCHEMA_DIR/workflow.schema.json" "$FIXTURE_DIR/workflow/missing-required.yaml")
+assert_contains "fail" "$RESULT" "missing workflow required fields rejected"
+
+# --- Test 13: FlowTrigger positive
+_flow_test_begin "trigger/valid.yaml validates against trigger.schema.json"
+RESULT=$(_validate_fixture "$SCHEMA_DIR/trigger.schema.json" "$FIXTURE_DIR/trigger/valid.yaml")
+assert_equal "ok" "$RESULT" "trigger/valid.yaml validates"
+
+# --- Test 14: FlowTrigger negative — missing required fields
+_flow_test_begin "trigger/missing-required.yaml is rejected"
+RESULT=$(_validate_fixture "$SCHEMA_DIR/trigger.schema.json" "$FIXTURE_DIR/trigger/missing-required.yaml")
+assert_contains "fail" "$RESULT" "missing trigger required fields rejected"
+
+# --- Test 15: FlowTrigger negative — empty forbidden_actions (Tier-3 deny missing)
+# Schema-enforced (not just documented): forbidden_actions MUST contain
+# 'merge' and 'release'. Empty array fails schema validation deterministically.
+_flow_test_begin "trigger/missing-tier3-deny.yaml is rejected (Tier-3 schema enforcement)"
+RESULT=$(_validate_fixture "$SCHEMA_DIR/trigger.schema.json" "$FIXTURE_DIR/trigger/missing-tier3-deny.yaml")
+assert_contains "fail" "$RESULT" "forbidden_actions without merge+release rejected"
+
+# --- Test 16: every plugin-shipped workflow validates against the schema
+_flow_test_begin "all plugin workflows validate against workflow.schema.json"
+WORKFLOW_FAILURES=0
+for wf in "$REPO_ROOT"/plugins/flow/workflows/*.workflow.yaml; do
+  RESULT=$(_validate_fixture "$SCHEMA_DIR/workflow.schema.json" "$wf")
+  if [ "$RESULT" != "ok" ]; then
+    WORKFLOW_FAILURES=$((WORKFLOW_FAILURES + 1))
+    echo "  -> $(basename "$wf"): $RESULT" >&2
+  fi
+done
+assert_equal "0" "$WORKFLOW_FAILURES" "all 7 plugin workflows validate"
+
+# --- Test 17: every plugin-shipped trigger template validates against the schema
+# Templates use ${VAR} placeholders; we substitute trivial values so YAML
+# parses correctly, then validate.
+_flow_test_begin "all plugin trigger templates validate against trigger.schema.json"
+TRIGGER_FAILURES=0
+for tt in "$REPO_ROOT"/plugins/flow/triggers/templates/*.trigger.yaml; do
+  TMP=$(mktemp -t trigger-fixture.XXXXXX.yaml)
+  # Substitute placeholders with regex-conformant values. Branch and repo
+  # must avoid '/' because the trigger metadata.id pattern only permits
+  # [a-z0-9-] (the slug is built from these).
+  sed -e 's/\${PR}/42/g' \
+      -e 's|\${BRANCH}|feature-example|g' \
+      -e 's|\${REPO}|example-example|g' \
+      -e "s|\\\${NOW}|2026-05-20T14:30:00Z|g" \
+      -e 's/\${ISSUE}/100/g' \
+      "$tt" > "$TMP"
+  RESULT=$(_validate_fixture "$SCHEMA_DIR/trigger.schema.json" "$TMP")
+  rm -f "$TMP"
+  if [ "$RESULT" != "ok" ]; then
+    TRIGGER_FAILURES=$((TRIGGER_FAILURES + 1))
+    echo "  -> $(basename "$tt"): $RESULT" >&2
+  fi
+done
+assert_equal "0" "$TRIGGER_FAILURES" "all 3 plugin trigger templates validate after \${VAR} substitution"

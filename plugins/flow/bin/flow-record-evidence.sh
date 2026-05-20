@@ -79,9 +79,9 @@ sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 script_dir = sys.argv[1]
 sys.path.insert(0, script_dir)
 
+import errno
 import os
 import re
-import shutil
 
 import yaml
 from _journal_atomic import JournalAtomicError, write_yaml_file
@@ -143,19 +143,49 @@ except JournalAtomicError as e:
     sys.exit(e.exit_code)
 
 # Copy raw output, if provided, to <safe_name>.txt next to the sidecar.
-# We use shutil.copyfile (not copy2) so we don't preserve potentially
-# misleading mtimes from a temp capture file. Symlink defense: refuse if
-# the destination already exists as a symlink.
+# Symlink defense: use O_NOFOLLOW on both source AND destination to
+# atomically reject symlinks. `os.path.islink` + `shutil.copyfile` has a
+# TOCTOU window — an attacker can plant a symlink between the check and
+# the open. O_NOFOLLOW is atomic. O_EXCL on the destination refuses to
+# overwrite an existing file (intentional: evidence is immutable).
 if raw_output:
     raw_target = os.path.join(evidence_dir, f"{safe_name}.txt")
-    if os.path.islink(raw_target):
-        print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} is a symlink", file=sys.stderr)
+    try:
+        src_fd = os.open(raw_output, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as e:
+        if getattr(e, "errno", None) == errno.ELOOP:
+            print(f"flow-record-evidence.sh: refusing — raw-output source {raw_output} is a symlink", file=sys.stderr)
+        else:
+            print(f"flow-record-evidence.sh: cannot open raw-output source: {e}", file=sys.stderr)
         sys.exit(2)
     try:
-        shutil.copyfile(raw_output, raw_target)
+        dst_fd = os.open(raw_target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    except OSError as e:
+        os.close(src_fd)
+        if getattr(e, "errno", None) == errno.ELOOP:
+            print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} is a symlink", file=sys.stderr)
+        elif getattr(e, "errno", None) == errno.EEXIST:
+            print(f"flow-record-evidence.sh: refusing — raw-output target {raw_target} already exists (evidence is immutable)", file=sys.stderr)
+        else:
+            print(f"flow-record-evidence.sh: cannot create raw-output target: {e}", file=sys.stderr)
+        sys.exit(2)
+    try:
+        while True:
+            chunk = os.read(src_fd, 65536)
+            if not chunk:
+                break
+            os.write(dst_fd, chunk)
     except OSError as e:
         print(f"flow-record-evidence.sh: raw-output copy failed: {e}", file=sys.stderr)
+        os.close(src_fd); os.close(dst_fd)
+        try: os.unlink(raw_target)
+        except OSError: pass
         sys.exit(2)
+    finally:
+        try: os.close(src_fd)
+        except OSError: pass
+        try: os.close(dst_fd)
+        except OSError: pass
 
 print(f"flow-record-evidence.sh: recorded {safe_name} in {sidecar_target}", file=sys.stderr)
 PYTHON

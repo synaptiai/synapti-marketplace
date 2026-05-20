@@ -1,5 +1,6 @@
 ---
 description: "Create a FlowTrigger from a template AND generate a /loop prompt file the user invokes manually. Subcommands: pr <N>, ci, issue <N>, branch. Flow CANNOT invoke /loop from plugin code; this command prepares the prompt and tells the user how to start the loop themselves."
+argument-hint: "<subcommand> [N]"
 allowed-tools: Bash, Read, Write, AskUserQuestion, Skill
 ---
 

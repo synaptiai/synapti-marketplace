@@ -91,7 +91,11 @@
         "forbidden_actions": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Hard requirement: must include 'merge' and 'release' (Tier 3 cannot be autonomous regardless of trigger settings)."
+          "description": "Hard requirement: must include 'merge' and 'release' (Tier 3 cannot be autonomous regardless of trigger settings). Enforced by schema: allOf contains assertions below.",
+          "allOf": [
+            { "contains": { "const": "merge" } },
+            { "contains": { "const": "release" } }
+          ]
         }
       }
     },

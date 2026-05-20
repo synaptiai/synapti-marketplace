@@ -25,10 +25,18 @@ set -uo pipefail
 export PYTHONSAFEPATH=1
 
 # Graceful degradation. Without these tools, we can't safely evaluate the
-# state — exit 0 with a no-op decision so the stop completes normally.
-command -v jq      >/dev/null 2>&1 || { echo '{"decision":"approve","reason":"jq unavailable"}'; exit 0; }
-command -v python3 >/dev/null 2>&1 || { echo '{"decision":"approve","reason":"python3 unavailable"}'; exit 0; }
-python3 -c "import yaml" >/dev/null 2>&1 || { echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
+# state — exit 0 with a no-op decision so the stop completes normally. Emit
+# a one-line stderr notice on first miss per session so users aren't blind to
+# the degradation (silent skip masks misconfigured environments).
+_flow_warned_once() {
+  local sentinel="${HOME}/.claude/flow-degraded-${1}"
+  [ -e "$sentinel" ] && return 0
+  mkdir -p "$(dirname "$sentinel")" 2>/dev/null && : > "$sentinel" 2>/dev/null
+  return 1
+}
+command -v jq      >/dev/null 2>&1 || { _flow_warned_once jq      || echo "flow: jq unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"jq unavailable"}'; exit 0; }
+command -v python3 >/dev/null 2>&1 || { _flow_warned_once python3 || echo "flow: python3 unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"python3 unavailable"}'; exit 0; }
+python3 -c "import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (pip install pyyaml) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
@@ -90,25 +98,26 @@ case "${MODE}" in
     PATH_VIOLATIONS=$(echo "$REPORT" | jq -r '.path_violations[]?' 2>/dev/null | head -5)
 
     if [ -n "${INCOMPLETE}" ] || [ -n "${FAILING}" ] || [ -n "${PATH_VIOLATIONS}" ]; then
-      # Compose a multi-line warning. The format is intentionally similar
-      # to the existing flow stderr patterns (FLOW_REVIEW_CYCLE markers etc.)
-      # so users recognize it as flow-emitted.
-      REASON=$(python3 -c "
+      # Compose a multi-line warning. Pass attacker-influenceable values
+      # (GOAL_NAME from filename basename, INCOMPLETE/FAILING from AC IDs in
+      # the goal YAML, PATH_VIOLATIONS from `git diff --name-only`) via
+      # argv — NEVER via shell interpolation into Python source — to prevent
+      # source injection when AC IDs or filenames contain quote characters.
+      REASON=$(python3 - "$GOAL_NAME" "$INCOMPLETE" "$FAILING" "$PATH_VIOLATIONS" <<'PYEOF'
 import sys
-parts = ['FLOW_GOAL_INCOMPLETE']
-parts.append('Active goal: ${GOAL_NAME}')
-inc = '''${INCOMPLETE}'''.strip()
-fail = '''${FAILING}'''.strip()
-viol = '''${PATH_VIOLATIONS}'''.strip()
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+goal_name, inc, fail, viol = sys.argv[1], sys.argv[2].strip(), sys.argv[3].strip(), sys.argv[4].strip()
+parts = ['FLOW_GOAL_INCOMPLETE', f'Active goal: {goal_name}']
 if inc:
     parts.append('Missing evidence for: ' + ', '.join(inc.split()))
 if fail:
     parts.append('Failing acceptance criteria: ' + ', '.join(fail.split()))
 if viol:
     parts.append('Path-boundary violations: ' + ', '.join(viol.splitlines()))
-parts.append('Next action: /flow:goal evaluate ${GOAL_NAME}')
-print('\\n'.join(parts))
-")
+parts.append(f'Next action: /flow:goal evaluate {goal_name}')
+print('\n'.join(parts))
+PYEOF
+)
       DECISION="approve"
       [ "$MODE" = "block" ] && DECISION="block"
       jq -nc --arg r "$REASON" --arg d "$DECISION" '{decision:$d, reason:$r}'
@@ -124,11 +133,46 @@ print('\\n'.join(parts))
       echo '{"decision":"approve","reason":"evaluator-loop mode requested but flow-goal-evaluator.sh is not executable"}'
       exit 0
     fi
-    # Pass the original stdin event by piping the captured EVENT back in.
-    printf '%s' "$EVENT" | exec "${PLUGIN_ROOT}/hooks/scripts/flow-goal-evaluator.sh"
+    # Invoke without `exec` inside the pipe — `exec` on the right side of a
+    # pipe runs in a subshell and is a no-op; if the evaluator fails to start
+    # or crashes before emitting JSON, capture the failure and emit a safe
+    # approve with a diagnostic reason rather than silently exiting empty.
+    EVAL_OUTPUT=$(printf '%s' "$EVENT" | "${PLUGIN_ROOT}/hooks/scripts/flow-goal-evaluator.sh" 2>&1)
+    EVAL_RC=$?
+    if [ $EVAL_RC -ne 0 ] || [ -z "$EVAL_OUTPUT" ]; then
+      jq -nc --arg r "evaluator-loop hook failed (rc=$EVAL_RC): $EVAL_OUTPUT" '{decision:"approve",reason:$r}'
+      exit 0
+    fi
+    printf '%s' "$EVAL_OUTPUT"
+    exit 0
     ;;
   *)
-    echo "{\"decision\":\"approve\",\"reason\":\"unknown stopHookEnforcement value: ${MODE}\"}"
+    # Fail-loud-but-not-fatal: emit stderr diagnostic AND fall through to
+    # warn mode so a single-character typo in settings doesn't silently
+    # disable enforcement.
+    echo "flow-goal-stop: unknown stopHookEnforcement value '${MODE}' — valid: warn|block|evaluator-loop. Falling back to 'warn' mode." >&2
+    REPORT=$("${PLUGIN_ROOT}/hooks/scripts/flow-run-deterministic-checks.sh" "${ACTIVE_GOAL}" 2>/dev/null || echo '{}')
+    GOAL_NAME=$(basename "${ACTIVE_GOAL}" .goal.yaml)
+    INCOMPLETE=$(echo "$REPORT" | jq -r '.incomplete_acs[]?' 2>/dev/null | head -5)
+    FAILING=$(echo "$REPORT"   | jq -r '.failing[]?'       2>/dev/null | head -5)
+    PATH_VIOLATIONS=$(echo "$REPORT" | jq -r '.path_violations[]?' 2>/dev/null | head -5)
+    if [ -n "${INCOMPLETE}" ] || [ -n "${FAILING}" ] || [ -n "${PATH_VIOLATIONS}" ]; then
+      REASON=$(python3 - "$GOAL_NAME" "$INCOMPLETE" "$FAILING" "$PATH_VIOLATIONS" <<'PYEOF'
+import sys
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+goal_name, inc, fail, viol = sys.argv[1], sys.argv[2].strip(), sys.argv[3].strip(), sys.argv[4].strip()
+parts = [f'FLOW_GOAL_CONFIG_FALLBACK_WARN (unknown stopHookEnforcement, treated as warn)', f'Active goal: {goal_name}']
+if inc:  parts.append('Missing evidence for: ' + ', '.join(inc.split()))
+if fail: parts.append('Failing acceptance criteria: ' + ', '.join(fail.split()))
+if viol: parts.append('Path-boundary violations: ' + ', '.join(viol.splitlines()))
+parts.append(f'Next action: /flow:goal evaluate {goal_name}')
+print('\n'.join(parts))
+PYEOF
+)
+      jq -nc --arg r "$REASON" '{decision:"approve",reason:$r}'
+    else
+      echo '{"decision":"approve","reason":"goal evidence complete; ready for /flow:goal evaluate"}'
+    fi
     exit 0
     ;;
 esac

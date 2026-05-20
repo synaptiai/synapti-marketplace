@@ -152,3 +152,41 @@ EXIT=$?
 assert_exit 2 "$EXIT" "exit 2"
 assert_contains "symlink" "$ERR" "stderr names the symlink refusal"
 assert_equal "untouched-lock-target" "$(cat "$TARGET_REDIRECT")" "redirect target preserved"
+
+# --- Test 6: symlink at raw-output target → exit 2 (O_NOFOLLOW)
+# Sidecar write succeeds, but raw-output destination pre-staged as a symlink
+# must be refused — O_NOFOLLOW + O_EXCL on the destination.
+_flow_test_begin "symlink at raw-output target → exit 2 (O_NOFOLLOW on dst)"
+DIR=$(_fre_mktemp_dir)
+mkdir -p "$DIR/.flow/runs/2026-05-20T143000Z-test/evidence"
+RAW_REDIRECT="$DIR/raw-output-redirect"
+echo "untouched-raw-content" > "$RAW_REDIRECT"
+# Pre-stage the destination as a symlink to a redirect file.
+ln -s "$RAW_REDIRECT" "$DIR/.flow/runs/2026-05-20T143000Z-test/evidence/evidence_symtest.txt"
+
+EV="$DIR/symraw.yaml"
+cat > "$EV" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowEvidence
+metadata:
+  id: evidence_symtest
+  created_at: '2026-05-20T14:42:00Z'
+evidence:
+  type: command_result
+  exit_code: 0
+YML
+RAW="$DIR/raw-source.txt"
+printf 'real source content\n' > "$RAW"
+
+ERR=$(_run_helper "$DIR" --run-id 2026-05-20T143000Z-test --evidence-file "$EV" --raw-output "$RAW" 2>&1 >/dev/null)
+EXIT=$?
+assert_exit 2 "$EXIT" "exit 2"
+# Refusal can present as either ELOOP ("symlink") or EEXIST ("already exists")
+# depending on platform errno precedence under O_NOFOLLOW|O_EXCL. Either form
+# proves the symlink was NOT followed — what matters is the protection holds.
+if echo "$ERR" | grep -qE 'symlink|already exists'; then
+  _flow_assert_pass "stderr refuses raw-output write to symlinked dst"
+else
+  _flow_assert_fail "stderr did not signal refusal: $ERR"
+fi
+assert_equal "untouched-raw-content" "$(cat "$RAW_REDIRECT")" "redirect target NOT overwritten via symlink"

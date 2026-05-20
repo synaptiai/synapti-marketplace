@@ -44,15 +44,38 @@ SESSION_ID=$(echo "$EVENT" | jq -r '.session_id // "unknown"')
 TRANSCRIPT=$(echo "$EVENT" | jq -r '.transcript_path // ""')
 STOP_ACTIVE=$(echo "$EVENT" | jq -r '.stop_hook_active // false')
 
+# Sanitize SESSION_ID aggressively: bound charset to [a-zA-Z0-9_-], cap
+# length at 64. This removes path-traversal (..), shell-special chars, and
+# unicode RTL overrides before SESSION_ID is interpolated into file paths.
+SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9_-' | head -c 64)
+[ -z "$SESSION_ID" ] && SESSION_ID="anon"
+
 # Resolve config from cascade.
 JUDGE_MODEL=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "haiku" '.flow.goals.judge.model // empty' 2>/dev/null)
 [ -z "$JUDGE_MODEL" ] && JUDGE_MODEL="haiku"
+# Validate model against an allowlist — an unrecognized name would either
+# fail at the claude CLI or escalate to a paid tier silently.
+case "$JUDGE_MODEL" in
+  haiku|sonnet|opus) ;;
+  *) echo "flow-goal-evaluator: unknown judge.model '$JUDGE_MODEL' — falling back to haiku" >&2; JUDGE_MODEL="haiku" ;;
+esac
 JUDGE_TIMEOUT=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "60" '.flow.goals.judge.timeoutSeconds // empty' 2>/dev/null)
 [ -z "$JUDGE_TIMEOUT" ] && JUDGE_TIMEOUT="60"
+# Validate timeout is a positive int within reasonable bounds (5..600s).
+case "$JUDGE_TIMEOUT" in
+  ''|*[!0-9]*) JUDGE_TIMEOUT="60" ;;
+esac
+if [ "$JUDGE_TIMEOUT" -lt 5 ] || [ "$JUDGE_TIMEOUT" -gt 600 ]; then
+  JUDGE_TIMEOUT=60
+fi
 
-# Throttle. Three continuations per 5-minute window per session. After that,
-# force-approve and reset — protects against runaway loops.
-THROTTLE_FILE="/tmp/.flow-goal-throttle-$(echo "$SESSION_ID" | tr '/' '_')"
+# Throttle state lives in $HOME/.claude/flow-goal-throttle/ (mode 0700),
+# NOT in /tmp. Predictable /tmp paths are a symlink-attack vector on shared
+# systems; per-user dirs aren't. SESSION_ID is sanitized above so it's
+# safe to interpolate.
+THROTTLE_DIR="${HOME:-/tmp}/.claude/flow-goal-throttle"
+mkdir -p "$THROTTLE_DIR" 2>/dev/null && chmod 0700 "$THROTTLE_DIR" 2>/dev/null
+THROTTLE_FILE="${THROTTLE_DIR}/${SESSION_ID}"
 NOW=$(date +%s)
 CONTINUE_COUNT=0
 LAST_TIME=0
@@ -60,6 +83,11 @@ if [ "$STOP_ACTIVE" = "true" ] && [ -f "$THROTTLE_FILE" ]; then
   THROTTLE_DATA=$(cat "$THROTTLE_FILE" 2>/dev/null)
   CONTINUE_COUNT=$(echo "$THROTTLE_DATA" | cut -d: -f1)
   LAST_TIME=$(echo "$THROTTLE_DATA" | cut -d: -f2)
+  # Defensively coerce to integers — guard against partial writes or
+  # foreign content (parse failure would error inside the `-ge` test below
+  # because `set -u` is in effect).
+  case "$CONTINUE_COUNT" in ''|*[!0-9]*) CONTINUE_COUNT=0 ;; esac
+  case "$LAST_TIME" in ''|*[!0-9]*) LAST_TIME=0 ;; esac
   SINCE=$((NOW - LAST_TIME))
   # Reset if more than 5 minutes since last continuation.
   [ "$SINCE" -gt 300 ] && CONTINUE_COUNT=0
@@ -124,10 +152,10 @@ HAS_MUST_PASS_FAIL=$(echo "$REPORT" | jq -r '
 
 if [ -n "$HAS_MUST_PASS_FAIL" ] || [ -n "$VIOLATIONS" ]; then
   # Compose continuation prompt. Iteration policy comes from the goal YAML.
-  REASON=$(python3 - "$ACTIVE_GOAL" "$REPORT" <<'PYEOF' 2>/dev/null
+  REASON=$(python3 - "$ACTIVE_GOAL" "$REPORT" "$BUDGET_REMAINING" <<'PYEOF' 2>/dev/null
 import sys, json, yaml
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
-goal_path, report_json = sys.argv[1:3]
+goal_path, report_json, budget = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(goal_path, "r", encoding="utf-8") as f:
     goal = yaml.safe_load(f) or {}
 report = json.loads(report_json) if report_json else {}
@@ -143,7 +171,7 @@ constraints = goal.get("constraints") or {}
 if constraints.get("denied_paths"):
     parts.append(f"Denied paths: {', '.join(constraints['denied_paths'])}")
 parts.append("Iteration policy: smallest change first; re-run narrowest validation; do not edit files outside allowed_paths.")
-parts.append(f"Budget remaining: {sys.argv[3] if len(sys.argv) > 3 else '?'} turns.")
+parts.append(f"Budget remaining: {budget or '?'} turns.")
 print("\n".join(parts))
 PYEOF
 )

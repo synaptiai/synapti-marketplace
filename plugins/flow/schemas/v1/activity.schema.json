@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://synapti.ai/schemas/flow/v1/activity.schema.json",
   "title": "FlowActivity",
-  "description": "A bounded unit of work within a FlowRun. Written by flow-record-activity.sh (M1 helper) at phase boundaries. Immutable once written — re-running an activity creates a new sequence-numbered file.",
+  "description": "A bounded unit of work within a FlowRun. Written by flow-record-activity.sh at phase boundaries. Immutable once written — re-running an activity creates a new sequence-numbered file.",
   "type": "object",
   "required": ["apiVersion", "kind", "metadata", "activity"],
   "additionalProperties": false,

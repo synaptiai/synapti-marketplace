@@ -64,7 +64,7 @@
         },
         "run_id": {
           "type": "string",
-          "description": "FlowRun identifier this goal is associated with (M3)."
+          "description": "FlowRun identifier this goal is associated with."
         }
       }
     },

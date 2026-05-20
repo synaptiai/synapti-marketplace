@@ -46,6 +46,19 @@ GOAL_YAML="${1:-}"
 [ -z "$GOAL_YAML" ] && { echo "flow-run-deterministic-checks.sh: <goal-yaml-path> argument required" >&2; exit 1; }
 [ -f "$GOAL_YAML" ] || { echo "flow-run-deterministic-checks.sh: goal yaml '$GOAL_YAML' does not exist" >&2; exit 1; }
 
+# Resolve the opt-in gate for executing verification_command strings. A goal
+# YAML's verification_command runs under `bash -c`; if a hostile repo ships a
+# goal with lifecycle.status: active, the Stop hook would otherwise execute
+# attacker-supplied commands on first turn after `gh pr checkout`. Defaults
+# to false — ACs with verification_command are reported as `incomplete_acs`
+# (with reason: not_executed) unless the user opts in. Users who own the
+# repo and want auto-execution set flow.goals.executeVerificationCommands: true.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
+EXEC_VERIFY=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "false" '.flow.goals.executeVerificationCommands // empty' 2>/dev/null)
+[ -z "$EXEC_VERIFY" ] && EXEC_VERIFY="false"
+export FLOW_EXEC_VERIFY="$EXEC_VERIFY"
+
 python3 - "$GOAL_YAML" <<'PYTHON'
 import json
 import os
@@ -98,6 +111,21 @@ for ac in acs:
         report["incomplete_acs"].append(ac_id)
         continue
 
+    # Opt-in gate: don't auto-exec verification_command strings unless the
+    # user has explicitly enabled it. This is a security boundary — a goal
+    # YAML's verification_command runs under `bash -c`, and a hostile repo's
+    # active goal would otherwise execute attacker-controlled bash on the
+    # first Stop event after checkout.
+    if os.environ.get("FLOW_EXEC_VERIFY", "false").lower() != "true":
+        report["incomplete_acs"].append(ac_id)
+        report["checked"].append({
+            "id": ac_id,
+            "exit_code": None,
+            "must_pass": must_pass,
+            "reason": "not_executed (flow.goals.executeVerificationCommands is false)",
+        })
+        continue
+
     # Run with a hard timeout to keep the Stop hook responsive. 30s is a
     # generous upper bound for test/lint commands; goal authors needing
     # longer-running checks should run them via /flow:goal evaluate
@@ -148,10 +176,14 @@ if allowed_paths:
         )
         if result.returncode == 0:
             changed_files = [f for f in result.stdout.splitlines() if f]
-            # Use fnmatch for glob-style matching against allowed_paths.
-            import fnmatch
+            # Match allowed_paths with PurePath.match — supports recursive `**`
+            # patterns (e.g., `src/**` matches `src/foo/bar.ts`). fnmatch does
+            # NOT do recursive `**`; pathlib does. For simple patterns without
+            # `**`, behavior is the same.
+            from pathlib import PurePath
             for f in changed_files:
-                allowed = any(fnmatch.fnmatch(f, pat) for pat in allowed_paths)
+                target = PurePath(f)
+                allowed = any(target.match(pat) for pat in allowed_paths)
                 if not allowed:
                     report["path_violations"].append(f)
     except (subprocess.TimeoutExpired, OSError):

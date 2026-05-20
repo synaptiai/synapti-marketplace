@@ -1,0 +1,5 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowWorkflow
+metadata:
+  id: incomplete
+description: Missing required fields (no phases, no tier_classification)

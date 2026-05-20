@@ -1,5 +1,6 @@
 ---
-description: "Manage FlowTrigger artifacts at .flow/triggers/. Subcommands: list, inspect <id>, enable <id>, disable <id>, run <id>, delete <id>. Triggers describe wake-up intent; they do NOT guarantee background execution. Use /flow:trigger <subcommand>."
+description: "Manage FlowTrigger artifacts at .flow/triggers/. Subcommands: list, inspect <id>, enable <id>, disable <id>, run <id>, delete <id>. Triggers describe wake-up intent; they do NOT guarantee background execution."
+argument-hint: "<subcommand> [id]"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, Skill
 ---
 
