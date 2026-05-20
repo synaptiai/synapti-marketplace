@@ -252,6 +252,130 @@
       "type": "boolean",
       "default": false,
       "description": "When true, restores the original deferral behavior for cosmetic P3 in untouched files only: the 'Create a follow-up issue?' AskUserQuestion is re-enabled, and Boy Scout expansion is softened. All other principles still apply (P1/P2 fix in-PR, no calendar estimates, fix-forward unbounded). Use when the user has deliberately constrained scope. See skills/llm-operator-principles/SKILL.md."
+    },
+    "flow": {
+      "type": "object",
+      "description": "Flow v3 runtime layer — goals, workflows, triggers. M2 wires goals into hooks + commands. See plugins/flow/references/flow-goals.md and references/stop-hook-goal-enforcement.md.",
+      "properties": {
+        "runtime": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Master switch for the .flow/ runtime layer. Setting to false disables FlowGoal, FlowWorkflow, FlowTrigger, and FlowRun writes; existing files remain readable but no new ones are produced."
+            },
+            "stateDir": {
+              "type": "string",
+              "default": ".flow",
+              "description": "Project-local directory for runtime state (relative to repo root). Changing this is rare — most teams should keep the default to maintain compatibility with the gitignore policy."
+            },
+            "runRetentionDays": {
+              "type": "integer",
+              "default": 30,
+              "minimum": 1,
+              "description": "How many days of FlowRun records to keep under .flow/runs/ before a future cleanup helper prunes them. M3+ adds the cleanup script; M2 only reads this for documentation."
+            }
+          },
+          "additionalProperties": false
+        },
+        "goals": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Master switch for the FlowGoal feature. When false, /flow:goal is disabled and the Stop hook fast-paths to approve."
+            },
+            "requireGoalForStart": {
+              "type": "boolean",
+              "default": false,
+              "description": "When true, /flow:start automatically creates a FlowGoal after the Spec Validation Gate. M2 ships default false so /flow:start UX is byte-identical to v2.4.0; teams flip to true after one release cycle of opt-in usage."
+            },
+            "stopHookEnforcement": {
+              "enum": ["warn", "block", "evaluator-loop"],
+              "default": "warn",
+              "description": "Stop hook posture: 'warn' (passive, no LLM, emits warning when active goal lacks evidence) | 'block' (same check, injects warning as next-turn prompt) | 'evaluator-loop' (active Haiku judge per turn, ~$0.001/eval, opt-in). See references/stop-hook-goal-enforcement.md."
+            },
+            "failAfterStuckTurns": {
+              "type": "integer",
+              "default": 3,
+              "minimum": 1,
+              "description": "In evaluator-loop mode, the Stop hook transitions the goal to 'failed' if the pass-set hash is unchanged for this many consecutive turns. Prevents infinite churn on goals that can't make forward progress."
+            },
+            "judge": {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "default": "haiku",
+                  "description": "Claude model used by the evaluator-loop judge subprocess. Haiku is the cost-effective default (~$0.001/eval); sonnet/opus available for harder rubrics."
+                },
+                "timeoutSeconds": {
+                  "type": "integer",
+                  "default": 60,
+                  "minimum": 10,
+                  "description": "Hard timeout on the judge subprocess. If exceeded, the hook approves the stop with a 'judge timed out' notice rather than blocking indefinitely."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "workflows": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Master switch for the FlowWorkflow feature. M4 enables this when the workflow YAML definitions ship; M2 default is false."
+            }
+          },
+          "additionalProperties": false
+        },
+        "triggers": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Master switch for the FlowTrigger feature. M5 enables this when /flow:trigger and /flow:watch ship; M2 default is false."
+            },
+            "allowedTypes": {
+              "type": "array",
+              "items": {
+                "enum": ["manual", "hook", "loop_prompt", "github_actions", "local_cron", "local_daemon"]
+              },
+              "default": ["manual", "hook", "loop_prompt"],
+              "description": "Trigger types allowed in this project. v3.0 supports manual/hook/loop_prompt; github_actions/local_cron/local_daemon are deferred to v3.1+."
+            },
+            "allowAutonomousMerge": {
+              "type": "boolean",
+              "default": false,
+              "description": "Non-negotiable in v3.0 — Tier 3 actions (merge, release) require explicit AskUserQuestion confirmation; no trigger can grant merge autonomy."
+            },
+            "allowTriggerCreationFromTriggeredRun": {
+              "type": "boolean",
+              "default": false,
+              "description": "Recursion policy: by default, runs initiated by a trigger may NOT create new triggers. Prevents trigger-creates-trigger loops."
+            },
+            "defaultConcurrency": {
+              "enum": ["skip_if_running", "queue", "cancel_previous"],
+              "default": "skip_if_running",
+              "description": "Default concurrency policy when a trigger fires while a prior run is in flight."
+            },
+            "maxActiveTriggers": {
+              "type": "integer",
+              "default": 5,
+              "minimum": 0,
+              "description": "Maximum number of triggers in active status. Zero disables triggers entirely (same as triggers.enabled=false but composable)."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false
