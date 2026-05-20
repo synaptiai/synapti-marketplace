@@ -149,7 +149,7 @@ Test additions for per-skill, per-command, and full workflow integration are def
 - Per-skill / per-command unit tests for M3-M5 deliverables.
 - Polyglot Windows wrapper for hook scripts (existing tech debt; separate cleanup PR).
 - `/flow:status` and `/flow:learn` extensions to read from `.flow/`.
-- `last-verdict.json` write path in `/flow:goal evaluate` — the assembler reads it when present; persistence comes in a separate PR.
+(`last-verdict.json` persistence and cross-judge enforcement — previously listed here as deferred — closed in cycle-3 of PR #109. See the cycle-3 follow-on below.)
 
 ## Cycle-2 follow-on to PR #109 (Independence Protocol enforcement)
 
@@ -161,6 +161,17 @@ After the M1-M6 commits, a self-review cycle on PR #109 surfaced an Independence
 - 19 new test assertions in `flow-evidence-bundle.test.sh` cover the bundle structure, prompt-injection containment, raw-output truncation, path-traversal refusal, symlink defense, and a regression guard that asserts the transcript content NEVER leaks into the bundle.
 
 No user action required. The change is internal to evaluator-loop mode (opt-in via `flow.goals.stopHookEnforcement: evaluator-loop`); warn-mode behavior is unchanged.
+
+## Cycle-3 follow-on to PR #109 (close the last two gaps)
+
+Cycle-2 left two items deferred: `last-verdict.json` had a reader but no writer (delta computation always fell back to "unchanged"), and the spec's "never pass on `llm_judge_report` alone" rule was judge-time discipline only — nothing stopped a regression. Cycle-3 closes both:
+
+- New `bin/flow-record-verdict.sh` (CLI helper, validates required keys + enums + confidence range before writing) is invoked at every verdict-producing site: the evaluator-loop hook after `claude --print` returns, and the `/flow:goal evaluate` command after the skill produces a verdict. `last-verdict.json` is now produced wherever verdicts are produced.
+- The assembler in `bin/_flow_evidence_bundle.py` now emits an `### Evidence coverage analysis` header at the top of `<<<UNTRUSTED_EVIDENCE_LEDGER>>>`. Per-AC classification (`deterministic`, `mixed`, `judge_only`, `none`) makes the cross-check rule impossible to miss — judge-only ACs are explicitly flagged `CROSS-CHECK REQUIRED`. The judge spec at `agents/goal-evaluator-judge.md` now references this header as authoritative.
+- New `_journal_atomic.write_json_file` helper mirrors `write_yaml_file` (same O_NOFOLLOW + flock + tempfile+rename+fsync defenses) so the verdict producer reuses the established atomic-write pattern.
+- 35 new test assertions (10 cases in `flow-record-verdict.test.sh` + 4 cases in `flow-evidence-bundle.test.sh` covering coverage analysis). All 330 tests pass.
+
+`references/stop-hook-goal-enforcement.md` "What's NOT yet enforced" section is now empty — both gaps closed.
 
 ## Critical references
 

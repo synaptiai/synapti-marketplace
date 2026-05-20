@@ -140,11 +140,124 @@ def _list_evidence_files(run_dir: str) -> list:
     return result
 
 
-def _assemble_evidence_section(run_dir: str) -> str:
-    """Concatenate every evidence sidecar (and its raw output, if any)
-    into a single fenced section.
+# Evidence-type classification for the cross-check analysis (Step B of
+# the Independence Protocol enforcement). The agent spec
+# (agents/goal-evaluator-judge.md) declares: "NEVER pass an AC purely on
+# the basis of another LLM's report; cross-check against a deterministic
+# sidecar." This module enforces that rule at bundle-assembly time by
+# emitting a per-AC coverage analysis header.
+DETERMINISTIC_EVIDENCE_TYPES = frozenset({
+    "command_result",
+    "test_result",
+    "runtime_smoke_result",
+    "holdout_validation",
+    "path_boundary_check",
+})
+JUDGE_EVIDENCE_TYPES = frozenset({
+    "llm_judge_report",
+})
 
-    Format per sidecar:
+
+def _classify_sidecar(sidecar: dict) -> tuple:
+    """Extract (evidence_type, proves_list) from a parsed sidecar dict.
+
+    Returns (None, []) if the sidecar shape doesn't match the schema —
+    the assembler treats unrecognized sidecars as "uncategorized" and
+    omits them from coverage analysis (they still appear in the
+    evidence ledger; analysis just can't say anything about them).
+    """
+    if not isinstance(sidecar, dict):
+        return (None, [])
+    evidence_block = sidecar.get("evidence") or {}
+    if not isinstance(evidence_block, dict):
+        return (None, [])
+    ev_type = evidence_block.get("type")
+    proves = evidence_block.get("proves") or []
+    if not isinstance(proves, list):
+        proves = []
+    return (ev_type, [p for p in proves if isinstance(p, str)])
+
+
+def _compute_evidence_coverage(goal_acs: list, classified: list) -> dict:
+    """Map each AC id to its coverage status given the classified sidecars.
+
+    Returns a dict {ac_id: status} where status is one of:
+      - 'deterministic' — at least one deterministic sidecar
+      - 'mixed'         — both deterministic AND judge sidecars
+      - 'judge_only'    — only llm_judge_report sidecars (CROSS-CHECK REQUIRED)
+      - 'none'          — no sidecars at all (judge spec treats as `incomplete`)
+
+    `goal_acs` is goal.objective.acceptance_criteria — a list of dicts
+    with an `id` field.
+    `classified` is a list of (evidence_type, proves_list) tuples
+    from _classify_sidecar over every parsed sidecar in the run.
+    """
+    coverage = {}
+    for ac in goal_acs or []:
+        if not isinstance(ac, dict):
+            continue
+        ac_id = ac.get("id")
+        if not isinstance(ac_id, str):
+            continue
+        has_det = False
+        has_judge = False
+        for ev_type, proves in classified:
+            if ac_id not in proves:
+                continue
+            if ev_type in DETERMINISTIC_EVIDENCE_TYPES:
+                has_det = True
+            elif ev_type in JUDGE_EVIDENCE_TYPES:
+                has_judge = True
+        if has_det and has_judge:
+            coverage[ac_id] = "mixed"
+        elif has_det:
+            coverage[ac_id] = "deterministic"
+        elif has_judge:
+            coverage[ac_id] = "judge_only"
+        else:
+            coverage[ac_id] = "none"
+    return coverage
+
+
+def _render_coverage_header(coverage: dict) -> str:
+    """Render the per-AC coverage analysis as a markdown header.
+
+    Emitted at the TOP of <<<UNTRUSTED_EVIDENCE_LEDGER>>> so the judge
+    sees it before reading any sidecar. Each AC gets a one-line summary;
+    judge_only ACs are explicitly marked CROSS-CHECK REQUIRED so the
+    judge's anti-pattern ("never pass on llm_judge_report alone") is
+    impossible to miss.
+    """
+    if not coverage:
+        return "### Evidence coverage analysis\n(no acceptance_criteria declared in goal contract)"
+
+    lines = ["### Evidence coverage analysis"]
+    for ac_id, status in coverage.items():
+        if status == "deterministic":
+            lines.append(f"- {ac_id}: deterministic evidence present")
+        elif status == "mixed":
+            lines.append(f"- {ac_id}: deterministic + LLM-judge — cross-check satisfied")
+        elif status == "judge_only":
+            lines.append(
+                f"- {ac_id}: LLM-judge evidence ONLY — CROSS-CHECK REQUIRED; "
+                f"do NOT pass on this alone (downgrade to incomplete per agent spec)"
+            )
+        else:  # 'none'
+            lines.append(f"- {ac_id}: no sidecar — judge MUST mark as incomplete")
+    return "\n".join(lines)
+
+
+def _assemble_evidence_section(run_dir: str, goal_acs: list) -> str:
+    """Concatenate every evidence sidecar (and its raw output, if any)
+    into a single fenced section, prefixed with a per-AC coverage
+    analysis header.
+
+    Format:
+        ### Evidence coverage analysis
+        - AC1: deterministic evidence present
+        - AC2: LLM-judge evidence ONLY — CROSS-CHECK REQUIRED
+        ...
+
         ### evidence/<basename>
         ```yaml
         {sidecar content, truncated to MAX_SIDECAR_BYTES}
@@ -157,27 +270,43 @@ def _assemble_evidence_section(run_dir: str) -> str:
     parts = []
     files = _list_evidence_files(run_dir)
     if not files:
-        return _fence("evidence", "(no evidence sidecars in this run)")
+        coverage = _compute_evidence_coverage(goal_acs, [])
+        header = _render_coverage_header(coverage)
+        return _fence("evidence", f"{header}\n\n(no evidence sidecars in this run)")
 
+    # First pass: parse every sidecar to build the classification list.
+    # We separate this from the rendering pass so the coverage header
+    # appears BEFORE any sidecar content (the judge sees coverage first).
+    classified = []
+    parsed_sidecars = []  # list of (rel_name, sidecar_text, sidecar_dict_or_None, path)
     for sidecar_path in files:
         rel_name = os.path.basename(sidecar_path)
         try:
             sidecar_text = _read_no_follow(sidecar_path, max_bytes=MAX_SIDECAR_BYTES)
         except OSError as e:
-            if getattr(e, "errno", None) == errno.ELOOP:
-                parts.append(f"### evidence/{rel_name}\n(refused: sidecar is a symlink)")
-            else:
-                parts.append(f"### evidence/{rel_name}\n(refused: {type(e).__name__})")
+            parsed_sidecars.append((rel_name, None, None, sidecar_path, e))
             continue
-
-        parts.append(f"### evidence/{rel_name}\n```yaml\n{sidecar_text}\n```")
-
-        # Try to load the sidecar to find an output_ref. If parse fails,
-        # emit the sidecar verbatim above and skip raw output.
         try:
             sidecar = yaml.safe_load(sidecar_text)
         except yaml.YAMLError:
             sidecar = None
+        if isinstance(sidecar, dict):
+            classified.append(_classify_sidecar(sidecar))
+        parsed_sidecars.append((rel_name, sidecar_text, sidecar, sidecar_path, None))
+
+    coverage = _compute_evidence_coverage(goal_acs, classified)
+    parts.append(_render_coverage_header(coverage))
+    parts.append("")  # blank line between header and sidecars
+
+    for rel_name, sidecar_text, sidecar, sidecar_path, read_err in parsed_sidecars:
+        if read_err is not None:
+            if getattr(read_err, "errno", None) == errno.ELOOP:
+                parts.append(f"### evidence/{rel_name}\n(refused: sidecar is a symlink)")
+            else:
+                parts.append(f"### evidence/{rel_name}\n(refused: {type(read_err).__name__})")
+            continue
+
+        parts.append(f"### evidence/{rel_name}\n```yaml\n{sidecar_text}\n```")
 
         if isinstance(sidecar, dict):
             evidence_block = sidecar.get("evidence") or {}
@@ -263,6 +392,12 @@ def assemble_bundle(
     except yaml.YAMLError:
         goal = {}
 
+    # Extract acceptance criteria for the evidence coverage analysis. The
+    # assembler emits a per-AC header inside the evidence section that
+    # marks ACs whose only sidecar is `llm_judge_report` as CROSS-CHECK
+    # REQUIRED — enforcing the judge spec's anti-pattern at bundle time.
+    goal_acs = ((goal.get("objective") or {}).get("acceptance_criteria") or [])
+
     sections = [
         "# Judge prompt — assembled by flow-goal-evaluator-loop",
         "",
@@ -278,14 +413,18 @@ def assemble_bundle(
 
     # Evidence + previous verdict sections are scoped to the run dir.
     if run_dir and os.path.isdir(run_dir):
-        sections.append(_assemble_evidence_section(run_dir))
+        sections.append(_assemble_evidence_section(run_dir, goal_acs))
         sections.append("")
         prev = _assemble_previous_verdict_section(run_dir)
         if prev:
             sections.append(prev)
             sections.append("")
     else:
-        sections.append(_fence("evidence", "(no run directory; evidence ledger unavailable)"))
+        # Even without a run dir, render the coverage header so the judge
+        # sees per-AC status (all "no sidecar — judge MUST mark as incomplete").
+        coverage = _compute_evidence_coverage(goal_acs, [])
+        header = _render_coverage_header(coverage)
+        sections.append(_fence("evidence", f"{header}\n\n(no run directory; evidence ledger unavailable)"))
         sections.append("")
 
     sections.append(_assemble_budget_section(goal))

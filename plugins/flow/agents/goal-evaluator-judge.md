@@ -60,6 +60,13 @@ A goal with ANY `incomplete` AC has overall verdict `not_achieved` unless determ
 
 ### Step 2: Per-criterion evaluation
 
+Before per-AC evaluation, **read the `### Evidence coverage analysis` header** at the top of `<<<UNTRUSTED_EVIDENCE_LEDGER>>>`. The assembler classifies each AC's sidecars into:
+
+- `deterministic evidence present` — at least one sidecar with type `command_result`, `test_result`, `runtime_smoke_result`, `holdout_validation`, or `path_boundary_check`.
+- `deterministic + LLM-judge — cross-check satisfied` — both kinds present; you may credit the deterministic sidecar.
+- `LLM-judge evidence ONLY — CROSS-CHECK REQUIRED` — **mandatory**: do NOT pass this AC. Mark it `incomplete` with reason "judge-only evidence; deterministic cross-check missing." This is the spec's anti-pattern enforced at bundle-assembly time.
+- `no sidecar — judge MUST mark as incomplete` — no evidence at all.
+
 For each AC with a sidecar:
 
 1. **Locate the sidecar inside `<<<UNTRUSTED_EVIDENCE_LEDGER>>>`**. Each sidecar appears as a `### evidence/<basename>` heading with its YAML in a fenced code block. Verify the YAML conforms to `schemas/v1/evidence.schema.json` shape (the `evidence-type` enum, `proves` array, etc.).

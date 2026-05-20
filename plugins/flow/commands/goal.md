@@ -113,6 +113,27 @@ Read-only deep dump:
 
 Invoke `Skill(goal-evaluator)` with `trigger=command`. The skill runs deterministic checks, optionally dispatches `Agent(goal-evaluator-judge)`, and transitions lifecycle. This is the primary user-facing way to advance a goal's state.
 
+After the skill produces a verdict, **persist it via `bin/flow-record-verdict.sh`** so the next evaluator-loop turn (or the next manual evaluation) can compute `delta` against this verdict:
+
+```bash
+# After Skill(goal-evaluator) returns the structured verdict, write it
+# to a temp JSON file and invoke the helper:
+TMP=$(mktemp -t flow-verdict.XXXXXX.json)
+jq -n \
+  --arg v "<verdict>" \
+  --argjson c <confidence> \
+  --arg d "<delta>" \
+  --arg r "<reason>" \
+  --arg h "<next_step_hint>" \
+  '{verdict:$v, confidence:$c, delta:$d, reason:$r, next_step_hint:$h, source:"command"}' > "$TMP"
+"${CLAUDE_PLUGIN_ROOT}/bin/flow-record-verdict.sh" \
+  --run-id "<run-id-from-goal.scope.run_id>" \
+  --verdict-file "$TMP"
+rm -f "$TMP"
+```
+
+Skipping the write breaks delta computation for the next turn (everything becomes "unchanged"), so the skill enforces this step.
+
 Print the resulting verdict + per-AC table. If lifecycle transitioned to `achieved`, print celebration. If `failed`, print the failing AC + suggested next action.
 
 ### `/flow:goal pause <id>`

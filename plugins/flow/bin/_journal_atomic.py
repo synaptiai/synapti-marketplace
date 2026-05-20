@@ -350,6 +350,47 @@ def write_yaml_file(target_path, lockfile_path, data):
             pass
 
 
+def write_json_file(target_path, lockfile_path, data):
+    """Atomically write `data` (dict) as a standalone JSON file.
+
+    Used for FlowRun last-verdict.json and any other JSON state file under
+    .flow/runs/. Replace semantics (NOT merge) — verdicts are immutable per
+    turn but mutable across turns; the new verdict supersedes the old.
+
+    Same security defenses as write_yaml_file:
+      - O_NOFOLLOW probe rejects symlinked target atomically
+      - flock(lockfile_path) serializes concurrent writers
+      - tempfile.mkstemp + os.rename + dual fsync for durability
+      - Hostile-fork sys.path filter inherited via _harden_sys_path
+
+    JSON is serialized with sort_keys=True so re-writing the same data
+    produces byte-identical output (useful for diff-based comparison and
+    avoids spurious mtime churn).
+    """
+    _harden_sys_path()
+    lock_fd = acquire_lock(lockfile_path)
+    try:
+        if os.path.lexists(target_path):
+            try:
+                check_fd = os.open(target_path, os.O_RDONLY | os.O_NOFOLLOW)
+                os.close(check_fd)
+            except OSError as e:
+                if e.errno in (errno.ELOOP, errno.EMLINK):
+                    raise JournalAtomicError(
+                        f"refusing — target {target_path} is a symlink",
+                        exit_code=2,
+                    )
+
+        import json as _json
+        content = _json.dumps(data, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
+        _atomic_write(target_path, content)
+    finally:
+        try:
+            os.close(lock_fd)
+        except OSError:
+            pass
+
+
 def append_jsonl(events_path, event):
     """Append `event` (dict) as a JSON line to `events_path`.
 

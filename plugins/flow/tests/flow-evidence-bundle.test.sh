@@ -280,3 +280,120 @@ if echo "$OUT" | grep -q "attacker-content"; then
 else
   _flow_assert_pass "symlinked sidecar was skipped (attacker content absent)"
 fi
+
+# --- Test 9: cross-check enforcement — AC with only llm_judge_report
+# triggers a CROSS-CHECK REQUIRED warning. Without this, the "never pass on
+# llm_judge_report alone" rule is only documented in agent prose — the
+# assembler now makes it impossible to miss.
+_flow_test_begin "AC with only llm_judge_report → CROSS-CHECK REQUIRED warning"
+DIR=$(_feb_mktemp_dir)
+mkdir -p "$DIR/.flow/runs/r9/evidence"
+cat > "$DIR/.flow/runs/r9/evidence/judge.evidence.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowEvidence
+metadata: {id: evidence_judge, created_at: '2026-05-20T14:31:00Z'}
+evidence: {type: llm_judge_report, exit_code: 0, proves: [AC1]}
+YML
+cat > "$DIR/goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: g9, created_at: '2026-05-20T14:30:00Z'}
+scope: {repo: t/t, branch: m, run_id: r9}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - {id: AC1, text: judge-only, status: pending}
+evaluator: {type: flow_verdict_judge}
+lifecycle: {status: active}
+YML
+OUT=$(_assemble "$DIR" goal.yaml '{}' .flow/runs/r9)
+assert_contains "Evidence coverage analysis" "$OUT" "coverage header present"
+assert_contains "CROSS-CHECK REQUIRED" "$OUT" "judge-only AC flagged for cross-check"
+assert_contains "AC1: LLM-judge evidence ONLY" "$OUT" "specific AC named in warning"
+
+# --- Test 10: AC with BOTH deterministic and judge → cross-check satisfied
+_flow_test_begin "AC with deterministic + LLM-judge → cross-check satisfied"
+DIR=$(_feb_mktemp_dir)
+mkdir -p "$DIR/.flow/runs/r10/evidence"
+cat > "$DIR/.flow/runs/r10/evidence/det.evidence.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowEvidence
+metadata: {id: evidence_det, created_at: '2026-05-20T14:31:00Z'}
+evidence: {type: command_result, exit_code: 0, proves: [AC1]}
+YML
+cat > "$DIR/.flow/runs/r10/evidence/judge.evidence.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowEvidence
+metadata: {id: evidence_judge, created_at: '2026-05-20T14:32:00Z'}
+evidence: {type: llm_judge_report, exit_code: 0, proves: [AC1]}
+YML
+cat > "$DIR/goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: g10, created_at: '2026-05-20T14:30:00Z'}
+scope: {repo: t/t, branch: m, run_id: r10}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - {id: AC1, text: covered-both-ways, status: pending}
+evaluator: {type: flow_verdict_judge}
+lifecycle: {status: active}
+YML
+OUT=$(_assemble "$DIR" goal.yaml '{}' .flow/runs/r10)
+assert_contains "AC1: deterministic + LLM-judge — cross-check satisfied" "$OUT" "mixed coverage shown as satisfied"
+if echo "$OUT" | grep -q "AC1.*CROSS-CHECK REQUIRED"; then
+  _flow_assert_fail "AC with both kinds incorrectly flagged for cross-check"
+else
+  _flow_assert_pass "AC with deterministic backing is NOT flagged"
+fi
+
+# --- Test 11: AC with only deterministic evidence — no warning, just "present"
+_flow_test_begin "AC with only deterministic evidence → no cross-check warning"
+DIR=$(_feb_mktemp_dir)
+mkdir -p "$DIR/.flow/runs/r11/evidence"
+cat > "$DIR/.flow/runs/r11/evidence/test.evidence.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowEvidence
+metadata: {id: evidence_test, created_at: '2026-05-20T14:31:00Z'}
+evidence: {type: test_result, exit_code: 0, proves: [AC1]}
+YML
+cat > "$DIR/goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: g11, created_at: '2026-05-20T14:30:00Z'}
+scope: {repo: t/t, branch: m, run_id: r11}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - {id: AC1, text: deterministic-only, status: pending}
+evaluator: {type: flow_verdict_judge}
+lifecycle: {status: active}
+YML
+OUT=$(_assemble "$DIR" goal.yaml '{}' .flow/runs/r11)
+assert_contains "AC1: deterministic evidence present" "$OUT" "deterministic AC shown without warning"
+if echo "$OUT" | grep -q "CROSS-CHECK REQUIRED"; then
+  _flow_assert_fail "deterministic-only AC incorrectly flagged for cross-check"
+else
+  _flow_assert_pass "deterministic-only AC NOT flagged"
+fi
+
+# --- Test 12: AC with no sidecar at all → "no sidecar — judge MUST mark as incomplete"
+_flow_test_begin "AC with no sidecar → coverage header marks it incomplete"
+DIR=$(_feb_mktemp_dir)
+mkdir -p "$DIR/.flow/runs/r12/evidence"
+cat > "$DIR/goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: g12, created_at: '2026-05-20T14:30:00Z'}
+scope: {repo: t/t, branch: m, run_id: r12}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - {id: AC1, text: no-evidence, status: pending}
+    - {id: AC2, text: also-no-evidence, status: pending}
+evaluator: {type: flow_verdict_judge}
+lifecycle: {status: active}
+YML
+OUT=$(_assemble "$DIR" goal.yaml '{}' .flow/runs/r12)
+assert_contains "AC1: no sidecar — judge MUST mark as incomplete" "$OUT" "AC1 incomplete marker"
+assert_contains "AC2: no sidecar — judge MUST mark as incomplete" "$OUT" "AC2 incomplete marker"

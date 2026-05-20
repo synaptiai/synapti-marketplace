@@ -118,7 +118,26 @@ bin/journal-record.sh --issue {N} --type goal-evaluation \
   --metadata failures=<comma-list of failing AC ids or 'none'>
 ```
 
-### Step 8: Stuck detection (Stop-hook evaluator-loop mode only)
+### Step 8: Persist the verdict for next-turn delta (MANDATORY)
+
+Write the structured verdict to `.flow/runs/<run-id>/last-verdict.json` via `bin/flow-record-verdict.sh`. Without this step, the next evaluator-loop turn (or the next manual evaluation) cannot compute `delta` against a previous state — every turn becomes "unchanged" and the stuck-detection in Step 9 is broken.
+
+```bash
+TMP=$(mktemp -t flow-verdict.XXXXXX.json)
+jq -n \
+  --arg v "<verdict>" \
+  --argjson c <confidence> \
+  --arg d "<delta>" \
+  --arg r "<reason>" \
+  --arg h "<next_step_hint>" \
+  '{verdict:$v, confidence:$c, delta:$d, reason:$r, next_step_hint:$h, source:"skill"}' > "$TMP"
+bin/flow-record-verdict.sh --run-id "<run-id>" --verdict-file "$TMP"
+rm -f "$TMP"
+```
+
+The helper validates required keys + enum values and refuses malformed input — failures here surface as a stderr warning, not a verdict change. The skill SHOULD treat a write-failure as a soft warning (the in-memory verdict is still correct for this turn; only the next turn loses delta).
+
+### Step 9: Stuck detection (Stop-hook evaluator-loop mode only)
 
 If `trigger == stop-hook` AND the new pass-set hash matches the previous turn's hash for `flow.goals.failAfterStuckTurns` consecutive turns (default 3), transition status to `failed` with reason `stuck_no_progress`. This prevents the evaluator loop from churning indefinitely on a goal that can't make forward progress.
 
@@ -136,4 +155,5 @@ If `trigger == stop-hook` AND the new pass-set hash matches the previous turn's 
 - `plugins/flow/agents/goal-evaluator-judge.md` — the specialized judge this skill dispatches.
 - `plugins/flow/bin/flow-record-evidence.sh` — atomic evidence sidecar writes.
 - `plugins/flow/bin/flow-goal-record.sh` — atomic goal lifecycle updates.
+- `plugins/flow/bin/flow-record-verdict.sh` — last-verdict.json producer; Step 8 invokes this.
 - `plugins/flow/references/evidence-bundle-format.md` — canonical evidence layout.

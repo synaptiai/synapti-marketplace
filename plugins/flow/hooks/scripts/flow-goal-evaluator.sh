@@ -273,6 +273,36 @@ RESP=$(cd "$EVAL_DIR" && CLAUDE_HOOK_GOAL_JUDGE_MODE=true timeout "$JUDGE_TIMEOU
 VERDICT=$(echo "$RESP" | jq -r '.structured_output.verdict // "needs_human_review"' 2>/dev/null)
 REASON_TXT=$(echo "$RESP" | jq -r '.structured_output.reason // "judge unavailable or output unparseable"' 2>/dev/null)
 HINT=$(echo "$RESP" | jq -r '.structured_output.next_step_hint // ""' 2>/dev/null)
+CONFIDENCE=$(echo "$RESP" | jq -r '.structured_output.confidence // 0.5' 2>/dev/null)
+DELTA=$(echo "$RESP" | jq -r '.structured_output.delta // "unchanged"' 2>/dev/null)
+
+# Persist the verdict so the next turn's bundle can compute delta. Only
+# write when we have a real RESP — a parse-failure fallback is not a
+# verdict we want to remember (would lock the next turn into permanent
+# `needs_human_review`).
+if [ -n "$RESP" ] && [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
+  VERDICT_TMP=$(mktemp -t flow-verdict.XXXXXX.json 2>/dev/null)
+  if [ -n "$VERDICT_TMP" ]; then
+    # Build the verdict file using jq so we serialize JSON correctly even
+    # when REASON_TXT/HINT contain quotes or backslashes.
+    jq -n \
+      --arg v "$VERDICT" \
+      --argjson c "$CONFIDENCE" \
+      --arg d "$DELTA" \
+      --arg r "$REASON_TXT" \
+      --arg h "$HINT" \
+      '{verdict:$v, confidence:$c, delta:$d, reason:$r, next_step_hint:$h, source:"evaluator-loop"}' \
+      > "$VERDICT_TMP" 2>/dev/null
+    # Best-effort record. Failures are logged but do NOT break the hook —
+    # the hook output (decision JSON below) is the load-bearing surface;
+    # the verdict file is just delta-state for the next turn.
+    "${PLUGIN_ROOT}/bin/flow-record-verdict.sh" \
+      --run-id "$RUN_ID" \
+      --verdict-file "$VERDICT_TMP" \
+      >/dev/null 2>&1 || echo "flow-goal-evaluator: last-verdict.json write failed (delta computation on next turn will fall back to 'unchanged')" >&2
+    rm -f "$VERDICT_TMP"
+  fi
+fi
 
 case "$VERDICT" in
   achieved)
