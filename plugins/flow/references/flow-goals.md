@@ -16,6 +16,28 @@ A FlowGoal is a durable, schema-validated YAML file at `.flow/goals/<id>.goal.ya
 
 The full schema lives at `plugins/flow/schemas/v1/goal.schema.json`.
 
+## Enabling v3 in your project
+
+Flow v3 ships dormant by default — the feature flags default to `false` so v2 projects upgrade with zero behavioral change. To turn on FlowGoals for `/flow:start` and `/flow:pr` / `/flow:merge`, add to `.claude/settings.flow.json`:
+
+```json
+{
+  "flow": {
+    "goals": {
+      "requireGoalForStart": true,
+      "executeVerificationCommands": true
+    }
+  }
+}
+```
+
+- `requireGoalForStart: true` — `/flow:start <issue>` auto-creates `.flow/goals/issue-<N>.goal.yaml` after the Spec Validation Gate.
+- `executeVerificationCommands: true` — `/flow:goal evaluate` runs each AC's `verification_command` and captures the output as evidence. Without this, evaluations report `not_executed` for every command-backed AC.
+
+`/flow:start` will also prompt you the first time you run it in a project that has neither `.claude/settings.flow.json` nor `.flow/` — answer **Enable v3** and the same flags are written automatically.
+
+See [`flow-goals-quickstart.md`](flow-goals-quickstart.md) for a 5-minute walkthrough on a synthetic issue, and [`migration-v2-to-v3.md`](migration-v2-to-v3.md) for the step-by-step v2 → v3 opt-in across all four feature areas (goals, Stop hook, workflows, triggers).
+
 ## Goal lifecycle
 
 ```
