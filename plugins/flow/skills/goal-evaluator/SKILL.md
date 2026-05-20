@@ -118,12 +118,13 @@ bin/journal-record.sh --issue {N} --type goal-evaluation \
   --metadata failures=<comma-list of failing AC ids or 'none'>
 ```
 
-### Step 8: Persist the verdict for next-turn delta (MANDATORY)
+### Step 8: Persist the verdict for next-turn delta (MANDATORY, non-fatal)
 
 Write the structured verdict to `.flow/runs/<run-id>/last-verdict.json` via `bin/flow-record-verdict.sh`. Without this step, the next evaluator-loop turn (or the next manual evaluation) cannot compute `delta` against a previous state — every turn becomes "unchanged" and the stuck-detection in Step 9 is broken.
 
 ```bash
 TMP=$(mktemp -t flow-verdict.XXXXXX.json)
+trap 'rm -f "$TMP"' EXIT
 jq -n \
   --arg v "<verdict>" \
   --argjson c <confidence> \
@@ -131,11 +132,14 @@ jq -n \
   --arg r "<reason>" \
   --arg h "<next_step_hint>" \
   '{verdict:$v, confidence:$c, delta:$d, reason:$r, next_step_hint:$h, source:"skill"}' > "$TMP"
-bin/flow-record-verdict.sh --run-id "<run-id>" --verdict-file "$TMP"
-rm -f "$TMP"
+bin/flow-record-verdict.sh --run-id "<run-id>" --verdict-file "$TMP" \
+  || echo "skill: last-verdict.json write failed; next turn's delta will be 'unchanged'" >&2
 ```
 
-The helper validates required keys + enum values and refuses malformed input — failures here surface as a stderr warning, not a verdict change. The skill SHOULD treat a write-failure as a soft warning (the in-memory verdict is still correct for this turn; only the next turn loses delta).
+**Contract** (resolves the prior "MANDATORY heading vs SHOULD body" ambiguity):
+- The step is **MANDATORY**: every verdict-producing path MUST invoke this helper.
+- The step is **non-fatal**: a helper failure (malformed JSON, symlink rejected, disk full) MUST surface to stderr via the `||` clause shown above, MUST NOT retry within the same turn, and MUST NOT abort the calling skill or hook. The in-memory verdict for this turn is still correct; only the next turn loses delta semantics.
+- When called from `flow-goal-evaluator.sh` (evaluator-loop mode), the hook already invokes the helper after the judge subprocess returns — Step 8 in that path is a SKIP, not a double-write. Detect via the `CLAUDE_HOOK_GOAL_JUDGE_MODE=true` environment variable that the evaluator-loop sets in subprocesses.
 
 ### Step 9: Stuck detection (Stop-hook evaluator-loop mode only)
 

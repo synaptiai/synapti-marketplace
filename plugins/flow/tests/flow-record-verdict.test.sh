@@ -162,3 +162,95 @@ EXIT=$(echo "$ERR" | grep -oE 'EXIT=[0-9]+' | cut -d= -f2)
 assert_equal "2" "$EXIT" "exit 2 on symlink"
 assert_contains "symlink" "$ERR" "stderr names the symlink refusal"
 assert_equal "untouched-redirect" "$(cat "$DIR/redirect")" "redirect target preserved"
+
+# --- Test 11: bool confidence rejected (isinstance trap)
+_flow_test_begin "confidence: true (bool) → exit 1 (isinstance bool guard)"
+DIR=$(_frv_mktemp_dir)
+cat > "$DIR/v.json" <<'JSON'
+{"verdict": "achieved", "confidence": true, "delta": "made_progress", "reason": "bool test"}
+JSON
+ERR=$(_run_helper "$DIR" --run-id 2026-05-20T143000Z-test --verdict-file "$DIR/v.json" 2>&1 >/dev/null; echo "EXIT=$?")
+EXIT=$(echo "$ERR" | grep -oE 'EXIT=[0-9]+' | cut -d= -f2)
+assert_equal "1" "$EXIT" "exit 1"
+assert_contains "must be a number" "$ERR" "stderr names the range refusal"
+
+# --- Test 12: bare run-id '.' refused
+_flow_test_begin "run-id bare '.' → exit 1"
+DIR=$(_frv_mktemp_dir)
+cat > "$DIR/v.json" <<'JSON'
+{"verdict": "achieved", "confidence": 0.9, "delta": "made_progress", "reason": "."}
+JSON
+ERR=$(_run_helper "$DIR" --run-id "." --verdict-file "$DIR/v.json" 2>&1 >/dev/null; echo "EXIT=$?")
+EXIT=$(echo "$ERR" | grep -oE 'EXIT=[0-9]+' | cut -d= -f2)
+assert_equal "1" "$EXIT" "exit 1"
+assert_contains "refusing for safety" "$ERR" "stderr names refusal"
+
+# --- Test 13: invalid blocker_type rejected
+_flow_test_begin "invalid blocker_type → exit 1"
+DIR=$(_frv_mktemp_dir)
+cat > "$DIR/v.json" <<'JSON'
+{"verdict": "blocked", "confidence": 0.5, "delta": "unchanged", "reason": "test", "blocker_type": "free_form_string"}
+JSON
+ERR=$(_run_helper "$DIR" --run-id 2026-05-20T143000Z-test --verdict-file "$DIR/v.json" 2>&1 >/dev/null; echo "EXIT=$?")
+EXIT=$(echo "$ERR" | grep -oE 'EXIT=[0-9]+' | cut -d= -f2)
+assert_equal "1" "$EXIT" "exit 1"
+assert_contains "blocker_type must be one of" "$ERR" "stderr names the enum refusal"
+
+# --- Test 14: oversized next_step_hint is truncated, not rejected
+_flow_test_begin "next_step_hint > 500 chars → soft-truncated"
+DIR=$(_frv_mktemp_dir)
+LONG=$(printf 'x%.0s' $(seq 1 600))
+python3 -c "
+import json
+data = {'verdict':'achieved','confidence':0.9,'delta':'made_progress','reason':'t','next_step_hint':'$LONG'}
+print(json.dumps(data))
+" > "$DIR/v.json"
+ERR=$(_run_helper "$DIR" --run-id 2026-05-20T143000Z-test --verdict-file "$DIR/v.json" 2>&1 >/dev/null; echo "EXIT=$?")
+EXIT=$(echo "$ERR" | grep -oE 'EXIT=[0-9]+' | cut -d= -f2)
+assert_equal "0" "$EXIT" "exit 0 (truncated, not rejected)"
+assert_contains "exceeded 500-byte cap" "$ERR" "stderr notes the truncation"
+TARGET="$DIR/.flow/runs/2026-05-20T143000Z-test/last-verdict.json"
+HINT_LEN=$(python3 -c "import json; print(len(json.load(open('$TARGET'))['next_step_hint']))")
+[ "$HINT_LEN" -lt 600 ] && _flow_assert_pass "persisted hint was truncated (len=$HINT_LEN)" \
+                       || _flow_assert_fail "persisted hint not truncated (len=$HINT_LEN)"
+
+# --- Test 15: verdict-file as symlink → exit 2 (O_NOFOLLOW on read)
+_flow_test_begin "verdict-file is a symlink → exit 2"
+DIR=$(_frv_mktemp_dir)
+cat > "$DIR/real.json" <<'JSON'
+{"verdict": "achieved", "confidence": 0.9, "delta": "made_progress", "reason": "via symlink"}
+JSON
+ln -s "$DIR/real.json" "$DIR/link.json"
+ERR=$(_run_helper "$DIR" --run-id 2026-05-20T143000Z-test --verdict-file "$DIR/link.json" 2>&1 >/dev/null; echo "EXIT=$?")
+EXIT=$(echo "$ERR" | grep -oE 'EXIT=[0-9]+' | cut -d= -f2)
+assert_equal "2" "$EXIT" "exit 2 on symlinked --verdict-file"
+assert_contains "is a symlink" "$ERR" "stderr names the symlink refusal"
+
+# --- Test 16: symlinked run dir refused (DIR-SYMLINK defense)
+_flow_test_begin "run dir pre-staged as symlink → exit 2"
+DIR=$(_frv_mktemp_dir)
+mkdir -p "$DIR/attacker-target"
+mkdir -p "$DIR/.flow/runs"
+ln -s "$DIR/attacker-target" "$DIR/.flow/runs/symlink-id"
+cat > "$DIR/v.json" <<'JSON'
+{"verdict": "achieved", "confidence": 0.9, "delta": "made_progress", "reason": "via symlinked dir"}
+JSON
+ERR=$(_run_helper "$DIR" --run-id "symlink-id" --verdict-file "$DIR/v.json" 2>&1 >/dev/null; echo "EXIT=$?")
+EXIT=$(echo "$ERR" | grep -oE 'EXIT=[0-9]+' | cut -d= -f2)
+assert_equal "2" "$EXIT" "exit 2 on symlinked run dir"
+assert_contains "is a symlink" "$ERR" "stderr names the directory symlink refusal"
+# Confirm no verdict was written into the attacker-target dir.
+[ ! -e "$DIR/attacker-target/last-verdict.json" ] && _flow_assert_pass "no verdict written into attacker dir" \
+                                                  || _flow_assert_fail "BREACH: verdict written into attacker dir"
+
+# --- Test 17: byte-identical re-write of same verdict (sort_keys guarantee)
+_flow_test_begin "identical verdict re-written produces byte-identical output"
+DIR=$(_frv_mktemp_dir)
+cat > "$DIR/v.json" <<'JSON'
+{"verdict": "achieved", "confidence": 0.9, "delta": "made_progress", "reason": "idempotency", "recorded_at": "2026-05-20T14:30:00Z"}
+JSON
+_run_helper "$DIR" --run-id 2026-05-20T143000Z-test --verdict-file "$DIR/v.json" 2>&1 >/dev/null
+HASH1=$(shasum "$DIR/.flow/runs/2026-05-20T143000Z-test/last-verdict.json" | awk '{print $1}')
+_run_helper "$DIR" --run-id 2026-05-20T143000Z-test --verdict-file "$DIR/v.json" 2>&1 >/dev/null
+HASH2=$(shasum "$DIR/.flow/runs/2026-05-20T143000Z-test/last-verdict.json" | awk '{print $1}')
+assert_equal "$HASH1" "$HASH2" "byte-identical re-write (sort_keys=True guarantee)"

@@ -10,11 +10,13 @@ The flow plugin's v3 runtime layer stores project-local execution state under `.
 ├── workflows/<id>.workflow.yaml       # FlowWorkflow definitions (M4; tracked; rare overrides)
 ├── triggers/<id>.trigger.yaml         # FlowTrigger configs (M5; tracked)
 ├── triggers/<id>.local.yaml           # local-only triggers (gitignored)
-└── runs/<ISO-timestamp-id>/           # FlowRun records (M3; gitignored)
+└── runs/<ISO-timestamp-id>/           # FlowRun records (gitignored)
     ├── run.yaml                       # the run document
     ├── activities/<NNN>-<name>.yaml   # sequence-numbered FlowActivity records
     ├── events.jsonl                   # append-only event ledger
-    ├── .lock                          # flock target (gitignored)
+    ├── .lock                          # flock target for activity/evidence appends
+    ├── last-verdict.json              # most-recent evaluator verdict (replace-semantics; consumed by next-turn delta computation)
+    ├── .verdict.lock                  # per-target flock for verdict writes (separate from .lock so replace and append progress concurrently)
     └── evidence/                      # FlowEvidence sidecars + raw output
         ├── <id>.evidence.yaml
         └── <id>.txt

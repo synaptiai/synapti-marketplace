@@ -22,6 +22,18 @@
 set -uo pipefail
 export PYTHONSAFEPATH=1
 
+# Top-level cleanup — tempfiles created by _record_verdict are tracked
+# here and removed on any exit (including SIGTERM/SIGINT) so we don't
+# leak files into $TMPDIR across many evaluator-loop turns.
+_VTMP_LIST=()
+_flow_cleanup_vtmps() {
+  local f
+  for f in "${_VTMP_LIST[@]:-}"; do
+    [ -n "$f" ] && rm -f "$f" 2>/dev/null
+  done
+}
+trap _flow_cleanup_vtmps EXIT INT TERM
+
 command -v jq      >/dev/null 2>&1 || { echo '{"decision":"approve","reason":"jq unavailable"}'; exit 0; }
 command -v python3 >/dev/null 2>&1 || { echo '{"decision":"approve","reason":"python3 unavailable"}'; exit 0; }
 command -v claude  >/dev/null 2>&1 || { echo '{"decision":"approve","reason":"claude CLI unavailable; evaluator-loop requires it"}'; exit 0; }
@@ -141,6 +153,59 @@ if [ "$BUDGET_REMAINING" -le 0 ]; then
   exit 0
 fi
 
+# Resolve run dir for verdict persistence. Used by _record_verdict.
+RUN_ID=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
+import sys, yaml
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    print((data.get("scope") or {}).get("run_id") or "")
+except Exception:
+    pass
+PYEOF
+)
+
+# Shared verdict-persistence helper. Cycle-4 fix: previously only the
+# hybrid (judge-spawned) path wrote last-verdict.json; the deterministic-
+# all-pass and must_pass-fail early-returns skipped persistence, leaving
+# the next-turn delta computation broken for those paths. This helper
+# centralizes the write so EVERY exit path persists a verdict.
+#
+# Args: $1=verdict, $2=confidence, $3=delta, $4=reason, $5=next_step_hint, $6=source
+# Best-effort: failures are logged to stderr but do not abort the hook.
+_record_verdict() {
+  local v="$1" c="$2" d="$3" r="$4" h="$5" src="$6"
+  [ -z "$RUN_ID" ] && return 0
+  # Validate confidence — non-numeric crashes jq silently. Default to 0.5
+  # with a stderr note rather than corrupting the verdict file.
+  case "$c" in
+    ''|*[!0-9.]*) echo "flow-goal-evaluator: invalid confidence '$c' from judge; using 0.5" >&2; c="0.5" ;;
+  esac
+  local vtmp
+  vtmp=$(mktemp -t flow-verdict.XXXXXX.json 2>/dev/null) || return 0
+  # Register in the global cleanup list so the top-level EXIT/INT/TERM
+  # trap removes the tempfile even if SIGTERM kills us mid-helper-call.
+  _VTMP_LIST+=("$vtmp")
+  if ! jq -n \
+        --arg v "$v" \
+        --argjson c "$c" \
+        --arg d "$d" \
+        --arg r "$r" \
+        --arg h "$h" \
+        --arg s "$src" \
+        '{verdict:$v, confidence:$c, delta:$d, reason:$r, next_step_hint:$h, source:$s}' \
+        > "$vtmp" 2>/dev/null; then
+    echo "flow-goal-evaluator: verdict JSON build failed (delta computation on next turn will fall back to 'unchanged')" >&2
+    return 0
+  fi
+  # Run-dir may not exist yet; helper does mkdir -p but only if RUN_ID
+  # looks valid. Surface the helper's stderr so failure modes are observable.
+  "${PLUGIN_ROOT}/bin/flow-record-verdict.sh" --run-id "$RUN_ID" --verdict-file "$vtmp" \
+    >/dev/null \
+    || echo "flow-goal-evaluator: last-verdict.json write failed (delta computation on next turn will fall back to 'unchanged')" >&2
+}
+
 # Run deterministic checks.
 REPORT=$("${PLUGIN_ROOT}/hooks/scripts/flow-run-deterministic-checks.sh" "${ACTIVE_GOAL}" 2>/dev/null || echo '{}')
 GOAL_NAME=$(basename "${ACTIVE_GOAL}" .goal.yaml)
@@ -180,6 +245,13 @@ PYEOF
 )
   jq -nc --arg r "$REASON" '{decision:"block", reason:$r}'
 
+  # Persist verdict so next-turn delta computation has memory. Cycle-4
+  # fix: this branch previously skipped the verdict write, breaking the
+  # cycle-3 promise. Confidence 1.0 because the deterministic must_pass
+  # failure is unambiguous evidence of `not_achieved`.
+  _record_verdict "not_achieved" "1.0" "unchanged" \
+    "must_pass criterion failed deterministically" "" "evaluator-loop-must-pass-fail"
+
   # Update throttle.
   echo "$((CONTINUE_COUNT + 1)):$NOW" > "$THROTTLE_FILE"
   exit 0
@@ -192,6 +264,11 @@ if [ -z "$INCOMPLETE" ] && [ -z "$FAILING" ]; then
   # a notice so the user can see the achievement on their next /flow:goal
   # status).
   echo '{"decision":"approve","reason":"goal evidence complete and all deterministic checks pass; run /flow:goal evaluate to finalize the achieved verdict"}'
+
+  # Persist verdict (cycle-4 fix — was previously skipped on this path).
+  _record_verdict "achieved" "1.0" "made_progress" \
+    "all deterministic checks pass, no fuzzy criteria remain" "" "evaluator-loop-deterministic-all-pass"
+
   rm -f "$THROTTLE_FILE"
   exit 0
 fi
@@ -210,20 +287,8 @@ EVAL_DIR="${HOME:-/tmp}/.claude/flow-goal-judge"
 mkdir -p "$EVAL_DIR" 2>/dev/null || EVAL_DIR="/tmp"
 chmod 0700 "$EVAL_DIR" 2>/dev/null
 
-# Resolve the run directory from the goal's scope.run_id (if any). When
-# absent or non-existent, the assembler emits a bundle with the goal +
-# report sections only — still valid for fuzzy-criteria judgment.
-RUN_ID=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
-import sys, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
-try:
-    with open(sys.argv[1], "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    print((data.get("scope") or {}).get("run_id") or "")
-except Exception:
-    pass
-PYEOF
-)
+# RUN_ID was already resolved near the top (before _record_verdict was
+# defined). Compute the absolute-path RUN_DIR here for the bundle assembler.
 RUN_DIR=""
 if [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
   RUN_DIR=".flow/runs/$RUN_ID"
@@ -276,32 +341,14 @@ HINT=$(echo "$RESP" | jq -r '.structured_output.next_step_hint // ""' 2>/dev/nul
 CONFIDENCE=$(echo "$RESP" | jq -r '.structured_output.confidence // 0.5' 2>/dev/null)
 DELTA=$(echo "$RESP" | jq -r '.structured_output.delta // "unchanged"' 2>/dev/null)
 
-# Persist the verdict so the next turn's bundle can compute delta. Only
-# write when we have a real RESP — a parse-failure fallback is not a
-# verdict we want to remember (would lock the next turn into permanent
-# `needs_human_review`).
-if [ -n "$RESP" ] && [ -n "$RUN_ID" ] && [ -d ".flow/runs/$RUN_ID" ]; then
-  VERDICT_TMP=$(mktemp -t flow-verdict.XXXXXX.json 2>/dev/null)
-  if [ -n "$VERDICT_TMP" ]; then
-    # Build the verdict file using jq so we serialize JSON correctly even
-    # when REASON_TXT/HINT contain quotes or backslashes.
-    jq -n \
-      --arg v "$VERDICT" \
-      --argjson c "$CONFIDENCE" \
-      --arg d "$DELTA" \
-      --arg r "$REASON_TXT" \
-      --arg h "$HINT" \
-      '{verdict:$v, confidence:$c, delta:$d, reason:$r, next_step_hint:$h, source:"evaluator-loop"}' \
-      > "$VERDICT_TMP" 2>/dev/null
-    # Best-effort record. Failures are logged but do NOT break the hook —
-    # the hook output (decision JSON below) is the load-bearing surface;
-    # the verdict file is just delta-state for the next turn.
-    "${PLUGIN_ROOT}/bin/flow-record-verdict.sh" \
-      --run-id "$RUN_ID" \
-      --verdict-file "$VERDICT_TMP" \
-      >/dev/null 2>&1 || echo "flow-goal-evaluator: last-verdict.json write failed (delta computation on next turn will fall back to 'unchanged')" >&2
-    rm -f "$VERDICT_TMP"
-  fi
+# Persist the verdict so the next turn's bundle can compute delta. We
+# write ONLY when RESP is non-empty — a parse-failure fallback would lock
+# the next turn into permanent `needs_human_review`. Genuine timeouts /
+# unparseable judge output do NOT update the persisted verdict; the user
+# sees needs_human_review in the decision JSON but the historical verdict
+# file remains intact for delta computation.
+if [ -n "$RESP" ]; then
+  _record_verdict "$VERDICT" "$CONFIDENCE" "$DELTA" "$REASON_TXT" "$HINT" "evaluator-loop"
 fi
 
 case "$VERDICT" in

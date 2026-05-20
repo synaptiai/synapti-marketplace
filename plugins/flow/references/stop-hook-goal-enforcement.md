@@ -121,7 +121,7 @@ The judge's own Stop hook sees the env var and short-circuits. No recursion poss
 
 In `evaluator-loop` mode, the throttle protects against runaway loops:
 
-- Track continuations per session at `/tmp/.flow-goal-throttle-${SESSION_ID}` (format: `count:last_unix_time`)
+- Track continuations per session at `${HOME}/.claude/flow-goal-throttle/${SESSION_ID}` (mode 0700; format: `count:last_unix_time`) — moved from `/tmp/.flow-goal-throttle-*` in cycle-1 to defend against `/tmp` symlink attacks on shared systems
 - Allow up to 3 continuations within any 5-minute window
 - 4th continuation in the window → force-approve and reset counter
 - Reset counter when more than 5 minutes elapsed since last continuation

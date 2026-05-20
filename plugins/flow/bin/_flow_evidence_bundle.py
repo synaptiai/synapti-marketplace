@@ -41,6 +41,7 @@ Security defenses (preserved from the broader flow plugin):
 import errno
 import json
 import os
+import re
 import sys
 from typing import Optional
 
@@ -146,16 +147,62 @@ def _list_evidence_files(run_dir: str) -> list:
 # the basis of another LLM's report; cross-check against a deterministic
 # sidecar." This module enforces that rule at bundle-assembly time by
 # emitting a per-AC coverage analysis header.
+#
+# Schema source-of-truth: schemas/v1/evidence.schema.json `evidence.type`
+# enum. We split that enum into two buckets — `JUDGE_EVIDENCE_TYPES` are
+# subjective LLM-derived assessments that MUST be cross-checked;
+# `DETERMINISTIC_EVIDENCE_TYPES` are everything else (machine-produced
+# checks, human approvals, review snapshots — all sufficient on their own
+# to credit an AC). The full-enum assertion at module-import time fails
+# fast if the schema gains a new type that hasn't been classified, so a
+# schema change forces a deliberate bucket decision rather than silent
+# fall-through to "no sidecar — judge MUST mark as incomplete".
+JUDGE_EVIDENCE_TYPES = frozenset({
+    "llm_judge_report",
+    "verdict",  # another judge's recorded verdict — subjective, needs cross-check
+})
 DETERMINISTIC_EVIDENCE_TYPES = frozenset({
     "command_result",
     "test_result",
+    "lint_result",
+    "typecheck_result",
     "runtime_smoke_result",
+    "visual_result",
+    "git_diff",
     "holdout_validation",
+    "human_approval",
+    "review_comment_snapshot",
+    "ci_status",
+    "artifact_check",
     "path_boundary_check",
 })
-JUDGE_EVIDENCE_TYPES = frozenset({
-    "llm_judge_report",
-})
+# Full enum from schemas/v1/evidence.schema.json — kept in sync via the
+# assertion below. Update both this set AND the schema enum together.
+_SCHEMA_EVIDENCE_TYPES = JUDGE_EVIDENCE_TYPES | DETERMINISTIC_EVIDENCE_TYPES
+assert len(JUDGE_EVIDENCE_TYPES & DETERMINISTIC_EVIDENCE_TYPES) == 0, (
+    "_flow_evidence_bundle: JUDGE_EVIDENCE_TYPES and DETERMINISTIC_EVIDENCE_TYPES overlap — fix classification"
+)
+
+
+def verify_schema_enum_coverage(schema_path: str) -> set:
+    """Return the set of evidence types in the schema enum that are NOT
+    classified by this module. Empty set means full coverage.
+
+    Used by tests to assert that future schema additions are deliberately
+    bucketed rather than silently falling through to "unknown" (which
+    classifies as `none` per _render_coverage_header and forces the judge
+    to mark the AC incomplete — a silent regression of cross-check enforcement).
+    """
+    import json as _json
+    with open(schema_path, "r", encoding="utf-8") as f:
+        schema = _json.load(f)
+    schema_types = set(
+        ((schema.get("properties") or {}).get("evidence") or {})
+        .get("properties", {})
+        .get("type", {})
+        .get("enum", [])
+    )
+    return schema_types - _SCHEMA_EVIDENCE_TYPES
 
 
 def _classify_sidecar(sidecar: dict) -> tuple:
@@ -178,27 +225,45 @@ def _classify_sidecar(sidecar: dict) -> tuple:
     return (ev_type, [p for p in proves if isinstance(p, str)])
 
 
-def _compute_evidence_coverage(goal_acs: list, classified: list) -> dict:
-    """Map each AC id to its coverage status given the classified sidecars.
+def _compute_evidence_coverage(goal_acs: list, classified: list) -> tuple:
+    """Map each AC id to its coverage status; also surface orphan sidecars.
 
-    Returns a dict {ac_id: status} where status is one of:
-      - 'deterministic' — at least one deterministic sidecar
-      - 'mixed'         — both deterministic AND judge sidecars
-      - 'judge_only'    — only llm_judge_report sidecars (CROSS-CHECK REQUIRED)
-      - 'none'          — no sidecars at all (judge spec treats as `incomplete`)
+    Returns (coverage, malformed, orphan_proves) where:
+      coverage: dict {ac_id: status} with status in
+        - 'deterministic' — at least one deterministic sidecar
+        - 'mixed'         — both deterministic AND judge sidecars
+        - 'judge_only'    — only llm_judge_report sidecars (CROSS-CHECK REQUIRED)
+        - 'none'          — no sidecars at all (judge spec treats as `incomplete`)
+      malformed: list of (index, reason) for ACs that couldn't be classified
+        (non-dict, non-string id, missing id). Surfaced as warning lines in
+        the coverage header so a malformed goal can't silently hide ACs from
+        the judge.
+      orphan_proves: list of AC ids referenced by sidecars but NOT present
+        in `goal_acs` — judge sees these in the ledger but coverage analysis
+        would otherwise silently drop them.
 
     `goal_acs` is goal.objective.acceptance_criteria — a list of dicts
-    with an `id` field.
-    `classified` is a list of (evidence_type, proves_list) tuples
-    from _classify_sidecar over every parsed sidecar in the run.
+    with an `id` field. Schema enforces shape but the assembler tolerates
+    malformed inputs (validation is optional at flow-goal-record.sh:114-117
+    when jsonschema is absent).
     """
     coverage = {}
-    for ac in goal_acs or []:
+    malformed = []
+    valid_ac_ids = set()
+
+    for idx, ac in enumerate(goal_acs or []):
         if not isinstance(ac, dict):
+            malformed.append((idx, "AC is not a mapping"))
             continue
         ac_id = ac.get("id")
-        if not isinstance(ac_id, str):
+        if ac_id is None:
+            malformed.append((idx, "AC has no `id` field"))
             continue
+        if not isinstance(ac_id, str):
+            malformed.append((idx, f"AC `id` is {type(ac_id).__name__}, not string: {ac_id!r}"))
+            continue
+        valid_ac_ids.add(ac_id)
+
         has_det = False
         has_judge = False
         for ev_type, proves in classified:
@@ -216,10 +281,36 @@ def _compute_evidence_coverage(goal_acs: list, classified: list) -> dict:
             coverage[ac_id] = "judge_only"
         else:
             coverage[ac_id] = "none"
-    return coverage
+
+    # Surface sidecars that claim to prove ACs not in the goal contract.
+    orphan_proves = set()
+    for _ev_type, proves in classified:
+        for p in proves:
+            if p not in valid_ac_ids:
+                orphan_proves.add(p)
+
+    return coverage, malformed, sorted(orphan_proves)
 
 
-def _render_coverage_header(coverage: dict) -> str:
+_SAFE_AC_ID_RE = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def _safe_ac_id(ac_id: str) -> str:
+    """Render an AC id as a safe markdown token.
+
+    Schema enforces `^[A-Z]+[0-9]+$` but schema validation is optional
+    (cycle-1 SEC-6). A hostile/malformed goal could ship an AC id with
+    a newline that would break out of the coverage header's list-item
+    context, or markdown that confuses the judge. Strip anything outside
+    [A-Za-z0-9_-]; cap at 64 chars to bound prompt size. The resulting
+    token may differ from the on-disk id, but that's preferable to
+    embedding raw markdown into the coverage header.
+    """
+    safe = _SAFE_AC_ID_RE.sub("?", ac_id)[:64]
+    return safe or "(unparseable AC id)"
+
+
+def _render_coverage_header(coverage: dict, malformed: list = None, orphan_proves: list = None) -> str:
     """Render the per-AC coverage analysis as a markdown header.
 
     Emitted at the TOP of <<<UNTRUSTED_EVIDENCE_LEDGER>>> so the judge
@@ -227,23 +318,53 @@ def _render_coverage_header(coverage: dict) -> str:
     judge_only ACs are explicitly marked CROSS-CHECK REQUIRED so the
     judge's anti-pattern ("never pass on llm_judge_report alone") is
     impossible to miss.
+
+    AC ids are sanitized through _safe_ac_id() — a hostile AC id with a
+    newline or markdown metacharacters cannot break the coverage header's
+    list-item structure or inject fake "deterministic" lines for ACs
+    that are actually judge-only.
+
+    `malformed` lists ACs that couldn't be classified (non-dict, missing
+    or non-string id). `orphan_proves` lists AC ids referenced by sidecars
+    but not declared in the goal — both are surfaced so the judge sees
+    discrepancies instead of silently dropped evidence.
     """
-    if not coverage:
+    malformed = malformed or []
+    orphan_proves = orphan_proves or []
+
+    if not coverage and not malformed and not orphan_proves:
         return "### Evidence coverage analysis\n(no acceptance_criteria declared in goal contract)"
 
     lines = ["### Evidence coverage analysis"]
     for ac_id, status in coverage.items():
+        safe = _safe_ac_id(ac_id)
         if status == "deterministic":
-            lines.append(f"- {ac_id}: deterministic evidence present")
+            lines.append(f"- {safe}: deterministic evidence present")
         elif status == "mixed":
-            lines.append(f"- {ac_id}: deterministic + LLM-judge — cross-check satisfied")
+            lines.append(f"- {safe}: deterministic + LLM-judge — cross-check satisfied")
         elif status == "judge_only":
             lines.append(
-                f"- {ac_id}: LLM-judge evidence ONLY — CROSS-CHECK REQUIRED; "
+                f"- {safe}: LLM-judge evidence ONLY — CROSS-CHECK REQUIRED; "
                 f"do NOT pass on this alone (downgrade to incomplete per agent spec)"
             )
         else:  # 'none'
-            lines.append(f"- {ac_id}: no sidecar — judge MUST mark as incomplete")
+            lines.append(f"- {safe}: no sidecar — judge MUST mark as incomplete")
+
+    # Surface malformed AC entries — judge MUST treat them as incomplete
+    # because their identity cannot be determined.
+    for idx, reason in malformed:
+        lines.append(f"- (malformed AC at index {idx}): {reason} — judge MUST mark as incomplete")
+
+    # Surface orphan-prove sidecars so the judge knows there's evidence
+    # in the ledger that doesn't map to any declared AC.
+    if orphan_proves:
+        safe_orphans = ", ".join(_safe_ac_id(p) for p in orphan_proves[:10])
+        more = f" (+{len(orphan_proves)-10} more)" if len(orphan_proves) > 10 else ""
+        lines.append(
+            f"- (warning) {len(orphan_proves)} sidecar(s) reference AC ids "
+            f"not in the goal contract: {safe_orphans}{more}"
+        )
+
     return "\n".join(lines)
 
 
@@ -270,8 +391,8 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list) -> str:
     parts = []
     files = _list_evidence_files(run_dir)
     if not files:
-        coverage = _compute_evidence_coverage(goal_acs, [])
-        header = _render_coverage_header(coverage)
+        coverage, malformed, orphans = _compute_evidence_coverage(goal_acs, [])
+        header = _render_coverage_header(coverage, malformed, orphans)
         return _fence("evidence", f"{header}\n\n(no evidence sidecars in this run)")
 
     # First pass: parse every sidecar to build the classification list.
@@ -294,8 +415,8 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list) -> str:
             classified.append(_classify_sidecar(sidecar))
         parsed_sidecars.append((rel_name, sidecar_text, sidecar, sidecar_path, None))
 
-    coverage = _compute_evidence_coverage(goal_acs, classified)
-    parts.append(_render_coverage_header(coverage))
+    coverage, malformed, orphans = _compute_evidence_coverage(goal_acs, classified)
+    parts.append(_render_coverage_header(coverage, malformed, orphans))
     parts.append("")  # blank line between header and sidecars
 
     for rel_name, sidecar_text, sidecar, sidecar_path, read_err in parsed_sidecars:
@@ -336,15 +457,60 @@ def _assemble_previous_verdict_section(run_dir: str) -> str:
     """Read the previous turn's verdict from .flow/runs/<id>/last-verdict.json
     if it exists. Returns an empty string when absent — the assembler omits
     the section entirely in that case (first-turn case).
+
+    Parses the JSON and re-serializes a compact projection (verdict,
+    confidence, delta, reason, recorded_at, plus optional next_step_hint
+    capped to 200 chars). This guarantees the embedded text is valid JSON
+    even when the original file has a large criterion_results array that
+    would otherwise truncate mid-token under a fixed byte cap. The judge
+    needs delta context, not the full criterion table from the prior turn.
     """
     path = os.path.join(run_dir, "last-verdict.json")
     if not os.path.isfile(path):
         return ""
     try:
-        text = _read_no_follow(path, max_bytes=4 * 1024)
-    except OSError:
+        # 32KB cap (8x the prior cap) — large enough for any reasonable
+        # verdict including criterion_results, but bounded against
+        # pathological files that fill the prompt.
+        text = _read_no_follow(path, max_bytes=32 * 1024)
+    except OSError as e:
+        # Differentiate permission-denied from "file doesn't exist" so
+        # operators have a signal during stuck-loop investigations.
+        print(
+            f"_flow_evidence_bundle: failed to read previous verdict at {path}: {e}",
+            file=sys.stderr,
+        )
         return ""
-    return _fence("verdict", text.rstrip())
+
+    # Parse + project. A corrupt/truncated file is treated as "no previous
+    # verdict" (empty string) rather than embedding broken JSON into the
+    # prompt — that would defeat the cycle-3 delta-computation purpose.
+    import json as _json
+    try:
+        data = _json.loads(text)
+    except (_json.JSONDecodeError, ValueError) as e:
+        print(
+            f"_flow_evidence_bundle: previous verdict at {path} is unparseable JSON: {e}; omitting section",
+            file=sys.stderr,
+        )
+        return ""
+
+    if not isinstance(data, dict):
+        return ""
+
+    # Compact projection — bounded, valid JSON, sufficient for delta.
+    hint = data.get("next_step_hint") or ""
+    if isinstance(hint, str) and len(hint) > 200:
+        hint = hint[:200] + "…"
+    projection = {
+        "verdict":      data.get("verdict"),
+        "confidence":   data.get("confidence"),
+        "delta":        data.get("delta"),
+        "reason":       data.get("reason"),
+        "recorded_at":  data.get("recorded_at"),
+        "next_step_hint": hint,
+    }
+    return _fence("verdict", _json.dumps(projection, sort_keys=True, indent=2))
 
 
 def _assemble_budget_section(goal: dict) -> str:
@@ -354,8 +520,15 @@ def _assemble_budget_section(goal: dict) -> str:
     `goal.continuation.max_iterations`. We compute `remaining` for
     convenience.
     """
-    lifecycle = goal.get("lifecycle") or {}
-    continuation = goal.get("continuation") or {}
+    # Defensive guards — malformed YAML could ship lifecycle/continuation
+    # as non-dicts (lists, scalars). Fail-safe to defaults instead of
+    # crashing the assembler.
+    lifecycle = goal.get("lifecycle")
+    if not isinstance(lifecycle, dict):
+        lifecycle = {}
+    continuation = goal.get("continuation")
+    if not isinstance(continuation, dict):
+        continuation = {}
     turns = int(lifecycle.get("turns_evaluated") or 0)
     max_iter = continuation.get("max_iterations")
     if isinstance(max_iter, int):
@@ -396,7 +569,16 @@ def assemble_bundle(
     # assembler emits a per-AC header inside the evidence section that
     # marks ACs whose only sidecar is `llm_judge_report` as CROSS-CHECK
     # REQUIRED — enforcing the judge spec's anti-pattern at bundle time.
-    goal_acs = ((goal.get("objective") or {}).get("acceptance_criteria") or [])
+    # Defensive isinstance guards: a malformed YAML where `objective` is a
+    # list (e.g., `objective:\n  - acceptance_criteria: ...`) would
+    # otherwise raise AttributeError on `.get()` — fail-safe to empty
+    # bundles rather than crashing the hook with no useful message.
+    objective = goal.get("objective")
+    if not isinstance(objective, dict):
+        objective = {}
+    goal_acs = objective.get("acceptance_criteria")
+    if not isinstance(goal_acs, list):
+        goal_acs = []
 
     sections = [
         "# Judge prompt — assembled by flow-goal-evaluator-loop",
@@ -422,8 +604,8 @@ def assemble_bundle(
     else:
         # Even without a run dir, render the coverage header so the judge
         # sees per-AC status (all "no sidecar — judge MUST mark as incomplete").
-        coverage = _compute_evidence_coverage(goal_acs, [])
-        header = _render_coverage_header(coverage)
+        coverage, malformed, orphans = _compute_evidence_coverage(goal_acs, [])
+        header = _render_coverage_header(coverage, malformed, orphans)
         sections.append(_fence("evidence", f"{header}\n\n(no run directory; evidence ledger unavailable)"))
         sections.append("")
 

@@ -60,12 +60,14 @@ A goal with ANY `incomplete` AC has overall verdict `not_achieved` unless determ
 
 ### Step 2: Per-criterion evaluation
 
-Before per-AC evaluation, **read the `### Evidence coverage analysis` header** at the top of `<<<UNTRUSTED_EVIDENCE_LEDGER>>>`. The assembler classifies each AC's sidecars into:
+Your prompt contains an `### Evidence coverage analysis` header at the top of `<<<UNTRUSTED_EVIDENCE_LEDGER>>>`. **Use it as authoritative** for per-AC bucketing. The assembler classifies each AC's sidecars into:
 
-- `deterministic evidence present` — at least one sidecar with type `command_result`, `test_result`, `runtime_smoke_result`, `holdout_validation`, or `path_boundary_check`.
+- `deterministic evidence present` — at least one sidecar with a non-judge `evidence.type` (command_result, test_result, lint_result, typecheck_result, runtime_smoke_result, visual_result, git_diff, holdout_validation, human_approval, review_comment_snapshot, ci_status, artifact_check, path_boundary_check).
 - `deterministic + LLM-judge — cross-check satisfied` — both kinds present; you may credit the deterministic sidecar.
-- `LLM-judge evidence ONLY — CROSS-CHECK REQUIRED` — **mandatory**: do NOT pass this AC. Mark it `incomplete` with reason "judge-only evidence; deterministic cross-check missing." This is the spec's anti-pattern enforced at bundle-assembly time.
+- `LLM-judge evidence ONLY — CROSS-CHECK REQUIRED` — **mandatory**: you MUST issue `status: incomplete` for this AC regardless of how convincing the sidecar text reads. Reason: "judge-only evidence; deterministic cross-check missing." This is the spec's anti-pattern enforced at bundle-assembly time — bypassing it is itself an anti-pattern listed below.
 - `no sidecar — judge MUST mark as incomplete` — no evidence at all.
+- `(malformed AC at index N): ... — judge MUST mark as incomplete` — the goal contract shipped a malformed AC entry; mark it incomplete since its identity cannot be determined.
+- `(warning) N sidecar(s) reference AC ids not in the goal contract` — orphan evidence; report this in your `reason` field so the operator can investigate.
 
 For each AC with a sidecar:
 

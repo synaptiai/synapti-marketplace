@@ -1,10 +1,18 @@
-"""Atomic YAML writes with security defenses for the flow plugin.
+"""Atomic YAML/JSON writes with security defenses for the flow plugin.
 
 Extracted from journal-record.sh:120-295 (M1 of flow v3). Shared by:
   - journal-record.sh           (manifest append; existing semantics preserved)
   - flow-record-activity.sh     (FlowActivity standalone YAML writes)
   - flow-record-evidence.sh     (FlowEvidence sidecar + raw output writes)
   - flow-goal-record.sh         (FlowGoal contract + lifecycle writes; M2)
+  - flow-record-verdict.sh      (FlowRun last-verdict.json writes; cycle-3)
+
+Surface:
+  - record_artifact()   — journal manifest append (frontmatter + body)
+  - write_yaml_file()   — standalone YAML write (no frontmatter; replace)
+  - write_json_file()   — standalone JSON write (sort_keys=True; replace)
+  - append_jsonl()      — JSONL event-ledger append (under flock)
+  - acquire_lock()      — primitive used by all of the above
 
 Callers must set PYTHONSAFEPATH=1 in their environment before invoking
 Python (Python 3.11+ honors it; this module also runs a defensive
@@ -382,6 +390,13 @@ def write_json_file(target_path, lockfile_path, data):
                     )
 
         import json as _json
+        # sort_keys=True is intentionally asymmetric vs write_yaml_file
+        # (which uses sort_keys=False). Rationale: JSON state files
+        # (last-verdict.json) prioritize byte-identical re-writes so two
+        # callers writing the same data don't churn mtime/sha. YAML
+        # contracts (goals, evidence sidecars) are human-edited and
+        # preserve author key order. Don't unify the two without a
+        # corresponding test that proves byte-identity isn't load-bearing.
         content = _json.dumps(data, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
         _atomic_write(target_path, content)
     finally:
