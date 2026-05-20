@@ -154,8 +154,8 @@ append_jsonl(f".flow/runs/{run_id}/events.jsonl", event)
 
 ## Reuse map
 
-- `plugins/flow/bin/flow-goal-record.sh` — atomic lifecycle writer (M2 helper).
-- `plugins/flow/bin/journal-record.sh` — manifest artifact recorder (extended in M1).
-- `plugins/flow/references/decision-journal-schema.md` — `goal-created` and `goal-evaluation` artifact-type rows (added in M1).
+- `plugins/flow/bin/flow-goal-record.sh` — atomic lifecycle writer.
+- `plugins/flow/bin/journal-record.sh` — manifest artifact recorder.
+- `plugins/flow/references/decision-journal-schema.md` — `goal-created` and `goal-evaluation` artifact-type rows.
 - `plugins/flow/references/escalation-format.md` — six-field escalation for race-condition mismatches.
 - `plugins/flow/schemas/v1/goal.schema.json` — lifecycle.status enum.

@@ -168,7 +168,7 @@ Explicit non-features (per v3 design goals):
 
 1. **Not a reasoning engine.** Warn/block modes do zero LLM calls. Evaluator-loop mode spawns a judge subprocess; the hook itself emits structured JSON, never free-form text.
 2. **Not a Tier 3 actor.** The hook can `block` a stop (Tier 1 — same as the agent's own turn), but it CANNOT trigger merge or release. Those remain AskUserQuestion-gated regardless of goal lifecycle.
-3. **Not a guaranteed-execution background process.** The hook only fires during user-driven sessions. To enforce goals when no session is running, use `/flow:watch` (M5) to generate a loop-prompt file the user invokes manually.
+3. **Not a guaranteed-execution background process.** The hook only fires during user-driven sessions. To enforce goals when no session is running, use `/flow:watch` to generate a loop-prompt file the user invokes manually.
 
 ## Local install round-trip (verification)
 

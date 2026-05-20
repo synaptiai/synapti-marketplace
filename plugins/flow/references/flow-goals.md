@@ -96,8 +96,8 @@ The schema validation rules for these keys live in `plugins/flow/schema.json`.
 .flow/evidence/         # gitignored — per-developer evidence captures
 .flow/triggers/*.local.yaml  # gitignored — local trigger configs
 .flow/goals/*.goal.yaml      # tracked — teams share goal contracts
-.flow/workflows/*.workflow.yaml  # tracked (M4)
-.flow/triggers/*.trigger.yaml    # tracked (M5; non-.local variants)
+.flow/workflows/*.workflow.yaml  # tracked
+.flow/triggers/*.trigger.yaml    # tracked (non-.local variants)
 ```
 
 Teams that want fully-private goals can add `.flow/goals/` to their personal `.gitignore`; the helper writes don't depend on git state.
@@ -111,7 +111,7 @@ These are non-goals — flow v3 makes no claim to provide them:
 3. **Background execution** — the Stop hook fires inside the user's turn; goals don't run "in the background" without an external trigger (CI, cron, user-driven `/loop`).
 4. **Tier 3 autonomy** — goals can never grant merge or release autonomy. Those remain AskUserQuestion-gated.
 
-If your needs require any of the above, FlowGoal is the wrong primitive — escalate to a durable runtime adapter (github_actions, temporal) via `runtime_target` in M5+.
+If your needs require any of the above, FlowGoal is the wrong primitive — escalate to a durable runtime adapter (github_actions, temporal) via `runtime_target`.
 
 ## Compose with other flow features
 

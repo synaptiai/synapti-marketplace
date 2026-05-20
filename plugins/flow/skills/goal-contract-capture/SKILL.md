@@ -54,7 +54,7 @@ Plus: one `goal-created` artifact appended to the linked decision journal via `b
      owner: <git user.email or @me>
    ```
 
-3. **Compose `scope`** — from inputs. Set `journal` to the linked decision journal path. Leave `run_id` empty until M3 wires FlowRun creation.
+3. **Compose `scope`** — from inputs. Set `journal` to the linked decision journal path. Leave `run_id` empty until `run-state-management` wires FlowRun creation.
 
 4. **Compose `objective`** — pull AC text + verification commands from the existing `criterion-verification-map` output. Each AC is one entry with `status: pending` and `evidence_ref: null` initially. The `outcome` is a one-sentence statement derived from invocation reason:
    - `start` → "Issue #{N} is implemented and verified."
@@ -125,6 +125,6 @@ Plus: one `goal-created` artifact appended to the linked decision journal via `b
 - `plugins/flow/skills/specification-capture/SKILL.md` — read the per-invoker scope table; this skill adds row 5 (`goal-create`).
 - `plugins/flow/skills/criterion-verification-map/SKILL.md` — read for the AC verification-command shape.
 - `plugins/flow/schemas/v1/goal.schema.json` — the canonical schema this skill writes against.
-- `plugins/flow/bin/flow-goal-record.sh` — atomic writer (M2 helper).
+- `plugins/flow/bin/flow-goal-record.sh` — atomic writer.
 - `plugins/flow/bin/journal-record.sh` — for the `goal-created` manifest artifact.
 - `plugins/flow/references/escalation-format.md` — six-field escalation for any empty/ambiguous block.

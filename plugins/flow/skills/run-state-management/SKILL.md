@@ -26,7 +26,7 @@ If `autonomous-workflow` says "next phase is VERIFY," this skill writes the corr
 ## Inputs
 
 The invoking command MUST pass:
-1. **Workflow id** — `start-issue | debug | address-pr | review-pr | merge-pr | release` (matches the M4 workflow YAML filenames).
+1. **Workflow id** — `start-issue | debug | address-pr | review-pr | merge-pr | release` (matches the workflow YAML filenames under `plugins/flow/workflows/`).
 2. **Run id** — typically `<ISO-8601-compact-timestamp>-<target-slug>` (e.g., `2026-05-20T143000Z-issue-42`).
 3. **Context** — repo, branch, issue/pr number, linked journal path, linked goal id (when available).
 4. **Phase** — initial phase id (`preflight`, `explore`, `plan`, `code`, `verify`).
@@ -139,7 +139,7 @@ state:
     - ${JUST_RECORDED_ACTIVITY_ID}   # append the one we just wrote
 ```
 
-This update is atomic via the same helper pattern. For now M3 uses a direct read-merge-write through Python with `_journal_atomic.py.acquire_lock(run.yaml.lock)`.
+This update is atomic via the same helper pattern: direct read-merge-write through Python with `_journal_atomic.py.acquire_lock(run.yaml.lock)`.
 
 ### Step 4: Transition to terminal state
 
@@ -163,7 +163,7 @@ When SessionEnd fires (separate hook: `session-end-state.sh`), if an active Flow
 - Set `state.blocked_reason: "session ended"` if no terminal transition happened
 - Print a one-line notice: `Active FlowRun <id> persisted; use /flow:resume to continue`
 
-## Phase order table (for M3 — pre-FlowWorkflow YAML in M4)
+## Phase order table
 
 | Workflow | Phase order |
 |---|---|
@@ -174,7 +174,7 @@ When SessionEnd fires (separate hook: `session-end-state.sh`), if an active Flow
 | `merge-pr` | preflight → verify → confirm → merge |
 | `release` | preflight → bump → tag → push |
 
-M4 replaces this table with machine-readable `*.workflow.yaml` files.
+The machine-readable equivalents live at `plugins/flow/workflows/<id>.workflow.yaml`.
 
 ## Anti-patterns
 
@@ -187,7 +187,7 @@ M4 replaces this table with machine-readable `*.workflow.yaml` files.
 ## Reuse map
 
 - `plugins/flow/skills/autonomous-workflow/SKILL.md` — phase structure source of truth.
-- `plugins/flow/bin/flow-record-activity.sh` — atomic activity writer (M1).
+- `plugins/flow/bin/flow-record-activity.sh` — atomic activity writer.
 - `plugins/flow/bin/_journal_atomic.py` — exposed `acquire_lock`, `_atomic_write` for run.yaml updates.
 - `plugins/flow/schemas/v1/run.schema.json` — run document schema.
 - `plugins/flow/schemas/v1/activity.schema.json` — activity document schema.

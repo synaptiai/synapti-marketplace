@@ -1,5 +1,5 @@
 ---
-description: "Manage FlowGoal completion contracts — create, inspect, evaluate, pause/resume/clear. Subcommands: status (default), create <kind> [id], inspect <id>, evaluate <id>, pause <id>, resume <id>, clear <id>, history. Flow plugins cannot invoke native Claude /goal; this command is the project-local replacement."
+description: "Manage FlowGoal completion contracts — create, inspect, evaluate, pause/resume/clear, history. Use when starting a goal-driven task, when checking active-goal state, or when finalizing the verdict after evidence is collected. Captures acceptance criteria with verification commands, runs deterministic checks, and dispatches the goal-evaluator-judge for fuzzy criteria."
 argument-hint: "[subcommand] [args]"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, Skill, Agent
 ---
@@ -22,7 +22,7 @@ Invoke these skills as part of the subcommand workflows below:
 Before any subcommand:
 
 ```bash
-# Resolve flow.goals.enabled (default true in M2)
+# Resolve flow.goals.enabled (default true)
 ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" \
   --default "true" '.flow.goals.enabled // empty')
 if [ "$ENABLED" != "true" ]; then
@@ -169,12 +169,6 @@ Filter via flag:
 This command does NOT directly invoke the Stop hook. The Stop hook (`hooks/scripts/flow-goal-stop.sh`) fires on every conversation turn and reads the `.flow/goals/` directory independently. If the user runs `/flow:goal pause` or `/flow:goal clear`, the Stop hook silences itself on the next turn because no goal has `status: active`.
 
 When `flow.goals.stopHookEnforcement: evaluator-loop`, the Stop hook spawns `Skill(goal-evaluator)` automatically — equivalent to running `/flow:goal evaluate <active>` after every turn, with throttling and budget enforcement.
-
-## Architectural notes
-
-- **No native /goal invocation.** This command exists because plugins cannot call Claude Code's native `/goal`. There is no `SlashCommand` tool; the only post-turn surface available to plugins is the `Stop` hook. See `references/stop-hook-goal-enforcement.md` for the full mechanism.
-- **Tier classification.** `status`, `inspect`, `history` are read-only (Tier 1 — autonomous). `create`, `evaluate` are journal (Tier 2). `pause`, `resume`, `clear` are journal (Tier 2). NONE of this command's subcommands are Tier 3.
-- **Coexistence with /flow:start.** When `flow.goals.requireGoalForStart: true` (default), `/flow:start <issue>` calls this command's `create issue <N>` internally after the Spec Validation Gate. Users running `/flow:start` never need to invoke `/flow:goal create` explicitly.
 
 ## Critical references
 

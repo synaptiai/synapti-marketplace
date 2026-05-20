@@ -4,7 +4,7 @@
 # Writes a sequence-numbered, atomic YAML file plus appends an event to
 # .flow/runs/<run-id>/events.jsonl. Activities are immutable once written;
 # re-running an activity creates a new sequence-numbered file rather than
-# overwriting. M1 ships the helper; M3 wires it into flow commands.
+# overwriting.
 #
 # Usage:
 #   flow-record-activity.sh \

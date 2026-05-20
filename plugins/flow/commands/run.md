@@ -27,7 +27,7 @@ ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" \
 3. Invoke `Skill(trigger-policy)` in `enforce` mode. Abort on violation (Tier 3 deny, recursion deny, etc.).
 4. Check `concurrency.policy`:
    - `skip_if_running` (default) — if a previous run for this trigger is in flight (check `.flow/runs/` for runs with metadata.trigger=<id> and state.status=active), exit 0 with a notice.
-   - `queue` — queue the run (M5 logs a journal artifact; full queue is M6+).
+   - `queue` — queue the run (currently logs a journal artifact; full queue semantics not implemented).
    - `cancel_previous` — find any in-flight runs and transition them to `cancelled` before starting.
 5. Set env var `FLOW_TRIGGERED_RUN=true` (target commands consult this for recursion policy enforcement).
 6. Invoke `target.command` from the trigger YAML.
@@ -42,7 +42,7 @@ When `FLOW_TRIGGERED_RUN=true`:
 ## Anti-patterns
 
 - ❌ Bypassing trigger-policy validation. Triggers fire without supervision; policy is the only gate.
-- ❌ Treating concurrency.skip_if_running as a no-op when a stuck active run exists. M6 adds a "stale run" detection; M5 surfaces this as a warning.
+- ❌ Treating concurrency.skip_if_running as a no-op when a stuck active run exists. Stuck-active is surfaced as a warning today; stale-run auto-detection is not yet implemented.
 - ❌ Allowing FLOW_TRIGGERED_RUN to be set when not actually triggered. Manual invocation must NOT set the env var.
 
 ## Critical references

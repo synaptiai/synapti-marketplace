@@ -16,7 +16,7 @@ FlowWorkflow YAMLs at `plugins/flow/workflows/<id>.workflow.yaml` are the inspec
 
 The full schema lives at `plugins/flow/schemas/v1/workflow.schema.json`.
 
-## Workflows shipped in M4
+## Workflows shipped
 
 | Workflow | Command | Phases (high-level) |
 |---|---|---|
@@ -82,7 +82,7 @@ Project-local workflows are committed by default (per the gitignore policy). Tru
 
 | Key | Default | Description |
 |---|---|---|
-| `flow.workflows.enabled` | `false` (M4 default) | Master switch for `/flow:workflow` command |
+| `flow.workflows.enabled` | `false` | Master switch for `/flow:workflow` command |
 
 Default is `false` because workflows are inspectable documents — most users don't need to run `/flow:workflow` interactively. Teams flip to `true` for CI integration.
 

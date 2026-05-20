@@ -10,7 +10,7 @@ FlowTrigger is the flow plugin's project-local replacement for "background execu
 | `hook` | Claude Code hook | A hook script (e.g., PostToolUse) invokes `/flow:run trigger <id>` programmatically |
 | `loop_prompt` | User-invoked `/loop` | `/flow:watch` generates a loop-prompt file the user invokes with `/loop @.claude/flow-loop-<id>.md` |
 
-## Trigger types (v3.1+ — design only, NOT shipped in M5)
+## Trigger types (v3.1+ — design only, NOT shipped in v3.0)
 
 | Type | Runner | Mechanism |
 |---|---|---|
@@ -45,12 +45,12 @@ A trigger doesn't have its own state machine — `metadata.enabled` is the only 
 ## Files
 
 ```
-plugins/flow/triggers/templates/         # Plugin-shipped templates (M5)
+plugins/flow/triggers/templates/         # Plugin-shipped templates
 ├── pr-watch.trigger.yaml                  # Template for /flow:watch pr <N>
 ├── ci-failure.trigger.yaml                # Template for /flow:watch ci
 └── nightly-maintenance.trigger.yaml       # Template for /flow:watch (manual setup)
 
-.flow/triggers/                          # Project-local trigger artifacts (M5)
+.flow/triggers/                          # Project-local trigger artifacts
 ├── pr-123-watch.trigger.yaml             # Tracked — team-shared trigger
 ├── ci-failure-main.trigger.yaml          # Tracked
 └── pr-456-debug.local.yaml               # GITIGNORED — per-developer
@@ -63,7 +63,7 @@ plugins/flow/triggers/templates/         # Plugin-shipped templates (M5)
 
 | Key | Default | Description |
 |---|---|---|
-| `flow.triggers.enabled` | `false` (M5) | Master switch |
+| `flow.triggers.enabled` | `false` | Master switch |
 | `flow.triggers.allowedTypes` | `[manual, hook, loop_prompt]` | v3.1+ types are valid schema but disabled until shipped |
 | `flow.triggers.allowAutonomousMerge` | `false` | Hard-coded non-negotiable |
 | `flow.triggers.allowTriggerCreationFromTriggeredRun` | `false` | Recursion default |

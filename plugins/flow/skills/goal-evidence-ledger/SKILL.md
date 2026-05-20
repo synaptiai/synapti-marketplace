@@ -129,6 +129,6 @@ acceptance_criteria:
 ## Reuse map
 
 - `plugins/flow/skills/evidence-based-development/SKILL.md` — ASSERTION/EVIDENCE/VERIFIED protocol.
-- `plugins/flow/bin/flow-record-evidence.sh` — atomic writer (M1 helper).
+- `plugins/flow/bin/flow-record-evidence.sh` — atomic writer.
 - `plugins/flow/schemas/v1/evidence.schema.json` — sidecar schema.
 - `plugins/flow/references/evidence-bundle-format.md` — bundle layout the verdict-judge consumes.

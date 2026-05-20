@@ -6,9 +6,9 @@ The flow plugin's v3 runtime layer stores project-local execution state under `.
 
 ```
 .flow/
-├── goals/<id>.goal.yaml              # FlowGoal contracts (M2; tracked)
-├── workflows/<id>.workflow.yaml       # FlowWorkflow definitions (M4; tracked; rare overrides)
-├── triggers/<id>.trigger.yaml         # FlowTrigger configs (M5; tracked)
+├── goals/<id>.goal.yaml              # FlowGoal contracts (tracked)
+├── workflows/<id>.workflow.yaml       # FlowWorkflow definitions (tracked; rare overrides)
+├── triggers/<id>.trigger.yaml         # FlowTrigger configs (tracked)
 ├── triggers/<id>.local.yaml           # local-only triggers (gitignored)
 └── runs/<ISO-timestamp-id>/           # FlowRun records (gitignored)
     ├── run.yaml                       # the run document
@@ -24,7 +24,7 @@ The flow plugin's v3 runtime layer stores project-local execution state under `.
 
 ## Gitignore policy
 
-Settled in M1's `.gitignore`:
+The repo `.gitignore` excludes per-developer noise and tracks team contracts:
 
 ```
 # Per-developer runtime noise (gitignored)
@@ -54,7 +54,7 @@ All `.flow/` writes go through `bin/_journal_atomic.py` (or one of its wrappers)
 | `bin/flow-goal-record.sh` | `.flow/goals/<id>.goal.yaml` (create + update-lifecycle modes) |
 | `bin/flow-record-activity.sh` | `.flow/runs/<id>/activities/<NNN>-<name>.yaml` + appends `events.jsonl` |
 | `bin/flow-record-evidence.sh` | `.flow/runs/<id>/evidence/<id>.evidence.yaml` + optional `<id>.txt` |
-| `bin/journal-record.sh` | `.decisions/issue-N.md` manifest entries (M1 refactor; not `.flow/`) |
+| `bin/journal-record.sh` | `.decisions/issue-N.md` manifest entries (not `.flow/`) |
 
 Atomicity guarantees:
 - `O_NOFOLLOW` on lockfile + target — symlinks rejected atomically
@@ -80,7 +80,7 @@ Every `.flow/` mutation that has long-term significance ALSO writes a journal ma
 
 ## What `.flow/` is NOT
 
-1. **Not a database.** No queries beyond `glob.glob` + per-file YAML parsing. Adding query semantics is M5+ territory.
+1. **Not a database.** No queries beyond `glob.glob` + per-file YAML parsing. Adding query semantics is out of scope.
 2. **Not a CI artifact store.** Use existing CI artifact mechanisms; `.flow/runs/` is for local resumability.
 3. **Not Temporal.** No exactly-once execution. No deterministic replay. Resume reads `state.completed_activities[]` and tells the user where to pick up — the user decides whether to re-run partially-completed phases.
 4. **Not a long-term archive.** `runRetentionDays` (default 30; cascade-resolved via `flow.runtime.runRetentionDays`) bounds run records. A future cleanup helper will prune by mtime.
@@ -109,11 +109,11 @@ This switch is meant for users who want to opt out entirely; the per-feature swi
 
 ## References
 
-- `plugins/flow/schemas/v1/` — JSON Schemas for goal, run, activity, evidence (workflow + trigger in M4/M5).
-- `plugins/flow/bin/_journal_atomic.py` — atomicity primitives (M1).
-- `plugins/flow/skills/run-state-management/SKILL.md` — owns run state mutations (M3).
-- `plugins/flow/commands/resume.md` — `/flow:resume` command (M3).
-- `plugins/flow/hooks/scripts/session-end-state.sh` — SessionEnd persistence (M3).
+- `plugins/flow/schemas/v1/` — JSON Schemas for goal, run, activity, evidence, workflow, trigger.
+- `plugins/flow/bin/_journal_atomic.py` — atomicity primitives.
+- `plugins/flow/skills/run-state-management/SKILL.md` — owns run state mutations.
+- `plugins/flow/commands/resume.md` — `/flow:resume` command.
+- `plugins/flow/hooks/scripts/session-end-state.sh` — SessionEnd persistence.
 - `plugins/flow/references/flow-goals.md` — FlowGoal model documentation.
 - `plugins/flow/references/stop-hook-goal-enforcement.md` — Stop hook architecture.
 - `plugins/flow/references/decision-journal-schema.md` — `.decisions/` manifest + journal artifact types.

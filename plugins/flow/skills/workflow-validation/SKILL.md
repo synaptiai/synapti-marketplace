@@ -1,6 +1,6 @@
 ---
 name: workflow-validation
-description: "Validate a FlowWorkflow YAML at `plugins/flow/workflows/<id>.workflow.yaml` against `schemas/v1/workflow.schema.json` AND cross-reference the referenced skills/agents exist + every Tier 3 action is confirm-gated + no native /goal or /loop dependency is declared. Use when /flow:workflow validate is invoked, when CI runs the M4 schema gates, or when a new workflow is being authored. This skill MUST be consulted because schema validation alone catches shape errors; cross-reference validation catches the silent-correctness failures (typo'd skill name, Tier 3 escape, /goal dependency) that would otherwise ship to users."
+description: "Validate a FlowWorkflow YAML at `plugins/flow/workflows/<id>.workflow.yaml` against `schemas/v1/workflow.schema.json` AND cross-reference the referenced skills/agents exist + every Tier 3 action is confirm-gated + no native /goal or /loop dependency is declared. Use when /flow:workflow validate is invoked, when CI runs the workflow schema gates, or when a new workflow is being authored. This skill MUST be consulted because schema validation alone catches shape errors; cross-reference validation catches the silent-correctness failures (typo'd skill name, Tier 3 escape, /goal dependency) that would otherwise ship to users."
 allowed-tools: Bash, Read
 context: fork
 agent: general-purpose
