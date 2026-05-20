@@ -1,0 +1,65 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowWorkflow
+
+metadata:
+  id: design
+  command: /flow:design
+  version: 1
+  description: Design or review architecture for a feature or system. Optional goal creation when acceptance is concrete.
+
+inputs:
+  feature_description:
+    type: string
+    required: true
+
+required_skills:
+  - architecture-patterns
+  - specification-capture
+  - run-state-management
+
+required_agents:
+  - implementation-planner
+
+phases:
+  - id: preflight
+    type: bash
+    gate: blocking
+    activities:
+      - id: preflight_design_start
+        type: bash
+        evidence: preflight_output
+
+  - id: explore
+    type: mixed
+    activities:
+      - id: load_existing_patterns
+        type: skill
+        skill: architecture-patterns
+        evidence: pattern_inventory
+      - id: capture_specification
+        type: skill
+        skill: specification-capture
+        evidence: specification_journal_artifact
+
+  - id: design
+    type: mixed
+    activities:
+      - id: produce_design
+        type: agent
+        agent: implementation-planner
+        evidence: design_document
+      - id: design_decision_artifact
+        type: bash
+        evidence: design_decision_journal_entry
+
+completion_gate:
+  requires:
+    - specification_captured
+    - design_document_produced
+    - design_decision_recorded
+
+tier_classification:
+  file_edits: autonomous
+  branch_creation: autonomous
+  pr_create: journal
+  merge: confirm

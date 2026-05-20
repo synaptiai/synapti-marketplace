@@ -1,0 +1,86 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowWorkflow
+
+metadata:
+  id: review-pr
+  command: /flow:review
+  version: 1
+  description: Review a pull request — fan-out reviewers, consolidate findings, post comments.
+
+inputs:
+  pr_number:
+    type: integer
+    required: true
+
+required_skills:
+  - capability-discovery
+  - holdout-validation
+  - goal-contract-capture
+  - goal-lifecycle
+  - run-state-management
+
+required_agents:
+  - verdict-judge
+  - code-reviewer
+
+phases:
+  - id: preflight
+    type: bash
+    gate: blocking
+    activities:
+      - id: preflight_review_start
+        type: bash
+        evidence: preflight_output
+      - id: fetch_pr_metadata
+        type: bash
+        evidence: pr_metadata
+
+  - id: fan_out
+    type: parallel_then_judge
+    activities:
+      - id: goal_creation
+        type: skill
+        skill: goal-contract-capture
+        evidence: review_goal_yaml
+      - id: parallel_reviewer_dispatch
+        type: agent
+        agent: code-reviewer
+        evidence: reviewer_findings
+
+  - id: consolidate
+    type: mixed
+    activities:
+      - id: consolidate_findings
+        type: bash
+        evidence: consolidated_findings_table
+      - id: holdout_check
+        type: skill
+        skill: holdout-validation
+        evidence: holdout_findings
+
+  - id: report
+    type: mixed
+    activities:
+      - id: post_review_comment
+        type: bash
+        evidence: review_comment_url
+      - id: review_cycle_artifact
+        type: bash
+        evidence: review_cycle_journal_entry
+      - id: goal_evaluation
+        type: evaluation
+        command: /flow:goal evaluate
+        evidence: goal_verdict
+
+completion_gate:
+  requires:
+    - findings_consolidated
+    - review_comment_posted_or_no_findings
+    - holdout_validation_pass_or_p3_only
+    - goal_status_achieved
+
+tier_classification:
+  pr_comment: journal
+  branch_creation: autonomous
+  merge: confirm
+  release: confirm

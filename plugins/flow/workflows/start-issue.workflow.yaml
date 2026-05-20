@@ -1,0 +1,152 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowWorkflow
+
+metadata:
+  id: start-issue
+  command: /flow:start
+  version: 1
+  description: Start work on a GitHub issue — preflight, spec capture, plan, code, verify.
+
+inputs:
+  issue_number:
+    type: integer
+    required: true
+    description: GitHub issue number to start work on.
+
+required_skills:
+  - llm-operator-principles
+  - branch-and-task-management
+  - change-classification
+  - capability-discovery
+  - debugging-patterns
+  - preflight-checks
+  - criterion-verification-map
+  - holdout-validation
+  - issue-crafting
+  - specification-capture
+  - goal-contract-capture
+  - goal-lifecycle
+  - run-state-management
+
+required_agents:
+  - implementation-planner
+  - verdict-judge
+  - code-reviewer
+
+phases:
+  - id: preflight
+    type: bash
+    gate: blocking
+    activities:
+      - id: preflight_issue_start
+        type: bash
+        evidence: preflight_output
+
+  - id: explore
+    type: mixed
+    activities:
+      - id: fetch_issue_context
+        type: bash
+        evidence: issue_context
+      - id: fetch_repo_context
+        type: bash
+        evidence: repo_context
+      - id: specification_capture
+        type: skill
+        skill: specification-capture
+        evidence: specification_journal_artifact
+      - id: spec_validation_gate
+        type: gate
+        gate: spec_validation
+        evidence: spec_validation_result
+
+  - id: plan
+    type: agent
+    activities:
+      - id: goal_creation
+        type: skill
+        skill: goal-contract-capture
+        evidence: goal_yaml
+      - id: implementation_plan
+        type: agent
+        agent: implementation-planner
+        evidence: task_graph
+      - id: stranger_test
+        type: gate
+        gate: stranger_test
+        evidence: stranger_test_result
+
+  - id: code
+    type: loop
+    loop_over: goal.acceptance_criteria
+    activities:
+      - id: tdd_red
+        type: task
+        evidence: failing_test_output
+      - id: implement
+        type: task
+        evidence: code_diff
+      - id: test
+        type: bash
+        evidence: passing_test_output
+      - id: collect_task_evidence
+        type: skill
+        skill: goal-evidence-ledger
+        evidence: evidence_sidecar
+      - id: classify_changes
+        type: skill
+        skill: change-classification
+        evidence: change_classification
+      - id: commit
+        type: bash
+        evidence: commit_sha
+
+  - id: verify
+    type: parallel_then_judge
+    activities:
+      - id: quality_suite
+        type: bash
+        evidence: quality_output
+      - id: runtime_verification
+        type: skill
+        skill: runtime-verification
+        evidence: runtime_smoke_result
+      - id: visual_verification
+        type: skill
+        skill: visual-verification
+        evidence: visual_result
+      - id: self_review
+        type: agent
+        agent: code-reviewer
+        evidence: self_review_report
+      - id: holdout_validation
+        type: skill
+        skill: holdout-validation
+        evidence: holdout_findings
+      - id: evidence_bundle
+        type: bash
+        evidence: bundle_path
+      - id: goal_evaluation
+        type: evaluation
+        command: /flow:goal evaluate
+        evidence: goal_verdict
+
+completion_gate:
+  requires:
+    - all_quality_checks_pass
+    - runtime_verification_pass_or_valid_skip
+    - no_unresolved_p1
+    - holdout_validation_pass_or_p3_only
+    - all_tasks_completed
+    - goal_status_achieved
+    - visual_verification_not_blocked
+
+tier_classification:
+  branch_creation: autonomous
+  file_edits: autonomous
+  commits: autonomous
+  issue_assignment: journal
+  push: journal
+  pr_create: journal
+  merge: confirm
+  release: confirm

@@ -1,0 +1,85 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowWorkflow
+
+metadata:
+  id: release
+  command: /flow:release
+  version: 1
+  description: Create a release — bump version, generate changelog, tag, push, require AskUserQuestion.
+
+inputs:
+  release_type:
+    type: string
+    required: true
+    description: patch | minor | major
+
+required_skills:
+  - run-state-management
+
+required_agents: []
+
+phases:
+  - id: preflight
+    type: bash
+    gate: blocking
+    activities:
+      - id: preflight_release_start
+        type: bash
+        evidence: preflight_output
+      - id: detect_current_version
+        type: bash
+        evidence: current_version
+      - id: gather_unreleased_commits
+        type: bash
+        evidence: commit_list
+
+  - id: bump
+    type: mixed
+    activities:
+      - id: compute_next_version
+        type: bash
+        evidence: next_version
+      - id: update_plugin_json
+        type: bash
+        evidence: plugin_json_diff
+      - id: update_marketplace_json
+        type: bash
+        evidence: marketplace_json_diff
+      - id: generate_changelog
+        type: bash
+        evidence: changelog_diff
+
+  - id: confirm
+    type: mixed
+    activities:
+      - id: ask_user_to_release
+        type: external
+        evidence: user_confirmation
+
+  - id: tag
+    type: mixed
+    activities:
+      - id: create_tag
+        type: bash
+        evidence: tag_sha
+      - id: push_tag
+        type: bash
+        evidence: push_result
+      - id: workflow_run_terminal
+        type: skill
+        skill: run-state-management
+        evidence: workflow_run_completed
+
+completion_gate:
+  requires:
+    - version_bumped_consistently
+    - changelog_generated
+    - user_confirmed
+    - tag_pushed
+
+tier_classification:
+  file_edits: autonomous
+  commits: journal
+  push: journal
+  tag_push: confirm
+  release: confirm

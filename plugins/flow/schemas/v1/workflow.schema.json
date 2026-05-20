@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synapti.ai/schemas/flow/v1/workflow.schema.json",
+  "title": "FlowWorkflow",
+  "description": "Machine-readable process contract for a flow command. Declares phases, activities, gates, required skills/agents, and tier classification. The command markdown remains Claude's execution manual; this YAML is the inspectable contract that /flow:workflow validate runs cross-checks against.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "phases", "completion_gate", "tier_classification"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": { "const": "flow.synapti.ai/v1" },
+    "kind": { "const": "FlowWorkflow" },
+    "metadata": {
+      "type": "object",
+      "required": ["id", "command", "version", "description"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+        },
+        "command": {
+          "type": "string",
+          "pattern": "^/flow:[a-z][a-z0-9-]*$",
+          "description": "The slash command this workflow describes (e.g., /flow:start)."
+        },
+        "version": { "type": "integer", "minimum": 1 },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "description": "Inputs the command accepts. Each input has a type and required flag.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "enum": ["string", "integer", "boolean"] },
+          "required": { "type": "boolean", "default": false },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "required_skills": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Skills that MUST exist under plugins/flow/skills/<name>/SKILL.md. /flow:workflow validate rejects fixtures that reference non-existent skills."
+    },
+    "required_agents": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "activities"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "type": {
+            "enum": ["bash", "mixed", "agent", "loop", "parallel_then_judge"]
+          },
+          "gate": {
+            "enum": ["blocking", "spec_validation", "stranger_test", "completion", "none"]
+          },
+          "loop_over": {
+            "type": "string",
+            "description": "When type=loop, the path expression for the loop's iteration source (e.g., 'goal.acceptance_criteria')."
+          },
+          "activities": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["id"],
+              "additionalProperties": true,
+              "properties": {
+                "id": { "type": "string" },
+                "type": {
+                  "enum": ["bash", "skill", "agent", "task", "gate", "evaluation", "external"]
+                },
+                "skill": { "type": "string" },
+                "agent": { "type": "string" },
+                "command": { "type": "string" },
+                "evidence": {
+                  "oneOf": [
+                    { "type": "string" },
+                    { "const": "none" }
+                  ]
+                },
+                "gate": {
+                  "enum": ["spec_validation", "stranger_test", "completion", "blocking"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "completion_gate": {
+      "type": "object",
+      "required": ["requires"],
+      "additionalProperties": false,
+      "properties": {
+        "requires": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "tier_classification": {
+      "type": "object",
+      "description": "Per-action tier (autonomous | journal | confirm). MUST gate Tier 3 actions (merge, release).",
+      "additionalProperties": {
+        "enum": ["autonomous", "journal", "confirm"]
+      }
+    }
+  }
+}

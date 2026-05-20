@@ -1,0 +1,110 @@
+---
+name: workflow-validation
+description: "Validate a FlowWorkflow YAML at `plugins/flow/workflows/<id>.workflow.yaml` against `schemas/v1/workflow.schema.json` AND cross-reference the referenced skills/agents exist + every Tier 3 action is confirm-gated + no native /goal or /loop dependency is declared. Use when /flow:workflow validate is invoked, when CI runs the M4 schema gates, or when a new workflow is being authored. This skill MUST be consulted because schema validation alone catches shape errors; cross-reference validation catches the silent-correctness failures (typo'd skill name, Tier 3 escape, /goal dependency) that would otherwise ship to users."
+allowed-tools: Bash, Read
+context: fork
+agent: general-purpose
+---
+
+# Workflow Validation
+
+You validate FlowWorkflow YAMLs at two levels: schema conformance + cross-reference correctness.
+
+## Iron Law
+
+**A workflow that schema-validates but references a non-existent skill is a bug waiting to fire at runtime. Cross-reference validation catches this at author-time so it never reaches the user.**
+
+## Inputs
+
+The invoking command MUST pass:
+1. **Workflow id** — `start-issue | review-pr | address-pr | merge-pr | release | debug | design` (or a future custom workflow). Maps to `plugins/flow/workflows/<id>.workflow.yaml`.
+
+## Outputs
+
+Structured JSON report on stdout:
+
+```json
+{
+  "workflow_id": "start-issue",
+  "schema_valid": true,
+  "cross_reference_errors": [],
+  "tier_warnings": [],
+  "native_slash_violations": [],
+  "overall": "pass"
+}
+```
+
+Exit code: 0 if `overall: pass`; 1 if any cross-reference or tier error; 2 if schema invalid.
+
+## Workflow
+
+### Step 1: Schema validation
+
+```bash
+python3 -m jsonschema -i "plugins/flow/workflows/${ID}.workflow.yaml" "plugins/flow/schemas/v1/workflow.schema.json"
+```
+
+(Use the Python API rather than CLI for richer error formatting; the SKILL implementation reads the schema + workflow YAML and calls `jsonschema.validate`.)
+
+If schema validation fails, populate `cross_reference_errors` with the first error and set `overall: schema_invalid`. Skip remaining steps.
+
+### Step 2: Required-skills cross-reference
+
+For each entry in `required_skills[]`:
+```bash
+[ -f "plugins/flow/skills/${skill_name}/SKILL.md" ]
+```
+
+Missing → `cross_reference_errors.append({"type": "missing_skill", "name": skill_name})`.
+
+### Step 3: Required-agents cross-reference
+
+For each entry in `required_agents[]`:
+```bash
+[ -f "plugins/flow/agents/${agent_name}.md" ]
+```
+
+Missing → `cross_reference_errors.append({"type": "missing_agent", "name": agent_name})`.
+
+### Step 4: Activity-level skill/agent cross-reference
+
+Walk `phases[].activities[]`. For each activity with a `skill` field, repeat the existence check from Step 2. For each `agent` field, repeat Step 3.
+
+### Step 5: Tier classification check
+
+In `tier_classification`, verify:
+- `merge` is `confirm` (Tier 3 — hard requirement)
+- `release` is `confirm` (Tier 3 — hard requirement)
+- `tag_push` is `confirm` when present
+
+Any `merge` or `release` set to `autonomous` or `journal` → `tier_warnings.append({"action": ..., "value": ..., "expected": "confirm"})`. This is a warning rather than a hard error because future hooks may add legitimate Tier 3 exceptions — but the default expectation is confirm.
+
+### Step 6: No-native-slash check
+
+Grep the entire workflow YAML for `/goal\b`, `/loop\b`, `/schedule\b`, `/routine\b` outside of `description` fields. Any match that looks like an invoked dependency (e.g., `command: /goal foo`) → `native_slash_violations.append(...)`. Hard fail.
+
+### Step 7: Completion gate dependency check
+
+For each entry in `completion_gate.requires[]`, verify it maps to at least one activity's `evidence` field (or to a known gate output). Unmapped requirements → `cross_reference_errors.append({"type": "unmapped_gate", "requirement": ...})`.
+
+### Step 8: Overall verdict
+
+| Condition | overall |
+|---|---|
+| schema fails | `schema_invalid` (exit 2) |
+| any `native_slash_violations` | `native_slash_present` (exit 1) |
+| any `cross_reference_errors` | `cross_reference_failed` (exit 1) |
+| any `tier_warnings` | `tier_warnings` (exit 0 — soft fail) |
+| else | `pass` (exit 0) |
+
+## Anti-patterns
+
+- ❌ Treating schema-valid as cross-reference-valid. Schema only catches shape; references catch identity.
+- ❌ Treating `tier_warnings` as hard fail. A future workflow may legitimately override (with documented rationale).
+- ❌ Accepting workflows that reference native `/goal`. Per the v3 non-goals — plugins cannot invoke native slash commands.
+
+## Reuse map
+
+- `plugins/flow/schemas/v1/workflow.schema.json` — schema this skill validates against.
+- `plugins/flow/workflows/*.workflow.yaml` — workflows this skill validates.
+- `plugins/flow/commands/workflow.md` — the `/flow:workflow` dispatcher that invokes this skill.

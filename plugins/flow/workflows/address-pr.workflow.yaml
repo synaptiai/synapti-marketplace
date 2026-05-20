@@ -1,0 +1,103 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowWorkflow
+
+metadata:
+  id: address-pr
+  command: /flow:address
+  version: 1
+  description: Address PR review feedback — categorize findings, resolve surgically, verify.
+
+inputs:
+  pr_number:
+    type: integer
+    required: true
+
+required_skills:
+  - feedback-resolution
+  - change-classification
+  - holdout-validation
+  - runtime-verification
+  - goal-contract-capture
+  - goal-lifecycle
+  - run-state-management
+
+required_agents:
+  - verdict-judge
+  - code-reviewer
+
+phases:
+  - id: preflight
+    type: bash
+    gate: blocking
+    activities:
+      - id: preflight_address_start
+        type: bash
+        evidence: preflight_output
+      - id: fetch_pr_threads
+        type: bash
+        evidence: review_threads_snapshot
+
+  - id: categorize
+    type: mixed
+    activities:
+      - id: categorize_findings
+        type: skill
+        skill: feedback-resolution
+        evidence: categorized_findings_table
+      - id: goal_creation
+        type: skill
+        skill: goal-contract-capture
+        evidence: address_goal_yaml
+
+  - id: resolve
+    type: loop
+    loop_over: goal.acceptance_criteria
+    activities:
+      - id: implement_fix
+        type: task
+        evidence: code_diff
+      - id: classify_changes
+        type: skill
+        skill: change-classification
+        evidence: change_classification
+      - id: commit
+        type: bash
+        evidence: commit_sha
+
+  - id: verify
+    type: parallel_then_judge
+    activities:
+      - id: quality_suite
+        type: bash
+        evidence: quality_output
+      - id: runtime_verification
+        type: skill
+        skill: runtime-verification
+        evidence: runtime_smoke_result
+      - id: holdout_validation
+        type: skill
+        skill: holdout-validation
+        evidence: holdout_findings
+      - id: reply_to_threads
+        type: bash
+        evidence: thread_replies
+      - id: goal_evaluation
+        type: evaluation
+        command: /flow:goal evaluate
+        evidence: goal_verdict
+
+completion_gate:
+  requires:
+    - all_findings_resolved_or_escalated
+    - all_quality_checks_pass
+    - runtime_verification_pass_or_valid_skip
+    - holdout_validation_pass_or_p3_only
+    - thread_replies_posted
+    - goal_status_achieved
+
+tier_classification:
+  file_edits: autonomous
+  commits: autonomous
+  push: journal
+  pr_comment: journal
+  merge: confirm

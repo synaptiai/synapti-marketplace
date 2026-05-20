@@ -1,0 +1,106 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowWorkflow
+
+metadata:
+  id: debug
+  command: /flow:debug
+  version: 1
+  description: Debug a specific failure — reproduce, root-cause, fix, verify.
+
+inputs:
+  failure_description:
+    type: string
+    required: true
+    description: Concrete failure to debug (error message, failing test, observed behavior).
+
+required_skills:
+  - debugging-patterns
+  - capability-discovery
+  - runtime-verification
+  - goal-contract-capture
+  - goal-evaluator
+  - goal-lifecycle
+  - run-state-management
+
+required_agents:
+  - verdict-judge
+
+phases:
+  - id: preflight
+    type: bash
+    gate: blocking
+    activities:
+      - id: preflight_debug_start
+        type: bash
+        evidence: preflight_output
+
+  - id: reproduce
+    type: mixed
+    activities:
+      - id: reproduce_failure
+        type: skill
+        skill: debugging-patterns
+        evidence: reproducing_test
+      - id: goal_creation
+        type: skill
+        skill: goal-contract-capture
+        evidence: debug_goal_yaml
+
+  - id: diagnose
+    type: mixed
+    activities:
+      - id: form_hypothesis
+        type: skill
+        skill: debugging-patterns
+        evidence: hypothesis_journal_entry
+      - id: confirm_root_cause
+        type: bash
+        evidence: root_cause_evidence
+
+  - id: fix
+    type: loop
+    loop_over: goal.acceptance_criteria
+    activities:
+      - id: implement_fix
+        type: task
+        evidence: code_diff
+      - id: run_reproducing_test
+        type: bash
+        evidence: passing_test_output
+      - id: commit
+        type: bash
+        evidence: commit_sha
+
+  - id: verify
+    type: parallel_then_judge
+    activities:
+      - id: quality_suite
+        type: bash
+        evidence: quality_output
+      - id: runtime_verification
+        type: skill
+        skill: runtime-verification
+        evidence: runtime_smoke_result
+      - id: regression_suite
+        type: bash
+        evidence: full_test_output
+      - id: goal_evaluation
+        type: evaluation
+        command: /flow:goal evaluate
+        evidence: goal_verdict
+
+completion_gate:
+  requires:
+    - reproducing_test_added
+    - reproducing_test_green_after_fix
+    - regression_suite_green
+    - root_cause_documented
+    - goal_status_achieved
+
+tier_classification:
+  branch_creation: autonomous
+  file_edits: autonomous
+  commits: autonomous
+  push: journal
+  pr_create: journal
+  merge: confirm
