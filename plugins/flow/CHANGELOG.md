@@ -86,6 +86,15 @@ To close the "feature ships dormant" usability gap surfaced by the post-cycle-8 
 
 `tests/flow-start-onboarding.test.sh` covers the onboarding detection logic (fresh / settings present / `.flow/` present / both present), the idempotency of both `enable` and `skip` arms (settings file written + re-detection returns `skip`), and the FlowGoal auto-creation gate (create / exists / skip-when-disabled / skip-on-missing-or-invalid issue number). 19 new assertions.
 
+#### Cycle-10 regression fixes (field-feedback hotfix)
+
+Field testing on a separate project surfaced two regressions in the cycle-9 expansion:
+
+- **Onboarding gate detects partial settings** — Phase 0.5 in `/flow:start` now treats a `.claude/settings.flow.json` lacking the `flow.goals` block as "not onboarded yet" and fires the consent prompt. Previously, any existing settings file silently bypassed onboarding, so a project where `/flow:setup` had landed `{"agentTeams": false}` before `/flow:start` was ever run would never see the v3 prompt. New detection: `.flow/` exists → skip; no settings file → prompt; settings file without `flow.goals` block (parsed via `jq -e '.flow.goals // empty'`) → prompt; settings file with `flow.goals` block (any contents, even `{}`) → skip. Conservative jq-unavailable fallback: skip.
+- **Settings merge preserves v2 keys** — when the user answers "Enable v3" or "Skip" and a partial file already exists, the new keys are merged via `jq` into the existing file instead of overwriting it. Previously the `cat > settings.flow.json <<JSON` heredoc would silently wipe v2 settings like `agentTeams`, `tiers`, `conventions.commitTypes`. New helper `set_flow_goals()` in `/flow:start` Phase 0.5 uses `jq --argjson req $1 --argjson exe $2 '.flow.goals.requireGoalForStart = $req | .flow.goals.executeVerificationCommands = $exe'` to mutate only the two flags.
+- **`context: fork` removed from three command-invoked skills** — `specification-capture`, `holdout-validation`, `runtime-verification` no longer fork. The `Skill(X)` invocation pattern with inline `Inputs:` blocks (used in `start.md`, `pr.md`, `review.md`, `address.md`, `design.md`, `brainstorm.md`) now resolves against the parent's context as intended. Field report: forked subprocess returned "what would you like me to do?" when invoked with full inline args, rendering all three documented-mandatory skills silently optional. Other skills with `context: fork` (the goal-* family, `capability-discovery`, `visual-verification`, `criterion-verification-map`) may have the same bug shape — surfaced as a follow-up issue rather than expanding cycle-10 scope.
+- **Test additions**: `flow-start-onboarding.test.sh` grows by 13 assertions covering partial-settings detection (6 cases: `{}`, v2-only keys, `flow` block without `goals`, empty `flow.goals`, `.flow/` overrides partial settings, malformed JSON), jq-merge preservation (4 assertions on agentTeams/tiers/requireGoalForStart/executeVerificationCommands), and the `context: fork` lint (3 assertions, one per fixed skill).
+
 #### File-tree additions
 
 - `plugins/flow/schemas/v1/` — 6 schemas (goal, run, activity, evidence, workflow, trigger)
@@ -111,7 +120,7 @@ Iterative paired-reviewer self-review converged the 3.0.0 surface against:
 
 #### Test totals
 
-452 assertions pass, 0 fail (initial v3 baseline 259 → 433 after iterative self-review → 452 after post-cycle-8 onboarding + docs). Tests cover JSON schemas, atomic write helpers, Stop hook behavior, the integration harness (full `claude` mock for evaluator-loop active mode), and the new fresh-install onboarding detection. Per-skill / per-command unit tests deferred to follow-up.
+465 assertions pass, 0 fail (initial v3 baseline 259 → 433 after iterative self-review → 452 after post-cycle-8 onboarding + docs → 465 after cycle-10 regression fixes). Tests cover JSON schemas, atomic write helpers, Stop hook behavior, the integration harness (full `claude` mock for evaluator-loop active mode), the fresh-install onboarding detection, partial-settings detection + merge, and the `context: fork` skill-frontmatter lint. Per-skill / per-command unit tests deferred to follow-up.
 
 #### What's deferred
 
@@ -122,6 +131,13 @@ Iterative paired-reviewer self-review converged the 3.0.0 surface against:
 - `/flow:watch` post-creation `AskUserQuestion` confirmation step.
 - Polyglot Windows wrapper for hook scripts (separate cleanup PR).
 - Per-skill / per-command unit tests for workflow / run-state / trigger surfaces.
+- `context: fork` audit across remaining skills (goal-* family, `capability-discovery`, `visual-verification`, `criterion-verification-map`, and others) — cycle-10 fixed only the 3 user-reported failures.
+- Auto-log compaction (50+ `<!-- auto-log: -->` lines per session reduced to one rolled-up entry per phase).
+- Review fan-out extracted as a shared skill (`/flow:pr` Phase 3 and `/flow:review` Path B currently duplicate the 5-agent dispatch).
+- Cross-cycle pattern linker for findings (finding-id stability + "same pattern as cycle N-1" detector).
+- Structured Tier 3 override-with-rationale option in `/flow:merge` and `/flow:release`.
+- Journal `## Lessons Learned` section appended at `/flow:merge` or `/flow:learn`.
+- Defense-in-depth: hard-fail when a `Skill(X)` invocation returns empty / "what would you like me to do?" instead of silently accepting the skip.
 
 ---
 
