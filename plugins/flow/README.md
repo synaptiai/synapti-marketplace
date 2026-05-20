@@ -14,9 +14,14 @@ Flow v3 introduces a **runtime layer** at `.flow/` on top of the existing skill 
 
 Flow does NOT invoke native Claude Code `/goal` or `/loop` — those are session-only built-ins and not exposed to plugins. Flow implements its own file-backed goal layer and uses Stop hooks for post-turn enforcement. The `/flow:watch` command generates a `/loop` prompt file the user invokes manually.
 
-**Default behavior is preserved**: `flow.goals.requireGoalForStart` defaults to `false`, so `/flow:start` does NOT auto-create goals. Users opt in via `/flow:goal create`. See the CHANGELOG for the full settings matrix.
+**Default behavior is preserved**: `flow.goals.requireGoalForStart` defaults to `false`, so `/flow:start` does NOT auto-create goals. The first `/flow:start` in a project with neither `.claude/settings.flow.json` nor `.flow/` prompts you to opt in once; v2 projects with an existing settings file never see the prompt. See the CHANGELOG for the full settings matrix.
 
-Key references:
+### Get started with v3
+
+- [`references/flow-goals-quickstart.md`](references/flow-goals-quickstart.md) — 5-minute Hello-FlowGoal walkthrough (synthetic issue → goal → evaluate → verdict)
+- [`references/migration-v2-to-v3.md`](references/migration-v2-to-v3.md) — step-by-step v2 → v3 opt-in (four independent flags)
+
+Other v3 references:
 - [`references/flow-goals.md`](references/flow-goals.md) — FlowGoal model
 - [`references/flow-runtime-state.md`](references/flow-runtime-state.md) — `.flow/` directory layout
 - [`references/flow-workflows.md`](references/flow-workflows.md) — FlowWorkflow contracts
