@@ -7,7 +7,8 @@
 #   - When active goal has a failing AC: emit FLOW_GOAL_INCOMPLETE warning
 #   - mode=block uses decision:block instead of decision:approve
 #   - mode=evaluator-loop delegates to flow-goal-evaluator.sh (smoke check only;
-#     the active-mode tests live separately because they require `claude` CLI)
+#     full active-mode coverage lives in flow-goal-evaluator.test.sh, which
+#     stubs `claude --print` via tests/lib/mock-claude.sh)
 #
 # The Stop hook reads stdin (Stop event JSON). We feed it via _run_hook helper.
 
