@@ -136,6 +136,10 @@ Skipping the write breaks delta computation for the next turn (everything become
 
 Print the resulting verdict + per-AC table. If lifecycle transitioned to `achieved`, print celebration. If `failed`, print the failing AC + suggested next action.
 
+**When any AC has `last_result.reason: not_executed`** (deterministic checks were skipped because `flow.goals.executeVerificationCommands` defaults to `false`), append this hint to the printed output:
+
+> Set `flow.goals.executeVerificationCommands: true` in `.claude/settings.flow.json` to auto-run each AC's `verification_command` during evaluate. Without it, ACs with verification commands stay in `evidence_collected` until evidence is recorded by another path.
+
 ### `/flow:goal pause <id>`
 
 Transition `active → waiting_for_user` via `Skill(goal-lifecycle)`. Use when stepping away mid-flow and the Stop hook should fall silent.
