@@ -71,7 +71,7 @@ phases:
         evidence: workflow_run_completed
 
 completion_gate:
-  requires:
+  documented_requirements:
     - version_bumped_consistently
     - changelog_generated
     - user_confirmed

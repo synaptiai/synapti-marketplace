@@ -15,7 +15,7 @@ phases:
         skill: llm-operator-principles
         evidence: gathered_context
 completion_gate:
-  requires:
+  documented_requirements:
     - all_quality_checks_pass
 tier_classification:
   commit: autonomous

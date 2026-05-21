@@ -73,7 +73,7 @@ phases:
         evidence: goal_verdict
 
 completion_gate:
-  requires:
+  documented_requirements:
     - findings_consolidated
     - review_comment_posted_or_no_findings
     - holdout_validation_pass_or_p3_only

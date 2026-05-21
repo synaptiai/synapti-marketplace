@@ -90,7 +90,7 @@ phases:
         evidence: goal_verdict
 
 completion_gate:
-  requires:
+  documented_requirements:
     - reproducing_test_added
     - reproducing_test_green_after_fix
     - regression_suite_green

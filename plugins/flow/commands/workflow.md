@@ -115,9 +115,12 @@ for i, phase in enumerate(wf['phases'], start=1):
         cmd = f" cmd={act['command']}" if 'command' in act else ""
         print(f"     {i}.{j} {act_id} ({act_type}{skill}{agent}{cmd})")
 print()
-print("COMPLETION GATE")
-print("---------------")
-for req in wf['completion_gate']['requires']:
+print("COMPLETION GATE (advisory documentation, not enforced)")
+print("------------------------------------------------------")
+gate = wf.get('completion_gate', {}) or {}
+# Accept legacy field name during v3.0.x deprecation window (drop in v3.1).
+reqs = gate.get('documented_requirements') or gate.get('requires') or []
+for req in reqs:
     print(f"  - {req}")
 print()
 print("TIER CLASSIFICATION")

@@ -67,7 +67,7 @@ phases:
         evidence: workflow_run_completed
 
 completion_gate:
-  requires:
+  documented_requirements:
     - approval_present
     - ci_green
     - no_unresolved_threads

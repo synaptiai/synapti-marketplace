@@ -132,7 +132,7 @@ phases:
         evidence: goal_verdict
 
 completion_gate:
-  requires:
+  documented_requirements:
     - all_quality_checks_pass
     - runtime_verification_pass_or_valid_skip
     - no_unresolved_p1

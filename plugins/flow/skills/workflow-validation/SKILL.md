@@ -39,11 +39,22 @@ Exit code: 0 if `overall: pass`; 1 if any cross-reference or tier error; 2 if sc
 
 ### Step 1: Schema validation
 
+Before invoking jsonschema, apply the **v3.0.x deprecation migration**: if the YAML has the legacy field `completion_gate.requires` and lacks the current field `completion_gate.documented_requirements`, rename it in-memory and emit a deprecation warning to stderr. This keeps project-local workflows authored against the v3.0.0 shape valid through v3.0.x; support is removed in v3.1.
+
+```python
+# Pre-validation migration (v3.0.x compatibility shim)
+gate = wf.get("completion_gate") or {}
+if "requires" in gate and "documented_requirements" not in gate:
+    gate["documented_requirements"] = gate.pop("requires")
+    print(f"WARN: {workflow_path}: completion_gate.requires is deprecated — rename to completion_gate.documented_requirements (will be required in v3.1)", file=sys.stderr)
+    wf["completion_gate"] = gate
+```
+
+Then validate against the schema (the Python API rather than CLI for richer error formatting; the SKILL implementation reads the schema + workflow YAML and calls `jsonschema.validate`):
+
 ```bash
 python3 -m jsonschema -i "plugins/flow/workflows/${ID}.workflow.yaml" "plugins/flow/schemas/v1/workflow.schema.json"
 ```
-
-(Use the Python API rather than CLI for richer error formatting; the SKILL implementation reads the schema + workflow YAML and calls `jsonschema.validate`.)
 
 If schema validation fails, populate `cross_reference_errors` with the first error and set `overall: schema_invalid`. Skip remaining steps.
 
@@ -82,9 +93,11 @@ Any of `merge`, `release`, or `tag_push` set to `autonomous` or `journal` → `t
 
 Grep the entire workflow YAML for `/goal\b`, `/loop\b`, `/schedule\b`, `/routine\b` outside of `description` fields. Any match that looks like an invoked dependency (e.g., `command: /goal foo`) → `native_slash_violations.append(...)`. Hard fail.
 
-### Step 7: Completion gate dependency check
+### Step 7: Completion gate documentation check
 
-For each entry in `completion_gate.requires[]`, verify it maps to at least one activity's `evidence` field (or to a known gate output). Unmapped requirements → `cross_reference_errors.append({"type": "unmapped_gate", "requirement": ...})`.
+`completion_gate.documented_requirements` is advisory documentation, not an enforced check vocabulary — commands enforce their own gates (goal lifecycle, finding ledger, quality commands). This step only verifies the field is present and non-empty (already enforced by the schema's `minItems: 1`). No cross-reference to activity `evidence` fields is performed; the labels are free-text by design.
+
+If a future version reintroduces enforcement, the registry of valid labels would live here. For v3.0.x, this step is a no-op beyond the schema check.
 
 ### Step 8: Overall verdict
 

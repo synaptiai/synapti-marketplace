@@ -11,7 +11,7 @@ FlowWorkflow YAMLs at `plugins/flow/workflows/<id>.workflow.yaml` are the inspec
 | `required_skills` | skills the command MUST be able to invoke (existence-checked) |
 | `required_agents` | agents the command MUST be able to dispatch (existence-checked) |
 | `phases` | ordered list of phases, each with type + activities |
-| `completion_gate.requires` | conditions that MUST be true for the workflow to be "complete" |
+| `completion_gate.documented_requirements` | **Advisory** list of conditions describing what "complete" means. NOT enforced by `/flow:workflow validate` — commands enforce their own gates (goal lifecycle, finding ledger, quality commands). Free-text labels for human inspection. |
 | `tier_classification` | per-action tier (autonomous \| journal \| confirm) |
 
 The full schema lives at `plugins/flow/schemas/v1/workflow.schema.json`.
@@ -38,7 +38,9 @@ The full schema lives at `plugins/flow/schemas/v1/workflow.schema.json`.
 4. **Per-activity references** — activities with `skill:` or `agent:` fields are existence-checked too.
 5. **Tier 3 confirm-gating** — `merge` and `release` MUST be `confirm`. Soft fail for other Tier 3 actions.
 6. **No native-slash invocations** — no `/goal`, `/loop`, `/schedule`, `/routine` as invoked commands. Hard fail.
-7. **Completion gate dependency mapping** — every entry in `completion_gate.requires` corresponds to an activity output.
+7. **Completion gate field present** — `completion_gate.documented_requirements` is a non-empty array. The label values are NOT cross-referenced against activity evidence outputs (the field is advisory documentation; commands enforce their own gates).
+
+   For backward compatibility, the legacy field name `completion_gate.requires` is accepted during the v3.0.x window — `/flow:workflow validate` emits a deprecation warning to stderr and migrates in-memory. Support is removed in v3.1.
 
 ## Project-local overrides
 

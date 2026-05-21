@@ -53,7 +53,7 @@ phases:
         evidence: design_decision_journal_entry
 
 completion_gate:
-  requires:
+  documented_requirements:
     - specification_captured
     - design_document_produced
     - design_decision_recorded

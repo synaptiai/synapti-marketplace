@@ -101,13 +101,15 @@
     },
     "completion_gate": {
       "type": "object",
-      "required": ["requires"],
+      "required": ["documented_requirements"],
       "additionalProperties": false,
+      "description": "Advisory documentation of what the workflow considers 'complete'. NOT enforced by /flow:workflow validate — commands enforce their own gates (goal lifecycle, finding ledger, quality commands). The list is a contract reference for human inspection via /flow:workflow inspect|graph.",
       "properties": {
-        "requires": {
+        "documented_requirements": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string" }
+          "items": { "type": "string" },
+          "description": "Free-text labels describing what must be true at completion. Advisory only; no check vocabulary is enforced by the validation skill."
         }
       }
     },
