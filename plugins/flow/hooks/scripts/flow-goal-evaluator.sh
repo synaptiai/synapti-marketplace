@@ -143,24 +143,47 @@ if [ "$STOP_ACTIVE" = "true" ] && [ -f "$THROTTLE_FILE" ]; then
     if [ -x "$ACTIVE_GOAL_HELPER" ]; then
       THROTTLE_GOAL_PATH=$("$ACTIVE_GOAL_HELPER" --path 2>/dev/null)
       if [ -n "$THROTTLE_GOAL_PATH" ] && [ -f "$THROTTLE_GOAL_PATH" ]; then
-        THROTTLE_RUN_ID=$(python3 -c "
+        # Cycle-14 SEC-3: argv-passing instead of -c with bash interpolation —
+        # closes the Python code injection vector where a file with a `'` in
+        # the path would inject into the single-quoted Python literal.
+        THROTTLE_RUN_ID=$(python3 - "$THROTTLE_GOAL_PATH" <<'PYEOF' 2>/dev/null
 import sys, yaml
 sys.path[:] = [p for p in sys.path if p not in ('', '.')]
 try:
-    with open('$THROTTLE_GOAL_PATH', 'r', encoding='utf-8') as f:
+    with open(sys.argv[1], 'r', encoding='utf-8') as f:
         data = yaml.safe_load(f) or {}
     print((data.get('scope') or {}).get('run_id') or '')
-except Exception:
-    pass
-" 2>/dev/null)
+except Exception as e:
+    print(f"flow-goal-evaluator: throttle run_id lookup failed: {e}", file=sys.stderr)
+PYEOF
+)
+        # Cycle-14 SEC-1: defensive reject path-traversal in run_id even
+        # though the schema now constrains it — defense-in-depth in case a
+        # hostile YAML bypassed schema (e.g., jsonschema unavailable per F11).
+        case "$THROTTLE_RUN_ID" in
+          ''|.|..|*..*|*/*|*$'\n'*)
+            THROTTLE_RUN_ID=""
+            ;;
+        esac
         if [ -n "$THROTTLE_RUN_ID" ] && [ -d ".flow/runs/$THROTTLE_RUN_ID" ]; then
-          jq -nc \
-              --arg type "throttle-block" \
-              --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              --arg sid "$SESSION_ID" \
-              --arg reason "3 continuations in 5min" \
-              '{type:$type, ts:$ts, session_id:$sid, reason:$reason}' \
-              >> ".flow/runs/$THROTTLE_RUN_ID/events.jsonl" 2>/dev/null || true
+          # Cycle-14 SEC-2: symlink defense on events.jsonl — the bash `>>`
+          # follows symlinks; a planted symlink at .flow/runs/<id>/events.jsonl
+          # would redirect the throttle-block payload to any user-writable
+          # target. Refuse the write if the file is a symlink. Matches the
+          # defense scope in bin/flow-active-goal.sh and bin/journal-record.sh.
+          EVENTS_FILE=".flow/runs/$THROTTLE_RUN_ID/events.jsonl"
+          if [ ! -L "$EVENTS_FILE" ]; then
+            jq -nc \
+                --arg type "throttle-block" \
+                --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                --arg sid "$SESSION_ID" \
+                --arg reason "3 continuations in 5min" \
+                '{type:$type, ts:$ts, session_id:$sid, reason:$reason}' \
+                >> "$EVENTS_FILE" \
+                || echo "flow-goal-evaluator: throttle event log append failed (pattern analysis may miss this event)" >&2
+          else
+            echo "flow-goal-evaluator: refusing to append throttle event — $EVENTS_FILE is a symlink" >&2
+          fi
         fi
       fi
     fi
@@ -217,10 +240,23 @@ try:
     with open(sys.argv[1], "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     print((data.get("scope") or {}).get("run_id") or "")
-except Exception:
-    pass
+except Exception as e:
+    print(f"flow-goal-evaluator: RUN_ID lookup failed: {e}", file=sys.stderr)
 PYEOF
 )
+
+# Cycle-14 SEC-1: defense-in-depth path-traversal reject on RUN_ID. The
+# schema constrains scope.run_id to ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ but
+# when jsonschema is unavailable (F11 silent-skip path), a hostile YAML
+# could land on disk and reach this point with `..` or `/` in run_id.
+# Reject any value that contains a path separator, traversal, control char,
+# or empty bare-dot.
+case "$RUN_ID" in
+  ''|.|..|*..*|*/*|*$'\n'*)
+    [ -n "$RUN_ID" ] && echo "flow-goal-evaluator: rejecting unsafe run_id '$RUN_ID' (path-separator or traversal); RUN_ID cleared" >&2
+    RUN_ID=""
+    ;;
+esac
 
 # Shared verdict-persistence helper. EVERY exit path must persist a verdict
 # so the next turn's delta computation has memory; centralizing here keeps
@@ -282,6 +318,19 @@ _check_stuck() {
   [ -d "$run_dir" ] || return 0
 
   local counter_file="$run_dir/stuck-counter"
+
+  # Cycle-14 SEC-3: symlink defense on stuck-counter. The read+write below
+  # use shell redirection which follows symlinks; a hostile project could
+  # plant a symlink at .flow/runs/<id>/stuck-counter pointing at e.g.
+  # ~/.bashrc and the integer write would overwrite it. Refuse to operate
+  # on the counter if it's a symlink (counter stays at 0 for this turn —
+  # stuck-detection becomes a no-op for this run, which is the safe
+  # fail-open since the user can manually run /flow:goal evaluate).
+  if [ -L "$counter_file" ]; then
+    echo "flow-goal-evaluator: refusing — $counter_file is a symlink (stuck-detection skipped this turn)" >&2
+    return 0
+  fi
+
   local counter=0
   if [ -f "$counter_file" ]; then
     counter=$(tr -cd '0-9' < "$counter_file" 2>/dev/null)
@@ -296,7 +345,15 @@ _check_stuck() {
     # the stuck condition.
     counter=0
   fi
-  echo "$counter" > "$counter_file" 2>/dev/null || true
+  # Cycle-14 F2 (error-handler skeptic): surface counter-write failures
+  # instead of silently swallowing with `|| true`. A silent write failure
+  # means in-memory counter advances but on-disk state stays — next turn
+  # re-reads stale state and the threshold is never reached, trapping the
+  # user in infinite continuations. Fail-closed by treating as terminal.
+  if ! echo "$counter" > "$counter_file" 2>/dev/null; then
+    echo "flow-goal-evaluator: stuck-counter write failed for run $RUN_ID (disk full or permission denied) — treating as stuck to fail-closed" >&2
+    counter=999  # Force threshold below to trigger; lifecycle transition will surface its own diagnostics if it also fails.
+  fi
 
   local threshold
   threshold=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "3" '.flow.goals.failAfterStuckTurns // empty' 2>/dev/null)
@@ -310,6 +367,27 @@ _check_stuck() {
   # Stuck threshold reached. Transition goal → failed.
   local goal_id
   goal_id=$(basename "$ACTIVE_GOAL" .goal.yaml)
+
+  # Cycle-14 F1 (code-reviewer verifier): preserve turns_evaluated history.
+  # flow-goal-record.sh's lifecycle-update path replaces (does not deep-merge)
+  # the lifecycle block, so writing `turns_evaluated: 0` here would drop the
+  # real iteration count from disk — making /flow:learn's stuck-pattern
+  # analysis blind to "how long did this goal churn before failing." Read
+  # the existing value before composing the fragment.
+  local existing_turns
+  existing_turns=$(python3 - "$ACTIVE_GOAL" <<'PYEOF' 2>/dev/null
+import sys, yaml
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    print(int((data.get("lifecycle") or {}).get("turns_evaluated") or 0))
+except Exception:
+    print(0)
+PYEOF
+)
+  case "$existing_turns" in ''|*[!0-9]*) existing_turns=0 ;; esac
+
   local lifecycle_tmp
   lifecycle_tmp=$(mktemp -t flow-stuck-lifecycle.XXXXXX.yaml 2>/dev/null) || return 0
   _TMP_FILES+=("$lifecycle_tmp")
@@ -317,28 +395,42 @@ _check_stuck() {
   now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   cat > "$lifecycle_tmp" <<EOF
 status: failed
-turns_evaluated: 0
+turns_evaluated: ${existing_turns}
 last_evaluation:
   result: fail
   reason: "stuck_no_progress: delta unchanged for ${counter} consecutive turns (threshold=${threshold})"
   at: "${now_iso}"
 EOF
-  "${PLUGIN_ROOT}/bin/flow-goal-record.sh" --update-lifecycle \
+  # Cycle-14 F7 (error-handler skeptic): surface write failures honestly.
+  # Previously the `|| echo "stuck-transition write failed"` was followed by
+  # the caller emitting "lifecycle transitioned to failed" — a lie when the
+  # write didn't actually happen. Now we return 0 on failure so the caller
+  # keeps the block loop active until the user intervenes.
+  if ! "${PLUGIN_ROOT}/bin/flow-goal-record.sh" --update-lifecycle \
       --goal-id "$goal_id" \
       --lifecycle-file "$lifecycle_tmp" \
       --from-status active \
-      >/dev/null 2>&1 || echo "flow-goal-evaluator: stuck-transition write failed for goal $goal_id" >&2
+      >/dev/null 2>&1; then
+    echo "flow-goal-evaluator: stuck-transition write failed for goal $goal_id — lifecycle NOT updated; user must run /flow:goal evaluate manually" >&2
+    return 0  # keep the block loop active; do NOT lie that we transitioned.
+  fi
 
-  # Log event for /flow:learn (F3 reads .flow/runs/*/events.jsonl).
-  jq -nc \
-      --arg type "stuck-detection-fired" \
-      --arg ts "$now_iso" \
-      --arg sid "$SESSION_ID" \
-      --arg gid "$goal_id" \
-      --argjson count "$counter" \
-      --argjson thresh "$threshold" \
-      '{type:$type, ts:$ts, session_id:$sid, goal_id:$gid, stuck_count:$count, threshold:$thresh}' \
-      >> "$run_dir/events.jsonl" 2>/dev/null || true
+  # Cycle-14 SEC-2: symlink defense on events.jsonl for stuck event log.
+  local events_file="$run_dir/events.jsonl"
+  if [ ! -L "$events_file" ]; then
+    jq -nc \
+        --arg type "stuck-detection-fired" \
+        --arg ts "$now_iso" \
+        --arg sid "$SESSION_ID" \
+        --arg gid "$goal_id" \
+        --argjson count "$counter" \
+        --argjson thresh "$threshold" \
+        '{type:$type, ts:$ts, session_id:$sid, goal_id:$gid, stuck_count:$count, threshold:$thresh}' \
+        >> "$events_file" \
+        || echo "flow-goal-evaluator: stuck-detection event log append failed (pattern analysis may miss this event)" >&2
+  else
+    echo "flow-goal-evaluator: refusing to append stuck-detection event — $events_file is a symlink" >&2
+  fi
 
   # Reset counter — the goal is terminal; future runs would start fresh.
   rm -f "$counter_file" 2>/dev/null || true

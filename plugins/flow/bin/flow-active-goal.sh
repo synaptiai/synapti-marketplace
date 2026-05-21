@@ -109,15 +109,27 @@ elif mode == "--status":
 elif mode == "--json":
     print(json.dumps(data, sort_keys=True))
 elif mode == "--ac-summary":
+    # Cycle-14 F1 (code-reviewer skeptic): sanitize ALL emitted fields for
+    # both newlines (line-break contract) and pipes (column-separator
+    # contract). A goal YAML with a pipe character in any field would
+    # silently inject extra columns into the documented
+    # `<id>|<status>|<evidence_ref>|<last_result>` format. Replace pipe
+    # with U+2502 (box drawings light vertical) so the visual intent is
+    # preserved without breaking parsers.
+    def _sanitize(value):
+        s = " ".join(str(value).split())  # collapse all whitespace incl. newlines
+        return s.replace("|", "│")
     acs = ((data.get("objective") or {}).get("acceptance_criteria") or [])
     for ac in acs:
-        ac_id = ac.get("id", "?")
-        status = ac.get("status", "pending")
-        evidence_ref = ac.get("evidence_ref") or "-"
-        last_result = ac.get("last_result") or "-"
-        # Sanitize for stdout — strip embedded newlines that would break the
-        # one-line-per-AC contract callers parse against.
-        last_result = " ".join(str(last_result).split())
+        if not isinstance(ac, dict):
+            # Cycle-14 F7 (code-reviewer verifier): tolerate malformed AC
+            # shapes (string instead of dict) rather than crashing with
+            # AttributeError outside the try/except in the search loop.
+            continue
+        ac_id = _sanitize(ac.get("id", "?"))
+        status = _sanitize(ac.get("status", "pending"))
+        evidence_ref = _sanitize(ac.get("evidence_ref") or "-")
+        last_result = _sanitize(ac.get("last_result") or "-")
         print(f"{ac_id}|{status}|{evidence_ref}|{last_result}")
 else:
     print(f"flow-active-goal.sh: unknown mode {mode}", file=sys.stderr)

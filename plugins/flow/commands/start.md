@@ -192,12 +192,26 @@ mkdir -p .claude
 
 set_flow_goals() {
   # Args: $1=requireGoalForStart (true|false) $2=executeVerificationCommands (true|false)
-  local req="$1" exe="$2"
+  #       $3=workflowsEnabled (true|false|skip — "skip" omits the workflows key)
+  # Cycle-14 F2 (code-reviewer verifier): merges all three keys atomically
+  # via a single jq invocation so there's no partial-write state where
+  # flow.goals lands but flow.workflows.enabled is missing. The previous
+  # split into two helpers (set_flow_goals + set_flow_workflows_enabled)
+  # introduced the partial-success bug — eliminating the second helper
+  # eliminates the bug.
+  local req="$1" exe="$2" wfl="${3:-skip}"
 
   # Re-check symlink between definition and call — defense against TOCTOU race.
   if [ -e "$SETTINGS" ] && [ -L "$SETTINGS" ]; then
     echo "FLOW_ONBOARDING_ERROR=$SETTINGS became a symlink — refusing to write" >&2
     return 1
+  fi
+
+  # Compose the jq merge expression. Conditional workflows clause: "skip"
+  # leaves the existing value (or absence) untouched; "true"/"false" sets it.
+  local jq_expr='.flow.goals.requireGoalForStart = $req | .flow.goals.executeVerificationCommands = $exe'
+  if [ "$wfl" = "true" ] || [ "$wfl" = "false" ]; then
+    jq_expr="$jq_expr | .flow.workflows.enabled = \$wfl"
   fi
 
   if [ -f "$SETTINGS" ]; then
@@ -207,17 +221,44 @@ set_flow_goals() {
       return 1
     fi
 
-    # PID-scoped tmpfile + flock for atomicity under concurrent /flow:start invocations.
-    local tmp="${SETTINGS}.tmp.$$"
+    # Cycle-14 SEC-6: use mktemp instead of PID-scoped tmpfile. PID
+    # predictability (~15 bits of entropy) allows symlink-planting attacks
+    # on multi-user systems; mktemp's random suffix defeats it.
+    local tmp
+    tmp=$(mktemp -t flow-settings.XXXXXX 2>/dev/null) || {
+      echo "FLOW_ONBOARDING_ERROR=mktemp failed for settings merge" >&2
+      return 1
+    }
     local lockfile="${SETTINGS}.lock"
+    # Cycle-14 F5 (error-handler skeptic): trap to clean tmpfile on signal
+    # so .claude/ doesn't accumulate stale `settings.flow.json.tmp.NNNN`.
+    trap 'rm -f "$tmp"' EXIT INT TERM
     (
       # flock guards the read-modify-write window; (subshell) scopes the fd.
       flock -x 9 || { echo "FLOW_ONBOARDING_ERROR=failed to acquire $lockfile" >&2; exit 1; }
-      if ! jq --argjson req "$req" --argjson exe "$exe" \
-           '.flow.goals.requireGoalForStart = $req | .flow.goals.executeVerificationCommands = $exe' \
-           "$SETTINGS" > "$tmp"; then
+      if [ "$wfl" = "true" ] || [ "$wfl" = "false" ]; then
+        if ! jq --argjson req "$req" --argjson exe "$exe" --argjson wfl "$wfl" \
+             "$jq_expr" \
+             "$SETTINGS" > "$tmp"; then
+          rm -f "$tmp"
+          echo "FLOW_ONBOARDING_ERROR=jq merge failed on $SETTINGS" >&2
+          exit 1
+        fi
+      else
+        if ! jq --argjson req "$req" --argjson exe "$exe" \
+             "$jq_expr" \
+             "$SETTINGS" > "$tmp"; then
+          rm -f "$tmp"
+          echo "FLOW_ONBOARDING_ERROR=jq merge failed on $SETTINGS" >&2
+          exit 1
+        fi
+      fi
+      # Cycle-14 SEC-V5 (security verifier): validate the merged file is
+      # non-empty AND parseable BEFORE replacing the original — a jq that
+      # exits 0 with empty/truncated output would otherwise destroy settings.
+      if [ ! -s "$tmp" ] || ! jq empty "$tmp" >/dev/null 2>&1; then
         rm -f "$tmp"
-        echo "FLOW_ONBOARDING_ERROR=jq merge failed on $SETTINGS" >&2
+        echo "FLOW_ONBOARDING_ERROR=jq produced empty or invalid JSON; $SETTINGS unchanged" >&2
         exit 1
       fi
       if ! mv "$tmp" "$SETTINGS"; then
@@ -227,83 +268,85 @@ set_flow_goals() {
       fi
     ) 9>"$lockfile"
     local rc=$?
+    trap - EXIT INT TERM
+    rm -f "$tmp"
     [ "$rc" -ne 0 ] && return 1
   else
-    # Fresh file — heredoc with quoted delimiter (no expansion in body) plus
-    # printf interpolation for the two boolean flags.
-    printf '%s\n' "{" \
-      "  \"flow\": {" \
-      "    \"goals\": {" \
-      "      \"requireGoalForStart\": ${req}," \
-      "      \"executeVerificationCommands\": ${exe}" \
-      "    }" \
-      "  }" \
-      "}" > "$SETTINGS" || {
-      echo "FLOW_ONBOARDING_ERROR=could not write $SETTINGS (fresh)" >&2
+    # Fresh file — write atomically via tmpfile+mv (cycle-14 F4 error-handler
+    # verifier: the previous non-atomic `printf > $SETTINGS` left the file
+    # partial on signal mid-write).
+    local tmp
+    tmp=$(mktemp -t flow-settings.XXXXXX 2>/dev/null) || {
+      echo "FLOW_ONBOARDING_ERROR=mktemp failed for fresh-file write" >&2
       return 1
     }
-  fi
-}
-
-# F5: Companion helper called by the "Enable v3" arm AFTER set_flow_goals
-# succeeds. Sets flow.workflows.enabled atomically. NOT called by the Skip arm
-# (preserves the user's existing flow.workflows setting). Triggers stay
-# separate opt-in — they can fire shell, so a single "Enable v3" answer must
-# not also enable trigger autonomy.
-set_flow_workflows_enabled() {
-  local enabled="$1"  # "true" (Enable arm only invokes with true)
-
-  if [ -e "$SETTINGS" ] && [ -L "$SETTINGS" ]; then
-    echo "FLOW_ONBOARDING_ERROR=$SETTINGS became a symlink — refusing to write" >&2
-    return 1
-  fi
-  if [ ! -f "$SETTINGS" ]; then
-    # Defensive — set_flow_goals always creates the file before this runs.
-    echo "FLOW_ONBOARDING_ERROR=$SETTINGS missing — set_flow_goals must run first" >&2
-    return 1
-  fi
-  if ! command -v jq >/dev/null 2>&1; then
-    echo "FLOW_ONBOARDING_ERROR=$SETTINGS exists but jq is unavailable — cannot set workflows.enabled atomically" >&2
-    return 1
-  fi
-
-  local tmp="${SETTINGS}.tmp.$$"
-  local lockfile="${SETTINGS}.lock"
-  (
-    flock -x 9 || { echo "FLOW_ONBOARDING_ERROR=failed to acquire $lockfile for workflows merge" >&2; exit 1; }
-    if ! jq --argjson en "$enabled" '.flow.workflows.enabled = $en' "$SETTINGS" > "$tmp"; then
+    trap 'rm -f "$tmp"' EXIT INT TERM
+    # Compose the JSON document with conditional workflows.enabled.
+    if [ "$wfl" = "true" ] || [ "$wfl" = "false" ]; then
+      printf '%s\n' "{" \
+        "  \"flow\": {" \
+        "    \"goals\": {" \
+        "      \"requireGoalForStart\": ${req}," \
+        "      \"executeVerificationCommands\": ${exe}" \
+        "    }," \
+        "    \"workflows\": {" \
+        "      \"enabled\": ${wfl}" \
+        "    }" \
+        "  }" \
+        "}" > "$tmp"
+    else
+      printf '%s\n' "{" \
+        "  \"flow\": {" \
+        "    \"goals\": {" \
+        "      \"requireGoalForStart\": ${req}," \
+        "      \"executeVerificationCommands\": ${exe}" \
+        "    }" \
+        "  }" \
+        "}" > "$tmp"
+    fi
+    if [ ! -s "$tmp" ] || ! jq empty "$tmp" >/dev/null 2>&1; then
       rm -f "$tmp"
-      echo "FLOW_ONBOARDING_ERROR=jq merge for workflows.enabled failed" >&2
-      exit 1
+      trap - EXIT INT TERM
+      echo "FLOW_ONBOARDING_ERROR=fresh file write produced empty or invalid JSON" >&2
+      return 1
     fi
     if ! mv "$tmp" "$SETTINGS"; then
       rm -f "$tmp"
-      echo "FLOW_ONBOARDING_ERROR=mv failed; $SETTINGS unchanged after workflows merge" >&2
-      exit 1
+      trap - EXIT INT TERM
+      echo "FLOW_ONBOARDING_ERROR=mv failed for fresh-file write" >&2
+      return 1
     fi
-  ) 9>"$lockfile"
-  local rc=$?
-  [ "$rc" -ne 0 ] && return 1
+    trap - EXIT INT TERM
+  fi
 }
+
+# Cycle-14 F2 (code-reviewer verifier): set_flow_workflows_enabled REMOVED.
+# Previously cycle-13 added a second helper for the workflows.enabled key, but
+# the two-helper sequence created a partial-success failure mode: if the
+# second invocation failed, the settings file ended up with flow.goals but no
+# flow.workflows, and the Phase 0.5 detector silently skipped the re-prompt
+# (looks for .flow.goals only). The fix is structural: set_flow_goals now
+# takes a 3rd arg (workflows: "true"|"false"|"skip") and writes all keys in
+# a single jq merge. Enable arm passes "true"; Skip arm passes "skip" to
+# preserve any pre-existing flow.workflows.enabled setting.
 ```
 
 **Dispatch based on the user's answer** (Claude runs ONE of the following based on the `AskUserQuestion` response — NOT a shell `case`):
 
 - **Answer = "Enable v3 (recommended for new projects)"**:
   ```bash
-  set_flow_goals true true \
-    && set_flow_workflows_enabled true \
+  set_flow_goals true true true \
     && echo "Flow v3 enabled (goals + workflows). Settings written to $SETTINGS." \
     && echo "Note: FlowTriggers (/flow:watch, /flow:trigger) remain separate opt-in." \
     && echo "  Enable later via: jq '.flow.triggers.enabled = true' $SETTINGS > /tmp/s && mv /tmp/s $SETTINGS"
   ```
-  If either helper returns non-zero, halt Phase 0.5 and surface the `FLOW_ONBOARDING_ERROR` line — do NOT proceed to Phase 1 with inconsistent state. The two helpers are sequential (`&&`) so partial success (goals written but workflows merge failed) is surfaced as a halt rather than silently inconsistent settings.
+  Cycle-14 F2: `set_flow_goals` now writes all three keys atomically in one jq merge — no more partial-success state where goals lands but workflows is missing. If the helper returns non-zero, halt Phase 0.5 and surface the `FLOW_ONBOARDING_ERROR` line.
 
 - **Answer = "Skip — keep v2 behavior"**:
   ```bash
-  set_flow_goals false false && echo "Flow v3 left disabled. Settings written to $SETTINGS (re-enable later by editing the file)."
+  set_flow_goals false false skip && echo "Flow v3 left disabled. Settings written to $SETTINGS (re-enable later by editing the file)."
   ```
-  Same error-halt semantics.
+  Third arg is `skip` so the helper leaves `flow.workflows` untouched (preserves any pre-existing user choice). Same error-halt semantics.
 
 - **Answer = "Tell me more"**:
   ```bash

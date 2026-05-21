@@ -64,7 +64,8 @@
         },
         "run_id": {
           "type": "string",
-          "description": "FlowRun identifier this goal is associated with."
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "description": "FlowRun identifier. Constrained character set (no path separators or '..') because the hook + helpers interpolate this value into .flow/runs/<run_id>/ paths; an unconstrained run_id is a path-traversal write primitive (cycle-14 SEC-1)."
         }
       }
     },

@@ -49,23 +49,52 @@ Exit code: 0 if `overall: pass`; 1 if any cross-reference, recursion, native-sla
 
 ## Workflow
 
-### Step 1: Schema validation
+### Step 1: Schema validation (with v3.0.x deprecation migration)
 
-Before invoking jsonschema, apply the **v3.0.x deprecation migration**: if the YAML has the legacy field `completion_gate.requires` and lacks the current field `completion_gate.documented_requirements`, rename it in-memory and emit a deprecation warning to stderr. This keeps project-local workflows authored against the v3.0.0 shape valid through v3.0.x; support is removed in v3.1.
-
-```python
-# Pre-validation migration (v3.0.x compatibility shim)
-gate = wf.get("completion_gate") or {}
-if "requires" in gate and "documented_requirements" not in gate:
-    gate["documented_requirements"] = gate.pop("requires")
-    print(f"WARN: {workflow_path}: completion_gate.requires is deprecated — rename to completion_gate.documented_requirements (will be required in v3.1)", file=sys.stderr)
-    wf["completion_gate"] = gate
-```
-
-Then validate against the schema (the Python API rather than CLI for richer error formatting; the SKILL implementation reads the schema + workflow YAML and calls `jsonschema.validate`):
+**Cycle-14 F4 (error-handler verifier)**: the previous documentation showed both an in-memory migration shim AND a `python3 -m jsonschema -i <file> <schema>` invocation. The CLI re-reads the file from disk, bypassing the in-memory shim entirely. Any project-local workflow with the legacy `completion_gate.requires` field would fail schema validation despite the documented "accept legacy through v3.0.x" contract. The shim and the validator must run in the same Python process. The canonical invocation is:
 
 ```bash
-python3 -m jsonschema -i "plugins/flow/workflows/${ID}.workflow.yaml" "plugins/flow/schemas/v1/workflow.schema.json"
+python3 - "$WORKFLOW_PATH" "$SCHEMA_PATH" <<'PYEOF'
+import sys, yaml, json, jsonschema
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+
+workflow_path = sys.argv[1]
+schema_path = sys.argv[2]
+
+with open(workflow_path, "r", encoding="utf-8") as f:
+    wf = yaml.safe_load(f)
+
+# Pre-validation migration (v3.0.x deprecation shim).
+gate = (wf or {}).get("completion_gate") or {}
+if "requires" in gate and "documented_requirements" not in gate:
+    gate["documented_requirements"] = gate.pop("requires")
+    wf["completion_gate"] = gate
+    print(
+        f"WARN: {workflow_path}: completion_gate.requires is deprecated — "
+        f"rename to completion_gate.documented_requirements (will be required in v3.1)",
+        file=sys.stderr,
+    )
+elif "requires" in gate and "documented_requirements" in gate:
+    # Cycle-14 F3 (code-reviewer verifier): both fields present — drop legacy,
+    # emit WARN. Previously the shim silently skipped this case and the schema
+    # rejected the YAML with an opaque `additionalProperties` error.
+    del gate["requires"]
+    wf["completion_gate"] = gate
+    print(
+        f"WARN: {workflow_path}: both completion_gate.requires (legacy) and "
+        f".documented_requirements present — dropping legacy field. Remove from source.",
+        file=sys.stderr,
+    )
+
+with open(schema_path, "r", encoding="utf-8") as f:
+    schema = json.load(f)
+try:
+    jsonschema.validate(wf, schema)
+    print("schema_valid: true")
+except jsonschema.ValidationError as e:
+    print(f"schema_valid: false\nerror: {e.message}")
+    sys.exit(2)
+PYEOF
 ```
 
 If schema validation fails, populate `cross_reference_errors` with the first error and set `overall: schema_invalid`. Skip remaining steps.

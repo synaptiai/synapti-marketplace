@@ -58,8 +58,16 @@
       "required": ["command"],
       "additionalProperties": true,
       "properties": {
-        "workflow": { "type": "string" },
-        "goal": { "type": "string" },
+        "workflow": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+          "description": "Workflow id (matches the FlowWorkflow metadata.id pattern). Pattern-constrained because trigger-policy interpolates this into plugins/flow/workflows/<workflow>.workflow.yaml during cross-reference — an unconstrained value is a path-traversal probe (cycle-14 SEC-6)."
+        },
+        "goal": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+          "description": "Goal id (matches the FlowGoal metadata.id pattern)."
+        },
         "command": {
           "type": "string",
           "description": "Slash command to invoke when the trigger fires (e.g., /flow:run trigger pr-123-watch)."

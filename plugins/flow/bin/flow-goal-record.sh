@@ -118,27 +118,47 @@ LIFECYCLE_TRANSITIONS = {
 }
 TERMINAL_STATES = {"achieved", "failed", "cancelled"}
 
-# F11: Optional schema validation. When jsonschema is unavailable, emit a
-# one-line stderr WARN so the user knows safety is degraded — previously
-# silent skip meant a malformed goal could land on disk and break the
-# evaluator on a later turn with no surfaced diagnosis. The warning fires
-# once per process (idempotent via a module-level sentinel).
-_JSONSCHEMA_WARN_EMITTED = False
-
+# F11 (cycle-13) + cycle-14 F11-SENTINEL fix: when jsonschema is unavailable,
+# emit a stderr WARN dedup'd PER DAY via a sentinel file. The original
+# cycle-13 implementation used a module-level Python sentinel that reset on
+# every bash invocation (because each bash call spawns a fresh Python), so
+# the WARN fired on every /flow:goal command — noise that drowned out real
+# diagnostics.
+#
+# Sentinel location: ${TMPDIR}/flow-warn-jsonschema-${USER}-YYYY-MM-DD rather
+# than $HOME/.claude/ because overriding HOME (which tests sometimes do for
+# isolation) breaks Python's user-site-packages lookup and would hide PyYAML.
+# TMPDIR is honored, USER prevents cross-user collision on shared hosts.
 def _validate_goal(goal):
-    global _JSONSCHEMA_WARN_EMITTED
+    import datetime, tempfile, getpass
     schemas_dir = os.path.join(script_dir, "..", "schemas", "v1")
     schema_path = os.path.normpath(os.path.join(schemas_dir, "goal.schema.json"))
     try:
         import json, jsonschema
     except ImportError:
-        if not _JSONSCHEMA_WARN_EMITTED:
+        today = datetime.date.today().isoformat()
+        try:
+            user = getpass.getuser() or "default"
+        except Exception:
+            user = "default"
+        # Sanitize username (could contain unsafe chars on misconfigured hosts).
+        user = "".join(c for c in user if c.isalnum() or c in "_-")[:32] or "default"
+        sentinel_dir = tempfile.gettempdir()
+        sentinel = os.path.join(sentinel_dir, f"flow-warn-jsonschema-{user}-{today}")
+        if not os.path.exists(sentinel):
             print(
                 "flow-goal-record.sh: WARN jsonschema unavailable — goal validation skipped. "
-                "Install via 'pip install jsonschema' for safety (malformed goal YAMLs will land on disk and may break the evaluator).",
+                "Install via 'pip install jsonschema' for safety (malformed goal YAMLs will land on disk and may break the evaluator). "
+                "This warning fires once per day per user.",
                 file=sys.stderr,
             )
-            _JSONSCHEMA_WARN_EMITTED = True
+            try:
+                with open(sentinel, "w", encoding="utf-8") as _f:
+                    _f.write("")
+            except OSError:
+                # If we can't write the sentinel, WARN will re-fire on the
+                # next invocation — better than masking the diagnostic.
+                pass
         return  # validation skipped
     with open(schema_path, "r", encoding="utf-8") as f:
         schema = json.load(f)

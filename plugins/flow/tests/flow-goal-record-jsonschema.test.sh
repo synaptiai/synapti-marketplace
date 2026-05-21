@@ -100,11 +100,44 @@ class _BlockJsonschema(importlib.abc.MetaPathFinder, importlib.abc.Loader):
 sys.meta_path.insert(0, _BlockJsonschema())
 PYEOF
 
-ERR=$(cd "$DIR" && PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" \
+# Cycle-14: WARN dedup uses per-day file sentinel at $TMPDIR/. Isolate TMPDIR
+# so the test sentinel doesn't survive across runs (which would silently pass
+# even if the WARN logic regressed). Use TMPDIR (not HOME) because HOME
+# isolation also breaks Python's user-site-packages lookup and hides PyYAML.
+ISOLATED_TMP=$(_fjs_mkdir)
+ERR=$(cd "$DIR" && TMPDIR="$ISOLATED_TMP" PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" \
   bash "$HELPER" --create --goal-file "$GOAL" 2>&1 >/dev/null)
 # Helper may succeed (validation skipped) but MUST print the WARN.
 assert_contains "jsonschema unavailable" "$ERR" "stderr surfaces the missing jsonschema"
 assert_contains "WARN" "$ERR" "WARN tag visible in the message"
+
+# --- Test 1b: Second invocation in the same isolated HOME — WARN should NOT
+# re-fire (per-day sentinel dedup works).
+_flow_test_begin "WARN deduped across same-day invocations (cycle-14 F11-SENTINEL)"
+GOAL2="$DIR/.flow/goals/issue-jsonschema-test-second.goal.yaml"
+cat > "$GOAL2" <<'EOF'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-jsonschema-test-second
+  created_at: "2026-05-21T00:00:00Z"
+scope:
+  repo: owner/example
+  branch: feature/test
+objective:
+  outcome: Test outcome
+  acceptance_criteria:
+    - id: AC1
+      text: First criterion
+      status: pending
+evaluator:
+  type: hybrid
+lifecycle:
+  status: draft
+EOF
+ERR2=$(cd "$DIR" && TMPDIR="$ISOLATED_TMP" PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" \
+  bash "$HELPER" --create --goal-file "$GOAL2" 2>&1 >/dev/null)
+assert_not_contains "jsonschema unavailable" "$ERR2" "WARN does NOT re-fire on same-day second invocation"
 
 # --- Test 2: when jsonschema IS available, no WARN is emitted
 _flow_test_begin "no WARN when jsonschema present"
