@@ -107,6 +107,41 @@ A pointed question — "why was the broader audit deferred?" — surfaced that c
 
 **Cumulative fork-removal scope**: 15 of 28 skills (3 cycle-10 + 12 cycle-11). 13 ambient skills retain fork pending follow-up audit.
 
+#### Cycle-12 self-review fix-forward (paired-reviewer review of cycles 9-11)
+
+Cycle-12 paired-reviewer protocol (Path A: 10 facet agents + 2 holdout-validation lenses) surfaced 17 findings across cycles 9-11. All P1 + P2 fixed in-PR; P3 cosmetic items folded into the same changes where bounded.
+
+**P1 fixes** (load-bearing correctness):
+- **Onboarding answer dispatch** (`commands/start.md` Phase 0.5) — the prior `case "$ONBOARDING_ANSWER"` block referenced a variable that never received the `AskUserQuestion` response, so all three arms fell through silently. Restructured as prose-driven dispatch (Claude runs ONE of three documented bash blocks based on the user's chosen option) with explicit halt semantics on `set_flow_goals` failure.
+- **Terminal-goal resume guard** (Phase 1) — when `.flow/goals/issue-<N>.goal.yaml` already exists, the gate now parses `lifecycle.status`. Terminal goals (`achieved | failed | cancelled`) emit `FLOW_GOAL_STATE=terminal` and surface a six-field escalation rather than silently attempting to "resume" an immutable goal.
+- **Post-write verify after `Skill(goal-contract-capture)`** (Phase 1) — the "FlowGoal created" echo now fires only after confirming `$GOAL_PATH` exists AND `lifecycle.status == active`. Skill silent failure no longer produces a false-positive visibility line.
+- **Symlink defense on settings file** (`set_flow_goals` helper) — refuses to write through `.claude` or `settings.flow.json` if either is a symlink, matching the O_NOFOLLOW pattern in `bin/journal-record.sh`. TOCTOU re-check before the actual write.
+- **`executeVerificationCommands` gate scope clarified** — the docs in `commands/goal.md`, `references/flow-goals.md`, `references/flow-goals-quickstart.md` previously claimed the flag governs `/flow:goal evaluate`. The implementation only honors it in the Stop hook's `bin/flow-run-deterministic-checks.sh` (matching `schema.json:309`). Docs corrected to say the flag governs the Stop hook path; `/flow:goal evaluate` executes verification commands when present regardless.
+- **README v3 prompt-firing claim corrected** — README previously said "v2 projects with an existing settings file never see the prompt"; cycle-10 introduced partial-settings detection that fires the prompt when the existing file lacks a `flow.goals` block. README and `migration-v2-to-v3.md` now describe the actual behavior with a carve-out.
+
+**P2 fixes**:
+- **jq-absent fallback regression** (`set_flow_goals`) — when the file exists and jq is unavailable, the helper refuses to write rather than overwrite v2 keys with a heredoc fallback. Closes the gap where cycle-10's "v2 keys preserved" claim applied only to the jq-present path.
+- **Concurrent-write race** — wrapped the read-modify-write in `flock -x` with a PID-scoped tmpfile and explicit `mv`/jq error handling, so two parallel `/flow:start` invocations cannot lose data.
+- **`skill-manifests.md` drift** — the "Domain Skills Inventory" table is now synced with current SKILL.md frontmatter state (15 inline + 13 fork + 4 disable-model-invocation), with explanatory header noting the cycle-10/11 unfork scope. Added 13 v3 skills missing from the table entirely.
+- **`jq -e` stderr handling** + **`cascade-resolve.sh` existence check** — both error paths now surface `FLOW_ONBOARDING_ERROR=` / `FLOW_GOAL_ERROR=` lines instead of silently degrading. cascade-resolve absence halts Phase 1 with a `FLOW_GOAL_STATE=blocked` exit.
+- **`migration-v2-to-v3.md` "no change" carve-out** — added a section explicitly documenting the v2-visible behavior change (first-run prompt for v2-with-partial-settings users) and how to pre-empt it.
+- **"Rolling back" destructive snippet fix** — added a jq-merge example so users don't wipe v2 settings by copy-pasting the disable JSON.
+
+**P3 fixes** (folded into above where bounded):
+- Per-skill enumeration of the 13 deferred ambient skills (replacing opaque count assertion) — the test now reports which skill drifted.
+- Added inverse-direction assertion catching a new fork-using skill outside the 13 deferred + 15 fixed set.
+- Added 3 new partial-settings edge cases: array root (`[]`), `flow.goals: null`, and the previously-tested malformed JSON.
+- Added 2 new `set_flow_goals` direct tests: jq-absent refusal + symlink refusal.
+
+**Not addressed** (intentionally deferred to follow-up, not regression):
+- Orphaned `agent:` field on 15 unforked SKILL.md files — dead frontmatter, no behavior impact. Cosmetic cleanup tracked in follow-up.
+- CHANGELOG cycle-9 heading-shape inconsistency (no `#### Cycle-9` heading vs cycle-10/11) — purely indexing style.
+- End-to-end `/flow:start` integration test — convention across the suite is to lift bash blocks; adding an end-to-end runner is a suite-wide change.
+
+**Test additions**: `flow-start-onboarding.test.sh` grew by 20 assertions (45 → 65): 3 new edge cases (array, null, refined malformed), 5 set_flow_goals direct tests, 12 per-skill deferred-audit assertions (replacing 1 count assertion = net +12). Suite total: 478 → 498 pass.
+
+**Self-review verdict**: All 6 P1 + 6 P2 + 5 P3 findings either fixed or explicitly documented as deferred with rationale. Cycle 12 converged to zero outstanding findings.
+
 #### File-tree additions
 
 - `plugins/flow/schemas/v1/` — 6 schemas (goal, run, activity, evidence, workflow, trigger)
@@ -132,7 +167,7 @@ Iterative paired-reviewer self-review converged the 3.0.0 surface against:
 
 #### Test totals
 
-478 assertions pass, 0 fail (initial v3 baseline 259 → 433 after iterative self-review → 452 after post-cycle-8 onboarding + docs → 465 after cycle-10 regression fixes → 478 after cycle-11 broader fork audit). Tests cover JSON schemas, atomic write helpers, Stop hook behavior, the integration harness (full `claude` mock for evaluator-loop active mode), the fresh-install onboarding detection, partial-settings detection + merge, and the `context: fork` skill-frontmatter lint (15 fixed + 13 deferred-audit sanity). Per-skill / per-command unit tests deferred to follow-up.
+498 assertions pass, 0 fail (initial v3 baseline 259 → 433 after iterative self-review → 452 after post-cycle-8 onboarding + docs → 465 after cycle-10 regression fixes → 478 after cycle-11 broader fork audit → 498 after cycle-12 paired-reviewer self-review fix-forward). Tests cover JSON schemas, atomic write helpers, Stop hook behavior, the integration harness (full `claude` mock for evaluator-loop active mode), the fresh-install onboarding detection, partial-settings detection + merge (with array/null/malformed edge cases), the `set_flow_goals` helper direct (jq-absent refusal + symlink refusal), and the `context: fork` skill-frontmatter lint (15 fixed + 13 deferred-audit per-skill + inverse-drift detection). Per-skill / per-command unit tests for the v3 runtime-layer surfaces deferred to follow-up.
 
 #### What's deferred
 
