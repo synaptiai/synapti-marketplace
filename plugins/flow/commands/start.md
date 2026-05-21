@@ -244,15 +244,60 @@ set_flow_goals() {
     }
   fi
 }
+
+# F5: Companion helper called by the "Enable v3" arm AFTER set_flow_goals
+# succeeds. Sets flow.workflows.enabled atomically. NOT called by the Skip arm
+# (preserves the user's existing flow.workflows setting). Triggers stay
+# separate opt-in — they can fire shell, so a single "Enable v3" answer must
+# not also enable trigger autonomy.
+set_flow_workflows_enabled() {
+  local enabled="$1"  # "true" (Enable arm only invokes with true)
+
+  if [ -e "$SETTINGS" ] && [ -L "$SETTINGS" ]; then
+    echo "FLOW_ONBOARDING_ERROR=$SETTINGS became a symlink — refusing to write" >&2
+    return 1
+  fi
+  if [ ! -f "$SETTINGS" ]; then
+    # Defensive — set_flow_goals always creates the file before this runs.
+    echo "FLOW_ONBOARDING_ERROR=$SETTINGS missing — set_flow_goals must run first" >&2
+    return 1
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "FLOW_ONBOARDING_ERROR=$SETTINGS exists but jq is unavailable — cannot set workflows.enabled atomically" >&2
+    return 1
+  fi
+
+  local tmp="${SETTINGS}.tmp.$$"
+  local lockfile="${SETTINGS}.lock"
+  (
+    flock -x 9 || { echo "FLOW_ONBOARDING_ERROR=failed to acquire $lockfile for workflows merge" >&2; exit 1; }
+    if ! jq --argjson en "$enabled" '.flow.workflows.enabled = $en' "$SETTINGS" > "$tmp"; then
+      rm -f "$tmp"
+      echo "FLOW_ONBOARDING_ERROR=jq merge for workflows.enabled failed" >&2
+      exit 1
+    fi
+    if ! mv "$tmp" "$SETTINGS"; then
+      rm -f "$tmp"
+      echo "FLOW_ONBOARDING_ERROR=mv failed; $SETTINGS unchanged after workflows merge" >&2
+      exit 1
+    fi
+  ) 9>"$lockfile"
+  local rc=$?
+  [ "$rc" -ne 0 ] && return 1
+}
 ```
 
 **Dispatch based on the user's answer** (Claude runs ONE of the following based on the `AskUserQuestion` response — NOT a shell `case`):
 
 - **Answer = "Enable v3 (recommended for new projects)"**:
   ```bash
-  set_flow_goals true true && echo "Flow v3 enabled. Settings written to $SETTINGS."
+  set_flow_goals true true \
+    && set_flow_workflows_enabled true \
+    && echo "Flow v3 enabled (goals + workflows). Settings written to $SETTINGS." \
+    && echo "Note: FlowTriggers (/flow:watch, /flow:trigger) remain separate opt-in." \
+    && echo "  Enable later via: jq '.flow.triggers.enabled = true' $SETTINGS > /tmp/s && mv /tmp/s $SETTINGS"
   ```
-  If `set_flow_goals` returns non-zero, halt Phase 0.5 and surface the `FLOW_ONBOARDING_ERROR` line — do NOT proceed to Phase 1 with inconsistent state.
+  If either helper returns non-zero, halt Phase 0.5 and surface the `FLOW_ONBOARDING_ERROR` line — do NOT proceed to Phase 1 with inconsistent state. The two helpers are sequential (`&&`) so partial success (goals written but workflows merge failed) is surfaced as a halt rather than silently inconsistent settings.
 
 - **Answer = "Skip — keep v2 behavior"**:
   ```bash

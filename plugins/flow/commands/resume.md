@@ -154,3 +154,15 @@ If the user explicitly wants to act on the resume rather than just inspect, offe
 - `plugins/flow/schemas/v1/run.schema.json` — run document schema.
 - `plugins/flow/bin/flow-record-activity.sh` — activity writer (called by run-state-management).
 - `plugins/flow/references/flow-runtime-state.md` — user-facing runtime layer doc.
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read `.flow/runs/*/run.yaml` to identify active/blocked runs | 1 | Autonomous, read-only |
+| Read linked `.flow/goals/<id>.goal.yaml` for goal context | 1 | Autonomous, read-only |
+| Read last N lines of `events.jsonl` for recent activity | 1 | Autonomous, read-only |
+| Format and print resume report | 1 | Autonomous, output-only |
+| Optional AskUserQuestion offering the suggested next command | 2 | Asks only if the user explicitly wants to act; outcome is the user's choice to invoke the next command (`/flow:resume` itself never auto-executes) |
+
+`/flow:resume` is purely informational. It cannot modify run state, transition lifecycles, or invoke workflow phases — those happen only when the user explicitly invokes the suggested next command.

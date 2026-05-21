@@ -131,6 +131,39 @@ if [ "$STOP_ACTIVE" = "true" ] && [ -f "$THROTTLE_FILE" ]; then
   [ "$SINCE" -gt 300 ] && CONTINUE_COUNT=0
   if [ "$CONTINUE_COUNT" -ge 3 ] && [ "$SINCE" -lt 300 ]; then
     rm -f "$THROTTLE_FILE"
+    # F8: Log the throttle-block event to the active run's events.jsonl so
+    # /flow:learn pattern analysis can detect projects where the evaluator
+    # loop hits the throttle frequently (signal: the goal contract or the
+    # executor's iteration cadence needs adjustment).
+    #
+    # Inline resolution because the active-goal lookup further down hasn't
+    # run yet. Best-effort: if any step fails, silently continue — the
+    # throttle decision is the primary outcome.
+    ACTIVE_GOAL_HELPER="${PLUGIN_ROOT}/bin/flow-active-goal.sh"
+    if [ -x "$ACTIVE_GOAL_HELPER" ]; then
+      THROTTLE_GOAL_PATH=$("$ACTIVE_GOAL_HELPER" --path 2>/dev/null)
+      if [ -n "$THROTTLE_GOAL_PATH" ] && [ -f "$THROTTLE_GOAL_PATH" ]; then
+        THROTTLE_RUN_ID=$(python3 -c "
+import sys, yaml
+sys.path[:] = [p for p in sys.path if p not in ('', '.')]
+try:
+    with open('$THROTTLE_GOAL_PATH', 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    print((data.get('scope') or {}).get('run_id') or '')
+except Exception:
+    pass
+" 2>/dev/null)
+        if [ -n "$THROTTLE_RUN_ID" ] && [ -d ".flow/runs/$THROTTLE_RUN_ID" ]; then
+          jq -nc \
+              --arg type "throttle-block" \
+              --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --arg sid "$SESSION_ID" \
+              --arg reason "3 continuations in 5min" \
+              '{type:$type, ts:$ts, session_id:$sid, reason:$reason}' \
+              >> ".flow/runs/$THROTTLE_RUN_ID/events.jsonl" 2>/dev/null || true
+        fi
+      fi
+    fi
     echo '{"decision":"approve","reason":"evaluator-loop throttled: 3 continuations in 5min — forcing stop"}'
     exit 0
   fi
@@ -230,6 +263,89 @@ _record_verdict() {
     || echo "flow-goal-evaluator: last-verdict.json write failed (delta computation on next turn will fall back to 'unchanged')" >&2
 }
 
+# F9: Stuck-detection helper. Increments a per-run counter when the verdict's
+# delta is 'unchanged'; resets the counter on any other delta. When the counter
+# reaches flow.goals.failAfterStuckTurns (cascade-resolved; default 3), the
+# helper transitions the active goal to lifecycle.status=failed via
+# bin/flow-goal-record.sh, logs a stuck-detection-fired event to events.jsonl,
+# and returns 1 to signal "goal terminal — caller should emit approve instead
+# of block".
+#
+# Args: $1 = delta string (made_progress | unchanged | regressed)
+# Returns:
+#   0 — not stuck (caller continues with normal block decision)
+#   1 — stuck triggered (caller emits approve; goal already transitioned to failed)
+_check_stuck() {
+  local delta="$1"
+  [ -z "$RUN_ID" ] && return 0
+  local run_dir=".flow/runs/$RUN_ID"
+  [ -d "$run_dir" ] || return 0
+
+  local counter_file="$run_dir/stuck-counter"
+  local counter=0
+  if [ -f "$counter_file" ]; then
+    counter=$(tr -cd '0-9' < "$counter_file" 2>/dev/null)
+    [ -z "$counter" ] && counter=0
+  fi
+
+  if [ "$delta" = "unchanged" ]; then
+    counter=$((counter + 1))
+  else
+    # Any non-'unchanged' delta resets — progress (good) or regression
+    # (different evidence; not stuck on the same pass-set) both break
+    # the stuck condition.
+    counter=0
+  fi
+  echo "$counter" > "$counter_file" 2>/dev/null || true
+
+  local threshold
+  threshold=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "3" '.flow.goals.failAfterStuckTurns // empty' 2>/dev/null)
+  case "$threshold" in ''|*[!0-9]*) threshold=3 ;; esac
+  [ "$threshold" -lt 1 ] && threshold=1
+
+  if [ "$counter" -lt "$threshold" ]; then
+    return 0  # not yet stuck
+  fi
+
+  # Stuck threshold reached. Transition goal → failed.
+  local goal_id
+  goal_id=$(basename "$ACTIVE_GOAL" .goal.yaml)
+  local lifecycle_tmp
+  lifecycle_tmp=$(mktemp -t flow-stuck-lifecycle.XXXXXX.yaml 2>/dev/null) || return 0
+  _TMP_FILES+=("$lifecycle_tmp")
+  local now_iso
+  now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  cat > "$lifecycle_tmp" <<EOF
+status: failed
+turns_evaluated: 0
+last_evaluation:
+  result: fail
+  reason: "stuck_no_progress: delta unchanged for ${counter} consecutive turns (threshold=${threshold})"
+  at: "${now_iso}"
+EOF
+  "${PLUGIN_ROOT}/bin/flow-goal-record.sh" --update-lifecycle \
+      --goal-id "$goal_id" \
+      --lifecycle-file "$lifecycle_tmp" \
+      --from-status active \
+      >/dev/null 2>&1 || echo "flow-goal-evaluator: stuck-transition write failed for goal $goal_id" >&2
+
+  # Log event for /flow:learn (F3 reads .flow/runs/*/events.jsonl).
+  jq -nc \
+      --arg type "stuck-detection-fired" \
+      --arg ts "$now_iso" \
+      --arg sid "$SESSION_ID" \
+      --arg gid "$goal_id" \
+      --argjson count "$counter" \
+      --argjson thresh "$threshold" \
+      '{type:$type, ts:$ts, session_id:$sid, goal_id:$gid, stuck_count:$count, threshold:$thresh}' \
+      >> "$run_dir/events.jsonl" 2>/dev/null || true
+
+  # Reset counter — the goal is terminal; future runs would start fresh.
+  rm -f "$counter_file" 2>/dev/null || true
+
+  return 1  # stuck triggered; caller should emit approve
+}
+
 # Run deterministic checks.
 REPORT=$("${PLUGIN_ROOT}/hooks/scripts/flow-run-deterministic-checks.sh" "${ACTIVE_GOAL}" 2>/dev/null || echo '{}')
 GOAL_NAME=$(basename "${ACTIVE_GOAL}" .goal.yaml)
@@ -272,16 +388,25 @@ parts.append(f"Budget remaining: {budget or '?'} turns.")
 print("\n".join(parts))
 PYEOF
 )
-  jq -nc --arg r "$REASON" '{decision:"block", reason:$r}'
-
   # Persist verdict so next-turn delta computation has memory. Confidence
   # 1.0 because the deterministic must_pass failure is unambiguous
-  # evidence of `not_achieved`.
+  # evidence of `not_achieved`. Record BEFORE deciding block-or-approve so
+  # _check_stuck (F9) can read the persisted delta history.
   _record_verdict "not_achieved" "1.0" "unchanged" \
     "must_pass criterion failed deterministically" "" "evaluator-loop-must-pass-fail"
 
-  # Update throttle.
-  echo "$((CONTINUE_COUNT + 1)):$NOW" > "$THROTTLE_FILE"
+  # F9: Stuck-detection. If the goal has been stuck on "unchanged" for
+  # failAfterStuckTurns consecutive turns, transition to failed and emit
+  # approve so the user isn't trapped in an infinite block loop.
+  if _check_stuck "unchanged"; then
+    # Not stuck — proceed with normal block decision.
+    jq -nc --arg r "$REASON" '{decision:"block", reason:$r}'
+    echo "$((CONTINUE_COUNT + 1)):$NOW" > "$THROTTLE_FILE"
+  else
+    # Stuck — goal has been transitioned to failed inside _check_stuck.
+    rm -f "$THROTTLE_FILE"
+    echo '{"decision":"approve","reason":"goal failed: stuck_no_progress — delta unchanged for failAfterStuckTurns consecutive turns; lifecycle transitioned to failed (see /flow:goal inspect)"}'
+  fi
   exit 0
 fi
 
@@ -392,8 +517,15 @@ case "$VERDICT" in
     jq -nc --arg r "Goal $VERDICT: $REASON_TXT" '{decision:"approve", reason:$r}'
     ;;
   not_achieved|*)
-    echo "$((CONTINUE_COUNT + 1)):$NOW" > "$THROTTLE_FILE"
-    jq -nc --arg r "FLOW_GOAL_CONTINUATION ($VERDICT): $REASON_TXT. Next: $HINT" '{decision:"block", reason:$r}'
+    # F9: Check stuck-detection on the judge's delta. Stuck threshold may
+    # transition the goal to failed and override the block with approve.
+    if _check_stuck "$DELTA"; then
+      echo "$((CONTINUE_COUNT + 1)):$NOW" > "$THROTTLE_FILE"
+      jq -nc --arg r "FLOW_GOAL_CONTINUATION ($VERDICT): $REASON_TXT. Next: $HINT" '{decision:"block", reason:$r}'
+    else
+      rm -f "$THROTTLE_FILE"
+      echo '{"decision":"approve","reason":"goal failed: stuck_no_progress — judge delta unchanged for failAfterStuckTurns consecutive turns; lifecycle transitioned to failed (see /flow:goal inspect)"}'
+    fi
     ;;
 esac
 exit 0

@@ -51,3 +51,15 @@ When `FLOW_TRIGGERED_RUN=true`:
 - `plugins/flow/commands/trigger.md` — trigger management.
 - `plugins/flow/commands/watch.md` — watch-mode trigger creation.
 - `plugins/flow/schemas/v1/trigger.schema.json` — trigger schema.
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read `.flow/triggers/<id>.trigger.yaml` and validate via `Skill(trigger-policy)` | 1 | Autonomous, read-only |
+| Concurrency check against `.flow/runs/` for in-flight runs of this trigger | 1 | Autonomous, read-only |
+| Set `FLOW_TRIGGERED_RUN=true` env var | 1 | Autonomous |
+| Invoke `target.command` (the trigger's nominated next-action) | 2 | Journal-and-proceed — writes a FlowRun, a `trigger-fired` decision-journal artifact, and may invoke a Tier 2 workflow (push, PR creation) *within the target's own tier policy*. Tier 3 actions (`merge`, `release`) are blocked by `trigger-policy` regardless of trigger settings. |
+| Cancel previous in-flight runs (when `concurrency.policy: cancel_previous`) | 2 | Journal-and-proceed — transitions other runs to `cancelled` |
+
+`/flow:run` itself never enforces a Tier 3 action; the trigger-policy hard-deny on merge/release is non-negotiable.

@@ -130,6 +130,17 @@ for action, tier in wf.get('tier_classification', {}).items():
 PYEOF
 ```
 
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| `/flow:workflow list` — enumerate plugin + project-local workflow YAMLs | 1 | Autonomous, read-only |
+| `/flow:workflow inspect <id>` — dump full YAML | 1 | Autonomous, read-only |
+| `/flow:workflow validate <id>` — invoke `Skill(workflow-validation)`; emit JSON report | 1 | Autonomous, read-only — no writes; the skill produces a diagnostic report |
+| `/flow:workflow graph <id>` — render textual DAG of phases/activities | 1 | Autonomous, output-only |
+
+`/flow:workflow` is entirely read-only. It cannot create, modify, or delete workflow YAMLs; the schema and project-local override files are the only sources of truth. To author a new workflow, edit `.flow/workflows/<id>.workflow.yaml` directly.
+
 ## Architectural notes
 
 - **Workflows are data, not code.** They describe the structure of the `/flow:*` commands; the commands themselves remain Claude's execution manuals. Changing a workflow YAML changes the contract validation but does NOT change command behavior.

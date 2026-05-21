@@ -187,3 +187,17 @@ When `flow.goals.stopHookEnforcement: evaluator-loop`, the Stop hook spawns `Ski
 - `plugins/flow/references/flow-goals.md` — user-facing FlowGoal model doc
 - `plugins/flow/references/stop-hook-goal-enforcement.md` — Stop hook architecture
 - `plugins/flow/schemas/v1/goal.schema.json` — the schema goals validate against
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| `/flow:goal` (default) / `status` — read goal yaml, render summary | 1 | Autonomous, read-only |
+| `/flow:goal inspect <id>` — full YAML + events + transition log | 1 | Autonomous, read-only |
+| `/flow:goal history` — list all goals with filters | 1 | Autonomous, read-only |
+| `/flow:goal create <kind>` — invoke `Skill(goal-contract-capture)`, write `.flow/goals/<id>.goal.yaml`, transition draft→active | 2 | Journal-and-proceed (writes a goal artifact + lifecycle transition) |
+| `/flow:goal evaluate <id>` — non-terminal verdict — invoke `Skill(goal-evaluator)`, persist verdict, update lifecycle | 1 | Autonomous |
+| `/flow:goal evaluate <id>` — terminal verdict (`achieved` / `failed`) | 2 | **Confirm** via AskUserQuestion (per F10 — see "Terminal-state confirmation" below) |
+| `/flow:goal pause <id>` — active → waiting_for_user | 1 | Autonomous; reason via AskUserQuestion if not `--reason` |
+| `/flow:goal resume <id>` — waiting → active | 1 | Autonomous |
+| `/flow:goal clear <id>` — non-terminal → cancelled | 2 | **Confirm** via AskUserQuestion (irreversible) |

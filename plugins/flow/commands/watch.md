@@ -118,3 +118,15 @@ To stop watch mode: Ctrl-C the /loop, or invoke /flow:trigger disable pr-<N>-wat
 - `plugins/flow/commands/trigger.md` — `/flow:trigger` (manage triggers)
 - `plugins/flow/commands/run.md` — `/flow:run trigger <id>` (single-shot executor)
 - `plugins/flow/references/flow-triggers.md` — full trigger documentation
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| Read template under `plugins/flow/triggers/templates/` | 1 | Autonomous, read-only |
+| Substitute template variables (`${PR}`, `${REPO}`, `${BRANCH}`, `${NOW}`) | 1 | Autonomous |
+| Write `.flow/triggers/<id>.trigger.yaml` (validated via `Skill(trigger-policy)`) | 2 | Journal-and-proceed — atomic write after validation |
+| Write `.claude/flow-loop-<id>.md` (the prompt the user feeds to `/loop`) | 2 | Journal-and-proceed — produces a discrete artifact for `/loop` |
+| Print manual invocation instructions for `/loop @<path>` | 1 | Autonomous, output-only |
+
+`/flow:watch` never invokes `/loop` itself — the plugin model forbids native-slash invocation. The user must start the loop manually with the printed instruction.

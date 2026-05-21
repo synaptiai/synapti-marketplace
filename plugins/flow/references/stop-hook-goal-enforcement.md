@@ -145,6 +145,28 @@ In `evaluator-loop` mode, the throttle protects against runaway loops:
 
 This is a backstop, not a feature. The goal contract's `continuation.max_iterations` is the primary budget; throttling catches edge cases where a goal misconfigured with high max_iterations would otherwise churn.
 
+### Throttle event log (v3.1)
+
+When a throttle block fires, the hook also appends a `throttle-block` event to the active FlowRun's events.jsonl (`.flow/runs/<id>/events.jsonl`). This makes throttle hits discoverable via `/flow:learn` pattern analysis — projects that hit the throttle frequently are signaling that either the goal contract is too coarse or the executor's iteration cadence needs adjustment.
+
+Event shape:
+
+```json
+{"type":"throttle-block","ts":"2026-05-21T12:34:56Z","session_id":"<sanitized>","reason":"3 continuations in 5min"}
+```
+
+Inspect a single run's throttle history: `grep '"throttle-block"' .flow/runs/<run-id>/events.jsonl`.
+
+### Stuck detection (v3.1)
+
+Independent of the throttle window, the hook tracks consecutive `delta: unchanged` verdicts and transitions the goal to `lifecycle.status: failed` when the count reaches `flow.goals.failAfterStuckTurns` (default 3). This catches goals where the executor is making no progress turn-over-turn — the throttle would force-stop the session, but stuck-detection ends the goal so the next session doesn't resume the same dead loop.
+
+Stuck counter state lives at `.flow/runs/<id>/stuck-counter` (single integer file; per-run, not per-session). The counter resets on any non-`unchanged` delta — `made_progress` (evidence advancing) and `regressed` (evidence going backward) both break the stuck condition. Stuck-detection emits a `stuck-detection-fired` event to events.jsonl on the firing turn:
+
+```json
+{"type":"stuck-detection-fired","ts":"...","session_id":"...","goal_id":"...","stuck_count":3,"threshold":3}
+```
+
 ## Budget enforcement
 
 Two budget dimensions:

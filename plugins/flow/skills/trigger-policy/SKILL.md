@@ -30,6 +30,7 @@ Structured JSON report:
   "tier3_violations": [],
   "recursion_violations": [],
   "missing_required_forbidden": [],
+  "cross_reference_violations": [],
   "concurrency_violations": [],
   "overall": "pass"
 }
@@ -67,13 +68,29 @@ Count `.flow/triggers/*.trigger.yaml` files with `metadata.enabled: true` AND li
 
 If `concurrency.policy: cancel_previous` is set on a trigger whose target invokes a Tier 2 action (e.g., push, commit), surface a warning — cancel_previous + Tier 2 can produce partial commits.
 
-### Step 7: Compose overall verdict
+### Step 7: Target workflow cross-reference
+
+If `target.workflow` is set, verify the referenced workflow exists. Check both locations:
+
+```bash
+WF="${target_workflow}"
+PLUGIN_PATH="plugins/flow/workflows/${WF}.workflow.yaml"
+LOCAL_PATH=".flow/workflows/${WF}.workflow.yaml"
+[ -f "$PLUGIN_PATH" ] || [ -f "$LOCAL_PATH" ]
+```
+
+Missing → `cross_reference_violations.append({"type": "missing_target_workflow", "name": target_workflow, "checked_paths": [PLUGIN_PATH, LOCAL_PATH]})`. **Hard fail** (exit 1) — a trigger that points at a non-existent workflow can never do meaningful work and is broken by construction. This catches typos (e.g., `address` instead of `address-pr`) at trigger creation time rather than at runtime when `/flow:run trigger <id>` tries to dispatch.
+
+If `target.workflow` is absent (the trigger uses `target.command` directly without naming a workflow), this step is a no-op.
+
+### Step 8: Compose overall verdict
 
 | Condition | overall |
 |---|---|
 | schema fails | `schema_invalid` (exit 2) |
 | `tier3_violations` non-empty | `tier3_violation` (exit 1; HARD FAIL) |
 | `recursion_violations` non-empty | `recursion_violation` (exit 1) |
+| `cross_reference_violations` non-empty | `cross_reference_failed` (exit 1; HARD FAIL — missing target workflow) |
 | `concurrency_violations` non-empty | `concurrency_warning` (exit 0 — soft warning) |
 | else | `pass` (exit 0) |
 

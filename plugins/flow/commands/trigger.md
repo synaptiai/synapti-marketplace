@@ -70,3 +70,12 @@ Remove the trigger YAML. Confirmation via AskUserQuestion (Tier 2 — irreversib
 - `plugins/flow/commands/watch.md` — `/flow:watch` (creates triggers from templates).
 - `plugins/flow/commands/run.md` — `/flow:run trigger <id>` (single-shot executor).
 - `plugins/flow/references/flow-triggers.md` — user-facing documentation.
+
+## Tier Classification
+
+| Action | Tier | Behavior |
+|---|---|---|
+| `/flow:trigger list` / `inspect <id>` — read `.flow/triggers/` | 1 | Autonomous, read-only |
+| `/flow:trigger enable <id>` / `disable <id>` — toggle `metadata.enabled` after validation | 2 | Journal-and-proceed — `Skill(trigger-policy)` validates before write; atomic via `_journal_atomic.py` |
+| `/flow:trigger run <id>` — single-shot execution of target | 2 | Journal-and-proceed — delegates to `/flow:run trigger <id>`; tier3-forbidden actions remain blocked by `trigger-policy` |
+| `/flow:trigger delete <id>` — irreversible removal of trigger YAML | 2 | **Confirm** via AskUserQuestion (deletes a possibly-enabled trigger) |
