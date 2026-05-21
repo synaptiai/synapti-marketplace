@@ -66,6 +66,32 @@ else
   ls "$PROPOSAL_DIR"/*.md 2>/dev/null | sed 's/^/PROPOSAL_FILE=/'
 fi
 
+# Section: FlowRun Events + FlowGoals (v3)
+# Gated behind flow.goals.enabled — when v3 is enabled, surface the goal
+# YAMLs + run-event ledgers so Phase 2's Goal Failure Patterns can detect
+# recurring failed ACs, stuck-detection hits, and not_executed warnings.
+echo ""
+echo "### FlowRun Events"
+GOALS_ENABLED="false"
+[ -x "$HELPER" ] && GOALS_ENABLED=$("$HELPER" --default "true" '.flow.goals.enabled // empty' 2>/dev/null)
+if [ "$GOALS_ENABLED" != "true" ]; then
+  echo "STATE=disabled"
+else
+  GOAL_FILES=0
+  [ -d ".flow/goals" ] && GOAL_FILES=$(ls .flow/goals/*.goal.yaml 2>/dev/null | wc -l | tr -d ' ')
+  RUN_FILES=0
+  [ -d ".flow/runs" ] && RUN_FILES=$(find .flow/runs -name "events.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+  echo "GOAL_FILE_COUNT=$GOAL_FILES"
+  echo "RUN_EVENT_FILE_COUNT=$RUN_FILES"
+  if [ "$GOAL_FILES" = "0" ] && [ "$RUN_FILES" = "0" ]; then
+    echo "STATE=empty"
+  else
+    echo "STATE=ok"
+    ls .flow/goals/*.goal.yaml 2>/dev/null | sed 's/^/GOAL_FILE=/'
+    find .flow/runs -name "events.jsonl" 2>/dev/null | sed 's/^/RUN_EVENTS=/'
+  fi
+fi
+
 true
 ```
 
@@ -88,6 +114,17 @@ Analyze journal entries for:
 ### Gate Patterns
 - Gates that always get approved → candidate for tier demotion
 - Gates that frequently trigger → valuable safety check
+
+### Goal Failure Patterns (v3, when `flow.goals.enabled: true`)
+
+Parse `.flow/goals/*.goal.yaml` and `.flow/runs/*/events.jsonl` to detect goal-level patterns the journal alone can't see:
+
+- **Recurring failed ACs**: same `verification_command` failing across 3+ goals → the command may be wrong, flaky, or testing the wrong thing. Pattern qualifies when the same command string appears in `objective.acceptance_criteria[].verification_command` of ≥3 goals AND the corresponding AC `last_result` shows non-zero exit on each.
+- **Stuck-detection hits**: count of `delta == "unchanged"` runs across recent verdicts. A goal that hit `failAfterStuckTurns` is parseable from `last-verdict.json` files + a final `lifecycle.status: failed` with `last_evaluation.reason: stuck_no_progress`. Pattern: 2+ goals failing this way → either ACs are too coarse, or the executor needs different scaffolding.
+- **`not_executed` ACs**: across goals, count ACs whose `last_result.reason` includes `not_executed`. If the user has `executeVerificationCommands: false` but goals consistently fail to capture deterministic evidence, suggest flipping the flag.
+- **Path-boundary violations**: `events.jsonl` entries with `type: path-boundary-violation` indicate goals whose `allowed_paths` was too narrow OR the executor strayed from scope. Recurring violations of the same path glob → either the glob is too tight, or the workflow's natural scope exceeds the goal's contract.
+
+Pattern qualifies for proposal generation under the same rules as decision patterns: ≥2 occurrences + evidence citations (goal id + AC id + run id + event timestamp).
 
 ## Phase 3: Quality Filters
 
@@ -175,7 +212,8 @@ If no journal entries found:
 | Action | Tier | Behavior |
 |---|---|---|
 | Read decision journal | 1 | Autonomous, read-only |
-| Pattern detection across journal entries | 1 | Autonomous |
+| Read `.flow/goals/*.goal.yaml` + `.flow/runs/*/events.jsonl` (v3) | 1 | Autonomous, read-only |
+| Pattern detection across journal entries + goal/run events | 1 | Autonomous |
 | Write skill proposals to `~/.claude/flow-proposals/` | 1 | Autonomous, user-scoped files (outside repo) |
 | Clear `~/.claude/flow-learn-pending` flag | 1 | Autonomous |
 
