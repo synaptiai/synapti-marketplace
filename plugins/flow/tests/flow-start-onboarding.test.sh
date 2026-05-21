@@ -502,3 +502,76 @@ if command -v jq >/dev/null 2>&1; then
 else
   _flow_assert_pass "skip: jq unavailable — merge requires jq"
 fi
+
+
+_flow_test_begin "Enable v3 arm also writes flow.workflows.enabled (cycle-13 F5)"
+
+# F5: The 'Enable v3' arm in commands/start.md now invokes set_flow_workflows_enabled
+# after set_flow_goals. The helper merges flow.workflows.enabled=true into the
+# settings file via jq. Triggers stay separate opt-in (the Enable arm doesn't
+# touch flow.triggers).
+
+if command -v jq >/dev/null 2>&1; then
+  F5_DIR="$TMP_DIR/f5-enable-workflows"
+  mkdir -p "$F5_DIR/.claude"
+  echo '{"agentTeams": false}' > "$F5_DIR/.claude/settings.flow.json"
+
+  # Step 1: set_flow_goals (simulating the helper from commands/start.md).
+  (
+    cd "$F5_DIR"
+    SETTINGS=.claude/settings.flow.json
+    jq --argjson req true --argjson exe true \
+       '.flow.goals.requireGoalForStart = $req | .flow.goals.executeVerificationCommands = $exe' \
+       "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
+  )
+
+  # Step 2: set_flow_workflows_enabled (the F5 addition).
+  (
+    cd "$F5_DIR"
+    SETTINGS=.claude/settings.flow.json
+    jq --argjson en true '.flow.workflows.enabled = $en' \
+       "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
+  )
+
+  REQ_GOAL=$(jq -r '.flow.goals.requireGoalForStart' "$F5_DIR/.claude/settings.flow.json")
+  WORKFLOWS=$(jq -r '.flow.workflows.enabled' "$F5_DIR/.claude/settings.flow.json")
+  TRIGGERS=$(jq -r '.flow.triggers // "absent"' "$F5_DIR/.claude/settings.flow.json")
+  AGENT_TEAMS=$(jq -r '.agentTeams' "$F5_DIR/.claude/settings.flow.json")
+
+  assert_equal "true" "$REQ_GOAL" "F5: goals.requireGoalForStart still true after both helpers"
+  assert_equal "true" "$WORKFLOWS" "F5: workflows.enabled set to true"
+  assert_equal "absent" "$TRIGGERS" "F5: triggers section NOT touched (separate opt-in)"
+  assert_equal "false" "$AGENT_TEAMS" "F5: v2 keys still preserved"
+else
+  _flow_assert_pass "skip: jq unavailable — F5 helper requires jq"
+fi
+
+
+_flow_test_begin "Skip arm does NOT touch flow.workflows (F5 preserves user setting)"
+
+# If the user already had flow.workflows.enabled set to a specific value
+# (e.g., true from a prior Enable answer that was later disabled by hand),
+# choosing 'Skip — keep v2 behavior' must preserve that value, not clobber.
+
+if command -v jq >/dev/null 2>&1; then
+  SKIP_DIR="$TMP_DIR/f5-skip-preserves"
+  mkdir -p "$SKIP_DIR/.claude"
+  echo '{"flow": {"workflows": {"enabled": true}}}' > "$SKIP_DIR/.claude/settings.flow.json"
+
+  # Skip arm: set_flow_goals false false — does NOT call set_flow_workflows_enabled.
+  (
+    cd "$SKIP_DIR"
+    SETTINGS=.claude/settings.flow.json
+    jq --argjson req false --argjson exe false \
+       '.flow.goals.requireGoalForStart = $req | .flow.goals.executeVerificationCommands = $exe' \
+       "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
+  )
+
+  WORKFLOWS_AFTER=$(jq -r '.flow.workflows.enabled' "$SKIP_DIR/.claude/settings.flow.json")
+  REQ_GOAL_AFTER=$(jq -r '.flow.goals.requireGoalForStart' "$SKIP_DIR/.claude/settings.flow.json")
+
+  assert_equal "true" "$WORKFLOWS_AFTER" "F5: Skip preserves pre-existing flow.workflows.enabled=true"
+  assert_equal "false" "$REQ_GOAL_AFTER" "F5: Skip writes flow.goals.requireGoalForStart=false"
+else
+  _flow_assert_pass "skip: jq unavailable — F5 helper requires jq"
+fi
