@@ -15,7 +15,7 @@ When a session ends mid-workflow (interrupted, paused, blocked), `.flow/runs/<id
 
 ```bash
 ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" \
-  --default "true" '.flow.runtime.enabled // empty')
+  --default "true" '.flow.runtime.enabled')
 if [ "$ENABLED" != "true" ]; then
   echo "flow.runtime.enabled is false — /flow:resume requires the runtime layer." >&2
   exit 0

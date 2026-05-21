@@ -155,7 +155,30 @@ try:
         print(f"flow-record-activity.sh: activity does not match schema: {e.message}", file=sys.stderr)
         sys.exit(1)
 except ImportError:
-    pass  # jsonschema absent — skip validation, helper still writes.
+    # Cycle-14 F11-INCONSISTENCY (error-handler verifier): apply the same
+    # per-day WARN as flow-goal-record.sh so the jsonschema-degraded state
+    # is surfaced uniformly across all three FlowRunArtifact writers (goal,
+    # activity, evidence). Previous behavior was silent skip — diverged
+    # from F11's "surface the degradation" rationale.
+    import datetime, tempfile, getpass
+    today = datetime.date.today().isoformat()
+    try:
+        user = getpass.getuser() or "default"
+    except Exception:
+        user = "default"
+    user = "".join(c for c in user if c.isalnum() or c in "_-")[:32] or "default"
+    sentinel = os.path.join(tempfile.gettempdir(), f"flow-warn-jsonschema-{user}-{today}")
+    if not os.path.exists(sentinel):
+        print(
+            "flow-record-activity.sh: WARN jsonschema unavailable — activity validation skipped. "
+            "Install via 'pip install jsonschema' for safety. Warning fires once per day per user.",
+            file=sys.stderr,
+        )
+        try:
+            with open(sentinel, "w", encoding="utf-8") as _f:
+                _f.write("")
+        except OSError:
+            pass
 
 # Layout: .flow/runs/<run-id>/activities/<NNN>-<id>.yaml.
 # The sequence number is the count of existing .yaml files in activities/

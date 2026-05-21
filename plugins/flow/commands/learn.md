@@ -73,7 +73,7 @@ fi
 echo ""
 echo "### FlowRun Events"
 GOALS_ENABLED="false"
-[ -x "$HELPER" ] && GOALS_ENABLED=$("$HELPER" --default "true" '.flow.goals.enabled // empty' 2>/dev/null)
+[ -x "$HELPER" ] && GOALS_ENABLED=$("$HELPER" --default "true" '.flow.goals.enabled' 2>/dev/null)
 if [ "$GOALS_ENABLED" != "true" ]; then
   echo "STATE=disabled"
 else

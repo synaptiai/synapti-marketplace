@@ -24,7 +24,7 @@ Before any subcommand:
 ```bash
 # Resolve flow.goals.enabled (default true)
 ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" \
-  --default "true" '.flow.goals.enabled // empty')
+  --default "true" '.flow.goals.enabled')
 if [ "$ENABLED" != "true" ]; then
   echo "flow.goals.enabled is false — /flow:goal is disabled in this project's settings cascade." >&2
   exit 0

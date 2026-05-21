@@ -121,7 +121,27 @@ try:
         print(f"flow-record-evidence.sh: evidence does not match schema: {e.message}", file=sys.stderr)
         sys.exit(1)
 except ImportError:
-    pass
+    # Cycle-14 F11-INCONSISTENCY (error-handler verifier): mirror the per-day
+    # WARN from flow-goal-record.sh and flow-record-activity.sh.
+    import datetime, tempfile, getpass
+    today = datetime.date.today().isoformat()
+    try:
+        user = getpass.getuser() or "default"
+    except Exception:
+        user = "default"
+    user = "".join(c for c in user if c.isalnum() or c in "_-")[:32] or "default"
+    sentinel = os.path.join(tempfile.gettempdir(), f"flow-warn-jsonschema-{user}-{today}")
+    if not os.path.exists(sentinel):
+        print(
+            "flow-record-evidence.sh: WARN jsonschema unavailable — evidence validation skipped. "
+            "Install via 'pip install jsonschema' for safety. Warning fires once per day per user.",
+            file=sys.stderr,
+        )
+        try:
+            with open(sentinel, "w", encoding="utf-8") as _f:
+                _f.write("")
+        except OSError:
+            pass
 
 run_dir = os.path.join(".flow", "runs", run_id)
 evidence_dir = os.path.join(run_dir, "evidence")

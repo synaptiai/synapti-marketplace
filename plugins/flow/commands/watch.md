@@ -21,7 +21,7 @@ The user manually starts the loop. Flow does NOT invoke `/loop` from plugin code
 
 ```bash
 ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" \
-  --default "false" '.flow.triggers.enabled // empty')
+  --default "false" '.flow.triggers.enabled')
 if [ "$ENABLED" != "true" ]; then
   echo "flow.triggers.enabled is false — /flow:watch is opt-in."
   exit 0

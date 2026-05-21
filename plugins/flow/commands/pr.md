@@ -121,7 +121,7 @@ else
   echo ""
   echo "### FlowGoal State"
   HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
-  REQUIRE_GOAL=$("$HELPER" --default "false" '.flow.goals.requireGoalForStart // empty' 2>/dev/null)
+  REQUIRE_GOAL=$("$HELPER" --default "false" '.flow.goals.requireGoalForStart' 2>/dev/null)
   if [ "$REQUIRE_GOAL" != "true" ]; then
     echo "STATE=disabled"
     echo "REASON=flow.goals.requireGoalForStart is not true"

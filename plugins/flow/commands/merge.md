@@ -325,7 +325,7 @@ Independent of the finding-ledger gate, the FlowGoal gate verifies the active go
 
 ```!
 HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
-REQUIRE_GOAL=$("$HELPER" --default "false" '.flow.goals.requireGoalForStart // empty' 2>/dev/null)
+REQUIRE_GOAL=$("$HELPER" --default "false" '.flow.goals.requireGoalForStart' 2>/dev/null)
 
 echo "### FlowGoal Gate"
 if [ "$REQUIRE_GOAL" != "true" ]; then

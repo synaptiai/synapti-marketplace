@@ -20,7 +20,7 @@ jq '.flow.triggers.enabled = true' .claude/settings.flow.json > /tmp/s && mv /tm
 Verify:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" --default "false" '.flow.triggers.enabled // empty'
+"${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" --default "false" '.flow.triggers.enabled'
 # expect: true
 ```
 

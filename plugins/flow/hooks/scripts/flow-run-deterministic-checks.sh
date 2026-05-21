@@ -55,7 +55,7 @@ GOAL_YAML="${1:-}"
 # repo and want auto-execution set flow.goals.executeVerificationCommands: true.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
-EXEC_VERIFY=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "false" '.flow.goals.executeVerificationCommands // empty' 2>/dev/null)
+EXEC_VERIFY=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "false" '.flow.goals.executeVerificationCommands' 2>/dev/null)
 [ -z "$EXEC_VERIFY" ] && EXEC_VERIFY="false"
 export FLOW_EXEC_VERIFY="$EXEC_VERIFY"
 

@@ -16,7 +16,7 @@ When a FlowTrigger's target needs to run NOW (manual invocation, loop iteration,
 
 ```bash
 ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" \
-  --default "false" '.flow.triggers.enabled // empty')
+  --default "false" '.flow.triggers.enabled')
 [ "$ENABLED" != "true" ] && { echo "flow.triggers.enabled is false"; exit 0; }
 ```
 

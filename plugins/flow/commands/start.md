@@ -534,7 +534,7 @@ if [ ! -x "$CASCADE" ]; then
   echo "FLOW_GOAL_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
   true; exit 0
 fi
-REQUIRE_GOAL=$("$CASCADE" --default "false" '.flow.goals.requireGoalForStart // empty' 2>/dev/null)
+REQUIRE_GOAL=$("$CASCADE" --default "false" '.flow.goals.requireGoalForStart' 2>/dev/null)
 
 ARG1="${ARGUMENTS%% *}"
 case "$ARG1" in

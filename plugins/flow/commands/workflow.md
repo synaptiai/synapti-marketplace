@@ -18,7 +18,7 @@ The command markdown remains Claude's execution manual; this YAML is the inspect
 
 ```bash
 ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" \
-  --default "false" '.flow.workflows.enabled // empty')
+  --default "false" '.flow.workflows.enabled')
 if [ "$ENABLED" != "true" ]; then
   echo "flow.workflows.enabled is false — /flow:workflow is opt-in." >&2
   echo "Enable in .claude/settings.flow.local.json: { \"flow\": { \"workflows\": { \"enabled\": true } } }"

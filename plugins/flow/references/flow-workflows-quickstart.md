@@ -20,7 +20,7 @@ jq '.flow.workflows.enabled = true' .claude/settings.flow.json > /tmp/s && mv /t
 Verify:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" --default "false" '.flow.workflows.enabled // empty'
+"${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" --default "false" '.flow.workflows.enabled'
 # expect: true
 ```
 

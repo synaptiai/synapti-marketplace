@@ -356,7 +356,7 @@ _check_stuck() {
   fi
 
   local threshold
-  threshold=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "3" '.flow.goals.failAfterStuckTurns // empty' 2>/dev/null)
+  threshold=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "3" '.flow.goals.failAfterStuckTurns' 2>/dev/null)
   case "$threshold" in ''|*[!0-9]*) threshold=3 ;; esac
   [ "$threshold" -lt 1 ] && threshold=1
 

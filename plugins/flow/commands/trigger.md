@@ -16,7 +16,7 @@ Flow cannot invoke native `/loop`, scheduled tasks, or any external runner from 
 
 ```bash
 ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" \
-  --default "false" '.flow.triggers.enabled // empty')
+  --default "false" '.flow.triggers.enabled')
 if [ "$ENABLED" != "true" ]; then
   echo "flow.triggers.enabled is false — /flow:trigger is opt-in." >&2
   echo "Enable in .claude/settings.flow.local.json: { \"flow\": { \"triggers\": { \"enabled\": true } } }"
