@@ -1,5 +1,5 @@
-# Source-presence tests for cycle-13 F1 — /flow:pr and /flow:merge gate on
-# active FlowGoal lifecycle.
+# Tests for plugins/flow/commands/pr.md + merge.md FlowGoal gate (cycle-13 F1).
+# Source-presence lints; behavioral coverage is in flow-cycle14-behavioral.test.sh.
 #
 # These check that the gate bash blocks are present in the command markdown
 # and use the new bin/flow-active-goal.sh helper. Behavioral tests of the

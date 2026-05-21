@@ -102,9 +102,9 @@ If lifecycle is `achieved`, the goal is complete. `/flow:pr` and `/flow:merge` f
 
 ## Next steps
 
-- `flow-goals.md` — full FlowGoal model + lifecycle state machine
-- `flow-workflows-quickstart.md` — companion 5-minute walkthrough for `/flow:workflow` (inspect, validate, graph)
-- `flow-triggers-quickstart.md` — companion 5-minute walkthrough for `/flow:trigger` and `/flow:watch`
-- `stop-hook-goal-enforcement.md` — three Stop-hook modes (`warn`, `block`, `evaluator-loop`) with cost characteristics
-- `flow-runtime-state.md` — `.flow/` directory layout and gitignore policy
-- `migration-v2-to-v3.md` — step-by-step v2 → v3 opt-in (for projects already using flow v2.x)
+- [`flow-goals.md`](flow-goals.md) — full FlowGoal model + lifecycle state machine
+- [`flow-workflows-quickstart.md`](flow-workflows-quickstart.md) — companion 5-minute walkthrough for `/flow:workflow` (inspect, validate, graph)
+- [`flow-triggers-quickstart.md`](flow-triggers-quickstart.md) — companion 5-minute walkthrough for `/flow:trigger` and `/flow:watch`
+- [`stop-hook-goal-enforcement.md`](stop-hook-goal-enforcement.md) — three Stop-hook modes (`warn`, `block`, `evaluator-loop`) with cost characteristics
+- [`flow-runtime-state.md`](flow-runtime-state.md) — `.flow/` directory layout and gitignore policy
+- [`migration-v2-to-v3.md`](migration-v2-to-v3.md) — step-by-step v2 → v3 opt-in (for projects already using flow v2.x)

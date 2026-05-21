@@ -1,5 +1,5 @@
-# Source-presence lint tests for cycle-13 F8 (throttle log) and F9
-# (stuck detection). These are lint-style checks that the new behavior
+# Tests for plugins/flow/hooks/scripts/flow-goal-evaluator.sh throttle log + stuck-detection (cycle-13 F8 + F9).
+# Source-presence lint tests. These are lint-style checks that the new behavior
 # remains in the hook script — they catch regressions where someone
 # removes the logic during a refactor without realizing it.
 #

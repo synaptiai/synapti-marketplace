@@ -181,6 +181,48 @@ A logical-usability assessment after cycle-12 surfaced 16 findings spanning inte
 
 **Self-review verdict**: All 4 P1 + 8 P2 + 4 P3 findings (F1-F16) addressed in this cycle. Cycle 13 converges with 589/589 tests passing.
 
+#### Cycle-14 — paired-reviewer fix-forward (18 findings across security, correctness, tests)
+
+Cycle-13's Path A paired-reviewer self-review surfaced 18 additional findings (6 security P1, 6 correctness P1, 6 P2). Per the user's no-deferral rule, all addressed in-PR.
+
+**Security (P1)**:
+- **SEC-1 — `scope.run_id` path-traversal**: schema now constrains run_id to `^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$` so the value can't traverse out of `.flow/runs/<id>/` when interpolated into bash path expressions. Defense-in-depth bash reject in `flow-goal-evaluator.sh` for the jsonschema-unavailable path.
+- **SEC-2 — `events.jsonl` symlink defense**: both throttle-block (F8) and stuck-detection-fired (F9) writes now refuse to append if the file is a symlink. Previously the bash `>>` followed symlinks, creating a write primitive for any user-writable target.
+- **SEC-3 — Python injection via `$THROTTLE_GOAL_PATH`**: converted the `python3 -c "...'$VAR'..."` heredoc to `python3 - "$VAR" <<'PYEOF' ... sys.argv[1] ... PYEOF` argv pattern. Matches the safe pattern used elsewhere in the same file. Stuck-counter writes also gain `[ -L ]` symlink defense.
+- **SEC-6 — `trigger.target.workflow` + `trigger.target.goal` path-traversal**: schema constrains both to `^[a-z0-9][a-z0-9-]{0,63}$` (matches `metadata.id` pattern). Closes the cross-reference probe vector.
+
+**Correctness (P1)**:
+- **F1 — `--ac-summary` pipe + newline sanitization**: pipe characters in AC fields used to silently inject extra columns into the documented `<id>|<status>|<evidence_ref>|<last_result>` contract. Now replaced with U+2502 (visual fidelity, parser-safe). Malformed AC shapes (string instead of dict) skipped instead of crashing.
+- **F2 — `/flow:status` Recent Runs `tac` fallback**: previous `... | tac 2>/dev/null || ... | tail -3` silently produced oldest-first when `tac` was missing on macOS. Now uses awk-based reverse for portable most-recent-first ordering.
+- **F2 — F5 partial-onboarding atomic write**: cycle-13's two-helper sequence (`set_flow_goals` + `set_flow_workflows_enabled`) had a partial-success failure mode where `flow.goals` landed but `flow.workflows` didn't. Refactored to single helper with 3rd arg (`workflows: "true"|"false"|"skip"`) writing all keys in one jq merge. Plus mktemp instead of PID-scoped tmpfile (SEC-V6), cleanup trap, and post-merge JSON validation before mv.
+- **F1 — F9 lifecycle preserves `turns_evaluated`**: stuck-detection now reads the existing `turns_evaluated` and writes it back in the failed lifecycle fragment (was hard-coded to 0, losing iteration history `/flow:learn` needs).
+- **F7 — F9 stuck-transition no longer lies on failure**: when `flow-goal-record.sh --update-lifecycle` fails, the hook returns 0 (keep block loop active) instead of emitting "lifecycle transitioned to failed" — which was a lie when the write didn't happen.
+- **F2 — F9 stuck-counter write fail-closed**: previously `|| true` masked counter-write failure, letting in-memory increment diverge from on-disk state and trapping the user in infinite continuations. Now fail-closed (treat as stuck) when the write fails.
+- **F4-COVERAGE — workflow-validation migration shim unreachable**: cycle-13 documented an in-memory `requires → documented_requirements` shim but then invoked `python3 -m jsonschema -i <file> <schema>` which re-read the file from disk, bypassing the shim entirely. Now SKILL.md shows the canonical inline-Python invocation that runs the shim and jsonschema in the same process.
+- **F3 — both-fields-present migration**: shim now drops legacy `requires` with WARN when `documented_requirements` is also present (was opaque schema error).
+
+**P2 cluster**:
+- **SEC-V4 — cascade-resolve null vs false**: settings cascade could not distinguish "absent" from "explicit false" — both jq `// empty` and `// null` operators fire on null/false, so a higher-precedence source could never override a lower source's true with false. Two-part fix: (a) `cascade-resolve.sh` now treats jq output of `"null"` as not-found (was only treating empty string); (b) 19 boolean-flag call sites converted from `.flow.X // empty` to bare `.flow.X` so jq outputs `false`/`true`/`null` verbatim and cascade routes each correctly.
+- **F11-SENTINEL — jsonschema WARN dedup**: cycle-13's `_JSONSCHEMA_WARN_EMITTED` Python sentinel was per-process; since each bash call spawned a fresh Python, WARN fired on every `/flow:goal` command. Now per-day file sentinel at `$TMPDIR/flow-warn-jsonschema-USER-DATE` survives across invocations. TMPDIR (not HOME) so isolated-HOME tests don't break Python user-site-packages lookup.
+- **F11-INCONSISTENCY — sibling helpers**: `flow-record-activity.sh` and `flow-record-evidence.sh` were silently swallowing jsonschema ImportError while `flow-goal-record.sh` warned — divergent from F11's "surface the degradation" rationale. All three writers now use the same per-day sentinel.
+- **F5 — fresh-file atomic write**: cycle-13's `printf > $SETTINGS` for new settings files was non-atomic; signal mid-write would leave partial content. Now goes through tmpfile + jq-empty-check + mv like the merge path.
+
+**Convention polish (P3)**:
+- Cycle-13 test file headers converted from "Source-presence tests for cycle-13 F<n>" to the established "Tests for plugins/flow/<exact-path>" convention.
+- Three quickstart `Next steps` sections converted from bare-backtick filenames to clickable markdown links matching project precedent.
+
+**Test coverage (F16 upgrade)**:
+- New `flow-cycle14-behavioral.test.sh` provides 33 fixture-driven assertions for the cycle-13 source-presence-only tests:
+  - F4 migration shim runs full Python pipeline against schema (legacy `requires` + both-fields cases)
+  - F9 stuck-counter increment/reset semantics + symlink defense
+  - F10 `proposed_transition` contract + three-option AskUserQuestion
+  - F1 pr.md goal-gate state vocabulary (5 states)
+  - F8 hook source contains both event types + 3+ symlink-guard sites
+  - SEC-1/SEC-6 schema patterns verified at the property level
+  - SEC-V4 cascade-resolve explicit-false recognition
+
+**Test totals**: 589 → 622 (+33). Cycle-14 self-review verdict: zero outstanding findings; all 18 paired-reviewer findings addressed in-PR.
+
 #### File-tree additions
 
 - `plugins/flow/schemas/v1/` — 6 schemas (goal, run, activity, evidence, workflow, trigger)
@@ -206,7 +248,7 @@ Iterative paired-reviewer self-review converged the 3.0.0 surface against:
 
 #### Test totals
 
-589 assertions pass, 0 fail (initial v3 baseline 259 → 433 after iterative self-review → 452 after post-cycle-8 onboarding + docs → 465 after cycle-10 regression fixes → 478 after cycle-11 broader fork audit → 498 after cycle-12 paired-reviewer self-review fix-forward → 589 after cycle-13 logical-usability fixes). Tests cover JSON schemas, atomic write helpers, Stop hook behavior, the integration harness (full `claude` mock for evaluator-loop active mode), the fresh-install onboarding detection, partial-settings detection + merge (with array/null/malformed edge cases), the `set_flow_goals` helper direct (jq-absent refusal + symlink refusal), the `context: fork` skill-frontmatter lint (15 fixed + 13 deferred-audit per-skill + inverse-drift detection), `bin/flow-active-goal.sh` (all 4 output modes, symlink defense, degenerate-state), Tier Classification convention lint, `completion_gate.documented_requirements` rename + schema acceptance, jsonschema-unavailable WARN, throttle/stuck source-presence, trigger cross-reference, /flow:pr + /flow:merge goal gate presence, /flow:status + /flow:learn v3 sections.
+622 assertions pass, 0 fail (initial v3 baseline 259 → 433 after iterative self-review → 452 after post-cycle-8 onboarding + docs → 465 after cycle-10 regression fixes → 478 after cycle-11 broader fork audit → 498 after cycle-12 paired-reviewer self-review fix-forward → 589 after cycle-13 logical-usability fixes → 622 after cycle-14 paired-reviewer fix-forward). Tests cover JSON schemas, atomic write helpers, Stop hook behavior, the integration harness (full `claude` mock for evaluator-loop active mode), the fresh-install onboarding detection, partial-settings detection + merge (with array/null/malformed edge cases), the `set_flow_goals` helper direct (jq-absent refusal + symlink refusal), the `context: fork` skill-frontmatter lint (15 fixed + 13 deferred-audit per-skill + inverse-drift detection), `bin/flow-active-goal.sh` (all 4 output modes, symlink defense, degenerate-state), Tier Classification convention lint, `completion_gate.documented_requirements` rename + schema acceptance, jsonschema-unavailable WARN, throttle/stuck source-presence, trigger cross-reference, /flow:pr + /flow:merge goal gate presence, /flow:status + /flow:learn v3 sections.
 
 #### What's deferred (after cycle 13)
 

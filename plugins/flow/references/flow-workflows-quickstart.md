@@ -144,8 +144,8 @@ Project-local overrides are committed by default (matches gitignore policy in `r
 
 ## Next steps
 
-- `flow-workflows.md` — full FlowWorkflow model + validation rules
-- `flow-triggers-quickstart.md` — companion walkthrough for `/flow:trigger` and `/flow:watch`
-- `flow-goals-quickstart.md` — companion walkthrough for `/flow:goal` (5-minute FlowGoal demo)
-- `plugins/flow/schemas/v1/workflow.schema.json` — schema source of truth
-- `plugins/flow/skills/workflow-validation/SKILL.md` — validation logic detail
+- [`flow-workflows.md`](flow-workflows.md) — full FlowWorkflow model + validation rules
+- [`flow-triggers-quickstart.md`](flow-triggers-quickstart.md) — companion walkthrough for `/flow:trigger` and `/flow:watch`
+- [`flow-goals-quickstart.md`](flow-goals-quickstart.md) — companion walkthrough for `/flow:goal` (5-minute FlowGoal demo)
+- [`../schemas/v1/workflow.schema.json`](../schemas/v1/workflow.schema.json) — schema source of truth
+- [`../skills/workflow-validation/SKILL.md`](../skills/workflow-validation/SKILL.md) — validation logic detail

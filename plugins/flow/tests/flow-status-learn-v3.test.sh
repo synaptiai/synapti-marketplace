@@ -1,5 +1,5 @@
-# Source-presence tests for cycle-13 F2 (/flow:status v3 sections) and
-# F3 (/flow:learn goal failure patterns).
+# Tests for plugins/flow/commands/status.md + learn.md v3 sections (cycle-13 F2 + F3).
+# Source-presence lints; behavioral coverage is in flow-cycle14-behavioral.test.sh.
 
 STATUS_CMD="$REPO_ROOT/plugins/flow/commands/status.md"
 LEARN_CMD="$REPO_ROOT/plugins/flow/commands/learn.md"

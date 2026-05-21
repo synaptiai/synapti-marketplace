@@ -135,9 +135,9 @@ This invokes the trigger's `target.command` exactly once, with `FLOW_TRIGGERED_R
 
 ## Next steps
 
-- `flow-triggers.md` — full FlowTrigger model + lifecycle + safety contract
-- `flow-workflows-quickstart.md` — companion walkthrough for `/flow:workflow`
-- `flow-goals-quickstart.md` — companion walkthrough for `/flow:goal`
-- `plugins/flow/schemas/v1/trigger.schema.json` — schema source of truth
-- `plugins/flow/skills/trigger-policy/SKILL.md` — safety enforcement detail
-- `plugins/flow/triggers/templates/` — plugin-shipped templates (pr-watch, ci-failure, nightly-maintenance)
+- [`flow-triggers.md`](flow-triggers.md) — full FlowTrigger model + lifecycle + safety contract
+- [`flow-workflows-quickstart.md`](flow-workflows-quickstart.md) — companion walkthrough for `/flow:workflow`
+- [`flow-goals-quickstart.md`](flow-goals-quickstart.md) — companion walkthrough for `/flow:goal`
+- [`../schemas/v1/trigger.schema.json`](../schemas/v1/trigger.schema.json) — schema source of truth
+- [`../skills/trigger-policy/SKILL.md`](../skills/trigger-policy/SKILL.md) — safety enforcement detail
+- [`../triggers/templates/`](../triggers/templates/) — plugin-shipped templates (pr-watch, ci-failure, nightly-maintenance)
