@@ -6,12 +6,22 @@ flow v3.0 is **purely additive**. Existing v2.x projects upgrade with zero behav
 
 After upgrading to v3.0 without editing settings:
 
-- `/flow:start <issue>` runs exactly as in v2.x — no goal is created, no `.flow/` directory appears.
+- `/flow:start <issue>` runs exactly as in v2.x — no goal is created, no `.flow/` directory appears, no settings are written.
 - The Stop hook fires but exits silently (default mode is `warn`, and `warn` is itself silent when no active FlowGoal exists).
 - `/flow:status`, `/flow:learn`, `/flow:pr`, `/flow:merge`, `/flow:review`, `/flow:address` behave identically to v2.4.
-- No new files are created in your repo.
 
 The new v3 commands (`/flow:goal`, `/flow:resume`, `/flow:workflow`, `/flow:trigger`, `/flow:watch`, `/flow:run`) are available but only have effect when their feature flags are enabled.
+
+### One v2-visible behavior change: the first-run onboarding prompt
+
+There is one path where v3.0 changes behavior for a v2 project without an explicit opt-in: the **first `/flow:start` after upgrade** may emit a one-time `AskUserQuestion` consent prompt asking whether to enable v3. The prompt fires only when **both** signals say "the v3 question has never been answered":
+
+1. No `.flow/` directory exists at the repo root, AND
+2. `.claude/settings.flow.json` is either absent OR present without a `flow.goals` block.
+
+v2 projects that already committed a `.claude/settings.flow.json` with a `flow.goals` block (any contents — even `{}`) skip the prompt. Projects that have `.flow/` artifacts also skip (clearly already using v3).
+
+If you don't want to see the prompt at all, pre-write `.claude/settings.flow.json` with `{"flow": {"goals": {"requireGoalForStart": false, "executeVerificationCommands": false}}}` and the gate stays quiet on the first invocation. Answering "Skip — keep v2 behavior" persists the same JSON automatically.
 
 ## Enable v3 in four optional steps
 
@@ -91,7 +101,19 @@ Flow cannot invoke native `/loop` from plugin code — the generated prompt file
 
 ## Rolling back
 
-If you opt in and decide v3 isn't a fit:
+If you opt in and decide v3 isn't a fit, **merge** the disable flags into your existing settings rather than overwriting the file (copying the snippet below verbatim into an existing `.claude/settings.flow.json` will wipe other keys like `agentTeams`, `tiers`, `conventions.commitTypes`):
+
+```bash
+# Use jq to merge the disable flags into the existing settings file:
+jq '.flow.runtime.enabled = false |
+    .flow.goals.enabled = false |
+    .flow.workflows.enabled = false |
+    .flow.triggers.enabled = false' \
+   .claude/settings.flow.json > .claude/settings.flow.json.tmp \
+  && mv .claude/settings.flow.json.tmp .claude/settings.flow.json
+```
+
+Or, if you prefer to edit by hand, ensure these keys exist alongside your other settings — do not replace the whole file:
 
 ```json
 {

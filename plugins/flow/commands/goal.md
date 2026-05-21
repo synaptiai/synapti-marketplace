@@ -136,9 +136,9 @@ Skipping the write breaks delta computation for the next turn (everything become
 
 Print the resulting verdict + per-AC table. If lifecycle transitioned to `achieved`, print celebration. If `failed`, print the failing AC + suggested next action.
 
-**When any AC has `last_result.reason: not_executed`** (deterministic checks were skipped because `flow.goals.executeVerificationCommands` defaults to `false`), append this hint to the printed output:
+**When any AC has `last_result.reason: not_executed`** (the Stop hook's deterministic-checks runner skipped the command because `flow.goals.executeVerificationCommands` defaults to `false`), append this hint to the printed output:
 
-> Set `flow.goals.executeVerificationCommands: true` in `.claude/settings.flow.json` to auto-run each AC's `verification_command` during evaluate. Without it, ACs with verification commands stay in `evidence_collected` until evidence is recorded by another path.
+> Set `flow.goals.executeVerificationCommands: true` in `.claude/settings.flow.json` to let the Stop hook auto-run each AC's `verification_command` during evaluator-loop and deterministic-check passes. This setting governs the Stop hook path (`bin/flow-run-deterministic-checks.sh`); `/flow:goal evaluate` always executes verification commands when present, so the hint applies only to ACs whose last evaluation came from a Stop hook pass.
 
 ### `/flow:goal pause <id>`
 

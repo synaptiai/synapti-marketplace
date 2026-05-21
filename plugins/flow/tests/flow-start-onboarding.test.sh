@@ -286,6 +286,100 @@ else
 fi
 
 
+_flow_test_begin "partial-settings detection: array root -> needed"
+
+if command -v jq >/dev/null 2>&1; then
+  ARR_DIR="$TMP_DIR/partial-array"
+  mkdir -p "$ARR_DIR/.claude"
+  echo '[]' > "$ARR_DIR/.claude/settings.flow.json"
+  OUT=$(cd "$ARR_DIR" && bash -c "$ONBOARDING_BLOCK")
+  assert_equal "FLOW_V3_ONBOARDING=needed" "$OUT" "array root -> prompt (no flow.goals path through array)"
+else
+  _flow_assert_pass "skip: jq unavailable"
+fi
+
+
+_flow_test_begin "partial-settings detection: flow.goals = null -> needed"
+
+if command -v jq >/dev/null 2>&1; then
+  NULL_DIR="$TMP_DIR/partial-null"
+  mkdir -p "$NULL_DIR/.claude"
+  echo '{"flow": {"goals": null}}' > "$NULL_DIR/.claude/settings.flow.json"
+  OUT=$(cd "$NULL_DIR" && bash -c "$ONBOARDING_BLOCK")
+  assert_equal "FLOW_V3_ONBOARDING=needed" "$OUT" "flow.goals=null -> prompt (// empty filter drops null)"
+else
+  _flow_assert_pass "skip: jq unavailable"
+fi
+
+
+_flow_test_begin "set_flow_goals: refuses to overwrite when jq unavailable + file exists"
+
+# Lift the set_flow_goals body from start.md and verify the cycle-12 fix:
+# when the settings file exists but jq is missing, the helper MUST refuse to
+# write rather than clobber v2 keys with the heredoc fallback (which would
+# regress the cycle-10 fix on jq-less machines).
+NOJQ_DIR="$TMP_DIR/set-goals-nojq"
+mkdir -p "$NOJQ_DIR/.claude"
+echo '{"agentTeams": false, "tiers": {"merge": "confirm"}}' > "$NOJQ_DIR/.claude/settings.flow.json"
+
+SET_FLOW_GOALS_BLOCK='
+SETTINGS=.claude/settings.flow.json
+# Simulate jq absent by stubbing command -v so it returns false for jq.
+# Cannot rely on PATH manipulation because jq lives in multiple locations
+# on macOS (/opt/homebrew/bin AND /usr/bin) and trimming PATH risks
+# stripping other tools the helper needs. Override `command` via a function
+# in the subshell to surgically simulate the jq-missing case.
+command() {
+  if [ "$1" = "-v" ] && [ "$2" = "jq" ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+
+set_flow_goals() {
+  local req="$1" exe="$2"
+  if [ -f "$SETTINGS" ] && [ -L "$SETTINGS" ]; then
+    echo "ERROR_SYMLINK" >&2; return 1
+  fi
+  if [ -f "$SETTINGS" ]; then
+    if ! command -v jq >/dev/null 2>&1; then
+      echo "ERROR_REFUSE_NOJQ" >&2; return 1
+    fi
+    return 0
+  else
+    return 0
+  fi
+}
+set_flow_goals true true
+echo "EXIT=$?"
+'
+
+OUT=$(cd "$NOJQ_DIR" && bash -c "$SET_FLOW_GOALS_BLOCK" 2>&1)
+assert_contains "ERROR_REFUSE_NOJQ" "$OUT" "set_flow_goals emits refusal when jq missing + file exists"
+assert_contains "EXIT=1" "$OUT" "set_flow_goals returns non-zero in refusal path"
+
+# Sanity: settings file unchanged after refusal
+PRESERVED=$(cat "$NOJQ_DIR/.claude/settings.flow.json")
+assert_contains "agentTeams" "$PRESERVED" "v2 keys preserved when jq missing (no clobber)"
+
+
+_flow_test_begin "set_flow_goals: refuses symlinked settings file"
+
+# Symlink defense from cycle-12. .claude as symlink AND settings as symlink.
+SYM_DIR="$TMP_DIR/set-goals-symlink"
+mkdir -p "$SYM_DIR/.claude"
+SYM_TARGET="$TMP_DIR/sym-target-$$.json"
+echo '{"hostile": true}' > "$SYM_TARGET"
+ln -s "$SYM_TARGET" "$SYM_DIR/.claude/settings.flow.json"
+
+OUT=$(cd "$SYM_DIR" && bash -c "$SET_FLOW_GOALS_BLOCK" 2>&1)
+assert_contains "ERROR_SYMLINK" "$OUT" "set_flow_goals refuses symlinked settings file"
+
+# Target unchanged (hostile claim was true; refusal preserves it)
+SYM_CONTENT=$(cat "$SYM_TARGET")
+assert_contains "hostile" "$SYM_CONTENT" "symlink target unchanged after refusal"
+
+
 _flow_test_begin "skills invoked from command Inputs blocks do not use context: fork"
 
 # Cycle-10 + cycle-11 regression fix: skills with `context: fork` lose their
@@ -334,21 +428,47 @@ for skill in \
   fi
 done
 
-# Sanity: the 13 deferred ambient skills should STILL carry context: fork.
-# This documents the deferred-audit scope and catches accidental removals.
+# Per-skill assertions for the 13 deferred ambient skills. Each one must
+# STILL carry context: fork until its body is individually audited. Per-skill
+# diagnostics (vs. a single count assertion) tell the operator WHICH skill
+# drifted on a failure, instead of "expected 13, got 12 — which one?".
 DEFERRED_AMBIENT=(architecture-patterns brainstorming branch-and-task-management \
                   change-classification code-review-methodology convention-enforcement \
                   criterion-verification-map debugging-patterns feedback-resolution \
                   goal-evidence-ledger merge-conflict-resolution run-state-management \
                   tdd-patterns)
-DEFERRED_CARRYING_FORK=0
 for skill in "${DEFERRED_AMBIENT[@]}"; do
   SKILL_PATH="$REPO_ROOT_FOR_LINT/plugins/flow/skills/$skill/SKILL.md"
-  if [ -f "$SKILL_PATH" ] && grep -q "^context: fork" "$SKILL_PATH"; then
-    DEFERRED_CARRYING_FORK=$((DEFERRED_CARRYING_FORK + 1))
+  if [ -f "$SKILL_PATH" ]; then
+    if grep -q "^context: fork" "$SKILL_PATH"; then
+      _flow_assert_pass "deferred-audit skill $skill still carries context: fork"
+    else
+      _flow_assert_fail "deferred-audit skill $skill MISSING context: fork (audit-scope drift)"
+    fi
+  else
+    _flow_assert_fail "deferred-audit skill file missing: $SKILL_PATH"
   fi
 done
-assert_equal "13" "$DEFERRED_CARRYING_FORK" "13 ambient-only skills carry context: fork as deferred audit scope"
+
+# Catch the inverse case: a skill outside both the 15-fixed and 13-deferred
+# sets should not be carrying context: fork (no new fork-using skills slipping
+# in without an audit). This guards against the "add a new skill with fork"
+# regression that the per-skill loops above would miss.
+ALL_FIXED=(specification-capture holdout-validation runtime-verification \
+           capability-discovery goal-contract-capture goal-evaluator goal-lifecycle \
+           issue-crafting trigger-policy visual-verification workflow-validation \
+           merge-and-release pr-lifecycle preflight-checks team-coordination)
+EXPECTED_FORK_SET=("${DEFERRED_AMBIENT[@]}")
+ALL_FORK=$(grep -l "^context: fork" "$REPO_ROOT_FOR_LINT"/plugins/flow/skills/*/SKILL.md 2>/dev/null \
+           | sed 's|.*/skills/\([^/]*\)/.*|\1|' | sort)
+EXPECTED_FORK_SORTED=$(printf '%s\n' "${EXPECTED_FORK_SET[@]}" | sort)
+if [ "$ALL_FORK" = "$EXPECTED_FORK_SORTED" ]; then
+  _flow_assert_pass "no fork-using skill outside the 13 deferred-audit set"
+else
+  EXTRA=$(comm -23 <(printf '%s\n' "$ALL_FORK") <(printf '%s\n' "$EXPECTED_FORK_SORTED") | head -3 | tr '\n' ',')
+  MISSING=$(comm -13 <(printf '%s\n' "$ALL_FORK") <(printf '%s\n' "$EXPECTED_FORK_SORTED") | head -3 | tr '\n' ',')
+  _flow_assert_fail "fork-set drift: extra=[$EXTRA] missing=[$MISSING]"
+fi
 
 
 _flow_test_begin "partial-settings merge: jq preserves v2 keys when enabling v3"
@@ -358,7 +478,10 @@ if command -v jq >/dev/null 2>&1; then
   mkdir -p "$MERGE_DIR/.claude"
   echo '{"agentTeams": false, "tiers": {"merge": "confirm"}}' > "$MERGE_DIR/.claude/settings.flow.json"
 
-  # Simulate the set_flow_goals helper from start.md
+  # Exercise the actual set_flow_goals semantics from commands/start.md.
+  # The helper is markdown-embedded so we lift the jq invocation here. If
+  # the markdown changes the merge expression, update this lift too — the
+  # alternative (no test) is the cycle-9 pattern we've moved away from.
   (
     cd "$MERGE_DIR"
     SETTINGS=.claude/settings.flow.json

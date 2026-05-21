@@ -32,7 +32,7 @@ Flow v3 ships dormant by default — the feature flags default to `false` so v2 
 ```
 
 - `requireGoalForStart: true` — `/flow:start <issue>` auto-creates `.flow/goals/issue-<N>.goal.yaml` after the Spec Validation Gate.
-- `executeVerificationCommands: true` — `/flow:goal evaluate` runs each AC's `verification_command` and captures the output as evidence. Without this, evaluations report `not_executed` for every command-backed AC.
+- `executeVerificationCommands: true` — lets the Stop hook's deterministic-checks runner execute each AC's `verification_command` rather than reporting `not_executed`. Governs only the Stop hook path (`bin/flow-run-deterministic-checks.sh`); `/flow:goal evaluate` and `Skill(goal-evaluator)` execute verification commands when present regardless. Set `true` only when you trust the source of `.flow/goals/*.goal.yaml` (Stop hook fires on every turn — running unvetted commands every turn is a hostile-fork attack surface).
 
 `/flow:start` will also prompt you the first time you run it in a project that has neither `.claude/settings.flow.json` nor `.flow/` — answer **Enable v3** and the same flags are written automatically.
 

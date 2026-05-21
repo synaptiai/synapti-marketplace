@@ -166,51 +166,107 @@ If `FLOW_V3_ONBOARDING=needed`, use `AskUserQuestion` exactly once with this pro
 > 2. **Skip — keep v2 behavior** — `/flow:start` proceeds without goals; v3 surfaces remain reachable via explicit `/flow:goal create`
 > 3. **Tell me more** — open the quickstart, decide on the next invocation
 
-Persist the answer to `.claude/settings.flow.json` so this prompt does not re-fire. When the file already exists with a partial shape (e.g., the user committed `{"agentTeams": false}` from `/flow:setup` before v3 onboarding), the new keys are MERGED via `jq` so unrelated v2 settings are preserved. When the file is absent, a fresh JSON document is written:
+Persist the answer to `.claude/settings.flow.json`. When the file already exists with a partial shape (e.g., the user committed `{"agentTeams": false}` from `/flow:setup` before v3 onboarding), the new keys are MERGED via `jq` so unrelated v2 settings are preserved. When the file is absent, a fresh JSON document is written. When `jq` is unavailable AND the file already exists, the helper refuses to write rather than clobber v2 keys with a heredoc fallback.
+
+The `set_flow_goals` helper below is shared by all three answer arms. After defining it, dispatch based on the user's `AskUserQuestion` response — the dispatch is prose-driven, not a shell `case` (the `AskUserQuestion` answer reaches Claude, not the shell, so Claude runs the appropriate arm directly).
+
+**Helper definition** (run once):
 
 ```bash
-mkdir -p .claude
 SETTINGS=.claude/settings.flow.json
 
+# Symlink defense: refuse to write through symlinks at .claude/ or settings file.
+# Matches the O_NOFOLLOW pattern documented in bin/journal-record.sh and the
+# CHANGELOG's "symlink defenses everywhere" rule. A hostile fork PR could plant
+# .claude as a symlink to ~/.ssh or settings.flow.json as a symlink to ~/.bashrc;
+# refuse rather than corrupt the target.
+if [ -e .claude ] && [ -L .claude ]; then
+  echo "FLOW_ONBOARDING_ERROR=.claude is a symlink — refusing to write through it" >&2
+  exit 1
+fi
+if [ -e "$SETTINGS" ] && [ -L "$SETTINGS" ]; then
+  echo "FLOW_ONBOARDING_ERROR=$SETTINGS is a symlink — refusing to write through it" >&2
+  exit 1
+fi
+mkdir -p .claude
+
 set_flow_goals() {
-  # Args: $1=requireGoalForStart $2=executeVerificationCommands
-  if [ -f "$SETTINGS" ] && command -v jq >/dev/null 2>&1; then
-    # Merge: preserve every existing top-level key, set the two goal flags.
-    jq --argjson req "$1" --argjson exe "$2" \
-       '.flow.goals.requireGoalForStart = $req | .flow.goals.executeVerificationCommands = $exe' \
-       "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
+  # Args: $1=requireGoalForStart (true|false) $2=executeVerificationCommands (true|false)
+  local req="$1" exe="$2"
+
+  # Re-check symlink between definition and call — defense against TOCTOU race.
+  if [ -e "$SETTINGS" ] && [ -L "$SETTINGS" ]; then
+    echo "FLOW_ONBOARDING_ERROR=$SETTINGS became a symlink — refusing to write" >&2
+    return 1
+  fi
+
+  if [ -f "$SETTINGS" ]; then
+    # File exists — must merge, never overwrite. Requires jq.
+    if ! command -v jq >/dev/null 2>&1; then
+      echo "FLOW_ONBOARDING_ERROR=$SETTINGS exists but jq is unavailable — refusing to overwrite v2 keys; install jq and re-run /flow:start" >&2
+      return 1
+    fi
+
+    # PID-scoped tmpfile + flock for atomicity under concurrent /flow:start invocations.
+    local tmp="${SETTINGS}.tmp.$$"
+    local lockfile="${SETTINGS}.lock"
+    (
+      # flock guards the read-modify-write window; (subshell) scopes the fd.
+      flock -x 9 || { echo "FLOW_ONBOARDING_ERROR=failed to acquire $lockfile" >&2; exit 1; }
+      if ! jq --argjson req "$req" --argjson exe "$exe" \
+           '.flow.goals.requireGoalForStart = $req | .flow.goals.executeVerificationCommands = $exe' \
+           "$SETTINGS" > "$tmp"; then
+        rm -f "$tmp"
+        echo "FLOW_ONBOARDING_ERROR=jq merge failed on $SETTINGS" >&2
+        exit 1
+      fi
+      if ! mv "$tmp" "$SETTINGS"; then
+        rm -f "$tmp"
+        echo "FLOW_ONBOARDING_ERROR=mv failed; $SETTINGS unchanged" >&2
+        exit 1
+      fi
+    ) 9>"$lockfile"
+    local rc=$?
+    [ "$rc" -ne 0 ] && return 1
   else
-    # Fresh file (or jq missing — write minimal JSON).
-    cat > "$SETTINGS" <<JSON
-{
-  "flow": {
-    "goals": {
-      "requireGoalForStart": $1,
-      "executeVerificationCommands": $2
+    # Fresh file — heredoc with quoted delimiter (no expansion in body) plus
+    # printf interpolation for the two boolean flags.
+    printf '%s\n' "{" \
+      "  \"flow\": {" \
+      "    \"goals\": {" \
+      "      \"requireGoalForStart\": ${req}," \
+      "      \"executeVerificationCommands\": ${exe}" \
+      "    }" \
+      "  }" \
+      "}" > "$SETTINGS" || {
+      echo "FLOW_ONBOARDING_ERROR=could not write $SETTINGS (fresh)" >&2
+      return 1
     }
-  }
-}
-JSON
   fi
 }
-
-case "$ONBOARDING_ANSWER" in
-  enable)
-    set_flow_goals true true
-    echo "Flow v3 enabled. Settings written to $SETTINGS."
-    ;;
-  skip)
-    set_flow_goals false false
-    echo "Flow v3 left disabled. Settings written to $SETTINGS (you can re-enable later by editing the file)."
-    ;;
-  more)
-    echo "Open plugins/flow/references/flow-goals-quickstart.md, then re-run /flow:start when ready."
-    exit 0
-    ;;
-esac
 ```
 
-`Option 3 (Tell me more)` exits without writing the settings file, so the next `/flow:start` will re-prompt — by design. Options 1 and 2 both write/merge the file (with opposing flag values) so the prompt fires exactly once per project.
+**Dispatch based on the user's answer** (Claude runs ONE of the following based on the `AskUserQuestion` response — NOT a shell `case`):
+
+- **Answer = "Enable v3 (recommended for new projects)"**:
+  ```bash
+  set_flow_goals true true && echo "Flow v3 enabled. Settings written to $SETTINGS."
+  ```
+  If `set_flow_goals` returns non-zero, halt Phase 0.5 and surface the `FLOW_ONBOARDING_ERROR` line — do NOT proceed to Phase 1 with inconsistent state.
+
+- **Answer = "Skip — keep v2 behavior"**:
+  ```bash
+  set_flow_goals false false && echo "Flow v3 left disabled. Settings written to $SETTINGS (re-enable later by editing the file)."
+  ```
+  Same error-halt semantics.
+
+- **Answer = "Tell me more"**:
+  ```bash
+  echo "Open plugins/flow/references/flow-goals-quickstart.md, then re-run /flow:start when ready."
+  ```
+  Do NOT write the settings file. Halt Phase 0.5 without proceeding. The next `/flow:start` will re-prompt — by design.
+
+Only the Enable and Skip arms write the settings file (with opposing flag values) so the prompt fires exactly once per project for users who actually answered. `Tell me more` is non-persistent so the user can re-enter the flow after reading the quickstart.
 
 ## Phase 1: EXPLORE
 
@@ -383,8 +439,15 @@ gh issue edit "$ISSUE_NUM" --add-assignee @me
 **FlowGoal auto-creation (gated by `flow.goals.requireGoalForStart`):**
 
 ```!
-REQUIRE_GOAL=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" \
-  --default "false" '.flow.goals.requireGoalForStart // empty' 2>/dev/null)
+CASCADE="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+# Surface cascade-resolve unavailability instead of silently degrading the gate.
+if [ ! -x "$CASCADE" ]; then
+  echo "FLOW_GOAL_STATE=blocked"
+  echo "FLOW_GOAL_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
+  true; exit 0
+fi
+REQUIRE_GOAL=$("$CASCADE" --default "false" '.flow.goals.requireGoalForStart // empty' 2>/dev/null)
+
 ARG1="${ARGUMENTS%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) ISSUE_NUM="" ;;
@@ -395,8 +458,32 @@ if [ "$REQUIRE_GOAL" = "true" ] && [ -n "$ISSUE_NUM" ]; then
   GOAL_ID="issue-$ISSUE_NUM"
   GOAL_PATH=".flow/goals/${GOAL_ID}.goal.yaml"
   if [ -f "$GOAL_PATH" ]; then
-    echo "FLOW_GOAL_STATE=exists"
-    echo "GOAL_PATH=$GOAL_PATH"
+    # Inspect lifecycle.status — terminal goals (achieved/failed/cancelled)
+    # are immutable per goal-lifecycle/SKILL.md ("terminal → any" is
+    # disallowed). Resume only when status is non-terminal.
+    if command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" >/dev/null 2>&1; then
+      STATUS=$(python3 - "$GOAL_PATH" <<'PY' 2>/dev/null
+import sys, yaml
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    data = yaml.safe_load(f) or {}
+print(data.get("lifecycle", {}).get("status", "unknown"))
+PY
+)
+    else
+      STATUS="unknown"
+    fi
+    case "$STATUS" in
+      achieved|failed|cancelled)
+        echo "FLOW_GOAL_STATE=terminal"
+        echo "GOAL_PATH=$GOAL_PATH"
+        echo "GOAL_STATUS=$STATUS"
+        ;;
+      *)
+        echo "FLOW_GOAL_STATE=exists"
+        echo "GOAL_PATH=$GOAL_PATH"
+        echo "GOAL_STATUS=$STATUS"
+        ;;
+    esac
   else
     echo "FLOW_GOAL_STATE=create"
     echo "GOAL_ID=$GOAL_ID"
@@ -409,7 +496,15 @@ fi
 true
 ```
 
-If `FLOW_GOAL_STATE=create`:
+Dispatch based on `FLOW_GOAL_STATE`:
+
+- **`create`** — proceed to invoke the skills (steps below). The visibility echo is gated on the post-write verify.
+- **`exists`** — non-terminal goal already on disk; print `FlowGoal already exists: <GOAL_PATH> (status: $GOAL_STATUS) — resuming. Use /flow:goal inspect <GOAL_ID> to review.`
+- **`terminal`** — goal is `achieved|failed|cancelled` and immutable. Refuse to resume; surface a six-field escalation per [`references/escalation-format.md`](../references/escalation-format.md): _Situation_: terminal goal at `<GOAL_PATH>`. _Tried_: detected `lifecycle.status=<GOAL_STATUS>`. _Options_: (1) Use `/flow:goal clear <GOAL_ID>` then re-run `/flow:start`, (2) Pick a new goal id, (3) Abort. _Recommendation_: Option 1 if the original goal is stale. _Blocking_: yes. _Risk_: mutating a terminal goal corrupts the audit trail.
+- **`blocked`** — cascade-resolve unavailable; surface `FLOW_GOAL_ERROR` and halt Phase 1.
+- **`skip`** — proceed without goal creation (v2 behavior preserved).
+
+For `FLOW_GOAL_STATE=create`:
 
 1. Invoke `Skill(goal-contract-capture)` with inputs:
    - `goal id` = the `GOAL_ID` from the block above
@@ -417,17 +512,25 @@ If `FLOW_GOAL_STATE=create`:
    - `source` = pre-fetched issue body + Spec Validation Gate output
    - `invocation reason` = `start`
 2. After the skill writes the YAML, invoke `Skill(goal-lifecycle)` to transition `draft → active`.
-3. Emit the visibility line so the user knows a contract was persisted:
+3. **Post-write verify** — before emitting the visibility echo, confirm the contract was persisted and is in `active`:
+   ```bash
+   if [ ! -f "$GOAL_PATH" ]; then
+     echo "FLOW_GOAL_ERROR=goal-contract-capture returned success but $GOAL_PATH does not exist" >&2
+     # halt — do not proceed to Phase 2 with inconsistent state
+     exit 1
+   fi
+   if command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" >/dev/null 2>&1; then
+     STATUS=$(python3 -c "import sys, yaml; print((yaml.safe_load(open('$GOAL_PATH')) or {}).get('lifecycle', {}).get('status', 'unknown'))" 2>/dev/null)
+     if [ "$STATUS" != "active" ]; then
+       echo "FLOW_GOAL_ERROR=goal-lifecycle did not transition to active (current: $STATUS)" >&2
+       exit 1
+     fi
+   fi
+   ```
+4. Only after verify passes, emit:
    ```
    FlowGoal created: <GOAL_ID> at <GOAL_PATH> (status: active)
    ```
-
-If `FLOW_GOAL_STATE=exists`, do not overwrite. Print:
-```
-FlowGoal already exists: <GOAL_PATH> — resuming. Use /flow:goal inspect <GOAL_ID> to review.
-```
-
-If `FLOW_GOAL_STATE=skip`, proceed without goal creation (v2 behavior preserved).
 
 ## Phase 2: PLAN
 

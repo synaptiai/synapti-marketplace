@@ -28,7 +28,7 @@ In an existing project where you skipped the onboarding prompt or you want to op
 These two flags do the load-bearing work:
 
 - `requireGoalForStart: true` — `/flow:start <issue>` will auto-create a FlowGoal after the Spec Validation Gate passes.
-- `executeVerificationCommands: true` — `/flow:goal evaluate` will run each AC's `verification_command` and capture the output as evidence. Without this, evaluations report `not_executed` for every command-backed AC.
+- `executeVerificationCommands: true` — when the Stop hook (`flow-goal-stop.sh` / `flow-goal-evaluator.sh`) runs deterministic checks against an active goal, it will execute each AC's `verification_command` rather than reporting `not_executed`. The flag is honored by `bin/flow-run-deterministic-checks.sh` (the hook path); `/flow:goal evaluate` and `Skill(goal-evaluator)` always execute verification commands when present — the flag does not gate that path. Keep `false` (default) for repos where you don't want the Stop hook running arbitrary shell from goal YAMLs; set `true` once you trust the source of `.flow/goals/*.goal.yaml`.
 
 ## Step 2 — Create a synthetic issue
 
