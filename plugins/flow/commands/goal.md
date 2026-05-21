@@ -113,12 +113,16 @@ Read-only deep dump:
 
 Invoke `Skill(goal-evaluator)` with `trigger=command`. The skill runs deterministic checks, optionally dispatches `Agent(goal-evaluator-judge)`, and transitions lifecycle. This is the primary user-facing way to advance a goal's state.
 
-After the skill produces a verdict, **persist it via `bin/flow-record-verdict.sh`** so the next evaluator-loop turn (or the next manual evaluation) can compute `delta` against this verdict:
+After the skill produces a verdict, **the command (not the skill) persists it via `bin/flow-record-verdict.sh`**. The skill returns the structured verdict in-memory; the command is the single owner of the write. This eliminates the prior double-write where both the skill's Step 8 and the command's heredoc wrote sequentially, with the command's write silently winning. See `skills/goal-evaluator/SKILL.md` Step 8 for the current contract.
 
 ```bash
 # After Skill(goal-evaluator) returns the structured verdict, write it
-# to a temp JSON file and invoke the helper:
+# to a temp JSON file and invoke the helper. The skill does NOT write —
+# this command is the canonical caller. The Stop-hook evaluator-loop is
+# the OTHER caller (it computes its own verdict via the judge subprocess
+# and calls the same helper). Two callers, one helper, one write per turn.
 TMP=$(mktemp -t flow-verdict.XXXXXX.json)
+trap 'rm -f "$TMP"' EXIT
 jq -n \
   --arg v "<verdict>" \
   --argjson c <confidence> \
@@ -128,11 +132,11 @@ jq -n \
   '{verdict:$v, confidence:$c, delta:$d, reason:$r, next_step_hint:$h, source:"command"}' > "$TMP"
 "${CLAUDE_PLUGIN_ROOT}/bin/flow-record-verdict.sh" \
   --run-id "<run-id-from-goal.scope.run_id>" \
-  --verdict-file "$TMP"
-rm -f "$TMP"
+  --verdict-file "$TMP" \
+  || echo "command: last-verdict.json write failed; next turn's delta will be 'unchanged'" >&2
 ```
 
-Skipping the write breaks delta computation for the next turn (everything becomes "unchanged"), so the skill enforces this step.
+Skipping the write breaks delta computation for the next turn (everything becomes "unchanged"). Helper failure is **non-fatal** — surface to stderr via the `||` clause, never abort the command's lifecycle update.
 
 Print the resulting verdict + per-AC table. If lifecycle transitioned to `achieved`, print celebration. If `failed`, print the failing AC + suggested next action.
 

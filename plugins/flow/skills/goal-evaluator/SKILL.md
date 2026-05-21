@@ -117,28 +117,20 @@ bin/journal-record.sh --issue {N} --type goal-evaluation \
   --metadata failures=<comma-list of failing AC ids or 'none'>
 ```
 
-### Step 8: Persist the verdict for next-turn delta (MANDATORY, non-fatal)
+### Step 8: Return the structured verdict to the caller (skill does NOT write)
 
-Write the structured verdict to `.flow/runs/<run-id>/last-verdict.json` via `bin/flow-record-verdict.sh`. Without this step, the next evaluator-loop turn (or the next manual evaluation) cannot compute `delta` against a previous state — every turn becomes "unchanged" and the stuck-detection in Step 9 is broken.
+This skill **does NOT write** `.flow/runs/<run-id>/last-verdict.json`. The skill computes the verdict (verdict, confidence, delta, reason, next_step_hint, criterion_results) and **returns** it to the calling command or hook. The caller is the single owner of verdict persistence.
 
-```bash
-TMP=$(mktemp -t flow-verdict.XXXXXX.json)
-trap 'rm -f "$TMP"' EXIT
-jq -n \
-  --arg v "<verdict>" \
-  --argjson c <confidence> \
-  --arg d "<delta>" \
-  --arg r "<reason>" \
-  --arg h "<next_step_hint>" \
-  '{verdict:$v, confidence:$c, delta:$d, reason:$r, next_step_hint:$h, source:"skill"}' > "$TMP"
-bin/flow-record-verdict.sh --run-id "<run-id>" --verdict-file "$TMP" \
-  || echo "skill: last-verdict.json write failed; next turn's delta will be 'unchanged'" >&2
-```
+**Callers responsible for the write** (one per invocation context):
+- `/flow:goal evaluate <id>` (`commands/goal.md`) — invokes `bin/flow-record-verdict.sh` after the skill returns. `source: "command"`.
+- `hooks/scripts/flow-goal-evaluator.sh` (Stop-hook evaluator-loop mode) — invokes `bin/flow-record-verdict.sh` via its internal `_record_verdict()` helper after the judge subprocess returns. `source: "evaluator-loop"`.
 
-**Contract** (resolves the prior "MANDATORY heading vs SHOULD body" ambiguity):
-- The step is **MANDATORY**: every verdict-producing path MUST invoke this helper.
-- The step is **non-fatal**: a helper failure (malformed JSON, symlink rejected, disk full) MUST surface to stderr via the `||` clause shown above, MUST NOT retry within the same turn, and MUST NOT abort the calling skill or hook. The in-memory verdict for this turn is still correct; only the next turn loses delta semantics.
-- When called from `flow-goal-evaluator.sh` (evaluator-loop mode), the hook already invokes the helper after the judge subprocess returns — Step 8 in that path is a SKIP, not a double-write. Detect via the `CLAUDE_HOOK_GOAL_JUDGE_MODE=true` environment variable that the evaluator-loop sets in subprocesses.
+**Contract:**
+- The skill MUST return verdict + confidence + delta + reason + next_step_hint in its structured response (the format the caller parses for the persistence call).
+- The skill MUST NOT itself invoke `bin/flow-record-verdict.sh`. Centralizing persistence in the caller prevents the double-write where the skill wrote first and the command's heredoc immediately overwrote — with the skill's `source: "skill"` silently lost.
+- The caller MUST invoke `bin/flow-record-verdict.sh` and MUST handle helper failure as **non-fatal** (surface to stderr via `||`; do NOT abort the evaluation; the in-memory verdict is still correct, only next-turn delta semantics are lost).
+
+**Why this split:** Three callers (skill, command, hook) writing through the same helper produced last-writer-wins races. Two callers (command, hook) with no skill-side write is race-free.
 
 ### Step 9: Stuck detection (Stop-hook evaluator-loop mode only)
 
