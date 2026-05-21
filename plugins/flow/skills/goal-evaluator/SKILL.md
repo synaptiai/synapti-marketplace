@@ -105,7 +105,13 @@ The judge returns verdict + confidence + delta + next_step_hint as a structured 
 | `incomplete` | `needs_human_review` | `waiting_for_user` |
 | `path_boundary_violation` | (judge skipped) | `blocked` |
 
-Update `lifecycle.status`, `lifecycle.turns_evaluated += 1`, `lifecycle.last_evaluation = {result, reason, at}`. Write back via `bin/flow-goal-record.sh`.
+**Non-terminal transitions** (`active`, `blocked`, `waiting_for_user`, `waiting_for_ci`):
+Update `lifecycle.status`, `lifecycle.turns_evaluated += 1`, `lifecycle.last_evaluation = {result, reason, at}`. Write back via `bin/flow-goal-record.sh` immediately.
+
+**Terminal transitions** (`achieved`, `failed`, `cancelled`) — F10 contract:
+The skill does NOT write the terminal status itself. Instead, it returns `proposed_transition: {to: <achieved|failed|cancelled>, reason: ..., turns_evaluated: ...}` in its structured response and leaves the goal's persisted `lifecycle.status` at its current non-terminal value. The caller is responsible for invoking AskUserQuestion and, on user confirmation, calling `bin/flow-goal-record.sh --update-lifecycle` to write the terminal status.
+
+The Stop-hook evaluator-loop path is an exception: when the hook calls this skill (or the deterministic path produces a terminal verdict), Tier 2 confirmation cannot run inside the hook (no AskUserQuestion in hook context). The hook persists the verdict via `bin/flow-record-verdict.sh` and emits a `decision: "approve"` with a `next_step_hint` pointing to `/flow:goal evaluate <id>` — the user explicitly confirms via the command path on the next turn.
 
 ### Step 7: Record manifest artifact
 

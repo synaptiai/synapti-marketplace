@@ -20,20 +20,32 @@ The invoking command MUST pass:
 
 ## Outputs
 
-Structured JSON report on stdout:
+Structured JSON report on stdout. Each violation entry includes `source_file` (the YAML path that failed) and `example` (a snippet showing the corrected form) so the caller can render actionable error messages without consulting the schema separately (F15):
 
 ```json
 {
   "workflow_id": "start-issue",
+  "source_file": "plugins/flow/workflows/start-issue.workflow.yaml",
   "schema_valid": true,
-  "cross_reference_errors": [],
-  "tier_warnings": [],
+  "cross_reference_errors": [
+    {
+      "type": "missing_skill",
+      "name": "specifcation-capture",
+      "source_file": "plugins/flow/workflows/start-issue.workflow.yaml",
+      "example": "required_skills:\n  - specification-capture  # correct spelling"
+    }
+  ],
+  "tier3_violations": [],
   "native_slash_violations": [],
   "overall": "pass"
 }
 ```
 
-Exit code: 0 if `overall: pass`; 1 if any cross-reference or tier error; 2 if schema invalid.
+Exit code: 0 if `overall: pass`; 1 if any cross-reference, recursion, native-slash, or tier-3 violation; 2 if schema invalid.
+
+**Per-violation field contract:**
+- `source_file` — the YAML path (project-local override takes precedence over plugin default; whichever was actually loaded).
+- `example` — a YAML snippet showing the corrected shape for this specific violation. The renderer in `commands/workflow.md:validate` prints `source_file` + `example` below each error.
 
 ## Workflow
 
@@ -65,7 +77,7 @@ For each entry in `required_skills[]`:
 [ -f "plugins/flow/skills/${skill_name}/SKILL.md" ]
 ```
 
-Missing → `cross_reference_errors.append({"type": "missing_skill", "name": skill_name})`.
+Missing → `cross_reference_errors.append({"type": "missing_skill", "name": skill_name, "source_file": <loaded YAML path>, "example": "required_skills:\n  - <correct-skill-name>\n# check plugins/flow/skills/ for existing skill directory names"})`.
 
 ### Step 3: Required-agents cross-reference
 
@@ -74,7 +86,7 @@ For each entry in `required_agents[]`:
 [ -f "plugins/flow/agents/${agent_name}.md" ]
 ```
 
-Missing → `cross_reference_errors.append({"type": "missing_agent", "name": agent_name})`.
+Missing → `cross_reference_errors.append({"type": "missing_agent", "name": agent_name, "source_file": <loaded YAML path>, "example": "required_agents:\n  - <correct-agent-name>\n# check plugins/flow/agents/*.md for available agents"})`.
 
 ### Step 4: Activity-level skill/agent cross-reference
 
@@ -87,7 +99,7 @@ In `tier_classification`, verify:
 - `release` is `confirm` (Tier 3 — Iron Law, hard fail)
 - `tag_push` is `confirm` when present (Iron Law, hard fail)
 
-Any of `merge`, `release`, or `tag_push` set to `autonomous` or `journal` → `tier3_violations.append({"action": ..., "value": ..., "expected": "confirm"})`. **Hard fail** (exit 1). This matches `trigger-policy/SKILL.md` Step 2 — the project's "No Irreversible Actions Without Approval" boundary is non-negotiable; a workflow that downgrades Tier 3 is broken by construction, not "legitimately overriding."
+Any of `merge`, `release`, or `tag_push` set to `autonomous` or `journal` → `tier3_violations.append({"action": ..., "value": ..., "expected": "confirm", "source_file": <loaded YAML path>, "example": "tier_classification:\n  merge: confirm  # Tier 3 must be confirm — non-negotiable per the Iron Law"})`. **Hard fail** (exit 1). This matches `trigger-policy/SKILL.md` Step 2 — the project's "No Irreversible Actions Without Approval" boundary is non-negotiable; a workflow that downgrades Tier 3 is broken by construction, not "legitimately overriding."
 
 ### Step 6: No-native-slash check
 

@@ -79,6 +79,16 @@ Invoke `Skill(workflow-validation)` with the workflow id. The skill performs:
 - No-native-slash check
 - Completion gate dependency check
 
+The skill emits structured JSON. Render each violation with its `source_file` + `example` snippet so the user can fix the YAML directly without consulting the schema:
+
+```text
+✗ tier3_violation: merge set to 'autonomous' (expected 'confirm')
+  source: plugins/flow/workflows/start-issue.workflow.yaml
+  fix:
+    tier_classification:
+      merge: confirm  # Tier 3 must be confirm — non-negotiable per the Iron Law
+```
+
 Print the structured JSON report; exit per the skill's exit code convention.
 
 ### `/flow:workflow graph <id>`

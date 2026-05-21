@@ -90,6 +90,24 @@ The Stop hook (`hooks/scripts/flow-goal-stop.sh`) fires after every conversation
 
 See `references/stop-hook-goal-enforcement.md` for the full Stop hook architecture, recursion guard, throttling, and budget enforcement.
 
+## Verdict delta semantics
+
+Every `/flow:goal evaluate` (and every Stop-hook evaluator-loop turn) produces a verdict with a `delta` field. It compares the current evaluation's pass-set against the previous verdict persisted at `.flow/runs/<run-id>/last-verdict.json`.
+
+| Value | Meaning | Computed when |
+|---|---|---|
+| `made_progress` | At least one AC moved from a failing/pending state to a passing/evidence-collected state since the last verdict — OR the very first evaluation of a run (no prior verdict to compare against). | The deterministic checker observes an AC's `status` advancing; the judge sees stronger evidence than the prior bundle. |
+| `unchanged` | The pass-set is identical to the previous turn's pass-set. | The evaluator can't see forward progress — the same ACs are still passing/failing. |
+| `regressed` | An AC that previously passed is no longer passing. | The evaluator detects a step backward (test that used to be green is now red; evidence that was sufficient is no longer there). |
+
+**Who consumes `delta`:**
+
+- **Stuck detection** (`flow-goal-evaluator.sh` evaluator-loop mode): increments a per-run counter on `unchanged`; resets on `made_progress` or `regressed`. After `flow.goals.failAfterStuckTurns` consecutive `unchanged` (default 3), the goal transitions to `failed` with reason `stuck_no_progress`.
+- **`/flow:learn` pattern analysis** (when `flow.goals.enabled: true`): counts `unchanged` runs and stuck-detection-fired events across goals to surface recurring stuck patterns.
+- **`/flow:goal status`**: surfaces the latest verdict's delta in the output so the user sees what direction the goal is moving turn-over-turn.
+
+**Where the value lives:** `.flow/runs/<run-id>/last-verdict.json` — the verdict file produced by `bin/flow-record-verdict.sh`. Schema enforces `delta ∈ {made_progress, unchanged, regressed}` at write time.
+
 ## Settings (cascade-resolved)
 
 All settings live under `flow.goals.*` and resolve via `bin/cascade-resolve.sh` (highest priority first):

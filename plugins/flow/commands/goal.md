@@ -79,6 +79,7 @@ Acceptance criteria:
 
 Last evaluation:   <last_evaluation.at> — <last_evaluation.result>
 Reason:            <last_evaluation.reason>
+Delta:             <made_progress | unchanged | regressed>  (from .flow/runs/<run-id>/last-verdict.json — see references/flow-goals.md § Verdict delta semantics)
 
 Stop hook mode:    <stopHookEnforcement value>
 Next safe action:  /flow:goal evaluate <id>
@@ -137,6 +138,45 @@ jq -n \
 ```
 
 Skipping the write breaks delta computation for the next turn (everything becomes "unchanged"). Helper failure is **non-fatal** — surface to stderr via the `||` clause, never abort the command's lifecycle update.
+
+**F10 — Terminal-transition Tier 2 confirmation**:
+
+When `Skill(goal-evaluator)` returns a `proposed_transition` to `achieved` or `failed`, the command (NOT the skill) is responsible for writing the terminal lifecycle status — gated by AskUserQuestion. The skill leaves the goal at its current non-terminal status; this step finalizes (or rejects) the transition.
+
+```text
+AskUserQuestion: "FlowGoal $GOAL_ID evaluation produced verdict: <achieved|failed>.
+                  Confirm transition to terminal status '<proposed_to>'?
+                  Reason: <proposed_reason>"
+
+Options:
+  1. Confirm — write the terminal lifecycle status now (recommended when the verdict matches your expectations)
+  2. Re-evaluate — invoke /flow:goal evaluate again (use when you expect more progress on the next run)
+  3. Cancel — keep the goal at its current non-terminal status (use when the verdict feels premature or you want to pause)
+```
+
+On **Confirm**, write the lifecycle update:
+
+```bash
+LIFE_TMP=$(mktemp -t flow-lifecycle.XXXXXX.yaml)
+trap 'rm -f "$LIFE_TMP"' EXIT
+cat > "$LIFE_TMP" <<EOF
+status: ${PROPOSED_TO}
+last_evaluation:
+  result: ${VERDICT_RESULT}
+  reason: ${PROPOSED_REASON}
+  at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+EOF
+"${CLAUDE_PLUGIN_ROOT}/bin/flow-goal-record.sh" --update-lifecycle \
+  --goal-id "$GOAL_ID" \
+  --lifecycle-file "$LIFE_TMP" \
+  --from-status "$CURRENT_FROM_STATUS"
+```
+
+On **Re-evaluate**, recursively invoke `/flow:goal evaluate $GOAL_ID` for another pass.
+
+On **Cancel**, exit cleanly. The goal stays at its current non-terminal status; the verdict has been persisted to `last-verdict.json` (so next-turn delta is correct) but lifecycle is unchanged.
+
+For **non-terminal transitions** (`active`, `blocked`, `waiting_for_user`, `waiting_for_ci`), the skill writes lifecycle itself per Step 6 of `goal-evaluator/SKILL.md` — no AskUserQuestion is needed for these reversible states.
 
 Print the resulting verdict + per-AC table. If lifecycle transitioned to `achieved`, print celebration. If `failed`, print the failing AC + suggested next action.
 

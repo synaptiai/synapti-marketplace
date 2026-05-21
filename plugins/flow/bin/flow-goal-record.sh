@@ -118,13 +118,27 @@ LIFECYCLE_TRANSITIONS = {
 }
 TERMINAL_STATES = {"achieved", "failed", "cancelled"}
 
-# Optional schema validation. Skipped when jsonschema is absent.
+# F11: Optional schema validation. When jsonschema is unavailable, emit a
+# one-line stderr WARN so the user knows safety is degraded — previously
+# silent skip meant a malformed goal could land on disk and break the
+# evaluator on a later turn with no surfaced diagnosis. The warning fires
+# once per process (idempotent via a module-level sentinel).
+_JSONSCHEMA_WARN_EMITTED = False
+
 def _validate_goal(goal):
+    global _JSONSCHEMA_WARN_EMITTED
     schemas_dir = os.path.join(script_dir, "..", "schemas", "v1")
     schema_path = os.path.normpath(os.path.join(schemas_dir, "goal.schema.json"))
     try:
         import json, jsonschema
     except ImportError:
+        if not _JSONSCHEMA_WARN_EMITTED:
+            print(
+                "flow-goal-record.sh: WARN jsonschema unavailable — goal validation skipped. "
+                "Install via 'pip install jsonschema' for safety (malformed goal YAMLs will land on disk and may break the evaluator).",
+                file=sys.stderr,
+            )
+            _JSONSCHEMA_WARN_EMITTED = True
         return  # validation skipped
     with open(schema_path, "r", encoding="utf-8") as f:
         schema = json.load(f)
