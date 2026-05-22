@@ -335,13 +335,13 @@ true
 
 If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.
 
-**Model selection.** When `USE_PATH_A=1`, the gate emits `AGENT_TEAM_MODEL` (default `sonnet`). Dispatch every Path A agent below — both the A.1 paired reviewers and the A.3 challenge rounds — with that model passed as the per-invocation `model` parameter, e.g. `Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL)`. The per-invocation `model` overrides each agent's `model: inherit` frontmatter (precedence: dispatch param > frontmatter > session model), so the reviewers run on `AGENT_TEAM_MODEL` regardless of the session's model. When `AGENT_TEAM_MODEL=inherit`, passing `model=inherit` is itself valid and resolves to the session model (the same behavior as before this setting existed); omitting the parameter entirely is equivalent. The two `Skill(holdout-validation)` invocations are unaffected (skills run inline in the parent context, not as model-dispatched subagents).
+**Model selection.** When `USE_PATH_A=1`, the gate emits `AGENT_TEAM_MODEL` (default `sonnet`). Dispatch every Path A agent below — both the A.1 paired reviewers and the A.3 challenge rounds — passing `AGENT_TEAM_MODEL` as the Agent tool's per-invocation `model` override (the `model=...` shown in the `Agent(...)` examples maps to that tool argument). The override takes precedence over each agent's `model: inherit` frontmatter (precedence: dispatch override > frontmatter > session model), so the reviewers run on `AGENT_TEAM_MODEL` regardless of the session's model. **When `AGENT_TEAM_MODEL=inherit`, OMIT the `model` argument entirely** — the dispatch-time override accepts only `sonnet`/`opus`/`haiku`, and the session model (the behavior before this setting existed) is expressed by dropping the override, NOT by passing `model=inherit`. The two `Skill(holdout-validation)` invocations are unaffected (skills run inline in the parent context, not as model-dispatched subagents).
 
 #### A.1 — Independent Analysis (paired reviewers, parallel dispatch)
 
 Dispatch **12 invocations** (10 `Agent(...)` + 2 `Skill(holdout-validation)`) in a single parallel block — 5 agent facets × {skeptic, verifier} plus the holdout-validation skill in both lenses. Each variant carries an orthogonal lens; both run with no awareness of each other.
 
-Each `Agent(...)` call below carries `model=$AGENT_TEAM_MODEL` per **Model selection** above. (`model=inherit` is valid and means the session model.)
+Each `Agent(...)` call below carries `model=$AGENT_TEAM_MODEL` per **Model selection** above. (When the resolved value is `inherit`, drop the `model=` argument — the session model is the default when no override is passed.)
 
 ```
 Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL):

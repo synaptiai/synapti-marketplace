@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added: configurable model for Path A agent-team review
+
+`/flow:review` Path A (agent-team paired-reviewer mode) dispatches ~20 subagents, all previously `model: inherit` — on an Opus session that multiplied Opus-rate tokens ~4x. A new top-level `agentTeamModel` setting (enum `haiku|sonnet|opus|inherit`, default `sonnet`, cascade-resolved) controls the model for those Path A reviewers via the Agent tool's per-invocation `model` override. `inherit` reproduces the prior behavior (override omitted → session model). Invalid values are rejected with a warning and fall back to `sonnet`. Path B (single-session, default) is unchanged.
+
 ## 3.0.0 (2026-05-20)
 
 ### New: Flow v3 runtime layer — goals, workflows, triggers

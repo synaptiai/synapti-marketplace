@@ -78,6 +78,13 @@ assert_match '^(1[0-9]|[2-9])$' "$DISPATCH_WITH_MODEL" "at least several fenced 
 DISPATCH_WITHOUT_MODEL=$(printf '%s\n' "$REVIEW_CONTENT" | grep -E 'Agent\([a-z-]+(-skeptic|-verifier)[):]' | grep -vc 'model=\$AGENT_TEAM_MODEL')
 assert_equal "0" "$DISPATCH_WITHOUT_MODEL" "no paired-reviewer dispatch omits the model param"
 
+_flow_test_begin "review.md omits the model override when inherit (dispatch enum is sonnet|opus|haiku)"
+# The Agent tool's per-invocation model override accepts only sonnet|opus|haiku;
+# 'inherit' must be expressed by dropping the override, never by passing
+# model=inherit (which would be an invalid dispatch and break the inherit case).
+assert_contains "OMIT the \`model\` argument" "$REVIEW_CONTENT" "directive instructs omitting the override on inherit"
+assert_not_contains "model=inherit\` is itself valid" "$REVIEW_CONTENT" "no false 'model=inherit is valid' claim"
+
 _flow_test_begin "review.md documents Path B as unchanged"
 # A line stating Path B leaves the model inherited / unchanged.
 assert_match 'Path B.*(unchanged|inherit|not modified|NOT modified)' "$REVIEW_CONTENT" "Path B explicitly noted as unchanged"
