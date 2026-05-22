@@ -1,4 +1,4 @@
-# Tests for the configurable Path A agent-team review model (issue #112).
+# Tests for the configurable Path A agent-team review model.
 #
 # Contract under test:
 #   - settings.json carries a top-level `agentTeamModel` defaulting to "sonnet".
@@ -73,13 +73,13 @@ _flow_test_begin "review.md fenced dispatches carry the resolved model"
 # challenge-mode examples = 12 expected.
 DISPATCH_WITH_MODEL=$(printf '%s\n' "$REVIEW_CONTENT" | grep -cE 'Agent\([a-z-]+(-skeptic|-verifier).*model=\$AGENT_TEAM_MODEL')
 assert_match '^(1[0-9]|[2-9])$' "$DISPATCH_WITH_MODEL" "at least several fenced Agent(...) dispatches carry model=\$AGENT_TEAM_MODEL (found $DISPATCH_WITH_MODEL)"
-# Guard against the F1 regression specifically: no paired-reviewer dispatch line
-# may exist WITHOUT the model param.
+# The model param must travel with the copy-ready fenced examples, not live
+# only in adjacent prose: no paired-reviewer dispatch line may omit it.
 DISPATCH_WITHOUT_MODEL=$(printf '%s\n' "$REVIEW_CONTENT" | grep -E 'Agent\([a-z-]+(-skeptic|-verifier)[):]' | grep -vc 'model=\$AGENT_TEAM_MODEL')
 assert_equal "0" "$DISPATCH_WITHOUT_MODEL" "no paired-reviewer dispatch omits the model param"
 
 _flow_test_begin "review.md documents Path B as unchanged"
-# A line tying Path B to leaving the model inherited / unchanged for #112.
+# A line stating Path B leaves the model inherited / unchanged.
 assert_match 'Path B.*(unchanged|inherit|not modified|NOT modified)' "$REVIEW_CONTENT" "Path B explicitly noted as unchanged"
 
 # --- docs mention the key

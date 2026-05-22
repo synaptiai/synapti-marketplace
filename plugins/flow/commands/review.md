@@ -310,7 +310,7 @@ else
 fi
 
 # AGENTTEAM_MODEL_BEGIN
-# Resolve the model for Path A review agents (#112). Scoped to Path A only —
+# Resolve the model for Path A review agents. Scoped to Path A only —
 # Path B agents continue to inherit the session model via their frontmatter.
 # Cascade precedence: local > project > user > plugin default (same cascade as
 # agentTeams). Default is sonnet: a paired-reviewer run dispatches ~20 agents,
@@ -335,13 +335,13 @@ true
 
 If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.
 
-**Model selection (#112).** When `USE_PATH_A=1`, the gate emits `AGENT_TEAM_MODEL` (default `sonnet`). Dispatch every Path A agent below — both the A.1 paired reviewers and the A.3 challenge rounds — with that model passed as the per-invocation `model` parameter, e.g. `Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL)`. The per-invocation `model` overrides each agent's `model: inherit` frontmatter (precedence: dispatch param > frontmatter > session model), so the reviewers run on `AGENT_TEAM_MODEL` regardless of the session's model. When `AGENT_TEAM_MODEL=inherit`, passing `model=inherit` is itself valid and resolves to the session model (reproducing pre-#112 behavior); omitting the parameter entirely is equivalent. The two `Skill(holdout-validation)` invocations are unaffected (skills run inline in the parent context, not as model-dispatched subagents).
+**Model selection.** When `USE_PATH_A=1`, the gate emits `AGENT_TEAM_MODEL` (default `sonnet`). Dispatch every Path A agent below — both the A.1 paired reviewers and the A.3 challenge rounds — with that model passed as the per-invocation `model` parameter, e.g. `Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL)`. The per-invocation `model` overrides each agent's `model: inherit` frontmatter (precedence: dispatch param > frontmatter > session model), so the reviewers run on `AGENT_TEAM_MODEL` regardless of the session's model. When `AGENT_TEAM_MODEL=inherit`, passing `model=inherit` is itself valid and resolves to the session model (the same behavior as before this setting existed); omitting the parameter entirely is equivalent. The two `Skill(holdout-validation)` invocations are unaffected (skills run inline in the parent context, not as model-dispatched subagents).
 
 #### A.1 — Independent Analysis (paired reviewers, parallel dispatch)
 
 Dispatch **12 invocations** (10 `Agent(...)` + 2 `Skill(holdout-validation)`) in a single parallel block — 5 agent facets × {skeptic, verifier} plus the holdout-validation skill in both lenses. Each variant carries an orthogonal lens; both run with no awareness of each other.
 
-Each `Agent(...)` call below carries `model=$AGENT_TEAM_MODEL` per **Model selection (#112)** above. (`model=inherit` is valid and means the session model.)
+Each `Agent(...)` call below carries `model=$AGENT_TEAM_MODEL` per **Model selection** above. (`model=inherit` is valid and means the session model.)
 
 ```
 Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
@@ -461,7 +461,7 @@ Auto-consensus findings skip the challenge round (no need — both reviewers alr
 
 #### A.3 — Challenge Round (disposition-only, parallel)
 
-For findings NOT in auto-consensus, dispatch each variant to challenge the OTHER variant's findings. **Variants do NOT re-read the diff.** Up to 10 challenge prompts run in parallel (5 agent facets × 2 directions; holdout-validation excluded — see A.1 note). Each challenge `Agent(...)` carries `model=$AGENT_TEAM_MODEL` per **Model selection (#112)**.
+For findings NOT in auto-consensus, dispatch each variant to challenge the OTHER variant's findings. **Variants do NOT re-read the diff.** Up to 10 challenge prompts run in parallel (5 agent facets × 2 directions; holdout-validation excluded — see A.1 note). Each challenge `Agent(...)` carries `model=$AGENT_TEAM_MODEL` per **Model selection**.
 
 ```
 Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL) [challenge mode]:
@@ -543,7 +543,7 @@ After A.6 completes, jump to Phase 4 with the consolidated finding set.
 
 ### Path B: Single Session (default)
 
-Path B dispatch is intentionally unchanged (#112) — its agents carry no `model` parameter and inherit the session model via frontmatter. The `agentTeamModel` setting applies to Path A only.
+Path B dispatch is intentionally unchanged — its agents carry no `model` parameter and inherit the session model via frontmatter. The `agentTeamModel` setting applies to Path A only.
 
 **Parallel Agent dispatch** — 5 agents in single message:
 
