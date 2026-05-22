@@ -61,10 +61,22 @@ assert_contains "AGENTTEAM_MODEL_BEGIN" "$REVIEW_CONTENT" "model-resolution bloc
 assert_contains "cascade-resolve.sh" "$REVIEW_CONTENT" "gate uses cascade-resolve.sh"
 assert_contains ".agentTeamModel" "$REVIEW_CONTENT" "gate resolves the agentTeamModel key"
 assert_contains "AGENT_TEAM_MODEL=" "$REVIEW_CONTENT" "gate emits AGENT_TEAM_MODEL"
-assert_match 'haiku\|sonnet\|opus\|inherit' "$REVIEW_CONTENT" "gate validates against the enum allowlist"
+# Bind to the actual case-allowlist construct, not just any prose mention of
+# the model names (which appear throughout the file).
+assert_contains "haiku|sonnet|opus|inherit) ;;" "$REVIEW_CONTENT" "gate validates against the enum allowlist case arm"
 
-_flow_test_begin "review.md dispatches pass the resolved model"
-assert_contains "model=\$AGENT_TEAM_MODEL" "$REVIEW_CONTENT" "A.1/A.3 dispatch directive passes model=\$AGENT_TEAM_MODEL"
+_flow_test_begin "review.md fenced dispatches carry the resolved model"
+# The param must travel with the copy-ready Agent(...) examples, not live only
+# in adjacent prose — otherwise an agent copying the fenced block silently
+# drops it and regresses to inherited-model behavior. Count fenced dispatches
+# that carry model=$AGENT_TEAM_MODEL: A.1 has 10 paired reviewers, A.3 shows 2
+# challenge-mode examples = 12 expected.
+DISPATCH_WITH_MODEL=$(printf '%s\n' "$REVIEW_CONTENT" | grep -cE 'Agent\([a-z-]+(-skeptic|-verifier).*model=\$AGENT_TEAM_MODEL')
+assert_match '^(1[0-9]|[2-9])$' "$DISPATCH_WITH_MODEL" "at least several fenced Agent(...) dispatches carry model=\$AGENT_TEAM_MODEL (found $DISPATCH_WITH_MODEL)"
+# Guard against the F1 regression specifically: no paired-reviewer dispatch line
+# may exist WITHOUT the model param.
+DISPATCH_WITHOUT_MODEL=$(printf '%s\n' "$REVIEW_CONTENT" | grep -E 'Agent\([a-z-]+(-skeptic|-verifier)[):]' | grep -vc 'model=\$AGENT_TEAM_MODEL')
+assert_equal "0" "$DISPATCH_WITHOUT_MODEL" "no paired-reviewer dispatch omits the model param"
 
 _flow_test_begin "review.md documents Path B as unchanged"
 # A line tying Path B to leaving the model inherited / unchanged for #112.
@@ -123,3 +135,11 @@ OUT=$(_run_model_block "gpt-9000" 2>/dev/null)
 ERR=$(_run_model_block "gpt-9000" 2>&1 >/dev/null)
 assert_contains "AGENT_TEAM_MODEL=sonnet" "$OUT" "bogus value falls back to sonnet"
 assert_contains "WARN" "$ERR" "bogus value is rejected with a clear WARN (not silent)"
+
+_flow_test_begin "gate block treats an empty resolution as invalid -> sonnet + WARN"
+# Defends the path where cascade-resolve yields nothing (e.g. jq missing and no
+# default reached the case): the allowlist's catchall must still produce sonnet.
+OUT=$(_run_model_block "" 2>/dev/null)
+ERR=$(_run_model_block "" 2>&1 >/dev/null)
+assert_contains "AGENT_TEAM_MODEL=sonnet" "$OUT" "empty value falls back to sonnet"
+assert_contains "WARN" "$ERR" "empty value is rejected with a clear WARN (not silent)"

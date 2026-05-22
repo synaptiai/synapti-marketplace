@@ -335,16 +335,16 @@ true
 
 If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.
 
-**Model selection (#112).** When `USE_PATH_A=1`, the gate emits `AGENT_TEAM_MODEL` (default `sonnet`). Dispatch every Path A agent below — both the A.1 paired reviewers and the A.3 challenge rounds — with that model passed as the per-invocation `model` parameter, e.g. `Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL)`. The per-invocation `model` overrides each agent's `model: inherit` frontmatter (precedence: dispatch param > frontmatter > session model), so the reviewers run on `AGENT_TEAM_MODEL` regardless of the session's model. **Exception:** when `AGENT_TEAM_MODEL=inherit`, OMIT the `model` parameter so agents fall back to frontmatter `inherit` (the session model) — reproducing pre-#112 behavior. The two `Skill(holdout-validation)` invocations are unaffected (skills run inline in the parent context, not as model-dispatched subagents).
+**Model selection (#112).** When `USE_PATH_A=1`, the gate emits `AGENT_TEAM_MODEL` (default `sonnet`). Dispatch every Path A agent below — both the A.1 paired reviewers and the A.3 challenge rounds — with that model passed as the per-invocation `model` parameter, e.g. `Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL)`. The per-invocation `model` overrides each agent's `model: inherit` frontmatter (precedence: dispatch param > frontmatter > session model), so the reviewers run on `AGENT_TEAM_MODEL` regardless of the session's model. When `AGENT_TEAM_MODEL=inherit`, passing `model=inherit` is itself valid and resolves to the session model (reproducing pre-#112 behavior); omitting the parameter entirely is equivalent. The two `Skill(holdout-validation)` invocations are unaffected (skills run inline in the parent context, not as model-dispatched subagents).
 
 #### A.1 — Independent Analysis (paired reviewers, parallel dispatch)
 
 Dispatch **12 invocations** (10 `Agent(...)` + 2 `Skill(holdout-validation)`) in a single parallel block — 5 agent facets × {skeptic, verifier} plus the holdout-validation skill in both lenses. Each variant carries an orthogonal lens; both run with no awareness of each other.
 
-Each `Agent(...)` call below carries `model=$AGENT_TEAM_MODEL` per **Model selection (#112)** above (omit the parameter only when the resolved value is `inherit`).
+Each `Agent(...)` call below carries `model=$AGENT_TEAM_MODEL` per **Model selection (#112)** above. (`model=inherit` is valid and means the session model.)
 
 ```
-Agent(security-reviewer-skeptic):
+Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
   "You are reviewing PR #$ARGUMENTS as the SKEPTIC variant. Assume the diff is
    broken until proven otherwise. Flag every security behavior you cannot prove
    correct from the code as written: OWASP Top 10, secrets, auth/authz, input
@@ -352,41 +352,41 @@ Agent(security-reviewer-skeptic):
    file:line citations and category. Do NOT include challenge information —
    another reviewer will challenge your findings later."
 
-Agent(security-reviewer-verifier):
+Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL):
   "You are reviewing PR #$ARGUMENTS as the VERIFIER variant. Assume the diff is
    correct as a baseline. Look only for missed security edge cases, undocumented
    contract assumptions, or invariants that aren't enforced. Return P1/P2/P3
    findings with file:line citations and category."
 
-Agent(code-reviewer-skeptic):
+Agent(code-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
   "PR #$ARGUMENTS as SKEPTIC. Assume broken; flag logic/quality/edge-case
    issues you cannot prove correct. P1/P2/P3 + file:line + category."
 
-Agent(code-reviewer-verifier):
+Agent(code-reviewer-verifier, model=$AGENT_TEAM_MODEL):
   "PR #$ARGUMENTS as VERIFIER. Assume correct; look only for missed edge cases
    and unenforced invariants. P1/P2/P3 + file:line + category."
 
-Agent(convention-checker-skeptic):
+Agent(convention-checker-skeptic, model=$AGENT_TEAM_MODEL):
   "PR #$ARGUMENTS as SKEPTIC. Flag every convention violation (commits, branch
    naming, code patterns) you cannot prove conformant. P1/P2/P3 + file:line."
 
-Agent(convention-checker-verifier):
+Agent(convention-checker-verifier, model=$AGENT_TEAM_MODEL):
   "PR #$ARGUMENTS as VERIFIER. Look for convention drift the skeptic might miss
    (e.g., subtle stylistic divergence). P1/P2/P3 + file:line."
 
-Agent(test-runner-skeptic):
+Agent(test-runner-skeptic, model=$AGENT_TEAM_MODEL):
   "PR #$ARGUMENTS as SKEPTIC. Run quality commands (lint, test, typecheck) and
    flag every failure or warning. Return findings with command output."
 
-Agent(test-runner-verifier):
+Agent(test-runner-verifier, model=$AGENT_TEAM_MODEL):
   "PR #$ARGUMENTS as VERIFIER. Run quality commands and flag missing test
    coverage or weak assertions in passing tests. Return findings."
 
-Agent(error-handler-inspector-skeptic):
+Agent(error-handler-inspector-skeptic, model=$AGENT_TEAM_MODEL):
   "PR #$ARGUMENTS as SKEPTIC. Flag every error-handling gap, silent failure,
    or unhandled exception you cannot prove handled. P1/P2/P3 + file:line."
 
-Agent(error-handler-inspector-verifier):
+Agent(error-handler-inspector-verifier, model=$AGENT_TEAM_MODEL):
   "PR #$ARGUMENTS as VERIFIER. Look for missed error contracts and unenforced
    exception invariants. P1/P2/P3 + file:line."
 
@@ -461,10 +461,10 @@ Auto-consensus findings skip the challenge round (no need — both reviewers alr
 
 #### A.3 — Challenge Round (disposition-only, parallel)
 
-For findings NOT in auto-consensus, dispatch each variant to challenge the OTHER variant's findings. **Variants do NOT re-read the diff.** Up to 10 challenge prompts run in parallel (5 agent facets × 2 directions; holdout-validation excluded — see A.1 note). Each challenge `Agent(...)` carries `model=$AGENT_TEAM_MODEL` per **Model selection (#112)** (omit only when the value is `inherit`).
+For findings NOT in auto-consensus, dispatch each variant to challenge the OTHER variant's findings. **Variants do NOT re-read the diff.** Up to 10 challenge prompts run in parallel (5 agent facets × 2 directions; holdout-validation excluded — see A.1 note). Each challenge `Agent(...)` carries `model=$AGENT_TEAM_MODEL` per **Model selection (#112)**.
 
 ```
-Agent(security-reviewer-skeptic) [challenge mode]:
+Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL) [challenge mode]:
   "You are reviewer-A (skeptic) for facet 'security'. Reviewer-B (verifier)
    raised the following findings on the same diff you reviewed independently.
    For each finding, respond with exactly one line:
@@ -478,7 +478,7 @@ Agent(security-reviewer-skeptic) [challenge mode]:
    Findings to challenge:
    {list of verifier's non-auto-consensus findings: ID, file:line, priority, category}"
 
-Agent(security-reviewer-verifier) [challenge mode]:
+Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL) [challenge mode]:
   "Same instructions, reversed: challenge the skeptic's non-auto-consensus
    findings for facet 'security'."
 
