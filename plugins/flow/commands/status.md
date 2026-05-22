@@ -114,6 +114,83 @@ else
   echo "LEARNING_PENDING=none"
 fi
 
+# Section: FlowGoal State (v3, gated behind flow.goals.enabled)
+# When goals are enabled, surface the active FlowGoal's lifecycle + per-AC
+# pass/fail so the user sees what the Stop hook is watching. v2 projects
+# (flag false/unset) emit STATE=disabled and the section renders as "(v3 not enabled)".
+echo ""
+echo "### FlowGoal State"
+HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+GOALS_ENABLED="false"
+[ -x "$HELPER" ] && GOALS_ENABLED=$("$HELPER" --default "true" '.flow.goals.enabled' 2>/dev/null)
+if [ "$GOALS_ENABLED" != "true" ]; then
+  echo "STATE=disabled"
+else
+  ACTIVE_GOAL_HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/flow-active-goal.sh"
+  if [ ! -x "$ACTIVE_GOAL_HELPER" ]; then
+    echo "STATE=unavailable"
+    echo "REASON=flow-active-goal.sh missing"
+  else
+    GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status 2>/dev/null); GOAL_EXIT=$?
+    case "$GOAL_EXIT" in
+      0)
+        GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id 2>/dev/null)
+        echo "STATE=ok"
+        echo "GOAL_ID=$GOAL_ID"
+        echo "GOAL_LIFECYCLE=$GOAL_STATUS"
+        # AC summary: one line per AC in id|status|evidence_ref|last_result format.
+        "$ACTIVE_GOAL_HELPER" --ac-summary 2>/dev/null | sed 's/^/AC=/'
+        ;;
+      1)
+        echo "STATE=no_active_goal"
+        ;;
+      3)
+        echo "STATE=degenerate"
+        echo "REASON=multiple active goals detected"
+        ;;
+      *)
+        echo "STATE=unavailable"
+        echo "REASON=flow-active-goal.sh exited $GOAL_EXIT"
+        ;;
+    esac
+  fi
+fi
+
+# Section: Recent Runs (last 3 by modification time)
+# The .flow/runs/ directory holds FlowActivity ledgers per workflow invocation.
+# Surface the latest 3 so the user can see what's happening in flight.
+echo ""
+echo "### Recent Runs"
+if [ ! -d ".flow/runs" ]; then
+  echo "STATE=empty"
+else
+  # Most-recent-first sort by mtime. Cycle-14 F2 (code-reviewer skeptic):
+  # the previous `... | tac 2>/dev/null || ... | tail -3` fallback silently
+  # produced oldest-first when tac was missing (macOS without coreutils).
+  # Use awk-based reverse instead — portable POSIX and matches the
+  # documented "most-recent-first" contract.
+  RECENT_RUNS=$(ls -1tr .flow/runs/ 2>/dev/null | tail -3 | awk '{a[NR]=$0} END{for(i=NR;i>=1;i--) print a[i]}')
+  if [ -z "$RECENT_RUNS" ]; then
+    echo "STATE=empty"
+  else
+    echo "STATE=ok"
+    echo "$RECENT_RUNS" | while read -r run; do
+      [ -z "$run" ] && continue
+      RUN_DIR=".flow/runs/$run"
+      [ -d "$RUN_DIR" ] || continue
+      # Surface the run's last verdict if available.
+      VERDICT="-"
+      if [ -f "$RUN_DIR/last-verdict.json" ]; then
+        VERDICT=$(jq -r '.verdict // "-"' "$RUN_DIR/last-verdict.json" 2>/dev/null)
+      fi
+      # Surface activity count.
+      ACT_COUNT=0
+      [ -f "$RUN_DIR/events.jsonl" ] && ACT_COUNT=$(wc -l < "$RUN_DIR/events.jsonl" 2>/dev/null | tr -d ' ')
+      echo "RUN=id=$run verdict=$VERDICT activities=$ACT_COUNT"
+    done
+  fi
+fi
+
 true
 ```
 
@@ -305,6 +382,25 @@ State values: `unavailable` (gh API failed) | `no_open_prs` (user has no open PR
 - **Journals**: {N} active
 - **Learning**: {pending/none}
 
+### FlowGoal State
+{When STATE=disabled: render "(FlowGoal v3 not enabled — set `flow.goals.enabled: true` in `.claude/settings.flow.json` to opt in)"}
+{When STATE=no_active_goal: render "No active FlowGoal."}
+{When STATE=degenerate: render "⚠ Degenerate state: multiple active goals — run `/flow:goal history` and clear extras"}
+{When STATE=unavailable: render "Unavailable: {REASON}"}
+{When STATE=ok: render the goal id + lifecycle + AC table}
+
+| Goal | Lifecycle | ACs |
+|------|-----------|-----|
+| `{GOAL_ID}` | `{GOAL_LIFECYCLE}` | {summary: e.g., "3/5 pass, 1 evidence_collected, 1 pending"} |
+
+### Recent Runs
+{When STATE=empty: render "No FlowRuns yet."}
+{When STATE=ok: render a table of the most recent 3 runs}
+
+| Run ID | Verdict | Activities |
+|--------|---------|------------|
+| `{run}` | `{verdict}` | {activities} |
+
 ### Findings Ledger
 {single line: `P1: {n}[ (annotation)]    P2: {n}[ (annotation)]    P3: {n}[ (annotation)]` — annotations are omitted when count is 0; see render rules below}
 
@@ -349,6 +445,7 @@ Format matches the workshop slide mockup in `docs/flow-team-session/slides.md` (
 | Has PR with review comments | "`/flow:address {pr-number}`" |
 | Has PR approved | "`/flow:merge {pr-number}`" |
 | PRs awaiting review | "`/flow:review {first-pr-number}`" |
+| Active FlowGoal with `lifecycle != achieved` | "`/flow:goal evaluate {GOAL_ID}`" (precedes `/flow:pr` and `/flow:merge` suggestions when v3 is enabled) |
 | Learning pending | "`/flow:learn`" |
 
 ## Tier Classification
@@ -360,6 +457,8 @@ Format matches the workshop slide mockup in `docs/flow-team-session/slides.md` (
 | Read `.decisions/` journal directory | 1 | Autonomous, read-only |
 | Read `~/.claude/flow-learn-pending` flag | 1 | Autonomous, read-only |
 | Findings-ledger aggregation across open PRs (`gh api` paginated) | 1 | Autonomous, read-only |
+| Read `.flow/goals/*.goal.yaml` for active goal + ACs (v3) | 1 | Autonomous, read-only |
+| Read `.flow/runs/*/` for recent run summaries (v3) | 1 | Autonomous, read-only |
 | Render status tables | 1 | Autonomous, output-only |
 
 `/flow:status` makes **zero mutations**. It cannot create branches, commit files, push, post comments, create issues, or change settings. Every action is a read; every output is a render.

@@ -1,0 +1,51 @@
+# Template: CI failure trigger
+#
+# Fires when CI fails on a branch. Diagnoses the failure and (when safe)
+# applies a fix. Substituted variables: ${BRANCH}, ${REPO}, ${NOW}.
+
+apiVersion: flow.synapti.ai/v1
+kind: FlowTrigger
+
+metadata:
+  id: ci-failure-${BRANCH}
+  name: 'CI failure watch on ${BRANCH}'
+  enabled: true
+  created_at: '${NOW}'
+
+trigger:
+  type: hook
+  suggested_interval: 'on_ci_status_change'
+  user_starts_loop_manually: false
+
+target:
+  workflow: debug
+  command: '/flow:debug "CI failure on ${BRANCH}"'
+
+context:
+  repo: '${REPO}'
+  branch: '${BRANCH}'
+
+policy:
+  autonomy: journal
+  allowed_actions:
+    - read_ci
+    - read_logs
+    - edit_files
+    - commit
+    - push
+  forbidden_actions:
+    - merge
+    - release
+    - create_trigger
+    - delete_branch
+
+concurrency:
+  policy: skip_if_running
+
+stop_conditions:
+  - 'ci_status == success'
+
+recursion_policy:
+  triggered_runs_may_create_triggers: false
+  triggered_runs_may_modify_triggers: false
+  triggered_runs_may_enable_triggers: false

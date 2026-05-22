@@ -1,0 +1,26 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowTrigger
+metadata:
+  id: missing-tier3
+  name: Missing tier3 deny
+  enabled: true
+  created_at: '2026-05-20T14:30:00Z'
+trigger:
+  type: manual
+  user_starts_loop_manually: true
+target:
+  workflow: address-pr
+  command: '/flow:run trigger missing-tier3'
+context:
+  repo: example/example
+policy:
+  autonomy: journal
+  allowed_actions:
+    - read_pr
+  forbidden_actions: []
+concurrency:
+  policy: skip_if_running
+recursion_policy:
+  triggered_runs_may_create_triggers: false
+  triggered_runs_may_modify_triggers: false
+  triggered_runs_may_enable_triggers: false

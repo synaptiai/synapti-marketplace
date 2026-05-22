@@ -1,5 +1,274 @@
 # Changelog
 
+## 3.0.0 (2026-05-20)
+
+### New: Flow v3 runtime layer — goals, workflows, triggers
+
+Flow v3.0 introduces a **runtime layer** at `.flow/` on top of the existing v2 plugin. Six new primitives — FlowGoal, FlowWorkflow, FlowTrigger, FlowRun, FlowActivity, FlowEvidence — give the plugin durable goals (completion contracts), inspectable workflows (process contracts), declarative triggers (wake-up intent), and resumable execution records.
+
+**The non-negotiable constraint** (verified): Claude Code plugins cannot invoke native `/goal`, `/loop`, `/schedule`, or any built-in slash command. Flow v3 replicates the *contract* via project-local artifacts and runs its own loop via the `Stop` hook.
+
+#### New primitives
+
+- **FlowGoal** — `.flow/goals/<id>.goal.yaml`, schema-validated completion contracts with outcome, AC, verification commands, constraints, evaluator binding, and lifecycle state (`draft → active → {waiting_for_user, waiting_for_ci, blocked} → {achieved, failed, cancelled}`). Lifecycle transitions go through `bin/flow-goal-record.sh` (atomic via `_journal_atomic.py`).
+- **FlowWorkflow** — `plugins/flow/workflows/<id>.workflow.yaml`, machine-readable process contracts for `/flow:start`, `/flow:review`, `/flow:address`, `/flow:merge`, `/flow:release`, `/flow:debug`, `/flow:design`. Validated by `/flow:workflow validate`.
+- **FlowTrigger** — `.flow/triggers/<id>.trigger.yaml`, wake-up intent contracts. v3.0 supports `manual | hook | loop_prompt`; v3.1+ adds `github_actions | local_cron | local_daemon`. Hard requirement: `merge` and `release` MUST be in every trigger's `policy.forbidden_actions`.
+- **FlowRun + FlowActivity** — `.flow/runs/<ISO-timestamp-id>/` with `run.yaml`, sequence-numbered `activities/<NNN>-<name>.yaml`, and `events.jsonl`. Powers `/flow:resume`.
+- **FlowEvidence** — `.evidence.yaml` sidecars + raw output captures under `.flow/runs/<id>/evidence/`.
+
+#### New commands
+
+- `/flow:goal` — `status | create | inspect | evaluate | pause | resume | clear | history`
+- `/flow:resume` — informational; reads interrupted FlowRun state, suggests next safe action
+- `/flow:workflow` — `list | inspect | validate | graph`
+- `/flow:trigger` — `list | inspect | enable | disable | run | delete`
+- `/flow:watch` — `pr <N> | ci | issue <N> | branch`; creates trigger + generates `.claude/flow-loop-<id>.md` for manual `/loop` invocation
+- `/flow:run` — `trigger <id>`; single-shot trigger executor
+
+#### New skills (7)
+
+- `goal-contract-capture` — extends `specification-capture` as 5th invoker; writes goal YAMLs
+- `goal-evaluator` — wraps `criterion-verification-map`; runs deterministic checks + optional judge dispatch
+- `goal-evidence-ledger` — wraps `evidence-based-development`; file-backed sidecars
+- `goal-lifecycle` — state machine enforcement; every transition writes journal artifact
+- `run-state-management` — owns FlowRun mutations; wraps `autonomous-workflow`
+- `workflow-validation` — schema + cross-reference checks
+- `trigger-policy` — Tier 3 absolute deny + recursion deny enforcement
+
+#### New agent
+
+- `goal-evaluator-judge` — specializes `verdict-judge`. Same Independence Protocol; output adds `confidence`, `delta`, `next_step_hint`. Used in evaluator-loop Stop mode and `/flow:goal evaluate`.
+
+#### New hooks
+
+- `flow-goal-stop.sh` — Stop hook in three modes: `warn` (default, $0/turn), `block`, `evaluator-loop` (opt-in, Haiku subprocess ~$0.001/turn).
+- `flow-goal-evaluator.sh` — Active evaluator-loop mode. Recursion guarded via `CLAUDE_HOOK_GOAL_JUDGE_MODE` env var; throttled to 3 continuations/5min/session.
+- `flow-run-deterministic-checks.sh` — Shared deterministic checks runner.
+- `session-end-state.sh` — Annotates active FlowRuns at session end.
+
+#### Refactored
+
+- `bin/journal-record.sh` lines 120-295 (Python heredoc) extracted into `bin/_journal_atomic.py` as a shared module. All 14 existing tests in `journal-record.test.sh` pass unchanged. Security defenses (PYTHONSAFEPATH, O_NOFOLLOW, fcntl.flock, tempfile+rename+fsync, hostile-fork RCE mitigations) preserved verbatim.
+
+#### Settings additions
+
+All under `flow.*` namespace, cascade-resolved via `bin/cascade-resolve.sh`:
+- `flow.runtime.*` — master switch + state dir + retention
+- `flow.goals.*` — feature flag + auto-create flag + Stop hook posture + judge model
+- `flow.workflows.*` — feature flag (default `false`)
+- `flow.triggers.*` — feature flag + allowed types + concurrency + recursion deny
+
+#### Behavior defaults (preserve v2.x UX)
+
+- `flow.goals.requireGoalForStart: false` — `/flow:start` does NOT auto-create goals by default. Users opt in via `/flow:goal create` OR via the first-run consent prompt below.
+- `flow.goals.stopHookEnforcement: warn` — Stop hook is silent for users without active goals.
+- `flow.workflows.enabled: false` — `/flow:workflow` opt-in.
+- `flow.triggers.enabled: false` — `/flow:trigger` and `/flow:watch` opt-in.
+
+To disable the v3 runtime layer entirely (rollback): set `flow.runtime.enabled: false` and `flow.goals.enabled: false`.
+
+#### First-run consent prompt + integration into `/flow:start`
+
+To close the "feature ships dormant" usability gap surfaced by the post-cycle-8 review, `/flow:start` now wires v3 into the workflow surface and prompts new users to opt in:
+
+- **Phase 0.5 onboarding** — when both `.claude/settings.flow.json` AND `.flow/` are absent (fresh-install signal), `/flow:start` fires a single `AskUserQuestion` consent prompt with three options: enable v3 (recommended for new projects), skip and keep v2 behavior, or read the quickstart first. The user's answer is persisted to `.claude/settings.flow.json` so the prompt fires exactly once per project. v2 projects upgrading (with any existing settings file) never see the prompt.
+- **Phase 1 goal auto-creation** — after the Spec Validation Gate passes, `/flow:start` checks `flow.goals.requireGoalForStart`. When `true`, it invokes `Skill(goal-contract-capture)` + `Skill(goal-lifecycle)` to create `.flow/goals/issue-<N>.goal.yaml` and transition to `active`, then echoes `FlowGoal created: issue-<N> at <path> (status: active)`. When the goal already exists, it surfaces the path without overwriting.
+- **`/flow:goal evaluate` hint** — when ACs return `last_result.reason: not_executed` (deterministic checks skipped because `flow.goals.executeVerificationCommands: false`), the evaluator output now includes the settings hint to flip the flag, replacing the previous silent skip behavior.
+
+#### New documentation (post-cycle-8)
+
+- `references/flow-goals-quickstart.md` — 5-minute Hello-FlowGoal walkthrough on a synthetic issue (enable → start → inspect → evaluate → verdict)
+- `references/migration-v2-to-v3.md` — step-by-step v2 → v3 opt-in across the four independent feature flags (goals, Stop-hook posture, workflows, triggers), with rollback path
+- `references/flow-goals.md` — new "Enabling v3 in your project" section with copy-pasteable JSON for `.claude/settings.flow.json`
+- `README.md` — new "Get started with v3" link block pointing at the quickstart and migration guide
+
+#### New test
+
+`tests/flow-start-onboarding.test.sh` covers the onboarding detection logic (fresh / settings present / `.flow/` present / both present), the idempotency of both `enable` and `skip` arms (settings file written + re-detection returns `skip`), and the FlowGoal auto-creation gate (create / exists / skip-when-disabled / skip-on-missing-or-invalid issue number). 19 new assertions.
+
+#### Cycle-10 regression fixes (field-feedback hotfix)
+
+Field testing on a separate project surfaced two regressions in the cycle-9 expansion:
+
+- **Onboarding gate detects partial settings** — Phase 0.5 in `/flow:start` now treats a `.claude/settings.flow.json` lacking the `flow.goals` block as "not onboarded yet" and fires the consent prompt. Previously, any existing settings file silently bypassed onboarding, so a project where `/flow:setup` had landed `{"agentTeams": false}` before `/flow:start` was ever run would never see the v3 prompt. New detection: `.flow/` exists → skip; no settings file → prompt; settings file without `flow.goals` block (parsed via `jq -e '.flow.goals // empty'`) → prompt; settings file with `flow.goals` block (any contents, even `{}`) → skip. Conservative jq-unavailable fallback: skip.
+- **Settings merge preserves v2 keys** — when the user answers "Enable v3" or "Skip" and a partial file already exists, the new keys are merged via `jq` into the existing file instead of overwriting it. Previously the `cat > settings.flow.json <<JSON` heredoc would silently wipe v2 settings like `agentTeams`, `tiers`, `conventions.commitTypes`. New helper `set_flow_goals()` in `/flow:start` Phase 0.5 uses `jq --argjson req $1 --argjson exe $2 '.flow.goals.requireGoalForStart = $req | .flow.goals.executeVerificationCommands = $exe'` to mutate only the two flags.
+- **`context: fork` removed from three command-invoked skills** — `specification-capture`, `holdout-validation`, `runtime-verification` no longer fork. The `Skill(X)` invocation pattern with inline `Inputs:` blocks (used in `start.md`, `pr.md`, `review.md`, `address.md`, `design.md`, `brainstorm.md`) now resolves against the parent's context as intended. Field report: forked subprocess returned "what would you like me to do?" when invoked with full inline args, rendering all three documented-mandatory skills silently optional.
+- **Test additions**: `flow-start-onboarding.test.sh` grows by 13 assertions covering partial-settings detection (6 cases: `{}`, v2-only keys, `flow` block without `goals`, empty `flow.goals`, `.flow/` overrides partial settings, malformed JSON), jq-merge preservation (4 assertions on agentTeams/tiers/requireGoalForStart/executeVerificationCommands), and the `context: fork` lint (3 assertions, one per fixed skill).
+
+#### Cycle-11 broader `context: fork` audit
+
+A pointed question — "why was the broader audit deferred?" — surfaced that cycle 10 had stopped at the 3 user-reported failures while 25 other skills carried the same field. Per the [Claude Code docs on skill subagent context](https://code.claude.com/docs/en/skills.md), `context: fork` is only correct when the skill body is a self-contained task directive that captures inputs via `$ARGUMENTS`. None of the 25 remaining skills satisfied that contract; all were in documented-misuse territory. Cycle 11 audits and fixes the broader scope:
+
+- **8 Pattern A skills** (invoked from command markdown via `Skill(X)` references, same bug shape as cycle-10's three): `capability-discovery`, `goal-contract-capture`, `goal-evaluator`, `goal-lifecycle`, `issue-crafting`, `trigger-policy`, `visual-verification`, `workflow-validation`. Of these, 5 (goal-contract-capture, goal-evaluator, goal-lifecycle, trigger-policy, workflow-validation) explicitly declare "The invoking command MUST pass" inputs in their bodies — fork was dropping those inputs entirely, silently. The other 3 are reference-doc / self-contained but gain access to parent context (e.g., git diff state) by running inline.
+- **4 disable-invoke skills** (cosmetic cleanup; fork is dormant when `disable-model-invocation: true` prevents autonomous invocation): `merge-and-release`, `pr-lifecycle`, `preflight-checks`, `team-coordination`. Zero behavior change; removes the misleading frontmatter field.
+- **13 ambient-only skills deferred**: `architecture-patterns`, `brainstorming`, `branch-and-task-management`, `change-classification`, `code-review-methodology`, `convention-enforcement`, `criterion-verification-map`, `debugging-patterns`, `feedback-resolution`, `goal-evidence-ledger`, `merge-conflict-resolution`, `run-state-management`, `tdd-patterns`. These are listed only in `## Required Skills` blocks (loaded as ambient context, no `Skill(X)` invocation), so fork is dormant unless Claude autonomously invokes them via description matching. Each body needs individual audit (task-directive-with-$ARGUMENTS vs reference) before unforking. Tracked as deferred follow-up; the lint test asserts they still carry `context: fork` to catch accidental removals.
+
+**Test additions**: `flow-start-onboarding.test.sh` grows by 13 assertions (12 fork-lint extensions covering the new fixes + 1 sanity assertion that the 13 deferred skills still carry `context: fork`).
+
+**Cumulative fork-removal scope**: 15 of 28 skills (3 cycle-10 + 12 cycle-11). 13 ambient skills retain fork pending follow-up audit.
+
+#### Cycle-12 self-review fix-forward (paired-reviewer review of cycles 9-11)
+
+Cycle-12 paired-reviewer protocol (Path A: 10 facet agents + 2 holdout-validation lenses) surfaced 17 findings across cycles 9-11. All P1 + P2 fixed in-PR; P3 cosmetic items folded into the same changes where bounded.
+
+**P1 fixes** (load-bearing correctness):
+- **Onboarding answer dispatch** (`commands/start.md` Phase 0.5) — the prior `case "$ONBOARDING_ANSWER"` block referenced a variable that never received the `AskUserQuestion` response, so all three arms fell through silently. Restructured as prose-driven dispatch (Claude runs ONE of three documented bash blocks based on the user's chosen option) with explicit halt semantics on `set_flow_goals` failure.
+- **Terminal-goal resume guard** (Phase 1) — when `.flow/goals/issue-<N>.goal.yaml` already exists, the gate now parses `lifecycle.status`. Terminal goals (`achieved | failed | cancelled`) emit `FLOW_GOAL_STATE=terminal` and surface a six-field escalation rather than silently attempting to "resume" an immutable goal.
+- **Post-write verify after `Skill(goal-contract-capture)`** (Phase 1) — the "FlowGoal created" echo now fires only after confirming `$GOAL_PATH` exists AND `lifecycle.status == active`. Skill silent failure no longer produces a false-positive visibility line.
+- **Symlink defense on settings file** (`set_flow_goals` helper) — refuses to write through `.claude` or `settings.flow.json` if either is a symlink, matching the O_NOFOLLOW pattern in `bin/journal-record.sh`. TOCTOU re-check before the actual write.
+- **`executeVerificationCommands` gate scope clarified** — the docs in `commands/goal.md`, `references/flow-goals.md`, `references/flow-goals-quickstart.md` previously claimed the flag governs `/flow:goal evaluate`. The implementation only honors it in the Stop hook's `bin/flow-run-deterministic-checks.sh` (matching `schema.json:309`). Docs corrected to say the flag governs the Stop hook path; `/flow:goal evaluate` executes verification commands when present regardless.
+- **README v3 prompt-firing claim corrected** — README previously said "v2 projects with an existing settings file never see the prompt"; cycle-10 introduced partial-settings detection that fires the prompt when the existing file lacks a `flow.goals` block. README and `migration-v2-to-v3.md` now describe the actual behavior with a carve-out.
+
+**P2 fixes**:
+- **jq-absent fallback regression** (`set_flow_goals`) — when the file exists and jq is unavailable, the helper refuses to write rather than overwrite v2 keys with a heredoc fallback. Closes the gap where cycle-10's "v2 keys preserved" claim applied only to the jq-present path.
+- **Concurrent-write race** — wrapped the read-modify-write in `flock -x` with a PID-scoped tmpfile and explicit `mv`/jq error handling, so two parallel `/flow:start` invocations cannot lose data.
+- **`skill-manifests.md` drift** — the "Domain Skills Inventory" table is now synced with current SKILL.md frontmatter state (15 inline + 13 fork + 4 disable-model-invocation), with explanatory header noting the cycle-10/11 unfork scope. Added 13 v3 skills missing from the table entirely.
+- **`jq -e` stderr handling** + **`cascade-resolve.sh` existence check** — both error paths now surface `FLOW_ONBOARDING_ERROR=` / `FLOW_GOAL_ERROR=` lines instead of silently degrading. cascade-resolve absence halts Phase 1 with a `FLOW_GOAL_STATE=blocked` exit.
+- **`migration-v2-to-v3.md` "no change" carve-out** — added a section explicitly documenting the v2-visible behavior change (first-run prompt for v2-with-partial-settings users) and how to pre-empt it.
+- **"Rolling back" destructive snippet fix** — added a jq-merge example so users don't wipe v2 settings by copy-pasting the disable JSON.
+
+**P3 fixes** (folded into above where bounded):
+- Per-skill enumeration of the 13 deferred ambient skills (replacing opaque count assertion) — the test now reports which skill drifted.
+- Added inverse-direction assertion catching a new fork-using skill outside the 13 deferred + 15 fixed set.
+- Added 3 new partial-settings edge cases: array root (`[]`), `flow.goals: null`, and the previously-tested malformed JSON.
+- Added 2 new `set_flow_goals` direct tests: jq-absent refusal + symlink refusal.
+
+**Not addressed** (intentionally deferred to follow-up, not regression):
+- Orphaned `agent:` field on 15 unforked SKILL.md files — dead frontmatter, no behavior impact. Cosmetic cleanup tracked in follow-up.
+- CHANGELOG cycle-9 heading-shape inconsistency (no `#### Cycle-9` heading vs cycle-10/11) — purely indexing style.
+- End-to-end `/flow:start` integration test — convention across the suite is to lift bash blocks; adding an end-to-end runner is a suite-wide change.
+
+**Test additions**: `flow-start-onboarding.test.sh` grew by 20 assertions (45 → 65): 3 new edge cases (array, null, refined malformed), 5 set_flow_goals direct tests, 12 per-skill deferred-audit assertions (replacing 1 count assertion = net +12). Suite total: 478 → 498 pass.
+
+**Self-review verdict**: All 6 P1 + 6 P2 + 5 P3 findings either fixed or explicitly documented as deferred with rationale. Cycle 12 converged to zero outstanding findings.
+
+#### Cycle-13 — logical-usability assessment fixes (all 16 findings, P1+P2+P3)
+
+A logical-usability assessment after cycle-12 surfaced 16 findings spanning integration gaps (4 P1), contract drift (8 P2), and polish (4 P3). All addressed in-PR per the no-scope-deferral feedback. Decisions locked via AskUserQuestion:
+
+- Scope: All 16 findings (P1+P2+P3)
+- F4: Workflows documented as inspectable contracts (not enforced gates); `completion_gate.requires` renamed to `completion_gate.documented_requirements`
+- F5: Single "Enable v3" enables goals + workflows together; triggers stay separate opt-in (they can fire shell)
+- F6: Helper is single source for verdict persistence; skill returns structured verdict and never writes
+- F9: Implement stuck-detection (saner default than removing the contract)
+
+**P1 fixes** (integration gaps):
+
+- **F1 — FlowGoal gate in `/flow:pr` and `/flow:merge`**: `pr.md` Phase 1 surfaces a `### FlowGoal State` section reading `bin/flow-active-goal.sh`. Phase 4 step 7a fires AskUserQuestion when the gate blocks (Run /flow:goal evaluate / Create PR with not-yet-achieved status / Cancel). `merge.md` Phase 1 extends the finding-ledger gate with a parallel `### FlowGoal Gate` block; the BLOCKED display gains a FlowGoal row. Gated behind `flow.goals.requireGoalForStart` — v2 projects (flag false/unset) see no behavior change.
+- **F2 — `### FlowGoal State` + `### Recent Runs` in `/flow:status`**: New `!`-block sections after `### Decision Journal`. FlowGoal State surfaces active goal + per-AC status via `bin/flow-active-goal.sh --ac-summary`. Recent Runs lists last 3 entries from `.flow/runs/<ISO-id>/` with verdict + activity count. Both gated behind `flow.goals.enabled`; v2 mode → `STATE=disabled`.
+- **F3 — Goal failure pattern analysis in `/flow:learn`**: Phase 1 enumerates `.flow/goals/*.goal.yaml` + `.flow/runs/*/events.jsonl`. Phase 2 adds a `Goal Failure Patterns` category covering recurring failed ACs (same `verification_command` failing across 3+ goals), stuck-detection hits, `not_executed` ACs, and path-boundary violations. Pattern qualifies same as decision patterns (≥2 occurrences + evidence citations).
+- **F6 — Verdict persistence consolidated to a single helper**: Eliminates the prior 3-way race (skill, command, hook all wrote `last-verdict.json`; last writer won, skill's verdict silently discarded). `goal-evaluator` SKILL.md Step 8 rewritten: skill returns structured verdict and does NOT write. Command (`goal.md`) and Stop hook (`flow-goal-evaluator.sh`) each invoke `bin/flow-record-verdict.sh` directly. Two callers, one helper, one write per turn.
+
+**P2 fixes** (contract drift):
+
+- **F4 — `completion_gate.requires` renamed to `completion_gate.documented_requirements`**: The legacy name implied enforcement; the field is advisory documentation. Renamed across `workflow.schema.json`, 7 plugin workflow YAMLs, `flow-workflows.md` docs. `workflow-validation` SKILL.md gains a v3.0.x migration shim — YAMLs with the legacy field are accepted with a stderr deprecation warning. Support drops in v3.1.
+- **F5 — Onboarding enables goals + workflows together**: `/flow:start` Phase 0.5 "Enable v3" arm now invokes a new `set_flow_workflows_enabled` helper after `set_flow_goals` succeeds. Both go through atomic jq-merge + flock. Skip arm leaves `flow.workflows` untouched (preserves user's existing setting). Triggers stay separate opt-in — they can fire shell, so a single Enable answer doesn't grant trigger autonomy. Confirmation message tells the user how to enable triggers later.
+- **F7 — `delta` semantics documented**: New "Verdict delta semantics" section in `references/flow-goals.md` defines `made_progress | unchanged | regressed` values + computation rules + consumers (stuck detection, /flow:learn, /flow:goal status). `goal.md` status output template gains a `Delta:` line.
+- **F8 — Throttle event logging**: `flow-goal-evaluator.sh` throttle path now appends a `throttle-block` event to the active run's `events.jsonl` so `/flow:learn` can detect projects frequently hitting the throttle. Inline best-effort RUN_ID resolution via `bin/flow-active-goal.sh`. `references/stop-hook-goal-enforcement.md` gains a "Throttle event log" subsection documenting the schema.
+- **F9 — Stuck-detection implemented in the hook**: New `_check_stuck` helper in `flow-goal-evaluator.sh` increments a per-run counter on `delta == "unchanged"`, resets on other deltas, transitions the goal to `lifecycle.status: failed` when counter reaches `flow.goals.failAfterStuckTurns` (default 3). Counter state at `.flow/runs/<id>/stuck-counter`. Emits `stuck-detection-fired` event. Integrated into both must-pass-fail and judge not_achieved paths — on stuck, hook emits approve instead of block (goal is terminal; further iteration moot).
+- **F12 — Tier Classification audit + lint test**: Added `## Tier Classification` sections to 6 commands missing them (`goal.md`, `resume.md`, `run.md`, `trigger.md`, `watch.md`, `workflow.md`). New `tests/flow-tier-classification-lint.test.sh` runs in CI; catches future regressions.
+- **F13 — Trigger target workflow cross-reference**: `trigger-policy` SKILL.md gains Step 7 — verifies `trigger.target.workflow` resolves to an existing workflow YAML (plugin or project-local). Hard fail. Catches typos at trigger-create time rather than at runtime when `/flow:run trigger <id>` dispatches.
+- **F16 — Test coverage for all 14 changes**: 7 new test files + 1 extended; 91 new assertions (498 → 589 pass).
+
+**P3 fixes** (polish):
+
+- **F10 — Tier 2 confirm on terminal-state transition**: `goal-evaluator` SKILL.md Step 6 contract updated — skill writes lifecycle only for non-terminal states. Terminal verdicts (`achieved`/`failed`) return a `proposed_transition`; the command fires AskUserQuestion with Confirm | Re-evaluate | Cancel. Stop-hook evaluator-loop excluded (no AskUserQuestion in hook context — emits approve + next-step hint).
+- **F11 — Hard-warn on missing jsonschema**: `bin/flow-goal-record.sh` now emits a one-line stderr WARN when `import jsonschema` fails. Idempotent via module-level sentinel. Previously silent skip masked the validation degradation.
+- **F14 — Workflow + trigger quickstarts**: Two new files mirroring `flow-goals-quickstart.md` shape — `flow-workflows-quickstart.md` (5-minute walkthrough of `/flow:workflow list|inspect|validate|graph` + project-local overrides) and `flow-triggers-quickstart.md` (5-minute walkthrough of `/flow:watch pr <N>` + `/flow:trigger` lifecycle + watch-mode `/loop` usage). All three quickstarts cross-link.
+- **F15 — Validation errors emit source path + example**: `workflow-validation` SKILL.md violations now include `source_file` + `example` fields. `commands/workflow.md` renders source path + corrected YAML snippet per violation.
+
+**Test additions**: 7 new test files + 1 extension = +91 assertions (498 → 589 pass). New files: `flow-active-goal.test.sh` (14), `flow-tier-classification-lint.test.sh` (2), `flow-workflow-completion-gate-rename.test.sh` (4), `flow-goal-record-jsonschema.test.sh` (2), `flow-throttle-stuck-presence.test.sh` (4), `flow-trigger-cross-ref.test.sh` (2), `flow-pr-merge-goal-gate.test.sh` (4), `flow-status-learn-v3.test.sh` (4). `flow-start-onboarding.test.sh` extended by 7 (F5 verification).
+
+**Self-review verdict**: All 4 P1 + 8 P2 + 4 P3 findings (F1-F16) addressed in this cycle. Cycle 13 converges with 589/589 tests passing.
+
+#### Cycle-14 — paired-reviewer fix-forward (18 findings across security, correctness, tests)
+
+Cycle-13's Path A paired-reviewer self-review surfaced 18 additional findings (6 security P1, 6 correctness P1, 6 P2). Per the user's no-deferral rule, all addressed in-PR.
+
+**Security (P1)**:
+- **SEC-1 — `scope.run_id` path-traversal**: schema now constrains run_id to `^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$` so the value can't traverse out of `.flow/runs/<id>/` when interpolated into bash path expressions. Defense-in-depth bash reject in `flow-goal-evaluator.sh` for the jsonschema-unavailable path.
+- **SEC-2 — `events.jsonl` symlink defense**: both throttle-block (F8) and stuck-detection-fired (F9) writes now refuse to append if the file is a symlink. Previously the bash `>>` followed symlinks, creating a write primitive for any user-writable target.
+- **SEC-3 — Python injection via `$THROTTLE_GOAL_PATH`**: converted the `python3 -c "...'$VAR'..."` heredoc to `python3 - "$VAR" <<'PYEOF' ... sys.argv[1] ... PYEOF` argv pattern. Matches the safe pattern used elsewhere in the same file. Stuck-counter writes also gain `[ -L ]` symlink defense.
+- **SEC-6 — `trigger.target.workflow` + `trigger.target.goal` path-traversal**: schema constrains both to `^[a-z0-9][a-z0-9-]{0,63}$` (matches `metadata.id` pattern). Closes the cross-reference probe vector.
+
+**Correctness (P1)**:
+- **F1 — `--ac-summary` pipe + newline sanitization**: pipe characters in AC fields used to silently inject extra columns into the documented `<id>|<status>|<evidence_ref>|<last_result>` contract. Now replaced with U+2502 (visual fidelity, parser-safe). Malformed AC shapes (string instead of dict) skipped instead of crashing.
+- **F2 — `/flow:status` Recent Runs `tac` fallback**: previous `... | tac 2>/dev/null || ... | tail -3` silently produced oldest-first when `tac` was missing on macOS. Now uses awk-based reverse for portable most-recent-first ordering.
+- **F2 — F5 partial-onboarding atomic write**: cycle-13's two-helper sequence (`set_flow_goals` + `set_flow_workflows_enabled`) had a partial-success failure mode where `flow.goals` landed but `flow.workflows` didn't. Refactored to single helper with 3rd arg (`workflows: "true"|"false"|"skip"`) writing all keys in one jq merge. Plus mktemp instead of PID-scoped tmpfile (SEC-V6), cleanup trap, and post-merge JSON validation before mv.
+- **F1 — F9 lifecycle preserves `turns_evaluated`**: stuck-detection now reads the existing `turns_evaluated` and writes it back in the failed lifecycle fragment (was hard-coded to 0, losing iteration history `/flow:learn` needs).
+- **F7 — F9 stuck-transition no longer lies on failure**: when `flow-goal-record.sh --update-lifecycle` fails, the hook returns 0 (keep block loop active) instead of emitting "lifecycle transitioned to failed" — which was a lie when the write didn't happen.
+- **F2 — F9 stuck-counter write fail-closed**: previously `|| true` masked counter-write failure, letting in-memory increment diverge from on-disk state and trapping the user in infinite continuations. Now fail-closed (treat as stuck) when the write fails.
+- **F4-COVERAGE — workflow-validation migration shim unreachable**: cycle-13 documented an in-memory `requires → documented_requirements` shim but then invoked `python3 -m jsonschema -i <file> <schema>` which re-read the file from disk, bypassing the shim entirely. Now SKILL.md shows the canonical inline-Python invocation that runs the shim and jsonschema in the same process.
+- **F3 — both-fields-present migration**: shim now drops legacy `requires` with WARN when `documented_requirements` is also present (was opaque schema error).
+
+**P2 cluster**:
+- **SEC-V4 — cascade-resolve null vs false**: settings cascade could not distinguish "absent" from "explicit false" — both jq `// empty` and `// null` operators fire on null/false, so a higher-precedence source could never override a lower source's true with false. Two-part fix: (a) `cascade-resolve.sh` now treats jq output of `"null"` as not-found (was only treating empty string); (b) 19 boolean-flag call sites converted from `.flow.X // empty` to bare `.flow.X` so jq outputs `false`/`true`/`null` verbatim and cascade routes each correctly.
+- **F11-SENTINEL — jsonschema WARN dedup**: cycle-13's `_JSONSCHEMA_WARN_EMITTED` Python sentinel was per-process; since each bash call spawned a fresh Python, WARN fired on every `/flow:goal` command. Now per-day file sentinel at `$TMPDIR/flow-warn-jsonschema-USER-DATE` survives across invocations. TMPDIR (not HOME) so isolated-HOME tests don't break Python user-site-packages lookup.
+- **F11-INCONSISTENCY — sibling helpers**: `flow-record-activity.sh` and `flow-record-evidence.sh` were silently swallowing jsonschema ImportError while `flow-goal-record.sh` warned — divergent from F11's "surface the degradation" rationale. All three writers now use the same per-day sentinel.
+- **F5 — fresh-file atomic write**: cycle-13's `printf > $SETTINGS` for new settings files was non-atomic; signal mid-write would leave partial content. Now goes through tmpfile + jq-empty-check + mv like the merge path.
+
+**Convention polish (P3)**:
+- Cycle-13 test file headers converted from "Source-presence tests for cycle-13 F<n>" to the established "Tests for plugins/flow/<exact-path>" convention.
+- Three quickstart `Next steps` sections converted from bare-backtick filenames to clickable markdown links matching project precedent.
+
+**Test coverage (F16 upgrade)**:
+- New `flow-cycle14-behavioral.test.sh` provides 33 fixture-driven assertions for the cycle-13 source-presence-only tests:
+  - F4 migration shim runs full Python pipeline against schema (legacy `requires` + both-fields cases)
+  - F9 stuck-counter increment/reset semantics + symlink defense
+  - F10 `proposed_transition` contract + three-option AskUserQuestion
+  - F1 pr.md goal-gate state vocabulary (5 states)
+  - F8 hook source contains both event types + 3+ symlink-guard sites
+  - SEC-1/SEC-6 schema patterns verified at the property level
+  - SEC-V4 cascade-resolve explicit-false recognition
+
+**Test totals**: 589 → 622 (+33). Cycle-14 self-review verdict: zero outstanding findings; all 18 paired-reviewer findings addressed in-PR.
+
+#### File-tree additions
+
+- `plugins/flow/schemas/v1/` — 6 schemas (goal, run, activity, evidence, workflow, trigger)
+- `plugins/flow/workflows/` — 7 workflow YAMLs
+- `plugins/flow/triggers/templates/` — 3 trigger templates
+- `plugins/flow/references/` — 5 new references (flow-goals, stop-hook-goal-enforcement, flow-runtime-state, flow-workflows, flow-triggers)
+- Root `.gitignore` — `.flow/runs/`, `.flow/evidence/`, `.flow/triggers/*.local.yaml` gitignored; `.flow/goals/`, `.flow/workflows/`, non-`.local` triggers tracked
+
+#### Migration
+
+v3.0 is **purely additive**. Existing v2.x users see no breaking changes; opting into v3 features is a settings flag (`flow.goals.requireGoalForStart`, `flow.workflows.enabled`, `flow.triggers.enabled` — all default `false` or to safe v2.x-compatible values). To roll back entirely, set `flow.runtime.enabled: false` and `flow.goals.enabled: false`.
+
+#### Pre-GA hardening (during PR #109 self-review)
+
+Iterative paired-reviewer self-review converged the 3.0.0 surface against:
+
+- **Independence Protocol enforcement** — new `bin/_flow_evidence_bundle.py` assembles the judge prompt from goal contract + deterministic report + evidence sidecars only; the conversation transcript is never read. All untrusted content is wrapped in `<<<UNTRUSTED_*>>>` fences; the judge's `--disallowedTools '*'` plus `tools: []` in the agent spec is the security boundary.
+- **`last-verdict.json` producer + cross-judge enforcement** — `bin/flow-record-verdict.sh` is invoked from every verdict-producing site (evaluator-loop hook on all 3 exit paths; `/flow:goal evaluate` after the skill produces a verdict). Assembler emits `### Evidence coverage analysis` headers with per-AC classification (`deterministic | mixed | judge_only | none`); judge-only ACs are flagged `CROSS-CHECK REQUIRED`.
+- **Schema enum coverage + `_safe_ac_id` + orphan-AC + malformed-AC surfacing** in the assembler.
+- **Symlink defenses everywhere** — `O_NOFOLLOW` on every file read and tempfile write; `-L` directory checks before+after `mkdir -p`; rejected symlinked goal YAMLs trigger safe-fallback.
+- **`timeout(1)` detection** for evaluator-loop mode — hook detects `timeout` or `gtimeout` and degrades with platform-aware install guidance (`brew install coreutils` on Darwin; `apt/dnf/apk add coreutils` on Linux) when neither exists.
+- **Integration harness** for evaluator-loop active mode — `tests/lib/mock-claude.sh` PATH-shim, 6 verdict fixtures, 25 test cases covering every documented exit path.
+
+#### Test totals
+
+622 assertions pass, 0 fail (initial v3 baseline 259 → 433 after iterative self-review → 452 after post-cycle-8 onboarding + docs → 465 after cycle-10 regression fixes → 478 after cycle-11 broader fork audit → 498 after cycle-12 paired-reviewer self-review fix-forward → 589 after cycle-13 logical-usability fixes → 622 after cycle-14 paired-reviewer fix-forward). Tests cover JSON schemas, atomic write helpers, Stop hook behavior, the integration harness (full `claude` mock for evaluator-loop active mode), the fresh-install onboarding detection, partial-settings detection + merge (with array/null/malformed edge cases), the `set_flow_goals` helper direct (jq-absent refusal + symlink refusal), the `context: fork` skill-frontmatter lint (15 fixed + 13 deferred-audit per-skill + inverse-drift detection), `bin/flow-active-goal.sh` (all 4 output modes, symlink defense, degenerate-state), Tier Classification convention lint, `completion_gate.documented_requirements` rename + schema acceptance, jsonschema-unavailable WARN, throttle/stuck source-presence, trigger cross-reference, /flow:pr + /flow:merge goal gate presence, /flow:status + /flow:learn v3 sections.
+
+#### What's deferred (after cycle 13)
+
+- Integration of FlowRun creation + FlowGoal auto-creation into the remaining commands (`debug.md`, `address.md`, `review.md`, `release.md`). `start.md` is wired (see "First-run consent prompt + integration into `/flow:start`" above). `pr.md` and `merge.md` gain goal-state visibility + gating in cycle 13 F1; full FlowRun creation in these commands is deferred.
+- ~~`/flow:status` and `/flow:learn` extensions to read from `.flow/`.~~ — completed in cycle-13 F2 + F3.
+- Recovery / stuck-goal documentation (`references/recovering-stuck-goals.md`).
+- Consolidated cost-comparison table for the three Stop-hook modes in a single page.
+- `/flow:watch` post-creation `AskUserQuestion` confirmation step.
+- Polyglot Windows wrapper for hook scripts (separate cleanup PR).
+- Per-skill / per-command unit tests for workflow / run-state / trigger surfaces.
+- `context: fork` audit across the remaining 13 ambient-only skills (`architecture-patterns`, `brainstorming`, `branch-and-task-management`, `change-classification`, `code-review-methodology`, `convention-enforcement`, `criterion-verification-map`, `debugging-patterns`, `feedback-resolution`, `goal-evidence-ledger`, `merge-conflict-resolution`, `run-state-management`, `tdd-patterns`) — fork is dormant for these because they're only loaded via `## Required Skills` (no `Skill(X)` invocations); each body must be individually classified before any fork-removal action.
+- Auto-log compaction (50+ `<!-- auto-log: -->` lines per session reduced to one rolled-up entry per phase).
+- Review fan-out extracted as a shared skill (`/flow:pr` Phase 3 and `/flow:review` Path B currently duplicate the 5-agent dispatch).
+- Cross-cycle pattern linker for findings (finding-id stability + "same pattern as cycle N-1" detector).
+- Structured Tier 3 override-with-rationale option in `/flow:merge` and `/flow:release`.
+- Journal `## Lessons Learned` section appended at `/flow:merge` or `/flow:learn`.
+- Defense-in-depth: hard-fail when a `Skill(X)` invocation returns empty / "what would you like me to do?" instead of silently accepting the skip.
+
+---
+
 ## 2.4.0 (2026-05-19)
 
 ### Behavior change — LLM Operator Principles

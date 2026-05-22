@@ -2,6 +2,32 @@
 
 A Claude Code plugin that replaces command-driven GitHub workflow automation with a skill-driven, agent-team-powered approach. Skills encode reusable team knowledge — policy, philosophy, and rationale — as reference documents that compound across sessions; commands carry the executable bash that runs at workflow time.
 
+## Flow v3 Runtime Layer (new in 3.0.0)
+
+Flow v3 introduces a **runtime layer** at `.flow/` on top of the existing skill + command framework. Six new primitives give the plugin durable goals, inspectable workflows, declarative triggers, and resumable execution:
+
+- **FlowGoal** — `.flow/goals/<id>.goal.yaml`, durable completion contracts (`/flow:goal status | create | inspect | evaluate | pause | resume | clear`).
+- **FlowWorkflow** — `plugins/flow/workflows/*.workflow.yaml`, machine-readable process contracts for every `/flow:*` command (`/flow:workflow list | inspect | validate | graph`).
+- **FlowTrigger** — `.flow/triggers/<id>.trigger.yaml`, wake-up intent contracts (`/flow:trigger`, `/flow:watch`, `/flow:run`). v3.0 supports `manual | hook | loop_prompt`.
+- **FlowRun + FlowActivity** — `.flow/runs/<ISO-id>/`, durable execution ledger (`/flow:resume`).
+- **FlowEvidence** — `.evidence.yaml` sidecars proving acceptance criteria.
+
+Flow does NOT invoke native Claude Code `/goal` or `/loop` — those are session-only built-ins and not exposed to plugins. Flow implements its own file-backed goal layer and uses Stop hooks for post-turn enforcement. The `/flow:watch` command generates a `/loop` prompt file the user invokes manually.
+
+**Default behavior is preserved**: `flow.goals.requireGoalForStart` defaults to `false`, so `/flow:start` does NOT auto-create goals. The onboarding prompt fires on the first `/flow:start` in a project that has no `.flow/` directory AND whose `.claude/settings.flow.json` (if present) lacks a `flow.goals` block. v2 projects whose settings file already contains a `flow.goals` block (any contents) skip the prompt — only projects that have never answered the v3 question see it. See the CHANGELOG for the full settings matrix.
+
+### Get started with v3
+
+- [`references/flow-goals-quickstart.md`](references/flow-goals-quickstart.md) — 5-minute Hello-FlowGoal walkthrough (synthetic issue → goal → evaluate → verdict)
+- [`references/migration-v2-to-v3.md`](references/migration-v2-to-v3.md) — step-by-step v2 → v3 opt-in (four independent flags)
+
+Other v3 references:
+- [`references/flow-goals.md`](references/flow-goals.md) — FlowGoal model
+- [`references/flow-runtime-state.md`](references/flow-runtime-state.md) — `.flow/` directory layout
+- [`references/flow-workflows.md`](references/flow-workflows.md) — FlowWorkflow contracts
+- [`references/flow-triggers.md`](references/flow-triggers.md) — FlowTrigger model
+- [`references/stop-hook-goal-enforcement.md`](references/stop-hook-goal-enforcement.md) — Stop hook architecture
+
 ## Excellence Principles
 
 Flow v2.0 enforces six guiding principles that shift the quality bar from "good enough" to "provably correct." These principles emerged from observed failure patterns in agent-driven development and are now structural defaults.

@@ -1,7 +1,7 @@
 {
   "name": "flow",
-  "version": "2.4.0",
-  "description": "Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Encodes team knowledge as composable skills, enforces safety through hooks, and compounds learning across sessions. Strict TDD, Stranger Test, holdout validation, and evidence-based verification built in.",
+  "version": "3.0.0",
+  "description": "Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Encodes team knowledge as composable skills, enforces safety through hooks, and compounds learning across sessions. Strict TDD, Stranger Test, holdout validation, and evidence-based verification built in. Durable goals, workflows, triggers, and runs at .flow/.",
   "author": {
     "name": "Synapti AI",
     "url": "https://github.com/synaptiai"

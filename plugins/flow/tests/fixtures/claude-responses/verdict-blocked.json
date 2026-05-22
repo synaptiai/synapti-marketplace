@@ -1,0 +1,1 @@
+{"structured_output":{"verdict":"blocked","confidence":0.85,"delta":"unchanged","next_step_hint":"obtain database migration approval before AC3 can proceed","reason":"AC3 requires Tier 3 migration approval that has not been granted","blocker_type":"missing_approval","criterion_results":[]}}

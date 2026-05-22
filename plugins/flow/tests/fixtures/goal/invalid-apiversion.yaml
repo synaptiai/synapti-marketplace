@@ -1,0 +1,22 @@
+# Negative fixture: apiVersion does not match the v1 const.
+# Future major versions (v2, v3) must NOT validate against this schema —
+# they need their own schema file at schemas/v2/goal.schema.json, etc.
+# Expected: jsonschema validation FAILS with const mismatch.
+apiVersion: flow.synapti.ai/v2
+kind: FlowGoal
+metadata:
+  id: issue-42
+  created_at: '2026-05-20T14:30:00Z'
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-42-search-fix
+objective:
+  outcome: Issue #42 is implemented and verified.
+  acceptance_criteria:
+    - id: AC1
+      text: 'AC text'
+      status: pending
+evaluator:
+  type: flow_verdict_judge
+lifecycle:
+  status: active

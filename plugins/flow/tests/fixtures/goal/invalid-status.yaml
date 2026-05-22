@@ -1,0 +1,22 @@
+# Negative fixture: lifecycle.status set to a value outside the allowed enum.
+# 'in_progress' looks plausible but the schema requires
+# {draft, active, waiting_for_user, waiting_for_ci, blocked, achieved, failed, cancelled}.
+# Expected: jsonschema validation FAILS with enum-mismatch error.
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-42
+  created_at: '2026-05-20T14:30:00Z'
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-42-search-fix
+objective:
+  outcome: Issue #42 is implemented and verified.
+  acceptance_criteria:
+    - id: AC1
+      text: 'AC text'
+      status: pending
+evaluator:
+  type: flow_verdict_judge
+lifecycle:
+  status: in_progress

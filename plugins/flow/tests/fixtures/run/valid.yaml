@@ -1,0 +1,31 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowRun
+metadata:
+  id: 2026-05-20T143000Z-issue-42
+  workflow: start-issue
+  workflow_version: 1
+  goal: issue-42
+  created_at: '2026-05-20T14:30:00Z'
+context:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-42-search-fix
+  issue: 42
+  pr: null
+  journal: .decisions/issue-42.md
+state:
+  status: active
+  current_phase: code
+  current_activity: 004-task-AC1
+  completed_activities:
+    - preflight_issue_start
+    - fetch_issue_context
+    - specification_capture
+    - spec_validation_gate
+  blocked_reason: null
+limits:
+  max_iterations: 10
+  max_runtime_minutes: null
+events:
+  - at: '2026-05-20T14:30:00Z'
+    type: run_started
+    activity: preflight_issue_start

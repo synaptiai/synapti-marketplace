@@ -1,0 +1,81 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowWorkflow
+
+metadata:
+  id: merge-pr
+  command: /flow:merge
+  version: 1
+  description: Merge an approved PR — verify approval, CI green, goal achieved; require AskUserQuestion.
+
+inputs:
+  pr_number:
+    type: integer
+    required: true
+
+required_skills:
+  - run-state-management
+
+required_agents: []
+
+phases:
+  - id: preflight
+    type: bash
+    gate: blocking
+    activities:
+      - id: preflight_merge_start
+        type: bash
+        evidence: preflight_output
+      - id: fetch_pr_state
+        type: bash
+        evidence: pr_state_snapshot
+
+  - id: verify
+    type: mixed
+    activities:
+      - id: check_approval
+        type: bash
+        evidence: approval_state
+      - id: check_ci_status
+        type: bash
+        evidence: ci_status
+      - id: check_unresolved_threads
+        type: bash
+        evidence: thread_state
+      - id: check_linked_goal_achieved
+        type: bash
+        evidence: goal_status
+
+  - id: confirm
+    type: mixed
+    activities:
+      - id: ask_user_to_merge
+        type: external
+        evidence: user_confirmation
+
+  - id: merge
+    type: mixed
+    activities:
+      - id: perform_merge
+        type: bash
+        evidence: merge_sha
+      - id: delete_branch
+        type: bash
+        evidence: branch_delete_result
+      - id: workflow_run_terminal
+        type: skill
+        skill: run-state-management
+        evidence: workflow_run_completed
+
+completion_gate:
+  documented_requirements:
+    - approval_present
+    - ci_green
+    - no_unresolved_threads
+    - linked_goal_achieved
+    - user_confirmed
+    - merge_completed
+
+tier_classification:
+  branch_delete: journal
+  merge: confirm
+  release: confirm

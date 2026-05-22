@@ -1,0 +1,32 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowTrigger
+metadata:
+  id: example-trigger
+  name: Example trigger
+  enabled: true
+  created_at: '2026-05-20T14:30:00Z'
+trigger:
+  type: manual
+  user_starts_loop_manually: true
+target:
+  workflow: address-pr
+  command: '/flow:run trigger example-trigger'
+context:
+  repo: example/example
+policy:
+  autonomy: journal
+  allowed_actions:
+    - read_pr
+    - edit_files
+    - commit
+  forbidden_actions:
+    - merge
+    - release
+concurrency:
+  policy: skip_if_running
+stop_conditions:
+  - 'goal_status == achieved'
+recursion_policy:
+  triggered_runs_may_create_triggers: false
+  triggered_runs_may_modify_triggers: false
+  triggered_runs_may_enable_triggers: false

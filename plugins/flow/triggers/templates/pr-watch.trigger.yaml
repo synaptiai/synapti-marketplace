@@ -1,0 +1,62 @@
+# Template: PR watch
+#
+# Generates a user-invoked /loop prompt that monitors a PR's CI + review state.
+# /flow:watch pr <N> copies this template, substitutes ${PR} with the actual PR
+# number, and writes to .flow/triggers/pr-<N>-watch.trigger.yaml.
+#
+# Plugin CANNOT invoke /loop. User invokes it manually using the generated
+# .claude/flow-loop-pr-<N>.md prompt file.
+
+apiVersion: flow.synapti.ai/v1
+kind: FlowTrigger
+
+metadata:
+  id: pr-${PR}-watch
+  name: 'Watch PR #${PR}'
+  enabled: true
+  created_at: '${NOW}'
+
+trigger:
+  type: loop_prompt
+  suggested_interval: '20m'
+  jitter: '5m'
+  user_starts_loop_manually: true
+
+target:
+  workflow: address-pr
+  goal: pr-${PR}-address
+  command: '/flow:run trigger pr-${PR}-watch'
+
+context:
+  repo: '${REPO}'
+  branch: '${BRANCH}'
+  pr: ${PR}
+
+policy:
+  autonomy: journal
+  allowed_actions:
+    - read_pr
+    - read_ci
+    - read_review_comments
+    - edit_files
+    - commit
+    - push
+    - comment
+  forbidden_actions:
+    - merge
+    - release
+    - delete_branch
+    - create_trigger
+
+concurrency:
+  policy: skip_if_running
+
+stop_conditions:
+  - 'ci_status == success'
+  - 'unresolved_review_threads == 0'
+  - 'goal_status == achieved'
+
+recursion_policy:
+  triggered_runs_may_create_triggers: false
+  triggered_runs_may_modify_triggers: false
+  triggered_runs_may_enable_triggers: false

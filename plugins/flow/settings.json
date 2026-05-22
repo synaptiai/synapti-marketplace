@@ -84,5 +84,34 @@
     ],
     "maxIterations": 3,
     "requireVisualVerification": false
+  },
+  "flow": {
+    "runtime": {
+      "enabled": true,
+      "stateDir": ".flow",
+      "runRetentionDays": 30
+    },
+    "goals": {
+      "enabled": true,
+      "requireGoalForStart": false,
+      "stopHookEnforcement": "warn",
+      "failAfterStuckTurns": 3,
+      "executeVerificationCommands": false,
+      "judge": {
+        "model": "haiku",
+        "timeoutSeconds": 60
+      }
+    },
+    "workflows": {
+      "enabled": false
+    },
+    "triggers": {
+      "enabled": false,
+      "allowedTypes": ["manual", "hook", "loop_prompt"],
+      "allowAutonomousMerge": false,
+      "allowTriggerCreationFromTriggeredRun": false,
+      "defaultConcurrency": "skip_if_running",
+      "maxActiveTriggers": 5
+    }
   }
 }

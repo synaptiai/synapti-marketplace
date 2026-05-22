@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synapti.ai/schemas/flow/v1/evidence.schema.json",
+  "title": "FlowEvidence",
+  "description": "A durable proof object produced by an activity and consumed by goal evaluators. Stored as a sidecar (.evidence.yaml) alongside raw output (.txt) under .flow/runs/<id>/evidence/. Evidence must NOT live only in the transcript — it must survive session boundaries.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "evidence"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "flow.synapti.ai/v1"
+    },
+    "kind": {
+      "const": "FlowEvidence"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["id", "created_at"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "description": "Evidence identifier (e.g., 'evidence-AC1-test', 'evidence-lint-pass')."
+        },
+        "goal": {
+          "type": ["string", "null"],
+          "description": "FlowGoal id this evidence proves/disproves."
+        },
+        "run_id": {
+          "type": ["string", "null"],
+          "description": "FlowRun id this evidence was collected in."
+        },
+        "activity_id": {
+          "type": ["string", "null"],
+          "description": "FlowActivity id that produced this evidence."
+        },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "enum": [
+            "command_result",
+            "test_result",
+            "lint_result",
+            "typecheck_result",
+            "runtime_smoke_result",
+            "visual_result",
+            "git_diff",
+            "holdout_validation",
+            "verdict",
+            "human_approval",
+            "review_comment_snapshot",
+            "ci_status",
+            "llm_judge_report",
+            "artifact_check",
+            "path_boundary_check"
+          ]
+        },
+        "command": {
+          "type": "string",
+          "description": "Bash command that produced the evidence (when type is *_result)."
+        },
+        "exit_code": { "type": "integer" },
+        "output_ref": {
+          "type": "string",
+          "description": "Relative path to the raw output file (e.g., '.flow/runs/<id>/evidence/AC1-test.txt')."
+        },
+        "proves": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Acceptance criterion IDs (e.g., ['AC1', 'AC2']) that this evidence proves."
+        },
+        "limitations": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "What this evidence does NOT prove. Required for non-trivial evidence — surface negative space."
+        },
+        "negative_cases": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Adversarial cases or boundary conditions explicitly tested."
+        }
+      }
+    }
+  }
+}

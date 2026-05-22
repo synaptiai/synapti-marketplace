@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synapti.ai/schemas/flow/v1/trigger.schema.json",
+  "title": "FlowTrigger",
+  "description": "A wake-up intent contract. Declares when flow should resume or start work, but does NOT guarantee background execution. Plugins cannot invoke native /loop or scheduled tasks; FlowTrigger v3.0 is descriptive and command-driven (manual | hook | loop_prompt). Future v3.1+ adds github_actions / local_cron / local_daemon adapters.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "trigger", "target", "policy"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": { "const": "flow.synapti.ai/v1" },
+    "kind": { "const": "FlowTrigger" },
+    "metadata": {
+      "type": "object",
+      "required": ["id", "created_at", "enabled"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+        },
+        "name": { "type": "string" },
+        "enabled": { "type": "boolean", "default": true },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "enum": [
+            "manual",
+            "hook",
+            "loop_prompt",
+            "github_actions",
+            "local_cron",
+            "local_daemon"
+          ]
+        },
+        "suggested_interval": {
+          "type": "string",
+          "description": "Human-readable interval suggestion (e.g., '20m', '1h'). Used by loop_prompt type to instruct the user-driven /loop."
+        },
+        "jitter": { "type": "string" },
+        "user_starts_loop_manually": {
+          "type": "boolean",
+          "description": "Set true for loop_prompt type — explicit acknowledgment that flow does NOT invoke /loop; the user does."
+        },
+        "schedule": {
+          "type": "string",
+          "description": "Cron expression — only valid for local_cron / github_actions types."
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["command"],
+      "additionalProperties": true,
+      "properties": {
+        "workflow": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+          "description": "Workflow id (matches the FlowWorkflow metadata.id pattern). Pattern-constrained because trigger-policy interpolates this into plugins/flow/workflows/<workflow>.workflow.yaml during cross-reference — an unconstrained value is a path-traversal probe (cycle-14 SEC-6)."
+        },
+        "goal": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+          "description": "Goal id (matches the FlowGoal metadata.id pattern)."
+        },
+        "command": {
+          "type": "string",
+          "description": "Slash command to invoke when the trigger fires (e.g., /flow:run trigger pr-123-watch)."
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "repo": { "type": "string" },
+        "branch": { "type": "string" },
+        "pr": { "type": ["integer", "null"], "minimum": 1 },
+        "issue": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": ["autonomy", "allowed_actions", "forbidden_actions"],
+      "additionalProperties": false,
+      "properties": {
+        "autonomy": {
+          "enum": ["autonomous", "journal", "confirm"]
+        },
+        "allowed_actions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "forbidden_actions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Hard requirement: must include 'merge' and 'release' (Tier 3 cannot be autonomous regardless of trigger settings). Enforced by schema: allOf contains assertions below.",
+          "allOf": [
+            { "contains": { "const": "merge" } },
+            { "contains": { "const": "release" } }
+          ]
+        }
+      }
+    },
+    "concurrency": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "policy": {
+          "enum": ["skip_if_running", "queue", "cancel_previous"],
+          "default": "skip_if_running"
+        }
+      }
+    },
+    "stop_conditions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Boolean expressions evaluated each iteration. When all are true, the trigger should stop firing (terminal state)."
+    },
+    "recursion_policy": {
+      "type": "object",
+      "description": "By default, triggered runs may NOT create or modify triggers — prevents trigger-creates-trigger loops.",
+      "additionalProperties": false,
+      "properties": {
+        "triggered_runs_may_create_triggers": { "type": "boolean", "default": false },
+        "triggered_runs_may_modify_triggers": { "type": "boolean", "default": false },
+        "triggered_runs_may_enable_triggers": { "type": "boolean", "default": false }
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+# Negative fixture: missing required top-level `evidence` block (which holds type).
+# Expected: jsonschema validation FAILS with "required property 'evidence'" error.
+apiVersion: flow.synapti.ai/v1
+kind: FlowEvidence
+metadata:
+  id: evidence-ac1-test
+  goal: issue-42
+  created_at: '2026-05-20T14:42:00Z'

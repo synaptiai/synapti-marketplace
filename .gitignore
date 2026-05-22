@@ -14,3 +14,16 @@ ai-first-kit-workspace/*
 
 # Workshop slide renders (regenerate via Marp from .md sources)
 docs/flow-team-session/*.pdf
+
+# Flow v3 runtime state — per-developer; not committed.
+# .flow/goals/*.goal.yaml and .flow/workflows/*.workflow.yaml remain
+# tracked so teams can share goal contracts and workflow overrides;
+# runs/evidence/local-triggers are gitignored to avoid noise.
+.flow/runs/
+.flow/evidence/
+.flow/triggers/*.local.yaml
+
+# Python bytecode caches in plugin bin/ — _journal_atomic.py is imported
+# by helper scripts; the .pyc cache is per-developer noise.
+plugins/flow/bin/__pycache__/
+plugins/flow/**/__pycache__/

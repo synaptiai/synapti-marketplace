@@ -319,26 +319,84 @@ fi  # /if [ -z "$PR_NUM" ]
 true
 ```
 
-**If the finding-ledger check fails**, stop immediately and display:
+### FlowGoal Gate (v3, opt-in)
+
+Independent of the finding-ledger gate, the FlowGoal gate verifies the active goal has reached `lifecycle.status == achieved`. Gated behind `flow.goals.requireGoalForStart` — when false (v2 mode), this block emits `FLOW_GOAL_GATE_STATE=disabled` and the gate is skipped silently.
+
+```!
+HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+REQUIRE_GOAL=$("$HELPER" --default "false" '.flow.goals.requireGoalForStart' 2>/dev/null)
+
+echo "### FlowGoal Gate"
+if [ "$REQUIRE_GOAL" != "true" ]; then
+  echo "FLOW_GOAL_GATE_STATE=disabled"
+else
+  ACTIVE_GOAL_HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/flow-active-goal.sh"
+  if [ ! -x "$ACTIVE_GOAL_HELPER" ]; then
+    echo "FLOW_GOAL_GATE_STATE=blocked"
+    echo "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh missing or non-executable"
+  else
+    GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status 2>/dev/null); GOAL_EXIT=$?
+    case "$GOAL_EXIT" in
+      0)
+        GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id 2>/dev/null)
+        echo "FLOW_GOAL_ID=$GOAL_ID"
+        echo "FLOW_GOAL_LIFECYCLE=$GOAL_STATUS"
+        if [ "$GOAL_STATUS" = "achieved" ]; then
+          echo "FLOW_GOAL_GATE_STATE=ok"
+        else
+          # Active goal exists but is not achieved — fail closed.
+          # The "no incomplete shipments" hard boundary applies: merging a
+          # PR whose own contract reports incomplete is exactly what F1 is
+          # designed to prevent.
+          echo "FLOW_GOAL_GATE_STATE=blocked"
+          echo "FLOW_GOAL_BLOCK_REASON=FlowGoal $GOAL_ID lifecycle is '$GOAL_STATUS' — run /flow:goal evaluate $GOAL_ID to advance"
+        fi
+        ;;
+      1)
+        # v3 enabled but no active goal — caller policy. Fail closed by
+        # default; the user can override via the Tier 3 confirm prompt in
+        # Phase 3 with explicit rationale.
+        echo "FLOW_GOAL_GATE_STATE=blocked"
+        echo "FLOW_GOAL_BLOCK_REASON=requireGoalForStart=true but no active FlowGoal — run /flow:goal create issue or set requireGoalForStart=false"
+        ;;
+      3)
+        echo "FLOW_GOAL_GATE_STATE=blocked"
+        echo "FLOW_GOAL_BLOCK_REASON=degenerate state — multiple active FlowGoals"
+        ;;
+      *)
+        echo "FLOW_GOAL_GATE_STATE=blocked"
+        echo "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh exited $GOAL_EXIT"
+        ;;
+    esac
+  fi
+fi
+
+true
+```
+
+**If either the finding-ledger check or the FlowGoal gate fails**, stop immediately and display:
 
 ```markdown
-## BLOCKED: Unresolved Findings
+## BLOCKED: Merge Prerequisites Not Met
 
-PR #$PR_NUM cannot be merged — the finding ledger has unresolved items.
+PR #$PR_NUM cannot be merged — one or more gates report unresolved items.
 
-| Issue | Details |
-|-------|---------|
-| gh API unavailable | {if either GH_EXIT_RES or GH_EXIT_REV is non-zero, list both exit codes; else "N/A"} |
-| Untrusted markers only | {if RES_UNTRUSTED or REV_UNTRUSTED is non-zero AND no trusted markers found, list counts} |
-| Non-empty ESCALATED | {list of escalated finding IDs, if any} |
-| Unmatched FINDINGS | {list of finding IDs with no RESOLVED entry, if any} |
+| Gate | Issue | Details |
+|------|-------|---------|
+| Finding ledger | gh API unavailable | {if either GH_EXIT_RES or GH_EXIT_REV is non-zero, list both exit codes; else "N/A"} |
+| Finding ledger | Untrusted markers only | {if RES_UNTRUSTED or REV_UNTRUSTED is non-zero AND no trusted markers found, list counts} |
+| Finding ledger | Non-empty ESCALATED | {list of escalated finding IDs, if any} |
+| Finding ledger | Unmatched FINDINGS | {list of finding IDs with no RESOLVED entry, if any} |
+| FlowGoal | Not achieved | {if FLOW_GOAL_GATE_STATE=blocked, show FLOW_GOAL_ID + FLOW_GOAL_LIFECYCLE + FLOW_GOAL_BLOCK_REASON} |
 
 ### Remediation
 
 1. Run `/flow:address $PR_NUM` to resolve remaining findings
 2. Ensure every finding in `FLOW_REVIEW_CYCLE:FINDINGS` has a matching `RESOLVED` entry in `FLOW_RESOLUTION_CYCLE`
 3. Ensure `ESCALATED:[]` is empty (all escalated items must be resolved or have explicit human override)
-4. Re-run `/flow:merge $PR_NUM`
+4. If the FlowGoal gate blocks, run `/flow:goal evaluate $FLOW_GOAL_ID` and verify the verdict reaches `achieved`
+5. Re-run `/flow:merge $PR_NUM`
 
 This gate enforces the "no incomplete shipments" hard boundary.
 ```
@@ -437,6 +495,7 @@ Suggest: `/flow:release {type}` if this completes a milestone.
 |---|---|---|
 | Read PR status / reviews / comments / threads | 1 | Autonomous |
 | Finding-ledger gate check (parses `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE`) | 1 | Autonomous; blocks on failure |
+| FlowGoal gate check (v3 opt-in; reads `.flow/goals/*.goal.yaml`) | 1 | Autonomous; blocks on `lifecycle.status != achieved` |
 | Stale-approval check | 1 | Autonomous; warns on stale |
 | Conflict-resolution escalation (`Skill(flow:resolve)` invocation) | 2 | Journal-and-proceed if user accepts; otherwise blocked |
 | `gh pr merge` | 3 | **Confirm** — always asks via `AskUserQuestion` |

@@ -1,0 +1,53 @@
+# Template: nightly maintenance
+#
+# Periodic maintenance run — e.g., dependency updates, doc sync. Runs once
+# per night via user-invoked /loop (v3.0) or local_cron (v3.1+).
+
+apiVersion: flow.synapti.ai/v1
+kind: FlowTrigger
+
+metadata:
+  id: nightly-maintenance
+  name: 'Nightly maintenance run'
+  enabled: false  # Disabled by default; user opts in via /flow:trigger enable
+  created_at: '${NOW}'
+
+trigger:
+  type: loop_prompt
+  suggested_interval: '24h'
+  jitter: '1h'
+  user_starts_loop_manually: true
+
+target:
+  workflow: debug
+  command: '/flow:run trigger nightly-maintenance'
+
+context:
+  repo: '${REPO}'
+  branch: 'main'
+
+policy:
+  autonomy: journal
+  allowed_actions:
+    - read_repo
+    - edit_files
+    - commit
+    - push
+    - pr_create
+  forbidden_actions:
+    - merge
+    - release
+    - create_trigger
+    - delete_branch
+
+concurrency:
+  policy: cancel_previous
+
+stop_conditions:
+  - 'maintenance_pr_open'
+  - 'no_pending_dependency_updates'
+
+recursion_policy:
+  triggered_runs_may_create_triggers: false
+  triggered_runs_may_modify_triggers: false
+  triggered_runs_may_enable_triggers: false

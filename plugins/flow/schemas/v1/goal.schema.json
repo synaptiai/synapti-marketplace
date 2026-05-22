@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synapti.ai/schemas/flow/v1/goal.schema.json",
+  "title": "FlowGoal",
+  "description": "A durable project-local completion contract. Defines what must become true (outcome + acceptance criteria), how flow verifies it (verification commands + evaluator), what constraints apply (denied paths, tier policy), and what lifecycle state the goal is in. NOT Claude Code native /goal — that is session-only and not callable from plugins. FlowGoal is file-backed, inspectable, resumable.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "scope", "objective", "evaluator", "lifecycle"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "flow.synapti.ai/v1",
+      "description": "Schema version identifier. Must match exactly so future versions can be migrated mechanically."
+    },
+    "kind": {
+      "const": "FlowGoal"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["id", "created_at"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+          "description": "Goal identifier. Lowercase alphanumeric + hyphens; max 64 chars. Typically derived from issue/PR/branch (e.g., issue-42, pr-123-review)."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "created_by": {
+          "type": "string",
+          "description": "Originating command (e.g., '/flow:start', '/flow:goal create')."
+        },
+        "owner": {
+          "type": "string",
+          "description": "Goal owner — typically the git user or @me."
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "required": ["repo", "branch"],
+      "additionalProperties": true,
+      "properties": {
+        "repo": {
+          "type": "string",
+          "description": "Owner/name of the GitHub repository."
+        },
+        "branch": {
+          "type": "string"
+        },
+        "issue": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "pr": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "journal": {
+          "type": "string",
+          "description": "Path to the linked decision-journal entry (e.g., .decisions/issue-42.md)."
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "description": "FlowRun identifier. Constrained character set (no path separators or '..') because the hook + helpers interpolate this value into .flow/runs/<run_id>/ paths; an unconstrained run_id is a path-traversal write primitive (cycle-14 SEC-1)."
+        }
+      }
+    },
+    "objective": {
+      "type": "object",
+      "required": ["outcome", "acceptance_criteria"],
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "minLength": 1,
+          "description": "One-sentence verifiable success statement (e.g., 'Issue #42 is implemented and verified')."
+        },
+        "source": {
+          "type": "object",
+          "description": "Origin of the acceptance criteria (e.g., {type: github_issue, number: 42, title: '...'})."
+        },
+        "acceptance_criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "text", "status"],
+            "additionalProperties": true,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Z]+[0-9]+$",
+                "description": "AC identifier (e.g., AC1, AC2). Uppercase prefix + digits."
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "verification_command": {
+                "type": "string",
+                "description": "Runnable bash command whose exit code or output proves this AC. From criterion-verification-map."
+              },
+              "must_pass": {
+                "type": "boolean",
+                "default": true,
+                "description": "If true, AC failure blocks goal achievement; if false, AC failure produces a warning but does not block."
+              },
+              "status": {
+                "enum": ["pending", "evidence_collected", "pass", "fail"]
+              },
+              "evidence_ref": {
+                "type": ["string", "null"],
+                "description": "Path to a FlowEvidence sidecar that proves/disproves this AC."
+              },
+              "last_evaluated_at": {
+                "type": ["string", "null"],
+                "format": "date-time"
+              },
+              "last_result": {
+                "type": ["string", "null"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "specification": {
+      "type": "object",
+      "description": "Captured by goal-contract-capture skill (extends specification-capture).",
+      "additionalProperties": false,
+      "properties": {
+        "non_goals": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "failure_modes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "interface_contracts": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "tdd_required": { "type": "boolean", "default": true },
+        "require_all_pass": { "type": "boolean", "default": true },
+        "no_calendar_estimates": { "type": "boolean", "default": true },
+        "no_tier3_without_confirmation": { "type": "boolean", "default": true },
+        "denied_paths": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "allowed_paths": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Glob patterns restricting where edits may land. Validated via git diff --name-only against the active diff."
+        }
+      }
+    },
+    "evaluator": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "enum": ["flow_verdict_judge", "deterministic", "hybrid"]
+        },
+        "command": {
+          "type": "string",
+          "description": "Slash command that invokes the evaluator (e.g., '/flow:goal evaluate')."
+        },
+        "judge_agent": {
+          "type": "string",
+          "description": "Agent name (e.g., 'verdict-judge', 'goal-evaluator-judge')."
+        },
+        "judge_model": {
+          "type": "string",
+          "description": "Subprocess model when type=hybrid and a fuzzy LLM-judge stage is required. Default 'haiku'."
+        },
+        "evidence_bundle_format": {
+          "type": "string",
+          "description": "Reference path documenting the evidence bundle layout (e.g., 'plugins/flow/references/evidence-bundle-format.md')."
+        },
+        "denied_context": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Context items the judge MUST NOT receive (e.g., 'implementation_rationale', 'self_review_findings') — preserves Independence Protocol from verdict-judge."
+        }
+      }
+    },
+    "continuation": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "mode": {
+          "enum": ["flow_managed", "evaluator_loop"]
+        },
+        "on_incomplete": { "type": "string" },
+        "on_blocked": { "type": "string" },
+        "on_complete": { "type": "string" },
+        "max_iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 20
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": true,
+      "properties": {
+        "status": {
+          "enum": [
+            "draft",
+            "active",
+            "waiting_for_user",
+            "waiting_for_ci",
+            "blocked",
+            "achieved",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "current_phase": { "type": "string" },
+        "current_activity": { "type": "string" },
+        "turns_evaluated": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "last_evaluation": {
+          "type": "object",
+          "properties": {
+            "result": {
+              "enum": ["pass", "incomplete", "fail", "needs_human_review", "blocked"]
+            },
+            "reason": { "type": "string" },
+            "at": { "type": "string", "format": "date-time" }
+          }
+        }
+      }
+    }
+  }
+}

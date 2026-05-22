@@ -2,7 +2,6 @@
 name: specification-capture
 description: "Capture the three specification elements (non-goals, failure modes, interface contracts) for an issue and persist them to the decision journal under a ## Specification heading. Use when starting work on an issue (Phase 1 of /flow:start), entering a design discussion (/flow:design), or starting a brainstorm (/flow:brainstorm). This skill MUST be consulted because acceptance criteria alone do not describe the full specification — without explicit non-goals, failure modes, and interface contracts, downstream phases (PLAN, CODE, VERIFY) cannot fence the implementation or know what behavior to test."
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
-context: fork
 agent: general-purpose
 ---
 

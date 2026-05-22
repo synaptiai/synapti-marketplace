@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Synapti plugin marketplace",
-    "version": "4.4.0"
+    "version": "4.5.0"
   },
   "plugins": [
     {
@@ -108,8 +108,8 @@
     {
       "name": "flow",
       "source": "./plugins/flow",
-      "description": "Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Encodes team knowledge as composable skills, enforces safety through hooks, and compounds learning across sessions.",
-      "version": "2.4.0",
+      "description": "Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Encodes team knowledge as composable skills, enforces safety through hooks, compounds learning across sessions, and provides durable goals, workflows, triggers, and runs at .flow/.",
+      "version": "3.0.0",
       "author": {
         "name": "Daniel Bentes"
       },

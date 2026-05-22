@@ -1,0 +1,24 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowWorkflow
+metadata:
+  id: example-workflow
+  command: /flow:example
+  version: 1
+  description: Minimal valid workflow fixture for schema tests
+required_skills:
+  - llm-operator-principles
+phases:
+  - id: explore
+    type: mixed
+    activities:
+      - id: read-issue
+        skill: llm-operator-principles
+        evidence: gathered_context
+completion_gate:
+  documented_requirements:
+    - all_quality_checks_pass
+tier_classification:
+  commit: autonomous
+  push: journal
+  merge: confirm
+  release: confirm

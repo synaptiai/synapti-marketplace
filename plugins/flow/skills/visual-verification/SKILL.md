@@ -2,7 +2,6 @@
 name: visual-verification
 description: "Verify UI-facing changes by running a screenshot-analyze-verify loop across configured viewports, with a browser-tool priority cascade (Playwright MCP → Chrome DevTools MCP → CLI fallback → external skill fallback) and bounded iteration. Use after build/runtime verification passes and the diff includes `.tsx`/`.jsx`/`.vue`/`.html`/`.css`/`.scss`/`.svelte` files OR the acceptance criteria mention UI/page/render/display/visual. This skill MUST be consulted because UI changes that pass build and unit tests can still ship blank pages, render-blocking console errors, or broken responsive layouts that no other verification phase catches."
 allowed-tools: Bash, Read, Glob, Grep, TaskCreate, TaskList, TaskUpdate
-context: fork
 agent: Explore
 paths:
   - "**/*.tsx"

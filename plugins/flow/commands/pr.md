@@ -113,6 +113,55 @@ else
   else
     echo "STATE=empty"
   fi
+
+  # Section: FlowGoal State (v3, opt-in via flow.goals.requireGoalForStart)
+  # When v3 is enabled, surface the active goal's lifecycle so Phase 4 can
+  # gate PR creation on goal achievement. v2 projects (flag unset/false)
+  # see STATE=disabled and the gate is skipped silently.
+  echo ""
+  echo "### FlowGoal State"
+  HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+  REQUIRE_GOAL=$("$HELPER" --default "false" '.flow.goals.requireGoalForStart' 2>/dev/null)
+  if [ "$REQUIRE_GOAL" != "true" ]; then
+    echo "STATE=disabled"
+    echo "REASON=flow.goals.requireGoalForStart is not true"
+  else
+    ACTIVE_GOAL_HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/flow-active-goal.sh"
+    if [ ! -x "$ACTIVE_GOAL_HELPER" ]; then
+      echo "STATE=unavailable"
+      echo "REASON=flow-active-goal.sh missing or non-executable"
+    else
+      GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status 2>/dev/null); GOAL_EXIT=$?
+      case "$GOAL_EXIT" in
+        0)
+          GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id 2>/dev/null)
+          echo "STATE=ok"
+          echo "GOAL_ID=$GOAL_ID"
+          echo "GOAL_LIFECYCLE=$GOAL_STATUS"
+          if [ "$GOAL_STATUS" = "achieved" ]; then
+            echo "GATE=pass"
+          else
+            echo "GATE=block"
+          fi
+          ;;
+        1)
+          echo "STATE=missing"
+          echo "GATE=block"
+          echo "REASON=v3 enabled but no active FlowGoal for this branch — run /flow:goal create issue first"
+          ;;
+        3)
+          echo "STATE=degenerate"
+          echo "GATE=block"
+          echo "REASON=multiple active goals detected (should be impossible) — run /flow:goal history and clear extras"
+          ;;
+        *)
+          echo "STATE=unavailable"
+          echo "GATE=block"
+          echo "REASON=flow-active-goal.sh exited $GOAL_EXIT"
+          ;;
+      esac
+    fi
+  fi
 fi
 
 true
@@ -236,7 +285,28 @@ After agents return, TaskUpdate each review task with findings.
    - P2 findings → fix before PR (continue iterating until zero remain; finding triage is NEVER a valid escalation trigger)
    - P3 findings → fix in-PR by default. Cosmetic P3 in untouched files only: fix if bounded (<10 lines) or document inline in the PR body under `### Known cosmetic notes`. Do NOT add a "Known issues" section that defers fixable P2s.
 7. **If P1 or P2 findings**: Fix them, re-run review
+
+7a. **FlowGoal gate (v3, opt-in)** — when the Phase 1 `### FlowGoal State` section reported `GATE=block`, the active FlowGoal is not yet `achieved`. Do NOT push or create the PR with an incomplete goal — use the AskUserQuestion tool with these options:
+
+   - **Option 1 (Recommended): Run `/flow:goal evaluate <id>` first** — produces a verdict that may transition the goal to `achieved`. If the verdict is `achieved`, return here and proceed with PR creation.
+   - **Option 2: Create PR with goal not-yet-achieved** — proceed with PR creation; the PR body includes a `## FlowGoal Status` section noting the lifecycle is `<status>`. The `/flow:merge` gate will block until the goal is achieved or the user overrides.
+   - **Option 3: Cancel** — exit `/flow:pr` and finish the implementation work first.
+
+   When `STATE=disabled` (v2 mode, `requireGoalForStart` not set): skip this step silently.
+
+   When `STATE=missing` (v3 enabled but no goal): present a different AskUserQuestion — "v3 is enabled but no FlowGoal exists for this branch. Create one now via `/flow:goal create issue` and re-run `/flow:pr`, or proceed without a goal (the merge gate will then have nothing to verify)?"
+
 8. **Generate PR body** from template + findings + journal + comprehension report.
+
+   If the FlowGoal gate fired and user chose Option 2 (proceed with not-yet-achieved goal), include a `## FlowGoal Status` section at the top of the body:
+
+   ```markdown
+   ## FlowGoal Status
+
+   - **Goal**: `<GOAL_ID>` (from `.flow/goals/<id>.goal.yaml`)
+   - **Lifecycle**: `<status>` (not yet `achieved`)
+   - **Note**: `/flow:merge` will block until this goal is `achieved` or the user explicitly overrides.
+   ```
    If visual verification ran, include visual evidence section:
    ```markdown
    ## Visual Verification
@@ -282,10 +352,12 @@ Display PR URL and next steps.
 | Action | Tier | Behavior |
 |---|---|---|
 | Pre-flight checks (branch, commits, PR existence) | 1 | Autonomous; blocks on failure |
+| Phase 1 FlowGoal State section (v3 opt-in) | 1 | Autonomous read; sets GATE=pass\|block sentinel |
 | Multi-agent review fan-out (5 reviewers + holdout-validation) | 1 | Autonomous; Tasks tracked |
 | `Skill(integration-verifier)` runtime + visual verification | 1 | Autonomous |
 | File edits (fix-forward for P1/P2 findings) | 1 | Autonomous |
 | Commits (`fix:` from fix-forward) | 1 | Autonomous, logged by hook |
+| FlowGoal gate AskUserQuestion (Phase 4 step 7a, fires only when GATE=block) | 2 | Asks via `AskUserQuestion`; outcome (proceed/cancel) journaled |
 | `git push -u origin <branch>` | 2 | Journal-and-proceed |
 | `gh pr create` | 2 | Journal-and-proceed |
 | Visual-verification BLOCKED escalation (when `requireVisualVerification: true`) | 2 | Asks via `AskUserQuestion`; outcome journaled |

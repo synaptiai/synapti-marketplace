@@ -1,0 +1,1 @@
+{"structured_output":{"verdict":"not_achieved","confidence":0.7,"delta":"made_progress","next_step_hint":"add coverage for AC2 edge case","reason":"AC2 evidence shows happy path only; edge case untested","criterion_results":[]}}

@@ -1,0 +1,6 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowTrigger
+metadata:
+  id: missing-required
+trigger:
+  type: manual

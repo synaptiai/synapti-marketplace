@@ -2,7 +2,6 @@
 name: pr-lifecycle
 description: "Reference document describing PR lifecycle: pre-flight gates (4 conditions), verification gate (5 conditions), body structure (7 sections), reviewer-suggestion algorithm (CODEOWNERS → file expertise → recent activity → workload balance), and finding-ledger merge prerequisite. Reference only (policy document; consumed by `/flow:pr` and `/flow:merge`)."
 allowed-tools: Read
-context: fork
 agent: general-purpose
 disable-model-invocation: true
 ---
