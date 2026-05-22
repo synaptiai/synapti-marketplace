@@ -8,6 +8,11 @@
       "default": false,
       "description": "Enable agent team support for adversarial review and parallel implementation"
     },
+    "agentTeamModel": {
+      "enum": ["haiku", "sonnet", "opus", "inherit"],
+      "default": "sonnet",
+      "description": "Model used by the Path A agent-team review agents in /flow:review (paired skeptic/verifier reviewers + challenge round). Resolved via the standard settings cascade (local > project > user > plugin default). Default is 'sonnet' because a paired-reviewer run dispatches ~20 agents — inheriting an Opus session would multiply Opus-rate tokens ~4x for marginal review value. Use 'inherit' to reproduce the pre-configuration behavior (agents run on the main session's model). Mirrors the configurable-model pattern of flow.goals.judge.model. Scoped to Path A only: Path B (single-session, default) agents always inherit the session model."
+    },
     "tiers": {
       "type": "object",
       "description": "Safety tier classification for actions",

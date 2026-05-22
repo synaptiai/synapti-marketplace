@@ -199,6 +199,16 @@ Example: enabling Path A paired-reviewer mode for yourself in this project only:
 
 (Note: `agentTeams: true` also requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` set in your shell environment — the env var is the user-side opt-in for the experimental feature.)
 
+**Path A review model (`agentTeamModel`).** Path A dispatches ~20 review agents (paired skeptic/verifier × 5 facets + a challenge round), all of which would otherwise inherit the session model. To avoid running an Opus session's rate across that fan-out, the model is configurable via the top-level `agentTeamModel` key (enum `haiku|sonnet|opus|inherit`, default `sonnet`), resolved through this same cascade. An invalid value is rejected with a WARN and falls back to `sonnet`. Use `inherit` to reproduce the pre-configuration behavior. This is scoped to Path A only — Path B (single-session) agents always inherit the session model.
+
+```json
+// .claude/settings.flow.local.json (gitignored) — pin a higher model for a hard review
+{
+  "agentTeams": true,
+  "agentTeamModel": "opus"
+}
+```
+
 #### Team-wide opt-in
 
 To enable a setting for the whole team via the committed project-shared file:

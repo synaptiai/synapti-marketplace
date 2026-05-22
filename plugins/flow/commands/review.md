@@ -309,14 +309,39 @@ else
   echo "PATH_A_STATE=disabled"
 fi
 
+# AGENTTEAM_MODEL_BEGIN
+# Resolve the model for Path A review agents (#112). Scoped to Path A only —
+# Path B agents continue to inherit the session model via their frontmatter.
+# Cascade precedence: local > project > user > plugin default (same cascade as
+# agentTeams). Default is sonnet: a paired-reviewer run dispatches ~20 agents,
+# so inheriting an Opus session would multiply Opus-rate tokens ~4x for
+# marginal review value. An invalid value is rejected with a WARN (NOT silently
+# coerced) and falls back to sonnet.
+if [ "$USE_PATH_A" = "1" ]; then
+  AGENT_TEAM_MODEL=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" --default sonnet '.agentTeamModel // empty' 2>/dev/null)
+  case "$AGENT_TEAM_MODEL" in
+    haiku|sonnet|opus|inherit) ;;
+    *)
+      echo "WARN: agentTeamModel='$AGENT_TEAM_MODEL' is not one of haiku|sonnet|opus|inherit; rejecting and using sonnet. Set a valid value in .claude/settings.flow.local.json, .claude/settings.flow.json, \$HOME/.claude/settings.flow.json, or the plugin settings.json." >&2
+      AGENT_TEAM_MODEL=sonnet
+      ;;
+  esac
+  echo "AGENT_TEAM_MODEL=$AGENT_TEAM_MODEL"
+fi
+# AGENTTEAM_MODEL_END
+
 true
 ```
 
 If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.
 
+**Model selection (#112).** When `USE_PATH_A=1`, the gate emits `AGENT_TEAM_MODEL` (default `sonnet`). Dispatch every Path A agent below — both the A.1 paired reviewers and the A.3 challenge rounds — with that model passed as the per-invocation `model` parameter, e.g. `Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL)`. The per-invocation `model` overrides each agent's `model: inherit` frontmatter (precedence: dispatch param > frontmatter > session model), so the reviewers run on `AGENT_TEAM_MODEL` regardless of the session's model. **Exception:** when `AGENT_TEAM_MODEL=inherit`, OMIT the `model` parameter so agents fall back to frontmatter `inherit` (the session model) — reproducing pre-#112 behavior. The two `Skill(holdout-validation)` invocations are unaffected (skills run inline in the parent context, not as model-dispatched subagents).
+
 #### A.1 — Independent Analysis (paired reviewers, parallel dispatch)
 
 Dispatch **12 invocations** (10 `Agent(...)` + 2 `Skill(holdout-validation)`) in a single parallel block — 5 agent facets × {skeptic, verifier} plus the holdout-validation skill in both lenses. Each variant carries an orthogonal lens; both run with no awareness of each other.
+
+Each `Agent(...)` call below carries `model=$AGENT_TEAM_MODEL` per **Model selection (#112)** above (omit the parameter only when the resolved value is `inherit`).
 
 ```
 Agent(security-reviewer-skeptic):
@@ -436,7 +461,7 @@ Auto-consensus findings skip the challenge round (no need — both reviewers alr
 
 #### A.3 — Challenge Round (disposition-only, parallel)
 
-For findings NOT in auto-consensus, dispatch each variant to challenge the OTHER variant's findings. **Variants do NOT re-read the diff.** Up to 10 challenge prompts run in parallel (5 agent facets × 2 directions; holdout-validation excluded — see A.1 note).
+For findings NOT in auto-consensus, dispatch each variant to challenge the OTHER variant's findings. **Variants do NOT re-read the diff.** Up to 10 challenge prompts run in parallel (5 agent facets × 2 directions; holdout-validation excluded — see A.1 note). Each challenge `Agent(...)` carries `model=$AGENT_TEAM_MODEL` per **Model selection (#112)** (omit only when the value is `inherit`).
 
 ```
 Agent(security-reviewer-skeptic) [challenge mode]:
@@ -517,6 +542,8 @@ When Path A is the orchestrator, the marker is **uniformly 7-field** — includi
 After A.6 completes, jump to Phase 4 with the consolidated finding set.
 
 ### Path B: Single Session (default)
+
+Path B dispatch is intentionally unchanged (#112) — its agents carry no `model` parameter and inherit the session model via frontmatter. The `agentTeamModel` setting applies to Path A only.
 
 **Parallel Agent dispatch** — 5 agents in single message:
 
