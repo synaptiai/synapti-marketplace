@@ -1,3 +1,18 @@
+---
+issue: 112
+created: '2026-05-22T23:15:25Z'
+artifacts:
+- type: specification
+  captured_at: '2026-05-22T23:15:25Z'
+  by: specification-capture
+  elements:
+  - non-goals
+  - failure-modes
+  - interface-contracts
+- type: verdict
+  captured_at: '2026-05-22T23:15:25Z'
+  result: PASS
+---
 # Issue #112 — Configurable model for flow agent-team (Path A) review
 
 Branch: `feature/issue-112-configurable-agentteam-model`
@@ -61,3 +76,41 @@ configurable via a settings key (cascade-resolved), default `sonnet`. Path B unc
 <!-- auto-log: 2026-05-23 01:07 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/README.md -->
 
 <!-- auto-log: 2026-05-23 01:08 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/gate-configuration.md -->
+
+<!-- auto-log: 2026-05-23 01:09 commit "feat(flow): configurable model for Path A agent-team review (#112)" -->
+
+<!-- auto-log: 2026-05-23 01:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:13 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:13 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:13 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:13 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:13 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:13 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 01:13 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-agentteam-model.test.sh -->
+
+<!-- auto-log: 2026-05-23 01:13 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-agentteam-model.test.sh -->
+
+<!-- auto-log: 2026-05-23 01:15 commit "fix(flow): carry model param on Path A fenced dispatches (#112)" -->
