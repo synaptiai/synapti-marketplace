@@ -323,6 +323,8 @@ Enable with `"agentTeams": true` in settings. Requires `CLAUDE_CODE_EXPERIMENTAL
 
 When enabled, `/flow:review` spawns an adversarial review team where independent reviewers challenge each other's findings. Falls back to single-session mode gracefully.
 
+**Model selection.** Because this Path A team dispatches ~20 agents per review, all of which would otherwise inherit the session model, the model is configurable via `agentTeamModel` (default `"sonnet"`; enum `haiku|sonnet|opus|inherit`). It resolves through the same settings cascade as `agentTeams`. Set it to `"inherit"` to run the review agents on the session's model, or `"opus"` for a high-stakes review. This mirrors the `flow.goals.judge.model` pattern and applies to Path A only — Path B (single-session, the default) always inherits the session model.
+
 ## Learning Loop
 
 Flow captures development decisions in a journal (`.decisions/`) and analyzes them for patterns:
@@ -346,6 +348,7 @@ Example project settings in `.claude/settings.flow.json`:
 ```json
 {
   "agentTeams": false,
+  "agentTeamModel": "sonnet",
   "tiers": { "push": "journal", "merge": "confirm", "release": "confirm" },
   "conventions": { "commitTypes": ["feat", "fix", "docs", "..."] },
   "merge": { "strategy": "squash", "deleteBranch": true },

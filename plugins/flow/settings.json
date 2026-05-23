@@ -1,5 +1,6 @@
 {
   "agentTeams": false,
+  "agentTeamModel": "sonnet",
   "tiers": {
     "push": "journal",
     "prCreate": "journal",
