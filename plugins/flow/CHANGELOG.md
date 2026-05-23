@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 3.1.0 (2026-05-23)
+
+### Fixed: merge-aware force-branch-delete in the destructive-command hook
+
+`block-destructive.sh` previously blocked every force branch-delete and pointed users at safe-delete — but safe-delete cannot remove squash-merged branches, so merged-branch cleanup was impossible. The hook is now merge-aware: it allows a force-delete only when every target branch is provably merged into the default branch (ancestor check for regular/fast-forward merges; synthetic-commit + `git cherry` patch-equivalence for squash merges; checked against the local default and `origin/<default>`), detecting all force-delete forms (`-D`, `-Df`/`-fD`, `--delete --force`). It still blocks the default branch, unmerged work, unresolvable refs, compound commands, and fails safe on any uncertainty. All other destructive blocks are unchanged. Also fixed a flaky `assert_match` SIGPIPE/`pipefail` race in the test harness.
 
 ### Added: v3 runtime integration — FlowRun + FlowGoal wired into the commands
 

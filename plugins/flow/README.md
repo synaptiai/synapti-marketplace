@@ -136,7 +136,7 @@ claude plugins add ./plugins/flow
 ## Architecture
 
 ```
-SKILL LIBRARY (25 skills)
+SKILL LIBRARY (33 skills)
   ├── Foundation (always loaded, stable shape)
   │   ├── llm-operator-principles (operator stance — convergence, anti-deferral, anti-estimation)
   │   ├── evidence-based-development
