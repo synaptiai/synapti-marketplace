@@ -9,6 +9,9 @@ artifacts:
   - non-goals
   - failure-modes
   - interface-contracts
+- type: verdict
+  captured_at: '2026-05-23T01:23:11Z'
+  result: PASS
 ---
 # Issue #110 — v3 integration: wire FlowGoal + FlowRun into the 7 commands
 
@@ -117,3 +120,127 @@ add a binary `requireGoalForStart` flip.
 | 12 | CHANGELOG entry | grep CHANGELOG for the integration entry |
 
 <!-- auto-log: 2026-05-23 02:53 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-110.md -->
+
+<!-- auto-log: 2026-05-23 02:58 commit "feat(flow): wire FlowRun into release.md (#110)" -->
+
+<!-- auto-log: 2026-05-23 02:59 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 03:00 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 03:00 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-05-23 03:00 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 03:00 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-05-23 03:00 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-05-23 03:00 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:00 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/start.md -->
+
+<!-- auto-log: 2026-05-23 03:00 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:01 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/start-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:01 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/start-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:01 commit "feat(flow): wire FlowRun into start.md linked to FlowGoal (#110)" -->
+
+<!-- auto-log: 2026-05-23 03:03 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/pr.md -->
+
+<!-- auto-log: 2026-05-23 03:03 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/pr.md -->
+
+<!-- auto-log: 2026-05-23 03:03 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/pr-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:04 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/pr.md -->
+
+<!-- auto-log: 2026-05-23 03:04 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-23 03:04 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-23 03:05 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/merge-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:05 commit "feat(flow): wire FlowRun into pr/merge/review/address (#110)" -->
+
+<!-- auto-log: 2026-05-23 03:06 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/debug.md -->
+
+<!-- auto-log: 2026-05-23 03:06 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/debug.md -->
+
+<!-- auto-log: 2026-05-23 03:06 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/debug.md -->
+
+<!-- auto-log: 2026-05-23 03:07 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/specification-capture/SKILL.md -->
+
+<!-- auto-log: 2026-05-23 03:07 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/debug-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:07 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/debug.md -->
+
+<!-- auto-log: 2026-05-23 03:07 commit "feat(flow): wire FlowRun + FlowGoal into debug.md (#110)" -->
+
+<!-- auto-log: 2026-05-23 03:08 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-23 03:09 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-23 03:09 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/settings.json -->
+
+<!-- auto-log: 2026-05-23 03:09 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/CHANGELOG.md -->
+
+<!-- auto-log: 2026-05-23 03:09 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/status-triggers-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:10 commit "feat(flow): status Active Triggers section + enable workflows/triggers defaults (#110)" -->
+
+<!-- auto-log: 2026-05-23 03:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/release.md -->
+
+<!-- auto-log: 2026-05-23 03:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/start.md -->
+
+<!-- auto-log: 2026-05-23 03:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-23 03:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-05-23 03:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-05-23 03:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/debug.md -->
+
+<!-- auto-log: 2026-05-23 03:18 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/release.md -->
+
+<!-- auto-log: 2026-05-23 03:18 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/release.md -->
+
+<!-- auto-log: 2026-05-23 03:18 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/run-state-management/SKILL.md -->
+
+<!-- auto-log: 2026-05-23 03:18 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/workflows/review-pr.workflow.yaml -->
+
+<!-- auto-log: 2026-05-23 03:18 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/workflows/review-pr.workflow.yaml -->
+
+<!-- auto-log: 2026-05-23 03:19 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/workflows/review-pr.workflow.yaml -->
+
+<!-- auto-log: 2026-05-23 03:19 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/workflows/address-pr.workflow.yaml -->
+
+<!-- auto-log: 2026-05-23 03:19 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/workflows/address-pr.workflow.yaml -->
+
+<!-- auto-log: 2026-05-23 03:19 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/workflows/address-pr.workflow.yaml -->
+
+<!-- auto-log: 2026-05-23 03:19 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/pr.md -->
+
+<!-- auto-log: 2026-05-23 03:19 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/start.md -->
+
+<!-- auto-log: 2026-05-23 03:20 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-23 03:20 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-05-23 03:20 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/release-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:20 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/release-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:20 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/start-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:20 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/merge-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:21 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/debug-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:21 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:21 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:21 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/status-triggers-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-05-23 03:22 commit "fix(flow): self-review findings — schema-valid run/goal ids, workflow-yaml reconciliation (#110)" -->
