@@ -61,9 +61,15 @@ assert_equal() {
 
 # assert_match <regex> <actual> [<label>]
 # Uses grep -E so the regex is ERE — same flavor the test bodies already use.
+# A here-string (not `printf ... | grep`) feeds the haystack: with a pipe,
+# `grep -q` exits at the first match and closes the pipe, so printf is killed by
+# SIGPIPE (141) and — under the runner's `set -o pipefail` — the pipeline
+# reports non-zero even though the match succeeded. That produced nondeterministic
+# false failures on large haystacks (the match position races the pipe buffer).
+# A here-string has no pipeline, so pipefail/SIGPIPE cannot corrupt the result.
 assert_match() {
   local pattern="$1" actual="$2" label="${3:-match}"
-  if printf '%s' "$actual" | grep -qE "$pattern"; then
+  if grep -qE "$pattern" <<<"$actual"; then
     _flow_assert_pass "$label"
     return 0
   fi
