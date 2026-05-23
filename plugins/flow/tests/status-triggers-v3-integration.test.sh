@@ -25,7 +25,8 @@ assert_contains "### Active Triggers" "$CONTENT" "Active Triggers heading presen
 assert_contains ".flow/triggers" "$CONTENT" "reads the triggers directory"
 assert_contains "*.trigger.yaml" "$CONTENT" "enumerates trigger yamls"
 assert_contains "flow.triggers.enabled" "$CONTENT" "gated behind the triggers flag"
-assert_contains "last_fired" "$CONTENT" "surfaces last-fired per trigger"
+assert_contains "enabled" "$CONTENT" "surfaces the enabled state per trigger (schema-backed metadata.enabled)"
+assert_not_contains "state.last_fired" "$CONTENT" "no phantom state.last_fired field (not in the trigger schema)"
 
 _flow_test_begin "status.md triggers reader has a v2 disabled sentinel + symlink defense"
 assert_contains "STATE=disabled" "$CONTENT" "v2 mode renders disabled"

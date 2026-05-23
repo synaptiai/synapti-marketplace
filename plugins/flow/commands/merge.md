@@ -426,7 +426,7 @@ if [ "$RUNTIME_ENABLED" != "true" ]; then
   echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
 else
   SLUG="${PR_NUM:-nonum}"
-  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-merge-pr-${SLUG}"
+  RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-merge-pr-${SLUG}"
   echo "FLOW_RUN_STATE=create"
   echo "RUN_ID=$RUN_ID"
   echo "WORKFLOW=merge-pr"

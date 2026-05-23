@@ -218,11 +218,10 @@ else
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
 m = d.get("metadata", {}) or {}
-state = d.get("state", {}) or {}
 tid = m.get("id", "?")
-ttype = (d.get("trigger", {}) or {}).get("type", m.get("type", "?"))
-last = state.get("last_fired", "never")
-print(f"TRIGGER=id={tid} type={ttype} last_fired={last}")
+ttype = (d.get("trigger", {}) or {}).get("type", "?")
+enabled = m.get("enabled", True)
+print(f"TRIGGER=id={tid} type={ttype} enabled={enabled}")
 PY
     done
   else
@@ -447,9 +446,9 @@ State values: `unavailable` (gh API failed) | `no_open_prs` (user has no open PR
 {When STATE=degraded: render "Unavailable: {REASON}"}
 {When STATE=ok: render a table of registered triggers}
 
-| Trigger | Type | Last Fired |
-|---------|------|------------|
-| `{id}` | `{type}` | {last_fired} |
+| Trigger | Type | Enabled |
+|---------|------|---------|
+| `{id}` | `{type}` | {enabled} |
 
 ### Findings Ledger
 {single line: `P1: {n}[ (annotation)]    P2: {n}[ (annotation)]    P3: {n}[ (annotation)]` — annotations are omitted when count is 0; see render rules below}

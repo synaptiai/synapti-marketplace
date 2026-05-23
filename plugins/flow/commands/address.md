@@ -144,7 +144,7 @@ if [ "$RUNTIME_ENABLED" != "true" ]; then
   echo "FLOW_RUN_STATE=skip"
   echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
 else
-  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-address"
+  RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-address"
   echo "FLOW_RUN_STATE=create"
   echo "RUN_ID=$RUN_ID"
   echo "WORKFLOW=address-pr"

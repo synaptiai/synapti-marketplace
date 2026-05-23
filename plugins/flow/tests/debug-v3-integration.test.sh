@@ -61,8 +61,16 @@ _extract_run_block > "$WORK/block.sh"
 OUT=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash block.sh 2>/dev/null)
 assert_contains "FLOW_RUN_STATE=create" "$OUT" "default runtime → create"
 assert_contains "WORKFLOW=debug" "$OUT" "workflow id emitted"
-assert_match 'RUN_ID=[0-9]{8}T[0-9]{6}Z-debug' "$OUT" "RUN_ID carries the debug slug"
-assert_match 'GOAL_LINK=debug-[0-9]{8}T[0-9]{6}Z' "$OUT" "goal id forward-reference emitted"
+# Validate RUN_ID against run.schema and GOAL_LINK against goal.schema — the
+# goal id pattern forbids uppercase, so the forward-referenced goal id must NOT
+# reuse the ISO run timestamp (the bug a hand-written regex would have missed).
+RUN_ID=$(printf '%s\n' "$OUT" | grep '^RUN_ID=' | cut -d= -f2-)
+GOAL_LINK=$(printf '%s\n' "$OUT" | grep '^GOAL_LINK=' | cut -d= -f2-)
+RUN_PAT=$(jq -r '.properties.metadata.properties.id.pattern' "$PLUGIN_DIR/schemas/v1/run.schema.json")
+GOAL_PAT=$(jq -r '.properties.metadata.properties.id.pattern' "$PLUGIN_DIR/schemas/v1/goal.schema.json")
+if printf '%s' "$RUN_ID" | grep -qE "$RUN_PAT"; then _flow_assert_pass "RUN_ID '$RUN_ID' conforms to run.schema"; else _flow_assert_fail "RUN_ID '$RUN_ID' violates /$RUN_PAT/"; fi
+if printf '%s' "$GOAL_LINK" | grep -qE "$GOAL_PAT"; then _flow_assert_pass "GOAL_LINK '$GOAL_LINK' conforms to goal.schema (no uppercase)"; else _flow_assert_fail "GOAL_LINK '$GOAL_LINK' violates /$GOAL_PAT/"; fi
+assert_contains "debug" "$RUN_ID" "RUN_ID carries the debug slug"
 
 _flow_test_begin "entry block skips when runtime disabled (v2 mode)"
 WORK2=$(mktemp -d -t flow-dbg2.XXXXXX); DBG_CLEANUP+=("$WORK2")

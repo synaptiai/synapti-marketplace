@@ -61,7 +61,10 @@ _extract_run_block > "$WORK/block.sh"
 OUT=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash block.sh 2>/dev/null)
 assert_contains "FLOW_RUN_STATE=create" "$OUT" "default runtime → create"
 assert_contains "WORKFLOW=review-pr" "$OUT" "workflow id emitted"
-assert_match 'RUN_ID=[0-9]{8}T[0-9]{6}Z-review' "$OUT" "RUN_ID is an ISO-compact timestamp slug"
+RUN_ID=$(printf '%s\n' "$OUT" | grep '^RUN_ID=' | cut -d= -f2-)
+SCHEMA_PAT=$(jq -r '.properties.metadata.properties.id.pattern' "$PLUGIN_DIR/schemas/v1/run.schema.json")
+if printf '%s' "$RUN_ID" | grep -qE "$SCHEMA_PAT"; then _flow_assert_pass "RUN_ID '$RUN_ID' conforms to run.schema"; else _flow_assert_fail "RUN_ID '$RUN_ID' violates /$SCHEMA_PAT/"; fi
+assert_contains "review" "$RUN_ID" "RUN_ID carries the review slug"
 
 _flow_test_begin "entry block emits FLOW_RUN_STATE=skip when runtime disabled (v2 mode)"
 WORK2=$(mktemp -d -t flow-rev2.XXXXXX); REV_CLEANUP+=("$WORK2")

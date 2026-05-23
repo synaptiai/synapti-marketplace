@@ -292,11 +292,18 @@ After agents return, TaskUpdate each review task with findings.
    - **Option 2: Create PR with goal not-yet-achieved** — proceed with PR creation; the PR body includes a `## FlowGoal Status` section noting the lifecycle is `<status>`. The `/flow:merge` gate will block until the goal is achieved or the user overrides. This is a Proactive-Autonomy override of the gate, so record it to the decision journal:
 
      ```bash
-     "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
-       --issue "$ISSUE_NUM" --type escalation-resolved \
-       --metadata gate=flowgoal-pr \
-       --metadata goal_status="$GOAL_LIFECYCLE" \
-       --metadata outcome="user-overrode: created PR with goal not yet achieved"
+     # Self-contained: the Phase 1 !-block's vars do not persist into this
+     # block's shell, so re-derive the issue from the branch and read the
+     # lifecycle from the helper (same pattern as the manifest-emit block).
+     ISSUE_NUM=$(git branch --show-current 2>/dev/null | grep -oE 'issue-[0-9]+' | head -1 | sed 's/issue-//')
+     GOAL_LIFECYCLE=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/flow-active-goal.sh" --status 2>/dev/null || echo "unknown")
+     if [ -n "$ISSUE_NUM" ]; then
+       "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+         --issue "$ISSUE_NUM" --type escalation-resolved \
+         --metadata gate=flowgoal-pr \
+         --metadata goal_status="$GOAL_LIFECYCLE" \
+         --metadata outcome="user-overrode: created PR with goal not yet achieved"
+     fi
      ```
    - **Option 3: Cancel** — exit `/flow:pr` and finish the implementation work first.
 

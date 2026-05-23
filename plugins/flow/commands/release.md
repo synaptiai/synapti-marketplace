@@ -86,7 +86,7 @@ if [ "$RUNTIME_ENABLED" != "true" ]; then
   echo "FLOW_RUN_STATE=skip"
   echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
 else
-  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-release"
+  RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-release"
   echo "FLOW_RUN_STATE=create"
   echo "RUN_ID=$RUN_ID"
   echo "WORKFLOW=release"
@@ -96,7 +96,7 @@ fi
 true
 ```
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`release`, goal=`null` — a release is not goal-bound; it verifies the goals of *included* PRs in Phase 4), initial phase `preflight`. The release is not issue-scoped, so the `workflow-run` journal artifact is best-effort: emit it only if a single issue can be inferred from the included PRs; otherwise the `run.yaml` is the durable record. Phase order: `preflight → bump → tag → push`.
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`release`, goal=`null` — a release is not goal-bound; it verifies the goals of *included* PRs in Phase 4), initial phase `preflight`. The release is not issue-scoped, so the `workflow-run` journal artifact is best-effort: emit it only if a single issue can be inferred from the included PRs; otherwise the `run.yaml` is the durable record. Phase order: `preflight → bump → confirm → tag` (matching `workflows/release.workflow.yaml`; the tag push and `gh release create` are steps inside the `tag` phase).
 
 ## Phase 2: Calculate Version
 
@@ -156,7 +156,7 @@ git push origin "$TAG"
 gh release create "$TAG" --title "$TAG" --notes "$CHANGELOG"
 ```
 
-**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record one FlowActivity per phase boundary as it completes — `bump` (version calculated, phase `bump`), `tag` (`git tag` succeeded, phase `tag`), and `push` (`git push` + `gh release create` succeeded, phase `push`). Each write advances `state.current_phase` per the `preflight → bump → tag → push` order.
+**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record one FlowActivity per phase boundary as it completes — `bump` (version calculated + changelog generated), `confirm` (user approved the release via AskUserQuestion), and `tag` (`git tag`, `git push origin <tag>`, and `gh release create` all succeeded). Each write advances `state.current_phase` per the `preflight → bump → confirm → tag` order.
 
 ## Phase 5: Post-Release
 

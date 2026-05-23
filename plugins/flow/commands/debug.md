@@ -75,13 +75,16 @@ if [ "$RUNTIME_ENABLED" != "true" ]; then
   echo "FLOW_RUN_STATE=skip"
   echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
 else
-  TS="$(date -u +%Y%m%dT%H%M%SZ)"
-  RUN_ID="${TS}-debug"
+  RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-debug"
+  # The goal id must match the FlowGoal metadata.id pattern
+  # ^[a-z0-9][a-z0-9-]{0,63}$ — no uppercase, so it cannot reuse the ISO run
+  # timestamp (which carries T/Z). Use a hyphen-only lowercase stamp.
+  GOAL_TS="$(date -u +%Y-%m-%d-%H%M%S)"
   echo "FLOW_RUN_STATE=create"
   echo "RUN_ID=$RUN_ID"
   echo "WORKFLOW=debug"
   echo "INITIAL_PHASE=preflight"
-  echo "GOAL_LINK=debug-${TS}"
+  echo "GOAL_LINK=debug-${GOAL_TS}"
 fi
 # FLOW_RUN_BLOCK_END
 true

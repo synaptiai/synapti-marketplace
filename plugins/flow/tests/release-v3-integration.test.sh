@@ -38,7 +38,7 @@ assert_contains "run-state-management" "$CONTENT" "delegates to run-state-manage
 
 _flow_test_begin "release.md records activities at phase boundaries"
 assert_contains "FlowActivity writes" "$CONTENT" "activity-write step documented"
-assert_match 'preflight . bump . tag . push' "$CONTENT" "documents the release phase order"
+assert_match 'preflight . bump . confirm . tag' "$CONTENT" "documents the release phase order (matches workflow yaml)"
 
 _flow_test_begin "release.md transitions the FlowRun to terminal state"
 assert_contains "FlowRun terminal transition" "$CONTENT" "terminal-transition step documented"
@@ -60,7 +60,15 @@ _extract_run_block > "$WORK/block.sh"
 OUT=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash block.sh 2>/dev/null)
 assert_contains "FLOW_RUN_STATE=create" "$OUT" "default runtime → create"
 assert_contains "WORKFLOW=release" "$OUT" "workflow id emitted"
-assert_match 'RUN_ID=[0-9]{8}T[0-9]{6}Z-release' "$OUT" "RUN_ID is an ISO-compact timestamp slug"
+# Validate the emitted RUN_ID against the ACTUAL run.schema.json metadata.id
+# pattern (not just a hand-written regex) — guards against id-format drift.
+RUN_ID=$(printf '%s\n' "$OUT" | grep '^RUN_ID=' | cut -d= -f2-)
+SCHEMA_PAT=$(jq -r '.properties.metadata.properties.id.pattern' "$PLUGIN_DIR/schemas/v1/run.schema.json")
+if printf '%s' "$RUN_ID" | grep -qE "$SCHEMA_PAT"; then
+  _flow_assert_pass "RUN_ID '$RUN_ID' conforms to run.schema metadata.id pattern"
+else
+  _flow_assert_fail "RUN_ID '$RUN_ID' violates run.schema pattern /$SCHEMA_PAT/"
+fi
 
 _flow_test_begin "entry block emits FLOW_RUN_STATE=skip when runtime disabled (v2 mode)"
 WORK2=$(mktemp -d -t flow-rel2.XXXXXX); REL_CLEANUP+=("$WORK2")
