@@ -112,8 +112,44 @@ _run_hook "$R" "git clean -fd"; assert_exit 2 "$?" "git clean -f still blocked"
 _run_hook "$R" "rm -rf /some/important/path"; assert_exit 2 "$?" "rm -rf still blocked"
 _run_hook "$R" "git restore ."; assert_exit 2 "$?" "git restore . still blocked"
 
+# --- force-delete EQUIVALENT forms are also merge-aware (not bypassed)
+_flow_test_begin "force-delete equivalents (--delete --force, -Df, -fD) are merge-aware"
+R=$(_new_repo)
+( cd "$R" && git checkout -qb gone && echo a > a.txt && git add a.txt && git commit -qm ca \
+  && git checkout -q main && git merge -q --no-ff gone -m "merge gone" \
+  && git checkout -qb live && echo b > b.txt && git add b.txt && git commit -qm cb \
+  && git checkout -q main ) >/dev/null 2>&1
+# merged target via each equivalent form → allowed
+_run_hook "$R" "git branch --delete --force gone"; assert_exit 0 "$?" "--delete --force on merged → allowed"
+_run_hook "$R" "git branch -Df gone"; assert_exit 0 "$?" "-Df on merged → allowed"
+_run_hook "$R" "git branch -fD gone"; assert_exit 0 "$?" "-fD on merged → allowed"
+# unmerged target via each equivalent form → blocked (the bypass is closed)
+_run_hook "$R" "git branch --delete --force live"; assert_exit 2 "$?" "--delete --force on unmerged → blocked"
+_run_hook "$R" "git branch -Df live"; assert_exit 2 "$?" "-Df on unmerged → blocked"
+_run_hook "$R" "git branch -d --force live"; assert_exit 2 "$?" "-d --force on unmerged → blocked"
+
+# --- merged into origin/<default> while local default is behind → allowed
+_flow_test_begin "force-delete allowed when merged into origin/<default> (local behind)"
+R=$(_new_repo)
+( cd "$R" \
+  && git checkout -qb feat && echo x > f.txt && git add f.txt && git commit -qm c1 \
+  && git checkout -q main && git merge -q --squash feat && git commit -qm "squash feat" \
+  && git update-ref refs/remotes/origin/main main \
+  && git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main \
+  && git reset -q --hard HEAD~1 ) >/dev/null 2>&1   # local main now BEHIND origin/main
+_run_hook "$R" "git branch -D feat"; assert_exit 0 "$?" "merged on origin/main but not local → allowed"
+
+# --- compound command with a force-delete falls through to BLOCK
+_flow_test_begin "force-delete chained into a compound command is blocked"
+R=$(_new_repo)
+( cd "$R" && git checkout -qb m1 && echo a > a.txt && git add a.txt && git commit -qm ca \
+  && git checkout -q main && git merge -q --no-ff m1 -m "merge m1" ) >/dev/null 2>&1
+# m1 is merged, but the chained tail must NOT be greenlit → block
+_run_hook "$R" "git branch -D m1 && echo pwned"; assert_exit 2 "$?" "compound force-delete → blocked (no false allow)"
+
 # --- ordinary commands pass
 _flow_test_begin "non-destructive commands pass"
 R=$(_new_repo)
 _run_hook "$R" "git status"; assert_exit 0 "$?" "git status allowed"
 _run_hook "$R" "rm -rf node_modules"; assert_exit 0 "$?" "rm -rf in safe dir allowed"
+_run_hook "$R" "git branch -f other main"; assert_exit 0 "$?" "git branch -f (force-create/move, no delete) allowed"
