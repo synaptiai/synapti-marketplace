@@ -620,6 +620,50 @@ For `FLOW_GOAL_STATE=create`:
    FlowGoal created: <GOAL_ID> at <GOAL_PATH> (status: active)
    ```
 
+### FlowRun (v3 runtime)
+
+`/flow:start` is a long-running workflow, so it gets a durable FlowRun linked to the FlowGoal. Runs are gated by `flow.runtime.enabled` (default `true`); v2 projects that opted out see `FLOW_RUN_STATE=skip` and the wiring is a no-op.
+
+```!
+# FLOW_RUN_BLOCK_BEGIN
+CASCADE="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+if [ ! -x "$CASCADE" ]; then
+  echo "FLOW_RUN_STATE=blocked"
+  echo "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
+  true; exit 0
+fi
+RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) ISSUE_NUM="" ;;
+  *) ISSUE_NUM="$ARG1" ;;
+esac
+if [ "$RUNTIME_ENABLED" != "true" ]; then
+  echo "FLOW_RUN_STATE=skip"
+  echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+else
+  SLUG="${ISSUE_NUM:-nonum}"
+  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-issue-${SLUG}"
+  echo "FLOW_RUN_STATE=create"
+  echo "RUN_ID=$RUN_ID"
+  echo "WORKFLOW=start-issue"
+  echo "INITIAL_PHASE=preflight"
+  if [ -n "$ISSUE_NUM" ]; then echo "GOAL_LINK=issue-$ISSUE_NUM"; else echo "GOAL_LINK=null"; fi
+fi
+# FLOW_RUN_BLOCK_END
+true
+```
+
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`start-issue`, goal=`$GOAL_LINK` — the FlowGoal created above, or `null` when goal creation was skipped), initial phase `preflight`. Because `/flow:start` is issue-scoped, also emit the `workflow-run` artifact to `.decisions/issue-$ISSUE_NUM.md`:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+  --issue "$ISSUE_NUM" --type workflow-run \
+  --metadata workflow=start-issue --metadata run_id="$RUN_ID" --metadata status=active
+```
+
+Phase order: `preflight → explore → plan → code → verify`. At each subsequent phase boundary (PLAN, CODE, VERIFY), invoke `Skill(run-state-management)` to write a FlowActivity record and advance `state.current_phase`. After the Phase 4 verdict settles, transition the FlowRun: `state.status: completed` when the verdict is PASS (and update the `workflow-run` artifact to `status=completed`); `state.status: blocked` (with `blocked_reason`) when the verdict is FAIL or the session ends mid-workflow, so `/flow:resume` can pick it up.
+
 ## Phase 2: PLAN
 
 Create branch and decompose tasks.
