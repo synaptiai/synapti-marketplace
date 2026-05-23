@@ -135,6 +135,7 @@ Downstream consumers (`implementation-planner` agent, Stranger Test gate, Phase 
 | `commands/start.md` Phase 1 | All three (non-goals, failure modes, interface contracts) | Required for PLAN to proceed. Treat partial capture as BLOCK; complete it via Step 3. |
 | `commands/design.md` Phase 1 | Non-goals + interface contracts (failure modes optional but recommended) | If the journal already has the elements, surface them in the design discussion as the fence. If missing, capture during the design conversation. |
 | `commands/brainstorm.md` Phase 1 | Non-goals only (the brainstorm is bounded by what's IN scope) | If non-goals exist in the journal, brainstorm only inside the fence. If missing, capture them BEFORE generating approaches — otherwise the brainstorm sprawls. |
+| `commands/debug.md` Phase 3 (via `goal-contract-capture`) | Outcome (from the failure description) + acceptance criterion (the reproducing test) + root-cause constraints. The full three-element specification is skipped — a confirmed bug already carries its context. | Captured after hypothesis confirmation, not at entry. The reproducing test is the AC; no separate spec gate. |
 
 The skill always writes the elements it captures to the journal regardless of invoker. A `/flow:brainstorm` call that captures non-goals first will pre-populate that element for a later `/flow:start` call on the same issue, eliminating duplicate prompting.
 
