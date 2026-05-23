@@ -403,6 +403,43 @@ This gate enforces the "no incomplete shipments" hard boundary.
 
 Do NOT proceed to Phase 2. Exit here.
 
+### FlowRun (v3 runtime)
+
+`/flow:merge` runs the `merge-pr` workflow, so it gets a durable FlowRun. Runs are gated by `flow.runtime.enabled` (default `true`); v2 projects that opted out see `FLOW_RUN_STATE=skip` and the wiring is a no-op.
+
+```!
+# FLOW_RUN_BLOCK_BEGIN
+CASCADE="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+if [ ! -x "$CASCADE" ]; then
+  echo "FLOW_RUN_STATE=blocked"
+  echo "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
+  true; exit 0
+fi
+RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) PR_NUM="" ;;
+  *) PR_NUM="$ARG1" ;;
+esac
+if [ "$RUNTIME_ENABLED" != "true" ]; then
+  echo "FLOW_RUN_STATE=skip"
+  echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+else
+  SLUG="${PR_NUM:-nonum}"
+  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-merge-pr-${SLUG}"
+  echo "FLOW_RUN_STATE=create"
+  echo "RUN_ID=$RUN_ID"
+  echo "WORKFLOW=merge-pr"
+  echo "INITIAL_PHASE=preflight"
+fi
+# FLOW_RUN_BLOCK_END
+true
+```
+
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`merge-pr`, goal=`null` — the merge reads the linked FlowGoal for the gate below but the run itself is not goal-owned), initial phase `preflight`. Phase order: `preflight → verify → confirm → merge`. Write a FlowActivity at each boundary (verify, confirm, merge).
+
+**Linked-run completion check** (Phase 2 / verify): before allowing merge, verify that every FlowRun linked to this PR's branch (the `start-issue` run and any `address-pr` / `review-pr` runs) has reached `state.status: completed`. If any linked run is still `active`, refuse the merge — this is Tier 3, so there is **no override** beyond the standard merge confirmation. Surface the still-active run id and point to `/flow:resume`.
+
 ## Phase 2: Display Assessment
 
 ```markdown
@@ -470,6 +507,8 @@ DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.na
 git checkout $DEFAULT_BRANCH
 git pull origin $DEFAULT_BRANCH
 ```
+
+**FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): after a successful merge, invoke `Skill(run-state-management)` to transition the `merge-pr` FlowRun to `state.status: completed` and update its `workflow-run` journal artifact to `status=completed`. Then transition the linked FlowGoal to a terminal status if it is not already — the merge itself is the achievement signal. If the merge was cancelled, transition the run to `cancelled` (with `blocked_reason`) so it is not treated as resumable.
 
 **Manifest emit** — if this merge resolved any escalations (a Proactive-Autonomy escalation surfaced via `AskUserQuestion` during Phase 1's finding-ledger check, Phase 2's stale-approval warning, or the conflict-resolution path closed because the user provided one of the six canonical fields), record an `escalation-resolved` artifact for each:
 
