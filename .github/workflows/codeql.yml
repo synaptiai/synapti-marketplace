@@ -1,0 +1,55 @@
+name: "CodeQL"
+
+# Advanced setup (replaces GitHub's CodeQL "default setup"). Default setup's
+# checkout did not authenticate the git submodule fetch, so the python analysis
+# died at "Checkout repository" — the repo's only python lives in the
+# `plugins/agent-capability-standard` submodule. This workflow checks the
+# submodule out explicitly with credentials so CodeQL can scan it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: python
+            build-mode: none
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # The repo's python lives in a submodule; CodeQL needs it present to
+          # scan. persist-credentials keeps the token so the submodule fetch
+          # authenticates (the default-setup checkout failed here with
+          # "could not read Username for https://github.com").
+          submodules: recursive
+          persist-credentials: true
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # Default query suite — matches the prior default-setup config
+          # (query_suite: default). This change fixes the submodule checkout
+          # only; it does not widen scan scope.
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
