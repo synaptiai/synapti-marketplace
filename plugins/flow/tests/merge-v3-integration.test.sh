@@ -1,4 +1,4 @@
-# Tests for #110 v3 integration — FlowRun wiring in commands/merge.md.
+# Tests for the v3 runtime integration — FlowRun wiring in commands/merge.md.
 #
 # The FlowGoal gate (block on lifecycle != achieved) already exists; this file
 # covers the NEW FlowRun layer + the AC5 contract:

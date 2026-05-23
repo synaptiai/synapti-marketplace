@@ -1,4 +1,4 @@
-# Tests for #110 v3 integration — FlowRun wiring in commands/start.md.
+# Tests for the v3 runtime integration — FlowRun wiring in commands/start.md.
 #
 # FlowGoal creation in start.md already exists (gated on requireGoalForStart)
 # and is covered elsewhere. This file covers only the NEW FlowRun layer:

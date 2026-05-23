@@ -1,4 +1,4 @@
-# Tests for #110 v3 integration — FlowRun wiring in commands/address.md.
+# Tests for the v3 runtime integration — FlowRun wiring in commands/address.md.
 #
 # Contract under test:
 #   - address.md wires a FlowRun at the end of Phase 1 (FLOW_RUN_STATE block,

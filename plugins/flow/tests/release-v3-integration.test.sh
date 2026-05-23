@@ -1,4 +1,4 @@
-# Tests for #110 v3 integration — FlowRun wiring in commands/release.md.
+# Tests for the v3 runtime integration — FlowRun wiring in commands/release.md.
 #
 # Contract under test:
 #   - release.md wires a FlowRun at entry (FLOW_RUN_STATE block, gated by

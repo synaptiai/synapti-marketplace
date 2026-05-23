@@ -1,4 +1,4 @@
-# Tests for #110 v3 integration — FlowRun wiring in commands/review.md.
+# Tests for the v3 runtime integration — FlowRun wiring in commands/review.md.
 #
 # Contract under test:
 #   - review.md wires a FlowRun at the end of Phase 1 (FLOW_RUN_STATE block,

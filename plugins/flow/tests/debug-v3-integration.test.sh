@@ -1,4 +1,4 @@
-# Tests for #110 v3 integration — FlowRun + FlowGoal wiring in commands/debug.md.
+# Tests for the v3 runtime integration — FlowRun + FlowGoal wiring in commands/debug.md.
 #
 # debug is the second goal-creating command (alongside start). It:
 #   - creates a FlowRun at entry (workflow=debug), gated by flow.runtime.enabled,

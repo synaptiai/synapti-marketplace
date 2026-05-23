@@ -1,4 +1,4 @@
-# Tests for #110 v3 integration — status Active Triggers section + settings flips.
+# Tests for the v3 runtime integration — status Active Triggers section + settings flips.
 #
 #   - AC6 sub-part: /flow:status surfaces an Active Triggers section reading
 #     .flow/triggers/*.trigger.yaml, gated behind flow.triggers.enabled, with a
@@ -39,7 +39,7 @@ assert_equal "true" "$WF" "flow.workflows.enabled is true"
 assert_equal "true" "$TR" "flow.triggers.enabled is true"
 
 _flow_test_begin "goal-creation default NOT flipped here (owned by the UX layer)"
-# #110 must NOT introduce a binary requireGoalForStart:true default — that
-# migration belongs to the UX layer. Assert the plugin default stays false.
+# The FlowRun integration must NOT introduce a binary requireGoalForStart:true
+# default — that migration belongs to the UX layer. Assert the default stays false.
 RGS=$(jq -r '.flow.goals.requireGoalForStart' "$SETTINGS")
 assert_equal "false" "$RGS" "requireGoalForStart default left false (not flipped by this work)"
