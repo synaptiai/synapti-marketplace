@@ -104,10 +104,10 @@
       }
     },
     "workflows": {
-      "enabled": false
+      "enabled": true
     },
     "triggers": {
-      "enabled": false,
+      "enabled": true,
       "allowedTypes": ["manual", "hook", "loop_prompt"],
       "allowAutonomousMerge": false,
       "allowTriggerCreationFromTriggeredRun": false,
