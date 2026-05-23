@@ -33,10 +33,91 @@ if echo "$COMMAND" | grep -qE 'rm\s+(-[rfRF]+\s+)+|rm\s+(-[a-zA-Z]\s+)*-[a-zA-Z]
   fi
 fi
 
-# Block git branch -D (force delete)
-if echo "$COMMAND" | grep -qE 'git\s+branch\s+-D\s'; then
-  echo "BLOCKED: Force branch deletion detected. Use 'git branch -d' for safe delete, or run -D manually." >&2
-  exit 2
+# Force branch deletion (git branch -D): allowed ONLY when every target branch
+# is provably merged into the default branch. `git branch -d` (the safe form)
+# cannot delete squash-merged branches — git doesn't see their commits on the
+# default branch — so a blanket -D block makes squash-merged cleanup impossible.
+# This check distinguishes merged (safe to drop) from unmerged (would lose work)
+# and fails safe (blocks) on any uncertainty.
+if echo "$COMMAND" | grep -qE 'git[[:space:]]+branch[[:space:]]+-D([[:space:]]|$)'; then
+  set +e          # this block is fully conditional and always exits explicitly
+  set -f          # no pathname expansion of parsed tokens
+
+  # Targets = non-flag tokens after the -D flag.
+  TARGETS=$(printf '%s' "$COMMAND" | awk '{
+    seen=0
+    for (i=1;i<=NF;i++) {
+      if (seen) { if ($i ~ /^-/) continue; print $i }
+      else if ($i == "-D") seen=1
+    }
+  }')
+
+  if [ -z "$TARGETS" ]; then
+    echo "BLOCKED: Force branch deletion with no resolvable target. Run -D manually if intended." >&2
+    exit 2
+  fi
+  if ! command -v git >/dev/null 2>&1 || ! git rev-parse --git-dir >/dev/null 2>&1; then
+    echo "BLOCKED: Force branch deletion — cannot verify merge status (not a git repo / git unavailable). Run -D manually if intended." >&2
+    exit 2
+  fi
+
+  # Resolve the default branch: origin/HEAD, else local main/master.
+  DEFAULT=""
+  if DH=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null); then
+    DEFAULT="${DH#origin/}"
+  fi
+  if [ -z "$DEFAULT" ]; then
+    for cand in main master; do
+      if git show-ref --verify --quiet "refs/heads/$cand"; then DEFAULT="$cand"; break; fi
+    done
+  fi
+  if [ -z "$DEFAULT" ]; then
+    echo "BLOCKED: Force branch deletion — cannot resolve a default branch to verify against. Run -D manually if intended." >&2
+    exit 2
+  fi
+
+  for BR in $TARGETS; do
+    if [ "$BR" = "$DEFAULT" ]; then
+      echo "BLOCKED: Refusing to force-delete the default branch '$DEFAULT'." >&2
+      exit 2
+    fi
+    if ! git show-ref --verify --quiet "refs/heads/$BR"; then
+      echo "BLOCKED: Force branch deletion — '$BR' is not a local branch (cannot verify merge status). Run -D manually if intended." >&2
+      exit 2
+    fi
+
+    MERGED=0
+    # (1) Regular / fast-forward merge: branch tip is an ancestor of the default.
+    if git merge-base --is-ancestor "$BR" "$DEFAULT" 2>/dev/null; then
+      MERGED=1
+    else
+      # (2) Squash merge: the branch's *combined* change is patch-equivalent to a
+      # commit already in the default branch. Synthesize a single commit of the
+      # branch's tree atop the merge-base, then ask `git cherry` whether the
+      # default already contains an equivalent patch ('-' prefix == present).
+      # Author/committer identity is forced inline so commit-tree never depends
+      # on (possibly unset) git config.
+      MB=$(git merge-base "$DEFAULT" "$BR" 2>/dev/null)
+      TREE=$(git rev-parse --quiet --verify "$BR^{tree}" 2>/dev/null)
+      if [ -n "$MB" ] && [ -n "$TREE" ]; then
+        SYNTH=$(GIT_AUTHOR_NAME=_ GIT_AUTHOR_EMAIL=_@_ GIT_COMMITTER_NAME=_ GIT_COMMITTER_EMAIL=_@_ \
+                git commit-tree "$TREE" -p "$MB" -m _ 2>/dev/null)
+        if [ -n "$SYNTH" ]; then
+          case "$(git cherry "$DEFAULT" "$SYNTH" 2>/dev/null | head -n1)" in
+            -*) MERGED=1 ;;
+          esac
+        fi
+      fi
+    fi
+
+    if [ "$MERGED" != "1" ]; then
+      echo "BLOCKED: '$BR' is not merged into '$DEFAULT' — force-delete would lose unmerged work. Run -D manually if intended." >&2
+      exit 2
+    fi
+  done
+
+  # Every target is merged into the default branch — safe to drop.
+  exit 0
 fi
 
 # Block git checkout -- . (discard all changes)
