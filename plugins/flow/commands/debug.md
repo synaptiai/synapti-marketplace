@@ -58,6 +58,40 @@ echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
 true
 ```
 
+### FlowRun (v3 runtime)
+
+`/flow:debug` is a long-running workflow, so it gets a durable FlowRun. The companion FlowGoal is created later (after hypothesis confirmation), so the run forward-references its id. Runs are gated by `flow.runtime.enabled` (default `true`); v2 projects that opted out see `FLOW_RUN_STATE=skip` and the wiring is a no-op.
+
+```!
+# FLOW_RUN_BLOCK_BEGIN
+CASCADE="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+if [ ! -x "$CASCADE" ]; then
+  echo "FLOW_RUN_STATE=blocked"
+  echo "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
+  true; exit 0
+fi
+RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
+if [ "$RUNTIME_ENABLED" != "true" ]; then
+  echo "FLOW_RUN_STATE=skip"
+  echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+else
+  RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-debug"
+  # The goal id must match the FlowGoal metadata.id pattern
+  # ^[a-z0-9][a-z0-9-]{0,63}$ — no uppercase, so it cannot reuse the ISO run
+  # timestamp (which carries T/Z). Use a hyphen-only lowercase stamp.
+  GOAL_TS="$(date -u +%Y-%m-%d-%H%M%S)"
+  echo "FLOW_RUN_STATE=create"
+  echo "RUN_ID=$RUN_ID"
+  echo "WORKFLOW=debug"
+  echo "INITIAL_PHASE=preflight"
+  echo "GOAL_LINK=debug-${GOAL_TS}"
+fi
+# FLOW_RUN_BLOCK_END
+true
+```
+
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`debug`, goal=`$GOAL_LINK` — the debug FlowGoal created in Phase 3 below), initial phase `preflight`. Phase order: `preflight → reproduce → diagnose → fix → verify`. Write a FlowActivity at each boundary.
+
 **Parallel searches:**
 
 - `Grep`: Search for error message keywords in the codebase
@@ -118,6 +152,8 @@ For each hypothesis (highest confidence first):
      c. Move to next hypothesis
 ```
 
+**FlowGoal creation (after the confirmed hypothesis — end of the diagnose phase):** when `FLOW_RUN_STATE=create`, invoke `Skill(goal-contract-capture)` with invocation reason `debug`, goal id `$GOAL_LINK` (from the entry block), and the outcome template "The reported failure `$ARGUMENTS` is reproduced, root-caused, and a fix is verified." The acceptance criterion is the reproducing test written in step 4a; constraints come from the confirmed root cause. Then invoke `Skill(goal-lifecycle)` to transition `draft → active`, and write a FlowActivity for the diagnose→fix boundary.
+
 **Stop conditions from debugging-patterns:**
 - 3+ failed fix attempts → problem is architectural, return to EXPLORE
 - Can't explain current behavior → investigate more, don't guess
@@ -143,7 +179,8 @@ For each hypothesis (highest confidence first):
    ```
    If not applicable (non-UI bug): skip TaskCreate entirely.
 5. **TaskList** — confirm all tasks show status: completed
-6. **Display summary**:
+6. **FlowGoal evaluation + FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): invoke `Skill(goal-evaluator)` with `trigger=command` to evaluate the debug FlowGoal against the reproducing test evidence; persist the proposed lifecycle transition (the skill does not write terminal status itself). When the goal reaches `achieved`, transition the FlowRun to `state.status: completed`; if the bug could not be root-caused, transition to `state.status: blocked` (with `blocked_reason`) so `/flow:resume` can pick it up.
+7. **Display summary**:
    - Root cause: {description}
    - Hypothesis confirmed: #{N}
    - Fix: {what was changed}

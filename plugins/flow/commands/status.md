@@ -191,6 +191,45 @@ else
   fi
 fi
 
+# Section: Active Triggers (v3, gated behind flow.triggers.enabled)
+# Surface registered triggers under .flow/triggers/*.trigger.yaml so the user
+# can see what is wired to fire automatically. v2 projects (flag false/unset)
+# emit STATE=disabled.
+echo ""
+echo "### Active Triggers"
+TRIG_HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+TRIGGERS_ENABLED="false"
+[ -x "$TRIG_HELPER" ] && TRIGGERS_ENABLED=$("$TRIG_HELPER" --default "false" '.flow.triggers.enabled' 2>/dev/null)
+if [ "$TRIGGERS_ENABLED" != "true" ]; then
+  echo "STATE=disabled"
+elif [ ! -d ".flow/triggers" ]; then
+  echo "STATE=empty"
+else
+  TRIGGER_FILES=$(ls -1 .flow/triggers/*.trigger.yaml 2>/dev/null)
+  if [ -z "$TRIGGER_FILES" ]; then
+    echo "STATE=empty"
+  elif command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" >/dev/null 2>&1; then
+    echo "STATE=ok"
+    printf '%s\n' "$TRIGGER_FILES" | while read -r tf; do
+      [ -f "$tf" ] || continue
+      # [ -L ] symlink defense — matches the reader guards elsewhere.
+      [ -L "$tf" ] && { echo "TRIGGER=skipped (symlink rejected): $tf"; continue; }
+      python3 - "$tf" <<'PY' 2>/dev/null
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
+m = d.get("metadata", {}) or {}
+tid = m.get("id", "?")
+ttype = (d.get("trigger", {}) or {}).get("type", "?")
+enabled = m.get("enabled", True)
+print(f"TRIGGER=id={tid} type={ttype} enabled={enabled}")
+PY
+    done
+  else
+    echo "STATE=degraded"
+    echo "REASON=python3/PyYAML unavailable — cannot parse trigger yamls"
+  fi
+fi
+
 true
 ```
 
@@ -400,6 +439,16 @@ State values: `unavailable` (gh API failed) | `no_open_prs` (user has no open PR
 | Run ID | Verdict | Activities |
 |--------|---------|------------|
 | `{run}` | `{verdict}` | {activities} |
+
+### Active Triggers
+{When STATE=disabled: render "(Triggers v3 not enabled — set `flow.triggers.enabled: true` in `.claude/settings.flow.json` to opt in)"}
+{When STATE=empty: render "No triggers registered."}
+{When STATE=degraded: render "Unavailable: {REASON}"}
+{When STATE=ok: render a table of registered triggers}
+
+| Trigger | Type | Enabled |
+|---------|------|---------|
+| `{id}` | `{type}` | {enabled} |
 
 ### Findings Ledger
 {single line: `P1: {n}[ (annotation)]    P2: {n}[ (annotation)]    P3: {n}[ (annotation)]` — annotations are omitted when count is 0; see render rules below}

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added: v3 runtime integration — FlowRun + FlowGoal wired into the commands
+
+v3.0 shipped the runtime primitives as infrastructure; this release wires them into the workflow commands so runs and goals are automatic rather than opt-in:
+
+- **FlowRun wiring** in all seven long-running commands (`start`, `debug`, `address`, `review`, `pr`, `merge`, `release`). Each creates (or, for `pr`, appends to) a durable `.flow/runs/<id>/run.yaml` at entry, records FlowActivities at phase boundaries, and transitions to a terminal state on completion — gated by `flow.runtime.enabled` (default `true`; v2 projects opting out see a no-op).
+- **FlowGoal creation** now also covers `/flow:debug` (alongside the existing `/flow:start`), via `goal-contract-capture` after hypothesis confirmation. `/flow:review` and `/flow:address` are FlowRun-only (a review/address session is bounded by the PR). A `debug` row was added to the `specification-capture` per-invoker scope table.
+- **Goal gates**: `/flow:pr` blocks PR creation when the linked goal is not `achieved` (with a journaled override path), and `/flow:merge` blocks merge until the goal is `achieved` and all linked FlowRuns are `completed` (Tier 3, no override).
+- **`/flow:status`** now surfaces an **Active Triggers** section (alongside the existing FlowGoal State + Recent Runs).
+- **Defaults flipped**: `flow.workflows.enabled` and `flow.triggers.enabled` are now `true` (still per-trigger opt-in; overridable to `false` for v2.x behavior via the settings cascade).
+
 ### Added: configurable model for Path A agent-team review
 
 `/flow:review` Path A (agent-team paired-reviewer mode) dispatches ~20 subagents, all previously `model: inherit` — on an Opus session that multiplied Opus-rate tokens ~4x. A new top-level `agentTeamModel` setting (enum `haiku|sonnet|opus|inherit`, default `sonnet`, cascade-resolved) controls the model for those Path A reviewers via the Agent tool's per-invocation `model` override. `inherit` reproduces the prior behavior (override omitted → session model). Invalid values are rejected with a warning and fall back to `sonnet`. Path B (single-session, default) is unchanged.

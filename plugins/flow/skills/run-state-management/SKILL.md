@@ -172,7 +172,7 @@ When SessionEnd fires (separate hook: `session-end-state.sh`), if an active Flow
 | `address-pr` | preflight → categorize → resolve → verify |
 | `review-pr` | preflight → fan-out → consolidate → report |
 | `merge-pr` | preflight → verify → confirm → merge |
-| `release` | preflight → bump → tag → push |
+| `release` | preflight → bump → confirm → tag |
 
 The machine-readable equivalents live at `plugins/flow/workflows/<id>.workflow.yaml`.
 

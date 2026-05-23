@@ -127,6 +127,35 @@ gh pr checkout "$PR_NUM"
 
 **Skill(capability-discovery)**: Discover quality commands for verification.
 
+### FlowRun (v3 runtime)
+
+Addressing review feedback is a long-running workflow, so it gets a durable FlowRun. Runs are gated by `flow.runtime.enabled` (default `true`); v2 projects that opted out see `FLOW_RUN_STATE=skip` and the wiring is a no-op.
+
+```!
+# FLOW_RUN_BLOCK_BEGIN
+CASCADE="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+if [ ! -x "$CASCADE" ]; then
+  echo "FLOW_RUN_STATE=blocked"
+  echo "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
+  true; exit 0
+fi
+RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
+if [ "$RUNTIME_ENABLED" != "true" ]; then
+  echo "FLOW_RUN_STATE=skip"
+  echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+else
+  RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-address"
+  echo "FLOW_RUN_STATE=create"
+  echo "RUN_ID=$RUN_ID"
+  echo "WORKFLOW=address-pr"
+  echo "INITIAL_PHASE=preflight"
+fi
+# FLOW_RUN_BLOCK_END
+true
+```
+
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`address-pr`, goal=`null`), initial phase `preflight`. Phase order: `preflight → categorize → resolve → verify`. Address is **FlowRun-only — it creates NO FlowGoal**: the PR's own review-thread state (resolved comments, re-request status, cycle history) is the durable record of feedback resolution, so there is no separate acceptance-criteria contract to evaluate.
+
 ## Review Cycle Tracking
 
 ```!
@@ -218,6 +247,8 @@ For each feedback task (in priority order):
 - Boy Scout fixes get separate `improve:` commits
 
 TaskUpdate(testCoverageTaskId, status: "completed", result: "Tests written/updated for {N} fixes")
+
+**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record one FlowActivity per resolved finding as each fix lands, and invoke `Skill(goal-evidence-ledger)` to capture the verification-evidence sidecar (the test/quality output that proves the fix) attached to the FlowRun — not a goal, since address is FlowRun-only. Each activity write advances `state.current_phase` per the `preflight → categorize → resolve → verify` order.
 
 For **Question** items: prepare a response comment (no code change needed).
 
@@ -359,6 +390,8 @@ Even in minimal-scope mode, P1 and P2 findings in untouched files are always fix
         - Option 3: "Override with written risk acceptance (will be recorded on PR)"
 
 Display summary: fixes applied, Boy Scout improvements, questions answered, pushback items, cycle count.
+
+**FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): once all findings are resolved and the resolution comment is posted, invoke `Skill(run-state-management)` to transition the FlowRun to `state.status: completed`. The `workflow-run` journal artifact is best-effort because address is PR-scoped: emit `bin/journal-record.sh --type workflow-run` only if a single issue can be inferred from the PR (e.g., the PR closes exactly one issue); otherwise the `run.yaml` is the durable record. If feedback resolution fails or is cancelled, transition to `state.status: cancelled` (with `blocked_reason`) instead so `/flow:resume` does not treat it as resumable.
 
 ## Tier Classification
 

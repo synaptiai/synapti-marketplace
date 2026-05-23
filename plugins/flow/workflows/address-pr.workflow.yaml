@@ -17,8 +17,7 @@ required_skills:
   - change-classification
   - holdout-validation
   - runtime-verification
-  - goal-contract-capture
-  - goal-lifecycle
+  - goal-evidence-ledger
   - run-state-management
 
 required_agents:
@@ -44,14 +43,10 @@ phases:
         type: skill
         skill: feedback-resolution
         evidence: categorized_findings_table
-      - id: goal_creation
-        type: skill
-        skill: goal-contract-capture
-        evidence: address_goal_yaml
 
   - id: resolve
     type: loop
-    loop_over: goal.acceptance_criteria
+    loop_over: categorized_findings
     activities:
       - id: implement_fix
         type: task
@@ -81,10 +76,10 @@ phases:
       - id: reply_to_threads
         type: bash
         evidence: thread_replies
-      - id: goal_evaluation
-        type: evaluation
-        command: /flow:goal evaluate
-        evidence: goal_verdict
+      - id: workflow_run_terminal
+        type: skill
+        skill: run-state-management
+        evidence: workflow_run_completed
 
 completion_gate:
   documented_requirements:
@@ -93,7 +88,7 @@ completion_gate:
     - runtime_verification_pass_or_valid_skip
     - holdout_validation_pass_or_p3_only
     - thread_replies_posted
-    - goal_status_achieved
+    - flow_run_completed
 
 tier_classification:
   file_edits: autonomous

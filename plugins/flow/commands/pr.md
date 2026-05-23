@@ -289,7 +289,22 @@ After agents return, TaskUpdate each review task with findings.
 7a. **FlowGoal gate (v3, opt-in)** — when the Phase 1 `### FlowGoal State` section reported `GATE=block`, the active FlowGoal is not yet `achieved`. Do NOT push or create the PR with an incomplete goal — use the AskUserQuestion tool with these options:
 
    - **Option 1 (Recommended): Run `/flow:goal evaluate <id>` first** — produces a verdict that may transition the goal to `achieved`. If the verdict is `achieved`, return here and proceed with PR creation.
-   - **Option 2: Create PR with goal not-yet-achieved** — proceed with PR creation; the PR body includes a `## FlowGoal Status` section noting the lifecycle is `<status>`. The `/flow:merge` gate will block until the goal is achieved or the user overrides.
+   - **Option 2: Create PR with goal not-yet-achieved** — proceed with PR creation; the PR body includes a `## FlowGoal Status` section noting the lifecycle is `<status>`. The `/flow:merge` gate will block until the goal is achieved or the user overrides. This is a Proactive-Autonomy override of the gate, so record it to the decision journal:
+
+     ```bash
+     # Self-contained: the Phase 1 !-block's vars do not persist into this
+     # block's shell, so re-derive the issue from the branch and read the
+     # lifecycle from the helper (same pattern as the manifest-emit block).
+     ISSUE_NUM=$(git branch --show-current 2>/dev/null | grep -oE 'issue-[0-9]+' | head -1 | sed 's/issue-//')
+     GOAL_LIFECYCLE=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/flow-active-goal.sh" --status 2>/dev/null || echo "unknown")
+     if [ -n "$ISSUE_NUM" ]; then
+       "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+         --issue "$ISSUE_NUM" --type escalation-resolved \
+         --metadata gate=flowgoal-pr \
+         --metadata goal_status="$GOAL_LIFECYCLE" \
+         --metadata outcome="user-overrode: created PR with goal not yet achieved"
+     fi
+     ```
    - **Option 3: Cancel** — exit `/flow:pr` and finish the implementation work first.
 
    When `STATE=disabled` (v2 mode, `requireGoalForStart` not set): skip this step silently.
@@ -305,8 +320,11 @@ After agents return, TaskUpdate each review task with findings.
 
    - **Goal**: `<GOAL_ID>` (from `.flow/goals/<id>.goal.yaml`)
    - **Lifecycle**: `<status>` (not yet `achieved`)
+   - **Evidence**: per-criterion FlowEvidence sidecars under `.flow/runs/<run-id>/evidence/`
    - **Note**: `/flow:merge` will block until this goal is `achieved` or the user explicitly overrides.
    ```
+
+   The `<run-id>` is the active FlowRun for this branch (the `start-issue` run created by `/flow:start`). List the evidence sidecar filenames so a reviewer can trace each acceptance criterion to its captured output.
    If visual verification ran, include visual evidence section:
    ```markdown
    ## Visual Verification
@@ -322,6 +340,8 @@ After agents return, TaskUpdate each review task with findings.
     ```bash
     gh pr create --title "$TITLE" --body "$BODY"
     ```
+
+    **FlowRun activity** — `/flow:pr` is the tail of the `start-issue` workflow, not a workflow of its own, so it does NOT create a new FlowRun. Instead, when `flow.runtime.enabled` is `true` and an active FlowRun exists for this branch (the `start-issue` run), invoke `Skill(run-state-management)` to append a `pr_create` FlowActivity (type `bash`, phase `verify`) recording the PR number and URL as evidence. Best-effort: if no active run is found for the branch, skip — the PR itself is the durable record.
 11. **Suggest reviewers** using pr-lifecycle skill algorithm
 12. **Verify**: `gh pr view --json number,url`
 13. **Manifest emit** — record the review-cycle artifact for the parallel-review pass that ran during PR creation. Same emit shape as `commands/review.md` Phase 4 step 7 — the PR-creation flow runs an inline review and is morally a cycle:

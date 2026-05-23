@@ -167,6 +167,35 @@ true
 
 If previous cycles exist, build a **Previous Feedback Status** table and cross-reference each finding's location against `git diff` to verify resolution.
 
+### FlowRun (v3 runtime)
+
+A review is a long-running workflow, so it gets a durable FlowRun. Runs are gated by `flow.runtime.enabled` (default `true`); v2 projects that opted out see `FLOW_RUN_STATE=skip` and the wiring is a no-op.
+
+```!
+# FLOW_RUN_BLOCK_BEGIN
+CASCADE="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+if [ ! -x "$CASCADE" ]; then
+  echo "FLOW_RUN_STATE=blocked"
+  echo "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
+  true; exit 0
+fi
+RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
+if [ "$RUNTIME_ENABLED" != "true" ]; then
+  echo "FLOW_RUN_STATE=skip"
+  echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+else
+  RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-review"
+  echo "FLOW_RUN_STATE=create"
+  echo "RUN_ID=$RUN_ID"
+  echo "WORKFLOW=review-pr"
+  echo "INITIAL_PHASE=preflight"
+fi
+# FLOW_RUN_BLOCK_END
+true
+```
+
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`review-pr`, goal=`null`), initial phase `preflight`. Phase order: `preflight → fan-out → consolidate → report`. Review is **FlowRun-only — it creates NO FlowGoal**: a review session is bounded by the PR under review, and the PR's own review-thread state (the posted review comment plus its FLOW_REVIEW_CYCLE marker) is the durable record of what the review found. The `run.yaml` captures the workflow's resumability state; there is no separate goal contract to satisfy.
+
 ## Phase 2: PLAN
 
 ```
@@ -577,6 +606,8 @@ Skill(holdout-validation):
 
 TaskUpdate each review task as agents complete.
 
+**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record a FlowActivity as the consolidate boundary completes — once the per-facet findings (Path A consolidation or Path B synthesis) have been merged into a single deduplicated finding set, advancing `state.current_phase` to `consolidate` per the `preflight → fan-out → consolidate → report` order.
+
 ## Phase 4: VERIFY
 
 **CRITICAL: Posting review findings to the PR is MANDATORY. NEVER skip posting. The review is not complete until `gh pr review` has been executed and TaskUpdate confirms the post task is completed. Do not suggest next steps until posting is verified.**
@@ -697,6 +728,10 @@ TaskUpdate each review task as agents complete.
 8. **Verify posting**: TaskList — confirm "Post review comment" or "Post self-review comment" task is completed. Do NOT proceed to step 9 until this is verified.
 
 9. **Post-review**: If self-review fixed everything, suggest `/flow:pr`. If external review, suggest `/flow:address $PR_NUM` for the PR author.
+
+**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record a FlowActivity as the report boundary completes — once the review comment is posted (step 7) and posting is verified (step 8), advancing `state.current_phase` to `report` per the `preflight → fan-out → consolidate → report` order.
+
+**FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): once the review comment is posted (or no-finding evidence is recorded), invoke `Skill(run-state-management)` to transition the FlowRun to `state.status: completed`. The `workflow-run` journal artifact is best-effort — a review is PR-scoped, not issue-scoped — so emit `bin/journal-record.sh --type workflow-run` only if a single issue can be inferred from the PR (the linked issue parsed from the PR body); otherwise the `run.yaml` is the durable record and no journal artifact is written. If the review failed or was cancelled before posting, transition to `state.status: cancelled` (with `blocked_reason`) instead so `/flow:resume` does not treat it as resumable.
 
 ## Tier Classification
 
