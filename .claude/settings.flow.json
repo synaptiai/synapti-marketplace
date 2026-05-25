@@ -80,5 +80,10 @@
     ],
     "maxIterations": 3,
     "requireVisualVerification": false
+  },
+  "flow": {
+    "goals": {
+      "requireGoalForStart": true
+    }
   }
 }
