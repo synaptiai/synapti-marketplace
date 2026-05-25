@@ -9,7 +9,7 @@ scope:
   repo: synaptiai/synapti-marketplace
   branch: fix/issue-120-arguments-param-expansion
   issue: 120
-  pr: null
+  pr: 121
   journal: .decisions/issue-120.md
 objective:
   outcome: 'Issue #120 is implemented and verified: command !-blocks extract the first
