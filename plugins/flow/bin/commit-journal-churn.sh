@@ -51,6 +51,12 @@ while IFS= read -r line; do
   # below, so renames fall through to HAS_OTHER and we safely no-op.
   p=$(printf '%s' "$line" | cut -c4-)
   case "$p" in
+    # Nested path under the journal dir: the journal is flat by contract, and
+    # the staging glob below is single-level — so anything nested would be
+    # classified-but-not-staged (a silent partial commit). Treat it as a
+    # non-journal change and no-op instead. Must precede the *.md/*.lock arms
+    # because shell `case` `*` spans `/`.
+    "$JOURNAL_DIR"/*/*)    HAS_OTHER=1 ;;
     "$JOURNAL_DIR"/*.md)   HAS_JOURNAL_MD=1 ;;
     "$JOURNAL_DIR"/*.lock) : ;;
     *)                     HAS_OTHER=1 ;;

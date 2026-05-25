@@ -106,7 +106,8 @@ assert_equal "$H6/.claude/plugins/cache/synapti-marketplace/flow/3.1.0" "$ROOT" 
 # future edit that hand-tweaks one site out of sync.
 _flow_test_begin "all embedded resolver sites match the canonical doc form (no drift)"
 UNIQ=$(grep -rhoE '\$\(__fr=.*;echo "\$__fr"\)' \
-  "$REPO_ROOT/plugins/flow/commands" "$REPO_ROOT/plugins/flow/agents" 2>/dev/null | sort -u)
+  "$REPO_ROOT/plugins/flow/commands" "$REPO_ROOT/plugins/flow/agents" \
+  "$REPO_ROOT/plugins/flow/references" 2>/dev/null | sort -u)
 NFORMS=$(printf '%s\n' "$UNIQ" | grep -c .)
 assert_equal "1" "$NFORMS" "exactly one unique resolver form across all embedded sites"
 assert_equal "$RESOLVER" "$UNIQ" "embedded resolver is byte-identical to the reference-doc canonical form"

@@ -110,3 +110,21 @@ assert_equal "?? .decisions/" "$(git -C "$RF" status --porcelain)" "default porc
 _run_helper "$RF" >/dev/null
 assert_equal "chore(decisions): record session journal entries" "$(_subject "$RF")" "untracked journal dir committed"
 assert_equal "" "$(_porcelain "$RF")" "tree clean after committing untracked journal dir"
+
+# --- Scenario G: nested journal .md → no-op (classifier matches staging) -----
+# The classifier `case` glob spans '/', but the staging glob is single-level.
+# A nested .md must therefore be treated as a non-journal change (no-op) rather
+# than classified-but-not-staged (a silent partial commit that exits 0 claiming
+# a clean tree). Journal is flat by contract.
+_flow_test_begin "nested journal .md → no-op, no partial commit"
+R=$(_new_repo)
+BEFORE=$(_subject "$R")
+printf '<!-- auto-log: edit -->\n' >> "$R/.decisions/issue-1.md"
+mkdir -p "$R/.decisions/sub"
+printf -- '---\nx\n---\n' > "$R/.decisions/sub/nested.md"
+_run_helper "$R" >/dev/null
+assert_equal "$BEFORE" "$(_subject "$R")" "no commit when a nested journal .md is present"
+# The flat churn + nested file both remain — nothing was partial-committed.
+# (Default porcelain collapses the untracked subdir to `?? .decisions/sub/`.)
+assert_match "issue-1.md" "$(_porcelain "$R")" "flat journal churn left uncommitted (no partial commit)"
+assert_match "\.decisions/sub" "$(_porcelain "$R")" "nested path left uncommitted"
