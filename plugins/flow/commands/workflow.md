@@ -17,7 +17,7 @@ The command markdown remains Claude's execution manual; this YAML is the inspect
 ## Pre-flight
 
 ```bash
-ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" \
+ENABLED=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh" \
   --default "false" '.flow.workflows.enabled')
 if [ "$ENABLED" != "true" ]; then
   echo "flow.workflows.enabled is false — /flow:workflow is opt-in." >&2
@@ -34,7 +34,7 @@ List all plugin-shipped workflows + any project-local overrides:
 
 ```bash
 echo "Plugin-shipped workflows:"
-for f in "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/workflows/"*.workflow.yaml; do
+for f in "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/workflows/"*.workflow.yaml; do
   ID=$(basename "$f" .workflow.yaml)
   CMD=$(python3 -c "import yaml; print(yaml.safe_load(open('$f'))['metadata']['command'])" 2>/dev/null)
   DESC=$(python3 -c "import yaml; print(yaml.safe_load(open('$f'))['metadata']['description'])" 2>/dev/null)
@@ -58,7 +58,7 @@ Dump the workflow's frontmatter + phase structure:
 
 ```bash
 ID="${ARGUMENTS}"
-WF_PATH="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/workflows/${ID}.workflow.yaml"
+WF_PATH="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/workflows/${ID}.workflow.yaml"
 [ -f ".flow/workflows/${ID}.workflow.yaml" ] && WF_PATH=".flow/workflows/${ID}.workflow.yaml"
 
 if [ ! -f "$WF_PATH" ]; then
@@ -97,7 +97,7 @@ Render a textual graph of the workflow's phase structure:
 
 ```bash
 ID="${ARGUMENTS}"
-WF_PATH="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/workflows/${ID}.workflow.yaml"
+WF_PATH="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/workflows/${ID}.workflow.yaml"
 [ -f ".flow/workflows/${ID}.workflow.yaml" ] && WF_PATH=".flow/workflows/${ID}.workflow.yaml"
 
 python3 - "$WF_PATH" <<'PYEOF'

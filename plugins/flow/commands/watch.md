@@ -20,7 +20,7 @@ The user manually starts the loop. Flow does NOT invoke `/loop` from plugin code
 ## Pre-flight
 
 ```bash
-ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" \
+ENABLED=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh" \
   --default "false" '.flow.triggers.enabled')
 if [ "$ENABLED" != "true" ]; then
   echo "flow.triggers.enabled is false — /flow:watch is opt-in."

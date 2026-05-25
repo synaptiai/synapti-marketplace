@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.1.1 (2026-05-25)
+
+### Fixed: command bash blocks could not locate bundled `bin/` on marketplace installs
+
+Command `!`/bash blocks located bundled helpers via `${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/…`. `CLAUDE_PLUGIN_ROOT` is documented for hooks/MCP/LSP/monitors/skill substitution but **not** for slash-command bash blocks (and is unset when an agent runs the steps through its Bash tool), and the `:-plugins/flow` fallback only resolves for an in-repo checkout — never for a marketplace install. The result: in a consumer repo, helpers were unreachable, so `/flow:start` with `flow.goals.requireGoalForStart: true` could not auto-create the FlowGoal (`.flow/` was never created) and the `/flow:merge` goal gate had nothing to check.
+
+Command blocks now use an inline resolver that probes, in order: `$CLAUDE_PLUGIN_ROOT`, in-repo `plugins/flow`, the highest-semver marketplace cache install, then the marketplaces checkout — failing loud (existing `*_STATE=blocked` sentinels) when none resolves. Hooks are unaffected (they receive `CLAUDE_PLUGIN_ROOT` per the docs). See `references/plugin-root-resolution.md`.
+
+### Added: `/flow:pr` commits trailing decision-journal churn
+
+The decision journal (`.decisions/`, tracked) is appended to by the auto-log hooks during normal work and never committed, so it showed dirty at PR time. `/flow:pr` now sweeps journal-only churn into a `chore(decisions):` commit before pushing (new `bin/commit-journal-churn.sh`). It no-ops if any non-journal path is dirty and never stages lockfiles; the `chore(decisions):` subject is skipped by the `log-commits.sh` Guard 1, so there is no re-append loop. Journal lockfiles, `.trail/`, and `.claude/scheduled_tasks.lock` are now gitignored.
+
 ## 3.1.0 (2026-05-23)
 
 ### Fixed: merge-aware force-branch-delete in the destructive-command hook
