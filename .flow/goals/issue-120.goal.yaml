@@ -1,0 +1,99 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-120
+  created_at: '2026-05-25T16:04:45Z'
+  created_by: /flow:goal
+  owner: daniel.bentes@gmail.com
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: fix/issue-120-arguments-param-expansion
+  issue: 120
+  pr: null
+  journal: .decisions/issue-120.md
+objective:
+  outcome: 'Issue #120 is implemented and verified: command !-blocks extract the first
+    $ARGUMENTS token correctly under Claude Code''s bare-only substitution.'
+  source:
+    issue_title: 'flow: ${ARGUMENTS%% *} in command !-blocks expands to empty (Claude
+      Code substitutes bare $NAME only)'
+  acceptance_criteria:
+  - id: AC1
+    text: No bash parameter-expansion on $ARGUMENTS remains in any flow command executable
+      block.
+    verification_command: '! grep -rqE ''[$][{]ARGUMENTS[%#/:^,@+-]'' plugins/flow/commands/'
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC2
+    text: The onboarding gate fixture models Claude Code text-substitution (not env-var
+      injection) and asserts the old form degrades to skip while the fixed form produces
+      create.
+    verification_command: bash plugins/flow/tests/run.sh flow-start-onboarding.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC3
+    text: A static lint rejects parameter-expansion on $ARGUMENTS in !/bash/sh fences
+      and self-guards full operator coverage with no false positives.
+    verification_command: bash plugins/flow/tests/run.sh command-frontmatter.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC4
+    text: The full flow test suite passes.
+    verification_command: bash plugins/flow/tests/run.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+specification:
+  non_goals:
+  - Not changing first-token extraction semantics (still strip trailing prose; still
+    reject non-digit input where rejected before).
+  - Not the documentation-only alternative; the code refactor is definitive.
+  - Not touching bare $ARGUMENTS uses in prose / agent-prompt strings (substituted
+    correctly).
+  failure_modes:
+  - Lint over-matches and flags legitimate ${SOMEVAR%% *} on non-ARGUMENTS vars ->
+    anchored strictly to ${ARGUMENTS<op>.
+  - Refactor introduces an unquoted $ARGUMENTS -> existing Test 3 still guards quoting.
+  - 'Comment-strip eats the # in ${ARGUMENTS#foo} -> word-boundary strip preserves
+    operator #; self-guard asserts coverage.'
+  interface_contracts:
+  - Replace ARG1="${ARGUMENTS%% *}" with _RAW="$ARGUMENTS" then ARG1="${_RAW%% *}";
+    bare $ARGUMENTS is what Claude Code substitutes.
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+evaluator:
+  type: deterministic
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: achieved
+  turns_evaluated: 1
+  last_evaluation:
+    result: pass
+    reason: All 4 acceptance criteria pass deterministically (AC1 no broken forms;
+      AC2 onboarding fixture 73/73; AC3 lint 10/10; AC4 full suite 840/840).
+    at: '2026-05-25T16:34:25Z'
