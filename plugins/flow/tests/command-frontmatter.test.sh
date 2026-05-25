@@ -143,16 +143,21 @@ for FILE in "$COMMANDS_DIR"/*.md; do
 done
 [ "$PASS" = "1" ] && _flow_assert_pass "no destructive verbs in any ! block"
 
-# --- Test 3: $ARGUMENTS inside ! blocks is quoted or extracted via case
+# --- Test 3: $ARGUMENTS inside ! blocks is quoted
 # Acceptable forms inside an ! block:
 #   - "$ARGUMENTS"           (double-quoted scalar)
-#   - "${ARGUMENTS%% *}"     (first-token extraction; the case-validated form)
-#   - assigned to a var then used: ARG1="${ARGUMENTS%% *}"; then "$ARG1"
-# Unacceptable: any unquoted form including bare $ARGUMENTS, ${ARGUMENTS},
-# or ${ARGUMENTS%% *} outside of double quotes. The previous "char-before"
-# regex over-accepted ${ARGUMENTS} because `$` was in the negative class to
-# permit `${...}` braces — but unquoted braces are still word-split-vulnerable.
-# Fix: strip all quoted spans first, then flag any remaining $ARGUMENTS form.
+#   - "${ARGUMENTS}"         (double-quoted, braces, no operator)
+#   - copied to a local then expanded: _RAW="$ARGUMENTS"; ARG1="${_RAW%% *}"
+# Unacceptable here: any unquoted form including bare $ARGUMENTS or ${ARGUMENTS}.
+# The previous "char-before" regex over-accepted ${ARGUMENTS} because `$` was
+# in the negative class to permit `${...}` braces — but unquoted braces are
+# still word-split-vulnerable. Fix: strip all quoted spans first, then flag
+# any remaining $ARGUMENTS form.
+#
+# NOTE: this test only guards QUOTING (word-split safety). It does NOT catch
+# bash parameter-expansion applied to $ARGUMENTS (e.g. "${ARGUMENTS%% *}"),
+# which is quoted-and-safe but still BROKEN because Claude Code never
+# substitutes it (see Test 6).
 _flow_test_begin "\$ARGUMENTS in ! blocks is inside double quotes"
 PASS=1
 for FILE in "$COMMANDS_DIR"/*.md; do
@@ -286,3 +291,88 @@ for FILE in "$COMMANDS_DIR"/*.md; do
   done <<< "$PATTERNS"
 done
 [ "$PASS" = "1" ] && _flow_assert_pass "allowed-tools Bash() prefix linter handles synthetic fixtures correctly"
+
+# --- Test 6: no bash parameter-expansion applied directly to $ARGUMENTS.
+# Claude Code's slash-command preprocessor textually substitutes
+# bare $ARGUMENTS and ${ARGUMENTS} (no operator), but NOT parameter-expansion
+# forms like ${ARGUMENTS%% *}, ${ARGUMENTS#foo}, ${ARGUMENTS:0:3}. The bash
+# interpreter then sees an undefined ARGUMENTS var and the expansion yields
+# the empty string — every downstream guard silently degrades to its no-arg
+# path even when the user passed an argument.
+#
+# The correct pattern copies the substituted bare form into a line-local var
+# first, then applies parameter-expansion to THAT var:
+#   _RAW="$ARGUMENTS"        # Claude Code substitutes bare $ARGUMENTS
+#   ARG1="${_RAW%% *}"       # bash now operates on a real env var
+#
+# This check scans RAW block bodies (NOT quote-stripped): "${ARGUMENTS%% *}"
+# is quoted-and-safe per Test 3 but still broken, so quoting is irrelevant.
+# The operator class [%#/:^,@+-] covers every bash parameter-expansion
+# operator that can follow the variable name (%/%% suffix, #/## prefix,
+# / substitution, : substring/default, ^/, case, @ operator, +/- default).
+#
+# Scope covers `!`, `bash`, and `sh` executable fences — not just `!` blocks.
+# Claude Code's $ARGUMENTS substitution is a template-wide preprocessing pass,
+# so a `${ARGUMENTS:-}` in a ```bash block fed to the Bash tool is just as
+# broken as one in a ```! block (a ```bash fence was the second affected site). Only
+# `!` and `bash` fences exist today; `sh` is included so a future ```sh fence
+# is covered the moment it lands rather than slipping through.
+#
+# Comment-strip subtlety: the strip must remove a TRAILING shell comment (so a
+# doc comment like `# the ${ARGUMENTS:-} form is broken` is not flagged) WITHOUT
+# eating the `#`/`##` prefix-removal operators inside `${ARGUMENTS#foo}`. A
+# naive `s/[[:space:]]*#.*$//` truncates at the operator `#` (zero-space match)
+# and silently loses those two operators. Anchoring the strip to a word
+# boundary — `#` at line-start or preceded by whitespace — keeps real comments
+# stripped while preserving operator `#`, which is never space-preceded.
+_strip_arg_comment() { sed -E 's/(^|[[:space:]])#.*$/\1/'; }
+_flow_test_begin "no bash parameter-expansion on \$ARGUMENTS in executable blocks"
+PASS=1
+for FILE in "$COMMANDS_DIR"/*.md; do
+  CMD=$(basename "$FILE" .md)
+  BODY=$(awk '
+    /^```(!|bash|sh)$/ { in_block=1; next }
+    /^```$/ && in_block { in_block=0; next }
+    in_block { print }
+  ' "$FILE")
+  [ -z "$BODY" ] && continue
+  BAD=$(printf '%s\n' "$BODY" | _strip_arg_comment \
+        | grep -nE '\$\{ARGUMENTS[%#/:^,@+-]' || true)
+  if [ -n "$BAD" ]; then
+    _flow_assert_fail "$CMD.md applies bash parameter-expansion to \$ARGUMENTS in an executable block (Claude Code won't substitute it; copy to a local var first): $BAD"
+    PASS=0
+  fi
+done
+[ "$PASS" = "1" ] && _flow_assert_pass "no executable block applies bash parameter-expansion directly to \$ARGUMENTS"
+
+# Self-guard for Test 6: the strip+grep pipeline
+# is the line of defense, so prove it actually catches every operator it claims
+# — including the `#`/`##` prefix forms that a naive comment-strip would lose —
+# and that it does NOT false-positive on a trailing doc comment that merely
+# *mentions* a broken form.
+_flow_test_begin "Test 6 strip+grep catches all \$ARGUMENTS operators, ignores doc mentions"
+PASS=1
+for FORM in '${ARGUMENTS#foo}' '${ARGUMENTS##*/}' '${ARGUMENTS%% *}' '${ARGUMENTS:-}' \
+            '${ARGUMENTS/a/b}' '${ARGUMENTS^^}' '${ARGUMENTS,,}' '${ARGUMENTS:0:3}' '${ARGUMENTS@Q}'; do
+  HIT=$(printf 'X="%s"\n' "$FORM" | _strip_arg_comment | grep -nE '\$\{ARGUMENTS[%#/:^,@+-]' || true)
+  if [ -z "$HIT" ]; then
+    _flow_assert_fail "Test 6 pipeline failed to flag broken form: $FORM"
+    PASS=0
+  fi
+done
+# Bare forms Claude Code DOES substitute must NOT be flagged.
+for OK in '$ARGUMENTS' '${ARGUMENTS}' '"$ARGUMENTS"'; do
+  HIT=$(printf 'X="%s"\n' "$OK" | _strip_arg_comment | grep -nE '\$\{ARGUMENTS[%#/:^,@+-]' || true)
+  if [ -n "$HIT" ]; then
+    _flow_assert_fail "Test 6 pipeline false-positived on a CC-substituted bare form: $OK"
+    PASS=0
+  fi
+done
+# Trailing doc comment mentioning a broken form must be stripped, not flagged.
+FP=$(printf '%s\n' 'RUN_ID="$ARGUMENTS"  # the ${ARGUMENTS:-} form is NOT substituted' \
+     | _strip_arg_comment | grep -nE '\$\{ARGUMENTS[%#/:^,@+-]' || true)
+if [ -n "$FP" ]; then
+  _flow_assert_fail "Test 6 pipeline false-positived on a doc-comment mention: $FP"
+  PASS=0
+fi
+[ "$PASS" = "1" ] && _flow_assert_pass "Test 6 strip+grep covers all operators with no false positives"

@@ -30,7 +30,8 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 #
 # Output: `###`-headed sections + KEY=value per
 # `references/command-output-format.md`. STATE=blocked on bad input.
-ARG1="${ARGUMENTS%% *}"
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) PR_NUM="" ;;
   *) PR_NUM="$ARG1" ;;
@@ -114,7 +115,8 @@ Check for previous reviews — if this is a follow-up review, focus on changes s
 ```!
 # Parse previous review findings + resolution outcomes. PR_NUM is digit-validated
 # (matches Phase 1 block); a non-digit token rejects rather than reaching shell.
-ARG1="${ARGUMENTS%% *}"
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) PR_NUM="" ;;
   *) PR_NUM="$ARG1" ;;

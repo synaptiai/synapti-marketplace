@@ -37,7 +37,8 @@ Understand the goal before generating options. Execute in parallel:
 #
 # Output: `###`-headed sections + KEY=value per
 # `references/command-output-format.md`.
-ARG1="${ARGUMENTS%% *}"
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) ISSUE_NUM="" ;;
   *) ISSUE_NUM="$ARG1" ;;

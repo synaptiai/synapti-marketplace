@@ -135,11 +135,30 @@ assert_equal "FLOW_V3_ONBOARDING=skip" "$OUT" "skip arm: re-detection returns sk
 
 _flow_test_begin "goal auto-creation gate: requireGoal=true + ISSUE_NUM -> create"
 
+# Model Claude Code's slash-command preprocessor. It textually substitutes the
+# bare `$ARGUMENTS` and `${ARGUMENTS}` (braces, no operator) tokens with the
+# literal argument string, and leaves bash parameter-expansion forms like
+# `${ARGUMENTS%% *}` UNTOUCHED. Crucially it does NOT export ARGUMENTS into the
+# runtime environment — so a block that survives only because `${ARGUMENTS%% *}`
+# expanded against a real env var is broken in production. Earlier this fixture
+# ran `ARGUMENTS=42 bash -c "$BLOCK"`, which injected that env var and thereby
+# HID the bug: the broken `${ARGUMENTS%% *}` form "worked" in the test and
+# shipped degraded.
+cc_substitute() {
+  local block="$1" arg="${2-}"
+  block="${block//\$\{ARGUMENTS\}/$arg}"   # ${ARGUMENTS} (braces, no operator)
+  block="${block//\$ARGUMENTS/$arg}"        # bare $ARGUMENTS
+  printf '%s' "$block"
+}
+
 # Lift the gate logic from start.md and exercise it without invoking
 # cascade-resolve.sh — we pre-set REQUIRE_GOAL directly so this test is
-# hermetic and doesn't depend on the cascade implementation.
+# hermetic and doesn't depend on the cascade implementation. The arg parse
+# uses the correct pattern: copy the bare (substituted) form into a local,
+# THEN apply parameter-expansion to the local.
 GOAL_GATE_BLOCK='
-ARG1="${ARGUMENTS%% *}"
+_RAW="$ARGUMENTS"
+ARG1="${_RAW%% *}"
 case "$ARG1" in
   ""|*[!0-9]*) ISSUE_NUM="" ;;
   *) ISSUE_NUM="$ARG1" ;;
@@ -161,9 +180,11 @@ else
 fi
 '
 
+# Each arm substitutes the arg into the block the way Claude Code would, then
+# runs it WITHOUT ARGUMENTS in the env (production never sets it).
 CREATE_DIR="$TMP_DIR/create-arm"
 mkdir -p "$CREATE_DIR"
-OUT=$(cd "$CREATE_DIR" && REQUIRE_GOAL=true ARGUMENTS="42" bash -c "$GOAL_GATE_BLOCK")
+OUT=$(cd "$CREATE_DIR" && REQUIRE_GOAL=true bash -c "$(cc_substitute "$GOAL_GATE_BLOCK" "42")")
 assert_contains "FLOW_GOAL_STATE=create" "$OUT" "create arm: state=create"
 assert_contains "GOAL_ID=issue-42" "$OUT" "create arm: GOAL_ID=issue-42"
 assert_contains "GOAL_PATH=.flow/goals/issue-42.goal.yaml" "$OUT" "create arm: GOAL_PATH set"
@@ -174,27 +195,54 @@ _flow_test_begin "goal auto-creation gate: existing goal -> exists (no overwrite
 EXISTS_DIR="$TMP_DIR/exists-arm"
 mkdir -p "$EXISTS_DIR/.flow/goals"
 echo "apiVersion: flow.synapti.ai/v1" > "$EXISTS_DIR/.flow/goals/issue-42.goal.yaml"
-OUT=$(cd "$EXISTS_DIR" && REQUIRE_GOAL=true ARGUMENTS="42" bash -c "$GOAL_GATE_BLOCK")
+OUT=$(cd "$EXISTS_DIR" && REQUIRE_GOAL=true bash -c "$(cc_substitute "$GOAL_GATE_BLOCK" "42")")
 assert_contains "FLOW_GOAL_STATE=exists" "$OUT" "exists arm: state=exists"
 assert_not_contains "FLOW_GOAL_STATE=create" "$OUT" "exists arm: not flagged for creation"
 
 
 _flow_test_begin "goal auto-creation gate: requireGoal=false -> skip"
 
-OUT=$(cd "$TMP_DIR" && REQUIRE_GOAL=false ARGUMENTS="42" bash -c "$GOAL_GATE_BLOCK")
+OUT=$(cd "$TMP_DIR" && REQUIRE_GOAL=false bash -c "$(cc_substitute "$GOAL_GATE_BLOCK" "42")")
 assert_equal "FLOW_GOAL_STATE=skip" "$OUT" "requireGoal=false -> skip"
 
 
 _flow_test_begin "goal auto-creation gate: missing ISSUE_NUM -> skip"
 
-OUT=$(cd "$TMP_DIR" && REQUIRE_GOAL=true ARGUMENTS="" bash -c "$GOAL_GATE_BLOCK")
+OUT=$(cd "$TMP_DIR" && REQUIRE_GOAL=true bash -c "$(cc_substitute "$GOAL_GATE_BLOCK" "")")
 assert_equal "FLOW_GOAL_STATE=skip" "$OUT" "missing ISSUE_NUM -> skip"
 
 
 _flow_test_begin "goal auto-creation gate: non-digit ARGUMENTS -> skip"
 
-OUT=$(cd "$TMP_DIR" && REQUIRE_GOAL=true ARGUMENTS="abc" bash -c "$GOAL_GATE_BLOCK")
+OUT=$(cd "$TMP_DIR" && REQUIRE_GOAL=true bash -c "$(cc_substitute "$GOAL_GATE_BLOCK" "abc")")
 assert_equal "FLOW_GOAL_STATE=skip" "$OUT" "non-digit ARGUMENTS -> skip (matches Phase 0 validation)"
+
+
+_flow_test_begin "regression: old \${ARGUMENTS%% *} form degrades to skip under CC substitution"
+
+# The fixture's whole point: prove the bug now, so a revert to the broken form
+# fails here. Under faithful CC substitution (bare-only, no env var), the old
+# parameter-expansion form expands empty and the gate silently skips — even
+# with requireGoal=true and a valid issue number passed.
+OLD_BROKEN_BLOCK='
+ARG1="${ARGUMENTS%% *}"
+case "$ARG1" in
+  ""|*[!0-9]*) ISSUE_NUM="" ;;
+  *) ISSUE_NUM="$ARG1" ;;
+esac
+if [ "$REQUIRE_GOAL" = "true" ] && [ -n "$ISSUE_NUM" ]; then
+  echo "FLOW_GOAL_STATE=create"
+else
+  echo "FLOW_GOAL_STATE=skip"
+fi
+'
+OUT=$(cd "$TMP_DIR" && REQUIRE_GOAL=true bash -c "$(cc_substitute "$OLD_BROKEN_BLOCK" "42")")
+assert_equal "FLOW_GOAL_STATE=skip" "$OUT" "old form expands empty under CC substitution (this IS the bug; env-injection fixture hid it)"
+
+# Sanity: the SAME arg through the SAME substitution model, but the fixed
+# block, must produce create — proving the fix, not just the bug.
+OUT=$(cd "$TMP_DIR" && REQUIRE_GOAL=true bash -c "$(cc_substitute "$GOAL_GATE_BLOCK" "42")")
+assert_contains "FLOW_GOAL_STATE=create" "$OUT" "fixed _RAW form produces create under the identical substitution model"
 
 
 # ────────────────────────────────────────────────────────────────────────────
