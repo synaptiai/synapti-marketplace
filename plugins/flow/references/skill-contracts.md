@@ -57,7 +57,7 @@ Producers MUST validate inputs **before** invoking a skill. The pattern:
 
 ```bash
 PAYLOAD='{"selfReviewFindings": [...], "evidenceBundle": [...], "fileList": [...]}'
-if ! "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/validate-skill-input.sh" holdout-validation "$PAYLOAD" >&2; then
+if ! "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/validate-skill-input.sh" holdout-validation "$PAYLOAD" >&2; then
   echo "ERROR: holdout-validation input failed validation; refusing to invoke skill" >&2
   exit 1
 fi

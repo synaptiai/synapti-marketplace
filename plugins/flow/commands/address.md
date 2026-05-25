@@ -133,7 +133,7 @@ Addressing review feedback is a long-running workflow, so it gets a durable Flow
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
-CASCADE="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
 if [ ! -x "$CASCADE" ]; then
   echo "FLOW_RUN_STATE=blocked"
   echo "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"

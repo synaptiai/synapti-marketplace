@@ -21,7 +21,7 @@ You are a Git convention validator for the flow plugin. Verify adherence to repo
 # an array) — those return empty from the filter and the helper falls
 # through to the next source.
 DEFAULT_TYPES="feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert"
-HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
 COMMIT_TYPES="$DEFAULT_TYPES"
 [ -x "$HELPER" ] && COMMIT_TYPES=$("$HELPER" --default "$DEFAULT_TYPES" '.conventions.commitTypes // empty | if type == "array" then join("|") else empty end')
 echo "Commit types: $COMMIT_TYPES"

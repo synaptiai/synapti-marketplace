@@ -24,7 +24,7 @@ echo "### Resolved Paths"
 # without expansion, so downstream tools that don't auto-expand tildes
 # (Read/Write/Edit, Python os.path) would fail. Manually expand `~` to
 # $HOME so the agent always receives an absolute path.
-HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
 PROPOSAL_DIR="$HOME/.claude/flow-proposals"
 if [ -x "$HELPER" ]; then
@@ -171,7 +171,7 @@ Write each proposal to `$PROPOSAL_DIR/YYYY-MM-DD-{topic}.md` using the skill-pro
 To promote a proposal to an active skill, use the canonical helper:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/promote-proposal.sh \
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/promote-proposal.sh" \
   --proposal ~/.claude/flow-proposals/YYYY-MM-DD-{topic}.md
 ```
 
@@ -187,7 +187,7 @@ The PR is **always draft** — `bin/promote-proposal.sh` is Tier 2 (journal-and-
 Use `--dry-run` to validate a proposal without filesystem effects:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/promote-proposal.sh \
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/promote-proposal.sh" \
   --proposal ~/.claude/flow-proposals/YYYY-MM-DD-{topic}.md \
   --dry-run
 ```

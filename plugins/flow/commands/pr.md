@@ -120,13 +120,13 @@ else
   # see STATE=disabled and the gate is skipped silently.
   echo ""
   echo "### FlowGoal State"
-  HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+  HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
   REQUIRE_GOAL=$("$HELPER" --default "false" '.flow.goals.requireGoalForStart' 2>/dev/null)
   if [ "$REQUIRE_GOAL" != "true" ]; then
     echo "STATE=disabled"
     echo "REASON=flow.goals.requireGoalForStart is not true"
   else
-    ACTIVE_GOAL_HELPER="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/flow-active-goal.sh"
+    ACTIVE_GOAL_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-active-goal.sh"
     if [ ! -x "$ACTIVE_GOAL_HELPER" ]; then
       echo "STATE=unavailable"
       echo "REASON=flow-active-goal.sh missing or non-executable"
@@ -296,9 +296,9 @@ After agents return, TaskUpdate each review task with findings.
      # block's shell, so re-derive the issue from the branch and read the
      # lifecycle from the helper (same pattern as the manifest-emit block).
      ISSUE_NUM=$(git branch --show-current 2>/dev/null | grep -oE 'issue-[0-9]+' | head -1 | sed 's/issue-//')
-     GOAL_LIFECYCLE=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/flow-active-goal.sh" --status 2>/dev/null || echo "unknown")
+     GOAL_LIFECYCLE=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-active-goal.sh" --status 2>/dev/null || echo "unknown")
      if [ -n "$ISSUE_NUM" ]; then
-       "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+       "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
          --issue "$ISSUE_NUM" --type escalation-resolved \
          --metadata gate=flowgoal-pr \
          --metadata goal_status="$GOAL_LIFECYCLE" \
@@ -332,8 +332,13 @@ After agents return, TaskUpdate each review task with findings.
    |------|----------|--------|------------|
    ```
    Note: screenshots are local files; for remote visibility, mention "verified locally"
-9. **Push** (Tier 2: journal-and-proceed):
+9. **Push** (Tier 2: journal-and-proceed). First sweep any trailing decision-journal
+   churn into a `chore(decisions):` commit so the working tree is clean for the PR — the
+   auto-log hooks append to the tracked journal during normal work and never commit it.
+   The helper no-ops if any non-journal path is dirty (it never sweeps unrelated work), and
+   its `chore(decisions):` subject is skipped by `log-commits.sh` Guard 1 (no re-append):
    ```bash
+   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/commit-journal-churn.sh" 2>/dev/null || true
    git push -u origin $BRANCH
    ```
 10. **Create PR** (Tier 2):
@@ -353,7 +358,7 @@ After agents return, TaskUpdate each review task with findings.
       ISSUE=$(echo "$BRANCH" | grep -oE 'issue-([0-9]+)' | head -1 | sed 's/issue-//')
     fi
     if [ -n "$ISSUE" ]; then
-      "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+      "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
         --issue $ISSUE \
         --type review-cycle \
         --metadata cycle=1 \

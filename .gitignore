@@ -23,6 +23,13 @@ docs/flow-team-session/*.pdf
 .flow/evidence/
 .flow/triggers/*.local.yaml
 
+# Flow decision-journal lockfiles (left by bin/_journal_atomic.py after the
+# flock is released), session audit trail, and scheduler lock — all ephemeral
+# per-developer runtime state, never committed.
+.decisions/*.lock
+.trail/
+.claude/scheduled_tasks.lock
+
 # Python bytecode caches in plugin bin/ — _journal_atomic.py is imported
 # by helper scripts; the .pyc cache is per-developer noise.
 plugins/flow/bin/__pycache__/

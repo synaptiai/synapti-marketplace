@@ -470,7 +470,7 @@ If any check fails, halt and re-invoke the skill with the failure noted. Do NOT 
 **Manifest emit** — record the specification artifact in the journal manifest so downstream tooling and `/flow:status` can see it without parsing the freeform `## Specification` body:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
   --issue "$ISSUE_NUM" \
   --type specification \
   --metadata by=specification-capture \
@@ -527,7 +527,7 @@ gh issue edit "$ISSUE_NUM" --add-assignee @me
 **FlowGoal auto-creation (gated by `flow.goals.requireGoalForStart`):**
 
 ```!
-CASCADE="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
 # Surface cascade-resolve unavailability instead of silently degrading the gate.
 if [ ! -x "$CASCADE" ]; then
   echo "FLOW_GOAL_STATE=blocked"
@@ -626,7 +626,7 @@ For `FLOW_GOAL_STATE=create`:
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
-CASCADE="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh"
+CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
 if [ ! -x "$CASCADE" ]; then
   echo "FLOW_RUN_STATE=blocked"
   echo "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
@@ -661,7 +661,7 @@ When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.f
 # do not persist here). RUN_ID is the value emitted by the FlowRun entry block.
 ARG1="${ARGUMENTS%% *}"; case "$ARG1" in ''|*[!0-9]*) ISSUE_NUM="" ;; *) ISSUE_NUM="$ARG1" ;; esac
 if [ -n "$ISSUE_NUM" ]; then
-  "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+  "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
     --issue "$ISSUE_NUM" --type workflow-run \
     --metadata workflow=start-issue --metadata run_id="$RUN_ID" --metadata status=active
 fi
@@ -747,7 +747,7 @@ Record the Stranger Test result to `.decisions/issue-$ISSUE_NUM.md` under a `## 
 **Manifest emit** — append the stranger-test artifact (alongside the freeform `## Stranger Test` section) so the manifest captures the gate's outcome:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
   --issue "$ISSUE_NUM" \
   --type stranger-test \
   --metadata result={PASS|BLOCK} \
@@ -909,7 +909,7 @@ Prove everything works with fix-forward:
    **Manifest emit** — record the verdict artifact after the verdict-judge returns (and any fix-loop iterations have settled):
 
    ```bash
-   "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/journal-record.sh" \
+   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
      --issue "$ISSUE_NUM" \
      --type verdict \
      --metadata result={PASS|FAIL|NEEDS-HUMAN-REVIEW}

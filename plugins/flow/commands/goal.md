@@ -23,7 +23,7 @@ Before any subcommand:
 
 ```bash
 # Resolve flow.goals.enabled (default true)
-ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" \
+ENABLED=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh" \
   --default "true" '.flow.goals.enabled')
 if [ "$ENABLED" != "true" ]; then
   echo "flow.goals.enabled is false — /flow:goal is disabled in this project's settings cascade." >&2
@@ -31,7 +31,7 @@ if [ "$ENABLED" != "true" ]; then
 fi
 
 # Resolve stopHookEnforcement (warn | block | evaluator-loop)
-STOP_MODE=$("${CLAUDE_PLUGIN_ROOT:-plugins/flow}/bin/cascade-resolve.sh" \
+STOP_MODE=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh" \
   --default "warn" '.flow.goals.stopHookEnforcement // empty')
 
 mkdir -p .flow/goals
@@ -131,7 +131,7 @@ jq -n \
   --arg r "<reason>" \
   --arg h "<next_step_hint>" \
   '{verdict:$v, confidence:$c, delta:$d, reason:$r, next_step_hint:$h, source:"command"}' > "$TMP"
-"${CLAUDE_PLUGIN_ROOT}/bin/flow-record-verdict.sh" \
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-record-verdict.sh" \
   --run-id "<run-id-from-goal.scope.run_id>" \
   --verdict-file "$TMP" \
   || echo "command: last-verdict.json write failed; next turn's delta will be 'unchanged'" >&2
@@ -166,7 +166,7 @@ last_evaluation:
   reason: ${PROPOSED_REASON}
   at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
-"${CLAUDE_PLUGIN_ROOT}/bin/flow-goal-record.sh" --update-lifecycle \
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-goal-record.sh" --update-lifecycle \
   --goal-id "$GOAL_ID" \
   --lifecycle-file "$LIFE_TMP" \
   --from-status "$CURRENT_FROM_STATUS"
