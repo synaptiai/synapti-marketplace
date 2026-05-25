@@ -18,6 +18,12 @@ artifacts:
   path: B
   findings_count: 2
   pr: 121
+- type: review-cycle
+  captured_at: '2026-05-25T16:44:49Z'
+  cycle: 2
+  path: B
+  findings_count: 1
+  pr: 121
 ---
 # Issue #120 — `${ARGUMENTS%% *}` in command !-blocks expands to empty
 
@@ -150,3 +156,13 @@ fixture fix + lint guard).
 <!-- auto-log: 2026-05-25 18:34 commit "chore(flow): add achieved FlowGoal contract for issue 120" -->
 
 <!-- auto-log: 2026-05-25 18:36 commit "chore(flow): link FlowGoal issue-120 to PR #121" -->
+
+<!-- auto-log: 2026-05-25 18:42 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/command-frontmatter.test.sh -->
+
+<!-- auto-log: 2026-05-25 18:43 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/command-frontmatter.test.sh -->
+
+<!-- auto-log: 2026-05-25 18:43 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/command-frontmatter.test.sh -->
+
+<!-- auto-log: 2026-05-25 18:43 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/command-frontmatter.test.sh -->
+
+<!-- auto-log: 2026-05-25 18:44 commit "test(flow): broaden $ARGUMENTS lint to length/indirection/array forms" -->
