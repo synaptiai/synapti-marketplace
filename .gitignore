@@ -27,6 +27,7 @@ docs/flow-team-session/*.pdf
 # flock is released), session audit trail, and scheduler lock — all ephemeral
 # per-developer runtime state, never committed.
 .decisions/*.lock
+.flow/goals/*.lock
 .trail/
 .claude/scheduled_tasks.lock
 

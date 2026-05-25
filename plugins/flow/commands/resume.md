@@ -36,7 +36,7 @@ If `$ARGUMENTS` is supplied: use it as the run-id directly. Verify `.flow/runs/<
 If no arguments: find the most-recently-modified `run.yaml` with `state.status` in `{active, blocked}`.
 
 ```bash
-RUN_ID="${ARGUMENTS:-}"
+RUN_ID="$ARGUMENTS"  # bare form so Claude Code substitutes it (a default-operator form would NOT be substituted); empty when no arg passed
 if [ -z "$RUN_ID" ]; then
   RUN_ID=$(python3 - <<'PYEOF'
 import os, glob, sys, yaml

@@ -52,7 +52,8 @@ Pure bash validation — fails fast before any agent reasoning.
 # Output: `### Pre-Flight` heading + PREFLIGHT_FAIL=/PREFLIGHT_WARN= lines
 # per check + final PREFLIGHT_STATE=PASSED|BLOCKED sentinel. See
 # `references/command-output-format.md`.
-ARG1="${ARGUMENTS%% *}"
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) ISSUE_NUM="" ;;
   *) ISSUE_NUM="$ARG1" ;;
@@ -367,7 +368,8 @@ Gather all context before planning.
 
 ```!
 # Digit-validate ISSUE_NUM (matches Phase 0 block).
-ARG1="${ARGUMENTS%% *}"
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) ISSUE_NUM="" ;;
   *) ISSUE_NUM="$ARG1" ;;
@@ -536,7 +538,8 @@ if [ ! -x "$CASCADE" ]; then
 fi
 REQUIRE_GOAL=$("$CASCADE" --default "false" '.flow.goals.requireGoalForStart' 2>/dev/null)
 
-ARG1="${ARGUMENTS%% *}"
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) ISSUE_NUM="" ;;
   *) ISSUE_NUM="$ARG1" ;;
@@ -633,7 +636,8 @@ if [ ! -x "$CASCADE" ]; then
   true; exit 0
 fi
 RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
-ARG1="${ARGUMENTS%% *}"
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) ISSUE_NUM="" ;;
   *) ISSUE_NUM="$ARG1" ;;
@@ -659,7 +663,7 @@ When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.f
 ```bash
 # Self-contained: re-derive the issue from $ARGUMENTS (the entry !-block's vars
 # do not persist here). RUN_ID is the value emitted by the FlowRun entry block.
-ARG1="${ARGUMENTS%% *}"; case "$ARG1" in ''|*[!0-9]*) ISSUE_NUM="" ;; *) ISSUE_NUM="$ARG1" ;; esac
+_RAW="$ARGUMENTS"; ARG1="${_RAW%% *}"; case "$ARG1" in ''|*[!0-9]*) ISSUE_NUM="" ;; *) ISSUE_NUM="$ARG1" ;; esac
 if [ -n "$ISSUE_NUM" ]; then
   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
     --issue "$ISSUE_NUM" --type workflow-run \

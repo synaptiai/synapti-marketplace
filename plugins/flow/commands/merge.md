@@ -29,7 +29,8 @@ Tier 3 operation — **always requires human confirmation**. This is non-negotia
 # Output: `###`-headed sections + KEY=value per
 # `references/command-output-format.md`. STATE=blocked on bad input;
 # downstream Phase 2 reads each named field directly.
-ARG1="${ARGUMENTS%% *}"
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) PR_NUM="" ;;
   *) PR_NUM="$ARG1" ;;
@@ -140,7 +141,8 @@ Parse the latest `FLOW_RESOLUTION_CYCLE` and `FLOW_REVIEW_CYCLE` comments to ver
 # Capture gh exit code: a silent gh failure (auth, network) must fail the gate
 # CLOSED, not pass it open. PR_NUM is digit-validated (matches Phase 1 block);
 # a non-digit token rejects rather than reaching downstream shell or echo.
-ARG1="${ARGUMENTS%% *}"
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) PR_NUM="" ;;
   *) PR_NUM="$ARG1" ;;
@@ -416,7 +418,8 @@ if [ ! -x "$CASCADE" ]; then
   true; exit 0
 fi
 RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
-ARG1="${ARGUMENTS%% *}"
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) PR_NUM="" ;;
   *) PR_NUM="$ARG1" ;;

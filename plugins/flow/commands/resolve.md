@@ -44,7 +44,8 @@ Determine invocation mode from `$ARGUMENTS`:
 #
 # Output: `###`-headed sections + KEY=value per
 # `references/command-output-format.md`.
-ARG1="${ARGUMENTS%% *}"
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
 case "$ARG1" in
   ''|*[!a-zA-Z0-9._/-]*) RESOLVE_TARGET="" ;;
   *) RESOLVE_TARGET="$ARG1" ;;

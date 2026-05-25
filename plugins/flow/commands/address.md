@@ -38,7 +38,8 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 #
 # Output: `###`-headed sections + KEY=value per
 # `references/command-output-format.md`. STATE=blocked on bad input.
-ARG1="${ARGUMENTS%% *}"
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) PR_NUM="" ;;
   *) PR_NUM="$ARG1" ;;
@@ -160,7 +161,8 @@ When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.f
 
 ```!
 # Digit-validate PR_NUM (matches Phase 1 block).
-ARG1="${ARGUMENTS%% *}"
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
 case "$ARG1" in
   ''|*[!0-9]*) PR_NUM="" ;;
   *) PR_NUM="$ARG1" ;;
