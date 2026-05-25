@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.1.2 (2026-05-26)
+
+### Fixed: `${ARGUMENTS%% *}` in command `!`-blocks expanded to empty (#121)
+
+Claude Code's slash-command preprocessor substitutes only the bare `$ARGUMENTS` and `${ARGUMENTS}` tokens — never bash parameter-expansion forms like `${ARGUMENTS%% *}` or `${ARGUMENTS:-}`. The bash interpreter then saw an undefined `ARGUMENTS` variable and the expansion yielded the empty string, so first-token extraction produced `""` and downstream gates (`PREFLIGHT_STATE`, `FLOW_GOAL_STATE`) silently degraded to their no-arg paths even when the user passed an argument.
+
+Command `!`/bash blocks now copy the substituted bare form into a line-local variable first (`_RAW="$ARGUMENTS"; ARG1="${_RAW%% *}"`) across `start`, `address`, `merge`, `review`, `resolve`, `design`, `brainstorm`, and `resume`. A static lint (`command-frontmatter` test) now rejects bash parameter-expansion on `$ARGUMENTS` in `!`/`bash`/`sh` fences — covering trailing-operator (`%% # / : ^ , @ + -`), array-subscript, length (`${#ARGUMENTS}`), and indirection (`${!ARGUMENTS}`) forms — and the onboarding gate fixture now models Claude Code's text substitution instead of injecting `ARGUMENTS` as an environment variable, which is what had masked the bug.
+
 ## 3.1.1 (2026-05-25)
 
 ### Fixed: command bash blocks could not locate bundled `bin/` on marketplace installs
