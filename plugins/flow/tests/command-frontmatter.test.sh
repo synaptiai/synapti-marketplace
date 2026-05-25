@@ -307,9 +307,15 @@ done
 #
 # This check scans RAW block bodies (NOT quote-stripped): "${ARGUMENTS%% *}"
 # is quoted-and-safe per Test 3 but still broken, so quoting is irrelevant.
-# The operator class [%#/:^,@+-] covers every bash parameter-expansion
-# operator that can follow the variable name (%/%% suffix, #/## prefix,
-# / substitution, : substring/default, ^/, case, @ operator, +/- default).
+# The pattern covers three broken shapes, all of which CC leaves unsubstituted:
+#   1. trailing operator after the name — ${ARGUMENTS<op>} where <op> is one of
+#      [%#/:^,@+-] (%/%% suffix, #/## prefix, / substitution, : substring/default,
+#      ^/, case, @ operator, +/- default) — plus [ for array subscript
+#      (${ARGUMENTS[0]}).
+#   2. leading length sigil — ${#ARGUMENTS}.
+#   3. leading indirection sigil — ${!ARGUMENTS}.
+# Only the bare ${ARGUMENTS} (no sigil, no operator) and bare $ARGUMENTS are
+# substituted by CC, so those are the ONLY accepted braced forms.
 #
 # Scope covers `!`, `bash`, and `sh` executable fences — not just `!` blocks.
 # Claude Code's $ARGUMENTS substitution is a template-wide preprocessing pass,
@@ -326,6 +332,11 @@ done
 # boundary — `#` at line-start or preceded by whitespace — keeps real comments
 # stripped while preserving operator `#`, which is never space-preceded.
 _strip_arg_comment() { sed -E 's/(^|[[:space:]])#.*$/\1/'; }
+# Single source of truth for the broken-form pattern (used by the main scan AND
+# the self-guard below, so they can never drift). Branch 1: leading #/! sigil
+# (length / indirection). Branch 2: trailing operator or [ array subscript.
+# Bare ${ARGUMENTS} (next char }) matches neither branch — correctly accepted.
+_ARGEXP_RE='\$\{([#!]ARGUMENTS|ARGUMENTS[%#/:^,@+[-])'
 _flow_test_begin "no bash parameter-expansion on \$ARGUMENTS in executable blocks"
 PASS=1
 for FILE in "$COMMANDS_DIR"/*.md; do
@@ -337,7 +348,7 @@ for FILE in "$COMMANDS_DIR"/*.md; do
   ' "$FILE")
   [ -z "$BODY" ] && continue
   BAD=$(printf '%s\n' "$BODY" | _strip_arg_comment \
-        | grep -nE '\$\{ARGUMENTS[%#/:^,@+-]' || true)
+        | grep -nE "$_ARGEXP_RE" || true)
   if [ -n "$BAD" ]; then
     _flow_assert_fail "$CMD.md applies bash parameter-expansion to \$ARGUMENTS in an executable block (Claude Code won't substitute it; copy to a local var first): $BAD"
     PASS=0
@@ -353,8 +364,9 @@ done
 _flow_test_begin "Test 6 strip+grep catches all \$ARGUMENTS operators, ignores doc mentions"
 PASS=1
 for FORM in '${ARGUMENTS#foo}' '${ARGUMENTS##*/}' '${ARGUMENTS%% *}' '${ARGUMENTS:-}' \
-            '${ARGUMENTS/a/b}' '${ARGUMENTS^^}' '${ARGUMENTS,,}' '${ARGUMENTS:0:3}' '${ARGUMENTS@Q}'; do
-  HIT=$(printf 'X="%s"\n' "$FORM" | _strip_arg_comment | grep -nE '\$\{ARGUMENTS[%#/:^,@+-]' || true)
+            '${ARGUMENTS/a/b}' '${ARGUMENTS^^}' '${ARGUMENTS,,}' '${ARGUMENTS:0:3}' '${ARGUMENTS@Q}' \
+            '${#ARGUMENTS}' '${!ARGUMENTS}' '${ARGUMENTS[0]}'; do
+  HIT=$(printf 'X="%s"\n' "$FORM" | _strip_arg_comment | grep -nE "$_ARGEXP_RE" || true)
   if [ -z "$HIT" ]; then
     _flow_assert_fail "Test 6 pipeline failed to flag broken form: $FORM"
     PASS=0
@@ -362,7 +374,7 @@ for FORM in '${ARGUMENTS#foo}' '${ARGUMENTS##*/}' '${ARGUMENTS%% *}' '${ARGUMENT
 done
 # Bare forms Claude Code DOES substitute must NOT be flagged.
 for OK in '$ARGUMENTS' '${ARGUMENTS}' '"$ARGUMENTS"'; do
-  HIT=$(printf 'X="%s"\n' "$OK" | _strip_arg_comment | grep -nE '\$\{ARGUMENTS[%#/:^,@+-]' || true)
+  HIT=$(printf 'X="%s"\n' "$OK" | _strip_arg_comment | grep -nE "$_ARGEXP_RE" || true)
   if [ -n "$HIT" ]; then
     _flow_assert_fail "Test 6 pipeline false-positived on a CC-substituted bare form: $OK"
     PASS=0
@@ -370,7 +382,7 @@ for OK in '$ARGUMENTS' '${ARGUMENTS}' '"$ARGUMENTS"'; do
 done
 # Trailing doc comment mentioning a broken form must be stripped, not flagged.
 FP=$(printf '%s\n' 'RUN_ID="$ARGUMENTS"  # the ${ARGUMENTS:-} form is NOT substituted' \
-     | _strip_arg_comment | grep -nE '\$\{ARGUMENTS[%#/:^,@+-]' || true)
+     | _strip_arg_comment | grep -nE "$_ARGEXP_RE" || true)
 if [ -n "$FP" ]; then
   _flow_assert_fail "Test 6 pipeline false-positived on a doc-comment mention: $FP"
   PASS=0
