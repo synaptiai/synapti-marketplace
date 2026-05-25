@@ -12,6 +12,12 @@ artifacts:
   result: achieved
   evidence_bundle: .flow/runs/20260525T1810Z-issue-120-eval
   failures: none
+- type: review-cycle
+  captured_at: '2026-05-25T16:35:50Z'
+  cycle: 1
+  path: B
+  findings_count: 2
+  pr: 121
 ---
 # Issue #120 — `${ARGUMENTS%% *}` in command !-blocks expands to empty
 
@@ -142,3 +148,5 @@ fixture fix + lint guard).
 <!-- auto-log: 2026-05-25 18:34 Edit /Users/danielbentes/synapti-marketplace/.gitignore -->
 
 <!-- auto-log: 2026-05-25 18:34 commit "chore(flow): add achieved FlowGoal contract for issue 120" -->
+
+<!-- auto-log: 2026-05-25 18:36 commit "chore(flow): link FlowGoal issue-120 to PR #121" -->
