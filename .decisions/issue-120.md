@@ -1,3 +1,18 @@
+---
+issue: 120
+created: '2026-05-25T16:04:58Z'
+artifacts:
+- type: goal-created
+  captured_at: '2026-05-25T16:04:58Z'
+  goal_id: issue-120
+  source: issue
+- type: goal-evaluation
+  captured_at: '2026-05-25T16:11:30Z'
+  goal_id: issue-120
+  result: achieved
+  evidence_bundle: .flow/runs/20260525T1810Z-issue-120-eval
+  failures: none
+---
 # Issue #120 — `${ARGUMENTS%% *}` in command !-blocks expands to empty
 
 **Branch**: `fix/issue-120-arguments-param-expansion`
@@ -117,3 +132,13 @@ fixture fix + lint guard).
 <!-- auto-log: 2026-05-25 17:47 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-start-onboarding.test.sh -->
 
 <!-- auto-log: 2026-05-25 17:47 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-start-onboarding.test.sh -->
+
+<!-- auto-log: 2026-05-25 17:48 commit "fix(flow): copy $ARGUMENTS into a local before bash parameter-expansion in command blocks" -->
+
+<!-- auto-log: 2026-05-25 18:06 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/resume.md -->
+
+<!-- auto-log: 2026-05-25 18:07 commit "fix(flow): copy $ARGUMENTS into a local before bash parameter-expansion in command blocks" -->
+
+<!-- auto-log: 2026-05-25 18:34 Edit /Users/danielbentes/synapti-marketplace/.gitignore -->
+
+<!-- auto-log: 2026-05-25 18:34 commit "chore(flow): add achieved FlowGoal contract for issue 120" -->
