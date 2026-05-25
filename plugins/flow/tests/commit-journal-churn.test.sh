@@ -88,3 +88,25 @@ printf '{"tool_input":{"command":"git commit -m x"}}' \
   | ( cd "$R" && HOME="$FAKE_HOME" bash "$LOGCOMMITS" ) >/dev/null 2>&1 || true
 COUNT_AFTER=$(grep -c 'auto-log' "$R/.decisions/issue-1.md")
 assert_equal "$COUNT_BEFORE" "$COUNT_AFTER" "no new auto-log line appended after chore(decisions): commit"
+
+# --- Scenario F: wholly-untracked journal dir (fresh consumer repo) ----------
+# Regression for the -uall fix: when .decisions/ was never committed,
+# `git status --porcelain` collapses it to a single `?? .decisions/` entry that
+# would be misread as a non-journal change. The helper must use -uall so the
+# untracked journal files are seen individually and committed.
+_flow_test_begin "wholly-untracked .decisions/ is committed (the fresh-consumer-repo case)"
+RF=$(mktemp -d -t cjc.repo.XXXXXX); CLEANUP_PATHS+=("$RF")
+git -C "$RF" init -q
+git -C "$RF" checkout -q -B feature/issue-1-test
+git -C "$RF" config user.email "t@example.com"
+git -C "$RF" config user.name "Test"
+printf 'readme\n' > "$RF/README.md"
+git -C "$RF" add README.md
+git -C "$RF" commit -q -m "init (no journal yet)"
+mkdir -p "$RF/.decisions"
+printf -- '---\nissue: 1\n---\n<!-- auto-log: x -->\n' > "$RF/.decisions/issue-1.md"
+# Sanity: default porcelain would hide the per-file path (the bug condition).
+assert_equal "?? .decisions/" "$(git -C "$RF" status --porcelain)" "default porcelain collapses the untracked journal dir"
+_run_helper "$RF" >/dev/null
+assert_equal "chore(decisions): record session journal entries" "$(_subject "$RF")" "untracked journal dir committed"
+assert_equal "" "$(_porcelain "$RF")" "tree clean after committing untracked journal dir"

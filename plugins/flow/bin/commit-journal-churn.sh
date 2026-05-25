@@ -30,12 +30,18 @@ if [ -x "$SCRIPT_DIR/cascade-resolve.sh" ]; then
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 fi
 
-DIRTY=$(git status --porcelain 2>/dev/null)
+# `-uall` expands untracked directories to individual file paths. Without it, a
+# journal dir that was never committed (the fresh-consumer-repo case this
+# feature targets) collapses to a single `?? .decisions/` entry that matches
+# neither glob below and is misread as a non-journal change — so the helper
+# would no-op exactly when it is needed most.
+DIRTY=$(git status --porcelain -uall 2>/dev/null)
 [ -z "$DIRTY" ] && exit 0   # clean tree
 
-# Classify every pending path. `.md` inside the journal dir is committable
-# churn; `.lock` inside it is transient (ignore); anything else disqualifies
-# the auto-commit entirely.
+# Classify every pending path. The journal is flat by contract (issue-N.md,
+# session-DATE.md), so single-level globs suffice: `.md` inside the journal dir
+# is committable churn; `.lock` inside it is transient (ignore); anything else
+# disqualifies the auto-commit entirely.
 HAS_JOURNAL_MD=0
 HAS_OTHER=0
 while IFS= read -r line; do
