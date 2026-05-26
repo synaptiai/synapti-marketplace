@@ -269,10 +269,10 @@ if [ $GH_EXIT_RES -ne 0 ] || [ $GH_EXIT_REV -ne 0 ]; then
 fi
 
 # Surface "untrusted-only" markers as a block reason rather than silently
-# treating them as no markers at all. This is the #92 forgery defense.
+# treating them as no markers at all. This is the marker-forgery defense.
 # Render the trust list as a comma-separated string for the user-facing
 # message — the `$TRUST_REGEX` variable used to appear here was a leftover
-# from PR #93 and never assigned, producing the empty-parens string
+# from an earlier revision and never assigned, producing the empty-parens string
 # "trusted authors ()" in messages or aborting under `set -u`.
 #
 # Derive the fallback from $TRUST_DEFAULT rather than hard-coding the value:
@@ -360,8 +360,8 @@ else
         else
           # Active goal exists but is not achieved — fail closed.
           # The "no incomplete shipments" hard boundary applies: merging a
-          # PR whose own contract reports incomplete is exactly what F1 is
-          # designed to prevent.
+          # PR whose own contract reports incomplete is exactly what the
+          # "no incomplete shipments" boundary is designed to prevent.
           echo "FLOW_GOAL_GATE_STATE=blocked"
           echo "FLOW_GOAL_BLOCK_REASON=FlowGoal $GOAL_ID lifecycle is '$GOAL_STATUS' — run /flow:goal evaluate $GOAL_ID to advance"
         fi

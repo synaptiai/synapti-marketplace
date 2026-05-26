@@ -139,7 +139,7 @@ assert_not_contains "set_flow_goals" "$SC" "set_flow_goals helper removed"
 
 _flow_test_begin "skills invoked from command Inputs blocks do not use context: fork"
 
-# Cycle-10 + cycle-11 regression fix: skills with `context: fork` lose their
+# Skills with `context: fork` lose their
 # parent's context when invoked from command markdown. Per Claude Code docs
 # (https://code.claude.com/docs/en/skills.md): "context: fork only makes
 # sense for skills with explicit instructions ... If your skill contains
@@ -149,12 +149,12 @@ _flow_test_begin "skills invoked from command Inputs blocks do not use context: 
 # input, so fork is documented misuse for all of them.
 #
 # Three groups:
-#   - cycle-10 fixes (3): user-reported failure cases — structured Inputs
+#   - fixes (3): user-reported failure cases — structured Inputs
 #     invocation from command markdown.
-#   - cycle-11 Pattern A fixes (8): invoked via Skill(X) from command
+#   - Pattern A fixes (8): invoked via Skill(X) from command
 #     markdown; 5 of them explicitly say "invoking command MUST pass" in
 #     body, which fork drops.
-#   - cycle-11 disable-invoke fixes (4): have disable-model-invocation:
+#   - disable-invoke fixes (4): have disable-model-invocation:
 #     true so fork is dormant anyway — cosmetic cleanup.
 #
 # 13 remaining ambient-only skills (architecture-patterns, brainstorming,

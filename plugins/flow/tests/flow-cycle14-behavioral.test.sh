@@ -1,15 +1,14 @@
-# Behavioral tests for cycle-13 fixes that previously had source-presence-only
-# coverage. Upgraded in cycle 14 (paired-reviewer test-skeptic S1-S6 +
-# test-verifier F6-V1/F9-V1/F10-V1 surfaced the gaps).
+# Behavioral tests for command/hook behaviors that previously had only
+# source-presence coverage.
 #
 # Covered:
-#   F4 — workflow-validation migration shim accepts legacy `requires` field
-#   F9 — _check_stuck increments counter on unchanged delta, resets on
-#        progress/regress, transitions goal to failed at threshold, writes
-#        stuck-detection-fired event, fails honestly when transition write
-#        fails
-#   F10 — goal-evaluator SKILL.md documents the proposed_transition contract
-#         (skill does NOT write terminal status; caller persists)
+#   - workflow-validation migration shim accepts legacy `requires` field
+#   - _check_stuck increments counter on unchanged delta, resets on
+#     progress/regress, transitions goal to failed at threshold, writes
+#     the stuck-detection-fired event, and fails honestly when the transition
+#     write fails
+#   - goal-evaluator SKILL.md documents the proposed_transition contract
+#     (skill does NOT write terminal status; caller persists)
 
 C14_CLEANUP_PATHS=()
 _c14_cleanup() {
@@ -22,7 +21,7 @@ trap _c14_cleanup EXIT
 
 _c14_mktmp() {
   local out
-  out=$(mktemp -d -t flow-cycle14.tests.XXXXXX 2>/dev/null)
+  out=$(mktemp -d -t flow-.tests.XXXXXX 2>/dev/null)
   [ -z "$out" ] && { echo "mktemp failed" >&2; exit 2; }
   C14_CLEANUP_PATHS+=("$out")
   printf '%s' "$out"
@@ -44,8 +43,8 @@ if ! python3 -c "import jsonschema" >/dev/null 2>&1; then
   return 0
 fi
 
-# --- F4 — migration shim accepts legacy `requires` field with WARN
-_flow_test_begin "F4 — workflow-validation migration shim accepts legacy 'requires'"
+# --- migration shim accepts legacy `requires` field with WARN
+_flow_test_begin "workflow-validation migration shim accepts legacy 'requires'"
 
 SCHEMA="$REPO_ROOT/plugins/flow/schemas/v1/workflow.schema.json"
 DIR=$(_c14_mktmp)
@@ -100,7 +99,7 @@ assert_contains "deprecated" "$RESULT" "WARN names deprecation"
 assert_contains "schema_valid: true" "$RESULT" "post-migration validation passes"
 
 # Both-fields-present case: drop legacy + WARN
-_flow_test_begin "F4 — migration shim drops legacy when both fields present"
+_flow_test_begin "migration shim drops legacy when both fields present"
 cat > "$DIR/both.yaml" <<'EOF'
 apiVersion: flow.synapti.ai/v1
 kind: FlowWorkflow
@@ -149,8 +148,8 @@ assert_contains "schema_valid: true" "$RESULT" "both-fields validates after drop
 assert_contains "dropping legacy" "$RESULT" "WARN names the drop"
 
 
-# --- F9 — _check_stuck behavioral: 3 unchanged turns → goal failed
-_flow_test_begin "F9 — stuck-counter file increments on unchanged delta"
+# --- _check_stuck behavioral: 3 unchanged turns → goal failed
+_flow_test_begin "stuck-counter file increments on unchanged delta"
 
 DIR=$(_c14_mktmp)
 cd "$DIR"
@@ -174,7 +173,7 @@ assert_equal "0" "$RESET" "counter resets to 0 on non-unchanged delta"
 
 cd - >/dev/null
 
-_flow_test_begin "F9 — symlink defense on stuck-counter rejects swap"
+_flow_test_begin "symlink defense on stuck-counter rejects swap"
 DIR=$(_c14_mktmp)
 cd "$DIR"
 mkdir -p .flow/runs/test-run
@@ -191,8 +190,8 @@ rm -f /tmp/hostile-target.$$
 cd - >/dev/null
 
 
-# --- F10 — goal-evaluator SKILL.md documents proposed_transition contract
-_flow_test_begin "F10 — goal-evaluator SKILL.md describes proposed_transition + caller-side write"
+# --- goal-evaluator SKILL.md documents proposed_transition contract
+_flow_test_begin "goal-evaluator SKILL.md describes proposed_transition + caller-side write"
 
 SKILL_PATH="$REPO_ROOT/plugins/flow/skills/goal-evaluator/SKILL.md"
 if [ ! -f "$SKILL_PATH" ]; then
@@ -206,13 +205,13 @@ else
   assert_contains "Non-terminal transitions" "$CONTENT" "Non-terminal branch documented separately"
 fi
 
-_flow_test_begin "F10 — /flow:goal evaluate command documents the three confirm options"
+_flow_test_begin "/flow:goal evaluate command documents the three confirm options"
 GOAL_CMD="$REPO_ROOT/plugins/flow/commands/goal.md"
 if [ ! -f "$GOAL_CMD" ]; then
   _flow_assert_fail "goal.md missing"
 else
   CONTENT=$(cat "$GOAL_CMD")
-  assert_contains "Terminal-transition Tier 2 confirmation" "$CONTENT" "F10 confirmation section heading"
+  assert_contains "Terminal-transition Tier 2 confirmation" "$CONTENT" "confirmation section heading"
   assert_contains "Confirm" "$CONTENT" "Confirm option"
   assert_contains "Re-evaluate" "$CONTENT" "Re-evaluate option"
   assert_contains "Cancel" "$CONTENT" "Cancel option"
@@ -231,8 +230,8 @@ assert_contains "STATE=unavailable" "$CONTENT" "unavailable state documented"
 assert_contains "STATE=disabled" "$CONTENT" "disabled state (enabled:false / goalCreation:off) documented"
 
 
-# --- F8 — throttle and stuck events both have their own emit sites
-_flow_test_begin "F8 — flow-goal-evaluator emits TWO distinct event types"
+# --- throttle and stuck events both have their own emit sites
+_flow_test_begin "flow-goal-evaluator emits TWO distinct event types"
 HOOK="$REPO_ROOT/plugins/flow/hooks/scripts/flow-goal-evaluator.sh"
 CONTENT=$(cat "$HOOK")
 # Use grep -c with a literal string to count occurrences
@@ -245,7 +244,7 @@ else
 fi
 
 # Symlink defense on BOTH events.jsonl write sites
-_flow_test_begin "F8 — events.jsonl writes guarded by symlink check"
+_flow_test_begin "events.jsonl writes guarded by symlink check"
 SYMLINK_GUARD_COUNT=$(grep -c 'is a symlink' "$HOOK" 2>/dev/null)
 # Expected at least 3: throttle events.jsonl + stuck events.jsonl + stuck-counter symlink check
 if [ "$SYMLINK_GUARD_COUNT" -ge "3" ]; then
@@ -256,38 +255,38 @@ fi
 
 
 # --- Schema patterns: run_id, target.workflow constrained
-_flow_test_begin "SEC-1 — goal.schema.json constrains scope.run_id to safe pattern"
+_flow_test_begin "goal.schema.json constrains scope.run_id to safe pattern"
 RUN_ID_PATTERN=$(jq -r '.properties.scope.properties.run_id.pattern // "absent"' "$REPO_ROOT/plugins/flow/schemas/v1/goal.schema.json")
 assert_contains "[A-Za-z0-9]" "$RUN_ID_PATTERN" "run_id pattern present and starts with safe char class"
 
-_flow_test_begin "SEC-6 — trigger.schema.json constrains target.workflow + target.goal patterns"
+_flow_test_begin "trigger.schema.json constrains target.workflow + target.goal patterns"
 WF_PATTERN=$(jq -r '.properties.target.properties.workflow.pattern // "absent"' "$REPO_ROOT/plugins/flow/schemas/v1/trigger.schema.json")
 GOAL_PATTERN=$(jq -r '.properties.target.properties.goal.pattern // "absent"' "$REPO_ROOT/plugins/flow/schemas/v1/trigger.schema.json")
 assert_contains "[a-z0-9]" "$WF_PATTERN" "target.workflow pattern present"
 assert_contains "[a-z0-9]" "$GOAL_PATTERN" "target.goal pattern present"
 
 
-# --- Cascade `null` recognition of explicit false (cycle-14 SEC-V4)
+# --- Cascade `null` recognition of explicit false
 #
 # Both `// empty` and `// null` in jq trigger on null AND false (both are
 # "falsy" per jq's // operator semantics) — so neither preserves an explicit
 # false. The fix is BOTH: (a) cascade-resolve treats "null" output as
 # not-found, AND (b) callers use BARE expressions (no //) so jq outputs
 # "false" / "true" / "null" verbatim.
-_flow_test_begin "SEC-V4 — cascade-resolve.sh with bare expression returns 'false' for explicit false"
+_flow_test_begin "cascade-resolve.sh with bare expression returns 'false' for explicit false"
 DIR=$(_c14_mktmp)
 mkdir -p "$DIR/.claude"
 echo '{"flow":{"workflows":{"enabled":false}}}' > "$DIR/.claude/settings.flow.json"
 RESULT=$(cd "$DIR" && "$REPO_ROOT/plugins/flow/bin/cascade-resolve.sh" --default "default-fallback" '.flow.workflows.enabled')
-assert_equal "false" "$RESULT" "bare expression returns 'false' (was always 'true' before cycle-14)"
+assert_equal "false" "$RESULT" "bare expression returns 'false' (was always 'true' before )"
 
 # Compare against // empty which still swallows false (legacy callers)
-_flow_test_begin "SEC-V4 — cascade-resolve.sh + // empty still falls through on false (backward-compat for non-boolean callers)"
+_flow_test_begin "cascade-resolve.sh + // empty still falls through on false (backward-compat for non-boolean callers)"
 RESULT_EMPTY=$(cd "$DIR" && "$REPO_ROOT/plugins/flow/bin/cascade-resolve.sh" --default "default-fallback" '.flow.workflows.enabled // empty')
 assert_equal "default-fallback" "$RESULT_EMPTY" "// empty falls through to default (legacy behavior preserved)"
 
 # Absent key returns default for both expression styles
-_flow_test_begin "SEC-V4 — absent key with bare expression falls through to default"
+_flow_test_begin "absent key with bare expression falls through to default"
 DIR2=$(_c14_mktmp)
 mkdir -p "$DIR2/.claude"
 echo '{"other": "value"}' > "$DIR2/.claude/settings.flow.json"

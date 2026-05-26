@@ -1,4 +1,4 @@
-# Tests for plugins/flow/bin/flow-active-goal.sh (cycle 13, F1/F2/F3 foundation).
+# Tests for plugins/flow/bin/flow-active-goal.sh.
 #
 # Contract:
 #   - Output modes: --path, --id, --status, --json, --ac-summary, --verifiable-count

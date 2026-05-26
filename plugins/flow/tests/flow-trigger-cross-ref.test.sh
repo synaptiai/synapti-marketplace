@@ -1,4 +1,4 @@
-# Source-presence + contract test for cycle-13 F13 — trigger-policy now
+# Source-presence + contract test for trigger-policy: it now
 # verifies trigger.target.workflow resolves to an existing workflow YAML.
 #
 # Lint-style: verify the SKILL.md documents the step + hard-fail semantics.
@@ -7,7 +7,7 @@
 
 SKILL="$REPO_ROOT/plugins/flow/skills/trigger-policy/SKILL.md"
 
-_flow_test_begin "F13 — trigger-policy documents target workflow cross-ref step"
+_flow_test_begin "trigger-policy documents target workflow cross-ref step"
 
 if [ ! -f "$SKILL" ]; then
   _flow_assert_fail "trigger-policy/SKILL.md missing at $SKILL"
@@ -22,6 +22,6 @@ else
   assert_contains "Hard fail" "$CONTENT" "documented as hard fail (not soft warning)"
 fi
 
-_flow_test_begin "F13 — overall verdict table includes cross-reference branch"
+_flow_test_begin "overall verdict table includes cross-reference branch"
 CONTENT=$(cat "$SKILL")
 assert_contains "cross_reference_failed" "$CONTENT" "overall verdict has cross-ref branch"

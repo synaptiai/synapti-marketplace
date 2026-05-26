@@ -1,4 +1,4 @@
-# Tests for cycle-13 F4 — completion_gate.requires renamed to documented_requirements.
+# Tests that completion_gate.requires was renamed to documented_requirements.
 #
 # Contract:
 #   - Schema accepts the new name (documented_requirements)

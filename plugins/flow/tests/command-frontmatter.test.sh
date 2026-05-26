@@ -1,9 +1,9 @@
 # Static lint over plugins/flow/commands/*.md.
 #
-# What this catches (regression-of-record from PR #103 / PR #104 review cycles):
-#   - F3:  `!` block missing trailing `true` (start.md Phase 1 was the original miss)
+# What this catches:
+#   - `!` block missing trailing `true`
 #   - C4-*: `!` block silently exits non-zero from a trailing pipeline
-#   - F2/F6: $ARGUMENTS interpolated into an `!` block without quoting/validation
+#   - $ARGUMENTS interpolated into an `!` block without quoting/validation
 #   - C1:  `allowed-tools` Bash() pattern that no body invocation actually matches
 #   - Required Skills entry that doesn't resolve to a plugins/flow/skills/<name>/ dir
 #   - destructive shell commands inside an `!` block (! blocks are read-only context)
@@ -36,7 +36,7 @@ _strip_quoted() {
 }
 
 # --- Test 1: every `!` block ends with `true`, and no triple-backtick fences
-# appear inside an `!` block. The trailing-`true` check is the F3 regression
+# appear inside an `!` block. The trailing-`true` check is the regression
 # guard; the no-nested-fence assertion guarantees the awk extractor's
 # correctness (a `!` block containing a literal ``` line would silently
 # close the block early, hiding everything after it).
@@ -221,7 +221,7 @@ fi
 # --- Test 5: allowed-tools Bash(...) prefix-validation logic works
 # Currently NO flow command file uses prefix-restricted `Bash(prefix:*)`
 # patterns — they all declare full `Bash` access. The previous form of this
-# test iterated over zero patterns and trivially passed (F6/TV6). Instead,
+# test iterated over zero patterns and trivially passed. Instead,
 # exercise the logic against synthetic fixtures: one frontmatter where the
 # prefix has a matching body invocation (must PASS), one where it doesn't
 # (must FAIL the inner check).

@@ -181,7 +181,7 @@ echo "### Recent Runs"
 if [ ! -d ".flow/runs" ]; then
   echo "STATE=empty"
 else
-  # Most-recent-first sort by mtime. Cycle-14 F2 (code-reviewer skeptic):
+  # Most-recent-first sort by mtime:
   # the previous `... | tac 2>/dev/null || ... | tail -3` fallback silently
   # produced oldest-first when tac was missing (macOS without coreutils).
   # Use awk-based reverse instead — portable POSIX and matches the

@@ -1,9 +1,9 @@
-# Tests for the Tier Classification convention (cycle 13, F12).
+# Tests for the Tier Classification convention.
 #
 # Every commands/*.md MUST include a `## Tier Classification` section so
 # users can see at a glance what actions the command takes and at which
-# safety tier. This lint runs in CI to prevent regression — the cycle-12
-# review found 6 v3 commands missing the section.
+# safety tier. This lint runs in CI to prevent regression — an audit
+# found v3 commands missing the section.
 
 _flow_test_begin "every commands/*.md has '## Tier Classification'"
 

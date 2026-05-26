@@ -118,9 +118,9 @@ LIFECYCLE_TRANSITIONS = {
 }
 TERMINAL_STATES = {"achieved", "failed", "cancelled"}
 
-# F11 (cycle-13) + cycle-14 F11-SENTINEL fix: when jsonschema is unavailable,
+# when jsonschema is unavailable,
 # emit a stderr WARN dedup'd PER DAY via a sentinel file. The original
-# cycle-13 implementation used a module-level Python sentinel that reset on
+# implementation used a module-level Python sentinel that reset on
 # every bash invocation (because each bash call spawns a fresh Python), so
 # the WARN fired on every /flow:goal command — noise that drowned out real
 # diagnostics.

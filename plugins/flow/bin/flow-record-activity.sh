@@ -155,11 +155,11 @@ try:
         print(f"flow-record-activity.sh: activity does not match schema: {e.message}", file=sys.stderr)
         sys.exit(1)
 except ImportError:
-    # Cycle-14 F11-INCONSISTENCY (error-handler verifier): apply the same
+    # apply the same
     # per-day WARN as flow-goal-record.sh so the jsonschema-degraded state
     # is surfaced uniformly across all three FlowRunArtifact writers (goal,
     # activity, evidence). Previous behavior was silent skip — diverged
-    # from F11's "surface the degradation" rationale.
+    # following the same "surface the degradation" rationale.
     import datetime, tempfile, getpass
     today = datetime.date.today().isoformat()
     try:

@@ -1,4 +1,4 @@
-# Tests for cycle-13 F11 — bin/flow-goal-record.sh now emits a stderr WARN
+# Tests that bin/flow-goal-record.sh emits a stderr WARN
 # when jsonschema is unavailable instead of silently skipping validation.
 #
 # Strategy: Run the helper under a PYTHONPATH-isolated subshell that fails
@@ -86,7 +86,7 @@ _fjs_write_goal "$GOAL"
 
 CUSTOM_DIR=$(_fjs_mkdir)
 cat > "$CUSTOM_DIR/sitecustomize.py" <<'PYEOF'
-# Test stub — blocks `import jsonschema` so we can exercise the F11 WARN path.
+# Test stub — blocks `import jsonschema` so we can exercise the WARN path.
 import sys, importlib.abc, importlib.machinery
 class _BlockJsonschema(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     def find_spec(self, fullname, path, target=None):
@@ -100,7 +100,7 @@ class _BlockJsonschema(importlib.abc.MetaPathFinder, importlib.abc.Loader):
 sys.meta_path.insert(0, _BlockJsonschema())
 PYEOF
 
-# Cycle-14: WARN dedup uses per-day file sentinel at $TMPDIR/. Isolate TMPDIR
+# WARN dedup uses per-day file sentinel at $TMPDIR/. Isolate TMPDIR
 # so the test sentinel doesn't survive across runs (which would silently pass
 # even if the WARN logic regressed). Use TMPDIR (not HOME) because HOME
 # isolation also breaks Python's user-site-packages lookup and hides PyYAML.
@@ -113,7 +113,7 @@ assert_contains "WARN" "$ERR" "WARN tag visible in the message"
 
 # --- Test 1b: Second invocation in the same isolated HOME — WARN should NOT
 # re-fire (per-day sentinel dedup works).
-_flow_test_begin "WARN deduped across same-day invocations (cycle-14 F11-SENTINEL)"
+_flow_test_begin "WARN deduped across same-day invocations"
 GOAL2="$DIR/.flow/goals/issue-jsonschema-test-second.goal.yaml"
 cat > "$GOAL2" <<'EOF'
 apiVersion: flow.synapti.ai/v1

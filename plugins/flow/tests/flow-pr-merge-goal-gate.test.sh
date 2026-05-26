@@ -1,5 +1,5 @@
-# Tests for plugins/flow/commands/pr.md + merge.md FlowGoal gate (cycle-13 F1).
-# Source-presence lints; behavioral coverage is in flow-cycle14-behavioral.test.sh.
+# Tests for plugins/flow/commands/pr.md + merge.md FlowGoal gate.
+# Source-presence lints; behavioral coverage is in flow--behavioral.test.sh.
 #
 # These check that the gate bash blocks are present in the command markdown
 # and use the new bin/flow-active-goal.sh helper. Behavioral tests of the
@@ -9,7 +9,7 @@
 PR_CMD="$REPO_ROOT/plugins/flow/commands/pr.md"
 MERGE_CMD="$REPO_ROOT/plugins/flow/commands/merge.md"
 
-_flow_test_begin "F1 — /flow:pr Phase 1 includes FlowGoal State section"
+_flow_test_begin "/flow:pr Phase 1 includes FlowGoal State section"
 if [ ! -f "$PR_CMD" ]; then
   _flow_assert_fail "pr.md missing"
 else
@@ -22,14 +22,14 @@ else
   assert_contains "STATE=none" "$CONTENT" "no-goal state is gate-not-applicable (gate on existence)"
 fi
 
-_flow_test_begin "F1 — /flow:pr Phase 4 step 7a uses AskUserQuestion on gate block"
+_flow_test_begin "/flow:pr Phase 4 step 7a uses AskUserQuestion on gate block"
 CONTENT=$(cat "$PR_CMD")
 assert_contains "FlowGoal gate (v3, opt-in)" "$CONTENT" "Phase 4 step 7a heading present"
 assert_contains "/flow:goal evaluate" "$CONTENT" "Recommends running evaluate first"
 assert_contains "Create PR with goal not-yet-achieved" "$CONTENT" "Override option offered"
 assert_contains "FlowGoal Status" "$CONTENT" "PR body section name documented"
 
-_flow_test_begin "F1 — /flow:merge Phase 1 includes FlowGoal Gate block"
+_flow_test_begin "/flow:merge Phase 1 includes FlowGoal Gate block"
 if [ ! -f "$MERGE_CMD" ]; then
   _flow_assert_fail "merge.md missing"
 else
@@ -41,7 +41,7 @@ else
   assert_contains "gate not applicable" "$CONTENT" "no-goal merge is NOT blocked (gate on existence)"
 fi
 
-_flow_test_begin "F1 — /flow:merge BLOCKED display includes FlowGoal row"
+_flow_test_begin "/flow:merge BLOCKED display includes FlowGoal row"
 CONTENT=$(cat "$MERGE_CMD")
 assert_contains "Merge Prerequisites Not Met" "$CONTENT" "Updated BLOCKED template heading"
 assert_contains "| FlowGoal" "$CONTENT" "BLOCKED table has FlowGoal row"

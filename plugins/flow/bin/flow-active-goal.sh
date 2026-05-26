@@ -206,7 +206,7 @@ elif mode == "--status":
 elif mode == "--json":
     print(json.dumps(data, sort_keys=True))
 elif mode == "--ac-summary":
-    # Cycle-14 F1 (code-reviewer skeptic): sanitize ALL emitted fields for
+    # sanitize ALL emitted fields for
     # both newlines (line-break contract) and pipes (column-separator
     # contract). A goal YAML with a pipe character in any field would
     # silently inject extra columns into the documented
@@ -223,7 +223,7 @@ elif mode == "--ac-summary":
         acs = []
     for ac in acs:
         if not isinstance(ac, dict):
-            # Cycle-14 F7 (code-reviewer verifier): tolerate malformed AC
+            # tolerate malformed AC
             # shapes (string instead of dict) rather than crashing with
             # AttributeError outside the try/except in the search loop.
             continue
