@@ -14,6 +14,7 @@
 - **`/flow:resume` conservatism (AC-6)** — detects uncommitted changes outside `.flow/` and `.decisions/` and asks before suggesting continuation, so a resumed run never silently absorbs unrelated work. Remains informational-only.
 - **Docs reframe + count fix (AC-7)** — README leads with work-first framing; the six runtime primitives (`goal`, `workflow`, `trigger`, `run`, `resume`, `watch`) moved to an "Advanced / runtime internals" section, with `/flow:goal create` reframed as the `--manual` path. Fixed `COMMANDS (17)` → `(23)` and added a test that keeps the README count in sync with the actual command-file count.
 - **`/flow:review` + `/flow:address` record a FlowRun only, no user-facing FlowGoal (AC-3)** — shipped in #114.
+- **`/flow:setup` upgrades deprecated settings on re-run** — new `bin/flow-migrate-settings.sh` detects a committed `flow.goals.requireGoalForStart` and, behind an `AskUserQuestion` confirmation, rewrites it to `goalCreation` (`true`→`always`, `false`→`off`) atomically, preserving all other keys. Optional hygiene only — the runtime already honors the deprecated key read-only, so declining changes nothing. The v3 runtime settings blocks stay governed by plugin defaults (not written into the team file).
 
 ### Fixed: FlowGoal gate could never observe an `achieved` goal (#122)
 
