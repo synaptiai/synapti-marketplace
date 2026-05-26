@@ -187,3 +187,21 @@ issue-120's goal separately; not required by this plan.
 <!-- auto-log: 2026-05-26 14:55 commit "docs(flow): README work-first reframe + command-count fix (#111 AC-7)" -->
 
 <!-- auto-log: 2026-05-26 14:57 commit "docs(flow): changelog entry for #111 v3.1 UX layer + fix stale test comment" -->
+
+<!-- auto-log: 2026-05-26 15:01 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
+
+<!-- auto-log: 2026-05-26 15:01 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
+
+<!-- auto-log: 2026-05-26 15:01 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
+
+<!-- auto-log: 2026-05-26 15:02 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
+
+<!-- auto-log: 2026-05-26 15:02 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
+
+<!-- auto-log: 2026-05-26 15:04 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/CHANGELOG.md -->
+
+<!-- auto-log: 2026-05-26 15:05 commit "fix(flow): FlowGoal gate can observe achieved goals via --allow-terminal (#122)" -->
+
+<!-- auto-log: 2026-05-26 15:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/resume.md -->
+
+<!-- auto-log: 2026-05-26 15:13 commit "fix(flow): resume unlinked-detection handles git-quoted paths (PR review F1)" -->
