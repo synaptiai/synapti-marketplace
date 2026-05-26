@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.2.0 (2026-05-26)
 
 ### Added: v3.1 UX layer — invisible-by-default runtime (#111)
 
