@@ -108,10 +108,11 @@ if [ "$APPLY" != "1" ]; then
   exit 0
 fi
 
-# Atomic write: tmpfile in the same dir, validate, then mv. flock guards the
-# read-modify-write window against concurrent writers.
-TMP=$(mktemp -t flow-migrate-settings.XXXXXX 2>/dev/null) || {
-  echo "flow-migrate-settings.sh: mktemp failed" >&2; exit 2; }
+# Atomic write: tmpfile in the SAME directory as the target (so the final mv is
+# a same-filesystem atomic rename, not a cross-FS copy+unlink), validate, then
+# mv. flock guards the read-modify-write window against concurrent writers.
+TMP=$(mktemp "${SETTINGS_DIR}/.flow-migrate-settings.XXXXXX" 2>/dev/null) || {
+  echo "flow-migrate-settings.sh: mktemp failed in $SETTINGS_DIR" >&2; exit 2; }
 LOCK="${SETTINGS}.lock"
 trap 'rm -f "$TMP"' EXIT INT TERM
 (
