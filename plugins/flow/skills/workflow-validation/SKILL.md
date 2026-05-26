@@ -20,7 +20,7 @@ The invoking command MUST pass:
 
 ## Outputs
 
-Structured JSON report on stdout. Each violation entry includes `source_file` (the YAML path that failed) and `example` (a snippet showing the corrected form) so the caller can render actionable error messages without consulting the schema separately (F15):
+Structured JSON report on stdout. Each violation entry includes `source_file` (the YAML path that failed) and `example` (a snippet showing the corrected form) so the caller can render actionable error messages without consulting the schema separately:
 
 ```json
 {
@@ -51,7 +51,7 @@ Exit code: 0 if `overall: pass`; 1 if any cross-reference, recursion, native-sla
 
 ### Step 1: Schema validation (with v3.0.x deprecation migration)
 
-**Cycle-14 F4 (error-handler verifier)**: the previous documentation showed both an in-memory migration shim AND a `python3 -m jsonschema -i <file> <schema>` invocation. The CLI re-reads the file from disk, bypassing the in-memory shim entirely. Any project-local workflow with the legacy `completion_gate.requires` field would fail schema validation despite the documented "accept legacy through v3.0.x" contract. The shim and the validator must run in the same Python process. The canonical invocation is:
+the previous documentation showed both an in-memory migration shim AND a `python3 -m jsonschema -i <file> <schema>` invocation. The CLI re-reads the file from disk, bypassing the in-memory shim entirely. Any project-local workflow with the legacy `completion_gate.requires` field would fail schema validation despite the documented "accept legacy through v3.0.x" contract. The shim and the validator must run in the same Python process. The canonical invocation is:
 
 ```bash
 python3 - "$WORKFLOW_PATH" "$SCHEMA_PATH" <<'PYEOF'
@@ -75,7 +75,7 @@ if "requires" in gate and "documented_requirements" not in gate:
         file=sys.stderr,
     )
 elif "requires" in gate and "documented_requirements" in gate:
-    # Cycle-14 F3 (code-reviewer verifier): both fields present — drop legacy,
+    # both fields present — drop legacy,
     # emit WARN. Previously the shim silently skipped this case and the schema
     # rejected the YAML with an opaque `additionalProperties` error.
     del gate["requires"]

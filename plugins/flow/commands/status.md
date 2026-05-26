@@ -11,6 +11,23 @@ Read-only overview of the current development state. No skills needed — pure o
 
 _None — read-only status command. No skill invocations._
 
+## Mode
+
+Parse an optional display mode from the command arguments. Use the bare-`$ARGUMENTS`-first pattern — copy the substituted token into a shell var BEFORE applying parameter-expansion, never `${ARGUMENTS%% *}` directly. An unknown argument falls back to the compact dashboard (never errors).
+
+```!
+_RAW="$ARGUMENTS"
+ARG1="${_RAW%% *}"
+case "$ARG1" in
+  --full)        echo "STATUS_MODE=full" ;;
+  --json)        echo "STATUS_MODE=json" ;;
+  --evidence)    echo "STATUS_MODE=evidence" ;;
+  ""|--compact)  echo "STATUS_MODE=compact" ;;
+  *)             echo "STATUS_MODE=compact"; echo "STATUS_MODE_NOTE=unknown arg '$ARG1' — defaulting to compact dashboard" ;;
+esac
+true
+```
+
 ## Gather State
 
 ```!
@@ -164,7 +181,7 @@ echo "### Recent Runs"
 if [ ! -d ".flow/runs" ]; then
   echo "STATE=empty"
 else
-  # Most-recent-first sort by mtime. Cycle-14 F2 (code-reviewer skeptic):
+  # Most-recent-first sort by mtime:
   # the previous `... | tac 2>/dev/null || ... | tail -3` fallback silently
   # produced oldest-first when tac was missing (macOS without coreutils).
   # Use awk-based reverse instead — portable POSIX and matches the
@@ -394,6 +411,28 @@ State values: `unavailable` (gh API failed) | `no_open_prs` (user has no open PR
 
 ## Display
 
+Render according to `STATUS_MODE` (from the **Mode** block). All modes draw from the same gathered state; they differ only in shape. The v3 sections stay gated on `flow.goals.enabled` / `flow.triggers.enabled` — when disabled, render the existing `(… v3 not enabled …)` line in every mode (no change for v2 users). If `STATUS_MODE_NOTE` was emitted, print it as a one-line note above the output.
+
+### `compact` (default)
+
+A five-line operational dashboard — the fastest read of "where am I, and what's safe to do next":
+
+```markdown
+## Flow Status — {branch}
+
+- **Active work**: {issue/PR in flight, or "none"}
+- **Goal**: {GOAL_ID} {lifecycle} — {verifiable}/{total} ACs verified  (or "none (no active goal on this branch)", or the ⚠ degenerate / needs-attention marker when 0 verifiable ACs)
+- **Workflow**: {latest run workflow} @ {current_phase} ({latest activity}, or "no active run")
+- **Evidence**: {Findings Ledger one-liner — P1/P2/P3 per Render Rules}
+- **Next safe action**: {from Suggestions Logic}
+```
+
+When `flow.goals.enabled` is false, the Goal / Workflow / Evidence lines render `(v3 not enabled)` instead.
+
+### `--full`
+
+The complete verbose dashboard (every section):
+
 ```markdown
 ## Flow Status
 
@@ -456,6 +495,35 @@ State values: `unavailable` (gh API failed) | `no_open_prs` (user has no open PR
 ### Suggested Next Action
 {Based on state, suggest the most useful /flow command}
 ```
+
+### `--json`
+
+A single machine-readable JSON object for tooling/debugging — no prose, no tables:
+
+```json
+{
+  "branch": "{branch}",
+  "goal": {"id": "{GOAL_ID}", "lifecycle": "{status}", "acs": {"total": N, "verifiable": M}},
+  "run": {"id": "{RUN_ID}", "workflow": "{workflow}", "phase": "{current_phase}", "status": "{status}"},
+  "findings": {"p1": N, "p2": N, "p3": N},
+  "next_action": "{suggestion}"
+}
+```
+
+Emit `"goal": null` and/or `"run": null` when none is active. When `flow.goals.enabled` is false, emit `"v3_enabled": false` and set `goal`/`run` to `null`.
+
+### `--evidence`
+
+Per-AC evidence listing for the active goal (debugging the verdict path). One row per AC from `flow-active-goal.sh --ac-summary`, with the evidence sidecar path under `.flow/runs/<id>/evidence/`:
+
+```markdown
+## Goal Evidence — {GOAL_ID}
+| AC | Status | Evidence ref | Last result |
+|----|--------|--------------|-------------|
+| {id} | {status} | {evidence_ref} | {last_result} |
+```
+
+When no active goal exists: render `No active goal on this branch.` (or `(v3 not enabled)` when `flow.goals.enabled` is false).
 
 ## Render Rules — Findings Ledger
 

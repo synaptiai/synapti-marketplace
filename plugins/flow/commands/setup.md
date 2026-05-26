@@ -43,12 +43,16 @@ mkdir -p .claude
 
 **Ensure `.claude/settings.flow.local.json` is gitignored** (idempotent — adds the line only if missing). Without this, a downstream user creating a personal-pin file as documented in Phase 6 below would commit it accidentally, leaking their machine-local preferences and weakening the project-local override layer:
 
+Also ignore `.claude/*.lock` — `flow-migrate-settings.sh` (and other writers) create a transient `<file>.lock` beside the settings file; the trap removes it, but a hard kill (SIGKILL) could leave one behind, and it must never be committed.
+
 ```bash
-if [ -f .gitignore ] && ! grep -qxF '.claude/settings.flow.local.json' .gitignore; then
-  echo '.claude/settings.flow.local.json' >> .gitignore
-elif [ ! -f .gitignore ]; then
-  echo '.claude/settings.flow.local.json' > .gitignore
-fi
+for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock'; do
+  if [ -f .gitignore ]; then
+    grep -qxF "$IGNORE" .gitignore || echo "$IGNORE" >> .gitignore
+  else
+    echo "$IGNORE" > .gitignore
+  fi
+done
 ```
 
 Flow settings follow the standard Claude Code cascade — `local > project > user > plugin default`. Setup writes the project-shared file, which gives the whole team a baseline. Any user can then override locally via `.claude/settings.flow.local.json` (gitignored), set cross-project preferences in `$HOME/.claude/settings.flow.json`, or rely on the plugin's bundled defaults.
@@ -74,6 +78,42 @@ Write `.claude/settings.flow.json` with:
 - Tier classification (`tiers.*`), timeouts, debugging settings, verdict settings, testing settings, visualVerification settings
 
 **On re-run** (existing settings detected): Read current settings and merge — preserve user customizations, only add new keys that don't exist yet.
+
+The v3 runtime settings (`flow.goals`, `flow.runtime`, `flow.workflows`, `flow.triggers`) are intentionally **not** written into the team file — they are governed by the plugin defaults via the cascade, so the committed file stays lean. The one thing setup actively does for them is upgrade **deprecated** keys (next step).
+
+### Upgrade deprecated settings (re-run only)
+
+When existing settings are detected, check whether the committed `.claude/settings.flow.json` carries any deprecated keys and offer to upgrade it to the current schema. The runtime already honors deprecated keys read-only (via `cascade-resolve`), so this is a **hygiene upgrade — nothing breaks if declined**. Current migrations: `flow.goals.requireGoalForStart` → `flow.goals.goalCreation` (`true`→`always`, `false`→`off`).
+
+```!
+SETTINGS=".claude/settings.flow.json"
+MIGRATOR="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-migrate-settings.sh"
+if [ -f "$SETTINGS" ] && [ -x "$MIGRATOR" ]; then
+  "$MIGRATOR" "$SETTINGS"   # dry-run — emits MIGRATE=... lines (MIGRATE=none when clean)
+else
+  echo "MIGRATE=skip (no committed settings or migrator unavailable)"
+fi
+true
+```
+
+If the output is `MIGRATE=none` or `MIGRATE=skip`, there is nothing to upgrade — proceed silently. Otherwise it reports the pending change(s) (`MIGRATE_FROM=...` / `MIGRATE_TO=...`). Surface them and use `AskUserQuestion`:
+
+> Your committed `.claude/settings.flow.json` uses deprecated settings keys that can be upgraded to the current schema:
+> {the `MIGRATE_FROM` → `MIGRATE_TO` lines}
+>
+> The runtime already honors the old keys read-only, so this is optional cleanup.
+>
+> Options:
+> 1. **Upgrade now (Recommended)** — rewrite the committed file in place (atomic; every other key preserved)
+> 2. **Leave as-is** — the read-only migration keeps it working; the deprecated key stays in version control
+
+On **Upgrade now**, apply the rewrite. This block re-resolves the helper path inline — shell variables from the detection `!`-block above do NOT persist into a separately-executed `bash` block:
+
+```bash
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-migrate-settings.sh" --apply ".claude/settings.flow.json"
+```
+
+It writes atomically and preserves all other keys. Note the change in the Phase 6 summary so the user reviews the one-line diff before committing.
 
 ## Phase 3: LSP Server Setup
 
@@ -320,6 +360,7 @@ Any key set at a higher layer overrides lower layers. See [`references/gate-conf
 | Detect environment, tech stack, build commands | 1 | Autonomous, read-only |
 | Probe LSP capabilities | 1 | Autonomous, read-only |
 | Write `.claude/settings.flow.json` (project-shared settings) | 1 | Autonomous, project file |
+| Upgrade deprecated keys in an existing `.claude/settings.flow.json` (`flow-migrate-settings.sh --apply`) | 2 | AskUserQuestion before rewriting the committed file; atomic, preserves other keys |
 | Write `.claude/CLAUDE.md` flow integration block | 1 | Autonomous, project file |
 | Install LSP servers (when user opts in) | 2 | Journal-and-proceed (touches user environment outside repo) |
 | `mkdir -p .decisions/` | 1 | Autonomous |

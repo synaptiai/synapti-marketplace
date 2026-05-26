@@ -96,7 +96,7 @@ for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_
   fi
   rm -f "$STDERR_TMP" 2>/dev/null
 
-  # Cycle-14 SEC-V4: treat jq's "null" output as not-found so callers can use
+  # Treat jq's "null" output as not-found so callers can use
   # `.flow.workflows.enabled // null` (recognizes explicit false) instead of
   # `// empty` (which swallows false alongside null). Backward compatible:
   # callers still using `// empty` produce "" and fall through as before.

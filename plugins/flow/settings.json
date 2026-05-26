@@ -94,7 +94,7 @@
     },
     "goals": {
       "enabled": true,
-      "requireGoalForStart": false,
+      "goalCreation": "auto",
       "stopHookEnforcement": "warn",
       "failAfterStuckTurns": 3,
       "executeVerificationCommands": false,

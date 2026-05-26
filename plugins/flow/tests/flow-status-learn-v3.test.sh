@@ -1,10 +1,10 @@
-# Tests for plugins/flow/commands/status.md + learn.md v3 sections (cycle-13 F2 + F3).
-# Source-presence lints; behavioral coverage is in flow-cycle14-behavioral.test.sh.
+# Tests for plugins/flow/commands/status.md + learn.md v3 sections.
+# Source-presence lints; behavioral coverage is in flow--behavioral.test.sh.
 
 STATUS_CMD="$REPO_ROOT/plugins/flow/commands/status.md"
 LEARN_CMD="$REPO_ROOT/plugins/flow/commands/learn.md"
 
-_flow_test_begin "F2 — /flow:status includes FlowGoal State + Recent Runs sections"
+_flow_test_begin "/flow:status includes FlowGoal State + Recent Runs sections"
 if [ ! -f "$STATUS_CMD" ]; then
   _flow_assert_fail "status.md missing"
 else
@@ -17,11 +17,11 @@ else
   assert_contains "last-verdict.json" "$CONTENT" "Recent Runs reads last-verdict.json"
 fi
 
-_flow_test_begin "F2 — /flow:status Suggestions table mentions /flow:goal evaluate"
+_flow_test_begin "/flow:status Suggestions table mentions /flow:goal evaluate"
 CONTENT=$(cat "$STATUS_CMD")
 assert_contains "/flow:goal evaluate" "$CONTENT" "suggestion table includes /flow:goal evaluate path"
 
-_flow_test_begin "F3 — /flow:learn discovers FlowRun events + goal yamls"
+_flow_test_begin "/flow:learn discovers FlowRun events + goal yamls"
 if [ ! -f "$LEARN_CMD" ]; then
   _flow_assert_fail "learn.md missing"
 else
@@ -32,10 +32,52 @@ else
   assert_contains 'flow.goals.enabled' "$CONTENT" "gated behind enabled flag"
 fi
 
-_flow_test_begin "F3 — /flow:learn Phase 2 has Goal Failure Patterns category"
+_flow_test_begin "/flow:learn Phase 2 has Goal Failure Patterns category"
 CONTENT=$(cat "$LEARN_CMD")
 assert_contains "Goal Failure Patterns" "$CONTENT" "category heading present"
 assert_contains "Recurring failed ACs" "$CONTENT" "AC failure signal documented"
 assert_contains "Stuck-detection hits" "$CONTENT" "stuck signal documented"
 assert_contains "not_executed" "$CONTENT" "not_executed signal documented"
 assert_contains "Path-boundary violations" "$CONTENT" "path violation signal documented"
+
+
+# --- /flow:status compact dashboard + deep modes ----------------------------
+_flow_test_begin "status.md documents compact default + --full/--json/--evidence modes"
+CONTENT=$(cat "$STATUS_CMD")
+assert_contains "STATUS_MODE" "$CONTENT" "mode dispatch variable present"
+assert_contains '`compact` (default)' "$CONTENT" "compact is the default mode"
+assert_contains '### `--full`' "$CONTENT" "--full mode documented"
+assert_contains '### `--json`' "$CONTENT" "--json mode documented"
+assert_contains '### `--evidence`' "$CONTENT" "--evidence mode documented"
+assert_contains "Next safe action" "$CONTENT" "compact dashboard includes next-safe-action line"
+assert_contains "v3 not enabled" "$CONTENT" "(v3 not enabled) gating preserved across modes"
+
+# Behavioral: extract the Mode !-block and confirm arg parsing + unknown fallback.
+MODE_BLOCK=$(python3 - "$STATUS_CMD" <<'PY'
+import sys, re
+src = open(sys.argv[1]).read()
+# The first ```! fenced block after the "## Mode" heading.
+after = src.split("## Mode", 1)[1]
+m = re.search(r"```!\n(.*?)\n```", after, re.S)
+sys.stdout.write(m.group(1) if m else "")
+PY
+)
+_run_mode() {  # $1 = ARGUMENTS value
+  local raw="$1"
+  local blk="${MODE_BLOCK//\$\{ARGUMENTS\}/$raw}"
+  blk="${blk//\$ARGUMENTS/$raw}"
+  bash -c "$blk"
+}
+
+_flow_test_begin "mode parse — no arg -> compact"
+assert_contains "STATUS_MODE=compact" "$(_run_mode '')" "default (no arg) is compact"
+
+_flow_test_begin "mode parse — --full/--json/--evidence map to their modes"
+assert_contains "STATUS_MODE=full" "$(_run_mode '--full')" "--full -> full"
+assert_contains "STATUS_MODE=json" "$(_run_mode '--json')" "--json -> json"
+assert_contains "STATUS_MODE=evidence" "$(_run_mode '--evidence')" "--evidence -> evidence"
+
+_flow_test_begin "mode parse — unknown arg falls back to compact (no error)"
+OUT=$(_run_mode '--bogus')
+assert_contains "STATUS_MODE=compact" "$OUT" "unknown arg -> compact"
+assert_contains "STATUS_MODE_NOTE=unknown arg" "$OUT" "unknown arg surfaces a note"

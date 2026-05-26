@@ -1,4 +1,4 @@
-# Tests for plugins/flow/hooks/scripts/flow-goal-evaluator.sh throttle log + stuck-detection (cycle-13 F8 + F9).
+# Tests for plugins/flow/hooks/scripts/flow-goal-evaluator.sh throttle log + stuck-detection.
 # Source-presence lint tests. These are lint-style checks that the new behavior
 # remains in the hook script — they catch regressions where someone
 # removes the logic during a refactor without realizing it.
@@ -9,8 +9,8 @@
 
 HOOK="$REPO_ROOT/plugins/flow/hooks/scripts/flow-goal-evaluator.sh"
 
-# --- F8: throttle block writes events.jsonl
-_flow_test_begin "F8 — throttle block writes a throttle-block event to .flow/runs/<id>/events.jsonl"
+# --- throttle block writes events.jsonl
+_flow_test_begin "throttle block writes a throttle-block event to .flow/runs/<id>/events.jsonl"
 
 if [ ! -f "$HOOK" ]; then
   _flow_assert_fail "hook script missing at $HOOK"
@@ -22,8 +22,8 @@ else
   assert_contains 'events.jsonl' "$CONTENT" "events.jsonl write target present"
 fi
 
-# --- F9: stuck-detection helper exists
-_flow_test_begin "F9 — _check_stuck helper defined in hook source"
+# --- stuck-detection helper exists
+_flow_test_begin "_check_stuck helper defined in hook source"
 
 if [ ! -f "$HOOK" ]; then
   _flow_assert_fail "hook script missing"
@@ -36,8 +36,8 @@ else
   assert_contains "stuck-detection-fired" "$CONTENT" "stuck event type emitted to events.jsonl"
 fi
 
-# --- F9: stuck-detection invoked from both must-pass-fail and judge paths
-_flow_test_begin "F9 — _check_stuck called from must-pass-fail path"
+# --- stuck-detection invoked from both must-pass-fail and judge paths
+_flow_test_begin "_check_stuck called from must-pass-fail path"
 CONTENT=$(cat "$HOOK")
 # Count occurrences of _check_stuck calls. Should be:
 #   1× definition (function declaration)
@@ -48,14 +48,20 @@ CALL_COUNT=$(grep -c "_check_stuck" "$HOOK")
 if [ "$CALL_COUNT" -ge "3" ]; then
   _flow_assert_pass "expected ≥3 occurrences (definition + 2 call sites); got $CALL_COUNT"
 else
-  _flow_assert_fail "expected ≥3 _check_stuck occurrences (definition + ≥2 calls); got $CALL_COUNT — F9 may not be integrated into both paths"
+  _flow_assert_fail "expected ≥3 _check_stuck occurrences (definition + ≥2 calls); got $CALL_COUNT — stuck-detection may not be integrated into both paths"
 fi
 
-# --- F9: lifecycle YAML fragment uses correct status name
-_flow_test_begin "F9 — lifecycle transition writes status:failed"
+# --- lifecycle YAML fragment uses correct status name
+_flow_test_begin "lifecycle transition writes status:failed"
 CONTENT=$(cat "$HOOK")
 # When stuck fires, the hook writes a lifecycle YAML to a temp file with
 # status:failed. Verify the literal is present.
 assert_contains "status: failed" "$CONTENT" "lifecycle fragment uses 'status: failed'"
 assert_contains 'flow-goal-record.sh' "$CONTENT" "transition invokes the canonical writer"
 assert_contains '--from-status active' "$CONTENT" "from-status guard prevents racing transitions"
+
+# --- evaluator resolves the active goal branch-aware (not an inline scan) ------
+_flow_test_begin "evaluator delegates active-goal lookup to the branch-strict resolver"
+HOOK_SRC=$(cat "$REPO_ROOT/plugins/flow/hooks/scripts/flow-goal-evaluator.sh")
+assert_contains "flow-active-goal.sh" "$HOOK_SRC" "uses the centralized resolver"
+assert_contains "--path --branch-strict" "$HOOK_SRC" "resolves the current branch's goal (no cross-branch / alphabetical-first pick)"

@@ -568,7 +568,7 @@ synapti-marketplace/
     │   │   └── plugin.json
     │   ├── README.md
     │   ├── agents/                   # 8 specialized agents
-    │   ├── commands/                 # 17 workflow commands
+    │   ├── commands/                 # 23 workflow commands (17 work + 6 runtime/admin)
     │   ├── hooks/                    # Safety hook definitions
     │   ├── skills/                   # 22 composable skills (3 foundation + 19 domain)
     │   ├── templates/                # PR, issue, skill proposal templates

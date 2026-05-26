@@ -22,9 +22,9 @@ This is unsafe for **marketplace installs**:
   repo the plugin lives under `~/.claude/plugins/...`, so the fallback points at
   a path that does not exist and every bundled helper becomes unreachable.
 
-Observed failure: `/flow:start` in a consumer repo with
-`flow.goals.requireGoalForStart: true` could not find `cascade-resolve.sh`, so
-the FlowGoal was never created and the `/flow:merge` goal gate had nothing to
+Observed failure: `/flow:start` in a consumer repo with goal creation active
+(`flow.goals.goalCreation: auto` or `always`) could not find `cascade-resolve.sh`,
+so the FlowGoal was never created and the `/flow:merge` goal gate had nothing to
 check.
 
 Hooks are unaffected (they get `CLAUDE_PLUGIN_ROOT` per the docs), so

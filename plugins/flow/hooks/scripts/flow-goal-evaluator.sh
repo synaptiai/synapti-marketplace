@@ -131,7 +131,7 @@ if [ "$STOP_ACTIVE" = "true" ] && [ -f "$THROTTLE_FILE" ]; then
   [ "$SINCE" -gt 300 ] && CONTINUE_COUNT=0
   if [ "$CONTINUE_COUNT" -ge 3 ] && [ "$SINCE" -lt 300 ]; then
     rm -f "$THROTTLE_FILE"
-    # F8: Log the throttle-block event to the active run's events.jsonl so
+    # Log the throttle-block event to the active run's events.jsonl so
     # /flow:learn pattern analysis can detect projects where the evaluator
     # loop hits the throttle frequently (signal: the goal contract or the
     # executor's iteration cadence needs adjustment).
@@ -141,9 +141,15 @@ if [ "$STOP_ACTIVE" = "true" ] && [ -f "$THROTTLE_FILE" ]; then
     # throttle decision is the primary outcome.
     ACTIVE_GOAL_HELPER="${PLUGIN_ROOT}/bin/flow-active-goal.sh"
     if [ -x "$ACTIVE_GOAL_HELPER" ]; then
-      THROTTLE_GOAL_PATH=$("$ACTIVE_GOAL_HELPER" --path 2>/dev/null)
-      if [ -n "$THROTTLE_GOAL_PATH" ] && [ -f "$THROTTLE_GOAL_PATH" ]; then
-        # Cycle-14 SEC-3: argv-passing instead of -c with bash interpolation —
+      THROTTLE_GOAL_PATH=$("$ACTIVE_GOAL_HELPER" --path --branch-strict 2>/dev/null)
+      if [ -z "$THROTTLE_GOAL_PATH" ]; then
+        # No active goal owns the current branch — nothing to attribute the
+        # throttle-block event to. The throttle decision below still fires; only
+        # the per-run event log is skipped. Surface it so the gap is diagnosable
+        # rather than a silent hole in /flow:learn's event history.
+        echo "flow-goal-evaluator: throttle event skipped — no active goal on the current branch" >&2
+      elif [ -f "$THROTTLE_GOAL_PATH" ]; then
+        # argv-passing instead of -c with bash interpolation —
         # closes the Python code injection vector where a file with a `'` in
         # the path would inject into the single-quoted Python literal.
         THROTTLE_RUN_ID=$(python3 - "$THROTTLE_GOAL_PATH" <<'PYEOF' 2>/dev/null
@@ -157,16 +163,16 @@ except Exception as e:
     print(f"flow-goal-evaluator: throttle run_id lookup failed: {e}", file=sys.stderr)
 PYEOF
 )
-        # Cycle-14 SEC-1: defensive reject path-traversal in run_id even
+        # defensive reject path-traversal in run_id even
         # though the schema now constrains it — defense-in-depth in case a
-        # hostile YAML bypassed schema (e.g., jsonschema unavailable per F11).
+        # hostile YAML bypassed schema (e.g., jsonschema unavailable).
         case "$THROTTLE_RUN_ID" in
           ''|.|..|*..*|*/*|*$'\n'*)
             THROTTLE_RUN_ID=""
             ;;
         esac
         if [ -n "$THROTTLE_RUN_ID" ] && [ -d ".flow/runs/$THROTTLE_RUN_ID" ]; then
-          # Cycle-14 SEC-2: symlink defense on events.jsonl — the bash `>>`
+          # symlink defense on events.jsonl — the bash `>>`
           # follows symlinks; a planted symlink at .flow/runs/<id>/events.jsonl
           # would redirect the throttle-block payload to any user-writable
           # target. Refuse the write if the file is a symlink. Matches the
@@ -192,23 +198,17 @@ PYEOF
   fi
 fi
 
-# Find active goal (same logic as flow-goal-stop.sh).
-ACTIVE_GOAL=$(python3 - <<'PYEOF' 2>/dev/null
-import os, glob, sys, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
-if not os.path.isdir(".flow/goals"):
-    sys.exit(0)
-for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        if data.get("lifecycle", {}).get("status") == "active":
-            print(path)
-            sys.exit(0)
-    except Exception:
-        continue
-PYEOF
-)
+# Find the active goal that owns the current branch. Delegate to the
+# centralized branch-aware resolver (--branch-strict) so that, when goals are
+# active across multiple branches, the evaluator acts on THIS branch's goal and
+# never a stale goal on another branch. Empty result (approve) when the helper
+# is unavailable — the Stop hook must not block the user on infra failure.
+GOAL_HELPER="${PLUGIN_ROOT}/bin/flow-active-goal.sh"
+if [ -x "$GOAL_HELPER" ]; then
+  ACTIVE_GOAL=$("$GOAL_HELPER" --path --branch-strict 2>/dev/null)
+else
+  ACTIVE_GOAL=""
+fi
 [ -z "$ACTIVE_GOAL" ] && { echo '{"decision":"approve","reason":"no active flow goal"}'; exit 0; }
 
 # Budget check. Read turns_evaluated and max_iterations; transition to
@@ -245,9 +245,9 @@ except Exception as e:
 PYEOF
 )
 
-# Cycle-14 SEC-1: defense-in-depth path-traversal reject on RUN_ID. The
+# defense-in-depth path-traversal reject on RUN_ID. The
 # schema constrains scope.run_id to ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ but
-# when jsonschema is unavailable (F11 silent-skip path), a hostile YAML
+# when jsonschema is unavailable, a hostile YAML
 # could land on disk and reach this point with `..` or `/` in run_id.
 # Reject any value that contains a path separator, traversal, control char,
 # or empty bare-dot.
@@ -299,7 +299,7 @@ _record_verdict() {
     || echo "flow-goal-evaluator: last-verdict.json write failed (delta computation on next turn will fall back to 'unchanged')" >&2
 }
 
-# F9: Stuck-detection helper. Increments a per-run counter when the verdict's
+# Stuck-detection helper. Increments a per-run counter when the verdict's
 # delta is 'unchanged'; resets the counter on any other delta. When the counter
 # reaches flow.goals.failAfterStuckTurns (cascade-resolved; default 3), the
 # helper transitions the active goal to lifecycle.status=failed via
@@ -319,7 +319,7 @@ _check_stuck() {
 
   local counter_file="$run_dir/stuck-counter"
 
-  # Cycle-14 SEC-3: symlink defense on stuck-counter. The read+write below
+  # symlink defense on stuck-counter. The read+write below
   # use shell redirection which follows symlinks; a hostile project could
   # plant a symlink at .flow/runs/<id>/stuck-counter pointing at e.g.
   # ~/.bashrc and the integer write would overwrite it. Refuse to operate
@@ -345,7 +345,7 @@ _check_stuck() {
     # the stuck condition.
     counter=0
   fi
-  # Cycle-14 F2 (error-handler skeptic): surface counter-write failures
+  # surface counter-write failures
   # instead of silently swallowing with `|| true`. A silent write failure
   # means in-memory counter advances but on-disk state stays — next turn
   # re-reads stale state and the threshold is never reached, trapping the
@@ -368,7 +368,7 @@ _check_stuck() {
   local goal_id
   goal_id=$(basename "$ACTIVE_GOAL" .goal.yaml)
 
-  # Cycle-14 F1 (code-reviewer verifier): preserve turns_evaluated history.
+  # preserve turns_evaluated history.
   # flow-goal-record.sh's lifecycle-update path replaces (does not deep-merge)
   # the lifecycle block, so writing `turns_evaluated: 0` here would drop the
   # real iteration count from disk — making /flow:learn's stuck-pattern
@@ -401,7 +401,7 @@ last_evaluation:
   reason: "stuck_no_progress: delta unchanged for ${counter} consecutive turns (threshold=${threshold})"
   at: "${now_iso}"
 EOF
-  # Cycle-14 F7 (error-handler skeptic): surface write failures honestly.
+  # surface write failures honestly.
   # Previously the `|| echo "stuck-transition write failed"` was followed by
   # the caller emitting "lifecycle transitioned to failed" — a lie when the
   # write didn't actually happen. Now we return 0 on failure so the caller
@@ -415,7 +415,7 @@ EOF
     return 0  # keep the block loop active; do NOT lie that we transitioned.
   fi
 
-  # Cycle-14 SEC-2: symlink defense on events.jsonl for stuck event log.
+  # symlink defense on events.jsonl for stuck event log.
   local events_file="$run_dir/events.jsonl"
   if [ ! -L "$events_file" ]; then
     jq -nc \
@@ -483,11 +483,11 @@ PYEOF
   # Persist verdict so next-turn delta computation has memory. Confidence
   # 1.0 because the deterministic must_pass failure is unambiguous
   # evidence of `not_achieved`. Record BEFORE deciding block-or-approve so
-  # _check_stuck (F9) can read the persisted delta history.
+  # _check_stuck can read the persisted delta history.
   _record_verdict "not_achieved" "1.0" "unchanged" \
     "must_pass criterion failed deterministically" "" "evaluator-loop-must-pass-fail"
 
-  # F9: Stuck-detection. If the goal has been stuck on "unchanged" for
+  # Stuck-detection. If the goal has been stuck on "unchanged" for
   # failAfterStuckTurns consecutive turns, transition to failed and emit
   # approve so the user isn't trapped in an infinite block loop.
   if _check_stuck "unchanged"; then
@@ -609,7 +609,7 @@ case "$VERDICT" in
     jq -nc --arg r "Goal $VERDICT: $REASON_TXT" '{decision:"approve", reason:$r}'
     ;;
   not_achieved|*)
-    # F9: Check stuck-detection on the judge's delta. Stuck threshold may
+    # Check stuck-detection on the judge's delta. Stuck threshold may
     # transition the goal to failed and override the block with approve.
     if _check_stuck "$DELTA"; then
       echo "$((CONTINUE_COUNT + 1)):$NOW" > "$THROTTLE_FILE"

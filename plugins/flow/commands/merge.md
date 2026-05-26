@@ -269,10 +269,10 @@ if [ $GH_EXIT_RES -ne 0 ] || [ $GH_EXIT_REV -ne 0 ]; then
 fi
 
 # Surface "untrusted-only" markers as a block reason rather than silently
-# treating them as no markers at all. This is the #92 forgery defense.
+# treating them as no markers at all. This is the marker-forgery defense.
 # Render the trust list as a comma-separated string for the user-facing
 # message — the `$TRUST_REGEX` variable used to appear here was a leftover
-# from PR #93 and never assigned, producing the empty-parens string
+# from an earlier revision and never assigned, producing the empty-parens string
 # "trusted authors ()" in messages or aborting under `set -u`.
 #
 # Derive the fallback from $TRUST_DEFAULT rather than hard-coding the value:
@@ -321,16 +321,23 @@ fi  # /if [ -z "$PR_NUM" ]
 true
 ```
 
-### FlowGoal Gate (v3, opt-in)
+### FlowGoal Gate (v3)
 
-Independent of the finding-ledger gate, the FlowGoal gate verifies the active goal has reached `lifecycle.status == achieved`. Gated behind `flow.goals.requireGoalForStart` — when false (v2 mode), this block emits `FLOW_GOAL_GATE_STATE=disabled` and the gate is skipped silently.
+Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**: when an active goal exists for this branch it must have reached `lifecycle.status == achieved` to merge; when **no** active goal exists the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off` — preserving the v2 `requireGoalForStart: false` UX (no merge gating).
 
 ```!
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
-REQUIRE_GOAL=$("$HELPER" --default "false" '.flow.goals.requireGoalForStart' 2>/dev/null)
+# Migration-aware: goalCreation wins; else map legacy requireGoalForStart
+# (true->always, false->off); else null so the cascade default (auto) applies.
+GOAL_MODE=$("$HELPER" --default "auto" '.flow.goals.goalCreation // (if .flow.goals.requireGoalForStart == true then "always" elif .flow.goals.requireGoalForStart == false then "off" else null end)' 2>/dev/null)
+case "$GOAL_MODE" in auto|always|off) ;; *) GOAL_MODE="auto" ;; esac
+ENABLED=$("$HELPER" --default "true" '.flow.goals.enabled' 2>/dev/null)
+# Empty means cascade-resolve itself failed (missing/non-exec) — honor the
+# enabled-by-default intent rather than fail-open to a silently disabled gate.
+[ -z "$ENABLED" ] && ENABLED="true"
 
 echo "### FlowGoal Gate"
-if [ "$REQUIRE_GOAL" != "true" ]; then
+if [ "$ENABLED" != "true" ] || [ "$GOAL_MODE" = "off" ]; then
   echo "FLOW_GOAL_GATE_STATE=disabled"
 else
   ACTIVE_GOAL_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-active-goal.sh"
@@ -338,10 +345,15 @@ else
     echo "FLOW_GOAL_GATE_STATE=blocked"
     echo "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh missing or non-executable"
   else
-    GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status 2>/dev/null); GOAL_EXIT=$?
+    # --allow-terminal: surface a goal that already reached `achieved` so the
+    # success branch below is reachable (without it the helper is active-only,
+    # exits 1, and an achieved goal is mislabeled "no active FlowGoal").
+    # --branch-strict: resolve ONLY a goal owning the current branch — never a
+    # stale active goal on another branch, which would falsely block this merge.
+    GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status --allow-terminal --branch-strict 2>/dev/null); GOAL_EXIT=$?
     case "$GOAL_EXIT" in
       0)
-        GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id 2>/dev/null)
+        GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id --allow-terminal --branch-strict 2>/dev/null)
         echo "FLOW_GOAL_ID=$GOAL_ID"
         echo "FLOW_GOAL_LIFECYCLE=$GOAL_STATUS"
         if [ "$GOAL_STATUS" = "achieved" ]; then
@@ -349,22 +361,25 @@ else
         else
           # Active goal exists but is not achieved — fail closed.
           # The "no incomplete shipments" hard boundary applies: merging a
-          # PR whose own contract reports incomplete is exactly what F1 is
-          # designed to prevent.
+          # PR whose own contract reports incomplete is exactly what the
+          # "no incomplete shipments" boundary is designed to prevent.
           echo "FLOW_GOAL_GATE_STATE=blocked"
           echo "FLOW_GOAL_BLOCK_REASON=FlowGoal $GOAL_ID lifecycle is '$GOAL_STATUS' — run /flow:goal evaluate $GOAL_ID to advance"
         fi
         ;;
       1)
-        # v3 enabled but no active goal — caller policy. Fail closed by
-        # default; the user can override via the Tier 3 confirm prompt in
-        # Phase 3 with explicit rationale.
-        echo "FLOW_GOAL_GATE_STATE=blocked"
-        echo "FLOW_GOAL_BLOCK_REASON=requireGoalForStart=true but no active FlowGoal — run /flow:goal create issue or set requireGoalForStart=false"
+        # No active goal on this branch — gate not applicable: the gate keys
+        # on goal existence. A PR without a FlowGoal is not blocked; the PR's
+        # own review state remains the durable record. This intentionally
+        # replaces the prior fail-closed so default installs (goalCreation:auto)
+        # do not start blocking goal-less merges.
+        echo "FLOW_GOAL_GATE_STATE=ok"
+        echo "FLOW_GOAL_GATE_NOTE=no active FlowGoal for this branch — gate not applicable"
         ;;
       3)
+        # >1 active goal on the current branch (after branch-scoping).
         echo "FLOW_GOAL_GATE_STATE=blocked"
-        echo "FLOW_GOAL_BLOCK_REASON=degenerate state — multiple active FlowGoals"
+        echo "FLOW_GOAL_BLOCK_REASON=degenerate state — multiple active FlowGoals on the current branch"
         ;;
       *)
         echo "FLOW_GOAL_GATE_STATE=blocked"

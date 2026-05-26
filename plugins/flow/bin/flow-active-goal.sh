@@ -7,17 +7,45 @@
 # schema only touch one reader.
 #
 # Output modes (exactly one allowed, default --status):
-#   --path        absolute-or-relative path to .flow/goals/<id>.goal.yaml
-#   --id          metadata.id
-#   --status      lifecycle.status (e.g., active, waiting_for_user)
-#   --json        full goal as JSON, sorted keys (jq-compatible)
-#   --ac-summary  one line per AC: <id>|<status>|<evidence_ref>|<last_result>
+#   --path             absolute-or-relative path to .flow/goals/<id>.goal.yaml
+#   --id               metadata.id
+#   --status           lifecycle.status (e.g., active, waiting_for_user)
+#   --json             full goal as JSON, sorted keys (jq-compatible)
+#   --ac-summary       one line per AC: <id>|<status>|<evidence_ref>|<last_result>
+#   --verifiable-count <total>/<verifiable> — AC count and the subset carrying a
+#                      non-empty verification_command (feeds the compact-summary
+#                      degenerate marker)
+#
+# Branch scoping:
+#   Selection is branch-first — a goal that owns the current git branch always
+#   wins over a cross-branch goal regardless of lifecycle status. If no goal owns
+#   the current branch (or the branch is unknown, e.g. detached HEAD / legacy
+#   goals predating scope.branch), the most-recently-modified ACTIVE goal is
+#   returned. Exit 3 (degenerate) fires ONLY when >1 active goal share the
+#   current branch — concurrent goals on different branches/worktrees each
+#   resolve cleanly.
+#   --branch <name>    override the detected current branch (test-only / scripting)
+#   --allow-terminal   also consider a terminal `achieved` goal, but ONLY when it
+#                      owns the current branch (never cross-branch) — lets the
+#                      merge/pr gate observe a goal that already left the active
+#                      window. Active goals on the current branch still take
+#                      precedence. Stop hook + /flow:status omit the flag to keep
+#                      their narrow active-only semantics.
+#   --branch-strict    when the current branch is KNOWN and owns no goal, exit 1
+#                      (not applicable) instead of falling back to a goal on
+#                      another branch. Used by callers that must act on the
+#                      current branch's goal and never a stale goal elsewhere
+#                      (the merge/pr gate, the Stop-hook evaluator). When the
+#                      branch is UNKNOWN (detached HEAD / CI / not a repo) there
+#                      is nothing to discriminate on, so it still falls back to
+#                      the most-recent active goal. Lenient callers (status/learn)
+#                      omit the flag.
 #
 # Exit codes:
 #   0  active goal found; output on stdout
 #   1  no active goal (caller decides whether this is OK)
 #   2  infrastructure error (python3 / PyYAML missing; symlink rejected)
-#   3  degenerate state (>1 active goal — should never happen)
+#   3  degenerate state (>1 active goal on the current branch)
 #
 # Symlink defense: refuses to read if .flow/goals/ or any *.goal.yaml is a
 # symlink. Matches bin/journal-record.sh and bin/flow-record-verdict.sh.
@@ -27,17 +55,33 @@ export PYTHONSAFEPATH=1
 
 MODE="--status"
 SAW_MODE=0
+OVERRIDE_BRANCH=""
+ALLOW_TERMINAL=0
+BRANCH_STRICT=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --path|--id|--status|--json|--ac-summary)
+    --path|--id|--status|--json|--ac-summary|--verifiable-count)
       [ "$SAW_MODE" = "1" ] && { echo "flow-active-goal.sh: only one mode flag allowed (got both $MODE and $1)" >&2; exit 2; }
       MODE="$1"
       SAW_MODE=1
       shift
       ;;
+    --branch)
+      [ $# -lt 2 ] && { echo "flow-active-goal.sh: --branch requires a value" >&2; exit 2; }
+      OVERRIDE_BRANCH="$2"
+      shift 2
+      ;;
+    --allow-terminal)
+      ALLOW_TERMINAL=1
+      shift
+      ;;
+    --branch-strict)
+      BRANCH_STRICT=1
+      shift
+      ;;
     -h|--help)
-      sed -n '2,24p' "$0" | sed 's/^# \?//'
+      sed -n '2,51p' "$0" | sed 's/^# \?//'
       exit 0
       ;;
     *)
@@ -62,17 +106,44 @@ if [ -L ".flow/goals" ]; then
   exit 2
 fi
 
-python3 - "$MODE" <<'PYEOF'
-import sys, glob, os, json
+python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" "$BRANCH_STRICT" <<'PYEOF'
+import sys, glob, os, json, subprocess
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 import yaml
 
 mode = sys.argv[1]
+override_branch = sys.argv[2] if len(sys.argv) > 2 else ""
+allow_terminal = (sys.argv[3] if len(sys.argv) > 3 else "0") == "1"
+branch_strict = (sys.argv[4] if len(sys.argv) > 4 else "0") == "1"
 
 if not os.path.isdir(".flow/goals"):
     sys.exit(1)
 
+# Determine the current branch for branch-first selection. An
+# explicit --branch override wins (test-only / scripting); otherwise ask git,
+# tolerating any failure (not a repo, detached HEAD, git missing) by treating
+# the branch as unknown ("").
+current_branch = override_branch
+if not current_branch:
+    try:
+        r = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0:
+            current_branch = r.stdout.strip()
+    except Exception:
+        current_branch = ""
+
 active = []
+# Terminal `achieved` goals, collected only when --allow-terminal is set, so the
+# merge/pr gate can observe a goal that already left the `active` window. They
+# are only ever selected when their scope.branch matches the current branch —
+# never via a cross-branch fallback. The sole --allow-terminal caller (the gate)
+# always runs on the goal's own branch, and a cross-branch terminal pick would
+# both answer the gate with an unrelated goal and be influenceable through file
+# mtime.
+terminal = []
 for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
     if os.path.islink(path):
         print(f"flow-active-goal.sh: refusing — {path} is a symlink", file=sys.stderr)
@@ -80,25 +151,74 @@ for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
-        if (data.get("lifecycle") or {}).get("status") == "active":
-            active.append((path, data))
+        status = (data.get("lifecycle") or {}).get("status")
+        branch = (data.get("scope") or {}).get("branch") or ""
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            mtime = 0.0
+        if status == "active":
+            active.append((path, data, branch, mtime))
+        elif allow_terminal and status == "achieved":
+            terminal.append((path, data, branch, mtime))
     except Exception:
         # Tolerate unparseable goals — they would block lookup of a sibling
-        # legitimate active goal. The Stop hook + status subcommand follow
-        # the same tolerate-and-continue pattern.
+        # legitimate goal. The Stop hook + status subcommand follow the same
+        # tolerate-and-continue pattern.
         continue
 
-if not active:
+if not active and not terminal:
     sys.exit(1)
-if len(active) > 1:
-    paths = [p for p, _ in active]
-    print(
-        f"flow-active-goal.sh: degenerate state — {len(active)} active goals: {', '.join(paths)}",
-        file=sys.stderr,
-    )
-    sys.exit(3)
 
-path, data = active[0]
+# Branch-first selection. A goal that owns the current branch always wins over a
+# cross-branch goal, regardless of lifecycle status. Priority:
+#   1. active goal(s) on the current branch  (>1 -> exit 3, degenerate)
+#   2. achieved goal on the current branch    (only with --allow-terminal)
+#   3. most-recently-modified ACTIVE goal on any branch (legacy goals predating
+#      scope.branch, detached HEAD, or a caller run from main)
+# Terminal goals are never selected cross-branch (no tier-3 equivalent): if only
+# achieved goals exist and none own the current branch, there is no applicable
+# goal for this caller.
+def _branch_matches(t):
+    return bool(current_branch) and t[2] == current_branch
+
+active_here = [t for t in active if _branch_matches(t)]
+terminal_here = [t for t in terminal if _branch_matches(t)]
+
+if active_here:
+    if len(active_here) > 1:
+        paths = [t[0] for t in active_here]
+        print(
+            f"flow-active-goal.sh: degenerate state — {len(active_here)} active goals "
+            f"on branch '{current_branch}': {', '.join(paths)}",
+            file=sys.stderr,
+        )
+        sys.exit(3)
+    chosen = active_here[0]
+elif terminal_here:
+    # Achieved goal on the current branch (e.g. the gate after evaluation).
+    # Most-recent wins; equal mtime -> alphabetically-first path (sorted glob
+    # order), deterministic across re-runs.
+    chosen = max(terminal_here, key=lambda t: t[3])
+elif active and (not branch_strict or not current_branch):
+    # Fall back to the most-recently-modified ACTIVE goal (equal mtime ->
+    # alphabetically-first path). This fires for lenient callers (status/learn
+    # run from main, legacy goals without scope.branch), AND for --branch-strict
+    # callers when the current branch is UNKNOWN ("" — detached HEAD / CI / not a
+    # repo): with no branch to discriminate on, the most-recently-modified
+    # active goal is the only sensible resolution (a more principled pick than
+    # the pre-branch-scoping scan, which returned the alphabetically-first).
+    # --branch-strict only bites when the branch IS known and no goal owns it —
+    # that is the case where grabbing a cross-branch goal would be wrong (the
+    # gate would false-block; the evaluator would mutate another branch's goal).
+    chosen = max(active, key=lambda t: t[3])
+else:
+    # Either only terminal goals exist and none own the current branch, or
+    # --branch-strict with a KNOWN current branch that owns no goal -> the
+    # caller must treat this as "no applicable goal for this branch".
+    sys.exit(1)
+
+path, data = chosen[0], chosen[1]
 
 if mode == "--path":
     print(path)
@@ -109,7 +229,7 @@ elif mode == "--status":
 elif mode == "--json":
     print(json.dumps(data, sort_keys=True))
 elif mode == "--ac-summary":
-    # Cycle-14 F1 (code-reviewer skeptic): sanitize ALL emitted fields for
+    # sanitize ALL emitted fields for
     # both newlines (line-break contract) and pipes (column-separator
     # contract). A goal YAML with a pipe character in any field would
     # silently inject extra columns into the documented
@@ -120,9 +240,13 @@ elif mode == "--ac-summary":
         s = " ".join(str(value).split())  # collapse all whitespace incl. newlines
         return s.replace("|", "│")
     acs = ((data.get("objective") or {}).get("acceptance_criteria") or [])
+    if not isinstance(acs, list):
+        # A non-list acceptance_criteria (e.g. a scalar in malformed user YAML)
+        # would raise TypeError on iteration — outside the parse loop's try.
+        acs = []
     for ac in acs:
         if not isinstance(ac, dict):
-            # Cycle-14 F7 (code-reviewer verifier): tolerate malformed AC
+            # tolerate malformed AC
             # shapes (string instead of dict) rather than crashing with
             # AttributeError outside the try/except in the search loop.
             continue
@@ -131,6 +255,24 @@ elif mode == "--ac-summary":
         evidence_ref = _sanitize(ac.get("evidence_ref") or "-")
         last_result = _sanitize(ac.get("last_result") or "-")
         print(f"{ac_id}|{status}|{evidence_ref}|{last_result}")
+elif mode == "--verifiable-count":
+    # Emit "<total>/<verifiable>" so the compact summary can flag a degenerate
+    # goal (0 ACs, or 0 ACs carrying a non-empty verification_command) without
+    # re-parsing the YAML. A verification_command of "" or whitespace is not
+    # verifiable.
+    acs = ((data.get("objective") or {}).get("acceptance_criteria") or [])
+    if not isinstance(acs, list):
+        acs = []   # non-list (scalar) acceptance_criteria -> treat as zero ACs
+    total = 0
+    verifiable = 0
+    for ac in acs:
+        if not isinstance(ac, dict):
+            continue
+        total += 1
+        vc = ac.get("verification_command")
+        if isinstance(vc, str) and vc.strip():
+            verifiable += 1
+    print(f"{total}/{verifiable}")
 else:
     print(f"flow-active-goal.sh: unknown mode {mode}", file=sys.stderr)
     sys.exit(2)

@@ -1,7 +1,7 @@
 # Tests for the v3 runtime integration — pr.md goal gate + FlowRun activity.
 #
 # The FlowGoal 5-state gate already exists and is covered by
-# flow-cycle14-behavioral.test.sh; this file asserts that gate contract holds
+# flow--behavioral.test.sh; this file asserts that gate contract holds
 # and the newer pieces are wired:
 #   - AC4: pr.md blocks PR creation when the linked goal is not `achieved`,
 #     WITH an override path (Option 2) that records an escalation-resolved

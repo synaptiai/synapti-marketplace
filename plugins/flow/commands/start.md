@@ -111,252 +111,6 @@ true
 
 If `PREFLIGHT_STATE=BLOCKED`, stop. Do not proceed to EXPLORE. The `PREFLIGHT_FAIL=` lines under the section enumerate the reasons.
 
-## Phase 0.5: FLOW V3 ONBOARDING
-
-Detects whether this is the first `/flow:start` in a project that has neither been configured nor produced any v3 runtime state. Fires the consent prompt once; subsequent invocations see the persisted answer and skip.
-
-```!
-# Onboarding detection. Three branches, evaluated in order:
-#
-# 1. `.flow/` directory exists — user already has v3 runtime state, skip
-#    regardless of settings file state.
-# 2. No settings file AND no `.flow/` — fresh install, prompt.
-# 3. Settings file exists but lacks `flow.goals` block — partial-file
-#    bypass (the user has never answered the v3 onboarding question; an
-#    unrelated v2 setting like `agentTeams` doesn't count as opting in
-#    either way). Prompt.
-#
-# Otherwise (settings file with `flow.goals` block present, regardless of
-# the block's contents) → skip; the user has answered.
-NEEDS_ONBOARDING=0
-
-if [ -d .flow ]; then
-  NEEDS_ONBOARDING=0
-elif [ ! -f .claude/settings.flow.json ]; then
-  NEEDS_ONBOARDING=1
-else
-  if command -v jq >/dev/null 2>&1; then
-    # `jq -e` exits non-zero on null/false/missing, which redirects
-    # HAS_GOALS to empty. Parse errors also produce empty output.
-    HAS_GOALS=$(jq -e '.flow.goals // empty' .claude/settings.flow.json 2>/dev/null)
-    [ -z "$HAS_GOALS" ] && NEEDS_ONBOARDING=1
-  fi
-  # If jq is unavailable we conservatively skip — a v2 user with a
-  # carefully configured settings file should not be re-prompted on every
-  # /flow:start just because we cannot parse the file. Onboarding is
-  # still reachable via /flow:goal create or manual settings edit.
-fi
-
-if [ "$NEEDS_ONBOARDING" = "1" ]; then
-  echo "FLOW_V3_ONBOARDING=needed"
-else
-  echo "FLOW_V3_ONBOARDING=skip"
-fi
-
-true
-```
-
-If `FLOW_V3_ONBOARDING=needed`, use `AskUserQuestion` exactly once with this prompt:
-
-> **Enable Flow v3 runtime layer for this project?**
->
-> Flow v3 adds durable completion contracts (FlowGoal), inspectable workflows, and resumable execution records under `.flow/`. Acceptance criteria with `verification_command` auto-validate via `/flow:goal evaluate`. See `references/flow-goals-quickstart.md` for a walkthrough.
->
-> Options:
-> 1. **Enable v3 (recommended for new projects)** — auto-create goals on `/flow:start`, run verification commands during evaluate
-> 2. **Skip — keep v2 behavior** — `/flow:start` proceeds without goals; v3 surfaces remain reachable via explicit `/flow:goal create`
-> 3. **Tell me more** — open the quickstart, decide on the next invocation
-
-Persist the answer to `.claude/settings.flow.json`. When the file already exists with a partial shape (e.g., the user committed `{"agentTeams": false}` from `/flow:setup` before v3 onboarding), the new keys are MERGED via `jq` so unrelated v2 settings are preserved. When the file is absent, a fresh JSON document is written. When `jq` is unavailable AND the file already exists, the helper refuses to write rather than clobber v2 keys with a heredoc fallback.
-
-The `set_flow_goals` helper below is shared by all three answer arms. After defining it, dispatch based on the user's `AskUserQuestion` response — the dispatch is prose-driven, not a shell `case` (the `AskUserQuestion` answer reaches Claude, not the shell, so Claude runs the appropriate arm directly).
-
-**Helper definition** (run once):
-
-```bash
-SETTINGS=.claude/settings.flow.json
-
-# Symlink defense: refuse to write through symlinks at .claude/ or settings file.
-# Matches the O_NOFOLLOW pattern documented in bin/journal-record.sh and the
-# CHANGELOG's "symlink defenses everywhere" rule. A hostile fork PR could plant
-# .claude as a symlink to ~/.ssh or settings.flow.json as a symlink to ~/.bashrc;
-# refuse rather than corrupt the target.
-if [ -e .claude ] && [ -L .claude ]; then
-  echo "FLOW_ONBOARDING_ERROR=.claude is a symlink — refusing to write through it" >&2
-  exit 1
-fi
-if [ -e "$SETTINGS" ] && [ -L "$SETTINGS" ]; then
-  echo "FLOW_ONBOARDING_ERROR=$SETTINGS is a symlink — refusing to write through it" >&2
-  exit 1
-fi
-mkdir -p .claude
-
-set_flow_goals() {
-  # Args: $1=requireGoalForStart (true|false) $2=executeVerificationCommands (true|false)
-  #       $3=workflowsEnabled (true|false|skip — "skip" omits the workflows key)
-  # Cycle-14 F2 (code-reviewer verifier): merges all three keys atomically
-  # via a single jq invocation so there's no partial-write state where
-  # flow.goals lands but flow.workflows.enabled is missing. The previous
-  # split into two helpers (set_flow_goals + set_flow_workflows_enabled)
-  # introduced the partial-success bug — eliminating the second helper
-  # eliminates the bug.
-  local req="$1" exe="$2" wfl="${3:-skip}"
-
-  # Re-check symlink between definition and call — defense against TOCTOU race.
-  if [ -e "$SETTINGS" ] && [ -L "$SETTINGS" ]; then
-    echo "FLOW_ONBOARDING_ERROR=$SETTINGS became a symlink — refusing to write" >&2
-    return 1
-  fi
-
-  # Compose the jq merge expression. Conditional workflows clause: "skip"
-  # leaves the existing value (or absence) untouched; "true"/"false" sets it.
-  local jq_expr='.flow.goals.requireGoalForStart = $req | .flow.goals.executeVerificationCommands = $exe'
-  if [ "$wfl" = "true" ] || [ "$wfl" = "false" ]; then
-    jq_expr="$jq_expr | .flow.workflows.enabled = \$wfl"
-  fi
-
-  if [ -f "$SETTINGS" ]; then
-    # File exists — must merge, never overwrite. Requires jq.
-    if ! command -v jq >/dev/null 2>&1; then
-      echo "FLOW_ONBOARDING_ERROR=$SETTINGS exists but jq is unavailable — refusing to overwrite v2 keys; install jq and re-run /flow:start" >&2
-      return 1
-    fi
-
-    # Cycle-14 SEC-6: use mktemp instead of PID-scoped tmpfile. PID
-    # predictability (~15 bits of entropy) allows symlink-planting attacks
-    # on multi-user systems; mktemp's random suffix defeats it.
-    local tmp
-    tmp=$(mktemp -t flow-settings.XXXXXX 2>/dev/null) || {
-      echo "FLOW_ONBOARDING_ERROR=mktemp failed for settings merge" >&2
-      return 1
-    }
-    local lockfile="${SETTINGS}.lock"
-    # Cycle-14 F5 (error-handler skeptic): trap to clean tmpfile on signal
-    # so .claude/ doesn't accumulate stale `settings.flow.json.tmp.NNNN`.
-    trap 'rm -f "$tmp"' EXIT INT TERM
-    (
-      # flock guards the read-modify-write window; (subshell) scopes the fd.
-      flock -x 9 || { echo "FLOW_ONBOARDING_ERROR=failed to acquire $lockfile" >&2; exit 1; }
-      if [ "$wfl" = "true" ] || [ "$wfl" = "false" ]; then
-        if ! jq --argjson req "$req" --argjson exe "$exe" --argjson wfl "$wfl" \
-             "$jq_expr" \
-             "$SETTINGS" > "$tmp"; then
-          rm -f "$tmp"
-          echo "FLOW_ONBOARDING_ERROR=jq merge failed on $SETTINGS" >&2
-          exit 1
-        fi
-      else
-        if ! jq --argjson req "$req" --argjson exe "$exe" \
-             "$jq_expr" \
-             "$SETTINGS" > "$tmp"; then
-          rm -f "$tmp"
-          echo "FLOW_ONBOARDING_ERROR=jq merge failed on $SETTINGS" >&2
-          exit 1
-        fi
-      fi
-      # Cycle-14 SEC-V5 (security verifier): validate the merged file is
-      # non-empty AND parseable BEFORE replacing the original — a jq that
-      # exits 0 with empty/truncated output would otherwise destroy settings.
-      if [ ! -s "$tmp" ] || ! jq empty "$tmp" >/dev/null 2>&1; then
-        rm -f "$tmp"
-        echo "FLOW_ONBOARDING_ERROR=jq produced empty or invalid JSON; $SETTINGS unchanged" >&2
-        exit 1
-      fi
-      if ! mv "$tmp" "$SETTINGS"; then
-        rm -f "$tmp"
-        echo "FLOW_ONBOARDING_ERROR=mv failed; $SETTINGS unchanged" >&2
-        exit 1
-      fi
-    ) 9>"$lockfile"
-    local rc=$?
-    trap - EXIT INT TERM
-    rm -f "$tmp"
-    [ "$rc" -ne 0 ] && return 1
-  else
-    # Fresh file — write atomically via tmpfile+mv (cycle-14 F4 error-handler
-    # verifier: the previous non-atomic `printf > $SETTINGS` left the file
-    # partial on signal mid-write).
-    local tmp
-    tmp=$(mktemp -t flow-settings.XXXXXX 2>/dev/null) || {
-      echo "FLOW_ONBOARDING_ERROR=mktemp failed for fresh-file write" >&2
-      return 1
-    }
-    trap 'rm -f "$tmp"' EXIT INT TERM
-    # Compose the JSON document with conditional workflows.enabled.
-    if [ "$wfl" = "true" ] || [ "$wfl" = "false" ]; then
-      printf '%s\n' "{" \
-        "  \"flow\": {" \
-        "    \"goals\": {" \
-        "      \"requireGoalForStart\": ${req}," \
-        "      \"executeVerificationCommands\": ${exe}" \
-        "    }," \
-        "    \"workflows\": {" \
-        "      \"enabled\": ${wfl}" \
-        "    }" \
-        "  }" \
-        "}" > "$tmp"
-    else
-      printf '%s\n' "{" \
-        "  \"flow\": {" \
-        "    \"goals\": {" \
-        "      \"requireGoalForStart\": ${req}," \
-        "      \"executeVerificationCommands\": ${exe}" \
-        "    }" \
-        "  }" \
-        "}" > "$tmp"
-    fi
-    if [ ! -s "$tmp" ] || ! jq empty "$tmp" >/dev/null 2>&1; then
-      rm -f "$tmp"
-      trap - EXIT INT TERM
-      echo "FLOW_ONBOARDING_ERROR=fresh file write produced empty or invalid JSON" >&2
-      return 1
-    fi
-    if ! mv "$tmp" "$SETTINGS"; then
-      rm -f "$tmp"
-      trap - EXIT INT TERM
-      echo "FLOW_ONBOARDING_ERROR=mv failed for fresh-file write" >&2
-      return 1
-    fi
-    trap - EXIT INT TERM
-  fi
-}
-
-# Cycle-14 F2 (code-reviewer verifier): set_flow_workflows_enabled REMOVED.
-# Previously cycle-13 added a second helper for the workflows.enabled key, but
-# the two-helper sequence created a partial-success failure mode: if the
-# second invocation failed, the settings file ended up with flow.goals but no
-# flow.workflows, and the Phase 0.5 detector silently skipped the re-prompt
-# (looks for .flow.goals only). The fix is structural: set_flow_goals now
-# takes a 3rd arg (workflows: "true"|"false"|"skip") and writes all keys in
-# a single jq merge. Enable arm passes "true"; Skip arm passes "skip" to
-# preserve any pre-existing flow.workflows.enabled setting.
-```
-
-**Dispatch based on the user's answer** (Claude runs ONE of the following based on the `AskUserQuestion` response — NOT a shell `case`):
-
-- **Answer = "Enable v3 (recommended for new projects)"**:
-  ```bash
-  set_flow_goals true true true \
-    && echo "Flow v3 enabled (goals + workflows). Settings written to $SETTINGS." \
-    && echo "Note: FlowTriggers (/flow:watch, /flow:trigger) remain separate opt-in." \
-    && echo "  Enable later via: jq '.flow.triggers.enabled = true' $SETTINGS > /tmp/s && mv /tmp/s $SETTINGS"
-  ```
-  Cycle-14 F2: `set_flow_goals` now writes all three keys atomically in one jq merge — no more partial-success state where goals lands but workflows is missing. If the helper returns non-zero, halt Phase 0.5 and surface the `FLOW_ONBOARDING_ERROR` line.
-
-- **Answer = "Skip — keep v2 behavior"**:
-  ```bash
-  set_flow_goals false false skip && echo "Flow v3 left disabled. Settings written to $SETTINGS (re-enable later by editing the file)."
-  ```
-  Third arg is `skip` so the helper leaves `flow.workflows` untouched (preserves any pre-existing user choice). Same error-halt semantics.
-
-- **Answer = "Tell me more"**:
-  ```bash
-  echo "Open plugins/flow/references/flow-goals-quickstart.md, then re-run /flow:start when ready."
-  ```
-  Do NOT write the settings file. Halt Phase 0.5 without proceeding. The next `/flow:start` will re-prompt — by design.
-
-Only the Enable and Skip arms write the settings file (with opposing flag values) so the prompt fires exactly once per project for users who actually answered. `Tell me more` is non-persistent so the user can re-enter the flow after reading the quickstart.
-
 ## Phase 1: EXPLORE
 
 Gather all context before planning.
@@ -526,7 +280,14 @@ Only after every criterion shows PASS or user-approved MANUAL can the workflow p
 gh issue edit "$ISSUE_NUM" --add-assignee @me
 ```
 
-**FlowGoal auto-creation (gated by `flow.goals.requireGoalForStart`):**
+**FlowGoal auto-creation (gated by `flow.goals.goalCreation`):**
+
+`goalCreation` is a 3-state setting — `auto` (default), `always`, or `off`:
+- `off` — never auto-create (manual `/flow:goal create` still works).
+- `always` — create a goal unconditionally (even a degenerate goal; flagged in the compact summary).
+- `auto` — create **iff** the Spec Validation Gate passed with ≥1 acceptance criterion carrying a `verification_command`. An issue that yields zero verifiable ACs (e.g. a spec-free `documentation`/`chore` issue) is skipped **silently** — no prompt, no error.
+
+The master switch `flow.goals.enabled: false` forces `off` regardless of `goalCreation` (whole feature off — distinct from `goalCreation: off`, which leaves the feature on and only suppresses auto-creation).
 
 ```!
 CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
@@ -536,7 +297,19 @@ if [ ! -x "$CASCADE" ]; then
   echo "FLOW_GOAL_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
   true; exit 0
 fi
-REQUIRE_GOAL=$("$CASCADE" --default "false" '.flow.goals.requireGoalForStart' 2>/dev/null)
+# Read-only migration: goalCreation wins; else map the legacy
+# requireGoalForStart (true→always, false→off); else `null` so the cascade
+# default (auto) applies. `else null` — NOT "auto" — is load-bearing: it lets a
+# settings source carrying NEITHER key fall through to the next cascade source
+# instead of short-circuiting and masking a lower-precedence requireGoalForStart.
+# Never rewrites the user's settings file, so configured projects are never
+# re-prompted or silently changed.
+GOAL_MODE=$("$CASCADE" --default "auto" '.flow.goals.goalCreation // (if .flow.goals.requireGoalForStart == true then "always" elif .flow.goals.requireGoalForStart == false then "off" else null end)' 2>/dev/null)
+case "$GOAL_MODE" in auto|always|off) ;; *) GOAL_MODE="auto" ;; esac
+# Master switch forces off when the whole feature is disabled.
+ENABLED=$("$CASCADE" --default "true" '.flow.goals.enabled' 2>/dev/null)
+[ "$ENABLED" != "true" ] && GOAL_MODE="off"
+echo "FLOW_GOAL_MODE=$GOAL_MODE"
 
 _RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
 ARG1="${_RAW%% *}"
@@ -545,7 +318,7 @@ case "$ARG1" in
   *) ISSUE_NUM="$ARG1" ;;
 esac
 
-if [ "$REQUIRE_GOAL" = "true" ] && [ -n "$ISSUE_NUM" ]; then
+if [ "$GOAL_MODE" != "off" ] && [ -n "$ISSUE_NUM" ]; then
   GOAL_ID="issue-$ISSUE_NUM"
   GOAL_PATH=".flow/goals/${GOAL_ID}.goal.yaml"
   if [ -f "$GOAL_PATH" ]; then
@@ -589,7 +362,11 @@ true
 
 Dispatch based on `FLOW_GOAL_STATE`:
 
-- **`create`** — proceed to invoke the skills (steps below). The visibility echo is gated on the post-write verify.
+- **`create`** — branch on `FLOW_GOAL_MODE`:
+  - **`always`** — create the goal unconditionally. A degenerate goal (0 ACs, or 0 ACs carrying a `verification_command`) is allowed here but is flagged in the compact summary. Proceed to the skills below.
+  - **`auto`** — create the goal **iff** the Spec Validation Gate passed with ≥1 acceptance criterion carrying a `verification_command` (the "verifiable ACs win" rule — labels do not veto). If zero verifiable ACs (e.g. a spec-free `documentation`/`chore` issue that passed the gate with no commands), **skip silently**: do not invoke the skills, print no goal line, and treat exactly like `skip`. Otherwise proceed to the skills below.
+
+  In both create paths the visibility echo is gated on the post-write verify.
 - **`exists`** — non-terminal goal already on disk; print `FlowGoal already exists: <GOAL_PATH> (status: $GOAL_STATUS) — resuming. Use /flow:goal inspect <GOAL_ID> to review.`
 - **`terminal`** — goal is `achieved|failed|cancelled` and immutable. Refuse to resume; surface a six-field escalation per [`references/escalation-format.md`](../references/escalation-format.md): _Situation_: terminal goal at `<GOAL_PATH>`. _Tried_: detected `lifecycle.status=<GOAL_STATUS>`. _Options_: (1) Use `/flow:goal clear <GOAL_ID>` then re-run `/flow:start`, (2) Pick a new goal id, (3) Abort. _Recommendation_: Option 1 if the original goal is stale. _Blocking_: yes. _Risk_: mutating a terminal goal corrupts the audit trail.
 - **`blocked`** — cascade-resolve unavailable; surface `FLOW_GOAL_ERROR` and halt Phase 1.
@@ -618,10 +395,7 @@ For `FLOW_GOAL_STATE=create`:
      fi
    fi
    ```
-4. Only after verify passes, emit:
-   ```
-   FlowGoal created: <GOAL_ID> at <GOAL_PATH> (status: active)
-   ```
+4. Only after verify passes, proceed to create the FlowRun (next section). **Do not** emit a per-artifact `FlowGoal created:` line here — the compact runtime summary that supersedes it is emitted once both the goal and run exist (see **Runtime summary** below).
 
 ### FlowRun (v3 runtime)
 
@@ -658,6 +432,8 @@ fi
 true
 ```
 
+Dispatch on `FLOW_RUN_STATE`: **`skip`** — proceed without a FlowRun (v2 behavior; the wiring is a no-op). **`blocked`** — `cascade-resolve.sh` was unavailable; surface the `FLOW_RUN_ERROR` line to the user and halt Phase 1 rather than silently proceeding without a run (same posture as `FLOW_GOAL_STATE=blocked`). **`create`** — proceed as below.
+
 When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`start-issue`, goal=`$GOAL_LINK` — the FlowGoal created above, or `null` when goal creation was skipped), initial phase `preflight`. Because `/flow:start` is issue-scoped, also emit the `workflow-run` artifact to `.decisions/issue-$ISSUE_NUM.md`:
 
 ```bash
@@ -670,6 +446,28 @@ if [ -n "$ISSUE_NUM" ]; then
     --metadata workflow=start-issue --metadata run_id="$RUN_ID" --metadata status=active
 fi
 ```
+
+### Runtime summary
+
+Once the goal (if any) and the FlowRun exist, emit **one** compact runtime summary **in place of** any per-artifact `FlowGoal created:` line. Do not dump the goal/run YAML — "invisible" means low-ceremony, not hidden-state. The summary has exactly these lines:
+
+- **Goal**: `<GOAL_ID>` (`<lifecycle status>`) — `<verifiable>` of `<total>` ACs carry a `verification_command`
+- **Workflow**: `start-issue`
+- **Run**: `<RUN_ID>` (the value emitted by the FlowRun block)
+- **Branch**: `<current branch>` (`git branch --show-current`)
+- _I'll work until the goal is achieved, blocked, or needs your decision._
+
+Compute the AC counts with the shared helper (it prints `<total>/<verifiable>`). It exits non-zero with no output when no goal owns the current branch — that is the **skip path** (goal creation was skipped), and the summary then omits the Goal line entirely:
+
+```bash
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-active-goal.sh" --verifiable-count 2>/dev/null || true
+```
+
+**Truthfulness gate (load-bearing):** if the goal is degenerate — `<total>` is `0`, or `<verifiable>` is `0` — or the goal is unevaluated, the Goal line MUST be flagged, never shown as a clean `active`:
+
+- **Goal**: `<GOAL_ID>` ⚠ **degenerate / needs-attention** — `0` verifiable ACs; this goal cannot auto-evaluate.
+
+A degenerate goal can only arise under `goalCreation: always` or a manual `/flow:goal create` — `auto` never creates one (it requires ≥1 verifiable AC). When goal creation was **skipped** (`auto` with zero verifiable ACs, or `off`): omit the Goal line entirely and show only Workflow / Run / Branch — never present a skipped goal as if one exists.
 
 Phase order: `preflight → explore → plan → code → verify`. At each subsequent phase boundary (PLAN, CODE, VERIFY), invoke `Skill(run-state-management)` to write a FlowActivity record and advance `state.current_phase`. After the Phase 4 verdict settles, transition the FlowRun: `state.status: completed` when the verdict is PASS (and update the `workflow-run` artifact to `status=completed`); `state.status: blocked` (with `blocked_reason`) when the verdict is FAIL or the session ends mid-workflow, so `/flow:resume` can pick it up.
 

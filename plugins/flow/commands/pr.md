@@ -114,27 +114,39 @@ else
     echo "STATE=empty"
   fi
 
-  # Section: FlowGoal State (v3, opt-in via flow.goals.requireGoalForStart)
-  # When v3 is enabled, surface the active goal's lifecycle so Phase 4 can
-  # gate PR creation on goal achievement. v2 projects (flag unset/false)
-  # see STATE=disabled and the gate is skipped silently.
+  # Section: FlowGoal State (v3) — gate on goal existence.
+  # Surface the active goal's lifecycle so Phase 4 can gate PR creation on goal
+  # achievement WHEN a goal exists; a branch with no goal is not blocked. The
+  # gate is disabled when flow.goals.enabled is false or goalCreation is off,
+  # preserving the v2 (requireGoalForStart:false) UX.
   echo ""
   echo "### FlowGoal State"
   HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
-  REQUIRE_GOAL=$("$HELPER" --default "false" '.flow.goals.requireGoalForStart' 2>/dev/null)
-  if [ "$REQUIRE_GOAL" != "true" ]; then
+  # Migration-aware: goalCreation wins; else map legacy requireGoalForStart
+  # (true->always, false->off); else null so the cascade default (auto) applies.
+  GOAL_MODE=$("$HELPER" --default "auto" '.flow.goals.goalCreation // (if .flow.goals.requireGoalForStart == true then "always" elif .flow.goals.requireGoalForStart == false then "off" else null end)' 2>/dev/null)
+  case "$GOAL_MODE" in auto|always|off) ;; *) GOAL_MODE="auto" ;; esac
+  ENABLED=$("$HELPER" --default "true" '.flow.goals.enabled' 2>/dev/null)
+  # Empty means cascade-resolve itself failed — honor enabled-by-default intent
+  # rather than fail-open to a silently disabled gate.
+  [ -z "$ENABLED" ] && ENABLED="true"
+  if [ "$ENABLED" != "true" ] || [ "$GOAL_MODE" = "off" ]; then
     echo "STATE=disabled"
-    echo "REASON=flow.goals.requireGoalForStart is not true"
+    echo "REASON=flow.goals.enabled is false or goalCreation is off"
   else
     ACTIVE_GOAL_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-active-goal.sh"
     if [ ! -x "$ACTIVE_GOAL_HELPER" ]; then
       echo "STATE=unavailable"
       echo "REASON=flow-active-goal.sh missing or non-executable"
     else
-      GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status 2>/dev/null); GOAL_EXIT=$?
+      # --allow-terminal: surface an already-`achieved` goal so the GATE=pass
+      # branch below is reachable (the helper is active-only otherwise).
+      # --branch-strict: resolve ONLY a goal owning the current branch, never a
+      # stale active goal on another branch.
+      GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status --allow-terminal --branch-strict 2>/dev/null); GOAL_EXIT=$?
       case "$GOAL_EXIT" in
         0)
-          GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id 2>/dev/null)
+          GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id --allow-terminal --branch-strict 2>/dev/null)
           echo "STATE=ok"
           echo "GOAL_ID=$GOAL_ID"
           echo "GOAL_LIFECYCLE=$GOAL_STATUS"
@@ -145,14 +157,16 @@ else
           fi
           ;;
         1)
-          echo "STATE=missing"
-          echo "GATE=block"
-          echo "REASON=v3 enabled but no active FlowGoal for this branch — run /flow:goal create issue first"
+          # No active goal on this branch — gate not applicable: the gate keys
+          # on goal existence. PR creation proceeds; a goal-less PR is not blocked.
+          echo "STATE=none"
+          echo "GATE=pass"
+          echo "REASON=no active FlowGoal for this branch — gate not applicable"
           ;;
         3)
           echo "STATE=degenerate"
           echo "GATE=block"
-          echo "REASON=multiple active goals detected (should be impossible) — run /flow:goal history and clear extras"
+          echo "REASON=multiple active goals on the current branch — run /flow:goal history and clear extras"
           ;;
         *)
           echo "STATE=unavailable"
@@ -307,9 +321,9 @@ After agents return, TaskUpdate each review task with findings.
      ```
    - **Option 3: Cancel** — exit `/flow:pr` and finish the implementation work first.
 
-   When `STATE=disabled` (v2 mode, `requireGoalForStart` not set): skip this step silently.
+   When `STATE=disabled` (`flow.goals.enabled` false or `goalCreation: off`): skip this step silently.
 
-   When `STATE=missing` (v3 enabled but no goal): present a different AskUserQuestion — "v3 is enabled but no FlowGoal exists for this branch. Create one now via `/flow:goal create issue` and re-run `/flow:pr`, or proceed without a goal (the merge gate will then have nothing to verify)?"
+   When `STATE=none` (no active FlowGoal for this branch): the gate is **not applicable** (it keys on goal existence). Proceed with PR creation silently — a goal-less PR is not blocked and needs no prompt. The PR body omits the `## FlowGoal Status` section.
 
 8. **Generate PR body** from template + findings + journal + comprehension report.
 

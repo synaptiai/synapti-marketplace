@@ -292,10 +292,15 @@
               "default": true,
               "description": "Master switch for the FlowGoal feature. When false, /flow:goal is disabled and the Stop hook fast-paths to approve."
             },
+            "goalCreation": {
+              "enum": ["auto", "always", "off"],
+              "default": "auto",
+              "description": "Controls /flow:start FlowGoal auto-creation. 'auto' (default): create a goal iff the Spec Validation Gate passed with >=1 acceptance criterion carrying a verification_command (labels do not veto); spec-free issues yielding zero verifiable ACs are skipped silently. 'always': create unconditionally (a degenerate goal is allowed but flagged in the compact summary). 'off': never auto-create; manual /flow:goal create still works. Distinct from goals.enabled:false, which disables the whole feature. There is no consent prompt — invisible-auto is the default."
+            },
             "requireGoalForStart": {
               "type": "boolean",
-              "default": false,
-              "description": "When true, /flow:start automatically creates a FlowGoal after the Spec Validation Gate. v3.0 ships default false so /flow:start UX is byte-identical to v2.4.0; teams flip to true after one release cycle of opt-in usage."
+              "x-deprecated": true,
+              "description": "DEPRECATED — superseded by goalCreation. Still accepted for backward compatibility via a read-only migration: true maps to goalCreation 'always', false maps to 'off'. Absence maps to 'auto'. Set goalCreation directly in new configs."
             },
             "stopHookEnforcement": {
               "enum": ["warn", "block", "evaluator-loop"],

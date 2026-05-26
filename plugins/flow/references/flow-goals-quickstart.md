@@ -8,26 +8,24 @@ A 5-minute walkthrough of the v3 runtime layer on a synthetic issue. By the end 
 - A git repository (any one — a scratch repo works)
 - `python3` with `PyYAML` available (`python3 -c 'import yaml'` exits 0)
 
-If you've never run `/flow:start` in this project, the first invocation will prompt you to enable v3 — answer **Enable v3** and the prompt will not fire again.
+As of v3.1, FlowGoals are on by default (`goalCreation: auto`) — there is no onboarding prompt. Running `/flow:start <issue>` on an issue with ≥1 verifiable AC just creates the goal.
 
-## Step 1 — Enable v3 explicitly (skip if you've already onboarded)
+## Step 1 — (Optional) tune goal creation
 
-In an existing project where you skipped the onboarding prompt or you want to opt in without re-running `/flow:start`, write `.claude/settings.flow.json`:
+Goal creation defaults to `auto`, so most projects need no settings at all. To change the policy or enable Stop-hook command execution, write `.claude/settings.flow.json`:
 
 ```json
 {
   "flow": {
     "goals": {
-      "requireGoalForStart": true,
-      "executeVerificationCommands": true
+      "goalCreation": "auto",
+      "executeVerificationCommands": false
     }
   }
 }
 ```
 
-These two flags do the load-bearing work:
-
-- `requireGoalForStart: true` — `/flow:start <issue>` will auto-create a FlowGoal after the Spec Validation Gate passes.
+- `goalCreation` — `auto` (default; create iff ≥1 AC carries a `verification_command`), `always` (create unconditionally; degenerate goals are flagged), or `off` (never auto-create; manual `/flow:goal create` still works). The deprecated `requireGoalForStart` is migrated read-only: `true`→`always`, `false`→`off`.
 - `executeVerificationCommands: true` — when the Stop hook (`flow-goal-stop.sh` / `flow-goal-evaluator.sh`) runs deterministic checks against an active goal, it will execute each AC's `verification_command` rather than reporting `not_executed`. The flag is honored by `bin/flow-run-deterministic-checks.sh` (the hook path); `/flow:goal evaluate` and `Skill(goal-evaluator)` always execute verification commands when present — the flag does not gate that path. Keep `false` (default) for repos where you don't want the Stop hook running arbitrary shell from goal YAMLs; set `true` once you trust the source of `.flow/goals/*.goal.yaml`.
 
 ## Step 2 — Create a synthetic issue
@@ -92,7 +90,7 @@ You'll see a per-AC table and the verdict.
 /flow:goal status
 ```
 
-If lifecycle is `achieved`, the goal is complete. `/flow:pr` and `/flow:merge` from this point require the goal to be `achieved` (with `requireGoalForStart: true`).
+If lifecycle is `achieved`, the goal is complete. When an active goal exists for the branch, `/flow:pr` and `/flow:merge` require it to be `achieved` — the gate is on goal *existence*, so a branch with no goal is not blocked.
 
 ## Common adjustments
 
