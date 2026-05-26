@@ -39,3 +39,45 @@ assert_contains "Recurring failed ACs" "$CONTENT" "AC failure signal documented"
 assert_contains "Stuck-detection hits" "$CONTENT" "stuck signal documented"
 assert_contains "not_executed" "$CONTENT" "not_executed signal documented"
 assert_contains "Path-boundary violations" "$CONTENT" "path violation signal documented"
+
+
+# --- #111 AC-5: /flow:status compact dashboard + deep modes -------------------
+_flow_test_begin "AC-5: status.md documents compact default + --full/--json/--evidence modes"
+CONTENT=$(cat "$STATUS_CMD")
+assert_contains "STATUS_MODE" "$CONTENT" "mode dispatch variable present"
+assert_contains '`compact` (default)' "$CONTENT" "compact is the default mode"
+assert_contains '### `--full`' "$CONTENT" "--full mode documented"
+assert_contains '### `--json`' "$CONTENT" "--json mode documented"
+assert_contains '### `--evidence`' "$CONTENT" "--evidence mode documented"
+assert_contains "Next safe action" "$CONTENT" "compact dashboard includes next-safe-action line"
+assert_contains "v3 not enabled" "$CONTENT" "(v3 not enabled) gating preserved across modes"
+
+# Behavioral: extract the Mode !-block and confirm arg parsing + unknown fallback.
+MODE_BLOCK=$(python3 - "$STATUS_CMD" <<'PY'
+import sys, re
+src = open(sys.argv[1]).read()
+# The first ```! fenced block after the "## Mode" heading.
+after = src.split("## Mode", 1)[1]
+m = re.search(r"```!\n(.*?)\n```", after, re.S)
+sys.stdout.write(m.group(1) if m else "")
+PY
+)
+_run_mode() {  # $1 = ARGUMENTS value
+  local raw="$1"
+  local blk="${MODE_BLOCK//\$\{ARGUMENTS\}/$raw}"
+  blk="${blk//\$ARGUMENTS/$raw}"
+  bash -c "$blk"
+}
+
+_flow_test_begin "AC-5: mode parse — no arg -> compact"
+assert_contains "STATUS_MODE=compact" "$(_run_mode '')" "default (no arg) is compact"
+
+_flow_test_begin "AC-5: mode parse — --full/--json/--evidence map to their modes"
+assert_contains "STATUS_MODE=full" "$(_run_mode '--full')" "--full -> full"
+assert_contains "STATUS_MODE=json" "$(_run_mode '--json')" "--json -> json"
+assert_contains "STATUS_MODE=evidence" "$(_run_mode '--evidence')" "--evidence -> evidence"
+
+_flow_test_begin "AC-5: mode parse — unknown arg falls back to compact (no error)"
+OUT=$(_run_mode '--bogus')
+assert_contains "STATUS_MODE=compact" "$OUT" "unknown arg -> compact"
+assert_contains "STATUS_MODE_NOTE=unknown arg" "$OUT" "unknown arg surfaces a note"
