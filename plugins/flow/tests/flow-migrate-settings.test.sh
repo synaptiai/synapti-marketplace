@@ -99,3 +99,38 @@ D=$(_ms_dir)
 OUT=$(bash "$HELPER" --apply "$D/.claude/nope.json" 2>&1); EXIT=$?
 assert_equal "2" "$EXIT" "exit 2 when file absent"
 assert_contains "not found" "$OUT" "stderr names the missing file"
+
+_flow_test_begin "no flow block ({}) -> MIGRATE=none (else-branch, exit 0)"
+D=$(_ms_dir); F="$D/.claude/settings.flow.json"
+echo '{}' > "$F"
+OUT=$(bash "$HELPER" --apply "$F" 2>&1); EXIT=$?
+assert_equal "0" "$EXIT" "empty object is a clean no-op"
+assert_contains "MIGRATE=none" "$OUT" "nothing to migrate for {}"
+
+_flow_test_begin "flow.goals is a non-object -> MIGRATE=none (guarded else-branch)"
+D=$(_ms_dir); F="$D/.claude/settings.flow.json"
+echo '{"flow":{"goals":true}}' > "$F"
+OUT=$(bash "$HELPER" --apply "$F" 2>&1); EXIT=$?
+assert_equal "0" "$EXIT" "non-object flow.goals does not crash"
+assert_contains "MIGRATE=none" "$OUT" "type guard prevents touching a non-object goals"
+
+_flow_test_begin "top-level non-object JSON ([]) -> exit 2"
+D=$(_ms_dir); F="$D/.claude/settings.flow.json"
+printf '[]' > "$F"
+OUT=$(bash "$HELPER" --apply "$F" 2>&1); EXIT=$?
+assert_equal "2" "$EXIT" "exit 2 on a top-level array"
+assert_contains "not a JSON object" "$OUT" "stderr names the non-object input"
+
+_flow_test_begin "v3-clean file (goalCreation only) -> MIGRATE=none, untouched"
+D=$(_ms_dir); F="$D/.claude/settings.flow.json"
+echo '{"flow":{"goals":{"goalCreation":"always"}}}' > "$F"; BEFORE=$(cat "$F")
+OUT=$(bash "$HELPER" --apply "$F" 2>&1)
+assert_contains "MIGRATE=none" "$OUT" "already-current file is a no-op"
+assert_equal "$BEFORE" "$(cat "$F")" "v3-clean file left byte-identical"
+
+_flow_test_begin "no lock-file residue after a successful --apply"
+D=$(_ms_dir); F="$D/.claude/settings.flow.json"
+echo '{"flow":{"goals":{"requireGoalForStart":true}}}' > "$F"
+bash "$HELPER" --apply "$F" >/dev/null 2>&1
+RESIDUE=$(ls "$D/.claude"/*.lock 2>/dev/null)
+assert_equal "" "$RESIDUE" "the .lock file is cleaned up after apply"

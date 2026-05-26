@@ -43,12 +43,16 @@ mkdir -p .claude
 
 **Ensure `.claude/settings.flow.local.json` is gitignored** (idempotent — adds the line only if missing). Without this, a downstream user creating a personal-pin file as documented in Phase 6 below would commit it accidentally, leaking their machine-local preferences and weakening the project-local override layer:
 
+Also ignore `.claude/*.lock` — `flow-migrate-settings.sh` (and other writers) create a transient `<file>.lock` beside the settings file; the trap removes it, but a hard kill (SIGKILL) could leave one behind, and it must never be committed.
+
 ```bash
-if [ -f .gitignore ] && ! grep -qxF '.claude/settings.flow.local.json' .gitignore; then
-  echo '.claude/settings.flow.local.json' >> .gitignore
-elif [ ! -f .gitignore ]; then
-  echo '.claude/settings.flow.local.json' > .gitignore
-fi
+for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock'; do
+  if [ -f .gitignore ]; then
+    grep -qxF "$IGNORE" .gitignore || echo "$IGNORE" >> .gitignore
+  else
+    echo "$IGNORE" > .gitignore
+  fi
+done
 ```
 
 Flow settings follow the standard Claude Code cascade — `local > project > user > plugin default`. Setup writes the project-shared file, which gives the whole team a baseline. Any user can then override locally via `.claude/settings.flow.local.json` (gitignored), set cross-project preferences in `$HOME/.claude/settings.flow.json`, or rely on the plugin's bundled defaults.
@@ -103,10 +107,10 @@ If the output is `MIGRATE=none` or `MIGRATE=skip`, there is nothing to upgrade �
 > 1. **Upgrade now (Recommended)** — rewrite the committed file in place (atomic; every other key preserved)
 > 2. **Leave as-is** — the read-only migration keeps it working; the deprecated key stays in version control
 
-On **Upgrade now**, apply the rewrite:
+On **Upgrade now**, apply the rewrite. This block re-resolves the helper path inline — shell variables from the detection `!`-block above do NOT persist into a separately-executed `bash` block:
 
 ```bash
-"$MIGRATOR" --apply ".claude/settings.flow.json"
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-migrate-settings.sh" --apply ".claude/settings.flow.json"
 ```
 
 It writes atomically and preserves all other keys. Note the change in the Phase 6 summary so the user reviews the one-line diff before committing.
