@@ -205,8 +205,9 @@ elif active and (not branch_strict or not current_branch):
     # alphabetically-first path). This fires for lenient callers (status/learn
     # run from main, legacy goals without scope.branch), AND for --branch-strict
     # callers when the current branch is UNKNOWN ("" — detached HEAD / CI / not a
-    # repo): with no branch to discriminate on, a single/most-recent active goal
-    # is the only sensible resolution and matches pre-branch-scoping behavior.
+    # repo): with no branch to discriminate on, the most-recently-modified
+    # active goal is the only sensible resolution (a more principled pick than
+    # the pre-branch-scoping scan, which returned the alphabetically-first).
     # --branch-strict only bites when the branch IS known and no goal owns it —
     # that is the case where grabbing a cross-branch goal would be wrong (the
     # gate would false-block; the evaluator would mutate another branch's goal).

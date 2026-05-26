@@ -142,7 +142,13 @@ if [ "$STOP_ACTIVE" = "true" ] && [ -f "$THROTTLE_FILE" ]; then
     ACTIVE_GOAL_HELPER="${PLUGIN_ROOT}/bin/flow-active-goal.sh"
     if [ -x "$ACTIVE_GOAL_HELPER" ]; then
       THROTTLE_GOAL_PATH=$("$ACTIVE_GOAL_HELPER" --path --branch-strict 2>/dev/null)
-      if [ -n "$THROTTLE_GOAL_PATH" ] && [ -f "$THROTTLE_GOAL_PATH" ]; then
+      if [ -z "$THROTTLE_GOAL_PATH" ]; then
+        # No active goal owns the current branch — nothing to attribute the
+        # throttle-block event to. The throttle decision below still fires; only
+        # the per-run event log is skipped. Surface it so the gap is diagnosable
+        # rather than a silent hole in /flow:learn's event history.
+        echo "flow-goal-evaluator: throttle event skipped — no active goal on the current branch" >&2
+      elif [ -f "$THROTTLE_GOAL_PATH" ]; then
         # argv-passing instead of -c with bash interpolation —
         # closes the Python code injection vector where a file with a `'` in
         # the path would inject into the single-quoted Python literal.

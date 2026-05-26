@@ -437,12 +437,28 @@ OUT=$(cd "$DIR" && bash "$HELPER" --id --branch feature/mine --branch-strict 2>/
 assert_equal "0" "$EXIT" "resolves the current-branch goal (exit 0)"
 assert_equal "issue-mine" "$OUT" "--branch-strict returns the current branch's own active goal"
 
-_flow_test_begin "--branch-strict + --allow-terminal: achieved-on-branch resolves; achieved-elsewhere does not"
+_flow_test_begin "--branch-strict + --allow-terminal: achieved-on-branch resolves; cross-branch (active OR achieved) does not"
 DIR=$(_fag_mkdir)
 mkdir -p "$DIR/.flow/goals"
 _fag_write_goal "$DIR/.flow/goals/issue-done-here.goal.yaml" "achieved" "issue-done-here" "feature/mine"
+# An active goal on a different branch must ALSO be suppressed under strict — so
+# querying from feature/elsewhere has both an achieved (mine) and an active
+# (other) goal available, and strict must surface NEITHER.
+_fag_write_goal "$DIR/.flow/goals/issue-active-other.goal.yaml" "active" "issue-active-other" "feature/other"
 OUT=$(cd "$DIR" && bash "$HELPER" --id --allow-terminal --branch-strict --branch feature/mine 2>/dev/null); EXIT=$?
 assert_equal "0" "$EXIT" "achieved goal on current branch resolves under strict+allow-terminal"
 assert_equal "issue-done-here" "$OUT" "returns the current-branch achieved goal"
 EXIT=$(cd "$DIR" && bash "$HELPER" --status --allow-terminal --branch-strict --branch feature/elsewhere >/dev/null 2>&1; echo $?)
-assert_equal "1" "$EXIT" "achieved goal on another branch is not applicable under strict (exit 1)"
+assert_equal "1" "$EXIT" "from a third branch, neither the cross-branch achieved nor active goal is applicable (exit 1)"
+
+_flow_test_begin "--branch-strict with UNKNOWN branch still falls back (CI / detached-HEAD safety valve)"
+# The fixture tmpdir is not a git repo, so `git branch --show-current` fails and
+# the branch is unknown (""). With nothing to discriminate on, --branch-strict
+# must STILL resolve the single active goal (this is the safety valve that keeps
+# the Stop-hook evaluator working in CI / detached HEAD).
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-only.goal.yaml" "active" "issue-only" "feature/other"
+OUT=$(cd "$DIR" && bash "$HELPER" --id --branch-strict 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "unknown branch + strict still resolves (exit 0)"
+assert_equal "issue-only" "$OUT" "falls back to the most-recent active goal when the branch is unknown"
