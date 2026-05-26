@@ -15,7 +15,20 @@
     "teammateTimeout": 300
   },
   "conventions": {
-    "commitTypes": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build", "revert", "improve"],
+    "commitTypes": [
+      "feat",
+      "fix",
+      "docs",
+      "style",
+      "refactor",
+      "test",
+      "chore",
+      "perf",
+      "ci",
+      "build",
+      "revert",
+      "improve"
+    ],
     "branchPatterns": {
       "feature": "feature/issue-{N}-{desc}",
       "fix": "fix/issue-{N}-{desc}",
@@ -26,7 +39,11 @@
     "strategy": "squash",
     "deleteBranch": true,
     "markerTrust": {
-      "allowedAssociations": ["OWNER", "MEMBER", "COLLABORATOR"]
+      "allowedAssociations": [
+        "OWNER",
+        "MEMBER",
+        "COLLABORATOR"
+      ]
     }
   },
   "conflictResolution": {
@@ -45,7 +62,10 @@
   },
   "specFirst": {
     "requireAcceptanceCriteria": true,
-    "allowSpecFreeLabels": ["documentation", "chore"]
+    "allowSpecFreeLabels": [
+      "documentation",
+      "chore"
+    ]
   },
   "verdict": {
     "enabled": true,
@@ -76,14 +96,18 @@
     "enabled": false,
     "screenshotDir": ".screenshots",
     "viewports": [
-      { "name": "desktop", "width": 1280, "height": 720 }
+      {
+        "name": "desktop",
+        "width": 1280,
+        "height": 720
+      }
     ],
     "maxIterations": 3,
     "requireVisualVerification": false
   },
   "flow": {
     "goals": {
-      "requireGoalForStart": true
+      "goalCreation": "always"
     }
   }
 }
