@@ -1,11 +1,13 @@
 # Tests for plugins/flow/bin/flow-active-goal.sh (cycle 13, F1/F2/F3 foundation).
 #
 # Contract:
-#   - Output modes: --path, --id, --status, --json, --ac-summary
+#   - Output modes: --path, --id, --status, --json, --ac-summary, --verifiable-count
+#   - Branch-first selection (#111 AC-4): prefer scope.branch == current branch,
+#     fall back to most-recently-modified active; --branch <name> overrides detection
 #   - Exit 0: active goal found
 #   - Exit 1: no active goal
 #   - Exit 2: infrastructure error (missing python3/PyYAML or symlink rejected)
-#   - Exit 3: degenerate state (multiple active goals)
+#   - Exit 3: degenerate state (>1 active goal on the current branch)
 #   - Symlink defense on .flow/goals/ AND individual goal YAMLs
 
 HELPER="$REPO_ROOT/plugins/flow/bin/flow-active-goal.sh"
@@ -42,7 +44,7 @@ fi
 # (we don't run jsonschema here — only the helper's lifecycle.status check
 # needs to be exercised).
 _fag_write_goal() {
-  local path="$1" status="$2" goal_id="$3"
+  local path="$1" status="$2" goal_id="$3" branch="${4:-feature/test}"
   cat > "$path" <<EOF
 apiVersion: flow.synapti.ai/v1
 kind: FlowGoal
@@ -51,7 +53,7 @@ metadata:
   created_at: "2026-05-21T00:00:00Z"
 scope:
   repo: owner/example
-  branch: feature/test
+  branch: ${branch}
 objective:
   outcome: Test outcome
   acceptance_criteria:
@@ -68,6 +70,42 @@ evaluator:
 lifecycle:
   status: ${status}
 EOF
+}
+
+# Goal fixture with a controllable number of verification_command-carrying ACs,
+# for --verifiable-count and degenerate-marker tests (#111 AC-2).
+_fag_write_goal_vc() {
+  local path="$1" status="$2" goal_id="$3" verifiable="$4" branch="${5:-feature/test}"
+  {
+    cat <<EOF
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: ${goal_id}
+  created_at: "2026-05-21T00:00:00Z"
+scope:
+  repo: owner/example
+  branch: ${branch}
+objective:
+  outcome: Test outcome
+  acceptance_criteria:
+EOF
+    # AC1 always present; carries a verification_command iff verifiable >= 1.
+    echo "    - id: AC1"
+    echo "      text: First criterion"
+    echo "      status: pending"
+    [ "$verifiable" -ge 1 ] && echo "      verification_command: \"bash tests/run.sh\""
+    echo "    - id: AC2"
+    echo "      text: Second criterion"
+    echo "      status: pending"
+    [ "$verifiable" -ge 2 ] && echo "      verification_command: \"npm test\""
+    cat <<EOF
+evaluator:
+  type: hybrid
+lifecycle:
+  status: ${status}
+EOF
+  } > "$path"
 }
 
 # --- Test 1: no .flow/ → exit 1
@@ -125,16 +163,56 @@ _fag_write_goal "$DIR/.flow/goals/issue-1.goal.yaml" "achieved" "issue-1"
 EXIT=$(cd "$DIR" && bash "$HELPER" --status >/dev/null 2>&1; echo $?)
 assert_equal "1" "$EXIT" "exit 1 — only achieved goals exist"
 
-# --- Test 9: degenerate state — 2 active goals → exit 3
-_flow_test_begin "2 active goals → exit 3 (degenerate)"
+# --- Test 9: degenerate state — 2 active goals on the SAME (current) branch → exit 3
+# Branch-first selection (#111 AC-4): degeneracy is now scoped to the current
+# branch, so both fixtures share one branch and we pin the current branch via
+# --branch to exercise the same-branch collision deterministically.
+_flow_test_begin "2 active goals on same branch → exit 3 (degenerate)"
 DIR=$(_fag_mkdir)
 mkdir -p "$DIR/.flow/goals"
-_fag_write_goal "$DIR/.flow/goals/issue-a.goal.yaml" "active" "issue-a"
-_fag_write_goal "$DIR/.flow/goals/issue-b.goal.yaml" "active" "issue-b"
-ERR=$(cd "$DIR" && bash "$HELPER" --status 2>&1 >/dev/null)
-EXIT=$(cd "$DIR" && bash "$HELPER" --status >/dev/null 2>&1; echo $?)
-assert_equal "3" "$EXIT" "exit 3 — degenerate"
+_fag_write_goal "$DIR/.flow/goals/issue-a.goal.yaml" "active" "issue-a" "feature/shared"
+_fag_write_goal "$DIR/.flow/goals/issue-b.goal.yaml" "active" "issue-b" "feature/shared"
+ERR=$(cd "$DIR" && bash "$HELPER" --status --branch feature/shared 2>&1 >/dev/null)
+EXIT=$(cd "$DIR" && bash "$HELPER" --status --branch feature/shared >/dev/null 2>&1; echo $?)
+assert_equal "3" "$EXIT" "exit 3 — degenerate on the current branch"
 assert_contains "degenerate state" "$ERR" "stderr names the degenerate state"
+assert_contains "feature/shared" "$ERR" "stderr names the colliding branch"
+
+# --- Test 9b: 2 active goals on DIFFERENT branches → each resolves its own (exit 0)
+# This is the core AC-4 fix: concurrent goals across branches/worktrees must
+# stop tripping the degenerate-state error.
+_flow_test_begin "2 active goals on different branches each resolve (exit 0)"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-a.goal.yaml" "active" "issue-a" "feature/aaa"
+_fag_write_goal "$DIR/.flow/goals/issue-b.goal.yaml" "active" "issue-b" "feature/bbb"
+OUT_A=$(cd "$DIR" && bash "$HELPER" --id --branch feature/aaa 2>/dev/null); EXIT_A=$?
+OUT_B=$(cd "$DIR" && bash "$HELPER" --id --branch feature/bbb 2>/dev/null); EXIT_B=$?
+assert_equal "0" "$EXIT_A" "branch aaa resolves (exit 0)"
+assert_equal "issue-a" "$OUT_A" "branch aaa returns its own goal"
+assert_equal "0" "$EXIT_B" "branch bbb resolves (exit 0)"
+assert_equal "issue-b" "$OUT_B" "branch bbb returns its own goal"
+
+# --- Test 9c: no goal owns the current branch → fall back to most-recently-modified
+_flow_test_begin "no branch match → fall back to most-recently-modified active"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-old.goal.yaml" "active" "issue-old" "feature/aaa"
+sleep 1
+_fag_write_goal "$DIR/.flow/goals/issue-new.goal.yaml" "active" "issue-new" "feature/bbb"
+OUT=$(cd "$DIR" && bash "$HELPER" --id --branch feature/unrelated 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "fallback resolves (exit 0)"
+assert_equal "issue-new" "$OUT" "fallback returns the most-recently-modified active goal"
+
+# --- Test 9d: --branch requires a value
+_flow_test_begin "--branch without value → exit 2"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-1.goal.yaml" "active" "issue-1"
+ERR=$(cd "$DIR" && bash "$HELPER" --branch 2>&1 >/dev/null)
+EXIT=$(cd "$DIR" && bash "$HELPER" --branch >/dev/null 2>&1; echo $?)
+assert_equal "2" "$EXIT" "exit 2 when --branch has no value"
+assert_contains "--branch requires a value" "$ERR" "stderr names the missing value"
 
 # --- Test 10: symlink at .flow/goals/ is refused
 _flow_test_begin "symlinked .flow/goals/ → exit 2"
@@ -188,3 +266,28 @@ ERR=$(cd "$DIR" && bash "$HELPER" --status --id 2>&1 >/dev/null)
 EXIT=$(cd "$DIR" && bash "$HELPER" --status --id >/dev/null 2>&1; echo $?)
 assert_equal "2" "$EXIT" "exit 2 — only one mode allowed"
 assert_contains "only one mode flag" "$ERR" "stderr names the conflict"
+
+# --- Test 15: --verifiable-count reports total/verifiable (both ACs verifiable)
+_flow_test_begin "--verifiable-count: 2 ACs, 2 verifiable → 2/2"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal_vc "$DIR/.flow/goals/issue-1.goal.yaml" "active" "issue-1" 2
+OUT=$(cd "$DIR" && bash "$HELPER" --verifiable-count 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "exit 0 with active goal"
+assert_equal "2/2" "$OUT" "2 total ACs, 2 carry verification_command"
+
+# --- Test 16: --verifiable-count with one verifiable AC → 2/1
+_flow_test_begin "--verifiable-count: 2 ACs, 1 verifiable → 2/1"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal_vc "$DIR/.flow/goals/issue-1.goal.yaml" "active" "issue-1" 1
+OUT=$(cd "$DIR" && bash "$HELPER" --verifiable-count 2>/dev/null)
+assert_equal "2/1" "$OUT" "1 of 2 ACs carries a verification_command"
+
+# --- Test 17: --verifiable-count degenerate (0 verifiable) → 2/0
+_flow_test_begin "--verifiable-count: 2 ACs, 0 verifiable → 2/0 (degenerate)"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal_vc "$DIR/.flow/goals/issue-1.goal.yaml" "active" "issue-1" 0
+OUT=$(cd "$DIR" && bash "$HELPER" --verifiable-count 2>/dev/null)
+assert_equal "2/0" "$OUT" "no AC carries a verification_command — degenerate"
