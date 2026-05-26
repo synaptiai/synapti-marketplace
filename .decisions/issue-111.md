@@ -253,3 +253,11 @@ issue-120's goal separately; not required by this plan.
 <!-- auto-log: 2026-05-26 17:02 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
 
 <!-- auto-log: 2026-05-26 17:06 Write /tmp/pr-123-review-c2.md -->
+
+<!-- auto-log: 2026-05-26 17:19 Write /tmp/pr-123-review-c3.md -->
+
+<!-- auto-log: 2026-05-26 17:26 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/setup.md -->
+
+<!-- auto-log: 2026-05-26 17:26 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/setup.md -->
+
+<!-- auto-log: 2026-05-26 17:29 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/CHANGELOG.md -->
