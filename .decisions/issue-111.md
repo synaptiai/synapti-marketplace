@@ -241,3 +241,13 @@ issue-120's goal separately; not required by this plan.
 <!-- auto-log: 2026-05-26 15:56 Edit /Users/danielbentes/synapti-marketplace/README.md -->
 
 <!-- auto-log: 2026-05-26 15:56 commit "docs(flow): strip remaining finding/AC refs from comments + fix main README count" -->
+
+<!-- auto-log: 2026-05-26 16:37 commit "docs(flow): comment-discipline sweep across the plugin" -->
+
+<!-- auto-log: 2026-05-26 16:50 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/project_flow_test_suite.md -->
+
+<!-- auto-log: 2026-05-26 16:50 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/MEMORY.md -->
+
+<!-- auto-log: 2026-05-26 17:02 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
+
+<!-- auto-log: 2026-05-26 17:02 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
