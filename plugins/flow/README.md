@@ -14,7 +14,7 @@ Flow v3 introduces a **runtime layer** at `.flow/` on top of the existing skill 
 
 Flow does NOT invoke native Claude Code `/goal` or `/loop` — those are session-only built-ins and not exposed to plugins. Flow implements its own file-backed goal layer and uses Stop hooks for post-turn enforcement. The `/flow:watch` command generates a `/loop` prompt file the user invokes manually.
 
-**Default behavior is preserved**: `flow.goals.requireGoalForStart` defaults to `false`, so `/flow:start` does NOT auto-create goals. The onboarding prompt fires on the first `/flow:start` in a project that has no `.flow/` directory AND whose `.claude/settings.flow.json` (if present) lacks a `flow.goals` block. v2 projects whose settings file already contains a `flow.goals` block (any contents) skip the prompt — only projects that have never answered the v3 question see it. See the CHANGELOG for the full settings matrix.
+**Goals are invisible-by-default**: `flow.goals.goalCreation` defaults to `auto`, so `/flow:start` records a FlowGoal whenever the issue has ≥1 acceptance criterion carrying a `verification_command` — no consent prompt (the v3.0 onboarding `AskUserQuestion` was retired in v3.1). Issues with zero verifiable ACs (e.g. spec-free `documentation`/`chore`) create no goal, silently. Set `goalCreation: off` to suppress auto-creation, or `flow.goals.enabled: false` to disable the feature. The deprecated `requireGoalForStart` is migrated read-only (`true`→`always`, `false`→`off`). See `references/migration-v2-to-v3.md`.
 
 ### Get started with v3
 

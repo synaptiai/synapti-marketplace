@@ -2,42 +2,47 @@
 
 flow v3.0 is **purely additive**. Existing v2.x projects upgrade with zero behavioral change unless you opt in. This guide walks through enabling v3 features one at a time.
 
-## What "no change" means
+## What changes when you upgrade (v3.1)
 
-After upgrading to v3.0 without editing settings:
+v3.1 makes FlowGoals **invisible-by-default**: `flow.goals.goalCreation` defaults to `auto`, so goal/run/evidence artifacts are recorded for you rather than gated behind an opt-in. After upgrading without editing settings:
 
-- `/flow:start <issue>` runs exactly as in v2.x — no goal is created, no `.flow/` directory appears, no settings are written.
-- The Stop hook fires but exits silently (default mode is `warn`, and `warn` is itself silent when no active FlowGoal exists).
-- `/flow:status`, `/flow:learn`, `/flow:pr`, `/flow:merge`, `/flow:review`, `/flow:address` behave identically to v2.4.
+- `/flow:start <issue>` creates `.flow/goals/issue-<N>.goal.yaml` whenever the Spec Validation Gate passes with **≥1 acceptance criterion carrying a `verification_command`**. An issue that yields zero verifiable ACs (e.g. a spec-free `documentation`/`chore` issue) creates **no** goal, silently. All artifacts are local under `.flow/` — nothing is pushed, posted, or sent.
+- `/flow:status` surfaces the active goal/run; `/flow:pr` and `/flow:merge` gate on goal **existence** — a branch whose goal isn't `achieved` is held back, but a branch with **no** goal is not blocked.
+- The Stop hook fires but stays silent in the default `warn` mode unless an active goal lacks evidence.
+- `/flow:learn`, `/flow:review`, `/flow:address` behave as before (review/address record a FlowRun but no user-facing goal).
 
-The new v3 commands (`/flow:goal`, `/flow:resume`, `/flow:workflow`, `/flow:trigger`, `/flow:watch`, `/flow:run`) are available but only have effect when their feature flags are enabled.
+There is **no consent prompt** — the v3.0 first-run onboarding `AskUserQuestion` was retired in v3.1. Writing local `.flow/` artifacts needs no confirmation.
 
-### One v2-visible behavior change: the first-run onboarding prompt
+### Migrating the old `requireGoalForStart` flag
 
-There is one path where v3.0 changes behavior for a v2 project without an explicit opt-in: the **first `/flow:start` after upgrade** may emit a one-time `AskUserQuestion` consent prompt asking whether to enable v3. The prompt fires only when **both** signals say "the v3 question has never been answered":
+If your `.claude/settings.flow.json` set the v3.0 `flow.goals.requireGoalForStart` flag, it is honored via a **read-only** migration — your file is never rewritten:
 
-1. No `.flow/` directory exists at the repo root, AND
-2. `.claude/settings.flow.json` is either absent OR present without a `flow.goals` block.
+| v3.0 setting | v3.1 behavior |
+|---|---|
+| `requireGoalForStart: true` | `goalCreation: always` |
+| `requireGoalForStart: false` | `goalCreation: off` |
+| absent | `goalCreation: auto` (default) |
 
-v2 projects that already committed a `.claude/settings.flow.json` with a `flow.goals` block (any contents — even `{}`) skip the prompt. Projects that have `.flow/` artifacts also skip (clearly already using v3).
+To adopt the new key explicitly, replace `requireGoalForStart` with `goalCreation` in your settings.
 
-If you don't want to see the prompt at all, pre-write `.claude/settings.flow.json` with `{"flow": {"goals": {"requireGoalForStart": false, "executeVerificationCommands": false}}}` and the gate stays quiet on the first invocation. Answering "Skip — keep v2 behavior" persists the same JSON automatically.
+### Opting out
 
-## Enable v3 in four optional steps
+- `goalCreation: off` — `/flow:start` won't auto-create goals (manual `/flow:goal create` still works); the pr/merge goal gate is disabled.
+- `flow.goals.enabled: false` — disables the whole FlowGoal feature (Stop hook fast-paths, `/flow:goal` disabled).
+
+## Tune goal behavior in optional steps
 
 Each step is independent. Adopt them in the order below or skip ones that don't fit your workflow.
 
-### Step 1 — Enable goals (recommended starting point)
+### Step 1 — Goals (on by default)
 
-Adds durable completion contracts to `/flow:start`. After the Spec Validation Gate passes, a `.flow/goals/issue-<N>.goal.yaml` is created with `lifecycle.status: active`. `/flow:pr` and `/flow:merge` will require the goal to be `achieved` before proceeding (override path: six-field escalation).
-
-Add to `.claude/settings.flow.json` (create the file if it doesn't exist):
+Goals are created automatically under `goalCreation: auto`. To require a goal on **every** `/flow:start` regardless of verifiable ACs, set `goalCreation: always`:
 
 ```json
 {
   "flow": {
     "goals": {
-      "requireGoalForStart": true,
+      "goalCreation": "always",
       "executeVerificationCommands": true
     }
   }
@@ -46,7 +51,7 @@ Add to `.claude/settings.flow.json` (create the file if it doesn't exist):
 
 `executeVerificationCommands: true` lets `/flow:goal evaluate` auto-run each AC's `verification_command`. Without it, evaluator returns `not_executed` and you must capture evidence manually.
 
-Run `/flow:goal status` to confirm v3 is on. Walk through `flow-goals-quickstart.md` for a worked example.
+Run `/flow:goal status` to confirm goal state. Walk through `flow-goals-quickstart.md` for a worked example.
 
 ### Step 2 — Enable active Stop-hook enforcement (optional)
 

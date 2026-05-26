@@ -16,25 +16,30 @@ A FlowGoal is a durable, schema-validated YAML file at `.flow/goals/<id>.goal.ya
 
 The full schema lives at `plugins/flow/schemas/v1/goal.schema.json`.
 
-## Enabling v3 in your project
+## FlowGoals are on by default (v3.1)
 
-Flow v3 ships dormant by default — the feature flags default to `false` so v2 projects upgrade with zero behavioral change. To turn on FlowGoals for `/flow:start` and `/flow:pr` / `/flow:merge`, add to `.claude/settings.flow.json`:
+As of v3.1, `/flow:start` records FlowGoals automatically — `flow.goals.goalCreation` defaults to `auto`. There is no opt-in prompt; goals, runs, and evidence are written to `.flow/` behind the scenes and surfaced through `/flow:status`. You interact with outcomes, not the runtime.
+
+`goalCreation` is a 3-state setting in `.claude/settings.flow.json`:
 
 ```json
 {
   "flow": {
     "goals": {
-      "requireGoalForStart": true,
-      "executeVerificationCommands": true
+      "goalCreation": "auto",
+      "executeVerificationCommands": false
     }
   }
 }
 ```
 
-- `requireGoalForStart: true` — `/flow:start <issue>` auto-creates `.flow/goals/issue-<N>.goal.yaml` after the Spec Validation Gate.
+- `goalCreation: auto` (default) — `/flow:start <issue>` creates `.flow/goals/issue-<N>.goal.yaml` **iff** the Spec Validation Gate passed with ≥1 acceptance criterion carrying a `verification_command` (labels do not veto). An issue that yields zero verifiable ACs (e.g. a spec-free `documentation`/`chore` issue) creates **no** goal, silently.
+- `goalCreation: always` — create a goal unconditionally; a degenerate goal (no verifiable ACs) is allowed but flagged in the compact summary.
+- `goalCreation: off` — never auto-create; manual `/flow:goal create` still works.
+- `flow.goals.enabled: false` — disables the whole feature (Stop hook fast-paths, `/flow:goal` disabled). Distinct from `goalCreation: off`, which keeps the feature on and only suppresses auto-creation.
 - `executeVerificationCommands: true` — lets the Stop hook's deterministic-checks runner execute each AC's `verification_command` rather than reporting `not_executed`. Governs only the Stop hook path (`bin/flow-run-deterministic-checks.sh`); `/flow:goal evaluate` and `Skill(goal-evaluator)` execute verification commands when present regardless. Set `true` only when you trust the source of `.flow/goals/*.goal.yaml` (Stop hook fires on every turn — running unvetted commands every turn is a hostile-fork attack surface).
 
-`/flow:start` will also prompt you the first time you run it in a project that has neither `.claude/settings.flow.json` nor `.flow/` — answer **Enable v3** and the same flags are written automatically.
+> **Upgrading from the v3.0 `requireGoalForStart` flag?** It is mapped read-only — `true` → `always`, `false` → `off`, absent → `auto` — and your settings file is never rewritten. See `migration-v2-to-v3.md`.
 
 See [`flow-goals-quickstart.md`](flow-goals-quickstart.md) for a 5-minute walkthrough on a synthetic issue, and [`migration-v2-to-v3.md`](migration-v2-to-v3.md) for the step-by-step v2 → v3 opt-in across all four feature areas (goals, Stop hook, workflows, triggers).
 
@@ -121,7 +126,7 @@ All settings live under `flow.goals.*` and resolve via `bin/cascade-resolve.sh` 
 |---|---|---|
 | `flow.runtime.enabled` | `true` | Master switch for `.flow/` runtime layer |
 | `flow.goals.enabled` | `true` | Master switch for FlowGoal feature |
-| `flow.goals.requireGoalForStart` | `false` | If `true`, `/flow:start` auto-creates a goal after Spec Validation Gate |
+| `flow.goals.goalCreation` | `auto` | `auto` (create iff ≥1 verifiable AC) \| `always` \| `off`. Replaces the deprecated `requireGoalForStart` (migrated read-only: `true`→`always`, `false`→`off`) |
 | `flow.goals.stopHookEnforcement` | `warn` | `warn \| block \| evaluator-loop` |
 | `flow.goals.failAfterStuckTurns` | `3` | evaluator-loop fails goal after N turns of unchanged pass-set |
 | `flow.goals.judge.model` | `haiku` | Judge subprocess model |
@@ -155,7 +160,7 @@ If your needs require any of the above, FlowGoal is the wrong primitive — esca
 
 ## Compose with other flow features
 
-- **`/flow:start <issue>`** — when `requireGoalForStart: true`, creates `.flow/goals/issue-<N>.goal.yaml` after Spec Validation Gate. Lifecycle stays `active` through Phase 4 (CODE, VERIFY); `verdict-judge` PASS transitions to `achieved`.
+- **`/flow:start <issue>`** — under `goalCreation: auto` (default), creates `.flow/goals/issue-<N>.goal.yaml` after the Spec Validation Gate **iff** ≥1 AC carries a `verification_command`. Lifecycle stays `active` through Phase 4 (CODE, VERIFY); `verdict-judge` PASS transitions to `achieved`.
 - **`/flow:review <PR>`** — creates a `pr-<N>-review.goal.yaml` with review-checklist ACs.
 - **`/flow:address <PR>`** — creates a `pr-<N>-address.goal.yaml` with one AC per unresolved finding.
 - **`/flow:debug`** — Goal with `outcome: "The reported failure is reproduced, root-caused, and a fix is verified."` and ACs derived from the bug hypothesis.

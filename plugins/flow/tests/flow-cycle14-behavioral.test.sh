@@ -220,14 +220,15 @@ else
 fi
 
 
-# --- F1 — pr.md FlowGoal gate handles all 5 states (ok, missing, degenerate, unavailable, disabled)
-_flow_test_begin "F1 — pr.md gate distinguishes block subkinds (missing vs degenerate vs unavailable)"
+# --- F1 — pr.md FlowGoal gate handles all states (#111 D-GATE: gate on existence,
+# so no-goal is STATE=none/GATE=pass rather than a blocking STATE=missing)
+_flow_test_begin "F1 — pr.md gate distinguishes states (none vs degenerate vs unavailable)"
 PR_CMD="$REPO_ROOT/plugins/flow/commands/pr.md"
 CONTENT=$(cat "$PR_CMD")
-assert_contains "STATE=missing" "$CONTENT" "missing state documented"
+assert_contains "STATE=none" "$CONTENT" "no-goal state (gate not applicable) documented"
 assert_contains "STATE=degenerate" "$CONTENT" "degenerate state documented"
 assert_contains "STATE=unavailable" "$CONTENT" "unavailable state documented"
-assert_contains "STATE=disabled" "$CONTENT" "disabled state (v2 mode) documented"
+assert_contains "STATE=disabled" "$CONTENT" "disabled state (enabled:false / goalCreation:off) documented"
 
 
 # --- F8 — throttle and stuck events both have their own emit sites

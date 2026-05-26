@@ -15,10 +15,11 @@ if [ ! -f "$PR_CMD" ]; then
 else
   CONTENT=$(cat "$PR_CMD")
   assert_contains "### FlowGoal State" "$CONTENT" "Phase 1 section heading present"
-  assert_contains 'flow.goals.requireGoalForStart' "$CONTENT" "settings key gated"
+  assert_contains 'flow.goals.goalCreation' "$CONTENT" "migration-aware goalCreation resolution (#111 AC-1)"
   assert_contains "flow-active-goal.sh" "$CONTENT" "uses the centralized helper"
   assert_contains "GATE=pass" "$CONTENT" "pass sentinel emitted"
   assert_contains "GATE=block" "$CONTENT" "block sentinel emitted"
+  assert_contains "STATE=none" "$CONTENT" "no-goal state is gate-not-applicable (#111 D-GATE: gate on existence)"
 fi
 
 _flow_test_begin "F1 — /flow:pr Phase 4 step 7a uses AskUserQuestion on gate block"
@@ -36,7 +37,8 @@ else
   assert_contains "### FlowGoal Gate" "$CONTENT" "merge.md Phase 1 gate section present"
   assert_contains "FLOW_GOAL_GATE_STATE" "$CONTENT" "gate state sentinel emitted"
   assert_contains "flow-active-goal.sh" "$CONTENT" "uses centralized helper"
-  assert_contains "fail closed" "$CONTENT" "behavior documented as fail-closed"
+  assert_contains 'flow.goals.goalCreation' "$CONTENT" "migration-aware goalCreation resolution (#111 AC-1)"
+  assert_contains "gate not applicable" "$CONTENT" "no-goal merge is NOT blocked (#111 D-GATE: gate on existence)"
 fi
 
 _flow_test_begin "F1 — /flow:merge BLOCKED display includes FlowGoal row"

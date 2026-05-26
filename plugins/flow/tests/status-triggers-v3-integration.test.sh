@@ -38,8 +38,11 @@ TR=$(jq -r '.flow.triggers.enabled' "$SETTINGS")
 assert_equal "true" "$WF" "flow.workflows.enabled is true"
 assert_equal "true" "$TR" "flow.triggers.enabled is true"
 
-_flow_test_begin "goal-creation default NOT flipped here (owned by the UX layer)"
-# The FlowRun integration must NOT introduce a binary requireGoalForStart:true
-# default — that migration belongs to the UX layer. Assert the default stays false.
-RGS=$(jq -r '.flow.goals.requireGoalForStart' "$SETTINGS")
-assert_equal "false" "$RGS" "requireGoalForStart default left false (not flipped by this work)"
+_flow_test_begin "goalCreation default is auto (set by the #111 UX layer)"
+# #111 AC-1 retires the binary requireGoalForStart in favor of the 3-state
+# goalCreation (default auto). The legacy key is migrated read-only and must no
+# longer appear as a settings default.
+GC=$(jq -r '.flow.goals.goalCreation' "$SETTINGS")
+assert_equal "auto" "$GC" "goalCreation default is auto"
+RGS=$(jq -r '.flow.goals.requireGoalForStart // "absent"' "$SETTINGS")
+assert_equal "absent" "$RGS" "legacy requireGoalForStart removed from settings default"

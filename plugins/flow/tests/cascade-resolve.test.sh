@@ -209,3 +209,54 @@ EXIT=$?
 ERR=$(cat "$STDERR_TMP")
 assert_exit 2 "$EXIT" "exit 2 without --default"
 assert_contains "jq not installed" "$ERR" "stderr WARN about missing jq"
+
+# --- Compound migration expression (#111 AC-1) ───────────────────────────────
+# cascade-resolve passes any jq through, but the 3-state goalCreation migration
+# relies on a compound if/elif/else-null expression that was previously untested.
+# The `else null` (not "auto") is load-bearing: a source carrying NEITHER key
+# must yield null so the cascade falls through instead of short-circuiting.
+MIG='.flow.goals.goalCreation // (if .flow.goals.requireGoalForStart == true then "always" elif .flow.goals.requireGoalForStart == false then "off" else null end)'
+
+_flow_test_begin "migration expr: requireGoalForStart:true -> always"
+DIR=$(_make_scratch mig-true)
+echo '{}' > "$DIR/plugins/flow/settings.json"
+echo '{"flow":{"goals":{"requireGoalForStart":true}}}' > "$DIR/.claude/settings.flow.json"
+OUT=$(cd "$DIR" && HOME="$DIR/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default auto "$MIG" 2>/dev/null)
+assert_equal "always" "$OUT" "legacy true maps to always"
+
+_flow_test_begin "migration expr: requireGoalForStart:false -> off"
+DIR=$(_make_scratch mig-false)
+echo '{}' > "$DIR/plugins/flow/settings.json"
+echo '{"flow":{"goals":{"requireGoalForStart":false}}}' > "$DIR/.claude/settings.flow.json"
+OUT=$(cd "$DIR" && HOME="$DIR/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default auto "$MIG" 2>/dev/null)
+assert_equal "off" "$OUT" "legacy false maps to off"
+
+_flow_test_begin "migration expr: no key anywhere -> auto (cascade default)"
+DIR=$(_make_scratch mig-none)
+echo '{}' > "$DIR/plugins/flow/settings.json"
+OUT=$(cd "$DIR" && HOME="$DIR/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default auto "$MIG" 2>/dev/null)
+assert_equal "auto" "$OUT" "absent everywhere -> auto"
+
+_flow_test_begin "migration expr: explicit goalCreation wins"
+DIR=$(_make_scratch mig-explicit)
+echo '{}' > "$DIR/plugins/flow/settings.json"
+echo '{"flow":{"goals":{"goalCreation":"always","requireGoalForStart":false}}}' > "$DIR/.claude/settings.flow.json"
+OUT=$(cd "$DIR" && HOME="$DIR/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default auto "$MIG" 2>/dev/null)
+assert_equal "always" "$OUT" "goalCreation overrides legacy key in same source"
+
+_flow_test_begin "migration expr: PRECEDENCE-LEAK GUARD — unrelated local file does not mask project requireGoalForStart"
+DIR=$(_make_scratch mig-leak)
+echo '{}' > "$DIR/plugins/flow/settings.json"
+echo '{"flow":{"goals":{"requireGoalForStart":true}}}' > "$DIR/.claude/settings.flow.json"
+# Highest-precedence local file with NO goals key (e.g. an unrelated agentTeams override).
+echo '{"agentTeams":false}' > "$DIR/.claude/settings.flow.local.json"
+OUT=$(cd "$DIR" && HOME="$DIR/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default auto "$MIG" 2>/dev/null)
+assert_equal "always" "$OUT" "else-null lets the neither-key local file fall through to project (a buggy else-\"auto\" would mask it as auto)"
+
+_flow_test_begin "migration expr: explicit local goalCreation:off correctly wins over project legacy true"
+DIR=$(_make_scratch mig-localwins)
+echo '{}' > "$DIR/plugins/flow/settings.json"
+echo '{"flow":{"goals":{"requireGoalForStart":true}}}' > "$DIR/.claude/settings.flow.json"
+echo '{"flow":{"goals":{"goalCreation":"off"}}}' > "$DIR/.claude/settings.flow.local.json"
+OUT=$(cd "$DIR" && HOME="$DIR/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default auto "$MIG" 2>/dev/null)
+assert_equal "off" "$OUT" "a real local goalCreation still wins (precedence preserved)"
