@@ -7,6 +7,12 @@ artifacts:
   by: flow-start-interview
   mode: lock-the-plan-only
   status: awaiting-implementation
+- type: review-cycle
+  captured_at: '2026-05-26T13:14:59Z'
+  cycle: 1
+  path: B
+  findings_count: 1
+  pr: 123
 ---
 # Issue #111 — v3.1 UX layer (invisible-by-default runtime)
 
@@ -205,3 +211,27 @@ issue-120's goal separately; not required by this plan.
 <!-- auto-log: 2026-05-26 15:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/resume.md -->
 
 <!-- auto-log: 2026-05-26 15:13 commit "fix(flow): resume unlinked-detection handles git-quoted paths (PR review F1)" -->
+
+<!-- auto-log: 2026-05-26 15:14 Write /tmp/pr-111-body.md -->
+
+<!-- auto-log: 2026-05-26 15:34 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
+
+<!-- auto-log: 2026-05-26 15:34 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
+
+<!-- auto-log: 2026-05-26 15:34 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
+
+<!-- auto-log: 2026-05-26 15:35 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
+
+<!-- auto-log: 2026-05-26 15:36 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-active-goal.test.sh -->
+
+<!-- auto-log: 2026-05-26 15:37 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/resume.md -->
+
+<!-- auto-log: 2026-05-26 15:37 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/resume.md -->
+
+<!-- auto-log: 2026-05-26 15:39 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-resume-unlinked.test.sh -->
+
+<!-- auto-log: 2026-05-26 15:39 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-05-26 15:40 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/pr.md -->
+
+<!-- auto-log: 2026-05-26 15:46 commit "fix(flow): address self-review findings on the v3.1 UX layer" -->
