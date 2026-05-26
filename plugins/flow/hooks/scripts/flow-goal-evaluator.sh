@@ -141,7 +141,7 @@ if [ "$STOP_ACTIVE" = "true" ] && [ -f "$THROTTLE_FILE" ]; then
     # throttle decision is the primary outcome.
     ACTIVE_GOAL_HELPER="${PLUGIN_ROOT}/bin/flow-active-goal.sh"
     if [ -x "$ACTIVE_GOAL_HELPER" ]; then
-      THROTTLE_GOAL_PATH=$("$ACTIVE_GOAL_HELPER" --path 2>/dev/null)
+      THROTTLE_GOAL_PATH=$("$ACTIVE_GOAL_HELPER" --path --branch-strict 2>/dev/null)
       if [ -n "$THROTTLE_GOAL_PATH" ] && [ -f "$THROTTLE_GOAL_PATH" ]; then
         # argv-passing instead of -c with bash interpolation —
         # closes the Python code injection vector where a file with a `'` in
@@ -192,23 +192,17 @@ PYEOF
   fi
 fi
 
-# Find active goal (same logic as flow-goal-stop.sh).
-ACTIVE_GOAL=$(python3 - <<'PYEOF' 2>/dev/null
-import os, glob, sys, yaml
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
-if not os.path.isdir(".flow/goals"):
-    sys.exit(0)
-for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        if data.get("lifecycle", {}).get("status") == "active":
-            print(path)
-            sys.exit(0)
-    except Exception:
-        continue
-PYEOF
-)
+# Find the active goal that owns the current branch. Delegate to the
+# centralized branch-aware resolver (--branch-strict) so that, when goals are
+# active across multiple branches, the evaluator acts on THIS branch's goal and
+# never a stale goal on another branch. Empty result (approve) when the helper
+# is unavailable — the Stop hook must not block the user on infra failure.
+GOAL_HELPER="${PLUGIN_ROOT}/bin/flow-active-goal.sh"
+if [ -x "$GOAL_HELPER" ]; then
+  ACTIVE_GOAL=$("$GOAL_HELPER" --path --branch-strict 2>/dev/null)
+else
+  ACTIVE_GOAL=""
+fi
 [ -z "$ACTIVE_GOAL" ] && { echo '{"decision":"approve","reason":"no active flow goal"}'; exit 0; }
 
 # Budget check. Read turns_evaluated and max_iterations; transition to

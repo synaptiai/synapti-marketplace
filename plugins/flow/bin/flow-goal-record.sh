@@ -118,8 +118,8 @@ LIFECYCLE_TRANSITIONS = {
 }
 TERMINAL_STATES = {"achieved", "failed", "cancelled"}
 
-# when jsonschema is unavailable,
-# emit a stderr WARN dedup'd PER DAY via a sentinel file. The original
+# When jsonschema is unavailable, emit a stderr WARN dedup'd PER DAY via a
+# sentinel file. The original
 # implementation used a module-level Python sentinel that reset on
 # every bash invocation (because each bash call spawns a fresh Python), so
 # the WARN fired on every /flow:goal command — noise that drowned out real

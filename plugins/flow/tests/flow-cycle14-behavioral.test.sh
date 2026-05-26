@@ -3,10 +3,8 @@
 #
 # Covered:
 #   - workflow-validation migration shim accepts legacy `requires` field
-#   - _check_stuck increments counter on unchanged delta, resets on
-#     progress/regress, transitions goal to failed at threshold, writes
-#     the stuck-detection-fired event, and fails honestly when the transition
-#     write fails
+#   - _check_stuck counter increments on unchanged delta and resets on
+#     progress/regress; symlink guard rejects a counter-file swap
 #   - goal-evaluator SKILL.md documents the proposed_transition contract
 #     (skill does NOT write terminal status; caller persists)
 
@@ -21,7 +19,7 @@ trap _c14_cleanup EXIT
 
 _c14_mktmp() {
   local out
-  out=$(mktemp -d -t flow-.tests.XXXXXX 2>/dev/null)
+  out=$(mktemp -d -t flow-behavioral.tests.XXXXXX 2>/dev/null)
   [ -z "$out" ] && { echo "mktemp failed" >&2; exit 2; }
   C14_CLEANUP_PATHS+=("$out")
   printf '%s' "$out"
@@ -278,7 +276,7 @@ DIR=$(_c14_mktmp)
 mkdir -p "$DIR/.claude"
 echo '{"flow":{"workflows":{"enabled":false}}}' > "$DIR/.claude/settings.flow.json"
 RESULT=$(cd "$DIR" && "$REPO_ROOT/plugins/flow/bin/cascade-resolve.sh" --default "default-fallback" '.flow.workflows.enabled')
-assert_equal "false" "$RESULT" "bare expression returns 'false' (was always 'true' before )"
+assert_equal "false" "$RESULT" "bare expression returns 'false' (was always 'true' before this fix)"
 
 # Compare against // empty which still swallows false (legacy callers)
 _flow_test_begin "cascade-resolve.sh + // empty still falls through on false (backward-compat for non-boolean callers)"

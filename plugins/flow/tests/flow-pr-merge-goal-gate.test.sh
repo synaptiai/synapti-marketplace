@@ -50,10 +50,15 @@ assert_contains "/flow:goal evaluate" "$CONTENT" "remediation references goal ev
 # --- gates pass --allow-terminal so an achieved goal is observable -----------
 _flow_test_begin "merge.md FlowGoal gate queries the helper with --allow-terminal"
 CONTENT=$(cat "$MERGE_CMD")
-assert_contains -- "--status --allow-terminal" "$CONTENT" "merge gate --status uses --allow-terminal"
-assert_contains -- "--id --allow-terminal" "$CONTENT" "merge gate --id uses --allow-terminal"
+assert_contains "--status --allow-terminal" "$CONTENT" "merge gate --status uses --allow-terminal"
+assert_contains "--id --allow-terminal" "$CONTENT" "merge gate --id uses --allow-terminal"
 
 _flow_test_begin "pr.md FlowGoal state queries the helper with --allow-terminal"
 CONTENT=$(cat "$PR_CMD")
-assert_contains -- "--status --allow-terminal" "$CONTENT" "pr gate --status uses --allow-terminal"
-assert_contains -- "--id --allow-terminal" "$CONTENT" "pr gate --id uses --allow-terminal"
+assert_contains "--status --allow-terminal" "$CONTENT" "pr gate --status uses --allow-terminal"
+assert_contains "--id --allow-terminal" "$CONTENT" "pr gate --id uses --allow-terminal"
+
+# --- gate callers resolve branch-strict (no cross-branch false-block) ----------
+_flow_test_begin "pr.md + merge.md gate resolve with --branch-strict"
+assert_contains "--branch-strict" "$(cat "$PR_CMD")" "pr gate passes --branch-strict to the resolver"
+assert_contains "--branch-strict" "$(cat "$MERGE_CMD")" "merge gate passes --branch-strict to the resolver"

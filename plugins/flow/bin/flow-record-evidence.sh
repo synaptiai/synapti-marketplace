@@ -121,8 +121,7 @@ try:
         print(f"flow-record-evidence.sh: evidence does not match schema: {e.message}", file=sys.stderr)
         sys.exit(1)
 except ImportError:
-    # mirror the per-day
-    # WARN from flow-goal-record.sh and flow-record-activity.sh.
+    # Mirror the per-day WARN from flow-goal-record.sh and flow-record-activity.sh.
     import datetime, tempfile, getpass
     today = datetime.date.today().isoformat()
     try:

@@ -345,14 +345,15 @@ else
     echo "FLOW_GOAL_GATE_STATE=blocked"
     echo "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh missing or non-executable"
   else
-    # --allow-terminal: surface a goal that already reached `achieved` so
-    # the success branch below is reachable. Without it the helper filters
-    # achieved goals out (active-only), exit 1, and an achieved goal would be
-    # mislabeled "no active FlowGoal" instead of passing the gate.
-    GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status --allow-terminal 2>/dev/null); GOAL_EXIT=$?
+    # --allow-terminal: surface a goal that already reached `achieved` so the
+    # success branch below is reachable (without it the helper is active-only,
+    # exits 1, and an achieved goal is mislabeled "no active FlowGoal").
+    # --branch-strict: resolve ONLY a goal owning the current branch — never a
+    # stale active goal on another branch, which would falsely block this merge.
+    GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status --allow-terminal --branch-strict 2>/dev/null); GOAL_EXIT=$?
     case "$GOAL_EXIT" in
       0)
-        GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id --allow-terminal 2>/dev/null)
+        GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id --allow-terminal --branch-strict 2>/dev/null)
         echo "FLOW_GOAL_ID=$GOAL_ID"
         echo "FLOW_GOAL_LIFECYCLE=$GOAL_STATUS"
         if [ "$GOAL_STATUS" = "achieved" ]; then

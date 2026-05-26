@@ -31,6 +31,15 @@
 #                      window. Active goals on the current branch still take
 #                      precedence. Stop hook + /flow:status omit the flag to keep
 #                      their narrow active-only semantics.
+#   --branch-strict    when the current branch is KNOWN and owns no goal, exit 1
+#                      (not applicable) instead of falling back to a goal on
+#                      another branch. Used by callers that must act on the
+#                      current branch's goal and never a stale goal elsewhere
+#                      (the merge/pr gate, the Stop-hook evaluator). When the
+#                      branch is UNKNOWN (detached HEAD / CI / not a repo) there
+#                      is nothing to discriminate on, so it still falls back to
+#                      the most-recent active goal. Lenient callers (status/learn)
+#                      omit the flag.
 #
 # Exit codes:
 #   0  active goal found; output on stdout
@@ -48,6 +57,7 @@ MODE="--status"
 SAW_MODE=0
 OVERRIDE_BRANCH=""
 ALLOW_TERMINAL=0
+BRANCH_STRICT=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -66,8 +76,12 @@ while [ $# -gt 0 ]; do
       ALLOW_TERMINAL=1
       shift
       ;;
+    --branch-strict)
+      BRANCH_STRICT=1
+      shift
+      ;;
     -h|--help)
-      sed -n '2,40p' "$0" | sed 's/^# \?//'
+      sed -n '2,51p' "$0" | sed 's/^# \?//'
       exit 0
       ;;
     *)
@@ -92,7 +106,7 @@ if [ -L ".flow/goals" ]; then
   exit 2
 fi
 
-python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" <<'PYEOF'
+python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" "$BRANCH_STRICT" <<'PYEOF'
 import sys, glob, os, json, subprocess
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 import yaml
@@ -100,6 +114,7 @@ import yaml
 mode = sys.argv[1]
 override_branch = sys.argv[2] if len(sys.argv) > 2 else ""
 allow_terminal = (sys.argv[3] if len(sys.argv) > 3 else "0") == "1"
+branch_strict = (sys.argv[4] if len(sys.argv) > 4 else "0") == "1"
 
 if not os.path.isdir(".flow/goals"):
     sys.exit(1)
@@ -185,14 +200,21 @@ elif terminal_here:
     # Most-recent wins; equal mtime -> alphabetically-first path (sorted glob
     # order), deterministic across re-runs.
     chosen = max(terminal_here, key=lambda t: t[3])
-elif active:
-    # No goal owns the current branch: fall back to the most-recently-modified
-    # ACTIVE goal so single-goal callers (status/learn run from main, or legacy
-    # goals without scope.branch) still resolve. Equal mtime -> alphabetically-
-    # first path.
+elif active and (not branch_strict or not current_branch):
+    # Fall back to the most-recently-modified ACTIVE goal (equal mtime ->
+    # alphabetically-first path). This fires for lenient callers (status/learn
+    # run from main, legacy goals without scope.branch), AND for --branch-strict
+    # callers when the current branch is UNKNOWN ("" — detached HEAD / CI / not a
+    # repo): with no branch to discriminate on, a single/most-recent active goal
+    # is the only sensible resolution and matches pre-branch-scoping behavior.
+    # --branch-strict only bites when the branch IS known and no goal owns it —
+    # that is the case where grabbing a cross-branch goal would be wrong (the
+    # gate would false-block; the evaluator would mutate another branch's goal).
     chosen = max(active, key=lambda t: t[3])
 else:
-    # Only terminal goals exist and none own the current branch -> not applicable.
+    # Either only terminal goals exist and none own the current branch, or
+    # --branch-strict with a KNOWN current branch that owns no goal -> the
+    # caller must treat this as "no applicable goal for this branch".
     sys.exit(1)
 
 path, data = chosen[0], chosen[1]

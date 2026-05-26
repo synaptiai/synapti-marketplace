@@ -414,3 +414,35 @@ EOF
 OUT=$(cd "$DIR" && bash "$HELPER" --id --branch feature/anything 2>/dev/null); EXIT=$?
 assert_equal "0" "$EXIT" "legacy goal (no scope.branch) still resolves via mtime fallback"
 assert_equal "issue-legacy" "$OUT" "the active legacy goal is returned"
+
+# --- --branch-strict: gate/evaluator callers never resolve a cross-branch goal -
+_flow_test_begin "--branch-strict: no goal on current branch + active goal elsewhere -> exit 1"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-elsewhere.goal.yaml" "active" "issue-elsewhere" "feature/other"
+# Lenient (default) resolves the cross-branch goal via the mtime fallback...
+OUT=$(cd "$DIR" && bash "$HELPER" --id --branch feature/mine 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "lenient mode falls back cross-branch (exit 0)"
+assert_equal "issue-elsewhere" "$OUT" "lenient mode returns the cross-branch active goal"
+# ...but --branch-strict refuses it: this branch owns no goal -> not applicable.
+EXIT=$(cd "$DIR" && bash "$HELPER" --status --branch feature/mine --branch-strict >/dev/null 2>&1; echo $?)
+assert_equal "1" "$EXIT" "--branch-strict suppresses the cross-branch fallback (exit 1)"
+
+_flow_test_begin "--branch-strict: active goal owning the current branch still resolves"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-mine.goal.yaml" "active" "issue-mine" "feature/mine"
+_fag_write_goal "$DIR/.flow/goals/issue-other.goal.yaml" "active" "issue-other" "feature/other"
+OUT=$(cd "$DIR" && bash "$HELPER" --id --branch feature/mine --branch-strict 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "resolves the current-branch goal (exit 0)"
+assert_equal "issue-mine" "$OUT" "--branch-strict returns the current branch's own active goal"
+
+_flow_test_begin "--branch-strict + --allow-terminal: achieved-on-branch resolves; achieved-elsewhere does not"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-done-here.goal.yaml" "achieved" "issue-done-here" "feature/mine"
+OUT=$(cd "$DIR" && bash "$HELPER" --id --allow-terminal --branch-strict --branch feature/mine 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "achieved goal on current branch resolves under strict+allow-terminal"
+assert_equal "issue-done-here" "$OUT" "returns the current-branch achieved goal"
+EXIT=$(cd "$DIR" && bash "$HELPER" --status --allow-terminal --branch-strict --branch feature/elsewhere >/dev/null 2>&1; echo $?)
+assert_equal "1" "$EXIT" "achieved goal on another branch is not applicable under strict (exit 1)"
