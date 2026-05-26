@@ -291,3 +291,52 @@ mkdir -p "$DIR/.flow/goals"
 _fag_write_goal_vc "$DIR/.flow/goals/issue-1.goal.yaml" "active" "issue-1" 0
 OUT=$(cd "$DIR" && bash "$HELPER" --verifiable-count 2>/dev/null)
 assert_equal "2/0" "$OUT" "no AC carries a verification_command — degenerate"
+
+# --- #122: --allow-terminal surfaces achieved goals for the merge/pr gate ------
+_flow_test_begin "#122: achieved goal is hidden by default (active-only) → exit 1"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-72.goal.yaml" "achieved" "issue-72"
+EXIT=$(cd "$DIR" && bash "$HELPER" --status >/dev/null 2>&1; echo $?)
+assert_equal "1" "$EXIT" "achieved goal not surfaced without --allow-terminal (Stop hook / status semantics preserved)"
+
+_flow_test_begin "#122: --allow-terminal surfaces the achieved goal (exit 0, status achieved)"
+OUT=$(cd "$DIR" && bash "$HELPER" --status --allow-terminal 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "achieved goal surfaced with --allow-terminal"
+assert_equal "achieved" "$OUT" "status reads 'achieved' — makes the gate's achieved-branch reachable"
+OUT=$(cd "$DIR" && bash "$HELPER" --id --allow-terminal 2>/dev/null)
+assert_equal "issue-72" "$OUT" "--id resolves the achieved goal"
+
+_flow_test_begin "#122: active goals take precedence over achieved under --allow-terminal"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-done.goal.yaml" "achieved" "issue-done" "feature/x"
+_fag_write_goal "$DIR/.flow/goals/issue-live.goal.yaml" "active" "issue-live" "feature/x"
+OUT=$(cd "$DIR" && bash "$HELPER" --id --allow-terminal --branch feature/x 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "resolves (exit 0)"
+assert_equal "issue-live" "$OUT" "active goal wins over achieved fallback"
+
+_flow_test_begin "#122: achieved fallback is branch-first too"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-a.goal.yaml" "achieved" "issue-a" "feature/aaa"
+_fag_write_goal "$DIR/.flow/goals/issue-b.goal.yaml" "achieved" "issue-b" "feature/bbb"
+OUT=$(cd "$DIR" && bash "$HELPER" --id --allow-terminal --branch feature/bbb 2>/dev/null)
+assert_equal "issue-b" "$OUT" "achieved goal on the current branch is preferred"
+
+_flow_test_begin "#122: multiple achieved goals on one branch do NOT trip exit 3 (history is normal)"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-1.goal.yaml" "achieved" "issue-1" "feature/x"
+sleep 1
+_fag_write_goal "$DIR/.flow/goals/issue-2.goal.yaml" "achieved" "issue-2" "feature/x"
+OUT=$(cd "$DIR" && bash "$HELPER" --id --allow-terminal --branch feature/x 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "no degenerate error for multiple achieved on a branch"
+assert_equal "issue-2" "$OUT" "most-recently-modified achieved goal wins"
+
+_flow_test_begin "#122: failed/cancelled goals are NOT surfaced even with --allow-terminal"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-x.goal.yaml" "cancelled" "issue-x"
+EXIT=$(cd "$DIR" && bash "$HELPER" --status --allow-terminal >/dev/null 2>&1; echo $?)
+assert_equal "1" "$EXIT" "only 'achieved' is a gate-relevant terminal state; cancelled stays out of window"

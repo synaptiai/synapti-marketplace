@@ -15,6 +15,10 @@
 - **Docs reframe + count fix (AC-7)** — README leads with work-first framing; the six runtime primitives (`goal`, `workflow`, `trigger`, `run`, `resume`, `watch`) moved to an "Advanced / runtime internals" section, with `/flow:goal create` reframed as the `--manual` path. Fixed `COMMANDS (17)` → `(23)` and added a test that keeps the README count in sync with the actual command-file count.
 - **`/flow:review` + `/flow:address` record a FlowRun only, no user-facing FlowGoal (AC-3)** — shipped in #114.
 
+### Fixed: FlowGoal gate could never observe an `achieved` goal (#122)
+
+`bin/flow-active-goal.sh` filtered goals to `active`-only, so a goal that had correctly transitioned to terminal `achieved` returned exit 1 (no active goal) and the gate's `if [ "$GOAL_STATUS" = "achieved" ]` success branch in `merge.md`/`pr.md` was unreachable dead code. Combined with the #111 gate-on-existence change this no longer hard-blocked the merge, but it mislabeled an achieved goal as "no active FlowGoal — gate not applicable," losing the audit trail. Added an opt-in `--allow-terminal` flag to the helper (surfaces `achieved` goals as a branch-first fallback, only when no active goal exists, never trips the degenerate exit 3) and wired it into both gate invocations in `merge.md` and `pr.md`. The Stop hook and `/flow:status` keep their narrow active-only semantics by omitting the flag. Closes the test-coverage gap with an end-to-end `achieved`-path test in `flow-active-goal.test.sh`.
+
 ## 3.1.2 (2026-05-26)
 
 ### Fixed: `${ARGUMENTS%% *}` in command `!`-blocks expanded to empty (#121)

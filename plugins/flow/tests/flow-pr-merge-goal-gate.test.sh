@@ -46,3 +46,14 @@ CONTENT=$(cat "$MERGE_CMD")
 assert_contains "Merge Prerequisites Not Met" "$CONTENT" "Updated BLOCKED template heading"
 assert_contains "| FlowGoal" "$CONTENT" "BLOCKED table has FlowGoal row"
 assert_contains "/flow:goal evaluate" "$CONTENT" "remediation references goal evaluate"
+
+# --- #122: gates pass --allow-terminal so an achieved goal is observable -------
+_flow_test_begin "#122: merge.md FlowGoal gate queries the helper with --allow-terminal"
+CONTENT=$(cat "$MERGE_CMD")
+assert_contains -- "--status --allow-terminal" "$CONTENT" "merge gate --status uses --allow-terminal"
+assert_contains -- "--id --allow-terminal" "$CONTENT" "merge gate --id uses --allow-terminal"
+
+_flow_test_begin "#122: pr.md FlowGoal state queries the helper with --allow-terminal"
+CONTENT=$(cat "$PR_CMD")
+assert_contains -- "--status --allow-terminal" "$CONTENT" "pr gate --status uses --allow-terminal"
+assert_contains -- "--id --allow-terminal" "$CONTENT" "pr gate --id uses --allow-terminal"

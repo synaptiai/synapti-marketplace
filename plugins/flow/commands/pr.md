@@ -136,10 +136,12 @@ else
       echo "STATE=unavailable"
       echo "REASON=flow-active-goal.sh missing or non-executable"
     else
-      GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status 2>/dev/null); GOAL_EXIT=$?
+      # --allow-terminal (#122): surface an already-`achieved` goal so the
+      # GATE=pass branch below is reachable (the helper is active-only otherwise).
+      GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status --allow-terminal 2>/dev/null); GOAL_EXIT=$?
       case "$GOAL_EXIT" in
         0)
-          GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id 2>/dev/null)
+          GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id --allow-terminal 2>/dev/null)
           echo "STATE=ok"
           echo "GOAL_ID=$GOAL_ID"
           echo "GOAL_LIFECYCLE=$GOAL_STATUS"

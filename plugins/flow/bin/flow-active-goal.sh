@@ -23,6 +23,12 @@
 #   active goal share the current branch — concurrent goals on *different*
 #   branches/worktrees each resolve cleanly.
 #   --branch <name>    override the detected current branch (test-only / scripting)
+#   --allow-terminal   also consider terminal `achieved` goals as a fallback when
+#                      no active goal exists, so the merge/pr gate can observe a
+#                      goal that already reached `achieved` (#122). Active goals
+#                      always take precedence; the achieved fallback never trips
+#                      exit 3. Stop hook + /flow:status omit the flag to keep
+#                      their narrow active-only semantics.
 #
 # Exit codes:
 #   0  active goal found; output on stdout
@@ -39,6 +45,7 @@ export PYTHONSAFEPATH=1
 MODE="--status"
 SAW_MODE=0
 OVERRIDE_BRANCH=""
+ALLOW_TERMINAL=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -53,8 +60,12 @@ while [ $# -gt 0 ]; do
       OVERRIDE_BRANCH="$2"
       shift 2
       ;;
+    --allow-terminal)
+      ALLOW_TERMINAL=1
+      shift
+      ;;
     -h|--help)
-      sed -n '2,34p' "$0" | sed 's/^# \?//'
+      sed -n '2,40p' "$0" | sed 's/^# \?//'
       exit 0
       ;;
     *)
@@ -79,13 +90,14 @@ if [ -L ".flow/goals" ]; then
   exit 2
 fi
 
-python3 - "$MODE" "${OVERRIDE_BRANCH:-}" <<'PYEOF'
+python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" <<'PYEOF'
 import sys, glob, os, json, subprocess
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 import yaml
 
 mode = sys.argv[1]
 override_branch = sys.argv[2] if len(sys.argv) > 2 else ""
+allow_terminal = (sys.argv[3] if len(sys.argv) > 3 else "0") == "1"
 
 if not os.path.isdir(".flow/goals"):
     sys.exit(1)
@@ -107,6 +119,10 @@ if not current_branch:
         current_branch = ""
 
 active = []
+# Terminal-achieved goals, collected only when --allow-terminal is set. Used as
+# a fallback so the merge/pr gate can observe a goal that already reached
+# `achieved` (#122) — active goals always take precedence over this set.
+terminal = []
 for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
     if os.path.islink(path):
         print(f"flow-active-goal.sh: refusing — {path} is a symlink", file=sys.stderr)
@@ -114,41 +130,52 @@ for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
-        if (data.get("lifecycle") or {}).get("status") == "active":
-            branch = (data.get("scope") or {}).get("branch") or ""
-            try:
-                mtime = os.path.getmtime(path)
-            except OSError:
-                mtime = 0.0
+        status = (data.get("lifecycle") or {}).get("status")
+        branch = (data.get("scope") or {}).get("branch") or ""
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            mtime = 0.0
+        if status == "active":
             active.append((path, data, branch, mtime))
+        elif allow_terminal and status == "achieved":
+            terminal.append((path, data, branch, mtime))
     except Exception:
         # Tolerate unparseable goals — they would block lookup of a sibling
         # legitimate active goal. The Stop hook + status subcommand follow
         # the same tolerate-and-continue pattern.
         continue
 
-if not active:
+if not active and not terminal:
     sys.exit(1)
 
 # Branch-first selection (#111 AC-4): prefer goals whose scope.branch matches
-# the current branch. Exit 3 (degenerate) fires ONLY when >1 active goal share
+# the current branch. Exit 3 (degenerate) fires ONLY when >1 ACTIVE goal share
 # the current branch — concurrent goals on different branches no longer collide.
-candidates = [t for t in active if current_branch and t[2] == current_branch]
-if candidates:
-    if len(candidates) > 1:
-        paths = [t[0] for t in candidates]
-        print(
-            f"flow-active-goal.sh: degenerate state — {len(candidates)} active goals "
-            f"on branch '{current_branch}': {', '.join(paths)}",
-            file=sys.stderr,
-        )
-        sys.exit(3)
-    path, data = candidates[0][0], candidates[0][1]
+if active:
+    candidates = [t for t in active if current_branch and t[2] == current_branch]
+    if candidates:
+        if len(candidates) > 1:
+            paths = [t[0] for t in candidates]
+            print(
+                f"flow-active-goal.sh: degenerate state — {len(candidates)} active goals "
+                f"on branch '{current_branch}': {', '.join(paths)}",
+                file=sys.stderr,
+            )
+            sys.exit(3)
+        path, data = candidates[0][0], candidates[0][1]
+    else:
+        # No active goal owns the current branch (or the branch is unknown /
+        # legacy goals predate scope.branch): fall back to the most-recently-
+        # modified active goal so single-goal callers (e.g. run from main) resolve.
+        best = max(active, key=lambda t: t[3])
+        path, data = best[0], best[1]
 else:
-    # No active goal owns the current branch (or the branch is unknown / legacy
-    # goals predate scope.branch): fall back to the most-recently-modified
-    # active goal so single-goal callers (e.g. run from main) still resolve.
-    best = max(active, key=lambda t: t[3])
+    # No active goal anywhere — fall back to a terminal `achieved` goal (#122,
+    # only reachable under --allow-terminal). Branch-first, then most-recent;
+    # never degenerate (multiple achieved goals on a branch is normal history).
+    t_candidates = [t for t in terminal if current_branch and t[2] == current_branch] or terminal
+    best = max(t_candidates, key=lambda t: t[3])
     path, data = best[0], best[1]
 
 if mode == "--path":
