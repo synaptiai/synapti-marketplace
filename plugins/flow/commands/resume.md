@@ -92,6 +92,41 @@ Read the last 5 lines of `events.jsonl` for additional context.
 
 Read the linked goal (if any): `.flow/goals/<metadata.goal>.goal.yaml`. Show AC pass/fail state.
 
+### Step 3.5: Detect unlinked working-tree changes (#111 AC-6)
+
+Flow records its own artifacts under `.flow/` and the decision journal under `.decisions/`. **Any other tracked change in the working tree is "unlinked"** — most likely unrelated human work that `/flow:resume` must not silently fold into a continuation.
+
+```!
+# Treat any porcelain entry whose path is NOT under .flow/ or .decisions/ as
+# unlinked. Conservative by design (#111 AC-6 chose the simple definition over
+# diffing against the run's recorded paths): better to ask once too often than
+# to absorb a human's unrelated edits into a resumed workflow.
+UNLINKED=$(git status --porcelain 2>/dev/null | awk '
+  { path = substr($0, 4) }
+  { n = index(path, " -> "); if (n) path = substr(path, n + 4) }   # rename: take destination
+  path !~ /^\.flow\// && path !~ /^\.decisions\// { print path }
+')
+if [ -n "$UNLINKED" ]; then
+  echo "FLOW_RESUME_UNLINKED=1"
+  printf '%s\n' "$UNLINKED" | sed 's/^/  /'
+else
+  echo "FLOW_RESUME_UNLINKED=0"
+fi
+true
+```
+
+When `FLOW_RESUME_UNLINKED=1`, you MUST surface the listed paths and **ask before suggesting continuation** — do not jump to the Step 5 next-action suggestion. Use `AskUserQuestion`:
+
+> Uncommitted changes exist that aren't linked to FlowRun `<RUN_ID>` (they're outside `.flow/` and `.decisions/`):
+> `<the listed paths>`
+>
+> Options:
+> 1. These belong to this run — continue (proceed to the resume suggestion)
+> 2. These are unrelated work — I'll handle them separately (stop here; do not suggest continuation)
+> 3. Cancel
+
+Remain informational-only: even on Option 1, `/flow:resume` never auto-executes the next phase — it only unlocks the Step 5 suggestion. When `FLOW_RESUME_UNLINKED=0`, proceed normally.
+
 ### Step 4: Format the resume report
 
 ```
@@ -144,6 +179,7 @@ If the user explicitly wants to act on the resume rather than just inspect, offe
 ## Anti-patterns
 
 - ❌ Auto-executing the next phase. /flow:resume is informational; the user decides whether to continue.
+- ❌ Suggesting continuation when unlinked working-tree changes exist (changes outside `.flow/` and `.decisions/`) without asking first (#111 AC-6). Flow must not absorb unrelated human work into a resumed run.
 - ❌ Resuming a `blocked` run without surfacing the blocker. If the blocker is "needs CI to pass," running the next phase before CI passes will fail again.
 - ❌ Resuming a run whose linked goal is `cancelled` or `failed`. Surface the goal's terminal state and recommend creating a new goal.
 - ❌ Reading `events.jsonl` lines without tolerating partial reads. Per the helper's design, the last line may be incomplete if a writer was killed mid-line.
@@ -160,6 +196,7 @@ If the user explicitly wants to act on the resume rather than just inspect, offe
 | Action | Tier | Behavior |
 |---|---|---|
 | Read `.flow/runs/*/run.yaml` to identify active/blocked runs | 1 | Autonomous, read-only |
+| Read `git status --porcelain` to detect unlinked working-tree changes | 1 | Autonomous, read-only |
 | Read linked `.flow/goals/<id>.goal.yaml` for goal context | 1 | Autonomous, read-only |
 | Read last N lines of `events.jsonl` for recent activity | 1 | Autonomous, read-only |
 | Format and print resume report | 1 | Autonomous, output-only |
