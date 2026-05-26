@@ -81,3 +81,17 @@ _extract_run_block > "$WORK2/block.sh"
 OUT2=$(cd "$WORK2" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ARGUMENTS="110" bash block.sh 2>/dev/null)
 assert_contains "FLOW_RUN_STATE=skip" "$OUT2" "runtime disabled → skip"
 assert_not_contains "FLOW_RUN_STATE=create" "$OUT2" "does not create when disabled"
+
+
+# --- #111 AC-2: compact runtime summary replaces the FlowGoal-created dump ----
+_flow_test_begin "AC-2: start.md emits a compact runtime summary, not a FlowGoal-created dump"
+START_CMD="$REPO_ROOT/plugins/flow/commands/start.md"
+SC=$(cat "$START_CMD")
+assert_not_contains "FlowGoal created: <GOAL_ID> at <GOAL_PATH>" "$SC" "old per-artifact dump line removed"
+assert_contains "Runtime summary" "$SC" "compact runtime summary section present"
+assert_contains "I'll work until the goal is achieved, blocked, or needs your decision" "$SC" "one-line working statement present"
+assert_contains "verifiable-count" "$SC" "summary sources AC counts from flow-active-goal.sh --verifiable-count"
+
+_flow_test_begin "AC-2: degenerate goals are flagged, never shown as a clean active line"
+assert_contains "degenerate / needs-attention" "$SC" "degenerate marker documented"
+assert_contains "omit the Goal line entirely" "$SC" "skipped-goal path omits the goal line (no phantom goal)"

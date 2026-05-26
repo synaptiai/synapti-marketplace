@@ -395,10 +395,7 @@ For `FLOW_GOAL_STATE=create`:
      fi
    fi
    ```
-4. Only after verify passes, emit:
-   ```
-   FlowGoal created: <GOAL_ID> at <GOAL_PATH> (status: active)
-   ```
+4. Only after verify passes, proceed to create the FlowRun (next section). **Do not** emit a per-artifact `FlowGoal created:` line here — the compact runtime summary that supersedes it is emitted once both the goal and run exist (see **Runtime summary** below, #111 AC-2).
 
 ### FlowRun (v3 runtime)
 
@@ -447,6 +444,28 @@ if [ -n "$ISSUE_NUM" ]; then
     --metadata workflow=start-issue --metadata run_id="$RUN_ID" --metadata status=active
 fi
 ```
+
+### Runtime summary (#111 AC-2)
+
+Once the goal (if any) and the FlowRun exist, emit **one** compact runtime summary **in place of** any per-artifact `FlowGoal created:` line. Do not dump the goal/run YAML — "invisible" means low-ceremony, not hidden-state. The summary has exactly these lines:
+
+- **Goal**: `<GOAL_ID>` (`<lifecycle status>`) — `<verifiable>` of `<total>` ACs carry a `verification_command`
+- **Workflow**: `start-issue`
+- **Run**: `<RUN_ID>` (the value emitted by the FlowRun block)
+- **Branch**: `<current branch>` (`git branch --show-current`)
+- _I'll work until the goal is achieved, blocked, or needs your decision._
+
+Compute the AC counts with the shared helper (it prints `<total>/<verifiable>`):
+
+```bash
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-active-goal.sh" --verifiable-count
+```
+
+**Truthfulness gate (load-bearing):** if the goal is degenerate — `<total>` is `0`, or `<verifiable>` is `0` — or the goal is unevaluated, the Goal line MUST be flagged, never shown as a clean `active`:
+
+- **Goal**: `<GOAL_ID>` ⚠ **degenerate / needs-attention** — `0` verifiable ACs; this goal cannot auto-evaluate.
+
+A degenerate goal can only arise under `goalCreation: always` or a manual `/flow:goal create` — `auto` never creates one (it requires ≥1 verifiable AC). When goal creation was **skipped** (`auto` with zero verifiable ACs, or `off`): omit the Goal line entirely and show only Workflow / Run / Branch — never present a skipped goal as if one exists.
 
 Phase order: `preflight → explore → plan → code → verify`. At each subsequent phase boundary (PLAN, CODE, VERIFY), invoke `Skill(run-state-management)` to write a FlowActivity record and advance `state.current_phase`. After the Phase 4 verdict settles, transition the FlowRun: `state.status: completed` when the verdict is PASS (and update the `workflow-run` artifact to `status=completed`); `state.status: blocked` (with `blocked_reason`) when the verdict is FAIL or the session ends mid-workflow, so `/flow:resume` can pick it up.
 
