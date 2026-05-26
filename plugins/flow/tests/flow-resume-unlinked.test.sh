@@ -67,3 +67,14 @@ _flow_test_begin "AC-6: clean tree -> UNLINKED=0"
 D=$(_new_repo)
 OUT=$(cd "$D" && bash -c "$UNLINKED_BLOCK")
 assert_contains "FLOW_RESUME_UNLINKED=0" "$OUT" "clean tree is not unlinked"
+
+_flow_test_begin "AC-6 (F1): special-char/non-ASCII .flow path is still excluded (quotePath robustness)"
+D=$(_new_repo)
+# git quotes non-ASCII paths under default core.quotePath; the detector must
+# still recognize the .flow/ prefix (core.quotePath=false + unquote) and a
+# matching unrelated path must still be flagged.
+( cd "$D" && mkdir -p ".flow/runs" && echo run > ".flow/runs/café.yaml" && echo x > "src/café.txt" )
+OUT=$(cd "$D" && bash -c "$UNLINKED_BLOCK")
+assert_contains "FLOW_RESUME_UNLINKED=1" "$OUT" "the unrelated non-ASCII file is flagged"
+assert_contains "src/café.txt" "$OUT" "unrelated non-ASCII path listed"
+assert_not_contains ".flow/runs/café.yaml" "$OUT" "non-ASCII .flow path excluded despite git quoting"

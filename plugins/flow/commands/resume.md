@@ -101,9 +101,10 @@ Flow records its own artifacts under `.flow/` and the decision journal under `.d
 # unlinked. Conservative by design (#111 AC-6 chose the simple definition over
 # diffing against the run's recorded paths): better to ask once too often than
 # to absorb a human's unrelated edits into a resumed workflow.
-UNLINKED=$(git status --porcelain 2>/dev/null | awk '
+UNLINKED=$(git -c core.quotePath=false status --porcelain 2>/dev/null | awk '
   { path = substr($0, 4) }
   { n = index(path, " -> "); if (n) path = substr(path, n + 4) }   # rename: take destination
+  { sub(/^"/, "", path); sub(/"$/, "", path) }                     # unquote special-char paths
   path !~ /^\.flow\// && path !~ /^\.decisions\// { print path }
 ')
 if [ -n "$UNLINKED" ]; then
