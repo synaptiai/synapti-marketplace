@@ -1,7 +1,7 @@
 # Tests for the v3 runtime integration — FlowRun wiring in commands/start.md.
 #
-# FlowGoal creation in start.md already exists (gated on requireGoalForStart)
-# and is covered elsewhere. This file covers only the NEW FlowRun layer:
+# FlowGoal creation in start.md (gated on flow.goals.goalCreation, #111 AC-1)
+# is covered elsewhere. This file covers the FlowRun layer + the AC-2 summary:
 #   - start.md creates a FlowRun at entry (workflow=start-issue), linked to the
 #     FlowGoal, gated by flow.runtime.enabled, delegating to run-state-management.
 #   - It emits a workflow-run journal artifact (start is issue-scoped).

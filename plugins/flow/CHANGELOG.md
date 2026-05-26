@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### v3.1 UX layer — invisible-by-default runtime (#111)
+
+"User intent in, runtime artifacts out." Goals/runs/evidence are now managed for you rather than gated behind opt-in.
+
+- **Conditional-auto goal creation (AC-1)** — replaced the binary `flow.goals.requireGoalForStart` with a 3-state `flow.goals.goalCreation: auto | always | off` (default `auto`). `auto` creates a FlowGoal iff the Spec Validation Gate passed with ≥1 acceptance criterion carrying a `verification_command` (labels do not veto; zero-verifiable/spec-free issues skip silently). `always` creates unconditionally; `off` never auto-creates (manual `/flow:goal create` still works). Read-only migration: `requireGoalForStart: true`→`always`, `false`→`off`, absent→`auto` (settings files are never rewritten). The Phase 0.5 onboarding `AskUserQuestion` and the `set_flow_goals` helper are retired.
+- **Compact runtime summary (AC-2)** — `/flow:start` replaces the `FlowGoal created: …` dump with a compact Goal/Workflow/Run/Branch summary. A degenerate goal (0 ACs, or 0 ACs carrying a `verification_command`) is flagged `⚠ degenerate / needs-attention`, never shown as a clean `active` line; a skipped goal omits the goal line entirely.
+- **Gate on goal existence (AC-1 D-GATE)** — `/flow:pr` and `/flow:merge` now block only when an active goal exists and isn't `achieved`; a branch with **no** goal is no longer blocked (the prior exit-1 fail-closed is removed), preserving v2 merge UX for default installs. The gate is disabled under `goalCreation: off` or `goals.enabled: false`.
+- **Branch-first active-goal detection (AC-4)** — `bin/flow-active-goal.sh` resolves the active goal branch-first (`scope.branch == current branch`, falling back to most-recently-modified active). Exit 3 (degenerate) now fires only when >1 active goal share the current branch, so concurrent goals on different branches/worktrees stop colliding. Adds a test-only `--branch` override and a `--verifiable-count` mode.
+- **`/flow:status` compact dashboard + deep modes (AC-5)** — default output is a 5-line operational dashboard; `--full`, `--json`, and `--evidence` modes added (bare-`$ARGUMENTS`-first parse; unknown arg → compact fallback). `(v3 not enabled)` gating preserved for v2 users.
+- **`/flow:resume` conservatism (AC-6)** — detects uncommitted changes outside `.flow/` and `.decisions/` and asks before suggesting continuation, so a resumed run never silently absorbs unrelated work. Remains informational-only.
+- **Docs reframe + count fix (AC-7)** — README leads with work-first framing; the six runtime primitives (`goal`, `workflow`, `trigger`, `run`, `resume`, `watch`) moved to an "Advanced / runtime internals" section, with `/flow:goal create` reframed as the `--manual` path. Fixed `COMMANDS (17)` → `(23)` and added a test that keeps the README count in sync with the actual command-file count.
+- **`/flow:review` + `/flow:address` record a FlowRun only, no user-facing FlowGoal (AC-3)** — shipped in #114.
+
 ## 3.1.2 (2026-05-26)
 
 ### Fixed: `${ARGUMENTS%% *}` in command `!`-blocks expanded to empty (#121)
