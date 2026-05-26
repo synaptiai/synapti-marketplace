@@ -261,3 +261,23 @@ issue-120's goal separately; not required by this plan.
 <!-- auto-log: 2026-05-26 17:26 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/setup.md -->
 
 <!-- auto-log: 2026-05-26 17:29 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/CHANGELOG.md -->
+
+<!-- auto-log: 2026-05-26 17:29 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-migrate-settings.sh -->
+
+<!-- auto-log: 2026-05-26 17:30 commit "fix(flow): flow-migrate-settings writes its tmpfile in the target dir (atomic rename)" -->
+
+<!-- auto-log: 2026-05-26 17:40 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-migrate-settings.sh -->
+
+<!-- auto-log: 2026-05-26 17:40 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-migrate-settings.sh -->
+
+<!-- auto-log: 2026-05-26 17:40 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-migrate-settings.sh -->
+
+<!-- auto-log: 2026-05-26 17:40 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-migrate-settings.sh -->
+
+<!-- auto-log: 2026-05-26 17:40 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-migrate-settings.sh -->
+
+<!-- auto-log: 2026-05-26 17:41 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/setup.md -->
+
+<!-- auto-log: 2026-05-26 17:42 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-setup-migrate.test.sh -->
+
+<!-- auto-log: 2026-05-26 17:44 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/setup.md -->
