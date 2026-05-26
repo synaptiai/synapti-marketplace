@@ -20,10 +20,10 @@
 
 COMMANDS_DIR="$REPO_ROOT/plugins/flow/commands"
 SKILLS_DIR="$REPO_ROOT/plugins/flow/skills"
-# Floor matches the current count of command files (17 as of this writing).
-# A drop below this is either a real deletion (update the floor in the same
-# PR) or a path resolution bug (find and fix). Either way: fail loudly.
-FILE_COUNT_FLOOR=15
+# Floor sits just under the current count of command files (23 as of this
+# writing). A drop below this is either a real deletion (update the floor in the
+# same PR) or a path resolution bug (find and fix). Either way: fail loudly.
+FILE_COUNT_FLOOR=20
 
 # Strip bash-style quoted spans from a body of text. Used by the $ARGUMENTS
 # lint to ignore safely-quoted occurrences. Removes "..." and '...' on a

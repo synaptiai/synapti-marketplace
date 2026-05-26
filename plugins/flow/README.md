@@ -177,7 +177,8 @@ AGENTS (8)
   ├── integration-verifier (integration validation)
   └── verdict-judge (independent acceptance criteria evaluation)
 
-COMMANDS (17)
+COMMANDS (23)
+  Work / intent (17) — the commands you drive:
   ├── flow (universal dispatcher)
   ├── start, commit, pr, issue
   ├── review, address
@@ -185,6 +186,8 @@ COMMANDS (17)
   ├── status, learn
   ├── setup, explain
   └── brainstorm, debug, design
+  Runtime / admin (6) — inspect & debug the layer Flow manages for you:
+  └── goal, workflow, trigger, run, resume, watch
 
 HOOKS (8 scripts)
   ├── Safety: block-force-push, block-destructive, block-secrets
@@ -274,6 +277,10 @@ Per-command tier tables make the safety boundary explicit at the point of use. R
 
 ## Commands
 
+**You work in outcomes; Flow manages the runtime.** `/flow:start` creates a goal, selects a workflow, records evidence, and prevents premature completion — you inspect it with `/flow:status`, you don't manage it by hand. Reach for the intent commands below; the runtime primitives (`goal`, `workflow`, `trigger`, `run`, `resume`, `watch`) are admin/debug surface documented under [Advanced / runtime internals](#advanced--runtime-internals).
+
+### Work (intent) commands
+
 | Command | Purpose |
 |---------|---------|
 | `/flow:start <issue>` | Assign issue, create branch, decompose tasks, implement |
@@ -291,6 +298,19 @@ Per-command tier tables make the safety boundary explicit at the point of use. R
 | `/flow:brainstorm [topic]` | Explore approaches before implementation |
 | `/flow:debug [error]` | Structured debugging with root cause analysis |
 | `/flow:design [feature]` | Architecture discussion and design validation |
+
+### Advanced / runtime internals
+
+These commands expose the v3 runtime layer Flow normally manages for you. You rarely invoke them directly — the intent commands above create and advance goals, workflows, runs, and evidence automatically. Reach for these to inspect, debug, or hand-drive the runtime.
+
+| Command | Purpose |
+|---------|---------|
+| `/flow:goal` | Inspect/evaluate FlowGoals. **`/flow:goal create` is the `--manual` path** — the normal way a goal is created is automatically by `/flow:start` (`goalCreation: auto`), not by hand. |
+| `/flow:workflow` | Inspect workflow definitions and phase/activity state |
+| `/flow:trigger` | Manage FlowTriggers (opt-in automation; `flow.triggers.enabled`) |
+| `/flow:run` | Inspect FlowRun records and their event ledgers |
+| `/flow:resume` | Read an interrupted run and propose the next safe action (informational-only) |
+| `/flow:watch` | Generate a `/loop` prompt file for hands-off iteration (user invokes the loop) |
 
 ## Safety Model
 
