@@ -179,7 +179,7 @@ assert_contains "degenerate state" "$ERR" "stderr names the degenerate state"
 assert_contains "feature/shared" "$ERR" "stderr names the colliding branch"
 
 # --- Test 9b: 2 active goals on DIFFERENT branches → each resolves its own (exit 0)
-# This is the core AC-4 fix: concurrent goals across branches/worktrees must
+# Concurrent goals across branches/worktrees must
 # stop tripping the degenerate-state error.
 _flow_test_begin "2 active goals on different branches each resolve (exit 0)"
 DIR=$(_fag_mkdir)

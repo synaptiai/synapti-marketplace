@@ -104,7 +104,7 @@ allow_terminal = (sys.argv[3] if len(sys.argv) > 3 else "0") == "1"
 if not os.path.isdir(".flow/goals"):
     sys.exit(1)
 
-# Determine the current branch for branch-first selection (#111 AC-4). An
+# Determine the current branch for branch-first selection. An
 # explicit --branch override wins (test-only / scripting); otherwise ask git,
 # tolerating any failure (not a repo, detached HEAD, git missing) by treating
 # the branch as unknown ("").

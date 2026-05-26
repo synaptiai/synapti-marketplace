@@ -23,7 +23,7 @@ _resume_cleanup() { local p; for p in "${RESUME_CLEANUP[@]:-}"; do [ -n "$p" ] &
 trap _resume_cleanup EXIT
 
 if ! command -v git >/dev/null 2>&1; then
-  _flow_test_begin "AC-6 behavioral"
+  _flow_test_begin "unlinked-detection behavioral prerequisites"
   _flow_assert_pass "SKIP: git not installed"
   return 0
 fi

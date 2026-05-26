@@ -42,7 +42,7 @@ assert_contains "Path-boundary violations" "$CONTENT" "path violation signal doc
 
 
 # --- /flow:status compact dashboard + deep modes ----------------------------
-_flow_test_begin "AC-5: status.md documents compact default + --full/--json/--evidence modes"
+_flow_test_begin "status.md documents compact default + --full/--json/--evidence modes"
 CONTENT=$(cat "$STATUS_CMD")
 assert_contains "STATUS_MODE" "$CONTENT" "mode dispatch variable present"
 assert_contains '`compact` (default)' "$CONTENT" "compact is the default mode"
@@ -69,15 +69,15 @@ _run_mode() {  # $1 = ARGUMENTS value
   bash -c "$blk"
 }
 
-_flow_test_begin "AC-5: mode parse — no arg -> compact"
+_flow_test_begin "mode parse — no arg -> compact"
 assert_contains "STATUS_MODE=compact" "$(_run_mode '')" "default (no arg) is compact"
 
-_flow_test_begin "AC-5: mode parse — --full/--json/--evidence map to their modes"
+_flow_test_begin "mode parse — --full/--json/--evidence map to their modes"
 assert_contains "STATUS_MODE=full" "$(_run_mode '--full')" "--full -> full"
 assert_contains "STATUS_MODE=json" "$(_run_mode '--json')" "--json -> json"
 assert_contains "STATUS_MODE=evidence" "$(_run_mode '--evidence')" "--evidence -> evidence"
 
-_flow_test_begin "AC-5: mode parse — unknown arg falls back to compact (no error)"
+_flow_test_begin "mode parse — unknown arg falls back to compact (no error)"
 OUT=$(_run_mode '--bogus')
 assert_contains "STATUS_MODE=compact" "$OUT" "unknown arg -> compact"
 assert_contains "STATUS_MODE_NOTE=unknown arg" "$OUT" "unknown arg surfaces a note"

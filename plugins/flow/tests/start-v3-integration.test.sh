@@ -1,7 +1,7 @@
 # Tests for the v3 runtime integration — FlowRun wiring in commands/start.md.
 #
 # FlowGoal creation in start.md (gated on flow.goals.goalCreation)
-# is covered elsewhere. This file covers the FlowRun layer + the AC-2 summary:
+# is covered elsewhere. This file covers the FlowRun layer + the compact runtime summary:
 #   - start.md creates a FlowRun at entry (workflow=start-issue), linked to the
 #     FlowGoal, gated by flow.runtime.enabled, delegating to run-state-management.
 #   - It emits a workflow-run journal artifact (start is issue-scoped).
@@ -84,7 +84,7 @@ assert_not_contains "FLOW_RUN_STATE=create" "$OUT2" "does not create when disabl
 
 
 # --- compact runtime summary replaces the FlowGoal-created dump -------------
-_flow_test_begin "AC-2: start.md emits a compact runtime summary, not a FlowGoal-created dump"
+_flow_test_begin "start.md emits a compact runtime summary, not a FlowGoal-created dump"
 START_CMD="$REPO_ROOT/plugins/flow/commands/start.md"
 SC=$(cat "$START_CMD")
 assert_not_contains "FlowGoal created: <GOAL_ID> at <GOAL_PATH>" "$SC" "old per-artifact dump line removed"
@@ -92,6 +92,6 @@ assert_contains "Runtime summary" "$SC" "compact runtime summary section present
 assert_contains "I'll work until the goal is achieved, blocked, or needs your decision" "$SC" "one-line working statement present"
 assert_contains "verifiable-count" "$SC" "summary sources AC counts from flow-active-goal.sh --verifiable-count"
 
-_flow_test_begin "AC-2: degenerate goals are flagged, never shown as a clean active line"
+_flow_test_begin "degenerate goals are flagged, never shown as a clean active line"
 assert_contains "degenerate / needs-attention" "$SC" "degenerate marker documented"
 assert_contains "omit the Goal line entirely" "$SC" "skipped-goal path omits the goal line (no phantom goal)"
