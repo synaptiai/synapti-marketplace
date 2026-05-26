@@ -237,3 +237,7 @@ issue-120's goal separately; not required by this plan.
 <!-- auto-log: 2026-05-26 15:46 commit "fix(flow): address self-review findings on the v3.1 UX layer" -->
 
 <!-- auto-log: 2026-05-26 15:46 Write /tmp/pr-123-review.md -->
+
+<!-- auto-log: 2026-05-26 15:56 Edit /Users/danielbentes/synapti-marketplace/README.md -->
+
+<!-- auto-log: 2026-05-26 15:56 commit "docs(flow): strip remaining finding/AC refs from comments + fix main README count" -->
