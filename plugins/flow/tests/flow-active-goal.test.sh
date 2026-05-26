@@ -2,7 +2,7 @@
 #
 # Contract:
 #   - Output modes: --path, --id, --status, --json, --ac-summary, --verifiable-count
-#   - Branch-first selection (#111 AC-4): prefer scope.branch == current branch,
+#   - Branch-first selection: prefer scope.branch == current branch,
 #     fall back to most-recently-modified active; --branch <name> overrides detection
 #   - Exit 0: active goal found
 #   - Exit 1: no active goal
@@ -73,7 +73,7 @@ EOF
 }
 
 # Goal fixture with a controllable number of verification_command-carrying ACs,
-# for --verifiable-count and degenerate-marker tests (#111 AC-2).
+# for --verifiable-count and degenerate-marker tests.
 _fag_write_goal_vc() {
   local path="$1" status="$2" goal_id="$3" verifiable="$4" branch="${5:-feature/test}"
   {
@@ -164,7 +164,7 @@ EXIT=$(cd "$DIR" && bash "$HELPER" --status >/dev/null 2>&1; echo $?)
 assert_equal "1" "$EXIT" "exit 1 — only achieved goals exist"
 
 # --- Test 9: degenerate state — 2 active goals on the SAME (current) branch → exit 3
-# Branch-first selection (#111 AC-4): degeneracy is now scoped to the current
+# Branch-first selection: degeneracy is now scoped to the current
 # branch, so both fixtures share one branch and we pin the current branch via
 # --branch to exercise the same-branch collision deterministically.
 _flow_test_begin "2 active goals on same branch → exit 3 (degenerate)"
@@ -292,31 +292,48 @@ _fag_write_goal_vc "$DIR/.flow/goals/issue-1.goal.yaml" "active" "issue-1" 0
 OUT=$(cd "$DIR" && bash "$HELPER" --verifiable-count 2>/dev/null)
 assert_equal "2/0" "$OUT" "no AC carries a verification_command — degenerate"
 
-# --- #122: --allow-terminal surfaces achieved goals for the merge/pr gate ------
-_flow_test_begin "#122: achieved goal is hidden by default (active-only) → exit 1"
+# --- --allow-terminal: branch-scoped surfacing of achieved goals for the gate --
+_flow_test_begin "achieved goal is hidden by default (active-only) -> exit 1"
 DIR=$(_fag_mkdir)
 mkdir -p "$DIR/.flow/goals"
-_fag_write_goal "$DIR/.flow/goals/issue-72.goal.yaml" "achieved" "issue-72"
-EXIT=$(cd "$DIR" && bash "$HELPER" --status >/dev/null 2>&1; echo $?)
+_fag_write_goal "$DIR/.flow/goals/issue-72.goal.yaml" "achieved" "issue-72" "feature/done"
+EXIT=$(cd "$DIR" && bash "$HELPER" --status --branch feature/done >/dev/null 2>&1; echo $?)
 assert_equal "1" "$EXIT" "achieved goal not surfaced without --allow-terminal (Stop hook / status semantics preserved)"
 
-_flow_test_begin "#122: --allow-terminal surfaces the achieved goal (exit 0, status achieved)"
-OUT=$(cd "$DIR" && bash "$HELPER" --status --allow-terminal 2>/dev/null); EXIT=$?
-assert_equal "0" "$EXIT" "achieved goal surfaced with --allow-terminal"
-assert_equal "achieved" "$OUT" "status reads 'achieved' — makes the gate's achieved-branch reachable"
-OUT=$(cd "$DIR" && bash "$HELPER" --id --allow-terminal 2>/dev/null)
+_flow_test_begin "--allow-terminal surfaces an achieved goal that owns the current branch"
+OUT=$(cd "$DIR" && bash "$HELPER" --status --allow-terminal --branch feature/done 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "achieved goal surfaced with --allow-terminal on its own branch"
+assert_equal "achieved" "$OUT" "status reads 'achieved' — the gate's achieved branch is reachable"
+OUT=$(cd "$DIR" && bash "$HELPER" --id --allow-terminal --branch feature/done 2>/dev/null)
 assert_equal "issue-72" "$OUT" "--id resolves the achieved goal"
 
-_flow_test_begin "#122: active goals take precedence over achieved under --allow-terminal"
+_flow_test_begin "achieved goal is NOT surfaced cross-branch (no terminal mtime fallback)"
+# A planted or stale achieved goal on another branch must never answer the gate
+# for the current branch.
+OUT=$(cd "$DIR" && bash "$HELPER" --status --allow-terminal --branch feature/other 2>/dev/null); EXIT=$?
+assert_equal "1" "$EXIT" "achieved goal on a different branch is not applicable (exit 1)"
+
+_flow_test_begin "active goal on the current branch beats an achieved goal on the same branch"
 DIR=$(_fag_mkdir)
 mkdir -p "$DIR/.flow/goals"
 _fag_write_goal "$DIR/.flow/goals/issue-done.goal.yaml" "achieved" "issue-done" "feature/x"
 _fag_write_goal "$DIR/.flow/goals/issue-live.goal.yaml" "active" "issue-live" "feature/x"
 OUT=$(cd "$DIR" && bash "$HELPER" --id --allow-terminal --branch feature/x 2>/dev/null); EXIT=$?
 assert_equal "0" "$EXIT" "resolves (exit 0)"
-assert_equal "issue-live" "$OUT" "active goal wins over achieved fallback"
+assert_equal "issue-live" "$OUT" "active goal wins over achieved on the same branch"
 
-_flow_test_begin "#122: achieved fallback is branch-first too"
+_flow_test_begin "branch ownership beats lifecycle status: achieved-on-current > active-cross-branch"
+# Branch ownership takes priority over status — an achieved goal owning the
+# current branch must beat an active goal on a different branch.
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-other.goal.yaml" "active" "issue-other" "feature/aaa"
+_fag_write_goal "$DIR/.flow/goals/issue-mine.goal.yaml" "achieved" "issue-mine" "feature/bbb"
+OUT=$(cd "$DIR" && bash "$HELPER" --id --allow-terminal --branch feature/bbb 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "resolves (exit 0)"
+assert_equal "issue-mine" "$OUT" "achieved goal on current branch beats active goal on another branch"
+
+_flow_test_begin "achieved fallback prefers the current branch among multiple achieved"
 DIR=$(_fag_mkdir)
 mkdir -p "$DIR/.flow/goals"
 _fag_write_goal "$DIR/.flow/goals/issue-a.goal.yaml" "achieved" "issue-a" "feature/aaa"
@@ -324,7 +341,7 @@ _fag_write_goal "$DIR/.flow/goals/issue-b.goal.yaml" "achieved" "issue-b" "featu
 OUT=$(cd "$DIR" && bash "$HELPER" --id --allow-terminal --branch feature/bbb 2>/dev/null)
 assert_equal "issue-b" "$OUT" "achieved goal on the current branch is preferred"
 
-_flow_test_begin "#122: multiple achieved goals on one branch do NOT trip exit 3 (history is normal)"
+_flow_test_begin "multiple achieved goals on one branch do NOT trip exit 3 (history is normal)"
 DIR=$(_fag_mkdir)
 mkdir -p "$DIR/.flow/goals"
 _fag_write_goal "$DIR/.flow/goals/issue-1.goal.yaml" "achieved" "issue-1" "feature/x"
@@ -334,9 +351,66 @@ OUT=$(cd "$DIR" && bash "$HELPER" --id --allow-terminal --branch feature/x 2>/de
 assert_equal "0" "$EXIT" "no degenerate error for multiple achieved on a branch"
 assert_equal "issue-2" "$OUT" "most-recently-modified achieved goal wins"
 
-_flow_test_begin "#122: failed/cancelled goals are NOT surfaced even with --allow-terminal"
+_flow_test_begin "failed/cancelled goals are NOT surfaced even with --allow-terminal"
 DIR=$(_fag_mkdir)
 mkdir -p "$DIR/.flow/goals"
-_fag_write_goal "$DIR/.flow/goals/issue-x.goal.yaml" "cancelled" "issue-x"
-EXIT=$(cd "$DIR" && bash "$HELPER" --status --allow-terminal >/dev/null 2>&1; echo $?)
+_fag_write_goal "$DIR/.flow/goals/issue-x.goal.yaml" "cancelled" "issue-x" "feature/x"
+EXIT=$(cd "$DIR" && bash "$HELPER" --status --allow-terminal --branch feature/x >/dev/null 2>&1; echo $?)
 assert_equal "1" "$EXIT" "only 'achieved' is a gate-relevant terminal state; cancelled stays out of window"
+
+# --- robustness: degenerate AC shapes + legacy goals ---------------------------
+_flow_test_begin "--verifiable-count on a goal with zero ACs -> 0/0"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+cat > "$DIR/.flow/goals/issue-empty.goal.yaml" <<'EOF'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: { id: issue-empty, created_at: "2026-05-21T00:00:00Z" }
+scope: { repo: owner/example, branch: feature/test }
+objective:
+  outcome: Test outcome
+  acceptance_criteria: []
+evaluator: { type: hybrid }
+lifecycle: { status: active }
+EOF
+OUT=$(cd "$DIR" && bash "$HELPER" --verifiable-count --branch feature/test 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "resolves (exit 0)"
+assert_equal "0/0" "$OUT" "empty acceptance_criteria reports 0/0 (degenerate)"
+
+_flow_test_begin "--verifiable-count / --ac-summary tolerate a non-list acceptance_criteria (no crash)"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+cat > "$DIR/.flow/goals/issue-bad.goal.yaml" <<'EOF'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: { id: issue-bad, created_at: "2026-05-21T00:00:00Z" }
+scope: { repo: owner/example, branch: feature/test }
+objective:
+  outcome: Test outcome
+  acceptance_criteria: 42
+evaluator: { type: hybrid }
+lifecycle: { status: active }
+EOF
+OUT=$(cd "$DIR" && bash "$HELPER" --verifiable-count --branch feature/test 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "non-list acceptance_criteria does not crash --verifiable-count"
+assert_equal "0/0" "$OUT" "scalar acceptance_criteria treated as zero ACs"
+OUT=$(cd "$DIR" && bash "$HELPER" --ac-summary --branch feature/test 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "non-list acceptance_criteria does not crash --ac-summary"
+
+_flow_test_begin "legacy goal with no scope.branch resolves via the most-recent-active fallback"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+cat > "$DIR/.flow/goals/issue-legacy.goal.yaml" <<'EOF'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: { id: issue-legacy, created_at: "2026-05-21T00:00:00Z" }
+objective:
+  outcome: Test outcome
+  acceptance_criteria:
+    - { id: AC1, text: First, status: pending }
+evaluator: { type: hybrid }
+lifecycle: { status: active }
+EOF
+OUT=$(cd "$DIR" && bash "$HELPER" --id --branch feature/anything 2>/dev/null); EXIT=$?
+assert_equal "0" "$EXIT" "legacy goal (no scope.branch) still resolves via mtime fallback"
+assert_equal "issue-legacy" "$OUT" "the active legacy goal is returned"

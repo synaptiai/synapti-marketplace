@@ -13,7 +13,7 @@ _None — read-only status command. No skill invocations._
 
 ## Mode
 
-Parse an optional display mode from the command arguments (#111 AC-5). Use the bare-`$ARGUMENTS`-first pattern (#120) — copy the substituted token into a shell var BEFORE applying parameter-expansion, never `${ARGUMENTS%% *}` directly. An unknown argument falls back to the compact dashboard (never errors).
+Parse an optional display mode from the command arguments. Use the bare-`$ARGUMENTS`-first pattern — copy the substituted token into a shell var BEFORE applying parameter-expansion, never `${ARGUMENTS%% *}` directly. An unknown argument falls back to the compact dashboard (never errors).
 
 ```!
 _RAW="$ARGUMENTS"

@@ -114,7 +114,7 @@ else
     echo "STATE=empty"
   fi
 
-  # Section: FlowGoal State (v3) — gate on goal existence (#111 D-GATE).
+  # Section: FlowGoal State (v3) — gate on goal existence.
   # Surface the active goal's lifecycle so Phase 4 can gate PR creation on goal
   # achievement WHEN a goal exists; a branch with no goal is not blocked. The
   # gate is disabled when flow.goals.enabled is false or goalCreation is off,
@@ -122,11 +122,14 @@ else
   echo ""
   echo "### FlowGoal State"
   HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
-  # Migration-aware (#111 AC-1): goalCreation wins; else map legacy
-  # requireGoalForStart (true→always, false→off); else null → cascade default auto.
+  # Migration-aware: goalCreation wins; else map legacy requireGoalForStart
+  # (true->always, false->off); else null so the cascade default (auto) applies.
   GOAL_MODE=$("$HELPER" --default "auto" '.flow.goals.goalCreation // (if .flow.goals.requireGoalForStart == true then "always" elif .flow.goals.requireGoalForStart == false then "off" else null end)' 2>/dev/null)
   case "$GOAL_MODE" in auto|always|off) ;; *) GOAL_MODE="auto" ;; esac
   ENABLED=$("$HELPER" --default "true" '.flow.goals.enabled' 2>/dev/null)
+  # Empty means cascade-resolve itself failed — honor enabled-by-default intent
+  # rather than fail-open to a silently disabled gate.
+  [ -z "$ENABLED" ] && ENABLED="true"
   if [ "$ENABLED" != "true" ] || [ "$GOAL_MODE" = "off" ]; then
     echo "STATE=disabled"
     echo "REASON=flow.goals.enabled is false or goalCreation is off"
@@ -136,7 +139,7 @@ else
       echo "STATE=unavailable"
       echo "REASON=flow-active-goal.sh missing or non-executable"
     else
-      # --allow-terminal (#122): surface an already-`achieved` goal so the
+      # --allow-terminal: surface an already-`achieved` goal so the
       # GATE=pass branch below is reachable (the helper is active-only otherwise).
       GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status --allow-terminal 2>/dev/null); GOAL_EXIT=$?
       case "$GOAL_EXIT" in
@@ -152,8 +155,8 @@ else
           fi
           ;;
         1)
-          # No active goal on this branch — gate not applicable (#111 D-GATE:
-          # gate on existence). PR creation proceeds; a goal-less PR is not blocked.
+          # No active goal on this branch — gate not applicable: the gate keys
+          # on goal existence. PR creation proceeds; a goal-less PR is not blocked.
           echo "STATE=none"
           echo "GATE=pass"
           echo "REASON=no active FlowGoal for this branch — gate not applicable"
@@ -318,7 +321,7 @@ After agents return, TaskUpdate each review task with findings.
 
    When `STATE=disabled` (`flow.goals.enabled` false or `goalCreation: off`): skip this step silently.
 
-   When `STATE=none` (no active FlowGoal for this branch): the gate is **not applicable** (#111 D-GATE gates on existence). Proceed with PR creation silently — a goal-less PR is not blocked and needs no prompt. The PR body omits the `## FlowGoal Status` section.
+   When `STATE=none` (no active FlowGoal for this branch): the gate is **not applicable** (it keys on goal existence). Proceed with PR creation silently — a goal-less PR is not blocked and needs no prompt. The PR body omits the `## FlowGoal Status` section.
 
 8. **Generate PR body** from template + findings + journal + comprehension report.
 

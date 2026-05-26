@@ -1,6 +1,6 @@
 # plugins/flow/tests/flow-start-onboarding.test.sh (goalCreation suite)
 #
-# #111 AC-1 retired the Phase 0.5 onboarding AskUserQuestion and the
+# The conditional-auto goalCreation work retired the Phase 0.5 onboarding AskUserQuestion and the
 # set_flow_goals helper, replacing the binary requireGoalForStart with the
 # 3-state flow.goals.goalCreation (auto|always|off, default auto). This suite
 # now covers:
@@ -8,7 +8,7 @@
 #     merge.md resolve): requireGoalForStart true->always, false->off,
 #     absent->auto, and explicit goalCreation wins over the legacy key.
 #   - The FlowGoal auto-creation gate keyed on GOAL_MODE != off, including the
-#     bare-$ARGUMENTS parsing regression guard from #120.
+#     bare-$ARGUMENTS parsing regression guard.
 #   - start.md documents the "verifiable ACs win" auto predicate (the
 #     prose-side gate Claude applies after the bash block).
 # The unrelated context:fork skill lint is preserved at the end.
@@ -107,7 +107,7 @@ _flow_test_begin "gate: GOAL_MODE=auto + non-digit ARGUMENTS -> skip"
 OUT=$(cd "$TMP_DIR" && GOAL_MODE=auto bash -c "$(cc_substitute "$GOAL_GATE_BLOCK" "abc")")
 assert_equal "FLOW_GOAL_STATE=skip" "$OUT" "non-digit -> skip"
 
-_flow_test_begin "regression(#120): old \${ARGUMENTS%% *} form degrades to skip under CC substitution"
+_flow_test_begin "regression: old \${ARGUMENTS%% *} form degrades to skip under CC substitution"
 OLD_BROKEN_BLOCK='
 ARG1="${ARGUMENTS%% *}"
 case "$ARG1" in
@@ -121,7 +121,7 @@ else
 fi
 '
 OUT=$(cd "$TMP_DIR" && GOAL_MODE=auto bash -c "$(cc_substitute "$OLD_BROKEN_BLOCK" "42")")
-assert_equal "FLOW_GOAL_STATE=skip" "$OUT" "old form expands empty under CC substitution (this IS the #120 bug)"
+assert_equal "FLOW_GOAL_STATE=skip" "$OUT" "old form expands empty under CC substitution (this IS the bug)"
 OUT=$(cd "$TMP_DIR" && GOAL_MODE=auto bash -c "$(cc_substitute "$GOAL_GATE_BLOCK" "42")")
 assert_contains "FLOW_GOAL_STATE=create" "$OUT" "fixed _RAW form produces create under the identical model"
 
@@ -226,3 +226,17 @@ else
   MISSING=$(comm -13 <(printf '%s\n' "$ALL_FORK") <(printf '%s\n' "$EXPECTED_FORK_SORTED") | head -3 | tr '\n' ',')
   _flow_assert_fail "fork-set drift: extra=[$EXTRA] missing=[$MISSING]"
 fi
+
+
+# --- goals.enabled master switch forces goal creation off ---------------------
+_flow_test_begin "start.md documents the enabled:false -> off master switch"
+SC=$(cat "$REPO_ROOT/plugins/flow/commands/start.md")
+assert_contains 'ENABLED" != "true" ] && GOAL_MODE="off"' "$SC" "master-switch coercion present in the gate block"
+
+_flow_test_begin "master switch: enabled=false coerces GOAL_MODE off -> gate skips"
+# Reproduce the start.md coercion (ENABLED resolved, then forced off) ahead of
+# the lifted gate block, and confirm the gate skips even when GOAL_MODE started auto.
+OUT=$(ENABLED=false GOAL_MODE=auto bash -c '
+  [ "$ENABLED" != "true" ] && GOAL_MODE="off"
+  '"$(cc_substitute "$GOAL_GATE_BLOCK" "42")")
+assert_equal "FLOW_GOAL_STATE=skip" "$OUT" "enabled:false -> GOAL_MODE off -> skip"

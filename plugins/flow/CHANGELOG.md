@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### v3.1 UX layer — invisible-by-default runtime (#111)
+### Added: v3.1 UX layer — invisible-by-default runtime (#111)
 
 "User intent in, runtime artifacts out." Goals/runs/evidence are now managed for you rather than gated behind opt-in.
 

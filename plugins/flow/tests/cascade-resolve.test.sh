@@ -210,7 +210,7 @@ ERR=$(cat "$STDERR_TMP")
 assert_exit 2 "$EXIT" "exit 2 without --default"
 assert_contains "jq not installed" "$ERR" "stderr WARN about missing jq"
 
-# --- Compound migration expression (#111 AC-1) ───────────────────────────────
+# --- Compound migration expression ────────────────────────────────────────
 # cascade-resolve passes any jq through, but the 3-state goalCreation migration
 # relies on a compound if/elif/else-null expression that was previously untested.
 # The `else null` (not "auto") is load-bearing: a source carrying NEITHER key

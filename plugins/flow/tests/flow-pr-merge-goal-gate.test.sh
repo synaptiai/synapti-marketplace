@@ -15,11 +15,11 @@ if [ ! -f "$PR_CMD" ]; then
 else
   CONTENT=$(cat "$PR_CMD")
   assert_contains "### FlowGoal State" "$CONTENT" "Phase 1 section heading present"
-  assert_contains 'flow.goals.goalCreation' "$CONTENT" "migration-aware goalCreation resolution (#111 AC-1)"
+  assert_contains 'flow.goals.goalCreation' "$CONTENT" "migration-aware goalCreation resolution"
   assert_contains "flow-active-goal.sh" "$CONTENT" "uses the centralized helper"
   assert_contains "GATE=pass" "$CONTENT" "pass sentinel emitted"
   assert_contains "GATE=block" "$CONTENT" "block sentinel emitted"
-  assert_contains "STATE=none" "$CONTENT" "no-goal state is gate-not-applicable (#111 D-GATE: gate on existence)"
+  assert_contains "STATE=none" "$CONTENT" "no-goal state is gate-not-applicable (gate on existence)"
 fi
 
 _flow_test_begin "F1 — /flow:pr Phase 4 step 7a uses AskUserQuestion on gate block"
@@ -37,8 +37,8 @@ else
   assert_contains "### FlowGoal Gate" "$CONTENT" "merge.md Phase 1 gate section present"
   assert_contains "FLOW_GOAL_GATE_STATE" "$CONTENT" "gate state sentinel emitted"
   assert_contains "flow-active-goal.sh" "$CONTENT" "uses centralized helper"
-  assert_contains 'flow.goals.goalCreation' "$CONTENT" "migration-aware goalCreation resolution (#111 AC-1)"
-  assert_contains "gate not applicable" "$CONTENT" "no-goal merge is NOT blocked (#111 D-GATE: gate on existence)"
+  assert_contains 'flow.goals.goalCreation' "$CONTENT" "migration-aware goalCreation resolution"
+  assert_contains "gate not applicable" "$CONTENT" "no-goal merge is NOT blocked (gate on existence)"
 fi
 
 _flow_test_begin "F1 — /flow:merge BLOCKED display includes FlowGoal row"
@@ -47,13 +47,13 @@ assert_contains "Merge Prerequisites Not Met" "$CONTENT" "Updated BLOCKED templa
 assert_contains "| FlowGoal" "$CONTENT" "BLOCKED table has FlowGoal row"
 assert_contains "/flow:goal evaluate" "$CONTENT" "remediation references goal evaluate"
 
-# --- #122: gates pass --allow-terminal so an achieved goal is observable -------
-_flow_test_begin "#122: merge.md FlowGoal gate queries the helper with --allow-terminal"
+# --- gates pass --allow-terminal so an achieved goal is observable -----------
+_flow_test_begin "merge.md FlowGoal gate queries the helper with --allow-terminal"
 CONTENT=$(cat "$MERGE_CMD")
 assert_contains -- "--status --allow-terminal" "$CONTENT" "merge gate --status uses --allow-terminal"
 assert_contains -- "--id --allow-terminal" "$CONTENT" "merge gate --id uses --allow-terminal"
 
-_flow_test_begin "#122: pr.md FlowGoal state queries the helper with --allow-terminal"
+_flow_test_begin "pr.md FlowGoal state queries the helper with --allow-terminal"
 CONTENT=$(cat "$PR_CMD")
 assert_contains -- "--status --allow-terminal" "$CONTENT" "pr gate --status uses --allow-terminal"
 assert_contains -- "--id --allow-terminal" "$CONTENT" "pr gate --id uses --allow-terminal"

@@ -1,6 +1,6 @@
 # Tests for the v3 runtime integration — FlowRun wiring in commands/start.md.
 #
-# FlowGoal creation in start.md (gated on flow.goals.goalCreation, #111 AC-1)
+# FlowGoal creation in start.md (gated on flow.goals.goalCreation)
 # is covered elsewhere. This file covers the FlowRun layer + the AC-2 summary:
 #   - start.md creates a FlowRun at entry (workflow=start-issue), linked to the
 #     FlowGoal, gated by flow.runtime.enabled, delegating to run-state-management.
@@ -83,7 +83,7 @@ assert_contains "FLOW_RUN_STATE=skip" "$OUT2" "runtime disabled → skip"
 assert_not_contains "FLOW_RUN_STATE=create" "$OUT2" "does not create when disabled"
 
 
-# --- #111 AC-2: compact runtime summary replaces the FlowGoal-created dump ----
+# --- compact runtime summary replaces the FlowGoal-created dump -------------
 _flow_test_begin "AC-2: start.md emits a compact runtime summary, not a FlowGoal-created dump"
 START_CMD="$REPO_ROOT/plugins/flow/commands/start.md"
 SC=$(cat "$START_CMD")

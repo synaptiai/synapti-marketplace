@@ -90,7 +90,7 @@ You'll see a per-AC table and the verdict.
 /flow:goal status
 ```
 
-If lifecycle is `achieved`, the goal is complete. When an active goal exists for the branch, `/flow:pr` and `/flow:merge` require it to be `achieved` (#111 D-GATE: the gate is on goal *existence* — a branch with no goal is not blocked).
+If lifecycle is `achieved`, the goal is complete. When an active goal exists for the branch, `/flow:pr` and `/flow:merge` require it to be `achieved` — the gate is on goal *existence*, so a branch with no goal is not blocked.
 
 ## Common adjustments
 

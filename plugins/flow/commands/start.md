@@ -284,7 +284,7 @@ gh issue edit "$ISSUE_NUM" --add-assignee @me
 
 `goalCreation` is a 3-state setting — `auto` (default), `always`, or `off`:
 - `off` — never auto-create (manual `/flow:goal create` still works).
-- `always` — create a goal unconditionally (even a degenerate goal; flagged per AC-2).
+- `always` — create a goal unconditionally (even a degenerate goal; flagged in the compact summary).
 - `auto` — create **iff** the Spec Validation Gate passed with ≥1 acceptance criterion carrying a `verification_command`. An issue that yields zero verifiable ACs (e.g. a spec-free `documentation`/`chore` issue) is skipped **silently** — no prompt, no error.
 
 The master switch `flow.goals.enabled: false` forces `off` regardless of `goalCreation` (whole feature off — distinct from `goalCreation: off`, which leaves the feature on and only suppresses auto-creation).
@@ -297,7 +297,7 @@ if [ ! -x "$CASCADE" ]; then
   echo "FLOW_GOAL_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
   true; exit 0
 fi
-# Read-only migration (#111 AC-1): goalCreation wins; else map the legacy
+# Read-only migration: goalCreation wins; else map the legacy
 # requireGoalForStart (true→always, false→off); else `null` so the cascade
 # default (auto) applies. `else null` — NOT "auto" — is load-bearing: it lets a
 # settings source carrying NEITHER key fall through to the next cascade source
@@ -363,7 +363,7 @@ true
 Dispatch based on `FLOW_GOAL_STATE`:
 
 - **`create`** — branch on `FLOW_GOAL_MODE`:
-  - **`always`** — create the goal unconditionally. A degenerate goal (0 ACs, or 0 ACs carrying a `verification_command`) is allowed here but is flagged in the compact summary per AC-2. Proceed to the skills below.
+  - **`always`** — create the goal unconditionally. A degenerate goal (0 ACs, or 0 ACs carrying a `verification_command`) is allowed here but is flagged in the compact summary. Proceed to the skills below.
   - **`auto`** — create the goal **iff** the Spec Validation Gate passed with ≥1 acceptance criterion carrying a `verification_command` (the "verifiable ACs win" rule — labels do not veto). If zero verifiable ACs (e.g. a spec-free `documentation`/`chore` issue that passed the gate with no commands), **skip silently**: do not invoke the skills, print no goal line, and treat exactly like `skip`. Otherwise proceed to the skills below.
 
   In both create paths the visibility echo is gated on the post-write verify.
@@ -395,7 +395,7 @@ For `FLOW_GOAL_STATE=create`:
      fi
    fi
    ```
-4. Only after verify passes, proceed to create the FlowRun (next section). **Do not** emit a per-artifact `FlowGoal created:` line here — the compact runtime summary that supersedes it is emitted once both the goal and run exist (see **Runtime summary** below, #111 AC-2).
+4. Only after verify passes, proceed to create the FlowRun (next section). **Do not** emit a per-artifact `FlowGoal created:` line here — the compact runtime summary that supersedes it is emitted once both the goal and run exist (see **Runtime summary** below).
 
 ### FlowRun (v3 runtime)
 
@@ -432,6 +432,8 @@ fi
 true
 ```
 
+Dispatch on `FLOW_RUN_STATE`: **`skip`** — proceed without a FlowRun (v2 behavior; the wiring is a no-op). **`blocked`** — `cascade-resolve.sh` was unavailable; surface the `FLOW_RUN_ERROR` line to the user and halt Phase 1 rather than silently proceeding without a run (same posture as `FLOW_GOAL_STATE=blocked`). **`create`** — proceed as below.
+
 When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`start-issue`, goal=`$GOAL_LINK` — the FlowGoal created above, or `null` when goal creation was skipped), initial phase `preflight`. Because `/flow:start` is issue-scoped, also emit the `workflow-run` artifact to `.decisions/issue-$ISSUE_NUM.md`:
 
 ```bash
@@ -445,7 +447,7 @@ if [ -n "$ISSUE_NUM" ]; then
 fi
 ```
 
-### Runtime summary (#111 AC-2)
+### Runtime summary
 
 Once the goal (if any) and the FlowRun exist, emit **one** compact runtime summary **in place of** any per-artifact `FlowGoal created:` line. Do not dump the goal/run YAML — "invisible" means low-ceremony, not hidden-state. The summary has exactly these lines:
 
@@ -455,10 +457,10 @@ Once the goal (if any) and the FlowRun exist, emit **one** compact runtime summa
 - **Branch**: `<current branch>` (`git branch --show-current`)
 - _I'll work until the goal is achieved, blocked, or needs your decision._
 
-Compute the AC counts with the shared helper (it prints `<total>/<verifiable>`):
+Compute the AC counts with the shared helper (it prints `<total>/<verifiable>`). It exits non-zero with no output when no goal owns the current branch — that is the **skip path** (goal creation was skipped), and the summary then omits the Goal line entirely:
 
 ```bash
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-active-goal.sh" --verifiable-count
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-active-goal.sh" --verifiable-count --allow-terminal 2>/dev/null || true
 ```
 
 **Truthfulness gate (load-bearing):** if the goal is degenerate — `<total>` is `0`, or `<verifiable>` is `0` — or the goal is unevaluated, the Goal line MUST be flagged, never shown as a clean `active`:

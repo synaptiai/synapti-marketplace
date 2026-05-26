@@ -1,4 +1,4 @@
-# Tests for plugins/flow/README.md command surface (#111 AC-7).
+# Tests for plugins/flow/README.md command surface.
 #
 # Guards the count-drift fix dynamically: the README "COMMANDS (N)" header must
 # equal the actual number of commands/*.md files, so the next added/removed

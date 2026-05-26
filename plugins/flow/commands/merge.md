@@ -323,15 +323,18 @@ true
 
 ### FlowGoal Gate (v3)
 
-Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence** (#111 D-GATE): when an active goal exists for this branch it must have reached `lifecycle.status == achieved` to merge; when **no** active goal exists the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off` — preserving the v2 `requireGoalForStart: false` UX (no merge gating).
+Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**: when an active goal exists for this branch it must have reached `lifecycle.status == achieved` to merge; when **no** active goal exists the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off` — preserving the v2 `requireGoalForStart: false` UX (no merge gating).
 
 ```!
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
-# Migration-aware (#111 AC-1): goalCreation wins; else map legacy
-# requireGoalForStart (true→always, false→off); else null → cascade default auto.
+# Migration-aware: goalCreation wins; else map legacy requireGoalForStart
+# (true->always, false->off); else null so the cascade default (auto) applies.
 GOAL_MODE=$("$HELPER" --default "auto" '.flow.goals.goalCreation // (if .flow.goals.requireGoalForStart == true then "always" elif .flow.goals.requireGoalForStart == false then "off" else null end)' 2>/dev/null)
 case "$GOAL_MODE" in auto|always|off) ;; *) GOAL_MODE="auto" ;; esac
 ENABLED=$("$HELPER" --default "true" '.flow.goals.enabled' 2>/dev/null)
+# Empty means cascade-resolve itself failed (missing/non-exec) — honor the
+# enabled-by-default intent rather than fail-open to a silently disabled gate.
+[ -z "$ENABLED" ] && ENABLED="true"
 
 echo "### FlowGoal Gate"
 if [ "$ENABLED" != "true" ] || [ "$GOAL_MODE" = "off" ]; then
@@ -342,7 +345,7 @@ else
     echo "FLOW_GOAL_GATE_STATE=blocked"
     echo "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh missing or non-executable"
   else
-    # --allow-terminal (#122): surface a goal that already reached `achieved` so
+    # --allow-terminal: surface a goal that already reached `achieved` so
     # the success branch below is reachable. Without it the helper filters
     # achieved goals out (active-only), exit 1, and an achieved goal would be
     # mislabeled "no active FlowGoal" instead of passing the gate.
@@ -364,8 +367,8 @@ else
         fi
         ;;
       1)
-        # No active goal on this branch — gate not applicable (#111 D-GATE:
-        # gate on existence). A PR without a FlowGoal is not blocked; the PR's
+        # No active goal on this branch — gate not applicable: the gate keys
+        # on goal existence. A PR without a FlowGoal is not blocked; the PR's
         # own review state remains the durable record. This intentionally
         # replaces the prior fail-closed so default installs (goalCreation:auto)
         # do not start blocking goal-less merges.
@@ -373,7 +376,7 @@ else
         echo "FLOW_GOAL_GATE_NOTE=no active FlowGoal for this branch — gate not applicable"
         ;;
       3)
-        # >1 active goal on the current branch (after #111 AC-4 branch-scoping).
+        # >1 active goal on the current branch (after branch-scoping).
         echo "FLOW_GOAL_GATE_STATE=blocked"
         echo "FLOW_GOAL_BLOCK_REASON=degenerate state — multiple active FlowGoals on the current branch"
         ;;

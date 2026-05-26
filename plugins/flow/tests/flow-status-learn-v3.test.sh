@@ -41,7 +41,7 @@ assert_contains "not_executed" "$CONTENT" "not_executed signal documented"
 assert_contains "Path-boundary violations" "$CONTENT" "path violation signal documented"
 
 
-# --- #111 AC-5: /flow:status compact dashboard + deep modes -------------------
+# --- /flow:status compact dashboard + deep modes ----------------------------
 _flow_test_begin "AC-5: status.md documents compact default + --full/--json/--evidence modes"
 CONTENT=$(cat "$STATUS_CMD")
 assert_contains "STATUS_MODE" "$CONTENT" "mode dispatch variable present"

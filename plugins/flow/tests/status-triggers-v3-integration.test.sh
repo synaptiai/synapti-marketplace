@@ -38,8 +38,8 @@ TR=$(jq -r '.flow.triggers.enabled' "$SETTINGS")
 assert_equal "true" "$WF" "flow.workflows.enabled is true"
 assert_equal "true" "$TR" "flow.triggers.enabled is true"
 
-_flow_test_begin "goalCreation default is auto (set by the #111 UX layer)"
-# #111 AC-1 retires the binary requireGoalForStart in favor of the 3-state
+_flow_test_begin "goalCreation default is auto (set by the v3.1 UX layer)"
+# The v3.1 UX layer retires the binary requireGoalForStart in favor of the 3-state
 # goalCreation (default auto). The legacy key is migrated read-only and must no
 # longer appear as a settings default.
 GC=$(jq -r '.flow.goals.goalCreation' "$SETTINGS")

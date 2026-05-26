@@ -220,8 +220,8 @@ else
 fi
 
 
-# --- F1 — pr.md FlowGoal gate handles all states (#111 D-GATE: gate on existence,
-# so no-goal is STATE=none/GATE=pass rather than a blocking STATE=missing)
+# --- pr.md FlowGoal gate state coverage: gate-on-existence means no-goal is
+# STATE=none/GATE=pass rather than a blocking STATE=missing
 _flow_test_begin "F1 — pr.md gate distinguishes states (none vs degenerate vs unavailable)"
 PR_CMD="$REPO_ROOT/plugins/flow/commands/pr.md"
 CONTENT=$(cat "$PR_CMD")
