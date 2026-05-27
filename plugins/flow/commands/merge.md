@@ -116,16 +116,32 @@ else
   # Capture gh exit separately per endpoint. Same reason as the Reviews section: the
   # merge gate must close (STATE=unavailable) rather than open (STATE=empty) when
   # markers can't be read.
-  SEED_COMMENTS=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE|FLOW_REVIEW_CYCLE")) | {id, body, surface: "issue-comments"}]' 2>/dev/null); GH_EXIT_C=$?
-  SEED_REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE|FLOW_REVIEW_CYCLE")) | {id, body, surface: "reviews"}]' 2>/dev/null); GH_EXIT_R=$?
+  # The select pattern requires the `:` form (FLOW_*_CYCLE:) so it matches what the
+  # authoritative gate selects (test("FLOW_REVIEW_CYCLE:") / test("FLOW_RESOLUTION_CYCLE:"))
+  # and never selects a bare prose mention of the marker NAME — otherwise a comment that
+  # merely references "FLOW_REVIEW_CYCLE" in prose would be flagged SEED_FORMAT_INVALID,
+  # a false positive the gate never raises.
+  SEED_COMMENTS=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:|FLOW_REVIEW_CYCLE:")) | {id, body, surface: "issue-comments"}]' 2>/dev/null); GH_EXIT_C=$?
+  SEED_REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:|FLOW_REVIEW_CYCLE:")) | {id, body, surface: "reviews"}]' 2>/dev/null); GH_EXIT_R=$?
   echo "SEED_SCANNED=reviews,issue-comments"
   if [ $GH_EXIT_C -ne 0 ] || [ $GH_EXIT_R -ne 0 ]; then
     echo "SEED_MARKER_COUNT=0"
     echo "STATE=unavailable"
     echo "SEED_UNAVAILABLE=comments_exit=$GH_EXIT_C reviews_exit=$GH_EXIT_R"
   else
-    # Union both streams into one array for counting + per-marker emission.
-    SEED_JSON=$(printf '%s\n%s' "$SEED_COMMENTS" "$SEED_REVIEWS" | jq -s 'add // []' 2>/dev/null)
+    # Union both streams into one array for counting + per-marker emission. Capture jq's
+    # exit so a malformed-JSON operand fails CLOSED (STATE=unavailable) rather than open:
+    # without this, a jq error swallowed by 2>/dev/null leaves SEED_JSON empty and the
+    # block would mislabel a real marker stream as STATE=empty ("no markers"). Mirrors the
+    # per-endpoint fail-closed posture above. `add // []` still tolerates an empty/null
+    # operand (the normal "one stream has no markers" case) without erroring.
+    SEED_JSON=$(printf '%s\n%s\n' "$SEED_COMMENTS" "$SEED_REVIEWS" | jq -s 'add // []' 2>/dev/null); SEED_JQ_EXIT=$?
+    if [ $SEED_JQ_EXIT -ne 0 ]; then
+      echo "SEED_MARKER_COUNT=0"
+      echo "STATE=unavailable"
+      echo "SEED_UNAVAILABLE=union_jq_exit=$SEED_JQ_EXIT"
+      true; exit 0
+    fi
     SEED_COUNT=$(echo "$SEED_JSON" | jq 'length' 2>/dev/null)
     [ -z "$SEED_COUNT" ] && SEED_COUNT=0
     echo "SEED_MARKER_COUNT=$SEED_COUNT"

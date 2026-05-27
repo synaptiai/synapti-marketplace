@@ -36,6 +36,13 @@ _flow_test_begin "review.md creates the resolution-post task in the self-review 
 CONTENT=$(cat "$REVIEW_MD")
 assert_contains "Post self-review resolution marker" "$CONTENT" "TaskCreate for resolution marker present"
 
+_flow_test_begin "review.md gates step 8 on the resolution-marker task (no silent skip on gh failure)"
+# A failed `gh pr comment` must NOT advance the workflow — otherwise the resolution marker
+# is silently absent and the merge gate false-blocks again (the bug this whole change fixes).
+CONTENT=$(cat "$REVIEW_MD")
+assert_contains 'BOTH "Post self-review comment" AND "Post self-review resolution marker"' "$CONTENT" "step 8 requires both self-review posting tasks"
+assert_contains "leave the task" "$CONTENT" "resolution post has a failure backstop (retry, do not advance)"
+
 _flow_test_begin "review.md self-review still posts FLOW_REVIEW_CYCLE in the review body"
 CONTENT=$(cat "$REVIEW_MD")
 assert_contains "FLOW_REVIEW_CYCLE" "$CONTENT" "review-body marker retained (records what was found)"

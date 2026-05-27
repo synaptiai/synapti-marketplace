@@ -29,16 +29,26 @@ else
   assert_contains "SEED_SCANNED=reviews,issue-comments" "$CONTENT" "seed names both scanned surfaces"
   assert_contains "SEED_FORMAT_INVALID" "$CONTENT" "seed distinguishes malformed markers from absent"
   assert_contains "DIAGNOSTIC PREVIEW ONLY" "$CONTENT" "seed documents it is a preview, not the gate"
+  # The select must require the `:` form so a bare prose mention of the marker NAME is not
+  # selected (and so the seed's selection matches the authoritative gate's test("...:")).
+  assert_contains 'test("FLOW_RESOLUTION_CYCLE:|FLOW_REVIEW_CYCLE:")' "$CONTENT" "seed select requires the colon form (matches the gate, ignores prose)"
+  # The union must fail closed on a malformed-JSON operand, not collapse to STATE=empty.
+  assert_contains "SEED_JQ_EXIT" "$CONTENT" "union jq exit captured (fail-closed on malformed JSON)"
+  assert_contains "union_jq_exit=" "$CONTENT" "malformed union surfaces as STATE=unavailable, not empty"
 fi
 
-# --- functional: the union + classification logic the seed uses --------------
-# Mirrors the jq in the seed block: union both streams, count, and classify each marker
-# row as a valid SEED line or SEED_FORMAT_INVALID. Proves a review-body-only marker is
-# counted (the #126 regression) and a digit-less marker is flagged malformed.
+# --- functional: the select + union + classification logic the seed uses -----
+# Mirrors the seed block end-to-end: apply the per-stream `:`-form select (so a prose
+# mention is excluded), union both streams, count, and classify each row as a valid SEED
+# line or SEED_FORMAT_INVALID. Proves a review-body-only marker is counted (the #126
+# regression), a digit-less marker is flagged malformed, and a prose mention is ignored.
 _seed_classify() {
   local comments="$1" reviews="$2"
-  local seed_json
-  seed_json=$(printf '%s\n%s' "$comments" "$reviews" | jq -s 'add // []')
+  local sel='[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:|FLOW_REVIEW_CYCLE:"))]'
+  local c r seed_json
+  c=$(printf '%s' "$comments" | jq "$sel")
+  r=$(printf '%s' "$reviews"  | jq "$sel")
+  seed_json=$(printf '%s\n%s\n' "$c" "$r" | jq -s 'add // []')
   echo "COUNT=$(echo "$seed_json" | jq 'length')"
   echo "$seed_json" | jq -r '.[] | (
     ([.body | scan("FLOW_(RESOLUTION|REVIEW)_CYCLE:([0-9]+)")] | last) as $last |
@@ -71,3 +81,14 @@ OUT=$(_seed_classify \
   '[{"id":10,"body":"FLOW_REVIEW_CYCLE: no digits here","surface":"reviews"}]')
 assert_contains "COUNT=1" "$OUT" "malformed marker still counted as present"
 assert_contains "SEED_FORMAT_INVALID=id=10" "$OUT" "malformed marker flagged, not silently dropped"
+
+_flow_test_begin "prose mention of a marker name (no colon) is NOT selected (no false SEED_FORMAT_INVALID)"
+# A body that names the marker in prose, with no real :N marker, must be excluded by the
+# select so it never produces a spurious SEED_FORMAT_INVALID line. self-review-comment.md
+# adds exactly such prose, so this guards a real false-positive path.
+OUT=$(_seed_classify \
+  '[{"id":11,"body":"This body carries the FLOW_REVIEW_CYCLE marker (what was FOUND).","surface":"issue-comments"}]' \
+  '[{"id":12,"body":"<!-- FLOW_REVIEW_CYCLE:3 FINDINGS:[F1|P2|x|a:1|open] -->","surface":"reviews"}]')
+assert_contains "COUNT=1" "$OUT" "prose mention excluded; only the real marker counts"
+assert_not_contains "SEED_FORMAT_INVALID" "$OUT" "prose mention does not produce a false malformed flag"
+assert_contains "kind=REVIEW cycle=3" "$OUT" "the genuine marker is still parsed"

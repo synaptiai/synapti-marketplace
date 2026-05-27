@@ -744,6 +744,11 @@ TaskUpdate each review task as agents complete.
    The resolution comment body MUST end with:
    `<!-- FLOW_RESOLUTION_CYCLE:{CYCLE_NUMBER} RESOLVED:[{ids}] ESCALATED:[{ids}] DISPUTED:[] -->`
 
+   Mark the task completed ONLY if `gh pr comment` succeeded (exit 0 and a comment URL returned).
+   If it failed (auth/network/rate-limit), leave the task `in_progress`, retry, and do NOT advance
+   to step 9 — a silently-absent resolution marker re-introduces the merge false-block this emission
+   exists to prevent.
+
    TaskUpdate(resolutionCommentTaskId, status: "completed", result: "PASS — self-review resolution marker posted")
 
    **Manifest emit** — record the review-cycle artifact in the issue's journal manifest. Use the issue number associated with this PR (parse from PR body: `gh pr view "$PR_NUM" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#'`):
@@ -763,7 +768,7 @@ TaskUpdate each review task as agents complete.
 
    The `path` value is `A` when paired-reviewer mode produced the findings (7-field marker), `B` when Path B (5-field marker) produced them. `findings_count` is the total across P1+P2+P3 in the cycle. If the PR body does not link an issue, skip the emit (the marker on the PR comment is sufficient for that PR's own state; the manifest is keyed by issue, not PR).
 
-8. **Verify posting**: TaskList — confirm "Post review comment" or "Post self-review comment" task is completed. Do NOT proceed to step 9 until this is verified.
+8. **Verify posting**: TaskList — confirm the posting task(s) are completed. Do NOT proceed to step 9 until verified. For external review: "Post review comment". For self-review: BOTH "Post self-review comment" AND "Post self-review resolution marker" must be `completed` — the resolution marker is what balances the merge finding-ledger gate, so a self-review that posted the review body but not the resolution marker is NOT done (it would false-block at merge). Mirror `commands/address.md` step 11's "ALL tasks including the resolution comment" gate.
 
 9. **Post-review**: If self-review fixed everything, suggest `/flow:pr`. If external review, suggest `/flow:address $PR_NUM` for the PR author.
 
