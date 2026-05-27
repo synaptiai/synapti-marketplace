@@ -102,28 +102,51 @@ else
   # Section: Finding-ledger seed (full gate runs in next ! block)
   echo ""
   echo "### Finding-Ledger Seed"
-  # Capture gh exit separately. Same reason as the Reviews section: the merge
-  # gate must close (STATE=unavailable) rather than open (STATE=empty) when
+  # DIAGNOSTIC PREVIEW ONLY — the authoritative gate runs in the next ! block and
+  # scans both streams with trust filtering. This seed exists so the assessment can
+  # report what markers are reachable before the gate runs.
+  #
+  # Markers live on TWO different GitHub objects (see references/finding-ledger-parser.md):
+  #   - FLOW_REVIEW_CYCLE     → PR review bodies     (repos/.../pulls/N/reviews)
+  #   - FLOW_RESOLUTION_CYCLE → PR/issue comments    (repos/.../issues/N/comments)
+  # Scanning only one stream (the historical bug, #126) undercounts: a PR whose only
+  # marker is a FLOW_REVIEW_CYCLE in a review body reported SEED_MARKER_COUNT=0 even
+  # though the gate would find it. Scan both and union the hits.
+  #
+  # Capture gh exit separately per endpoint. Same reason as the Reviews section: the
+  # merge gate must close (STATE=unavailable) rather than open (STATE=empty) when
   # markers can't be read.
-  SEED_JSON=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE|FLOW_REVIEW_CYCLE")) | {id, body}]' 2>/dev/null); GH_EXIT=$?
-  if [ $GH_EXIT -ne 0 ]; then
+  SEED_COMMENTS=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE|FLOW_REVIEW_CYCLE")) | {id, body, surface: "issue-comments"}]' 2>/dev/null); GH_EXIT_C=$?
+  SEED_REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE|FLOW_REVIEW_CYCLE")) | {id, body, surface: "reviews"}]' 2>/dev/null); GH_EXIT_R=$?
+  echo "SEED_SCANNED=reviews,issue-comments"
+  if [ $GH_EXIT_C -ne 0 ] || [ $GH_EXIT_R -ne 0 ]; then
     echo "SEED_MARKER_COUNT=0"
     echo "STATE=unavailable"
+    echo "SEED_UNAVAILABLE=comments_exit=$GH_EXIT_C reviews_exit=$GH_EXIT_R"
   else
+    # Union both streams into one array for counting + per-marker emission.
+    SEED_JSON=$(printf '%s\n%s' "$SEED_COMMENTS" "$SEED_REVIEWS" | jq -s 'add // []' 2>/dev/null)
     SEED_COUNT=$(echo "$SEED_JSON" | jq 'length' 2>/dev/null)
     [ -z "$SEED_COUNT" ] && SEED_COUNT=0
     echo "SEED_MARKER_COUNT=$SEED_COUNT"
     if [ "$SEED_COUNT" = "0" ]; then
+      # Truly absent on both surfaces — distinct from "present but malformed" below.
       echo "STATE=empty"
     else
       # `scan` is a generator that yields each match; wrap in `[...]` to collect
       # all matches into an array, then take `last` (the actual marker —
       # typically in an HTML comment at end-of-body — earlier occurrences are
       # usually prose references). Two capture groups (kind, cycle) so each
-      # element is `[kind, cycle]`.
+      # element is `[kind, cycle]`. A marker line whose cycle is non-numeric (or
+      # whose kind/cycle won't parse) surfaces as SEED_FORMAT_INVALID so the
+      # operator can tell a malformed marker from an absent one.
       echo "$SEED_JSON" | jq -r '.[] | (
-        ([.body | scan("FLOW_(RESOLUTION|REVIEW)_CYCLE:([0-9]+)")] | last // ["?","?"]) as $last |
-        "SEED=id=\(.id) kind=\($last[0]) cycle=\($last[1])"
+        ([.body | scan("FLOW_(RESOLUTION|REVIEW)_CYCLE:([0-9]+)")] | last) as $last |
+        if $last == null then
+          "SEED_FORMAT_INVALID=id=\(.id) surface=\(.surface) (marker present but cycle not parseable)"
+        else
+          "SEED=id=\(.id) surface=\(.surface) kind=\($last[0]) cycle=\($last[1])"
+        end
       )' 2>/dev/null
     fi
   fi
