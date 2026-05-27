@@ -1,5 +1,40 @@
 # Changelog
 
+## 3.2.1 (2026-05-27)
+
+### Fixed: /flow:merge gate false-blocks + diagnostics
+
+- **Self-reviewed PRs no longer false-block at the finding-ledger gate (#124).** The self-review
+  fix-forward path fixes every finding in-PR but only posted a `FLOW_REVIEW_CYCLE` marker (status
+  `open`) with no `FLOW_RESOLUTION_CYCLE`. The merge gate balances `FINDINGS − RESOLVED` and reads
+  `RESOLVED` only from a `FLOW_RESOLUTION_CYCLE` issue comment, so a solo/agent-authored PR whose
+  findings were all fixed in-PR blocked at merge and required a manual Tier-3 override. Self-review
+  now emits the same `FLOW_RESOLUTION_CYCLE` marker `/flow:address` emits (issue-comments stream),
+  recording fix-forwarded IDs as `RESOLVED` and any unfixable finding as `ESCALATED` — unifying solo
+  and two-actor flows on the mechanism the gate already trusts, with **zero change to the gate's
+  classification logic**. Also adds the previously-missing `FLOW_REVIEW_CYCLE` marker to
+  `templates/self-review-comment.md`.
+- **Finding-ledger seed scans both marker streams (#126).** The merge assessment's diagnostic seed
+  scanned only the issue-comments stream, so a PR whose only marker was a `FLOW_REVIEW_CYCLE` in a
+  review body reported `SEED_MARKER_COUNT=0`. The seed now queries both the reviews and
+  issue-comments streams and emits `SEED_SCANNED` naming the surfaces. A marker is defined precisely
+  as `FLOW_*_CYCLE:<digits>`, so bare prose mentions and unsubstituted `:{N}` placeholders are not
+  counted (`SEED_MARKER_COUNT=0` means genuinely absent), and both the union and count jq steps fail
+  closed to `STATE=unavailable` on unreadable input rather than collapsing to a false `STATE=empty`.
+  Diagnostic-only — the authoritative gate already scanned both streams, so gate behavior is unchanged.
+
+### Tests
+
+- **Regression guard for the terminal/achieved FlowGoal merge gate (#125).** #125's primary bug — an
+  `achieved` (terminal) goal read as "no active FlowGoal" and false-blocking merge — was already fixed
+  in 3.2.0 (`flow-active-goal.sh --allow-terminal --branch-strict`), but nothing pinned the
+  lifecycle→state mapping. Adds a consolidated guard asserting `achieved → ok`, `active → blocked`,
+  and `failed`/`cancelled`/no-goal `→ not-applicable`. Note: `failed`/`cancelled` resolve to
+  not-applicable **by design** (only `achieved` is a gate-relevant terminal state); #125's
+  failed/cancelled-should-block wishlist item is intentionally not implemented in 3.2.x — the merge
+  gate keys on an *active, incomplete* obligation, and an abandoned/closed goal defers to the PR's own
+  review state and the finding-ledger gate.
+
 ## 3.2.0 (2026-05-26)
 
 ### Added: v3.1 UX layer — invisible-by-default runtime (#111)

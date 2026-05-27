@@ -652,6 +652,7 @@ TaskUpdate each review task as agents complete.
    - No follow-up issue creation for fixable items — finding triage is NEVER a valid escalation trigger; fix in this PR
    - Approaching the iteration ceiling without convergence is a signal to re-check the findings (are two findings in tension? misunderstood scope?), not to escalate
    - TaskCreate("Post self-review comment", "Post review findings summary to PR via gh pr review --comment")
+   - TaskCreate("Post self-review resolution marker", "Post a FLOW_RESOLUTION_CYCLE issue comment (gh pr comment) recording the fix-forwarded finding IDs as RESOLVED — required so the merge finding-ledger gate balances for self-reviewed PRs. Skip only when zero findings were raised.")
 
 6. **External review (someone else's PR — PR_AUTHOR != CURRENT_USER)**:
 
@@ -710,6 +711,47 @@ TaskUpdate each review task as agents complete.
 
    TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — review posted as {approve/request-changes/comment}")
 
+   **Self-review resolution marker (MANDATORY when `PR_AUTHOR == CURRENT_USER`):**
+
+   Self-review is *raise + resolve in one action* — fix-forward (step 5) already fixed every
+   finding in-PR. The `FLOW_REVIEW_CYCLE` marker posted above records what was **found** (review
+   body, reviews stream, status `open`); it does NOT, on its own, tell the merge gate the findings
+   were **resolved**. The merge finding-ledger gate balances `FINDINGS − RESOLVED` and reads
+   `RESOLVED` only from a `FLOW_RESOLUTION_CYCLE` marker in the issue-comments stream
+   (`references/finding-ledger-parser.md` §3; `commands/merge.md` finding-ledger gate). Without
+   this marker, a self-reviewed PR whose every finding was fix-forwarded would false-block at merge.
+
+   So after posting the review body, emit a `FLOW_RESOLUTION_CYCLE` marker as a **PR issue comment**
+   — the same marker and placement `/flow:address` uses (`commands/address.md` step 9), built from
+   `templates/resolution-comment.md`. This is what collapses the two-actor flow (reviewer raises →
+   author resolves) into a single self-review action. Skip ONLY when there were zero findings (an
+   approve-style self-review with an empty `FINDINGS:[]` — nothing to resolve).
+
+   - `RESOLVED:[...]` — every finding ID that fix-forward fixed in-PR (the common case: all of them).
+   - `ESCALATED:[...]` — any finding that could NOT be fixed in-PR and was escalated with the
+     six-field structure (step 5 / `self-review-comment.md` "Escalated for Human Judgment"). The
+     merge gate blocks on a non-empty `ESCALATED`, which is correct — an escalated finding is an
+     open product decision, not a shipped fix.
+   - `DISPUTED:[]` — empty for self-review (there is no second actor to dispute).
+
+   ```bash
+   # $CYCLE_NUMBER is the same cycle the FLOW_REVIEW_CYCLE marker above used.
+   # RESOLVED/ESCALATED are comma-separated finding IDs (e.g. F1,F2,F3).
+   RES_BODY="$(build from templates/resolution-comment.md with the self-review cycle metrics)"
+   [ -n "$RES_BODY" ] || { echo "ERROR: empty resolution body — refusing to post a marker-less comment" >&2; }
+   gh pr comment "$PR_NUM" --body "$RES_BODY"; RES_EXIT=$?
+   ```
+
+   The resolution comment body MUST end with:
+   `<!-- FLOW_RESOLUTION_CYCLE:{CYCLE_NUMBER} RESOLVED:[{ids}] ESCALATED:[{ids}] DISPUTED:[] -->`
+
+   Mark the task completed ONLY if `RES_EXIT` is `0` (the `gh pr comment` succeeded and returned a
+   comment URL). If it is non-zero (auth/network/rate-limit) or `RES_BODY` was empty, leave the task
+   `in_progress`, retry, and do NOT advance to step 9 — a silently-absent resolution marker
+   re-introduces the merge false-block this emission exists to prevent.
+
+   TaskUpdate(resolutionCommentTaskId, status: "completed", result: "PASS — self-review resolution marker posted")
+
    **Manifest emit** — record the review-cycle artifact in the issue's journal manifest. Use the issue number associated with this PR (parse from PR body: `gh pr view "$PR_NUM" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#'`):
 
    ```bash
@@ -727,7 +769,9 @@ TaskUpdate each review task as agents complete.
 
    The `path` value is `A` when paired-reviewer mode produced the findings (7-field marker), `B` when Path B (5-field marker) produced them. `findings_count` is the total across P1+P2+P3 in the cycle. If the PR body does not link an issue, skip the emit (the marker on the PR comment is sufficient for that PR's own state; the manifest is keyed by issue, not PR).
 
-8. **Verify posting**: TaskList — confirm "Post review comment" or "Post self-review comment" task is completed. Do NOT proceed to step 9 until this is verified.
+8. **Verify posting**: TaskList — confirm the posting task(s) are completed. Do NOT proceed to step 9 until verified. For external review: "Post review comment". For self-review: BOTH "Post self-review comment" AND "Post self-review resolution marker" must be `completed` — the resolution marker is what balances the merge finding-ledger gate, so a self-review that posted the review body but not the resolution marker is NOT done (it would false-block at merge). Mirror `commands/address.md` step 11's "ALL tasks including the resolution comment" gate.
+
+   **Zero-findings exception**: when the self-review raised zero findings (the review posts an empty `FINDINGS:[]` and there is nothing to resolve), the resolution marker is correctly skipped (per step 5 and step 7). In that case mark the "Post self-review resolution marker" task `completed` with `result: "SKIP — no findings to resolve"` so the gate is satisfied. A balanced ledger with no findings needs no resolution marker; only DO post one when at least one finding was fix-forwarded.
 
 9. **Post-review**: If self-review fixed everything, suggest `/flow:pr`. If external review, suggest `/flow:address $PR_NUM` for the PR author.
 
@@ -745,4 +789,5 @@ TaskUpdate each review task as agents complete.
 | Holdout validation (skill, parallel) | 1 | Autonomous |
 | Self-review fix-forward (when reviewing own PR) | 1 | File edits + commits autonomous; push is Tier 2 |
 | `gh pr review --comment / --request-changes / --approve` | 2 | Journal-and-proceed |
+| `gh pr comment` (self-review `FLOW_RESOLUTION_CYCLE` marker) | 2 | Journal-and-proceed |
 | Follow-up issue creation (cosmetic P3 in untouched files, external PR review only) | 2 | Journal-and-proceed |

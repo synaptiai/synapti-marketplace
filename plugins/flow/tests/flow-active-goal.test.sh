@@ -462,3 +462,38 @@ _fag_write_goal "$DIR/.flow/goals/issue-only.goal.yaml" "active" "issue-only" "f
 OUT=$(cd "$DIR" && bash "$HELPER" --id --branch-strict 2>/dev/null); EXIT=$?
 assert_equal "0" "$EXIT" "unknown branch + strict still resolves (exit 0)"
 assert_equal "issue-only" "$OUT" "falls back to the most-recent active goal when the branch is unknown"
+
+# --- #125 regression guard: the FULL lifecycle -> (exit, status) contract the ---
+# merge FlowGoal gate depends on. The gate (commands/merge.md) invokes the helper
+# with `--status --allow-terminal --branch-strict` and maps:
+#   exit 0 + "achieved"        -> FLOW_GOAL_GATE_STATE=ok      (shipment complete)
+#   exit 0 + other (e.g active) -> FLOW_GOAL_GATE_STATE=blocked (incomplete shipment)
+#   exit 1 (no goal on branch)  -> FLOW_GOAL_GATE_STATE=ok      (gate not applicable)
+# #125 was the achieved->ok branch regressing to "no active goal" and false-blocking.
+# This asserts every lifecycle in one place so the precompute block cannot silently
+# break the mapping again. NOTE: `failed`/`cancelled` resolve to exit 1 here BY DESIGN
+# (only `achieved` is a gate-relevant terminal state — see the "failed/cancelled goals
+# are NOT surfaced" test above); the gate therefore treats them as not-applicable, not
+# as a block. That is intentional in v3.2.x; see CHANGELOG 3.2.1.
+_fag_gate_status() { # status, branch-owner -> echoes "exit|status" as the gate would observe
+  local st="$1" owner="$2" dir out exit
+  dir=$(_fag_mkdir); mkdir -p "$dir/.flow/goals"
+  _fag_write_goal "$dir/.flow/goals/issue-g.goal.yaml" "$st" "issue-g" "$owner"
+  out=$(cd "$dir" && bash "$HELPER" --status --allow-terminal --branch-strict --branch feature/cur 2>/dev/null); exit=$?
+  printf '%s|%s' "$exit" "$out"
+}
+
+_flow_test_begin "#125: achieved goal on current branch -> exit 0 / 'achieved' (gate maps to ok)"
+assert_equal "0|achieved" "$(_fag_gate_status achieved feature/cur)" "achieved -> exit 0 + status achieved"
+
+_flow_test_begin "#125: active (not achieved) goal on current branch -> exit 0 / 'active' (gate maps to blocked)"
+assert_equal "0|active" "$(_fag_gate_status active feature/cur)" "active -> exit 0 + status active"
+
+_flow_test_begin "#125: failed goal on current branch -> exit 1 (gate not applicable, by design)"
+assert_equal "1|" "$(_fag_gate_status failed feature/cur)" "failed -> exit 1 (out of gate window)"
+
+_flow_test_begin "#125: cancelled goal on current branch -> exit 1 (gate not applicable, by design)"
+assert_equal "1|" "$(_fag_gate_status cancelled feature/cur)" "cancelled -> exit 1 (out of gate window)"
+
+_flow_test_begin "#125: no goal owning the current branch -> exit 1 (gate not applicable)"
+assert_equal "1|" "$(_fag_gate_status active feature/elsewhere)" "goal on another branch -> exit 1 under strict"

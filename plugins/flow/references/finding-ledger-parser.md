@@ -60,6 +60,21 @@ Source: `templates/resolution-comment.md`. Reports the disposition of cycle `N`'
 
 Arrays carry IDs only; priority must be looked up from the matching `FLOW_REVIEW_CYCLE`.
 
+**Two emitters, one mechanism.** This marker is emitted by both paths that close findings:
+
+- **Two-actor flow** — `/flow:address` (`commands/address.md` step 9) posts it after the PR author
+  resolves a reviewer's findings.
+- **Self-review / fix-forward** — `/flow:review` (and the inline review in `/flow:pr`) on your *own*
+  PR posts it too (`commands/review.md` Phase 4 step 7, self-review branch). Self-review is raise +
+  resolve in one action: the `FLOW_REVIEW_CYCLE` marker in the review body records what was found
+  (status `open`), and this `FLOW_RESOLUTION_CYCLE` issue comment records the fix-forwarded IDs as
+  `RESOLVED`. Without it, a solo/agent-authored PR whose every finding was fixed in-PR would
+  false-block at the merge finding-ledger gate (it reads `RESOLVED` only from this marker, never from
+  an inline `FLOW_REVIEW_CYCLE` status field).
+
+In both cases the marker lands in the **issue-comments stream** (`gh pr comment`) — never a review
+body — so the merge gate's resolution query (§3 below) finds it regardless of which command emitted it.
+
 ## Finding State Classification
 
 For a single PR, after reading the **latest** marker of each kind:
