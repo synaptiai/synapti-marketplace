@@ -17,10 +17,11 @@
 - **Finding-ledger seed scans both marker streams (#126).** The merge assessment's diagnostic seed
   scanned only the issue-comments stream, so a PR whose only marker was a `FLOW_REVIEW_CYCLE` in a
   review body reported `SEED_MARKER_COUNT=0`. The seed now queries both the reviews and
-  issue-comments streams (matching the authoritative gate), emits `SEED_SCANNED` naming the surfaces,
-  and distinguishes a truly-absent marker (`SEED_MARKER_COUNT=0`) from a present-but-malformed one
-  (`SEED_FORMAT_INVALID`). Diagnostic-only — the gate already scanned both streams, so gate behavior
-  is unchanged.
+  issue-comments streams and emits `SEED_SCANNED` naming the surfaces. A marker is defined precisely
+  as `FLOW_*_CYCLE:<digits>`, so bare prose mentions and unsubstituted `:{N}` placeholders are not
+  counted (`SEED_MARKER_COUNT=0` means genuinely absent), and both the union and count jq steps fail
+  closed to `STATE=unavailable` on unreadable input rather than collapsing to a false `STATE=empty`.
+  Diagnostic-only — the authoritative gate already scanned both streams, so gate behavior is unchanged.
 
 ### Tests
 

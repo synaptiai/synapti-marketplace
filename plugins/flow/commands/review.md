@@ -738,16 +738,17 @@ TaskUpdate each review task as agents complete.
    # $CYCLE_NUMBER is the same cycle the FLOW_REVIEW_CYCLE marker above used.
    # RESOLVED/ESCALATED are comma-separated finding IDs (e.g. F1,F2,F3).
    RES_BODY="$(build from templates/resolution-comment.md with the self-review cycle metrics)"
-   gh pr comment "$PR_NUM" --body "$RES_BODY"
+   [ -n "$RES_BODY" ] || { echo "ERROR: empty resolution body — refusing to post a marker-less comment" >&2; }
+   gh pr comment "$PR_NUM" --body "$RES_BODY"; RES_EXIT=$?
    ```
 
    The resolution comment body MUST end with:
    `<!-- FLOW_RESOLUTION_CYCLE:{CYCLE_NUMBER} RESOLVED:[{ids}] ESCALATED:[{ids}] DISPUTED:[] -->`
 
-   Mark the task completed ONLY if `gh pr comment` succeeded (exit 0 and a comment URL returned).
-   If it failed (auth/network/rate-limit), leave the task `in_progress`, retry, and do NOT advance
-   to step 9 — a silently-absent resolution marker re-introduces the merge false-block this emission
-   exists to prevent.
+   Mark the task completed ONLY if `RES_EXIT` is `0` (the `gh pr comment` succeeded and returned a
+   comment URL). If it is non-zero (auth/network/rate-limit) or `RES_BODY` was empty, leave the task
+   `in_progress`, retry, and do NOT advance to step 9 — a silently-absent resolution marker
+   re-introduces the merge false-block this emission exists to prevent.
 
    TaskUpdate(resolutionCommentTaskId, status: "completed", result: "PASS — self-review resolution marker posted")
 
@@ -769,6 +770,8 @@ TaskUpdate each review task as agents complete.
    The `path` value is `A` when paired-reviewer mode produced the findings (7-field marker), `B` when Path B (5-field marker) produced them. `findings_count` is the total across P1+P2+P3 in the cycle. If the PR body does not link an issue, skip the emit (the marker on the PR comment is sufficient for that PR's own state; the manifest is keyed by issue, not PR).
 
 8. **Verify posting**: TaskList — confirm the posting task(s) are completed. Do NOT proceed to step 9 until verified. For external review: "Post review comment". For self-review: BOTH "Post self-review comment" AND "Post self-review resolution marker" must be `completed` — the resolution marker is what balances the merge finding-ledger gate, so a self-review that posted the review body but not the resolution marker is NOT done (it would false-block at merge). Mirror `commands/address.md` step 11's "ALL tasks including the resolution comment" gate.
+
+   **Zero-findings exception**: when the self-review raised zero findings (the review posts an empty `FINDINGS:[]` and there is nothing to resolve), the resolution marker is correctly skipped (per step 5 and step 7). In that case mark the "Post self-review resolution marker" task `completed` with `result: "SKIP — no findings to resolve"` so the gate is satisfied. A balanced ledger with no findings needs no resolution marker; only DO post one when at least one finding was fix-forwarded.
 
 9. **Post-review**: If self-review fixed everything, suggest `/flow:pr`. If external review, suggest `/flow:address $PR_NUM` for the PR author.
 

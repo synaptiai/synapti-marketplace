@@ -34,14 +34,24 @@ fi
 
 _flow_test_begin "review.md creates the resolution-post task in the self-review path"
 CONTENT=$(cat "$REVIEW_MD")
-assert_contains "Post self-review resolution marker" "$CONTENT" "TaskCreate for resolution marker present"
+# Assert on the TaskCreate form specifically (not the bare label, which also appears in the
+# step-8 gate prose) so removing the step-5 TaskCreate would actually fail this test.
+assert_contains 'TaskCreate("Post self-review resolution marker"' "$CONTENT" "step-5 TaskCreate for resolution marker present"
 
 _flow_test_begin "review.md gates step 8 on the resolution-marker task (no silent skip on gh failure)"
 # A failed `gh pr comment` must NOT advance the workflow — otherwise the resolution marker
 # is silently absent and the merge gate false-blocks again (the bug this whole change fixes).
 CONTENT=$(cat "$REVIEW_MD")
 assert_contains 'BOTH "Post self-review comment" AND "Post self-review resolution marker"' "$CONTENT" "step 8 requires both self-review posting tasks"
+assert_contains "RES_EXIT" "$CONTENT" "resolution post captures gh exit for a machine-checkable backstop"
 assert_contains "leave the task" "$CONTENT" "resolution post has a failure backstop (retry, do not advance)"
+
+_flow_test_begin "review.md step 8 has a zero-findings carve-out (no deadlock when nothing to resolve)"
+# A zero-findings self-review legitimately skips the resolution marker; step 8 must allow the
+# task to be completed as SKIP rather than deadlocking on the both-tasks gate.
+CONTENT=$(cat "$REVIEW_MD")
+assert_contains "Zero-findings exception" "$CONTENT" "step 8 documents the zero-findings carve-out"
+assert_contains "SKIP — no findings to resolve" "$CONTENT" "zero-findings path completes the task as SKIP"
 
 _flow_test_begin "review.md self-review still posts FLOW_REVIEW_CYCLE in the review body"
 CONTENT=$(cat "$REVIEW_MD")
