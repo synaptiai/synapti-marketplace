@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.2.1 (2026-05-27)
+## 3.2.2 (2026-05-29)
 
 ### Changed: review/finding tables render as two columns
 
@@ -19,6 +19,8 @@
   shell-pipe quotes like `grep \| head` from breaking rows. Rendering change only — the finding data
   model and the `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE` marker grammar (which the merge/status
   gates parse) are unchanged, so no migration is required.
+
+## 3.2.1 (2026-05-27)
 
 ### Fixed: /flow:merge gate false-blocks + diagnostics
 
