@@ -624,8 +624,8 @@ TaskUpdate each review task as agents complete.
 ### Findings: P1: {X}, P2: {Y}, P3: {Z}
 
 ### P1 — Critical
-| # | Category | Location | Issue | Fix |
-|---|----------|----------|-------|-----|
+| Finding | Suggested Fix |
+|---------|---------------|
 
 ### Requirements Adherence
 | # | Criterion | Status | Evidence |

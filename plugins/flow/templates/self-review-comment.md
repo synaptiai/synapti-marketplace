@@ -24,9 +24,9 @@ All criteria verified independently.
 Verdict: N/A (independent verdict not enabled)
 
 ### Findings Found & Fixed
-| # | Priority | Location | Issue | Fix Applied |
-|---|----------|----------|-------|-------------|
-| {n} | {P1/P2/P3} | {file:line} | {issue} | {fix description} |
+| Finding | Fix Applied |
+|---------|-------------|
+| **{n} · {P1/P2/P3} · `{file:line}`**<br>{issue} | {fix description} |
 
 ### Escalated for Human Judgment
 {Only populated if findings could not be fixed in-PR. Each escalation uses the six-field Proactive-Autonomy structure.}

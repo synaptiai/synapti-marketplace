@@ -69,17 +69,17 @@ Map each acceptance criterion to evidence:
 
 ```markdown
 ### P1 - Critical
-| # | Category | Location | Issue | Fix |
-|---|----------|----------|-------|-----|
-| 1 | security | auth.rb:42 | SQL injection via string interpolation | Use parameterized query |
+| Finding | Suggested Fix |
+|---------|---------------|
+| **1 · security · `auth.rb:42`**<br>SQL injection via string interpolation. | Use parameterized query. |
 
 ### P2 - Should Fix
-| # | Category | Location | Issue | Fix |
-|---|----------|----------|-------|-----|
+| Finding | Suggested Fix |
+|---------|---------------|
 
 ### P3 - Consider
-| # | Category | Location | Issue | Fix |
-|---|----------|----------|-------|-----|
+| Finding | Suggested Fix |
+|---------|---------------|
 ```
 
 ## Confidence Assessment

@@ -135,19 +135,21 @@ Integration-verifier produces TWO output artifacts: (1) the per-check **results 
 
 ### Findings (when verification surfaced issues)
 
+Two-column `Finding | Suggested Fix` per priority (canonical schema; escape any literal `|` as `\|`).
+
 #### P1 — Critical (Blocks Merge)
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
-| INT-1 | runtime | dist/server.js:1 | Build succeeds but server crashes on start: `TypeError: Cannot read property 'listen' of undefined` | Add null check on `app` import in `src/server.ts:14` | HIGH |
-| INT-2 | visual | http://localhost:3000/ | Console error on page load: `Uncaught ReferenceError: GA_TRACKING_ID is not defined` (screenshot evidence) | Stub `window.GA_TRACKING_ID` in dev or guard the analytics call | HIGH |
+| Finding | Suggested Fix |
+|---------|---------------|
+| **INT-1 · runtime · `dist/server.js:1`**<br>Build succeeds but server crashes on start: `TypeError: Cannot read property 'listen' of undefined`. | Add null check on `app` import in `src/server.ts:14`. |
+| **INT-2 · visual · `http://localhost:3000/`**<br>Console error on page load: `Uncaught ReferenceError: GA_TRACKING_ID is not defined` (screenshot evidence). | Stub `window.GA_TRACKING_ID` in dev or guard the analytics call. |
 
 #### P2 — Should Fix
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
+| Finding | Suggested Fix |
+|---------|---------------|
 
 #### P3 — Consider
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
+| Finding | Suggested Fix |
+|---------|---------------|
 
 ### Visual Evidence
 (Include when screenshots were captured)

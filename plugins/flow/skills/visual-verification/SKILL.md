@@ -72,7 +72,7 @@ For each page URL (dev server root + key pages from routes):
   6. Record screenshot path as evidence (referenced from the per-criterion evidence bundle)
 ```
 
-Findings emit using the canonical row shape (`ID | Category | Location | Problem | Suggested Fix | Confidence`). Use the `INT-` prefix when invoked from `integration-verifier`, the `VIS-` prefix when invoked standalone. Location for visual findings is the URL path (e.g., `http://localhost:3000/login` instead of `file:line`) — the schema accepts non-file locations for renderer-surface findings.
+Findings emit using the canonical two-column `Finding | Suggested Fix` table (see `references/finding-schema.md`): bold `{ID} · {category} · `{location}`` on the first line, problem prose after a `<br>`. Use the `INT-` prefix when invoked from `integration-verifier`, the `VIS-` prefix when invoked standalone. Location for visual findings is the URL path (e.g., `http://localhost:3000/login` instead of `file:line`) — the schema accepts non-file locations for renderer-surface findings.
 
 ## Responsive Verification
 
@@ -154,16 +154,16 @@ Use `TaskList` after all visual verification completes to confirm all sub-tasks 
 ### Visual Findings (canonical finding-schema)
 
 #### P1 — Critical (Blocks Completion)
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
+| Finding | Suggested Fix |
+|---------|---------------|
 
 #### P2 — Should Fix
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
+| Finding | Suggested Fix |
+|---------|---------------|
 
 #### P3 — Consider
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
+| Finding | Suggested Fix |
+|---------|---------------|
 ```
 
 ## Active Problem Solving

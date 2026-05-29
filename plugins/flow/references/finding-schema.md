@@ -59,23 +59,35 @@ Reviewers should pick from this controlled list when possible. Free-form categor
 
 ## Output format (per reviewer agent)
 
+Findings are rendered as a **two-column table** so they stay legible in GitHub's narrow PR-comment
+column. Previously a 6-column table (`ID | Category | Location | Problem | Suggested Fix | Confidence`) collapsed
+on GitHub: each prose cell wraps one word — sometimes one character — per line, stacking `category`
+vertically and breaking `location` mid-path. Two columns give each prose column ~half the width, so
+the short metadata (id, category, location, confidence, disposition) is packed into the first cell and
+the two prose fields (problem, suggested_fix) each get a full column.
+
+This is a **rendering** decision only. The data model is unchanged (the eight fields above), and the
+`FLOW_REVIEW_CYCLE` marker grammar is unchanged (still pipe-delimited 5-field / 7-field rows — see
+`references/finding-ledger-parser.md`). Do not confuse the rendered table's two columns with the
+marker's field count; they are independent.
+
 Every reviewer agent's output section uses three priority-ordered tables plus a summary:
 
 ```markdown
 ## {Reviewer} Findings
 
 ### P1 — Critical (Blocks Merge)
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
-| F1 | security | src/auth.ts:42 | SQL injection via string interpolation | Use parameterized query (`$1`, `$2`) | HIGH |
+| Finding | Suggested Fix |
+|---------|---------------|
+| **F1 · security · `src/auth.ts:42`**<br>SQL injection via string interpolation. | Use parameterized query (`$1`, `$2`). |
 
 ### P2 — Should Fix
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
+| Finding | Suggested Fix |
+|---------|---------------|
 
 ### P3 — Consider
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
+| Finding | Suggested Fix |
+|---------|---------------|
 
 ### Summary
 - Files reviewed: {N}
@@ -83,7 +95,24 @@ Every reviewer agent's output section uses three priority-ordered tables plus a 
 - Recommendation: APPROVE | COMMENT | REQUEST_CHANGES
 ```
 
-Empty priority sections SHOULD be retained as-is (just the header + table header) so consumers can tell "no findings at this priority" apart from "this priority section was forgotten". The summary line counts MUST match the row counts in the tables — this is the cheapest invariant to spot-check during synthesis.
+Cell construction:
+- **Finding cell, line 1 (bold):** `{ID} · {category} · `{location}``. Priority is NOT repeated in
+  the cell — the `### P1/P2/P3` section header already carries it.
+- **Finding cell, line 2** (after `<br>`): the `problem` prose.
+- **Confidence + disposition:** appended to the Finding cell as a trailing `_(HIGH · consensus)_`
+  **only in paired-reviewer / Path A mode**. Single-session / Path B omits the trailing italic. (These
+  replace the old `Confidence` and `Disposition` columns.)
+- **Suggested Fix cell:** the `suggested_fix` prose, or `—` when non-obvious (then append a
+  `**{ID} context:** …` paragraph below the table explaining the trade-off, as before).
+
+**Pipe escaping (required):** any literal `|` inside a cell MUST be written `\|` or kept inside a code
+span. Findings routinely quote shell pipes (`grep \| head`); an unescaped `|` silently breaks the row
+into extra columns.
+
+Empty priority sections SHOULD be retained as-is (just the header + the `| Finding | Suggested Fix |`
+header row) so consumers can tell "no findings at this priority" apart from "this priority section was
+forgotten". The summary line counts MUST match the row counts in the tables — this is the cheapest
+invariant to spot-check during synthesis.
 
 ## ID grammar
 
