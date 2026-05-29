@@ -134,14 +134,14 @@ The disposition vocabulary `consensus|validated|refined|kept|unchallenged` is th
 
 ### Phase 5: Emit consolidated output
 
-Lead writes the per-priority finding tables with two new columns:
+Lead writes the per-priority finding tables, folding confidence and disposition into the Finding cell as a trailing `_(confidence · disposition)_` suffix:
 
 ```markdown
 ### P1 — Critical
-| # | Category | Location | Issue | Fix | Confidence | Disposition |
-|---|----------|----------|-------|-----|------------|-------------|
-| F1 | security | src/auth.ts:42 | ... | ... | HIGH | consensus |
-| F2 | correctness | src/api.ts:88 | ... | ... | LOW | kept (B disagreed: "off-by-one is intentional") |
+| Finding | Suggested Fix |
+|---------|---------------|
+| **F1 · security · `src/auth.ts:42`**<br>... _(HIGH · consensus)_ | ... |
+| **F2 · correctness · `src/api.ts:88`**<br>... _(LOW · kept — B disagreed: "off-by-one is intentional")_ | ... |
 ```
 
 And the extended `FLOW_REVIEW_CYCLE` marker (7 fields per row; example exercises three disposition values):

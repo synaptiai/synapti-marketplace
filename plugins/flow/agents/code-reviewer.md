@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: "Review code changes for quality, logic correctness, edge cases, security, and error handling. Return P1/P2/P3 findings using the canonical row shape from `references/finding-schema.md` (ID | Category | Location | Problem | Suggested Fix | Confidence)."
+description: "Review code changes for quality, logic correctness, edge cases, security, and error handling. Return P1/P2/P3 findings using the canonical two-column finding table from `references/finding-schema.md` (Finding | Suggested Fix, with id/category/location packed into the Finding cell)."
 model: inherit
 tools: Read, Bash, Grep, Glob, LSP
 skills: code-review-methodology, evidence-based-development
@@ -82,25 +82,25 @@ For each changed file, analyze:
 
 ### Step 5: Report
 
-Emit findings using the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md). Each finding row has six fields in this order: `ID | Category | Location | Problem | Suggested Fix | Confidence`. Assign IDs with the `F` prefix (`F1`, `F2`, `F3`) per the schema's recommended provenance convention.
+Emit findings using the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md) — a **two-column** `Finding | Suggested Fix` table per priority. Pack the metadata into the Finding cell: a bold first line `{ID} · {category} · `{location}``, then the problem prose after a `<br>`. Assign IDs with the `F` prefix (`F1`, `F2`, `F3`) per the schema's recommended provenance convention. Escape any literal `|` in a cell as `\|` (shell pipes like `grep \| head` otherwise break the row).
 
-The Problem column is a one-line description. When a finding needs a paragraph of context (e.g., to explain a trade-off the suggested fix introduces), append it below the table as `**F{n} context:** ...` rather than inflating the table cell — wide cells are unreadable in PR comments and break the marker schema.
+When a finding needs a paragraph of context (e.g., to explain a trade-off the suggested fix introduces), append it below the table as `**F{n} context:** ...` rather than inflating the cell.
 
 ```markdown
 ## Code Review Findings
 
 ### P1 — Critical (Blocks Merge)
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
-| F1 | security | src/auth.ts:42 | SQL injection via string interpolation | Use parameterized query (`$1`, `$2`) | HIGH |
+| Finding | Suggested Fix |
+|---------|---------------|
+| **F1 · security · `src/auth.ts:42`**<br>SQL injection via string interpolation. | Use parameterized query (`$1`, `$2`). |
 
 ### P2 — Should Fix
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
+| Finding | Suggested Fix |
+|---------|---------------|
 
 ### P3 — Consider
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
+| Finding | Suggested Fix |
+|---------|---------------|
 
 ### Summary
 - Files reviewed: {N}

@@ -78,7 +78,7 @@ Read each changed file and check for:
 
 ### Step 5: Report
 
-Emit security findings using the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md). Each finding row has six fields in this order: `ID | Category | Location | Problem | Suggested Fix | Confidence`. Assign IDs with the `SEC-` prefix (`SEC-1`, `SEC-2`, ...) per the schema's recommended provenance convention. Use `category=security` for OWASP and code-level findings; the `category` cell can carry sub-types (`auth`, `injection`, `xss`, `idor`, `secrets`) when useful.
+Emit security findings using the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md) — a **two-column** `Finding | Suggested Fix` table per priority, with `{ID} · {category} · `{location}`` bolded on the Finding cell's first line and the problem prose after a `<br>`. Assign IDs with the `SEC-` prefix (`SEC-1`, `SEC-2`, ...) per the schema's recommended provenance convention. Use `category=security` for OWASP and code-level findings; the category can carry sub-types (`auth`, `injection`, `xss`, `idor`, `secrets`) when useful. Escape any literal `|` in a cell as `\|`.
 
 The dependency-audit table below is a SEPARATE artifact from the canonical findings table — dependency vulnerabilities don't have a `file:line` location, they have a package version, so they don't fit the canonical schema. Keep them in their own table; the orchestrator surfaces them alongside but does not merge them into the FLOW_REVIEW_CYCLE marker.
 
@@ -86,17 +86,17 @@ The dependency-audit table below is a SEPARATE artifact from the canonical findi
 ## Security Review Findings
 
 ### P1 — Critical Security Issues (Blocks Merge)
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
-| SEC-1 | security | src/auth.ts:42 | SQL injection via string interpolation | Use parameterized query | HIGH |
+| Finding | Suggested Fix |
+|---------|---------------|
+| **SEC-1 · security · `src/auth.ts:42`**<br>SQL injection via string interpolation. | Use parameterized query. |
 
 ### P2 — Security Concerns
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
+| Finding | Suggested Fix |
+|---------|---------------|
 
 ### P3 — Security Improvements
-| ID | Category | Location | Problem | Suggested Fix | Confidence |
-|----|----------|----------|---------|---------------|------------|
+| Finding | Suggested Fix |
+|---------|---------------|
 
 ### Dependency Audit (separate from finding schema — no file:line)
 | Package | Severity | Advisory | Fix |

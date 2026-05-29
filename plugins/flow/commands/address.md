@@ -214,11 +214,11 @@ Group related feedback. Set dependencies for sequential fixes.
 
 Display categorized feedback:
 ```markdown
-| # | Category | File | Feedback | Priority |
-|---|----------|------|----------|----------|
-| 1 | Must fix | auth.rb:42 | SQL injection risk | P1 |
-| 2 | Should fix | test.rb:10 | Missing edge case | P2 |
-| 3 | Question | api.rb:5 | Why this approach? | Q |
+| Feedback | Planned action |
+|----------|----------------|
+| **P1 · Must fix · `auth.rb:42`**<br>SQL injection risk | Fix in this PR |
+| **P2 · Should fix · `test.rb:10`**<br>Missing edge case | Fix in this PR |
+| **Q · Question · `api.rb:5`**<br>Why this approach? | Reply in thread |
 ```
 
 ## Phase 3: CODE

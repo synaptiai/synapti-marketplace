@@ -2,6 +2,24 @@
 
 ## 3.2.1 (2026-05-27)
 
+### Changed: review/finding tables render as two columns
+
+- **Findings and resolution tables are now two-column (`Finding | Suggested Fix`) for legibility in
+  GitHub PR comments.** Review and self-review comments previously used 5–7 column tables (`ID |
+  Category | Location | Problem | Suggested Fix | Confidence [| Disposition]`). In GitHub's narrow
+  PR-comment column every prose cell collapsed and wrapped one word — sometimes one character — per
+  line, stacking `category` vertically and breaking `location` mid-path. All finding and resolution
+  tables now collapse to a two-column shape: the short metadata (`{ID} · {category} · {location}`,
+  plus the paired-reviewer `_(confidence · disposition)_` suffix) is packed into the bold first line
+  of the Finding cell, and the two prose fields each get a full column. Updated across
+  `references/finding-schema.md` (keystone), the four reviewer agents, `skills/visual-verification`,
+  `skills/code-review-methodology`, `skills/team-coordination`, `templates/review-comment.md`,
+  `templates/self-review-comment.md`, `templates/resolution-comment.md`, `commands/review.md`,
+  and `commands/address.md`. A new pipe-escaping rule (`\|` inside cells) keeps
+  shell-pipe quotes like `grep \| head` from breaking rows. Rendering change only — the finding data
+  model and the `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE` marker grammar (which the merge/status
+  gates parse) are unchanged, so no migration is required.
+
 ### Fixed: /flow:merge gate false-blocks + diagnostics
 
 - **Self-reviewed PRs no longer false-block at the finding-ledger gate (#124).** The self-review

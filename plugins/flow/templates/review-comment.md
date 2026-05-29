@@ -2,17 +2,17 @@
 
 ### Findings: P1: {p1_count}, P2: {p2_count}, P3: {p3_count}
 
-> **Note**: Confidence/Disposition columns appear only when paired-reviewer mode (`agentTeams: true` AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`) produced the findings. Single-session reviews omit these columns and emit the legacy 5-field FLOW_REVIEW_CYCLE marker.
+> **Note**: The `_(CONFIDENCE · disposition)_` suffix on a finding appears only when paired-reviewer mode (`agentTeams: true` AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`) produced it. Single-session reviews omit it and emit the legacy 5-field FLOW_REVIEW_CYCLE marker. Escape any literal `|` in a cell as `\|`.
 
 #### P1 — Critical (Blocks Merge)
-| # | Category | Location | Issue | Suggested Fix | Confidence | Disposition |
-|---|----------|----------|-------|---------------|------------|-------------|
-| {n} | {category} | {file:line} | {issue} | {fix} | {HIGH\|MEDIUM\|LOW} | {consensus\|validated\|refined\|kept\|unchallenged} |
+| Finding | Suggested Fix |
+|---------|---------------|
+| **{ID} · {category} · `{file:line}`**<br>{issue} {_({HIGH\|MEDIUM\|LOW} · {consensus\|validated\|refined\|kept\|unchallenged})_ — paired-reviewer mode only; omit otherwise} | {fix} |
 
 #### P2 — Important
-| # | Category | Location | Issue | Suggested Fix | Confidence | Disposition |
-|---|----------|----------|-------|---------------|------------|-------------|
-| {n} | {category} | {file:line} | {issue} | {fix} | {HIGH\|MEDIUM\|LOW} | {consensus\|validated\|refined\|kept\|unchallenged} |
+| Finding | Suggested Fix |
+|---------|---------------|
+| **{ID} · {category} · `{file:line}`**<br>{issue} {_({HIGH\|MEDIUM\|LOW} · {consensus\|validated\|refined\|kept\|unchallenged})_ — paired-reviewer mode only; omit otherwise} | {fix} |
 
 #### P3 — Suggestions
 - {suggestion} {(Confidence: HIGH/MEDIUM/LOW · Disposition: consensus/validated/refined/kept/unchallenged) — paired-reviewer mode only}

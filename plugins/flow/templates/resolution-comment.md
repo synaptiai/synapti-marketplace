@@ -36,9 +36,9 @@ For each item the author believes requires a judgment call beyond autonomous res
 
 ### Thread Status
 
-| Comment ID | Thread | Status |
-|------------|--------|--------|
-| {comment_id} | {Comment summary} | {Resolved / Addressed / Escalated} |
+| Thread | Status |
+|--------|--------|
+| **{Comment summary}**<br>(comment {comment_id}) | {Resolved / Addressed / Escalated} |
 
 ### Verification
 
