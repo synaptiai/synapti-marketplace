@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Plugin-orange.svg)](https://claude.com/claude-code)
-[![Plugins](https://img.shields.io/badge/Plugins-6-green.svg)](#available-plugins)
+[![Plugins](https://img.shields.io/badge/Plugins-8-green.svg)](#available-plugins)
 
 ## About the Marketplace
 
@@ -29,6 +29,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.5.0 |
 | [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Composable skills, safety hooks, agent teams, LSP code intelligence, holdout validation, and learning loop. | 3.2.0 |
 | [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.9.0 |
+| [Hermes Tweet ↗](https://github.com/Xquik-dev/hermes-tweet) | Social Intelligence, Hermes Agent | Native Hermes Agent X/Twitter plugin for read-first social listening, trend and account research, and approval-gated account actions. | 0.1.6 |
 | [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) | Prompt Engineering | Enhance prompts automatically with composable decorators (143 across 14 categories — reasoning, structure, tone, verification, and eight developer categories). Inline `::Name`/`+++Name` syntax, always-on config, and an opt-in Haiku-powered auto-selector that picks 0-3 decorators per prompt. | 0.1.0 |
 
 ### When to Use Each Plugin
@@ -58,6 +59,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Quickly triage content before deeper analysis | [Decipon](#featured-decipon) `/decipon:score` |
 | Research a complex topic with verified sources | [Decipon](#featured-decipon) `/decipon:deep-research` |
 | Fact-check claims in content | [Decipon](#featured-decipon) `/decipon:verify` |
+| Run X/Twitter social listening, trend checks, or account research through Hermes Agent | [Hermes Tweet ↗](https://github.com/Xquik-dev/hermes-tweet) |
 | Start implementing a GitHub issue (autonomous, with learning) | [Flow](#featured-flow) `/flow start` |
 | Create PRs with parallel review agents | [Flow](#featured-flow) `/flow pr` |
 | Debug with structured root cause analysis | [Flow](#featured-flow) `/flow debug` |
