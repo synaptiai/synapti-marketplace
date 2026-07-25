@@ -1,16 +1,16 @@
 ---
-description: "Evaluate the sixteen release-gate conditions and issue a release-ready, conditionally-ready, or not-ready verdict. Runs the mechanical checks by script and dispatches the scorer for the judgment set — and refuses to pass without both."
+description: "Evaluate the seventeen release-gate conditions and issue a release-ready, conditionally-ready, or not-ready verdict. Runs the mechanical checks by script and dispatches the scorer for the judgment set — and refuses to pass without both."
 argument-hint: "[--json] [--strict] [--path <package-root>] [--round <n>]"
 allowed-tools: Bash, Read, Write, Glob, Grep, Skill, Agent
 ---
 
 # Release Gate: $ARGUMENTS
 
-Sixteen conditions, conjunctive. Sixteen of sixteen, or the package is not release-ready.
+Seventeen conditions, conjunctive. Seventeen of seventeen, or the package is not release-ready.
 
 ## Required Skills
 
-- `scoring-and-release-gate` — the ten-dimension rubric, the sixteen conditions, and the verdict vocabulary
+- `scoring-and-release-gate` — the ten-dimension rubric, the seventeen conditions, and the verdict vocabulary
 
 ## The contract this command enforces
 
@@ -87,7 +87,7 @@ A verdict silent on a condition has not evaluated it, and silence must not read 
 bin/dossier-gate.sh --output-root "$OUTPUT_ROOT" --round "$ROUND"
 ```
 
-Now all sixteen are decidable. The result is final for this round.
+Now all seventeen are decidable. The result is final for this round.
 
 `--strict` maps exit 3 to exit 1, so CI treats an uncovered judgment set as a failure rather than as a state to interpret. Use it in any automated context.
 
@@ -97,7 +97,7 @@ Now all sixteen are decidable. The result is final for this round.
 
 | Verdict | Condition |
 |---|---|
-| `release-ready` | All 16 pass |
+| `release-ready` | All 17 pass |
 | `conditionally ready` | Every failure is `needs-owner` or blocked by a stated access limitation — nothing further the run can do |
 | `not ready` | Anything else, including any `INCONCLUSIVE` |
 

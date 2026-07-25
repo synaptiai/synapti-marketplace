@@ -101,10 +101,21 @@ for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_
   fi
   rm -f "$STDERR_TMP" 2>/dev/null
 
-  # Treat jq's "null" output as not-found so callers can use
-  # `.dossier.ci.enabled // null` (recognizes explicit false) instead of
-  # `// empty` (which swallows false alongside null).
-  if [ -n "$RESULT" ] && [ "$RESULT" != "null" ]; then
+  # Absence is decided by jq, not by the shell.
+  #
+  # The old test was `[ -n "$RESULT" ] && [ "$RESULT" != "null" ]`, which
+  # conflates three different states: key absent, key set to null, and key set
+  # to an EMPTY STRING. The third is a meaningful, documented value in this
+  # plugin — `project.name: ""` means "deliberately unresolved" and
+  # `ci.agent.model: ""` means "inherit the action default". Treating it as
+  # absence made a higher-precedence layer's explicit clear fall through to a
+  # lower one, so a stale user-global value silently won.
+  #
+  # This is the same defect already fixed for booleans further down the stack;
+  # it simply was never extended to strings. Ask jq whether the path resolves
+  # to a non-null value — true for `""` and for `false`, false for a missing
+  # key — and only then read it.
+  if jq -e "($EXPR) != null" "$SETTINGS" >/dev/null 2>&1; then
     printf '%s\n' "$RESULT"
     exit 0
   fi

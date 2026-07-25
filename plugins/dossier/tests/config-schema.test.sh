@@ -112,6 +112,19 @@ V=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK" \
       "$PLUGIN_ABS/bin/dossier-resolve-config.sh" dossier.project.outputRoot 2>/dev/null)
 assert_equal "docs/from-env" "$V" "cascade: environment beats every file"
 
+# An explicit EMPTY STRING must resolve, not fall through. `project.name: ""`
+# and `ci.agent.model: ""` are documented sentinels meaning "deliberately
+# unresolved" and "inherit the action default" — treating them as absence let a
+# stale user-global value win, which in a serial-engagement tool means a prior
+# client's name propagating into a new project's document headers.
+mkdir -p "$WORK/home/.claude" 2>/dev/null
+printf '{"dossier":{"project":{"name":"PRIOR-CLIENT"}}}\n' > "$WORK/home/.claude/settings.dossier.json"
+printf '{"dossier":{"project":{"name":""}}}\n' > "$WORK/.claude/settings.dossier.json"
+printf '{}\n' > "$WORK/.claude/settings.dossier.local.json"
+V=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK/home" \
+      "$PLUGIN_ABS/bin/dossier-resolve-config.sh" dossier.project.name 2>/dev/null)
+assert_equal "" "$V" "cascade: an explicit empty string is not treated as absence"
+
 # An explicit false must resolve, not fall through to the next layer.
 printf '{"dossier":{"ci":{"enabled":false}}}\n' > "$WORK/.claude/settings.dossier.local.json"
 V=$(cd "$WORK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" HOME="$WORK" \

@@ -20,7 +20,7 @@ Initial release.
 - `disclosure-gating` — the `CL-####` claim and disclosure register and the derivation of the two public documents from approved claims only
 - `verification-protocol` — one independent verification pass executed by falsification, emitting findings before any repair
 - `finding-reconciliation` — merges the independent A/B/C findings, publishes the pre-repair table, and splits agent-repairable from owner-decision
-- `scoring-and-release-gate` — the ten-dimension weighted scorecard and the sixteen-condition binary release gate
+- `scoring-and-release-gate` — the ten-dimension weighted scorecard and the seventeen-condition binary release gate
 
 **Commands — 9**
 

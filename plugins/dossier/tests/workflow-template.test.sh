@@ -128,6 +128,17 @@ assert_contains "/dossier:refresh" "$BODY" "invokes the refresh command"
 # --- Tool restriction --------------------------------------------------------
 assert_contains "allowedTools" "$BODY" "restricts the agent's tools"
 assert_contains "disallowedTools" "$BODY" "explicitly denies dangerous tools"
+
+# refresh.md dispatches a collector plus per-document drafters and loads four
+# skills. Omit Agent/Skill from the allowlist and every one of those calls is
+# unreachable in a headless run — the fan-out silently degrades to flat inline
+# drafting with no signal that it happened.
+# Anchor on the flag itself: a bare 'allowedTools' grep matches the substring
+# inside '--disallowedTools' in the design-notes header first.
+ALLOWED=$(grep -m1 -- '--allowedTools "' "$WF")
+for needed in "Agent" "Skill"; do
+  assert_contains "$needed" "$ALLOWED" "CI allowlist includes $needed (refresh.md dispatches it)"
+done
 for denied in "WebFetch" "git push"; do
   DIS=$(grep -A3 'disallowedTools' "$WF" | head -8)
   assert_contains "$denied" "$DIS" "denies $denied"

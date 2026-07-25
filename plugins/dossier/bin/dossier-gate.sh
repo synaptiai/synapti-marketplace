@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# dossier-gate.sh — evaluate the sixteen release-gate conditions.
+# dossier-gate.sh — evaluate the seventeen release-gate conditions.
 #
 # NORMATIVE CONTRACT (references/release-gate-conditions.md):
 #
 #   Failing is decidable from a subset. Passing is not.
 #
-# Nine conditions are mechanical and decidable here. Seven are judgment and
+# Ten conditions are mechanical and decidable here. Seven are judgment and
 # require the dossier-scorer verdict file. One broken link is enough to prove a
 # package is NOT releasable; no amount of mechanical checking proves it IS,
 # because the judgment set includes both scorecard conditions and three of the
@@ -239,6 +239,27 @@ if [ -f "$AQ" ] && [ -f "$CONTROL/evidence-ledger.md" ]; then
   fi
 else
   record G16 mechanical FAIL script "registers missing"
+fi
+
+# G17 — reviewer-pass independence method disclosed, including model diversity
+#
+# The protocol calls this disclosure required, and the package's own evidence
+# standard turns on it: three passes that shared one model decorrelate lenses
+# but not model-level blind spots. Without this condition a package could pass
+# every other one while omitting the sentence that tells a reader how much the
+# verification is actually worth.
+if [ -f "$REPORT" ]; then
+  HAS_METHOD=$(grep -c '^## Reviewer-pass independence method' "$REPORT" 2>/dev/null || true)
+  HAS_DIVERSITY=$(grep -c '^Model diversity:' "$REPORT" 2>/dev/null || true)
+  [ -z "$HAS_METHOD" ] && HAS_METHOD=0
+  [ -z "$HAS_DIVERSITY" ] && HAS_DIVERSITY=0
+  if [ "$HAS_METHOD" -gt 0 ] && [ "$HAS_DIVERSITY" -gt 0 ]; then
+    record G17 mechanical PASS script "independence method and model-diversity line present"
+  else
+    record G17 mechanical FAIL script "verification report is missing the independence method heading ($HAS_METHOD) or the 'Model diversity:' line ($HAS_DIVERSITY)"
+  fi
+else
+  record G17 mechanical FAIL script "no verification report at $REPORT"
 fi
 
 # =============================================================================

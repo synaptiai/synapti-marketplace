@@ -254,19 +254,37 @@
               "description": "Per-pass model override. A plugin cannot guarantee a genuinely different model, so this is the honest half-measure: independent context always, different model when you configure it. Use /dossier:audit --external for true cross-model independence.",
               "properties": {
                 "A": {
-                  "type": "string",
                   "default": "inherit",
-                  "description": "Model for pass A (evidence and coverage). 'inherit' uses the session model."
+                  "description": "Model for pass A. 'inherit' means OMIT the dispatch override so the agent's `model: inherit` frontmatter selects the session model — it is not itself a value the Agent tool accepts. The other four are the only valid override values; a full model ID such as 'claude-opus-5' is rejected at dispatch, which is why this is an enum rather than a free string.",
+                  "enum": [
+                    "inherit",
+                    "sonnet",
+                    "opus",
+                    "haiku",
+                    "fable"
+                  ]
                 },
                 "B": {
-                  "type": "string",
                   "default": "inherit",
-                  "description": "Model for pass B (model falsification). 'inherit' uses the session model."
+                  "description": "Model for pass B. 'inherit' means OMIT the dispatch override so the agent's `model: inherit` frontmatter selects the session model — it is not itself a value the Agent tool accepts. The other four are the only valid override values; a full model ID such as 'claude-opus-5' is rejected at dispatch, which is why this is an enum rather than a free string.",
+                  "enum": [
+                    "inherit",
+                    "sonnet",
+                    "opus",
+                    "haiku",
+                    "fable"
+                  ]
                 },
                 "C": {
-                  "type": "string",
                   "default": "inherit",
-                  "description": "Model for pass C (audience and disclosure). 'inherit' uses the session model."
+                  "description": "Model for pass C. 'inherit' means OMIT the dispatch override so the agent's `model: inherit` frontmatter selects the session model — it is not itself a value the Agent tool accepts. The other four are the only valid override values; a full model ID such as 'claude-opus-5' is rejected at dispatch, which is why this is an enum rather than a free string.",
+                  "enum": [
+                    "inherit",
+                    "sonnet",
+                    "opus",
+                    "haiku",
+                    "fable"
+                  ]
                 }
               }
             },
@@ -544,7 +562,8 @@
                 "model": {
                   "type": "string",
                   "default": "",
-                  "description": "Model for the CI refresh. Empty inherits the action default."
+                  "description": "Model for the CI refresh, passed through to the action's --model. Empty inherits the action default and emits no flag at all. Pattern-constrained to a single bare token: the value is interpolated into the workflow's claude_args block, so whitespace would split into stray arguments. This is the CLI surface, so a full model ID is valid here — unlike verification.passModels, which is the Agent-tool surface.",
+                  "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9.-]*$"
                 },
                 "maxTurns": {
                   "type": "integer",

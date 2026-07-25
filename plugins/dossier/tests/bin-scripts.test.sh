@@ -121,6 +121,12 @@ else
   _dossier_assert_pass "gate exit $RC is not PASS without a verdict"
 fi
 
+# G17 exists and is mechanical. The independence disclosure the protocol calls
+# required was previously enforced by nothing, so a package could pass every
+# other condition while omitting the sentence that says how much the
+# verification is worth.
+assert_contains "G17" "$OUT" "gate evaluates G17 (independence method disclosed)"
+
 # Every judgment condition must be reported INCONCLUSIVE, not silently omitted.
 for gid in G01 G02 G04 G07 G13 G14 G15; do
   if printf '%s' "$OUT" | grep -qE "^$gid .*(INCONCLUSIVE|FAIL)"; then

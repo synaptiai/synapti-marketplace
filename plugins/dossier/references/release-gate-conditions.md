@@ -1,8 +1,8 @@
 # Release Gate Conditions
 
-Reference document. The sixteen conditions that decide whether a documentation package may be released, how each is checked, and the contract that stops the gate from becoming theater.
+Reference document. The seventeen conditions that decide whether a documentation package may be released, how each is checked, and the contract that stops the gate from becoming theater.
 
-The gate is **binary and conjunctive**: sixteen of sixteen, or the package is not `release-ready`. A high score is one condition, not a substitute for the other fifteen. A package can score 96/100 and be unreleasable on a single unsupported public claim, and that is the correct outcome — the score measures quality, and the other conditions measure whether the package is safe to rely on.
+The gate is **binary and conjunctive**: seventeen of seventeen, or the package is not `release-ready`. A high score is one condition, not a substitute for the other fifteen. A package can score 96/100 and be unreleasable on a single unsupported public claim, and that is the correct outcome — the score measures quality, and the other conditions measure whether the package is safe to rely on.
 
 ## The mechanical / judgment split
 
@@ -13,7 +13,7 @@ Every condition carries exactly one tag, and the tag determines who is allowed t
 | **`mechanical`** | `bin/dossier-gate.sh` can decide it true or false from repository state alone — files, headings, register rows, greps, link resolution, exit codes. No verdict file, no model judgment. |
 | **`judgment`** | Cannot be decided from repository state. Requires the `dossier-scorer` verdict file, which is a model-produced artifact. The script's job is to **require and parse** that verdict, never to substitute for it. |
 
-Nine conditions are mechanical; seven are judgment.
+Ten conditions are mechanical; seven are judgment.
 
 Some mechanical conditions have a judgment shadow — a script can prove every registered claim has approved evidence, but not that every public *sentence* was registered in the first place. Where that applies, the condition below names its **mechanical precondition** and says which judgment condition covers the rest. The split is drawn so that the shadow always lands on a judgment-tagged condition rather than falling through the gate.
 
@@ -41,14 +41,14 @@ Exit codes:
 
 | Code | Meaning |
 |---:|---|
-| 0 | `PASS` — all sixteen conditions satisfied, judgment set covered by a valid verdict file |
+| 0 | `PASS` — all seventeen conditions satisfied, judgment set covered by a valid verdict file |
 | 1 | `FAIL` — at least one condition failed. Emitted from mechanics alone when a mechanical condition fails, with or without a verdict file |
 | 2 | Usage error — missing or invalid arguments |
 | 3 | `INCONCLUSIVE` — no mechanical condition failed, but the judgment set is not covered |
 
 `--strict` maps exit 3 to exit 1, so CI treats an uncovered judgment set as a failure rather than as a state to interpret. `--json` emits one object per condition with `id`, `tag`, `result`, `evidence`, and `source` (`script` or `verdict`), so a reader can always tell which conditions were machine-decided and which were asserted by the scorer.
 
-## The sixteen conditions
+## The seventeen conditions
 
 | ID | Condition | Tag |
 |---|---|---|
@@ -68,6 +68,7 @@ Exit codes:
 | G14 | Targets are not presented as measured results | judgment |
 | G15 | Policies are not presented as implemented controls | judgment |
 | G16 | Unresolved uncertainty and source limitations are visible | mechanical |
+| G17 | The reviewer-pass independence method is disclosed, including model diversity | mechanical |
 
 ### G01 — Total score is at least `gate.minScore`
 
@@ -237,7 +238,7 @@ The gate result maps to exactly one of three package statuses, which is what the
 
 | Status | Requires |
 |---|---|
-| `release-ready` | All sixteen conditions `PASS`, with the judgment set covered by a valid scorer verdict file. |
+| `release-ready` | All seventeen conditions `PASS`, with the judgment set covered by a valid scorer verdict file. |
 | `conditionally ready` | Every failing condition satisfies all four of: no unresolved `Critical` finding anywhere in the package; a named individual owner; an exact, obtainable evidence request; and disclosure of the condition in both the documentation index and the verification report. Internal audiences may use the package with the named conditions attached. `06-public/**` is **not** released. |
 | `not ready` | Any unresolved `Critical` finding; any secret or prohibited disclosure present; any failing condition with no known resolution path; or an `INCONCLUSIVE` gate result. |
 
@@ -284,3 +285,15 @@ The corresponding positive obligation, stated in `references/document-headers.md
 | `references/register-schemas.md` | `CL-`, `CT-`, `AS-`, `OQ-` row shapes, read by G04, G05, G07, G10 |
 | `references/package-contract-*.md` | Required sections per directory, read by G08 |
 | `references/document-headers.md` | Header contract, read by G16 and scored under dimension 10 |
+
+### G17 — The reviewer-pass independence method is disclosed, including model diversity
+
+**Tag:** `mechanical`
+
+**Check:** `07-verification/documentation-verification-report.md` contains a `## Reviewer-pass independence method` heading, a table row per pass that ran, and a line beginning `Model diversity:`.
+
+**Satisfied by:** the table and the diversity line, written honestly — including when the honest answer is `none`, because all passes shared a model.
+
+**Why it is a gate condition rather than a convention.** `references/independent-audit-protocol.md` calls this disclosure required, and the package's own evidence standard turns on it: three passes that shared one model decorrelate lenses but not model-level blind spots, and a reader who cannot see which tier ran has no way to weigh the audit. Without G17 a package could pass all sixteen other conditions while omitting the one sentence that tells the reader how much the verification is worth. That is the same defect class the format exists to catch elsewhere — a capability claim broader than what was actually done.
+
+Mechanical rather than judgment: presence of the heading and the `Model diversity:` line is decidable from the file. Whether the disclosure is *accurate* is covered by G16's honesty requirement and by the scorer.

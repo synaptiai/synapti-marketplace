@@ -108,9 +108,13 @@ ENV_NAME=$(printf '%s' "$ENV_TAIL" \
   | tr '[:lower:]' '[:upper:]')
 ENV_NAME="DOSSIER_${ENV_NAME}"
 
-ENV_VALUE=$(eval "printf '%s' \"\${${ENV_NAME}:-}\"" 2>/dev/null)
-if [ -n "$ENV_VALUE" ]; then
-  printf '%s\n' "$ENV_VALUE"
+# Set-ness, not emptiness: `${VAR+x}` is non-empty exactly when VAR is set,
+# including when it is set to "". An operator who exports DOSSIER_PROJECT_NAME=""
+# is clearing the value deliberately, and that must beat every file layer rather
+# than falling through to one.
+ENV_IS_SET=$(eval "printf '%s' \"\${${ENV_NAME}+x}\"" 2>/dev/null)
+if [ -n "$ENV_IS_SET" ]; then
+  eval "printf '%s\n' \"\${${ENV_NAME}}\"" 2>/dev/null
   exit 0
 fi
 
@@ -119,9 +123,10 @@ if [ -n "${DOSSIER_CONFIG:-}" ] && [ -f "$DOSSIER_CONFIG" ]; then
   JQ_MODE="-r"
   [ "$MODE_ARGS" = "--compact" ] && JQ_MODE="-c"
   # Bare path, for the same reason as the cascade layers below: `// empty` and
-  # `// null` both swallow an explicit `false`.
+  # `// null` both swallow an explicit `false`. Presence is decided by jq for
+  # the same reason `""` must not read as absence — see cascade-resolve.sh.
   if RESULT=$(jq $JQ_MODE ".dossier.${KEY#dossier.}" "$DOSSIER_CONFIG" 2>/dev/null); then
-    if [ -n "$RESULT" ] && [ "$RESULT" != "null" ]; then
+    if jq -e "(.dossier.${KEY#dossier.}) != null" "$DOSSIER_CONFIG" >/dev/null 2>&1; then
       printf '%s\n' "$RESULT"
       exit 0
     fi

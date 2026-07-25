@@ -407,7 +407,18 @@ jobs:
           claude_args: |
             --max-turns ${{ needs.policy.outputs.max_turns }}
             ${{ needs.policy.outputs.model_arg }}
-            --allowedTools "Read,Glob,Grep,Edit,Write,MultiEdit,TodoWrite,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(jq:*)"
+            # Agent and Skill are required, not incidental: /dossier:refresh
+            # dispatches a collector and one drafter per affected document, and
+            # loads four skills. Omit them and every one of those calls is
+            # unreachable in a headless run with no TTY to approve it — the
+            # refresh silently degrades to flat inline drafting, losing the
+            # per-document context isolation the design depends on.
+            #
+            # They do not widen the blast radius. Subagents inherit this job's
+            # permissions (contents:read, no write token, no persisted git
+            # credentials), and containment is enforced at the patch layer by
+            # the write allowlist in the publish job — not by the tool list.
+            --allowedTools "Read,Glob,Grep,Edit,Write,MultiEdit,TodoWrite,Agent,Skill,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(jq:*)"
             --disallowedTools "WebFetch,WebSearch,Bash(gh:*),Bash(curl:*),Bash(wget:*),Bash(git push:*),Bash(git remote:*),Bash(git config:*),Bash(env:*)"
 
       # Hard-fails on any path outside the allowlist and on any credential
