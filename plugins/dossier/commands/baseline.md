@@ -92,6 +92,10 @@ Do not stall the package for a non-blocking unknown.
 
 Dispatch `Agent(dossier-doc-drafter)` once per document, in dependency waves. Within a wave, dispatch **all** agents in a single message.
 
+**Cap the fan-out.** `--max-drafters <n>` bounds how many drafters run concurrently within a wave; default **6**. A wave larger than the cap is split into consecutive batches, still one message per batch.
+
+The cap is not ceremony. Wave 2 alone is five documents and the full package is 21, each drafter re-reading its contract and its ledger slice — and current models delegate more readily than their predecessors, so an uncapped fan-out multiplies cost and latency without improving any single document. Raise it only when the documents are genuinely independent and the budget is deliberate.
+
 | Wave | Documents | Depends on |
 |---|---|---|
 | 1 | `00-control/*` (4 registers) | Phase 1–3 |

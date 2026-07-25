@@ -84,6 +84,8 @@ Ask only about what is genuinely blocking for the chosen delivery mode:
 | `disclosure.policy` | all | Yes — defaults to `internal-only`, which is safe, not a guess |
 | `engagement.dueDiligenceContext` | none | Absent produces a general readiness assessment |
 
+`--mode full|targeted|verification-only` presets `engagement.deliveryMode` and skips the question. `--output-root <path>` does the same for `project.outputRoot`. A flag-supplied value is a deliberate operator choice: record it and do not re-ask.
+
 With `--non-interactive`, take defaults for everything non-blocking and record each blocking gap as an `AQ-####` row rather than asking.
 
 Read `$HOME/.claude/settings.dossier.json` first and **skip any key the user already set there** — project-shared beats user-global in the cascade, and silently overriding a user's global preference is the kind of surprise that makes people distrust setup commands. On conflict, `AskUserQuestion`.

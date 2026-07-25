@@ -148,7 +148,7 @@ true
 
 ## Display
 
-Render the gathered state as a compact dashboard. `--json` emits the same fields as one object.
+Render the gathered state as a compact dashboard. `--json` emits the same fields as one object. `--path <package-root>` overrides the resolved `project.outputRoot`, reporting on a package other than the one this repository's config points at.
 
 ```markdown
 ## Documentation Status — {PROJECT_NAME}

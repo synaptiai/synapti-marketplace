@@ -64,6 +64,24 @@ done <<EOF
 $(find "$REFS" -name '*.md' -type f 2>/dev/null | sort)
 EOF
 
+# --- Every templates/ path named in prose exists ------------------------------
+# Markdown-link checking above only covers `](path)` forms. A file referenced in
+# prose — "render `templates/external-audit-prompt.md`" — is invisible to it,
+# which is exactly how a command's documented path can point at a file nobody
+# ever wrote. That failure is silent until a user takes the branch.
+while IFS= read -r tpl; do
+  [ -z "$tpl" ] && continue
+  if [ -f "$PLUGIN/$tpl" ]; then
+    _dossier_assert_pass "referenced template $tpl exists"
+  else
+    _dossier_assert_fail "template $tpl is referenced in prose but does not exist"
+  fi
+done <<EOF
+$(grep -rhoE 'templates/[a-z0-9/._-]+\.(md|json|yml|yaml)' \
+    "$PLUGIN/skills" "$PLUGIN/commands" "$PLUGIN/agents" "$PLUGIN/references" 2>/dev/null \
+  | grep -v 'templates/package/' | sort -u)
+EOF
+
 # --- Every reference cited in a skill or command exists -----------------------
 while IFS= read -r cited; do
   [ -z "$cited" ] && continue

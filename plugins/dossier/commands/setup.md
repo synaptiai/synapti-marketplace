@@ -109,6 +109,8 @@ For `dirty`/`foreign`, offer: keep mine and write `.new` alongside (recommended)
 
 Use `AskUserQuestion` for each, with a stated recommendation and the failure mode of each option.
 
+`--ci github-actions|flow-trigger|none` answers question 1 up front and skips it. `--dry-run` prints what every phase would write and stops before writing anything, including the remote label creation.
+
 1. **CI wiring** — GitHub Actions (recommended when `.github/` exists) · local flow trigger only · settings only, wire later · skip. Offer a GitLab template when `HAS_GITLAB_CI=true` rather than assuming GitHub.
 2. **Trigger policy** — path-filtered merge plus a weekly sweep (recommended) · every merge · weekly sweep only · label-gated. Show `MERGES_LAST_4W` so the cost conversation happens with numbers. Label-gated is offered but not recommended: its failure mode is quietly stale documentation that looks current.
 3. **Branch strategy** — rolling `docs/dossier` with one accumulating PR (recommended) · per-source-PR · rolling with weekly rotation. State that per-PR branching guarantees pairwise conflicts across the same 23 files.
@@ -116,6 +118,8 @@ Use `AskUserQuestion` for each, with a stated recommendation and the failure mod
 5. **Token identity** — asked **only when `REQUIRED_CHECKS != none`**, because that is the only case where `GITHUB_TOKEN` is actually broken rather than merely limited. GitHub App (recommended) · fine-grained PAT · `GITHUB_TOKEN` anyway, accepting that the docs PR will never receive those checks.
 6. **Action pinning** — `@v1` (recommended, gets fixes) · a commit SHA (supply-chain hardening; Dependabot bumps it).
 7. **Instruction source** — plugin install via `plugin_marketplaces` (recommended) · vendored. Say plainly that `plugin_marketplaces` accepts no ref, so CI always runs the skill text from marketplace `main` even when the helper scripts are pinned. Vendored is the complete fix and the right answer for a private marketplace.
+
+   Choosing vendored changes what Phase 3 writes and what the workflow runs: setup emits `.claude/dossier/refresh-instructions.md`, drops the `plugin_marketplaces` and `plugins` inputs from the rendered workflow, and points the `prompt` at the vendored file instead of `/dossier:refresh`. The trade is explicit — fully pinned instructions, at the cost of re-running `/dossier:setup` to pick up plugin updates. Say that when the user picks it.
 8. **`CLAUDE.md`** — append the dossier section?
 
 ## Phase 3 — Write
@@ -128,6 +132,7 @@ Use `AskUserQuestion` for each, with a stated recommendation and the failure mod
 | `<outputRoot>/.dossier-state.json` | seed | Only if absent. Empty `last_documented_sha` means cold start | 1 |
 | `CLAUDE.md` | append | Only after consent; `grep -qF '## Dossier Documentation'` guards re-append | 2 |
 | `.github/dependabot.yml` | create/merge | Only after consent. Adds a `github-actions` entry so the pinned action does not silently rot. Merges, never replaces | 2 |
+| `.claude/dossier/refresh-instructions.md` | copy | **Only when `ci.instructionSource: vendored`.** Concatenates `commands/refresh.md` with the references it cites, resolved to a single self-contained file with no `plugins/dossier/...` paths left in it | 1 |
 | `.flow/triggers/docs-refresh.trigger.yaml` | copy | Only on the non-GHA path. Validate with flow's `trigger-policy` skill before writing — it hard-fails a trigger that does not forbid `merge` and `release` | 2 |
 | Repo labels | `gh label create` | Remote mutation. Existence-checked and idempotent | 2 |
 

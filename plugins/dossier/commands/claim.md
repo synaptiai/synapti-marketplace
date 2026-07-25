@@ -47,6 +47,8 @@ true
 
 A file path adjudicates every declarative sentence in the file. Bare text adjudicates that one sentence.
 
+`--audience partner|customer` selects which destination the claim is judged against, because the same sentence can be approved for one and not the other. A partner guide may carry interface detail, rate limits, and sandbox mechanics that a customer guide may not; a customer guide is held to a plainer standard on capability and trust language. Absent the flag, judge against the stricter of the two and say which standard was applied.
+
 ## Phase 1 — Match the register
 
 Invoke `Skill(disclosure-gating)`.

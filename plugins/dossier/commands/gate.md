@@ -54,6 +54,8 @@ echo "GATE_SCRIPT_EXIT=$?"
 true
 ```
 
+`--path <package-root>` overrides the resolved `project.outputRoot`, and is passed through to `bin/dossier-gate.sh --output-root`. Use it to gate a package other than the one this repository's config points at.
+
 Exit codes: `0` PASS · `1` FAIL · `2` usage error · `3` INCONCLUSIVE.
 
 **Exit 1 means stop.** A mechanical condition failed, and the judgment set cannot rescue it. Report the failed conditions and their remediation without spending scorer budget.

@@ -111,6 +111,19 @@ for f in "$CMD_DIR"/*.md; do
     _dossier_assert_pass "$cmd: no direct \${ARGUMENTS} expansion"
   fi
 
+  # Every flag advertised in argument-hint must be handled in the body.
+  # A flag that parses and then does nothing is worse than an absent one: the
+  # user believes they set a bound that was never applied.
+  hint=$(awk -F'argument-hint: ' '/^argument-hint:/{print $2; exit}' "$f")
+  for flag in $(printf '%s' "$hint" | grep -oE '\-\-[a-z][a-z-]*' | sort -u); do
+    body_uses=$(sed -n '/^## /,$p' "$f" | grep -c -- "$flag")
+    if [ "$body_uses" -gt 0 ]; then
+      _dossier_assert_pass "$cmd: $flag is handled in the body"
+    else
+      _dossier_assert_fail "$cmd: $flag is advertised in argument-hint but never handled in the body"
+    fi
+  done
+
   # Read-only context blocks must not mutate the repository.
   if awk '/^```!$/{i=1;next} /^```$/{i=0} i' "$f" | grep -qE '(^|[;&|[:space:]])(rm|git (commit|push|checkout|reset|merge)|gh (pr|issue|release) (create|merge|edit))\b'; then
     _dossier_assert_fail "$cmd: destructive command inside a read-only \`!\` block"

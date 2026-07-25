@@ -68,6 +68,8 @@ fi
 true
 ```
 
+`--path <package-root>` overrides the resolved `project.outputRoot` for this run — use it to audit a package that is not the one this repository's config points at (a vendored copy, a second project, a package under review from elsewhere). Everything downstream reads the override, not the config.
+
 A package missing canonical files is a structural finding, not an audit input. Report it and stop rather than spending three passes' budget confirming the same absence three times.
 
 ## Phase 1 — Build three isolated payloads
@@ -94,7 +96,19 @@ Agent(dossier-pass-c-audience)      → .dossier/runs/<id>/pass-C.md
 
 **One message. Three calls.** Sequential dispatch leaks pass A's output into this context before B is spawned.
 
-Apply `verification.passModels` per pass. A plugin cannot guarantee a different model, so this is the honest half-measure: independent context always, different model when configured. Record which tier was used — the package's own evidence standard requires it.
+Apply `verification.passModels` per pass — **but the value `inherit` is not a dispatch argument.**
+
+The Agent tool's per-invocation `model` override accepts only `sonnet`, `opus`, `haiku`, or `fable`. `inherit` is valid in an agent's *frontmatter*, where it means "use the session model"; it is **not** a valid override value. The default for all three passes is `inherit`, so a literal reading of "apply passModels" breaks the out-of-the-box configuration at the moment of dispatch.
+
+| `passModels.{A,B,C}` | What to pass |
+|---|---|
+| `inherit` (the default) | **Omit `model` entirely.** The agent's `model: inherit` frontmatter already selects the session model |
+| `sonnet` / `opus` / `haiku` / `fable` | Pass it as the dispatch override — it takes precedence over frontmatter |
+| anything else | Do not dispatch. Report a configuration error naming the invalid value |
+
+Omitting the override and passing `model="inherit"` are not the same thing: the first works, the second is an invalid enum value.
+
+A plugin cannot guarantee a different model, so this is the honest half-measure: independent context always, a different model only when the operator configures one. Record which tier was used — the package's own evidence standard requires it.
 
 With `--passes A,C`, run only those and record the narrowed coverage as a deliberate reduction in assurance. Narrowing is legitimate; hiding it is not.
 
