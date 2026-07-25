@@ -156,8 +156,8 @@ No privacy regulation attaches to this project's own operations, because it proc
 |---|---|---|---|---|---|
 | GDPR and equivalent privacy law | statutory | **Not applicable** to the project's own processing | It processes no personal data; it has no runtime, no accounts, and no store | N/A | [EV-0044] |
 | SOC 2, ISO 27001 | contractual | Not applicable | No customer contract exists; the project is an unmonetized public repository | N/A | [EV-0044] |
-| Open-source licence obligations | statutory | **Applicable and unmet** | The project distributes source publicly. Each plugin manifest declares a licence, but **no `LICENSE` file exists and GitHub detects none**, so default copyright applies and installers have no grant of rights | **gap — CT-0001** | [EV-0018], [EV-0019], [EV-0021] |
-| Apache-2.0 attribution obligations | statutory | Applicable | Two published plugins are Apache-2.0 | Attribution is present in their own manifests; not restated at repository level, which is where the missing `LICENSE` compounds it | partial | [EV-0021] |
+| Open-source licence obligations | statutory | **Applicable and met** | The project distributes source publicly under Apache-2.0: the licence text is at the repository root and every plugin manifest and marketplace entry declares the same identifier | met as of 2026-07-26 | [EV-0019], [EV-0020], [EV-0021] |
+| Apache-2.0 attribution obligations | statutory | Applicable | The whole distribution is Apache-2.0 | The licence text is present at the repository root and the submodule carries its own copy | met | [EV-0019], [EV-0021] |
 
 ## Control evidence and test dates
 
@@ -178,7 +178,6 @@ No privacy regulation attaches to this project's own operations, because it proc
 | Gap | Severity | Likelihood | Impact | Affected assets | Remediation | Owner | Evidence |
 |---|---|---|---|---|---|---|---|
 | No gate on `main`: no protection, no rulesets, no required checks, no required review | **High** | Medium | Any change — mistaken or malicious — reaches every installer's machine as executable code, with no check having to pass | Every operator machine | Enable branch protection requiring both test workflows and one review | Daniel Bentes | [EV-0016], [EV-0017] |
-| No `LICENSE` file while the README asserts MIT | **High** | Certain — it is true now | Installers and forkers have no grant of rights; the README tells them otherwise | Every installer and forker | Add a `LICENSE` file | Daniel Bentes | CT-0001, [EV-0018], [EV-0019] |
 | No security disclosure channel | **High** | Medium | A researcher who finds a flaw in a hook that runs on operator machines must disclose publicly or not at all | Every operator machine | Add `SECURITY.md` with one contact address | Daniel Bentes | [EV-0036] |
 | Shell is not statically analysed | Medium | Medium | The entire executable surface on operator machines has no automated security analysis. CodeQL's presence makes this easy to miss | 42 shell scripts | Add `shellcheck` to both test workflows | Daniel Bentes | [EV-0012], [EV-0007] |
 | No manifest validation | Medium | Medium | A malformed or tampered `marketplace.json` breaks or redirects all 8 plugins with nothing detecting it | All installers | One CI step: parse, resolve each source, compare versions | Daniel Bentes | [EV-0026] |

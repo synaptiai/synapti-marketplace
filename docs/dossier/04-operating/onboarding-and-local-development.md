@@ -28,7 +28,7 @@ One caveat frames the whole document: **no one but the maintainer has ever onboa
 | Data / AI | Read `02-architecture/data-and-ai.md` — particularly the AI risk controls and the absent evaluation | Writing the first behavioural evaluation for any skill; none exists | days |
 | Operations | Read `02-architecture/infrastructure-and-deployment.md` | Enabling branch protection, or adding the missing manifest check | under an hour |
 | Security | Read `03-assurance/security-privacy-and-compliance.md`, then the 16 hook scripts | Adding `shellcheck` to CI, or writing `SECURITY.md` | under an hour |
-| Leadership | `01-project/executive-project-brief.md` alone | Deciding CT-0001 (the licence) and AQ-0002 (whether dossier may be described as working) | one read |
+| Leadership | `01-project/executive-project-brief.md` alone | Deciding AQ-0002 (whether dossier may be described as working) and whether to gate `main` | one read |
 
 ## Prerequisites
 

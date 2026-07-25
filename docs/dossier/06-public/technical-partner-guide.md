@@ -67,15 +67,15 @@ Helper scripts under each plugin's `bin/` are internal. They are executable and 
 
 Plugins run inside your own Claude Code session. The marketplace operates no service and collects no telemetry.
 
-Three plugins register hooks — shell scripts the client runs on your machine at defined lifecycle points. This is the one thing to understand before installing: **hooks execute without you invoking them.** They run with your user privileges, in your shell, with access to whatever you have access to. There is no sandbox.
+Three plugins register hooks — shell scripts the Claude Code client runs on your machine at defined lifecycle points.
 
-What makes that acceptable, and what you should check yourself:
+**Hooks execute without you invoking them.** They run with your user privileges, in your shell, with access to whatever you have access to. There is no sandbox.
+
+Two things bound that risk, and you should verify both yourself.
 
 - Every hook is plain shell you can read before installing. There are no binaries and no bundles.
 - The hooks in the flow plugin are restrictive by design — they block destructive commands, force-pushes, and writes containing credential patterns.
 - Two of the three hook-shipping plugins carry test suites; the third does not have one in this repository.
-
-Read `plugins/<name>/hooks/` before installing any plugin. That is the intended workflow, not a precaution against it.
 
 ## Authentication and authorization
 
@@ -97,7 +97,7 @@ Read `plugins/<name>/hooks/` before installing any plugin. That is the intended 
 
 The marketplace has published 57 tags; the most recent release is v4.6.2, dated 2026-05-29.
 
-Note that Claude Code's plugin client defaults to auto-updating an added marketplace. Changes reach you without your acting, on the client's schedule.
+Claude Code's plugin client defaults to auto-updating an added marketplace. Changes reach you without your acting, on the client's schedule.
 
 ## Behaviour a partner must handle
 
@@ -133,8 +133,6 @@ The flow and dossier plugins ship automated test suites — 1022 and 1034 assert
 
 Five of the seven in-repository plugins ship no automated test suite.
 
-Both numbers belong together. The tested plugins are tested thoroughly; most of the collection is not tested at all.
-
 ## Security and data responsibility
 
 | Responsibility | Product | Partner |
@@ -161,7 +159,7 @@ Both numbers belong together. The tested plugins are tested thoroughly; most of 
 |---|---|---|---|
 | **none** | — | — | Nowhere. There is no contract, no SLA, and no support agreement with anyone |
 
-This is an open-source project published without warranty or commitment. Nothing in this guide creates one.
+This is an open-source project published without warranty or commitment.
 
 ## Change communication
 

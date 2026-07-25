@@ -167,7 +167,21 @@ if [ -f "$CLAIMS" ]; then
       *) continue ;;
     esac
     printf '%s' "$row" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$3); print $3}' | normalize
-  done > "$APPROVED_FILE"
+  done >> "$APPROVED_FILE"
+
+  # Required qualifications are approved text too, and the contract *mandates*
+  # that they appear in the public document beside the claim they qualify. They
+  # carry no `approved` cell of their own, so matching only claim rows made every
+  # mandated qualification an unregistered sentence — the register requiring a
+  # sentence the scan then reported. Column 2 of that table is the qualification.
+  awk '
+    /^## Required qualifications/ { inq = 1; next }
+    inq && /^## / { inq = 0 }
+    inq && /^\| *CL-/ {
+      n = split($0, f, "|")
+      if (n >= 3) { gsub(/^[ \t]+|[ \t]+$/, "", f[3]); print f[3] }
+    }
+  ' "$CLAIMS" 2>/dev/null | normalize >> "$APPROVED_FILE"
 fi
 
 # Redact credential-shaped substrings before any sentence text is echoed.

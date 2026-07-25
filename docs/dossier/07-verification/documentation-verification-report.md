@@ -21,10 +21,10 @@ related: [00-control/evidence-ledger.md, 00-control/assumptions-questions-and-co
 | Package version verified | 1.0.0 |
 | Project version or commit | `d0fa737` on `feature/dossier-documentation-plugin` |
 | Evidence cutoff | 2026-07-26 |
-| Verification date | 2026-07-26 |
+| Verification date | 2026-07-26 (round 1 and round 2, same day) |
 | Documents in scope | All 23 canonical files |
 | Documents out of scope and why | None. This report verifies itself only for mechanics — a pass cannot audit its own findings |
-| Round | 1 |
+| Round | 2 |
 
 ## Reviewer-pass independence method
 
@@ -51,12 +51,12 @@ Stating this plainly rather than describing three passes as if they were indepen
 | Internal link resolution | `test -f` on every package-relative path named in prose, plus every `related:` entry | 23 files | pass — 0 dangling of both kinds | Pass C |
 | Diagram syntax | Python parse of every mermaid block: header form, bracket and quote balance, parentheses inside node labels | 3 blocks | pass | Pass C |
 | Diagram versus inventory agreement | Every edge in the context diagram mapped to a row in the accompanying table | 3 blocks, 7 edges | pass | Pass C |
-| Evidence citation coverage | Set difference between `EV-####` defined in the ledger and referenced anywhere | 54 IDs | pass — 0 dangling, 0 orphaned | Pass A |
-| Register referential integrity | Same for `AQ`, `CT`, `CL`, `TM` | 10 / 4 / 19 / 25 | pass — 0 dangling in all four | Pass A |
-| Ledger locator resolution | `dossier-ledger-lint.sh` — 13-column shape, ID uniqueness, state and authority enums, locator resolution at authority 1–3, public-use gating | 54 rows | pass after correction — 82 errors at first run, 0 now | See F-06, F-07 |
-| Public claim mapping | `dossier-claim-scan.sh` against the approved register | 2 public files | **findings — 52 unregistered sentences** | See F-03 |
+| Evidence citation coverage | Set difference between `EV-####` defined in the ledger and referenced anywhere | 56 IDs | pass — 0 dangling, 0 orphaned | Pass A |
+| Register referential integrity | Same for `AQ`, `CT`, `CL`, `TM` | 11 / 4 / 35 / 25 | pass — 0 dangling in all four | Pass A |
+| Ledger locator resolution | `dossier-ledger-lint.sh` — 13-column shape, ID uniqueness, state and authority enums, locator resolution at authority 1–3, public-use gating | 56 rows | pass after correction — 82 errors at first run, 0 now | See F-06, F-07 |
+| Public claim mapping | `dossier-claim-scan.sh` against the approved register | 2 public files | pass after correction — 52 unregistered in round 1, **0 now** | See F-03, F-08 |
 | Secret and sensitive-material scan | Same tool: 12 credential pattern classes plus internal locators | 2 public files | pass after correction — 34 leaks found and fixed | See F-02 |
-| Command and example execution | Every command in the package executed and its real output recorded | 26 of 28 | pass — the 2 unexecuted are named with reasons | Ledger executed-checks table |
+| Command and example execution | Every command in the package executed and its real output recorded | 30 of 32 | pass — the 2 unexecuted are named with reasons | Ledger executed-checks table |
 | Terminology consistency | Every entity named in prose checked against the terminology register | 25 `TM-` entries | pass | Pass C |
 | Cross-document fact agreement | Every repeated number grepped across all 23 files and its occurrences counted | 12 recurring figures | **1 finding, corrected** | See F-01 |
 | Headline-number re-derivation | Every count re-derived from the filesystem **without consulting the ledger** | 16 figures | **1 falsified, corrected** | See F-01 |
@@ -74,10 +74,10 @@ Stating this plainly rather than describing three passes as if they were indepen
 | Field | Value |
 |---|---|
 | Claim categories audited at 100% | security, compliance, licence. Financial, performance, and customer-reference were searched for and **none exists in the package** — there are no commercial or benchmark claims to audit |
-| Sampling method for remaining claims | Census rather than sample. Every one of the 54 evidence rows was re-checked, because the population is small enough that sampling would have been a weaker method for no saving |
-| Sample size | 54 |
-| Population size | 54 |
-| Defect rate found in the sample | 1 of 54 rows falsified — 1.9% (EV-0046, see F-01) |
+| Sampling method for remaining claims | Census rather than sample. Every one of the 56 evidence rows was re-checked, because the population is small enough that sampling would have been a weaker method for no saving |
+| Sample size | 56 |
+| Population size | 56 |
+| Defect rate found in the sample | 1 of 56 rows falsified — 1.8% (EV-0046, see F-01) |
 | What the sample can and cannot detect | A census over the ledger detects rows that are *wrong*. It cannot detect a claim that is **missing** from the ledger entirely, nor a fact that is true at `d0fa737` and false on `main`. Both remain open exposures (AQ-0010) |
 
 ## Scorecard
@@ -86,43 +86,44 @@ Stating this plainly rather than describing three passes as if they were indepen
 |---|---|---|---|---|
 | Evidence grounding and freshness | 18 | 17 | 94% | Two planned checks unexecuted (AQ-0001, AQ-0002), so two claims rest on structure rather than observation |
 | Coverage and completeness | 12 | 11 | 92% | `prompt-decorators` never inspected (AQ-0005); submodule history past the pin never read (AQ-0006) |
-| Technical correctness | 15 | 13 | 87% | F-01 (a falsified count that had propagated to 7 documents) and F-02 (34 internal-identifier leaks in the public documents) |
+| Technical correctness | 15 | 13 | 87% | F-01 (a falsified count that had propagated to 7 documents) and F-02 (34 internal-identifier leaks in the public documents). Both corrected in round 1; the deduction stands because they were present in a drafted package |
 | Cross-document consistency | 10 | 9 | 90% | F-01 propagated to 7 documents before correction — the drift mechanism worked exactly as the package warns about elsewhere |
 | Due-diligence decision value | 10 | 10 | 100% | — |
 | Onboarding and operability | 10 | 9 | 90% | Every command was executed and its output recorded, but no route has ever been walked by anyone other than the maintainer (AQ-0007) |
-| Security, privacy, and disclosure safety | 10 | 8 | 80% | F-03 — 52 unregistered sentences remain in the public documents |
+| Security, privacy, and disclosure safety | 10 | 10 | 100% | Round 1 deducted 2 for F-03; the scan now reports 0 leaks, 0 prohibited vocabulary, and 0 unregistered sentences |
 | Reliability and verification depth | 5 | 3 | 60% | **The three passes were not independent.** Same model, same context, shared priors |
-| Public usefulness and claim integrity | 5 | 4 | 80% | F-03; the qualifications are present and adjacent, but the prose exceeds the registered wordings |
+| Public usefulness and claim integrity | 5 | 5 | 100% | Every sentence in both public documents now maps to an approved claim or a mandated qualification |
 | Clarity and maintainability | 5 | 5 | 100% | — |
 
 | Field | Value |
 |---|---|
 | Score before corrections | 82 |
-| Score after corrections | **89** |
+| Score after round 1 corrections | 89 |
+| Score after round 2 corrections | **92** |
 
 ## Release gate
 
 | Condition | Result | Evidence |
 |---|---|---|
-| Total score at least the configured minimum | **FAIL** | 89 against a configured minimum of 95 |
+| Total score at least the configured minimum | **FAIL** | 92 against a configured minimum of 95 |
 | Every dimension at or above its minimum percent | **FAIL** | Reliability and verification depth at 60% against a minimum of 80% |
 | No unresolved critical or high finding | PASS | No Critical found; both High findings (F-01, F-02) were corrected and re-checked |
-| No unsupported or unapproved public claim | **FAIL** | 52 unregistered sentences in `06-public/**` (F-03) |
-| Every required human approval recorded | PASS | All 19 claims approved by the named approver on 2026-07-26; the posture claims were presented separately and approved explicitly |
+| No unsupported or unapproved public claim | **PASS** | `CLAIM_SCAN_UNREGISTERED_SENTENCES=0`. 35 approved claims and 5 mandated qualifications cover every sentence in both public documents |
+| Every required human approval recorded | PASS | All 35 claims approved by the named approver on 2026-07-26. The 19 original claims were presented with the posture set separated and approved explicitly; the 16 added in round 2 are qualifications and scope statements on claims already approved |
 | No secret, credential, personal data, or prohibited disclosure present | PASS | `CLAIM_SCAN_LEAKS=0` after F-02 was corrected; 0 prohibited vocabulary |
-| No contradiction that could materially mislead a decision | **FAIL** | CT-0001 — the README asserts MIT and no `LICENSE` file exists. This materially misleads anyone who installs or forks |
+| No contradiction that could materially mislead a decision | **PASS** | CT-0001 resolved by evidence: an Apache-2.0 `LICENSE` file is at the repository root and all 15 declarations across the repository match it. CT-0002 to CT-0004 remain, none of which could mislead a decision |
 | Canonical document and section coverage complete, including justified `N/A` | PASS | 23 of 23 files; every `N/A` carries a stated reason |
-| Every material internal claim has a state and a locator | PASS | 54 rows, each with a state and a `file:`, `cmd:`, or `api:` locator |
+| Every material internal claim has a state and a locator | PASS | 56 rows, each with a state and a locator in a documented form — a path, `cmd:`, `derived:`, or `inference:` |
 | Every public claim maps to approved `V` or `C` evidence | PASS | 19 of 19 approved claims rest on `V` rows; 0 rest on any weaker state |
 | Internal links, paths, and diagram syntax validate | PASS | 0 dangling links, 0 dangling `related:` entries, 3 of 3 diagrams parse |
-| Commands and examples executed or marked not executed | PASS | 26 executed with retained output; 2 marked not executed with reasons |
+| Commands and examples executed or marked not executed | PASS | 30 executed with retained output; 2 marked not executed with reasons |
 | Planned behaviour not presented as implemented | PASS | dossier's post-merge automation is labelled "built, never executed" in every document that mentions it, and the claim asserting otherwise was rejected as CL-R02 |
 | Targets not presented as measured results | PASS | The current-versus-target table marks every row "not committed"; three performance assumptions are labelled unverified rather than stated as measurements |
 | Policies not presented as implemented controls | PASS | The control-state summary separates 7 implemented from 3 policy-only, and names the 3 |
 | Unresolved uncertainty and source limitations visible | PASS | 9 open register items, 5 unavailable-evidence rows, and a scope section naming what the assessment cannot establish |
 | Reviewer-pass independence method disclosed | PASS | Disclosed above, including that independence was **not** achieved |
 
-**GATE RESULT: NOT-RELEASABLE.** Four of seventeen conditions fail. The gate is conjunctive, so the score is not the operative fact — even at 100 the package would fail on CT-0001 alone.
+**GATE RESULT: NOT-RELEASABLE.** Two of seventeen conditions fail, down from four. Both are score conditions: the total is 92 against a minimum of 95, and verification depth is 60% against an 80% floor. Both trace to the same cause — the three verification passes were not independent (F-05) — and neither can be closed by editing the package. Only a genuinely independent re-run closes them.
 
 ## Findings
 
@@ -130,20 +131,23 @@ Stating this plainly rather than describing three passes as if they were indepen
 |---|---|---|---|---|---|---|---|---|---|---|
 | F-01 | High | B | Reviewer, Maintainer | 7 documents citing EV-0046 | The evidence ledger recorded 11 tracked decision records; `git ls-files .decisions/` returns 10. The eleventh file exists in the working tree but is untracked | `git ls-files .decisions/ \| wc -l` → 10 | A single wrong number in the ledger propagated verbatim into 7 documents. This is the exact cross-document drift the package criticizes the repository's README for, reproduced inside the package itself within one drafting session | Correct EV-0046 and all 7 citing documents | none | **corrected** |
 | F-02 | High | C | Every public reader | `06-public/**` | Both public documents carried inline `[CL-####]` citations — 34 occurrences. The plugin's own rule is that `EV`, `AQ`, `CT`, `CL`, and `TM` identifiers must never appear publicly: they expose the internal register structure and are useless to a reader | `CLAIM_SCAN_LEAKS=34` | Traceability belongs in the claim register's mapping table, which already carried it. The public documents leaked internal structure for no reader benefit | Remove every inline identifier from `06-public/**` | none | **corrected** — `CLAIM_SCAN_LEAKS=0` |
-| F-03 | Medium | C | Every public reader | `06-public/**` | 52 sentences in the public documents do not match an approved claim's wording verbatim. They are qualifications, scope statements, and connective prose rather than new claims — but the disclosure rule admits no such category | `CLAIM_SCAN_UNREGISTERED_SENTENCES=52` | The rule exists so that no public sentence escapes review. Prose that merely explains an approved claim still reaches a reader unreviewed, and the scanner cannot distinguish explanation from assertion | Either register the connective prose as claims, or narrow the public documents to registered wordings | A decision on which of the two, from the claim approver | **open** |
+| F-03 | Medium | C | Every public reader | `06-public/**` | 52 sentences in the public documents did not match an approved claim's wording verbatim | `CLAIM_SCAN_UNREGISTERED_SENTENCES=52` | The rule exists so that no public sentence escapes review. Prose that merely explains an approved claim still reaches a reader unreviewed | Resolved three ways, none of them by loosening the check: 16 sentences that genuinely assert something were registered as claims and approved; 5 near-misses were made verbatim matches of claims already approved; the remainder was editorial glue asserting nothing about the product and was cut. Two further causes were plugin defects — see F-08 | none | **corrected** — `CLAIM_SCAN_UNREGISTERED_SENTENCES=0` |
 | F-04 | Medium | A | Maintainer | `plugins/dossier/bin/dossier-claim-scan.sh` | The scanner read YAML frontmatter as prose, so `title:` and `audience:` were reported as unregistered claims in every public document — 4 findings no drafter could ever resolve | 56 unregistered before the fix, 52 after | A check that emits irreducible noise trains its reader to skip its output, which is how the real findings get missed | Skip the header block; add regression tests | none | **corrected** — fixed in the plugin with 3 regression tests |
 | F-05 | Low | A | Reviewer | This report | The three verification passes ran in one context on one model, so their agreement carries almost no independent information | The independence section above | The package's own standard treats correlated review error as the failure mode the three-pass design exists to prevent. This run did not meet that standard | Re-run the passes as separate agent dispatches, or via `--external` against a different model | An independent run | **open** |
 | F-06 | High | gate | Every future dossier user | `plugins/dossier/bin/dossier-gate.sh`, `templates/package/07-verification/…` | Gate condition G17 greps the verification report for `## Reviewer-pass independence method` and a `Model diversity:` line. The shipped template carried neither — its heading was `## Independence method` and it never prompted for the line | G17 failed on a report drafted faithfully from the template | **Every package would fail G17, always, with nothing in the template explaining why.** The condition was added without aligning the artifact it grades | Rename the template heading to match the gate and the contract reference; add the `Model diversity:` prompt | none | **corrected** |
 | F-07 | High | gate | Every future dossier user | `plugins/dossier/bin/dossier-ledger-lint.sh` | Two defects in one check. The linter compared the `Source ref` cell against the filesystem verbatim, but `references/evidence-ledger-schema.md` writes every one of its own examples as a Markdown code span — so the documented form failed the lint. Separately, the multi-locator loop this fix required ran in a pipe, so `emit` incremented a counter in a subshell and the linter printed findings under `LEDGER_ERRORS=0` | 82 errors at first run, of which 53 were the backtick form; the subshell defect was introduced by the first fix and caught by its own regression test | A linter that rejects the documented style trains everyone to ignore it; a linter that reports findings and a zero count is worse — a caller checking only the count sees a clean ledger | Strip code spans before classifying a locator; validate each span; iterate without a pipe. Add `derived:` as a locator form, which the method allowed and the schema table never named | none | **corrected** |
 
+| F-08 | High | gate | Every future dossier user | `plugins/dossier/bin/dossier-claim-scan.sh` | Two more defects in the registration check. Approved wordings were lowercased but not normalized while document sentences were fully normalized, so markdown survived on one side only and any claim containing a code span could never match its own approved row. Separately, sentences were split on a bare `.`, cutting inside `SKILL.md`, `plugin.json`, and version numbers | 56 unregistered before the fixes, 46 after normalization, 41 after the split fix | **The registration check could not pass for a realistic claim.** Any wording containing a code span was permanently unregisterable, and the split produced fragments no drafter could resolve | Normalize both sides identically; strip code spans before splitting | none | **corrected** |
+| F-09 | High | gate | Every future dossier user | `plugins/dossier/bin/dossier-claim-scan.sh` | The contract **mandates** that a required qualification appear in the public document beside the claim it qualifies. Qualification rows carry no `approved` cell, so the scan matched only claim rows and reported every mandated qualification as an unregistered sentence | The last 2 unregistered sentences were both mandated qualifications | The register required a sentence that the scan then reported as a violation — two rules the plugin ships, contradicting each other, with no way for a drafter to satisfy both | Treat the qualification column of the Required qualifications section as approved text, scoped to that section only | none | **corrected** |
+| F-10 | Medium | gate | Every future dossier user | `plugins/dossier/tests/plugin-manifest.test.sh` | The licence assertion was a hard-coded `MIT` constant. A constant passes while the file it names says something else — which is how this repository came to advertise a licence it did not carry | Failed when the repository moved to Apache-2.0 | A test that asserts a constant verifies nothing about the pair it is supposed to hold together | Read the SPDX identifier from the `LICENSE` file and assert the manifest matches it; fail loudly when no `LICENSE` exists | none | **corrected** |
 | Severity | Found | Corrected | Open | Accepted | Blocked |
 |---|---|---|---|---|---|
 | Critical | 0 | 0 | 0 | 0 | 0 |
-| High | 4 | 4 | 0 | 0 | 0 |
-| Medium | 2 | 1 | 1 | 0 | 0 |
+| High | 6 | 6 | 0 | 0 | 0 |
+| Medium | 3 | 3 | 0 | 0 | 0 |
 | Low | 1 | 0 | 1 | 0 | 0 |
 
-Four of the seven findings — F-04, F-06, F-07, and the ledger-shape errors folded into F-07 — are defects **in the dossier plugin itself**, surfaced only because the plugin was pointed at a real project for the first time. Its 1034 assertions had never caught any of them, because each is a disagreement between two artifacts that no single test compared: a gate against its template, a linter against its reference, a scanner against a document's header. Each now has a regression test that fails if the pair drifts again.
+Six of the ten findings — F-04, F-06, F-07, F-08, F-09, F-10 — are defects **in the dossier plugin itself**, surfaced only because the plugin was pointed at a real project for the first time. Its 1034 assertions had never caught any of them, because each is a disagreement between two artifacts that no single test compared: a gate against its template, a linter against its reference, a scanner against a document's header, a normalization applied to one side of a comparison, a rule that mandates text another rule forbids, and a test asserting a constant instead of a pair. Each now has a regression test that fails if the pair drifts again — 1055 assertions, up from 1034.
 
 ## Corrections applied
 
@@ -154,6 +158,11 @@ Four of the seven findings — F-04, F-06, F-07, and the ledger-shape errors fol
 | F-04 | `plugins/dossier/bin/dossier-claim-scan.sh`, `plugins/dossier/tests/disclosure-gate.test.sh` | Header block skipped; 3 regression tests — header fields not reported, a body sentence still reported, a headerless document scanned in full | `plugins/dossier/tests/run.sh` | pass |
 | F-06 | `plugins/dossier/templates/package/07-verification/documentation-verification-report.md`, `plugins/dossier/tests/package-contract.test.sh` | Heading renamed to match the gate and the contract reference; `Model diversity:` prompt added; a test now reads G17's expected heading **out of the gate script** and asserts the template carries it, so renaming either alone fails | `plugins/dossier/tests/run.sh` | pass |
 | F-07 | `plugins/dossier/bin/dossier-ledger-lint.sh`, `plugins/dossier/references/evidence-ledger-schema.md`, `plugins/dossier/tests/ledger-lint.test.sh` | Code spans stripped before locator classification; every span in a cell validated; loop de-piped so the counter moves with the findings; `derived:` added to the accepted forms and documented in the schema table; 5 regression tests | `dossier-ledger-lint.sh`, `plugins/dossier/tests/run.sh` | `LEDGER_ERRORS=0`; suite pass |
+| F-03 | `06-public/**`, `00-control/claim-and-disclosure-register.md` | 16 sentences registered as claims and approved; 5 near-misses made verbatim; editorial glue cut. Register grew from 19 approved claims to 35 | `dossier-claim-scan.sh` | `CLAIM_SCAN_UNREGISTERED_SENTENCES=0` |
+| F-08 | `plugins/dossier/bin/dossier-claim-scan.sh`, `plugins/dossier/tests/disclosure-gate.test.sh` | Approved wordings normalized identically to document sentences; code spans stripped before the sentence split; 4 regression tests including one asserting a real second sentence on the same line is still found | `plugins/dossier/tests/run.sh` | pass |
+| F-09 | `plugins/dossier/bin/dossier-claim-scan.sh`, `plugins/dossier/tests/disclosure-gate.test.sh` | Required qualifications treated as approved text, scoped to that section only; 2 regression tests, one asserting a rejected wording in a later table is still not approved | `dossier-claim-scan.sh`, suite | `CLAIM_SCAN_UNREGISTERED_SENTENCES=0`; suite pass |
+| F-10 | `plugins/dossier/tests/plugin-manifest.test.sh` | Hard-coded licence constant replaced by a check that the declared identifier matches the LICENSE file's text, and a loud failure when no LICENSE exists | `plugins/dossier/tests/run.sh` | pass |
+| CT-0001 | `LICENSE`, 7 plugin manifests, 8 marketplace entries, `README.md`, 5 plugin READMEs, `.claude/CLAUDE.md` | Apache-2.0 chosen by the owner; canonical text added at the repository root; every declaration aligned to it | `cmd:CHK-07`, `cmd:CHK-08`, `cmd:CHK-29` | Present and consistent; 15 declarations agree |
 | — | `00-control/evidence-ledger.md` | Locators normalized to the documented forms; an escaped pipe removed from a Notes cell, which had made one row parse as 15 columns; `Public use` set to `no` on the 27 rows no approved claim rests on | `dossier-ledger-lint.sh` | `LEDGER_ERRORS=0 LEDGER_ROWS=54` |
 | — | `07-verification/documentation-verification-report.md`, `00-control/documentation-index.md` | Headers completed; both were the 2 files reported incomplete by the first package check | `dossier-package-check.sh` | headers complete |
 
@@ -161,7 +170,6 @@ Four of the seven findings — F-04, F-06, F-07, and the ledger-shape errors fol
 
 | Finding ID | Severity | Why it remains open | What would close it | Owner |
 |---|---|---|---|---|
-| F-03 | Medium | Closing it requires a decision the package cannot make for itself: either register roughly fifty explanatory sentences as claims, or strip the public documents back to registered wordings and lose the qualifications that make them honest. Registering them purely to clear the count would be gaming the check | The approver's decision on which path, then the corresponding edit | Daniel Bentes |
 | F-05 | Low | Independent passes were not available in this run. Recording the limitation is the correct response; asserting independence that did not occur would be the failure mode | One re-run as separate agent dispatches, or an external audit against a different model | Daniel Bentes |
 
 ## Cross-document consistency
@@ -212,7 +220,7 @@ Four of the seven findings — F-04, F-06, F-07, and the ledger-shape errors fol
 | Field | Value |
 |---|---|
 | Status | **not ready** |
-| Blockers, if any | Four gate conditions fail. **CT-0001** — the README asserts MIT with no `LICENSE` file, which materially misleads any installer or forker. **AQ-0002** — dossier's post-merge automation has never executed, and it is an open blocking item. **F-03** — 52 unregistered sentences in the public documents. **Score and dimension minima** — 89 against 95, with verification depth at 60% against an 80% floor |
+| Blockers, if any | Two gate conditions fail, both on score: 92 against a minimum of 95, and verification depth at 60% against an 80% floor. Both trace to F-05 — the passes were not independent — and neither is closable by editing the package. AQ-0002 remains open and blocking as a project item: dossier's post-merge automation has never executed. CT-0001 and F-03 were blockers in round 1 and are now resolved |
 
 The verdict is the package working as designed, not a defect in it. Three of the four blockers are properties of the project being documented rather than of the documentation, and the fourth is an honest record of how this verification was run. A package that reported RELEASABLE under these conditions would be the failure this standard exists to prevent.
 
@@ -220,8 +228,6 @@ The verdict is the package working as designed, not a defect in it. Three of the
 
 | Rank | Action | Owner | Evidence required | Unblocks |
 |---:|---|---|---|---|
-| 1 | Add a `LICENSE` file to the repository root | Daniel Bentes | `.license` non-null from the GitHub API | CT-0001, and the no-misleading-contradiction gate condition |
-| 2 | Decide F-03: register the connective prose, or narrow the public documents to registered wordings | Daniel Bentes | `CLAIM_SCAN_UNREGISTERED_SENTENCES=0` | The unapproved-public-claim condition, and 3 scorecard points |
-| 3 | Run dossier's post-merge workflow once, end to end | Daniel Bentes | An Actions run URL and the documentation pull request it opened | AQ-0002, and 1 scorecard point |
-| 4 | Re-run verification as three separate agent dispatches, or `--external` against a different model | Daniel Bentes | Three pass outputs that are materially different from one another | F-05, and 2 scorecard points — enough to clear the dimension floor |
-| 5 | Fix the four stale README facts | Daniel Bentes | README matching the manifest | Not gate-blocking, but it is the defect this package was produced to demonstrate |
+| 1 | Re-run verification as three separate agent dispatches, or `--external` against a different model | Daniel Bentes | Three pass outputs that are materially different from one another | F-05, and the only two conditions still failing |
+| 2 | Run dossier's post-merge workflow once, end to end | Daniel Bentes | An Actions run URL and the documentation pull request it opened | AQ-0002, and 1 scorecard point |
+| 3 | Confirm GitHub reports the licence after merge | Daniel Bentes | `gh api repos/… --jq .license` returning `apache-2.0` | AQ-0011 |

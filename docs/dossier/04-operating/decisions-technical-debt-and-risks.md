@@ -46,7 +46,7 @@ Eight decisions in force; **three have no recorded rationale at all**, and the r
 
 | ID | Decision needed | Options | Blocked by | Decides | Deadline | Consequence of not deciding |
 |---|---|---|---|---|---|---|
-| U-01 | Add a `LICENSE` file, and which licence it states | MIT, matching 6 plugin manifests · Apache-2.0, matching the other 2 · dual | nothing | Daniel Bentes | before the next release | Installers and forkers have no grant of rights while the README tells them they do (CT-0001) |
+| U-01 | ~~Add a `LICENSE` file, and which licence it states~~ | — | — | Daniel Bentes | — | **Decided 2026-07-26: Apache-2.0.** File added; 7 plugin manifests, 8 marketplace entries, the README, 5 plugin READMEs, and the project instructions aligned to it |
 | U-02 | Whether dossier's post-merge automation may be described as working | Run it once and claim it · ship it undescribed · withhold the plugin | An end-to-end run | Daniel Bentes | before dossier is announced | The plugin's headline capability rests on unit tests of its parts (AQ-0002) |
 | U-03 | Windows support policy | Support and test it · declare it unsupported in the README · leave silent | nothing | Daniel Bentes | issue #100 has been open without resolution | Operators discover non-support by failing, having been told nothing |
 | U-04 | Whether to deprecate `gh-workflow` | Deprecate with notice · keep both · merge them | AQ-0004 — no usage signal exists | Daniel Bentes | none | Two overlapping workflow plugins with conflicting hooks continue to ship with no guidance beyond a `CLAUDE.md` line |
@@ -74,7 +74,7 @@ Eight decisions in force; **three have no recorded rationale at all**, and the r
 
 | ID | Risk | Category | Likelihood | Impact | Detectability | Urgency | Evidence | Mitigation | Owner | Status |
 |---|---|---|---|---|---|---|---|---|---|---|
-| R-01 | No licence file: installers and forkers have no grant of rights while the README asserts MIT | legal | **certain — true now** | High | high, once looked for | **immediate** | CT-0001, [EV-0018], [EV-0019] | Add a `LICENSE` file | Daniel Bentes | open |
+| R-01 | ~~No licence file~~ | legal | resolved | was High | — | — | [EV-0019], [EV-0020], [EV-0021] | Apache-2.0 licence file added and every declaration aligned. Residual: copies taken before 2026-07-26, and GitHub's derived field which updates on merge (AQ-0011) | Daniel Bentes | **closed** |
 | R-02 | Nothing gates `main`: any change reaches every installer as executable code with no check having to pass | security | Medium | **High** | low — nothing would detect it | **immediate** | [EV-0016], [EV-0017] | Branch protection requiring both suites | Daniel Bentes | open |
 | R-03 | No security disclosure channel for code that runs on other people's machines | security | Medium | High | none | **immediate** | [EV-0036] | `SECURITY.md` with one contact | Daniel Bentes | open |
 | R-04 | Bus factor of one across 8 published plugins | organizational | Certain — it is the current state | High | high | high | [EV-0035] | Name a backup, or disclose single-maintainer status | Daniel Bentes | open |
@@ -99,7 +99,7 @@ Eight decisions in force; **three have no recorded rationale at all**, and the r
 | R-03 (no disclosure channel) | R-02 | A researcher who finds the flaw that R-02 lets through has no way to report it privately, so the fastest fix path is also the most public one |
 | R-04 (bus factor) | R-05, R-06, R-10, R-11 | Every open item has the same owner. The remediation list is not parallelizable, which is why it has stayed open |
 | R-14 (no usage signal) | R-06, R-10, U-04 | Without knowing who uses what, deprecating a plugin, prioritizing Windows, and judging README harm are all decisions made blind |
-| R-01 (no licence) | R-14 | If the project has users, the missing licence affects all of them; if it has none, it affects nobody. **The project cannot tell which** |
+| R-01 (resolved) | R-14 | While it was open, the project could not tell whether the missing licence affected everyone or nobody. That is the general shape of every risk here: no usage signal means no way to size the blast radius of anything |
 
 ## Accepted risks
 
@@ -113,7 +113,6 @@ One accepted risk. Every other row is open, none has been formally accepted, and
 
 | Horizon | Item | Addresses | Kind | Effort basis | Owner |
 |---|---|---|---|---|---|
-| Immediate | Add a `LICENSE` file | R-01, CT-0001 | risk reduction | one file | Daniel Bentes |
 | Immediate | Enable branch protection on `main` requiring both test workflows | R-02, R-11 | risk reduction | one settings change | Daniel Bentes |
 | Immediate | Add `SECURITY.md` with a contact address | R-03 | risk reduction | one file | Daniel Bentes |
 | Immediate | Fix the four stale README facts | R-10 | risk reduction | one edit | Daniel Bentes |

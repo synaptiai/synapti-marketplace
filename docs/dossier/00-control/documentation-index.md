@@ -23,9 +23,9 @@ related: []
 | Evidence cutoff date | 2026-07-26 |
 | Delivery mode | full |
 | Last full verification | 2026-07-26 |
-| Last gate verdict | **NOT-RELEASABLE** — 4 of 17 conditions fail; see `07-verification/documentation-verification-report.md` |
+| Last gate verdict | **NOT-RELEASABLE** — 2 of 17 conditions fail after round 2, down from 4; see `07-verification/documentation-verification-report.md` |
 
-The verdict is the package working as intended. Three of the four failing conditions are properties of the project being documented — no licence file, an unexecuted capability, and unregistered public prose — and the fourth records honestly that this run's three verification passes were not independent of one another.
+The verdict is the package working as intended. Round 1 failed four conditions; two were closed by fixing the underlying facts — the repository is now licensed under Apache-2.0, and every public sentence maps to an approved claim. The two that remain are both score conditions, and both trace to a single cause: this run's three verification passes were not independent of one another. No edit to the package can close them; only a genuinely independent re-run can.
 
 ## Reader routes
 
@@ -73,7 +73,7 @@ The verdict is the package working as intended. Three of the four failing condit
 
 | Measure | Value |
 |---|---|
-| Evidence rows | 54 |
+| Evidence rows | 56 |
 | Material claims with no evidence row | 0 — every `EV-####` referenced resolves, and every row defined is cited |
 | Rows past their freshness expiry | 0 — all observed 2026-07-26 |
 | Source classes inspected | Source trees, plugin and marketplace manifests, CI definitions, live GitHub settings and history, existing documentation, the Claude Code client's own install state |
@@ -81,7 +81,7 @@ The verdict is the package working as intended. Three of the four failing condit
 
 | Document | Rows cited | Weakest state carrying decision weight | Note |
 |---|---|---|---|
-| `00-control/evidence-ledger.md` | 54 | `I` | One row, EV-0043, with its inference chain stated |
+| `00-control/evidence-ledger.md` | 56 | `I` | One row, EV-0043, with its inference chain stated |
 | `01-project/executive-project-brief.md` | 24 | `V` | Unknowns are named as unknowns rather than weighted |
 | `01-project/product-and-domain.md` | 26 | `R` | The decipon capability row, attributed to its own description |
 | `02-architecture/system-architecture.md` | 30 | `I` | EV-0043 in the tradeoffs table, labelled |
@@ -104,9 +104,8 @@ The verdict is the package working as intended. Three of the four failing condit
 
 | ID | Item | Impact if wrong | Owner | Affected documents |
 |---|---|---|---|---|
-| CT-0001 | The README asserts MIT and no `LICENSE` file exists | Installers and forkers have no grant of rights while being told they do | Daniel Bentes | `05-due-diligence/assets-dependencies-and-licenses.md`, `03-assurance/security-privacy-and-compliance.md`, `06-public/customer-product-and-trust-guide.md` |
+| AQ-0011 | GitHub's derived licence field still reports `null` | Only the badge and automated scanners; the licence itself is in place | Daniel Bentes | `05-due-diligence/assets-dependencies-and-licenses.md`, `06-public/customer-product-and-trust-guide.md` |
 | AQ-0002 | dossier's post-merge automation has never executed | A published plugin's headline capability rests on unit tests of its parts | Daniel Bentes | `03-assurance`, `04-operating`, `05-due-diligence`, `06-public` |
-| F-03 | 52 unregistered sentences in the public documents | Prose reaches an external reader without passing claim review | Daniel Bentes | `06-public` |
 | F-05 | The three verification passes were not independent | Every judgment finding in this package is one reviewer's opinion, not three | Daniel Bentes | `07-verification/documentation-verification-report.md` |
 
 ## Document dependencies and sources of truth

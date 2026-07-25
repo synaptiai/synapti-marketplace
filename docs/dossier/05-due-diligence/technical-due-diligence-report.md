@@ -20,8 +20,8 @@ related: [01-project/executive-project-brief.md, 04-operating/decisions-technica
 |---|---|
 | Verdict | **proceed with conditions** |
 | Confidence | **high** on the artifacts, **low** on outcomes |
-| Basis for the confidence rating | 54 evidence rows, 53 of them `V` and 1 `I` with its chain stated; 26 of 28 planned checks executed with retained output, and the 2 unexecuted ones named with their reason. That supports high confidence about *what the project is*. It supports none at all about *whether it works for anyone*: there is no telemetry, no evaluation suite, and no user research, and that limitation is structural rather than an omission (AQ-0004) |
-| Conditions, if any | Four, all cheap. **(1)** Add a `LICENSE` file — without it, installers and forkers have no grant of rights while the README asserts MIT (CT-0001). **(2)** Enable branch protection on `main` requiring both test workflows — today any change reaches every installer's machine as executable code with no check having to pass. **(3)** Publish a security contact — the project ships hooks that run on other people's machines and has no private disclosure channel. **(4)** Do not describe dossier's post-merge automation as working until it has been observed working once (AQ-0002) |
+| Basis for the confidence rating | 56 evidence rows, 55 of them `V` or `C` and 1 `I` with its chain stated; 30 of 32 planned checks executed with retained output, and the 2 unexecuted ones named with their reason. That supports high confidence about *what the project is*. It supports none at all about *whether it works for anyone*: there is no telemetry, no evaluation suite, and no user research, and that limitation is structural rather than an omission (AQ-0004) |
+| Conditions, if any | Three remain, all cheap. **(1)** Enable branch protection on `main` requiring both test workflows — today any change reaches every installer's machine as executable code with no check having to pass. **(2)** Publish a security contact — the project ships hooks that run on other people's machines and has no private disclosure channel. **(3)** Do not describe dossier's post-merge automation as working until it has been observed working once (AQ-0002). A fourth condition, the missing licence, was **discharged on 2026-07-26**: Apache-2.0 was chosen, the file added, and every declaration aligned to it |
 
 The shape of the verdict is worth stating plainly, because it is unusual. **This project's engineering quality is high and its governance is absent.** The two test suites, the restrictive-by-default hooks, the single dependency, and the readable-plain-text execution surface are all genuinely good. Every one of the four conditions above is a settings change or a single file — and every one has stayed undone, which is itself the finding: a project with one maintainer produces good artifacts and no process.
 
@@ -44,7 +44,7 @@ The shape of the verdict is worth stating plainly, because it is unusual. **This
 | Project version assessed | `d0fa737` on `feature/dossier-documentation-plugin` — **not `main`** (AQ-0010) |
 | Sources inspected | All 6 in-tree plugin trees; the checked-out `agent-capability-standard` submodule; all 4 workflows; the manifest and all 7 plugin manifests; `README.md` in full; live GitHub settings, releases, issues, and Actions history; the Claude Code client's own install-state files |
 | Sources unavailable | `prompt-decorators` source (AQ-0005); upstream submodule history past the pinned commit (AQ-0006); install telemetry, which does not exist (AQ-0004); any Windows environment (AQ-0008) |
-| Checks executed | 26 of 28, each with output retained in the evidence ledger |
+| Checks executed | 30 of 32, each with output retained in the evidence ledger |
 | Checks not executed | The submodule's Python suite (AQ-0001); dossier's post-merge workflow end to end (AQ-0002). A third, a clean-profile install (AQ-0003), was partially substituted by observing an existing resolved install |
 | Access limitations | `engagement.allowedActions` set `runBuild` and `networkAccess` to `false` for this run, which is what prevented AQ-0001 and AQ-0003 |
 | What this assessment cannot establish | **Whether any plugin helps anyone.** There is no usage signal, no behavioural evaluation of any prompt, and no user research. Every quality statement in this package is a property of the code, never of its effect. A reader who treats artifact quality as evidence of outcome is over-reading this report |
@@ -85,7 +85,7 @@ The shape of the verdict is worth stating plainly, because it is unusual. **This
 
 | Weakness | Why it is material | How it would surface | Evidence | State |
 |---|---|---|---|---|
-| No `LICENSE` file while the README asserts MIT | Installers and forkers have no grant of rights. Anyone who has already relied on the badge did so on a false premise | The first time someone forks, vendors, or legally reviews the project | CT-0001, [EV-0018]–[EV-0020] | V |
+| Copies taken before 2026-07-26 carry no licence | The repository published no `LICENSE` file until that date while the README asserted MIT. The licence now governs every copy taken from then on; what governs an earlier one is a question of law | Only if someone who forked earlier relies on the earlier state | [EV-0019], [EV-0020] | V |
 | Nothing gates `main` | Any change — mistaken or malicious — reaches every installer's machine as executable code with no check having to pass, and `autoUpdate` is on by default | A bad commit, or one compromised account | [EV-0016], [EV-0017], [EV-0051] | V |
 | No security disclosure channel | The project ships hooks that execute on other people's machines and offers no private way to report a flaw in them | The first researcher who finds something | [EV-0036] | V |
 | Bus factor of one | 8 published plugins; one identity across all 351 commits; no component has a backup owner; no succession path | Any absence of one person | [EV-0035] | V |
@@ -100,7 +100,7 @@ The shape of the verdict is worth stating plainly, because it is unusual. **This
 
 | Grouping | Contents |
 |---|---|
-| Verified facts | 53 of 54 rows. Artifact counts; both test results; all 4 workflow definitions and their permission scoping; live branch protection, rulesets, and licence detection; release and tag history; contributor count; the full dependency surface; the client's install state; version agreement across 7 plugins; the credential scan; the workflow-injection scan |
+| Verified facts | 55 of 56 rows. Artifact counts; both test results; all 4 workflow definitions and their permission scoping; live branch protection, rulesets, and licence detection; release and tag history; contributor count; the full dependency surface; the client's install state; version agreement across 7 plugins; the credential scan; the workflow-injection scan |
 | Reported assertions, not independently verified | The `prompt-decorators` entry's description of its own contents (AQ-0005); the `agent-capability-standard` version label, where the pinned tree is 2 commits past the tag it advertises (AQ-0006); the Windows failure reports in issues #100 and #130, which were read but not reproduced (AQ-0008) |
 | Inferences | One: that distribution is a git read rather than a registry publish [EV-0043], reasoned from the absence of any registry manifest and any publish step in the 4 workflows, with the chain stated in the row |
 | Unknowns | Whether anyone uses the product; whether dossier's automation works; whether a clean-profile install succeeds; whether the submodule's Python suite passes; the Windows portability scope; whether any prompt improves model behaviour |
@@ -109,7 +109,7 @@ The shape of the verdict is worth stating plainly, because it is unusual. **This
 
 | Flag | Severity | Why it could be decisive | Evidence | What would clear it |
 |---|---|---|---|---|
-| No licence file while claiming MIT | **High** | An adopter cannot establish their right to use, modify, or redistribute anything here. For a fork, a vendoring decision, or a corporate adoption this is a hard stop, not a nit | CT-0001 | One `LICENSE` file at the repository root, then re-reading `api:repos/…` and confirming `.license` is non-null |
+| ~~No licence file while claiming MIT~~ | **Cleared** | Was a hard stop for any fork, vendoring, or corporate adoption. Apache-2.0 chosen; the file is at the repository root and every declaration matches it | [EV-0019], [EV-0021] | Cleared 2026-07-26. GitHub's derived licence field updates on merge (AQ-0011) |
 | Ungated `main` on a distribution channel that auto-updates | **High** | The combination is what makes it decisive: no check has to pass, and `autoUpdate: true` means installers receive whatever lands without acting. A single compromised account reaches every operator's machine | [EV-0016], [EV-0017], [EV-0051] | Branch protection requiring both test workflows and one review |
 | No disclosure channel for code that runs on user machines | **High** | It converts every security finding into a public one, and signals that vulnerability reports were not planned for | [EV-0036] | `SECURITY.md` with one contact address |
 | Bus factor of one | Medium-High | 8 published plugins freeze on any absence of one person, and no installer can weigh this because it is not disclosed | [EV-0035] | Name a backup maintainer, or state single-maintainer status in the README |
@@ -120,7 +120,6 @@ The shape of the verdict is worth stating plainly, because it is unusual. **This
 
 | Rank | Risk | Decision impact | Likelihood | Detectability | Evidence | Mitigation | Owner |
 |---:|---|---|---|---|---|---|---|
-| 1 | No grant of rights to any recipient | Blocks adoption, forking, and vendoring outright | certain — true now | high, once looked for | CT-0001 | Add `LICENSE` | Daniel Bentes |
 | 2 | Ungated `main` feeding an auto-updating channel | Any adopter inherits an unbounded supply-chain exposure | medium | **none — nothing would detect it** | [EV-0016], [EV-0017] | Branch protection | Daniel Bentes |
 | 3 | No security disclosure path | Guarantees that the first real finding is public | medium | none | [EV-0036] | `SECURITY.md` | Daniel Bentes |
 | 4 | Bus factor of one | Continuity risk across all 8 plugins | certain | high | [EV-0035] | Backup maintainer, or disclosure | Daniel Bentes |
@@ -135,7 +134,7 @@ The shape of the verdict is worth stating plainly, because it is unusual. **This
 
 | Item | Effort range | Assumptions the range rests on | What would narrow it | Confidence |
 |---|---|---|---|---|
-| Add `LICENSE` | one file | The licence choice is already implied by 6 manifests | A decision on MIT versus dual | high |
+| ~~Add `LICENSE`~~ | done | — | — | **Completed 2026-07-26** — Apache-2.0, with all 15 declarations aligned |
 | Enable branch protection | one settings change | Both workflows already exist and pass | — | high |
 | Add `SECURITY.md` | one file | A contact address exists | — | high |
 | Fix the 4 stale README facts | one edit | The correct values are in the manifest | — | high |
@@ -151,7 +150,6 @@ Seven of nine items are a single file, setting, or step. That concentration is t
 
 | Rank | Question | Why it matters to the decision | Smallest sufficient evidence | Register ID |
 |---:|---|---|---|---|
-| 1 | Which licence governs this project, and will a `LICENSE` file be added? | Blocks every adoption decision | The file, plus `.license` non-null from the API | CT-0001 |
 | 2 | Will `main` be gated before the next release? | Determines whether an adopter inherits an unbounded supply-chain exposure | A `200` from the branch-protection endpoint | R-02 |
 | 3 | Where should a researcher report a vulnerability privately? | Determines whether the first finding is public | `SECURITY.md` | R-03 |
 | 4 | Has dossier's post-merge workflow ever run end to end? | Determines whether its headline capability may be claimed | One Actions run URL and the documentation pull request it opened | AQ-0002 |
@@ -163,7 +161,7 @@ Seven of nine items are a single file, setting, or step. That concentration is t
 
 | Horizon | Priority | Addresses | Why now | Owner |
 |---|---|---|---|---|
-| 30 days | Add `LICENSE`, `SECURITY.md`; enable branch protection; fix the 4 README facts | Ranks 1–3, R-10 | Four edits close both gate-blocking conditions and the two highest-severity security gaps. Nothing here needs design work | Daniel Bentes |
+| 30 days | Add `SECURITY.md`; enable branch protection | Ranks 1–2 | Two edits close the two highest-severity remaining security gaps. Nothing here needs design work. `LICENSE` and the 4 stale README facts were done on 2026-07-26 | Daniel Bentes |
 | 30 days | Run dossier's post-merge workflow once and record the run | Rank 5, AQ-0002 | Its release is pending; the claim cannot be made without it | Daniel Bentes |
 | 60 days | One CI step validating the manifest, the version pairs, and the README facts | Ranks 8, R-10, TD-01, TD-02 | Converts four recurring manual gates — three of which have already failed — into a check | Daniel Bentes |
 | 60 days | `shellcheck` in both test workflows; pin the actions to SHAs; pin `prompt-decorators`; move the submodule pointer to its tag | Ranks 6, 10, TD-07, TD-08 | Closes the supply-chain and analysis gaps while the surface is still small enough to fix cheaply | Daniel Bentes |

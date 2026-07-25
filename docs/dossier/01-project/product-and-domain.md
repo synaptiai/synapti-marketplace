@@ -179,7 +179,7 @@ The consequence is the single most important product fact in this package: **eve
 | prompt-decorators version | README table: 0.1.0 | 0.1.1 | stale by 1 patch | Minor | [EV-0025] |
 | ai-first-org-design-kit size | Description: "Fourteen opinionated skills" | 15 `SKILL.md` files | off by one | An installer looks for a fourteenth skill and finds fifteen | [EV-0027], CT-0003 |
 | flow size | README: "33 skills" | 32 `SKILL.md` files | off by one — `skills/learned/` holds only `.gitkeep` | An installer looks for a skill that does not exist | [EV-0028], CT-0002 |
-| Licensing | README: MIT, badge linking to `LICENSE` | **No `LICENSE` file; GitHub detects no licence** | The claim is false | Installers and forkers have no grant of rights | [EV-0018]–[EV-0020], CT-0001 |
+| Licensing | README: Apache-2.0, badge linking to `LICENSE` | `LICENSE` present with the Apache-2.0 text; every manifest declares the same | **none — resolved 2026-07-26** | Was: installers and forkers had no grant of rights | [EV-0019], [EV-0020], [EV-0021] |
 | agent-capability-standard version | Manifest: 1.2.0 | Submodule pinned 2 commits past `v1.2.0` | pointer drift | The advertised version is not what installs | [EV-0031] |
 | Shell-injection rule | dossier's CI template forbids `${{ github.event.* }}` in a `run:` body, and ships a test enforcing it | `release-desktop-skills.yml` line 24 does exactly that | the repository fails a rule it publishes | Low exploitability — it requires release-publishing access — but the inconsistency is real | [EV-0015], CT-0004 |
 | Test coverage | 2,056 passing assertions | Covering 2 of 7 in-tree plugins | The strong number invites over-reading | 5 plugins are entirely unverified | [EV-0010] |
@@ -194,7 +194,6 @@ Eleven divergences, of which six are the same underlying failure: **prose that s
 | The product has users other than its maintainer | assumption | Determines whether stale README facts are a real harm or a private inconvenience | — | AQ-0004 |
 | A clean-profile install succeeds | assumption | Every claim about how an operator gets the plugins rests on it | Daniel Bentes | AQ-0003 |
 | The `prompt-decorators` entry describes its actual contents | assumption | It is published to installers from this manifest | Daniel Bentes | AQ-0005 |
-| No licence file exists | risk | Installers and forkers have no grant of rights | Daniel Bentes | CT-0001 |
 | The README misstates four facts | risk | The storefront misleads on first read | Daniel Bentes | [EV-0022]–[EV-0025] |
 | Windows is unsupported by omission | risk | An unknown share of operators cannot use the product, and were never told | Daniel Bentes | AQ-0008 |
 | Prompt efficacy is unmeasured | risk | The product's core value proposition has no evidence for or against it | Daniel Bentes | [EV-0008], [EV-0009] |

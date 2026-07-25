@@ -107,13 +107,15 @@ The last row is worth noting as a near-miss: dossier ships exactly the version-d
 
 | Item | Kind | Where | Since | Owner | Impact | Evidence |
 |---|---|---|---|---|---|---|
-| No quarantined or skipped test | — | — | — | — | Both suites report 0 failures and no skips at `d0fa737` | [EV-0008], [EV-0009] |
+| An intermittent failure in `flow-goal-stop.test.sh` | flaky | flow | first observed 2026-07-26 | Daniel Bentes | Failed 4 assertions on one run, then passed 10 consecutive runs. **Not reproduced.** A suite that is already advisory is worth less again if its pass is not repeatable | [EV-0055] |
+| Temp directories leaked every run | harness defect | both suites | since the harness was written | Daniel Bentes | flow +254 and dossier +81 directories per run. Test files are *sourced*, so an `EXIT` trap set by one is replaced by the next file's, and a trailing cleanup line strands above anything appended after it. Fixed in dossier by scoping `TMPDIR` to a runner-owned directory that is removed on exit; **still present in flow** | [EV-0056] |
+| No quarantined or skipped test | — | — | — | — | Both suites report 0 failures and no deliberate skips | [EV-0008], [EV-0009] |
 | Conditional degradation on missing `pyyaml` | graceful skip, not a quarantine | `workflow-template.test.sh` | since the test was written | Daniel Bentes | The YAML parse check is skipped where `pyyaml` is absent; it records a pass with the reason and continues structural checks. CI pins `pyyaml`, so the skip does not occur there | [EV-0009] |
 | Version bump across two files | manual gate | `plugin.json` and `marketplace.json` | always | Daniel Bentes | Consistent today, verified by hand; nothing enforces it | [EV-0026] |
 | README accuracy | manual gate | `README.md` | always | Daniel Bentes | **Already failed** — 4 stale facts | [EV-0022]–[EV-0025] |
 | Submodule pointer alignment | manual gate | `.gitmodules` | always | Daniel Bentes | **Already drifted** — 2 commits past the advertised tag | [EV-0031] |
 
-Three of the five manual gates have already failed at least once, and two are failing right now. That is the empirical case for automating them.
+Three of the five manual gates have already failed at least once. That is the empirical case for automating them — and the two harness rows above make the same point about the suites themselves: a test that leaks state is a test whose result depends on how many times it has run before.
 
 ## Delivery pipeline
 

@@ -332,14 +332,15 @@ Ask via AskUserQuestion: "Do you want framework-specific configuration files in 
     "tools": [{"type": "function", "function": {"name": "[tool]", "description": "[from permissions]"}}]
   }
   ```
-- **Anthropic Agent SDK** — Generates a Python configuration snippet:
+- **Claude Agent SDK** — Generates a Python configuration snippet. Take the
+  constructor shape from the `claude-agent-sdk` documentation at generation time
+  rather than from this example: the package's surface is versioned separately
+  from this plugin, and a snippet that looks plausible but does not exist is
+  worse than none. Pin the model explicitly so a regenerated config does not
+  silently change model:
   ```python
-  agent = Agent(
-      name="[role-slug]",
-      model="claude-sonnet-4-20250514",
-      instructions=open("[system-prompt-path]").read(),
-      tools=[...],
-  )
+  # model: claude-opus-5 (current Opus). Verify the constructor against the
+  # claude-agent-sdk docs before shipping this file.
   ```
 - **CrewAI** — Generates a YAML agent definition:
   ```yaml

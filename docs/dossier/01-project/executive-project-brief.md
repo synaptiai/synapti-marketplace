@@ -78,7 +78,7 @@ The intended outcome is that an operator installs one command and inherits a wor
 | The Claude Code client | technical | Resolves, installs, and executes every artifact. Its manifest schema, cache layout, and hook contract are external and can change without notice | **none** | [EV-0043] |
 | GitHub | technical | Hosting, distribution, releases, and CI | low | [EV-0051] |
 | Single maintainer | organizational | No release, merge, security response, or fix happens without one person, and no component has a backup owner | **none** | [EV-0035] |
-| No licence file | legal | Installers and forkers have no grant of rights, while the README asserts MIT | immediate — one file | [EV-0018], [EV-0019] |
+| Apache-2.0, effective 2026-07-26 | legal | The repository carried no `LICENSE` file before that date while the README asserted MIT. Every declaration now matches the file | resolved | [EV-0019], [EV-0021] |
 | `synaptiai/prompt-decorators` at `ref: main` | technical | Changes what installers receive under this marketplace's name, with no commit or record here | immediate — pin a tag | [EV-0030] |
 | `pyyaml>=6.0` | technical | The only declared third-party runtime dependency in the whole repository | high | [EV-0041] |
 | No spend control on induced model usage | commercial | The project pays nothing; operators pay for whatever the plugins induce, unmeasured | none | [EV-0044] |
@@ -98,7 +98,6 @@ The intended outcome is that an operator installs one command and inherits a wor
 
 | Item | Kind | Impact | Owner | Evidence or register ID |
 |---|---|---|---|---|
-| No `LICENSE` file while the README claims MIT | risk | Installers and forkers have no grant of rights. Affects every user of every plugin | Daniel Bentes | CT-0001 |
 | Nothing gates `main` | risk | Any change — mistaken or malicious — reaches every installer's machine as executable code, with no check having to pass | Daniel Bentes | [EV-0016], [EV-0017] |
 | dossier's headline capability has never executed | risk | A published plugin whose central claim rests on unit tests of its parts | Daniel Bentes | AQ-0002 |
 | Bus factor of one | risk | No release, merge, security response, or fix is possible without one person | Daniel Bentes | [EV-0035] |
@@ -108,14 +107,13 @@ The intended outcome is that an operator installs one command and inherits a wor
 | Whether the product is used at all | unknown | Every quality decision is made without knowing whether it matters | — | AQ-0004 |
 | Windows portability scope | unknown | Two operators have reported failures; the real scope is unmeasured | Daniel Bentes | AQ-0008 |
 | Prompt efficacy | unknown | This is a prompt-engineering product with no evaluation of whether its prompts help | Daniel Bentes | [EV-0008], [EV-0009] |
-| Whether to add a licence, and which | decision | Blocks any accurate public statement about licensing | Daniel Bentes | CT-0001 |
 | Whether dossier may be described as working before it has been observed working | decision | Blocks any public claim about the automation | Daniel Bentes | AQ-0002 |
 
 ## Documentation confidence
 
 | Grouping | Content |
 |---|---|
-| Verified facts | 53 of 54 evidence rows are `V`. Artifact counts, test results, workflow definitions, repository settings, licence detection, release history, contributor count, dependency surface, install state, and version agreement were each established by direct read or executed command |
+| Verified facts | 55 of 56 evidence rows are `V` or `C`. Artifact counts, test results, workflow definitions, repository settings, licence detection, release history, contributor count, dependency surface, install state, and version agreement were each established by direct read or executed command |
 | Reported assertions, not independently verified | The `prompt-decorators` entry's description of its own contents (AQ-0005); the `agent-capability-standard` version label, where the pinned tree is 2 commits past the tag it advertises (AQ-0006); the Windows failure reports in issues #100 and #130 (AQ-0008) |
 | Inferences | One row: that distribution is a git read rather than a registry publish [EV-0043], reasoned from the absence of any registry manifest and any publish step, with the chain stated |
 | Unknowns | Whether anyone uses the product; whether the dossier automation works; whether a clean-profile install succeeds; whether the submodule's Python suite passes; the Windows portability scope; whether any prompt improves model behaviour |
@@ -123,6 +121,6 @@ The intended outcome is that an operator installs one command and inherits a wor
 | Measure | Value |
 |---|---|
 | Overall confidence | **high**, for what the package covers |
-| Basis for that rating | 54 evidence rows, of which 53 are `V` and 1 is `I` with its chain stated. 25 of 27 planned checks were executed with retained output; the 2 that were not are named, with the reason and the open question each is recorded under. Every material claim traces to a row |
+| Basis for that rating | 56 evidence rows, of which 55 are `V` or `C` and 1 is `I` with its chain stated. 30 of 32 planned checks were executed with retained output; the 2 that were not are named, with the reason and the open question each is recorded under. Every material claim traces to a row |
 | Largest source of residual uncertainty | The package documents artifacts thoroughly and outcomes not at all. Nothing here establishes that any plugin helps anyone, because nothing can: there is no telemetry, no evaluation suite, and no user research. A reader should treat every quality signal in this package as a property of the code, never of its effect |
-| Package status | Complete against its contract, and **NOT-RELEASABLE** against the release gate. Two conditions fail: one open blocking question (AQ-0002) and one unresolved materially-misleading contradiction (CT-0001). Both are recorded rather than worked around, which is the intended behaviour |
+| Package status | Complete against its contract, and **NOT-RELEASABLE** against the release gate. The licence contradiction that failed the gate on round 1 is resolved; one open blocking question remains (AQ-0002), alongside the score and dimension minima. Recorded rather than worked around, which is the intended behaviour |

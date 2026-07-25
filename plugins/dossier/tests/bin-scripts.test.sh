@@ -156,4 +156,35 @@ assert_contains "silent on" "$OUT2" "gate names the condition the verdict omitte
 
 rm -rf "$WORK" 2>/dev/null
 
+# --- The runner owns the temp directory --------------------------------------
+# Test files are *sourced*, so an EXIT trap set by one is replaced by the next
+# file's, and a trailing cleanup line gets stranded above whatever the next
+# contributor appends below it. Both happened in this suite. The runner creates
+# one directory, points TMPDIR at it, and removes it — so cleanup no longer
+# depends on every file remembering.
+RUNNER="plugins/dossier/tests/run.sh"
+assert_file_exists "$RUNNER" "runner exists"
+if grep -q 'export TMPDIR=' "$RUNNER"; then
+  _dossier_assert_pass "runner scopes TMPDIR to a directory it owns"
+else
+  _dossier_assert_fail "runner does not scope TMPDIR — every mktemp in the suite leaks"
+fi
+if grep -qE "^trap .*RUN_TMPDIR.* EXIT" "$RUNNER"; then
+  _dossier_assert_pass "runner removes its temp directory on exit"
+else
+  _dossier_assert_fail "runner creates a temp directory it never removes"
+fi
+
+# A test file must not carry its own EXIT trap: sourced files share one trap
+# slot, so the last one registered silently disables all the others.
+TRAPPED=""
+for tf in plugins/dossier/tests/*.test.sh; do
+  grep -qE "^[[:space:]]*trap .* EXIT" "$tf" && TRAPPED="$TRAPPED $(basename "$tf")"
+done
+if [ -z "$TRAPPED" ]; then
+  _dossier_assert_pass "no test file registers an EXIT trap the next file would replace"
+else
+  _dossier_assert_fail "EXIT trap(s) in sourced test file(s):$TRAPPED — only the last survives"
+fi
+
 _dossier_test_summary

@@ -174,7 +174,6 @@ OUT=$(scanout "$T")
 assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
   "a headerless document is scanned from its first line"
 
-rm -rf "$W" 2>/dev/null
 
 # --- An approved wording containing markdown must be matchable ---------------
 # Document sentences are normalized (code spans, emphasis, and links stripped)
@@ -214,5 +213,42 @@ reg "$T" '| CL-0001 | The first claim is registered. | capability | EV-0001 | 1.
 pub "$T" 'The first claim is registered. The second claim is not registered anywhere.'
 scan "$T"
 assert_equal "1" "$?" "a second unregistered sentence on the same line is still found"
+
+# --- A required qualification is approved text ------------------------------
+# The contract mandates that a qualification appear in the public document beside
+# the claim it qualifies. Qualification rows carry no `approved` cell of their
+# own, so matching only claim rows made every mandated qualification an
+# unregistered sentence: the register required a sentence the scan then reported.
+T="$W/qualification"; mkpkg "$T"
+{
+  printf '| ID | Proposed wording | Claim type | Evidence | Applicable version | Scope | Limitations | Approver | Classification | Destination | Status | Decision basis |\n'
+  printf '|---|---|---|---|---|---|---|---|---|---|---|---|\n'
+  printf '| CL-0001 | The scan found no credential in any tracked file. | security | EV-0001 | 1.0 | all | qualified | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |\n'
+  printf '\n## Required qualifications\n\n'
+  printf '| Claim ID | Qualification that must accompany it | Where it appears |\n|---|---|---|\n'
+  printf '| CL-0001 | The scan covers an enumerated pattern set and proves only that none of those formats appears. | adjacent to the claim |\n'
+} > "$T/docs/dossier/00-control/claim-and-disclosure-register.md"
+pub "$T" 'The scan found no credential in any tracked file. The scan covers an enumerated pattern set and proves only that none of those formats appears.'
+scan "$T"
+assert_equal "0" "$?" "a mandated qualification is treated as approved text"
+
+# The qualifications table must not become a way to approve arbitrary prose:
+# only rows inside that section count, and only its qualification column.
+T="$W/qual-scope"; mkpkg "$T"
+{
+  printf '| ID | Proposed wording | Claim type | Evidence | Applicable version | Scope | Limitations | Approver | Classification | Destination | Status | Decision basis |\n'
+  printf '|---|---|---|---|---|---|---|---|---|---|---|---|\n'
+  printf '| CL-0001 | The scan found no credential in any tracked file. | security | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |\n'
+  printf '\n## Required qualifications\n\n'
+  printf '| Claim ID | Qualification that must accompany it | Where it appears |\n|---|---|---|\n'
+  printf '| CL-0001 | A qualification that is genuinely required here. | adjacent to the claim |\n'
+  printf '\n## Rejected and withdrawn claims\n\n'
+  printf '| CL-R01 | This rejected wording must never count as approved. | reason | 2026-07-26 | nothing |\n'
+} > "$T/docs/dossier/00-control/claim-and-disclosure-register.md"
+pub "$T" 'This rejected wording must never count as approved.'
+scan "$T"
+assert_equal "1" "$?" "a rejected wording is not approved by sitting in a later table"
+
+rm -rf "$W" 2>/dev/null
 
 _dossier_test_summary

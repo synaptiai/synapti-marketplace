@@ -133,7 +133,7 @@ The evaluation row is the most important line in this document. This is a prompt
 
 | Asset | Origin | License or terms | Permitted uses | Restrictions | Evidence |
 |---|---|---|---|---|---|
-| Skills, commands, agents (in-tree) | Written for this repository | Declared MIT in 6 plugin manifests — **but no `LICENSE` file exists and GitHub detects no licence**, so the effective grant is unclear (CT-0001) | Unclear pending CT-0001 | Unclear pending CT-0001 | [EV-0018], [EV-0019], [EV-0021] |
+| Skills, commands, agents (in-tree) | Written for this repository | Apache-2.0, declared in every plugin manifest and carried by the `LICENSE` file at the repository root | Use, modify, redistribute, with notice and change-statement obligations | Patent grant terminates on patent litigation against the project | [EV-0019], [EV-0021] |
 | `agent-capability-standard` | `synaptiai/agent-capability-standard` | Apache-2.0, declared in both `plugin.json` and `pyproject.toml` | Per Apache-2.0 | Per Apache-2.0 | [EV-0021], [EV-0041] |
 | `prompt-decorators` | `synaptiai/prompt-decorators` | Apache-2.0 per its marketplace entry | Per Apache-2.0 | Not verified from here (AQ-0005) | [EV-0030] |
 | Training data | **None.** No model is trained, fine-tuned, or distilled by this project | N/A | N/A | N/A | [EV-0044] |

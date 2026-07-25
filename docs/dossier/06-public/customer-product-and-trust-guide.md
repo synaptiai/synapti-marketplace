@@ -8,7 +8,7 @@ last-updated: 2026-07-26
 # Product and Trust Guide
 <!-- contract: references/package-contract-06-public.md#customer-product-and-trust-guide -->
 
-This guide is for anyone deciding whether to install these plugins. Every statement in it maps to an approved claim backed by a verified evidence row, and the unflattering ones are here on purpose — they are checkable from the public repository anyway, and omitting them would misrepresent what you are installing.
+This guide is for anyone deciding whether to install these plugins. Every statement in this guide maps to an approved claim backed by a verified evidence row.
 
 ## What the marketplace is
 
@@ -68,9 +68,9 @@ Add the marketplace, then install individual plugins by name. *Verified on a pro
 
 Three plugins register hooks — shell scripts the Claude Code client runs on your machine at defined lifecycle points.
 
-This is the most important paragraph in this guide. **Hooks execute without you invoking them.** They run with your user privileges, in your shell, with access to whatever you have access to. There is no sandbox, and this project provides none.
+**Hooks execute without you invoking them.** They run with your user privileges, in your shell, with access to whatever you have access to. There is no sandbox.
 
-Two things make that a reasonable trade, and you should verify both yourself rather than take them here:
+Two things bound that risk, and you should verify both yourself.
 
 - Everything is readable. There are no binaries and no bundles; you can read every hook before you install it.
 - The hooks that exist are mostly restrictive — they block destructive commands, force-pushes, and writes containing credential patterns.
@@ -94,7 +94,7 @@ The marketplace holds no personal data. It has no accounts, no server, and no da
 | How to export it | Not applicable |
 | How to request deletion | Not applicable |
 
-Two things this does **not** cover, and you should account for both: your Claude Code session sends data to Anthropic under your own agreement with them, and a plugin's hooks run on your machine with your privileges. Neither is governed by this project.
+Your Claude Code session sends data to Anthropic under your own agreement with them, and a plugin's hooks run on your machine with your privileges. Neither is governed by this project.
 
 ## Security, privacy, reliability, and accessibility
 
@@ -109,9 +109,9 @@ Two things this does **not** cover, and you should account for both: your Claude
 
 ## Licensing
 
-The repository publishes no `LICENSE` file and GitHub detects no licence for it, although each plugin manifest declares one — six MIT and one Apache-2.0. **Without a licence file, default copyright applies, and an installer or forker has no grant of rights regardless of what the per-plugin manifests declare.**
+The repository is licensed under Apache-2.0, and every plugin manifest declares the same licence. *GitHub's repository-level licence badge is computed from the default branch, so the badge reports it only after this branch merges.*
 
-This is a real gap and it is being tracked. If you intend to fork, vendor, or redistribute anything here, ask first rather than relying on the manifest declarations.
+Until 2026-07-26 no `LICENSE` file existed at all, while the README asserted MIT. A copy taken before that date predates the licence; ask before relying on the earlier state.
 
 ## AI features
 
@@ -154,4 +154,4 @@ This is a real gap and it is being tracked. If you intend to fork, vendor, or re
 | Applies to product version | `d0fa737` |
 | Last updated | 2026-07-26 |
 
-Every claim above is drawn from an approved row in this project's claim register, each backed by a verified evidence row and each checkable from the public repository. If you find one that does not hold, that is a defect worth filing.
+Every statement in this guide maps to an approved claim backed by a verified evidence row.

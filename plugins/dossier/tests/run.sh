@@ -47,6 +47,20 @@ REPO_ROOT="$(cd "$TESTS_DIR/../../.." && pwd)"
 # uses a relative path report misleading results.
 cd "$REPO_ROOT" || { echo "run.sh: cannot cd to $REPO_ROOT" >&2; exit 2; }
 
+# Every `mktemp` in a test body, and in the scripts those tests invoke, lands
+# under a directory this runner owns and removes when the run ends.
+#
+# Per-file cleanup does not survive contact with a growing suite: test files are
+# *sourced*, so an `EXIT` trap set by one is replaced by the next file's, and a
+# trailing `rm` gets stranded above whatever the next contributor appends. Both
+# happened here. Owning the parent directory makes the guarantee independent of
+# per-file discipline — the failure mode is a full disk on a developer's laptop,
+# which nothing in the suite would otherwise report.
+RUN_TMPDIR=$(mktemp -d -t dossier-run.XXXXXX 2>/dev/null) || {
+  echo "run.sh: cannot create a run temp directory" >&2; exit 2; }
+export TMPDIR="$RUN_TMPDIR"
+trap 'rm -rf "$RUN_TMPDIR" 2>/dev/null' EXIT INT TERM
+
 if [ $# -gt 0 ]; then
   TEST_FILES=("$@")
 else

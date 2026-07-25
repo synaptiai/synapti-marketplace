@@ -136,7 +136,6 @@ if command -v jq >/dev/null 2>&1; then
   fi
 fi
 
-rm -rf "$W" 2>/dev/null
 
 # --- Locators are written as code spans --------------------------------------
 # `references/evidence-ledger-schema.md` writes every one of its own Source ref
@@ -177,5 +176,7 @@ row '| EV-0001 | This follows from the two rows below | V | `derived: EV-0002 + 
 row '| EV-0002 | A directly observed fact | V | `a.ts` | yes | 2 | abc123 | 2026-07-25 | none | Internal | no | 02-architecture/interfaces-and-integrations.md | — |' "$D"
 row '| EV-0003 | Another directly observed fact | V | `a.ts` | yes | 2 | abc123 | 2026-07-25 | none | Internal | no | 02-architecture/interfaces-and-integrations.md | — |' "$D"
 assert_contains "LEDGER_ERRORS=0" "$(lintout "$D")" "derived: is a recognized non-path locator form"
+
+rm -rf "$W" 2>/dev/null
 
 _dossier_test_summary

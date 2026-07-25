@@ -14,7 +14,9 @@ related: [05-due-diligence/technical-due-diligence-report.md, 03-assurance/secur
 # Assets, Dependencies, and Licenses
 <!-- contract: references/package-contract-05-due-diligence.md#assets-dependencies-and-licenses -->
 
-The headline finding sits at the top because it governs every other row: **the repository publishes no `LICENSE` file, and GitHub detects no licence for it** [EV-0018], [EV-0019]. Each plugin manifest declares one — six MIT, one Apache-2.0 [EV-0021] — and the README asserts MIT with a badge linking to a file that does not exist [EV-0020]. Under default copyright, an installer or forker has no grant of rights whatever the manifests say. This is CT-0001, and it is unresolved.
+The headline finding of the first round governed every other row: the repository published no `LICENSE` file while the README asserted MIT with a badge linking to a file that did not exist, so under default copyright no installer or forker had a grant of rights whatever the manifests said.
+
+**That is now resolved.** A `LICENSE` file carrying the canonical Apache-2.0 text sits at the repository root [EV-0019], the README badge and licence section point at it and resolve [EV-0020], and every declaration was aligned to it — 7 plugin manifests and 8 marketplace entries, all Apache-2.0 [EV-0021]. One thing remains pending and cannot be forced: GitHub computes repository-level licence detection from the default branch, so its derived field reports the licence only after this branch merges (AQ-0011).
 
 ## Asset inventory
 
@@ -54,22 +56,22 @@ The headline finding sits at the top because it governs every other row: **the r
 |---|---|---|---|---|---|
 | MIT | `pyyaml`, `actions/checkout`, `github/codeql-action` | Preserve copyright and licence text when redistributing | Redistribution of the covered code | **No** — none of these is redistributed. They are consumed at CI time or installed separately by the operator | [EV-0041], [EV-0042] |
 | Apache-2.0 | `agent-capability-standard` (submodule), `prompt-decorators` (external entry) | Preserve notices; state changes; include the licence | Distribution of the covered code | **Yes for the submodule** — its tree is present in this repository and is cloned by every installer. Its own `LICENSE` and manifest travel with it, which satisfies the obligation at the plugin level. It is **not** restated at repository level, where the missing root `LICENSE` compounds the ambiguity | [EV-0021], [EV-0031] |
-| **The project's own terms** | its own 112 skills, 61 commands, 29 agents, 42 scripts | Grant recipients rights to use, modify, and redistribute | Publishing source publicly | **Cannot be determined.** Six manifests say MIT, one says Apache-2.0, the README says MIT — and no `LICENSE` file exists, so default copyright applies | [EV-0018], [EV-0019], [EV-0021], CT-0001 |
+| **Apache-2.0, the project's own licence** | its own 112 skills, 61 commands, 29 agents, 42 scripts | Preserve notices; state changes; include the licence; the patent grant and its termination clause bind both directions | Publishing source publicly, and any redistribution by a recipient | **Yes, and it is now satisfiable** — the licence text is present at the root and every manifest declares the same identifier | [EV-0019], [EV-0020], [EV-0021] |
 
 | Distribution mode | What is distributed | To whom | Obligations that attach |
 |---|---|---|---|
-| Git clone by the Claude Code client | The whole repository, including the submodule tree | Any operator who adds the marketplace | Whatever the project's own terms grant — **currently undetermined** |
+| Git clone by the Claude Code client | The whole repository, including the submodule tree | Any operator who adds the marketplace | Apache-2.0: retain the licence and notices, state changes on modification |
 | GitHub release assets | Desktop skill ZIPs built from `SKILL.md` files | Anyone who downloads a release | Same |
 | Public repository browsing | Everything | Anyone | Same |
 
-Every row of the second table ends in the same place. Until CT-0001 is resolved, the project distributes source through three channels under terms nobody can state.
+All three channels now carry the same terms, which is the point of resolving CT-0001: a recipient's rights no longer depend on which channel they arrived through.
 
 ## Commercial terms requiring human review
 
 | Party | What is licensed or contracted | Term that needs review | Why | Owner |
 |---|---|---|---|---|
 | Anthropic | The Claude Code client that executes every artifact | Whether distributing plugins that instruct the client has any term attached | The project's entire distribution depends on it, and no review of its terms is recorded anywhere | Daniel Bentes |
-| Recipients of the six MIT-declared plugins | Their grant of rights | Whether a `plugin.json` `license` field constitutes a licence grant absent a `LICENSE` file | The difference between "MIT-licensed" and "all rights reserved with a misleading badge" | Daniel Bentes |
+| Anyone who cloned or forked before 2026-07-26 | Their grant of rights for that copy | Whether a copy taken while no `LICENSE` file existed is covered retroactively by the licence added afterwards | The licence now applies going forward; what governs an earlier copy is a question of law, not of code | Daniel Bentes |
 | Contributors, if any join | Copyright assignment or inbound licence | No CLA, no DCO, no `CONTRIBUTING.md` — a contribution's terms would be undefined | AQ-0007 — untested because no external contribution has occurred | Daniel Bentes |
 
 ## Generated, copied, vendored, and contributed material
@@ -80,7 +82,7 @@ Every row of the second table ends in the same place. Until CT-0001 is resolved,
 | `plugins/dossier/tests/{run.sh,lib/assert.sh}` | the flow test harness | copied, identifiers renamed | same project | no | N/A | [EV-0009] |
 | `plugins/agent-capability-standard/**` | `synaptiai/agent-capability-standard` | vendored via submodule | Apache-2.0 | yes — its own `LICENSE` and manifest travel with the tree | yes | [EV-0031] |
 | `prompt-decorators` | `synaptiai/prompt-decorators` | referenced, not vendored | Apache-2.0 per its marketplace entry | Not verifiable from here (AQ-0005) | unverified | [EV-0030] |
-| `dist/desktop/**` | every `SKILL.md`, via `package-desktop-skills.sh` | generated | inherits the project's terms | N/A | inherits CT-0001 | [EV-0012] |
+| `dist/desktop/**` | every `SKILL.md`, via `package-desktop-skills.sh` | generated | Apache-2.0, inherited from the project | N/A | yes | [EV-0012], [EV-0019] |
 | External contributions | — | **none exist** | — | — | — | [EV-0035] |
 
 The first row is a maintenance hazard rather than a licensing one, and it has already materialized: the two copies have diverged, dossier's carries a fix flow's does not, and neither points at the other [TD-05].
@@ -137,15 +139,15 @@ Two of the four fragile dependencies are the project's own repositories, which i
 |---|---|---|---|---|
 | `prompt-decorators` contents | Whether the published entry matches what it describes, and whether its Apache-2.0 declaration is present in the source | It is published to installers from this manifest under this marketplace's name | Inspecting the `claude-code-plugin` subdirectory upstream | AQ-0005 |
 | The 2 commits past `v1.2.0` | What they change | The marketplace advertises a version it does not ship | `git log v1.2.0..95f7ac2` upstream | AQ-0006 |
-| The project's own licence terms | Which licence, if any, is granted to recipients | Governs every fork, install, and reuse | Adding a `LICENSE` file | CT-0001 |
+| GitHub's derived licence field | Whether the repository badge and automated scanners report Apache-2.0 | Every licence scanner reads the derived field rather than the file | Merging this branch, then re-reading `gh api repos/…` | AQ-0011 |
 | Inbound contribution terms | What terms a contribution would arrive under | No contribution has occurred, so nothing has tested it | A `CONTRIBUTING.md` stating inbound terms | AQ-0007 |
 
 ## Items flagged for qualified legal review
 
 | Item | Question for counsel | Why it exceeds a technical assessment | Owner |
 |---|---|---|---|
-| Missing root `LICENSE` against per-plugin declarations | Does a `license` field in a `plugin.json` constitute an effective grant to a recipient absent a `LICENSE` file, and what is the position of anyone who has already installed or forked in reliance on the README's MIT badge? | Whether a declaration in a metadata file is legally operative is a question of law, not of code. This assessment can establish only that the file is absent and the badge is present | Daniel Bentes |
-| Mixed MIT and Apache-2.0 within one distributed tree | Does distributing an Apache-2.0 submodule inside an otherwise-MIT repository create any compatibility or notice obligation at the repository level? | Licence compatibility analysis | Daniel Bentes |
+| Copies taken before the licence was added | What is the position of anyone who installed or forked while the README's MIT badge pointed at a file that did not exist? | Whether a metadata declaration was legally operative, and whether a later licence covers an earlier copy, are questions of law. This assessment can establish only what the repository carried on each date | Daniel Bentes |
+| Relicensing six plugins from MIT to Apache-2.0 | The sole author holds copyright in all of them, but does the change bind a recipient who took a copy under the earlier declaration? | Relicensing analysis | Daniel Bentes |
 | Inbound contribution terms | Should a CLA or DCO be adopted before the first external contribution? | A policy question with legal consequences | Daniel Bentes |
 
-Three items, all downstream of the same absent file. Resolving CT-0001 narrows the second and third to routine choices.
+Three items, all downstream of the same absent file — and the file now exists. What remains is retrospective: the licence governs every copy taken from 2026-07-26 onward, and only the position of earlier copies needs counsel.
