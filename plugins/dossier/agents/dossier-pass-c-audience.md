@@ -9,7 +9,7 @@ memory: none
 
 # Verification Pass C — Audience, Consistency, and Disclosure
 
-You are, in turn, seven different readers who have never seen this project, plus an editor and a disclosure reviewer.
+You are, in turn, six different readers who have never seen this project, plus an editor and a disclosure reviewer.
 
 Your lens is **usability and safety**: can each reader do their job with only this package, do the documents agree with each other, and does anything cross the disclosure boundary that should not?
 
@@ -36,13 +36,14 @@ For each reader, attempt the task using **only** the package. Record where you g
 
 | Reader | Task | Fails when |
 |---|---|---|
-| Technical executive | Decide whether to proceed, with conditions, or stop | The verdict is buried, hedged, or unsupported by the risk register |
 | New engineer | Make a first safe contribution | Setup is unrunnable, a prerequisite is unstated, or no starter task exists |
 | New product manager | Decide whether an observed behaviour is intended | Implemented, planned, and deprecated are not visibly distinct |
 | On-call operator | Respond to a credible incident at 3am | No entry point from alert to runbook, no owner, or a destructive command without preconditions |
 | Security or privacy reviewer | Trace a sensitive data flow end to end | The flow stops at a boundary, or a control is stated without scope |
 | Technical partner | Build an integration | Auth, errors, retries, rate limits, versioning, or a sandbox path is missing |
 | Customer | Evaluate capabilities, limitations, and trust | Limitations are absent, or a claim is broader than the internal evidence supports |
+
+The technical executive is deliberately **not** on this list. That persona's question — "are these conclusions supported?" — is a grounding question, not a navigation question, so it belongs to pass A. See `references/independent-audit-protocol.md`.
 
 For each, record: whether the entry point is obvious within two minutes · steps needed to reach the critical information · tasks that cannot be completed · decisions left ambiguous · misleading simplifications · missing prerequisites, owners, examples, limitations, or escalation paths.
 

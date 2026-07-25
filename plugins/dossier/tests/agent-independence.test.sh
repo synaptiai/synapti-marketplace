@@ -104,6 +104,42 @@ for f in "$A" "$B" "$C"; do
     "$(basename "$f" .md): emits findings before repair"
 done
 
+# --- Reconciliation-only fields never appear as pass OUTPUT -------------------
+# A pass that emits a corroboration count or adjudicates a contradiction has
+# seen the other passes. The words are allowed in the denial list — that is the
+# pass being told it may not have them — but must not appear in the output
+# contract, which starts at the "## Output" heading.
+for f in "$A" "$B" "$C"; do
+  out=$(sed -n '/^## Output/,$p' "$f")
+  for field in "corroboration" "N/3"; do
+    case "$out" in
+      *"$field"*) _dossier_assert_fail "$(basename "$f" .md): emits '$field' — a reconciliation-only field" ;;
+      *)          _dossier_assert_pass "$(basename "$f" .md): does not emit '$field'" ;;
+    esac
+  done
+done
+
+# --- Persona ownership agrees with the protocol ------------------------------
+# The protocol assigns the technical-executive persona to pass A (its question
+# is about grounding) and the other six to pass C (theirs are about
+# navigation). The agents and the reference disagreeing about who simulates
+# whom is the same cross-document contradiction the package format exists to
+# surface — shipping it would be the plugin failing its own dimension 4.
+PROTO="plugins/dossier/references/independent-audit-protocol.md"
+if [ -f "$PROTO" ]; then
+  assert_contains "six of the seven personas" "$(cat "$PROTO")" "protocol states the 6/1 persona split"
+
+  C_TABLE=$(sed -n '/| Reader | Task | Fails when |/,/^$/p' "$C")
+  assert_not_contains "Technical executive" "$C_TABLE" "pass C does not claim the technical-executive persona"
+
+  # Data rows only: drop the header and the `|---|` separator, which has no
+  # space after its pipe and so needs excluding by content, not by position.
+  C_PERSONAS=$(printf '%s' "$C_TABLE" | grep '^| ' | grep -v '^| Reader ' | grep -c .)
+  assert_equal "6" "$C_PERSONAS" "pass C simulates exactly 6 personas"
+
+  assert_contains "technical executive" "$(cat "$A")" "pass A carries the technical-executive persona"
+fi
+
 # --- The scorer sees outcomes, not process -----------------------------------
 SC_BODY=$(cat "$SCORER")
 assert_contains "repair rationale" "$SC_BODY" "scorer is denied the repair rationale"

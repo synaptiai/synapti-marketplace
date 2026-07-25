@@ -12,7 +12,7 @@ Owns the shape of the package: which files exist, what each must contain, and wh
 
 ## Iron Law
 
-**THE PACKAGE SHAPE IS FIXED — 7 directories, 23 files, every run. Content adapts; structure never.**
+**THE PACKAGE SHAPE IS FIXED — 8 directories, 23 files, every run. Content adapts; structure never.**
 
 A missing canonical file is indistinguishable from an incomplete run. An irrelevant topic is handled with a justified `N/A` at section level, never by deleting the file — because "we dropped that file, it did not apply" and "we ran out of time" read identically six months later.
 
@@ -44,7 +44,7 @@ A missing canonical file is indistinguishable from an incomplete run. An irrelev
 | `06-public/customer-product-and-trust-guide.md` | Customers | Per disclosure policy | `package-contract-06-public.md` |
 | `07-verification/documentation-verification-report.md` | All | Internal | `package-contract-07-verification.md` |
 
-Load **only** the contract for the document you are drafting. Loading all eight pulls roughly 350 content requirements into one context for no benefit.
+Load **only** the contract for the document you are drafting. Loading all eight pulls over 500 requirements and hard rules into one context for no benefit.
 
 ## Headers
 

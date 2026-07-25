@@ -6,7 +6,7 @@ How the fixed 23-file package adapts to what the project actually is.
 
 **Content adapts. Structure never.**
 
-Every project gets all 7 directories and all 23 files. A library still has `infrastructure-and-deployment.md`; a project with no AI still has `data-and-ai.md`. What changes is which sections carry substance and which carry a justified `N/A`.
+Every project gets all 8 directories and all 23 files. A library still has `infrastructure-and-deployment.md`; a project with no AI still has `data-and-ai.md`. What changes is which sections carry substance and which carry a justified `N/A`.
 
 This is not bureaucracy. A package whose shape varies per project cannot be diffed across revisions, compared across engagements, or audited against a checklist — and "we dropped that file because it did not apply" is indistinguishable from "we ran out of time" six months later. An `N/A` with evidence is a finding; a missing file is a hole.
 

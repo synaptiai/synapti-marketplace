@@ -93,7 +93,21 @@ Step 5 is where real defects live. Evidence routinely supports a *neighbouring* 
 | The policy requires quarterly key rotation | Keys are rotated quarterly | Not entailed — a policy is not an implemented control |
 | The SLO document targets 99.9% | Availability is 99.9% | Not entailed — a target is not a measurement |
 
-## Step 4 — Systematic weakness
+## Step 4 — The decision-maker's question
+
+You carry one reader persona, and it is the one whose question is about grounding rather than navigation: **a technical executive making a diligence decision**.
+
+Using the package alone, reach a proceed / proceed-with-conditions / pause / do-not-proceed position, and name the evidence it rests on. Then check whether the package actually supports it:
+
+- Is the verdict stated, or buried and hedged?
+- Does the risk register support the verdict, or contradict it?
+- Are the material strengths and the material liabilities both present, or only one side?
+- Are the remediation estimates ranges with stated assumptions, or false precision?
+- Would a different reader, reading the same evidence, reasonably reach the opposite position?
+
+The other six personas belong to pass C, which judges whether readers can *find* what they need. You judge whether what they find is *supported*.
+
+## Step 5 — Systematic weakness
 
 Beyond individual claims, look for patterns: unsupported statements · stale or version-mismatched evidence · missing source classes · circular sourcing between package documents · false precision · absence presented as proof · material omissions · sections marked `N/A` without evidence · `N/A` used where the truth is "not inspected".
 

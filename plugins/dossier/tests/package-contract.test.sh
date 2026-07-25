@@ -63,12 +63,31 @@ done <<EOF
 $(find "$PKG" -name '*.md' -type f 2>/dev/null | sort)
 EOF
 
-# The seven numbered directories.
+# The eight numbered directories.
 for d in 00-control 01-project 02-architecture 03-assurance 04-operating 05-due-diligence 06-public 07-verification; do
   if [ -d "$PKG/$d" ]; then
     _dossier_assert_pass "directory $d exists"
   else
     _dossier_assert_fail "directory $d missing"
+  fi
+done
+
+DIR_COUNT=$(find "$PKG" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+assert_equal "8" "$DIR_COUNT" "exactly 8 numbered directories on disk"
+
+# Prose must agree with the filesystem. The package structure is stated in an
+# Iron Law and in two other places; an off-by-one there is the plugin telling
+# users something its own scaffold contradicts, which is the precise defect the
+# cross-document consistency dimension exists to catch.
+for f in plugins/dossier/skills/doc-package-contract/SKILL.md \
+         plugins/dossier/skills/engagement-scoping/SKILL.md \
+         plugins/dossier/references/project-type-adaptation.md \
+         plugins/dossier/README.md; do
+  [ -f "$f" ] || continue
+  if grep -qE '\b7 (directories|dirs)\b|\bseven directories\b' "$f"; then
+    _dossier_assert_fail "$(basename "$f"): says 7 directories; the package has $DIR_COUNT"
+  else
+    _dossier_assert_pass "$(basename "$f"): no stale directory count"
   fi
 done
 

@@ -68,7 +68,7 @@ Then `/dossier:setup` once, and the package maintains itself.
 
 `engagement-scoping` · `evidence-ledger` · `gap-and-contradiction-register` · `project-modeling` · `doc-package-contract` · `disclosure-gating` · `verification-protocol` · `finding-reconciliation` · `scoring-and-release-gate`
 
-Each carries one Iron Law. The per-document content contracts — roughly 350 requirements — live in `references/package-contract-*.md`, one file per directory, so a drafting agent loads exactly the one it needs.
+Each carries one Iron Law. The per-document content contracts — over 500 requirements and hard rules — live in `references/package-contract-*.md`, one file per directory, so a drafting agent loads exactly the one it needs.
 
 ## Agents (6)
 

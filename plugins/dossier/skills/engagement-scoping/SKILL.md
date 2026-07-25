@@ -71,7 +71,7 @@ Validate before scoping. A config that fails `dossier-validate-config.sh` produc
 
 Classify from evidence before scoping the inspection, because the classification changes which sources matter. Record the classification with its supporting evidence IDs — a wrong classification produces a subtly wrong package. See `references/project-type-adaptation.md`.
 
-Structure never adapts. All 7 directories and all 23 files exist for every project type; only emphasis and justified `N/A` change.
+Structure never adapts. All 8 directories and all 23 files exist for every project type; only emphasis and justified `N/A` change.
 
 ## Large scopes
 
