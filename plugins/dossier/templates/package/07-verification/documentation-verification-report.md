@@ -28,7 +28,7 @@ This report says what was verified, what remains uncertain, and whether the pack
 | Documents out of scope and why | {fill} |
 | Round | {fill} |
 
-## Independence method
+## Reviewer-pass independence method
 
 How correlated review error was limited, stated honestly. A plugin cannot guarantee a different model; what it can guarantee is separate context, and which was used is recorded here.
 
@@ -40,6 +40,8 @@ How correlated review error was limited, stated honestly. A plugin cannot guaran
 | Did any pass read another pass's findings before producing its own | {fill — no \| yes, with explanation} |
 | External audit performed | {fill — yes, by {fill} \| no} |
 | Residual correlation risk | {fill} |
+
+Model diversity: {fill — `none, all passes used the session model` | the per-pass model list}
 
 ## Checks performed
 

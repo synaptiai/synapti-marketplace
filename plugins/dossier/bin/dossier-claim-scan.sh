@@ -185,9 +185,23 @@ redact() {
 
 for f in $TARGETS; do
   IN_FENCE=0
+  # The header is structured metadata, not prose. `title:` and `audience:` are
+  # long enough to clear the word floor and match no approved wording, so every
+  # public document would report two unregistered "sentences" that no drafter
+  # could ever resolve — noise that trains a reader to ignore the real findings.
+  # A document opening with `---` is in its header until the closing fence.
+  IN_HEADER=0
+  FIRST_LINE=1
   LN=0
   while IFS= read -r line; do
     LN=$((LN + 1))
+    if [ "$FIRST_LINE" -eq 1 ]; then
+      FIRST_LINE=0
+      if [ "$line" = "---" ]; then IN_HEADER=1; continue; fi
+    elif [ "$IN_HEADER" -eq 1 ]; then
+      [ "$line" = "---" ] && IN_HEADER=0
+      continue
+    fi
     case "$line" in
       '```'*) IN_FENCE=$((1 - IN_FENCE)); continue ;;
     esac

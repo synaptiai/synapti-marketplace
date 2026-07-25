@@ -35,3 +35,6 @@ docs/flow-team-session/*.pdf
 # by helper scripts; the .pyc cache is per-developer noise.
 plugins/flow/bin/__pycache__/
 plugins/flow/**/__pycache__/
+.dossier/
+.claude/settings.dossier.local.json
+.claude/*.lock

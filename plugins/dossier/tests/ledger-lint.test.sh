@@ -138,4 +138,44 @@ fi
 
 rm -rf "$W" 2>/dev/null
 
+# --- Locators are written as code spans --------------------------------------
+# `references/evidence-ledger-schema.md` writes every one of its own Source ref
+# examples inside backticks, so a drafter copying the documented form produced a
+# cell the linter compared against the filesystem verbatim, and every authority
+# 1-3 row failed. The reference and the tool have to agree on one form.
+B="$W/backtick"; mk "$B"; printf 'x\n' > "$B/real-source.ts"
+row '| EV-0001 | The handler validates the token | V | `real-source.ts` | yes | 2 | abc123 | 2026-07-25 | none | Internal | no | 02-architecture/interfaces-and-integrations.md | — |' "$B"
+assert_contains "LEDGER_ERRORS=0" "$(lintout "$B")" "a backticked path locator resolves"
+
+# Several spans in one cell are several locators, and all must resolve.
+M="$W/multi"; mk "$M"; printf 'x\n' > "$M/a.ts"; printf 'y\n' > "$M/b.ts"
+row '| EV-0001 | Two sources agree | C | `a.ts`, `b.ts` | yes | 2 | abc123 | 2026-07-25 | none | Internal | no | 02-architecture/interfaces-and-integrations.md | — |' "$M"
+assert_contains "LEDGER_ERRORS=0" "$(lintout "$M")" "every span in a multi-locator cell is resolved"
+
+MB="$W/multibad"; mk "$MB"; printf 'x\n' > "$MB/a.ts"
+row '| EV-0001 | One source is missing | C | `a.ts`, `no/such/file.ts` | yes | 2 | abc123 | 2026-07-25 | none | Internal | no | 02-architecture/interfaces-and-integrations.md | — |' "$MB"
+OUT=$(lintout "$MB")
+assert_not_contains "LEDGER_ERRORS=0" "$OUT" "an unresolvable span in a multi-locator cell is an error"
+
+# The counter must move with the findings. Iterating locators through a pipe put
+# `emit` in a subshell, which printed findings under LEDGER_ERRORS=0 — a linter
+# reporting problems and simultaneously reporting none.
+if printf '%s' "$OUT" | grep -q '\[error\]'; then
+  N=$(printf '%s' "$OUT" | sed -nE 's/^LEDGER_ERRORS=([0-9]+)$/\1/p')
+  if [ "${N:-0}" -ge 1 ]; then
+    _dossier_assert_pass "the error count moves with the findings it prints"
+  else
+    _dossier_assert_fail "findings printed while LEDGER_ERRORS=$N — the counter is in a subshell"
+  fi
+else
+  _dossier_assert_fail "expected an error finding for the unresolvable locator"
+fi
+
+# A row supported by other ledger rows needs a locator form of its own.
+D="$W/derived"; mk "$D"; printf 'x\n' > "$D/a.ts"
+row '| EV-0001 | This follows from the two rows below | V | `derived: EV-0002 + EV-0003` | yes | 1 | abc123 | 2026-07-25 | none | Internal | no | 02-architecture/interfaces-and-integrations.md | — |' "$D"
+row '| EV-0002 | A directly observed fact | V | `a.ts` | yes | 2 | abc123 | 2026-07-25 | none | Internal | no | 02-architecture/interfaces-and-integrations.md | — |' "$D"
+row '| EV-0003 | Another directly observed fact | V | `a.ts` | yes | 2 | abc123 | 2026-07-25 | none | Internal | no | 02-architecture/interfaces-and-integrations.md | — |' "$D"
+assert_contains "LEDGER_ERRORS=0" "$(lintout "$D")" "derived: is a recognized non-path locator form"
+
 _dossier_test_summary

@@ -147,6 +147,33 @@ T="$W/nopub"; mkdir -p "$T/docs/dossier" 2>/dev/null
 scan "$T"
 assert_equal "2" "$?" "a missing public directory exits 2"
 
+# --- the header is metadata, not prose ---------------------------------------
+# `title:` and `audience:` clear the four-word floor and match no approved
+# wording, so scanning the header reports unregistered "sentences" that no
+# drafter can resolve — noise that trains a reader to skip the real findings.
+T="$W/header"; mkdir -p "$T/docs/dossier/06-public" 2>/dev/null
+printf -- '---\ndossier-header: public-v1\ntitle: A Guide For Evaluating Partners\naudience: Partners and integrators evaluating the product\nproduct-version: abc1234\nlast-updated: 2026-07-26\n---\n# A Guide For Evaluating Partners\n' \
+  > "$T/docs/dossier/06-public/g.md" 2>/dev/null
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=0" "$OUT" \
+  "header fields are not reported as unregistered claims"
+
+# The same document with one unregistered body sentence must still report it,
+# so the skip above cannot be widened into skipping the document.
+printf -- '\nThe product supports every integration pattern a partner needs.\n' \
+  >> "$T/docs/dossier/06-public/g.md" 2>/dev/null
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "an unregistered body sentence is still reported after the header skip"
+
+# A document that does not open with a header fence must be scanned in full.
+T="$W/noheader"; mkdir -p "$T/docs/dossier/06-public" 2>/dev/null
+printf -- '# Guide\n\nThe product supports every integration pattern a partner needs.\n' \
+  > "$T/docs/dossier/06-public/g.md" 2>/dev/null
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "a headerless document is scanned from its first line"
+
 rm -rf "$W" 2>/dev/null
 
 _dossier_test_summary

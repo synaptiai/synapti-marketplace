@@ -155,20 +155,44 @@ while IFS= read -r line; do
   fi
 
   # 7. Locator resolution, levels 1-3 only
+  #
+  # A locator is written as a Markdown code span — `references/evidence-ledger-schema.md`
+  # writes every one of its own examples that way, and a drafter reading it will
+  # copy the form. Comparing the raw cell against the filesystem therefore fails
+  # on the documented style, so the backticks come off before anything is tested.
+  # A cell may carry several spans; each is a locator in its own right, and the
+  # row is sound only if all of them resolve.
   case "$AUTH" in
     [1-3])
-      case "$SRCREF" in
-        cmd:*|dashboard:*|git:*|release:*|pr:*|incident:*|inference*|contract:*|interview:*)
-          : ;;  # non-path locator forms; shape is checked, existence is not
-        *)
-          # Path form, optionally with ::symbol or #heading
-          p=${SRCREF%%::*}
-          p=${p%%#*}
-          p=$(trim "$p")
-          if [ -n "$p" ] && [ ! -e "$p" ] && [ ! -e "$OUTPUT_ROOT/$p" ]; then
-            emit error "$LINENO_" "$EVID: Source ref '$p' does not resolve (authority $AUTH requires a reachable locator)"
-          fi ;;
-      esac ;;
+      LOCATORS=$(printf '%s\n' "$SRCREF" | tr '`' '\n' | awk 'NR % 2 == 0')
+      [ -z "$LOCATORS" ] && LOCATORS=$SRCREF
+      # Iterated without a pipe: `emit` increments the error counter, and a
+      # subshell would discard every increment while still printing the finding
+      # — a linter that reports findings and a zero error count.
+      OLD_IFS=$IFS
+      IFS='
+'
+      for loc in $LOCATORS; do
+        IFS=$OLD_IFS
+        loc=$(trim "$loc")
+        [ -z "$loc" ] && { IFS='
+'; continue; }
+        case "$loc" in
+          cmd:*|dashboard:*|git:*|release:*|pr:*|incident:*|inference*|contract:*|interview:*|derived:*)
+            IFS='
+'; continue ;;  # non-path locator forms; shape is checked, existence is not
+        esac
+        # Path form, optionally with ::symbol or #heading
+        p=${loc%%::*}
+        p=${p%%#*}
+        p=$(trim "$p")
+        if [ -n "$p" ] && [ ! -e "$p" ] && [ ! -e "$OUTPUT_ROOT/$p" ]; then
+          emit error "$LINENO_" "$EVID: Source ref '$p' does not resolve (authority $AUTH requires a reachable locator)"
+        fi
+        IFS='
+'
+      done
+      IFS=$OLD_IFS ;;
   esac
 
   # 9. Public use gating

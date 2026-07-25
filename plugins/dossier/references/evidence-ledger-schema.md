@@ -40,6 +40,7 @@ A claim must be falsifiable by inspection. "The architecture is clean" cannot be
 | Executed check | `cmd: <command>` plus the artifact path holding its output, e.g. `cmd: npm test → .dossier/runs/<id>/npm-test.log` | `yes` |
 | Schema / IaC / config | Same as code. Include the environment when the file is per-environment. | `yes` |
 | Immutable record | `git:<sha>`, `release:<tag>`, `pr:<number>`, `incident:<id>` | `yes` |
+| Derived from other rows | `derived:<EV-#### expression>`, e.g. `derived: EV-0004..EV-0007, EV-0041`. Use when the row states something that follows from rows already in the ledger rather than from a source outside it — the cited rows carry the grounding, and each must exist | `yes` |
 | Dashboard / telemetry | `dashboard:<system>/<dashboard name>/<panel>` plus the query window, e.g. `dashboard:grafana/api-slo/p99-latency (7d window, observed 2026-07-20)` | `yes` if the reader has the console; `no` if the panel is retention-limited and the window has since aged out |
 | Contract / policy | `contract:<counterparty> <document title> §<clause>` — never the document text, never the counterparty's confidential terms | usually `no` |
 | Interview / stakeholder | `interview:<role>, <YYYY-MM-DD>` — role, not name, unless the person's name is already public in the terminology register | `no` |

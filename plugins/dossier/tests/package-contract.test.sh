@@ -294,4 +294,34 @@ for r in evidence-ledger assumptions-questions-and-contradictions claim-and-disc
   fi
 done
 
+# --- The gate's G17 strings must exist in the template it grades -------------
+# G17 greps the verification report for a heading and a line. If the shipped
+# template does not carry them, a drafter who follows the template verbatim
+# fails the gate every time with nothing in the template to explain why.
+VR="$PKG/07-verification/documentation-verification-report.md"
+GATE="plugins/dossier/bin/dossier-gate.sh"
+assert_file_exists "$VR" "verification report template exists"
+assert_file_exists "$GATE" "gate script exists"
+
+# Read the heading out of the gate rather than restating it here, so renaming
+# one without the other fails instead of drifting silently.
+G17_HEAD=$(grep -o "'\^## [A-Za-z -]*independence method'" "$GATE" | head -1 | tr -d "'^")
+if [ -n "$G17_HEAD" ]; then
+  _dossier_assert_pass "G17's expected heading was recovered from the gate ($G17_HEAD)"
+  if grep -qF "$G17_HEAD" "$VR"; then
+    _dossier_assert_pass "template carries the heading G17 greps for"
+  else
+    _dossier_assert_fail "template lacks G17's heading '$G17_HEAD' — every drafted report fails G17"
+  fi
+else
+  _dossier_assert_fail "could not recover G17's heading from the gate — the test cannot verify the pair"
+fi
+
+if grep -q 'Model diversity:' "$VR"; then
+  _dossier_assert_pass "template prompts for the 'Model diversity:' line G17 requires"
+else
+  _dossier_assert_fail "template does not prompt for 'Model diversity:' — G17 fails on a faithful report"
+fi
+
 _dossier_test_summary
+
