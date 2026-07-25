@@ -160,6 +160,130 @@ done <<EOF
 $EXPECTED
 EOF
 
+# =============================================================================
+# Contract/template bijection and metadata coherence
+# =============================================================================
+# The claim "contract and skeleton cannot drift" is only worth making if it is
+# checked. Each assertion below closes one drift vector that the anchor check
+# above does not reach.
+
+CONTRACT_SECTIONS=$(grep -h '^## ' "$REFS"/package-contract-0*.md | sed 's/^## //' | sort)
+SECTION_COUNT=$(printf '%s\n' "$CONTRACT_SECTIONS" | grep -c .)
+assert_equal "23" "$SECTION_COUNT" "the 8 contracts declare exactly 23 document sections"
+
+# Bijection: no orphan section, no duplicate. A section with no template is a
+# requirement nothing implements.
+DUPES=$(printf '%s\n' "$CONTRACT_SECTIONS" | uniq -d)
+if [ -z "$DUPES" ]; then
+  _dossier_assert_pass "no duplicate contract sections"
+else
+  _dossier_assert_fail "duplicate contract sections: $(printf '%s' "$DUPES" | tr '\n' ' ')"
+fi
+
+TEMPLATE_SLUGS=$(find "$PKG" -name '*.md' -type f 2>/dev/null | sed -E 's|.*/||; s|\.md$||' | sort)
+if [ "$CONTRACT_SECTIONS" = "$TEMPLATE_SLUGS" ]; then
+  _dossier_assert_pass "contract sections and template basenames are a 1:1 bijection"
+else
+  _dossier_assert_fail "contract sections and template basenames differ: $(diff <(printf '%s\n' "$CONTRACT_SECTIONS") <(printf '%s\n' "$TEMPLATE_SLUGS") | tr '\n' ' ')"
+fi
+
+# Per-section metadata. Each contract section declares Path, Template, Header
+# style and Audience in its metadata table.
+for field in "Path" "Template" "Header style" "Audience"; do
+  n=$(grep -h "^| $field |" "$REFS"/package-contract-0*.md | wc -l | tr -d ' ')
+  assert_equal "23" "$n" "every section declares $field"
+done
+
+# Declared Path and Template must resolve, and the declared header style must
+# match what the template actually carries.
+#
+# THAT LAST ONE IS THE DRIFT VECTOR NOTHING ELSE CATCHES. The check further up
+# validates each template's own discriminator against a rule derived from its
+# directory. It never compares the template against what the CONTRACT says the
+# template should be — so a contract declaring `internal-v1` for a public
+# document would sail through while instructing a drafter to stamp the wrong
+# header and leak internal fields into a published file.
+for cf in "$REFS"/package-contract-0*.md; do
+  # Split on section headings, then read the metadata rows of each block.
+  # Values are backtick-delimited; split on the backtick and take field 2
+  # rather than using gsub, whose greedy `.*` consumes both delimiters and
+  # leaves the trailing table pipe.
+  awk -F'`' '
+    /^## / { slug=$0; sub(/^## /,"",slug); path=""; tpl=""; hdr=""; next }
+    slug != "" && /^\| Path \| / { path=$2; next }
+    slug != "" && /^\| Template \| / { tpl=$2; next }
+    slug != "" && /^\| Header style \| / {
+      hdr=$2
+      print slug "\t" path "\t" tpl "\t" hdr
+      slug=""
+      next
+    }
+  ' "$cf" > /tmp/dossier-contract-meta.$$ 2>/dev/null
+
+  while IFS=$'\t' read -r slug path tpl hdr; do
+    [ -z "$slug" ] && continue
+
+    # Declared package-relative path must name this slug.
+    base=$(basename "$path" .md)
+    if [ "$base" = "$slug" ]; then
+      _dossier_assert_pass "$slug: declared Path names the same document"
+    else
+      _dossier_assert_fail "$slug: declared Path '$path' does not match the section slug"
+
+    fi
+
+    # Declared template must exist. The contract paths are plugin-relative.
+    tpl_abs="plugins/dossier/$tpl"
+    [ -f "$tpl" ] && tpl_abs="$tpl"
+    if [ -f "$tpl_abs" ]; then
+      _dossier_assert_pass "$slug: declared Template resolves"
+    else
+      _dossier_assert_fail "$slug: declared Template '$tpl' does not resolve"
+
+      continue
+    fi
+
+    actual=$(awk -F': ' '/^dossier-header:/{print $2; exit}' "$tpl_abs" 2>/dev/null)
+    if [ "$actual" = "$hdr" ]; then
+      _dossier_assert_pass "$slug: declared header style matches the template"
+    else
+      _dossier_assert_fail "$slug: contract declares header '$hdr' but the template carries '$actual'"
+
+    fi
+  done < /tmp/dossier-contract-meta.$$
+  rm -f /tmp/dossier-contract-meta.$$ 2>/dev/null
+done
+
+# Required subsections. All three are mandatory in every section; the third is
+# where source principle 7 ("optimize for decisions and tasks") lives, since it
+# is a quality attribute with no invocation point and therefore owns no skill.
+for sub in "Required content" "Hard rules" "Decision-usefulness test"; do
+  n=$(grep -h "^### $sub" "$REFS"/package-contract-0*.md | wc -l | tr -d ' ')
+  assert_equal "23" "$n" "every section carries a '$sub' subsection"
+done
+
+# Project-type adaptation is required everywhere EXCEPT 00-control, and that
+# exception is deliberate rather than an omission: register mechanics are
+# project-type-invariant. An EV- row has the same columns for a firmware
+# project and a SaaS; what varies is what fills them, and that variation is
+# already carried by the per-project-type table in
+# source-authority-and-claim-states.md. Duplicating it here would create
+# exactly the drift surface the package format exists to prevent.
+#
+# Encoded as an explicit exception so a future maintainer does not "fix" the
+# gap by adding the duplicate.
+for cf in "$REFS"/package-contract-0*.md; do
+  name=$(basename "$cf")
+  sections=$(grep -c '^## ' "$cf")
+  adapt=$(grep -c '^### Project-type adaptation' "$cf")
+  case "$name" in
+    package-contract-00-control.md)
+      assert_equal "0" "$adapt" "$name: no project-type adaptation, by design (register mechanics are invariant)" ;;
+    *)
+      assert_equal "$sections" "$adapt" "$name: every section carries project-type adaptation" ;;
+  esac
+done
+
 # The four control registers ARE the empty tables — a separate registers/ dir
 # would duplicate them and immediately drift.
 for r in evidence-ledger assumptions-questions-and-contradictions claim-and-disclosure-register terminology-and-ownership; do
