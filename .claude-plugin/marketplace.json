@@ -19,7 +19,7 @@
       },
       "homepage": "https://github.com/synaptiai/synapti-marketplace",
       "repository": "https://github.com/synaptiai/synapti-marketplace",
-      "license": "MIT",
+      "license": "Apache-2.0",
       "category": "analysis",
       "keywords": [
         "manipulation-detection",
@@ -52,7 +52,7 @@
       },
       "homepage": "https://github.com/synaptiai/synapti-marketplace",
       "repository": "https://github.com/synaptiai/synapti-marketplace",
-      "license": "MIT",
+      "license": "Apache-2.0",
       "category": "workflow",
       "keywords": [
         "github",
@@ -83,7 +83,7 @@
       },
       "homepage": "https://github.com/synaptiai/synapti-marketplace",
       "repository": "https://github.com/synaptiai/synapti-marketplace",
-      "license": "MIT",
+      "license": "Apache-2.0",
       "category": "product-development",
       "keywords": [
         "product-development",
@@ -115,7 +115,7 @@
       },
       "homepage": "https://github.com/synaptiai/synapti-marketplace",
       "repository": "https://github.com/synaptiai/synapti-marketplace",
-      "license": "MIT",
+      "license": "Apache-2.0",
       "category": "workflow",
       "keywords": [
         "github",
@@ -216,7 +216,7 @@
       },
       "homepage": "https://github.com/synaptiai/synapti-marketplace",
       "repository": "https://github.com/synaptiai/synapti-marketplace",
-      "license": "MIT",
+      "license": "Apache-2.0",
       "category": "organizational-design",
       "keywords": [
         "organizational-design",
@@ -272,7 +272,7 @@
       },
       "homepage": "https://github.com/synaptiai/synapti-marketplace",
       "repository": "https://github.com/synaptiai/synapti-marketplace",
-      "license": "MIT",
+      "license": "Apache-2.0",
       "category": "documentation",
       "keywords": [
         "documentation",

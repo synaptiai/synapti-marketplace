@@ -8,7 +8,7 @@
   },
   "repository": "https://github.com/synaptiai/synapti-marketplace",
   "homepage": "https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/context-ledger",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": [
     "product-development",
     "evidence-based",

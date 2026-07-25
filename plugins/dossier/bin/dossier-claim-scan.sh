@@ -147,23 +147,28 @@ APPROVED_FILE=$(mktemp -t dossier-approved.XXXXXX) || {
   echo "dossier-claim-scan: cannot create temp file" >&2; exit 2; }
 trap 'rm -f "$HITS_FILE" "$APPROVED_FILE" 2>/dev/null' EXIT
 
-REGISTER_PRESENT=0
-if [ -f "$CLAIMS" ]; then
-  REGISTER_PRESENT=1
-  grep '^| *CL-' "$CLAIMS" 2>/dev/null | while IFS= read -r row; do
-    case "$row" in
-      *"| approved |"*|*"|approved|"*) ;;
-      *) continue ;;
-    esac
-    printf '%s' "$row" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$3); print tolower($3)}'
-  done > "$APPROVED_FILE"
-fi
-
 normalize() { # strip markdown emphasis/code/links, collapse space, lowercase
   sed -e 's/`[^`]*`/ /g' -e 's/\[\([^]]*\)\]([^)]*)/\1/g' \
       -e 's/[*_#>]//g' -e 's/[[:space:]]\{1,\}/ /g' \
       -e 's/^ //' -e 's/ $//' | tr '[:upper:]' '[:lower:]'
 }
+
+REGISTER_PRESENT=0
+if [ -f "$CLAIMS" ]; then
+  REGISTER_PRESENT=1
+  # Approved wordings go through the SAME normalization as document sentences.
+  # Lowercasing alone left the register's markdown intact while the document side
+  # had it stripped, so any claim containing a code span, bold, or a link could
+  # never match its own approved row — the check could not pass for a realistic
+  # claim, and every such sentence was reported as unregistered.
+  grep '^| *CL-' "$CLAIMS" 2>/dev/null | while IFS= read -r row; do
+    case "$row" in
+      *"| approved |"*|*"|approved|"*) ;;
+      *) continue ;;
+    esac
+    printf '%s' "$row" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$3); print $3}' | normalize
+  done > "$APPROVED_FILE"
+fi
 
 # Redact credential-shaped substrings before any sentence text is echoed.
 #
@@ -212,7 +217,13 @@ for f in $TARGETS; do
 
     # One sentence per check. Declarative only: a heading or a fragment is not
     # a claim, and flagging them would drown the real findings.
-    printf '%s\n' "$line" | tr '.' '\n' | while IFS= read -r sentence; do
+    #
+    # Code spans come out BEFORE the split. A bare `tr '.' '\n'` cuts inside
+    # `SKILL.md`, `plugin.json`, and `3.2.2`, producing fragments like
+    # "md` is not a skill" — reported as unregistered claims that no drafter
+    # could resolve, because they are not sentences.
+    SPLITTABLE=$(printf '%s' "$line" | sed 's/`[^`]*`/ /g')
+    printf '%s\n' "$SPLITTABLE" | tr '.' '\n' | while IFS= read -r sentence; do
       norm=$(printf '%s' "$sentence" | normalize)
       [ -z "$norm" ] && continue
       words=$(printf '%s' "$norm" | wc -w | tr -d ' ')

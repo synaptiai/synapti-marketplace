@@ -8,7 +8,7 @@
   },
   "repository": "https://github.com/synaptiai/synapti-marketplace",
   "homepage": "https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/dossier",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": [
     "documentation",
     "due-diligence",

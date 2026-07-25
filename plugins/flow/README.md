@@ -396,4 +396,4 @@ See `schema.json` for full configuration reference.
 
 ## License
 
-MIT
+Apache-2.0

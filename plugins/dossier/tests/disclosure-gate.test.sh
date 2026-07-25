@@ -176,4 +176,43 @@ assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
 
 rm -rf "$W" 2>/dev/null
 
+# --- An approved wording containing markdown must be matchable ---------------
+# Document sentences are normalized (code spans, emphasis, and links stripped)
+# before comparison. Lowercasing the register row without normalizing it left the
+# markdown in place on one side only, so any claim containing a code span could
+# never match its own approved row — the check could not pass for a realistic
+# claim, and every such sentence was reported as unregistered.
+T="$W/md-claim"; mkpkg "$T"
+reg "$T" '| CL-0001 | The only declared dependency is `pyyaml`, required by one plugin. | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+pub "$T" 'The only declared dependency is `pyyaml`, required by one plugin.'
+scan "$T"
+assert_equal "0" "$?" "an approved wording containing a code span matches its document sentence"
+
+# Emphasis on one side only must not defeat the match either.
+T="$W/md-emph"; mkpkg "$T"
+reg "$T" '| CL-0001 | Hooks execute without you invoking them. | security | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+pub "$T" '**Hooks execute without you invoking them.**'
+scan "$T"
+assert_equal "0" "$?" "emphasis in the document does not defeat the match"
+
+# --- A period inside a code span is not a sentence boundary ------------------
+# `tr '.' '\n'` cuts inside SKILL.md, plugin.json, and 3.2.2, producing fragments
+# like "md is not a skill" that are reported as unregistered claims no drafter
+# can resolve, because they are not sentences.
+T="$W/dotted"; mkpkg "$T"
+reg "$T" '| CL-0001 | A directory without a `SKILL.md` is not a skill. | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+pub "$T" 'A directory without a `SKILL.md` is not a skill.'
+scan "$T"
+assert_equal "0" "$?" "a filename inside a code span is not split into fragments"
+
+OUT=$(scanout "$T")
+assert_not_contains "md is not a skill" "$OUT" "no fragment is reported from a split filename"
+
+# The split must still happen at real sentence boundaries.
+T="$W/twosent"; mkpkg "$T"
+reg "$T" '| CL-0001 | The first claim is registered. | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+pub "$T" 'The first claim is registered. The second claim is not registered anywhere.'
+scan "$T"
+assert_equal "1" "$?" "a second unregistered sentence on the same line is still found"
+
 _dossier_test_summary

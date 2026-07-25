@@ -472,7 +472,7 @@ Most "context" tooling is a dump of notes.
 
 ## License
 
-MIT License - See LICENSE file for details.
+Apache-2.0 - see the [LICENSE](../../LICENSE) file at the repository root.
 
 ## Author
 

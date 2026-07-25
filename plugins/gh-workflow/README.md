@@ -609,4 +609,4 @@ The `/gh-setup` command detects your project's tech stack and generates appropri
 
 ## License
 
-MIT
+Apache-2.0

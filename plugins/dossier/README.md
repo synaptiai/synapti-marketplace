@@ -136,4 +136,4 @@ plugins/dossier/tests/run.sh agent-independence.test.sh  # one file
 
 ## License
 
-MIT
+Apache-2.0

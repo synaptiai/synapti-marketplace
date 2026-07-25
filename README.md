@@ -2,7 +2,7 @@
 
 > Agentic harnesses for Claude Code — specialized AI agents for complex analytical tasks
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Plugin-orange.svg)](https://claude.com/claude-code)
 [![Plugins](https://img.shields.io/badge/Plugins-8-green.svg)](#available-plugins)
 
@@ -681,7 +681,7 @@ your-plugin/
   "version": "1.0.0",
   "description": "Brief description of what your plugin does",
   "author": { "name": "Your Name" },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": ["relevant", "keywords"]
 }
 ```
@@ -697,7 +697,7 @@ your-plugin/
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the [Apache License 2.0](LICENSE).
 
 ## Credits
 

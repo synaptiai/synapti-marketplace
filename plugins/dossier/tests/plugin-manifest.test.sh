@@ -24,7 +24,29 @@ if command -v jq >/dev/null 2>&1; then
   done
 
   assert_equal "dossier" "$(jq -r '.name' "$PLUGIN_JSON")" "plugin name is dossier"
-  assert_equal "MIT" "$(jq -r '.license' "$PLUGIN_JSON")" "license is MIT"
+
+  # The declared licence is checked against the repository's LICENSE file rather
+  # than a constant. A hard-coded identifier passes happily while the file it
+  # refers to says something else — which is exactly how this repository came to
+  # advertise a licence it did not carry.
+  REPO_LICENSE="LICENSE"
+  if [ -f "$REPO_LICENSE" ]; then
+    _dossier_assert_pass "repository carries a LICENSE file"
+    EXPECTED_SPDX=""
+    if grep -q 'Apache License' "$REPO_LICENSE" && grep -q 'Version 2\.0' "$REPO_LICENSE"; then
+      EXPECTED_SPDX="Apache-2.0"
+    elif grep -q 'MIT License' "$REPO_LICENSE"; then
+      EXPECTED_SPDX="MIT"
+    fi
+    if [ -n "$EXPECTED_SPDX" ]; then
+      assert_equal "$EXPECTED_SPDX" "$(jq -r '.license' "$PLUGIN_JSON")" \
+        "plugin.json license matches the LICENSE file ($EXPECTED_SPDX)"
+    else
+      _dossier_assert_fail "LICENSE file text matches no SPDX identifier this test recognizes"
+    fi
+  else
+    _dossier_assert_fail "no LICENSE file at the repository root — the declared licence grants nothing"
+  fi
 
   # author is an object with name and url, matching the sibling plugins.
   assert_match '^[A-Za-z]' "$(jq -r '.author.name // empty' "$PLUGIN_JSON")" "author.name present"

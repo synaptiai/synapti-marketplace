@@ -53,12 +53,14 @@ The canonical 23-file documentation package across `00-control/`, `01-project/`,
 
 ### Fixed
 
-First run against a real project — this repository — surfaced four defects that 1034 assertions had not, because each was a disagreement between two artifacts no single test compared.
+First run against a real project — this repository — surfaced six defects that 1034 assertions had not, because each was a disagreement between two artifacts no single test compared.
 
 - `dossier-gate.sh` condition G17 required a heading and a `Model diversity:` line that the shipped verification-report template did not carry, so a faithfully drafted report failed the gate every time. The template now matches the gate and the contract reference, and a test reads the expected heading out of the gate script so renaming either alone fails.
 - `dossier-ledger-lint.sh` compared the `Source ref` cell against the filesystem verbatim, while `references/evidence-ledger-schema.md` writes every one of its own examples as a Markdown code span — the documented form failed the lint. Code spans are now stripped before classification, and a cell carrying several spans has each of them checked.
 - `dossier-ledger-lint.sh` iterated locators through a pipe, so `emit` incremented the error counter inside a subshell and the linter printed findings under `LEDGER_ERRORS=0`. A caller reading only the count saw a clean ledger. The loop no longer forks.
 - `dossier-claim-scan.sh` read YAML frontmatter as prose, reporting `title:` and `audience:` as unregistered claims in every public document — findings no drafter could resolve.
+- `dossier-claim-scan.sh` lowercased approved wordings but did not normalize them, while document sentences were fully normalized. Markdown survived on one side only, so a claim containing a code span, emphasis, or a link could never match its own approved row — the registration check could not pass for a realistic claim.
+- `dossier-claim-scan.sh` split sentences on a bare `.`, cutting inside `SKILL.md`, `plugin.json`, and version numbers, and reporting the fragments as unregistered claims. Code spans now come out before the split.
 
 ### Added
 
