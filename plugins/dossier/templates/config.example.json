@@ -1,0 +1,142 @@
+{
+  "$schema": "https://raw.githubusercontent.com/synaptiai/synapti-marketplace/main/plugins/dossier/schema.json",
+  "dossier": {
+    "project": {
+      "name": "Acme Ledger Core",
+      "mission": "Settlement ledger for cross-border B2B payments. Used by treasury operators at mid-market importers to reconcile multi-currency invoices against bank statements without manual spreadsheet work.",
+      "sources": ["./", "../ledger-infra"],
+      "outputRoot": "docs/dossier",
+      "versionOrCommit": "auto",
+      "type": "auto"
+    },
+    "engagement": {
+      "deliveryMode": "full",
+      "dueDiligenceContext": "Series B technical diligence. Decision maker: lead investor's technical partner. Stage: post-revenue, 14 engineers. Materiality threshold: anything requiring more than one engineer-quarter to remediate. Risk appetite: moderate. Horizon: decision in six weeks.",
+      "stakeholders": [
+        { "name": "unknown", "role": "VP Engineering", "audience": "internal-eng" },
+        { "name": "unknown", "role": "Head of Product", "audience": "internal-product" }
+      ],
+      "constraints": [
+        "no access to production telemetry",
+        "no access to the customer contract repository",
+        "staging environment only"
+      ],
+      "regulatory": ["SOC 2 Type II", "GDPR", "PSD2"],
+      "allowedActions": {
+        "readSource": true,
+        "readSecrets": false,
+        "runBuild": true,
+        "runTests": true,
+        "networkAccess": false,
+        "writeOutsideOutputRoot": false,
+        "contactHumans": true
+      }
+    },
+    "disclosure": {
+      "policy": "partner-nda",
+      "publicClaimApproval": "required",
+      "confidentialityDefault": "Internal",
+      "redactionPatterns": [
+        "(?i)api[_-]?key",
+        "(?i)\\bcustomer:\\s*\\S+",
+        "(?i)\\b(acme|northwind)-(prod|internal)\\b"
+      ]
+    },
+    "package": {
+      "requireAll23": true,
+      "allowExtraFiles": true,
+      "headerStyle": "internal-v1"
+    },
+    "verification": {
+      "passes": ["A", "B", "C"],
+      "passModels": { "A": "inherit", "B": "inherit", "C": "inherit" },
+      "claimSample": {
+        "minRows": 30,
+        "percent": 10,
+        "auditAllCategories": [
+          "security",
+          "compliance",
+          "license",
+          "financial",
+          "performance",
+          "customer-reference"
+        ]
+      },
+      "traceCount": 10,
+      "maxRounds": 3
+    },
+    "gate": {
+      "minScore": 95,
+      "minDimensionPercent": 80,
+      "requireAllConditions": true,
+      "failOn": ["Critical", "High"]
+    },
+    "refresh": {
+      "stalenessDays": 90
+    },
+    "ci": {
+      "enabled": true,
+      "triggerPolicy": "path-filtered",
+      "branchStrategy": "rolling",
+      "rollingBranch": "docs/dossier",
+      "rollingBranchRotation": "none",
+      "instructionSource": "plugin",
+      "forkPolicy": "warn",
+      "labels": {
+        "generated": "dossier:generated",
+        "force": "docs:refresh",
+        "skip": "docs:skip",
+        "oversized": "dossier:oversized"
+      },
+      "pathFilters": {
+        "include": [
+          "src/**",
+          "internal/**",
+          "api/**",
+          "schemas/**",
+          "migrations/**",
+          "go.mod",
+          "Dockerfile",
+          "deploy/**",
+          "README.md",
+          ".github/workflows/**"
+        ],
+        "exclude": [
+          "docs/dossier/**",
+          "**/*_test.go",
+          "**/testdata/**",
+          "CHANGELOG.md",
+          "**/*.lock"
+        ]
+      },
+      "apiSurfaceGlobs": [
+        "api/**/*.proto",
+        "schemas/**/*.json",
+        "**/openapi*.yaml"
+      ],
+      "thresholds": {
+        "minChangedFiles": 1,
+        "maxSourceDiffLines": 50000,
+        "maxSourceDiffBytes": 524288,
+        "maxDocChangedFiles": 30,
+        "maxDocChangedLines": 3000,
+        "oversizedBehavior": "draft"
+      },
+      "circuitBreaker": { "maxDocPrsPer24h": 6 },
+      "agent": { "model": "", "maxTurns": 60 },
+      "schedule": { "enabled": true, "cron": "0 6 * * 1", "minCommits": 1 },
+      "writeAllowlist": ["docs/dossier/**"],
+      "expectedPluginVersion": "1.0.0"
+    },
+    "local": {
+      "onFlowMerge": "suggest"
+    },
+    "tiers": {
+      "writeInternalDocs": "autonomous",
+      "writePublicDocs": "journal",
+      "modifyClaimRegister": "journal",
+      "publishExternally": "confirm",
+      "overrideGateCondition": "confirm"
+    }
+  }
+}

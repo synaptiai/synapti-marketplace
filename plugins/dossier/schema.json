@@ -1,0 +1,659 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Dossier Plugin Settings",
+  "type": "object",
+  "properties": {
+    "dossier": {
+      "type": "object",
+      "description": "Root namespace. Every key is resolved through the settings cascade (.claude/settings.dossier.local.json > .claude/settings.dossier.json > $HOME/.claude/settings.dossier.json > plugin settings.json), with DOSSIER_* environment variables overriding all four. The env layer is what lets a CI job run with zero interaction.",
+      "properties": {
+        "project": {
+          "type": "object",
+          "description": "Project identity and where the package is written. Corresponds to PROJECT_NAME / PROJECT_MISSION / PROJECT_ROOT_OR_SOURCES / DOCUMENTATION_OUTPUT_ROOT / PROJECT_VERSION_OR_COMMIT in the invocation contract.",
+          "properties": {
+            "name": {
+              "type": "string",
+              "default": "",
+              "description": "Canonical project name used in every document header and in the terminology register. Empty means unresolved; /dossier:init asks for it rather than inferring, because an inferred product name silently propagates into public documents."
+            },
+            "mission": {
+              "type": "string",
+              "default": "",
+              "description": "One-paragraph statement of problem, users, and intended outcome. Empty is legitimate — the package records it as Unknown and derives what it can from evidence rather than inventing intent."
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "A repository-relative or sibling path the run may inspect."
+              },
+              "default": [
+                "./"
+              ],
+              "description": "Roots the run may inspect. Multiple entries support multi-repo projects. Anything outside this list is out of scope and is reported as an inspection-coverage gap rather than silently skipped."
+            },
+            "outputRoot": {
+              "type": "string",
+              "pattern": "^[^/].*",
+              "default": "docs/dossier",
+              "description": "Where the 23-file package is written. Relative-only by pattern so that engagement.allowedActions.writeOutsideOutputRoot is mechanically checkable — an absolute path would make the containment check meaningless."
+            },
+            "versionOrCommit": {
+              "type": "string",
+              "default": "auto",
+              "description": "The version the package describes. 'auto' resolves to the current commit SHA at run start and pins it for the whole run, so a package never mixes evidence from two revisions."
+            },
+            "type": {
+              "enum": [
+                "auto",
+                "application",
+                "service",
+                "platform",
+                "library",
+                "data-product",
+                "ai-system",
+                "infrastructure",
+                "embedded",
+                "mixed"
+              ],
+              "default": "auto",
+              "description": "Project classification. Drives section-level adaptation only — never the file set. 'auto' classifies from evidence in Phase 1 and records the classification with its supporting evidence IDs."
+            }
+          }
+        },
+        "engagement": {
+          "type": "object",
+          "description": "Why the package is being produced and what the run is permitted to do.",
+          "properties": {
+            "deliveryMode": {
+              "enum": [
+                "full",
+                "targeted",
+                "verification-only"
+              ],
+              "default": "full",
+              "description": "full = inspect the whole scope and build/rebuild the package. targeted = identify changed evidence, update affected and downstream documents, then check the whole package for contradictions. verification-only = audit and write the verification report, repairing nothing unless allowedActions permits it."
+            },
+            "dueDiligenceContext": {
+              "type": "string",
+              "default": "",
+              "description": "The decision being supported, its decision maker, stage, materiality thresholds, risk appetite, and horizon. Empty produces a general technical and product readiness assessment — never invented transaction-specific acceptance criteria."
+            },
+            "stakeholders": {
+              "type": "array",
+              "default": [],
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Stakeholder name, or 'unknown'. Never inferred."
+                  },
+                  "role": {
+                    "type": "string",
+                    "description": "Their role in the project."
+                  },
+                  "audience": {
+                    "type": "string",
+                    "description": "Which documentation audience they belong to."
+                  }
+                }
+              },
+              "description": "Known stakeholders. Feeds the ownership register and the pass-C audience personas. Never used to invent an owner: components with no evidenced owner are recorded 'unassigned'."
+            },
+            "constraints": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "One stated constraint, in prose."
+              },
+              "default": [],
+              "description": "Access, environment, confidentiality, platform, or cost constraints. Each one that blocks a check becomes a 'not executed' entry with this as its reason, rather than an unexplained gap."
+            },
+            "regulatory": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "One candidate regime. Listing it does not establish applicability."
+              },
+              "default": [],
+              "description": "Applicable jurisdictions, industries, contracts, or policies. Listing one here does not make it applicable — applicability itself is a claim requiring evidence."
+            },
+            "allowedActions": {
+              "type": "object",
+              "description": "The action ceiling. Resolved in Phase 0 and immutable for the run; a run that widens its own ceiling mid-flight produces a package nobody can audit. Defaults are restrictive because the safe failure is an under-verified claim honestly labelled, not an unauthorized action.",
+              "properties": {
+                "readSource": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "Read project source, config, and history."
+                },
+                "readSecrets": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Off by default and rarely worth enabling: a secret's value is never needed to document that it exists, only its type, location category, and rotation story."
+                },
+                "runBuild": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Execute documented build commands to verify they work. Off by default because builds run arbitrary project code."
+                },
+                "runTests": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Execute documented test commands. Off by default for the same reason as runBuild. When off, every setup/build/test claim is marked 'not executed' rather than assumed to pass."
+                },
+                "networkAccess": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Reach external sources to verify vendor lifecycle status, CVEs, or license terms. Off by default; when off, such claims are labelled rather than answered from model memory."
+                },
+                "writeOutsideOutputRoot": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Write anywhere other than project.outputRoot. Off by default and enforced by a PreToolUse hook, not merely by instruction."
+                },
+                "contactHumans": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Ask blocking questions of a human. Off by default in CI; non-blocking unknowns always go to the open-questions register instead of stalling the package."
+                }
+              }
+            }
+          }
+        },
+        "disclosure": {
+          "type": "object",
+          "description": "Governs everything under 06-public/. A public document is an unretractable commitment, so the defaults here are the most conservative in the file.",
+          "properties": {
+            "policy": {
+              "enum": [
+                "public",
+                "partner-nda",
+                "customer-nda",
+                "internal-only",
+                "regulated"
+              ],
+              "default": "internal-only",
+              "description": "Default classification for material not otherwise classified. 'internal-only' is the default because when the disclosure boundary is unknown the correct behaviour is to draft public documents without releasing them, not to guess what is safe to say."
+            },
+            "publicClaimApproval": {
+              "enum": [
+                "required",
+                "not-required"
+              ],
+              "default": "required",
+              "description": "Whether a public claim needs recorded human approval before it can be marked approved. Default 'required': the run may apply a policy but may never appoint itself the business, legal, security, or communications approver. Unapproved claims stay 'pending' and block the release gate."
+            },
+            "confidentialityDefault": {
+              "enum": [
+                "Public",
+                "Partner-Confidential",
+                "Internal",
+                "Restricted"
+              ],
+              "default": "Internal",
+              "description": "Confidentiality stamped on an internal document header when its content does not dictate otherwise."
+            },
+            "redactionPatterns": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "An extended regular expression scanned for in public content."
+              },
+              "default": [],
+              "description": "Extra regexes scanned for in 06-public/ content, on top of the built-in credential patterns. Project-specific additions such as customer names or internal hostnames belong here."
+            }
+          }
+        },
+        "package": {
+          "type": "object",
+          "description": "Structural contract for the generated package.",
+          "properties": {
+            "requireAll23": {
+              "type": "boolean",
+              "default": true,
+              "description": "Require every canonical file to exist. True by default and rarely worth changing: a package whose shape varies per project cannot be diffed, audited, or compared across engagements. Irrelevant topics are handled with a justified N/A at section level, not by dropping the file."
+            },
+            "allowExtraFiles": {
+              "type": "boolean",
+              "default": true,
+              "description": "Permit supplemental documents alongside the canonical set. They must be linked from the documentation index and must not duplicate a canonical source of truth."
+            },
+            "headerStyle": {
+              "enum": [
+                "internal-v1"
+              ],
+              "default": "internal-v1",
+              "description": "Header contract version. Enumerated with one value so that a future header change is a versioned migration rather than a silent reformat."
+            }
+          }
+        },
+        "verification": {
+          "type": "object",
+          "description": "The three-pass independent audit. Independence is architectural: separate agent dispatches, memory: none, and a skill firewall that keeps reconciliation logic out of every verifier's context.",
+          "properties": {
+            "passes": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "A",
+                  "B",
+                  "C"
+                ]
+              },
+              "default": [
+                "A",
+                "B",
+                "C"
+              ],
+              "description": "Which passes to run. A = evidence and coverage, B = model falsification, C = audience, consistency, and disclosure. Narrowing this is a deliberate reduction in assurance and is recorded in the verification report."
+            },
+            "passModels": {
+              "type": "object",
+              "description": "Per-pass model override. A plugin cannot guarantee a genuinely different model, so this is the honest half-measure: independent context always, different model when you configure it. Use /dossier:audit --external for true cross-model independence.",
+              "properties": {
+                "A": {
+                  "type": "string",
+                  "default": "inherit",
+                  "description": "Model for pass A (evidence and coverage). 'inherit' uses the session model."
+                },
+                "B": {
+                  "type": "string",
+                  "default": "inherit",
+                  "description": "Model for pass B (model falsification). 'inherit' uses the session model."
+                },
+                "C": {
+                  "type": "string",
+                  "default": "inherit",
+                  "description": "Model for pass C (audience and disclosure). 'inherit' uses the session model."
+                }
+              }
+            },
+            "claimSample": {
+              "type": "object",
+              "description": "How much of the ledger each pass audits.",
+              "properties": {
+                "minRows": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 30,
+                  "description": "Floor on sampled rows, so a small package is not audited by a sample of three."
+                },
+                "percent": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100,
+                  "default": 10,
+                  "description": "Percentage of lower-impact internal claims sampled. The sampling method and size are stated in the verification report — an unstated sample is not evidence."
+                },
+                "auditAllCategories": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "description": "A claim category audited at 100 percent, never sampled."
+                  },
+                  "default": [
+                    "security",
+                    "compliance",
+                    "license",
+                    "financial",
+                    "performance",
+                    "customer-reference"
+                  ],
+                  "description": "Categories audited at 100%, never sampled. These are the claims where a single wrong row changes a transaction, security, or legal decision."
+                }
+              }
+            },
+            "traceCount": {
+              "type": "integer",
+              "minimum": 3,
+              "default": 10,
+              "description": "End-to-end traces pass B executes against the sources. Minimum 3 because the model must be tested against at least one primary flow, one change-to-production flow, and one failure or abuse flow."
+            },
+            "maxRounds": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 3,
+              "description": "Audit/repair rounds before the run stops and reports conditionally-ready with exact blockers. Bounded so a package that cannot converge produces an honest verdict rather than an infinite loop."
+            }
+          }
+        },
+        "gate": {
+          "type": "object",
+          "description": "The release gate. Binary and conjunctive — a score is not a gate.",
+          "properties": {
+            "minScore": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 95,
+              "description": "Total scorecard minimum. 95 matches the source contract; lowering it is a local policy decision that the verification report records verbatim."
+            },
+            "minDimensionPercent": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 80,
+              "description": "Each dimension must reach this percentage of its available points. Prevents a package averaging well while failing one dimension outright."
+            },
+            "requireAllConditions": {
+              "type": "boolean",
+              "default": true,
+              "description": "Require all 16 gate conditions. True by default: a package can score 96 and still be unreleasable on one unsupported public claim."
+            },
+            "failOn": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "Critical",
+                  "High",
+                  "Medium",
+                  "Low"
+                ]
+              },
+              "default": [
+                "Critical",
+                "High"
+              ],
+              "description": "Unresolved finding severities that block release."
+            }
+          }
+        },
+        "refresh": {
+          "type": "object",
+          "properties": {
+            "stalenessDays": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 90,
+              "description": "Age at which a document's last-verified date makes its claims stale, independent of whether code changed. Surfaces in /dossier:status and is one of the documented refresh triggers."
+            }
+          }
+        },
+        "ci": {
+          "type": "object",
+          "description": "The post-merge documentation job. Only the parts GitHub must evaluate before a runner exists live in the workflow YAML; everything here is read at runtime by dossier-policy.sh, so policy changes need no workflow edit.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Master switch. False makes the policy job exit with reason=disabled after ~40 seconds and zero tokens."
+            },
+            "triggerPolicy": {
+              "enum": [
+                "path-filtered",
+                "every-merge",
+                "label-gated",
+                "schedule-only"
+              ],
+              "default": "path-filtered",
+              "description": "Default is path-filtered merge composed with a scheduled sweep. They compose safely because refresh is range-based against a durable cursor: a wrong path filter costs latency, never correctness. label-gated is available but not the default — its failure mode is quietly stale documentation that looks current, which is the exact failure this plugin exists to prevent."
+            },
+            "branchStrategy": {
+              "enum": [
+                "rolling",
+                "per-pr"
+              ],
+              "default": "rolling",
+              "description": "rolling = one long-lived branch, one accumulating PR. Chosen as default because a 23-file package regenerated from overlapping ranges produces mutually-conflicting edits to the same files on every per-PR branch; per-pr multiplies merge cost by N while appearing to isolate. Per-run traceability is preserved by commit trailers."
+            },
+            "rollingBranch": {
+              "type": "string",
+              "default": "docs/dossier",
+              "description": "Branch name. Its prefix is also the strongest loop guard, so changing it requires re-running /dossier:setup to re-render the workflow's if: expression."
+            },
+            "rollingBranchRotation": {
+              "enum": [
+                "none",
+                "weekly",
+                "monthly"
+              ],
+              "default": "none",
+              "description": "Rotate the rolling branch so the open PR never becomes a 400-commit monster nobody reviews. Recommended for high-volume repos."
+            },
+            "instructionSource": {
+              "enum": [
+                "plugin",
+                "vendored"
+              ],
+              "default": "plugin",
+              "description": "plugin = CI installs from the marketplace via plugin_marketplaces, which accepts no ref — so the skill text always tracks marketplace main even when bin/ scripts are pinned. vendored = copy the refresh instructions into the repo for full pinning. Choose vendored when you need reproducible CI or the marketplace is private."
+            },
+            "forkPolicy": {
+              "enum": [
+                "warn",
+                "target",
+                "skip"
+              ],
+              "default": "warn",
+              "description": "warn = notice and let the scheduled sweep cover fork PRs (GitHub withholds secrets from fork pull_request runs by design). target = use pull_request_target, safe here only because we never check out PR head. skip = silent."
+            },
+            "labels": {
+              "type": "object",
+              "properties": {
+                "generated": {
+                  "type": "string",
+                  "default": "dossier:generated",
+                  "description": "Applied to every generated documentation pull request. Also a loop guard: a PR carrying it never triggers a refresh."
+                },
+                "force": {
+                  "type": "string",
+                  "default": "docs:refresh",
+                  "description": "Applied by a human to force a refresh for a pull request the trigger policy would otherwise skip."
+                },
+                "skip": {
+                  "type": "string",
+                  "default": "docs:skip",
+                  "description": "Applied by a human to suppress the refresh for one pull request."
+                },
+                "oversized": {
+                  "type": "string",
+                  "default": "dossier:oversized",
+                  "description": "Applied when the generated diff exceeds the document thresholds, so an unusually large docs PR is visibly flagged rather than quietly merged."
+                }
+              },
+              "description": "Label names. 'generated' and the branch prefix are independent loop guards; keep both."
+            },
+            "pathFilters": {
+              "type": "object",
+              "properties": {
+                "include": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "description": "A glob whose change should trigger a documentation refresh."
+                  },
+                  "description": "Rendered into the workflow's on.pull_request.paths, so a non-matching merge costs literally zero."
+                },
+                "exclude": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "description": "A glob whose change should not trigger a refresh."
+                  },
+                  "description": "Applied at runtime after the coarse filter. Must contain the outputRoot glob, which is what makes a merged docs PR fail the policy check even if every other loop guard were removed."
+                }
+              }
+            },
+            "apiSurfaceGlobs": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "A glob matching interface-defining files."
+              },
+              "description": "Paths whose diff is extracted separately into the evidence bundle, because an interface change has outsized documentation impact relative to its line count."
+            },
+            "thresholds": {
+              "type": "object",
+              "properties": {
+                "minChangedFiles": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 1,
+                  "description": "Minimum changed files before a refresh is worth running. Default 1: any real change is worth documenting, and the path filters already removed the noise."
+                },
+                "maxSourceDiffLines": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 50000,
+                  "description": "Refuse ranges above this. Catches vendored-dependency drops that would burn a run's whole budget on noise."
+                },
+                "maxSourceDiffBytes": {
+                  "type": "integer",
+                  "minimum": 1024,
+                  "default": 524288,
+                  "description": "Cap on source.diff in the evidence bundle. Beyond it the diff is truncated and flagged, and the agent reads files from the checkout instead — strictly better evidence, and it keeps a $0.50 run from becoming a $15 one."
+                },
+                "maxDocChangedFiles": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 30,
+                  "description": "Document count above which the generated diff is treated as oversized. Default 30 sits above a normal targeted refresh and below a full regeneration."
+                },
+                "maxDocChangedLines": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 3000,
+                  "description": "Line count above which the generated diff is treated as oversized."
+                },
+                "oversizedBehavior": {
+                  "enum": [
+                    "draft",
+                    "block"
+                  ],
+                  "default": "draft",
+                  "description": "What to do when the generated diff exceeds the doc thresholds. 'draft' opens the PR as a draft and labels it, because an oversized diff is usually the correct output of a cold start or a major refactor and discarding it destroys real work."
+                }
+              }
+            },
+            "circuitBreaker": {
+              "type": "object",
+              "properties": {
+                "maxDocPrsPer24h": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 6,
+                  "description": "Refuse to start further runs above this rate. Catches refresh loops. Note this bounds loop count, not cost per run — GitHub Actions has no spend cap for third-party API calls."
+                }
+              }
+            },
+            "agent": {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "default": "",
+                  "description": "Model for the CI refresh. Empty inherits the action default."
+                },
+                "maxTurns": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 60,
+                  "description": "Hard turn ceiling passed as --max-turns. Bounds a single run's cost."
+                }
+              }
+            },
+            "schedule": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "The sweep that catches whatever the path filters missed. Cheap: on a current repo the policy job exits in ~40s having spent zero tokens."
+                },
+                "cron": {
+                  "type": "string",
+                  "default": "0 6 * * 1",
+                  "description": "Sweep schedule. Weekly on Monday morning by default: often enough that a missed merge is documented within days, rare enough to stay nearly free."
+                },
+                "minCommits": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 1,
+                  "description": "Minimum commits in the range before the scheduled sweep does any work. Default 1, so a quiet week costs one short policy job and no tokens."
+                }
+              }
+            },
+            "writeAllowlist": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "A glob a CI run may modify. Anything else aborts the run."
+              },
+              "default": [
+                "docs/dossier/**"
+              ],
+              "description": "The only paths a CI run may modify. Enforced twice — once in the unprivileged refresh job and again, independently, in the privileged publish job. The second check is the control; the first is a convenience. An escape is a hard failure, never a silent filter, because a silent filter hides the attempt."
+            },
+            "expectedPluginVersion": {
+              "type": "string",
+              "default": "1.0.0",
+              "description": "Plugin version the rendered workflow was generated against. A mismatch tells you to re-run /dossier:setup."
+            }
+          }
+        },
+        "local": {
+          "type": "object",
+          "properties": {
+            "onFlowMerge": {
+              "enum": [
+                "suggest",
+                "run",
+                "off"
+              ],
+              "default": "suggest",
+              "description": "Behaviour when the flow plugin completes a merge locally. 'suggest' is the default because the local path is cheaper and simpler than CI but has weaker coverage — it only fires for merges that go through /flow:merge, missing web-UI and merge-queue merges."
+            }
+          }
+        },
+        "tiers": {
+          "type": "object",
+          "description": "Safety tier per action class. Promotion (autonomous -> journal -> confirm) is always allowed; demotion is a deliberate reduction in safety and is recorded.",
+          "properties": {
+            "writeInternalDocs": {
+              "enum": [
+                "autonomous",
+                "journal",
+                "confirm"
+              ],
+              "default": "autonomous"
+            },
+            "writePublicDocs": {
+              "enum": [
+                "autonomous",
+                "journal",
+                "confirm"
+              ],
+              "default": "journal"
+            },
+            "modifyClaimRegister": {
+              "enum": [
+                "autonomous",
+                "journal",
+                "confirm"
+              ],
+              "default": "journal"
+            },
+            "publishExternally": {
+              "enum": [
+                "autonomous",
+                "journal",
+                "confirm"
+              ],
+              "default": "confirm"
+            },
+            "overrideGateCondition": {
+              "enum": [
+                "autonomous",
+                "journal",
+                "confirm"
+              ],
+              "default": "confirm"
+            }
+          }
+        }
+      }
+    }
+  }
+}
