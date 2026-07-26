@@ -82,3 +82,21 @@ jobs:
             fi
           done
           exit $FAILED
+
+      - name: Shellcheck
+        # The suite proves the scripts behave; shellcheck proves they are not
+        # relying on behaviour that differs between shells. Both matter here
+        # because these run on a contributor's machine as PreToolUse hooks and
+        # on a Linux runner inside the refresh workflow, and a quoting bug that
+        # is benign under one is a defect under the other.
+        #
+        # Pinned so an upstream rule change cannot turn a green branch red
+        # without a commit that says so.
+        run: |
+          set -euo pipefail
+          SC_VERSION=v0.11.0
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SC_VERSION}/shellcheck-${SC_VERSION}.linux.x86_64.tar.xz" \
+            | tar -xJf - --strip-components=1 -C /usr/local/bin "shellcheck-${SC_VERSION}/shellcheck"
+          shellcheck --version
+          shellcheck -S warning plugins/dossier/bin/*.sh plugins/dossier/hooks/scripts/*.sh
+          shellcheck -S warning -x plugins/dossier/tests/*.sh

@@ -11,7 +11,6 @@
 _dossier_test_begin "bin-behaviour"
 
 BIN="plugins/dossier/bin"
-REPO=$(pwd)
 
 WORK=$(mktemp -d) || { _dossier_assert_fail "cannot create temp dir"; _dossier_test_summary; return 0 2>/dev/null || exit 0; }
 

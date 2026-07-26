@@ -128,6 +128,7 @@ AGENT_COUNT=$(find "$PLUGIN/agents" -name '*.md' -type f 2>/dev/null | wc -l | t
 
 assert_contains "Skills ($SKILL_COUNT)" "$(cat "$README")" "README skill count matches the $SKILL_COUNT skills on disk"
 assert_contains "Agents ($AGENT_COUNT)" "$(cat "$README")" "README agent count matches the $AGENT_COUNT agents on disk"
+assert_contains "Commands ($CMD_COUNT)" "$(cat "$README")" "README command count matches the $CMD_COUNT commands on disk"
 
 # Every command must appear in the README's command table — an undocumented
 # command is one nobody finds.

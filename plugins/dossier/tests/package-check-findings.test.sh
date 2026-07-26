@@ -15,7 +15,6 @@ _dossier_test_begin "package-check-findings"
 
 BIN="plugins/dossier/bin"
 PC="$BIN/dossier-package-check.sh"
-REPO=$(pwd)
 
 WORK=$(mktemp -d) || { _dossier_assert_fail "cannot create temp dir"; _dossier_test_summary; return 0 2>/dev/null || exit 0; }
 PKG="$WORK/docs"

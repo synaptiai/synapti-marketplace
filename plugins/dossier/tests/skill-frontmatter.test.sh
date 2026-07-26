@@ -14,7 +14,6 @@ assert_equal "$EXPECTED_COUNT" "$COUNT" "skill count"
 for f in "$SKILLS_DIR"/*/SKILL.md; do
   [ -f "$f" ] || continue
   dir=$(basename "$(dirname "$f")")
-  body=$(cat "$f")
 
   # name must match the directory — the loader resolves by directory, and a
   # mismatch produces a skill that cannot be invoked by its own name.

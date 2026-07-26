@@ -42,7 +42,7 @@ All 23 exist for every project. A library still gets `infrastructure-and-deploym
 /plugin install dossier@synapti-marketplace
 ```
 
-## Commands
+## Commands (9)
 
 | Command | Purpose |
 |---|---|

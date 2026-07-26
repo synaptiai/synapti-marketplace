@@ -109,7 +109,7 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
     # shellcheck disable=SC1090
     source "$TEST_FILE"
     _dossier_test_summary
-  2>&1)
+  ) 2>&1
   RC=$?
   printf '%s\n' "$OUTPUT"
   # Extract last SUMMARY line — tolerate trailing whitespace and CR (a stray

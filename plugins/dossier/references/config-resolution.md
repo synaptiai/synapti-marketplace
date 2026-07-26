@@ -10,10 +10,12 @@ Six layers, highest first. The first layer that produces a non-empty, non-`null`
 |---|-------|------|-----------|---------|
 | 0 | Environment | `DOSSIER_<UPPER_SNAKE>` | n/a | **What makes a CI job zero-interaction.** Overrides everything. |
 | 1 | Explicit file | `$DOSSIER_CONFIG` | n/a | A named config for one-off runs against a project you do not own. |
-| 2 | Project-local | `.claude/settings.dossier.local.json` | No — gitignored | Personal overrides. Never shared. |
+| 2 | Project-local | `.claude/settings.dossier.local.json` | No — gitignored, and **ignored if tracked** | Personal overrides. Never shared. |
 | 3 | Project-shared | `.claude/settings.dossier.json` | Yes | The team's answer. What `/dossier:setup` writes. |
 | 4 | User-global | `$HOME/.claude/settings.dossier.json` | n/a | Your defaults across every project. |
 | 5 | Plugin default | `${CLAUDE_PLUGIN_ROOT}/settings.json` | Yes (in the plugin) | The shipped baseline. Every key has one. |
+
+**The project-local layer is admitted on evidence that it is untracked, not that it exists.** It outranks every other source, and it earns that rank by being one operator's machine-specific file. Committing it inverts the reasoning: a tracked `.local.json` reaching an unattended run is the highest-precedence layer of the settings a pull request can change, silently outranking `ci.writeAllowlist`, `disclosure.policy`, and `engagement.allowedActions` for every run afterwards. `cascade-resolve.sh` therefore checks `git ls-files` and skips the layer with a warning when it is tracked, rather than trusting the `.gitignore` entry `/dossier:init` writes to still be there.
 
 Layers 2–5 are read by `bin/cascade-resolve.sh`, which is a behavioural twin of the flow plugin's script of the same name — a fix to cascade semantics in either plugin ports directly to the other. Layers 0 and 1 are added by `bin/dossier-resolve-config.sh`, which wraps it.
 

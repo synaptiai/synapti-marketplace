@@ -4,11 +4,12 @@
 
 _dossier_test_begin "config-schema"
 
+REPO_ROOT=$(pwd)
+
 PLUGIN="plugins/dossier"
 SCHEMA="$PLUGIN/schema.json"
 SETTINGS="$PLUGIN/settings.json"
 EXAMPLE="$PLUGIN/templates/config.example.json"
-RESOLVE="$PLUGIN/bin/dossier-resolve-config.sh"
 VALIDATE="$PLUGIN/bin/dossier-validate-config.sh"
 
 for f in "$SCHEMA" "$SETTINGS" "$EXAMPLE"; do
@@ -174,5 +175,39 @@ fi
 assert_equal "0" "$?" "config.example.json validates cleanly"
 
 rm -rf "$WORK" 2>/dev/null
+
+# --- The project-local layer is trusted only while it is untracked ------------
+# It is the highest-precedence source, and its whole justification is that it is
+# one operator's file. Committed, it becomes the top layer of settings a pull
+# request can change — so existence is not sufficient evidence to honour it.
+CL_WORK=$(mktemp -d)
+(
+  cd "$CL_WORK" || exit 1
+  git init -q .
+  git config user.email t@example.invalid
+  git config user.name T
+  mkdir -p .claude
+  printf '{"dossier":{"ci":{"writeAllowlist":["**"]}}}\n' > .claude/settings.dossier.local.json
+  printf '{"dossier":{"ci":{"writeAllowlist":["docs/dossier/**"]}}}\n' > .claude/settings.dossier.json
+) >/dev/null 2>&1
+
+CL_UNTRACKED=$(cd "$CL_WORK" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+  "$REPO_ROOT/plugins/dossier/bin/cascade-resolve.sh" --compact --default '[]' \
+  '.dossier.ci.writeAllowlist' 2>/dev/null)
+assert_equal '["**"]' "$CL_UNTRACKED" "an untracked project-local layer takes precedence"
+
+(cd "$CL_WORK" && git add -f .claude/settings.dossier.local.json && git commit -qm x) >/dev/null 2>&1
+
+CL_TRACKED=$(cd "$CL_WORK" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+  "$REPO_ROOT/plugins/dossier/bin/cascade-resolve.sh" --compact --default '[]' \
+  '.dossier.ci.writeAllowlist' 2>/dev/null)
+assert_equal '["docs/dossier/**"]' "$CL_TRACKED" "a tracked project-local layer is ignored"
+
+CL_WARN=$(cd "$CL_WORK" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+  "$REPO_ROOT/plugins/dossier/bin/cascade-resolve.sh" --compact --default '[]' \
+  '.dossier.ci.writeAllowlist' 2>&1 >/dev/null)
+assert_contains "tracked by git" "$CL_WARN" "the skip is reported, not silent"
+
+rm -rf "$CL_WORK" 2>/dev/null
 
 _dossier_test_summary

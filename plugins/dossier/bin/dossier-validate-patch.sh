@@ -454,7 +454,6 @@ fi
 
 # Step 2: stage. `-A` over an explicit pathspec picks up new files, which is
 # what a cold start produces almost exclusively.
-ADD_ARGS=""
 printf '%s\n' "$ALLOW_GLOBS" | while IFS= read -r G; do
   G=$(printf '%s' "$G" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
   [ -n "$G" ] || continue

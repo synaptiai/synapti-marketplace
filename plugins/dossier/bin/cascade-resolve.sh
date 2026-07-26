@@ -83,6 +83,24 @@ PROJECT_SETTINGS=".claude/settings.dossier.json"
 USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.dossier.json"
 PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-plugins/dossier}/settings.json"
 
+# The project-local layer outranks every other, and it earns that rank by being
+# untracked: it is one operator's machine-specific override, which is why
+# /dossier:init appends it to .gitignore. That reasoning does not survive the
+# file being committed. A tracked `.local.json` reaching an unattended run is no
+# longer a local override — it is the highest-precedence layer of the settings a
+# pull request can change, silently outranking `ci.writeAllowlist`,
+# `disclosure.policy`, and `engagement.allowedActions` for every run afterwards.
+#
+# So the layer is admitted on the evidence that it is untracked, not on the
+# evidence that it exists.
+if [ -f "$LOCAL_SETTINGS" ] \
+   && command -v git >/dev/null 2>&1 \
+   && git rev-parse --git-dir >/dev/null 2>&1 \
+   && git ls-files --error-unmatch "$LOCAL_SETTINGS" >/dev/null 2>&1; then
+  echo "cascade-resolve: WARN: $LOCAL_SETTINGS is tracked by git; ignoring it. The project-local layer is the highest-precedence source and is only trustworthy while it is untracked." >&2
+  LOCAL_SETTINGS="/nonexistent/settings.dossier.local.json"
+fi
+
 for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
   [ -f "$SETTINGS" ] || continue
 
