@@ -16,7 +16,7 @@ related: [02-architecture/components-and-codebase.md, 03-assurance/testing-quali
 
 Every command in this document was executed on 2026-07-26 against `d8c10fa` on macOS 25.5, and its actual output is recorded. Commands that were not executed are marked as such rather than presented as working.
 
-One caveat frames the whole document: **no one but the maintainer has ever onboarded to this repository.** All 355 commits across all refs carry a single author identity [EV-0035], and no external contribution has been merged (AQ-0007). The routes below are derived from the repository's structure and its own conventions; they have never been walked by a stranger.
+One caveat frames the whole document: **no one but the maintainer has ever onboarded to this repository.** All 358 commits across all refs carry a single author identity [EV-0035], and no external contribution has been merged (AQ-0007). The routes below are derived from the repository's structure and its own conventions; they have never been walked by a stranger.
 
 ## Onboarding routes
 
@@ -96,7 +96,7 @@ The absent lint row is a real gap rather than a stylistic one: 42 shell scripts 
 |---|---|---|---|
 | Branching | `feature/issue-{n}-{desc}`, `fix/issue-{n}-{desc}`, `docs/issue-{n}-{desc}` | convention in `.claude/CLAUDE.md`; **unenforced** | `.claude/CLAUDE.md` |
 | Commit conventions | `<type>(<scope>): <subject>` with semantic prefixes. **No Claude attribution lines** | convention; unenforced | `.claude/CLAUDE.md` |
-| Review | Pull requests used by habit — 62 merged against 198 commits — but **not required** | GitHub | [EV-0016], [EV-0050] |
+| Review | Pull requests used by habit — 62 merged against 201 commits — but **not required** | GitHub | [EV-0016], [EV-0050] |
 | CI | `flow-tests.yml` and `dossier-tests.yml`, path-filtered, `contents: read`; plus CodeQL. **All advisory** | GitHub Actions | [EV-0013], [EV-0016] |
 | Release | Bump `plugin.json` and the matching `marketplace.json` entry, optionally bump `metadata.version`, tag, publish. Publishing triggers desktop packaging | manual, unverified by anything | [EV-0032], [EV-0026] |
 | Feature flags | None at runtime — there is no runtime. Install-time defaults only | plugin `settings.json` | [EV-0044] |

@@ -102,7 +102,7 @@ There is no on-call rotation because there is nothing to be on call for. This is
 
 | Gap | What is unowned | Criticality | Consequence | Evidence | Proposed resolution |
 |---|---|---|---|---|---|
-| Bus factor of one | Every component | critical | If the sole maintainer stops, 8 published plugins have no one who can cut a release, merge a fix, or answer a security report | [EV-0035] — one identity across all 355 commits on all refs | Name a backup maintainer, or state in the README that the project is single-maintainer so installers can weight that themselves |
+| Bus factor of one | Every component | critical | If the sole maintainer stops, 8 published plugins have no one who can cut a release, merge a fix, or answer a security report | [EV-0035] — one identity across all 358 commits on all refs | Name a backup maintainer, or state in the README that the project is single-maintainer so installers can weight that themselves |
 | No security contact | Vulnerability intake | high | A researcher who finds a flaw in a hook that runs on operator machines has no private channel; the only option is a public issue | [EV-0036] | Add `SECURITY.md` with one contact address |
 | No merge gate | `main` | high | Any push to `main` lands without review or a passing test run; the 2212 assertions across both suites are advisory | [EV-0016], [EV-0017] | Enable branch protection requiring both test workflows |
 | No contribution path | External contribution | medium | A would-be contributor has no stated process, no CODEOWNERS, and no template | [EV-0036], AQ-0007 | Add `CONTRIBUTING.md` |

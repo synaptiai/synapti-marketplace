@@ -172,7 +172,7 @@ There is no build step for the plugins themselves. What is committed is what ins
 | `plugins/dossier` | Daniel Bentes | 1 | 1 | 1190 assertions, one reader | [EV-0009], [EV-0035] |
 | `.github/workflows` | Daniel Bentes | 1 | 1 | A workflow change lands with no second opinion and no required check | [EV-0016], [EV-0035] |
 
-The inspected history window is the full repository history across all refs: 355 commits, first 2025-12-19, most recent 2026-07-26 [EV-0034], [EV-0035]. Contributor counts describe that window, not who understands the code today — but with a single identity across the whole window, the two coincide.
+The inspected history window is the full repository history across all refs: 358 commits, first 2025-12-19, most recent 2026-07-26 [EV-0034], [EV-0035]. Contributor counts describe that window, not who understands the code today — but with a single identity across the whole window, the two coincide.
 
 ## Where to make this change
 

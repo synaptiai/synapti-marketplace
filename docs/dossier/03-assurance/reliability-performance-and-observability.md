@@ -49,7 +49,7 @@ Stating "no objectives" is the accurate answer here rather than a gap to be fill
 | flow test suite runtime | seconds | per run | macOS 25.5 and ubuntu-latest | `tests/run.sh` | 2026-07-26 | [EV-0008] |
 | dossier test suite runtime | seconds | per run | same | `tests/run.sh` | 2026-07-26 | [EV-0009] |
 | CodeQL analysis | 38s (`actions`), 49s (`python`) | per run | ubuntu-latest | Actions run log | 2026-07-25 | [EV-0012] |
-| Repository size | ~3.0 MB, 570 tracked files | live | GitHub | GitHub API | 2026-07-26 | [EV-0034] |
+| Repository size | ~3.0 MB, 572 tracked files | live | GitHub | GitHub API | 2026-07-26 | [EV-0034] |
 | Install latency | **not measured** | — | — | — | — | [EV-0052] |
 | Hook execution latency | **not measured** — and `PreToolUse` hooks block the operator's tool call while they run | — | — | — | — | [EV-0040] |
 | Skill context cost | **not measured** | — | — | — | — | [EV-0004] |

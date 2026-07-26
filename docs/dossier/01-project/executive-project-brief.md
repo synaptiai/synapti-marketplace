@@ -63,7 +63,7 @@ The intended outcome is that an operator installs one command and inherits a wor
 | Skills / commands / agents | 112 / 61 / 29 | d8c10fa | repository | V | [EV-0004]–[EV-0006] |
 | Test assertions passing | 2,212 across 2 plugins, 0 failures | 2026-07-26 | macOS 25.5 | V | [EV-0008], [EV-0009] |
 | In-tree plugins with a test suite | 2 of 7 | d8c10fa | repository | V | [EV-0010] |
-| Commits on `main` | 198 | 2025-12-19 → 2026-07-26 | production | V | [EV-0034] |
+| Commits on the assessed branch | 201 | 2025-12-19 → 2026-07-26 | production | V | [EV-0034] |
 | Merged pull requests | 62 | full history | production | V | [EV-0050] |
 | Releases published | 57 tags; latest `v4.6.2` | live | production | V | [EV-0032] |
 | Contributors | 1 | full history, all refs | repository | V | [EV-0035] |

@@ -234,8 +234,8 @@ Every row is marked not committed, because no roadmap, milestone, or decision re
 | Boundary | Current limit | How the limit was established | Symptom on breach | Headroom | Evidence |
 |---|---|---|---|---|---|
 | Plugin context cost | 112 skills across 8 plugins; a session loads only what it triggers | calculated — skills load on demand, not eagerly | Context pressure in the operator's session | Unmeasured | [EV-0004] |
-| Repository clone size | 3,103 KB per the GitHub API; 570 tracked files | measured | Slow first install | Large | [EV-0034] |
-| Maintainer throughput | 198 commits and 62 merged pull requests by one person | measured | Review latency; no second reviewer exists at any load | None — this is the binding constraint on everything else | [EV-0035], [EV-0050] |
+| Repository clone size | 3,103 KB per the GitHub API; 572 tracked files | measured | Slow first install | Large | [EV-0034] |
+| Maintainer throughput | 201 commits and 62 merged pull requests by one person | measured | Review latency; no second reviewer exists at any load | None — this is the binding constraint on everything else | [EV-0035], [EV-0050] |
 | CI capacity | 4 workflows, path-filtered | measured | Not approached | Large | [EV-0012] |
 
 The only real scalability boundary in this system is the maintainer. Nothing else in it is under load.

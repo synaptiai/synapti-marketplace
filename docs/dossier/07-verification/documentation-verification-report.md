@@ -145,10 +145,18 @@ written during that cycle rather than by a reader.
 
 Two consequences for this package, and only two:
 
-- **The pin moved** from `fbeb1ee` to `d8c10fa`, and the assertion figures were
-  re-derived from it (dossier 1076 → 1190, combined 2,098 → 2,212). This is F-11's
+- **The pin moved** from `fbeb1ee` to `d8c10fa`, and every figure that moves with a
+  commit was re-derived from it: the dossier assertion count (1076 → 1190), the
+  combined count (2,098 → 2,212), commits on the assessed branch (198 → 201),
+  commits across all refs (355 → 358), and tracked files (570 → 572). This is F-11's
   rule applied again: figures and pin must name the same commit, or the package is
   simultaneously pinned and current and cannot be both.
+
+  One label was wrong rather than stale. CHK-16 runs `git rev-list --count HEAD`,
+  which counts the assessed branch, but five documents reported the result as the
+  commit count of `main`. `main` has 189. The figure was right and the noun was
+  wrong, which is the harder version of the same defect: nothing about the number
+  looked incorrect.
 - **Nothing else changed.** No claim was re-verified, no finding was re-opened or
   closed, and the gate verdict is unmoved.
 

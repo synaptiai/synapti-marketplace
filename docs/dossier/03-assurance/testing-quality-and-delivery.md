@@ -123,7 +123,7 @@ Three of the five manual gates have already failed at least once. That is the em
 |---|---|---|---|
 | CI workflows | 4, path-filtered. Both test workflows scope `permissions: contents: read` | `.github/workflows/` | [EV-0012], [EV-0013] |
 | Branch policy | `feature/issue-{n}-{desc}`, `fix/…`, `docs/…` | `.claude/CLAUDE.md`; unenforced | `.claude/CLAUDE.md` |
-| Review policy | Pull requests used by habit — 62 merged against 198 commits | **nothing** | [EV-0016], [EV-0050] |
+| Review policy | Pull requests used by habit — 62 merged against 201 commits | **nothing** | [EV-0016], [EV-0050] |
 | Artifact provenance | none | — | [EV-0043] |
 | Signing | none | — | [EV-0043] |
 | Promotion between environments | N/A — one environment | — | [EV-0044] |
@@ -147,7 +147,7 @@ The manifest currently advertises `metadata.version` 4.7.0 with no corresponding
 | Defect escape rate | **unknown**. 2 open issues, both portability reports from users, which is the only escape signal that exists | live | GitHub issues | U | [EV-0049] |
 | Incident rate | **unknown** — no incident process, and no runtime for an incident to occur in | — | — | U | [EV-0044] |
 | Lead time to production | Effectively zero — a push to `main` is production | live | git | I — inferred from the absence of any gate | [EV-0016] |
-| Deployment frequency | 198 commits to `main` over ~7 months, each of which is a deployment | 2025-12-19 to 2026-07-25 | git | V | [EV-0034] |
+| Deployment frequency | 201 commits to the assessed branch over ~7 months, each of which is a deployment | 2025-12-19 to 2026-07-25 | git | V | [EV-0034] |
 | Merged pull requests | 62 | full history | GitHub | V | [EV-0050] |
 | Test assertions executed per run | 2,212 across both suites | per CI run | `tests/run.sh` | V | [EV-0008], [EV-0009] |
 

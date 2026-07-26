@@ -82,8 +82,8 @@ Locator prefixes: `file:` a tracked path · `cmd:` an executed check, output in 
 | EV-0031 | The `agent-capability-standard` submodule is pinned to `95f7ac2`, 2 commits past tag `v1.2.0` | V | `cmd:CHK-14` | yes | 1 | d8c10fa | 2026-07-26 | until the pointer moves | Public | no | 02, 05 | `git describe` → `v1.2.0-2-g95f7ac2` |
 | EV-0032 | 57 git tags exist; the latest published release is `v4.6.2`, dated 2026-05-29 | V | `cmd:CHK-15`, `cmd: gh api releases` | yes | 3 | live | 2026-07-26 | until the next release | Public | yes | 03, 04 | |
 | EV-0033 | `marketplace.json` metadata version 4.7.0 has no corresponding release tag | V | `derived: EV-0002 + EV-0032` | yes | 1 | d8c10fa | 2026-07-26 | until 4.7.0 is released | Public | no | 04 | Expected on an unmerged feature branch |
-| EV-0034 | The default branch has 198 commits; first 2025-12-19, most recent 2026-07-26 | V | `cmd:CHK-16` | yes | 1 | d8c10fa | 2026-07-26 | continuously | Public | no | 01, 04 | |
-| EV-0035 | All commits across all refs carry one author identity, Daniel Bentes | V | `cmd:CHK-17` | yes | 1 | d8c10fa | 2026-07-26 | until another contributor commits | Public | yes | 01, 04, 05 | `git shortlog -sne --all` returns a single line, 355 commits |
+| EV-0034 | The assessed branch has 201 commits; first 2025-12-19, most recent 2026-07-26 | V | `cmd:CHK-16` | yes | 1 | d8c10fa | 2026-07-26 | continuously | Public | no | 01, 04 | |
+| EV-0035 | All commits across all refs carry one author identity, Daniel Bentes | V | `cmd:CHK-17` | yes | 1 | d8c10fa | 2026-07-26 | until another contributor commits | Public | yes | 01, 04, 05 | `git shortlog -sne --all` returns a single line, 358 commits |
 | EV-0036 | The repository has no `SECURITY.md`, `CONTRIBUTING.md`, `CODEOWNERS`, `dependabot.yml`, issue templates, or pull-request template | V | `cmd:CHK-18` | yes | 1 | d8c10fa | 2026-07-26 | until any is added | Public | yes | 03, 04, 05 | 9 of 9 paths absent |
 | EV-0037 | No credential matching the repository's own detector pattern set appears in tracked files outside detector definitions and their fixtures | V | `cmd:CHK-19` | yes | 1 | d8c10fa | 2026-07-26 | every commit | Public | yes | 03 | A negative result over a known pattern set, not proof of absence |
 | EV-0038 | The flow plugin ships 12 hook scripts, including `block-secrets.sh`, `block-destructive.sh`, and `block-force-push.sh` | V | `plugins/flow/hooks/scripts/` | yes | 2 | d8c10fa | 2026-07-26 | until hooks change | Public | yes | 02, 03 | |
@@ -98,7 +98,7 @@ Locator prefixes: `file:` a tracked path · `cmd:` an executed check, output in 
 | EV-0047 | The dossier scaffold created 23 of 23 canonical files with 0 failures | V | `cmd:CHK-24` | yes | 1 | d8c10fa | 2026-07-26 | one-time | Public | no | 07 | |
 | EV-0048 | `dossier-validate-config.sh` reports `CONFIG_VALID=true` with 0 findings for this project's configuration | V | `cmd:CHK-25` | yes | 1 | d8c10fa | 2026-07-26 | until the configuration changes | Public | no | 07 | |
 | EV-0049 | 2 pull requests and 2 issues are open; both open issues concern Windows and Git Bash portability | V | `cmd: gh api issues`, `cmd: gh api pulls` | yes | 3 | live | 2026-07-26 | days | Public | yes | 04 | Issues #100 and #130 |
-| EV-0050 | 62 pull requests have been merged | V | `cmd: gh api pulls?state=merged` | yes | 3 | live | 2026-07-26 | days | Public | no | 04 | Against 198 commits on the default branch |
+| EV-0050 | 62 pull requests have been merged | V | `cmd: gh api pulls?state=merged` | yes | 3 | live | 2026-07-26 | days | Public | no | 04 | Against 201 commits on the assessed branch |
 | EV-0051 | The Claude Code client resolves this marketplace from `source: github, repo: synaptiai/synapti-marketplace` and holds a clone last updated 2026-07-20 with `autoUpdate: true` | V | `cmd:CHK-28` | yes | 1 | live | 2026-07-26 | until the client re-syncs | Public | yes | 02, 04, 06 | Observed on the assessment machine, not on a clean profile |
 | EV-0052 | 6 plugins from this marketplace are installed and cached on the assessment machine | V | `cmd:CHK-28` | yes | 1 | live | 2026-07-26 | until install state changes | Public | yes | 04, 06 | flow, gh-workflow, decipon, context-ledger, ai-first-org-design-kit, prompt-decorators |
 | EV-0053 | The client's clone populates the `agent-capability-standard` submodule, so a submodule-sourced entry resolves to real files for an installer | V | `cmd:CHK-28` | yes | 1 | live | 2026-07-26 | until the client changes | Public | no | 02, 05 | 30 entries present in the client's copy of the submodule path |
@@ -143,8 +143,8 @@ Every `cmd:` locator in the evidence table appears here. A check that could not 
 | CHK-13 | `ls -la plugins/flow/skills/learned/` | flow | macOS 25.5 | 2026-07-26 | passed | `.gitkeep` only |
 | CHK-14 | `git submodule status` | Submodule | git | 2026-07-26 | passed | `v1.2.0-2-g95f7ac2` |
 | CHK-15 | `git tag --list \| wc -l`, `gh release list` | Repository | git, gh | 2026-07-26 | passed | 57 tags; latest v4.6.2 |
-| CHK-16 | `git rev-list --count HEAD` plus first and last commit dates | Default branch | git | 2026-07-26 | passed | 198; 2025-12-19 → 2026-07-26 |
-| CHK-17 | `git shortlog -sne --all` | All refs | git | 2026-07-26 | passed | 1 identity, 355 commits |
+| CHK-16 | `git rev-list --count HEAD` plus first and last commit dates | The assessed branch, not `main` | git | 2026-07-26 | passed | 201; 2025-12-19 → 2026-07-26 |
+| CHK-17 | `git shortlog -sne --all` | All refs | git | 2026-07-26 | passed | 1 identity, 358 commits |
 | CHK-18 | Existence test over 9 community-health paths | Repository | macOS 25.5 | 2026-07-26 | failed | 9 of 9 absent |
 | CHK-19 | `git grep -nE` over the repository's own credential pattern set | Tracked files | git | 2026-07-26 | passed | No match outside detector definitions and their fixtures |
 | CHK-20 | `ls plugins/*/hooks/hooks.json` | In-tree plugins | macOS 25.5 | 2026-07-26 | passed | 3 matches |
