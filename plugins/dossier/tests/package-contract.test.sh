@@ -116,14 +116,29 @@ if [ -f "$GATE_REF" ]; then
   assert_equal "$COND_TOTAL" "$((COND_MECH + COND_JUDG))" "every gate condition is tagged mechanical or judgment"
 
   # Number words for the counts the prose actually uses.
-  case "$COND_TOTAL" in
-    16) TOTAL_WORD=sixteen ;; 17) TOTAL_WORD=seventeen ;; 18) TOTAL_WORD=eighteen ;;
-    *)  TOTAL_WORD="" ;;
-  esac
-  case "$COND_MECH" in
-    9) MECH_WORD=Nine ;; 10) MECH_WORD=Ten ;; 11) MECH_WORD=Eleven ;;
-    *) MECH_WORD="" ;;
-  esac
+  # Wide enough that a plausible change stays inside it, and loud rather than
+  # silent when it does not: an unmapped count used to blank the variable and
+  # skip every assertion below with no pass and no fail recorded.
+  number_word() { # n -> lowercase english number word, empty if unmapped
+    case "$1" in
+      1) echo one ;;     2) echo two ;;      3) echo three ;;    4) echo four ;;
+      5) echo five ;;    6) echo six ;;      7) echo seven ;;    8) echo eight ;;
+      9) echo nine ;;   10) echo ten ;;     11) echo eleven ;;  12) echo twelve ;;
+     13) echo thirteen ;; 14) echo fourteen ;; 15) echo fifteen ;; 16) echo sixteen ;;
+     17) echo seventeen ;; 18) echo eighteen ;; 19) echo nineteen ;; 20) echo twenty ;;
+     21) echo twenty-one ;; 22) echo twenty-two ;; 23) echo twenty-three ;;
+     24) echo twenty-four ;; 25) echo twenty-five ;;
+      *) echo "" ;;
+    esac
+  }
+  TOTAL_WORD=$(number_word "$COND_TOTAL")
+  MECH_WORD=$(number_word "$COND_MECH")
+  [ -n "$TOTAL_WORD" ] \
+    && _dossier_assert_pass "the condition count ($COND_TOTAL) maps to a number word" \
+    || _dossier_assert_fail "condition count $COND_TOTAL is outside the mapped range; the prose cross-check would be skipped"
+  [ -n "$MECH_WORD" ] \
+    && _dossier_assert_pass "the mechanical count ($COND_MECH) maps to a number word" \
+    || _dossier_assert_fail "mechanical count $COND_MECH is outside the mapped range; the prose cross-check would be skipped"
 
   if [ -n "$TOTAL_WORD" ]; then
     for f in plugins/dossier/README.md \

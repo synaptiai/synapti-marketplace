@@ -5,7 +5,7 @@
   "properties": {
     "dossier": {
       "type": "object",
-      "description": "Root namespace. Every key is resolved through the settings cascade (.claude/settings.dossier.local.json > .claude/settings.dossier.json > $HOME/.claude/settings.dossier.json > plugin settings.json), with DOSSIER_* environment variables overriding all four. The env layer is what lets a CI job run with zero interaction.",
+      "description": "Root namespace. Every key is resolved through the settings cascade (.claude/settings.dossier.local.json > .claude/settings.dossier.json > $HOME/.claude/settings.dossier.json > plugin settings.json), with DOSSIER_* environment variables overriding all four. The env layer is what lets a CI job run with zero interaction. One deliberate exception: bin/dossier-validate-patch.sh reads the file cascade only and ignores the env layer, because it runs in the same environment as the agent it contains and the value it reads is the write allowlist — an agent able to set DOSSIER_CI_WRITE_ALLOWLIST could widen its own boundary. The project-local cascade layer is likewise honoured only while it is untracked.",
       "properties": {
         "project": {
           "type": "object",
@@ -607,7 +607,7 @@
             },
             "expectedPluginVersion": {
               "type": "string",
-              "default": "1.0.0",
+              "default": "1.0.1",
               "description": "Plugin version the rendered workflow was generated against. A mismatch tells you to re-run /dossier:setup."
             }
           }

@@ -49,7 +49,7 @@ done
 command -v jq >/dev/null 2>&1 || { echo "dossier-blast-radius: jq is not installed." >&2; exit 1; }
 
 TMPD=$(mktemp -d -t dossier-blast.XXXXXX) || {
-  echo "dossier-blast-radius: cannot create a temporary file or directory" >&2; exit 2;
+  echo "dossier-blast-radius: cannot create a temporary file or directory" >&2; exit 1;
 }
 mkdir -p "$TMPD" 2>/dev/null
 cleanup() { rm -rf "$TMPD" 2>/dev/null; }

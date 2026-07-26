@@ -50,7 +50,7 @@ head -20 "$FILE_PATH" | grep -q '^dossier-header:' || {
   exit 0
 }
 
-LAST_VERIFIED=$(awk -F': *' '/^last-verified:/{print $2; exit}' "$FILE_PATH" | tr -d '"'"'"' \r')
+LAST_VERIFIED=$(awk -F': *' '/^last-verified:/{print $2; exit}' "$FILE_PATH" | tr -d $'"\'\r')
 
 if [ -z "$LAST_VERIFIED" ] || [ "$LAST_VERIFIED" = "{fill}" ]; then
   echo "[dossier] $REL: last-verified is unset. A document with no verification date cannot be checked for staleness." >&2

@@ -61,61 +61,73 @@ EOF
 BOUND='(^|[;&|(]|^[[:space:]]*)[[:space:]]*([A-Za-z0-9_.-]*/)*'
 
 # One layer of indirection defeats a boundary anchor: `bash -c "npm test"`,
-# `env curl ...`, `xargs curl`, and `eval "curl ..."` all place the keyword
-# where no boundary character precedes it. Rather than loosening BOUND to treat
-# every quote as a boundary — which would block the `grep -r "npm test"` case
-# above — detect the wrapper explicitly and, only then, re-run the deny checks
-# against a form with wrapper tokens and quotes neutralised. The false-positive
-# risk is confined to commands that actually invoke a wrapper.
-WRAPPER='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*(bash|sh|zsh|dash|ksh|env|command|exec|eval|xargs|nohup|setsid|time|timeout|nice|sudo|doas)([[:space:]]|$)'
+# `env curl ...`, `timeout 30 curl ...`, and `sudo -u www-data curl ...` all
+# place the keyword where no boundary character precedes it.
+#
+# The obvious repair — strip the wrapper token and its flags — is the wrong
+# shape, because it requires knowing which flags take a value. `timeout 30 curl`
+# and `sudo -u www-data curl` each leave a non-flag argument sitting between the
+# wrapper and the payload, and any enumeration of value-taking flags is a list
+# that goes stale the first time a wrapper grows an option.
+#
+# So this does not try to find where the real command starts. When a wrapper is
+# present anywhere in the command, whitespace itself becomes a boundary for the
+# deny scan — every token position is checked, so no argument shape can hide a
+# keyword behind a wrapper. The cost is a narrow over-block: with a wrapper in
+# play, `timeout 5 grep -r "npm test" docs/` is refused although it only reads
+# about a command. That is the correct direction to fail for a containment
+# check, the message says exactly what happened, and dropping the wrapper
+# re-runs it. Without a wrapper, the strict anchor below is unchanged and that
+# case still passes.
+WRAPPER='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*(bash|sh|zsh|dash|ksh|env|command|exec|eval|xargs|nohup|setsid|stdbuf|script|time|timeout|nice|ionice|sudo|doas|su)([[:space:]]|$)'
 
 SCAN="$COMMAND"
-if printf '%s' "$SCAN" | grep -qE "$WRAPPER"; then
-  # Quotes become boundaries and wrapper tokens are dropped, so the payload of
-  # `bash -c "npm test"` is matched as though it had been typed directly.
-  SCAN=$(printf '%s' "$COMMAND" \
-    | sed -E -e 's,["'"'"'`],;,g' \
-          -e 's,\$\(,;,g' \
-          -e 's/(^|[;&|( ])[[:space:]]*([A-Za-z0-9_.-]*\/)*(bash|sh|zsh|dash|ksh|env|command|exec|eval|xargs|nohup|setsid|time|timeout|nice|sudo|doas)([[:space:]]+(-[A-Za-z]+)?)/\1;/g')
+BOUND_ACTIVE="$BOUND"
+if printf '%s' "$COMMAND" | grep -qE "$WRAPPER"; then
+  # Quotes and command-substitution openers stop hiding a boundary, and every
+  # whitespace run becomes one.
+  SCAN=$(printf '%s' "$COMMAND" | sed -E -e 's,["'"'"'`],;,g' -e 's,\$\(,;,g')
+  BOUND_ACTIVE='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*'
 fi
 
-# Every check below tests $SCAN, which is $COMMAND unless a wrapper was found.
+# Every check below tests $SCAN with $BOUND_ACTIVE, which are $COMMAND and the
+# strict anchor unless a wrapper was found.
 
 if [ "$RUN_TESTS" != "true" ]; then
-  if printf '%s' "$SCAN" | grep -qE "${BOUND}(npm|yarn|pnpm|bun)[[:space:]]+(run[[:space:]]+)?test\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND_ACTIVE}(npm|yarn|pnpm|bun)[[:space:]]+(run[[:space:]]+)?test\b"; then
     deny "run tests" runTests "package-manager test"
   fi
-  if printf '%s' "$SCAN" | grep -qE "${BOUND}(pytest|jest|vitest|mocha|rspec|phpunit)\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND_ACTIVE}(pytest|jest|vitest|mocha|rspec|phpunit)\b"; then
     deny "run tests" runTests "test runner"
   fi
-  if printf '%s' "$SCAN" | grep -qE "${BOUND}(go|cargo|dotnet|mvn|gradle)[[:space:]]+test\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND_ACTIVE}(go|cargo|dotnet|mvn|gradle)[[:space:]]+test\b"; then
     deny "run tests" runTests "toolchain test"
   fi
 fi
 
 if [ "$RUN_BUILD" != "true" ]; then
-  if printf '%s' "$SCAN" | grep -qE "${BOUND}(npm|yarn|pnpm|bun)[[:space:]]+(run[[:space:]]+)?build\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND_ACTIVE}(npm|yarn|pnpm|bun)[[:space:]]+(run[[:space:]]+)?build\b"; then
     deny "run builds" runBuild "package-manager build"
   fi
-  if printf '%s' "$SCAN" | grep -qE "${BOUND}(make|cargo[[:space:]]+build|go[[:space:]]+build|mvn[[:space:]]+package|gradle[[:space:]]+build|docker[[:space:]]+build|tsc)\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND_ACTIVE}(make|cargo[[:space:]]+build|go[[:space:]]+build|mvn[[:space:]]+package|gradle[[:space:]]+build|docker[[:space:]]+build|tsc)\b"; then
     deny "run builds" runBuild "build tool"
   fi
-  if printf '%s' "$SCAN" | grep -qE "${BOUND}(npm|yarn|pnpm|bun|pip|pip3|poetry|bundle|cargo)[[:space:]]+(install|add|ci|fetch)\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND_ACTIVE}(npm|yarn|pnpm|bun|pip|pip3|poetry|bundle|cargo)[[:space:]]+(install|add|ci|fetch)\b"; then
     deny "run builds" runBuild "dependency install"
   fi
 fi
 
 if [ "$NETWORK" != "true" ]; then
-  if printf '%s' "$SCAN" | grep -qE "${BOUND}(curl|wget|nc|ncat|telnet|ssh|scp|rsync)\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND_ACTIVE}(curl|wget|nc|ncat|telnet|ssh|scp|rsync)\b"; then
     deny "network access" networkAccess "network client"
   fi
   # Read-only gh and git commands are permitted: they are how a run inspects
   # its own repository, and blocking them would make the plugin unusable
   # without buying any containment the sandbox does not already provide.
-  if printf '%s' "$SCAN" | grep -qE "${BOUND}git[[:space:]]+(push|remote[[:space:]]+add|clone)\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND_ACTIVE}git[[:space:]]+(push|remote[[:space:]]+add|clone)\b"; then
     deny "network access" networkAccess "git network operation"
   fi
-  if printf '%s' "$SCAN" | grep -qE "${BOUND}gh[[:space:]]+(pr[[:space:]]+(create|merge|edit|close)|issue[[:space:]]+(create|edit|close)|release[[:space:]]+create|api[[:space:]]+-X[[:space:]]*(POST|PUT|PATCH|DELETE))"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND_ACTIVE}gh[[:space:]]+(pr[[:space:]]+(create|merge|edit|close)|issue[[:space:]]+(create|edit|close)|release[[:space:]]+create|api[[:space:]]+-X[[:space:]]*(POST|PUT|PATCH|DELETE))"; then
     deny "network access" networkAccess "GitHub mutation"
   fi
 fi

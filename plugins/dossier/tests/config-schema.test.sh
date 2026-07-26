@@ -210,4 +210,64 @@ assert_contains "tracked by git" "$CL_WARN" "the skip is reported, not silent"
 
 rm -rf "$CL_WORK" 2>/dev/null
 
+# --- An explicitly-disabled boolean reads as false, not as unset -------------
+# jq's `//` is falsy-triggered: `false // empty` yields empty, so a validator
+# using it reads an explicitly-disabled feature as unset and every guard that
+# tests `!= "false"` fires against a config that turned the feature off. The
+# cascade resolvers were corrected for this; the validator's own helper had the
+# same defect, which is why this asserts behaviour rather than shape.
+VC_WORK=$(mktemp -d)
+# outputRoot is present in both fixtures because the allowlist guard is gated on
+# it; without it the guard is off for a reason unrelated to ci.enabled and the
+# comparison would prove nothing.
+printf '%s\n' '{"dossier":{"project":{"outputRoot":"docs/dossier"},"ci":{"enabled":false,"writeAllowlist":[]}}}' > "$VC_WORK/ci-off.json"
+VC_OUT=$(CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+  "$REPO_ROOT/plugins/dossier/bin/dossier-validate-config.sh" \
+  --config "$VC_WORK/ci-off.json" 2>&1)
+assert_not_contains "writeAllowlist" "$VC_OUT" \
+  "an explicitly disabled ci block produces no writeAllowlist finding"
+
+# The same config with ci.enabled absent must still be checked, or the guard is
+# off for everyone rather than for the people who turned CI off.
+printf '%s\n' '{"dossier":{"project":{"outputRoot":"docs/dossier"},"ci":{"writeAllowlist":[]}}}' > "$VC_WORK/ci-on.json"
+VC_OUT2=$(CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+  "$REPO_ROOT/plugins/dossier/bin/dossier-validate-config.sh" \
+  --config "$VC_WORK/ci-on.json" 2>&1)
+if printf '%s' "$VC_OUT2" | grep -qi 'allowlist'; then
+  _dossier_assert_pass "a ci block without an explicit disable is still checked"
+else
+  _dossier_assert_fail "the ci guard did not fire on an enabled ci block"
+fi
+rm -rf "$VC_WORK" 2>/dev/null
+
+# --- Which scripts honour the DOSSIER_* env layer, and which must not ---------
+# schema.json calls the env layer "what lets a CI job run with zero
+# interaction", so a CI-facing script reading the raw file cascade makes the
+# documented escape hatch dead code. The patch validator is the one deliberate
+# exception: it runs in the same environment as the agent it contains, and the
+# value it reads is the write allowlist.
+for f in dossier-policy.sh dossier-evidence.sh dossier-gate.sh dossier-ledger-lint.sh dossier-claim-scan.sh; do
+  if grep -q 'dossier-resolve-config.sh' "$PLUGIN/bin/$f"; then
+    _dossier_assert_pass "$f resolves config through the env-aware resolver"
+  else
+    _dossier_assert_fail "$f reads the raw cascade, so DOSSIER_* overrides are ignored"
+  fi
+done
+
+if grep -q 'CASCADE="$SCRIPT_DIR/cascade-resolve.sh"' "$PLUGIN/bin/dossier-validate-patch.sh"; then
+  _dossier_assert_pass "dossier-validate-patch deliberately bypasses the env layer"
+else
+  _dossier_assert_fail "dossier-validate-patch now honours DOSSIER_*, letting a contained agent widen its own allowlist"
+fi
+if grep -q 'must not' "$PLUGIN/bin/dossier-validate-patch.sh"; then
+  _dossier_assert_pass "the patch validator's exception is documented in the script"
+else
+  _dossier_assert_fail "the patch validator's env exclusion is undocumented"
+fi
+if grep -q 'deliberate exception' "$PLUGIN/schema.json"; then
+  _dossier_assert_pass "schema.json records the env-layer exception"
+else
+  _dossier_assert_fail "schema.json still claims the env layer applies everywhere"
+fi
+
 _dossier_test_summary

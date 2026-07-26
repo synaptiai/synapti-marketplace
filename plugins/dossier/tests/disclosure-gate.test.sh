@@ -251,4 +251,51 @@ assert_equal "1" "$?" "a rejected wording is not approved by sitting in a later 
 
 rm -rf "$W" 2>/dev/null
 
+# --- The redactor runs before the lowercasing, not after ----------------------
+# `normalize` folds case, and two credential patterns are case-sensitive by
+# construction: `AKIA[0-9A-Z]{16}` and the PEM armour. Redacting after
+# normalizing meant those two classes printed into the findings excerpt
+# verbatim-but-lowercased — recognisable, reconstructable, and bound for a CI
+# log. That is precisely what the redactor exists to prevent, so each class is
+# checked against the real output rather than against the pattern list.
+T="$W/redact"; mkpkg "$T"
+pub "$T" "The staging key AKIAIOSFODNN7EXAMPLE was rotated by the team last week."
+OUT=$(scanout "$T")
+assert_not_contains "AKIAIOSFODNN7EXAMPLE" "$OUT" "an AWS key never reaches the findings output"
+assert_not_contains "akiaiosfodnn7example" "$OUT" "nor does its lowercased form"
+assert_contains "aws-access-key" "$OUT" "the class is named instead"
+
+T="$W/redact-pem"; mkpkg "$T"
+pub "$T" "Our certificate begins with -----BEGIN RSA PRIVATE KEY----- and continues onward."
+OUT=$(scanout "$T")
+assert_not_contains "BEGIN RSA PRIVATE KEY" "$OUT" "a PEM header never reaches the findings output"
+assert_not_contains "begin rsa private key" "$OUT" "nor does its lowercased form"
+
+T="$W/redact-ant"; mkpkg "$T"
+pub "$T" "The token sk-ant-abcdefgh12345678 is stored in the vault for safekeeping."
+OUT=$(scanout "$T")
+assert_not_contains "sk-ant-abcdefgh12345678" "$OUT" "an anthropic key never reaches the findings output"
+
+# --- A rejected row must not be read as an approved claim ---------------------
+# `CL-` rows appear in two tables with different column layouts, and the
+# approval test is a literal substring match. A rejected row whose free-text
+# cell happens to contain the approved marker would otherwise be honoured.
+T="$W/rejected"; mkpkg "$T"
+cat >> "$T/00-control/claim-and-disclosure-register.md" <<'REGEOF'
+
+## Rejected and withdrawn claims
+
+| ID | Wording | Reason declined | Date | What would make it publishable |
+|---|---|---|---|---|
+| CL-9001 | our service is completely secure | the reviewer noted this was not "| approved |" by security | 2026-07-26 | evidence |
+REGEOF
+pub "$T" "Our service is completely secure."
+scan "$T"
+RC=$?
+if [ "$RC" -eq 0 ]; then
+  _dossier_assert_fail "a rejected row was honoured as an approved claim"
+else
+  _dossier_assert_pass "a rejected row is not honoured as an approved claim (exit $RC)"
+fi
+
 _dossier_test_summary

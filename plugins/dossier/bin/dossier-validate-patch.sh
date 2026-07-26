@@ -45,6 +45,12 @@ if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] || [ ! -f "${CLAUDE_PLUGIN_ROOT:-}/settings.
   CLAUDE_PLUGIN_ROOT=$(dirname "$SCRIPT_DIR")
   export CLAUDE_PLUGIN_ROOT
 fi
+# Deliberately the raw file cascade, NOT dossier-resolve-config.sh: this is the
+# only config read in the plugin that must ignore the DOSSIER_* environment
+# layer. This script runs in the `refresh` job, in the same environment as the
+# agent it is meant to contain, and the value it reads is the write allowlist.
+# An agent that can set DOSSIER_CI_WRITE_ALLOWLIST could widen its own boundary.
+# Every other script honours the env layer; this one must not.
 CASCADE="$SCRIPT_DIR/cascade-resolve.sh"
 
 OUT_PATCH=""

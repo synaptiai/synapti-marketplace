@@ -64,6 +64,14 @@ case "${COMMENT_STYLE:-hash}" in
   *) echo "dossier-managed-file: --comment must be 'hash' or 'html'" >&2; exit 2 ;;
 esac
 
+# --comment selects how a stamp is rendered, and verify mode renders nothing:
+# its regex matches both styles unconditionally. Accepting the flag there would
+# report success for an argument that did nothing.
+if [ "$MODE" = "verify" ] && [ -n "$COMMENT_STYLE" ]; then
+  echo "dossier-managed-file: --comment applies to --stamp only; it has no effect with --verify" >&2
+  exit 2
+fi
+
 STAMP_VERSION="v1"
 STAMP_MARKER="dossier:managed"
 
@@ -148,7 +156,7 @@ fi
 [ -f "$TARGET" ] || { echo "dossier-managed-file: file not found: $TARGET" >&2; exit 1; }
 
 TMPF=$(mktemp -t dossier-managed.XXXXXX) || {
-  echo "dossier-managed-file: cannot create a temporary file or directory" >&2; exit 2;
+  echo "dossier-managed-file: cannot create a temporary file or directory" >&2; exit 1;
 }
 cleanup() { rm -f "$TMPF" "$TMPF.body" 2>/dev/null; }
 trap cleanup EXIT

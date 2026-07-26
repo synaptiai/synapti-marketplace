@@ -90,7 +90,7 @@ echo "STALENESS_THRESHOLD_DAYS=$STALE_DAYS"
 TODAY_S=$(date -u +%s)
 STALE=0; UNDATED=0; OLDEST=""
 while IFS= read -r f; do
-  lv=$(awk -F': *' '/^last-verified:/{print $2; exit}' "$f" 2>/dev/null | tr -d '"'"'"' \r')
+  lv=$(awk -F': *' '/^last-verified:/{print $2; exit}' "$f" 2>/dev/null | tr -d $'"\'\r')
   case "$lv" in
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
     *) UNDATED=$((UNDATED + 1)); continue ;;
