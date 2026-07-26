@@ -937,11 +937,20 @@ jobs:
               ;;
           esac
 
-      # Last, and unconditional on whether anything was published: the cursor
-      # advances on every successful run including a no-op, so a range that
-      # produced no documentation change is not re-examined forever.
+      # Last. The cursor advances on every SUCCESSFUL run including a no-op, so a
+      # range that produced no documentation change is not re-examined forever.
+      #
+      # `success()`, not `always()`. Every substantive step above is gated on
+      # `has_changes`, so a genuine no-op skips them all and the job succeeds —
+      # the no-op advance this exists for still happens. But a run that FAILED
+      # (a rejected patch, a refused push, a commit that did not happen) must
+      # leave the cursor where it was, or the range holding those changes is
+      # skipped forever and the documentation is silently missing them. With
+      # `always()` a failed run advanced the cursor exactly like a successful
+      # one, which contradicts the range design's whole claim: a lost run is
+      # never a lost change, the next run's range just widens.
       - name: Advance the documentation cursor
-        if: always() && needs.policy.outputs.should_run == 'true'
+        if: success() && needs.policy.outputs.should_run == 'true'
         env:
           HEAD_SHA: ${{ needs.policy.outputs.head_sha }}
         run: |
