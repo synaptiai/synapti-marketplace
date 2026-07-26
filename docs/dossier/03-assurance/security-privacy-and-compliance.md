@@ -6,7 +6,7 @@ audience: Reviewer, Installing operator, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: 4c1b62f
+project-version: fd884b2
 last-verified: 2026-07-26
 review-trigger: A hook is added or changed; repository access controls change; a dependency or third-party action is added
 related: [02-architecture/system-architecture.md, 02-architecture/data-and-ai.md, 05-due-diligence/assets-dependencies-and-licenses.md, 00-control/evidence-ledger.md]
@@ -20,19 +20,19 @@ The security question for this project is not the usual one. There is no server 
 
 | Field | Value |
 |---|---|
-| Systems in scope | This repository at `4c1b62f`, its 4 GitHub Actions workflows, its live GitHub settings, and the 7 in-tree plugin trees including the checked-out submodule |
+| Systems in scope | This repository at `fd884b2`, its 4 GitHub Actions workflows, its live GitHub settings, and the 7 in-tree plugin trees including the checked-out submodule |
 | Systems explicitly out of scope | The Claude Code client (not built or controlled here); the Anthropic API; `synaptiai/prompt-decorators`, whose contents are not present in this repository (AQ-0005); the upstream history of `agent-capability-standard` beyond the pinned commit (AQ-0006) |
 | Evidence classes inspected | Tracked source, hook and `bin/` scripts, workflow definitions, dependency manifests, live repository settings via the GitHub API, and both plugin test suites executed |
 | Evidence classes unavailable | Windows execution results (AQ-0008); GitHub audit logs; any runtime observation of a hook executing on an operator's machine; install telemetry (AQ-0004) |
 | Assessment date | 2026-07-26 |
-| Assessed against project version | `4c1b62f` on `feature/dossier-documentation-plugin`, not `main` (AQ-0010) |
+| Assessed against project version | `fd884b2` on `fix/issue-131-round-5-containment`, not `main` (AQ-0010) |
 
 ## Assets, actors, and trust boundaries
 
 | Asset | Value to an attacker | Where it lives | Protected by | Evidence |
 |---|---|---|---|---|
 | Write access to `main` | Total. Anything pushed here reaches every installer's machine on their next client sync, as executable code | GitHub | A GitHub account with write access. **Nothing else — no branch protection, no rulesets, no required review, no required checks** | [EV-0016], [EV-0017], [EV-0051] |
-| The 16 hook scripts | High. They execute on operator machines with the operator's full privileges, without being invoked | `plugins/{flow,dossier,agent-capability-standard}/hooks/` | Being readable plain text before install; 2,216 assertions over 2 of the 3 plugins | [EV-0038], [EV-0039], [EV-0040] |
+| The 16 hook scripts | High. They execute on operator machines with the operator's full privileges, without being invoked | `plugins/{flow,dossier,agent-capability-standard}/hooks/` | Being readable plain text before install; 2,249 assertions over 2 of the 3 plugins | [EV-0038], [EV-0039], [EV-0040] |
 | The 26 `bin/` scripts | Medium. Executed when a command calls them, on the operator's machine | `plugins/*/bin/` | Same as above | [EV-0007] |
 | `marketplace.json` | High. It controls what every installer resolves and from where | the repository | Nothing. **No validation exists anywhere** | [EV-0026] |
 | `synaptiai/prompt-decorators` `main` | High. It reaches installers under this marketplace's name with no commit here | an external repository | Whatever protects that repository — not visible from here | [EV-0030] |
@@ -164,7 +164,7 @@ No privacy regulation attaches to this project's own operations, because it proc
 | Control | Last tested | Tested by | Method | Result | Next due | Evidence |
 |---|---|---|---|---|---|---|
 | flow hook and script behaviour | 2026-07-26 | this assessment | `plugins/flow/tests/run.sh` | 1022 pass, 0 fail | on change | [EV-0008] |
-| dossier hook and script behaviour | 2026-07-26 | this assessment | `plugins/dossier/tests/run.sh` | 1194 pass, 0 fail | on change | [EV-0009] |
+| dossier hook and script behaviour | 2026-07-26 | this assessment | `plugins/dossier/tests/run.sh` | 1227 pass, 0 fail | on change | [EV-0009] |
 | No credentials in tracked files | 2026-07-26 | this assessment | `git grep` over the project's own detector pattern set | no match | every commit | [EV-0037] |
 | No untrusted interpolation in workflow `run:` bodies | 2026-07-26 | this assessment | `awk` run-block scanner | **1 hit** — `release-desktop-skills.yml` line 24 | on workflow change | [EV-0015] |
 | Branch protection on `main` | 2026-07-26 | this assessment | `gh api .../branches/main/protection` | **404 — not protected** | on settings change | [EV-0016] |

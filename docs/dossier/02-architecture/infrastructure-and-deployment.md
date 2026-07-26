@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: 4c1b62f
+project-version: fd884b2
 last-verified: 2026-07-26
 review-trigger: A workflow is added or changed; branch protection or repository rulesets change; the release process changes
 related: [02-architecture/system-architecture.md, 03-assurance/testing-quality-and-delivery.md, 04-operating/operations-and-incident-response.md, 00-control/evidence-ledger.md]
@@ -23,7 +23,7 @@ That makes the interesting question narrow and answerable. **What stands between
 | Environment | Purpose | Who can access | Data class held | Parity with production | Evidence |
 |---|---|---|---|---|---|
 | Maintainer's working tree | Where all changes are authored and both test suites are run | Daniel Bentes | Public content only | Identical — the tree *is* the artifact | [EV-0035] |
-| Feature branch | Pre-merge staging. This assessment ran on `feature/dossier-documentation-plugin` | anyone with write access; today, one person | Public | Identical | [EV-0034] |
+| Feature branch | Pre-merge staging. This assessment ran on `fix/issue-131-round-5-containment` | anyone with write access; today, one person | Public | Identical | [EV-0034] |
 | `main` | **The production environment.** Whatever is here is what the next installer receives | anyone with write access, ungated | Public | It is production | [EV-0016], [EV-0051] |
 | GitHub Actions runner | Ephemeral ubuntu-latest for tests, CodeQL, and release packaging | GitHub | Public content plus, on release, a write-scoped token | Not applicable | [EV-0012] |
 | Operator's machine | Where installed plugins actually execute | The operator | Whatever the operator has | Not applicable — and not observable from here | [EV-0052] |
@@ -130,7 +130,7 @@ The last row is the sharpest: a change in a *different* repository alters what i
 | Repository size | ~3.0 MB, 570 files | GitHub's repository limits | vendor-stated | none | flat | [EV-0034] |
 | Actions minutes | 4 path-filtered workflows | free-tier minutes for public repositories | vendor-stated | none | flat | [EV-0012] |
 | Release assets | 57 releases | GitHub's limits | vendor-stated | none | flat | [EV-0032] |
-| Maintainer capacity | 203 commits, 62 merged pull requests, one person | one person | measured | none | **This is the binding constraint on everything else in the project** | [EV-0035], [EV-0050] |
+| Maintainer capacity | 191 commits, 62 merged pull requests, one person | one person | measured | none | **This is the binding constraint on everything else in the project** | [EV-0035], [EV-0050] |
 
 ## Backup, restore, and disaster recovery
 
@@ -155,7 +155,7 @@ Distributed version control gives this project accidental resilience: the mainta
 | Change approval | Pull requests are used in practice — 62 merged — but are not required. Both test workflows run and neither is a required check | nothing | Any change can bypass review and CI entirely, and reach every installer on their next sync | [EV-0016], [EV-0017], [EV-0050] |
 | Rollback limitations | A revert is immediate in the repository and eventual on installers' machines, on a client-controlled schedule. A published release tag can be moved, which silently changes what a pinned consumer resolves | nothing | No way to reach installers, no way to measure exposure, no way to expedite | [EV-0051] |
 
-Sixty-two merged pull requests against 203 commits on the assessed branch shows a maintainer who reviews their own work through pull requests by habit [EV-0050], [EV-0034]. The finding is not that review is absent — it is that review is **voluntary**, so its presence tells you about one person's discipline rather than about the project's guarantees.
+Sixty-two merged pull requests against 191 commits on the assessed branch shows a maintainer who reviews their own work through pull requests by habit [EV-0050], [EV-0034]. The finding is not that review is absent — it is that review is **voluntary**, so its presence tells you about one person's discipline rather than about the project's guarantees.
 
 ## Manual steps, single points of failure, and undocumented infrastructure
 
