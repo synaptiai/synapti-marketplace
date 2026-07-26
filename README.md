@@ -2,9 +2,9 @@
 
 > Agentic harnesses for Claude Code — specialized AI agents for complex analytical tasks
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Plugin-orange.svg)](https://claude.com/claude-code)
-[![Plugins](https://img.shields.io/badge/Plugins-6-green.svg)](#available-plugins)
+[![Plugins](https://img.shields.io/badge/Plugins-8-green.svg)](#available-plugins)
 
 ## About the Marketplace
 
@@ -24,12 +24,13 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Plugin | Category | Description | Version |
 |--------|----------|-------------|---------|
 | [Agent Capability Standard ↗](https://github.com/synaptiai/agent-capability-standard) | Standards, Agent Development | Technical specification for AI agents with structural reliability. 36 atomic capabilities across 9 layers with reference workflows and safety-by-construction patterns. | 1.2.0 |
-| [AI-First Org Design Kit](./plugins/ai-first-org-design-kit/) | Organizational Design | Fourteen opinionated skills for designing, deploying, adopting, and evolving AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, validate gates against hidden holdout scenarios, architect governance, redesign roles, navigate politics, operationalize, run evolution audits, generate agent configs, build maturity matrices, design adoption sprints, and write human-facing AI usage policies. | 1.5.0 |
+| [AI-First Org Design Kit](./plugins/ai-first-org-design-kit/) | Organizational Design | Fourteen opinionated skills for designing, deploying, adopting, and evolving AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, validate gates against hidden holdout scenarios, architect governance, redesign roles, navigate politics, operationalize, run evolution audits, generate agent configs, build maturity matrices, design adoption sprints, and write human-facing AI usage policies. | 1.5.1 |
 | [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.5.0 |
-| [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Composable skills, safety hooks, agent teams, LSP code intelligence, holdout validation, and learning loop. | 3.2.0 |
+| [Dossier](./plugins/dossier/) | Documentation | Evidence-first project documentation: builds a 23-file audit-ready package where every claim carries a state and a citation, verifies it by falsification, and refuses to certify a package it cannot ground. Includes post-merge CI that refreshes affected documents after a PR merges. | 1.0.0 |
+| [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Composable skills, safety hooks, agent teams, LSP code intelligence, holdout validation, and learning loop. | 3.2.2 |
 | [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.9.0 |
-| [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) | Prompt Engineering | Enhance prompts automatically with composable decorators (143 across 14 categories — reasoning, structure, tone, verification, and eight developer categories). Inline `::Name`/`+++Name` syntax, always-on config, and an opt-in Haiku-powered auto-selector that picks 0-3 decorators per prompt. | 0.1.0 |
+| [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) | Prompt Engineering | Enhance prompts automatically with composable decorators (143 across 14 categories — reasoning, structure, tone, verification, and eight developer categories). Inline `::Name`/`+++Name` syntax, always-on config, and an opt-in Haiku-powered auto-selector that picks 0-3 decorators per prompt. | 0.1.1 |
 
 ### When to Use Each Plugin
 
@@ -58,6 +59,10 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Quickly triage content before deeper analysis | [Decipon](#featured-decipon) `/decipon:score` |
 | Research a complex topic with verified sources | [Decipon](#featured-decipon) `/decipon:deep-research` |
 | Fact-check claims in content | [Decipon](#featured-decipon) `/decipon:verify` |
+| Document a project so every claim cites its evidence | [Dossier](#featured-dossier) `/dossier:baseline` |
+| Verify existing documentation by trying to falsify it | [Dossier](#featured-dossier) `/dossier:audit` |
+| Check whether a public claim is supported before publishing it | [Dossier](#featured-dossier) `/dossier:claim` |
+| Refresh documentation automatically after a PR merges | [Dossier](#featured-dossier) `/dossier:setup` |
 | Start implementing a GitHub issue (autonomous, with learning) | [Flow](#featured-flow) `/flow start` |
 | Create PRs with parallel review agents | [Flow](#featured-flow) `/flow pr` |
 | Debug with structured root cause analysis | [Flow](#featured-flow) `/flow debug` |
@@ -443,6 +448,52 @@ claude plugin install flow
 
 ---
 
+## Featured: Dossier
+
+Documentation that cannot quietly become false.
+
+### Key Insight
+
+Documentation does not fail by being missing. It fails by staying confident while the system moves underneath it — and a reader cannot tell the difference between a fact that was checked yesterday and one that was true two years ago. Dossier makes every claim carry its own evidence, its own state, and its own expiry, so a stale sentence is visible as stale rather than as fact.
+
+### What Makes It Different
+
+- **No assertion without a ledger row.** Every material claim cites an `EV-####` row recording the source, the authority level, when it was observed, and how long it stays fresh. If a claim cannot be cited, it is written as "Unknown" rather than dropped.
+- **Six claim states, not two.** Verified, corroborated, reported, inferred, unknown, not applicable. Only verified and corroborated claims may appear unqualified in a public document.
+- **Verification by falsification.** Three passes attempt to break the documentation rather than confirm it — one auditing evidence integrity, one executing end-to-end traces against the sources, one reading as six different personas. Their independence is architectural: separate contexts, `memory: none`, and a skill firewall that keeps merge logic out of every verifier.
+- **A gate that cannot certify itself.** Seventeen conjunctive conditions. Ten are mechanical and can only ever prove a package *unreleasable*; passing additionally requires a judgment the mechanical checks cannot supply. A package that scores 100 still fails if one condition fails.
+- **Public claims are gated on approval.** No sentence reaches a public document without an approved row in the claim register, and a scan blocks internal identifiers, credentials, and unregistered assertions before publication.
+- **Post-merge automation.** `/dossier:setup` scaffolds a GitHub Actions workflow that regenerates the affected documents after a pull request merges and opens a documentation PR. Three jobs split by privilege: the agent job holds no write token, and the job that holds one runs no agent.
+
+### Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/dossier:init` | Resolve engagement scope and scaffold the 23-file package |
+| `/dossier:baseline` | Inventory evidence, model the project, draft the package |
+| `/dossier:audit` | Three independent verification passes |
+| `/dossier:reconcile` | Merge findings, publish the pre-repair table, apply repairs |
+| `/dossier:gate` | Scorecard plus the 17-condition release gate |
+| `/dossier:claim` | Verdict on whether a sentence may be published |
+| `/dossier:refresh` | Re-document only what a change actually affected |
+| `/dossier:setup` | Wire the post-merge documentation refresh |
+| `/dossier:status` | Completeness, register counts, staleness, last verdict |
+
+### Installation
+
+```bash
+claude plugin marketplace add synaptiai/synapti-marketplace
+claude plugin install dossier
+```
+
+### Dogfooding
+
+This marketplace documents itself with dossier. The package is in [`docs/dossier/`](./docs/dossier/), and its gate verdict is **NOT-RELEASABLE** — two of seventeen conditions fail, and the report says exactly which and why.
+
+That is the intended behaviour, not a caveat. The run also found real defects in this repository — a licence badge pointing at a file that does not exist, four stale facts in this README, a submodule advertised as a version it does not ship — and four defects in the dossier plugin itself, each now covered by a regression test. Start at [`00-control/documentation-index.md`](./docs/dossier/00-control/documentation-index.md).
+
+---
+
 ## Featured: Agent Capability Standard
 
 **Agent Capability Standard** is a technical specification for building AI agents with structural reliability. It implements "Grounded Agency" — a framework ensuring agents operate with evidence-backed claims rather than hallucinations.
@@ -630,7 +681,7 @@ your-plugin/
   "version": "1.0.0",
   "description": "Brief description of what your plugin does",
   "author": { "name": "Your Name" },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": ["relevant", "keywords"]
 }
 ```
@@ -646,7 +697,7 @@ your-plugin/
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the [Apache License 2.0](LICENSE).
 
 ## Credits
 

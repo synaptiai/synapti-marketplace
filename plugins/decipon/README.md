@@ -665,7 +665,7 @@ Key finding: The research report scored low for manipulation despite covering ma
 
 ## License
 
-MIT License - See LICENSE file for details.
+Apache-2.0 - see the [LICENSE](../../LICENSE) file at the repository root.
 
 ## Author
 

@@ -1,0 +1,102 @@
+name: Dossier Plugin Tests
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/dossier/**'
+      - '.claude-plugin/marketplace.json'
+      - '.github/workflows/dossier-tests.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugins/dossier/**'
+      - '.claude-plugin/marketplace.json'
+      - '.github/workflows/dossier-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Python prerequisites
+        # config-schema.test.sh asserts that schema validation actually runs, and
+        # workflow-template.test.sh parses the rendered workflow. Both degrade to
+        # a skip locally when the modules are absent; in CI we always want the
+        # strict path, because the skip is exactly what would hide a broken
+        # schema or an unparseable workflow.
+        #
+        # Versions are pinned so an upstream regression or a hostile release
+        # cannot silently change a CI result. --break-system-packages is a no-op
+        # on current runner images and preserves this install path on PEP 668
+        # systems without adding a venv step.
+        run: |
+          python3 --version
+          python3 -m pip install --quiet --break-system-packages \
+            'pyyaml==6.0.2' \
+            'jsonschema==4.23.0'
+
+      - name: Verify test prerequisites
+        run: |
+          bash --version | head -1
+          jq --version
+          python3 -c "import yaml; print('PyYAML', yaml.__version__)"
+          python3 -c "import jsonschema; print('jsonschema', jsonschema.__version__)"
+
+      - name: Run dossier tests
+        run: plugins/dossier/tests/run.sh
+
+      - name: Verify marketplace registration
+        # The plugin version is written in three places. Drift is silent — the
+        # plugin installs and behaves, it just reports the wrong version — so it
+        # is checked here as well as in the suite, where a future refactor of the
+        # manifest test could quietly drop it.
+        run: |
+          set -euo pipefail
+          PV=$(jq -r '.version' plugins/dossier/.claude-plugin/plugin.json)
+          MV=$(jq -r '.plugins[] | select(.name=="dossier") | .version' .claude-plugin/marketplace.json)
+          SV=$(jq -r '.dossier.ci.expectedPluginVersion' plugins/dossier/settings.json)
+          echo "plugin.json=$PV  marketplace.json=$MV  settings.json=$SV"
+          if [ "$PV" != "$MV" ] || [ "$PV" != "$SV" ]; then
+            echo "::error title=Version drift::plugin.json ($PV), marketplace.json ($MV) and settings.json ($SV) disagree"
+            exit 1
+          fi
+
+      - name: Verify bundled scripts are executable
+        # A non-executable bin/ script fails at runtime with a permission error
+        # that points at the user's machine rather than at this repository. Git
+        # tracks the bit, so it is checkable here.
+        run: |
+          set -euo pipefail
+          FAILED=0
+          for f in plugins/dossier/bin/*.sh plugins/dossier/hooks/scripts/*.sh plugins/dossier/tests/run.sh; do
+            if [ ! -x "$f" ]; then
+              echo "::error file=$f::not executable — run chmod +x and commit the mode change"
+              FAILED=1
+            fi
+          done
+          exit $FAILED
+
+      - name: Shellcheck
+        # The suite proves the scripts behave; shellcheck proves they are not
+        # relying on behaviour that differs between shells. Both matter here
+        # because these run on a contributor's machine as PreToolUse hooks and
+        # on a Linux runner inside the refresh workflow, and a quoting bug that
+        # is benign under one is a defect under the other.
+        #
+        # Pinned so an upstream rule change cannot turn a green branch red
+        # without a commit that says so.
+        run: |
+          set -euo pipefail
+          SC_VERSION=v0.11.0
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SC_VERSION}/shellcheck-${SC_VERSION}.linux.x86_64.tar.xz" \
+            | tar -xJf - --strip-components=1 -C /usr/local/bin "shellcheck-${SC_VERSION}/shellcheck"
+          shellcheck --version
+          shellcheck -S warning plugins/dossier/bin/*.sh plugins/dossier/hooks/scripts/*.sh
+          shellcheck -S warning -x plugins/dossier/tests/*.sh

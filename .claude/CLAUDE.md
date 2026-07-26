@@ -6,7 +6,7 @@ Claude Code plugin marketplace with specialized agents for analytical and resear
 
 - **GitHub**: https://github.com/synaptiai/synapti-marketplace
 - **Tech Stack**: Claude Code plugins, Markdown-based agents/commands/skills
-- **License**: MIT
+- **License**: Apache-2.0
 
 ## Git Workflow
 

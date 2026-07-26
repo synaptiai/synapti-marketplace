@@ -35,3 +35,15 @@ docs/flow-team-session/*.pdf
 # by helper scripts; the .pyc cache is per-developer noise.
 plugins/flow/bin/__pycache__/
 plugins/flow/**/__pycache__/
+.dossier/
+.claude/settings.dossier.local.json
+.claude/*.lock
+
+# Session detritus from flow runs: a diff dump written by /flow:pr and the
+# per-PR handoff note. Both are local working state, not repository content.
+.flow_diff_tmp.txt
+.handoff-pr*.md
+
+# Per-run dossier scope file. It lives inside the tracked output root but is
+# ephemeral run state, and the enforcement hooks key off its mere existence.
+**/00-control/.scope.json

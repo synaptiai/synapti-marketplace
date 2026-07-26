@@ -1,0 +1,24 @@
+{
+  "name": "dossier",
+  "version": "1.0.0",
+  "description": "Evidence-first project documentation system. Produces an audit-ready 23-file package for technical due diligence, engineering and product onboarding, and partner or customer communication — every material claim traced to a ledger row and a claim state, three context-isolated verification passes, and a binary release gate. Ships a post-merge GitHub Actions job that keeps the package current by opening a documentation PR.",
+  "author": {
+    "name": "Synapti AI",
+    "url": "https://github.com/synaptiai"
+  },
+  "repository": "https://github.com/synaptiai/synapti-marketplace",
+  "homepage": "https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/dossier",
+  "license": "Apache-2.0",
+  "keywords": [
+    "documentation",
+    "due-diligence",
+    "onboarding",
+    "evidence-based",
+    "audit",
+    "verification",
+    "disclosure",
+    "architecture",
+    "compliance",
+    "automation"
+  ]
+}

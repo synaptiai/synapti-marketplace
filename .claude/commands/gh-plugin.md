@@ -64,7 +64,7 @@ Read and validate `plugins/{name}/.claude-plugin/plugin.json`:
 
 **Optional but recommended**:
 - `author` - Author information (object with `name`)
-- `license` - License identifier (string, e.g., "MIT")
+- `license` - License identifier (string, e.g., "Apache-2.0")
 - `keywords` - Search keywords (array of strings)
 - `repository` - GitHub repository URL
 

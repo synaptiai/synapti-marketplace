@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Synapti plugin marketplace",
-    "version": "4.6.2"
+    "version": "4.7.0"
   },
   "plugins": [
     {
@@ -19,7 +19,7 @@
       },
       "homepage": "https://github.com/synaptiai/synapti-marketplace",
       "repository": "https://github.com/synaptiai/synapti-marketplace",
-      "license": "MIT",
+      "license": "Apache-2.0",
       "category": "analysis",
       "keywords": [
         "manipulation-detection",
@@ -52,7 +52,7 @@
       },
       "homepage": "https://github.com/synaptiai/synapti-marketplace",
       "repository": "https://github.com/synaptiai/synapti-marketplace",
-      "license": "MIT",
+      "license": "Apache-2.0",
       "category": "workflow",
       "keywords": [
         "github",
@@ -83,7 +83,7 @@
       },
       "homepage": "https://github.com/synaptiai/synapti-marketplace",
       "repository": "https://github.com/synaptiai/synapti-marketplace",
-      "license": "MIT",
+      "license": "Apache-2.0",
       "category": "product-development",
       "keywords": [
         "product-development",
@@ -115,7 +115,7 @@
       },
       "homepage": "https://github.com/synaptiai/synapti-marketplace",
       "repository": "https://github.com/synaptiai/synapti-marketplace",
-      "license": "MIT",
+      "license": "Apache-2.0",
       "category": "workflow",
       "keywords": [
         "github",
@@ -210,13 +210,13 @@
       "name": "ai-first-org-design-kit",
       "source": "./plugins/ai-first-org-design-kit",
       "description": "Fourteen opinionated skills for designing, deploying, adopting, and evolving AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, validate gates against hidden holdout scenarios, architect governance, redesign roles, navigate politics, operationalize designs into agent-consumable primers, run evolution audits, generate agent configurations, build per-role maturity matrices, design adoption sprints, and write human-facing AI usage policies.",
-      "version": "1.5.0",
+      "version": "1.5.1",
       "author": {
         "name": "Daniel Bentes"
       },
       "homepage": "https://github.com/synaptiai/synapti-marketplace",
       "repository": "https://github.com/synaptiai/synapti-marketplace",
-      "license": "MIT",
+      "license": "Apache-2.0",
       "category": "organizational-design",
       "keywords": [
         "organizational-design",
@@ -260,6 +260,38 @@
         "agent-deployment",
         "adoption",
         "maturity-matrix"
+      ]
+    },
+    {
+      "name": "dossier",
+      "source": "./plugins/dossier",
+      "description": "Evidence-first project documentation system. Produces an audit-ready 23-file package for technical due diligence, engineering and product onboarding, and partner or customer communication — every material claim traced to a ledger row and a claim state, three context-isolated verification passes, and a binary release gate. Ships a post-merge GitHub Actions job that keeps the package current by opening a documentation PR.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Daniel Bentes"
+      },
+      "homepage": "https://github.com/synaptiai/synapti-marketplace",
+      "repository": "https://github.com/synaptiai/synapti-marketplace",
+      "license": "Apache-2.0",
+      "category": "documentation",
+      "keywords": [
+        "documentation",
+        "due-diligence",
+        "onboarding",
+        "evidence-based",
+        "audit",
+        "verification",
+        "disclosure",
+        "architecture",
+        "compliance",
+        "automation"
+      ],
+      "tags": [
+        "documentation",
+        "due-diligence",
+        "onboarding",
+        "audit",
+        "automation"
       ]
     }
   ]

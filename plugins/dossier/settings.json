@@ -1,0 +1,149 @@
+{
+  "$schema": "./schema.json",
+  "dossier": {
+    "project": {
+      "name": "",
+      "mission": "",
+      "sources": ["./"],
+      "outputRoot": "docs/dossier",
+      "versionOrCommit": "auto",
+      "type": "auto"
+    },
+    "engagement": {
+      "deliveryMode": "full",
+      "dueDiligenceContext": "",
+      "stakeholders": [],
+      "constraints": [],
+      "regulatory": [],
+      "allowedActions": {
+        "readSource": true,
+        "readSecrets": false,
+        "runBuild": false,
+        "runTests": false,
+        "networkAccess": false,
+        "writeOutsideOutputRoot": false,
+        "contactHumans": false
+      }
+    },
+    "disclosure": {
+      "policy": "internal-only",
+      "publicClaimApproval": "required",
+      "confidentialityDefault": "Internal",
+      "redactionPatterns": []
+    },
+    "package": {
+      "requireAll23": true,
+      "allowExtraFiles": true,
+      "headerStyle": "internal-v1"
+    },
+    "verification": {
+      "passes": ["A", "B", "C"],
+      "passModels": { "A": "inherit", "B": "inherit", "C": "inherit" },
+      "claimSample": {
+        "minRows": 30,
+        "percent": 10,
+        "auditAllCategories": [
+          "security",
+          "compliance",
+          "license",
+          "financial",
+          "performance",
+          "customer-reference"
+        ]
+      },
+      "traceCount": 10,
+      "maxRounds": 3
+    },
+    "gate": {
+      "minScore": 95,
+      "minDimensionPercent": 80,
+      "requireAllConditions": true,
+      "failOn": ["Critical", "High"]
+    },
+    "refresh": {
+      "stalenessDays": 90
+    },
+    "ci": {
+      "enabled": true,
+      "triggerPolicy": "path-filtered",
+      "branchStrategy": "rolling",
+      "rollingBranch": "docs/dossier",
+      "rollingBranchRotation": "none",
+      "instructionSource": "plugin",
+      "forkPolicy": "warn",
+      "labels": {
+        "generated": "dossier:generated",
+        "force": "docs:refresh",
+        "skip": "docs:skip",
+        "oversized": "dossier:oversized"
+      },
+      "pathFilters": {
+        "include": [
+          "src/**",
+          "lib/**",
+          "app/**",
+          "api/**",
+          "schemas/**",
+          "migrations/**",
+          "package.json",
+          "pyproject.toml",
+          "go.mod",
+          "Cargo.toml",
+          "Gemfile",
+          "Dockerfile",
+          "docker-compose*.yml",
+          "README.md",
+          ".github/workflows/**"
+        ],
+        "exclude": [
+          "docs/dossier/**",
+          "**/*.test.*",
+          "**/*.spec.*",
+          "**/__snapshots__/**",
+          "**/testdata/**",
+          "CHANGELOG.md",
+          "**/*.lock",
+          "**/*.snap"
+        ]
+      },
+      "apiSurfaceGlobs": [
+        "**/openapi*.{yaml,yml,json}",
+        "**/*.proto",
+        "**/*.graphql",
+        "schemas/**"
+      ],
+      "thresholds": {
+        "minChangedFiles": 1,
+        "maxSourceDiffLines": 50000,
+        "maxSourceDiffBytes": 524288,
+        "maxDocChangedFiles": 30,
+        "maxDocChangedLines": 3000,
+        "oversizedBehavior": "draft"
+      },
+      "circuitBreaker": {
+        "maxDocPrsPer24h": 6
+      },
+      "agent": {
+        "model": "",
+        "maxTurns": 60
+      },
+      "schedule": {
+        "enabled": true,
+        "cron": "0 6 * * 1",
+        "minCommits": 1
+      },
+      "writeAllowlist": ["docs/dossier/**"],
+      "expectedPluginVersion": "1.0.0"
+    },
+    "local": {
+      "onFlowMerge": "suggest"
+    },
+    "tiers": {
+      "writeInternalDocs": "autonomous",
+      "writePublicDocs": "journal",
+      "modifyClaimRegister": "journal",
+      "publishExternally": "confirm",
+      "overrideGateCondition": "confirm"
+    }
+  }
+}

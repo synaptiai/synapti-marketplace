@@ -1,0 +1,91 @@
+# Template: dossier documentation refresh
+#
+# The non-GitHub-Actions path. Use it when the repository has no `.github/`,
+# when CI secrets are not available, or when the team would rather the refresh
+# run from a developer's own session so that the documentation pull request is
+# opened by a real account and therefore triggers the repository's required
+# status checks normally.
+#
+# What it gives up compared with the workflow: coverage. A merge performed in
+# the web UI or through a merge queue is invisible to a local loop, so the
+# range only closes the next time somebody runs it. That is a real weakness and
+# is the reason the GitHub Actions path is the default.
+#
+# What it keeps: the refresh is range-based against the same durable watermark,
+# so a missed iteration is never a missed change — the next run's range is
+# simply wider.
+#
+# /dossier:setup substitutes ${REPO}, ${BRANCH} and ${NOW} when it copies this
+# file to .flow/triggers/docs-refresh.trigger.yaml, and runs flow's
+# trigger-policy validation before writing it.
+
+apiVersion: flow.synapti.ai/v1
+kind: FlowTrigger
+
+metadata:
+  id: docs-refresh
+  name: 'Dossier documentation refresh'
+  enabled: false  # Disabled by default; user opts in via /flow:trigger enable
+  created_at: '${NOW}'
+
+trigger:
+  type: loop_prompt
+  suggested_interval: '24h'
+  # Long jitter on purpose. A refresh is not time-critical, and spreading the
+  # start avoids several repositories in one working session all deciding to
+  # regenerate documentation at the same moment.
+  jitter: '2h'
+  # Flow does not start the loop. The user does, with /loop. Stating it here
+  # keeps the trigger honest about who is actually in control of the schedule.
+  user_starts_loop_manually: true
+
+target:
+  # No `workflow:` key. There is no dossier FlowWorkflow to cross-reference, and
+  # naming one that does not exist would fail trigger-policy's step 7 rather
+  # than degrade quietly.
+  command: '/dossier:refresh'
+
+context:
+  repo: '${REPO}'
+  branch: '${BRANCH}'
+
+policy:
+  # journal, not autonomous: the refresh writes public-facing documents and
+  # touches the claim register, which is Tier 2 work under the dossier tier
+  # vocabulary and has to leave a record.
+  autonomy: journal
+  allowed_actions:
+    - read_repo
+    - read_pr
+    - edit_files
+    - commit
+    - push
+    - pr_create
+  # merge and release are mandatory here. Flow's trigger-policy skill hard-fails
+  # any trigger that omits either, and the rule is right: a trigger fires without
+  # supervision, so granting it Tier 3 autonomy is the shortest path to an
+  # unreviewed merge. delete_branch and create_trigger are forbidden for the same
+  # reason at one remove — the first destroys work nobody approved losing, the
+  # second is the loop-bomb shape of the runtime layer.
+  forbidden_actions:
+    - merge
+    - release
+    - delete_branch
+    - create_trigger
+
+concurrency:
+  # skip_if_running, never cancel_previous. A cancelled refresh can leave a
+  # half-written documentation package on disk, and the package's own contract
+  # is that all twenty-three files are internally consistent at all times.
+  policy: skip_if_running
+
+stop_conditions:
+  # The loop has nothing left to do once a documentation pull request is waiting
+  # for a human, or once the watermark has caught up with the branch tip.
+  - 'docs_pr_open'
+  - 'watermark_equals_head'
+
+recursion_policy:
+  triggered_runs_may_create_triggers: false
+  triggered_runs_may_modify_triggers: false
+  triggered_runs_may_enable_triggers: false

@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+# Hooks: manifest validity, script resolution, and — the part that matters —
+# that each hook is INERT when no run is active and ACTIVE when one is.
+#
+# A hook that fires unconditionally makes the plugin hostile to install: it
+# would block ordinary editing in any repo that merely has dossier available.
+# A hook that never fires is decoration.
+
+_dossier_test_begin "hooks"
+
+PLUGIN="plugins/dossier"
+HOOKS_JSON="$PLUGIN/hooks/hooks.json"
+
+assert_file_exists "$HOOKS_JSON" "hooks.json exists"
+
+if command -v jq >/dev/null 2>&1; then
+  if jq -e . "$HOOKS_JSON" >/dev/null 2>&1; then
+    _dossier_assert_pass "hooks.json is valid JSON"
+  else
+    _dossier_assert_fail "hooks.json is not valid JSON"
+  fi
+
+  for ev in PreToolUse PostToolUse; do
+    if jq -e ".hooks.$ev" "$HOOKS_JSON" >/dev/null 2>&1; then
+      _dossier_assert_pass "hooks.json binds $ev"
+    else
+      _dossier_assert_fail "hooks.json does not bind $ev"
+    fi
+  done
+
+  # Every referenced script must exist and be executable, or the hook fails at
+  # runtime with a message that points at the harness rather than at us.
+  while IFS= read -r cmd; do
+    [ -z "$cmd" ] && continue
+    rel=${cmd#\$\{CLAUDE_PLUGIN_ROOT\}/}
+    path="$PLUGIN/$rel"
+    if [ -f "$path" ]; then
+      _dossier_assert_pass "hook script $rel exists"
+    else
+      _dossier_assert_fail "hook script $rel does not exist"
+      continue
+    fi
+    [ -x "$path" ] && _dossier_assert_pass "hook script $rel is executable" \
+                   || _dossier_assert_fail "hook script $rel is not executable"
+    bash -n "$path" 2>/dev/null && _dossier_assert_pass "hook script $rel passes bash -n" \
+                                || _dossier_assert_fail "hook script $rel has a syntax error"
+    case "$cmd" in
+      '${CLAUDE_PLUGIN_ROOT}/'*) _dossier_assert_pass "hook $rel uses CLAUDE_PLUGIN_ROOT" ;;
+      *) _dossier_assert_fail "hook command is not rooted at CLAUDE_PLUGIN_ROOT: $cmd" ;;
+    esac
+  done <<EOF
+$(jq -r '.hooks | to_entries[] | .value[] | .hooks[] | .command' "$HOOKS_JSON" 2>/dev/null)
+EOF
+else
+  _dossier_assert_fail "jq unavailable — cannot validate hooks.json"
+fi
+
+HS="$PLUGIN/hooks/scripts"
+REPO=$(pwd)
+
+# --- Inert with no active run ------------------------------------------------
+# The frozen scope file is the signal that a dossier run owns the session.
+WORK=$(mktemp -d 2>/dev/null) || WORK="/tmp/dossier-hooks.$$"
+mkdir -p "$WORK" 2>/dev/null
+
+OUT=$(cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"/tmp/unrelated.md","content":"hello"}}' \
+        | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-output-root.sh" 2>&1)
+RC=$?
+assert_equal "0" "$RC" "enforce-output-root is inert with no active run"
+
+OUT=$(cd "$WORK" && printf '%s' '{"tool_input":{"command":"npm test"}}' \
+        | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" 2>&1)
+RC=$?
+assert_equal "0" "$RC" "enforce-allowed-actions is inert with no active run"
+
+# --- Active once a run is frozen ---------------------------------------------
+mkdir -p "$WORK/docs/dossier/00-control" 2>/dev/null
+printf '{"schema_version":1}\n' > "$WORK/docs/dossier/00-control/.scope.json" 2>/dev/null
+
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"src/app.ts","content":"x"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-output-root.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-output-root blocks a write outside the output root during a run"
+
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"docs/dossier/01-project/x.md","content":"x"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-output-root.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "enforce-output-root permits a write inside the output root"
+
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"file_path":".dossier/evidence/manifest.json","content":"x"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-output-root.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "enforce-output-root permits the evidence working directory"
+
+# --- Traversal out of the output root ----------------------------------------
+# The allow-case is a `case` glob, and a glob `*` matches `/`. Without an
+# explicit refusal, `docs/dossier/../../etc/passwd` starts with the allowed
+# prefix and is permitted while landing outside the root — a containment check
+# that can be stepped around by respelling the path is not one.
+for BAD in \
+  'docs/dossier/../../../etc/passwd' \
+  'docs/dossier/../../.github/workflows/evil.yml' \
+  '.dossier/../../../etc/hosts'
+do
+  RC=0
+  (cd "$WORK" && printf '{"tool_input":{"file_path":"%s","content":"x"}}' "$BAD" \
+     | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-output-root.sh" >/dev/null 2>&1) || RC=$?
+  assert_equal "2" "$RC" "enforce-output-root refuses the traversal $BAD"
+done
+
+# --- The action ceiling actually denies --------------------------------------
+# Previously only the inert path was exercised, so deny() could have been
+# deleted without a failing assertion.
+RC=0
+OUT=$(cd "$WORK" && printf '%s' '{"tool_input":{"command":"npm test"}}' \
+        | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions denies a test run when runTests is false"
+assert_contains "BLOCKED" "$OUT" "the deny message names the block"
+
+# One layer of indirection must not defeat the ceiling. Each of these places the
+# denied keyword where no command-boundary character precedes it.
+for BAD in \
+  '/usr/bin/curl https://example.invalid' \
+  'env curl https://example.invalid' \
+  'command curl https://example.invalid' \
+  'bash -c "npm test"' \
+  'eval "curl https://example.invalid"'
+do
+  RC=0
+  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$BAD" | jq -Rs .)" \
+     | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+  assert_equal "2" "$RC" "enforce-allowed-actions sees through the wrapper: $BAD"
+done
+
+# …and reading *about* a command is still not running one. This is the case the
+# boundary anchor exists for, and the wrapper handling above must not break it.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"grep -r \"npm test\" docs/"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "enforce-allowed-actions permits grepping for a command name"
+
+# --- Security hooks fail closed ----------------------------------------------
+# A boundary that switches itself off when a dependency is missing is
+# indistinguishable from one that was never there. Simulated by giving the hook
+# a PATH with no jq on it.
+for H in enforce-output-root enforce-allowed-actions block-unregistered-claim; do
+  RC=0
+  (cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"src/x.ts","content":"x","command":"curl https://example.invalid"}}' \
+     | PATH=/nonexistent CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" \
+       /bin/bash "$REPO/$HS/$H.sh" >/dev/null 2>&1) || RC=$?
+  assert_equal "2" "$RC" "$H fails closed when jq is unavailable"
+done
+
+# stale-header-stamp is advisory, so it correctly does the reverse.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"docs/dossier/01-project/brief.md"}}' \
+   | PATH=/nonexistent CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" \
+     /bin/bash "$REPO/$HS/stale-header-stamp.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "stale-header-stamp stays advisory when jq is unavailable"
+
+# --- Disclosure hook is unconditional ----------------------------------------
+# Leakage into a public document is blocked whether or not a run is "active",
+# because the cost of a miss is unretractable.
+RC=0
+OUT=$(printf '%s' '{"tool_input":{"file_path":"docs/dossier/06-public/guide.md","content":"token sk-ant-abcd12345678"}}' \
+        | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/block-unregistered-claim.sh" 2>&1) || RC=$?
+assert_equal "2" "$RC" "block-unregistered-claim blocks a credential bound for 06-public"
+
+# The matched value must never be echoed — printing it copies the leak into a
+# transcript that is itself shared.
+assert_not_contains "sk-ant-abcd12345678" "$OUT" "the matched secret value is never printed"
+assert_contains "anthropic-key" "$OUT" "the pattern class is named instead"
+
+RC=0
+(printf '%s' '{"tool_input":{"file_path":"docs/dossier/06-public/guide.md","content":"The API supports OAuth 2.0."}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/block-unregistered-claim.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "block-unregistered-claim permits clean public content"
+
+# Internal register IDs must not reach a public document.
+RC=0
+(printf '%s' '{"tool_input":{"file_path":"docs/dossier/06-public/guide.md","content":"See EV-0042 for details."}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/block-unregistered-claim.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "block-unregistered-claim blocks an internal evidence ID"
+
+# Internal documents are not the disclosure hook's business.
+RC=0
+(printf '%s' '{"tool_input":{"file_path":"docs/dossier/02-architecture/system.md","content":"See EV-0042."}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/block-unregistered-claim.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "block-unregistered-claim ignores internal documents"
+
+# disclosure-policy-levels.md names internal repository paths alongside register
+# IDs, and says this hook enforces the rule together with dossier-claim-scan.sh.
+# The scanner had the pattern and the hook did not, so the live block deferred a
+# class it never documented as deferred.
+RC=0
+(printf '%s' '{"tool_input":{"file_path":"docs/dossier/06-public/guide.md","content":"See src/internal/billing/config.rb for the derivation."}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/block-unregistered-claim.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "block-unregistered-claim blocks an internal repository path"
+
+# The hook and the batch scanner must agree on the class, or one of them is
+# certifying a document the other would reject.
+if grep -q 'check "internal-path"' "$HS/block-unregistered-claim.sh" \
+   && grep -q '"internal-path"' "$PLUGIN/bin/dossier-claim-scan.sh"; then
+  _dossier_assert_pass "hook and batch scanner both implement internal-path"
+else
+  _dossier_assert_fail "internal-path is implemented in only one of the hook and the scanner"
+fi
+
+# --- The stamp hook warns, never blocks --------------------------------------
+mkdir -p "$WORK/docs/dossier/01-project" 2>/dev/null
+printf -- '---\ndossier-header: internal-v1\nlast-verified: 2020-01-01\n---\n# X\n' \
+  > "$WORK/docs/dossier/01-project/brief.md" 2>/dev/null
+RC=0
+OUT=$(cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"docs/dossier/01-project/brief.md"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/stale-header-stamp.sh" 2>&1) || RC=$?
+assert_equal "0" "$RC" "stale-header-stamp warns without blocking"
+# Exit 0 is this script's only outcome by design, so asserting it alone would
+# still pass with the warning logic deleted. The message is the behaviour.
+assert_contains "last-verified" "$OUT" "stale-header-stamp names the stale field"
+
+# A freshly verified document must not warn, or the signal is noise.
+TODAY=$(date -u +%Y-%m-%d)
+printf -- '---\ndossier-header: internal-v1\nlast-verified: %s\n---\n# X\n' "$TODAY" \
+  > "$WORK/docs/dossier/01-project/fresh.md" 2>/dev/null
+OUT=$(cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"docs/dossier/01-project/fresh.md"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/stale-header-stamp.sh" 2>&1)
+assert_not_contains "last-verified" "$OUT" "stale-header-stamp is silent on a same-day document"
+
+rm -rf "$WORK" 2>/dev/null
+
+_dossier_test_summary

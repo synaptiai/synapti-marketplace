@@ -1,0 +1,109 @@
+{
+  "$schema": "https://raw.githubusercontent.com/synaptiai/synapti-marketplace/main/plugins/dossier/schema.json",
+  "dossier": {
+    "project": {
+      "name": "Synapti Plugin Marketplace",
+      "mission": "A curated Claude Code plugin marketplace. Distributes eight plugins of skills, commands, agents, and safety hooks that give Claude Code operators reusable harnesses for GitHub development workflow, organizational design, content analysis, prompt engineering, and evidence-first documentation.",
+      "sources": ["./"],
+      "outputRoot": "docs/dossier",
+      "versionOrCommit": "auto",
+      "type": "mixed"
+    },
+    "engagement": {
+      "deliveryMode": "full",
+      "dueDiligenceContext": "Self-assessment of an open-source marketplace against its own documentation standard. Decision maker: the repository owner. Materiality threshold: anything an installing operator would be misled by. Horizon: immediate.",
+      "stakeholders": [
+        { "name": "Daniel Bentes", "role": "Owner and sole maintainer", "audience": "internal-eng" },
+        { "name": "unknown", "role": "Installing Claude Code operator", "audience": "external-user" },
+        { "name": "unknown", "role": "Contributor", "audience": "external-contributor" }
+      ],
+      "constraints": [
+        "no production telemetry — the marketplace has no runtime and emits no metrics",
+        "no install analytics — download and install counts are not observable from the repository",
+        "one plugin (agent-capability-standard) is a git submodule and one (prompt-decorators) is an external git-subdir source; neither is inspected in depth from this repository",
+        "assessment runs on the feature/dossier-documentation-plugin branch, not on main"
+      ],
+      "regulatory": [],
+      "allowedActions": {
+        "readSource": true,
+        "readSecrets": false,
+        "runBuild": false,
+        "runTests": true,
+        "networkAccess": false,
+        "writeOutsideOutputRoot": false,
+        "contactHumans": true
+      }
+    },
+    "disclosure": {
+      "policy": "public",
+      "publicClaimApproval": "required",
+      "confidentialityDefault": "Public",
+      "redactionPatterns": []
+    },
+    "package": {
+      "requireAll23": true,
+      "allowExtraFiles": true,
+      "headerStyle": "internal-v1"
+    },
+    "verification": {
+      "passes": ["A", "B", "C"],
+      "passModels": { "A": "inherit", "B": "inherit", "C": "inherit" },
+      "claimSample": {
+        "minRows": 30,
+        "percent": 10,
+        "auditAllCategories": [
+          "security",
+          "compliance",
+          "license",
+          "financial",
+          "performance",
+          "customer-reference"
+        ]
+      },
+      "traceCount": 10,
+      "maxRounds": 3
+    },
+    "gate": {
+      "minScore": 95,
+      "minDimensionPercent": 80,
+      "requireAllConditions": true,
+      "failOn": ["Critical", "High"]
+    },
+    "refresh": {
+      "stalenessDays": 90
+    },
+    "ci": {
+      "enabled": true,
+      "triggerPolicy": "path-filtered",
+      "branchStrategy": "rolling",
+      "rollingBranch": "docs/dossier",
+      "instructionSource": "plugin",
+      "forkPolicy": "warn",
+      "pathFilters": {
+        "include": [
+          "plugins/**",
+          ".claude-plugin/marketplace.json",
+          ".github/workflows/**",
+          "scripts/**",
+          "README.md"
+        ],
+        "exclude": [
+          "docs/dossier/**",
+          "**/CHANGELOG.md",
+          "plugins/*/tests/**"
+        ]
+      },
+      "apiSurfaceGlobs": [
+        "plugins/*/.claude-plugin/plugin.json",
+        ".claude-plugin/marketplace.json",
+        "plugins/*/schema.json",
+        "plugins/*/hooks/hooks.json"
+      ],
+      "writeAllowlist": ["docs/dossier/**"],
+      "expectedPluginVersion": "1.0.0"
+    },
+    "local": {
+      "onFlowMerge": "suggest"
+    }
+  }
+}
