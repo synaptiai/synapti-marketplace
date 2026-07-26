@@ -2,7 +2,7 @@
 dossier-header: public-v1
 title: Product and Trust Guide
 audience: Operators deciding whether to install
-product-version: fbeb1ee
+product-version: d8c10fa
 last-updated: 2026-07-26
 ---
 # Product and Trust Guide
@@ -151,7 +151,7 @@ Until 2026-07-26 no `LICENSE` file existed at all, while the README asserted MIT
 
 | Field | Value |
 |---|---|
-| Applies to product version | `fbeb1ee` |
+| Applies to product version | `d8c10fa` |
 | Last updated | 2026-07-26 |
 
 Every statement in this guide maps to an approved claim backed by a verified evidence row.

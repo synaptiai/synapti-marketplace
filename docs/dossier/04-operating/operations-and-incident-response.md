@@ -6,7 +6,7 @@ audience: Maintainer, Reviewer, Installing operator
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: fbeb1ee
+project-version: d8c10fa
 last-verified: 2026-07-26
 review-trigger: The project acquires a runtime or a service; a security disclosure channel is established; an incident occurs
 related: [02-architecture/infrastructure-and-deployment.md, 03-assurance/reliability-performance-and-observability.md, 03-assurance/security-privacy-and-compliance.md]

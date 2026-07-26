@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: fbeb1ee
+project-version: d8c10fa
 last-verified: 2026-07-26
 review-trigger: Any new evidence that settles an open row, or any new source disagreement discovered during refresh
 related: [00-control/evidence-ledger.md, 00-control/claim-and-disclosure-register.md, 04-operating/decisions-technical-debt-and-risks.md]
@@ -34,7 +34,7 @@ A contradiction is never resolved by choosing the convenient side. Both sides ar
 | AQ-0008 | question | The real Windows and Git Bash portability surface of the 26 shipped shell scripts | The scripts run on the operator's machine. Two open issues (#100, #130) assert defects, and neither CI workflow runs on Windows | Assume defects exist as reported; the scope is unmeasured | A CI matrix job on `windows-latest` running both suites | Daniel Bentes | no | 03-assurance, 04-operating, 06-public | open | — |
 | AQ-0009 | assumption | Skill and command counts derived by file-counting are the counts an operator experiences | Every artifact-count claim in this package uses `find … -name SKILL.md` | File-counting is authoritative; directory-counting is not, because an empty directory is not a skill (EV-0029) | — | Daniel Bentes | no | 02-architecture, 06-public | closed | Confirmed: `plugins/flow/skills/learned/` holds only `.gitkeep`, which is exactly the 33-vs-32 discrepancy in CT-0002 |
 | AQ-0011 | question | GitHub's repository-level licence detection reports Apache-2.0 | The badge a visitor sees, and the field every automated licence scanner reads | Unobservable from here. The `/license` endpoint returns 404 for any non-default ref, and repository-level detection is computed from the default branch, where `LICENSE` does not yet exist | One `gh api repos/synaptiai/synapti-marketplace --jq .license` after this branch merges | Daniel Bentes | no | 05-due-diligence, 06-public | on merge | open | The file and every declaration are verified; only GitHub's derived field is pending |
-| AQ-0010 | assumption | Assessment on an unmerged feature branch is representative of the project | This package was produced at `fbeb1ee` on `feature/dossier-documentation-plugin`, not on `main` | State it in every header via `project-version`, and treat `main`-only claims as out of scope | Re-run after merge | Daniel Bentes | no | all | open | Version 4.7.0 and the entire dossier plugin exist only on this branch (EV-0033) |
+| AQ-0010 | assumption | Assessment on an unmerged feature branch is representative of the project | This package was produced at `d8c10fa` on `feature/dossier-documentation-plugin`, not on `main` | State it in every header via `project-version`, and treat `main`-only claims as out of scope | Re-run after merge | Daniel Bentes | no | all | open | Version 4.7.0 and the entire dossier plugin exist only on this branch (EV-0033) |
 
 ## Contradictions
 

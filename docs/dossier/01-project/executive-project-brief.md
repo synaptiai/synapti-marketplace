@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer, Prospective contributor
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: fbeb1ee
+project-version: d8c10fa
 last-verified: 2026-07-26
 review-trigger: A plugin is added or removed; a release is cut; any top risk changes state
 related: [01-project/product-and-domain.md, 02-architecture/system-architecture.md, 05-due-diligence/technical-due-diligence-report.md, 00-control/evidence-ledger.md]
@@ -37,7 +37,7 @@ The intended outcome is that an operator installs one command and inherits a wor
 |---|---|---|---|
 | Plugin discovery and installation | implemented | [EV-0051], [EV-0052] | Verified against the Claude Code client's own state files on one machine |
 | flow — GitHub workflow harness | implemented | [EV-0004], [EV-0008] | 32 skills, 23 commands, 9 agents, 12 hook scripts, 1022 passing assertions |
-| dossier — evidence-first documentation | implemented, unreleased | [EV-0009] | 1076 passing assertions; produced this package |
+| dossier — evidence-first documentation | implemented, unreleased | [EV-0009] | 1190 passing assertions; produced this package |
 | dossier — post-merge documentation automation | **built, never executed** | [EV-0045] | Its parts pass structural tests; the assembled workflow has never run (AQ-0002) |
 | gh-workflow, decipon, context-ledger, ai-first-org-design-kit | implemented, **untested** | [EV-0010] | 5 of 7 in-tree plugins ship no test suite |
 | agent-capability-standard | implemented, tested upstream | [EV-0011], [EV-0031] | Pinned 2 commits past the advertised `v1.2.0` |
@@ -52,7 +52,7 @@ The intended outcome is that an operator installs one command and inherits a wor
 |---|---|---|
 | System shape | A manifest plus a content tree. No runtime. All execution happens in the operator's own session, on their machine, with their privileges. The one boundary that matters is install-time: 16 hook scripts run on lifecycle events the operator never invokes | `02-architecture/system-architecture.md` |
 | Deployment and environments | One environment. `main` is production, and a push is the deploy. No build step, no promotion, no staging | `02-architecture/infrastructure-and-deployment.md` |
-| Delivery model | 2,098 passing assertions across 2 of 7 in-tree plugins, run by 2 CI workflows — **both advisory.** No branch protection, no rulesets, no required checks | `03-assurance/testing-quality-and-delivery.md` |
+| Delivery model | 2,212 passing assertions across 2 of 7 in-tree plugins, run by 2 CI workflows — **both advisory.** No branch protection, no rulesets, no required checks | `03-assurance/testing-quality-and-delivery.md` |
 | Operating model | Nothing to operate. No on-call, no incidents, no telemetry. Failures are distribution failures, detected only when an operator files an issue | `04-operating/operations-and-incident-response.md` |
 
 ## Metrics
@@ -60,9 +60,9 @@ The intended outcome is that an operator installs one command and inherits a wor
 | Metric | Value | Window | Environment | State | Evidence |
 |---|---|---|---|---|---|
 | Published plugins | 8 (7 on `main`, 8 on this branch) | live | production | V | [EV-0001], [EV-0054] |
-| Skills / commands / agents | 112 / 61 / 29 | fbeb1ee | repository | V | [EV-0004]–[EV-0006] |
-| Test assertions passing | 2,098 across 2 plugins, 0 failures | 2026-07-26 | macOS 25.5 | V | [EV-0008], [EV-0009] |
-| In-tree plugins with a test suite | 2 of 7 | fbeb1ee | repository | V | [EV-0010] |
+| Skills / commands / agents | 112 / 61 / 29 | d8c10fa | repository | V | [EV-0004]–[EV-0006] |
+| Test assertions passing | 2,212 across 2 plugins, 0 failures | 2026-07-26 | macOS 25.5 | V | [EV-0008], [EV-0009] |
+| In-tree plugins with a test suite | 2 of 7 | d8c10fa | repository | V | [EV-0010] |
 | Commits on `main` | 198 | 2025-12-19 → 2026-07-26 | production | V | [EV-0034] |
 | Merged pull requests | 62 | full history | production | V | [EV-0050] |
 | Releases published | 57 tags; latest `v4.6.2` | live | production | V | [EV-0032] |
@@ -88,7 +88,7 @@ The intended outcome is that an operator installs one command and inherits a wor
 | Strength | Why it is material | Evidence |
 |---|---|---|
 | Everything executable is readable plain text | 26 helper scripts and 16 hook scripts, no binaries, no bundles. An installer can audit before trusting — which matters more here than usual, because hooks run unprompted | [EV-0007], [EV-0044] |
-| Substantial structural testing where it exists | 2,098 assertions covering frontmatter shape, cross-reference resolution, bash 3.2 portability, and cross-artifact invariants. Markdown has no compiler; these suites substitute for one | [EV-0008], [EV-0009] |
+| Substantial structural testing where it exists | 2,212 assertions covering frontmatter shape, cross-reference resolution, bash 3.2 portability, and cross-artifact invariants. Markdown has no compiler; these suites substitute for one | [EV-0008], [EV-0009] |
 | Safety rails are restrictive by default | flow's hooks block destructive commands, force-pushes, and secret writes. dossier's action ceiling defaults every capability to `false` except reading source | [EV-0038], [EV-0039] |
 | Tests catch real defects | The destructive-command hook blocked two `rm -rf` invocations during this project's own development, and dossier's own suite surfaced a settings-cascade defect before release | [EV-0038], [EV-0009] |
 | Machine-readable version consistency holds | All 7 in-tree plugins agree with their manifest entries, verified directly | [EV-0026] |

@@ -2,7 +2,7 @@
 dossier-header: public-v1
 title: Technical Partner Guide
 audience: Plugin authors, integrators, and operators evaluating the marketplace
-product-version: fbeb1ee
+product-version: d8c10fa
 last-updated: 2026-07-26
 ---
 # Technical Partner Guide
@@ -142,7 +142,7 @@ There is no sandbox environment and no staging marketplace. A scratch repository
 
 ## Quality signals
 
-The flow and dossier plugins ship automated test suites — 1022 and 1076 assertions respectively — both passing at the assessed commit. *Assertion counts describe the suites, not coverage of the plugins they guard.*
+The flow and dossier plugins ship automated test suites — 1022 and 1190 assertions respectively — both passing at the assessed commit. *Assertion counts describe the suites, not coverage of the plugins they guard.*
 
 Five of the seven in-repository plugins ship no automated test suite.
 

@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer, Contributor, Installing operator
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: fbeb1ee
+project-version: d8c10fa
 last-verified: 2026-07-26
 review-trigger: Any document is added, removed, or re-verified; the gate verdict changes
 related: []
@@ -18,12 +18,12 @@ related: []
 
 | Field | Value |
 |---|---|
-| Package version | 1.0.1 |
-| Project version or commit | `fbeb1ee` on `feature/dossier-documentation-plugin` — **not `main`** |
+| Package version | 1.0.2 |
+| Project version or commit | `d8c10fa` on `feature/dossier-documentation-plugin` — **not `main`** |
 | Evidence cutoff date | 2026-07-26 |
 | Delivery mode | full |
 | Last full verification | 2026-07-26 |
-| Last gate verdict | **NOT-RELEASABLE** — 2 of 17 conditions fail after round 3, down from 4 in round 1; see `07-verification/documentation-verification-report.md` |
+| Last gate verdict | **NOT-RELEASABLE** — 2 of 17 conditions fail after round 4, down from 4 in round 1; see `07-verification/documentation-verification-report.md` |
 
 The verdict is the package working as intended. Round 1 failed four conditions; two were closed by fixing the underlying facts — the repository is now licensed under Apache-2.0, and every public sentence maps to an approved claim. The two that remain are both score conditions, and both trace to a single cause: this run's verification passes were not independent of one another. No edit to the package can close them; only a genuinely independent re-run can.
 
@@ -138,6 +138,7 @@ Round 3 lowered the score from 92 to 87 rather than raising it. It re-derived ev
 |---|---|---|---|
 | 2026-07-26 | 1.0.0 | all 23 | Initial package, produced by running the dossier plugin against the repository that ships it |
 | 2026-07-26 | 1.0.1 | all 23, plus the new `README.md` | Round 3: re-pinned to `fbeb1ee`, six figures re-derived, three requested diagrams drawn, the ledger's internal contradiction closed, the due-diligence ranked tables renumbered, and an entry point added at the package root |
+| 2026-07-26 | 1.0.2 | all 23 | Round 4: an external review of the plugin found five containment defects in the code this package documents. Re-pinned to `d8c10fa` and the assertion figures re-derived from it. No new verification pass ran — the package's own findings are unchanged, and F-05 remains open |
 
 ## Supplemental documents
 

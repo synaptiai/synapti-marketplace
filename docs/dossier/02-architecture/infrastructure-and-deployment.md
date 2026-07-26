@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: fbeb1ee
+project-version: d8c10fa
 last-verified: 2026-07-26
 review-trigger: A workflow is added or changed; branch protection or repository rulesets change; the release process changes
 related: [02-architecture/system-architecture.md, 03-assurance/testing-quality-and-delivery.md, 04-operating/operations-and-incident-response.md, 00-control/evidence-ledger.md]
