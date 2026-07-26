@@ -4,9 +4,11 @@ All notable changes to the dossier plugin are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-07-26
 
-### Fixed
+Initial release. The sections below record the pre-release review cycles, because a defect found and fixed before shipping is still evidence about how the thing was built.
+
+### Fixed before release
 
 - **`enforce-output-root.sh` allowed writes out of the output root.** The allow-case
   was a `case` glob, and a glob `*` matches `/` — so `docs/dossier/../../.github/…`
@@ -61,7 +63,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   pull request title could rewrite a table cell into a link that said something the
   title did not.
 
-### Fixed — the plugin contradicting itself
+#### The plugin contradicting itself
 
 These are the defect class dossier exists to catch, found in its own artifacts.
 
@@ -83,7 +85,7 @@ These are the defect class dossier exists to catch, found in its own artifacts.
   `AQ-`, and `TM-`.
 - G17's section sat after `## Related references`, out of sequence with G01–G16.
 
-### Added
+#### Test coverage added
 
 - `validate-patch.test.sh` — the write-allowlist control had no functional test at
   all. Fourteen assertions, almost all rejection cases: allowlist escape, traversal,
@@ -100,11 +102,9 @@ These are the defect class dossier exists to catch, found in its own artifacts.
 - The fifth independence mechanism (per-pass model configuration) is now asserted.
   The README claimed a regression test enforced all five; four were covered.
 
-## [1.0.0] - 2026-07-25
+### Shipped in the initial release
 
-Initial release.
-
-### Added
+#### Added
 
 **Method — 9 skills**
 
@@ -151,7 +151,7 @@ A `README.md` signpost is scaffolded at the output root alongside them. It is su
 
 `.claude/settings.dossier.json` resolved through the standard four-source cascade with `DOSSIER_*` environment overrides. Conditional and cross-field rules live in `bin/dossier-validate-config.sh` rather than in `schema.json`, because the documented fallback validator ignores `if`/`then` when `jsonschema` is absent — a schema conditional would report success and enforce nothing on exactly the machines that need it.
 
-### Fixed
+#### Fixed during the first three review cycles
 
 First run against a real project — this repository — surfaced nine defects that 1034 assertions had not, because each was a disagreement between two artifacts no single test compared.
 
@@ -165,11 +165,11 @@ First run against a real project — this repository — surfaced nine defects t
 - `tests/plugin-manifest.test.sh` asserted a hard-coded licence identifier. A constant passes while the file it names says something else, which is how this repository came to advertise a licence it did not carry. It now reads the SPDX identifier from the `LICENSE` file and fails loudly when there is none.
 - `tests/run.sh` leaked roughly 80 temp directories per run. Test files are *sourced*, so an `EXIT` trap set by one is replaced by the next file's, and a trailing cleanup line strands above whatever the next contributor appends. The runner now owns one directory, points `TMPDIR` at it, and removes it on exit, so cleanup no longer depends on per-file discipline.
 
-### Added
+#### Added during the first three review cycles
 
 - `derived:<EV-#### expression>` as a `Source ref` locator form. A row whose grounding is other ledger rows always existed in the method; the schema table had no form for it, so the linter treated the expression as a path.
 
-### Known limitations
+#### Known limitations
 
 - `plugin_marketplaces` accepts no ref, so a CI run always executes the skill text from marketplace `main` even when the helper scripts are pinned to a tag. Set `ci.instructionSource: vendored` for reproducible CI or a private marketplace.
 - The circuit breaker bounds runaway refresh loops, not cost per run. GitHub Actions has no spend cap for third-party API calls; set a budget in the Anthropic console.
