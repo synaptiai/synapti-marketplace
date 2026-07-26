@@ -1,6 +1,6 @@
 ---
 description: "Merge the independent A/B/C findings into one adjudicated ledger, publish the pre-repair table, apply agent-repairable corrections, route owner decisions to the registers, and trigger a re-audit when a material claim changed."
-argument-hint: "[--round <n>] [--findings <path>] [--dry-run]"
+argument-hint: [--round <n>] [--findings <path>] [--dry-run]
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent
 ---
 

@@ -1,6 +1,6 @@
 # AI-First Org Design Kit
 
-> **Version:** 1.5.0 | **License:** Apache-2.0 | **Category:** Organizational Design
+> **Version:** 1.5.1 | **License:** Apache-2.0 | **Category:** Organizational Design
 
 Fourteen opinionated skills that guide founders and leaders through designing, deploying, adopting, and evolving organizations where agents handle coordination and execution while humans own specification and judgment.
 

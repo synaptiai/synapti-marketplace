@@ -77,7 +77,8 @@ sanitize() {
   printf '%s' "${1:-}" \
     | LC_ALL=C tr -cd '[:print:][:space:]' \
     | tr '\r\n\t' '   ' \
-    | sed -e 's/|/\\|/g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+    | sed -e 's/|/\\|/g' -e 's/\[/\\[/g' -e 's/\]/\\]/g' -e 's/`/\\`/g' \
+          -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
     | cut -c1-120
 }
 

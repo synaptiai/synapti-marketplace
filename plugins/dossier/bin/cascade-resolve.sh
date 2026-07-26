@@ -89,7 +89,9 @@ for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_
   # Capture stdout and stderr separately. `2>&1` would mix jq's parse-error
   # text with the resolved value when jq emits warnings on stderr while
   # exiting 0 (older jq versions can do this).
-  STDERR_TMP=$(mktemp -t cascade-resolve.err.XXXXXX 2>/dev/null) || STDERR_TMP="/tmp/cascade-resolve.err.$$"
+  STDERR_TMP=$(mktemp -t cascade-resolve.err.XXXXXX) || {
+  echo "cascade-resolve: cannot create a temporary file or directory" >&2; exit 2;
+}
   RESULT=$(jq $MODE "$EXPR" "$SETTINGS" 2>"$STDERR_TMP")
   EXIT=$?
 

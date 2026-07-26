@@ -147,7 +147,9 @@ fi
 # ---------------------------------------------------------------------------
 [ -f "$TARGET" ] || { echo "dossier-managed-file: file not found: $TARGET" >&2; exit 1; }
 
-TMPF=$(mktemp -t dossier-managed.XXXXXX 2>/dev/null) || TMPF="/tmp/dossier-managed.$$"
+TMPF=$(mktemp -t dossier-managed.XXXXXX) || {
+  echo "dossier-managed-file: cannot create a temporary file or directory" >&2; exit 2;
+}
 cleanup() { rm -f "$TMPF" "$TMPF.body" 2>/dev/null; }
 trap cleanup EXIT
 

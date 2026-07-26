@@ -2,7 +2,7 @@
 # Bin script hygiene, plus THE ANTI-THEATER ASSERTION.
 #
 # The gate's whole credibility rests on one property: it must not emit PASS from
-# mechanical checks alone. Nine mechanical conditions can prove a package is not
+# mechanical checks alone. Ten mechanical conditions can prove a package is not
 # releasable; they can never prove it is, because the judgment set includes the
 # scorecard and three of the four "must never appear" rules. A gate that passed
 # on mechanics would certify a package whose planned features are documented as

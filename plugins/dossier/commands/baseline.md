@@ -1,6 +1,6 @@
 ---
 description: "Build the full documentation package from evidence. Inventories sources, models the project, resolves material gaps, drafts the 21 internal documents in dependency waves, then derives the 2 public documents from approved claims only."
-argument-hint: "[--only <dir-or-file>] [--max-drafters <n>]"
+argument-hint: [--only <dir-or-file>] [--max-drafters <n>]
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate
 ---
 

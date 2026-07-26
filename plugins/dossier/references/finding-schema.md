@@ -298,5 +298,5 @@ Empty severity sections are retained with their header and the table header row,
 - **Scoring.** How a finding becomes a deduction, the 0–10 anchors, and the severity-to-cap rules live in `references/scorecard-rubric.md`.
 - **The gate.** Which conditions a finding set fails, and the mechanical-versus-judgment split, live in `references/release-gate-conditions.md`.
 - **Evidence rows.** `EV-####` shape, the seven source-authority levels, and the `V/C/R/I/U/N-A` claim states live in `references/evidence-ledger-schema.md` and `references/source-authority-and-claim-states.md`.
-- **Registers.** `CL-`, `CT-`, `AS-`, and `OQ-` row shapes live in `references/register-schemas.md`.
+- **Registers.** `CL-`, `CT-`, `AQ-`, and `TM-` row shapes live in `references/register-schemas.md`.
 - **How passes are run and kept independent.** `references/independent-audit-protocol.md`. That document is normative for what a pass may receive; this one is normative only for what it emits.

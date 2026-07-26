@@ -210,7 +210,7 @@
       "name": "ai-first-org-design-kit",
       "source": "./plugins/ai-first-org-design-kit",
       "description": "Fourteen opinionated skills for designing, deploying, adopting, and evolving AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, validate gates against hidden holdout scenarios, architect governance, redesign roles, navigate politics, operationalize designs into agent-consumable primers, run evolution audits, generate agent configurations, build per-role maturity matrices, design adoption sprints, and write human-facing AI usage policies.",
-      "version": "1.5.0",
+      "version": "1.5.1",
       "author": {
         "name": "Daniel Bentes"
       },

@@ -1,6 +1,6 @@
 ---
 description: "Read-only overview of documentation package health — canonical coverage, register counts, open material gaps, staleness against the freshness threshold, the last gate verdict, and whether the post-merge automation is wired and current."
-argument-hint: "[--json] [--path <package-root>]"
+argument-hint: [--json] [--path <package-root>]
 allowed-tools: Bash, Read
 ---
 

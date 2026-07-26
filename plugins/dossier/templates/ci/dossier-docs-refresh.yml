@@ -576,11 +576,17 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          git fetch --no-tags --prune origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          git fetch --no-tags --prune origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" || {
+            echo "::error title=Dossier::Could not fetch ${BASE_REF}. The refresh range cannot be trusted, so nothing was written."
+            exit 1
+          }
 
           MODE=create
           if git ls-remote --exit-code --heads origin "$DOCS_BRANCH" >/dev/null 2>&1; then
-            git fetch --no-tags origin "+refs/heads/${DOCS_BRANCH}:refs/remotes/origin/${DOCS_BRANCH}"
+            git fetch --no-tags origin "+refs/heads/${DOCS_BRANCH}:refs/remotes/origin/${DOCS_BRANCH}" || {
+              echo "::error title=Dossier::Could not fetch the existing ${DOCS_BRANCH}. Refusing to guess its state."
+              exit 1
+            }
 
             # Ownership is established per commit by the Dossier-Generated
             # trailer, never by author. Authorship varies with whichever token
@@ -628,14 +634,26 @@ jobs:
               # Deleting and re-creating is not a force push: nothing is
               # overwritten, and nothing this job did not write is touched.
               echo "Recreating ${DOCS_BRANCH} from ${BASE_REF} (all previous commits were generated, no open pull request)."
-              git push origin --delete "$DOCS_BRANCH"
-              git checkout -q -B "$DOCS_BRANCH" "origin/${BASE_REF}"
+              git push origin --delete "$DOCS_BRANCH" || {
+                echo "::error title=Dossier::Could not delete ${DOCS_BRANCH}. Nothing was recreated."
+                exit 1
+              }
+              git checkout -q -B "$DOCS_BRANCH" "origin/${BASE_REF}" || {
+                echo "::error title=Dossier::Could not create ${DOCS_BRANCH} from ${BASE_REF}."
+                exit 1
+              }
               ;;
             create)
-              git checkout -q -B "$DOCS_BRANCH" "origin/${BASE_REF}"
+              git checkout -q -B "$DOCS_BRANCH" "origin/${BASE_REF}" || {
+                echo "::error title=Dossier::Could not create ${DOCS_BRANCH} from ${BASE_REF}."
+                exit 1
+              }
               ;;
             update)
-              git checkout -q -B "$DOCS_BRANCH" "origin/${DOCS_BRANCH}"
+              git checkout -q -B "$DOCS_BRANCH" "origin/${DOCS_BRANCH}" || {
+                echo "::error title=Dossier::Could not check out the existing ${DOCS_BRANCH}."
+                exit 1
+              }
 
               # Merge forward, never rebase. Rebasing a shared branch under an
               # open pull request invalidates every review comment on it and
@@ -760,7 +778,10 @@ jobs:
             printf 'Dossier-Run: %s\n' "$RUN_URL"
           } > .dossier/commit-message.txt
 
-          git commit -q -F .dossier/commit-message.txt
+          git commit -q -F .dossier/commit-message.txt || {
+            echo "::error title=Dossier::Could not commit the documentation patch. Nothing was pushed."
+            exit 1
+          }
           echo "committed=true" >> "$GITHUB_OUTPUT"
 
           # Fast-forward push. Nothing here pushes with force, with or without a

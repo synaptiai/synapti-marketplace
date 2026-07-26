@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dossier-scaffold.sh — create the canonical 7-directory / 23-file documentation
+# dossier-scaffold.sh — create the canonical 8-directory / 23-file documentation
 # package under an output root by copying the plugin's templates.
 #
 # Idempotent and non-destructive: an existing file is NEVER overwritten, never

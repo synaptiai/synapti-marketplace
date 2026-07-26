@@ -97,7 +97,9 @@ MODEL=""
 MODEL_ARG=""
 NOTES=""
 
-TMPDIR_POLICY=$(mktemp -d -t dossier-policy.XXXXXX 2>/dev/null) || TMPDIR_POLICY="/tmp/dossier-policy.$$"
+TMPDIR_POLICY=$(mktemp -d -t dossier-policy.XXXXXX) || {
+  echo "dossier-policy: cannot create a temporary file or directory" >&2; exit 2;
+}
 mkdir -p "$TMPDIR_POLICY" 2>/dev/null
 cleanup() { rm -rf "$TMPDIR_POLICY" 2>/dev/null; }
 trap cleanup EXIT
@@ -105,10 +107,15 @@ trap cleanup EXIT
 note() { NOTES="${NOTES}- $1
 "; }
 
+# $GITHUB_OUTPUT is parsed line by line as key=value, so a value carrying a
+# newline does not merely render wrong — it forges additional output pairs for
+# the next job to read. Every value written here is stripped of newlines and
+# control characters first, whatever cascade layer it came from.
 emit() {
-  printf '%s=%s\n' "$1" "$2"
+  _v=$(printf '%s' "$2" | LC_ALL=C tr -d '\000-\037')
+  printf '%s=%s\n' "$1" "$_v"
   if [ -n "$GITHUB_OUTPUT_FILE" ]; then
-    printf '%s=%s\n' "$1" "$2" >>"$GITHUB_OUTPUT_FILE"
+    printf '%s=%s\n' "$1" "$_v" >>"$GITHUB_OUTPUT_FILE"
   fi
   return 0
 }
@@ -243,7 +250,20 @@ MAX_PRS_24H=$(cfg '.dossier.ci.circuitBreaker.maxDocPrsPer24h' '6')
 SCHEDULE_MIN_COMMITS=$(cfg '.dossier.ci.schedule.minCommits' '1')
 MAX_TURNS=$(cfg '.dossier.ci.agent.maxTurns' '60')
 MODEL=$(cfg '.dossier.ci.agent.model' '')
-[ -n "$MODEL" ] && MODEL_ARG="--model $MODEL"
+# schema.json constrains this to a single bare token because the value is
+# interpolated into the workflow's claude_args block, where whitespace would
+# split into stray arguments ahead of the --allowedTools/--disallowedTools flags
+# that bound the agent. dossier-validate-config.sh enforces that pattern, but it
+# does not run in the workflow — so the constraint is re-checked at the point of
+# use rather than trusted to have been checked somewhere upstream.
+if [ -n "$MODEL" ]; then
+  case "$MODEL" in
+    *[!A-Za-z0-9._-]*)
+      die_infra "dossier.ci.agent.model must be a single bare token matching [A-Za-z0-9._-]+; got a value containing whitespace or a shell metacharacter."
+      ;;
+  esac
+  MODEL_ARG="--model $MODEL"
+fi
 
 INC_ERE="$TMPDIR_POLICY/include.ere"
 EXC_ERE="$TMPDIR_POLICY/exclude.ere"

@@ -48,7 +48,9 @@ done
 [ -f "$CHANGED" ] || { echo "dossier-blast-radius: changed-files list not found: $CHANGED" >&2; exit 2; }
 command -v jq >/dev/null 2>&1 || { echo "dossier-blast-radius: jq is not installed." >&2; exit 1; }
 
-TMPD=$(mktemp -d -t dossier-blast.XXXXXX 2>/dev/null) || TMPD="/tmp/dossier-blast.$$"
+TMPD=$(mktemp -d -t dossier-blast.XXXXXX) || {
+  echo "dossier-blast-radius: cannot create a temporary file or directory" >&2; exit 2;
+}
 mkdir -p "$TMPD" 2>/dev/null
 cleanup() { rm -rf "$TMPD" 2>/dev/null; }
 trap cleanup EXIT
@@ -241,9 +243,14 @@ for E in $EVENTS; do
   # is already in changed-files.txt; repeating it here would make the mapping
   # the largest file in the bundle for no added signal.
   SAMPLE=$(printf '%s\n' "$MATCHES" | head -25 | jq -R . | jq -sc .)
-  jq -c --arg e "$E" --argjson n "${MATCH_COUNT:-0}" --argjson s "$SAMPLE" \
-    '. + [{event: $e, match_count: $n, matched_files: $s}]' "$EVENT_JSON" >"$EVENT_JSON.next" \
-    && mv "$EVENT_JSON.next" "$EVENT_JSON"
+  if jq -c --arg e "$E" --argjson n "${MATCH_COUNT:-0}" --argjson s "$SAMPLE" \
+       '. + [{event: $e, match_count: $n, matched_files: $s}]' "$EVENT_JSON" >"$EVENT_JSON.next"; then
+    mv "$EVENT_JSON.next" "$EVENT_JSON"
+  else
+    rm -f "$EVENT_JSON.next" 2>/dev/null
+    echo "dossier-blast-radius: could not record event '$E' in the report." >&2
+    exit 1
+  fi
 done
 
 printf '%s\n' "$ALWAYS_DOCS" | while IFS= read -r D; do

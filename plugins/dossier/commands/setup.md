@@ -1,6 +1,6 @@
 ---
 description: "Wire the post-merge documentation refresh into this repository. Preflights the GitHub settings that silently break it, renders the three-job workflow, creates labels, and lists the manual steps setup cannot perform."
-argument-hint: "[--ci github-actions|flow-trigger|none] [--dry-run]"
+argument-hint: [--ci github-actions|flow-trigger|none] [--dry-run]
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, AskUserQuestion
 ---
 

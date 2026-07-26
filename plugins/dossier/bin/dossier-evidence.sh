@@ -73,9 +73,19 @@ git cat-file -e "${HEAD}^{commit}" 2>/dev/null || die "head '${HEAD}' is not a c
 
 mkdir -p "$OUT" || die "could not create bundle directory '${OUT}'."
 
-NOTES_FILE=$(mktemp -t dossier-evidence.notes.XXXXXX 2>/dev/null) || NOTES_FILE="/tmp/dossier-evidence.notes.$$"
+NOTES_FILE=$(mktemp -t dossier-evidence.notes.XXXXXX) || die "cannot create a temporary file."
 : >"$NOTES_FILE"
-cleanup() { rm -f "$NOTES_FILE" 2>/dev/null; }
+# Every temp file below is registered here rather than removed at its point
+# of use. A `set -u` abort or a signal between creation and that point would
+# otherwise leak it — the same gap the test runner's temp dir had.
+API_ERE_FILE=""; PR_TMP=""; REL_TMP=""; DOC_TMP=""
+cleanup() {
+  rm -f "$NOTES_FILE" \
+        ${API_ERE_FILE:+"$API_ERE_FILE"} \
+        ${PR_TMP:+"$PR_TMP" "$PR_TMP.next"} \
+        ${REL_TMP:+"$REL_TMP" "$REL_TMP.next"} \
+        ${DOC_TMP:+"$DOC_TMP" "$DOC_TMP.next"} 2>/dev/null
+}
 trap cleanup EXIT
 note() { printf '%s\n' "$1" >>"$NOTES_FILE"; }
 
@@ -212,7 +222,9 @@ fi
 # ---------------------------------------------------------------------------
 # api-surface.diff — restricted to dossier.ci.apiSurfaceGlobs.
 # ---------------------------------------------------------------------------
-API_ERE_FILE=$(mktemp -t dossier-evidence.api.XXXXXX 2>/dev/null) || API_ERE_FILE="/tmp/dossier-evidence.api.$$"
+API_ERE_FILE=$(mktemp -t dossier-evidence.api.XXXXXX) || {
+  echo "dossier-evidence: cannot create a temporary file or directory" >&2; exit 2;
+}
 : >"$API_ERE_FILE"
 cfg_arr '.dossier.ci.apiSurfaceGlobs' | while IFS= read -r G; do
   [ -n "$G" ] || continue
@@ -270,7 +282,9 @@ if [ "$PR_DISCOVERED" -eq 50 ]; then
   note 'Pull request discovery hit its cap of 50. Older pull requests in this range are represented only by their commits.'
 fi
 
-PR_TMP=$(mktemp -t dossier-evidence.prs.XXXXXX 2>/dev/null) || PR_TMP="/tmp/dossier-evidence.prs.$$"
+PR_TMP=$(mktemp -t dossier-evidence.prs.XXXXXX) || {
+  echo "dossier-evidence: cannot create a temporary file or directory" >&2; exit 2;
+}
 echo '[]' >"$PR_TMP"
 if [ -n "$PR_NUMBERS" ]; then
   for N in $PR_NUMBERS; do
@@ -332,7 +346,9 @@ TAGS_BASE=$(git tag --merged "$BASE" 2>/dev/null | sort)
 TAGS_HEAD=$(git tag --merged "$HEAD" 2>/dev/null | sort)
 NEW_TAGS=$(printf '%s\n' "$TAGS_HEAD" | grep -vxF -f <(printf '%s\n' "$TAGS_BASE") 2>/dev/null | head -20)
 
-REL_TMP=$(mktemp -t dossier-evidence.rel.XXXXXX 2>/dev/null) || REL_TMP="/tmp/dossier-evidence.rel.$$"
+REL_TMP=$(mktemp -t dossier-evidence.rel.XXXXXX) || {
+  echo "dossier-evidence: cannot create a temporary file or directory" >&2; exit 2;
+}
 echo '[]' >"$REL_TMP"
 if [ -n "$NEW_TAGS" ]; then
   printf '%s\n' "$NEW_TAGS" | while IFS= read -r T; do
@@ -381,7 +397,9 @@ CANONICAL_DOCS='00-control/documentation-index.md
 06-public/customer-product-and-trust-guide.md
 07-verification/documentation-verification-report.md'
 
-DOC_TMP=$(mktemp -t dossier-evidence.docs.XXXXXX 2>/dev/null) || DOC_TMP="/tmp/dossier-evidence.docs.$$"
+DOC_TMP=$(mktemp -t dossier-evidence.docs.XXXXXX) || {
+  echo "dossier-evidence: cannot create a temporary file or directory" >&2; exit 2;
+}
 echo '[]' >"$DOC_TMP"
 printf '%s\n' "$CANONICAL_DOCS" | while IFS= read -r REL; do
   [ -n "$REL" ] || continue

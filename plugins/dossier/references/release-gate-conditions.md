@@ -2,7 +2,7 @@
 
 Reference document. The seventeen conditions that decide whether a documentation package may be released, how each is checked, and the contract that stops the gate from becoming theater.
 
-The gate is **binary and conjunctive**: seventeen of seventeen, or the package is not `release-ready`. A high score is one condition, not a substitute for the other fifteen. A package can score 96/100 and be unreleasable on a single unsupported public claim, and that is the correct outcome — the score measures quality, and the other conditions measure whether the package is safe to rely on.
+The gate is **binary and conjunctive**: seventeen of seventeen, or the package is not `release-ready`. A high score is one condition, not a substitute for the other sixteen. A package can score 96/100 and be unreleasable on a single unsupported public claim, and that is the correct outcome — the score measures quality, and the other conditions measure whether the package is safe to rely on.
 
 ## The mechanical / judgment split
 
@@ -23,7 +23,7 @@ This section is normative for `bin/dossier-gate.sh`.
 
 **Failing is decidable from a subset. Passing is not.**
 
-That asymmetry is the whole design. Nine mechanical conditions are enough to prove a package is *not* releasable — one broken link is sufficient. They are never enough to prove it *is*, because the seven judgment conditions include both scorecard conditions and three of the four "must never appear" rules. A script that passed on mechanics alone would emit `PASS` for a package whose planned features are documented as shipped, whose targets are printed as measurements, and whose policies are described as controls, having checked none of it. That package would look audited and would be wrong in exactly the ways the system exists to catch.
+That asymmetry is the whole design. Ten mechanical conditions are enough to prove a package is *not* releasable — one broken link is sufficient. They are never enough to prove it *is*, because the seven judgment conditions include both scorecard conditions and three of the four "must never appear" rules. A script that passed on mechanics alone would emit `PASS` for a package whose planned features are documented as shipped, whose targets are printed as measurements, and whose policies are described as controls, having checked none of it. That package would look audited and would be wrong in exactly the ways the system exists to catch.
 
 So the script **structurally refuses to emit `PASS` without a scorer verdict file**:
 
@@ -232,6 +232,18 @@ Exit codes:
 | Evidence that satisfies it | Each of those sections present and non-empty, or explicitly stating `none` as a positive assertion. `none` counts as present; blank does not. |
 | Fails when | Any required disclosure section is absent or blank. Whether the disclosures are *complete* is a coverage judgment scored under dimensions 1 and 5 and raised as pass-A findings, reaching the gate through G01, G02, and G03. |
 
+### G17 — The reviewer-pass independence method is disclosed, including model diversity
+
+**Tag:** `mechanical`
+
+**Check:** `07-verification/documentation-verification-report.md` contains a `## Reviewer-pass independence method` heading, a table row per pass that ran, and a line beginning `Model diversity:`.
+
+**Satisfied by:** the table and the diversity line, written honestly — including when the honest answer is `none`, because all passes shared a model.
+
+**Why it is a gate condition rather than a convention.** `references/independent-audit-protocol.md` calls this disclosure required, and the package's own evidence standard turns on it: three passes that shared one model decorrelate lenses but not model-level blind spots, and a reader who cannot see which tier ran has no way to weigh the audit. Without G17 a package could pass all sixteen other conditions while omitting the one sentence that tells the reader how much the verification is worth. That is the same defect class the format exists to catch elsewhere — a capability claim broader than what was actually done.
+
+Mechanical rather than judgment: presence of the heading and the `Model diversity:` line is decidable from the file. Whether the disclosure is *accurate* is covered by G16's honesty requirement and by the scorer.
+
 ## Package status
 
 The gate result maps to exactly one of three package statuses, which is what the completion response and `07-verification/documentation-verification-report.md` report.
@@ -282,18 +294,6 @@ The corresponding positive obligation, stated in `references/document-headers.md
 | `references/scorecard-rubric.md` | The ten dimensions, 0–10 anchors, deduction ledger, severity caps |
 | `references/independent-audit-protocol.md` | How the passes run, what they may receive, how independence is recorded |
 | `references/evidence-ledger-schema.md` | `EV-####` row shape, read by G09 |
-| `references/register-schemas.md` | `CL-`, `CT-`, `AS-`, `OQ-` row shapes, read by G04, G05, G07, G10 |
+| `references/register-schemas.md` | `CL-`, `CT-`, `AQ-`, `TM-` row shapes, read by G04, G05, G07, G10 |
 | `references/package-contract-*.md` | Required sections per directory, read by G08 |
 | `references/document-headers.md` | Header contract, read by G16 and scored under dimension 10 |
-
-### G17 — The reviewer-pass independence method is disclosed, including model diversity
-
-**Tag:** `mechanical`
-
-**Check:** `07-verification/documentation-verification-report.md` contains a `## Reviewer-pass independence method` heading, a table row per pass that ran, and a line beginning `Model diversity:`.
-
-**Satisfied by:** the table and the diversity line, written honestly — including when the honest answer is `none`, because all passes shared a model.
-
-**Why it is a gate condition rather than a convention.** `references/independent-audit-protocol.md` calls this disclosure required, and the package's own evidence standard turns on it: three passes that shared one model decorrelate lenses but not model-level blind spots, and a reader who cannot see which tier ran has no way to weigh the audit. Without G17 a package could pass all sixteen other conditions while omitting the one sentence that tells the reader how much the verification is worth. That is the same defect class the format exists to catch elsewhere — a capability claim broader than what was actually done.
-
-Mechanical rather than judgment: presence of the heading and the `Model diversity:` line is decidable from the file. Whether the disclosure is *accurate* is covered by G16's honesty requirement and by the scorer.

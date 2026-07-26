@@ -10,7 +10,14 @@
 
 set -uo pipefail
 
-command -v jq >/dev/null 2>&1 || exit 0
+# Fails closed. This hook is a containment boundary, not an advisory: a missing
+# jq would otherwise turn the guarantee off silently, and a boundary that
+# disappears when a dependency is absent is indistinguishable from one that was
+# never there. stale-header-stamp.sh is advisory and correctly does the reverse.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "BLOCKED: dossier cannot enforce its output root without jq on PATH." >&2
+  exit 2
+fi
 
 INPUT=$(cat)
 FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty' 2>/dev/null)
@@ -39,13 +46,31 @@ case "$REL" in
   ./*)      REL="${REL#./}" ;;
 esac
 
+# Reject any traversal segment before the prefix test. The allow-cases below are
+# `case` globs, and a glob `*` matches `/` — so `docs/dossier/../../etc/passwd`
+# textually starts with the output root and would be allowed while landing
+# outside it. Refusing `..` outright is what makes the prefix test mean what it
+# reads as; without this the check is bypassable by construction.
 case "$REL" in
-  "$OUTPUT_ROOT"/*|"$OUTPUT_ROOT") exit 0 ;;
-  .dossier/*) exit 0 ;;
+  ..|../*|*/../*|*/..)
+    cat >&2 <<EOF
+BLOCKED: dossier run may not write through a path traversal.
+
+  target: $REL
+
+A path containing a '..' segment is refused whatever it resolves to. The output
+root is a containment boundary, and a boundary that can be stepped around by
+spelling the path differently is not one.
+EOF
+    exit 2
+    ;;
 esac
 
-# A traversal that lands back inside the root is still outside it as written,
-# and allowing it would make the check bypassable by construction.
+case "$REL" in
+  "$OUTPUT_ROOT"/*|"$OUTPUT_ROOT") exit 0 ;;
+  .dossier/*|.dossier) exit 0 ;;
+esac
+
 cat >&2 <<EOF
 BLOCKED: dossier run may not write outside its output root.
 

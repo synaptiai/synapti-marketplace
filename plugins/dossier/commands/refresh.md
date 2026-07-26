@@ -1,6 +1,6 @@
 ---
 description: "Refresh the documentation package for a range of changes. Computes the blast radius from changed evidence, re-inventories only what moved, re-drafts the affected documents and everything downstream of them, then sweeps the whole package for contradictions. The entry point the post-merge CI job invokes."
-argument-hint: "[<commit-range>] [--evidence <manifest.json>] [--mode ci] [--dry-run]"
+argument-hint: [<commit-range>] [--evidence <manifest.json>] [--mode ci] [--dry-run]
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent, TaskCreate, TaskList, TaskUpdate
 ---
 

@@ -24,7 +24,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | Plugin | Category | Description | Version |
 |--------|----------|-------------|---------|
 | [Agent Capability Standard ↗](https://github.com/synaptiai/agent-capability-standard) | Standards, Agent Development | Technical specification for AI agents with structural reliability. 36 atomic capabilities across 9 layers with reference workflows and safety-by-construction patterns. | 1.2.0 |
-| [AI-First Org Design Kit](./plugins/ai-first-org-design-kit/) | Organizational Design | Fourteen opinionated skills for designing, deploying, adopting, and evolving AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, validate gates against hidden holdout scenarios, architect governance, redesign roles, navigate politics, operationalize, run evolution audits, generate agent configs, build maturity matrices, design adoption sprints, and write human-facing AI usage policies. | 1.5.0 |
+| [AI-First Org Design Kit](./plugins/ai-first-org-design-kit/) | Organizational Design | Fourteen opinionated skills for designing, deploying, adopting, and evolving AI-first organizations — diagnose coordination overhead, encode organizational identity, write specifications, convert approvals to quality gates, validate gates against hidden holdout scenarios, architect governance, redesign roles, navigate politics, operationalize, run evolution audits, generate agent configs, build maturity matrices, design adoption sprints, and write human-facing AI usage policies. | 1.5.1 |
 | [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.5.0 |
 | [Dossier](./plugins/dossier/) | Documentation | Evidence-first project documentation: builds a 23-file audit-ready package where every claim carries a state and a citation, verifies it by falsification, and refuses to certify a package it cannot ground. Includes post-merge CI that refreshes affected documents after a PR merges. | 1.0.0 |
@@ -488,7 +488,7 @@ claude plugin install dossier
 
 ### Dogfooding
 
-This marketplace documents itself with dossier. The package is in [`docs/dossier/`](./docs/dossier/), and its gate verdict is **NOT-RELEASABLE** — four of seventeen conditions fail, and the report says exactly which and why.
+This marketplace documents itself with dossier. The package is in [`docs/dossier/`](./docs/dossier/), and its gate verdict is **NOT-RELEASABLE** — two of seventeen conditions fail, and the report says exactly which and why.
 
 That is the intended behaviour, not a caveat. The run also found real defects in this repository — a licence badge pointing at a file that does not exist, four stale facts in this README, a submodule advertised as a version it does not ship — and four defects in the dossier plugin itself, each now covered by a regression test. Start at [`00-control/documentation-index.md`](./docs/dossier/00-control/documentation-index.md).
 

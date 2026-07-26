@@ -1,6 +1,6 @@
 ---
 name: doc-package-contract
-description: "Enforce the fixed 23-file, 7-directory documentation package under the resolved output root — routing each document to its required-content contract in `references/package-contract-*.md`, stamping the internal or public header, and refusing to add, drop, rename, or merge a canonical file. Use when scaffolding a package, drafting or revising any canonical document, or checking structural completeness. This skill MUST be consulted because a package whose shape changes per project cannot be diffed, audited, or compared across engagements — the structure is the contract and only the content adapts."
+description: "Enforce the fixed 23-file, 8-directory documentation package under the resolved output root — routing each document to its required-content contract in `references/package-contract-*.md`, stamping the internal or public header, and refusing to add, drop, rename, or merge a canonical file. Use when scaffolding a package, drafting or revising any canonical document, or checking structural completeness. This skill MUST be consulted because a package whose shape changes per project cannot be diffed, audited, or compared across engagements — the structure is the contract and only the content adapts."
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 context: fork
 agent: general-purpose

@@ -1,6 +1,6 @@
 ---
 description: "Initialize a dossier documentation package. Resolves the engagement inputs, classifies the project from evidence, writes .claude/settings.dossier.json, scaffolds the 23 canonical files, and seeds the five control registers."
-argument-hint: "[project-name] [--output-root <path>] [--mode full|targeted|verification-only] [--non-interactive]"
+argument-hint: [project-name] [--output-root <path>] [--mode full|targeted|verification-only] [--non-interactive]
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, AskUserQuestion
 ---
 

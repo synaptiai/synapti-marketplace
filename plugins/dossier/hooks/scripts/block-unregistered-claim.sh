@@ -14,7 +14,12 @@
 
 set -uo pipefail
 
-command -v jq >/dev/null 2>&1 || exit 0
+# Fails closed. A public document is unretractable, so the one place the leak
+# has not yet happened is not a place to no-op on a missing dependency.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "BLOCKED: dossier cannot scan a public document for leakage without jq on PATH." >&2
+  exit 2
+fi
 
 INPUT=$(cat)
 FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty' 2>/dev/null)
@@ -49,6 +54,11 @@ check "bearer-token"         'Bearer[[:space:]]+[A-Za-z0-9._-]{20,}'
 check "connection-string"    '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[^[:space:]@]+@'
 check "secret-assignment"    '(api[_-]?key|secret|password|passwd|token|credential)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9/_+=-]{12,}'
 check "internal-register-id" '\b(EV|AQ|CT|CL|TM)-[0-9]{4,}\b'
+# disclosure-policy-levels.md names internal repository paths alongside register
+# IDs as prohibited in 06-public/, and says this hook enforces it with
+# dossier-claim-scan.sh. The pattern is the scanner's, so the live block and the
+# batch scan agree rather than the hook deferring a class it never documented.
+check "internal-path"        '(^|[[:space:](`])(src|internal|lib|app|infra|terraform|\.github)/[A-Za-z0-9_./-]+'
 check "internal-hostname"    '\b[a-z0-9-]+\.(internal|local|corp|intranet|svc\.cluster\.local)\b'
 check "private-ip"           '\b(10\.[0-9]{1,3}|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b'
 

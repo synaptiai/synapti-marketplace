@@ -1,6 +1,6 @@
 ---
 description: "Run the three independent verification passes over a documentation package. Dispatches evidence, falsification, and audience lenses in isolated contexts and collects their findings tables verbatim. Does not merge, judge, or repair — that is /dossier:reconcile."
-argument-hint: "[--round <n>] [--passes A,B,C] [--path <package-root>] [--external]"
+argument-hint: [--round <n>] [--passes A,B,C] [--path <package-root>] [--external]
 allowed-tools: Bash, Read, Write, Glob, Grep, Skill, Agent
 ---
 

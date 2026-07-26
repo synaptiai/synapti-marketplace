@@ -94,8 +94,14 @@ summary() {
   return 0
 }
 
-TMPD=$(mktemp -d -t dossier-validate.XXXXXX 2>/dev/null) || TMPD="/tmp/dossier-validate.$$"
-mkdir -p "$TMPD" 2>/dev/null
+# Hard-fail rather than fall back to a predictable /tmp path, matching
+# dossier-gate.sh, dossier-claim-scan.sh, and dossier-ledger-lint.sh. This
+# script is the write-allowlist control; a temp directory an unprivileged
+# process on the same host can pre-create is not a place to stage a patch.
+TMPD=$(mktemp -d -t dossier-validate.XXXXXX) || {
+  echo "::error title=dossier patch validation::cannot create a temporary directory" >&2
+  exit 1
+}
 cleanup() { rm -rf "$TMPD" 2>/dev/null; }
 trap cleanup EXIT
 
@@ -171,6 +177,16 @@ done
 [ -s "$ALLOW_ERE" ] || hard_fail "The write allowlist produced no usable patterns."
 
 path_allowed() {
+  # A traversal segment is refused before the allowlist is consulted, because
+  # the allowlist cannot see it: `docs/dossier/**` compiles to `^docs/dossier/.*$`,
+  # which `docs/dossier/../../.env` matches while resolving outside the root.
+  # `git apply` without --unsafe-paths would also reject it, but this script is
+  # the documented control and the publish job's independent re-check — it does
+  # not get to rely on a default in a tool someone may later invoke differently.
+  case "$1" in
+    ..|../*|*/../*|*/..) return 1 ;;
+    /*) return 1 ;;
+  esac
   printf '%s\n' "$1" | grep -qE -f "$ALLOW_ERE"
 }
 
@@ -305,6 +321,19 @@ if [ -n "$VERIFY_PATCH" ]; then
     }
   ' "$VERIFY_PATCH" | sort -u >"$TMPD/patch-paths.txt"
 
+  # A path inside the allowlist can still point outside it. Mode 120000 is a
+  # symlink, whose content is its target — so an allowlisted `docs/dossier/x.md`
+  # created as a link to `../../.env` escapes by reference rather than by path,
+  # and every later reader that follows links discloses the target. Path
+  # checking alone cannot see this, so the mode is refused outright.
+  if grep -qE '^(new file |old |new )mode 120000$' "$VERIFY_PATCH" 2>/dev/null; then
+    summary ""
+    summary "### Dossier patch validation: REJECTED (symlink)"
+    summary ""
+    summary "The patch creates or converts a file to a symbolic link. Documentation is written as regular files; a link inside the allowlist can point outside it."
+    hard_fail "The patch contains a symlink mode (120000). It was not applied."
+  fi
+
   VIOLATIONS=""
   while IFS= read -r P; do
     [ -n "$P" ] || continue
@@ -366,6 +395,7 @@ fi
 # simply be invisible.
 # ---------------------------------------------------------------------------
 VIOLATIONS=""
+SYMLINKS=""
 STATUS_COUNT=0
 while IFS= read -r -d '' ENTRY; do
   ST=$(printf '%s' "$ENTRY" | cut -c1-2)
@@ -385,7 +415,25 @@ while IFS= read -r -d '' ENTRY; do
   STATUS_COUNT=$((STATUS_COUNT + 1))
   path_allowed "$P" || VIOLATIONS="${VIOLATIONS}${P}
 "
+  # Same reasoning as the verify-mode symlink refusal: an allowlisted path that
+  # is a link resolves somewhere the allowlist never approved.
+  if [ -L "$P" ]; then
+    SYMLINKS="${SYMLINKS}${P}
+"
+  fi
 done < <(git status --porcelain -z -uall 2>/dev/null)
+
+if [ -n "$SYMLINKS" ]; then
+  summary ""
+  summary "### Dossier patch validation: REJECTED (symlink)"
+  summary ""
+  summary "The working tree stages symbolic links. Documentation is written as regular files; a link inside the allowlist can point outside it."
+  printf '%s\n' "$SYMLINKS" | while IFS= read -r P; do
+    [ -n "$P" ] || continue
+    summary "- \`$P\`"
+  done
+  hard_fail "The working tree contains staged symbolic links. Nothing was written."
+fi
 
 if [ -n "$VIOLATIONS" ]; then
   summary ""

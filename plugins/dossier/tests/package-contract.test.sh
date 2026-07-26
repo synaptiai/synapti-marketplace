@@ -79,17 +79,88 @@ assert_equal "8" "$DIR_COUNT" "exactly 8 numbered directories on disk"
 # Iron Law and in two other places; an off-by-one there is the plugin telling
 # users something its own scaffold contradicts, which is the precise defect the
 # cross-document consistency dimension exists to catch.
-for f in plugins/dossier/skills/doc-package-contract/SKILL.md \
-         plugins/dossier/skills/engagement-scoping/SKILL.md \
-         plugins/dossier/references/project-type-adaptation.md \
-         plugins/dossier/README.md; do
+#
+# The pattern matches the hyphenated attributive form ("7-directory package") as
+# well as the spaced one. An earlier version required a space and so reported a
+# pass on a file whose very first description line said `7-directory` — a green
+# assertion certifying the defect it was written to pin, which is worse than no
+# assertion at all. The scan set is every file that states the count, not the
+# subset that happened to state it when the check was written.
+STALE_DIR_RE='\b(7|seven)[- ](director(y|ies)|dirs)\b'
+while IFS= read -r f; do
   [ -f "$f" ] || continue
-  if grep -qE '\b7 (directories|dirs)\b|\bseven directories\b' "$f"; then
-    _dossier_assert_fail "$(basename "$f"): says 7 directories; the package has $DIR_COUNT"
+  if grep -qE "$STALE_DIR_RE" "$f"; then
+    _dossier_assert_fail "$f: says 7 directories; the package has $DIR_COUNT"
   else
     _dossier_assert_pass "$(basename "$f"): no stale directory count"
   fi
-done
+done <<EOF
+plugins/dossier/skills/doc-package-contract/SKILL.md
+plugins/dossier/skills/engagement-scoping/SKILL.md
+plugins/dossier/references/project-type-adaptation.md
+plugins/dossier/README.md
+plugins/dossier/CHANGELOG.md
+plugins/dossier/bin/dossier-scaffold.sh
+EOF
+
+# The release gate's condition count and its mechanical/judgment split are
+# stated in prose across the plugin and implemented once, in the gate script.
+# Both numbers are derived from the condition table rather than written down
+# here, so adding G18 moves the expectation automatically and any prose that
+# still says "seventeen" fails.
+GATE_REF="$REFS/release-gate-conditions.md"
+if [ -f "$GATE_REF" ]; then
+  COND_TOTAL=$(grep -cE '^\| G[0-9]+ \|' "$GATE_REF" | tr -d ' ')
+  COND_MECH=$(grep -E '^\| G[0-9]+ \|' "$GATE_REF" | grep -c 'mechanical' | tr -d ' ')
+  COND_JUDG=$(grep -E '^\| G[0-9]+ \|' "$GATE_REF" | grep -c 'judgment' | tr -d ' ')
+  assert_equal "$COND_TOTAL" "$((COND_MECH + COND_JUDG))" "every gate condition is tagged mechanical or judgment"
+
+  # Number words for the counts the prose actually uses.
+  case "$COND_TOTAL" in
+    16) TOTAL_WORD=sixteen ;; 17) TOTAL_WORD=seventeen ;; 18) TOTAL_WORD=eighteen ;;
+    *)  TOTAL_WORD="" ;;
+  esac
+  case "$COND_MECH" in
+    9) MECH_WORD=Nine ;; 10) MECH_WORD=Ten ;; 11) MECH_WORD=Eleven ;;
+    *) MECH_WORD="" ;;
+  esac
+
+  if [ -n "$TOTAL_WORD" ]; then
+    for f in plugins/dossier/README.md \
+             plugins/dossier/CHANGELOG.md \
+             plugins/dossier/commands/gate.md \
+             plugins/dossier/agents/dossier-scorer.md \
+             plugins/dossier/skills/scoring-and-release-gate/SKILL.md \
+             plugins/dossier/references/scorecard-rubric.md \
+             "$GATE_REF"; do
+      [ -f "$f" ] || continue
+      # Any condition-count word other than the derived one is stale.
+      BAD=$(grep -oiE "\b(fifteen|sixteen|seventeen|eighteen) conditions\b" "$f" \
+              | grep -ivE "^${TOTAL_WORD} conditions$" | head -1)
+      if [ -n "$BAD" ]; then
+        _dossier_assert_fail "$f: says '$BAD'; the gate has $COND_TOTAL conditions"
+      else
+        _dossier_assert_pass "$(basename "$f"): condition count agrees with the table"
+      fi
+    done
+  fi
+
+  if [ -n "$MECH_WORD" ]; then
+    for f in plugins/dossier/README.md \
+             plugins/dossier/commands/gate.md \
+             plugins/dossier/tests/bin-scripts.test.sh \
+             "$GATE_REF"; do
+      [ -f "$f" ] || continue
+      BAD=$(grep -oiE "\b(nine|ten|eleven) mechanical\b" "$f" \
+              | grep -ivE "^${MECH_WORD} mechanical$" | head -1)
+      if [ -n "$BAD" ]; then
+        _dossier_assert_fail "$f: says '$BAD'; the table tags $COND_MECH conditions mechanical"
+      else
+        _dossier_assert_pass "$(basename "$f"): mechanical count agrees with the table"
+      fi
+    done
+  fi
+fi
 
 # The eight contract references.
 for d in 00-control 01-project 02-architecture 03-assurance 04-operating 05-due-diligence 06-public 07-verification; do

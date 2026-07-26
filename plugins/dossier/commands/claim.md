@@ -1,6 +1,6 @@
 ---
 description: "Adjudicate whether a single statement may be said publicly. Traces the claim to its evidence, checks the claim state and disclosure approval, and returns approved, needs-evidence, or blocked with the exact qualification required."
-argument-hint: "<claim-text|file-path> [--register] [--audience partner|customer]"
+argument-hint: <claim-text|file-path> [--register] [--audience partner|customer]
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill
 ---
 

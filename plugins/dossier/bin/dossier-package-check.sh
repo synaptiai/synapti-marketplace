@@ -135,8 +135,11 @@ if [ -z "$REF_ROOT" ] || [ ! -d "$REF_ROOT/references" ]; then
   exit 2
 fi
 
-FINDINGS_FILE=$(mktemp -t dossier-check.XXXXXX 2>/dev/null) || FINDINGS_FILE="/tmp/dossier-check.$$"
+FINDINGS_FILE=$(mktemp -t dossier-check.XXXXXX) || {
+  echo "dossier-package-check: cannot create temp file" >&2; exit 2;
+}
 : >"$FINDINGS_FILE"
+trap 'rm -f "$FINDINGS_FILE" 2>/dev/null' EXIT
 
 FILES_PRESENT=0
 FILES_MISSING=0

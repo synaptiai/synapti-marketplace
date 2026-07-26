@@ -9,16 +9,33 @@
 
 set -uo pipefail
 
-command -v jq >/dev/null 2>&1 || exit 0
+# Fails closed, for the same reason as enforce-output-root.sh: an action ceiling
+# that switches itself off when a dependency is missing lets a run report
+# "not executed" for a command that was never actually prevented.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "BLOCKED: dossier cannot enforce its action ceiling without jq on PATH." >&2
+  exit 2
+fi
 
 INPUT=$(cat)
 COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
 [ -z "$COMMAND" ] && exit 0
 
+# A missing resolver means the ceiling cannot be read, not that it is absent.
+# Keep the restrictive defaults and go on enforcing, matching what
+# enforce-output-root.sh does in the same situation.
 RESOLVER="${CLAUDE_PLUGIN_ROOT:-plugins/dossier}/bin/dossier-resolve-config.sh"
-[ -x "$RESOLVER" ] || exit 0
+OUTPUT_ROOT="docs/dossier"
+RUN_TESTS="false"
+RUN_BUILD="false"
+NETWORK="false"
+if [ -x "$RESOLVER" ]; then
+  OUTPUT_ROOT=$("$RESOLVER" --default "docs/dossier" dossier.project.outputRoot 2>/dev/null)
+  RUN_TESTS=$("$RESOLVER" --default "false" dossier.engagement.allowedActions.runTests 2>/dev/null)
+  RUN_BUILD=$("$RESOLVER" --default "false" dossier.engagement.allowedActions.runBuild 2>/dev/null)
+  NETWORK=$("$RESOLVER"   --default "false" dossier.engagement.allowedActions.networkAccess 2>/dev/null)
+fi
 
-OUTPUT_ROOT=$("$RESOLVER" --default "docs/dossier" dossier.project.outputRoot 2>/dev/null)
 [ -f "$OUTPUT_ROOT/00-control/.scope.json" ] || exit 0
 
 deny() { # capability | setting | matched-class
@@ -37,50 +54,68 @@ EOF
   exit 2
 }
 
-RUN_TESTS=$("$RESOLVER" --default "false" dossier.engagement.allowedActions.runTests 2>/dev/null)
-RUN_BUILD=$("$RESOLVER" --default "false" dossier.engagement.allowedActions.runBuild 2>/dev/null)
-NETWORK=$("$RESOLVER"   --default "false" dossier.engagement.allowedActions.networkAccess 2>/dev/null)
+# Anchored on a command boundary (start of line, pipe, semicolon, &&, subshell)
+# so that `grep -r "npm test" docs/` — reading about a command — is not mistaken
+# for running one. The optional trailing path run also catches `/usr/bin/curl`,
+# which is the same command spelled absolutely.
+BOUND='(^|[;&|(]|^[[:space:]]*)[[:space:]]*([A-Za-z0-9_.-]*/)*'
 
-# Anchored on a command boundary (start of line, pipe, semicolon, &&) so that
-# `grep -r "npm test" docs/` — reading about a command — is not mistaken for
-# running one.
-BOUND='(^|[;&|][[:space:]]*|^[[:space:]]*)'
+# One layer of indirection defeats a boundary anchor: `bash -c "npm test"`,
+# `env curl ...`, `xargs curl`, and `eval "curl ..."` all place the keyword
+# where no boundary character precedes it. Rather than loosening BOUND to treat
+# every quote as a boundary — which would block the `grep -r "npm test"` case
+# above — detect the wrapper explicitly and, only then, re-run the deny checks
+# against a form with wrapper tokens and quotes neutralised. The false-positive
+# risk is confined to commands that actually invoke a wrapper.
+WRAPPER='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*(bash|sh|zsh|dash|ksh|env|command|exec|eval|xargs|nohup|setsid|time|timeout|nice|sudo|doas)([[:space:]]|$)'
+
+SCAN="$COMMAND"
+if printf '%s' "$SCAN" | grep -qE "$WRAPPER"; then
+  # Quotes become boundaries and wrapper tokens are dropped, so the payload of
+  # `bash -c "npm test"` is matched as though it had been typed directly.
+  SCAN=$(printf '%s' "$COMMAND" \
+    | sed -E -e 's,["'"'"'`],;,g' \
+          -e 's,\$\(,;,g' \
+          -e 's/(^|[;&|( ])[[:space:]]*([A-Za-z0-9_.-]*\/)*(bash|sh|zsh|dash|ksh|env|command|exec|eval|xargs|nohup|setsid|time|timeout|nice|sudo|doas)([[:space:]]+(-[A-Za-z]+)?)/\1;/g')
+fi
+
+# Every check below tests $SCAN, which is $COMMAND unless a wrapper was found.
 
 if [ "$RUN_TESTS" != "true" ]; then
-  if printf '%s' "$COMMAND" | grep -qE "${BOUND}(npm|yarn|pnpm|bun)[[:space:]]+(run[[:space:]]+)?test\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND}(npm|yarn|pnpm|bun)[[:space:]]+(run[[:space:]]+)?test\b"; then
     deny "run tests" runTests "package-manager test"
   fi
-  if printf '%s' "$COMMAND" | grep -qE "${BOUND}(pytest|jest|vitest|mocha|rspec|phpunit)\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND}(pytest|jest|vitest|mocha|rspec|phpunit)\b"; then
     deny "run tests" runTests "test runner"
   fi
-  if printf '%s' "$COMMAND" | grep -qE "${BOUND}(go|cargo|dotnet|mvn|gradle)[[:space:]]+test\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND}(go|cargo|dotnet|mvn|gradle)[[:space:]]+test\b"; then
     deny "run tests" runTests "toolchain test"
   fi
 fi
 
 if [ "$RUN_BUILD" != "true" ]; then
-  if printf '%s' "$COMMAND" | grep -qE "${BOUND}(npm|yarn|pnpm|bun)[[:space:]]+(run[[:space:]]+)?build\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND}(npm|yarn|pnpm|bun)[[:space:]]+(run[[:space:]]+)?build\b"; then
     deny "run builds" runBuild "package-manager build"
   fi
-  if printf '%s' "$COMMAND" | grep -qE "${BOUND}(make|cargo[[:space:]]+build|go[[:space:]]+build|mvn[[:space:]]+package|gradle[[:space:]]+build|docker[[:space:]]+build|tsc)\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND}(make|cargo[[:space:]]+build|go[[:space:]]+build|mvn[[:space:]]+package|gradle[[:space:]]+build|docker[[:space:]]+build|tsc)\b"; then
     deny "run builds" runBuild "build tool"
   fi
-  if printf '%s' "$COMMAND" | grep -qE "${BOUND}(npm|yarn|pnpm|bun|pip|pip3|poetry|bundle|cargo)[[:space:]]+(install|add|ci|fetch)\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND}(npm|yarn|pnpm|bun|pip|pip3|poetry|bundle|cargo)[[:space:]]+(install|add|ci|fetch)\b"; then
     deny "run builds" runBuild "dependency install"
   fi
 fi
 
 if [ "$NETWORK" != "true" ]; then
-  if printf '%s' "$COMMAND" | grep -qE "${BOUND}(curl|wget|nc|ncat|telnet|ssh|scp|rsync)\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND}(curl|wget|nc|ncat|telnet|ssh|scp|rsync)\b"; then
     deny "network access" networkAccess "network client"
   fi
   # Read-only gh and git commands are permitted: they are how a run inspects
   # its own repository, and blocking them would make the plugin unusable
   # without buying any containment the sandbox does not already provide.
-  if printf '%s' "$COMMAND" | grep -qE "${BOUND}git[[:space:]]+(push|remote[[:space:]]+add|clone)\b"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND}git[[:space:]]+(push|remote[[:space:]]+add|clone)\b"; then
     deny "network access" networkAccess "git network operation"
   fi
-  if printf '%s' "$COMMAND" | grep -qE "${BOUND}gh[[:space:]]+(pr[[:space:]]+(create|merge|edit|close)|issue[[:space:]]+(create|edit|close)|release[[:space:]]+create|api[[:space:]]+-X[[:space:]]*(POST|PUT|PATCH|DELETE))"; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND}gh[[:space:]]+(pr[[:space:]]+(create|merge|edit|close)|issue[[:space:]]+(create|edit|close)|release[[:space:]]+create|api[[:space:]]+-X[[:space:]]*(POST|PUT|PATCH|DELETE))"; then
     deny "network access" networkAccess "GitHub mutation"
   fi
 fi

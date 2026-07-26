@@ -12,6 +12,8 @@
 
 _dossier_test_begin "agent-independence"
 
+REPO_ROOT=$(pwd)
+
 A="plugins/dossier/agents/dossier-pass-a-evidence.md"
 B="plugins/dossier/agents/dossier-pass-b-falsification.md"
 C="plugins/dossier/agents/dossier-pass-c-audience.md"
@@ -144,5 +146,53 @@ fi
 SC_BODY=$(cat "$SCORER")
 assert_contains "repair rationale" "$SC_BODY" "scorer is denied the repair rationale"
 assert_contains "self-score" "$SC_BODY" "scorer is denied prior self-scores"
+
+# --- Mechanism 5: per-pass model configuration -------------------------------
+# The README claims five structural independence properties and this file
+# asserted four. The fifth — that each pass's model is separately configurable —
+# was the one nothing checked, which made the count itself the unverified claim.
+assert_contains "passModels" "$AUDIT" "audit.md reads verification.passModels"
+
+# `inherit` is valid in agent frontmatter and invalid as a dispatch override.
+# Conflating the two breaks the out-of-the-box configuration at dispatch, so the
+# distinction has to survive an edit to the command.
+assert_contains "Omit \`model\` entirely" "$AUDIT" \
+  "audit.md says inherit means omitting the override, not passing it"
+
+for m in sonnet opus haiku fable; do
+  assert_contains "$m" "$AUDIT" "audit.md names $m as a dispatch-override value"
+done
+
+# The setting must exist in the schema, or the command reads a key nothing
+# defines and every pass silently inherits.
+SCHEMA="plugins/dossier/schema.json"
+if command -v jq >/dev/null 2>&1 && [ -f "$SCHEMA" ]; then
+  for pass in A B C; do
+    if jq -e --arg p "$pass" \
+         '..|objects|select(has("passModels"))|.passModels|.properties|has($p)' \
+         "$SCHEMA" >/dev/null 2>&1; then
+      _dossier_assert_pass "schema defines verification.passModels.$pass"
+    else
+      _dossier_assert_fail "schema does not define verification.passModels.$pass"
+    fi
+  done
+
+  # The value round-trips through the cascade, so configuring a pass actually
+  # reaches the dispatch site rather than resolving to the default.
+  RC_WORK=$(mktemp -d)
+  mkdir -p "$RC_WORK/.claude"
+  printf '{"dossier":{"verification":{"passModels":{"A":"opus","B":"sonnet","C":"haiku"}}}}\n' \
+    > "$RC_WORK/.claude/settings.dossier.json"
+  for pair in A:opus B:sonnet C:haiku; do
+    pass=${pair%%:*}; want=${pair##*:}
+    got=$(cd "$RC_WORK" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+            "$REPO_ROOT/plugins/dossier/bin/dossier-resolve-config.sh" \
+            --default '' "dossier.verification.passModels.$pass" 2>/dev/null)
+    assert_equal "$want" "$got" "passModels.$pass resolves through the cascade"
+  done
+  rm -rf "$RC_WORK" 2>/dev/null
+else
+  _dossier_assert_fail "jq unavailable — cannot verify the passModels schema"
+fi
 
 _dossier_test_summary

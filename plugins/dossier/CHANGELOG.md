@@ -4,6 +4,102 @@ All notable changes to the dossier plugin are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`enforce-output-root.sh` allowed writes out of the output root.** The allow-case
+  was a `case` glob, and a glob `*` matches `/` — so `docs/dossier/../../.github/…`
+  textually started with the allowed prefix and was permitted while landing outside
+  it. A `..` segment is now refused before the prefix test, which is what makes the
+  test read as what it does. The comment three lines below had asserted the opposite
+  behaviour since the file was written.
+- **The three security hooks failed open on a missing `jq`.** Write containment,
+  disclosure blocking, and the action ceiling all silently no-opped when `jq` was
+  absent from `PATH`. They now fail closed. `stale-header-stamp.sh` is advisory and
+  keeps the old behaviour, which is the correct posture for it.
+- **`enforce-allowed-actions.sh` was defeated by one layer of indirection.**
+  `/usr/bin/curl`, `env curl`, `command curl`, `bash -c "npm test"`, and
+  `eval "curl …"` all placed the keyword where no boundary character preceded it,
+  so the whole deny list passed. Wrapper invocations are now detected and rescanned
+  with quotes neutralised, while `grep -r "npm test" docs/` — reading about a
+  command rather than running one — still passes. The header now states the hook's
+  honest scope: a tripwire, not a sandbox.
+- **`block-unregistered-claim.sh` had no `internal-path` class.**
+  `disclosure-policy-levels.md` names internal repository paths as prohibited in
+  `06-public/` and says this hook enforces it alongside `dossier-claim-scan.sh`. The
+  scanner had the pattern; the hook did not, so a sentence naming
+  `src/internal/billing/config.rb` was written into a public document with no live
+  block.
+- **`dossier-validate-patch.sh` accepted symlinks and traversal paths.** A path
+  inside the write allowlist can still point outside it: mode `120000` escapes by
+  reference, and `docs/dossier/../../.env` matches the allowlist's compiled ERE
+  `^docs/dossier/.*$`. Both are now refused in staging and verification mode. This
+  is the documented control and the publish job's independent re-check, so it no
+  longer relies on `git apply` rejecting the path as a side effect.
+- **`dossier-policy.sh` wrote unvalidated config into `$GITHUB_OUTPUT`.**
+  `schema.json` constrains `ci.agent.model` to a bare token precisely because the
+  value is interpolated into `claude_args`, but the only enforcement lived in a
+  validator the workflow never invokes. The pattern is now re-checked at the point
+  of use, and every emitted value is stripped of control characters — a newline
+  forges additional output pairs for the next job rather than merely rendering
+  wrong.
+- **Five unchecked `git` calls in the refresh workflow.** `fetch`, `push --delete`,
+  three `checkout -B`, and the `commit` before `committed=true` ran in a step with
+  no `set -e`; a failure left the wrong branch checked out and the run continued,
+  or reported a commit that never happened.
+- **Temp-file handling was inconsistent across `bin/`.** Eleven sites fell back to a
+  predictable `/tmp/<name>.$$` when `mktemp` failed — including the patch validator
+  — while three hard-failed. All now hard-fail. `dossier-evidence.sh` registers all
+  five of its temp files with the one trap instead of relying on each code path
+  reaching its own cleanup, and `dossier-package-check.sh` gained the trap its
+  sibling scripts already had.
+- **`dossier-blast-radius.sh` dropped an event silently** when its `jq` write
+  failed, producing a report that read as "nothing matched" rather than "this was
+  not recorded".
+- **`dossier-pr-body.sh` escaped `|` but not `[`, `]`, or backtick,** so a hostile
+  pull request title could rewrite a table cell into a link that said something the
+  title did not.
+
+### Fixed — the plugin contradicting itself
+
+These are the defect class dossier exists to catch, found in its own artifacts.
+
+- The `doc-package-contract` skill description stated the directory count as one
+  fewer than the Iron Law in the same file. `dossier-scaffold.sh` and this
+  changelog carried the same off-by-one.
+  **The regression test written to pin this reported a pass on the file that carried
+  it** — its pattern required a space and missed the hyphenated form. The pattern now
+  matches both, and the scan set covers every file that states the count.
+- The plugin README stated the gate as one condition smaller than it is, and
+  understated the mechanical half by one. The gate has seventeen conditions, ten
+  of them mechanical. The condition count and the mechanical/judgment
+  split are now derived from the condition table by a test, so adding G18 moves the
+  expectation and any prose that still says "seventeen" fails.
+- The repository README said four of seventeen gate conditions fail; the package has
+  said two since round 3.
+- `finding-schema.md` and `release-gate-conditions.md` cited `AS-` and `OQ-` register
+  prefixes. Neither exists anywhere in the plugin — the registers are `CL-`, `CT-`,
+  `AQ-`, and `TM-`.
+- G17's section sat after `## Related references`, out of sequence with G01–G16.
+
+### Added
+
+- `validate-patch.test.sh` — the write-allowlist control had no functional test at
+  all. Fourteen assertions, almost all rejection cases: allowlist escape, traversal,
+  symlink by mode and by working tree, credential in an allowlisted hunk, and an
+  empty allowlist. The traversal defect above was found by this test.
+- `package-check-findings.test.sh` — fixtures for the documented finding codes,
+  including every field on the internal-only list that `LEAKED-FIELD` guards.
+- `bin-behaviour.test.sh` — behavioural coverage for scripts that previously had
+  only hygiene checks, including the blast-radius mapping and the four
+  always-regenerated control documents.
+- Hook tests for traversal refusal, wrapper indirection, fail-closed-on-missing-`jq`,
+  and the `internal-path` disclosure class; the action ceiling's deny path was
+  previously never exercised.
+- The fifth independence mechanism (per-pass model configuration) is now asserted.
+  The README claimed a regression test enforced all five; four were covered.
+
 ## [1.0.0] - 2026-07-25
 
 Initial release.
@@ -16,7 +112,7 @@ Initial release.
 - `evidence-ledger` — the `EV-####` ledger, the seven-level source-authority ordering, and the six claim states (verified, corroborated, reported, inferred, unknown, not applicable)
 - `gap-and-contradiction-register` — the `AQ-####` and `CT-####` registers; contradictions are recorded and escalated, never resolved by choosing
 - `project-modeling` — one canonical project model with audience views projected from it, plus the end-to-end traces verification later attempts to falsify
-- `doc-package-contract` — the fixed 7-directory, 23-file structure, the internal and public document headers, and index maintenance
+- `doc-package-contract` — the fixed 8-directory, 23-file structure, the internal and public document headers, and index maintenance
 - `disclosure-gating` — the `CL-####` claim and disclosure register and the derivation of the two public documents from approved claims only
 - `verification-protocol` — one independent verification pass executed by falsification, emitting findings before any repair
 - `finding-reconciliation` — merges the independent A/B/C findings, publishes the pre-repair table, and splits agent-repairable from owner-decision
