@@ -6,7 +6,7 @@ audience: Reviewer, Installing operator, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: d8c10fa
+project-version: 4c1b62f
 last-verified: 2026-07-26
 review-trigger: A plugin begins storing data, invoking a model directly, or shipping an evaluation suite
 related: [02-architecture/system-architecture.md, 03-assurance/security-privacy-and-compliance.md, 00-control/evidence-ledger.md]
@@ -122,7 +122,7 @@ The third row is the honest answer to "does this handle sensitive data". The pro
 | Control | What it checks | Where it runs | On failure | Coverage gap | Evidence |
 |---|---|---|---|---|---|
 | flow test suite | 1022 assertions over the flow tree's structure and script behaviour | Locally and in `flow-tests.yml` | Non-zero exit; **advisory, since no check is required for merge** | Covers only flow | [EV-0008], [EV-0016] |
-| dossier test suite | 1190 assertions, including frontmatter shape, cross-reference resolution, and script portability | Locally and in `dossier-tests.yml` | Non-zero exit; advisory | Covers only dossier | [EV-0009] |
+| dossier test suite | 1194 assertions, including frontmatter shape, cross-reference resolution, and script portability | Locally and in `dossier-tests.yml` | Non-zero exit; advisory | Covers only dossier | [EV-0009] |
 | CodeQL | Static analysis over `actions` and `python` | `codeql.yml` on push, pull request, and schedule | Alerts | Does not analyse shell, which is the language of all 26 `bin/` scripts and all 16 hook scripts | [EV-0012], [EV-0007] |
 | Manifest validation | — | nowhere | — | **Total gap.** Nothing validates that `marketplace.json` parses, that every `source` resolves, or that versions agree | [EV-0026] |
 | README accuracy | — | nowhere | — | **Total gap.** Four verified-stale facts are live today | [EV-0022], [EV-0023], [EV-0024], [EV-0025] |
@@ -139,7 +139,7 @@ The two total gaps are the highest-value data-quality work available, and both a
 | Tools | Declared per skill via `allowed-tools` and per agent via `tools:`. The plugins define no tools of their own; they constrain which of the client's tools each artifact may use | per plugin | Daniel Bentes | [EV-0004] |
 | Retrieval | None. Skills reference `references/*.md` files by path, read by the model as ordinary files. There is no embedding, no vector store, and no retrieval ranking | N/A | — | [EV-0004] |
 | Memory | The flow plugin writes durable state to `.flow/` and `.decisions/` in the consuming repository; dossier's verification agents are declared `memory: none` so that independent passes cannot converge | per plugin | Daniel Bentes | [EV-0046], [EV-0009] |
-| Evaluation | **No behavioural evaluation exists for any plugin.** The 2,212 assertions test structure and script behaviour, not whether a skill produces good output when a model reads it | — | — | [EV-0008], [EV-0009] |
+| Evaluation | **No behavioural evaluation exists for any plugin.** The 2,216 assertions test structure and script behaviour, not whether a skill produces good output when a model reads it | — | — | [EV-0008], [EV-0009] |
 
 The evaluation row is the most important line in this document. This is a prompt-engineering product with a large structural test suite and **no measurement of prompt efficacy at all**. A skill can pass every assertion, load correctly, and still make a model behave worse than it would have unaided; nothing here would detect that.
 

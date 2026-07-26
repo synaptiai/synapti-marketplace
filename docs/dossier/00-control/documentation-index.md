@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer, Contributor, Installing operator
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: d8c10fa
+project-version: 4c1b62f
 last-verified: 2026-07-26
 review-trigger: Any document is added, removed, or re-verified; the gate verdict changes
 related: []
@@ -19,7 +19,7 @@ related: []
 | Field | Value |
 |---|---|
 | Package version | 1.0.2 |
-| Project version or commit | `d8c10fa` on `feature/dossier-documentation-plugin` — **not `main`** |
+| Project version or commit | `4c1b62f` on `feature/dossier-documentation-plugin` — **not `main`** |
 | Evidence cutoff date | 2026-07-26 |
 | Delivery mode | full |
 | Last full verification | 2026-07-26 |
@@ -138,7 +138,7 @@ Round 3 lowered the score from 92 to 87 rather than raising it. It re-derived ev
 |---|---|---|---|
 | 2026-07-26 | 1.0.0 | all 23 | Initial package, produced by running the dossier plugin against the repository that ships it |
 | 2026-07-26 | 1.0.1 | all 23, plus the new `README.md` | Round 3: re-pinned to `fbeb1ee`, six figures re-derived, three requested diagrams drawn, the ledger's internal contradiction closed, the due-diligence ranked tables renumbered, and an entry point added at the package root |
-| 2026-07-26 | 1.0.2 | all 23 | Round 4: an external review of the plugin found five containment defects in the code this package documents. Re-pinned to `d8c10fa` and the assertion figures re-derived from it. No new verification pass ran — the package's own findings are unchanged, and F-05 remains open |
+| 2026-07-26 | 1.0.2 | all 23 | Round 4: an external review of the plugin found five containment defects in the code this package documents. Re-pinned to `4c1b62f` and the assertion figures re-derived from it. No new verification pass ran — the package's own findings are unchanged, and F-05 remains open |
 
 ## Supplemental documents
 

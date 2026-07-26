@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: d8c10fa
+project-version: 4c1b62f
 last-verified: 2026-07-26
 review-trigger: Any re-run of the verification passes, or any correction applied to a document after this report was written
 related: [00-control/evidence-ledger.md, 00-control/assumptions-questions-and-contradictions.md, 00-control/claim-and-disclosure-register.md, 05-due-diligence/technical-due-diligence-report.md]
@@ -19,7 +19,7 @@ related: [00-control/evidence-ledger.md, 00-control/assumptions-questions-and-co
 | Field | Value |
 |---|---|
 | Package version verified | 1.0.2 |
-| Project version or commit | `d8c10fa` on `feature/dossier-documentation-plugin` |
+| Project version or commit | `4c1b62f` on `feature/dossier-documentation-plugin` |
 | Evidence cutoff | 2026-07-26 |
 | Verification date | 2026-07-26 (rounds 1 through 3, same day; round 4 is a fix cycle — see below) |
 | Documents in scope | All 23 canonical files |
@@ -82,7 +82,7 @@ Round 3 is the evidence for how much that costs. It re-derived every headline fi
 | Sample size | 56 |
 | Population size | 56 |
 | Defect rate found in the sample | 1 of 56 rows falsified — 1.8% (EV-0046, see F-01) |
-| What the sample can and cannot detect | A census over the ledger detects rows that are *wrong*. It cannot detect a claim that is **missing** from the ledger entirely, nor a fact that is true at `d8c10fa` and false on `main`. Both remain open exposures (AQ-0010) |
+| What the sample can and cannot detect | A census over the ledger detects rows that are *wrong*. It cannot detect a claim that is **missing** from the ledger entirely, nor a fact that is true at `4c1b62f` and false on `main`. Both remain open exposures (AQ-0010) |
 
 ## Scorecard
 
@@ -145,10 +145,10 @@ written during that cycle rather than by a reader.
 
 Two consequences for this package, and only two:
 
-- **The pin moved** from `fbeb1ee` to `d8c10fa`, and every figure that moves with a
-  commit was re-derived from it: the dossier assertion count (1076 → 1190), the
-  combined count (2,098 → 2,212), commits on the assessed branch (198 → 201),
-  commits across all refs (355 → 358), and tracked files (570 → 572). This is F-11's
+- **The pin moved** from `fbeb1ee` to `4c1b62f`, and every figure that moves with a
+  commit was re-derived from it: the dossier assertion count (1076 → 1194), the
+  combined count (2,098 → 2,216), commits on the assessed branch (198 → 203),
+  commits across all refs (355 → 360), and tracked files (570 → 572). This is F-11's
   rule applied again: figures and pin must name the same commit, or the package is
   simultaneously pinned and current and cannot be both.
 
@@ -161,7 +161,7 @@ Two consequences for this package, and only two:
   closed, and the gate verdict is unmoved.
 
 What round 4 did **not** do is verify anything. No pass A, B, or C ran against
-`d8c10fa`. The scorecard, the release gate, and every claim state below describe
+`4c1b62f`. The scorecard, the release gate, and every claim state below describe
 the package as it stood at round 3 and are carried forward unchanged. A reader
 weighing this report should read the round-3 evidence as the most recent
 verification of record.
@@ -200,7 +200,7 @@ round 4 demonstrates it again from the outside.
 | Medium | 5 | 5 | 0 | 0 | 0 |
 | Low | 2 | 1 | 1 | 0 | 0 |
 
-Eight of the fifteen findings — F-04, F-06 through F-10, F-12, F-13 — are defects **in the dossier plugin itself**, surfaced only because the plugin was pointed at a real project for the first time. Its original 1034 assertions had never caught any of them, because each is a disagreement between two artifacts that no single test compared: a gate against its template, a linter against its reference, a scanner against a document's header, a normalization applied to one side of a comparison, a rule that mandates text another rule forbids, a test asserting a constant instead of a pair, a scaffold that built a package with no way into it, and a diagram check that graded what was drawn and never asked what was skipped. Each now has a regression test that fails if the pair drifts again — 1190 assertions, up from 1034.
+Eight of the fifteen findings — F-04, F-06 through F-10, F-12, F-13 — are defects **in the dossier plugin itself**, surfaced only because the plugin was pointed at a real project for the first time. Its original 1034 assertions had never caught any of them, because each is a disagreement between two artifacts that no single test compared: a gate against its template, a linter against its reference, a scanner against a document's header, a normalization applied to one side of a comparison, a rule that mandates text another rule forbids, a test asserting a constant instead of a pair, a scaffold that built a package with no way into it, and a diagram check that graded what was drawn and never asked what was skipped. Each now has a regression test that fails if the pair drifts again — 1194 assertions, up from 1034.
 
 ## Corrections applied
 
@@ -274,7 +274,7 @@ Rounds 1 and 2 reported this section clean. Round 3 found six subjects that disa
 |---|---|---|---|
 | Verification-pass independence | Every finding in this report | The passes ran inline in one context rather than as separate dispatches | A blind spot shared by all three would go undetected. Treat the *mechanical* findings — which are reproducible by re-running the commands — as strong, and the *judgment* findings as one reviewer's opinion |
 | Whether the product helps anyone | Every quality statement in the package | No telemetry exists for plugin marketplaces and the plugins emit none (AQ-0004) | A reader could mistake artifact quality for user outcome. The package says so repeatedly for this reason |
-| `main` versus the assessed branch | Every claim | The assessment ran at `d8c10fa` on an unmerged branch (AQ-0010) | A claim true here may be false on `main`. Version 4.7.0 and the entire dossier plugin exist only on this branch |
+| `main` versus the assessed branch | Every claim | The assessment ran at `4c1b62f` on an unmerged branch (AQ-0010) | A claim true here may be false on `main`. Version 4.7.0 and the entire dossier plugin exist only on this branch |
 | `prompt-decorators` contents | Its rows in the architecture and due-diligence documents | The source is in another repository (AQ-0005) | One published plugin is described from its manifest alone |
 | Windows behaviour | The portability claims | No Windows environment was available (AQ-0008) | The scope of two reported defects is unmeasured |
 
