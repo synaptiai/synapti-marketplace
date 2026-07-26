@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: 4c1b62f
+project-version: 13c99b1
 last-verified: 2026-07-26
 review-trigger: Any red flag changes state; a release is cut; the maintainer count changes
 related: [01-project/executive-project-brief.md, 04-operating/decisions-technical-debt-and-risks.md, 05-due-diligence/assets-dependencies-and-licenses.md, 07-verification/documentation-verification-report.md]
@@ -41,7 +41,7 @@ The shape of the verdict is worth stating plainly, because it is unusual. **This
 | Field | Value |
 |---|---|
 | Diligence date | 2026-07-26 |
-| Project version assessed | `4c1b62f` on `feature/dossier-documentation-plugin` — **not `main`** (AQ-0010) |
+| Project version assessed | `13c99b1` on `fix/issue-131-round-5-containment` — **not `main`** (AQ-0010) |
 | Sources inspected | All 6 in-tree plugin trees; the checked-out `agent-capability-standard` submodule; all 4 workflows; the manifest and all 7 plugin manifests; `README.md` in full; live GitHub settings, releases, issues, and Actions history; the Claude Code client's own install-state files |
 | Sources unavailable | `prompt-decorators` source (AQ-0005); upstream submodule history past the pinned commit (AQ-0006); install telemetry, which does not exist (AQ-0004); any Windows environment (AQ-0008) |
 | Checks executed | 30 of 32, each with output retained in the evidence ledger |
@@ -64,7 +64,7 @@ The shape of the verdict is worth stating plainly, because it is unusual. **This
 | Dimension | Assessment | Evidence | State |
 |---|---|---|---|
 | Product maturity | **Low-to-moderate.** 57 releases over ~7 months and 8 published plugins, against zero measurement of use and no roadmap, milestone, or forward-looking plan of any kind | [EV-0032], [EV-0046], AQ-0004 | V |
-| Engineering maturity | **Moderate-to-high where it exists, absent where it does not.** 2,216 passing assertions with genuinely sophisticated tests — cross-artifact invariants, portability constraints, an anti-self-certification assertion — covering 2 of 7 in-tree plugins | [EV-0008], [EV-0009], [EV-0010] | V |
+| Engineering maturity | **Moderate-to-high where it exists, absent where it does not.** 2,251 passing assertions with genuinely sophisticated tests — cross-artifact invariants, portability constraints, an anti-self-certification assertion — covering 2 of 7 in-tree plugins | [EV-0008], [EV-0009], [EV-0010] | V |
 | Operational maturity | **Low, and largely N/A.** Nothing is operated, so most of the absence is correct. What is not correct: no runbook for any of six identified failure modes, no incident process, and no way to reach installers when something breaks them | [EV-0044], [EV-0036] | V |
 | Security maturity | **Mixed, and the mix is the finding.** Real controls exist — restrictive hooks, permission-scoped workflows, no credentials anywhere, an all-false action ceiling. Real gaps sit alongside them: nothing gates `main`, shell is unanalysed, and there is no disclosure channel for code that runs on other people's machines | [EV-0016], [EV-0036], [EV-0037], [EV-0038] | V |
 
@@ -73,7 +73,7 @@ The shape of the verdict is worth stating plainly, because it is unusual. **This
 | Strength | Why it is defensible or valuable | Evidence | State |
 |---|---|---|---|
 | Auditable execution surface | 42 executable files, all plain shell, no binaries or bundles. An installer can read everything that will run on their machine before trusting it — which matters more here than usual, because hooks run unprompted | [EV-0007], [EV-0040] | V |
-| Substantial and unusual testing where it exists | 2,216 assertions covering frontmatter shape, cross-reference resolution, bash 3.2 portability, cross-artifact invariants, and an assertion that the documentation gate cannot certify itself | [EV-0008], [EV-0009] | V |
+| Substantial and unusual testing where it exists | 2,251 assertions covering frontmatter shape, cross-reference resolution, bash 3.2 portability, cross-artifact invariants, and an assertion that the documentation gate cannot certify itself | [EV-0008], [EV-0009] | V |
 | Tests that catch real defects | The destructive-command hook blocked two `rm -rf` invocations during this project's own development; dossier's suite surfaced a settings-cascade defect before release | [EV-0038], [EV-0009] | V |
 | Restrictive-by-default safety model | Tiered actions with merge and release requiring explicit confirmation; an action ceiling whose every capability defaults to `false` except reading source | [EV-0038], [EV-0039] | V |
 | Minimal supply chain | One declared third-party runtime dependency in the whole repository | [EV-0041] | V |
@@ -88,7 +88,7 @@ The shape of the verdict is worth stating plainly, because it is unusual. **This
 | Copies taken before 2026-07-26 carry no licence | The repository published no `LICENSE` file until that date while the README asserted MIT. The licence now governs every copy taken from then on; what governs an earlier one is a question of law | Only if someone who forked earlier relies on the earlier state | [EV-0019], [EV-0020] | V |
 | Nothing gates `main` | Any change — mistaken or malicious — reaches every installer's machine as executable code with no check having to pass, and `autoUpdate` is on by default | A bad commit, or one compromised account | [EV-0016], [EV-0017], [EV-0051] | V |
 | No security disclosure channel | The project ships hooks that execute on other people's machines and offers no private way to report a flaw in them | The first researcher who finds something | [EV-0036] | V |
-| Bus factor of one | 8 published plugins; one identity across all 360 commits; no component has a backup owner; no succession path | Any absence of one person | [EV-0035] | V |
+| Bus factor of one | 8 published plugins; one identity across all 366 commits; no component has a backup owner; no succession path | Any absence of one person | [EV-0035] | V |
 | Shell is unanalysed while CodeQL runs | The entire executable surface on operator machines has no automated security analysis, and CodeQL's presence makes the gap easy to miss | A defect that `shellcheck` would have caught | [EV-0012], [EV-0007] | V |
 | Five of seven in-tree plugins are untested | 34 commands, 14 agents, and 29 skills with no verification of even structural validity | A change to any of them | [EV-0010] | V |
 | dossier's headline capability has never executed | A published plugin whose central claim rests on unit tests of its parts | The first time someone runs it | AQ-0002, [EV-0045] | V |

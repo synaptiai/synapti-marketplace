@@ -157,4 +157,22 @@ fi
 assert_contains "{{DOSSIER_ROLLING_BRANCH}}" "$BODY" "branch prefix is render-time substituted"
 assert_contains "{{DOSSIER_DOCS_DIR}}" "$BODY" "docs dir is render-time substituted"
 
+# --- The cursor must not advance on a failed run -----------------------------
+# Every substantive publish step is gated on has_changes, so a genuine no-op
+# skips them and the job succeeds — the no-op advance still happens. A FAILED
+# run is different: leaving the cursor where it was is what makes the next run's
+# range widen instead of skipping the changes that failed to publish. `always()`
+# collapses those two cases into one and produces a silent documentation gap.
+CURSOR_BLOCK=$(awk '/- name: Advance the documentation cursor/{f=1} f{print} f&&/run:/{exit}' "$WF")
+if printf '%s' "$CURSOR_BLOCK" | grep -q 'if: *always()'; then
+  _dossier_assert_fail "the cursor advances with always(), so a failed publish silently skips its range"
+else
+  _dossier_assert_pass "the cursor does not advance with always()"
+fi
+if printf '%s' "$CURSOR_BLOCK" | grep -q "if: *success()"; then
+  _dossier_assert_pass "the cursor advance is gated on success()"
+else
+  _dossier_assert_fail "the cursor advance is not gated on success()"
+fi
+
 _dossier_test_summary

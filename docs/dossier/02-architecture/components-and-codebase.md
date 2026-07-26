@@ -6,7 +6,7 @@ audience: Contributor, Maintainer, Reviewer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: 4c1b62f
+project-version: 13c99b1
 last-verified: 2026-07-26
 review-trigger: A plugin is added or removed; a convention changes; a bin/ or hooks/ script is added
 related: [02-architecture/system-architecture.md, 00-control/terminology-and-ownership.md, 03-assurance/testing-quality-and-delivery.md, 04-operating/onboarding-and-local-development.md]
@@ -161,7 +161,7 @@ There is no build step for the plugins themselves. What is committed is what ins
 | `.claude/commands/gh-*.md` | legacy | yes, in this repository's own sessions | unknown | The repository's own `CLAUDE.md` documents both the `/gh-*` and `/flow:*` command sets as current | `.claude/CLAUDE.md` |
 | `plugins/flow/skills/learned/` | experimental | no — it is empty | no | It is a reserved location for learned skills; removing it would remove the convention | [EV-0029] |
 | `dist/desktop/` | generated | on release only | yes, at any time | Nothing — it is untracked | [EV-0012] |
-| Root-level drafts: `flow_plugin_medium_article_grounded.md`, `Provably_correct_code_with_Flow_AI_agents_eng.txt` | orphaned | no | unknown | Untracked working-tree files, not part of the repository | working tree at `4c1b62f` |
+| Root-level drafts: `flow_plugin_medium_article_grounded.md`, `Provably_correct_code_with_Flow_AI_agents_eng.txt` | orphaned | no | unknown | Untracked working-tree files, not part of the repository | working tree at `13c99b1` |
 
 ## Code ownership and bus factor
 
@@ -169,10 +169,10 @@ There is no build step for the plugins themselves. What is committed is what ins
 |---|---|---|---|---|---|
 | Every path in this repository | Daniel Bentes | 1 | 1 | No component has a second person who has ever changed it | [EV-0035] |
 | `plugins/flow` | Daniel Bentes | 1 | 1 | The largest plugin, 1022 assertions, one reader | [EV-0008], [EV-0035] |
-| `plugins/dossier` | Daniel Bentes | 1 | 1 | 1194 assertions, one reader | [EV-0009], [EV-0035] |
+| `plugins/dossier` | Daniel Bentes | 1 | 1 | 1229 assertions, one reader | [EV-0009], [EV-0035] |
 | `.github/workflows` | Daniel Bentes | 1 | 1 | A workflow change lands with no second opinion and no required check | [EV-0016], [EV-0035] |
 
-The inspected history window is the full repository history across all refs: 360 commits, first 2025-12-19, most recent 2026-07-26 [EV-0034], [EV-0035]. Contributor counts describe that window, not who understands the code today — but with a single identity across the whole window, the two coincide.
+The inspected history window is the full repository history across all refs: 366 commits, first 2025-12-19, most recent 2026-07-26 [EV-0034], [EV-0035]. Contributor counts describe that window, not who understands the code today — but with a single identity across the whole window, the two coincide.
 
 ## Where to make this change
 

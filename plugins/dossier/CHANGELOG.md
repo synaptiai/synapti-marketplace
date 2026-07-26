@@ -4,6 +4,67 @@ All notable changes to the dossier plugin are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-07-26
+
+Two reviewers reported after 1.0.0 was tagged. Both found real defects, one of
+them in a fix that release had just shipped.
+
+### Fixed
+
+- **The action-ceiling wrapper fix was incomplete.** 1.0.0 stripped a wrapper
+  token plus one optional flag, which is the wrong shape: it needs to know which
+  flags take a value. `timeout 30 curl …` left `30` between the wrapper and the
+  payload, so the anchor never matched and the entire deny list passed — and
+  `timeout N cmd` is the most idiomatic way to bound a command, so this was the
+  modal bypass, not an exotic one. Also affected `sudo -u www-data curl`,
+  `nice -n 10 curl`, and `timeout -s KILL 30 curl`. The repair no longer tries to
+  find where the real command starts: when a wrapper appears anywhere, whitespace
+  itself becomes a boundary, so no argument shape can hide a keyword. The cost is
+  a narrow over-block (`timeout 5 grep -r "npm test"` is refused) which is the
+  correct direction to fail. It shipped green because every wrapper case tested in
+  1.0.0 happened to take no argument.
+- **The disclosure scanner printed AWS keys and PEM headers into its own
+  findings.** `normalize()` folds case and ran *before* `redact()`, whose
+  `AKIA[0-9A-Z]{16}` and PEM-armour patterns are case-sensitive by construction —
+  so those two classes emerged lowercased but complete, into output bound for a CI
+  log. The redactor now runs on the raw sentence. This is the exact failure the
+  function's own comment says it exists to prevent.
+- **`dossier-validate-config.sh` reintroduced the `//`-on-`false` bug** that was
+  fixed in the cascade resolvers in the same release. `ci.enabled: false` read as
+  unset, so three CI guards fired against a config that had explicitly turned CI
+  off.
+- **Three CI-facing scripts ignored the `DOSSIER_*` environment layer**,
+  contradicting `schema.json`, which calls that layer "what lets a CI job run with
+  zero interaction". `dossier-policy.sh` and `dossier-evidence.sh` now route
+  through the resolver. `dossier-validate-patch.sh` deliberately does not, and now
+  says so in both the script and the schema: it runs in the same environment as
+  the agent it contains, and the value it reads is the write allowlist — an agent
+  able to set `DOSSIER_CI_WRITE_ALLOWLIST` could widen its own boundary.
+- **The approved-claim scan swept the whole register**, including the rejected and
+  withdrawn table, whose different column layout could let a free-text cell
+  containing the approval marker read as an approved claim. Scoped by excluding
+  the section that cannot hold approvals, rather than by requiring a specific
+  inventory heading — requiring one would silently stop recognising approvals in
+  any register that named its sections differently.
+- **`--comment` was accepted and ignored** in `--verify` mode.
+- **A stray space in a `tr` delete-set** stripped every space from the value, not
+  just quotes and CR. Harmless on the ISO date it currently reads, wrong for any
+  field with spaces, and duplicated in two files.
+- **Unquoted splits still globbed.** A custom `IFS` suppresses word splitting but
+  not pathname expansion. Fixed in the ledger cell split and the `related:` entry
+  split — and the first attempt at the latter left `set -f` unbalanced, disabling
+  globbing for the rest of the script, which is what produced a one-off failure on
+  Linux that three later runs did not reproduce.
+- **mktemp hard-fails used exit 2** where each script's own documented contract
+  reserves 2 for a bad argument and 1 for infrastructure failure.
+
+### Changed
+
+- The gate's condition-count cross-check maps numbers 1–25 instead of a
+  three-value window, and fails loudly outside it. Previously an unmapped count
+  blanked the variable and skipped every assertion below with no pass and no fail
+  recorded — silently absent, which is the defect class the check exists to catch.
+
 ## [1.0.0] - 2026-07-26
 
 Initial release. The sections below record the pre-release review cycles, because a defect found and fixed before shipping is still evidence about how the thing was built.
@@ -176,4 +237,5 @@ First run against a real project — this repository — surfaced nine defects t
 - Secret-scan patterns miss novel credential formats. The agent has no network egress and the documentation pull request is human-reviewed, which are the backstops.
 - A plugin cannot guarantee a different model for verification. In-plugin passes give independent context with a configurable model; `/dossier:audit --external` renders a self-contained prompt for genuinely cross-model review. Which tier was used is recorded in the verification report.
 
+[1.0.1]: https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/dossier
 [1.0.0]: https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/dossier

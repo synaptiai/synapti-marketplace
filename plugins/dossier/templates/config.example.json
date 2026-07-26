@@ -126,7 +126,7 @@
       "agent": { "model": "", "maxTurns": 60 },
       "schedule": { "enabled": true, "cron": "0 6 * * 1", "minCommits": 1 },
       "writeAllowlist": ["docs/dossier/**"],
-      "expectedPluginVersion": "1.0.0"
+      "expectedPluginVersion": "1.0.1"
     },
     "local": {
       "onFlowMerge": "suggest"

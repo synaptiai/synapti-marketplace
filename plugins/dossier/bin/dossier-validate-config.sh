@@ -72,7 +72,14 @@ add_finding() {
 "
 }
 
-get() { printf '%s' "$CONFIG" | jq -r "$1 // empty" 2>/dev/null; }
+# `//` is falsy-triggered, not absence-triggered: `false // empty` yields empty,
+# so an explicitly-disabled boolean reads as unset and every guard that tests
+# `!= "false"` fires against a config that turned the feature off. The cascade
+# resolvers were corrected for this; this validator's own helper had the same
+# defect. Absence is decided by jq, and only absence.
+get() {
+  printf '%s' "$CONFIG" | jq -r "if ($1) != null then ($1) else empty end" 2>/dev/null
+}
 
 # --- layer 1: schema validation ----------------------------------------------
 SCHEMA_RESULT="skipped"

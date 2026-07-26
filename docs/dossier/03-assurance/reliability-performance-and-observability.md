@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer, Installing operator
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: 4c1b62f
+project-version: 13c99b1
 last-verified: 2026-07-26
 review-trigger: The project acquires a runtime, a hosted service, or any telemetry; a new failure mode is reported by an operator
 related: [02-architecture/system-architecture.md, 02-architecture/infrastructure-and-deployment.md, 04-operating/operations-and-incident-response.md, 00-control/evidence-ledger.md]
@@ -141,7 +141,7 @@ The three bolded rows are the project's real failure modes. All three share one 
 | Failover | never | — | — | — | — | There is nothing to fail over to [EV-0044] |
 | Backup | never | — | — | — | — | No backup policy exists; git clones are redundancy, not backup [EV-0044] |
 | Recovery | never | — | — | — | — | [EV-0036] |
-| Structural and script | 2026-07-26 | flow and dossier | macOS 25.5, bash | 1022 and 1194 assertions, 0 failures | `TOTAL pass=… fail=0` | [EV-0008], [EV-0009] |
+| Structural and script | 2026-07-26 | flow and dossier | macOS 25.5, bash | 1022 and 1229 assertions, 0 failures | `TOTAL pass=… fail=0` | [EV-0008], [EV-0009] |
 
 Six of seven rows are `never`, and for five of them that is the correct answer for a project with no runtime. The exception is **recovery**: a documented, exercised procedure for "a bad commit reached every installer" would be meaningful here, and none exists.
 
@@ -152,7 +152,7 @@ Six of seven rows are `never`, and for five of them that is the correct answer f
 | No synthetic check on the manifest | A malformed or mis-resolving `marketplace.json` | Until an operator reports it — unbounded | All 8 plugins undiscoverable, with the maintainer unaware | One scheduled workflow: parse the manifest, resolve each source, compare each version to its `plugin.json` | Daniel Bentes |
 | No install or usage signal | That nobody uses the product, or that everybody's install is broken | indefinitely | Every quality decision is made without knowing whether it matters (AQ-0004) | Accept it as unmeasurable, and stop treating artifact quality as a proxy for user outcome | Daniel Bentes |
 | No behavioural test of any hook | A hook that no longer blocks what it claims to block | Until an operator is harmed by the thing it should have blocked | The security controls this project advertises are structurally verified, not behaviourally | One integration test per blocking hook | Daniel Bentes |
-| Advisory CI | A merge that breaks every installer | Immediately propagated, detected only by report | The 2,216 assertions are information, not enforcement | Require both workflows in branch protection | Daniel Bentes |
+| Advisory CI | A merge that breaks every installer | Immediately propagated, detected only by report | The 2,251 assertions are information, not enforcement | Require both workflows in branch protection | Daniel Bentes |
 | No Windows environment | Every Windows-specific defect | Until an operator reports it — two already have | An unknown share of operators cannot use the plugins | A `windows-latest` matrix leg | Daniel Bentes |
 | The dossier refresh has never run | Whether the plugin's headline capability works at all | Until someone runs it | A published plugin whose central claim is unverified (AQ-0002) | One end-to-end run in a scratch repository | Daniel Bentes |
 

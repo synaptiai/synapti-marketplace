@@ -161,7 +161,17 @@ if [ -f "$CLAIMS" ]; then
   # had it stripped, so any claim containing a code span, bold, or a link could
   # never match its own approved row — the check could not pass for a realistic
   # claim, and every such sentence was reported as unregistered.
-  grep '^| *CL-' "$CLAIMS" 2>/dev/null | while IFS= read -r row; do
+  # Every CL- row except those in a rejected/withdrawn section. That table has a
+  # different column layout, and the approval test below is a literal substring
+  # match with no column awareness — a free-text cell there containing
+  # "| approved |" would be read as an approved claim. Excluding the section
+  # that cannot hold approvals is robust to a register that names its inventory
+  # heading differently; requiring a specific inventory heading would silently
+  # stop recognising approvals in any register that did.
+  awk '
+    /^## / { skip = ($0 ~ /^## *(Rejected|Withdrawn)/) ? 1 : 0 }
+    !skip && /^\| *CL-/ { print }
+  ' "$CLAIMS" 2>/dev/null | while IFS= read -r row; do
     case "$row" in
       *"| approved |"*|*"|approved|"*) ;;
       *) continue ;;
@@ -248,8 +258,16 @@ for f in $TARGETS; do
           continue
         fi
       fi
+      # Redact the ORIGINAL sentence, not the normalized one. `normalize`
+      # lowercases, and two of the credential patterns are case-sensitive by
+      # construction — `AKIA[0-9A-Z]{16}` and the PEM header cannot match text
+      # that has already been folded to lower case. Redacting after normalizing
+      # therefore printed AWS keys and private-key headers into the findings
+      # output verbatim-but-lowercased: still recognisable, still reconstructable,
+      # and destined for a CI log. This is the exact failure the redactor exists
+      # to prevent, so the excerpt is built from the raw sentence.
       printf 'unregistered\t%s\t%s\t%s\n' "$f" "$LN" \
-        "$(printf '%s' "$norm" | redact | cut -c1-80)" >> "$HITS_FILE"
+        "$(printf '%s' "$sentence" | redact | normalize | cut -c1-80)" >> "$HITS_FILE"
     done
   done < "$f"
 done

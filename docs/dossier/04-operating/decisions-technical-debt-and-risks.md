@@ -6,7 +6,7 @@ audience: Maintainer, Reviewer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: 4c1b62f
+project-version: 13c99b1
 last-verified: 2026-07-26
 review-trigger: A risk changes state; a debt item is remediated; a decision is made or recorded
 related: [01-project/executive-project-brief.md, 03-assurance/security-privacy-and-compliance.md, 05-due-diligence/technical-due-diligence-report.md, 00-control/assumptions-questions-and-contradictions.md]
@@ -51,7 +51,7 @@ Eight decisions in force; **three have no recorded rationale at all**, and the r
 | U-03 | Windows support policy | Support and test it · declare it unsupported in the README · leave silent | nothing | Daniel Bentes | issue #100 has been open without resolution | Operators discover non-support by failing, having been told nothing |
 | U-04 | Whether to deprecate `gh-workflow` | Deprecate with notice · keep both · merge them | AQ-0004 — no usage signal exists | Daniel Bentes | none | Two overlapping workflow plugins with conflicting hooks continue to ship with no guidance beyond a `CLAUDE.md` line |
 | U-05 | Whether to name a backup maintainer, or to state single-maintainer status publicly | Name one · state it in the README · neither | nothing | Daniel Bentes | none | 8 published plugins have a bus factor of one and installers cannot weigh it |
-| U-06 | Whether to make CI blocking | Require both suites in branch protection · leave advisory | nothing | Daniel Bentes | none | 2,216 assertions remain information rather than enforcement |
+| U-06 | Whether to make CI blocking | Require both suites in branch protection · leave advisory | nothing | Daniel Bentes | none | 2,251 assertions remain information rather than enforcement |
 
 ## Technical debt register
 

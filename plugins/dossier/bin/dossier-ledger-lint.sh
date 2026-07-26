@@ -95,8 +95,10 @@ while IFS= read -r line; do
   body=${body%|}
   OLD_IFS=$IFS
   IFS='|'
+  set -f            # a bare glob in a cell must stay literal, not expand
   # shellcheck disable=SC2206
   cells=($body)
+  set +f
   IFS=$OLD_IFS
 
   ncells=${#cells[@]}

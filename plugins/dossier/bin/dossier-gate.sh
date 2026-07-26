@@ -173,7 +173,10 @@ if [ -f "$CLAIMS" ] && [ -f "$CONTROL/evidence-ledger.md" ]; then
       ST=$(printf '%s' "$LR" | awk -F'|' '{gsub(/ /,"",$4); print $4}')
       case "$ST" in V|C) ;; *) BAD=$((BAD + 1)) ;; esac
     done
-  done < <(grep '^| *CL-' "$CLAIMS" 2>/dev/null)
+  done < <(awk '
+    /^## / { skip = ($0 ~ /^## *(Rejected|Withdrawn)/) ? 1 : 0 }
+    !skip && /^\| *CL-/ { print }
+  ' "$CLAIMS" 2>/dev/null)
   if [ "$BAD" -eq 0 ]; then
     record G10 mechanical PASS script "all approved claims cite V/C evidence"
   else

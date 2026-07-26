@@ -50,7 +50,14 @@ if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] || [ ! -f "${CLAUDE_PLUGIN_ROOT:-}/settings.
   CLAUDE_PLUGIN_ROOT=$(dirname "$SCRIPT_DIR")
   export CLAUDE_PLUGIN_ROOT
 fi
-CASCADE="$SCRIPT_DIR/cascade-resolve.sh"
+# Config is read through the resolver, not the raw cascade, so the documented
+# DOSSIER_* environment layer applies. schema.json calls that layer "what lets a
+# CI job run with zero interaction", and this script is one of the two that run
+# in the unattended `policy` job — reading the file cascade directly made the
+# documented escape hatch dead code for the surface it exists for. Safe here
+# because this job runs before any agent does; the patch validator deliberately
+# does NOT do this, for the opposite reason.
+CASCADE="$SCRIPT_DIR/dossier-resolve-config.sh"
 
 GITHUB_OUTPUT_FILE=""
 SUMMARY_FILE=""
@@ -98,7 +105,7 @@ MODEL_ARG=""
 NOTES=""
 
 TMPDIR_POLICY=$(mktemp -d -t dossier-policy.XXXXXX) || {
-  echo "dossier-policy: cannot create a temporary file or directory" >&2; exit 2;
+  echo "dossier-policy: cannot create a temporary file or directory" >&2; exit 1;
 }
 mkdir -p "$TMPDIR_POLICY" 2>/dev/null
 cleanup() { rm -rf "$TMPDIR_POLICY" 2>/dev/null; }
@@ -142,8 +149,8 @@ command -v git >/dev/null 2>&1 || die_infra "git is not installed on this runner
 command -v jq  >/dev/null 2>&1 || die_infra "jq is not installed; dossier configuration cannot be read."
 git rev-parse --git-dir >/dev/null 2>&1 || die_infra "not inside a git repository (checkout step missing or failed)."
 
-cfg()     { "$CASCADE" --default "$2" "$1" 2>/dev/null; }
-cfg_arr() { "$CASCADE" --compact --default '[]' "$1" 2>/dev/null | jq -r '.[]? // empty' 2>/dev/null; }
+cfg()     { "$CASCADE" --default "$2" "${1#.}" 2>/dev/null; }
+cfg_arr() { "$CASCADE" --compact --default '[]' "${1#.}" 2>/dev/null | jq -r '.[]? // empty' 2>/dev/null; }
 
 # Translate a glob (`**`, `*`, `?`, `{a,b}`) into an anchored POSIX ERE.
 # Hand-rolled rather than delegated to bash pathname expansion because the

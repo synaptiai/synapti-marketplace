@@ -336,6 +336,7 @@ EOF
     RELATED=${RELATED%]}
     OLD_IFS=$IFS
     IFS=','
+    set -f            # same reason as the ledger cell split: no globbing
     for ENTRY in $RELATED; do
       ENTRY=$(printf '%s' "$ENTRY" | sed 's/^[ \t]*//; s/[ \t]*$//; s/^["'"'"']//; s/["'"'"']$//')
       [ -z "$ENTRY" ] && continue
@@ -344,6 +345,7 @@ EOF
         record "DEAD-RELATED" "$REL" "related entry '$ENTRY' does not exist under the output root"
       fi
     done
+    set +f            # restore globbing; leaving it off leaks to the whole script
     IFS=$OLD_IFS
   fi
 

@@ -132,12 +132,41 @@ do
   assert_equal "2" "$RC" "enforce-allowed-actions sees through the wrapper: $BAD"
 done
 
+# Wrappers that take an argument of their own. The first fix stripped the
+# wrapper token plus one optional flag, which left `30` sitting between
+# `timeout` and `curl` so the anchor never matched and the whole deny list
+# passed. `timeout N cmd` is the single most idiomatic way to bound a command,
+# so this was the modal bypass rather than an exotic one — and it shipped
+# because every wrapper case tested above happens to take no argument.
+for BAD in \
+  'timeout 30 curl https://example.invalid' \
+  'timeout 30 npm test' \
+  'timeout 600 npm install' \
+  'timeout -s KILL 30 curl https://example.invalid' \
+  'timeout --kill-after=5 30 npm test' \
+  'sudo -u www-data curl https://example.invalid' \
+  'nice -n 10 curl https://example.invalid'
+do
+  RC=0
+  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$BAD" | jq -Rs .)" \
+     | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+  assert_equal "2" "$RC" "enforce-allowed-actions sees through an argument-taking wrapper: $BAD"
+done
+
 # …and reading *about* a command is still not running one. This is the case the
 # boundary anchor exists for, and the wrapper handling above must not break it.
 RC=0
 (cd "$WORK" && printf '%s' '{"tool_input":{"command":"grep -r \"npm test\" docs/"}}' \
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "0" "$RC" "enforce-allowed-actions permits grepping for a command name"
+
+# Commands that merely contain a wrapper must not be denied on that basis.
+for OK in 'timeout 5 ls' 'time ls' 'nice ls' 'env ls' 'ls -la' 'git status' 'cat README.md'; do
+  RC=0
+  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$OK" | jq -Rs .)" \
+     | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+  assert_equal "0" "$RC" "enforce-allowed-actions permits: $OK"
+done
 
 # --- Security hooks fail closed ----------------------------------------------
 # A boundary that switches itself off when a dependency is missing is
