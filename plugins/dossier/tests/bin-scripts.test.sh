@@ -187,4 +187,95 @@ else
   _dossier_assert_fail "EXIT trap(s) in sourced test file(s):$TRAPPED — only the last survives"
 fi
 
+# =============================================================================
+# The output-root signpost
+# =============================================================================
+# The index is the control plane, but a reader who browses the output root lands
+# on eight numbered directories and never reaches it. The scaffold writes a
+# README that points there. It is supplemental, so the assertions below pin two
+# things: that it appears, and that it never disturbs the canonical count.
+
+README_TPL="plugins/dossier/templates/package-readme.md"
+assert_file_exists "$README_TPL" "output-root README template exists"
+
+# It asserts no fact, so it carries no evidence identifiers to leak or to rot.
+if grep -qE '\b(EV|AQ|CT|CL|TM)-[0-9]{4}\b' "$README_TPL"; then
+  _dossier_assert_fail "README template cites register identifiers — a signpost must assert nothing"
+else
+  _dossier_assert_pass "README template cites no register identifiers"
+fi
+
+if grep -qF '00-control/documentation-index.md' "$README_TPL"; then
+  _dossier_assert_pass "README template routes to the index"
+else
+  _dossier_assert_fail "README template does not link the index — the signpost points nowhere"
+fi
+
+# The directory table is the one thing in the signpost that CAN drift: it names
+# the canonical directories, and the scaffold owns that list. Compare the pair
+# rather than restating either — the lesson from every finding in this suite
+# where a constant silently disagreed with the artifact it described.
+SCAFFOLD_DIRS=$(grep -m1 '^CANONICAL_DIRS=' "$BIN/dossier-scaffold.sh" \
+  | sed 's/^CANONICAL_DIRS="//; s/"$//' | tr ' ' '\n' | grep . | sort)
+README_DIRS=$(grep -oE '^\| `[0-9]{2}-[a-z-]+/`' "$README_TPL" \
+  | tr -d '|` ' | sed 's|/$||' | sort)
+if [ "$SCAFFOLD_DIRS" = "$README_DIRS" ]; then
+  _dossier_assert_pass "README directory table matches the scaffold's canonical directories"
+else
+  _dossier_assert_fail "README table and scaffold directories differ: $(diff <(printf '%s\n' "$SCAFFOLD_DIRS") <(printf '%s\n' "$README_DIRS") | tr '\n' ' ')"
+fi
+
+SWORK=$(mktemp -d 2>/dev/null) || SWORK="/tmp/dossier-scaffold-test.$$"
+mkdir -p "$SWORK" 2>/dev/null
+
+SOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SWORK/docs" 2>&1)
+assert_contains "SCAFFOLD_README=created" "$SOUT" "scaffold reports the README as created"
+assert_contains "SCAFFOLD_CREATED=23" "$SOUT" "the README does not inflate the canonical count"
+assert_file_exists "$SWORK/docs/README.md" "README lands at the output root"
+
+# Never overwritten, the same guarantee the canonical files carry. A signpost a
+# maintainer has edited must survive the next scaffold.
+printf 'hand-edited\n' > "$SWORK/docs/README.md"
+SOUT2=$("$BIN/dossier-scaffold.sh" --output-root "$SWORK/docs" 2>&1)
+assert_contains "SCAFFOLD_README=skipped" "$SOUT2" "an existing README is reported as skipped"
+assert_equal "hand-edited" "$(cat "$SWORK/docs/README.md" 2>/dev/null)" \
+  "an existing README is never overwritten"
+
+# The supplement must not make the canonical package check see a 24th document.
+PCOUT=$("$BIN/dossier-package-check.sh" --output-root "$SWORK/docs" --quiet 2>&1)
+assert_contains "CHECK_FILES_PRESENT=23" "$PCOUT" \
+  "package check still counts 23 canonical files with the README present"
+
+# --- Diagram coverage --------------------------------------------------------
+# A template that opens a mermaid fence is asking for a diagram. Counting the
+# fences that exist grades the diagrams somebody drew and says nothing about the
+# prompts they skipped — so the request is compared against the answer. A fresh
+# scaffold carries the templates' own fences; the finding path is exercised by
+# removing one.
+assert_contains "CHECK_DIAGRAMS_EXPECTED=6" "$PCOUT" \
+  "package check counts the diagrams the templates ask for"
+
+DAI="$SWORK/docs/02-architecture/data-and-ai.md"
+awk '/^```mermaid/ { skip = 1; next } skip && /^```/ { skip = 0; next } !skip' \
+  "$DAI" > "$DAI.stripped" 2>/dev/null && mv "$DAI.stripped" "$DAI"
+PCOUT2=$("$BIN/dossier-package-check.sh" --output-root "$SWORK/docs" 2>&1)
+assert_contains "DIAGRAM_MISSING 02-architecture/data-and-ai.md" "$PCOUT2" \
+  "a document shipped without the diagram its template asks for is a finding"
+assert_contains "CHECK_DIAGRAMS_PRESENT=5" "$PCOUT2" \
+  "the present-count moves with the document, not with the template"
+
+# A missing template is a loud failure, not a silent omission — the failure mode
+# every other check in this plugin was written to avoid.
+SOUT3=$("$BIN/dossier-scaffold.sh" --output-root "$SWORK/other" \
+  --readme-template "$SWORK/nonexistent.md" 2>&1)
+SRC3=$?
+assert_contains "SCAFFOLD_README=failed" "$SOUT3" "a missing README template is reported"
+if [ "$SRC3" -eq 0 ]; then
+  _dossier_assert_fail "scaffold exited 0 with the README template missing"
+else
+  _dossier_assert_pass "scaffold exit $SRC3 is non-zero with the README template missing"
+fi
+
+rm -rf "$SWORK" 2>/dev/null
+
 _dossier_test_summary

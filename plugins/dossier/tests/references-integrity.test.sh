@@ -34,12 +34,35 @@ while IFS= read -r f; do
 $(grep -oE '\]\([^)]+\)' "$f" 2>/dev/null | sed -e 's/^](//' -e 's/)$//')
 EOF
 done <<EOF
-$(find "$PLUGIN" -name '*.md' -type f -not -path '*/templates/package/*' 2>/dev/null | sort)
+$(find "$PLUGIN" -name '*.md' -type f -not -path '*/templates/package/*' -not -name 'package-readme.md' 2>/dev/null | sort)
 EOF
 
 if [ "$BROKEN" -eq 0 ]; then
   _dossier_assert_pass "all $CHECKED relative links resolve"
 fi
+
+# --- The output-root signpost resolves against the PACKAGE, not the plugin ----
+# Its links are written for the destination it is copied to, so the walk above
+# cannot judge them. Excluding it and stopping there would leave the one file a
+# reader opens first entirely unchecked, so its links are resolved against the
+# canonical layout the scaffold actually writes — which also catches a signpost
+# pointing at a document the package does not contain.
+PKG_README="$PLUGIN/templates/package-readme.md"
+CANON_FILES=$(sed -n '/^CANONICAL_FILES="/,/^"$/p' "$PLUGIN/bin/dossier-scaffold.sh" \
+  | grep -E '^[0-9]{2}-')
+while IFS= read -r target; do
+  [ -z "$target" ] && continue
+  case "$target" in http*|mailto:*|'#'*) continue ;; esac
+  t=${target%%#*}
+  [ -z "$t" ] && continue
+  if printf '%s\n' "$CANON_FILES" | grep -qxF "$t"; then
+    _dossier_assert_pass "signpost link $t is a canonical package document"
+  else
+    _dossier_assert_fail "signpost links $t, which the scaffold does not write"
+  fi
+done <<EOF
+$(grep -oE '\]\([^)]+\)' "$PKG_README" 2>/dev/null | sed -e 's/^](//' -e 's/)$//')
+EOF
 
 # --- Every reference is cited by something -----------------------------------
 # An orphan reference is either dead weight or a document somebody forgot to

@@ -92,6 +92,8 @@ The last row is the failure mode that matters. `N/A` and `Unknown` are opposite 
 
 Permitted when the project genuinely needs them — a safety case, a per-service deep dive. They must be linked from the documentation index, must explain why they exist, and must not duplicate a canonical source of truth. The canonical 23 stay intact regardless.
 
+One supplement is always written: a `README.md` signpost at the output root, from `templates/package-readme.md`. A reader browsing the output root otherwise lands on eight numbered directories with no entry point, and the index cannot route someone who never finds it. The signpost states no fact about the project — no counts, no dates, no verdict — so it cannot go stale and needs no evidence row. Everything that can drift stays in the index, which the signpost links to. Register it in the index's supplemental table like any other.
+
 ## Diagrams
 
 Use Mermaid where it materially improves understanding of real structure, data flow, trust boundaries, or deployment flow. Every node and edge needs evidence; inferred connections are labelled inferred in internal documents.

@@ -7,8 +7,15 @@
 # gaps. This is deliberate — the package holds hand-written evidence, and a
 # scaffold that clobbers is a scaffold nobody dares re-run.
 #
+# A README.md signpost is written at the output root alongside the canonical 23.
+# It is supplemental, not canonical: it asserts no fact about the project, so it
+# cannot go stale, and it exists only because a reader who browses the output
+# root otherwise lands on eight numbered directories with no entry point. The
+# index remains the control plane; the README points at it.
+#
 # Usage:
 #   dossier-scaffold.sh --output-root <path> [--dry-run] [--templates <dir>]
+#                       [--readme-template <path>]
 #
 # Flags:
 #   --output-root <path>   REQUIRED. Directory the package is created under.
@@ -16,14 +23,17 @@
 #   --dry-run              Report what would be created; write nothing.
 #   --templates <dir>      Override the template source directory. Defaults to
 #                          <plugin-root>/templates/package. Used by tests.
+#   --readme-template <p>  Override the output-root README source. Defaults to
+#                          <plugin-root>/templates/package-readme.md.
 #
 # Output (stdout): KEY=value lines, then a per-file action list.
 #   SCAFFOLD_ROOT=<path>
 #   SCAFFOLD_DRY_RUN=0|1
 #   SCAFFOLD_EXPECTED=23
-#   SCAFFOLD_CREATED=<n>
-#   SCAFFOLD_SKIPPED=<n>
+#   SCAFFOLD_CREATED=<n>          (canonical files only)
+#   SCAFFOLD_SKIPPED=<n>          (canonical files only)
 #   SCAFFOLD_FAILED=<n>
+#   SCAFFOLD_README=created|skipped|failed
 #   CREATED <relative-path>   (one line per created file)
 #   SKIPPED <relative-path>   (one line per pre-existing file)
 #   FAILED  <relative-path>   (one line per copy failure)
@@ -38,6 +48,8 @@ set -uo pipefail
 OUTPUT_ROOT=""
 DRY_RUN=0
 TEMPLATE_DIR=""
+README_TEMPLATE=""
+README_REL="README.md"
 
 # The canonical package. Order is the reading order, not alphabetical.
 CANONICAL_FILES="
@@ -76,29 +88,34 @@ while [ $# -gt 0 ]; do
     --templates)
       [ $# -lt 2 ] && { echo "dossier-scaffold: --templates requires a value" >&2; exit 2; }
       TEMPLATE_DIR="$2"; shift 2 ;;
+    --readme-template)
+      [ $# -lt 2 ] && { echo "dossier-scaffold: --readme-template requires a value" >&2; exit 2; }
+      README_TEMPLATE="$2"; shift 2 ;;
     --dry-run)
       DRY_RUN=1; shift ;;
     -h|--help)
-      sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     --) shift; break ;;
     *)
       echo "dossier-scaffold: unknown argument: $1" >&2
-      echo "Usage: $0 --output-root <path> [--dry-run] [--templates <dir>]" >&2
+      echo "Usage: $0 --output-root <path> [--dry-run] [--templates <dir>] [--readme-template <path>]" >&2
       exit 2 ;;
   esac
 done
 
 if [ -z "$OUTPUT_ROOT" ]; then
-  echo "dossier-scaffold: missing --output-root. Usage: $0 --output-root <path> [--dry-run] [--templates <dir>]" >&2
+  echo "dossier-scaffold: missing --output-root. Usage: $0 --output-root <path> [--dry-run] [--templates <dir>] [--readme-template <path>]" >&2
   exit 2
 fi
 
-# Resolve the template directory. CLAUDE_PLUGIN_ROOT is not reliably set inside
-# slash-command bash blocks, so fall back to this script's own location, which is
+# CLAUDE_PLUGIN_ROOT is not reliably set inside slash-command bash blocks, so
+# every template lookup below falls back to this script's own location, which is
 # always <plugin-root>/bin.
+SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)
+
+# Resolve the template directory.
 if [ -z "$TEMPLATE_DIR" ]; then
-  SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)
   for CANDIDATE in \
     "${CLAUDE_PLUGIN_ROOT:-}/templates/package" \
     "${SCRIPT_DIR:-}/../templates/package" \
@@ -112,6 +129,21 @@ fi
 if [ -z "$TEMPLATE_DIR" ] || [ ! -d "$TEMPLATE_DIR" ]; then
   echo "dossier-scaffold: template directory not found (looked at CLAUDE_PLUGIN_ROOT, script dir, and plugins/dossier)" >&2
   exit 2
+fi
+
+# The README template is resolved independently of --templates: a caller
+# pointing --templates at a fixture still gets the real signpost, and a caller
+# who wants a different one says so explicitly.
+if [ -z "$README_TEMPLATE" ]; then
+  for CANDIDATE in \
+    "$TEMPLATE_DIR/../package-readme.md" \
+    "${CLAUDE_PLUGIN_ROOT:-}/templates/package-readme.md" \
+    "${SCRIPT_DIR:-}/../templates/package-readme.md" \
+    "plugins/dossier/templates/package-readme.md"
+  do
+    case "$CANDIDATE" in /templates/package-readme.md|"") continue ;; esac
+    if [ -f "$CANDIDATE" ]; then README_TEMPLATE="$CANDIDATE"; break; fi
+  done
 fi
 
 CREATED=0
@@ -164,12 +196,30 @@ for REL in $CANONICAL_FILES; do
   fi
 done
 
+# The output-root signpost. Counted separately from the canonical 23 so that
+# SCAFFOLD_CREATED keeps meaning "canonical documents" — a consumer asserting 23
+# must not start seeing 24 because a supplement was added.
+README_STATE="created"
+README_DEST="$OUTPUT_ROOT/$README_REL"
+
+if [ -e "$README_DEST" ]; then
+  README_STATE="skipped"
+elif [ -z "$README_TEMPLATE" ] || [ ! -f "$README_TEMPLATE" ]; then
+  README_STATE="failed"
+  FAILED=$((FAILED + 1))
+  echo "dossier-scaffold: README template not found (looked at --readme-template, CLAUDE_PLUGIN_ROOT, script dir, and plugins/dossier)" >&2
+elif [ "$DRY_RUN" -eq 0 ] && ! cp "$README_TEMPLATE" "$README_DEST" 2>/dev/null; then
+  README_STATE="failed"
+  FAILED=$((FAILED + 1))
+fi
+
 printf 'SCAFFOLD_ROOT=%s\n' "$OUTPUT_ROOT"
 printf 'SCAFFOLD_DRY_RUN=%s\n' "$DRY_RUN"
 printf 'SCAFFOLD_EXPECTED=23\n'
 printf 'SCAFFOLD_CREATED=%s\n' "$CREATED"
 printf 'SCAFFOLD_SKIPPED=%s\n' "$SKIPPED"
 printf 'SCAFFOLD_FAILED=%s\n' "$FAILED"
+printf 'SCAFFOLD_README=%s\n' "$README_STATE"
 printf '%s' "$ACTIONS"
 
 [ "$FAILED" -gt 0 ] && exit 1

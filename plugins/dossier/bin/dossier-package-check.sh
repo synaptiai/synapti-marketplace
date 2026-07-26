@@ -377,6 +377,44 @@ $(awk '
 EOF
 done
 
+# --- Diagram coverage --------------------------------------------------------
+# A template that opens a ```mermaid fence is asking for a diagram at that point
+# in that document. Nothing else compares the request against the answer: the
+# gate counts fences and checks the ones present are balanced, which grades the
+# diagrams that were drawn and is silent about the ones that were not. A drafter
+# can skip every prompt and the package still reports a clean diagram check.
+#
+# Equality is not required — a drafter may merge two views or add one the
+# template never asked for. What is required is that a document the contract
+# wants illustrated is not shipped with nothing.
+DIAGRAMS_EXPECTED=0
+DIAGRAMS_PRESENT=0
+TPL_ROOT="$REF_ROOT/templates/package"
+
+if [ -d "$TPL_ROOT" ]; then
+  for REL in $CANONICAL_FILES; do
+    TPL="$TPL_ROOT/$REL"
+    DOC="$OUTPUT_ROOT/$REL"
+    [ -f "$TPL" ] || continue
+    WANT=$(grep -c '^```mermaid' "$TPL" 2>/dev/null || true)
+    [ -z "$WANT" ] && WANT=0
+    [ "$WANT" -eq 0 ] && continue
+    DIAGRAMS_EXPECTED=$((DIAGRAMS_EXPECTED + WANT))
+
+    [ -f "$DOC" ] || continue
+    HAVE=$(grep -c '^```mermaid' "$DOC" 2>/dev/null || true)
+    [ -z "$HAVE" ] && HAVE=0
+    DIAGRAMS_PRESENT=$((DIAGRAMS_PRESENT + HAVE))
+    if [ "$HAVE" -eq 0 ]; then
+      record DIAGRAM_MISSING "$REL" \
+        "template asks for $WANT diagram(s); the document has none"
+    fi
+  done
+else
+  DIAGRAMS_EXPECTED="unknown"
+  DIAGRAMS_PRESENT="unknown"
+fi
+
 TOTAL=$(wc -l <"$FINDINGS_FILE" | tr -d ' ')
 
 printf 'CHECK_ROOT=%s\n' "$OUTPUT_ROOT"
@@ -387,6 +425,8 @@ printf 'CHECK_FILES_MISSING=%s\n' "$FILES_MISSING"
 printf 'CHECK_HEADERS_OK=%s\n' "$HEADERS_OK"
 printf 'CHECK_POINTERS_CHECKED=%s\n' "$POINTERS_CHECKED"
 printf 'CHECK_LINKS_CHECKED=%s\n' "$LINKS_CHECKED"
+printf 'CHECK_DIAGRAMS_EXPECTED=%s\n' "$DIAGRAMS_EXPECTED"
+printf 'CHECK_DIAGRAMS_PRESENT=%s\n' "$DIAGRAMS_PRESENT"
 printf 'CHECK_FINDINGS=%s\n' "$TOTAL"
 
 if [ "$TOTAL" -eq 0 ]; then
