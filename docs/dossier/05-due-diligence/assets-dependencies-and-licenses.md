@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: 13c99b1
+project-version: 06b1586
 last-verified: 2026-07-26
 review-trigger: A dependency, plugin source, or licence declaration changes; a LICENSE file is added
 related: [05-due-diligence/technical-due-diligence-report.md, 03-assurance/security-privacy-and-compliance.md, 00-control/assumptions-questions-and-contradictions.md]

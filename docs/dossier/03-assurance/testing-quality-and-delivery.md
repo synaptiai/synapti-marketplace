@@ -6,7 +6,7 @@ audience: Reviewer, Contributor, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: 13c99b1
+project-version: 06b1586
 last-verified: 2026-07-26
 review-trigger: A test suite is added or removed; a workflow changes; branch protection or required checks change
 related: [02-architecture/infrastructure-and-deployment.md, 03-assurance/security-privacy-and-compliance.md, 05-due-diligence/technical-due-diligence-report.md, 00-control/evidence-ledger.md]
@@ -14,7 +14,7 @@ related: [02-architecture/infrastructure-and-deployment.md, 03-assurance/securit
 # Testing, Quality, and Delivery
 <!-- contract: references/package-contract-03-assurance.md#testing-quality-and-delivery -->
 
-Two numbers dominate this document and both are real: 1022 passing assertions in flow, 1229 in dossier, zero failures at `13c99b1` [EV-0008], [EV-0009]. They are also narrower than they look, in three specific ways that this document exists to make explicit — they cover 2 of 7 in-tree plugins, they test structure rather than behaviour, and no check is required for merge.
+Two numbers dominate this document and both are real: 1022 passing assertions in flow, 1241 in dossier, zero failures at `06b1586` [EV-0008], [EV-0009]. They are also narrower than they look, in three specific ways that this document exists to make explicit — they cover 2 of 7 in-tree plugins, they test structure rather than behaviour, and no check is required for merge.
 
 ## Quality strategy
 
@@ -50,7 +50,7 @@ Four of eight dimensions are genuine `N/A` for a project with no runtime, no dat
 | Area | Tests present | Coverage measure | What the measure counts | Gap | Consequence of the gap | Evidence |
 |---|---|---|---|---|---|---|
 | flow | 1022 assertions | assertion count | Executed assertions, not lines or branches | No behavioural coverage; no Windows | A skill can be structurally perfect and unhelpful, and nothing detects it | [EV-0008] |
-| dossier | 1229 assertions | assertion count | same | Its headline capability has never run (AQ-0002) | The plugin's central claim is unverified | [EV-0009], [EV-0045] |
+| dossier | 1241 assertions | assertion count | same | Its headline capability has never run (AQ-0002) | The plugin's central claim is unverified | [EV-0009], [EV-0045] |
 | gh-workflow | **none** | — | — | total | 14 commands, 7 skills, 4 agents, entirely unverified | [EV-0010] |
 | decipon | **none** | — | — | total | 7 commands, 5 agents unverified | [EV-0010] |
 | context-ledger | **none** | — | — | total | 8 commands, 5 agents unverified | [EV-0010] |
@@ -78,7 +78,7 @@ Four of eight dimensions are genuine `N/A` for a project with no runtime, no dat
 | Release | None. A tag and a release can be created regardless of CI state | no | — | Nothing | [EV-0032] |
 | Production | N/A — `main` is production, and the push is the deploy | no | — | Nothing | [EV-0016] |
 
-This table is the core finding of the document. The project has genuinely good tests and **no gate anywhere that stops a change**. The 2,251 assertions are information, not enforcement.
+This table is the core finding of the document. The project has genuinely good tests and **no gate anywhere that stops a change**. The 2,263 assertions are information, not enforcement.
 
 ## Static and supply-chain checks
 
@@ -149,7 +149,7 @@ The manifest currently advertises `metadata.version` 4.7.0 with no corresponding
 | Lead time to production | Effectively zero — a push to `main` is production | live | git | I — inferred from the absence of any gate | [EV-0016] |
 | Deployment frequency | 193 commits to the assessed branch over ~7 months, each of which is a deployment | 2025-12-19 to 2026-07-25 | git | V | [EV-0034] |
 | Merged pull requests | 62 | full history | GitHub | V | [EV-0050] |
-| Test assertions executed per run | 2,251 across both suites | per CI run | `tests/run.sh` | V | [EV-0008], [EV-0009] |
+| Test assertions executed per run | 2,263 across both suites | per CI run | `tests/run.sh` | V | [EV-0008], [EV-0009] |
 
 Three of the seven metrics are `unknown`, and they are the three that would measure whether quality is *achieved* rather than *attempted*. That is the honest summary of this project's delivery evidence: the inputs are visible, the outcomes are not.
 
@@ -158,7 +158,7 @@ Three of the seven metrics are `unknown`, and they are the three that would meas
 | Command | Purpose | Environment | Date | Result | Output artifact |
 |---|---|---|---|---|---|
 | `plugins/flow/tests/run.sh` | Verify flow's suite passes | macOS 25.5, bash | 2026-07-26 | pass | `TOTAL pass=1022 fail=0` |
-| `plugins/dossier/tests/run.sh` | Verify dossier's suite passes | macOS 25.5, bash | 2026-07-26 | pass | `TOTAL pass=1229 fail=0` |
+| `plugins/dossier/tests/run.sh` | Verify dossier's suite passes | macOS 25.5, bash | 2026-07-26 | pass | `TOTAL pass=1241 fail=0` |
 | `ls plugins/*/tests/run.sh` | Establish which plugins have suites | macOS 25.5 | 2026-07-26 | 2 matches | [EV-0010] |
 | YAML parse of all 4 workflows | Establish triggers, permissions, jobs | python3 + pyyaml | 2026-07-26 | 4 parsed | [EV-0012], [EV-0013], [EV-0014] |
 | `awk` run-block scanner | Find untrusted interpolation in `run:` bodies | macOS 25.5 | 2026-07-26 | 1 hit | [EV-0015] |

@@ -6,7 +6,7 @@ audience: Reviewer, Installing operator, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: 13c99b1
+project-version: 06b1586
 last-verified: 2026-07-26
 review-trigger: A plugin gains or loses hooks; a new plugin source kind is added; the Claude Code plugin resolution model changes
 related: [02-architecture/components-and-codebase.md, 02-architecture/interfaces-and-integrations.md, 02-architecture/infrastructure-and-deployment.md, 03-assurance/security-privacy-and-compliance.md, 00-control/evidence-ledger.md]
@@ -142,7 +142,7 @@ graph TD
 | B4 — CI | Repository content from the Actions token | Workflow `permissions` blocks | GitHub OIDC | `contents: read` for both test workflows, `contents: write` for release packaging, and **`codeql.yml` declares no top-level permissions**, falling back to the repository default | [EV-0013], [EV-0014] |
 | B5 — write on `main` | Any commit from the released default branch | `git push` | GitHub account | **None.** No branch protection, no rulesets, no required checks | [EV-0016], [EV-0017] |
 
-B2 deserves a reviewer's attention, and it is one-way: once installed, a plugin's hooks run with the operator's privileges and nothing in this project constrains them. The mitigations are that every script is readable plain text [EV-0007], that two of the three hook-shipping plugins carry suites totalling 2,251 assertions [EV-0008], [EV-0009], and that the flow hooks' purpose is restrictive — `block-destructive.sh`, `block-secrets.sh`, `block-force-push.sh` [EV-0038].
+B2 deserves a reviewer's attention, and it is one-way: once installed, a plugin's hooks run with the operator's privileges and nothing in this project constrains them. The mitigations are that every script is readable plain text [EV-0007], that two of the three hook-shipping plugins carry suites totalling 2,263 assertions [EV-0008], [EV-0009], and that the flow hooks' purpose is restrictive — `block-destructive.sh`, `block-secrets.sh`, `block-force-push.sh` [EV-0038].
 
 B5 is the weakest boundary relative to its consequence: whatever is on `main` is what the next operator installs, and nothing gates the push that puts it there.
 
@@ -202,7 +202,7 @@ The "what it does not isolate" column carries the weight in the last row. Descri
 | Interceptor chain | `hooks.json` in 3 plugins | The only way to change session behaviour without the operator invoking something. Used restrictively — the flow hooks mostly block | [EV-0038], [EV-0040] |
 | Settings cascade | `plugins/flow/bin/cascade-resolve.sh`, copied into dossier | Lets a project override a user default and a user override a plugin default, with environment variables on top for CI | [EV-0007] |
 | Shell-out to helper scripts | 26 `bin/*.sh` | Keeps deterministic logic out of model context: the model orchestrates, the script decides | [EV-0007] |
-| Structural test suites over prose artifacts | 2,251 assertions across flow and dossier | Markdown has no compiler, so frontmatter shape, cross-reference resolution, and counts are asserted in shell instead | [EV-0008], [EV-0009] |
+| Structural test suites over prose artifacts | 2,263 assertions across flow and dossier | Markdown has no compiler, so frontmatter shape, cross-reference resolution, and counts are asserted in shell instead | [EV-0008], [EV-0009] |
 | Vendoring by copy | `cascade-resolve.sh` and the test harness were copied from flow into dossier | Deliberate: plugins install independently and cannot depend on one another at runtime | [EV-0007] |
 
 ## Tradeoffs and rejected alternatives

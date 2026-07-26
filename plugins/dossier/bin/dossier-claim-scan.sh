@@ -21,7 +21,11 @@
 # Usage:
 #   dossier-claim-scan.sh [--output-root <path>] [--file <path>] [--json] [--quiet]
 #
-# Exit: 0 clean · 1 registration gaps only · 2 leakage detected or infra error
+# Exit: 0 clean · 1 registration gaps only · 2 leakage detected · 3 infra error
+#
+# 2 and 3 are separate because the gate turns this exit code into published
+# evidence. Reporting "leakage detected" for a package that simply has no
+# public directory yet names a security incident that did not happen.
 
 set -uo pipefail
 
@@ -66,7 +70,7 @@ else
   if [ ! -d "$PUBDIR" ]; then
     echo "CLAIM_SCAN=blocked"
     echo "CLAIM_SCAN_ERROR=no public directory at $PUBDIR"
-    exit 2
+    exit 3
   fi
   TARGETS=$(find "$PUBDIR" -name '*.md' -type f | sort)
 fi

@@ -278,4 +278,103 @@ fi
 
 rm -rf "$SWORK" 2>/dev/null
 
+# --- The gate cannot lose a judgment condition -------------------------------
+# The anti-theater assertion above proves the gate will not PASS without a
+# verdict. This proves the subtler thing: it will not pass *over* a condition.
+#
+# The silence check and the extraction used to run two different greps. The
+# silence check demanded a PASS/FAIL token anywhere in the file; extraction took
+# the first line merely naming the id. A verdict naming an id twice — a summary
+# row with an empty Result cell, then a detail row carrying the real word —
+# satisfied the first on line two and parsed line one. Neither token matched, so
+# `record` was never called and the condition vanished from the output and from
+# BOTH counters. Worse than silence: silence is at least counted inconclusive.
+GW=$(mktemp -d)
+cp -a docs/dossier "$GW/pkg"
+mkdir -p "$GW/.dossier/runs/r1"
+
+verdict_rows() { # emit a full judgment set, overriding one id with $1/$2
+  for g in G01 G02 G04 G07 G13 G14 G15; do
+    if [ "$g" = "$1" ]; then printf '| %s | %s |\n' "$g" "$2"
+    else                     printf '| %s | PASS |\n' "$g"
+    fi
+  done
+}
+
+# An id whose FIRST mention has an empty result and whose SECOND carries PASS.
+{
+  printf '# Scorer verdict\n\n'
+  verdict_rows G04 ''
+  printf '| 1 | 10 |\n'
+  printf '\n## Appendix\n| G04 | PASS | detail row |\n'
+} > "$GW/.dossier/runs/r1/scorer-verdict.md"
+
+GOUT=$( cd "$GW" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+  "$REPO_ROOT/plugins/dossier/bin/dossier-gate.sh" --output-root "$GW/pkg" 2>&1 )
+GCOUNT=$(printf '%s' "$GOUT" | grep -cE '^G[0-9]+ ')
+assert_equal "17" "$GCOUNT" "every one of the 17 conditions is reported, none dropped"
+if printf '%s' "$GOUT" | grep -qE '^G04 '; then
+  _dossier_assert_pass "a condition named twice is still evaluated"
+else
+  _dossier_assert_fail "a condition named twice vanished from the results"
+fi
+# …and evaluated from the line that actually carries a verdict. The row-count
+# guard below would catch a dropped condition and mark it INCONCLUSIVE, so
+# presence alone does not prove extraction picked the right line — only the
+# resulting PASS does. Without this the two guards mask each other and neither
+# is pinned.
+if printf '%s' "$GOUT" | grep -qE '^G04 +judgment +PASS'; then
+  _dossier_assert_pass "the verdict is read from the line carrying PASS, not the empty one"
+else
+  _dossier_assert_fail "extraction read the empty row; G04 resolved to something other than PASS"
+fi
+
+# An id mentioned but never decided must be INCONCLUSIVE, never absent.
+{
+  printf '# Scorer verdict\n\n'
+  verdict_rows G04 ''
+  printf '| 1 | 10 |\n'
+} > "$GW/.dossier/runs/r1/scorer-verdict.md"
+GOUT2=$( cd "$GW" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+  "$REPO_ROOT/plugins/dossier/bin/dossier-gate.sh" --output-root "$GW/pkg" 2>&1 )
+assert_contains "G04" "$GOUT2" "an undecided condition still appears in the results"
+if printf '%s' "$GOUT2" | grep -qE '^G04 .*INCONCLUSIVE'; then
+  _dossier_assert_pass "an undecided condition is INCONCLUSIVE"
+else
+  _dossier_assert_fail "an undecided condition was not marked INCONCLUSIVE"
+fi
+if printf '%s' "$GOUT2" | grep -q 'GATE_RESULT=PASS'; then
+  _dossier_assert_fail "the gate emitted PASS with a condition it never decided"
+else
+  _dossier_assert_pass "the gate refuses PASS with an undecided condition"
+fi
+
+# --- --round is implemented, and enforced ------------------------------------
+# It was advertised in three commands' argument-hints and invoked verbatim in
+# the documented Phase 2 command, while the parser rejected it outright.
+ROUT=$( cd "$GW" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
+  "$REPO_ROOT/plugins/dossier/bin/dossier-gate.sh" --output-root "$GW/pkg" --round 1 2>&1 )
+assert_not_contains "unknown argument" "$ROUT" "--round is accepted by the parser"
+assert_contains "round 1" "$ROUT" "a verdict that does not name the round is refused"
+
+rm -rf "$GW" 2>/dev/null
+
+# --- The scaffold treats a truncated file as absent ---------------------------
+# `-e` cannot tell a killed mid-write from a completed one, so the retry that
+# exists to "fill only the gaps" reported SKIPPED and FAILED=0 over a package
+# with an empty canonical file — a clean bill of health on a broken package.
+SW=$(mktemp -d)
+"$BIN/dossier-scaffold.sh" --output-root "$SW/pkg" >/dev/null 2>&1
+: > "$SW/pkg/00-control/evidence-ledger.md"
+printf 'no frontmatter here\n' > "$SW/pkg/01-project/product-and-domain.md"
+SOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SW/pkg" 2>&1)
+assert_contains "REPAIRED 00-control/evidence-ledger.md" "$SOUT" "an empty canonical file is repaired, not skipped"
+assert_contains "REPAIRED 01-project/product-and-domain.md" "$SOUT" "a headerless canonical file is repaired, not skipped"
+if [ -s "$SW/pkg/00-control/evidence-ledger.md" ]; then
+  _dossier_assert_pass "the repaired file has content"
+else
+  _dossier_assert_fail "the repaired file is still empty"
+fi
+rm -rf "$SW" 2>/dev/null
+
 _dossier_test_summary

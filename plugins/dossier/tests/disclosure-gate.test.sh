@@ -142,10 +142,19 @@ if command -v jq >/dev/null 2>&1; then
   fi
 fi
 
-# --- missing public directory is infrastructure ------------------------------
+# --- missing public directory is infrastructure, NOT leakage ------------------
+# 2 and 3 must stay distinct. The gate turns this exit code straight into
+# published evidence, so collapsing them made an incomplete package read as a
+# disclosure incident — a security claim in the record that never happened.
 T="$W/nopub"; mkdir -p "$T/docs/dossier" 2>/dev/null
 scan "$T"
-assert_equal "2" "$?" "a missing public directory exits 2"
+assert_equal "3" "$?" "a missing public directory exits 3 (infrastructure), not 2 (leakage)"
+
+# A real leak must still be 2, or the distinction is one-sided.
+T="$W/reallеak"; mkpkg "$T"
+pub "$T" "The key sk-ant-abcdefgh12345678 is stored in the vault for safekeeping."
+scan "$T"
+assert_equal "2" "$?" "an actual credential still exits 2 (leakage)"
 
 # --- the header is metadata, not prose ---------------------------------------
 # `title:` and `audience:` clear the four-word floor and match no approved

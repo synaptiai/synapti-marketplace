@@ -6,7 +6,7 @@ audience: Contributor, Installing operator, Reviewer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: 13c99b1
+project-version: 06b1586
 last-verified: 2026-07-26
 review-trigger: A command, hook event, settings key, or manifest field is added, renamed, or removed
 related: [02-architecture/system-architecture.md, 02-architecture/components-and-codebase.md, 06-public/technical-partner-guide.md, 00-control/claim-and-disclosure-register.md]

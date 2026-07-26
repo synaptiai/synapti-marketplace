@@ -607,7 +607,7 @@
             },
             "expectedPluginVersion": {
               "type": "string",
-              "default": "1.0.1",
+              "default": "1.0.2",
               "description": "Plugin version the rendered workflow was generated against. A mismatch tells you to re-run /dossier:setup."
             }
           }
