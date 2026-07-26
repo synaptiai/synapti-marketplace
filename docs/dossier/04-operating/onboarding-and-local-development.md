@@ -6,7 +6,7 @@ audience: Contributor, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: d0fa737
+project-version: fbeb1ee
 last-verified: 2026-07-26
 review-trigger: A prerequisite, test command, or repository convention changes
 related: [02-architecture/components-and-codebase.md, 03-assurance/testing-quality-and-delivery.md, 04-operating/decisions-technical-debt-and-risks.md]
@@ -14,9 +14,9 @@ related: [02-architecture/components-and-codebase.md, 03-assurance/testing-quali
 # Onboarding and Local Development
 <!-- contract: references/package-contract-04-operating.md#onboarding-and-local-development -->
 
-Every command in this document was executed on 2026-07-26 against `d0fa737` on macOS 25.5, and its actual output is recorded. Commands that were not executed are marked as such rather than presented as working.
+Every command in this document was executed on 2026-07-26 against `fbeb1ee` on macOS 25.5, and its actual output is recorded. Commands that were not executed are marked as such rather than presented as working.
 
-One caveat frames the whole document: **no one but the maintainer has ever onboarded to this repository.** All 351 commits across all refs carry a single author identity [EV-0035], and no external contribution has been merged (AQ-0007). The routes below are derived from the repository's structure and its own conventions; they have never been walked by a stranger.
+One caveat frames the whole document: **no one but the maintainer has ever onboarded to this repository.** All 355 commits across all refs carry a single author identity [EV-0035], and no external contribution has been merged (AQ-0007). The routes below are derived from the repository's structure and its own conventions; they have never been walked by a stranger.
 
 ## Onboarding routes
 
@@ -56,7 +56,7 @@ One caveat frames the whole document: **no one but the maintainer has ever onboa
 | 1 — clone with submodules | `git clone --recurse-submodules https://github.com/synaptiai/synapti-marketplace.git` | `plugins/agent-capability-standard/` is populated | Not executed here — this assessment ran in an existing clone. The Claude Code client's own clone does populate the submodule [EV-0053] | — | 2026-07-26 |
 | 2 — confirm the manifest parses | `jq '.plugins \| length' .claude-plugin/marketplace.json` | prints `8` | executed, printed `8` | macOS 25.5 | 2026-07-26 |
 | 3 — run the flow suite | `plugins/flow/tests/run.sh` | `TOTAL pass=… fail=0` | executed: `TOTAL pass=1022 fail=0` | macOS 25.5 | 2026-07-26 |
-| 4 — run the dossier suite | `plugins/dossier/tests/run.sh` | `TOTAL pass=… fail=0` | executed: `TOTAL pass=1034 fail=0` | macOS 25.5 | 2026-07-26 |
+| 4 — run the dossier suite | `plugins/dossier/tests/run.sh` | `TOTAL pass=… fail=0` | executed: `TOTAL pass=1076 fail=0` | macOS 25.5 | 2026-07-26 |
 
 There is no build step, no dependency install, and no environment file. Steps 3 and 4 are the whole setup [EV-0044].
 
@@ -82,7 +82,7 @@ No secret exists in this repository and none is needed [EV-0037].
 |---|---|---|---|---|
 | Build | N/A — no build step exists | — | — | — |
 | Run | N/A — nothing runs. To exercise a plugin, install it in Claude Code | — | — | — |
-| Test | `plugins/flow/tests/run.sh` and `plugins/dossier/tests/run.sh` | `TOTAL pass=<n> fail=0` | executed: 1022 and 1034, 0 failures | 2026-07-26 |
+| Test | `plugins/flow/tests/run.sh` and `plugins/dossier/tests/run.sh` | `TOTAL pass=<n> fail=0` | executed: 1022 and 1076, 0 failures | 2026-07-26 |
 | Lint / type-check | **none exists.** No `shellcheck`, no formatter, no type checker | — | — | — |
 | Debug | Run the individual `bin/` script directly; every one emits `KEY=value` lines and exits 0/1/2 | Readable diagnostic output | executed for `dossier-validate-config.sh`, `dossier-scaffold.sh`, `dossier-package-check.sh` | 2026-07-26 |
 | Reset to clean state | `git checkout -- .` and `git clean -fd` | Working tree matches HEAD | not executed — the working tree holds this in-progress package | — |
@@ -96,7 +96,7 @@ The absent lint row is a real gap rather than a stylistic one: 42 shell scripts 
 |---|---|---|---|
 | Branching | `feature/issue-{n}-{desc}`, `fix/issue-{n}-{desc}`, `docs/issue-{n}-{desc}` | convention in `.claude/CLAUDE.md`; **unenforced** | `.claude/CLAUDE.md` |
 | Commit conventions | `<type>(<scope>): <subject>` with semantic prefixes. **No Claude attribution lines** | convention; unenforced | `.claude/CLAUDE.md` |
-| Review | Pull requests used by habit — 62 merged against 194 commits — but **not required** | GitHub | [EV-0016], [EV-0050] |
+| Review | Pull requests used by habit — 62 merged against 198 commits — but **not required** | GitHub | [EV-0016], [EV-0050] |
 | CI | `flow-tests.yml` and `dossier-tests.yml`, path-filtered, `contents: read`; plus CodeQL. **All advisory** | GitHub Actions | [EV-0013], [EV-0016] |
 | Release | Bump `plugin.json` and the matching `marketplace.json` entry, optionally bump `metadata.version`, tag, publish. Publishing triggers desktop packaging | manual, unverified by anything | [EV-0032], [EV-0026] |
 | Feature flags | None at runtime — there is no runtime. Install-time defaults only | plugin `settings.json` | [EV-0044] |
@@ -116,7 +116,7 @@ The absent lint row is a real gap rather than a stylistic one: 42 shell scripts 
 
 | Horizon | Outcome | How it is demonstrated |
 |---|---|---|
-| First day | Both suites run green locally; you can name what a skill, command, agent, and hook each are, and which of them execute without an operator asking | `TOTAL pass=1022 fail=0` and `TOTAL pass=1034 fail=0` on your own machine |
+| First day | Both suites run green locally; you can name what a skill, command, agent, and hook each are, and which of them execute without an operator asking | `TOTAL pass=1022 fail=0` and `TOTAL pass=1076 fail=0` on your own machine |
 | First week | One merged change with a test that fails without it | A pull request that adds an assertion and the change it guards |
 | First month | You can add a plugin end to end — tree, manifest entry, README row, version agreement — and you know which of those steps nothing checks | A published plugin whose `plugin.json` and manifest entry agree, and whose README row is correct on the first try |
 

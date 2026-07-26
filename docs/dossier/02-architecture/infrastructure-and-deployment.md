@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: d0fa737
+project-version: fbeb1ee
 last-verified: 2026-07-26
 review-trigger: A workflow is added or changed; branch protection or repository rulesets change; the release process changes
 related: [02-architecture/system-architecture.md, 03-assurance/testing-quality-and-delivery.md, 04-operating/operations-and-incident-response.md, 00-control/evidence-ledger.md]
@@ -34,12 +34,29 @@ There is no test, staging, or pre-production environment, and none would be mean
 
 | Layer | Configuration | Region or location | Owner | Source of truth | Evidence |
 |---|---|---|---|---|---|
-| Source hosting | Public GitHub repository, 541 tracked files, ~3.5 MB | GitHub | Daniel Bentes | the repository | [EV-0034] |
+| Source hosting | Public GitHub repository, 570 tracked files, ~3.0 MB | GitHub | Daniel Bentes | the repository | [EV-0034] |
 | Distribution | git clone performed by the Claude Code client; no registry, no CDN, no signing | GitHub | Anthropic's client | `marketplace.json` | [EV-0043], [EV-0051] |
 | CI | 4 workflows on GitHub-hosted ubuntu-latest | GitHub | Daniel Bentes | `.github/workflows/` | [EV-0012] |
 | Release artifacts | GitHub Releases; 57 tags, desktop ZIPs attached on publish | GitHub | Daniel Bentes | GitHub Releases | [EV-0032] |
 | External plugin sources | 1 git submodule pinned to a commit; 1 `git-subdir` pinned to the floating ref `main` | GitHub | Daniel Bentes | `.gitmodules`, `marketplace.json` | [EV-0030], [EV-0031] |
 | Runtime | none | the operator's machine | the operator | — | [EV-0044] |
+
+```mermaid
+%% The path from a keystroke to an installer's machine. Every node is a row in
+%% the environment or topology table above. The dashed edge is the only one that
+%% is optional in practice and the only one that is optional by policy: CI runs,
+%% and nothing requires it to pass before the solid edges are taken.
+graph LR
+  tree["Maintainer working tree<br/>the tree is the artifact"] --> branch["Feature branch<br/>real but optional"]
+  branch --> main["main — the production environment<br/>no branch protection, no rulesets"]
+  tree --> main
+  main -.->|"advisory only"| ci["GitHub Actions<br/>4 workflows, ubuntu-latest"]
+  main --> clone["git clone by the Claude Code client<br/>no registry, no CDN, no signing"]
+  clone --> machine["Operator machine<br/>autoUpdate on by default"]
+  sub["git submodule<br/>pinned to a commit"] --> main
+  ext["git-subdir entry<br/>floating ref main"] -.->|"fetched at install"| clone
+  main --> rel["GitHub Releases<br/>57 tags, desktop ZIP assets"]
+```
 
 ## Infrastructure ownership and source of truth
 
@@ -57,7 +74,7 @@ The second row is the gap that matters. Every meaningful control surface for thi
 
 | Resource | Type | Environment | Sizing | Cost driver | Owner | Evidence |
 |---|---|---|---|---|---|---|
-| GitHub repository | hosting | production | ~3.5 MB, 541 files | free tier for a public repository | Daniel Bentes | [EV-0034] |
+| GitHub repository | hosting | production | ~3.0 MB, 570 files | free tier for a public repository | Daniel Bentes | [EV-0034] |
 | GitHub Actions minutes | compute | CI | 4 workflows, path-filtered so most pushes trigger at most one | free tier for a public repository | Daniel Bentes | [EV-0012] |
 | GitHub Releases storage | storage | production | 57 releases with desktop ZIP assets | free tier | Daniel Bentes | [EV-0032] |
 | Anthropic API usage | compute | the operator's own account | unbounded per operator | Borne entirely by the operator | the operator | [EV-0044] |
@@ -110,10 +127,10 @@ The last row is the sharpest: a change in a *different* repository alters what i
 | Dimension | Current | Limit | Limit source | Scaling mechanism | Cost behaviour at scale | Evidence |
 |---|---|---|---|---|---|---|
 | Installers | unknown — no telemetry exists | none | — | none needed; git clone scales on GitHub's side | flat, zero to this project | [EV-0044] |
-| Repository size | ~3.5 MB, 541 files | GitHub's repository limits | vendor-stated | none | flat | [EV-0034] |
+| Repository size | ~3.0 MB, 570 files | GitHub's repository limits | vendor-stated | none | flat | [EV-0034] |
 | Actions minutes | 4 path-filtered workflows | free-tier minutes for public repositories | vendor-stated | none | flat | [EV-0012] |
 | Release assets | 57 releases | GitHub's limits | vendor-stated | none | flat | [EV-0032] |
-| Maintainer capacity | 194 commits, 62 merged pull requests, one person | one person | measured | none | **This is the binding constraint on everything else in the project** | [EV-0035], [EV-0050] |
+| Maintainer capacity | 198 commits, 62 merged pull requests, one person | one person | measured | none | **This is the binding constraint on everything else in the project** | [EV-0035], [EV-0050] |
 
 ## Backup, restore, and disaster recovery
 
@@ -138,7 +155,7 @@ Distributed version control gives this project accidental resilience: the mainta
 | Change approval | Pull requests are used in practice — 62 merged — but are not required. Both test workflows run and neither is a required check | nothing | Any change can bypass review and CI entirely, and reach every installer on their next sync | [EV-0016], [EV-0017], [EV-0050] |
 | Rollback limitations | A revert is immediate in the repository and eventual on installers' machines, on a client-controlled schedule. A published release tag can be moved, which silently changes what a pinned consumer resolves | nothing | No way to reach installers, no way to measure exposure, no way to expedite | [EV-0051] |
 
-Sixty-two merged pull requests against 194 commits on `main` shows a maintainer who reviews their own work through pull requests by habit [EV-0050], [EV-0034]. The finding is not that review is absent — it is that review is **voluntary**, so its presence tells you about one person's discipline rather than about the project's guarantees.
+Sixty-two merged pull requests against 198 commits on `main` shows a maintainer who reviews their own work through pull requests by habit [EV-0050], [EV-0034]. The finding is not that review is absent — it is that review is **voluntary**, so its presence tells you about one person's discipline rather than about the project's guarantees.
 
 ## Manual steps, single points of failure, and undocumented infrastructure
 

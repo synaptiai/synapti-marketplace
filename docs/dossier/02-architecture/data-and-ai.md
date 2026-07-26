@@ -6,7 +6,7 @@ audience: Reviewer, Installing operator, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: d0fa737
+project-version: fbeb1ee
 last-verified: 2026-07-26
 review-trigger: A plugin begins storing data, invoking a model directly, or shipping an evaluation suite
 related: [02-architecture/system-architecture.md, 03-assurance/security-privacy-and-compliance.md, 00-control/evidence-ledger.md]
@@ -30,6 +30,20 @@ Two facts frame this document, and both are unusual enough to state before any t
 | Command | One Markdown file invoked as `/plugin:name` | the plugin | git | filename | Declares the skills it invokes | [EV-0005] |
 | Agent definition | A subagent's system prompt, tool list, and skill list | the plugin | git | filename | Names the skills it may load | [EV-0006] |
 | Hook registration | An event-to-script binding | `hooks/hooks.json` | git | event kind plus matcher | Points to a script under `hooks/scripts/` | [EV-0040] |
+
+```mermaid
+%% Cardinalities restate the Relationships column above; every entity is one of
+%% its rows. Nothing here is enforced by a schema — the manifest-to-plugin pair
+%% is held together by a test, and an artifact belongs to one plugin by its path.
+erDiagram
+  PLUGIN_ENTRY ||--|| PLUGIN_MANIFEST : "version must agree"
+  PLUGIN_MANIFEST ||--o{ SKILL : "contains"
+  PLUGIN_MANIFEST ||--o{ COMMAND : "contains"
+  PLUGIN_MANIFEST ||--o{ AGENT_DEFINITION : "contains"
+  PLUGIN_MANIFEST ||--o{ HOOK_REGISTRATION : "registers"
+  COMMAND }o--o{ SKILL : "declares the skills it invokes"
+  AGENT_DEFINITION }o--o{ SKILL : "names the skills it may load"
+```
 
 Every entity above is a file in git. There is no database, no serialization format beyond JSON and YAML frontmatter, and no identifier that outlives a commit.
 
@@ -108,7 +122,7 @@ The third row is the honest answer to "does this handle sensitive data". The pro
 | Control | What it checks | Where it runs | On failure | Coverage gap | Evidence |
 |---|---|---|---|---|---|
 | flow test suite | 1022 assertions over the flow tree's structure and script behaviour | Locally and in `flow-tests.yml` | Non-zero exit; **advisory, since no check is required for merge** | Covers only flow | [EV-0008], [EV-0016] |
-| dossier test suite | 1034 assertions, including frontmatter shape, cross-reference resolution, and script portability | Locally and in `dossier-tests.yml` | Non-zero exit; advisory | Covers only dossier | [EV-0009] |
+| dossier test suite | 1076 assertions, including frontmatter shape, cross-reference resolution, and script portability | Locally and in `dossier-tests.yml` | Non-zero exit; advisory | Covers only dossier | [EV-0009] |
 | CodeQL | Static analysis over `actions` and `python` | `codeql.yml` on push, pull request, and schedule | Alerts | Does not analyse shell, which is the language of all 26 `bin/` scripts and all 16 hook scripts | [EV-0012], [EV-0007] |
 | Manifest validation | — | nowhere | — | **Total gap.** Nothing validates that `marketplace.json` parses, that every `source` resolves, or that versions agree | [EV-0026] |
 | README accuracy | — | nowhere | — | **Total gap.** Four verified-stale facts are live today | [EV-0022], [EV-0023], [EV-0024], [EV-0025] |
@@ -125,7 +139,7 @@ The two total gaps are the highest-value data-quality work available, and both a
 | Tools | Declared per skill via `allowed-tools` and per agent via `tools:`. The plugins define no tools of their own; they constrain which of the client's tools each artifact may use | per plugin | Daniel Bentes | [EV-0004] |
 | Retrieval | None. Skills reference `references/*.md` files by path, read by the model as ordinary files. There is no embedding, no vector store, and no retrieval ranking | N/A | — | [EV-0004] |
 | Memory | The flow plugin writes durable state to `.flow/` and `.decisions/` in the consuming repository; dossier's verification agents are declared `memory: none` so that independent passes cannot converge | per plugin | Daniel Bentes | [EV-0046], [EV-0009] |
-| Evaluation | **No behavioural evaluation exists for any plugin.** The 2,056 assertions test structure and script behaviour, not whether a skill produces good output when a model reads it | — | — | [EV-0008], [EV-0009] |
+| Evaluation | **No behavioural evaluation exists for any plugin.** The 2,098 assertions test structure and script behaviour, not whether a skill produces good output when a model reads it | — | — | [EV-0008], [EV-0009] |
 
 The evaluation row is the most important line in this document. This is a prompt-engineering product with a large structural test suite and **no measurement of prompt efficacy at all**. A skill can pass every assertion, load correctly, and still make a model behave worse than it would have unaided; nothing here would detect that.
 

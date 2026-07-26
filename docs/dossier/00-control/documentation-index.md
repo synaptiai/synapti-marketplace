@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer, Contributor, Installing operator
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: d0fa737
+project-version: fbeb1ee
 last-verified: 2026-07-26
 review-trigger: Any document is added, removed, or re-verified; the gate verdict changes
 related: []
@@ -18,14 +18,16 @@ related: []
 
 | Field | Value |
 |---|---|
-| Package version | 1.0.0 |
-| Project version or commit | `d0fa737` on `feature/dossier-documentation-plugin` — **not `main`** |
+| Package version | 1.0.1 |
+| Project version or commit | `fbeb1ee` on `feature/dossier-documentation-plugin` — **not `main`** |
 | Evidence cutoff date | 2026-07-26 |
 | Delivery mode | full |
 | Last full verification | 2026-07-26 |
-| Last gate verdict | **NOT-RELEASABLE** — 2 of 17 conditions fail after round 2, down from 4; see `07-verification/documentation-verification-report.md` |
+| Last gate verdict | **NOT-RELEASABLE** — 2 of 17 conditions fail after round 3, down from 4 in round 1; see `07-verification/documentation-verification-report.md` |
 
-The verdict is the package working as intended. Round 1 failed four conditions; two were closed by fixing the underlying facts — the repository is now licensed under Apache-2.0, and every public sentence maps to an approved claim. The two that remain are both score conditions, and both trace to a single cause: this run's three verification passes were not independent of one another. No edit to the package can close them; only a genuinely independent re-run can.
+The verdict is the package working as intended. Round 1 failed four conditions; two were closed by fixing the underlying facts — the repository is now licensed under Apache-2.0, and every public sentence maps to an approved claim. The two that remain are both score conditions, and both trace to a single cause: this run's verification passes were not independent of one another. No edit to the package can close them; only a genuinely independent re-run can.
+
+Round 3 lowered the score from 92 to 87 rather than raising it. It re-derived every headline figure from the commit under review instead of from the ledger and found five defects two earlier rounds had certified past — a pin naming a commit at which the licence did not exist, six stale counts, three contract-requested diagrams never drawn, a ledger contradicting itself, and a ranked table missing its first row. All are corrected. The score fell because the earlier number had been measuring how hard the reviewer looked.
 
 ## Reader routes
 
@@ -97,7 +99,7 @@ The verdict is the package working as intended. Round 1 failed four conditions; 
 | `04-operating/decisions-technical-debt-and-risks.md` | 25 | `U` | Three decision rows record an unknown rationale rather than reconstructing one |
 | `05-due-diligence/technical-due-diligence-report.md` | 28 | `I` | — |
 | `05-due-diligence/assets-dependencies-and-licenses.md` | 19 | `V` | — |
-| `06-public/**` | 0 direct | `V` only | Public documents cite no identifiers by design; every sentence traces through the claim register, and all 19 approved claims rest on `V` rows |
+| `06-public/**` | 0 direct | `V` only | Public documents cite no identifiers by design; every sentence traces through the claim register, and all 35 approved claims rest on `V` rows |
 | `07-verification/documentation-verification-report.md` | 8 | `V` | — |
 
 ## Unresolved critical items
@@ -135,11 +137,13 @@ The verdict is the package working as intended. Round 1 failed four conditions; 
 | Date | Package version | Documents changed | Reason |
 |---|---|---|---|
 | 2026-07-26 | 1.0.0 | all 23 | Initial package, produced by running the dossier plugin against the repository that ships it |
+| 2026-07-26 | 1.0.1 | all 23, plus the new `README.md` | Round 3: re-pinned to `fbeb1ee`, six figures re-derived, three requested diagrams drawn, the ledger's internal contradiction closed, the due-diligence ranked tables renumbered, and an entry point added at the package root |
 
 ## Supplemental documents
 
 | Path | Why it exists | Extends | Owner |
 |---|---|---|---|
+| `README.md` at the package root | A reader browsing this directory lands on eight numbered folders and never reaches this index. The signpost points here. It states no fact about the project — no counts, dates, or verdict — so it cannot go stale | This file | Daniel Bentes |
 | `.claude/settings.dossier.json` | The engagement configuration this package was produced under — scope, action ceiling, disclosure policy | The whole package | Daniel Bentes |
 | `README.md` at the repository root | The storefront a prospective operator reads first | `06-public` | Daniel Bentes |
 | `plugins/dossier/references/` | The package contract each document is written against | All 23 documents, via their contract pointers | Daniel Bentes |

@@ -36,6 +36,10 @@ Pass independence is architectural rather than instructed: separate dispatches, 
 
 The canonical 23-file documentation package across `00-control/`, `01-project/`, `02-architecture/`, `03-assurance/`, `04-operating/`, `05-due-diligence/`, `06-public/`, and `07-verification/`, with per-file content contracts and document skeletons.
 
+A `README.md` signpost is scaffolded at the output root alongside them. It is supplemental rather than canonical — never overwritten, excluded from the canonical count, and asserting no fact about the project, so it cannot go stale. It exists because a reader browsing the output root otherwise reaches eight numbered directories and never finds the index that routes them.
+
+`dossier-package-check.sh` reports `CHECK_DIAGRAMS_EXPECTED` and `CHECK_DIAGRAMS_PRESENT`, and records a finding when a document whose template asks for a diagram ships without one. Counting mermaid fences grades the diagrams somebody drew and says nothing about the prompts they skipped.
+
 **Post-merge automation**
 
 `/dossier:setup` scaffolds a GitHub Actions workflow into the consuming repository that regenerates affected documents after a pull request merges and opens a documentation pull request against the same repository.

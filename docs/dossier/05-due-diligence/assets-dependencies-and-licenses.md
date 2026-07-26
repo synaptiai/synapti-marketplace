@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: d0fa737
+project-version: fbeb1ee
 last-verified: 2026-07-26
 review-trigger: A dependency, plugin source, or licence declaration changes; a LICENSE file is added
 related: [05-due-diligence/technical-due-diligence-report.md, 03-assurance/security-privacy-and-compliance.md, 00-control/assumptions-questions-and-contradictions.md]
@@ -33,7 +33,7 @@ The headline finding of the first round governed every other row: the repository
 | `prompt-decorators` plugin | borrowed IP | Daniel Bentes, separate repository | `git-subdir` at ref `main` | medium | **never inspected from here** (AQ-0005) | the upstream repository | [EV-0030] |
 | 57 release tags and their assets | distribution asset | Daniel Bentes | Built by CI on publish | medium | active — latest v4.6.2 | Rebuildable from any tag | [EV-0032] |
 | The `synaptiai/synapti-marketplace` name | brand asset | Daniel Bentes | GitHub namespace | high | active | Not recoverable if the namespace is lost | [EV-0051] |
-| 10 decision records | knowledge asset | Daniel Bentes | Produced by the flow plugin during development | low | active | git | [EV-0046] |
+| 11 decision records | knowledge asset | Daniel Bentes | Produced by the flow plugin during development | low | active | git | [EV-0046] |
 
 ## Dependencies
 

@@ -2,7 +2,7 @@
 dossier-header: public-v1
 title: Technical Partner Guide
 audience: Plugin authors, integrators, and operators evaluating the marketplace
-product-version: d0fa737
+product-version: fbeb1ee
 last-updated: 2026-07-26
 ---
 # Technical Partner Guide
@@ -15,6 +15,19 @@ Every statement in this guide maps to an approved claim backed by a verified evi
 The marketplace publishes eight Claude Code plugins. *The published `main` manifest carries seven entries; the eighth exists only on the branch this guide was produced from.*
 
 Six plugins are versioned in this repository. Two are published from external sources — one git submodule and one `git-subdir` entry.
+
+## How an integration fits together
+
+```mermaid
+%% Your side, the published surface, and your session. Nothing runs on our
+%% infrastructure at any point on this path.
+graph LR
+  you["Your project"] --> client["Claude Code<br/>your client"]
+  client --> manifest["The published marketplace<br/>a list of installable plugins"]
+  manifest --> plugin["The plugin you chose"]
+  plugin --> session["Your session<br/>commands, skills, and hooks"]
+  session --> repo["Your repository<br/>on your machine"]
+```
 
 ## Supported use cases
 
@@ -129,7 +142,7 @@ There is no sandbox environment and no staging marketplace. A scratch repository
 
 ## Quality signals
 
-The flow and dossier plugins ship automated test suites — 1022 and 1034 assertions respectively — both passing at the assessed commit. *Assertion counts describe the suites, not coverage of the plugins they guard.*
+The flow and dossier plugins ship automated test suites — 1022 and 1076 assertions respectively — both passing at the assessed commit. *Assertion counts describe the suites, not coverage of the plugins they guard.*
 
 Five of the seven in-repository plugins ship no automated test suite.
 

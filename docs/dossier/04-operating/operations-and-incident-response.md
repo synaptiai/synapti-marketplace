@@ -6,7 +6,7 @@ audience: Maintainer, Reviewer, Installing operator
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: d0fa737
+project-version: fbeb1ee
 last-verified: 2026-07-26
 review-trigger: The project acquires a runtime or a service; a security disclosure channel is established; an incident occurs
 related: [02-architecture/infrastructure-and-deployment.md, 03-assurance/reliability-performance-and-observability.md, 03-assurance/security-privacy-and-compliance.md]
@@ -101,7 +101,7 @@ Six identified failure modes, zero runbooks, zero exercises.
 | Mitigation | Revert and push. Propagation to installers is on the client's schedule, which this project does not control | Daniel Bentes | a commit |
 | Recovery | The same push | Daniel Bentes | — |
 | Closure | Close the issue | Daniel Bentes | the issue thread |
-| Post-incident review | Not defined. The `.decisions/` journal holds 10 records, none of which is an incident review | — | — |
+| Post-incident review | Not defined. The `.decisions/` journal holds 11 records, none of which is an incident review | — | — |
 
 ## Security and privacy incidents
 
@@ -140,7 +140,7 @@ The absence of a *legal* obligation is worth separating from the absence of an *
 | Post-incident review | **none defined** | — | — | [EV-0036] |
 | Action tracking | GitHub issues — 2 open, both Windows portability, neither resolved | Daniel Bentes | none | [EV-0049] |
 | Recurrence check | **none** | — | — | [EV-0036] |
-| Decision journalling | `.decisions/` — 10 records, produced by the flow plugin during development | Daniel Bentes | per issue worked | [EV-0046] |
+| Decision journalling | `.decisions/` — 11 records, produced by the flow plugin during development | Daniel Bentes | per issue worked | [EV-0046] |
 
 The last row is the one genuine learning mechanism the project has, and it is a byproduct of using its own plugin.
 

@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer, Contributor
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: d0fa737
+project-version: fbeb1ee
 last-verified: 2026-07-26
 review-trigger: A plugin is added, renamed, or removed; ownership of any component changes
 related: [00-control/evidence-ledger.md, 02-architecture/components-and-codebase.md, 04-operating/decisions-technical-debt-and-risks.md]
@@ -53,7 +53,7 @@ An owner is never invented. `unassigned` is the correct value where no evidence 
 | TM-0029 | `main` | environment | The default branch. The only ref from which scheduled workflows run and from which releases are cut. Carries no branch protection and no rulesets | — | Daniel Bentes | Daniel Bentes | `api:branches/main` | [EV-0016], [EV-0017] | current |
 | TM-0030 | GitHub Actions | external system | The only execution environment the project itself operates: 4 workflows, 2 third-party action sources | CI | Daniel Bentes | Daniel Bentes | `.github/workflows/` | [EV-0012], [EV-0042] | current |
 | TM-0031 | Claude Code plugin client | external system | Reads `marketplace.json`, resolves each entry's source, and executes skills, commands, agents, and hooks on the operator's machine. Not built or controlled by this project | — | Anthropic | Anthropic | — | [EV-0043] | current |
-| TM-0032 | `.decisions/` | component | 10 tracked decision records written by the flow plugin's journal during development of this repository | decision journal | Daniel Bentes | Daniel Bentes | `.decisions/` | [EV-0046] | current |
+| TM-0032 | `.decisions/` | component | 11 tracked decision records written by the flow plugin's journal during development of this repository | decision journal | Daniel Bentes | Daniel Bentes | `.decisions/` | [EV-0046] | current |
 
 ## Component and capability ownership
 
@@ -61,7 +61,7 @@ An owner is never invented. `unassigned` is the correct value where no evidence 
 |---|---|---|---|---|---|
 | `marketplace.json` manifest | Daniel Bentes | unassigned | critical | Sole commit identity [EV-0035] | A malformed manifest breaks discovery for every plugin at once |
 | flow plugin | Daniel Bentes | unassigned | critical | [EV-0035] | 1022 assertions guard it; no second reviewer exists |
-| dossier plugin | Daniel Bentes | unassigned | high | [EV-0035] | 1034 assertions; headline capability unproven end to end (AQ-0002) |
+| dossier plugin | Daniel Bentes | unassigned | high | [EV-0035] | 1076 assertions; headline capability unproven end to end (AQ-0002) |
 | gh-workflow, decipon, context-ledger, ai-first-org-design-kit | Daniel Bentes | unassigned | medium | [EV-0035] | No test suite [EV-0010] |
 | agent-capability-standard | Daniel Bentes | unassigned | medium | `.gitmodules`, upstream repository under the same owner | Submodule pointer sits 2 commits past the advertised tag [EV-0031] |
 | prompt-decorators | Daniel Bentes | unassigned | medium | Marketplace entry author field | Contents unverified from here (AQ-0005) |
@@ -102,9 +102,9 @@ There is no on-call rotation because there is nothing to be on call for. This is
 
 | Gap | What is unowned | Criticality | Consequence | Evidence | Proposed resolution |
 |---|---|---|---|---|---|
-| Bus factor of one | Every component | critical | If the sole maintainer stops, 8 published plugins have no one who can cut a release, merge a fix, or answer a security report | [EV-0035] — one identity across all 351 commits on all refs | Name a backup maintainer, or state in the README that the project is single-maintainer so installers can weight that themselves |
+| Bus factor of one | Every component | critical | If the sole maintainer stops, 8 published plugins have no one who can cut a release, merge a fix, or answer a security report | [EV-0035] — one identity across all 355 commits on all refs | Name a backup maintainer, or state in the README that the project is single-maintainer so installers can weight that themselves |
 | No security contact | Vulnerability intake | high | A researcher who finds a flaw in a hook that runs on operator machines has no private channel; the only option is a public issue | [EV-0036] | Add `SECURITY.md` with one contact address |
-| No merge gate | `main` | high | Any push to `main` lands without review or a passing test run; the 2056 assertions across both suites are advisory | [EV-0016], [EV-0017] | Enable branch protection requiring both test workflows |
+| No merge gate | `main` | high | Any push to `main` lands without review or a passing test run; the 2098 assertions across both suites are advisory | [EV-0016], [EV-0017] | Enable branch protection requiring both test workflows |
 | No contribution path | External contribution | medium | A would-be contributor has no stated process, no CODEOWNERS, and no template | [EV-0036], AQ-0007 | Add `CONTRIBUTING.md` |
 
 | Measure | Count |
