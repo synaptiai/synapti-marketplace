@@ -164,11 +164,26 @@ for REL in $CANONICAL_FILES; do
   SRC="$TEMPLATE_DIR/$REL"
   DEST="$OUTPUT_ROOT/$REL"
 
+  # Presence is not completeness. A process killed mid-write leaves a file that
+  # exists and holds nothing, and `-e` alone cannot tell that from a correctly
+  # scaffolded one — so the retry that exists to "fill only the gaps" reported
+  # SKIPPED and FAILED=0, a clean bill of health over a truncated package. An
+  # empty file, or one with no frontmatter fence on its first line, is treated
+  # as absent and rewritten.
   if [ -e "$DEST" ]; then
-    SKIPPED=$((SKIPPED + 1))
-    ACTIONS="${ACTIONS}SKIPPED $REL
+    DEST_INTACT=1
+    [ -s "$DEST" ] || DEST_INTACT=0
+    if [ "$DEST_INTACT" -eq 1 ]; then
+      head -n 1 "$DEST" 2>/dev/null | grep -q '^---$' || DEST_INTACT=0
+    fi
+    if [ "$DEST_INTACT" -eq 1 ]; then
+      SKIPPED=$((SKIPPED + 1))
+      ACTIONS="${ACTIONS}SKIPPED $REL
 "
-    continue
+      continue
+    fi
+    ACTIONS="${ACTIONS}REPAIRED $REL
+"
   fi
 
   if [ ! -f "$SRC" ]; then

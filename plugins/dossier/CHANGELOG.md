@@ -4,6 +4,58 @@ All notable changes to the dossier plugin are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-07-26
+
+A reviewer whose findings never reached me during the previous two rounds
+reported five. Four were new; the fifth (the cursor) had already been fixed.
+Three of the four attack the gate's central claim.
+
+### Fixed
+
+- **The gate could emit a verdict with a judgment condition it never
+  evaluated.** The silence check demanded a PASS/FAIL token anywhere in the
+  verdict file; extraction took the first line merely naming the id. A verdict
+  naming an id twice — a summary row with an empty Result cell, then a detail
+  row carrying the real word — satisfied the silence check on the second line
+  and parsed the first. Neither token matched, `record` was never called, and
+  the condition vanished from the output and from **both** counters. That is
+  worse than silence, which is at least counted inconclusive. Reproduced: 16 of
+  17 conditions reported, G04 absent entirely. Both greps now use the same
+  predicate, an undecidable row is INCONCLUSIVE, and a row-count assertion makes
+  a missing condition impossible to reach PASS through. This falsified the
+  script's own header — "silent on any judgment condition => INCONCLUSIVE, never
+  PASS" — which is the plugin's headline property.
+- **`--round` was advertised and unimplemented.** It appears in three commands'
+  argument-hints and is invoked verbatim in the documented Phase 2 command in
+  `gate.md`, while the parser rejected it with `unknown argument`. The
+  documented command was broken as written and the round pin was unenforced.
+  Implemented, and a verdict that does not name the round is now refused.
+- **`versionOrCommit: auto` disabled the revision pin.** `auto` is the shipped
+  default and `engagement-scoping` promises it "resolves the current SHA and
+  pins it for the whole run". Nothing resolved it; it was a sentinel that
+  switched the check off, so on a default configuration a verdict from any
+  revision was accepted. It now resolves to the commit under evaluation.
+- **A missing public directory was published as a disclosure incident.**
+  `dossier-claim-scan.sh` overloaded exit 2 for both leakage and infrastructure
+  error, and the gate hard-coded "detected leakage (exit 2)" for either. A
+  package that simply has no `06-public/` yet produced a G06 FAIL naming a
+  security event that did not happen. Infrastructure errors now exit 3 and the
+  gate reports the scanner's actual reason as INCONCLUSIVE.
+- **The scaffold treated a truncated file as complete.** The only "already
+  there" test was `[ -e ]`, so a file left empty by an interrupted run was
+  reported `SKIPPED` with `SCAFFOLD_FAILED=0` — a clean bill of health over a
+  broken package, against a header that claims re-running "fills only the gaps".
+  Empty or headerless files are now repaired and reported as `REPAIRED`.
+
+### Note on the tests
+
+Reverting the extraction fix alone does not fail the suite, because the
+row-count guard catches it and marks the condition inconclusive — the two
+guards are deliberately redundant. That redundancy also meant nothing pinned
+extraction reading the *correct* line, so an assertion was added that
+discriminates: the twice-named condition must resolve to PASS, not merely be
+present.
+
 ## [1.0.1] - 2026-07-26
 
 Two reviewers reported after 1.0.0 was tagged. Both found real defects, one of
@@ -237,5 +289,6 @@ First run against a real project — this repository — surfaced nine defects t
 - Secret-scan patterns miss novel credential formats. The agent has no network egress and the documentation pull request is human-reviewed, which are the backstops.
 - A plugin cannot guarantee a different model for verification. In-plugin passes give independent context with a configurable model; `/dossier:audit --external` renders a self-contained prompt for genuinely cross-model review. Which tier was used is recorded in the verification report.
 
+[1.0.2]: https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/dossier
 [1.0.1]: https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/dossier
 [1.0.0]: https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/dossier

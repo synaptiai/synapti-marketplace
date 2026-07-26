@@ -31,6 +31,7 @@ RESOLVER="$SELF_DIR/dossier-resolve-config.sh"
 OUTPUT_ROOT=""
 RUN_ID=""
 VERDICT=""
+ROUND=""
 WANT_JSON=0
 STRICT=0
 QUIET=0
@@ -43,6 +44,8 @@ while [ $# -gt 0 ]; do
                    RUN_ID="$2"; shift 2 ;;
     --verdict)     [ $# -lt 2 ] && { echo "dossier-gate: --verdict requires a path" >&2; exit 2; }
                    VERDICT="$2"; shift 2 ;;
+    --round)       [ $# -lt 2 ] && { echo "dossier-gate: --round requires a value" >&2; exit 2; }
+                   ROUND="$2"; shift 2 ;;
     --json)   WANT_JSON=1; shift ;;
     --strict) STRICT=1; shift ;;
     --quiet)  QUIET=1; shift ;;
@@ -127,13 +130,18 @@ fi
 
 # G06 — no secret, credential, personal data, or prohibited disclosure present
 if [ -x "$SELF_DIR/dossier-claim-scan.sh" ]; then
-  "$SELF_DIR/dossier-claim-scan.sh" --output-root "$OUTPUT_ROOT" --quiet >/dev/null 2>&1
+  SCAN_OUT=$("$SELF_DIR/dossier-claim-scan.sh" --output-root "$OUTPUT_ROOT" --quiet 2>&1)
   SCAN_RC=$?
-  if [ "$SCAN_RC" -eq 2 ]; then
-    record G06 mechanical FAIL script "dossier-claim-scan.sh detected leakage (exit 2)"
-  else
-    record G06 mechanical PASS script "no leakage patterns matched"
-  fi
+  # 2 and 3 mean different things and must not be published as the same finding.
+  # A missing public directory is an incomplete package, not a disclosure
+  # incident, and naming it one puts a security claim in the record that is not
+  # true.
+  case "$SCAN_RC" in
+    2) record G06 mechanical FAIL script "dossier-claim-scan.sh detected leakage" ;;
+    3) SCAN_WHY=$(printf '%s' "$SCAN_OUT" | sed -n 's/^CLAIM_SCAN_ERROR=//p' | head -1)
+       record G06 mechanical INCONCLUSIVE script "disclosure scan could not run: ${SCAN_WHY:-unknown error}" ;;
+    *) record G06 mechanical PASS script "no leakage patterns matched" ;;
+  esac
 else
   record G06 mechanical FAIL script "dossier-claim-scan.sh missing — cannot certify disclosure safety"
 fi
@@ -278,10 +286,30 @@ else
   VERDICT_OK=1
   # Revision must match: a verdict against a different revision is neither
   # true nor false about this package.
-  if [ "$PINNED_VERSION" != "auto" ] && [ -n "$PINNED_VERSION" ]; then
-    grep -q "$PINNED_VERSION" "$VERDICT" 2>/dev/null || {
+  # `auto` is the shipped default and the scoping skill promises it "resolves
+  # the current SHA and pins it for the whole run". It did not: it was a
+  # sentinel that switched the revision check off entirely, so on a default
+  # configuration a verdict from any revision was accepted. Resolve it here to
+  # the commit actually under evaluation rather than treating it as "no pin".
+  EFFECTIVE_PIN="$PINNED_VERSION"
+  if [ "$EFFECTIVE_PIN" = "auto" ]; then
+    EFFECTIVE_PIN=$(git rev-parse --short HEAD 2>/dev/null || printf '')
+    [ -n "$EFFECTIVE_PIN" ] || VERDICT_REASON="versionOrCommit is 'auto' but the revision could not be resolved"
+  fi
+  if [ -n "$EFFECTIVE_PIN" ]; then
+    grep -q "$EFFECTIVE_PIN" "$VERDICT" 2>/dev/null || {
       VERDICT_OK=0
-      VERDICT_REASON="verdict does not name the pinned revision $PINNED_VERSION"
+      VERDICT_REASON="verdict does not name the pinned revision $EFFECTIVE_PIN"
+    }
+  fi
+  # A verdict from another round is not true or false about this one. The flag
+  # was advertised in three commands' argument-hints and invoked verbatim in the
+  # documented Phase 2 command while the parser rejected it, so the round pin
+  # was both unenforced and un-runnable.
+  if [ "$VERDICT_OK" -eq 1 ] && [ -n "$ROUND" ]; then
+    grep -qiE "^\|? *Round[[:space:]]*[:|][[:space:]]*$ROUND\b" "$VERDICT" 2>/dev/null || {
+      VERDICT_OK=0
+      VERDICT_REASON="verdict does not name round $ROUND"
     }
   fi
   # Silence must not read as assent.
@@ -304,11 +332,34 @@ fi
 
 if [ "$VERDICT_OK" -eq 1 ]; then
   for gid in $JUDGMENT_IDS; do
-    LINE=$(grep -m1 -E "^\|? *$gid\b" "$VERDICT" 2>/dev/null)
+    # The SAME predicate the silence check used. Previously the silence check
+    # required a PASS/FAIL token anywhere in the file while extraction took the
+    # first line merely mentioning the id — so a verdict naming an id twice (a
+    # summary row with an empty Result cell, then a later detail row carrying
+    # the real word) satisfied the silence check on the second line and parsed
+    # the first. The `case` matched neither token, `record` was never called,
+    # and the condition disappeared from the output and from BOTH counters. A
+    # dropped condition is worse than a silent one: silence is at least counted
+    # as inconclusive, while this was counted as nothing at all, which is how a
+    # PASS could be emitted for a package with a judgment condition nobody
+    # evaluated — exactly what this script's header says cannot happen.
+    LINE=$(grep -m1 -E "^\|? *$gid\b.*\b(PASS|FAIL)\b" "$VERDICT" 2>/dev/null)
     case "$LINE" in
       *FAIL*) record "$gid" judgment FAIL verdict "scorer: FAIL" ;;
       *PASS*) record "$gid" judgment PASS verdict "scorer: PASS" ;;
+      *)      record "$gid" judgment INCONCLUSIVE verdict "verdict carries no decidable result for $gid" ;;
     esac
+  done
+
+  # Belt and braces: every judgment id must have produced exactly one row. If
+  # the loop above ever fails to record one, the gate must not be able to reach
+  # PASS on a condition that is simply absent from its own results.
+  for gid in $JUDGMENT_IDS; do
+    ROWS=$(grep -cE "^${gid}[[:space:]]" "$RESULTS_FILE" 2>/dev/null || true)
+    [ -z "$ROWS" ] && ROWS=0
+    if [ "$ROWS" -ne 1 ]; then
+      record "$gid" judgment INCONCLUSIVE verdict "expected exactly one verdict row for $gid, found $ROWS"
+    fi
   done
 else
   for gid in $JUDGMENT_IDS; do
