@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer, Contributor, Installing operator
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: fd884b2
+project-version: 13c99b1
 last-verified: 2026-07-26
 review-trigger: Any document is added, removed, or re-verified; the gate verdict changes
 related: []
@@ -19,7 +19,7 @@ related: []
 | Field | Value |
 |---|---|
 | Package version | 1.0.3 |
-| Project version or commit | `fd884b2` on `fix/issue-131-round-5-containment` — **not `main`** |
+| Project version or commit | `13c99b1` on `fix/issue-131-round-5-containment` — **not `main`** |
 | Evidence cutoff date | 2026-07-26 |
 | Delivery mode | full |
 | Last full verification | 2026-07-26 |
@@ -138,8 +138,8 @@ Round 3 lowered the score from 92 to 87 rather than raising it. It re-derived ev
 |---|---|---|---|
 | 2026-07-26 | 1.0.0 | all 23 | Initial package, produced by running the dossier plugin against the repository that ships it |
 | 2026-07-26 | 1.0.1 | all 23, plus the new `README.md` | Round 3: re-pinned to `fbeb1ee`, six figures re-derived, three requested diagrams drawn, the ledger's internal contradiction closed, the due-diligence ranked tables renumbered, and an entry point added at the package root |
-| 2026-07-26 | 1.0.2 | all 23 | Round 4: an external review of the plugin found five containment defects in the code this package documents. Re-pinned to `fd884b2` and the assertion figures re-derived from it. No new verification pass ran — the package's own findings are unchanged, and F-05 remains open |
-| 2026-07-26 | 1.0.3 | all 23 | Round 5: two reviewers reported after round 4 was tagged. One found that round 4's own action-ceiling fix still admitted `timeout N <command>`. Re-pinned to `fd884b2`, figures re-derived, and the assessed branch is now a short branch off `main` rather than the merged feature branch |
+| 2026-07-26 | 1.0.2 | all 23 | Round 4: an external review of the plugin found five containment defects in the code this package documents. Re-pinned to `13c99b1` and the assertion figures re-derived from it. No new verification pass ran — the package's own findings are unchanged, and F-05 remains open |
+| 2026-07-26 | 1.0.3 | all 23 | Round 5: two reviewers reported after round 4 was tagged. One found that round 4's own action-ceiling fix still admitted `timeout N <command>`. Re-pinned to `13c99b1`, figures re-derived, and the assessed branch is now a short branch off `main` rather than the merged feature branch |
 
 ## Supplemental documents
 

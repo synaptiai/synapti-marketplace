@@ -6,7 +6,7 @@ audience: Maintainer, Reviewer, Prospective contributor
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: fd884b2
+project-version: 13c99b1
 last-verified: 2026-07-26
 review-trigger: A plugin is added or removed; a plugin's stated purpose or description changes; the intended audience changes
 related: [01-project/executive-project-brief.md, 00-control/terminology-and-ownership.md, 02-architecture/components-and-codebase.md, 04-operating/decisions-technical-debt-and-risks.md]
@@ -25,7 +25,7 @@ Neither is a vision statement, and no document in the repository contains one. W
 | Make reusable Claude Code methods installable | 8 published plugin entries resolvable by the client | V — [EV-0001], [EV-0051] |
 | Ship methods that are safe to run unattended | 16 hook scripts, of which flow's three are purely restrictive; dossier's action ceiling defaults to all-false except reading source | V — [EV-0038], [EV-0039] |
 | Ship methods that are auditable before installing | Every executable artifact is plain shell or Markdown; no binaries, no bundles | V — [EV-0007], [EV-0044] |
-| Keep the artifacts correct | 2,249 passing assertions across 2 plugins | V, partial — covers 2 of 7 in-tree plugins [EV-0008], [EV-0009], [EV-0010] |
+| Keep the artifacts correct | 2,251 passing assertions across 2 plugins | V, partial — covers 2 of 7 in-tree plugins [EV-0008], [EV-0009], [EV-0010] |
 | **Whether operators are helped** | no measure exists | **U** — no telemetry, no evaluation suite, no user research (AQ-0004) |
 
 | Non-goal | Why excluded | Evidence |
@@ -74,7 +74,7 @@ Two journeys are known to be broken rather than merely unverified: evaluation-be
 | Auto-update | implemented, client-owned | operator | client | [EV-0051] | `autoUpdate: true` observed. Changes propagate without the operator acting |
 | GitHub workflow harness | implemented | operator | `/flow:*` — 23 commands | [EV-0004], [EV-0008] | Tested: 1022 assertions |
 | Legacy workflow harness | implemented, superseded | operator | `/gh-*` — 14 commands | [EV-0004] | No deprecation notice; `.claude/CLAUDE.md` says enable only one of the two |
-| Evidence-first documentation | implemented | operator | `/dossier:*` — 9 commands | [EV-0009] | Tested: 1227 assertions. Unreleased |
+| Evidence-first documentation | implemented | operator | `/dossier:*` — 9 commands | [EV-0009] | Tested: 1229 assertions. Unreleased |
 | Post-merge doc automation | built, unexecuted | operator | `/dossier:setup` | [EV-0045] | AQ-0002 |
 | Content analysis | implemented | operator | `decipon` commands | [EV-0004] | Untested |
 | Product-development ledger | implemented | operator | `context-ledger` commands | [EV-0004] | Untested |
@@ -182,7 +182,7 @@ The consequence is the single most important product fact in this package: **eve
 | Licensing | README: Apache-2.0, badge linking to `LICENSE` | `LICENSE` present with the Apache-2.0 text; every manifest declares the same | **none — resolved 2026-07-26** | Was: installers and forkers had no grant of rights | [EV-0019], [EV-0020], [EV-0021] |
 | agent-capability-standard version | Manifest: 1.2.0 | Submodule pinned 2 commits past `v1.2.0` | pointer drift | The advertised version is not what installs | [EV-0031] |
 | Shell-injection rule | dossier's CI template forbids `${{ github.event.* }}` in a `run:` body, and ships a test enforcing it | `release-desktop-skills.yml` line 24 does exactly that | the repository fails a rule it publishes | Low exploitability — it requires release-publishing access — but the inconsistency is real | [EV-0015], CT-0004 |
-| Test coverage | 2,249 passing assertions | Covering 2 of 7 in-tree plugins | The strong number invites over-reading | 5 plugins are entirely unverified | [EV-0010] |
+| Test coverage | 2,251 passing assertions | Covering 2 of 7 in-tree plugins | The strong number invites over-reading | 5 plugins are entirely unverified | [EV-0010] |
 | CI as a quality gate | Two test workflows run on every relevant push | **Neither is a required check; `main` has no protection** | Advisory, not enforcing | A failing suite does not stop a change reaching every installer | [EV-0016], [EV-0017] |
 
 Eleven divergences, of which six are the same underlying failure: **prose that states a fact which the machine-readable source contradicts.** That is precisely the failure mode the dossier plugin was built to prevent, found in the repository that ships it. It is the strongest available argument for the plugin and the sharpest indictment of the project's current documentation practice, and both readings are correct.

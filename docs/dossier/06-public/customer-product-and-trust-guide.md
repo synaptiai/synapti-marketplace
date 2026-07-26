@@ -2,7 +2,7 @@
 dossier-header: public-v1
 title: Product and Trust Guide
 audience: Operators deciding whether to install
-product-version: fd884b2
+product-version: 13c99b1
 last-updated: 2026-07-26
 ---
 # Product and Trust Guide
@@ -151,7 +151,7 @@ Until 2026-07-26 no `LICENSE` file existed at all, while the README asserted MIT
 
 | Field | Value |
 |---|---|
-| Applies to product version | `fd884b2` |
+| Applies to product version | `13c99b1` |
 | Last updated | 2026-07-26 |
 
 Every statement in this guide maps to an approved claim backed by a verified evidence row.
