@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: 13c99b1
+project-version: 06b1586
 last-verified: 2026-07-26
 review-trigger: Any re-run of the verification passes, or any correction applied to a document after this report was written
 related: [00-control/evidence-ledger.md, 00-control/assumptions-questions-and-contradictions.md, 00-control/claim-and-disclosure-register.md, 05-due-diligence/technical-due-diligence-report.md]
@@ -18,13 +18,13 @@ related: [00-control/evidence-ledger.md, 00-control/assumptions-questions-and-co
 
 | Field | Value |
 |---|---|
-| Package version verified | 1.0.3 |
-| Project version or commit | `13c99b1` on `fix/issue-131-round-5-containment` |
+| Package version verified | 1.0.4 |
+| Project version or commit | `06b1586` on `fix/gate-verdict-integrity` |
 | Evidence cutoff | 2026-07-26 |
 | Verification date | 2026-07-26 (rounds 1 through 3, same day; round 4 is a fix cycle — see below) |
 | Documents in scope | All 23 canonical files |
 | Documents out of scope and why | None. This report verifies itself only for mechanics — a pass cannot audit its own findings |
-| Round | 5 |
+| Round | 6 |
 
 ## Reviewer-pass independence method
 
@@ -82,7 +82,7 @@ Round 3 is the evidence for how much that costs. It re-derived every headline fi
 | Sample size | 56 |
 | Population size | 56 |
 | Defect rate found in the sample | 1 of 56 rows falsified — 1.8% (EV-0046, see F-01) |
-| What the sample can and cannot detect | A census over the ledger detects rows that are *wrong*. It cannot detect a claim that is **missing** from the ledger entirely, nor a fact that is true at `13c99b1` and false on `main`. Both remain open exposures (AQ-0010) |
+| What the sample can and cannot detect | A census over the ledger detects rows that are *wrong*. It cannot detect a claim that is **missing** from the ledger entirely, nor a fact that is true at `06b1586` and false on `main`. Both remain open exposures (AQ-0010) |
 
 ## Scorecard
 
@@ -145,10 +145,10 @@ written during that cycle rather than by a reader.
 
 Two consequences for this package, and only two:
 
-- **The pin moved** from `fbeb1ee` to `13c99b1`, and every figure that moves with a
-  commit was re-derived from it: the dossier assertion count (1076 → 1229), the
-  combined count (2,098 → 2,251), commits on the assessed branch (198 → 193),
-  commits across all refs (355 → 366), and tracked files (570 → 572). This is F-11's
+- **The pin moved** from `fbeb1ee` to `06b1586`, and every figure that moves with a
+  commit was re-derived from it: the dossier assertion count (1076 → 1241), the
+  combined count (2,098 → 2,263), commits on the assessed branch (198 → 193),
+  commits across all refs (355 → 370), and tracked files (570 → 572). This is F-11's
   rule applied again: figures and pin must name the same commit, or the package is
   simultaneously pinned and current and cannot be both.
 
@@ -167,10 +167,30 @@ Two consequences for this package, and only two:
   closed, and the gate verdict is unmoved.
 
 What round 4 did **not** do is verify anything. No pass A, B, or C ran against
-`13c99b1`. The scorecard, the release gate, and every claim state below describe
+`06b1586`. The scorecard, the release gate, and every claim state below describe
 the package as it stood at round 3 and are carried forward unchanged. A reader
 weighing this report should read the round-3 evidence as the most recent
 verification of record.
+
+### Round 6 — the gate's own integrity
+
+The reviewer assigned error-handling in rounds 4 and 5 reported nothing both
+times; its findings never reached the orchestrator. In round 5 that gap was
+covered by re-deriving its scope directly, which found the cursor defect. It did
+not find the other four, and the release went out before the reviewer's own
+answer arrived.
+
+Three of those four attacked this gate's central claim. The most serious: the
+verdict-file silence check and the result extraction used different predicates,
+so a verdict naming a condition twice — an empty summary row, then a detail row
+with the real word — satisfied the check on one line and was parsed from the
+other. The condition was recorded nowhere and counted in neither the failure nor
+the inconclusive tally. Sixteen of seventeen conditions reported, one simply
+gone. A dropped condition is worse than a silent one, because silence is at
+least counted.
+
+That is a fourth instance of the shape below, and the first to land on the gate
+itself rather than on the package or the tests.
 
 ### Round 5 — the same shape, one level down
 
@@ -227,7 +247,7 @@ round 4 demonstrates it again from the outside.
 | Medium | 5 | 5 | 0 | 0 | 0 |
 | Low | 2 | 1 | 1 | 0 | 0 |
 
-Eight of the fifteen findings — F-04, F-06 through F-10, F-12, F-13 — are defects **in the dossier plugin itself**, surfaced only because the plugin was pointed at a real project for the first time. Its original 1034 assertions had never caught any of them, because each is a disagreement between two artifacts that no single test compared: a gate against its template, a linter against its reference, a scanner against a document's header, a normalization applied to one side of a comparison, a rule that mandates text another rule forbids, a test asserting a constant instead of a pair, a scaffold that built a package with no way into it, and a diagram check that graded what was drawn and never asked what was skipped. Each now has a regression test that fails if the pair drifts again — 1229 assertions, up from 1034.
+Eight of the fifteen findings — F-04, F-06 through F-10, F-12, F-13 — are defects **in the dossier plugin itself**, surfaced only because the plugin was pointed at a real project for the first time. Its original 1034 assertions had never caught any of them, because each is a disagreement between two artifacts that no single test compared: a gate against its template, a linter against its reference, a scanner against a document's header, a normalization applied to one side of a comparison, a rule that mandates text another rule forbids, a test asserting a constant instead of a pair, a scaffold that built a package with no way into it, and a diagram check that graded what was drawn and never asked what was skipped. Each now has a regression test that fails if the pair drifts again — 1241 assertions, up from 1034.
 
 ## Corrections applied
 
@@ -301,7 +321,7 @@ Rounds 1 and 2 reported this section clean. Round 3 found six subjects that disa
 |---|---|---|---|
 | Verification-pass independence | Every finding in this report | The passes ran inline in one context rather than as separate dispatches | A blind spot shared by all three would go undetected. Treat the *mechanical* findings — which are reproducible by re-running the commands — as strong, and the *judgment* findings as one reviewer's opinion |
 | Whether the product helps anyone | Every quality statement in the package | No telemetry exists for plugin marketplaces and the plugins emit none (AQ-0004) | A reader could mistake artifact quality for user outcome. The package says so repeatedly for this reason |
-| `main` versus the assessed branch | Every claim | The assessment ran at `13c99b1` on an unmerged branch (AQ-0010) | A claim true here may be false on `main`. Version 4.7.0 and the entire dossier plugin exist only on this branch |
+| `main` versus the assessed branch | Every claim | The assessment ran at `06b1586` on an unmerged branch (AQ-0010) | A claim true here may be false on `main`. Version 4.7.0 and the entire dossier plugin exist only on this branch |
 | `prompt-decorators` contents | Its rows in the architecture and due-diligence documents | The source is in another repository (AQ-0005) | One published plugin is described from its manifest alone |
 | Windows behaviour | The portability claims | No Windows environment was available (AQ-0008) | The scope of two reported defects is unmeasured |
 

@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: 13c99b1
+project-version: 06b1586
 last-verified: 2026-07-26
 review-trigger: A workflow is added or changed; branch protection or repository rulesets change; the release process changes
 related: [02-architecture/system-architecture.md, 03-assurance/testing-quality-and-delivery.md, 04-operating/operations-and-incident-response.md, 00-control/evidence-ledger.md]
@@ -23,7 +23,7 @@ That makes the interesting question narrow and answerable. **What stands between
 | Environment | Purpose | Who can access | Data class held | Parity with production | Evidence |
 |---|---|---|---|---|---|
 | Maintainer's working tree | Where all changes are authored and both test suites are run | Daniel Bentes | Public content only | Identical — the tree *is* the artifact | [EV-0035] |
-| Feature branch | Pre-merge staging. This assessment ran on `fix/issue-131-round-5-containment` | anyone with write access; today, one person | Public | Identical | [EV-0034] |
+| Feature branch | Pre-merge staging. This assessment ran on `fix/gate-verdict-integrity` | anyone with write access; today, one person | Public | Identical | [EV-0034] |
 | `main` | **The production environment.** Whatever is here is what the next installer receives | anyone with write access, ungated | Public | It is production | [EV-0016], [EV-0051] |
 | GitHub Actions runner | Ephemeral ubuntu-latest for tests, CodeQL, and release packaging | GitHub | Public content plus, on release, a write-scoped token | Not applicable | [EV-0012] |
 | Operator's machine | Where installed plugins actually execute | The operator | Whatever the operator has | Not applicable — and not observable from here | [EV-0052] |
