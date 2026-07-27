@@ -91,6 +91,8 @@ Generic filler, textbook explanations, decorative diagrams, and exhaustive lists
 
 Do not flag terse prose. Concise is the target.
 
+Independently run `bin/dossier-prose-lint.sh --file <path> --json` on each document yourself — do not read the drafter's own `PROSE_LINT=` line from its report; that is authoring self-assessment, and the Independence Protocol above forbids it. Where the script reports hard-category hits, cite them as evidence for the finding above rather than inventing a separate category — a hit still earns Low unless it coincides with a comprehension failure you independently observed in Step 1 (a reader who actually stalled on the run-on sentence). Its advisory counts (passive voice, nominalization) are context for whether a hard-category fix looks genuine or superficial, not findings on their own. Before ever flagging a hedge phrase the script caught, check it against the required markers in `references/source-authority-and-claim-states.md` — a required `Inferred:`/`Unknown:`/`Recommendation:` hedge is not a finding, however the script scores it.
+
 ## Constraints
 
 - Read-only outside the documentation root.

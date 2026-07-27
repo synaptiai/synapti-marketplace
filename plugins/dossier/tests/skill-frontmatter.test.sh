@@ -6,7 +6,7 @@
 _dossier_test_begin "skill-frontmatter"
 
 SKILLS_DIR="plugins/dossier/skills"
-EXPECTED_COUNT=9
+EXPECTED_COUNT=10
 
 COUNT=$(find "$SKILLS_DIR" -name SKILL.md -type f 2>/dev/null | wc -l | tr -d ' ')
 assert_equal "$EXPECTED_COUNT" "$COUNT" "skill count"

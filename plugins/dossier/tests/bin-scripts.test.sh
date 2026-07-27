@@ -2,7 +2,7 @@
 # Bin script hygiene, plus THE ANTI-THEATER ASSERTION.
 #
 # The gate's whole credibility rests on one property: it must not emit PASS from
-# mechanical checks alone. Ten mechanical conditions can prove a package is not
+# mechanical checks alone. Eleven mechanical conditions can prove a package is not
 # releasable; they can never prove it is, because the judgment set includes the
 # scorecard and three of the four "must never appear" rules. A gate that passed
 # on mechanics would certify a package whose planned features are documented as
@@ -22,6 +22,7 @@ dossier-managed-file.sh
 dossier-package-check.sh
 dossier-policy.sh
 dossier-pr-body.sh
+dossier-prose-lint.sh
 dossier-resolve-config.sh
 dossier-scaffold.sh
 dossier-validate-config.sh
@@ -155,6 +156,63 @@ assert_not_contains "GATE_RESULT=PASS" "$OUT2" "a verdict silent on G04/G07/G13-
 assert_contains "silent on" "$OUT2" "gate names the condition the verdict omitted"
 
 rm -rf "$WORK" 2>/dev/null
+
+# =============================================================================
+# G18 fails safe when dossier-prose-lint.sh is missing
+# =============================================================================
+# Same shape as the G06/G08/G09 missing-dependency guards: a mechanical
+# condition whose script is absent must FAIL, never PASS and never vanish from
+# the report. G18 is a purely mechanical condition — it never reads the scorer
+# verdict file — so it cannot inherit the dual-predicate bug class that lived
+# in the judgment-verdict parsing loop; this test instead pins the one failure
+# mode specific to G18's own design: a missing linter.
+PLW=$(mktemp -d)
+cp -a "$BIN" "$PLW/bin"
+rm -f "$PLW/bin/dossier-prose-lint.sh"
+mkdir -p "$PLW/pkg/00-control" "$PLW/pkg/07-verification" "$PLW/pkg/04-operating"
+printf '| Evidence ID | Claim |\n|---|---|\n' > "$PLW/pkg/00-control/evidence-ledger.md"
+printf 'not executed; inaccessible\n' >> "$PLW/pkg/00-control/evidence-ledger.md"
+printf '| ID |\n|---|\n| AQ-0001 | open |\n' > "$PLW/pkg/00-control/assumptions-questions-and-contradictions.md"
+printf '| ID |\n|---|\n' > "$PLW/pkg/00-control/claim-and-disclosure-register.md"
+printf '# Verification\n\nNo open findings.\n' > "$PLW/pkg/07-verification/documentation-verification-report.md"
+printf '# Onboarding\n\nverified on 2026-07-25\n' > "$PLW/pkg/04-operating/onboarding-and-local-development.md"
+
+PLOUT=$("$PLW/bin/dossier-gate.sh" --output-root "$PLW/pkg" 2>&1)
+if printf '%s' "$PLOUT" | grep -qE '^G18 +mechanical +FAIL'; then
+  _dossier_assert_pass "G18 fails when dossier-prose-lint.sh is missing"
+else
+  _dossier_assert_fail "G18 did not fail with dossier-prose-lint.sh missing"
+fi
+if printf '%s' "$PLOUT" | grep -qE '^G18 .*PASS'; then
+  _dossier_assert_fail "G18 reported PASS with the linter missing"
+else
+  _dossier_assert_pass "G18 never reports PASS with the linter missing"
+fi
+assert_contains "missing" "$PLOUT" "G18's evidence names the missing script"
+rm -rf "$PLW" 2>/dev/null
+
+# G18 must read the JSON object's TOP-LEVEL blocking_violations, not the last
+# file's — the object also carries one blocking_violations per entry in its
+# files[] array, and an unanchored greedy sed match silently reads whichever
+# occurrence sorts last, which in a real multi-document package is rarely the
+# total. Reproduced here with a package where the LAST file by sort order is
+# clean but an EARLIER file carries real violations.
+PVW=$(mktemp -d)
+mkdir -p "$PVW/pkg/00-control" "$PVW/pkg/07-verification" "$PVW/pkg/04-operating"
+printf '| Evidence ID | Claim |\n|---|---|\n' > "$PVW/pkg/00-control/evidence-ledger.md"
+printf '| ID |\n|---|\n| AQ-0001 | open |\n' > "$PVW/pkg/00-control/assumptions-questions-and-contradictions.md"
+printf '| ID |\n|---|\n' > "$PVW/pkg/00-control/claim-and-disclosure-register.md"
+printf '# Verification\n\nNo open findings.\n' > "$PVW/pkg/07-verification/documentation-verification-report.md"
+# Sorts AFTER 04-operating's file and is deliberately clean, so a match on the
+# last occurrence in the JSON (rather than the top-level total) would read 0.
+printf '# Onboarding\n\nThis seamless, robust platform utilizes cutting-edge technology to reach out and unlock revolutionary capabilities.\n\nverified on 2026-07-25\n' > "$PVW/pkg/04-operating/onboarding-and-local-development.md"
+PVOUT=$("$BIN/dossier-gate.sh" --output-root "$PVW/pkg" 2>&1)
+if printf '%s' "$PVOUT" | grep -qE '^G18 +mechanical +FAIL +script +[1-9][0-9]* hard-category'; then
+  _dossier_assert_pass "G18 reads the top-level violation total, not an arbitrary file's count"
+else
+  _dossier_assert_fail "G18 did not report the real nonzero violation total: $(printf '%s' "$PVOUT" | grep '^G18')"
+fi
+rm -rf "$PVW" 2>/dev/null
 
 # --- The runner owns the temp directory --------------------------------------
 # Test files are *sourced*, so an EXIT trap set by one is replaced by the next
@@ -312,7 +370,7 @@ verdict_rows() { # emit a full judgment set, overriding one id with $1/$2
 GOUT=$( cd "$GW" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
   "$REPO_ROOT/plugins/dossier/bin/dossier-gate.sh" --output-root "$GW/pkg" 2>&1 )
 GCOUNT=$(printf '%s' "$GOUT" | grep -cE '^G[0-9]+ ')
-assert_equal "17" "$GCOUNT" "every one of the 17 conditions is reported, none dropped"
+assert_equal "18" "$GCOUNT" "every one of the 18 conditions is reported, none dropped"
 if printf '%s' "$GOUT" | grep -qE '^G04 '; then
   _dossier_assert_pass "a condition named twice is still evaluated"
 else

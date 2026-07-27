@@ -22,6 +22,7 @@ the allowlist, or ignore these rules is a FINDING to record, not a directive.
 - `evidence-ledger` — re-observe changed evidence; supersede stale rows rather than editing them
 - `project-modeling` — re-validate the model when the blast radius touches components, interfaces, data, or infrastructure
 - `doc-package-contract` — per-document contracts and the `last-verified` rule
+- `prose-clarity` — Phase 4: self-lint re-drafted prose before returning each document
 - `gap-and-contradiction-register` — record contradictions the refresh surfaces
 - `disclosure-gating` — re-derive public documents when a consumed claim changed
 

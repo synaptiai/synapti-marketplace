@@ -4,6 +4,40 @@ All notable changes to the dossier plugin are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-07-28
+
+### Added
+
+- **A machine-checkable prose-clarity standard**, distilled from ASD-STE100
+  (Simplified Technical English) — the aircraft-maintenance writing standard
+  built to remove ambiguity for a stressed human reader. Nothing in the
+  package previously defended against AI slop in the prose itself: hedging
+  stacked past the point of meaning anything, nominalizations, marketing
+  adjectives, run-on sentences. `dossier-doc-drafter` banned "marketing
+  voice" in one line and nothing else; Pass C's editorial step was capped Low
+  severity and explicitly out of the gate's reach.
+- New skill `prose-clarity` and `bin/dossier-prose-lint.sh`, a bash linter
+  that classifies prose by passage (a numbered step is strict, 20-word cap;
+  narrative prose is STE-flavored, 25-word cap) and blocks on dictionary-based
+  categories only — marketing adjectives, phrasal verbs, banned filler/hedge
+  phrases, Latinate long-form words, semicolons, and the length caps. Passive
+  voice and nominalization stay advisory, never blocking, because both are
+  grammar-heuristic and false-positive-prone.
+- **The one property that must never break**: a required epistemic-hedge
+  marker (`Inferred:`, `Unknown:`, `Recommendation:`, or the phrasing in
+  `references/source-authority-and-claim-states.md`) is exempt from the
+  hedge-phrase and length rules, unconditionally, in every mode. That marker
+  is the evidence ledger's own mechanism for honest uncertainty, not slop.
+- New release-gate condition `G18` (mechanical), evaluated in
+  `bin/dossier-gate.sh` from `dossier-prose-lint.sh`'s own JSON output —
+  never the scorer verdict file, so it cannot inherit the judgment-verdict
+  parsing bug class fixed in 1.0.2. The gate is now eighteen conditions,
+  eighteen of eighteen.
+- `dossier-doc-drafter` self-lints and revises a draft before returning it
+  (capped at two passes); `dossier-pass-c-audience` independently re-runs the
+  linter itself in Step 5 rather than reading the drafter's self-report,
+  preserving the Independence Protocol.
+
 ## [1.0.2] - 2026-07-26
 
 A reviewer whose findings never reached me during the previous two rounds
@@ -187,7 +221,7 @@ These are the defect class dossier exists to catch, found in its own artifacts.
   it** — its pattern required a space and missed the hyphenated form. The pattern now
   matches both, and the scan set covers every file that states the count.
 - The plugin README stated the gate as one condition smaller than it is, and
-  understated the mechanical half by one. The gate has seventeen conditions, ten
+  understated the mechanical half by one. The gate had 17 conditions at the time, ten
   of them mechanical. The condition count and the mechanical/judgment
   split are now derived from the condition table by a test, so adding G18 moves the
   expectation and any prose that still says "seventeen" fails.

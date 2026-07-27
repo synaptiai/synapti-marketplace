@@ -133,7 +133,7 @@
         "minCommits": 1
       },
       "writeAllowlist": ["docs/dossier/**"],
-      "expectedPluginVersion": "1.0.2"
+      "expectedPluginVersion": "1.1.0"
     },
     "local": {
       "onFlowMerge": "suggest"

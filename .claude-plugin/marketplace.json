@@ -266,7 +266,7 @@
       "name": "dossier",
       "source": "./plugins/dossier",
       "description": "Evidence-first project documentation system. Produces an audit-ready 23-file package for technical due diligence, engineering and product onboarding, and partner or customer communication — every material claim traced to a ledger row and a claim state, three context-isolated verification passes, and a binary release gate. Ships a post-merge GitHub Actions job that keeps the package current by opening a documentation PR.",
-      "version": "1.0.2",
+      "version": "1.1.0",
       "author": {
         "name": "Daniel Bentes"
       },

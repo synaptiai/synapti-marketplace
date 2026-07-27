@@ -31,7 +31,7 @@ All 23 exist for every project. A library still gets `infrastructure-and-deploym
 
 **Three verification passes that genuinely cannot see each other.** Independence is architectural, not instructed: separate agent dispatches, `memory: none`, a skill firewall that keeps reconciliation logic out of every verifier's context, single-message dispatch, and per-pass model configuration. A regression test enforces all five properties, because a verifier that quietly gained access to the merge logic still produces a plausible-looking findings table and nothing else would catch it.
 
-**A gate that cannot be faked.** Seventeen conditions, conjunctive. Ten are mechanical; seven need a model to read the package. `bin/dossier-gate.sh` structurally refuses to emit `PASS` without a scorer verdict — because link-checking and header parsing certifying a package whose security claims nobody read is exactly the theater this system exists to prevent. A package can score 96/100 and be `not ready` on one unapproved public claim.
+**A gate that cannot be faked.** Eighteen conditions, conjunctive. Eleven are mechanical; seven need a model to read the package. `bin/dossier-gate.sh` structurally refuses to emit `PASS` without a scorer verdict — because link-checking and header parsing certifying a package whose security claims nobody read is exactly the theater this system exists to prevent. A package can score 96/100 and be `not ready` on one unapproved public claim.
 
 **The findings table is published before any repair.** A package that quietly fixes what it found and reports only the clean end state has destroyed its own audit trail.
 
@@ -64,9 +64,9 @@ Typical first run:
 
 Then `/dossier:setup` once, and the package maintains itself.
 
-## Skills (9)
+## Skills (10)
 
-`engagement-scoping` · `evidence-ledger` · `gap-and-contradiction-register` · `project-modeling` · `doc-package-contract` · `disclosure-gating` · `verification-protocol` · `finding-reconciliation` · `scoring-and-release-gate`
+`engagement-scoping` · `evidence-ledger` · `gap-and-contradiction-register` · `project-modeling` · `doc-package-contract` · `disclosure-gating` · `verification-protocol` · `finding-reconciliation` · `scoring-and-release-gate` · `prose-clarity`
 
 Each carries one Iron Law. The per-document content contracts — over 500 requirements and hard rules — live in `references/package-contract-*.md`, one file per directory, so a drafting agent loads exactly the one it needs.
 
