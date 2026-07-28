@@ -98,14 +98,17 @@ The write allowlist in the manifest is the boundary. In CI it is enforced twice 
 ## Phase 2 — Blast radius
 
 ```bash
-bin/dossier-blast-radius.sh --changed-files <(jq -r '.[].path' .dossier/evidence/changed-files.json) --out .dossier/evidence/blast-radius.json
+bin/dossier-blast-radius.sh --changed-files <(jq -r '.[].path' .dossier/evidence/changed-files.json) --out .dossier/evidence/blast-radius.json \
+  --stale-docs "$(jq -r '.stale_docs | join(",")' .dossier/evidence/manifest.json)"
 ```
 
 This is the single biggest lever on both cost and reviewability. Regenerating all 23 documents for a dependency bump burns the budget and produces a diff nobody reads carefully; regenerating none of the downstream views produces a package that contradicts itself.
 
-The affected set is the union of: documents whose triggering change event fired · documents consuming a changed evidence row (from the ledger's `Consuming docs` column) · public documents consuming a changed claim.
+The affected set is the union of: documents whose triggering change event fired · documents consuming a changed evidence row (from the ledger's `Consuming docs` column) · public documents consuming a changed claim · documents named in `manifest.json`'s `stale_docs` (a schedule-triggered staleness sweep with no other trigger present — surfaced as `class: "stale"` in the blast-radius output).
 
 **A document whose triggering event did not fire is left exactly as it was, including its `last-verified` date.** Advancing that date because the run touched the file is how a stale package comes to look current.
+
+**`class: "stale"` means verification, not redraft.** A document that is in the affected set only because `--stale-docs` named it gets Phase 4's verification-only path, never the drafter. A document that is *also* event-matched keeps `class: "matched"` (its `reasons` may still list `"stale"` alongside the real event) and follows the normal redraft path below — the sweep never downgrades a genuinely change-driven document to the lighter treatment.
 
 ## Phase 3 — Re-inventory
 
@@ -115,13 +118,18 @@ Supersede stale rows rather than editing them. A row whose source changed gains 
 
 `docs-state.json` carries per-document fingerprints from the previous run. Use them to decide which affected documents genuinely need regeneration versus which are unchanged in substance.
 
+**Documents in the affected set solely by `class: "stale"` have no changed path to scope evidence collection to** — nothing moved; the document is here because time passed. For each, dispatch `Agent(dossier-evidence-collector)` scoped instead to that document's own existing citations (the evidence-ledger rows its `Consuming docs` column already names), re-checking each cited source against the claims the document currently makes. This is a re-verification of what the document already says, not an inventory of something new — the output Phase 4 needs is simply whether any cited claim no longer holds.
+
 ## Phase 4 — Re-draft
 
 Invoke `Skill(project-modeling)` first when the blast radius touches components, interfaces, data, or infrastructure — a model change invalidates more than the document that triggered it.
 
-Dispatch `Agent(dossier-doc-drafter)` once per affected document, **all in a single message** per wave. Each gets its contract, the model, and its evidence slice.
+Partition the affected set by blast-radius `class` before dispatching:
 
-Advance `last-verified` only on documents whose claims were actually re-checked.
+- **`class: "matched"` or `"always"`** — dispatch `Agent(dossier-doc-drafter)` once per document, **all in a single message** per wave. Each gets its contract, the model, and its evidence slice. Advance `last-verified` only on documents whose claims were actually re-checked.
+- **`class: "stale"`** — do **not** dispatch the drafter. Compare Phase 3's re-verification against the document's current claims:
+  - **No drift** — every cited claim still holds. Advance `last-verified` to today and leave the prose untouched. This is the case `references/change-triggers-and-blast-radius.md` describes: "regenerating it anyway would produce prose churn and a new date that stands for nothing."
+  - **Drift found** — re-verification surfaced a claim the cited evidence no longer supports. Treat the document as `class: "matched"` from here: dispatch `Agent(dossier-doc-drafter)` with the updated evidence, and advance `last-verified` because it was genuinely re-checked and found to need a change.
 
 ## Phase 5 — Package-wide contradiction sweep
 

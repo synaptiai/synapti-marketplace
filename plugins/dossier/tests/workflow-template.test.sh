@@ -175,4 +175,13 @@ else
   _dossier_assert_fail "the cursor advance is not gated on success()"
 fi
 
+# --- Stale-sweep documents reach the blast radius ----------------------------
+# The policy job's decision must surface as a job output, and the evidence-
+# bundle step must thread it into dossier-blast-radius.sh, or a schedule-
+# triggered stale-sweep run computes should_run=true but the affected
+# document never actually gets a verification pass.
+assert_contains "stale_docs: \${{ steps.decide.outputs.stale_docs }}" "$BODY" "policy job exposes stale_docs as a job output"
+assert_contains "STALE_DOCS: \${{ steps.decide.outputs.stale_docs }}" "$BODY" "the evidence-bundle step reads stale_docs from the decide step"
+assert_contains "STALE_DOCS_ARGS" "$BODY" "dossier-blast-radius.sh is invoked with the stale-docs list when present"
+
 _dossier_test_summary

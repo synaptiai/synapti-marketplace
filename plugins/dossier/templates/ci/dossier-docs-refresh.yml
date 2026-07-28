@@ -156,6 +156,7 @@ jobs:
       existing_pr: ${{ steps.decide.outputs.existing_pr }}
       max_turns: ${{ steps.decide.outputs.max_turns }}
       model_arg: ${{ steps.decide.outputs.model_arg }}
+      stale_docs: ${{ steps.decide.outputs.stale_docs }}
     steps:
       # fetch-depth: 0 in every job. The watermark can be arbitrarily far back,
       # and a shallow clone turns "resolve the range" into "fail confusingly".
@@ -213,6 +214,7 @@ jobs:
         env:
           BASE_SHA: ${{ steps.decide.outputs.base_sha }}
           HEAD_SHA: ${{ steps.decide.outputs.head_sha }}
+          STALE_DOCS: ${{ steps.decide.outputs.stale_docs }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
@@ -222,16 +224,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
+          # Non-empty only when the policy job's decide step reported a
+          # schedule-triggered stale-sweep override (steps.decide.outputs.
+          # stale_docs). Threaded into both the evidence manifest and the
+          # blast-radius map, which are the two files commands/refresh.md
+          # Phase 2/4 actually reads to decide verification-vs-redraft.
+          STALE_DOCS_ARGS=()
+          [ -n "$STALE_DOCS" ] && STALE_DOCS_ARGS=(--stale-docs "$STALE_DOCS")
+
           "$DOSSIER_BIN/dossier-evidence.sh" \
             --base "$BASE_SHA" --head "$HEAD_SHA" \
-            --out .dossier/evidence
+            --out .dossier/evidence \
+            "${STALE_DOCS_ARGS[@]}"
 
           # The blast-radius map lives beside the bundle rather than inside it,
           # so that manifest.json keeps describing exactly the canonical evidence
           # format and nothing else.
           "$DOSSIER_BIN/dossier-blast-radius.sh" \
             --changed-files .dossier/evidence/changed-files.txt \
-            --out .dossier/blast-radius.json
+            --out .dossier/blast-radius.json \
+            "${STALE_DOCS_ARGS[@]}"
 
           {
             echo '### Documents in the blast radius'

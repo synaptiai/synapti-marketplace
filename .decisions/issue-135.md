@@ -101,3 +101,51 @@ A zero-context agent given this journal's Interface Contracts (exact script name
 <!-- auto-log: 2026-07-28 11:43 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-trigger.test.sh -->
 
 <!-- auto-log: 2026-07-28 11:43 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-trigger.test.sh -->
+
+<!-- auto-log: 2026-07-28 11:48 commit "feat(dossier): staleness actively triggers a schedule-only sweep in dossier-policy.sh" -->
+
+<!-- auto-log: 2026-07-28 11:49 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-blast-radius.sh -->
+
+<!-- auto-log: 2026-07-28 11:49 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-blast-radius.sh -->
+
+<!-- auto-log: 2026-07-28 11:50 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-blast-radius.sh -->
+
+<!-- auto-log: 2026-07-28 11:50 Write /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/blast-radius-staleness.test.sh -->
+
+<!-- auto-log: 2026-07-28 11:51 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-blast-radius.sh -->
+
+<!-- auto-log: 2026-07-28 11:51 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-07-28 11:51 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-07-28 11:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/workflow-template.test.sh -->
+
+<!-- auto-log: 2026-07-28 11:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 11:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 11:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 11:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 11:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-07-28 11:55 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-07-28 11:55 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/commands/refresh.md -->
+
+<!-- auto-log: 2026-07-28 11:56 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/commands/refresh.md -->
+
+<!-- auto-log: 2026-07-28 11:56 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/commands/refresh.md -->
+
+<!-- auto-log: 2026-07-28 11:56 Write /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/refresh-staleness.test.sh -->
+
+<!-- auto-log: 2026-07-28 11:57 Write /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/local-merge-config.test.sh -->
+
+<!-- auto-log: 2026-07-28 11:57 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/schema.json -->
+
+<!-- auto-log: 2026-07-28 11:58 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/settings.json -->
+
+<!-- auto-log: 2026-07-28 11:58 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/config.example.json -->
+
+<!-- auto-log: 2026-07-28 11:58 Edit /Users/danielbentes/synapti-marketplace/.claude/settings.dossier.json -->
