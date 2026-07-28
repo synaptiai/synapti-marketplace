@@ -47,9 +47,14 @@
 #     "scan": {"format", "tool", "scope", "retrieved", "source_path"},
 #     "findings": [{"id","package","version","severity","summary","source_ref"}],
 #     "aggregate": {[<Medium|Low>]: <n>},  # keys present only when non-zero
-#     "unresolved_severity": [{"id","package","version","summary"}]
+#     "unresolved_severity": [{"id","package","version","summary"}],
+#     "unparseable_records": [{"id","package","version","summary","parse_error"}]
 #   }
-# On parse failure: {"schema", "scan": {"source_path","format": null}, "error": "parse-error: ..."}
+# unparseable_records covers a single malformed record within an otherwise
+# valid scan (a field present with the wrong type) — the whole scan still
+# parses; that one record could not be normalized and is flagged rather than
+# silently dropped or allowed to abort every other record's extraction.
+# On total parse failure: {"schema", "scan": {"source_path","format": null}, "error": "parse-error: ..."}
 #
 # --out <dir> additionally writes the same JSON to <dir>/vuln-evidence.json.
 #
@@ -135,43 +140,55 @@ def sev_from_string(s):
       else null end
   end;
 
+# A single malformed record (a field present with the wrong TYPE, not merely
+# absent — `.properties` as a string instead of an object, for example) makes
+# jq's object-construction throw. Uncaught, that error propagates out of the
+# surrounding array comprehension and aborts the WHOLE extraction — turning
+# "23 valid findings and 1 malformed one" into "0 findings, total failure"
+# and silently discarding every genuine finding alongside the bad record.
+# Wrapping each record's build lets one bad record degrade to its own
+# unparseable-record marker instead of taking the rest of the scan down with
+# it — the per-record analogue of the whole-file ERR-3 pattern.
+def safe_finding(build):
+  try (build) catch {id: "UNKNOWN", package: "unknown", version: null, summary: "unparseable record", severity: null, parse_error: (. | tostring)};
+
 (
   if $format == "sarif" then
     {
       tool: (.runs[0].tool.driver.name // "unknown"),
       scope: ([.runs[]?.results[]?.locations[0]?.physicalLocation?.artifactLocation?.uri]
               | map(select(. != null)) | unique | join(", ")),
-      raw: [ .runs[]?.results[]? | {
+      raw: [ .runs[]?.results[]? | safe_finding({
         id: (.ruleId // "UNKNOWN"),
         package: (.locations[0]?.physicalLocation?.artifactLocation?.uri // "unknown"),
         version: null,
         summary: (.message.text // ""),
         severity: bucket_severity(.properties["security-severity"])
-      } ]
+      }) ]
     }
   elif $format == "osv-scanner" then
     {
       tool: "osv-scanner",
       scope: ([.results[]?.source.path] | map(select(. != null)) | unique | join(", ")),
-      raw: [ .results[]? as $r | ($r.packages // [])[]? as $p | ($p.vulnerabilities // [])[]? | {
+      raw: [ .results[]? as $r | ($r.packages // [])[]? as $p | ($p.vulnerabilities // [])[]? | safe_finding({
         id: (.id // "UNKNOWN"),
         package: ($p.package.name // "unknown"),
         version: ($p.package.version // null),
         summary: (.summary // ""),
         severity: bucket_severity(.severity[0]?.score)
-      } ]
+      }) ]
     }
   elif $format == "dependabot" then
     {
       tool: "dependabot",
       scope: ([.[].dependency.manifest_path] | map(select(. != null)) | unique | join(", ")),
-      raw: [ .[] | {
+      raw: [ .[] | safe_finding({
         id: (.security_advisory.ghsa_id // "UNKNOWN"),
         package: (.dependency.package.name // "unknown"),
         version: null,
         summary: (.security_advisory.summary // ""),
         severity: sev_from_string(.security_advisory.severity)
-      } ]
+      }) ]
     }
   else
     {tool: "unknown", scope: "", raw: []}
@@ -187,7 +204,8 @@ def sev_from_string(s):
    | map({key: .[0].severity, value: length})
    | from_entries
   ) as $agg
-| ($extracted.raw | map(select(.severity == null))) as $unresolved
+| ($extracted.raw | map(select(.severity == null and (has("parse_error") | not)))) as $unresolved
+| ($extracted.raw | map(select(has("parse_error")))) as $unparseable
 | {
     schema: "dossier.vuln-evidence/v1",
     scan: {
@@ -199,7 +217,8 @@ def sev_from_string(s):
     },
     findings: $material,
     aggregate: ($agg // {}),
-    unresolved_severity: $unresolved
+    unresolved_severity: $unresolved,
+    unparseable_records: $unparseable
   }
 JQEOF
 )

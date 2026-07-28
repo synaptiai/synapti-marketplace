@@ -508,4 +508,114 @@ g19_fixture "$G19_SECONDROW_DIR" \
 G19_SECONDROW_RESULT=$(g19_result "$G19_SECONDROW_DIR")
 assert_equal "PASS" "$G19_SECONDROW_RESULT" "F3 regression: a second Risk register row citing the same finding disposes it even when an earlier citing row does not qualify"
 
+# =============================================================================
+# Part 6 — holdout validation findings
+# =============================================================================
+
+# --- H1 (was P1): one malformed record in an otherwise-valid multi-finding
+# scan must not abort extraction of the OTHER, genuinely valid findings — a
+# jq object-construction error on one array element previously propagated
+# out of the whole array comprehension, discarding every finding, not just
+# the bad one. -----------------------------------------------------------
+H1_DIR=$(_dossier_safe_mktemp_dir "h1-partial-record")
+cat >"$H1_DIR/mixed.json" <<'EOF'
+{
+  "runs": [
+    {
+      "tool": {"driver": {"name": "example-sast", "version": "1.4.0"}},
+      "results": [
+        {
+          "ruleId": "CVE-2024-11111",
+          "message": {"text": "malformed properties field"},
+          "properties": "this-should-be-an-object-not-a-string",
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "package.json"}}}]
+        },
+        {
+          "ruleId": "CVE-2024-33333",
+          "message": {"text": "a perfectly normal second finding"},
+          "properties": {"security-severity": "9.5"},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "package.json"}}}]
+        }
+      ]
+    }
+  ]
+}
+EOF
+H1_OUT=$(cd "$H1_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan mixed.json 2>&1)
+H1_RC=$?
+assert_equal "0" "$H1_RC" "H1: a scan with one malformed record alongside a valid one still exits 0 — a per-record problem, not a total failure"
+H1_VALID_ID=$(printf '%s' "$H1_OUT" | jq -r '.findings[0].id' 2>/dev/null)
+assert_equal "CVE-2024-33333" "$H1_VALID_ID" "H1: the genuinely valid Critical finding is NOT lost alongside its malformed sibling"
+H1_VALID_SEV=$(printf '%s' "$H1_OUT" | jq -r '.findings[0].severity' 2>/dev/null)
+assert_equal "Critical" "$H1_VALID_SEV" "H1: the valid finding's severity is correctly preserved"
+H1_UNPARSEABLE_COUNT=$(printf '%s' "$H1_OUT" | jq '.unparseable_records | length' 2>/dev/null)
+assert_equal "1" "$H1_UNPARSEABLE_COUNT" "H1: the malformed record is flagged in unparseable_records, not silently dropped"
+H1_PARSE_ERROR=$(printf '%s' "$H1_OUT" | jq -r '.unparseable_records[0].parse_error' 2>/dev/null)
+assert_contains "security-severity" "$H1_PARSE_ERROR" "H1: the unparseable record retains the underlying error detail"
+
+# --- H2: SARIF's own empty-runs clean-scan shape must parse cleanly, the
+# same guarantee already regression-tested for Dependabot/osv-scanner -------
+H2_DIR=$(_dossier_safe_mktemp_dir "h2-sarif-empty")
+printf '{"runs":[]}' >"$H2_DIR/empty-runs.json"
+H2_OUT=$(cd "$H2_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan empty-runs.json 2>&1)
+H2_RC=$?
+assert_equal "0" "$H2_RC" "H2: a SARIF scan with zero runs (a clean scan) parses cleanly"
+H2_FORMAT=$(printf '%s' "$H2_OUT" | jq -r '.scan.format' 2>/dev/null)
+assert_equal "sarif" "$H2_FORMAT" "H2: an empty-runs SARIF file is still detected as sarif"
+H2_FINDINGS_COUNT=$(printf '%s' "$H2_OUT" | jq '.findings | length' 2>/dev/null)
+assert_equal "0" "$H2_FINDINGS_COUNT" "H2: zero findings, correctly — not a parse error"
+
+# --- H3: CVSS bucket boundaries are exact, not approximate ------------------
+H3_DIR=$(_dossier_safe_mktemp_dir "h3-cvss-boundaries")
+cat >"$H3_DIR/boundaries.json" <<'EOF'
+{
+  "runs": [{
+    "tool": {"driver": {"name": "boundary-test"}},
+    "results": [
+      {"ruleId": "B-CRIT-LOW",  "message": {"text": "exactly 9.0"}, "properties": {"security-severity": "9.0"}},
+      {"ruleId": "B-HIGH-HIGH", "message": {"text": "just under Critical"}, "properties": {"security-severity": "8.9"}},
+      {"ruleId": "B-HIGH-LOW",  "message": {"text": "exactly 7.0"}, "properties": {"security-severity": "7.0"}},
+      {"ruleId": "B-MED-HIGH",  "message": {"text": "just under High"}, "properties": {"security-severity": "6.9"}},
+      {"ruleId": "B-MED-LOW",   "message": {"text": "exactly 4.0"}, "properties": {"security-severity": "4.0"}},
+      {"ruleId": "B-LOW-HIGH",  "message": {"text": "just under Medium"}, "properties": {"security-severity": "3.9"}},
+      {"ruleId": "B-LOW-LOW",   "message": {"text": "just above zero"}, "properties": {"security-severity": "0.1"}},
+      {"ruleId": "B-ZERO",      "message": {"text": "zero score"}, "properties": {"security-severity": "0.0"}}
+    ]
+  }]
+}
+EOF
+H3_OUT=$(cd "$H3_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan boundaries.json 2>&1)
+# Critical/High are itemized in `findings[]`; Medium/Low are aggregate-only
+# counts (never individually addressable by id) — sev_of() only resolves the
+# itemized half.
+sev_of() { printf '%s' "$H3_OUT" | jq -r --arg id "$1" '.findings[] | select(.id == $id) | .severity // "null"' 2>/dev/null; }
+assert_equal "Critical" "$(sev_of B-CRIT-LOW)" "H3: 9.0 is Critical (lower boundary inclusive)"
+assert_equal "High" "$(sev_of B-HIGH-HIGH)" "H3: 8.9 is High, not Critical"
+assert_equal "High" "$(sev_of B-HIGH-LOW)" "H3: 7.0 is High (lower boundary inclusive)"
+H3_MEDIUM_COUNT=$(printf '%s' "$H3_OUT" | jq -r '.aggregate.Medium // 0' 2>/dev/null)
+assert_equal "2" "$H3_MEDIUM_COUNT" "H3: both 6.9 (just under High) and 4.0 (lower boundary) bucket to Medium, not High"
+H3_LOW_COUNT=$(printf '%s' "$H3_OUT" | jq -r '.aggregate.Low // 0' 2>/dev/null)
+assert_equal "2" "$H3_LOW_COUNT" "H3: both 3.9 (just under Medium) and 0.1 (lower boundary) bucket to Low, not Medium"
+H3_ZERO_SEV=$(printf '%s' "$H3_OUT" | jq -r '.unresolved_severity[] | select(.id == "B-ZERO") | .severity' 2>/dev/null)
+assert_equal "null" "$H3_ZERO_SEV" "H3: a 0.0 score is unresolved, not fabricated as Low"
+
+# --- H4: two Critical/High findings, one disposed and one not — the gate
+# must FAIL for the undisposed one without being satisfied by the other's
+# valid disposition, and the evidence must name the undisposed one specifically
+H4_DIR=$(_dossier_safe_mktemp_dir "h4-mixed-disposition")
+g19_fixture "$H4_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0010 | osv-scanner reports GHSA-disposed-0001 in flask@1.1.0, severity Critical | R | `scan.json` — osv-scanner, GHSA-disposed-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |
+| EV-0011 | osv-scanner reports GHSA-undisposed-0002 in requests@2.25.0, severity High | R | `scan.json` — osv-scanner, GHSA-undisposed-0002, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
+'## Accepted risks
+
+| Risk ID | Accepted by | Date | Basis for acceptance | Review date | Evidence of the acceptance |
+|---|---|---|---|---|---|
+| [EV-0010] | Jane Doe, VP Engineering | 2026-07-20 | Low exploitability in this deployment | 2026-10-20 | Slack thread, 2026-07-20, #security-review |'
+H4_RESULT=$(g19_result "$H4_DIR")
+assert_equal "FAIL" "$H4_RESULT" "H4: one disposed and one undisposed finding — the gate still FAILs overall"
+H4_EVIDENCE=$(g19_evidence "$H4_DIR")
+assert_contains "EV-0011" "$H4_EVIDENCE" "H4: the evidence names the undisposed finding"
+assert_not_contains "EV-0010" "$H4_EVIDENCE" "H4: the evidence does not also name the properly-disposed finding"
+
 _dossier_test_summary

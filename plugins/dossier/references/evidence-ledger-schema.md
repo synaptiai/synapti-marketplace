@@ -134,13 +134,14 @@ Rules:
 
   | Row kind | Notes tag |
   |---|---|
-  | Coverage (what was scanned) | `vuln-scan-coverage status=parsed` or `vuln-scan-coverage status=parse-error` |
+  | Coverage (what was scanned) | `vuln-scan-coverage status=parsed`, `vuln-scan-coverage status=parse-error` (the whole scan failed to parse), or `vuln-scan-coverage status=partial` (the scan parsed, but one or more individual records inside it did not) |
   | Material finding (Critical or High) | `vuln-finding severity=<Critical\|High>` |
   | Aggregated Medium/Low count | `vuln-finding-aggregate severity=<Medium\|Low> count=<n>` |
+  | Severity could not be determined, or the individual record could not be parsed | `vuln-finding-unresolved` |
 
 - **Disposition**: a `vuln-finding` row's Critical/High status is resolved by a corresponding row in `04-operating/decisions-technical-debt-and-risks.md`'s existing Risk register or Accepted risks table, citing the `EV-####` row via that table's own `Evidence` column. The ledger row itself never carries owner/target-date/acceptance — that state lives in the risk register, not duplicated here.
 
-A parse failure (malformed scan artifact, or an unrecognized shape) is recorded as a `vuln-scan-coverage status=parse-error` row with `State: U`, never silently omitted and never read as "zero findings, therefore clean."
+A parse failure (malformed scan artifact, or an unrecognized shape) is recorded as a `vuln-scan-coverage status=parse-error` row with `State: U`, never silently omitted and never read as "zero findings, therefore clean." A finding whose severity could not be derived, or an individual record within an otherwise-valid scan that could not be normalized, is never fabricated as `Low` or otherwise silently dropped — it becomes its own `vuln-finding-unresolved` row with `State: U`, an honest disclosure that something was found whose materiality is unknown, per this ledger's own rule that absence of evidence is never recorded as evidence of absence. `bin/dossier-gate.sh`'s G19 does not itemize `vuln-finding-unresolved` rows into its FAIL/PASS decision — it acts only on confirmed `Critical`/`High` severities — but the row's presence is itself the honesty the format requires.
 
 ## Ledger sections
 
