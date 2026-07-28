@@ -67,6 +67,16 @@ _Captured by specification-capture skill on 2026-07-28. Source: mixed — extrac
 - **`enforce-allowed-actions.sh`**: two new deny-blocks (defense-in-depth backstop, following the exact structure of the existing `RUN_TESTS`/`RUN_BUILD`/`NETWORK` blocks at lines 96-133) matching direct `osv-scanner`/`pyscn` invocations at a real command boundary (reusing the existing `BOUND`/`WRAPPER` anchoring so `bash -c`/`env`/`timeout`/etc. indirection can't bypass it), denying when the corresponding flag resolves `false`.
 - **CI template (`plugins/dossier/templates/ci/dossier-docs-refresh.yml`)**: a new job/step, architecturally a sibling of the already-shipped `policy` job — `permissions: {contents: read}` only (no `pull-requests`/`contents: write`), no `ANTHROPIC_API_KEY`/`CLAUDE_CODE_OAUTH_TOKEN` exposure, `persist-credentials: false` on checkout, resource/timeout limits, pinned tool versions (`osv-scanner`/`pyscn` install step pins an exact version, not a floating tag). Output normalized and uploaded as a build artifact (matching the existing `dossier-evidence` artifact pattern) for the `refresh` job's agent to `Read` — the agent never executes either scanner directly.
 
+## Resolved: AC4 offline-staleness gap (verdict-judge NEEDS-HUMAN-REVIEW, PR review cycle)
+
+The independent verdict judge in `/flow:start` Phase 4 returned `NEEDS-HUMAN-REVIEW` on AC4, catching a genuine, self-contradictory gap in the evidence bundle: "What was tested" claimed stale/missing offline-DB coverage, but "What was NOT tested" and "Known limitations" retracted that for the *stale* (present-but-expired) case specifically — only the *missing* (absent-entirely) case had real test evidence. Investigated directly rather than escalated to the user, since it was answerable by empirical fact-check (the judge's own recommended Option 1): does osv-scanner itself treat an expired local cache the same as a missing one?
+
+**Confirmed empirically: no.** A real cached PyPI database, artificially aged to 2020 via `touch`, was loaded and scanned by real osv-scanner 2.4.0 with zero warning, zero error, and output content-identical to a genuinely fresh fetch — osv-scanner performs no staleness check on its own local cache whatsoever. The existing stderr-pattern-match detection (`could not load db`) only fires on a *load failure*, never on a stale-but-loadable cache, so it could never have closed this gap regardless of test coverage.
+
+**Fix**: `dossier-scan-security.sh` now checks the cached database's own file age *before* invoking osv-scanner at all, whenever `--offline` is set — refusing with `status: unavailable`, `detail` containing `stale_advisory_data`, if the newest file under osv-scanner's cache directory is older than `DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS` (default 7, overridable for testing). This is a separate check from the existing "no cache at all" detection; either can fire independently.
+
+**Second-order discovery during this fix, itself worth recording**: osv-scanner's cache-directory resolution (Go's `os.UserCacheDir()`) does **not** consult `XDG_CACHE_HOME` on Darwin — it always uses `$HOME/Library/Caches`, confirmed by moving the real cache aside and observing osv-scanner report "no offline version of the OSV database is available" despite a populated `XDG_CACHE_HOME`-based fake cache being present. Only non-Darwin Unix (the actual CI runner platform) honors `XDG_CACHE_HOME`. The wrapper's own cache-path detection was written to check `XDG_CACHE_HOME` unconditionally first — silently wrong on macOS — and was corrected to match Go's real precedence (platform check first, `XDG_CACHE_HOME` only consulted on non-Darwin). This bug was caught by re-running the test suite immediately after the fix and finding the *pre-existing* "no cached DB" test now failing (it was silently relying on this repo-author's own real, populated system cache), not by static reasoning — a live regression against this machine's own manual testing earlier in the session, surfaced only by actually re-running everything.
+
 ## Stranger Test
 
 _Recorded after Phase 2 task decomposition, 2026-07-28._
@@ -212,3 +222,31 @@ No item remains open under "Needs Clarification" — every gap the advisor raise
 <!-- auto-log: 2026-07-28 21:23 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/enforce-allowed-actions.sh -->
 
 <!-- auto-log: 2026-07-28 21:23 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/issue-find-exec-bypass.md -->
+
+<!-- auto-log: 2026-07-28 21:29 commit "fix: address self-review findings (P1/P2/P3) on issue #137 branch" -->
+
+<!-- auto-log: 2026-07-28 21:34 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
+
+<!-- auto-log: 2026-07-28 21:39 commit "test(dossier): non-ASCII coverage for osv-scanner group extraction" -->
+
+<!-- auto-log: 2026-07-28 21:46 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-28 21:46 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-28 21:46 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-28 21:47 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-28 21:48 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-28 21:48 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-28 21:48 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-28 21:50 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-28 21:50 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-28 21:51 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-28 21:56 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-137.md -->

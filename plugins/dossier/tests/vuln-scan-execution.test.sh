@@ -102,10 +102,78 @@ if command -v osv-scanner >/dev/null 2>&1; then
   DIR_OFFLINE=$(_dossier_safe_mktemp_dir "offline-no-db")
   mkdir -p "$DIR_OFFLINE/target"
   printf 'requests==2.32.3\n' >"$DIR_OFFLINE/target/requirements.txt"
+
+  # Isolation technique: override $HOME, not XDG_CACHE_HOME. Verified live
+  # that osv-scanner's own cache-directory resolution (Go's
+  # os.UserCacheDir()) IGNORES XDG_CACHE_HOME entirely on Darwin — it
+  # always uses $HOME/Library/Caches regardless — so an XDG_CACHE_HOME-only
+  # override silently fails to isolate this test from a real system cache
+  # on macOS (confirmed: it produced a false failure against this exact
+  # machine's own prior manual osv-scanner use). Overriding $HOME instead
+  # redirects both this wrapper's own cache-path computation AND
+  # osv-scanner's real internal resolution consistently, on every platform.
+  if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+    OSV_CACHE_REL="Library/Caches/osv-scanner/PyPI"
+  else
+    OSV_CACHE_REL=".cache/osv-scanner/PyPI"
+  fi
+
+  DIR_OFFLINE_HOME=$(_dossier_safe_mktemp_dir "offline-no-db-home")
   OUT_OFFLINE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+    HOME="$DIR_OFFLINE_HOME" \
     "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
   STATUS_OFFLINE=$(printf '%s' "$OUT_OFFLINE" | jq -r '.status' 2>/dev/null)
   assert_equal "unavailable" "$STATUS_OFFLINE" "--offline with no cached DB: reported as unavailable, never as a clean scan, even though the tool's own stdout is valid empty-results JSON"
+
+  # --- Offline cache staleness (issue #137 verdict-judge NEEDS-HUMAN-REVIEW
+  # on AC4): osv-scanner itself has no staleness check on a cache that DOES
+  # load successfully — verified live against real osv-scanner 2.4.0 (a
+  # real cached database artificially aged to 2020 loaded and scanned with
+  # zero warning, indistinguishable from a fresh fetch). This wrapper must
+  # detect that case independently, since the tool never will. The
+  # staleness check runs and returns BEFORE osv-scanner is ever invoked, so
+  # a syntactically-fake placeholder file (not a real zip) is sufficient
+  # here — its content is never read. -------------------------------------
+  DIR_STALE_HOME=$(_dossier_safe_mktemp_dir "offline-stale-home")
+  mkdir -p "$DIR_STALE_HOME/$OSV_CACHE_REL"
+  printf 'stale placeholder db\n' >"$DIR_STALE_HOME/$OSV_CACHE_REL/all.zip"
+  touch -t 202001010000 "$DIR_STALE_HOME/$OSV_CACHE_REL/all.zip"
+  OUT_STALE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+    HOME="$DIR_STALE_HOME" \
+    "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
+  STATUS_STALE=$(printf '%s' "$OUT_STALE" | jq -r '.status' 2>/dev/null)
+  assert_equal "unavailable" "$STATUS_STALE" "--offline with a stale (2020) cached DB: reported as unavailable, refused before osv-scanner is even invoked"
+  DETAIL_STALE=$(printf '%s' "$OUT_STALE" | jq -r '.detail' 2>/dev/null)
+  assert_contains "stale_advisory_data" "$DETAIL_STALE" "--offline stale-cache detail names the specific reason"
+
+  # A cache within the configured max age must NOT be refused BY THE AGE
+  # CHECK — the placeholder file is not a real database, so osv-scanner's
+  # own subsequent invocation still fails to load it, but for a DIFFERENT,
+  # distinguishable reason (no "stale_advisory_data" in the detail). This
+  # isolates "the age check itself doesn't false-positive" from "a fresh
+  # cache leads to a successful scan," which would require a genuine
+  # database and is out of scope for this assertion.
+  DIR_FRESH_HOME=$(_dossier_safe_mktemp_dir "offline-fresh-home")
+  mkdir -p "$DIR_FRESH_HOME/$OSV_CACHE_REL"
+  printf 'fresh placeholder db\n' >"$DIR_FRESH_HOME/$OSV_CACHE_REL/all.zip"
+  OUT_FRESH=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+    HOME="$DIR_FRESH_HOME" \
+    "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
+  DETAIL_FRESH=$(printf '%s' "$OUT_FRESH" | jq -r '.detail // ""' 2>/dev/null)
+  assert_not_contains "stale_advisory_data" "$DETAIL_FRESH" "--offline with a fresh (just-created) cache is not refused as stale by the age check itself"
+
+  # DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS override: a cache that would fail the
+  # default 7-day threshold must NOT be refused as stale under a wide
+  # override — same isolation reasoning as the fresh-cache case above.
+  DIR_OVERRIDE_HOME=$(_dossier_safe_mktemp_dir "offline-max-age-override-home")
+  mkdir -p "$DIR_OVERRIDE_HOME/$OSV_CACHE_REL"
+  printf 'placeholder db\n' >"$DIR_OVERRIDE_HOME/$OSV_CACHE_REL/all.zip"
+  touch -t 202001010000 "$DIR_OVERRIDE_HOME/$OSV_CACHE_REL/all.zip"
+  OUT_OVERRIDE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS=99999 \
+    CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" HOME="$DIR_OVERRIDE_HOME" \
+    "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
+  DETAIL_OVERRIDE=$(printf '%s' "$OUT_OVERRIDE" | jq -r '.detail // ""' 2>/dev/null)
+  assert_not_contains "stale_advisory_data" "$DETAIL_OVERRIDE" "DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS override widens the acceptable-age window as configured"
 else
   _dossier_assert_pass "osv-scanner unavailable on PATH — the --offline-no-cached-DB assertion was skipped (real-tool-dependent; run.sh's CI job installs it)"
 fi

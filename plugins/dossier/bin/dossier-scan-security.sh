@@ -42,6 +42,21 @@
 # signal and is reported as `unavailable`, never `ok`, regardless of stdout
 # parsing cleanly.
 #
+# osv-scanner itself has no staleness check on its cached local database —
+# verified live: a real cached database artificially aged to 2020 loaded
+# and scanned with zero warning, indistinguishable in output from a fresh
+# fetch. This script therefore checks the cache's own age BEFORE invoking
+# osv-scanner whenever `--offline` is set: if the newest file under
+# osv-scanner's own cache directory (`~/Library/Caches/osv-scanner` on
+# Darwin, unconditionally — verified live that osv-scanner ignores
+# XDG_CACHE_HOME entirely on this platform even when it's set;
+# `$XDG_CACHE_HOME/osv-scanner`, falling back to `~/.cache/osv-scanner`, on
+# other Unix, matching Go's os.UserCacheDir() precedence exactly) is older
+# than DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS (default 7), the scan is refused
+# and reported as `unavailable` with a `stale_advisory_data` explanation —
+# never `ok`. This is a separate check from the "no cached DB at all"
+# detection above; either can fire independently.
+#
 # A timeout kills the tool (TERM then KILL) and discards any partial output
 # — a killed run's incomplete stdout is never read as a result.
 #
@@ -86,6 +101,7 @@ emit() {
   # $1 = status, $2 = detail (may be empty), $3 = artifact_path (may be empty
   # meaning null), $4 = 1 to include offline_caveat
   _status="$1"; _detail="$2"; _artifact="$3"; _offline_caveat="$4"
+  _offline_caveat_text="This result was produced in --offline mode against a locally cached vulnerability database no older than ${MAX_AGE_DAYS:-7} days (age-checked before this scan ran). dossier does not verify the cache's provenance, digest, or the completeness of its advisory coverage in this release — an offline result still carries less assurance than a network-verified one."
   RESULT=$(jq -cn \
     --arg status "$_status" \
     --arg tool "osv-scanner" \
@@ -94,6 +110,7 @@ emit() {
     --arg detail "$_detail" \
     --arg artifact "$_artifact" \
     --arg note "$NOTE" \
+    --arg offline_caveat_text "$_offline_caveat_text" \
     --argjson offline_caveat_flag "$_offline_caveat" \
     '{
       schema: "dossier.scan-security/v1",
@@ -103,7 +120,7 @@ emit() {
       note: $note
     }
     + (if $detail == "" then {} else {detail: $detail} end)
-    + (if $offline_caveat_flag == 1 then {offline_caveat: "This result was produced in --offline mode. dossier does not verify the cached vulnerability database'\''s age or provenance in this release — an offline clean result carries less assurance than a network-verified one."} else {} end)')
+    + (if $offline_caveat_flag == 1 then {offline_caveat: $offline_caveat_text} else {} end)')
 
   if ! printf '%s\n' "$RESULT" | jq -e . >/dev/null 2>&1; then
     echo "dossier-scan-security: internal error: produced malformed output" >&2
@@ -146,6 +163,62 @@ fi
 
 RAW_STDOUT="$WORKDIR/osv-scan-raw.json"
 RAW_STDERR="$WORKDIR/.osv-scan-stderr.txt"
+
+# --- Offline cache freshness, checked BEFORE invoking osv-scanner at all.
+# osv-scanner itself does not check the age of its cached local database —
+# verified live: a real cached PyPI database artificially aged to 2020 was
+# loaded and scanned with zero warning, zero error, and a clean-looking
+# "Loaded PyPI local db from ..." line, indistinguishable from a fresh
+# fetch. The stderr-based "no offline version of the OSV database is
+# available" detection below only fires when the cache is entirely ABSENT
+# or fails to load — it cannot detect a present-but-stale cache, since
+# osv-scanner itself never reports that condition. This wrapper therefore
+# owns staleness detection independently: refuse to scan against a cache
+# whose newest file is older than the configured maximum age, reporting
+# `unavailable` before osv-scanner ever runs, rather than letting a stale
+# "clean" result look identical to a genuinely fresh one.
+if [ "$OFFLINE" -eq 1 ]; then
+  # Must mirror osv-scanner's own cache-directory resolution EXACTLY (Go's
+  # os.UserCacheDir(), which osv-scanner uses) or this check silently
+  # inspects the wrong directory. Verified live and confirmed against Go's
+  # documented behavior: Darwin ALWAYS uses $HOME/Library/Caches and NEVER
+  # consults XDG_CACHE_HOME, even when it is set — osv-scanner ignored a
+  # populated XDG_CACHE_HOME-based fake cache entirely on this platform and
+  # used the real ~/Library/Caches/osv-scanner path regardless. Only
+  # non-Darwin Unix (the CI runner's actual platform) checks XDG_CACHE_HOME
+  # first, falling back to $HOME/.cache.
+  if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+    OSV_CACHE_DIR="$HOME/Library/Caches/osv-scanner"
+  elif [ -n "${XDG_CACHE_HOME:-}" ]; then
+    OSV_CACHE_DIR="$XDG_CACHE_HOME/osv-scanner"
+  else
+    OSV_CACHE_DIR="$HOME/.cache/osv-scanner"
+  fi
+  MAX_AGE_DAYS="${DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS:-7}"
+  MAX_AGE_SECONDS=$((MAX_AGE_DAYS * 86400))
+  if [ -d "$OSV_CACHE_DIR" ]; then
+    NEWEST_MTIME=0
+    while IFS= read -r _f; do
+      _m=$(stat -f %m "$_f" 2>/dev/null || stat -c %Y "$_f" 2>/dev/null)
+      [ -n "$_m" ] && [ "$_m" -gt "$NEWEST_MTIME" ] && NEWEST_MTIME="$_m"
+    done <<EOF
+$(find "$OSV_CACHE_DIR" -type f 2>/dev/null)
+EOF
+    if [ "$NEWEST_MTIME" -gt 0 ]; then
+      NOW_EPOCH=$(date -u +%s)
+      AGE_SECONDS=$((NOW_EPOCH - NEWEST_MTIME))
+      if [ "$AGE_SECONDS" -gt "$MAX_AGE_SECONDS" ]; then
+        AGE_DAYS=$((AGE_SECONDS / 86400))
+        emit "unavailable" "offline mode requested but the cached vulnerability database at $OSV_CACHE_DIR is ${AGE_DAYS} days old (max acceptable age: ${MAX_AGE_DAYS} days) — stale_advisory_data, refusing to report a result from it" "" 0
+      fi
+    fi
+    # NEWEST_MTIME == 0 (directory exists but is empty) falls through to
+    # the real invocation below, which osv-scanner will itself fail on —
+    # already covered by the existing "no offline version" detection.
+  fi
+  # A wholly absent cache directory also falls through: osv-scanner's own
+  # load failure is caught by the existing stderr-based check below.
+fi
 
 SCAN_ARGS=(scan source --format json -r "$TARGET")
 [ "$OFFLINE" -eq 1 ] && SCAN_ARGS+=(--offline-vulnerabilities)
