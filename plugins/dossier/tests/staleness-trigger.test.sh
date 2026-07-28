@@ -127,4 +127,32 @@ OUT_NOSTALE=$(run_policy "$F3" schedule "$WM3")
 assert_equal "false" "$(get "$OUT_NOSTALE" should_run)" "no stale documents: the schedule sweep still declines to run, unchanged from before this feature"
 assert_equal "no-relevant-paths" "$(get "$OUT_NOSTALE" reason)" "no stale documents: reason is still no-relevant-paths, not stale-sweep"
 
+# --- ERR-3: an infrastructure failure in dossier-staleness-check.sh must not
+# be silently treated as "zero stale documents" ------------------------------
+# A real sibling-script copy (dossier-policy.sh needs dossier-resolve-config.sh
+# alongside it) with only dossier-staleness-check.sh swapped for a script that
+# always fails — entirely inside an isolated fixture, the real repo scripts
+# are never touched.
+ERR3_ROOT=$(_dossier_safe_mktemp_dir "policy-staleness-failure")
+mkdir -p "$ERR3_ROOT/bin"
+cp "$(pwd)/plugins/dossier/bin/"*.sh "$ERR3_ROOT/bin/"
+cat >"$ERR3_ROOT/bin/dossier-staleness-check.sh" <<'FAKE'
+#!/usr/bin/env bash
+echo "dossier-staleness-check: simulated infrastructure failure" >&2
+exit 2
+FAKE
+chmod +x "$ERR3_ROOT/bin"/*.sh
+
+F4=$(setup_fixture 1)
+WM4=$(git -C "$F4" rev-parse HEAD)
+( cd "$F4" && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
+
+ERR3_SUMMARY="$ERR3_ROOT/summary.md"
+OUT_ERR3=$( cd "$F4" && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" EVT="schedule" PR_LABELS="" PR_HEAD_REF="" PR_ACTOR="" PR_NUMBER="" \
+    "$ERR3_ROOT/bin/dossier-policy.sh" --base "$WM4" --summary "$ERR3_SUMMARY" 2>&1 )
+assert_not_contains "reason=stale-sweep" "$OUT_ERR3" "ERR-3: a staleness-check infrastructure failure never masquerades as reason=stale-sweep"
+ERR3_SUMMARY_BODY=$(cat "$ERR3_SUMMARY" 2>/dev/null)
+assert_contains "dossier-staleness-check.sh failed" "$ERR3_SUMMARY_BODY" "ERR-3: the failure is noted in the run summary, not silently swallowed"
+assert_contains "simulated infrastructure failure" "$ERR3_SUMMARY_BODY" "ERR-3: the note carries the underlying script's stderr, not just a generic message"
+
 _dossier_test_summary

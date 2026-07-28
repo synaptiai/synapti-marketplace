@@ -197,3 +197,19 @@ A zero-context agent given this journal's Interface Contracts (exact script name
 <!-- auto-log: 2026-07-28 13:25 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/commit-msg-review-fixes.txt -->
 
 <!-- auto-log: 2026-07-28 13:25 commit "fix(dossier): address review findings on staleness-check and policy" -->
+
+<!-- auto-log: 2026-07-28 13:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-staleness-check.sh -->
+
+<!-- auto-log: 2026-07-28 13:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-staleness-check.sh -->
+
+<!-- auto-log: 2026-07-28 13:30 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-staleness-check.sh -->
+
+<!-- auto-log: 2026-07-28 13:30 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-check.test.sh -->
+
+<!-- auto-log: 2026-07-28 13:31 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-check.test.sh -->
+
+<!-- auto-log: 2026-07-28 13:31 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-check.test.sh -->
+
+<!-- auto-log: 2026-07-28 13:32 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-trigger.test.sh -->
+
+<!-- auto-log: 2026-07-28 13:35 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/commit-msg-narrow-sec3.txt -->

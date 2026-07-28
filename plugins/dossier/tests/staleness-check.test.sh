@@ -80,13 +80,29 @@ last-verified: {fill}
 Placeholder date.
 EOF
 
+# SEC-3 (narrow scope): a stale, dated, non-canonical file (a package README
+# that happens to carry a last-verified header, say) must still count toward
+# DOCUMENTS_STALE like every other document status.md has always seen — but
+# must never be sweep-eligible, even when it is the single most-overdue file
+# in the package. Deliberately the oldest of all (500 days), so if the sweep
+# ever regressed to walking all *.md files again, this would displace a
+# canonical entry from the capped list and the exact-match assertion below
+# would catch it.
+STRAY_DOC="$FIXTURE/docs/dossier/README.md"
+cat >"$STRAY_DOC" <<EOF
+dossier-header: v1
+last-verified: $(day_offset 500)
+---
+Not a canonical dossier document, just a plain package readme.
+EOF
+
 OUT=$("$SCRIPT" --output-root "$FIXTURE/docs/dossier" --stale-days 90 --max-sweep 2 2>&1)
 
 get_field() { printf '%s\n' "$OUT" | awk -F= -v k="$1" '$1==k{print $2; exit}'; }
 
 assert_equal "90" "$(get_field STALENESS_THRESHOLD_DAYS)" "threshold echoes the --stale-days flag"
-assert_equal "3" "$(get_field DOCUMENTS_STALE)" "three documents cross the 90-day threshold"
-assert_equal "2" "$(get_field DOCUMENTS_UNDATED)" "two documents are undated (missing header, placeholder value)"
+assert_equal "4" "$(get_field DOCUMENTS_STALE)" "four documents cross the 90-day threshold, including the non-canonical stray README"
+assert_equal "2" "$(get_field DOCUMENTS_UNDATED)" "two documents are undated (missing header, placeholder value) — the stray README is dated, so it does not add a third"
 assert_equal "2" "$(get_field MAX_STALE_DOCS_PER_SWEEP)" "sweep cap echoes the --max-sweep flag"
 
 SWEEP=$(get_field STALE_DOCS_FOR_SWEEP)
@@ -96,7 +112,7 @@ assert_equal "2" "$SWEEP_COUNT" "sweep list is capped at 2 even though 3 documen
 # match here would not have caught a doubled prefix like
 # "docs/dossier/docs/dossier/02-architecture/...", which still contains the
 # bare filename as a substring.
-assert_equal "02-architecture/components-and-codebase.md,02-architecture/data-and-ai.md" "$SWEEP" "sweep list is exact, package-relative, most-overdue first"
+assert_equal "02-architecture/components-and-codebase.md,02-architecture/data-and-ai.md" "$SWEEP" "sweep list is exact, package-relative, most-overdue first — and excludes the stray non-canonical README even though it is the single most-overdue stale document of all"
 
 # --- Empty/absent package: no crash, zero counts, empty sweep list ----------
 EMPTY_OUT=$("$SCRIPT" --output-root "$FIXTURE/docs/nonexistent" --stale-days 90 --max-sweep 5 2>&1)

@@ -95,6 +95,8 @@ if [ -z "$OUTPUT_ROOT" ]; then
     OUTPUT_ROOT="docs/dossier"
   fi
 fi
+# Trailing slash would otherwise break the package-relative prefix strip below.
+OUTPUT_ROOT="${OUTPUT_ROOT%/}"
 if [ -z "$STALE_DAYS" ]; then
   if [ -x "$CASCADE" ]; then
     STALE_DAYS=$("$CASCADE" --default 90 dossier.refresh.stalenessDays 2>/dev/null)
@@ -156,11 +158,15 @@ trap 'rm -rf "$TMPDIR_SC" 2>/dev/null' EXIT
 STALE_LIST="$TMPDIR_SC/stale.tsv"
 : >"$STALE_LIST"
 
-# The 23 canonical documents bin/dossier-evidence.sh recognizes. Walking only
-# these — never a bare `find $OUTPUT_ROOT -name '*.md'` — matters because a
-# sweep's slots are bounded (MAX_SWEEP): a stray non-canonical markdown file
-# with an old last-verified date must not consume a sweep slot that starves a
-# genuinely stale canonical document.
+# The 23 canonical documents bin/dossier-evidence.sh recognizes. A sweep's
+# re-verification slots are bounded (MAX_SWEEP), so a stray non-canonical
+# markdown file (a README, a scratch note) with an old or missing
+# last-verified date must not consume a sweep slot that starves a genuinely
+# stale canonical document — membership in this list gates SWEEP eligibility
+# only. It does NOT gate the STALE/UNDATED/OLDEST scalar counts below: those
+# must keep counting every *.md under OUTPUT_ROOT exactly as the pre-existing
+# walk did, so status.md's dashboard contract does not silently change
+# meaning for a package that has non-canonical markdown files in it.
 CANONICAL_DOCS='00-control/documentation-index.md
 00-control/evidence-ledger.md
 00-control/assumptions-questions-and-contradictions.md
@@ -185,16 +191,19 @@ CANONICAL_DOCS='00-control/documentation-index.md
 06-public/customer-product-and-trust-guide.md
 07-verification/documentation-verification-report.md'
 
+is_canonical_doc() {
+  printf '%s\n' "$CANONICAL_DOCS" | grep -Fxq "$1"
+}
+
 # Same field order and skip/continue semantics as commands/status.md's former
 # inline loop, byte-for-byte, so its emitted counters do not change meaning.
 # STALE_LIST stores package-relative paths ($REL, never $OUTPUT_ROOT/$REL) —
 # every downstream consumer (dossier-blast-radius.sh --stale-docs,
 # commands/refresh.md) expects package-relative, matching
 # dossier-evidence.sh's CANONICAL_DOCS convention.
-while IFS= read -r REL; do
-  [ -n "$REL" ] || continue
-  f="$OUTPUT_ROOT/$REL"
-  [ -f "$f" ] || continue
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  rel="${f#"$OUTPUT_ROOT"/}"
   lv=$(parse_last_verified "$f")
   case "$lv" in
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
@@ -211,11 +220,11 @@ while IFS= read -r REL; do
   age=$(( (TODAY_S - lv_s) / 86400 ))
   if [ "$age" -gt "$STALE_DAYS" ]; then
     STALE=$((STALE + 1))
-    printf '%s\t%s\n' "$age" "$REL" >>"$STALE_LIST"
+    is_canonical_doc "$rel" && printf '%s\t%s\n' "$age" "$rel" >>"$STALE_LIST"
   fi
   if [ -z "$OLDEST" ] || [ "$lv" \< "$OLDEST" ]; then OLDEST="$lv"; fi
 done <<EOF
-$CANONICAL_DOCS
+$(find "$OUTPUT_ROOT" -name '*.md' -type f 2>/dev/null)
 EOF
 
 SWEEP_LIST=""
