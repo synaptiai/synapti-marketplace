@@ -386,4 +386,58 @@ else
   _dossier_assert_fail "$CONTRACT_05 missing"
 fi
 
+# =============================================================================
+# Part 4 — end-to-end: a planted unresolved vulnerability is actually caught,
+# not just theoretically coverable (AC5)
+# =============================================================================
+# Full pipeline in one fixture: a real scan artifact -> the real ingestion
+# script's real output -> a ledger row built FROM that output (not
+# hand-typed, bypassing the parser) -> the real gate. Distinct from Part 2's
+# fixtures, which hand-write ledger rows to test G19's logic in isolation.
+
+E2E_DIR=$(_dossier_safe_mktemp_dir "e2e-planted-vuln")
+mkdir -p "$E2E_DIR/docs/dossier/00-control"
+
+cat >"$E2E_DIR/planted-scan.json" <<'EOF'
+[
+  {
+    "number": 42,
+    "state": "open",
+    "dependency": {"package": {"name": "jinja2"}, "manifest_path": "requirements.txt"},
+    "security_advisory": {"ghsa_id": "GHSA-h5c8-rqwp-cp95", "severity": "high", "summary": "Jinja2 sandbox escape"}
+  }
+]
+EOF
+
+E2E_INGEST_OUT=$(cd "$E2E_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan planted-scan.json 2>&1)
+E2E_INGEST_RC=$?
+assert_equal "0" "$E2E_INGEST_RC" "e2e: the planted Dependabot artifact ingests cleanly"
+
+E2E_FINDING_ID=$(printf '%s' "$E2E_INGEST_OUT" | jq -r '.findings[0].id' 2>/dev/null)
+E2E_FINDING_SEV=$(printf '%s' "$E2E_INGEST_OUT" | jq -r '.findings[0].severity' 2>/dev/null)
+E2E_FINDING_PKG=$(printf '%s' "$E2E_INGEST_OUT" | jq -r '.findings[0].package' 2>/dev/null)
+assert_equal "GHSA-h5c8-rqwp-cp95" "$E2E_FINDING_ID" "e2e: the ingestion script's real output carries the planted finding's real ID"
+assert_equal "High" "$E2E_FINDING_SEV" "e2e: the ingestion script's real output carries the planted finding's real severity"
+assert_equal "jinja2" "$E2E_FINDING_PKG" "e2e: the ingestion script's real output carries the planted finding's real package"
+
+# Simulate what the evidence-ledger skill does: append the script's own
+# output as ledger rows, verbatim from the parsed fields above — not a
+# second, independently hand-typed claim.
+cat >"$E2E_DIR/docs/dossier/00-control/evidence-ledger.md" <<EOF
+# Evidence Ledger
+
+| Evidence ID | Claim | State | Source ref | Retrievable | Authority | Version/env | Observed | Freshness | Confidentiality | Public use | Consuming docs | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| EV-0001 | Dependency vulnerability scan: dependabot on requirements.txt, 2026-07-28 | R | \`planted-scan.json\` — dependabot, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0002 | dependabot reports $E2E_FINDING_ID in $E2E_FINDING_PKG, severity $E2E_FINDING_SEV | R | \`planted-scan.json\` — dependabot, $E2E_FINDING_ID, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=$E2E_FINDING_SEV |
+EOF
+# Deliberately no 04-operating/decisions-technical-debt-and-risks.md at all —
+# the planted finding has no disposition anywhere in this package.
+
+E2E_GATE_OUT=$(cd "$E2E_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$GATE" --output-root docs/dossier --json 2>/dev/null)
+E2E_G19_RESULT=$(printf '%s' "$E2E_GATE_OUT" | jq -r '.conditions[] | select(.id=="G19") | .result' 2>/dev/null)
+E2E_G19_EVIDENCE=$(printf '%s' "$E2E_GATE_OUT" | jq -r '.conditions[] | select(.id=="G19") | .evidence' 2>/dev/null)
+assert_equal "FAIL" "$E2E_G19_RESULT" "AC5: the planted unresolved High vulnerability, carried through the real ingestion script and the real gate, is actually caught"
+assert_contains "EV-0002" "$E2E_G19_EVIDENCE" "AC5: G19's evidence names the planted finding's specific EV-#### row"
+
 _dossier_test_summary

@@ -175,3 +175,7 @@ Accepted consequence, worth surfacing here rather than only in the resolved-desi
 <!-- auto-log: 2026-07-28 16:20 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/package/03-assurance/testing-quality-and-delivery.md -->
 
 <!-- auto-log: 2026-07-28 16:20 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
+
+<!-- auto-log: 2026-07-28 16:21 commit "docs(dossier): require the honest no-scan-found fallback in vulnerability templates" -->
+
+<!-- auto-log: 2026-07-28 16:22 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
