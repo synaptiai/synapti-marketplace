@@ -12,6 +12,11 @@ artifacts:
   workflow: review-pr
   run_id: 2026-07-28T120749Z-review
   status: completed
+- type: workflow-run
+  captured_at: '2026-07-28T13:18:56Z'
+  workflow: release
+  run_id: 2026-07-28T131400Z-release
+  status: active
 ---
 # Decision Journal — Issue #135
 
