@@ -172,3 +172,11 @@ No item remains open under "Needs Clarification" — every gap the advisor raise
 <!-- auto-log: 2026-07-28 20:43 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/hooks.test.sh -->
 
 <!-- auto-log: 2026-07-28 20:44 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/skills/engagement-scoping/SKILL.md -->
+
+<!-- auto-log: 2026-07-28 20:47 commit "feat(dossier): backstop scanner execution with deny-blocks in the action ceiling" -->
+
+<!-- auto-log: 2026-07-28 20:47 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:47 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/quality-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:48 Edit /Users/danielbentes/synapti-marketplace/.github/workflows/dossier-tests.yml -->

@@ -199,6 +199,31 @@ STATUS_CROSSFLAG=$(printf '%s' "$OUT_CROSSFLAG" | jq -r '.status' 2>/dev/null)
 assert_equal "disabled" "$STATUS_CROSSFLAG" "AC3: runSecurityScan=true alone never enables the quality wrapper"
 
 # =============================================================================
+# AC3 (joint, issue #137 Task 26): with BOTH scripts invoked under one shared
+# config where only runCodeQualityScan is true, the quality wrapper proceeds
+# while the security wrapper independently reports disabled — and vice
+# versa. Mirrors the joint assertion in vuln-scan-execution.test.sh (AC3's
+# own stated verification names both test files).
+# =============================================================================
+SECURITY_SCRIPT="$(pwd)/plugins/dossier/bin/dossier-scan-security.sh"
+if [ -x "$SECURITY_SCRIPT" ]; then
+  DIR_JOINT=$(_dossier_safe_mktemp_dir "ac3-joint")
+  mkdir -p "$DIR_JOINT/sec-target" "$DIR_JOINT/qual-target"
+  printf 'def f():\n    pass\n' >"$DIR_JOINT/qual-target/mod.py"
+
+  QUAL_OUT=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=false \
+    CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SCRIPT" --target "$DIR_JOINT/qual-target" 2>&1)
+  SEC_OUT=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=false \
+    CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SECURITY_SCRIPT" --target "$DIR_JOINT/sec-target" 2>&1)
+  QUAL_STATUS=$(printf '%s' "$QUAL_OUT" | jq -r '.status' 2>/dev/null)
+  SEC_STATUS=$(printf '%s' "$SEC_OUT" | jq -r '.status' 2>/dev/null)
+  assert_not_contains "disabled" "$QUAL_STATUS" "AC3 joint: quality proceeds (not disabled) when only runCodeQualityScan is true"
+  assert_equal "disabled" "$SEC_STATUS" "AC3 joint: security independently stays disabled under the identical shared environment"
+else
+  _dossier_assert_fail "$SECURITY_SCRIPT missing or not executable — AC3 joint assertions could not run"
+fi
+
+# =============================================================================
 # CLI hygiene
 # =============================================================================
 "$SCRIPT" --target >/dev/null 2>&1

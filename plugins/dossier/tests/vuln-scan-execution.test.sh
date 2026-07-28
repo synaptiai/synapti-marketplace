@@ -187,6 +187,42 @@ STATUS_CROSSFLAG=$(printf '%s' "$OUT_CROSSFLAG" | jq -r '.status' 2>/dev/null)
 assert_equal "disabled" "$STATUS_CROSSFLAG" "AC3: runCodeQualityScan=true alone never enables the security wrapper"
 
 # =============================================================================
+# AC3 (joint, issue #137 Task 26): with BOTH scripts invoked under one shared
+# config where only runSecurityScan is true, the security wrapper proceeds
+# while the quality wrapper independently reports disabled — and vice versa.
+# The per-script AC3 assertions above prove each script ignores the other's
+# flag in isolation; this proves it holds when both run back to back against
+# the identical environment, per AC3's own stated verification (same two
+# test files).
+# =============================================================================
+QUALITY_SCRIPT="$(pwd)/plugins/dossier/bin/dossier-scan-quality.sh"
+if [ -x "$QUALITY_SCRIPT" ]; then
+  DIR_JOINT=$(_dossier_safe_mktemp_dir "ac3-joint")
+  mkdir -p "$DIR_JOINT/sec-target" "$DIR_JOINT/qual-target"
+  printf 'def f():\n    pass\n' >"$DIR_JOINT/qual-target/mod.py"
+
+  SEC_OUT=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=false \
+    CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SCRIPT" --target "$DIR_JOINT/sec-target" 2>&1)
+  QUAL_OUT=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=false \
+    CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$QUALITY_SCRIPT" --target "$DIR_JOINT/qual-target" 2>&1)
+  SEC_STATUS=$(printf '%s' "$SEC_OUT" | jq -r '.status' 2>/dev/null)
+  QUAL_STATUS=$(printf '%s' "$QUAL_OUT" | jq -r '.status' 2>/dev/null)
+  assert_not_contains "disabled" "$SEC_STATUS" "AC3 joint: security proceeds (not disabled) when only runSecurityScan is true"
+  assert_equal "disabled" "$QUAL_STATUS" "AC3 joint: quality independently stays disabled under the identical shared environment"
+
+  SEC_OUT2=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=false DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true \
+    CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SCRIPT" --target "$DIR_JOINT/sec-target" 2>&1)
+  QUAL_OUT2=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=false DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true \
+    CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$QUALITY_SCRIPT" --target "$DIR_JOINT/qual-target" 2>&1)
+  SEC_STATUS2=$(printf '%s' "$SEC_OUT2" | jq -r '.status' 2>/dev/null)
+  QUAL_STATUS2=$(printf '%s' "$QUAL_OUT2" | jq -r '.status' 2>/dev/null)
+  assert_equal "disabled" "$SEC_STATUS2" "AC3 joint (flipped): security independently stays disabled under the identical shared environment"
+  assert_not_contains "disabled" "$QUAL_STATUS2" "AC3 joint (flipped): quality proceeds (not disabled) when only runCodeQualityScan is true"
+else
+  _dossier_assert_fail "$QUALITY_SCRIPT missing or not executable — AC3 joint assertions could not run"
+fi
+
+# =============================================================================
 # CLI hygiene
 # =============================================================================
 "$SCRIPT" --target >/dev/null 2>&1

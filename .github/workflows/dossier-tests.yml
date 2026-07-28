@@ -42,12 +42,39 @@ jobs:
             'pyyaml==6.0.2' \
             'jsonschema==4.23.0'
 
+      - name: Install osv-scanner and pyscn
+        # vuln-scan-execution.test.sh and quality-scan-execution.test.sh each
+        # carry a real end-to-end run against the actual scanning tools
+        # (issue #137, AC6) that degrades to a named, honest skip when the
+        # tool is absent from PATH — the same idiom this file's Python-
+        # prerequisites step above already uses. In CI we always want the
+        # strict path, because the skip is exactly what would hide a broken
+        # wrapper script or a regression in the severity-extraction fix.
+        #
+        # Versions and the osv-scanner binary's checksum are pinned so an
+        # upstream regression or a hostile release cannot silently change a
+        # CI result.
+        run: |
+          set -euo pipefail
+          OSV_VERSION=v2.4.0
+          OSV_SHA256=15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
+          curl -fsSL -o /usr/local/bin/osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  /usr/local/bin/osv-scanner" | sha256sum -c -
+          chmod +x /usr/local/bin/osv-scanner
+          osv-scanner --version
+
+          python3 -m pip install --quiet --break-system-packages 'pyscn==1.10.2'
+          pyscn --version
+
       - name: Verify test prerequisites
         run: |
           bash --version | head -1
           jq --version
           python3 -c "import yaml; print('PyYAML', yaml.__version__)"
           python3 -c "import jsonschema; print('jsonschema', jsonschema.__version__)"
+          osv-scanner --version
+          pyscn --version
 
       - name: Run dossier tests
         run: plugins/dossier/tests/run.sh
