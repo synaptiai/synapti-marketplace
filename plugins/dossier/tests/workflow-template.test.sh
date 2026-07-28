@@ -192,6 +192,16 @@ for denied in "WebFetch" "git push"; do
   assert_contains "$denied" "$DIS" "denies $denied"
 done
 
+# The refresh job's agent is the only place enforce-allowed-actions.sh's
+# scanner deny-blocks could matter in CI (the scan job is a plain shell step
+# with no agent at all) — so the refresh job's own Bash allowlist is the real
+# backstop against the hook's known find-exec/xargs-I{} bypass (issue #143).
+# Granular Bash(cmd:*) entries are the boundary; find/xargs are absent from
+# the list entirely, not merely unlisted alongside others.
+for excluded in "Bash(find" "Bash(xargs" "Bash(osv-scanner" "Bash(pyscn"; do
+  assert_not_contains "$excluded" "$ALLOWED" "CI allowlist excludes $excluded — the find-exec/xargs hook bypass (#143) cannot reach a tool the refresh job was never granted"
+done
+
 # --- Prompt is static --------------------------------------------------------
 # The prompt carries a path, never attacker-controlled content.
 PROMPT_LINE=$(grep -E '^\s*prompt:' "$WF" | head -1)
