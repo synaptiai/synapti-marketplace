@@ -1,8 +1,8 @@
 # Release Gate Conditions
 
-Reference document. The eighteen conditions that decide whether a documentation package may be released, how each is checked, and the contract that stops the gate from becoming theater.
+Reference document. The nineteen conditions that decide whether a documentation package may be released, how each is checked, and the contract that stops the gate from becoming theater.
 
-The gate is **binary and conjunctive**: eighteen of eighteen, or the package is not `release-ready`. A high score is one condition, not a substitute for the other seventeen. A package can score 96/100 and be unreleasable on a single unsupported public claim, and that is the correct outcome — the score measures quality, and the other conditions measure whether the package is safe to rely on.
+The gate is **binary and conjunctive**: nineteen of nineteen, or the package is not `release-ready`. A high score is one condition, not a substitute for the other eighteen. A package can score 96/100 and be unreleasable on a single unsupported public claim, and that is the correct outcome — the score measures quality, and the other conditions measure whether the package is safe to rely on.
 
 ## The mechanical / judgment split
 
@@ -13,7 +13,7 @@ Every condition carries exactly one tag, and the tag determines who is allowed t
 | **`mechanical`** | `bin/dossier-gate.sh` can decide it true or false from repository state alone — files, headings, register rows, greps, link resolution, exit codes. No verdict file, no model judgment. |
 | **`judgment`** | Cannot be decided from repository state. Requires the `dossier-scorer` verdict file, which is a model-produced artifact. The script's job is to **require and parse** that verdict, never to substitute for it. |
 
-Eleven conditions are mechanical; seven are judgment.
+Twelve conditions are mechanical; seven are judgment.
 
 Some mechanical conditions have a judgment shadow — a script can prove every registered claim has approved evidence, but not that every public *sentence* was registered in the first place. Where that applies, the condition below names its **mechanical precondition** and says which judgment condition covers the rest. The split is drawn so that the shadow always lands on a judgment-tagged condition rather than falling through the gate.
 
@@ -23,7 +23,7 @@ This section is normative for `bin/dossier-gate.sh`.
 
 **Failing is decidable from a subset. Passing is not.**
 
-That asymmetry is the whole design. Eleven mechanical conditions are enough to prove a package is *not* releasable — one broken link is sufficient. They are never enough to prove it *is*, because the seven judgment conditions include both scorecard conditions and three of the four "must never appear" rules. A script that passed on mechanics alone would emit `PASS` for a package whose planned features are documented as shipped, whose targets are printed as measurements, and whose policies are described as controls, having checked none of it. That package would look audited and would be wrong in exactly the ways the system exists to catch.
+That asymmetry is the whole design. Twelve mechanical conditions are enough to prove a package is *not* releasable — one broken link is sufficient. They are never enough to prove it *is*, because the seven judgment conditions include both scorecard conditions and three of the four "must never appear" rules. A script that passed on mechanics alone would emit `PASS` for a package whose planned features are documented as shipped, whose targets are printed as measurements, and whose policies are described as controls, having checked none of it. That package would look audited and would be wrong in exactly the ways the system exists to catch.
 
 So the script **structurally refuses to emit `PASS` without a scorer verdict file**:
 
@@ -41,14 +41,14 @@ Exit codes:
 
 | Code | Meaning |
 |---:|---|
-| 0 | `PASS` — all eighteen conditions satisfied, judgment set covered by a valid verdict file |
+| 0 | `PASS` — all nineteen conditions satisfied, judgment set covered by a valid verdict file |
 | 1 | `FAIL` — at least one condition failed. Emitted from mechanics alone when a mechanical condition fails, with or without a verdict file |
 | 2 | Usage error — missing or invalid arguments |
 | 3 | `INCONCLUSIVE` — no mechanical condition failed, but the judgment set is not covered |
 
 `--strict` maps exit 3 to exit 1, so CI treats an uncovered judgment set as a failure rather than as a state to interpret. `--json` emits one object per condition with `id`, `tag`, `result`, `evidence`, and `source` (`script` or `verdict`), so a reader can always tell which conditions were machine-decided and which were asserted by the scorer.
 
-## The eighteen conditions
+## The nineteen conditions
 
 | ID | Condition | Tag |
 |---|---|---|
@@ -70,6 +70,7 @@ Exit codes:
 | G16 | Unresolved uncertainty and source limitations are visible | mechanical |
 | G17 | The reviewer-pass independence method is disclosed, including model diversity | mechanical |
 | G18 | No hard-category prose-clarity violation exists in the package | mechanical |
+| G19 | No unresolved Critical or High dependency vulnerability lacks a recorded disposition | mechanical |
 
 ### G01 — Total score is at least `gate.minScore`
 
@@ -241,7 +242,7 @@ Exit codes:
 
 **Satisfied by:** the table and the diversity line, written honestly — including when the honest answer is `none`, because all passes shared a model.
 
-**Why it is a gate condition rather than a convention.** `references/independent-audit-protocol.md` calls this disclosure required, and the package's own evidence standard turns on it: three passes that shared one model decorrelate lenses but not model-level blind spots, and a reader who cannot see which tier ran has no way to weigh the audit. Without G17 a package could pass all sixteen other conditions while omitting the one sentence that tells the reader how much the verification is worth. That is the same defect class the format exists to catch elsewhere — a capability claim broader than what was actually done.
+**Why it is a gate condition rather than a convention.** `references/independent-audit-protocol.md` calls this disclosure required, and the package's own evidence standard turns on it: three passes that shared one model decorrelate lenses but not model-level blind spots, and a reader who cannot see which tier ran has no way to weigh the audit. Without G17 a package could pass all eighteen other conditions while omitting the one sentence that tells the reader how much the verification is worth. That is the same defect class the format exists to catch elsewhere — a capability claim broader than what was actually done.
 
 Mechanical rather than judgment: presence of the heading and the `Model diversity:` line is decidable from the file. Whether the disclosure is *accurate* is covered by G16's honesty requirement and by the scorer.
 
@@ -257,13 +258,27 @@ Mechanical rather than judgment: presence of the heading and the `Model diversit
 
 Advisory categories (passive voice, nominalization, em-dash count) are never checked here — they are grammar-heuristic and false-positive-prone, so they feed `dossier-pass-c-audience`'s Step 5 and Dimension 10 of `references/scorecard-rubric.md` as judgment context instead of a mechanical gate condition. This plugin's own reference documents use em-dashes constitutively, and an advisory category gating release would fail this plugin's own package on its first run.
 
+### G19 — No unresolved Critical or High dependency vulnerability lacks a recorded disposition
+
+**Tag:** mechanical
+
+| Aspect | Content |
+|---|---|
+| Check | Read `00-control/evidence-ledger.md` for vulnerability-finding rows (`Notes` tagged `vuln-finding severity=<Critical\|High>`, case-insensitive, written by the evidence-ledger skill from `bin/dossier-vuln-evidence.sh`'s normalized output — dossier never executes a scanner itself). For each Critical/High row, look for a disposition: a `04-operating/decisions-technical-debt-and-risks.md` Risk register row citing the same `EV-####`, with `Category` `dependency` or `security` (case-insensitive), a filled (non-placeholder) `Owner`, and `Status` of `mitigating` or `closed` (case-insensitive); or an Accepted risks row citing it with a filled accepter, a calendar-valid acceptance date, a filled basis, and a calendar-valid review date that has not yet elapsed. |
+| Evidence that satisfies it | Every Critical/High `vuln-finding` row in the ledger has a qualifying Risk register or Accepted risks row citing it. A package with zero Critical/High findings (including zero vulnerability evidence recorded at all, and including scan output with only Medium/Low findings) satisfies this trivially **only when** a `vuln-scan-coverage status=parsed` row is also present, with no `vuln-finding-unresolved` row alongside it — see "Fails when" for the no-evidence and unresolved-severity cases, both `INCONCLUSIVE`, not a vacuous pass. |
+| Fails when | Any Critical/High `vuln-finding` row has no qualifying disposition — `FAIL`, naming the specific `EV-####`. A `Status` of `accepted` in the Risk register alone does **not** qualify: the template requires a named human with the authority to accept, which a bare `Owner` cell does not establish — that disposition must go through the Accepted risks table's fuller accountability fields. Zero vulnerability evidence recorded in the ledger at all, a `vuln-scan-coverage status=parse-error` row (the scan artifact could not be parsed), a `vuln-scan-coverage status=partial` row (some records could not be normalized), a `vuln-finding-unresolved` row present alongside zero confirmed Critical/High rows (a finding's severity is unknown, not absent), or a `vuln-finding` row whose tag does not match the expected format even case-insensitively (a formatting anomaly, not a clean scan) — `INCONCLUSIVE`, never `PASS`: an unevaluated condition must never read as assent, the same principle that governs an uncovered judgment set. An unreadable (as opposed to absent) risk register file is also `INCONCLUSIVE`, distinct from a genuine `FAIL`, since disposition could not be evaluated at all. This is a deliberate design choice: it means every existing dossier package moves to `not ready` on this condition the moment it exists, until vulnerability evidence is actually ingested — see `.decisions/issue-136.md`. |
+
+Deliberately never reuses G03's `findings.md` ledger: `references/finding-schema.md` scopes `findings.md` to defects **in the documentation**, evidenced by something outside it. A dependency vulnerability is a defect in the project being documented, not in the documentation describing it — architecturally out of scope for G03, and recorded instead as a risk row per that same reference document's own guidance.
+
+A Risk register or Accepted risks row citing the finding may appear anywhere in its table — the check does not stop at the first citing row — and a citation may name more than one `EV-####` per the ledger's `[EV-0042, EV-0043]` list form or `[EV-0042–EV-0045]` range form, per `references/evidence-ledger-schema.md`'s inline citation grammar — the two forms are parsed distinctly, so a list of non-adjacent ids is never misread as an inclusive range spanning everything between them. Cells in both tables carry no raw `|` character, the same constraint the evidence ledger's own table already carries.
+
 ## Package status
 
 The gate result maps to exactly one of three package statuses, which is what the completion response and `07-verification/documentation-verification-report.md` report.
 
 | Status | Requires |
 |---|---|
-| `release-ready` | All eighteen conditions `PASS`, with the judgment set covered by a valid scorer verdict file. |
+| `release-ready` | All nineteen conditions `PASS`, with the judgment set covered by a valid scorer verdict file. |
 | `conditionally ready` | Every failing condition satisfies all four of: no unresolved `Critical` finding anywhere in the package; a named individual owner; an exact, obtainable evidence request; and disclosure of the condition in both the documentation index and the verification report. Internal audiences may use the package with the named conditions attached. `06-public/**` is **not** released. |
 | `not ready` | Any unresolved `Critical` finding; any secret or prohibited disclosure present; any failing condition with no known resolution path; or an `INCONCLUSIVE` gate result. |
 

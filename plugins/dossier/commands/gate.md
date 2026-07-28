@@ -1,22 +1,22 @@
 ---
-description: "Evaluate the eighteen release-gate conditions and issue a release-ready, conditionally-ready, or not-ready verdict. Runs the mechanical checks by script and dispatches the scorer for the judgment set — and refuses to pass without both."
+description: "Evaluate the nineteen release-gate conditions and issue a release-ready, conditionally-ready, or not-ready verdict. Runs the mechanical checks by script and dispatches the scorer for the judgment set — and refuses to pass without both."
 argument-hint: [--json] [--strict] [--path <package-root>] [--round <n>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Skill, Agent
 ---
 
 # Release Gate: $ARGUMENTS
 
-Eighteen conditions, conjunctive. Eighteen of eighteen, or the package is not release-ready.
+Nineteen conditions, conjunctive. Nineteen of nineteen, or the package is not release-ready.
 
 ## Required Skills
 
-- `scoring-and-release-gate` — the ten-dimension rubric, the eighteen conditions, and the verdict vocabulary
+- `scoring-and-release-gate` — the ten-dimension rubric, the nineteen conditions, and the verdict vocabulary
 
 ## The contract this command enforces
 
 **Failing is decidable from a subset. Passing is not.**
 
-Eleven mechanical conditions are enough to prove a package is *not* releasable — one broken link suffices. They are never enough to prove it *is*, because the judgment set includes both scorecard conditions and three of the four "must never appear" rules. A gate that passed on mechanics alone would certify a package whose planned features are documented as shipped and whose targets are printed as measurements, having read neither.
+Twelve mechanical conditions are enough to prove a package is *not* releasable — one broken link suffices. They are never enough to prove it *is*, because the judgment set includes both scorecard conditions and three of the four "must never appear" rules. A gate that passed on mechanics alone would certify a package whose planned features are documented as shipped and whose targets are printed as measurements, having read neither.
 
 So `bin/dossier-gate.sh` **structurally refuses to emit PASS without a valid scorer verdict file**. Absent, stale, revision-mismatched, round-mismatched, or silent on any judgment condition yields `INCONCLUSIVE` — which maps to `not ready`, never to `conditionally ready`. "We did not check" is an absence of assurance, not a condition to attach.
 
@@ -87,7 +87,7 @@ A verdict silent on a condition has not evaluated it, and silence must not read 
 bin/dossier-gate.sh --output-root "$OUTPUT_ROOT" --round "$ROUND"
 ```
 
-Now all eighteen are decidable. The result is final for this round.
+Now all nineteen are decidable. The result is final for this round.
 
 `--strict` maps exit 3 to exit 1, so CI treats an uncovered judgment set as a failure rather than as a state to interpret. Use it in any automated context.
 
@@ -97,7 +97,7 @@ Now all eighteen are decidable. The result is final for this round.
 
 | Verdict | Condition |
 |---|---|
-| `release-ready` | All 18 pass |
+| `release-ready` | All 19 pass |
 | `conditionally ready` | Every failure is `needs-owner` or blocked by a stated access limitation — nothing further the run can do |
 | `not ready` | Anything else, including any `INCONCLUSIVE` |
 

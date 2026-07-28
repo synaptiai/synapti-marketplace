@@ -1,0 +1,146 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-136
+  created_at: '2026-07-28T13:43:42Z'
+  created_by: /flow:start
+  owner: daniel.bentes@gmail.com
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-136-vulnerability-evidence-gate
+  issue: 136
+  pr: null
+  journal: .decisions/issue-136.md
+objective:
+  outcome: 'Issue #136 is implemented and verified.'
+  source:
+    type: github_issue
+    number: 136
+    title: 'dossier: ingest known dependency vulnerabilities as cited evidence, with
+      a release-gate condition for unresolved severe findings'
+  acceptance_criteria:
+  - id: AC1
+    text: Given a project with existing vulnerability-scan output, dossier's generated
+      documentation package accurately reflects what was scanned, what was found (if
+      anything), and cites it as evidence rather than asserting it from general knowledge.
+    verification_command: bash plugins/dossier/tests/run.sh vuln-evidence-gate.test.sh
+    must_pass: true
+    status: pass
+    evidence_ref: .flow/runs/2026-07-28T132544Z-issue-136/evidence/evidence-ac1-eval-1.evidence.yaml
+    last_evaluated_at: '2026-07-28T15:29:46Z'
+    last_result: pass
+  - id: AC2
+    text: A generated package with an unresolved, high-severity known vulnerability
+      and no recorded disposition fails release-gate evaluation, with a clear, specific
+      reason.
+    verification_command: bash plugins/dossier/tests/run.sh vuln-evidence-gate.test.sh
+    must_pass: true
+    status: pass
+    evidence_ref: .flow/runs/2026-07-28T132544Z-issue-136/evidence/evidence-ac2-eval-1.evidence.yaml
+    last_evaluated_at: '2026-07-28T15:29:46Z'
+    last_result: pass
+  - id: AC3
+    text: A generated package where every known high-severity vulnerability has an
+      owner, target date, and explicit acceptance on record passes that same gate
+      condition.
+    verification_command: bash plugins/dossier/tests/run.sh vuln-evidence-gate.test.sh
+    must_pass: true
+    status: pass
+    evidence_ref: .flow/runs/2026-07-28T132544Z-issue-136/evidence/evidence-ac3-eval-1.evidence.yaml
+    last_evaluated_at: '2026-07-28T15:29:46Z'
+    last_result: pass
+  - id: AC4
+    text: A project with no vulnerability-scan output available is handled honestly
+      — dossier does not imply a clean bill of health it cannot support.
+    verification_command: bash plugins/dossier/tests/run.sh vuln-evidence-gate.test.sh
+    must_pass: true
+    status: pass
+    evidence_ref: .flow/runs/2026-07-28T132544Z-issue-136/evidence/evidence-ac4-eval-1.evidence.yaml
+    last_evaluated_at: '2026-07-28T15:29:46Z'
+    last_result: pass
+  - id: AC5
+    text: The full dossier test suite passes, including a scenario that plants a known
+      unresolved vulnerability and confirms it is actually caught, not just theoretically
+      coverable.
+    verification_command: bash plugins/dossier/tests/run.sh
+    must_pass: true
+    status: pass
+    evidence_ref: .flow/runs/2026-07-28T132544Z-issue-136/evidence/evidence-ac5-eval-1.evidence.yaml
+    last_evaluated_at: '2026-07-28T15:29:46Z'
+    last_result: pass
+specification:
+  non_goals:
+  - 'Scanner execution (osv-scanner, pyscn, or any other tool) — entirely out of scope;
+    that''s issue #137. This issue ingests only pre-existing scan output already present
+    in the target project, via the Read tool.'
+  - Regulatory-compliance checklists (SOC2/GDPR/ISO27001) — dropped from the whole
+    4-part initiative, not deferred to this issue.
+  - Any change to G01–G18's existing logic, order, or the FAIL > INCONCLUSIVE > PASS
+    precedence computation in dossier-gate.sh — G19 is purely additive.
+  - Any new package-level table in the 23 canonical documents — fill-instruction changes
+    only to existing tables, reusing the existing Risk register / Accepted risks tables
+    in decisions-technical-debt-and-risks.md.
+  - Reusing G03/findings.md for vulnerability findings — architecturally wrong per
+    finding-schema.md's explicit project-defect-out-of-scope rule.
+  - 'Rotation/telemetry (issue #138) — untouched.'
+  - Widening engagement.allowedActions — no new action class; ingestion is Read-tool
+    only, no network access.
+  - Exploit-chain detail or affected-version specifics beyond package+version+severity.
+  failure_modes:
+  - 'Timeouts: none — no network calls or long-running scans (Read-tool only).'
+  - 'Partial failures: a scan artifact that parses partially must record what parsed
+    and flag the unparsed portion in the evidence ledger''s Unavailable evidence section
+    — never silently drop it.'
+  - 'Invalid input: a scan-artifact parse failure must produce an explicit could-not-parse
+    signal that flows to G19 as INCONCLUSIVE, never zero-findings-therefore-clean
+    — mirrors the ERR-3 fix pattern shipped in dossier-policy.sh/dossier-evidence.sh.'
+  - 'Missing context: (a) no scan artifact at all — G19 reports INCONCLUSIVE, never
+    PASS; (b) calendar-invalid/rollover target/review dates must be rejected via validate_calendar_date(),
+    not silently normalized; (c) a scan artifact read from repository content is untrusted
+    input — documented constraint for any future CI-facing consumer, this issue''s
+    scope is drafting-time only.'
+  interface_contracts:
+  - dossier-gate.sh gains a G19 mechanical condition using the existing record <id>
+    mechanical <PASS|FAIL|INCONCLUSIVE> script pattern; JUDGMENT_IDS unchanged.
+  - '00-control/evidence-ledger.md: vulnerability findings are ordinary EV-#### rows
+    in the existing Evidence table — no schema change; one row per material (Critical/High)
+    finding.'
+  - '04-operating/decisions-technical-debt-and-risks.md: disposition uses the existing
+    Risk register (Category=dependency|security) and Accepted risks table, unmodified
+    schema.'
+  - 'New ingestion entry point (name TBD in PLAN, e.g. dossier-vuln-evidence.sh):
+    reads a scan artifact, detects format (SARIF/osv-scanner JSON/Dependabot export),
+    emits normalized evidence rows. Read-tool-only.'
+  - '05-due-diligence/assets-dependencies-and-licenses.md and 03-assurance/*.md: fill-instruction
+    updates only, zero column/table changes.'
+  - 'release-gate-conditions.md gains a ### G19 section in the existing prose contract
+    shape.'
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+evaluator:
+  type: flow_verdict_judge
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: achieved
+  current_phase: verify
+  current_activity: pr
+  turns_evaluated: 1
+  last_evaluation:
+    result: pass
+    reason: 'All 5 ACs pass (deterministic: 82/82 feature-test assertions, 1501/1501
+      full suite). Judge verdict: achieved, confidence 0.70. User-confirmed via AskUserQuestion.'
+    at: '2026-07-28T15:42:39Z'

@@ -2,7 +2,7 @@
 # Bin script hygiene, plus THE ANTI-THEATER ASSERTION.
 #
 # The gate's whole credibility rests on one property: it must not emit PASS from
-# mechanical checks alone. Eleven mechanical conditions can prove a package is not
+# mechanical checks alone. Twelve mechanical conditions can prove a package is not
 # releasable; they can never prove it is, because the judgment set includes the
 # scorecard and three of the four "must never appear" rules. A gate that passed
 # on mechanics would certify a package whose planned features are documented as
@@ -27,7 +27,8 @@ dossier-resolve-config.sh
 dossier-scaffold.sh
 dossier-staleness-check.sh
 dossier-validate-config.sh
-dossier-validate-patch.sh"
+dossier-validate-patch.sh
+dossier-vuln-evidence.sh"
 
 while IFS= read -r s; do
   [ -z "$s" ] && continue
@@ -83,10 +84,22 @@ $EXPECTED_SCRIPTS
 EOF
 
 # --- Usage errors exit 2, not 0 or 1 -----------------------------------------
-for s in dossier-ledger-lint.sh dossier-claim-scan.sh dossier-gate.sh dossier-validate-config.sh; do
+for s in dossier-ledger-lint.sh dossier-claim-scan.sh dossier-gate.sh dossier-validate-config.sh dossier-vuln-evidence.sh; do
   "$BIN/$s" --nonexistent-flag >/dev/null 2>&1
   assert_equal "2" "$?" "$s exits 2 on an unknown flag"
 done
+
+# dossier-vuln-evidence.sh has three further usage-error paths beyond an
+# unknown flag, none previously exercised anywhere in this suite: a value-
+# taking flag given with nothing after it, and the required --scan flag
+# omitted entirely. Each must exit 2 (a caller-error), never 0 or the 1 this
+# script otherwise reserves for a scan-artifact parse/read failure.
+"$BIN/dossier-vuln-evidence.sh" --scan >/dev/null 2>&1
+assert_equal "2" "$?" "dossier-vuln-evidence.sh exits 2 when --scan is given with no path"
+"$BIN/dossier-vuln-evidence.sh" --scan x.json --out >/dev/null 2>&1
+assert_equal "2" "$?" "dossier-vuln-evidence.sh exits 2 when --out is given with no path"
+"$BIN/dossier-vuln-evidence.sh" >/dev/null 2>&1
+assert_equal "2" "$?" "dossier-vuln-evidence.sh exits 2 when the required --scan flag is omitted entirely"
 
 # =============================================================================
 # THE ANTI-THEATER ASSERTION
@@ -371,7 +384,7 @@ verdict_rows() { # emit a full judgment set, overriding one id with $1/$2
 GOUT=$( cd "$GW" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
   "$REPO_ROOT/plugins/dossier/bin/dossier-gate.sh" --output-root "$GW/pkg" 2>&1 )
 GCOUNT=$(printf '%s' "$GOUT" | grep -cE '^G[0-9]+ ')
-assert_equal "18" "$GCOUNT" "every one of the 18 conditions is reported, none dropped"
+assert_equal "19" "$GCOUNT" "every one of the 19 conditions is reported, none dropped"
 if printf '%s' "$GOUT" | grep -qE '^G04 '; then
   _dossier_assert_pass "a condition named twice is still evaluated"
 else

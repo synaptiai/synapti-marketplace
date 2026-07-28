@@ -1,6 +1,6 @@
 ---
 name: scoring-and-release-gate
-description: "Score a documentation package against the ten-dimension weighted rubric in `references/scorecard-rubric.md` with a cited justification per dimension, then evaluate the eighteen conditions in `references/release-gate-conditions.md` and emit a binary release-ready, conditionally-ready, or not-ready verdict with per-condition evidence. Use when a verification pass is finishing, when reconciliation completes a round, or when CI needs a machine-readable gate result. This skill MUST be consulted because a score is not a gate — a package can average 96 out of 100 and remain unreleasable on a single unsupported public claim, and conflating the two is how audit-ready packages ship with unverified security claims."
+description: "Score a documentation package against the ten-dimension weighted rubric in `references/scorecard-rubric.md` with a cited justification per dimension, then evaluate the nineteen conditions in `references/release-gate-conditions.md` and emit a binary release-ready, conditionally-ready, or not-ready verdict with per-condition evidence. Use when a verification pass is finishing, when reconciliation completes a round, or when CI needs a machine-readable gate result. This skill MUST be consulted because a score is not a gate — a package can average 96 out of 100 and remain unreleasable on a single unsupported public claim, and conflating the two is how audit-ready packages ship with unverified security claims."
 allowed-tools: Read, Grep, Glob, Bash
 context: fork
 agent: Explore
@@ -12,7 +12,7 @@ Two separate judgments that must never be collapsed: how good the package is, an
 
 ## Iron Law
 
-**THE GATE IS BINARY AND CONJUNCTIVE — 18 of 18 or NOT-RELEASABLE. A high score never substitutes for a failed condition.**
+**THE GATE IS BINARY AND CONJUNCTIVE — 19 of 19 or NOT-RELEASABLE. A high score never substitutes for a failed condition.**
 
 The score is a quality signal for the people improving the package. The gate is a release decision. A 98 with one unapproved public claim is `not ready`, and the 98 is irrelevant to that fact.
 
@@ -46,7 +46,7 @@ Each verification pass scores independently, seeing only its own findings. **Do 
 
 ## The mechanical / judgment split
 
-Most of the eighteen conditions are checkable by script; the rest need a model to read the package.
+Most of the nineteen conditions are checkable by script; the rest need a model to read the package.
 
 This split is load-bearing. A script that evaluated only the mechanical conditions and emitted `PASS` would make the entire system theater: link-checking and header parsing would certify a package whose security claims were never read. So:
 
@@ -54,17 +54,17 @@ This split is load-bearing. A script that evaluated only the mechanical conditio
 
 Per-condition tags and checks: `references/release-gate-conditions.md`.
 
-## The eighteen conditions
+## The nineteen conditions
 
-`G01` score ≥ `gate.minScore` · `G02` every dimension ≥ `gate.minDimensionPercent` · `G03` no unresolved Critical or High finding · `G04` no unsupported or unapproved public claim · `G05` every required human approval recorded · `G06` no secret, credential, personal data, or prohibited disclosure present · `G07` no known contradiction that could materially mislead · `G08` canonical coverage 100% including justified `N/A` · `G09` every material internal claim has a state and locator · `G10` every public claim maps to `V`/`C` disclosure-approved evidence · `G11` links, paths, and diagram syntax validate · `G12` commands and examples executed or visibly marked not executed · `G13` planned behaviour not presented as implemented · `G14` targets not presented as measured results · `G15` policies not presented as implemented controls · `G16` unresolved uncertainty and source limitations visible · `G17` reviewer-pass independence method disclosed, including model diversity · `G18` no hard-category prose-clarity violation exists in the package.
+`G01` score ≥ `gate.minScore` · `G02` every dimension ≥ `gate.minDimensionPercent` · `G03` no unresolved Critical or High finding · `G04` no unsupported or unapproved public claim · `G05` every required human approval recorded · `G06` no secret, credential, personal data, or prohibited disclosure present · `G07` no known contradiction that could materially mislead · `G08` canonical coverage 100% including justified `N/A` · `G09` every material internal claim has a state and locator · `G10` every public claim maps to `V`/`C` disclosure-approved evidence · `G11` links, paths, and diagram syntax validate · `G12` commands and examples executed or visibly marked not executed · `G13` planned behaviour not presented as implemented · `G14` targets not presented as measured results · `G15` policies not presented as implemented controls · `G16` unresolved uncertainty and source limitations visible · `G17` reviewer-pass independence method disclosed, including model diversity · `G18` no hard-category prose-clarity violation exists in the package · `G19` no unresolved Critical or High dependency vulnerability lacks a recorded disposition.
 
-Conjunctive. All eighteen, or not releasable.
+Conjunctive. All nineteen, or not releasable.
 
 ## Verdicts
 
 | Verdict | Condition |
 |---|---|
-| `release-ready` | All 18 pass |
+| `release-ready` | All 19 pass |
 | `conditionally ready` | Failures are all `needs-owner` or blocked by a stated access limitation — nothing further the run can do |
 | `not ready` | Anything else |
 
@@ -105,7 +105,7 @@ The blocker table is the most-read output of the whole package. Every row must n
 
 | Excuse | Response |
 |--------|----------|
-| "96 out of 100 is clearly good enough to release" | The gate is not the score. Which of the eighteen failed? |
+| "96 out of 100 is clearly good enough to release" | The gate is not the score. Which of the nineteen failed? |
 | "The mechanical checks all pass, so the gate passes" | Then no one read the security claims. Without a scorer verdict the result is `not ready`. |
 | "One public claim is pending approval, everything else is clean" | `G04` and `G10` fail. That is `not ready` or `conditionally ready`, never `release-ready`. |
 | "This dimension scores low but it is a small weight" | `G02` applies per dimension regardless of weight. That is why it exists. |

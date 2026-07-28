@@ -70,11 +70,15 @@ Transitive dependencies are included where material — where they carry a restr
 
 ## Vulnerability evidence
 
+One row per scan the project has already run — dossier does not execute a scanner itself. Populate from `bin/dossier-vuln-evidence.sh`'s normalized output, citing the evidence-ledger coverage row (`Notes: vuln-scan-coverage status=parsed`) in `Evidence`.
+
 | Scan | Tool | Scope | Date | Findings by severity | Source of advisory data | Evidence |
 |---|---|---|---|---|---|---|
 | {fill} | {fill} | {fill} | {fill} | {fill} | {fill} | {fill} |
 
 No specific vulnerability identifiers, affected version details, or exploitation conditions are reproduced here. Counts and severities only; the detail lives with the security owner.
+
+**No scan artifact found.** Do not leave the table blank or absent — a blank table reads as "not checked," and to some readers as "clean," and neither is true. State explicitly that no vulnerability-scan output was located for this project, citing the evidence ledger's "Unavailable evidence" row that records the same fact (`references/evidence-ledger-schema.md#vulnerability-finding-rows`).
 
 A clean scan is evidence that the scanner found nothing in its scope on its date, against its advisory data. It is not evidence that the system has no vulnerabilities.
 
