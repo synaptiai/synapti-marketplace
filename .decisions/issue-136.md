@@ -48,6 +48,19 @@ artifacts:
   workflow: review-pr
   run_id: 2026-07-28T160627Z-review
   status: active
+- type: review-cycle
+  captured_at: '2026-07-28T17:00:16Z'
+  cycle: 1
+  path: A
+  findings_count: 17
+  pr: 141
+- type: resolution-cycle
+  captured_at: '2026-07-28T17:00:16Z'
+  cycle: 1
+  resolved_count: 17
+  escalated_count: 0
+  disputed_count: 0
+  pr: 141
 ---
 # Decision Journal — Issue #136
 
@@ -381,3 +394,23 @@ Accepted consequence, worth surfacing here rather than only in the resolved-desi
 <!-- auto-log: 2026-07-28 18:43 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-136.md -->
 
 <!-- auto-log: 2026-07-28 18:43 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/skills/evidence-ledger/SKILL.md -->
+
+<!-- auto-log: 2026-07-28 18:46 commit "fix(dossier): close PR#141 review findings (F1-F5, SEC-1/2/3, ERR-1/2/3/6)" -->
+
+<!-- auto-log: 2026-07-28 18:49 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-07-28 18:50 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
+
+<!-- auto-log: 2026-07-28 18:50 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
+
+<!-- auto-log: 2026-07-28 18:51 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
+
+<!-- auto-log: 2026-07-28 18:51 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
+
+<!-- auto-log: 2026-07-28 18:55 commit "test(dossier): close test-runner-verifier's coverage gaps from PR#141 review" -->
+
+<!-- auto-log: 2026-07-28 18:59 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/review-comment-pr141-cycle1.md -->
+
+<!-- auto-log: 2026-07-28 19:00 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/resolution-comment-pr141-cycle1.md -->
+
+<!-- auto-log: 2026-07-28 19:00 Edit /Users/danielbentes/synapti-marketplace/.flow/runs/2026-07-28T160627Z-review/run.yaml -->
