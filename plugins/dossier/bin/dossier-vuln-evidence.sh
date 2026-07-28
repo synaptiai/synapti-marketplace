@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# dossier-vuln-evidence.sh — normalize a project's EXISTING vulnerability-scan
-# output into cited evidence. Never executes a scanner and makes no network
-# call; it only reads and parses a scan-artifact file already present in the
-# working tree. Executing a scanner is out of scope (issue #137).
+# dossier-vuln-evidence.sh — normalize a project's vulnerability-scan output
+# into cited evidence. This script itself never executes a scanner and makes
+# no network call; it only reads and parses a scan-artifact file already
+# present in the working tree — the artifact may have been checked into the
+# project already, or produced moments earlier by the isolated scan job
+# dossier-scan-security.sh runs (issue #137). Either way, this script's job
+# is normalization, not execution.
 #
 # Supports three input shapes, detected by JSON structure rather than file
 # extension:
@@ -10,15 +13,18 @@
 #                   `results[]` (severity via the `security-severity`
 #                   property, a CVSS score).
 #   osv-scanner  - top-level `results[]`, each with `packages[]`, each with
-#                   `vulnerabilities[]` (severity via `severity[].score`, a
-#                   CVSS score). NOTE: assumes a plain numeric score string —
-#                   verified against this script's own test fixtures, not
-#                   against live osv-scanner output. If real output encodes
-#                   severity as a CVSS vector string instead of a bare score,
-#                   that finding will correctly fall through to
-#                   `unresolved_severity` rather than being mis-bucketed; the
-#                   assumption should be re-verified against real tool output
-#                   when issue #137 (isolated scanner execution) lands.
+#                   `groups[]` (severity via `max_severity`, osv-scanner's own
+#                   precomputed bare-number CVSS base score) and
+#                   `vulnerabilities[]` (id/summary lookup only). Verified
+#                   against live osv-scanner 2.4.0 output: per-vulnerability
+#                   `severity[].score` is a CVSS VECTOR STRING (e.g.
+#                   "CVSS:3.1/AV:N/AC:H/..."), never a bare score, so
+#                   `groups[].max_severity` is the correct source — reading
+#                   `severity[].score` instead silently routed every real
+#                   finding to `unresolved_severity`. A group merges
+#                   duplicate/aliased ids into one logical vulnerability, so
+#                   one evidence row is emitted per group, not per raw
+#                   vulnerability id.
 #   dependabot   - top-level JSON array of alert objects, each with
 #                   `security_advisory.severity` (already dossier's own
 #                   Critical/High/Medium/Low vocabulary, case-insensitive).
@@ -78,7 +84,7 @@ while [ $# -gt 0 ]; do
             SCAN="$2"; shift 2 ;;
     --out)  [ $# -lt 2 ] && { echo "dossier-vuln-evidence: --out requires a path" >&2; exit 2; }
             OUT="$2"; shift 2 ;;
-    -h|--help) sed -n '2,68p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,74p' "$0"; exit 0 ;;
     *) echo "dossier-vuln-evidence: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -251,13 +257,50 @@ def safe_str(f): try (f) catch "unknown";
               if ($vulns | type) != "array" then
                 unparseable("packages[].vulnerabilities"; "expected array, got " + ($vulns | type))
               else
-                $vulns[]? | safe_finding({
-                  id: (.id // "UNKNOWN"),
-                  package: ($p.package.name // "unknown"),
-                  version: ($p.package.version // null),
-                  summary: (.summary // ""),
-                  severity: bucket_severity(.severity[0].score)
-                })
+                # Real osv-scanner output carries per-vulnerability severity as a
+                # CVSS VECTOR STRING (e.g. "CVSS:3.1/AV:N/AC:H/..."), never a bare
+                # score — bucket_severity's tonumber cast on that string throws,
+                # caught, and resolves to null, so reading .severity[0].score here
+                # would silently route every real finding to unresolved_severity.
+                # groups[].max_severity is osv-scanner's own precomputed bare-number
+                # CVSS base score and is the correct source. A group also merges
+                # duplicate/aliased ids (e.g. a PYSEC id and its GHSA alias) into one
+                # logical vulnerability, so one row is emitted per GROUP, not per
+                # raw vulnerability id — the primary id is the group's CVE- alias
+                # when present, else the lexicographically-first id, never
+                # "whichever id the tool happened to list first" (unstable).
+                ($p.groups // []) as $groups |
+                if ($groups | type) == "array" and ($groups | length) > 0 then
+                  $groups[]? | safe_finding(
+                    . as $g
+                    | ($g.ids // []) as $gids
+                    | ((($g.aliases // []) | map(select(type == "string" and test("^CVE-"))) | first)
+                       // (($gids | sort) | first)
+                       // "UNKNOWN") as $primary_id
+                    | ([$vulns[]? | select(.id as $vid | $gids | index($vid) != null) | (.summary // "")] | first // "") as $vuln_summary
+                    | {
+                        id: $primary_id,
+                        package: ($p.package.name // "unknown"),
+                        version: ($p.package.version // null),
+                        summary: $vuln_summary,
+                        severity: bucket_severity($g.max_severity)
+                      }
+                  )
+                else
+                  # Defensive fallback: vulnerabilities present but groups is
+                  # absent, wrong-typed, or empty — not observed in real
+                  # osv-scanner 2.4.0 output (groups always populates in lockstep
+                  # with vulnerabilities), but every vulnerability here must still
+                  # surface as unresolved rather than silently vanish if it ever
+                  # does.
+                  $vulns[]? | safe_finding({
+                    id: (.id // "UNKNOWN"),
+                    package: ($p.package.name // "unknown"),
+                    version: ($p.package.version // null),
+                    summary: (.summary // ""),
+                    severity: null
+                  })
+                end
               end
             end
           end

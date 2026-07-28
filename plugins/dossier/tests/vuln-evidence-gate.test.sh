@@ -69,7 +69,14 @@ assert_equal "0" "$LOW_ITEMIZED" "SARIF: 3.1 (Low) is not itemized as a material
 LOW_AGG=$(printf '%s' "$OUT_SARIF" | jq -r '.aggregate.Low // 0' 2>/dev/null)
 assert_equal "1" "$LOW_AGG" "SARIF: the Low-severity result is counted in the aggregate instead"
 
-# --- osv-scanner: CVSS score under severity[].score --------------------------
+# --- osv-scanner: severity via groups[].max_severity, not vulnerabilities[]
+# .severity[].score. Real osv-scanner 2.4.0 output encodes per-vulnerability
+# severity as a CVSS VECTOR STRING (e.g. "CVSS:3.1/AV:N/AC:H/..."), confirmed
+# by direct live testing during issue #137 — groups[].max_severity is
+# osv-scanner's own precomputed bare-number CVSS base score and the correct
+# extraction source. The vulnerabilities[].severity field below is left in
+# vector-string shape (realistic, and deliberately proves it is no longer
+# read for bucketing at all). -------------------------------------------
 cat >"$FIXTURES/scan.osv.json" <<'EOF'
 {
   "results": [
@@ -78,11 +85,14 @@ cat >"$FIXTURES/scan.osv.json" <<'EOF'
       "packages": [
         {
           "package": {"name": "axios", "version": "0.21.1", "ecosystem": "npm"},
+          "groups": [
+            {"ids": ["GHSA-4w2v-q235-vp99"], "aliases": ["CVE-2021-3749", "GHSA-4w2v-q235-vp99"], "max_severity": "8.1"}
+          ],
           "vulnerabilities": [
             {
               "id": "GHSA-4w2v-q235-vp99",
               "summary": "axios SSRF",
-              "severity": [{"type": "CVSS_V3", "score": "8.1"}]
+              "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"}]
             }
           ]
         }
@@ -96,9 +106,68 @@ assert_equal "0" "$?" "osv-scanner: a well-formed scan parses cleanly"
 FORMAT_OSV=$(printf '%s' "$OUT_OSV" | jq -r '.scan.format' 2>/dev/null)
 assert_equal "osv-scanner" "$FORMAT_OSV" "osv-scanner: format is correctly detected"
 OSV_SEV=$(printf '%s' "$OUT_OSV" | jq -r '.findings[0].severity' 2>/dev/null)
-assert_equal "High" "$OSV_SEV" "osv-scanner: CVSS 8.1 buckets to High"
+assert_equal "High" "$OSV_SEV" "osv-scanner: groups[].max_severity 8.1 buckets to High"
 OSV_PKG=$(printf '%s' "$OUT_OSV" | jq -r '.findings[0].package' 2>/dev/null)
 assert_equal "axios" "$OSV_PKG" "osv-scanner: package name is carried through"
+OSV_ID=$(printf '%s' "$OUT_OSV" | jq -r '.findings[0].id' 2>/dev/null)
+assert_equal "CVE-2021-3749" "$OSV_ID" "osv-scanner: the group's CVE- prefixed alias is preferred as the primary id"
+
+# --- osv-scanner: a group with no CVE- alias falls back to the
+# lexicographically-first id, never tool-output order. -----------------------
+cat >"$FIXTURES/scan.osv.no-cve-alias.json" <<'EOF'
+{
+  "results": [
+    {
+      "source": {"path": "package-lock.json"},
+      "packages": [
+        {
+          "package": {"name": "lodash", "version": "4.17.15"},
+          "groups": [
+            {"ids": ["GHSA-zzzz-0001", "GHSA-aaaa-0002"], "aliases": ["GHSA-zzzz-0001", "GHSA-aaaa-0002"], "max_severity": "7.5"}
+          ],
+          "vulnerabilities": [
+            {"id": "GHSA-zzzz-0001", "summary": "prototype pollution (dup 1)"},
+            {"id": "GHSA-aaaa-0002", "summary": "prototype pollution (dup 2)"}
+          ]
+        }
+      ]
+    }
+  ]
+}
+EOF
+OSV_NOCVE_OUT=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.no-cve-alias.json 2>&1)
+OSV_NOCVE_COUNT=$(printf '%s' "$OSV_NOCVE_OUT" | jq '.findings | length' 2>/dev/null)
+assert_equal "1" "$OSV_NOCVE_COUNT" "osv-scanner: a group merging two aliased ids produces exactly one evidence row, not two"
+OSV_NOCVE_ID=$(printf '%s' "$OSV_NOCVE_OUT" | jq -r '.findings[0].id' 2>/dev/null)
+assert_equal "GHSA-aaaa-0002" "$OSV_NOCVE_ID" "osv-scanner: no CVE- alias present -> lexicographically-first id wins, not the tool's listed order"
+
+# --- osv-scanner: a group with null/absent max_severity falls to
+# unresolved_severity, never defaulted Low. -----------------------------------
+cat >"$FIXTURES/scan.osv.null-max-severity.json" <<'EOF'
+{
+  "results": [
+    {
+      "source": {"path": "package-lock.json"},
+      "packages": [
+        {
+          "package": {"name": "example-pkg", "version": "2.0.0"},
+          "groups": [
+            {"ids": ["GHSA-nullsev-0001"], "aliases": ["GHSA-nullsev-0001"], "max_severity": null}
+          ],
+          "vulnerabilities": [
+            {"id": "GHSA-nullsev-0001", "summary": "severity not yet scored"}
+          ]
+        }
+      ]
+    }
+  ]
+}
+EOF
+OSV_NULLSEV_OUT=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.null-max-severity.json 2>&1)
+OSV_NULLSEV_UNRESOLVED_ID=$(printf '%s' "$OSV_NULLSEV_OUT" | jq -r '.unresolved_severity[0].id // "MISSING"' 2>/dev/null)
+assert_equal "GHSA-nullsev-0001" "$OSV_NULLSEV_UNRESOLVED_ID" "osv-scanner: a group with null max_severity lands in unresolved_severity, never fabricated as Low"
+OSV_NULLSEV_FINDINGS=$(printf '%s' "$OSV_NULLSEV_OUT" | jq '.findings | length' 2>/dev/null)
+assert_equal "0" "$OSV_NULLSEV_FINDINGS" "osv-scanner: a null-max_severity group is never itemized as a material finding"
 
 # --- Dependabot alerts export: severity string used directly ----------------
 cat >"$FIXTURES/scan.dependabot.json" <<'EOF'
@@ -124,7 +193,11 @@ assert_equal "dependabot" "$FORMAT_DEP" "Dependabot: format is correctly detecte
 DEP_SEV=$(printf '%s' "$OUT_DEP" | jq -r '.findings[0].severity' 2>/dev/null)
 assert_equal "High" "$DEP_SEV" "Dependabot: severity string 'high' maps directly to High"
 
-# --- No derivable severity: never silently Low -------------------------------
+# --- No derivable severity: never silently Low. This package's vulnerabilities[]
+# is non-empty while `groups` is entirely absent — the defensive fallback path
+# added for issue #137 (real osv-scanner output always populates groups[] in
+# lockstep with vulnerabilities[], but this is not observed, only assumed, so
+# the fallback must fail safe rather than silently drop the record). --------
 cat >"$FIXTURES/scan.no-severity.json" <<'EOF'
 {
   "results": [
@@ -712,8 +785,11 @@ cat >"$H7_DIR/osv-bad-packages.json" <<'EOF'
       "packages": [
         {
           "package": {"name": "requests", "version": "2.25.0"},
+          "groups": [
+            {"ids": ["GHSA-valid-0001"], "aliases": ["GHSA-valid-0001"], "max_severity": "9.2"}
+          ],
           "vulnerabilities": [
-            {"id": "GHSA-valid-0001", "summary": "a genuinely valid finding", "severity": [{"type": "CVSS_V3", "score": "9.2"}]}
+            {"id": "GHSA-valid-0001", "summary": "a genuinely valid finding"}
           ]
         }
       ]
@@ -879,13 +955,21 @@ assert_contains "parsed partially" "$ERR2_EVIDENCE" "ERR-2/F1: the partial-parse
 # agents corroborated most of these)
 # =============================================================================
 
-# --- F1 (code-reviewer-skeptic / ERR-1 error-handler): osv-scanner's
-# `.severity[0]?.score` swallowed a wrong-typed `.severity` field into a
+# --- F1 (historical, code-reviewer-skeptic / ERR-1 error-handler): osv-scanner's
+# `.severity[0]?.score` used to swallow a wrong-typed `.severity` field into a
 # zero-output jq generator — the WHOLE finding record vanished (not in
-# findings, not in unresolved_severity, not in unparseable_records), with
-# exit 0. Confirmed by live reproduction before the fix. Now: the same
-# wrong-typed field throws (no `?`) and is caught by safe_finding, matching
-# the SARIF branch's already-tested parity behaviour. -----------------------
+# findings, not in unresolved_severity, not in unparseable_records), with exit
+# 0. Confirmed by live reproduction before the original PR#141 fix (dropping
+# the `?` so the wrong-typed field threw and was caught).
+#
+# Superseded by issue #137's severity-extraction rework: real osv-scanner
+# output encodes per-vulnerability severity as a CVSS VECTOR STRING, not a
+# bare score (confirmed by direct live testing), so `.severity` is no longer
+# read for extraction AT ALL — the correct source is groups[].max_severity.
+# This closes the original bug class categorically (a malformed .severity
+# field, in ANY shape, is now simply irrelevant to extraction — proven below),
+# but shifts the "malformed record must not silently vanish" risk to the
+# groups[] iteration itself, tested separately after this. -----------------
 F1_DIR=$(_dossier_safe_mktemp_dir "f1-severity-swallow")
 cat >"$F1_DIR/bad-severity-shape.json" <<'EOF'
 {
@@ -904,23 +988,55 @@ cat >"$F1_DIR/bad-severity-shape.json" <<'EOF'
 }
 EOF
 F1_OUT=$(cd "$F1_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-severity-shape.json 2>&1)
-assert_equal "0" "$?" "F1: a wrong-typed (non-array) severity field still exits 0 — a tracked condition, not a crash"
+assert_equal "0" "$?" "F1: a malformed (non-array) .severity field still exits 0 — a tracked condition, not a crash"
 F1_FINDINGS_COUNT=$(printf '%s' "$F1_OUT" | jq '.findings | length' 2>/dev/null)
-assert_equal "0" "$F1_FINDINGS_COUNT" "F1: the malformed record is never itemized as a material finding"
-F1_UNRESOLVED_COUNT=$(printf '%s' "$F1_OUT" | jq '.unresolved_severity | length' 2>/dev/null)
-assert_equal "0" "$F1_UNRESOLVED_COUNT" "F1: a wrong-typed severity is a parse anomaly, not merely an absent one — it must not land in unresolved_severity either"
+assert_equal "0" "$F1_FINDINGS_COUNT" "F1: no groups present means no material finding is itemized, regardless of the malformed .severity field's content"
+F1_UNRESOLVED_ID=$(printf '%s' "$F1_OUT" | jq -r '.unresolved_severity[0].id // "MISSING"' 2>/dev/null)
+assert_equal "GHSA-swallow-0001" "$F1_UNRESOLVED_ID" "F1: with groups absent, the record lands in unresolved_severity via the fallback — never silently discarded, and the malformed .severity content has no bearing on this outcome"
 F1_UNPARSEABLE_COUNT=$(printf '%s' "$F1_OUT" | jq '.unparseable_records | length' 2>/dev/null)
-assert_equal "1" "$F1_UNPARSEABLE_COUNT" "F1: the record is tracked in unparseable_records — the finding is never silently discarded with zero trace"
+assert_equal "0" "$F1_UNPARSEABLE_COUNT" "F1: the fallback path never throws on a malformed .severity field, because that field is never read by it"
 
-# A genuinely absent severity field must still behave exactly as before this
-# fix (lands in unresolved_severity, not unparseable_records) — dropping the
-# `?` must not re-route the honest "no severity data" case.
+# A genuinely absent severity field behaves identically to the malformed-shape
+# case above — proving .severity's presence/absence/shape is uniformly
+# irrelevant now that extraction reads groups[].max_severity instead.
 cat >"$F1_DIR/absent-severity.json" <<'EOF'
 {"results": [{"packages": [{"package": {"name": "left-pad", "version": "1.0.0"}, "vulnerabilities": [{"id": "GHSA-absent-0001", "summary": "no severity field at all"}]}]}]}
 EOF
 F1_ABSENT_OUT=$(cd "$F1_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan absent-severity.json 2>&1)
 F1_ABSENT_UNRESOLVED=$(printf '%s' "$F1_ABSENT_OUT" | jq -r '.unresolved_severity[0].id // "MISSING"' 2>/dev/null)
 assert_equal "GHSA-absent-0001" "$F1_ABSENT_UNRESOLVED" "F1: a genuinely absent severity field still lands in unresolved_severity, not unparseable_records"
+F1_ABSENT_UNPARSEABLE=$(printf '%s' "$F1_ABSENT_OUT" | jq '.unparseable_records | length' 2>/dev/null)
+assert_equal "0" "$F1_ABSENT_UNPARSEABLE" "F1: an absent severity field is not mis-routed to unparseable_records"
+
+# --- F1-successor (issue #137): the new swallow-risk surface is groups[]
+# itself, not .severity. A malformed groups[] entry (wrong type, not an
+# object) must throw inside safe_finding's try/catch and land in
+# unparseable_records — never silently vanish with zero trace, the same
+# failure mode the original F1 fix closed one field over. -------------------
+F1B_DIR=$(_dossier_safe_mktemp_dir "f1-successor-bad-group-entry")
+cat >"$F1B_DIR/bad-group-entry.json" <<'EOF'
+{
+  "results": [
+    {
+      "packages": [
+        {
+          "package": {"name": "left-pad", "version": "1.0.0"},
+          "groups": ["this-should-be-an-object-not-a-string"],
+          "vulnerabilities": [
+            {"id": "GHSA-badgroup-0001", "summary": "actually a critical RCE"}
+          ]
+        }
+      ]
+    }
+  ]
+}
+EOF
+F1B_OUT=$(cd "$F1B_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-group-entry.json 2>&1)
+assert_equal "0" "$?" "F1-successor: a malformed groups[] entry still exits 0 — a tracked condition, not a crash"
+F1B_FINDINGS_COUNT=$(printf '%s' "$F1B_OUT" | jq '.findings | length' 2>/dev/null)
+assert_equal "0" "$F1B_FINDINGS_COUNT" "F1-successor: the malformed group entry is never itemized as a material finding"
+F1B_UNPARSEABLE_COUNT=$(printf '%s' "$F1B_OUT" | jq '.unparseable_records | length' 2>/dev/null)
+assert_equal "1" "$F1B_UNPARSEABLE_COUNT" "F1-successor: a non-object groups[] entry is tracked in unparseable_records — never silently discarded with zero trace"
 F1_ABSENT_UNPARSEABLE=$(printf '%s' "$F1_ABSENT_OUT" | jq '.unparseable_records | length' 2>/dev/null)
 assert_equal "0" "$F1_ABSENT_UNPARSEABLE" "F1: an absent severity field is not mis-routed to unparseable_records by the fix"
 
