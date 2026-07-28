@@ -386,6 +386,12 @@
               "minimum": 1,
               "default": 90,
               "description": "Age at which a document's last-verified date makes its claims stale, independent of whether code changed. Surfaces in /dossier:status and is one of the documented refresh triggers."
+            },
+            "maxStaleDocsPerSweep": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 5,
+              "description": "Ceiling on how many stale documents a single schedule-triggered sweep hands to dossier-policy.sh for re-verification, most-overdue first. Bounds a scheduled run's cost when many documents have gone stale simultaneously; it does not bound how many can be reported as stale by /dossier:status."
             }
           }
         },
@@ -615,14 +621,14 @@
         "local": {
           "type": "object",
           "properties": {
-            "onFlowMerge": {
+            "onLocalMerge": {
               "enum": [
                 "suggest",
                 "run",
                 "off"
               ],
               "default": "suggest",
-              "description": "Behaviour when the flow plugin completes a merge locally. 'suggest' is the default because the local path is cheaper and simpler than CI but has weaker coverage — it only fires for merges that go through /flow:merge, missing web-UI and merge-queue merges."
+              "description": "Behaviour when a merge to the repository's default branch happens locally, detected by dossier's own PostToolUse hook watching for merge-shaped Bash commands (git merge, a git pull that produces a merge commit, gh pr merge) — regardless of which plugin or human ran the command. 'suggest' is the default because the local path is cheaper and simpler than CI but has weaker coverage — it only fires for merges made from this working tree, missing web-UI and merge-queue merges."
             }
           }
         },

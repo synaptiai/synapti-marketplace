@@ -23,6 +23,34 @@ _dossier_test_begin() {
   DOSSIER_TEST_CURRENT="$1"
 }
 
+# _dossier_safe_mktemp_dir <prefix> — the only sanctioned way for a test
+# fixture to create a git-fixture directory. Bare `mktemp -d "$RUN_TMPDIR/…"`
+# followed by `cd "$VAR" || exit 1` fails open: if RUN_TMPDIR is unset/empty
+# (invoking a test file directly, bypassing run.sh) or mktemp itself fails,
+# `$VAR` is empty, and `cd ""` returns 0 in bash — a silent no-op that leaves
+# every subsequent command running in the real caller's directory instead of
+# aborting. This happened for real during development: a fixture's git
+# init/commit/checkout/merge and `rm -rf .claude` ran against this actual
+# repository, deleting the tracked .claude/ directory and polluting main with
+# fixture commits. Exits 2 (a runner-level failure, not a test failure) rather
+# than returning empty, so a caller relying on `$(...)` cannot receive "" and
+# proceed regardless.
+_dossier_safe_mktemp_dir() {
+  if [ -z "${RUN_TMPDIR:-}" ] || [ ! -d "$RUN_TMPDIR" ]; then
+    echo "FATAL: RUN_TMPDIR is unset or not a directory — this test file must be run via tests/run.sh, not invoked directly" >&2
+    exit 2
+  fi
+  _dir=$(mktemp -d "$RUN_TMPDIR/${1:-fixture}.XXXXXX") || {
+    echo "FATAL: mktemp -d under RUN_TMPDIR failed" >&2
+    exit 2
+  }
+  if [ -z "$_dir" ] || [ ! -d "$_dir" ]; then
+    echo "FATAL: mktemp -d returned an unusable path: '$_dir'" >&2
+    exit 2
+  fi
+  printf '%s\n' "$_dir"
+}
+
 _dossier_assert_pass() {
   DOSSIER_TEST_PASS=$((DOSSIER_TEST_PASS + 1))
   printf 'PASS %s — %s\n' "$DOSSIER_TEST_CURRENT" "$1"

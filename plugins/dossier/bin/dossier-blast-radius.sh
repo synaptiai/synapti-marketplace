@@ -15,11 +15,21 @@
 # reference is the explanation, this file is the behaviour.
 #
 # Usage:
-#   dossier-blast-radius.sh --changed-files <file> --out <file>
+#   dossier-blast-radius.sh --changed-files <file> --out <file> [--stale-docs <list>]
 #
 # Flags:
 #   --changed-files <file>  newline-separated repository-relative paths
 #   --out <file>            write the JSON result here
+#   --stale-docs <list>     comma-separated package-relative paths from a
+#                           schedule sweep (dossier-staleness-check.sh's
+#                           STALE_DOCS_FOR_SWEEP). Added to `documents` with
+#                           class "stale" when no event or always-reason also
+#                           reaches them — the fourth blast-radius membership
+#                           criterion documented in commands/refresh.md Phase
+#                           2, distinct from "matched" because
+#                           references/change-triggers-and-blast-radius.md's
+#                           rule is verification, never a redraft, for a
+#                           document that arrives this way alone.
 #
 # Output (stdout): `key=value` lines — events, document_count, documents,
 #   matched_files, unmatched_files.
@@ -33,12 +43,14 @@ set -uo pipefail
 
 CHANGED=""
 OUT=""
+STALE_DOCS=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --changed-files) [ $# -lt 2 ] && { echo "dossier-blast-radius: --changed-files requires a value" >&2; exit 2; }; CHANGED="$2"; shift 2 ;;
     --out)           [ $# -lt 2 ] && { echo "dossier-blast-radius: --out requires a value" >&2; exit 2; }; OUT="$2"; shift 2 ;;
-    -h|--help)       sed -n '2,30p' "$0"; exit 0 ;;
+    --stale-docs)    [ $# -lt 2 ] && { echo "dossier-blast-radius: --stale-docs requires a value" >&2; exit 2; }; STALE_DOCS="$2"; shift 2 ;;
+    -h|--help)       sed -n '2,40p' "$0"; exit 0 ;;
     *) echo "dossier-blast-radius: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -258,14 +270,34 @@ printf '%s\n' "$ALWAYS_DOCS" | while IFS= read -r D; do
   printf '%s\t%s\n' "$D" "always" >>"$PAIRS"
 done
 
+if [ -n "$STALE_DOCS" ]; then
+  # A trailing newline is required: `read` returns failure on an unterminated
+  # final line, and since the `while` condition tests that exit status, the
+  # last comma-separated entry would silently never reach the loop body.
+  printf '%s\n' "$STALE_DOCS" | tr ',' '\n' | while IFS= read -r D; do
+    [ -n "$D" ] || continue
+    printf '%s\t%s\n' "$D" "stale" >>"$PAIRS"
+  done
+fi
+
+# class precedence: always > matched > stale. A document earns "stale" only
+# when the schedule sweep is the SOLE reason it is in this set at all — the
+# case commands/refresh.md routes to a verification pass instead of a
+# redraft. A document that is also event-matched or an always-doc keeps that
+# class; "stale" still appears in its reasons for visibility, but the
+# stronger class governs how Phase 4 treats it.
 DOCS_JSON=$(jq -Rn '
   [inputs | select(length > 0) | split("\t") | {doc: .[0], event: .[1]}]
   | group_by(.doc)
   | map({
       path: .[0].doc,
       reasons: ([.[].event] | unique),
-      class: (if ([.[].event] | any(. == "always")) and ([.[].event] | length) == 1
-              then "always" else "matched" end)
+      class: (
+        if ([.[].event] | any(. == "always")) then "always"
+        elif ([.[].event] | any(. != "stale")) then "matched"
+        else "stale"
+        end
+      )
     })
   | sort_by(.path)
 ' <"$PAIRS" 2>/dev/null)

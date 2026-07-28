@@ -103,7 +103,7 @@
       "expectedPluginVersion": "1.0.0"
     },
     "local": {
-      "onFlowMerge": "suggest"
+      "onLocalMerge": "suggest"
     }
   }
 }

@@ -34,7 +34,7 @@ echo "### Mode"
 echo "STATUS_MODE=$MODE"
 
 echo "### Plugin"
-if [ ! -x "$__dr/bin/dossier-resolve-config.sh" ]; then
+if [ ! -x "$__dr/bin/dossier-resolve-config.sh" ] || [ ! -x "$__dr/bin/dossier-staleness-check.sh" ]; then
   echo "STATUS_STATE=blocked"
   echo "STATUS_ERROR=dossier plugin scripts not found — reinstall or upgrade the plugin"
   true; exit 0
@@ -85,28 +85,15 @@ echo "TERMS=$(grep -c '^| TM-' "$C/terminology-and-ownership.md" 2>/dev/null || 
 echo "UNASSIGNED_OWNERS=$(grep -c 'unassigned' "$C/terminology-and-ownership.md" 2>/dev/null || echo 0)"
 
 echo "### Staleness"
-STALE_DAYS=$("$R" --default 90 dossier.refresh.stalenessDays 2>/dev/null)
-echo "STALENESS_THRESHOLD_DAYS=$STALE_DAYS"
-TODAY_S=$(date -u +%s)
-STALE=0; UNDATED=0; OLDEST=""
-while IFS= read -r f; do
-  lv=$(awk -F': *' '/^last-verified:/{print $2; exit}' "$f" 2>/dev/null | tr -d $'"\'\r')
-  case "$lv" in
-    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
-    *) UNDATED=$((UNDATED + 1)); continue ;;
-  esac
-  # BSD and GNU date take different flags; try both rather than assuming.
-  lv_s=$(date -j -f "%Y-%m-%d" "$lv" +%s 2>/dev/null || date -d "$lv" +%s 2>/dev/null || echo "")
-  [ -z "$lv_s" ] && continue
-  age=$(( (TODAY_S - lv_s) / 86400 ))
-  [ "$age" -gt "$STALE_DAYS" ] && STALE=$((STALE + 1))
-  if [ -z "$OLDEST" ] || [ "$lv" \< "$OLDEST" ]; then OLDEST="$lv"; fi
-done <<EOF
-$(find "$OUTPUT_ROOT" -name '*.md' -type f 2>/dev/null)
-EOF
-echo "DOCUMENTS_STALE=$STALE"
-echo "DOCUMENTS_UNDATED=$UNDATED"
-echo "OLDEST_VERIFICATION=${OLDEST:-none}"
+if [ -x "$__dr/bin/dossier-staleness-check.sh" ]; then
+  "$__dr/bin/dossier-staleness-check.sh" --output-root "$OUTPUT_ROOT" \
+    | grep -E '^(STALENESS_THRESHOLD_DAYS|DOCUMENTS_STALE|DOCUMENTS_UNDATED|OLDEST_VERIFICATION)='
+else
+  echo "STALENESS_THRESHOLD_DAYS=unknown"
+  echo "DOCUMENTS_STALE=unknown"
+  echo "DOCUMENTS_UNDATED=unknown"
+  echo "OLDEST_VERIFICATION=unknown"
+fi
 
 echo "### Verification"
 VR="$OUTPUT_ROOT/07-verification/documentation-verification-report.md"

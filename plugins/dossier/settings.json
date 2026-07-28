@@ -61,7 +61,8 @@
       "failOn": ["Critical", "High"]
     },
     "refresh": {
-      "stalenessDays": 90
+      "stalenessDays": 90,
+      "maxStaleDocsPerSweep": 5
     },
     "ci": {
       "enabled": true,
@@ -136,7 +137,7 @@
       "expectedPluginVersion": "1.1.0"
     },
     "local": {
-      "onFlowMerge": "suggest"
+      "onLocalMerge": "suggest"
     },
     "tiers": {
       "writeInternalDocs": "autonomous",
