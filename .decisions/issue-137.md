@@ -22,6 +22,12 @@ artifacts:
   captured_at: '2026-07-28T18:09:21Z'
   result: PASS
   task_count: 8
+- type: goal-evaluation
+  captured_at: '2026-07-28T21:09:59Z'
+  goal_id: issue-137
+  result: achieved
+  evidence_bundle: .flow/runs/2026-07-28T172831Z-issue-137
+  failures: none
 ---
 # Decision Journal — Issue #137
 
@@ -76,6 +82,14 @@ The independent verdict judge in `/flow:start` Phase 4 returned `NEEDS-HUMAN-REV
 **Fix**: `dossier-scan-security.sh` now checks the cached database's own file age *before* invoking osv-scanner at all, whenever `--offline` is set — refusing with `status: unavailable`, `detail` containing `stale_advisory_data`, if the newest file under osv-scanner's cache directory is older than `DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS` (default 7, overridable for testing). This is a separate check from the existing "no cache at all" detection; either can fire independently.
 
 **Second-order discovery during this fix, itself worth recording**: osv-scanner's cache-directory resolution (Go's `os.UserCacheDir()`) does **not** consult `XDG_CACHE_HOME` on Darwin — it always uses `$HOME/Library/Caches`, confirmed by moving the real cache aside and observing osv-scanner report "no offline version of the OSV database is available" despite a populated `XDG_CACHE_HOME`-based fake cache being present. Only non-Darwin Unix (the actual CI runner platform) honors `XDG_CACHE_HOME`. The wrapper's own cache-path detection was written to check `XDG_CACHE_HOME` unconditionally first — silently wrong on macOS — and was corrected to match Go's real precedence (platform check first, `XDG_CACHE_HOME` only consulted on non-Darwin). This bug was caught by re-running the test suite immediately after the fix and finding the *pre-existing* "no cached DB" test now failing (it was silently relying on this repo-author's own real, populated system cache), not by static reasoning — a live regression against this machine's own manual testing earlier in the session, surfaced only by actually re-running everything.
+
+## Resolved: AC6 contract defect (goal-evaluator-judge, five NEEDS-HUMAN-REVIEW/incomplete passes)
+
+`AC6`'s `verification_command` in `.flow/goals/issue-137.goal.yaml` was originally authored as descriptive prose with a command embedded inline (`osv-scanner --version && pyscn --version (both actually installed; real local run captured as evidence, per resolved non-goal on live-CI requirement)`) rather than a literal, mechanically re-runnable command. Five successive `goal-evaluator-judge` passes on AC6 returned `incomplete`/`needs_human_review`, each time against progressively stronger evidence (real version banners → real wrapper invocations → raw JSON artifact excerpts with real CVE ids). The first four passes were interpreted as an evidence-quality gap and answered by improving the evidence; the fifth pass instead surfaced the actual defect directly: "AC6's `verification_command` is not a runnable command — it embeds non-goal prose inline... Nobody can mechanically re-derive this evidence from that string as written," alongside bundle-assembly defects (hand-rolled prompts had not used the canonical `flow-run-deterministic-checks.sh` / `bin/_flow_evidence_bundle.py` pipeline, so the judge's expected `### Evidence coverage analysis` header and per-AC deterministic JSON were absent).
+
+**Fix**: `AC6.verification_command` corrected to `bash plugins/dossier/tests/run.sh vuln-scan-execution.test.sh quality-scan-execution.test.sh` — a real, already-passing command. This is not a scope change: AC6's text ("at least one real end-to-end run against the actual scanning tools... confirms the capability works in practice") is exactly what those two test files' own tripwire assertions exercise when a real `osv-scanner`/`pyscn` binary is on `PATH` (as it is on this machine), which is what the four prior evidence submissions were independently trying to demonstrate by hand. Re-evaluated via the canonical `flow-run-deterministic-checks.sh` → `bin/_flow_evidence_bundle.py` pipeline rather than a hand-assembled prompt, closing both the contract gap and the bundle-format gap in one fix.
+
+**Sixth-pass follow-on (same session)**: a full 7-AC canonical-pipeline judge pass caught the same class of contract mismatch on `AC5` — its `verification_command` named only `hooks.test.sh`, while the actual evidence proving AC5's "existing security boundaries" claim (the CI scan job's read-only permissions, no-credential-exposure, and pinned-tool-install assertions) lives in `workflow-template.test.sh`. Corrected to `bash plugins/dossier/tests/run.sh hooks.test.sh workflow-template.test.sh`, matching the sidecar command that had already been evidencing it in practice. The same pass also flagged AC5's own limitations text (citing the pre-existing, documented-not-patched `find -exec`/`xargs -I{}` hook bypass, issue #143) as overlapping AC5's scope. On inspection this was an imprecise disclosure, not a real gap: the bypass grants command execution when a capability flag denies it — never the network, credential, or write access AC5's parenthetical actually enumerates — and it is a property of the pre-existing `enforce-allowed-actions.sh` script shared identically by `runTests`/`runBuild`/`network`, not something this issue's two new deny-blocks introduced or widened. The CI-boundary claim itself rests on the job permission model (`contents: read`, no write, no LLM credential, `persist-credentials: false`), which the bypass cannot touch — the refresh job's own tool allowlist contains neither `find` nor `xargs`. Limitation text rewritten to state this precisely rather than the prior wording, which invited the overlap reading by omission.
 
 ## Stranger Test
 
@@ -250,3 +264,41 @@ No item remains open under "Needs Clarification" — every gap the advisor raise
 <!-- auto-log: 2026-07-28 21:51 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
 
 <!-- auto-log: 2026-07-28 21:56 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-137.md -->
+
+<!-- auto-log: 2026-07-28 21:56 commit "fix(dossier): detect offline vulnerability-DB staleness (AC4)" -->
+
+<!-- auto-log: 2026-07-28 22:02 Write /Users/danielbentes/synapti-marketplace/.flow/runs/2026-07-28T172831Z-issue-137/run.yaml -->
+
+<!-- auto-log: 2026-07-28 22:33 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-137.goal.yaml -->
+
+<!-- auto-log: 2026-07-28 22:33 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-137.md -->
+
+<!-- auto-log: 2026-07-28 22:39 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/evidence-ac6-eval-5.evidence.yaml -->
+
+<!-- auto-log: 2026-07-28 22:48 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-137.goal.yaml -->
+
+<!-- auto-log: 2026-07-28 22:49 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-137.md -->
+
+<!-- auto-log: 2026-07-28 22:49 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/evidence-ac4-eval-2.evidence.yaml -->
+
+<!-- auto-log: 2026-07-28 22:49 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/evidence-ac5-eval-2.evidence.yaml -->
+
+<!-- auto-log: 2026-07-28 22:49 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/evidence-ac7-eval-2.evidence.yaml -->
+
+<!-- auto-log: 2026-07-28 22:49 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/evidence-ac5-eval-2.evidence.yaml -->
+
+<!-- auto-log: 2026-07-28 22:58 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/workflow-template.test.sh -->
+
+<!-- auto-log: 2026-07-28 23:02 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/evidence-ac5-eval-3.evidence.yaml -->
+
+<!-- auto-log: 2026-07-28 23:02 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/evidence-ac7-eval-3.evidence.yaml -->
+
+<!-- auto-log: 2026-07-28 23:09 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/issue137-verdict.json -->
+
+<!-- auto-log: 2026-07-28 23:28 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/issue137-lifecycle.yaml -->
+
+<!-- auto-log: 2026-07-28 23:28 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/issue137-lifecycle.yaml -->
+
+<!-- auto-log: 2026-07-28 23:29 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/issue137-lifecycle.yaml -->
+
+<!-- auto-log: 2026-07-28 23:30 commit "test(dossier): assert CI refresh job's tool allowlist excludes find/xargs/scanners (AC5)" -->
