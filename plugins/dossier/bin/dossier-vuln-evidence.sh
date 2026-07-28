@@ -149,16 +149,36 @@ def sev_from_string(s):
 # Wrapping each record's build lets one bad record degrade to its own
 # unparseable-record marker instead of taking the rest of the scan down with
 # it — the per-record analogue of the whole-file ERR-3 pattern.
+#
+# This alone is not sufficient: a throwing type mismatch can occur at ANY
+# level a generator chain walks through on its way to producing a record —
+# not only inside the final object literal. A malformed `.runs[0]` (a string
+# instead of an object) or a malformed `.results[]?`/`.packages[]?` entry
+# throws BEFORE its output ever reaches safe_finding, aborting the whole
+# comprehension exactly as the unwrapped case did. Every generator stage that
+# indexes into a value which could legitimately be present-but-wrong-typed is
+# therefore wrapped in its own try/catch, falling back to an empty list for
+# that one branch rather than aborting its siblings.
 def safe_finding(build):
   try (build) catch {id: "UNKNOWN", package: "unknown", version: null, summary: "unparseable record", severity: null, parse_error: (. | tostring)};
+
+def safe_list(f): try (f) catch [];
+def safe_str(f): try (f) catch "unknown";
 
 (
   if $format == "sarif" then
     {
-      tool: (.runs[0].tool.driver.name // "unknown"),
-      scope: ([.runs[]?.results[]?.locations[0]?.physicalLocation?.artifactLocation?.uri]
-              | map(select(. != null)) | unique | join(", ")),
-      raw: [ .runs[]?.results[]? | safe_finding({
+      tool: (safe_str(.runs[0].tool.driver.name) // "unknown"),
+      # Isolated per-run, per-result — same shape as `raw` below, not a
+      # generator nested inside a single try/catch (jq's try only converts
+      # the FIRST error from a multi-output generator into the catch value;
+      # outputs already produced before that error are not retracted, which
+      # would leave scope's list a confusing mix of real values and stray
+      # fallbacks. Isolating at each stage, like `raw` does, avoids that.
+      scope: (try ([ (.runs // [])[]? as $run | safe_list($run.results)[]?
+              | (try (.locations[0]?.physicalLocation?.artifactLocation?.uri) catch null) ]
+              | map(select(. != null)) | unique | join(", ")) catch ""),
+      raw: [ (.runs // [])[]? as $run | safe_list($run.results)[]? | safe_finding({
         id: (.ruleId // "UNKNOWN"),
         package: (.locations[0]?.physicalLocation?.artifactLocation?.uri // "unknown"),
         version: null,
@@ -169,8 +189,8 @@ def safe_finding(build):
   elif $format == "osv-scanner" then
     {
       tool: "osv-scanner",
-      scope: ([.results[]?.source.path] | map(select(. != null)) | unique | join(", ")),
-      raw: [ .results[]? as $r | ($r.packages // [])[]? as $p | ($p.vulnerabilities // [])[]? | safe_finding({
+      scope: (try ([.results[]? | safe_str(.source.path)] | map(select(. != null and . != "unknown")) | unique | join(", ")) catch ""),
+      raw: [ (.results // [])[]? as $r | safe_list($r.packages)[]? as $p | safe_list($p.vulnerabilities)[]? | safe_finding({
         id: (.id // "UNKNOWN"),
         package: ($p.package.name // "unknown"),
         version: ($p.package.version // null),
@@ -181,7 +201,7 @@ def safe_finding(build):
   elif $format == "dependabot" then
     {
       tool: "dependabot",
-      scope: ([.[].dependency.manifest_path] | map(select(. != null)) | unique | join(", ")),
+      scope: (try ([.[] | safe_str(.dependency.manifest_path)] | map(select(. != null and . != "unknown")) | unique | join(", ")) catch ""),
       raw: [ .[] | safe_finding({
         id: (.security_advisory.ghsa_id // "UNKNOWN"),
         package: (.dependency.package.name // "unknown"),

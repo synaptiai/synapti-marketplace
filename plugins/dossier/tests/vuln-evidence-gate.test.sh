@@ -618,4 +618,89 @@ H4_EVIDENCE=$(g19_evidence "$H4_DIR")
 assert_contains "EV-0011" "$H4_EVIDENCE" "H4: the evidence names the undisposed finding"
 assert_not_contains "EV-0010" "$H4_EVIDENCE" "H4: the evidence does not also name the properly-disposed finding"
 
+# =============================================================================
+# Part 7 — independent post-fix re-validation findings (H1's fix was
+# incomplete: it protected the final per-record object build, but a type
+# error occurring further upstream in the generator chain that PRODUCES each
+# record — a malformed top-level field, or a malformed individual array
+# element one or more levels above the final record — throws before ever
+# reaching that protection and still aborts the whole extraction.)
+# =============================================================================
+
+# --- H5: a malformed top-level scan-metadata field (tool) must not cost the
+# scan its actual findings ----------------------------------------------------
+H5_DIR=$(_dossier_safe_mktemp_dir "h5-bad-tool-field")
+cat >"$H5_DIR/bad-tool.json" <<'EOF'
+{
+  "runs": [
+    {
+      "tool": "this-should-be-an-object-not-a-string",
+      "results": [
+        {"ruleId": "CVE-2024-99999", "message": {"text": "valid finding"}, "properties": {"security-severity": "9.5"}}
+      ]
+    }
+  ]
+}
+EOF
+H5_OUT=$(cd "$H5_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-tool.json 2>&1)
+H5_RC=$?
+assert_equal "0" "$H5_RC" "H5: a malformed top-level tool field does not abort the whole scan"
+H5_FINDING_ID=$(printf '%s' "$H5_OUT" | jq -r '.findings[0].id' 2>/dev/null)
+assert_equal "CVE-2024-99999" "$H5_FINDING_ID" "H5: the genuinely valid finding survives a malformed sibling top-level field"
+H5_TOOL=$(printf '%s' "$H5_OUT" | jq -r '.scan.tool' 2>/dev/null)
+assert_equal "unknown" "$H5_TOOL" "H5: the malformed tool field itself degrades to 'unknown', not a crash"
+
+# --- H6: a malformed individual entry ABOVE the final record (a bad `.runs[]`
+# entry sitting next to a well-formed one) must not cost the WELL-FORMED
+# run's findings --------------------------------------------------------------
+H6_DIR=$(_dossier_safe_mktemp_dir "h6-bad-run-entry")
+cat >"$H6_DIR/bad-run.json" <<'EOF'
+{
+  "runs": [
+    "this-run-entry-is-a-string-not-an-object",
+    {
+      "tool": {"driver": {"name": "example-sast"}},
+      "results": [
+        {"ruleId": "CVE-2024-88888", "message": {"text": "valid finding in the second run"}, "properties": {"security-severity": "9.1"}}
+      ]
+    }
+  ]
+}
+EOF
+H6_OUT=$(cd "$H6_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-run.json 2>&1)
+H6_RC=$?
+assert_equal "0" "$H6_RC" "H6: one malformed run entry alongside a well-formed one does not abort the whole scan"
+H6_FINDING_ID=$(printf '%s' "$H6_OUT" | jq -r '.findings[0].id' 2>/dev/null)
+assert_equal "CVE-2024-88888" "$H6_FINDING_ID" "H6: the well-formed run's genuine finding survives its malformed sibling run"
+
+# --- H7: same isolation for osv-scanner's own nested structure (a malformed
+# `packages` field on one result must not cost a sibling result's findings) --
+H7_DIR=$(_dossier_safe_mktemp_dir "h7-osv-bad-packages")
+cat >"$H7_DIR/osv-bad-packages.json" <<'EOF'
+{
+  "results": [
+    {
+      "source": {"path": "package-lock.json"},
+      "packages": "this-should-be-an-array-not-a-string"
+    },
+    {
+      "source": {"path": "requirements.txt"},
+      "packages": [
+        {
+          "package": {"name": "requests", "version": "2.25.0"},
+          "vulnerabilities": [
+            {"id": "GHSA-valid-0001", "summary": "a genuinely valid finding", "severity": [{"type": "CVSS_V3", "score": "9.2"}]}
+          ]
+        }
+      ]
+    }
+  ]
+}
+EOF
+H7_OUT=$(cd "$H7_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan osv-bad-packages.json 2>&1)
+H7_RC=$?
+assert_equal "0" "$H7_RC" "H7: osv-scanner — one malformed result's packages field does not abort the whole scan"
+H7_FINDING_ID=$(printf '%s' "$H7_OUT" | jq -r '.findings[0].id' 2>/dev/null)
+assert_equal "GHSA-valid-0001" "$H7_FINDING_ID" "H7: a sibling result's genuine finding survives a malformed packages field elsewhere"
+
 _dossier_test_summary
