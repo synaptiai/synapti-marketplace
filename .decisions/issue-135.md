@@ -275,3 +275,5 @@ A zero-context agent given this journal's Interface Contracts (exact script name
 <!-- auto-log: 2026-07-28 14:25 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-135.md -->
 
 <!-- auto-log: 2026-07-28 14:28 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/commit-msg-review-fixforward.txt -->
+
+<!-- auto-log: 2026-07-28 14:28 commit "fix(dossier): fix-forward P1/P2 findings from PR #139 review" -->
