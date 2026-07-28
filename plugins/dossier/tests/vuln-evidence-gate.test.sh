@@ -143,8 +143,12 @@ cat >"$FIXTURES/scan.no-severity.json" <<'EOF'
 }
 EOF
 OUT_NOSEV=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.no-severity.json 2>&1)
-assert_not_contains "\"severity\": \"Low\"" "$OUT_NOSEV" "a finding with no derivable severity is never fabricated as Low"
-assert_not_contains "\"severity\":\"Low\"" "$OUT_NOSEV" "(compact form) never fabricated as Low"
+# Parsed via jq, not a raw-text grep for '"severity": "Low"' — the script
+# always emits compact (`jq -c`) output, so a spaced-form text match can
+# never appear regardless of whether the underlying value is correct,
+# making a text-grep assertion here tautological rather than a real check.
+NOSEV_SEVERITY=$(printf '%s' "$OUT_NOSEV" | jq -r '.unresolved_severity[0].severity // "MISSING"' 2>/dev/null)
+assert_not_contains "Low" "$NOSEV_SEVERITY" "a finding with no derivable severity is never fabricated as Low"
 NOSEV_ID=$(printf '%s' "$OUT_NOSEV" | jq -r '.unresolved_severity[0].id // "MISSING"' 2>/dev/null)
 assert_equal "GHSA-0000-0000-0000" "$NOSEV_ID" "the no-derivable-severity finding is recorded in unresolved_severity, not silently omitted"
 
@@ -189,8 +193,14 @@ case "$COVERAGE_DATE" in
   *) _dossier_assert_fail "the coverage record's retrieved date '$COVERAGE_DATE' is not an ISO date" ;;
 esac
 
-# --- --help and bin-scripts hygiene are covered by bin-scripts.test.sh's
-# EXPECTED_SCRIPTS enumeration; not duplicated here.
+# --- General bin-script hygiene (exists, executable, syntax, usage header,
+# bash-3.2 portability, unknown-flag exit code) is covered by
+# bin-scripts.test.sh's EXPECTED_SCRIPTS enumeration; not duplicated here.
+# That enumeration only checks for a `# Usage:` header's PRESENCE in source,
+# not --help's actual invoked output — --help's content is exercised in
+# Part 8 below, and dossier-vuln-evidence.sh's other usage-error exit paths
+# (--scan/--out given with no value, --scan omitted) are covered directly in
+# bin-scripts.test.sh alongside its unknown-flag check.
 
 # =============================================================================
 # Part 2 — dossier-gate.sh G19: FAIL / PASS / INCONCLUSIVE (AC2/AC3/AC4)
@@ -323,11 +333,23 @@ assert_equal "INCONCLUSIVE" "$G19_NOEVIDENCE_RESULT" "AC4: zero vulnerability-sc
 G19_NOEVIDENCE_EVIDENCE=$(g19_evidence "$G19_NOEVIDENCE_DIR")
 assert_contains "no vulnerability-scan evidence" "$G19_NOEVIDENCE_EVIDENCE" "AC4: the no-evidence branch names itself distinctly"
 
-# The overall GATE_RESULT (not just the G19 row) must not read PASS either —
-# a regression check that G19 participates in the existing FAIL > INCONCLUSIVE
-# > PASS precedence correctly, with no change expected to that logic.
-G19_NOEVIDENCE_OVERALL=$(cd "$G19_NOEVIDENCE_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$GATE" --output-root docs/dossier --quiet 2>&1; echo "RC=$?")
-assert_not_contains "GATE_RESULT=PASS" "$G19_NOEVIDENCE_OVERALL" "AC4: the overall gate result does not read PASS when G19 is INCONCLUSIVE"
+# Scoped honestly: this fixture is deliberately minimal (only the two files
+# G19 reads), so several OTHER conditions also fail on it independently of
+# G19 — verified directly: this exact fixture's overall result is FAIL, from
+# G03/G05/G08/G09/G10/G12/G16/G17, not from G19. This assertion therefore
+# does NOT isolate G19's individual causal contribution to the overall
+# result (that would need a fixture where every other condition legitimately
+# passes); it is a narrower sanity check that the aggregate FAIL/INCONCLUSIVE
+# precedence computation doesn't erroneously report PASS on a fixture with
+# multiple non-PASS conditions, G19 among them. G19's OWN row is what the
+# assert_equal two lines above already proves precisely, via the
+# per-condition JSON field rather than a text search.
+G19_NOEVIDENCE_OVERALL_RESULT=$(cd "$G19_NOEVIDENCE_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$GATE" --output-root docs/dossier --json 2>/dev/null | jq -r '.result' 2>/dev/null)
+if [ "$G19_NOEVIDENCE_OVERALL_RESULT" = "PASS" ]; then
+  _dossier_assert_fail "AC4: the overall gate result read PASS on a fixture where G19 (among other uncovered conditions) is non-PASS"
+else
+  _dossier_assert_pass "AC4: the overall gate result is not PASS on a fixture where G19 (among other uncovered conditions) is non-PASS (got: $G19_NOEVIDENCE_OVERALL_RESULT)"
+fi
 
 # --- INCONCLUSIVE: a scan artifact that failed to parse, distinct wording ---
 # from the "never scanned" branch above — the ERR-3-style distinction must
