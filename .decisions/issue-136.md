@@ -61,6 +61,13 @@ artifacts:
   escalated_count: 0
   disputed_count: 0
   pr: 141
+- type: workflow-run
+  captured_at: '2026-07-28T17:09:54Z'
+  workflow: merge-pr
+  run_id: 2026-07-28T170210Z-merge-pr-141
+  status: completed
+  pr: 141
+  merge_commit: 2982034
 ---
 # Decision Journal — Issue #136
 
