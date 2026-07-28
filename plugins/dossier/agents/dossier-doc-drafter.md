@@ -2,8 +2,8 @@
 name: dossier-doc-drafter
 description: "Draft exactly one canonical package document from its required-content contract, the project model, and the evidence-ledger slice it is given, citing evidence IDs on every material assertion and marking claim states. Use when Phase 4 drafts internal documents or Phase 5 derives public documents, dispatched once per document in dependency waves."
 model: inherit
-tools: Read, Write, Edit, Grep, Glob
-skills: doc-package-contract, evidence-ledger, disclosure-gating
+tools: Read, Write, Edit, Grep, Glob, Bash
+skills: doc-package-contract, evidence-ledger, disclosure-gating, prose-clarity
 memory: project
 ---
 
@@ -51,6 +51,12 @@ Avoid generic explanation ("microservices are an architectural style where…"),
 
 Every section should let a reader answer a question or perform a task. If you cannot name the question a section answers, cut it.
 
+## Self-lint before returning
+
+Run `bin/dossier-prose-lint.sh --file {path} --json`. Fix hard-category hits with `Edit`, then re-run — capped at two revision passes, the same per-document budget discipline this file already applies to context. Return the draft regardless of outcome after the cap.
+
+A required citation, a required hedge (`Inferred:`, `Unknown:`, `Recommendation:`, or the phrasing in `references/source-authority-and-claim-states.md`), or an owner name that cannot shrink always outranks the linter. If a hard-category hit survives two passes because fixing it would break an Iron Rule from this file or another skill, say so in the report rather than forcing a fix that trades accuracy for a clean lint.
+
 ## Justified `N/A`
 
 `N/A` means "demonstrably irrelevant to this project", with a reason and evidence. It does **not** mean "not inspected" — that is `U` with an `AQ-####` row.
@@ -80,6 +86,7 @@ CLAIMS_CITED={n}  BY_STATE={V:n C:n R:n I:n U:n}
 SECTIONS_NA={n}  SECTIONS_UNKNOWN={n}
 LAST_VERIFIED={ISO date}
 CONFIDENTIALITY={class}
+PROSE_LINT={clean|n hard violation(s) after revision}
 
 ### Contract coverage
 | Required content | Covered | Evidence | Note |

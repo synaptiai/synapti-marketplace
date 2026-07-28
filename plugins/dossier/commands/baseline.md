@@ -21,6 +21,7 @@ have no dependency on each other and triples wall-clock for no benefit.
 - `project-modeling` — Phase 2: the canonical model, terminology, and end-to-end traces
 - `gap-and-contradiction-register` — Phase 3: classify and route material gaps
 - `doc-package-contract` — Phase 4: per-document contracts and headers
+- `prose-clarity` — Phase 4: self-lint drafted prose before returning each document
 - `disclosure-gating` — Phase 5: derive the public documents from approved claims only
 
 ## References

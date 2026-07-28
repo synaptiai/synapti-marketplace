@@ -1,8 +1,8 @@
 # Release Gate Conditions
 
-Reference document. The seventeen conditions that decide whether a documentation package may be released, how each is checked, and the contract that stops the gate from becoming theater.
+Reference document. The eighteen conditions that decide whether a documentation package may be released, how each is checked, and the contract that stops the gate from becoming theater.
 
-The gate is **binary and conjunctive**: seventeen of seventeen, or the package is not `release-ready`. A high score is one condition, not a substitute for the other sixteen. A package can score 96/100 and be unreleasable on a single unsupported public claim, and that is the correct outcome — the score measures quality, and the other conditions measure whether the package is safe to rely on.
+The gate is **binary and conjunctive**: eighteen of eighteen, or the package is not `release-ready`. A high score is one condition, not a substitute for the other seventeen. A package can score 96/100 and be unreleasable on a single unsupported public claim, and that is the correct outcome — the score measures quality, and the other conditions measure whether the package is safe to rely on.
 
 ## The mechanical / judgment split
 
@@ -13,7 +13,7 @@ Every condition carries exactly one tag, and the tag determines who is allowed t
 | **`mechanical`** | `bin/dossier-gate.sh` can decide it true or false from repository state alone — files, headings, register rows, greps, link resolution, exit codes. No verdict file, no model judgment. |
 | **`judgment`** | Cannot be decided from repository state. Requires the `dossier-scorer` verdict file, which is a model-produced artifact. The script's job is to **require and parse** that verdict, never to substitute for it. |
 
-Ten conditions are mechanical; seven are judgment.
+Eleven conditions are mechanical; seven are judgment.
 
 Some mechanical conditions have a judgment shadow — a script can prove every registered claim has approved evidence, but not that every public *sentence* was registered in the first place. Where that applies, the condition below names its **mechanical precondition** and says which judgment condition covers the rest. The split is drawn so that the shadow always lands on a judgment-tagged condition rather than falling through the gate.
 
@@ -23,7 +23,7 @@ This section is normative for `bin/dossier-gate.sh`.
 
 **Failing is decidable from a subset. Passing is not.**
 
-That asymmetry is the whole design. Ten mechanical conditions are enough to prove a package is *not* releasable — one broken link is sufficient. They are never enough to prove it *is*, because the seven judgment conditions include both scorecard conditions and three of the four "must never appear" rules. A script that passed on mechanics alone would emit `PASS` for a package whose planned features are documented as shipped, whose targets are printed as measurements, and whose policies are described as controls, having checked none of it. That package would look audited and would be wrong in exactly the ways the system exists to catch.
+That asymmetry is the whole design. Eleven mechanical conditions are enough to prove a package is *not* releasable — one broken link is sufficient. They are never enough to prove it *is*, because the seven judgment conditions include both scorecard conditions and three of the four "must never appear" rules. A script that passed on mechanics alone would emit `PASS` for a package whose planned features are documented as shipped, whose targets are printed as measurements, and whose policies are described as controls, having checked none of it. That package would look audited and would be wrong in exactly the ways the system exists to catch.
 
 So the script **structurally refuses to emit `PASS` without a scorer verdict file**:
 
@@ -41,14 +41,14 @@ Exit codes:
 
 | Code | Meaning |
 |---:|---|
-| 0 | `PASS` — all seventeen conditions satisfied, judgment set covered by a valid verdict file |
+| 0 | `PASS` — all eighteen conditions satisfied, judgment set covered by a valid verdict file |
 | 1 | `FAIL` — at least one condition failed. Emitted from mechanics alone when a mechanical condition fails, with or without a verdict file |
 | 2 | Usage error — missing or invalid arguments |
 | 3 | `INCONCLUSIVE` — no mechanical condition failed, but the judgment set is not covered |
 
 `--strict` maps exit 3 to exit 1, so CI treats an uncovered judgment set as a failure rather than as a state to interpret. `--json` emits one object per condition with `id`, `tag`, `result`, `evidence`, and `source` (`script` or `verdict`), so a reader can always tell which conditions were machine-decided and which were asserted by the scorer.
 
-## The seventeen conditions
+## The eighteen conditions
 
 | ID | Condition | Tag |
 |---|---|---|
@@ -69,6 +69,7 @@ Exit codes:
 | G15 | Policies are not presented as implemented controls | judgment |
 | G16 | Unresolved uncertainty and source limitations are visible | mechanical |
 | G17 | The reviewer-pass independence method is disclosed, including model diversity | mechanical |
+| G18 | No hard-category prose-clarity violation exists in the package | mechanical |
 
 ### G01 — Total score is at least `gate.minScore`
 
@@ -244,13 +245,25 @@ Exit codes:
 
 Mechanical rather than judgment: presence of the heading and the `Model diversity:` line is decidable from the file. Whether the disclosure is *accurate* is covered by G16's honesty requirement and by the scorer.
 
+### G18 — No hard-category prose-clarity violation exists in the package
+
+**Tag:** mechanical
+
+| Aspect | Content |
+|---|---|
+| Check | `bin/dossier-prose-lint.sh --output-root <path> --json` across all 23 canonical files. Hard categories only: banned marketing adjectives, banned phrasal verbs, banned filler/hedge phrases, Latinate long-form words, semicolons, over-length sentences, over-length paragraphs. A required epistemic-hedge marker (`Inferred:`, `Unknown:`, `Recommendation:`, or the phrasing in `references/source-authority-and-claim-states.md`) is exempt from the hedge-phrase and length rules, unconditionally — see `skills/prose-clarity/SKILL.md`. |
+| Evidence that satisfies it | The linter's own JSON reporting `blocking_violations: 0`, with its exit code (`0`) agreeing. |
+| Fails when | `blocking_violations` is nonzero; `dossier-prose-lint.sh` is missing or non-executable, which never reads as a pass; or the script's exit code and its own reported count disagree, which is a linter defect recorded as a failure rather than a result to pick favorably from — the same asymmetry G06 and G08 apply to a missing dependency. |
+
+Advisory categories (passive voice, nominalization, em-dash count) are never checked here — they are grammar-heuristic and false-positive-prone, so they feed `dossier-pass-c-audience`'s Step 5 and Dimension 10 of `references/scorecard-rubric.md` as judgment context instead of a mechanical gate condition. This plugin's own reference documents use em-dashes constitutively, and an advisory category gating release would fail this plugin's own package on its first run.
+
 ## Package status
 
 The gate result maps to exactly one of three package statuses, which is what the completion response and `07-verification/documentation-verification-report.md` report.
 
 | Status | Requires |
 |---|---|
-| `release-ready` | All seventeen conditions `PASS`, with the judgment set covered by a valid scorer verdict file. |
+| `release-ready` | All eighteen conditions `PASS`, with the judgment set covered by a valid scorer verdict file. |
 | `conditionally ready` | Every failing condition satisfies all four of: no unresolved `Critical` finding anywhere in the package; a named individual owner; an exact, obtainable evidence request; and disclosure of the condition in both the documentation index and the verification report. Internal audiences may use the package with the named conditions attached. `06-public/**` is **not** released. |
 | `not ready` | Any unresolved `Critical` finding; any secret or prohibited disclosure present; any failing condition with no known resolution path; or an `INCONCLUSIVE` gate result. |
 
@@ -297,3 +310,4 @@ The corresponding positive obligation, stated in `references/document-headers.md
 | `references/register-schemas.md` | `CL-`, `CT-`, `AQ-`, `TM-` row shapes, read by G04, G05, G07, G10 |
 | `references/package-contract-*.md` | Required sections per directory, read by G08 |
 | `references/document-headers.md` | Header contract, read by G16 and scored under dimension 10 |
+| `references/prose-style-and-vocabulary.md` | Word lists and the epistemic-hedge carve-out, read by G18 |

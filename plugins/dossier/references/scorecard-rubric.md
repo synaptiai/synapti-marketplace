@@ -2,7 +2,7 @@
 
 Reference document. The ten weighted dimensions, the 0–10 anchors that fix what each score means, and the arithmetic that turns anchors into a total the release gate can compare against `gate.minScore`.
 
-A score is not a gate. It is one of seventeen conditions, and it is the only one that compresses a package into a number — which is exactly why the anchors below are concrete and why every deduction must name a finding. An unanchored score drifts upward round over round; an anchored score with a citation trail does not.
+A score is not a gate. It is one of eighteen conditions, and it is the only one that compresses a package into a number — which is exactly why the anchors below are concrete and why every deduction must name a finding. An unanchored score drifts upward round over round; an anchored score with a citation trail does not.
 
 ## The ten dimensions
 
@@ -221,6 +221,8 @@ Each anchor is cumulative: an 8 includes everything at 5, which includes everyth
 | 5 | Headers complete and the index navigable, but prose is padded with generic explanation, and review triggers and cadence are absent — so the package will age without anyone noticing. |
 | **8** | Every document carries the full header contract from `references/document-headers.md`. The index gives a reader route per audience. Maintenance policy, review cadence, and review triggers stated. Prose is concrete and free of filler. |
 | 10 | All of 8, plus a change summary since the previous documentation version; document dependencies and sources of truth mapped so a change's blast radius is readable from the index; ownership gaps and bus-factor concerns stated explicitly rather than left as bare `unassigned` rows. |
+
+"Prose is concrete and free of filler" at anchor 8 is a judgment call `bin/dossier-prose-lint.sh` cannot make alone — its hard categories are gated separately by `G18`, never here. Its advisory categories (passive voice, nominalization) are useful evidence for this dimension: a document whose G18 fix reads as genuine has few of them; one that shortened sentences into vague fragments to dodge the word cap tends to keep or worsen them.
 
 ## Worked example
 

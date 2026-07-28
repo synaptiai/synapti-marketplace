@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# dossier-gate.sh — evaluate the seventeen release-gate conditions.
+# dossier-gate.sh — evaluate the eighteen release-gate conditions.
 #
 # NORMATIVE CONTRACT (references/release-gate-conditions.md):
 #
 #   Failing is decidable from a subset. Passing is not.
 #
-# Ten conditions are mechanical and decidable here. Seven are judgment and
+# Eleven conditions are mechanical and decidable here. Seven are judgment and
 # require the dossier-scorer verdict file. One broken link is enough to prove a
 # package is NOT releasable; no amount of mechanical checking proves it IS,
 # because the judgment set includes both scorecard conditions and three of the
@@ -271,6 +271,36 @@ if [ -f "$REPORT" ]; then
   fi
 else
   record G17 mechanical FAIL script "no verification report at $REPORT"
+fi
+
+# G18 — no hard-category prose-clarity violation exists in the package
+#
+# Purely mechanical: reads dossier-prose-lint.sh's own JSON, never the scorer
+# verdict file, so it cannot inherit the class of bug that lived in the
+# judgment-verdict parsing loop below. Two independent readings of the same
+# run are cross-checked before recording a result — the script's exit code and
+# its parsed blocking_violations count — because a script that disagrees with
+# its own exit code is a linter defect, not a result to pick favorably from.
+if [ -x "$SELF_DIR/dossier-prose-lint.sh" ]; then
+  LINT_OUT=$("$SELF_DIR/dossier-prose-lint.sh" --output-root "$OUTPUT_ROOT" --json 2>&1)
+  LINT_RC=$?
+  # Anchored to the start of the object: the JSON also carries one
+  # "blocking_violations" per file in its files[] array, and an unanchored
+  # greedy match would silently read the LAST file's count instead of the
+  # top-level total.
+  LINT_COUNT=$(printf '%s' "$LINT_OUT" | sed -n 's/^{"blocking_violations":\([0-9]*\).*/\1/p' | head -1)
+  [ -z "$LINT_COUNT" ] && LINT_COUNT=-1
+  if [ "$LINT_COUNT" -lt 0 ]; then
+    record G18 mechanical FAIL script "dossier-prose-lint.sh produced no parseable blocking_violations count"
+  elif [ "$LINT_COUNT" -eq 0 ] && [ "$LINT_RC" -eq 0 ]; then
+    record G18 mechanical PASS script "0 hard-category prose-clarity violations"
+  elif [ "$LINT_COUNT" -gt 0 ] && [ "$LINT_RC" -ne 0 ]; then
+    record G18 mechanical FAIL script "$LINT_COUNT hard-category prose-clarity violation(s)"
+  else
+    record G18 mechanical FAIL script "exit code ($LINT_RC) and reported count ($LINT_COUNT) disagree — linter defect, not a pass"
+  fi
+else
+  record G18 mechanical FAIL script "dossier-prose-lint.sh missing — cannot certify prose clarity"
 fi
 
 # =============================================================================
