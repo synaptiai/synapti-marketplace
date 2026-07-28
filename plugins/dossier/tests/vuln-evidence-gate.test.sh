@@ -252,4 +252,61 @@ g19_fixture "$G19_OPEN_DIR" \
 G19_OPEN_RESULT=$(g19_result "$G19_OPEN_DIR")
 assert_equal "FAIL" "$G19_OPEN_RESULT" "AC2: a Risk register row with Status=open still fails G19 — an open row is not a disposition"
 
+# --- PASS: an Accepted risks row with a named accepter, valid dates, and a
+# stated basis disposes a High finding (AC3) --------------------------------
+G19_ACCEPTED_DIR=$(_dossier_safe_mktemp_dir "g19-accepted")
+g19_fixture "$G19_ACCEPTED_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0042 | osv-scanner reports GHSA-4w2v-q235-vp99 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-4w2v-q235-vp99, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
+'## Accepted risks
+
+| Risk ID | Accepted by | Date | Basis for acceptance | Review date | Evidence of the acceptance |
+|---|---|---|---|---|---|
+| [EV-0042] | Jane Doe, VP Engineering | 2026-07-20 | Low exploitability in this deployment; upgrade scheduled next quarter | 2026-10-20 | Slack thread, 2026-07-20, #security-review |'
+G19_ACCEPTED_RESULT=$(g19_result "$G19_ACCEPTED_DIR")
+assert_equal "PASS" "$G19_ACCEPTED_RESULT" "AC3: a High finding with a named accepter, valid dates, and a stated basis in Accepted risks passes G19"
+
+# --- PASS: a Risk register row alone (Category=dependency, owned, not open)
+# also disposes a Critical finding — Accepted risks is not the only path ----
+G19_MITIGATING_DIR=$(_dossier_safe_mktemp_dir "g19-mitigating")
+g19_fixture "$G19_MITIGATING_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0043 | osv-scanner reports GHSA-9999-9999-9999 in lodash@4.17.15, severity Critical | R | `scan.json` — osv-scanner, GHSA-9999-9999-9999, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
+'## Risk register
+
+| ID | Risk | Category | Likelihood | Impact | Detectability | Urgency | Evidence | Mitigation | Owner | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| RISK-0002 | lodash prototype pollution via GHSA-9999-9999-9999 | dependency | medium | critical | high | high | [EV-0043] | upgrading in the next patch release | Jane Doe | mitigating |'
+G19_MITIGATING_RESULT=$(g19_result "$G19_MITIGATING_DIR")
+assert_equal "PASS" "$G19_MITIGATING_RESULT" "AC3: a Risk register row with Category=dependency, a named Owner, and Status=mitigating disposes a Critical finding — Risk register alone qualifies, not only Accepted risks"
+
+# --- PASS: a clean scan (coverage recorded, zero Critical/High findings) is
+# a legitimate pass, not an omission ------------------------------------------
+G19_CLEAN_DIR=$(_dossier_safe_mktemp_dir "g19-clean")
+g19_fixture "$G19_CLEAN_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0002 | osv-scanner aggregate: 2 Low-severity findings in package-lock.json | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding-aggregate severity=Low count=2 |' \
+''
+G19_CLEAN_RESULT=$(g19_result "$G19_CLEAN_DIR")
+assert_equal "PASS" "$G19_CLEAN_RESULT" "AC3/AC4: a parsed scan with zero Critical/High findings passes G19 — a clean scan is a legitimate pass, not an omission"
+
+# --- Negative control: a calendar-invalid rollover Review date must NOT
+# dispose the finding — proves validate_calendar_date() is actually applied,
+# not merely present in the source file --------------------------------------
+G19_ROLLOVER_DIR=$(_dossier_safe_mktemp_dir "g19-rollover")
+g19_fixture "$G19_ROLLOVER_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0044 | osv-scanner reports GHSA-8888-8888-8888 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-8888-8888-8888, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
+'## Accepted risks
+
+| Risk ID | Accepted by | Date | Basis for acceptance | Review date | Evidence of the acceptance |
+|---|---|---|---|---|---|
+| [EV-0044] | Jane Doe, VP Engineering | 2026-07-20 | Low exploitability in this deployment | 2026-06-31 | Slack thread, 2026-07-20, #security-review |'
+G19_ROLLOVER_RESULT=$(g19_result "$G19_ROLLOVER_DIR")
+if [ "$G19_ROLLOVER_RESULT" = "PASS" ]; then
+  _dossier_assert_fail "a calendar-invalid rollover Review date (2026-06-31) was accepted as a valid disposition"
+else
+  _dossier_assert_pass "a calendar-invalid rollover Review date (2026-06-31, silently rolls to July 1) does not dispose the finding (G19 result: $G19_ROLLOVER_RESULT)"
+fi
+
 _dossier_test_summary

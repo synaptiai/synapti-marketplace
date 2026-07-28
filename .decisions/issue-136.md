@@ -155,3 +155,7 @@ Accepted consequence, worth surfacing here rather than only in the resolved-desi
 <!-- auto-log: 2026-07-28 16:12 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
 
 <!-- auto-log: 2026-07-28 16:15 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/commit-16.txt -->
+
+<!-- auto-log: 2026-07-28 16:15 commit "feat(dossier): add G19 release-gate condition for unresolved vulnerabilities" -->
+
+<!-- auto-log: 2026-07-28 16:15 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
