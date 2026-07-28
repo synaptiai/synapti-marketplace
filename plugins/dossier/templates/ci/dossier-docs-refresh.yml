@@ -261,11 +261,98 @@ jobs:
           if-no-files-found: error
 
   # ==========================================================================
+  # scan — the two optional isolated scanners (issue #137): dependency
+  # vulnerabilities (osv-scanner) and, for Python projects, code quality
+  # (pyscn). No LLM credential, no write token, read-only checkout — a
+  # sibling of `policy` in privilege shape, not in scheduling: it runs after
+  # `policy` and only when policy decided to run at all, so a merge the loop
+  # guard already rejected costs nothing here either.
+  #
+  # Neither wrapper script is invoked from inside the refresh job's agent
+  # sandbox — this job is their only execution path. Each wrapper self-gates
+  # on its own dossier.engagement.allowedActions flag; this job does not
+  # duplicate that policy in YAML (principle 4 above), so installing both
+  # tools unconditionally here — bounded, pinned, and cheap — is simpler
+  # than resolving the flags a second time just to skip an install. A
+  # disabled flag makes the wrapper report `disabled` without invoking the
+  # tool; it does not skip the step.
+  # ==========================================================================
+  scan:
+    name: Execute optional dependency and code-quality scans
+    needs: policy
+    if: needs.policy.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          # Shallow: this job scans the working tree as it stands, not its
+          # history.
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Check out the dossier plugin
+        uses: actions/checkout@v4
+        with:
+          repository: '{{DOSSIER_MARKETPLACE_REPO}}'
+          ref: '{{DOSSIER_REF}}'
+          path: .dossier-plugin
+          fetch-depth: 1
+          persist-credentials: false
+
+      # Pinned to a specific release and verified by checksum — the same
+      # posture as .github/workflows/dossier-tests.yml's own install step —
+      # so an upstream regression or a hostile release cannot silently
+      # change what this job reports.
+      - name: Install osv-scanner and pyscn
+        run: |
+          set -euo pipefail
+          OSV_VERSION=v2.4.0
+          OSV_SHA256=15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
+          curl -fsSL -o /usr/local/bin/osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  /usr/local/bin/osv-scanner" | sha256sum -c -
+          chmod +x /usr/local/bin/osv-scanner
+
+          python3 -m pip install --quiet --break-system-packages 'pyscn==1.10.2'
+
+      - name: Run the security scan
+        run: |
+          set -uo pipefail
+          chmod +x "$DOSSIER_BIN"/*.sh
+          "$DOSSIER_BIN/dossier-scan-security.sh" \
+            --target . \
+            --out .dossier/scan
+
+      - name: Run the code-quality scan
+        run: |
+          set -uo pipefail
+          chmod +x "$DOSSIER_BIN"/*.sh
+          "$DOSSIER_BIN/dossier-scan-quality.sh" \
+            --target . \
+            --out .dossier/scan
+
+      # Every status (ok, disabled, unavailable, timeout, error) writes an
+      # envelope file, so this artifact always has content — a missing file
+      # here means the scan step itself broke, not merely that a capability
+      # was off.
+      - name: Upload the scan bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: dossier-scan
+          path: .dossier/scan/
+          retention-days: 7
+          if-no-files-found: error
+
+  # ==========================================================================
   # refresh — the agent. Read permissions only, and no persisted credentials.
   # ==========================================================================
   refresh:
     name: Refresh the documentation
-    needs: policy
+    needs: [policy, scan]
     if: needs.policy.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -399,6 +486,19 @@ jobs:
           fi
           jq -r '"Documenting \(.range.spec) — \(.counts.changed_files) files, \(.counts.commits) commits."' \
             .dossier/evidence/manifest.json
+
+      # Supplementary evidence, not a precondition: unlike the evidence
+      # bundle above, a scan reporting `disabled`/`unavailable`/`timeout`
+      # (or the artifact being unusable for any reason) must never block
+      # documenting the range. No hard verification gate here on purpose —
+      # the refresh skill reads this file when present and useful, and
+      # proceeds identically when it is not.
+      - name: Download the scan bundle
+        if: steps.preflight.outputs.proceed == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: dossier-scan
+          path: .dossier/scan/
 
       # The prompt is static and carries a path, never content. Nothing
       # attacker-controlled is interpolated into it. Every piece of untrusted

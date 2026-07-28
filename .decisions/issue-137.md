@@ -180,3 +180,11 @@ No item remains open under "Needs Clarification" — every gap the advisor raise
 <!-- auto-log: 2026-07-28 20:47 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/quality-scan-execution.test.sh -->
 
 <!-- auto-log: 2026-07-28 20:48 Edit /Users/danielbentes/synapti-marketplace/.github/workflows/dossier-tests.yml -->
+
+<!-- auto-log: 2026-07-28 20:52 commit "test(dossier): joint AC3/AC4 verification + pin osv-scanner/pyscn in CI" -->
+
+<!-- auto-log: 2026-07-28 20:53 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-07-28 20:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-07-28 20:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/workflow-template.test.sh -->

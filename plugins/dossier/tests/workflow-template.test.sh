@@ -46,11 +46,39 @@ fi
 
 # --- Privilege split ---------------------------------------------------------
 # Three jobs, and the agent job must never hold a write token.
-for job in "  policy:" "  refresh:" "  publish:"; do
+for job in "  policy:" "  scan:" "  refresh:" "  publish:"; do
   assert_contains "$job" "$BODY" "job ${job# } declared"
 done
 
 assert_match '^permissions: \{\}' "$BODY" "top-level permissions is empty — per-job grants only"
+
+# The scan job (issue #137): isolated osv-scanner/pyscn execution. Same
+# privilege posture as policy — read-only, no write token, no agent.
+SCAN_BLOCK=$(awk '/^  scan:/{f=1} /^  refresh:/{f=0} f' "$WF")
+assert_contains "contents: read" "$SCAN_BLOCK" "scan job has contents: read"
+assert_not_contains "contents: write" "$SCAN_BLOCK" "scan job has NO write permission"
+assert_not_contains "pull-requests: write" "$SCAN_BLOCK" "scan job cannot open PRs"
+assert_not_contains "anthropics/claude-code-action" "$SCAN_BLOCK" "scan job runs NO agent"
+assert_not_contains "ANTHROPIC_API_KEY" "$SCAN_BLOCK" "scan job never sees the Anthropic key"
+assert_not_contains "CLAUDE_CODE_OAUTH_TOKEN" "$SCAN_BLOCK" "scan job never sees the OAuth token"
+assert_contains "persist-credentials: false" "$SCAN_BLOCK" "scan job does not persist git credentials"
+assert_contains "timeout-minutes:" "$SCAN_BLOCK" "scan job declares a timeout"
+assert_contains "dossier-scan-security.sh" "$SCAN_BLOCK" "scan job invokes the security scanner wrapper"
+assert_contains "dossier-scan-quality.sh" "$SCAN_BLOCK" "scan job invokes the quality scanner wrapper"
+assert_contains "upload-artifact" "$SCAN_BLOCK" "scan job uploads its results as an artifact"
+assert_contains "name: dossier-scan" "$SCAN_BLOCK" "scan job's artifact is named dossier-scan"
+assert_not_contains "@latest" "$SCAN_BLOCK" "scan job's tool install does not float on @latest"
+if printf '%s' "$SCAN_BLOCK" | grep -qE 'OSV_VERSION=v[0-9]+\.[0-9]+\.[0-9]+'; then
+  _dossier_assert_pass "scan job pins an explicit osv-scanner release version"
+else
+  _dossier_assert_fail "scan job does not pin an explicit osv-scanner release version"
+fi
+assert_contains "sha256sum -c" "$SCAN_BLOCK" "scan job verifies the downloaded osv-scanner binary by checksum"
+if printf '%s' "$SCAN_BLOCK" | grep -qE "pyscn==[0-9]+\.[0-9]+\.[0-9]+"; then
+  _dossier_assert_pass "scan job pins an explicit pyscn version"
+else
+  _dossier_assert_fail "scan job does not pin an explicit pyscn version"
+fi
 
 # The refresh job (the one running the agent) must have contents: read.
 REFRESH_BLOCK=$(awk '/^  refresh:/{f=1} /^  publish:/{f=0} f' "$WF")
@@ -58,6 +86,14 @@ assert_contains "contents: read" "$REFRESH_BLOCK" "refresh job has contents: rea
 assert_not_contains "contents: write" "$REFRESH_BLOCK" "refresh job has NO write permission"
 assert_not_contains "pull-requests: write" "$REFRESH_BLOCK" "refresh job cannot open PRs"
 assert_contains "persist-credentials: false" "$REFRESH_BLOCK" "refresh job does not persist git credentials"
+
+# refresh now depends on scan too (for the artifact download), and must
+# proceed even if the scan's own semantic outcome is disabled/unavailable/
+# timeout/error — only a genuine scan-JOB failure (not a reported status)
+# would ever prevent refresh from running, since every wrapper status short
+# of an internal bug exits 0.
+assert_contains "needs: [policy, scan]" "$BODY" "refresh depends on both policy and scan"
+assert_contains "dossier-scan" "$REFRESH_BLOCK" "refresh downloads the scan bundle artifact"
 
 # The publish job holds the write token and must run no agent.
 PUBLISH_BLOCK=$(awk '/^  publish:/{f=1} f' "$WF")
