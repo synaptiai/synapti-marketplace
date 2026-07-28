@@ -15,7 +15,7 @@ if [ ! -x "$SCRIPT" ]; then
   return 0 2>/dev/null || exit 0
 fi
 
-FIXTURE=$(mktemp -d "$RUN_TMPDIR/blast-radius-staleness.XXXXXX")
+FIXTURE=$(_dossier_safe_mktemp_dir "blast-radius-staleness")
 
 # A changed-files list that matches nothing in the event matrix, so the only
 # documents in the result (absent --stale-docs) are the four "always" docs.

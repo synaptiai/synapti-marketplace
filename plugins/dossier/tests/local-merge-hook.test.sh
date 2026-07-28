@@ -18,7 +18,7 @@ fi
 # This is the test that actually proves self-containment, not just asserts it
 # in prose: PLUGIN_ROOT points at a directory tree where plugins/flow simply
 # does not exist on disk, and the hook must still behave correctly.
-FLOWLESS_ROOT=$(mktemp -d "$RUN_TMPDIR/flowless-plugins.XXXXXX")
+FLOWLESS_ROOT=$(_dossier_safe_mktemp_dir "flowless-plugins")
 cp -R plugins/dossier "$FLOWLESS_ROOT/dossier"
 if [ -d "$FLOWLESS_ROOT/flow" ]; then
   _dossier_assert_fail "fixture setup bug: flow plugin ended up in the flowless fixture"
@@ -29,7 +29,7 @@ PLUGIN_ROOT="$FLOWLESS_ROOT/dossier"
 
 # A git repo to run the hook against — default branch checked out, HEAD has
 # no second parent yet.
-REPO=$(mktemp -d "$RUN_TMPDIR/local-merge-repo.XXXXXX")
+REPO=$(_dossier_safe_mktemp_dir "local-merge-repo")
 (
   cd "$REPO" || exit 1
   git init -q -b main
@@ -43,11 +43,19 @@ REPO=$(mktemp -d "$RUN_TMPDIR/local-merge-repo.XXXXXX")
 HOOK_ABS="$(pwd)/$HOOK"
 run_hook() {
   # $1 = bash command the (fake) Bash tool call carried, $2 = onLocalMerge mode
+  #
+  # Every path below is $REPO-absolute, never a bare relative ".claude" — a
+  # `cd "$REPO"` that silently fails for any reason must not turn `rm -rf
+  # .claude` into a deletion of the real caller's .claude/ directory. This is
+  # the exact incident that happened during development (see
+  # _dossier_safe_mktemp_dir's comment); this function closes the risk class
+  # even though the mktemp-empty root cause is now fixed there too.
   local cmd="$1" mode="$2"
-  ( cd "$REPO" && mkdir -p .claude && jq -n --arg m "$mode" '{dossier:{local:{onLocalMerge:$m}}}' > .claude/settings.dossier.json
-    printf '{"tool_input":{"command":"%s"}}' "$cmd" | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK_ABS" 2>&1
+  ( mkdir -p "$REPO/.claude"
+    jq -n --arg m "$mode" '{dossier:{local:{onLocalMerge:$m}}}' > "$REPO/.claude/settings.dossier.json"
+    ( cd "$REPO" && printf '{"tool_input":{"command":"%s"}}' "$cmd" | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$HOOK_ABS" 2>&1 )
     RC=$?
-    rm -rf .claude
+    rm -rf "$REPO/.claude"
     echo "RC=$RC" )
 }
 

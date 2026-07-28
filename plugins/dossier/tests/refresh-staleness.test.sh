@@ -24,7 +24,7 @@ if [ ! -x "$EVIDENCE_SCRIPT" ]; then
 fi
 
 # --- dossier-evidence.sh --stale-docs -> manifest.json stale_docs ----------
-FIXTURE=$(mktemp -d "$RUN_TMPDIR/refresh-staleness.XXXXXX")
+FIXTURE=$(_dossier_safe_mktemp_dir "refresh-staleness")
 (
   cd "$FIXTURE" || exit 1
   git init -q

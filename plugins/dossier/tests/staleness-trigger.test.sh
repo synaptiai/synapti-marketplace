@@ -25,7 +25,7 @@ day_offset() { date -u -d "-$1 days" +%Y-%m-%d 2>/dev/null || date -u -v-"$1"d +
 setup_fixture() {
   # $1 = number of stale documents to plant (each independently past 90 days)
   local n="$1" fixture docs i
-  fixture=$(mktemp -d "$RUN_TMPDIR/policy-stale.XXXXXX")
+  fixture=$(_dossier_safe_mktemp_dir "policy-stale")
   docs="$fixture/docs/dossier/02-architecture"
   mkdir -p "$fixture/docs/dossier/00-control" "$docs"
   i=1
@@ -96,7 +96,7 @@ STALE_DOCS_COUNT=$(printf '%s' "$STALE_DOCS_FIELD" | tr ',' '\n' | grep -c .)
 assert_equal "3" "$STALE_DOCS_COUNT" "AC3: the stale_docs list is capped at maxStaleDocsPerSweep (3), not all 8"
 
 # --- No stale documents at all: schedule sweep behaves exactly as before ---
-F3=$(mktemp -d "$RUN_TMPDIR/policy-fresh.XXXXXX")
+F3=$(_dossier_safe_mktemp_dir "policy-fresh")
 mkdir -p "$F3/docs/dossier/00-control" "$F3/docs/dossier/02-architecture"
 cat >"$F3/docs/dossier/02-architecture/fresh.md" <<EOF
 dossier-header: v1

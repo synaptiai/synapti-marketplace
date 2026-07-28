@@ -14,7 +14,7 @@ if [ ! -x "$SCRIPT" ]; then
   return 0 2>/dev/null || exit 0
 fi
 
-FIXTURE=$(mktemp -d "$RUN_TMPDIR/staleness-check.XXXXXX")
+FIXTURE=$(_dossier_safe_mktemp_dir "staleness-check")
 DOCS="$FIXTURE/docs/dossier/02-architecture"
 mkdir -p "$DOCS"
 
