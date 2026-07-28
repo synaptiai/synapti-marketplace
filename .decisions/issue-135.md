@@ -281,3 +281,5 @@ A zero-context agent given this journal's Interface Contracts (exact script name
 <!-- auto-log: 2026-07-28 14:32 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-check.test.sh -->
 
 <!-- auto-log: 2026-07-28 14:34 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/commit-msg-holdout-coverage.txt -->
+
+<!-- auto-log: 2026-07-28 14:35 commit "test(dossier): add regression coverage for the calendar-rollover fix" -->
