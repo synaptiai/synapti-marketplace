@@ -103,7 +103,14 @@ fi
 # top-level `results` array of its own.
 FORMAT=""
 if jq -e 'type == "array"' "$SCAN" >/dev/null 2>&1; then
-  if jq -e 'length == 0 or (.[0].security_advisory != null)' "$SCAN" >/dev/null 2>&1; then
+  # Indexing `.[0]` directly threw when the first array element itself was
+  # not an object (a wrong-typed leading element) — the detection check
+  # crashed before extraction ever got a chance to fault-isolate it,
+  # producing a total parse-error instead of correctly detecting the format
+  # and flagging just that one element. `any` type-guards each element
+  # before indexing it, so one malformed element anywhere in the array no
+  # longer prevents recognizing the shape from the others.
+  if jq -e 'length == 0 or any(.[]; type == "object" and (.security_advisory != null))' "$SCAN" >/dev/null 2>&1; then
     FORMAT="dependabot"
   fi
 elif jq -e '(.runs != null) and (.runs | type) == "array"' "$SCAN" >/dev/null 2>&1; then

@@ -703,4 +703,28 @@ assert_equal "0" "$H7_RC" "H7: osv-scanner — one malformed result's packages f
 H7_FINDING_ID=$(printf '%s' "$H7_OUT" | jq -r '.findings[0].id' 2>/dev/null)
 assert_equal "GHSA-valid-0001" "$H7_FINDING_ID" "H7: a sibling result's genuine finding survives a malformed packages field elsewhere"
 
+# --- H8: Dependabot's own equivalent case — a malformed array element
+# alongside a well-formed one. Dependabot's shape is flat (a single top-level
+# array, no intermediate nesting), so this is a narrower case than H5-H7, but
+# it closes out the same fault-isolation guarantee across all three formats.
+H8_DIR=$(_dossier_safe_mktemp_dir "h8-dependabot-bad-element")
+cat >"$H8_DIR/dependabot-bad-element.json" <<'EOF'
+[
+  "this-element-is-a-string-not-an-alert-object",
+  {
+    "number": 7,
+    "state": "open",
+    "dependency": {"package": {"name": "django"}, "manifest_path": "requirements.txt"},
+    "security_advisory": {"ghsa_id": "GHSA-valid-dep01", "severity": "high", "summary": "a genuinely valid finding"}
+  }
+]
+EOF
+H8_OUT=$(cd "$H8_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan dependabot-bad-element.json 2>&1)
+H8_RC=$?
+assert_equal "0" "$H8_RC" "H8: Dependabot — one malformed array element does not abort the whole scan"
+H8_FINDING_ID=$(printf '%s' "$H8_OUT" | jq -r '.findings[0].id' 2>/dev/null)
+assert_equal "GHSA-valid-dep01" "$H8_FINDING_ID" "H8: a sibling array element's genuine finding survives a malformed element elsewhere"
+H8_UNPARSEABLE_COUNT=$(printf '%s' "$H8_OUT" | jq '.unparseable_records | length' 2>/dev/null)
+assert_equal "1" "$H8_UNPARSEABLE_COUNT" "H8: the malformed element is flagged, not silently dropped"
+
 _dossier_test_summary
