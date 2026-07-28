@@ -353,7 +353,15 @@ jobs:
   refresh:
     name: Refresh the documentation
     needs: [policy, scan]
-    if: needs.policy.outputs.should_run == 'true'
+    # always() overrides GitHub's IMPLICIT success() gate on every job in
+    # needs: — without it, a scan-job failure (a network blip during the
+    # tool install, not a wrapper reporting disabled/unavailable/timeout,
+    # which all exit 0) would silently skip refresh entirely, exactly the
+    # "must never block documenting the range" guarantee this job's own
+    # comment above promises. needs.policy.outputs.should_run still gates
+    # correctly when policy itself fails or is skipped: a failed policy job
+    # never sets that output, so the comparison is false either way.
+    if: always() && needs.policy.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -492,9 +500,14 @@ jobs:
       # (or the artifact being unusable for any reason) must never block
       # documenting the range. No hard verification gate here on purpose —
       # the refresh skill reads this file when present and useful, and
-      # proceeds identically when it is not.
+      # proceeds identically when it is not. continue-on-error is required,
+      # not cosmetic: with refresh's if: now always() (see above), the scan
+      # job that normally produces this artifact may itself have failed to
+      # run at all, and actions/download-artifact@v4 fails the step by
+      # default when the named artifact was never uploaded.
       - name: Download the scan bundle
         if: steps.preflight.outputs.proceed == 'true'
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: dossier-scan

@@ -271,13 +271,28 @@ def safe_str(f): try (f) catch "unknown";
                 # "whichever id the tool happened to list first" (unstable).
                 ($p.groups // []) as $groups |
                 if ($groups | type) == "array" and ($groups | length) > 0 then
-                  $groups[]? | safe_finding(
+                  # A non-object element anywhere in $vulns throws when the
+                  # per-group summary lookup below indexes it with .id — and
+                  # because $vulns is shared across every group's lookup in
+                  # this package, an unguarded throw there previously took
+                  # down ALL of the package's groups, not just the group
+                  # whose summary happened to hit the bad element (the same
+                  # silent-mass-loss shape unparseable()/safe_finding exist
+                  # to prevent one level up). select(type == "object") below
+                  # keeps one malformed element from poisoning every group's
+                  # lookup; this companion pass still surfaces it — emitted
+                  # once per bad element, not once per group, since it does
+                  # not depend on $g.
+                  ($vulns[]? | if type != "object" then
+                    unparseable("a vulnerabilities[] entry"; "expected object, got " + type)
+                   else empty end),
+                  ($groups[]? | safe_finding(
                     . as $g
                     | ($g.ids // []) as $gids
                     | ((($g.aliases // []) | map(select(type == "string" and test("^CVE-"))) | first)
                        // (($gids | sort) | first)
                        // "UNKNOWN") as $primary_id
-                    | ([$vulns[]? | select(.id as $vid | $gids | index($vid) != null) | (.summary // "")] | first // "") as $vuln_summary
+                    | ([$vulns[]? | select(type == "object") | select(.id as $vid | $gids | index($vid) != null) | (.summary // "")] | first // "") as $vuln_summary
                     | {
                         id: $primary_id,
                         package: ($p.package.name // "unknown"),
@@ -285,7 +300,7 @@ def safe_str(f): try (f) catch "unknown";
                         summary: $vuln_summary,
                         severity: bucket_severity($g.max_severity)
                       }
-                  )
+                  ))
                 else
                   # Defensive fallback: vulnerabilities present but groups is
                   # absent, wrong-typed, or empty — not observed in real

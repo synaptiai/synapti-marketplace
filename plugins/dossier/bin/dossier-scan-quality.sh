@@ -235,8 +235,12 @@ fi
 FINAL_REPORT_PATH="$REPORT_PATH"
 if [ -n "$OUT" ]; then
   FINAL_REPORT_PATH="$OUT/pyscn-scan-raw.json"
-  cp "$REPORT_PATH" "$FINAL_REPORT_PATH" 2>/dev/null || FINAL_REPORT_PATH="$REPORT_PATH"
-  [ "$FINAL_REPORT_PATH" != "$REPORT_PATH" ] && rm -rf "$SCRATCH" 2>/dev/null
+  if cp "$REPORT_PATH" "$FINAL_REPORT_PATH" 2>/dev/null; then
+    rm -rf "$SCRATCH" 2>/dev/null
+  else
+    echo "dossier-scan-quality: could not copy report to $OUT — leaving $SCRATCH in place" >&2
+    FINAL_REPORT_PATH="$REPORT_PATH"
+  fi
 fi
 
 emit "ok" "" "$FINAL_REPORT_PATH"

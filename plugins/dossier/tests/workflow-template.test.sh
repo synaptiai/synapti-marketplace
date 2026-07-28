@@ -88,12 +88,24 @@ assert_not_contains "pull-requests: write" "$REFRESH_BLOCK" "refresh job cannot 
 assert_contains "persist-credentials: false" "$REFRESH_BLOCK" "refresh job does not persist git credentials"
 
 # refresh now depends on scan too (for the artifact download), and must
-# proceed even if the scan's own semantic outcome is disabled/unavailable/
-# timeout/error — only a genuine scan-JOB failure (not a reported status)
-# would ever prevent refresh from running, since every wrapper status short
-# of an internal bug exits 0.
+# proceed even if scan itself fails outright (not just reports a non-ok
+# status) — GitHub Actions ANDs an implicit success() onto every needs:
+# entry, so needs: [policy, scan] alone would silently skip refresh on a
+# scan-job failure unrelated to the wrapper scripts (e.g. a network blip
+# during the tool install), directly contradicting the "must never block
+# documenting the range" guarantee (/flow:review PR#137, code-reviewer P2).
+# always() overrides that implicit gate; needs.policy.outputs.should_run
+# still correctly gates on policy specifically, since a failed policy job
+# never sets that output.
 assert_contains "needs: [policy, scan]" "$BODY" "refresh depends on both policy and scan"
+assert_contains "always() && needs.policy.outputs.should_run" "$BODY" "refresh's if: is not implicitly success-gated on scan alone"
 assert_contains "dossier-scan" "$REFRESH_BLOCK" "refresh downloads the scan bundle artifact"
+
+# The download step must not hard-fail refresh when scan never uploaded the
+# artifact (the always() change above makes that reachable: refresh can now
+# run even when scan failed to produce anything).
+SCAN_DOWNLOAD_BLOCK=$(awk '/Download the scan bundle/{f=1} f{print} f && /path: \.dossier\/scan\//{exit}' "$WF")
+assert_contains "continue-on-error: true" "$SCAN_DOWNLOAD_BLOCK" "the scan-bundle download step tolerates a missing artifact"
 
 # The publish job holds the write token and must run no agent.
 PUBLISH_BLOCK=$(awk '/^  publish:/{f=1} f' "$WF")

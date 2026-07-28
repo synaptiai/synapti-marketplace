@@ -141,6 +141,7 @@ if [ -n "$OUT" ]; then
   mkdir -p "$WORKDIR" 2>/dev/null || { echo "dossier-scan-security: could not create --out directory $OUT" >&2; exit 1; }
 else
   WORKDIR=$(mktemp -d 2>/dev/null) || WORKDIR="/tmp/dossier-scan-security.$$"
+  mkdir -p "$WORKDIR" 2>/dev/null || { echo "dossier-scan-security: could not create scratch directory $WORKDIR" >&2; exit 1; }
 fi
 
 RAW_STDOUT="$WORKDIR/osv-scan-raw.json"

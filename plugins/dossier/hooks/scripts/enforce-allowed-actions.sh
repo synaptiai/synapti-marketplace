@@ -85,6 +85,20 @@ BOUND='(^|[;&|(]|^[[:space:]]*)[[:space:]]*([A-Za-z0-9_.-]*/)*'
 # case still passes.
 WRAPPER='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*(bash|sh|zsh|dash|ksh|env|command|exec|eval|xargs|nohup|setsid|stdbuf|script|time|timeout|nice|ionice|sudo|doas|su)([[:space:]]|$)'
 
+# Known limitation, not fixed here (issue synaptiai/synapti-marketplace#143):
+# a command-embedded indirection that never spells one of the WRAPPER tokens
+# as its own word still bypasses the boundary anchor — `find . -exec curl
+# https://evil {} \;` and `xargs -I{} curl {}` are the confirmed cases:
+# `-exec`/`-I{}` are glued to a flag, not a standalone token, so neither
+# WRAPPER nor the strict BOUND anchor ever fires for the command inside
+# them. This does not widen the token list further (see
+# [[feedback_matcher_narrowing_vs_grammar_parsing]] — the WRAPPER list has
+# already been narrowed/widened several times and each round just moves the
+# hole); a real fix needs to parse the actual shell grammar rather than
+# pattern-match tokens, tracked separately. Low real-world exposure: this
+# hook is a local/interactive backstop only — the CI refresh job's own
+# --allowedTools allowlist doesn't include `find`, `xargs`, or a bare shell
+# at all, so the automated pipeline has no reach here regardless.
 SCAN="$COMMAND"
 BOUND_ACTIVE="$BOUND"
 if printf '%s' "$COMMAND" | grep -qE "$WRAPPER"; then

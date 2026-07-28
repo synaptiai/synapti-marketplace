@@ -1037,6 +1037,51 @@ F1B_FINDINGS_COUNT=$(printf '%s' "$F1B_OUT" | jq '.findings | length' 2>/dev/nul
 assert_equal "0" "$F1B_FINDINGS_COUNT" "F1-successor: the malformed group entry is never itemized as a material finding"
 F1B_UNPARSEABLE_COUNT=$(printf '%s' "$F1B_OUT" | jq '.unparseable_records | length' 2>/dev/null)
 assert_equal "1" "$F1B_UNPARSEABLE_COUNT" "F1-successor: a non-object groups[] entry is tracked in unparseable_records — never silently discarded with zero trace"
+
+# --- F1-successor-2 (/flow:review PR#137 findings, code-reviewer P1): the
+# group-summary lookup ($vulns[]? | select(.id as $vid | ...)) is shared
+# across EVERY group's build in a package. A single non-object element
+# anywhere in vulnerabilities[] threw when that shared lookup indexed .id —
+# and because the throw happened inside safe_finding's own try/catch, it
+# took down the whole group's build, but since the lookup is re-evaluated
+# per group, a bad element poisoned ALL of that package's groups, not just
+# whichever group's summary happened to hit it. Reproduced live before the
+# fix: two genuinely valid groups (Critical 9.8, High 8.1) alongside one bad
+# element in vulnerabilities[] produced findings:[] and both groups routed
+# to unparseable_records with a generic id — silently discarding two real
+# findings. Confirmed by direct reproduction that this is reachable from
+# ingested scan-artifact content, not only from a live scanner bug. -------
+F1C_DIR=$(_dossier_safe_mktemp_dir "f1-successor-2-bad-vuln-element")
+cat >"$F1C_DIR/bad-vuln-element.json" <<'EOF'
+{
+  "results": [
+    {
+      "packages": [
+        {
+          "package": {"name": "left-pad", "version": "1.0.0"},
+          "groups": [
+            {"ids": ["GHSA-good-0001"], "aliases": ["CVE-2024-88880"], "max_severity": "9.8"},
+            {"ids": ["GHSA-good-0002"], "aliases": ["CVE-2024-88881"], "max_severity": "8.1"}
+          ],
+          "vulnerabilities": [
+            {"id": "GHSA-good-0001", "summary": "a real critical finding"},
+            "this-is-a-malformed-non-object-element",
+            {"id": "GHSA-good-0002", "summary": "a real high finding"}
+          ]
+        }
+      ]
+    }
+  ]
+}
+EOF
+F1C_OUT=$(cd "$F1C_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-vuln-element.json 2>&1)
+assert_equal "0" "$?" "F1-successor-2: a malformed vulnerabilities[] entry alongside valid groups still exits 0"
+F1C_FINDINGS_COUNT=$(printf '%s' "$F1C_OUT" | jq '.findings | length' 2>/dev/null)
+assert_equal "2" "$F1C_FINDINGS_COUNT" "F1-successor-2: both genuinely valid groups still resolve to material findings — one bad vulnerabilities[] element does not poison every group's summary lookup in the same package"
+F1C_IDS=$(printf '%s' "$F1C_OUT" | jq -r '[.findings[].id] | sort | join(",")' 2>/dev/null)
+assert_equal "CVE-2024-88880,CVE-2024-88881" "$F1C_IDS" "F1-successor-2: both real findings resolve to their correct CVE- primary ids, not UNKNOWN"
+F1C_UNPARSEABLE_COUNT=$(printf '%s' "$F1C_OUT" | jq '.unparseable_records | length' 2>/dev/null)
+assert_equal "1" "$F1C_UNPARSEABLE_COUNT" "F1-successor-2: the single malformed vulnerabilities[] element is tracked exactly once, not once per group"
 F1_ABSENT_UNPARSEABLE=$(printf '%s' "$F1_ABSENT_OUT" | jq '.unparseable_records | length' 2>/dev/null)
 assert_equal "0" "$F1_ABSENT_UNPARSEABLE" "F1: an absent severity field is not mis-routed to unparseable_records by the fix"
 

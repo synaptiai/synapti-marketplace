@@ -192,3 +192,23 @@ No item remains open under "Needs Clarification" — every gap the advisor raise
 <!-- auto-log: 2026-07-28 20:58 commit "feat(dossier): wire isolated scan job into the CI refresh pipeline template" -->
 
 <!-- auto-log: 2026-07-28 20:58 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
+
+<!-- auto-log: 2026-07-28 21:02 commit "docs(dossier): CHANGELOG entry for isolated scanner execution (#137)" -->
+
+<!-- auto-log: 2026-07-28 21:19 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-vuln-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 21:20 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
+
+<!-- auto-log: 2026-07-28 21:21 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-07-28 21:21 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-07-28 21:22 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/workflow-template.test.sh -->
+
+<!-- auto-log: 2026-07-28 21:22 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-quality.sh -->
+
+<!-- auto-log: 2026-07-28 21:22 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-28 21:23 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/enforce-allowed-actions.sh -->
+
+<!-- auto-log: 2026-07-28 21:23 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/issue-find-exec-bypass.md -->
