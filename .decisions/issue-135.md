@@ -17,6 +17,11 @@ artifacts:
   workflow: release
   run_id: 2026-07-28T131400Z-release
   status: active
+- type: workflow-run
+  captured_at: '2026-07-28T13:26:05Z'
+  workflow: release
+  run_id: 2026-07-28T131400Z-release
+  status: completed
 ---
 # Decision Journal — Issue #135
 
