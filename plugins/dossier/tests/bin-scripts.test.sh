@@ -25,6 +25,7 @@ dossier-pr-body.sh
 dossier-prose-lint.sh
 dossier-resolve-config.sh
 dossier-scaffold.sh
+dossier-scan-security.sh
 dossier-staleness-check.sh
 dossier-validate-config.sh
 dossier-validate-patch.sh
@@ -84,7 +85,7 @@ $EXPECTED_SCRIPTS
 EOF
 
 # --- Usage errors exit 2, not 0 or 1 -----------------------------------------
-for s in dossier-ledger-lint.sh dossier-claim-scan.sh dossier-gate.sh dossier-validate-config.sh dossier-vuln-evidence.sh; do
+for s in dossier-ledger-lint.sh dossier-claim-scan.sh dossier-gate.sh dossier-validate-config.sh dossier-vuln-evidence.sh dossier-scan-security.sh; do
   "$BIN/$s" --nonexistent-flag >/dev/null 2>&1
   assert_equal "2" "$?" "$s exits 2 on an unknown flag"
 done
@@ -100,6 +101,11 @@ assert_equal "2" "$?" "dossier-vuln-evidence.sh exits 2 when --scan is given wit
 assert_equal "2" "$?" "dossier-vuln-evidence.sh exits 2 when --out is given with no path"
 "$BIN/dossier-vuln-evidence.sh" >/dev/null 2>&1
 assert_equal "2" "$?" "dossier-vuln-evidence.sh exits 2 when the required --scan flag is omitted entirely"
+
+"$BIN/dossier-scan-security.sh" --target >/dev/null 2>&1
+assert_equal "2" "$?" "dossier-scan-security.sh exits 2 when --target is given with no path"
+"$BIN/dossier-scan-security.sh" >/dev/null 2>&1
+assert_equal "2" "$?" "dossier-scan-security.sh exits 2 when the required --target flag is omitted entirely"
 
 # =============================================================================
 # THE ANTI-THEATER ASSERTION

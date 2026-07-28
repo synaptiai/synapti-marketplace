@@ -124,3 +124,23 @@ No item remains open under "Needs Clarification" — every gap the advisor raise
 <!-- auto-log: 2026-07-28 20:17 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
 
 <!-- auto-log: 2026-07-28 20:18 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-vuln-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 20:22 commit "feat(dossier): add runSecurityScan/runCodeQualityScan action-ceiling flags" -->
+
+<!-- auto-log: 2026-07-28 20:22 commit "fix(dossier): extract osv-scanner severity from groups[].max_severity" -->
+
+<!-- auto-log: 2026-07-28 20:25 Write /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-28 20:27 Write /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:28 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
