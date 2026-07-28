@@ -46,9 +46,9 @@ Two hard rules:
 - **Every deduction cites at least one finding ID** from the adjudicated ledger. A deduction with no finding is a mood. If the deduction is real, the finding is missing and *that* is itself a finding about the verification.
 - **Every dimension must reach `gate.minDimensionPercent`** of its available points. This is condition `G02`, evaluated separately from the total.
 
-## Step 2 — Evaluate all eighteen conditions
+## Step 2 — Evaluate all nineteen conditions
 
-Per `references/release-gate-conditions.md`. Conjunctive: all eighteen, or not releasable.
+Per `references/release-gate-conditions.md`. Conjunctive: all nineteen, or not releasable.
 
 Mechanical conditions come from `bin/dossier-gate.sh`. **Judgment conditions are yours** — you must read the package to evaluate them. This is exactly why the script structurally refuses to emit `PASS` without your verdict file: link-checking and header parsing certifying a package whose security claims nobody read would make the entire system theater.
 

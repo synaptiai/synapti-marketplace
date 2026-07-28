@@ -2,7 +2,7 @@
 
 Reference document. The ten weighted dimensions, the 0–10 anchors that fix what each score means, and the arithmetic that turns anchors into a total the release gate can compare against `gate.minScore`.
 
-A score is not a gate. It is one of eighteen conditions, and it is the only one that compresses a package into a number — which is exactly why the anchors below are concrete and why every deduction must name a finding. An unanchored score drifts upward round over round; an anchored score with a citation trail does not.
+A score is not a gate. It is one of nineteen conditions, and it is the only one that compresses a package into a number — which is exactly why the anchors below are concrete and why every deduction must name a finding. An unanchored score drifts upward round over round; an anchored score with a citation trail does not.
 
 ## The ten dimensions
 

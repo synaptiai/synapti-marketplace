@@ -125,3 +125,33 @@ Accepted consequence, worth surfacing here rather than only in the resolved-desi
 <!-- auto-log: 2026-07-28 16:03 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/skills/evidence-ledger/SKILL.md -->
 
 <!-- auto-log: 2026-07-28 16:06 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/commit-15.txt -->
+
+<!-- auto-log: 2026-07-28 16:06 commit "feat(dossier): ingest existing vulnerability-scan output as cited evidence" -->
+
+<!-- auto-log: 2026-07-28 16:08 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-gate.sh -->
+
+<!-- auto-log: 2026-07-28 16:08 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-gate.sh -->
+
+<!-- auto-log: 2026-07-28 16:08 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-gate.sh -->
+
+<!-- auto-log: 2026-07-28 16:09 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-gate.sh -->
+
+<!-- auto-log: 2026-07-28 16:09 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
+
+<!-- auto-log: 2026-07-28 16:09 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/references/release-gate-conditions.md -->
+
+<!-- auto-log: 2026-07-28 16:09 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/references/release-gate-conditions.md -->
+
+<!-- auto-log: 2026-07-28 16:10 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/references/release-gate-conditions.md -->
+
+<!-- auto-log: 2026-07-28 16:10 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/references/release-gate-conditions.md -->
+
+<!-- auto-log: 2026-07-28 16:10 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/references/release-gate-conditions.md -->
+
+<!-- auto-log: 2026-07-28 16:11 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-07-28 16:11 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
+
+<!-- auto-log: 2026-07-28 16:12 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
+
+<!-- auto-log: 2026-07-28 16:15 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/commit-16.txt -->

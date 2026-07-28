@@ -2,7 +2,7 @@
 # Bin script hygiene, plus THE ANTI-THEATER ASSERTION.
 #
 # The gate's whole credibility rests on one property: it must not emit PASS from
-# mechanical checks alone. Eleven mechanical conditions can prove a package is not
+# mechanical checks alone. Twelve mechanical conditions can prove a package is not
 # releasable; they can never prove it is, because the judgment set includes the
 # scorecard and three of the four "must never appear" rules. A gate that passed
 # on mechanics would certify a package whose planned features are documented as
@@ -372,7 +372,7 @@ verdict_rows() { # emit a full judgment set, overriding one id with $1/$2
 GOUT=$( cd "$GW" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/dossier" \
   "$REPO_ROOT/plugins/dossier/bin/dossier-gate.sh" --output-root "$GW/pkg" 2>&1 )
 GCOUNT=$(printf '%s' "$GOUT" | grep -cE '^G[0-9]+ ')
-assert_equal "18" "$GCOUNT" "every one of the 18 conditions is reported, none dropped"
+assert_equal "19" "$GCOUNT" "every one of the 19 conditions is reported, none dropped"
 if printf '%s' "$GOUT" | grep -qE '^G04 '; then
   _dossier_assert_pass "a condition named twice is still evaluated"
 else

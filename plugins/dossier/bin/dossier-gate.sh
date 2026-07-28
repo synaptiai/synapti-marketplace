@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# dossier-gate.sh — evaluate the eighteen release-gate conditions.
+# dossier-gate.sh — evaluate the nineteen release-gate conditions.
 #
 # NORMATIVE CONTRACT (references/release-gate-conditions.md):
 #
 #   Failing is decidable from a subset. Passing is not.
 #
-# Eleven conditions are mechanical and decidable here. Seven are judgment and
+# Twelve conditions are mechanical and decidable here. Seven are judgment and
 # require the dossier-scorer verdict file. One broken link is enough to prove a
 # package is NOT releasable; no amount of mechanical checking proves it IS,
 # because the judgment set includes both scorecard conditions and three of the
@@ -303,6 +303,147 @@ else
   record G18 mechanical FAIL script "dossier-prose-lint.sh missing — cannot certify prose clarity"
 fi
 
+# G19 — no unresolved Critical/High dependency vulnerability lacks a recorded
+# disposition
+#
+# Mechanical: reads vulnerability-finding rows in 00-control/evidence-ledger.md
+# (written by the evidence-ledger skill from bin/dossier-vuln-evidence.sh's
+# output — dossier never executes a scanner itself) and cross-references
+# disposition against 04-operating/decisions-technical-debt-and-risks.md's
+# EXISTING Risk register and Accepted risks tables — no new template table.
+# Deliberately never reuses G03/findings.md: references/finding-schema.md
+# scopes findings.md to documentation defects only, and a dependency
+# vulnerability is a defect in the project, not the documentation.
+#
+# Zero vulnerability evidence recorded at all is INCONCLUSIVE, never PASS —
+# matching commit 525cca5's ("#133") precedent that an unevaluated condition
+# must never read as assent, and G06's own INCONCLUSIVE-on-could-not-run
+# behaviour. This is a deliberate design choice (see .decisions/issue-136.md):
+# every existing dossier package moves to `not ready` on this condition until
+# vulnerability evidence is actually ingested, rather than passing silently.
+trim_g19() { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+
+# Identical to dossier-staleness-check.sh's validate_calendar_date() — kept as
+# a verbatim copy rather than a cross-script `source`, matching this bin/
+# directory's convention of independently invocable, self-contained scripts.
+# Neither BSD `date -j` nor GNU `date -d` reject an out-of-range day-of-month
+# (2026-06-31 silently rolls to 2026-07-01), so a target/review date is only
+# accepted if it round-trips back to its original string.
+validate_calendar_date_g19() {
+  _orig="$1" _epoch="$2"
+  [ -n "$_epoch" ] || return 0
+  _rt1=$(date -j -f %s "$_epoch" +%Y-%m-%d 2>/dev/null || echo "")
+  _rt2=$(date -d "@$_epoch" +%Y-%m-%d 2>/dev/null || echo "")
+  if [ "$_rt1" = "$_orig" ] || [ "$_rt2" = "$_orig" ]; then
+    printf '%s\n' "$_epoch"
+  fi
+}
+
+date_to_epoch_g19() {
+  _d="$1"
+  [ -n "$_d" ] || return 0
+  _e=$(date -j -f "%Y-%m-%d" "$_d" +%s 2>/dev/null || date -d "$_d" +%s 2>/dev/null || echo "")
+  [ -n "$_e" ] && validate_calendar_date_g19 "$_d" "$_e"
+}
+
+extract_section_g19() { # file | anchored heading regex, e.g. "^## Risk register"
+  awk -v pat="$2" '$0 ~ pat {flag=1; next} /^## / {flag=0} flag' "$1" 2>/dev/null
+}
+
+LEDGER="$CONTROL/evidence-ledger.md"
+RISKS="$OUTPUT_ROOT/04-operating/decisions-technical-debt-and-risks.md"
+
+if [ ! -f "$LEDGER" ]; then
+  record G19 mechanical INCONCLUSIVE script "no evidence ledger at $LEDGER — vulnerability-scan evidence could not be evaluated"
+else
+  COVERAGE_ROWS=$(grep -c 'vuln-scan-coverage' "$LEDGER" 2>/dev/null || true)
+  [ -z "$COVERAGE_ROWS" ] && COVERAGE_ROWS=0
+  FINDING_ROWS=$(grep -c 'vuln-finding ' "$LEDGER" 2>/dev/null || true)
+  [ -z "$FINDING_ROWS" ] && FINDING_ROWS=0
+  PARSE_ERROR_ROW=$(grep -m1 'vuln-scan-coverage status=parse-error' "$LEDGER" 2>/dev/null)
+
+  if [ "$COVERAGE_ROWS" -eq 0 ] && [ "$FINDING_ROWS" -eq 0 ]; then
+    record G19 mechanical INCONCLUSIVE script "no vulnerability-scan evidence recorded in the ledger — ingest an existing scan artifact via dossier-vuln-evidence.sh, or record why none is available"
+  elif [ -n "$PARSE_ERROR_ROW" ]; then
+    PE_EVID=$(printf '%s\n' "$PARSE_ERROR_ROW" | grep -oE 'EV-[0-9]{4,}' | head -1)
+    record G19 mechanical INCONCLUSIVE script "the vulnerability-scan artifact could not be parsed (${PE_EVID:-no EV row found}) — the finding set is incomplete, not clean"
+  else
+    UNDISPOSED=""
+    while IFS= read -r G19_ROW; do
+      [ -n "$G19_ROW" ] || continue
+      G19_EVID=$(printf '%s\n' "$G19_ROW" | grep -oE '^\| *EV-[0-9]{4,}' | grep -oE 'EV-[0-9]{4,}')
+      [ -n "$G19_EVID" ] || continue
+      G19_SEV=$(printf '%s\n' "$G19_ROW" | grep -oE 'vuln-finding severity=(Critical|High)' | sed 's/.*severity=//')
+      [ -n "$G19_SEV" ] || continue
+
+      G19_DISPOSED=0
+
+      # Risk register: a row citing [EV-####] with Category dependency|security,
+      # a non-empty Owner, and Status not "open".
+      if [ -f "$RISKS" ]; then
+        RISK_ROW=$(extract_section_g19 "$RISKS" '^## Risk register' | grep -m1 "\[$G19_EVID\]" | grep -E '^\|')
+        if [ -n "$RISK_ROW" ]; then
+          body=${RISK_ROW#|}; body=${body%|}
+          OLD_IFS=$IFS; IFS='|'; set -f
+          # shellcheck disable=SC2206
+          cells=($body)
+          set +f; IFS=$OLD_IFS
+          if [ "${#cells[@]}" -eq 11 ]; then
+            RISK_CATEGORY=$(trim_g19 "${cells[2]}")
+            RISK_OWNER=$(trim_g19 "${cells[9]}")
+            RISK_STATUS=$(trim_g19 "${cells[10]}")
+            case "$RISK_CATEGORY" in
+              dependency|security)
+                if [ -n "$RISK_OWNER" ] && [ "$RISK_OWNER" != "—" ] && [ "$RISK_OWNER" != "-" ] \
+                   && [ -n "$RISK_STATUS" ] && [ "$RISK_STATUS" != "open" ]; then
+                  G19_DISPOSED=1
+                fi
+                ;;
+            esac
+          fi
+        fi
+      fi
+
+      # Accepted risks: a row citing [EV-####] with a named accepter, a
+      # calendar-valid date, a stated basis, and a calendar-valid review date.
+      if [ "$G19_DISPOSED" -eq 0 ] && [ -f "$RISKS" ]; then
+        ACC_ROW=$(extract_section_g19 "$RISKS" '^## Accepted risks' | grep -m1 "\[$G19_EVID\]" | grep -E '^\|')
+        if [ -n "$ACC_ROW" ]; then
+          body=${ACC_ROW#|}; body=${body%|}
+          OLD_IFS=$IFS; IFS='|'; set -f
+          # shellcheck disable=SC2206
+          cells=($body)
+          set +f; IFS=$OLD_IFS
+          if [ "${#cells[@]}" -eq 6 ]; then
+            ACC_ACCEPTER=$(trim_g19 "${cells[1]}")
+            ACC_DATE=$(trim_g19 "${cells[2]}")
+            ACC_BASIS=$(trim_g19 "${cells[3]}")
+            ACC_REVIEW=$(trim_g19 "${cells[4]}")
+            ACC_DATE_EPOCH=$(date_to_epoch_g19 "$ACC_DATE")
+            ACC_REVIEW_EPOCH=$(date_to_epoch_g19 "$ACC_REVIEW")
+            if [ -n "$ACC_ACCEPTER" ] && [ "$ACC_ACCEPTER" != "—" ] && [ "$ACC_ACCEPTER" != "-" ] \
+               && [ -n "$ACC_DATE_EPOCH" ] \
+               && [ -n "$ACC_BASIS" ] && [ "$ACC_BASIS" != "—" ] && [ "$ACC_BASIS" != "-" ] \
+               && [ -n "$ACC_REVIEW_EPOCH" ]; then
+              G19_DISPOSED=1
+            fi
+          fi
+        fi
+      fi
+
+      if [ "$G19_DISPOSED" -eq 0 ]; then
+        UNDISPOSED="${UNDISPOSED}${UNDISPOSED:+, }$G19_EVID ($G19_SEV)"
+      fi
+    done < <(grep -E 'vuln-finding severity=(Critical|High)' "$LEDGER" 2>/dev/null)
+
+    if [ -n "$UNDISPOSED" ]; then
+      record G19 mechanical FAIL script "unresolved vulnerability finding(s) with no recorded disposition: $UNDISPOSED"
+    else
+      record G19 mechanical PASS script "vulnerability-scan evidence recorded; every Critical/High finding is disposed (resolved or explicitly risk-accepted)"
+    fi
+  fi
+fi
+
 # =============================================================================
 # JUDGMENT CONDITIONS — require the scorer verdict file
 # =============================================================================
@@ -403,6 +544,13 @@ fi
 FAILED=$(awk -F'\t' '$3=="FAIL"{printf "%s,",$1}' "$RESULTS_FILE" | sed 's/,$//')
 FAIL_COUNT=$(awk -F'\t' '$3=="FAIL"' "$RESULTS_FILE" | wc -l | tr -d ' ')
 INCONC_COUNT=$(awk -F'\t' '$3=="INCONCLUSIVE"' "$RESULTS_FILE" | wc -l | tr -d ' ')
+# Split by tag, not just count: an INCONCLUSIVE judgment condition means "run
+# dossier-scorer"; an INCONCLUSIVE mechanical condition (currently only G19)
+# means something else entirely (ingest vulnerability evidence). Conflating
+# them into one remedy would misdirect a G19-only INCONCLUSIVE — the exact
+# "clear, specific reason" issue #136's AC2 requires.
+JUDGMENT_INCONC_COUNT=$(awk -F'\t' '$2=="judgment" && $3=="INCONCLUSIVE"' "$RESULTS_FILE" | wc -l | tr -d ' ')
+MECHANICAL_INCONC_IDS=$(awk -F'\t' '$2=="mechanical" && $3=="INCONCLUSIVE"{printf "%s,",$1}' "$RESULTS_FILE" | sed 's/,$//')
 
 if [ "$FAIL_COUNT" -gt 0 ]; then
   RESULT="FAIL"; STATUS="not ready"; CODE=1
@@ -440,11 +588,17 @@ elif [ "$QUIET" -eq 0 ]; then
   sort "$RESULTS_FILE" | while IFS=$'\t' read -r id tag res src ev; do
     printf '%-5s %-11s %-13s %-8s %s\n' "$id" "$tag" "$res" "$src" "$ev"
   done
-  if [ "$INCONC_COUNT" -gt 0 ]; then
+  if [ "$JUDGMENT_INCONC_COUNT" -gt 0 ]; then
     echo ""
     echo "The judgment conditions were not evaluated. Mechanical checks alone cannot"
     echo "certify a package — run /dossier:gate to dispatch dossier-scorer, or pass"
     echo "--verdict <path> if a verdict already exists."
+  fi
+  if [ -n "$MECHANICAL_INCONC_IDS" ]; then
+    echo ""
+    echo "Mechanical condition(s) $MECHANICAL_INCONC_IDS could not be evaluated — see its"
+    echo "EVIDENCE column above for what is missing. This is a different gap than an"
+    echo "uncovered judgment set and has a different remedy."
   fi
 fi
 

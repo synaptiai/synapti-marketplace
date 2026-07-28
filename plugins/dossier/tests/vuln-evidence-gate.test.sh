@@ -190,4 +190,66 @@ esac
 # --- --help and bin-scripts hygiene are covered by bin-scripts.test.sh's
 # EXPECTED_SCRIPTS enumeration; not duplicated here.
 
+# =============================================================================
+# Part 2 — dossier-gate.sh G19: FAIL / PASS / INCONCLUSIVE (AC2/AC3/AC4)
+# =============================================================================
+
+if [ ! -x "$GATE" ]; then
+  _dossier_assert_fail "$GATE missing or not executable"
+  _dossier_test_summary
+  return 0 2>/dev/null || exit 0
+fi
+
+# g19_fixture <dir> <ledger-vuln-rows-heredoc-var-name> <risks-body-or-empty>
+# Minimal-but-real package: only the two files G19 actually reads. The other
+# 17 conditions will report FAIL/INCONCLUSIVE against this fixture — expected
+# and irrelevant, since every assertion below greps out only the G19 row.
+g19_fixture() {
+  local dir="$1" ledger_rows="$2" risks_body="$3"
+  mkdir -p "$dir/docs/dossier/00-control" "$dir/docs/dossier/04-operating"
+  cat >"$dir/docs/dossier/00-control/evidence-ledger.md" <<EOF
+# Evidence Ledger
+
+| Evidence ID | Claim | State | Source ref | Retrievable | Authority | Version/env | Observed | Freshness | Confidentiality | Public use | Consuming docs | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+$ledger_rows
+EOF
+  if [ -n "$risks_body" ]; then
+    printf '%s\n' "$risks_body" > "$dir/docs/dossier/04-operating/decisions-technical-debt-and-risks.md"
+  fi
+}
+
+g19_result() { # dir
+  ( cd "$1" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$GATE" --output-root docs/dossier --json 2>/dev/null ) \
+    | jq -r '.conditions[] | select(.id=="G19") | .result' 2>/dev/null
+}
+g19_evidence() { # dir
+  ( cd "$1" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$GATE" --output-root docs/dossier --json 2>/dev/null ) \
+    | jq -r '.conditions[] | select(.id=="G19") | .evidence' 2>/dev/null
+}
+
+# --- FAIL: a High finding with no disposition anywhere ----------------------
+G19_FAIL_DIR=$(_dossier_safe_mktemp_dir "g19-fail")
+g19_fixture "$G19_FAIL_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0002 | osv-scanner reports GHSA-4w2v-q235-vp99 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-4w2v-q235-vp99, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
+''
+G19_FAIL_RESULT=$(g19_result "$G19_FAIL_DIR")
+assert_equal "FAIL" "$G19_FAIL_RESULT" "AC2: an unresolved High finding with no risks file at all fails G19"
+G19_FAIL_EVIDENCE=$(g19_evidence "$G19_FAIL_DIR")
+assert_contains "EV-0002" "$G19_FAIL_EVIDENCE" "AC2: G19's evidence names the specific unresolved EV-#### row"
+
+# --- FAIL: a Risk register row exists but Status is still open --------------
+G19_OPEN_DIR=$(_dossier_safe_mktemp_dir "g19-open")
+g19_fixture "$G19_OPEN_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0002 | osv-scanner reports GHSA-4w2v-q235-vp99 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-4w2v-q235-vp99, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
+'## Risk register
+
+| ID | Risk | Category | Likelihood | Impact | Detectability | Urgency | Evidence | Mitigation | Owner | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| RISK-0001 | axios SSRF via GHSA-4w2v-q235-vp99 | dependency | medium | high | high | high | [EV-0002] | upgrade to 0.21.2 | Jane Doe | open |'
+G19_OPEN_RESULT=$(g19_result "$G19_OPEN_DIR")
+assert_equal "FAIL" "$G19_OPEN_RESULT" "AC2: a Risk register row with Status=open still fails G19 — an open row is not a disposition"
+
 _dossier_test_summary
