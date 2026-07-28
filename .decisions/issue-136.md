@@ -237,3 +237,5 @@ Accepted consequence, worth surfacing here rather than only in the resolved-desi
 <!-- auto-log: 2026-07-28 17:20 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
 
 <!-- auto-log: 2026-07-28 17:21 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-vuln-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 17:23 commit "fix(dossier): fault-isolate Dependabot format detection itself" -->
