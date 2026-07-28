@@ -8,12 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **Vulnerability-scan evidence ingestion**, citation-only — dossier never
-  executes a scanner. `bin/dossier-vuln-evidence.sh` normalizes a project's
-  own SARIF, `osv-scanner` JSON, or Dependabot alerts export into
-  evidence-ledger rows, wired through the `evidence-ledger` skill: found, it
-  cites the scan as evidence; not found, an honest `Unavailable evidence`
-  entry, never an implied clean bill of health.
+- **Vulnerability-scan evidence ingestion**, citation-only —
+  `bin/dossier-vuln-evidence.sh` normalizes a project's own SARIF,
+  `osv-scanner` JSON, or Dependabot alerts export into evidence-ledger rows,
+  wired through the `evidence-ledger` skill: found, it cites the scan as
+  evidence; not found, an honest `Unavailable evidence` entry, never an
+  implied clean bill of health. Dossier itself does not execute a scanner to
+  produce this input — see the isolated scan execution entry below for the
+  capability that can.
 - New release-gate condition `G19` (mechanical): a Critical or High
   vulnerability finding with no recorded disposition (an owner and a
   non-`open` status in `04-operating/decisions-technical-debt-and-risks.md`'s
@@ -23,6 +25,43 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   unevaluated-never-reads-as-assent principle the judgment-verdict path
   already enforces. The gate is now nineteen conditions, nineteen of
   nineteen.
+- **Isolated dependency-vulnerability and Python code-quality scanning**,
+  opt-in and architecturally separated from the LLM agent's own sandbox.
+  Two new scripts, `bin/dossier-scan-security.sh` (`osv-scanner`) and
+  `bin/dossier-scan-quality.sh` (`pyscn`), each gated by its own
+  `dossier.engagement.allowedActions` flag (`runSecurityScan` /
+  `runCodeQualityScan`, both default `false`, independently resolved —
+  enabling one never enables the other) and each reporting a distinct,
+  honest status (`disabled` / `unavailable` / `timeout` / `error` / `ok`) —
+  a scan that could not genuinely run is never indistinguishable from one
+  that found nothing. `enforce-allowed-actions.sh` gains matching deny-blocks
+  as a defense-in-depth backstop; the primary containment is architectural
+  (a new isolated `scan` CI job in `templates/ci/dossier-docs-refresh.yml`,
+  a read-only, no-credential sibling of the existing `policy` job — neither
+  scanner is ever invoked from inside the refresh job's own agent sandbox).
+  The security scan's output feeds the existing `dossier-vuln-evidence.sh`
+  ingestion path directly; the quality scan's output is an artifact only —
+  a deliberate, narrower scope, with no evidence-ledger citation and no new
+  gate condition for code-quality findings in this release.
+
+### Fixed
+
+- `dossier-vuln-evidence.sh`'s `osv-scanner` severity extraction read
+  `vulnerabilities[].severity[].score`, which real `osv-scanner` output
+  encodes as a CVSS **vector string** (e.g. `CVSS:3.1/AV:N/AC:H/...`), never
+  a bare score — confirmed by direct testing against the actual tool.
+  Every real Critical/High finding was silently routed to
+  `unresolved_severity` instead of being cited as material evidence.
+  Corrected to read `groups[].max_severity`, `osv-scanner`'s own
+  precomputed bare-number CVSS base score, which also resolves severity for
+  records where the per-vulnerability `severity` field is entirely absent.
+  Evidence is now one row per vulnerability *group* (merging duplicate/
+  aliased ids) rather than one row per raw vulnerability id.
+
+  **This is a behavior change, not only a bug fix**: an installation that
+  already ingested `osv-scanner` output will see previously-`INCONCLUSIVE`
+  G19 evaluations (from `vuln-finding-unresolved` rows) become `FAIL` where
+  a real, previously-hidden Critical/High finding now resolves correctly.
 
 ## [1.1.0] - 2026-07-28
 

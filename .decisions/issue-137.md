@@ -188,3 +188,7 @@ No item remains open under "Needs Clarification" — every gap the advisor raise
 <!-- auto-log: 2026-07-28 20:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
 
 <!-- auto-log: 2026-07-28 20:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/workflow-template.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:58 commit "feat(dossier): wire isolated scan job into the CI refresh pipeline template" -->
+
+<!-- auto-log: 2026-07-28 20:58 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
