@@ -1,0 +1,183 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-137
+  created_at: '2026-07-28T17:28:31Z'
+  created_by: /flow:start
+  owner: daniel.bentes@synapti.ai
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-137-isolated-scanner-execution
+  issue: 137
+  pr: null
+  journal: .decisions/issue-137.md
+objective:
+  outcome: 'Issue #137 is implemented and verified.'
+  source:
+    type: github_issue
+    number: 137
+    title: 'dossier: execute dependency-vulnerability and Python code-quality scans,
+      isolated within the automated refresh pipeline''s security boundaries'
+  acceptance_criteria:
+  - id: AC1
+    text: With the capability enabled, dossier produces real vulnerability-scan results
+      for a project with known vulnerable dependencies, correctly cited as evidence.
+    verification_command: bash plugins/dossier/tests/run.sh vuln-scan-execution.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC2
+    text: With the capability enabled on a Python project, dossier produces real code-quality
+      scan results.
+    verification_command: bash plugins/dossier/tests/run.sh quality-scan-execution.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC3
+    text: Enabling one of the two scan types does not enable the other.
+    verification_command: bash plugins/dossier/tests/run.sh vuln-scan-execution.test.sh
+      quality-scan-execution.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC4
+    text: A scan that cannot genuinely run for any reason (capability disabled, tool
+      unavailable, stale or missing offline reference data) is clearly and distinctly
+      reported as not having run — never reported as a clean result.
+    verification_command: bash plugins/dossier/tests/run.sh vuln-scan-execution.test.sh
+      quality-scan-execution.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC5
+    text: The scanning capability operates within the automated pipeline's existing
+      security boundaries (no broader network, credential, or write access than the
+      specific scan needs).
+    verification_command: bash plugins/dossier/tests/run.sh hooks.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC6
+    text: At least one real end-to-end run against the actual scanning tools (not
+      a substitute/stand-in) confirms the capability works in practice, not just in
+      isolated tests.
+    verification_command: osv-scanner --version && pyscn --version (both actually
+      installed; real local run captured as evidence, per resolved non-goal on live-CI
+      requirement)
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC7
+    text: The full dossier test suite passes.
+    verification_command: bash plugins/dossier/tests/run.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+specification:
+  non_goals:
+  - Ledger citation for code-quality findings — pyscn output is normalized into an
+    artifact only (no dossier-quality-evidence.sh, no new evidence-ledger Notes-tag
+    vocabulary, no EV-#### rows, no G20). Confirmed via AskUserQuestion.
+  - A single combined wrapper script — two separate scripts (dossier-scan-security.sh,
+    dossier-scan-quality.sh), not one script with a --type flag.
+  - Any change to G01–G19's existing logic, order, or precedence computation in dossier-gate.sh
+    — only G19's inputs change, via the severity-extraction bug fix.
+  - Live GitHub Actions execution as a completion requirement — AC6 is satisfied by
+    a local run against actually-installed real tools, contrasted with a fake/stub
+    binary, not by deploying and triggering the CI workflow.
+  - Reimplementing CVSS scoring math — severity comes from osv-scanner's own precomputed
+    groups[].max_severity field.
+  - pyscn check's CI-oriented exit-code mode — check has no --json output at all;
+    analyze --json is used exclusively.
+  - Widening engagement.allowedActions beyond the two new flags (runSecurityScan,
+    runCodeQualityScan).
+  - Offline-vulnerability-database provisioning/refresh tooling — this issue defines
+    the fail-closed contract only, not a scheduled downloader.
+  failure_modes:
+  - 'Timeouts: both wrapper scripts run their underlying tool under an explicit bounded
+    timeout; a timeout reports a distinct did-not-complete status, never 0 findings.'
+  - 'Partial failures: osv-scanner''s existing per-record fault isolation (unparseable_records)
+    is preserved end-to-end; pyscn''s own warnings/errors arrays are surfaced, not
+    discarded.'
+  - 'Invalid input: a target path that does not exist, is not readable, or (quality
+    scan) contains no Python files is reported as an explicit error, never a clean
+    zero-issues result.'
+  - 'Missing context: (a) capability disabled -> reports not-run/disabled, tool never
+    invoked; (b) tool unavailable on PATH -> distinct tool-unavailable status, never
+    0 findings; (c) stale/missing offline vulnerability DB -> unavailable/stale_advisory_data,
+    fail-closed, never clean; (d) pyscn''s .pyscn/ report directory follows CWD not
+    target path -> wrapper cds into a scratch dir and selects the report via before/after
+    directory snapshot, never newest-file.'
+  interface_contracts:
+  - 'dossier-scan-security.sh (new): --target <path> [--out <dir>] [--offline]. Resolves
+    dossier.engagement.allowedActions.runSecurityScan via bare dotted key with --default
+    "false", no // fallback. Success = valid JSON on stdout, never exit-code==0 (osv-scanner
+    exit 1 = vulnerabilities found = success; exit 127/128 = genuine failure with
+    empty stdout). Feeds dossier-vuln-evidence.sh --scan <path>.'
+  - 'dossier-vuln-evidence.sh severity-extraction fix (bug fix in scope): switch from
+    vulnerabilities[].severity[0].score (a CVSS vector string in real output) to groups[].max_severity
+    (a bare numeric CVSS string) for the osv-scanner shape. One evidence row per group
+    (merges aliases); primary id = CVE- alias if present else lexicographically-first
+    id. Resolved design decision: this flips previously-INCONCLUSIVE G19 evaluations
+    to real Critical/High rows for existing installations — documented, not silent.'
+  - evidence-ledger-schema.md:129 State=R rationale sentence revised to distinguish
+    citing a pre-existing artifact (#136) from dossier having executed the scan itself
+    (#137), both remaining State R.
+  - 'dossier-scan-quality.sh (new): --target <path> [--out <dir>]. Resolves dossier.engagement.allowedActions.runCodeQualityScan
+    independently of runSecurityScan, same bare-dotted-key pattern. cds into a scratch
+    dir, invokes pyscn analyze --json <target>, selects report via directory snapshot
+    diff. Parses both snake_case (dead_code section) and PascalCase (complexity section)
+    keys in the same report. New artifact schema dossier.quality-scan/v1, no ledger
+    citation.'
+  - 'schema.json/settings.json: two new allowedActions booleans, runSecurityScan and
+    runCodeQualityScan, both default false, following the existing runTests/runBuild
+    pattern.'
+  - 'enforce-allowed-actions.sh: two new deny-blocks for direct osv-scanner/pyscn
+    invocation, following the existing RUN_TESTS/RUN_BUILD/NETWORK block structure
+    and BOUND/WRAPPER anchoring.'
+  - 'CI template (dossier-docs-refresh.yml): new job/step, sibling of the existing
+    policy job — permissions contents:read only, no LLM credential, persist-credentials:false,
+    pinned tool versions, output uploaded as an artifact for the refresh job''s agent
+    to Read, never execute.'
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+evaluator:
+  type: flow_verdict_judge
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: active
+  current_phase: explore
+  current_activity: plan
+  turns_evaluated: 0
+  last_evaluation:
+    result: incomplete
+    reason: Goal created; evidence not yet collected.
+    at: '2026-07-28T17:51:30Z'

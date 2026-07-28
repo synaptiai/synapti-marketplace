@@ -73,7 +73,7 @@ assert_equal "rolling" "$(jq -r '.dossier.ci.branchStrategy' "$SETTINGS")" "defa
 
 # Restrictive action ceiling: the safe failure is an honestly-labelled
 # unverified claim, not an unauthorized action.
-for cap in readSecrets runBuild runTests networkAccess writeOutsideOutputRoot contactHumans; do
+for cap in readSecrets runBuild runTests networkAccess writeOutsideOutputRoot contactHumans runSecurityScan runCodeQualityScan; do
   assert_equal "false" "$(jq -r ".dossier.engagement.allowedActions.$cap" "$SETTINGS")" \
     "allowedActions.$cap defaults to false"
 done

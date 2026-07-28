@@ -29,7 +29,9 @@
         "runTests": true,
         "networkAccess": false,
         "writeOutsideOutputRoot": false,
-        "contactHumans": true
+        "contactHumans": true,
+        "runSecurityScan": false,
+        "runCodeQualityScan": false
       }
     },
     "disclosure": {

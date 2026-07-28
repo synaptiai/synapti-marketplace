@@ -148,6 +148,16 @@
                   "default": false,
                   "description": "Reach external sources to verify vendor lifecycle status, CVEs, or license terms. Off by default; when off, such claims are labelled rather than answered from model memory."
                 },
+                "runSecurityScan": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Execute a dependency-vulnerability scan (osv-scanner) via the isolated pre-agent scan job, never from inside the agent's own Bash tool. Off by default; when off, vulnerability evidence is limited to scan artifacts the project already produced, or omitted and reported as such — never silently treated as clean."
+                },
+                "runCodeQualityScan": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Execute a Python code-quality scan (pyscn) via the isolated pre-agent scan job, never from inside the agent's own Bash tool. Off by default and independent of runSecurityScan — enabling one must never enable the other. When off, code-quality findings are omitted and reported as not run, never as clean."
+                },
                 "writeOutsideOutputRoot": {
                   "type": "boolean",
                   "default": false,
