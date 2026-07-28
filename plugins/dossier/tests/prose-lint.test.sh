@@ -14,7 +14,7 @@ lint_json() { # <path>
   "$LINT" --file "$1" --json 2>/dev/null
 }
 count_of() { # <json> <field>
-  printf '%s' "$1" | sed -n "s/.*\"$2\":\([0-9]*\).*/\1/p" | head -1
+  printf '%s' "$1" | LC_ALL=C sed -n "s/.*\"$2\":\([0-9]*\).*/\1/p" | head -1
 }
 
 # --- clean prose passes -------------------------------------------------------
@@ -118,6 +118,40 @@ FM="$W/flavored-mode.md"
 printf '# Test\n\n%s\n' "$TWENTYONE" > "$FM"
 J=$(lint_json "$FM")
 assert_equal "0" "$(count_of "$J" long_sentence)" "the same 21-word sentence as narrative prose stays under the flavored 25-word cap"
+
+# --- a file that cannot genuinely be scanned must never read as clean --------
+# Reproduced during review: an unquoted file-list loop silently dropped any
+# path with a space, and an unchecked awk exit status let binary content and
+# an unclosed frontmatter fence render as "0 violations" — indistinguishable
+# from a file that was actually scanned and found clean.
+BIN="$W/binary.md"
+printf '\xff\xfe\x00\x01This seamless robust platform utilizes cutting-edge technology.\n' > "$BIN"
+"$LINT" --file "$BIN" >/dev/null 2>&1
+assert_equal "1" "$?" "unscannable (binary) content exits 1, never a false clean pass"
+J=$(lint_json "$BIN")
+assert_equal "1" "$(count_of "$J" scan_errors)" "binary content is counted as a scan error, not silently zero"
+
+UNCLOSED="$W/unclosed-header.md"
+printf -- '---\nname: test\n\nThis seamless robust platform utilizes cutting-edge technology.\n' > "$UNCLOSED"
+"$LINT" --file "$UNCLOSED" >/dev/null 2>&1
+assert_equal "1" "$?" "an unclosed frontmatter fence exits 1, never a false clean pass"
+J=$(lint_json "$UNCLOSED")
+assert_equal "1" "$(count_of "$J" scan_errors)" "the unclosed fence is counted as a scan error"
+
+SPACED_DIR="$W/spaced dir"
+mkdir -p "$SPACED_DIR"
+printf '# Test\n\nThis seamless platform helps you. This is fine.\n' > "$SPACED_DIR/doc.md"
+J=$(lint_json "$SPACED_DIR/doc.md")
+assert_equal "0" "$(count_of "$J" scan_errors)" "a path containing a space is not treated as a scan error"
+assert_equal "1" "$(count_of "$J" marketing_adjective)" "a path containing a space is still linted, not silently skipped"
+
+EMPTY_ROOT="$W/empty-root"
+mkdir -p "$EMPTY_ROOT"
+"$LINT" --output-root "$EMPTY_ROOT" >/dev/null 2>&1
+assert_equal "1" "$?" "an output-root with zero .md files exits 1, not a false clean pass"
+J=$("$LINT" --output-root "$EMPTY_ROOT" --json 2>/dev/null)
+assert_equal "0" "$(count_of "$J" files_scanned)" "zero files were actually scanned"
+assert_equal "1" "$(count_of "$J" scan_errors)" "zero files scanned is itself reported as a scan error"
 
 # --- usage error ---------------------------------------------------------------
 "$LINT" --nonexistent-flag >/dev/null 2>&1

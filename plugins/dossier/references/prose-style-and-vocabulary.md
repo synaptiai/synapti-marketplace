@@ -76,7 +76,7 @@ A drafter or the linter treating one of these as slop has confused the plugin's 
 
 - **Passive voice**: a be-verb (`am|is|are|was|were|be|been|being`) followed by a past participle, with the actor unstated.
 - **Nominalization**: a verb turned into a noun and paired with a light verb — `perform an analysis` instead of `analyze`, `make use of` instead of `use`, `carry out a review` instead of `review`.
-- **Em-dash** (`—` or `--`): a diagnostic count only. This plugin's own reference documents use em-dashes constitutively, so em-dash is never a hard-category violation.
+- **Em-dash** (`—`): a diagnostic count only. This plugin's own reference documents use em-dashes constitutively, so em-dash is never a hard-category violation. The ASCII double-hyphen (`--`) is not counted — it collides with markdown horizontal rules and code idioms too often to detect reliably.
 
 ## Sentence and paragraph caps
 

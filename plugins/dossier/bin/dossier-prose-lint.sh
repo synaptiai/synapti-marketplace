@@ -174,8 +174,21 @@ BEGIN {
     print "S\t" s
   }
 }
-END { print "SUMMARY\t" semi "\t" emdash }
+END {
+  # A frontmatter fence opened but never closed means every remaining line
+  # was silently skipped as "still in the header" — the rest of the document
+  # was never scanned. Report it rather than let that read as a clean file.
+  if (in_header) print "UNCLOSED_HEADER\t1"
+  print "SUMMARY\t" semi "\t" emdash
+}
 AWKEOF
+
+# A write failure here (unwritable temp dir) must not be discovered later as
+# an awk-can't-open-file error on every single file — fail loudly once, now.
+[ -s "$AWK_PROG" ] || {
+  echo "dossier-prose-lint: cannot write the structural-pass program to $AWK_PROG" >&2
+  exit 2
+}
 
 count_matches() { # <text> <ERE pattern> — occurrence count, not line count
   local n
@@ -184,19 +197,65 @@ count_matches() { # <text> <ERE pattern> — occurrence count, not line count
 }
 
 H_MARKETING=0; H_PHRASAL=0; H_FILLER=0; H_LATINATE=0; H_SEMICOLON=0
-H_LONG_SENT=0; H_LONG_PARA=0
+H_LONG_SENT=0; H_LONG_PARA=0; H_SCAN_ERROR=0
 A_PASSIVE=0; A_NOMINALIZE=0; A_EMDASH=0
 FILES_JSON=""
 FIRST_FILE=1
 FINDINGS=""
+FILES_SCANNED=0
+
+# A file that could not be genuinely scanned must never render as "0
+# violations" — that is indistinguishable from a file that was scanned and
+# found clean, and a gate condition reading this JSON would record PASS on a
+# file it never actually read.
+scan_error_hit() { # <path> <reason>
+  local ef="$1" reason ef_esc reason_esc
+  # The reason string can come from awk's own diagnostic, which echoes the
+  # offending bytes verbatim on a multibyte-conversion failure — exactly the
+  # kind of content that triggered this path in the first place. Restricting
+  # to printable ASCII guarantees the JSON this produces is valid regardless
+  # of what was in the file that could not be scanned.
+  reason=$(printf '%s' "$2" | LC_ALL=C tr -cd '\40-\176')
+  H_SCAN_ERROR=$((H_SCAN_ERROR + 1))
+  FINDINGS="$FINDINGS
+  $ef: scan_error ($reason)"
+  if [ "$WANT_JSON" -eq 1 ]; then
+    [ "$FIRST_FILE" -eq 0 ] && FILES_JSON="$FILES_JSON,"
+    FIRST_FILE=0
+    ef_esc=$(printf '%s' "$ef" | LC_ALL=C sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+    reason_esc=$(printf '%s' "$reason" | LC_ALL=C sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+    FILES_JSON="$FILES_JSON{\"file\":\"$ef_esc\",\"scan_error\":\"$reason_esc\",\"blocking_violations\":1}"
+  fi
+}
 
 lint_file() { # <path>
   local f="$1"
-  local awk_out sent_buf summary_line semi emdash
+  local awk_out awk_err awk_rc sent_buf summary_line semi emdash errmsg
   local f_marketing f_phrasal f_filler f_latinate f_semicolon
   local f_long_sent f_long_para f_passive f_nominalize f_emdash f_blocking
 
-  awk_out=$(awk -f "$AWK_PROG" "$f")
+  FILES_SCANNED=$((FILES_SCANNED + 1))
+
+  awk_err=$(mktemp -t dossier-prose-lint-awkerr.XXXXXX 2>/dev/null) || awk_err=/dev/null
+  awk_out=$(awk -f "$AWK_PROG" "$f" 2>"$awk_err")
+  awk_rc=$?
+  if [ "$awk_rc" -ne 0 ]; then
+    # A binary file, or one that turned unreadable mid-run, is the case this
+    # guards against.
+    errmsg=$(head -1 "$awk_err" 2>/dev/null)
+    scan_error_hit "$f" "awk exit $awk_rc: ${errmsg:-no diagnostic}"
+    rm -f "$awk_err" 2>/dev/null
+    return
+  fi
+  rm -f "$awk_err" 2>/dev/null
+
+  if printf '%s\n' "$awk_out" | grep -q $'^UNCLOSED_HEADER\t'; then
+    # A frontmatter fence opened but never closed means every remaining line
+    # was silently treated as "still in the header" and never reached the
+    # rest of the checks — the document was not actually scanned past line 1.
+    scan_error_hit "$f" "frontmatter fence opened but never closed"
+    return
+  fi
 
   sent_buf=$(printf '%s\n' "$awk_out" | grep $'^S\t' | cut -f2-)
   f_long_sent=$(printf '%s\n' "$awk_out" | grep -c $'^E\tlong_sentence\t')
@@ -231,23 +290,46 @@ lint_file() { # <path>
   if [ "$WANT_JSON" -eq 1 ]; then
     [ "$FIRST_FILE" -eq 0 ] && FILES_JSON="$FILES_JSON,"
     FIRST_FILE=0
-    FILES_JSON="$FILES_JSON{\"file\":\"$f\",\"blocking_violations\":$f_blocking,\"hard\":{\"marketing_adjective\":$f_marketing,\"phrasal_verb\":$f_phrasal,\"filler_hedge\":$f_filler,\"latinate_word\":$f_latinate,\"semicolon\":$f_semicolon,\"long_sentence\":$f_long_sent,\"long_paragraph\":$f_long_para},\"advisory\":{\"passive_voice\":$f_passive,\"nominalization\":$f_nominalize,\"em_dash\":$f_emdash}}"
+    # Escaped: an unescaped path containing a double quote or backslash would
+    # otherwise emit malformed JSON.
+    f_esc=$(printf '%s' "$f" | LC_ALL=C sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+    FILES_JSON="$FILES_JSON{\"file\":\"$f_esc\",\"blocking_violations\":$f_blocking,\"hard\":{\"marketing_adjective\":$f_marketing,\"phrasal_verb\":$f_phrasal,\"filler_hedge\":$f_filler,\"latinate_word\":$f_latinate,\"semicolon\":$f_semicolon,\"long_sentence\":$f_long_sent,\"long_paragraph\":$f_long_para},\"advisory\":{\"passive_voice\":$f_passive,\"nominalization\":$f_nominalize,\"em_dash\":$f_emdash}}"
   fi
 }
 
-for f in $TARGETS; do
+# Newline-delimited read, not `for f in $TARGETS`: an unquoted for-loop word-
+# splits on any IFS whitespace in a path (a doc titled with a space) and
+# glob-expands any literal *, ?, or [ it contains. Process substitution keeps
+# this out of a subshell, so lint_file's mutations to the H_*/FILES_JSON
+# globals still land in the caller.
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
   [ -f "$f" ] || continue
   lint_file "$f"
-done
+done < <(printf '%s\n' "$TARGETS")
 
-BLOCKING=$((H_MARKETING + H_PHRASAL + H_FILLER + H_LATINATE + H_SEMICOLON + H_LONG_SENT + H_LONG_PARA))
+# In --output-root mode, zero files scanned (an empty directory, a directory
+# with no .md files, a path typo) reports as "0 violations, clean" exactly
+# like a package that was genuinely scanned and found spotless. Those are not
+# the same claim, and a gate condition reading this JSON cannot tell them
+# apart without this signal — mirrors G16's own "zero implausible unknowns is
+# a finding, not a pass" reasoning elsewhere in this plugin's gate.
+if [ -z "$SINGLE_FILE" ] && [ "$FILES_SCANNED" -eq 0 ]; then
+  H_SCAN_ERROR=$((H_SCAN_ERROR + 1))
+  FINDINGS="$FINDINGS
+  $OUTPUT_ROOT: scan_error (0 .md files found under this root)"
+fi
+
+BLOCKING=$((H_MARKETING + H_PHRASAL + H_FILLER + H_LATINATE + H_SEMICOLON + H_LONG_SENT + H_LONG_PARA + H_SCAN_ERROR))
 
 if [ "$WANT_JSON" -eq 1 ]; then
-  printf '{"blocking_violations":%s,"hard":{"marketing_adjective":%s,"phrasal_verb":%s,"filler_hedge":%s,"latinate_word":%s,"semicolon":%s,"long_sentence":%s,"long_paragraph":%s},"advisory":{"passive_voice":%s,"nominalization":%s,"em_dash":%s},"files":[%s]}\n' \
-    "$BLOCKING" "$H_MARKETING" "$H_PHRASAL" "$H_FILLER" "$H_LATINATE" "$H_SEMICOLON" "$H_LONG_SENT" "$H_LONG_PARA" \
+  printf '{"blocking_violations":%s,"files_scanned":%s,"scan_errors":%s,"hard":{"marketing_adjective":%s,"phrasal_verb":%s,"filler_hedge":%s,"latinate_word":%s,"semicolon":%s,"long_sentence":%s,"long_paragraph":%s},"advisory":{"passive_voice":%s,"nominalization":%s,"em_dash":%s},"files":[%s]}\n' \
+    "$BLOCKING" "$FILES_SCANNED" "$H_SCAN_ERROR" "$H_MARKETING" "$H_PHRASAL" "$H_FILLER" "$H_LATINATE" "$H_SEMICOLON" "$H_LONG_SENT" "$H_LONG_PARA" \
     "$A_PASSIVE" "$A_NOMINALIZE" "$A_EMDASH" "$FILES_JSON"
 elif [ "$QUIET" -eq 0 ]; then
   echo "PROSE_LINT_BLOCKING_VIOLATIONS=$BLOCKING"
+  echo "PROSE_LINT_FILES_SCANNED=$FILES_SCANNED"
+  echo "PROSE_LINT_SCAN_ERRORS=$H_SCAN_ERROR"
   echo "PROSE_LINT_HARD_MARKETING=$H_MARKETING"
   echo "PROSE_LINT_HARD_PHRASAL=$H_PHRASAL"
   echo "PROSE_LINT_HARD_FILLER_HEDGE=$H_FILLER"
