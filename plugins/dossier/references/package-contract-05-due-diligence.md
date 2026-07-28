@@ -97,7 +97,7 @@ A decision maker reads the report and acts. It passes if:
 - Commercial third-party terms that require human review.
 - Generated, copied, vendored, or externally contributed code and content.
 - Software bill of materials status.
-- Vulnerability evidence and scan date.
+- Vulnerability evidence and scan date, cited to an evidence-ledger row — never asserted from general knowledge. When no vulnerability-scan output exists for the project, the table states that explicitly (no vulnerability-scan output located) rather than leaving the row blank; a blank row reads as unchecked or, worse, clean, and neither is true.
 - Abandoned or single-maintainer dependencies.
 - External services, lock-in, exit strategy, and business continuity.
 - Unknown provenance or ownership, treated as a material diligence risk.

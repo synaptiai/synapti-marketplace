@@ -359,4 +359,31 @@ else
   _dossier_assert_pass "docs/dossier not present in this checkout — skipping the real-package guard"
 fi
 
+# =============================================================================
+# Part 3 — template fill-instructions never imply a clean bill of health when
+# no scan output exists (AC1 support + AC4, template half)
+# =============================================================================
+ASSETS_TEMPLATE="plugins/dossier/templates/package/05-due-diligence/assets-dependencies-and-licenses.md"
+CONTRACT_05="plugins/dossier/references/package-contract-05-due-diligence.md"
+
+if [ -f "$ASSETS_TEMPLATE" ]; then
+  if grep -qiE 'no vulnerability-scan output.*located' "$ASSETS_TEMPLATE"; then
+    _dossier_assert_pass "assets-dependencies-and-licenses.md's Vulnerability evidence table instructs the honest no-scan-found fallback"
+  else
+    _dossier_assert_fail "assets-dependencies-and-licenses.md has no explicit no-scan-found instruction — a blank table would read as clean"
+  fi
+else
+  _dossier_assert_fail "$ASSETS_TEMPLATE missing"
+fi
+
+if [ -f "$CONTRACT_05" ]; then
+  if grep -qiE 'no vulnerability-scan output exists.*table states that explicitly' "$CONTRACT_05"; then
+    _dossier_assert_pass "package-contract-05-due-diligence.md's Required content requires the honest-absence case"
+  else
+    _dossier_assert_fail "package-contract-05-due-diligence.md's Required content does not require the honest-absence case"
+  fi
+else
+  _dossier_assert_fail "$CONTRACT_05 missing"
+fi
+
 _dossier_test_summary

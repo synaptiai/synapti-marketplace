@@ -163,3 +163,15 @@ Accepted consequence, worth surfacing here rather than only in the resolved-desi
 <!-- auto-log: 2026-07-28 16:15 commit "test(dossier): cover G19 PASS path — Accepted risks, Risk register, clean scan, rollover-date rejection" -->
 
 <!-- auto-log: 2026-07-28 16:16 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
+
+<!-- auto-log: 2026-07-28 16:19 commit "test(dossier): cover G19 INCONCLUSIVE path — no evidence, parse-error, this repo's own package" -->
+
+<!-- auto-log: 2026-07-28 16:19 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/references/package-contract-05-due-diligence.md -->
+
+<!-- auto-log: 2026-07-28 16:20 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/package/05-due-diligence/assets-dependencies-and-licenses.md -->
+
+<!-- auto-log: 2026-07-28 16:20 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/package/03-assurance/security-privacy-and-compliance.md -->
+
+<!-- auto-log: 2026-07-28 16:20 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/package/03-assurance/testing-quality-and-delivery.md -->
+
+<!-- auto-log: 2026-07-28 16:20 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->

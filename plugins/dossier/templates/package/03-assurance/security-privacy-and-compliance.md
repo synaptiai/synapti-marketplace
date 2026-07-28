@@ -83,6 +83,8 @@ The "scope it does not cover" column is required on every row. "Encrypted at res
 
 ## Secure development and vulnerability management
 
+The `Dependency scanning` row's `Current state` and `Evidence` cells come from `bin/dossier-vuln-evidence.sh`'s ingestion of an existing scan artifact — dossier does not execute a scanner. When no scan artifact was found, `Current state` says so explicitly (no vulnerability-scan output located); it is never left blank, and it is never written as though the absence of a scan were a clean result.
+
 | Practice | Current state | Enforced by | Coverage | Evidence |
 |---|---|---|---|---|
 | Threat modelling | {fill} | {fill} | {fill} | {fill} |

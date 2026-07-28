@@ -60,6 +60,8 @@ Critical paths with no test are listed explicitly rather than implied by a cover
 
 ## Static and supply-chain checks
 
+The `Dependency scanning` row's `Tool`, `Last result`, and `Evidence` cells come from `bin/dossier-vuln-evidence.sh`'s ingestion of an existing scan artifact — dossier does not execute a scanner. When no scan artifact was found, `Last result` says so explicitly (no vulnerability-scan output located); it is never left blank, and it is never written as though the absence of a scan were a clean result.
+
 | Check | Tool | Scope | Runs where | Blocking | Last result | Evidence |
 |---|---|---|---|---|---|---|
 | Static analysis | {fill} | {fill} | {fill} | {fill} | {fill} | {fill} |
