@@ -137,7 +137,7 @@
       "expectedPluginVersion": "1.1.0"
     },
     "local": {
-      "onFlowMerge": "suggest"
+      "onLocalMerge": "suggest"
     },
     "tiers": {
       "writeInternalDocs": "autonomous",
