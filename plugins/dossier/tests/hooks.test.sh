@@ -180,12 +180,19 @@ for H in enforce-output-root enforce-allowed-actions block-unregistered-claim; d
   assert_equal "2" "$RC" "$H fails closed when jq is unavailable"
 done
 
-# stale-header-stamp is advisory, so it correctly does the reverse.
+# stale-header-stamp and detect-local-merge are advisory, so they correctly
+# do the reverse.
 RC=0
 (cd "$WORK" && printf '%s' '{"tool_input":{"file_path":"docs/dossier/01-project/brief.md"}}' \
    | PATH=/nonexistent CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" \
      /bin/bash "$REPO/$HS/stale-header-stamp.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "0" "$RC" "stale-header-stamp stays advisory when jq is unavailable"
+
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"git merge feature"}}' \
+   | PATH=/nonexistent CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" \
+     /bin/bash "$REPO/$HS/detect-local-merge.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "detect-local-merge stays advisory when jq is unavailable"
 
 # --- Disclosure hook is unconditional ----------------------------------------
 # Leakage into a public document is blocked whether or not a run is "active",

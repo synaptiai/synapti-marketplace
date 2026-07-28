@@ -149,3 +149,25 @@ A zero-context agent given this journal's Interface Contracts (exact script name
 <!-- auto-log: 2026-07-28 11:58 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/config.example.json -->
 
 <!-- auto-log: 2026-07-28 11:58 Edit /Users/danielbentes/synapti-marketplace/.claude/settings.dossier.json -->
+
+<!-- auto-log: 2026-07-28 11:59 commit "feat(dossier): route stale-only documents through verification, not redraft" -->
+
+<!-- auto-log: 2026-07-28 11:59 commit "feat(dossier): rename dossier.local.onFlowMerge to onLocalMerge" -->
+
+<!-- auto-log: 2026-07-28 12:01 Write /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/local-merge-hook.test.sh -->
+
+<!-- auto-log: 2026-07-28 12:01 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/local-merge-hook.test.sh -->
+
+<!-- auto-log: 2026-07-28 12:02 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/local-merge-hook.test.sh -->
+
+<!-- auto-log: 2026-07-28 12:02 Write /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/detect-local-merge.sh -->
+
+<!-- auto-log: 2026-07-28 12:03 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/detect-local-merge.sh -->
+
+<!-- auto-log: 2026-07-28 12:03 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/local-merge-hook.test.sh -->
+
+<!-- auto-log: 2026-07-28 12:04 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/hooks.json -->
+
+<!-- auto-log: 2026-07-28 12:04 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/hooks.test.sh -->
+
+<!-- auto-log: 2026-07-28 12:08 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/local-merge-hook.test.sh -->
