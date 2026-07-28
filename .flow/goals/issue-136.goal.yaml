@@ -25,49 +25,49 @@ objective:
       anything), and cites it as evidence rather than asserting it from general knowledge.
     verification_command: bash plugins/dossier/tests/run.sh vuln-evidence-gate.test.sh
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-07-28T132544Z-issue-136/evidence/evidence-ac1-eval-1.evidence.yaml
+    last_evaluated_at: '2026-07-28T15:29:46Z'
+    last_result: pass
   - id: AC2
     text: A generated package with an unresolved, high-severity known vulnerability
       and no recorded disposition fails release-gate evaluation, with a clear, specific
       reason.
     verification_command: bash plugins/dossier/tests/run.sh vuln-evidence-gate.test.sh
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-07-28T132544Z-issue-136/evidence/evidence-ac2-eval-1.evidence.yaml
+    last_evaluated_at: '2026-07-28T15:29:46Z'
+    last_result: pass
   - id: AC3
     text: A generated package where every known high-severity vulnerability has an
       owner, target date, and explicit acceptance on record passes that same gate
       condition.
     verification_command: bash plugins/dossier/tests/run.sh vuln-evidence-gate.test.sh
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-07-28T132544Z-issue-136/evidence/evidence-ac3-eval-1.evidence.yaml
+    last_evaluated_at: '2026-07-28T15:29:46Z'
+    last_result: pass
   - id: AC4
     text: A project with no vulnerability-scan output available is handled honestly
       — dossier does not imply a clean bill of health it cannot support.
     verification_command: bash plugins/dossier/tests/run.sh vuln-evidence-gate.test.sh
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-07-28T132544Z-issue-136/evidence/evidence-ac4-eval-1.evidence.yaml
+    last_evaluated_at: '2026-07-28T15:29:46Z'
+    last_result: pass
   - id: AC5
     text: The full dossier test suite passes, including a scenario that plants a known
       unresolved vulnerability and confirms it is actually caught, not just theoretically
       coverable.
     verification_command: bash plugins/dossier/tests/run.sh
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-07-28T132544Z-issue-136/evidence/evidence-ac5-eval-1.evidence.yaml
+    last_evaluated_at: '2026-07-28T15:29:46Z'
+    last_result: pass
 specification:
   non_goals:
   - 'Scanner execution (osv-scanner, pyscn, or any other tool) — entirely out of scope;
@@ -135,12 +135,12 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
-  current_phase: explore
-  current_activity: plan
-  turns_evaluated: 0
+  status: achieved
+  current_phase: verify
+  current_activity: pr
+  turns_evaluated: 1
   last_evaluation:
-    result: incomplete
-    reason: Goal contract captured; specification and 5 ACs recorded. Beginning Phase
-      2 PLAN.
-    at: '2026-07-28T13:44:26Z'
+    result: pass
+    reason: 'All 5 ACs pass (deterministic: 82/82 feature-test assertions, 1501/1501
+      full suite). Judge verdict: achieved, confidence 0.70. User-confirmed via AskUserQuestion.'
+    at: '2026-07-28T15:42:39Z'

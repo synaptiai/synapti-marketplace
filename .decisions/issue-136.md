@@ -26,6 +26,17 @@ artifacts:
   captured_at: '2026-07-28T13:56:59Z'
   result: PASS
   task_count: 6
+- type: workflow-run
+  captured_at: '2026-07-28T15:35:27Z'
+  workflow: start-issue
+  run_id: 2026-07-28T132544Z-issue-136
+  status: completed
+- type: goal-evaluation
+  captured_at: '2026-07-28T15:42:44Z'
+  goal_id: issue-136
+  result: achieved
+  evidence_bundle: .flow/runs/2026-07-28T132544Z-issue-136
+  failures: none
 ---
 # Decision Journal — Issue #136
 
@@ -239,3 +250,5 @@ Accepted consequence, worth surfacing here rather than only in the resolved-desi
 <!-- auto-log: 2026-07-28 17:21 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-vuln-evidence.sh -->
 
 <!-- auto-log: 2026-07-28 17:23 commit "fix(dossier): fault-isolate Dependabot format detection itself" -->
+
+<!-- auto-log: 2026-07-28 17:35 Edit /Users/danielbentes/synapti-marketplace/.flow/runs/2026-07-28T132544Z-issue-136/run.yaml -->
