@@ -296,3 +296,7 @@ Accepted consequence, worth surfacing here rather than only in the resolved-desi
 <!-- auto-log: 2026-07-28 17:59 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
 
 <!-- auto-log: 2026-07-28 18:02 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/commit-pr-review-fixes.txt -->
+
+<!-- auto-log: 2026-07-28 18:03 commit "fix(dossier): close PR-creation review findings (SEC-1/2/4, ERR-1/2, F1-F4)" -->
+
+<!-- auto-log: 2026-07-28 18:04 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr-136-body.md -->
