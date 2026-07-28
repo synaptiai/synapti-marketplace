@@ -851,4 +851,299 @@ assert_equal "INCONCLUSIVE" "$ERR2_RESULT" "ERR-2/F1: a status=partial coverage 
 ERR2_EVIDENCE=$(g19_evidence "$ERR2_DIR")
 assert_contains "parsed partially" "$ERR2_EVIDENCE" "ERR-2/F1: the partial-parse branch names itself distinctly from both the no-evidence and total-parse-error branches"
 
+# =============================================================================
+# Part 8 — /flow:review PR#141 findings (F1-F5 code-reviewer, SEC-1/2/3
+# security-reviewer, ERR-1/2/3/6 error-handler-inspector; 3-6 independent
+# agents corroborated most of these)
+# =============================================================================
+
+# --- F1 (code-reviewer-skeptic / ERR-1 error-handler): osv-scanner's
+# `.severity[0]?.score` swallowed a wrong-typed `.severity` field into a
+# zero-output jq generator — the WHOLE finding record vanished (not in
+# findings, not in unresolved_severity, not in unparseable_records), with
+# exit 0. Confirmed by live reproduction before the fix. Now: the same
+# wrong-typed field throws (no `?`) and is caught by safe_finding, matching
+# the SARIF branch's already-tested parity behaviour. -----------------------
+F1_DIR=$(_dossier_safe_mktemp_dir "f1-severity-swallow")
+cat >"$F1_DIR/bad-severity-shape.json" <<'EOF'
+{
+  "results": [
+    {
+      "packages": [
+        {
+          "package": {"name": "left-pad", "version": "1.0.0"},
+          "vulnerabilities": [
+            {"id": "GHSA-swallow-0001", "summary": "actually a critical RCE", "severity": "HIGH"}
+          ]
+        }
+      ]
+    }
+  ]
+}
+EOF
+F1_OUT=$(cd "$F1_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-severity-shape.json 2>&1)
+assert_equal "0" "$?" "F1: a wrong-typed (non-array) severity field still exits 0 — a tracked condition, not a crash"
+F1_FINDINGS_COUNT=$(printf '%s' "$F1_OUT" | jq '.findings | length' 2>/dev/null)
+assert_equal "0" "$F1_FINDINGS_COUNT" "F1: the malformed record is never itemized as a material finding"
+F1_UNRESOLVED_COUNT=$(printf '%s' "$F1_OUT" | jq '.unresolved_severity | length' 2>/dev/null)
+assert_equal "0" "$F1_UNRESOLVED_COUNT" "F1: a wrong-typed severity is a parse anomaly, not merely an absent one — it must not land in unresolved_severity either"
+F1_UNPARSEABLE_COUNT=$(printf '%s' "$F1_OUT" | jq '.unparseable_records | length' 2>/dev/null)
+assert_equal "1" "$F1_UNPARSEABLE_COUNT" "F1: the record is tracked in unparseable_records — the finding is never silently discarded with zero trace"
+
+# A genuinely absent severity field must still behave exactly as before this
+# fix (lands in unresolved_severity, not unparseable_records) — dropping the
+# `?` must not re-route the honest "no severity data" case.
+cat >"$F1_DIR/absent-severity.json" <<'EOF'
+{"results": [{"packages": [{"package": {"name": "left-pad", "version": "1.0.0"}, "vulnerabilities": [{"id": "GHSA-absent-0001", "summary": "no severity field at all"}]}]}]}
+EOF
+F1_ABSENT_OUT=$(cd "$F1_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan absent-severity.json 2>&1)
+F1_ABSENT_UNRESOLVED=$(printf '%s' "$F1_ABSENT_OUT" | jq -r '.unresolved_severity[0].id // "MISSING"' 2>/dev/null)
+assert_equal "GHSA-absent-0001" "$F1_ABSENT_UNRESOLVED" "F1: a genuinely absent severity field still lands in unresolved_severity, not unparseable_records"
+F1_ABSENT_UNPARSEABLE=$(printf '%s' "$F1_ABSENT_OUT" | jq '.unparseable_records | length' 2>/dev/null)
+assert_equal "0" "$F1_ABSENT_UNPARSEABLE" "F1: an absent severity field is not mis-routed to unparseable_records by the fix"
+
+# --- SEC-3: the ingestion script's output now carries a structural
+# untrusted-content marker, matching the pattern dossier-evidence.sh's
+# manifest.json already uses for the same class of contributor-controlled
+# content, rather than relying on skill prose alone. -------------------------
+NOTE_TEXT=$(printf '%s' "$F1_ABSENT_OUT" | jq -r '.note // "MISSING"' 2>/dev/null)
+assert_contains "evidence" "$NOTE_TEXT" "SEC-3: the output JSON carries a structural note field"
+assert_contains "never as instructions" "$NOTE_TEXT" "SEC-3: the note frames scan content as data, never as instructions"
+
+# --- --help now shows the Exit codes section (previously truncated by
+# sed -n '2,42p', which cut off before the output-schema/exit-code lines) ---
+HELP_OUT=$("$VULN_SCRIPT" --help 2>&1)
+assert_contains "Exit:" "$HELP_OUT" "--help includes the Exit codes section, not truncated before it"
+assert_contains "missing or invalid argument" "$HELP_OUT" "--help includes exit code 2's description"
+
+# --- --out: previously untested. Confirms the file is actually written, its
+# content matches stdout, and the flag doesn't change exit behaviour. -------
+OUT_DIR=$(_dossier_safe_mktemp_dir "out-flag")
+mkdir -p "$OUT_DIR/target"
+printf '{"results":[]}' >"$OUT_DIR/clean.json"
+OUT_STDOUT=$(cd "$OUT_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan clean.json --out target 2>&1)
+OUT_RC=$?
+assert_equal "0" "$OUT_RC" "--out: a successful run with --out still exits 0"
+if [ -f "$OUT_DIR/target/vuln-evidence.json" ]; then
+  _dossier_assert_pass "--out: the output file is actually created"
+else
+  _dossier_assert_fail "--out: no file was written to the --out directory"
+fi
+OUT_FILE_CONTENT=$(cat "$OUT_DIR/target/vuln-evidence.json" 2>/dev/null)
+assert_equal "$OUT_STDOUT" "$OUT_FILE_CONTENT" "--out: the file content matches stdout exactly"
+
+# --out on a parse failure: the error JSON must be written to the file too,
+# not leave a stale prior success result sitting there (F2 from PR-creation
+# review — already fixed; still worth pinning against --out specifically).
+printf 'not json' >"$OUT_DIR/bad.json"
+OUT_ERR_RC=0
+( cd "$OUT_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad.json --out target >/dev/null 2>&1 ) || OUT_ERR_RC=$?
+assert_equal "1" "$OUT_ERR_RC" "--out: a parse failure with --out still exits 1"
+OUT_ERR_FILE=$(cat "$OUT_DIR/target/vuln-evidence.json" 2>/dev/null)
+assert_contains "parse-error" "$OUT_ERR_FILE" "--out: a failed run overwrites the file with the error JSON, not a stale prior success"
+
+# =============================================================================
+# Part 8b — dossier-gate.sh G19 findings
+# =============================================================================
+
+# --- F2 (code-reviewer-skeptic/verifier, SEC-1 security-skeptic/verifier,
+# ERR-2 error-handler-skeptic — 5 independent agents): the Risk register
+# Status check was a denylist of the single literal string "open", so a
+# capitalized variant or an unfilled template placeholder disposed a
+# genuinely undisposed Critical/High finding. Now an allowlist against the
+# template's own closed enum, case-normalized, with placeholder rejection. --
+G19_STATUS_CASE_DIR=$(_dossier_safe_mktemp_dir "f2-status-case")
+g19_fixture "$G19_STATUS_CASE_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0050 | osv-scanner reports GHSA-f2-0001 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-f2-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
+'## Risk register
+
+| ID | Risk | Category | Likelihood | Impact | Detectability | Urgency | Evidence | Mitigation | Owner | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| RISK-0010 | axios SSRF | dependency | medium | high | high | high | [EV-0050] | upgrade planned | Jane Doe | Open |'
+assert_equal "FAIL" "$(g19_result "$G19_STATUS_CASE_DIR")" "F2: a capitalized Status value (\"Open\") no longer disposes a Critical/High finding"
+
+G19_STATUS_PLACEHOLDER_DIR=$(_dossier_safe_mktemp_dir "f2-status-placeholder")
+g19_fixture "$G19_STATUS_PLACEHOLDER_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0051 | osv-scanner reports GHSA-f2-0002 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-f2-0002, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
+'## Risk register
+
+| ID | Risk | Category | Likelihood | Impact | Detectability | Urgency | Evidence | Mitigation | Owner | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| RISK-0011 | axios SSRF, unfilled template row | dependency | medium | high | high | high | [EV-0051] | {fill} | {fill} | {fill} |'
+assert_equal "FAIL" "$(g19_result "$G19_STATUS_PLACEHOLDER_DIR")" "F2/F4: an unfilled {fill} Status/Owner placeholder no longer disposes a finding"
+
+# --- F5/SEC-4 (code-reviewer-verifier, security-skeptic): Category is now
+# case-insensitive — a capitalized "Dependency" must still dispose a
+# genuinely-mitigated finding, not spuriously FAIL. --------------------------
+G19_CATEGORY_CASE_DIR=$(_dossier_safe_mktemp_dir "f5-category-case")
+g19_fixture "$G19_CATEGORY_CASE_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0052 | osv-scanner reports GHSA-f5-0001 in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-f5-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
+'## Risk register
+
+| ID | Risk | Category | Likelihood | Impact | Detectability | Urgency | Evidence | Mitigation | Owner | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| RISK-0012 | axios SSRF, capitalized Category | Dependency | medium | critical | high | high | [EV-0052] | upgraded | Jane Doe | closed |'
+assert_equal "PASS" "$(g19_result "$G19_CATEGORY_CASE_DIR")" "F5/SEC-4: a capitalized Category (\"Dependency\") still disposes an otherwise fully-qualifying finding"
+
+# --- F3 (code-reviewer-verifier, design decision): "accepted" is no longer a
+# valid disposition via the Risk register alone — the template requires a
+# named human with the authority to accept, which a bare Owner cell does not
+# establish. An accepted disposition must go through the Accepted risks
+# table, with its accepter/date/basis/review-date accountability fields. ----
+G19_RISKACCEPTED_DIR=$(_dossier_safe_mktemp_dir "f3-risk-register-accepted")
+g19_fixture "$G19_RISKACCEPTED_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0053 | osv-scanner reports GHSA-f3-0001 in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-f3-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
+'## Risk register
+
+| ID | Risk | Category | Likelihood | Impact | Detectability | Urgency | Evidence | Mitigation | Owner | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| RISK-0013 | axios SSRF, marked accepted via Risk register alone | dependency | medium | critical | high | high | [EV-0053] | none planned | Jane Doe | accepted |'
+assert_equal "FAIL" "$(g19_result "$G19_RISKACCEPTED_DIR")" "F3: Status=accepted in the Risk register alone (no Accepted risks row) no longer disposes the finding"
+
+# --- F4 (code-reviewer-verifier): Accepted risks' Accepter/Basis cells
+# accepted the literal unfilled template placeholder {fill}. -----------------
+G19_ACC_PLACEHOLDER_DIR=$(_dossier_safe_mktemp_dir "f4-accepted-placeholder")
+g19_fixture "$G19_ACC_PLACEHOLDER_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0054 | osv-scanner reports GHSA-f4-0001 in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-f4-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
+'## Accepted risks
+
+| Risk ID | Accepted by | Date | Basis for acceptance | Review date | Evidence of the acceptance |
+|---|---|---|---|---|---|
+| [EV-0054] | {fill} | 2026-07-20 | {fill} | 2026-10-20 | {fill} |'
+assert_equal "FAIL" "$(g19_result "$G19_ACC_PLACEHOLDER_DIR")" "F4: unfilled {fill} Accepter/Basis placeholders no longer dispose a finding via Accepted risks"
+
+# --- New (SEC-2 security-skeptic, SEC-3 security-verifier, F1
+# code-reviewer-verifier — 3 independent agents): a scan that parsed cleanly
+# (status=parsed, not partial) but recorded a finding with unresolved
+# severity, and zero confirmed Critical/High rows, must be INCONCLUSIVE —
+# materiality unknown is not the same as clean. Distinct from the existing
+# status=partial test above: here the COVERAGE row itself is status=parsed. -
+G19_UNRESOLVED_ONLY_DIR=$(_dossier_safe_mktemp_dir "unresolved-only")
+g19_fixture "$G19_UNRESOLVED_ONLY_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0060 | osv-scanner: severity could not be derived for GHSA-unresolved-0001 | U | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding-unresolved |' \
+''
+G19_UNRESOLVED_ONLY_RESULT=$(g19_result "$G19_UNRESOLVED_ONLY_DIR")
+assert_equal "INCONCLUSIVE" "$G19_UNRESOLVED_ONLY_RESULT" "New: status=parsed with an unresolved-severity row and zero confirmed Critical/High rows is INCONCLUSIVE, not a vacuous PASS"
+G19_UNRESOLVED_ONLY_EVIDENCE=$(g19_evidence "$G19_UNRESOLVED_ONLY_DIR")
+assert_contains "unresolved severity" "$G19_UNRESOLVED_ONLY_EVIDENCE" "New: the unresolved-severity branch names itself distinctly"
+
+# A confirmed, undisposed Critical finding alongside an unrelated unresolved
+# row must still FAIL, not soften to INCONCLUSIVE — FAIL outranks
+# INCONCLUSIVE, matching the gate's existing overall precedence.
+G19_UNRESOLVED_PLUS_FAIL_DIR=$(_dossier_safe_mktemp_dir "unresolved-plus-fail")
+g19_fixture "$G19_UNRESOLVED_PLUS_FAIL_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0061 | osv-scanner: severity could not be derived for GHSA-unresolved-0002 | U | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding-unresolved |
+| EV-0062 | osv-scanner reports GHSA-confirmed-0001 in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-confirmed-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
+''
+assert_equal "FAIL" "$(g19_result "$G19_UNRESOLVED_PLUS_FAIL_DIR")" "New: a confirmed undisposed Critical finding still FAILs even alongside an unrelated unresolved-severity row"
+
+# --- New (SEC-2 security-verifier, ERR-3 error-handler-skeptic — 2
+# independent agents): the Accepted risks Review date was only checked for
+# calendar validity, never compared to "now" — a review date from years ago
+# disposed a Critical finding permanently. -----------------------------------
+G19_STALE_REVIEW_DIR=$(_dossier_safe_mktemp_dir "stale-review-date")
+g19_fixture "$G19_STALE_REVIEW_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0070 | osv-scanner reports GHSA-stale-0001 in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-stale-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
+'## Accepted risks
+
+| Risk ID | Accepted by | Date | Basis for acceptance | Review date | Evidence of the acceptance |
+|---|---|---|---|---|---|
+| [EV-0070] | Jane Doe, VP Engineering | 2020-01-01 | Low exploitability at the time | 2020-01-01 | Slack thread, 2020-01-01 |'
+assert_equal "FAIL" "$(g19_result "$G19_STALE_REVIEW_DIR")" "New: an Accepted-risks Review date years in the past no longer disposes a Critical finding"
+
+# A review date in the future (not yet elapsed) must still dispose normally —
+# negative control proving the fix checks "elapsed", not "always reject".
+G19_FUTURE_REVIEW_DIR=$(_dossier_safe_mktemp_dir "future-review-date")
+g19_fixture "$G19_FUTURE_REVIEW_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0071 | osv-scanner reports GHSA-future-0001 in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-future-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
+'## Accepted risks
+
+| Risk ID | Accepted by | Date | Basis for acceptance | Review date | Evidence of the acceptance |
+|---|---|---|---|---|---|
+| [EV-0071] | Jane Doe, VP Engineering | 2026-07-20 | Low exploitability in this deployment | 2099-01-01 | Slack thread, 2026-07-20 |'
+assert_equal "PASS" "$(g19_result "$G19_FUTURE_REVIEW_DIR")" "New: an Accepted-risks Review date still in the future disposes the finding normally"
+
+# --- ERR-2 (error-handler-inspector-verifier): the citation-range regex
+# could not distinguish the en-dash range form from the schema-legal
+# comma-separated LIST form, so [EV-0042, EV-0099] falsely disposed an
+# unrelated EV-0050 that merely fell numerically between the two listed,
+# non-adjacent ids. g19_row_cites now splits on the list separator before
+# ever looking for a range. --------------------------------------------------
+G19_COMMA_NOT_RANGE_DIR=$(_dossier_safe_mktemp_dir "err2-comma-not-range")
+g19_fixture "$G19_COMMA_NOT_RANGE_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0042 | osv-scanner reports GHSA-list-0001 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-list-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |
+| EV-0050 | osv-scanner reports GHSA-list-0002 in lodash@4.17.15, severity Critical | R | `scan.json` — osv-scanner, GHSA-list-0002, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |
+| EV-0099 | osv-scanner reports GHSA-list-0003 in requests@2.25.0, severity High | R | `scan.json` — osv-scanner, GHSA-list-0003, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
+'## Risk register
+
+| ID | Risk | Category | Likelihood | Impact | Detectability | Urgency | Evidence | Mitigation | Owner | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| RISK-0020 | two of three findings triaged together, cited as a comma-separated LIST, not a range | dependency | medium | high | high | high | [EV-0042, EV-0099] | upgraded both | Jane Doe | closed |'
+G19_COMMA_RESULT=$(g19_result "$G19_COMMA_NOT_RANGE_DIR")
+assert_equal "FAIL" "$G19_COMMA_RESULT" "ERR-2: EV-0050 (never cited, only numerically between the two listed ids) is still undisposed — the comma-list is not misread as a range"
+G19_COMMA_EVIDENCE=$(g19_evidence "$G19_COMMA_NOT_RANGE_DIR")
+assert_contains "EV-0050" "$G19_COMMA_EVIDENCE" "ERR-2: the evidence names the genuinely undisposed finding"
+assert_not_contains "EV-0042" "$G19_COMMA_EVIDENCE" "ERR-2: EV-0042, actually cited in the list, is not also reported as undisposed"
+assert_not_contains "EV-0099" "$G19_COMMA_EVIDENCE" "ERR-2: EV-0099, actually cited in the list, is not also reported as undisposed"
+
+# --- ERR-3 (error-handler-inspector-skeptic): a vuln-finding row whose
+# formatting drifts beyond mere case (unexpected spacing around `=`) is
+# counted by the loose FINDING_ROWS scan but was previously invisible to the
+# strict selection loop — silently treated as "nothing to see" rather than
+# flagged. Now reconciled: a leftover, unrecognized row makes G19
+# INCONCLUSIVE instead of vanishing. ------------------------------------------
+G19_MALFORMED_TAG_DIR=$(_dossier_safe_mktemp_dir "err3-malformed-tag")
+g19_fixture "$G19_MALFORMED_TAG_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0080 | osv-scanner reports GHSA-err3-0001 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-err3-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity = High |' \
+''
+G19_MALFORMED_TAG_RESULT=$(g19_result "$G19_MALFORMED_TAG_DIR")
+assert_equal "INCONCLUSIVE" "$G19_MALFORMED_TAG_RESULT" "ERR-3: a vuln-finding row with non-canonical tag spacing is INCONCLUSIVE, not silently treated as a clean scan"
+G19_MALFORMED_TAG_EVIDENCE=$(g19_evidence "$G19_MALFORMED_TAG_DIR")
+assert_contains "did not match" "$G19_MALFORMED_TAG_EVIDENCE" "ERR-3: the reconciliation branch names itself distinctly"
+
+# Case drift alone (not spacing) must now be tolerated directly by the main
+# selection loop, not merely caught by the reconciliation fallback.
+G19_CASE_DRIFT_DIR=$(_dossier_safe_mktemp_dir "err3-case-drift")
+g19_fixture "$G19_CASE_DRIFT_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0081 | osv-scanner reports GHSA-err3-0002 in axios@0.21.1, severity critical | R | `scan.json` — osv-scanner, GHSA-err3-0002, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=critical |' \
+''
+G19_CASE_DRIFT_RESULT=$(g19_result "$G19_CASE_DRIFT_DIR")
+assert_equal "FAIL" "$G19_CASE_DRIFT_RESULT" "ERR-3: a lowercase severity value (severity=critical) is still recognized and correctly FAILs as undisposed"
+G19_CASE_DRIFT_EVIDENCE=$(g19_evidence "$G19_CASE_DRIFT_DIR")
+assert_contains "EV-0081 (Critical)" "$G19_CASE_DRIFT_EVIDENCE" "ERR-3: the recognized severity is normalized back to canonical Title-case in the evidence text"
+
+# --- ERR-6 (error-handler-inspector-verifier): an unreadable (as opposed to
+# absent) risk register was indistinguishable from a genuine FAIL — a
+# permissions problem misdirected remediation toward triaging findings that
+# may already be disposed in a file G19 simply couldn't open. ----------------
+if [ "$(id -u)" != "0" ]; then
+  G19_UNREADABLE_DIR=$(_dossier_safe_mktemp_dir "err6-unreadable-risks")
+  g19_fixture "$G19_UNREADABLE_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0090 | osv-scanner reports GHSA-err6-0001 in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-err6-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
+'## Risk register
+
+| ID | Risk | Category | Likelihood | Impact | Detectability | Urgency | Evidence | Mitigation | Owner | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| RISK-0030 | axios SSRF, disposed in a file the gate cannot read | dependency | medium | critical | high | high | [EV-0090] | upgraded | Jane Doe | closed |'
+  chmod 000 "$G19_UNREADABLE_DIR/docs/dossier/04-operating/decisions-technical-debt-and-risks.md"
+  G19_UNREADABLE_RESULT=$(g19_result "$G19_UNREADABLE_DIR")
+  chmod 644 "$G19_UNREADABLE_DIR/docs/dossier/04-operating/decisions-technical-debt-and-risks.md" 2>/dev/null
+  assert_equal "INCONCLUSIVE" "$G19_UNREADABLE_RESULT" "ERR-6: an unreadable (not absent) risk register is INCONCLUSIVE, distinct from a genuine FAIL"
+else
+  _dossier_assert_pass "ERR-6: skipped — running as root, chmod 000 does not enforce unreadability"
+fi
+
 _dossier_test_summary

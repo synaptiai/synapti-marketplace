@@ -37,6 +37,17 @@ artifacts:
   result: achieved
   evidence_bundle: .flow/runs/2026-07-28T132544Z-issue-136
   failures: none
+- type: review-cycle
+  captured_at: '2026-07-28T16:06:09Z'
+  cycle: 1
+  path: B
+  findings_count: 17
+  pr: 141
+- type: workflow-run
+  captured_at: '2026-07-28T16:08:21Z'
+  workflow: review-pr
+  run_id: 2026-07-28T160627Z-review
+  status: active
 ---
 # Decision Journal — Issue #136
 
@@ -83,6 +94,16 @@ _Captured by specification-capture skill on 2026-07-28. Source: user-confirmed (
 ### Resolved design decision: G19's no-evidence state
 
 Confirmed with the user via `AskUserQuestion` on 2026-07-28: when a package has **zero vulnerability-evidence `EV-####` rows at all**, G19 reports **`INCONCLUSIVE`**, never `PASS`. This matches commit `525cca5` ("#133")'s established precedent that an unevaluated condition must never read as assent, and mirrors G06's own INCONCLUSIVE-on-could-not-run behavior. This is a **deliberate, confirmed deviation** from the original plan document's text ("existing installations are unaffected... condition has nothing to evaluate"), accepted knowing it changes gate status — to `not ready` — for every existing dossier package (including this repo's own `docs/dossier`) until vulnerability evidence is ingested. The overall `GATE_RESULT` computation already treats `INCONCLUSIVE` as blocking (`STATUS=not ready`) exactly like every other uncovered condition today; no change needed to that precedence logic.
+
+### Resolved design decisions: PR #141 review cycle (2026-07-28)
+
+`/flow:review`'s Path A paired-reviewer protocol (10 agents + 2 holdout lenses) surfaced three points this journal had not explicitly resolved during specification — resolved here rather than deferred, per self-review mode's fix-forward mandate:
+
+- **Unresolved severity now factors into the FAIL/PASS/INCONCLUSIVE decision, not just PASS/FAIL.** The original interface contract (above) only specified disposition-checking for confirmed `Critical`/`High` rows; it did not say what a `vuln-finding-unresolved` row (severity undeterminable) should do to the result when zero confirmed rows exist alongside it. Three independent reviewers (code-reviewer-verifier, security-reviewer-skeptic, security-reviewer-verifier) reproduced a scan that parsed cleanly (`status=parsed`, not `partial`) but whose one finding had unresolved severity, and zero confirmed Critical/High rows — G19 reported a vacuous `PASS`. Resolved: `INCONCLUSIVE`, same "materiality unknown must never read as assent" principle already governing the no-evidence and parse-error branches. `references/evidence-ledger-schema.md` and `references/release-gate-conditions.md` updated in the same commit as the code fix.
+- **A `Status: accepted` disposition in the Risk register alone no longer qualifies — it must go through the Accepted risks table.** This is a genuine, deliberate contract change, not a bug fix: the Risk register's `Status` column has always documented `accepted` as a valid enum value (`templates/package/04-operating/decisions-technical-debt-and-risks.md`), so a package filled exactly as previously documented will now `FAIL` where it previously `PASS`ed. Made anyway because the template's own Accepted-risks section states "acceptance requires a named human with the authority to accept" — a bare `Owner` cell in the Risk register does not establish that authority, only that someone is tracking the item. Single-sourced by code-reviewer-verifier (F3); taken as the right call because it closes a real accountability gap the Status-allowlist fix (below) would otherwise have left open, and because the template's own stated rule already implied it. Template guidance and `release-gate-conditions.md` updated in the same commit.
+- **An Accepted-risks `Review date` must not have elapsed, not merely be calendar-valid.** The original failure-mode note (above) only specified rejecting a calendar-invalid or rollover date; it did not address a calendar-valid date from years in the past. Two independent reviewers (security-reviewer-verifier, error-handler-inspector-skeptic) reproduced a 2020 review date still disposing a Critical finding today. This journal's silence on the elapsed case was an oversight, not a considered exclusion — resolved by requiring `Review date >= today`, matching this project's own established staleness-enforcement philosophy (`dossier-staleness-check.sh`) rather than inventing a new one.
+
+Also fixed in the same review cycle, without a design-decision-level resolution needed (implementation bugs, not contract questions): a jq optional-index operator silently discarding a whole finding record instead of throwing (F1/ERR-1, five agents); a Risk register `Status` denylist of the single string `"open"` instead of an allowlist against the documented enum, letting case variants and unfilled `{fill}` placeholders through as false dispositions (F2, five agents); `Category`/`Status` case-sensitivity (F5/SEC-4); unfilled `{fill}` placeholders accepted in Accepted-risks `Accepted by`/`Basis for acceptance` cells (F4); a citation-range regex that misread the schema-legal comma-separated list form as an inclusive range (ERR-2); a `vuln-finding` row whose tag formatting drifted beyond mere case going completely unevaluated instead of flagged (ERR-3); and an unreadable (vs. absent) risk register file reading as an ordinary `FAIL` instead of a distinct `INCONCLUSIVE` (ERR-6).
 
 ## Stranger Test
 
@@ -300,3 +321,63 @@ Accepted consequence, worth surfacing here rather than only in the resolved-desi
 <!-- auto-log: 2026-07-28 18:03 commit "fix(dossier): close PR-creation review findings (SEC-1/2/4, ERR-1/2, F1-F4)" -->
 
 <!-- auto-log: 2026-07-28 18:04 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr-136-body.md -->
+
+<!-- auto-log: 2026-07-28 18:07 Write /Users/danielbentes/synapti-marketplace/.flow/runs/2026-07-28T160627Z-review/run.yaml -->
+
+<!-- auto-log: 2026-07-28 18:08 Edit /Users/danielbentes/synapti-marketplace/.flow/runs/2026-07-28T160627Z-review/run.yaml -->
+
+<!-- auto-log: 2026-07-28 18:09 Edit /Users/danielbentes/synapti-marketplace/.flow/runs/2026-07-28T160627Z-review/run.yaml -->
+
+<!-- auto-log: 2026-07-28 18:10 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr_create.yaml -->
+
+<!-- auto-log: 2026-07-28 18:10 Edit /Users/danielbentes/synapti-marketplace/.flow/runs/2026-07-28T132544Z-issue-136/run.yaml -->
+
+<!-- auto-log: 2026-07-28 18:10 Edit /Users/danielbentes/synapti-marketplace/.flow/runs/2026-07-28T132544Z-issue-136/run.yaml -->
+
+<!-- auto-log: 2026-07-28 18:13 Edit /Users/danielbentes/synapti-marketplace/.flow/runs/2026-07-28T132544Z-issue-136/activities/010-pr_create.yaml -->
+
+<!-- auto-log: 2026-07-28 18:16 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-gate.sh -->
+
+<!-- auto-log: 2026-07-28 18:18 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-vuln-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 18:21 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_dossier_gate_deny_list_pattern.md -->
+
+<!-- auto-log: 2026-07-28 18:21 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_dossier_gate_g19_unresolved_severity_gap.md -->
+
+<!-- auto-log: 2026-07-28 18:21 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-07-28 18:22 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_dossier_vuln_data_loss_bugclass.md -->
+
+<!-- auto-log: 2026-07-28 18:22 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/MEMORY.md -->
+
+<!-- auto-log: 2026-07-28 18:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-vuln-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 18:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-vuln-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 18:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-vuln-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 18:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-vuln-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 18:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-vuln-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 18:33 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/test-g19-cites.sh -->
+
+<!-- auto-log: 2026-07-28 18:34 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-gate.sh -->
+
+<!-- auto-log: 2026-07-28 18:35 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-gate.sh -->
+
+<!-- auto-log: 2026-07-28 18:38 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
+
+<!-- auto-log: 2026-07-28 18:38 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
+
+<!-- auto-log: 2026-07-28 18:41 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/references/evidence-ledger-schema.md -->
+
+<!-- auto-log: 2026-07-28 18:42 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/references/release-gate-conditions.md -->
+
+<!-- auto-log: 2026-07-28 18:42 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/package/04-operating/decisions-technical-debt-and-risks.md -->
+
+<!-- auto-log: 2026-07-28 18:42 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/package/04-operating/decisions-technical-debt-and-risks.md -->
+
+<!-- auto-log: 2026-07-28 18:43 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-136.md -->
+
+<!-- auto-log: 2026-07-28 18:43 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/skills/evidence-ledger/SKILL.md -->

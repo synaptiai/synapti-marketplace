@@ -329,6 +329,11 @@ trim_g19() { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//
 # Neither BSD `date -j` nor GNU `date -d` reject an out-of-range day-of-month
 # (2026-06-31 silently rolls to 2026-07-01), so a target/review date is only
 # accepted if it round-trips back to its original string.
+#
+# Deliberately omits `local` (unlike g19_row_cites below) — this function's
+# body is byte-for-byte identical to its source, modulo the function name, so
+# a future diff against dossier-staleness-check.sh's copy stays a clean
+# comparison rather than picking up an unrelated stylistic divergence.
 validate_calendar_date_g19() {
   _orig="$1" _epoch="$2"
   [ -n "$_epoch" ] || return 0
@@ -376,30 +381,43 @@ extract_section_g19() { # file | anchored heading regex, e.g. "^## Risk register
 # mentioned in trailing prose and falsely dispose an unrelated finding.
 # Confirmed by live reproduction.
 g19_row_cites() { # citation-cell | evid
-  local _row="$1" _evid="$2" _span _range _lo _hi _en
+  local _row="$1" _evid="$2" _span _inner _token _ids_in_token _id_count _lo _hi _en
   while IFS= read -r _span; do
     [ -n "$_span" ] || continue
-    printf '%s\n' "$_span" | grep -oE 'EV-[0-9]{4,}' | grep -qxF "$_evid" && return 0
-    # `[^A-Za-z0-9]+` rather than a literal `[-–]` bracket expression: the
-    # en-dash is a multi-byte UTF-8 sequence, and a byte-oriented regex engine
-    # under a C/POSIX locale (common on minimal Linux CI images, and not
-    # something this script or any workflow in this repo forces away from)
-    # matches a bracket expression one byte at a time — the range form could
-    # silently fail to match there while working fine on this development
-    # machine's locale-aware engine. A negated ASCII class with a quantifier
-    # consumes the separator's bytes regardless of how many there are or how
-    # the active locale interprets them.
-    _range=$(printf '%s\n' "$_span" | grep -oE 'EV-[0-9]{4,}[^A-Za-z0-9]+(EV-)?[0-9]{4,}' | head -1)
-    if [ -n "$_range" ]; then
-      _lo=$(printf '%s' "$_range" | grep -oE '^EV-[0-9]{4,}' | grep -oE '[0-9]{4,}')
-      _hi=$(printf '%s' "$_range" | grep -oE '[0-9]{4,}$')
-      _en=$(printf '%s' "$_evid" | grep -oE '[0-9]{4,}')
-      if [ -n "$_lo" ] && [ -n "$_hi" ] && [ -n "$_en" ]; then
-        # 10# forces base-10: a zero-padded id like 0099 is otherwise read as
-        # an invalid octal literal by bash arithmetic.
-        [ "$((10#$_en))" -ge "$((10#$_lo))" ] && [ "$((10#$_en))" -le "$((10#$_hi))" ] && return 0
+    # Strip the surrounding brackets, then split on the schema's LIST
+    # separator (comma or semicolon) BEFORE ever looking for a range. Doing
+    # this the other way round — searching the whole span for two ids
+    # separated by any non-alphanumeric run — let the list separator itself
+    # satisfy the range pattern: `[EV-0042, EV-0099]` (two ids the schema
+    # documents as a LIST, each cited on its own) parsed as an inclusive
+    # RANGE spanning everything between them, falsely disposing an
+    # unrelated, genuinely undisposed id like EV-0050 that merely fell
+    # between the two endpoints. Confirmed by live reproduction — this was
+    # the fourth false-disposition bug found in this function by successive
+    # narrowing of a single matcher, which is what motivated parsing the
+    # grammar instead of excluding one more character. Splitting on the list
+    # separator first means a range can only ever be found within a single
+    # comma/semicolon-free token, where exactly two ids can only mean the
+    # explicit range form.
+    _inner=$(printf '%s\n' "$_span" | sed -e 's/^\[//' -e 's/\]$//')
+    while IFS= read -r _token; do
+      _token=$(trim_g19 "$_token")
+      [ -n "$_token" ] || continue
+      _ids_in_token=$(printf '%s\n' "$_token" | grep -oE 'EV-[0-9]{4,}')
+      _id_count=$(printf '%s\n' "$_ids_in_token" | grep -c .)
+      if [ "$_id_count" -eq 1 ]; then
+        printf '%s\n' "$_ids_in_token" | grep -qxF "$_evid" && return 0
+      elif [ "$_id_count" -eq 2 ]; then
+        _lo=$(printf '%s\n' "$_ids_in_token" | sed -n '1p' | grep -oE '[0-9]{4,}')
+        _hi=$(printf '%s\n' "$_ids_in_token" | sed -n '2p' | grep -oE '[0-9]{4,}')
+        _en=$(printf '%s' "$_evid" | grep -oE '[0-9]{4,}')
+        if [ -n "$_lo" ] && [ -n "$_hi" ] && [ -n "$_en" ]; then
+          # 10# forces base-10: a zero-padded id like 0099 is otherwise read
+          # as an invalid octal literal by bash arithmetic.
+          [ "$((10#$_en))" -ge "$((10#$_lo))" ] && [ "$((10#$_en))" -le "$((10#$_hi))" ] && return 0
+        fi
       fi
-    fi
+    done < <(printf '%s\n' "$_inner" | tr ',;' '\n\n')
   done < <(printf '%s\n' "$_row" | grep -oE '\[[^]]*\]')
   return 1
 }
@@ -407,14 +425,29 @@ g19_row_cites() { # citation-cell | evid
 LEDGER="$CONTROL/evidence-ledger.md"
 RISKS="$OUTPUT_ROOT/04-operating/decisions-technical-debt-and-risks.md"
 
+# A cell that is non-empty but is one of the template's own placeholder
+# conventions (an em-dash/hyphen "not applicable" marker, or an unfilled
+# `{fill}` token) must never count as a real value. A denylist check that
+# only excluded "—"/"-" let an unfilled `{fill}` cell — non-empty, and not
+# literally either dash — pass as a real owner/accepter/basis. Confirmed by
+# live reproduction against an unfilled template row.
+g19_filled() {
+  local _v="$1"
+  [ -n "$_v" ] || return 1
+  case "$_v" in
+    "—"|"-"|"{fill}"|"{fill"*"}") return 1 ;;
+  esac
+  return 0
+}
+
 if [ ! -f "$LEDGER" ]; then
   record G19 mechanical INCONCLUSIVE script "no evidence ledger at $LEDGER — vulnerability-scan evidence could not be evaluated"
 else
-  COVERAGE_ROWS=$(grep -c 'vuln-scan-coverage' "$LEDGER" 2>/dev/null || true)
+  COVERAGE_ROWS=$(grep -ci 'vuln-scan-coverage' "$LEDGER" 2>/dev/null || true)
   [ -z "$COVERAGE_ROWS" ] && COVERAGE_ROWS=0
-  FINDING_ROWS=$(grep -c 'vuln-finding ' "$LEDGER" 2>/dev/null || true)
+  FINDING_ROWS=$(grep -ci 'vuln-finding ' "$LEDGER" 2>/dev/null || true)
   [ -z "$FINDING_ROWS" ] && FINDING_ROWS=0
-  PARSE_ERROR_ROW=$(grep -m1 'vuln-scan-coverage status=parse-error' "$LEDGER" 2>/dev/null)
+  PARSE_ERROR_ROW=$(grep -im1 'vuln-scan-coverage status=parse-error' "$LEDGER" 2>/dev/null)
   # A whole-scan parse failure (status=parse-error) is not the only way the
   # finding set can be incomplete. dossier-vuln-evidence.sh's per-record fault
   # isolation lets the scan AS A WHOLE parse while one or more individual
@@ -425,7 +458,21 @@ else
   # DID parse happens to be disposed — the same "unevaluated must never read
   # as assent" principle the parse-error branch already applies, extended to
   # the case where SOME of the scan was readable and some was not.
-  PARTIAL_ROW=$(grep -m1 'vuln-scan-coverage status=partial' "$LEDGER" 2>/dev/null)
+  PARTIAL_ROW=$(grep -im1 'vuln-scan-coverage status=partial' "$LEDGER" 2>/dev/null)
+  # A finding whose severity could not be derived gets its own
+  # `vuln-finding-unresolved` row while the coverage row can still read
+  # status=parsed: the SCAN parsed fine, one RECORD's materiality didn't.
+  # dossier-vuln-evidence.sh's own header flags the osv-scanner
+  # CVSS-vector-vs-bare-score assumption as unverified against live tool
+  # output — this is plausibly the mainline path against real osv-scanner
+  # output, not an edge case. Confirmed by live reproduction: a ledger with
+  # status=parsed, one unresolved row, and zero severity=Critical|High rows
+  # fell through every prior branch to a vacuous PASS. Checked below the
+  # main disposition loop, not here, so it never overrides a genuine FAIL
+  # from a confirmed, undisposed Critical/High finding — unresolved severity
+  # means "materiality unknown", which is worse than PASS but better than a
+  # FAIL naming a specific disposed-or-not finding.
+  UNRESOLVED_ROW=$(grep -im1 'vuln-finding-unresolved' "$LEDGER" 2>/dev/null)
 
   if [ "$COVERAGE_ROWS" -eq 0 ] && [ "$FINDING_ROWS" -eq 0 ]; then
     record G19 mechanical INCONCLUSIVE script "no vulnerability-scan evidence recorded in the ledger — ingest an existing scan artifact via dossier-vuln-evidence.sh, or record why none is available"
@@ -436,11 +483,35 @@ else
     PA_EVID=$(printf '%s\n' "$PARTIAL_ROW" | grep -oE 'EV-[0-9]{4,}' | head -1)
     record G19 mechanical INCONCLUSIVE script "the vulnerability scan parsed partially (${PA_EVID:-no EV row found}) — one or more records could not be normalized, so the finding set may be incomplete"
   else
+    NOW_EPOCH_G19=$(date -u +%s)
+    # An unreadable (as opposed to absent) risk register is a DIFFERENT
+    # condition from "no disposition was recorded" — the former means
+    # disposition genuinely could not be evaluated, the latter means it was
+    # evaluated and found wanting. Conflating them let a permissions problem
+    # read as an ordinary FAIL, misdirecting remediation toward triaging
+    # findings that may in fact already be disposed in a file G19 simply
+    # couldn't open.
+    RISKS_UNREADABLE=0
+    [ -f "$RISKS" ] && [ ! -r "$RISKS" ] && RISKS_UNREADABLE=1
+
     UNDISPOSED=""
+    CONSUMED_FINDING_ROWS=0
     while IFS= read -r G19_ROW; do
       [ -n "$G19_ROW" ] || continue
-      G19_SEV=$(printf '%s\n' "$G19_ROW" | grep -oE 'vuln-finding severity=(Critical|High)' | sed 's/.*severity=//')
-      [ -n "$G19_SEV" ] || continue
+      CONSUMED_FINDING_ROWS=$((CONSUMED_FINDING_ROWS + 1))
+      # Case-insensitive on both the selection (below) and this extraction:
+      # the ledger's `Notes` tags are authored by the evidence-ledger SKILL
+      # (an LLM transcribing free text), not emitted by a script, so casing
+      # drift ("severity=critical") is realistic rather than adversarial —
+      # the same reasoning G16 already applies with its own `-ciE` selector.
+      # Normalized back to canonical Title-case so downstream evidence text
+      # is consistent regardless of source casing.
+      G19_SEV_RAW=$(printf '%s\n' "$G19_ROW" | grep -oiE 'vuln-finding severity=(Critical|High)' | sed 's/.*severity=//')
+      case "$(printf '%s' "$G19_SEV_RAW" | tr '[:upper:]' '[:lower:]')" in
+        critical) G19_SEV="Critical" ;;
+        high) G19_SEV="High" ;;
+        *) continue ;;
+      esac
       # Tolerant of up to 3 leading spaces before the pipe, matching CommonMark's
       # own table-row syntax (a row indented that far still renders identically,
       # so the selection grep above — deliberately unanchored, since it exists to
@@ -459,11 +530,11 @@ else
       G19_DISPOSED=0
 
       # Risk register: ANY row citing EV-#### (a bracket may cite more than one
-      # id — see g19_row_cites) with Category dependency|security, a non-empty
-      # Owner, and Status not "open" disposes the finding. Every citing row is
-      # checked, not just the first, since an earlier triage row citing the same
-      # id may not itself qualify while a later one does.
-      if [ -f "$RISKS" ]; then
+      # id — see g19_row_cites) with Category dependency|security, a filled
+      # Owner, and a Status of mitigating|closed disposes the finding. Every
+      # citing row is checked, not just the first, since an earlier triage row
+      # citing the same id may not itself qualify while a later one does.
+      if [ "$RISKS_UNREADABLE" -eq 0 ] && [ -f "$RISKS" ]; then
         while IFS= read -r RISK_ROW; do
           [ "$G19_DISPOSED" -eq 0 ] || break
           case "$RISK_ROW" in "|"*) ;; *) continue ;; esac
@@ -487,15 +558,33 @@ else
             # cell happened to mention another finding's id disposed that
             # other, genuinely-undisposed finding.
             g19_row_cites "${cells[7]}" "$G19_EVID" || continue
-            RISK_CATEGORY=$(trim_g19 "${cells[2]}")
+            RISK_CATEGORY=$(trim_g19 "${cells[2]}" | tr '[:upper:]' '[:lower:]')
             RISK_OWNER=$(trim_g19 "${cells[9]}")
-            RISK_STATUS=$(trim_g19 "${cells[10]}")
+            RISK_STATUS=$(trim_g19 "${cells[10]}" | tr '[:upper:]' '[:lower:]')
             case "$RISK_CATEGORY" in
               dependency|security)
-                if [ -n "$RISK_OWNER" ] && [ "$RISK_OWNER" != "—" ] && [ "$RISK_OWNER" != "-" ] \
-                   && [ -n "$RISK_STATUS" ] && [ "$RISK_STATUS" != "open" ]; then
-                  G19_DISPOSED=1
-                fi
+                # An allowlist against the template's own closed enum
+                # (open|mitigating|accepted|closed), not a denylist of the
+                # single string "open" — a denylist disposed the finding for
+                # ANY other value, including case variants ("Open"), unfilled
+                # template placeholders ("{fill}"), and genuinely
+                # non-dispositive statuses ("blocked", "reopened"). Confirmed
+                # by live reproduction against both a capitalized value and an
+                # unfilled placeholder.
+                #
+                # `accepted` is deliberately excluded here: the template
+                # states acceptance requires a named human with the authority
+                # to accept, which this table's bare Owner cell does not
+                # establish. An accepted disposition must go through the
+                # Accepted risks table below, with its
+                # accepter/date/basis/review-date accountability fields —
+                # this Risk register path covers only ownership-tracked
+                # remediation that is in progress or already done.
+                case "$RISK_STATUS" in
+                  mitigating|closed)
+                    g19_filled "$RISK_OWNER" && G19_DISPOSED=1
+                    ;;
+                esac
                 ;;
             esac
           fi
@@ -503,8 +592,9 @@ else
       fi
 
       # Accepted risks: ANY row citing EV-#### with a named accepter, a
-      # calendar-valid date, a stated basis, and a calendar-valid review date.
-      if [ "$G19_DISPOSED" -eq 0 ] && [ -f "$RISKS" ]; then
+      # calendar-valid acceptance date, a stated basis, and a calendar-valid
+      # review date that has not yet elapsed.
+      if [ "$G19_DISPOSED" -eq 0 ] && [ "$RISKS_UNREADABLE" -eq 0 ] && [ -f "$RISKS" ]; then
         while IFS= read -r ACC_ROW; do
           [ "$G19_DISPOSED" -eq 0 ] || break
           case "$ACC_ROW" in "|"*) ;; *) continue ;; esac
@@ -525,10 +615,17 @@ else
             ACC_REVIEW=$(trim_g19 "${cells[4]}")
             ACC_DATE_EPOCH=$(date_to_epoch_g19 "$ACC_DATE")
             ACC_REVIEW_EPOCH=$(date_to_epoch_g19 "$ACC_REVIEW")
-            if [ -n "$ACC_ACCEPTER" ] && [ "$ACC_ACCEPTER" != "—" ] && [ "$ACC_ACCEPTER" != "-" ] \
-               && [ -n "$ACC_DATE_EPOCH" ] \
-               && [ -n "$ACC_BASIS" ] && [ "$ACC_BASIS" != "—" ] && [ "$ACC_BASIS" != "-" ] \
-               && [ -n "$ACC_REVIEW_EPOCH" ]; then
+            # A review date's whole purpose is to force periodic
+            # re-affirmation of a risk acceptance — validating only that it
+            # is CALENDAR-valid, never comparing it to "now", let an
+            # acceptance from years ago dispose a Critical finding
+            # permanently. Confirmed by live reproduction (a 2020 review
+            # date still disposed a Critical finding today). Matches this
+            # project's own established staleness-enforcement philosophy
+            # (dossier-staleness-check.sh) rather than inventing a new one.
+            if g19_filled "$ACC_ACCEPTER" && [ -n "$ACC_DATE_EPOCH" ] \
+               && g19_filled "$ACC_BASIS" \
+               && [ -n "$ACC_REVIEW_EPOCH" ] && [ "$ACC_REVIEW_EPOCH" -ge "$NOW_EPOCH_G19" ]; then
               G19_DISPOSED=1
             fi
           fi
@@ -538,10 +635,29 @@ else
       if [ "$G19_DISPOSED" -eq 0 ]; then
         UNDISPOSED="${UNDISPOSED}${UNDISPOSED:+, }$G19_EVID ($G19_SEV)"
       fi
-    done < <(grep -E 'vuln-finding severity=(Critical|High)' "$LEDGER" 2>/dev/null)
+    done < <(grep -iE 'vuln-finding severity=(Critical|High)' "$LEDGER" 2>/dev/null)
+
+    # A row counted by the loose FINDING_ROWS scan above but never consumed by
+    # the (already case-insensitive) selection loop indicates formatting
+    # drift beyond mere case — unexpected spacing around `=`, a stray
+    # separator — that would otherwise let a genuine finding row go
+    # completely unevaluated. Silently treating that as "nothing to see" is
+    # the same "unevaluated must never read as assent" failure this whole
+    # condition exists to prevent one level up; it is surfaced as
+    # INCONCLUSIVE below rather than allowed to vanish.
+    UNRECOGNIZED_FINDING_ROWS=$((FINDING_ROWS - CONSUMED_FINDING_ROWS))
+    [ "$UNRECOGNIZED_FINDING_ROWS" -lt 0 ] && UNRECOGNIZED_FINDING_ROWS=0
 
     if [ -n "$UNDISPOSED" ]; then
-      record G19 mechanical FAIL script "unresolved vulnerability finding(s) with no recorded disposition: $UNDISPOSED"
+      if [ "$RISKS_UNREADABLE" -eq 1 ]; then
+        record G19 mechanical INCONCLUSIVE script "$RISKS exists but could not be read — disposition could not be evaluated for: $UNDISPOSED"
+      else
+        record G19 mechanical FAIL script "unresolved vulnerability finding(s) with no recorded disposition: $UNDISPOSED"
+      fi
+    elif [ -n "$UNRESOLVED_ROW" ]; then
+      record G19 mechanical INCONCLUSIVE script "one or more vulnerability findings have unresolved severity — materiality unknown, not a clean scan"
+    elif [ "$UNRECOGNIZED_FINDING_ROWS" -gt 0 ]; then
+      record G19 mechanical INCONCLUSIVE script "$UNRECOGNIZED_FINDING_ROWS vulnerability-finding row(s) in the ledger did not match the expected severity=Critical|High tag format — could not be evaluated"
     else
       record G19 mechanical PASS script "vulnerability-scan evidence recorded; every Critical/High finding is disposed (resolved or explicitly risk-accepted)"
     fi
