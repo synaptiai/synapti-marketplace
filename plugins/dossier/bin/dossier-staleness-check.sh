@@ -72,7 +72,7 @@ while [ $# -gt 0 ]; do
       [ $# -lt 2 ] && { echo "dossier-staleness-check: --single-file requires a value" >&2; exit 2; }
       SINGLE_FILE="$2"; shift 2 ;;
     -h|--help)
-      sed -n '2,31p' "$0"; exit 0 ;;
+      sed -n '2,41p' "$0"; exit 0 ;;
     *)
       echo "dossier-staleness-check: unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -110,14 +110,20 @@ if [ -n "$SINGLE_FILE" ]; then
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
       TODAY_S=$(date -u +%s)
       LV_S=$(date -j -f "%Y-%m-%d" "$LV" +%s 2>/dev/null || date -d "$LV" +%s 2>/dev/null || echo "")
-      IS_STALE="false"
-      if [ -n "$LV_S" ]; then
+      if [ -z "$LV_S" ]; then
+        # Shape-valid but not a real calendar date (e.g. 2024-13-45) — no
+        # evidence anyone actually verified this document, same as missing.
+        printf 'LAST_VERIFIED=%s\n' "$LV"
+        printf 'IS_STALE=false\n'
+        printf 'IS_UNDATED=true\n'
+      else
+        IS_STALE="false"
         AGE=$(( (TODAY_S - LV_S) / 86400 ))
         [ "$AGE" -gt "$STALE_DAYS" ] && IS_STALE="true"
+        printf 'LAST_VERIFIED=%s\n' "$LV"
+        printf 'IS_STALE=%s\n' "$IS_STALE"
+        printf 'IS_UNDATED=false\n'
       fi
-      printf 'LAST_VERIFIED=%s\n' "$LV"
-      printf 'IS_STALE=%s\n' "$IS_STALE"
-      printf 'IS_UNDATED=false\n'
       ;;
     *)
       printf 'LAST_VERIFIED=\n'
@@ -150,10 +156,45 @@ trap 'rm -rf "$TMPDIR_SC" 2>/dev/null' EXIT
 STALE_LIST="$TMPDIR_SC/stale.tsv"
 : >"$STALE_LIST"
 
+# The 23 canonical documents bin/dossier-evidence.sh recognizes. Walking only
+# these — never a bare `find $OUTPUT_ROOT -name '*.md'` — matters because a
+# sweep's slots are bounded (MAX_SWEEP): a stray non-canonical markdown file
+# with an old last-verified date must not consume a sweep slot that starves a
+# genuinely stale canonical document.
+CANONICAL_DOCS='00-control/documentation-index.md
+00-control/evidence-ledger.md
+00-control/assumptions-questions-and-contradictions.md
+00-control/claim-and-disclosure-register.md
+00-control/terminology-and-ownership.md
+01-project/executive-project-brief.md
+01-project/product-and-domain.md
+02-architecture/system-architecture.md
+02-architecture/components-and-codebase.md
+02-architecture/data-and-ai.md
+02-architecture/interfaces-and-integrations.md
+02-architecture/infrastructure-and-deployment.md
+03-assurance/security-privacy-and-compliance.md
+03-assurance/reliability-performance-and-observability.md
+03-assurance/testing-quality-and-delivery.md
+04-operating/onboarding-and-local-development.md
+04-operating/operations-and-incident-response.md
+04-operating/decisions-technical-debt-and-risks.md
+05-due-diligence/technical-due-diligence-report.md
+05-due-diligence/assets-dependencies-and-licenses.md
+06-public/technical-partner-guide.md
+06-public/customer-product-and-trust-guide.md
+07-verification/documentation-verification-report.md'
+
 # Same field order and skip/continue semantics as commands/status.md's former
 # inline loop, byte-for-byte, so its emitted counters do not change meaning.
-while IFS= read -r f; do
-  [ -n "$f" ] || continue
+# STALE_LIST stores package-relative paths ($REL, never $OUTPUT_ROOT/$REL) —
+# every downstream consumer (dossier-blast-radius.sh --stale-docs,
+# commands/refresh.md) expects package-relative, matching
+# dossier-evidence.sh's CANONICAL_DOCS convention.
+while IFS= read -r REL; do
+  [ -n "$REL" ] || continue
+  f="$OUTPUT_ROOT/$REL"
+  [ -f "$f" ] || continue
   lv=$(parse_last_verified "$f")
   case "$lv" in
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
@@ -161,15 +202,20 @@ while IFS= read -r f; do
   esac
   # BSD and GNU date take different flags; try both rather than assuming.
   lv_s=$(date -j -f "%Y-%m-%d" "$lv" +%s 2>/dev/null || date -d "$lv" +%s 2>/dev/null || echo "")
-  [ -z "$lv_s" ] && continue
+  if [ -z "$lv_s" ]; then
+    # Shape-valid but not a real calendar date (e.g. 2024-13-45) — no
+    # evidence anyone actually verified this document, same as missing.
+    UNDATED=$((UNDATED + 1))
+    continue
+  fi
   age=$(( (TODAY_S - lv_s) / 86400 ))
   if [ "$age" -gt "$STALE_DAYS" ]; then
     STALE=$((STALE + 1))
-    printf '%s\t%s\n' "$age" "$f" >>"$STALE_LIST"
+    printf '%s\t%s\n' "$age" "$REL" >>"$STALE_LIST"
   fi
   if [ -z "$OLDEST" ] || [ "$lv" \< "$OLDEST" ]; then OLDEST="$lv"; fi
 done <<EOF
-$(find "$OUTPUT_ROOT" -name '*.md' -type f 2>/dev/null)
+$CANONICAL_DOCS
 EOF
 
 SWEEP_LIST=""

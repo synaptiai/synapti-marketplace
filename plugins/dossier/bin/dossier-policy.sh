@@ -473,11 +473,25 @@ fi
 STALE_SWEEP_LIST=""
 STALE_SWEEP_COUNT=0
 if [ "$EVT" = "schedule" ]; then
-  STALE_SWEEP_OUT=$("$SCRIPT_DIR/dossier-staleness-check.sh" --output-root "$OUTPUT_ROOT" 2>/dev/null)
-  STALE_SWEEP_LIST=$(printf '%s\n' "$STALE_SWEEP_OUT" | awk -F= '$1=="STALE_DOCS_FOR_SWEEP"{sub(/^[^=]*=/,""); print; exit}')
-  if [ -n "$STALE_SWEEP_LIST" ]; then
-    STALE_SWEEP_COUNT=$(printf '%s' "$STALE_SWEEP_LIST" | tr ',' '\n' | grep -c .)
+  STALE_SWEEP_ERR=$(mktemp -t dossier-policy-stale-err.XXXXXX 2>/dev/null) || STALE_SWEEP_ERR=""
+  if [ -n "$STALE_SWEEP_ERR" ]; then
+    STALE_SWEEP_OUT=$("$SCRIPT_DIR/dossier-staleness-check.sh" --output-root "$OUTPUT_ROOT" 2>"$STALE_SWEEP_ERR")
+    STALE_SWEEP_RC=$?
+  else
+    STALE_SWEEP_OUT=$("$SCRIPT_DIR/dossier-staleness-check.sh" --output-root "$OUTPUT_ROOT" 2>&1)
+    STALE_SWEEP_RC=$?
   fi
+  if [ "$STALE_SWEEP_RC" -ne 0 ]; then
+    STALE_SWEEP_ERRMSG=""
+    [ -n "$STALE_SWEEP_ERR" ] && STALE_SWEEP_ERRMSG=$(cat "$STALE_SWEEP_ERR" 2>/dev/null)
+    note "dossier-staleness-check.sh failed (exit $STALE_SWEEP_RC)${STALE_SWEEP_ERRMSG:+: $STALE_SWEEP_ERRMSG} — the staleness sweep was not evaluated this run, not treated as zero stale documents."
+  else
+    STALE_SWEEP_LIST=$(printf '%s\n' "$STALE_SWEEP_OUT" | awk -F= '$1=="STALE_DOCS_FOR_SWEEP"{sub(/^[^=]*=/,""); print; exit}')
+    if [ -n "$STALE_SWEEP_LIST" ]; then
+      STALE_SWEEP_COUNT=$(printf '%s' "$STALE_SWEEP_LIST" | tr ',' '\n' | grep -c .)
+    fi
+  fi
+  [ -n "$STALE_SWEEP_ERR" ] && rm -f "$STALE_SWEEP_ERR" 2>/dev/null
 fi
 
 stale_sweep_override() {

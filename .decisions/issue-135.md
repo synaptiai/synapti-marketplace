@@ -171,3 +171,27 @@ A zero-context agent given this journal's Interface Contracts (exact script name
 <!-- auto-log: 2026-07-28 12:04 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/hooks.test.sh -->
 
 <!-- auto-log: 2026-07-28 12:08 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/local-merge-hook.test.sh -->
+
+<!-- auto-log: 2026-07-28 13:17 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-staleness-check.sh -->
+
+<!-- auto-log: 2026-07-28 13:18 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-staleness-check.sh -->
+
+<!-- auto-log: 2026-07-28 13:18 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-staleness-check.sh -->
+
+<!-- auto-log: 2026-07-28 13:18 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-policy.sh -->
+
+<!-- auto-log: 2026-07-28 13:18 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/commands/status.md -->
+
+<!-- auto-log: 2026-07-28 13:19 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-check.test.sh -->
+
+<!-- auto-log: 2026-07-28 13:20 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-check.test.sh -->
+
+<!-- auto-log: 2026-07-28 13:20 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-check.test.sh -->
+
+<!-- auto-log: 2026-07-28 13:21 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-trigger.test.sh -->
+
+<!-- auto-log: 2026-07-28 13:21 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-trigger.test.sh -->
+
+<!-- auto-log: 2026-07-28 13:21 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-trigger.test.sh -->
+
+<!-- auto-log: 2026-07-28 13:25 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/commit-msg-review-fixes.txt -->

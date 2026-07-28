@@ -34,7 +34,7 @@ echo "### Mode"
 echo "STATUS_MODE=$MODE"
 
 echo "### Plugin"
-if [ ! -x "$__dr/bin/dossier-resolve-config.sh" ]; then
+if [ ! -x "$__dr/bin/dossier-resolve-config.sh" ] || [ ! -x "$__dr/bin/dossier-staleness-check.sh" ]; then
   echo "STATUS_STATE=blocked"
   echo "STATUS_ERROR=dossier plugin scripts not found — reinstall or upgrade the plugin"
   true; exit 0

@@ -15,14 +15,26 @@ if [ ! -x "$SCRIPT" ]; then
 fi
 
 FIXTURE=$(_dossier_safe_mktemp_dir "staleness-check")
-DOCS="$FIXTURE/docs/dossier/02-architecture"
-mkdir -p "$DOCS"
+ARCH="$FIXTURE/docs/dossier/02-architecture"
+CONTROL="$FIXTURE/docs/dossier/00-control"
+mkdir -p "$ARCH" "$CONTROL"
+
+# The sweep walk is restricted to the 23 canonical document paths
+# bin/dossier-evidence.sh recognizes (SEC-3) — a made-up filename like
+# "very-stale.md" would silently never be found, so every fixture file below
+# uses a real canonical relative path.
+FRESH_DOC="$ARCH/system-architecture.md"
+MOST_OVERDUE_DOC="$ARCH/components-and-codebase.md"
+SECOND_OVERDUE_DOC="$ARCH/data-and-ai.md"
+LEAST_OVERDUE_DOC="$ARCH/interfaces-and-integrations.md"
+UNDATED_DOC="$ARCH/infrastructure-and-deployment.md"
+PLACEHOLDER_DOC="$CONTROL/documentation-index.md"
 
 TODAY_S=$(date -u +%s)
 day_offset() { date -u -d "@$((TODAY_S - $1 * 86400))" +%Y-%m-%d 2>/dev/null || date -u -j -f %s "$((TODAY_S - $1 * 86400))" +%Y-%m-%d 2>/dev/null; }
 
 # Fresh: verified 10 days ago, well inside a 90-day threshold.
-cat >"$DOCS/fresh.md" <<EOF
+cat >"$FRESH_DOC" <<EOF
 dossier-header: v1
 last-verified: $(day_offset 10)
 ---
@@ -30,7 +42,7 @@ Fresh document.
 EOF
 
 # Stale, most overdue: verified 400 days ago.
-cat >"$DOCS/very-stale.md" <<EOF
+cat >"$MOST_OVERDUE_DOC" <<EOF
 dossier-header: v1
 last-verified: $(day_offset 400)
 ---
@@ -38,7 +50,7 @@ Very stale document.
 EOF
 
 # Stale, less overdue: verified 200 days ago.
-cat >"$DOCS/somewhat-stale.md" <<EOF
+cat >"$SECOND_OVERDUE_DOC" <<EOF
 dossier-header: v1
 last-verified: $(day_offset 200)
 ---
@@ -46,7 +58,7 @@ Somewhat stale document.
 EOF
 
 # Stale, least overdue: verified 100 days ago (just past a 90-day threshold).
-cat >"$DOCS/barely-stale.md" <<EOF
+cat >"$LEAST_OVERDUE_DOC" <<EOF
 dossier-header: v1
 last-verified: $(day_offset 100)
 ---
@@ -54,14 +66,14 @@ Barely stale document.
 EOF
 
 # Undated: no last-verified header at all.
-cat >"$DOCS/undated.md" <<EOF
+cat >"$UNDATED_DOC" <<EOF
 dossier-header: v1
 ---
 No verification date.
 EOF
 
 # Undated: placeholder value, not a real date.
-cat >"$DOCS/placeholder.md" <<EOF
+cat >"$PLACEHOLDER_DOC" <<EOF
 dossier-header: v1
 last-verified: {fill}
 ---
@@ -80,10 +92,11 @@ assert_equal "2" "$(get_field MAX_STALE_DOCS_PER_SWEEP)" "sweep cap echoes the -
 SWEEP=$(get_field STALE_DOCS_FOR_SWEEP)
 SWEEP_COUNT=$(printf '%s' "$SWEEP" | tr ',' '\n' | grep -c .)
 assert_equal "2" "$SWEEP_COUNT" "sweep list is capped at 2 even though 3 documents are stale"
-assert_contains "very-stale.md" "$SWEEP" "the most-overdue document is in the capped sweep list"
-assert_contains "somewhat-stale.md" "$SWEEP" "the second-most-overdue document is in the capped sweep list"
-assert_not_contains "barely-stale.md" "$SWEEP" "the least-overdue stale document is excluded once the cap is reached"
-assert_not_contains "fresh.md" "$SWEEP" "a fresh document never appears in the sweep list"
+# Exact-match, package-relative — never $OUTPUT_ROOT-prefixed. A substring
+# match here would not have caught a doubled prefix like
+# "docs/dossier/docs/dossier/02-architecture/...", which still contains the
+# bare filename as a substring.
+assert_equal "02-architecture/components-and-codebase.md,02-architecture/data-and-ai.md" "$SWEEP" "sweep list is exact, package-relative, most-overdue first"
 
 # --- Empty/absent package: no crash, zero counts, empty sweep list ----------
 EMPTY_OUT=$("$SCRIPT" --output-root "$FIXTURE/docs/nonexistent" --stale-days 90 --max-sweep 5 2>&1)
@@ -91,16 +104,31 @@ assert_equal "0" "$(printf '%s\n' "$EMPTY_OUT" | awk -F= '$1=="DOCUMENTS_STALE"{
 assert_equal "" "$(printf '%s\n' "$EMPTY_OUT" | awk -F= '$1=="STALE_DOCS_FOR_SWEEP"{print $2; exit}')" "an absent package produces an empty sweep list"
 
 # --- --single-file mode: the per-document query dossier-evidence.sh uses ----
-SF_OUT=$("$SCRIPT" --single-file "$DOCS/very-stale.md" --stale-days 90 2>&1)
+# --single-file takes an explicit path and is not subject to the canonical-doc
+# restriction (that only bounds the sweep-mode walk), but reuses the same
+# fixture files for coverage of the same three states.
+SF_OUT=$("$SCRIPT" --single-file "$MOST_OVERDUE_DOC" --stale-days 90 2>&1)
 assert_equal "true" "$(printf '%s\n' "$SF_OUT" | awk -F= '$1=="IS_STALE"{print $2; exit}')" "--single-file: a document verified 400 days ago is stale under a 90-day threshold"
 assert_equal "false" "$(printf '%s\n' "$SF_OUT" | awk -F= '$1=="IS_UNDATED"{print $2; exit}')" "--single-file: a dated document is not undated"
 
-SF_FRESH=$("$SCRIPT" --single-file "$DOCS/fresh.md" --stale-days 90 2>&1)
+SF_FRESH=$("$SCRIPT" --single-file "$FRESH_DOC" --stale-days 90 2>&1)
 assert_equal "false" "$(printf '%s\n' "$SF_FRESH" | awk -F= '$1=="IS_STALE"{print $2; exit}')" "--single-file: a document verified 10 days ago is not stale under a 90-day threshold"
 
-SF_UNDATED=$("$SCRIPT" --single-file "$DOCS/undated.md" --stale-days 90 2>&1)
+SF_UNDATED=$("$SCRIPT" --single-file "$UNDATED_DOC" --stale-days 90 2>&1)
 assert_equal "true" "$(printf '%s\n' "$SF_UNDATED" | awk -F= '$1=="IS_UNDATED"{print $2; exit}')" "--single-file: a document with no last-verified header is undated"
 assert_equal "false" "$(printf '%s\n' "$SF_UNDATED" | awk -F= '$1=="IS_STALE"{print $2; exit}')" "--single-file: an undated document is never reported as stale"
+
+# --- ERR-2: calendar-invalid but shape-valid dates count as undated, not stale
+CALENDAR_INVALID_DOC="$ARCH/calendar-invalid.md"
+cat >"$CALENDAR_INVALID_DOC" <<EOF
+dossier-header: v1
+last-verified: 2024-13-45
+---
+Shape-valid, not a real calendar date.
+EOF
+SF_INVALID=$("$SCRIPT" --single-file "$CALENDAR_INVALID_DOC" --stale-days 90 2>&1)
+assert_equal "true" "$(printf '%s\n' "$SF_INVALID" | awk -F= '$1=="IS_UNDATED"{print $2; exit}')" "--single-file: a calendar-invalid date (2024-13-45) counts as undated, not fresh"
+assert_equal "false" "$(printf '%s\n' "$SF_INVALID" | awk -F= '$1=="IS_STALE"{print $2; exit}')" "--single-file: a calendar-invalid date is never reported as stale"
 
 # =============================================================================
 # Golden-fixture check: commands/status.md's "### Staleness" section must keep
@@ -122,19 +150,21 @@ if [ -f "$STATUS_MD" ]; then
   STATUS_FIXTURE="$RUN_TMPDIR/status-md-fixture"
   STATUS_DOCS="$STATUS_FIXTURE/docs/dossier/02-architecture"
   mkdir -p "$STATUS_DOCS" "$STATUS_FIXTURE/docs/dossier/00-control"
-  cat >"$STATUS_DOCS/very-stale.md" <<EOF
+  # Canonical filenames — see the SEC-3 comment above; the sweep walk only
+  # ever looks at the 23 recognized document paths.
+  cat >"$STATUS_DOCS/system-architecture.md" <<EOF
 dossier-header: v1
 last-verified: $(day_offset 400)
 ---
 Very stale document for the status.md golden-fixture check.
 EOF
-  cat >"$STATUS_DOCS/fresh.md" <<EOF
+  cat >"$STATUS_DOCS/components-and-codebase.md" <<EOF
 dossier-header: v1
 last-verified: $(day_offset 10)
 ---
 Fresh document for the status.md golden-fixture check.
 EOF
-  cat >"$STATUS_DOCS/undated.md" <<EOF
+  cat >"$STATUS_DOCS/data-and-ai.md" <<EOF
 dossier-header: v1
 ---
 Undated document for the status.md golden-fixture check.
