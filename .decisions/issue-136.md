@@ -252,3 +252,5 @@ Accepted consequence, worth surfacing here rather than only in the resolved-desi
 <!-- auto-log: 2026-07-28 17:23 commit "fix(dossier): fault-isolate Dependabot format detection itself" -->
 
 <!-- auto-log: 2026-07-28 17:35 Edit /Users/danielbentes/synapti-marketplace/.flow/runs/2026-07-28T132544Z-issue-136/run.yaml -->
+
+<!-- auto-log: 2026-07-28 17:42 commit "chore(flow): mark FlowGoal issue-136 achieved" -->
