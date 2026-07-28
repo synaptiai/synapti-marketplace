@@ -218,6 +218,9 @@ write_summary() {
     printf '| Head | `%s` |\n' "${HEAD_SHA:-unresolved}"
     printf '| Docs branch | `%s` |\n' "$DOCS_BRANCH"
     printf '| Existing docs PR | `%s` |\n' "${EXISTING_PR:-none}"
+    if [ -n "${STALE_SWEEP_LIST:-}" ]; then
+      printf '| Stale documents (this sweep) | `%s` |\n' "$STALE_SWEEP_LIST"
+    fi
     printf '\n'
     if [ -n "$NOTES" ]; then
       printf 'Notes:\n\n%s\n' "$NOTES"
@@ -237,6 +240,7 @@ finish() {
   emit max_turns   "$MAX_TURNS"
   emit model       "$MODEL"
   emit model_arg   "$MODEL_ARG"
+  emit stale_docs  "${STALE_SWEEP_LIST:-}"
   write_summary
   exit 0
 }
@@ -459,9 +463,39 @@ if [ $FORCED -eq 0 ] && command -v gh >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
+# Staleness sweep, schedule events only. A document can go stale purely from
+# time passing, with no code change nearby to trigger the rules below — the
+# scheduled sweep is the only path that ever notices, per
+# references/change-triggers-and-blast-radius.md's "Staleness" section. Reads
+# the working tree as checked out at HEAD, which is already what the CI job
+# and a local /dossier:refresh both have on disk; no separate checkout needed.
+# ---------------------------------------------------------------------------
+STALE_SWEEP_LIST=""
+STALE_SWEEP_COUNT=0
+if [ "$EVT" = "schedule" ]; then
+  STALE_SWEEP_OUT=$("$SCRIPT_DIR/dossier-staleness-check.sh" --output-root "$OUTPUT_ROOT" 2>/dev/null)
+  STALE_SWEEP_LIST=$(printf '%s\n' "$STALE_SWEEP_OUT" | awk -F= '$1=="STALE_DOCS_FOR_SWEEP"{sub(/^[^=]*=/,""); print; exit}')
+  if [ -n "$STALE_SWEEP_LIST" ]; then
+    STALE_SWEEP_COUNT=$(printf '%s' "$STALE_SWEEP_LIST" | tr ',' '\n' | grep -c .)
+  fi
+fi
+
+stale_sweep_override() {
+  # $1 = what the finish() call would otherwise have said. Overrides only the
+  # three "nothing to document" declines (up-to-date, no-relevant-paths,
+  # below-threshold) — never the disabled/opted-out/loop-guard/circuit-open
+  # rules above this point, which mean "do not run" regardless of staleness.
+  [ -n "$STALE_SWEEP_LIST" ] || return 1
+  SHOULD_RUN="true"; REASON="stale-sweep"
+  note "${STALE_SWEEP_COUNT} document(s) past dossier.refresh.stalenessDays with no other trigger present (would otherwise have been: $1); the scheduled sweep re-verifies them, capped at dossier.refresh.maxStaleDocsPerSweep."
+  finish
+}
+
+# ---------------------------------------------------------------------------
 # Rule 6 — up to date.
 # ---------------------------------------------------------------------------
 if [ "$BASE_SHA" = "$HEAD_SHA" ]; then
+  stale_sweep_override "up-to-date"
   SHOULD_RUN="false"; REASON="up-to-date"
   note 'The watermark already equals the head commit; there is nothing undocumented.'
   finish
@@ -503,6 +537,7 @@ COMMIT_COUNT=$(git rev-list --count "$BASE_SHA..$HEAD_SHA" 2>/dev/null | tr -d '
 # zero tokens.
 # ---------------------------------------------------------------------------
 if [ $FORCED -eq 0 ] && [ "$RELEVANT_COUNT" -eq 0 ]; then
+  stale_sweep_override "no-relevant-paths"
   SHOULD_RUN="false"; REASON="no-relevant-paths"
   note "The range touches $(grep -c . "$ALL_FILES" 2>/dev/null | tr -d ' ') files, none of which survive dossier.ci.pathFilters."
   finish
@@ -513,11 +548,13 @@ fi
 # ---------------------------------------------------------------------------
 if [ $FORCED -eq 0 ]; then
   if [ "$RELEVANT_COUNT" -lt "$MIN_CHANGED_FILES" ]; then
+    stale_sweep_override "below-threshold"
     SHOULD_RUN="false"; REASON="below-threshold"
     note "${RELEVANT_COUNT} relevant files changed, below dossier.ci.thresholds.minChangedFiles (${MIN_CHANGED_FILES})."
     finish
   fi
   if [ "$EVT" = "schedule" ] && [ "$COMMIT_COUNT" -lt "$SCHEDULE_MIN_COMMITS" ]; then
+    stale_sweep_override "below-threshold"
     SHOULD_RUN="false"; REASON="below-threshold"
     note "${COMMIT_COUNT} commits since the watermark, below dossier.ci.schedule.minCommits (${SCHEDULE_MIN_COMMITS})."
     finish
