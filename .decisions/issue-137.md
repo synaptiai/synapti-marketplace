@@ -144,3 +144,21 @@ No item remains open under "Needs Clarification" — every gap the advisor raise
 <!-- auto-log: 2026-07-28 20:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
 
 <!-- auto-log: 2026-07-28 20:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:34 commit "feat(dossier): add dossier-scan-security.sh, isolated osv-scanner execution" -->
+
+<!-- auto-log: 2026-07-28 20:35 Write /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-quality.sh -->
+
+<!-- auto-log: 2026-07-28 20:36 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-quality.sh -->
+
+<!-- auto-log: 2026-07-28 20:36 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-quality.sh -->
+
+<!-- auto-log: 2026-07-28 20:36 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-quality.sh -->
+
+<!-- auto-log: 2026-07-28 20:38 Write /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/quality-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:38 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:38 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:38 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
