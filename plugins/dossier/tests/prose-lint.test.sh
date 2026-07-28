@@ -128,8 +128,22 @@ BIN="$W/binary.md"
 printf '\xff\xfe\x00\x01This seamless robust platform utilizes cutting-edge technology.\n' > "$BIN"
 "$LINT" --file "$BIN" >/dev/null 2>&1
 assert_equal "1" "$?" "unscannable (binary) content exits 1, never a false clean pass"
-J=$(lint_json "$BIN")
-assert_equal "1" "$(count_of "$J" scan_errors)" "binary content is counted as a scan error, not silently zero"
+# Whether invalid UTF-8 makes awk itself exit nonzero (triggering scan_error)
+# or the surviving ASCII text still matches a normal hard category is awk-
+# implementation-dependent (observed to differ between macOS awk and gawk) —
+# only the overall exit code above is a portable assertion for this fixture.
+# The scan_error mechanism itself is pinned deterministically below via a
+# file made genuinely unreadable, which fails identically on any awk.
+if [ "$(id -u)" != "0" ]; then
+  UNREADABLE="$W/unreadable.md"
+  printf '# Test\n\nThis seamless robust platform utilizes cutting-edge technology.\n' > "$UNREADABLE"
+  chmod 000 "$UNREADABLE"
+  "$LINT" --file "$UNREADABLE" >/dev/null 2>&1
+  assert_equal "1" "$?" "an unreadable file exits 1, never a false clean pass"
+  J=$(lint_json "$UNREADABLE")
+  assert_equal "1" "$(count_of "$J" scan_errors)" "an unreadable file is counted as a scan error, not silently zero"
+  chmod 644 "$UNREADABLE"
+fi
 
 UNCLOSED="$W/unclosed-header.md"
 printf -- '---\nname: test\n\nThis seamless robust platform utilizes cutting-edge technology.\n' > "$UNCLOSED"
