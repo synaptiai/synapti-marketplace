@@ -350,27 +350,57 @@ extract_section_g19() { # file | anchored heading regex, e.g. "^## Risk register
   awk -v pat="$2" '$0 ~ pat {flag=1; next} /^## / {flag=0} flag' "$1" 2>/dev/null
 }
 
-# A row's Evidence cell may cite more than one id — the ledger's own inline
+# A citation cell may cite more than one id — the ledger's own inline
 # citation grammar allows `[EV-0042]`, `[EV-0042, EV-0043]`, and the en-dash
 # range form `[EV-0042–EV-0045]` (references/evidence-ledger-schema.md). A
 # plain `grep "\[$EVID\]"` only matches the single-id form, so a genuinely
 # disposed finding cited alongside another id in the same bracket would read
-# as undisposed. Row cell values (not table structure) may also contain no
-# pipes — see the comment on `cells=($body)` below.
-g19_row_cites() { # row | evid
-  local _row="$1" _evid="$2" _tok _range _lo _hi _en
-  printf '%s\n' "$_row" | grep -oE 'EV-[0-9]{4,}' | grep -qxF "$_evid" && return 0
-  _range=$(printf '%s\n' "$_row" | grep -oE 'EV-[0-9]{4,}[-–](EV-)?[0-9]{4,}' | head -1)
-  if [ -n "$_range" ]; then
-    _lo=$(printf '%s' "$_range" | grep -oE '^EV-[0-9]{4,}' | grep -oE '[0-9]{4,}')
-    _hi=$(printf '%s' "$_range" | grep -oE '[0-9]{4,}$')
-    _en=$(printf '%s' "$_evid" | grep -oE '[0-9]{4,}')
-    if [ -n "$_lo" ] && [ -n "$_hi" ] && [ -n "$_en" ]; then
-      # 10# forces base-10: a zero-padded id like 0099 is otherwise read as an
-      # invalid octal literal by bash arithmetic.
-      [ "$((10#$_en))" -ge "$((10#$_lo))" ] && [ "$((10#$_en))" -le "$((10#$_hi))" ] && return 0
+# as undisposed.
+#
+# Takes the CITATION CELL specifically (Risk register's Evidence column,
+# Accepted risks' Risk ID column) — never the whole row. An earlier version
+# matched against the entire row, which let an EV-#### id mentioned anywhere
+# else on the row — coincidentally, in free-text Risk/Mitigation/Basis prose
+# that carries no citation semantics — read as citing a DIFFERENT finding,
+# falsely disposing it. Confirmed by live reproduction. Cell values (not
+# table structure) may also contain no pipes — see the comment on
+# `cells=($body)` below.
+#
+# Even scoped to the citation cell, matching is further scoped to text
+# actually inside a `[...]` bracket span — the ledger's own citation grammar
+# (references/evidence-ledger-schema.md) never cites outside brackets. The
+# same free-text-collision risk that motivated the cell-scoping above applies
+# WITHIN the cell too: a cell reading `[EV-0002] and prior related range
+# EV-0050-EV-0150` legitimately cites only EV-0002, but an id/range search
+# over the cell's raw text would also match the un-bracketed "EV-0050-EV-0150"
+# mentioned in trailing prose and falsely dispose an unrelated finding.
+# Confirmed by live reproduction.
+g19_row_cites() { # citation-cell | evid
+  local _row="$1" _evid="$2" _span _range _lo _hi _en
+  while IFS= read -r _span; do
+    [ -n "$_span" ] || continue
+    printf '%s\n' "$_span" | grep -oE 'EV-[0-9]{4,}' | grep -qxF "$_evid" && return 0
+    # `[^A-Za-z0-9]+` rather than a literal `[-–]` bracket expression: the
+    # en-dash is a multi-byte UTF-8 sequence, and a byte-oriented regex engine
+    # under a C/POSIX locale (common on minimal Linux CI images, and not
+    # something this script or any workflow in this repo forces away from)
+    # matches a bracket expression one byte at a time — the range form could
+    # silently fail to match there while working fine on this development
+    # machine's locale-aware engine. A negated ASCII class with a quantifier
+    # consumes the separator's bytes regardless of how many there are or how
+    # the active locale interprets them.
+    _range=$(printf '%s\n' "$_span" | grep -oE 'EV-[0-9]{4,}[^A-Za-z0-9]+(EV-)?[0-9]{4,}' | head -1)
+    if [ -n "$_range" ]; then
+      _lo=$(printf '%s' "$_range" | grep -oE '^EV-[0-9]{4,}' | grep -oE '[0-9]{4,}')
+      _hi=$(printf '%s' "$_range" | grep -oE '[0-9]{4,}$')
+      _en=$(printf '%s' "$_evid" | grep -oE '[0-9]{4,}')
+      if [ -n "$_lo" ] && [ -n "$_hi" ] && [ -n "$_en" ]; then
+        # 10# forces base-10: a zero-padded id like 0099 is otherwise read as
+        # an invalid octal literal by bash arithmetic.
+        [ "$((10#$_en))" -ge "$((10#$_lo))" ] && [ "$((10#$_en))" -le "$((10#$_hi))" ] && return 0
+      fi
     fi
-  fi
+  done < <(printf '%s\n' "$_row" | grep -oE '\[[^]]*\]')
   return 1
 }
 
@@ -385,12 +415,26 @@ else
   FINDING_ROWS=$(grep -c 'vuln-finding ' "$LEDGER" 2>/dev/null || true)
   [ -z "$FINDING_ROWS" ] && FINDING_ROWS=0
   PARSE_ERROR_ROW=$(grep -m1 'vuln-scan-coverage status=parse-error' "$LEDGER" 2>/dev/null)
+  # A whole-scan parse failure (status=parse-error) is not the only way the
+  # finding set can be incomplete. dossier-vuln-evidence.sh's per-record fault
+  # isolation lets the scan AS A WHOLE parse while one or more individual
+  # records inside it did not — evidence-ledger-schema.md's own grammar has
+  # the evidence-ledger skill record that as status=partial. A condition
+  # whose materiality is unknown (an unparsed record could have been
+  # Critical/High) must never read as clean just because every record that
+  # DID parse happens to be disposed — the same "unevaluated must never read
+  # as assent" principle the parse-error branch already applies, extended to
+  # the case where SOME of the scan was readable and some was not.
+  PARTIAL_ROW=$(grep -m1 'vuln-scan-coverage status=partial' "$LEDGER" 2>/dev/null)
 
   if [ "$COVERAGE_ROWS" -eq 0 ] && [ "$FINDING_ROWS" -eq 0 ]; then
     record G19 mechanical INCONCLUSIVE script "no vulnerability-scan evidence recorded in the ledger — ingest an existing scan artifact via dossier-vuln-evidence.sh, or record why none is available"
   elif [ -n "$PARSE_ERROR_ROW" ]; then
     PE_EVID=$(printf '%s\n' "$PARSE_ERROR_ROW" | grep -oE 'EV-[0-9]{4,}' | head -1)
     record G19 mechanical INCONCLUSIVE script "the vulnerability-scan artifact could not be parsed (${PE_EVID:-no EV row found}) — the finding set is incomplete, not clean"
+  elif [ -n "$PARTIAL_ROW" ]; then
+    PA_EVID=$(printf '%s\n' "$PARTIAL_ROW" | grep -oE 'EV-[0-9]{4,}' | head -1)
+    record G19 mechanical INCONCLUSIVE script "the vulnerability scan parsed partially (${PA_EVID:-no EV row found}) — one or more records could not be normalized, so the finding set may be incomplete"
   else
     UNDISPOSED=""
     while IFS= read -r G19_ROW; do
@@ -423,7 +467,6 @@ else
         while IFS= read -r RISK_ROW; do
           [ "$G19_DISPOSED" -eq 0 ] || break
           case "$RISK_ROW" in "|"*) ;; *) continue ;; esac
-          g19_row_cites "$RISK_ROW" "$G19_EVID" || continue
           body=${RISK_ROW#|}; body=${body%|}
           OLD_IFS=$IFS; IFS='|'; set -f
           # shellcheck disable=SC2206
@@ -434,6 +477,16 @@ else
           cells=($body)
           set +f; IFS=$OLD_IFS
           if [ "${#cells[@]}" -eq 11 ]; then
+            # Citation match is scoped to the Evidence cell specifically, never
+            # the whole row. Checking the full row text let an EV-#### id
+            # mentioned anywhere else on the row — coincidentally, in the
+            # free-text Risk/Mitigation prose, which carries no citation
+            # semantics — read as a citation belonging to a DIFFERENT finding
+            # entirely, falsely disposing it. Confirmed by live reproduction:
+            # a Risk register row for one finding whose "Risk" description
+            # cell happened to mention another finding's id disposed that
+            # other, genuinely-undisposed finding.
+            g19_row_cites "${cells[7]}" "$G19_EVID" || continue
             RISK_CATEGORY=$(trim_g19 "${cells[2]}")
             RISK_OWNER=$(trim_g19 "${cells[9]}")
             RISK_STATUS=$(trim_g19 "${cells[10]}")
@@ -455,13 +508,17 @@ else
         while IFS= read -r ACC_ROW; do
           [ "$G19_DISPOSED" -eq 0 ] || break
           case "$ACC_ROW" in "|"*) ;; *) continue ;; esac
-          g19_row_cites "$ACC_ROW" "$G19_EVID" || continue
           body=${ACC_ROW#|}; body=${body%|}
           OLD_IFS=$IFS; IFS='|'; set -f
           # shellcheck disable=SC2206
           cells=($body)
           set +f; IFS=$OLD_IFS
           if [ "${#cells[@]}" -eq 6 ]; then
+            # Citation match scoped to the "Risk ID" cell specifically — same
+            # reasoning as the Risk register fix above: matching the whole row
+            # let an EV-#### id mentioned in the free-text Basis-for-acceptance
+            # prose falsely dispose an unrelated finding.
+            g19_row_cites "${cells[0]}" "$G19_EVID" || continue
             ACC_ACCEPTER=$(trim_g19 "${cells[1]}")
             ACC_DATE=$(trim_g19 "${cells[2]}")
             ACC_BASIS=$(trim_g19 "${cells[3]}")
@@ -592,10 +649,13 @@ FAILED=$(awk -F'\t' '$3=="FAIL"{printf "%s,",$1}' "$RESULTS_FILE" | sed 's/,$//'
 FAIL_COUNT=$(awk -F'\t' '$3=="FAIL"' "$RESULTS_FILE" | wc -l | tr -d ' ')
 INCONC_COUNT=$(awk -F'\t' '$3=="INCONCLUSIVE"' "$RESULTS_FILE" | wc -l | tr -d ' ')
 # Split by tag, not just count: an INCONCLUSIVE judgment condition means "run
-# dossier-scorer"; an INCONCLUSIVE mechanical condition (currently only G19)
-# means something else entirely (ingest vulnerability evidence). Conflating
-# them into one remedy would misdirect a G19-only INCONCLUSIVE — the exact
-# "clear, specific reason" issue #136's AC2 requires.
+# dossier-scorer"; an INCONCLUSIVE mechanical condition (G06 when the
+# disclosure scan could not run, G19 when vulnerability evidence is missing
+# or incomplete — both pre-date and post-date this comment respectively, and
+# more may be added later) means something else entirely, and a different
+# something for each condition. Conflating them into one remedy would
+# misdirect the reader — the exact "clear, specific reason" issue #136's AC2
+# requires, generalized to every mechanical condition, not just G19.
 JUDGMENT_INCONC_COUNT=$(awk -F'\t' '$2=="judgment" && $3=="INCONCLUSIVE"' "$RESULTS_FILE" | wc -l | tr -d ' ')
 MECHANICAL_INCONC_IDS=$(awk -F'\t' '$2=="mechanical" && $3=="INCONCLUSIVE"{printf "%s,",$1}' "$RESULTS_FILE" | sed 's/,$//')
 
@@ -643,9 +703,9 @@ elif [ "$QUIET" -eq 0 ]; then
   fi
   if [ -n "$MECHANICAL_INCONC_IDS" ]; then
     echo ""
-    echo "Mechanical condition(s) $MECHANICAL_INCONC_IDS could not be evaluated — see its"
-    echo "EVIDENCE column above for what is missing. This is a different gap than an"
-    echo "uncovered judgment set and has a different remedy."
+    echo "Mechanical condition(s) $MECHANICAL_INCONC_IDS could not be evaluated — see the"
+    echo "EVIDENCE column(s) above for what is missing. This is a different gap than an"
+    echo "uncovered judgment set and has a different remedy for each condition."
   fi
 fi
 

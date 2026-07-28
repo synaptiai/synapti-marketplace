@@ -81,8 +81,18 @@ done
 command -v jq >/dev/null 2>&1 || { echo "dossier-vuln-evidence: jq is not installed" >&2; exit 1; }
 
 emit_error() {
-  jq -cn --arg path "$SCAN" --arg err "parse-error: $1" \
-    '{schema: "dossier.vuln-evidence/v1", scan: {source_path: $path, format: null}, error: $err}'
+  ERR_JSON=$(jq -cn --arg path "$SCAN" --arg err "parse-error: $1" \
+    '{schema: "dossier.vuln-evidence/v1", scan: {source_path: $path, format: null}, error: $err}')
+  printf '%s\n' "$ERR_JSON"
+  # A caller reading --out's file rather than stdout must never see a STALE
+  # prior success sitting there on this run's failure — that is exactly the
+  # "delegate failure masquerading as clean" pattern this whole feature
+  # guards against one level up. --out is a documented flag of this script's
+  # own usage contract (not an internal-only detail), so its output is held
+  # to the same never-stale-on-error guarantee as stdout.
+  if [ -n "$OUT" ]; then
+    mkdir -p "$OUT" 2>/dev/null && printf '%s\n' "$ERR_JSON" >"$OUT/vuln-evidence.json"
+  fi
   exit 1
 }
 
@@ -156,54 +166,93 @@ def sev_from_string(s):
 # Wrapping each record's build lets one bad record degrade to its own
 # unparseable-record marker instead of taking the rest of the scan down with
 # it — the per-record analogue of the whole-file ERR-3 pattern.
-#
-# This alone is not sufficient: a throwing type mismatch can occur at ANY
-# level a generator chain walks through on its way to producing a record —
-# not only inside the final object literal. A malformed `.runs[0]` (a string
-# instead of an object) or a malformed `.results[]?`/`.packages[]?` entry
-# throws BEFORE its output ever reaches safe_finding, aborting the whole
-# comprehension exactly as the unwrapped case did. Every generator stage that
-# indexes into a value which could legitimately be present-but-wrong-typed is
-# therefore wrapped in its own try/catch, falling back to an empty list for
-# that one branch rather than aborting its siblings.
 def safe_finding(build):
   try (build) catch {id: "UNKNOWN", package: "unknown", version: null, summary: "unparseable record", severity: null, parse_error: (. | tostring)};
 
-def safe_list(f): try (f) catch [];
+# A throwing type mismatch can occur at ANY level a generator chain walks
+# through on its way to producing a record — not only inside the final
+# object literal. A malformed `.runs[0]` (a string instead of an object) or
+# a malformed `.results`/`.packages` field throws BEFORE its output ever
+# reaches safe_finding. An earlier version handled this with `try (f) catch
+# []` at each container level — but a caught container error then degraded
+# to a silently empty list, indistinguishable from that container
+# legitimately having nothing in it: a scan where EVERY container was
+# malformed produced `findings: [], unparseable_records: []`, identical to a
+# genuinely clean scan, which is exactly the "partial parse read as complete
+# coverage" outcome the ERR-3 pattern exists to prevent one level down.
+# `type` never throws in jq regardless of the input's actual type, so
+# checking it BEFORE indexing avoids the exception entirely and gives an
+# explicit branch to emit a tracked marker from, rather than relying on
+# try/catch to notice the failure after the fact.
+def unparseable(_label; _detail):
+  {id: "UNKNOWN", package: "unknown", version: null, summary: "unparseable record", severity: null, parse_error: (_label + ": " + _detail)};
+
 def safe_str(f): try (f) catch "unknown";
 
 (
   if $format == "sarif" then
     {
       tool: (safe_str(.runs[0].tool.driver.name) // "unknown"),
-      # Isolated per-run, per-result — same shape as `raw` below, not a
-      # generator nested inside a single try/catch (jq's try only converts
-      # the FIRST error from a multi-output generator into the catch value;
-      # outputs already produced before that error are not retracted, which
-      # would leave scope's list a confusing mix of real values and stray
-      # fallbacks. Isolating at each stage, like `raw` does, avoids that.
-      scope: (try ([ (.runs // [])[]? as $run | safe_list($run.results)[]?
+      # Purely informational, so a malformed run/result here degrades to "no
+      # uri from this one" rather than a tracked marker — `raw` below is
+      # where a real, tracked finding-loss would happen, and it does not use
+      # this shortcut.
+      scope: (try ([ (.runs // [])[]? as $run | ($run.results // [])[]?
               | (try (.locations[0]?.physicalLocation?.artifactLocation?.uri) catch null) ]
               | map(select(. != null)) | unique | join(", ")) catch ""),
-      raw: [ (.runs // [])[]? as $run | safe_list($run.results)[]? | safe_finding({
-        id: (.ruleId // "UNKNOWN"),
-        package: (.locations[0]?.physicalLocation?.artifactLocation?.uri // "unknown"),
-        version: null,
-        summary: (.message.text // ""),
-        severity: bucket_severity(.properties["security-severity"])
-      }) ]
+      raw: [
+        (.runs // [])[]? as $run |
+        if ($run | type) != "object" then
+          unparseable("a runs[] entry"; "expected object, got " + ($run | type))
+        else
+          ($run.results // []) as $results |
+          if ($results | type) != "array" then
+            unparseable("runs[].results"; "expected array, got " + ($results | type))
+          else
+            $results[]? | safe_finding({
+              id: (.ruleId // "UNKNOWN"),
+              package: (.locations[0]?.physicalLocation?.artifactLocation?.uri // "unknown"),
+              version: null,
+              summary: (.message.text // ""),
+              severity: bucket_severity(.properties["security-severity"])
+            })
+          end
+        end
+      ]
     }
   elif $format == "osv-scanner" then
     {
       tool: "osv-scanner",
       scope: (try ([.results[]? | safe_str(.source.path)] | map(select(. != null and . != "unknown")) | unique | join(", ")) catch ""),
-      raw: [ (.results // [])[]? as $r | safe_list($r.packages)[]? as $p | safe_list($p.vulnerabilities)[]? | safe_finding({
-        id: (.id // "UNKNOWN"),
-        package: ($p.package.name // "unknown"),
-        version: ($p.package.version // null),
-        summary: (.summary // ""),
-        severity: bucket_severity(.severity[0]?.score)
-      }) ]
+      raw: [
+        (.results // [])[]? as $r |
+        if ($r | type) != "object" then
+          unparseable("a results[] entry"; "expected object, got " + ($r | type))
+        else
+          ($r.packages // []) as $packages |
+          if ($packages | type) != "array" then
+            unparseable("results[].packages"; "expected array, got " + ($packages | type))
+          else
+            $packages[]? as $p |
+            if ($p | type) != "object" then
+              unparseable("a packages[] entry"; "expected object, got " + ($p | type))
+            else
+              ($p.vulnerabilities // []) as $vulns |
+              if ($vulns | type) != "array" then
+                unparseable("packages[].vulnerabilities"; "expected array, got " + ($vulns | type))
+              else
+                $vulns[]? | safe_finding({
+                  id: (.id // "UNKNOWN"),
+                  package: ($p.package.name // "unknown"),
+                  version: ($p.package.version // null),
+                  summary: (.summary // ""),
+                  severity: bucket_severity(.severity[0]?.score)
+                })
+              end
+            end
+          end
+        end
+      ]
     }
   elif $format == "dependabot" then
     {

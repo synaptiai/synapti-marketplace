@@ -143,9 +143,10 @@ cat >"$FIXTURES/scan.no-severity.json" <<'EOF'
 }
 EOF
 OUT_NOSEV=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.no-severity.json 2>&1)
-NOSEV_SEV=$(printf '%s' "$OUT_NOSEV" | jq -r '.findings[0].severity // .unresolved_severity[0].id // "MISSING"' 2>/dev/null)
 assert_not_contains "\"severity\": \"Low\"" "$OUT_NOSEV" "a finding with no derivable severity is never fabricated as Low"
 assert_not_contains "\"severity\":\"Low\"" "$OUT_NOSEV" "(compact form) never fabricated as Low"
+NOSEV_ID=$(printf '%s' "$OUT_NOSEV" | jq -r '.unresolved_severity[0].id // "MISSING"' 2>/dev/null)
+assert_equal "GHSA-0000-0000-0000" "$NOSEV_ID" "the no-derivable-severity finding is recorded in unresolved_severity, not silently omitted"
 
 # --- Parse failure: malformed JSON must be a distinct signal, never
 # "0 findings therefore clean" — mirrors the ERR-3 fix pattern already shipped
@@ -168,6 +169,7 @@ assert_contains "parse-error" "$OUT_UNKNOWN" "an unrecognized shape is reported 
 # --- Missing scan file --------------------------------------------------------
 OUT_MISSING=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan does-not-exist.json 2>&1)
 RC_MISSING=$?
+assert_contains "no scan artifact" "$OUT_MISSING" "a missing scan file names itself distinctly from a parse failure"
 if [ "$RC_MISSING" -ne 0 ]; then _dossier_assert_pass "a missing scan file exits non-zero"
 else _dossier_assert_fail "a missing scan file exited 0"; fi
 
@@ -726,5 +728,127 @@ H8_FINDING_ID=$(printf '%s' "$H8_OUT" | jq -r '.findings[0].id' 2>/dev/null)
 assert_equal "GHSA-valid-dep01" "$H8_FINDING_ID" "H8: a sibling array element's genuine finding survives a malformed element elsewhere"
 H8_UNPARSEABLE_COUNT=$(printf '%s' "$H8_OUT" | jq '.unparseable_records | length' 2>/dev/null)
 assert_equal "1" "$H8_UNPARSEABLE_COUNT" "H8: the malformed element is flagged, not silently dropped"
+
+# --- H9: an EV-#### id mentioned coincidentally in a Risk/Mitigation/Basis
+# prose cell (not the actual citation cell) must NEVER be read as disposing
+# that finding — citation matching is scoped to the Evidence/Risk-ID cell
+# specifically, never the whole row. A real, exploitable false-positive: a
+# Risk register row for one finding, whose free-text description happens to
+# mention a completely different finding's id, previously disposed that
+# other, genuinely-unresolved finding. ---------------------------------------
+H9_RISK_DIR=$(_dossier_safe_mktemp_dir "h9-coincidental-mention-risk")
+g19_fixture "$H9_RISK_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0099 | osv-scanner reports GHSA-real-target in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-real-target, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
+'## Risk register
+
+| ID | Risk | Category | Likelihood | Impact | Detectability | Urgency | Evidence | Mitigation | Owner | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| RISK-0002 | A totally unrelated dependency risk whose own tracking reference happens to be EV-0099-old, citing different evidence entirely | dependency | low | low | low | low | [EV-0002] | patched already | Jane Doe | mitigating |'
+H9_RISK_RESULT=$(g19_result "$H9_RISK_DIR")
+assert_equal "FAIL" "$H9_RISK_RESULT" "H9: a coincidental EV-#### mention in the Risk register's Risk/Mitigation prose does not falsely dispose an unrelated finding"
+H9_RISK_EVIDENCE=$(g19_evidence "$H9_RISK_DIR")
+assert_contains "EV-0099" "$H9_RISK_EVIDENCE" "H9: the genuinely undisposed finding is still correctly named"
+
+H9_ACC_DIR=$(_dossier_safe_mktemp_dir "h9-coincidental-mention-accepted")
+g19_fixture "$H9_ACC_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0099 | osv-scanner reports GHSA-real-target in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-real-target, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
+'## Accepted risks
+
+| Risk ID | Accepted by | Date | Basis for acceptance | Review date | Evidence of the acceptance |
+|---|---|---|---|---|---|
+| [EV-0002] | Jane Doe | 2026-07-20 | Low exploitability; unrelated finding, but this basis text happens to mention EV-0099 in passing for historical context | 2026-10-20 | Slack thread |'
+H9_ACC_RESULT=$(g19_result "$H9_ACC_DIR")
+assert_equal "FAIL" "$H9_ACC_RESULT" "H9: a coincidental EV-#### mention in the Accepted risks Basis prose does not falsely dispose an unrelated finding"
+
+# --- SEC-4: shell metacharacters in scan-artifact content (package name,
+# summary — repository/fork-PR-controlled data) must never be executed, at
+# either the ingestion step (jq --arg, never string-concatenated into the jq
+# program) or the gate's table-cell parsing (bash IFS='|' word-splitting,
+# which does not re-invoke the shell parser on cell contents). A pinned
+# regression so a future refactor of either path cannot silently reintroduce
+# an injection vector without a test catching it. ---------------------------
+SEC4_MARKER="/tmp/dossier-sec4-pwned-marker-$$"
+rm -f "$SEC4_MARKER" 2>/dev/null
+SEC4_DIR=$(_dossier_safe_mktemp_dir "sec4-injection-safety")
+cat >"$SEC4_DIR/scan.json" <<EOF
+[
+  {
+    "number": 1,
+    "state": "open",
+    "dependency": {"package": {"name": "\$(touch $SEC4_MARKER)\`touch $SEC4_MARKER\`"}, "manifest_path": "requirements.txt"},
+    "security_advisory": {"ghsa_id": "GHSA-inj-0001", "severity": "high", "summary": "\$(touch $SEC4_MARKER); a summary with a | pipe and \`backticks\` and \$(command substitution)"}
+  }
+]
+EOF
+SEC4_INGEST_OUT=$(cd "$SEC4_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.json 2>&1)
+SEC4_INGEST_RC=$?
+assert_equal "0" "$SEC4_INGEST_RC" "SEC-4: shell metacharacters in scan content do not break ingestion"
+if [ -f "$SEC4_MARKER" ]; then
+  _dossier_assert_fail "SEC-4: shell metacharacters in scan content were executed during ingestion"
+  rm -f "$SEC4_MARKER" 2>/dev/null
+else
+  _dossier_assert_pass "SEC-4: shell metacharacters in scan content were not executed during ingestion"
+fi
+SEC4_PKG=$(printf '%s' "$SEC4_INGEST_OUT" | jq -r '.findings[0].package' 2>/dev/null)
+assert_contains 'touch' "$SEC4_PKG" "SEC-4: the malicious-looking package name is preserved verbatim as data, not stripped or executed"
+
+# Thread the same content into a ledger fixture and confirm the gate's own
+# table-cell parsing is equally inert.
+mkdir -p "$SEC4_DIR/docs/dossier/00-control"
+cat >"$SEC4_DIR/docs/dossier/00-control/evidence-ledger.md" <<EOF
+# Evidence Ledger
+
+| Evidence ID | Claim | State | Source ref | Retrievable | Authority | Version/env | Observed | Freshness | Confidentiality | Public use | Consuming docs | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| EV-0001 | Dependency vulnerability scan: dependabot on requirements.txt, 2026-07-28 | R | \`scan.json\` — dependabot, retrieved 2026-07-28 | yes | 3 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0002 | dependabot reports GHSA-inj-0001 in \$(touch $SEC4_MARKER), severity High | R | \`scan.json\` — dependabot, GHSA-inj-0001, retrieved 2026-07-28 | yes | 3 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |
+EOF
+SEC4_GATE_OUT=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$GATE" --output-root "$SEC4_DIR/docs/dossier" --json 2>/dev/null)
+SEC4_GATE_RESULT=$(printf '%s' "$SEC4_GATE_OUT" | jq -r '.conditions[] | select(.id=="G19") | .result' 2>/dev/null)
+assert_equal "FAIL" "$SEC4_GATE_RESULT" "SEC-4: the gate still correctly evaluates disposition (FAIL, undisposed) despite shell-metacharacter content in the ledger"
+if [ -f "$SEC4_MARKER" ]; then
+  _dossier_assert_fail "SEC-4: shell metacharacters in ledger content were executed during gate evaluation"
+  rm -f "$SEC4_MARKER" 2>/dev/null
+else
+  _dossier_assert_pass "SEC-4: shell metacharacters in ledger content were not executed during gate evaluation"
+fi
+
+# --- ERR-1: a container-level malformed entry (not just a leaf record) must
+# be tracked in unparseable_records, never silently degrade to an empty
+# result indistinguishable from that container legitimately having nothing
+# — a scan where EVERY container is malformed must not read as a clean,
+# zero-findings scan. --------------------------------------------------------
+ERR1_DIR=$(_dossier_safe_mktemp_dir "err1-container-tracking")
+cat >"$ERR1_DIR/all-bad-runs.json" <<'EOF'
+{"runs": ["a string, not an object", 42]}
+EOF
+ERR1_OUT=$(cd "$ERR1_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan all-bad-runs.json 2>&1)
+ERR1_RC=$?
+assert_equal "0" "$ERR1_RC" "ERR-1: a scan where every runs[] entry is malformed still exits 0 (a tracked condition, not a total failure)"
+ERR1_UNPARSEABLE_COUNT=$(printf '%s' "$ERR1_OUT" | jq '.unparseable_records | length' 2>/dev/null)
+assert_equal "2" "$ERR1_UNPARSEABLE_COUNT" "ERR-1: both malformed runs[] entries are tracked in unparseable_records — never silently indistinguishable from a genuinely clean scan"
+
+cat >"$ERR1_DIR/bad-packages-field.json" <<'EOF'
+{"results": [{"source": {"path": "a"}, "packages": "not-an-array"}]}
+EOF
+ERR1_PKG_OUT=$(cd "$ERR1_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan bad-packages-field.json 2>&1)
+ERR1_PKG_UNPARSEABLE=$(printf '%s' "$ERR1_PKG_OUT" | jq '.unparseable_records | length' 2>/dev/null)
+assert_equal "1" "$ERR1_PKG_UNPARSEABLE" "ERR-1: a wrong-typed packages field one level above the leaf record is also tracked, not silently swallowed"
+
+# --- ERR-2 / F1: a status=partial coverage row (some records parsed, some
+# did not) must make G19 INCONCLUSIVE, never PASS just because every record
+# that DID parse happens to be disposed — the unparsed portion's materiality
+# is unknown. -----------------------------------------------------------
+ERR2_DIR=$(_dossier_safe_mktemp_dir "err2-status-partial")
+g19_fixture "$ERR2_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 (1 record could not be normalized) | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=partial |
+| EV-0002 | osv-scanner: one record could not be normalized, severity unknown | U | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding-unresolved |' \
+''
+ERR2_RESULT=$(g19_result "$ERR2_DIR")
+assert_equal "INCONCLUSIVE" "$ERR2_RESULT" "ERR-2/F1: a status=partial coverage row with zero itemized Critical/High rows is INCONCLUSIVE, never a vacuous PASS"
+ERR2_EVIDENCE=$(g19_evidence "$ERR2_DIR")
+assert_contains "parsed partially" "$ERR2_EVIDENCE" "ERR-2/F1: the partial-parse branch names itself distinctly from both the no-evidence and total-parse-error branches"
 
 _dossier_test_summary
