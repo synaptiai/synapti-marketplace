@@ -309,4 +309,54 @@ else
   _dossier_assert_pass "a calendar-invalid rollover Review date (2026-06-31, silently rolls to July 1) does not dispose the finding (G19 result: $G19_ROLLOVER_RESULT)"
 fi
 
+# --- INCONCLUSIVE: no vulnerability evidence at all (AC4, gate half) --------
+# Confirmed design decision (.decisions/issue-136.md): zero evidence means
+# INCONCLUSIVE, never PASS — not a bug to work around.
+G19_NOEVIDENCE_DIR=$(_dossier_safe_mktemp_dir "g19-noevidence")
+g19_fixture "$G19_NOEVIDENCE_DIR" \
+'| EV-0001 | The HTTP API authenticates with OAuth 2.0 | V | `src/api/auth.ts::authenticate` | yes | 2 | main | 2026-07-28 | none | Internal | no | 02-architecture/interfaces-and-integrations.md | — |' \
+''
+G19_NOEVIDENCE_RESULT=$(g19_result "$G19_NOEVIDENCE_DIR")
+assert_equal "INCONCLUSIVE" "$G19_NOEVIDENCE_RESULT" "AC4: zero vulnerability-scan evidence in the ledger is INCONCLUSIVE, never PASS"
+G19_NOEVIDENCE_EVIDENCE=$(g19_evidence "$G19_NOEVIDENCE_DIR")
+assert_contains "no vulnerability-scan evidence" "$G19_NOEVIDENCE_EVIDENCE" "AC4: the no-evidence branch names itself distinctly"
+
+# The overall GATE_RESULT (not just the G19 row) must not read PASS either —
+# a regression check that G19 participates in the existing FAIL > INCONCLUSIVE
+# > PASS precedence correctly, with no change expected to that logic.
+G19_NOEVIDENCE_OVERALL=$(cd "$G19_NOEVIDENCE_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$GATE" --output-root docs/dossier --quiet 2>&1; echo "RC=$?")
+assert_not_contains "GATE_RESULT=PASS" "$G19_NOEVIDENCE_OVERALL" "AC4: the overall gate result does not read PASS when G19 is INCONCLUSIVE"
+
+# --- INCONCLUSIVE: a scan artifact that failed to parse, distinct wording ---
+# from the "never scanned" branch above — the ERR-3-style distinction must
+# survive into the gate's own reported reason, not just the ingestion script.
+G19_PARSEERR_DIR=$(_dossier_safe_mktemp_dir "g19-parseerr")
+g19_fixture "$G19_PARSEERR_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | U | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parse-error |' \
+''
+G19_PARSEERR_RESULT=$(g19_result "$G19_PARSEERR_DIR")
+assert_equal "INCONCLUSIVE" "$G19_PARSEERR_RESULT" "AC4: a parse-error coverage row is also INCONCLUSIVE, never PASS"
+G19_PARSEERR_EVIDENCE=$(g19_evidence "$G19_PARSEERR_DIR")
+assert_contains "could not be parsed" "$G19_PARSEERR_EVIDENCE" "AC4: the parse-error branch names itself distinctly from the no-evidence branch"
+assert_contains "EV-0001" "$G19_PARSEERR_EVIDENCE" "AC4: the parse-error branch cites the specific coverage row"
+if [ "$G19_NOEVIDENCE_EVIDENCE" = "$G19_PARSEERR_EVIDENCE" ]; then
+  _dossier_assert_fail "the no-evidence and parse-error branches produced identical evidence text — the ERR-3-style distinction did not survive into the gate"
+else
+  _dossier_assert_pass "the no-evidence and parse-error branches produce distinguishable evidence text"
+fi
+
+# --- This repo's own docs/dossier package: G19 is reported, not silently
+# omitted, on a real pre-existing package that predates this feature --------
+if [ -d "$(pwd)/docs/dossier" ]; then
+  REPO_G19_OUT=$( CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$GATE" --output-root docs/dossier --json 2>/dev/null )
+  REPO_G19_LINE=$(printf '%s' "$REPO_G19_OUT" | jq -r '.conditions[] | select(.id=="G19")' 2>/dev/null)
+  if [ -n "$REPO_G19_LINE" ]; then
+    _dossier_assert_pass "this repo's own docs/dossier package reports a G19 line (not silently omitted)"
+  else
+    _dossier_assert_fail "this repo's own docs/dossier package has no G19 line at all"
+  fi
+else
+  _dossier_assert_pass "docs/dossier not present in this checkout — skipping the real-package guard"
+fi
+
 _dossier_test_summary
