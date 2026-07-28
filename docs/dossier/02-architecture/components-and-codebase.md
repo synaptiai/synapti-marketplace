@@ -139,7 +139,7 @@ No secret value appears in this table, and none exists in the repository to appe
 |---|---|---|---|---|---|---|
 | `dossier.ci.enabled` | Whether the post-merge refresh runs at all | `true` in the plugin default; the scaffolded workflow is absent from this repository | not installed here | Daniel Bentes | none stated | [EV-0045] |
 | `dossier.ci.instructionSource` | `plugin` reads skill text from marketplace `main`; `vendored` copies it into the consuming repository | `plugin` | not applicable here | Daniel Bentes | When `plugin_marketplaces` accepts a ref | [EV-0030] |
-| `dossier.local.onFlowMerge` | Whether a flow merge suggests a documentation refresh | `suggest` | not exercised | Daniel Bentes | none stated | [EV-0045] |
+| `dossier.local.onLocalMerge` | Whether a local merge to the default branch (by any plugin or human) suggests a documentation refresh | `suggest` | not exercised | Daniel Bentes | none stated | [EV-0045] |
 
 There are no runtime feature flags, because there is no runtime. Every row above is an install-time configuration default. Two of the three have no removal condition, which is recorded as debt in `04-operating/decisions-technical-debt-and-risks.md`.
 

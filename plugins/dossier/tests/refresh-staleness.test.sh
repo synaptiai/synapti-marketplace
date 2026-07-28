@@ -63,6 +63,42 @@ OUT_DIR2="$FIXTURE/.dossier/evidence2"
 NO_STALE_JSON=$(jq -c '.stale_docs' "$OUT_DIR2/manifest.json" 2>/dev/null)
 assert_equal '[]' "$NO_STALE_JSON" "without --stale-docs, manifest.json's stale_docs field is an empty array, not null or absent"
 
+# --- A dossier-staleness-check.sh infrastructure failure is noted, not
+# silently swallowed as "never verified" for every document -----------------
+# The staleness-check delegate is only ever invoked for a canonical document
+# that actually exists on disk (the "absent" branch skips it entirely), so
+# this fixture needs at least one real canonical file — otherwise this test
+# would pass vacuously without ever exercising the failure path.
+mkdir -p "$FIXTURE/docs/dossier/00-control"
+cat >"$FIXTURE/docs/dossier/00-control/documentation-index.md" <<EOF
+dossier-header: v1
+last-verified: $(date -u +%Y-%m-%d)
+---
+Present so the staleness-check delegate actually runs.
+EOF
+
+# Same technique as staleness-trigger.test.sh's ERR-3 case: a real sibling-
+# script copy with only dossier-staleness-check.sh swapped for a script that
+# always fails, entirely inside an isolated fixture.
+ERR_ROOT=$(_dossier_safe_mktemp_dir "evidence-staleness-failure")
+mkdir -p "$ERR_ROOT/bin"
+cp "$(pwd)/plugins/dossier/bin/"*.sh "$ERR_ROOT/bin/"
+cat >"$ERR_ROOT/bin/dossier-staleness-check.sh" <<'FAKE'
+#!/usr/bin/env bash
+echo "dossier-staleness-check: simulated infrastructure failure" >&2
+exit 2
+FAKE
+chmod +x "$ERR_ROOT/bin"/*.sh
+
+OUT_DIR3="$FIXTURE/.dossier/evidence3"
+( cd "$FIXTURE" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$ERR_ROOT/bin/dossier-evidence.sh" \
+    --base "$BASE_SHA" --head "$HEAD_SHA" --out "$OUT_DIR3" ) >/dev/null 2>&1
+assert_file_exists "$OUT_DIR3/manifest.json" "manifest.json still written even when the staleness delegate fails"
+NOTES_TEXT=$(jq -r '.notes // [] | join("\n")' "$OUT_DIR3/manifest.json" 2>/dev/null)
+assert_contains "dossier-staleness-check.sh failed" "$NOTES_TEXT" "the staleness-check failure is recorded in manifest.json's notes, not silently swallowed"
+NOTE_COUNT=$(printf '%s' "$NOTES_TEXT" | grep -c "dossier-staleness-check.sh failed")
+assert_equal "1" "$NOTE_COUNT" "the failure is noted exactly once across all 23 documents, not once per document"
+
 # --- commands/refresh.md: structural contract for the verification path ----
 REFRESH_MD="plugins/dossier/commands/refresh.md"
 if [ -f "$REFRESH_MD" ]; then

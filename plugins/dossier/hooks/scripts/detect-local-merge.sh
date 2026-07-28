@@ -33,24 +33,46 @@ MODE="suggest"
 # performing one.
 BOUND='(^|[;&|(]|^[[:space:]]*)[[:space:]]*([A-Za-z0-9_.-]*/)*'
 
-IS_PULL=0
+CHECK_MERGE_COMMIT=0
 if printf '%s' "$COMMAND" | grep -qE "${BOUND}git[[:space:]]+merge\b"; then
-  :
+  CHECK_MERGE_COMMIT=1
 elif printf '%s' "$COMMAND" | grep -qE "${BOUND}git[[:space:]]+pull\b"; then
-  IS_PULL=1
+  CHECK_MERGE_COMMIT=1
 elif printf '%s' "$COMMAND" | grep -qE "${BOUND}gh[[:space:]]+pr[[:space:]]+merge\b"; then
   :
 else
   exit 0
 fi
 
-# A `git pull` only counts when it actually produced a merge commit (HEAD has
-# two parents) — a fast-forward pull is routine branch catch-up, not "new work
-# landed via a merge", and firing on every one would make the suggestion noise
-# nobody reads. This check runs post-hoc (PostToolUse fires after the command
-# already completed), so the outcome is known rather than guessed.
-if [ "$IS_PULL" -eq 1 ]; then
+# A `git merge`/`git pull` only counts when THIS command actually produced a
+# new merge commit — two checks, both required:
+#
+# 1. HEAD^2 exists: this really is a merge commit, not a fast-forward pull.
+#
+# 2. HEAD's most recent reflog move happened essentially now, not at some
+#    earlier point in history. This is the one that actually matters: once
+#    any real merge has ever landed, HEAD stays a two-parent commit until the
+#    next ordinary commit, so check 1 alone would re-fire on every later
+#    command that merely matches the regex — including a genuinely no-op
+#    `git pull` (verified: a no-op pull writes no new reflog entry, so
+#    comparing HEAD@{1} to HEAD does NOT distinguish "just happened" from
+#    "happened a while ago and nothing has moved since" — the reflog position
+#    is identical in both cases). A hook has no persisted state from a prior
+#    invocation to compare against, so elapsed-time-since-last-move is the
+#    only stateless signal available. This also naturally excludes `git merge
+#    --abort`/`--quit`/`--no-commit`: none of them move HEAD, so its last real
+#    move stays whatever it was before this command ran.
+if [ "$CHECK_MERGE_COMMIT" -eq 1 ]; then
   git rev-parse --verify --quiet HEAD^2 >/dev/null 2>&1 || exit 0
+  REFLOG_TIME=$(git log -g -1 --format=%cd --date=unix HEAD 2>/dev/null)
+  NOW=$(date +%s)
+  case "$REFLOG_TIME" in
+    ''|*[!0-9]*) exit 0 ;;
+  esac
+  # Overridable only for tests, which cannot wait out a real freshness window
+  # to prove the "stale merge does not re-fire" case deterministically and
+  # fast — real usage always gets the 15s default.
+  [ $((NOW - REFLOG_TIME)) -le "${DOSSIER_MERGE_FRESHNESS_SECONDS:-15}" ] || exit 0
 fi
 
 # Best-effort default-branch check. An unresolvable default branch degrades to

@@ -69,7 +69,7 @@ while [ $# -gt 0 ]; do
     --head) [ $# -lt 2 ] && { echo "dossier-evidence: --head requires a value" >&2; exit 2; }; HEAD="$2"; shift 2 ;;
     --out)  [ $# -lt 2 ] && { echo "dossier-evidence: --out requires a value"  >&2; exit 2; }; OUT="$2";  shift 2 ;;
     --stale-docs) [ $# -lt 2 ] && { echo "dossier-evidence: --stale-docs requires a value" >&2; exit 2; }; STALE_DOCS_ARG="$2"; shift 2 ;;
-    -h|--help) sed -n '2,42p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,43p' "$0"; exit 0 ;;
     *) echo "dossier-evidence: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -99,7 +99,7 @@ cleanup() {
         ${API_ERE_FILE:+"$API_ERE_FILE"} \
         ${PR_TMP:+"$PR_TMP" "$PR_TMP.next"} \
         ${REL_TMP:+"$REL_TMP" "$REL_TMP.next"} \
-        ${DOC_TMP:+"$DOC_TMP" "$DOC_TMP.next"} 2>/dev/null
+        ${DOC_TMP:+"$DOC_TMP" "$DOC_TMP.next" "$DOC_TMP.stale-err" "$DOC_TMP.stale-check-noted"} 2>/dev/null
 }
 trap cleanup EXIT
 note() { printf '%s\n' "$1" >>"$NOTES_FILE"; }
@@ -421,7 +421,20 @@ printf '%s\n' "$CANONICAL_DOCS" | while IFS= read -r REL; do
     # commit date, which only says when the bytes last moved. Delegated to
     # dossier-staleness-check.sh so this producer and status.md's cannot
     # silently disagree on what counts as verified.
-    STALE_SF=$("$SCRIPT_DIR/dossier-staleness-check.sh" --single-file "$FULL" --stale-days "${STALENESS_DAYS:-90}" 2>/dev/null)
+    STALE_SF=$("$SCRIPT_DIR/dossier-staleness-check.sh" --single-file "$FULL" --stale-days "${STALENESS_DAYS:-90}" 2>"$DOC_TMP.stale-err")
+    STALE_RC=$?
+    if [ "$STALE_RC" -ne 0 ] && [ ! -f "$DOC_TMP.stale-check-noted" ]; then
+      # Noted once, not once per document — dossier-staleness-check.sh runs
+      # 23 times in this loop, and a systemic failure (missing prerequisite
+      # tool, bad interpreter) would fail identically every time. Without
+      # this, every affected document's last_verified/is_stale silently
+      # defaults to empty/false, indistinguishable from "genuinely never
+      # verified" — mirrors the equivalent fix already made at
+      # dossier-policy.sh's sibling call site of the same script.
+      STALE_ERRMSG=$(cat "$DOC_TMP.stale-err" 2>/dev/null)
+      note "dossier-staleness-check.sh failed (exit $STALE_RC)${STALE_ERRMSG:+: $STALE_ERRMSG} — last_verified/is_stale could not be computed for one or more documents this run; affected records default to empty/false, not a genuine never-verified signal."
+      : >"$DOC_TMP.stale-check-noted"
+    fi
     LAST_VERIFIED=$(printf '%s\n' "$STALE_SF" | awk -F= '$1=="LAST_VERIFIED"{print $2; exit}')
     IS_STALE=$(printf '%s\n' "$STALE_SF" | awk -F= '$1=="IS_STALE"{print $2; exit}')
     [ "$IS_STALE" = "true" ] || IS_STALE="false"

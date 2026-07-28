@@ -50,7 +50,7 @@ while [ $# -gt 0 ]; do
     --changed-files) [ $# -lt 2 ] && { echo "dossier-blast-radius: --changed-files requires a value" >&2; exit 2; }; CHANGED="$2"; shift 2 ;;
     --out)           [ $# -lt 2 ] && { echo "dossier-blast-radius: --out requires a value" >&2; exit 2; }; OUT="$2"; shift 2 ;;
     --stale-docs)    [ $# -lt 2 ] && { echo "dossier-blast-radius: --stale-docs requires a value" >&2; exit 2; }; STALE_DOCS="$2"; shift 2 ;;
-    -h|--help)       sed -n '2,38p' "$0"; exit 0 ;;
+    -h|--help)       sed -n '2,40p' "$0"; exit 0 ;;
     *) echo "dossier-blast-radius: unknown argument: $1" >&2; exit 2 ;;
   esac
 done

@@ -85,6 +85,24 @@ parse_last_verified() {
   awk -F': *' '/^last-verified:/{print $2; exit}' "$1" 2>/dev/null | tr -d $'"\'\r'
 }
 
+# validate_calendar_date <original-date> <epoch-seconds> — neither BSD `date -j`
+# nor GNU `date -d` reject an out-of-range day-of-month; both silently roll it
+# over (2026-06-31 -> 2026-07-01), so a typo reads as a real, freshly-verified
+# date instead of the undated/no-evidence case this script's contract promises.
+# Round-tripping the epoch back to YYYY-MM-DD and comparing to the original
+# string is the only reliable cross-platform way to catch the rollover — a
+# genuine date always round-trips to itself; a rolled-over one never does.
+# Echoes the epoch seconds if valid, nothing if not.
+validate_calendar_date() {
+  _orig="$1" _epoch="$2"
+  [ -n "$_epoch" ] || return 0
+  _rt1=$(date -j -f %s "$_epoch" +%Y-%m-%d 2>/dev/null || echo "")
+  _rt2=$(date -d "@$_epoch" +%Y-%m-%d 2>/dev/null || echo "")
+  if [ "$_rt1" = "$_orig" ] || [ "$_rt2" = "$_orig" ]; then
+    printf '%s\n' "$_epoch"
+  fi
+}
+
 # Flags win outright (tests and callers that already resolved config pass
 # them explicitly); otherwise fall through to the resolver, matching every
 # other bin script's precedence.
@@ -95,6 +113,11 @@ if [ -z "$OUTPUT_ROOT" ]; then
     OUTPUT_ROOT="docs/dossier"
   fi
 fi
+# $CASCADE can exit non-zero with empty stdout (missing jq, missing
+# cascade-resolve.sh) — unlike STALE_DAYS/MAX_SWEEP below, an empty
+# OUTPUT_ROOT was not being reset to the default, so `find ""` would fail
+# silently and this script would report a false "zero stale documents".
+[ -n "$OUTPUT_ROOT" ] || OUTPUT_ROOT="docs/dossier"
 # Trailing slash would otherwise break the package-relative prefix strip below.
 OUTPUT_ROOT="${OUTPUT_ROOT%/}"
 if [ -z "$STALE_DAYS" ]; then
@@ -112,8 +135,10 @@ if [ -n "$SINGLE_FILE" ]; then
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
       TODAY_S=$(date -u +%s)
       LV_S=$(date -j -f "%Y-%m-%d" "$LV" +%s 2>/dev/null || date -d "$LV" +%s 2>/dev/null || echo "")
+      LV_S=$(validate_calendar_date "$LV" "$LV_S")
       if [ -z "$LV_S" ]; then
-        # Shape-valid but not a real calendar date (e.g. 2024-13-45) — no
+        # Shape-valid but not a real calendar date (e.g. 2024-13-45, or one
+        # BSD/GNU date silently rolls over like 2026-06-31 -> July 1) — no
         # evidence anyone actually verified this document, same as missing.
         printf 'LAST_VERIFIED=%s\n' "$LV"
         printf 'IS_STALE=false\n'
@@ -211,8 +236,10 @@ while IFS= read -r f; do
   esac
   # BSD and GNU date take different flags; try both rather than assuming.
   lv_s=$(date -j -f "%Y-%m-%d" "$lv" +%s 2>/dev/null || date -d "$lv" +%s 2>/dev/null || echo "")
+  lv_s=$(validate_calendar_date "$lv" "$lv_s")
   if [ -z "$lv_s" ]; then
-    # Shape-valid but not a real calendar date (e.g. 2024-13-45) — no
+    # Shape-valid but not a real calendar date (e.g. 2024-13-45, or one
+    # BSD/GNU date silently rolls over like 2026-06-31 -> July 1) — no
     # evidence anyone actually verified this document, same as missing.
     UNDATED=$((UNDATED + 1))
     continue
