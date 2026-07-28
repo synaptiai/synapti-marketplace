@@ -7,6 +7,11 @@ artifacts:
   workflow: review-pr
   run_id: 2026-07-28T120749Z-review
   status: active
+- type: workflow-run
+  captured_at: '2026-07-28T12:53:32Z'
+  workflow: review-pr
+  run_id: 2026-07-28T120749Z-review
+  status: completed
 ---
 # Decision Journal — Issue #135
 
@@ -287,3 +292,19 @@ A zero-context agent given this journal's Interface Contracts (exact script name
 <!-- auto-log: 2026-07-28 14:38 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/review-comment-pr139.md -->
 
 <!-- auto-log: 2026-07-28 14:38 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/resolution-comment-pr139.md -->
+
+<!-- auto-log: 2026-07-28 14:52 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/001-preflight.yaml -->
+
+<!-- auto-log: 2026-07-28 14:52 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/002-fan-out.yaml -->
+
+<!-- auto-log: 2026-07-28 14:52 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/003-consolidate.yaml -->
+
+<!-- auto-log: 2026-07-28 14:52 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/004-report.yaml -->
+
+<!-- auto-log: 2026-07-28 14:52 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/001-preflight.yaml -->
+
+<!-- auto-log: 2026-07-28 14:52 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/002-fan-out.yaml -->
+
+<!-- auto-log: 2026-07-28 14:52 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/003-consolidate.yaml -->
+
+<!-- auto-log: 2026-07-28 14:52 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/004-report.yaml -->
