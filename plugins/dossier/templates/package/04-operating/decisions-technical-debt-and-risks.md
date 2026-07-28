@@ -58,6 +58,8 @@ Only decisions whose rationale is evidenced appear here.
 
 Every category above is represented or explicitly marked `N/A` with a reason. A register missing a whole category usually means the category was not examined, not that it holds no risk.
 
+`bin/dossier-gate.sh`'s G19 condition reads this table mechanically for `dependency`/`security` rows citing a vulnerability finding (`[EV-####]` in `Evidence`). Cells here carry no raw `|` character — the same constraint `references/evidence-ledger-schema.md` and `dossier-ledger-lint.sh` already apply to the evidence ledger's own table.
+
 ## Risk dependencies
 
 Risks that compound. This is where a set of individually-moderate risks becomes a material one.
@@ -72,7 +74,7 @@ Risks that compound. This is where a set of individually-moderate risks becomes 
 |---|---|---|---|---|---|
 | {fill} | {fill} | {fill} | {fill} | {fill} | {fill} |
 
-Acceptance requires a named human with the authority to accept. A risk recorded as accepted with no named accepter is an open risk.
+Acceptance requires a named human with the authority to accept. A risk recorded as accepted with no named accepter is an open risk. `Risk ID` cites the finding this row disposes (`[EV-####]`); cells carry no raw `|` character, per the Risk register's note above.
 
 ## Remediation roadmap
 

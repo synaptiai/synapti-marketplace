@@ -270,6 +270,8 @@ Advisory categories (passive voice, nominalization, em-dash count) are never che
 
 Deliberately never reuses G03's `findings.md` ledger: `references/finding-schema.md` scopes `findings.md` to defects **in the documentation**, evidenced by something outside it. A dependency vulnerability is a defect in the project being documented, not in the documentation describing it — architecturally out of scope for G03, and recorded instead as a risk row per that same reference document's own guidance.
 
+A Risk register or Accepted risks row citing the finding may appear anywhere in its table — the check does not stop at the first citing row — and a citation may name more than one `EV-####` in the same bracket, per `references/evidence-ledger-schema.md`'s inline citation grammar. Cells in both tables carry no raw `|` character, the same constraint the evidence ledger's own table already carries.
+
 ## Package status
 
 The gate result maps to exactly one of three package statuses, which is what the completion response and `07-verification/documentation-verification-report.md` report.

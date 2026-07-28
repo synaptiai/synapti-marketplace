@@ -179,3 +179,27 @@ Accepted consequence, worth surfacing here rather than only in the resolved-desi
 <!-- auto-log: 2026-07-28 16:21 commit "docs(dossier): require the honest no-scan-found fallback in vulnerability templates" -->
 
 <!-- auto-log: 2026-07-28 16:22 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
+
+<!-- auto-log: 2026-07-28 16:27 commit "test(dossier): end-to-end scenario proving a planted vulnerability is caught" -->
+
+<!-- auto-log: 2026-07-28 16:43 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-gate.sh -->
+
+<!-- auto-log: 2026-07-28 16:44 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-gate.sh -->
+
+<!-- auto-log: 2026-07-28 16:44 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-vuln-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 16:44 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-vuln-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 16:44 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-vuln-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 16:45 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/package/04-operating/decisions-technical-debt-and-risks.md -->
+
+<!-- auto-log: 2026-07-28 16:45 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/package/04-operating/decisions-technical-debt-and-risks.md -->
+
+<!-- auto-log: 2026-07-28 16:45 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/references/release-gate-conditions.md -->
+
+<!-- auto-log: 2026-07-28 16:47 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-evidence-gate.test.sh -->
+
+<!-- auto-log: 2026-07-28 16:53 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/okf-issue-body.md -->
+
+<!-- auto-log: 2026-07-28 16:53 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/commit-review-fixes.txt -->

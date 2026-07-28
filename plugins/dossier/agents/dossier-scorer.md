@@ -58,7 +58,7 @@ For each condition record `PASS` or `FAIL` with the specific evidence — a valu
 
 | Verdict | Condition |
 |---|---|
-| `release-ready` | All 18 pass |
+| `release-ready` | All 19 pass |
 | `conditionally ready` | Every failure is `needs-owner` or blocked by a stated access limitation — nothing further the run can do |
 | `not ready` | Anything else |
 

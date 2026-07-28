@@ -46,7 +46,7 @@
 #     "schema": "dossier.vuln-evidence/v1",
 #     "scan": {"format", "tool", "scope", "retrieved", "source_path"},
 #     "findings": [{"id","package","version","severity","summary","source_ref"}],
-#     "aggregate": {"Medium": <n>, "Low": <n>},
+#     "aggregate": {[<Medium|Low>]: <n>},  # keys present only when non-zero
 #     "unresolved_severity": [{"id","package","version","summary"}]
 #   }
 # On parse failure: {"schema", "scan": {"source_path","format": null}, "error": "parse-error: ..."}
@@ -57,8 +57,6 @@
 #       · 2 missing or invalid argument
 
 set -uo pipefail
-
-SELF_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 
 SCAN=""
 OUT=""
@@ -90,14 +88,22 @@ if ! jq -e . "$SCAN" >/dev/null 2>&1; then
 fi
 
 # --- Format detection, by structure, not file extension ---------------------
+# A clean scan (zero findings) must detect correctly, not just a scan with
+# results — the exit-0-including-zero-findings contract above applies to
+# every supported format, not only the one whose empty shape happens to still
+# carry a nested array to key off. Dependabot's real "no open alerts" output
+# is a bare `[]`; osv-scanner's is commonly `{"results":[]}` with no
+# `packages` key anywhere. Neither is ambiguous with an unrelated JSON shape:
+# no other supported format is a top-level array, and no other format keys a
+# top-level `results` array of its own.
 FORMAT=""
 if jq -e 'type == "array"' "$SCAN" >/dev/null 2>&1; then
-  if jq -e 'length > 0 and (.[0].security_advisory != null)' "$SCAN" >/dev/null 2>&1; then
+  if jq -e 'length == 0 or (.[0].security_advisory != null)' "$SCAN" >/dev/null 2>&1; then
     FORMAT="dependabot"
   fi
 elif jq -e '(.runs != null) and (.runs | type) == "array"' "$SCAN" >/dev/null 2>&1; then
   FORMAT="sarif"
-elif jq -e '(.results != null) and (.results | type) == "array" and (.results[0].packages != null)' "$SCAN" >/dev/null 2>&1; then
+elif jq -e '(.results != null) and (.results | type) == "array"' "$SCAN" >/dev/null 2>&1; then
   FORMAT="osv-scanner"
 fi
 

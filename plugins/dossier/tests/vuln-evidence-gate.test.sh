@@ -440,4 +440,72 @@ E2E_G19_EVIDENCE=$(printf '%s' "$E2E_GATE_OUT" | jq -r '.conditions[] | select(.
 assert_equal "FAIL" "$E2E_G19_RESULT" "AC5: the planted unresolved High vulnerability, carried through the real ingestion script and the real gate, is actually caught"
 assert_contains "EV-0002" "$E2E_G19_EVIDENCE" "AC5: G19's evidence names the planted finding's specific EV-#### row"
 
+# =============================================================================
+# Part 5 — regressions found and fixed during self-review (F1-F4)
+# =============================================================================
+
+# --- F1: a selected row (matches the vuln-finding tag) whose id cannot be
+# extracted must never silently vanish from the loop — it counts as
+# undisposed, never as an implicit pass. A row indented by a couple of
+# spaces before the pipe renders identically in Markdown but was previously
+# lost between the (unanchored) selection grep and the (anchored) extraction
+# grep. ------------------------------------------------------------------
+G19_INDENT_DIR=$(_dossier_safe_mktemp_dir "g19-indent")
+mkdir -p "$G19_INDENT_DIR/docs/dossier/00-control"
+printf '%s\n' \
+  '# Evidence Ledger' \
+  '' \
+  '| Evidence ID | Claim | State | Source ref | Retrievable | Authority | Version/env | Observed | Freshness | Confidentiality | Public use | Consuming docs | Notes |' \
+  '|---|---|---|---|---|---|---|---|---|---|---|---|---|' \
+  '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |' \
+  '  | EV-0002 | osv-scanner reports GHSA-4w2v-q235-vp99 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-4w2v-q235-vp99, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
+  > "$G19_INDENT_DIR/docs/dossier/00-control/evidence-ledger.md"
+G19_INDENT_RESULT=$(g19_result "$G19_INDENT_DIR")
+assert_equal "FAIL" "$G19_INDENT_RESULT" "F1 regression: a vuln-finding row indented before the pipe still fails G19 (never silently drops out as an implicit pass)"
+
+# --- F2: format detection on a genuinely clean scan for the two formats
+# whose empty shape does not carry a nested array to key off -----------------
+G19_F2_DIR=$(_dossier_safe_mktemp_dir "f2-clean-detect")
+printf '[]' >"$G19_F2_DIR/empty.json"
+F2_DEP_OUT=$(cd "$G19_F2_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan empty.json 2>&1)
+F2_DEP_RC=$?
+assert_equal "0" "$F2_DEP_RC" "F2 regression: an empty Dependabot alerts array ([]) — the real zero-open-alerts API shape — parses cleanly"
+F2_DEP_FORMAT=$(printf '%s' "$F2_DEP_OUT" | jq -r '.scan.format' 2>/dev/null)
+assert_equal "dependabot" "$F2_DEP_FORMAT" "F2 regression: an empty array is still detected as dependabot, not rejected as unknown"
+
+printf '{"results":[]}' >"$G19_F2_DIR/clean.json"
+F2_OSV_OUT=$(cd "$G19_F2_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan clean.json 2>&1)
+F2_OSV_RC=$?
+assert_equal "0" "$F2_OSV_RC" "F2 regression: an osv-scanner clean result ({\"results\":[]}) with no packages key anywhere parses cleanly"
+F2_OSV_FORMAT=$(printf '%s' "$F2_OSV_OUT" | jq -r '.scan.format' 2>/dev/null)
+assert_equal "osv-scanner" "$F2_OSV_FORMAT" "F2 regression: a results-only-empty-array shape is still detected as osv-scanner"
+
+# --- F3: a disposition citing the finding alongside another id in the same
+# bracket, and a finding cited by a second (qualifying) row after a first
+# (non-qualifying) row, must both be recognized. -----------------------------
+G19_MULTI_DIR=$(_dossier_safe_mktemp_dir "g19-multi-citation")
+g19_fixture "$G19_MULTI_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0005 | osv-scanner reports GHSA-multi-0001 in requests@2.25.0, severity High | R | `scan.json` — osv-scanner, GHSA-multi-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
+'## Risk register
+
+| ID | Risk | Category | Likelihood | Impact | Detectability | Urgency | Evidence | Mitigation | Owner | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| RISK-0003 | requests vulnerability, comma-cited alongside another evidence row | dependency | medium | high | high | high | [EV-0004, EV-0005] | upgrading next sprint | Jane Doe | mitigating |'
+G19_MULTI_RESULT=$(g19_result "$G19_MULTI_DIR")
+assert_equal "PASS" "$G19_MULTI_RESULT" "F3 regression: a Risk register row citing the finding alongside another id in the same bracket ([EV-0004, EV-0005]) still disposes it"
+
+G19_SECONDROW_DIR=$(_dossier_safe_mktemp_dir "g19-second-row")
+g19_fixture "$G19_SECONDROW_DIR" \
+'| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
+| EV-0006 | osv-scanner reports GHSA-multi-0002 in flask@1.1.0, severity Critical | R | `scan.json` — osv-scanner, GHSA-multi-0002, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
+'## Risk register
+
+| ID | Risk | Category | Likelihood | Impact | Detectability | Urgency | Evidence | Mitigation | Owner | Status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| RISK-0004 | flask vulnerability, initial triage row not yet disposed | dependency | medium | critical | high | high | [EV-0006] | investigation ongoing | | open |
+| RISK-0005 | flask vulnerability, later fully-qualifying mitigation row citing the same evidence | dependency | medium | critical | high | high | [EV-0006] | upgraded to 1.1.1 | Jane Doe | mitigating |'
+G19_SECONDROW_RESULT=$(g19_result "$G19_SECONDROW_DIR")
+assert_equal "PASS" "$G19_SECONDROW_RESULT" "F3 regression: a second Risk register row citing the same finding disposes it even when an earlier citing row does not qualify"
+
 _dossier_test_summary

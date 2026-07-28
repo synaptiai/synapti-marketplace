@@ -97,7 +97,7 @@ Now all nineteen are decidable. The result is final for this round.
 
 | Verdict | Condition |
 |---|---|
-| `release-ready` | All 18 pass |
+| `release-ready` | All 19 pass |
 | `conditionally ready` | Every failure is `needs-owner` or blocked by a stated access limitation — nothing further the run can do |
 | `not ready` | Anything else, including any `INCONCLUSIVE` |
 

@@ -350,6 +350,30 @@ extract_section_g19() { # file | anchored heading regex, e.g. "^## Risk register
   awk -v pat="$2" '$0 ~ pat {flag=1; next} /^## / {flag=0} flag' "$1" 2>/dev/null
 }
 
+# A row's Evidence cell may cite more than one id — the ledger's own inline
+# citation grammar allows `[EV-0042]`, `[EV-0042, EV-0043]`, and the en-dash
+# range form `[EV-0042–EV-0045]` (references/evidence-ledger-schema.md). A
+# plain `grep "\[$EVID\]"` only matches the single-id form, so a genuinely
+# disposed finding cited alongside another id in the same bracket would read
+# as undisposed. Row cell values (not table structure) may also contain no
+# pipes — see the comment on `cells=($body)` below.
+g19_row_cites() { # row | evid
+  local _row="$1" _evid="$2" _tok _range _lo _hi _en
+  printf '%s\n' "$_row" | grep -oE 'EV-[0-9]{4,}' | grep -qxF "$_evid" && return 0
+  _range=$(printf '%s\n' "$_row" | grep -oE 'EV-[0-9]{4,}[-–](EV-)?[0-9]{4,}' | head -1)
+  if [ -n "$_range" ]; then
+    _lo=$(printf '%s' "$_range" | grep -oE '^EV-[0-9]{4,}' | grep -oE '[0-9]{4,}')
+    _hi=$(printf '%s' "$_range" | grep -oE '[0-9]{4,}$')
+    _en=$(printf '%s' "$_evid" | grep -oE '[0-9]{4,}')
+    if [ -n "$_lo" ] && [ -n "$_hi" ] && [ -n "$_en" ]; then
+      # 10# forces base-10: a zero-padded id like 0099 is otherwise read as an
+      # invalid octal literal by bash arithmetic.
+      [ "$((10#$_en))" -ge "$((10#$_lo))" ] && [ "$((10#$_en))" -le "$((10#$_hi))" ] && return 0
+    fi
+  fi
+  return 1
+}
+
 LEDGER="$CONTROL/evidence-ledger.md"
 RISKS="$OUTPUT_ROOT/04-operating/decisions-technical-debt-and-risks.md"
 
@@ -371,21 +395,42 @@ else
     UNDISPOSED=""
     while IFS= read -r G19_ROW; do
       [ -n "$G19_ROW" ] || continue
-      G19_EVID=$(printf '%s\n' "$G19_ROW" | grep -oE '^\| *EV-[0-9]{4,}' | grep -oE 'EV-[0-9]{4,}')
-      [ -n "$G19_EVID" ] || continue
       G19_SEV=$(printf '%s\n' "$G19_ROW" | grep -oE 'vuln-finding severity=(Critical|High)' | sed 's/.*severity=//')
       [ -n "$G19_SEV" ] || continue
+      # Tolerant of up to 3 leading spaces before the pipe, matching CommonMark's
+      # own table-row syntax (a row indented that far still renders identically,
+      # so the selection grep above — deliberately unanchored, since it exists to
+      # catch the row regardless of incidental leading whitespace — must not lose
+      # the id extraction step to a stricter anchor than its own selection step
+      # used. A selected row whose id still cannot be extracted is NEVER silently
+      # dropped: it is recorded as its own unparseable-and-therefore-undisposed
+      # entry, never allowed to vanish from the loop the way an omitted `record`
+      # call let a condition vanish before commit 525cca5 ("#133").
+      G19_EVID=$(printf '%s\n' "$G19_ROW" | grep -oE '^[[:space:]]{0,3}\| *EV-[0-9]{4,}' | grep -oE 'EV-[0-9]{4,}')
+      if [ -z "$G19_EVID" ]; then
+        UNDISPOSED="${UNDISPOSED}${UNDISPOSED:+, }<unparseable vuln-finding severity=$G19_SEV row — no EV-#### id could be extracted>"
+        continue
+      fi
 
       G19_DISPOSED=0
 
-      # Risk register: a row citing [EV-####] with Category dependency|security,
-      # a non-empty Owner, and Status not "open".
+      # Risk register: ANY row citing EV-#### (a bracket may cite more than one
+      # id — see g19_row_cites) with Category dependency|security, a non-empty
+      # Owner, and Status not "open" disposes the finding. Every citing row is
+      # checked, not just the first, since an earlier triage row citing the same
+      # id may not itself qualify while a later one does.
       if [ -f "$RISKS" ]; then
-        RISK_ROW=$(extract_section_g19 "$RISKS" '^## Risk register' | grep -m1 "\[$G19_EVID\]" | grep -E '^\|')
-        if [ -n "$RISK_ROW" ]; then
+        while IFS= read -r RISK_ROW; do
+          [ "$G19_DISPOSED" -eq 0 ] || break
+          case "$RISK_ROW" in "|"*) ;; *) continue ;; esac
+          g19_row_cites "$RISK_ROW" "$G19_EVID" || continue
           body=${RISK_ROW#|}; body=${body%|}
           OLD_IFS=$IFS; IFS='|'; set -f
           # shellcheck disable=SC2206
+          # A cell containing a literal, unescaped `|` desyncs this split — the
+          # same documented limitation dossier-ledger-lint.sh's own row parser
+          # carries (see its comment above `cells=($body)`); Risk register and
+          # Accepted risks cells are held to the same no-raw-pipes constraint.
           cells=($body)
           set +f; IFS=$OLD_IFS
           if [ "${#cells[@]}" -eq 11 ]; then
@@ -401,14 +446,16 @@ else
                 ;;
             esac
           fi
-        fi
+        done < <(extract_section_g19 "$RISKS" '^## Risk register')
       fi
 
-      # Accepted risks: a row citing [EV-####] with a named accepter, a
+      # Accepted risks: ANY row citing EV-#### with a named accepter, a
       # calendar-valid date, a stated basis, and a calendar-valid review date.
       if [ "$G19_DISPOSED" -eq 0 ] && [ -f "$RISKS" ]; then
-        ACC_ROW=$(extract_section_g19 "$RISKS" '^## Accepted risks' | grep -m1 "\[$G19_EVID\]" | grep -E '^\|')
-        if [ -n "$ACC_ROW" ]; then
+        while IFS= read -r ACC_ROW; do
+          [ "$G19_DISPOSED" -eq 0 ] || break
+          case "$ACC_ROW" in "|"*) ;; *) continue ;; esac
+          g19_row_cites "$ACC_ROW" "$G19_EVID" || continue
           body=${ACC_ROW#|}; body=${body%|}
           OLD_IFS=$IFS; IFS='|'; set -f
           # shellcheck disable=SC2206
@@ -428,7 +475,7 @@ else
               G19_DISPOSED=1
             fi
           fi
-        fi
+        done < <(extract_section_g19 "$RISKS" '^## Accepted risks')
       fi
 
       if [ "$G19_DISPOSED" -eq 0 ]; then

@@ -12,7 +12,7 @@ Two separate judgments that must never be collapsed: how good the package is, an
 
 ## Iron Law
 
-**THE GATE IS BINARY AND CONJUNCTIVE — 18 of 18 or NOT-RELEASABLE. A high score never substitutes for a failed condition.**
+**THE GATE IS BINARY AND CONJUNCTIVE — 19 of 19 or NOT-RELEASABLE. A high score never substitutes for a failed condition.**
 
 The score is a quality signal for the people improving the package. The gate is a release decision. A 98 with one unapproved public claim is `not ready`, and the 98 is irrelevant to that fact.
 
@@ -56,7 +56,7 @@ Per-condition tags and checks: `references/release-gate-conditions.md`.
 
 ## The nineteen conditions
 
-`G01` score ≥ `gate.minScore` · `G02` every dimension ≥ `gate.minDimensionPercent` · `G03` no unresolved Critical or High finding · `G04` no unsupported or unapproved public claim · `G05` every required human approval recorded · `G06` no secret, credential, personal data, or prohibited disclosure present · `G07` no known contradiction that could materially mislead · `G08` canonical coverage 100% including justified `N/A` · `G09` every material internal claim has a state and locator · `G10` every public claim maps to `V`/`C` disclosure-approved evidence · `G11` links, paths, and diagram syntax validate · `G12` commands and examples executed or visibly marked not executed · `G13` planned behaviour not presented as implemented · `G14` targets not presented as measured results · `G15` policies not presented as implemented controls · `G16` unresolved uncertainty and source limitations visible · `G17` reviewer-pass independence method disclosed, including model diversity · `G18` no hard-category prose-clarity violation exists in the package.
+`G01` score ≥ `gate.minScore` · `G02` every dimension ≥ `gate.minDimensionPercent` · `G03` no unresolved Critical or High finding · `G04` no unsupported or unapproved public claim · `G05` every required human approval recorded · `G06` no secret, credential, personal data, or prohibited disclosure present · `G07` no known contradiction that could materially mislead · `G08` canonical coverage 100% including justified `N/A` · `G09` every material internal claim has a state and locator · `G10` every public claim maps to `V`/`C` disclosure-approved evidence · `G11` links, paths, and diagram syntax validate · `G12` commands and examples executed or visibly marked not executed · `G13` planned behaviour not presented as implemented · `G14` targets not presented as measured results · `G15` policies not presented as implemented controls · `G16` unresolved uncertainty and source limitations visible · `G17` reviewer-pass independence method disclosed, including model diversity · `G18` no hard-category prose-clarity violation exists in the package · `G19` no unresolved Critical or High dependency vulnerability lacks a recorded disposition.
 
 Conjunctive. All nineteen, or not releasable.
 
@@ -64,7 +64,7 @@ Conjunctive. All nineteen, or not releasable.
 
 | Verdict | Condition |
 |---|---|
-| `release-ready` | All 18 pass |
+| `release-ready` | All 19 pass |
 | `conditionally ready` | Failures are all `needs-owner` or blocked by a stated access limitation — nothing further the run can do |
 | `not ready` | Anything else |
 
