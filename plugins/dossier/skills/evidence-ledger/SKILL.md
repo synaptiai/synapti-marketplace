@@ -78,6 +78,13 @@ Where the action ceiling permits, execute the check instead of reading about it:
 
 A check that could not run is `not executed` with the reason. Never presented as passed, never quietly omitted. `runTests: false` in the scope is a legitimate reason; "it seemed fine" is not.
 
+## Vulnerability-scan evidence
+
+Dossier never executes a scanner (that capability is separate, later work). Before drafting `05-due-diligence/assets-dependencies-and-licenses.md`'s Vulnerability evidence table or `03-assurance/security-privacy-and-compliance.md`'s Dependency scanning row, check the project for an existing vulnerability-scan artifact the project already produced — a checked-in SARIF file, an `osv-scanner` JSON export, or a Dependabot alerts export.
+
+- **Found**: run `bin/dossier-vuln-evidence.sh --scan <path>` and append its output to the ledger using the tag grammar in `references/evidence-ledger-schema.md#vulnerability-finding-rows` — one coverage row, one row per material (Critical/High) finding, one aggregated row for Medium/Low. A `parse-error` in the script's output is itself recorded as a `vuln-scan-coverage status=parse-error` row with `State: U`, never silently dropped.
+- **Not found**: add a row to the ledger's own "Unavailable evidence" section stating that no vulnerability-scan artifact was located — the same honest-`U` discipline as every other unresolved source. Do not write a claim implying the project has no known vulnerabilities; absence of a scan is not evidence of a clean bill of health.
+
 ## Absence is not evidence
 
 No known incident is not proof of security. No open issue is not proof of quality. A missing test is not proof the behaviour is broken, and a passing test proves only what it asserts. Each of these is `U`, and each is more useful to a reader as an honest unknown than as a comfortable inference.

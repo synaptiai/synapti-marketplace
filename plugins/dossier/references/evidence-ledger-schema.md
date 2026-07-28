@@ -123,6 +123,25 @@ Rules:
 
 `EV-0006` and `EV-0007` together are the pattern for an honest `N/A`: a positive verified statement about what was checked, plus an explicit row for what the check does not cover. A single row saying "no AI" would be converting the absence of a grep hit into evidence of absence.
 
+## Vulnerability-finding rows
+
+`bin/dossier-vuln-evidence.sh` normalizes a project's existing vulnerability-scan output (SARIF, osv-scanner JSON, a Dependabot alerts export — dossier never executes a scanner itself) into rows following this grammar, so `bin/dossier-gate.sh`'s G19 condition can find them mechanically without a strict column-position parser — the same loose-grep convention G03 already uses.
+
+- **State**: always `R` (Reported). Dossier reads the scan tool's output; it does not independently execute or re-verify the finding.
+- **Authority**: `2` when the scan-artifact file itself is present and versioned in the project at the pinned revision (a "Code" class source, per the table above); `5` when it is an externally-exported alert list not versioned alongside the code (e.g., a downloaded Dependabot export).
+- **`Source ref`**: the scan-artifact path wrapped in a code span, so `bin/dossier-ledger-lint.sh`'s locator-resolution check (authority 1–3) resolves it as a real file, followed by the tool name, finding identifier, and retrieval date — `` `<scan-artifact-path>` — <tool>, <identifier>, retrieved <YYYY-MM-DD> ``. This is `dossier-vuln-evidence.sh`'s own `findings[].source_ref` field, copied verbatim.
+- **`Notes`** tag grammar — one row for what was scanned (the coverage row), one row per material (Critical/High) finding, one row for the aggregated Medium/Low count. Never collapse a Critical/High finding into the aggregate.
+
+  | Row kind | Notes tag |
+  |---|---|
+  | Coverage (what was scanned) | `vuln-scan-coverage status=parsed` or `vuln-scan-coverage status=parse-error` |
+  | Material finding (Critical or High) | `vuln-finding severity=<Critical\|High>` |
+  | Aggregated Medium/Low count | `vuln-finding-aggregate severity=<Medium\|Low> count=<n>` |
+
+- **Disposition**: a `vuln-finding` row's Critical/High status is resolved by a corresponding row in `04-operating/decisions-technical-debt-and-risks.md`'s existing Risk register or Accepted risks table, citing the `EV-####` row via that table's own `Evidence` column. The ledger row itself never carries owner/target-date/acceptance — that state lives in the risk register, not duplicated here.
+
+A parse failure (malformed scan artifact, or an unrecognized shape) is recorded as a `vuln-scan-coverage status=parse-error` row with `State: U`, never silently omitted and never read as "zero findings, therefore clean."
+
 ## Ledger sections
 
 `00-control/evidence-ledger.md` carries more than the table. Its required sections are specified in `references/package-contract-00-control.md#evidence-ledger`; the parts that constrain rows are:

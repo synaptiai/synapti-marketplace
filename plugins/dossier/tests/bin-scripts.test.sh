@@ -27,7 +27,8 @@ dossier-resolve-config.sh
 dossier-scaffold.sh
 dossier-staleness-check.sh
 dossier-validate-config.sh
-dossier-validate-patch.sh"
+dossier-validate-patch.sh
+dossier-vuln-evidence.sh"
 
 while IFS= read -r s; do
   [ -z "$s" ] && continue
