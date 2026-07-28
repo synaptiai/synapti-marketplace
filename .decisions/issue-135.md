@@ -213,3 +213,5 @@ A zero-context agent given this journal's Interface Contracts (exact script name
 <!-- auto-log: 2026-07-28 13:32 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-trigger.test.sh -->
 
 <!-- auto-log: 2026-07-28 13:35 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/commit-msg-narrow-sec3.txt -->
+
+<!-- auto-log: 2026-07-28 13:35 commit "fix(dossier): narrow SEC-3 canonical-doc gate to the sweep list only" -->
