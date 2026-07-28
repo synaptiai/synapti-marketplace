@@ -1,0 +1,85 @@
+# Decision Journal — Issue #135
+
+**Title**: dossier: staleness should actively trigger re-verification; post-merge refresh suggestion must not depend on another plugin
+**Branch**: feature/issue-135-staleness-trigger-and-local-merge
+**Started**: 2026-07-28
+
+Part 1 of 4 in the dossier post-merge/investor-doc-gap initiative (plan: `the-dossier-plugin-is-federated-toucan`). Epics 2-4 (issues #136, #137, #138) are separate, sequential/independent work.
+
+## Specification
+
+### Non-goals
+- Epics 2-4 (vulnerability evidence ingestion, isolated scanner execution, rotation telemetry) — separate issues, not touched here.
+- `plugins/dossier/triggers/templates/docs-refresh.trigger.yaml` — a pre-existing, already-shipped `FlowTrigger` template that dossier's `/dossier:setup` copies into `.flow/triggers/` and that depends on flow's trigger-policy skill. This already couples dossier to flow, but it is a different feature (an opt-in local loop trigger) than this issue's scope (staleness-driven scheduled sweep + local-merge hook), and it is not mentioned in issue #135's acceptance criteria. Not modified by this work; flagged separately as a pre-existing item worth a future look, not fixed here.
+- `hooks/scripts/stale-header-stamp.sh` — a different staleness-adjacent check (warns when an edited doc's `last-verified` didn't move) that is edit-triggered, not age-threshold-triggered. Not consolidated into the new shared script; it answers a different question.
+- No change to the actual prose-generation machinery in `/dossier:refresh` Phase 4 (`dossier-doc-drafter` agent) — the stale-triggered path reuses existing re-verification/evidence-collection machinery and must NOT redraft a document whose claims still hold, per `references/change-triggers-and-blast-radius.md`'s existing "verification pass, not a redraft" rule.
+- No widening of `engagement.allowedActions` — the `onLocalMerge: run` path invokes the existing `/dossier:refresh`, itself already bounded by `enforce-allowed-actions.sh`; this issue adds no new action class.
+- Zero changes to any file under `plugins/flow/`.
+
+### Failure modes
+- `jq` missing at hook-invocation time → the merge-detection hook is advisory (suggest/run), so it fails OPEN (`exit 0`, silent no-op) — unlike `enforce-allowed-actions.sh`, which is a security ceiling and fails CLOSED. Blocking a shell command because a suggestion feature couldn't parse its JSON input would be a correctness regression with no compensating safety benefit.
+- Merge-shape detection false positive (a non-merge command incorrectly matched) → bounded blast radius: at most a suggestion is printed, or `/dossier:refresh` runs (itself read-mostly and confined by the existing output-root/action-ceiling hooks). Never destructive.
+- Merge-shape detection false negative (a real merge missed) → acceptable degradation for a `suggest`/`run` UX feature; the weekly staleness sweep and path-filtered CI trigger remain the durable coverage paths. Not a correctness bug to chase exhaustively.
+- `dossier-resolve-config.sh` non-executable/missing → keep restrictive defaults (`onLocalMerge` behaves as `off`; staleness sweep does not force a run), matching the fail-safe pattern in `enforce-allowed-actions.sh` when its resolver is absent.
+- Staleness sweep fires with a fresh/nonexistent package (`00-control` absent) → no-op, zero stale documents, no crash.
+- Staleness sweep triggered on a non-`schedule` event → must never force `should_run=true` from staleness alone (explicit AC #1: "on a scheduled cadence").
+- Many documents stale simultaneously → the sweep must cap how many it re-verifies in one run (explicit AC #3), never unbounded.
+- `status.md`'s existing emitted scalar fields (`STALENESS_THRESHOLD_DAYS`, `DOCUMENTS_STALE`, `DOCUMENTS_UNDATED`, `OLDEST_VERIFICATION`) must stay byte-identical after the computation moves into the shared script — a silent format drift would break the `/dossier:status` dashboard's existing contract with nothing to catch it except this task's golden-fixture check.
+
+### Interface contracts
+- New script `plugins/dossier/bin/dossier-staleness-check.sh`: reads `dossier.refresh.stalenessDays` (default 90) and a new `dossier.refresh.maxStaleDocsPerSweep` (default 5) via `dossier-resolve-config.sh`; walks `<outputRoot>/**/*.md`; for each, parses `last-verified:` header exactly as `status.md`/`dossier-evidence.sh` do today (`awk -F': *' '/^last-verified:/{print $2; exit}'`). Emits the same scalar fields `status.md` emits today, plus a new bounded field naming which stale documents are eligible for this sweep's re-verification pass, capped at `maxStaleDocsPerSweep`.
+- `dossier.local.onFlowMerge` (enum `suggest`/`run`/`off`, default `suggest`) is renamed to `dossier.local.onLocalMerge`, same enum/default/semantics, across `schema.json`, `settings.json`, `templates/config.example.json`, and this repo's own `.claude/settings.dossier.json`.
+- New hook script `plugins/dossier/hooks/scripts/detect-local-merge.sh`, registered as a `PostToolUse` entry matching `Bash` in `plugins/dossier/hooks/hooks.json`, following the existing `stale-header-stamp.sh`/`enforce-allowed-actions.sh` pattern: `INPUT=$(cat)`, `.tool_input.command` via `jq`, config via `dossier-resolve-config.sh`. Detects `git merge`, a `git pull` that produces a merge commit, and `gh pr merge`, landing on the repository's default branch.
+- `dossier-policy.sh` gains a new rule, evaluated only when `EVT=schedule`: if the existing "no relevant paths"/"below threshold" exits would otherwise fire, first consult `dossier-staleness-check.sh`; if it reports ≥1 stale document, override to `should_run=true reason=stale-sweep` and surface the bounded document list as a new output field.
+- `dossier-evidence.sh` and `status.md` are refactored to call the shared script instead of each re-implementing the age/threshold loop.
+
+## Spec Validation Gate
+
+| # | Acceptance Criterion | Verification Command | Gate Status |
+|---|---|---|---|
+| 1 | A document past its staleness threshold, with no other trigger, gets a real re-verification pass on a scheduled cadence — reproducible test, not just docs | `bash plugins/dossier/tests/run.sh staleness-trigger.test.sh` (new fixture: schedule event + planted stale doc + no path-filter-relevant diff → `should_run=true reason=stale-sweep`) | PASS |
+| 2 | A staleness-triggered re-verification never rewrites a document whose claims still hold — only `last-verified` advances | Same fixture file: assert byte-identical body content, changed `last-verified` header, for a planted doc whose evidence is unchanged | PASS |
+| 3 | A single scheduled sweep never re-verifies an unbounded number of documents even if many are stale simultaneously | Fixture: plant N > `maxStaleDocsPerSweep` stale docs; assert the emitted eligible-for-sweep list length equals the cap, not N | PASS |
+| 4 | The post-merge refresh suggestion behaves correctly with the flow plugin entirely absent — proven by a test | New `plugins/dossier/tests/local-merge-hook.test.sh`: invoke `detect-local-merge.sh` directly with a `git merge` command payload in an environment/fixture where no `plugins/flow` directory exists; assert correct `suggest`/`run`/`off` behavior per config | PASS |
+| 5 | The full dossier test suite passes | `bash plugins/dossier/tests/run.sh` | PASS |
+| 6 | `/dossier:status` (or its bash block) against this repo's own `docs/dossier` package reflects the new behavior accurately | Run `commands/status.md`'s bash block (or the equivalent direct script invocation) against `docs/dossier` after the change lands; manually inspect the Freshness/Automation rows for accuracy | PASS |
+
+All 6 ACs PASS — proceeding to PLAN.
+
+## Stranger Test
+
+A zero-context agent given this journal's Interface Contracts (exact script names, config key names/defaults, hook registration shape, and the existing file:line patterns to mirror) plus the Spec Validation Gate's verification commands could implement and verify every acceptance criterion without further clarification. **PASS.**
+
+<!-- auto-log: 2026-07-28 11:27 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-135.md -->
+
+<!-- auto-log: 2026-07-28 11:29 Write /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-check.test.sh -->
+
+<!-- auto-log: 2026-07-28 11:30 Write /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-staleness-check.sh -->
+
+<!-- auto-log: 2026-07-28 11:32 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-check.test.sh -->
+
+<!-- auto-log: 2026-07-28 11:32 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-check.test.sh -->
+
+<!-- auto-log: 2026-07-28 11:32 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-check.test.sh -->
+
+<!-- auto-log: 2026-07-28 11:33 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/commands/status.md -->
+
+<!-- auto-log: 2026-07-28 11:34 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-staleness-check.sh -->
+
+<!-- auto-log: 2026-07-28 11:34 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-staleness-check.sh -->
+
+<!-- auto-log: 2026-07-28 11:34 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-staleness-check.sh -->
+
+<!-- auto-log: 2026-07-28 11:34 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-staleness-check.sh -->
+
+<!-- auto-log: 2026-07-28 11:34 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-check.test.sh -->
+
+<!-- auto-log: 2026-07-28 11:35 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-evidence.sh -->
+
+<!-- auto-log: 2026-07-28 11:35 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-07-28 11:37 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/settings.json -->
+
+<!-- auto-log: 2026-07-28 11:37 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/config.example.json -->
+
+<!-- auto-log: 2026-07-28 11:37 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/schema.json -->

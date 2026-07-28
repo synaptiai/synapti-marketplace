@@ -61,7 +61,8 @@
       "failOn": ["Critical", "High"]
     },
     "refresh": {
-      "stalenessDays": 90
+      "stalenessDays": 90,
+      "maxStaleDocsPerSweep": 5
     },
     "ci": {
       "enabled": true,

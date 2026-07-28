@@ -410,19 +410,24 @@ printf '%s\n' "$CANONICAL_DOCS" | while IFS= read -r REL; do
     LAST_COMMIT_AT=$(git log -1 --format=%aI -- "$FULL" 2>/dev/null)
     # The header field is the document's own claim about when a human or a
     # verification pass last confirmed it — deliberately distinct from the
-    # commit date, which only says when the bytes last moved.
-    LAST_VERIFIED=$(grep -m1 -iE '^[-*]?[[:space:]]*(\*\*)?last[ -]verified(\*\*)?[[:space:]]*:' "$FULL" 2>/dev/null \
-                      | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
+    # commit date, which only says when the bytes last moved. Delegated to
+    # dossier-staleness-check.sh so this producer and status.md's cannot
+    # silently disagree on what counts as verified.
+    STALE_SF=$("$SCRIPT_DIR/dossier-staleness-check.sh" --single-file "$FULL" --stale-days "${STALENESS_DAYS:-90}" 2>/dev/null)
+    LAST_VERIFIED=$(printf '%s\n' "$STALE_SF" | awk -F= '$1=="LAST_VERIFIED"{print $2; exit}')
+    IS_STALE=$(printf '%s\n' "$STALE_SF" | awk -F= '$1=="IS_STALE"{print $2; exit}')
+    [ "$IS_STALE" = "true" ] || IS_STALE="false"
     CHANGED=$(git diff --name-only --no-renames $RANGE -- "$FULL" 2>/dev/null | head -1)
     REC=$(jq -cn --arg p "$REL" --arg s "${SUM:-}" --argjson b "${BYTES:-0}" \
                  --arg lc "${LAST_COMMIT:-}" --arg lca "${LAST_COMMIT_AT:-}" \
                  --arg lv "${LAST_VERIFIED:-}" --argjson ch "$([ -n "$CHANGED" ] && echo true || echo false)" \
+                 --argjson st "$IS_STALE" \
           '{path: $p, present: true, sha256: $s, bytes: $b, last_commit: $lc,
-            last_commit_at: $lca, last_verified: $lv, changed_in_range: $ch}')
+            last_commit_at: $lca, last_verified: $lv, changed_in_range: $ch, is_stale: $st}')
   else
     REC=$(jq -cn --arg p "$REL" \
           '{path: $p, present: false, sha256: "", bytes: 0, last_commit: "",
-            last_commit_at: "", last_verified: "", changed_in_range: false}')
+            last_commit_at: "", last_verified: "", changed_in_range: false, is_stale: false}')
   fi
   jq -c --argjson rec "$REC" '. + [$rec]' "$DOC_TMP" >"$DOC_TMP.next" 2>/dev/null && mv "$DOC_TMP.next" "$DOC_TMP"
 done

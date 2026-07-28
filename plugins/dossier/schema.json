@@ -386,6 +386,12 @@
               "minimum": 1,
               "default": 90,
               "description": "Age at which a document's last-verified date makes its claims stale, independent of whether code changed. Surfaces in /dossier:status and is one of the documented refresh triggers."
+            },
+            "maxStaleDocsPerSweep": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 5,
+              "description": "Ceiling on how many stale documents a single schedule-triggered sweep hands to dossier-policy.sh for re-verification, most-overdue first. Bounds a scheduled run's cost when many documents have gone stale simultaneously; it does not bound how many can be reported as stale by /dossier:status."
             }
           }
         },
