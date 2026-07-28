@@ -146,6 +146,49 @@ SF_INVALID=$("$SCRIPT" --single-file "$CALENDAR_INVALID_DOC" --stale-days 90 2>&
 assert_equal "true" "$(printf '%s\n' "$SF_INVALID" | awk -F= '$1=="IS_UNDATED"{print $2; exit}')" "--single-file: a calendar-invalid date (2024-13-45) counts as undated, not fresh"
 assert_equal "false" "$(printf '%s\n' "$SF_INVALID" | awk -F= '$1=="IS_STALE"{print $2; exit}')" "--single-file: a calendar-invalid date is never reported as stale"
 
+# --- Rollover dates: shape-valid AND parseable, but not a real calendar day.
+# Distinct from the ERR-2 case above (2024-13-45, which both BSD and GNU date
+# refuse outright): BSD/GNU date silently ROLL OVER an out-of-range day
+# (2026-06-31 -> July 1, 2024-02-30 -> March) instead of failing, so the naive
+# parse-and-compare-age logic reads a typo as freshly verified — the dangerous
+# direction, since it actively hides a genuinely-unverified document. This is
+# what validate_calendar_date()'s round-trip check exists to catch.
+ROLLOVER_JUNE_DOC="$ARCH/rollover-june.md"
+cat >"$ROLLOVER_JUNE_DOC" <<EOF
+dossier-header: v1
+last-verified: 2026-06-31
+---
+June has no 31st; BSD/GNU date rolls this to July 1.
+EOF
+SF_ROLLOVER_JUNE=$("$SCRIPT" --single-file "$ROLLOVER_JUNE_DOC" --stale-days 90 2>&1)
+assert_equal "true" "$(printf '%s\n' "$SF_ROLLOVER_JUNE" | awk -F= '$1=="IS_UNDATED"{print $2; exit}')" "--single-file: 2026-06-31 (rolls to July 1) counts as undated, not fresh"
+assert_equal "false" "$(printf '%s\n' "$SF_ROLLOVER_JUNE" | awk -F= '$1=="IS_STALE"{print $2; exit}')" "--single-file: 2026-06-31 is never reported as stale"
+
+ROLLOVER_FEB_DOC="$ARCH/rollover-feb.md"
+cat >"$ROLLOVER_FEB_DOC" <<EOF
+dossier-header: v1
+last-verified: 2024-02-30
+---
+February has no 30th; rolls to March.
+EOF
+SF_ROLLOVER_FEB=$("$SCRIPT" --single-file "$ROLLOVER_FEB_DOC" --stale-days 90 2>&1)
+assert_equal "true" "$(printf '%s\n' "$SF_ROLLOVER_FEB" | awk -F= '$1=="IS_UNDATED"{print $2; exit}')" "--single-file: 2024-02-30 (rolls to March) counts as undated, not stale under a 90-day threshold"
+
+# Sweep mode must catch the same rollover — a document with only a rollover
+# date and nothing else planted in this fixture must count toward
+# DOCUMENTS_UNDATED, not silently vanish from every count.
+ROLLOVER_FIXTURE=$(_dossier_safe_mktemp_dir "staleness-rollover")
+mkdir -p "$ROLLOVER_FIXTURE/docs/dossier/02-architecture"
+cat >"$ROLLOVER_FIXTURE/docs/dossier/02-architecture/system-architecture.md" <<EOF
+dossier-header: v1
+last-verified: 2026-06-31
+---
+Rollover date, sweep mode.
+EOF
+SWEEP_ROLLOVER_OUT=$("$SCRIPT" --output-root "$ROLLOVER_FIXTURE/docs/dossier" --stale-days 90 --max-sweep 5 2>&1)
+assert_equal "0" "$(printf '%s\n' "$SWEEP_ROLLOVER_OUT" | awk -F= '$1=="DOCUMENTS_STALE"{print $2; exit}')" "sweep mode: a rollover date is never counted as stale"
+assert_equal "1" "$(printf '%s\n' "$SWEEP_ROLLOVER_OUT" | awk -F= '$1=="DOCUMENTS_UNDATED"{print $2; exit}')" "sweep mode: a rollover date counts toward DOCUMENTS_UNDATED"
+
 # =============================================================================
 # Golden-fixture check: commands/status.md's "### Staleness" section must keep
 # emitting the same four fields, in the same order, with the same values, now
