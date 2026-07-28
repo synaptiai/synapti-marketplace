@@ -29,11 +29,15 @@ OUTPUT_ROOT="docs/dossier"
 RUN_TESTS="false"
 RUN_BUILD="false"
 NETWORK="false"
+RUN_SECURITY_SCAN="false"
+RUN_CODE_QUALITY_SCAN="false"
 if [ -x "$RESOLVER" ]; then
   OUTPUT_ROOT=$("$RESOLVER" --default "docs/dossier" dossier.project.outputRoot 2>/dev/null)
   RUN_TESTS=$("$RESOLVER" --default "false" dossier.engagement.allowedActions.runTests 2>/dev/null)
   RUN_BUILD=$("$RESOLVER" --default "false" dossier.engagement.allowedActions.runBuild 2>/dev/null)
   NETWORK=$("$RESOLVER"   --default "false" dossier.engagement.allowedActions.networkAccess 2>/dev/null)
+  RUN_SECURITY_SCAN=$("$RESOLVER" --default "false" dossier.engagement.allowedActions.runSecurityScan 2>/dev/null)
+  RUN_CODE_QUALITY_SCAN=$("$RESOLVER" --default "false" dossier.engagement.allowedActions.runCodeQualityScan 2>/dev/null)
 fi
 
 [ -f "$OUTPUT_ROOT/00-control/.scope.json" ] || exit 0
@@ -129,6 +133,26 @@ if [ "$NETWORK" != "true" ]; then
   fi
   if printf '%s' "$SCAN" | grep -qE "${BOUND_ACTIVE}gh[[:space:]]+(pr[[:space:]]+(create|merge|edit|close)|issue[[:space:]]+(create|edit|close)|release[[:space:]]+create|api[[:space:]]+-X[[:space:]]*(POST|PUT|PATCH|DELETE))"; then
     deny "network access" networkAccess "GitHub mutation"
+  fi
+fi
+
+# Defense-in-depth backstop: the primary containment for both scanners is
+# architectural (dossier-scan-security.sh / dossier-scan-quality.sh run as
+# an isolated pre-agent CI step, never from inside this agent's own Bash
+# tool — see templates/ci/dossier-docs-refresh.yml). These two blocks still
+# deny a direct invocation that bypasses the wrapper, so the ceiling holds
+# even if that architectural boundary is ever circumvented. Neither block
+# matches the wrapper scripts' own names (dossier-scan-security.sh /
+# dossier-scan-quality.sh), only the underlying tool binaries.
+if [ "$RUN_SECURITY_SCAN" != "true" ]; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND_ACTIVE}osv-scanner\b"; then
+    deny "run a security scan" runSecurityScan "osv-scanner invocation"
+  fi
+fi
+
+if [ "$RUN_CODE_QUALITY_SCAN" != "true" ]; then
+  if printf '%s' "$SCAN" | grep -qE "${BOUND_ACTIVE}pyscn\b"; then
+    deny "run a code-quality scan" runCodeQualityScan "pyscn invocation"
   fi
 fi
 

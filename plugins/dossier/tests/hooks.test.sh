@@ -168,6 +168,64 @@ for OK in 'timeout 5 ls' 'time ls' 'nice ls' 'env ls' 'ls -la' 'git status' 'cat
   assert_equal "0" "$RC" "enforce-allowed-actions permits: $OK"
 done
 
+# --- Scanner deny-blocks (issue #137): a defense-in-depth backstop for the
+# two new runSecurityScan/runCodeQualityScan flags, on top of the primary
+# architectural containment (the scanners run as an isolated CI step, never
+# from inside this agent's own Bash tool). ------------------------------------
+RC=0
+OUT=$(cd "$WORK" && printf '%s' '{"tool_input":{"command":"osv-scanner scan source -r ."}}' \
+        | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions denies a direct osv-scanner invocation when runSecurityScan is false"
+assert_contains "BLOCKED" "$OUT" "the osv-scanner deny message names the block"
+
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"pyscn analyze --json ."}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions denies a direct pyscn invocation when runCodeQualityScan is false"
+
+# Wrapper-indirection bypass, same technique proven above for curl/npm.
+for BAD in \
+  'bash -c "osv-scanner scan source -r ."' \
+  'env pyscn analyze --json .' \
+  'timeout 30 osv-scanner scan source -r .' \
+  'sudo -u www-data pyscn analyze --json .'
+do
+  RC=0
+  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$BAD" | jq -Rs .)" \
+     | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+  assert_equal "2" "$RC" "enforce-allowed-actions sees through the wrapper: $BAD"
+done
+
+# Reading about the tool is not running it.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"grep -r \"osv-scanner\" docs/"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "enforce-allowed-actions permits grepping for osv-scanner by name"
+
+# The wrapper scripts' own names are never denied by these blocks — they
+# contain neither literal "osv-scanner" nor "pyscn" as a command token.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"dossier-scan-security.sh --target ."}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "enforce-allowed-actions never denies dossier-scan-security.sh by its own name"
+
+# The flag-true permit path — not demonstrated anywhere above for any
+# capability. Env var name traced by hand through dossier-resolve-config.sh's
+# own sed pipeline: dossier.engagement.allowedActions.runSecurityScan ->
+# DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN. Also proves AC3 at
+# the hook layer: enabling runSecurityScan alone must not also permit pyscn.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"osv-scanner scan source -r ."}}' \
+   | DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" \
+     "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "enforce-allowed-actions permits osv-scanner once runSecurityScan resolves true"
+
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"pyscn analyze --json ."}}' \
+   | DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" \
+     "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "AC3 at the hook layer: runSecurityScan=true alone does not also permit pyscn"
+
 # --- Security hooks fail closed ----------------------------------------------
 # A boundary that switches itself off when a dependency is missing is
 # indistinguishable from one that was never there. Simulated by giving the hook

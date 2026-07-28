@@ -162,3 +162,13 @@ No item remains open under "Needs Clarification" — every gap the advisor raise
 <!-- auto-log: 2026-07-28 20:38 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
 
 <!-- auto-log: 2026-07-28 20:38 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:42 commit "feat(dossier): add dossier-scan-quality.sh, isolated pyscn execution" -->
+
+<!-- auto-log: 2026-07-28 20:42 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/enforce-allowed-actions.sh -->
+
+<!-- auto-log: 2026-07-28 20:42 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/enforce-allowed-actions.sh -->
+
+<!-- auto-log: 2026-07-28 20:43 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/hooks.test.sh -->
+
+<!-- auto-log: 2026-07-28 20:44 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/skills/engagement-scoping/SKILL.md -->
