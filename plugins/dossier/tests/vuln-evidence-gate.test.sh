@@ -141,6 +141,41 @@ assert_equal "1" "$OSV_NOCVE_COUNT" "osv-scanner: a group merging two aliased id
 OSV_NOCVE_ID=$(printf '%s' "$OSV_NOCVE_OUT" | jq -r '.findings[0].id' 2>/dev/null)
 assert_equal "GHSA-aaaa-0002" "$OSV_NOCVE_ID" "osv-scanner: no CVE- alias present -> lexicographically-first id wins, not the tool's listed order"
 
+# --- osv-scanner: non-ASCII content (a package name with a multi-byte
+# character, an emoji and RTL text in a finding summary) is carried through
+# verbatim by the group-based extraction, not corrupted or truncated. jq
+# handles UTF-8 natively and this extraction path does no byte-length or
+# substring operation on these fields, but the path had no dedicated test
+# for it — SEC-4 above tests shell-metacharacter injection resistance, a
+# different concern from encoding. -------------------------------------------
+cat >"$FIXTURES/scan.osv.unicode.json" <<'EOF'
+{
+  "results": [
+    {
+      "source": {"path": "package-lock.json"},
+      "packages": [
+        {
+          "package": {"name": "café-café-résumé", "version": "1.0.0"},
+          "groups": [
+            {"ids": ["GHSA-unicode-0001"], "aliases": ["CVE-2024-90001"], "max_severity": "9.1"}
+          ],
+          "vulnerabilities": [
+            {"id": "GHSA-unicode-0001", "summary": "🔥 critical: مرحبا injection 你好 world"}
+          ]
+        }
+      ]
+    }
+  ]
+}
+EOF
+OSV_UNICODE_OUT=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.unicode.json 2>&1)
+OSV_UNICODE_RC=$?
+assert_equal "0" "$OSV_UNICODE_RC" "osv-scanner: non-ASCII scan content parses cleanly, not treated as malformed"
+OSV_UNICODE_PKG=$(printf '%s' "$OSV_UNICODE_OUT" | jq -r '.findings[0].package' 2>/dev/null)
+assert_equal "café-café-résumé" "$OSV_UNICODE_PKG" "osv-scanner: a multi-byte package name is carried through verbatim, not corrupted or truncated"
+OSV_UNICODE_SUMMARY=$(printf '%s' "$OSV_UNICODE_OUT" | jq -r '.findings[0].summary' 2>/dev/null)
+assert_equal "🔥 critical: مرحبا injection 你好 world" "$OSV_UNICODE_SUMMARY" "osv-scanner: emoji and RTL/CJK text in a summary field survive extraction byte-for-byte"
+
 # --- osv-scanner: a group with null/absent max_severity falls to
 # unresolved_severity, never defaulted Low. -----------------------------------
 cat >"$FIXTURES/scan.osv.null-max-severity.json" <<'EOF'
