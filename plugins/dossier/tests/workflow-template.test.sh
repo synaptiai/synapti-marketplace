@@ -67,13 +67,26 @@ assert_contains "dossier-scan-security.sh" "$SCAN_BLOCK" "scan job invokes the s
 assert_contains "dossier-scan-quality.sh" "$SCAN_BLOCK" "scan job invokes the quality scanner wrapper"
 assert_contains "upload-artifact" "$SCAN_BLOCK" "scan job uploads its results as an artifact"
 assert_contains "name: dossier-scan" "$SCAN_BLOCK" "scan job's artifact is named dossier-scan"
-# The raw tool-native files carry no untrusted-content note of their own
-# (unlike each wrapper's own envelope, which does) -- must not ship in the
-# uploaded artifact unannotated.
-assert_contains "osv-scan-raw.json" "$SCAN_BLOCK" "scan job removes the un-annotated raw osv-scanner output before upload"
-assert_contains "pyscn-scan-raw.json" "$SCAN_BLOCK" "scan job removes the un-annotated raw pyscn output before upload"
+# pyscn's raw output carries no untrusted-content note of its own (unlike
+# the wrapper's own envelope, which does, and unlike pyscn's envelope, which
+# already embeds its findings inline) -- must not ship in the uploaded
+# artifact unannotated. osv-scanner's raw output is the opposite case: its
+# wrapper's envelope embeds no findings of its own, so the raw file is the
+# only artifact in the bundle a downstream Read can get citable
+# vulnerability content from -- it must survive to the uploaded artifact,
+# never be deleted alongside pyscn's.
+#
+# Anchored on the actual `run: rm -f ...` step, not any line that merely
+# mentions a filename -- the surrounding comments name both files by design
+# (explaining why one is kept and one isn't), so a bare substring match
+# would pass even if the real step were deleted, relocated after upload, or
+# widened to remove osv-scan-raw.json too.
+CLEANUP_RUN_LINE=$(printf '%s\n' "$SCAN_BLOCK" | grep -n '^ *run: rm -f' | head -1)
+CLEANUP_LINE_NUM=$(printf '%s' "$CLEANUP_RUN_LINE" | cut -d: -f1)
+CLEANUP_LINE_CONTENT=$(printf '%s' "$CLEANUP_RUN_LINE" | cut -d: -f2-)
+assert_contains "pyscn-scan-raw.json" "$CLEANUP_LINE_CONTENT" "the actual rm -f step removes pyscn's un-annotated raw output before upload"
+assert_not_contains "osv-scan-raw.json" "$CLEANUP_LINE_CONTENT" "the actual rm -f step does NOT remove osv-scanner's raw output -- it is the only bundle artifact carrying citable vulnerability content"
 UPLOAD_LINE_NUM=$(printf '%s\n' "$SCAN_BLOCK" | grep -n 'name: Upload the scan bundle' | head -1 | cut -d: -f1)
-CLEANUP_LINE_NUM=$(printf '%s\n' "$SCAN_BLOCK" | grep -n 'osv-scan-raw.json' | head -1 | cut -d: -f1)
 if [ -n "$UPLOAD_LINE_NUM" ] && [ -n "$CLEANUP_LINE_NUM" ] && [ "$CLEANUP_LINE_NUM" -lt "$UPLOAD_LINE_NUM" ]; then
   _dossier_assert_pass "raw-output cleanup runs before the artifact upload, not after"
 else

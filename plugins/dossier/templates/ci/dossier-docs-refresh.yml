@@ -349,17 +349,25 @@ jobs:
             --target . \
             --out .dossier/scan
 
-      # The raw tool-native files each wrapper leaves alongside its own
-      # envelope (osv-scan-raw.json, pyscn-scan-raw.json) carry no
-      # untrusted-content warning of their own — unlike the envelope, which
-      # includes one (both wrappers' `note` field). Nothing in this repo
-      # currently reads these raw files directly, but they'd otherwise ship
-      # in the uploaded artifact unannotated. The envelope already carries
-      # everything a consumer needs (status, note, and the parsed
-      # dead_code/complexity/artifact fields), so drop the raw duplicates
-      # rather than risk shipping fork-influenced content with no framing.
+      # Only pyscn's raw file is a true duplicate: dossier-scan-quality.sh's
+      # envelope already embeds its findings inline (dead_code/complexity),
+      # so pyscn-scan-raw.json carries nothing a consumer still needs and
+      # would otherwise ship unannotated (no `note` field of its own, unlike
+      # the envelope).
+      #
+      # osv-scan-raw.json is NOT dropped here, on the same reasoning applied
+      # in reverse: dossier-scan-security.sh's envelope embeds no findings of
+      # its own — only status/scan/note/artifact_path — precisely because
+      # dossier-vuln-evidence.sh's osv-scanner input shape (results[] /
+      # packages[] / groups[] / vulnerabilities[]) IS this raw file's shape.
+      # It is the only artifact in this bundle a downstream Read (by the
+      # refresh agent, or by dossier-vuln-evidence.sh --scan) can get
+      # citable vulnerability content from; deleting it here would leave the
+      # envelope's own artifact_path naming a file the bundle no longer
+      # contains. The envelope's `note` field, which travels in the same
+      # upload alongside it, is the disclosure framing for both files.
       - name: Remove raw tool output before upload
-        run: rm -f .dossier/scan/osv-scan-raw.json .dossier/scan/pyscn-scan-raw.json
+        run: rm -f .dossier/scan/pyscn-scan-raw.json
 
       # Every status (ok, disabled, unavailable, timeout, error) writes an
       # envelope file, so this artifact always has content — a missing file
