@@ -78,7 +78,7 @@ while [ $# -gt 0 ]; do
               TARGET="$2"; shift 2 ;;
     --out)    [ $# -lt 2 ] && { echo "dossier-scan-quality: --out requires a path" >&2; exit 2; }
               OUT="$2"; shift 2 ;;
-    -h|--help) sed -n '2,58p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,65p' "$0"; exit 0 ;;
     *) echo "dossier-scan-quality: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -155,11 +155,16 @@ if [ "$RUN_CODE_QUALITY_SCAN" != "true" ]; then
   emit "disabled" "dossier.engagement.allowedActions.runCodeQualityScan is false — pyscn was not invoked" ""
 fi
 
-# --- Invalid input: target must exist, be readable, and be a directory ------
-if [ ! -d "$TARGET" ] || [ ! -r "$TARGET" ]; then
+# --- Invalid input: target must exist, be readable, enterable, and be a
+# directory. -x matters distinctly from -r: a readable-but-not-enterable
+# directory (r--, no x — rare but constructible) would otherwise pass this
+# check and only fail later, silently, when the cd below can't enter it. ---
+if [ ! -d "$TARGET" ] || [ ! -r "$TARGET" ] || [ ! -x "$TARGET" ]; then
   emit "error" "target $TARGET does not exist, is not readable, or is not a directory" ""
 fi
-ABS_TARGET=$(CDPATH='' cd -- "$TARGET" && pwd)
+ABS_TARGET=$(CDPATH='' cd -- "$TARGET" && pwd) || {
+  emit "error" "target $TARGET could not be resolved to an absolute path" ""
+}
 
 # --- Tool availability, checked before any invocation attempt ---------------
 if ! command -v pyscn >/dev/null 2>&1; then
@@ -170,7 +175,9 @@ fi
 # process's CWD, not the analyzed target path — running from a dedicated
 # scratch dir keeps the target repository untouched. -------------------------
 SCRATCH=$(mktemp -d 2>/dev/null) || SCRATCH="/tmp/dossier-scan-quality.$$"
-mkdir -p "$SCRATCH/.pyscn/reports" 2>/dev/null
+mkdir -p "$SCRATCH/.pyscn/reports" 2>/dev/null || {
+  emit "error" "could not create scratch directory $SCRATCH/.pyscn/reports" ""
+}
 BEFORE_SNAPSHOT=$(ls -1 "$SCRATCH/.pyscn/reports" 2>/dev/null | sort)
 
 if [ -n "$OUT" ]; then
