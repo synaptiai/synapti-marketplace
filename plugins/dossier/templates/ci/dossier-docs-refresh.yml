@@ -333,7 +333,19 @@ jobs:
 
           python3 -m pip install --quiet --break-system-packages --no-deps 'pyscn==1.10.2'
 
+      # if: always() on every step from here down (also the cleanup and
+      # upload steps below): runSecurityScan and runCodeQualityScan are
+      # documented as independent capabilities ("enabling one must never
+      # enable the other" — both wrapper scripts' own headers), but without
+      # always() a hard failure of one step (a wrapper's own internal-bug
+      # exit 1, a checksum-verification failure upstream leaving osv-scanner
+      # missing from PATH, anything) would skip every subsequent step by
+      # GitHub Actions' default — silently losing the OTHER scan's coverage
+      # and the upload entirely, for a failure that has nothing to do with
+      # it. Each wrapper already reports "unavailable" honestly when its own
+      # tool isn't on PATH, so running it anyway is safe, not reckless.
       - name: Run the security scan
+        if: always()
         run: |
           set -uo pipefail
           chmod +x "$DOSSIER_BIN"/*.sh
@@ -342,6 +354,7 @@ jobs:
             --out .dossier/scan
 
       - name: Run the code-quality scan
+        if: always()
         run: |
           set -uo pipefail
           chmod +x "$DOSSIER_BIN"/*.sh
@@ -367,13 +380,18 @@ jobs:
       # contains. The envelope's `note` field, which travels in the same
       # upload alongside it, is the disclosure framing for both files.
       - name: Remove raw tool output before upload
+        if: always()
         run: rm -f .dossier/scan/pyscn-scan-raw.json
 
       # Every status (ok, disabled, unavailable, timeout, error) writes an
       # envelope file, so this artifact always has content — a missing file
       # here means the scan step itself broke, not merely that a capability
-      # was off.
+      # was off. always() here specifically means "upload whatever exists":
+      # if only one of the two scans produced output, that one still ships
+      # rather than being discarded as collateral damage of the other's
+      # failure.
       - name: Upload the scan bundle
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dossier-scan

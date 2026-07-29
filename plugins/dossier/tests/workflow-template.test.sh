@@ -105,6 +105,23 @@ else
   _dossier_assert_fail "scan job does not pin an explicit pyscn version"
 fi
 
+# Step-level fault isolation (error-handler-inspector P2, confirmed by 3
+# independent reviewers): runSecurityScan/runCodeQualityScan are documented
+# as independent capabilities, but without always() a hard failure of one
+# scan step skips every step after it by GitHub Actions' default -- silently
+# losing the OTHER scan's coverage and the artifact upload too. Anchored on
+# "name: X" immediately followed by "if: always()" so a step that HAS an
+# always() elsewhere in the block (e.g. on a different step) can't produce a
+# false pass.
+assert_contains "name: Run the security scan
+        if: always()" "$SCAN_BLOCK" "the security-scan step runs even if an earlier step in the job failed"
+assert_contains "name: Run the code-quality scan
+        if: always()" "$SCAN_BLOCK" "the quality-scan step runs even if the security-scan step failed -- the two capabilities stay independent at the CI-step level, not just by config flag"
+assert_contains "name: Remove raw tool output before upload
+        if: always()" "$SCAN_BLOCK" "the raw-output cleanup step runs even if a scan step failed, so a partial success still gets cleaned before upload"
+assert_contains "name: Upload the scan bundle
+        if: always()" "$SCAN_BLOCK" "the upload step runs even if a scan step failed -- whichever scan DID produce output still ships instead of being discarded as collateral damage"
+
 # The refresh job (the one running the agent) must have contents: read.
 REFRESH_BLOCK=$(awk '/^  refresh:/{f=1} /^  publish:/{f=0} f' "$WF")
 assert_contains "contents: read" "$REFRESH_BLOCK" "refresh job has contents: read"
