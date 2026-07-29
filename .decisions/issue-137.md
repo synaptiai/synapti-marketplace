@@ -34,6 +34,12 @@ artifacts:
   path: B
   findings_count: 10
   pr: 144
+- type: review-cycle
+  captured_at: '2026-07-29T11:15:11Z'
+  cycle: 1
+  path: A
+  findings_count: 13
+  pr: 144
 ---
 # Decision Journal — Issue #137
 
@@ -446,3 +452,7 @@ No item remains open under "Needs Clarification" — every gap the advisor raise
 <!-- auto-log: 2026-07-29 13:07 commit "docs(dossier): point evidence-ledger at the new isolated-scan capability" -->
 
 <!-- auto-log: 2026-07-29 13:08 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-137.md -->
+
+<!-- auto-log: 2026-07-29 13:14 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/self-review-comment-144.md -->
+
+<!-- auto-log: 2026-07-29 13:14 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/resolution-comment-144.md -->
