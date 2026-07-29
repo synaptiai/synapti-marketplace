@@ -198,11 +198,16 @@ if command -v pyscn >/dev/null 2>&1; then
   printf 'def f():\n    pass\n' >"$DIR_RERUN/target/mod.py"
   DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
     "$SCRIPT" --target "$DIR_RERUN/target" --out "$DIR_RERUN/out" >/dev/null 2>&1
-  FIRST_MTIME=$(stat -f %m "$DIR_RERUN/out/pyscn-scan-raw.json" 2>/dev/null || stat -c %Y "$DIR_RERUN/out/pyscn-scan-raw.json" 2>/dev/null)
+  # Two independent command substitutions, not `A || B` inside one: GNU
+  # stat's `-f` means "filesystem status", not BSD's "custom format" — on
+  # Linux, `stat -f %m FILE` fails but still leaks a multi-line filesystem
+  # dump to stdout before failing, which corrupts a single merged capture.
+  # Verified live on Ubuntu 24.04 (GNU coreutils).
+  FIRST_MTIME=$(stat -f %m "$DIR_RERUN/out/pyscn-scan-raw.json" 2>/dev/null) || FIRST_MTIME=$(stat -c %Y "$DIR_RERUN/out/pyscn-scan-raw.json" 2>/dev/null)
   sleep 2
   DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
     "$SCRIPT" --target "$DIR_RERUN/target" --out "$DIR_RERUN/out" >/dev/null 2>&1
-  SECOND_MTIME=$(stat -f %m "$DIR_RERUN/out/pyscn-scan-raw.json" 2>/dev/null || stat -c %Y "$DIR_RERUN/out/pyscn-scan-raw.json" 2>/dev/null)
+  SECOND_MTIME=$(stat -f %m "$DIR_RERUN/out/pyscn-scan-raw.json" 2>/dev/null) || SECOND_MTIME=$(stat -c %Y "$DIR_RERUN/out/pyscn-scan-raw.json" 2>/dev/null)
   if [ -n "$FIRST_MTIME" ] && [ -n "$SECOND_MTIME" ] && [ "$SECOND_MTIME" -gt "$FIRST_MTIME" ]; then
     _dossier_assert_pass "report selection: a second run produces a strictly newer artifact, never the first run's stale report"
   else

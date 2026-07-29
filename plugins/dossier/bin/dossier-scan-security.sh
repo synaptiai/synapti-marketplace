@@ -408,7 +408,15 @@ if [ "$OFFLINE" -eq 1 ]; then
       if [ -d "$_eco_dir" ]; then
         while IFS= read -r _f; do
           [ -z "$_f" ] && continue
-          _m=$(stat -f %m "$_f" 2>/dev/null || stat -c %Y "$_f" 2>/dev/null)
+          # Two independent command substitutions, not `A || B` inside one: GNU
+          # stat's `-f` means "filesystem status", not BSD's "custom format" —
+          # `stat -f %m FILE` fails (exit 1, since it reads "%m" as a second
+          # FILE argument that doesn't exist) but still writes a multi-line
+          # filesystem-info dump for the real file to STDOUT before failing.
+          # With both stat calls inside one `$(A || B)`, that leaked dump
+          # prefixes B's real mtime in the captured value, corrupting the
+          # arithmetic below. Verified live on Ubuntu 24.04 (GNU coreutils).
+          _m=$(stat -f %m "$_f" 2>/dev/null) || _m=$(stat -c %Y "$_f" 2>/dev/null)
           [ -z "$_m" ] && continue
           if [ -z "$_eco_oldest" ] || [ "$_m" -lt "$_eco_oldest" ]; then
             _eco_oldest="$_m"

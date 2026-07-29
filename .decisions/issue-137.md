@@ -456,3 +456,7 @@ No item remains open under "Needs Clarification" — every gap the advisor raise
 <!-- auto-log: 2026-07-29 13:14 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/self-review-comment-144.md -->
 
 <!-- auto-log: 2026-07-29 13:14 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/resolution-comment-144.md -->
+
+<!-- auto-log: 2026-07-29 13:24 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-29 13:25 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/quality-scan-execution.test.sh -->
