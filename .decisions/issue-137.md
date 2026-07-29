@@ -91,6 +91,20 @@ The independent verdict judge in `/flow:start` Phase 4 returned `NEEDS-HUMAN-REV
 
 **Sixth-pass follow-on (same session)**: a full 7-AC canonical-pipeline judge pass caught the same class of contract mismatch on `AC5` — its `verification_command` named only `hooks.test.sh`, while the actual evidence proving AC5's "existing security boundaries" claim (the CI scan job's read-only permissions, no-credential-exposure, and pinned-tool-install assertions) lives in `workflow-template.test.sh`. Corrected to `bash plugins/dossier/tests/run.sh hooks.test.sh workflow-template.test.sh`, matching the sidecar command that had already been evidencing it in practice. The same pass also flagged AC5's own limitations text (citing the pre-existing, documented-not-patched `find -exec`/`xargs -I{}` hook bypass, issue #143) as overlapping AC5's scope. On inspection this was an imprecise disclosure, not a real gap: the bypass grants command execution when a capability flag denies it — never the network, credential, or write access AC5's parenthetical actually enumerates — and it is a property of the pre-existing `enforce-allowed-actions.sh` script shared identically by `runTests`/`runBuild`/`network`, not something this issue's two new deny-blocks introduced or widened. The CI-boundary claim itself rests on the job permission model (`contents: read`, no write, no LLM credential, `persist-credentials: false`), which the bypass cannot touch — the refresh job's own tool allowlist contains neither `find` nor `xargs`. Limitation text rewritten to state this precisely rather than the prior wording, which invited the overlap reading by omission.
 
+## Resolved: holdout validation findings (/flow:pr Phase 3, 1 P1 + 2 P2 + 2 P3)
+
+The `holdout-validation` skill, run alongside the 5-agent review fan-out and `integration-verifier` in `/flow:pr` Phase 3, cross-referenced the code-reviewer's self-review claims and the evidence bundle against actual file state and surfaced five findings the prior review passes had not caught — all now fixed, TDD RED→GREEN verified, and re-confirmed by a full 23-file/1670-assertion targeted suite run (the two pre-existing, out-of-diff files with the known local-git-fixture-leak bug from issue #135 excluded, per the standing decision to not exercise them this session).
+
+**P1 — offline staleness guard keyed on the wrong file.** `dossier-scan-security.sh`'s AC4 staleness check (added earlier this session, see the AC4 entry above) computed the cache's age from the *newest* file across the whole `~/Library/Caches/osv-scanner` tree, not the ecosystem subdirectory the scan target actually needs. osv-scanner's cache is laid out per ecosystem (`osv-scanner/PyPI/all.zip`, `osv-scanner/npm/all.zip`, ...), so a single fresh file in any unrelated ecosystem masked an arbitrarily stale database in the ecosystem genuinely in use — reproduced live against real osv-scanner 2.4.0 (a 2020-dated PyPI database plus a fresh sibling npm file returned `status: ok` with an unearned `age-checked before this scan ran` claim; the identical database with no fresh sibling correctly refused). Fixed by keying the guard on the *oldest* file in the tree instead — fail-closed rather than attempting to duplicate osv-scanner's own manifest-detection logic to resolve the relevant ecosystem. A mixed-ecosystem regression test was added and RED→GREEN verified against the pre-fix code.
+
+**P2 — CI raw-file deletion broke the one downstream consumer that needs it.** The SEC-5 fix (see above) deleted both scanners' raw tool output before artifact upload, reasoning that "nothing in this repo currently reads these raw files directly." That premise was false for the security half specifically: `dossier-scan-security.sh`'s envelope embeds no findings of its own (unlike `dossier-scan-quality.sh`'s, which inlines `dead_code`/`complexity`), only `artifact_path` naming the raw file — and `dossier-vuln-evidence.sh --scan`'s documented input shape (`results[]`/`packages[]`/`groups[]`/`vulnerabilities[]`) *is* that raw file's shape. Deleting it left the envelope's own `artifact_path` pointing at a file the uploaded bundle no longer contained, and left the refresh job's agent with zero citable vulnerability content for the CI path — contradicting AC1's evidence-citation outcome and the goal's own "agent reads scan output" interface contract. Fixed by dropping only `pyscn-scan-raw.json`; the security raw file now survives to the artifact.
+
+**P2 — the test covering that cleanup step wasn't actually anchored to it.** `workflow-template.test.sh`'s three SEC-5 assertions matched the *first* occurrence of a raw-output filename anywhere in the scan job's YAML block, which was the explanatory comment above the real step, not the `run:` line itself — so deleting the step, moving it after the upload, or widening it to remove the security raw file too would all still have passed. Fixed by anchoring on the literal `run: rm -f ...` line and adding a positive assertion that the security raw filename is absent from it. RED→GREEN verified against the pre-fix template.
+
+**P3 — stale diagnostic text.** The AC1 end-to-end test's comment and failure message still named an earlier fixture (`axios 0.21.1` / `lodash 4.17.15`) after the fixture itself was changed to `django==2.0.1` / `requests==2.6.0` / `pyyaml==5.3` earlier in the session; only the wording was wrong, not the assertions. Corrected.
+
+**P3 — silent fallthrough on an empty-but-existing cache directory.** When the offline cache directory exists but contains zero stat-able files, the guard fell through to invocation rather than refusing, relying on the real tool's own downstream failure to catch the case — which happens to hold for the real binary but is not something this wrapper's own honesty guarantee should depend on. A stub binary that succeeds regardless of cache contents would have produced `status: ok` carrying the same unearned `age-checked` claim as the P1 case. Resolved as a side effect of the P1 fix (the guard now refuses explicitly when no stat-able file is found), closed with a tripwire test (fake `osv-scanner` on `PATH`, RED→GREEN verified) proving the real binary is never invoked in that state.
+
 ## Stranger Test
 
 _Recorded after Phase 2 task decomposition, 2026-07-28._
@@ -302,3 +316,81 @@ No item remains open under "Needs Clarification" — every gap the advisor raise
 <!-- auto-log: 2026-07-28 23:29 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/issue137-lifecycle.yaml -->
 
 <!-- auto-log: 2026-07-28 23:30 commit "test(dossier): assert CI refresh job's tool allowlist excludes find/xargs/scanners (AC5)" -->
+
+<!-- auto-log: 2026-07-29 10:45 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-29 10:47 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-29 10:48 commit "fix(dossier): refuse --offline scans when the cache directory is wholly missing (ERR-1)" -->
+
+<!-- auto-log: 2026-07-29 10:48 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-quality.sh -->
+
+<!-- auto-log: 2026-07-29 10:49 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/quality-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-29 10:50 commit "fix(dossier): kill the real pyscn process on timeout, not the wrapping subshell (ERR-2)" -->
+
+<!-- auto-log: 2026-07-29 10:51 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-29 10:51 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-29 10:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-29 10:54 commit "fix(dossier): defense-in-depth for offline-DB-unavailable detection (ERR-3)" -->
+
+<!-- auto-log: 2026-07-29 10:55 Edit /Users/danielbentes/synapti-marketplace/.github/workflows/dossier-tests.yml -->
+
+<!-- auto-log: 2026-07-29 10:55 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-07-29 10:55 Edit /Users/danielbentes/synapti-marketplace/.github/workflows/dossier-tests.yml -->
+
+<!-- auto-log: 2026-07-29 10:56 commit "fix(dossier): pin pyscn install to --no-deps, verify osv-scanner before it lands on PATH" -->
+
+<!-- auto-log: 2026-07-29 10:56 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/enforce-allowed-actions.sh -->
+
+<!-- auto-log: 2026-07-29 10:56 commit "docs(dossier): remove agent-memory cross-link syntax from a shipped comment" -->
+
+<!-- auto-log: 2026-07-29 10:57 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-07-29 10:57 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/workflow-template.test.sh -->
+
+<!-- auto-log: 2026-07-29 10:58 commit "fix(dossier): drop un-annotated raw scan output from the uploaded CI artifact (SEC-5)" -->
+
+<!-- auto-log: 2026-07-29 10:58 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-29 10:58 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-29 10:59 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-quality.sh -->
+
+<!-- auto-log: 2026-07-29 10:59 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-29 10:59 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-quality.sh -->
+
+<!-- auto-log: 2026-07-29 11:00 commit "fix(dossier): canonicalize target paths, check -x, surface setup failures, fix --help ranges" -->
+
+<!-- auto-log: 2026-07-29 11:23 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-29 11:23 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-29 11:23 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-29 11:24 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-29 11:26 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-29 11:26 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-29 11:28 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-07-29 11:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/workflow-template.test.sh -->
+
+<!-- auto-log: 2026-07-29 11:30 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-29 11:30 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-29 11:37 commit "fix(dossier): key offline staleness guard on oldest cache file, not newest" -->
+
+<!-- auto-log: 2026-07-29 11:40 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/commit-msg-p2.txt -->
+
+<!-- auto-log: 2026-07-29 11:40 commit "fix(dossier): retain osv-scanner raw output for downstream evidence citation" -->
+
+<!-- auto-log: 2026-07-29 11:41 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-137.md -->
