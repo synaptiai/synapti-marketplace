@@ -83,7 +83,13 @@ BOUND='(^|[;&|(]|^[[:space:]]*)[[:space:]]*([A-Za-z0-9_.-]*/)*'
 # check, the message says exactly what happened, and dropping the wrapper
 # re-runs it. Without a wrapper, the strict anchor below is unchanged and that
 # case still passes.
-WRAPPER='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*(bash|sh|zsh|dash|ksh|env|command|exec|eval|xargs|nohup|setsid|stdbuf|script|time|timeout|nice|ionice|sudo|doas|su)([[:space:]]|$)'
+# python/python3 close a proven bypass on the pyscn deny check specifically:
+# pyscn is installed as a pip package (see templates/ci's own install step),
+# so `python3 -m pyscn ...` / `python -m pyscn ...` are ordinary invocation
+# shapes for it, not exotic ones — confirmed live that the pyscn deny check
+# below permits them while correctly blocking bare pyscn/osv-scanner and
+# env/sudo-wrapped forms.
+WRAPPER='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*(bash|sh|zsh|dash|ksh|env|command|exec|eval|xargs|nohup|setsid|stdbuf|script|time|timeout|nice|ionice|sudo|doas|su|python|python3)([[:space:]]|$)'
 
 # Known limitation, not fixed here (issue synaptiai/synapti-marketplace#143):
 # a command-embedded indirection that never spells one of the WRAPPER tokens

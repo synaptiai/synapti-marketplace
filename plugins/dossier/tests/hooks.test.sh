@@ -184,11 +184,16 @@ RC=0
 assert_equal "2" "$RC" "enforce-allowed-actions denies a direct pyscn invocation when runCodeQualityScan is false"
 
 # Wrapper-indirection bypass, same technique proven above for curl/npm.
+# python/python3 are proven bypasses specifically for pyscn (holdout finding
+# on issue #137's PR review): pyscn is pip-installed, so `python3 -m pyscn`
+# is an ordinary invocation shape for it, not an exotic one.
 for BAD in \
   'bash -c "osv-scanner scan source -r ."' \
   'env pyscn analyze --json .' \
   'timeout 30 osv-scanner scan source -r .' \
-  'sudo -u www-data pyscn analyze --json .'
+  'sudo -u www-data pyscn analyze --json .' \
+  'python3 -m pyscn analyze --json .' \
+  'python -m pyscn analyze --json .'
 do
   RC=0
   (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$BAD" | jq -Rs .)" \
