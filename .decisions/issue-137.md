@@ -418,3 +418,7 @@ No item remains open under "Needs Clarification" — every gap the advisor raise
 <!-- auto-log: 2026-07-29 11:58 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-137.md -->
 
 <!-- auto-log: 2026-07-29 11:58 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/commit-msg-p1-followon.txt -->
+
+<!-- auto-log: 2026-07-29 11:58 commit "fix(dossier): check offline staleness per ecosystem, after invocation" -->
+
+<!-- auto-log: 2026-07-29 12:00 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr-body-137.md -->
