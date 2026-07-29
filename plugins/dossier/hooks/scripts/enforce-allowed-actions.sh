@@ -91,11 +91,11 @@ WRAPPER='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*(bash|sh|zsh|dash|
 # https://evil {} \;` and `xargs -I{} curl {}` are the confirmed cases:
 # `-exec`/`-I{}` are glued to a flag, not a standalone token, so neither
 # WRAPPER nor the strict BOUND anchor ever fires for the command inside
-# them. This does not widen the token list further (see
-# [[feedback_matcher_narrowing_vs_grammar_parsing]] — the WRAPPER list has
+# them. This does not widen the token list further — the WRAPPER list has
 # already been narrowed/widened several times and each round just moves the
-# hole); a real fix needs to parse the actual shell grammar rather than
-# pattern-match tokens, tracked separately. Low real-world exposure: this
+# hole, since the underlying problem is pattern-matching tokens rather than
+# parsing the actual shell grammar; a real fix needs the latter and is
+# tracked separately. Low real-world exposure: this
 # hook is a local/interactive backstop only — the CI refresh job's own
 # --allowedTools allowlist doesn't include `find`, `xargs`, or a bare shell
 # at all, so the automated pipeline has no reach here regardless.
