@@ -275,5 +275,26 @@ if ! jq -e . "$RAW_STDOUT" >/dev/null 2>&1; then
   emit "error" "$DETAIL" "" 0
 fi
 
+# --- Defense-in-depth for the same offline-DB-unavailable case above,
+# independent of the exact stderr wording matched there: this wrapper's own
+# text match is pinned to real osv-scanner 2.4.0's exact phrasing, and a
+# future release could reword it without this script's own tests noticing
+# (they run against whatever osv-scanner version is installed). A missing
+# offline database is empirically exit 127/128 with an EMPTY results array
+# — the same structural signature regardless of wording — so require BOTH
+# that exit-code shape AND a genuinely empty result before trusting "ok" in
+# offline mode. This never fires for a real clean scan against a loaded
+# database, which exits 0. ---------------------------------------------------
+if [ "$OFFLINE" -eq 1 ]; then
+  case "$TOOL_RC" in
+    127|128)
+      if [ "$(jq '(.results // []) | length' "$RAW_STDOUT" 2>/dev/null)" = "0" ]; then
+        rm -f "$RAW_STDOUT" "$RAW_STDERR" 2>/dev/null
+        emit "unavailable" "offline mode requested but osv-scanner exited $TOOL_RC with empty results — no cached vulnerability database appears to be available (stderr wording did not match the known signal; refusing rather than reporting an unverifiable clean scan)" "" 0
+      fi
+      ;;
+  esac
+fi
+
 rm -f "$RAW_STDERR" 2>/dev/null
 emit "ok" "" "$RAW_STDOUT" "$OFFLINE"

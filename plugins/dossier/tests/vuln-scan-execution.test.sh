@@ -208,6 +208,40 @@ else
 fi
 
 # =============================================================================
+# --offline-DB-unavailable defense-in-depth: a stub osv-scanner reproduces
+# the same exit-127-with-empty-results shape a real missing-DB run produces,
+# but with stderr wording that does NOT match the known "could not load
+# db"/"no offline version" text. This is independent of whether the real
+# tool is installed — it proves the structural (exit-code + empty-results)
+# check catches a reworded message the text match alone would miss. A fresh
+# placeholder cache under a dedicated $HOME override ensures the ERR-1
+# missing-directory refusal (checked before invocation) doesn't itself fire
+# first — this test isolates the DOWNSTREAM defense-in-depth specifically.
+# =============================================================================
+DIR_REWORDED=$(_dossier_safe_mktemp_dir "offline-reworded-stderr")
+mkdir -p "$DIR_REWORDED/fakebin" "$DIR_REWORDED/target"
+cat >"$DIR_REWORDED/fakebin/osv-scanner" <<'EOF'
+#!/usr/bin/env bash
+echo '{"results":[]}'
+echo "hypothetical future wording: advisory database not present" >&2
+exit 127
+EOF
+chmod +x "$DIR_REWORDED/fakebin/osv-scanner"
+if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+  REWORDED_CACHE_REL="Library/Caches/osv-scanner/PyPI"
+else
+  REWORDED_CACHE_REL=".cache/osv-scanner/PyPI"
+fi
+DIR_REWORDED_HOME=$(_dossier_safe_mktemp_dir "offline-reworded-stderr-home")
+mkdir -p "$DIR_REWORDED_HOME/$REWORDED_CACHE_REL"
+printf 'fresh placeholder db\n' >"$DIR_REWORDED_HOME/$REWORDED_CACHE_REL/all.zip"
+OUT_REWORDED=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+  HOME="$DIR_REWORDED_HOME" PATH="$DIR_REWORDED/fakebin:$PATH" \
+  "$SCRIPT" --target "$DIR_REWORDED/target" --offline 2>&1)
+STATUS_REWORDED=$(printf '%s' "$OUT_REWORDED" | jq -r '.status' 2>/dev/null)
+assert_equal "unavailable" "$STATUS_REWORDED" "--offline with exit 127 + empty results but non-matching stderr wording: still reported as unavailable via the structural defense-in-depth check, never as a clean scan"
+
+# =============================================================================
 # AC1 real end-to-end run: a fixture with actually-known-vulnerable
 # dependencies (axios 0.21.1, lodash 4.17.15 — both carry multiple
 # real, high-severity CVEs), scanned for real, fed into
