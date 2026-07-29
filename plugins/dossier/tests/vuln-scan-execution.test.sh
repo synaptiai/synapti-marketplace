@@ -127,6 +127,42 @@ else
   _dossier_assert_pass "--offline with a missing cache directory: osv-scanner tripwire was never invoked — the age-verifiability check happens before any tool lookup"
 fi
 
+# --offline with a cache directory that EXISTS but contains zero stat-able
+# files (holdout finding on issue #137): there is nothing whose age this
+# check can verify. With the real osv-scanner binary this state happens to
+# be caught downstream anyway (the tool itself fails to load a nonexistent
+# database), which is why this needs its own tripwire rather than relying
+# on the real binary — a stub that succeeds regardless of cache contents
+# proves the wrapper refuses BEFORE invocation, not that it merely happens
+# to be saved by the real tool's own behavior. Without the upstream refusal
+# this stub would return "ok" carrying an offline_caveat that falsely
+# claims "age-checked before this scan ran."
+DIR_EMPTY_CACHE=$(_dossier_safe_mktemp_dir "offline-empty-cache")
+mkdir -p "$DIR_EMPTY_CACHE/target" "$DIR_EMPTY_CACHE/tripwire-bin"
+TRIPWIRE_EMPTY_MARKER="$DIR_EMPTY_CACHE/osv-scanner-was-invoked"
+cat >"$DIR_EMPTY_CACHE/tripwire-bin/osv-scanner" <<EOF
+#!/usr/bin/env bash
+touch "$TRIPWIRE_EMPTY_MARKER"
+echo '{"results":[]}'
+EOF
+chmod +x "$DIR_EMPTY_CACHE/tripwire-bin/osv-scanner"
+DIR_EMPTY_CACHE_HOME=$(_dossier_safe_mktemp_dir "offline-empty-cache-home")
+if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+  mkdir -p "$DIR_EMPTY_CACHE_HOME/Library/Caches/osv-scanner"
+else
+  mkdir -p "$DIR_EMPTY_CACHE_HOME/.cache/osv-scanner"
+fi
+OUT_EMPTY_CACHE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+  HOME="$DIR_EMPTY_CACHE_HOME" PATH="$DIR_EMPTY_CACHE/tripwire-bin:$PATH" \
+  "$SCRIPT" --target "$DIR_EMPTY_CACHE/target" --offline 2>&1)
+STATUS_EMPTY_CACHE=$(printf '%s' "$OUT_EMPTY_CACHE" | jq -r '.status' 2>/dev/null)
+assert_equal "unavailable" "$STATUS_EMPTY_CACHE" "--offline with a cache directory that exists but contains no files: reported as unavailable"
+if [ -e "$TRIPWIRE_EMPTY_MARKER" ]; then
+  _dossier_assert_fail "--offline with an empty cache directory: osv-scanner tripwire was invoked — must refuse before any tool invocation, never emit ok with an unearned age-checked claim from an unverifiable cache"
+else
+  _dossier_assert_pass "--offline with an empty cache directory: osv-scanner tripwire was never invoked — refused before any tool lookup, not merely saved by the real tool's own fallback behavior"
+fi
+
 if command -v osv-scanner >/dev/null 2>&1; then
   DIR_OFFLINE=$(_dossier_safe_mktemp_dir "offline-no-db")
   mkdir -p "$DIR_OFFLINE/target"
@@ -203,6 +239,32 @@ if command -v osv-scanner >/dev/null 2>&1; then
     "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
   DETAIL_OVERRIDE=$(printf '%s' "$OUT_OVERRIDE" | jq -r '.detail // ""' 2>/dev/null)
   assert_not_contains "stale_advisory_data" "$DETAIL_OVERRIDE" "DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS override widens the acceptable-age window as configured"
+
+  # Mixed-ecosystem cache age (holdout finding on issue #137): the age guard
+  # inspects the whole ~/Library/Caches/osv-scanner tree, not only the
+  # ecosystem subdirectory the target actually needs, because this wrapper
+  # cannot determine the relevant ecosystem without duplicating osv-scanner's
+  # own manifest-detection logic. A single fresh file in an UNRELATED
+  # ecosystem (npm) must not mask an arbitrarily stale database in the
+  # ecosystem the PyPI target genuinely depends on — the guard must key off
+  # the OLDEST file in the tree, not the newest.
+  if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+    OSV_CACHE_REL_NPM="Library/Caches/osv-scanner/npm"
+  else
+    OSV_CACHE_REL_NPM=".cache/osv-scanner/npm"
+  fi
+  DIR_MIXED_HOME=$(_dossier_safe_mktemp_dir "offline-mixed-ecosystem-home")
+  mkdir -p "$DIR_MIXED_HOME/$OSV_CACHE_REL" "$DIR_MIXED_HOME/$OSV_CACHE_REL_NPM"
+  printf 'stale PyPI db\n' >"$DIR_MIXED_HOME/$OSV_CACHE_REL/all.zip"
+  touch -t 202001010000 "$DIR_MIXED_HOME/$OSV_CACHE_REL/all.zip"
+  printf 'fresh npm db\n' >"$DIR_MIXED_HOME/$OSV_CACHE_REL_NPM/all.zip"
+  OUT_MIXED=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+    HOME="$DIR_MIXED_HOME" \
+    "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
+  STATUS_MIXED=$(printf '%s' "$OUT_MIXED" | jq -r '.status' 2>/dev/null)
+  assert_equal "unavailable" "$STATUS_MIXED" "--offline with a stale PyPI db alongside a fresh, unrelated npm db: still refused as stale — a fresh sibling ecosystem must not mask the one actually needed"
+  DETAIL_MIXED=$(printf '%s' "$OUT_MIXED" | jq -r '.detail' 2>/dev/null)
+  assert_contains "stale_advisory_data" "$DETAIL_MIXED" "mixed-ecosystem cache: detail names the specific reason"
 else
   _dossier_assert_pass "osv-scanner unavailable on PATH — the --offline-no-cached-DB assertion was skipped (real-tool-dependent; run.sh's CI job installs it)"
 fi
@@ -243,8 +305,8 @@ assert_equal "unavailable" "$STATUS_REWORDED" "--offline with exit 127 + empty r
 
 # =============================================================================
 # AC1 real end-to-end run: a fixture with actually-known-vulnerable
-# dependencies (axios 0.21.1, lodash 4.17.15 — both carry multiple
-# real, high-severity CVEs), scanned for real, fed into
+# dependencies (django 2.0.1, requests 2.6.0, pyyaml 5.3 — all carry
+# multiple real, high-severity CVEs), scanned for real, fed into
 # dossier-vuln-evidence.sh, and cited as evidence. This is the load-bearing
 # proof for AC1 and, together with AC6, is not run against a substitute or
 # stand-in — it is the real osv-scanner binary querying the real OSV
@@ -274,7 +336,7 @@ if command -v osv-scanner >/dev/null 2>&1; then
   assert_equal "0" "$EVIDENCE_RC" "AC1 e2e: dossier-vuln-evidence.sh successfully ingests the wrapper's raw artifact"
   FINDINGS_COUNT_E2E=$(printf '%s' "$EVIDENCE_E2E" | jq '.findings | length' 2>/dev/null)
   case "$FINDINGS_COUNT_E2E" in
-    ''|0) _dossier_assert_fail "AC1 e2e: expected real Critical/High findings for axios 0.21.1 / lodash 4.17.15, got $FINDINGS_COUNT_E2E — the severity-extraction fix or the live OSV database may not be behaving as expected" ;;
+    ''|0) _dossier_assert_fail "AC1 e2e: expected real Critical/High findings for django 2.0.1 / requests 2.6.0 / pyyaml 5.3, got $FINDINGS_COUNT_E2E — the severity-extraction fix or the live OSV database may not be behaving as expected" ;;
     *) _dossier_assert_pass "AC1 e2e: $FINDINGS_COUNT_E2E real Critical/High finding(s) correctly extracted from a live osv-scanner run" ;;
   esac
   SRCREF_E2E=$(printf '%s' "$EVIDENCE_E2E" | jq -r '.findings[0].source_ref // "MISSING"' 2>/dev/null)

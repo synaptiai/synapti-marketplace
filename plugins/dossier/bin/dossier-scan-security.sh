@@ -46,7 +46,7 @@
 # verified live: a real cached database artificially aged to 2020 loaded
 # and scanned with zero warning, indistinguishable in output from a fresh
 # fetch. This script therefore checks the cache's own age BEFORE invoking
-# osv-scanner whenever `--offline` is set: if the newest file under
+# osv-scanner whenever `--offline` is set: if the OLDEST file under
 # osv-scanner's own cache directory (`~/Library/Caches/osv-scanner` on
 # Darwin, unconditionally — verified live that osv-scanner ignores
 # XDG_CACHE_HOME entirely on this platform even when it's set;
@@ -56,6 +56,18 @@
 # and reported as `unavailable` with a `stale_advisory_data` explanation —
 # never `ok`. This is a separate check from the "no cached DB at all"
 # detection above; either can fire independently.
+#
+# Deliberately the OLDEST file, not the newest: osv-scanner's cache is
+# laid out per ecosystem (osv-scanner/PyPI/all.zip, osv-scanner/npm/all.zip,
+# ...) and this wrapper has no reliable way to know in advance which
+# ecosystem(s) the target actually needs without duplicating osv-scanner's
+# own manifest-detection logic. Taking the newest file's age lets one
+# recently-refreshed, unrelated ecosystem mask an arbitrarily stale
+# database for the ecosystem the scan actually depends on. Taking the
+# oldest file is the fail-closed choice: it can over-refuse (a stale,
+# unrelated ecosystem blocks a scan that never needed it), but it can never
+# under-refuse — which matches this file's own rule that an unverifiable
+# result must never look identical to a verified-fresh one.
 #
 # A timeout kills the tool (TERM then KILL) and discards any partial output
 # — a killed run's incomplete stdout is never read as a result.
@@ -180,7 +192,7 @@ RAW_STDERR="$WORKDIR/.osv-scan-stderr.txt"
 # or fails to load — it cannot detect a present-but-stale cache, since
 # osv-scanner itself never reports that condition. This wrapper therefore
 # owns staleness detection independently: refuse to scan against a cache
-# whose newest file is older than the configured maximum age, reporting
+# whose oldest file is older than the configured maximum age, reporting
 # `unavailable` before osv-scanner ever runs, rather than letting a stale
 # "clean" result look identical to a genuinely fresh one.
 if [ "$OFFLINE" -eq 1 ]; then
@@ -203,24 +215,35 @@ if [ "$OFFLINE" -eq 1 ]; then
   MAX_AGE_DAYS="${DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS:-7}"
   MAX_AGE_SECONDS=$((MAX_AGE_DAYS * 86400))
   if [ -d "$OSV_CACHE_DIR" ]; then
-    NEWEST_MTIME=0
+    OLDEST_MTIME=""
     while IFS= read -r _f; do
+      [ -z "$_f" ] && continue
       _m=$(stat -f %m "$_f" 2>/dev/null || stat -c %Y "$_f" 2>/dev/null)
-      [ -n "$_m" ] && [ "$_m" -gt "$NEWEST_MTIME" ] && NEWEST_MTIME="$_m"
+      [ -z "$_m" ] && continue
+      if [ -z "$OLDEST_MTIME" ] || [ "$_m" -lt "$OLDEST_MTIME" ]; then
+        OLDEST_MTIME="$_m"
+      fi
     done <<EOF
 $(find "$OSV_CACHE_DIR" -type f 2>/dev/null)
 EOF
-    if [ "$NEWEST_MTIME" -gt 0 ]; then
+    if [ -n "$OLDEST_MTIME" ]; then
       NOW_EPOCH=$(date -u +%s)
-      AGE_SECONDS=$((NOW_EPOCH - NEWEST_MTIME))
+      AGE_SECONDS=$((NOW_EPOCH - OLDEST_MTIME))
       if [ "$AGE_SECONDS" -gt "$MAX_AGE_SECONDS" ]; then
         AGE_DAYS=$((AGE_SECONDS / 86400))
         emit "unavailable" "offline mode requested but the cached vulnerability database at $OSV_CACHE_DIR is ${AGE_DAYS} days old (max acceptable age: ${MAX_AGE_DAYS} days) — stale_advisory_data, refusing to report a result from it" "" 0
       fi
+    else
+      # The cache directory exists but contains no stat-able file at all —
+      # there is nothing whose age this check can verify. Falling through
+      # to invocation here would risk the same false claim the missing-
+      # directory branch below refuses to make: an "ok" result with an
+      # offline_caveat asserting "age-checked before this scan ran" when no
+      # age check actually ran. Refuse for the same reason, not because a
+      # real osv-scanner run is expected to fail here (it usually would,
+      # but this check must not depend on that downstream behavior).
+      emit "unavailable" "offline mode requested but the cache directory at $OSV_CACHE_DIR contains no files whose age could be verified" "" 0
     fi
-    # NEWEST_MTIME == 0 (directory exists but is empty) falls through to
-    # the real invocation below, which osv-scanner will itself fail on —
-    # already covered by the existing "no offline version" detection.
   else
     # The cache directory does not exist at the location this wrapper's own
     # (empirically verified) platform resolution predicts. Never fall
