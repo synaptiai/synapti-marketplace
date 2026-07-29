@@ -84,13 +84,19 @@ fi
 
 # =============================================================================
 # Timeout — a stub tool that outlives the configured timeout is terminated.
+# The stub `exec`s into `sleep` itself (one process, matching a real
+# compiled tool's shape, not a wrapper script with a child) so this test can
+# verify the tool process is ACTUALLY killed, not merely that the wrapper
+# reports "timeout" while the real process leaks on, orphaned.
 # =============================================================================
 DIR_TIMEOUT=$(_dossier_safe_mktemp_dir "timeout")
 mkdir -p "$DIR_TIMEOUT/fakebin" "$DIR_TIMEOUT/target"
 printf 'def f():\n    pass\n' >"$DIR_TIMEOUT/target/mod.py"
-cat >"$DIR_TIMEOUT/fakebin/pyscn" <<'EOF'
+TIMEOUT_PID_MARKER="$DIR_TIMEOUT/pyscn.pid"
+cat >"$DIR_TIMEOUT/fakebin/pyscn" <<EOF
 #!/usr/bin/env bash
-sleep 30
+echo \$\$ > "$TIMEOUT_PID_MARKER"
+exec sleep 30
 EOF
 chmod +x "$DIR_TIMEOUT/fakebin/pyscn"
 OUT_TIMEOUT=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true DOSSIER_SCAN_TIMEOUT_SECONDS=2 \
@@ -100,6 +106,24 @@ RC_TIMEOUT=$?
 assert_equal "0" "$RC_TIMEOUT" "timeout: still exits 0 — an honest not-run outcome"
 STATUS_TIMEOUT=$(printf '%s' "$OUT_TIMEOUT" | jq -r '.status' 2>/dev/null)
 assert_equal "timeout" "$STATUS_TIMEOUT" "timeout: distinct status"
+
+if [ -s "$TIMEOUT_PID_MARKER" ]; then
+  TOOL_TIMEOUT_PID=$(cat "$TIMEOUT_PID_MARKER")
+  # The wrapper's own poll loop already slept past TERM/KILL delivery before
+  # returning; poll briefly regardless to absorb scheduler jitter.
+  _still_alive=1
+  for _ in 1 2 3 4 5; do
+    kill -0 "$TOOL_TIMEOUT_PID" 2>/dev/null || { _still_alive=0; break; }
+    sleep 0.5
+  done
+  if [ "$_still_alive" -eq 1 ]; then
+    _dossier_assert_fail "timeout: the real tool process ($TOOL_TIMEOUT_PID) is still running after the wrapper reported timeout — TERM/KILL was sent to the wrong process"
+  else
+    _dossier_assert_pass "timeout: the real tool process was actually terminated, not merely orphaned while the wrapper reports timeout"
+  fi
+else
+  _dossier_assert_fail "timeout: the tool stub never wrote its PID marker — cannot verify termination"
+fi
 
 # =============================================================================
 # AC2 real end-to-end run: a fixture with an intentional dead-code function

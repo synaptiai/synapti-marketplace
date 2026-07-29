@@ -179,8 +179,13 @@ fi
 
 # --- bash-3.2-safe timeout guard: no `timeout`/`gtimeout` binary assumed
 # available. Background the tool, poll elapsed time, TERM then KILL on
-# expiry. -----------------------------------------------------------------
-(cd "$SCRATCH" && pyscn analyze --json "$ABS_TARGET" >"$SCRATCH/.pyscn-stdout.txt" 2>"$SCRATCH/.pyscn-stderr.txt") &
+# expiry. `exec` inside the subshell replaces its process image with pyscn
+# itself rather than running pyscn as a child of it — without `exec`, `$!`
+# below is the wrapping subshell's PID, and TERM/KILL on expiry kills only
+# that subshell while pyscn is reparented and keeps running unseen (verified
+# by reproduction: backgrounding `(cd DIR && sleep N) &` and signalling `$!`
+# left the child alive after the wrapper's own job reported "Terminated").
+(cd "$SCRATCH" && exec pyscn analyze --json "$ABS_TARGET" >"$SCRATCH/.pyscn-stdout.txt" 2>"$SCRATCH/.pyscn-stderr.txt") &
 TOOL_PID=$!
 ELAPSED=0
 TIMED_OUT=0
