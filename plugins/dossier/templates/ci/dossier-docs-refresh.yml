@@ -261,12 +261,159 @@ jobs:
           if-no-files-found: error
 
   # ==========================================================================
+  # scan — the two optional isolated scanners (issue #137): dependency
+  # vulnerabilities (osv-scanner) and, for Python projects, code quality
+  # (pyscn). No LLM credential, no write token, read-only checkout — a
+  # sibling of `policy` in privilege shape, not in scheduling: it runs after
+  # `policy` and only when policy decided to run at all, so a merge the loop
+  # guard already rejected costs nothing here either.
+  #
+  # Neither wrapper script is invoked from inside the refresh job's agent
+  # sandbox — this job is their only execution path. Each wrapper self-gates
+  # on its own dossier.engagement.allowedActions flag; this job does not
+  # duplicate that policy in YAML (principle 4 above), so installing both
+  # tools unconditionally here — bounded, pinned, and cheap — is simpler
+  # than resolving the flags a second time just to skip an install. A
+  # disabled flag makes the wrapper report `disabled` without invoking the
+  # tool; it does not skip the step.
+  # ==========================================================================
+  scan:
+    name: Execute optional dependency and code-quality scans
+    needs: policy
+    if: needs.policy.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          # Shallow: this job scans the working tree as it stands, not its
+          # history.
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Check out the dossier plugin
+        uses: actions/checkout@v4
+        with:
+          repository: '{{DOSSIER_MARKETPLACE_REPO}}'
+          ref: '{{DOSSIER_REF}}'
+          path: .dossier-plugin
+          fetch-depth: 1
+          persist-credentials: false
+
+      # osv-scanner: pinned to a specific release, downloaded to a temp path,
+      # and verified by checksum BEFORE it ever lands at its final PATH
+      # location — the same posture as .github/workflows/dossier-tests.yml's
+      # own install step — so an upstream regression or a hostile release
+      # cannot silently change what this job reports.
+      #
+      # pyscn: version-pinned and installed with --no-deps. pyscn 1.10.2
+      # declares zero runtime dependencies (confirmed via its own PyPI
+      # METADATA — no Requires-Dist entries), so --no-deps is a functional
+      # no-op that closes a real gap: without it, pip would additionally
+      # resolve and install an unpinned, unverified transitive dependency
+      # graph in a job that has the target repository checked out. pyscn
+      # itself is not binary-checksummed (unlike osv-scanner) — this job
+      # relies on PyPI's own version-pin integrity for the package itself,
+      # which is a real, disclosed difference in assurance level, not a
+      # claimed-but-unmet guarantee.
+      - name: Install osv-scanner and pyscn
+        run: |
+          set -euo pipefail
+          OSV_VERSION=v2.4.0
+          OSV_SHA256=15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
+          OSV_TMP=$(mktemp)
+          curl -fsSL -o "$OSV_TMP" \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  $OSV_TMP" | sha256sum -c -
+          chmod +x "$OSV_TMP"
+          mv "$OSV_TMP" /usr/local/bin/osv-scanner
+
+          python3 -m pip install --quiet --break-system-packages --no-deps 'pyscn==1.10.2'
+
+      # if: always() on every step from here down (also the cleanup and
+      # upload steps below): runSecurityScan and runCodeQualityScan are
+      # documented as independent capabilities ("enabling one must never
+      # enable the other" — both wrapper scripts' own headers), but without
+      # always() a hard failure of one step (a wrapper's own internal-bug
+      # exit 1, a checksum-verification failure upstream leaving osv-scanner
+      # missing from PATH, anything) would skip every subsequent step by
+      # GitHub Actions' default — silently losing the OTHER scan's coverage
+      # and the upload entirely, for a failure that has nothing to do with
+      # it. Each wrapper already reports "unavailable" honestly when its own
+      # tool isn't on PATH, so running it anyway is safe, not reckless.
+      - name: Run the security scan
+        if: always()
+        run: |
+          set -uo pipefail
+          chmod +x "$DOSSIER_BIN"/*.sh
+          "$DOSSIER_BIN/dossier-scan-security.sh" \
+            --target . \
+            --out .dossier/scan
+
+      - name: Run the code-quality scan
+        if: always()
+        run: |
+          set -uo pipefail
+          chmod +x "$DOSSIER_BIN"/*.sh
+          "$DOSSIER_BIN/dossier-scan-quality.sh" \
+            --target . \
+            --out .dossier/scan
+
+      # Only pyscn's raw file is a true duplicate: dossier-scan-quality.sh's
+      # envelope already embeds its findings inline (dead_code/complexity),
+      # so pyscn-scan-raw.json carries nothing a consumer still needs and
+      # would otherwise ship unannotated (no `note` field of its own, unlike
+      # the envelope).
+      #
+      # osv-scan-raw.json is NOT dropped here, on the same reasoning applied
+      # in reverse: dossier-scan-security.sh's envelope embeds no findings of
+      # its own — only status/scan/note/artifact_path — precisely because
+      # dossier-vuln-evidence.sh's osv-scanner input shape (results[] /
+      # packages[] / groups[] / vulnerabilities[]) IS this raw file's shape.
+      # It is the only artifact in this bundle a downstream Read (by the
+      # refresh agent, or by dossier-vuln-evidence.sh --scan) can get
+      # citable vulnerability content from; deleting it here would leave the
+      # envelope's own artifact_path naming a file the bundle no longer
+      # contains. The envelope's `note` field, which travels in the same
+      # upload alongside it, is the disclosure framing for both files.
+      - name: Remove raw tool output before upload
+        if: always()
+        run: rm -f .dossier/scan/pyscn-scan-raw.json
+
+      # Every status (ok, disabled, unavailable, timeout, error) writes an
+      # envelope file, so this artifact always has content — a missing file
+      # here means the scan step itself broke, not merely that a capability
+      # was off. always() here specifically means "upload whatever exists":
+      # if only one of the two scans produced output, that one still ships
+      # rather than being discarded as collateral damage of the other's
+      # failure.
+      - name: Upload the scan bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dossier-scan
+          path: .dossier/scan/
+          retention-days: 7
+          if-no-files-found: error
+
+  # ==========================================================================
   # refresh — the agent. Read permissions only, and no persisted credentials.
   # ==========================================================================
   refresh:
     name: Refresh the documentation
-    needs: policy
-    if: needs.policy.outputs.should_run == 'true'
+    needs: [policy, scan]
+    # always() overrides GitHub's IMPLICIT success() gate on every job in
+    # needs: — without it, a scan-job failure (a network blip during the
+    # tool install, not a wrapper reporting disabled/unavailable/timeout,
+    # which all exit 0) would silently skip refresh entirely, exactly the
+    # "must never block documenting the range" guarantee this job's own
+    # comment above promises. needs.policy.outputs.should_run still gates
+    # correctly when policy itself fails or is skipped: a failed policy job
+    # never sets that output, so the comparison is false either way.
+    if: always() && needs.policy.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -399,6 +546,24 @@ jobs:
           fi
           jq -r '"Documenting \(.range.spec) — \(.counts.changed_files) files, \(.counts.commits) commits."' \
             .dossier/evidence/manifest.json
+
+      # Supplementary evidence, not a precondition: unlike the evidence
+      # bundle above, a scan reporting `disabled`/`unavailable`/`timeout`
+      # (or the artifact being unusable for any reason) must never block
+      # documenting the range. No hard verification gate here on purpose —
+      # the refresh skill reads this file when present and useful, and
+      # proceeds identically when it is not. continue-on-error is required,
+      # not cosmetic: with refresh's if: now always() (see above), the scan
+      # job that normally produces this artifact may itself have failed to
+      # run at all, and actions/download-artifact@v4 fails the step by
+      # default when the named artifact was never uploaded.
+      - name: Download the scan bundle
+        if: steps.preflight.outputs.proceed == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: dossier-scan
+          path: .dossier/scan/
 
       # The prompt is static and carries a path, never content. Nothing
       # attacker-controlled is interpolated into it. Every piece of untrusted

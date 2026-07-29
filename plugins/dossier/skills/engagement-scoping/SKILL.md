@@ -63,6 +63,8 @@ Validate before scoping. A config that fails `dossier-validate-config.sh` produc
 |---|---|
 | `runBuild` / `runTests` | Every setup, build, and test claim is `not executed` with a reason — never assumed to pass |
 | `networkAccess` | Vendor lifecycle, CVE, and license claims are labelled rather than answered from model memory |
+| `runSecurityScan` | osv-scanner is never invoked (by the isolated scan job or, as a backstop, directly). Vulnerability evidence is limited to scan artifacts the project already produced, or reported as not run |
+| `runCodeQualityScan` | pyscn is never invoked. Independent of `runSecurityScan` — enabling one never enables the other |
 | `readSecrets` | Record a secret's type, location category, and rotation need. Never its value |
 | `writeOutsideOutputRoot` | The package is the only artifact. Unrelated user work is preserved untouched |
 | `contactHumans` | Non-blocking unknowns go to the open-questions register instead of stalling the run — the default in CI |

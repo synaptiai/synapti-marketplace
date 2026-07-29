@@ -46,11 +46,81 @@ fi
 
 # --- Privilege split ---------------------------------------------------------
 # Three jobs, and the agent job must never hold a write token.
-for job in "  policy:" "  refresh:" "  publish:"; do
+for job in "  policy:" "  scan:" "  refresh:" "  publish:"; do
   assert_contains "$job" "$BODY" "job ${job# } declared"
 done
 
 assert_match '^permissions: \{\}' "$BODY" "top-level permissions is empty — per-job grants only"
+
+# The scan job (issue #137): isolated osv-scanner/pyscn execution. Same
+# privilege posture as policy — read-only, no write token, no agent.
+SCAN_BLOCK=$(awk '/^  scan:/{f=1} /^  refresh:/{f=0} f' "$WF")
+assert_contains "contents: read" "$SCAN_BLOCK" "scan job has contents: read"
+assert_not_contains "contents: write" "$SCAN_BLOCK" "scan job has NO write permission"
+assert_not_contains "pull-requests: write" "$SCAN_BLOCK" "scan job cannot open PRs"
+assert_not_contains "anthropics/claude-code-action" "$SCAN_BLOCK" "scan job runs NO agent"
+assert_not_contains "ANTHROPIC_API_KEY" "$SCAN_BLOCK" "scan job never sees the Anthropic key"
+assert_not_contains "CLAUDE_CODE_OAUTH_TOKEN" "$SCAN_BLOCK" "scan job never sees the OAuth token"
+assert_contains "persist-credentials: false" "$SCAN_BLOCK" "scan job does not persist git credentials"
+assert_contains "timeout-minutes:" "$SCAN_BLOCK" "scan job declares a timeout"
+assert_contains "dossier-scan-security.sh" "$SCAN_BLOCK" "scan job invokes the security scanner wrapper"
+assert_contains "dossier-scan-quality.sh" "$SCAN_BLOCK" "scan job invokes the quality scanner wrapper"
+assert_contains "upload-artifact" "$SCAN_BLOCK" "scan job uploads its results as an artifact"
+assert_contains "name: dossier-scan" "$SCAN_BLOCK" "scan job's artifact is named dossier-scan"
+# pyscn's raw output carries no untrusted-content note of its own (unlike
+# the wrapper's own envelope, which does, and unlike pyscn's envelope, which
+# already embeds its findings inline) -- must not ship in the uploaded
+# artifact unannotated. osv-scanner's raw output is the opposite case: its
+# wrapper's envelope embeds no findings of its own, so the raw file is the
+# only artifact in the bundle a downstream Read can get citable
+# vulnerability content from -- it must survive to the uploaded artifact,
+# never be deleted alongside pyscn's.
+#
+# Anchored on the actual `run: rm -f ...` step, not any line that merely
+# mentions a filename -- the surrounding comments name both files by design
+# (explaining why one is kept and one isn't), so a bare substring match
+# would pass even if the real step were deleted, relocated after upload, or
+# widened to remove osv-scan-raw.json too.
+CLEANUP_RUN_LINE=$(printf '%s\n' "$SCAN_BLOCK" | grep -n '^ *run: rm -f' | head -1)
+CLEANUP_LINE_NUM=$(printf '%s' "$CLEANUP_RUN_LINE" | cut -d: -f1)
+CLEANUP_LINE_CONTENT=$(printf '%s' "$CLEANUP_RUN_LINE" | cut -d: -f2-)
+assert_contains "pyscn-scan-raw.json" "$CLEANUP_LINE_CONTENT" "the actual rm -f step removes pyscn's un-annotated raw output before upload"
+assert_not_contains "osv-scan-raw.json" "$CLEANUP_LINE_CONTENT" "the actual rm -f step does NOT remove osv-scanner's raw output -- it is the only bundle artifact carrying citable vulnerability content"
+UPLOAD_LINE_NUM=$(printf '%s\n' "$SCAN_BLOCK" | grep -n 'name: Upload the scan bundle' | head -1 | cut -d: -f1)
+if [ -n "$UPLOAD_LINE_NUM" ] && [ -n "$CLEANUP_LINE_NUM" ] && [ "$CLEANUP_LINE_NUM" -lt "$UPLOAD_LINE_NUM" ]; then
+  _dossier_assert_pass "raw-output cleanup runs before the artifact upload, not after"
+else
+  _dossier_assert_fail "raw-output cleanup does not run before the artifact upload"
+fi
+assert_not_contains "@latest" "$SCAN_BLOCK" "scan job's tool install does not float on @latest"
+if printf '%s' "$SCAN_BLOCK" | grep -qE 'OSV_VERSION=v[0-9]+\.[0-9]+\.[0-9]+'; then
+  _dossier_assert_pass "scan job pins an explicit osv-scanner release version"
+else
+  _dossier_assert_fail "scan job does not pin an explicit osv-scanner release version"
+fi
+assert_contains "sha256sum -c" "$SCAN_BLOCK" "scan job verifies the downloaded osv-scanner binary by checksum"
+if printf '%s' "$SCAN_BLOCK" | grep -qE "pyscn==[0-9]+\.[0-9]+\.[0-9]+"; then
+  _dossier_assert_pass "scan job pins an explicit pyscn version"
+else
+  _dossier_assert_fail "scan job does not pin an explicit pyscn version"
+fi
+
+# Step-level fault isolation (error-handler-inspector P2, confirmed by 3
+# independent reviewers): runSecurityScan/runCodeQualityScan are documented
+# as independent capabilities, but without always() a hard failure of one
+# scan step skips every step after it by GitHub Actions' default -- silently
+# losing the OTHER scan's coverage and the artifact upload too. Anchored on
+# "name: X" immediately followed by "if: always()" so a step that HAS an
+# always() elsewhere in the block (e.g. on a different step) can't produce a
+# false pass.
+assert_contains "name: Run the security scan
+        if: always()" "$SCAN_BLOCK" "the security-scan step runs even if an earlier step in the job failed"
+assert_contains "name: Run the code-quality scan
+        if: always()" "$SCAN_BLOCK" "the quality-scan step runs even if the security-scan step failed -- the two capabilities stay independent at the CI-step level, not just by config flag"
+assert_contains "name: Remove raw tool output before upload
+        if: always()" "$SCAN_BLOCK" "the raw-output cleanup step runs even if a scan step failed, so a partial success still gets cleaned before upload"
+assert_contains "name: Upload the scan bundle
+        if: always()" "$SCAN_BLOCK" "the upload step runs even if a scan step failed -- whichever scan DID produce output still ships instead of being discarded as collateral damage"
 
 # The refresh job (the one running the agent) must have contents: read.
 REFRESH_BLOCK=$(awk '/^  refresh:/{f=1} /^  publish:/{f=0} f' "$WF")
@@ -58,6 +128,26 @@ assert_contains "contents: read" "$REFRESH_BLOCK" "refresh job has contents: rea
 assert_not_contains "contents: write" "$REFRESH_BLOCK" "refresh job has NO write permission"
 assert_not_contains "pull-requests: write" "$REFRESH_BLOCK" "refresh job cannot open PRs"
 assert_contains "persist-credentials: false" "$REFRESH_BLOCK" "refresh job does not persist git credentials"
+
+# refresh now depends on scan too (for the artifact download), and must
+# proceed even if scan itself fails outright (not just reports a non-ok
+# status) — GitHub Actions ANDs an implicit success() onto every needs:
+# entry, so needs: [policy, scan] alone would silently skip refresh on a
+# scan-job failure unrelated to the wrapper scripts (e.g. a network blip
+# during the tool install), directly contradicting the "must never block
+# documenting the range" guarantee (/flow:review PR#137, code-reviewer P2).
+# always() overrides that implicit gate; needs.policy.outputs.should_run
+# still correctly gates on policy specifically, since a failed policy job
+# never sets that output.
+assert_contains "needs: [policy, scan]" "$BODY" "refresh depends on both policy and scan"
+assert_contains "always() && needs.policy.outputs.should_run" "$BODY" "refresh's if: is not implicitly success-gated on scan alone"
+assert_contains "dossier-scan" "$REFRESH_BLOCK" "refresh downloads the scan bundle artifact"
+
+# The download step must not hard-fail refresh when scan never uploaded the
+# artifact (the always() change above makes that reachable: refresh can now
+# run even when scan failed to produce anything).
+SCAN_DOWNLOAD_BLOCK=$(awk '/Download the scan bundle/{f=1} f{print} f && /path: \.dossier\/scan\//{exit}' "$WF")
+assert_contains "continue-on-error: true" "$SCAN_DOWNLOAD_BLOCK" "the scan-bundle download step tolerates a missing artifact"
 
 # The publish job holds the write token and must run no agent.
 PUBLISH_BLOCK=$(awk '/^  publish:/{f=1} f' "$WF")
@@ -142,6 +232,16 @@ done
 for denied in "WebFetch" "git push"; do
   DIS=$(grep -A3 'disallowedTools' "$WF" | head -8)
   assert_contains "$denied" "$DIS" "denies $denied"
+done
+
+# The refresh job's agent is the only place enforce-allowed-actions.sh's
+# scanner deny-blocks could matter in CI (the scan job is a plain shell step
+# with no agent at all) — so the refresh job's own Bash allowlist is the real
+# backstop against the hook's known find-exec/xargs-I{} bypass (issue #143).
+# Granular Bash(cmd:*) entries are the boundary; find/xargs are absent from
+# the list entirely, not merely unlisted alongside others.
+for excluded in "Bash(find" "Bash(xargs" "Bash(osv-scanner" "Bash(pyscn"; do
+  assert_not_contains "$excluded" "$ALLOWED" "CI allowlist excludes $excluded — the find-exec/xargs hook bypass (#143) cannot reach a tool the refresh job was never granted"
 done
 
 # --- Prompt is static --------------------------------------------------------
