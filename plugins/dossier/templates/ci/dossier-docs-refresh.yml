@@ -349,6 +349,18 @@ jobs:
             --target . \
             --out .dossier/scan
 
+      # The raw tool-native files each wrapper leaves alongside its own
+      # envelope (osv-scan-raw.json, pyscn-scan-raw.json) carry no
+      # untrusted-content warning of their own — unlike the envelope, which
+      # includes one (both wrappers' `note` field). Nothing in this repo
+      # currently reads these raw files directly, but they'd otherwise ship
+      # in the uploaded artifact unannotated. The envelope already carries
+      # everything a consumer needs (status, note, and the parsed
+      # dead_code/complexity/artifact fields), so drop the raw duplicates
+      # rather than risk shipping fork-influenced content with no framing.
+      - name: Remove raw tool output before upload
+        run: rm -f .dossier/scan/osv-scan-raw.json .dossier/scan/pyscn-scan-raw.json
+
       # Every status (ok, disabled, unavailable, timeout, error) writes an
       # envelope file, so this artifact always has content — a missing file
       # here means the scan step itself broke, not merely that a capability

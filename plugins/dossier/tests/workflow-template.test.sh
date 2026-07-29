@@ -67,6 +67,18 @@ assert_contains "dossier-scan-security.sh" "$SCAN_BLOCK" "scan job invokes the s
 assert_contains "dossier-scan-quality.sh" "$SCAN_BLOCK" "scan job invokes the quality scanner wrapper"
 assert_contains "upload-artifact" "$SCAN_BLOCK" "scan job uploads its results as an artifact"
 assert_contains "name: dossier-scan" "$SCAN_BLOCK" "scan job's artifact is named dossier-scan"
+# The raw tool-native files carry no untrusted-content note of their own
+# (unlike each wrapper's own envelope, which does) -- must not ship in the
+# uploaded artifact unannotated.
+assert_contains "osv-scan-raw.json" "$SCAN_BLOCK" "scan job removes the un-annotated raw osv-scanner output before upload"
+assert_contains "pyscn-scan-raw.json" "$SCAN_BLOCK" "scan job removes the un-annotated raw pyscn output before upload"
+UPLOAD_LINE_NUM=$(printf '%s\n' "$SCAN_BLOCK" | grep -n 'name: Upload the scan bundle' | head -1 | cut -d: -f1)
+CLEANUP_LINE_NUM=$(printf '%s\n' "$SCAN_BLOCK" | grep -n 'osv-scan-raw.json' | head -1 | cut -d: -f1)
+if [ -n "$UPLOAD_LINE_NUM" ] && [ -n "$CLEANUP_LINE_NUM" ] && [ "$CLEANUP_LINE_NUM" -lt "$UPLOAD_LINE_NUM" ]; then
+  _dossier_assert_pass "raw-output cleanup runs before the artifact upload, not after"
+else
+  _dossier_assert_fail "raw-output cleanup does not run before the artifact upload"
+fi
 assert_not_contains "@latest" "$SCAN_BLOCK" "scan job's tool install does not float on @latest"
 if printf '%s' "$SCAN_BLOCK" | grep -qE 'OSV_VERSION=v[0-9]+\.[0-9]+\.[0-9]+'; then
   _dossier_assert_pass "scan job pins an explicit osv-scanner release version"
