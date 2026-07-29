@@ -98,6 +98,35 @@ assert_equal "timeout" "$STATUS_TIMEOUT" "timeout: distinct status, wording dist
 # AC4's highest-stakes case: an offline "clean" result must never be
 # reported the same as a real clean scan.
 # =============================================================================
+# --offline with a MISSING cache directory (not merely empty) must refuse
+# before ever invoking osv-scanner — independent of whether the real tool is
+# installed, proven with the same tripwire technique used for the disabled
+# path above. This closes a false-assurance gap: falling through to
+# invocation here would let a real "ok" scan (from a cache osv-scanner finds
+# at some location this wrapper's own guess missed) emit an offline_caveat
+# unconditionally claiming the result is "age-checked before this scan ran"
+# when no age check occurred at all.
+DIR_MISSING_CACHE=$(_dossier_safe_mktemp_dir "offline-missing-cache")
+mkdir -p "$DIR_MISSING_CACHE/target" "$DIR_MISSING_CACHE/tripwire-bin"
+TRIPWIRE_OFFLINE_MARKER="$DIR_MISSING_CACHE/osv-scanner-was-invoked"
+cat >"$DIR_MISSING_CACHE/tripwire-bin/osv-scanner" <<EOF
+#!/usr/bin/env bash
+touch "$TRIPWIRE_OFFLINE_MARKER"
+echo '{"results":[]}'
+EOF
+chmod +x "$DIR_MISSING_CACHE/tripwire-bin/osv-scanner"
+DIR_MISSING_CACHE_HOME=$(_dossier_safe_mktemp_dir "offline-missing-cache-home")
+OUT_MISSING_CACHE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+  HOME="$DIR_MISSING_CACHE_HOME" PATH="$DIR_MISSING_CACHE/tripwire-bin:$PATH" \
+  "$SCRIPT" --target "$DIR_MISSING_CACHE/target" --offline 2>&1)
+STATUS_MISSING_CACHE=$(printf '%s' "$OUT_MISSING_CACHE" | jq -r '.status' 2>/dev/null)
+assert_equal "unavailable" "$STATUS_MISSING_CACHE" "--offline with a wholly missing cache directory: reported as unavailable"
+if [ -e "$TRIPWIRE_OFFLINE_MARKER" ]; then
+  _dossier_assert_fail "--offline with a missing cache directory: osv-scanner tripwire was invoked — must refuse before any tool invocation, never emit ok with an unearned age-checked claim"
+else
+  _dossier_assert_pass "--offline with a missing cache directory: osv-scanner tripwire was never invoked — the age-verifiability check happens before any tool lookup"
+fi
+
 if command -v osv-scanner >/dev/null 2>&1; then
   DIR_OFFLINE=$(_dossier_safe_mktemp_dir "offline-no-db")
   mkdir -p "$DIR_OFFLINE/target"

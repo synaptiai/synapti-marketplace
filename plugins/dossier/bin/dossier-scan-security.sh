@@ -215,9 +215,19 @@ EOF
     # NEWEST_MTIME == 0 (directory exists but is empty) falls through to
     # the real invocation below, which osv-scanner will itself fail on —
     # already covered by the existing "no offline version" detection.
+  else
+    # The cache directory does not exist at the location this wrapper's own
+    # (empirically verified) platform resolution predicts. Never fall
+    # through to invocation here: if osv-scanner nonetheless resolves a
+    # cache from some other location we didn't anticipate and returns a
+    # clean result, the code below would emit "ok" with an offline_caveat
+    # unconditionally claiming "age-checked before this scan ran" — false,
+    # since no age check occurred. Refusing here keeps that claim honest;
+    # an unverifiable-freshness result must never look identical to a
+    # verified-fresh one (the same AC4 principle as the stale-cache case
+    # above).
+    emit "unavailable" "offline mode requested but no vulnerability-database cache directory was found at $OSV_CACHE_DIR — cache age cannot be verified" "" 0
   fi
-  # A wholly absent cache directory also falls through: osv-scanner's own
-  # load failure is caught by the existing stderr-based check below.
 fi
 
 SCAN_ARGS=(scan source --format json -r "$TARGET")
