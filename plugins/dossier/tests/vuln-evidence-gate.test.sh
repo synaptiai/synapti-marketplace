@@ -141,6 +141,69 @@ assert_equal "1" "$OSV_NOCVE_COUNT" "osv-scanner: a group merging two aliased id
 OSV_NOCVE_ID=$(printf '%s' "$OSV_NOCVE_OUT" | jq -r '.findings[0].id' 2>/dev/null)
 assert_equal "GHSA-aaaa-0002" "$OSV_NOCVE_ID" "osv-scanner: no CVE- alias present -> lexicographically-first id wins, not the tool's listed order"
 
+# --- osv-scanner: when the first-iterating alias in vulnerabilities[] has no
+# summary but a later alias in the SAME group does, the group's finding must
+# use the real summary, never blank it because the null one happened to sort
+# first (code-reviewer P2 on issue #137's PR review: osv-scanner's real
+# output is not uniformly populated per-alias -- reproduced against the
+# project's own real e2e fixture, 4 of 12 findings shipped summary:"" for
+# exactly this reason). -------------------------------------------------
+cat >"$FIXTURES/scan.osv.alias-summary-fallback.json" <<'EOF'
+{
+  "results": [
+    {
+      "source": {"path": "requirements.txt"},
+      "packages": [
+        {
+          "package": {"name": "django", "version": "2.0.1"},
+          "groups": [
+            {"ids": ["PYSEC-2019-1", "GHSA-xxxx-yyyy-zzzz"], "aliases": ["CVE-2019-0001", "PYSEC-2019-1", "GHSA-xxxx-yyyy-zzzz"], "max_severity": "9.8"}
+          ],
+          "vulnerabilities": [
+            {"id": "PYSEC-2019-1", "summary": null},
+            {"id": "GHSA-xxxx-yyyy-zzzz", "summary": "Django vulnerable to information leakage in AuthenticationForm"}
+          ]
+        }
+      ]
+    }
+  ]
+}
+EOF
+OSV_ALIASFB_OUT=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.alias-summary-fallback.json 2>&1)
+OSV_ALIASFB_SUMMARY=$(printf '%s' "$OSV_ALIASFB_OUT" | jq -r '.findings[0].summary' 2>/dev/null)
+assert_equal "Django vulnerable to information leakage in AuthenticationForm" "$OSV_ALIASFB_SUMMARY" "osv-scanner: a later alias's real summary is used instead of an earlier alias's null summary within the same group"
+
+# --- osv-scanner: when NONE of a group's matching aliases have a summary,
+# the finding still falls back to an empty summary (never crashes, never
+# picks a wrong string) -- the genuine "nothing to report" case the fallback
+# above must still cover.
+cat >"$FIXTURES/scan.osv.alias-summary-all-null.json" <<'EOF'
+{
+  "results": [
+    {
+      "source": {"path": "requirements.txt"},
+      "packages": [
+        {
+          "package": {"name": "django", "version": "2.0.1"},
+          "groups": [
+            {"ids": ["PYSEC-2019-1", "PYSEC-2019-2"], "aliases": ["PYSEC-2019-1", "PYSEC-2019-2"], "max_severity": "9.8"}
+          ],
+          "vulnerabilities": [
+            {"id": "PYSEC-2019-1", "summary": null},
+            {"id": "PYSEC-2019-2"}
+          ]
+        }
+      ]
+    }
+  ]
+}
+EOF
+OSV_ALIASNULL_OUT=$(cd "$FIXTURES" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan scan.osv.alias-summary-all-null.json 2>&1)
+OSV_ALIASNULL_RC=$?
+assert_equal "0" "$OSV_ALIASNULL_RC" "osv-scanner: a group where every matching alias lacks a summary still parses cleanly"
+OSV_ALIASNULL_SUMMARY=$(printf '%s' "$OSV_ALIASNULL_OUT" | jq -r '.findings[0].summary' 2>/dev/null)
+assert_equal "" "$OSV_ALIASNULL_SUMMARY" "osv-scanner: with no summary anywhere in the group, the finding falls back to an empty string, not null or a crash"
+
 # --- osv-scanner: non-ASCII content (a package name with a multi-byte
 # character, an emoji and RTL text in a finding summary) is carried through
 # verbatim by the group-based extraction, not corrupted or truncated. jq

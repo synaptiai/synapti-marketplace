@@ -292,7 +292,20 @@ def safe_str(f): try (f) catch "unknown";
                     | ((($g.aliases // []) | map(select(type == "string" and test("^CVE-"))) | first)
                        // (($gids | sort) | first)
                        // "UNKNOWN") as $primary_id
-                    | ([$vulns[]? | select(type == "object") | select(.id as $vid | $gids | index($vid) != null) | (.summary // "")] | first // "") as $vuln_summary
+                    # first // "" alone locks in whichever matching alias
+                    # happens to sort/iterate first, even when its own
+                    # summary is null and a LATER alias in the same group has
+                    # a real one (osv-scanner's per-alias summaries are not
+                    # uniformly populated — confirmed against this issue's
+                    # own real e2e fixture: a PYSEC-prefixed id with a null
+                    # summary iterating before a GHSA-prefixed alias with a
+                    # real one produced a blank summary for 4 of 12 real
+                    # findings). `.summary // empty` filters out any
+                    # candidate with no summary entirely, instead of
+                    # coercing it to "", so `first` selects the first alias
+                    # that actually HAS one — falling back to "" only when
+                    # none of the matching aliases have a summary at all.
+                    | ([$vulns[]? | select(type == "object") | select(.id as $vid | $gids | index($vid) != null) | (.summary // empty)] | first // "") as $vuln_summary
                     | {
                         id: $primary_id,
                         package: ($p.package.name // "unknown"),
