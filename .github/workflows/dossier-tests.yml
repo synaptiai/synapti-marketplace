@@ -58,13 +58,22 @@ jobs:
           set -euo pipefail
           OSV_VERSION=v2.4.0
           OSV_SHA256=15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
-          curl -fsSL -o /usr/local/bin/osv-scanner \
+          OSV_TMP=$(mktemp)
+          curl -fsSL -o "$OSV_TMP" \
             "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
-          echo "${OSV_SHA256}  /usr/local/bin/osv-scanner" | sha256sum -c -
-          chmod +x /usr/local/bin/osv-scanner
+          echo "${OSV_SHA256}  $OSV_TMP" | sha256sum -c -
+          chmod +x "$OSV_TMP"
+          mv "$OSV_TMP" /usr/local/bin/osv-scanner
           osv-scanner --version
 
-          python3 -m pip install --quiet --break-system-packages 'pyscn==1.10.2'
+          # --no-deps: pyscn 1.10.2 declares zero runtime dependencies
+          # (confirmed via its own PyPI METADATA — no Requires-Dist entries),
+          # so this is a functional no-op that closes a real gap: without
+          # it, pip would additionally resolve and install pyscn's
+          # transitive dependency graph unpinned and unverified, in a job
+          # with outbound network access. Only the top-level package name
+          # and version were actually pinned before this fix.
+          python3 -m pip install --quiet --break-system-packages --no-deps 'pyscn==1.10.2'
           pyscn --version
 
       - name: Verify test prerequisites

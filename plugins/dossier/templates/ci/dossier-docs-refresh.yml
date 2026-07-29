@@ -303,21 +303,35 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      # Pinned to a specific release and verified by checksum — the same
-      # posture as .github/workflows/dossier-tests.yml's own install step —
-      # so an upstream regression or a hostile release cannot silently
-      # change what this job reports.
+      # osv-scanner: pinned to a specific release, downloaded to a temp path,
+      # and verified by checksum BEFORE it ever lands at its final PATH
+      # location — the same posture as .github/workflows/dossier-tests.yml's
+      # own install step — so an upstream regression or a hostile release
+      # cannot silently change what this job reports.
+      #
+      # pyscn: version-pinned and installed with --no-deps. pyscn 1.10.2
+      # declares zero runtime dependencies (confirmed via its own PyPI
+      # METADATA — no Requires-Dist entries), so --no-deps is a functional
+      # no-op that closes a real gap: without it, pip would additionally
+      # resolve and install an unpinned, unverified transitive dependency
+      # graph in a job that has the target repository checked out. pyscn
+      # itself is not binary-checksummed (unlike osv-scanner) — this job
+      # relies on PyPI's own version-pin integrity for the package itself,
+      # which is a real, disclosed difference in assurance level, not a
+      # claimed-but-unmet guarantee.
       - name: Install osv-scanner and pyscn
         run: |
           set -euo pipefail
           OSV_VERSION=v2.4.0
           OSV_SHA256=15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
-          curl -fsSL -o /usr/local/bin/osv-scanner \
+          OSV_TMP=$(mktemp)
+          curl -fsSL -o "$OSV_TMP" \
             "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
-          echo "${OSV_SHA256}  /usr/local/bin/osv-scanner" | sha256sum -c -
-          chmod +x /usr/local/bin/osv-scanner
+          echo "${OSV_SHA256}  $OSV_TMP" | sha256sum -c -
+          chmod +x "$OSV_TMP"
+          mv "$OSV_TMP" /usr/local/bin/osv-scanner
 
-          python3 -m pip install --quiet --break-system-packages 'pyscn==1.10.2'
+          python3 -m pip install --quiet --break-system-packages --no-deps 'pyscn==1.10.2'
 
       - name: Run the security scan
         run: |
