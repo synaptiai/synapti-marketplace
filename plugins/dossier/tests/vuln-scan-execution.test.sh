@@ -333,6 +333,61 @@ OUT_NOCACHE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_P
 STATUS_NOCACHE=$(printf '%s' "$OUT_NOCACHE" | jq -r '.status' 2>/dev/null)
 assert_equal "unavailable" "$STATUS_NOCACHE" "--offline where the consulted ecosystem (PyPI) has no cache subdirectory at all: refused, not reported ok"
 
+# --all-packages must actually reach osv-scanner in --offline mode (code-
+# reviewer P1: without it, real osv-scanner omits every package with zero
+# vulnerabilities from results[].packages[] entirely -- verified live
+# against real osv-scanner 2.4.0, a lone clean dependency produces
+# `{"results":[]}` -- so a genuinely clean scan would silently skip the
+# per-ecosystem staleness check above, the exact false-assurance failure
+# mode it exists to prevent, on the single most common outcome). A stub
+# that captures its own argv proves the flag is wired into SCAN_ARGS,
+# independent of whichever osv-scanner version happens to be installed.
+DIR_ALLPKGS=$(_dossier_safe_mktemp_dir "offline-all-packages-flag")
+mkdir -p "$DIR_ALLPKGS/$OSV_CACHE_REL" "$DIR_ALLPKGS/fakebin"
+printf 'fresh placeholder db\n' >"$DIR_ALLPKGS/$OSV_CACHE_REL/all.zip"
+ARGV_CAPTURE="$DIR_ALLPKGS/osv-scanner-argv"
+cat >"$DIR_ALLPKGS/fakebin/osv-scanner" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" >"$ARGV_CAPTURE"
+echo '{"results":[{"packages":[{"package":{"name":"requests","version":"2.32.3","ecosystem":"PyPI"},"vulnerabilities":[],"groups":[]}]}]}'
+exit 0
+EOF
+chmod +x "$DIR_ALLPKGS/fakebin/osv-scanner"
+DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+  HOME="$DIR_ALLPKGS" PATH="$DIR_ALLPKGS/fakebin:$PATH" \
+  "$SCRIPT" --target "$DIR_OFFLINE/target" --offline >/dev/null 2>&1
+assert_contains "--all-packages" "$(cat "$ARGV_CAPTURE" 2>/dev/null)" "--offline invocation passes --all-packages to osv-scanner, so a clean result still lists every consulted package/ecosystem"
+
+if command -v osv-scanner >/dev/null 2>&1; then
+  # Real end-to-end proof, not a stub: a genuinely clean, currently-unpatched
+  # dependency (tomli 2.0.1, zero known CVEs) scanned --offline against a
+  # STALE (2020) real cache must still be refused as stale, not reported ok
+  # -- the exact case the P1 above showed silently fell through before the
+  # --all-packages fix. Uses a real downloaded database (not a placeholder),
+  # since the per-ecosystem check now runs AFTER invocation and needs
+  # osv-scanner to actually load and report against real content.
+  DIR_CLEAN_E2E=$(_dossier_safe_mktemp_dir "offline-clean-e2e")
+  mkdir -p "$DIR_CLEAN_E2E/target"
+  printf 'tomli==2.0.1\n' >"$DIR_CLEAN_E2E/target/requirements.txt"
+  DIR_CLEAN_E2E_DOWNLOAD_HOME=$(_dossier_safe_mktemp_dir "offline-clean-e2e-download-home")
+  HOME="$DIR_CLEAN_E2E_DOWNLOAD_HOME" osv-scanner scan source --offline-vulnerabilities --download-offline-databases \
+    --format json -r "$DIR_CLEAN_E2E/target" >/dev/null 2>&1
+  if [ -f "$DIR_CLEAN_E2E_DOWNLOAD_HOME/$OSV_CACHE_REL/all.zip" ]; then
+    touch -t 202001010000 "$DIR_CLEAN_E2E_DOWNLOAD_HOME/$OSV_CACHE_REL/all.zip"
+    OUT_CLEAN_E2E=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+      HOME="$DIR_CLEAN_E2E_DOWNLOAD_HOME" \
+      "$SCRIPT" --target "$DIR_CLEAN_E2E/target" --offline 2>&1)
+    STATUS_CLEAN_E2E=$(printf '%s' "$OUT_CLEAN_E2E" | jq -r '.status' 2>/dev/null)
+    assert_equal "unavailable" "$STATUS_CLEAN_E2E" "real end-to-end: a genuinely clean scan (zero vulnerabilities found) against a real, 2020-dated cache is still refused as stale -- not silently reported ok because no findings meant no ecosystem to check"
+    DETAIL_CLEAN_E2E=$(printf '%s' "$OUT_CLEAN_E2E" | jq -r '.detail' 2>/dev/null)
+    assert_contains "stale_advisory_data" "$DETAIL_CLEAN_E2E" "real end-to-end clean-scan staleness detail names the specific reason"
+  else
+    _dossier_assert_pass "real end-to-end clean-scan staleness check skipped -- --download-offline-databases did not populate a local PyPI cache in this environment (network-dependent, not this wrapper's own logic)"
+  fi
+else
+  _dossier_assert_pass "osv-scanner unavailable on PATH -- the real end-to-end clean-scan staleness assertion was skipped (real-tool-dependent; run.sh's CI job installs it)"
+fi
+
 # =============================================================================
 # --offline-DB-unavailable defense-in-depth: a stub osv-scanner reproduces
 # the same exit-127-with-empty-results shape a real missing-DB run produces,
@@ -490,5 +545,127 @@ assert_equal "2" "$?" "exits 2 when the required --target flag is omitted entire
 assert_equal "2" "$?" "exits 2 when --out is given with no path"
 "$SCRIPT" --nonexistent-flag >/dev/null 2>&1
 assert_equal "2" "$?" "exits 2 on an unrecognized flag"
+
+# =============================================================================
+# --out write failure (error-handler-inspector P1): a fully-computed, valid
+# JSON envelope must still reach stdout even when the optional --out copy
+# can't be written. --out is a path nested UNDER A PLAIN FILE, guaranteeing
+# mkdir -p fails structurally (not a permissions flake), independent of
+# whether the test runs as root.
+# =============================================================================
+DIR_OUTFAIL=$(_dossier_safe_mktemp_dir "out-write-failure")
+mkdir -p "$DIR_OUTFAIL/target"
+printf 'not a directory\n' >"$DIR_OUTFAIL/blocker"
+OUT_OUTFAIL=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SCRIPT" --target "$DIR_OUTFAIL/target" --out "$DIR_OUTFAIL/blocker/nested" 2>/dev/null)
+RC_OUTFAIL=$?
+assert_equal "0" "$RC_OUTFAIL" "--out under an unwritable path: still exits 0 -- a failed --out copy is not an internal-bug case"
+STATUS_OUTFAIL=$(printf '%s' "$OUT_OUTFAIL" | jq -r '.status' 2>/dev/null)
+assert_equal "disabled" "$STATUS_OUTFAIL" "--out under an unwritable path: the already-computed result still reaches stdout as valid JSON"
+STDERR_OUTFAIL=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SCRIPT" --target "$DIR_OUTFAIL/target" --out "$DIR_OUTFAIL/blocker/nested" 2>&1 >/dev/null)
+assert_contains "could not create --out directory" "$STDERR_OUTFAIL" "--out under an unwritable path: the write failure is still surfaced, on stderr as a warning rather than silently swallowed"
+
+# =============================================================================
+# Malformed env-var overrides (error-handler-inspector P2s): both are
+# documented as internal test-fixture escape hatches, not config surface, but
+# a bad value must degrade to the documented default, never silently disable
+# a guard or crash the whole script with no JSON envelope.
+# =============================================================================
+# DOSSIER_SCAN_TIMEOUT_SECONDS: a non-numeric value made the ELAPSED -ge
+# TIMEOUT_SECONDS comparison itself error ("integer expression expected"),
+# which [ ] reads as false -- so the poll loop's own timeout enforcement
+# silently never fires (the wrapper still completes once the child exits on
+# its own, just with no upper bound). A stub that runs for ~2 real seconds
+# forces the poll loop to iterate at least once, so a stderr comparison
+# error would appear if the guard's own internal check were still broken.
+DIR_BADTIMEOUT=$(_dossier_safe_mktemp_dir "bad-timeout-env")
+mkdir -p "$DIR_BADTIMEOUT/fakebin" "$DIR_BADTIMEOUT/target"
+cat >"$DIR_BADTIMEOUT/fakebin/osv-scanner" <<'EOF'
+#!/usr/bin/env bash
+sleep 2
+echo '{"results":[]}'
+EOF
+chmod +x "$DIR_BADTIMEOUT/fakebin/osv-scanner"
+STDERR_BADTIMEOUT=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true DOSSIER_SCAN_TIMEOUT_SECONDS=not-a-number \
+  CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" PATH="$DIR_BADTIMEOUT/fakebin:$PATH" \
+  "$SCRIPT" --target "$DIR_BADTIMEOUT/target" 2>&1 >/dev/null)
+assert_not_contains "integer expression expected" "$STDERR_BADTIMEOUT" "a non-numeric DOSSIER_SCAN_TIMEOUT_SECONDS falls back to the documented default instead of breaking the poll loop's own comparison"
+
+# DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS: a non-numeric value crashed the whole
+# script under set -u ($((MAX_AGE_DAYS * 86400)) treats it as an unbound
+# variable reference) -- exit 127, EMPTY stdout, no JSON envelope at all.
+if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+  BADAGE_CACHE_REL="Library/Caches/osv-scanner/PyPI"
+else
+  BADAGE_CACHE_REL=".cache/osv-scanner/PyPI"
+fi
+DIR_BADAGE_HOME=$(_dossier_safe_mktemp_dir "bad-max-age-env-home")
+mkdir -p "$DIR_BADAGE_HOME/$BADAGE_CACHE_REL"
+printf 'placeholder db\n' >"$DIR_BADAGE_HOME/$BADAGE_CACHE_REL/all.zip"
+OUT_BADAGE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS=not-a-number \
+  CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" HOME="$DIR_BADAGE_HOME" \
+  "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>/dev/null)
+RC_BADAGE=$?
+assert_equal "0" "$RC_BADAGE" "a non-numeric DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS still exits 0 -- not a set -u crash"
+STATUS_BADAGE=$(printf '%s' "$OUT_BADAGE" | jq -r '.status' 2>/dev/null)
+if [ -n "$STATUS_BADAGE" ]; then
+  _dossier_assert_pass "a non-numeric DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS still produces a valid JSON envelope on stdout, not an empty crash"
+else
+  _dossier_assert_fail "a non-numeric DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS produced no status on stdout — likely a set -u crash with empty output"
+fi
+
+# --help must reach the full header, including the Exit-code contract (code-
+# reviewer P3): the sed range is a fixed line count that silently goes stale
+# whenever the header grows, unlike dossier-vuln-evidence.sh/dossier-scan-
+# quality.sh, which were kept in sync.
+HELP_OUT=$("$SCRIPT" --help 2>&1)
+assert_contains "Exit: 0 for every case" "$HELP_OUT" "--help output reaches the Exit-code contract, not truncated mid-header"
+
+# =============================================================================
+# Coverage gaps found by test-runner-verifier during PR #144 review: fail-
+# closed branches that were already correct but untested.
+# =============================================================================
+# A plain FILE as --target (not merely a nonexistent path) must be the same
+# explicit error as a nonexistent target -- the -d check's own job.
+DIR_FILETARGET=$(_dossier_safe_mktemp_dir "file-as-target")
+printf 'not a directory\n' >"$DIR_FILETARGET/plainfile"
+OUT_FILETARGET=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+  "$SCRIPT" --target "$DIR_FILETARGET/plainfile" 2>&1)
+STATUS_FILETARGET=$(printf '%s' "$OUT_FILETARGET" | jq -r '.status' 2>/dev/null)
+assert_equal "error" "$STATUS_FILETARGET" "a plain file as --target (not a directory) is an explicit error, never a clean result"
+
+# A readable-but-not-enterable directory (r--, no x) -- the specific case the
+# script's own header comment calls out for checking -x separately from -r.
+# Not reliable when the test runner itself is root (root bypasses directory
+# permission checks entirely), so this degrades honestly rather than
+# false-failing in that environment.
+if [ "$(id -u)" != "0" ]; then
+  DIR_NOEXEC_PARENT=$(_dossier_safe_mktemp_dir "noexec-target")
+  mkdir -p "$DIR_NOEXEC_PARENT/locked"
+  chmod 644 "$DIR_NOEXEC_PARENT/locked"
+  OUT_NOEXEC=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+    "$SCRIPT" --target "$DIR_NOEXEC_PARENT/locked" 2>&1)
+  STATUS_NOEXEC=$(printf '%s' "$OUT_NOEXEC" | jq -r '.status' 2>/dev/null)
+  assert_equal "error" "$STATUS_NOEXEC" "a readable-but-not-enterable directory (r--, no x) as --target is an explicit error, not a later silent cd failure"
+  chmod 755 "$DIR_NOEXEC_PARENT/locked" 2>/dev/null
+else
+  _dossier_assert_pass "readable-but-not-enterable directory check skipped -- test runner is root, which bypasses directory permission checks entirely"
+fi
+
+# osv-scanner emitting non-JSON stdout with exit 0 (a malformed-tool-output
+# case distinct from every other error path, which all involve either a
+# nonzero exit or valid-but-empty JSON).
+DIR_MALFORMED=$(_dossier_safe_mktemp_dir "malformed-stdout")
+mkdir -p "$DIR_MALFORMED/fakebin" "$DIR_MALFORMED/target"
+cat >"$DIR_MALFORMED/fakebin/osv-scanner" <<'EOF'
+#!/usr/bin/env bash
+echo 'this is not json'
+exit 0
+EOF
+chmod +x "$DIR_MALFORMED/fakebin/osv-scanner"
+OUT_MALFORMED=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+  PATH="$DIR_MALFORMED/fakebin:$PATH" \
+  "$SCRIPT" --target "$DIR_MALFORMED/target" 2>&1)
+STATUS_MALFORMED=$(printf '%s' "$OUT_MALFORMED" | jq -r '.status' 2>/dev/null)
+assert_equal "error" "$STATUS_MALFORMED" "osv-scanner emitting non-JSON stdout at exit 0 is an explicit error, never a clean or unavailable result"
 
 _dossier_test_summary

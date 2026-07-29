@@ -259,4 +259,86 @@ assert_equal "2" "$?" "exits 2 when --out is given with no path"
 "$SCRIPT" --nonexistent-flag >/dev/null 2>&1
 assert_equal "2" "$?" "exits 2 on an unrecognized flag"
 
+# =============================================================================
+# --out write failure (error-handler-inspector P1): a fully-computed, valid
+# JSON envelope must still reach stdout even when the optional --out copy
+# can't be written. --out is a path nested UNDER A PLAIN FILE, guaranteeing
+# mkdir -p fails structurally.
+# =============================================================================
+DIR_OUTFAIL=$(_dossier_safe_mktemp_dir "out-write-failure")
+mkdir -p "$DIR_OUTFAIL/target"
+printf 'not a directory\n' >"$DIR_OUTFAIL/blocker"
+OUT_OUTFAIL=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SCRIPT" --target "$DIR_OUTFAIL/target" --out "$DIR_OUTFAIL/blocker/nested" 2>/dev/null)
+RC_OUTFAIL=$?
+assert_equal "0" "$RC_OUTFAIL" "--out under an unwritable path: still exits 0 -- a failed --out copy is not an internal-bug case"
+STATUS_OUTFAIL=$(printf '%s' "$OUT_OUTFAIL" | jq -r '.status' 2>/dev/null)
+assert_equal "disabled" "$STATUS_OUTFAIL" "--out under an unwritable path: the already-computed result still reaches stdout as valid JSON"
+STDERR_OUTFAIL=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SCRIPT" --target "$DIR_OUTFAIL/target" --out "$DIR_OUTFAIL/blocker/nested" 2>&1 >/dev/null)
+assert_contains "could not create --out directory" "$STDERR_OUTFAIL" "--out under an unwritable path: the write failure is still surfaced, on stderr as a warning rather than silently swallowed"
+
+# =============================================================================
+# Malformed DOSSIER_SCAN_TIMEOUT_SECONDS (error-handler-inspector P2): a
+# non-numeric value made the ELAPSED -ge TIMEOUT_SECONDS comparison itself
+# error ("integer expression expected"), read as false by [ ], silently
+# disabling the poll loop's own timeout enforcement. A stub that runs for
+# ~2 real seconds forces the loop to iterate at least once.
+# =============================================================================
+DIR_BADTIMEOUT=$(_dossier_safe_mktemp_dir "bad-timeout-env")
+mkdir -p "$DIR_BADTIMEOUT/fakebin" "$DIR_BADTIMEOUT/target"
+printf 'def f():\n    pass\n' >"$DIR_BADTIMEOUT/target/mod.py"
+cat >"$DIR_BADTIMEOUT/fakebin/pyscn" <<'EOF'
+#!/usr/bin/env bash
+sleep 2
+echo '{}'
+EOF
+chmod +x "$DIR_BADTIMEOUT/fakebin/pyscn"
+STDERR_BADTIMEOUT=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true DOSSIER_SCAN_TIMEOUT_SECONDS=not-a-number \
+  CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" PATH="$DIR_BADTIMEOUT/fakebin:$PATH" \
+  "$SCRIPT" --target "$DIR_BADTIMEOUT/target" 2>&1 >/dev/null)
+assert_not_contains "integer expression expected" "$STDERR_BADTIMEOUT" "a non-numeric DOSSIER_SCAN_TIMEOUT_SECONDS falls back to the documented default instead of breaking the poll loop's own comparison"
+
+# =============================================================================
+# Coverage gaps found by test-runner-verifier during PR #144 review: fail-
+# closed branches that were already correct but untested.
+# =============================================================================
+# A plain FILE as --target is an explicit error, never a clean result.
+DIR_FILETARGET=$(_dossier_safe_mktemp_dir "file-as-target")
+printf 'not a directory\n' >"$DIR_FILETARGET/plainfile"
+OUT_FILETARGET=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+  "$SCRIPT" --target "$DIR_FILETARGET/plainfile" 2>&1)
+STATUS_FILETARGET=$(printf '%s' "$OUT_FILETARGET" | jq -r '.status' 2>/dev/null)
+assert_equal "error" "$STATUS_FILETARGET" "a plain file as --target (not a directory) is an explicit error, never a clean result"
+
+# A readable-but-not-enterable directory (r--, no x). Skipped when the test
+# runner itself is root, which bypasses directory permission checks.
+if [ "$(id -u)" != "0" ]; then
+  DIR_NOEXEC_PARENT=$(_dossier_safe_mktemp_dir "noexec-target")
+  mkdir -p "$DIR_NOEXEC_PARENT/locked"
+  chmod 644 "$DIR_NOEXEC_PARENT/locked"
+  OUT_NOEXEC=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+    "$SCRIPT" --target "$DIR_NOEXEC_PARENT/locked" 2>&1)
+  STATUS_NOEXEC=$(printf '%s' "$OUT_NOEXEC" | jq -r '.status' 2>/dev/null)
+  assert_equal "error" "$STATUS_NOEXEC" "a readable-but-not-enterable directory (r--, no x) as --target is an explicit error, not a later silent cd failure"
+  chmod 755 "$DIR_NOEXEC_PARENT/locked" 2>/dev/null
+else
+  _dossier_assert_pass "readable-but-not-enterable directory check skipped -- test runner is root, which bypasses directory permission checks entirely"
+fi
+
+# pyscn producing a report file that isn't valid JSON (distinct from
+# "produced no report file at all", which is already covered elsewhere).
+DIR_MALFORMED=$(_dossier_safe_mktemp_dir "malformed-report")
+mkdir -p "$DIR_MALFORMED/fakebin" "$DIR_MALFORMED/target"
+printf 'def f():\n    pass\n' >"$DIR_MALFORMED/target/mod.py"
+cat >"$DIR_MALFORMED/fakebin/pyscn" <<'EOF'
+#!/usr/bin/env bash
+mkdir -p .pyscn/reports
+echo 'this is not json' > .pyscn/reports/analyze_bad.json
+EOF
+chmod +x "$DIR_MALFORMED/fakebin/pyscn"
+OUT_MALFORMED=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+  PATH="$DIR_MALFORMED/fakebin:$PATH" \
+  "$SCRIPT" --target "$DIR_MALFORMED/target" 2>&1)
+STATUS_MALFORMED=$(printf '%s' "$OUT_MALFORMED" | jq -r '.status' 2>/dev/null)
+assert_equal "error" "$STATUS_MALFORMED" "pyscn producing a report file that isn't valid JSON is an explicit error, never a clean result"
+
 _dossier_test_summary
