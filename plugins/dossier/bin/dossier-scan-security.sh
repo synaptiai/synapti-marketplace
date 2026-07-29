@@ -45,29 +45,33 @@
 # osv-scanner itself has no staleness check on its cached local database —
 # verified live: a real cached database artificially aged to 2020 loaded
 # and scanned with zero warning, indistinguishable in output from a fresh
-# fetch. This script therefore checks the cache's own age BEFORE invoking
-# osv-scanner whenever `--offline` is set: if the OLDEST file under
-# osv-scanner's own cache directory (`~/Library/Caches/osv-scanner` on
-# Darwin, unconditionally — verified live that osv-scanner ignores
-# XDG_CACHE_HOME entirely on this platform even when it's set;
-# `$XDG_CACHE_HOME/osv-scanner`, falling back to `~/.cache/osv-scanner`, on
-# other Unix, matching Go's os.UserCacheDir() precedence exactly) is older
-# than DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS (default 7), the scan is refused
-# and reported as `unavailable` with a `stale_advisory_data` explanation —
-# never `ok`. This is a separate check from the "no cached DB at all"
-# detection above; either can fire independently.
+# fetch. This script therefore checks the cache's own age whenever
+# `--offline` is set — refused and reported as `unavailable` with a
+# `stale_advisory_data` explanation, never `ok`. This is a separate check
+# from the "no cached DB at all" detection below; either can fire
+# independently.
 #
-# Deliberately the OLDEST file, not the newest: osv-scanner's cache is
-# laid out per ecosystem (osv-scanner/PyPI/all.zip, osv-scanner/npm/all.zip,
-# ...) and this wrapper has no reliable way to know in advance which
-# ecosystem(s) the target actually needs without duplicating osv-scanner's
-# own manifest-detection logic. Taking the newest file's age lets one
-# recently-refreshed, unrelated ecosystem mask an arbitrarily stale
-# database for the ecosystem the scan actually depends on. Taking the
-# oldest file is the fail-closed choice: it can over-refuse (a stale,
-# unrelated ecosystem blocks a scan that never needed it), but it can never
-# under-refuse — which matches this file's own rule that an unverifiable
-# result must never look identical to a verified-fresh one.
+# Age is checked PER ECOSYSTEM, and only AFTER osv-scanner runs (see the
+# "Offline cache staleness" block near the bottom of this script, after the
+# invocation), not against the whole cache tree beforehand. osv-scanner's
+# cache is laid out per ecosystem (osv-scanner/PyPI/all.zip,
+# osv-scanner/npm/all.zip, ...), and this wrapper has no reliable way to
+# know in advance which ecosystem(s) a target needs without duplicating
+# osv-scanner's own manifest-detection logic — an earlier version of this
+# check used the whole tree's newest (then oldest) file as a proxy and got
+# both wrong: newest let one fresh, unrelated ecosystem mask an arbitrarily
+# stale one actually in use (a false "ok"); oldest let one stale, unrelated
+# ecosystem permanently block a scan that never needed it (a false
+# "unavailable" that never recovers even as the ecosystem actually in use
+# stays current). osv-scanner's own JSON output names the exact ecosystem
+# of every package it resolved (`results[].packages[].package.ecosystem`,
+# verified live against real osv-scanner 2.4.0 for both PyPI and npm
+# targets) — ground truth this wrapper doesn't need to guess at from
+# manifest filenames. The BEFORE-invocation check here is narrower: it only
+# refuses when the cache directory is missing entirely, or exists but holds
+# no files at all — a state no per-ecosystem check downstream could ever
+# rescue, so there's nothing to gain by waiting for osv-scanner to run
+# first.
 #
 # A timeout kills the tool (TERM then KILL) and discards any partial output
 # — a killed run's incomplete stdout is never read as a result.
@@ -215,33 +219,24 @@ if [ "$OFFLINE" -eq 1 ]; then
   MAX_AGE_DAYS="${DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS:-7}"
   MAX_AGE_SECONDS=$((MAX_AGE_DAYS * 86400))
   if [ -d "$OSV_CACHE_DIR" ]; then
-    OLDEST_MTIME=""
+    CACHE_HAS_FILES=0
     while IFS= read -r _f; do
       [ -z "$_f" ] && continue
-      _m=$(stat -f %m "$_f" 2>/dev/null || stat -c %Y "$_f" 2>/dev/null)
-      [ -z "$_m" ] && continue
-      if [ -z "$OLDEST_MTIME" ] || [ "$_m" -lt "$OLDEST_MTIME" ]; then
-        OLDEST_MTIME="$_m"
-      fi
+      CACHE_HAS_FILES=1
+      break
     done <<EOF
 $(find "$OSV_CACHE_DIR" -type f 2>/dev/null)
 EOF
-    if [ -n "$OLDEST_MTIME" ]; then
-      NOW_EPOCH=$(date -u +%s)
-      AGE_SECONDS=$((NOW_EPOCH - OLDEST_MTIME))
-      if [ "$AGE_SECONDS" -gt "$MAX_AGE_SECONDS" ]; then
-        AGE_DAYS=$((AGE_SECONDS / 86400))
-        emit "unavailable" "offline mode requested but the cached vulnerability database at $OSV_CACHE_DIR is ${AGE_DAYS} days old (max acceptable age: ${MAX_AGE_DAYS} days) — stale_advisory_data, refusing to report a result from it" "" 0
-      fi
-    else
-      # The cache directory exists but contains no stat-able file at all —
-      # there is nothing whose age this check can verify. Falling through
+    if [ "$CACHE_HAS_FILES" -eq 0 ]; then
+      # The cache directory exists but contains no file at all, for any
+      # ecosystem — there is nothing whose age the per-ecosystem check below
+      # could ever verify, no matter what the target needs. Falling through
       # to invocation here would risk the same false claim the missing-
       # directory branch below refuses to make: an "ok" result with an
       # offline_caveat asserting "age-checked before this scan ran" when no
-      # age check actually ran. Refuse for the same reason, not because a
-      # real osv-scanner run is expected to fail here (it usually would,
-      # but this check must not depend on that downstream behavior).
+      # age check actually ran. Refuse now rather than waiting on a real
+      # osv-scanner run that would likely fail anyway — this check must not
+      # depend on that downstream behavior.
       emit "unavailable" "offline mode requested but the cache directory at $OSV_CACHE_DIR contains no files whose age could be verified" "" 0
     fi
   else
@@ -323,6 +318,62 @@ if [ "$OFFLINE" -eq 1 ]; then
       fi
       ;;
   esac
+fi
+
+# --- Offline cache staleness, per ecosystem actually consulted. Runs AFTER
+# the tool, using its own JSON output as ground truth for which ecosystem(s)
+# were resolved from the target's lockfiles (results[].packages[].package.
+# ecosystem — verified live against real osv-scanner 2.4.0 for both PyPI and
+# npm targets, and matches this machine's real cache layout exactly:
+# osv-scanner/PyPI/all.zip, osv-scanner/npm/all.zip). Checking only the
+# ecosystem(s) actually in use, rather than the whole cache tree, avoids both
+# failure directions a whole-tree check has no way to avoid: an unrelated
+# fresh ecosystem masking a stale one in use (a false "ok"), and an unrelated
+# stale ecosystem permanently blocking a scan that never needed it (a false
+# "unavailable" that never recovers). A missing cache subdirectory for a
+# consulted ecosystem is treated the same as a stale one — osv-scanner
+# resolved packages for it from the lockfile without network access, which
+# means either a cached database backed that lookup or the vulnerability
+# data for that ecosystem was silently unchecked; this wrapper cannot tell
+# the two apart from the JSON alone, so it refuses rather than guess.
+if [ "$OFFLINE" -eq 1 ]; then
+  STALE_ECOSYSTEMS=""
+  ECOSYSTEMS=$(jq -r '(.results // []) | map(.packages // []) | flatten | map(.package.ecosystem // empty) | unique | .[]' "$RAW_STDOUT" 2>/dev/null)
+  if [ -n "$ECOSYSTEMS" ]; then
+    NOW_EPOCH=$(date -u +%s)
+    while IFS= read -r _eco; do
+      [ -z "$_eco" ] && continue
+      _eco_dir="$OSV_CACHE_DIR/$_eco"
+      _eco_oldest=""
+      if [ -d "$_eco_dir" ]; then
+        while IFS= read -r _f; do
+          [ -z "$_f" ] && continue
+          _m=$(stat -f %m "$_f" 2>/dev/null || stat -c %Y "$_f" 2>/dev/null)
+          [ -z "$_m" ] && continue
+          if [ -z "$_eco_oldest" ] || [ "$_m" -lt "$_eco_oldest" ]; then
+            _eco_oldest="$_m"
+          fi
+        done <<EOF
+$(find "$_eco_dir" -type f 2>/dev/null)
+EOF
+      fi
+      if [ -z "$_eco_oldest" ]; then
+        STALE_ECOSYSTEMS="${STALE_ECOSYSTEMS}${STALE_ECOSYSTEMS:+, }${_eco} (no verifiable cache)"
+      else
+        _eco_age=$((NOW_EPOCH - _eco_oldest))
+        if [ "$_eco_age" -gt "$MAX_AGE_SECONDS" ]; then
+          _eco_age_days=$((_eco_age / 86400))
+          STALE_ECOSYSTEMS="${STALE_ECOSYSTEMS}${STALE_ECOSYSTEMS:+, }${_eco} (${_eco_age_days}d old)"
+        fi
+      fi
+    done <<EOF
+$ECOSYSTEMS
+EOF
+  fi
+  if [ -n "$STALE_ECOSYSTEMS" ]; then
+    rm -f "$RAW_STDOUT" "$RAW_STDERR" 2>/dev/null
+    emit "unavailable" "offline mode requested but the following ecosystem(s) consulted for this scan have no verifiably fresh cached database (max acceptable age: ${MAX_AGE_DAYS} days) — stale_advisory_data, refusing to report a result from it: $STALE_ECOSYSTEMS" "" 0
+  fi
 fi
 
 rm -f "$RAW_STDERR" 2>/dev/null

@@ -28,6 +28,12 @@ artifacts:
   result: achieved
   evidence_bundle: .flow/runs/2026-07-28T172831Z-issue-137
   failures: none
+- type: review-cycle
+  captured_at: '2026-07-29T09:43:40Z'
+  cycle: 1
+  path: B
+  findings_count: 10
+  pr: 144
 ---
 # Decision Journal — Issue #137
 
@@ -95,7 +101,11 @@ The independent verdict judge in `/flow:start` Phase 4 returned `NEEDS-HUMAN-REV
 
 The `holdout-validation` skill, run alongside the 5-agent review fan-out and `integration-verifier` in `/flow:pr` Phase 3, cross-referenced the code-reviewer's self-review claims and the evidence bundle against actual file state and surfaced five findings the prior review passes had not caught — all now fixed, TDD RED→GREEN verified, and re-confirmed by a full 23-file/1670-assertion targeted suite run (the two pre-existing, out-of-diff files with the known local-git-fixture-leak bug from issue #135 excluded, per the standing decision to not exercise them this session).
 
-**P1 — offline staleness guard keyed on the wrong file.** `dossier-scan-security.sh`'s AC4 staleness check (added earlier this session, see the AC4 entry above) computed the cache's age from the *newest* file across the whole `~/Library/Caches/osv-scanner` tree, not the ecosystem subdirectory the scan target actually needs. osv-scanner's cache is laid out per ecosystem (`osv-scanner/PyPI/all.zip`, `osv-scanner/npm/all.zip`, ...), so a single fresh file in any unrelated ecosystem masked an arbitrarily stale database in the ecosystem genuinely in use — reproduced live against real osv-scanner 2.4.0 (a 2020-dated PyPI database plus a fresh sibling npm file returned `status: ok` with an unearned `age-checked before this scan ran` claim; the identical database with no fresh sibling correctly refused). Fixed by keying the guard on the *oldest* file in the tree instead — fail-closed rather than attempting to duplicate osv-scanner's own manifest-detection logic to resolve the relevant ecosystem. A mixed-ecosystem regression test was added and RED→GREEN verified against the pre-fix code.
+**P1 — offline staleness guard keyed on the wrong file.** `dossier-scan-security.sh`'s AC4 staleness check (added earlier this session, see the AC4 entry above) computed the cache's age from the *newest* file across the whole `~/Library/Caches/osv-scanner` tree, not the ecosystem subdirectory the scan target actually needs. osv-scanner's cache is laid out per ecosystem (`osv-scanner/PyPI/all.zip`, `osv-scanner/npm/all.zip`, ...), so a single fresh file in any unrelated ecosystem masked an arbitrarily stale database in the ecosystem genuinely in use — reproduced live against real osv-scanner 2.4.0 (a 2020-dated PyPI database plus a fresh sibling npm file returned `status: ok` with an unearned `age-checked before this scan ran` claim; the identical database with no fresh sibling correctly refused). First fix attempt keyed the guard on the *oldest* file in the whole tree instead, reasoning it was the fail-closed choice.
+
+**P1 follow-on, caught by advisor consultation before `/flow:review`**: the whole-tree-oldest fix traded one wrong failure mode for another, worse one — a machine with a genuinely long-lived, multi-ecosystem cache (e.g. one ecosystem scanned eight months ago, another refreshed this morning) would have its `--offline` capability permanently refuse the fresh, actively-used ecosystem forever, the moment any unrelated sibling ecosystem's cache aged past the threshold. Confirmed as a real defect (not merely theoretical) by writing the inverse regression case — fresh PyPI db, stale unrelated npm sibling, PyPI target — and observing it RED against the whole-tree-oldest code (`expected 'ok', got 'unavailable'`). A false "permanently unavailable" is a milder failure than the original bug's false "clean," but a capability that always reports unavailable in practice is indistinguishable from one that was never shipped.
+
+Redesigned to check staleness **per ecosystem, after invocation**, using osv-scanner's own JSON output as ground truth for which ecosystem(s) it actually resolved from the target's lockfiles (`results[].packages[].package.ecosystem` — verified live against real osv-scanner 2.4.0 for both a PyPI and an npm target, and matches this machine's real cache layout exactly: `osv-scanner/PyPI/all.zip`, `osv-scanner/npm/all.zip`). This needed no new manifest-to-ecosystem mapping to guess at, since osv-scanner already resolves ecosystem from the lockfile without touching the network or the vulnerability cache — the wrapper just reads its answer. The pre-invocation check is now narrower: it only refuses when the cache directory is missing entirely or holds no files at all (a state no per-ecosystem check could ever rescue); everything else runs the tool and validates the specific ecosystem(s) it actually consulted afterward, discarding the results and refusing retroactively if any of them is stale or has no corresponding cache subdirectory at all. Test fixtures for these cases moved from placeholder cache files (sufficient under the old pre-invocation design, where content was never read) to a stub `osv-scanner` binary, since the post-hoc design means the real tool would otherwise have to actually load the placeholder — and a real database aged past the threshold loads and scans cleanly per the AC4 investigation, so a fake/corrupt placeholder no longer exercises the same code path. Six regression cases (stale-relevant-ecosystem refuses, fresh-relevant-ecosystem passes, MAX_AGE_DAYS override widens the window, stale-target-with-fresh-sibling still refuses, fresh-target-with-stale-sibling now passes, missing-cache-subdirectory-for-the-consulted-ecosystem refuses) all RED→GREEN verified against the prior (whole-tree-oldest) code where applicable, full targeted suite re-confirmed clean (1673/1673) afterward.
 
 **P2 — CI raw-file deletion broke the one downstream consumer that needs it.** The SEC-5 fix (see above) deleted both scanners' raw tool output before artifact upload, reasoning that "nothing in this repo currently reads these raw files directly." That premise was false for the security half specifically: `dossier-scan-security.sh`'s envelope embeds no findings of its own (unlike `dossier-scan-quality.sh`'s, which inlines `dead_code`/`complexity`), only `artifact_path` naming the raw file — and `dossier-vuln-evidence.sh --scan`'s documented input shape (`results[]`/`packages[]`/`groups[]`/`vulnerabilities[]`) *is* that raw file's shape. Deleting it left the envelope's own `artifact_path` pointing at a file the uploaded bundle no longer contained, and left the refresh job's agent with zero citable vulnerability content for the CI path — contradicting AC1's evidence-citation outcome and the goal's own "agent reads scan output" interface contract. Fixed by dropping only `pyscn-scan-raw.json`; the security raw file now survives to the artifact.
 
@@ -394,3 +404,17 @@ No item remains open under "Needs Clarification" — every gap the advisor raise
 <!-- auto-log: 2026-07-29 11:40 commit "fix(dossier): retain osv-scanner raw output for downstream evidence citation" -->
 
 <!-- auto-log: 2026-07-29 11:41 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-137.md -->
+
+<!-- auto-log: 2026-07-29 11:43 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr-body-137.md -->
+
+<!-- auto-log: 2026-07-29 11:49 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-29 11:49 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-29 11:50 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scan-security.sh -->
+
+<!-- auto-log: 2026-07-29 11:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/vuln-scan-execution.test.sh -->
+
+<!-- auto-log: 2026-07-29 11:58 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-137.md -->
+
+<!-- auto-log: 2026-07-29 11:58 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/commit-msg-p1-followon.txt -->

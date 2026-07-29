@@ -163,111 +163,175 @@ else
   _dossier_assert_pass "--offline with an empty cache directory: osv-scanner tripwire was never invoked — refused before any tool lookup, not merely saved by the real tool's own fallback behavior"
 fi
 
+DIR_OFFLINE=$(_dossier_safe_mktemp_dir "offline-no-db")
+mkdir -p "$DIR_OFFLINE/target"
+printf 'requests==2.32.3\n' >"$DIR_OFFLINE/target/requirements.txt"
+
+# Isolation technique: override $HOME, not XDG_CACHE_HOME. Verified live
+# that osv-scanner's own cache-directory resolution (Go's
+# os.UserCacheDir()) IGNORES XDG_CACHE_HOME entirely on Darwin — it
+# always uses $HOME/Library/Caches regardless — so an XDG_CACHE_HOME-only
+# override silently fails to isolate this test from a real system cache
+# on macOS (confirmed: it produced a false failure against this exact
+# machine's own prior manual osv-scanner use). Overriding $HOME instead
+# redirects both this wrapper's own cache-path computation AND
+# osv-scanner's real internal resolution consistently, on every platform.
+if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+  OSV_CACHE_REL="Library/Caches/osv-scanner/PyPI"
+  OSV_CACHE_REL_NPM="Library/Caches/osv-scanner/npm"
+else
+  OSV_CACHE_REL=".cache/osv-scanner/PyPI"
+  OSV_CACHE_REL_NPM=".cache/osv-scanner/npm"
+fi
+
 if command -v osv-scanner >/dev/null 2>&1; then
-  DIR_OFFLINE=$(_dossier_safe_mktemp_dir "offline-no-db")
-  mkdir -p "$DIR_OFFLINE/target"
-  printf 'requests==2.32.3\n' >"$DIR_OFFLINE/target/requirements.txt"
-
-  # Isolation technique: override $HOME, not XDG_CACHE_HOME. Verified live
-  # that osv-scanner's own cache-directory resolution (Go's
-  # os.UserCacheDir()) IGNORES XDG_CACHE_HOME entirely on Darwin — it
-  # always uses $HOME/Library/Caches regardless — so an XDG_CACHE_HOME-only
-  # override silently fails to isolate this test from a real system cache
-  # on macOS (confirmed: it produced a false failure against this exact
-  # machine's own prior manual osv-scanner use). Overriding $HOME instead
-  # redirects both this wrapper's own cache-path computation AND
-  # osv-scanner's real internal resolution consistently, on every platform.
-  if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
-    OSV_CACHE_REL="Library/Caches/osv-scanner/PyPI"
-  else
-    OSV_CACHE_REL=".cache/osv-scanner/PyPI"
-  fi
-
   DIR_OFFLINE_HOME=$(_dossier_safe_mktemp_dir "offline-no-db-home")
   OUT_OFFLINE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
     HOME="$DIR_OFFLINE_HOME" \
     "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
   STATUS_OFFLINE=$(printf '%s' "$OUT_OFFLINE" | jq -r '.status' 2>/dev/null)
   assert_equal "unavailable" "$STATUS_OFFLINE" "--offline with no cached DB: reported as unavailable, never as a clean scan, even though the tool's own stdout is valid empty-results JSON"
-
-  # --- Offline cache staleness (issue #137 verdict-judge NEEDS-HUMAN-REVIEW
-  # on AC4): osv-scanner itself has no staleness check on a cache that DOES
-  # load successfully — verified live against real osv-scanner 2.4.0 (a
-  # real cached database artificially aged to 2020 loaded and scanned with
-  # zero warning, indistinguishable from a fresh fetch). This wrapper must
-  # detect that case independently, since the tool never will. The
-  # staleness check runs and returns BEFORE osv-scanner is ever invoked, so
-  # a syntactically-fake placeholder file (not a real zip) is sufficient
-  # here — its content is never read. -------------------------------------
-  DIR_STALE_HOME=$(_dossier_safe_mktemp_dir "offline-stale-home")
-  mkdir -p "$DIR_STALE_HOME/$OSV_CACHE_REL"
-  printf 'stale placeholder db\n' >"$DIR_STALE_HOME/$OSV_CACHE_REL/all.zip"
-  touch -t 202001010000 "$DIR_STALE_HOME/$OSV_CACHE_REL/all.zip"
-  OUT_STALE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
-    HOME="$DIR_STALE_HOME" \
-    "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
-  STATUS_STALE=$(printf '%s' "$OUT_STALE" | jq -r '.status' 2>/dev/null)
-  assert_equal "unavailable" "$STATUS_STALE" "--offline with a stale (2020) cached DB: reported as unavailable, refused before osv-scanner is even invoked"
-  DETAIL_STALE=$(printf '%s' "$OUT_STALE" | jq -r '.detail' 2>/dev/null)
-  assert_contains "stale_advisory_data" "$DETAIL_STALE" "--offline stale-cache detail names the specific reason"
-
-  # A cache within the configured max age must NOT be refused BY THE AGE
-  # CHECK — the placeholder file is not a real database, so osv-scanner's
-  # own subsequent invocation still fails to load it, but for a DIFFERENT,
-  # distinguishable reason (no "stale_advisory_data" in the detail). This
-  # isolates "the age check itself doesn't false-positive" from "a fresh
-  # cache leads to a successful scan," which would require a genuine
-  # database and is out of scope for this assertion.
-  DIR_FRESH_HOME=$(_dossier_safe_mktemp_dir "offline-fresh-home")
-  mkdir -p "$DIR_FRESH_HOME/$OSV_CACHE_REL"
-  printf 'fresh placeholder db\n' >"$DIR_FRESH_HOME/$OSV_CACHE_REL/all.zip"
-  OUT_FRESH=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
-    HOME="$DIR_FRESH_HOME" \
-    "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
-  DETAIL_FRESH=$(printf '%s' "$OUT_FRESH" | jq -r '.detail // ""' 2>/dev/null)
-  assert_not_contains "stale_advisory_data" "$DETAIL_FRESH" "--offline with a fresh (just-created) cache is not refused as stale by the age check itself"
-
-  # DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS override: a cache that would fail the
-  # default 7-day threshold must NOT be refused as stale under a wide
-  # override — same isolation reasoning as the fresh-cache case above.
-  DIR_OVERRIDE_HOME=$(_dossier_safe_mktemp_dir "offline-max-age-override-home")
-  mkdir -p "$DIR_OVERRIDE_HOME/$OSV_CACHE_REL"
-  printf 'placeholder db\n' >"$DIR_OVERRIDE_HOME/$OSV_CACHE_REL/all.zip"
-  touch -t 202001010000 "$DIR_OVERRIDE_HOME/$OSV_CACHE_REL/all.zip"
-  OUT_OVERRIDE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS=99999 \
-    CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" HOME="$DIR_OVERRIDE_HOME" \
-    "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
-  DETAIL_OVERRIDE=$(printf '%s' "$OUT_OVERRIDE" | jq -r '.detail // ""' 2>/dev/null)
-  assert_not_contains "stale_advisory_data" "$DETAIL_OVERRIDE" "DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS override widens the acceptable-age window as configured"
-
-  # Mixed-ecosystem cache age (holdout finding on issue #137): the age guard
-  # inspects the whole ~/Library/Caches/osv-scanner tree, not only the
-  # ecosystem subdirectory the target actually needs, because this wrapper
-  # cannot determine the relevant ecosystem without duplicating osv-scanner's
-  # own manifest-detection logic. A single fresh file in an UNRELATED
-  # ecosystem (npm) must not mask an arbitrarily stale database in the
-  # ecosystem the PyPI target genuinely depends on — the guard must key off
-  # the OLDEST file in the tree, not the newest.
-  if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
-    OSV_CACHE_REL_NPM="Library/Caches/osv-scanner/npm"
-  else
-    OSV_CACHE_REL_NPM=".cache/osv-scanner/npm"
-  fi
-  DIR_MIXED_HOME=$(_dossier_safe_mktemp_dir "offline-mixed-ecosystem-home")
-  mkdir -p "$DIR_MIXED_HOME/$OSV_CACHE_REL" "$DIR_MIXED_HOME/$OSV_CACHE_REL_NPM"
-  printf 'stale PyPI db\n' >"$DIR_MIXED_HOME/$OSV_CACHE_REL/all.zip"
-  touch -t 202001010000 "$DIR_MIXED_HOME/$OSV_CACHE_REL/all.zip"
-  printf 'fresh npm db\n' >"$DIR_MIXED_HOME/$OSV_CACHE_REL_NPM/all.zip"
-  OUT_MIXED=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
-    HOME="$DIR_MIXED_HOME" \
-    "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
-  STATUS_MIXED=$(printf '%s' "$OUT_MIXED" | jq -r '.status' 2>/dev/null)
-  assert_equal "unavailable" "$STATUS_MIXED" "--offline with a stale PyPI db alongside a fresh, unrelated npm db: still refused as stale — a fresh sibling ecosystem must not mask the one actually needed"
-  DETAIL_MIXED=$(printf '%s' "$OUT_MIXED" | jq -r '.detail' 2>/dev/null)
-  assert_contains "stale_advisory_data" "$DETAIL_MIXED" "mixed-ecosystem cache: detail names the specific reason"
 else
   _dossier_assert_pass "osv-scanner unavailable on PATH — the --offline-no-cached-DB assertion was skipped (real-tool-dependent; run.sh's CI job installs it)"
 fi
+
+# =============================================================================
+# Offline cache staleness, per ecosystem (issue #137 verdict-judge
+# NEEDS-HUMAN-REVIEW on AC4, then a holdout-validation P1 on the first fix).
+#
+# osv-scanner itself has no staleness check on a cache that DOES load
+# successfully — verified live against real osv-scanner 2.4.0 (a real
+# cached database artificially aged to 2020 loaded and scanned with zero
+# warning, indistinguishable from a fresh fetch). This wrapper detects that
+# independently, AFTER osv-scanner runs, keyed on the ecosystem(s) its own
+# JSON output actually names (results[].packages[].package.ecosystem) —
+# verified live for both PyPI and npm targets. A stub `osv-scanner` on PATH
+# isolates this wrapper's own age logic from whether the real tool can load
+# a given cache file's *content*, which is a separate concern the AC1 real
+# end-to-end run below already covers; the stub always reports having
+# consulted PyPI, deterministically, so these tests run everywhere,
+# independent of whether the real tool is installed.
+# =============================================================================
+DIR_STALE_HOME=$(_dossier_safe_mktemp_dir "offline-stale-home")
+mkdir -p "$DIR_STALE_HOME/$OSV_CACHE_REL" "$DIR_STALE_HOME/fakebin"
+printf 'stale placeholder db\n' >"$DIR_STALE_HOME/$OSV_CACHE_REL/all.zip"
+touch -t 202001010000 "$DIR_STALE_HOME/$OSV_CACHE_REL/all.zip"
+cat >"$DIR_STALE_HOME/fakebin/osv-scanner" <<'EOF'
+#!/usr/bin/env bash
+echo '{"results":[{"packages":[{"package":{"name":"requests","version":"2.32.3","ecosystem":"PyPI"},"vulnerabilities":[],"groups":[]}]}]}'
+exit 0
+EOF
+chmod +x "$DIR_STALE_HOME/fakebin/osv-scanner"
+OUT_STALE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+  HOME="$DIR_STALE_HOME" PATH="$DIR_STALE_HOME/fakebin:$PATH" \
+  "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
+STATUS_STALE=$(printf '%s' "$OUT_STALE" | jq -r '.status' 2>/dev/null)
+assert_equal "unavailable" "$STATUS_STALE" "--offline with a stale (2020) cached DB for the consulted ecosystem: reported as unavailable"
+DETAIL_STALE=$(printf '%s' "$OUT_STALE" | jq -r '.detail' 2>/dev/null)
+assert_contains "stale_advisory_data" "$DETAIL_STALE" "--offline stale-cache detail names the specific reason"
+assert_contains "PyPI" "$DETAIL_STALE" "--offline stale-cache detail names the specific ecosystem"
+
+# A cache within the configured max age must NOT be refused by the age check.
+DIR_FRESH_HOME=$(_dossier_safe_mktemp_dir "offline-fresh-home")
+mkdir -p "$DIR_FRESH_HOME/$OSV_CACHE_REL" "$DIR_FRESH_HOME/fakebin"
+printf 'fresh placeholder db\n' >"$DIR_FRESH_HOME/$OSV_CACHE_REL/all.zip"
+cat >"$DIR_FRESH_HOME/fakebin/osv-scanner" <<'EOF'
+#!/usr/bin/env bash
+echo '{"results":[{"packages":[{"package":{"name":"requests","version":"2.32.3","ecosystem":"PyPI"},"vulnerabilities":[],"groups":[]}]}]}'
+exit 0
+EOF
+chmod +x "$DIR_FRESH_HOME/fakebin/osv-scanner"
+OUT_FRESH=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+  HOME="$DIR_FRESH_HOME" PATH="$DIR_FRESH_HOME/fakebin:$PATH" \
+  "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
+STATUS_FRESH=$(printf '%s' "$OUT_FRESH" | jq -r '.status' 2>/dev/null)
+assert_equal "ok" "$STATUS_FRESH" "--offline with a fresh (just-created) cache for the consulted ecosystem: reported as ok, not refused as stale"
+
+# DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS override: a cache that would fail the
+# default 7-day threshold must NOT be refused as stale under a wide override.
+DIR_OVERRIDE_HOME=$(_dossier_safe_mktemp_dir "offline-max-age-override-home")
+mkdir -p "$DIR_OVERRIDE_HOME/$OSV_CACHE_REL" "$DIR_OVERRIDE_HOME/fakebin"
+printf 'placeholder db\n' >"$DIR_OVERRIDE_HOME/$OSV_CACHE_REL/all.zip"
+touch -t 202001010000 "$DIR_OVERRIDE_HOME/$OSV_CACHE_REL/all.zip"
+cat >"$DIR_OVERRIDE_HOME/fakebin/osv-scanner" <<'EOF'
+#!/usr/bin/env bash
+echo '{"results":[{"packages":[{"package":{"name":"requests","version":"2.32.3","ecosystem":"PyPI"},"vulnerabilities":[],"groups":[]}]}]}'
+exit 0
+EOF
+chmod +x "$DIR_OVERRIDE_HOME/fakebin/osv-scanner"
+OUT_OVERRIDE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS=99999 \
+  CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" HOME="$DIR_OVERRIDE_HOME" PATH="$DIR_OVERRIDE_HOME/fakebin:$PATH" \
+  "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
+STATUS_OVERRIDE=$(printf '%s' "$OUT_OVERRIDE" | jq -r '.status' 2>/dev/null)
+assert_equal "ok" "$STATUS_OVERRIDE" "DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS override widens the acceptable-age window as configured"
+
+# Mixed-ecosystem, stale TARGET ecosystem (holdout finding P1, original
+# repro): a fresh, UNRELATED sibling ecosystem (npm) must not mask a stale
+# database in the ecosystem the scan actually consulted (PyPI).
+DIR_MIXED_HOME=$(_dossier_safe_mktemp_dir "offline-mixed-ecosystem-home")
+mkdir -p "$DIR_MIXED_HOME/$OSV_CACHE_REL" "$DIR_MIXED_HOME/$OSV_CACHE_REL_NPM" "$DIR_MIXED_HOME/fakebin"
+printf 'stale PyPI db\n' >"$DIR_MIXED_HOME/$OSV_CACHE_REL/all.zip"
+touch -t 202001010000 "$DIR_MIXED_HOME/$OSV_CACHE_REL/all.zip"
+printf 'fresh npm db\n' >"$DIR_MIXED_HOME/$OSV_CACHE_REL_NPM/all.zip"
+cat >"$DIR_MIXED_HOME/fakebin/osv-scanner" <<'EOF'
+#!/usr/bin/env bash
+echo '{"results":[{"packages":[{"package":{"name":"requests","version":"2.32.3","ecosystem":"PyPI"},"vulnerabilities":[],"groups":[]}]}]}'
+exit 0
+EOF
+chmod +x "$DIR_MIXED_HOME/fakebin/osv-scanner"
+OUT_MIXED=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+  HOME="$DIR_MIXED_HOME" PATH="$DIR_MIXED_HOME/fakebin:$PATH" \
+  "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
+STATUS_MIXED=$(printf '%s' "$OUT_MIXED" | jq -r '.status' 2>/dev/null)
+assert_equal "unavailable" "$STATUS_MIXED" "--offline with a stale PyPI db (the consulted ecosystem) alongside a fresh, unrelated npm db: still refused as stale — a fresh sibling ecosystem must not mask the one actually needed"
+DETAIL_MIXED=$(printf '%s' "$OUT_MIXED" | jq -r '.detail' 2>/dev/null)
+assert_contains "stale_advisory_data" "$DETAIL_MIXED" "mixed-ecosystem cache: detail names the specific reason"
+
+# Mixed-ecosystem, stale SIBLING ecosystem (the inverse case, catching a
+# regression a whole-tree check of either direction gets wrong): a stale,
+# UNRELATED npm db must NOT block a scan whose actually-consulted ecosystem
+# (PyPI) is fresh. A whole-tree "oldest file" check would incorrectly
+# refuse this scan forever, on a database it never needed.
+DIR_MIXED2_HOME=$(_dossier_safe_mktemp_dir "offline-mixed-ecosystem-2-home")
+mkdir -p "$DIR_MIXED2_HOME/$OSV_CACHE_REL" "$DIR_MIXED2_HOME/$OSV_CACHE_REL_NPM" "$DIR_MIXED2_HOME/fakebin"
+printf 'fresh PyPI db\n' >"$DIR_MIXED2_HOME/$OSV_CACHE_REL/all.zip"
+printf 'stale npm db\n' >"$DIR_MIXED2_HOME/$OSV_CACHE_REL_NPM/all.zip"
+touch -t 202001010000 "$DIR_MIXED2_HOME/$OSV_CACHE_REL_NPM/all.zip"
+cat >"$DIR_MIXED2_HOME/fakebin/osv-scanner" <<'EOF'
+#!/usr/bin/env bash
+echo '{"results":[{"packages":[{"package":{"name":"requests","version":"2.32.3","ecosystem":"PyPI"},"vulnerabilities":[],"groups":[]}]}]}'
+exit 0
+EOF
+chmod +x "$DIR_MIXED2_HOME/fakebin/osv-scanner"
+OUT_MIXED2=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+  HOME="$DIR_MIXED2_HOME" PATH="$DIR_MIXED2_HOME/fakebin:$PATH" \
+  "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
+STATUS_MIXED2=$(printf '%s' "$OUT_MIXED2" | jq -r '.status' 2>/dev/null)
+assert_equal "ok" "$STATUS_MIXED2" "--offline with a fresh PyPI db (the consulted ecosystem) alongside a stale, unrelated npm db: reported ok — a stale sibling ecosystem must not permanently block a scan that never needed it"
+
+# Consulted ecosystem has NO cache subdirectory at all, despite osv-scanner
+# successfully resolving packages for it from the lockfile (which needs no
+# network/cache access) — this wrapper cannot tell "a cached database
+# silently backed this" from "no advisory data was checked at all" from the
+# JSON alone, so it refuses rather than guess.
+DIR_NOCACHE_HOME=$(_dossier_safe_mktemp_dir "offline-consulted-ecosystem-no-cache-home")
+mkdir -p "$DIR_NOCACHE_HOME/fakebin"
+if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+  mkdir -p "$DIR_NOCACHE_HOME/Library/Caches/osv-scanner"
+else
+  mkdir -p "$DIR_NOCACHE_HOME/.cache/osv-scanner"
+fi
+cat >"$DIR_NOCACHE_HOME/fakebin/osv-scanner" <<'EOF'
+#!/usr/bin/env bash
+echo '{"results":[{"packages":[{"package":{"name":"requests","version":"2.32.3","ecosystem":"PyPI"},"vulnerabilities":[],"groups":[]}]}]}'
+exit 0
+EOF
+chmod +x "$DIR_NOCACHE_HOME/fakebin/osv-scanner"
+OUT_NOCACHE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+  HOME="$DIR_NOCACHE_HOME" PATH="$DIR_NOCACHE_HOME/fakebin:$PATH" \
+  "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
+STATUS_NOCACHE=$(printf '%s' "$OUT_NOCACHE" | jq -r '.status' 2>/dev/null)
+assert_equal "unavailable" "$STATUS_NOCACHE" "--offline where the consulted ecosystem (PyPI) has no cache subdirectory at all: refused, not reported ok"
 
 # =============================================================================
 # --offline-DB-unavailable defense-in-depth: a stub osv-scanner reproduces
