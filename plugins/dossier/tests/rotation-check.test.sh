@@ -122,6 +122,13 @@ if [ -n "$ACC_LINES2" ] && [ "$ACC_LINES2" -gt 0 ] 2>/dev/null; then
 else
   _dossier_assert_fail "policy=none: accumulated_lines was empty or zero ($ACC_LINES2) — AC4 requires metrics regardless of policy"
 fi
+AGE_DAYS2=$(get "$OUT2" age_days)
+if [ -n "$AGE_DAYS2" ] && [ "$AGE_DAYS2" -ge 0 ] 2>/dev/null; then
+  _dossier_assert_pass "policy=none: age_days is still a real non-empty number (AC4 names all three fields, not just the size ones)"
+else
+  _dossier_assert_fail "policy=none: age_days was empty ($AGE_DAYS2) — AC4 requires age_days computed too, not just accumulated_files/accumulated_lines"
+fi
+assert_equal "branch_commits" "$(get "$OUT2" age_source)" "policy=none: age_source is still populated (branch_commits), not left as the default unknown"
 
 # =============================================================================
 # 3. Would-rotate via age (gh stub returns an old open PR)
