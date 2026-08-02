@@ -53,7 +53,7 @@ while [ $# -gt 0 ]; do
       [ $# -lt 2 ] && { echo "dossier-rotation-check: --summary requires a value" >&2; exit 2; }
       SUMMARY_FILE="$2"; shift 2 ;;
     -h|--help)
-      sed -n '2,26p' "$0"; exit 0 ;;
+      sed -n '2,24p' "$0"; exit 0 ;;
     *)
       echo "dossier-rotation-check: unknown argument: $1" >&2; exit 2 ;;
   esac

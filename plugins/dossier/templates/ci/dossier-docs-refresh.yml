@@ -209,7 +209,15 @@ jobs:
             --github-output "$GITHUB_OUTPUT" \
             --summary "$GITHUB_STEP_SUMMARY"
 
+      # continue-on-error: true, matching "Download the scan bundle"'s precedent
+      # below — this is purely observational telemetry (issue #138), and a
+      # failure in it must never cascade into skipping "Build the evidence
+      # bundle" (gated on should_run == 'true', which GitHub Actions
+      # implicitly ANDs with success()). No visibility is lost: die_infra()'s
+      # ::error annotation and $GITHUB_STEP_SUMMARY write both happen before
+      # the script's own exit.
       - name: Check whether the documentation branch would rotate
+        continue-on-error: true
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
           GH_TOKEN: ${{ github.token }}

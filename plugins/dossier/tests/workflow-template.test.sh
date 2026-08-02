@@ -72,6 +72,12 @@ ROTATION_STEP_BLOCK=$(awk '
 ' "$WF")
 assert_not_contains "if: steps.decide.outputs.should_run" "$ROTATION_STEP_BLOCK" "the rotation-check step runs unconditionally, even on a declined run"
 
+# A failure in this purely-observational step must never cascade into
+# skipping "Build the evidence bundle" (gated on should_run == 'true', which
+# GitHub Actions implicitly ANDs with success()) -- matching the precedent
+# already set by "Download the scan bundle" below.
+assert_contains "continue-on-error: true" "$ROTATION_STEP_BLOCK" "the rotation-check step cannot block the evidence-bundle build"
+
 # BASE_REF/GH_TOKEN come from github.event context expressions, not template
 # placeholders, so the step introduces no new {{PLACEHOLDER}} and needs no
 # addition to the sed substitution table above. Anchored on the render-time
