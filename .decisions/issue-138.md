@@ -36,6 +36,12 @@ artifacts:
   workflow: start-issue
   run_id: 2026-07-29T115831Z-issue-138
   status: completed
+- type: review-cycle
+  captured_at: '2026-08-02T23:11:01Z'
+  cycle: 1
+  path: B
+  findings_count: 8
+  pr: 145
 ---
 # Issue #138 — Rolling-branch rotation, telemetry only
 
@@ -132,3 +138,5 @@ PASS — 3 tasks reviewed (implementation-planner agent). Task 59 (script + work
 <!-- auto-log: 2026-08-03 01:02 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
 
 <!-- auto-log: 2026-08-03 01:06 commit "fix(dossier): guard empty config overrides, sanitize job-summary output" -->
+
+<!-- auto-log: 2026-08-03 01:10 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr-body-138.md -->
