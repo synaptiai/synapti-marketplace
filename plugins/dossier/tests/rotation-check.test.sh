@@ -209,6 +209,43 @@ assert_equal "true" "$(get "$OUT6" would_rotate)" "would-rotate via size alone: 
 assert_contains "accumulated" "$(get "$OUT6" reason)" "would-rotate via size alone: reason names the size condition"
 
 # =============================================================================
+# 6b. Exactly one dimension unknown (age) with the OTHER known dimension
+#     (size) under its threshold must still report would_rotate=unknown, not
+#     a confident "false" -- the unmeasured age dimension could have been
+#     over threshold. Same fixture shape as test 6 (no Dossier-Generated
+#     commit -> age_source=unknown), but the diff is kept small so size alone
+#     does not trigger. Regression test for the P1 finding on rotation-check
+#     issue #138 review (dossier-rotation-check.sh:324).
+# =============================================================================
+F6B=$(setup_fixture)
+(
+  cd "$F6B" || exit 1
+  git checkout -q -B docs/dossier origin/main
+  printf 'line one\nline two\nline three\n' >> docs.md
+  git add -A
+  git config user.email test@example.com
+  git config user.name "Test"
+  git commit -q -m "not a dossier commit"
+  git push -q origin docs/dossier
+  git checkout -q main
+) >/dev/null 2>&1
+NOGH_PATH6B=$(no_gh_path)
+OUT6B=$(cd "$F6B" && env PATH="$NOGH_PATH6B" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=5000 "$SCRIPT" 2>&1)
+RC6B=$?
+assert_equal "0" "$RC6B" "age unknown + size under threshold: exits 0"
+assert_equal "unknown" "$(get "$OUT6B" age_source)" "age unknown + size under threshold: age_source=unknown (no Dossier-Generated commit found)"
+ACC_LINES6B=$(get "$OUT6B" accumulated_lines)
+if [ -n "$ACC_LINES6B" ] && [ "$ACC_LINES6B" -eq 3 ] 2>/dev/null; then
+  _dossier_assert_pass "age unknown + size under threshold: accumulated_lines is a real measured number (3), not blanked by the unknown branch"
+else
+  _dossier_assert_fail "age unknown + size under threshold: accumulated_lines was '$ACC_LINES6B', expected 3 -- metrics must still flow even when would_rotate=unknown (AC4)"
+fi
+assert_equal "unknown" "$(get "$OUT6B" would_rotate)" "age unknown + size under threshold: would_rotate=unknown, NOT false -- the unmeasured age dimension could still be over threshold"
+REASON6B=$(get "$OUT6B" reason)
+assert_not_contains "within threshold" "$REASON6B" "age unknown + size under threshold: reason avoids the confident 'within threshold' phrasing"
+assert_contains "age is unavailable" "$REASON6B" "age unknown + size under threshold: reason names age as the unavailable dimension"
+
+# =============================================================================
 # 7. Both unknown -> the literal string "unknown", never coerced to false
 # =============================================================================
 F7=$(setup_fixture)

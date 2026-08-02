@@ -321,17 +321,18 @@ esac
 case "$AGE_DAYS" in ''|*[!0-9]*) AGE_KNOWN=0 ;; *) AGE_KNOWN=1 ;; esac
 case "$ACC_LINES" in ''|*[!0-9]*) SIZE_KNOWN=0 ;; *) SIZE_KNOWN=1 ;; esac
 
-if [ "$AGE_KNOWN" -eq 0 ] && [ "$SIZE_KNOWN" -eq 0 ]; then
-  WOULD_ROTATE="unknown"
-  REASON="rotation status could not be determined: age and accumulated size are both unavailable"
-  finish
-fi
-
 AGE_TRIGGERED=0
 [ "$AGE_KNOWN" -eq 1 ] && [ "$AGE_DAYS" -ge "$THRESHOLD_DAYS" ] && AGE_TRIGGERED=1
 SIZE_TRIGGERED=0
 [ "$SIZE_KNOWN" -eq 1 ] && [ "$ACC_LINES" -ge "$SIZE_THRESHOLD" ] && SIZE_TRIGGERED=1
 
+# A confident "false" requires BOTH dimensions to have been measured and
+# neither to have crossed its threshold. Whenever a dimension triggers, that
+# alone is decisive regardless of the other dimension's state. But when
+# NEITHER known dimension triggered and at least one dimension is unknown,
+# the unmeasured dimension could still be over threshold — that must report
+# "unknown", never a "false" that only happens to be right about the
+# dimension it could measure.
 if [ "$AGE_TRIGGERED" -eq 1 ] || [ "$SIZE_TRIGGERED" -eq 1 ]; then
   WOULD_ROTATE="true"
   PARTS=""
@@ -346,19 +347,17 @@ if [ "$AGE_TRIGGERED" -eq 1 ] || [ "$SIZE_TRIGGERED" -eq 1 ]; then
     fi
   fi
   REASON="would rotate: ${PARTS}"
+elif [ "$AGE_KNOWN" -eq 0 ] || [ "$SIZE_KNOWN" -eq 0 ]; then
+  WOULD_ROTATE="unknown"
+  if [ "$AGE_KNOWN" -eq 0 ] && [ "$SIZE_KNOWN" -eq 0 ]; then
+    REASON="rotation status could not be determined: age and accumulated size are both unavailable"
+  elif [ "$AGE_KNOWN" -eq 0 ]; then
+    REASON="rotation status could not be determined: age is unavailable; accumulated size is ${ACC_LINES} lines (< ${SIZE_THRESHOLD}-line threshold), but that alone cannot rule out rotation"
+  else
+    REASON="rotation status could not be determined: accumulated size is unavailable; age is ${AGE_DAYS} days (< ${THRESHOLD_DAYS}-day ${ROTATION_POLICY} threshold), but that alone cannot rule out rotation"
+  fi
 else
-  KNOWN_PARTS=""
-  if [ "$AGE_KNOWN" -eq 1 ]; then
-    KNOWN_PARTS="age is ${AGE_DAYS} days (< ${THRESHOLD_DAYS}-day ${ROTATION_POLICY} threshold)"
-  fi
-  if [ "$SIZE_KNOWN" -eq 1 ]; then
-    if [ -n "$KNOWN_PARTS" ]; then
-      KNOWN_PARTS="${KNOWN_PARTS}; accumulated size is ${ACC_LINES} lines (< ${SIZE_THRESHOLD}-line threshold)"
-    else
-      KNOWN_PARTS="accumulated size is ${ACC_LINES} lines (< ${SIZE_THRESHOLD}-line threshold)"
-    fi
-  fi
   WOULD_ROTATE="false"
-  REASON="within threshold: ${KNOWN_PARTS}"
+  REASON="within threshold: age is ${AGE_DAYS} days (< ${THRESHOLD_DAYS}-day ${ROTATION_POLICY} threshold); accumulated size is ${ACC_LINES} lines (< ${SIZE_THRESHOLD}-line threshold)"
 fi
 finish
