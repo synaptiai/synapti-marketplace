@@ -120,6 +120,15 @@ command -v git >/dev/null 2>&1 || die_infra "git is not installed on this runner
 command -v jq  >/dev/null 2>&1 || die_infra "jq is not installed; dossier configuration cannot be read."
 git rev-parse --git-dir >/dev/null 2>&1 || die_infra "not inside a git repository (checkout step missing or failed)."
 
+# $CASCADE exits 2 on infrastructure failure (missing jq, unreadable temp
+# dir, etc; see dossier-resolve-config.sh's own documented exit codes) and 0
+# for "resolved a value or returned the default" -- cfg() alone can't tell
+# those apart from its caller's side, and every call site below checks the
+# assignment's exit status with `|| die_infra ...` so a genuine resolver
+# crash is never silently treated as a deliberate empty/default read. This
+# check MUST happen in the same shell that calls cfg(), never inside a
+# helper invoked as `X=$(helper ...)` -- die_infra()'s `exit 1` would then
+# only terminate the command-substitution subshell, not the script.
 cfg() { "$CASCADE" --default "$2" "${1#.}" 2>/dev/null; }
 
 write_summary() {
@@ -161,7 +170,7 @@ finish() {
 # Configuration
 # ---------------------------------------------------------------------------
 
-DOCS_BRANCH=$(cfg '.dossier.ci.rollingBranch' 'docs/dossier')
+DOCS_BRANCH=$(cfg '.dossier.ci.rollingBranch' 'docs/dossier') || die_infra "could not resolve dossier.ci.rollingBranch (configuration resolver failed)."
 # An explicitly-empty override (DOSSIER_CI_ROLLING_BRANCH="" or
 # "rollingBranch": "" in any settings file) beats every cascade layer by
 # design (dossier-resolve-config.sh/cascade-resolve.sh both treat set-but-
@@ -177,14 +186,14 @@ case "$DOCS_BRANCH" in
     note "dossier.ci.rollingBranch resolved to an empty value; falling back to the documented default (docs/dossier)."
     ;;
 esac
-ROTATION_POLICY=$(cfg '.dossier.ci.rollingBranchRotation' 'none')
+ROTATION_POLICY=$(cfg '.dossier.ci.rollingBranchRotation' 'none') || die_infra "could not resolve dossier.ci.rollingBranchRotation (configuration resolver failed)."
 case "$ROTATION_POLICY" in
   '')
     ROTATION_POLICY='none'
     note "dossier.ci.rollingBranchRotation resolved to an empty value; falling back to the documented default (none)."
     ;;
 esac
-SIZE_THRESHOLD=$(cfg '.dossier.ci.thresholds.rotationMaxAccumulatedLines' '5000')
+SIZE_THRESHOLD=$(cfg '.dossier.ci.thresholds.rotationMaxAccumulatedLines' '5000') || die_infra "could not resolve dossier.ci.thresholds.rotationMaxAccumulatedLines (configuration resolver failed)."
 case "$SIZE_THRESHOLD" in
   ''|*[!0-9]*)
     SIZE_THRESHOLD=5000

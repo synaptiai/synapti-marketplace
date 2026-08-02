@@ -160,3 +160,27 @@ PASS — 3 tasks reviewed (implementation-planner agent). Task 59 (script + work
 <!-- auto-log: 2026-08-03 01:39 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
 
 <!-- auto-log: 2026-08-03 01:41 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 01:42 commit "fix(dossier): address remaining P2 findings from PR #145 Path A review" -->
+
+<!-- auto-log: 2026-08-03 01:45 commit "fix(dossier): address remaining P2 findings from PR #145 Path A review" -->
+
+<!-- auto-log: 2026-08-03 01:49 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:49 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:49 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:50 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:51 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 01:51 commit "fix(dossier): address remaining P2 findings from PR #145 Path A review" -->
+
+<!-- auto-log: 2026-08-03 01:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->

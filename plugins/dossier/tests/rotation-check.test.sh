@@ -497,4 +497,34 @@ assert_equal "0" "$RC17" "cross-repository decoy PR: exits 0"
 assert_equal "true" "$(get "$OUT17" would_rotate)" "cross-repository decoy PR: the real same-repo PR (10 days old) drives the age determination, not the more-recent fork decoy that would mask rotation"
 assert_equal "pr_created_at" "$(get "$OUT17" age_source)" "cross-repository decoy PR: age_source is still pr_created_at (the real PR was found, not silently skipped)"
 
+# =============================================================================
+# 18. A genuine config-resolver infrastructure failure (not an empty/default
+#     value) must be reported as a hard failure, never silently treated as a
+#     deliberate empty override -- regression test for a review finding
+#     (ERR1/skeptic), reproduced live on this session's machine via a stub
+#     `mktemp` that fails only for cascade-resolve.sh's own error-capture
+#     temp file (its real Ubuntu-runner trigger, an unwritable $TMPDIR, is
+#     silently tolerated by BSD/macOS mktemp, so it can't be reproduced
+#     directly on a macOS dev machine -- this reproduces the same downstream
+#     failure, $CASCADE exiting 2, by the most portable available means).
+# =============================================================================
+F18=$(setup_fixture)
+REAL_MKTEMP=$(command -v mktemp)
+STUB18=$(_dossier_safe_mktemp_dir "mktemp-stub-cascade-fail")
+cat > "$STUB18/mktemp" <<STUBEOF
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in
+    *cascade-resolve.err*) echo "mktemp: stub failure (simulated infra failure)" >&2; exit 1 ;;
+  esac
+done
+exec "$REAL_MKTEMP" "\$@"
+STUBEOF
+chmod +x "$STUB18/mktemp"
+OUT18=$(cd "$F18" && env PATH="$STUB18:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier "$SCRIPT" 2>&1)
+RC18=$?
+assert_equal "1" "$RC18" "config resolver infra failure: exits 1 (a hard infrastructure failure), not 0 (a reached decision)"
+assert_contains "could not resolve" "$OUT18" "config resolver infra failure: die_infra names the actual cause, not a generic empty-override note"
+assert_not_contains "would_rotate=false" "$OUT18" "config resolver infra failure: never emits a confident would_rotate result"
+
 _dossier_test_summary
