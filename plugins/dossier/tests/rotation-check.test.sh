@@ -333,6 +333,7 @@ NOTGIT=$(_dossier_safe_mktemp_dir "rotation-notgit")
 OUT_NOTGIT=$(cd "$NOTGIT" && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SCRIPT" 2>&1)
 RC_NOTGIT=$?
 assert_equal "1" "$RC_NOTGIT" "run outside a git repository exits 1 (infrastructure failure)"
+assert_contains "not inside a git repository" "$OUT_NOTGIT" "run outside a git repository: die_infra names the actual reason"
 
 # =============================================================================
 # 11. Structural workflow assertions live in workflow-template.test.sh, not
