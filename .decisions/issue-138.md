@@ -140,3 +140,7 @@ PASS — 3 tasks reviewed (implementation-planner agent). Task 59 (script + work
 <!-- auto-log: 2026-08-03 01:06 commit "fix(dossier): guard empty config overrides, sanitize job-summary output" -->
 
 <!-- auto-log: 2026-08-03 01:10 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr-body-138.md -->
+
+<!-- auto-log: 2026-08-03 01:14 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:15 commit "fix(dossier): sanitize die_infra's summary output for defense-in-depth" -->
