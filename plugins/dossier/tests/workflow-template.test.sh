@@ -52,6 +52,32 @@ done
 
 assert_match '^permissions: \{\}' "$BODY" "top-level permissions is empty — per-job grants only"
 
+# --- Rotation check (issue #138): telemetry-only, runs unconditionally ------
+# The policy job must invoke dossier-rotation-check.sh, and that specific step
+# must carry no `if:` gate — it has to run on every trigger, including a
+# declined run, so the metric is never conditional on should_run.
+POLICY_BLOCK=$(awk '/^  policy:/{f=1} /^  scan:/{f=0} f' "$WF")
+assert_contains "dossier-rotation-check.sh" "$POLICY_BLOCK" "the policy job invokes dossier-rotation-check.sh"
+assert_contains "name: Check whether the documentation branch would rotate" "$POLICY_BLOCK" "the policy job names the rotation-check step"
+
+# Extract only the rotation-check step's own block: from its own `- name:`
+# line up to (but not including) the next `- name:` line, so a gate that
+# exists elsewhere in the policy job (e.g. on "Build the evidence bundle")
+# cannot produce a false pass.
+ROTATION_STEP_BLOCK=$(awk '
+  /- name: Check whether the documentation branch would rotate/ { f=1; print; next }
+  f && /^      - name:/ { exit }
+  f { print }
+' "$WF")
+assert_not_contains "if: steps.decide.outputs.should_run" "$ROTATION_STEP_BLOCK" "the rotation-check step runs unconditionally, even on a declined run"
+
+# BASE_REF/GH_TOKEN come from github.event context expressions, not template
+# placeholders, so the step introduces no new {{PLACEHOLDER}} and needs no
+# addition to the sed substitution table above. Anchored on the render-time
+# `{{DOSSIER_` prefix, not a bare `{{`, since `${{ github.event... }}` is a
+# legitimate GitHub Actions expression that also contains `{{`.
+assert_not_contains "{{DOSSIER_" "$ROTATION_STEP_BLOCK" "the rotation-check step introduces no new template placeholder"
+
 # The scan job (issue #137): isolated osv-scanner/pyscn execution. Same
 # privilege posture as policy — read-only, no write token, no agent.
 SCAN_BLOCK=$(awk '/^  scan:/{f=1} /^  refresh:/{f=0} f' "$WF")

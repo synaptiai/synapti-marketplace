@@ -209,6 +209,16 @@ jobs:
             --github-output "$GITHUB_OUTPUT" \
             --summary "$GITHUB_STEP_SUMMARY"
 
+      - name: Check whether the documentation branch would rotate
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          chmod +x "$DOSSIER_BIN"/*.sh
+          "$DOSSIER_BIN/dossier-rotation-check.sh" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
       - name: Build the evidence bundle
         if: steps.decide.outputs.should_run == 'true'
         env:
