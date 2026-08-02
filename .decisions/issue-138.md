@@ -144,3 +144,19 @@ PASS — 3 tasks reviewed (implementation-planner agent). Task 59 (script + work
 <!-- auto-log: 2026-08-03 01:14 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
 
 <!-- auto-log: 2026-08-03 01:15 commit "fix(dossier): sanitize die_infra's summary output for defense-in-depth" -->
+
+<!-- auto-log: 2026-08-03 01:36 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:37 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:37 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:37 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 01:38 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 01:39 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 01:39 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 01:41 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->

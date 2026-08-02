@@ -18,6 +18,7 @@ fi
 get() { printf '%s\n' "$1" | awk -F= -v k="$2" '$1==k{sub(/^[^=]*=/,""); print; exit}'; }
 
 day_offset() { date -u -d "-$1 days" +%Y-%m-%d 2>/dev/null || date -u -v-"$1"d +%Y-%m-%d 2>/dev/null; }
+future_offset() { date -u -d "+$1 days" +%Y-%m-%d 2>/dev/null || date -u -v+"$1"d +%Y-%m-%d 2>/dev/null; }
 
 # Removes any PATH entry that hosts a `gh` executable, keeping every other
 # tool resolvable. `command -v gh` must genuinely fail for the "no gh" cases —
@@ -393,6 +394,7 @@ SUMMARY13=$(_dossier_safe_mktemp_dir "rotation-summary13")/summary.md
 OUT13=$(cd "$F13" && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH="$WEIRD_BRANCH" "$SCRIPT" --summary "$SUMMARY13" 2>&1)
 RC13=$?
 assert_equal "0" "$RC13" "branch name with backtick/pipe: still exits 0"
+assert_equal "$WEIRD_BRANCH" "$(get "$OUT13" docs_branch)" "branch name with backtick/pipe: raw key=value stdout is untouched by sanitize_md (sanitization is a display-boundary concern, not a working-value mutation)"
 if [ -f "$SUMMARY13" ] && grep -qE '^\| Docs branch \| `docs/dossierevil` \|$' "$SUMMARY13" 2>/dev/null; then
   _dossier_assert_pass "branch name with backtick/pipe: summary table cell is sanitized, not broken"
 else
@@ -400,5 +402,99 @@ else
 fi
 TABLE_ROW_COUNT13=$(grep -c '^| ' "$SUMMARY13" 2>/dev/null || echo 0)
 assert_equal "9" "$TABLE_ROW_COUNT13" "branch name with backtick/pipe: exactly the 9 real table rows (header + 8 fields), no injected extra row"
+
+# =============================================================================
+# 14. `gh pr list` failing (auth/rate-limit) must be distinguished from "no
+#     PR found" and must not abort the run — regression test for a review
+#     finding (ERR-3): previously claimed fixed but never covered by a test.
+# =============================================================================
+F14=$(setup_fixture)
+push_docs_branch_commit "$F14" "docs/dossier" "$(day_offset 10)"
+STUB14=$(_dossier_safe_mktemp_dir "gh-stub-list-fails")
+cat > "$STUB14/gh" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+chmod +x "$STUB14/gh"
+SUMMARY14=$(_dossier_safe_mktemp_dir "rotation-summary14")/summary.md
+OUT14=$(cd "$F14" && env PATH="$STUB14:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" --summary "$SUMMARY14" 2>&1)
+RC14=$?
+assert_equal "0" "$RC14" "gh pr list failure: still exits 0 (falls back to the commit-based age walk, not an infra failure)"
+assert_equal "branch_commits" "$(get "$OUT14" age_source)" "gh pr list failure: age_source falls back to branch_commits, not silently treated as no-PR"
+assert_equal "true" "$(get "$OUT14" would_rotate)" "gh pr list failure: the fallback age (10 days) still correctly triggers rotation under the weekly threshold"
+if [ -f "$SUMMARY14" ] && grep -q "gh pr list failed" "$SUMMARY14" 2>/dev/null; then
+  _dossier_assert_pass "gh pr list failure: the summary distinguishes a lookup failure from a genuine no-PR-found result"
+else
+  _dossier_assert_fail "gh pr list failure: no note recorded distinguishing lookup failure from no-PR-found"
+fi
+
+# =============================================================================
+# 15. rotationMaxAccumulatedLines=0 must not make the size signal trigger
+#     unconditionally (0 <= any non-negative line count is always true) --
+#     regression test for a review finding (F1/CONV1), reproduced live.
+# =============================================================================
+F15=$(setup_fixture)
+push_docs_branch_commit "$F15" "docs/dossier" "$(day_offset 1)"
+NOGH_PATH15=$(no_gh_path)
+OUT15=$(cd "$F15" && env PATH="$NOGH_PATH15" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=0 "$SCRIPT" 2>&1)
+RC15=$?
+assert_equal "0" "$RC15" "zero size threshold: exits 0"
+assert_equal "false" "$(get "$OUT15" would_rotate)" "zero size threshold: falls back to the documented default (5000) instead of triggering on every non-empty diff"
+
+# =============================================================================
+# 16. A future-dated PR createdAt (clock skew) must not surface a negative
+#     age_days alongside a reason claiming age is unavailable -- regression
+#     test for a review finding (AgeDaysNegative/ERR-3/ERR-4).
+# =============================================================================
+F16=$(setup_fixture)
+push_docs_branch_commit "$F16" "docs/dossier" "$(day_offset 1)"
+STUB16=$(_dossier_safe_mktemp_dir "gh-stub-future-pr")
+cat > "$STUB16/gh" <<EOF
+#!/usr/bin/env bash
+echo '{"number":99,"createdAt":"$(future_offset 3)T00:00:00Z"}'
+exit 0
+EOF
+chmod +x "$STUB16/gh"
+OUT16=$(cd "$F16" && env PATH="$STUB16:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" 2>&1)
+RC16=$?
+assert_equal "0" "$RC16" "future-dated PR createdAt (clock skew): still exits 0"
+assert_equal "" "$(get "$OUT16" age_days)" "future-dated PR createdAt: age_days is blanked, not a negative number, once age is known-unreliable"
+assert_equal "unknown" "$(get "$OUT16" would_rotate)" "future-dated PR createdAt: would_rotate=unknown, not a false coerced from a negative age"
+assert_contains "unavailable" "$(get "$OUT16" reason)" "future-dated PR createdAt: reason states age is unavailable, consistent with the blanked age_days"
+
+# =============================================================================
+# 17. `gh pr list --head` matches by branch name only, across every fork with
+#     an open PR against this repo. A cross-repository decoy PR (same branch
+#     name, recent, opened from a fork) must never be preferred over the real
+#     same-repo PR -- regression test for a review finding (SEC-1), reproduced
+#     via a stub that actually applies gh's --jq filter (real `gh` behavior),
+#     not just a fixed echo like the other gh stubs in this file.
+# =============================================================================
+F17=$(setup_fixture)
+push_docs_branch_commit "$F17" "docs/dossier" "$(day_offset 10)"
+STUB17=$(_dossier_safe_mktemp_dir "gh-stub-cross-repo")
+STUB17_JSON="[{\"number\":13,\"createdAt\":\"$(day_offset 1)T00:00:00Z\",\"isCrossRepository\":true},{\"number\":7,\"createdAt\":\"$(day_offset 10)T00:00:00Z\",\"isCrossRepository\":false}]"
+cat > "$STUB17/gh" <<STUBEOF
+#!/usr/bin/env bash
+FILTER=""
+while [ \$# -gt 0 ]; do
+  case "\$1" in
+    --jq) FILTER="\$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+JSON='$STUB17_JSON'
+if [ -n "\$FILTER" ]; then
+  printf '%s' "\$JSON" | jq "\$FILTER"
+else
+  printf '%s' "\$JSON"
+fi
+STUBEOF
+chmod +x "$STUB17/gh"
+OUT17=$(cd "$F17" && env PATH="$STUB17:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" 2>&1)
+RC17=$?
+assert_equal "0" "$RC17" "cross-repository decoy PR: exits 0"
+assert_equal "true" "$(get "$OUT17" would_rotate)" "cross-repository decoy PR: the real same-repo PR (10 days old) drives the age determination, not the more-recent fork decoy that would mask rotation"
+assert_equal "pr_created_at" "$(get "$OUT17" age_source)" "cross-repository decoy PR: age_source is still pr_created_at (the real PR was found, not silently skipped)"
 
 _dossier_test_summary

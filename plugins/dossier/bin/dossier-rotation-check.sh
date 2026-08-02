@@ -185,7 +185,15 @@ case "$ROTATION_POLICY" in
     ;;
 esac
 SIZE_THRESHOLD=$(cfg '.dossier.ci.thresholds.rotationMaxAccumulatedLines' '5000')
-case "$SIZE_THRESHOLD" in ''|*[!0-9]*) SIZE_THRESHOLD=5000 ;; esac
+case "$SIZE_THRESHOLD" in
+  ''|*[!0-9]*)
+    SIZE_THRESHOLD=5000
+    ;;
+  0)
+    SIZE_THRESHOLD=5000
+    note "dossier.ci.thresholds.rotationMaxAccumulatedLines resolved to 0, which would make the size signal trigger unconditionally; falling back to the documented default (5000)."
+    ;;
+esac
 
 if [ -z "$BASE_REF" ]; then
   BASE_REF=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
@@ -272,7 +280,12 @@ fi
 # walking the docs branch for the oldest Dossier-Generated commit.
 # ---------------------------------------------------------------------------
 if command -v gh >/dev/null 2>&1; then
-  PR_JSON=$(gh pr list --head "$DOCS_BRANCH" --state open --json number,createdAt --jq '.[0]' 2>/dev/null)
+  # --head matches by branch name only, across every fork with an open PR
+  # against this repo -- an external fork could open a same-named decoy
+  # branch to spoof the age lookup. isCrossRepository==false restricts the
+  # match to PRs whose head lives in this repo (gh has no owner:branch
+  # syntax for --head to scope this directly).
+  PR_JSON=$(gh pr list --head "$DOCS_BRANCH" --state open --json number,createdAt,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)][0]' 2>/dev/null)
   PR_LIST_RC=$?
   if [ "$PR_LIST_RC" -ne 0 ]; then
     # Distinct from "gh ran fine, no open PR found" (PR_JSON empty/null with
@@ -358,7 +371,7 @@ case "$ROTATION_POLICY" in
     ;;
 esac
 
-case "$AGE_DAYS" in ''|*[!0-9]*) AGE_KNOWN=0 ;; *) AGE_KNOWN=1 ;; esac
+case "$AGE_DAYS" in ''|*[!0-9]*) AGE_KNOWN=0; AGE_DAYS="" ;; *) AGE_KNOWN=1 ;; esac
 case "$ACC_LINES" in ''|*[!0-9]*) SIZE_KNOWN=0 ;; *) SIZE_KNOWN=1 ;; esac
 
 AGE_TRIGGERED=0
