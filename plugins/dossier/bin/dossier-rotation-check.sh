@@ -108,7 +108,7 @@ die_infra() {
   if [ -n "$SUMMARY_FILE" ]; then
     {
       printf '### Dossier rotation check: infrastructure error\n\n'
-      printf '%s\n\n' "$1"
+      printf '%s\n\n' "$(sanitize_md "$1")"
       printf 'The rotation determination could not be computed. This is a hard failure\n'
       printf 'rather than an "unknown" telemetry read.\n'
     } >>"$SUMMARY_FILE"
