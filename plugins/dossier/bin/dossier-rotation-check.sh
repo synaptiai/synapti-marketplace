@@ -71,7 +71,18 @@ DOCS_BRANCH=""
 ROTATION_POLICY=""
 NOTES=""
 
-note() { NOTES="${NOTES}- $1
+# Markdown-table and bullet-list cells are plain text interpolated with no
+# escaping, so a config/event-derived value (DOCS_BRANCH, BASE_REF) carrying
+# a backtick, pipe, or newline can break a table cell or inject a spoofed
+# extra row into the rendered job summary an operator reads to decide
+# whether rotation is warranted. Applied at every point a value reaches
+# $SUMMARY_FILE — note()'s bullet text and write_summary()'s table cells —
+# never to the working values themselves, which git commands need exact.
+sanitize_md() {
+  printf '%s' "$1" | LC_ALL=C tr -d '\000-\037' | tr -d '|`' | tr '\n' ' '
+}
+
+note() { NOTES="${NOTES}- $(sanitize_md "$1")
 "; }
 
 # $GITHUB_OUTPUT is parsed line by line as key=value, so a value carrying a
@@ -117,14 +128,14 @@ write_summary() {
     printf '### Dossier rolling-branch rotation check\n\n'
     printf 'Telemetry only — this step never rotates, closes, or deletes anything.\n\n'
     printf '| Field | Value |\n|---|---|\n'
-    printf '| Would rotate | `%s` |\n' "$WOULD_ROTATE"
-    printf '| Reason | `%s` |\n' "$REASON"
-    printf '| Age (days) | `%s` |\n' "${AGE_DAYS:-unknown}"
-    printf '| Age source | `%s` |\n' "$AGE_SOURCE"
-    printf '| Accumulated files | `%s` |\n' "${ACC_FILES:-unknown}"
-    printf '| Accumulated lines | `%s` |\n' "${ACC_LINES:-unknown}"
-    printf '| Docs branch | `%s` |\n' "$DOCS_BRANCH"
-    printf '| Rotation policy | `%s` |\n' "$ROTATION_POLICY"
+    printf '| Would rotate | `%s` |\n' "$(sanitize_md "$WOULD_ROTATE")"
+    printf '| Reason | `%s` |\n' "$(sanitize_md "$REASON")"
+    printf '| Age (days) | `%s` |\n' "$(sanitize_md "${AGE_DAYS:-unknown}")"
+    printf '| Age source | `%s` |\n' "$(sanitize_md "$AGE_SOURCE")"
+    printf '| Accumulated files | `%s` |\n' "$(sanitize_md "${ACC_FILES:-unknown}")"
+    printf '| Accumulated lines | `%s` |\n' "$(sanitize_md "${ACC_LINES:-unknown}")"
+    printf '| Docs branch | `%s` |\n' "$(sanitize_md "$DOCS_BRANCH")"
+    printf '| Rotation policy | `%s` |\n' "$(sanitize_md "$ROTATION_POLICY")"
     printf '\n'
     if [ -n "$NOTES" ]; then
       printf 'Notes:\n\n%s\n' "$NOTES"
@@ -151,7 +162,28 @@ finish() {
 # ---------------------------------------------------------------------------
 
 DOCS_BRANCH=$(cfg '.dossier.ci.rollingBranch' 'docs/dossier')
+# An explicitly-empty override (DOSSIER_CI_ROLLING_BRANCH="" or
+# "rollingBranch": "" in any settings file) beats every cascade layer by
+# design (dossier-resolve-config.sh/cascade-resolve.sh both treat set-but-
+# empty as a deliberate value, not "fall through to default"). Left
+# unguarded, an empty DOCS_BRANCH reaches `git ls-remote --exit-code --heads
+# origin ""`, which returns exit code 2 -- the SAME code this script uses to
+# mean "the branch genuinely doesn't exist" -- producing a confidently wrong
+# no-branch result even when the real docs branch exists and would
+# otherwise warrant rotation. Verified live: exit code 2 either way.
+case "$DOCS_BRANCH" in
+  '')
+    DOCS_BRANCH='docs/dossier'
+    note "dossier.ci.rollingBranch resolved to an empty value; falling back to the documented default (docs/dossier)."
+    ;;
+esac
 ROTATION_POLICY=$(cfg '.dossier.ci.rollingBranchRotation' 'none')
+case "$ROTATION_POLICY" in
+  '')
+    ROTATION_POLICY='none'
+    note "dossier.ci.rollingBranchRotation resolved to an empty value; falling back to the documented default (none)."
+    ;;
+esac
 SIZE_THRESHOLD=$(cfg '.dossier.ci.thresholds.rotationMaxAccumulatedLines' '5000')
 case "$SIZE_THRESHOLD" in ''|*[!0-9]*) SIZE_THRESHOLD=5000 ;; esac
 
@@ -241,6 +273,14 @@ fi
 # ---------------------------------------------------------------------------
 if command -v gh >/dev/null 2>&1; then
   PR_JSON=$(gh pr list --head "$DOCS_BRANCH" --state open --json number,createdAt --jq '.[0]' 2>/dev/null)
+  PR_LIST_RC=$?
+  if [ "$PR_LIST_RC" -ne 0 ]; then
+    # Distinct from "gh ran fine, no open PR found" (PR_JSON empty/null with
+    # PR_LIST_RC=0) -- a nonzero exit means the lookup itself failed (auth,
+    # rate limit, transient API error), which the summary should be able to
+    # tell apart from a genuine "no PR open" outcome.
+    note "gh pr list failed (exit ${PR_LIST_RC}); could not check for an open pull request on ${DOCS_BRANCH}."
+  fi
   if [ -n "$PR_JSON" ] && [ "$PR_JSON" != "null" ]; then
     CREATED_AT=$(printf '%s' "$PR_JSON" | jq -r '.createdAt // empty' 2>/dev/null)
     if [ -n "$CREATED_AT" ]; then

@@ -340,4 +340,65 @@ assert_contains "not inside a git repository" "$OUT_NOTGIT" "run outside a git r
 #     here — this file only exercises dossier-rotation-check.sh's own CLI.
 # =============================================================================
 
+# =============================================================================
+# 12. An explicitly-empty config override for the branch name or rotation
+#     policy must never collide with the real "no-branch"/"disabled" signal.
+#     DOSSIER_CI_ROLLING_BRANCH="" beats every cascade layer by design
+#     (dossier-resolve-config.sh treats set-but-empty as deliberate, not
+#     "fall through to default"), and an empty branch name reaches
+#     `git ls-remote --exit-code --heads origin ""`, which returns exit code
+#     2 -- the SAME code that means "branch genuinely doesn't exist". A real
+#     docs/dossier branch exists in this fixture and would otherwise warrant
+#     rotation (via size); an unguarded empty override must not silently
+#     make it invisible. Regression test for a review finding (ERR-1).
+# =============================================================================
+F12=$(setup_fixture)
+(
+  cd "$F12" || exit 1
+  git checkout -q -B docs/dossier origin/main
+  i=1
+  while [ "$i" -le 200 ]; do
+    printf 'line %s\n' "$i" >> docs.md
+    i=$((i + 1))
+  done
+  git add -A
+  git config user.email test@example.com
+  git config user.name "Test"
+  GIT_AUTHOR_DATE="$(day_offset 1)T00:00:00Z" GIT_COMMITTER_DATE="$(day_offset 1)T00:00:00Z" \
+    git commit -q -m "chore(dossier): generated" -m "Dossier-Generated: true"
+  git push -q origin docs/dossier
+  git checkout -q main
+) >/dev/null 2>&1
+NOGH_PATH12=$(no_gh_path)
+OUT12=$(cd "$F12" && env PATH="$NOGH_PATH12" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH="" DOSSIER_CI_ROLLING_BRANCH_ROTATION=monthly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=100 "$SCRIPT" 2>&1)
+RC12=$?
+assert_equal "0" "$RC12" "empty DOSSIER_CI_ROLLING_BRANCH: exits 0"
+assert_equal "docs/dossier" "$(get "$OUT12" docs_branch)" "empty DOSSIER_CI_ROLLING_BRANCH: falls back to the documented default, not an empty ref"
+assert_equal "true" "$(get "$OUT12" would_rotate)" "empty DOSSIER_CI_ROLLING_BRANCH: still measures the real docs/dossier branch (200 lines > 100-line threshold), not a false no-branch result"
+
+OUT12B=$(cd "$F12" && env PATH="$NOGH_PATH12" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH_ROTATION="" "$SCRIPT" 2>&1)
+RC12B=$?
+assert_equal "0" "$RC12B" "empty DOSSIER_CI_ROLLING_BRANCH_ROTATION: exits 0"
+assert_equal "none" "$(get "$OUT12B" rotation_policy)" "empty DOSSIER_CI_ROLLING_BRANCH_ROTATION: falls back to the documented default (none)"
+assert_equal "false" "$(get "$OUT12B" would_rotate)" "empty DOSSIER_CI_ROLLING_BRANCH_ROTATION: treated as disabled, not the unrecognized-policy branch"
+
+# =============================================================================
+# 13. A branch name containing a backtick or pipe must not break the job
+#     summary's markdown table or inject a spoofed extra row. Regression
+#     test for a review finding (SEC-1).
+# =============================================================================
+F13=$(setup_fixture)
+WEIRD_BRANCH='docs/dossier`|evil'
+SUMMARY13=$(_dossier_safe_mktemp_dir "rotation-summary13")/summary.md
+OUT13=$(cd "$F13" && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH="$WEIRD_BRANCH" "$SCRIPT" --summary "$SUMMARY13" 2>&1)
+RC13=$?
+assert_equal "0" "$RC13" "branch name with backtick/pipe: still exits 0"
+if [ -f "$SUMMARY13" ] && grep -qE '^\| Docs branch \| `docs/dossierevil` \|$' "$SUMMARY13" 2>/dev/null; then
+  _dossier_assert_pass "branch name with backtick/pipe: summary table cell is sanitized, not broken"
+else
+  _dossier_assert_fail "branch name with backtick/pipe: summary table cell was not sanitized as expected"
+fi
+TABLE_ROW_COUNT13=$(grep -c '^| ' "$SUMMARY13" 2>/dev/null || echo 0)
+assert_equal "9" "$TABLE_ROW_COUNT13" "branch name with backtick/pipe: exactly the 9 real table rows (header + 8 fields), no injected extra row"
+
 _dossier_test_summary
