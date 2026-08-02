@@ -94,3 +94,41 @@ PASS — 3 tasks reviewed (implementation-planner agent). Task 59 (script + work
 <!-- auto-log: 2026-08-03 00:47 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/complete_run.py -->
 
 <!-- auto-log: 2026-08-03 00:49 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/feedback_dont_run_dossier_test_suite.md -->
+
+<!-- auto-log: 2026-08-03 00:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 00:52 commit "test(dossier): assert on die_infra's message, silencing SC2034" -->
+
+<!-- auto-log: 2026-08-03 00:55 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-08-03 00:55 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/workflow-template.test.sh -->
+
+<!-- auto-log: 2026-08-03 00:55 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 00:56 commit "fix(dossier): add continue-on-error to rotation-check, fix --help range" -->
+
+<!-- auto-log: 2026-08-03 00:56 commit "fix(dossier): add continue-on-error to rotation-check, fix --help range" -->
+
+<!-- auto-log: 2026-08-03 00:57 commit "fix(dossier): add continue-on-error to rotation-check, fix --help range" -->
+
+<!-- auto-log: 2026-08-03 00:58 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/feedback_dont_execute_dossier_tests_directly.md -->
+
+<!-- auto-log: 2026-08-03 00:58 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_dossier_concurrent_flow_sessions.md -->
+
+<!-- auto-log: 2026-08-03 00:58 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-08-03 00:59 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:00 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 01:00 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 01:01 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:02 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:02 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:02 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 01:06 commit "fix(dossier): guard empty config overrides, sanitize job-summary output" -->
