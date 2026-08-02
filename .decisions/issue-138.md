@@ -31,6 +31,11 @@ artifacts:
   result: achieved
   evidence_bundle: .flow/runs/2026-07-29T115831Z-issue-138
   failures: none
+- type: workflow-run
+  captured_at: '2026-08-02T22:48:02Z'
+  workflow: start-issue
+  run_id: 2026-07-29T115831Z-issue-138
+  status: completed
 ---
 # Issue #138 — Rolling-branch rotation, telemetry only
 
@@ -85,3 +90,7 @@ PASS — 3 tasks reviewed (implementation-planner agent). Task 59 (script + work
 <!-- auto-log: 2026-08-02 23:11 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/verdict-issue-138.json -->
 
 <!-- auto-log: 2026-08-03 00:44 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/lifecycle-issue-138-achieved.yaml -->
+
+<!-- auto-log: 2026-08-03 00:47 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/complete_run.py -->
+
+<!-- auto-log: 2026-08-03 00:49 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/feedback_dont_run_dossier_test_suite.md -->
