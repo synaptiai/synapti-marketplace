@@ -9,6 +9,7 @@
 _dossier_test_begin "workflow-template"
 
 WF="plugins/dossier/templates/ci/dossier-docs-refresh.yml"
+PLUGIN="plugins/dossier"
 assert_file_exists "$WF" "workflow template exists"
 
 BODY=$(cat "$WF" 2>/dev/null)
@@ -77,6 +78,28 @@ assert_not_contains "if: steps.decide.outputs.should_run" "$ROTATION_STEP_BLOCK"
 # `{{DOSSIER_` prefix, not a bare `{{`, since `${{ github.event... }}` is a
 # legitimate GitHub Actions expression that also contains `{{`.
 assert_not_contains "{{DOSSIER_" "$ROTATION_STEP_BLOCK" "the rotation-check step introduces no new template placeholder"
+
+# --- AC2: the policy job never closes a PR, deletes a branch, or creates a --
+# replacement branch, under any circumstance ---------------------------------
+# Scoped to the policy job block ONLY (reused from above) — the publish job
+# legitimately contains "git push origin --delete" as its own
+# destructive-branch-guard code (a different job, a different privilege
+# level, pre-existing correct behaviour that is not touched here).
+assert_not_contains "git push origin --delete" "$POLICY_BLOCK" "policy job never deletes the docs branch"
+assert_not_contains "git branch -D" "$POLICY_BLOCK" "policy job never force-deletes a branch"
+assert_not_contains "gh pr close" "$POLICY_BLOCK" "policy job never closes a pull request"
+assert_not_contains "gh pr merge" "$POLICY_BLOCK" "policy job never merges a pull request"
+assert_contains "contents: read" "$POLICY_BLOCK" "policy job still declares contents: read"
+assert_contains "pull-requests: read" "$POLICY_BLOCK" "policy job still declares pull-requests: read"
+assert_not_contains "contents: write" "$POLICY_BLOCK" "policy job gains NO write permission from the new step"
+assert_not_contains "pull-requests: write" "$POLICY_BLOCK" "policy job gains NO pull-requests write permission from the new step"
+
+# dossier-rotation-check.sh is independently callable outside CI, so it needs
+# its own check, not just the workflow YAML.
+ROTATION_SCRIPT_BODY=$(cat "$PLUGIN/bin/dossier-rotation-check.sh" 2>/dev/null)
+for destructive in "git push" "gh pr close" "gh pr merge" "git branch -D" "git branch -d"; do
+  assert_not_contains "$destructive" "$ROTATION_SCRIPT_BODY" "dossier-rotation-check.sh itself never runs '$destructive'"
+done
 
 # The scan job (issue #137): isolated osv-scanner/pyscn execution. Same
 # privilege posture as policy — read-only, no write token, no agent.

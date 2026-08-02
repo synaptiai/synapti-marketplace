@@ -558,6 +558,12 @@
                   ],
                   "default": "draft",
                   "description": "What to do when the generated diff exceeds the doc thresholds. 'draft' opens the PR as a draft and labels it, because an oversized diff is usually the correct output of a cold start or a major refactor and discarding it destroys real work."
+                },
+                "rotationMaxAccumulatedLines": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 5000,
+                  "description": "Accumulated insertions+deletions on the rolling documentation branch above which dossier-rotation-check.sh reports would_rotate=true (telemetry only — no automated action is taken). Read by dossier-rotation-check.sh, not by the refresh/publish path."
                 }
               }
             },
