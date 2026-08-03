@@ -78,8 +78,15 @@ live script, before this skill was invoked)._
   reproduction claim about `xargs` does not hold against the current committed code and is
   treated as already resolved.
 - Not touching `BOUND` (the strict no-wrapper anchor) or the `SCAN`/`BOUND_ACTIVE` derivation
-  logic — the fix is entirely a `WRAPPER`-token-list addition (one alternative, `find`, added
-  to the existing token-alternation group).
+  logic itself — the fix only widens the *trigger condition* that decides whether that
+  derivation runs (see Interface contracts below for the final shape, which diverged from the
+  original single-token-addition approach captured here).
+
+  > **Superseded during review** (kept for audit trail, not current): the original design below
+  > added `find` directly to the `WRAPPER` token-alternation group. A code-review pass on this
+  > PR found that over-blocked any command merely containing the word "find" (not just actual
+  > `find -exec` invocations), and the shipped fix instead uses a separate `FIND_EXEC` regex —
+  > see the Interface contracts and Failure modes sections' correction notes below.
 
 ### Failure modes
 
@@ -87,25 +94,30 @@ live script, before this skill was invoked)._
   that could hang; nothing to time out.
 - **Partial failures** — none — the fix is a single-line regex alternation addition with no
   multi-step operation that could partially complete.
-- **Invalid input** — a wrapper-mode false positive: `find . -name "npm test"` (no `-exec` at
-  all, just a filename pattern that happens to contain a denied phrase) becomes over-blocked
-  once `find` is a `WRAPPER` token, because `WRAPPER`-mode makes every whitespace run a
-  boundary. This is the SAME accepted-tradeoff class already documented and shipped for every
-  other `WRAPPER` token (e.g. `timeout 5 grep -r "npm test" docs/` is already over-blocked
-  today) — not a new failure mode being introduced, but pinned down with an explicit regression
-  test for the first time (previously this tradeoff class was only ever documented in a
-  comment, never asserted in `hooks.test.sh`).
+- **Invalid input** — **superseded during review, correction**: the paragraph originally here
+  described `find . -name "npm test"` as an accepted over-block tradeoff, matching the original
+  bare-`find`-in-`WRAPPER` design. A code-review pass on this PR demonstrated live that this
+  tradeoff class is broader than "npm test" specifically — it swept in any command merely
+  containing the word "find" (e.g. a commit message `git commit -m "docs: find and document the
+  test workflow"`), not just actual `find -exec` invocations. The shipped fix (a dedicated
+  `FIND_EXEC` regex requiring `find` to co-occur with `-exec`/`-execdir`/`-ok`/`-okdir`) resolves
+  this rather than accepting it: `hooks.test.sh` now asserts `find . -name "npm test"` and the
+  commit-message case both correctly return RC=0 (not blocked).
 - **Missing context** — none — no new config/env dependency is introduced; the fix reuses the
   existing `WRAPPER` variable, which is already resolved unconditionally at hook-invocation
   time with no external state.
 
 ### Interface contracts
 
-- `WRAPPER` regex in `plugins/dossier/hooks/scripts/enforce-allowed-actions.sh`: add the
-  literal alternative `find` to the existing token-alternation group (alongside
-  `bash|sh|zsh|...|python|python3`), preserving the exact same anchoring/lookaround structure.
-  No new variables, no new functions, no change to `BOUND`, `BOUND_ACTIVE` derivation, or the
-  `SCAN` sed rewrite.
+- **Superseded during review** (final shipped shape): a new `FIND_EXEC` regex variable,
+  `'(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*find([[:space:]]|$).*[[:space:]]-(exec|execdir|ok|okdir)([[:space:]]|$)'`,
+  requiring `find` to actually co-occur with one of its four sub-command-execution primaries.
+  The trigger condition for boundary-widening becomes
+  `grep -qE "$WRAPPER" || grep -qE "$FIND_EXEC"` — `find` itself is never added to `WRAPPER`.
+  No change to `BOUND`, `BOUND_ACTIVE`'s own derivation logic, or the `SCAN` sed rewrite — only
+  the condition that decides whether that derivation runs. (Superseded original design, kept
+  for audit trail: adding the literal alternative `find` to `WRAPPER` directly. See the
+  Non-goals and Failure modes correction notes above for why this was replaced.)
 - No change to any deny-block's own detection regex (`runTests`/`runBuild`/`networkAccess`/
   `runSecurityScan`/`runCodeQualityScan`) — the fix is entirely upstream of them, in the shared
   `WRAPPER`/`BOUND_ACTIVE` mechanism they all consume. This is what makes the fix apply to
@@ -138,10 +150,10 @@ live script, before this skill was invoked)._
    newly-added ones. Verification: `bash plugins/dossier/tests/run.sh hooks.test.sh`
 2. The fix does not regress any existing passing case in `plugins/dossier/tests/hooks.test.sh`
    (the wrapper-indirection and grep-about-a-command cases especially). Verification: same
-   command, full file green (94/94, up from 85/85 pre-fix).
+   command, full file green (98/98 as of the final `FIND_EXEC` shape, up from 85/85 pre-fix).
 3. The approach is documented as classifying command structure rather than enumerating more
    literal indirection tokens, so a future new indirection shape doesn't require another
-   narrowing/widening round. Verification: `grep -n "find"
+   narrowing/widening round. Verification: `grep -n "FIND_EXEC"
    plugins/dossier/hooks/scripts/enforce-allowed-actions.sh` + manual read of the revised
    comment block.
 4. Covered by new test cases in `hooks.test.sh` for each denied-command class named above.
@@ -356,3 +368,17 @@ pre-bundle). `shellcheck -S warning -x` across every touched script — clean, e
 <!-- auto-log: 2026-08-03 15:45 commit "fix(dossier): paginate the EXISTING_PR lookup and distinguish a failed lookup from a confirmed none" -->
 
 <!-- auto-log: 2026-08-03 15:45 commit "fix(dossier): fail closed on an ambiguous PR-lookup signal and verify rev-list's exit status before trusting its output" -->
+
+<!-- auto-log: 2026-08-03 15:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-08-03 15:55 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-143.md -->
+
+<!-- auto-log: 2026-08-03 15:55 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-143.md -->
+
+<!-- auto-log: 2026-08-03 15:56 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-143.md -->
+
+<!-- auto-log: 2026-08-03 15:56 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-143.md -->
+
+<!-- auto-log: 2026-08-03 15:57 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr-153-self-review.md -->
+
+<!-- auto-log: 2026-08-03 15:57 commit "fix(dossier): capture git rev-list's stderr separately from its stdout" -->
