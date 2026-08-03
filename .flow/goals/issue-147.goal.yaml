@@ -19,9 +19,16 @@ objective:
       (and any git network op) silently inert on private repos'
   acceptance_criteria:
   - id: AC1
-    text: dossier-rotation-check.sh's git ls-remote and both git fetch calls authenticate
-      against origin using GH_TOKEN when it is non-empty, via a scoped -c http.extraheader="AUTHORIZATION
-      bearer $GH_TOKEN" applied per-invocation.
+    text: 'Superseded during review, shipped shape (original text below is the
+      pre-implementation plan, disproved live -- see .decisions/issue-147.md):
+      dossier-rotation-check.sh''s git ls-remote and both git fetch calls authenticate
+      against origin using GH_TOKEN when it is non-empty, via GIT_CONFIG_COUNT/KEY_0/VALUE_0
+      env vars carrying "AUTHORIZATION basic base64(x-access-token GH_TOKEN)", scoped
+      to origin''s own resolved scheme+host, applied per-invocation. Original plan
+      (-c http.extraheader="AUTHORIZATION bearer GH_TOKEN") was live-verified rejected
+      by GitHub; the unscoped-key variant of the env-var shape was also found, live,
+      to leak the header to unrelated HTTPS hosts, and was fixed to scope by origin''s
+      host before merge.'
     verification_command: bash plugins/dossier/tests/run.sh rotation-check.test.sh
     must_pass: true
     status: pending
@@ -87,9 +94,11 @@ specification:
   - 'Missing context: GH_TOKEN empty or absent falls back to today''s unauthenticated
     behavior rather than failing loudly.'
   interface_contracts:
-  - dossier-rotation-check.sh's git ls-remote and both git fetch calls gain a conditional
-    -c http.extraheader="AUTHORIZATION bearer $GH_TOKEN" prefix, added only when GH_TOKEN
-    is non-empty.
+  - 'Superseded during review, shipped shape (see .decisions/issue-147.md): dossier-rotation-check.sh''s
+    git ls-remote and both git fetch calls gain a conditional GIT_CONFIG_COUNT/KEY_0/VALUE_0
+    env-var prefix carrying "AUTHORIZATION basic base64(x-access-token GH_TOKEN)", scoped
+    to origin''s own resolved scheme plus host, added only when GH_TOKEN is non-empty
+    and origin resolves to an http(s) URL.'
   - No change to the script's --github-output/--summary output contract, exit codes,
     or any of its 8 emitted fields.
   - No change to dossier-docs-refresh.yml — GH_TOKEN is already present in the rotation-check

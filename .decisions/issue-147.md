@@ -192,6 +192,67 @@ against a live GitHub Actions run with a real `github.token`, since that token o
 the duration of an actual job. If a future CI run of `dossier-docs-refresh.yml` against a real
 private repo shows a different result, that is the next signal to act on.
 
+## Parallel review fix-forward (P1 + P2s, fixed before merge)
+
+The `/flow:pr` review pass (5 agents: code-quality, convention, security, error-handling,
+test-runner) converged on one confirmed P1 and several P2/P3 findings, all fixed:
+
+- **P1 (code-reviewer, live-reproduced)**: `GIT_CONFIG_KEY_0=http.extraheader` was unscoped —
+  it applies to every HTTPS request the `git` invocation makes, not just requests to `origin`.
+  Verified live: an unscoped key sent the Basic-auth header to an unrelated third-party host
+  (gitlab.com) when the script's origin was github.com. The security-reviewer initially
+  dismissed a similar-sounding concern citing CVE-2020-11008 (git no longer resends
+  `extraheader` across a mid-request host-changing redirect, fixed in git >= 2.26) — but that
+  citation addresses a different threat model (redirect-following within one HTTP transaction),
+  not static config-key scoping across separate git invocations, which is what the code-reviewer
+  actually reproduced. Fixed: `git_auth()` now derives `origin`'s own scheme+host via
+  `git remote get-url origin` and scopes the key to
+  `http.<scheme>://<host>/.extraheader`, matching `actions/checkout`'s own narrower scoping (not
+  just its header-value shape, which was already matched). Non-HTTP(S) origins (ssh://,
+  `git@host:path`, `git://`) fall through unauthenticated entirely, since Basic-over-HTTP
+  doesn't apply to those transports and there's no host to scope to. Re-verified against the
+  real private repo with the exact corrected function (not a hand-written replica): still
+  authenticates correctly against origin, and — new — confirmed the same credential no longer
+  reaches an explicitly-targeted different host (gitlab.com) in the same test session.
+- **P2 (error-handler-inspector)**: the base64-encoding pipeline's exit status was never
+  checked; a broken/missing `base64` would silently produce an empty credential, sent as
+  `AUTHORIZATION: basic ` — rejected by the remote, which is worse than no credential at all for
+  a public repo. Fixed: falls through unauthenticated if the encoding pipeline produces an empty
+  result.
+- **P2 (error-handler-inspector)**: `GIT_CONFIG_COUNT=1` unconditionally claims the whole
+  `GIT_CONFIG_*` namespace for the subprocess, silently overriding any ambient
+  `GIT_CONFIG_COUNT`/`KEY_N`/`VALUE_N` a caller might have set (nothing in this repo does today
+  — confirmed via grep — but noted as a latent gap). Documented explicitly in `git_auth()`'s own
+  comment as an intentional exclusive claim, not fixed with speculative append-logic for a
+  scenario with no current reachable caller.
+- **P2 (docs, code-reviewer + security-reviewer, independently)**: `.flow/goals/issue-147.goal.yaml`
+  still described the superseded `-c http.extraheader=...bearer...` design in AC1's text and
+  `interface_contracts`, and AC3's verification command spuriously still passed against the
+  shipped code (the substring `http.extraheader` survives incidentally as a config key-name
+  fragment). Fixed: goal file text updated to describe the shipped mechanism.
+- **P3 (security-reviewer + error-handler-inspector, independently)**: `_clean_token`/
+  `_b64_creds` were plain global assignments, not `local`, unnecessarily widening the
+  credential's exposure window in the shell's namespace after `git_auth` returns. Fixed: added
+  `local`.
+- **P3 (security-reviewer)**: `git_auth()`'s docstring didn't state the caller contract that
+  makes its own credential-transform safe (every call site must redirect stdout+stderr, since
+  the base64-transformed credential is not GitHub's literal secret string and Actions' log
+  masking would not catch it). Fixed: added to the docstring.
+- **P3 (error-handler-inspector)**: the transport-failure `note()` text at both sites didn't
+  record whether `GH_TOKEN` was set, so an operator couldn't distinguish "no token, private
+  repo, expected" from "token set and rejected." Fixed: both notes now include `GH_TOKEN set:
+  yes/no`.
+- **P2 (convention-checker, test-integrity)**: scenario 22's `DIRTY_TOKEN` was built as
+  `"...$(printf '\r\n')"` — a `$(...)` substitution strips all of its own trailing newlines
+  regardless of where the result is later concatenated, so the token only ever carried a
+  trailing `\r`, never a surviving embedded `\n`, contradicting the test's own comment and the
+  commit message that introduced it. Fixed: rebuilt via ANSI-C quoting (`$'...\r\n...'`), which
+  embeds real control characters with no such stripping.
+
+Test suite grew from 93 to 96 assertions (new scenario 21C: non-HTTP(S) origin falls through
+unauthenticated; two new scoping assertions in 21A). Final: `bash plugins/dossier/tests/run.sh
+rotation-check.test.sh` — 96/96. `shellcheck -S warning -x` — clean.
+
 <!-- auto-log: 2026-08-03 17:58 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-147.md -->
 
 <!-- auto-log: 2026-08-03 17:58 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/issue-147.goal.yaml -->
@@ -263,3 +324,31 @@ private repo shows a different result, that is the next signal to act on.
 <!-- auto-log: 2026-08-03 19:30 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/issue-147-lifecycle-achieved.yaml -->
 
 <!-- auto-log: 2026-08-03 19:30 Edit /Users/danielbentes/synapti-marketplace/.flow/runs/2026-08-03T160000Z-issue-147/run.yaml -->
+
+<!-- auto-log: 2026-08-03 19:34 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/test_redir.sh -->
+
+<!-- auto-log: 2026-08-03 19:34 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/propagation_test.sh -->
+
+<!-- auto-log: 2026-08-03 19:39 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/gitconfig_clobber_test.sh -->
+
+<!-- auto-log: 2026-08-03 19:42 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 19:43 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 19:43 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 19:46 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 19:47 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 19:47 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 19:48 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 19:51 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-147.md -->
+
+<!-- auto-log: 2026-08-03 19:51 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-147.goal.yaml -->
+
+<!-- auto-log: 2026-08-03 19:51 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-147.goal.yaml -->
+
+<!-- auto-log: 2026-08-03 19:53 commit "fix(dossier): scope git_auth's credential to origin's own host, fix silent-failure edge cases" -->
