@@ -20,16 +20,37 @@ get() { printf '%s\n' "$1" | awk -F= -v k="$2" '$1==k{sub(/^[^=]*=/,""); print; 
 day_offset() { date -u -d "-$1 days" +%Y-%m-%d 2>/dev/null || date -u -v-"$1"d +%Y-%m-%d 2>/dev/null; }
 future_offset() { date -u -d "+$1 days" +%Y-%m-%d 2>/dev/null || date -u -v+"$1"d +%Y-%m-%d 2>/dev/null; }
 
-# Removes any PATH entry that hosts a `gh` executable, keeping every other
-# tool resolvable. `command -v gh` must genuinely fail for the "no gh" cases —
-# the script branches on that check, not on gh's exit code.
+# Removes `gh` specifically, keeping every other tool on the same PATH
+# component resolvable. `command -v gh` must genuinely fail for the "no gh"
+# cases -- the script branches on that check, not on gh's exit code.
+#
+# Dropping the WHOLE directory that hosts `gh` (the original approach) works
+# on macOS, where Homebrew's `gh` lives in its own directory separate from
+# core utilities, but silently breaks everything on typical Linux CI images:
+# `/bin` is a symlink to `/usr/bin`, and apt-installed `gh` lives right next
+# to `git`/`date`/`jq`/`mktemp` in that same directory, so dropping it took
+# the whole userland with it (every scenario using this helper failed with
+# exit 127, "command not found", in CI while passing locally on macOS).
+# Filtering at the file level via a symlinked stand-in directory keeps the
+# helper's stated intent ("keeping every other tool resolvable") true on
+# both platforms.
 no_gh_path() {
   OLD_IFS="$IFS"; IFS=':'
   _out=""
   for _dir in $PATH; do
     [ -n "$_dir" ] || continue
-    [ -x "$_dir/gh" ] && continue
-    _out="${_out:+$_out:}$_dir"
+    if [ -x "$_dir/gh" ]; then
+      _filtered=$(_dossier_safe_mktemp_dir "no-gh-filtered")
+      for _entry in "$_dir"/*; do
+        [ -e "$_entry" ] || continue
+        _base=$(basename "$_entry")
+        [ "$_base" = "gh" ] && continue
+        ln -s "$_entry" "$_filtered/$_base" 2>/dev/null
+      done
+      _out="${_out:+$_out:}$_filtered"
+    else
+      _out="${_out:+$_out:}$_dir"
+    fi
   done
   IFS="$OLD_IFS"
   printf '%s' "$_out"

@@ -42,6 +42,12 @@ artifacts:
   path: B
   findings_count: 8
   pr: 145
+- type: review-cycle
+  captured_at: '2026-08-03T00:03:42Z'
+  cycle: 1
+  path: A
+  findings_count: 32
+  pr: 145
 ---
 # Issue #138 — Rolling-branch rotation, telemetry only
 
@@ -200,3 +206,15 @@ PASS — 3 tasks reviewed (implementation-planner agent). Task 59 (script + work
 <!-- auto-log: 2026-08-03 01:58 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
 
 <!-- auto-log: 2026-08-03 01:59 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 02:00 commit "fix(dossier): neutralize markdown-active note() text; close 3 test gaps" -->
+
+<!-- auto-log: 2026-08-03 02:01 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/review-145-cycle1.md -->
+
+<!-- auto-log: 2026-08-03 02:02 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/resolution-145-cycle1.md -->
+
+<!-- auto-log: 2026-08-03 02:03 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr145-current-body.md -->
+
+<!-- auto-log: 2026-08-03 02:06 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 02:08 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/test-no-gh-path.sh -->
