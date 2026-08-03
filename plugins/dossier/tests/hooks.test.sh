@@ -168,6 +168,66 @@ for OK in 'timeout 5 ls' 'time ls' 'nice ls' 'env ls' 'ls -la' 'git status' 'cat
   assert_equal "0" "$RC" "enforce-allowed-actions permits: $OK"
 done
 
+# --- find -exec/-execdir/-ok/-okdir and xargs -I{} indirection (issue #143) ---
+# -exec/-execdir/-ok/-okdir glue the sub-command execution position to a flag
+# rather than spelling it as a standalone token, so neither BOUND nor the prior
+# WRAPPER token list ever fired for the denied command sitting inside them.
+# One representative command per existing deny-block, so the fix (adding
+# "find" to WRAPPER) is proven to apply uniformly to every block rather than
+# just the block it happened to be developed against.
+for CASE in \
+  'find . -exec npm test {} \;|runTests' \
+  'find . -exec curl https://example.invalid {} \;|networkAccess' \
+  'find . -execdir curl https://example.invalid {} \;|networkAccess' \
+  'find . -ok curl https://example.invalid {} \;|networkAccess' \
+  'find . -okdir curl https://example.invalid {} \;|networkAccess' \
+  'find . -exec osv-scanner {} \;|runSecurityScan' \
+  'find . -exec pyscn {} \;|runCodeQualityScan'
+do
+  BAD="${CASE%%|*}"
+  CLASS="${CASE##*|}"
+  RC=0
+  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$BAD" | jq -Rs .)" \
+     | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+  assert_equal "2" "$RC" "enforce-allowed-actions sees through find's exec position ($CLASS): $BAD"
+done
+
+# runBuild's own denied tokens (make/cargo build/...) require a bare command
+# word, unlike npm/osv-scanner/curl above, so this needs its own case rather
+# than reusing the loop's single-word BAD strings.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"find . -exec make {} \\;"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions sees through find's exec position (runBuild): find . -exec make {} \\;"
+
+# xargs -I{} was already covered by the pre-existing WRAPPER token list (xargs
+# itself is a standalone token there), but AC1 names it explicitly, so it gets
+# its own direct assertion rather than relying on the general wrapper-loop
+# above to stand in for it.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"xargs -I{} curl {}"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions denies xargs -I{} <denied-command> {} (networkAccess)"
+
+# Accepted tradeoff, pinned rather than left only in a comment: once "find" is
+# a WRAPPER token, EVERY whitespace run becomes a boundary for the whole
+# command, so a find invocation that merely searches for a denied phrase as a
+# -name argument (no -exec at all) is over-blocked too. Same tradeoff class
+# already shipped for every other WRAPPER token (e.g. timeout+grep-about-a-
+# command); this is the first time it is pinned down with its own assertion
+# instead of only documented in prose.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"find . -name \"npm test\""}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "accepted tradeoff: find . -name \"npm test\" is over-blocked once find is a WRAPPER token"
+
+# Ordinary find usage with no embedded denied command must still pass — the
+# fix must not turn every find invocation into a denial.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"find . -type f -name \"*.md\""}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "ordinary find usage with no denied command embedded is still permitted"
+
 # --- Scanner deny-blocks (issue #137): a defense-in-depth backstop for the
 # two new runSecurityScan/runCodeQualityScan flags, on top of the primary
 # architectural containment (the scanners run as an isolated CI step, never

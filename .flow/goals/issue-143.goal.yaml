@@ -1,0 +1,119 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-143
+  created_at: '2026-08-03T11:53:19Z'
+  created_by: /flow:start
+  owner: daniel.bentes@synapti.ai
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-143-hook-policy-hardening
+  issue: 143
+  journal: .decisions/issue-143.md
+objective:
+  outcome: 'Issue #143 is implemented and verified.'
+  source:
+    type: github_issue
+    number: 143
+    title: 'dossier: enforce-allowed-actions.sh''s action-ceiling backstop can be
+      bypassed via find -exec / xargs -I{}'
+  acceptance_criteria:
+  - id: AC1
+    text: find ... -exec <denied-command> ..., find ... -execdir <denied-command>
+      ..., and xargs -I{} <denied-command> {} (and their common flag variants) are
+      correctly denied when the corresponding capability is off, for every existing
+      deny-block (runTests, runBuild, networkAccess, runSecurityScan, runCodeQualityScan),
+      not just newly-added ones.
+    verification_command: bash plugins/dossier/tests/run.sh hooks.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC2
+    text: The fix does not regress any existing passing case in plugins/dossier/tests/hooks.test.sh
+      (the wrapper-indirection and grep-about-a-command cases especially).
+    verification_command: bash plugins/dossier/tests/run.sh hooks.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC3
+    text: The approach is documented as classifying command structure rather than
+      enumerating more literal indirection tokens, so a future new indirection shape
+      doesn't require another narrowing/widening round.
+    verification_command: grep -n "find" plugins/dossier/hooks/scripts/enforce-allowed-actions.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC4
+    text: Covered by new test cases in hooks.test.sh for each denied-command class
+      named above.
+    verification_command: bash plugins/dossier/tests/run.sh hooks.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+specification:
+  non_goals:
+  - Not building a full POSIX/bash shell-grammar parser — this hook has zero CI reach,
+    so a grammar parser is disproportionate to the blast radius.
+  - Not closing every command that can embed an arbitrary sub-command (GNU parallel,
+    awk system(...), perl -e exec(...), etc.) — only find and xargs, the two named
+    in the acceptance criteria. Left as a documented out-of-scope comment, not a new
+    tracked issue.
+  - No code change needed for xargs specifically — empirically verified it is already
+    blocked today via the existing WRAPPER token list. Only find is a live gap.
+  - Not touching BOUND or the SCAN/BOUND_ACTIVE derivation logic — the fix is entirely
+    a WRAPPER-token-list addition.
+  failure_modes:
+  - 'Timeouts: none — synchronous regex-based hook, no I/O or network calls.'
+  - 'Partial failures: none — single-line regex alternation addition, no multi-step
+    operation.'
+  - 'Invalid input: find . -name "npm test" (no -exec) becomes an accepted over-block
+    once find is a WRAPPER token — same tradeoff class already shipped for every other
+    WRAPPER token, now pinned down with an explicit regression test.'
+  - 'Missing context: none — no new config/env dependency; reuses the existing WRAPPER
+    variable resolved unconditionally at hook-invocation time.'
+  interface_contracts:
+  - 'WRAPPER regex in plugins/dossier/hooks/scripts/enforce-allowed-actions.sh: add
+    the literal alternative "find" to the existing token-alternation group, preserving
+    the exact same anchoring/lookaround structure.'
+  - No change to any deny-block's own detection regex — the fix is entirely upstream,
+    in the shared WRAPPER/BOUND_ACTIVE mechanism they all consume.
+  - Test additions land in plugins/dossier/tests/hooks.test.sh only, following the
+    file's existing loop-based assertion pattern.
+  - 'The existing "Known limitation... issue #143" comment block is revised, not deleted,
+    to document what was fixed and what remains out of scope.'
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+evaluator:
+  type: flow_verdict_judge
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: active
+  current_phase: explore
+  current_activity: explore
+  turns_evaluated: 0
+  last_evaluation:
+    result: incomplete
+    reason: Goal activated at /flow:start Phase 1; evidence not yet collected.
+    at: '2026-08-03T11:53:19Z'

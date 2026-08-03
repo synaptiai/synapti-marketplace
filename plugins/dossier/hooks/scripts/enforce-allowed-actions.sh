@@ -89,22 +89,41 @@ BOUND='(^|[;&|(]|^[[:space:]]*)[[:space:]]*([A-Za-z0-9_.-]*/)*'
 # shapes for it, not exotic ones — confirmed live that the pyscn deny check
 # below permits them while correctly blocking bare pyscn/osv-scanner and
 # env/sudo-wrapped forms.
-WRAPPER='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*(bash|sh|zsh|dash|ksh|env|command|exec|eval|xargs|nohup|setsid|stdbuf|script|time|timeout|nice|ionice|sudo|doas|su|python|python3)([[:space:]]|$)'
+# find closes the issue #143 gap: `find . -exec curl https://evil {} \;` (and
+# -execdir/-ok/-okdir) glue the sub-command execution position to a flag
+# rather than spelling it as its own token, so neither WRAPPER nor the strict
+# BOUND anchor used to fire for the command sitting inside them. This is
+# deliberately classification by structure, not enumeration: `find` is added
+# once, as a command name (the same category as every other entry in this
+# list), not as a list of its flags — so -exec/-execdir/-ok/-okdir (and any
+# future find primitive with the same shape) are all covered by this one
+# addition, with no per-flag matching added anywhere. `xargs -I{} curl {}`
+# needed no change at all: `xargs` was already a WRAPPER token before this
+# fix, so it already flips the whole command into whitespace-boundary mode —
+# confirmed live, not assumed.
+WRAPPER='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*(find|bash|sh|zsh|dash|ksh|env|command|exec|eval|xargs|nohup|setsid|stdbuf|script|time|timeout|nice|ionice|sudo|doas|su|python|python3)([[:space:]]|$)'
 
-# Known limitation, not fixed here (issue synaptiai/synapti-marketplace#143):
-# a command-embedded indirection that never spells one of the WRAPPER tokens
-# as its own word still bypasses the boundary anchor — `find . -exec curl
-# https://evil {} \;` and `xargs -I{} curl {}` are the confirmed cases:
-# `-exec`/`-I{}` are glued to a flag, not a standalone token, so neither
-# WRAPPER nor the strict BOUND anchor ever fires for the command inside
-# them. This does not widen the token list further — the WRAPPER list has
-# already been narrowed/widened several times and each round just moves the
-# hole, since the underlying problem is pattern-matching tokens rather than
-# parsing the actual shell grammar; a real fix needs the latter and is
-# tracked separately. Low real-world exposure: this
-# hook is a local/interactive backstop only — the CI refresh job's own
-# --allowedTools allowlist doesn't include `find`, `xargs`, or a bare shell
-# at all, so the automated pipeline has no reach here regardless.
+# Accepted cost of the find fix above: since WRAPPER-mode makes every
+# whitespace run a boundary once `find` is present anywhere in the command,
+# `find . -name "npm test"` (no -exec at all — just a filename pattern that
+# happens to contain a denied phrase) is now over-blocked too. Same tradeoff
+# class already shipped for every other WRAPPER token (e.g. `timeout 5 grep
+# -r "npm test" docs/`); hooks.test.sh pins this one down with its own
+# assertion rather than leaving it only documented here.
+#
+# Known limitation, deliberately not fixed here: this file's mechanism is
+# "does this command name introduce an arbitrary sub-command execution
+# position, regardless of which flag spells that out" — but only for the
+# finite set of command names actually listed above. Genuinely different
+# tools with the same shape (GNU `parallel`, `awk 'system(...)'`, `perl -e
+# "exec(...)"`, `watch -x`, and others) are not covered and have no WRAPPER
+# entry. This is not tracked as a separate issue: unlike `find`/`xargs`
+# above, which came from an actual review finding on real PR traffic, this
+# residual class has no concrete trigger yet. Real-world exposure stays low
+# regardless — this hook is a local/interactive backstop only; the CI refresh
+# job's own --allowedTools allowlist doesn't include `find`, `xargs`,
+# `parallel`, `awk`, `perl`, or a bare shell at all, so the automated
+# pipeline has no reach here.
 SCAN="$COMMAND"
 BOUND_ACTIVE="$BOUND"
 if printf '%s' "$COMMAND" | grep -qE "$WRAPPER"; then
