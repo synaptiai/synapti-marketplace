@@ -150,34 +150,122 @@ FIND_EXEC='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*find([[:space:]]
 # above, which came from an actual review finding on real PR traffic, this
 # residual class has no concrete trigger yet.
 #
-# Second known limitation, tracked as issue #152 (not fixed here): quoting or
-# backslash-escaping a denied word defeats BOUND/WRAPPER entirely, for ANY
-# token listed anywhere in this file, not just `find`/`xargs` — confirmed
-# live (`"curl" https://evil`, `\curl https://evil`, and `\find . -exec curl
-# ... {} \;` all exit 0/permitted). This is broader and predates issue #143:
-# the SCAN/BOUND_ACTIVE quote-stripping normalization only runs after a
-# WRAPPER match is found, so a denied word spelled with a leading quote/
-# backslash never triggers that normalization in the first place. Fixing it
-# means normalizing unconditionally before any WRAPPER/FIND_EXEC/deny test,
-# not something scoped to this file's find/xargs change.
+# Second limitation, issue #152 (closed here): quoting or backslash-escaping a
+# denied word defeats BOUND/WRAPPER entirely, for ANY token listed anywhere in
+# this file, not just find/xargs — confirmed live for every one of these,
+# including a real curl invocation in each case:
+#   "curl" https://evil                  (whole word quoted)
+#   \curl https://evil                   (leading backslash)
+#   c\url https://evil                   (mid-word backslash split)
+#   cu''rl https://evil / cu"r"l https://evil   (adjacent quote fragments —
+#                                                bash joins these into one word)
+#   cur\<a real newline>l https://evil   (backslash-newline line continuation)
+#   $'\143url' https://evil              (bash's own ANSI-C octal quoting)
+# The last two were found investigating this issue, not in the original
+# report: this file's SCAN/BOUND_ACTIVE quote-stripping only ran after a
+# WRAPPER match, so a denied word spelled with a leading quote/backslash never
+# triggered it, and every variant above reduces to a plain, unrecognizable
+# spelling of the same word bash actually executes.
 #
-# Real-world exposure stays low regardless of either limitation above — this
-# hook is a local/interactive backstop only; the CI refresh
-# job's own --allowedTools allowlist doesn't include `find`, `xargs`,
-# `parallel`, `awk`, `perl`, or a bare shell at all, so the automated
+# DEQUOTED undoes exactly what bash's own quote/escape/ANSI-C removal would
+# do, so the anchor below tests the word bash actually runs rather than its
+# disguised spelling. Order matters:
+#
+#  1. $'...' content is decoded first — it has its own escape grammar
+#     (octal/hex), independent of ordinary quoting, and must not be treated as
+#     a plain literal string by step 4.
+#  2. A backslash immediately followed by a real newline is removed as a PAIR
+#     before any lone backslash is stripped. Stripping the backslash alone
+#     first leaves the newline behind as a still-valid whitespace separator,
+#     silently reopening the exact bypass this closes.
+#  3. Remaining lone backslashes (the escape character) are deleted, keeping
+#     the character they protected.
+#  4. Quote and backtick characters are deleted outright, not turned into a
+#     boundary/separator the way the WRAPPER-triggered widening below does.
+#     Bash's own quote removal deletes the marks and leaves adjacent fragments
+#     joined into one word (cu''rl -> curl); turning them into a separator
+#     would instead split the word into pieces that never reassemble.
+#
+# Done in bash parameter expansion (not sed/tr) for steps 2-4: sed and grep
+# are line-oriented by default, which would silently ignore the
+# backslash-newline case — the join needs to see the newline and the
+# character after it as one operation, not two independent lines — and this
+# also sidesteps the GNU/BSD sed divergence this suite has hit before. The
+# ANSI-C helper below still shells out to sed/printf for its own narrow,
+# already-isolated substring (the content between $' and '), where that
+# divergence risk does not apply.
+#
+# Known, accepted trade-off: deleting a quote mark can bring a boundary
+# character and a denied word directly together when nothing else separated
+# them — `echo hi;"curl" https://evil` has a boundary-char/keyword gap of
+# exactly one quote mark, so deleting it produces `;curl`, indistinguishable
+# from a real `;curl ...` invocation. (A quote mark elsewhere in the same
+# command, with other text between it and the keyword, is not this case: the
+# keyword's own preceding character is unchanged either way, which is why an
+# ordinary `"..."` argument containing a stray `|` or `(` earlier in a prose
+# string is not a NEW effect of this fix — the strict anchor already reads
+# raw command text without understanding quoting at all.) This is the same
+# direction of trade this file already accepts for the WRAPPER scan
+# (`timeout 5 grep -r "npm test" docs/` is refused too): over-block, name the
+# match, let a human drop the false trigger and re-run. See hooks.test.sh for
+# the assertion that proves this is deliberate, not a surprise.
+#
+# Real-world exposure stays low regardless of the remaining find/xargs-shaped
+# limitation noted above — this hook is a local/interactive backstop only;
+# the CI refresh job's own --allowedTools allowlist doesn't include `find`,
+# `xargs`, `parallel`, `awk`, `perl`, or a bare shell at all, so the automated
 # pipeline has no reach here.
-SCAN="$COMMAND"
+ansi_c_decode() { # $1: command string -> stdout: with every $'...' span decoded
+  # Bash's $'...' decodes \nnn (octal), \xHH (hex), and the usual \n/\t/...
+  # single-letter escapes. printf '%b' understands the same set, EXCEPT its
+  # octal form requires the leading zero bash's own \nnn does not (\143 vs
+  # \0143) — normalized below before handing the body to printf.
+  local s="$1" out="" pre body rest norm
+  while [[ "$s" == *\$\'*\'* ]]; do
+    pre="${s%%\$\'*}"
+    rest="${s#*\$\'}"
+    body="${rest%%\'*}"
+    rest="${rest#"$body"\'}"
+    norm=$(printf '%s' "$body" | sed -E 's/\\([0-7]{1,3})/\\0\1/g')
+    out+="$pre$(printf '%b' "$norm")"
+    s="$rest"
+  done
+  printf '%s' "$out$s"
+}
+
+COMMAND_ANSIC=$(ansi_c_decode "$COMMAND")
+
+# bash 3.2 (macOS's system /bin/bash) cannot match a pattern-substitution
+# pattern that is itself a literal backslash followed by a real newline: the
+# 2-character pattern's own length checks out, but the replacement silently
+# never fires -- confirmed empirically, and NOT reproducible under zsh or
+# newer bash, which both do fire. A backslash is a glob escape character
+# inside `${var//pattern/}`, and bash 3.2 mishandles escaping a newline
+# specifically. Every backslash is swapped for a placeholder byte first (one
+# that never legitimately appears in a Bash-tool command string) so the
+# join pattern below is placeholder+newline, never backslash+newline; the
+# remaining lone placeholders are then deleted, which is step 3 (the escape
+# character removed, the character it protected kept) applied via the same
+# placeholder rather than a second backslash-pattern substitution.
+DEQUOTE_PLACEHOLDER=$'\x01'
+COMMAND_MARKED="${COMMAND_ANSIC//\\/$DEQUOTE_PLACEHOLDER}"
+COMMAND_JOINED="${COMMAND_MARKED//$DEQUOTE_PLACEHOLDER$'\n'/}"
+DEQUOTED="${COMMAND_JOINED//$DEQUOTE_PLACEHOLDER/}"
+DEQUOTED="${DEQUOTED//\'/}"
+DEQUOTED="${DEQUOTED//\"/}"
+DEQUOTED="${DEQUOTED//\`/}"
+
+SCAN="$DEQUOTED"
 BOUND_ACTIVE="$BOUND"
-if printf '%s' "$COMMAND" | grep -qE "$WRAPPER" || printf '%s' "$COMMAND" | grep -qE "$FIND_EXEC"; then
-  # Quotes and command-substitution openers stop hiding a boundary, and every
-  # whitespace run becomes one.
-  SCAN=$(printf '%s' "$COMMAND" | sed -E -e 's,["'"'"'`],;,g' -e 's,\$\(,;,g')
+if printf '%s' "$DEQUOTED" | grep -qE "$WRAPPER" || printf '%s' "$DEQUOTED" | grep -qE "$FIND_EXEC"; then
   BOUND_ACTIVE='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*'
 fi
 
-# Every check below tests $SCAN with $BOUND_ACTIVE, which are $COMMAND and the
-# strict anchor unless a wrapper (or find's own exec-family primaries) was
-# found.
+# Every check below tests $SCAN with $BOUND_ACTIVE: $SCAN is always DEQUOTED
+# (quote/backslash/ANSI-C removed, so a disguised command-start is restored to
+# its plain spelling); $BOUND_ACTIVE is the strict anchor unless a wrapper (or
+# find's own exec-family primaries) was found in DEQUOTED, in which case
+# whitespace itself becomes a boundary too.
 
 if [ "$RUN_TESTS" != "true" ]; then
   if printf '%s' "$SCAN" | grep -qE "${BOUND_ACTIVE}(npm|yarn|pnpm|bun)[[:space:]]+(run[[:space:]]+)?test\b"; then

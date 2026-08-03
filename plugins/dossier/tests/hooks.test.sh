@@ -168,6 +168,74 @@ for OK in 'timeout 5 ls' 'time ls' 'nice ls' 'env ls' 'ls -la' 'git status' 'cat
   assert_equal "0" "$RC" "enforce-allowed-actions permits: $OK"
 done
 
+# --- Quoting/backslash-escaping a denied word (issue #152) -------------------
+# Independent of any wrapper token: a denied word spelled with a leading or
+# interior quote/backslash used to reach deny() as an intact, unrecognizable
+# word. Each of these is a real invocation once bash processes it — confirmed
+# live for every one (including a real curl attempt) while developing the fix.
+for BAD in \
+  '"curl" https://example.invalid|whole word quoted' \
+  '\curl https://example.invalid|leading backslash' \
+  'c\url https://example.invalid|mid-word backslash split'
+do
+  CASE_CMD="${BAD%%|*}"
+  CASE_LABEL="${BAD##*|}"
+  RC=0
+  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$CASE_CMD" | jq -Rs .)" \
+     | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+  assert_equal "2" "$RC" "enforce-allowed-actions closes the quote/backslash bypass ($CASE_LABEL): $CASE_CMD"
+done
+
+# Adjacent quote fragments: bash joins these into ONE word at execution time
+# (cu''rl -> curl), the same way `r''m` is two tokens to a naive matcher but
+# one to bash after quote removal.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"cu'"''"'rl https://example.invalid"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions closes the adjacent-single-quote-fragment bypass: cu''rl"
+
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"cu\"r\"l https://example.invalid"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" 'enforce-allowed-actions closes the adjacent-double-quote-fragment bypass: cu"r"l'
+
+# A backslash immediately followed by a real newline (bash's own line
+# continuation) splits a keyword across two lines. This one needed its own
+# ordering fix during development: joining the pair AFTER stripping lone
+# backslashes leaves the newline behind as a still-valid separator, silently
+# reopening the bypass.
+NL_CMD=$(printf 'cur\\\nl https://example.invalid')
+RC=0
+(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$NL_CMD" | jq -Rs .)" \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions closes the backslash-newline line-continuation bypass"
+
+# Bash's own ANSI-C quoting ($'...') decodes octal/hex escapes independently
+# of ordinary quote removal — confirmed to execute a real curl call.
+for BAD in \
+  '$'"'"'\143url'"'"' https://example.invalid|ansi-c octal' \
+  '$'"'"'\x63url'"'"' https://example.invalid|ansi-c hex'
+do
+  CASE_CMD="${BAD%%|*}"
+  CASE_LABEL="${BAD##*|}"
+  RC=0
+  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$CASE_CMD" | jq -Rs .)" \
+     | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+  assert_equal "2" "$RC" "enforce-allowed-actions closes the $CASE_LABEL bypass: $CASE_CMD"
+done
+
+# Known, accepted trade-off from the fix above: deleting a quote mark can
+# bring a boundary character and a denied word directly together when nothing
+# else separated them (a quote mark is the ENTIRE gap between the two). This
+# is a genuinely new effect of this fix, not pre-existing behavior — confirmed
+# by running this exact case against the pre-fix script, which permitted it
+# (rc=0); it must stay blocked now, proving the trade-off is deliberate
+# (documented in enforce-allowed-actions.sh), not a silent surprise.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"echo hi;\"curl\" https://example.invalid"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" 'enforce-allowed-actions accepts the documented over-block: echo hi;"curl" ... refused, a quote mark was the entire gap to the boundary char'
+
 # --- find -exec/-execdir/-ok/-okdir and xargs -I{} indirection (issue #143) ---
 # -exec/-execdir/-ok/-okdir glue the sub-command execution position to a flag
 # rather than spelling it as a standalone token, so neither BOUND nor the prior
