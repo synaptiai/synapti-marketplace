@@ -245,6 +245,42 @@ RC=0
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" 'enforce-allowed-actions accepts the documented over-block: echo hi;"curl" ... refused, a quote mark was the entire gap to the boundary char'
 
+# --- DEQUOTE_PLACEHOLDER collision and pathological-size guard (found reviewing this PR) ---
+# ansi_c_decode can manufacture a literal 0x01 byte from a plain $'\001'
+# escape in the ORIGINAL command -- the exact byte DEQUOTE_PLACEHOLDER uses
+# internally. Without a guard, that byte is indistinguishable from a
+# backslash this script marks itself, and gets deleted alongside a real
+# newline it happens to precede, splicing two statements into one with no
+# boundary character left to anchor on.
+SOH_CMD=$(printf 'echo done\001\ncurl https://example.invalid')
+RC=0
+(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$SOH_CMD" | jq -Rs .)" \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions closes the DEQUOTE_PLACEHOLDER (0x01) collision bypass"
+
+# A real two-statement command with no stray 0x01 byte must still be denied
+# for its own actual reason (proves the fix above isn't over-blocking every
+# multi-line command, just the byte-collision case).
+NL_ONLY_CMD=$(printf 'echo done\ncurl https://example.invalid')
+RC=0
+(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$NL_ONLY_CMD" | jq -Rs .)" \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions still denies an ordinary two-line command (network access), unrelated to the 0x01 guard"
+
+# ansi_c_decode's span-boundary search and the backslash-to-placeholder pass
+# are both quadratic in bash for large operands (confirmed empirically: a
+# 100KB command with ANSI-C content took ~20s to normalize before this
+# guard existed). A command over the length guard must be denied instantly,
+# not hang.
+LARGE_BODY=$(printf 'A%.0s' $(seq 1 9000))
+RC=0
+START_TS=$(date +%s)
+(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf 'echo $'"'"'%s'"'"' https://example.invalid' "$LARGE_BODY" | jq -Rs .)" \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+END_TS=$(date +%s)
+assert_equal "2" "$RC" "enforce-allowed-actions denies a command over the pathological-size guard (9000 bytes)"
+assert_equal "1" "$([ "$((END_TS - START_TS))" -le 3 ] && echo 1 || echo 0)" "the size guard rejects instantly rather than attempting the super-linear normalization"
+
 # --- find -exec/-execdir/-ok/-okdir and xargs -I{} indirection (issue #143) ---
 # -exec/-execdir/-ok/-okdir glue the sub-command execution position to a flag
 # rather than spelling it as a standalone token, so neither BOUND nor the prior

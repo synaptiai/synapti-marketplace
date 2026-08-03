@@ -67,6 +67,24 @@ if [ "$JQ_RC" -ne 0 ]; then
 fi
 [ -z "$COMMAND" ] && exit 0
 
+# Fail closed rather than let bash's own glob-based parameter expansion pay a
+# super-linear cost: ansi_c_decode's span-boundary search (`${rest%%\'*}`,
+# re-scanning a shrinking-but-still-large remainder every loop iteration) and
+# the backslash-to-placeholder pass further below (a single global
+# substitution over the whole command) are both quadratic in bash for large
+# operands -- confirmed empirically: a 100KB command containing ANSI-C
+# content took ~20s to normalize here, ~200KB took over a minute, and the
+# same blowup reproduces from backslash volume alone with no `$'...'`
+# involved at all. A command this large is never a legitimate interactive
+# Bash-tool call this hook needs to support, so refusing it outright costs
+# nothing real while closing an easy, no-malice-required hang -- and this
+# hook blocks the whole Bash tool call while it runs, not just itself.
+COMMAND_LEN=${#COMMAND}
+if [ "$COMMAND_LEN" -gt 8192 ]; then
+  echo "BLOCKED: dossier cannot safely enforce its action ceiling on a command this large (${COMMAND_LEN} bytes, limit 8192) -- bash's own quote/escape normalization is super-linear at this size. Split the command into smaller steps." >&2
+  exit 2
+fi
+
 deny() { # capability | setting | matched-class
   cat >&2 <<EOF
 BLOCKED: the run's action ceiling forbids this command.
@@ -254,6 +272,28 @@ ansi_c_decode() { # $1: command string -> stdout: with every $'...' span decoded
 }
 
 COMMAND_ANSIC=$(ansi_c_decode "$COMMAND")
+
+# The placeholder byte chosen below (0x01) is assumed to never legitimately
+# appear in a Bash-tool command string -- but that assumption is checked
+# here, not trusted, because ansi_c_decode above can manufacture that exact
+# byte itself from a plain, valid `$'\001'` (or `\x01`) escape in the
+# original command. An already-present 0x01 byte at this point is
+# indistinguishable from a backslash this script marks itself a few lines
+# down: if it happens to sit immediately before a real newline, the join
+# step below deletes both, splicing two separate statements together with no
+# boundary character left for BOUND/BOUND_ACTIVE to anchor on. Confirmed
+# live: `echo done$'\001'` followed by a real `curl ...` on the next line was
+# permitted outright before this guard existed. Failing closed costs
+# nothing real -- a raw 0x01 byte is not a legitimate case this hook needs
+# to support -- and covers both this manufactured case and a literal 0x01
+# typed directly into the command, since ansi_c_decode passes untouched
+# bytes through unchanged.
+case "$COMMAND_ANSIC" in
+  *$'\x01'*)
+    echo "BLOCKED: dossier cannot safely enforce its action ceiling on a command containing a raw 0x01 byte -- that byte is reserved for this script's own internal quote/escape normalization." >&2
+    exit 2
+    ;;
+esac
 
 # bash 3.2 (macOS's system /bin/bash) cannot match a pattern-substitution
 # pattern that is itself a literal backslash followed by a real newline: the
