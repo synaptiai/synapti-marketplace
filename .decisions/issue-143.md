@@ -22,6 +22,9 @@ artifacts:
   captured_at: '2026-08-03T11:58:58Z'
   result: PASS
   task_count: 5
+- type: verdict
+  captured_at: '2026-08-03T12:11:27Z'
+  result: PASS
 ---
 # Issue #143 — enforce-allowed-actions.sh: find -exec / xargs -I{} bypass the action-ceiling backstop
 
@@ -127,3 +130,48 @@ explicitly in the FlowGoal contract rather than silently treated as fully automa
 <!-- auto-log: 2026-08-03 13:59 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/hooks.test.sh -->
 
 <!-- auto-log: 2026-08-03 14:00 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/enforce-allowed-actions.sh -->
+
+<!-- auto-log: 2026-08-03 14:01 commit "fix(dossier): classify find/xargs as WRAPPER commands, closing the -exec/-I{} action-ceiling bypass" -->
+
+<!-- auto-log: 2026-08-03 14:01 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-146.md -->
+
+<!-- auto-log: 2026-08-03 14:02 Write /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/policy-existing-pr.test.sh -->
+
+<!-- auto-log: 2026-08-03 14:03 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/policy-existing-pr.test.sh -->
+
+<!-- auto-log: 2026-08-03 14:03 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/policy-existing-pr.test.sh -->
+
+<!-- auto-log: 2026-08-03 14:03 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-policy.sh -->
+
+<!-- auto-log: 2026-08-03 14:04 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-146.md -->
+
+<!-- auto-log: 2026-08-03 14:04 commit "fix(dossier): scope dossier-policy.sh's EXISTING_PR lookup to same-repo PRs" -->
+
+<!-- auto-log: 2026-08-03 14:04 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-148.md -->
+
+<!-- auto-log: 2026-08-03 14:04 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/workflow-template.test.sh -->
+
+<!-- auto-log: 2026-08-03 14:05 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/workflow-template.test.sh -->
+
+<!-- auto-log: 2026-08-03 14:05 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-08-03 14:05 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-08-03 14:06 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/workflow-template.test.sh -->
+
+<!-- auto-log: 2026-08-03 14:06 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-148.md -->
+
+<!-- auto-log: 2026-08-03 14:06 commit "feat(dossier): surface rotation-check telemetry as policy job outputs" -->
+
+## Verification
+
+- Full suite: `bash plugins/dossier/tests/run.sh` — 1882/1882 (up from 1852 pre-bundle).
+- `shellcheck -S warning -x plugins/dossier/tests/*.sh plugins/dossier/bin/*.sh
+  plugins/dossier/hooks/scripts/*.sh` — clean, exit 0, across every script in the plugin.
+- `bash -n` on every modified/new file — clean.
+- Each of the three bundled fixes (#143, #146, #148) TDD RED-confirmed against the
+  unpatched code first, then GREEN after its own fix, with per-file regression checks
+  (staleness-trigger.test.sh for #146; no cross-file breakage anywhere for #143/#148).
+- One test-authoring bug caught and fixed during #148's RED->GREEN cycle: an
+  assert_not_contains collision check matched as a substring of its own sibling
+  assertion; fixed by anchoring on exact YAML key position.
