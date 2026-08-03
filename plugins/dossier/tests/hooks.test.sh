@@ -210,6 +210,15 @@ RC=0
    | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
 assert_equal "2" "$RC" "enforce-allowed-actions closes the backslash-newline line-continuation bypass"
 
+# The exact third reproduction from issue #152 itself: a leading backslash on
+# `find` combines the #152 backslash bypass with the #143 find/-exec bypass —
+# DEQUOTED must restore `find` before FIND_EXEC is tested, not just restore
+# bare denied words like `curl` on their own.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"\\find . -exec curl https://example.invalid {} \\;"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" 'enforce-allowed-actions closes the backslash-escaped find+-exec bypass: \find . -exec curl {} \;'
+
 # Bash's own ANSI-C quoting ($'...') decodes octal/hex escapes independently
 # of ordinary quote removal — confirmed to execute a real curl call.
 for BAD in \
