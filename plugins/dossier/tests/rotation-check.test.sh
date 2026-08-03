@@ -635,4 +635,63 @@ else
 fi
 assert_contains "docs_branch=docs/dossierfake_output=INJECTEDreal=" "$(cat "$GHOUT20")" "github-output newline injection attempt: the embedded newlines collapse onto the single docs_branch line rather than forging new lines"
 
+# =============================================================================
+# 21. Private-repo credential gap (issue #147): git ls-remote/fetch must
+#     authenticate via GH_TOKEN when present, so the script produces a real
+#     determination on private repos instead of silently degrading to
+#     age_source=unknown. A PATH-stub `git` wrapper logs its own argv then
+#     execs the real git (resolved once, outside the stub, before it goes on
+#     PATH) -- preserving the fixture's real git behavior against the local
+#     bare-repo remote while making the constructed command line assertable.
+# =============================================================================
+REAL_GIT=$(command -v git)
+
+# Both fixtures push a docs-branch commit -- without one, ls-remote's
+# --exit-code correctly returns 2 (branch not found) and the script takes the
+# no-branch cold-start path before ever reaching the fetch calls, so the
+# fetch assertions below would trivially see zero invocations either way.
+setup_fixture F21A
+push_docs_branch_commit "$F21A" "docs/dossier" "$(day_offset 1)"
+_dossier_require_mktemp_dir STUB21A "git-stub-with-token"
+cat > "$STUB21A/git" <<STUBEOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$STUB21A/argv.log"
+exec "$REAL_GIT" "\$@"
+STUBEOF
+chmod +x "$STUB21A/git"
+( cd "$F21A" && env PATH="$STUB21A:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier GH_TOKEN=test-token-abc123 "$SCRIPT" ) >/dev/null 2>&1
+RC21A=$?
+assert_equal "0" "$RC21A" "GH_TOKEN set: script still exits 0 (correctness of ls-remote/fetch is unaffected)"
+# Argv is logged as a single space-joined line; -c precedes the subcommand
+# when authenticated ("-c http.extraheader=... ls-remote ..."), so matching
+# must find "ls-remote"/"fetch" as a substring, not anchor on line start.
+LSREMOTE_LINE21A=$(grep 'ls-remote --exit-code' "$STUB21A/argv.log" | head -1)
+assert_contains "http.extraheader=AUTHORIZATION: bearer test-token-abc123" "$LSREMOTE_LINE21A" "GH_TOKEN set: the ls-remote invocation carries the auth header"
+FETCH_LINES21A=$(grep 'fetch --no-tags' "$STUB21A/argv.log")
+FETCH_COUNT21A=$(printf '%s\n' "$FETCH_LINES21A" | grep -c 'fetch --no-tags')
+FETCH_WITH_AUTH21A=$(printf '%s\n' "$FETCH_LINES21A" | grep -c 'http.extraheader=AUTHORIZATION: bearer test-token-abc123')
+assert_equal "2" "$FETCH_COUNT21A" "GH_TOKEN set: both fetch invocations (base ref + docs branch) were captured"
+assert_equal "$FETCH_COUNT21A" "$FETCH_WITH_AUTH21A" "GH_TOKEN set: every fetch invocation carries the auth header, not just ls-remote"
+
+setup_fixture F21B
+push_docs_branch_commit "$F21B" "docs/dossier" "$(day_offset 1)"
+_dossier_require_mktemp_dir STUB21B "git-stub-no-token"
+cat > "$STUB21B/git" <<STUBEOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$STUB21B/argv.log"
+exec "$REAL_GIT" "\$@"
+STUBEOF
+chmod +x "$STUB21B/git"
+( cd "$F21B" && env -u GH_TOKEN PATH="$STUB21B:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier "$SCRIPT" ) >/dev/null 2>&1
+RC21B=$?
+assert_equal "0" "$RC21B" "GH_TOKEN empty/absent: script still exits 0 (today's public-repo behavior unchanged)"
+LSREMOTE_LINE21B=$(grep 'ls-remote --exit-code' "$STUB21B/argv.log" | head -1)
+assert_not_contains "http.extraheader" "$LSREMOTE_LINE21B" "GH_TOKEN empty/absent: the ls-remote invocation carries no auth header (no regression to the working public-repo case)"
+FETCH_LINES21B=$(grep 'fetch --no-tags' "$STUB21B/argv.log")
+if printf '%s\n' "$FETCH_LINES21B" | grep -q 'http.extraheader'; then
+  _dossier_assert_fail "GH_TOKEN empty/absent: at least one fetch invocation unexpectedly carries an auth header"
+else
+  _dossier_assert_pass "GH_TOKEN empty/absent: no fetch invocation carries an auth header"
+fi
+
 _dossier_test_summary

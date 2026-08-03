@@ -12,7 +12,11 @@
 #
 # Untrusted inputs arrive through the environment, never as arguments:
 #   BASE_REF   base branch name (falls back to the origin default branch)
-#   GH_TOKEN   passed through to `gh`, never interpolated into a command
+#   GH_TOKEN   passed through to `gh`, and to this script's own git
+#              ls-remote/fetch calls (git_auth, issue #147) so both stay
+#              functional on private repos -- never interpolated into a
+#              command that reaches a shell in either case. Falls back to
+#              today's unauthenticated git behavior when empty/absent.
 #
 # Output (stdout, and --github-output when given):
 #   would_rotate  reason  age_days  age_source
@@ -138,6 +142,24 @@ git rev-parse --git-dir >/dev/null 2>&1 || die_infra "not inside a git repositor
 # only terminate the command-substitution subshell, not the script.
 cfg() { "$CASCADE" --default "$2" "${1#.}" 2>/dev/null; }
 
+# `gh` already authenticates automatically via GH_TOKEN detection (see the
+# gh pr list call below), but raw `git` does not -- ls-remote/fetch against
+# origin run as unauthenticated HTTPS, which works on a public repo and fails
+# auth on a private one (issue #147). A conditional branch, not an array
+# expansion: an empty array under `set -u` is an unbound-variable error on
+# bash 3.2 (macOS's shipped /bin/bash), and this function's whole point is
+# to be safe to call whether or not GH_TOKEN is set. The token reaches git
+# as a single argv entry to -c, never interpolated into a string that
+# reaches a shell (same principle as GH_TOKEN's existing use with `gh`,
+# documented in this script's own header).
+git_auth() {
+  if [ -n "${GH_TOKEN:-}" ]; then
+    git -c "http.extraheader=AUTHORIZATION: bearer ${GH_TOKEN}" "$@"
+  else
+    git "$@"
+  fi
+}
+
 write_summary() {
   [ -n "$SUMMARY_FILE" ] || return 0
   {
@@ -220,7 +242,7 @@ NOW_EPOCH=$(date -u +%s)
 # ---------------------------------------------------------------------------
 # Step 1 — does the rolling branch exist at all?
 # ---------------------------------------------------------------------------
-git ls-remote --exit-code --heads origin "$DOCS_BRANCH" >/dev/null 2>&1
+git_auth ls-remote --exit-code --heads origin "$DOCS_BRANCH" >/dev/null 2>&1
 LS_REMOTE_RC=$?
 
 if [ "$LS_REMOTE_RC" -eq 2 ]; then
@@ -264,9 +286,9 @@ if [ -z "$BASE_REF" ]; then
   FETCH_OK=0
   note "BASE_REF could not be resolved (no env var and no origin/HEAD symbolic ref); age and size cannot be measured against a base."
 else
-  git fetch --no-tags --prune origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" >/dev/null 2>&1
+  git_auth fetch --no-tags --prune origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" >/dev/null 2>&1
   FETCH_BASE_RC=$?
-  git fetch --no-tags origin "+refs/heads/${DOCS_BRANCH}:refs/remotes/origin/${DOCS_BRANCH}" >/dev/null 2>&1
+  git_auth fetch --no-tags origin "+refs/heads/${DOCS_BRANCH}:refs/remotes/origin/${DOCS_BRANCH}" >/dev/null 2>&1
   FETCH_DOCS_RC=$?
   if [ "$FETCH_BASE_RC" -ne 0 ] || [ "$FETCH_DOCS_RC" -ne 0 ]; then
     FETCH_OK=0
