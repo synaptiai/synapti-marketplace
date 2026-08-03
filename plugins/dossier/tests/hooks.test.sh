@@ -168,6 +168,196 @@ for OK in 'timeout 5 ls' 'time ls' 'nice ls' 'env ls' 'ls -la' 'git status' 'cat
   assert_equal "0" "$RC" "enforce-allowed-actions permits: $OK"
 done
 
+# --- Quoting/backslash-escaping a denied word (issue #152) -------------------
+# Independent of any wrapper token: a denied word spelled with a leading or
+# interior quote/backslash used to reach deny() as an intact, unrecognizable
+# word. Each of these is a real invocation once bash processes it — confirmed
+# live for every one (including a real curl attempt) while developing the fix.
+for BAD in \
+  '"curl" https://example.invalid|whole word quoted' \
+  '\curl https://example.invalid|leading backslash' \
+  'c\url https://example.invalid|mid-word backslash split'
+do
+  CASE_CMD="${BAD%%|*}"
+  CASE_LABEL="${BAD##*|}"
+  RC=0
+  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$CASE_CMD" | jq -Rs .)" \
+     | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+  assert_equal "2" "$RC" "enforce-allowed-actions closes the quote/backslash bypass ($CASE_LABEL): $CASE_CMD"
+done
+
+# Adjacent quote fragments: bash joins these into ONE word at execution time
+# (cu''rl -> curl), the same way `r''m` is two tokens to a naive matcher but
+# one to bash after quote removal.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"cu'"''"'rl https://example.invalid"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions closes the adjacent-single-quote-fragment bypass: cu''rl"
+
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"cu\"r\"l https://example.invalid"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" 'enforce-allowed-actions closes the adjacent-double-quote-fragment bypass: cu"r"l'
+
+# A backslash immediately followed by a real newline (bash's own line
+# continuation) splits a keyword across two lines. This one needed its own
+# ordering fix during development: joining the pair AFTER stripping lone
+# backslashes leaves the newline behind as a still-valid separator, silently
+# reopening the bypass.
+NL_CMD=$(printf 'cur\\\nl https://example.invalid')
+RC=0
+(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$NL_CMD" | jq -Rs .)" \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions closes the backslash-newline line-continuation bypass"
+
+# The exact third reproduction from issue #152 itself: a leading backslash on
+# `find` combines the #152 backslash bypass with the #143 find/-exec bypass —
+# DEQUOTED must restore `find` before FIND_EXEC is tested, not just restore
+# bare denied words like `curl` on their own.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"\\find . -exec curl https://example.invalid {} \\;"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" 'enforce-allowed-actions closes the backslash-escaped find+-exec bypass: \find . -exec curl {} \;'
+
+# Bash's own ANSI-C quoting ($'...') decodes octal/hex escapes independently
+# of ordinary quote removal — confirmed to execute a real curl call.
+for BAD in \
+  '$'"'"'\143url'"'"' https://example.invalid|ansi-c octal' \
+  '$'"'"'\x63url'"'"' https://example.invalid|ansi-c hex'
+do
+  CASE_CMD="${BAD%%|*}"
+  CASE_LABEL="${BAD##*|}"
+  RC=0
+  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$CASE_CMD" | jq -Rs .)" \
+     | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+  assert_equal "2" "$RC" "enforce-allowed-actions closes the $CASE_LABEL bypass: $CASE_CMD"
+done
+
+# Bash's \u/\U Unicode ANSI-C escapes (added in bash 4.2) aren't in printf
+# '%b's escape set at all -- confirmed live: bash 3.2 (this suite's local
+# macOS bash, which doesn't implement \u/\U natively either) still resolves
+# these correctly, because unicode_normalize parses the escape as a string
+# pattern and converts it to \xHH by hand rather than depending on the
+# running bash's own native \u/\U support -- so this runs unconditionally,
+# on any bash, not just >=4.2.
+#
+# The escaped word must BE the command, not an argument to one (e.g. not
+# prefixed with "echo ") -- "echo <word>" is legitimately permitted no
+# matter how <word> decodes, since echo never invokes its arguments. An
+# earlier draft of this assertion had exactly that bug (an "echo " prefix
+# in front of the escaped word) and initially appeared to confirm a bypass
+# on CI, but for the wrong reason -- testing an argument to echo, not an
+# invoked command -- rather than the real one. Caught by re-deriving the
+# pre-fix/post-fix behavior of the corrected shape directly against both
+# script versions, not by trusting the first CI failure at face value.
+BKSL='\'
+U4_BODY="${BKSL}u0063url"
+U8_BODY="${BKSL}U00000063url"
+for BAD in \
+  "$U4_BODY|ansi-c 4-digit Unicode escape" \
+  "$U8_BODY|ansi-c 8-digit Unicode escape"
+do
+  CASE_LABEL="${BAD##*|}"
+  CASE_BODY="${BAD%%|*}"
+  U_ESCAPE_CMD=$(printf '$%s%s%s https://example.invalid' "'" "$CASE_BODY" "'")
+  RC=0
+  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$U_ESCAPE_CMD" | jq -Rs .)" \
+     | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+  assert_equal "2" "$RC" "enforce-allowed-actions closes the $CASE_LABEL bypass: $U_ESCAPE_CMD"
+done
+
+# A WRAPPER-list token disguised the same way the payload was (not just the
+# payload itself) must still widen the boundary -- the fix's own comment
+# claims this closes "for ANY token listed anywhere in this file," proven
+# here rather than only for payload words like curl.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"\\xargs -I{} curl {} https://example.invalid"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" 'enforce-allowed-actions widens the boundary for a disguised WRAPPER token, not just a disguised payload: \xargs -I{} curl {}'
+
+# A second, previously-undocumented over-block trade-off surfaces once a
+# quoted WRAPPER token is also dequoted before the WRAPPER scan: a quoted
+# wrapper (";\"env\" ...") could not trigger boundary-widening before this
+# fix (a quote character isn't in WRAPPER's boundary class), but can now --
+# which then also catches an otherwise-safe, fully-quoted prose argument
+# like "npm test" in a grep call. Same direction and same underlying
+# mechanism as the accepted trade-off above (over-block, name the match,
+# let a human drop the false trigger), just a different trigger shape --
+# pinned here so it's proven deliberate, not a silent surprise.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":";\"env\" grep -r \"npm test\" docs/"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" 'enforce-allowed-actions accepts the second documented over-block: ;"env" grep -r "npm test" docs/ refused once the wrapper token itself is quoted'
+
+# Known, accepted trade-off from the fix above: deleting a quote mark can
+# bring a boundary character and a denied word directly together when nothing
+# else separated them (a quote mark is the ENTIRE gap between the two). This
+# is a genuinely new effect of this fix, not pre-existing behavior — confirmed
+# by running this exact case against the pre-fix script, which permitted it
+# (rc=0); it must stay blocked now, proving the trade-off is deliberate
+# (documented in enforce-allowed-actions.sh), not a silent surprise.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"echo hi;\"curl\" https://example.invalid"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" 'enforce-allowed-actions accepts the documented over-block: echo hi;"curl" ... refused, a quote mark was the entire gap to the boundary char'
+
+# --- DEQUOTE_PLACEHOLDER collision and pathological-size guard (found reviewing this PR) ---
+# ansi_c_decode can manufacture a literal 0x01 byte from a plain $'\001'
+# escape in the ORIGINAL command -- the exact byte DEQUOTE_PLACEHOLDER uses
+# internally. Without a guard, that byte is indistinguishable from a
+# backslash this script marks itself, and gets deleted alongside a real
+# newline it happens to precede, splicing two statements into one with no
+# boundary character left to anchor on.
+SOH_CMD=$(printf 'echo done\001\ncurl https://example.invalid')
+RC=0
+(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$SOH_CMD" | jq -Rs .)" \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions closes the DEQUOTE_PLACEHOLDER (0x01) collision bypass"
+
+# A real two-statement command with no stray 0x01 byte must still be denied
+# for its own actual reason (proves the fix above isn't over-blocking every
+# multi-line command, just the byte-collision case).
+NL_ONLY_CMD=$(printf 'echo done\ncurl https://example.invalid')
+RC=0
+(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$NL_ONLY_CMD" | jq -Rs .)" \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions still denies an ordinary two-line command (network access), unrelated to the 0x01 guard"
+
+# ansi_c_decode's span-boundary search and the backslash-to-placeholder pass
+# are both quadratic in bash for large operands (confirmed empirically: a
+# 100KB command with ANSI-C content took ~20s to normalize before this
+# guard existed). A command over the length guard must be denied instantly,
+# not hang.
+LARGE_BODY=$(printf 'A%.0s' $(seq 1 9000))
+RC=0
+START_TS=$(date +%s)
+(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf 'echo $'"'"'%s'"'"' https://example.invalid' "$LARGE_BODY" | jq -Rs .)" \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+END_TS=$(date +%s)
+assert_equal "2" "$RC" "enforce-allowed-actions denies a command over the pathological-size guard (9000 bytes)"
+assert_equal "1" "$([ "$((END_TS - START_TS))" -le 3 ] && echo 1 || echo 0)" "the size guard rejects instantly rather than attempting the super-linear normalization"
+
+# ansi_c_decode forks a subprocess pair PER $'...' occurrence -- many tiny
+# spans stay well under the byte-length guard above but still pay that
+# overhead once per span. Must be denied fast, not just eventually.
+MANY_SPANS=""
+for _ in $(seq 1 100); do MANY_SPANS="${MANY_SPANS}\$'a'"; done
+RC=0
+START_TS=$(date +%s)
+(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf 'echo %s https://example.invalid' "$MANY_SPANS" | jq -Rs .)" \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+END_TS=$(date +%s)
+assert_equal "2" "$RC" "enforce-allowed-actions denies a command with too many \$'...' segments (100 spans, limit 64)"
+assert_equal "1" "$([ "$((END_TS - START_TS))" -le 3 ] && echo 1 || echo 0)" "the span-count guard rejects fast rather than forking a decode subprocess per span"
+
+# A legitimate command with a handful of ANSI-C spans (well under the limit)
+# must still be permitted normally -- proves the guard above isn't
+# over-blocking ordinary ANSI-C usage, just pathological span counts.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"echo $'"'"'hello'"'"' $'"'"'world'"'"'"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "enforce-allowed-actions still permits an ordinary command with a few ANSI-C spans"
+
 # --- find -exec/-execdir/-ok/-okdir and xargs -I{} indirection (issue #143) ---
 # -exec/-execdir/-ok/-okdir glue the sub-command execution position to a flag
 # rather than spelling it as a standalone token, so neither BOUND nor the prior
