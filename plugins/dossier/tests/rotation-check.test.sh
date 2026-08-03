@@ -635,4 +635,178 @@ else
 fi
 assert_contains "docs_branch=docs/dossierfake_output=INJECTEDreal=" "$(cat "$GHOUT20")" "github-output newline injection attempt: the embedded newlines collapse onto the single docs_branch line rather than forging new lines"
 
+# =============================================================================
+# 21. Private-repo credential gap (issue #147): git ls-remote/fetch must
+#     authenticate via GH_TOKEN when present, so the script produces a real
+#     determination on private repos instead of silently degrading to
+#     age_source=unknown. A PATH-stub `git` wrapper logs its own argv AND the
+#     GIT_CONFIG_* env vars it sees (the auth header travels via env, not
+#     argv -- see git_auth()'s own comment for why) then execs the real git
+#     (resolved once, outside the stub, before it goes on PATH) -- preserving
+#     the fixture's real git behavior against the local bare-repo remote
+#     while making the constructed invocation assertable.
+# =============================================================================
+REAL_GIT=$(command -v git)
+
+# Both fixtures push a docs-branch commit -- without one, ls-remote's
+# --exit-code correctly returns 2 (branch not found) and the script takes the
+# no-branch cold-start path before ever reaching the fetch calls, so the
+# fetch assertions below would trivially see zero invocations either way.
+#
+# git_auth() scopes the auth header to origin's own scheme+host (review
+# finding: an unscoped key sends the header to every HTTPS host the git
+# invocation touches, verified live against a real third-party host). The
+# local bare-repo fixture's origin is a filesystem path, which never matches
+# the https://|http:// case at all -- so scenarios needing GH_TOKEN set must
+# point origin at an HTTPS-shaped URL to exercise that branch. `.invalid` is
+# the IANA-reserved TLD guaranteed to never resolve (RFC 2606), so this stays
+# fully offline; the stub does not exec real git for these two scenarios (a
+# real attempt would hang/fail against a host that deliberately cannot
+# resolve) -- it fakes success after logging, which is sufficient since
+# scenario 21 verifies the CONSTRUCTED command, not real network behavior
+# (that was verified separately, live, against a real private repo -- see
+# .decisions/issue-147.md).
+setup_fixture F21A
+push_docs_branch_commit "$F21A" "docs/dossier" "$(day_offset 1)"
+( cd "$F21A" && git remote set-url origin "https://github.example.invalid/test/rotation-fixture.git" ) >/dev/null 2>&1
+_dossier_require_mktemp_dir STUB21A "git-stub-with-token"
+cat > "$STUB21A/git" <<STUBEOF
+#!/usr/bin/env bash
+printf 'ARGV=%s GIT_CONFIG_COUNT=%s GIT_CONFIG_KEY_0=%s GIT_CONFIG_VALUE_0=%s\n' "\$*" "\${GIT_CONFIG_COUNT:-}" "\${GIT_CONFIG_KEY_0:-}" "\${GIT_CONFIG_VALUE_0:-}" >> "$STUB21A/argv.log"
+# Only the two network subcommands are faked (a real attempt would try to
+# resolve the deliberately-unresolvable .invalid host); everything else
+# (symbolic-ref, remote get-url, rev-list, show, diff) passes through to real
+# git, operating on the local repo state populated by push_docs_branch_commit
+# before origin's URL was ever changed -- unaffected by what origin's URL
+# currently is, since those are local-only ref operations.
+case "\$1" in
+  ls-remote|fetch) exit 0 ;;
+esac
+exec "$REAL_GIT" "\$@"
+STUBEOF
+chmod +x "$STUB21A/git"
+( cd "$F21A" && env PATH="$STUB21A:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier GH_TOKEN=test-token-abc123 "$SCRIPT" ) >/dev/null 2>&1
+RC21A=$?
+assert_equal "0" "$RC21A" "GH_TOKEN set: script still exits 0 (correctness of ls-remote/fetch is unaffected)"
+# Basic, not Bearer -- verified directly against a real private GitHub repo
+# (see .decisions/issue-147.md) that Bearer is rejected and this exact
+# base64(x-access-token:<token>) shape is accepted. Computed here, not
+# hardcoded, so the assertion tracks the implementation rather than a
+# magic string.
+EXPECTED_B64_21=$(printf 'x-access-token:%s' "test-token-abc123" | base64 | tr -d '\r\n')
+LSREMOTE_LINE21A=$(grep 'ARGV=ls-remote --exit-code' "$STUB21A/argv.log" | head -1)
+assert_contains "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic ${EXPECTED_B64_21}" "$LSREMOTE_LINE21A" "GH_TOKEN set: the ls-remote invocation carries the Basic-auth header via GIT_CONFIG_VALUE_0"
+# Scoped to origin's own scheme+host (review finding), not the bare
+# "http.extraheader" key that would apply to every HTTPS host -- proven live
+# during review that the unscoped form leaks to unrelated hosts.
+assert_contains "GIT_CONFIG_KEY_0=http.https://github.example.invalid/.extraheader" "$LSREMOTE_LINE21A" "GH_TOKEN set: the ls-remote invocation scopes GIT_CONFIG_KEY_0 to origin's own scheme+host, not the bare unscoped key"
+FETCH_LINES21A=$(grep 'ARGV=fetch --no-tags' "$STUB21A/argv.log")
+FETCH_COUNT21A=$(printf '%s\n' "$FETCH_LINES21A" | grep -c 'ARGV=fetch --no-tags')
+FETCH_WITH_AUTH21A=$(printf '%s\n' "$FETCH_LINES21A" | grep -c "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic ${EXPECTED_B64_21}")
+assert_equal "2" "$FETCH_COUNT21A" "GH_TOKEN set: both fetch invocations (base ref + docs branch) were captured"
+assert_equal "$FETCH_COUNT21A" "$FETCH_WITH_AUTH21A" "GH_TOKEN set: every fetch invocation carries the auth header, not just ls-remote"
+FETCH_WITH_SCOPED_KEY21A=$(printf '%s\n' "$FETCH_LINES21A" | grep -c 'GIT_CONFIG_KEY_0=http.https://github.example.invalid/.extraheader')
+assert_equal "$FETCH_COUNT21A" "$FETCH_WITH_SCOPED_KEY21A" "GH_TOKEN set: every fetch invocation scopes the key the same way ls-remote does"
+# The token must never additionally leak into argv itself (the whole point
+# of moving off -c) -- isolate just the ARGV=... field (everything before
+# " GIT_CONFIG_COUNT=") and confirm the token is absent from it specifically,
+# even though the full log line legitimately contains it (in VALUE_0).
+ARGV_ONLY21A=$(awk -F' GIT_CONFIG_COUNT=' '{print $1}' "$STUB21A/argv.log")
+assert_not_contains "test-token-abc123" "$ARGV_ONLY21A" "GH_TOKEN set: the token never appears in the ARGV portion of any logged invocation (process-listing exposure)"
+
+# =============================================================================
+# 21C. A non-HTTP(S) origin (ssh remote) must never receive the auth header at
+#      all, even with GH_TOKEN set -- Basic auth over HTTP doesn't apply to
+#      that transport, and git_auth() falls through to unauthenticated rather
+#      than guess a key. Regression test for that fallthrough branch.
+# =============================================================================
+setup_fixture F21C
+push_docs_branch_commit "$F21C" "docs/dossier" "$(day_offset 1)"
+( cd "$F21C" && git remote set-url origin "git@github.example.invalid:test/rotation-fixture.git" ) >/dev/null 2>&1
+_dossier_require_mktemp_dir STUB21C "git-stub-ssh-origin"
+cat > "$STUB21C/git" <<STUBEOF
+#!/usr/bin/env bash
+printf 'ARGV=%s GIT_CONFIG_COUNT=%s GIT_CONFIG_KEY_0=%s GIT_CONFIG_VALUE_0=%s\n' "\$*" "\${GIT_CONFIG_COUNT:-}" "\${GIT_CONFIG_KEY_0:-}" "\${GIT_CONFIG_VALUE_0:-}" >> "$STUB21C/argv.log"
+case "\$1" in
+  ls-remote|fetch) exit 0 ;;
+esac
+exec "$REAL_GIT" "\$@"
+STUBEOF
+chmod +x "$STUB21C/git"
+( cd "$F21C" && env PATH="$STUB21C:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier GH_TOKEN=test-token-abc123 "$SCRIPT" ) >/dev/null 2>&1
+RC21C=$?
+assert_equal "0" "$RC21C" "SSH origin with GH_TOKEN set: script still exits 0"
+LSREMOTE_LINE21C=$(grep 'ARGV=ls-remote --exit-code' "$STUB21C/argv.log" | head -1)
+assert_contains "GIT_CONFIG_COUNT= GIT_CONFIG_KEY_0= GIT_CONFIG_VALUE_0=" "$LSREMOTE_LINE21C" "SSH origin with GH_TOKEN set: no auth header is attached -- Basic-over-HTTP does not apply to this transport"
+
+setup_fixture F21B
+push_docs_branch_commit "$F21B" "docs/dossier" "$(day_offset 1)"
+_dossier_require_mktemp_dir STUB21B "git-stub-no-token"
+cat > "$STUB21B/git" <<STUBEOF
+#!/usr/bin/env bash
+printf 'ARGV=%s GIT_CONFIG_COUNT=%s GIT_CONFIG_KEY_0=%s GIT_CONFIG_VALUE_0=%s\n' "\$*" "\${GIT_CONFIG_COUNT:-}" "\${GIT_CONFIG_KEY_0:-}" "\${GIT_CONFIG_VALUE_0:-}" >> "$STUB21B/argv.log"
+exec "$REAL_GIT" "\$@"
+STUBEOF
+chmod +x "$STUB21B/git"
+( cd "$F21B" && env -u GH_TOKEN PATH="$STUB21B:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier "$SCRIPT" ) >/dev/null 2>&1
+RC21B=$?
+assert_equal "0" "$RC21B" "GH_TOKEN empty/absent: script still exits 0 (today's public-repo behavior unchanged)"
+LSREMOTE_LINE21B=$(grep 'ARGV=ls-remote --exit-code' "$STUB21B/argv.log" | head -1)
+# Unset vars render as empty strings after "=" in the printf format above, so
+# an unauthenticated invocation's line ends in this literal, value-less form.
+assert_contains "GIT_CONFIG_COUNT= GIT_CONFIG_KEY_0= GIT_CONFIG_VALUE_0=" "$LSREMOTE_LINE21B" "GH_TOKEN empty/absent: the ls-remote invocation sets none of the GIT_CONFIG_* vars (no regression to the working public-repo case)"
+FETCH_LINES21B=$(grep 'ARGV=fetch --no-tags' "$STUB21B/argv.log")
+if printf '%s\n' "$FETCH_LINES21B" | grep -q 'GIT_CONFIG_VALUE_0=[^ ]'; then
+  _dossier_assert_fail "GH_TOKEN empty/absent: at least one fetch invocation unexpectedly carries an auth header"
+else
+  _dossier_assert_pass "GH_TOKEN empty/absent: no fetch invocation carries an auth header"
+fi
+
+# =============================================================================
+# 22. A "dirty" GH_TOKEN (embedded CR/LF, long enough that its base64 form
+#     would exceed GNU base64's default 76-column wrap) must still produce a
+#     single-line, correctly-cleaned header -- git_auth() strips both the raw
+#     token and the base64 output for exactly this reason, but nothing in
+#     scenario 21 (a short, clean token) exercises either code path.
+# =============================================================================
+setup_fixture F22
+push_docs_branch_commit "$F22" "docs/dossier" "$(day_offset 1)"
+( cd "$F22" && git remote set-url origin "https://github.example.invalid/test/rotation-fixture.git" ) >/dev/null 2>&1
+_dossier_require_mktemp_dir STUB22 "git-stub-dirty-token"
+cat > "$STUB22/git" <<STUBEOF
+#!/usr/bin/env bash
+printf 'ARGV=%s GIT_CONFIG_COUNT=%s GIT_CONFIG_KEY_0=%s GIT_CONFIG_VALUE_0=%s\n' "\$*" "\${GIT_CONFIG_COUNT:-}" "\${GIT_CONFIG_KEY_0:-}" "\${GIT_CONFIG_VALUE_0:-}" >> "$STUB22/argv.log"
+case "\$1" in
+  ls-remote|fetch) exit 0 ;;
+esac
+exec "$REAL_GIT" "\$@"
+STUBEOF
+chmod +x "$STUB22/git"
+# 30 'a's + a real embedded CRLF + 30 more 'a's, via ANSI-C quoting -- a
+# $(...) substitution strips ALL of its own trailing newlines regardless of
+# where the substitution's result is later concatenated, so a token built as
+# "...$(printf '\r\n')" (the original, incorrect version of this test) never
+# actually carries a surviving \n, only a trailing \r -- caught by review.
+# $'...' embeds real control characters with no such stripping. Long enough
+# (with the 15-char "x-access-token:" prefix) that base64(x-access-token:
+# <token>) exceeds 76 columns, exercising the GNU-wrap-collapse path too.
+DIRTY_TOKEN=$'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+CLEAN_TOKEN="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+EXPECTED_B64_22=$(printf 'x-access-token:%s' "$CLEAN_TOKEN" | base64 | tr -d '\r\n')
+( cd "$F22" && env PATH="$STUB22:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier GH_TOKEN="$DIRTY_TOKEN" "$SCRIPT" ) >/dev/null 2>&1
+RC22=$?
+assert_equal "0" "$RC22" "dirty long GH_TOKEN: script still exits 0"
+LSREMOTE_LINE22=$(grep 'ARGV=ls-remote --exit-code' "$STUB22/argv.log" | head -1)
+assert_contains "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic ${EXPECTED_B64_22}" "$LSREMOTE_LINE22" "dirty long GH_TOKEN: the header carries the base64 of the CLEANED token (embedded CR/LF stripped before encoding), not the dirty raw token"
+# The stub logs every git subcommand this run makes (rev-list/show/diff on
+# already-fetched local refs too, not just the 3 network calls), so a fixed
+# line count would be brittle. Well-formedness is the real property under
+# test: an embedded raw newline surviving into GIT_CONFIG_VALUE_0 would split
+# that one logged invocation across two lines, and the second half would not
+# start with "ARGV=" -- so every line starting with "ARGV=" is proof no
+# invocation's log entry was fragmented by an unstripped newline.
+TOTAL_LOG_LINES22=$(wc -l < "$STUB22/argv.log" | tr -d ' ')
+ARGV_PREFIXED_LINES22=$(grep -c '^ARGV=' "$STUB22/argv.log")
+assert_equal "$TOTAL_LOG_LINES22" "$ARGV_PREFIXED_LINES22" "dirty long GH_TOKEN: every logged line is a complete, well-formed invocation record (none fragmented by an unstripped embedded newline)"
+
 _dossier_test_summary

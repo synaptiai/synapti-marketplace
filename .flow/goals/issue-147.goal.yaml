@@ -1,0 +1,145 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-147
+  created_at: '2026-08-03T16:00:00Z'
+  created_by: /flow:start
+  owner: daniel.bentes@synapti.ai
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-147-rotation-check-private-repo-auth
+  issue: 147
+  journal: .decisions/issue-147.md
+objective:
+  outcome: 'Issue #147 is implemented and verified.'
+  source:
+    type: github_issue
+    number: 147
+    title: 'dossier: policy job''s persist-credentials: false makes rotation-check
+      (and any git network op) silently inert on private repos'
+  acceptance_criteria:
+  - id: AC1
+    text: 'Superseded during review, shipped shape (original text below is the
+      pre-implementation plan, disproved live -- see .decisions/issue-147.md):
+      dossier-rotation-check.sh''s git ls-remote and both git fetch calls authenticate
+      against origin using GH_TOKEN when it is non-empty, via GIT_CONFIG_COUNT/KEY_0/VALUE_0
+      env vars carrying "AUTHORIZATION basic base64(x-access-token GH_TOKEN)", scoped
+      to origin''s own resolved scheme+host, applied per-invocation. Original plan
+      (-c http.extraheader="AUTHORIZATION bearer GH_TOKEN") was live-verified rejected
+      by GitHub; the unscoped-key variant of the env-var shape was also found, live,
+      to leak the header to unrelated HTTPS hosts, and was fixed to scope by origin''s
+      host before merge.'
+    verification_command: bash plugins/dossier/tests/run.sh rotation-check.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC2
+    text: When GH_TOKEN is empty or absent, behavior is unchanged from today (unauthenticated
+      git calls, working on public repos, degrading to age_source=unknown on private
+      repos without a token). No regression to the public-repo path.
+    verification_command: bash plugins/dossier/tests/run.sh rotation-check.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC3
+    text: The auth logic lives inside dossier-rotation-check.sh itself, not the calling
+      workflow YAML.
+    verification_command: grep -n "http.extraheader" plugins/dossier/bin/dossier-rotation-check.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC4
+    text: New test coverage in rotation-check.test.sh using a PATH-stub git wrapper
+      that logs its own argv then execs the real git, asserting the auth header is
+      present when GH_TOKEN is set and absent when empty.
+    verification_command: bash plugins/dossier/tests/run.sh rotation-check.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC5
+    text: The script's usage header comment is updated to document that GH_TOKEN now
+      also authenticates the script's own git network calls, not just gh.
+    verification_command: grep -n "GH_TOKEN" plugins/dossier/bin/dossier-rotation-check.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+specification:
+  non_goals:
+  - Not changing persist-credentials false on the policy job's checkout step, and
+    not flipping it to true for the whole job.
+  - Not using gh auth setup-git — it would install a persistent git credential helper
+    for the rest of that step's process, a broader footprint than the 2-3 calls that
+    actually need authentication.
+  - Not treating an empty or absent GH_TOKEN as a hard configuration error — must
+    fall back to today's unauthenticated behavior.
+  - Not building new test infrastructure (an HTTP server, a git daemon) to exercise
+    the authenticated request end-to-end. Scoped testing to argv-inspection instead.
+  failure_modes:
+  - 'Timeouts: none — no new network call is introduced.'
+  - 'Partial failures: none — the fix is confined to how the git commands are invoked,
+    not a multi-step operation.'
+  - 'Invalid input: GH_TOKEN must never be interpolated into a command string that
+    reaches a shell — passed as a single argv entry to git, matching the script''s
+    existing documented principle.'
+  - 'Missing context: GH_TOKEN empty or absent falls back to today''s unauthenticated
+    behavior rather than failing loudly.'
+  interface_contracts:
+  - 'Superseded during review, shipped shape (see .decisions/issue-147.md): dossier-rotation-check.sh''s
+    git ls-remote and both git fetch calls gain a conditional GIT_CONFIG_COUNT/KEY_0/VALUE_0
+    env-var prefix carrying "AUTHORIZATION basic base64(x-access-token GH_TOKEN)", scoped
+    to origin''s own resolved scheme plus host, added only when GH_TOKEN is non-empty
+    and origin resolves to an http(s) URL.'
+  - No change to the script's --github-output/--summary output contract, exit codes,
+    or any of its 8 emitted fields.
+  - No change to dossier-docs-refresh.yml — GH_TOKEN is already present in the rotation-check
+    step's env block.
+  - Test additions land in rotation-check.test.sh using a PATH-stub git wrapper scoped
+    narrowly to the invocation under test, not the surrounding fixture-setup code.
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+  allowed_paths:
+  - plugins/dossier/bin/dossier-rotation-check.sh
+  - plugins/dossier/tests/rotation-check.test.sh
+  - .decisions/issue-147.md
+evaluator:
+  type: flow_verdict_judge
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: achieved
+  current_phase: verify
+  current_activity: complete
+  turns_evaluated: 1
+  last_evaluation:
+    result: pass
+    reason: 4/5 acceptance criteria PASS via independent verdict-judge; AC1 (does
+      the auth header actually authenticate against origin) returned NEEDS-HUMAN-REVIEW
+      because the local test fixture cannot exercise real HTTP auth, and the only
+      evidence is a manual verification against a real private repo documented in
+      the decision journal, which the judge's independence protocol correctly excludes
+      as inadmissible. User approved AC1 as met after reviewing the manual verification
+      directly.
+    at: '2026-08-03T19:15:00Z'
