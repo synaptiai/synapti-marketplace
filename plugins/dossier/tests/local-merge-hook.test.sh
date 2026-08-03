@@ -18,7 +18,7 @@ fi
 # This is the test that actually proves self-containment, not just asserts it
 # in prose: PLUGIN_ROOT points at a directory tree where plugins/flow simply
 # does not exist on disk, and the hook must still behave correctly.
-FLOWLESS_ROOT=$(_dossier_safe_mktemp_dir "flowless-plugins")
+_dossier_require_mktemp_dir FLOWLESS_ROOT "flowless-plugins"
 cp -R plugins/dossier "$FLOWLESS_ROOT/dossier"
 if [ -d "$FLOWLESS_ROOT/flow" ]; then
   _dossier_assert_fail "fixture setup bug: flow plugin ended up in the flowless fixture"
@@ -29,7 +29,7 @@ PLUGIN_ROOT="$FLOWLESS_ROOT/dossier"
 
 # A git repo to run the hook against — default branch checked out, HEAD has
 # no second parent yet.
-REPO=$(_dossier_safe_mktemp_dir "local-merge-repo")
+_dossier_require_mktemp_dir REPO "local-merge-repo"
 (
   cd "$REPO" || exit 1
   git init -q -b main

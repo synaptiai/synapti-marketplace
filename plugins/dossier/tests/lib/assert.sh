@@ -51,6 +51,27 @@ _dossier_safe_mktemp_dir() {
   printf '%s\n' "$_dir"
 }
 
+# _dossier_require_mktemp_dir <varname> <prefix> — the sanctioned way for a
+# call site to consume _dossier_safe_mktemp_dir's output. A bare
+# `VAR=$(_dossier_safe_mktemp_dir ...)` reopens the exact risk that function
+# was hardened against: its `exit 2` only terminates the `$(...)` subshell,
+# so a caller that doesn't check the assignment's own exit status proceeds
+# with VAR="" — and `cd ""` returns 0 in bash, silently no-oping instead of
+# aborting (issue #149; this happened for real to local-merge-hook.test.sh).
+# This helper does the capture-and-check exactly once, as a plain function
+# call (not itself wrapped in `$(...)`), so an internal failure's `exit 2`
+# propagates all the way up through the caller's shell rather than being
+# swallowed by another layer of subshell.
+_dossier_require_mktemp_dir() {
+  local __dossier_mktemp_varname="$1" __dossier_mktemp_prefix="$2" __dossier_mktemp_dir
+  __dossier_mktemp_dir=$(_dossier_safe_mktemp_dir "$__dossier_mktemp_prefix") || exit 2
+  if [ -z "$__dossier_mktemp_dir" ] || [ ! -d "$__dossier_mktemp_dir" ]; then
+    echo "FATAL: _dossier_safe_mktemp_dir(\"$__dossier_mktemp_prefix\") returned an unusable path for \$$__dossier_mktemp_varname: '$__dossier_mktemp_dir'" >&2
+    exit 2
+  fi
+  printf -v "$__dossier_mktemp_varname" '%s' "$__dossier_mktemp_dir"
+}
+
 _dossier_assert_pass() {
   DOSSIER_TEST_PASS=$((DOSSIER_TEST_PASS + 1))
   printf 'PASS %s — %s\n' "$DOSSIER_TEST_CURRENT" "$1"
