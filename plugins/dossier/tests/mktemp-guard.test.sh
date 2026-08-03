@@ -49,4 +49,42 @@ else
   _dossier_assert_pass "no .git directory materialized in the scratch cwd — git init never ran"
 fi
 
+# --- Scenario 4: pattern-level regression — a helper-consuming function that
+# returns its result via stdout (meant to be called as `X=$(fn)`) reopens the
+# exact swallowed-exit bug one level up, even though it calls the guard
+# correctly *internally*: the whole function runs inside the subshell that
+# `$(...)` forks for it, so the guard's `exit 2` only kills that subshell.
+# This is the shape setup_fixture()/no_gh_path() had in rotation-check.test.sh
+# and staleness-trigger.test.sh before this fix — found by review, not by the
+# original repo-wide audit, because the audit only greped for direct
+# `_dossier_safe_mktemp_dir` call sites, not for guard-consuming functions
+# invoked via `$(...)` by their own callers.
+BROKEN_WRAPPER_OUTPUT=$(RUN_TMPDIR="" bash -c "
+  source '$ASSERT_LIB_ABS'
+  stdout_returning_fn() {
+    local _d
+    _dossier_require_mktemp_dir _d 'wrapper-broken'
+    printf '%s' \"\$_d\"
+  }
+  RESULT=\$(stdout_returning_fn)
+  RC=\$?
+  echo \"RESULT=[\$RESULT] RC=\$RC OUTER_UNREACHABLE_MARKER\"
+" 2>&1)
+assert_contains "OUTER_UNREACHABLE_MARKER" "$BROKEN_WRAPPER_OUTPUT" "confirms the vulnerable shape: a stdout-returning wrapper lets the caller's script continue past a failed guard (RESULT=[] silently)"
+assert_contains "RESULT=[]" "$BROKEN_WRAPPER_OUTPUT" "confirms the vulnerable shape: the caller receives an empty result instead of the process dying"
+
+OUTVAR_WRAPPER_OUTPUT=$(RUN_TMPDIR="" bash -c "
+  source '$ASSERT_LIB_ABS'
+  outvar_returning_fn() {
+    local __outvar=\"\$1\" _d
+    _dossier_require_mktemp_dir _d 'wrapper-fixed'
+    printf -v \"\$__outvar\" '%s' \"\$_d\"
+  }
+  outvar_returning_fn RESULT
+  echo \"OUTER_UNREACHABLE_MARKER RESULT=[\$RESULT]\"
+" 2>&1)
+OUTVAR_WRAPPER_RC=$?
+assert_exit "2" "$OUTVAR_WRAPPER_RC" "the fixed shape (out-parameter via printf -v, called as a plain statement) correctly propagates exit 2 through the wrapper"
+assert_not_contains "OUTER_UNREACHABLE_MARKER" "$OUTVAR_WRAPPER_OUTPUT" "the fixed shape never reaches the caller's next line when the guard fires inside the wrapper"
+
 _dossier_test_summary

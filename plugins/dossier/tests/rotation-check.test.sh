@@ -34,7 +34,17 @@ future_offset() { date -u -d "+$1 days" +%Y-%m-%d 2>/dev/null || date -u -v+"$1"
 # Filtering at the file level via a symlinked stand-in directory keeps the
 # helper's stated intent ("keeping every other tool resolvable") true on
 # both platforms.
+# no_gh_path <outvar> — assigns into $outvar via printf -v and must be
+# called as a plain statement (`no_gh_path OUT`, never `OUT=$(no_gh_path)`).
+# It calls _dossier_require_mktemp_dir internally, whose exit-2-on-failure
+# only propagates through the caller's real shell when no `$(...)` boundary
+# sits between this function and the script that invokes it — a stdout-
+# returning version (`printf '%s' "$_out"`, meant for `$(no_gh_path)`) would
+# run the ENTIRE function inside the subshell that command substitution
+# forks, silently swallowing the guard's abort one level up (see issue #149
+# review; mktemp-guard.test.sh scenario 4 regression-tests this pattern).
 no_gh_path() {
+  local __outvar="$1"
   OLD_IFS="$IFS"; IFS=':'
   _out=""
   for _dir in $PATH; do
@@ -54,7 +64,7 @@ no_gh_path() {
     fi
   done
   IFS="$OLD_IFS"
-  printf '%s' "$_out"
+  printf -v "$__outvar" '%s' "$_out"
 }
 
 # Builds a bare "origin" remote + a working clone, with dossier plugin bin
@@ -62,8 +72,13 @@ no_gh_path() {
 # dir masquerading as one) because the script's own exit-code semantics
 # (git ls-remote --exit-code 0 vs 2 vs 128) require an actual remote to
 # exercise realistically.
+#
+# setup_fixture <outvar> — assigns the clone path into $outvar via printf -v
+# and must be called as a plain statement (`setup_fixture OUT`, never
+# `OUT=$(setup_fixture)`) — see no_gh_path's comment above for why a
+# stdout-returning version would swallow _dossier_require_mktemp_dir's guard.
 setup_fixture() {
-  local _fixture
+  local __outvar="$1" _fixture
   _dossier_require_mktemp_dir _fixture "rotation-fixture"
   _bare="$_fixture/origin.git"
   _clone="$_fixture/clone"
@@ -79,7 +94,7 @@ setup_fixture() {
     git push -q origin HEAD:refs/heads/main
     git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
   ) >/dev/null 2>&1
-  printf '%s' "$_clone"
+  printf -v "$__outvar" '%s' "$_clone"
 }
 
 # Adds $N commits to $DOCS_BRANCH (created from main if absent), each carrying
@@ -110,7 +125,7 @@ push_docs_branch_commit() {
 # =============================================================================
 # 1. No-branch cold start
 # =============================================================================
-F1=$(setup_fixture)
+setup_fixture F1
 _dossier_require_mktemp_dir SUMMARY1_DIR "rotation-summary1"
 SUMMARY1="$SUMMARY1_DIR/summary.md"
 OUT1=$(cd "$F1" && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier "$SCRIPT" --summary "$SUMMARY1" 2>&1)
@@ -127,7 +142,7 @@ assert_contains "does not exist yet" "$(get "$OUT1" reason)" "no-branch cold sta
 # 2. Policy=none, branch exists with a real diff — metrics still emitted
 #    (this is the AC4 assertion: metrics flow regardless of policy)
 # =============================================================================
-F2=$(setup_fixture)
+setup_fixture F2
 push_docs_branch_commit "$F2" "docs/dossier" "$(day_offset 3)" "insert-only content line one"
 push_docs_branch_commit "$F2" "docs/dossier" "$(day_offset 1)" "insert-only content line two"
 OUT2=$(cd "$F2" && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=none "$SCRIPT" 2>&1)
@@ -158,7 +173,7 @@ assert_equal "branch_commits" "$(get "$OUT2" age_source)" "policy=none: age_sour
 # =============================================================================
 # 3. Would-rotate via age (gh stub returns an old open PR)
 # =============================================================================
-F3=$(setup_fixture)
+setup_fixture F3
 push_docs_branch_commit "$F3" "docs/dossier" "$(day_offset 10)"
 _dossier_require_mktemp_dir STUB3 "gh-stub-old-pr"
 cat > "$STUB3/gh" <<EOF
@@ -177,7 +192,7 @@ assert_contains "age" "$(get "$OUT3" reason)" "would-rotate via age: reason cite
 # =============================================================================
 # 4. Would-not-rotate (gh stub, recent PR, small diff)
 # =============================================================================
-F4=$(setup_fixture)
+setup_fixture F4
 push_docs_branch_commit "$F4" "docs/dossier" "$(day_offset 1)"
 _dossier_require_mktemp_dir STUB4 "gh-stub-recent-pr"
 cat > "$STUB4/gh" <<EOF
@@ -195,9 +210,9 @@ assert_equal "pr_created_at" "$(get "$OUT4" age_source)" "would-not-rotate: age_
 # =============================================================================
 # 5. Degraded gh-unavailable, would-rotate via commit age (monthly policy)
 # =============================================================================
-F5=$(setup_fixture)
+setup_fixture F5
 push_docs_branch_commit "$F5" "docs/dossier" "$(day_offset 40)"
-NOGH_PATH5=$(no_gh_path)
+no_gh_path NOGH_PATH5
 _dossier_require_mktemp_dir SUMMARY5_DIR "rotation-summary5"
 SUMMARY5="$SUMMARY5_DIR/summary.md"
 OUT5=$(cd "$F5" && env PATH="$NOGH_PATH5" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=monthly "$SCRIPT" --summary "$SUMMARY5" 2>&1)
@@ -215,7 +230,7 @@ fi
 # 6. Would-rotate via size alone (no gh, no Dossier-Generated commits at all
 #    for age, but a large diff)
 # =============================================================================
-F6=$(setup_fixture)
+setup_fixture F6
 # Push a branch with a commit that is NOT Dossier-Generated, so age_source
 # ends up unknown, while still producing a large diff to trigger on size.
 (
@@ -233,7 +248,7 @@ F6=$(setup_fixture)
   git push -q origin docs/dossier
   git checkout -q main
 ) >/dev/null 2>&1
-NOGH_PATH6=$(no_gh_path)
+no_gh_path NOGH_PATH6
 OUT6=$(cd "$F6" && env PATH="$NOGH_PATH6" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=monthly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=100 "$SCRIPT" 2>&1)
 RC6=$?
 assert_equal "0" "$RC6" "would-rotate via size alone: exits 0"
@@ -250,7 +265,7 @@ assert_contains "accumulated" "$(get "$OUT6" reason)" "would-rotate via size alo
 #     does not trigger. Regression test for the P1 finding on rotation-check
 #     issue #138 review (dossier-rotation-check.sh:324).
 # =============================================================================
-F6B=$(setup_fixture)
+setup_fixture F6B
 (
   cd "$F6B" || exit 1
   git checkout -q -B docs/dossier origin/main
@@ -262,7 +277,7 @@ F6B=$(setup_fixture)
   git push -q origin docs/dossier
   git checkout -q main
 ) >/dev/null 2>&1
-NOGH_PATH6B=$(no_gh_path)
+no_gh_path NOGH_PATH6B
 OUT6B=$(cd "$F6B" && env PATH="$NOGH_PATH6B" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=5000 "$SCRIPT" 2>&1)
 RC6B=$?
 assert_equal "0" "$RC6B" "age unknown + size under threshold: exits 0"
@@ -281,13 +296,13 @@ assert_contains "age is unavailable" "$REASON6B" "age unknown + size under thres
 # =============================================================================
 # 7. Both unknown -> the literal string "unknown", never coerced to false
 # =============================================================================
-F7=$(setup_fixture)
+setup_fixture F7
 push_docs_branch_commit "$F7" "docs/dossier" "$(day_offset 5)"
 (
   cd "$F7" || exit 1
   git remote set-url origin /nonexistent/path/that/does/not/exist.git
 ) >/dev/null 2>&1
-NOGH_PATH7=$(no_gh_path)
+no_gh_path NOGH_PATH7
 _dossier_require_mktemp_dir SUMMARY7_DIR "rotation-summary7"
 SUMMARY7="$SUMMARY7_DIR/summary.md"
 OUT7=$(cd "$F7" && env PATH="$NOGH_PATH7" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" --summary "$SUMMARY7" 2>&1)
@@ -304,7 +319,7 @@ fi
 # =============================================================================
 # 8. Malformed threshold config falls back to the documented default (5000)
 # =============================================================================
-F8=$(setup_fixture)
+setup_fixture F8
 (
   cd "$F8" || exit 1
   git checkout -q -B docs/dossier origin/main
@@ -319,7 +334,7 @@ F8=$(setup_fixture)
   git push -q origin docs/dossier
   git checkout -q main
 ) >/dev/null 2>&1
-NOGH_PATH8=$(no_gh_path)
+no_gh_path NOGH_PATH8
 OUT8=$(cd "$F8" && env PATH="$NOGH_PATH8" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=monthly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=not-a-number "$SCRIPT" 2>&1)
 RC8=$?
 assert_equal "0" "$RC8" "malformed threshold: exits 0"
@@ -328,7 +343,7 @@ assert_equal "true" "$(get "$OUT8" would_rotate)" "malformed threshold: would_ro
 # =============================================================================
 # 9. --shortstat parsing: insertions-only and deletions-only diffs
 # =============================================================================
-F9=$(setup_fixture)
+setup_fixture F9
 (
   cd "$F9" || exit 1
   git checkout -q -B docs/dossier origin/main
@@ -341,7 +356,7 @@ F9=$(setup_fixture)
   git push -q origin docs/dossier
   git checkout -q main
 ) >/dev/null 2>&1
-NOGH_PATH9=$(no_gh_path)
+no_gh_path NOGH_PATH9
 OUT9=$(cd "$F9" && env PATH="$NOGH_PATH9" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=none "$SCRIPT" 2>&1)
 ACC_LINES9=$(get "$OUT9" accumulated_lines)
 if [ -n "$ACC_LINES9" ] && [ "$ACC_LINES9" -eq 2 ] 2>/dev/null; then
@@ -379,7 +394,7 @@ assert_contains "not inside a git repository" "$OUT_NOTGIT" "run outside a git r
 #     rotation (via size); an unguarded empty override must not silently
 #     make it invisible. Regression test for a review finding (ERR-1).
 # =============================================================================
-F12=$(setup_fixture)
+setup_fixture F12
 (
   cd "$F12" || exit 1
   git checkout -q -B docs/dossier origin/main
@@ -396,7 +411,7 @@ F12=$(setup_fixture)
   git push -q origin docs/dossier
   git checkout -q main
 ) >/dev/null 2>&1
-NOGH_PATH12=$(no_gh_path)
+no_gh_path NOGH_PATH12
 OUT12=$(cd "$F12" && env PATH="$NOGH_PATH12" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH="" DOSSIER_CI_ROLLING_BRANCH_ROTATION=monthly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=100 "$SCRIPT" 2>&1)
 RC12=$?
 assert_equal "0" "$RC12" "empty DOSSIER_CI_ROLLING_BRANCH: exits 0"
@@ -414,7 +429,7 @@ assert_equal "false" "$(get "$OUT12B" would_rotate)" "empty DOSSIER_CI_ROLLING_B
 #     summary's markdown table or inject a spoofed extra row. Regression
 #     test for a review finding (SEC-1).
 # =============================================================================
-F13=$(setup_fixture)
+setup_fixture F13
 WEIRD_BRANCH='docs/dossier`|evil'
 _dossier_require_mktemp_dir SUMMARY13_DIR "rotation-summary13"
 SUMMARY13="$SUMMARY13_DIR/summary.md"
@@ -435,7 +450,7 @@ assert_equal "9" "$TABLE_ROW_COUNT13" "branch name with backtick/pipe: exactly t
 #     PR found" and must not abort the run — regression test for a review
 #     finding (ERR-3): previously claimed fixed but never covered by a test.
 # =============================================================================
-F14=$(setup_fixture)
+setup_fixture F14
 push_docs_branch_commit "$F14" "docs/dossier" "$(day_offset 10)"
 _dossier_require_mktemp_dir STUB14 "gh-stub-list-fails"
 cat > "$STUB14/gh" <<'EOF'
@@ -461,9 +476,9 @@ fi
 #     unconditionally (0 <= any non-negative line count is always true) --
 #     regression test for a review finding (F1/CONV1), reproduced live.
 # =============================================================================
-F15=$(setup_fixture)
+setup_fixture F15
 push_docs_branch_commit "$F15" "docs/dossier" "$(day_offset 1)"
-NOGH_PATH15=$(no_gh_path)
+no_gh_path NOGH_PATH15
 OUT15=$(cd "$F15" && env PATH="$NOGH_PATH15" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly DOSSIER_CI_THRESHOLDS_ROTATION_MAX_ACCUMULATED_LINES=0 "$SCRIPT" 2>&1)
 RC15=$?
 assert_equal "0" "$RC15" "zero size threshold: exits 0"
@@ -474,7 +489,7 @@ assert_equal "false" "$(get "$OUT15" would_rotate)" "zero size threshold: falls 
 #     age_days alongside a reason claiming age is unavailable -- regression
 #     test for a review finding (AgeDaysNegative/ERR-3/ERR-4).
 # =============================================================================
-F16=$(setup_fixture)
+setup_fixture F16
 push_docs_branch_commit "$F16" "docs/dossier" "$(day_offset 1)"
 _dossier_require_mktemp_dir STUB16 "gh-stub-future-pr"
 cat > "$STUB16/gh" <<EOF
@@ -498,7 +513,7 @@ assert_contains "unavailable" "$(get "$OUT16" reason)" "future-dated PR createdA
 #     via a stub that actually applies gh's --jq filter (real `gh` behavior),
 #     not just a fixed echo like the other gh stubs in this file.
 # =============================================================================
-F17=$(setup_fixture)
+setup_fixture F17
 push_docs_branch_commit "$F17" "docs/dossier" "$(day_offset 10)"
 _dossier_require_mktemp_dir STUB17 "gh-stub-cross-repo"
 STUB17_JSON="[{\"number\":13,\"createdAt\":\"$(day_offset 1)T00:00:00Z\",\"isCrossRepository\":true},{\"number\":7,\"createdAt\":\"$(day_offset 10)T00:00:00Z\",\"isCrossRepository\":false}]"
@@ -536,7 +551,7 @@ assert_equal "pr_created_at" "$(get "$OUT17" age_source)" "cross-repository deco
 #     directly on a macOS dev machine -- this reproduces the same downstream
 #     failure, $CASCADE exiting 2, by the most portable available means).
 # =============================================================================
-F18=$(setup_fixture)
+setup_fixture F18
 REAL_MKTEMP=$(command -v mktemp)
 _dossier_require_mktemp_dir STUB18 "mktemp-stub-cascade-fail"
 cat > "$STUB18/mktemp" <<STUBEOF
@@ -564,9 +579,9 @@ assert_not_contains "would_rotate=false" "$OUT18" "config resolver infra failure
 #     SEC-1/verifier: note() didn't neutralize markdown link/bold/heading
 #     syntax the way table cells already do).
 # =============================================================================
-F19=$(setup_fixture)
+setup_fixture F19
 push_docs_branch_commit "$F19" "docs/dossier" "$(day_offset 1)"
-NOGH_PATH19=$(no_gh_path)
+no_gh_path NOGH_PATH19
 _dossier_require_mktemp_dir SUMMARY19_DIR "rotation-summary19"
 SUMMARY19="$SUMMARY19_DIR/summary.md"
 WEIRD_POLICY='biweekly [click here](https://evil.example)'
@@ -599,8 +614,8 @@ fi
 #     later CI step to read) had no test at all -- regression test for a
 #     review finding (TEST2, raised independently by both review lenses).
 # =============================================================================
-F20=$(setup_fixture)
-NOGH_PATH20=$(no_gh_path)
+setup_fixture F20
+no_gh_path NOGH_PATH20
 _dossier_require_mktemp_dir GHOUT20_DIR "rotation-ghout20"
 GHOUT20="$GHOUT20_DIR/github_output"
 : > "$GHOUT20"

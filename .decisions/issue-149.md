@@ -45,3 +45,21 @@ PASS — 3 tasks reviewed. Task "add guarded helper" specifies the exact functio
 <!-- auto-log: 2026-08-03 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-149.md -->
 
 <!-- auto-log: 2026-08-03 12:21 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-149.md -->
+
+<!-- auto-log: 2026-08-03 12:32 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_dossier_mktemp_guard_wrapper_composition_gap.md -->
+
+<!-- auto-log: 2026-08-03 12:32 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-08-03 12:32 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/mktemp-guard.test.sh -->
+
+<!-- auto-log: 2026-08-03 12:32 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 12:33 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 12:33 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-trigger.test.sh -->
+
+<!-- auto-log: 2026-08-03 12:33 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-trigger.test.sh -->
+
+<!-- auto-log: 2026-08-03 12:33 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/lib/assert.sh -->
+
+<!-- auto-log: 2026-08-03 12:39 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/lib/assert.sh -->

@@ -62,6 +62,18 @@ _dossier_safe_mktemp_dir() {
 # call (not itself wrapped in `$(...)`), so an internal failure's `exit 2`
 # propagates all the way up through the caller's shell rather than being
 # swallowed by another layer of subshell.
+#
+# That guarantee is only as good as every caller in the chain: if you write
+# a function that calls this helper internally and then hands its result
+# back to ITS OWN caller via stdout (`printf '%s' "$var"`, meant to be
+# consumed as `X=$(your_function)`), you have reintroduced the exact bug
+# this helper exists to close, one level up — `$(...)` forks a subshell for
+# your_function's entire body, so this helper's `exit 2` again only kills
+# that subshell. Give your function an <outvar> parameter and assign into
+# it via `printf -v` instead, and call it as a plain statement, the same
+# way this helper itself must be called. See `no_gh_path`/`setup_fixture`
+# in rotation-check.test.sh and staleness-trigger.test.sh for the pattern,
+# and mktemp-guard.test.sh scenario 4 for the regression test.
 _dossier_require_mktemp_dir() {
   local __dossier_mktemp_varname="$1" __dossier_mktemp_prefix="$2" __dossier_mktemp_dir
   __dossier_mktemp_dir=$(_dossier_safe_mktemp_dir "$__dossier_mktemp_prefix") || exit 2
@@ -69,7 +81,10 @@ _dossier_require_mktemp_dir() {
     echo "FATAL: _dossier_safe_mktemp_dir(\"$__dossier_mktemp_prefix\") returned an unusable path for \$$__dossier_mktemp_varname: '$__dossier_mktemp_dir'" >&2
     exit 2
   fi
-  printf -v "$__dossier_mktemp_varname" '%s' "$__dossier_mktemp_dir"
+  printf -v "$__dossier_mktemp_varname" '%s' "$__dossier_mktemp_dir" || {
+    echo "FATAL: printf -v failed to assign \$$__dossier_mktemp_varname (invalid identifier?)" >&2
+    exit 2
+  }
 }
 
 _dossier_assert_pass() {

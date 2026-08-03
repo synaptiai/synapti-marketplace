@@ -38,10 +38,16 @@ CANON_FIXTURE_DOCS='00-control/documentation-index.md
 02-architecture/interfaces-and-integrations.md
 02-architecture/infrastructure-and-deployment.md'
 
+# setup_fixture <outvar> <n> — assigns the fixture dir into $outvar via
+# printf -v and must be called as a plain statement (`setup_fixture OUT 1`,
+# never `OUT=$(setup_fixture 1)`) — a stdout-returning version would run
+# entirely inside the subshell $(...) forks for it, silently swallowing
+# _dossier_require_mktemp_dir's exit-2 guard one level up (issue #149
+# review; mktemp-guard.test.sh scenario 4 regression-tests this pattern).
 setup_fixture() {
-  # $1 = number of stale documents to plant (each independently past 90 days),
-  # drawn from CANON_FIXTURE_DOCS in order.
-  local n="$1" fixture rel i=1
+  # $1 = outvar, $2 = number of stale documents to plant (each independently
+  # past 90 days), drawn from CANON_FIXTURE_DOCS in order.
+  local __outvar="$1" n="$2" fixture rel i=1
   _dossier_require_mktemp_dir fixture "policy-stale"
   mkdir -p "$fixture/docs/dossier/00-control" "$fixture/docs/dossier/02-architecture"
   printf '%s\n' "$CANON_FIXTURE_DOCS" | head -n "$n" | while IFS= read -r rel; do
@@ -61,7 +67,7 @@ EOF
     git add -A
     git commit -q -m "watermark"
   ) >/dev/null 2>&1
-  printf '%s' "$fixture"
+  printf -v "$__outvar" '%s' "$fixture"
 }
 
 run_policy() {
@@ -75,7 +81,7 @@ run_policy() {
 get() { printf '%s\n' "$1" | awk -F= -v k="$2" '$1==k{sub(/^[^=]*=/,""); print; exit}'; }
 
 # --- One stale document, no other trigger, EVT=schedule ---------------------
-F1=$(setup_fixture 1)
+setup_fixture F1 1
 WM1=$(git -C "$F1" rev-parse HEAD)
 ( cd "$F1" && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
 
@@ -100,7 +106,7 @@ assert_equal "false" "$(get "$OUT_PR" should_run)" "staleness never overrides on
 assert_equal "no-relevant-paths" "$(get "$OUT_PR" reason)" "a non-schedule event keeps the original no-relevant-paths reason"
 
 # --- Many stale documents: the sweep is bounded, not unbounded (AC3) -------
-F2=$(setup_fixture 8)
+setup_fixture F2 8
 WM2=$(git -C "$F2" rev-parse HEAD)
 ( cd "$F2" && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
 
@@ -143,7 +149,7 @@ exit 2
 FAKE
 chmod +x "$ERR3_ROOT/bin"/*.sh
 
-F4=$(setup_fixture 1)
+setup_fixture F4 1
 WM4=$(git -C "$F4" rev-parse HEAD)
 ( cd "$F4" && echo noise > random-file.txt && git add -A && git commit -q -m "irrelevant change" ) >/dev/null 2>&1
 
