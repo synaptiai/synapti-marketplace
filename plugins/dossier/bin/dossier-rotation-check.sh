@@ -57,7 +57,7 @@ while [ $# -gt 0 ]; do
       [ $# -lt 2 ] && { echo "dossier-rotation-check: --summary requires a value" >&2; exit 2; }
       SUMMARY_FILE="$2"; shift 2 ;;
     -h|--help)
-      sed -n '2,24p' "$0"; exit 0 ;;
+      sed -n '2,28p' "$0"; exit 0 ;;
     *)
       echo "dossier-rotation-check: unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -148,13 +148,43 @@ cfg() { "$CASCADE" --default "$2" "${1#.}" 2>/dev/null; }
 # auth on a private one (issue #147). A conditional branch, not an array
 # expansion: an empty array under `set -u` is an unbound-variable error on
 # bash 3.2 (macOS's shipped /bin/bash), and this function's whole point is
-# to be safe to call whether or not GH_TOKEN is set. The token reaches git
-# as a single argv entry to -c, never interpolated into a string that
-# reaches a shell (same principle as GH_TOKEN's existing use with `gh`,
-# documented in this script's own header).
+# to be safe to call whether or not GH_TOKEN is set.
+#
+# The header is passed via GIT_CONFIG_COUNT/KEY/VALUE (git >= 2.31, both
+# ubuntu-latest and Homebrew macOS ship well past this), not `-c` on the
+# command line: a `-c` value is visible in process listings (`ps aux`,
+# /proc/<pid>/cmdline) for the life of the subprocess, which actions/checkout
+# itself deliberately avoids for the same credential-exposure reason (it
+# writes a placeholder via -c, then patches the real value directly into the
+# on-disk git config). Environment variables set via the `VAR=val cmd` prefix
+# form are scoped to this one subprocess only, not exported globally, and
+# match this file's own "never interpolated into a string that reaches a
+# shell" principle for GH_TOKEN just as well as -c did.
 git_auth() {
   if [ -n "${GH_TOKEN:-}" ]; then
-    git -c "http.extraheader=AUTHORIZATION: bearer ${GH_TOKEN}" "$@"
+    # Basic, not Bearer -- verified directly against a real private GitHub
+    # repo before shipping (see .decisions/issue-147.md): "AUTHORIZATION:
+    # bearer $GH_TOKEN" was REJECTED (fatal: could not read Username), while
+    # "AUTHORIZATION: basic base64(x-access-token:$GH_TOKEN)" succeeded --
+    # the same credential shape actions/checkout itself constructs
+    # internally. The issue's own suggested Bearer syntax does not work.
+    #
+    # Both the token and the base64 output are stripped the same way
+    # emit()/sanitize_md() strip other untrusted environment values before
+    # they reach a structured sink: an embedded CR/LF would malform the HTTP
+    # header (or, for the token, corrupt the base64 payload) rather than
+    # grant any new privilege -- whoever controls GH_TOKEN's bytes already
+    # holds the credential either way. The tr pass on the base64 output also
+    # collapses GNU base64's default 76-column line-wrapping (BSD/macOS
+    # base64 does not wrap by default, but Linux CI's GNU coreutils does for
+    # longer tokens) -- without it, a wrapped credential would embed a raw
+    # newline into the header value.
+    _clean_token=$(printf '%s' "$GH_TOKEN" | LC_ALL=C tr -d '\r\n\000-\037')
+    _b64_creds=$(printf 'x-access-token:%s' "$_clean_token" | base64 | LC_ALL=C tr -d '\r\n')
+    GIT_CONFIG_COUNT=1 \
+      GIT_CONFIG_KEY_0=http.extraheader \
+      GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${_b64_creds}" \
+      git "$@"
   else
     git "$@"
   fi
