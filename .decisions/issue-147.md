@@ -18,6 +18,20 @@ artifacts:
   workflow: start-issue
   run_id: 2026-08-03T160000Z-issue-147
   status: active
+- type: verdict
+  captured_at: '2026-08-03T17:30:05Z'
+  result: PASS
+- type: goal-evaluation
+  captured_at: '2026-08-03T17:30:22Z'
+  goal_id: issue-147
+  result: achieved
+  evidence_bundle: verdict-judge-inline
+  failures: none
+- type: workflow-run
+  captured_at: '2026-08-03T17:30:38Z'
+  workflow: start-issue
+  run_id: 2026-08-03T160000Z-issue-147
+  status: completed
 ---
 # Issue #147 — dossier-rotation-check.sh: git network calls are silently inert on private repos
 
@@ -239,3 +253,13 @@ private repo shows a different result, that is the next signal to act on.
 <!-- auto-log: 2026-08-03 18:39 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-147.md -->
 
 <!-- auto-log: 2026-08-03 18:39 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-147.md -->
+
+<!-- auto-log: 2026-08-03 19:16 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 19:19 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 19:20 commit "test(dossier): cover git_auth's control-character stripping and base64 line-wrap collapse" -->
+
+<!-- auto-log: 2026-08-03 19:30 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/issue-147-lifecycle-achieved.yaml -->
+
+<!-- auto-log: 2026-08-03 19:30 Edit /Users/danielbentes/synapti-marketplace/.flow/runs/2026-08-03T160000Z-issue-147/run.yaml -->
