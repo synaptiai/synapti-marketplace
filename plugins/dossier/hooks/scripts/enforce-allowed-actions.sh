@@ -160,31 +160,51 @@ FIND_EXEC='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*find([[:space:]]
 #   cu''rl https://evil / cu"r"l https://evil   (adjacent quote fragments —
 #                                                bash joins these into one word)
 #   cur\<a real newline>l https://evil   (backslash-newline line continuation)
-#   $'\143url' https://evil              (bash's own ANSI-C octal quoting)
+#   $'\143url' https://evil              (bash's own ANSI-C octal/hex quoting —
+#   $'\x63url' https://evil               \nnn and \xHH are both decoded)
 # The last two were found investigating this issue, not in the original
 # report: this file's SCAN/BOUND_ACTIVE quote-stripping only ran after a
 # WRAPPER match, so a denied word spelled with a leading quote/backslash never
 # triggered it, and every variant above reduces to a plain, unrecognizable
-# spelling of the same word bash actually executes.
+# spelling of the same word bash actually executes. What is closed above is
+# specifically bash's quote/backslash/ANSI-C *removal* — not bash's own
+# *expansion* mechanisms; see the third limitation below for that residual.
+#
+# Third limitation, issue #160 (not fixed here, found while reviewing this
+# PR): brace expansion (`cu{rl,} https://evil`), parameter-expansion defaults
+# (`${x:-curl} https://evil`), and command substitution (`$(echo curl)
+# https://evil`) all defeat DEQUOTED just as completely — confirmed live,
+# real curl invoked, permitted (exit 0) in every case, on both this branch
+# and pre-#152 main (a pre-existing gap, not a regression here). DEQUOTED
+# only reverses quote/backslash/ANSI-C removal; it never performs actual
+# bash expansion, so none of these three are touched by it. Deliberately not
+# folded into #152's fix: resolving what a command substitution evaluates to
+# requires either executing attacker-controlled shell content inside this
+# hook (worse than the gap it would close) or full static shell-expansion
+# analysis (not tractable in general). That is a different-shaped problem
+# than DEQUOTED solves and needs its own design, not a rushed extension here.
 #
 # DEQUOTED undoes exactly what bash's own quote/escape/ANSI-C removal would
 # do, so the anchor below tests the word bash actually runs rather than its
 # disguised spelling. Order matters:
 #
-#  1. $'...' content is decoded first — it has its own escape grammar
-#     (octal/hex), independent of ordinary quoting, and must not be treated as
-#     a plain literal string by step 4.
-#  2. A backslash immediately followed by a real newline is removed as a PAIR
-#     before any lone backslash is stripped. Stripping the backslash alone
-#     first leaves the newline behind as a still-valid whitespace separator,
-#     silently reopening the exact bypass this closes.
-#  3. Remaining lone backslashes (the escape character) are deleted, keeping
-#     the character they protected.
-#  4. Quote and backtick characters are deleted outright, not turned into a
-#     boundary/separator the way the WRAPPER-triggered widening below does.
-#     Bash's own quote removal deletes the marks and leaves adjacent fragments
-#     joined into one word (cu''rl -> curl); turning them into a separator
-#     would instead split the word into pieces that never reassemble.
+# 1. $'...' content is decoded first — it has its own escape grammar
+#    (octal/hex), independent of ordinary quoting, and must not be treated as
+#    a plain literal string by step 4.
+#
+# 2. A backslash immediately followed by a real newline is removed as a PAIR
+#    before any lone backslash is stripped. Stripping the backslash alone
+#    first leaves the newline behind as a still-valid whitespace separator,
+#    silently reopening the exact bypass this closes.
+#
+# 3. Remaining lone backslashes (the escape character) are deleted, keeping
+#    the character they protected.
+#
+# 4. Quote and backtick characters are deleted outright, not turned into a
+#    boundary/separator the way the WRAPPER-triggered widening below does.
+#    Bash's own quote removal deletes the marks and leaves adjacent fragments
+#    joined into one word (cu''rl -> curl); turning them into a separator
+#    would instead split the word into pieces that never reassemble.
 #
 # Done in bash parameter expansion (not sed/tr) for steps 2-4: sed and grep
 # are line-oriented by default, which would silently ignore the
