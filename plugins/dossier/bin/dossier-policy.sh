@@ -32,7 +32,7 @@
 #
 # Output (stdout, and --github-output when given):
 #   should_run  base_sha  head_sha  base_source  docs_branch
-#   reason      existing_pr  max_turns  model  model_arg
+#   reason      existing_pr  existing_pr_lookup_failed  max_turns  model  model_arg
 #
 # Exit:
 #   0 — a decision was reached (should_run may be true or false)
@@ -99,6 +99,7 @@ HEAD_SHA=""
 BASE_SOURCE="none"
 DOCS_BRANCH=""
 EXISTING_PR=""
+EXISTING_PR_LOOKUP_FAILED="false"
 MAX_TURNS=""
 MODEL=""
 MODEL_ARG=""
@@ -217,7 +218,18 @@ write_summary() {
     printf '| Base source | `%s` |\n' "$BASE_SOURCE"
     printf '| Head | `%s` |\n' "${HEAD_SHA:-unresolved}"
     printf '| Docs branch | `%s` |\n' "$DOCS_BRANCH"
-    printf '| Existing docs PR | `%s` |\n' "${EXISTING_PR:-none}"
+    # A failed lookup and a genuinely confirmed "no PR open" both leave
+    # $EXISTING_PR empty -- the table must not render them identically, or an
+    # operator skimming it (rather than the free-text Notes below) could read
+    # a failure as a confirmed fact, exactly the ambiguity
+    # existing_pr_lookup_failed exists to close.
+    if [ -n "$EXISTING_PR" ]; then
+      printf '| Existing docs PR | `%s` |\n' "$EXISTING_PR"
+    elif [ "$EXISTING_PR_LOOKUP_FAILED" = "true" ]; then
+      printf '| Existing docs PR | `unknown (lookup failed)` |\n'
+    else
+      printf '| Existing docs PR | `none` |\n'
+    fi
     if [ -n "${STALE_SWEEP_LIST:-}" ]; then
       printf '| Stale documents (this sweep) | `%s` |\n' "$STALE_SWEEP_LIST"
     fi
@@ -237,6 +249,7 @@ finish() {
   emit base_source "$BASE_SOURCE"
   emit docs_branch "$DOCS_BRANCH"
   emit existing_pr "$EXISTING_PR"
+  emit existing_pr_lookup_failed "$EXISTING_PR_LOOKUP_FAILED"
   emit max_turns   "$MAX_TURNS"
   emit model       "$MODEL"
   emit model_arg   "$MODEL_ARG"
@@ -252,6 +265,16 @@ finish() {
 CI_ENABLED=$(cfg '.dossier.ci.enabled' 'true')
 OUTPUT_ROOT=$(cfg '.dossier.project.outputRoot' 'docs/dossier')
 DOCS_BRANCH=$(cfg '.dossier.ci.rollingBranch' 'docs/dossier')
+# An explicitly-empty override (dossier.ci.rollingBranch: "") beats the
+# cascade default by design, same as dossier-rotation-check.sh's identical
+# guard -- without this, the two scripts would resolve DOCS_BRANCH
+# differently from the same config in the same job run.
+case "$DOCS_BRANCH" in
+  '')
+    DOCS_BRANCH='docs/dossier'
+    note "dossier.ci.rollingBranch resolved to an empty value; falling back to the documented default (docs/dossier)."
+    ;;
+esac
 LABEL_GENERATED=$(cfg '.dossier.ci.labels.generated' 'dossier:generated')
 LABEL_FORCE=$(cfg '.dossier.ci.labels.force' 'docs:refresh')
 LABEL_SKIP=$(cfg '.dossier.ci.labels.skip' 'docs:skip')
@@ -383,12 +406,41 @@ esac
 
 # ---------------------------------------------------------------------------
 # Existing docs PR (advisory; drives the publish job's create-vs-update path).
-# Absent gh is a degradation, not a failure: publish rediscovers the PR with a
-# privileged token anyway.
+# A missing or failed lookup is a degradation, not a guess: EXISTING_PR_LOOKUP_
+# FAILED tells the publish job the emptiness of EXISTING_PR is uninformative,
+# so it refuses to delete-and-recreate the documentation branch rather than
+# treating "we don't know" as "no PR is open".
 # ---------------------------------------------------------------------------
 if command -v gh >/dev/null 2>&1; then
-  EXISTING_PR=$(gh pr list --head "$DOCS_BRANCH" --state open --json number --jq '.[0].number // empty' 2>/dev/null)
+  # --head matches by branch name only, across every fork with an open PR
+  # against this repo -- gh has no owner:branch syntax to scope --head to a
+  # specific fork. isCrossRepository==false restricts the match to PRs whose
+  # head lives in this repo, so a same-named decoy branch opened from a fork
+  # cannot be returned in place of (or ahead of) the real docs-refresh PR.
+  # Mirrors the identical fix already shipped in dossier-rotation-check.sh
+  # (PR #145, SEC-1) -- this is the pre-existing original that fix was copied
+  # from. --limit is explicit (matching the circuit-breaker call below) so
+  # gh's own default page size (30) can't paginate the real same-repo PR off
+  # the page before the isCrossRepository filter ever runs -- a "successful"
+  # (exit 0) lookup that quietly omits the one entry that mattered would
+  # bypass this fix and the existing_pr_lookup_failed guard alike.
+  EXISTING_PR=$(gh pr list --head "$DOCS_BRANCH" --state open --limit 100 --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)][0].number // empty' 2>/dev/null)
+  PR_LIST_RC=$?
+  if [ "$PR_LIST_RC" -ne 0 ]; then
+    # An API failure (auth, rate limit, transient error) must never look like
+    # "no PR is open": the publish job's branch-preparation step treats an
+    # empty EXISTING_PR as license to delete and recreate the documentation
+    # branch whenever it already exists with no foreign commits -- exactly
+    # the steady state whenever a real docs PR IS open and this lookup just
+    # failed to report it. existing_pr_lookup_failed is the signal that step
+    # uses to refuse the destructive path instead of guessing.
+    EXISTING_PR_LOOKUP_FAILED="true"
+    note "gh pr list failed (exit ${PR_LIST_RC}); could not check for an existing docs-refresh pull request. Treating this as a lookup failure, not confirmation that no pull request is open."
+  fi
 else
+  # Same downstream risk as the failure branch above: EXISTING_PR ends up
+  # empty either way, so this must set the same signal, not just a note.
+  EXISTING_PR_LOOKUP_FAILED="true"
   note 'gh CLI unavailable; existing-PR lookup and the circuit-breaker count were skipped.'
 fi
 

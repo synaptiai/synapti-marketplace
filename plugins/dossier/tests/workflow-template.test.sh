@@ -85,6 +85,111 @@ assert_contains "continue-on-error: true" "$ROTATION_STEP_BLOCK" "the rotation-c
 # legitimate GitHub Actions expression that also contains `{{`.
 assert_not_contains "{{DOSSIER_" "$ROTATION_STEP_BLOCK" "the rotation-check step introduces no new template placeholder"
 
+# --- Rotation telemetry surfaced as job outputs (issue #148) -----------------
+# Without an id: and --github-output, the rotation step's fields land only in
+# stdout/the job summary -- human-readable per run, but not queryable across
+# runs, undercutting the whole point of an observation period. Both the step
+# itself and the policy job's outputs: map need updating.
+assert_contains "id: rotation" "$ROTATION_STEP_BLOCK" "the rotation-check step has its own step id"
+assert_contains "--github-output \"\$GITHUB_OUTPUT\"" "$ROTATION_STEP_BLOCK" "the rotation-check step passes --github-output so its fields land in GITHUB_OUTPUT, not just stdout/summary"
+
+# The script's own emitted keys (would_rotate/reason/age_days/age_source/
+# accumulated_files/accumulated_lines/rotation_policy) collide with two keys
+# the decide step ALREADY exposes on this same job (reason, docs_branch) --
+# confirmed by reading both the script's emit() calls and this job's existing
+# outputs: map. Every rotation-sourced output is prefixed rotation_ to avoid
+# that collision, and the redundant docs_branch (both steps resolve the
+# identical dossier.ci.rollingBranch config in the same job run) is dropped
+# rather than re-exposed under a new name.
+# Six fields keep their script-emitted name, prefixed on the output-map side
+# only. rotation_policy is the odd one out: the script itself already emits a
+# field literally named rotation_policy (see dossier-rotation-check.sh's own
+# finish()), so no further prefixing is applied there -- rotation_rotation_policy
+# would be wrong.
+for KEY in would_rotate reason age_days age_source accumulated_files accumulated_lines; do
+  assert_contains "rotation_${KEY}: \${{ steps.rotation.outputs.${KEY} }}" "$BODY" "policy job exposes rotation_${KEY} sourced from steps.rotation.outputs.${KEY}"
+done
+assert_contains "rotation_policy: \${{ steps.rotation.outputs.rotation_policy }}" "$BODY" "policy job exposes rotation_policy sourced from steps.rotation.outputs.rotation_policy"
+
+# No collision: the pre-existing decide-step-sourced reason/docs_branch
+# outputs must be completely unchanged -- this is a regression test for the
+# exact bug in this issue's own suggested fix (naming the new outputs
+# unmodified would have silently collided with these).
+assert_contains "reason: \${{ steps.decide.outputs.reason }}" "$BODY" "the pre-existing decide-step reason output is untouched"
+assert_contains "docs_branch: \${{ steps.decide.outputs.docs_branch }}" "$BODY" "the pre-existing decide-step docs_branch output is untouched"
+# Six-space indentation anchors this as its own outputs: map key rather than
+# matching as a substring of the legitimate "rotation_reason: ..." line above
+# (which also contains the literal text "reason: \${{ steps.rotation.outputs.reason }}").
+assert_not_contains "
+      reason: \${{ steps.rotation.outputs.reason }}" "$BODY" "no unprefixed rotation-sourced reason output was added (would collide with decide's own reason)"
+assert_not_contains "docs_branch: \${{ steps.rotation.outputs" "$BODY" "no rotation-sourced docs_branch output was added at all (redundant with decide's own docs_branch, dropped per design)"
+
+# --- existing_pr_lookup_failed guards the publish job's recreate path -------
+# A gh pr list failure (or gh unavailable) leaves existing_pr empty, which is
+# indistinguishable from a genuine "no PR open" result unless this signal is
+# threaded through. Left unguarded, the publish job's branch-preparation step
+# would treat that emptiness as license to delete and recreate the
+# documentation branch whenever it already exists with no foreign commits --
+# exactly the steady state whenever a real docs PR IS open and the lookup
+# just failed to report it (review finding on issues #143/#146/#148's own
+# bundle, not a scenario from either issue's original body).
+assert_contains "existing_pr_lookup_failed: \${{ steps.decide.outputs.existing_pr_lookup_failed }}" "$BODY" "policy job exposes existing_pr_lookup_failed sourced from the decide step"
+assert_contains "EXISTING_PR_LOOKUP_FAILED: \${{ needs.policy.outputs.existing_pr_lookup_failed }}" "$BODY" "the branch-preparation step reads existing_pr_lookup_failed from the policy job"
+# Checked against the safe value ("!= false"), never the unsafe one
+# ("= true") -- an absent/unexpected signal (e.g. a rendered workflow paired
+# with an older dossier-policy.sh that predates this field) must also refuse,
+# not silently fall through to the destructive recreate path
+# (/flow:review PR#153, security-skeptic SEC-1).
+assert_contains 'elif [ "$EXISTING_PR_LOOKUP_FAILED" != "false" ]; then' "$BODY" "the branch-preparation step's recreate path fails closed on anything but an explicit false"
+assert_not_contains 'elif [ "$EXISTING_PR_LOOKUP_FAILED" = "true" ]; then' "$BODY" "the fail-open form (checking for the unsafe value) is not present anywhere in the workflow"
+assert_contains "Refusing to delete and recreate a branch that might have review history attached" "$BODY" "a failed pull-request lookup refuses the destructive recreate path rather than guessing"
+
+# Extract only the branch-preparation step's own block, matching the
+# ROTATION_STEP_BLOCK technique above: from its own `- name:` line up to (but
+# not including) the next `- name:` line, so text elsewhere in the workflow
+# (e.g. a comment mentioning the same phrases) cannot produce a false pass.
+BRANCH_PREP_BLOCK=$(awk '
+  /- name: Prepare the documentation branch/ { f=1; print; next }
+  f && /^      - name:/ { exit }
+  f { print }
+' "$WF")
+
+# git rev-list's own exit status must be checked before its output is
+# consumed, and the failure path must refuse rather than silently treat the
+# failure as "no foreign commits" (/flow:review PR#153, error-handler
+# skeptic+verifier auto-consensus ERR-1). A plain assert_contains cannot
+# detect the check being present but unreachable (e.g. moved after the
+# consuming loop), so line order within the extracted block is verified
+# explicitly, matching the CLEANUP_LINE_NUM/UPLOAD_LINE_NUM technique above.
+assert_contains 'REV_LIST_RC=$?' "$BRANCH_PREP_BLOCK" "the branch-preparation step captures git rev-list's own exit status"
+assert_contains 'if [ "$REV_LIST_RC" -ne 0 ]; then' "$BRANCH_PREP_BLOCK" "the branch-preparation step checks the captured exit status"
+assert_contains "could not verify the documentation branch history" "$BRANCH_PREP_BLOCK" "a failed rev-list refuses with its own job-summary error block"
+
+REV_LIST_CAPTURE_LINE=$(printf '%s\n' "$BRANCH_PREP_BLOCK" | grep -n 'REV_LIST_RC=\$?' | head -1 | cut -d: -f1)
+REV_LIST_CHECK_LINE=$(printf '%s\n' "$BRANCH_PREP_BLOCK" | grep -n 'if \[ "\$REV_LIST_RC" -ne 0 \]; then' | head -1 | cut -d: -f1)
+REV_LIST_CONSUME_LINE=$(printf '%s\n' "$BRANCH_PREP_BLOCK" | grep -n 'for C in \$REV_LIST_OUT' | head -1 | cut -d: -f1)
+if [ -n "$REV_LIST_CAPTURE_LINE" ] && [ -n "$REV_LIST_CHECK_LINE" ] && [ -n "$REV_LIST_CONSUME_LINE" ] \
+  && [ "$REV_LIST_CAPTURE_LINE" -lt "$REV_LIST_CHECK_LINE" ] && [ "$REV_LIST_CHECK_LINE" -lt "$REV_LIST_CONSUME_LINE" ]; then
+  _dossier_assert_pass "git rev-list's exit status is checked before its output is consumed by the FOREIGN-commit loop"
+else
+  _dossier_assert_fail "git rev-list's exit status is not verifiably checked before its output is consumed"
+fi
+
+# The fail-closed existing_pr_lookup_failed elif must actually be reachable:
+# it must appear as its own arm of the SAME if/elif chain, strictly before
+# the chain's final `else` / `MODE=recreate` fallback -- otherwise a
+# misordering could leave the guard present in the file (satisfying a plain
+# assert_contains) but dead code that this destructive path never reaches.
+LOOKUP_FAILED_LINE=$(printf '%s\n' "$BRANCH_PREP_BLOCK" | grep -n 'elif \[ "\$EXISTING_PR_LOOKUP_FAILED" != "false" \]; then' | head -1 | cut -d: -f1)
+FOREIGN_ELIF_LINE=$(printf '%s\n' "$BRANCH_PREP_BLOCK" | grep -n 'elif \[ -n "\$FOREIGN" \]; then' | head -1 | cut -d: -f1)
+RECREATE_LINE=$(printf '%s\n' "$BRANCH_PREP_BLOCK" | grep -n 'MODE=recreate' | head -1 | cut -d: -f1)
+if [ -n "$FOREIGN_ELIF_LINE" ] && [ -n "$LOOKUP_FAILED_LINE" ] && [ -n "$RECREATE_LINE" ] \
+  && [ "$FOREIGN_ELIF_LINE" -lt "$LOOKUP_FAILED_LINE" ] && [ "$LOOKUP_FAILED_LINE" -lt "$RECREATE_LINE" ]; then
+  _dossier_assert_pass "existing_pr_lookup_failed is checked as a reachable arm of the if/elif chain, strictly before the recreate fallback"
+else
+  _dossier_assert_fail "existing_pr_lookup_failed guard is not verifiably ordered before the recreate fallback"
+fi
+
 # --- AC2: the policy job never closes a PR, deletes a branch, or creates a --
 # replacement branch, under any circumstance ---------------------------------
 # Scoped to the policy job block ONLY (reused from above) — the publish job

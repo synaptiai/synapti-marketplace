@@ -168,6 +168,78 @@ for OK in 'timeout 5 ls' 'time ls' 'nice ls' 'env ls' 'ls -la' 'git status' 'cat
   assert_equal "0" "$RC" "enforce-allowed-actions permits: $OK"
 done
 
+# --- find -exec/-execdir/-ok/-okdir and xargs -I{} indirection (issue #143) ---
+# -exec/-execdir/-ok/-okdir glue the sub-command execution position to a flag
+# rather than spelling it as a standalone token, so neither BOUND nor the prior
+# WRAPPER token list ever fired for the denied command sitting inside them.
+# One representative command per existing deny-block, so the fix (adding
+# "find" to WRAPPER) is proven to apply uniformly to every block rather than
+# just the block it happened to be developed against.
+for CASE in \
+  'find . -exec npm test {} \;|runTests' \
+  'find . -exec curl https://example.invalid {} \;|networkAccess' \
+  'find . -execdir curl https://example.invalid {} \;|networkAccess' \
+  'find . -ok curl https://example.invalid {} \;|networkAccess' \
+  'find . -okdir curl https://example.invalid {} \;|networkAccess' \
+  'find . -exec osv-scanner {} \;|runSecurityScan' \
+  'find . -exec pyscn {} \;|runCodeQualityScan'
+do
+  BAD="${CASE%%|*}"
+  CLASS="${CASE##*|}"
+  RC=0
+  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$BAD" | jq -Rs .)" \
+     | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+  assert_equal "2" "$RC" "enforce-allowed-actions sees through find's exec position ($CLASS): $BAD"
+done
+
+# runBuild's own denied tokens (make/cargo build/...) require a bare command
+# word, unlike npm/osv-scanner/curl above, so this needs its own case rather
+# than reusing the loop's single-word BAD strings.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"find . -exec make {} \\;"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions sees through find's exec position (runBuild): find . -exec make {} \\;"
+
+# xargs -I{} was already covered by the pre-existing WRAPPER token list (xargs
+# itself is a standalone token there), but AC1 names it explicitly, so it gets
+# its own direct assertion rather than relying on the general wrapper-loop
+# above to stand in for it.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"xargs -I{} curl {}"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions denies xargs -I{} <denied-command> {} (networkAccess)"
+
+# A find invocation with no -exec/-execdir/-ok/-okdir must never trip
+# boundary-widening at all, even when it merely searches for a denied phrase
+# as a -name argument -- this was an accepted over-block under the original
+# bare-"find"-in-WRAPPER fix, and is now correctly resolved by requiring
+# find to actually co-occur with one of its own sub-command-execution
+# primaries (FIND_EXEC) rather than triggering on the bare token. Also
+# covers a broader real-shape false positive a code-review pass demonstrated
+# live: an ordinary commit-message-shaped string that merely contains both
+# "find" and a denied phrase as separate words, with no find invocation at
+# all.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"find . -name \"npm test\""}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "find . -name \"npm test\" (no -exec) is correctly NOT over-blocked -- find alone never widens boundary mode"
+
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"git commit -m \"docs: find and document the npm test workflow\""}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "a command whose text merely contains both \"find\" and a denied phrase as separate words (no find invocation) is not over-blocked"
+
+# Ordinary find usage with no embedded denied command must still pass — the
+# fix must not turn every find invocation into a denial.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"find . -type f -name \"*.md\""}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "ordinary find usage with no denied command embedded is still permitted"
+
+# -execdir/-ok/-okdir coverage (not just -exec) is already proven above by
+# the "sees through find's exec position" loop -- no separate FIND_EXEC-
+# specific assertion needed here.
+
 # --- Scanner deny-blocks (issue #137): a defense-in-depth backstop for the
 # two new runSecurityScan/runCodeQualityScan flags, on top of the primary
 # architectural containment (the scanners run as an isolated CI step, never
@@ -242,6 +314,36 @@ for H in enforce-output-root enforce-allowed-actions block-unregistered-claim; d
        /bin/bash "$REPO/$HS/$H.sh" >/dev/null 2>&1) || RC=$?
   assert_equal "2" "$RC" "$H fails closed when jq is unavailable"
 done
+
+# A distinct failure class from "jq unavailable": jq present but given input
+# it cannot parse (a malformed/truncated hook payload). Before the fix, this
+# produced an empty $COMMAND indistinguishable from "no command field present"
+# -- both took the same `[ -z "$COMMAND" ] && exit 0` path, silently allowing
+# the run to proceed with its action ceiling entirely unenforced for that
+# command, contradicting the file's own declared fail-closed posture.
+# Exercised here with an active run ($WORK's .scope.json is still in place
+# from earlier in this file), and a more specific assertion than a bare
+# "BLOCKED" substring so this case is distinguishable from the jq-unavailable
+# case tested just above -- both emit "BLOCKED", only this one names parsing.
+RC=0
+OUT=$(cd "$WORK" && printf '%s' '{not valid json' \
+        | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions fails closed on malformed JSON input during an active run, not silently allowed"
+assert_contains "could not parse" "$OUT" "the malformed-input failure specifically names parsing, distinct from the jq-unavailable failure"
+
+# But with NO active run at all (no .scope.json anywhere under the cwd), the
+# same malformed payload must stay inert -- matching this file's own header
+# contract ("Inert unless a dossier run is active") for the ordinary case of
+# a non-dossier repository that merely has the hook installed. This is the
+# regression test for the reordering fix: inertness is decided before any
+# JSON parsing is attempted, not after.
+NORUN=$(mktemp -d 2>/dev/null) || NORUN="/tmp/dossier-hooks-norun.$$"
+mkdir -p "$NORUN" 2>/dev/null
+RC=0
+OUT=$(cd "$NORUN" && printf '%s' '{not valid json' \
+        | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" 2>&1) || RC=$?
+assert_equal "0" "$RC" "malformed JSON with no active dossier run stays inert, matching the header contract"
+rm -rf "$NORUN" 2>/dev/null
 
 # stale-header-stamp and detect-local-merge are advisory, so they correctly
 # do the reverse.

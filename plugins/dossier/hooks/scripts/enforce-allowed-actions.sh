@@ -18,8 +18,6 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 INPUT=$(cat)
-COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
-[ -z "$COMMAND" ] && exit 0
 
 # A missing resolver means the ceiling cannot be read, not that it is absent.
 # Keep the restrictive defaults and go on enforcing, matching what
@@ -33,6 +31,13 @@ RUN_SECURITY_SCAN="false"
 RUN_CODE_QUALITY_SCAN="false"
 if [ -x "$RESOLVER" ]; then
   OUTPUT_ROOT=$("$RESOLVER" --default "docs/dossier" dossier.project.outputRoot 2>/dev/null)
+  # A resolver call that fails (subshell exit != 0) or returns empty stdout
+  # must not be read as "output root is the empty string" -- $OUTPUT_ROOT
+  # feeds directly into the scope-file existence check below, and an empty
+  # value there resolves to an absolute-root path check that is essentially
+  # always false, silently disabling the entire action ceiling for this run
+  # with no error surfaced anywhere. Restrictive default, not an empty one.
+  [ -n "$OUTPUT_ROOT" ] || OUTPUT_ROOT="docs/dossier"
   RUN_TESTS=$("$RESOLVER" --default "false" dossier.engagement.allowedActions.runTests 2>/dev/null)
   RUN_BUILD=$("$RESOLVER" --default "false" dossier.engagement.allowedActions.runBuild 2>/dev/null)
   NETWORK=$("$RESOLVER"   --default "false" dossier.engagement.allowedActions.networkAccess 2>/dev/null)
@@ -40,7 +45,27 @@ if [ -x "$RESOLVER" ]; then
   RUN_CODE_QUALITY_SCAN=$("$RESOLVER" --default "false" dossier.engagement.allowedActions.runCodeQualityScan 2>/dev/null)
 fi
 
+# Inertness is decided entirely by OUTPUT_ROOT/the scope file, never by
+# $INPUT's own shape -- checked before any JSON parsing so that a malformed
+# hook payload on an ordinary, non-dossier command (no active run at all)
+# stays inert rather than blocking it, matching this file's own header
+# contract ("Inert unless a dossier run is active").
 [ -f "$OUTPUT_ROOT/00-control/.scope.json" ] || exit 0
+
+COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+JQ_RC=$?
+# A jq parse failure (malformed/truncated hook payload) is a different
+# failure than "no tool_input.command field present" -- both produce an
+# empty $COMMAND, but only the latter means "nothing to enforce". Checked
+# separately so a parse failure fails closed rather than silently taking the
+# same exit-0 path as a genuinely inert command, matching this file's own
+# declared fail-closed posture (see the jq-availability check above). Only
+# reachable once a run is confirmed active (see the scope-file check above).
+if [ "$JQ_RC" -ne 0 ]; then
+  echo "BLOCKED: dossier could not parse the tool input JSON to enforce its action ceiling." >&2
+  exit 2
+fi
+[ -z "$COMMAND" ] && exit 0
 
 deny() { # capability | setting | matched-class
   cat >&2 <<EOF
@@ -89,25 +114,61 @@ BOUND='(^|[;&|(]|^[[:space:]]*)[[:space:]]*([A-Za-z0-9_.-]*/)*'
 # shapes for it, not exotic ones — confirmed live that the pyscn deny check
 # below permits them while correctly blocking bare pyscn/osv-scanner and
 # env/sudo-wrapped forms.
+# xargs -I{} curl {} needed no change at all for issue #143: `xargs` was
+# already a WRAPPER token before that fix, so it already flips the whole
+# command into whitespace-boundary mode — confirmed live for the plain-text
+# case. A quoted/backslash-escaped denied word (`\xargs ...`, `"curl" ...`)
+# still bypasses this entirely, including for tokens already listed here —
+# see the Known limitation note below, tracked as issue #152.
 WRAPPER='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*(bash|sh|zsh|dash|ksh|env|command|exec|eval|xargs|nohup|setsid|stdbuf|script|time|timeout|nice|ionice|sudo|doas|su|python|python3)([[:space:]]|$)'
 
-# Known limitation, not fixed here (issue synaptiai/synapti-marketplace#143):
-# a command-embedded indirection that never spells one of the WRAPPER tokens
-# as its own word still bypasses the boundary anchor — `find . -exec curl
-# https://evil {} \;` and `xargs -I{} curl {}` are the confirmed cases:
-# `-exec`/`-I{}` are glued to a flag, not a standalone token, so neither
-# WRAPPER nor the strict BOUND anchor ever fires for the command inside
-# them. This does not widen the token list further — the WRAPPER list has
-# already been narrowed/widened several times and each round just moves the
-# hole, since the underlying problem is pattern-matching tokens rather than
-# parsing the actual shell grammar; a real fix needs the latter and is
-# tracked separately. Low real-world exposure: this
-# hook is a local/interactive backstop only — the CI refresh job's own
-# --allowedTools allowlist doesn't include `find`, `xargs`, or a bare shell
-# at all, so the automated pipeline has no reach here regardless.
+# find closes the issue #143 gap on its own regex, not by joining WRAPPER:
+# `find . -exec curl https://evil {} \;` (and -execdir/-ok/-okdir) glue the
+# sub-command execution position to a flag rather than spelling it as its own
+# token, so neither WRAPPER nor the strict BOUND anchor used to fire for the
+# command sitting inside them. This is classification by structure, not
+# enumeration: `find` combined with ANY of its four sub-command-execution
+# primaries (-exec/-execdir/-ok/-okdir) is what triggers boundary-widening —
+# no per-denied-command matching, and no per-flag matching beyond the fixed,
+# stable set find(1) itself defines. Requiring the co-occurrence (rather than
+# putting bare `find` in WRAPPER) is deliberately more precise than the
+# original fix: a bare `find . -name "npm test"` (or any other command that
+# merely contains the word "find" elsewhere, e.g. a commit message like
+# "docs: find and document the test workflow") is no longer swept into
+# boundary-widening mode at all, closing a broader false-positive class a
+# code-review pass demonstrated live on real-shaped input, not just this
+# file's own already-accepted narrow "npm test" tradeoff.
+FIND_EXEC='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*find([[:space:]]|$).*[[:space:]]-(exec|execdir|ok|okdir)([[:space:]]|$)'
+
+# Known limitation, deliberately not fixed here: this file's mechanism is
+# "does this command name introduce an arbitrary sub-command execution
+# position, regardless of which flag spells that out" — but only for the
+# finite set of command names actually listed above. Genuinely different
+# tools with the same shape (GNU `parallel`, `awk 'system(...)'`, `perl -e
+# "exec(...)"`, `watch -x`, and others) are not covered and have no WRAPPER
+# entry. This is not tracked as a separate issue: unlike `find`/`xargs`
+# above, which came from an actual review finding on real PR traffic, this
+# residual class has no concrete trigger yet.
+#
+# Second known limitation, tracked as issue #152 (not fixed here): quoting or
+# backslash-escaping a denied word defeats BOUND/WRAPPER entirely, for ANY
+# token listed anywhere in this file, not just `find`/`xargs` — confirmed
+# live (`"curl" https://evil`, `\curl https://evil`, and `\find . -exec curl
+# ... {} \;` all exit 0/permitted). This is broader and predates issue #143:
+# the SCAN/BOUND_ACTIVE quote-stripping normalization only runs after a
+# WRAPPER match is found, so a denied word spelled with a leading quote/
+# backslash never triggers that normalization in the first place. Fixing it
+# means normalizing unconditionally before any WRAPPER/FIND_EXEC/deny test,
+# not something scoped to this file's find/xargs change.
+#
+# Real-world exposure stays low regardless of either limitation above — this
+# hook is a local/interactive backstop only; the CI refresh
+# job's own --allowedTools allowlist doesn't include `find`, `xargs`,
+# `parallel`, `awk`, `perl`, or a bare shell at all, so the automated
+# pipeline has no reach here.
 SCAN="$COMMAND"
 BOUND_ACTIVE="$BOUND"
-if printf '%s' "$COMMAND" | grep -qE "$WRAPPER"; then
+if printf '%s' "$COMMAND" | grep -qE "$WRAPPER" || printf '%s' "$COMMAND" | grep -qE "$FIND_EXEC"; then
   # Quotes and command-substitution openers stop hiding a boundary, and every
   # whitespace run becomes one.
   SCAN=$(printf '%s' "$COMMAND" | sed -E -e 's,["'"'"'`],;,g' -e 's,\$\(,;,g')
@@ -115,7 +176,8 @@ if printf '%s' "$COMMAND" | grep -qE "$WRAPPER"; then
 fi
 
 # Every check below tests $SCAN with $BOUND_ACTIVE, which are $COMMAND and the
-# strict anchor unless a wrapper was found.
+# strict anchor unless a wrapper (or find's own exec-family primaries) was
+# found.
 
 if [ "$RUN_TESTS" != "true" ]; then
   if printf '%s' "$SCAN" | grep -qE "${BOUND_ACTIVE}(npm|yarn|pnpm|bun)[[:space:]]+(run[[:space:]]+)?test\b"; then

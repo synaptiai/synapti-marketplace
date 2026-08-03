@@ -154,9 +154,24 @@ jobs:
       base_source: ${{ steps.decide.outputs.base_source }}
       docs_branch: ${{ steps.decide.outputs.docs_branch }}
       existing_pr: ${{ steps.decide.outputs.existing_pr }}
+      existing_pr_lookup_failed: ${{ steps.decide.outputs.existing_pr_lookup_failed }}
       max_turns: ${{ steps.decide.outputs.max_turns }}
       model_arg: ${{ steps.decide.outputs.model_arg }}
       stale_docs: ${{ steps.decide.outputs.stale_docs }}
+      # Rotation telemetry (issue #148): prefixed rotation_* to avoid colliding
+      # with this same job's decide-step-sourced reason/docs_branch above --
+      # both scripts resolve docs_branch from the identical
+      # dossier.ci.rollingBranch config in the same job run, so rotation's own
+      # copy is not re-exposed here at all. No consumer reads these yet; this
+      # is exposure only, so a real observation period produces queryable
+      # data (issue #138 AC4) rather than N job summaries nobody aggregates.
+      rotation_would_rotate: ${{ steps.rotation.outputs.would_rotate }}
+      rotation_reason: ${{ steps.rotation.outputs.reason }}
+      rotation_age_days: ${{ steps.rotation.outputs.age_days }}
+      rotation_age_source: ${{ steps.rotation.outputs.age_source }}
+      rotation_accumulated_files: ${{ steps.rotation.outputs.accumulated_files }}
+      rotation_accumulated_lines: ${{ steps.rotation.outputs.accumulated_lines }}
+      rotation_policy: ${{ steps.rotation.outputs.rotation_policy }}
     steps:
       # fetch-depth: 0 in every job. The watermark can be arbitrarily far back,
       # and a shallow clone turns "resolve the range" into "fail confusingly".
@@ -217,6 +232,7 @@ jobs:
       # ::error annotation and $GITHUB_STEP_SUMMARY write both happen before
       # the script's own exit.
       - name: Check whether the documentation branch would rotate
+        id: rotation
         continue-on-error: true
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
@@ -225,6 +241,7 @@ jobs:
           set -uo pipefail
           chmod +x "$DOSSIER_BIN"/*.sh
           "$DOSSIER_BIN/dossier-rotation-check.sh" \
+            --github-output "$GITHUB_OUTPUT" \
             --summary "$GITHUB_STEP_SUMMARY"
 
       - name: Build the evidence bundle
@@ -759,6 +776,7 @@ jobs:
         env:
           DOCS_BRANCH: ${{ needs.policy.outputs.docs_branch }}
           EXISTING_PR: ${{ needs.policy.outputs.existing_pr }}
+          EXISTING_PR_LOOKUP_FAILED: ${{ needs.policy.outputs.existing_pr_lookup_failed }}
           BASE_SHA: ${{ needs.policy.outputs.base_sha }}
           HEAD_SHA: ${{ needs.policy.outputs.head_sha }}
           BASE_REF: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
@@ -788,8 +806,43 @@ jobs:
             # identity created the commit, and it is trivially spoofable; a
             # trailer we write ourselves on every commit is not a stronger
             # secret, but it is a far more reliable label.
+            #
+            # git rev-list's own exit status is captured explicitly: an
+            # unrelated failure (object-store issue, disk pressure) must not
+            # look like "genuinely no foreign commits" -- that is the exact
+            # "empty result treated as confirmed-safe" bug class the
+            # EXISTING_PR_LOOKUP_FAILED guard below exists to close, one hop
+            # earlier in this same step.
             FOREIGN=''
-            for C in $(git rev-list "origin/${BASE_REF}..origin/${DOCS_BRANCH}" 2>/dev/null); do
+            # stderr captured separately from stdout -- on the success path,
+            # any warning git writes to stderr (ambiguous-refname, reflog-gap,
+            # advice text) must never be merged into $REV_LIST_OUT: the loop
+            # below word-splits it unquoted, and a stray warning word treated
+            # as a commit SHA would fail `git show`, be silently misread as
+            # foreign (no Dossier-Generated trailer found), and land in the
+            # refusal message the operator actually reads.
+            REV_LIST_ERR=$(mktemp 2>/dev/null) || REV_LIST_ERR="${RUNNER_TEMP:-/tmp}/dossier-rev-list-err.$$"
+            REV_LIST_OUT=$(git rev-list "origin/${BASE_REF}..origin/${DOCS_BRANCH}" 2>"$REV_LIST_ERR")
+            REV_LIST_RC=$?
+            if [ "$REV_LIST_RC" -ne 0 ]; then
+              echo "::error title=Dossier::Could not enumerate commits on ${DOCS_BRANCH} to check for foreign (non-Dossier-Generated) history. Refusing to guess."
+              {
+                echo '### Dossier publish stopped: could not verify the documentation branch history'
+                echo
+                echo "\`git rev-list\` failed while checking \`${DOCS_BRANCH}\` for commits this job"
+                echo 'did not write, so it cannot be confirmed safe to delete and recreate.'
+                echo
+                echo '```'
+                cat "$REV_LIST_ERR" 2>/dev/null
+                echo '```'
+                echo
+                echo 'Nothing was deleted. Re-run the workflow once this can be checked.'
+              } >> "$GITHUB_STEP_SUMMARY"
+              rm -f "$REV_LIST_ERR" 2>/dev/null
+              exit 1
+            fi
+            rm -f "$REV_LIST_ERR" 2>/dev/null
+            for C in $REV_LIST_OUT; do
               if ! git show -s --format=%B "$C" | grep -qiE '^Dossier-Generated:[[:space:]]*true[[:space:]]*$'; then
                 FOREIGN="${FOREIGN} ${C}"
               fi
@@ -801,12 +854,18 @@ jobs:
                 echo "::notice title=Dossier::The documentation branch carries commits this job did not write. They are preserved; the refresh lands on top of them."
               fi
             elif [ -n "$FOREIGN" ]; then
-              echo "::error title=Dossier::The documentation branch has no open pull request but carries commits without a Dossier-Generated trailer."
+              echo "::error title=Dossier::The documentation branch has no confirmed open pull request but carries commits without a Dossier-Generated trailer."
               {
                 echo '### Dossier publish stopped: unrecognised commits on the documentation branch'
                 echo
-                echo "\`${DOCS_BRANCH}\` has no open pull request, so it would normally be recreated"
-                echo 'from the base branch. It carries commits this job did not write:'
+                if [ "$EXISTING_PR_LOOKUP_FAILED" = "false" ]; then
+                  echo "\`${DOCS_BRANCH}\` has no open pull request, so it would normally be recreated"
+                  echo 'from the base branch. It carries commits this job did not write:'
+                else
+                  echo "\`${DOCS_BRANCH}\`'s pull-request lookup failed (or gh was unavailable), so it is"
+                  echo 'not confirmed whether an open pull request exists. Either way, it carries'
+                  echo 'commits this job did not write:'
+                fi
                 echo
                 echo '```'
                 for C in $FOREIGN; do git log -1 --format='%h %an %s' "$C"; done
@@ -814,6 +873,35 @@ jobs:
                 echo
                 echo 'Nothing was deleted. Merge or move that work, or delete the branch yourself'
                 echo 'once you are sure it is finished, then re-run this workflow.'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            elif [ "$EXISTING_PR_LOOKUP_FAILED" != "false" ]; then
+              # Checked against the explicit safe value ("false"), not against
+              # the unsafe one ("true") -- an absent/unexpected value (e.g. a
+              # rendered workflow paired with a dossier-policy.sh pinned to a
+              # tag from before this field existed at all, which this
+              # plugin's own version-decoupling design allows) must also
+              # refuse, not silently fall through to the destructive path.
+              #
+              # An empty EXISTING_PR here is uninformative, not a confirmed
+              # "no PR is open" -- the policy job's own lookup failed or gh
+              # was unavailable. This is exactly the steady state whenever a
+              # real docs PR IS open and the lookup just couldn't see it:
+              # deleting and recreating the branch would discard the commits
+              # that PR is reviewing. Refuse, matching the FOREIGN-commits
+              # refusal above rather than silently guessing.
+              echo "::error title=Dossier::Could not confirm whether ${DOCS_BRANCH} has an open pull request (the lookup failed, gh was unavailable, or the signal was unexpectedly absent). Refusing to delete and recreate a branch that might have review history attached."
+              {
+                echo '### Dossier publish stopped: could not confirm the documentation branch has no open pull request'
+                echo
+                echo "\`${DOCS_BRANCH}\` exists and carries no unrecognised commits, which would normally mean"
+                echo "it is safe to recreate from the base branch. But the pull-request lookup that"
+                echo 'decision depends on failed, gh was unavailable, or the signal was unexpectedly'
+                echo 'absent -- an empty result cannot be trusted as "no pull request is open" unless'
+                echo 'it is explicitly confirmed.'
+                echo
+                echo 'Nothing was deleted. Re-run the workflow once the lookup can succeed, or verify'
+                echo 'by hand whether a pull request is open before deleting the branch yourself.'
               } >> "$GITHUB_STEP_SUMMARY"
               exit 1
             else
