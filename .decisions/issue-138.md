@@ -184,3 +184,19 @@ PASS — 3 tasks reviewed (implementation-planner agent). Task 59 (script + work
 <!-- auto-log: 2026-08-03 01:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
 
 <!-- auto-log: 2026-08-03 01:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:53 commit "fix(dossier): route config-resolver infra failures through die_infra" -->
+
+<!-- auto-log: 2026-08-03 01:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-rotation-check.sh -->
+
+<!-- auto-log: 2026-08-03 01:55 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 01:57 commit "fix(dossier): route config-resolver infra failures through die_infra" -->
+
+<!-- auto-log: 2026-08-03 01:57 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 01:58 commit "fix(dossier): route config-resolver infra failures through die_infra" -->
+
+<!-- auto-log: 2026-08-03 01:58 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 01:59 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->

@@ -527,4 +527,67 @@ assert_equal "1" "$RC18" "config resolver infra failure: exits 1 (a hard infrast
 assert_contains "could not resolve" "$OUT18" "config resolver infra failure: die_infra names the actual cause, not a generic empty-override note"
 assert_not_contains "would_rotate=false" "$OUT18" "config resolver infra failure: never emits a confident would_rotate result"
 
+# =============================================================================
+# 19. An unrecognized rotation policy value must (a) be treated as disabled,
+#     with its own distinct reason (not silently merged into "none"), and
+#     (b) have any markdown-active syntax in the value neutralized in the
+#     job summary's Notes section -- regression test for two review findings
+#     (UnrecognizedPolicyUntested: the fallback arm had no test at all;
+#     SEC-1/verifier: note() didn't neutralize markdown link/bold/heading
+#     syntax the way table cells already do).
+# =============================================================================
+F19=$(setup_fixture)
+push_docs_branch_commit "$F19" "docs/dossier" "$(day_offset 1)"
+NOGH_PATH19=$(no_gh_path)
+SUMMARY19=$(_dossier_safe_mktemp_dir "rotation-summary19")/summary.md
+WEIRD_POLICY='biweekly [click here](https://evil.example)'
+OUT19=$(cd "$F19" && env PATH="$NOGH_PATH19" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION="$WEIRD_POLICY" "$SCRIPT" --summary "$SUMMARY19" 2>&1)
+RC19=$?
+assert_equal "0" "$RC19" "unrecognized rotation policy: exits 0"
+assert_equal "false" "$(get "$OUT19" would_rotate)" "unrecognized rotation policy: treated as disabled"
+assert_contains "not recognised" "$(get "$OUT19" reason)" "unrecognized rotation policy: reason names it as unrecognized, distinct from the 'none' (deliberately disabled) case"
+# Scoped to the Notes section specifically -- the table's "Rotation policy"
+# row ALREADY wraps its value in backticks regardless of this fix (that's a
+# separate, pre-existing safe path), so a file-wide grep would pass even
+# without the fix by matching the table row instead of the actually
+# vulnerable bullet line.
+NOTES_SECTION19=$(awk '/^Notes:$/{found=1; next} found' "$SUMMARY19" 2>/dev/null)
+if printf '%s\n' "$NOTES_SECTION19" | grep -qE '^- `.*\[click here\]\(https://evil\.example\).*`$'; then
+  _dossier_assert_pass "unrecognized rotation policy: the Notes bullet is backtick-wrapped, neutralizing the embedded link syntax"
+else
+  _dossier_assert_fail "unrecognized rotation policy: the Notes bullet is not backtick-wrapped as expected"
+fi
+if printf '%s\n' "$NOTES_SECTION19" | grep -qF '](https://evil.example)' && ! printf '%s\n' "$NOTES_SECTION19" | grep -qE '^- `.*\[click here\]\(https://evil\.example\).*`$'; then
+  _dossier_assert_fail "unrecognized rotation policy: the Notes section renders a live markdown link instead of an inert code span"
+else
+  _dossier_assert_pass "unrecognized rotation policy: the Notes section does not render a live markdown link"
+fi
+
+# =============================================================================
+# 20. The --github-output flag's newline-injection defense (emit()'s
+#     control-character stripping, which is the only thing preventing a
+#     crafted config value from forging additional key=value pairs for a
+#     later CI step to read) had no test at all -- regression test for a
+#     review finding (TEST2, raised independently by both review lenses).
+# =============================================================================
+F20=$(setup_fixture)
+NOGH_PATH20=$(no_gh_path)
+GHOUT20=$(_dossier_safe_mktemp_dir "rotation-ghout20")/github_output
+: > "$GHOUT20"
+INJECT_BRANCH='docs/dossier
+fake_output=INJECTED
+real='
+OUT20=$(cd "$F20" && env PATH="$NOGH_PATH20" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH="$INJECT_BRANCH" "$SCRIPT" --github-output "$GHOUT20" 2>&1)
+RC20=$?
+assert_equal "0" "$RC20" "github-output newline injection attempt: still exits 0"
+assert_equal "docs/dossierfake_output=INJECTEDreal=" "$(get "$OUT20" docs_branch)" "github-output newline injection attempt: stdout's own docs_branch field is collapsed the same way as the --github-output file"
+GHOUT_LINES20=$(wc -l < "$GHOUT20" | tr -d ' ')
+assert_equal "8" "$GHOUT_LINES20" "github-output newline injection attempt: exactly the 8 real fields written, no forged extra key=value pairs"
+if grep -q '^fake_output=INJECTED$' "$GHOUT20" 2>/dev/null; then
+  _dossier_assert_fail "github-output newline injection attempt: a forged fake_output key was written to \$GITHUB_OUTPUT"
+else
+  _dossier_assert_pass "github-output newline injection attempt: no forged key was written to \$GITHUB_OUTPUT"
+fi
+assert_contains "docs_branch=docs/dossierfake_output=INJECTEDreal=" "$(cat "$GHOUT20")" "github-output newline injection attempt: the embedded newlines collapse onto the single docs_branch line rather than forging new lines"
+
 _dossier_test_summary

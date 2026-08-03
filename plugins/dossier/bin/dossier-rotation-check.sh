@@ -82,7 +82,14 @@ sanitize_md() {
   printf '%s' "$1" | LC_ALL=C tr -d '\000-\037' | tr -d '|`' | tr '\n' ' '
 }
 
-note() { NOTES="${NOTES}- $(sanitize_md "$1")
+# sanitize_md() strips backtick/pipe/control chars but does not strip
+# markdown-active syntax like [text](url), *bold*, or #heading -- table
+# cells neutralize that by wrapping in backticks (GFM renders a backtick
+# span as inert code), but a plain bullet does not get that wrapping for
+# free. Do it here too, so a config-derived note (DOCS_BRANCH/ROTATION_POLICY
+# flow through this from committed, PR-editable config) can't render a
+# spoofed link/heading in the job summary's Notes section.
+note() { NOTES="${NOTES}- \`$(sanitize_md "$1")\`
 "; }
 
 # $GITHUB_OUTPUT is parsed line by line as key=value, so a value carrying a
