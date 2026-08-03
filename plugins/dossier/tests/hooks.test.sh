@@ -303,6 +303,18 @@ for H in enforce-output-root enforce-allowed-actions block-unregistered-claim; d
   assert_equal "2" "$RC" "$H fails closed when jq is unavailable"
 done
 
+# A distinct failure class from "jq unavailable": jq present but given input
+# it cannot parse (a malformed/truncated hook payload). Before the fix, this
+# produced an empty $COMMAND indistinguishable from "no command field present"
+# -- both took the same `[ -z "$COMMAND" ] && exit 0` path, silently allowing
+# the run to proceed with its action ceiling entirely unenforced for that
+# command, contradicting the file's own declared fail-closed posture.
+RC=0
+OUT=$(cd "$WORK" && printf '%s' '{not valid json' \
+        | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" 2>&1) || RC=$?
+assert_equal "2" "$RC" "enforce-allowed-actions fails closed on malformed JSON input, not silently allowed"
+assert_contains "BLOCKED" "$OUT" "the malformed-input failure names the block"
+
 # stale-header-stamp and detect-local-merge are advisory, so they correctly
 # do the reverse.
 RC=0

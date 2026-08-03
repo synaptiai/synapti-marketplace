@@ -19,6 +19,17 @@ fi
 
 INPUT=$(cat)
 COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+JQ_RC=$?
+# A jq parse failure (malformed/truncated hook payload) is a different
+# failure than "no tool_input.command field present" -- both produce an
+# empty $COMMAND, but only the latter means "nothing to enforce". Checked
+# separately so a parse failure fails closed rather than silently taking the
+# same exit-0 path as a genuinely inert command, matching this file's own
+# declared fail-closed posture (see the jq-availability check above).
+if [ "$JQ_RC" -ne 0 ]; then
+  echo "BLOCKED: dossier could not parse the tool input JSON to enforce its action ceiling." >&2
+  exit 2
+fi
 [ -z "$COMMAND" ] && exit 0
 
 # A missing resolver means the ceiling cannot be read, not that it is absent.
@@ -100,7 +111,10 @@ BOUND='(^|[;&|(]|^[[:space:]]*)[[:space:]]*([A-Za-z0-9_.-]*/)*'
 # addition, with no per-flag matching added anywhere. `xargs -I{} curl {}`
 # needed no change at all: `xargs` was already a WRAPPER token before this
 # fix, so it already flips the whole command into whitespace-boundary mode —
-# confirmed live, not assumed.
+# confirmed live for the plain-text case. A quoted/backslash-escaped denied
+# word (`\find . -exec curl ... {} \;`, `"curl" ...`) still bypasses this
+# entirely, including for tokens already listed here — see the Known
+# limitation note below, tracked as issue #152.
 WRAPPER='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*(find|bash|sh|zsh|dash|ksh|env|command|exec|eval|xargs|nohup|setsid|stdbuf|script|time|timeout|nice|ionice|sudo|doas|su|python|python3)([[:space:]]|$)'
 
 # Accepted cost of the find fix above: since WRAPPER-mode makes every
@@ -119,8 +133,21 @@ WRAPPER='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*(find|bash|sh|zsh|
 # "exec(...)"`, `watch -x`, and others) are not covered and have no WRAPPER
 # entry. This is not tracked as a separate issue: unlike `find`/`xargs`
 # above, which came from an actual review finding on real PR traffic, this
-# residual class has no concrete trigger yet. Real-world exposure stays low
-# regardless — this hook is a local/interactive backstop only; the CI refresh
+# residual class has no concrete trigger yet.
+#
+# Second known limitation, tracked as issue #152 (not fixed here): quoting or
+# backslash-escaping a denied word defeats BOUND/WRAPPER entirely, for ANY
+# token listed anywhere in this file, not just `find`/`xargs` — confirmed
+# live (`"curl" https://evil`, `\curl https://evil`, and `\find . -exec curl
+# ... {} \;` all exit 0/permitted). This is broader and predates issue #143:
+# the SCAN/BOUND_ACTIVE quote-stripping normalization only runs after a
+# WRAPPER match is found, so a denied word spelled with a leading quote/
+# backslash never triggers that normalization in the first place. Fixing it
+# means normalizing unconditionally before any WRAPPER/deny test, not
+# something scoped to this file's find/xargs change.
+#
+# Real-world exposure stays low regardless of either limitation above — this
+# hook is a local/interactive backstop only; the CI refresh
 # job's own --allowedTools allowlist doesn't include `find`, `xargs`,
 # `parallel`, `awk`, `perl`, or a bare shell at all, so the automated
 # pipeline has no reach here.

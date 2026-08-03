@@ -124,6 +124,20 @@ assert_not_contains "
       reason: \${{ steps.rotation.outputs.reason }}" "$BODY" "no unprefixed rotation-sourced reason output was added (would collide with decide's own reason)"
 assert_not_contains "docs_branch: \${{ steps.rotation.outputs" "$BODY" "no rotation-sourced docs_branch output was added at all (redundant with decide's own docs_branch, dropped per design)"
 
+# --- existing_pr_lookup_failed guards the publish job's recreate path -------
+# A gh pr list failure (or gh unavailable) leaves existing_pr empty, which is
+# indistinguishable from a genuine "no PR open" result unless this signal is
+# threaded through. Left unguarded, the publish job's branch-preparation step
+# would treat that emptiness as license to delete and recreate the
+# documentation branch whenever it already exists with no foreign commits --
+# exactly the steady state whenever a real docs PR IS open and the lookup
+# just failed to report it (review finding on issues #143/#146/#148's own
+# bundle, not a scenario from either issue's original body).
+assert_contains "existing_pr_lookup_failed: \${{ steps.decide.outputs.existing_pr_lookup_failed }}" "$BODY" "policy job exposes existing_pr_lookup_failed sourced from the decide step"
+assert_contains "EXISTING_PR_LOOKUP_FAILED: \${{ needs.policy.outputs.existing_pr_lookup_failed }}" "$BODY" "the branch-preparation step reads existing_pr_lookup_failed from the policy job"
+assert_contains 'elif [ "$EXISTING_PR_LOOKUP_FAILED" = "true" ]; then' "$BODY" "the branch-preparation step's recreate path checks existing_pr_lookup_failed before proceeding"
+assert_contains "Refusing to delete and recreate a branch that might have review history attached" "$BODY" "a failed pull-request lookup refuses the destructive recreate path rather than guessing"
+
 # --- AC2: the policy job never closes a PR, deletes a branch, or creates a --
 # replacement branch, under any circumstance ---------------------------------
 # Scoped to the policy job block ONLY (reused from above) — the publish job

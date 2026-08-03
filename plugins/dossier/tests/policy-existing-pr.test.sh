@@ -169,5 +169,51 @@ OUT3=$(run_policy "$STUB3")
 RC3=$?
 assert_equal "0" "$RC3" "only a same-repo PR exists: dossier-policy.sh still exits 0"
 assert_equal "42" "$(get "$OUT3" existing_pr)" "only a same-repo PR exists: it is correctly selected"
+assert_equal "false" "$(get "$OUT3" existing_pr_lookup_failed)" "a genuinely successful lookup reports existing_pr_lookup_failed=false"
+
+# =============================================================================
+# 4. A gh pr list failure (auth/rate-limit/transient API error) must be
+#    distinguishable from a genuine "no PR found" result. Left unguarded, this
+#    is not merely a missed telemetry signal: the publish job's "Prepare the
+#    documentation branch" step treats an empty existing_pr as license to
+#    delete and recreate the documentation branch (git push origin --delete)
+#    whenever the branch already exists with no foreign commits -- the exact
+#    steady state whenever a real docs PR is open and gh only failed to
+#    report it. existing_pr_lookup_failed is the signal that step uses to
+#    refuse that path rather than silently guessing "no PR".
+# =============================================================================
+_dossier_require_mktemp_dir STUB4 "policy-gh-stub-failure"
+cat > "$STUB4/gh" <<'STUBEOF'
+#!/usr/bin/env bash
+exit 1
+STUBEOF
+chmod +x "$STUB4/gh"
+
+OUT4=$(run_policy "$STUB4")
+RC4=$?
+assert_equal "0" "$RC4" "gh pr list failure: dossier-policy.sh still exits 0 (advisory, does not hard-fail the policy job)"
+assert_equal "" "$(get "$OUT4" existing_pr)" "gh pr list failure: existing_pr is empty (no data), not a guessed value"
+assert_equal "true" "$(get "$OUT4" existing_pr_lookup_failed)" "gh pr list failure: existing_pr_lookup_failed distinguishes this from a genuine no-PR result"
+
+# =============================================================================
+# 5. gh entirely unavailable on PATH carries the exact same downstream risk
+#    as scenario 4 (existing_pr ends up empty either way) and must set the
+#    same signal -- this is the pre-existing "gh CLI unavailable" branch,
+#    not a new code path.
+# =============================================================================
+# gh and git/jq live in the same real directory on this machine (Homebrew),
+# so a PATH restriction has to keep git/jq reachable by name (via symlinks
+# into an otherwise-empty directory) while genuinely excluding gh, rather
+# than just omitting one directory that happens to hold all three.
+_dossier_require_mktemp_dir STUB5 "policy-no-gh"
+ln -s "$(command -v git)" "$STUB5/git"
+ln -s "$(command -v jq)" "$STUB5/jq"
+OUT5=$(cd "$FIXTURE" && env PATH="$STUB5:/usr/bin:/bin" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+    EVT=schedule PR_LABELS="" PR_HEAD_REF="" PR_ACTOR="" PR_NUMBER="" \
+    "$POLICY" --base "$WM" 2>&1)
+RC5=$?
+assert_equal "0" "$RC5" "gh unavailable: dossier-policy.sh still exits 0"
+assert_equal "" "$(get "$OUT5" existing_pr)" "gh unavailable: existing_pr is empty"
+assert_equal "true" "$(get "$OUT5" existing_pr_lookup_failed)" "gh unavailable: existing_pr_lookup_failed is also true (same downstream risk as a failed lookup)"
 
 _dossier_test_summary

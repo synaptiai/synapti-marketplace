@@ -1,6 +1,6 @@
 ---
 issue: 146
-created: '2026-08-03T11:53:19Z'
+created: '2026-08-03T12:01:00Z'
 ---
 # Issue #146 — dossier-policy.sh: gh pr list --head is unscoped by repo
 
@@ -81,3 +81,19 @@ and the exact test technique to port.
 - `shellcheck -S warning -x plugins/dossier/bin/dossier-policy.sh
   plugins/dossier/tests/policy-existing-pr.test.sh` — clean, exit 0.
 - `bash -n` on both modified/new files — clean.
+
+### Review-driven follow-up (P1, fixed in the same PR)
+
+The error-handler-inspector review pass on the bundle PR found that this fix's own
+`gh pr list` call swallows the lookup's exit code — pre-existing shape, not introduced
+here, but now demonstrably reachable: a transient `gh` failure leaves `existing_pr`
+empty, indistinguishable from a genuine no-PR result, and the publish job's branch-
+preparation step treats that emptiness as license to delete and recreate the
+documentation branch whenever it already exists with no foreign commits — exactly the
+steady state whenever a real docs PR IS open. Fixed by adding a new
+`existing_pr_lookup_failed` output (set on both a `gh pr list` failure and `gh`
+unavailability) and a matching guard in the publish job that refuses the destructive
+recreate path when the signal is set, rather than delete-and-rebuild — same posture as
+the file's own FOREIGN-commits refusal a few lines above it. New test scenarios 4/5 in
+`policy-existing-pr.test.sh`; new static assertions in `workflow-template.test.sh`.
+Final: `bash plugins/dossier/tests/run.sh policy-existing-pr.test.sh` — 13/13.

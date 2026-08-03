@@ -123,6 +123,24 @@ live script, before this skill was invoked)._
 
 <!-- auto-log: 2026-08-03 13:57 Write /Users/danielbentes/synapti-marketplace/.flow/runs/2026-08-03T115319Z-issue-143/run.yaml -->
 
+## Acceptance Criteria (as validated)
+
+1. `find ... -exec <denied-command> ...`, `find ... -execdir <denied-command> ...`, and
+   `xargs -I{} <denied-command> {}` (and their common flag variants) are correctly denied
+   when the corresponding capability is off, for every existing deny-block (`runTests`,
+   `runBuild`, `networkAccess`, `runSecurityScan`, `runCodeQualityScan`), not just
+   newly-added ones. Verification: `bash plugins/dossier/tests/run.sh hooks.test.sh`
+2. The fix does not regress any existing passing case in `plugins/dossier/tests/hooks.test.sh`
+   (the wrapper-indirection and grep-about-a-command cases especially). Verification: same
+   command, full file green (94/94, up from 85/85 pre-fix).
+3. The approach is documented as classifying command structure rather than enumerating more
+   literal indirection tokens, so a future new indirection shape doesn't require another
+   narrowing/widening round. Verification: `grep -n "find"
+   plugins/dossier/hooks/scripts/enforce-allowed-actions.sh` + manual read of the revised
+   comment block.
+4. Covered by new test cases in `hooks.test.sh` for each denied-command class named above.
+   Verification: same command as AC1/AC2.
+
 ## Stranger Test
 
 PASS — 5 tasks reviewed. Each names exact file paths/lines, the exact regex/field
@@ -193,3 +211,47 @@ explicitly in the FlowGoal contract rather than silently treated as fully automa
 <!-- auto-log: 2026-08-03 14:18 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/verdict-issue-143.json -->
 
 <!-- auto-log: 2026-08-03 14:26 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/issue-143-lifecycle-achieved.yaml -->
+
+<!-- auto-log: 2026-08-03 14:28 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/cmd_backslash.txt -->
+
+<!-- auto-log: 2026-08-03 14:41 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/policy-existing-pr.test.sh -->
+
+<!-- auto-log: 2026-08-03 14:42 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/policy-existing-pr.test.sh -->
+
+<!-- auto-log: 2026-08-03 14:42 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-policy.sh -->
+
+<!-- auto-log: 2026-08-03 14:42 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-policy.sh -->
+
+<!-- auto-log: 2026-08-03 14:42 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-policy.sh -->
+
+<!-- auto-log: 2026-08-03 14:42 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-policy.sh -->
+
+<!-- auto-log: 2026-08-03 14:43 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-policy.sh -->
+
+<!-- auto-log: 2026-08-03 14:43 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-policy.sh -->
+
+<!-- auto-log: 2026-08-03 14:43 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-08-03 14:44 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-08-03 14:44 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-08-03 14:44 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/workflow-template.test.sh -->
+
+<!-- auto-log: 2026-08-03 14:46 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/hooks.test.sh -->
+
+<!-- auto-log: 2026-08-03 14:47 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/enforce-allowed-actions.sh -->
+
+<!-- auto-log: 2026-08-03 14:48 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/enforce-allowed-actions.sh -->
+
+<!-- auto-log: 2026-08-03 14:49 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/enforce-allowed-actions.sh -->
+
+<!-- auto-log: 2026-08-03 14:49 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-146.md -->
+
+<!-- auto-log: 2026-08-03 14:49 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-148.md -->
+
+<!-- auto-log: 2026-08-03 14:50 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-143.md -->
+
+<!-- auto-log: 2026-08-03 14:55 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-146.md -->
+
+<!-- auto-log: 2026-08-03 14:55 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-148.md -->

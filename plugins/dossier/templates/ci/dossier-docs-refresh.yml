@@ -154,6 +154,7 @@ jobs:
       base_source: ${{ steps.decide.outputs.base_source }}
       docs_branch: ${{ steps.decide.outputs.docs_branch }}
       existing_pr: ${{ steps.decide.outputs.existing_pr }}
+      existing_pr_lookup_failed: ${{ steps.decide.outputs.existing_pr_lookup_failed }}
       max_turns: ${{ steps.decide.outputs.max_turns }}
       model_arg: ${{ steps.decide.outputs.model_arg }}
       stale_docs: ${{ steps.decide.outputs.stale_docs }}
@@ -775,6 +776,7 @@ jobs:
         env:
           DOCS_BRANCH: ${{ needs.policy.outputs.docs_branch }}
           EXISTING_PR: ${{ needs.policy.outputs.existing_pr }}
+          EXISTING_PR_LOOKUP_FAILED: ${{ needs.policy.outputs.existing_pr_lookup_failed }}
           BASE_SHA: ${{ needs.policy.outputs.base_sha }}
           HEAD_SHA: ${{ needs.policy.outputs.head_sha }}
           BASE_REF: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
@@ -830,6 +832,27 @@ jobs:
                 echo
                 echo 'Nothing was deleted. Merge or move that work, or delete the branch yourself'
                 echo 'once you are sure it is finished, then re-run this workflow.'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            elif [ "$EXISTING_PR_LOOKUP_FAILED" = "true" ]; then
+              # An empty EXISTING_PR here is uninformative, not a confirmed
+              # "no PR is open" -- the policy job's own lookup failed or gh
+              # was unavailable. This is exactly the steady state whenever a
+              # real docs PR IS open and the lookup just couldn't see it:
+              # deleting and recreating the branch would discard the commits
+              # that PR is reviewing. Refuse, matching the FOREIGN-commits
+              # refusal above rather than silently guessing.
+              echo "::error title=Dossier::Could not confirm whether ${DOCS_BRANCH} has an open pull request (the lookup failed or gh was unavailable). Refusing to delete and recreate a branch that might have review history attached."
+              {
+                echo '### Dossier publish stopped: could not confirm the documentation branch has no open pull request'
+                echo
+                echo "\`${DOCS_BRANCH}\` exists and carries no unrecognised commits, which would normally mean"
+                echo "it is safe to recreate from the base branch. But the pull-request lookup that"
+                echo 'decision depends on failed (or gh was unavailable), so an empty result cannot be'
+                echo 'trusted as "no pull request is open".'
+                echo
+                echo 'Nothing was deleted. Re-run the workflow once the lookup can succeed, or verify'
+                echo 'by hand whether a pull request is open before deleting the branch yourself.'
               } >> "$GITHUB_STEP_SUMMARY"
               exit 1
             else

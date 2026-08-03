@@ -1,6 +1,6 @@
 ---
 issue: 148
-created: '2026-08-03T11:53:19Z'
+created: '2026-08-03T12:04:00Z'
 ---
 # Issue #148 — rotation-check telemetry fields aren't surfaced as job outputs
 
@@ -86,3 +86,18 @@ exact step name, exact field list, exact prefix convention, and exact verificati
   prefix to check the exact YAML key position instead of a bare substring.
 - YAML still parses cleanly after placeholder substitution (existing
   workflow-template.test.sh check, unaffected).
+
+### Review-driven finding, deliberately deferred (P3, documented not fixed)
+
+The error-handler-inspector review pass on the bundle PR noted that `dossier-rotation-
+check.sh`'s two internal failure paths degrade inconsistently once these fields have a
+real consumer: `die_infra()` emits only 2 of 8 fields before exiting, so the newly-added
+`rotation_age_days`/`rotation_age_source`/`rotation_accumulated_files`/
+`rotation_accumulated_lines`/`rotation_policy` outputs land as genuinely-unset empty
+strings on that path, while `finish()` (the transport-failure path) emits all 8 including
+an explicit `age_source="unknown"` string — a future consumer could treat empty-string
+and the literal `"unknown"` as different signals for the same "we don't know" state.
+Not fixed here: `dossier-rotation-check.sh` is explicitly out of scope for this issue (see
+Non-goals) and no consumer of these fields exists yet (this issue's own stated purpose is
+exposure only), so normalizing `die_infra()`'s emit shape is deferred until a real
+consumer is built and the inconsistency actually matters.
