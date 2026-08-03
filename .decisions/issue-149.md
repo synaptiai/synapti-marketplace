@@ -38,19 +38,32 @@ PASS — 3 tasks reviewed. Task "add guarded helper" specifies the exact functio
 
 The first-pass fix (direct call-site conversion) left one gap: `setup_fixture()`/`no_gh_path()` in `rotation-check.test.sh` and `setup_fixture()` in `staleness-trigger.test.sh` called the new guard correctly *internally*, but were themselves invoked via `$(...)` at ~24 call sites — reopening the exact swallowed-exit bug one level up, since command substitution forks a subshell around the whole function body too. Found independently by three `/flow:pr` review agents (error-handling, security, code-quality) from three different angles. Fixed by converting both functions to the same out-parameter convention as the guard itself (`printf -v` into a caller-named variable, called as a plain statement), updating every call site, and hardening the guard's own final `printf -v` line to match. A repo-wide re-audit (every `$(...)`-invoked function name cross-checked against every function body containing the guard, across all 10 test files) confirmed zero remaining instances of this pattern.
 
-One reviewer's suggested prerequisite (`local _dir` in `_dossier_safe_mktemp_dir`, to prevent a claimed loop-variable clobber in `no_gh_path`) was investigated and empirically disproven via a standalone repro script — the guard's own internal `$(_dossier_safe_mktemp_dir ...)` call already forks its own subshell, which isolates `_dir` regardless of whether the outer helper is itself wrapped in `$(...)`. Not applied.
+A reviewer's suggested prerequisite (`local _dir` in `_dossier_safe_mktemp_dir`, to prevent a claimed loop-variable clobber in `no_gh_path`) was investigated and empirically disproven at the time — the guard's own internal `$(_dossier_safe_mktemp_dir ...)` call already forks its own subshell, which isolates `_dir` regardless of whether the outer helper is itself wrapped in `$(...)`. Not applied in that round. It was independently re-raised by two more reviewers during `/flow:review` (see below) with a different framing — not "this is a live bug" (it isn't, under the current call graph) but "the file's own docstring actively directs future contributors toward a refactor that would make it live" — and applied in round 3 as cheap proactive hardening, not a live-bug fix. Both framings are consistent; the decision changed because the second framing is the stronger argument for a one-word, zero-behavior-change addition.
 
-Also checked: converting `setup_fixture`/`no_gh_path` from subshell-isolated to plain-statement execution means their previously-unscoped internal variables (`_bare`, `_clone`, `_out`, `_dir`, `_entry`, `_base`, `OLD_IFS`) now persist in the caller's real shell instead of dying with a subshell. Grepped for reads of all seven names outside their three defining functions (`no_gh_path`, `setup_fixture`, `push_docs_branch_commit`) in `rotation-check.test.sh` — zero external reads found, so the newly-persistent globals are inert (each function reassigns before reading, so there's no cross-call contamination either).
+Also checked: converting `setup_fixture`/`no_gh_path` from subshell-isolated to plain-statement execution means their previously-unscoped internal variables (`_bare`, `_clone`, `_out`, `_dir`, `_entry`, `_base`, `OLD_IFS`) now persist in the caller's real shell instead of dying with a subshell. Grepped for reads of all seven names outside their three defining functions (`no_gh_path`, `setup_fixture`, `push_docs_branch_commit`) in `rotation-check.test.sh` — zero external reads found, so the newly-persistent globals were inert either way — but `local`-scoped them anyway in round 3 (below) for consistency with `staleness-trigger.test.sh`'s sibling `setup_fixture`, which already scoped everything correctly.
+
+## Third-order findings (`/flow:review` on PR #150, fix-forwarded before merge)
+
+The Path A paired-reviewer round (10 agents, 5 facets × skeptic/verifier) re-reviewed the full PR at its round-2 HEAD and converged, across 4 independent reviewers, on:
+
+1. **`no_gh_path`/`setup_fixture` (rotation-check.test.sh) internal variables should be `local`** — applied (`OLD_IFS _out _dir _entry _base` in `no_gh_path`; `_bare _clone` in `setup_fixture`), matching `staleness-trigger.test.sh`'s already-correct sibling.
+2. **The wrapper functions' own final `printf -v` (the out-parameter handoff `no_gh_path`/`setup_fixture` introduced in round 2) was itself unguarded** — the exact ERR-3/SEC-2 class fixed in `_dossier_require_mktemp_dir` in round 2 had been reintroduced one level up, in new code from round 2 itself. Fixed by extracting a shared `_dossier_assign_outvar <varname> <value>` helper (guarded `printf -v`, matching the FATAL+exit-2 pattern) and having both `_dossier_require_mktemp_dir` and all three wrapper functions delegate to it — DRY, so the guard can't be dropped on a future copy-paste of the out-parameter pattern.
+3. **No durable, CI-enforced guard against a future helper reintroducing this exact class** — `mktemp-guard.test.sh` scenario 4 only regression-tested the *pattern* generically via synthetic stand-ins, not the real files. Fixed by adding scenario 6: a static lint (pure awk/grep, no python dependency) that scans every `plugins/dossier/tests/*.test.sh` file for any function that calls the guard internally and is also invoked via `$(...)`/backticks anywhere in that file — verified it correctly flags a deliberately-introduced violation before trusting it as a regression guard.
+4. **`local _dir` in `_dossier_safe_mktemp_dir`** — re-raised (see above), applied.
+5. Scenario 3's `.git`-absence assertion was found to be proven vacuously (`local-merge-hook.test.sh` has two guarded call sites; the first always aborts before the second, behind which the actual `git init` sits, is ever reached) — relabeled the assertions to accurately describe what's proven (the first guard's abort) rather than implying the second guard was independently isolated.
 
 ## Verification
 
-- Full suite: `bash plugins/dossier/tests/run.sh` — 1848/1848 (up from 1798 pre-change, then 1844 after the first fix pass, then 1848 after the second-order fix's new mktemp-guard.test.sh scenario 4)
+- Full suite: `bash plugins/dossier/tests/run.sh` — 1852/1852 (1798 pre-change → 1844 after round 1 → 1848 after round 2 → 1852 after round 3's new scenarios 5 and 6)
 - `shellcheck -S warning -x plugins/dossier/tests/*.sh` (exact CI invocation) — clean, exit 0
 - `bash -n` on every modified file — clean
 - Regression test (`mktemp-guard.test.sh` scenario 3) reproduced RED against the pre-fix `local-merge-hook.test.sh` (confirmed a `.git` directory materializes in an isolated scratch fixture when the guard doesn't fire), then confirmed GREEN after the fix
 - Regression test (`mktemp-guard.test.sh` scenario 4) regression-tests the second-order pattern generically (stdout-returning wrapper vs. out-parameter wrapper), independent of any specific file
+- Regression test (`mktemp-guard.test.sh` scenario 5) proves `_dossier_assign_outvar` itself hard-aborts on an invalid target identifier, rather than letting a bare `printf -v` fail silently
+- Static lint (`mktemp-guard.test.sh` scenario 6) proves, and will keep proving on every future run, that no `*.test.sh` file defines a guard-consuming function that's also invoked via `$(...)`/backticks — verified it actually catches a deliberately-introduced violation before trusting it
 - Repo-wide audit: 0 remaining `VAR=$(_dossier_safe_mktemp_dir ...)` direct call sites without a guard (116 total direct call sites found; 116 guarded)
-- Repo-wide re-audit (second-order): 0 remaining functions that call the guard internally and are invoked via `$(...)` by their own callers
+- Repo-wide re-audit (second-order): 0 remaining functions that call the guard internally and are invoked via `$(...)` by their own callers (now continuously enforced by scenario 6, not just a one-time audit)
+- CI on PR #150: 4/4 checks green (`test`, `CodeQL`, `Analyze (actions)`, `Analyze (python)`), independently re-checked via `gh pr checks` per this project's own memory of prior local-green/CI-red divergence on this exact plugin
 
 <!-- auto-log: 2026-08-03 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-149.md -->
 
@@ -79,3 +92,29 @@ Also checked: converting `setup_fixture`/`no_gh_path` from subshell-isolated to 
 <!-- auto-log: 2026-08-03 12:42 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr149-body.md -->
 
 <!-- auto-log: 2026-08-03 12:46 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-149.md -->
+
+<!-- auto-log: 2026-08-03 12:55 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/lib/assert.sh -->
+
+<!-- auto-log: 2026-08-03 12:55 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 12:55 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 12:55 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/staleness-trigger.test.sh -->
+
+<!-- auto-log: 2026-08-03 12:55 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/mktemp-guard.test.sh -->
+
+<!-- auto-log: 2026-08-03 12:57 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 12:58 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/rotation-check.test.sh -->
+
+<!-- auto-log: 2026-08-03 12:59 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/mktemp-guard.test.sh -->
+
+<!-- auto-log: 2026-08-03 12:59 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/mktemp-guard.test.sh -->
+
+<!-- auto-log: 2026-08-03 13:01 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/lib/assert.sh -->
+
+<!-- auto-log: 2026-08-03 13:06 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/mktemp-guard.test.sh -->
+
+<!-- auto-log: 2026-08-03 13:06 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/mktemp-guard.test.sh -->
+
+<!-- auto-log: 2026-08-03 13:12 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-149.md -->

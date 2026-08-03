@@ -67,7 +67,7 @@ EOF
     git add -A
     git commit -q -m "watermark"
   ) >/dev/null 2>&1
-  printf -v "$__outvar" '%s' "$fixture"
+  _dossier_assign_outvar "$__outvar" "$fixture"
 }
 
 run_policy() {

@@ -44,7 +44,7 @@ future_offset() { date -u -d "+$1 days" +%Y-%m-%d 2>/dev/null || date -u -v+"$1"
 # forks, silently swallowing the guard's abort one level up (see issue #149
 # review; mktemp-guard.test.sh scenario 4 regression-tests this pattern).
 no_gh_path() {
-  local __outvar="$1"
+  local __outvar="$1" OLD_IFS _out _dir _entry _base
   OLD_IFS="$IFS"; IFS=':'
   _out=""
   for _dir in $PATH; do
@@ -64,7 +64,7 @@ no_gh_path() {
     fi
   done
   IFS="$OLD_IFS"
-  printf -v "$__outvar" '%s' "$_out"
+  _dossier_assign_outvar "$__outvar" "$_out"
 }
 
 # Builds a bare "origin" remote + a working clone, with dossier plugin bin
@@ -78,7 +78,7 @@ no_gh_path() {
 # `OUT=$(setup_fixture)`) — see no_gh_path's comment above for why a
 # stdout-returning version would swallow _dossier_require_mktemp_dir's guard.
 setup_fixture() {
-  local __outvar="$1" _fixture
+  local __outvar="$1" _fixture _bare _clone
   _dossier_require_mktemp_dir _fixture "rotation-fixture"
   _bare="$_fixture/origin.git"
   _clone="$_fixture/clone"
@@ -94,7 +94,7 @@ setup_fixture() {
     git push -q origin HEAD:refs/heads/main
     git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
   ) >/dev/null 2>&1
-  printf -v "$__outvar" '%s' "$_clone"
+  _dossier_assign_outvar "$__outvar" "$_clone"
 }
 
 # Adds $N commits to $DOCS_BRANCH (created from main if absent), each carrying
