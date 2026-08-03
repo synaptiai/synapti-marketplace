@@ -92,8 +92,10 @@ live script, before this skill was invoked)._
 
 - **Timeouts** — none — this is a synchronous regex-based hook with no I/O or network calls
   that could hang; nothing to time out.
-- **Partial failures** — none — the fix is a single-line regex alternation addition with no
-  multi-step operation that could partially complete.
+- **Partial failures** — none — the fix (originally a single-line regex alternation addition;
+  shipped as a new `FIND_EXEC` variable plus a widened trigger condition, see Interface
+  contracts) is still a synchronous regex evaluation with no multi-step operation that could
+  partially complete.
 - **Invalid input** — **superseded during review, correction**: the paragraph originally here
   described `find . -name "npm test"` as an accepted over-block tradeoff, matching the original
   bare-`find`-in-`WRAPPER` design. A code-review pass on this PR demonstrated live that this
@@ -103,9 +105,9 @@ live script, before this skill was invoked)._
   `FIND_EXEC` regex requiring `find` to co-occur with `-exec`/`-execdir`/`-ok`/`-okdir`) resolves
   this rather than accepting it: `hooks.test.sh` now asserts `find . -name "npm test"` and the
   commit-message case both correctly return RC=0 (not blocked).
-- **Missing context** — none — no new config/env dependency is introduced; the fix reuses the
-  existing `WRAPPER` variable, which is already resolved unconditionally at hook-invocation
-  time with no external state.
+- **Missing context** — none — no new config/env dependency is introduced; the fix's inputs
+  (`FIND_EXEC`, like `WRAPPER` before it) are resolved unconditionally at hook-invocation time
+  with no external state.
 
 ### Interface contracts
 
@@ -382,3 +384,7 @@ pre-bundle). `shellcheck -S warning -x` across every touched script — clean, e
 <!-- auto-log: 2026-08-03 15:57 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr-153-self-review.md -->
 
 <!-- auto-log: 2026-08-03 15:57 commit "fix(dossier): capture git rev-list's stderr separately from its stdout" -->
+
+<!-- auto-log: 2026-08-03 16:10 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-143.md -->
+
+<!-- auto-log: 2026-08-03 16:10 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-143.md -->
