@@ -109,11 +109,12 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
-  current_phase: explore
-  current_activity: explore
-  turns_evaluated: 0
+  status: achieved
+  current_phase: verify
+  current_activity: complete
+  turns_evaluated: 1
   last_evaluation:
-    result: incomplete
-    reason: Goal activated at /flow:start Phase 1; evidence not yet collected.
-    at: '2026-08-03T11:53:19Z'
+    result: pass
+    reason: All 4 acceptance criteria PASS via independent goal-evaluator-judge (confidence
+      0.8), hooks.test.sh 94/94 (up from 85 pre-fix).
+    at: '2026-08-03T14:20:00Z'
