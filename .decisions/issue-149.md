@@ -34,13 +34,23 @@ created: '2026-08-03T10:03:20Z'
 
 PASS — 3 tasks reviewed. Task "add guarded helper" specifies the exact function signature, its two internal guards, and the printf -v assignment mechanism. Task "fix local-merge-hook.test.sh" names the exact two call sites (file:line) and the exact verification command. Task "repo-wide conversion" specifies the exact audit method (Python scan, zero pre-existing guards confirmed) and the two conversion shapes (simple swap; two-line split for the 7 path-suffix sites in rotation-check.test.sh).
 
+## Second-order finding (PR #150 review, fix-forwarded before merge)
+
+The first-pass fix (direct call-site conversion) left one gap: `setup_fixture()`/`no_gh_path()` in `rotation-check.test.sh` and `setup_fixture()` in `staleness-trigger.test.sh` called the new guard correctly *internally*, but were themselves invoked via `$(...)` at ~24 call sites — reopening the exact swallowed-exit bug one level up, since command substitution forks a subshell around the whole function body too. Found independently by three `/flow:pr` review agents (error-handling, security, code-quality) from three different angles. Fixed by converting both functions to the same out-parameter convention as the guard itself (`printf -v` into a caller-named variable, called as a plain statement), updating every call site, and hardening the guard's own final `printf -v` line to match. A repo-wide re-audit (every `$(...)`-invoked function name cross-checked against every function body containing the guard, across all 10 test files) confirmed zero remaining instances of this pattern.
+
+One reviewer's suggested prerequisite (`local _dir` in `_dossier_safe_mktemp_dir`, to prevent a claimed loop-variable clobber in `no_gh_path`) was investigated and empirically disproven via a standalone repro script — the guard's own internal `$(_dossier_safe_mktemp_dir ...)` call already forks its own subshell, which isolates `_dir` regardless of whether the outer helper is itself wrapped in `$(...)`. Not applied.
+
+Also checked: converting `setup_fixture`/`no_gh_path` from subshell-isolated to plain-statement execution means their previously-unscoped internal variables (`_bare`, `_clone`, `_out`, `_dir`, `_entry`, `_base`, `OLD_IFS`) now persist in the caller's real shell instead of dying with a subshell. Grepped for reads of all seven names outside their three defining functions (`no_gh_path`, `setup_fixture`, `push_docs_branch_commit`) in `rotation-check.test.sh` — zero external reads found, so the newly-persistent globals are inert (each function reassigns before reading, so there's no cross-call contamination either).
+
 ## Verification
 
-- Full suite: `bash plugins/dossier/tests/run.sh` — 1844/1844 (up from 1798 pre-change)
+- Full suite: `bash plugins/dossier/tests/run.sh` — 1848/1848 (up from 1798 pre-change, then 1844 after the first fix pass, then 1848 after the second-order fix's new mktemp-guard.test.sh scenario 4)
 - `shellcheck -S warning -x plugins/dossier/tests/*.sh` (exact CI invocation) — clean, exit 0
 - `bash -n` on every modified file — clean
 - Regression test (`mktemp-guard.test.sh` scenario 3) reproduced RED against the pre-fix `local-merge-hook.test.sh` (confirmed a `.git` directory materializes in an isolated scratch fixture when the guard doesn't fire), then confirmed GREEN after the fix
-- Repo-wide audit: 0 remaining `VAR=$(_dossier_safe_mktemp_dir ...)` call sites without a guard (116 total call sites found; 116 now guarded)
+- Regression test (`mktemp-guard.test.sh` scenario 4) regression-tests the second-order pattern generically (stdout-returning wrapper vs. out-parameter wrapper), independent of any specific file
+- Repo-wide audit: 0 remaining `VAR=$(_dossier_safe_mktemp_dir ...)` direct call sites without a guard (116 total direct call sites found; 116 guarded)
+- Repo-wide re-audit (second-order): 0 remaining functions that call the guard internally and are invoked via `$(...)` by their own callers
 
 <!-- auto-log: 2026-08-03 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-149.md -->
 
@@ -63,3 +73,9 @@ PASS — 3 tasks reviewed. Task "add guarded helper" specifies the exact functio
 <!-- auto-log: 2026-08-03 12:33 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/lib/assert.sh -->
 
 <!-- auto-log: 2026-08-03 12:39 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/lib/assert.sh -->
+
+<!-- auto-log: 2026-08-03 12:41 commit "fix(dossier): close second-order guard-swallow in setup_fixture/no_gh_path" -->
+
+<!-- auto-log: 2026-08-03 12:42 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr149-body.md -->
+
+<!-- auto-log: 2026-08-03 12:46 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-149.md -->
