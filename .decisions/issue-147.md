@@ -352,3 +352,5 @@ rotation-check.test.sh` — 96/96. `shellcheck -S warning -x` — clean.
 <!-- auto-log: 2026-08-03 19:51 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-147.goal.yaml -->
 
 <!-- auto-log: 2026-08-03 19:53 commit "fix(dossier): scope git_auth's credential to origin's own host, fix silent-failure edge cases" -->
+
+<!-- auto-log: 2026-08-03 19:54 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr-147-body.md -->
