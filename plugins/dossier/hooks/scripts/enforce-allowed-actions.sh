@@ -271,6 +271,30 @@ ansi_c_decode() { # $1: command string -> stdout: with every $'...' span decoded
   printf '%s' "$out$s"
 }
 
+# ansi_c_decode forks a sed+printf subprocess pair for every $'...' occurrence
+# it finds. The byte-length guard above bounds the quadratic glob-matching
+# cost, but not this one: an attacker can still pack many tiny $'x' spans
+# into that same byte budget, and fork/exec overhead is paid per span
+# regardless of how small each one is -- confirmed live, ~2000 minimal spans
+# in an 8KB command took over 10 seconds from subprocess overhead alone, with
+# no `$'...'`-external content large enough to trip the length guard. A
+# legitimate interactive command needs at most a handful of ANSI-C-quoted
+# segments, so this is capped separately from the overall length.
+#
+# Counted with `grep -oF`, not bash's own `${var//pattern/replacement}`:
+# bash's global substitution has the exact same super-linear-for-many-matches
+# behavior this guard exists to bound -- confirmed live, counting via pure
+# bash parameter expansion on the same 2000-span input took ~7 seconds by
+# itself, which would have defeated the point of counting fast before
+# deciding whether to run the expensive decode. `-F` matches the 2-character
+# literal `$'` identically on GNU and BSD, so this doesn't reopen the
+# GNU/BSD divergence risk the newline-join logic above avoids sed/grep for.
+ANSIC_SPAN_COUNT=$(printf '%s' "$COMMAND" | grep -oF "\$'" | wc -l | tr -d '[:space:]')
+if [ "$ANSIC_SPAN_COUNT" -gt 64 ]; then
+  echo "BLOCKED: dossier cannot safely enforce its action ceiling on a command with this many \$'...' segments (${ANSIC_SPAN_COUNT}, limit 64) -- each one forks a subprocess to decode." >&2
+  exit 2
+fi
+
 COMMAND_ANSIC=$(ansi_c_decode "$COMMAND")
 
 # The placeholder byte chosen below (0x01) is assumed to never legitimately

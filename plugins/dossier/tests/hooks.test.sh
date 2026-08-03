@@ -281,6 +281,27 @@ END_TS=$(date +%s)
 assert_equal "2" "$RC" "enforce-allowed-actions denies a command over the pathological-size guard (9000 bytes)"
 assert_equal "1" "$([ "$((END_TS - START_TS))" -le 3 ] && echo 1 || echo 0)" "the size guard rejects instantly rather than attempting the super-linear normalization"
 
+# ansi_c_decode forks a subprocess pair PER $'...' occurrence -- many tiny
+# spans stay well under the byte-length guard above but still pay that
+# overhead once per span. Must be denied fast, not just eventually.
+MANY_SPANS=""
+for _ in $(seq 1 100); do MANY_SPANS="${MANY_SPANS}\$'a'"; done
+RC=0
+START_TS=$(date +%s)
+(cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf 'echo %s https://example.invalid' "$MANY_SPANS" | jq -Rs .)" \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+END_TS=$(date +%s)
+assert_equal "2" "$RC" "enforce-allowed-actions denies a command with too many \$'...' segments (100 spans, limit 64)"
+assert_equal "1" "$([ "$((END_TS - START_TS))" -le 3 ] && echo 1 || echo 0)" "the span-count guard rejects fast rather than forking a decode subprocess per span"
+
+# A legitimate command with a handful of ANSI-C spans (well under the limit)
+# must still be permitted normally -- proves the guard above isn't
+# over-blocking ordinary ANSI-C usage, just pathological span counts.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"echo $'"'"'hello'"'"' $'"'"'world'"'"'"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "enforce-allowed-actions still permits an ordinary command with a few ANSI-C spans"
+
 # --- find -exec/-execdir/-ok/-okdir and xargs -I{} indirection (issue #143) ---
 # -exec/-execdir/-ok/-okdir glue the sub-command execution position to a flag
 # rather than spelling it as a standalone token, so neither BOUND nor the prior
