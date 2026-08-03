@@ -289,22 +289,43 @@ assert_not_contains "sk-ant-abcdefgh12345678" "$OUT" "an anthropic key never rea
 # `CL-` rows appear in two tables with different column layouts, and the
 # approval test is a literal substring match. A rejected row whose free-text
 # cell happens to contain the approved marker would otherwise be honoured.
+# The probe sentence is deliberately mundane, NOT "our service is completely
+# secure": that wording independently trips the prohibited-vocabulary scanner
+# (section A, run over the raw document regardless of registration), which
+# forces exit 1 whether or not the rejected row is honoured as approved —
+# confirmed by running both the pass and fail cases below through the real
+# scanner. A sentence with no leak/vocabulary match is required for exit 0 vs.
+# exit 1 to actually distinguish "wrongly approved" from "correctly rejected".
 T="$W/rejected"; mkpkg "$T"
-cat >> "$T/00-control/claim-and-disclosure-register.md" <<'REGEOF'
+cat >> "$T/docs/dossier/00-control/claim-and-disclosure-register.md" <<'REGEOF'
 
 ## Rejected and withdrawn claims
 
 | ID | Wording | Reason declined | Date | What would make it publishable |
 |---|---|---|---|---|
-| CL-9001 | our service is completely secure | the reviewer noted this was not "| approved |" by security | 2026-07-26 | evidence |
+| CL-9001 | our onboarding process takes one business day | the reviewer noted this was not "| approved |" by security | 2026-07-26 | evidence |
 REGEOF
-pub "$T" "Our service is completely secure."
-scan "$T"
+# A silent failure here is exactly the bug this block was rewritten to fix: a
+# wrong or missing parent directory makes the heredoc redirect fail with the
+# register file never written at all, and the scan below would still exit
+# non-zero (via the unrelated "no register present" path) — passing the
+# assertion for the wrong reason all over again. Checked directly rather than
+# trusted, since that is precisely how the original bug hid.
+assert_file_exists "$T/docs/dossier/00-control/claim-and-disclosure-register.md" \
+  "the rejected-row register was actually written"
+pub "$T" "Our onboarding process takes one business day."
+OUT=$(scanout "$T")
 RC=$?
-if [ "$RC" -eq 0 ]; then
-  _dossier_assert_fail "a rejected row was honoured as an approved claim"
-else
-  _dossier_assert_pass "a rejected row is not honoured as an approved claim (exit $RC)"
-fi
+assert_equal "1" "$RC" "a rejected row is not honoured as an approved claim"
+# Pinned individually, not just via the aggregate exit code: exit 1 alone
+# cannot tell "correctly rejected" apart from a handful of other ways this
+# same fixture could produce a non-zero exit for the wrong reason — a
+# register silently absent again (the exact #151 failure shape), a `cd`/mkdir
+# break inside scan()/scanout(), or the probe sentence drifting back toward
+# vocabulary-flagged wording. Each assertion below names exactly one of those
+# and fails on it specifically, rather than letting exit 1 paper over it.
+assert_contains "CLAIM_SCAN_REGISTER_PRESENT=1" "$OUT" "the register was read, not silently absent"
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" "exactly the rejected-row sentence is unregistered"
+assert_contains "CLAIM_SCAN_PROHIBITED_VOCABULARY=0" "$OUT" "the probe sentence still trips no vocabulary pattern"
 
 _dossier_test_summary
