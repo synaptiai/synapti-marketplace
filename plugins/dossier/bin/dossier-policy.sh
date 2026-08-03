@@ -387,7 +387,15 @@ esac
 # privileged token anyway.
 # ---------------------------------------------------------------------------
 if command -v gh >/dev/null 2>&1; then
-  EXISTING_PR=$(gh pr list --head "$DOCS_BRANCH" --state open --json number --jq '.[0].number // empty' 2>/dev/null)
+  # --head matches by branch name only, across every fork with an open PR
+  # against this repo -- gh has no owner:branch syntax to scope --head to a
+  # specific fork. isCrossRepository==false restricts the match to PRs whose
+  # head lives in this repo, so a same-named decoy branch opened from a fork
+  # cannot be returned in place of (or ahead of) the real docs-refresh PR.
+  # Mirrors the identical fix already shipped in dossier-rotation-check.sh
+  # (PR #145, SEC-1) -- this is the pre-existing original that fix was copied
+  # from.
+  EXISTING_PR=$(gh pr list --head "$DOCS_BRANCH" --state open --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)][0].number // empty' 2>/dev/null)
 else
   note 'gh CLI unavailable; existing-PR lookup and the circuit-breaker count were skipped.'
 fi
