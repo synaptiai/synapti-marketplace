@@ -24,7 +24,7 @@ if [ ! -x "$EVIDENCE_SCRIPT" ]; then
 fi
 
 # --- dossier-evidence.sh --stale-docs -> manifest.json stale_docs ----------
-FIXTURE=$(_dossier_safe_mktemp_dir "refresh-staleness")
+_dossier_require_mktemp_dir FIXTURE "refresh-staleness"
 (
   cd "$FIXTURE" || exit 1
   git init -q
@@ -80,7 +80,7 @@ EOF
 # Same technique as staleness-trigger.test.sh's ERR-3 case: a real sibling-
 # script copy with only dossier-staleness-check.sh swapped for a script that
 # always fails, entirely inside an isolated fixture.
-ERR_ROOT=$(_dossier_safe_mktemp_dir "evidence-staleness-failure")
+_dossier_require_mktemp_dir ERR_ROOT "evidence-staleness-failure"
 mkdir -p "$ERR_ROOT/bin"
 cp "$(pwd)/plugins/dossier/bin/"*.sh "$ERR_ROOT/bin/"
 cat >"$ERR_ROOT/bin/dossier-staleness-check.sh" <<'FAKE'

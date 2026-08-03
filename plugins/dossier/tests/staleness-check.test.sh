@@ -14,7 +14,7 @@ if [ ! -x "$SCRIPT" ]; then
   return 0 2>/dev/null || exit 0
 fi
 
-FIXTURE=$(_dossier_safe_mktemp_dir "staleness-check")
+_dossier_require_mktemp_dir FIXTURE "staleness-check"
 ARCH="$FIXTURE/docs/dossier/02-architecture"
 CONTROL="$FIXTURE/docs/dossier/00-control"
 mkdir -p "$ARCH" "$CONTROL"
@@ -177,7 +177,7 @@ assert_equal "true" "$(printf '%s\n' "$SF_ROLLOVER_FEB" | awk -F= '$1=="IS_UNDAT
 # Sweep mode must catch the same rollover — a document with only a rollover
 # date and nothing else planted in this fixture must count toward
 # DOCUMENTS_UNDATED, not silently vanish from every count.
-ROLLOVER_FIXTURE=$(_dossier_safe_mktemp_dir "staleness-rollover")
+_dossier_require_mktemp_dir ROLLOVER_FIXTURE "staleness-rollover"
 mkdir -p "$ROLLOVER_FIXTURE/docs/dossier/02-architecture"
 cat >"$ROLLOVER_FIXTURE/docs/dossier/02-architecture/system-architecture.md" <<EOF
 dossier-header: v1

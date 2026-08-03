@@ -36,6 +36,16 @@ _dossier_test_begin() {
 # than returning empty, so a caller relying on `$(...)` cannot receive "" and
 # proceed regardless.
 _dossier_safe_mktemp_dir() {
+  # `_dir` is local defensively: this function is currently always invoked
+  # via `$(...)` (which subshell-isolates it regardless), but that isolation
+  # is an accident of every current caller's shape, not a documented
+  # invariant of this function itself — see _dossier_require_mktemp_dir's
+  # docstring, which actively tells future contributors to convert
+  # stdout-returning helpers like this one to a plain-statement out-param
+  # call. `local` here means that conversion can never silently clobber a
+  # caller's own `_dir` (e.g. no_gh_path's `for _dir in $PATH` loop
+  # variable), regardless of what shape a future caller takes.
+  local _dir
   if [ -z "${RUN_TMPDIR:-}" ] || [ ! -d "$RUN_TMPDIR" ]; then
     echo "FATAL: RUN_TMPDIR is unset or not a directory — this test file must be run via tests/run.sh, not invoked directly" >&2
     exit 2
@@ -49,6 +59,65 @@ _dossier_safe_mktemp_dir() {
     exit 2
   fi
   printf '%s\n' "$_dir"
+}
+
+# _dossier_require_mktemp_dir <varname> <prefix> — the sanctioned way for a
+# call site to consume _dossier_safe_mktemp_dir's output. A bare
+# `VAR=$(_dossier_safe_mktemp_dir ...)` reopens the exact risk that function
+# was hardened against: its `exit 2` only terminates the `$(...)` subshell,
+# so a caller that doesn't check the assignment's own exit status proceeds
+# with VAR="" — and `cd ""` returns 0 in bash, silently no-oping instead of
+# aborting (issue #149; this happened for real to local-merge-hook.test.sh).
+# This helper does the capture-and-check exactly once, as a plain function
+# call (not itself wrapped in `$(...)`), so an internal failure's `exit 2`
+# propagates all the way up through the caller's shell rather than being
+# swallowed by another layer of subshell.
+#
+# That guarantee is only as good as every caller in the chain: if you write
+# a function that calls this helper internally and then hands its result
+# back to ITS OWN caller via stdout (`printf '%s' "$var"`, meant to be
+# consumed as `X=$(your_function)`), you have reintroduced the exact bug
+# this helper exists to close, one level up — `$(...)` forks a subshell for
+# your_function's entire body, so this helper's `exit 2` again only kills
+# that subshell. Give your function an <outvar> parameter and assign into
+# it via `_dossier_assign_outvar` (below) instead, and call it as a plain
+# statement, the same way this helper itself must be called. See
+# `no_gh_path`/`setup_fixture` in rotation-check.test.sh and
+# staleness-trigger.test.sh for the pattern, and mktemp-guard.test.sh
+# scenario 4 for the regression test.
+#
+# Callers of your <outvar> function must also avoid naming their outvar
+# argument the same as any of the function's own `local` variables (a
+# collision silently assigns the function's local shadow instead of the
+# caller's variable, since bash resolves `printf -v` by innermost scope) —
+# see `no_gh_path`/`setup_fixture`'s own local declarations for the names
+# already in use.
+_dossier_require_mktemp_dir() {
+  local __dossier_mktemp_varname="$1" __dossier_mktemp_prefix="$2" __dossier_mktemp_dir
+  __dossier_mktemp_dir=$(_dossier_safe_mktemp_dir "$__dossier_mktemp_prefix") || exit 2
+  if [ -z "$__dossier_mktemp_dir" ] || [ ! -d "$__dossier_mktemp_dir" ]; then
+    echo "FATAL: _dossier_safe_mktemp_dir(\"$__dossier_mktemp_prefix\") returned an unusable path for \$$__dossier_mktemp_varname: '$__dossier_mktemp_dir'" >&2
+    exit 2
+  fi
+  _dossier_assign_outvar "$__dossier_mktemp_varname" "$__dossier_mktemp_dir"
+}
+
+# _dossier_assign_outvar <varname> <value> — the one guarded way to assign
+# into a caller-named "out parameter" via `printf -v`, used both by
+# _dossier_require_mktemp_dir above and by any wrapper function that
+# re-exposes its own result through an outvar (see that function's
+# docstring for why stdout+$(...) is unsafe here). A bare `printf -v` can
+# fail silently (invalid identifier, readonly/array-name collision) and
+# return non-zero with no message — under this suite's `set -uo pipefail`
+# (no `-e`), that failure would otherwise be swallowed exactly like the
+# bug this file exists to close. Centralized here so the guard can't be
+# dropped on the next copy-paste of the out-parameter pattern.
+_dossier_assign_outvar() {
+  local __dossier_assign_varname="$1" __dossier_assign_value="$2"
+  printf -v "$__dossier_assign_varname" '%s' "$__dossier_assign_value" || {
+    echo "FATAL: printf -v failed to assign \$$__dossier_assign_varname (invalid identifier?)" >&2
+    exit 2
+  }
 }
 
 _dossier_assert_pass() {
