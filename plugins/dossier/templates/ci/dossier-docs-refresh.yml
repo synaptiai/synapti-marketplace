@@ -814,7 +814,15 @@ jobs:
             # EXISTING_PR_LOOKUP_FAILED guard below exists to close, one hop
             # earlier in this same step.
             FOREIGN=''
-            REV_LIST_OUT=$(git rev-list "origin/${BASE_REF}..origin/${DOCS_BRANCH}" 2>&1)
+            # stderr captured separately from stdout -- on the success path,
+            # any warning git writes to stderr (ambiguous-refname, reflog-gap,
+            # advice text) must never be merged into $REV_LIST_OUT: the loop
+            # below word-splits it unquoted, and a stray warning word treated
+            # as a commit SHA would fail `git show`, be silently misread as
+            # foreign (no Dossier-Generated trailer found), and land in the
+            # refusal message the operator actually reads.
+            REV_LIST_ERR=$(mktemp 2>/dev/null) || REV_LIST_ERR="${RUNNER_TEMP:-/tmp}/dossier-rev-list-err.$$"
+            REV_LIST_OUT=$(git rev-list "origin/${BASE_REF}..origin/${DOCS_BRANCH}" 2>"$REV_LIST_ERR")
             REV_LIST_RC=$?
             if [ "$REV_LIST_RC" -ne 0 ]; then
               echo "::error title=Dossier::Could not enumerate commits on ${DOCS_BRANCH} to check for foreign (non-Dossier-Generated) history. Refusing to guess."
@@ -825,13 +833,15 @@ jobs:
                 echo 'did not write, so it cannot be confirmed safe to delete and recreate.'
                 echo
                 echo '```'
-                echo "$REV_LIST_OUT"
+                cat "$REV_LIST_ERR" 2>/dev/null
                 echo '```'
                 echo
                 echo 'Nothing was deleted. Re-run the workflow once this can be checked.'
               } >> "$GITHUB_STEP_SUMMARY"
+              rm -f "$REV_LIST_ERR" 2>/dev/null
               exit 1
             fi
+            rm -f "$REV_LIST_ERR" 2>/dev/null
             for C in $REV_LIST_OUT; do
               if ! git show -s --format=%B "$C" | grep -qiE '^Dossier-Generated:[[:space:]]*true[[:space:]]*$'; then
                 FOREIGN="${FOREIGN} ${C}"
