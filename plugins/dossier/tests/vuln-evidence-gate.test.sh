@@ -27,7 +27,7 @@ fi
 # evidence citation (AC1)
 # =============================================================================
 
-FIXTURES=$(_dossier_safe_mktemp_dir "vuln-evidence-fixtures")
+_dossier_require_mktemp_dir FIXTURES "vuln-evidence-fixtures"
 
 # --- SARIF: security-severity property drives CVSS bucketing ----------------
 cat >"$FIXTURES/scan.sarif.json" <<'EOF'
@@ -412,7 +412,7 @@ g19_evidence() { # dir
 }
 
 # --- FAIL: a High finding with no disposition anywhere ----------------------
-G19_FAIL_DIR=$(_dossier_safe_mktemp_dir "g19-fail")
+_dossier_require_mktemp_dir G19_FAIL_DIR "g19-fail"
 g19_fixture "$G19_FAIL_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0002 | osv-scanner reports GHSA-4w2v-q235-vp99 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-4w2v-q235-vp99, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
@@ -423,7 +423,7 @@ G19_FAIL_EVIDENCE=$(g19_evidence "$G19_FAIL_DIR")
 assert_contains "EV-0002" "$G19_FAIL_EVIDENCE" "AC2: G19's evidence names the specific unresolved EV-#### row"
 
 # --- FAIL: a Risk register row exists but Status is still open --------------
-G19_OPEN_DIR=$(_dossier_safe_mktemp_dir "g19-open")
+_dossier_require_mktemp_dir G19_OPEN_DIR "g19-open"
 g19_fixture "$G19_OPEN_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0002 | osv-scanner reports GHSA-4w2v-q235-vp99 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-4w2v-q235-vp99, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
@@ -437,7 +437,7 @@ assert_equal "FAIL" "$G19_OPEN_RESULT" "AC2: a Risk register row with Status=ope
 
 # --- PASS: an Accepted risks row with a named accepter, valid dates, and a
 # stated basis disposes a High finding (AC3) --------------------------------
-G19_ACCEPTED_DIR=$(_dossier_safe_mktemp_dir "g19-accepted")
+_dossier_require_mktemp_dir G19_ACCEPTED_DIR "g19-accepted"
 g19_fixture "$G19_ACCEPTED_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0042 | osv-scanner reports GHSA-4w2v-q235-vp99 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-4w2v-q235-vp99, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
@@ -451,7 +451,7 @@ assert_equal "PASS" "$G19_ACCEPTED_RESULT" "AC3: a High finding with a named acc
 
 # --- PASS: a Risk register row alone (Category=dependency, owned, not open)
 # also disposes a Critical finding — Accepted risks is not the only path ----
-G19_MITIGATING_DIR=$(_dossier_safe_mktemp_dir "g19-mitigating")
+_dossier_require_mktemp_dir G19_MITIGATING_DIR "g19-mitigating"
 g19_fixture "$G19_MITIGATING_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0043 | osv-scanner reports GHSA-9999-9999-9999 in lodash@4.17.15, severity Critical | R | `scan.json` — osv-scanner, GHSA-9999-9999-9999, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
@@ -465,7 +465,7 @@ assert_equal "PASS" "$G19_MITIGATING_RESULT" "AC3: a Risk register row with Cate
 
 # --- PASS: a clean scan (coverage recorded, zero Critical/High findings) is
 # a legitimate pass, not an omission ------------------------------------------
-G19_CLEAN_DIR=$(_dossier_safe_mktemp_dir "g19-clean")
+_dossier_require_mktemp_dir G19_CLEAN_DIR "g19-clean"
 g19_fixture "$G19_CLEAN_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0002 | osv-scanner aggregate: 2 Low-severity findings in package-lock.json | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding-aggregate severity=Low count=2 |' \
@@ -476,7 +476,7 @@ assert_equal "PASS" "$G19_CLEAN_RESULT" "AC3/AC4: a parsed scan with zero Critic
 # --- Negative control: a calendar-invalid rollover Review date must NOT
 # dispose the finding — proves validate_calendar_date() is actually applied,
 # not merely present in the source file --------------------------------------
-G19_ROLLOVER_DIR=$(_dossier_safe_mktemp_dir "g19-rollover")
+_dossier_require_mktemp_dir G19_ROLLOVER_DIR "g19-rollover"
 g19_fixture "$G19_ROLLOVER_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0044 | osv-scanner reports GHSA-8888-8888-8888 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-8888-8888-8888, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
@@ -495,7 +495,7 @@ fi
 # --- INCONCLUSIVE: no vulnerability evidence at all (AC4, gate half) --------
 # Confirmed design decision (.decisions/issue-136.md): zero evidence means
 # INCONCLUSIVE, never PASS — not a bug to work around.
-G19_NOEVIDENCE_DIR=$(_dossier_safe_mktemp_dir "g19-noevidence")
+_dossier_require_mktemp_dir G19_NOEVIDENCE_DIR "g19-noevidence"
 g19_fixture "$G19_NOEVIDENCE_DIR" \
 '| EV-0001 | The HTTP API authenticates with OAuth 2.0 | V | `src/api/auth.ts::authenticate` | yes | 2 | main | 2026-07-28 | none | Internal | no | 02-architecture/interfaces-and-integrations.md | — |' \
 ''
@@ -525,7 +525,7 @@ fi
 # --- INCONCLUSIVE: a scan artifact that failed to parse, distinct wording ---
 # from the "never scanned" branch above — the ERR-3-style distinction must
 # survive into the gate's own reported reason, not just the ingestion script.
-G19_PARSEERR_DIR=$(_dossier_safe_mktemp_dir "g19-parseerr")
+_dossier_require_mktemp_dir G19_PARSEERR_DIR "g19-parseerr"
 g19_fixture "$G19_PARSEERR_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | U | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parse-error |' \
 ''
@@ -590,7 +590,7 @@ fi
 # hand-typed, bypassing the parser) -> the real gate. Distinct from Part 2's
 # fixtures, which hand-write ledger rows to test G19's logic in isolation.
 
-E2E_DIR=$(_dossier_safe_mktemp_dir "e2e-planted-vuln")
+_dossier_require_mktemp_dir E2E_DIR "e2e-planted-vuln"
 mkdir -p "$E2E_DIR/docs/dossier/00-control"
 
 cat >"$E2E_DIR/planted-scan.json" <<'EOF'
@@ -645,7 +645,7 @@ assert_contains "EV-0002" "$E2E_G19_EVIDENCE" "AC5: G19's evidence names the pla
 # spaces before the pipe renders identically in Markdown but was previously
 # lost between the (unanchored) selection grep and the (anchored) extraction
 # grep. ------------------------------------------------------------------
-G19_INDENT_DIR=$(_dossier_safe_mktemp_dir "g19-indent")
+_dossier_require_mktemp_dir G19_INDENT_DIR "g19-indent"
 mkdir -p "$G19_INDENT_DIR/docs/dossier/00-control"
 printf '%s\n' \
   '# Evidence Ledger' \
@@ -660,7 +660,7 @@ assert_equal "FAIL" "$G19_INDENT_RESULT" "F1 regression: a vuln-finding row inde
 
 # --- F2: format detection on a genuinely clean scan for the two formats
 # whose empty shape does not carry a nested array to key off -----------------
-G19_F2_DIR=$(_dossier_safe_mktemp_dir "f2-clean-detect")
+_dossier_require_mktemp_dir G19_F2_DIR "f2-clean-detect"
 printf '[]' >"$G19_F2_DIR/empty.json"
 F2_DEP_OUT=$(cd "$G19_F2_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan empty.json 2>&1)
 F2_DEP_RC=$?
@@ -678,7 +678,7 @@ assert_equal "osv-scanner" "$F2_OSV_FORMAT" "F2 regression: a results-only-empty
 # --- F3: a disposition citing the finding alongside another id in the same
 # bracket, and a finding cited by a second (qualifying) row after a first
 # (non-qualifying) row, must both be recognized. -----------------------------
-G19_MULTI_DIR=$(_dossier_safe_mktemp_dir "g19-multi-citation")
+_dossier_require_mktemp_dir G19_MULTI_DIR "g19-multi-citation"
 g19_fixture "$G19_MULTI_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0005 | osv-scanner reports GHSA-multi-0001 in requests@2.25.0, severity High | R | `scan.json` — osv-scanner, GHSA-multi-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
@@ -690,7 +690,7 @@ g19_fixture "$G19_MULTI_DIR" \
 G19_MULTI_RESULT=$(g19_result "$G19_MULTI_DIR")
 assert_equal "PASS" "$G19_MULTI_RESULT" "F3 regression: a Risk register row citing the finding alongside another id in the same bracket ([EV-0004, EV-0005]) still disposes it"
 
-G19_SECONDROW_DIR=$(_dossier_safe_mktemp_dir "g19-second-row")
+_dossier_require_mktemp_dir G19_SECONDROW_DIR "g19-second-row"
 g19_fixture "$G19_SECONDROW_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0006 | osv-scanner reports GHSA-multi-0002 in flask@1.1.0, severity Critical | R | `scan.json` — osv-scanner, GHSA-multi-0002, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
@@ -712,7 +712,7 @@ assert_equal "PASS" "$G19_SECONDROW_RESULT" "F3 regression: a second Risk regist
 # jq object-construction error on one array element previously propagated
 # out of the whole array comprehension, discarding every finding, not just
 # the bad one. -----------------------------------------------------------
-H1_DIR=$(_dossier_safe_mktemp_dir "h1-partial-record")
+_dossier_require_mktemp_dir H1_DIR "h1-partial-record"
 cat >"$H1_DIR/mixed.json" <<'EOF'
 {
   "runs": [
@@ -750,7 +750,7 @@ assert_contains "security-severity" "$H1_PARSE_ERROR" "H1: the unparseable recor
 
 # --- H2: SARIF's own empty-runs clean-scan shape must parse cleanly, the
 # same guarantee already regression-tested for Dependabot/osv-scanner -------
-H2_DIR=$(_dossier_safe_mktemp_dir "h2-sarif-empty")
+_dossier_require_mktemp_dir H2_DIR "h2-sarif-empty"
 printf '{"runs":[]}' >"$H2_DIR/empty-runs.json"
 H2_OUT=$(cd "$H2_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan empty-runs.json 2>&1)
 H2_RC=$?
@@ -761,7 +761,7 @@ H2_FINDINGS_COUNT=$(printf '%s' "$H2_OUT" | jq '.findings | length' 2>/dev/null)
 assert_equal "0" "$H2_FINDINGS_COUNT" "H2: zero findings, correctly — not a parse error"
 
 # --- H3: CVSS bucket boundaries are exact, not approximate ------------------
-H3_DIR=$(_dossier_safe_mktemp_dir "h3-cvss-boundaries")
+_dossier_require_mktemp_dir H3_DIR "h3-cvss-boundaries"
 cat >"$H3_DIR/boundaries.json" <<'EOF'
 {
   "runs": [{
@@ -797,7 +797,7 @@ assert_equal "null" "$H3_ZERO_SEV" "H3: a 0.0 score is unresolved, not fabricate
 # --- H4: two Critical/High findings, one disposed and one not — the gate
 # must FAIL for the undisposed one without being satisfied by the other's
 # valid disposition, and the evidence must name the undisposed one specifically
-H4_DIR=$(_dossier_safe_mktemp_dir "h4-mixed-disposition")
+_dossier_require_mktemp_dir H4_DIR "h4-mixed-disposition"
 g19_fixture "$H4_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0010 | osv-scanner reports GHSA-disposed-0001 in flask@1.1.0, severity Critical | R | `scan.json` — osv-scanner, GHSA-disposed-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |
@@ -824,7 +824,7 @@ assert_not_contains "EV-0010" "$H4_EVIDENCE" "H4: the evidence does not also nam
 
 # --- H5: a malformed top-level scan-metadata field (tool) must not cost the
 # scan its actual findings ----------------------------------------------------
-H5_DIR=$(_dossier_safe_mktemp_dir "h5-bad-tool-field")
+_dossier_require_mktemp_dir H5_DIR "h5-bad-tool-field"
 cat >"$H5_DIR/bad-tool.json" <<'EOF'
 {
   "runs": [
@@ -848,7 +848,7 @@ assert_equal "unknown" "$H5_TOOL" "H5: the malformed tool field itself degrades 
 # --- H6: a malformed individual entry ABOVE the final record (a bad `.runs[]`
 # entry sitting next to a well-formed one) must not cost the WELL-FORMED
 # run's findings --------------------------------------------------------------
-H6_DIR=$(_dossier_safe_mktemp_dir "h6-bad-run-entry")
+_dossier_require_mktemp_dir H6_DIR "h6-bad-run-entry"
 cat >"$H6_DIR/bad-run.json" <<'EOF'
 {
   "runs": [
@@ -870,7 +870,7 @@ assert_equal "CVE-2024-88888" "$H6_FINDING_ID" "H6: the well-formed run's genuin
 
 # --- H7: same isolation for osv-scanner's own nested structure (a malformed
 # `packages` field on one result must not cost a sibling result's findings) --
-H7_DIR=$(_dossier_safe_mktemp_dir "h7-osv-bad-packages")
+_dossier_require_mktemp_dir H7_DIR "h7-osv-bad-packages"
 cat >"$H7_DIR/osv-bad-packages.json" <<'EOF'
 {
   "results": [
@@ -905,7 +905,7 @@ assert_equal "GHSA-valid-0001" "$H7_FINDING_ID" "H7: a sibling result's genuine 
 # alongside a well-formed one. Dependabot's shape is flat (a single top-level
 # array, no intermediate nesting), so this is a narrower case than H5-H7, but
 # it closes out the same fault-isolation guarantee across all three formats.
-H8_DIR=$(_dossier_safe_mktemp_dir "h8-dependabot-bad-element")
+_dossier_require_mktemp_dir H8_DIR "h8-dependabot-bad-element"
 cat >"$H8_DIR/dependabot-bad-element.json" <<'EOF'
 [
   "this-element-is-a-string-not-an-alert-object",
@@ -932,7 +932,7 @@ assert_equal "1" "$H8_UNPARSEABLE_COUNT" "H8: the malformed element is flagged, 
 # Risk register row for one finding, whose free-text description happens to
 # mention a completely different finding's id, previously disposed that
 # other, genuinely-unresolved finding. ---------------------------------------
-H9_RISK_DIR=$(_dossier_safe_mktemp_dir "h9-coincidental-mention-risk")
+_dossier_require_mktemp_dir H9_RISK_DIR "h9-coincidental-mention-risk"
 g19_fixture "$H9_RISK_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0099 | osv-scanner reports GHSA-real-target in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-real-target, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
@@ -946,7 +946,7 @@ assert_equal "FAIL" "$H9_RISK_RESULT" "H9: a coincidental EV-#### mention in the
 H9_RISK_EVIDENCE=$(g19_evidence "$H9_RISK_DIR")
 assert_contains "EV-0099" "$H9_RISK_EVIDENCE" "H9: the genuinely undisposed finding is still correctly named"
 
-H9_ACC_DIR=$(_dossier_safe_mktemp_dir "h9-coincidental-mention-accepted")
+_dossier_require_mktemp_dir H9_ACC_DIR "h9-coincidental-mention-accepted"
 g19_fixture "$H9_ACC_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0099 | osv-scanner reports GHSA-real-target in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-real-target, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
@@ -967,7 +967,7 @@ assert_equal "FAIL" "$H9_ACC_RESULT" "H9: a coincidental EV-#### mention in the 
 # an injection vector without a test catching it. ---------------------------
 SEC4_MARKER="/tmp/dossier-sec4-pwned-marker-$$"
 rm -f "$SEC4_MARKER" 2>/dev/null
-SEC4_DIR=$(_dossier_safe_mktemp_dir "sec4-injection-safety")
+_dossier_require_mktemp_dir SEC4_DIR "sec4-injection-safety"
 cat >"$SEC4_DIR/scan.json" <<EOF
 [
   {
@@ -1016,7 +1016,7 @@ fi
 # result indistinguishable from that container legitimately having nothing
 # — a scan where EVERY container is malformed must not read as a clean,
 # zero-findings scan. --------------------------------------------------------
-ERR1_DIR=$(_dossier_safe_mktemp_dir "err1-container-tracking")
+_dossier_require_mktemp_dir ERR1_DIR "err1-container-tracking"
 cat >"$ERR1_DIR/all-bad-runs.json" <<'EOF'
 {"runs": ["a string, not an object", 42]}
 EOF
@@ -1037,7 +1037,7 @@ assert_equal "1" "$ERR1_PKG_UNPARSEABLE" "ERR-1: a wrong-typed packages field on
 # did not) must make G19 INCONCLUSIVE, never PASS just because every record
 # that DID parse happens to be disposed — the unparsed portion's materiality
 # is unknown. -----------------------------------------------------------
-ERR2_DIR=$(_dossier_safe_mktemp_dir "err2-status-partial")
+_dossier_require_mktemp_dir ERR2_DIR "err2-status-partial"
 g19_fixture "$ERR2_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 (1 record could not be normalized) | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=partial |
 | EV-0002 | osv-scanner: one record could not be normalized, severity unknown | U | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding-unresolved |' \
@@ -1068,7 +1068,7 @@ assert_contains "parsed partially" "$ERR2_EVIDENCE" "ERR-2/F1: the partial-parse
 # field, in ANY shape, is now simply irrelevant to extraction — proven below),
 # but shifts the "malformed record must not silently vanish" risk to the
 # groups[] iteration itself, tested separately after this. -----------------
-F1_DIR=$(_dossier_safe_mktemp_dir "f1-severity-swallow")
+_dossier_require_mktemp_dir F1_DIR "f1-severity-swallow"
 cat >"$F1_DIR/bad-severity-shape.json" <<'EOF'
 {
   "results": [
@@ -1111,7 +1111,7 @@ assert_equal "0" "$F1_ABSENT_UNPARSEABLE" "F1: an absent severity field is not m
 # object) must throw inside safe_finding's try/catch and land in
 # unparseable_records — never silently vanish with zero trace, the same
 # failure mode the original F1 fix closed one field over. -------------------
-F1B_DIR=$(_dossier_safe_mktemp_dir "f1-successor-bad-group-entry")
+_dossier_require_mktemp_dir F1B_DIR "f1-successor-bad-group-entry"
 cat >"$F1B_DIR/bad-group-entry.json" <<'EOF'
 {
   "results": [
@@ -1149,7 +1149,7 @@ assert_equal "1" "$F1B_UNPARSEABLE_COUNT" "F1-successor: a non-object groups[] e
 # to unparseable_records with a generic id — silently discarding two real
 # findings. Confirmed by direct reproduction that this is reachable from
 # ingested scan-artifact content, not only from a live scanner bug. -------
-F1C_DIR=$(_dossier_safe_mktemp_dir "f1-successor-2-bad-vuln-element")
+_dossier_require_mktemp_dir F1C_DIR "f1-successor-2-bad-vuln-element"
 cat >"$F1C_DIR/bad-vuln-element.json" <<'EOF'
 {
   "results": [
@@ -1199,7 +1199,7 @@ assert_contains "missing or invalid argument" "$HELP_OUT" "--help includes exit 
 
 # --- --out: previously untested. Confirms the file is actually written, its
 # content matches stdout, and the flag doesn't change exit behaviour. -------
-OUT_DIR=$(_dossier_safe_mktemp_dir "out-flag")
+_dossier_require_mktemp_dir OUT_DIR "out-flag"
 mkdir -p "$OUT_DIR/target"
 printf '{"results":[]}' >"$OUT_DIR/clean.json"
 OUT_STDOUT=$(cd "$OUT_DIR" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$VULN_SCRIPT" --scan clean.json --out target 2>&1)
@@ -1233,7 +1233,7 @@ assert_contains "parse-error" "$OUT_ERR_FILE" "--out: a failed run overwrites th
 # capitalized variant or an unfilled template placeholder disposed a
 # genuinely undisposed Critical/High finding. Now an allowlist against the
 # template's own closed enum, case-normalized, with placeholder rejection. --
-G19_STATUS_CASE_DIR=$(_dossier_safe_mktemp_dir "f2-status-case")
+_dossier_require_mktemp_dir G19_STATUS_CASE_DIR "f2-status-case"
 g19_fixture "$G19_STATUS_CASE_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0050 | osv-scanner reports GHSA-f2-0001 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-f2-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
@@ -1244,7 +1244,7 @@ g19_fixture "$G19_STATUS_CASE_DIR" \
 | RISK-0010 | axios SSRF | dependency | medium | high | high | high | [EV-0050] | upgrade planned | Jane Doe | Open |'
 assert_equal "FAIL" "$(g19_result "$G19_STATUS_CASE_DIR")" "F2: a capitalized Status value (\"Open\") no longer disposes a Critical/High finding"
 
-G19_STATUS_PLACEHOLDER_DIR=$(_dossier_safe_mktemp_dir "f2-status-placeholder")
+_dossier_require_mktemp_dir G19_STATUS_PLACEHOLDER_DIR "f2-status-placeholder"
 g19_fixture "$G19_STATUS_PLACEHOLDER_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0051 | osv-scanner reports GHSA-f2-0002 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-f2-0002, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |' \
@@ -1258,7 +1258,7 @@ assert_equal "FAIL" "$(g19_result "$G19_STATUS_PLACEHOLDER_DIR")" "F2/F4: an unf
 # --- F5/SEC-4 (code-reviewer-verifier, security-skeptic): Category is now
 # case-insensitive — a capitalized "Dependency" must still dispose a
 # genuinely-mitigated finding, not spuriously FAIL. --------------------------
-G19_CATEGORY_CASE_DIR=$(_dossier_safe_mktemp_dir "f5-category-case")
+_dossier_require_mktemp_dir G19_CATEGORY_CASE_DIR "f5-category-case"
 g19_fixture "$G19_CATEGORY_CASE_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0052 | osv-scanner reports GHSA-f5-0001 in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-f5-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
@@ -1274,7 +1274,7 @@ assert_equal "PASS" "$(g19_result "$G19_CATEGORY_CASE_DIR")" "F5/SEC-4: a capita
 # named human with the authority to accept, which a bare Owner cell does not
 # establish. An accepted disposition must go through the Accepted risks
 # table, with its accepter/date/basis/review-date accountability fields. ----
-G19_RISKACCEPTED_DIR=$(_dossier_safe_mktemp_dir "f3-risk-register-accepted")
+_dossier_require_mktemp_dir G19_RISKACCEPTED_DIR "f3-risk-register-accepted"
 g19_fixture "$G19_RISKACCEPTED_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0053 | osv-scanner reports GHSA-f3-0001 in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-f3-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
@@ -1287,7 +1287,7 @@ assert_equal "FAIL" "$(g19_result "$G19_RISKACCEPTED_DIR")" "F3: Status=accepted
 
 # --- F4 (code-reviewer-verifier): Accepted risks' Accepter/Basis cells
 # accepted the literal unfilled template placeholder {fill}. -----------------
-G19_ACC_PLACEHOLDER_DIR=$(_dossier_safe_mktemp_dir "f4-accepted-placeholder")
+_dossier_require_mktemp_dir G19_ACC_PLACEHOLDER_DIR "f4-accepted-placeholder"
 g19_fixture "$G19_ACC_PLACEHOLDER_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0054 | osv-scanner reports GHSA-f4-0001 in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-f4-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
@@ -1304,7 +1304,7 @@ assert_equal "FAIL" "$(g19_result "$G19_ACC_PLACEHOLDER_DIR")" "F4: unfilled {fi
 # severity, and zero confirmed Critical/High rows, must be INCONCLUSIVE —
 # materiality unknown is not the same as clean. Distinct from the existing
 # status=partial test above: here the COVERAGE row itself is status=parsed. -
-G19_UNRESOLVED_ONLY_DIR=$(_dossier_safe_mktemp_dir "unresolved-only")
+_dossier_require_mktemp_dir G19_UNRESOLVED_ONLY_DIR "unresolved-only"
 g19_fixture "$G19_UNRESOLVED_ONLY_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0060 | osv-scanner: severity could not be derived for GHSA-unresolved-0001 | U | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding-unresolved |' \
@@ -1317,7 +1317,7 @@ assert_contains "unresolved severity" "$G19_UNRESOLVED_ONLY_EVIDENCE" "New: the 
 # A confirmed, undisposed Critical finding alongside an unrelated unresolved
 # row must still FAIL, not soften to INCONCLUSIVE — FAIL outranks
 # INCONCLUSIVE, matching the gate's existing overall precedence.
-G19_UNRESOLVED_PLUS_FAIL_DIR=$(_dossier_safe_mktemp_dir "unresolved-plus-fail")
+_dossier_require_mktemp_dir G19_UNRESOLVED_PLUS_FAIL_DIR "unresolved-plus-fail"
 g19_fixture "$G19_UNRESOLVED_PLUS_FAIL_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0061 | osv-scanner: severity could not be derived for GHSA-unresolved-0002 | U | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding-unresolved |
@@ -1329,7 +1329,7 @@ assert_equal "FAIL" "$(g19_result "$G19_UNRESOLVED_PLUS_FAIL_DIR")" "New: a conf
 # independent agents): the Accepted risks Review date was only checked for
 # calendar validity, never compared to "now" — a review date from years ago
 # disposed a Critical finding permanently. -----------------------------------
-G19_STALE_REVIEW_DIR=$(_dossier_safe_mktemp_dir "stale-review-date")
+_dossier_require_mktemp_dir G19_STALE_REVIEW_DIR "stale-review-date"
 g19_fixture "$G19_STALE_REVIEW_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0070 | osv-scanner reports GHSA-stale-0001 in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-stale-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
@@ -1342,7 +1342,7 @@ assert_equal "FAIL" "$(g19_result "$G19_STALE_REVIEW_DIR")" "New: an Accepted-ri
 
 # A review date in the future (not yet elapsed) must still dispose normally —
 # negative control proving the fix checks "elapsed", not "always reject".
-G19_FUTURE_REVIEW_DIR=$(_dossier_safe_mktemp_dir "future-review-date")
+_dossier_require_mktemp_dir G19_FUTURE_REVIEW_DIR "future-review-date"
 g19_fixture "$G19_FUTURE_REVIEW_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0071 | osv-scanner reports GHSA-future-0001 in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-future-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \
@@ -1359,7 +1359,7 @@ assert_equal "PASS" "$(g19_result "$G19_FUTURE_REVIEW_DIR")" "New: an Accepted-r
 # unrelated EV-0050 that merely fell numerically between the two listed,
 # non-adjacent ids. g19_row_cites now splits on the list separator before
 # ever looking for a range. --------------------------------------------------
-G19_COMMA_NOT_RANGE_DIR=$(_dossier_safe_mktemp_dir "err2-comma-not-range")
+_dossier_require_mktemp_dir G19_COMMA_NOT_RANGE_DIR "err2-comma-not-range"
 g19_fixture "$G19_COMMA_NOT_RANGE_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0042 | osv-scanner reports GHSA-list-0001 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-list-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=High |
@@ -1383,7 +1383,7 @@ assert_not_contains "EV-0099" "$G19_COMMA_EVIDENCE" "ERR-2: EV-0099, actually ci
 # strict selection loop — silently treated as "nothing to see" rather than
 # flagged. Now reconciled: a leftover, unrecognized row makes G19
 # INCONCLUSIVE instead of vanishing. ------------------------------------------
-G19_MALFORMED_TAG_DIR=$(_dossier_safe_mktemp_dir "err3-malformed-tag")
+_dossier_require_mktemp_dir G19_MALFORMED_TAG_DIR "err3-malformed-tag"
 g19_fixture "$G19_MALFORMED_TAG_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0080 | osv-scanner reports GHSA-err3-0001 in axios@0.21.1, severity High | R | `scan.json` — osv-scanner, GHSA-err3-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity = High |' \
@@ -1395,7 +1395,7 @@ assert_contains "did not match" "$G19_MALFORMED_TAG_EVIDENCE" "ERR-3: the reconc
 
 # Case drift alone (not spacing) must now be tolerated directly by the main
 # selection loop, not merely caught by the reconciliation fallback.
-G19_CASE_DRIFT_DIR=$(_dossier_safe_mktemp_dir "err3-case-drift")
+_dossier_require_mktemp_dir G19_CASE_DRIFT_DIR "err3-case-drift"
 g19_fixture "$G19_CASE_DRIFT_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0081 | osv-scanner reports GHSA-err3-0002 in axios@0.21.1, severity critical | R | `scan.json` — osv-scanner, GHSA-err3-0002, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=critical |' \
@@ -1410,7 +1410,7 @@ assert_contains "EV-0081 (Critical)" "$G19_CASE_DRIFT_EVIDENCE" "ERR-3: the reco
 # permissions problem misdirected remediation toward triaging findings that
 # may already be disposed in a file G19 simply couldn't open. ----------------
 if [ "$(id -u)" != "0" ]; then
-  G19_UNREADABLE_DIR=$(_dossier_safe_mktemp_dir "err6-unreadable-risks")
+  _dossier_require_mktemp_dir G19_UNREADABLE_DIR "err6-unreadable-risks"
   g19_fixture "$G19_UNREADABLE_DIR" \
 '| EV-0001 | Dependency vulnerability scan: osv-scanner on package-lock.json, 2026-07-28 | R | `scan.json` — osv-scanner, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-scan-coverage status=parsed |
 | EV-0090 | osv-scanner reports GHSA-err6-0001 in axios@0.21.1, severity Critical | R | `scan.json` — osv-scanner, GHSA-err6-0001, retrieved 2026-07-28 | yes | 2 | main | 2026-07-28 | none | Internal | no | 05-due-diligence/assets-dependencies-and-licenses.md | vuln-finding severity=Critical |' \

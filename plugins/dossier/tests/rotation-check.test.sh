@@ -40,7 +40,8 @@ no_gh_path() {
   for _dir in $PATH; do
     [ -n "$_dir" ] || continue
     if [ -x "$_dir/gh" ]; then
-      _filtered=$(_dossier_safe_mktemp_dir "no-gh-filtered")
+      local _filtered
+      _dossier_require_mktemp_dir _filtered "no-gh-filtered"
       for _entry in "$_dir"/*; do
         [ -e "$_entry" ] || continue
         _base=$(basename "$_entry")
@@ -62,7 +63,8 @@ no_gh_path() {
 # (git ls-remote --exit-code 0 vs 2 vs 128) require an actual remote to
 # exercise realistically.
 setup_fixture() {
-  _fixture=$(_dossier_safe_mktemp_dir "rotation-fixture")
+  local _fixture
+  _dossier_require_mktemp_dir _fixture "rotation-fixture"
   _bare="$_fixture/origin.git"
   _clone="$_fixture/clone"
   git init -q --bare "$_bare"
@@ -109,7 +111,8 @@ push_docs_branch_commit() {
 # 1. No-branch cold start
 # =============================================================================
 F1=$(setup_fixture)
-SUMMARY1=$(_dossier_safe_mktemp_dir "rotation-summary1")/summary.md
+_dossier_require_mktemp_dir SUMMARY1_DIR "rotation-summary1"
+SUMMARY1="$SUMMARY1_DIR/summary.md"
 OUT1=$(cd "$F1" && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier "$SCRIPT" --summary "$SUMMARY1" 2>&1)
 RC1=$?
 assert_equal "0" "$RC1" "no-branch cold start: exits 0 (a reached decision, not an infra failure)"
@@ -157,7 +160,7 @@ assert_equal "branch_commits" "$(get "$OUT2" age_source)" "policy=none: age_sour
 # =============================================================================
 F3=$(setup_fixture)
 push_docs_branch_commit "$F3" "docs/dossier" "$(day_offset 10)"
-STUB3=$(_dossier_safe_mktemp_dir "gh-stub-old-pr")
+_dossier_require_mktemp_dir STUB3 "gh-stub-old-pr"
 cat > "$STUB3/gh" <<EOF
 #!/usr/bin/env bash
 echo '{"number":42,"createdAt":"$(day_offset 10)T00:00:00Z"}'
@@ -176,7 +179,7 @@ assert_contains "age" "$(get "$OUT3" reason)" "would-rotate via age: reason cite
 # =============================================================================
 F4=$(setup_fixture)
 push_docs_branch_commit "$F4" "docs/dossier" "$(day_offset 1)"
-STUB4=$(_dossier_safe_mktemp_dir "gh-stub-recent-pr")
+_dossier_require_mktemp_dir STUB4 "gh-stub-recent-pr"
 cat > "$STUB4/gh" <<EOF
 #!/usr/bin/env bash
 echo '{"number":7,"createdAt":"$(day_offset 1)T00:00:00Z"}'
@@ -195,7 +198,8 @@ assert_equal "pr_created_at" "$(get "$OUT4" age_source)" "would-not-rotate: age_
 F5=$(setup_fixture)
 push_docs_branch_commit "$F5" "docs/dossier" "$(day_offset 40)"
 NOGH_PATH5=$(no_gh_path)
-SUMMARY5=$(_dossier_safe_mktemp_dir "rotation-summary5")/summary.md
+_dossier_require_mktemp_dir SUMMARY5_DIR "rotation-summary5"
+SUMMARY5="$SUMMARY5_DIR/summary.md"
 OUT5=$(cd "$F5" && env PATH="$NOGH_PATH5" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=monthly "$SCRIPT" --summary "$SUMMARY5" 2>&1)
 RC5=$?
 assert_equal "0" "$RC5" "degraded gh-unavailable via commit age: exits 0"
@@ -284,7 +288,8 @@ push_docs_branch_commit "$F7" "docs/dossier" "$(day_offset 5)"
   git remote set-url origin /nonexistent/path/that/does/not/exist.git
 ) >/dev/null 2>&1
 NOGH_PATH7=$(no_gh_path)
-SUMMARY7=$(_dossier_safe_mktemp_dir "rotation-summary7")/summary.md
+_dossier_require_mktemp_dir SUMMARY7_DIR "rotation-summary7"
+SUMMARY7="$SUMMARY7_DIR/summary.md"
 OUT7=$(cd "$F7" && env PATH="$NOGH_PATH7" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" --summary "$SUMMARY7" 2>&1)
 RC7=$?
 assert_equal "0" "$RC7" "transport failure: still exits 0 (a data-availability failure, not an infra failure)"
@@ -351,7 +356,7 @@ fi
 "$SCRIPT" --nonexistent-flag >/dev/null 2>&1
 assert_equal "2" "$?" "unknown flag exits 2"
 
-NOTGIT=$(_dossier_safe_mktemp_dir "rotation-notgit")
+_dossier_require_mktemp_dir NOTGIT "rotation-notgit"
 OUT_NOTGIT=$(cd "$NOTGIT" && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SCRIPT" 2>&1)
 RC_NOTGIT=$?
 assert_equal "1" "$RC_NOTGIT" "run outside a git repository exits 1 (infrastructure failure)"
@@ -411,7 +416,8 @@ assert_equal "false" "$(get "$OUT12B" would_rotate)" "empty DOSSIER_CI_ROLLING_B
 # =============================================================================
 F13=$(setup_fixture)
 WEIRD_BRANCH='docs/dossier`|evil'
-SUMMARY13=$(_dossier_safe_mktemp_dir "rotation-summary13")/summary.md
+_dossier_require_mktemp_dir SUMMARY13_DIR "rotation-summary13"
+SUMMARY13="$SUMMARY13_DIR/summary.md"
 OUT13=$(cd "$F13" && env CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH="$WEIRD_BRANCH" "$SCRIPT" --summary "$SUMMARY13" 2>&1)
 RC13=$?
 assert_equal "0" "$RC13" "branch name with backtick/pipe: still exits 0"
@@ -431,13 +437,14 @@ assert_equal "9" "$TABLE_ROW_COUNT13" "branch name with backtick/pipe: exactly t
 # =============================================================================
 F14=$(setup_fixture)
 push_docs_branch_commit "$F14" "docs/dossier" "$(day_offset 10)"
-STUB14=$(_dossier_safe_mktemp_dir "gh-stub-list-fails")
+_dossier_require_mktemp_dir STUB14 "gh-stub-list-fails"
 cat > "$STUB14/gh" <<'EOF'
 #!/usr/bin/env bash
 exit 1
 EOF
 chmod +x "$STUB14/gh"
-SUMMARY14=$(_dossier_safe_mktemp_dir "rotation-summary14")/summary.md
+_dossier_require_mktemp_dir SUMMARY14_DIR "rotation-summary14"
+SUMMARY14="$SUMMARY14_DIR/summary.md"
 OUT14=$(cd "$F14" && env PATH="$STUB14:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION=weekly "$SCRIPT" --summary "$SUMMARY14" 2>&1)
 RC14=$?
 assert_equal "0" "$RC14" "gh pr list failure: still exits 0 (falls back to the commit-based age walk, not an infra failure)"
@@ -469,7 +476,7 @@ assert_equal "false" "$(get "$OUT15" would_rotate)" "zero size threshold: falls 
 # =============================================================================
 F16=$(setup_fixture)
 push_docs_branch_commit "$F16" "docs/dossier" "$(day_offset 1)"
-STUB16=$(_dossier_safe_mktemp_dir "gh-stub-future-pr")
+_dossier_require_mktemp_dir STUB16 "gh-stub-future-pr"
 cat > "$STUB16/gh" <<EOF
 #!/usr/bin/env bash
 echo '{"number":99,"createdAt":"$(future_offset 3)T00:00:00Z"}'
@@ -493,7 +500,7 @@ assert_contains "unavailable" "$(get "$OUT16" reason)" "future-dated PR createdA
 # =============================================================================
 F17=$(setup_fixture)
 push_docs_branch_commit "$F17" "docs/dossier" "$(day_offset 10)"
-STUB17=$(_dossier_safe_mktemp_dir "gh-stub-cross-repo")
+_dossier_require_mktemp_dir STUB17 "gh-stub-cross-repo"
 STUB17_JSON="[{\"number\":13,\"createdAt\":\"$(day_offset 1)T00:00:00Z\",\"isCrossRepository\":true},{\"number\":7,\"createdAt\":\"$(day_offset 10)T00:00:00Z\",\"isCrossRepository\":false}]"
 cat > "$STUB17/gh" <<STUBEOF
 #!/usr/bin/env bash
@@ -531,7 +538,7 @@ assert_equal "pr_created_at" "$(get "$OUT17" age_source)" "cross-repository deco
 # =============================================================================
 F18=$(setup_fixture)
 REAL_MKTEMP=$(command -v mktemp)
-STUB18=$(_dossier_safe_mktemp_dir "mktemp-stub-cascade-fail")
+_dossier_require_mktemp_dir STUB18 "mktemp-stub-cascade-fail"
 cat > "$STUB18/mktemp" <<STUBEOF
 #!/usr/bin/env bash
 for a in "\$@"; do
@@ -560,7 +567,8 @@ assert_not_contains "would_rotate=false" "$OUT18" "config resolver infra failure
 F19=$(setup_fixture)
 push_docs_branch_commit "$F19" "docs/dossier" "$(day_offset 1)"
 NOGH_PATH19=$(no_gh_path)
-SUMMARY19=$(_dossier_safe_mktemp_dir "rotation-summary19")/summary.md
+_dossier_require_mktemp_dir SUMMARY19_DIR "rotation-summary19"
+SUMMARY19="$SUMMARY19_DIR/summary.md"
 WEIRD_POLICY='biweekly [click here](https://evil.example)'
 OUT19=$(cd "$F19" && env PATH="$NOGH_PATH19" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier DOSSIER_CI_ROLLING_BRANCH_ROTATION="$WEIRD_POLICY" "$SCRIPT" --summary "$SUMMARY19" 2>&1)
 RC19=$?
@@ -593,7 +601,8 @@ fi
 # =============================================================================
 F20=$(setup_fixture)
 NOGH_PATH20=$(no_gh_path)
-GHOUT20=$(_dossier_safe_mktemp_dir "rotation-ghout20")/github_output
+_dossier_require_mktemp_dir GHOUT20_DIR "rotation-ghout20"
+GHOUT20="$GHOUT20_DIR/github_output"
 : > "$GHOUT20"
 INJECT_BRANCH='docs/dossier
 fake_output=INJECTED

@@ -21,7 +21,7 @@ fi
 # is off, proven with a tripwire binary: a fake `pyscn` on PATH that writes
 # a marker file if ever executed.
 # =============================================================================
-DIR_DISABLED=$(_dossier_safe_mktemp_dir "disabled")
+_dossier_require_mktemp_dir DIR_DISABLED "disabled"
 mkdir -p "$DIR_DISABLED/target" "$DIR_DISABLED/tripwire-bin"
 printf 'def f():\n    pass\n' >"$DIR_DISABLED/target/mod.py"
 TRIPWIRE_MARKER="$DIR_DISABLED/pyscn-was-invoked"
@@ -71,7 +71,7 @@ assert_equal "unavailable" "$STATUS_NOTOOL" "tool-unavailable: distinct status, 
 # created), so this must never read as a clean zero-issues result.
 # =============================================================================
 if command -v pyscn >/dev/null 2>&1; then
-  DIR_NOPY=$(_dossier_safe_mktemp_dir "no-python-files")
+  _dossier_require_mktemp_dir DIR_NOPY "no-python-files"
   mkdir -p "$DIR_NOPY/target"
   printf 'hello\n' >"$DIR_NOPY/target/readme.txt"
   OUT_NOPY=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
@@ -89,7 +89,7 @@ fi
 # verify the tool process is ACTUALLY killed, not merely that the wrapper
 # reports "timeout" while the real process leaks on, orphaned.
 # =============================================================================
-DIR_TIMEOUT=$(_dossier_safe_mktemp_dir "timeout")
+_dossier_require_mktemp_dir DIR_TIMEOUT "timeout"
 mkdir -p "$DIR_TIMEOUT/fakebin" "$DIR_TIMEOUT/target"
 printf 'def f():\n    pass\n' >"$DIR_TIMEOUT/target/mod.py"
 TIMEOUT_PID_MARKER="$DIR_TIMEOUT/pyscn.pid"
@@ -135,7 +135,7 @@ fi
 # honest, NAMED skip locally when the tool is absent; CI installs it.
 # =============================================================================
 if command -v pyscn >/dev/null 2>&1; then
-  DIR_E2E=$(_dossier_safe_mktemp_dir "ac2-e2e")
+  _dossier_require_mktemp_dir DIR_E2E "ac2-e2e"
   mkdir -p "$DIR_E2E/target" "$DIR_E2E/out"
   cat >"$DIR_E2E/target/bad.py" <<'EOF'
 def unreachable_after_return(x):
@@ -193,7 +193,7 @@ fi
 # never return a stale (first-run) artifact on the second run.
 # =============================================================================
 if command -v pyscn >/dev/null 2>&1; then
-  DIR_RERUN=$(_dossier_safe_mktemp_dir "rerun")
+  _dossier_require_mktemp_dir DIR_RERUN "rerun"
   mkdir -p "$DIR_RERUN/target" "$DIR_RERUN/out"
   printf 'def f():\n    pass\n' >"$DIR_RERUN/target/mod.py"
   DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
@@ -236,7 +236,7 @@ assert_equal "disabled" "$STATUS_CROSSFLAG" "AC3: runSecurityScan=true alone nev
 # =============================================================================
 SECURITY_SCRIPT="$(pwd)/plugins/dossier/bin/dossier-scan-security.sh"
 if [ -x "$SECURITY_SCRIPT" ]; then
-  DIR_JOINT=$(_dossier_safe_mktemp_dir "ac3-joint")
+  _dossier_require_mktemp_dir DIR_JOINT "ac3-joint"
   mkdir -p "$DIR_JOINT/sec-target" "$DIR_JOINT/qual-target"
   printf 'def f():\n    pass\n' >"$DIR_JOINT/qual-target/mod.py"
 
@@ -270,7 +270,7 @@ assert_equal "2" "$?" "exits 2 on an unrecognized flag"
 # can't be written. --out is a path nested UNDER A PLAIN FILE, guaranteeing
 # mkdir -p fails structurally.
 # =============================================================================
-DIR_OUTFAIL=$(_dossier_safe_mktemp_dir "out-write-failure")
+_dossier_require_mktemp_dir DIR_OUTFAIL "out-write-failure"
 mkdir -p "$DIR_OUTFAIL/target"
 printf 'not a directory\n' >"$DIR_OUTFAIL/blocker"
 OUT_OUTFAIL=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SCRIPT" --target "$DIR_OUTFAIL/target" --out "$DIR_OUTFAIL/blocker/nested" 2>/dev/null)
@@ -288,7 +288,7 @@ assert_contains "could not create --out directory" "$STDERR_OUTFAIL" "--out unde
 # disabling the poll loop's own timeout enforcement. A stub that runs for
 # ~2 real seconds forces the loop to iterate at least once.
 # =============================================================================
-DIR_BADTIMEOUT=$(_dossier_safe_mktemp_dir "bad-timeout-env")
+_dossier_require_mktemp_dir DIR_BADTIMEOUT "bad-timeout-env"
 mkdir -p "$DIR_BADTIMEOUT/fakebin" "$DIR_BADTIMEOUT/target"
 printf 'def f():\n    pass\n' >"$DIR_BADTIMEOUT/target/mod.py"
 cat >"$DIR_BADTIMEOUT/fakebin/pyscn" <<'EOF'
@@ -307,7 +307,7 @@ assert_not_contains "integer expression expected" "$STDERR_BADTIMEOUT" "a non-nu
 # closed branches that were already correct but untested.
 # =============================================================================
 # A plain FILE as --target is an explicit error, never a clean result.
-DIR_FILETARGET=$(_dossier_safe_mktemp_dir "file-as-target")
+_dossier_require_mktemp_dir DIR_FILETARGET "file-as-target"
 printf 'not a directory\n' >"$DIR_FILETARGET/plainfile"
 OUT_FILETARGET=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
   "$SCRIPT" --target "$DIR_FILETARGET/plainfile" 2>&1)
@@ -317,7 +317,7 @@ assert_equal "error" "$STATUS_FILETARGET" "a plain file as --target (not a direc
 # A readable-but-not-enterable directory (r--, no x). Skipped when the test
 # runner itself is root, which bypasses directory permission checks.
 if [ "$(id -u)" != "0" ]; then
-  DIR_NOEXEC_PARENT=$(_dossier_safe_mktemp_dir "noexec-target")
+  _dossier_require_mktemp_dir DIR_NOEXEC_PARENT "noexec-target"
   mkdir -p "$DIR_NOEXEC_PARENT/locked"
   chmod 644 "$DIR_NOEXEC_PARENT/locked"
   OUT_NOEXEC=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_CODE_QUALITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
@@ -331,7 +331,7 @@ fi
 
 # pyscn producing a report file that isn't valid JSON (distinct from
 # "produced no report file at all", which is already covered elsewhere).
-DIR_MALFORMED=$(_dossier_safe_mktemp_dir "malformed-report")
+_dossier_require_mktemp_dir DIR_MALFORMED "malformed-report"
 mkdir -p "$DIR_MALFORMED/fakebin" "$DIR_MALFORMED/target"
 printf 'def f():\n    pass\n' >"$DIR_MALFORMED/target/mod.py"
 cat >"$DIR_MALFORMED/fakebin/pyscn" <<'EOF'

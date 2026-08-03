@@ -42,7 +42,7 @@ setup_fixture() {
   # $1 = number of stale documents to plant (each independently past 90 days),
   # drawn from CANON_FIXTURE_DOCS in order.
   local n="$1" fixture rel i=1
-  fixture=$(_dossier_safe_mktemp_dir "policy-stale")
+  _dossier_require_mktemp_dir fixture "policy-stale"
   mkdir -p "$fixture/docs/dossier/00-control" "$fixture/docs/dossier/02-architecture"
   printf '%s\n' "$CANON_FIXTURE_DOCS" | head -n "$n" | while IFS= read -r rel; do
     cat >"$fixture/docs/dossier/$rel" <<EOF
@@ -111,7 +111,7 @@ STALE_DOCS_COUNT=$(printf '%s' "$STALE_DOCS_FIELD" | tr ',' '\n' | grep -c .)
 assert_equal "3" "$STALE_DOCS_COUNT" "AC3: the stale_docs list is capped at maxStaleDocsPerSweep (3), not all 8"
 
 # --- No stale documents at all: schedule sweep behaves exactly as before ---
-F3=$(_dossier_safe_mktemp_dir "policy-fresh")
+_dossier_require_mktemp_dir F3 "policy-fresh"
 mkdir -p "$F3/docs/dossier/00-control" "$F3/docs/dossier/02-architecture"
 cat >"$F3/docs/dossier/02-architecture/system-architecture.md" <<EOF
 dossier-header: v1
@@ -133,7 +133,7 @@ assert_equal "no-relevant-paths" "$(get "$OUT_NOSTALE" reason)" "no stale docume
 # alongside it) with only dossier-staleness-check.sh swapped for a script that
 # always fails — entirely inside an isolated fixture, the real repo scripts
 # are never touched.
-ERR3_ROOT=$(_dossier_safe_mktemp_dir "policy-staleness-failure")
+_dossier_require_mktemp_dir ERR3_ROOT "policy-staleness-failure"
 mkdir -p "$ERR3_ROOT/bin"
 cp "$(pwd)/plugins/dossier/bin/"*.sh "$ERR3_ROOT/bin/"
 cat >"$ERR3_ROOT/bin/dossier-staleness-check.sh" <<'FAKE'

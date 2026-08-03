@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # _dossier_require_mktemp_dir (issue #149): closes the "cd \"\" silently
 # no-ops" corruption risk that a bare `VAR=$(_dossier_safe_mktemp_dir ...)`
 # call site reopens whenever it forgets to check the command substitution's
@@ -32,7 +33,7 @@ assert_not_contains "UNREACHABLE" "$GUARD_OUTPUT" "control flow never reaches pa
 # an isolated scratch directory (never the real repo) so that even a broken
 # fix can only ever corrupt a throwaway fixture, not this working tree.
 TARGET_TEST_ABS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/local-merge-hook.test.sh"
-GUARD_SCRATCH=$(_dossier_safe_mktemp_dir "local-merge-hook-guard-regression")
+_dossier_require_mktemp_dir GUARD_SCRATCH "local-merge-hook-guard-regression"
 mkdir -p "$GUARD_SCRATCH/plugins/dossier/hooks/scripts"
 cp "plugins/dossier/hooks/scripts/detect-local-merge.sh" "$GUARD_SCRATCH/plugins/dossier/hooks/scripts/detect-local-merge.sh"
 chmod +x "$GUARD_SCRATCH/plugins/dossier/hooks/scripts/detect-local-merge.sh"

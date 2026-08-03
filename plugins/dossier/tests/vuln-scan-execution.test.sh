@@ -22,7 +22,7 @@ fi
 # that writes a marker file if ever executed. If the disabled path is
 # genuinely short-circuited before any tool lookup, the marker never appears.
 # =============================================================================
-DIR_DISABLED=$(_dossier_safe_mktemp_dir "disabled")
+_dossier_require_mktemp_dir DIR_DISABLED "disabled"
 mkdir -p "$DIR_DISABLED/target" "$DIR_DISABLED/tripwire-bin"
 TRIPWIRE_MARKER="$DIR_DISABLED/osv-scanner-was-invoked"
 cat >"$DIR_DISABLED/tripwire-bin/osv-scanner" <<EOF
@@ -74,7 +74,7 @@ assert_equal "unavailable" "$STATUS_NOTOOL" "tool-unavailable: distinct status, 
 # and its (nonexistent, since it never got to print) output is never read
 # as a result.
 # =============================================================================
-DIR_TIMEOUT=$(_dossier_safe_mktemp_dir "timeout")
+_dossier_require_mktemp_dir DIR_TIMEOUT "timeout"
 mkdir -p "$DIR_TIMEOUT/fakebin" "$DIR_TIMEOUT/target"
 cat >"$DIR_TIMEOUT/fakebin/osv-scanner" <<'EOF'
 #!/usr/bin/env bash
@@ -106,7 +106,7 @@ assert_equal "timeout" "$STATUS_TIMEOUT" "timeout: distinct status, wording dist
 # at some location this wrapper's own guess missed) emit an offline_caveat
 # unconditionally claiming the result is "age-checked before this scan ran"
 # when no age check occurred at all.
-DIR_MISSING_CACHE=$(_dossier_safe_mktemp_dir "offline-missing-cache")
+_dossier_require_mktemp_dir DIR_MISSING_CACHE "offline-missing-cache"
 mkdir -p "$DIR_MISSING_CACHE/target" "$DIR_MISSING_CACHE/tripwire-bin"
 TRIPWIRE_OFFLINE_MARKER="$DIR_MISSING_CACHE/osv-scanner-was-invoked"
 cat >"$DIR_MISSING_CACHE/tripwire-bin/osv-scanner" <<EOF
@@ -115,7 +115,7 @@ touch "$TRIPWIRE_OFFLINE_MARKER"
 echo '{"results":[]}'
 EOF
 chmod +x "$DIR_MISSING_CACHE/tripwire-bin/osv-scanner"
-DIR_MISSING_CACHE_HOME=$(_dossier_safe_mktemp_dir "offline-missing-cache-home")
+_dossier_require_mktemp_dir DIR_MISSING_CACHE_HOME "offline-missing-cache-home"
 OUT_MISSING_CACHE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
   HOME="$DIR_MISSING_CACHE_HOME" PATH="$DIR_MISSING_CACHE/tripwire-bin:$PATH" \
   "$SCRIPT" --target "$DIR_MISSING_CACHE/target" --offline 2>&1)
@@ -137,7 +137,7 @@ fi
 # to be saved by the real tool's own behavior. Without the upstream refusal
 # this stub would return "ok" carrying an offline_caveat that falsely
 # claims "age-checked before this scan ran."
-DIR_EMPTY_CACHE=$(_dossier_safe_mktemp_dir "offline-empty-cache")
+_dossier_require_mktemp_dir DIR_EMPTY_CACHE "offline-empty-cache"
 mkdir -p "$DIR_EMPTY_CACHE/target" "$DIR_EMPTY_CACHE/tripwire-bin"
 TRIPWIRE_EMPTY_MARKER="$DIR_EMPTY_CACHE/osv-scanner-was-invoked"
 cat >"$DIR_EMPTY_CACHE/tripwire-bin/osv-scanner" <<EOF
@@ -146,7 +146,7 @@ touch "$TRIPWIRE_EMPTY_MARKER"
 echo '{"results":[]}'
 EOF
 chmod +x "$DIR_EMPTY_CACHE/tripwire-bin/osv-scanner"
-DIR_EMPTY_CACHE_HOME=$(_dossier_safe_mktemp_dir "offline-empty-cache-home")
+_dossier_require_mktemp_dir DIR_EMPTY_CACHE_HOME "offline-empty-cache-home"
 if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
   mkdir -p "$DIR_EMPTY_CACHE_HOME/Library/Caches/osv-scanner"
 else
@@ -163,7 +163,7 @@ else
   _dossier_assert_pass "--offline with an empty cache directory: osv-scanner tripwire was never invoked — refused before any tool lookup, not merely saved by the real tool's own fallback behavior"
 fi
 
-DIR_OFFLINE=$(_dossier_safe_mktemp_dir "offline-no-db")
+_dossier_require_mktemp_dir DIR_OFFLINE "offline-no-db"
 mkdir -p "$DIR_OFFLINE/target"
 printf 'requests==2.32.3\n' >"$DIR_OFFLINE/target/requirements.txt"
 
@@ -185,7 +185,7 @@ else
 fi
 
 if command -v osv-scanner >/dev/null 2>&1; then
-  DIR_OFFLINE_HOME=$(_dossier_safe_mktemp_dir "offline-no-db-home")
+  _dossier_require_mktemp_dir DIR_OFFLINE_HOME "offline-no-db-home"
   OUT_OFFLINE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
     HOME="$DIR_OFFLINE_HOME" \
     "$SCRIPT" --target "$DIR_OFFLINE/target" --offline 2>&1)
@@ -212,7 +212,7 @@ fi
 # consulted PyPI, deterministically, so these tests run everywhere,
 # independent of whether the real tool is installed.
 # =============================================================================
-DIR_STALE_HOME=$(_dossier_safe_mktemp_dir "offline-stale-home")
+_dossier_require_mktemp_dir DIR_STALE_HOME "offline-stale-home"
 mkdir -p "$DIR_STALE_HOME/$OSV_CACHE_REL" "$DIR_STALE_HOME/fakebin"
 printf 'stale placeholder db\n' >"$DIR_STALE_HOME/$OSV_CACHE_REL/all.zip"
 touch -t 202001010000 "$DIR_STALE_HOME/$OSV_CACHE_REL/all.zip"
@@ -232,7 +232,7 @@ assert_contains "stale_advisory_data" "$DETAIL_STALE" "--offline stale-cache det
 assert_contains "PyPI" "$DETAIL_STALE" "--offline stale-cache detail names the specific ecosystem"
 
 # A cache within the configured max age must NOT be refused by the age check.
-DIR_FRESH_HOME=$(_dossier_safe_mktemp_dir "offline-fresh-home")
+_dossier_require_mktemp_dir DIR_FRESH_HOME "offline-fresh-home"
 mkdir -p "$DIR_FRESH_HOME/$OSV_CACHE_REL" "$DIR_FRESH_HOME/fakebin"
 printf 'fresh placeholder db\n' >"$DIR_FRESH_HOME/$OSV_CACHE_REL/all.zip"
 cat >"$DIR_FRESH_HOME/fakebin/osv-scanner" <<'EOF'
@@ -249,7 +249,7 @@ assert_equal "ok" "$STATUS_FRESH" "--offline with a fresh (just-created) cache f
 
 # DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS override: a cache that would fail the
 # default 7-day threshold must NOT be refused as stale under a wide override.
-DIR_OVERRIDE_HOME=$(_dossier_safe_mktemp_dir "offline-max-age-override-home")
+_dossier_require_mktemp_dir DIR_OVERRIDE_HOME "offline-max-age-override-home"
 mkdir -p "$DIR_OVERRIDE_HOME/$OSV_CACHE_REL" "$DIR_OVERRIDE_HOME/fakebin"
 printf 'placeholder db\n' >"$DIR_OVERRIDE_HOME/$OSV_CACHE_REL/all.zip"
 touch -t 202001010000 "$DIR_OVERRIDE_HOME/$OSV_CACHE_REL/all.zip"
@@ -268,7 +268,7 @@ assert_equal "ok" "$STATUS_OVERRIDE" "DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS override
 # Mixed-ecosystem, stale TARGET ecosystem (holdout finding P1, original
 # repro): a fresh, UNRELATED sibling ecosystem (npm) must not mask a stale
 # database in the ecosystem the scan actually consulted (PyPI).
-DIR_MIXED_HOME=$(_dossier_safe_mktemp_dir "offline-mixed-ecosystem-home")
+_dossier_require_mktemp_dir DIR_MIXED_HOME "offline-mixed-ecosystem-home"
 mkdir -p "$DIR_MIXED_HOME/$OSV_CACHE_REL" "$DIR_MIXED_HOME/$OSV_CACHE_REL_NPM" "$DIR_MIXED_HOME/fakebin"
 printf 'stale PyPI db\n' >"$DIR_MIXED_HOME/$OSV_CACHE_REL/all.zip"
 touch -t 202001010000 "$DIR_MIXED_HOME/$OSV_CACHE_REL/all.zip"
@@ -292,7 +292,7 @@ assert_contains "stale_advisory_data" "$DETAIL_MIXED" "mixed-ecosystem cache: de
 # UNRELATED npm db must NOT block a scan whose actually-consulted ecosystem
 # (PyPI) is fresh. A whole-tree "oldest file" check would incorrectly
 # refuse this scan forever, on a database it never needed.
-DIR_MIXED2_HOME=$(_dossier_safe_mktemp_dir "offline-mixed-ecosystem-2-home")
+_dossier_require_mktemp_dir DIR_MIXED2_HOME "offline-mixed-ecosystem-2-home"
 mkdir -p "$DIR_MIXED2_HOME/$OSV_CACHE_REL" "$DIR_MIXED2_HOME/$OSV_CACHE_REL_NPM" "$DIR_MIXED2_HOME/fakebin"
 printf 'fresh PyPI db\n' >"$DIR_MIXED2_HOME/$OSV_CACHE_REL/all.zip"
 printf 'stale npm db\n' >"$DIR_MIXED2_HOME/$OSV_CACHE_REL_NPM/all.zip"
@@ -314,7 +314,7 @@ assert_equal "ok" "$STATUS_MIXED2" "--offline with a fresh PyPI db (the consulte
 # network/cache access) — this wrapper cannot tell "a cached database
 # silently backed this" from "no advisory data was checked at all" from the
 # JSON alone, so it refuses rather than guess.
-DIR_NOCACHE_HOME=$(_dossier_safe_mktemp_dir "offline-consulted-ecosystem-no-cache-home")
+_dossier_require_mktemp_dir DIR_NOCACHE_HOME "offline-consulted-ecosystem-no-cache-home"
 mkdir -p "$DIR_NOCACHE_HOME/fakebin"
 if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
   mkdir -p "$DIR_NOCACHE_HOME/Library/Caches/osv-scanner"
@@ -342,7 +342,7 @@ assert_equal "unavailable" "$STATUS_NOCACHE" "--offline where the consulted ecos
 # mode it exists to prevent, on the single most common outcome). A stub
 # that captures its own argv proves the flag is wired into SCAN_ARGS,
 # independent of whichever osv-scanner version happens to be installed.
-DIR_ALLPKGS=$(_dossier_safe_mktemp_dir "offline-all-packages-flag")
+_dossier_require_mktemp_dir DIR_ALLPKGS "offline-all-packages-flag"
 mkdir -p "$DIR_ALLPKGS/$OSV_CACHE_REL" "$DIR_ALLPKGS/fakebin"
 printf 'fresh placeholder db\n' >"$DIR_ALLPKGS/$OSV_CACHE_REL/all.zip"
 ARGV_CAPTURE="$DIR_ALLPKGS/osv-scanner-argv"
@@ -366,10 +366,10 @@ if command -v osv-scanner >/dev/null 2>&1; then
   # --all-packages fix. Uses a real downloaded database (not a placeholder),
   # since the per-ecosystem check now runs AFTER invocation and needs
   # osv-scanner to actually load and report against real content.
-  DIR_CLEAN_E2E=$(_dossier_safe_mktemp_dir "offline-clean-e2e")
+  _dossier_require_mktemp_dir DIR_CLEAN_E2E "offline-clean-e2e"
   mkdir -p "$DIR_CLEAN_E2E/target"
   printf 'tomli==2.0.1\n' >"$DIR_CLEAN_E2E/target/requirements.txt"
-  DIR_CLEAN_E2E_DOWNLOAD_HOME=$(_dossier_safe_mktemp_dir "offline-clean-e2e-download-home")
+  _dossier_require_mktemp_dir DIR_CLEAN_E2E_DOWNLOAD_HOME "offline-clean-e2e-download-home"
   HOME="$DIR_CLEAN_E2E_DOWNLOAD_HOME" osv-scanner scan source --offline-vulnerabilities --download-offline-databases \
     --format json -r "$DIR_CLEAN_E2E/target" >/dev/null 2>&1
   if [ -f "$DIR_CLEAN_E2E_DOWNLOAD_HOME/$OSV_CACHE_REL/all.zip" ]; then
@@ -399,7 +399,7 @@ fi
 # missing-directory refusal (checked before invocation) doesn't itself fire
 # first — this test isolates the DOWNSTREAM defense-in-depth specifically.
 # =============================================================================
-DIR_REWORDED=$(_dossier_safe_mktemp_dir "offline-reworded-stderr")
+_dossier_require_mktemp_dir DIR_REWORDED "offline-reworded-stderr"
 mkdir -p "$DIR_REWORDED/fakebin" "$DIR_REWORDED/target"
 cat >"$DIR_REWORDED/fakebin/osv-scanner" <<'EOF'
 #!/usr/bin/env bash
@@ -413,7 +413,7 @@ if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
 else
   REWORDED_CACHE_REL=".cache/osv-scanner/PyPI"
 fi
-DIR_REWORDED_HOME=$(_dossier_safe_mktemp_dir "offline-reworded-stderr-home")
+_dossier_require_mktemp_dir DIR_REWORDED_HOME "offline-reworded-stderr-home"
 mkdir -p "$DIR_REWORDED_HOME/$REWORDED_CACHE_REL"
 printf 'fresh placeholder db\n' >"$DIR_REWORDED_HOME/$REWORDED_CACHE_REL/all.zip"
 OUT_REWORDED=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
@@ -434,7 +434,7 @@ assert_equal "unavailable" "$STATUS_REWORDED" "--offline with exit 127 + empty r
 # installs it so the skip path is never exercised there.
 # =============================================================================
 if command -v osv-scanner >/dev/null 2>&1; then
-  DIR_E2E=$(_dossier_safe_mktemp_dir "ac1-e2e")
+  _dossier_require_mktemp_dir DIR_E2E "ac1-e2e"
   mkdir -p "$DIR_E2E/target" "$DIR_E2E/out"
   # django 2.0.1 and requests 2.6.0 both carry multiple real, published
   # Critical/High CVEs (confirmed via a live osv-scanner run against this
@@ -477,7 +477,7 @@ fi
 # not exercised as an `ok` case here.)
 # =============================================================================
 if command -v osv-scanner >/dev/null 2>&1; then
-  DIR_CLEAN=$(_dossier_safe_mktemp_dir "genuine-scan")
+  _dossier_require_mktemp_dir DIR_CLEAN "genuine-scan"
   mkdir -p "$DIR_CLEAN/target"
   printf 'requests==2.32.3\n' >"$DIR_CLEAN/target/requirements.txt"
   OUT_CLEAN=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
@@ -509,7 +509,7 @@ assert_equal "disabled" "$STATUS_CROSSFLAG" "AC3: runCodeQualityScan=true alone 
 # =============================================================================
 QUALITY_SCRIPT="$(pwd)/plugins/dossier/bin/dossier-scan-quality.sh"
 if [ -x "$QUALITY_SCRIPT" ]; then
-  DIR_JOINT=$(_dossier_safe_mktemp_dir "ac3-joint")
+  _dossier_require_mktemp_dir DIR_JOINT "ac3-joint"
   mkdir -p "$DIR_JOINT/sec-target" "$DIR_JOINT/qual-target"
   printf 'def f():\n    pass\n' >"$DIR_JOINT/qual-target/mod.py"
 
@@ -553,7 +553,7 @@ assert_equal "2" "$?" "exits 2 on an unrecognized flag"
 # mkdir -p fails structurally (not a permissions flake), independent of
 # whether the test runs as root.
 # =============================================================================
-DIR_OUTFAIL=$(_dossier_safe_mktemp_dir "out-write-failure")
+_dossier_require_mktemp_dir DIR_OUTFAIL "out-write-failure"
 mkdir -p "$DIR_OUTFAIL/target"
 printf 'not a directory\n' >"$DIR_OUTFAIL/blocker"
 OUT_OUTFAIL=$(CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$SCRIPT" --target "$DIR_OUTFAIL/target" --out "$DIR_OUTFAIL/blocker/nested" 2>/dev/null)
@@ -577,7 +577,7 @@ assert_contains "could not create --out directory" "$STDERR_OUTFAIL" "--out unde
 # its own, just with no upper bound). A stub that runs for ~2 real seconds
 # forces the poll loop to iterate at least once, so a stderr comparison
 # error would appear if the guard's own internal check were still broken.
-DIR_BADTIMEOUT=$(_dossier_safe_mktemp_dir "bad-timeout-env")
+_dossier_require_mktemp_dir DIR_BADTIMEOUT "bad-timeout-env"
 mkdir -p "$DIR_BADTIMEOUT/fakebin" "$DIR_BADTIMEOUT/target"
 cat >"$DIR_BADTIMEOUT/fakebin/osv-scanner" <<'EOF'
 #!/usr/bin/env bash
@@ -598,7 +598,7 @@ if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
 else
   BADAGE_CACHE_REL=".cache/osv-scanner/PyPI"
 fi
-DIR_BADAGE_HOME=$(_dossier_safe_mktemp_dir "bad-max-age-env-home")
+_dossier_require_mktemp_dir DIR_BADAGE_HOME "bad-max-age-env-home"
 mkdir -p "$DIR_BADAGE_HOME/$BADAGE_CACHE_REL"
 printf 'placeholder db\n' >"$DIR_BADAGE_HOME/$BADAGE_CACHE_REL/all.zip"
 OUT_BADAGE=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true DOSSIER_SCAN_OFFLINE_MAX_AGE_DAYS=not-a-number \
@@ -626,7 +626,7 @@ assert_contains "Exit: 0 for every case" "$HELP_OUT" "--help output reaches the 
 # =============================================================================
 # A plain FILE as --target (not merely a nonexistent path) must be the same
 # explicit error as a nonexistent target -- the -d check's own job.
-DIR_FILETARGET=$(_dossier_safe_mktemp_dir "file-as-target")
+_dossier_require_mktemp_dir DIR_FILETARGET "file-as-target"
 printf 'not a directory\n' >"$DIR_FILETARGET/plainfile"
 OUT_FILETARGET=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
   "$SCRIPT" --target "$DIR_FILETARGET/plainfile" 2>&1)
@@ -639,7 +639,7 @@ assert_equal "error" "$STATUS_FILETARGET" "a plain file as --target (not a direc
 # permission checks entirely), so this degrades honestly rather than
 # false-failing in that environment.
 if [ "$(id -u)" != "0" ]; then
-  DIR_NOEXEC_PARENT=$(_dossier_safe_mktemp_dir "noexec-target")
+  _dossier_require_mktemp_dir DIR_NOEXEC_PARENT "noexec-target"
   mkdir -p "$DIR_NOEXEC_PARENT/locked"
   chmod 644 "$DIR_NOEXEC_PARENT/locked"
   OUT_NOEXEC=$(DOSSIER_ENGAGEMENT_ALLOWED_ACTIONS_RUN_SECURITY_SCAN=true CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
@@ -654,7 +654,7 @@ fi
 # osv-scanner emitting non-JSON stdout with exit 0 (a malformed-tool-output
 # case distinct from every other error path, which all involve either a
 # nonzero exit or valid-but-empty JSON).
-DIR_MALFORMED=$(_dossier_safe_mktemp_dir "malformed-stdout")
+_dossier_require_mktemp_dir DIR_MALFORMED "malformed-stdout"
 mkdir -p "$DIR_MALFORMED/fakebin" "$DIR_MALFORMED/target"
 cat >"$DIR_MALFORMED/fakebin/osv-scanner" <<'EOF'
 #!/usr/bin/env bash
