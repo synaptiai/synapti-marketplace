@@ -9,6 +9,7 @@
 _dossier_test_begin "workflow-template"
 
 WF="plugins/dossier/templates/ci/dossier-docs-refresh.yml"
+PLUGIN="plugins/dossier"
 assert_file_exists "$WF" "workflow template exists"
 
 BODY=$(cat "$WF" 2>/dev/null)
@@ -51,6 +52,60 @@ for job in "  policy:" "  scan:" "  refresh:" "  publish:"; do
 done
 
 assert_match '^permissions: \{\}' "$BODY" "top-level permissions is empty — per-job grants only"
+
+# --- Rotation check (issue #138): telemetry-only, runs unconditionally ------
+# The policy job must invoke dossier-rotation-check.sh, and that specific step
+# must carry no `if:` gate — it has to run on every trigger, including a
+# declined run, so the metric is never conditional on should_run.
+POLICY_BLOCK=$(awk '/^  policy:/{f=1} /^  scan:/{f=0} f' "$WF")
+assert_contains "dossier-rotation-check.sh" "$POLICY_BLOCK" "the policy job invokes dossier-rotation-check.sh"
+assert_contains "name: Check whether the documentation branch would rotate" "$POLICY_BLOCK" "the policy job names the rotation-check step"
+
+# Extract only the rotation-check step's own block: from its own `- name:`
+# line up to (but not including) the next `- name:` line, so a gate that
+# exists elsewhere in the policy job (e.g. on "Build the evidence bundle")
+# cannot produce a false pass.
+ROTATION_STEP_BLOCK=$(awk '
+  /- name: Check whether the documentation branch would rotate/ { f=1; print; next }
+  f && /^      - name:/ { exit }
+  f { print }
+' "$WF")
+assert_not_contains "if: steps.decide.outputs.should_run" "$ROTATION_STEP_BLOCK" "the rotation-check step runs unconditionally, even on a declined run"
+
+# A failure in this purely-observational step must never cascade into
+# skipping "Build the evidence bundle" (gated on should_run == 'true', which
+# GitHub Actions implicitly ANDs with success()) -- matching the precedent
+# already set by "Download the scan bundle" below.
+assert_contains "continue-on-error: true" "$ROTATION_STEP_BLOCK" "the rotation-check step cannot block the evidence-bundle build"
+
+# BASE_REF/GH_TOKEN come from github.event context expressions, not template
+# placeholders, so the step introduces no new {{PLACEHOLDER}} and needs no
+# addition to the sed substitution table above. Anchored on the render-time
+# `{{DOSSIER_` prefix, not a bare `{{`, since `${{ github.event... }}` is a
+# legitimate GitHub Actions expression that also contains `{{`.
+assert_not_contains "{{DOSSIER_" "$ROTATION_STEP_BLOCK" "the rotation-check step introduces no new template placeholder"
+
+# --- AC2: the policy job never closes a PR, deletes a branch, or creates a --
+# replacement branch, under any circumstance ---------------------------------
+# Scoped to the policy job block ONLY (reused from above) — the publish job
+# legitimately contains "git push origin --delete" as its own
+# destructive-branch-guard code (a different job, a different privilege
+# level, pre-existing correct behaviour that is not touched here).
+assert_not_contains "git push origin --delete" "$POLICY_BLOCK" "policy job never deletes the docs branch"
+assert_not_contains "git branch -D" "$POLICY_BLOCK" "policy job never force-deletes a branch"
+assert_not_contains "gh pr close" "$POLICY_BLOCK" "policy job never closes a pull request"
+assert_not_contains "gh pr merge" "$POLICY_BLOCK" "policy job never merges a pull request"
+assert_contains "contents: read" "$POLICY_BLOCK" "policy job still declares contents: read"
+assert_contains "pull-requests: read" "$POLICY_BLOCK" "policy job still declares pull-requests: read"
+assert_not_contains "contents: write" "$POLICY_BLOCK" "policy job gains NO write permission from the new step"
+assert_not_contains "pull-requests: write" "$POLICY_BLOCK" "policy job gains NO pull-requests write permission from the new step"
+
+# dossier-rotation-check.sh is independently callable outside CI, so it needs
+# its own check, not just the workflow YAML.
+ROTATION_SCRIPT_BODY=$(cat "$PLUGIN/bin/dossier-rotation-check.sh" 2>/dev/null)
+for destructive in "git push" "gh pr close" "gh pr merge" "git branch -D" "git branch -d"; do
+  assert_not_contains "$destructive" "$ROTATION_SCRIPT_BODY" "dossier-rotation-check.sh itself never runs '$destructive'"
+done
 
 # The scan job (issue #137): isolated osv-scanner/pyscn execution. Same
 # privilege posture as policy — read-only, no write token, no agent.

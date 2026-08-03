@@ -123,7 +123,8 @@
         "maxSourceDiffBytes": 524288,
         "maxDocChangedFiles": 30,
         "maxDocChangedLines": 3000,
-        "oversizedBehavior": "draft"
+        "oversizedBehavior": "draft",
+        "rotationMaxAccumulatedLines": 5000
       },
       "circuitBreaker": { "maxDocPrsPer24h": 6 },
       "agent": { "model": "", "maxTurns": 60 },

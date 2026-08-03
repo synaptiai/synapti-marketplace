@@ -1,0 +1,131 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-138
+  created_at: '2026-07-29T12:13:50Z'
+  created_by: /flow:start
+  owner: daniel.bentes@gmail.com
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-138-rotation-telemetry
+  issue: 138
+  journal: .decisions/issue-138.md
+objective:
+  outcome: Issue
+  source:
+    type: github_issue
+    number: 138
+    title: 'dossier: make rolling-branch rotation observable (telemetry only) before
+      any automated branch action is considered'
+  acceptance_criteria:
+  - id: AC1
+    text: Every pipeline run records a clear, human-readable determination of whether
+      branch rotation would currently be warranted, and the specific reason.
+    verification_command: bash plugins/dossier/tests/run.sh rotation-check.test.sh
+      workflow-template.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC2
+    text: No pipeline run, under any circumstance, closes a pull request, deletes
+      a branch, or creates a replacement branch as a result of this capability — it
+      is purely observational.
+    verification_command: bash plugins/dossier/tests/run.sh bin-scripts.test.sh workflow-template.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC3
+    text: The determination logic is exercised by tests covering both "would rotate"
+      and "would not rotate" scenarios.
+    verification_command: bash plugins/dossier/tests/run.sh rotation-check.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC4
+    text: 'Reworded (user-confirmed 2026-07-29, .decisions/issue-138.md): age_days,
+      accumulated_files, and accumulated_lines are always computed and emitted in
+      a stable, parseable format across every state (no-branch, PR-anchored, commit-anchored,
+      degraded-lookup), including when rollingBranchRotation=none.'
+    verification_command: bash plugins/dossier/tests/run.sh rotation-check.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC5
+    text: The full dossier test suite passes.
+    verification_command: bash plugins/dossier/tests/run.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+specification:
+  non_goals:
+  - Never close a pull request, delete a branch, or create a replacement branch, under
+    any circumstance, as a result of this capability.
+  - Never implement the actual rotation mechanism (closing/deleting/recreating the
+    accumulating branch) — that requires its own dedicated proposal, backed by real
+    observation data from this issue's work.
+  - Never modify, weaken, or bypass the existing destructive-action guard in the publish
+    job's "Prepare the documentation branch" step (the FOREIGN-commit walk / EXISTING_PR
+    check that gates git push origin --delete).
+  - Never grant the new step more than the policy job's existing contents:read / pull-requests:read
+    permission scope.
+  failure_modes:
+  - 'Timeouts: none — only local git operations plus one optional gh pr list/view
+    call under the same network conditions as the existing policy job.'
+  - 'Partial failures: gh unavailable/failing degrades to git-only age (oldest Dossier-Generated
+    commit), with an explicit note() logged; if that also fails, would_rotate reports
+    the literal string ''unknown'', never coerced to false.'
+  - 'Invalid input: a non-numeric or missing rotationMaxAccumulatedLines config value
+    falls back to the documented default (5000).'
+  - 'Missing context: a docs branch that does not exist remotely is a distinct ''no-branch''
+    cold-start state (would_rotate=false, specific reason), never silently reported
+    as ''0 lines changed''.'
+  interface_contracts:
+  - 'New script plugins/dossier/bin/dossier-rotation-check.sh: [--github-output <file>]
+    [--summary <file>]; untrusted values (BASE_REF, GH_TOKEN) via environment only;
+    exit 0=decision reached, 1=infra failure, 2=bad args.'
+  - 'Emitted key=value fields: would_rotate (true|false|unknown), reason, age_days,
+    age_source (pr_created_at|branch_commits|no-branch|unknown), accumulated_files,
+    accumulated_lines, docs_branch, rotation_policy.'
+  - New schema field dossier.ci.thresholds.rotationMaxAccumulatedLines (integer, minimum
+    1, default 5000) in schema.json/settings.json/templates/config.example.json.
+  - New unconditional workflow step inside the policy job of dossier-docs-refresh.yml,
+    after the Decide step, within the job's existing read-only permission scope.
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+evaluator:
+  type: flow_verdict_judge
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: achieved
+  current_phase: verify
+  current_activity: complete
+  turns_evaluated: 2
+  last_evaluation:
+    result: pass
+    reason: All 5 acceptance criteria PASS via independent goal-evaluator-judge (confidence
+      0.85), full suite 1800/1800.
+    at: '2026-08-03T00:00:00Z'

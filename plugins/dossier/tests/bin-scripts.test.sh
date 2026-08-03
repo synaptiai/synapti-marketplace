@@ -24,6 +24,7 @@ dossier-policy.sh
 dossier-pr-body.sh
 dossier-prose-lint.sh
 dossier-resolve-config.sh
+dossier-rotation-check.sh
 dossier-scaffold.sh
 dossier-scan-quality.sh
 dossier-scan-security.sh
