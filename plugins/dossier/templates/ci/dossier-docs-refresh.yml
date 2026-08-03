@@ -157,6 +157,20 @@ jobs:
       max_turns: ${{ steps.decide.outputs.max_turns }}
       model_arg: ${{ steps.decide.outputs.model_arg }}
       stale_docs: ${{ steps.decide.outputs.stale_docs }}
+      # Rotation telemetry (issue #148): prefixed rotation_* to avoid colliding
+      # with this same job's decide-step-sourced reason/docs_branch above --
+      # both scripts resolve docs_branch from the identical
+      # dossier.ci.rollingBranch config in the same job run, so rotation's own
+      # copy is not re-exposed here at all. No consumer reads these yet; this
+      # is exposure only, so a real observation period produces queryable
+      # data (issue #138 AC4) rather than N job summaries nobody aggregates.
+      rotation_would_rotate: ${{ steps.rotation.outputs.would_rotate }}
+      rotation_reason: ${{ steps.rotation.outputs.reason }}
+      rotation_age_days: ${{ steps.rotation.outputs.age_days }}
+      rotation_age_source: ${{ steps.rotation.outputs.age_source }}
+      rotation_accumulated_files: ${{ steps.rotation.outputs.accumulated_files }}
+      rotation_accumulated_lines: ${{ steps.rotation.outputs.accumulated_lines }}
+      rotation_policy: ${{ steps.rotation.outputs.rotation_policy }}
     steps:
       # fetch-depth: 0 in every job. The watermark can be arbitrarily far back,
       # and a shallow clone turns "resolve the range" into "fail confusingly".
@@ -217,6 +231,7 @@ jobs:
       # ::error annotation and $GITHUB_STEP_SUMMARY write both happen before
       # the script's own exit.
       - name: Check whether the documentation branch would rotate
+        id: rotation
         continue-on-error: true
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
@@ -225,6 +240,7 @@ jobs:
           set -uo pipefail
           chmod +x "$DOSSIER_BIN"/*.sh
           "$DOSSIER_BIN/dossier-rotation-check.sh" \
+            --github-output "$GITHUB_OUTPUT" \
             --summary "$GITHUB_STEP_SUMMARY"
 
       - name: Build the evidence bundle

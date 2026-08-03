@@ -85,6 +85,45 @@ assert_contains "continue-on-error: true" "$ROTATION_STEP_BLOCK" "the rotation-c
 # legitimate GitHub Actions expression that also contains `{{`.
 assert_not_contains "{{DOSSIER_" "$ROTATION_STEP_BLOCK" "the rotation-check step introduces no new template placeholder"
 
+# --- Rotation telemetry surfaced as job outputs (issue #148) -----------------
+# Without an id: and --github-output, the rotation step's fields land only in
+# stdout/the job summary -- human-readable per run, but not queryable across
+# runs, undercutting the whole point of an observation period. Both the step
+# itself and the policy job's outputs: map need updating.
+assert_contains "id: rotation" "$ROTATION_STEP_BLOCK" "the rotation-check step has its own step id"
+assert_contains "--github-output \"\$GITHUB_OUTPUT\"" "$ROTATION_STEP_BLOCK" "the rotation-check step passes --github-output so its fields land in GITHUB_OUTPUT, not just stdout/summary"
+
+# The script's own emitted keys (would_rotate/reason/age_days/age_source/
+# accumulated_files/accumulated_lines/rotation_policy) collide with two keys
+# the decide step ALREADY exposes on this same job (reason, docs_branch) --
+# confirmed by reading both the script's emit() calls and this job's existing
+# outputs: map. Every rotation-sourced output is prefixed rotation_ to avoid
+# that collision, and the redundant docs_branch (both steps resolve the
+# identical dossier.ci.rollingBranch config in the same job run) is dropped
+# rather than re-exposed under a new name.
+# Six fields keep their script-emitted name, prefixed on the output-map side
+# only. rotation_policy is the odd one out: the script itself already emits a
+# field literally named rotation_policy (see dossier-rotation-check.sh's own
+# finish()), so no further prefixing is applied there -- rotation_rotation_policy
+# would be wrong.
+for KEY in would_rotate reason age_days age_source accumulated_files accumulated_lines; do
+  assert_contains "rotation_${KEY}: \${{ steps.rotation.outputs.${KEY} }}" "$BODY" "policy job exposes rotation_${KEY} sourced from steps.rotation.outputs.${KEY}"
+done
+assert_contains "rotation_policy: \${{ steps.rotation.outputs.rotation_policy }}" "$BODY" "policy job exposes rotation_policy sourced from steps.rotation.outputs.rotation_policy"
+
+# No collision: the pre-existing decide-step-sourced reason/docs_branch
+# outputs must be completely unchanged -- this is a regression test for the
+# exact bug in this issue's own suggested fix (naming the new outputs
+# unmodified would have silently collided with these).
+assert_contains "reason: \${{ steps.decide.outputs.reason }}" "$BODY" "the pre-existing decide-step reason output is untouched"
+assert_contains "docs_branch: \${{ steps.decide.outputs.docs_branch }}" "$BODY" "the pre-existing decide-step docs_branch output is untouched"
+# Six-space indentation anchors this as its own outputs: map key rather than
+# matching as a substring of the legitimate "rotation_reason: ..." line above
+# (which also contains the literal text "reason: \${{ steps.rotation.outputs.reason }}").
+assert_not_contains "
+      reason: \${{ steps.rotation.outputs.reason }}" "$BODY" "no unprefixed rotation-sourced reason output was added (would collide with decide's own reason)"
+assert_not_contains "docs_branch: \${{ steps.rotation.outputs" "$BODY" "no rotation-sourced docs_branch output was added at all (redundant with decide's own docs_branch, dropped per design)"
+
 # --- AC2: the policy job never closes a PR, deletes a branch, or creates a --
 # replacement branch, under any circumstance ---------------------------------
 # Scoped to the policy job block ONLY (reused from above) — the publish job
