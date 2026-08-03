@@ -31,6 +31,12 @@ artifacts:
   result: achieved
   evidence_bundle: .flow/runs/2026-08-03T115319Z-issue-143
   failures: none
+- type: review-cycle
+  captured_at: '2026-08-03T12:57:58Z'
+  cycle: 1
+  path: B
+  findings_count: 8
+  pr: 153
 ---
 # Issue #143 — enforce-allowed-actions.sh: find -exec / xargs -I{} bypass the action-ceiling backstop
 
@@ -255,3 +261,7 @@ explicitly in the FlowGoal contract rather than silently treated as fully automa
 <!-- auto-log: 2026-08-03 14:55 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-146.md -->
 
 <!-- auto-log: 2026-08-03 14:55 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-148.md -->
+
+<!-- auto-log: 2026-08-03 14:56 commit "fix(dossier): guard the docs-branch recreate path against a failed PR lookup" -->
+
+<!-- auto-log: 2026-08-03 14:57 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr-150-body.md -->
