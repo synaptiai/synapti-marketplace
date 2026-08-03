@@ -218,7 +218,18 @@ write_summary() {
     printf '| Base source | `%s` |\n' "$BASE_SOURCE"
     printf '| Head | `%s` |\n' "${HEAD_SHA:-unresolved}"
     printf '| Docs branch | `%s` |\n' "$DOCS_BRANCH"
-    printf '| Existing docs PR | `%s` |\n' "${EXISTING_PR:-none}"
+    # A failed lookup and a genuinely confirmed "no PR open" both leave
+    # $EXISTING_PR empty -- the table must not render them identically, or an
+    # operator skimming it (rather than the free-text Notes below) could read
+    # a failure as a confirmed fact, exactly the ambiguity
+    # existing_pr_lookup_failed exists to close.
+    if [ -n "$EXISTING_PR" ]; then
+      printf '| Existing docs PR | `%s` |\n' "$EXISTING_PR"
+    elif [ "$EXISTING_PR_LOOKUP_FAILED" = "true" ]; then
+      printf '| Existing docs PR | `unknown (lookup failed)` |\n'
+    else
+      printf '| Existing docs PR | `none` |\n'
+    fi
     if [ -n "${STALE_SWEEP_LIST:-}" ]; then
       printf '| Stale documents (this sweep) | `%s` |\n' "$STALE_SWEEP_LIST"
     fi
@@ -408,8 +419,12 @@ if command -v gh >/dev/null 2>&1; then
   # cannot be returned in place of (or ahead of) the real docs-refresh PR.
   # Mirrors the identical fix already shipped in dossier-rotation-check.sh
   # (PR #145, SEC-1) -- this is the pre-existing original that fix was copied
-  # from.
-  EXISTING_PR=$(gh pr list --head "$DOCS_BRANCH" --state open --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)][0].number // empty' 2>/dev/null)
+  # from. --limit is explicit (matching the circuit-breaker call below) so
+  # gh's own default page size (30) can't paginate the real same-repo PR off
+  # the page before the isCrossRepository filter ever runs -- a "successful"
+  # (exit 0) lookup that quietly omits the one entry that mattered would
+  # bypass this fix and the existing_pr_lookup_failed guard alike.
+  EXISTING_PR=$(gh pr list --head "$DOCS_BRANCH" --state open --limit 100 --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)][0].number // empty' 2>/dev/null)
   PR_LIST_RC=$?
   if [ "$PR_LIST_RC" -ne 0 ]; then
     # An API failure (auth, rate limit, transient error) must never look like
