@@ -233,6 +233,46 @@ do
   assert_equal "2" "$RC" "enforce-allowed-actions closes the $CASE_LABEL bypass: $CASE_CMD"
 done
 
+# Bash's \u/\U Unicode ANSI-C escapes (added in bash 4.2) aren't handled by
+# ansi_c_decode's octal-only normalization -- only meaningfully checkable on
+# a bash that implements them at all. Bash 3.2 (this suite's local macOS
+# bash) doesn't support \u/\U in either $'...' or printf '%b', so this
+# exercises the real question -- does the hook's printf-based decode agree
+# with what bash itself would spell -- only on bash >=4.2, which is what
+# this project's Linux CI runs. Skipped, not asserted false, on older bash:
+# asserting a specific outcome for a feature the interpreter doesn't have
+# would be testing a coincidence, not the mechanism.
+if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 2 ]; }; then
+  U_ESCAPE_CMD=$(printf 'echo $%s\\u0063url%s https://example.invalid' "'" "'")
+  RC=0
+  (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$U_ESCAPE_CMD" | jq -Rs .)" \
+     | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+  assert_equal "2" "$RC" "enforce-allowed-actions closes the ANSI-C \\u Unicode-escape bypass: $U_ESCAPE_CMD"
+fi
+
+# A WRAPPER-list token disguised the same way the payload was (not just the
+# payload itself) must still widen the boundary -- the fix's own comment
+# claims this closes "for ANY token listed anywhere in this file," proven
+# here rather than only for payload words like curl.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":"\\xargs -I{} curl {} https://example.invalid"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" 'enforce-allowed-actions widens the boundary for a disguised WRAPPER token, not just a disguised payload: \xargs -I{} curl {}'
+
+# A second, previously-undocumented over-block trade-off surfaces once a
+# quoted WRAPPER token is also dequoted before the WRAPPER scan: a quoted
+# wrapper (";\"env\" ...") could not trigger boundary-widening before this
+# fix (a quote character isn't in WRAPPER's boundary class), but can now --
+# which then also catches an otherwise-safe, fully-quoted prose argument
+# like "npm test" in a grep call. Same direction and same underlying
+# mechanism as the accepted trade-off above (over-block, name the match,
+# let a human drop the false trigger), just a different trigger shape --
+# pinned here so it's proven deliberate, not a silent surprise.
+RC=0
+(cd "$WORK" && printf '%s' '{"tool_input":{"command":";\"env\" grep -r \"npm test\" docs/"}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "2" "$RC" 'enforce-allowed-actions accepts the second documented over-block: ;"env" grep -r "npm test" docs/ refused once the wrapper token itself is quoted'
+
 # Known, accepted trade-off from the fix above: deleting a quote mark can
 # bring a boundary character and a denied word directly together when nothing
 # else separated them (a quote mark is the ENTIRE gap between the two). This

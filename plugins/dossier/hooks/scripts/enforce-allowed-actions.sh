@@ -271,6 +271,29 @@ ansi_c_decode() { # $1: command string -> stdout: with every $'...' span decoded
   printf '%s' "$out$s"
 }
 
+# Three known grammar divergences between ansi_c_decode and bash's own
+# $'...' parsing, each reviewed and confirmed non-exploitable rather than
+# left unmentioned:
+#   - `\'` inside a span (`$'cur\'l'`): bash decodes this to the 5-char
+#     string `cur'l` (the escaped quote is literal, decoding continues past
+#     it); this function's span-boundary search stops at the FIRST literal
+#     `'` regardless, so it mis-locates where the span ends. Not exploitable:
+#     any use of `\'` inside a span leaves a literal quote character in
+#     bash's own real decoded word too (`cur'l`, not `curl`), so it can never
+#     spell a clean, standalone denied word on the side that actually runs.
+#   - `\143` immediately after a literal backslash (`\\143`): the sed
+#     octal-normalization step below treats the second backslash as if it
+#     started a fresh octal escape, diverging from bash's own 4-byte decode
+#     of the same input. Same non-exploitability argument: the divergence
+#     only ever surfaces a stray backslash in bash's real decoded word too.
+#   - `\c` (control-character escape): bash's `\cX` consumes exactly the next
+#     character to form one control byte and keeps decoding after it; POSIX
+#     printf's `\c` means "stop all further output" instead, a completely
+#     different operation. Not exploitable: `\cX` always glues an
+#     unprintable control byte to whatever it's adjacent to, which corrupts
+#     the resulting word identically for bash's real execution (the command
+#     bash actually looks up on PATH also stops being a clean "curl"/"npm"/
+#     etc.), not just for this function's decode.
 # ansi_c_decode forks a sed+printf subprocess pair for every $'...' occurrence
 # it finds. The byte-length guard above bounds the quadratic glob-matching
 # cost, but not this one: an attacker can still pack many tiny $'x' spans
@@ -319,14 +342,17 @@ case "$COMMAND_ANSIC" in
     ;;
 esac
 
-# bash 3.2 (macOS's system /bin/bash) cannot match a pattern-substitution
-# pattern that is itself a literal backslash followed by a real newline: the
-# 2-character pattern's own length checks out, but the replacement silently
-# never fires -- confirmed empirically, and NOT reproducible under zsh or
-# newer bash, which both do fire. A backslash is a glob escape character
-# inside `${var//pattern/}`, and bash 3.2 mishandles escaping a newline
-# specifically. Every backslash is swapped for a placeholder byte first (one
-# that never legitimately appears in a Bash-tool command string) so the
+# bash 3.2 (macOS's system /bin/bash) mishandles a backslash-followed-by-
+# real-newline pattern specifically when that 2-character pattern is
+# pre-assembled into a variable before being used in `${var//pattern/}` --
+# the substitution then silently never fires, even though the identical
+# pattern written inline (`${var//\\$'\n'/}`) matches correctly on the same
+# bash. Confirmed empirically on both forms; NOT reproducible under zsh or
+# newer bash, where both forms fire. The placeholder-byte approach below
+# sidesteps the question of which form is safe on which bash version
+# entirely, rather than depending on getting that distinction right: every
+# backslash is swapped for a placeholder byte first (one that never
+# legitimately appears in a Bash-tool command string, checked above) so the
 # join pattern below is placeholder+newline, never backslash+newline; the
 # remaining lone placeholders are then deleted, which is step 3 (the escape
 # character removed, the character it protected kept) applied via the same
