@@ -233,22 +233,38 @@ do
   assert_equal "2" "$RC" "enforce-allowed-actions closes the $CASE_LABEL bypass: $CASE_CMD"
 done
 
-# Bash's \u/\U Unicode ANSI-C escapes (added in bash 4.2) aren't handled by
-# ansi_c_decode's octal-only normalization -- only meaningfully checkable on
-# a bash that implements them at all. Bash 3.2 (this suite's local macOS
-# bash) doesn't support \u/\U in either $'...' or printf '%b', so this
-# exercises the real question -- does the hook's printf-based decode agree
-# with what bash itself would spell -- only on bash >=4.2, which is what
-# this project's Linux CI runs. Skipped, not asserted false, on older bash:
-# asserting a specific outcome for a feature the interpreter doesn't have
-# would be testing a coincidence, not the mechanism.
-if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 2 ]; }; then
-  U_ESCAPE_CMD=$(printf 'echo $%s\\u0063url%s https://example.invalid' "'" "'")
+# Bash's \u/\U Unicode ANSI-C escapes (added in bash 4.2) aren't in printf
+# '%b's escape set at all -- confirmed live: bash 3.2 (this suite's local
+# macOS bash, which doesn't implement \u/\U natively either) still resolves
+# these correctly, because unicode_normalize parses the escape as a string
+# pattern and converts it to \xHH by hand rather than depending on the
+# running bash's own native \u/\U support -- so this runs unconditionally,
+# on any bash, not just >=4.2.
+#
+# The escaped word must BE the command, not an argument to one (e.g. not
+# prefixed with "echo ") -- "echo <word>" is legitimately permitted no
+# matter how <word> decodes, since echo never invokes its arguments. An
+# earlier draft of this assertion had exactly that bug (an "echo " prefix
+# in front of the escaped word) and initially appeared to confirm a bypass
+# on CI, but for the wrong reason -- testing an argument to echo, not an
+# invoked command -- rather than the real one. Caught by re-deriving the
+# pre-fix/post-fix behavior of the corrected shape directly against both
+# script versions, not by trusting the first CI failure at face value.
+BKSL='\'
+U4_BODY="${BKSL}u0063url"
+U8_BODY="${BKSL}U00000063url"
+for BAD in \
+  "$U4_BODY|ansi-c 4-digit Unicode escape" \
+  "$U8_BODY|ansi-c 8-digit Unicode escape"
+do
+  CASE_LABEL="${BAD##*|}"
+  CASE_BODY="${BAD%%|*}"
+  U_ESCAPE_CMD=$(printf '$%s%s%s https://example.invalid' "'" "$CASE_BODY" "'")
   RC=0
   (cd "$WORK" && printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$U_ESCAPE_CMD" | jq -Rs .)" \
      | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/enforce-allowed-actions.sh" >/dev/null 2>&1) || RC=$?
-  assert_equal "2" "$RC" "enforce-allowed-actions closes the ANSI-C \\u Unicode-escape bypass: $U_ESCAPE_CMD"
-fi
+  assert_equal "2" "$RC" "enforce-allowed-actions closes the $CASE_LABEL bypass: $U_ESCAPE_CMD"
+done
 
 # A WRAPPER-list token disguised the same way the payload was (not just the
 # payload itself) must still widen the boundary -- the fix's own comment

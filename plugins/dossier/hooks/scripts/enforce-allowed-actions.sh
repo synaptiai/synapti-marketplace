@@ -253,6 +253,42 @@ FIND_EXEC='(^|[;&|(]|[[:space:]])[[:space:]]*([A-Za-z0-9_.-]*/)*find([[:space:]]
 # the CI refresh job's own --allowedTools allowlist doesn't include `find`,
 # `xargs`, `parallel`, `awk`, `perl`, or a bare shell at all, so the automated
 # pipeline has no reach here.
+# Bash's \uHHHH/\UHHHHHHHH Unicode escapes (added in bash 4.2) aren't in
+# printf '%b's escape set at all -- confirmed divergence on real bash >=4.2:
+# bash's own $'...' decodes a 4-hex-digit \u escape for codepoint 0x63 to
+# the single byte 'c', but printf '%b' passes that same escape through
+# completely unrecognized, so a denied word spelled this way never reached
+# the deny scan. This was a real, live P1 on CI's Linux bash
+# (which implements \u/\U; the bash on this file's own dev machine does not,
+# so this had to be verified by pushing to CI and reading the failure, not
+# locally). Only the ASCII range (codepoint <= 0x7F) matters for spelling a
+# denied word -- curl/npm/git/etc. are all ASCII -- and UTF-8 encodes that
+# range as the single byte equal to the codepoint, so it's converted to
+# \xHH here, which printf '%b' already handles identically to bash (see the
+# octal note below). A codepoint above 0x7F needs real multi-byte UTF-8
+# encoding to replicate exactly and cannot spell an ASCII denied word
+# regardless, so it's deliberately left unnormalized (passes through as
+# literal text, same as it would if this function didn't exist at all).
+unicode_normalize() { # $1: ANSI-C span body -> stdout: ASCII-range \u/\U normalized to \xHH
+  local body="$1" esc hex cp repl escapes
+  escapes=$(printf '%s' "$body" | grep -oE '\\(u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})' | sort -u)
+  while IFS= read -r esc; do
+    [ -n "$esc" ] || continue
+    hex="${esc:2}"
+    cp=$((16#$hex))
+    if [ "$cp" -le 127 ]; then
+      repl=$(printf '\\x%02x' "$cp")
+      # $esc must be quoted here: unquoted, its leading backslash is a glob
+      # ESCAPE CHARACTER to `${var//pattern/}` (consumed, not matched
+      # literally), which silently matches one character late and leaves
+      # the original backslash behind duplicated alongside $repl's own --
+      # caught by testing the byte-level output, not by reading the diff.
+      body="${body//"$esc"/$repl}"
+    fi
+  done <<< "$escapes"
+  printf '%s' "$body"
+}
+
 ansi_c_decode() { # $1: command string -> stdout: with every $'...' span decoded
   # Bash's $'...' decodes \nnn (octal), \xHH (hex), and the usual \n/\t/...
   # single-letter escapes. printf '%b' understands the same set, EXCEPT its
@@ -264,6 +300,7 @@ ansi_c_decode() { # $1: command string -> stdout: with every $'...' span decoded
     rest="${s#*\$\'}"
     body="${rest%%\'*}"
     rest="${rest#"$body"\'}"
+    body=$(unicode_normalize "$body")
     norm=$(printf '%s' "$body" | sed -E 's/\\([0-7]{1,3})/\\0\1/g')
     out+="$pre$(printf '%b' "$norm")"
     s="$rest"
