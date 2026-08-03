@@ -206,6 +206,43 @@ explicitly in the FlowGoal contract rather than silently treated as fully automa
   assert_not_contains collision check matched as a substring of its own sibling
   assertion; fixed by anchoring on exact YAML key position.
 
+### Review-driven fix-forward (PR #153's `/flow:review`, Path A paired-reviewer protocol)
+
+A 10-agent paired-reviewer pass (5 facets x {skeptic, verifier}) plus 2 holdout-validation
+lenses converged on several findings beyond the three original fixes, all fixed in the same
+PR before merge:
+
+- **ERR-2 / P1 (doubly-confirmed)**: `enforce-allowed-actions.sh`'s config-resolver call could
+  return an empty `OUTPUT_ROOT`, which — read literally — meant "the empty string is the output
+  root," silently defeating the inertness check. Fixed with an explicit non-empty fallback.
+- **P1/P2/P3 (convergent)**: the hook's jq-parse-failure check ran after the inertness check,
+  so a malformed payload on a non-dossier command could still surface a spurious BLOCKED.
+  Reordered so inertness is decided before any JSON parsing.
+- **P2 (code-verifier)**: the bare `find` token in `WRAPPER` over-blocked commands like
+  `find . -name "npm test"` that never use `-exec`. Replaced with a dedicated `FIND_EXEC` regex
+  requiring `find` to actually co-occur with `-exec`/`-execdir`/`-ok`/`-okdir`.
+- **P2 (cross-facet convergent, raised independently by security-skeptic and code-skeptic)**:
+  the `EXISTING_PR` lookup in `dossier-policy.sh` had no `--limit`, unlike the file's own
+  circuit-breaker precedent. Added `--limit 100`.
+- **P2/P3 (triple-convergent)**: `write_summary()`'s "Existing docs PR" row couldn't distinguish
+  a genuinely-confirmed `none` from an `unknown (lookup failed)` state. Fixed with an explicit
+  `elif` branch.
+- **SEC-1 (security-skeptic)**: `dossier-docs-refresh.yml`'s branch-recreate guard checked
+  `existing_pr_lookup_failed = "true"`, which fails OPEN on any other value (including absent).
+  Inverted to `!= "false"`, which fails closed on unexpected/absent values too.
+- **ERR-1 (error-handler skeptic+verifier auto-consensus)**: the same file's `git rev-list` call
+  feeding the FOREIGN-commit-detection loop never checked its own exit status, so a rev-list
+  failure was indistinguishable from "genuinely no foreign commits." Added explicit exit-status
+  capture and a refusal path matching the file's existing FOREIGN/lookup-failed refusal pattern.
+- Both YAML fixes got new line-order-aware static assertions in `workflow-template.test.sh`
+  (a plain `assert_contains` cannot detect a correct-looking guard that is unreachable because
+  it was moved after the code path it's meant to gate).
+- One shellcheck warning (SC2034, an unused captured-but-discarded command substitution in a
+  new test scenario) found and fixed during this pass.
+
+Final: `bash plugins/dossier/tests/run.sh` — 1912/1912 (up from 1882 pre-review-pass, 1852
+pre-bundle). `shellcheck -S warning -x` across every touched script — clean, exit 0.
+
 <!-- auto-log: 2026-08-03 14:12 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/evidence-AC1.yaml -->
 
 <!-- auto-log: 2026-08-03 14:12 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/evidence-AC2.yaml -->
@@ -265,3 +302,57 @@ explicitly in the FlowGoal contract rather than silently treated as fully automa
 <!-- auto-log: 2026-08-03 14:56 commit "fix(dossier): guard the docs-branch recreate path against a failed PR lookup" -->
 
 <!-- auto-log: 2026-08-03 14:57 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/8c76ed85-3c0c-4a32-8924-be0cf2c7bc2d/scratchpad/pr-150-body.md -->
+
+<!-- auto-log: 2026-08-03 15:03 Write /Users/danielbentes/synapti-marketplace/.flow/runs/2026-08-03T130332Z-review/run.yaml -->
+
+<!-- auto-log: 2026-08-03 15:21 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/enforce-allowed-actions.sh -->
+
+<!-- auto-log: 2026-08-03 15:22 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/enforce-allowed-actions.sh -->
+
+<!-- auto-log: 2026-08-03 15:22 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/enforce-allowed-actions.sh -->
+
+<!-- auto-log: 2026-08-03 15:22 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/hooks/scripts/enforce-allowed-actions.sh -->
+
+<!-- auto-log: 2026-08-03 15:23 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/hooks.test.sh -->
+
+<!-- auto-log: 2026-08-03 15:23 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/hooks.test.sh -->
+
+<!-- auto-log: 2026-08-03 15:24 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/hooks.test.sh -->
+
+<!-- auto-log: 2026-08-03 15:25 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/policy-existing-pr.test.sh -->
+
+<!-- auto-log: 2026-08-03 15:26 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-policy.sh -->
+
+<!-- auto-log: 2026-08-03 15:26 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-policy.sh -->
+
+<!-- auto-log: 2026-08-03 15:26 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/policy-existing-pr.test.sh -->
+
+<!-- auto-log: 2026-08-03 15:28 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-08-03 15:33 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/templates/ci/dossier-docs-refresh.yml -->
+
+<!-- auto-log: 2026-08-03 15:35 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/workflow-template.test.sh -->
+
+<!-- auto-log: 2026-08-03 15:37 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/workflow-template.test.sh -->
+
+<!-- auto-log: 2026-08-03 15:37 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-146.md -->
+
+<!-- auto-log: 2026-08-03 15:38 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-146.md -->
+
+<!-- auto-log: 2026-08-03 15:38 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-146.md -->
+
+<!-- auto-log: 2026-08-03 15:38 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-148.md -->
+
+<!-- auto-log: 2026-08-03 15:38 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-148.md -->
+
+<!-- auto-log: 2026-08-03 15:39 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-148.md -->
+
+<!-- auto-log: 2026-08-03 15:40 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/policy-existing-pr.test.sh -->
+
+<!-- auto-log: 2026-08-03 15:41 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-143.md -->
+
+<!-- auto-log: 2026-08-03 15:45 commit "fix(dossier): fail closed on hook ordering/empty-resolver gaps, narrow find matching to its exec-family flags" -->
+
+<!-- auto-log: 2026-08-03 15:45 commit "fix(dossier): paginate the EXISTING_PR lookup and distinguish a failed lookup from a confirmed none" -->
+
+<!-- auto-log: 2026-08-03 15:45 commit "fix(dossier): fail closed on an ambiguous PR-lookup signal and verify rev-list's exit status before trusting its output" -->

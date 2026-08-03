@@ -55,8 +55,14 @@ Part of the hook/policy-hardening bundle driven by `/flow:start` on #143 (see
 - `--github-output "$GITHUB_OUTPUT"` added to that step's script invocation.
 - Policy job `outputs:` map gains: `rotation_would_rotate`, `rotation_reason`,
   `rotation_age_days`, `rotation_age_source`, `rotation_accumulated_files`,
-  `rotation_accumulated_lines`, `rotation_policy` — each `${{ steps.rotation.outputs.<key> }}`
-  where `<key>` is the script's own unprefixed field name.
+  `rotation_accumulated_lines`, `rotation_policy` — each sourced from
+  `${{ steps.rotation.outputs.<key> }}`. For six of the seven, `<key>` is the script's own
+  unprefixed field name (`would_rotate`, `reason`, `age_days`, `age_source`,
+  `accumulated_files`, `accumulated_lines`). `rotation_policy` is the odd one out: the
+  script's own `finish()` already emits a field literally named `rotation_policy` (not
+  `policy`), so `<key>` there is `rotation_policy` itself — adding another `rotation_`
+  prefix on the output-map side would produce `rotation_rotation_policy`, which is not
+  done.
 
 ## Acceptance Criteria (as validated)
 
@@ -71,8 +77,9 @@ Part of the hook/policy-hardening bundle driven by `/flow:start` on #143 (see
 
 ## Stranger Test
 
-PASS — inherits task #79 from `.decisions/issue-143.md`'s Stranger Test, which named the
-exact step name, exact field list, exact prefix convention, and exact verification file.
+PASS — inherits task 4 from `.decisions/issue-143.md`'s Stranger Test (the task covering
+the should_run/reason outputs pattern), which named the exact step name, exact field
+list, exact prefix convention, and exact verification file.
 
 ## Verification
 
@@ -86,6 +93,11 @@ exact step name, exact field list, exact prefix convention, and exact verificati
   prefix to check the exact YAML key position instead of a bare substring.
 - YAML still parses cleanly after placeholder substitution (existing
   workflow-template.test.sh check, unaffected).
+- A later `/flow:review` fix-forward pass on the same PR (SEC-1/ERR-1 fixes to
+  `dossier-docs-refresh.yml`'s branch-preparation step, unrelated to this issue's own
+  scope but landing in the same file) added further static assertions to the same test
+  file, including line-order checks that a plain `assert_contains` cannot express.
+  Final: `bash plugins/dossier/tests/run.sh workflow-template.test.sh` — 119/119.
 
 ### Review-driven finding, deliberately deferred (P3, documented not fixed)
 

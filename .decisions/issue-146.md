@@ -67,9 +67,10 @@ began (see the `## Bundle note` in `.decisions/issue-143.md`).
 
 ## Stranger Test
 
-PASS — inherits task #78 from `.decisions/issue-143.md`'s Stranger Test, which named
-the exact file:line, the exact existing-code precedent (PR #145 SEC-1) being mirrored,
-and the exact test technique to port.
+PASS — inherits task 3 from `.decisions/issue-143.md`'s Stranger Test (the task covering
+the `dossier-policy.sh` fork-hijack fix), which named the exact file:line, the exact
+existing-code precedent (PR #145's SEC-1 fix) being mirrored, and the exact test
+technique to port.
 
 ## Verification
 
@@ -96,4 +97,20 @@ unavailability) and a matching guard in the publish job that refuses the destruc
 recreate path when the signal is set, rather than delete-and-rebuild — same posture as
 the file's own FOREIGN-commits refusal a few lines above it. New test scenarios 4/5 in
 `policy-existing-pr.test.sh`; new static assertions in `workflow-template.test.sh`.
-Final: `bash plugins/dossier/tests/run.sh policy-existing-pr.test.sh` — 13/13.
+
+### Second review-driven follow-up (P1/P2, fixed in the same PR)
+
+A second `/flow:review` pass (Path A paired-reviewer protocol) converged on further
+gaps in the same lookup/guard mechanism: the `EXISTING_PR` lookup had no `--limit`,
+matching the file's own circuit-breaker precedent but missing here; the publish job's
+`existing_pr_lookup_failed` comparison (`= "true"`) failed OPEN on any unexpected or
+absent value instead of failing closed (`!= "false"`); the `git rev-list` call feeding
+the FOREIGN-commit-detection loop never checked its own exit status, so a rev-list
+failure was indistinguishable from "genuinely no foreign commits"; and
+`write_summary()`'s "Existing docs PR" row couldn't distinguish a genuine `none` from
+an `unknown (lookup failed)` state. All fixed in `dossier-docs-refresh.yml` and
+`dossier-policy.sh`, with new scenarios 6-9 in `policy-existing-pr.test.sh` and new
+ordering-aware static assertions in `workflow-template.test.sh`.
+
+Final: `bash plugins/dossier/tests/run.sh policy-existing-pr.test.sh` — 22/22.
+Final: `bash plugins/dossier/tests/run.sh workflow-template.test.sh` — 119/119.
