@@ -652,12 +652,36 @@ REAL_GIT=$(command -v git)
 # --exit-code correctly returns 2 (branch not found) and the script takes the
 # no-branch cold-start path before ever reaching the fetch calls, so the
 # fetch assertions below would trivially see zero invocations either way.
+#
+# git_auth() scopes the auth header to origin's own scheme+host (review
+# finding: an unscoped key sends the header to every HTTPS host the git
+# invocation touches, verified live against a real third-party host). The
+# local bare-repo fixture's origin is a filesystem path, which never matches
+# the https://|http:// case at all -- so scenarios needing GH_TOKEN set must
+# point origin at an HTTPS-shaped URL to exercise that branch. `.invalid` is
+# the IANA-reserved TLD guaranteed to never resolve (RFC 2606), so this stays
+# fully offline; the stub does not exec real git for these two scenarios (a
+# real attempt would hang/fail against a host that deliberately cannot
+# resolve) -- it fakes success after logging, which is sufficient since
+# scenario 21 verifies the CONSTRUCTED command, not real network behavior
+# (that was verified separately, live, against a real private repo -- see
+# .decisions/issue-147.md).
 setup_fixture F21A
 push_docs_branch_commit "$F21A" "docs/dossier" "$(day_offset 1)"
+( cd "$F21A" && git remote set-url origin "https://github.example.invalid/test/rotation-fixture.git" ) >/dev/null 2>&1
 _dossier_require_mktemp_dir STUB21A "git-stub-with-token"
 cat > "$STUB21A/git" <<STUBEOF
 #!/usr/bin/env bash
 printf 'ARGV=%s GIT_CONFIG_COUNT=%s GIT_CONFIG_KEY_0=%s GIT_CONFIG_VALUE_0=%s\n' "\$*" "\${GIT_CONFIG_COUNT:-}" "\${GIT_CONFIG_KEY_0:-}" "\${GIT_CONFIG_VALUE_0:-}" >> "$STUB21A/argv.log"
+# Only the two network subcommands are faked (a real attempt would try to
+# resolve the deliberately-unresolvable .invalid host); everything else
+# (symbolic-ref, remote get-url, rev-list, show, diff) passes through to real
+# git, operating on the local repo state populated by push_docs_branch_commit
+# before origin's URL was ever changed -- unaffected by what origin's URL
+# currently is, since those are local-only ref operations.
+case "\$1" in
+  ls-remote|fetch) exit 0 ;;
+esac
 exec "$REAL_GIT" "\$@"
 STUBEOF
 chmod +x "$STUB21A/git"
@@ -672,18 +696,48 @@ assert_equal "0" "$RC21A" "GH_TOKEN set: script still exits 0 (correctness of ls
 EXPECTED_B64_21=$(printf 'x-access-token:%s' "test-token-abc123" | base64 | tr -d '\r\n')
 LSREMOTE_LINE21A=$(grep 'ARGV=ls-remote --exit-code' "$STUB21A/argv.log" | head -1)
 assert_contains "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic ${EXPECTED_B64_21}" "$LSREMOTE_LINE21A" "GH_TOKEN set: the ls-remote invocation carries the Basic-auth header via GIT_CONFIG_VALUE_0"
-assert_contains "GIT_CONFIG_KEY_0=http.extraheader" "$LSREMOTE_LINE21A" "GH_TOKEN set: the ls-remote invocation sets GIT_CONFIG_KEY_0=http.extraheader"
+# Scoped to origin's own scheme+host (review finding), not the bare
+# "http.extraheader" key that would apply to every HTTPS host -- proven live
+# during review that the unscoped form leaks to unrelated hosts.
+assert_contains "GIT_CONFIG_KEY_0=http.https://github.example.invalid/.extraheader" "$LSREMOTE_LINE21A" "GH_TOKEN set: the ls-remote invocation scopes GIT_CONFIG_KEY_0 to origin's own scheme+host, not the bare unscoped key"
 FETCH_LINES21A=$(grep 'ARGV=fetch --no-tags' "$STUB21A/argv.log")
 FETCH_COUNT21A=$(printf '%s\n' "$FETCH_LINES21A" | grep -c 'ARGV=fetch --no-tags')
 FETCH_WITH_AUTH21A=$(printf '%s\n' "$FETCH_LINES21A" | grep -c "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic ${EXPECTED_B64_21}")
 assert_equal "2" "$FETCH_COUNT21A" "GH_TOKEN set: both fetch invocations (base ref + docs branch) were captured"
 assert_equal "$FETCH_COUNT21A" "$FETCH_WITH_AUTH21A" "GH_TOKEN set: every fetch invocation carries the auth header, not just ls-remote"
+FETCH_WITH_SCOPED_KEY21A=$(printf '%s\n' "$FETCH_LINES21A" | grep -c 'GIT_CONFIG_KEY_0=http.https://github.example.invalid/.extraheader')
+assert_equal "$FETCH_COUNT21A" "$FETCH_WITH_SCOPED_KEY21A" "GH_TOKEN set: every fetch invocation scopes the key the same way ls-remote does"
 # The token must never additionally leak into argv itself (the whole point
 # of moving off -c) -- isolate just the ARGV=... field (everything before
 # " GIT_CONFIG_COUNT=") and confirm the token is absent from it specifically,
 # even though the full log line legitimately contains it (in VALUE_0).
 ARGV_ONLY21A=$(awk -F' GIT_CONFIG_COUNT=' '{print $1}' "$STUB21A/argv.log")
 assert_not_contains "test-token-abc123" "$ARGV_ONLY21A" "GH_TOKEN set: the token never appears in the ARGV portion of any logged invocation (process-listing exposure)"
+
+# =============================================================================
+# 21C. A non-HTTP(S) origin (ssh remote) must never receive the auth header at
+#      all, even with GH_TOKEN set -- Basic auth over HTTP doesn't apply to
+#      that transport, and git_auth() falls through to unauthenticated rather
+#      than guess a key. Regression test for that fallthrough branch.
+# =============================================================================
+setup_fixture F21C
+push_docs_branch_commit "$F21C" "docs/dossier" "$(day_offset 1)"
+( cd "$F21C" && git remote set-url origin "git@github.example.invalid:test/rotation-fixture.git" ) >/dev/null 2>&1
+_dossier_require_mktemp_dir STUB21C "git-stub-ssh-origin"
+cat > "$STUB21C/git" <<STUBEOF
+#!/usr/bin/env bash
+printf 'ARGV=%s GIT_CONFIG_COUNT=%s GIT_CONFIG_KEY_0=%s GIT_CONFIG_VALUE_0=%s\n' "\$*" "\${GIT_CONFIG_COUNT:-}" "\${GIT_CONFIG_KEY_0:-}" "\${GIT_CONFIG_VALUE_0:-}" >> "$STUB21C/argv.log"
+case "\$1" in
+  ls-remote|fetch) exit 0 ;;
+esac
+exec "$REAL_GIT" "\$@"
+STUBEOF
+chmod +x "$STUB21C/git"
+( cd "$F21C" && env PATH="$STUB21C:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier GH_TOKEN=test-token-abc123 "$SCRIPT" ) >/dev/null 2>&1
+RC21C=$?
+assert_equal "0" "$RC21C" "SSH origin with GH_TOKEN set: script still exits 0"
+LSREMOTE_LINE21C=$(grep 'ARGV=ls-remote --exit-code' "$STUB21C/argv.log" | head -1)
+assert_contains "GIT_CONFIG_COUNT= GIT_CONFIG_KEY_0= GIT_CONFIG_VALUE_0=" "$LSREMOTE_LINE21C" "SSH origin with GH_TOKEN set: no auth header is attached -- Basic-over-HTTP does not apply to this transport"
 
 setup_fixture F21B
 push_docs_branch_commit "$F21B" "docs/dossier" "$(day_offset 1)"
@@ -717,18 +771,27 @@ fi
 # =============================================================================
 setup_fixture F22
 push_docs_branch_commit "$F22" "docs/dossier" "$(day_offset 1)"
+( cd "$F22" && git remote set-url origin "https://github.example.invalid/test/rotation-fixture.git" ) >/dev/null 2>&1
 _dossier_require_mktemp_dir STUB22 "git-stub-dirty-token"
 cat > "$STUB22/git" <<STUBEOF
 #!/usr/bin/env bash
 printf 'ARGV=%s GIT_CONFIG_COUNT=%s GIT_CONFIG_KEY_0=%s GIT_CONFIG_VALUE_0=%s\n' "\$*" "\${GIT_CONFIG_COUNT:-}" "\${GIT_CONFIG_KEY_0:-}" "\${GIT_CONFIG_VALUE_0:-}" >> "$STUB22/argv.log"
+case "\$1" in
+  ls-remote|fetch) exit 0 ;;
+esac
 exec "$REAL_GIT" "\$@"
 STUBEOF
 chmod +x "$STUB22/git"
-# 60 'a's + a trailing CRLF -- long enough (with the 15-char "x-access-token:"
-# prefix) that base64(x-access-token:<token>) exceeds 76 columns, and dirty
-# enough to exercise the raw-token CR/LF strip too.
-DIRTY_TOKEN="$(printf 'a%.0s' $(seq 1 60))$(printf '\r\n')"
-CLEAN_TOKEN="$(printf 'a%.0s' $(seq 1 60))"
+# 30 'a's + a real embedded CRLF + 30 more 'a's, via ANSI-C quoting -- a
+# $(...) substitution strips ALL of its own trailing newlines regardless of
+# where the substitution's result is later concatenated, so a token built as
+# "...$(printf '\r\n')" (the original, incorrect version of this test) never
+# actually carries a surviving \n, only a trailing \r -- caught by review.
+# $'...' embeds real control characters with no such stripping. Long enough
+# (with the 15-char "x-access-token:" prefix) that base64(x-access-token:
+# <token>) exceeds 76 columns, exercising the GNU-wrap-collapse path too.
+DIRTY_TOKEN=$'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+CLEAN_TOKEN="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 EXPECTED_B64_22=$(printf 'x-access-token:%s' "$CLEAN_TOKEN" | base64 | tr -d '\r\n')
 ( cd "$F22" && env PATH="$STUB22:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier GH_TOKEN="$DIRTY_TOKEN" "$SCRIPT" ) >/dev/null 2>&1
 RC22=$?

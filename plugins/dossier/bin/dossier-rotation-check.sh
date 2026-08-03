@@ -159,9 +159,46 @@ cfg() { "$CASCADE" --default "$2" "${1#.}" 2>/dev/null; }
 # on-disk git config). Environment variables set via the `VAR=val cmd` prefix
 # form are scoped to this one subprocess only, not exported globally, and
 # match this file's own "never interpolated into a string that reaches a
-# shell" principle for GH_TOKEN just as well as -c did.
+# shell" principle for GH_TOKEN just as well as -c did. This function claims
+# exclusive ownership of the GIT_CONFIG_* namespace for that one subprocess --
+# it does not compose with a caller that has already populated GIT_CONFIG_*
+# in its own environment (nothing in this repo does today).
+#
+# Callers MUST redirect this function's stdout and stderr (every call site
+# below does, via `>/dev/null 2>&1`) -- the constructed Basic-auth header is
+# a transform of GH_TOKEN, not GitHub Actions' literal secret string, so
+# Actions' automatic log-masking will not catch it if it ever reaches an
+# unredirected log.
 git_auth() {
   if [ -n "${GH_TOKEN:-}" ]; then
+    # Scoped to origin's own scheme+host, not the bare `http.extraheader` key
+    # -- an unscoped key applies to every HTTPS request the git invocation
+    # makes, not just requests to origin. Verified live during review: an
+    # unscoped key sent this credential to an unrelated third-party HTTPS
+    # host. This script documents itself as standalone and locally callable
+    # (see below), where origin is not guaranteed to be github.com -- a
+    # mirror, a self-hosted GitLab/GHE, a vendor remote. Matches
+    # actions/checkout's own narrower http.<url>.extraheader scoping, not
+    # just its header-value shape.
+    local _origin_url _scheme_host _clean_token _b64_creds
+    _origin_url=$(git remote get-url origin 2>/dev/null)
+    case "$_origin_url" in
+      https://*|http://*)
+        _scheme_host=$(printf '%s' "$_origin_url" | LC_ALL=C sed -E 's#^(https?://[^/]+)/?.*#\1#')
+        ;;
+      *)
+        # Not an HTTP(S) remote (ssh://, git@host:path, git://) -- Basic auth
+        # over HTTP does not apply to those transports, so this credential
+        # has nowhere safe to be scoped to. Fall through unauthenticated
+        # rather than guess a key that could apply too broadly.
+        _scheme_host=""
+        ;;
+    esac
+    if [ -z "$_scheme_host" ]; then
+      git "$@"
+      return $?
+    fi
+
     # Basic, not Bearer -- verified directly against a real private GitHub
     # repo before shipping (see .decisions/issue-147.md): "AUTHORIZATION:
     # bearer $GH_TOKEN" was REJECTED (fatal: could not read Username), while
@@ -181,8 +218,18 @@ git_auth() {
     # newline into the header value.
     _clean_token=$(printf '%s' "$GH_TOKEN" | LC_ALL=C tr -d '\r\n\000-\037')
     _b64_creds=$(printf 'x-access-token:%s' "$_clean_token" | base64 | LC_ALL=C tr -d '\r\n')
+    if [ -z "$_b64_creds" ]; then
+      # The encoding pipeline itself failed (missing/broken base64) or
+      # GH_TOKEN was pure control characters that stripped to nothing --
+      # either way, sending an empty/malformed credential would get rejected
+      # by the remote, which is a *worse* outcome than no credential at all
+      # for a public repo that would otherwise have worked unauthenticated.
+      # Fall through rather than send a header known to be broken.
+      git "$@"
+      return $?
+    fi
     GIT_CONFIG_COUNT=1 \
-      GIT_CONFIG_KEY_0=http.extraheader \
+      GIT_CONFIG_KEY_0="http.${_scheme_host}/.extraheader" \
       GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${_b64_creds}" \
       git "$@"
   else
@@ -294,7 +341,12 @@ if [ "$LS_REMOTE_RC" -ne 0 ]; then
   AGE_DAYS=""
   ACC_FILES=""
   ACC_LINES=""
-  note "could not reach the remote to check for ${DOCS_BRANCH} (git ls-remote exited ${LS_REMOTE_RC}); treating this as a transport failure, not a missing branch."
+  # GH_TOKEN set/unset is named explicitly so an operator reading the job
+  # summary can distinguish "no token, private repo, expected" from "token
+  # was set and got rejected" -- both currently collapse into an identical
+  # transport-failure result, and a rejected token is otherwise
+  # indistinguishable from a genuine network problem.
+  note "could not reach the remote to check for ${DOCS_BRANCH} (git ls-remote exited ${LS_REMOTE_RC}; GH_TOKEN set: $([ -n "${GH_TOKEN:-}" ] && echo yes || echo no)); treating this as a transport failure, not a missing branch."
   if [ "$ROTATION_POLICY" = "none" ]; then
     WOULD_ROTATE="false"
     REASON="rotation is disabled (dossier.ci.rollingBranchRotation=none); the remote was also unreachable, so no metrics could be gathered"
@@ -322,7 +374,7 @@ else
   FETCH_DOCS_RC=$?
   if [ "$FETCH_BASE_RC" -ne 0 ] || [ "$FETCH_DOCS_RC" -ne 0 ]; then
     FETCH_OK=0
-    note "could not fetch ${BASE_REF} and/or ${DOCS_BRANCH} from origin (base rc=${FETCH_BASE_RC}, docs rc=${FETCH_DOCS_RC}); treating this as a transport failure."
+    note "could not fetch ${BASE_REF} and/or ${DOCS_BRANCH} from origin (base rc=${FETCH_BASE_RC}, docs rc=${FETCH_DOCS_RC}; GH_TOKEN set: $([ -n "${GH_TOKEN:-}" ] && echo yes || echo no)); treating this as a transport failure."
   fi
 fi
 
