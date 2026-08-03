@@ -708,4 +708,42 @@ else
   _dossier_assert_pass "GH_TOKEN empty/absent: no fetch invocation carries an auth header"
 fi
 
+# =============================================================================
+# 22. A "dirty" GH_TOKEN (embedded CR/LF, long enough that its base64 form
+#     would exceed GNU base64's default 76-column wrap) must still produce a
+#     single-line, correctly-cleaned header -- git_auth() strips both the raw
+#     token and the base64 output for exactly this reason, but nothing in
+#     scenario 21 (a short, clean token) exercises either code path.
+# =============================================================================
+setup_fixture F22
+push_docs_branch_commit "$F22" "docs/dossier" "$(day_offset 1)"
+_dossier_require_mktemp_dir STUB22 "git-stub-dirty-token"
+cat > "$STUB22/git" <<STUBEOF
+#!/usr/bin/env bash
+printf 'ARGV=%s GIT_CONFIG_COUNT=%s GIT_CONFIG_KEY_0=%s GIT_CONFIG_VALUE_0=%s\n' "\$*" "\${GIT_CONFIG_COUNT:-}" "\${GIT_CONFIG_KEY_0:-}" "\${GIT_CONFIG_VALUE_0:-}" >> "$STUB22/argv.log"
+exec "$REAL_GIT" "\$@"
+STUBEOF
+chmod +x "$STUB22/git"
+# 60 'a's + a trailing CRLF -- long enough (with the 15-char "x-access-token:"
+# prefix) that base64(x-access-token:<token>) exceeds 76 columns, and dirty
+# enough to exercise the raw-token CR/LF strip too.
+DIRTY_TOKEN="$(printf 'a%.0s' $(seq 1 60))$(printf '\r\n')"
+CLEAN_TOKEN="$(printf 'a%.0s' $(seq 1 60))"
+EXPECTED_B64_22=$(printf 'x-access-token:%s' "$CLEAN_TOKEN" | base64 | tr -d '\r\n')
+( cd "$F22" && env PATH="$STUB22:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" DOSSIER_CI_ROLLING_BRANCH=docs/dossier GH_TOKEN="$DIRTY_TOKEN" "$SCRIPT" ) >/dev/null 2>&1
+RC22=$?
+assert_equal "0" "$RC22" "dirty long GH_TOKEN: script still exits 0"
+LSREMOTE_LINE22=$(grep 'ARGV=ls-remote --exit-code' "$STUB22/argv.log" | head -1)
+assert_contains "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic ${EXPECTED_B64_22}" "$LSREMOTE_LINE22" "dirty long GH_TOKEN: the header carries the base64 of the CLEANED token (embedded CR/LF stripped before encoding), not the dirty raw token"
+# The stub logs every git subcommand this run makes (rev-list/show/diff on
+# already-fetched local refs too, not just the 3 network calls), so a fixed
+# line count would be brittle. Well-formedness is the real property under
+# test: an embedded raw newline surviving into GIT_CONFIG_VALUE_0 would split
+# that one logged invocation across two lines, and the second half would not
+# start with "ARGV=" -- so every line starting with "ARGV=" is proof no
+# invocation's log entry was fragmented by an unstripped newline.
+TOTAL_LOG_LINES22=$(wc -l < "$STUB22/argv.log" | tr -d ' ')
+ARGV_PREFIXED_LINES22=$(grep -c '^ARGV=' "$STUB22/argv.log")
+assert_equal "$TOTAL_LOG_LINES22" "$ARGV_PREFIXED_LINES22" "dirty long GH_TOKEN: every logged line is a complete, well-formed invocation record (none fragmented by an unstripped embedded newline)"
+
 _dossier_test_summary
