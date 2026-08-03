@@ -289,7 +289,6 @@ assert_not_contains "sk-ant-abcdefgh12345678" "$OUT" "an anthropic key never rea
 # `CL-` rows appear in two tables with different column layouts, and the
 # approval test is a literal substring match. A rejected row whose free-text
 # cell happens to contain the approved marker would otherwise be honoured.
-#
 # The probe sentence is deliberately mundane, NOT "our service is completely
 # secure": that wording independently trips the prohibited-vocabulary scanner
 # (section A, run over the raw document regardless of registration), which
