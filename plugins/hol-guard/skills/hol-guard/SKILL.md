@@ -76,9 +76,11 @@ Inspect requests and receipts before taking action:
 
 ```bash
 hol-guard approvals
-hol-guard approvals open
+hol-guard approvals open <request-id>
 hol-guard receipts
 ```
+
+Use the request ID returned by `hol-guard approvals` when opening a pending request.
 
 Terminal approval decisions require the specific request ID:
 
