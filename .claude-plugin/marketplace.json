@@ -293,6 +293,35 @@
         "audit",
         "automation"
       ]
+    },
+    {
+      "name": "hol-guard",
+      "source": "./plugins/hol-guard",
+      "description": "Runtime safety for local AI coding agents. Installs and invokes HOL Guard to detect, protect, dry-run, inspect, and verify Claude Code tool execution boundaries.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Hashgraph Online"
+      },
+      "homepage": "https://hol.org/guard",
+      "repository": "https://github.com/hashgraph-online/hol-guard",
+      "license": "Apache-2.0",
+      "category": "security",
+      "keywords": [
+        "ai-security",
+        "agent-security",
+        "runtime-safety",
+        "claude-code",
+        "tool-safety",
+        "prompt-injection",
+        "command-safety"
+      ],
+      "tags": [
+        "security",
+        "runtime-safety",
+        "claude-code",
+        "ai-agents",
+        "tool-safety"
+      ]
     }
   ]
 }
