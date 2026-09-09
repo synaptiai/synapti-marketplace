@@ -393,6 +393,71 @@ What the numbers actually say:
   function signature), and it should run after the `unittest` fix so the enforce
   arms' turn counts reflect TDD rather than the gate.
 
+## Results, round two: 2026-09-09, flow 3.3.0, Sonnet 5 full grid and Opus 5 on interval-algebra
+
+105 runs, $184.65, zero errors after discarding and re-running every run
+that hit the account's usage limit. Sonnet 5: 7 arms × 4 cases × 3 runs
+(84 runs, $95.95). Opus 5: 7 arms × `interval-algebra` × 3 runs (21 runs,
+$88.70), the one case whose Sonnet baseline fails. Every plugin-arm run
+invoked both `flow:specification-capture` and `flow:tdd-patterns` (90 of
+90). Records: `evals/results-2026-09-09-round2/` (`summary.md`,
+`summary.json`, `runs.json` with every session id).
+
+| Model | Arm | Hidden pass | All-pass runs | Own tests catch traps | Own tests | Degenerate share | Cost/run | Turns |
+|---|---|---|---|---|---|---|---|---|
+| Sonnet 5 | baseline | 99% | 75% | 90% | 26.3 | 56% | $0.27 | 9.3 |
+| Sonnet 5 | enforce-risk | 99% | 92% | 92% | 19.5 | 44% | $1.89 | 28.9 |
+| Sonnet 5 | enforce-norisk | 99% | 83% | 91% | 19.0 | 41% | $1.55 | 28.8 |
+| Sonnet 5 | suggest-risk | 99% | 83% | 89% | 21.5 | 45% | $1.62 | 26.6 |
+| Sonnet 5 | suggest-norisk | 99% | 75% | 93% | 19.3 | 38% | $1.15 | 21.5 |
+| Sonnet 5 | off-risk | 100% | 92% | 91% | 22.2 | 45% | $0.79 | 16.2 |
+| Sonnet 5 | off-norisk | 99% | 83% | 91% | 22.6 | 42% | $0.73 | 15.7 |
+| Opus 5 | baseline | 100% | 100% | 97% | 57.7 | 73% | $1.13 | 11.7 |
+| Opus 5 | enforce-risk | 100% | 100% | 95% | 56.0 | 69% | $5.61 | 25.7 |
+| Opus 5 | enforce-norisk | 100% | 100% | 95% | 44.3 | 69% | $5.03 | 28.7 |
+| Opus 5 | suggest-risk | 100% | 100% | 97% | 45.3 | 69% | $5.31 | 33.3 |
+| Opus 5 | suggest-norisk | 100% | 100% | 92% | 47.3 | 71% | $5.30 | 36.7 |
+| Opus 5 | off-risk | 100% | 100% | 95% | 50.3 | 72% | $4.46 | 31.3 |
+| Opus 5 | off-norisk | 100% | 100% | 95% | 47.7 | 75% | $2.72 | 23.7 |
+
+On `interval-algebra` alone (Sonnet 5, 3 runs per arm): baseline 97% with no
+all-pass run; enforce-risk 96% (one run at 87%, two at 100%); enforce-norisk
+98%; suggest-risk 98%; suggest-norisk 94%; off-risk 99%; off-norisk 97%.
+Opus 5 passed every hidden test in every arm on that case.
+
+Verdict by the decision rule, both models: `keep-enforce`, decided by the
+secondary signal because the primary tied within the spread (Sonnet spread
+1.3 points, own-test spread 5.7; Opus spread 0, own-test spread 8.8). What
+the numbers say:
+
+- **No flow setting moved correctness on either model.** Sonnet's plugin
+  arms and baseline all sit at 99%, with all-pass rates from 75% to 92% that
+  lie inside the run-to-run spread on the one discriminating case. Opus is
+  at ceiling everywhere, including on the case Sonnet misses. The study's
+  "more tests, lower correctness" failure did not appear: the enforce arms
+  wrote fewer tests than the baseline, not more.
+- **Own tests catch the same share of traps with or without flow.** Sonnet
+  89% to 93% against a 90% baseline; Opus 92% to 97% against 97%. The oracle
+  and discriminating-input rules did not make the agent's tests stronger
+  against the seeded traps.
+- **The rules do change which inputs get written, on Sonnet.** Degenerate
+  literal inputs fell from 56% (baseline) to 38% to 45% on the plugin arms.
+  On Opus the share stayed near 70% in every arm; Opus writes about 50 tests
+  per run and the extra ones are mostly simple literals.
+- **The cost is real and the gate defect is gone.** With `python -m
+  unittest` recognised, the enforce arms still spend about six times the
+  Sonnet baseline and three times the off arms per run, and about five times
+  the Opus baseline. Turn counts roughly triple. That is the price of the
+  RED/GREEN/REFACTOR loop itself now, not of a misfiring gate.
+- **The risk map did nothing measurable.** Risk-on and risk-off arms differ
+  by 0.3 points on Sonnet and 0 on Opus, within the spread, at similar cost.
+- **Decision.** `testing.tddMode` stays `enforce` and `specFirst.riskMap`
+  stays `true` by the rule as written: neither round produced evidence that a
+  different default is more correct. The rule cannot see cost, and cost is
+  where the arms differ; whether a default that costs three to six times more
+  for the same measured correctness should stay the default is a product
+  decision the eval informs but does not make.
+
 ## Limitations
 
 - **Four tasks, one language.** All cases are small, single-module,

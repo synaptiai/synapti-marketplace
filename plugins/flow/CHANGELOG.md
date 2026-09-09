@@ -166,6 +166,14 @@ expected value.
   completion because `python3 -m unittest` was not a recognised quality command (fixed below), so
   the turn counts overstate the cost of TDD itself. The oracle and discriminating-input rules cut
   the share of degenerate literal test inputs from 38% (baseline) to 11% (`enforce-norisk`).
+- **Second full run recorded** (`evals/results-2026-09-09-round2/`): 105 runs, $184.65, Sonnet 5 on all
+  four cases and Opus 5 on `interval-algebra`. Verdict `keep-enforce` on both models, decided by the
+  own-test secondary signal because every primary comparison tied within the run-to-run spread. No
+  flow setting moved hidden-test correctness or the share of traps the agent's own tests catch; the
+  rules did cut degenerate literal inputs on Sonnet (56% to about 40%) and not on Opus; the enforce
+  arms cost three to six times the off and baseline arms for the same measured correctness. The
+  reference records the reading and names the cost question as a product decision the rule does not
+  make.
 - **`record-quality-run.sh` recognises `python -m unittest`.** Surfaced by the eval: the built-in
   patterns covered pytest, ruff, mypy and the rest but not the standard-library runner, so a
   project tested with unittest could never satisfy the task-completion gate.

@@ -1,0 +1,1743 @@
+[
+ {
+  "model": "claude-opus-5",
+  "arm": "baseline",
+  "case": "interval-algebra",
+  "run": "1",
+  "session_id": "122f33f8-96dc-4ada-8fe4-27d9809ce1d1",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.1784040000000002,
+  "num_turns": 9,
+  "test_functions": 53,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "baseline",
+  "case": "interval-algebra",
+  "run": "2",
+  "session_id": "cf8b7b4c-065e-473c-af21-103de3fd509c",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 0.9780614999999999,
+  "num_turns": 12,
+  "test_functions": 52,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "baseline",
+  "case": "interval-algebra",
+  "run": "3",
+  "session_id": "ad9c0211-85e4-4cae-bcb8-2306a59ff501",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.2476954999999998,
+  "num_turns": 14,
+  "test_functions": 68,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "enforce-norisk",
+  "case": "interval-algebra",
+  "run": "1",
+  "session_id": "53f71351-c234-443d-b5c2-860c18ec41ad",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 5.027473999999999,
+  "num_turns": 31,
+  "test_functions": 31,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "enforce-norisk",
+  "case": "interval-algebra",
+  "run": "2",
+  "session_id": "b3486b70-3eda-44f4-8bb1-fa4b38630331",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 4.876230499999999,
+  "num_turns": 26,
+  "test_functions": 39,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "enforce-norisk",
+  "case": "interval-algebra",
+  "run": "3",
+  "session_id": "b0969f28-c75f-4407-b51b-892d7b07b6dd",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 5.182633750000001,
+  "num_turns": 29,
+  "test_functions": 63,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "enforce-risk",
+  "case": "interval-algebra",
+  "run": "1",
+  "session_id": "35497e9e-4786-4bb5-b2e7-ca636792f851",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 5.451684,
+  "num_turns": 22,
+  "test_functions": 53,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "enforce-risk",
+  "case": "interval-algebra",
+  "run": "2",
+  "session_id": "fef2d40a-7396-4225-a68d-94cee47cbab2",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 5.701518749999999,
+  "num_turns": 29,
+  "test_functions": 51,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "enforce-risk",
+  "case": "interval-algebra",
+  "run": "3",
+  "session_id": "4daae4c4-ccc6-4a69-858c-787fed0d9671",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 5.676610000000001,
+  "num_turns": 26,
+  "test_functions": 64,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "off-norisk",
+  "case": "interval-algebra",
+  "run": "1",
+  "session_id": "fb753a2d-16fd-4a6b-a948-dd5474362c59",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 2.7912630000000003,
+  "num_turns": 23,
+  "test_functions": 40,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "off-norisk",
+  "case": "interval-algebra",
+  "run": "2",
+  "session_id": "b316a01d-3bb9-4f02-b940-1f25e9383625",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 2.503360249999999,
+  "num_turns": 21,
+  "test_functions": 55,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "off-norisk",
+  "case": "interval-algebra",
+  "run": "3",
+  "session_id": "4868d813-8e07-4eaf-97a4-4e0de977cae2",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 2.86439,
+  "num_turns": 27,
+  "test_functions": 48,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "off-risk",
+  "case": "interval-algebra",
+  "run": "1",
+  "session_id": "e5453771-1070-423d-b5d2-34a9d21daf0c",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 3.709976499999999,
+  "num_turns": 32,
+  "test_functions": 48,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "off-risk",
+  "case": "interval-algebra",
+  "run": "2",
+  "session_id": "4b620f6a-4506-4831-8ab9-cdb34955e5f6",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 6.136950749999996,
+  "num_turns": 35,
+  "test_functions": 57,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "off-risk",
+  "case": "interval-algebra",
+  "run": "3",
+  "session_id": "aded8e53-001e-4114-a9db-574ff0308383",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 3.5331989999999993,
+  "num_turns": 27,
+  "test_functions": 46,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "suggest-norisk",
+  "case": "interval-algebra",
+  "run": "1",
+  "session_id": "b198f7b3-3f03-4060-93b0-5b3d2491ebd2",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 5.4434587500000005,
+  "num_turns": 51,
+  "test_functions": 35,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "suggest-norisk",
+  "case": "interval-algebra",
+  "run": "2",
+  "session_id": "9e89d30b-ee00-4f9c-b340-0f7a40332dcc",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 5.2101275,
+  "num_turns": 31,
+  "test_functions": 59,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "suggest-norisk",
+  "case": "interval-algebra",
+  "run": "3",
+  "session_id": "90cb9454-1d60-4acb-86c4-2e70e7935c08",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.8461538461538461,
+  "cost_usd": 5.255355000000001,
+  "num_turns": 28,
+  "test_functions": 48,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "suggest-risk",
+  "case": "interval-algebra",
+  "run": "1",
+  "session_id": "d6896b8a-028c-4e27-ab93-f41c72e873dd",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 4.1338867499999985,
+  "num_turns": 24,
+  "test_functions": 28,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "suggest-risk",
+  "case": "interval-algebra",
+  "run": "2",
+  "session_id": "a37cefca-5f28-481f-9223-43f59f0c507d",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 5.6152925,
+  "num_turns": 35,
+  "test_functions": 58,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-opus-5",
+  "arm": "suggest-risk",
+  "case": "interval-algebra",
+  "run": "3",
+  "session_id": "7cdcc16a-f8b8-4c35-ac29-ae468690b0f1",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 6.181049250000001,
+  "num_turns": 41,
+  "test_functions": 50,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "baseline",
+  "case": "four-stream-codec",
+  "run": "1",
+  "session_id": "18000789-a17c-44df-883b-67eb0c8de995",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.1954092,
+  "num_turns": 10,
+  "test_functions": 26,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "baseline",
+  "case": "four-stream-codec",
+  "run": "2",
+  "session_id": "d63423b8-79fd-4da7-a235-34f3af1ed4d9",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.20716680000000004,
+  "num_turns": 11,
+  "test_functions": 26,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "baseline",
+  "case": "four-stream-codec",
+  "run": "3",
+  "session_id": "8175d970-be6e-4ead-a8ca-46fde146b5fb",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.1452108,
+  "num_turns": 7,
+  "test_functions": 23,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "baseline",
+  "case": "interval-algebra",
+  "run": "1",
+  "session_id": "9a1e567b-c765-45be-8493-726e9f4fc753",
+  "hidden_pass_rate": 0.9666666666666667,
+  "own_test_trap_catch_rate": 0.8461538461538461,
+  "cost_usd": 0.6068306,
+  "num_turns": 11,
+  "test_functions": 33,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "baseline",
+  "case": "interval-algebra",
+  "run": "2",
+  "session_id": "47db6e8c-df44-439b-aa1b-448e7d81747e",
+  "hidden_pass_rate": 0.9666666666666667,
+  "own_test_trap_catch_rate": 0.8461538461538461,
+  "cost_usd": 0.4651272,
+  "num_turns": 12,
+  "test_functions": 38,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "baseline",
+  "case": "interval-algebra",
+  "run": "3",
+  "session_id": "8b102c97-03ee-4b47-b14d-6141af279e87",
+  "hidden_pass_rate": 0.9666666666666667,
+  "own_test_trap_catch_rate": 0.8461538461538461,
+  "cost_usd": 0.48099040000000004,
+  "num_turns": 11,
+  "test_functions": 38,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "baseline",
+  "case": "money-allocator",
+  "run": "1",
+  "session_id": "e011672e-503a-4eec-a00f-554965b35d94",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 0.1928824,
+  "num_turns": 9,
+  "test_functions": 23,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "baseline",
+  "case": "money-allocator",
+  "run": "2",
+  "session_id": "f2cd9eff-84cb-4f4b-a47c-a71b1eb10480",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 0.1971008,
+  "num_turns": 7,
+  "test_functions": 23,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "baseline",
+  "case": "money-allocator",
+  "run": "3",
+  "session_id": "a67acfaf-9299-4e0c-b4a9-9d3b5ce2c368",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 0.1802436,
+  "num_turns": 8,
+  "test_functions": 22,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "baseline",
+  "case": "sliding-window-limiter",
+  "run": "1",
+  "session_id": "c81e0b4a-886f-45de-82ea-fb1a7eff8ba8",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.1456134,
+  "num_turns": 7,
+  "test_functions": 22,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "baseline",
+  "case": "sliding-window-limiter",
+  "run": "2",
+  "session_id": "26ea2bcb-10b0-4f9e-a1d6-ad7c4e7be47b",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.1980372,
+  "num_turns": 10,
+  "test_functions": 22,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "baseline",
+  "case": "sliding-window-limiter",
+  "run": "3",
+  "session_id": "938a1cfa-3673-4737-9a23-27f9fb2d0ad0",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.19796979999999997,
+  "num_turns": 9,
+  "test_functions": 20,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-norisk",
+  "case": "four-stream-codec",
+  "run": "1",
+  "session_id": "6cd85462-a943-422a-be9e-08117a34dcd7",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.9154315,
+  "num_turns": 15,
+  "test_functions": 14,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-norisk",
+  "case": "four-stream-codec",
+  "run": "2",
+  "session_id": "8ef5329e-4d3c-4a2a-9c8e-fdec763951a6",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.5326672000000001,
+  "num_turns": 32,
+  "test_functions": 21,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-norisk",
+  "case": "four-stream-codec",
+  "run": "3",
+  "session_id": "8059ec6f-4648-4cd3-9bba-8554083f234d",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.9587867,
+  "num_turns": 33,
+  "test_functions": 18,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-norisk",
+  "case": "interval-algebra",
+  "run": "1",
+  "session_id": "74969918-c3a1-478d-80ac-daec8438778c",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 2.3632650999999996,
+  "num_turns": 32,
+  "test_functions": 28,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-norisk",
+  "case": "interval-algebra",
+  "run": "2",
+  "session_id": "1f26446e-10b7-46f2-840b-e4bf752a5390",
+  "hidden_pass_rate": 0.9666666666666667,
+  "own_test_trap_catch_rate": 0.7692307692307693,
+  "cost_usd": 2.3519009,
+  "num_turns": 37,
+  "test_functions": 25,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-norisk",
+  "case": "interval-algebra",
+  "run": "3",
+  "session_id": "18e78cf6-8a55-4a1c-b1e7-36dcf66570fc",
+  "hidden_pass_rate": 0.9666666666666667,
+  "own_test_trap_catch_rate": 0.8461538461538461,
+  "cost_usd": 1.8713618000000005,
+  "num_turns": 32,
+  "test_functions": 32,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-norisk",
+  "case": "money-allocator",
+  "run": "1",
+  "session_id": "d34a3f0b-4040-4627-82d5-38a9c2ce3351",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.875,
+  "cost_usd": 1.2009512,
+  "num_turns": 16,
+  "test_functions": 15,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-norisk",
+  "case": "money-allocator",
+  "run": "2",
+  "session_id": "332ab392-2838-4348-bce0-b029415f1e88",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 1.3919879999999998,
+  "num_turns": 15,
+  "test_functions": 12,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-norisk",
+  "case": "money-allocator",
+  "run": "3",
+  "session_id": "0649f867-eac6-4305-92a4-7629bda811dd",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 0.4584039,
+  "num_turns": 17,
+  "test_functions": 22,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-norisk",
+  "case": "sliding-window-limiter",
+  "run": "1",
+  "session_id": "58802042-e980-404a-b714-3363b668155d",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.5083622999999997,
+  "num_turns": 35,
+  "test_functions": 11,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-norisk",
+  "case": "sliding-window-limiter",
+  "run": "2",
+  "session_id": "6310aa58-4b14-453e-8686-eb59048d7cab",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.0937259999999998,
+  "num_turns": 65,
+  "test_functions": 17,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-norisk",
+  "case": "sliding-window-limiter",
+  "run": "3",
+  "session_id": "9456817d-eccc-40cd-af6e-14a6fa92d361",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.8973534000000001,
+  "num_turns": 16,
+  "test_functions": 13,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-risk",
+  "case": "four-stream-codec",
+  "run": "1",
+  "session_id": "536b63b3-83d5-4508-a10d-88ab3078395f",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.4189381,
+  "num_turns": 34,
+  "test_functions": 14,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-risk",
+  "case": "four-stream-codec",
+  "run": "2",
+  "session_id": "b16653f6-b063-43b5-b5a2-06901b625e35",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.3828082,
+  "num_turns": 18,
+  "test_functions": 19,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-risk",
+  "case": "four-stream-codec",
+  "run": "3",
+  "session_id": "cded045f-87fa-49e3-ba50-37397531b270",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.9653271,
+  "num_turns": 18,
+  "test_functions": 20,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-risk",
+  "case": "interval-algebra",
+  "run": "1",
+  "session_id": "046dd9f5-cbc8-4bf0-9920-06623eb80f1f",
+  "hidden_pass_rate": 0.8666666666666667,
+  "own_test_trap_catch_rate": 0.8461538461538461,
+  "cost_usd": 2.5067381000000006,
+  "num_turns": 49,
+  "test_functions": 12,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-risk",
+  "case": "interval-algebra",
+  "run": "2",
+  "session_id": "5c775845-fc7a-48b1-b23c-9708ce705bcb",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 1.7330629999999996,
+  "num_turns": 50,
+  "test_functions": 25,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-risk",
+  "case": "interval-algebra",
+  "run": "3",
+  "session_id": "318df702-2168-4603-9474-9fc42f5b48aa",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 2.2224108000000005,
+  "num_turns": 15,
+  "test_functions": 29,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-risk",
+  "case": "money-allocator",
+  "run": "1",
+  "session_id": "f35d7afe-7687-49ae-99e1-194e2b744992",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 1.6293839000000003,
+  "num_turns": 14,
+  "test_functions": 17,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-risk",
+  "case": "money-allocator",
+  "run": "2",
+  "session_id": "f198ffa4-7972-4970-af73-1a77f12e7399",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.875,
+  "cost_usd": 1.9901207999999992,
+  "num_turns": 16,
+  "test_functions": 18,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-risk",
+  "case": "money-allocator",
+  "run": "3",
+  "session_id": "66ab6fdb-ee51-4750-a7a3-78350e242019",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 2.322611099999999,
+  "num_turns": 17,
+  "test_functions": 16,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-risk",
+  "case": "sliding-window-limiter",
+  "run": "1",
+  "session_id": "6968c99b-6c7d-4a27-9e55-c26f3706449c",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 2.6395769999999987,
+  "num_turns": 19,
+  "test_functions": 24,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-risk",
+  "case": "sliding-window-limiter",
+  "run": "2",
+  "session_id": "59115426-1b88-4e89-b3ee-223fc1adc9d2",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.5292150000000007,
+  "num_turns": 17,
+  "test_functions": 13,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "enforce-risk",
+  "case": "sliding-window-limiter",
+  "run": "3",
+  "session_id": "5f8bdcde-6e21-4c29-9304-d802df60e320",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.2888366999999998,
+  "num_turns": 80,
+  "test_functions": 27,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-norisk",
+  "case": "four-stream-codec",
+  "run": "1",
+  "session_id": "58833680-aac3-4eea-af20-83fdc5cb1a31",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.5152772,
+  "num_turns": 15,
+  "test_functions": 25,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-norisk",
+  "case": "four-stream-codec",
+  "run": "2",
+  "session_id": "18f0aeba-20a6-41b9-aa69-c4b8d4f52325",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.6724650000000002,
+  "num_turns": 20,
+  "test_functions": 34,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-norisk",
+  "case": "four-stream-codec",
+  "run": "3",
+  "session_id": "c2e5ebfe-a9bc-44c8-8d79-ca42ea3a367b",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.6409790999999999,
+  "num_turns": 16,
+  "test_functions": 22,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-norisk",
+  "case": "interval-algebra",
+  "run": "1",
+  "session_id": "a7f94d5b-4a60-4b98-8f20-f3e5f9da7d78",
+  "hidden_pass_rate": 0.9666666666666667,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 0.8558359999999998,
+  "num_turns": 13,
+  "test_functions": 27,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-norisk",
+  "case": "interval-algebra",
+  "run": "2",
+  "session_id": "e093702e-b395-413f-acc5-23d85501c1fc",
+  "hidden_pass_rate": 0.9333333333333333,
+  "own_test_trap_catch_rate": 0.8461538461538461,
+  "cost_usd": 0.8682012000000001,
+  "num_turns": 16,
+  "test_functions": 27,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-norisk",
+  "case": "interval-algebra",
+  "run": "3",
+  "session_id": "7c10fa90-7534-4a73-ac6c-1528d3518038",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 1.0296880000000002,
+  "num_turns": 17,
+  "test_functions": 33,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-norisk",
+  "case": "money-allocator",
+  "run": "1",
+  "session_id": "395cfc6f-c697-4047-9aad-36d2861ae42e",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 0.7124358,
+  "num_turns": 16,
+  "test_functions": 15,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-norisk",
+  "case": "money-allocator",
+  "run": "2",
+  "session_id": "523126a8-cf52-447a-8d7a-d8d757946f9f",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 0.705945,
+  "num_turns": 14,
+  "test_functions": 15,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-norisk",
+  "case": "money-allocator",
+  "run": "3",
+  "session_id": "89f855fb-2e3f-4067-b465-63482180b273",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 0.6121797,
+  "num_turns": 18,
+  "test_functions": 22,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-norisk",
+  "case": "sliding-window-limiter",
+  "run": "1",
+  "session_id": "b2cd0479-87bc-4407-98d1-c2780a3e431e",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.6855954000000001,
+  "num_turns": 14,
+  "test_functions": 19,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-norisk",
+  "case": "sliding-window-limiter",
+  "run": "2",
+  "session_id": "dbb53f6f-820f-469d-81bc-2b42c834eb9f",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.6811268000000001,
+  "num_turns": 15,
+  "test_functions": 11,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-norisk",
+  "case": "sliding-window-limiter",
+  "run": "3",
+  "session_id": "3b3b832c-f962-453a-9b68-36cc2d0457cb",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.7694840000000001,
+  "num_turns": 14,
+  "test_functions": 21,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-risk",
+  "case": "four-stream-codec",
+  "run": "1",
+  "session_id": "04a60e0e-26c1-418e-ae52-2e3c97e6327b",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.6445614000000002,
+  "num_turns": 19,
+  "test_functions": 18,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-risk",
+  "case": "four-stream-codec",
+  "run": "2",
+  "session_id": "d82c6fe3-8232-4e5c-bb86-5f1192761f64",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.6417630000000001,
+  "num_turns": 15,
+  "test_functions": 19,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-risk",
+  "case": "four-stream-codec",
+  "run": "3",
+  "session_id": "a508b1d0-ca44-4e18-abfb-129dcae1ef82",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.7008277999999998,
+  "num_turns": 15,
+  "test_functions": 21,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-risk",
+  "case": "interval-algebra",
+  "run": "1",
+  "session_id": "e7790a52-0d4d-4f7f-8fe6-a0deebdbbbab",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.8461538461538461,
+  "cost_usd": 0.9939713000000002,
+  "num_turns": 16,
+  "test_functions": 26,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-risk",
+  "case": "interval-algebra",
+  "run": "2",
+  "session_id": "96c39f9f-6e44-4ab5-b9d1-296437408abb",
+  "hidden_pass_rate": 0.9666666666666667,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 0.8475583,
+  "num_turns": 17,
+  "test_functions": 32,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-risk",
+  "case": "interval-algebra",
+  "run": "3",
+  "session_id": "bf58547c-f64b-4b25-b84e-93452ec00a9c",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.8461538461538461,
+  "cost_usd": 0.9833052999999998,
+  "num_turns": 15,
+  "test_functions": 26,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-risk",
+  "case": "money-allocator",
+  "run": "1",
+  "session_id": "e43a8ee8-8bb2-4af8-b146-5e18d79af60c",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.9102990000000001,
+  "num_turns": 11,
+  "test_functions": 18,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-risk",
+  "case": "money-allocator",
+  "run": "2",
+  "session_id": "cffe730a-40a1-42a3-812d-e50fadbf9324",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 0.6313561999999999,
+  "num_turns": 17,
+  "test_functions": 23,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-risk",
+  "case": "money-allocator",
+  "run": "3",
+  "session_id": "8fc28d5f-1b9d-4081-b148-2b0e5d4dc903",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 0.7308154,
+  "num_turns": 21,
+  "test_functions": 27,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-risk",
+  "case": "sliding-window-limiter",
+  "run": "1",
+  "session_id": "b0e5d318-f161-4c99-9d91-fb9c2138b86a",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.8774889999999997,
+  "num_turns": 18,
+  "test_functions": 21,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-risk",
+  "case": "sliding-window-limiter",
+  "run": "2",
+  "session_id": "a740b8c8-5850-4261-bc84-d25175c63787",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.8571428571428571,
+  "cost_usd": 0.6373533,
+  "num_turns": 14,
+  "test_functions": 19,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "off-risk",
+  "case": "sliding-window-limiter",
+  "run": "3",
+  "session_id": "e2475a4a-2883-4351-a10f-9f1f1bbb268f",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.8815285999999999,
+  "num_turns": 16,
+  "test_functions": 16,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-norisk",
+  "case": "four-stream-codec",
+  "run": "1",
+  "session_id": "537d1f8c-1775-4232-a39c-68c7e7b22c28",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.7099115000000001,
+  "num_turns": 17,
+  "test_functions": 18,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-norisk",
+  "case": "four-stream-codec",
+  "run": "2",
+  "session_id": "6f153769-30f5-4d8e-87e9-214f0197b001",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.5900038,
+  "num_turns": 16,
+  "test_functions": 17,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-norisk",
+  "case": "four-stream-codec",
+  "run": "3",
+  "session_id": "aa10a512-c561-408c-8f4a-c85e0e0ca202",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.6329358,
+  "num_turns": 15,
+  "test_functions": 20,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-norisk",
+  "case": "interval-algebra",
+  "run": "1",
+  "session_id": "373ca4f8-d552-48c0-bd14-0ba85e323bfb",
+  "hidden_pass_rate": 0.9666666666666667,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 0.9644544000000003,
+  "num_turns": 16,
+  "test_functions": 26,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-norisk",
+  "case": "interval-algebra",
+  "run": "2",
+  "session_id": "baf3eca9-994c-4dea-9f11-e2442f429f3f",
+  "hidden_pass_rate": 0.9,
+  "own_test_trap_catch_rate": 0.7692307692307693,
+  "cost_usd": 2.5737404,
+  "num_turns": 38,
+  "test_functions": 27,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-norisk",
+  "case": "interval-algebra",
+  "run": "3",
+  "session_id": "fa1b9f35-9f75-486b-bc4d-4e51121410c4",
+  "hidden_pass_rate": 0.9666666666666667,
+  "own_test_trap_catch_rate": 0.8461538461538461,
+  "cost_usd": 0.8512871000000001,
+  "num_turns": 23,
+  "test_functions": 29,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-norisk",
+  "case": "money-allocator",
+  "run": "1",
+  "session_id": "eb3b4347-f555-4957-a08e-b47ec7b42e83",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.7618516999999998,
+  "num_turns": 30,
+  "test_functions": 14,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-norisk",
+  "case": "money-allocator",
+  "run": "2",
+  "session_id": "b82cd9c7-4701-4fa1-9fc6-4d2da0ee3bdb",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.875,
+  "cost_usd": 0.9921762000000002,
+  "num_turns": 20,
+  "test_functions": 16,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-norisk",
+  "case": "money-allocator",
+  "run": "3",
+  "session_id": "f4e5fa27-e6e4-4cb2-b8c8-89bfb8b64af3",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 1.0879230999999998,
+  "num_turns": 28,
+  "test_functions": 19,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-norisk",
+  "case": "sliding-window-limiter",
+  "run": "1",
+  "session_id": "0fc59d0f-b1b9-42d5-8ea1-7c92799f1426",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.4113152000000004,
+  "num_turns": 16,
+  "test_functions": 12,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-norisk",
+  "case": "sliding-window-limiter",
+  "run": "2",
+  "session_id": "2e1bf1ab-fe25-48b8-9773-01312ffe13b0",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.6647426,
+  "num_turns": 17,
+  "test_functions": 18,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-norisk",
+  "case": "sliding-window-limiter",
+  "run": "3",
+  "session_id": "7aeda4c5-5cb6-4f55-aa35-643ce0edf757",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.6065667999999999,
+  "num_turns": 22,
+  "test_functions": 16,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-risk",
+  "case": "four-stream-codec",
+  "run": "1",
+  "session_id": "12663c6b-260c-487a-a79e-a62d68b680cb",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.4370643000000005,
+  "num_turns": 34,
+  "test_functions": 17,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-risk",
+  "case": "four-stream-codec",
+  "run": "2",
+  "session_id": "c23df424-c196-45e5-93cd-4baa73d69a00",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.8000589,
+  "num_turns": 14,
+  "test_functions": 22,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-risk",
+  "case": "four-stream-codec",
+  "run": "3",
+  "session_id": "17e13839-805e-4fd0-b28c-3d3091b48c0c",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.3984453000000003,
+  "num_turns": 31,
+  "test_functions": 21,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-risk",
+  "case": "interval-algebra",
+  "run": "1",
+  "session_id": "038a186a-4770-4182-98d5-b483199fb1fc",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.9230769230769231,
+  "cost_usd": 1.9308530000000002,
+  "num_turns": 35,
+  "test_functions": 37,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-risk",
+  "case": "interval-algebra",
+  "run": "2",
+  "session_id": "aa33fb18-adac-4ffc-a0cf-283e704c15bc",
+  "hidden_pass_rate": 0.9666666666666667,
+  "own_test_trap_catch_rate": 0.7692307692307693,
+  "cost_usd": 2.2159736000000003,
+  "num_turns": 19,
+  "test_functions": 23,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-risk",
+  "case": "interval-algebra",
+  "run": "3",
+  "session_id": "dd0fbaac-e5e4-44f1-b130-a0bfa6b0693e",
+  "hidden_pass_rate": 0.9666666666666667,
+  "own_test_trap_catch_rate": 0.7692307692307693,
+  "cost_usd": 2.4251536000000016,
+  "num_turns": 37,
+  "test_functions": 27,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-risk",
+  "case": "money-allocator",
+  "run": "1",
+  "session_id": "7dc527f2-ed98-4566-b9b7-46b7eb3c3e88",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 2.0575954000000003,
+  "num_turns": 30,
+  "test_functions": 15,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-risk",
+  "case": "money-allocator",
+  "run": "2",
+  "session_id": "bd1508cd-0034-410d-b1b2-4e6058ce863a",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 1.0719455000000002,
+  "num_turns": 14,
+  "test_functions": 17,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-risk",
+  "case": "money-allocator",
+  "run": "3",
+  "session_id": "4d4f5a04-8b8d-441e-9365-a92261b583e5",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 0.75,
+  "cost_usd": 1.2782737,
+  "num_turns": 26,
+  "test_functions": 15,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-risk",
+  "case": "sliding-window-limiter",
+  "run": "1",
+  "session_id": "f49b57c0-7cb5-410e-ac5c-d3b4c760c117",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 0.8150729999999999,
+  "num_turns": 38,
+  "test_functions": 22,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-risk",
+  "case": "sliding-window-limiter",
+  "run": "2",
+  "session_id": "6dcfd73d-ec5b-461b-83db-553fde3d333c",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 2.3425003,
+  "num_turns": 25,
+  "test_functions": 22,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "model": "claude-sonnet-5",
+  "arm": "suggest-risk",
+  "case": "sliding-window-limiter",
+  "run": "3",
+  "session_id": "07dd7cb6-362a-4fbf-9997-b22f738fe67c",
+  "hidden_pass_rate": 1.0,
+  "own_test_trap_catch_rate": 1.0,
+  "cost_usd": 1.7183016000000007,
+  "num_turns": 16,
+  "test_functions": 20,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ }
+]
