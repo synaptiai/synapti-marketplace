@@ -39,6 +39,13 @@ proposed: "{YYYY-MM-DD}"
 - `{journal-dir}/issue-{N}.md` @ {timestamp}: "{decision title}"
 - `{journal-dir}/issue-{M}.md` @ {timestamp}: "{decision title}"
 
+### Transcript Citations
+
+{User corrections mined from session transcripts by `/flow:learn` Phase 2 (`bin/flow-mine-corrections.sh`). Every line was re-read and verified before being listed; quote only the user's words, truncated. Delete this subsection when the pattern has no transcript evidence.}
+
+- `{transcript_path}:{line_no}` @ {timestamp} (session `{session_id}`): "{what the user said}"
+- `{transcript_path}:{line_no}` @ {timestamp} (session `{session_id}`): "{what the user said}"
+
 ### Example
 
 {A concrete example showing the pattern in action:}
@@ -47,6 +54,16 @@ proposed: "{YYYY-MM-DD}"
 {Before: what was done without this knowledge}
 {After: what should be done with this knowledge}
 ```
+
+## Enforcement point
+
+{Enforcement proposals only — delete this section for a new-skill proposal. Use it when Phase 2 labelled the pattern `rule exists in <skill>`: the rule was already written down and still broken, so the proposal is to make it mechanical rather than to write it again.}
+
+- **Rule already stated in**: `plugins/flow/skills/{skill}/SKILL.md` — "{the sentence that states the rule}"
+- **Check point**: {hook event (`PreToolUse` / `PostToolUse` / `Stop` / `TaskCompleted` / `SessionEnd`) or command gate/phase, e.g. `/flow:pr` Phase 3}
+- **What the check reads**: {tool input / tool response / files / run ledger}
+- **On violation**: {block with reason | warn | record finding} — {the exact stderr or reason text}
+- **Why the words were not enough**: {what the transcript evidence shows about when the rule was out of context}
 
 ## Verification
 

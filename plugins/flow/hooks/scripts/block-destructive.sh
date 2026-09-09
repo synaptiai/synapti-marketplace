@@ -1,6 +1,6 @@
 #!/bin/bash
 # [flow] PreToolUse hook: Block destructive operations
-# Prevents rm -rf, branch deletion, and checkout destructive resets
+# Prevents recursive+force rm, unmerged branch deletion, and destructive resets/cleans
 
 set -euo pipefail
 
@@ -13,24 +13,106 @@ fi
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
-# Block rm -rf (except in safe dirs like node_modules, build artifacts)
-# Handles: rm -rf, rm -fr, rm -r -f, rm --recursive --force, and multiple path arguments
+# ---------------------------------------------------------------------------
+# rm: block only when BOTH a recursive flag AND a force flag are present.
+#
+# `rm -f file` and `rm -r dir` are ordinary, bounded operations and pass. The
+# destructive shape is recursive+force together, in any spelling: -rf, -fr,
+# -Rf, -rF, -r -f, -f -r, -rv -f, --recursive --force, --force --recursive,
+# -r --force, --recursive -f, plus GNU unambiguous long-option prefixes
+# (--rec, --forc). Flags are recognised anywhere among the rm's arguments
+# (GNU rm permutes options), up to a `--` terminator.
+#
+# Command-position anchoring: the command is split into simple commands on
+# `;`, `|`, `&`, `(`, `)`, backtick and newline, and each is tokenised on
+# whitespace. The rule fires on a token that IS rm — `rm`, `/bin/rm`, `\rm` —
+# never on rm as a substring of another word (`npm run rm-cache`, `perform`).
+# Wrappers such as `sudo rm`, `xargs rm`, `env rm` are examined because rm
+# still runs against the filesystem.
+#
+# Deliberate exemption: `git rm` (the token immediately before rm is `git`).
+# `git rm -r --cached dir` only unstages, and even `git rm -rf` removes
+# tracked files that remain recoverable from history — it is not
+# filesystem-destructive in the sense this hook guards, so it is NOT blocked.
+# (The previous regex matched it via `rm -r`, a false block.) Only the
+# immediate `git rm` form is exempt; `git -C dir rm -rf x` is still examined.
+#
+# Targets: every target must be a SAFE_DIRS basename for the command to pass;
+# one unsafe target (`rm -rf node_modules src`) blocks, and so does a
+# recursive+force rm with no visible target (`ls | xargs rm -rf`) because the
+# targets cannot be verified. Redirections (`2>/dev/null`, `> out`) are not
+# targets. Quoted or variable targets (`"$DIR"`) are not resolved and
+# therefore count as unsafe (fail-safe).
+# ---------------------------------------------------------------------------
 SAFE_DIRS="node_modules|\.next|dist|build|tmp|\.cache|__pycache__|coverage|\.turbo|\.parcel-cache|\.vite"
-if echo "$COMMAND" | grep -qE 'rm\s+(-[rfRF]+\s+)+|rm\s+(-[a-zA-Z]\s+)*-[a-zA-Z]*[rR][a-zA-Z]*\s+.*-[a-zA-Z]*[fF]|rm\s+(-[a-zA-Z]\s+)*-[a-zA-Z]*[fF][a-zA-Z]*\s+.*-[a-zA-Z]*[rR]|rm\s+.*(--recursive|--force).*\s+(--recursive|--force)'; then
-  # Extract paths: remove 'rm' and all flag arguments (short and long flags, use [[:space:]] for macOS sed)
-  PATHS=$(echo "$COMMAND" | sed -E 's/^rm[[:space:]]+//; s/--[a-zA-Z-]+[[:space:]]*//g; s/-[a-zA-Z]+[[:space:]]*//g')
-  ALL_SAFE=true
-  for P in $PATHS; do
-    BASENAME=$(basename "$P")
-    if ! echo "$BASENAME" | grep -qE "^($SAFE_DIRS)$"; then
-      ALL_SAFE=false
-      break
-    fi
+
+# _rm_segment_is_destructive <simple-command>
+# Returns 0 when the segment runs rm with recursive+force and at least one
+# target outside SAFE_DIRS; 1 otherwise. `read -ra` tokenises without
+# pathname expansion, so `rm -rf *` is inspected literally.
+_rm_segment_is_destructive() {
+  local -a TOK=()
+  read -ra TOK <<< "$1"
+  local n=${#TOK[@]} i idx=-1 base tok
+  for ((i = 0; i < n; i++)); do
+    base="${TOK[i]##*/}"     # /bin/rm -> rm
+    base="${base#\\}"        # \rm -> rm
+    if [ "$base" = "rm" ]; then idx=$i; break; fi
   done
-  if [ "$ALL_SAFE" = "false" ]; then
-    echo "BLOCKED: Destructive rm -rf detected. Review the target path and run manually if intended." >&2
-    exit 2
+  if [ "$idx" -lt 0 ]; then return 1; fi
+  if [ "$idx" -gt 0 ]; then
+    base="${TOK[idx-1]##*/}"
+    if [ "$base" = "git" ]; then return 1; fi   # git rm exemption (see above)
   fi
+
+  local REC=0 FORCE=0 END_OPTS=0 SKIP_NEXT=0
+  local -a RM_TARGETS=()
+  for ((i = idx + 1; i < n; i++)); do
+    tok="${TOK[i]}"
+    if [ "$SKIP_NEXT" = "1" ]; then SKIP_NEXT=0; continue; fi   # target of a bare redirection operator
+    if [ "$END_OPTS" = "0" ]; then
+      case "$tok" in
+        --) END_OPTS=1; continue ;;
+        --r|--re|--rec|--recu|--recur|--recurs|--recursi|--recursiv|--recursive) REC=1; continue ;;
+        --f|--fo|--for|--forc|--force) FORCE=1; continue ;;
+        --*) continue ;;                                   # other long options (--verbose, --preserve-root, ...)
+        -?*)
+          case "$tok" in *[rR]*) REC=1 ;; esac
+          case "$tok" in *[fF]*) FORCE=1 ;; esac
+          continue ;;
+      esac
+    fi
+    case "$tok" in
+      '>'|'>>'|'<'|[0-9]'>'|[0-9]'>>') SKIP_NEXT=1; continue ;;   # bare redirection: next token is its file
+      '>'*|'<'*|[0-9]'>'*) continue ;;                            # attached redirection (2>/dev/null)
+    esac
+    RM_TARGETS+=("$tok")
+  done
+
+  if [ "$REC" = "1" ] && [ "$FORCE" = "1" ]; then
+    # No literal target means the targets come from somewhere the hook cannot
+    # see (`ls | xargs rm -rf`, `rm -rf $(...)` split by the tokeniser). That
+    # is "cannot verify", so it blocks; a bare `rm -rf` with no operand is a
+    # no-op nobody runs on purpose, so nothing legitimate is lost.
+    if [ "${#RM_TARGETS[@]}" -eq 0 ]; then return 0; fi
+    local P
+    for P in "${RM_TARGETS[@]}"; do
+      if ! printf '%s\n' "$(basename -- "$P")" | grep -qE "^($SAFE_DIRS)$"; then
+        return 0
+      fi
+    done
+  fi
+  return 1
+}
+
+RM_DESTRUCTIVE=0
+while IFS= read -r SEG; do
+  [ -z "$SEG" ] && continue
+  if _rm_segment_is_destructive "$SEG"; then RM_DESTRUCTIVE=1; break; fi
+done < <(printf '%s\n' "$COMMAND" | tr ';|&()`' '\n')
+if [ "$RM_DESTRUCTIVE" = "1" ]; then
+  echo "BLOCKED: Destructive rm -rf (recursive + force) detected. Review the target path and run manually if intended." >&2
+  exit 2
 fi
 
 # Force branch deletion: allowed ONLY when every target branch is provably

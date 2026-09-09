@@ -1,0 +1,4 @@
+{"type":"user","isSidechain":false,"sessionId":"fixture-session-b","timestamp":"2026-08-20T08:00:00.000Z","cwd":"/tmp/fixture-project","origin":{"kind":"human"},"message":{"role":"user","content":"Please rename the helper and update its callers."}}
+{"type":"assistant","isSidechain":false,"sessionId":"fixture-session-b","timestamp":"2026-08-20T08:00:10.000Z","cwd":"/tmp/fixture-project","message":{"role":"assistant","content":[{"type":"text","text":"Renamed the helper and updated three callers."}]}}
+{"type":"user","isSidechain":false,"sessionId":"fixture-session-b","timestamp":"2026-08-20T08:01:00.000Z","cwd":"/tmp/fixture-project","origin":{"kind":"human"},"message":{"role":"user","content":"great, ship it"}}
+{"type":"assistant","isSidechain":false,"sessionId":"fixture-session-b","timestamp":"2026-08-20T08:01:10.000Z","cwd":"/tmp/fixture-project","message":{"role":"assistant","content":[{"type":"text","text":"Shipped."}]}}
