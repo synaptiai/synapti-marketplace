@@ -86,6 +86,11 @@ STRIP_ENV=(
   CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
   CLAUDE_EFFORT CLAUDE_AUTO_BACKGROUND_TASKS CLAUDE_CODE_HOLD_UNANSWERED_PARKED_PERMISSION
   FLOW_STATE_DIR
+  # This runner exports PYTHONSAFEPATH=1 for its own helper calls; inherited by
+  # the child it makes `python3 -m unittest tests.x` fail to import from the
+  # project root, which every arm then has to debug (seen on the first full
+  # run). The child gets a clean Python environment.
+  PYTHONSAFEPATH
 )
 
 ARM_FILTER="all"
@@ -354,8 +359,13 @@ run_one() {
 }
 
 # --- plan and execute ---------------------------------------------------------
-[ "$DRY_RUN" = "1" ] && echo "PLAN  out=$OUT_DIR  per-run cap=\$$MAX_BUDGET  total cap=\$$MAX_TOTAL  plugin=$PLUGIN_ROOT"
 mkdir -p "$OUT_DIR"
+# Resolve --out to an absolute path: run_one cds into the per-run temp copy
+# and then references $run_dir/prompt.txt, so a relative --out would point
+# nowhere from there. (Seen on the first full run: every run died with
+# "prompt.txt: No such file or directory" before claude started.)
+OUT_DIR=$(cd "$OUT_DIR" && pwd -P) || { echo "flow-eval-run: cannot resolve --out $OUT_DIR" >&2; exit 2; }
+[ "$DRY_RUN" = "1" ] && echo "PLAN  out=$OUT_DIR  per-run cap=\$$MAX_BUDGET  total cap=\$$MAX_TOTAL  plugin=$PLUGIN_ROOT"
 for case in $CASES; do
   case_runs="${RUNS:-$(case_meta "$case" runs)}"; case_runs="${case_runs:-3}"
   for arm in $ARMS; do

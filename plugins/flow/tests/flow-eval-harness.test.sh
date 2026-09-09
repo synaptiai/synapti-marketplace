@@ -193,12 +193,18 @@ assert_contains "--plugin-dir $REPO_ROOT/plugins/flow" "$OUT" "plugin arms load 
 assert_contains "--max-turns 60 --max-budget-usd 4" "$OUT" "defaults: 60 turns, \$4 per run"
 assert_contains "--permission-mode acceptEdits --allowedTools Bash,Read,Write,Edit,Glob,Grep,Skill,Agent,TodoWrite,TaskCreate,TaskList,TaskUpdate,TaskGet" "$OUT" "allowed tools from prompt.md"
 assert_contains "-u CLAUDECODE -u CLAUDE_CODE_SESSION_ID" "$OUT" "session identity vars stripped"
+assert_contains "-u PYTHONSAFEPATH" "$OUT" "PYTHONSAFEPATH stripped so the child can import tests from the project root"
 assert_contains "-u CLAUDE_CODE_ENTRYPOINT" "$OUT" "entrypoint stripped"
 assert_not_contains "--model" "$OUT" "no model hardcoded"
 assert_contains "total cap=\$250" "$OUT" "default total cap"
 BASELINE_LINE=$(printf '%s\n' "$OUT" | grep -A1 '^RUN   baseline/four-stream-codec/1' | tail -1)
 assert_not_contains "--plugin-dir" "$BASELINE_LINE" "baseline command has no --plugin-dir"
 [ -d "$TMP/dry" ] && _flow_assert_fail "dry run left $TMP/dry behind" || _flow_assert_pass "dry run leaves no output dir"
+
+_flow_test_begin "--dry-run: a relative --out is resolved to an absolute path"
+OUT=$(cd "$TMP" && "$RUNNER" --dry-run --arm baseline --case money-allocator --runs 1 --out rel-out 2>&1)
+assert_match 'PLAN  out=/' "$OUT" "plan prints an absolute out dir for a relative --out"
+assert_contains "$TMP/rel-out" "$OUT" "the absolute path is the caller's cwd plus the relative --out"
 
 _flow_test_begin "--dry-run: filters, model passthrough and resume skip"
 OUT=$("$RUNNER" --dry-run --arm baseline,off-risk --case money-allocator --runs 1 --model my-model --max-turns 9 --out "$TMP/dry5" 2>&1)

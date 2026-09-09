@@ -111,7 +111,10 @@ diagnostics and SDK tee files, `CLAUDE_AFTER_LAST_COMPACT`,
 `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`, `CLAUDE_CODE_SYNC_SESSION_REFS`,
 session-ingress variables, `CLAUDE_ADDITIONAL_DIRECTORIES` and its CLAUDE_MD
 twin, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `CLAUDE_EFFORT`,
-`CLAUDE_AUTO_BACKGROUND_TASKS`, `CLAUDE_CODE_HOLD_UNANSWERED_PARKED_PERMISSION`)
+`CLAUDE_AUTO_BACKGROUND_TASKS`, `CLAUDE_CODE_HOLD_UNANSWERED_PARKED_PERMISSION`, and
+`PYTHONSAFEPATH`, which the runner sets for its own helpers and which would
+otherwise stop the child's `python3 -m unittest tests.x` from importing from
+the project root)
 and sets a per-run `FLOW_STATE_DIR`, so a nested run is neither mistaken for
 the parent session nor shares flow ledgers with other runs. Credentials,
 proxy and provider variables are left alone. User-global
