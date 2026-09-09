@@ -1,5 +1,48 @@
 # Changelog
 
+## 3.3.0 (2026-09-09)
+
+Fewer words, loaded unconditionally, checked by machine, then measured. Two findings drove this
+release: an audit of 43 sessions found flow's rules written but not in context when they were
+broken (no command mechanically loaded its Required Skills; the TaskCompleted hook exited 0 on
+every path; the Stop hook shipped in warn mode and read like enforcement; the rm guard refused
+`rm -f file`; the learn loop read only what flow itself wrote), and Dan Luu's "Agentic testing"
+study (https://danluu.com/agentic-testing/) found that naming a testing technique produces its
+surface rather than its value: TDD instructions doubled test count and lowered correctness because
+agents fed identical or palindromic inputs and pasted the implementation's own output in as the
+expected value.
+
+### Added: rules loaded into context by the command
+
+- **`bin/flow-load-skills.sh` + a `!` loader block in every command with Required Skills.** Claude
+  Code commands cannot preload skills from frontmatter (only agents have `skills:`), so the loader
+  inlines them at invocation: ambient skills (no `context: fork` / `agent:`) whole, dispatched
+  skills through a new mandatory `## Contract` section (first H2, at most 120 words: iron law,
+  invoking phase, return shape, permitted skips). `tests/flow-load-skills.test.sh` enforces that
+  the bullets and the loader block match, that every dispatched skill carries a Contract, and that
+  every skill body is at most 600 words. Seven commands invoked skills they never declared
+  (`run-state-management`, `runtime-verification`, `visual-verification`, the goal skills); the
+  declarations are now complete, and `commands/pr.md` no longer labels the `integration-verifier`
+  agent as a Skill. `references/skill-manifests.md` is regenerated from the commands.
+- **Every skill body trimmed to at most 600 words.** Tutorial content the model already carries
+  (what TDD is, how to name a test, what a smoke test does) is gone; rules, settings, contracts,
+  paths, and integration points stay. Load-bearing tables moved to `references/` files:
+  `paired-review-protocol.md` (team-coordination), `review-cycle-parsing.md` and
+  `holdout-lens-dispositions.md` (code-review-methodology / holdout-validation),
+  `specification-journal-format.md` (specification-capture).
+
+### Changed: hooks that hold the line
+
+- **TaskCompleted gate is now mechanical.** `hooks/scripts/verify-task-completion.sh` blocks task
+  completion (exit 2, plain-sentence stderr) while files changed in the session after the last
+  passing quality run. `log-file-changes.sh` records `file_change` entries and the new
+  `record-quality-run.sh` (PostToolUse Bash) records `quality_run` entries with exit codes in a
+  per-session JSONL ledger managed by `bin/flow-quality-ledger.sh` (`append|path|status`) under
+  `${FLOW_STATE_DIR:-~/.claude/flow-state}/sessions/<session_id>/`. New settings:
+  `testing.taskCompletionGate` (block|warn|off, default block) and `testing.qualityCommandPatterns`
+  (extra ERE patterns). Journal, `.flow/`, and `.screenshots/` writes never dirty the gate. The hook
+  reads the now-documented `task_subject` payload field with a fallback to the legacy `.task.subject`.
+
 ## 3.2.2 (2026-05-29)
 
 ### Changed: review/finding tables render as two columns

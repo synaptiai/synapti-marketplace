@@ -76,13 +76,15 @@ Hooks provide structural enforcement for dangerous operations:
 | `block-force-push.sh` | `git push --force` | Exit 2 (block) |
 | `block-destructive.sh` | `rm -rf`, `git reset --hard` | Exit 2 (block) |
 | `block-secrets.sh` | Inline credentials | Exit 2 (block) |
+| `ask-issue-create.sh` | `gh issue create` while a FlowGoal is active (and `minimalScope` is false) | JSON `permissionDecision: ask` (prompt names the goal and the fix-it-here rule) |
 
 Merge and release confirmation is handled at the command level via AskUserQuestion (see `/flow:merge` and `/flow:release`).
 
 ## Decision Journal Integration
 
 Tier 2 actions automatically log to the decision journal via PostToolUse hooks:
-- `log-file-changes.sh`: Logs Edit/Write operations
+- `log-file-changes.sh`: Logs Edit/Write operations (and records a `file_change` entry in the per-session quality ledger)
 - `log-commits.sh`: Logs git commit operations
+- `record-quality-run.sh`: Records test/lint/typecheck/build runs and their exit codes in the per-session quality ledger that the TaskCompleted gate reads
 
 This creates an audit trail of all team-visible actions.

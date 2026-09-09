@@ -31,6 +31,23 @@ This command operates with these domain skills loaded:
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 4)
 - `issue-crafting` — invoked when the issue body is missing acceptance criteria or needs reframing
 - `specification-capture` — capture non-goals, failure modes, and interface contracts to the decision journal (Phase 1, before Spec Validation Gate)
+- `tdd-patterns` — RED/GREEN/REFACTOR discipline, test-oracle and discriminating-input rules (Phase 3)
+- `goal-contract-capture` — FlowGoal creation (after the Spec Validation Gate / after hypothesis confirmation)
+- `goal-lifecycle` — goal state transitions (draft → active → terminal)
+- `run-state-management` — FlowRun/FlowActivity records at phase boundaries (v3 runtime)
+- `runtime-verification` — mandatory build/run/smoke/E2E verification (Phase 4); owns the three-category skip whitelist
+- `visual-verification` — screenshot-analyze-verify loop for UI-relevant diffs (Phase 4)
+
+```!
+# Inline the Required Skills above so their rules are in context before the
+# first phase runs (commands cannot preload skills from frontmatter). Ambient
+# skills load whole; dispatched skills (context: fork / agent:) load their
+# `## Contract` section and run in full when this command invokes
+# Skill(<name>). Output per `references/command-output-format.md`.
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" llm-operator-principles branch-and-task-management change-classification capability-discovery debugging-patterns preflight-checks criterion-verification-map holdout-validation issue-crafting specification-capture tdd-patterns goal-contract-capture goal-lifecycle run-state-management runtime-verification visual-verification
+
+true
+```
 
 ## References
 

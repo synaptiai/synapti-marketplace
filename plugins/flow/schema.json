@@ -97,7 +97,18 @@
       "type": "object",
       "properties": {
         "enabled": { "type": "boolean", "default": true },
-        "proposalDir": { "type": "string", "default": "~/.claude/flow-proposals" }
+        "proposalDir": { "type": "string", "default": "~/.claude/flow-proposals" },
+        "sources": {
+          "type": "array",
+          "items": { "enum": ["journal", "transcripts"] },
+          "default": ["journal", "transcripts"],
+          "description": "Where /flow:learn mines patterns from. 'journal' reads .decisions/*.md and .flow/runs/*/events.jsonl (what flow wrote). 'transcripts' reads the session transcripts under ~/.claude/projects/<project>/ via bin/flow-mine-corrections.sh, which is where user corrections actually live. Both are read-only and local."
+        },
+        "transcriptDir": {
+          "type": "string",
+          "default": "",
+          "description": "Override for the transcript directory /flow:learn scans. Empty string means auto: ~/.claude/projects/<project slug> where the slug is the working directory with every non-alphanumeric character replaced by '-'."
+        }
       }
     },
     "journal": {
@@ -120,6 +131,11 @@
           "items": { "type": "string" },
           "default": ["documentation", "chore"],
           "description": "Issue labels that allow proceeding without acceptance criteria (e.g., docs-only changes)"
+        },
+        "riskMap": {
+          "type": "boolean",
+          "default": true,
+          "description": "Capture the fourth specification element, the risk map (area / plausible wrong version / discriminating check), during /flow:start Phase 1 and require one discriminating test per row in the evidence bundle's '### Risk map coverage' subsection. When false the subsection is 'none — risk map disabled (specFirst.riskMap=false)' and is not an auto-FAIL. Exists so the correctness eval (references/correctness-eval.md) can compare arms with and without it."
         }
       }
     },
@@ -147,6 +163,17 @@
           "type": "boolean",
           "default": false,
           "description": "When true with tddMode=suggest, suppresses warnings about missing tests."
+        },
+        "taskCompletionGate": {
+          "enum": ["block", "warn", "off"],
+          "default": "block",
+          "description": "TaskCompleted hook posture (hooks/scripts/verify-task-completion.sh). 'block': refuse to mark a task complete while files changed in this session after the last passing quality-command run (exit 2 with the changed paths). 'warn': same check, stderr warning, completion allowed. 'off': no check. The session ledger is written by the PostToolUse hooks (log-file-changes.sh, record-quality-run.sh) under ${FLOW_STATE_DIR:-~/.claude/flow-state}/sessions/<session_id>/."
+        },
+        "qualityCommandPatterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Extra POSIX ERE patterns that classify a Bash command as a quality run (test/lint/typecheck/build) for the task-completion gate, in addition to the built-in list in hooks/scripts/record-quality-run.sh. Example: [\"^\\./scripts/ci\\.sh\"]."
         }
       }
     },

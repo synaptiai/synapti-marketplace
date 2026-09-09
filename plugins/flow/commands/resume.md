@@ -11,6 +11,17 @@ When a session ends mid-workflow (interrupted, paused, blocked), `.flow/runs/<id
 
 - `run-state-management` — for reading the run document and computing next-action hints.
 
+```!
+# Inline the Required Skills above so their rules are in context before the
+# first phase runs (commands cannot preload skills from frontmatter). Ambient
+# skills load whole; dispatched skills (context: fork / agent:) load their
+# `## Contract` section and run in full when this command invokes
+# Skill(<name>). Output per `references/command-output-format.md`.
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" run-state-management
+
+true
+```
+
 ## Pre-flight
 
 ```bash
