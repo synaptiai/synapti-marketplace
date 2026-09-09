@@ -42,6 +42,34 @@ expected value.
   `testing.taskCompletionGate` (block|warn|off, default block) and `testing.qualityCommandPatterns`
   (extra ERE patterns). Journal, `.flow/`, and `.screenshots/` writes never dirty the gate. The hook
   reads the now-documented `task_subject` payload field with a fallback to the legacy `.task.subject`.
+- **`block-destructive.sh` rm rule now requires recursive AND force.** `rm -f file` and `rm -r dir`
+  are no longer blocked; every recursive+force spelling (`-rf`, `-fr`, `-Rf`, `-r -f`, `-rv -f`,
+  `--recursive --force`, `-r --force`, GNU prefixes) still is, on any target outside the safe-dir
+  list. `rm` is matched only as a command word (`/bin/rm`, `\rm`, behind `sudo`/`xargs`), never as
+  a substring; `git rm` is exempt. A recursive+force rm with no visible target (`xargs rm -rf`) now
+  blocks as unverifiable; redirections are no longer mistaken for targets.
+- **New PreToolUse hook `ask-issue-create.sh`.** During an active FlowGoal on the current branch, a
+  `gh issue create` in command position becomes a permission prompt (`permissionDecision: ask`)
+  naming the goal and flow's fix-it-here rule. Disabled by `minimalScope: true`; silent when no goal
+  is active or the goal state cannot be determined.
+- **Explicit `false` no longer swallowed for `learning.enabled`.** `session-end-learn.sh` read the
+  key with `// empty`, which jq treats as falsy, so a project's `enabled: false` fell through to
+  the plugin default. The stale comment in `bin/cascade-resolve.sh` claiming `// null` preserves
+  false is corrected: boolean keys are read with a bare expression.
+
+### Added: learning from where corrections actually live
+
+- **`/flow:learn` reads session transcripts, not only flow's own journal.** New
+  `bin/flow-mine-corrections.sh` streams `~/.claude/projects/<slug>/*.jsonl` (read-only, no
+  network) and surfaces user turns that look like corrections via a recall-oriented keyword filter;
+  Phase 2 verifies each cited line, clusters by intent, and keeps patterns with 3+ instances across
+  2+ sessions. Patterns whose rule already exists in a skill produce an `enforcement` proposal
+  (which hook or gate should make the rule mechanical) instead of another skill;
+  `templates/skill-proposal.md` gains `### Transcript Citations` and `## Enforcement point`.
+- **SessionEnd flags pending learning on transcript corrections.** `session-end-learn.sh` also sets
+  `~/.claude/flow-learn-pending` when the ended session's transcript has a candidate correction
+  (scan capped at `timeout 1`, skipped silently on timeout). New settings `learning.sources`
+  (default `["journal","transcripts"]`) and `learning.transcriptDir` (empty = auto).
 
 ## 3.2.2 (2026-05-29)
 

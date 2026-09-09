@@ -45,7 +45,9 @@ LEARN_SOURCES='["journal","transcripts"]'
 TRANSCRIPT_DIR_SETTING=""
 if [ -x "$HELPER" ]; then
   JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty' 2>/dev/null)
-  LEARNING_ENABLED=$("$HELPER" --default "true" '.learning.enabled // empty' 2>/dev/null)
+  # Bare expression on purpose: `// empty` swallows an explicit `false`, so a
+  # project that disabled learning would fall through to the plugin default.
+  LEARNING_ENABLED=$("$HELPER" --default "true" '.learning.enabled' 2>/dev/null)
   LEARN_SOURCES=$("$HELPER" --compact --default '["journal","transcripts"]' '.learning.sources // empty' 2>/dev/null)
   TRANSCRIPT_DIR_SETTING=$("$HELPER" --default "" '.learning.transcriptDir // empty' 2>/dev/null)
 fi

@@ -274,6 +274,20 @@ else
   _flow_assert_pass "no flag when transcripts are not a learning source"
 fi
 
+_flow_test_begin "session-end-learn.sh — project-level learning.enabled:false wins over a user-global true"
+rm -rf "$FAKE_HOME/.claude"
+mkdir -p "$FAKE_HOME/.claude" "$PROJ/.claude"
+printf '%s\n' '{"learning":{"enabled":true}}' > "$FAKE_HOME/.claude/settings.flow.json"
+printf '%s\n' '{"learning":{"enabled":false}}' > "$PROJ/.claude/settings.flow.local.json"
+_run_hook "$PROJ" "$FAKE_HOME" "{\"hook_event_name\":\"SessionEnd\",\"reason\":\"exit\",\"transcript_path\":\"$CORRECTIONS\",\"cwd\":\"$PROJ\"}"
+assert_exit 0 "$?" "hook exits 0"
+if [ -f "$FAKE_HOME/.claude/flow-learn-pending" ]; then
+  _flow_assert_fail "flag written although the project disabled learning (explicit false was swallowed)"
+else
+  _flow_assert_pass "explicit false at project level disables learning"
+fi
+rm -f "$FAKE_HOME/.claude/settings.flow.json"
+
 _flow_test_begin "session-end-learn.sh — journal activity still sets the flag on its own"
 rm -f "$PROJ/.claude/settings.flow.local.json"
 mkdir -p "$PROJ/.decisions"
