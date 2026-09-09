@@ -1,7 +1,12 @@
 # Tests for the correctness-eval harness: plugins/flow/bin/flow-eval-run.sh,
 # plugins/flow/bin/_flow_eval.py and the seeded-bug cases under
 # plugins/flow/evals/. Offline only — no claude calls. Covers:
-#   - unittest -v output parsing (single-line and docstring layouts, crash)
+#   - unittest -v output parsing (single-line and docstring layouts, crash,
+#     missing summary line)
+#   - incomplete hidden runs (timeout, crash, no summary) scored over the
+#     suite's full size, with reason and observed/expected counts, through
+#     `hidden-run --raw`, a real timeout, finalize-run, rescore-hidden and
+#     the aggregate's Incomplete column
 #   - the degenerate-input heuristic on fixture test files
 #   - own-test trap grading on a fixture case (a fake agent suite that catches
 #     two of three trap variants; null-with-reason on unusable suites)
@@ -60,6 +65,7 @@ assert_contains '"test_beta": "FAIL"' "$OUT" "docstring layout status attaches t
 assert_contains '"test_gamma": "ERROR"' "$OUT" "ERROR status parsed"
 assert_contains '"test_delta": "skipped"' "$OUT" "skipped normalised"
 assert_contains '"completed": true' "$OUT" "Ran line matches the test count"
+assert_contains '"summary_line": "FAILED"' "$OUT" "final verdict line recorded"
 
 _flow_test_begin "parse-unittest: crash mid-suite leaves the pending test missing"
 printf 'test_one (m.T.test_one) ... ok\ntest_two (m.T.test_two) ... Traceback (most recent call last):\nSegmentation fault\n' > "$TMP/crash.txt"
@@ -67,6 +73,80 @@ OUT=$(python3 "$HELPER" parse-unittest "$TMP/crash.txt")
 assert_contains '"test_two": "missing"' "$OUT" "unterminated test marked missing"
 assert_contains '"completed": false' "$OUT" "no Ran line -> not completed"
 assert_contains '"passed": 1' "$OUT" "completed test still counted"
+
+_flow_test_begin "parse-unittest: a Ran line without the final OK/FAILED line is not complete"
+printf 'test_one (m.T.test_one) ... ok\n\n----\nRan 1 test in 0.001s\n' > "$TMP/nosummary.txt"
+OUT=$(python3 "$HELPER" parse-unittest "$TMP/nosummary.txt")
+assert_contains '"ran_line": 1' "$OUT" "Ran line parsed"
+assert_contains '"summary_line": null' "$OUT" "no verdict line"
+assert_contains '"completed": false' "$OUT" "missing OK/FAILED -> not completed"
+printf 'test_one (m.T.test_one) ... ok\n\n----\nRan 1 test in 0.001s\n\nOK (skipped=0)\n' > "$TMP/oksummary.txt"
+OUT=$(python3 "$HELPER" parse-unittest "$TMP/oksummary.txt")
+assert_contains '"summary_line": "OK"' "$OUT" "OK with a parenthesised count is the verdict"
+assert_contains '"completed": true' "$OUT" "Ran + OK -> completed"
+
+# --- 1b. incomplete hidden runs are scored over the full suite ------------------
+# The review finding: 4 `ok` lines then a hang on test 5 used to score 4/5 =
+# 0.80 because only tests that printed a status were counted. The suite has
+# 30 tests, so the honest score is 4/30.
+_flow_test_begin "hidden-run --raw: 4 ok + hang on test 5 of a 30-test suite scores 4/30, reason timeout"
+IA="$EVALS/interval-algebra"
+python3 - "$IA/hidden/test_hidden.py" "$TMP" <<'EOF'
+import ast, os, sys
+names = [n.name for n in ast.walk(ast.parse(open(sys.argv[1]).read()))
+         if isinstance(n, ast.FunctionDef) and n.name.startswith("test")]
+assert len(names) == 30, len(names)
+ok = ["%s (test_hidden.T.%s) ... ok" % (n, n) for n in names[:4]]
+pending = "%s (test_hidden.T.%s) ... " % (names[4], names[4])
+with open(os.path.join(sys.argv[2], "hang30.txt"), "w") as fh:
+    fh.write("\n".join(ok) + "\n" + pending + "\n[flow-eval] hidden suite timed out after 120s\n")
+with open(os.path.join(sys.argv[2], "crash30.txt"), "w") as fh:
+    fh.write("\n".join(ok) + "\n" + pending + "Traceback (most recent call last):\n  File \"x.py\", line 1, in <module>\nRuntimeError: boom\n")
+with open(os.path.join(sys.argv[2], "nosummary30.txt"), "w") as fh:
+    fh.write("\n".join("%s (test_hidden.T.%s) ... ok" % (n, n) for n in names) + "\n")
+EOF
+OUT=$(python3 "$HELPER" hidden-run --case-dir "$IA" --raw "$TMP/hang30.txt" | tee "$TMP/hang30.json")
+assert_contains '"passed": 4' "$OUT" "only observed ok lines count as passed"
+assert_contains '"total": 30' "$OUT" "denominator is the suite size, not the tests that printed a status"
+assert_equal "0.133" "$(json_get "$TMP/hang30.json" 'round(d["pass_rate"], 3)')" "pass rate 4/30, not 4/5"
+assert_contains '"incomplete": true' "$OUT" "run flagged incomplete"
+assert_contains '"reason": "timeout"' "$OUT" "the timeout marker names the reason"
+assert_contains '"timed_out": true' "$OUT" "timed_out set from the marker"
+assert_contains '"observed": 5' "$OUT" "five tests printed an id (four ok, one pending)"
+assert_contains '"expected": 30' "$OUT" "expected count from test_hidden.py"
+assert_contains '"import_or_crash": false' "$OUT" "not an import failure: tests did run"
+assert_contains '"all_pass": false' "$OUT" "not all-pass"
+assert_equal "25" "$(json_get "$TMP/hang30.json" 'len(d["unobserved"])')" "25 tests never reached"
+assert_equal "26" "$(json_get "$TMP/hang30.json" 'len(d["failed_ids"])')" "failed_ids = pending + unobserved, consistent with total - passed"
+
+_flow_test_begin "hidden-run --raw: a crash after four tests scores 4/30, reason crash"
+OUT=$(python3 "$HELPER" hidden-run --case-dir "$IA" --raw "$TMP/crash30.txt" | tee "$TMP/crash30.json")
+assert_contains '"reason": "crash"' "$OUT" "traceback without a Ran line is a crash"
+assert_contains '"incomplete": true' "$OUT" "flagged incomplete"
+assert_contains '"passed": 4' "$OUT" "four observed passes"
+assert_contains '"total": 30' "$OUT" "scored over the full suite"
+assert_equal "0.133" "$(json_get "$TMP/crash30.json" 'round(d["pass_rate"], 3)')" "pass rate 4/30"
+assert_contains '"timed_out": false' "$OUT" "not a timeout"
+
+_flow_test_begin "hidden-run --raw: every status printed but no summary -> reason no-summary"
+OUT=$(python3 "$HELPER" hidden-run --case-dir "$IA" --raw "$TMP/nosummary30.txt")
+assert_contains '"reason": "no-summary"' "$OUT" "missing Ran/OK lines"
+assert_contains '"incomplete": true' "$OUT" "flagged incomplete"
+assert_contains '"passed": 30' "$OUT" "observed passes still counted"
+assert_contains '"total": 30' "$OUT" "denominator unchanged when every test was observed"
+
+_flow_test_begin "hidden-run --raw: a complete run is scored exactly as the live run"
+LIVE=$(python3 "$HELPER" hidden-run --case-dir "$IA" --impl "$IA/hidden/reference_impl.py" --out "$TMP/ref30.txt")
+RAW=$(python3 "$HELPER" hidden-run --case-dir "$IA" --raw "$TMP/ref30.txt")
+assert_contains '"incomplete": false' "$RAW" "complete run not flagged"
+assert_contains '"reason": null' "$RAW" "no reason on a complete run"
+assert_contains '"observed": 30' "$RAW" "observed = suite size"
+assert_contains '"expected": 30' "$RAW" "expected = suite size"
+assert_contains '"pass_rate": 1.0' "$RAW" "reference still 1.0"
+assert_contains '"unobserved": []' "$RAW" "nothing unobserved"
+assert_equal "$(printf '%s' "$LIVE" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["passed"], d["total"], d["pass_rate"], d["incomplete"])')" \
+             "$(printf '%s' "$RAW" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["passed"], d["total"], d["pass_rate"], d["incomplete"])')" \
+             "live and --raw scores agree on a complete run"
 
 # --- 2. degenerate-input heuristic ------------------------------------------
 _flow_test_begin "agent-tests: degenerate heuristic on a fixture test file"
@@ -278,6 +358,84 @@ OUT=$(python3 "$HELPER" own-test-traps --case-dir "$MINI" --project-dir "$TMP/ag
 assert_exit 0 "$EXIT" "syntax error in the agent's tests exits 0"
 assert_contains '"catch_rate": null' "$OUT" "null rate on a syntax error"
 
+_flow_test_begin "hidden-run: a real timeout (module hangs on test 2 of 3) scores 1/3 with reason timeout"
+mkdir -p "$TMP/hangmod"
+cat > "$TMP/hangmod/mini.py" <<'EOF'
+import time
+
+
+def add(a, b):
+    return a + b
+
+
+def mul(a, b):
+    time.sleep(60)
+    return a * b
+
+
+def neg(a):
+    return -a
+EOF
+OUT=$(python3 "$HELPER" hidden-run --case-dir "$MINI" --project-dir "$TMP/hangmod" --timeout 1 | tee "$TMP/hangmod.json")
+assert_contains '"timed_out": true' "$OUT" "subprocess timeout recorded"
+assert_contains '"incomplete": true' "$OUT" "flagged incomplete"
+assert_contains '"reason": "timeout"' "$OUT" "reason timeout"
+assert_contains '"passed": 1' "$OUT" "test_add passed before the hang"
+assert_contains '"total": 3' "$OUT" "scored over the three-test suite"
+assert_contains '"observed": 2' "$OUT" "add finished, mul was pending"
+assert_contains '"expected": 3' "$OUT" "three tests in test_hidden.py"
+assert_equal "0.333" "$(json_get "$TMP/hangmod.json" 'round(d["pass_rate"], 3)')" "pass rate 1/3 (partial stdout captured on TimeoutExpired)"
+assert_equal "['test_neg_nonzero']" "$(json_get "$TMP/hangmod.json" 'd["unobserved"]')" "the test after the hang is listed as unobserved"
+assert_equal "['test_neg_nonzero']" "$(json_get "$TMP/hangmod.json" 'd["traps"]["neg_wrong"]["unobserved"]')" "per-trap unobserved list"
+assert_equal "False" "$(json_get "$TMP/hangmod.json" 'd["traps"]["add_wrong"]["caught"]')" "an observed pass clears its trap"
+
+_flow_test_begin "own-test-traps: a variant run that hangs is not a catch without an observed failure"
+# Class Aaa sorts first under unittest discovery, so on mul_wrong the hanging
+# test runs before Mul.test_basic could fail: nothing is observed failing.
+make_agent_project "$TMP/agent9"
+cat > "$TMP/agent9/tests/test_aaa.py" <<'EOF'
+import time
+import unittest
+
+import mini
+
+
+class Aaa(unittest.TestCase):
+    def test_hangs_when_mul_is_wrong(self):
+        if mini.mul(2, 3) != 6:
+            time.sleep(60)
+        self.assertEqual(mini.mul(2, 3), 6)
+EOF
+OUT=$(python3 "$HELPER" own-test-traps --case-dir "$MINI" --project-dir "$TMP/agent9" --timeout 1 --out "$TMP/agent9-own.json")
+assert_contains '"add_wrong": true' "$OUT" "add_wrong still caught by an observed failure"
+assert_contains '"mul_wrong": false' "$OUT" "hang on mul_wrong is not an observed failure -> not caught"
+assert_contains '"neg_wrong": false' "$OUT" "neg_wrong still missed"
+assert_equal "0.333" "$(json_get "$TMP/agent9-own.json" 'round(d["catch_rate"], 3)')" "catch rate 1/3, not 2/3"
+assert_equal "True" "$(json_get "$TMP/agent9-own.json" 'd["per_trap"]["mul_wrong"]["incomplete"]')" "variant run flagged incomplete"
+assert_equal "timeout" "$(json_get "$TMP/agent9-own.json" 'd["per_trap"]["mul_wrong"]["reason"]')" "reason timeout"
+assert_equal "0" "$(json_get "$TMP/agent9-own.json" 'd["per_trap"]["mul_wrong"]["failing_count"]')" "no failing own test recorded for the hang"
+assert_equal "4" "$(json_get "$TMP/agent9-own.json" 'd["per_trap"]["mul_wrong"]["unobserved_count"]')" "all four oracle tests unobserved (one pending, three never reached)"
+assert_equal "1" "$(json_get "$TMP/agent9-own.json" 'd["incomplete_runs"]')" "one incomplete run counted"
+assert_equal "False" "$(json_get "$TMP/agent9-own.json" 'd["per_trap"]["add_wrong"]["incomplete"]')" "the other variant runs completed"
+assert_equal "False" "$(json_get "$TMP/agent9-own.json" 'd["own_impl"]["incomplete"]')" "own run completed"
+
+_flow_test_begin "own-test-traps: a test never observed passing on the agent's module is not an oracle"
+make_agent_project "$TMP/agent10"
+cp "$TMP/hangmod/mini.py" "$TMP/agent10/mini.py"
+# neg(0) test is in class Mul after test_basic; mul hangs on the agent's module,
+# so Mul.test_basic is pending and test_neg_zero is never reached.
+OUT=$(python3 "$HELPER" own-test-traps --case-dir "$MINI" --project-dir "$TMP/agent10" --timeout 1 --out "$TMP/agent10-own.json")
+assert_equal "True" "$(json_get "$TMP/agent10-own.json" 'd["own_impl"]["incomplete"]')" "own run flagged incomplete"
+assert_equal "timeout" "$(json_get "$TMP/agent10-own.json" 'd["own_impl"]["reason"]')" "own run reason"
+assert_equal "1" "$(json_get "$TMP/agent10-own.json" 'd["own_impl"]["passed"]')" "only Add.test_basic observed passing"
+assert_equal "1" "$(json_get "$TMP/agent10-own.json" 'd["own_passing_tests"]')" "one oracle test"
+assert_contains '"add_wrong": true' "$OUT" "the oracle test catches add_wrong"
+assert_contains '"mul_wrong": false' "$OUT" "Mul.test_basic was pending on the own run: not an oracle, not a catch"
+assert_contains '"neg_wrong": false' "$OUT" "unreached test is not an oracle"
+assert_equal "0.333" "$(json_get "$TMP/agent10-own.json" 'round(d["catch_rate"], 3)')" "catch rate 1/3"
+assert_equal "False" "$(json_get "$TMP/agent10-own.json" 'd["reference_run"]["incomplete"]')" "reference run completed"
+assert_equal "1" "$(json_get "$TMP/agent10-own.json" 'd["incomplete_runs"]')" "one incomplete run counted"
+
 _flow_test_begin "finalize-run: model from modelUsage, own-test fields, project snapshot"
 make_agent_project "$TMP/agent7"
 RUN7="$TMP/run7"; mkdir -p "$RUN7"
@@ -300,14 +458,59 @@ assert_equal "True" "$(json_get "$RUN7/result.json" 'd["own_test_traps"]["caught
 assert_equal "1.0" "$(json_get "$RUN7/result.json" 'd["hidden"]["pass_rate"]')" "hidden suite still the primary score"
 assert_equal "['flow:tdd-patterns']" "$(json_get "$RUN7/result.json" 'd["skills_invoked"]')" "skills parsed from the stream"
 assert_equal "True" "$(json_get "$RUN7/result.json" 'd["completion_phrase"]')" "completion phrase detected"
+assert_equal "False" "$(json_get "$RUN7/result.json" 'd["hidden"]["incomplete"]')" "complete hidden run not flagged"
+assert_equal "None" "$(json_get "$RUN7/result.json" 'd["hidden"]["reason"]')" "no reason on a complete run"
+assert_equal "3 3" "$(json_get "$RUN7/result.json" 'str(d["hidden"]["observed"]) + " " + str(d["hidden"]["expected"])')" "observed/expected recorded"
+assert_equal "0" "$(json_get "$RUN7/result.json" 'd["own_test_traps"]["incomplete_runs"]')" "no incomplete own-suite runs"
+assert_contains '"hidden_incomplete": null' "$OUT" "grade line carries the incomplete reason (null here)"
+
+_flow_test_begin "finalize-run + rescore-hidden: an incomplete hidden run is recorded, visible in the aggregate, and re-scorable"
+# the copied stream names claude-test-model in modelUsage, so the record and the
+# aggregate are keyed by that model, not by the directory
+RS="$TMP/rescore"; M8=claude-test-model; RUN8="$RS/runs/$M8/off-risk/mini-case/1"; mkdir -p "$RUN8"
+cp "$RUN7/stream.jsonl" "$RUN8/stream.jsonl"
+make_agent_project "$TMP/agent11"
+cp "$TMP/hangmod/mini.py" "$TMP/agent11/mini.py"
+OUT=$(python3 "$HELPER" finalize-run --run-dir "$RUN8" --case-dir "$MINI" --project-dir "$TMP/agent11" --arm off-risk --case mini-case --run 1 --exit-code 0 --duration 3 --hidden-timeout 1 --own-timeout 1)
+assert_contains '"hidden_incomplete": "timeout"' "$OUT" "grade line names the timeout"
+assert_equal "True" "$(json_get "$RUN8/result.json" 'd["hidden"]["incomplete"]')" "result.json hidden.incomplete"
+assert_equal "timeout" "$(json_get "$RUN8/result.json" 'd["hidden"]["reason"]')" "result.json hidden.reason"
+assert_equal "0.333" "$(json_get "$RUN8/result.json" 'round(d["hidden"]["pass_rate"], 3)')" "1/3 over the full suite"
+assert_equal "2 3" "$(json_get "$RUN8/result.json" 'str(d["hidden"]["observed"]) + " " + str(d["hidden"]["expected"])')" "observed 2 of 3 expected"
+assert_equal "1" "$(json_get "$RUN8/result.json" 'd["own_test_traps"]["incomplete_runs"]')" "own-suite incomplete run counted in result.json"
+assert_contains "[flow-eval] hidden suite timed out after 1s" "$(cat "$RUN8/hidden.txt")" "hidden.txt keeps the timeout marker"
+OUT=$(python3 "$HELPER" aggregate --out "$RS")
+assert_equal "1" "$(json_get "$RS/summary.json" 'd["per_model"]["'"$M8"'"]["per_arm"]["off-risk"]["incomplete_runs"]')" "per-arm incomplete_runs from a real record"
+assert_equal "['timeout']" "$(json_get "$RS/summary.json" 'd["per_model"]["'"$M8"'"]["per_arm"]["off-risk"]["incomplete_reasons"]')" "reason collected"
+assert_equal "1" "$(json_get "$RS/summary.json" 'd["per_model"]["'"$M8"'"]["per_cell"]["off-risk/mini-case"]["own_test_incomplete_runs"]')" "per-cell own-test incomplete count"
+MD=$(cat "$RS/summary.md")
+assert_contains "| $M8 | off-risk | 1 | 33% | 0% |" "$MD" "per-arm row scores 33%"
+assert_contains "| 1 (timeout) |" "$MD" "Incomplete column shows the count and reason"
+assert_contains "| off-risk | 1/1, 1 incomplete |" "$MD" "own-test scored-runs cell flags the incomplete run"
+OUT=$(python3 "$HELPER" rescore-hidden --out "$RS" --evals-dir "$TMP" --timeout 1)
+assert_contains "scored  runs/$M8/off-risk/mini-case/1  hidden_pass_rate=0.333  incomplete=timeout" "$OUT" "rescore reports the incomplete run"
+cp "$MINI/hidden/reference_impl.py" "$RUN8/project/mini.py"
+OUT=$(python3 "$HELPER" rescore-hidden --out "$RS" --evals-dir "$TMP" --timeout 5)
+assert_contains "scored  runs/$M8/off-risk/mini-case/1  hidden_pass_rate=1.000" "$OUT" "rescore after fixing the snapshot"
+assert_not_contains "incomplete=" "$OUT" "no incomplete marker once the suite finishes"
+assert_equal "False" "$(json_get "$RUN8/result.json" 'd["hidden"]["incomplete"]')" "result.json hidden.incomplete cleared"
+assert_equal "None" "$(json_get "$RUN8/result.json" 'd["hidden"]["reason"]')" "reason cleared"
+assert_equal "1.0" "$(json_get "$RUN8/result.json" 'd["hidden"]["pass_rate"]')" "pass rate rewritten"
+assert_equal "3 3" "$(json_get "$RUN8/result.json" 'str(d["hidden"]["observed"]) + " " + str(d["hidden"]["expected"])')" "observed/expected rewritten"
+OUT=$(python3 "$HELPER" aggregate --out "$RS")
+assert_equal "0" "$(json_get "$RS/summary.json" 'd["per_model"]["'"$M8"'"]["per_arm"]["off-risk"]["incomplete_runs"]')" "aggregate clears after rescore"
+assert_contains "| $M8 | off-risk | 1 | 100% | 100% |" "$(cat "$RS/summary.md")" "per-arm row rescored to 100%"
 
 # --- 4. aggregation and decision rule -----------------------------------------
 _flow_test_begin "aggregate: canned results -> summary.json/summary.md with decision (per model)"
 write_result() {
-  # write_result <out> <model|-> <arm> <case> <n> <passed> <total> <tests> <degen-share|null> <cost> <turns> <error|null> <trapA> <trapB> <own-rate|null> <ownA> <ownB>
+  # write_result <out> <model|-> <arm> <case> <n> <passed> <total> <tests> <degen-share|null> <cost> <turns> <error|null> <trapA> <trapB> <own-rate|null> <ownA> <ownB> [hidden-extra] [own-extra]
   # model "-" writes the legacy runs/<arm>/<case>/<n> layout without a `model` field.
+  # hidden-extra / own-extra are raw JSON fragments (starting with a comma)
+  # appended inside the `hidden` / `own_test_traps` objects.
   local out="$1" model="$2" arm="$3" case="$4" n="$5" passed="$6" total="$7" tests="$8" share="$9"
   local cost="${10}" turns="${11}" err="${12}" trap_a="${13}" trap_b="${14}" own="${15}" own_a="${16}" own_b="${17}"
+  local hidden_extra="${18:-}" own_extra="${19:-}"
   local dir model_field=""
   if [ "$model" = "-" ]; then
     dir="$out/runs/$arm/$case/$n"
@@ -319,11 +522,11 @@ write_result() {
   [ "$err" != "null" ] && err="\"$err\""
   cat > "$dir/result.json" <<EOF
 {$model_field"arm":"$arm","case":"$case","run":$n,"cost_usd":$cost,"num_turns":$turns,"session_id":"s-$arm-$case-$n","is_error":false,"error":$err,
- "hidden":{"passed":$passed,"total":$total,"pass_rate":$(python3 -c "print($passed/$total)"),"all_pass":$([ "$passed" = "$total" ] && echo true || echo false),"failed_ids":[]},
+ "hidden":{"passed":$passed,"total":$total,"pass_rate":$(python3 -c "print($passed/$total)"),"all_pass":$([ "$passed" = "$total" ] && echo true || echo false),"failed_ids":[]$hidden_extra},
  "traps":{"trap_a":$trap_a,"trap_b":$trap_b},
  "agent_tests":{"files":1,"test_functions":$tests,"literal_inputs":10,"degenerate_inputs":3,"degenerate_share":$share},
  "own_test_trap_catch_rate":$own,
- "own_test_traps":{"caught":{"trap_a":$([ "$own" = "null" ] && echo null || echo "$own_a"),"trap_b":$([ "$own" = "null" ] && echo null || echo "$own_b")},"reason":$([ "$own" = "null" ] && echo '"no tests/ directory"' || echo null)},
+ "own_test_traps":{"caught":{"trap_a":$([ "$own" = "null" ] && echo null || echo "$own_a"),"trap_b":$([ "$own" = "null" ] && echo null || echo "$own_b")},"reason":$([ "$own" = "null" ] && echo '"no tests/ directory"' || echo null)$own_extra},
  "skills_invoked":["flow:tdd-patterns"]}
 EOF
 }
@@ -446,6 +649,35 @@ OUT=$(python3 "$HELPER" aggregate --out "$TMP/agg7"); EXIT=$?
 assert_exit 0 "$EXIT" "empty results dir aggregates without error"
 assert_contains '"runs": 0' "$OUT" "zero runs reported"
 assert_contains "No runs found." "$(cat "$TMP/agg7/summary.md")" "summary.md says so"
+
+_flow_test_begin "aggregate: incomplete hidden runs are counted per arm and per cell, old records read through timed_out/import_or_crash"
+AGG8="$TMP/agg8"
+for case in c1 c2 c3; do
+  # run 1 hung after 4 of 30 (new record), run 2 is an old-style import failure
+  # without the `incomplete` key, run 3 is complete; one run also had an
+  # incomplete own-suite run.
+  write_result "$AGG8" m enforce-risk "$case" 1 4 30 10 0.3 1.0 20 null true true 0.5 true false ',"incomplete":true,"reason":"timeout","observed":5,"expected":30'
+  write_result "$AGG8" m enforce-risk "$case" 2 0 30 10 0.3 1.0 20 null true true null false false ',"import_or_crash":true,"timed_out":false'
+  write_result "$AGG8" m enforce-risk "$case" 3 30 30 10 0.3 1.0 20 null false false 0.5 true false ',"incomplete":false,"reason":null,"observed":30,"expected":30' ',"incomplete_runs":2'
+  write_result "$AGG8" m suggest-risk "$case" 1 30 30 6 0.3 1.0 20 null false false 0.5 true false
+  write_result "$AGG8" m suggest-risk "$case" 2 30 30 6 0.3 1.0 20 null false false 0.5 true false ',"incomplete":false,"reason":null,"observed":30,"expected":30' ',"incomplete_runs":0'
+done
+OUT=$(python3 "$HELPER" aggregate --out "$AGG8")
+assert_equal "2" "$(json_get "$AGG8/summary.json" 'd["per_model"]["m"]["per_cell"]["enforce-risk/c1"]["incomplete_runs"]')" "per-cell: timeout record + legacy import_or_crash record"
+assert_equal "6" "$(json_get "$AGG8/summary.json" 'd["per_model"]["m"]["per_arm"]["enforce-risk"]["incomplete_runs"]')" "per-arm: two per case over three cases"
+assert_equal "['timeout', 'unknown']" "$(json_get "$AGG8/summary.json" 'd["per_model"]["m"]["per_arm"]["enforce-risk"]["incomplete_reasons"]')" "reasons listed; a legacy record has no reason"
+assert_equal "0" "$(json_get "$AGG8/summary.json" 'd["per_model"]["m"]["per_arm"]["suggest-risk"]["incomplete_runs"]')" "complete arm counts zero (with and without the key)"
+assert_equal "1" "$(json_get "$AGG8/summary.json" 'd["per_model"]["m"]["per_cell"]["enforce-risk/c1"]["own_test_incomplete_runs"]')" "own-suite incomplete runs counted per cell"
+assert_equal "3" "$(json_get "$AGG8/summary.json" 'd["per_model"]["m"]["per_arm"]["enforce-risk"]["own_test_incomplete_runs"]')" "own-suite incomplete runs counted per arm"
+MD=$(cat "$AGG8/summary.md")
+assert_contains "| Turns (mean) | Errors | Incomplete |" "$MD" "per-arm table has the Incomplete column"
+assert_contains "| Turns | Errors | Incomplete |" "$MD" "per-cell table has the Incomplete column"
+assert_contains "| m | enforce-risk | 9 | 38% | 33% | 50% (6/9) | 10.0 | 30% | \$1.00 | 20.0 | 0 | 6 (timeout, unknown) |" "$MD" "per-arm row: (4/30 + 0 + 1)/3 = 38%, six incomplete runs with reasons"
+assert_contains "| m | suggest-risk | 6 | 100% | 100% | 50% (6/6) | 6.0 | 30% | \$1.00 | 20.0 | 0 | 0 |" "$MD" "per-arm row: zero incomplete"
+assert_contains "| m | enforce-risk | c1 | 3 | 38% (0%–100%) | 33% | 50% (2/3) | 10.0 | 30% | \$1.00 | 20.0 | 0 | 2 (timeout, unknown) |" "$MD" "per-cell row carries the count"
+assert_contains "Incomplete: runs whose hidden suite did not finish" "$MD" "column explained under the table"
+assert_contains "| enforce-risk | 2/3, 1 incomplete |" "$MD" "own-test scored-runs cell flags the incomplete own run"
+assert_contains "| suggest-risk | 2/2 |" "$MD" "own-test cell unchanged when nothing was incomplete"
 
 _flow_test_begin "aggregate + migrate-layout: legacy runs/<arm>/<case>/<n> results"
 LEG="$TMP/legacy"

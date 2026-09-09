@@ -210,7 +210,7 @@ COMMANDS (23)
 HOOKS (14 scripts)
   ├── Safety (PreToolUse): block-force-push, block-destructive, block-secrets,
   │                        ask-issue-create (asks before `gh issue create` during an active goal)
-  ├── Ledger (PostToolUse): log-file-changes, log-commits, record-quality-run
+  ├── Ledger (PostToolUse / PostToolUseFailure): log-file-changes, log-commits, record-quality-run
   ├── Gates: verify-task-completion (TaskCompleted — blocks while edits postdate the last
   │          passing quality run), flow-goal-stop + flow-run-deterministic-checks +
   │          flow-goal-evaluator (Stop — FlowGoal evidence)
@@ -221,7 +221,7 @@ HOOKS (14 scripts)
 
 BIN/ HELPER SCRIPTS
   ├── flow-load-skills.sh   — inlines a command's Required Skills (ambient bodies, dispatched contracts)
-  ├── flow-quality-ledger.sh — per-session ledger of file edits and quality-command runs (task-completion gate)
+  ├── flow-quality-ledger.sh — per-session ledger of file edits and quality-command runs (task-completion gate): append|path|status|digest|prune
   ├── flow-goal-trust.sh    — user-local trust ledger: which FlowGoals may auto-run verification commands
   ├── flow-mine-corrections.sh — mines user corrections from session transcripts for /flow:learn
   ├── flow-eval-run.sh      — headless correctness eval (seeded-bug tasks, hidden tests; references/correctness-eval.md)
@@ -246,8 +246,9 @@ TESTS (repo-level, exercised by every PR series — not part of the plugin insta
 | Event | Wired Script | Min. Claude Code | Notes |
 |-------|--------------|------------------|-------|
 | `PreToolUse` (Bash) | `block-force-push`, `block-destructive`, `block-secrets`, `ask-issue-create` | All current | Documented event. `ask-issue-create` returns `permissionDecision: ask` (documented JSON contract) only for `gh issue create` while a FlowGoal is active and `minimalScope` is false |
-| `PostToolUse` (Edit\|Write) | `log-file-changes` | All current | Documented event; also appends a `file_change` entry to the session quality ledger |
-| `PostToolUse` (Bash) | `log-commits`, `record-quality-run` | All current | Documented event; `record-quality-run` classifies test/lint/typecheck/build commands and records `tool_response.exit_code` |
+| `PostToolUse` (Edit\|Write\|NotebookEdit) | `log-file-changes` | All current | Documented event; also appends a `file_change` entry to the session quality ledger (`notebook_path` read for NotebookEdit) |
+| `PostToolUse` (Bash) | `log-commits`, `record-quality-run` | All current | Documented event; `record-quality-run` classifies test/lint/typecheck/build commands at command position, records `tool_response.exit_code`, a `masked` flag (`\|\| true`), and a sha256 digest of the working-tree contents (HEAD excluded, so commits of tested edits stay clean) |
+| `PostToolUseFailure` (Bash) | `record-quality-run` | All current | Documented event ("after a tool call fails"): records the failed run (`failed: true`, exit code from the `Exit code N` line of `error`) so a failing test run reaches the ledger; deduped with PostToolUse on `tool_use_id` |
 | `Stop` | `flow-goal-stop` | All current | Documented event. Ships in `warn` mode: the reason says plainly that the stop was ALLOWED; `block` mode is opt-in and executes verification commands only for goals in the user-local trust ledger |
 | `SessionEnd` | `session-end-learn`, `session-end-state` | All current | Documented event |
 | `TaskCompleted` | `verify-task-completion` | **v2.1.33+** | Documented event (`task_id`, `task_subject`, `task_description`, `teammate_name`, `team_name`). Exit 2 blocks completion while files changed after the last passing quality run; `testing.taskCompletionGate` selects `block\|warn\|off` |

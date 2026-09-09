@@ -10,7 +10,10 @@ Standard library only. Every subcommand prints JSON to stdout unless noted.
   hidden-run  --case-dir D --project-dir P    run hidden/test_hidden.py against the
               [--impl FILE] [--timeout S]     module in P (or against --impl copied in);
               [--out hidden.txt]              a trap counts as caught when the run fails
-                                              every test listed for it in traps.json
+              [--raw hidden.txt]              every test listed for it in traps.json;
+                                              --raw scores a saved output instead of
+                                              running (an incomplete run is scored over
+                                              the suite's full size, see below)
   agent-tests --project-dir P                 count the agent's own tests and classify
                                               their literal sequence inputs
   own-test-traps --case-dir C --project-dir P run the agent's own suite (tests/, unittest
@@ -38,6 +41,17 @@ Standard library only. Every subcommand prints JSON to stdout unless noted.
                                               into each result.json; idempotent
   check-cases --evals-dir DIR [--case NAME]   reference passes, every trap variant fails
                                               its listed tests; exit 1 on any violation
+
+Incomplete runs: a unittest run is complete only when it prints `Ran N tests`
+for exactly the N tests observed and a final `OK`/`FAILED` line. When it does
+not (timeout, crash, or no summary), the hidden pass rate is observed `ok`
+lines over the suite's full size from hidden/test_hidden.py, never over the
+tests that happened to print a status; result.json records
+hidden.incomplete=true with reason timeout|crash|no-summary and the
+observed/expected counts, and the aggregate tables carry an Incomplete
+column. Own-test scoring applies the same rule: an incomplete run against a
+trap variant counts as a catch only for an oracle test observed to FAIL or
+ERROR, and a test not observed passing is not an oracle.
 
 Degenerate-input heuristic (agent-tests): an input is a literal sequence —
 a bytes constant, a list/tuple display whose elements are constants (or
@@ -145,6 +159,12 @@ STATUS_WORDS = ("ok", "FAIL", "ERROR", "skipped", "expected failure", "unexpecte
 TEST_LINE_RE = re.compile(r"^(test\w*) \(([\w.]+)\)")
 STATUS_RE = re.compile(r"\.\.\. (ok|FAIL|ERROR|skipped(?: .*)?|expected failure|unexpected success)\s*$")
 RAN_RE = re.compile(r"^Ran (\d+) tests? in ")
+SUMMARY_RE = re.compile(r"^(OK|FAILED)(?: \(.*\))?\s*$")
+TIMEOUT_MARK_RE = re.compile(r"^\[flow-eval\] .* timed out after ", re.M)
+# A crash inside a test prints the traceback on the pending test's own line
+# (`test_x (...) ... Traceback (most recent call last):`), so that pattern is
+# not anchored; the signal messages are.
+CRASH_RE = re.compile(r"Traceback \(most recent call last\):|^(?:Segmentation fault|Bus error|Killed|Fatal Python error)\b", re.M)
 
 
 def parse_unittest(text, full_ids=False):
@@ -155,6 +175,8 @@ def parse_unittest(text, full_ids=False):
     an error. Keys are the bare method names (the hidden suites never repeat
     one); with ``full_ids`` the key is ``module.Class.method`` so an agent
     suite that reuses a method name across classes is counted per test.
+    ``completed`` is true only when the `Ran N tests` line names exactly the
+    observed count and the final `OK`/`FAILED` line is present.
     """
     tests = {}
     order = []
@@ -182,10 +204,16 @@ def parse_unittest(text, full_ids=False):
                 tests[pending] = normalize_status(s.group(1))
                 pending = None
     ran = None
+    summary = None
     for line in text.splitlines():
         m = RAN_RE.match(line)
         if m:
             ran = int(m.group(1))
+            summary = None   # the verdict belongs to the last Ran line
+            continue
+        s = SUMMARY_RE.match(line.rstrip("\r"))
+        if s and ran is not None:
+            summary = s.group(1)
     passed = sum(1 for t in order if tests[t] == "ok")
     failed = [t for t in order if tests[t] in ("FAIL", "ERROR", "missing")]
     return {
@@ -195,8 +223,27 @@ def parse_unittest(text, full_ids=False):
         "total": len(order),
         "failed_ids": failed,
         "ran_line": ran,
-        "completed": ran is not None and ran == len(order),
+        "summary_line": summary,
+        "completed": ran is not None and ran == len(order) and summary is not None,
     }
+
+
+def incomplete_reason(parsed, raw, timed_out=False, returncode=None):
+    """Why a unittest run did not complete: timeout | crash | no-summary, or None.
+
+    ``timed_out`` is the subprocess verdict; a saved output carries the
+    `[flow-eval] ... timed out` marker instead. A crash is a non-zero exit or
+    a traceback/signal message without the `Ran N tests` line; anything else
+    that lacks a matching `Ran` line and final `OK`/`FAILED` is no-summary
+    (truncated output, a `sys.exit` inside the suite, a count mismatch).
+    """
+    if parsed["completed"]:
+        return None
+    if timed_out or TIMEOUT_MARK_RE.search(raw):
+        return "timeout"
+    if parsed["ran_line"] is None and ((returncode not in (None, 0)) or CRASH_RE.search(raw)):
+        return "crash"
+    return "no-summary"
 
 
 def normalize_status(word):
@@ -248,32 +295,69 @@ def run_hidden(case_dir, project_dir, impl=None, timeout=120):
             proc = subprocess.run(cmd, cwd=target, env=env, capture_output=True, text=True, timeout=timeout)
             raw = proc.stdout + proc.stderr
             timed_out = False
+            returncode = proc.returncode
         except subprocess.TimeoutExpired as exc:
-            raw = (exc.stdout or "") + (exc.stderr or "")
-            if isinstance(raw, bytes):
-                raw = raw.decode("utf-8", "replace")
-            raw += "\n[flow-eval] hidden suite timed out after %ss\n" % timeout
+            raw = partial_output(exc) + "\n[flow-eval] hidden suite timed out after %ss\n" % timeout
             timed_out = True
+            returncode = None
     finally:
         if scratch is not None:
             shutil.rmtree(scratch, ignore_errors=True)
+    return score_hidden(case_dir, raw, timed_out, returncode), raw
+
+
+def partial_output(exc):
+    """stdout + stderr captured before a subprocess.TimeoutExpired.
+
+    CPython attaches the partial streams as bytes even in text mode, and as
+    None for a stream the child never wrote to (unittest writes only to
+    stderr), so each part is decoded on its own.
+    """
+    parts = []
+    for chunk in (exc.stdout, exc.stderr):
+        if chunk is None:
+            continue
+        if isinstance(chunk, bytes):
+            chunk = chunk.decode("utf-8", "replace")
+        parts.append(chunk)
+    return "".join(parts)
+
+
+def score_hidden(case_dir, raw, timed_out=False, returncode=None):
+    """Score a hidden-suite output (from run_hidden or a saved hidden.txt).
+
+    A complete run is scored over the tests it reports. An incomplete run
+    (timeout, crash, no summary line) is scored as observed `ok` lines over
+    the suite's full size from hidden/test_hidden.py: a suite that hangs on
+    test 5 of 30 after four passes scores 4/30, not 4/5. The unobserved
+    tests are listed under `unobserved` and counted in `failed_ids`.
+    """
+    traps = load_traps(case_dir)
     parsed = parse_unittest(raw)
     parsed["timed_out"] = timed_out
-    # Import failure or crash before any test ran: score 0 over the known suite size.
+    suite_ids = hidden_test_ids(case_dir)
     expected_ids = sorted({t for trap in traps["traps"].values() for t in trap["discriminating_tests"]})
-    if parsed["total"] == 0:
-        parsed["total"] = count_hidden_tests(case_dir)
-        parsed["passed"] = 0
-        parsed["failed_ids"] = []
-        parsed["import_or_crash"] = True
+    parsed["observed"] = parsed["total"]
+    parsed["expected"] = len(suite_ids)
+    parsed["incomplete"] = not parsed["completed"]
+    parsed["reason"] = incomplete_reason(parsed, raw, timed_out, returncode)
+    # Import failure or crash before any test ran: score 0 over the known suite size.
+    parsed["import_or_crash"] = parsed["total"] == 0
+    if parsed["incomplete"]:
+        unobserved = [t for t in suite_ids if t not in parsed["tests"]]
+        parsed["unobserved"] = unobserved
+        parsed["total"] = max(parsed["expected"], parsed["observed"])
+        parsed["failed_ids"] = parsed["failed_ids"] + unobserved
     else:
-        parsed["import_or_crash"] = False
+        parsed["unobserved"] = []
     parsed["pass_rate"] = (parsed["passed"] / parsed["total"]) if parsed["total"] else 0.0
     parsed["all_pass"] = parsed["total"] > 0 and parsed["passed"] == parsed["total"]
     # Signature match: a trap is "caught" when the run fails every test its
     # variant fails (traps.json discriminating_tests). Some signatures are
     # subsets of others (a tie-order test also fails under round-half-up), so a
-    # run can match several traps; an import failure matches all of them.
+    # run can match several traps; an import failure matches all of them, and
+    # a test the run never reached counts as not passed (the same pessimistic
+    # reading as the pass rate; `unobserved` says which).
     parsed["traps"] = {}
     for name, trap in traps["traps"].items():
         ids = trap["discriminating_tests"]
@@ -283,29 +367,45 @@ def run_hidden(case_dir, project_dir, impl=None, timeout=120):
         parsed["traps"][name] = {
             "caught": tripped,
             "failing": list(ids) if parsed["import_or_crash"] else failing,
+            "unobserved": [t for t in ids if t not in parsed["tests"]],
         }
     parsed["mapped_test_ids"] = expected_ids
-    return parsed, raw
+    return parsed
+
+
+HIDDEN_RECORD_KEYS = ("passed", "total", "pass_rate", "all_pass", "failed_ids", "import_or_crash", "timed_out",
+                      "incomplete", "reason", "observed", "expected")
+
+
+def hidden_record(hidden):
+    """The `hidden` block of result.json."""
+    return {key: hidden[key] for key in HIDDEN_RECORD_KEYS}
+
+
+def hidden_test_ids(case_dir):
+    """Bare method names of every test_* function in hidden/test_hidden.py, in file order."""
+    tree = ast.parse(read_text(os.path.join(case_dir, "hidden", "test_hidden.py")))
+    return [node.name for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("test")]
 
 
 def count_hidden_tests(case_dir):
-    tree = ast.parse(read_text(os.path.join(case_dir, "hidden", "test_hidden.py")))
-    n = 0
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name.startswith("test"):
-            n += 1
-    return n
+    return len(hidden_test_ids(case_dir))
 
 
 def cmd_hidden_run(args):
-    opts = parse_opts(args, ["--case-dir", "--project-dir", "--impl", "--timeout", "--out"])
-    if not opts.get("--case-dir") or not (opts.get("--project-dir") or opts.get("--impl")):
-        die("hidden-run --case-dir D (--project-dir P | --impl FILE) [--timeout S] [--out FILE]")
-    parsed, raw = run_hidden(opts["--case-dir"], opts.get("--project-dir") or ".", opts.get("--impl"),
-                             int(opts.get("--timeout") or 120))
-    if opts.get("--out"):
-        with open(opts["--out"], "w", encoding="utf-8") as fh:
-            fh.write(raw)
+    opts = parse_opts(args, ["--case-dir", "--project-dir", "--impl", "--timeout", "--out", "--raw"])
+    if not opts.get("--case-dir") or not (opts.get("--project-dir") or opts.get("--impl") or opts.get("--raw")):
+        die("hidden-run --case-dir D (--project-dir P | --impl FILE | --raw OUTPUT) [--timeout S] [--out FILE]")
+    if opts.get("--raw"):
+        raw = read_text(opts["--raw"])
+        parsed = score_hidden(opts["--case-dir"], raw, timed_out=bool(TIMEOUT_MARK_RE.search(raw)))
+    else:
+        parsed, raw = run_hidden(opts["--case-dir"], opts.get("--project-dir") or ".", opts.get("--impl"),
+                                 int(opts.get("--timeout") or 120))
+        if opts.get("--out"):
+            with open(opts["--out"], "w", encoding="utf-8") as fh:
+                fh.write(raw)
     print(json.dumps(parsed, indent=2, sort_keys=True))
 
 
@@ -559,15 +659,25 @@ def run_own_suite(project_copy, timeout):
         proc = subprocess.run(OWN_TEST_COMMAND, cwd=project_copy, env=env, capture_output=True, text=True, timeout=timeout)
         raw = proc.stdout + proc.stderr
         timed_out = False
+        returncode = proc.returncode
     except subprocess.TimeoutExpired as exc:
-        raw = (exc.stdout or "") + (exc.stderr or "")
-        if isinstance(raw, bytes):
-            raw = raw.decode("utf-8", "replace")
-        raw += "\n[flow-eval] own suite timed out after %ss\n" % timeout
+        raw = partial_output(exc) + "\n[flow-eval] own suite timed out after %ss\n" % timeout
         timed_out = True
+        returncode = None
     parsed = parse_unittest(raw, full_ids=True)
     parsed["timed_out"] = timed_out
+    parsed["incomplete"] = not parsed["completed"]
+    parsed["reason"] = incomplete_reason(parsed, raw, timed_out, returncode)
     return parsed, raw
+
+
+def own_run_record(parsed):
+    """The fields of one own-suite run kept in own-test-traps.json."""
+    return {
+        "passed": parsed["passed"], "total": parsed["total"], "failed_ids": parsed["failed_ids"],
+        "timed_out": parsed["timed_out"], "completed": parsed["completed"],
+        "incomplete": parsed["incomplete"], "reason": parsed["reason"],
+    }
 
 
 def own_test_traps(case_dir, project_dir, timeout=120):
@@ -585,6 +695,14 @@ def own_test_traps(case_dir, project_dir, timeout=120):
     oracle (no tests/ dir, no tests discovered, the module not imported by
     the tests, the tests using names the variants do not define, or no test
     passing on both implementations).
+
+    Incomplete runs (timeout, crash, no summary line) never add evidence: a
+    test is an oracle only when it was observed passing on both the agent's
+    module and the reference, and a variant is caught only by an oracle test
+    observed to FAIL or ERROR against it — a test the variant run never
+    reached, or that was pending when it stopped, is not a catch. Each run's
+    `incomplete`/`reason` is recorded (`own_impl`, `reference_run`,
+    `per_trap.<name>`) and `incomplete_runs` counts them.
     """
     traps = load_traps(case_dir)
     module = traps["module"]
@@ -597,6 +715,7 @@ def own_test_traps(case_dir, project_dir, timeout=120):
         "caught": {name: None for name in trap_names},
         "per_trap": {},
         "own_impl": None,
+        "incomplete_runs": 0,
     }
 
     def bail(reason):
@@ -630,13 +749,13 @@ def own_test_traps(case_dir, project_dir, timeout=120):
         copy = os.path.join(scratch, "project")
         snapshot_project(project_dir, copy)
         own, own_raw = run_own_suite(copy, timeout)
-        result["own_impl"] = {
-            "passed": own["passed"], "total": own["total"], "failed_ids": own["failed_ids"],
-            "timed_out": own["timed_out"], "completed": own["completed"],
-        }
+        result["own_impl"] = own_run_record(own)
         result["own_impl_output_tail"] = own_raw[-2000:]
+        result["incomplete_runs"] += 1 if own["incomplete"] else 0
         if own["total"] == 0:
             return bail("own suite discovered no tests (import error or empty tests/)")
+        # Only a test observed passing is an oracle candidate; a test the run
+        # never reached (hang, crash) is not.
         passing_own = [t for t in own["order"] if own["tests"][t] == "ok"]
         if not passing_own:
             return bail("no own test passes against the agent's own implementation")
@@ -646,9 +765,11 @@ def own_test_traps(case_dir, project_dir, timeout=120):
         shutil.copy(reference, os.path.join(copy, "reference_impl.py"))
         shutil.copy(reference, module_path)
         ref_run, _ = run_own_suite(copy, timeout)
+        result["incomplete_runs"] += 1 if ref_run["incomplete"] else 0
         passing = [t for t in passing_own if ref_run["tests"].get(t, "missing") == "ok"]
-        result["disagree_with_reference"] = [t for t in passing_own if t not in passing]
-        result["reference_run"] = {"passed": ref_run["passed"], "total": ref_run["total"], "timed_out": ref_run["timed_out"]}
+        result["disagree_with_reference"] = [t for t in passing_own if ref_run["tests"].get(t) in ("FAIL", "ERROR")]
+        result["unobserved_on_reference"] = [t for t in passing_own if t not in passing and t not in result["disagree_with_reference"]]
+        result["reference_run"] = own_run_record(ref_run)
         if not passing:
             with open(module_path, "w", encoding="utf-8") as fh:
                 fh.write(original)
@@ -658,15 +779,23 @@ def own_test_traps(case_dir, project_dir, timeout=120):
             variant = os.path.join(case_dir, traps["traps"][name]["variant"])
             shutil.copy(variant, module_path)
             parsed, _ = run_own_suite(copy, timeout)
-            failing = [t for t in passing if parsed["tests"].get(t, "missing") != "ok"]
+            # A catch is an oracle test observed to FAIL or ERROR on the variant.
+            # On an incomplete run, tests never reached (or pending when the run
+            # stopped) are not evidence either way and are listed separately.
+            failing = [t for t in passing if parsed["tests"].get(t) in ("FAIL", "ERROR")]
+            unobserved = [t for t in passing if parsed["tests"].get(t, "missing") == "missing"]
             caught = bool(failing)
             caught_count += 1 if caught else 0
             result["caught"][name] = caught
+            result["incomplete_runs"] += 1 if parsed["incomplete"] else 0
             result["per_trap"][name] = {
                 "caught": caught,
                 "failing_own_tests": failing[:50],
                 "failing_count": len(failing),
+                "unobserved_oracle_tests": unobserved[:50],
+                "unobserved_count": len(unobserved),
                 "passed": parsed["passed"], "total": parsed["total"], "timed_out": parsed["timed_out"],
+                "incomplete": parsed["incomplete"], "reason": parsed["reason"],
             }
         with open(module_path, "w", encoding="utf-8") as fh:
             fh.write(original)
@@ -715,7 +844,7 @@ def rescore_own_tests(out_dir, evals_dir, timeout=120):
         own = own_test_traps(case_dir, project, timeout)
         write_json(os.path.join(run_dir, "own-test-traps.json"), own)
         record["own_test_trap_catch_rate"] = own.get("catch_rate")
-        record["own_test_traps"] = {"caught": own.get("caught") or {}, "reason": own.get("reason"), "own_impl": own.get("own_impl")}
+        record["own_test_traps"] = own_traps_record(own)
         write_json(result_path, record)
         scored.append((run_dir, own.get("catch_rate"), own.get("reason")))
     return scored, skipped
@@ -744,12 +873,18 @@ def rescore_hidden(out_dir, evals_dir, timeout=120):
         hidden, raw = run_hidden(case_dir, project, None, timeout)
         with open(os.path.join(run_dir, "hidden.txt"), "w", encoding="utf-8") as fh:
             fh.write(raw)
-        record["hidden"] = {key: hidden[key] for key in ("passed", "total", "pass_rate", "all_pass", "failed_ids", "import_or_crash", "timed_out")}
+        record["hidden"] = hidden_record(hidden)
         record["traps"] = {name: t["caught"] for name, t in hidden["traps"].items()}
         record["module_exists"] = os.path.exists(os.path.join(project, load_traps(case_dir)["module"] + ".py"))
         write_json(result_path, record)
-        scored.append((run_dir, hidden["pass_rate"], None))
+        scored.append((run_dir, hidden["pass_rate"], hidden["reason"]))
     return scored, skipped
+
+
+def own_traps_record(own):
+    """The `own_test_traps` block of result.json."""
+    return {"caught": own.get("caught") or {}, "reason": own.get("reason"), "own_impl": own.get("own_impl"),
+            "incomplete_runs": int(own.get("incomplete_runs") or 0)}
 
 
 def cmd_rescore_hidden(args):
@@ -757,8 +892,9 @@ def cmd_rescore_hidden(args):
     if not opts.get("--out") or not opts.get("--evals-dir"):
         die("rescore-hidden --out DIR --evals-dir EVALS [--timeout S]")
     scored, skipped = rescore_hidden(opts["--out"], opts["--evals-dir"], int(opts.get("--timeout") or 120))
-    for run_dir, rate, _ in scored:
-        print("scored  %s  hidden_pass_rate=%.3f" % (os.path.relpath(run_dir, opts["--out"]), rate))
+    for run_dir, rate, reason in scored:
+        print("scored  %s  hidden_pass_rate=%.3f%s" % (os.path.relpath(run_dir, opts["--out"]), rate,
+                                                    ("  incomplete=%s" % reason) if reason else ""))
     for run_dir, why in skipped:
         print("skipped %s  %s" % (os.path.relpath(run_dir, opts["--out"]), why))
     print(json.dumps({"scored": len(scored), "skipped": len(skipped)}))
@@ -910,15 +1046,7 @@ def cmd_finalize_run(args):
         "completion_phrase": "IMPLEMENTATION COMPLETE" in final_text,
         "permission_denials": (result_event.get("permission_denials") or []) if result_event else [],
         "module_exists": os.path.exists(os.path.join(opts["--project-dir"], load_traps(opts["--case-dir"])["module"] + ".py")),
-        "hidden": {
-            "passed": hidden["passed"],
-            "total": hidden["total"],
-            "pass_rate": hidden["pass_rate"],
-            "all_pass": hidden["all_pass"],
-            "failed_ids": hidden["failed_ids"],
-            "import_or_crash": hidden["import_or_crash"],
-            "timed_out": hidden["timed_out"],
-        },
+        "hidden": hidden_record(hidden),
         "traps": {name: t["caught"] for name, t in hidden["traps"].items()},
         "agent_tests": {
             "files": agent["file_count"],
@@ -928,15 +1056,12 @@ def cmd_finalize_run(args):
             "degenerate_share": agent["degenerate_share"],
         },
         "own_test_trap_catch_rate": own.get("catch_rate"),
-        "own_test_traps": {
-            "caught": own.get("caught") or {},
-            "reason": own.get("reason"),
-            "own_impl": own.get("own_impl"),
-        },
+        "own_test_traps": own_traps_record(own),
         "temp_dir": opts.get("--temp-dir"),
     }
     write_json(os.path.join(run_dir, "result.json"), result)
-    print(json.dumps({"hidden_pass_rate": result["hidden"]["pass_rate"], "cost_usd": cost, "num_turns": turns,
+    print(json.dumps({"hidden_pass_rate": result["hidden"]["pass_rate"], "hidden_incomplete": hidden["reason"],
+                      "cost_usd": cost, "num_turns": turns,
                       "error": error, "test_functions": agent["test_functions"], "model": model,
                       "own_test_trap_catch_rate": own.get("catch_rate")}))
 
@@ -1033,6 +1158,21 @@ def own_caught(record):
     return {k: v for k, v in caught.items() if isinstance(v, bool)}
 
 
+def hidden_incomplete(record):
+    """Whether the run's hidden suite did not finish. Records written before the
+    `incomplete` field existed are read through `timed_out`/`import_or_crash`."""
+    hidden = record.get("hidden") or {}
+    if "incomplete" in hidden:
+        return bool(hidden["incomplete"])
+    return bool(hidden.get("timed_out")) or bool(hidden.get("import_or_crash"))
+
+
+def own_incomplete_runs(record):
+    own = record.get("own_test_traps") or {}
+    value = own.get("incomplete_runs")
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
 def summarize_runs(rs):
     """Metrics shared by the per-arm and per-cell tables."""
     rates = [r["hidden"]["pass_rate"] for r in rs]
@@ -1042,6 +1182,9 @@ def summarize_runs(rs):
         "hidden_pass_rate_min": min(rates), "hidden_pass_rate_max": max(rates),
         "hidden_pass_rate_spread": max(rates) - min(rates),
         "all_pass_rate": mean([1.0 if r["hidden"]["all_pass"] else 0.0 for r in rs]),
+        "incomplete_runs": sum(1 for r in rs if hidden_incomplete(r)),
+        "incomplete_reasons": sorted({str((r.get("hidden") or {}).get("reason") or "unknown") for r in rs if hidden_incomplete(r)}),
+        "own_test_incomplete_runs": sum(1 for r in rs if own_incomplete_runs(r)),
         "own_tests_mean": mean([r["agent_tests"]["test_functions"] for r in rs]),
         "degenerate_share_mean": mean([r["agent_tests"]["degenerate_share"] for r in rs]),
         "own_test_trap_catch_rate": mean([own_rate(r) for r in rs]),
@@ -1253,21 +1396,23 @@ def render_summary_md(s):
         lines.append("")
     lines.append("## Per model × arm")
     lines.append("")
-    lines.append("| Model | Arm | Runs | Hidden pass rate | All-pass runs | Own tests catch traps | Own tests (mean) | Degenerate share | Cost (mean) | Turns (mean) | Errors |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| Model | Arm | Runs | Hidden pass rate | All-pass runs | Own tests catch traps | Own tests (mean) | Degenerate share | Cost (mean) | Turns (mean) | Errors | Incomplete |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
     for model in s["models"]:
         m = s["per_model"][model]
         for arm in m["arms"]:
             a = m["per_arm"][arm]
-            lines.append("| %s | %s | %d | %s | %s | %s | %s | %s | $%s | %s | %d |" % (
+            lines.append("| %s | %s | %d | %s | %s | %s | %s | %s | $%s | %s | %d | %s |" % (
                 model, arm, a["runs"], fmt(a["hidden_pass_rate_mean"], pct=True), fmt(a["all_pass_rate"], pct=True),
                 own_cell(a), fmt(a["own_tests_mean"], 1), fmt(a["degenerate_share_mean"], pct=True), fmt(a["cost_usd_mean"]),
-                fmt(a["num_turns_mean"], 1), a["errors"]))
+                fmt(a["num_turns_mean"], 1), a["errors"], incomplete_cell(a)))
+    lines.append("")
+    lines.append(INCOMPLETE_NOTE)
     lines.append("")
     lines.append("## Per model × arm × case")
     lines.append("")
-    lines.append("| Model | Arm | Case | Runs | Hidden pass rate (min–max) | All-pass | Own tests catch traps | Own tests | Degenerate share | Cost | Turns | Errors |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| Model | Arm | Case | Runs | Hidden pass rate (min–max) | All-pass | Own tests catch traps | Own tests | Degenerate share | Cost | Turns | Errors | Incomplete |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for model in s["models"]:
         m = s["per_model"][model]
         for arm in m["arms"]:
@@ -1275,10 +1420,11 @@ def render_summary_md(s):
                 c = m["per_cell"].get("%s/%s" % (arm, case))
                 if not c:
                     continue
-                lines.append("| %s | %s | %s | %d | %s (%s–%s) | %s | %s | %s | %s | $%s | %s | %d |" % (
+                lines.append("| %s | %s | %s | %d | %s (%s–%s) | %s | %s | %s | %s | $%s | %s | %d | %s |" % (
                     model, arm, case, c["runs"], fmt(c["hidden_pass_rate_mean"], pct=True), fmt(c["hidden_pass_rate_min"], pct=True),
                     fmt(c["hidden_pass_rate_max"], pct=True), fmt(c["all_pass_rate"], pct=True), own_cell(c), fmt(c["own_tests_mean"], 1),
-                    fmt(c["degenerate_share_mean"], pct=True), fmt(c["cost_usd_mean"]), fmt(c["num_turns_mean"], 1), c["errors"]))
+                    fmt(c["degenerate_share_mean"], pct=True), fmt(c["cost_usd_mean"]), fmt(c["num_turns_mean"], 1), c["errors"],
+                    incomplete_cell(c)))
     lines.append("")
     lines.append("## Trap catch rate (share of runs whose implementation fell into the trap; lower is better)")
     lines.append("")
@@ -1316,12 +1462,20 @@ def render_summary_md(s):
                 c = m["per_cell"].get("%s/%s" % (arm, case))
                 if not c:
                     continue
-                lines.append("| %s | %d/%d | " % (arm, c["own_test_trap_scored_runs"], c["runs"])
+                lines.append("| %s | %s | " % (arm, scored_cell(c))
                              + " | ".join(fmt(c["own_test_trap_catch"].get(t), pct=True) for t in traps) + " |")
             lines.append("")
+    lines.append("A run whose own suite did not finish against the agent's module, the reference or a variant (timeout, crash, no summary line) is marked `n incomplete` in the scored-runs column; such a run counts a variant as caught only on an observed FAIL/ERROR of an oracle test, and a test never observed passing is not an oracle (`own_test_traps.incomplete_runs` in result.json).")
+    lines.append("")
     lines.append("Skills invoked per cell are listed in summary.json (`per_model.<model>.per_cell.*.skills_invoked`); a plugin arm with no `flow:*` skill invocation did not exercise the plugin.")
     lines.append("")
     return "\n".join(lines)
+
+
+INCOMPLETE_NOTE = ("Incomplete: runs whose hidden suite did not finish (timeout, crash or no `OK`/`FAILED` summary line). "
+                   "Such a run is scored as the `ok` lines observed over the suite's full size, so the cell's hidden pass "
+                   "rate is a lower bound; `hidden.incomplete`, `hidden.reason` and `hidden.observed`/`hidden.expected` "
+                   "in its result.json say what was seen.")
 
 
 def own_cell(entry):
@@ -1329,6 +1483,21 @@ def own_cell(entry):
     if entry["own_test_trap_catch_rate"] is None:
         return "- (0/%d)" % entry["runs"]
     return "%s (%d/%d)" % (fmt(entry["own_test_trap_catch_rate"], pct=True), entry["own_test_trap_scored_runs"], entry["runs"])
+
+
+def scored_cell(entry):
+    """'3/3' or '2/3, 1 incomplete' — own-test scored runs, flagging runs with an unfinished suite run."""
+    text = "%d/%d" % (entry["own_test_trap_scored_runs"], entry["runs"])
+    if entry.get("own_test_incomplete_runs"):
+        text += ", %d incomplete" % entry["own_test_incomplete_runs"]
+    return text
+
+
+def incomplete_cell(entry):
+    """'0' or '1 (timeout)' — runs whose hidden suite did not finish, with the reasons."""
+    if not entry["incomplete_runs"]:
+        return "0"
+    return "%d (%s)" % (entry["incomplete_runs"], ", ".join(entry["incomplete_reasons"]))
 
 
 def cmd_aggregate(args):

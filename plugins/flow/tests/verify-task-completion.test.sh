@@ -1,7 +1,7 @@
 # Tests for the TaskCompleted quality gate and its ledger writers:
 #   hooks/scripts/verify-task-completion.sh  (gate)
-#   hooks/scripts/record-quality-run.sh      (quality_run writer, PostToolUse Bash)
-#   hooks/scripts/log-file-changes.sh        (file_change writer, PostToolUse Edit|Write)
+#   hooks/scripts/record-quality-run.sh      (quality_run writer, PostToolUse + PostToolUseFailure Bash)
+#   hooks/scripts/log-file-changes.sh        (file_change writer, PostToolUse Edit|Write|NotebookEdit)
 #
 # Contract:
 #   - block mode (default) + dirty ledger -> exit 2, stderr names the changed file
@@ -13,7 +13,11 @@
 #   - testing.taskCompletionGate resolved through the cascade (project
 #     .claude/settings.flow.json with the hook run from inside that repo)
 #   - record-quality-run.sh classifies commands (built-in + project patterns)
-#     and captures exit_code / interrupted
+#     at command position only (quoted spans stripped), captures exit_code /
+#     interrupted / masked (`|| true`) / failed (PostToolUseFailure payload),
+#     the worktree digest, and tool_use_id (deduped across both events)
+#   - the gate passes --cwd so edits made through Bash (sed -i) are caught
+#   - hooks.json registers NotebookEdit and PostToolUseFailure
 #
 # Every case uses its own FLOW_STATE_DIR and HOME so real user state never
 # leaks in; CLAUDE_PLUGIN_ROOT points at the real plugin so the cascade's
@@ -313,3 +317,196 @@ _edit "$REPO/src/b.js"
 _hook "$GATE" "$(_payload "Loop")"; assert_exit 2 "$EXIT" "blocked again after new edit"
 assert_contains "$REPO/src/b.js" "$ERR" "names only the new file"
 assert_not_contains "$REPO/src/a.js" "$ERR" "earlier file not named"
+
+# --- classifier: mentions vs commands ----------------------------------------
+_flow_test_begin "record-quality-run.sh: mentions inside quotes or arguments are not runs (PR #163 review)"
+assert_equal "none" "$(_classify 'git commit -m "chore: npm test config"')" "npm test inside a quoted commit message"
+assert_equal "none" "$(_classify 'echo cargo test')"                       "echo cargo test (argument position)"
+assert_equal "none" "$(_classify 'ls tests/run.sh')"                       "ls tests/run.sh"
+assert_equal "none" "$(_classify 'cat tests/run.sh')"                      "cat tests/run.sh"
+assert_equal "none" "$(_classify 'echo "pytest"')"                         "echo \"pytest\""
+assert_equal "none" "$(_classify 'grep pytest x')"                         "grep pytest x"
+assert_equal "none" "$(_classify "echo 'go test ./...'")"                  "single-quoted mention"
+assert_equal "none" "$(_classify 'git log --grep "make test"')"            "quoted mention after a flag"
+
+_flow_test_begin "record-quality-run.sh: command-position runs with prefixes, paths, and operators"
+assert_equal "test|0"      "$(_classify 'bash tests/run.sh')"                        "bash tests/run.sh"
+assert_equal "test|0"      "$(_classify 'plugins/flow/tests/run.sh file')"           "plugins/flow/tests/run.sh file"
+assert_equal "test|0"      "$(_classify './tests/run.sh')"                           "./tests/run.sh"
+assert_equal "test|0"      "$(_classify 'cd x && pytest')"                           "cd x && pytest"
+assert_equal "test|0"      "$(_classify 'FOO=1 pytest')"                             "FOO=1 pytest"
+assert_equal "test|0"      "$(_classify 'env CI=1 npm test')"                        "env CI=1 npm test"
+assert_equal "test|0"      "$(_classify 'time cargo test')"                          "time cargo test"
+assert_equal "test|0"      "$(_classify 'nice -n 10 go test ./...')"                 "nice -n 10 go test"
+assert_equal "test|0"      "$(_classify 'timeout 300 npm test')"                     "timeout 300 npm test"
+assert_equal "test|0"      "$(_classify 'echo start; pytest -q')"                    "after ;"
+assert_equal "test|0"      "$(_classify 'echo "npm test" && npm test')"              "quoted mention plus a real run"
+assert_equal "test|0"      "$(_classify 'out=$(pytest -q)')"                         "inside \$( )"
+assert_equal "test|0"      "$(_classify $'set -e\npytest')"                          "second line of a multi-line command"
+assert_equal "lint|0"      "$(_classify 'bash scripts/lint.sh')"                     "bash scripts/lint.sh"
+
+# --- masked exit codes -------------------------------------------------------
+_flow_test_begin "record-quality-run.sh: || true, ; true, || : record masked:true and never pass the gate"
+_masked() { _classify "$1" >/dev/null; jq -r '.masked' "$(_ledger_file)"; }
+assert_equal "true"  "$(_masked 'npm test || true')"        "|| true"
+assert_equal "true"  "$(_masked 'pytest; true')"            "; true"
+assert_equal "true"  "$(_masked 'cargo test || :')"         "|| :"
+assert_equal "true"  "$(_masked 'npm test 2>&1 || true;')"  "|| true with trailing ;"
+assert_equal "false" "$(_masked 'npm test')"                "plain run not masked"
+assert_equal "false" "$(_masked 'npm test || echo failed')" "|| echo is not masking"
+assert_equal "false" "$(_masked 'true; npm test')"          "true before the run is not masking"
+_case
+_ledger_change 2026-09-09T10:00:00Z "$REPO/src/a.js"
+_hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,tool_name:"Bash",tool_input:{command:"npm test || true"},tool_response:{exit_code:0}}')"
+_hook "$GATE" "$(_payload "Masked")"
+assert_exit 2 "$EXIT" "gate still blocks after a masked exit-0 run"
+assert_contains "exit code was masked" "$ERR" "explains the masking"
+
+# --- PostToolUseFailure payload ----------------------------------------------
+_flow_test_begin "record-quality-run.sh: PostToolUseFailure payload -> failed:true, exit_code from 'Exit code N'"
+_case
+_hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUseFailure",tool_name:"Bash",tool_use_id:"toolu_f1",tool_input:{command:"npm test"},error:"Exit code 1\nFAIL src/a.test.js",is_interrupt:false,duration_ms:4187}')"
+assert_exit 0 "$EXIT" "hook exit 0"
+LEDGER=$(_ledger_file)
+assert_file_exists "$LEDGER" "entry recorded from the failure event"
+assert_equal "true" "$(jq -r '.failed' "$LEDGER")" "failed:true"
+assert_equal "1" "$(jq -r '.exit_code' "$LEDGER")" "exit code parsed from the error text"
+assert_equal "toolu_f1" "$(jq -r '.tool_use_id' "$LEDGER")" "tool_use_id recorded"
+_ledger_change 2026-09-09T10:00:00Z "$REPO/src/a.js"
+_hook "$GATE" "$(_payload "Failed run")"
+assert_exit 2 "$EXIT" "gate blocks"
+assert_contains "the last quality run failed (tool error, exit 1)" "$ERR" "explains the failure"
+
+_flow_test_begin "record-quality-run.sh: failure payload without an exit-code line -> exit_code null, failed:true; tool_error also read; is_interrupt -> 130"
+_case
+_hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUseFailure",tool_name:"Bash",tool_input:{command:"npm test"},error:"Command timed out after 2m 0s"}')"
+assert_equal "null|true" "$(jq -r '"\(.exit_code)|\(.failed)"' "$(_ledger_file)")" "null exit, failed"
+_case
+_hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,tool_name:"Bash",tool_input:{command:"npm test"},tool_error:"Exit code 2\nboom"}')"
+assert_equal "2|true" "$(jq -r '"\(.exit_code)|\(.failed)"' "$(_ledger_file)")" "tool_error without hook_event_name still reads as a failure"
+_case
+_hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUseFailure",tool_name:"Bash",tool_input:{command:"npm test"},error:"aborted",is_interrupt:true}')"
+assert_equal "130|true" "$(jq -r '"\(.exit_code)|\(.failed)"' "$(_ledger_file)")" "is_interrupt -> 130"
+_case
+_hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_input:{command:"npm test"},tool_response:{exit_code:0}}')"
+assert_equal "0|false|false" "$(jq -r '"\(.exit_code)|\(.failed)|\(.masked)"' "$(_ledger_file)")" "success payload: failed:false, masked:false"
+
+_flow_test_begin "record-quality-run.sh: both events for one tool_use_id record a single entry"
+_case
+_hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUseFailure",tool_name:"Bash",tool_use_id:"toolu_dup",tool_input:{command:"npm test"},error:"Exit code 1\nfail"}')"
+_hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_use_id:"toolu_dup",tool_input:{command:"npm test"},tool_response:{exit_code:0}}')"
+assert_exit 0 "$EXIT" "second hook exit 0"
+LEDGER=$(_ledger_file)
+assert_equal "1" "$(wc -l <"$LEDGER" | tr -d ' ')" "one line"
+assert_equal "true" "$(jq -r '.failed' "$LEDGER")" "first (failure) entry kept"
+_hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_use_id:"toolu_other",tool_input:{command:"npm test"},tool_response:{exit_code:0}}')"
+assert_equal "2" "$(wc -l <"$LEDGER" | tr -d ' ')" "a different tool_use_id appends"
+_hook "$GATE" "$(_payload "Dedupe")"
+assert_exit 0 "$EXIT" "later passing run counts"
+
+# --- NotebookEdit ------------------------------------------------------------
+_flow_test_begin "log-file-changes.sh reads NotebookEdit's notebook_path"
+_case
+_hook "$LOG_CHANGES" "$(printf '{"session_id":"%s","cwd":"%s","tool_name":"NotebookEdit","tool_input":{"notebook_path":"%s/nb/analysis.ipynb","cell_id":"c1","new_source":"x"}}' "$SID" "$REPO" "$REPO")"
+assert_exit 0 "$EXIT" "hook exit 0"
+LEDGER=$(_ledger_file)
+assert_file_exists "$LEDGER" "ledger written"
+assert_equal "NotebookEdit" "$(jq -r '.tool' "$LEDGER")" "tool"
+assert_equal "$REPO/nb/analysis.ipynb" "$(jq -r '.path' "$LEDGER")" "notebook path recorded"
+_hook "$GATE" "$(_payload "Notebook")"
+assert_exit 2 "$EXIT" "gate blocks after a notebook edit"
+
+# --- hooks.json registration ---------------------------------------------------
+_flow_test_begin "hooks.json: NotebookEdit joins the file-change matcher; PostToolUseFailure/Bash runs record-quality-run.sh"
+HOOKS_JSON="$PLUGIN/hooks/hooks.json"
+assert_equal "Edit|Write|NotebookEdit" "$(jq -r '.hooks.PostToolUse[] | select(.hooks[].command | endswith("log-file-changes.sh")) | .matcher' "$HOOKS_JSON")" "file-change matcher"
+assert_equal "Bash" "$(jq -r '.hooks.PostToolUseFailure[0].matcher' "$HOOKS_JSON")" "PostToolUseFailure matcher"
+assert_equal '${CLAUDE_PLUGIN_ROOT}/hooks/scripts/record-quality-run.sh' "$(jq -r '.hooks.PostToolUseFailure[0].hooks[0].command' "$HOOKS_JSON")" "record-quality-run.sh registered on failure"
+assert_equal "1" "$(jq -r '[.hooks.PostToolUse[] | select(.matcher == "Bash") | .hooks[] | select(.command | endswith("record-quality-run.sh"))] | length' "$HOOKS_JSON")" "still registered on PostToolUse Bash"
+
+# --- worktree digest through the gate ----------------------------------------
+if command -v git >/dev/null 2>&1; then
+  _git() { git -c user.name=flow-test -c user.email=flow-test@example.invalid -c commit.gpgsign=false "$@"; }
+  _git_case() {
+    _case
+    _git -C "$REPO" init -q >/dev/null 2>&1
+    printf 'one\n' > "$REPO/a.txt"
+    _git -C "$REPO" add a.txt
+    _git -C "$REPO" commit -q -m init >/dev/null 2>&1
+  }
+  _flow_test_begin "gate --cwd: passing run, then sed -i with no hook -> blocked naming the file; revert -> allowed"
+  _git_case
+  _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,tool_name:"Bash",tool_input:{command:"npm test"},tool_response:{exit_code:0}}')"
+  assert_match '^[0-9a-f]{64}$' "$(jq -r '.worktree_digest' "$(_ledger_file)")" "digest recorded with the run"
+  _hook "$GATE" "$(_payload "Digest")"
+  assert_exit 0 "$EXIT" "clean right after the passing run"
+  sed -i.bak 's/one/uno/' "$REPO/a.txt" && rm -f "$REPO/a.txt.bak"
+  _hook "$GATE" "$(_payload "Digest")"
+  assert_exit 2 "$EXIT" "sed -i edit blocks even though no Edit hook fired"
+  assert_contains "1 file(s) changed since the last passing quality run" "$ERR" "counts the git-status path"
+  assert_contains "$REPO/a.txt" "$ERR" "names the file from git status"
+  _git -C "$REPO" checkout -q -- a.txt
+  _hook "$GATE" "$(_payload "Digest")"
+  assert_exit 0 "$EXIT" "revert -> allowed again"
+  assert_equal "" "$ERR" "silent when clean"
+
+  _flow_test_begin "gate --cwd: heredoc-created file and a commit both block; journal-only changes do not"
+  _git_case
+  _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,tool_name:"Bash",tool_input:{command:"npm test"},tool_response:{exit_code:0}}')"
+  cat > "$REPO/new.txt" <<'HEREDOC'
+created via heredoc
+HEREDOC
+  _hook "$GATE" "$(_payload "Heredoc")"
+  assert_exit 2 "$EXIT" "untracked file created via heredoc blocks"
+  assert_contains "$REPO/new.txt" "$ERR" "names the new file"
+  _git -C "$REPO" add new.txt
+  _git -C "$REPO" commit -q -m new >/dev/null 2>&1
+  _hook "$GATE" "$(_payload "Committed")"
+  assert_exit 2 "$EXIT" "committing untested changes still blocks"
+  assert_contains "the working tree contents differ from what the last passing quality run tested" "$ERR" "explains a tree-level change"
+  assert_contains "edits committed after that run, a checkout, a reset, a stash, or an edit made outside the Edit tool" "$ERR" "names the likely causes"
+  _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,tool_name:"Bash",tool_input:{command:"npm test"},tool_response:{exit_code:0}}')"
+  _hook "$GATE" "$(_payload "Retested")"
+  assert_exit 0 "$EXIT" "new passing run on the committed tree -> allowed"
+  mkdir -p "$REPO/.decisions" "$REPO/.flow/runs/r1" "$REPO/.screenshots"
+  printf 'note\n' > "$REPO/.decisions/issue-9.md"
+  printf '{}\n' > "$REPO/.flow/runs/r1/events.jsonl"
+  : > "$REPO/.screenshots/s.png"
+  _hook "$GATE" "$(_payload "Journal only")"
+  assert_exit 0 "$EXIT" "bookkeeping writes via Bash (journal, .flow, .screenshots) never dirty the gate"
+  assert_equal "" "$ERR" "silent"
+
+  _flow_test_begin "gate --cwd: a commit of edits the passing run already tested does not block"
+  _git_case
+  sed -i.bak 's/one/uno/' "$REPO/a.txt" && rm -f "$REPO/a.txt.bak"
+  _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,tool_name:"Bash",tool_input:{command:"npm test"},tool_response:{exit_code:0}}')"
+  _hook "$GATE" "$(_payload "Tested dirty tree")"
+  assert_exit 0 "$EXIT" "passing run on the edited tree -> allowed"
+  _git -C "$REPO" commit -q -am tested >/dev/null 2>&1
+  _hook "$GATE" "$(_payload "Committed tested edits")"
+  assert_exit 0 "$EXIT" "committing those same edits -> still allowed (digest hashes contents, not HEAD)"
+  assert_equal "" "$ERR" "silent"
+  printf 'more\n' >> "$REPO/a.txt"
+  _git -C "$REPO" commit -q -am more >/dev/null 2>&1
+  _hook "$GATE" "$(_payload "Committed untested edits")"
+  assert_exit 2 "$EXIT" "committing a further, untested edit -> blocked"
+
+  _flow_test_begin "gate --cwd: custom journal.dir is excluded from the digest by both recorder and gate"
+  _git_case
+  echo '{"journal":{"dir":"docs/decisions"}}' > "$REPO/.claude/settings.flow.json"
+  _git -C "$REPO" add .claude
+  _git -C "$REPO" commit -q -m settings >/dev/null 2>&1
+  _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" '{session_id:$sid,cwd:$cwd,tool_name:"Bash",tool_input:{command:"npm test"},tool_response:{exit_code:0}}')"
+  mkdir -p "$REPO/docs/decisions"
+  printf 'note\n' > "$REPO/docs/decisions/issue-9.md"
+  _hook "$GATE" "$(_payload "Custom journal via Bash")"
+  assert_exit 0 "$EXIT" "write under the custom journal dir -> allowed"
+  mkdir -p "$REPO/.decisions"
+  printf 'note\n' > "$REPO/.decisions/issue-9.md"
+  _hook "$GATE" "$(_payload "Default dir no longer ignored")"
+  assert_exit 2 "$EXIT" ".decisions is a real change once journal.dir moved"
+  assert_contains "$REPO/.decisions/issue-9.md" "$ERR" "names the path"
+else
+  _flow_test_begin "git prerequisite for gate digest tests"
+  _flow_assert_pass "SKIP: git not installed"
+fi

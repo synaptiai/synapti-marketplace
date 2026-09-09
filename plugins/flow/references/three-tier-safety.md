@@ -83,8 +83,8 @@ Merge and release confirmation is handled at the command level via AskUserQuesti
 ## Decision Journal Integration
 
 Tier 2 actions automatically log to the decision journal via PostToolUse hooks:
-- `log-file-changes.sh`: Logs Edit/Write operations (and records a `file_change` entry in the per-session quality ledger)
+- `log-file-changes.sh`: Logs Edit/Write/NotebookEdit operations (and records a `file_change` entry in the per-session quality ledger)
 - `log-commits.sh`: Logs git commit operations
-- `record-quality-run.sh`: Records test/lint/typecheck/build runs and their exit codes in the per-session quality ledger that the TaskCompleted gate reads
+- `record-quality-run.sh`: Records test/lint/typecheck/build runs (PostToolUse and PostToolUseFailure) with their exit codes, masked/failed flags, and a working-tree digest in the per-session quality ledger that the TaskCompleted gate reads
 
 This creates an audit trail of all team-visible actions.

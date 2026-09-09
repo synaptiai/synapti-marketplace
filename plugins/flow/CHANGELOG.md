@@ -71,6 +71,17 @@ expected value.
   splitting on `;`/`|`/`&`, so `git commit -m "fix; gh issue create later"` and
   `echo "gh issue create"` no longer prompt while `gh issue create --title "fix; later"` still
   does. Tests: `block-destructive-rm.test.sh`, `ask-issue-create.test.sh`.
+- **Task-completion gate closes four holes (PR #163 review).** `record-quality-run.sh` now strips quoted
+  spans and matches quality commands only at command position (`git commit -m "chore: npm test config"`,
+  `echo cargo test`, `ls tests/run.sh` no longer count; `cd x && pytest`, `FOO=1 pytest`, `bash tests/run.sh`
+  do), records `masked: true` for `|| true` / `; true` / `|| :` (never passing), stores a sha256 digest of
+  the working-tree contents (a git tree id built in a temporary index; HEAD excluded) so edits made through
+  Bash (`sed -i`, heredocs, `git apply`) and checkouts after the last passing run block completion while
+  committing already-tested edits does not (`flow-quality-ledger.sh status --cwd`, `digest`), and is also registered on the
+  documented `PostToolUseFailure` event so failing runs reach the ledger (`failed: true`, deduped on
+  `tool_use_id`). `log-file-changes.sh` matches `NotebookEdit` (`notebook_path`). New
+  `flow-quality-ledger.sh prune [--max-age-days N]` (default 14) sweeps idle session ledgers; `session-end-state.sh`
+  runs it once per day.
 
 ### Changed: the Stop hook says what it does, and block mode works
 
@@ -186,6 +197,15 @@ expected value.
 - **`record-quality-run.sh` recognises `python -m unittest`.** Surfaced by the eval: the built-in
   patterns covered pytest, ruff, mypy and the rest but not the standard-library runner, so a
   project tested with unittest could never satisfy the task-completion gate.
+- **Incomplete hidden runs are scored over the full suite.** Found in review of #163: the hidden pass
+  rate counted only tests that printed a status, so a suite that hung or crashed after four passes
+  scored 4/5 instead of 4/30. A run now counts as complete only with a matching `Ran N tests` line and
+  a final `OK`/`FAILED`; otherwise it scores observed `ok` lines over the suite size and records
+  `hidden.incomplete`, `reason` (`timeout`/`crash`/`no-summary`) and `observed`/`expected`. Own-test
+  scoring applies the same rule (a hang on a variant is not a catch; an unobserved test is not an
+  oracle), `summary.md` gains an Incomplete column, and `hidden-run --raw` re-scores a saved
+  `hidden.txt`. The `TimeoutExpired` path also crashed on bytes/None partial output before scoring;
+  fixed. Neither recorded run contains an incomplete suite, so the records stand.
 
 
 - **`/flow:learn` reads session transcripts, not only flow's own journal.** New

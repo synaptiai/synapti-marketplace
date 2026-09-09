@@ -1,9 +1,12 @@
 #!/bin/bash
 # [flow] PostToolUse hook: Log file edits to decision journal
-# Runs after Edit|Write operations to maintain audit trail, then records the
-# change in the per-session quality ledger (bin/flow-quality-ledger.sh) so
-# the TaskCompleted gate can tell whether files changed after the last
-# passing quality run.
+# Runs after Edit|Write|NotebookEdit operations to maintain audit trail, then
+# records the change in the per-session quality ledger
+# (bin/flow-quality-ledger.sh) so the TaskCompleted gate can tell whether
+# files changed after the last passing quality run. Edit/Write name the file
+# in tool_input.file_path, NotebookEdit in tool_input.notebook_path; both are
+# read. Edits made through Bash never reach this hook — the gate catches
+# those through the worktree digest recorded by record-quality-run.sh.
 
 set -euo pipefail
 
@@ -12,7 +15,7 @@ command -v jq &>/dev/null || exit 0
 
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
+FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty')
 
 # Skip if no file path
 [ -z "$FILE_PATH" ] && exit 0

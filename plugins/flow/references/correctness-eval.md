@@ -109,8 +109,20 @@ of it offline.
 Per run, the harness records (`runs/<model>/<arm>/<case>/<n>/result.json`;
 `<model>` is the `--model`/`--models` value or `default`):
 
-- **hidden pass rate** — fraction of hidden tests passing. The score. Never
-  the agent's own tests.
+- **hidden pass rate** — hidden tests observed passing (`... ok` lines)
+  over the suite's size. The score. Never the agent's own tests. A run is
+  **complete** only when `unittest -v` printed `Ran N tests` for exactly the
+  N tests observed and a final `OK`/`FAILED` line; a complete run is scored
+  over the N it reported. An **incomplete** run (timeout, crash, no summary)
+  is scored over the full suite size counted from `hidden/test_hidden.py`:
+  four `ok` lines then a hang on test 5 of 30 scores 4/30, not 4/5. The
+  `hidden` block records `incomplete: true`, `reason` (`timeout` — the
+  subprocess limit, `--hidden-timeout`; `crash` — a traceback or signal with
+  no `Ran` line; `no-summary` — anything else), `observed` (tests that
+  printed an id) and `expected` (suite size); tests never reached are added
+  to `failed_ids`. An incomplete run's pass rate is therefore a lower bound.
+  `import_or_crash` stays `true` for the special case where no test ran at
+  all (module missing or failing to import).
 - **all_pass** — the run passed 100% of hidden tests.
 - **traps** — per trap, whether the run fails every test that trap's variant
   fails (a signature match; some signatures nest, so a run can match several).
@@ -130,7 +142,11 @@ Per run, the harness records (`runs/<model>/<arm>/<case>/<n>/result.json`;
   context.
 - **project/** — a snapshot of the agent's module and `tests/` (without
   `.git`, plugin state and caches), so a run can be re-scored later with
-  `_flow_eval.py rescore-own-tests`.
+  `_flow_eval.py rescore-own-tests` (own-test fields) or `rescore-hidden`
+  (hidden suite, `hidden.txt` and the `hidden`/`traps` fields; its output
+  marks re-scored runs that are still incomplete with `incomplete=<reason>`).
+  `hidden-run --case-dir D --raw hidden.txt` scores a saved output without
+  re-running it.
 
 Own-test trap scoring (`bin/_flow_eval.py own-test-traps`, written to
 `own-test-traps.json`): the run's project is copied to a scratch directory
@@ -155,6 +171,18 @@ names the variants do not define (a private helper the agent added, which
 would make every variant "fail" on an AttributeError rather than on
 behaviour). Unscored runs are excluded from the mean, and their reasons are
 listed per cell in `summary.json`.
+
+An own-suite run that does not finish (timeout under `--own-timeout`,
+crash, or no summary line) adds no evidence in either direction: a test is
+an oracle only when it was *observed* passing on both the agent's module
+and the reference (a test pending when the run stopped, or never reached,
+is not one), and a variant is caught only by an oracle test observed to
+FAIL or ERROR against it — a hang or crash on the variant is not a catch.
+Each run's `incomplete`/`reason` is recorded (`own_impl`, `reference_run`,
+`per_trap.<name>`, with the unobserved oracle tests listed per trap) and
+`incomplete_runs` counts them; `result.json` carries the count under
+`own_test_traps.incomplete_runs` and the own-test tables in `summary.md`
+mark such runs as `n incomplete` in the scored-runs column.
 
 Degenerate-input heuristic (`bin/_flow_eval.py agent-tests`): an input is a
 literal sequence — bytes constant, list/tuple of constants, or `literal * n` —
@@ -253,7 +281,12 @@ path.
    **own tests catch traps** (mean own-test trap catch rate, with how many
    runs were scorable, e.g. `67% (8/9)`), mean own-test count, mean
    degenerate share, mean cost, mean turns, error count (timeouts,
-   `is_error`, non-zero exit, `error_max_turns`).
+   `is_error`, non-zero exit, `error_max_turns`), and **Incomplete** — how
+   many runs' hidden suite did not finish, with the reasons (`2 (timeout)`).
+   Those runs are scored over the full suite as observed passes, so a cell
+   with a non-zero Incomplete count reads as a lower bound; `summary.json`
+   carries `incomplete_runs`, `incomplete_reasons` and
+   `own_test_incomplete_runs` per arm and per cell.
 3. **Per model × arm × case** — the same with min–max of the hidden pass rate
    across runs.
 4. **Trap catch rate** — per model and case, per arm, the share of runs whose
@@ -477,7 +510,20 @@ the numbers say:
   before acting on a close call.
 - **Trap attribution is by signature.** Nested signatures (a tie-order test
   also fails under round-half-up) make some runs match several traps; the
-  hidden pass rate is the primary score.
+  hidden pass rate is the primary score. On an incomplete hidden run a test
+  never reached counts as not passed for the signature too (the same
+  pessimistic reading as the pass rate), so such a run can match traps it
+  did not demonstrably fall into; the per-trap `unobserved` list in
+  `hidden-run`'s output and the Incomplete column say when that applies.
+- **Incomplete runs are lower bounds, not measurements.** A hidden or own
+  suite that times out, crashes or prints no summary is scored only on what
+  it printed (observed passes over the full suite; observed failures only
+  for own-test catches). A cell with incomplete runs cannot be compared
+  against the spread as if it were complete; raise `--hidden-timeout` /
+  `--own-timeout` or fix the cause and `rescore-hidden` /
+  `rescore-own-tests` before reading it. Neither recorded run
+  (`evals/results-2026-09-09*/`) contains an incomplete run: every one of the
+  168 hidden suites printed `Ran N tests` for its full N and a verdict line.
 - **The degenerate heuristic only sees literals.** Generated inputs are
   neither credited nor penalised.
 - **Headless sessions are not interactive sessions.** `AskUserQuestion` is

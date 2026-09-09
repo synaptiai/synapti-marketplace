@@ -3,10 +3,21 @@
 #
 # A task cannot be marked complete while files changed in this session after
 # the last PASSING quality-command run. The evidence is the per-session
-# ledger written by log-file-changes.sh (file_change entries) and
-# record-quality-run.sh (quality_run entries); bin/flow-quality-ledger.sh
+# ledger written by log-file-changes.sh (file_change entries, PostToolUse
+# Edit|Write|NotebookEdit) and record-quality-run.sh (quality_run entries,
+# PostToolUse and PostToolUseFailure Bash); bin/flow-quality-ledger.sh
 # `status` folds it into clean/dirty. This gate runs in every session, with
 # or without a FlowGoal.
+#
+# "Passing" means exit_code 0, not masked (`|| true`), not failed (recorded
+# from PostToolUseFailure). Two signals make the ledger dirty:
+#   1. a file_change entry after the last passing run (Edit/Write/NotebookEdit);
+#   2. the working tree digest differs from the one that run recorded — the
+#      helper recomputes `digest` for the payload cwd (passed as --cwd), so
+#      edits made through Bash (sed -i, heredocs, git apply, mv) and
+#      checkouts that change contents are caught even though no file-tool
+#      hook saw them. The digest hashes contents, not HEAD, so committing
+#      the edits a passing run already tested does not dirty the gate.
 #
 # Mode (cascade key testing.taskCompletionGate, default block):
 #   block — STATE=dirty: plain-sentence explanation on stderr, exit 2
@@ -67,7 +78,7 @@ _abs() {
   esac
 }
 
-STATUS=$("$LEDGER_HELPER" status --session "$SESSION_ID" \
+STATUS=$("$LEDGER_HELPER" status --session "$SESSION_ID" --cwd "$CWD" \
   --ignore-prefix "$(_abs "$JOURNAL_DIR")" \
   --ignore-prefix "$(_abs ".flow")" \
   --ignore-prefix "$(_abs ".screenshots")" 2>/dev/null) || exit 0
@@ -75,6 +86,9 @@ STATUS=$("$LEDGER_HELPER" status --session "$SESSION_ID" \
 STATE=""
 LAST_PASSING_RUN="none"
 LAST_RUN_EXIT="none"
+LAST_RUN_MASKED="false"
+LAST_RUN_FAILED="false"
+WORKTREE="unknown"
 CHANGED_SINCE=0
 CHANGED_FILES=()
 while IFS= read -r line; do
@@ -82,6 +96,9 @@ while IFS= read -r line; do
     STATE=*) STATE="${line#STATE=}" ;;
     LAST_PASSING_RUN=*) LAST_PASSING_RUN="${line#LAST_PASSING_RUN=}" ;;
     LAST_RUN_EXIT=*) LAST_RUN_EXIT="${line#LAST_RUN_EXIT=}" ;;
+    LAST_RUN_MASKED=*) LAST_RUN_MASKED="${line#LAST_RUN_MASKED=}" ;;
+    LAST_RUN_FAILED=*) LAST_RUN_FAILED="${line#LAST_RUN_FAILED=}" ;;
+    WORKTREE=*) WORKTREE="${line#WORKTREE=}" ;;
     CHANGED_SINCE=*) CHANGED_SINCE="${line#CHANGED_SINCE=}" ;;
     CHANGED_FILE=*) CHANGED_FILES+=("${line#CHANGED_FILE=}") ;;
   esac
@@ -91,6 +108,10 @@ done <<<"$STATUS"
 
 if [ "$LAST_PASSING_RUN" != "none" ]; then
   RUN_TEXT="last passing run at $LAST_PASSING_RUN"
+elif [ "$LAST_RUN_MASKED" = "true" ]; then
+  RUN_TEXT="the last quality run exited $LAST_RUN_EXIT but its exit code was masked (|| true); no passing run this session"
+elif [ "$LAST_RUN_FAILED" = "true" ]; then
+  RUN_TEXT="the last quality run failed (tool error, exit $LAST_RUN_EXIT); no passing run this session"
 elif [ "$LAST_RUN_EXIT" != "none" ]; then
   RUN_TEXT="the last quality run exited $LAST_RUN_EXIT; no passing run this session"
 else
@@ -105,7 +126,14 @@ if [ "$CHANGED_SINCE" -gt "${#CHANGED_FILES[@]}" ] 2>/dev/null; then
   CHANGED_TEXT="$CHANGED_TEXT, and $((CHANGED_SINCE - ${#CHANGED_FILES[@]})) more"
 fi
 
-MESSAGE="Task '$TASK_SUBJECT' cannot be completed: $CHANGED_SINCE file(s) changed since the last passing quality run ($RUN_TEXT). Changed: $CHANGED_TEXT. Run the project's test/lint command and complete the task once it passes. Set testing.taskCompletionGate to warn or off to change this."
+if [ "$CHANGED_SINCE" -eq 0 ] 2>/dev/null && [ "$WORKTREE" = "changed" ]; then
+  # Digest moved but git status lists nothing outside the ignore prefixes:
+  # edits made after the run were committed, or a checkout, reset, or stash
+  # replaced the tested contents.
+  MESSAGE="Task '$TASK_SUBJECT' cannot be completed: the working tree contents differ from what the last passing quality run tested ($RUN_TEXT) — edits committed after that run, a checkout, a reset, a stash, or an edit made outside the Edit tool. Run the project's test/lint command and complete the task once it passes. Set testing.taskCompletionGate to warn or off to change this."
+else
+  MESSAGE="Task '$TASK_SUBJECT' cannot be completed: $CHANGED_SINCE file(s) changed since the last passing quality run ($RUN_TEXT). Changed: $CHANGED_TEXT. Run the project's test/lint command and complete the task once it passes. Set testing.taskCompletionGate to warn or off to change this."
+fi
 
 if [ "$MODE" = "warn" ]; then
   echo "WARNING (stop allowed): $MESSAGE" >&2
