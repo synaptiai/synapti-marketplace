@@ -45,7 +45,7 @@ test in at least one run, recorded in its `expected.md`. `interval-algebra`
 cleared it (100%, 93.3%, 96.7%): two of three runs sorted the sweep by lower
 bound only and mis-merged a closed point listed after the open-ended
 interval it should join, and one of them kept the wrong closed flag at an
-equal lower bound. Three other candidates, 30 hidden tests and 9-11 trap
+equal lower bound. Four other candidates, 30 hidden tests and 9-18 trap
 variants each, were built, calibrated and retired because Sonnet 5 solved
 them three times out of three (each got the one revision the bar allows):
 
@@ -64,12 +64,31 @@ them three times out of three (each got the one revision the bar allows):
   `count`/`until`; reference cross-checked against python-dateutil on 2,229
   random rules): 3/3 at 100% before and after a revision that probed
   `interval` counting calendar periods rather than matching ones; own tests
-  caught 82-90% of the variants.
+  caught 82-90% of the variants;
+- a single-room booking resolver (`resolve`/`conflicts`/`free_windows`
+  over half-open `[start, end)` bookings with priority preemption, a
+  segment-ends-only-when-the-winner-changes rule, id-ordered conflict pairs
+  and clipped free windows; 17-18 variants): 3/3 at 100% ($0.22-0.26, 8
+  turns) with the stateless winner key `(-priority, start, id)` that every
+  run evaluated per elementary interval between breakpoints, and 3/3 at
+  100% again ($0.23-0.26, 7 turns) after the one revision made the tie
+  order state-dependent (a holder is never interrupted by an equal
+  priority; a freed room goes to the waiting booking with the earliest
+  `end`, then the smaller `id`, so the stateless key is wrong in both
+  directions and the first calibration's three modules score 25/30 on the
+  revised suite): every run kept the same breakpoint sweep and added a
+  `current_holder` check in front of `min(candidates, key=(end, id))`,
+  because the spec states each half of the rule in its own sentence and
+  the worked example exercises both, while own tests caught 16/18 variants
+  (all but the two free-window ones) — an order-sensitive rule that is
+  spelled out is not the `interval-algebra` pattern, whose winning trap was
+  an input shape the spec never named.
 
 The pattern: rules that can be read are implemented, however many there
 are; what beat the baseline was an order-sensitive sweep on an input shape
 the agent never constructed (its own tests fed sorted intervals only). The
-retired cases live in the branch history of this file's commit, not in
+retired cases live in the branch history of this file's commits (the
+booking resolver, never committed, only in the calibration records), not in
 `evals/`; a future case should be built around that pattern, not around
 rule count.
 
@@ -296,7 +315,7 @@ Measured (all Claude Code 2.1.266, sandbox proxy, list prices):
   average (`enforce-*` $1.6-1.8, `suggest-*` $1.3-1.4, `off-*` $0.6).
 - `interval-algebra` calibration, Sonnet 5, baseline: $0.61, $0.50, $0.47
   (mean **$0.53**, 3.1x the original cases' baseline; 8-21 turns, 33-39 own
-  tests). The retired candidates cost $0.34-0.93 per baseline run.
+  tests). The retired candidates cost $0.22-0.93 per baseline run.
 
 Estimate for the second full comparison (7 arms x 4 cases x 3 runs = 84
 runs per model), derived from those figures:
