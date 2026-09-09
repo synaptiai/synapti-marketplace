@@ -8,91 +8,39 @@ agent: Explore
 
 # Brainstorming
 
-Domain skill for multi-option exploration and collaborative decision-making before implementation.
+## Contract
 
-## Iron Law
+Iron law: **explore before committing — choosing wrong costs ten times what exploring costs.** Invoked by `/flow:brainstorm` Phase 2 (GENERATE), Phase 3 (COMPARE), and Phase 4 (DECIDE), and whenever several valid approaches exist, requirements are ambiguous, or the team defaults to its first idea. Returns 2–4 genuinely distinct, implementable approaches (name, summary, pros, cons, effort, risk), a comparison table across the dimensions that matter for this decision, a recommendation with its key trade-off, and the user's choice via `AskUserQuestion`, logged to the decision journal. Permitted skips: none — the recommendation is never the decision; the user chooses.
 
-**EXPLORE BEFORE COMMITTING. The cost of choosing wrong is 10x the cost of exploring options.**
+## Process
 
-Every hour spent exploring saves a day of rework from the wrong approach.
+Track five tasks — clarify goal, check existing patterns, generate approaches, compare and recommend, user decision — and confirm with `TaskList` at the end.
 
-## When to Brainstorm
+### 1. Clarify the goal
 
-- Multiple valid approaches exist (and you know it)
-- Requirements are unclear or ambiguous
-- New territory — no existing patterns to follow
-- User says "help me think through" or "what are our options"
-- You catch yourself defaulting to the first idea
+Confirm **what** must happen (outcome, not implementation), **why** (motivation, constraints), and **who** is affected. Ambiguous → `AskUserQuestion`; do not guess.
 
-## Exploration Process
-
-Track the brainstorming lifecycle with tasks:
-
-```
-TaskCreate("Clarify goal", "Confirm what, why, who before generating options")
-TaskCreate("Check existing patterns", "Search codebase for how similar problems are solved")
-TaskCreate("Generate approaches", "Produce 2-4 distinct approaches with pros, cons, effort, risk")
-TaskCreate("Compare and recommend", "Build comparison table, highlight trade-offs, recommend")
-TaskCreate("User decision", "Present recommendation, get user choice, log decision")
-```
-
-### 1. Clarify the Goal
-
-TaskUpdate("Clarify goal", status: "in_progress")
-
-Before generating options, confirm you understand:
-- **What** needs to happen (outcome, not implementation)
-- **Why** it needs to happen (motivation, constraints)
-- **Who** is affected (users, systems, team)
-
-Use `AskUserQuestion` if the goal is ambiguous. Don't guess.
-
-TaskUpdate("Clarify goal", status: "completed")
-
-### 2. Check Existing Patterns
-
-TaskUpdate("Check existing patterns", status: "in_progress")
-
-Before proposing new approaches, see what the codebase already does:
+### 2. Check existing patterns
 
 ```bash
-# How does the project handle similar problems?
 grep -r "relevant_pattern" --include="*.{ts,js,py,rb}" -l
 git log --oneline --all --grep="related keyword" | head -10
 ```
 
-Existing patterns get priority — consistency has value.
+Existing patterns get priority; consistency has value.
 
-TaskUpdate("Check existing patterns", status: "completed")
+### 3. Generate 2–4 approaches
 
-### 3. Generate 2-4 Approaches
+Per approach: **Name**, **Summary** (one line), **Pros**, **Cons**, **Effort** (Small/Medium/Large), **Risk** (Low/Medium/High).
 
-TaskUpdate("Generate approaches", status: "in_progress")
+Rules:
+- Minimum 2, maximum 4. More than 4 is analysis paralysis — cap and decide with available information.
+- Genuinely distinct, not minor variations; "we can only do A or B" usually hides a C.
+- Include the "do nothing" or "simplest possible" option when applicable.
+- Each must be implementable — no hand-waving.
+- Present all options before discussing any, so the first does not anchor.
 
-For each approach, fill out:
-
-| Field | Content |
-|-------|---------|
-| **Name** | Short, memorable label |
-| **Summary** | One-line description |
-| **Pros** | Bullet list of advantages |
-| **Cons** | Bullet list of disadvantages |
-| **Effort** | Small / Medium / Large |
-| **Risk** | Low / Medium / High |
-
-**Rules:**
-- Minimum 2 approaches, maximum 4
-- Approaches must be **genuinely distinct** (not minor variations)
-- Include the "do nothing" or "simplest possible" option when applicable
-- Each approach must be implementable — no hand-waving
-
-TaskUpdate("Generate approaches", status: "completed")
-
-### 4. Compare Trade-offs
-
-TaskUpdate("Compare and recommend", status: "in_progress")
-
-Build a comparison table across key dimensions:
+### 4. Compare
 
 | Dimension | Approach A | Approach B | Approach C |
 |-----------|-----------|-----------|-----------|
@@ -103,48 +51,12 @@ Build a comparison table across key dimensions:
 | Effort | | | |
 | Risk | | | |
 
-TaskUpdate("Compare and recommend", status: "completed")
+Pick the dimensions relevant to THIS decision from these tensions: Simplicity vs Flexibility, Speed vs Correctness, Consistency vs Innovation, Build vs Buy, Coupling vs Convenience, Explicit vs Implicit.
 
-### 5. Recommend and Decide
+### 5. Recommend and decide
 
-TaskUpdate("User decision", status: "in_progress")
+State the recommendation with rationale and the single most important trade-off. Play devil's advocate on your own pick — what could go wrong? Then `AskUserQuestion` for the decision and log it.
 
-- State your recommendation with rationale
-- Highlight the most important trade-off
-- Let the user choose — recommendation is not a decision
-- Use `AskUserQuestion` for the final decision
+## Not Reasons to Skip
 
-TaskUpdate("User decision", status: "completed") after user selects an approach.
-Use TaskList to confirm the full brainstorming lifecycle completed.
-
-## Trade-Off Dimensions
-
-Common dimensions to evaluate (pick the relevant ones):
-
-| Dimension | Tension |
-|-----------|---------|
-| Simplicity vs Flexibility | Simple now vs adaptable later |
-| Speed vs Correctness | Ship fast vs get it right |
-| Consistency vs Innovation | Follow patterns vs better approach |
-| Build vs Buy | Custom solution vs existing library |
-| Coupling vs Convenience | Decoupled modules vs easy implementation |
-| Explicit vs Implicit | Verbose but clear vs concise but magical |
-
-## Anti-Patterns
-
-| Anti-Pattern | Symptom | Fix |
-|-------------|---------|-----|
-| **Analysis paralysis** | >4 options, endless comparison | Cap at 4. Decide with available info. |
-| **False dichotomy** | "We can only do A or B" | Challenge the constraint. Usually there's a C. |
-| **Bikeshedding** | 30 min debating variable names | Is this decision reversible? If yes, just pick one. |
-| **Anchoring** | First option dominates discussion | Present all options before discussing any. |
-| **Groupthink** | Everyone agrees immediately | Play devil's advocate. What could go wrong? |
-
-## Rationalization Prevention
-
-| Excuse | Response |
-|--------|----------|
-| "Let's just go with the obvious approach" | Obvious to whom? Explore first, then decide. |
-| "We don't have time to brainstorm" | You don't have time to rewrite after choosing wrong. |
-| "I've done this before, I know the best way" | Great. Then documenting why takes 2 minutes. Do it. |
-| "All approaches are roughly the same" | Then pick the simplest. If they're truly equivalent, simplicity wins. |
+"The obvious approach", "no time to brainstorm", "I've done this before" — documenting why takes minutes; rework from a wrong choice takes days. If all approaches are truly equivalent, pick the simplest and say so. If the decision is cheaply reversible (naming, formatting), pick one and move on rather than bikeshed.

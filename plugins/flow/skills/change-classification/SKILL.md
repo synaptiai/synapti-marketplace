@@ -8,58 +8,32 @@ agent: Explore
 
 # Change Classification
 
-Domain skill for analyzing and classifying code changes before committing.
+## Contract
 
-## Iron Law
+Iron law: classify before committing — every changed file gets a classification; unclassified files are not staged. Invoked by `/flow:commit` (Phase 2 CLASSIFY, cross-check), `/flow:start` (CODE phase per-task gate, step 8), `/flow:address` (after fixes), `/flow:debug`, and `/flow:pr` (pre-flight). Returns a finding-first table — File | Classification | Signal | Notes — with each file marked in-context, uncertain, out-of-context, or RED FLAG, plus first-touch notes and proposed atomic commit groups. Permitted skips: none. Red-flag files are blocked regardless of context; uncertain or out-of-context files go to the user via a six-field AskUserQuestion escalation before any commit.
 
-**CLASSIFY BEFORE COMMITTING. Every changed file gets a classification. Unclassified files do not get staged.**
+## Signals
 
-Committing without classification is how out-of-context changes, secrets, and unintended modifications reach the repository.
+Evaluate in order: red flags, primary, secondary, default → uncertain.
 
-## Classification Algorithm
+| Category | Signal | Result |
+|----------|--------|--------|
+| Red flag | `.env*`, `credentials*`, `*secret*`, key files | BLOCK — never commit |
+| Red flag | `*.lock`, `package-lock.json`, files >1MB, auto-generated | WARN — verify intentional |
+| Primary | In branch diff (`git diff --name-only $DEFAULT_BRANCH...HEAD`) | in-context |
+| Primary | Path matches issue title/body keywords | in-context |
+| Primary | Path referenced in a TaskList task, or same top-level directory as task files | in-context |
+| Secondary | Sibling of an in-context file; test companion (`foo.rb` ↔ `foo_test.rb`) | lean in-context |
+| Secondary | Config/dotfile/manifest in project root | uncertain |
+| Secondary | Unrelated directory, no link to issue or tasks | out-of-context |
 
-For each changed file, evaluate signals to classify as: **in-context**, **uncertain**, or **out-of-context**.
-
-### Primary Signals (Strong)
-
-| Signal | Classification | Detection |
-|--------|---------------|-----------|
-| File already in branch diff | in-context | `git diff --name-only $DEFAULT_BRANCH...HEAD` includes file |
-| File matches issue keywords | in-context | File path contains words from issue title/body |
-| File in active task | in-context | File path matches TaskList task descriptions |
-| File matches task directory | in-context | Same top-level directory as task-related files |
-
-### Secondary Signals (Supporting)
-
-| Signal | Classification | Detection |
-|--------|---------------|-----------|
-| Same directory as other changes | lean in-context | Sibling of already-classified in-context file |
-| Test file for changed module | lean in-context | Naming convention match (e.g., `foo.rb` → `foo_test.rb`) |
-| Config in project root | uncertain | Changes to dotfiles, config, package manifests |
-| Unrelated directory | out-of-context | No connection to issue or tasks |
-
-### Red Flags
-
-These always get flagged regardless of context:
-
-| Pattern | Action |
-|---------|--------|
-| `.env*`, `credentials*`, `*secret*` | Block — never commit |
-| `*.lock`, `package-lock.json` | Warn — verify intentional |
-| Large binary files (>1MB) | Warn — verify intentional |
-| Auto-generated files | Note — may need regeneration |
+Boy Scout cleanup (lint, format, typo, obvious bug) in a file already in the branch diff is the `boy-scout` subtype of in-context and uses the `improve` commit type. Weights, thresholds, and commit-type inference: `references/classification-signals.md`.
 
 ### First-Touch Detection
 
-A file is "first touch" when:
-- 0 commits on the current branch modify it (`git log $DEFAULT_BRANCH..HEAD -- file` is empty)
-- Large additions (>50 lines added)
-
-First-touch files get extra review attention.
+A file is "first touch" when `git log $DEFAULT_BRANCH..HEAD -- file` is empty AND it has >50 lines added. Note it regardless of classification; it gets extra review attention.
 
 ## Output Format
-
-Display classification as a table (finding-first pattern):
 
 ```markdown
 | File | Classification | Signal | Notes |
@@ -69,29 +43,10 @@ Display classification as a table (finding-first pattern):
 | .env.example | RED FLAG | secret pattern | NEVER COMMIT |
 ```
 
+## Out-of-Context Handling
+
+Uncertain or out-of-context files never get staged silently. Present them with the six-field escalation (`references/escalation-format.md`) offering: (1) include as a separate `improve:`/`chore:` commit when the change is Boy Scout cleanup; (2) exclude — leave unstaged for a separate branch. During `/flow:start` CODE, resolve them at task time, not commit time. Automatic changes (lock files) still need classification.
+
 ## Atomic Commit Grouping
 
-After classification, group in-context files into atomic commits:
-
-1. **By logical unit**: Related files that form one change (model + migration + test)
-2. **By type**: feat files separate from refactor files
-3. **By directory**: When in doubt, group by top-level directory
-
-Each group gets one conventional commit with an accurate message.
-
-## Rationalization Prevention
-
-| Excuse | Response |
-|--------|----------|
-| "It's obviously in-context" | Then classification takes 2 seconds. Do it. |
-| "I only changed one file" | One file, same process. One-file commits have leaked secrets. |
-| "The lock file changed automatically" | Automatic changes still need classification. Verify intentional. |
-
-## Integration
-
-This skill is invoked by:
-- `/flow:commit` — Phase 1 (classify all changes)
-- `/flow:address` — After fixes (verify no out-of-context changes)
-- `/flow:pr` — Pre-flight (verify committed changes match intent)
-
-See `references/classification-signals.md` for the complete signal reference.
+Group in-context files by logical unit (model + migration + test), then by type (feat separate from refactor), then by top-level directory. Each group gets one conventional commit with an accurate message.

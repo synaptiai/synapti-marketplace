@@ -10,7 +10,7 @@ Not every skill has an input contract — many skills (`brainstorming`, `archite
 |---|---|
 | `holdout-validation` | Receives self-review findings + evidence bundle + file list from the orchestrator. Three different upstream surfaces; each has its own format risk. |
 | `criterion-verification-map` | Receives parsed acceptance criteria from `commands/start.md` Phase 1. The criterion structure flows through PLAN, CODE, and VERIFY phases; a malformed input here corrupts the entire downstream chain. |
-| `specification-capture` | Receives issue context, journal path, and invocation reason from start/design/brainstorm. The invocation reason controls per-invoker scope (start needs all three elements; design needs two; brainstorm needs one) — a wrong reason produces wrong-scope captures. |
+| `specification-capture` | Receives issue context, journal path, and invocation reason from start/design/brainstorm. The invocation reason controls per-invoker scope (start needs all four elements — non-goals, failure modes, interface contracts, risk map — with the risk map exempt only when `specFirst.riskMap` is `false`; design needs non-goals + interface contracts with the risk map recommended; brainstorm needs non-goals only) — a wrong reason produces wrong-scope captures. The `specFirst.riskMap` toggle is read from the settings cascade inside the skill, not passed in the payload. |
 
 Other skills may add contracts as integration points solidify.
 

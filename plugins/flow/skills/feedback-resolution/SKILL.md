@@ -8,135 +8,53 @@ agent: general-purpose
 
 # Feedback Resolution
 
-Domain skill for systematically addressing PR review comments.
+## Contract
 
-## Iron Law
+Iron law: **every change traces to a specific review comment or passes the Boy Scout proximity test; anything else is out-of-context and does not belong in this round.** Invoked by `/flow:address` Phase 1 (collect and categorize feedback) through Phase 4 (verify, post the resolution comment, re-request review). Returns one commit per feedback item (`fix(scope): address review — {summary}`), separate `improve:` commits for Boy Scout fixes, a response for every Question or Pushback item, and the resolution comment from `templates/resolution-comment.md` posted before review is re-requested. Permitted skips: none — pushback replaces a fix only with `file:line` evidence, a named breaking test, or a quoted CLAUDE.md rule.
 
-**EVERY FIX TRACES TO A SPECIFIC REVIEW COMMENT OR THE BOY SCOUT RULE. Untraceable changes that fail the proximity test are out-of-context changes.**
-
-If you can't point to the review comment or the Boy Scout proximity test that motivated a change, the change doesn't belong in this round.
-
-## Focused Change Principle
-
-When addressing feedback, fix what the feedback requires — and apply the Boy Scout Rule to files you're already modifying:
-
-- Each feedback fix should be traceable to a specific review comment
-- Don't add features while addressing feedback
-- Don't change formatting in files not mentioned in feedback
-- Boy Scout cleanup in files being modified for feedback is allowed if it passes the proximity test (see `code-quality-principles`)
-- Boy Scout fixes get separate `improve:` commits, never mixed with feedback fixes
-
-## Feedback Collection
-
-Fetch all review feedback:
+## Collect
 
 ```bash
 PR_NUM=$ARGUMENTS
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-
-# Review comments with file:line context
 gh api repos/$REPO/pulls/$PR_NUM/comments --jq '.[] | {id: .id, path: .path, line: .line, body: .body, author: .user.login}'
-
-# Review summaries and states
 gh pr view $PR_NUM --json reviews --jq '.reviews[] | {state: .state, body: .body, author: .author.login}'
-
-# Root conversation threads (for grouping replies)
-gh api repos/$REPO/pulls/$PR_NUM/comments --jq '.[] | select(.in_reply_to_id == null) | .id'
 ```
 
-## Feedback Categorization
+## Categorize
 
-Categorize each comment:
-
-| Category | Action |
-|----------|--------|
+| Category | Meaning |
+|----------|---------|
 | **P1 — Must fix** | Code bug, security issue, logic error |
 | **P2 — Should fix** | Convention violation, missing test, unclear code |
 | **P3 — Consider** | Style preference, optimization suggestion |
-| **Question** | Needs response, not necessarily a code change |
+| **Question** | Needs a response, not necessarily a code change |
 | **Resolved** | Already fixed or no longer relevant |
 
-## Context Recovery
+## Fix Each Item (one task per item)
 
-Don't trust line numbers from review comments — code may have changed since the review:
+1. Read the comment. Do not trust its line number — locate by the quoted snippet (`grep -n "quoted_code" $FILE`) and path, then read the current file.
+2. Implement the minimal fix to the literal comment. If intent is unclear, check follow-up comments and codebase patterns, take the most conservative interpretation, and state it in the response.
+3. Write or update a test that would have caught the issue, following existing test patterns; test the specific edge case, not just the happy path. Touch only the fix target and its test file.
+4. Verify the fix addresses that comment and tests pass.
+5. Commit `fix(scope): address review — {summary}` — one commit per item, never batched.
 
-1. Search for the **quoted code** from the review comment
-2. Search for the **file path** mentioned
-3. Read the current state of the file
-4. Match the feedback to the current code location
+No new features; no formatting changes in files the feedback did not mention.
 
-```bash
-# Find current location of reviewed code
-grep -n "quoted_code_snippet" $FILE_PATH
-```
+## Boy Scout Rule
 
-## Fix Workflow
+Cleanup is allowed only in files already modified for feedback and only if it passes the `code-quality-principles` proximity test. Boy Scout fixes get separate `improve:` commits, never mixed with feedback fixes. A finding in a touched file is never out-of-scope. P1/P2 anywhere: fix in this PR. Cosmetic P3 in an untouched file: fix if bounded (<10 lines) or document inline under `### Known cosmetic notes`; a follow-up issue only under `minimalScope` mode.
 
-For each feedback item (as TaskCreate):
+## Pushback
 
-1. **Read** the review comment carefully
-2. **Find** the current code location (context recovery)
-3. **Implement** the minimal fix
-4. **Test** — write or update tests that verify the fix:
-   - Follow existing test patterns (co-located files, same framework)
-   - At minimum, write a test that would have caught the issue
-   - Test the specific edge case, not just the happy path
-   - Only modify the fix target and its test file
-5. **Verify** the fix addresses the specific feedback and tests pass
-6. **Commit** with reference: `fix(scope): address review — {summary}`
+Valid only when one of these holds, with the evidence in the response:
 
-## Ambiguity Handling
+- **Factually incorrect** — cite `file:line` showing the current state and why the feedback does not apply.
+- **Would break existing tests** — name the test and its `file:line`.
+- **Contradicts CLAUDE.md** — quote the rule and its location.
 
-When feedback is unclear:
+"I disagree" is not pushback; preferences resolve in the reviewer's favor. Never ignore feedback silently. A genuine product/architecture judgment beyond these three categories is a six-field escalation per `references/escalation-format.md`; finding triage (P1/P2/P3 disposition) is never an escalation trigger (`skills/llm-operator-principles/SKILL.md`).
 
-1. Check if follow-up comments clarify
-2. Check if similar patterns exist in the codebase for guidance
-3. If still unclear, resolve with the most conservative interpretation
-4. Note the interpretation in the response comment
+## Verify and Re-Request
 
-## Pushback Criteria
-
-Pushback is a narrow, evidence-backed response — not a general "I disagree" escape hatch. Pushback is valid only when one of the following holds, and the response must cite the specific evidence:
-
-- **Factually incorrect feedback** — the reviewer's claim about the code is wrong. Response must cite `file:line` showing the current state and explain why the feedback does not apply.
-- **Would break existing tests** — the suggested change would cause a regression. Response must show the failing test (name and `file:line`) that the suggestion would break.
-- **Contradicts a CLAUDE.md rule** — the suggestion violates a project convention documented in CLAUDE.md. Response must quote the rule and cite its location in CLAUDE.md.
-
-"I disagree" alone is NOT valid pushback. Subjective preference differences resolve in favor of the reviewer — if you don't have factual evidence, a broken test, or a CLAUDE.md citation, apply the fix.
-
-Always explain the reasoning when pushing back. Never ignore feedback silently. If pushback would require a judgment call beyond the three valid categories above, file a six-field Proactive-Autonomy escalation per `references/escalation-format.md` — but only if this is a genuine product/architecture decision. Finding triage (P1/P2/P3 disposition) is NEVER a valid escalation trigger; see `skills/llm-operator-principles/SKILL.md`.
-
-## Rationalization Prevention
-
-| Excuse | Response |
-|--------|----------|
-| "While fixing this, I noticed something else to improve" | Does it pass the proximity test? If yes, fix it in a separate `improve:` commit. If no AND it is cosmetic P3 in an untouched file: fix-if-bounded or document inline (default mode) — only create a follow-up issue under `minimalScope` mode. For P1/P2 anywhere: fix in this PR. |
-| "The reviewer probably meant this broader change" | Don't guess. Address the literal comment. Clarify if unsure. |
-| "I'll batch all fixes into one commit" | One commit per feedback item. Traceability requires it. |
-
-## Re-Review Request
-
-After all feedback is addressed:
-
-Post structured resolution summary using the template structure from `templates/resolution-comment.md`:
-
-```bash
-# Post resolution comment
-gh pr comment $PR_NUM --body "$BODY"
-```
-
-**BLOCKING**: The resolution comment MUST be posted before re-requesting review. Push + resolution comment + re-request review is an atomic sequence — never skip the middle step.
-
-```bash
-# Re-request review
-gh pr edit $PR_NUM --add-reviewer @{reviewer}
-```
-
-## Verification
-
-Before re-requesting review:
-
-1. All quality commands pass
-2. Each feedback item has a corresponding commit or response
-3. No out-of-context changes introduced (use change-classification)
-4. Push changes (Tier 2)
+Before re-requesting: all quality commands pass; every item has a commit or response; change-classification shows no out-of-context files; push (Tier 2). Then, as one atomic sequence: post the resolution comment (`gh pr comment $PR_NUM --body "$BODY"`, structure from `templates/resolution-comment.md`) and re-request (`gh pr edit $PR_NUM --add-reviewer @{reviewer}`). Push without the comment is incomplete — the reviewer cannot see what was addressed.

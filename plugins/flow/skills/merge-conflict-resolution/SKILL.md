@@ -8,124 +8,63 @@ agent: general-purpose
 
 # Merge Conflict Resolution
 
-Domain skill for detecting, classifying, and resolving git merge conflicts systematically.
+## Contract
 
-## Iron Law
+Iron law: **never silently drop changes — every resolution accounts for both sides, documents any excluded lines, and asks the user rather than guessing.** Invoked by `/flow:resolve` Phase 1 (detect and classify), Phase 2 (per-file strategy plan), Phase 3 (resolve hunks), and Phase 4 (marker audit, complete merge/rebase, quality checks). Returns, per conflicted file: type (UU/AA/UD/DU/AU/UA), complexity (trivial/semantic/structural/delete-modify), strategy (accept-ours/accept-theirs/manual-merge/ask-user), hunk count, and result, plus the quality outcome. Permitted skips: none — trivial files auto-resolve only when `conflictResolution.autoResolveTrivial` is true; delete-modify and competing hunks always go to the user.
 
-**NEVER silently drop changes.** Every conflict resolution must account for both sides. If lines from either side are excluded, the rationale must be documented. When in doubt, ask the user rather than guess.
-
-## Conflict Detection
-
-Detect conflicted files and their conflict types:
+## Detect
 
 ```bash
-# List files with unmerged entries
 git diff --name-only --diff-filter=U
-
-# Full status with conflict markers
 git status --porcelain
 ```
 
-Classify each file by its porcelain status prefix.
+Settings: `conflictResolution.autoResolveTrivial` (default `true`), `conflictResolution.maxConflictFiles` (default 20). Above the limit, `AskUserQuestion`: proceed anyway, or abort and rebase in smaller steps.
 
-## Conflict Type Classification
+## Classify
 
-| Status | Type | Description |
-|--------|------|-------------|
-| UU | Content | Both sides modified the same file |
-| AA | Add-add | Both sides added a file with the same name |
-| UD | Delete-modify (ours deleted) | We deleted, they modified |
-| DU | Delete-modify (theirs deleted) | They deleted, we modified |
-| AU | Rename-related (add/unmerged) | Rename collision |
-| UA | Rename-related (unmerged/add) | Rename collision |
+| Status | Type |
+|--------|------|
+| UU | Content — both sides modified the same file |
+| AA | Add-add — both sides added the same name |
+| UD | Delete-modify — ours deleted, theirs modified |
+| DU | Delete-modify — theirs deleted, ours modified |
+| AU / UA | Rename collision |
 
-## Conflict Complexity Classification
+| Complexity | Meaning |
+|------------|---------|
+| trivial | Non-overlapping changes in different sections |
+| semantic | Both sides change the same logical unit |
+| structural | One side refactored (moved code, renamed, restructured) |
+| delete-modify | One side deleted what the other modified |
 
-Assess each conflicted file's complexity before choosing a strategy:
+## Strategy
 
-| Complexity | Description | Example |
-|------------|-------------|---------|
-| Trivial | Non-overlapping changes in different sections | Import added at top + function added at bottom |
-| Semantic | Changes to the same logical unit | Both sides modify the same function |
-| Structural | File was refactored on one side | Moved code, renamed variables, changed structure |
-| Delete-modify | One side deleted what the other modified | Feature removed vs feature enhanced |
+| Strategy | When | Autonomy |
+|----------|------|----------|
+| accept-ours | Their change is superseded by ours | Tier 1 for trivial |
+| accept-theirs | Our change is superseded by theirs | Tier 1 for trivial |
+| manual-merge | Both changes are needed | Tier 2 — show rationale |
+| rebase | Linear history wanted, few conflicts | Tier 2 — show rationale |
 
-## Resolution Strategies
+Create one task per file (type, complexity, strategy, hunks) and display the Conflict Analysis table. Trivial files auto-proceed when `autoResolveTrivial` is true; semantic, structural, and delete-modify files show both sides and the proposed strategy via `AskUserQuestion` first. Never "take ours for everything" — analyze each conflict individually, and verify that "identical" changes really are identical.
 
-| Strategy | When to Use | Risk | Autonomy |
-|----------|-------------|------|----------|
-| accept-ours | Their change is superseded by ours | Low | Tier 1 for trivial |
-| accept-theirs | Our change is superseded by theirs | Low | Tier 1 for trivial |
-| manual-merge | Both changes are needed | Medium | Tier 2 — show rationale |
-| rebase | Clean linear history needed, few conflicts | Medium | Tier 2 — show rationale |
+## Resolve Each Hunk
 
-## Manual Merge Algorithm
+1. Parse the ours block (`<<<<<<<` to `=======`) and theirs block (`=======` to `>>>>>>>`).
+2. Identify each side's intent.
+3. Compatible (different imports, non-overlapping logic) → combine both. Competing (two implementations of the same thing) → `AskUserQuestion` showing both sides with context.
+4. Write the resolved content with all markers removed; `grep -n '<<<<<<<\|=======\|>>>>>>>' "$FILE"` must return nothing.
+5. `git add "$FILE"`; mark the task completed.
 
-For each conflict hunk in a file:
+**Delete-modify**: show what was deleted and what was modified; offer keep-modified, accept-deletion, or keep-modified-at-new-location (if the file moved); wait for the decision. Never auto-resolve.
 
-1. **Parse** — extract the ours block (`<<<<<<<` to `=======`) and theirs block (`=======` to `>>>>>>>`)
-2. **Identify intent** — what was each side trying to accomplish?
-3. **Classify compatibility**:
-   - **Compatible**: both changes can coexist (e.g., different imports, non-overlapping logic) → combine both
-   - **Competing**: changes are mutually exclusive (e.g., different implementations of the same function) → ask user
-4. **Apply** — write the resolved content, removing all conflict markers
-5. **Verify** — confirm no orphaned markers remain in the file
+## Verify (Phase 4)
 
-## Delete-Modify Protocol
-
-When one side deletes a file (or section) that the other side modifies:
-
-1. Show the user what was deleted and what was modified
-2. Present options:
-   - Keep the modified version
-   - Accept the deletion
-   - Keep modified version in a new location (if file was moved)
-3. Wait for user decision — never auto-resolve delete-modify conflicts
-
-## Post-Resolution Verification
-
-After resolving all conflicts, run these checks in order:
-
-### 1. Orphaned Marker Audit
-
-```bash
-# Must return zero results
-grep -rn '<<<<<<<\|=======\|>>>>>>>' --include='*' . 2>/dev/null | grep -v '.git/' | grep -v 'node_modules/'
-```
-
-If any markers remain, resolution is incomplete. Fix before proceeding.
-
-### 2. Stage and Complete
-
-```bash
-# Stage resolved files
-git add <resolved-files>
-
-# Complete the merge or rebase
-git merge --continue   # or git rebase --continue
-```
-
-### 3. Build and Test Verification
-
-Run the project's quality commands (lint, test, typecheck) to verify the resolution didn't break anything. Use capability-discovery to find available commands.
-
-### 4. Resolution Diff Display
-
-Show a summary of what was resolved:
-
-```bash
-# Show what changed in the resolution
-git diff HEAD~1 --stat
-```
-
-## Rationalization Prevention
-
-Watch for these shortcuts that lead to incorrect resolutions:
-
-| Rationalization | Correct Response |
-|----------------|-----------------|
-| "Just take ours for everything" | Analyze each conflict individually — theirs may contain important changes |
-| "Too complex, just reset and start over" | Read both sides first — most conflicts are simpler than they appear |
-| "Tests pass so the resolution is correct" | Review the diff too — passing tests don't guarantee semantic correctness |
-| "This file isn't important" | Every file in the conflict list matters — verify or explicitly document why it's safe to skip |
-| "Same change on both sides" | Verify they're truly identical — similar-looking changes may have subtle differences |
+1. Repo-wide marker audit — must return nothing; any hit goes back to resolving that file:
+   ```bash
+   grep -rn '<<<<<<<\|=======\|>>>>>>>' --include='*' . 2>/dev/null | grep -v '.git/' | grep -v 'node_modules/'
+   ```
+2. Complete: `git commit --no-edit` (merge) or `git rebase --continue` (rebase).
+3. Run lint, tests, typecheck (commands from capability-discovery). Failures → `debugging-patterns`, up to `closedLoop.maxBuildIterations`.
+4. Review the resolution diff (`git diff HEAD~1 --stat`) — passing tests do not prove semantic correctness. Every file in the conflict list is verified or its skip explicitly documented; "this file isn't important" is not a reason.

@@ -8,187 +8,49 @@ agent: general-purpose
 
 # Run State Management
 
-You own FlowRun durability. Every long-running flow command (start, debug, address, review, pr, merge, release) writes a `.flow/runs/<id>/run.yaml` at entry, appends an activity record at every phase boundary, and updates `state.status` on completion. Without this skill, runs are session-scoped and die when the conversation ends — defeating the resumability promise of the v3 runtime layer.
+## Contract
 
-## Iron Law
-
-**No phase transitions without an activity write. `state.completed_activities[]` is the source of truth for `/flow:resume` — a missing activity means the resume command will skip ahead and the user loses work.**
-
-## Relationship to existing skills
-
-This skill **wraps** `autonomous-workflow` (which encodes the phase structure of `/flow:start` and friends). It adds:
-- Durable file-backed state (vs. session-only TODO tracking)
-- Phase-boundary checkpointing (so resume can pick up mid-workflow)
-- Audit trail via `.flow/runs/<id>/events.jsonl`
-
-If `autonomous-workflow` says "next phase is VERIFY," this skill writes the corresponding activity YAML and updates `state.current_phase`.
+Iron law: no phase transition without an activity write — `state.completed_activities[]` is the source of truth for `/flow:resume`, and a missing activity makes resume skip ahead and lose work. Invoked when `FLOW_RUN_STATE=create` (gated by `flow.runtime.enabled`) by `/flow:start`, `/flow:debug`, `/flow:address`, `/flow:review`, `/flow:merge`, `/flow:release` at command entry (create), at every phase boundary (activity), and at completion (terminal transition); `/flow:pr` appends activities to the active `start-issue` run; `/flow:resume` reads its output. Returns `.flow/runs/<id>/run.yaml`, `activities/<NNN>-<name>.yaml`, `events.jsonl`, and a `workflow-run` journal artifact. Permitted skips: only when `flow.runtime.enabled` is `false` — then nothing under `.flow/` is written.
 
 ## Inputs
 
 The invoking command MUST pass:
-1. **Workflow id** — `start-issue | debug | address-pr | review-pr | merge-pr | release` (matches the workflow YAML filenames under `plugins/flow/workflows/`).
-2. **Run id** — typically `<ISO-8601-compact-timestamp>-<target-slug>` (e.g., `2026-05-20T143000Z-issue-42`).
-3. **Context** — repo, branch, issue/pr number, linked journal path, linked goal id (when available).
-4. **Phase** — initial phase id (`preflight`, `explore`, `plan`, `code`, `verify`).
+
+1. **Workflow id** — `start-issue | debug | address-pr | review-pr | merge-pr | release` (matches `plugins/flow/workflows/<id>.workflow.yaml`).
+2. **Run id** — `<ISO-8601-compact-timestamp>-<target-slug>`, e.g. `2026-05-20T143000Z-issue-42`.
+3. **Context** — repo, branch, issue/pr number, linked journal path, linked goal id (or `null`).
+4. **Phase** — initial phase id (`preflight` at creation; the workflow's phase order thereafter).
 
 ## Outputs
 
-1. `.flow/runs/<id>/run.yaml` — FlowRun document conforming to `schemas/v1/run.schema.json`.
-2. `.flow/runs/<id>/activities/<NNN>-<name>.yaml` — activity records written per phase boundary.
+1. `.flow/runs/<id>/run.yaml` — FlowRun conforming to `schemas/v1/run.schema.json`.
+2. `.flow/runs/<id>/activities/<NNN>-<name>.yaml` — one FlowActivity per phase boundary, `schemas/v1/activity.schema.json`.
 3. `.flow/runs/<id>/events.jsonl` — line-per-event ledger.
-4. `workflow-run` artifact appended to linked decision journal.
+4. `workflow-run` artifact in the linked decision journal (`bin/journal-record.sh --type workflow-run`), updated with the final status at the terminal transition.
+
+Exact document shapes and the per-workflow phase-order table: `references/run-state-templates.md`.
 
 ## Workflow
 
-### Step 1: Create the FlowRun
+1. **Create the FlowRun** at command entry: write `run.yaml` (`state.status: active`, `current_phase` = initial phase, `completed_activities: []`, `events: [run_started]`) by direct file write — race-free because the directory does not yet exist — and emit the `workflow-run` journal artifact with `status=active`.
+2. **Record an activity at every phase boundary** (and significant sub-steps): compose the FlowActivity YAML to a temp file, then `bin/flow-record-activity.sh --run-id <id> --activity-file <path>`. The helper assigns the sequence number, validates against the schema, writes atomically (O_NOFOLLOW + flock + tempfile+rename), and appends to `events.jsonl`.
+3. **Update `state.current_*`** after each activity: advance `current_phase` at a boundary, set `current_activity`, append the recorded id to `completed_activities[]`. Read-merge-write through `bin/_journal_atomic.py` (`acquire_lock(run.yaml.lock)` + atomic write) — never a bare overwrite.
+4. **Terminal transition** when the command ends: `state.status` → `completed` (verdict PASS / action succeeded), `blocked` with `blocked_reason` (verdict FAIL or session ended mid-workflow), `failed`, or `cancelled`; then re-emit the `workflow-run` artifact with the final status.
+5. **SessionEnd** (`hooks/scripts/session-end-state.sh`, not this skill): appends a `session_end` event to each active run's `events.jsonl` and prints `flow: N active FlowRun(s) persisted` — it does not mutate `run.yaml`; status changes are the user's decision via `/flow:resume`.
 
-When the command begins:
+## Rules
 
-```bash
-# Compose the FlowRun YAML
-cat > /tmp/run.yaml <<EOF
-apiVersion: flow.synapti.ai/v1
-kind: FlowRun
-metadata:
-  id: ${RUN_ID}
-  workflow: ${WORKFLOW_ID}
-  workflow_version: 1
-  goal: ${GOAL_ID:-null}
-  created_at: ${NOW}
-context:
-  repo: ${REPO}
-  branch: ${BRANCH}
-  issue: ${ISSUE:-null}
-  pr: ${PR:-null}
-  journal: ${JOURNAL}
-state:
-  status: active
-  current_phase: ${INITIAL_PHASE}
-  current_activity: null
-  completed_activities: []
-  blocked_reason: null
-limits:
-  max_iterations: 10
-  max_runtime_minutes: null
-events:
-  - at: ${NOW}
-    type: run_started
-EOF
-```
-
-Write to `.flow/runs/<id>/run.yaml` via direct file write (no atomic helper needed for the initial creation — race-free because the directory doesn't yet exist).
-
-Append `workflow-run` artifact to the linked journal:
-```bash
-bin/journal-record.sh --issue ${N} --type workflow-run \
-  --metadata workflow=${WORKFLOW_ID} \
-  --metadata run_id=${RUN_ID} \
-  --metadata status=active
-```
-
-### Step 2: Record activity at every phase boundary
-
-At the end of each phase (or significant sub-step within a phase), compose a FlowActivity YAML and invoke `bin/flow-record-activity.sh`:
-
-```bash
-ACT_FILE=$(mktemp)
-cat > "${ACT_FILE}" <<EOF
-apiVersion: flow.synapti.ai/v1
-kind: FlowActivity
-metadata:
-  id: ${ACTIVITY_NAME}
-  run_id: ${RUN_ID}
-  workflow: ${WORKFLOW_ID}
-  phase: ${PHASE}
-activity:
-  type: ${TYPE}              # bash | skill | agent | task | gate | evaluation
-  name: '${HUMAN_NAME}'
-  status: passed             # or running | failed | skipped | blocked
-  started_at: ${START_TIME}
-  completed_at: ${NOW}
-outputs:
-  evidence_refs: [${EVIDENCE_REF_LIST}]
-  files_changed: [${FILES_LIST}]
-  command_exit_code: ${EXIT_CODE}
-result:
-  summary: '${SUMMARY}'
-  confidence: ${high|medium|low}
-EOF
-
-bin/flow-record-activity.sh --run-id ${RUN_ID} --activity-file "${ACT_FILE}"
-rm "${ACT_FILE}"
-```
-
-The helper:
-- Assigns the next sequence number (`001-`, `002-`, ...)
-- Validates against `schemas/v1/activity.schema.json`
-- Writes atomically (O_NOFOLLOW + flock + tempfile+rename)
-- Appends one line to `events.jsonl`
-
-### Step 3: Update FlowRun state.current_*
-
-After each activity write, update `run.yaml` to reflect the new phase/activity:
-
-```yaml
-state:
-  status: active
-  current_phase: ${NEW_PHASE}      # advance if at phase boundary
-  current_activity: ${NEXT_ACTIVITY_ID}
-  completed_activities:
-    - ${PRIOR_ACTIVITY_IDS}
-    - ${JUST_RECORDED_ACTIVITY_ID}   # append the one we just wrote
-```
-
-This update is atomic via the same helper pattern: direct read-merge-write through Python with `_journal_atomic.py.acquire_lock(run.yaml.lock)`.
-
-### Step 4: Transition to terminal state
-
-When the command completes (success, failure, or cancellation):
-
-```yaml
-state:
-  status: completed   # or failed, cancelled, blocked
-  current_phase: <last>
-  current_activity: <last>
-  completed_activities: [...]
-  blocked_reason: null   # set when status is blocked
-```
-
-Update the `workflow-run` journal artifact with the final status (via a second `journal-record.sh` call with the updated metadata).
-
-### Step 5: SessionEnd persistence
-
-When SessionEnd fires (separate hook: `session-end-state.sh`), if an active FlowRun exists:
-- Append an event: `{type: session_end, at: <now>}`
-- Set `state.blocked_reason: "session ended"` if no terminal transition happened
-- Print a one-line notice: `Active FlowRun <id> persisted; use /flow:resume to continue`
-
-## Phase order table
-
-| Workflow | Phase order |
-|---|---|
-| `start-issue` | preflight → explore → plan → code → verify |
-| `debug` | preflight → reproduce → diagnose → fix → verify |
-| `address-pr` | preflight → categorize → resolve → verify |
-| `review-pr` | preflight → fan-out → consolidate → report |
-| `merge-pr` | preflight → verify → confirm → merge |
-| `release` | preflight → bump → confirm → tag |
-
-The machine-readable equivalents live at `plugins/flow/workflows/<id>.workflow.yaml`.
-
-## Anti-patterns
-
-- ❌ Writing `run.yaml` outside the helper or direct create — concurrent updates need flock.
-- ❌ Updating `state.current_phase` without writing an activity — phases without activities can't be resumed.
-- ❌ Marking `state.status: completed` while `completed_activities[]` is empty — implausible; the run did nothing.
-- ❌ Reading from `events.jsonl` and trusting partial lines — readers MUST skip un-parseable trailing lines (atomicity at write time, tolerance at read time).
-- ❌ Auto-resuming a `blocked` run without checking why it was blocked — surface the blocker first.
+- Never write `run.yaml` outside the helper except the initial create — concurrent updates need flock.
+- Never advance `state.current_phase` without writing an activity.
+- Never mark `state.status: completed` with an empty `completed_activities[]`.
+- Readers of `events.jsonl` MUST skip un-parseable trailing lines (atomic at write, tolerant at read).
+- Never auto-resume a `blocked` run without surfacing `blocked_reason` first.
 
 ## Reuse map
 
-- `plugins/flow/skills/autonomous-workflow/SKILL.md` — phase structure source of truth.
+- `plugins/flow/skills/autonomous-workflow/SKILL.md` — phase structure source of truth; this skill materializes its phase boundaries.
 - `plugins/flow/bin/flow-record-activity.sh` — atomic activity writer.
-- `plugins/flow/bin/_journal_atomic.py` — exposed `acquire_lock`, `_atomic_write` for run.yaml updates.
-- `plugins/flow/schemas/v1/run.schema.json` — run document schema.
-- `plugins/flow/schemas/v1/activity.schema.json` — activity document schema.
-- `plugins/flow/references/decision-journal-schema.md` — `workflow-run` and `activity-completed` artifact-type rows.
+- `plugins/flow/bin/_journal_atomic.py` — `acquire_lock`, `_atomic_write` for run.yaml updates.
+- `plugins/flow/schemas/v1/run.schema.json`, `activity.schema.json` — document schemas.
+- `plugins/flow/references/decision-journal-schema.md` — `workflow-run` and `run-state-transition` artifact rows.
+- `plugins/flow/references/flow-runtime-state.md` — `.flow/` layout, gitignore policy, resumability.
