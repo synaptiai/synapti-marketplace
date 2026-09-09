@@ -14,7 +14,7 @@ eval measures both.
 
 ## What is measured
 
-Seven arms, three cases, N runs each (default 3):
+Seven arms, five cases, N runs each (default 3), on one or more models:
 
 | Arm | `testing.tddMode` | `testing.tddModeOptOut` | `specFirst.riskMap` | Plugin loaded |
 |---|---|---|---|---|
@@ -36,29 +36,85 @@ Cases (`plugins/flow/evals/<case>/expected.md` has the trap tables):
 | `four-stream-codec` | `fourstream.py` — split/pack/unpack with a jump table and per-stream reversal | 25 | transposed stream order, no reversal, whole-body reversal, big-endian table, ceil split, no validation |
 | `sliding-window-limiter` | `ratelimit.py` — per-key sliding window with `(now-window, now]` semantics | 23 | inclusive boundary, fixed buckets, counting denied requests, shared counter, limit off-by-one, retry from newest, no monotonic check |
 | `money-allocator` | `allocate.py` — largest-remainder split with index-order ties | 25 | round-half-up, ties last-first, ties by weight, sorted output, float arithmetic, divide-first, hardcoded places, accepts non-positive weights |
+| `interval-algebra` | `intervals.py` — union/intersection/difference with independently open/closed ends, canonical output | 30 | merge only overlapping, merge any touching, point dropped, half-open point kept, intersection closed-or, difference keeps closedness, intersection not normalized, unsorted output, sort by lower only, equal lower takes farther flag, shorthand half-open, no validation, float endpoints |
+| `recurrence-expander` | `rrule.py` — RFC 5545 RRULE subset (DAILY/WEEKLY/MONTHLY/YEARLY, interval, wkst, bymonth/bymonthday/byday/bysetpos, count/until) | 30 | dtstart always included, until exclusive, day-31 clamped, negative monthday off by one, byday/monthday union, wkst ignored, interval from first occurrence, setpos global, setpos after drop, yearly ordinal month-relative Under calibration on the branch (three Sonnet baseline runs passed 30/30, so it has not yet cleared the bar and is not shipped); it joins the suite once a revision clears it. |
+
+The first three cases were solved by every arm on the first full run (see
+Results below). `interval-algebra` and `recurrence-expander` were added for
+the second run and had to clear a bar first: the no-plugin baseline (Sonnet
+5, 3 runs) must fail at least one hidden test in at least one run. Their
+`expected.md` records that calibration. What cleared the bar was not
+rule count but order-sensitive algorithms: a sweep whose result depends on
+the sort key when a point interval sits between two open ends, and
+calendar periods whose alignment depends on `wkst` and `interval`. Two
+other candidates were built, calibrated and retired because Sonnet 5 solved
+them three times out of three: a line-based changeset applier (original-
+text coordinates, id-ordered same-line inserts, overlap error, per-line
+CRLF/LF inheritance; 3/3 at 100% before and after a revision that removed
+the worked example and added interaction rules) and a canonical line diff
+(minimal edit script with a lexicographic tie-break, unified hunks; 3/3 at
+100% once a `context=True` assertion that relied on `bool` being an `int`
+was removed as unfair). Both kept their own tests catching 90-100% of their
+trap variants: rules that can be read can be implemented.
 
 Every trap passes the degenerate inputs agents reach for first (identical
-streams, palindromes, equal weights, a single request, `len % 4 == 0`) and
-fails on the hand-derived inputs in `hidden/test_hidden.py`. The suites were
+streams, palindromes, equal weights, a single request, `len % 4 == 0`, a
+single edit, sorted intervals) and fails on the hand-derived inputs in
+`hidden/test_hidden.py`. The suites were
 written from the spec, checked against `hidden/reference_impl.py`, and run
 against each variant in `hidden/traps/`; `hidden/traps.json` records which
 tests each variant fails and `flow-eval-run.sh --check-cases` re-verifies all
 of it offline.
 
-Per run, the harness records (`runs/<arm>/<case>/<n>/result.json`):
+Per run, the harness records (`runs/<model>/<arm>/<case>/<n>/result.json`;
+`<model>` is the `--model`/`--models` value or `default`):
 
 - **hidden pass rate** — fraction of hidden tests passing. The score. Never
   the agent's own tests.
 - **all_pass** — the run passed 100% of hidden tests.
 - **traps** — per trap, whether the run fails every test that trap's variant
   fails (a signature match; some signatures nest, so a run can match several).
+- **own_test_trap_catch_rate** — the share of trap variants the agent's OWN
+  suite rejects (details in `own-test-traps.json`, method below). The
+  secondary signal.
 - **agent_tests** — files and `test_*` functions the agent wrote, literal
   inputs it fed to code, and the share that are degenerate.
+- **model, models_used, model_requested** — `model` is the billed model with
+  the largest cost among the `modelUsage` keys of the claude result event
+  (a subagent on another model appears as a second key in `models_used`);
+  `model_requested` is what `--model` asked for.
 - **cost_usd, num_turns, session_id, is_error, error, permission_denials,
   tool_counts, skills_invoked** — from the `stream-json` transcript
   (`stream.jsonl`, final event saved as `claude.json`). `skills_invoked` empty
   on a plugin arm means the plugin was loaded but its skills never entered
   context.
+- **project/** — a snapshot of the agent's module and `tests/` (without
+  `.git`, plugin state and caches), so a run can be re-scored later with
+  `_flow_eval.py rescore-own-tests`.
+
+Own-test trap scoring (`bin/_flow_eval.py own-test-traps`, written to
+`own-test-traps.json`): the run's project is copied to a scratch directory
+and the agent's suite is run exactly as the agent ran it, `python3 -m
+unittest discover -s tests -t . -v`, first against the agent's own module
+and then once per variant in `hidden/traps/`, with the variant swapped in
+under the case's module name, and once against `hidden/reference_impl.py`.
+A trap is **caught by own tests** when at least one *oracle* test fails or
+errors against that variant, where an oracle test is one that passes on
+both the agent's module and the reference; the catch rate is caught / traps.
+The reference run matters: every variant inherits the reference's behaviour
+on the rules it does not override, so a test that already disagrees with the
+reference (an input-validation edge the agent read differently, say) would
+otherwise count as catching every variant. Such tests are recorded under
+`disagree_with_reference` and ignored (the first calibration showed 100%
+catch rates across the board before this filter existed, all from one
+validation test). The suite is only used as an oracle when it can be one:
+`catch_rate` is `null` with a `reason` when `tests/` is missing, discovery
+finds no tests, the tests never import the module (or import it under
+another name), no test passes on both implementations, or the tests use
+names the variants do not define (a private helper the agent added, which
+would make every variant "fail" on an AttributeError rather than on
+behaviour). Unscored runs are excluded from the mean, and their reasons are
+listed per cell in `summary.json`.
 
 Degenerate-input heuristic (`bin/_flow_eval.py agent-tests`): an input is a
 literal sequence — bytes constant, list/tuple of constants, or `literal * n` —
@@ -74,27 +130,45 @@ any single test.
 # verify cases offline (no API calls): reference passes, every trap variant fails its tests
 plugins/flow/bin/flow-eval-run.sh --check-cases
 
-# print the plan and the exact command line per run, no API calls
-plugins/flow/bin/flow-eval-run.sh --dry-run
+# print the plan (model × arm × case × run) and the exact command line per run, no API calls
+plugins/flow/bin/flow-eval-run.sh --dry-run --models claude-sonnet-5,claude-opus-4-1
 
-# full comparison: 7 arms × 3 cases × 3 runs = 63 runs
-plugins/flow/bin/flow-eval-run.sh --arm all --case all --runs 3 --out plugins/flow/evals/results/full
+# full comparison on two models: 2 × 7 arms × 5 cases × 3 runs = 210 runs
+plugins/flow/bin/flow-eval-run.sh --models claude-sonnet-5,claude-opus-4-1 --arm all --case all --runs 3 \
+  --max-total-usd 400 --out plugins/flow/evals/results/full-2
 
-# one arm on one case, resuming an interrupted run (completed result.json files are skipped)
-plugins/flow/bin/flow-eval-run.sh --arm enforce-risk --case money-allocator --out plugins/flow/evals/results/full
+# one arm on one case, resuming an interrupted run (completed result.json files are skipped, per model)
+plugins/flow/bin/flow-eval-run.sh --model claude-sonnet-5 --arm enforce-risk --case changeset-applier --out plugins/flow/evals/results/full-2
 
 # re-aggregate an existing results directory
-plugins/flow/bin/flow-eval-run.sh --aggregate-only --out plugins/flow/evals/results/full
+plugins/flow/bin/flow-eval-run.sh --aggregate-only --out plugins/flow/evals/results/full-2
+
+# re-score own tests against the traps for every run that kept a project/ snapshot, then re-aggregate
+python3 plugins/flow/bin/_flow_eval.py rescore-own-tests --out plugins/flow/evals/results/full-2 --evals-dir plugins/flow/evals
+plugins/flow/bin/flow-eval-run.sh --aggregate-only --out plugins/flow/evals/results/full-2
+
+# one-off: move results written by the first version (runs/<arm>/<case>/<n>) under their model
+python3 plugins/flow/bin/_flow_eval.py migrate-layout --out plugins/flow/evals/results/full
 ```
 
 Flags: `--arm <name|all>` (comma lists allowed), `--case <name|all>`, `--runs N`
 (default 3 or prompt.md `runs`), `--model <m>` (default: the CLI default; no
-model is hardcoded), `--max-turns N` (default 60), `--max-budget-usd X` per
-run (default 4), `--max-total-usd X` (default 250; the runner stops with exit
-3 before a run that could exceed it), `--timeout-seconds S` per run (default
-1800), `--out <dir>` (default `plugins/flow/evals/results/<UTC timestamp>/`),
+model is hardcoded) or `--models <a,b>` (the whole plan once per model, in
+order; results keyed by model), `--max-turns N` (default 60),
+`--max-budget-usd X` per run (default 4), `--max-total-usd X` (default 250,
+summed over every model in `--out`; the runner stops with exit 3 before a run
+that could exceed it), `--timeout-seconds S` per run (default 1800), `--out
+<dir>` (default `plugins/flow/evals/results/<UTC timestamp>/`),
 `--permission-mode acceptEdits|bypassPermissions`, `--dry-run`, `--keep-temp`,
 `--aggregate-only`, `--check-cases`.
+
+Results land under `runs/<model>/<arm>/<case>/<n>/`. Directories written by
+the first version (`runs/<arm>/<case>/<n>/`) are still read by
+`--aggregate-only`, grouped under the model recorded in their `claude.json`,
+and `summary.md` says how many were read that way; `migrate-layout` moves
+them into the model layout once (idempotent, stamps `model` into each
+`result.json`). Resume only recognises the model layout, so migrate before
+continuing an old results directory.
 
 Each run copies `scaffold/` to a fresh temp dir, `git init`s it, writes the
 arm's `.claude/settings.flow.json`, and invokes `claude -p` from that
@@ -131,19 +205,34 @@ path.
 
 `summary.md` (and `summary.json`) under `--out`:
 
-1. **Reading** — plain sentences: the decision-rule verdict, the risk-map
-   difference, the baseline comparison, and a provisional flag when any arm
-   has fewer than 3 runs on any case.
-2. **Per arm** — mean hidden pass rate, share of all-pass runs, mean own-test
-   count, mean degenerate share, mean cost, mean turns, error count (timeouts,
+1. **Reading** — one paragraph per model, plain sentences: the decision-rule
+   verdict and which signal decided it, the risk-map difference, the baseline
+   comparison (hidden pass rate and own-test catch rate), and a provisional
+   flag when any arm has fewer than 3 runs on any case.
+2. **Per model × arm** — mean hidden pass rate, share of all-pass runs,
+   **own tests catch traps** (mean own-test trap catch rate, with how many
+   runs were scorable, e.g. `67% (8/9)`), mean own-test count, mean
+   degenerate share, mean cost, mean turns, error count (timeouts,
    `is_error`, non-zero exit, `error_max_turns`).
-3. **Per arm × case** — the same with min–max of the hidden pass rate across
-   runs.
-4. **Trap catch rate** — per case, per arm, the share of runs whose
+3. **Per model × arm × case** — the same with min–max of the hidden pass rate
+   across runs.
+4. **Trap catch rate** — per model and case, per arm, the share of runs whose
    implementation matched each trap's failure signature. Lower is better.
    Compare `enforce-*` against `off-*` on the order/position traps
-   (`transposed_order`, `ties_last_first`, `sorted_output`): those are the
-   ones degenerate inputs mask.
+   (`transposed_order`, `ties_last_first`, `sorted_output`,
+   `same_line_by_position`, `unsorted_output`): those are the ones degenerate
+   inputs mask.
+5. **Own-test trap catch rate** — per model and case, per arm and per trap,
+   the share of scored runs whose own suite failed that variant. Higher is
+   better: it says whether the tests an arm produces would have rejected the
+   plausible wrong implementation, independently of whether the run's own
+   implementation happened to be right. A trap that hidden tests never see
+   tripped but own tests rarely catch (the first run's pattern) is one the
+   agent got right without a test that guards it.
+
+`summary.json` mirrors all of it under `per_model.<model>` (`per_arm`,
+`per_cell`, `decision`, `run_to_run_spread`, `own_test_trap_spread`), with
+`decision.verdicts` at the top level.
 
 Read own-test count together with hidden pass rate. The study's failure mode
 is "more tests, lower correctness": if `enforce-*` has the highest own-test
@@ -152,17 +241,31 @@ producing tests, not correctness.
 
 ## Decision rule
 
-Let `enforce` be the mean hidden pass rate over `enforce-risk` and
-`enforce-norisk`, `alt` the higher of the `suggest-*` mean and the `off-*`
-mean, and the **run-to-run spread** the mean, over every arm × case cell, of
-(max − min hidden pass rate across that cell's runs).
+Applied per model. Let `enforce` be the mean hidden pass rate over
+`enforce-risk` and `enforce-norisk`, `alt` the higher of the `suggest-*` mean
+and the `off-*` mean, and the **run-to-run spread** the mean, over every
+arm × case cell, of (max − min hidden pass rate across that cell's runs).
 
-- If `alt − enforce > spread`, `testing.tddMode`'s default flips to `suggest`
-  (`tddModeOptOut` stays a two-field opt-out for teams that want `enforce`).
-  Verdict `flip-to-suggest`.
-- Otherwise the default stays `enforce`. Verdict `keep-enforce`.
+- **Primary signal.** If `alt − enforce > spread`, `testing.tddMode`'s default
+  flips to `suggest` (`tddModeOptOut` stays a two-field opt-out for teams
+  that want `enforce`). Verdict `flip-to-suggest`, `decided_by: primary`.
+- If `enforce` is ahead of `alt` by more than the spread, the default stays
+  `enforce`. Verdict `keep-enforce`, `decided_by: primary`.
+- **Secondary signal.** When the two tie within the spread
+  (`|alt − enforce| ≤ spread`, the first run's situation at ceiling), the
+  own-test trap catch rate decides: let `enforce_own` and `alt_own` be the
+  mean `own_test_trap_catch_rate` of the same arms and the **own-test
+  spread** the mean per-cell (max − min) of that rate. If `alt_own −
+  enforce_own > own-test spread`, verdict `flip-to-suggest` (`decided_by:
+  secondary`, `secondary.verdict: alt-ahead`): the gate is not producing
+  tests that guard against the traps any better than the alternative, at
+  several times the cost. Otherwise `keep-enforce` (`secondary.verdict:
+  enforce-ahead` or `tie`). If either side has no scorable own-test runs,
+  the primary signal stands (`decided_by: primary`) and the reading says so.
 - With fewer than 3 runs per cell for every arm the verdict is provisional;
   the runner still prints it and marks the summary incomplete.
+- Two models can disagree; `summary.json` carries a verdict per model and the
+  default is only flipped when the model the plugin is used with says so.
 
 `specFirst.riskMap` is reported the same way (`*-risk` mean vs `*-norisk`
 mean, "beyond"/"within the spread"); it stays `true` unless the `norisk` arms
@@ -235,9 +338,15 @@ What the numbers actually say:
 
 ## Limitations
 
-- **Three tasks, one language.** All cases are small, single-module,
+- **Five tasks, one language.** All cases are small, single-module,
   standard-library Python. Effects on multi-file or typed-language work are
   not measured.
+- **Own-test scoring needs the spec's public surface.** A suite that reaches
+  into private helpers, or that renames the module, is not scored (null with
+  a reason) rather than mis-scored; a suite that only exercises degenerate
+  inputs scores 0%, which is the point. A trap counts as caught on any
+  FAIL or ERROR, so a variant that raises where the agent's implementation
+  did not is a catch even when the agent never asserted on that behaviour.
 - **Model- and version-specific.** Results hold for the model and Claude Code
   version used; re-run after either changes. Record the `session_id`s from
   `result.json` when citing a result.

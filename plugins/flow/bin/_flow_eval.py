@@ -13,11 +13,29 @@ Standard library only. Every subcommand prints JSON to stdout unless noted.
                                               every test listed for it in traps.json
   agent-tests --project-dir P                 count the agent's own tests and classify
                                               their literal sequence inputs
+  own-test-traps --case-dir C --project-dir P run the agent's own suite (tests/, unittest
+              [--timeout S] [--out FILE]      discover) against its implementation and
+                                              against every hidden/traps/*.py variant;
+                                              a trap is caught when a test that passes on
+                                              the agent's module fails on the variant
+  rescore-hidden --out DIR --evals-dir E      re-run the hidden suite against every run's
+              [--timeout S]                   project/ snapshot (after a suite correction);
+                                              rewrites hidden.txt and result.json's hidden/traps
+  rescore-own-tests --out DIR --evals-dir E   redo own-test trap scoring for every run under
+              [--timeout S]                   DIR that kept a project/ snapshot (rewrites
+                                              own-test-traps.json and result.json fields)
   finalize-run --run-dir R --case-dir C       parse stream.jsonl, grade, write result.json,
-              --project-dir P --arm A         hidden.txt, agent-tests-summary.json
-              --case NAME --run N --exit-code X
+              --project-dir P --arm A         hidden.txt, agent-tests-summary.json,
+              --case NAME --run N --exit-code X   own-test-traps.json and project/ (snapshot
+              [--model-requested M]           of the agent's module and tests)
               [--timed-out] [--duration S] [--temp-dir T]
-  aggregate   --out DIR                       summary.json + summary.md from DIR/runs
+  aggregate   --out DIR                       summary.json + summary.md from DIR/runs,
+                                              grouped by model (runs/<model>/<arm>/<case>/<n>;
+                                              the older runs/<arm>/<case>/<n> layout is read too)
+  migrate-layout --out DIR                    move runs/<arm>/<case>/<n> into
+                                              runs/<model>/<arm>/<case>/<n> (model from
+                                              claude.json modelUsage) and stamp `model`
+                                              into each result.json; idempotent
   check-cases --evals-dir DIR [--case NAME]   reference passes, every trap variant fails
                                               its listed tests; exit 1 on any violation
 
@@ -129,12 +147,14 @@ STATUS_RE = re.compile(r"\.\.\. (ok|FAIL|ERROR|skipped(?: .*)?|expected failure|
 RAN_RE = re.compile(r"^Ran (\d+) tests? in ")
 
 
-def parse_unittest(text):
+def parse_unittest(text, full_ids=False):
     """Parse `python -m unittest -v` output. Returns {tests:{id:status}, passed, total, ...}.
 
     Handles the docstring layout, where the status lands on the line after the
     test id, and treats a test whose status never appears (crash, timeout) as
-    an error.
+    an error. Keys are the bare method names (the hidden suites never repeat
+    one); with ``full_ids`` the key is ``module.Class.method`` so an agent
+    suite that reuses a method name across classes is counted per test.
     """
     tests = {}
     order = []
@@ -144,6 +164,9 @@ def parse_unittest(text):
         m = TEST_LINE_RE.match(line)
         if m:
             test_id = m.group(1)
+            if full_ids:
+                qualname = m.group(2)
+                test_id = qualname if qualname.endswith("." + test_id) else qualname + "." + test_id
             if test_id not in tests:
                 order.append(test_id)
             tests[test_id] = "missing"
@@ -203,6 +226,7 @@ def run_hidden(case_dir, project_dir, impl=None, timeout=120):
     under the case's module name (and reference_impl.py alongside so trap
     variants can import it). The agent's directory is never modified.
     """
+    case_dir = os.path.abspath(case_dir)   # the suite runs with cwd=target; relative paths would not resolve
     traps = load_traps(case_dir)
     module = traps["module"]
     scratch = None
@@ -437,6 +461,322 @@ def cmd_agent_tests(args):
     print(json.dumps(analyze_agent_tests(opts["--project-dir"]), indent=2, sort_keys=True))
 
 
+# ------------------------------------------------------- own tests vs traps
+
+OWN_TEST_COMMAND = [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-t", ".", "-v"]
+SNAPSHOT_SKIP_DIRS = (".git", ".claude", ".flow", ".flow-state", ".decisions", "__pycache__", "node_modules")
+
+
+def snapshot_project(project_dir, dest):
+    """Copy the agent's project (minus VCS, plugin state and caches) to dest."""
+    def ignore(_dir, names):
+        return [n for n in names if n in SNAPSHOT_SKIP_DIRS or n.endswith(".pyc")]
+    if os.path.isdir(dest):
+        shutil.rmtree(dest)
+    shutil.copytree(project_dir, dest, ignore=ignore, symlinks=True)
+    return dest
+
+
+def module_names_used_by_tests(test_files, module):
+    """Return (imports_module, names) — whether any test file imports ``module`` and
+    the attribute / from-import names it takes from it."""
+    imports = False
+    names = set()
+    aliases = set()
+    for path in test_files:
+        try:
+            tree = ast.parse(read_text(path), filename=path)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == module or alias.name.startswith(module + "."):
+                        imports = True
+                        aliases.add((alias.asname or alias.name).split(".")[0])
+            elif isinstance(node, ast.ImportFrom):
+                if node.module == module or (node.module or "").startswith(module + "."):
+                    imports = True
+                    for alias in node.names:
+                        if alias.name != "*":
+                            names.add(alias.name)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in aliases:
+                names.add(node.attr)
+    return imports, sorted(names)
+
+
+def public_names_defined(path, seen=None, search_dirs=()):
+    """Top-level names a variant module defines, following `from x import *`.
+
+    A star-imported sibling is looked up next to ``path`` and then in
+    ``search_dirs`` (the case's hidden/ directory, where reference_impl.py
+    lives while the variants sit in hidden/traps/).
+    """
+    seen = seen or set()
+    if path in seen or not os.path.exists(path):
+        return set()
+    seen.add(path)
+    try:
+        tree = ast.parse(read_text(path), filename=path)
+    except SyntaxError:
+        return set()
+    names = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                for leaf in ast.walk(target):
+                    if isinstance(leaf, ast.Name):
+                        names.add(leaf.id)
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add((alias.asname or alias.name).split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == "*":
+                    filename = (node.module or "") + ".py"
+                    for base in (os.path.dirname(path),) + tuple(search_dirs):
+                        sibling = os.path.join(base, filename)
+                        if os.path.exists(sibling):
+                            names |= {n for n in public_names_defined(sibling, seen, search_dirs) if not n.startswith("_")}
+                            break
+                else:
+                    names.add(alias.asname or alias.name)
+    return names
+
+
+def run_own_suite(project_copy, timeout):
+    """Run the agent's suite the way the agent did. Returns (parsed, raw)."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONHASHSEED"] = "0"
+    env["PYTHONPATH"] = project_copy
+    try:
+        proc = subprocess.run(OWN_TEST_COMMAND, cwd=project_copy, env=env, capture_output=True, text=True, timeout=timeout)
+        raw = proc.stdout + proc.stderr
+        timed_out = False
+    except subprocess.TimeoutExpired as exc:
+        raw = (exc.stdout or "") + (exc.stderr or "")
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", "replace")
+        raw += "\n[flow-eval] own suite timed out after %ss\n" % timeout
+        timed_out = True
+    parsed = parse_unittest(raw, full_ids=True)
+    parsed["timed_out"] = timed_out
+    return parsed, raw
+
+
+def own_test_traps(case_dir, project_dir, timeout=120):
+    """Score the agent's own tests against every trap variant.
+
+    A trap is caught when at least one oracle test fails (FAIL or ERROR)
+    against the variant swapped in under the same module name. An oracle
+    test is one that passes against the agent's own implementation AND
+    against hidden/reference_impl.py: every variant inherits the reference's
+    behaviour on whatever rule it does not override, so a test that already
+    disagrees with the reference (a spec edge the agent read differently)
+    would "catch" every variant for the wrong reason. Those tests are listed
+    under `disagree_with_reference` and ignored. `catch_rate` is caught /
+    traps, or None with a `reason` when the suite cannot be used as an
+    oracle (no tests/ dir, no tests discovered, the module not imported by
+    the tests, the tests using names the variants do not define, or no test
+    passing on both implementations).
+    """
+    traps = load_traps(case_dir)
+    module = traps["module"]
+    trap_names = sorted(traps["traps"])
+    result = {
+        "module": module,
+        "command": " ".join(["python3"] + OWN_TEST_COMMAND[1:]),
+        "catch_rate": None,
+        "reason": None,
+        "caught": {name: None for name in trap_names},
+        "per_trap": {},
+        "own_impl": None,
+    }
+
+    def bail(reason):
+        result["reason"] = reason
+        return result
+
+    tests_dir = os.path.join(project_dir, "tests")
+    if not os.path.isdir(tests_dir):
+        return bail("no tests/ directory in the agent's project")
+    if not os.path.exists(os.path.join(project_dir, module + ".py")):
+        return bail("module %s.py missing from the agent's project" % module)
+    test_files = [p for p in find_agent_test_files(project_dir) if os.path.relpath(p, project_dir).startswith("tests" + os.sep)]
+    if not test_files:
+        return bail("no test_*.py files under tests/")
+    imports_module, used_names = module_names_used_by_tests(test_files, module)
+    if not imports_module:
+        return bail("agent tests never import %s" % module)
+    missing_by_variant = {}
+    hidden_dir = os.path.join(case_dir, "hidden")
+    for name in trap_names:
+        variant = os.path.join(case_dir, traps["traps"][name]["variant"])
+        defined = public_names_defined(variant, search_dirs=(hidden_dir,))
+        missing = sorted(n for n in used_names if n not in defined)
+        if missing:
+            missing_by_variant[name] = missing
+    if missing_by_variant:
+        return bail("agent tests use names the trap variants do not define: %s" % json.dumps(missing_by_variant, sort_keys=True))
+
+    scratch = tempfile.mkdtemp(prefix="flow-eval-own.")
+    try:
+        copy = os.path.join(scratch, "project")
+        snapshot_project(project_dir, copy)
+        own, own_raw = run_own_suite(copy, timeout)
+        result["own_impl"] = {
+            "passed": own["passed"], "total": own["total"], "failed_ids": own["failed_ids"],
+            "timed_out": own["timed_out"], "completed": own["completed"],
+        }
+        result["own_impl_output_tail"] = own_raw[-2000:]
+        if own["total"] == 0:
+            return bail("own suite discovered no tests (import error or empty tests/)")
+        passing_own = [t for t in own["order"] if own["tests"][t] == "ok"]
+        if not passing_own:
+            return bail("no own test passes against the agent's own implementation")
+        module_path = os.path.join(copy, module + ".py")
+        original = read_text(module_path)
+        reference = os.path.join(case_dir, "hidden", "reference_impl.py")
+        shutil.copy(reference, os.path.join(copy, "reference_impl.py"))
+        shutil.copy(reference, module_path)
+        ref_run, _ = run_own_suite(copy, timeout)
+        passing = [t for t in passing_own if ref_run["tests"].get(t, "missing") == "ok"]
+        result["disagree_with_reference"] = [t for t in passing_own if t not in passing]
+        result["reference_run"] = {"passed": ref_run["passed"], "total": ref_run["total"], "timed_out": ref_run["timed_out"]}
+        if not passing:
+            with open(module_path, "w", encoding="utf-8") as fh:
+                fh.write(original)
+            return bail("no own test passes against both the agent's implementation and the reference")
+        caught_count = 0
+        for name in trap_names:
+            variant = os.path.join(case_dir, traps["traps"][name]["variant"])
+            shutil.copy(variant, module_path)
+            parsed, _ = run_own_suite(copy, timeout)
+            failing = [t for t in passing if parsed["tests"].get(t, "missing") != "ok"]
+            caught = bool(failing)
+            caught_count += 1 if caught else 0
+            result["caught"][name] = caught
+            result["per_trap"][name] = {
+                "caught": caught,
+                "failing_own_tests": failing[:50],
+                "failing_count": len(failing),
+                "passed": parsed["passed"], "total": parsed["total"], "timed_out": parsed["timed_out"],
+            }
+        with open(module_path, "w", encoding="utf-8") as fh:
+            fh.write(original)
+        result["catch_rate"] = caught_count / len(trap_names) if trap_names else None
+        result["caught_count"] = caught_count
+        result["trap_count"] = len(trap_names)
+        result["own_passing_tests"] = len(passing)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return result
+
+
+def cmd_own_test_traps(args):
+    opts = parse_opts(args, ["--case-dir", "--project-dir", "--timeout", "--out"])
+    if not opts.get("--case-dir") or not opts.get("--project-dir"):
+        die("own-test-traps --case-dir C --project-dir P [--timeout S] [--out FILE]")
+    result = own_test_traps(opts["--case-dir"], opts["--project-dir"], int(opts.get("--timeout") or 120))
+    if opts.get("--out"):
+        write_json(opts["--out"], result)
+    print(json.dumps(result, indent=2, sort_keys=True))
+
+
+def rescore_own_tests(out_dir, evals_dir, timeout=120):
+    """Re-run own-test trap scoring for every run that kept a project/ snapshot.
+
+    Rewrites own-test-traps.json and the own-test fields of result.json;
+    runs without a snapshot are left untouched and listed as skipped.
+    """
+    scored, skipped = [], []
+    for run_dir, _layout in iter_run_dirs(out_dir):
+        result_path = os.path.join(run_dir, "result.json")
+        project = os.path.join(run_dir, "project")
+        try:
+            with open(result_path, encoding="utf-8") as fh:
+                record = json.load(fh)
+        except ValueError:
+            skipped.append((run_dir, "unreadable result.json"))
+            continue
+        case_dir = os.path.join(evals_dir, str(record.get("case") or ""))
+        if not os.path.isdir(project):
+            skipped.append((run_dir, "no project/ snapshot"))
+            continue
+        if not os.path.isfile(os.path.join(case_dir, "hidden", "traps.json")):
+            skipped.append((run_dir, "no such case under %s" % evals_dir))
+            continue
+        own = own_test_traps(case_dir, project, timeout)
+        write_json(os.path.join(run_dir, "own-test-traps.json"), own)
+        record["own_test_trap_catch_rate"] = own.get("catch_rate")
+        record["own_test_traps"] = {"caught": own.get("caught") or {}, "reason": own.get("reason"), "own_impl": own.get("own_impl")}
+        write_json(result_path, record)
+        scored.append((run_dir, own.get("catch_rate"), own.get("reason")))
+    return scored, skipped
+
+
+def rescore_hidden(out_dir, evals_dir, timeout=120):
+    """Re-run the hidden suite against every run's project/ snapshot and rewrite
+    hidden.txt plus the hidden/trap/module_exists fields of result.json."""
+    scored, skipped = [], []
+    for run_dir, _layout in iter_run_dirs(out_dir):
+        result_path = os.path.join(run_dir, "result.json")
+        project = os.path.join(run_dir, "project")
+        try:
+            with open(result_path, encoding="utf-8") as fh:
+                record = json.load(fh)
+        except ValueError:
+            skipped.append((run_dir, "unreadable result.json"))
+            continue
+        case_dir = os.path.join(evals_dir, str(record.get("case") or ""))
+        if not os.path.isdir(project):
+            skipped.append((run_dir, "no project/ snapshot"))
+            continue
+        if not os.path.isfile(os.path.join(case_dir, "hidden", "traps.json")):
+            skipped.append((run_dir, "no such case under %s" % evals_dir))
+            continue
+        hidden, raw = run_hidden(case_dir, project, None, timeout)
+        with open(os.path.join(run_dir, "hidden.txt"), "w", encoding="utf-8") as fh:
+            fh.write(raw)
+        record["hidden"] = {key: hidden[key] for key in ("passed", "total", "pass_rate", "all_pass", "failed_ids", "import_or_crash", "timed_out")}
+        record["traps"] = {name: t["caught"] for name, t in hidden["traps"].items()}
+        record["module_exists"] = os.path.exists(os.path.join(project, load_traps(case_dir)["module"] + ".py"))
+        write_json(result_path, record)
+        scored.append((run_dir, hidden["pass_rate"], None))
+    return scored, skipped
+
+
+def cmd_rescore_hidden(args):
+    opts = parse_opts(args, ["--out", "--evals-dir", "--timeout"])
+    if not opts.get("--out") or not opts.get("--evals-dir"):
+        die("rescore-hidden --out DIR --evals-dir EVALS [--timeout S]")
+    scored, skipped = rescore_hidden(opts["--out"], opts["--evals-dir"], int(opts.get("--timeout") or 120))
+    for run_dir, rate, _ in scored:
+        print("scored  %s  hidden_pass_rate=%.3f" % (os.path.relpath(run_dir, opts["--out"]), rate))
+    for run_dir, why in skipped:
+        print("skipped %s  %s" % (os.path.relpath(run_dir, opts["--out"]), why))
+    print(json.dumps({"scored": len(scored), "skipped": len(skipped)}))
+
+
+def cmd_rescore_own_tests(args):
+    opts = parse_opts(args, ["--out", "--evals-dir", "--timeout"])
+    if not opts.get("--out") or not opts.get("--evals-dir"):
+        die("rescore-own-tests --out DIR --evals-dir EVALS [--timeout S]")
+    scored, skipped = rescore_own_tests(opts["--out"], opts["--evals-dir"], int(opts.get("--timeout") or 120))
+    for run_dir, rate, reason in scored:
+        print("scored  %s  rate=%s%s" % (os.path.relpath(run_dir, opts["--out"]), "-" if rate is None else "%.3f" % rate,
+                                         ("  (%s)" % reason) if reason else ""))
+    for run_dir, why in skipped:
+        print("skipped %s  %s" % (os.path.relpath(run_dir, opts["--out"]), why))
+    print(json.dumps({"scored": len(scored), "skipped": len(skipped)}))
+
+
 # --------------------------------------------------------------- stream.jsonl
 
 def parse_stream(path):
@@ -483,9 +823,29 @@ def parse_stream(path):
     return result, tool_counts, skills, events
 
 
+def models_from_result_event(result_event):
+    """(primary model, all models) from a claude result event's modelUsage keys.
+
+    The primary model is the one with the largest recorded cost (a subagent on
+    another model shows up as a second key); None when there is no usage.
+    """
+    usage = result_event.get("modelUsage") if isinstance(result_event, dict) else None
+    if not isinstance(usage, dict) or not usage:
+        return None, []
+    names = sorted(str(k) for k in usage)
+
+    def cost(name):
+        entry = usage.get(name)
+        value = entry.get("costUSD") if isinstance(entry, dict) else None
+        return value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
+    primary = max(names, key=lambda n: (cost(n), -names.index(n)))
+    return primary, names
+
+
 def cmd_finalize_run(args):
     opts = parse_opts(args, ["--run-dir", "--case-dir", "--project-dir", "--arm", "--case", "--run",
-                             "--exit-code", "--duration", "--temp-dir", "--hidden-timeout"],
+                             "--exit-code", "--duration", "--temp-dir", "--hidden-timeout", "--model-requested",
+                             "--own-timeout"],
                       flags=["--timed-out"])
     for key in ("--run-dir", "--case-dir", "--project-dir", "--arm", "--case", "--run"):
         if not opts.get(key):
@@ -496,12 +856,23 @@ def cmd_finalize_run(args):
     result_event, tool_counts, skills, events = parse_stream(stream_path)
     if result_event is not None:
         write_json(os.path.join(run_dir, "claude.json"), result_event)
+    model, models_used = models_from_result_event(result_event)
 
     hidden, raw = run_hidden(opts["--case-dir"], opts["--project-dir"], None, int(opts.get("--hidden-timeout") or 120))
     with open(os.path.join(run_dir, "hidden.txt"), "w", encoding="utf-8") as fh:
         fh.write(raw)
     agent = analyze_agent_tests(opts["--project-dir"])
     write_json(os.path.join(run_dir, "agent-tests-summary.json"), agent)
+    try:
+        snapshot_project(opts["--project-dir"], os.path.join(run_dir, "project"))
+    except OSError as exc:
+        sys.stderr.write("_flow_eval: project snapshot failed: %s\n" % exc)
+    try:
+        own = own_test_traps(opts["--case-dir"], opts["--project-dir"], int(opts.get("--own-timeout") or 120))
+    except Exception as exc:  # never let own-test scoring sink the run record
+        own = {"catch_rate": None, "reason": "own-test scoring crashed: %s: %s" % (type(exc).__name__, exc),
+               "caught": {}, "per_trap": {}, "own_impl": None}
+    write_json(os.path.join(run_dir, "own-test-traps.json"), own)
 
     exit_code = int(opts.get("--exit-code") or 0)
     timed_out = bool(opts.get("--timed-out"))
@@ -522,6 +893,9 @@ def cmd_finalize_run(args):
         "arm": opts["--arm"],
         "case": opts["--case"],
         "run": int(opts["--run"]),
+        "model": model,
+        "models_used": models_used,
+        "model_requested": opts.get("--model-requested") or None,
         "cost_usd": cost,
         "num_turns": turns,
         "session_id": result_event.get("session_id") if result_event else None,
@@ -553,11 +927,18 @@ def cmd_finalize_run(args):
             "degenerate_inputs": agent["degenerate_inputs"],
             "degenerate_share": agent["degenerate_share"],
         },
+        "own_test_trap_catch_rate": own.get("catch_rate"),
+        "own_test_traps": {
+            "caught": own.get("caught") or {},
+            "reason": own.get("reason"),
+            "own_impl": own.get("own_impl"),
+        },
         "temp_dir": opts.get("--temp-dir"),
     }
     write_json(os.path.join(run_dir, "result.json"), result)
     print(json.dumps({"hidden_pass_rate": result["hidden"]["pass_rate"], "cost_usd": cost, "num_turns": turns,
-                      "error": error, "test_functions": agent["test_functions"]}))
+                      "error": error, "test_functions": agent["test_functions"], "model": model,
+                      "own_test_trap_catch_rate": own.get("catch_rate")}))
 
 
 def num(obj, key):
@@ -580,29 +961,103 @@ def fmt(value, digits=2, pct=False):
     return ("%%.%df" % digits) % value
 
 
-def load_results(out_dir):
-    runs = []
+def infer_model(run_dir, record):
+    """Model for grouping: result.json `model`, else claude.json modelUsage, else
+    the model directory of the new layout, else `model_requested`, else "default"."""
+    if record.get("model"):
+        return str(record["model"])
+    claude_path = os.path.join(run_dir, "claude.json")
+    if os.path.exists(claude_path):
+        try:
+            with open(claude_path, encoding="utf-8") as fh:
+                primary, _ = models_from_result_event(json.load(fh))
+            if primary:
+                return primary
+        except (ValueError, OSError):
+            pass
+    if record.get("model_requested"):
+        return str(record["model_requested"])
+    return "default"
+
+
+def iter_run_dirs(out_dir):
+    """Yield (run_dir, layout) for every result.json under out_dir/runs.
+
+    New layout: runs/<model>/<arm>/<case>/<n>; old: runs/<arm>/<case>/<n>.
+    The depth decides: a result.json four levels below runs/ is the new
+    layout, three levels is the old one.
+    """
     root = os.path.join(out_dir, "runs")
     if not os.path.isdir(root):
-        return runs
-    for arm in sorted(os.listdir(root)):
-        for case in sorted(os.listdir(os.path.join(root, arm))):
-            case_dir = os.path.join(root, arm, case)
-            if not os.path.isdir(case_dir):
-                continue
-            for n in sorted(os.listdir(case_dir)):
-                path = os.path.join(case_dir, n, "result.json")
-                if os.path.exists(path):
-                    try:
-                        with open(path, encoding="utf-8") as fh:
-                            runs.append(json.load(fh))
-                    except ValueError:
-                        sys.stderr.write("_flow_eval: skipping unreadable %s\n" % path)
+        return
+    for dirpath, dirnames, names in os.walk(root):
+        dirnames.sort()
+        if "result.json" not in names:
+            continue
+        rel = os.path.relpath(dirpath, root).split(os.sep)
+        if len(rel) == 4:
+            yield dirpath, "model"
+        elif len(rel) == 3:
+            yield dirpath, "legacy"
+        dirnames[:] = []
+
+
+def load_results(out_dir):
+    runs = []
+    for run_dir, layout in iter_run_dirs(out_dir):
+        path = os.path.join(run_dir, "result.json")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                record = json.load(fh)
+        except ValueError:
+            sys.stderr.write("_flow_eval: skipping unreadable %s\n" % path)
+            continue
+        if not isinstance(record, dict) or "arm" not in record or "case" not in record:
+            sys.stderr.write("_flow_eval: skipping incomplete %s\n" % path)
+            continue
+        record["_model"] = infer_model(run_dir, record)
+        record["_layout"] = layout
+        record["_run_dir"] = run_dir
+        runs.append(record)
     return runs
 
 
-def aggregate(out_dir):
-    runs = load_results(out_dir)
+def own_rate(record):
+    value = record.get("own_test_trap_catch_rate")
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def own_caught(record):
+    own = record.get("own_test_traps") or {}
+    caught = own.get("caught") or {}
+    return {k: v for k, v in caught.items() if isinstance(v, bool)}
+
+
+def summarize_runs(rs):
+    """Metrics shared by the per-arm and per-cell tables."""
+    rates = [r["hidden"]["pass_rate"] for r in rs]
+    return {
+        "runs": len(rs),
+        "hidden_pass_rate_mean": mean(rates),
+        "hidden_pass_rate_min": min(rates), "hidden_pass_rate_max": max(rates),
+        "hidden_pass_rate_spread": max(rates) - min(rates),
+        "all_pass_rate": mean([1.0 if r["hidden"]["all_pass"] else 0.0 for r in rs]),
+        "own_tests_mean": mean([r["agent_tests"]["test_functions"] for r in rs]),
+        "degenerate_share_mean": mean([r["agent_tests"]["degenerate_share"] for r in rs]),
+        "own_test_trap_catch_rate": mean([own_rate(r) for r in rs]),
+        "own_test_trap_scored_runs": sum(1 for r in rs if own_rate(r) is not None),
+        "own_test_trap_unscored_reasons": sorted({str((r.get("own_test_traps") or {}).get("reason"))
+                                                 for r in rs if own_rate(r) is None and (r.get("own_test_traps") or {}).get("reason")}),
+        "cost_usd_mean": mean([r["cost_usd"] for r in rs]),
+        "cost_usd_total": sum(r["cost_usd"] or 0 for r in rs),
+        "num_turns_mean": mean([r["num_turns"] for r in rs]),
+        "errors": sum(1 for r in rs if r.get("error")),
+        "skills_invoked": sorted({s for r in rs for s in r.get("skills_invoked", [])}),
+    }
+
+
+def aggregate_model(runs):
+    """Per-arm, per-cell and decision for the runs of one model."""
     cells = {}
     for r in runs:
         cells.setdefault((r["arm"], r["case"]), []).append(r)
@@ -610,53 +1065,62 @@ def aggregate(out_dir):
     cases = sorted({c for _, c in cells})
     cell_summary = {}
     for (arm, case), rs in cells.items():
-        rates = [r["hidden"]["pass_rate"] for r in rs]
+        entry = summarize_runs(rs)
+        entry.update({"arm": arm, "case": case})
         traps = {}
         for name in sorted({t for r in rs for t in r.get("traps", {})}):
             hits = [r["traps"].get(name) for r in rs if name in r.get("traps", {})]
             traps[name] = mean([1.0 if h else 0.0 for h in hits])
-        cell_summary["%s/%s" % (arm, case)] = {
-            "arm": arm, "case": case, "runs": len(rs),
-            "hidden_pass_rate_mean": mean(rates),
-            "hidden_pass_rate_min": min(rates), "hidden_pass_rate_max": max(rates),
-            "hidden_pass_rate_spread": max(rates) - min(rates),
-            "all_pass_rate": mean([1.0 if r["hidden"]["all_pass"] else 0.0 for r in rs]),
-            "trap_catch_rate": traps,
-            "own_tests_mean": mean([r["agent_tests"]["test_functions"] for r in rs]),
-            "degenerate_share_mean": mean([r["agent_tests"]["degenerate_share"] for r in rs]),
-            "cost_usd_mean": mean([r["cost_usd"] for r in rs]),
-            "num_turns_mean": mean([r["num_turns"] for r in rs]),
-            "errors": sum(1 for r in rs if r.get("error")),
-            "skills_invoked": sorted({s for r in rs for s in r.get("skills_invoked", [])}),
-        }
+        entry["trap_catch_rate"] = traps
+        own_traps = {}
+        for name in sorted({t for r in rs for t in own_caught(r)}):
+            hits = [own_caught(r)[name] for r in rs if name in own_caught(r)]
+            own_traps[name] = mean([1.0 if h else 0.0 for h in hits])
+        entry["own_test_trap_catch"] = own_traps
+        own_rates = [own_rate(r) for r in rs if own_rate(r) is not None]
+        entry["own_test_trap_catch_spread"] = (max(own_rates) - min(own_rates)) if own_rates else None
+        cell_summary["%s/%s" % (arm, case)] = entry
     arm_summary = {}
     for arm in arms:
         rs = [r for r in runs if r["arm"] == arm]
         arm_cells = [c for c in cell_summary.values() if c["arm"] == arm]
-        arm_summary[arm] = {
-            "runs": len(rs),
-            "cases": sorted({c["case"] for c in arm_cells}),
-            "hidden_pass_rate_mean": mean([r["hidden"]["pass_rate"] for r in rs]),
-            "all_pass_rate": mean([1.0 if r["hidden"]["all_pass"] else 0.0 for r in rs]),
-            "own_tests_mean": mean([r["agent_tests"]["test_functions"] for r in rs]),
-            "degenerate_share_mean": mean([r["agent_tests"]["degenerate_share"] for r in rs]),
-            "cost_usd_mean": mean([r["cost_usd"] for r in rs]),
-            "cost_usd_total": sum(r["cost_usd"] or 0 for r in rs),
-            "num_turns_mean": mean([r["num_turns"] for r in rs]),
-            "errors": sum(1 for r in rs if r.get("error")),
-            "spread_mean": mean([c["hidden_pass_rate_spread"] for c in arm_cells]),
-        }
+        entry = summarize_runs(rs)
+        entry["cases"] = sorted({c["case"] for c in arm_cells})
+        entry["spread_mean"] = mean([c["hidden_pass_rate_spread"] for c in arm_cells])
+        arm_summary[arm] = entry
     spread = mean([c["hidden_pass_rate_spread"] for c in cell_summary.values()])
-    decision = decide(arm_summary, spread, cases)
-    summary = {
+    own_spread = mean([c["own_test_trap_catch_spread"] for c in cell_summary.values()])
+    decision = decide(arm_summary, spread, cases, own_spread)
+    return {
         "runs": len(runs),
         "arms": arms,
         "cases": cases,
         "total_cost_usd": sum(r["cost_usd"] or 0 for r in runs),
         "run_to_run_spread": spread,
+        "own_test_trap_spread": own_spread,
         "per_arm": arm_summary,
         "per_cell": cell_summary,
         "decision": decision,
+    }
+
+
+def aggregate(out_dir):
+    runs = load_results(out_dir)
+    models = sorted({r["_model"] for r in runs})
+    per_model = {m: aggregate_model([r for r in runs if r["_model"] == m]) for m in models}
+    summary = {
+        "runs": len(runs),
+        "models": models,
+        "arms": sorted({a for m in per_model.values() for a in m["arms"]}, key=lambda a: ALL_ARMS.index(a) if a in ALL_ARMS else 99),
+        "cases": sorted({c for m in per_model.values() for c in m["cases"]}),
+        "total_cost_usd": sum(r["cost_usd"] or 0 for r in runs),
+        "legacy_layout_runs": sum(1 for r in runs if r["_layout"] == "legacy"),
+        "per_model": per_model,
+        "decision": {
+            "verdicts": {m: per_model[m]["decision"]["verdict"] for m in models},
+            "reading": " ".join("[%s] %s" % (m, per_model[m]["decision"]["reading"]) for m in models)
+                       or "No runs found.",
+        },
     }
     write_json(os.path.join(out_dir, "summary.json"), summary)
     with open(os.path.join(out_dir, "summary.md"), "w", encoding="utf-8") as fh:
@@ -664,10 +1128,16 @@ def aggregate(out_dir):
     return summary
 
 
-def decide(arm_summary, spread, cases):
-    """Apply the decision rule documented in references/correctness-eval.md."""
-    def arm_mean(names):
-        vals = [arm_summary[a]["hidden_pass_rate_mean"] for a in names if a in arm_summary]
+def decide(arm_summary, spread, cases, own_spread=None):
+    """Apply the decision rule documented in references/correctness-eval.md.
+
+    Primary signal: hidden pass rate. Secondary, used only when the primary
+    ties within the run-to-run spread: the own-test trap catch rate (share
+    of trap variants the agent's own suite fails), compared against its own
+    per-cell spread.
+    """
+    def arm_mean(names, key="hidden_pass_rate_mean"):
+        vals = [arm_summary[a][key] for a in names if a in arm_summary]
         return mean(vals)
 
     enforce = arm_mean(["enforce-risk", "enforce-norisk"])
@@ -676,29 +1146,60 @@ def decide(arm_summary, spread, cases):
     risk = arm_mean(["enforce-risk", "suggest-risk", "off-risk"])
     norisk = arm_mean(["enforce-norisk", "suggest-norisk", "off-norisk"])
     baseline = arm_mean(["baseline"])
-    best_alt = mean([v for v in (suggest, off) if v is not None]) if (suggest is not None or off is not None) else None
-    best_alt = max(v for v in (suggest, off) if v is not None) if best_alt is not None else None
+    best_alt = max(v for v in (suggest, off) if v is not None) if (suggest is not None or off is not None) else None
     complete = all(a in arm_summary for a in ALL_ARMS) and len(cases) >= 3 and all(
         arm_summary[a]["runs"] >= 3 * len(cases) for a in ALL_ARMS)
     sentences = []
     verdict = "insufficient-data"
+    decided_by = None
+    secondary = {"enforce": None, "alt": None, "spread": own_spread, "verdict": None}
     if enforce is None or best_alt is None or spread is None:
         sentences.append("Not enough arms have results to apply the decision rule (need at least one enforce-* arm and one suggest-*/off-* arm).")
     else:
         gap = best_alt - enforce
         alt_name = "suggest" if (suggest is not None and (off is None or suggest >= off)) else "off"
+        alt_arms = ["suggest-risk", "suggest-norisk"] if alt_name == "suggest" else ["off-risk", "off-norisk"]
         if gap > spread:
             verdict = "flip-to-suggest"
+            decided_by = "primary"
             sentences.append(
                 "Hidden pass rate under tddMode=enforce (%s) is below the best non-enforce plugin arm (%s, %s) by %.1f points, "
                 "more than the run-to-run spread of %.1f points, so the rule says testing.tddMode should default to suggest."
                 % (fmt(enforce, pct=True), alt_name, fmt(best_alt, pct=True), gap * 100, spread * 100))
         else:
-            verdict = "keep-enforce"
             sentences.append(
                 "Hidden pass rate under tddMode=enforce (%s) is not below the best non-enforce plugin arm (%s, %s) by more than "
-                "the run-to-run spread (%.1f points vs %.1f), so the rule keeps testing.tddMode=enforce."
+                "the run-to-run spread (%.1f points vs %.1f), so on the primary signal the rule keeps testing.tddMode=enforce."
                 % (fmt(enforce, pct=True), alt_name, fmt(best_alt, pct=True), gap * 100, spread * 100))
+            enforce_own = arm_mean(["enforce-risk", "enforce-norisk"], "own_test_trap_catch_rate")
+            alt_own = arm_mean(alt_arms, "own_test_trap_catch_rate")
+            secondary["enforce"], secondary["alt"] = enforce_own, alt_own
+            if abs(gap) <= spread and enforce_own is not None and alt_own is not None:
+                own_gap = alt_own - enforce_own
+                threshold = own_spread if own_spread is not None else 0.0
+                if own_gap > threshold:
+                    verdict = "flip-to-suggest"
+                    decided_by = "secondary"
+                    secondary["verdict"] = "alt-ahead"
+                    sentences.append(
+                        "The arms tie within the spread, so the secondary signal decides: the agent's own tests catch %s of the trap "
+                        "variants under %s against %s under enforce, a gap of %.1f points beyond the own-test spread of %.1f, "
+                        "so the rule says testing.tddMode should default to suggest."
+                        % (fmt(alt_own, pct=True), alt_name, fmt(enforce_own, pct=True), own_gap * 100, threshold * 100))
+                else:
+                    verdict = "keep-enforce"
+                    decided_by = "secondary"
+                    secondary["verdict"] = "enforce-ahead" if -own_gap > threshold else "tie"
+                    sentences.append(
+                        "The arms tie within the spread, so the secondary signal decides: the agent's own tests catch %s of the trap "
+                        "variants under enforce against %s under %s (%+.1f points for %s, own-test spread %.1f), so the rule keeps "
+                        "testing.tddMode=enforce."
+                        % (fmt(enforce_own, pct=True), fmt(alt_own, pct=True), alt_name, own_gap * 100, alt_name, threshold * 100))
+            else:
+                verdict = "keep-enforce"
+                decided_by = "primary"
+                if abs(gap) <= spread:
+                    sentences.append("The arms tie within the spread but the own-test trap catch rate is unavailable for one side, so the primary signal stands.")
     if risk is not None and norisk is not None:
         diff = risk - norisk
         sentences.append("Arms with specFirst.riskMap=true average %s hidden pass rate against %s without it (%+.1f points%s)."
@@ -709,72 +1210,125 @@ def decide(arm_summary, spread, cases):
         if plugin is not None:
             sentences.append("The no-plugin baseline scores %s against a plugin-arm average of %s."
                              % (fmt(baseline, pct=True), fmt(plugin, pct=True)))
+        baseline_own = arm_mean(["baseline"], "own_test_trap_catch_rate")
+        plugin_own = arm_mean(list(PLUGIN_ARMS), "own_test_trap_catch_rate")
+        if baseline_own is not None and plugin_own is not None:
+            sentences.append("Own tests catch %s of the trap variants on the baseline against %s on the plugin arms."
+                             % (fmt(baseline_own, pct=True), fmt(plugin_own, pct=True)))
     if not complete:
         sentences.append("The comparison is incomplete (not every arm has >= 3 runs on every case); treat the reading as provisional.")
     return {
         "verdict": verdict,
+        "decided_by": decided_by,
         "enforce_mean": enforce, "suggest_mean": suggest, "off_mean": off,
         "risk_mean": risk, "norisk_mean": norisk, "baseline_mean": baseline,
         "spread": spread, "complete": complete,
+        "secondary": secondary,
         "reading": " ".join(sentences),
     }
 
 
 def render_summary_md(s):
     lines = ["# Flow correctness eval — summary", ""]
-    lines.append("Runs: %d across %d arm(s) and %d case(s). Total cost: $%.2f. Run-to-run spread (mean per-cell max−min of hidden pass rate): %s."
-                 % (s["runs"], len(s["arms"]), len(s["cases"]), s["total_cost_usd"], fmt(s["run_to_run_spread"], pct=True)))
+    lines.append("Runs: %d across %d model(s), %d arm(s) and %d case(s). Total cost: $%.2f. Models: %s."
+                 % (s["runs"], len(s["models"]), len(s["arms"]), len(s["cases"]), s["total_cost_usd"],
+                    ", ".join("`%s`" % m for m in s["models"]) or "none"))
+    if s.get("legacy_layout_runs"):
+        lines.append("")
+        lines.append("%d run(s) were read from the older `runs/<arm>/<case>/<n>` layout; `_flow_eval.py migrate-layout --out <dir>` moves them under their model." % s["legacy_layout_runs"])
     lines.append("")
     lines.append("## Reading")
     lines.append("")
-    lines.append(s["decision"]["reading"])
+    for model in s["models"]:
+        m = s["per_model"][model]
+        lines.append("**%s** (%d runs, $%.2f, run-to-run spread %s, own-test spread %s): %s"
+                     % (model, m["runs"], m["total_cost_usd"], fmt(m["run_to_run_spread"], pct=True),
+                        fmt(m["own_test_trap_spread"], pct=True), m["decision"]["reading"]))
+        lines.append("")
+        lines.append("Verdict for `%s`: `%s`%s" % (model, m["decision"]["verdict"],
+                     (" (decided by the %s signal)" % m["decision"]["decided_by"]) if m["decision"].get("decided_by") else ""))
+        lines.append("")
+    if not s["models"]:
+        lines.append("No runs found.")
+        lines.append("")
+    lines.append("## Per model × arm")
     lines.append("")
-    lines.append("Verdict: `%s`" % s["decision"]["verdict"])
+    lines.append("| Model | Arm | Runs | Hidden pass rate | All-pass runs | Own tests catch traps | Own tests (mean) | Degenerate share | Cost (mean) | Turns (mean) | Errors |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    for model in s["models"]:
+        m = s["per_model"][model]
+        for arm in m["arms"]:
+            a = m["per_arm"][arm]
+            lines.append("| %s | %s | %d | %s | %s | %s | %s | %s | $%s | %s | %d |" % (
+                model, arm, a["runs"], fmt(a["hidden_pass_rate_mean"], pct=True), fmt(a["all_pass_rate"], pct=True),
+                own_cell(a), fmt(a["own_tests_mean"], 1), fmt(a["degenerate_share_mean"], pct=True), fmt(a["cost_usd_mean"]),
+                fmt(a["num_turns_mean"], 1), a["errors"]))
     lines.append("")
-    lines.append("## Per arm")
+    lines.append("## Per model × arm × case")
     lines.append("")
-    lines.append("| Arm | Runs | Hidden pass rate | All-pass runs | Own tests (mean) | Degenerate share | Cost (mean) | Turns (mean) | Errors |")
-    lines.append("|---|---|---|---|---|---|---|---|---|")
-    for arm in s["arms"]:
-        a = s["per_arm"][arm]
-        lines.append("| %s | %d | %s | %s | %s | %s | $%s | %s | %d |" % (
-            arm, a["runs"], fmt(a["hidden_pass_rate_mean"], pct=True), fmt(a["all_pass_rate"], pct=True),
-            fmt(a["own_tests_mean"], 1), fmt(a["degenerate_share_mean"], pct=True), fmt(a["cost_usd_mean"]),
-            fmt(a["num_turns_mean"], 1), a["errors"]))
-    lines.append("")
-    lines.append("## Per arm × case")
-    lines.append("")
-    lines.append("| Arm | Case | Runs | Hidden pass rate (min–max) | All-pass | Own tests | Degenerate share | Cost | Turns | Errors |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|")
-    for arm in s["arms"]:
-        for case in s["cases"]:
-            c = s["per_cell"].get("%s/%s" % (arm, case))
-            if not c:
-                continue
-            lines.append("| %s | %s | %d | %s (%s–%s) | %s | %s | %s | $%s | %s | %d |" % (
-                arm, case, c["runs"], fmt(c["hidden_pass_rate_mean"], pct=True), fmt(c["hidden_pass_rate_min"], pct=True),
-                fmt(c["hidden_pass_rate_max"], pct=True), fmt(c["all_pass_rate"], pct=True), fmt(c["own_tests_mean"], 1),
-                fmt(c["degenerate_share_mean"], pct=True), fmt(c["cost_usd_mean"]), fmt(c["num_turns_mean"], 1), c["errors"]))
+    lines.append("| Model | Arm | Case | Runs | Hidden pass rate (min–max) | All-pass | Own tests catch traps | Own tests | Degenerate share | Cost | Turns | Errors |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+    for model in s["models"]:
+        m = s["per_model"][model]
+        for arm in m["arms"]:
+            for case in m["cases"]:
+                c = m["per_cell"].get("%s/%s" % (arm, case))
+                if not c:
+                    continue
+                lines.append("| %s | %s | %s | %d | %s (%s–%s) | %s | %s | %s | %s | $%s | %s | %d |" % (
+                    model, arm, case, c["runs"], fmt(c["hidden_pass_rate_mean"], pct=True), fmt(c["hidden_pass_rate_min"], pct=True),
+                    fmt(c["hidden_pass_rate_max"], pct=True), fmt(c["all_pass_rate"], pct=True), own_cell(c), fmt(c["own_tests_mean"], 1),
+                    fmt(c["degenerate_share_mean"], pct=True), fmt(c["cost_usd_mean"]), fmt(c["num_turns_mean"], 1), c["errors"]))
     lines.append("")
     lines.append("## Trap catch rate (share of runs whose implementation fell into the trap; lower is better)")
     lines.append("")
-    for case in s["cases"]:
-        traps = sorted({t for key, c in s["per_cell"].items() if c["case"] == case for t in c["trap_catch_rate"]})
-        if not traps:
-            continue
-        lines.append("### %s" % case)
-        lines.append("")
-        lines.append("| Arm | " + " | ".join(traps) + " |")
-        lines.append("|---|" + "---|" * len(traps))
-        for arm in s["arms"]:
-            c = s["per_cell"].get("%s/%s" % (arm, case))
-            if not c:
+    for model in s["models"]:
+        m = s["per_model"][model]
+        for case in m["cases"]:
+            traps = sorted({t for c in m["per_cell"].values() if c["case"] == case for t in c["trap_catch_rate"]})
+            if not traps:
                 continue
-            lines.append("| %s | " % arm + " | ".join(fmt(c["trap_catch_rate"].get(t), pct=True) for t in traps) + " |")
-        lines.append("")
-    lines.append("Skills invoked per cell are listed in summary.json (`per_cell.*.skills_invoked`); a plugin arm with no `flow:*` skill invocation did not exercise the plugin.")
+            lines.append("### %s — %s" % (model, case))
+            lines.append("")
+            lines.append("| Arm | " + " | ".join(traps) + " |")
+            lines.append("|---|" + "---|" * len(traps))
+            for arm in m["arms"]:
+                c = m["per_cell"].get("%s/%s" % (arm, case))
+                if not c:
+                    continue
+                lines.append("| %s | " % arm + " | ".join(fmt(c["trap_catch_rate"].get(t), pct=True) for t in traps) + " |")
+            lines.append("")
+    lines.append("## Own-test trap catch rate (share of runs whose own tests fail the trap variant; higher is better)")
+    lines.append("")
+    lines.append("A run is scored only when its `tests/` suite imports the module, passes at least one test against the agent's own implementation, and uses no names the variants lack; `summary.json` lists the reasons for unscored runs (`per_cell.*.own_test_trap_unscored_reasons`).")
+    lines.append("")
+    for model in s["models"]:
+        m = s["per_model"][model]
+        for case in m["cases"]:
+            traps = sorted({t for c in m["per_cell"].values() if c["case"] == case for t in c["own_test_trap_catch"]})
+            if not traps:
+                continue
+            lines.append("### %s — %s" % (model, case))
+            lines.append("")
+            lines.append("| Arm | scored runs | " + " | ".join(traps) + " |")
+            lines.append("|---|---|" + "---|" * len(traps))
+            for arm in m["arms"]:
+                c = m["per_cell"].get("%s/%s" % (arm, case))
+                if not c:
+                    continue
+                lines.append("| %s | %d/%d | " % (arm, c["own_test_trap_scored_runs"], c["runs"])
+                             + " | ".join(fmt(c["own_test_trap_catch"].get(t), pct=True) for t in traps) + " |")
+            lines.append("")
+    lines.append("Skills invoked per cell are listed in summary.json (`per_model.<model>.per_cell.*.skills_invoked`); a plugin arm with no `flow:*` skill invocation did not exercise the plugin.")
     lines.append("")
     return "\n".join(lines)
+
+
+def own_cell(entry):
+    """'67% (3/3)' — mean own-test trap catch rate and how many runs were scored."""
+    if entry["own_test_trap_catch_rate"] is None:
+        return "- (0/%d)" % entry["runs"]
+    return "%s (%d/%d)" % (fmt(entry["own_test_trap_catch_rate"], pct=True), entry["own_test_trap_scored_runs"], entry["runs"])
 
 
 def cmd_aggregate(args):
@@ -782,8 +1336,69 @@ def cmd_aggregate(args):
     if not opts.get("--out"):
         die("aggregate --out DIR")
     summary = aggregate(opts["--out"])
-    print(json.dumps({"runs": summary["runs"], "verdict": summary["decision"]["verdict"],
+    print(json.dumps({"runs": summary["runs"], "models": summary["models"], "verdicts": summary["decision"]["verdicts"],
                       "total_cost_usd": summary["total_cost_usd"]}))
+
+
+# ------------------------------------------------------------ migrate-layout
+
+def migrate_layout(out_dir):
+    """Move runs/<arm>/<case>/<n> to runs/<model>/<arm>/<case>/<n> and stamp `model`.
+
+    The model comes from result.json (`model`), else claude.json modelUsage,
+    else `model_requested`, else "default". Idempotent: runs already in the
+    model layout are left alone (their result.json still gets `model` filled
+    in when missing). Returns the list of (from, to) moves.
+    """
+    moves = []
+    root = os.path.join(out_dir, "runs")
+    for run_dir, layout in list(iter_run_dirs(out_dir)):
+        path = os.path.join(run_dir, "result.json")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                record = json.load(fh)
+        except ValueError:
+            continue
+        model = infer_model(run_dir, record)
+        if record.get("model") != model:
+            record["model"] = model
+            claude_path = os.path.join(run_dir, "claude.json")
+            if os.path.exists(claude_path) and not record.get("models_used"):
+                try:
+                    with open(claude_path, encoding="utf-8") as fh:
+                        _, record["models_used"] = models_from_result_event(json.load(fh))
+                except (ValueError, OSError):
+                    pass
+            write_json(path, record)
+        if layout == "model":
+            continue
+        arm, case, n = os.path.relpath(run_dir, root).split(os.sep)
+        dest = os.path.join(root, model.replace("/", "_"), arm, case, n)
+        if os.path.exists(dest):
+            sys.stderr.write("_flow_eval: not moving %s: %s exists\n" % (run_dir, dest))
+            continue
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.move(run_dir, dest)
+        moves.append((run_dir, dest))
+    # drop the now-empty legacy directories (bottom-up; a dir emptied by the
+    # previous rmdir is re-checked with listdir, not os.walk's stale dirnames)
+    for arm in list(os.listdir(root)) if os.path.isdir(root) else []:
+        arm_dir = os.path.join(root, arm)
+        if arm in ALL_ARMS and os.path.isdir(arm_dir):
+            for dirpath, _dirnames, _filenames in os.walk(arm_dir, topdown=False):
+                if not os.listdir(dirpath):
+                    os.rmdir(dirpath)
+    return moves
+
+
+def cmd_migrate_layout(args):
+    opts = parse_opts(args, ["--out"])
+    if not opts.get("--out"):
+        die("migrate-layout --out DIR")
+    moves = migrate_layout(opts["--out"])
+    for src, dst in moves:
+        print("moved %s -> %s" % (os.path.relpath(src, opts["--out"]), os.path.relpath(dst, opts["--out"])))
+    print(json.dumps({"moved": len(moves)}))
 
 
 # --------------------------------------------------------------- check-cases
@@ -854,8 +1469,12 @@ COMMANDS = {
     "parse-unittest": cmd_parse_unittest,
     "hidden-run": cmd_hidden_run,
     "agent-tests": cmd_agent_tests,
+    "own-test-traps": cmd_own_test_traps,
+    "rescore-own-tests": cmd_rescore_own_tests,
+    "rescore-hidden": cmd_rescore_hidden,
     "finalize-run": cmd_finalize_run,
     "aggregate": cmd_aggregate,
+    "migrate-layout": cmd_migrate_layout,
     "check-cases": cmd_check_cases,
 }
 

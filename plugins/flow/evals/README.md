@@ -16,8 +16,19 @@ evals/<case>/
   hidden/reference_impl.py   known-good implementation the suite was verified against
   hidden/traps/*.py    one wrong variant per seeded trap
   hidden/traps.json    trap -> tests that fail under its variant (generated, verified by --check-cases)
-  expected.md          human-readable trap table
+  expected.md          human-readable trap table; the two 2026-09 cases also record their
+                       no-plugin baseline calibration (the bar: the baseline must fail at
+                       least one hidden test in at least one of three runs)
 ```
+
+Cases: `four-stream-codec`, `sliding-window-limiter`, `money-allocator` (first
+run, 2026-09-09, solved by every arm) and `changeset-applier`,
+`interval-algebra` (added for the second run; rules that a first reading of
+the spec tends to get wrong). Trap variants import the reference
+(`from reference_impl import *`) and override one rule each, so the same
+variants serve two scorings: the hidden suite against the agent's module
+(the score), and the agent's own `tests/` against each variant swapped in
+under the module name (`own-test-traps.json`, the secondary signal).
 
 Run with `plugins/flow/bin/flow-eval-run.sh` (see
 [`../references/correctness-eval.md`](../references/correctness-eval.md)).

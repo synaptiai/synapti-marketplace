@@ -9,7 +9,7 @@
 #
 # Usage:
 #   flow-eval-run.sh [--arm <name>|all] [--case <name>|all] [--runs N]
-#                    [--model <m>] [--max-turns N] [--max-budget-usd X]
+#                    [--model <m> | --models <a,b>] [--max-turns N] [--max-budget-usd X]
 #                    [--max-total-usd X] [--timeout-seconds S] [--out <dir>]
 #                    [--permission-mode acceptEdits|bypassPermissions]
 #                    [--dry-run] [--keep-temp] [--aggregate-only] [--check-cases]
@@ -27,7 +27,8 @@
 # --max-turns 60 (or prompt.md `max_turns`), --max-budget-usd 4 per run,
 # --max-total-usd 250, --timeout-seconds 1800 (or prompt.md `timeout_seconds`),
 # --out plugins/flow/evals/results/<UTC timestamp>/. --model is passed through
-# only when given; otherwise the CLI default model is used.
+# only when given; otherwise the CLI default model is used. --models a,b runs
+# the whole plan once per model, sequentially; results are keyed by model.
 #
 # Permissions: the child runs headless with `--permission-mode acceptEdits
 # --allowedTools <prompt.md allowed_tools> --permission-prompts none` (verified
@@ -43,15 +44,22 @@
 # run in --out) is checked before each run: when total + --max-budget-usd would
 # exceed --max-total-usd the runner stops with exit 3 and still aggregates.
 #
-# Output layout under --out:
-#   runs/<arm>/<case>/<n>/result.json            composite per-run record
-#   runs/<arm>/<case>/<n>/claude.json            the claude result event (cost, turns, session_id)
-#   runs/<arm>/<case>/<n>/stream.jsonl           full stream-json transcript of the run
-#   runs/<arm>/<case>/<n>/hidden.txt             raw hidden-suite output
-#   runs/<arm>/<case>/<n>/agent-tests-summary.json
-#   runs/<arm>/<case>/<n>/settings.json          the arm's settings.flow.json (plugin arms)
-#   runs/<arm>/<case>/<n>/prompt.txt, command.txt
+# Output layout under --out (<model> is the --model/--models value with "/"
+# replaced by "_", or "default" when none was given; result.json records the
+# model actually billed, from the claude result event's modelUsage keys):
+#   runs/<model>/<arm>/<case>/<n>/result.json    composite per-run record
+#   runs/<model>/<arm>/<case>/<n>/claude.json    the claude result event (cost, turns, session_id)
+#   runs/<model>/<arm>/<case>/<n>/stream.jsonl   full stream-json transcript of the run
+#   runs/<model>/<arm>/<case>/<n>/hidden.txt     raw hidden-suite output
+#   runs/<model>/<arm>/<case>/<n>/own-test-traps.json  the agent's own suite vs each trap variant
+#   runs/<model>/<arm>/<case>/<n>/project/       snapshot of the agent's module and tests
+#   runs/<model>/<arm>/<case>/<n>/agent-tests-summary.json
+#   runs/<model>/<arm>/<case>/<n>/settings.json  the arm's settings.flow.json (plugin arms)
+#   runs/<model>/<arm>/<case>/<n>/prompt.txt, command.txt
 #   summary.json, summary.md
+# Results written by earlier versions under runs/<arm>/<case>/<n>/ are still
+# read by --aggregate-only; move them into the model layout once with
+#   python3 plugins/flow/bin/_flow_eval.py migrate-layout --out <dir>
 #
 # Child-session hygiene: the parent Claude Code session exports CLAUDE* variables
 # that would make the nested `claude` believe it is a sub-session of this one.
@@ -97,6 +105,8 @@ ARM_FILTER="all"
 CASE_FILTER="all"
 RUNS=""
 MODEL=""
+MODELS_LIST=""
+MODELS_GIVEN=0
 MAX_TURNS=""
 MAX_BUDGET="4"
 MAX_TOTAL="250"
@@ -123,6 +133,7 @@ while [ $# -gt 0 ]; do
     --case) need_value "$@"; CASE_FILTER="$2"; shift 2 ;;
     --runs) need_value "$@"; RUNS="$2"; shift 2 ;;
     --model) need_value "$@"; MODEL="$2"; shift 2 ;;
+    --models) need_value "$@"; MODELS_LIST="$2"; MODELS_GIVEN=1; shift 2 ;;
     --max-turns) need_value "$@"; MAX_TURNS="$2"; shift 2 ;;
     --max-budget-usd) need_value "$@"; MAX_BUDGET="$2"; shift 2 ;;
     --max-total-usd) need_value "$@"; MAX_TOTAL="$2"; shift 2 ;;
@@ -138,6 +149,21 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+if [ -n "$MODEL" ] && [ "$MODELS_GIVEN" = "1" ]; then
+  echo "flow-eval-run: use either --model or --models, not both" >&2; exit 1
+fi
+# MODELS holds one entry per model to run; the empty string means "CLI default".
+MODELS=()
+if [ "$MODELS_GIVEN" = "1" ]; then
+  IFS=',' read -r -a REQUESTED_MODELS <<<"$MODELS_LIST"
+  for m in "${REQUESTED_MODELS[@]}"; do
+    m="${m// /}"
+    [ -n "$m" ] && MODELS+=("$m")
+  done
+  [ "${#MODELS[@]}" -gt 0 ] || { echo "flow-eval-run: --models needs at least one model name" >&2; exit 1; }
+else
+  MODELS=("$MODEL")
+fi
 for n in "$MAX_BUDGET" "$MAX_TOTAL"; do
   [[ "$n" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "flow-eval-run: budget values must be numbers, got '$n'" >&2; exit 1; }
 done
@@ -275,40 +301,48 @@ PLANNED=0
 EXECUTED=0
 SKIPPED=0
 
+model_label() {
+  # model_label <model> — directory name for a model ("default" when empty)
+  local m="${1:-default}"
+  printf '%s' "${m//\//_}"
+}
+
 run_one() {
-  local arm="$1" case="$2" n="$3"
-  local run_dir="$OUT_DIR/runs/$arm/$case/$n"
+  local model="$1" arm="$2" case="$3" n="$4"
+  local label run_dir
+  label="$(model_label "$model")"
+  run_dir="$OUT_DIR/runs/$label/$arm/$case/$n"
   local case_dir="$EVALS_DIR/$case"
   local run_max_turns run_model run_timeout run_allowed_tools
   run_max_turns="${MAX_TURNS:-$(case_meta "$case" max_turns)}"; run_max_turns="${run_max_turns:-60}"
   # prompt.md allowed_tools is a JSON list; the CLI wants a comma-separated string.
   run_allowed_tools="$(case_meta "$case" allowed_tools | tr -d '[]" ' )"; run_allowed_tools="${run_allowed_tools:-$DEFAULT_ALLOWED_TOOLS}"
   run_timeout="${TIMEOUT_SECONDS:-$(case_meta "$case" timeout_seconds)}"; run_timeout="${run_timeout:-1800}"
-  run_model="${MODEL:-$(case_meta "$case" model)}"
+  run_model="${model:-$(case_meta "$case" model)}"
   build_command
 
   PLANNED=$((PLANNED + 1))
   if [ -f "$run_dir/result.json" ]; then
     SKIPPED=$((SKIPPED + 1))
-    [ "$DRY_RUN" = "1" ] && echo "SKIP  $arm/$case/$n (result.json exists)"
+    [ "$DRY_RUN" = "1" ] && echo "SKIP  $label/$arm/$case/$n (result.json exists)"
     return 0
   fi
 
   if [ "$DRY_RUN" = "1" ]; then
     local plugin_note="(no plugin)"
     [ "$arm" != "baseline" ] && plugin_note="settings=$(arm_settings "$arm")"
-    echo "RUN   $arm/$case/$n  timeout=${run_timeout}s  $plugin_note"
+    echo "RUN   $label/$arm/$case/$n  model=${run_model:-<cli default>}  timeout=${run_timeout}s  $plugin_note"
     local unset_list=""
     for v in "${STRIP_ENV[@]}"; do unset_list="$unset_list -u $v"; done
     printf '      cd <temp copy of %s> && env%s FLOW_STATE_DIR=<temp>/.flow-state timeout %s %s < prompt.txt > %s/stream.jsonl\n' \
-      "evals/$case/scaffold" "$unset_list" "$run_timeout" "${CLAUDE_CMD[*]}" "runs/$arm/$case/$n"
+      "evals/$case/scaffold" "$unset_list" "$run_timeout" "${CLAUDE_CMD[*]}" "runs/$label/$arm/$case/$n"
     return 0
   fi
 
   local total
   total=$(running_total)
   if would_exceed "$total" "$MAX_BUDGET" "$MAX_TOTAL"; then
-    echo "flow-eval-run: stopping before $arm/$case/$n — running total \$$total + per-run cap \$$MAX_BUDGET would exceed --max-total-usd \$$MAX_TOTAL" >&2
+    echo "flow-eval-run: stopping before $label/$arm/$case/$n — running total \$$total + per-run cap \$$MAX_BUDGET would exceed --max-total-usd \$$MAX_TOTAL" >&2
     BUDGET_STOP=1
     return 1
   fi
@@ -327,7 +361,7 @@ run_one() {
   python3 "$HELPER" case-prompt "$case_dir" --arm "$arm" > "$run_dir/prompt.txt"
   printf '%s\n' "${CLAUDE_CMD[*]}" > "$run_dir/command.txt"
 
-  echo "flow-eval-run: [$arm/$case/$n] starting (total so far \$$total; max-turns $run_max_turns; timeout ${run_timeout}s)"
+  echo "flow-eval-run: [$label/$arm/$case/$n] starting (model ${run_model:-<cli default>}; total so far \$$total; max-turns $run_max_turns; timeout ${run_timeout}s)"
   local start end exit_code timed_out=0
   start=$(date +%s)
   local unset_args=()
@@ -341,11 +375,12 @@ run_one() {
 
   local finalize_args=(finalize-run --run-dir "$run_dir" --case-dir "$case_dir" --project-dir "$tmp"
     --arm "$arm" --case "$case" --run "$n" --exit-code "$exit_code" --duration "$((end - start))")
+  [ -n "$run_model" ] && finalize_args+=(--model-requested "$run_model")
   [ "$timed_out" = "1" ] && finalize_args+=(--timed-out)
   [ "$KEEP_TEMP" = "1" ] && finalize_args+=(--temp-dir "$tmp")
   local grade
-  grade=$(python3 "$HELPER" "${finalize_args[@]}") || { echo "flow-eval-run: grading failed for $arm/$case/$n" >&2; RUN_ERRORS=$((RUN_ERRORS + 1)); }
-  echo "flow-eval-run: [$arm/$case/$n] done exit=$exit_code $grade"
+  grade=$(python3 "$HELPER" "${finalize_args[@]}") || { echo "flow-eval-run: grading failed for $label/$arm/$case/$n" >&2; RUN_ERRORS=$((RUN_ERRORS + 1)); }
+  echo "flow-eval-run: [$label/$arm/$case/$n] done exit=$exit_code $grade"
   EXECUTED=$((EXECUTED + 1))
   if grep -q '"error": "' "$run_dir/result.json" 2>/dev/null && ! grep -q '"error": null' "$run_dir/result.json"; then
     RUN_ERRORS=$((RUN_ERRORS + 1))
@@ -365,20 +400,22 @@ mkdir -p "$OUT_DIR"
 # nowhere from there. (Seen on the first full run: every run died with
 # "prompt.txt: No such file or directory" before claude started.)
 OUT_DIR=$(cd "$OUT_DIR" && pwd -P) || { echo "flow-eval-run: cannot resolve --out $OUT_DIR" >&2; exit 2; }
-[ "$DRY_RUN" = "1" ] && echo "PLAN  out=$OUT_DIR  per-run cap=\$$MAX_BUDGET  total cap=\$$MAX_TOTAL  plugin=$PLUGIN_ROOT"
-for case in $CASES; do
-  case_runs="${RUNS:-$(case_meta "$case" runs)}"; case_runs="${case_runs:-3}"
-  for arm in $ARMS; do
-    n=1
-    while [ "$n" -le "$case_runs" ]; do
-      run_one "$arm" "$case" "$n" || break 2
-      n=$((n + 1))
+[ "$DRY_RUN" = "1" ] && echo "PLAN  out=$OUT_DIR  per-run cap=\$$MAX_BUDGET  total cap=\$$MAX_TOTAL  plugin=$PLUGIN_ROOT  models=$(for m in "${MODELS[@]}"; do printf '%s ' "$(model_label "$m")"; done)"
+for model in "${MODELS[@]}"; do
+  for case in $CASES; do
+    case_runs="${RUNS:-$(case_meta "$case" runs)}"; case_runs="${case_runs:-3}"
+    for arm in $ARMS; do
+      n=1
+      while [ "$n" -le "$case_runs" ]; do
+        run_one "$model" "$arm" "$case" "$n" || break 3
+        n=$((n + 1))
+      done
     done
   done
 done
 
 if [ "$DRY_RUN" = "1" ]; then
-  echo "PLAN  $PLANNED run(s): $(echo "$ARMS" | wc -w | tr -d ' ') arm(s) × $(echo "$CASES" | wc -w | tr -d ' ') case(s); $SKIPPED already complete"
+  echo "PLAN  $PLANNED run(s): ${#MODELS[@]} model(s) × $(echo "$ARMS" | wc -w | tr -d ' ') arm(s) × $(echo "$CASES" | wc -w | tr -d ' ') case(s); $SKIPPED already complete"
   rmdir "$OUT_DIR" 2>/dev/null
   exit 0
 fi
