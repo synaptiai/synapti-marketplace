@@ -47,7 +47,7 @@ BUILTIN_PATTERNS=(
   'typecheck|(^|[;&|[:space:]])(npm|pnpm|yarn|bun)[[:space:]]+run[[:space:]]+(typecheck|type-check)([[:space:]]|$)'
   'build|(^|[;&|[:space:]])(npm|pnpm|yarn|bun)[[:space:]]+run[[:space:]]+build([[:space:]]|$)'
   'test|(^|[;&|[:space:]])(npx[[:space:]]+)?(vitest|jest|mocha|ava|tap)([[:space:]]|$)'
-  'test|(^|[;&|[:space:]])(pytest|python3?[[:space:]]+-m[[:space:]]+pytest)([[:space:]]|$)'
+  'test|(^|[;&|[:space:]])(pytest|python3?[[:space:]]+-m[[:space:]]+(pytest|unittest|doctest))([[:space:]]|$)'
   'lint|(^|[;&|[:space:]])(ruff|flake8|black[[:space:]]+--check)([[:space:]]|$)'
   'typecheck|(^|[;&|[:space:]])(mypy|pyright)([[:space:]]|$)'
   'typecheck|(^|[;&|[:space:]])(npx[[:space:]]+)?tsc([[:space:]]|$)'

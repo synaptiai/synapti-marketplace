@@ -1,0 +1,917 @@
+[
+ {
+  "arm": "baseline",
+  "case": "four-stream-codec",
+  "run": "1",
+  "session_id": "ad106ecb-1538-4af2-8c74-c4d83cd5965b",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.16661800000000002,
+  "num_turns": 7,
+  "test_functions": 27,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "arm": "baseline",
+  "case": "four-stream-codec",
+  "run": "2",
+  "session_id": "7afdd9cd-04ec-42bb-bd95-92704073a8a9",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.1388598,
+  "num_turns": 7,
+  "test_functions": 23,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "arm": "baseline",
+  "case": "four-stream-codec",
+  "run": "3",
+  "session_id": "3b22b7cc-73da-47e5-9e1d-e5305f4c3718",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.174119,
+  "num_turns": 8,
+  "test_functions": 32,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "arm": "baseline",
+  "case": "money-allocator",
+  "run": "1",
+  "session_id": "29e292a8-1d10-4d0e-9c32-84b64613f84e",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.1823142,
+  "num_turns": 8,
+  "test_functions": 23,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "arm": "baseline",
+  "case": "money-allocator",
+  "run": "2",
+  "session_id": "c85c0040-cbfb-46d8-b64c-b5a76cc3b632",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.22450720000000002,
+  "num_turns": 10,
+  "test_functions": 23,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "arm": "baseline",
+  "case": "money-allocator",
+  "run": "3",
+  "session_id": "69db5049-6f05-40a5-b1cb-28d0f85fff95",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.1897884,
+  "num_turns": 7,
+  "test_functions": 23,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "arm": "baseline",
+  "case": "sliding-window-limiter",
+  "run": "1",
+  "session_id": "70f260a0-0809-4a37-a972-9e8e661073ea",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.14338940000000003,
+  "num_turns": 7,
+  "test_functions": 24,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "arm": "baseline",
+  "case": "sliding-window-limiter",
+  "run": "2",
+  "session_id": "e306f857-e3fc-4581-afd6-a676bcd5d3a3",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.19294940000000002,
+  "num_turns": 10,
+  "test_functions": 22,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "arm": "baseline",
+  "case": "sliding-window-limiter",
+  "run": "3",
+  "session_id": "391b7e9f-c039-400f-8b9f-0ada48d0ccdb",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.15593980000000002,
+  "num_turns": 7,
+  "test_functions": 22,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "arm": "enforce-norisk",
+  "case": "four-stream-codec",
+  "run": "1",
+  "session_id": "2ad0e48f-9007-4bfd-92ae-22ef1cf948a8",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.9723483,
+  "num_turns": 14,
+  "test_functions": 17,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-norisk",
+  "case": "four-stream-codec",
+  "run": "2",
+  "session_id": "72118ec2-9bf5-4b53-94c4-26feab8d08ec",
+  "hidden_pass_rate": null,
+  "cost_usd": 2.2501821,
+  "num_turns": 33,
+  "test_functions": 11,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-norisk",
+  "case": "four-stream-codec",
+  "run": "3",
+  "session_id": "a1c2bacc-8c55-4016-938b-cf53d558acd2",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.6691165999999997,
+  "num_turns": 16,
+  "test_functions": 18,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-norisk",
+  "case": "money-allocator",
+  "run": "1",
+  "session_id": "6873e4eb-0979-46c8-a283-a48df2bec450",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.5243171000000004,
+  "num_turns": 38,
+  "test_functions": 20,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-norisk",
+  "case": "money-allocator",
+  "run": "2",
+  "session_id": "7cfae293-f0cd-4422-8f68-a5c3a6b9e450",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.3633798,
+  "num_turns": 27,
+  "test_functions": 13,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-norisk",
+  "case": "money-allocator",
+  "run": "3",
+  "session_id": "d3eaa63d-effe-4d2d-b468-a71a80a4c714",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.9758933,
+  "num_turns": 13,
+  "test_functions": 15,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-norisk",
+  "case": "sliding-window-limiter",
+  "run": "1",
+  "session_id": "78eadb73-7e42-4fb5-ac17-4a35fad4ff53",
+  "hidden_pass_rate": null,
+  "cost_usd": 2.7687332,
+  "num_turns": 38,
+  "test_functions": 25,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-norisk",
+  "case": "sliding-window-limiter",
+  "run": "2",
+  "session_id": "d942f550-2cf4-4b53-960b-0d7a2dea0bda",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.8255628999999995,
+  "num_turns": 16,
+  "test_functions": 13,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-norisk",
+  "case": "sliding-window-limiter",
+  "run": "3",
+  "session_id": "251ec277-1068-48f4-acb0-04d4327aadfe",
+  "hidden_pass_rate": null,
+  "cost_usd": 2.2410056999999997,
+  "num_turns": 42,
+  "test_functions": 9,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-risk",
+  "case": "four-stream-codec",
+  "run": "1",
+  "session_id": "bd609709-bc51-4e10-a33c-7e21bde3697b",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.2156828000000002,
+  "num_turns": 80,
+  "test_functions": 21,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-risk",
+  "case": "four-stream-codec",
+  "run": "2",
+  "session_id": "2def4aaa-aa30-4d19-82e6-8679eb04ea94",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.2106565999999996,
+  "num_turns": 36,
+  "test_functions": 15,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-risk",
+  "case": "four-stream-codec",
+  "run": "3",
+  "session_id": "d0a58c48-f412-4223-a8bc-483c19fcd36b",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.5677558999999996,
+  "num_turns": 16,
+  "test_functions": 26,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-risk",
+  "case": "money-allocator",
+  "run": "1",
+  "session_id": "78d4984f-af32-48f6-a1d4-b93f737e2d72",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.6382599,
+  "num_turns": 15,
+  "test_functions": 15,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-risk",
+  "case": "money-allocator",
+  "run": "2",
+  "session_id": "d0528d73-e836-46ce-8041-d8764a1fc288",
+  "hidden_pass_rate": null,
+  "cost_usd": 2.3799751,
+  "num_turns": 33,
+  "test_functions": 16,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-risk",
+  "case": "money-allocator",
+  "run": "3",
+  "session_id": "033c25d3-3c38-4e6b-add3-b1895f50d710",
+  "hidden_pass_rate": null,
+  "cost_usd": 2.4068304,
+  "num_turns": 31,
+  "test_functions": 18,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-risk",
+  "case": "sliding-window-limiter",
+  "run": "1",
+  "session_id": "d5867713-576a-4e4f-9414-6b8c0e251963",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.0893890000000002,
+  "num_turns": 70,
+  "test_functions": 16,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-risk",
+  "case": "sliding-window-limiter",
+  "run": "2",
+  "session_id": "dac27c39-e00e-49c1-8643-68d7273a371e",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.9376060999999998,
+  "num_turns": 42,
+  "test_functions": 22,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "enforce-risk",
+  "case": "sliding-window-limiter",
+  "run": "3",
+  "session_id": "69a5dffe-b81f-486d-a947-26a7bc93b177",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.8933210000000003,
+  "num_turns": 37,
+  "test_functions": 20,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-norisk",
+  "case": "four-stream-codec",
+  "run": "1",
+  "session_id": "07dbafce-c969-4cf3-95b7-9f0dca058a2f",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.5538330000000001,
+  "num_turns": 16,
+  "test_functions": 20,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-norisk",
+  "case": "four-stream-codec",
+  "run": "2",
+  "session_id": "d40a12c5-3c75-4a81-8f77-7c19bdd5d3a3",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.6545763000000002,
+  "num_turns": 18,
+  "test_functions": 21,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-norisk",
+  "case": "four-stream-codec",
+  "run": "3",
+  "session_id": "31d13881-27e0-43ca-b07f-00d21e8266e8",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.6789862999999999,
+  "num_turns": 17,
+  "test_functions": 16,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-norisk",
+  "case": "money-allocator",
+  "run": "1",
+  "session_id": "df716c14-fcbd-496a-b202-331fe104830c",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.7023499000000002,
+  "num_turns": 16,
+  "test_functions": 20,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-norisk",
+  "case": "money-allocator",
+  "run": "2",
+  "session_id": "7c595554-3ed7-46e2-8462-7c47fcca4c1f",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.6080078000000001,
+  "num_turns": 16,
+  "test_functions": 21,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-norisk",
+  "case": "money-allocator",
+  "run": "3",
+  "session_id": "5772e467-68fa-4ae9-ab82-3639b07ade69",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.6335653000000001,
+  "num_turns": 13,
+  "test_functions": 19,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-norisk",
+  "case": "sliding-window-limiter",
+  "run": "1",
+  "session_id": "032bcd73-ede0-4bfc-aa49-d975320a7964",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.6043080999999999,
+  "num_turns": 14,
+  "test_functions": 18,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-norisk",
+  "case": "sliding-window-limiter",
+  "run": "2",
+  "session_id": "ab6da294-288b-4e5a-8c19-ccc202f4ca20",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.48528619999999995,
+  "num_turns": 17,
+  "test_functions": 22,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-norisk",
+  "case": "sliding-window-limiter",
+  "run": "3",
+  "session_id": "f375a154-ab9c-470e-b071-cc4e2b0a39ee",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.5685684,
+  "num_turns": 23,
+  "test_functions": 20,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-risk",
+  "case": "four-stream-codec",
+  "run": "1",
+  "session_id": "47fef4b2-85e2-436f-9a04-571c03891657",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.5556146,
+  "num_turns": 15,
+  "test_functions": 20,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-risk",
+  "case": "four-stream-codec",
+  "run": "2",
+  "session_id": "da38edb0-1e88-48d2-8a85-ad2ed0461fff",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.5894519,
+  "num_turns": 10,
+  "test_functions": 21,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-risk",
+  "case": "four-stream-codec",
+  "run": "3",
+  "session_id": "3b5e6ba3-1c95-43a6-86c2-4e8596273731",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.5341615999999999,
+  "num_turns": 15,
+  "test_functions": 26,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-risk",
+  "case": "money-allocator",
+  "run": "1",
+  "session_id": "cf1612ee-a1f4-4df4-ac11-4fe6e5e40a38",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.8018487999999999,
+  "num_turns": 17,
+  "test_functions": 20,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-risk",
+  "case": "money-allocator",
+  "run": "2",
+  "session_id": "6830162c-c156-4af0-ae93-6c1b92f1af6c",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.7699531000000002,
+  "num_turns": 16,
+  "test_functions": 17,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-risk",
+  "case": "money-allocator",
+  "run": "3",
+  "session_id": "d91db497-27b2-41f0-b0fc-7e3413c23dc2",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.6710982999999999,
+  "num_turns": 17,
+  "test_functions": 21,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-risk",
+  "case": "sliding-window-limiter",
+  "run": "1",
+  "session_id": "de62f79a-25d3-44e9-98bc-85fde1142c15",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.49611459999999996,
+  "num_turns": 18,
+  "test_functions": 21,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-risk",
+  "case": "sliding-window-limiter",
+  "run": "2",
+  "session_id": "be71a5c8-1271-4ca8-b73c-ee29d621d26a",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.8082421999999999,
+  "num_turns": 14,
+  "test_functions": 17,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "off-risk",
+  "case": "sliding-window-limiter",
+  "run": "3",
+  "session_id": "46af1921-6556-451e-ade4-1981a94dc5ea",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.5161146999999999,
+  "num_turns": 16,
+  "test_functions": 22,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-norisk",
+  "case": "four-stream-codec",
+  "run": "1",
+  "session_id": "e9516de9-a240-40af-ab7d-4f4cac0ad24e",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.5760931,
+  "num_turns": 14,
+  "test_functions": 19,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-norisk",
+  "case": "four-stream-codec",
+  "run": "2",
+  "session_id": "006884af-c3f2-4ebb-a829-a96cbebcb171",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.1111389999999999,
+  "num_turns": 15,
+  "test_functions": 15,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-norisk",
+  "case": "four-stream-codec",
+  "run": "3",
+  "session_id": "cc846b6f-1e83-4d78-9777-77615c99e4a5",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.9758040000000003,
+  "num_turns": 18,
+  "test_functions": 18,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-norisk",
+  "case": "money-allocator",
+  "run": "1",
+  "session_id": "fabe25b0-8732-488f-b597-52fc1c65b3e0",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.1728732999999998,
+  "num_turns": 13,
+  "test_functions": 16,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-norisk",
+  "case": "money-allocator",
+  "run": "2",
+  "session_id": "b22d220a-b473-43c6-9b2f-b05d864218bf",
+  "hidden_pass_rate": null,
+  "cost_usd": 2.4050256,
+  "num_turns": 19,
+  "test_functions": 15,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-norisk",
+  "case": "money-allocator",
+  "run": "3",
+  "session_id": "35bb7f2f-c80a-4643-9df2-30326ba4336b",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.5237301000000003,
+  "num_turns": 12,
+  "test_functions": 15,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-norisk",
+  "case": "sliding-window-limiter",
+  "run": "1",
+  "session_id": "bbaaabc0-0288-4b02-8656-0061284854ea",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.7705208999999998,
+  "num_turns": 15,
+  "test_functions": 20,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-norisk",
+  "case": "sliding-window-limiter",
+  "run": "2",
+  "session_id": "ce014ad6-a7f2-419a-a82e-51a3b3bd0cf7",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.6895932999999996,
+  "num_turns": 16,
+  "test_functions": 22,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-norisk",
+  "case": "sliding-window-limiter",
+  "run": "3",
+  "session_id": "f7ef8ce2-38df-4cc7-ba82-7bef8538afbe",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.5601829000000003,
+  "num_turns": 17,
+  "test_functions": 29,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-risk",
+  "case": "four-stream-codec",
+  "run": "1",
+  "session_id": "c46b3052-9cf4-4f72-b431-632bfcc51cfb",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.523753,
+  "num_turns": 19,
+  "test_functions": 23,
+  "skills_invoked": [],
+  "error": null
+ },
+ {
+  "arm": "suggest-risk",
+  "case": "four-stream-codec",
+  "run": "2",
+  "session_id": "40e58a76-91f8-420b-b728-f89cb4849033",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.6638105999999995,
+  "num_turns": 35,
+  "test_functions": 17,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-risk",
+  "case": "four-stream-codec",
+  "run": "3",
+  "session_id": "7a99d3a9-62da-4d13-9756-437cf9da08d3",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.5601684999999998,
+  "num_turns": 21,
+  "test_functions": 16,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-risk",
+  "case": "money-allocator",
+  "run": "1",
+  "session_id": "3ad897c5-1658-4982-b560-156f8a822d83",
+  "hidden_pass_rate": null,
+  "cost_usd": 3.3025941000000008,
+  "num_turns": 14,
+  "test_functions": 15,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-risk",
+  "case": "money-allocator",
+  "run": "2",
+  "session_id": "b0229cad-af82-48b4-b470-211cc1b66722",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.2557171999999996,
+  "num_turns": 15,
+  "test_functions": 16,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-risk",
+  "case": "money-allocator",
+  "run": "3",
+  "session_id": "19abe565-7ba9-4baa-8836-77de091c6170",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.7619003,
+  "num_turns": 23,
+  "test_functions": 17,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-risk",
+  "case": "sliding-window-limiter",
+  "run": "1",
+  "session_id": "26490004-0933-44e6-9bf0-eff2fbfc8c2f",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.7703734000000002,
+  "num_turns": 14,
+  "test_functions": 18,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-risk",
+  "case": "sliding-window-limiter",
+  "run": "2",
+  "session_id": "19900d59-50a4-4f55-878b-152c0f046599",
+  "hidden_pass_rate": null,
+  "cost_usd": 0.8742068999999999,
+  "num_turns": 17,
+  "test_functions": 20,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ },
+ {
+  "arm": "suggest-risk",
+  "case": "sliding-window-limiter",
+  "run": "3",
+  "session_id": "2d9aff87-a653-475d-8bc7-ccf2bb28513e",
+  "hidden_pass_rate": null,
+  "cost_usd": 1.8958638999999997,
+  "num_turns": 14,
+  "test_functions": 20,
+  "skills_invoked": [
+   "flow:specification-capture",
+   "flow:tdd-patterns"
+  ],
+  "error": null
+ }
+]

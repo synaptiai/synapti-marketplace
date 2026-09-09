@@ -181,6 +181,58 @@ the $4 per-run cap; with 63 runs the default `--max-total-usd 250` is the hard
 ceiling, and the expected total for the full comparison is in the low tens of
 dollars. `--dry-run` prints every command line without spending anything.
 
+## Results: 2026-09-09, flow 3.3.0, Claude Code 2.1.266, CLI default model
+
+Full comparison, 63 runs (7 arms × 3 cases × 3 runs), $68.12, zero errors after
+discarding eight runs that hit the account's session limit and re-running them.
+Records: `evals/results-2026-09-09/` (`summary.md`, `summary.json`, `runs.json`
+with every session id). Every plugin-arm run invoked both
+`flow:specification-capture` and `flow:tdd-patterns`; the baseline invoked
+nothing from the plugin.
+
+| Arm | Hidden pass rate | Own tests (mean) | Degenerate share | Cost (mean) | Turns (mean) |
+|---|---|---|---|---|---|
+| baseline | 100% | 24.3 | 38% | $0.17 | 7.9 |
+| enforce-risk | 100% | 18.8 | 28% | $1.59 | 40.0 |
+| enforce-norisk | 100% | 15.7 | 11% | $1.84 | 26.3 |
+| suggest-risk | 100% | 18.0 | 34% | $1.40 | 19.1 |
+| suggest-norisk | 100% | 18.8 | 33% | $1.31 | 15.4 |
+| off-risk | 100% | 20.6 | 36% | $0.64 | 15.3 |
+| off-norisk | 100% | 19.7 | 30% | $0.61 | 16.7 |
+
+Verdict by the decision rule: `keep-enforce` (spread 0.0, no arm below any other).
+What the numbers actually say:
+
+- **Correctness is at ceiling.** Every run in every arm passed every hidden test
+  and fell into no trap, including the no-plugin baseline in about eight turns.
+  These three tasks do not discriminate correctness for this model, so the rule
+  cannot flip the default on correctness grounds and does not. The study's
+  failure mode (more tests, lower correctness) did not appear; the enforce arms
+  wrote fewer own tests than the baseline, not more.
+- **The gates cost turns and money for no measured correctness gain here.** The
+  enforce arms spent about nine times the baseline and two and a half times the
+  off arms per run. Reading the transcripts explains part of it: with
+  `testing.taskCompletionGate: block` active, the agents' `python3 -m unittest`
+  runs were not recognised as quality runs by `record-quality-run.sh`, so the
+  TaskCompleted gate refused task completion until the agent worked around it
+  (one run tried to add the pattern to settings and was denied). That is a
+  plugin defect the eval surfaced, fixed in the same release by adding
+  `unittest` to the built-in patterns; re-run before reading the enforce turn
+  counts as the cost of TDD itself.
+- **The oracle and discriminating-input rules change the tests written.**
+  `enforce-norisk` produced the lowest share of degenerate literal inputs (11%
+  against 38% for the baseline). With the risk map on, the share rose back to
+  28%, which suggests the extra planning rows pushed agents toward the same
+  simple literals they would reach for anyway; the risk map did not move the
+  correctness score either way.
+- **Decision.** `testing.tddMode` stays `enforce` and `specFirst.riskMap` stays
+  `true`, by the rule and not by the ceiling: a result that cannot distinguish
+  the arms is not evidence for flipping a default. The next run needs tasks that
+  the baseline fails at least some of the time (larger modules, a second
+  language, or traps that require reading a spec the agent cannot infer from the
+  function signature), and it should run after the `unittest` fix so the enforce
+  arms' turn counts reflect TDD rather than the gate.
+
 ## Limitations
 
 - **Three tasks, one language.** All cases are small, single-module,

@@ -138,7 +138,18 @@ expected value.
   `references/correctness-eval.md` states what is measured, how to read `summary.md`, the decision
   rule for the `tddMode` default, cost expectations, and limitations.
 
-### Added: learning from where corrections actually live
+- **First full run recorded** (`evals/results-2026-09-09/`): 63 runs, $68.12, verdict
+  `keep-enforce`. Every arm, the no-plugin baseline included, passed 100% of the hidden tests, so
+  the tasks are at ceiling for this model and the rule keeps `testing.tddMode: enforce` and
+  `specFirst.riskMap: true` without correctness evidence either way. The enforce arms cost about
+  nine times the baseline per run; the transcripts show the new TaskCompleted gate refusing
+  completion because `python3 -m unittest` was not a recognised quality command (fixed below), so
+  the turn counts overstate the cost of TDD itself. The oracle and discriminating-input rules cut
+  the share of degenerate literal test inputs from 38% (baseline) to 11% (`enforce-norisk`).
+- **`record-quality-run.sh` recognises `python -m unittest`.** Surfaced by the eval: the built-in
+  patterns covered pytest, ruff, mypy and the rest but not the standard-library runner, so a
+  project tested with unittest could never satisfy the task-completion gate.
+
 
 - **`/flow:learn` reads session transcripts, not only flow's own journal.** New
   `bin/flow-mine-corrections.sh` streams `~/.claude/projects/<slug>/*.jsonl` (read-only, no
