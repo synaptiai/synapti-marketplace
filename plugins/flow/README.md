@@ -184,15 +184,16 @@ SKILL LIBRARY (33 skills, every body <= 600 words)
       ├── tdd-patterns
       └── learned/ (promoted from proposals)
 
-AGENTS (8)
-  ├── implementation-planner (task decomposition)
+AGENTS (9)
+  ├── implementation-planner (task decomposition, risk areas per task)
   ├── test-runner (quality commands)
   ├── code-reviewer (quality + security + LSP references)
   ├── convention-checker (git conventions)
   ├── security-reviewer (OWASP, secrets, auth)
   ├── error-handler-inspector (error handling + LSP diagnostics)
   ├── integration-verifier (integration validation)
-  └── verdict-judge (independent acceptance criteria evaluation)
+  ├── verdict-judge (independent acceptance criteria evaluation; sees test inputs, never the diff)
+  └── goal-evaluator-judge (loop-time verdict for FlowGoals)
 
 COMMANDS (23)
   Work / intent (17) — the commands you drive:
