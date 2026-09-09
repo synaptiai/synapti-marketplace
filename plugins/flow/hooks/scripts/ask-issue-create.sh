@@ -23,9 +23,19 @@
 # `||`, `|`, `(`, `$(`, a backtick or a newline — optionally preceded by
 # VAR=value assignments, and the `gh` may carry a path (`/usr/bin/gh`). Text
 # that merely contains the words is an argument to another command and does
-# not prompt: `echo gh issue create` and `git commit -m "gh issue create
-# later"` both pass. Shell quoting cannot put quoted text into command
-# position, so quoted occurrences never prompt without any quote parsing.
+# not prompt: `echo gh issue create` and `npm run gh issue create` pass.
+#
+# Quotes and comments are removed before the split. Every '...' and "..."
+# span on a line is deleted first (best-effort, line-local, no escape
+# handling — the same approach as tests/command-frontmatter.test.sh), then
+# everything from an unquoted `#` at the start of a word to the end of the
+# line. Only then is the text split on `;`, `|`, `&`, `(`, `)`, backtick and
+# newline into simple commands. So `echo "gh issue create"`, `git commit -m
+# "fix; gh issue create later"` (the `;` inside the quotes never becomes a
+# separator) and `# gh issue create` do not prompt, while `gh issue create
+# --title "fix; later"` still does: its argument is stripped, the command
+# word stays. An unterminated quote leaves its text in place, which can only
+# cause an extra prompt, never a missed one.
 #
 # Goal selection is --branch-strict: only a goal that owns the current branch
 # (or, when the branch is unknown, the most recently modified active goal)
@@ -52,8 +62,10 @@ INPUT=$(cat 2>/dev/null || echo '{}')
 COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
 [ -z "$COMMAND" ] && exit 0
 
-# Split into simple commands, then test each for `gh issue create` in command
-# position. Separators: ; | & ( ) backtick newline. `$(` becomes `$` + `(`.
+# 1. Remove quoted spans ("..." first, then '...') and `#` comments, per line.
+# 2. Split into simple commands. Separators: ; | & ( ) backtick newline.
+#    `$(` becomes `$` + `(`.
+# 3. Test each simple command for `gh issue create` in command position.
 IS_ISSUE_CREATE=0
 while IFS= read -r SEG; do
   [ -z "$SEG" ] && continue
@@ -61,7 +73,9 @@ while IFS= read -r SEG; do
     IS_ISSUE_CREATE=1
     break
   fi
-done < <(printf '%s\n' "$COMMAND" | tr ';|&()`' '\n')
+done < <(printf '%s\n' "$COMMAND" \
+  | sed -E -e 's/"[^"]*"//g' -e "s/'[^']*'//g" -e 's/(^|[[:space:]])#.*$//' \
+  | tr ';|&()`' '\n')
 [ "$IS_ISSUE_CREATE" = "1" ] || exit 0
 
 # minimalScope: true restores the follow-up-issue workflow, so there is

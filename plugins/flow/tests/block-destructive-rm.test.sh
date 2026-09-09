@@ -5,7 +5,9 @@
 # order or spelling, AND at least one target is not a SAFE_DIRS basename.
 # `rm -f file`, `rm -r dir`, `rm -rf node_modules` pass. `rm` is matched only
 # as a command word (never as a substring), and `git rm` is deliberately
-# exempt because it is not filesystem-destructive.
+# exempt because it is not filesystem-destructive. Tokens are read the way
+# the shell reads them: a quoted flag (`rm "-rf" src`) is still a flag and a
+# quoted path (`rm -rf "some dir"`) is one target.
 #
 # The hook reads {"tool_input":{"command":"..."}} on stdin and exits 0 (allow)
 # or 2 (block). The rm rule does not consult git, so scenarios run from a
@@ -76,6 +78,19 @@ _run_hook "rm -rf node_modules src";       assert_exit 2 "$?" "mixed safe + unsa
 _run_hook "rm -rf -- -weird";              assert_exit 2 "$?" "unsafe target after -- blocked"
 _run_hook 'rm -rf "$DIR"';                 assert_exit 2 "$?" "unresolved variable target blocked (fail-safe)"
 _run_hook "rm -rf *";                      assert_exit 2 "$?" "glob target blocked (not expanded by the hook)"
+
+# --- quoted flags and paths (PR #163 review: `rm "-rf" src` slipped through
+# because a token starting with a quote never matched the -?* flag case)
+_flow_test_begin "quoted flags are still flags and quoted paths are single targets"
+_run_hook 'rm "-rf" src';                  assert_exit 2 "$?" 'rm "-rf" src blocked (double-quoted flag)'
+_run_hook "rm '-fr' src";                  assert_exit 2 "$?" "rm '-fr' src blocked (single-quoted flag)"
+_run_hook 'rm "-r" -f src';                assert_exit 2 "$?" 'rm "-r" -f src blocked (quoted flag combined with a bare one)'
+_run_hook 'rm "--recursive" '"'"'--force'"'"' src'; assert_exit 2 "$?" "quoted long options blocked"
+_run_hook 'rm "-f" a.txt';                 assert_exit 0 "$?" 'rm "-f" a.txt allowed (force alone, quoted)'
+_run_hook 'rm -rf "node_modules"';         assert_exit 0 "$?" 'rm -rf "node_modules" allowed (quoted safe dir)'
+_run_hook 'rm -rf "some dir"';             assert_exit 2 "$?" 'rm -rf "some dir" blocked (quoted path is one unsafe target)'
+_run_hook 'rm -rf "node_modules" '"'"'dist'"'"''; assert_exit 0 "$?" "two quoted safe targets allowed"
+_run_hook 'rm -rf "unterminated';          assert_exit 2 "$?" "unterminated quote blocked (fail-safe)"
 
 # --- compound commands and wrappers
 _flow_test_begin "rm is found in compound commands and behind wrappers"

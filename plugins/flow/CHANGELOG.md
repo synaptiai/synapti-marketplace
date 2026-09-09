@@ -63,6 +63,15 @@ expected value.
   the plugin default. The stale comment in `bin/cascade-resolve.sh` claiming `// null` preserves
   false is corrected: boolean keys are read with a bare expression.
 
+- **Quoting fixes in two PreToolUse hooks (PR #163 review).** `block-destructive.sh` now
+  tokenises each simple command the way the shell does: quoted flags (`rm "-rf" src`,
+  `rm '-fr' src`, `rm "--recursive" --force src`) are seen as flags and a quoted path
+  (`rm -rf "some dir"`) is one target, closing a bypass where a token starting with a quote never
+  reached the flag check. `ask-issue-create.sh` strips quoted spans and `#` comments before
+  splitting on `;`/`|`/`&`, so `git commit -m "fix; gh issue create later"` and
+  `echo "gh issue create"` no longer prompt while `gh issue create --title "fix; later"` still
+  does. Tests: `block-destructive-rm.test.sh`, `ask-issue-create.test.sh`.
+
 ### Changed: the Stop hook says what it does, and block mode works
 
 - **Warn mode is honest.** The reason now opens `FLOW_GOAL_INCOMPLETE — stop ALLOWED

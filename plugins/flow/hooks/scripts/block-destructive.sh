@@ -25,10 +25,10 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 #
 # Command-position anchoring: the command is split into simple commands on
 # `;`, `|`, `&`, `(`, `)`, backtick and newline, and each is tokenised on
-# whitespace. The rule fires on a token that IS rm — `rm`, `/bin/rm`, `\rm` —
-# never on rm as a substring of another word (`npm run rm-cache`, `perform`).
-# Wrappers such as `sudo rm`, `xargs rm`, `env rm` are examined because rm
-# still runs against the filesystem.
+# unquoted whitespace (see Quoting below). The rule fires on a token that IS
+# rm — `rm`, `/bin/rm`, `\rm` — never on rm as a substring of another word
+# (`npm run rm-cache`, `perform`). Wrappers such as `sudo rm`, `xargs rm`,
+# `env rm` are examined because rm still runs against the filesystem.
 #
 # Deliberate exemption: `git rm` (the token immediately before rm is `git`).
 # `git rm -r --cached dir` only unstages, and even `git rm -rf` removes
@@ -41,18 +41,53 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 # one unsafe target (`rm -rf node_modules src`) blocks, and so does a
 # recursive+force rm with no visible target (`ls | xargs rm -rf`) because the
 # targets cannot be verified. Redirections (`2>/dev/null`, `> out`) are not
-# targets. Quoted or variable targets (`"$DIR"`) are not resolved and
-# therefore count as unsafe (fail-safe).
+# targets.
+#
+# Quoting: each simple command is tokenised the way the shell does, on
+# unquoted whitespace, with single and double quotes removed and their
+# contents kept as part of the token. So `rm "-rf" src`, `rm '-fr' src` and
+# `rm "--recursive" --force src` carry the same flags as `rm -rf src`, and
+# `rm -rf "my dir"` has the one target `my dir`. (An earlier version split on
+# bare whitespace and let a quoted flag through unseen.) Variable targets
+# (`"$DIR"`) are not expanded and therefore count as unsafe (fail-safe), as
+# does a target with an unterminated quote.
 # ---------------------------------------------------------------------------
 SAFE_DIRS="node_modules|\.next|dist|build|tmp|\.cache|__pycache__|coverage|\.turbo|\.parcel-cache|\.vite"
 
+# _rm_tokenise <simple-command>
+# Fills the caller's TOK array with the words of the command: split on
+# unquoted whitespace, single/double quote pairs removed, quoted text kept
+# verbatim (whitespace included) inside its word. Pure string handling — no
+# pathname expansion, so `rm -rf *` is inspected literally. An unterminated
+# quote runs to the end of the segment; the partial word is still a token.
+_rm_tokenise() {
+  local s="$1" i c q="" cur="" in_word=0
+  TOK=()
+  for ((i = 0; i < ${#s}; i++)); do
+    c="${s:i:1}"
+    if [ -n "$q" ]; then
+      if [ "$c" = "$q" ]; then q=""; else cur+="$c"; fi
+      continue
+    fi
+    case "$c" in
+      \"|\') q="$c"; in_word=1 ;;
+      [[:space:]]) if [ "$in_word" = "1" ]; then TOK+=("$cur"); cur=""; in_word=0; fi ;;
+      *) cur+="$c"; in_word=1 ;;
+    esac
+  done
+  if [ "$in_word" = "1" ]; then TOK+=("$cur"); fi
+}
+
 # _rm_segment_is_destructive <simple-command>
 # Returns 0 when the segment runs rm with recursive+force and at least one
-# target outside SAFE_DIRS; 1 otherwise. `read -ra` tokenises without
-# pathname expansion, so `rm -rf *` is inspected literally.
+# target outside SAFE_DIRS; 1 otherwise.
 _rm_segment_is_destructive() {
+  # Fast path: a segment without the letters "rm" cannot name rm; skip the
+  # character-level tokeniser (hooks run on every Bash call, commands can be
+  # long heredocs).
+  case "$1" in *rm*) ;; *) return 1 ;; esac
   local -a TOK=()
-  read -ra TOK <<< "$1"
+  _rm_tokenise "$1"
   local n=${#TOK[@]} i idx=-1 base tok
   for ((i = 0; i < n; i++)); do
     base="${TOK[i]##*/}"     # /bin/rm -> rm

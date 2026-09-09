@@ -111,11 +111,40 @@ assert_equal "" "$AIC_OUT" "echo gh issue create has no stdout"
 _run_hook "$R" "npm run gh issue create"
 assert_equal "" "$AIC_OUT" "argument to another command has no stdout"
 
-# (f) inside quotes → silent (a quoted string cannot be in command position)
+# (f) inside quotes → silent (a quoted string cannot be in command position).
+# Quoted spans are stripped BEFORE the split on `;`/`|`/`&`, so a separator
+# inside quotes never opens a fresh "command position" (PR #163 review: the
+# old order turned `-m "fix; gh issue create later"` into a prompting segment).
 _flow_test_begin "gh issue create inside a quoted argument is not prompted"
 _run_hook "$R" 'git commit -m "gh issue create later"'
 assert_exit 0 "$AIC_RC" "git commit exits 0"
 assert_equal "" "$AIC_OUT" "quoted text has no stdout"
+_run_hook "$R" 'git commit -m "fix; gh issue create later"'
+assert_exit 0 "$AIC_RC" "git commit with a ; inside the quoted message exits 0"
+assert_equal "" "$AIC_OUT" "a ; inside quotes does not create command position"
+_run_hook "$R" 'echo "gh issue create"'
+assert_equal "" "$AIC_OUT" "double-quoted echo argument has no stdout"
+_run_hook "$R" "echo 'gh issue create'"
+assert_equal "" "$AIC_OUT" "single-quoted echo argument has no stdout"
+_run_hook "$R" "git commit -m \"it's; gh issue create\""
+assert_equal "" "$AIC_OUT" "an apostrophe inside double quotes does not break the strip"
+
+# a comment is not a command
+_flow_test_begin "gh issue create in a comment is not prompted"
+_run_hook "$R" '# gh issue create'
+assert_exit 0 "$AIC_RC" "comment-only command exits 0"
+assert_equal "" "$AIC_OUT" "comment-only command has no stdout"
+_run_hook "$R" 'echo done # gh issue create'
+assert_equal "" "$AIC_OUT" "trailing comment has no stdout"
+
+# a genuine gh issue create keeps prompting after its quoted arguments are stripped
+_flow_test_begin "gh issue create with a quoted argument containing a separator still asks"
+_run_hook "$R" 'gh issue create --title "fix; later"'
+assert_equal "ask" "$(printf '%s' "$AIC_OUT" | jq -r '.hookSpecificOutput.permissionDecision')" "quoted ; in --title still asks"
+_run_hook "$R" "gh issue create --title 'a | b' --body \"c && d\""
+assert_equal "ask" "$(printf '%s' "$AIC_OUT" | jq -r '.hookSpecificOutput.permissionDecision')" "quoted | and && in arguments still asks"
+_run_hook "$R" 'echo "#"; gh issue create -t x'
+assert_equal "ask" "$(printf '%s' "$AIC_OUT" | jq -r '.hookSpecificOutput.permissionDecision')" "a quoted # is not a comment; the following gh issue create asks"
 
 # (d) no active goal → silent
 _flow_test_begin "no active goal (status achieved) is not prompted"
