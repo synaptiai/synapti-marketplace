@@ -89,8 +89,13 @@ are; what beat the baseline was an order-sensitive sweep on an input shape
 the agent never constructed (its own tests fed sorted intervals only). The
 retired cases live in the branch history of this file's commits (the
 booking resolver, never committed, only in the calibration records), not in
-`evals/`; a future case should be built around that pattern, not around
-rule count.
+`evals/`. The booking resolver tested the "order-sensitive sweep" reading of
+that pattern and did not clear: an order rule that the spec spells out gets
+implemented like any other rule. What discriminated on `interval-algebra` was
+an input shape the spec never named (unsorted input with a point after the
+open-ended interval it joins), so the agent's own tests never fed it. A future
+case should be built around an unnamed input shape the rules quietly depend
+on, not around rule count and not around order-sensitivity as such.
 
 Every trap passes the degenerate inputs agents reach for first (identical
 streams, palindromes, equal weights, a single request, `len % 4 == 0`, a
