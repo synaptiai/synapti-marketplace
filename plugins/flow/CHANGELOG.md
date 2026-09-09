@@ -63,6 +63,25 @@ expected value.
   the plugin default. The stale comment in `bin/cascade-resolve.sh` claiming `// null` preserves
   false is corrected: boolean keys are read with a bare expression.
 
+### Changed: the Stop hook says what it does, and block mode works
+
+- **Warn mode is honest.** The reason now opens `FLOW_GOAL_INCOMPLETE — stop ALLOWED
+  (stopHookEnforcement=warn)`, ends with how to enforce, and is printed to stderr (previously it
+  lived only in the hook's JSON). The unknown-mode fallback uses the same wording.
+- **Block mode is usable.** A per-user trust ledger (`bin/flow-goal-trust.sh record|check|list`,
+  at `${FLOW_STATE_DIR:-~/.claude/flow-state}/goal-trust.jsonl`) records every goal flow creates
+  with a sha256 over its AC ids and verification commands; the Stop hook executes verification
+  commands for trusted goals without the global `executeVerificationCommands` flag, and a goal that
+  arrived with a checkout (or whose commands were edited by hand) stays `not_executed` until
+  re-recorded. Block mode blocks only on failing ACs, path violations, or ACs with no command;
+  untrusted not-executed ACs are explained with the record command; consecutive blocks per session
+  and goal are capped at `failAfterStuckTurns` (`FLOW_GOAL_BLOCK_CAP`) and every approve resets the
+  counter.
+- **FlowGoal YAML gains `specification.risk_map`**, lifted from the journal's `### Risk map` table
+  by goal-contract-capture; the lifecycle transition tables move to
+  `references/goal-lifecycle-transitions.md` and now match `flow-goal-record.sh` exactly (the old
+  skill table omitted `draft→cancelled` and `blocked→failed`).
+
 ### Added: the risk map, and a judge that sees test inputs
 
 - **Risk map is the fourth specification element.** `specification-capture` drafts 2-6 rows of

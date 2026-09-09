@@ -12,6 +12,11 @@
 # Atomicity: all writes through bin/_journal_atomic.py — O_NOFOLLOW + flock +
 # tempfile+rename + fsync. Schema validation via jsonschema when available.
 #
+# Trust: after a successful --create, the goal is recorded in the per-user
+# trust ledger (bin/flow-goal-trust.sh record) so the Stop hook may execute
+# its verification commands without flow.goals.executeVerificationCommands.
+# A ledger failure never fails the create — it is reported on stderr.
+#
 # Usage:
 #   flow-goal-record.sh --create --goal-file <path-to-yaml>
 #   flow-goal-record.sh --update-lifecycle --goal-id <id> --lifecycle-file <path-to-yaml-fragment>
@@ -82,7 +87,10 @@ esac
 
 mkdir -p .flow/goals
 
-python3 - "$SCRIPT_DIR" "$MODE" "$GOAL_FILE" "$GOAL_ID" "$LIFECYCLE_FILE" "$FROM_STATUS" <<'PYTHON'
+# Stdout of the Python block carries the written goal path in --create mode
+# (nothing in --update-lifecycle mode); all diagnostics go to stderr. Under
+# `set -e` a non-zero Python exit aborts here with that exit code.
+CREATED_TARGET=$(python3 - "$SCRIPT_DIR" "$MODE" "$GOAL_FILE" "$GOAL_ID" "$LIFECYCLE_FILE" "$FROM_STATUS" <<'PYTHON'
 import sys
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
@@ -235,6 +243,7 @@ if mode == "create":
         print(f"flow-goal-record.sh: {e}", file=sys.stderr)
         sys.exit(e.exit_code)
     print(f"flow-goal-record.sh: created {target}", file=sys.stderr)
+    print(target)
 
 elif mode == "update-lifecycle":
     target = os.path.join(".flow", "goals", f"{goal_id_arg}.goal.yaml")
@@ -325,3 +334,13 @@ elif mode == "update-lifecycle":
     new_status = lifecycle_fragment["lifecycle"].get("status", "<unset>")
     print(f"flow-goal-record.sh: updated {target} lifecycle.status to '{new_status}'", file=sys.stderr)
 PYTHON
+)
+
+# Record the freshly created goal in the per-user trust ledger. Best-effort:
+# the goal is already on disk and valid; a ledger problem is a note, not a
+# failure (the Stop hook simply treats the goal as untrusted until recorded).
+if [ "$MODE" = "create" ] && [ -n "$CREATED_TARGET" ]; then
+  if ! TRUST_ERR=$("${SCRIPT_DIR}/flow-goal-trust.sh" record --goal-file "$CREATED_TARGET" 2>&1 >/dev/null); then
+    echo "flow-goal-record.sh: note — trust ledger record failed; run '${SCRIPT_DIR}/flow-goal-trust.sh record --goal-file ${CREATED_TARGET}' to let the Stop hook execute this goal's verification commands (${TRUST_ERR})" >&2
+  fi
+fi

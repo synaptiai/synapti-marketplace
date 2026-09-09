@@ -1,0 +1,28 @@
+# Negative fixture: specification.risk_map rows require all three columns
+# (area, plausible_wrong_version, discriminating_check). This row lacks the
+# discriminating check — the schema must reject it so a lifted table with a
+# blank cell never lands on disk as a "risk" with no way to test it.
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-42
+  created_at: '2026-05-20T14:30:00Z'
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-42-search-fix
+objective:
+  outcome: Issue #42 is implemented and verified.
+  acceptance_criteria:
+    - id: AC1
+      text: 'Searching for an exact match returns the match.'
+      verification_command: 'npm test -- --grep search'
+      must_pass: true
+      status: pending
+specification:
+  risk_map:
+    - area: 'query normalisation'
+      plausible_wrong_version: 'lowercasing also strips diacritics'
+evaluator:
+  type: flow_verdict_judge
+lifecycle:
+  status: active

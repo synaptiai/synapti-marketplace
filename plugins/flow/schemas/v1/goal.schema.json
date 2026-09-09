@@ -144,6 +144,20 @@
         "interface_contracts": {
           "type": "array",
           "items": { "type": "string" }
+        },
+        "risk_map": {
+          "type": "array",
+          "description": "Lifted from the journal's `### Risk map` table (columns: Area | Plausible wrong version | Discriminating check). Optional — goals created before the risk map existed lack it; goal-contract-capture omits the key when the journal has no risk map and never invents rows.",
+          "items": {
+            "type": "object",
+            "required": ["area", "plausible_wrong_version", "discriminating_check"],
+            "additionalProperties": false,
+            "properties": {
+              "area": { "type": "string", "minLength": 1 },
+              "plausible_wrong_version": { "type": "string", "minLength": 1 },
+              "discriminating_check": { "type": "string", "minLength": 1 }
+            }
+          }
         }
       }
     },

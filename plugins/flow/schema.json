@@ -332,18 +332,18 @@
             "stopHookEnforcement": {
               "enum": ["warn", "block", "evaluator-loop"],
               "default": "warn",
-              "description": "Stop hook posture: 'warn' (passive, no LLM, emits warning when active goal lacks evidence) | 'block' (same check, injects warning as next-turn prompt) | 'evaluator-loop' (active Haiku judge per turn, ~$0.001/eval, opt-in). See references/stop-hook-goal-enforcement.md."
+              "description": "Stop hook posture. 'warn' (default): the stop is always allowed; when the active goal lacks evidence the reason starts 'FLOW_GOAL_INCOMPLETE \u2014 stop ALLOWED (stopHookEnforcement=warn)' and is printed to stderr. 'block': decision:block on failing ACs, path violations, or ACs with no verification_command; verification commands run for goals in the per-user trust ledger (bin/flow-goal-trust.sh) without executeVerificationCommands; an untrusted goal's not-executed ACs never block on their own; consecutive blocks per session and goal are capped at failAfterStuckTurns (FLOW_GOAL_BLOCK_CAP). 'evaluator-loop': active Haiku judge per turn, ~$0.001/eval, opt-in. See references/stop-hook-goal-enforcement.md."
             },
             "failAfterStuckTurns": {
               "type": "integer",
               "default": 3,
               "minimum": 1,
-              "description": "In evaluator-loop mode, the Stop hook transitions the goal to 'failed' if the pass-set hash is unchanged for this many consecutive turns. Prevents infinite churn on goals that can't make forward progress."
+              "description": "In evaluator-loop mode, the goal transitions to 'failed' after this many consecutive turns with an unchanged pass-set. In block mode, the Stop hook allows the stop (FLOW_GOAL_BLOCK_CAP) after this many consecutive blocks for one session and goal, so an unmet contract can never block forever."
             },
             "executeVerificationCommands": {
               "type": "boolean",
               "default": false,
-              "description": "Security gate: when false (default), the Stop hook does NOT execute goal verification_command strings — ACs are reported as 'incomplete_acs' with reason 'not_executed'. When true, the hook runs each AC's verification_command via `bash -c` with a 30s timeout. Default-deny: a hostile repo's goal YAML cannot auto-execute commands on first turn after checkout."
+              "description": "Global opt-in to execute every goal's verification_command strings in the Stop hook, trusted or not. Rarely needed: goals created through flow are recorded in the per-user trust ledger (${FLOW_STATE_DIR:-~/.claude/flow-state}/goal-trust.jsonl) and execute with this false. Untrusted goals report ACs as 'not_executed (goal not trusted; flow.goals.executeVerificationCommands is false)' until 'bin/flow-goal-trust.sh record --goal-file <goal>' is run. Default-deny keeps a hostile checkout's goal YAML from running commands."
             },
             "judge": {
               "type": "object",

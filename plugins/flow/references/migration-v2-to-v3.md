@@ -49,7 +49,7 @@ Goals are created automatically under `goalCreation: auto`. To require a goal on
 }
 ```
 
-`executeVerificationCommands: true` lets `/flow:goal evaluate` auto-run each AC's `verification_command`. Without it, evaluator returns `not_executed` and you must capture evidence manually.
+`executeVerificationCommands: true` makes the Stop hook run every goal's `verification_command`, trusted or not. You rarely need it: goals created through flow are recorded in the per-user trust ledger (`bin/flow-goal-trust.sh`) and execute with the flag false; a goal that arrived with a checkout stays `not_executed` until you run `bin/flow-goal-trust.sh record --goal-file <goal>`. `/flow:goal evaluate` always executes verification commands when present.
 
 Run `/flow:goal status` to confirm goal state. Walk through `flow-goals-quickstart.md` for a worked example.
 

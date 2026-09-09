@@ -1,9 +1,14 @@
 # Tests that bin/flow-goal-record.sh emits a stderr WARN
-# when jsonschema is unavailable instead of silently skipping validation.
+# when jsonschema is unavailable instead of silently skipping validation,
+# and that --create records the goal in the per-user trust ledger
+# (bin/flow-goal-trust.sh) without ever failing the create over the ledger.
 #
 # Strategy: Run the helper under a PYTHONPATH-isolated subshell that fails
-# the `import jsonschema` line. The Python module-level `_JSONSCHEMA_WARN_EMITTED`
-# sentinel makes the warning idempotent (fires once per process).
+# the `import jsonschema` line. The WARN is deduplicated per day through a
+# sentinel file under TMPDIR, so TMPDIR is isolated per test.
+#
+# Every invocation sets FLOW_STATE_DIR under a temp dir so the trust ledger
+# never lands in the developer's real ~/.claude/flow-state.
 
 HELPER="$REPO_ROOT/plugins/flow/bin/flow-goal-record.sh"
 
@@ -105,7 +110,7 @@ PYEOF
 # even if the WARN logic regressed). Use TMPDIR (not HOME) because HOME
 # isolation also breaks Python's user-site-packages lookup and hides PyYAML.
 ISOLATED_TMP=$(_fjs_mkdir)
-ERR=$(cd "$DIR" && TMPDIR="$ISOLATED_TMP" PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" \
+ERR=$(cd "$DIR" && TMPDIR="$ISOLATED_TMP" PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR/.flow-state" \
   bash "$HELPER" --create --goal-file "$GOAL" 2>&1 >/dev/null)
 # Helper may succeed (validation skipped) but MUST print the WARN.
 assert_contains "jsonschema unavailable" "$ERR" "stderr surfaces the missing jsonschema"
@@ -135,7 +140,7 @@ evaluator:
 lifecycle:
   status: draft
 EOF
-ERR2=$(cd "$DIR" && TMPDIR="$ISOLATED_TMP" PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" \
+ERR2=$(cd "$DIR" && TMPDIR="$ISOLATED_TMP" PYTHONPATH="$CUSTOM_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR/.flow-state" \
   bash "$HELPER" --create --goal-file "$GOAL2" 2>&1 >/dev/null)
 assert_not_contains "jsonschema unavailable" "$ERR2" "WARN does NOT re-fire on same-day second invocation"
 
@@ -168,7 +173,64 @@ evaluator:
 lifecycle:
   status: draft
 EOF
-  ERR=$(cd "$DIR2" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" \
+  ERR=$(cd "$DIR2" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR2/.flow-state" \
     bash "$HELPER" --create --goal-file "$GOAL2" 2>&1 >/dev/null)
   assert_not_contains "jsonschema unavailable" "$ERR" "no WARN when jsonschema present"
 fi
+
+# --- Test 3: --create records the goal in the trust ledger
+_flow_test_begin "--create records the goal in FLOW_STATE_DIR/goal-trust.jsonl"
+DIR3=$(_fjs_mkdir)
+GOAL3="$DIR3/issue-trust-record.yaml"
+mkdir -p "$DIR3/.flow/goals"
+cat > "$GOAL3" <<'EOF'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-trust-record
+  created_at: "2026-05-21T00:00:00Z"
+scope:
+  repo: owner/example
+  branch: feature/test
+objective:
+  outcome: Test outcome
+  acceptance_criteria:
+    - id: AC1
+      text: First criterion
+      verification_command: 'true'
+      must_pass: true
+      status: pending
+evaluator:
+  type: deterministic
+lifecycle:
+  status: draft
+EOF
+OUT=$(cd "$DIR3" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR3/.flow-state" CLAUDE_SESSION_ID="rec-sess" \
+  bash "$HELPER" --create --goal-file "$GOAL3" 2>&1); RC=$?
+assert_exit 0 "$RC" "create succeeds"
+assert_file_exists "$DIR3/.flow/goals/issue-trust-record.goal.yaml" "goal written"
+assert_file_exists "$DIR3/.flow-state/goal-trust.jsonl" "trust ledger created"
+ENTRY=$(tail -1 "$DIR3/.flow-state/goal-trust.jsonl")
+assert_equal "issue-trust-record" "$(echo "$ENTRY" | jq -r '.goal_id')" "ledger entry names the goal"
+assert_equal "rec-sess" "$(echo "$ENTRY" | jq -r '.session_id')" "ledger entry carries the session id"
+CHECK=$(cd "$DIR3" && FLOW_STATE_DIR="$DIR3/.flow-state" "$REPO_ROOT/plugins/flow/bin/flow-goal-trust.sh" check --goal-file .flow/goals/issue-trust-record.goal.yaml 2>/dev/null); RC=$?
+assert_exit 0 "$RC" "written goal is trusted"
+assert_equal "TRUSTED=yes" "$CHECK" "check prints TRUSTED=yes"
+assert_not_contains "trust ledger record failed" "$OUT" "no failure note on the happy path"
+
+# --- Test 4: a ledger failure never fails the create (note on stderr)
+_flow_test_begin "--create succeeds when the trust ledger is a symlink (stderr note only)"
+DIR4=$(_fjs_mkdir)
+GOAL4="$DIR4/issue-trust-symlink.yaml"
+mkdir -p "$DIR4/.flow/goals" "$DIR4/.flow-state"
+: > "$DIR4/victim.jsonl"
+ln -s "$DIR4/victim.jsonl" "$DIR4/.flow-state/goal-trust.jsonl"
+sed 's/issue-trust-record/issue-trust-symlink/' "$GOAL3" > "$GOAL4"
+OUT=$(cd "$DIR4" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR4/.flow-state" \
+  bash "$HELPER" --create --goal-file "$GOAL4" 2>&1); RC=$?
+assert_exit 0 "$RC" "create still exits 0"
+assert_file_exists "$DIR4/.flow/goals/issue-trust-symlink.goal.yaml" "goal written despite ledger failure"
+assert_contains "trust ledger record failed" "$OUT" "stderr notes the ledger failure"
+assert_contains "flow-goal-trust.sh record --goal-file .flow/goals/issue-trust-symlink.goal.yaml" "$OUT" "note gives the re-record command"
+assert_contains "symlink" "$OUT" "note carries the underlying reason"
+assert_equal "0" "$(wc -c < "$DIR4/victim.jsonl" | tr -d ' ')" "nothing written through the symlink"

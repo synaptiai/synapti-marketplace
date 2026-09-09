@@ -104,6 +104,20 @@ _flow_test_begin "goal/invalid-apiversion.yaml is rejected"
 RESULT=$(_validate_fixture "$SCHEMA_DIR/goal.schema.json" "$FIXTURE_DIR/goal/invalid-apiversion.yaml")
 assert_contains "fail" "$RESULT" "non-v1 apiVersion rejected"
 
+_flow_test_begin "goal/invalid-risk-map.yaml is rejected"
+RESULT=$(_validate_fixture "$SCHEMA_DIR/goal.schema.json" "$FIXTURE_DIR/goal/invalid-risk-map.yaml")
+assert_contains "fail" "$RESULT" "risk_map row missing discriminating_check rejected"
+assert_contains "discriminating_check" "$RESULT" "error names the missing column"
+
+# --- Test 4b: goal fixture with risk_map rows validates (the positive fixture
+# carries one row; older goals without the key must also validate)
+_flow_test_begin "goal without specification.risk_map still validates (key is optional)"
+TMP_GOAL=$(mktemp -t goal-no-riskmap.XXXXXX.yaml)
+grep -v -E '^  risk_map:|^    - area:|^      plausible_wrong_version:|^      discriminating_check:' "$FIXTURE_DIR/goal/valid.yaml" > "$TMP_GOAL"
+RESULT=$(_validate_fixture "$SCHEMA_DIR/goal.schema.json" "$TMP_GOAL")
+rm -f "$TMP_GOAL"
+assert_equal "ok" "$RESULT" "goal/valid.yaml minus risk_map validates"
+
 # --- Test 5: FlowRun positive fixture validates
 _flow_test_begin "run/valid.yaml validates against run.schema.json"
 RESULT=$(_validate_fixture "$SCHEMA_DIR/run.schema.json" "$FIXTURE_DIR/run/valid.yaml")
