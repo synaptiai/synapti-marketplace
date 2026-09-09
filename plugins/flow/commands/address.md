@@ -15,7 +15,7 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 
 ## Required Skills
 
-- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
+- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `feedback-resolution` — surgical changes, context recovery, pushback criteria
 - `change-classification` — verify no out-of-context changes
 - `capability-discovery` — quality commands for verification

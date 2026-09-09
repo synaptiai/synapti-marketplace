@@ -10,7 +10,7 @@ Tier 3 operation — **always requires human confirmation**. This is non-negotia
 
 ## Required Skills
 
-- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
+- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `merge-and-release` — prerequisite verification, merge execution
 - `run-state-management` — FlowRun/FlowActivity records at phase boundaries (v3 runtime)
 

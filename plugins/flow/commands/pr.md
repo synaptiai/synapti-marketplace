@@ -16,7 +16,7 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 
 ## Required Skills
 
-- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
+- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `pr-lifecycle` — pre-flight, PR body, reviewer suggestion
 - `code-review-methodology` — 6-facet review synthesis
 - `capability-discovery` — detect quality commands and agents

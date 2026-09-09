@@ -378,6 +378,10 @@ When enabled, `/flow:review` spawns an adversarial review team where independent
 
 **Model selection.** Because this Path A team dispatches ~20 agents per review, all of which would otherwise inherit the session model, the model is configurable via `agentTeamModel` (default `"sonnet"`; enum `haiku|sonnet|opus|inherit`). It resolves through the same settings cascade as `agentTeams`. Set it to `"inherit"` to run the review agents on the session's model, or `"opus"` for a high-stakes review. This mirrors the `flow.goals.judge.model` pattern and applies to Path A only — Path B (single-session, the default) always inherits the session model.
 
+## Correctness Eval
+
+Flow's testing gates are measured, not assumed. `bin/flow-eval-run.sh` runs headless sessions on three seeded-bug tasks under `evals/` across seven arms (`testing.tddMode` ∈ enforce/suggest/off × `specFirst.riskMap` on/off, plus a no-plugin baseline) and scores each run against a hidden unittest suite the agent never sees. `summary.md` states the verdict in plain sentences; the rule that flips the `tddMode` default is in [`references/correctness-eval.md`](references/correctness-eval.md). Verify the cases offline with `bin/flow-eval-run.sh --check-cases`.
+
 ## Learning Loop
 
 Flow captures development decisions in a journal (`.decisions/`) and, since 3.3.0, also reads the session transcripts where user corrections actually live:

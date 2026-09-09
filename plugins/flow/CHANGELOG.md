@@ -125,6 +125,19 @@ expected value.
   `references/test-review-checklist.md` flag copied or sourceless expectations and degenerate inputs
   as P1 and a risk row without a discriminating test as P2.
 
+### Added: a correctness eval instead of an assumption
+
+- **`bin/flow-eval-run.sh` + `bin/_flow_eval.py`.** Headless `claude -p` runs on three seeded-bug
+  cases (`evals/four-stream-codec`, `evals/sliding-window-limiter`, `evals/money-allocator`) across
+  seven arms (`testing.tddMode` enforce/suggest/off × `specFirst.riskMap` on/off, plus a no-plugin
+  baseline), scored against a hidden unittest suite the agent never sees, with per-trap signature
+  attribution, own-test and degenerate-input counts, cost caps, resume, `--dry-run`,
+  `--check-cases`, and `--aggregate-only`. Each case ships a reference implementation and 6-8
+  deliberately wrong variants that prove every hidden test discriminates a real trap; the layout is
+  `claude plugin eval`-compatible for when that tool leaves early access.
+  `references/correctness-eval.md` states what is measured, how to read `summary.md`, the decision
+  rule for the `tddMode` default, cost expectations, and limitations.
+
 ### Added: learning from where corrections actually live
 
 - **`/flow:learn` reads session transcripts, not only flow's own journal.** New

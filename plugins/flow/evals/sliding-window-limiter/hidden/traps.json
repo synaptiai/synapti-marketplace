@@ -1,0 +1,86 @@
+{
+  "module": "ratelimit",
+  "traps": {
+    "counts_denied": {
+      "description": "Trap: denied requests are recorded too, so a burst of rejections keeps the key locked out. Masked when tests never send more than `limit` requests per window.",
+      "variant": "hidden/traps/counts_denied.py",
+      "discriminating_tests": [
+        "test_capacity_frees_one_entry_at_a_time",
+        "test_denied_requests_are_not_recorded",
+        "test_fractional_window",
+        "test_remaining_ignores_denied_requests",
+        "test_retry_after_agrees_with_allow",
+        "test_sliding_window_not_fixed_buckets"
+      ]
+    },
+    "fixed_window": {
+      "description": "Trap: fixed buckets [k*window, (k+1)*window) instead of a sliding window. Masked when all requests of a test fall inside one bucket or are spaced by whole windows.",
+      "variant": "hidden/traps/fixed_window.py",
+      "discriminating_tests": [
+        "test_capacity_frees_one_entry_at_a_time",
+        "test_fractional_window",
+        "test_remaining_counts_down_and_recovers",
+        "test_retry_after_agrees_with_allow",
+        "test_sliding_window_not_fixed_buckets"
+      ]
+    },
+    "inclusive_boundary": {
+      "description": "Trap: window treated as [now - window, now] \u2014 an entry at exactly now - window still counts. Masked unless a test probes the exact edge.",
+      "variant": "hidden/traps/inclusive_boundary.py",
+      "discriminating_tests": [
+        "test_capacity_frees_one_entry_at_a_time",
+        "test_fractional_window",
+        "test_remaining_counts_down_and_recovers",
+        "test_remaining_ignores_denied_requests",
+        "test_request_at_exactly_window_edge_has_expired",
+        "test_retry_after_agrees_with_allow",
+        "test_sliding_window_not_fixed_buckets"
+      ]
+    },
+    "limit_off_by_one": {
+      "description": "Trap: `<= limit` lets limit + 1 requests through. Masked when tests only send `limit` requests.",
+      "variant": "hidden/traps/limit_off_by_one.py",
+      "discriminating_tests": [
+        "test_allows_exactly_limit_then_denies",
+        "test_capacity_frees_one_entry_at_a_time",
+        "test_denied_requests_are_not_recorded",
+        "test_fractional_window",
+        "test_interleaved_keys_count_separately",
+        "test_keys_are_independent",
+        "test_limit_one",
+        "test_limit_zero_denies_everything",
+        "test_remaining_counts_down_and_recovers",
+        "test_remaining_for_unseen_key_is_limit",
+        "test_request_just_inside_window_is_denied",
+        "test_retry_after_agrees_with_allow",
+        "test_retry_after_measures_from_oldest_in_window",
+        "test_retry_after_with_single_request_in_window",
+        "test_sliding_window_not_fixed_buckets"
+      ]
+    },
+    "no_monotonic_check": {
+      "description": "Trap: time going backwards is silently accepted. Masked whenever timestamps are increasing.",
+      "variant": "hidden/traps/no_monotonic_check.py",
+      "discriminating_tests": [
+        "test_time_going_backwards_across_keys_raises",
+        "test_time_going_backwards_raises"
+      ]
+    },
+    "retry_from_newest": {
+      "description": "Trap: retry_after measured from the newest accepted request instead of the oldest. Masked when only one request sits in the window.",
+      "variant": "hidden/traps/retry_from_newest.py",
+      "discriminating_tests": [
+        "test_retry_after_agrees_with_allow",
+        "test_retry_after_measures_from_oldest_in_window"
+      ]
+    },
+    "shared_counter": {
+      "description": "Trap: one counter for all keys. Masked when every test uses a single key.",
+      "variant": "hidden/traps/shared_counter.py",
+      "discriminating_tests": [
+        "test_interleaved_keys_count_separately",
+        "test_keys_are_independent"
+      ]
+    }
+  }
+}

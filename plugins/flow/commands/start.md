@@ -21,7 +21,7 @@ Skill-driven workflow from issue assignment through implementation. Follows the 
 ## Required Skills
 
 This command operates with these domain skills loaded:
-- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
+- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `branch-and-task-management` — branch creation, task decomposition
 - `change-classification` — change context awareness
 - `capability-discovery` — detect available quality tools
@@ -589,10 +589,7 @@ Display task plan. Proceed unless user objects.
 
 ## Phase 3: CODE
 
-**TDD enforcement**: Check `settings.json` → `testing.tddMode`:
-- `enforce` (default) — write a failing test FIRST. Implementation without a preceding RED test is blocked.
-- `suggest` — recommend TDD but allow override. Only active when `testing.tddModeOptOut` is `true`.
-- `off` — no TDD guidance; tests still run in verification.
+**TDD enforcement**: `testing.tddMode` (`enforce` default; `suggest` only with `testing.tddModeOptOut: true`; `off` still runs tests in verification). The `tdd-patterns` contract loaded above defines RED: a test is red only when it fails for the intended reason, its expected value has a stated source (spec, reference, hand computation, fixture, standard — never the implementation's output), and its input is not degenerate for the behavior under test.
 
 Execute tasks following the per-task verification gate loop:
 
@@ -601,13 +598,14 @@ For each task (in dependency order):
   1. TaskUpdate(taskId, status: "in_progress")
   2. Read relevant files (follow existing patterns)
   3. TDD enforcement (when tddMode=enforce):
-     a. RED: Write the failing test FIRST — the test MUST fail before any implementation
-     b. Verify it fails for the right reason (not syntax error, not wrong import)
-  4. GREEN: Implement the change — simplest code to make the test pass
+     a. RED: write the failing test FIRST, from the task's Test plan — expected value with its
+        stated source, input chosen to differ between the right version and the row's plausible
+        wrong version for every `Risk areas:` row this task touches
+     b. Verify it fails for the intended reason (not a syntax error, not a wrong import)
+  4. GREEN: implement the change — the simplest code that makes the test pass
      - Follow existing patterns (co-located files, same framework)
-     - At minimum, one test per acceptance criterion or behavior
-     - Test edge cases, not just the happy path
-     - For bug fixes: write a test that would have caught the original bug
+     - At minimum, one test per acceptance criterion or behavior, plus one discriminating test per risk row
+     - For bug fixes: the reproducing test must fail on the original code
   5. Run tests (existing + new):
      IF tests FAIL → enter debug-fix-retest loop:
        - Read failure output, identify root cause
@@ -631,7 +629,7 @@ For each task (in dependency order):
       - All tests pass (existing + new)
       - Verification evidence captured for this task's acceptance criterion
       - No unresolved out-of-context files from this task
-      - TDD cycle completed (RED → GREEN → REFACTOR) when tddMode=enforce
+      - TDD cycle completed (RED → GREEN → REFACTOR) when tddMode=enforce, with a discriminating test per `Risk areas:` row
       TaskUpdate(taskId, status: "completed")
 ```
 
@@ -666,7 +664,7 @@ Prove everything works with fix-forward:
 1. **Run full quality suite** (parallel Bash calls for lint, test, typecheck)
 2. **Runtime verification** (MANDATORY — not conditional on skill availability):
 
-   Invoke `Skill(runtime-verification)` for build, dev-server, smoke, E2E, and LSP-diagnostics checks. The skill owns the skip whitelist (the three enumerated categories `markdown-only`, `config-only`, `dependency-bump-only` with their required evidence) and the escalation protocol for out-of-whitelist skips per [`references/escalation-format.md`](../references/escalation-format.md). Any skip outside the whitelist requires an approved Proactive-Autonomy escalation surfaced via `AskUserQuestion` — blanket or subjective justifications are not valid. If in doubt, run it.
+   Invoke `Skill(runtime-verification)` for build, dev-server, smoke, E2E, and LSP-diagnostics checks. Its contract (loaded above) owns the skip whitelist — only `markdown-only`, `config-only`, `dependency-bump-only`, each with its required evidence — and any other skip needs an approved six-field escalation per [`references/escalation-format.md`](../references/escalation-format.md). If in doubt, run it.
 
    When the diff is UI-relevant (UI file extensions OR acceptance criteria with UI keywords — see the visual-verification skill for the exact detection rules), invoke `Skill(visual-verification)` in parallel. The two skills coordinate via the dev server URL: if `runtime-verification` cannot start the dev server, `visual-verification` returns SKIP with that reason and the completion gate treats the dev-server failure as the primary finding.
 3. **Self-review with fix-forward** — dispatch Agent(code-reviewer):

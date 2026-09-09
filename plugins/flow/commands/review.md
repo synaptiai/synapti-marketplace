@@ -15,7 +15,7 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 
 ## Required Skills
 
-- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
+- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `code-review-methodology` — 6-facet review, finding synthesis, adversarial protocol
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 3)
 - `run-state-management` — FlowRun/FlowActivity records at phase boundaries (v3 runtime)
