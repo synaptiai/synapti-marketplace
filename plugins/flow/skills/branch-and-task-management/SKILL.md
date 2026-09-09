@@ -8,26 +8,15 @@ agent: general-purpose
 
 # Branch and Task Management
 
-Domain skill for starting work: branch setup, context loading, and task decomposition.
+## Contract
 
-## Iron Law
-
-**NO CODE BEFORE CONTEXT. Read the issue, load the history, understand the scope — then create the branch.**
-
-Starting a branch without loading issue context leads to misaligned implementations and wasted effort.
+Iron law: no code before context — read the issue body and comments, load history, understand scope, then create the branch. Invoked by `/flow:start` (Phase 1 EXPLORE through Phase 2 PLAN) and by the `implementation-planner` agent for task decomposition. Returns: a feature branch named per `conventions.branchPatterns` checked out from the default branch, one TaskCreate task per acceptance criterion with dependencies set, and an initialized decision journal at `{JOURNAL_DIR}/issue-{N}.md`. Permitted skips: none — an issue without acceptance criteria is not decomposed; it goes back to the user (or `Skill(issue-crafting)`) first.
 
 ## Pre-Conditions
 
-Before creating a branch, confirm:
-
-1. Issue exists and is open (not already closed/resolved)
-2. Issue has acceptance criteria (if not, ask the user or create them)
-3. No existing branch already addresses this issue
-4. You've read the full issue body AND comments (not just the title)
+Before creating a branch, confirm: the issue exists and is OPEN; it has acceptance criteria (otherwise ask the user or create them); no existing branch already addresses it; you have read the full body AND comments.
 
 ## Branch Creation
-
-Follow project conventions from settings or CLAUDE.md:
 
 ```bash
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
@@ -35,76 +24,36 @@ git fetch origin "$DEFAULT_BRANCH"
 git checkout -b "feature/issue-{N}-{desc}" "origin/$DEFAULT_BRANCH"
 ```
 
-Branch naming patterns (from `settings.json` → `conventions.branchPatterns`):
-- `feature/issue-{N}-{desc}` — New features
-- `fix/issue-{N}-{desc}` — Bug fixes
-- `docs/issue-{N}-{desc}` — Documentation
-
-Keep `{desc}` to 3-5 words, kebab-case, meaningful.
+Patterns from `settings.json` → `conventions.branchPatterns`: `feature/issue-{N}-{desc}`, `fix/issue-{N}-{desc}`, `docs/issue-{N}-{desc}`. `{desc}` is 3-5 kebab-case words.
 
 ## Issue Context Loading
 
-Fetch issue details in parallel:
-
-```bash
-# Parallel: issue details + comments + linked issues
-gh issue view $N --json title,body,labels,assignees,milestone
-gh issue view $N --comments
-```
-
-Extract from issue body:
-- **Title**: One-line summary
-- **Acceptance criteria**: Each `- [ ]` item becomes a task
-- **Labels**: Inform implementation approach
-- **Related issues**: Cross-references for context
+Fetch in parallel: `gh issue view $N --json title,body,labels,assignees,milestone` and `gh issue view $N --comments`. Extract: title; acceptance criteria (each `- [ ]` item becomes a task); labels (inform approach); related issues.
 
 ## Impact Analysis
 
-Before implementation, identify affected areas:
-
-```bash
-# Search for related code
-grep -r "keyword_from_issue" --include="*.{rb,js,ts,py}" -l
-# Check recent changes in related areas
-git log --oneline -10 -- "path/to/related/"
-```
-
-Map acceptance criteria to likely file changes. Flag if the issue touches:
-- Multiple modules (coordination needed)
-- Shared utilities (risk of side effects)
-- Test fixtures (may need updates across suites)
+Grep for issue keywords and check `git log --oneline -10 -- <related path>`. Map acceptance criteria to likely file changes. Flag when the issue touches multiple modules (coordination), shared utilities (side-effect risk), or test fixtures (cross-suite updates).
 
 ## Task Decomposition
 
-Convert acceptance criteria to tasks using TaskCreate:
-
-```
 For each acceptance criterion:
-  TaskCreate(
-    subject: "Implement: {criterion summary}",
-    description: "Acceptance criterion: {full text}\nLikely files: {paths}\nVerification: {how to check}"
-  )
+
+```
+TaskCreate(
+  subject: "Implement: {criterion summary}",
+  description: "Acceptance criterion: {full text}\nLikely files: {paths}\nVerification: {how to check}"
+)
 ```
 
-Rules:
-- One task per acceptance criterion (minimum)
-- Add infrastructure tasks if needed (migrations, config)
-- Add a verification task at the end
-- Set dependencies with addBlockedBy for sequential work
+Rules: at least one task per criterion; add infrastructure tasks (migrations, config) when needed; add a verification task at the end; set dependencies with addBlockedBy for sequential work.
 
 ## Parallel Task Detection
 
-Identify tasks that can run concurrently:
-
-- Tasks touching **different files** with **no shared imports** → parallelizable
-- Tasks in **different directories** → likely parallelizable
-- Tasks modifying **the same file** → sequential (dependency)
-
-If agent teams are enabled and >5 acceptance criteria with independent file sets → suggest team dispatch.
+Different files with no shared imports, or different directories → parallelizable. Same file → sequential dependency. If agent teams are enabled and >5 criteria have independent file sets → suggest team dispatch.
 
 ## Decision Journal Init
 
-Create `{JOURNAL_DIR}/issue-{N}.md` (journal dir defaults to `.decisions/`):
+Create `{JOURNAL_DIR}/issue-{N}.md` (default `.decisions/`):
 
 ```markdown
 # Decision Journal: Issue #{N} — {title}
@@ -112,13 +61,8 @@ Create `{JOURNAL_DIR}/issue-{N}.md` (journal dir defaults to `.decisions/`):
 ---
 ```
 
-The autonomous-workflow skill governs ongoing journal entry format (Init/Log/Summarize).
+The autonomous-workflow skill governs ongoing entry format (Init/Log/Summarize).
 
 ## Verification
 
-Branch setup is valid when:
-- Branch name matches convention pattern
-- Issue details loaded successfully
-- At least one task created per acceptance criterion
-- Dependencies set correctly (no circular deps)
-- Journal initialized
+Branch setup is valid when: the branch name matches a convention pattern; issue details loaded; at least one task per acceptance criterion; no circular dependencies; journal initialized.

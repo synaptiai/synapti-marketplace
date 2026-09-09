@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # [flow] Run a FlowGoal's deterministic verification commands and emit a
-# structured report. Used by both flow-goal-stop.sh (warn mode) and
+# structured report. Used by both flow-goal-stop.sh (warn/block modes) and
 # flow-goal-evaluator.sh (evaluator-loop mode); the report tells the caller
 # which ACs are pending evidence, which passed, and which failed.
 #
@@ -10,10 +10,13 @@
 # Stdout: JSON document with shape:
 #   {
 #     "goal_id": "issue-42",
+#     "trusted": true,                          # goal matches the per-user trust ledger
 #     "checked": [{"id": "AC1", "exit_code": 0, "must_pass": true}, ...],
 #     "passing":         ["AC1", "AC3"],
 #     "failing":         ["AC2"],
-#     "incomplete_acs":  ["AC4"],            # ACs with no verification_command
+#     "incomplete_acs":  ["AC4", "AC5"],       # no verification_command, OR not executed
+#     "not_executed":    ["AC5"],              # subset of incomplete_acs: has a command
+#                                              # that was skipped (untrusted + exec off)
 #     "path_violations": ["src/billing/x.ts"]  # files outside allowed_paths
 #   }
 #
@@ -46,18 +49,33 @@ GOAL_YAML="${1:-}"
 [ -z "$GOAL_YAML" ] && { echo "flow-run-deterministic-checks.sh: <goal-yaml-path> argument required" >&2; exit 1; }
 [ -f "$GOAL_YAML" ] || { echo "flow-run-deterministic-checks.sh: goal yaml '$GOAL_YAML' does not exist" >&2; exit 1; }
 
-# Resolve the opt-in gate for executing verification_command strings. A goal
+# Resolve the two gates for executing verification_command strings. A goal
 # YAML's verification_command runs under `bash -c`; if a hostile repo ships a
 # goal with lifecycle.status: active, the Stop hook would otherwise execute
-# attacker-supplied commands on first turn after `gh pr checkout`. Defaults
-# to false — ACs with verification_command are reported as `incomplete_acs`
-# (with reason: not_executed) unless the user opts in. Users who own the
-# repo and want auto-execution set flow.goals.executeVerificationCommands: true.
+# attacker-supplied commands on first turn after `gh pr checkout`.
+#
+#   1. flow.goals.executeVerificationCommands (default false) — global opt-in.
+#   2. The per-user trust ledger (bin/flow-goal-trust.sh check) — the goal
+#      was created through flow in this user's environment and its AC ids +
+#      commands still hash to the recorded value. A hostile checkout cannot
+#      write to ${FLOW_STATE_DIR:-$HOME/.claude/flow-state}, so a goal that
+#      arrived with the repo is never trusted until the user records it.
+#
+# Commands run when EITHER gate opens. Otherwise ACs with a command are
+# reported in `incomplete_acs` AND `not_executed` with reason
+# `not_executed (goal not trusted; flow.goals.executeVerificationCommands is false)`.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
 EXEC_VERIFY=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "false" '.flow.goals.executeVerificationCommands' 2>/dev/null)
 [ -z "$EXEC_VERIFY" ] && EXEC_VERIFY="false"
 export FLOW_EXEC_VERIFY="$EXEC_VERIFY"
+
+GOAL_TRUSTED="false"
+if [ -x "${PLUGIN_ROOT}/bin/flow-goal-trust.sh" ] && \
+   "${PLUGIN_ROOT}/bin/flow-goal-trust.sh" check --goal-file "$GOAL_YAML" >/dev/null 2>&1; then
+  GOAL_TRUSTED="true"
+fi
+export FLOW_GOAL_TRUSTED="$GOAL_TRUSTED"
 
 python3 - "$GOAL_YAML" <<'PYTHON'
 import json
@@ -87,12 +105,17 @@ metadata = goal.get("metadata") or {}
 goal_id = metadata.get("id", "<unknown>")
 acs = (goal.get("objective") or {}).get("acceptance_criteria", []) or []
 
+exec_verify = os.environ.get("FLOW_EXEC_VERIFY", "false").lower() == "true"
+trusted = os.environ.get("FLOW_GOAL_TRUSTED", "false").lower() == "true"
+
 report = {
     "goal_id": goal_id,
+    "trusted": trusted,
     "checked": [],
     "passing": [],
     "failing": [],
     "incomplete_acs": [],
+    "not_executed": [],
     "path_violations": [],
 }
 
@@ -111,18 +134,19 @@ for ac in acs:
         report["incomplete_acs"].append(ac_id)
         continue
 
-    # Opt-in gate: don't auto-exec verification_command strings unless the
-    # user has explicitly enabled it. This is a security boundary — a goal
-    # YAML's verification_command runs under `bash -c`, and a hostile repo's
-    # active goal would otherwise execute attacker-controlled bash on the
-    # first Stop event after checkout.
-    if os.environ.get("FLOW_EXEC_VERIFY", "false").lower() != "true":
+    # Execution gate: run the command only when the user opted in globally
+    # OR this goal is trusted per the ledger. This is a security boundary —
+    # a goal YAML's verification_command runs under `bash -c`, and a hostile
+    # repo's active goal would otherwise execute attacker-controlled bash on
+    # the first Stop event after checkout.
+    if not (exec_verify or trusted):
         report["incomplete_acs"].append(ac_id)
+        report["not_executed"].append(ac_id)
         report["checked"].append({
             "id": ac_id,
             "exit_code": None,
             "must_pass": must_pass,
-            "reason": "not_executed (flow.goals.executeVerificationCommands is false)",
+            "reason": "not_executed (goal not trusted; flow.goals.executeVerificationCommands is false)",
         })
         continue
 

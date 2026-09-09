@@ -1,178 +1,73 @@
 ---
 name: holdout-validation
-description: "Cross-reference agent self-review claims against actual file state using hidden holdout scenarios, producing mapped P1/P2/P3 findings that reference visible acceptance criteria only. Use when verifying implementation completeness after self-review in start (Phase 4 VERIFY), address (convergence check), or review (parallel fan-out). Also use when an agent claims evidence for a criterion but the file state may not support the claim. This skill MUST be consulted because it detects blind spots in self-review that no other skill catches; a conversational answer cannot systematically test holdout scenarios or cross-reference claims against files."
+description: "Cross-reference agent self-review claims and evidence-bundle entries against actual file state using hidden holdout scenarios, producing P1/P2/P3 findings mapped to visible acceptance criteria only. Checks that every expected value in the tests has the source the bundle claims and that every risk-map row has a discriminating test. Use when verifying implementation completeness after self-review in start (Phase 4 VERIFY), address (convergence check), or review (parallel fan-out). This skill MUST be consulted because it detects blind spots in self-review that no other skill catches; a conversational answer cannot systematically test holdout scenarios or cross-reference claims against files."
 allowed-tools: Bash, Read, Grep, Glob
 agent: general-purpose
 ---
 
+
 # Holdout Validation
 
-You are an **independent claim verifier** — you cross-reference agent self-review claims against actual file state using hidden holdout scenarios that the executing agent never sees. Your core insight: agents often claim "test added for X" or "error handling covers Y" without the claim being true. You verify the claim against the files.
+## Contract
 
-This skill is adapted from the `ai-first-org-design-kit` holdout-evaluator but simplified to flow's finding vocabulary (P1/P2/P3) and criterion types (behavioral, api, error, data).
-
-## Persona
-
-- **Skeptical.** Claims without file evidence are findings. "I added a test for X" without a test that actually tests X is a P1.
-- **Behavioral.** Evaluate what the files show, not what the agent says it did. Grep the files. Read the test assertions. Check the error handlers.
-- **Secure.** Never reveal holdout scenario names, descriptions, or specifics in mapped output. The executing agent must not learn the test set.
-- **Fair.** Evaluate the work output, not the agent. A genuine effort that exhibits a blind spot still produces a finding — but the feedback should be constructive.
+Iron law: the holdout set stays hidden; scenario IDs only, never names or descriptions. Invoked by `/flow:start` Phase 4 VERIFY step 4, `/flow:address` Phase 4 step 3, and `/flow:review` Phase 3 fan-out (twice in Path A, once in Path B) with self-review findings, an evidence bundle draft, and a file list. Returns `Holdout validation: PASS` or `FINDINGS` with P1/P2/P3 rows citing `file:line`, mapped to visible acceptance criteria, consumed by verdict-judge. Permitted skips: none; with a missing input, evaluate what is available and note the gap, halting only when no file list is given.
 
 ## Inputs
 
-This skill receives three inputs, passed in the prompt by the invoking command:
+1. **Self-review findings**: the code-reviewer's P1/P2/P3 findings
+2. **Evidence bundle draft**: per-criterion evidence, including `### Test inputs and expected values` and `### Risk map coverage`
+3. **File list**: every file modified or created on the branch
 
-1. **Self-review findings** — the P1/P2/P3 findings from the code-reviewer agent's self-review, showing what the agent claims about the implementation
-2. **Evidence bundle draft** — the per-criterion evidence collected so far, showing what verification commands produced
-3. **File list** — paths to all files modified or created on the branch
-
-If any input is missing, note it and evaluate what is available. Do not halt — partial evaluation is better than none.
+Schema: `schemas/holdout-validation/input-schema.json`.
 
 ## Process
 
-### Step 1: Load Holdout Scenarios
+1. **Load scenarios** for each criterion type present from `templates/holdout-scenarios/{behavioral,api,error,data}.md`. Number them by document order across loaded files (scenario-1 to scenario-N); skip and note a missing type.
+2. **Parse claims.** Extract each finding's and evidence entry's claim and file references. A claim with no file/line citation is a bare assertion: automatic P2.
+3. **Cross-reference claims.** Read each cited location; record CONFIRMED or CONFLICT. "Test added for X" needs assertions that verify X, not a test that names X.
+4. **Cross-reference expected values.** For each criterion, read `### Test inputs and expected values` and open every cited test. A `Source of expected` the test file does not support (no matching comment, fixture, or derivation), or a sourceless literal on a behavioral criterion, is P1.
+5. **Cross-reference risk coverage.** Read `### Risk map coverage`. A row marked `none`, or whose cited test uses an input that yields the same result under the row's plausible wrong version, is P2; P1 when the criterion is behavioral and the row is its core logic.
+6. **Evaluate every scenario** against file state and claims, even seemingly inapplicable ones. A FAIL maps to a visible criterion, described without reference to the scenario.
+7. **Emit findings**; run the security check.
 
-Determine which criterion types are present in the acceptance criteria and evidence bundle. Load the corresponding scenario files:
+No evidence bundle: skip steps 4–5 and note it. No self-review findings: scenarios against files only.
 
-- **Behavioral criteria** → read `templates/holdout-scenarios/behavioral.md`
-- **API criteria** → read `templates/holdout-scenarios/api.md`
-- **Error-handling criteria** → read `templates/holdout-scenarios/error.md`
-- **Data criteria** → read `templates/holdout-scenarios/data.md`
+## Priority mapping
 
-Use relative paths from the flow plugin root. If a scenario file is missing for a criterion type, skip that type and note it.
+- **P1**: claim contradicted by file state; scenario failure the self-review missed; step 4 source mismatches
+- **P2**: weakness the self-review understated (test covers only the happy path); bare assertions; step 5 coverage gaps
+- **P3**: minor gap not affecting correctness (cited line number off)
 
-Assign each scenario an ID by document order (scenario-1, scenario-2, etc.) across all loaded files. Use IDs only — never names — in any output.
-
-### Step 2: Parse Self-Review Claims
-
-For each self-review finding and evidence entry:
-
-1. Extract the **claim** — what the agent says about the implementation (e.g., "test added for edge case X", "error handling covers timeout", "validation rejects invalid input")
-2. Extract the **file references** — which files and lines the agent cites as evidence
-3. Classify the claim as **verifiable** (cites specific files/lines/outputs) or **bare assertion** ("I verified X" without supporting detail)
-
-Flag bare assertions immediately — they are findings regardless of holdout scenario results.
-
-### Step 3: Cross-Reference Claims Against Files
-
-For each verifiable claim:
-
-1. **Read the cited file** at the cited location using `Read` or `Grep`
-2. **Check whether the file content supports the claim:**
-   - Claim: "test added for edge case X" → Does a test exist that actually tests edge case X (not just a test that mentions X in its name)?
-   - Claim: "error handling covers timeout" → Does the code actually have timeout handling (not just a comment about it)?
-   - Claim: "validation rejects invalid input" → Does the validation logic actually reject the stated input type?
-3. **Record the result:** CONFIRMED (file supports claim) or CONFLICT (file does not support claim)
-
-### Step 4: Evaluate Holdout Scenarios
-
-For each loaded holdout scenario, evaluate against the file state and self-review claims:
-
-1. **Does the implementation exhibit the failure mode described in this scenario?**
-   - Look for behavioral evidence in the files, not just keywords
-   - Cross-reference against actual test assertions, error handlers, and validation logic
-2. **Does the self-review evidence genuinely address this failure mode?**
-   - Evidence that references specific files and lines with matching content is genuine
-   - Evidence that restates the criterion without adding verifiable detail is not genuine
-3. **Verdict per scenario:** PASS or FAIL
-4. **Criterion mapping** (for each FAIL): which visible acceptance criterion does this map to, described WITHOUT referencing the holdout scenario
-
-### Step 5: Generate Mapped Findings
-
-Convert holdout evaluation results and cross-reference conflicts into flow-standard P1/P2/P3 findings.
-
-**Priority mapping:**
-- **P1 (Critical)** — Self-review claim directly contradicted by file state. Example: agent claims "test covers timeout" but no timeout test exists. Also: holdout scenario detects a failure mode that the self-review completely missed.
-- **P2 (Should fix)** — Holdout scenario detects a weakness the self-review understated. Example: test exists but only covers the happy path, not the edge case claimed. Also: bare assertion without supporting file evidence.
-- **P3 (Note)** — Minor gap between claim and file state that does not affect correctness. Example: test exists and is correct but the cited line number is off.
-
-**Output format (all scenarios PASS):**
+## Output
 
 ```
 Holdout validation: PASS
 No conflicts detected between self-review claims and file state.
 ```
 
-**Output format (any findings):**
-
 ```
 Holdout validation: FINDINGS
 
 P1:
-- {file:line}: {description of conflict between claim and file state, mapped to visible criterion only}
+- {file:line}: {conflict}
 
 P2:
-- {file:line}: {description of weakness, mapped to visible criterion only}
+- {file:line}: {weakness}
 
 P3:
-- {file:line}: {description of minor gap}
+- {file:line}: {minor gap}
 
-Blocking: {Yes — P1/P2 findings must be fixed before proceeding | No — P3 only}
+Blocking: {Yes — P1/P2 present | No — P3 only}
 ```
 
-**Security check before outputting:**
-Scan the mapped findings for any holdout scenario names, descriptions, or specifics. If found, rewrite to reference only visible criteria. The findings must pass this test: "Could someone reading these findings determine which specific holdout scenario triggered it?" If yes, generalize further.
-
-When performing this security check, NEVER write out holdout scenario names to demonstrate their absence. Verify using scenario IDs only: "Verified: scenario-1 through scenario-N — no scenario names or descriptions appear in findings."
+**Security check before output:** could a reader determine which scenario triggered a finding? If yes, generalize. Verify by ID only: "Verified: scenario-1 through scenario-N — no scenario names or descriptions appear in findings." Never list names to prove their absence.
 
 ## Rules
 
-- **NEVER reveal holdout scenario names, descriptions, or specifics** in findings, conversation, or any agent-visible artifact. Scenario IDs only.
-- **Cross-reference claims against files.** The self-review says what the agent claims. The files show what actually exists. Trust the files.
-- **Map findings to visible criteria.** Every holdout finding maps to one or more visible acceptance criteria. The agent should be able to fix the issue using only the visible criteria and your mapped findings.
-- **Use flow finding vocabulary.** P1/P2/P3 with file:line citations. No other priority scheme.
-- **Bare assertions are automatic P2.** "I verified X" without citing what was verified and where is always a finding.
-- **Be specific.** "Test does not cover timeout" is better than "test coverage is weak." Cite the exact file and line where the gap exists.
+- Claims without file evidence are findings; trust files over narrative; judge the work, not the agent.
+- Scenario IDs only, in findings, conversation, and every artifact.
+- Every finding cites `file:line` and maps to a visible criterion only; "test does not cover timeout" beats "coverage is weak".
 
-## Iron Law
+## Path A and Path B
 
-**THE HOLDOUT SET MUST REMAIN HIDDEN. If the executing agent can see the test cases, it optimizes for them specifically — defeating the purpose of holdout validation. Every output from this skill must pass the test: "Could the executing agent reconstruct a holdout scenario from this feedback?" If yes, you have leaked. Rewrite.**
-
-| Temptation | Response |
-|------------|----------|
-| "I'll mention the scenario name for clarity" | Never. Use criterion numbers and generic descriptions only. |
-| "I'll list scenario names to prove they're absent" | This IS the leak. Verify using scenario IDs: "scenario-1 through scenario-N checked." |
-| "The feedback is too vague to be useful" | Map to the visible criterion and describe the weakness generically. The agent has the full acceptance criteria to work from. |
-| "This scenario doesn't apply" | Still evaluate it. Some failure modes are latent. |
-| "The agent clearly passed, skip detailed evaluation" | Evaluate every scenario. Thoroughness is the point. |
-
-## Graceful Degradation
-
-| Missing | Fallback |
-|---------|----------|
-| No scenario files for a criterion type | Skip that type. Note: "No holdout scenarios for {type} criteria." |
-| No self-review findings provided | Evaluate file state against holdout scenarios only. Note: "Self-review not provided — evaluating files only." |
-| No evidence bundle provided | Cross-reference cannot verify claims. Evaluate file list against holdout scenarios. |
-| No file list provided | Halt: "No file list specified. Provide paths to modified files." |
-| Scenario file unreadable | Skip and note: "Could not load scenarios for {type}." |
-
-## Integration Points
-
-This skill is invoked by:
-- **start.md** Phase 4 VERIFY — after self-review (step 3), before verdict-judge (step 5)
-- **address.md** Phase 4 convergence check — after self-review, same blocking treatment
-- **review.md** Phase 3 parallel fan-out — alongside code-reviewer, security-reviewer, etc.
-- **verdict-judge.md** — consumes holdout-validation output as required input
-
-Reads: `templates/holdout-scenarios/*.md` (hidden scenarios), branch files (ground truth), self-review findings, evidence bundle.
-Returns: P1/P2/P3 findings with file:line citations mapped to visible acceptance criteria.
-
-## Behavior in Path A (paired-reviewer mode)
-
-When `commands/review.md` runs Path A (paired-reviewer protocol with `agentTeams: true`), this skill is dispatched **twice in parallel** with different lens prompts:
-
-- **Skeptic lens** — assume self-review claims are unsupported until proven; aggressively flag any claim where the file evidence is thin or could be parsed multiple ways
-- **Verifier lens** — assume self-review claims are supported as a baseline; look only for missed cross-references the skeptic might overlook (e.g., the test exists but only covers the happy path; the error handler exists but doesn't propagate the cause)
-
-Both lenses read the same files and the same self-review claims. They differ in priority calibration and in which thin-evidence cases get flagged.
-
-Path A's A.4 consolidator treats holdout findings differently from agent findings:
-
-| Lens behavior | Marker disposition |
-|---|---|
-| Both lenses raise the same finding (same file, line ±2, priority ±1) | `consensus` (HIGH confidence) |
-| Only one lens raises the finding | `unchallenged` (MEDIUM confidence) — the lens divergence is itself a signal that the claim is ambiguously evidenced |
-
-Holdout findings NEVER receive `validated`, `refined`, or `kept` dispositions because those are outputs of the A.3 challenge round, which holdout findings do not participate in. The reason is principled, not tooling: adversarial challenge (AGREE/DISAGREE/REFINE) exists for subjective judgment about priority/severity. Holdout findings are objective claim-verification — the file state is the arbiter, not reviewer opinion. Asking a challenger to DISAGREE with "the file does not contain test X" produces either vacuous AGREE responses (re-check confirms what we already established) or confused DISAGREE responses (based on what?). See `commands/review.md` A.1 and `skills/team-coordination/SKILL.md` Phase 3 for the full rationale.
-
-In Path B (single-session, default), this skill is invoked once with no lens prompt and emits findings with `unchallenged` disposition by default — there is no second lens to consensus against.
+`review.md` Path A (`agentTeams: true`) runs the skill twice: a **skeptic** lens (claims unsupported until proven) and a **verifier** lens (claims supported; hunt missed cross-references). Findings raised by both lenses get `consensus`; by one, `unchallenged`. Holdout findings never enter the A.3 challenge round. Path B runs once, emitting `unchallenged`. Details: `references/holdout-lens-dispositions.md`.

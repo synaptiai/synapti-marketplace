@@ -1,6 +1,6 @@
 ---
 name: goal-evidence-ledger
-description: "Maintain an append-only evidence ledger as `.flow/runs/<run-id>/evidence/*.evidence.yaml` sidecars (structured metadata) plus matching `.txt` raw-output captures, written exclusively via `bin/flow-record-evidence.sh`. Use when goal-evaluator runs a verification command, when a Stop hook captures a deterministic check, or when /flow:goal evaluate produces a judge report. This skill MUST be consulted because evidence-by-transcript dies with the session — only file-backed, schema-validated sidecars survive across sessions, prove ACs durably, and satisfy the verdict-judge's Independence Protocol (judges only see surfaced evidence, not free-form transcripts)."
+description: "Maintain the append-only evidence ledger: `.flow/runs/<run-id>/evidence/*.evidence.yaml` sidecars plus matching `.txt` raw captures, written only via `bin/flow-record-evidence.sh`. Use when goal-evaluator runs a verification command, when /flow:start or /flow:address captures verification evidence on a FlowRun, or when /flow:goal evaluate produces a judge report. Evidence that lives only in the transcript dies with the session; only file-backed, schema-validated sidecars prove ACs durably and satisfy the judge's Independence Protocol."
 allowed-tools: Bash, Read, Write
 context: fork
 agent: general-purpose
@@ -8,40 +8,27 @@ agent: general-purpose
 
 # Goal Evidence Ledger
 
-You record evidence durably. Every assertion about an AC must be backed by a file-backed FlowEvidence sidecar — not a transcript message, not a console log that vanishes when the session ends, not an LLM's recollection. This skill enforces the **negative space** discipline from `evidence-based-development`: every evidence entry MUST declare what it does NOT prove.
+## Contract
 
-## Iron Law
-
-**No AC transitions to `pass` without a corresponding FlowEvidence sidecar. The sidecar's `proves: [<AC.id>]` field is the load-bearing link. Without it, the verdict-judge has no surfaced evidence to evaluate and falls back to transcript text — defeating the Independence Protocol.**
-
-## Relationship to existing skills
-
-This skill **wraps** `evidence-based-development` (which encodes ASSERTION/EVIDENCE/VERIFIED discipline). It adds:
-- File-backed persistence (vs. transcript-only)
-- Schema-validated structure (vs. free-form)
-- Cross-session durability (vs. session-scoped)
-- Concurrent-safe writes (via `_journal_atomic.py`)
-
-If `evidence-based-development` has produced findings in a session, this skill **materializes** those findings as `.evidence.yaml` sidecars.
+Iron law: no AC transitions to `pass` without a FlowEvidence sidecar whose `proves: [<AC.id>]` names it, and every non-trivial sidecar declares what it does NOT prove. Invoked by `goal-evaluator` (Step 2, once per verification command), by `/flow:start` Phase 4 and `/flow:address` (verification-evidence sidecars on the FlowRun), and by `/flow:goal evaluate` for judge reports. Inputs: evidence id, type, proves list, and optional command, exit code, raw-output path, limitations, negative cases. Returns the sidecar path, which the caller sets as the AC's `evidence_ref`. Permitted skips: `limitations` on `holdout_validation` and `verdict` types; the raw `.txt` when nothing was captured. The helper is never skipped.
 
 ## Inputs
 
-The invoking command/skill MUST pass:
-1. **Evidence id** — typically `evidence-<AC.id>-<descriptor>-<turn>`. Lowercase + digits + `_-`.
-2. **Evidence type** — one of the enum values from `evidence.schema.json` (command_result, test_result, lint_result, runtime_smoke_result, visual_result, git_diff, holdout_validation, verdict, human_approval, review_comment_snapshot, ci_status, llm_judge_report, artifact_check, path_boundary_check).
-3. **Proves** — list of AC ids this evidence supports.
-4. **Optional**: `command`, `exit_code`, raw output path, `limitations` list, `negative_cases` list.
+1. **Evidence id** — `evidence-<AC.id>-<descriptor>-<turn>`; lowercase, digits, `_-`.
+2. **Evidence type** — one of `evidence.schema.json`'s enum: command_result, test_result, lint_result, runtime_smoke_result, visual_result, git_diff, holdout_validation, verdict, human_approval, review_comment_snapshot, ci_status, llm_judge_report, artifact_check, path_boundary_check.
+3. **Proves** — AC ids this evidence supports.
+4. Optional: `command`, `exit_code`, raw output path, `limitations`, `negative_cases`.
 
 ## Outputs
 
-1. `.flow/runs/<run-id>/evidence/<evidence-id>.evidence.yaml` — structured sidecar.
-2. `.flow/runs/<run-id>/evidence/<evidence-id>.txt` — raw stdout/stderr capture (when applicable).
-3. `evidence-captured` artifact in the linked decision journal.
+1. `.flow/runs/<run-id>/evidence/<evidence-id>.evidence.yaml` (schema `plugins/flow/schemas/v1/evidence.schema.json`).
+2. `.flow/runs/<run-id>/evidence/<evidence-id>.txt` — raw stdout/stderr when captured.
+3. An `evidence-captured` journal artifact.
 4. One line appended to `.flow/runs/<run-id>/events.jsonl`.
 
 ## Workflow
 
-### Step 1: Compose the FlowEvidence YAML
+### Step 1: Compose
 
 ```yaml
 apiVersion: flow.synapti.ai/v1
@@ -60,75 +47,47 @@ evidence:
   proves:
     - <AC.id>
   limitations:
-    - <what this evidence does NOT prove — required for non-trivial evidence>
+    - <what this evidence does NOT prove>
   negative_cases:
-    - <adversarial cases or boundary conditions tested>
+    - <adversarial or boundary cases exercised>
 ```
 
-### Step 2: Negative space discipline
+### Step 2: Negative space
 
-**Mandatory fields when applicable:**
+| Evidence type | Required |
+|---|---|
+| `command_result`, `test_result`, `lint_result`, `visual_result`, `llm_judge_report` | `limitations` |
+| `runtime_smoke_result` | `limitations` + `negative_cases` |
+| `holdout_validation`, `verdict` | none — the verdict format owns its negative space |
 
-| Evidence type | Mandatory negative-space field | Rationale |
-|---|---|---|
-| `command_result`, `test_result` | `limitations` | What the command did NOT test (other code paths, edge cases) |
-| `runtime_smoke_result` | `limitations` + `negative_cases` | Smoke tests are inherently shallow; surface that explicitly |
-| `visual_result` | `limitations` | Visual diffs don't catch behavior; name that |
-| `holdout_validation`, `verdict` | none (already structured) | The verdict format owns its own negative space |
-| `llm_judge_report` | `limitations` | LLM reasoning is fuzzy; surface confidence band |
+The schema rejects a `command_result` without `limitations` at write time.
 
-A sidecar of type `command_result` without a `limitations` field is rejected by the schema (the rejection happens at write time, not at read time — fail fast).
-
-### Step 3: Write the sidecar
-
-Invoke `bin/flow-record-evidence.sh`:
+### Step 3: Write
 
 ```bash
-bin/flow-record-evidence.sh \
-  --run-id <run-id> \
-  --evidence-file <path-to-composed-yaml> \
-  --raw-output <path-to-stdout-capture>
+bin/flow-record-evidence.sh --run-id <run-id> --evidence-file <composed.yaml> [--raw-output <stdout-capture>]
 ```
 
-The helper handles:
-- Atomic write (tempfile + rename via `_journal_atomic.py`)
-- Symlink defense (O_NOFOLLOW on lockfile + target)
-- Schema validation (when `jsonschema` is available)
-- Raw output copy alongside the sidecar
+The helper writes atomically (tempfile + rename via `_journal_atomic.py`), refuses symlinked targets and lockfiles, validates the schema when `jsonschema` is installed, and copies the raw output next to the sidecar. Surface any non-zero exit with its stderr.
 
-### Step 4: Record manifest artifact
+### Step 4: Journal
 
 ```bash
-bin/journal-record.sh --issue {N} --type evidence-captured \
-  --metadata evidence_id=<id> \
-  --metadata goal_id=<goal-id> \
-  --metadata proves=<comma-list of AC ids>
+bin/journal-record.sh --issue {N} --type evidence-captured --metadata evidence_id=<id> --metadata goal_id=<goal-id> --metadata proves=<comma-list of AC ids>
 ```
 
-### Step 5: Update the goal AC's `evidence_ref`
+### Step 5: Link
 
-The `goal-evaluator` skill (the typical caller) updates the AC entry in `.flow/goals/<id>.goal.yaml` to point at the new sidecar:
+The caller updates the AC in `.flow/goals/<id>.goal.yaml`: `status: evidence_collected`, `evidence_ref: .flow/runs/<run-id>/evidence/<evidence-id>.evidence.yaml`, `last_evaluated_at: <now>`.
 
-```yaml
-acceptance_criteria:
-  - id: AC1
-    text: '...'
-    status: evidence_collected  # was: pending
-    evidence_ref: .flow/runs/<run-id>/evidence/<evidence-id>.evidence.yaml
-    last_evaluated_at: <now>
-```
+## Rules
 
-## Anti-patterns
+- Evidence is append-only: a correction is a new sidecar (`evidence-AC1-retest-turn2`) and the AC's `evidence_ref` moves to it; the old sidecar stays as audit trail.
+- One run proving two ACs is one sidecar with `proves: [AC1, AC2]`.
+- Capture evidence before the verdict; never after the goal is `achieved`.
+- Never write a sidecar with `echo >`; the helper is the only writer.
 
-- ❌ Writing evidence by `echo > .evidence.yaml` instead of via the helper — bypasses atomicity + schema validation.
-- ❌ Omitting `limitations` on a `command_result` — claim without scope = useless evidence.
-- ❌ Pointing two ACs to the same evidence file without `proves: [AC1, AC2]` — the link is bidirectional.
-- ❌ Editing a sidecar in place — evidence is append-only; corrections are NEW sidecars (e.g., `evidence-AC1-retest-turn2`) and the AC's `evidence_ref` is updated to the new one. The old sidecar stays as audit trail.
-- ❌ Writing evidence after a goal has transitioned to `achieved` — evidence is captured BEFORE the verdict, not after.
+## References
 
-## Reuse map
-
-- `plugins/flow/skills/evidence-based-development/SKILL.md` — ASSERTION/EVIDENCE/VERIFIED protocol.
-- `plugins/flow/bin/flow-record-evidence.sh` — atomic writer.
-- `plugins/flow/schemas/v1/evidence.schema.json` — sidecar schema.
-- `plugins/flow/references/evidence-bundle-format.md` — bundle layout the verdict-judge consumes.
+- `plugins/flow/skills/evidence-based-development/SKILL.md` — the ASSERTION/EVIDENCE/VERIFIED discipline this ledger materializes.
+- `plugins/flow/references/evidence-bundle-format.md` — the bundle layout the judge consumes.

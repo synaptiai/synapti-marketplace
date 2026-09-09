@@ -45,3 +45,11 @@ Hidden scenarios for validating data-handling acceptance criteria. These probe c
 **What to check:** Read the persistence code. What happens if the same data is written twice? Is there a unique constraint, upsert, or duplicate check? Is the operation safe to retry after a timeout?
 
 **Signals:** `INSERT` without `ON CONFLICT`, no unique constraint on the natural key, no idempotency key for API operations, test that only runs the operation once, no test for duplicate submission.
+
+### 6. Fixed-Point Inputs
+
+**Failure mode:** Agent claims "transformation verified" but every test input is a fixed point of the transformation — normalizing already-normalized data, sorting sorted data, escaping strings with nothing to escape, converting a value whose source and target representations coincide. Input equals output, so an identity function (or a transform with the direction reversed) passes.
+
+**What to check:** For each transformation test, compare the input and the expected output. Are they equal or trivially related? Is there at least one input that the transformation must visibly change, with an expected value derived independently (spec, hand computation, fixture, external standard) rather than copied from the code's output?
+
+**Signals:** `expect(transform(x)).toEqual(x)` as the only assertion, inputs already in canonical form, round-trip tests (`decode(encode(x)) == x`) with no direct check of the encoded form, empty or single-element collections as the only inputs, ASCII-only inputs for an encoding transform.

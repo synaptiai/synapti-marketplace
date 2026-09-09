@@ -14,6 +14,8 @@ Flow v3 introduces a **runtime layer** at `.flow/` on top of the existing skill 
 
 Flow does NOT invoke native Claude Code `/goal` or `/loop` — those are session-only built-ins and not exposed to plugins. Flow implements its own file-backed goal layer and uses Stop hooks for post-turn enforcement. The `/flow:watch` command generates a `/loop` prompt file the user invokes manually.
 
+**Trust ledger.** The Stop hook executes a goal's `verification_command` strings only when the goal is *trusted*: `bin/flow-goal-record.sh --create` records every goal flow creates in `${FLOW_STATE_DIR:-~/.claude/flow-state}/goal-trust.jsonl` (repo, goal id, sha256 of AC ids + commands). A goal that arrived with a checkout is untrusted and its ACs are reported `not_executed` until you run `bin/flow-goal-trust.sh record --goal-file .flow/goals/<id>.goal.yaml`, which is also required after editing a `verification_command` by hand; `flow-goal-trust.sh list` shows the ledger. `flow.goals.executeVerificationCommands: true` still forces execution for every goal. `stopHookEnforcement: warn` (the default) never blocks and says so in its reason and on stderr; `block` keeps the agent working on missing evidence and is capped at `failAfterStuckTurns` consecutive blocks per session and goal.
+
 **Goals are invisible-by-default**: `flow.goals.goalCreation` defaults to `auto`, so `/flow:start` records a FlowGoal whenever the issue has ≥1 acceptance criterion carrying a `verification_command` — no consent prompt (the v3.0 onboarding `AskUserQuestion` was retired in v3.1). Issues with zero verifiable ACs (e.g. spec-free `documentation`/`chore`) create no goal, silently. Set `goalCreation: off` to suppress auto-creation, or `flow.goals.enabled: false` to disable the feature. The deprecated `requireGoalForStart` is migrated read-only (`true`→`always`, `false`→`off`). See `references/migration-v2-to-v3.md`.
 
 ### Get started with v3
@@ -50,11 +52,21 @@ TDD mode defaults to `enforce`, meaning tests must exist and pass before task co
 
 ### 5. No Lazy Verification
 
-Evidence bundles must include "What was NOT tested," "Known limitations," and "Negative/adversarial cases" for every criterion. The missing-criterion scan (verdict-judge Step 1) checks that every acceptance criterion has evidence before evaluation begins. Holdout validation cross-references self-review claims against actual file state.
+Evidence bundles must include "What was NOT tested," "Known limitations," "Negative/adversarial cases," "Test inputs and expected values," and "Risk map coverage" for every criterion. The missing-criterion scan (verdict-judge Step 1) checks that every acceptance criterion has evidence before evaluation begins. Holdout validation cross-references self-review claims against actual file state.
 
 ### 6. No Incomplete Shipments
 
 Pre-existing findings in touched files keep their natural priority (no longer capped at P3). The finding-ledger merge gate blocks merges when `FLOW_RESOLUTION_CYCLE` markers contain unresolved or escalated items. "DEFERRED" markers have been renamed to "ESCALATED" to signal that deferral is not an option.
+
+### 7. Rules in the Room, Checked by Machine (3.3.0)
+
+Two findings shaped 3.3.0. An audit of 43 sessions showed flow's rules were written but not in context when they were broken, and the hooks that could enforce them warned or exited 0. Dan Luu's "Agentic testing" study showed that naming a testing technique produces its surface, not its value: TDD instructions doubled test count and lowered correctness because agents fed identical or palindromic inputs and pasted the implementation's own output in as the expected value. The response is structural:
+
+- Every command inlines its Required Skills at invocation (`bin/flow-load-skills.sh`); skill bodies are capped at 600 words so the load is affordable.
+- The TaskCompleted hook blocks while edits postdate the last passing quality run; `gh issue create` asks during an active goal; the Stop hook says plainly when a stop was allowed.
+- Specifications carry a risk map (where the logic is most likely to be subtly wrong, what the plausible wrong version does, and a check that tells them apart). Expected values must state their source; degenerate inputs do not count as coverage. The verdict judge sees test inputs and expected values, never the implementation.
+- `/flow:learn` reads session transcripts, where corrections actually live.
+- A headless correctness eval (`references/correctness-eval.md`) measures the TDD and risk-map settings on seeded-bug tasks with hidden tests instead of assuming.
 
 ### Strict Defaults
 
@@ -66,6 +78,9 @@ Pre-existing findings in touched files keep their natural priority (no longer ca
 | `reviewCycleLimit` | `3` | `10` |
 | `autonomous` | _(new)_ | `false` |
 | `minimalScope` | _(new)_ | `false` |
+| `testing.taskCompletionGate` | _(new, 3.3.0)_ | `"block"` |
+| `specFirst.riskMap` | _(new, 3.3.0)_ | `true` |
+| `learning.sources` | _(new, 3.3.0)_ | `["journal", "transcripts"]` |
 
 ### LLM Operator Principles (v2.4)
 
@@ -136,20 +151,22 @@ claude plugins add ./plugins/flow
 ## Architecture
 
 ```
-SKILL LIBRARY (33 skills)
-  ├── Foundation (always loaded, stable shape)
+SKILL LIBRARY (33 skills, every body <= 600 words)
+  ├── Ambient (no context: fork / agent:) — inlined WHOLE into a command's prompt
+  │   │                                    when the command lists them as Required
   │   ├── llm-operator-principles (operator stance — convergence, anti-deferral, anti-estimation)
   │   ├── evidence-based-development
   │   ├── autonomous-workflow
   │   └── code-quality-principles
   │
-  └── Domain (contextually invoked, max 3 concurrent)
+  └── Dispatched (context: fork / agent:) — their `## Contract` (<= 120 words) is
+      │                                    inlined; the body runs via Skill(<name>)
       ├── issue-crafting
       ├── branch-and-task-management
       ├── change-classification
       ├── convention-enforcement
       ├── capability-discovery (+ LSP probing)
-      ├── specification-capture (non-goals, failure modes, interface contracts)
+      ├── specification-capture (non-goals, failure modes, interface contracts, risk map)
       ├── code-review-methodology
       ├── criterion-verification-map
       ├── pr-lifecycle
@@ -167,15 +184,16 @@ SKILL LIBRARY (33 skills)
       ├── tdd-patterns
       └── learned/ (promoted from proposals)
 
-AGENTS (8)
-  ├── implementation-planner (task decomposition)
+AGENTS (9)
+  ├── implementation-planner (task decomposition, risk areas per task)
   ├── test-runner (quality commands)
   ├── code-reviewer (quality + security + LSP references)
   ├── convention-checker (git conventions)
   ├── security-reviewer (OWASP, secrets, auth)
   ├── error-handler-inspector (error handling + LSP diagnostics)
   ├── integration-verifier (integration validation)
-  └── verdict-judge (independent acceptance criteria evaluation)
+  ├── verdict-judge (independent acceptance criteria evaluation; sees test inputs, never the diff)
+  └── goal-evaluator-judge (loop-time verdict for FlowGoals)
 
 COMMANDS (23)
   Work / intent (17) — the commands you drive:
@@ -189,15 +207,24 @@ COMMANDS (23)
   Runtime / admin (6) — inspect & debug the layer Flow manages for you:
   └── goal, workflow, trigger, run, resume, watch
 
-HOOKS (8 scripts)
-  ├── Safety: block-force-push, block-destructive, block-secrets
-  ├── Audit: log-file-changes, log-commits
-  └── Experimental: verify-task-completion, nudge-idle-teammate, session-end-learn
+HOOKS (14 scripts)
+  ├── Safety (PreToolUse): block-force-push, block-destructive, block-secrets,
+  │                        ask-issue-create (asks before `gh issue create` during an active goal)
+  ├── Ledger (PostToolUse / PostToolUseFailure): log-file-changes, log-commits, record-quality-run
+  ├── Gates: verify-task-completion (TaskCompleted — blocks while edits postdate the last
+  │          passing quality run), flow-goal-stop + flow-run-deterministic-checks +
+  │          flow-goal-evaluator (Stop — FlowGoal evidence)
+  └── Session: session-end-learn, session-end-state, nudge-idle-teammate
 
   Note: merge/release confirmation gates run at the COMMAND level via
   AskUserQuestion (see references/three-tier-safety.md), not as hooks.
 
 BIN/ HELPER SCRIPTS
+  ├── flow-load-skills.sh   — inlines a command's Required Skills (ambient bodies, dispatched contracts)
+  ├── flow-quality-ledger.sh — per-session ledger of file edits and quality-command runs (task-completion gate): append|path|status|digest|prune
+  ├── flow-goal-trust.sh    — user-local trust ledger: which FlowGoals may auto-run verification commands
+  ├── flow-mine-corrections.sh — mines user corrections from session transcripts for /flow:learn
+  ├── flow-eval-run.sh      — headless correctness eval (seeded-bug tasks, hidden tests; references/correctness-eval.md)
   ├── flow-escalate.sh      — formats canonical six-field escalation prompts (CLI utility)
   ├── validate-skill-input.sh — validates skill inputs against JSON Schemas in plugins/flow/schemas/
   ├── journal-record.sh     — atomically updates the YAML manifest in .decisions/issue-{N}.md
@@ -218,30 +245,34 @@ TESTS (repo-level, exercised by every PR series — not part of the plugin insta
 
 | Event | Wired Script | Min. Claude Code | Notes |
 |-------|--------------|------------------|-------|
-| `PreToolUse` (Bash) | `block-force-push`, `block-destructive`, `block-secrets` | All current | Documented event |
-| `PostToolUse` (Edit\|Write) | `log-file-changes` | All current | Documented event |
-| `PostToolUse` (Bash) | `log-commits` | All current | Documented event |
-| `SessionEnd` | `session-end-learn` | All current | Documented event |
-| `TaskCompleted` | `verify-task-completion` | **v2.1.33+** | See note below |
-| `TeammateIdle` | `nudge-idle-teammate` | **v2.1.33+** | See note below |
+| `PreToolUse` (Bash) | `block-force-push`, `block-destructive`, `block-secrets`, `ask-issue-create` | All current | Documented event. `ask-issue-create` returns `permissionDecision: ask` (documented JSON contract) only for `gh issue create` while a FlowGoal is active and `minimalScope` is false |
+| `PostToolUse` (Edit\|Write\|NotebookEdit) | `log-file-changes` | All current | Documented event; also appends a `file_change` entry to the session quality ledger (`notebook_path` read for NotebookEdit) |
+| `PostToolUse` (Bash) | `log-commits`, `record-quality-run` | All current | Documented event; `record-quality-run` classifies test/lint/typecheck/build commands at command position, records `tool_response.exit_code`, a `masked` flag (`\|\| true`), and a sha256 digest of the working-tree contents (HEAD excluded, so commits of tested edits stay clean) |
+| `PostToolUseFailure` (Bash) | `record-quality-run` | All current | Documented event ("after a tool call fails"): records the failed run (`failed: true`, exit code from the `Exit code N` line of `error`) so a failing test run reaches the ledger; deduped with PostToolUse on `tool_use_id` |
+| `Stop` | `flow-goal-stop` | All current | Documented event. Ships in `warn` mode: the reason says plainly that the stop was ALLOWED; `block` mode is opt-in and executes verification commands only for goals in the user-local trust ledger |
+| `SessionEnd` | `session-end-learn`, `session-end-state` | All current | Documented event |
+| `TaskCompleted` | `verify-task-completion` | **v2.1.33+** | Documented event (`task_id`, `task_subject`, `task_description`, `teammate_name`, `team_name`). Exit 2 blocks completion while files changed after the last passing quality run; `testing.taskCompletionGate` selects `block\|warn\|off` |
+| `TeammateIdle` | `nudge-idle-teammate` | **v2.1.33+** | Payload fields still treated as best-effort |
 
-`TaskCompleted` and `TeammateIdle` were introduced alongside agent-team support in Claude Code v2.1.33 and are not currently listed in the public hooks documentation. The events DO fire today; the JSON payload schema for both is undocumented, so the hooks treat their expected fields (`.task.subject`, `.task.description`, `.teammate.id`, `.idle_seconds`) as best-effort and exit 0 silently when those fields are absent rather than blocking on schema drift. The `v2.1.33+` floor only matters for installs running an older Claude Code build.
+`TaskCompleted` and `TeammateIdle` were introduced alongside agent-team support in Claude Code v2.1.33. The TaskCompleted payload is now documented (https://code.claude.com/docs/en/hooks) and `verify-task-completion.sh` reads the documented `task_subject` / `task_description` fields, falling back to the legacy `.task.subject` shape. `TeammateIdle` fields (`.teammate.id`, `.idle_seconds`) remain best-effort: the hook exits 0 silently when they are absent. The `v2.1.33+` floor only matters for installs running an older Claude Code build.
 
-### Required Skills vs Skill() invocation convention
+### Required Skills: loaded by the command, not by the agent
 
-Commands declare their skill dependencies in two complementary ways:
+Claude Code commands cannot preload skills from frontmatter (only agents have `skills:`), so until 3.3.0 a command's `## Required Skills` section was a reading list the agent might or might not open mid-run. An audit of 43 sessions found the skill carrying the most-broken rule loaded once in twenty-four chances. Every command with Required Skills now carries a `!` block right under the list that calls `bin/flow-load-skills.sh <names...>`; Claude Code pre-executes it and injects the output, so the rules are in context before Phase 0.
 
-- **`## Required Skills`** (declarative) — skills that inform the WHOLE command. Loaded as context at the start, applied throughout. Example: `code-review-methodology` for `/flow:review`.
-- **`Skill(X)`** (imperative) — explicit forks at specific phase boundaries where the command hands off to a skill for a discrete sub-task. Example: `Skill(capability-discovery)` invoked once during Phase 1 detection.
+Two loading modes, decided from each skill's frontmatter:
 
-Rules:
+- **Ambient** (no `context: fork`, no `agent:`) — the whole body is inlined. These are stance skills that apply throughout (`llm-operator-principles`, `evidence-based-development`, `autonomous-workflow`, `code-quality-principles`).
+- **Dispatched** (`context: fork` or `agent:`) — only the skill's `## Contract` section is inlined (its first H2, at most 120 words: iron law, invoking phase, return shape, permitted skips). The body runs in full when the command invokes `Skill(<name>)`.
 
-1. Every command either has a `## Required Skills` section, or an explicit `_None — {reason}_` marker so the absence is intentional.
-2. Every `Skill(X)` invocation in a command body must resolve cleanly: `X` MUST also appear in that command's `## Required Skills` list. Invocation is a phase-specific call; the Required Skills list is the canonical dependency manifest, so all skill dependencies are visible in one place.
-3. A skill listed as Required does NOT need an explicit `Skill()` invocation — the command operates with it loaded as ambient context.
-4. Read-only / dispatcher commands (`status`, `learn`, `explain`, `flow`) typically have no domain skills and use the `_None_` marker.
+Rules, enforced by `tests/flow-load-skills.test.sh`:
 
-When auditing: grep for `Skill(` in command bodies and confirm each name appears in Required Skills.
+1. Every command either has `## Required Skills` bullets plus the loader block, or an explicit `_None — {reason}_` marker and no loader block.
+2. The loader block's names equal the bullet list exactly. Every `Skill(X)` invocation in the body must name a Required Skill.
+3. Every dispatched skill has `## Contract` as its first H2, at most 120 words. Every skill body is at most 600 words; long tables live under `references/` and are linked.
+4. Read-only / dispatcher commands (`status`, `learn`, `explain`, `flow`) use the `_None_` marker.
+
+`references/skill-manifests.md` lists what each command loads and how many words that costs.
 
 ## Canonical Reference Documents
 
@@ -251,17 +282,21 @@ The plugin ships three canonical reference documents (under `plugins/flow/refere
 |---|---|---|
 | [`finding-schema.md`](references/finding-schema.md) | Reviewer output: 6-field finding data model (id, category, location, problem, suggested_fix, confidence) rendered as a two-column table (`Finding` and `Suggested Fix` columns) for legibility in GitHub's narrow PR-comment column, plus the marker-only `status` and `disposition` fields. Compatible with the existing `FLOW_REVIEW_CYCLE` 7-field marker schema. | All 4 reviewer agents (`code-reviewer`, `security-reviewer`, `error-handler-inspector`, `integration-verifier`); orchestrators (`commands/review.md`, `commands/pr.md`, `commands/address.md`) |
 | [`escalation-format.md`](references/escalation-format.md) | Six-field Proactive-Autonomy escalation structure (Situation, What I tried, Options, Recommendation, Blocking?, Risk). Delivered via `AskUserQuestion`, never inline text. | All 6 escalating commands (`start`, `pr`, `merge`, `commit`, `address`, `resolve`); reviewer agents that surface NEEDS-HUMAN-REVIEW |
-| [`evidence-bundle-format.md`](references/evidence-bundle-format.md) | Markdown shape verdict-judge consumes: per-criterion sections with mandatory `### Does NOT promise` plus three completeness subsections. `none` is a valid positive-statement answer; bare blank triggers auto-FAIL. | `commands/start.md` Phase 4 (producer), `agents/verdict-judge.md` Step 1 (consumer); `criterion-verification-map` skill (plan-time inputs) |
+| [`specification-journal-format.md`](references/specification-journal-format.md) | The `## Specification` journal shape: non-goals, failure modes, interface contracts, and the risk map (2-6 rows of area / plausible wrong version / discriminating check), plus the `specFirst.riskMap` disabled marker and the goal-YAML `risk_map` mapping. | `specification-capture` skill (producer); `implementation-planner`, `goal-contract-capture`, Phase 4 bundle producer (consumers) |
+| [`verdict-output-format.md`](references/verdict-output-format.md) | The verdict table the judge returns, with a fixed rationale vocabulary (`self-referential oracle`, `degenerate inputs`, `risk map uncovered`, ...). | `agents/verdict-judge.md`, `commands/start.md` Phase 4 step 6 |
+| [`evidence-bundle-format.md`](references/evidence-bundle-format.md) | Markdown shape verdict-judge consumes: per-criterion sections with mandatory `### Does NOT promise`, `### Visual analysis` (per-viewport `Observed:` blocks on ui criteria; the judge has no file tools and never opens the screenshot), plus five completeness subsections (including test inputs with their expected-value sources and risk-map coverage). `none` is a valid positive-statement answer; bare blank triggers auto-FAIL. | `commands/start.md` Phase 4 (producer), `agents/verdict-judge.md` Step 1 (consumer); `criterion-verification-map` skill (plan-time inputs) |
 
 Plus the existing references documenting policy, parser rules, and configuration:
 
 - [`finding-ledger-parser.md`](references/finding-ledger-parser.md) — `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE` marker grammar
-- [`gate-configuration.md`](references/gate-configuration.md) — the eight quality gates flow enforces
+- [`gate-configuration.md`](references/gate-configuration.md) — the ten quality gates flow enforces
 - [`decision-journal-schema.md`](references/decision-journal-schema.md) — `.decisions/` file format
 - [`three-tier-safety.md`](references/three-tier-safety.md) — Tier 1/2/3 action classification
 - [`skill-manifests.md`](references/skill-manifests.md) — command → required-skill mapping (kept in lockstep with command files)
 - [`test-review-checklist.md`](references/test-review-checklist.md), [`code-review-checklist.md`](references/code-review-checklist.md) — runnable checklists for review facets
 - [`classification-signals.md`](references/classification-signals.md) — `change-classification` skill heuristics
+- [`review-cycle-parsing.md`](references/review-cycle-parsing.md), [`holdout-lens-dispositions.md`](references/holdout-lens-dispositions.md), [`paired-review-protocol.md`](references/paired-review-protocol.md) — cycle-marker parsing for reviewers; Path A lens stances, holdout marker dispositions, and the full paired-review protocol tables
+- [`correctness-eval.md`](references/correctness-eval.md) — the headless correctness eval (seeded-bug tasks, hidden tests) that measures the TDD and risk-map settings
 
 ## Tier Classification (every command)
 
@@ -345,13 +380,17 @@ When enabled, `/flow:review` spawns an adversarial review team where independent
 
 **Model selection.** Because this Path A team dispatches ~20 agents per review, all of which would otherwise inherit the session model, the model is configurable via `agentTeamModel` (default `"sonnet"`; enum `haiku|sonnet|opus|inherit`). It resolves through the same settings cascade as `agentTeams`. Set it to `"inherit"` to run the review agents on the session's model, or `"opus"` for a high-stakes review. This mirrors the `flow.goals.judge.model` pattern and applies to Path A only — Path B (single-session, the default) always inherits the session model.
 
+## Correctness Eval
+
+Flow's testing gates are measured, not assumed. `bin/flow-eval-run.sh` runs headless sessions on four seeded-bug tasks under `evals/` across seven arms (`testing.tddMode` ∈ enforce/suggest/off × `specFirst.riskMap` on/off, plus a no-plugin baseline) and scores each run against a hidden unittest suite the agent never sees. `summary.md` states the verdict in plain sentences; the rule that flips the `tddMode` default is in [`references/correctness-eval.md`](references/correctness-eval.md). Verify the cases offline with `bin/flow-eval-run.sh --check-cases`. Each run's own tests are also scored against the trap variants as a secondary signal, and results are grouped by model (`--models`). The first full run (2026-09-09, 63 runs) is recorded under `evals/results-2026-09-09/`: every arm was at ceiling on correctness, so the defaults stay by the rule, and the run surfaced a gate defect (`python -m unittest` unrecognised) that is fixed in 3.3.0. The second run (`evals/results-2026-09-09-round2/`, Sonnet 5 on four cases and Opus 5 on the one case Sonnet fails) again found no correctness difference between arms and a three-to-six-fold cost for the enforce arms; both defaults stay by the rule.
+
 ## Learning Loop
 
-Flow captures development decisions in a journal (`.decisions/`) and analyzes them for patterns:
+Flow captures development decisions in a journal (`.decisions/`) and, since 3.3.0, also reads the session transcripts where user corrections actually live:
 
 1. **During work**: PostToolUse hooks auto-log file changes and commits
-2. **After work**: `/flow:learn` identifies recurring patterns
-3. **Proposals**: Generates skill proposals in `~/.claude/flow-proposals/`
+2. **After work**: `/flow:learn` mines the journal and run events (what flow wrote) and, when `learning.sources` includes `transcripts`, the user turns in `~/.claude/projects/<project>/*.jsonl` via `bin/flow-mine-corrections.sh` (read-only, local, recall-oriented filter; the judging happens in Phase 2). A pattern counts only with 3+ verified instances across 2+ sessions
+3. **Proposals**: Generates skill proposals in `~/.claude/flow-proposals/`. When the rule already exists in a skill, the proposal is an `enforcement` proposal naming the hook or gate that should make it mechanical, not a new skill
 4. **Promotion**: Human reviews and promotes proposals to active skills
 
 ## Configuration
@@ -376,7 +415,9 @@ Example project settings in `.claude/settings.flow.json`:
   "lsp": { "enabled": true, "timeout": 5000, "diagnosticsAsQuality": true },
   "visualVerification": { "enabled": true, "screenshotDir": ".screenshots", "maxIterations": 3 },
   "debugging": { "maxHypotheses": 3 },
-  "testing": { "tddMode": "enforce", "tddModeOptOut": false },
+  "testing": { "tddMode": "enforce", "tddModeOptOut": false, "taskCompletionGate": "block", "qualityCommandPatterns": [] },
+  "specFirst": { "riskMap": true },
+  "learning": { "enabled": true, "sources": ["journal", "transcripts"] },
   "verdict": { "requireAllPass": true }
 }
 ```

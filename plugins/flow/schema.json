@@ -97,7 +97,18 @@
       "type": "object",
       "properties": {
         "enabled": { "type": "boolean", "default": true },
-        "proposalDir": { "type": "string", "default": "~/.claude/flow-proposals" }
+        "proposalDir": { "type": "string", "default": "~/.claude/flow-proposals" },
+        "sources": {
+          "type": "array",
+          "items": { "enum": ["journal", "transcripts"] },
+          "default": ["journal", "transcripts"],
+          "description": "Where /flow:learn mines patterns from. 'journal' reads .decisions/*.md and .flow/runs/*/events.jsonl (what flow wrote). 'transcripts' reads the session transcripts under ~/.claude/projects/<project>/ via bin/flow-mine-corrections.sh, which is where user corrections actually live. Both are read-only and local."
+        },
+        "transcriptDir": {
+          "type": "string",
+          "default": "",
+          "description": "Override for the transcript directory /flow:learn scans. Empty string means auto: ~/.claude/projects/<project slug> where the slug is the working directory with every non-alphanumeric character replaced by '-'."
+        }
       }
     },
     "journal": {
@@ -120,6 +131,11 @@
           "items": { "type": "string" },
           "default": ["documentation", "chore"],
           "description": "Issue labels that allow proceeding without acceptance criteria (e.g., docs-only changes)"
+        },
+        "riskMap": {
+          "type": "boolean",
+          "default": true,
+          "description": "Capture the fourth specification element, the risk map (area / plausible wrong version / discriminating check), during /flow:start Phase 1 and require one discriminating test per row in the evidence bundle's '### Risk map coverage' subsection. When false the subsection is 'none — risk map disabled (specFirst.riskMap=false)' and is not an auto-FAIL. Exists so the correctness eval (references/correctness-eval.md) can compare arms with and without it."
         }
       }
     },
@@ -147,6 +163,17 @@
           "type": "boolean",
           "default": false,
           "description": "When true with tddMode=suggest, suppresses warnings about missing tests."
+        },
+        "taskCompletionGate": {
+          "enum": ["block", "warn", "off"],
+          "default": "block",
+          "description": "TaskCompleted hook posture (hooks/scripts/verify-task-completion.sh). 'block': refuse to mark a task complete while the working tree changed in this session after the last passing quality-command run (exit 2 with the changed paths). 'warn': same check, stderr warning, completion allowed. 'off': no check. A run passes only with exit code 0, not masked by a trailing `|| true`, and not recorded from PostToolUseFailure. Changes are detected two ways: file_change entries from the PostToolUse Edit|Write|NotebookEdit hook (log-file-changes.sh), and a sha256 digest of the working tree contents (a git tree id built in a temporary index: every tracked and untracked file with its mode, HEAD excluded) that record-quality-run.sh (PostToolUse and PostToolUseFailure, Bash) stores with each run and the gate recomputes — so edits made through Bash (sed -i, heredocs, git apply) and checkouts count too, while committing edits a passing run already tested does not. The session ledger lives under ${FLOW_STATE_DIR:-~/.claude/flow-state}/sessions/<session_id>/ and is pruned by session-end-state.sh (`flow-quality-ledger.sh prune`, 14 days)."
+        },
+        "qualityCommandPatterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Extra POSIX ERE patterns that classify a Bash command as a quality run (test/lint/typecheck/build) for the task-completion gate, in addition to the built-in list in hooks/scripts/record-quality-run.sh. Example: [\"^\\./scripts/ci\\.sh\"]."
         }
       }
     },
@@ -305,18 +332,18 @@
             "stopHookEnforcement": {
               "enum": ["warn", "block", "evaluator-loop"],
               "default": "warn",
-              "description": "Stop hook posture: 'warn' (passive, no LLM, emits warning when active goal lacks evidence) | 'block' (same check, injects warning as next-turn prompt) | 'evaluator-loop' (active Haiku judge per turn, ~$0.001/eval, opt-in). See references/stop-hook-goal-enforcement.md."
+              "description": "Stop hook posture. 'warn' (default): the stop is always allowed; when the active goal lacks evidence the reason starts 'FLOW_GOAL_INCOMPLETE \u2014 stop ALLOWED (stopHookEnforcement=warn)' and is printed to stderr. 'block': decision:block on failing ACs, path violations, or ACs with no verification_command; verification commands run for goals in the per-user trust ledger (bin/flow-goal-trust.sh) without executeVerificationCommands; an untrusted goal's not-executed ACs never block on their own; consecutive blocks per session and goal are capped at failAfterStuckTurns (FLOW_GOAL_BLOCK_CAP). 'evaluator-loop': active Haiku judge per turn, ~$0.001/eval, opt-in. See references/stop-hook-goal-enforcement.md."
             },
             "failAfterStuckTurns": {
               "type": "integer",
               "default": 3,
               "minimum": 1,
-              "description": "In evaluator-loop mode, the Stop hook transitions the goal to 'failed' if the pass-set hash is unchanged for this many consecutive turns. Prevents infinite churn on goals that can't make forward progress."
+              "description": "In evaluator-loop mode, the goal transitions to 'failed' after this many consecutive turns with an unchanged pass-set. In block mode, the Stop hook allows the stop (FLOW_GOAL_BLOCK_CAP) after this many consecutive blocks for one session and goal, so an unmet contract can never block forever."
             },
             "executeVerificationCommands": {
               "type": "boolean",
               "default": false,
-              "description": "Security gate: when false (default), the Stop hook does NOT execute goal verification_command strings — ACs are reported as 'incomplete_acs' with reason 'not_executed'. When true, the hook runs each AC's verification_command via `bash -c` with a 30s timeout. Default-deny: a hostile repo's goal YAML cannot auto-execute commands on first turn after checkout."
+              "description": "Global opt-in to execute every goal's verification_command strings in the Stop hook, trusted or not. Rarely needed: goals created through flow are recorded in the per-user trust ledger (${FLOW_STATE_DIR:-~/.claude/flow-state}/goal-trust.jsonl) and execute with this false. Untrusted goals report ACs as 'not_executed (goal not trusted; flow.goals.executeVerificationCommands is false)' until 'bin/flow-goal-trust.sh record --goal-file <goal>' is run. Default-deny keeps a hostile checkout's goal YAML from running commands."
             },
             "judge": {
               "type": "object",

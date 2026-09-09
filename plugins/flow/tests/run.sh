@@ -20,6 +20,20 @@
 
 set -uo pipefail
 
+# Several test bodies match the multibyte arrow ("→") in command prose with a
+# single `.` under grep -E. Under a POSIX/C locale that is a byte-wise match
+# and six integration files fail for reasons unrelated to the code under
+# test. Pin a UTF-8 locale when the caller has not chosen one, so results do
+# not depend on the runner's LANG (CI images and remote sandboxes often ship
+# with LC_CTYPE=POSIX).
+if [ -z "${LC_ALL:-}" ]; then
+  if locale -a 2>/dev/null | grep -qiE '^C\.utf-?8$'; then
+    export LC_ALL=C.UTF-8
+  elif locale -a 2>/dev/null | grep -qiE '^en_US\.utf-?8$'; then
+    export LC_ALL=en_US.UTF-8
+  fi
+fi
+
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$TESTS_DIR/lib/assert.sh"
 

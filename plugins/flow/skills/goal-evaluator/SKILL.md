@@ -1,160 +1,79 @@
 ---
 name: goal-evaluator
-description: "Evaluate a FlowGoal against its evidence ledger and update lifecycle status to one of {pass, incomplete, fail, needs_human_review, blocked} by running deterministic verification commands first, then (when stopHookEnforcement=evaluator-loop or explicit /flow:goal evaluate invocation) dispatching the goal-evaluator-judge agent for fuzzy rubric criteria. Use when /flow:goal evaluate is invoked, when the Stop hook fires in evaluator-loop mode, or when /flow:start Phase 4 needs to convert AC evidence into a verdict. This skill MUST be consulted because lifecycle transitions without deterministic evidence enable silent premature completion — the goal contract is only as good as the evaluator that proves or disproves it."
+description: "Evaluate a FlowGoal against its evidence ledger: run every deterministic verification command first, dispatch the goal-evaluator-judge only for fuzzy criteria, then return a structured verdict and write non-terminal lifecycle updates. Use when /flow:goal evaluate runs, when the Stop hook fires in evaluator-loop mode, or when /flow:start Phase 4 or /flow:debug converts AC evidence into a verdict. A lifecycle transition without deterministic evidence is silent premature completion."
 allowed-tools: Bash, Read, Edit, Agent
 agent: general-purpose
 ---
 
 # Goal Evaluator
 
-You convert a goal's evidence ledger into a verdict and update the goal's lifecycle. This skill wraps `criterion-verification-map` (which produces per-AC commands at plan time) and adds the loop-time evaluation: run the commands, capture evidence, judge satisfaction, transition state.
+## Contract
 
-## Iron Law
-
-**Deterministic checks beat LLM judgment when they apply. The LLM judge runs only when the contract has fuzzy rubric criteria that no command can prove. Always run deterministic checks first; never substitute judge output for a runnable command's exit code.**
+Iron law: deterministic checks beat LLM judgment: run every `verification_command` first and never substitute judge output for a runnable command's exit code. Invoked by `/flow:goal evaluate <id>` and `/flow:debug` step 6 (`trigger=command`), and by `hooks/scripts/flow-goal-evaluator.sh` in evaluator-loop mode (`trigger=stop-hook`), with goal id, run id, and trigger. Returns `{verdict, confidence, delta, reason, next_step_hint, criterion_results}` plus, for terminal outcomes, a `proposed_transition`; writes evidence sidecars and non-terminal lifecycle updates, never `last-verdict.json` and never a terminal status. Permitted skips: the judge when no fuzzy criteria remain; the path-boundary check when `constraints.allowed_paths` is unset.
 
 ## Inputs
 
-The invoking command/hook MUST pass:
-1. **Goal id** — `<id>` such that `.flow/goals/<id>.goal.yaml` exists with `lifecycle.status == active` (or `waiting_for_user`, `waiting_for_ci`, `blocked` — evaluator can resurrect these on resume).
-2. **Run id** — for evidence ledger writes (`.flow/runs/<run-id>/evidence/`). If absent, evaluator infers from the goal's `scope.run_id`.
-3. **Trigger** — `manual | stop-hook | command`. Affects whether judge subprocess runs (Stop hook in `evaluator-loop` mode auto-runs judge; `manual` invocation runs judge per the goal's `evaluator.type`).
+1. **Goal id**: `.flow/goals/<id>.goal.yaml` with status `active` (or resumable `waiting_for_user`, `waiting_for_ci`, `blocked`).
+2. **Run id**: for `.flow/runs/<run-id>/evidence/`; defaults to the goal's `scope.run_id`.
+3. **Trigger**: `manual | stop-hook | command`.
 
 ## Outputs
 
-1. Updated `.flow/goals/<id>.goal.yaml` with new `lifecycle.last_evaluation` and possibly new `lifecycle.status`.
-2. New `*.evidence.yaml` sidecars under `.flow/runs/<run-id>/evidence/` for each verification command run.
-3. `goal-evaluation` artifact appended to the linked decision journal.
-4. Updated AC entries: `status` transitions from `pending → evidence_collected → pass | fail`; `evidence_ref` set to the new sidecar path.
+1. Updated goal: AC `status` (`pending → evidence_collected → pass | fail`), `evidence_ref`, `last_evaluated_at`, `last_result`; `lifecycle.last_evaluation`; non-terminal `lifecycle.status`.
+2. `*.evidence.yaml` sidecars via `bin/flow-record-evidence.sh` (the `goal-evidence-ledger` skill).
+3. A `goal-evaluation` journal artifact.
+4. The structured verdict, returned to the caller.
 
 ## Workflow
 
-### Step 1: Load contract + ledger
+### Step 1: Load
 
-Read `.flow/goals/<id>.goal.yaml`. Verify schema. Read existing evidence sidecars under `.flow/runs/<run-id>/evidence/` for any AC with `evidence_ref` already set.
+Read the goal, confirm it matches `schemas/v1/goal.schema.json`, and read existing sidecars for ACs that already carry `evidence_ref`.
 
-### Step 2: Run deterministic checks
+### Step 2: Deterministic checks
 
-For each AC where `verification_command` is set and `must_pass` is true OR all-pass evaluation is required:
-
-```bash
-# Capture stdout + exit code
-OUTPUT=$(mktemp)
-bash -c "${AC.verification_command}" > "$OUTPUT" 2>&1
-EXIT_CODE=$?
-```
-
-Then assemble a FlowEvidence YAML and write via `bin/flow-record-evidence.sh`:
-
-```yaml
-apiVersion: flow.synapti.ai/v1
-kind: FlowEvidence
-metadata:
-  id: evidence-<AC.id>-eval-<turn>
-  goal: <goal-id>
-  run_id: <run-id>
-  created_at: <now>
-evidence:
-  type: command_result
-  command: <AC.verification_command>
-  exit_code: <captured>
-  output_ref: <relative path to .txt copy>
-  proves:
-    - <AC.id>
-  limitations:
-    - <list from criterion-verification-map's "Does NOT promise" field if present>
-```
-
-Update the AC entry: `status: evidence_collected`, `evidence_ref: <sidecar path>`, `last_evaluated_at: <now>`, `last_result: <exit-code or summary>`.
+For each AC with a `verification_command`: run `bash -c "<command>"`, capture stdout/stderr and the exit code, write a `command_result` FlowEvidence with `proves: [<AC.id>]` and `limitations` (criterion-verification-map's "Does NOT promise" field when present), then update the AC entry (`status: evidence_collected`, `evidence_ref`, `last_evaluated_at`, `last_result`).
 
 ### Step 3: Deterministic verdict
 
-After all deterministic checks:
-- All AC with `must_pass: true` have `exit_code == 0` → status candidate = `pass`.
-- Any `must_pass: true` AC with `exit_code != 0` → status candidate = `fail`.
-- AC missing `verification_command` (= fuzzy criterion) → status candidate = `incomplete` (LLM judge required).
+All `must_pass` ACs exit 0 → `pass`; any `must_pass` AC non-zero → `fail`; any AC without a command → `incomplete` (judge required).
 
-### Step 4: Path-boundary check
+### Step 4: Path boundary
 
-If the goal has `constraints.allowed_paths`, run `git diff --name-only` (current branch vs. base). Any modified file outside `allowed_paths` → emit a `path_boundary_check` FlowEvidence with `proves: []` and the violating filenames; transition status to `blocked` with reason `path_boundary_violation`.
+When `constraints.allowed_paths` is set, run `git diff --name-only`; any file outside the globs → write a `path_boundary_check` sidecar (`proves: []`, violating filenames) and set the candidate to `blocked` with reason `path_boundary_violation`.
 
-### Step 5: LLM judge (conditional)
+### Step 5: Judge (conditional)
 
-Run the judge subprocess ONLY when:
-- `evaluator.type == hybrid` AND deterministic candidate is `incomplete` (= fuzzy criteria remain), OR
-- `evaluator.type == flow_verdict_judge` and the user explicitly invoked `/flow:goal evaluate` (manual review).
+Dispatch `Agent(goal-evaluator-judge)` only when `evaluator.type == hybrid` and fuzzy criteria remain, or when `evaluator.type == flow_verdict_judge` and the user invoked `/flow:goal evaluate`. Pass the outcome + AC table, sidecar paths, the evidence bundle (`references/evidence-bundle-format.md`), and `denied_context` verbatim. The judge returns verdict, confidence, delta, next_step_hint.
 
-Spawn `Agent(goal-evaluator-judge)` with:
-- The goal's outcome + AC table
-- The just-written evidence sidecars (paths only — the judge reads them itself)
-- The transcript-level evidence bundle (Bundle format: `plugins/flow/references/evidence-bundle-format.md`)
-- The `denied_context` list (passed verbatim)
+### Step 6: Lifecycle update
 
-The judge returns verdict + confidence + delta + next_step_hint as a structured table.
+Map the candidate and judge verdict to a status with the table in `references/goal-lifecycle-transitions.md`.
 
-### Step 6: Compose lifecycle update
+**Non-terminal transitions** (`active`, `blocked`, `waiting_for_user`, `waiting_for_ci`): set `lifecycle.status`, increment `turns_evaluated`, set `last_evaluation = {result, reason, at}`, and write immediately via `bin/flow-goal-record.sh --update-lifecycle`.
 
-| Deterministic candidate | Judge verdict | Final lifecycle.status |
-|---|---|---|
-| `pass` (all must_pass green, no fuzzy) | (judge skipped) | `achieved` |
-| `pass` + fuzzy criteria | `achieved` | `achieved` |
-| `pass` + fuzzy criteria | `not_achieved` | `active` (continue) |
-| `fail` | (judge may run for context) | `active` (continue, surface failing AC) |
-| `incomplete` | `not_achieved` | `active` |
-| `incomplete` | `blocked` (with blocker_type) | `blocked` |
-| `incomplete` | `needs_human_review` | `waiting_for_user` |
-| `path_boundary_violation` | (judge skipped) | `blocked` |
+**Terminal transitions** (`achieved`, `failed`, `cancelled`): the skill does NOT write them. Return `proposed_transition: {to, reason, turns_evaluated}` and leave the persisted status non-terminal; the caller is responsible for invoking AskUserQuestion and, on confirmation, calling `bin/flow-goal-record.sh --update-lifecycle`. The Stop-hook evaluator-loop cannot ask: it records the verdict and approves the stop with a hint to run `/flow:goal evaluate <id>`.
 
-**Non-terminal transitions** (`active`, `blocked`, `waiting_for_user`, `waiting_for_ci`):
-Update `lifecycle.status`, `lifecycle.turns_evaluated += 1`, `lifecycle.last_evaluation = {result, reason, at}`. Write back via `bin/flow-goal-record.sh` immediately.
+### Step 7: Journal
 
-**Terminal transitions** (`achieved`, `failed`, `cancelled`) — F10 contract:
-The skill does NOT write the terminal status itself. Instead, it returns `proposed_transition: {to: <achieved|failed|cancelled>, reason: ..., turns_evaluated: ...}` in its structured response and leaves the goal's persisted `lifecycle.status` at its current non-terminal value. The caller is responsible for invoking AskUserQuestion and, on user confirmation, calling `bin/flow-goal-record.sh --update-lifecycle` to write the terminal status.
+`bin/journal-record.sh --issue {N} --type goal-evaluation --metadata goal_id=<id> --metadata result=<status> --metadata evidence_bundle=<run-dir> --metadata failures=<comma-list or none>`.
 
-The Stop-hook evaluator-loop path is an exception: when the hook calls this skill (or the deterministic path produces a terminal verdict), Tier 2 confirmation cannot run inside the hook (no AskUserQuestion in hook context). The hook persists the verdict via `bin/flow-record-verdict.sh` and emits a `decision: "approve"` with a `next_step_hint` pointing to `/flow:goal evaluate <id>` — the user explicitly confirms via the command path on the next turn.
+### Step 8: Return the verdict (the skill does NOT write `last-verdict.json`)
 
-### Step 7: Record manifest artifact
+Return verdict, confidence, delta, reason, and next_step_hint. The caller, `commands/goal.md` (`source: "command"`) or `flow-goal-evaluator.sh` (`source: "evaluator-loop"`), invokes `bin/flow-record-verdict.sh` and treats a helper failure as non-fatal. One owner per write prevents the last-writer-wins race that lost the skill's verdict before.
 
-```bash
-bin/journal-record.sh --issue {N} --type goal-evaluation \
-  --metadata goal_id=<id> \
-  --metadata result=<lifecycle.status> \
-  --metadata evidence_bundle=<run-dir relative path> \
-  --metadata failures=<comma-list of failing AC ids or 'none'>
-```
+### Step 9: Stuck detection (stop-hook only)
 
-### Step 8: Return the structured verdict to the caller (skill does NOT write)
+When `trigger == stop-hook` and the pass-set is unchanged for `flow.goals.failAfterStuckTurns` consecutive turns (default 3), propose `failed` with reason `stuck_no_progress`.
 
-This skill **does NOT write** `.flow/runs/<run-id>/last-verdict.json`. The skill computes the verdict (verdict, confidence, delta, reason, next_step_hint, criterion_results) and **returns** it to the calling command or hook. The caller is the single owner of verdict persistence.
+## Rules
 
-**Callers responsible for the write** (one per invocation context):
-- `/flow:goal evaluate <id>` (`commands/goal.md`) — invokes `bin/flow-record-verdict.sh` after the skill returns. `source: "command"`.
-- `hooks/scripts/flow-goal-evaluator.sh` (Stop-hook evaluator-loop mode) — invokes `bin/flow-record-verdict.sh` via its internal `_record_verdict()` helper after the judge subprocess returns. `source: "evaluator-loop"`.
+- No AC reaches `pass` without an `evidence_ref`.
+- No lifecycle write without a `goal-evaluation` artifact.
+- Never run the judge when deterministic checks suffice; never skip the path-boundary check when `allowed_paths` is set.
 
-**Contract:**
-- The skill MUST return verdict + confidence + delta + reason + next_step_hint in its structured response (the format the caller parses for the persistence call).
-- The skill MUST NOT itself invoke `bin/flow-record-verdict.sh`. Centralizing persistence in the caller prevents the double-write where the skill wrote first and the command's heredoc immediately overwrote — with the skill's `source: "skill"` silently lost.
-- The caller MUST invoke `bin/flow-record-verdict.sh` and MUST handle helper failure as **non-fatal** (surface to stderr via `||`; do NOT abort the evaluation; the in-memory verdict is still correct, only next-turn delta semantics are lost).
+## References
 
-**Why this split:** Three callers (skill, command, hook) writing through the same helper produced last-writer-wins races. Two callers (command, hook) with no skill-side write is race-free.
-
-### Step 9: Stuck detection (Stop-hook evaluator-loop mode only)
-
-If `trigger == stop-hook` AND the new pass-set hash matches the previous turn's hash for `flow.goals.failAfterStuckTurns` consecutive turns (default 3), transition status to `failed` with reason `stuck_no_progress`. This prevents the evaluator loop from churning indefinitely on a goal that can't make forward progress.
-
-## Anti-patterns
-
-- ❌ Running LLM judge when deterministic checks suffice — costs money, slower, less reliable.
-- ❌ Updating `lifecycle.status` without writing a `goal-evaluation` artifact — breaks audit trail.
-- ❌ Marking an AC as `pass` without an `evidence_ref` — bypasses the evidence ledger.
-- ❌ Skipping path-boundary check when `allowed_paths` is set — goals exist to fence scope.
-
-## Reuse map
-
-- `plugins/flow/skills/criterion-verification-map/SKILL.md` — AC → verification command shape.
-- `plugins/flow/agents/verdict-judge.md` — independence protocol the LLM judge inherits.
-- `plugins/flow/agents/goal-evaluator-judge.md` — the specialized judge this skill dispatches.
-- `plugins/flow/bin/flow-record-evidence.sh` — atomic evidence sidecar writes.
-- `plugins/flow/bin/flow-goal-record.sh` — atomic goal lifecycle updates.
-- `plugins/flow/bin/flow-record-verdict.sh` — last-verdict.json producer; Step 8 invokes this.
-- `plugins/flow/references/evidence-bundle-format.md` — canonical evidence layout.
+- `plugins/flow/agents/goal-evaluator-judge.md`: the judge; inherits verdict-judge's Independence Protocol.
+- `plugins/flow/references/goal-lifecycle-transitions.md`: verdict-to-status table.
+- `plugins/flow/bin/flow-record-verdict.sh`: the caller-owned `last-verdict.json` writer.

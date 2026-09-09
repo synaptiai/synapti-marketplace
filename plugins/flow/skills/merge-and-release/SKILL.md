@@ -8,114 +8,70 @@ disable-model-invocation: true
 
 # Merge and Release
 
-Reference document for merge and release policy. The executable bash lives in `plugins/flow/commands/merge.md` and `plugins/flow/commands/release.md`. This skill describes **what those commands enforce and why**.
+Policy reference for `/flow:merge` and `/flow:release`; the runnable bash lives in `commands/merge.md` and `commands/release.md`.
 
-Both merge and release are **Tier 3** — they always require explicit human confirmation, even in autonomous mode. This is non-negotiable.
+## Contract
 
-## Iron Law
+Iron law: **merge is irreversible in practice — every prerequisite is verified with fresh evidence, never memory, and merge and release are Tier 3 (explicit human confirmation, even in autonomous mode).** Consumed by `/flow:merge` Phase 1 (five-check gate plus finding-ledger check), Phase 2 (Merge Assessment), Phase 3 (confirm and execute), Phase 4 (post-merge), and by `/flow:release` Phases 2–5 (version, changelog, confirm and execute, post-release). Returns the checks, stop conditions, settings, and execution sequence those commands apply. Permitted skips: none — a failed prerequisite stops the command without asking "merge anyway?"; an override happens only by the human acting outside the command.
 
-**MERGE IS IRREVERSIBLE IN PRACTICE. Treat every merge as permanent. Every prerequisite must be verified with fresh evidence, not memory.**
+## Five-Check Gate (`/flow:merge` Phase 1)
 
-Reverting a merge is technically possible in git but disruptive in practice — downstream branches rebase off the merge, deploys propagate it, and history grows confusing. Prevention is the only reliable strategy. The Tier 3 confirmation requirement is the structural expression of that fact.
+| # | Check | Requirement |
+|---|-------|-------------|
+| 1 | Approval | At least one approval, no outstanding requested changes |
+| 2 | CI checks | `statusCheckRollup` all success |
+| 3 | Mergeable | `mergeable == "MERGEABLE"` |
+| 4 | Conversations | Unresolved review threads == 0 (GraphQL `reviewThreads`; the REST field is incomplete) |
+| 5 | Stale approval | No commits after the last approval timestamp |
 
-## Merge Prerequisites — The Five-Check Gate
+Plus the `pr-lifecycle` finding-ledger check: non-empty `ESCALATED` or unmatched `FINDINGS` blocks.
 
-Before a merge proceeds, all five checks must pass. The runnable verification is in `plugins/flow/commands/merge.md` Phase 1.
+**Stale approval**: compare the latest `submittedAt` among reviews with `state == "APPROVED"` against the `committedDate` of the newest commit. Commits after approval: warn "Approval may be stale", request re-review, do not merge — the approver has not seen what would be merged.
 
-| # | Check | Requirement | What it protects against |
-|---|-------|-------------|--------------------------|
-| 1 | Approval | At least one approval, no outstanding requested changes | Merging code that no human has signed off on |
-| 2 | CI Checks | All status checks pass (`statusCheckRollup` all success) | Merging code that fails the project's automated tests |
-| 3 | Mergeable | No merge conflicts (`mergeable == "MERGEABLE"`) | Merging a PR whose content cannot cleanly land on the base branch |
-| 4 | Conversations | All review threads resolved (unresolved count == 0) | Closing reviewer concerns by ignoring them |
-| 5 | Stale approval | No commits after the last approval timestamp | Merging code that was approved before the latest changes existed |
+## Stop Conditions
 
-The conversation-resolution check requires GitHub's GraphQL API (the REST `reviewThreads` field is incomplete). The exact GraphQL query used is in `plugins/flow/commands/merge.md`.
+Any prerequisite fails, stale approval, unresolved conversations > 0, or ledger gate fails: stop. No "override the gate" option exists in autonomous mode.
 
-## Stop Conditions — Non-Negotiable
+## Merge Execution (Phases 2–4)
 
-When any of these conditions is detected, the command **stops without asking "merge anyway?"**:
+Display the Merge Assessment table (each prerequisite's status, strategy, branch-delete decision), then ask; proceed only on a clear "yes".
 
-- ANY of the five prerequisites fails
-- Stale approval detected — request re-review, do not merge
-- Unresolved conversations > 0 — resolve first, do not merge
-- Finding-ledger check fails (see `pr-lifecycle` skill for details)
+- `merge.strategy`: `squash` | `merge` | `rebase` (default `squash`)
+- `merge.deleteBranch`: default `true`, bundled into the merge confirmation
+- `merge.markerTrust.allowedAssociations`: default `["OWNER","MEMBER","COLLABORATOR"]`; filters whose ledger markers are honored, pinned to the plugin tier rather than the settings cascade (`references/finding-ledger-parser.md`)
 
-There is no "override the gate" option in autonomous mode. Overrides require the human user to take the action themselves outside the command.
+Post-merge: `gh pr view $PR_NUM --json state` must return `MERGED`; then suggest switching to the default branch and pulling.
 
-## Stale Approval Detection
+## Release (`/flow:release`)
 
-A "stale" approval is one that predates the most recent commit on the PR. The check compares:
+**Version** (Phase 2): tag = `release.tagPrefix` (default `v`) + version.
 
-- The latest `submittedAt` timestamp among reviews where `state == "APPROVED"`
-- The `committedDate` of the most recent commit on the PR
-
-If commits exist after the last approval, the command warns: "Approval may be stale." Stale approvals are a stop condition because the approver has not actually seen what is being merged.
-
-## Merge Execution
-
-After all prerequisites pass, the command displays a **Merge Assessment** table and explicitly asks the user to confirm. Only after a clear "yes" does the merge proceed:
-
-- Strategy is read from settings (`squash` | `merge` | `rebase`, default `squash`)
-- Branch deletion is read from settings (default `true`)
-- The `gh pr merge` invocation is in `plugins/flow/commands/merge.md` Phase 3
-
-The user-visible assessment lists every prerequisite's status, the chosen strategy, and the branch-delete decision so the human can verify before approving.
-
-## Release Process
-
-Releases follow the same Tier 3 confirmation discipline as merges. The runnable bash is in `plugins/flow/commands/release.md`.
-
-### Version Calculation
-
-| Bump type | Format | When to use |
-|-----------|--------|-------------|
+| Bump | Format | When |
+|------|--------|------|
 | `patch` | 0.0.X+1 | Bug fixes only, no behavior change |
 | `minor` | 0.X+1.0 | New features, no breaking changes |
 | `major` | X+1.0.0 | Breaking changes |
 
-The first release defaults to `v1.0.0` if no prior tag exists.
+No prior tag: first release is `v1.0.0`.
 
-### Changelog Generation
+**Changelog** (Phase 3): merged PRs since the last tag, grouped by conventional prefix — Features (`feat:`), Bug Fixes (`fix:`), Other Changes (`docs:`, `chore:`, …) — each with PR number and author, plus a "Full Changelog" compare link `{prev}...{new}`.
 
-The changelog is built from merged PRs since the last release tag, categorized by conventional commit prefix:
+**Execute** (Phase 4): show the Release Preview (version, previous tag, PR count, changelog), confirm via `AskUserQuestion`, then in one sequence:
 
-- **Features** — `feat:` PRs
-- **Bug Fixes** — `fix:` PRs
-- **Other Changes** — `docs:`, `chore:`, etc.
+```bash
+git tag -a "$TAG" -m "Release $TAG"
+git push origin "$TAG"
+gh release create "$TAG" --title "$TAG" --notes "$CHANGELOG"
+```
 
-Each entry includes the PR number and author. A "Full Changelog" link compares the previous tag to the new one.
+One confirmation covers all three; they are never split across turns.
 
-### Release Execution
+**Post-release** (Phase 5): `gh release view "$TAG"` must succeed; suggest updating plugin version files if applicable.
 
-After the changelog and version are displayed, the command asks the user to confirm. Only after explicit confirmation:
+## Why Tier 3 Is Structural
 
-1. Create annotated tag: `git tag -a "$TAG" -m "Release $TAG"`
-2. Push tag: `git push origin "$TAG"`
-3. Create GitHub release: `gh release create "$TAG" --title "$TAG" --notes "$CHANGELOG"`
+An unwanted merge or release is paid for by people outside this conversation; only the human in the loop can speak for them.
 
-These three operations together are the release. They are not split across multiple agent turns — the user confirms once and the command performs them in sequence.
+## Keeping Policy and Bash Aligned
 
-## Post-Merge / Post-Release
-
-After either operation completes, the command verifies state:
-
-- Merge: `gh pr view $PR_NUM --json state` should return `MERGED`
-- Release: `gh release view $TAG` should succeed
-
-The command then suggests cleanup: switch to the default branch, pull latest, and (for releases) update plugin version files if applicable.
-
-## Why Tier 3 Is Structural, Not Optional
-
-Merges and releases produce visible, durable artifacts: a merge commit on `main`, a published tag, a GitHub release page that subscribers may receive notifications for. The cost of an unwanted merge or release is paid by everyone downstream — other developers rebasing, users seeing a notification for a release that was a mistake, package managers fetching the new version.
-
-Tier 3 is not gatekeeping for its own sake. It is the structural expression of: **the cost of an unwanted action is borne by people who are not in this conversation.** The human in the loop is the only person who can speak for those downstream people.
-
-## Where the Bash Lives
-
-This skill is reference-only. The runnable implementations are:
-
-- **Merge prerequisites + execution**: `plugins/flow/commands/merge.md`
-- **Release version calculation + tagging + GitHub release creation**: `plugins/flow/commands/release.md`
-
-When the policy needs to evolve — a new prerequisite, a new release strategy, a different versioning scheme — update the command and update this reference together. The bash is the runtime; this document is the rationale.
+Merge prerequisites and execution: `commands/merge.md`. Version, tagging, GitHub release: `commands/release.md`. A new prerequisite, strategy, or versioning rule changes the command and this reference together.

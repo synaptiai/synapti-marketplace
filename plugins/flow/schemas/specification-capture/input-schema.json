@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/synaptiai/synapti-marketplace/plugins/flow/schemas/specification-capture/input-schema.json",
   "title": "specification-capture input contract",
-  "description": "Input contract for the specification-capture skill. The skill captures non-goals, failure modes, and interface contracts for an issue and persists them to the decision journal. See plugins/flow/skills/specification-capture/SKILL.md for the skill's full process.",
+  "description": "Input contract for the specification-capture skill. The skill captures non-goals, failure modes, interface contracts, and a risk map for an issue and persists them to the decision journal (shape: plugins/flow/references/specification-journal-format.md). The specFirst.riskMap toggle is read from the settings cascade by the skill, not passed here. See plugins/flow/skills/specification-capture/SKILL.md for the skill's full process.",
   "type": "object",
   "required": ["issueContext", "journalPath", "invocationReason"],
   "properties": {
@@ -17,7 +17,7 @@
         },
         "body": {
           "type": "string",
-          "description": "The full issue body. The skill scans this for non-goals/failure-modes/interface-contracts cues."
+          "description": "The full issue body. The skill scans this for non-goals/failure-modes/interface-contracts/risk-map cues."
         },
         "comments": {
           "type": "array",
@@ -42,7 +42,7 @@
     "invocationReason": {
       "type": "string",
       "enum": ["start", "design", "brainstorm"],
-      "description": "Which command invoked the skill. Used to scope which elements the skill focuses on (start needs all three; design needs non-goals + interface contracts; brainstorm needs non-goals only)."
+      "description": "Which command invoked the skill. Used to scope which elements the skill focuses on (start needs all four, risk map exempt only when specFirst.riskMap is false; design needs non-goals + interface contracts, risk map recommended; brainstorm needs non-goals only)."
     }
   }
 }

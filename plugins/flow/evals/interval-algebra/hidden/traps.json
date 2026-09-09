@@ -1,0 +1,152 @@
+{
+  "module": "intervals",
+  "traps": {
+    "difference_keeps_closedness": {
+      "description": "Trap: the complement keeps the subtrahend's closedness instead of flipping it, so [1,5] \u2212 [2,3] gives [1,2] + [3,5]. Masked when the subtrahend's ends are open.",
+      "discriminating_tests": [
+        "test_bounds_unbounded_in_intersection_and_difference",
+        "test_difference_closed_cut_opens_ends",
+        "test_difference_full_cover_is_empty_and_partial_edges",
+        "test_difference_leaves_a_point",
+        "test_difference_open_cut_leaves_closed_ends",
+        "test_difference_removes_a_point"
+      ],
+      "variant": "hidden/traps/difference_keeps_closedness.py"
+    },
+    "equal_lower_takes_farther_flag": {
+      "description": "Trap: when two merged intervals share a lower bound, the one reaching farther supplies both flags instead of the lower flags being OR-ed, so [1,2] + (1,5) gives (1,5) rather than [1,5). Seen (combined with a lower-bound-only sort) in the calibration baseline runs. Masked when merged intervals never share a lower bound.",
+      "discriminating_tests": [
+        "test_canonical_merged_upper_end_takes_farther_interval"
+      ],
+      "variant": "hidden/traps/equal_lower_takes_farther_flag.py"
+    },
+    "float_endpoints": {
+      "description": "Trap: bounds are converted to float internally, so Fraction and Decimal values come back changed. Masked while tests use ints.",
+      "discriminating_tests": [
+        "test_canonical_flags_are_bool_and_bounds_keep_type"
+      ],
+      "variant": "hidden/traps/float_endpoints.py"
+    },
+    "halfopen_point_kept": {
+      "description": "Trap: lo == hi counts as non-empty when either end is closed, so (2,2] and [2,2) survive normalize and a difference by a half-open \"point\" removes a point. Masked unless degenerate half-open intervals appear.",
+      "discriminating_tests": [
+        "test_canonical_drops_open_points",
+        "test_difference_full_cover_is_empty_and_partial_edges",
+        "test_difference_leaves_a_point",
+        "test_intersect_touching_open_end_is_empty",
+        "test_union_basic_and_unnormalized_inputs"
+      ],
+      "variant": "hidden/traps/halfopen_point_kept.py"
+    },
+    "intersection_closed_or": {
+      "description": "Trap: at an equal endpoint the intersection is closed when either input is closed (or instead of and). Masked when endpoints differ.",
+      "discriminating_tests": [
+        "test_bounds_unbounded_in_intersection_and_difference",
+        "test_intersect_equal_endpoints_closed_only_if_both"
+      ],
+      "variant": "hidden/traps/intersection_closed_or.py"
+    },
+    "intersection_not_normalized": {
+      "description": "Trap: intersection is the raw pairwise product of the inputs, neither the inputs nor the result normalized, so [1,5] \u2229 ([1,2] + [2,5]) comes back as two intervals. Masked when both inputs are already canonical.",
+      "discriminating_tests": [
+        "test_intersect_normalizes_inputs"
+      ],
+      "variant": "hidden/traps/intersection_not_normalized.py"
+    },
+    "merge_any_touching": {
+      "description": "Trap: intervals that touch (hi1 == lo2) always merge, even when both ends at the meeting point are open, so [1,3) + (3,5] becomes [1,5]. Masked when a closed end meets the point.",
+      "discriminating_tests": [
+        "test_difference_leaves_a_point",
+        "test_difference_removes_a_point",
+        "test_touching_open_ends_stay_apart"
+      ],
+      "variant": "hidden/traps/merge_any_touching.py"
+    },
+    "merge_only_overlapping": {
+      "description": "Trap: only strictly overlapping intervals (hi1 > lo2) merge; [1,3] + [3,5] stays two intervals. Masked when inputs overlap by more than a point.",
+      "discriminating_tests": [
+        "test_canonical_flags_are_bool_and_bounds_keep_type",
+        "test_canonical_shorthand_pairs_are_closed",
+        "test_canonical_worked_example_from_issue",
+        "test_intersect_normalizes_inputs",
+        "test_touching_chain_merges_transitively",
+        "test_touching_closed_ends_merge",
+        "test_touching_one_closed_end_merges",
+        "test_touching_point_fills_the_gap",
+        "test_union_basic_and_unnormalized_inputs"
+      ],
+      "variant": "hidden/traps/merge_only_overlapping.py"
+    },
+    "no_validation": {
+      "description": "Trap: closed unbounded ends and non-bool flags are accepted (flags coerced with bool()). Masked by well-formed input.",
+      "discriminating_tests": [
+        "test_bounds_malformed_rejected",
+        "test_bounds_unbounded_closed_rejected"
+      ],
+      "variant": "hidden/traps/no_validation.py"
+    },
+    "point_dropped": {
+      "description": "Trap: lo == hi is always empty, so the closed point [3,3] disappears from normalize, intersection ([1,3] \u2229 [3,5]) and difference results. Masked unless a point interval appears.",
+      "discriminating_tests": [
+        "test_canonical_keeps_closed_point",
+        "test_canonical_worked_example_from_issue",
+        "test_difference_full_cover_is_empty_and_partial_edges",
+        "test_difference_leaves_a_point",
+        "test_difference_removes_a_point",
+        "test_intersect_touching_closed_ends_give_point",
+        "test_touching_point_fills_the_gap"
+      ],
+      "variant": "hidden/traps/point_dropped.py"
+    },
+    "shorthand_halfopen": {
+      "description": "Trap: the 2-tuple shorthand is read as the half-open [lo, hi) like Python's range. Masked when tests use 4-tuples only.",
+      "discriminating_tests": [
+        "test_bounds_unbounded_in_intersection_and_difference",
+        "test_bounds_unbounded_merge_and_sort",
+        "test_canonical_drops_reversed_bounds",
+        "test_canonical_flags_are_bool_and_bounds_keep_type",
+        "test_canonical_keeps_closed_point",
+        "test_canonical_merged_upper_end_takes_farther_interval",
+        "test_canonical_merges_overlapping",
+        "test_canonical_shorthand_pairs_are_closed",
+        "test_canonical_sorts_by_lower_bound",
+        "test_canonical_worked_example_from_issue",
+        "test_difference_closed_cut_opens_ends",
+        "test_difference_empty_subtrahend_returns_normalized_a",
+        "test_difference_full_cover_is_empty_and_partial_edges",
+        "test_difference_open_cut_leaves_closed_ends",
+        "test_difference_removes_a_point",
+        "test_intersect_equal_endpoints_closed_only_if_both",
+        "test_intersect_normalizes_inputs",
+        "test_intersect_touching_closed_ends_give_point",
+        "test_touching_chain_merges_transitively",
+        "test_union_basic_and_unnormalized_inputs"
+      ],
+      "variant": "hidden/traps/shorthand_halfopen.py"
+    },
+    "sort_by_lower_only": {
+      "description": "Trap: the sweep sorts by lower bound only (input order on ties), so a closed point [3,3] listed after (3,5] is visited after it and the gap between [1,3) and (3,5] is never closed. Seen in the calibration baseline runs. Masked when equal lower bounds arrive closed-first.",
+      "discriminating_tests": [
+        "test_touching_point_fills_the_gap"
+      ],
+      "variant": "hidden/traps/sort_by_lower_only.py"
+    },
+    "unsorted_output": {
+      "description": "Trap: no sort; only neighbours in input order are merged and the output keeps input order. Masked when inputs arrive sorted.",
+      "discriminating_tests": [
+        "test_bounds_unbounded_merge_and_sort",
+        "test_canonical_keeps_closed_point",
+        "test_canonical_merges_overlapping",
+        "test_canonical_sorts_by_lower_bound",
+        "test_canonical_worked_example_from_issue",
+        "test_difference_closed_cut_opens_ends",
+        "test_difference_empty_subtrahend_returns_normalized_a",
+        "test_intersect_normalizes_inputs",
+        "test_touching_chain_merges_transitively",
+        "test_touching_point_fills_the_gap",
+        "test_union_basic_and_unnormalized_inputs"
+      ],
+      "variant": "hidden/traps/unsorted_output.py"
+    }
+  }
+}

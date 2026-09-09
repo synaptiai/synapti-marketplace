@@ -20,7 +20,7 @@
 # Examples:
 #   journal-record.sh --issue 142 --type specification \
 #       --metadata by=specification-capture \
-#       --metadata elements=non-goals,failure-modes,interface-contracts
+#       --metadata elements=non-goals,failure-modes,interface-contracts,risk-map
 #
 #   journal-record.sh --issue 142 --type stranger-test \
 #       --metadata result=PASS --metadata task_count=5

@@ -68,7 +68,9 @@ tier_classification:
   release: confirm
 EOF
 
-# Run the canonical inline-Python invocation documented in SKILL.md Step 1.
+# Run the canonical inline-Python invocation documented in
+# plugins/flow/references/workflow-validation-shim.md (linked from
+# workflow-validation/SKILL.md Step 1).
 RESULT=$(python3 - "$DIR/legacy.yaml" "$SCHEMA" 2>&1 <<'PYEOF'
 import sys, yaml, json, jsonschema
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]

@@ -1,5 +1,225 @@
 # Changelog
 
+## 3.3.0 (2026-09-09)
+
+Fewer words, loaded unconditionally, checked by machine, then measured. Two findings drove this
+release: an audit of 43 sessions found flow's rules written but not in context when they were
+broken (no command mechanically loaded its Required Skills; the TaskCompleted hook exited 0 on
+every path; the Stop hook shipped in warn mode and read like enforcement; the rm guard refused
+`rm -f file`; the learn loop read only what flow itself wrote), and Dan Luu's "Agentic testing"
+study (https://danluu.com/agentic-testing/) found that naming a testing technique produces its
+surface rather than its value: TDD instructions doubled test count and lowered correctness because
+agents fed identical or palindromic inputs and pasted the implementation's own output in as the
+expected value.
+
+### Added: rules loaded into context by the command
+
+- **`bin/flow-load-skills.sh` + a `!` loader block in every command with Required Skills.** Claude
+  Code commands cannot preload skills from frontmatter (only agents have `skills:`), so the loader
+  inlines them at invocation: ambient skills (no `context: fork` / `agent:`) whole, dispatched
+  skills through a new mandatory `## Contract` section (first H2, at most 120 words: iron law,
+  invoking phase, return shape, permitted skips). `tests/flow-load-skills.test.sh` enforces that
+  the bullets and the loader block match, that every dispatched skill carries a Contract, and that
+  every skill body is at most 600 words. Seven commands invoked skills they never declared
+  (`run-state-management`, `runtime-verification`, `visual-verification`, the goal skills); the
+  declarations are now complete, and `commands/pr.md` no longer labels the `integration-verifier`
+  agent as a Skill. `references/skill-manifests.md` is regenerated from the commands.
+- **Every skill body trimmed to at most 600 words.** Tutorial content the model already carries
+  (what TDD is, how to name a test, what a smoke test does) is gone; rules, settings, contracts,
+  paths, and integration points stay. Load-bearing tables moved to `references/` files:
+  `paired-review-protocol.md` (team-coordination), `review-cycle-parsing.md` and
+  `holdout-lens-dispositions.md` (code-review-methodology / holdout-validation),
+  `specification-journal-format.md` (specification-capture).
+  Also: `architecture-decision-record.md`, `lsp-capability-probes.md`, `run-state-templates.md`,
+  `runtime-verification-probes.md`, `visual-verification-output.md`, `workflow-validation-shim.md`,
+  `verdict-output-format.md`, `goal-lifecycle-transitions.md`. Two corrections surfaced by the trim:
+  `run-state-management` claimed the SessionEnd hook sets `blocked_reason` (it only appends a
+  `session_end` event), and `pr-lifecycle` advertised a seven-section PR body that
+  `templates/pr-body.md` does not have.
+
+### Changed: hooks that hold the line
+
+- **TaskCompleted gate is now mechanical.** `hooks/scripts/verify-task-completion.sh` blocks task
+  completion (exit 2, plain-sentence stderr) while files changed in the session after the last
+  passing quality run. `log-file-changes.sh` records `file_change` entries and the new
+  `record-quality-run.sh` (PostToolUse Bash) records `quality_run` entries with exit codes in a
+  per-session JSONL ledger managed by `bin/flow-quality-ledger.sh` (`append|path|status`) under
+  `${FLOW_STATE_DIR:-~/.claude/flow-state}/sessions/<session_id>/`. New settings:
+  `testing.taskCompletionGate` (block|warn|off, default block) and `testing.qualityCommandPatterns`
+  (extra ERE patterns). Journal, `.flow/`, and `.screenshots/` writes never dirty the gate. The hook
+  reads the now-documented `task_subject` payload field with a fallback to the legacy `.task.subject`.
+- **`block-destructive.sh` rm rule now requires recursive AND force.** `rm -f file` and `rm -r dir`
+  are no longer blocked; every recursive+force spelling (`-rf`, `-fr`, `-Rf`, `-r -f`, `-rv -f`,
+  `--recursive --force`, `-r --force`, GNU prefixes) still is, on any target outside the safe-dir
+  list. `rm` is matched only as a command word (`/bin/rm`, `\rm`, behind `sudo`/`xargs`), never as
+  a substring; `git rm` is exempt. A recursive+force rm with no visible target (`xargs rm -rf`) now
+  blocks as unverifiable; redirections are no longer mistaken for targets.
+- **New PreToolUse hook `ask-issue-create.sh`.** During an active FlowGoal on the current branch, a
+  `gh issue create` in command position becomes a permission prompt (`permissionDecision: ask`)
+  naming the goal and flow's fix-it-here rule. Disabled by `minimalScope: true`; silent when no goal
+  is active or the goal state cannot be determined.
+- **Explicit `false` no longer swallowed for `learning.enabled`.** `session-end-learn.sh` read the
+  key with `// empty`, which jq treats as falsy, so a project's `enabled: false` fell through to
+  the plugin default. The stale comment in `bin/cascade-resolve.sh` claiming `// null` preserves
+  false is corrected: boolean keys are read with a bare expression.
+
+- **Quoting fixes in two PreToolUse hooks (PR #163 review).** `block-destructive.sh` now
+  tokenises each simple command the way the shell does: quoted flags (`rm "-rf" src`,
+  `rm '-fr' src`, `rm "--recursive" --force src`) are seen as flags and a quoted path
+  (`rm -rf "some dir"`) is one target, closing a bypass where a token starting with a quote never
+  reached the flag check. `ask-issue-create.sh` strips quoted spans and `#` comments before
+  splitting on `;`/`|`/`&`, so `git commit -m "fix; gh issue create later"` and
+  `echo "gh issue create"` no longer prompt while `gh issue create --title "fix; later"` still
+  does. Tests: `block-destructive-rm.test.sh`, `ask-issue-create.test.sh`.
+- **Task-completion gate closes four holes (PR #163 review).** `record-quality-run.sh` now strips quoted
+  spans and matches quality commands only at command position (`git commit -m "chore: npm test config"`,
+  `echo cargo test`, `ls tests/run.sh` no longer count; `cd x && pytest`, `FOO=1 pytest`, `bash tests/run.sh`
+  do), records `masked: true` for `|| true` / `; true` / `|| :` (never passing), stores a sha256 digest of
+  the working-tree contents (a git tree id built in a temporary index; HEAD excluded) so edits made through
+  Bash (`sed -i`, heredocs, `git apply`) and checkouts after the last passing run block completion while
+  committing already-tested edits does not (`flow-quality-ledger.sh status --cwd`, `digest`), and is also registered on the
+  documented `PostToolUseFailure` event so failing runs reach the ledger (`failed: true`, deduped on
+  `tool_use_id`). `log-file-changes.sh` matches `NotebookEdit` (`notebook_path`). New
+  `flow-quality-ledger.sh prune [--max-age-days N]` (default 14) sweeps idle session ledgers; `session-end-state.sh`
+  runs it once per day.
+
+### Changed: the Stop hook says what it does, and block mode works
+
+- **Warn mode is honest.** The reason now opens `FLOW_GOAL_INCOMPLETE — stop ALLOWED
+  (stopHookEnforcement=warn)`, ends with how to enforce, and is printed to stderr (previously it
+  lived only in the hook's JSON). The unknown-mode fallback uses the same wording.
+- **Block mode is usable.** A per-user trust ledger (`bin/flow-goal-trust.sh record|check|list`,
+  at `${FLOW_STATE_DIR:-~/.claude/flow-state}/goal-trust.jsonl`) records every goal flow creates
+  with a sha256 over its AC ids and verification commands; the Stop hook executes verification
+  commands for trusted goals without the global `executeVerificationCommands` flag, and a goal that
+  arrived with a checkout (or whose commands were edited by hand) stays `not_executed` until
+  re-recorded. Block mode blocks only on failing ACs, path violations, or ACs with no command;
+  untrusted not-executed ACs are explained with the record command; consecutive blocks per session
+  and goal are capped at `failAfterStuckTurns` (`FLOW_GOAL_BLOCK_CAP`) and every approve resets the
+  counter.
+- **FlowGoal YAML gains `specification.risk_map`**, lifted from the journal's `### Risk map` table
+  by goal-contract-capture; the lifecycle transition tables move to
+  `references/goal-lifecycle-transitions.md` and now match `flow-goal-record.sh` exactly (the old
+  skill table omitted `draft→cancelled` and `blocked→failed`).
+
+### Added: the risk map, and a judge that sees test inputs
+
+- **Risk map is the fourth specification element.** `specification-capture` drafts 2-6 rows of
+  `| Area | Plausible wrong version | Discriminating check |` (where the logic is most likely to be
+  subtly wrong, what the plausible wrong implementation would do, and an input on which right and
+  wrong differ) and writes them under `### Risk map`; the four failure-mode categories (timeouts,
+  partial failures, invalid input, missing context) are infrastructure error paths and do not cover
+  it. `implementation-planner` copies rows into each task as `Risk areas:` and requires one
+  discriminating test per row; the Stranger Test fails a task that names a risk area without one.
+  FlowGoal YAML gains `specification.risk_map`. `specFirst.riskMap` (default true) toggles the whole
+  chain so the eval can compare with and without. Canonical shape:
+  `references/specification-journal-format.md`.
+- **Evidence bundles carry `### Test inputs and expected values` and `### Risk map coverage`.**
+  Both mandatory (auto-FAIL when blank); `none — <reason>` is allowed for test inputs only on ui and
+  config criteria, and for risk-map coverage only with the `specFirst.riskMap=false` marker.
+  `verdict-judge` stays blind to the implementation and to test source but now FAILs a
+  self-referential oracle (every expected value sourced from implementation output), all-degenerate
+  inputs on an order-, position-, or value-sensitive criterion, and a behavioral criterion whose
+  risk-map rows have no discriminating test. Output shape: `references/verdict-output-format.md`.
+- **`specification-capture` journal re-read bug fixed.** The old `awk '/^## Specification$/,/^## /'`
+  matched its own start line as the end and returned only the heading; the verification gate now
+  uses a flag-based range.
+
+- **verdict-judge has no file tools.** `agents/verdict-judge.md` drops `Read` (`tools: []`), so the
+  Independence Protocol is enforced by the tool list rather than prose: everything the judge evaluates
+  is inside the evidence bundle. The bundle gains a mandatory `### Visual analysis` subsection (after
+  `### Output`) carrying, per viewport, `Viewport:` / `Screenshot:` / `Result:` / `Observed:` blocks
+  copied from the `visual-verification` skill's result tasks; `none — criterion type {type} has no
+  visual surface` on non-ui types; missing or blank on a `ui` criterion is an auto-FAIL. A criterion
+  whose evidence is not in the bundle is FAIL `evidence not in bundle`, never NEEDS-HUMAN-REVIEW. New
+  static lint `tests/verdict-judge-independence.test.sh`.
+
+### Changed: tests must discriminate, and expected values must have a source
+
+- **tdd-patterns states where expected values come from.** An expected value is derived from the
+  spec, a reference implementation, hand computation, an existing fixture, or an external standard,
+  and the test says which; running the implementation and pasting its output is a finding. Inputs
+  must discriminate the plausible wrong version named in the task's `Risk areas:` rows; identical,
+  symmetric, palindromic, zero, or single-value inputs do not count as coverage of order-, position-,
+  or value-sensitive behavior. RED is redefined: a test is red only when it fails for the intended
+  reason, its expected value has a stated source, and its input is not degenerate. Randomized inputs
+  are biased toward interesting state, and no technique is named as an instruction.
+- **holdout-validation cross-references the new evidence-bundle subsections.** An unsupported
+  `Source of expected` or a sourceless literal is P1; a risk-map row with no discriminating test is
+  P2 (P1 for a behavioral criterion's core logic). New hidden scenarios: behavioral 6
+  (self-referential expected values) and 7 (degenerate inputs), data 6 (fixed-point inputs), error 6
+  (rejection-path-only inputs).
+- **Reviewers derive expected behavior from the spec before reading the tests.**
+  `code-review-methodology`'s Tests facet, `code-reviewer` Step 4 (test adequacy), and
+  `references/test-review-checklist.md` flag copied or sourceless expectations and degenerate inputs
+  as P1 and a risk row without a discriminating test as P2.
+
+### Added: a correctness eval instead of an assumption
+
+- **`bin/flow-eval-run.sh` + `bin/_flow_eval.py`.** Headless `claude -p` runs on three seeded-bug
+  cases (`evals/four-stream-codec`, `evals/sliding-window-limiter`, `evals/money-allocator`) across
+  seven arms (`testing.tddMode` enforce/suggest/off × `specFirst.riskMap` on/off, plus a no-plugin
+  baseline), scored against a hidden unittest suite the agent never sees, with per-trap signature
+  attribution, own-test and degenerate-input counts, cost caps, resume, `--dry-run`,
+  `--check-cases`, and `--aggregate-only`. Each case ships a reference implementation and 6-8
+  deliberately wrong variants that prove every hidden test discriminates a real trap; the layout is
+  `claude plugin eval`-compatible for when that tool leaves early access.
+  `references/correctness-eval.md` states what is measured, how to read `summary.md`, the decision
+  rule for the `tddMode` default, cost expectations, and limitations.
+
+- **Second round of the harness.** The runner now scores each run's *own* tests against the trap
+  variants (`own-test-traps.json`; a trap counts as caught only by tests that also pass on the
+  reference), records the billed model from `modelUsage`, keys results by model
+  (`runs/<model>/<arm>/<case>/<n>/`; `--models a,b` runs a plan on several models; `migrate-layout`
+  moves first-round results), and reports per model × arm with an "Own tests catch traps" column.
+  The decision rule gains a secondary signal: when hidden pass rates tie within the spread, the
+  own-test trap catch rate decides. New case `interval-algebra` (30 hidden tests, 13 traps) is the
+  first to clear a calibration bar: the Sonnet 5 baseline failed hidden tests in 2 of 3 runs on
+  sweep-order rules its own tests never probed. Three other candidates (changeset applier, canonical
+  line diff, RFC 5545 recurrence expander) were built, calibrated, and retired because the baseline
+  solved them 3/3 even after revision; `references/correctness-eval.md` records what was tried.
+- **First full run recorded** (`evals/results-2026-09-09/`): 63 runs, $68.12, verdict
+  `keep-enforce`. Every arm, the no-plugin baseline included, passed 100% of the hidden tests, so
+  the tasks are at ceiling for this model and the rule keeps `testing.tddMode: enforce` and
+  `specFirst.riskMap: true` without correctness evidence either way. The enforce arms cost about
+  nine times the baseline per run; the transcripts show the new TaskCompleted gate refusing
+  completion because `python3 -m unittest` was not a recognised quality command (fixed below), so
+  the turn counts overstate the cost of TDD itself. The oracle and discriminating-input rules cut
+  the share of degenerate literal test inputs from 38% (baseline) to 11% (`enforce-norisk`).
+- **Second full run recorded** (`evals/results-2026-09-09-round2/`): 105 runs, $184.65, Sonnet 5 on all
+  four cases and Opus 5 on `interval-algebra`. Verdict `keep-enforce` on both models, decided by the
+  own-test secondary signal because every primary comparison tied within the run-to-run spread. No
+  flow setting moved hidden-test correctness or the share of traps the agent's own tests catch; the
+  rules did cut degenerate literal inputs on Sonnet (56% to about 40%) and not on Opus; the enforce
+  arms cost three to six times the off and baseline arms for the same measured correctness. The
+  reference records the reading and names the cost question as a product decision the rule does not
+  make.
+- **`record-quality-run.sh` recognises `python -m unittest`.** Surfaced by the eval: the built-in
+  patterns covered pytest, ruff, mypy and the rest but not the standard-library runner, so a
+  project tested with unittest could never satisfy the task-completion gate.
+- **Incomplete hidden runs are scored over the full suite.** Found in review of #163: the hidden pass
+  rate counted only tests that printed a status, so a suite that hung or crashed after four passes
+  scored 4/5 instead of 4/30. A run now counts as complete only with a matching `Ran N tests` line and
+  a final `OK`/`FAILED`; otherwise it scores observed `ok` lines over the suite size and records
+  `hidden.incomplete`, `reason` (`timeout`/`crash`/`no-summary`) and `observed`/`expected`. Own-test
+  scoring applies the same rule (a hang on a variant is not a catch; an unobserved test is not an
+  oracle), `summary.md` gains an Incomplete column, and `hidden-run --raw` re-scores a saved
+  `hidden.txt`. The `TimeoutExpired` path also crashed on bytes/None partial output before scoring;
+  fixed. Neither recorded run contains an incomplete suite, so the records stand.
+
+
+- **`/flow:learn` reads session transcripts, not only flow's own journal.** New
+  `bin/flow-mine-corrections.sh` streams `~/.claude/projects/<slug>/*.jsonl` (read-only, no
+  network) and surfaces user turns that look like corrections via a recall-oriented keyword filter;
+  Phase 2 verifies each cited line, clusters by intent, and keeps patterns with 3+ instances across
+  2+ sessions. Patterns whose rule already exists in a skill produce an `enforcement` proposal
+  (which hook or gate should make the rule mechanical) instead of another skill;
+  `templates/skill-proposal.md` gains `### Transcript Citations` and `## Enforcement point`.
+- **SessionEnd flags pending learning on transcript corrections.** `session-end-learn.sh` also sets
+  `~/.claude/flow-learn-pending` when the ended session's transcript has a candidate correction
+  (scan capped at `timeout 1`, skipped silently on timeout). New settings `learning.sources`
+  (default `["journal","transcripts"]`) and `learning.transcriptDir` (empty = auto).
+
 ## 3.2.2 (2026-05-29)
 
 ### Changed: review/finding tables render as two columns

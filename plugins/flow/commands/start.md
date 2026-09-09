@@ -21,7 +21,7 @@ Skill-driven workflow from issue assignment through implementation. Follows the 
 ## Required Skills
 
 This command operates with these domain skills loaded:
-- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
+- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `branch-and-task-management` — branch creation, task decomposition
 - `change-classification` — change context awareness
 - `capability-discovery` — detect available quality tools
@@ -30,7 +30,24 @@ This command operates with these domain skills loaded:
 - `criterion-verification-map` — per-criterion evidence collection (Phase 2 + Phase 4)
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 4)
 - `issue-crafting` — invoked when the issue body is missing acceptance criteria or needs reframing
-- `specification-capture` — capture non-goals, failure modes, and interface contracts to the decision journal (Phase 1, before Spec Validation Gate)
+- `specification-capture` — capture non-goals, failure modes, interface contracts, and the risk map to the decision journal (Phase 1, before Spec Validation Gate)
+- `tdd-patterns` — RED/GREEN/REFACTOR discipline, test-oracle and discriminating-input rules (Phase 3)
+- `goal-contract-capture` — FlowGoal creation (after the Spec Validation Gate / after hypothesis confirmation)
+- `goal-lifecycle` — goal state transitions (draft → active → terminal)
+- `run-state-management` — FlowRun/FlowActivity records at phase boundaries (v3 runtime)
+- `runtime-verification` — mandatory build/run/smoke/E2E verification (Phase 4); owns the three-category skip whitelist
+- `visual-verification` — screenshot-analyze-verify loop for UI-relevant diffs (Phase 4)
+
+```!
+# Inline the Required Skills above so their rules are in context before the
+# first phase runs (commands cannot preload skills from frontmatter). Ambient
+# skills load whole; dispatched skills (context: fork / agent:) load their
+# `## Contract` section and run in full when this command invokes
+# Skill(<name>). Output per `references/command-output-format.md`.
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" llm-operator-principles branch-and-task-management change-classification capability-discovery debugging-patterns preflight-checks criterion-verification-map holdout-validation issue-crafting specification-capture tdd-patterns goal-contract-capture goal-lifecycle run-state-management runtime-verification visual-verification
+
+true
+```
 
 ## References
 
@@ -203,7 +220,7 @@ If zero acceptance criteria found and `specFirst.requireAcceptanceCriteria` is `
 
 **Specification capture** (before Spec Validation Gate):
 
-Acceptance criteria alone do not describe the full specification. Before building the Spec Validation Gate, capture three additional specification elements (non-goals, failure modes, interface contracts) and persist them to the decision journal under a `## Specification` heading. The capture lifecycle is owned by the `specification-capture` skill — do NOT inline the prompts or the journal write. The skill handles journal-first detection, issue-body extraction, per-element user confirmation via `AskUserQuestion` (with the canonical six-field structure from `references/escalation-format.md`), and the journal write.
+Acceptance criteria alone do not describe the full specification. Before building the Spec Validation Gate, capture four additional specification elements (non-goals, failure modes, interface contracts, risk map — shape in `references/specification-journal-format.md`) and persist them to the decision journal under a `## Specification` heading. The capture lifecycle is owned by the `specification-capture` skill — do NOT inline the prompts or the journal write. The skill handles journal-first detection, issue-body extraction, per-element user confirmation via `AskUserQuestion` (with the canonical six-field structure from `references/escalation-format.md`), and the journal write.
 
 ```
 Skill(specification-capture):
@@ -213,29 +230,37 @@ Skill(specification-capture):
   - Invocation reason: start
 ```
 
-The skill returns the captured specification (non-goals, failure modes, interface contracts). It writes them to the journal and verifies the write before returning.
+The skill returns the captured specification (non-goals, failure modes, interface contracts, risk map). It writes them to the journal and verifies the write before returning.
 
 After the skill returns, verify per the skill's "Verification gates" section:
 
 1. The journal `.decisions/issue-$ISSUE_NUM.md` contains a `## Specification` heading
-2. All three element subsections (`### Non-goals`, `### Failure modes`, `### Interface contracts`) are present and non-empty (or `none — {reason}` for failure-mode categories that don't apply)
-3. The returned payload matches the journal contents
+2. `### Non-goals`, `### Failure modes`, `### Interface contracts` are present and non-empty (or `none — {reason}` for failure-mode categories that don't apply)
+3. `### Risk map` is a 2-6 row `| Area | Plausible wrong version | Discriminating check |` table, or exactly `disabled — specFirst.riskMap=false` when `specFirst.riskMap` resolves to `false`
+4. The returned payload matches the journal contents
 
 If any check fails, halt and re-invoke the skill with the failure noted. Do NOT proceed to the Spec Validation Gate with a partial specification — the Stranger Test at end-of-PLAN will fail downstream.
 
 **Manifest emit** — record the specification artifact in the journal manifest so downstream tooling and `/flow:status` can see it without parsing the freeform `## Specification` body:
 
 ```bash
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")
+RISK_MAP=$("$FLOW_ROOT/bin/cascade-resolve.sh" --default true '.specFirst.riskMap')
+if [ "$RISK_MAP" = "false" ]; then
+  ELEMENTS_META=(--metadata elements=non-goals,failure-modes,interface-contracts --metadata risk_map=disabled)
+else
+  ELEMENTS_META=(--metadata elements=non-goals,failure-modes,interface-contracts,risk-map)
+fi
+"$FLOW_ROOT/bin/journal-record.sh" \
   --issue "$ISSUE_NUM" \
   --type specification \
   --metadata by=specification-capture \
-  --metadata elements=non-goals,failure-modes,interface-contracts
+  "${ELEMENTS_META[@]}"
 ```
 
 If the helper exits non-zero, halt — a missing manifest entry breaks downstream artifact discovery (`/flow:status`, the `verdict-judge` evidence-bundle assembly). The emit is required even when the skill returned an existing-spec verbatim from the journal-first path: the freeform section may already be present, but the manifest entry is the audit trail of *this* invocation.
 
-Once the captured specification is in the journal, downstream phases reference it: `implementation-planner` agent receives it as the `Specification` field in its dispatch (Phase 2); the Phase 4 evidence-bundle producer pulls `Non-goals` into each criterion's `### Does NOT promise` subsection (per `references/evidence-bundle-format.md`).
+Once the captured specification is in the journal, downstream phases reference it: `implementation-planner` agent receives it as the `Specification` field in its dispatch (Phase 2); the Phase 4 evidence-bundle producer pulls `Non-goals` into each criterion's `### Does NOT promise` subsection (per `references/evidence-bundle-format.md`), and `Risk map` rows into each task's `Risk areas:` field (Phase 2) and each criterion's `### Risk map coverage` subsection (Phase 4).
 
 **Spec Validation Gate** (blocking):
 
@@ -504,7 +529,7 @@ A task is not "done" until all three are complete. Splitting them into three sib
 Agent(implementation-planner):
   "Parse acceptance criteria from issue #$ISSUE_NUM and create atomic tasks.
    Issue context: {pre-fetched issue title, body, comments}
-   Specification (from EXPLORE): {non-goals, failure modes, interface contracts}
+   Specification (from EXPLORE): {non-goals, failure modes, interface contracts, risk map}
    Spec Validation Gate results: {criterion -> verification command mapping}
 
    For each acceptance criterion, use TaskCreate with a single atomic task:
@@ -514,8 +539,9 @@ Agent(implementation-planner):
        Non-goals touched: {which non-goals this task must respect}
        Failure modes covered: {which failure modes this task implements handling for}
        Interface contract: {schema/signature this task must honor}
+       Risk areas: {risk-map rows whose area this task touches, verbatim | none | (disabled by specFirst.riskMap)}
        Implementation outline: {files + approach}
-       Test plan: {test file + cases + assertions}
+       Test plan: {test file + cases + assertions; one discriminating test per Risk areas row: input, expected, source of expected}
        Verification command: {exact command from Spec Validation Gate}
        Expected evidence: {what success output looks like}
 
@@ -541,6 +567,7 @@ Check each task for these failure modes:
 - **Unspecified verification command** — a zero-context agent would not know what to run to prove the task is done
 - **Missing interface contracts** — schema/signature/shape is not written in the task
 - **Missing failure-mode coverage** — the task does not reference which failure modes it must handle
+- **Missing discriminating test** — the task names a risk-map area but its test plan has no test (input + expected + source of expected) whose result differs between the right version and the row's plausible wrong version
 
 If ANY task fails the Stranger Test, the plan is incomplete. The agent must either rewrite the task to close the gap, or issue a Proactive-Autonomy escalation asking the user to fill in the missing context. Only after every task passes the Stranger Test can the workflow proceed to Phase 3.
 
@@ -562,10 +589,7 @@ Display task plan. Proceed unless user objects.
 
 ## Phase 3: CODE
 
-**TDD enforcement**: Check `settings.json` → `testing.tddMode`:
-- `enforce` (default) — write a failing test FIRST. Implementation without a preceding RED test is blocked.
-- `suggest` — recommend TDD but allow override. Only active when `testing.tddModeOptOut` is `true`.
-- `off` — no TDD guidance; tests still run in verification.
+**TDD enforcement**: `testing.tddMode` (`enforce` default; `suggest` only with `testing.tddModeOptOut: true`; `off` still runs tests in verification). The `tdd-patterns` contract loaded above defines RED: a test is red only when it fails for the intended reason, its expected value has a stated source (spec, reference, hand computation, fixture, standard — never the implementation's output), and its input is not degenerate for the behavior under test.
 
 Execute tasks following the per-task verification gate loop:
 
@@ -574,13 +598,14 @@ For each task (in dependency order):
   1. TaskUpdate(taskId, status: "in_progress")
   2. Read relevant files (follow existing patterns)
   3. TDD enforcement (when tddMode=enforce):
-     a. RED: Write the failing test FIRST — the test MUST fail before any implementation
-     b. Verify it fails for the right reason (not syntax error, not wrong import)
-  4. GREEN: Implement the change — simplest code to make the test pass
+     a. RED: write the failing test FIRST, from the task's Test plan — expected value with its
+        stated source, input chosen to differ between the right version and the row's plausible
+        wrong version for every `Risk areas:` row this task touches
+     b. Verify it fails for the intended reason (not a syntax error, not a wrong import)
+  4. GREEN: implement the change — the simplest code that makes the test pass
      - Follow existing patterns (co-located files, same framework)
-     - At minimum, one test per acceptance criterion or behavior
-     - Test edge cases, not just the happy path
-     - For bug fixes: write a test that would have caught the original bug
+     - At minimum, one test per acceptance criterion or behavior, plus one discriminating test per risk row
+     - For bug fixes: the reproducing test must fail on the original code
   5. Run tests (existing + new):
      IF tests FAIL → enter debug-fix-retest loop:
        - Read failure output, identify root cause
@@ -604,7 +629,7 @@ For each task (in dependency order):
       - All tests pass (existing + new)
       - Verification evidence captured for this task's acceptance criterion
       - No unresolved out-of-context files from this task
-      - TDD cycle completed (RED → GREEN → REFACTOR) when tddMode=enforce
+      - TDD cycle completed (RED → GREEN → REFACTOR) when tddMode=enforce, with a discriminating test per `Risk areas:` row
       TaskUpdate(taskId, status: "completed")
 ```
 
@@ -639,7 +664,7 @@ Prove everything works with fix-forward:
 1. **Run full quality suite** (parallel Bash calls for lint, test, typecheck)
 2. **Runtime verification** (MANDATORY — not conditional on skill availability):
 
-   Invoke `Skill(runtime-verification)` for build, dev-server, smoke, E2E, and LSP-diagnostics checks. The skill owns the skip whitelist (the three enumerated categories `markdown-only`, `config-only`, `dependency-bump-only` with their required evidence) and the escalation protocol for out-of-whitelist skips per [`references/escalation-format.md`](../references/escalation-format.md). Any skip outside the whitelist requires an approved Proactive-Autonomy escalation surfaced via `AskUserQuestion` — blanket or subjective justifications are not valid. If in doubt, run it.
+   Invoke `Skill(runtime-verification)` for build, dev-server, smoke, E2E, and LSP-diagnostics checks. Its contract (loaded above) owns the skip whitelist — only `markdown-only`, `config-only`, `dependency-bump-only`, each with its required evidence — and any other skip needs an approved six-field escalation per [`references/escalation-format.md`](../references/escalation-format.md). If in doubt, run it.
 
    When the diff is UI-relevant (UI file extensions OR acceptance criteria with UI keywords — see the visual-verification skill for the exact detection rules), invoke `Skill(visual-verification)` in parallel. The two skills coordinate via the dev server URL: if `runtime-verification` cannot start the dev server, `visual-verification` returns SKIP with that reason and the completion gate treats the dev-server failure as the primary finding.
 3. **Self-review with fix-forward** — dispatch Agent(code-reviewer):
@@ -678,7 +703,7 @@ Prove everything works with fix-forward:
      3. Capture output as evidence
      4. TaskUpdate(verifyTaskId, status: "completed", result: "EVIDENCE_COLLECTED")
    ```
-   Assemble the evidence bundle following the canonical format in [`references/evidence-bundle-format.md`](../references/evidence-bundle-format.md). For every acceptance criterion, the bundle MUST include: `### Verification command` (the exact command from the Spec Validation Gate), `### Output` (captured stdout/stderr verbatim), `### Does NOT promise` (non-goals — pulled from the Phase 1 specification capture), `### What was tested` (informational), and the three mandatory completeness subsections `### What was NOT tested`, `### Known limitations of this evidence`, `### Negative/adversarial cases covered`. All four mandatory subsections (`Does NOT promise` plus the three completeness ones) accept `none` as a positive statement when the producer can affirmatively say there is nothing to disclose; bare blank is NOT permitted and triggers the verdict-judge auto-FAIL. If a mandatory subsection cannot be filled, escalate via `references/escalation-format.md` rather than emitting a blank field — the gap surfaces with better context than waiting for the auto-FAIL downstream.
+   Assemble the evidence bundle following the canonical format in [`references/evidence-bundle-format.md`](../references/evidence-bundle-format.md). For every acceptance criterion, the bundle MUST include: `### Verification command` (the exact command from the Spec Validation Gate), `### Output` (captured stdout/stderr verbatim), `### Visual analysis` (for ui types: one `Viewport:`/`Screenshot:`/`Result:`/`Observed:` block per configured viewport, copied from the visual-verification result tasks — the judge never opens the screenshot; `none — criterion type {type} has no visual surface` for every other type), `### Does NOT promise` (non-goals — pulled from the Phase 1 specification capture), `### What was tested` (informational), `### Type` (the task's Verification type), and the five mandatory completeness subsections `### What was NOT tested`, `### Known limitations of this evidence`, `### Negative/adversarial cases covered`, `### Test inputs and expected values` (rows taken from the cited test files' source — input, expected, source of expected; `none — {reason}` only for ui/config types), `### Risk map coverage` (`<area> → <test file:line>` per mapped row; `none — risk map disabled (specFirst.riskMap=false)` when disabled). All seven mandatory subsections (`Does NOT promise`, `Visual analysis`, plus the five completeness ones) accept `none` as a positive statement when the producer can affirmatively say there is nothing to disclose (`Visual analysis` only on non-ui types); bare blank is NOT permitted and triggers the verdict-judge auto-FAIL. If a mandatory subsection cannot be filled, escalate via `references/escalation-format.md` rather than emitting a blank field — the gap surfaces with better context than waiting for the auto-FAIL downstream.
 6. **Independent verdict** — if `verdict.enabled` is `true` (default), dispatch Agent(verdict-judge):
    ```
    Agent(verdict-judge):
@@ -694,7 +719,7 @@ Prove everything works with fix-forward:
       {findings from step 4 — P1/P2/P3 with file:line citations}"
    ```
    The verdict-judge receives ONLY the acceptance criteria, evidence bundle, and holdout-validation output.
-   It does NOT receive: the diff, decision journal, planning rationale, or self-review findings.
+   It does NOT receive: the diff, decision journal, planning rationale, self-review findings, or test source (test inputs reach it only as bundle rows). It returns the shape in `references/verdict-output-format.md`.
 
    **Handle verdicts:**
    - **All PASS** → proceed to completion gate

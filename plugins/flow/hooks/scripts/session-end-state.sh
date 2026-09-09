@@ -10,17 +10,42 @@
 # the user (active runs may be intentionally paused mid-flow). It only
 # records the event and ensures /flow:resume can find the run.
 #
+# It also sweeps stale per-session quality ledgers: once per day (sentinel
+# ${FLOW_STATE_DIR:-~/.claude/flow-state}/.prune-stamp holding today's UTC
+# date) it runs `bin/flow-quality-ledger.sh prune` (default: session
+# directories idle for 14 days). Best-effort — the sweep can never fail the
+# hook, and it runs before the python3/PyYAML checks below so it happens even
+# where the FlowRun bookkeeping cannot.
+#
 # Exits 0 in all cases (SessionEnd hooks must be silent-failure-safe).
 
 set -uo pipefail
 export PYTHONSAFEPATH=1
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
+
+# --- Quality-ledger sweep (once per day, best-effort) ---------------------
+_flow_prune_sessions() {
+  local root helper stamp today
+  root="${FLOW_STATE_DIR:-${HOME:-/nonexistent}/.claude/flow-state}"
+  helper="${PLUGIN_ROOT}/bin/flow-quality-ledger.sh"
+  [ -x "$helper" ] || return 0
+  [ -d "$root/sessions" ] || return 0
+  stamp="$root/.prune-stamp"
+  [ -L "$stamp" ] && return 0
+  today=$(date -u +%Y-%m-%d) || return 0
+  if [ -f "$stamp" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$today" ]; then
+    return 0
+  fi
+  "$helper" prune >/dev/null 2>&1 || return 0
+  printf '%s\n' "$today" > "$stamp" 2>/dev/null || return 0
+}
+_flow_prune_sessions || true
+
 # Graceful degradation — matches session-end-learn.sh:13 pattern.
 command -v python3 >/dev/null 2>&1 || exit 0
 python3 -c "import yaml" >/dev/null 2>&1 || exit 0
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
 
 # Check the runtime layer is enabled (matches the gating in /flow:resume).
 ENABLED=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "true" '.flow.runtime.enabled' 2>/dev/null)

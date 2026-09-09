@@ -1,160 +1,53 @@
 ---
 name: goal-lifecycle
-description: "Enforce the FlowGoal state machine — every status transition (draft → active → {waiting_for_user, waiting_for_ci, blocked, achieved, failed, cancelled}) writes both the new lifecycle block to `.flow/goals/<id>.goal.yaml` AND a `goal-evaluation` artifact to the linked decision journal, in a single atomic operation via `bin/flow-goal-record.sh`. Use when any code path mutates `lifecycle.status`, when /flow:goal pause/resume/clear is invoked, when the Stop hook detects a stuck pass-set, or when the evaluator returns a verdict. This skill MUST be consulted because state machines without recorded transitions become liars — a goal in `failed` status with no `goal-evaluation` artifact explaining why is worse than no state machine at all."
+description: "Enforce the FlowGoal state machine: every `lifecycle.status` transition (draft → active → {waiting_for_user, waiting_for_ci, blocked, achieved, failed, cancelled}) writes the new lifecycle block through `bin/flow-goal-record.sh` AND a `goal-created` or `goal-evaluation` artifact to the decision journal. Use when any code path mutates `lifecycle.status`: /flow:goal pause/resume/clear, the draft → active step after goal-contract-capture, the evaluator's verdict, or the Stop hook's stuck detection. A goal in `failed` with no artifact explaining why is worse than no state machine."
 allowed-tools: Bash, Read, Edit
 agent: general-purpose
 ---
 
 # Goal Lifecycle
 
-You own the FlowGoal state machine. Every `lifecycle.status` transition is mediated through this skill — no exceptions, no shortcuts, no "I'll just edit the YAML directly."
+## Contract
 
-## Iron Law
-
-**No transition without an audit-trail entry. The decision journal MUST receive a `goal-evaluation` artifact (or `goal-created` for the initial draft→active) on every transition. A `lifecycle.last_evaluation` block without a matching journal entry is a bug.**
+Iron law: no `lifecycle.status` transition without an audit-trail entry — the goal file changes only through `bin/flow-goal-record.sh --update-lifecycle`, and every transition writes a `goal-created` (draft → active) or `goal-evaluation` journal artifact. Invoked by `/flow:goal create`, `/flow:start` Phase 1, and `/flow:debug` for draft → active after `goal-contract-capture`; by `/flow:goal pause | resume | clear`; after `/flow:goal evaluate` confirms a terminal verdict; and by `goal-evaluator` for non-terminal updates. Inputs: goal id, from-state, to-state, reason, trigger (`evaluator | command | hook | user`). Returns the new status once the write and the artifact both succeed. Permitted skip: the run event when `scope.run_id` is unset. Nothing else.
 
 ## State machine
 
-```
-       ┌────────────────────────────────────────────────────────┐
-       ▼                                                        │
-   ┌───────┐                                                    │
-   │ draft │──┐                                                 │
-   └───────┘  │                                                 │
-              ▼                                                 │
-       ┌──────────┐                                             │
-       │  active  │────────────────────────────┐                │
-       └──────────┘                            │                │
-        │  │  │  │                             │                │
-        │  │  │  └─→ waiting_for_ci    ────────┤                │
-        │  │  └────→ waiting_for_user  ────────┤                │
-        │  └───────→ blocked           ────────┤                │
-        │                                      ▼                │
-        ├──────────────────────────────→  achieved              │
-        ├──────────────────────────────→  failed                │
-        └──────────────────────────────→  cancelled  ───────────┘
-
-       Terminal: {achieved, failed, cancelled}
-       Resumable: {waiting_for_user, waiting_for_ci, blocked}
-```
-
-Allowed transitions:
-
-| From | To | Trigger |
-|---|---|---|
-| `draft` | `active` | `goal-contract-capture` completes; `/flow:goal create` returns |
-| `active` | `waiting_for_user` | judge verdict `needs_human_review`; `AskUserQuestion` mid-evaluation |
-| `active` | `waiting_for_ci` | CI run pending; goal waits on external signal |
-| `active` | `blocked` | judge verdict `blocked` (with `blocker_type`); path-boundary violation |
-| `active` | `achieved` | deterministic all-pass + (no fuzzy OR judge `achieved`) |
-| `active` | `failed` | budget exhausted (max_iterations or max_runtime); stuck pass-set ≥ N turns; deterministic must_pass FAIL with no fix path |
-| `active` | `cancelled` | user invokes `/flow:goal clear <id>` |
-| `waiting_for_user` | `active` | `AskUserQuestion` resolves; user runs `/flow:goal resume` |
-| `waiting_for_ci` | `active` | CI status transitions to terminal |
-| `blocked` | `active` | blocker resolved (manual or `/flow:goal resume` after fix) |
-
-**Disallowed transitions** (the helper rejects these):
-
-- `terminal → any` — once `achieved/failed/cancelled`, the goal is immutable. New work requires a new goal id.
-- `active → draft` — no going back to draft.
-- `blocked → achieved` direct — must transition through `active` first (forces an evaluation step).
-
-## Inputs
-
-The invoking command/skill MUST pass:
-1. **Goal id** — must point to an existing `.flow/goals/<id>.goal.yaml`.
-2. **From state** — what the caller observed (used for race-detection).
-3. **To state** — one of the enum values.
-4. **Reason** — free-form string explaining why; surfaced in the journal artifact.
-5. **Trigger** — `evaluator | command | hook | user`. Affects which journal artifact type is written.
+Non-terminal: `draft`, `active`, and the resumable `waiting_for_user`, `waiting_for_ci`, `blocked`. Terminal and immutable: `achieved`, `failed`, `cancelled` — new work needs a new goal id. The allowed-transition table with triggers, the disallowed transitions, and the `last_evaluation.result` mapping live in `references/goal-lifecycle-transitions.md`; `bin/flow-goal-record.sh` enforces the same table and refuses anything outside it (including `terminal → any`, `active → draft`, and `blocked → achieved` without passing through `active`).
 
 ## Outputs
 
-1. Updated `.flow/goals/<id>.goal.yaml` with new `lifecycle.status`, `lifecycle.last_evaluation`, and (optionally) new `lifecycle.current_phase` / `current_activity`.
-2. Decision journal artifact:
-   - `goal-created` if from=`draft` to=`active`
-   - `goal-evaluation` for all other transitions
-3. One event line in `.flow/runs/<run-id>/events.jsonl` (when run_id is set).
+1. Goal file: `lifecycle.status`, `lifecycle.last_evaluation`, optional `current_phase` / `current_activity`, `turns_evaluated` incremented when leaving `active` for a non-terminal state.
+2. Journal artifact: `goal-created` for draft → active, `goal-evaluation` for every other transition.
+3. One `lifecycle_transition` event in `.flow/runs/<run-id>/events.jsonl` when `run_id` is set.
 
 ## Workflow
 
-### Step 1: Validate the transition
+1. **Validate** — read the goal. If its status differs from the caller's from-state, another process transitioned it: stop and raise the six-field escalation (`references/escalation-format.md`). Reject a transition outside the table with a stderr explanation and exit 1.
+2. **Compose** the lifecycle fragment:
+   ```yaml
+   lifecycle:
+     status: <to>
+     current_phase: <preserved or caller-updated>
+     current_activity: <preserved or caller-updated>
+     turns_evaluated: <incremented when from=active and to is non-terminal>
+     last_evaluation:
+       result: <pass | incomplete | fail | needs_human_review | blocked>
+       reason: <caller-provided; under 200 chars; comma-safe>
+       at: <ISO-8601 UTC now>
+   ```
+3. **Write** — `bin/flow-goal-record.sh --update-lifecycle --goal-id <id> --lifecycle-file <fragment> --from-status <from>`. The helper takes an O_NOFOLLOW lock, replaces only the `lifecycle` block, validates against `schemas/v1/goal.schema.json` when `jsonschema` is installed, and writes tempfile + rename + fsync. Surface any non-zero exit with its stderr; do not retry blindly — a race means re-reading the state.
+4. **Journal** — draft → active: `bin/journal-record.sh --issue {N} --type goal-created --metadata goal_id=<id> --metadata source=<src>`. Otherwise: `bin/journal-record.sh --issue {N} --type goal-evaluation --metadata goal_id=<id> --metadata result=<to> --metadata reason=<short>`. Ad-hoc goals with no issue write to the session journal `.decisions/session-{YYYY-MM-DD}.md`.
+5. **Run event** — when `run_id` is set, append `{"at","type":"lifecycle_transition","goal_id","from","to"}` to `.flow/runs/<run-id>/events.jsonl`; `bin/flow-record-activity.sh` appends it as part of the FlowActivity the caller records for the phase boundary.
 
-Read the current `.flow/goals/<id>.goal.yaml`. Compare `lifecycle.status` with the caller's `from` parameter:
-- Match → proceed.
-- Mismatch → race condition. Surface via six-field escalation: another process transitioned the goal between the caller's read and this skill's invocation.
+## Rules
 
-Check the transition is allowed (per the table above). Reject disallowed transitions with stderr explanation and exit 1.
+- Never edit `.flow/goals/<id>.goal.yaml` directly; never bypass the from-state check.
+- Never resurrect a terminal goal.
+- Never skip the journal artifact because "the lifecycle block records it" — the goal file is local state, the journal is the cross-PR audit trail.
+- Keep `last_evaluation.reason` short; the reasoning lives in the journal artifact body.
 
-### Step 2: Compose new lifecycle block
+## References
 
-```yaml
-lifecycle:
-  status: <to>
-  current_phase: <preserved or updated by caller>
-  current_activity: <preserved or updated by caller>
-  turns_evaluated: <incremented if from active and to in {active, waiting_*, blocked}>
-  last_evaluation:
-    result: <maps to status: pass→achieved, incomplete→active, fail→active (with failing AC), blocked→blocked, needs_human_review→waiting_for_user>
-    reason: <caller-provided>
-    at: <ISO-8601 UTC now>
-```
-
-### Step 3: Write atomically
-
-Invoke `bin/flow-goal-record.sh --update-lifecycle` with the new block. The helper:
-- Acquires lockfile (`O_NOFOLLOW`)
-- Reads the current YAML
-- Merges the new lifecycle into the existing document (preserves all other fields)
-- Validates against `schemas/v1/goal.schema.json` (when jsonschema available)
-- Writes via tempfile + rename + fsync
-
-### Step 4: Record the journal artifact
-
-For `draft → active`:
-```bash
-bin/journal-record.sh --issue {N} --type goal-created \
-  --metadata goal_id=<id> \
-  --metadata source=<e.g., github_issue:42>
-```
-
-For all other transitions:
-```bash
-bin/journal-record.sh --issue {N} --type goal-evaluation \
-  --metadata goal_id=<id> \
-  --metadata result=<to-state> \
-  --metadata reason=<short, comma-safe>
-```
-
-When the journal-issue link is unavailable (ad-hoc goals from `/flow:goal create` with no issue), write to a session-scoped journal (`.decisions/session-{YYYY-MM-DD}.md`) per the existing convention.
-
-### Step 5: Append run event (if run_id is set)
-
-```python
-# Conceptually — actual call goes through bin/flow-record-activity.sh
-# or a future bin/flow-record-event.sh
-event = {
-    "at": <now>,
-    "type": "lifecycle_transition",
-    "goal_id": <id>,
-    "from": <from>,
-    "to": <to>,
-}
-append_jsonl(f".flow/runs/{run_id}/events.jsonl", event)
-```
-
-## Anti-patterns
-
-- ❌ Editing `.flow/goals/<id>.goal.yaml` outside `bin/flow-goal-record.sh` — race conditions, no audit trail.
-- ❌ Transitioning a `terminal` goal back to `active` — by design impossible. New goal id required.
-- ❌ Skipping the journal artifact "because the lifecycle block already records it" — the journal is the cross-PR audit trail; the goal YAML is local state. Both are needed.
-- ❌ Bypassing the from-state check — race conditions silently lose evidence of prior transitions.
-- ❌ Writing `last_evaluation.reason` as a free-form essay — keep it < 200 chars, comma-safe; full reasoning lives in the journal artifact body.
-
-## Reuse map
-
-- `plugins/flow/bin/flow-goal-record.sh` — atomic lifecycle writer.
-- `plugins/flow/bin/journal-record.sh` — manifest artifact recorder.
-- `plugins/flow/references/decision-journal-schema.md` — `goal-created` and `goal-evaluation` artifact-type rows.
-- `plugins/flow/references/escalation-format.md` — six-field escalation for race-condition mismatches.
-- `plugins/flow/schemas/v1/goal.schema.json` — lifecycle.status enum.
+- `plugins/flow/references/goal-lifecycle-transitions.md` — transition table, disallowed transitions, result mapping.
+- `plugins/flow/references/decision-journal-schema.md` — `goal-created` and `goal-evaluation` artifact rows.

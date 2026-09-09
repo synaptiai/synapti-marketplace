@@ -39,14 +39,17 @@
   },
   "learning": {
     "enabled": true,
-    "proposalDir": "~/.claude/flow-proposals"
+    "proposalDir": "~/.claude/flow-proposals",
+    "sources": ["journal", "transcripts"],
+    "transcriptDir": ""
   },
   "journal": {
     "dir": ".decisions"
   },
   "specFirst": {
     "requireAcceptanceCriteria": true,
-    "allowSpecFreeLabels": ["documentation", "chore"]
+    "allowSpecFreeLabels": ["documentation", "chore"],
+    "riskMap": true
   },
   "verdict": {
     "enabled": true,
@@ -54,7 +57,9 @@
   },
   "testing": {
     "tddMode": "enforce",
-    "tddModeOptOut": false
+    "tddModeOptOut": false,
+    "taskCompletionGate": "block",
+    "qualityCommandPatterns": []
   },
   "debugging": {
     "maxHypotheses": 3

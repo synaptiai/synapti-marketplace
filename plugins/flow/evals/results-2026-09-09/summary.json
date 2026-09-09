@@ -1,0 +1,733 @@
+{
+  "arms": [
+    "baseline",
+    "enforce-risk",
+    "enforce-norisk",
+    "suggest-risk",
+    "suggest-norisk",
+    "off-risk",
+    "off-norisk"
+  ],
+  "cases": [
+    "four-stream-codec",
+    "money-allocator",
+    "sliding-window-limiter"
+  ],
+  "decision": {
+    "baseline_mean": 1.0,
+    "complete": true,
+    "enforce_mean": 1.0,
+    "norisk_mean": 1.0,
+    "off_mean": 1.0,
+    "reading": "Hidden pass rate under tddMode=enforce (100%) is not below the best non-enforce plugin arm (suggest, 100%) by more than the run-to-run spread (0.0 points vs 0.0), so the rule keeps testing.tddMode=enforce. Arms with specFirst.riskMap=true average 100% hidden pass rate against 100% without it (+0.0 points, within the spread). The no-plugin baseline scores 100% against a plugin-arm average of 100%.",
+    "risk_mean": 1.0,
+    "spread": 0.0,
+    "suggest_mean": 1.0,
+    "verdict": "keep-enforce"
+  },
+  "per_arm": {
+    "baseline": {
+      "all_pass_rate": 1.0,
+      "cases": [
+        "four-stream-codec",
+        "money-allocator",
+        "sliding-window-limiter"
+      ],
+      "cost_usd_mean": 0.17427613333333336,
+      "cost_usd_total": 1.5684852000000002,
+      "degenerate_share_mean": 0.38089892378740603,
+      "errors": 0,
+      "hidden_pass_rate_mean": 1.0,
+      "num_turns_mean": 7.888888888888889,
+      "own_tests_mean": 24.333333333333332,
+      "runs": 9,
+      "spread_mean": 0.0
+    },
+    "enforce-norisk": {
+      "all_pass_rate": 1.0,
+      "cases": [
+        "four-stream-codec",
+        "money-allocator",
+        "sliding-window-limiter"
+      ],
+      "cost_usd_mean": 1.8433932222222222,
+      "cost_usd_total": 16.590539,
+      "degenerate_share_mean": 0.11393467643467642,
+      "errors": 0,
+      "hidden_pass_rate_mean": 1.0,
+      "num_turns_mean": 26.333333333333332,
+      "own_tests_mean": 15.666666666666666,
+      "runs": 9,
+      "spread_mean": 0.0
+    },
+    "enforce-risk": {
+      "all_pass_rate": 1.0,
+      "cases": [
+        "four-stream-codec",
+        "money-allocator",
+        "sliding-window-limiter"
+      ],
+      "cost_usd_mean": 1.5932752,
+      "cost_usd_total": 14.3394768,
+      "degenerate_share_mean": 0.2750739184562714,
+      "errors": 0,
+      "hidden_pass_rate_mean": 1.0,
+      "num_turns_mean": 40.0,
+      "own_tests_mean": 18.77777777777778,
+      "runs": 9,
+      "spread_mean": 0.0
+    },
+    "off-norisk": {
+      "all_pass_rate": 1.0,
+      "cases": [
+        "four-stream-codec",
+        "money-allocator",
+        "sliding-window-limiter"
+      ],
+      "cost_usd_mean": 0.6099423666666668,
+      "cost_usd_total": 5.489481300000001,
+      "degenerate_share_mean": 0.3039351851851852,
+      "errors": 0,
+      "hidden_pass_rate_mean": 1.0,
+      "num_turns_mean": 16.666666666666668,
+      "own_tests_mean": 19.666666666666668,
+      "runs": 9,
+      "spread_mean": 0.0
+    },
+    "off-risk": {
+      "all_pass_rate": 1.0,
+      "cases": [
+        "four-stream-codec",
+        "money-allocator",
+        "sliding-window-limiter"
+      ],
+      "cost_usd_mean": 0.6380666444444444,
+      "cost_usd_total": 5.7425998,
+      "degenerate_share_mean": 0.36001769128704114,
+      "errors": 0,
+      "hidden_pass_rate_mean": 1.0,
+      "num_turns_mean": 15.333333333333334,
+      "own_tests_mean": 20.555555555555557,
+      "runs": 9,
+      "spread_mean": 0.0
+    },
+    "suggest-norisk": {
+      "all_pass_rate": 1.0,
+      "cases": [
+        "four-stream-codec",
+        "money-allocator",
+        "sliding-window-limiter"
+      ],
+      "cost_usd_mean": 1.3094402444444446,
+      "cost_usd_total": 11.7849622,
+      "degenerate_share_mean": 0.3257464757464757,
+      "errors": 0,
+      "hidden_pass_rate_mean": 1.0,
+      "num_turns_mean": 15.444444444444445,
+      "own_tests_mean": 18.77777777777778,
+      "runs": 9,
+      "spread_mean": 0.0
+    },
+    "suggest-risk": {
+      "all_pass_rate": 1.0,
+      "cases": [
+        "four-stream-codec",
+        "money-allocator",
+        "sliding-window-limiter"
+      ],
+      "cost_usd_mean": 1.4009319888888891,
+      "cost_usd_total": 12.608387900000002,
+      "degenerate_share_mean": 0.3384288260758849,
+      "errors": 0,
+      "hidden_pass_rate_mean": 1.0,
+      "num_turns_mean": 19.11111111111111,
+      "own_tests_mean": 18.0,
+      "runs": 9,
+      "spread_mean": 0.0
+    }
+  },
+  "per_cell": {
+    "baseline/four-stream-codec": {
+      "all_pass_rate": 1.0,
+      "arm": "baseline",
+      "case": "four-stream-codec",
+      "cost_usd_mean": 0.15986560000000002,
+      "degenerate_share_mean": 0.2676639621365788,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 7.333333333333333,
+      "own_tests_mean": 27.333333333333332,
+      "runs": 3,
+      "skills_invoked": [],
+      "trap_catch_rate": {
+        "big_endian_table": 0.0,
+        "ceil_split": 0.0,
+        "no_reverse": 0.0,
+        "no_validation": 0.0,
+        "reverse_whole_body": 0.0,
+        "transposed_order": 0.0
+      }
+    },
+    "baseline/money-allocator": {
+      "all_pass_rate": 1.0,
+      "arm": "baseline",
+      "case": "money-allocator",
+      "cost_usd_mean": 0.19886993333333333,
+      "degenerate_share_mean": 0.4941338854382333,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 8.333333333333334,
+      "own_tests_mean": 23.0,
+      "runs": 3,
+      "skills_invoked": [],
+      "trap_catch_rate": {
+        "accepts_nonpositive_weights": 0.0,
+        "divide_first": 0.0,
+        "float_arithmetic": 0.0,
+        "hardcoded_places": 0.0,
+        "round_half_up": 0.0,
+        "sorted_output": 0.0,
+        "ties_by_weight": 0.0,
+        "ties_last_first": 0.0
+      }
+    },
+    "baseline/sliding-window-limiter": {
+      "all_pass_rate": 1.0,
+      "arm": "baseline",
+      "case": "sliding-window-limiter",
+      "cost_usd_mean": 0.1640928666666667,
+      "degenerate_share_mean": null,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 8.0,
+      "own_tests_mean": 22.666666666666668,
+      "runs": 3,
+      "skills_invoked": [],
+      "trap_catch_rate": {
+        "counts_denied": 0.0,
+        "fixed_window": 0.0,
+        "inclusive_boundary": 0.0,
+        "limit_off_by_one": 0.0,
+        "no_monotonic_check": 0.0,
+        "retry_from_newest": 0.0,
+        "shared_counter": 0.0
+      }
+    },
+    "enforce-norisk/four-stream-codec": {
+      "all_pass_rate": 1.0,
+      "arm": "enforce-norisk",
+      "case": "four-stream-codec",
+      "cost_usd_mean": 1.630549,
+      "degenerate_share_mean": 0.09722222222222221,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 21.0,
+      "own_tests_mean": 15.333333333333334,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "big_endian_table": 0.0,
+        "ceil_split": 0.0,
+        "no_reverse": 0.0,
+        "no_validation": 0.0,
+        "reverse_whole_body": 0.0,
+        "transposed_order": 0.0
+      }
+    },
+    "enforce-norisk/money-allocator": {
+      "all_pass_rate": 1.0,
+      "arm": "enforce-norisk",
+      "case": "money-allocator",
+      "cost_usd_mean": 1.6211967333333337,
+      "degenerate_share_mean": 0.13064713064713065,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 26.0,
+      "own_tests_mean": 16.0,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "accepts_nonpositive_weights": 0.0,
+        "divide_first": 0.0,
+        "float_arithmetic": 0.0,
+        "hardcoded_places": 0.0,
+        "round_half_up": 0.0,
+        "sorted_output": 0.0,
+        "ties_by_weight": 0.0,
+        "ties_last_first": 0.0
+      }
+    },
+    "enforce-norisk/sliding-window-limiter": {
+      "all_pass_rate": 1.0,
+      "arm": "enforce-norisk",
+      "case": "sliding-window-limiter",
+      "cost_usd_mean": 2.278433933333333,
+      "degenerate_share_mean": null,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 32.0,
+      "own_tests_mean": 15.666666666666666,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "counts_denied": 0.0,
+        "fixed_window": 0.0,
+        "inclusive_boundary": 0.0,
+        "limit_off_by_one": 0.0,
+        "no_monotonic_check": 0.0,
+        "retry_from_newest": 0.0,
+        "shared_counter": 0.0
+      }
+    },
+    "enforce-risk/four-stream-codec": {
+      "all_pass_rate": 1.0,
+      "arm": "enforce-risk",
+      "case": "four-stream-codec",
+      "cost_usd_mean": 1.3313651,
+      "degenerate_share_mean": 0.2605820105820106,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 44.0,
+      "own_tests_mean": 20.666666666666668,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "big_endian_table": 0.0,
+        "ceil_split": 0.0,
+        "no_reverse": 0.0,
+        "no_validation": 0.0,
+        "reverse_whole_body": 0.0,
+        "transposed_order": 0.0
+      }
+    },
+    "enforce-risk/money-allocator": {
+      "all_pass_rate": 1.0,
+      "arm": "enforce-risk",
+      "case": "money-allocator",
+      "cost_usd_mean": 2.1416884666666665,
+      "degenerate_share_mean": 0.28956582633053224,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 26.333333333333332,
+      "own_tests_mean": 16.333333333333332,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "accepts_nonpositive_weights": 0.0,
+        "divide_first": 0.0,
+        "float_arithmetic": 0.0,
+        "hardcoded_places": 0.0,
+        "round_half_up": 0.0,
+        "sorted_output": 0.0,
+        "ties_by_weight": 0.0,
+        "ties_last_first": 0.0
+      }
+    },
+    "enforce-risk/sliding-window-limiter": {
+      "all_pass_rate": 1.0,
+      "arm": "enforce-risk",
+      "case": "sliding-window-limiter",
+      "cost_usd_mean": 1.3067720333333332,
+      "degenerate_share_mean": null,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 49.666666666666664,
+      "own_tests_mean": 19.333333333333332,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "counts_denied": 0.0,
+        "fixed_window": 0.0,
+        "inclusive_boundary": 0.0,
+        "limit_off_by_one": 0.0,
+        "no_monotonic_check": 0.0,
+        "retry_from_newest": 0.0,
+        "shared_counter": 0.0
+      }
+    },
+    "off-norisk/four-stream-codec": {
+      "all_pass_rate": 1.0,
+      "arm": "off-norisk",
+      "case": "four-stream-codec",
+      "cost_usd_mean": 0.6291318666666669,
+      "degenerate_share_mean": 0.20370370370370372,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 17.0,
+      "own_tests_mean": 19.0,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "big_endian_table": 0.0,
+        "ceil_split": 0.0,
+        "no_reverse": 0.0,
+        "no_validation": 0.0,
+        "reverse_whole_body": 0.0,
+        "transposed_order": 0.0
+      }
+    },
+    "off-norisk/money-allocator": {
+      "all_pass_rate": 1.0,
+      "arm": "off-norisk",
+      "case": "money-allocator",
+      "cost_usd_mean": 0.6479743333333335,
+      "degenerate_share_mean": 0.4041666666666666,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 15.0,
+      "own_tests_mean": 20.0,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "accepts_nonpositive_weights": 0.0,
+        "divide_first": 0.0,
+        "float_arithmetic": 0.0,
+        "hardcoded_places": 0.0,
+        "round_half_up": 0.0,
+        "sorted_output": 0.0,
+        "ties_by_weight": 0.0,
+        "ties_last_first": 0.0
+      }
+    },
+    "off-norisk/sliding-window-limiter": {
+      "all_pass_rate": 1.0,
+      "arm": "off-norisk",
+      "case": "sliding-window-limiter",
+      "cost_usd_mean": 0.5527209,
+      "degenerate_share_mean": null,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 18.0,
+      "own_tests_mean": 20.0,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "counts_denied": 0.0,
+        "fixed_window": 0.0,
+        "inclusive_boundary": 0.0,
+        "limit_off_by_one": 0.0,
+        "no_monotonic_check": 0.0,
+        "retry_from_newest": 0.0,
+        "shared_counter": 0.0
+      }
+    },
+    "off-risk/four-stream-codec": {
+      "all_pass_rate": 1.0,
+      "arm": "off-risk",
+      "case": "four-stream-codec",
+      "cost_usd_mean": 0.5597427,
+      "degenerate_share_mean": 0.3027421494913755,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 13.333333333333334,
+      "own_tests_mean": 22.333333333333332,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "big_endian_table": 0.0,
+        "ceil_split": 0.0,
+        "no_reverse": 0.0,
+        "no_validation": 0.0,
+        "reverse_whole_body": 0.0,
+        "transposed_order": 0.0
+      }
+    },
+    "off-risk/money-allocator": {
+      "all_pass_rate": 1.0,
+      "arm": "off-risk",
+      "case": "money-allocator",
+      "cost_usd_mean": 0.7476334000000001,
+      "degenerate_share_mean": 0.41729323308270677,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 16.666666666666668,
+      "own_tests_mean": 19.333333333333332,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "accepts_nonpositive_weights": 0.0,
+        "divide_first": 0.0,
+        "float_arithmetic": 0.0,
+        "hardcoded_places": 0.0,
+        "round_half_up": 0.0,
+        "sorted_output": 0.0,
+        "ties_by_weight": 0.0,
+        "ties_last_first": 0.0
+      }
+    },
+    "off-risk/sliding-window-limiter": {
+      "all_pass_rate": 1.0,
+      "arm": "off-risk",
+      "case": "sliding-window-limiter",
+      "cost_usd_mean": 0.6068238333333332,
+      "degenerate_share_mean": null,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 16.0,
+      "own_tests_mean": 20.0,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "counts_denied": 0.0,
+        "fixed_window": 0.0,
+        "inclusive_boundary": 0.0,
+        "limit_off_by_one": 0.0,
+        "no_monotonic_check": 0.0,
+        "retry_from_newest": 0.0,
+        "shared_counter": 0.0
+      }
+    },
+    "suggest-norisk/four-stream-codec": {
+      "all_pass_rate": 1.0,
+      "arm": "suggest-norisk",
+      "case": "four-stream-codec",
+      "cost_usd_mean": 0.8876787,
+      "degenerate_share_mean": 0.23574203574203575,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 15.666666666666666,
+      "own_tests_mean": 17.333333333333332,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "big_endian_table": 0.0,
+        "ceil_split": 0.0,
+        "no_reverse": 0.0,
+        "no_validation": 0.0,
+        "reverse_whole_body": 0.0,
+        "transposed_order": 0.0
+      }
+    },
+    "suggest-norisk/money-allocator": {
+      "all_pass_rate": 1.0,
+      "arm": "suggest-norisk",
+      "case": "money-allocator",
+      "cost_usd_mean": 1.7005430000000004,
+      "degenerate_share_mean": 0.4157509157509158,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 14.666666666666666,
+      "own_tests_mean": 15.333333333333334,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "accepts_nonpositive_weights": 0.0,
+        "divide_first": 0.0,
+        "float_arithmetic": 0.0,
+        "hardcoded_places": 0.0,
+        "round_half_up": 0.0,
+        "sorted_output": 0.0,
+        "ties_by_weight": 0.0,
+        "ties_last_first": 0.0
+      }
+    },
+    "suggest-norisk/sliding-window-limiter": {
+      "all_pass_rate": 1.0,
+      "arm": "suggest-norisk",
+      "case": "sliding-window-limiter",
+      "cost_usd_mean": 1.3400990333333331,
+      "degenerate_share_mean": null,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 16.0,
+      "own_tests_mean": 23.666666666666668,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "counts_denied": 0.0,
+        "fixed_window": 0.0,
+        "inclusive_boundary": 0.0,
+        "limit_off_by_one": 0.0,
+        "no_monotonic_check": 0.0,
+        "retry_from_newest": 0.0,
+        "shared_counter": 0.0
+      }
+    },
+    "suggest-risk/four-stream-codec": {
+      "all_pass_rate": 1.0,
+      "arm": "suggest-risk",
+      "case": "four-stream-codec",
+      "cost_usd_mean": 1.2492440333333332,
+      "degenerate_share_mean": 0.260891265597148,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 25.0,
+      "own_tests_mean": 18.666666666666668,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "big_endian_table": 0.0,
+        "ceil_split": 0.0,
+        "no_reverse": 0.0,
+        "no_validation": 0.0,
+        "reverse_whole_body": 0.0,
+        "transposed_order": 0.0
+      }
+    },
+    "suggest-risk/money-allocator": {
+      "all_pass_rate": 1.0,
+      "arm": "suggest-risk",
+      "case": "money-allocator",
+      "cost_usd_mean": 1.7734038666666667,
+      "degenerate_share_mean": 0.41596638655462187,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 17.333333333333332,
+      "own_tests_mean": 16.0,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "accepts_nonpositive_weights": 0.0,
+        "divide_first": 0.0,
+        "float_arithmetic": 0.0,
+        "hardcoded_places": 0.0,
+        "round_half_up": 0.0,
+        "sorted_output": 0.0,
+        "ties_by_weight": 0.0,
+        "ties_last_first": 0.0
+      }
+    },
+    "suggest-risk/sliding-window-limiter": {
+      "all_pass_rate": 1.0,
+      "arm": "suggest-risk",
+      "case": "sliding-window-limiter",
+      "cost_usd_mean": 1.1801480666666666,
+      "degenerate_share_mean": null,
+      "errors": 0,
+      "hidden_pass_rate_max": 1.0,
+      "hidden_pass_rate_mean": 1.0,
+      "hidden_pass_rate_min": 1.0,
+      "hidden_pass_rate_spread": 0.0,
+      "num_turns_mean": 15.0,
+      "own_tests_mean": 19.333333333333332,
+      "runs": 3,
+      "skills_invoked": [
+        "flow:specification-capture",
+        "flow:tdd-patterns"
+      ],
+      "trap_catch_rate": {
+        "counts_denied": 0.0,
+        "fixed_window": 0.0,
+        "inclusive_boundary": 0.0,
+        "limit_off_by_one": 0.0,
+        "no_monotonic_check": 0.0,
+        "retry_from_newest": 0.0,
+        "shared_counter": 0.0
+      }
+    }
+  },
+  "run_to_run_spread": 0.0,
+  "runs": 63,
+  "total_cost_usd": 68.1239322
+}

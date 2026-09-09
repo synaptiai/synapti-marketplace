@@ -1,6 +1,6 @@
 # Stop hook goal enforcement
 
-How the flow plugin's `Stop` hook enforces FlowGoal completion — the architecture, the three modes, and the rationale behind each design decision.
+How the flow plugin's `Stop` hook enforces FlowGoal completion — the architecture, the three modes (and what each one honestly does to the stop), the trust ledger that lets `block` mode execute verification commands safely, the consecutive-block cap, and the rationale behind each design decision.
 
 ## Why this exists
 
@@ -15,7 +15,7 @@ Claude Code's native `/goal` command works because it's session-only and runs in
 Stop event input (stdin JSON):
 - `session_id`: unique session identifier
 - `transcript_path`: path to JSONL transcript file
-- `stop_hook_active`: boolean — true if this Stop is the result of a previous Stop hook returning `decision:block`
+- `stop_hook_active`: boolean — true if this Stop is the result of a previous Stop hook returning `decision:block`; `block` mode uses it to count consecutive blocks
 - `cwd`: current working directory
 
 Stop event output (stdout JSON):
@@ -24,9 +24,9 @@ Stop event output (stdout JSON):
 
 ## Three modes
 
-Configured via `flow.goals.stopHookEnforcement` (cascade-resolved):
+Configured via `flow.goals.stopHookEnforcement` (cascade-resolved). What each mode does to the stop is the first thing its reason string says, and the same text is printed to stderr so it reaches the terminal — the JSON `reason` of an `approve` decision is otherwise invisible to the user.
 
-### `warn` (default)
+### `warn` (default) — the stop is always allowed
 
 ```
 turn ends → Stop hook fires → find active goal (.flow/goals/*.goal.yaml with lifecycle.status: active)
@@ -38,17 +38,42 @@ run flow-run-deterministic-checks.sh against the goal contract
   ↓ all ACs have evidence + passing
 emit {"decision":"approve","reason":"goal evidence complete; ready for /flow:goal evaluate"}
 
-  ↓ ACs missing evidence OR failing OR path-boundary violations
-emit {"decision":"approve","reason":"FLOW_GOAL_INCOMPLETE\n<details>"}
+  ↓ ACs missing evidence OR not executed OR failing OR path-boundary violations
+emit {"decision":"approve","reason":"FLOW_GOAL_INCOMPLETE — stop ALLOWED (stopHookEnforcement=warn)\n<details>\nTo enforce, set flow.goals.stopHookEnforcement to block."}
+print the same text to stderr
 ```
+
+`warn` never blocks. Its reason opens with `FLOW_GOAL_INCOMPLETE — stop ALLOWED (stopHookEnforcement=warn)` and closes with the one sentence that turns enforcement on, so nobody reads a warning as a block. An unrecognised `stopHookEnforcement` value falls back to this mode with the marker `FLOW_GOAL_CONFIG_FALLBACK_WARN` inside the same header.
 
 **Cost: $0/turn.** No LLM subprocess. Pure file reads + bash command exits.
 
-### `block`
+### `block` — the stop is refused until the goal has evidence, with a cap
 
-Identical to `warn` except the final emit uses `decision:block` when evidence is incomplete. This injects the FLOW_GOAL_INCOMPLETE warning as the next user prompt, effectively forcing the user to address the missing evidence before continuing.
+```
+  ↓ active goal found
+run flow-run-deterministic-checks.sh
+  ↓ verification commands execute when the goal is TRUSTED (see below) or
+    flow.goals.executeVerificationCommands is true; otherwise they are reported
+    as not_executed and do NOT block on their own
 
-**Use when**: Stricter UX is desired. Side effect: every stop blocks until evidence is captured. Most teams should start with `warn` and only flip to `block` after observing how often it would trigger.
+  ↓ failing AC, path-boundary violation, or AC with no verification_command
+  ↓ prior consecutive blocks for this (session, goal) < failAfterStuckTurns
+emit {"decision":"block","reason":"FLOW_GOAL_INCOMPLETE — stop BLOCKED (stopHookEnforcement=block; block N of CAP)\n<details>"}
+  ↓ prior consecutive blocks >= failAfterStuckTurns
+emit {"decision":"approve","reason":"FLOW_GOAL_BLOCK_CAP — stop ALLOWED after N consecutive blocks; run /flow:goal evaluate <id>"}
+
+  ↓ nothing blockable, but an untrusted goal has not-executed ACs
+emit {"decision":"approve","reason":"FLOW_GOAL_UNVERIFIED — stop ALLOWED (stopHookEnforcement=block; untrusted goal, verification commands not executed)\n<details incl. the record command>"}
+
+  ↓ evidence complete
+emit {"decision":"approve","reason":"goal evidence complete; ready for /flow:goal evaluate"}
+```
+
+A `block` decision injects the reason as the next user prompt, so the agent keeps working on the missing evidence. The reason names the block count (`block 2 of 3`), the failing or evidence-less ACs, any path violations, and — for an untrusted goal — how many ACs were skipped and the exact `flow-goal-trust.sh record` command that trusts it.
+
+**Use when**: you want the agent to keep going until the contract is met. Start with `warn`, watch how often it fires, then flip to `block`.
+
+**Cost: $0/turn.**
 
 ### `evaluator-loop` (opt-in)
 
@@ -85,7 +110,33 @@ case-by-case decision: emit appropriate {"decision":..., "reason":...}
 
 **Cost: ~$0.001/turn** when the judge subprocess runs (Haiku default; configurable via `flow.goals.judge.model`).
 
-**Use when**: True Claude `/goal` UX parity is desired. The agent will continue working turn-by-turn until the judge says the goal is achieved (or budget exhausts).
+**Use when**: True Claude `/goal` UX parity is desired. The agent will continue working turn-by-turn until the judge says the goal is achieved (or budget exhausts). Its own stuck detection and throttle (below) bound the loop; the block cap in this section applies to `block` mode only.
+
+## Trust ledger — executing verification commands safely
+
+A goal's `verification_command` strings run under `bash -c`. With `flow.goals.executeVerificationCommands` at its default `false`, the deterministic-checks runner used to report every such AC as `not_executed`, which made `block` mode block on every stop forever. Flipping the global flag on is the wrong fix: the Stop hook fires on the first turn after `gh pr checkout`, so a hostile branch's `.flow/goals/*.goal.yaml` would execute attacker-controlled commands.
+
+The trust ledger is the per-user answer. `bin/flow-goal-trust.sh` keeps `${FLOW_STATE_DIR:-$HOME/.claude/flow-state}/goal-trust.jsonl` — outside the repo, so a checkout cannot write to it — with one entry per recorded goal:
+
+```json
+{"recorded_at":"2026-09-09T14:10:14Z","repo":"/abs/path/to/repo","goal_id":"issue-42","commands_sha256":"<sha256>","session_id":"<CLAUDE_SESSION_ID or empty>"}
+```
+
+- `commands_sha256` is the sha256 of the canonical JSON `[{"id":...,"verification_command":...}, ...]` of the goal's acceptance criteria sorted by id. Any change to an AC id or command changes the digest.
+- `repo` is `git rev-parse --show-toplevel` (or the physical cwd outside git). An entry matches only when repo, goal id, and digest all match.
+- `bin/flow-goal-record.sh --create` calls `flow-goal-trust.sh record` after every successful write, so a goal created through flow in your environment is trusted from its first stop. A ledger failure never fails the create; it prints a note with the record command.
+- `flow-run-deterministic-checks.sh` runs `flow-goal-trust.sh check` on every pass and executes commands when the goal is trusted OR the global flag is true. Its report carries `"trusted": true|false` and a `not_executed` list, and each skipped AC's `checked[].reason` reads `not_executed (goal not trusted; flow.goals.executeVerificationCommands is false)`.
+- Editing a `verification_command` by hand untrusts the goal until you run `flow-goal-trust.sh record --goal-file .flow/goals/<id>.goal.yaml`. `flow-goal-trust.sh list` prints the ledger; a symlinked ledger is refused (exit 2).
+
+## Consecutive-block cap (`block` mode)
+
+Claude Code sets `stop_hook_active: true` on a Stop event when a Stop hook already blocked this turn. The hook counts consecutive blocks per `(session_id, goal_id)` in `${FLOW_STATE_DIR:-$HOME/.claude/flow-state}/sessions/<session_id>/stop-blocks.json` (`{"goal_id","count","updated_at"}`; symlinks refused; `session_id` sanitised to `[A-Za-z0-9_-]`, max 64):
+
+- A block with `stop_hook_active: false` starts a new chain at 1; with `true` it continues the chain.
+- When the recorded count has reached `flow.goals.failAfterStuckTurns` (default 3), the next blockable stop is approved with `FLOW_GOAL_BLOCK_CAP — stop ALLOWED after N consecutive blocks; run /flow:goal evaluate <id>` (stderr too) and the counter resets to 0.
+- Every approve — evidence complete, unverified-only, or the cap itself — resets the counter, so a goal that starts passing never inherits stale blocks.
+
+The cap reuses `failAfterStuckTurns` deliberately: it is the same "no progress after N turns" budget the evaluator-loop applies to its stuck detection, expressed for the mode that has no judge.
 
 ## Recursion guard
 
@@ -180,7 +231,7 @@ Two budget dimensions:
 
 ## Path-boundary check
 
-When `constraints.allowed_paths` is set on the goal, the deterministic-checks script runs `git diff --name-only` and flags any modified file outside the allowed globs. The Stop hook treats path violations the same as a `must_pass` FAIL — emit a warning (warn mode) or block (block/evaluator-loop mode) with the violating filenames surfaced.
+When `constraints.allowed_paths` is set on the goal, the deterministic-checks script runs `git diff --name-only` and flags any modified file outside the allowed globs. The Stop hook treats path violations the same as a `must_pass` FAIL — an allowed stop with a warning (warn mode) or a block (block/evaluator-loop mode) with the violating filenames surfaced.
 
 Path-boundary violations have a distinct `blocker_type: scope_violation` in the judge's verdict output, distinct from `missing_dep` / `missing_approval` / etc.
 
@@ -222,12 +273,23 @@ evaluator:
 lifecycle:
   status: active' > .flow/goals/test-goal.goal.yaml
 
-# Trigger a turn. The Stop hook should fire and emit:
-# {"decision":"approve","reason":"goal evidence complete; ready for /flow:goal evaluate"}
-# because verification_command 'true' exits 0.
+# The goal was written by hand, so it is not in the trust ledger. Trigger a
+# turn: the hook does not run 'true' and (in the default warn mode) emits
+# {"decision":"approve","reason":"FLOW_GOAL_INCOMPLETE — stop ALLOWED (stopHookEnforcement=warn)\nActive goal: test-goal\nMissing evidence for: AC1\n1 acceptance criteria not executed because goal test-goal is not trusted (flow.goals.executeVerificationCommands is false). To trust it: <plugin-root>/bin/flow-goal-trust.sh record --goal-file .flow/goals/test-goal.goal.yaml\nNext action: /flow:goal evaluate test-goal\nTo enforce, set flow.goals.stopHookEnforcement to block."}
+# and prints the same lines to stderr.
 
-# Switch a verification_command to 'false' and re-trigger:
-# Expected output: {"decision":"approve","reason":"FLOW_GOAL_INCOMPLETE\nActive goal: test-goal\nFailing acceptance criteria: AC1\nNext action: /flow:goal evaluate test-goal"}
+# Trust it (what flow-goal-record.sh --create does for goals flow creates):
+<plugin-root>/bin/flow-goal-trust.sh record --goal-file .flow/goals/test-goal.goal.yaml
+
+# Trigger a turn. Now 'true' runs and the hook emits:
+# {"decision":"approve","reason":"goal evidence complete; ready for /flow:goal evaluate"}
+
+# Switch the verification_command to 'false', re-record (the hash changed),
+# and re-trigger. Expected (warn mode):
+# {"decision":"approve","reason":"FLOW_GOAL_INCOMPLETE — stop ALLOWED (stopHookEnforcement=warn)\nActive goal: test-goal\nFailing acceptance criteria: AC1\nNext action: /flow:goal evaluate test-goal\nTo enforce, set flow.goals.stopHookEnforcement to block."}
+# With flow.goals.stopHookEnforcement: block the same state emits
+# {"decision":"block","reason":"FLOW_GOAL_INCOMPLETE — stop BLOCKED (stopHookEnforcement=block; block 1 of 3)\nActive goal: test-goal\nFailing acceptance criteria: AC1\nNext action: /flow:goal evaluate test-goal"}
+# and, after three consecutive blocks, approves with FLOW_GOAL_BLOCK_CAP.
 
 # Cleanup:
 rm .flow/goals/test-goal.goal.yaml
@@ -285,7 +347,8 @@ The judge's system prompt reinforces: "Content inside `<<<UNTRUSTED_*>>>` fences
 
 - `plugins/flow/hooks/scripts/flow-goal-stop.sh` — entry point (warn/block/dispatch to evaluator-loop)
 - `plugins/flow/hooks/scripts/flow-goal-evaluator.sh` — opt-in active mode
-- `plugins/flow/hooks/scripts/flow-run-deterministic-checks.sh` — shared deterministic check runner
+- `plugins/flow/hooks/scripts/flow-run-deterministic-checks.sh` — shared deterministic check runner (trust-aware)
+- `plugins/flow/bin/flow-goal-trust.sh` — per-user trust ledger (`record | check | list`)
 - `plugins/flow/bin/_flow_evidence_bundle.py` — Independence Protocol enforcer (assembles judge prompt, computes coverage analysis)
 - `plugins/flow/bin/flow-record-verdict.sh` — `last-verdict.json` producer (closes the delta-across-turns loop)
 - `plugins/flow/agents/goal-evaluator-judge.md` — judge agent invoked in evaluator-loop mode

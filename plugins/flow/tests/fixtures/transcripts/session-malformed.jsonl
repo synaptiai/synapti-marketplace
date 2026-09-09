@@ -1,0 +1,6 @@
+{"type":"user","isSidechain":false,"sessionId":"fixture-session-c","timestamp":"2026-08-25T14:00:00.000Z","cwd":"/tmp/fixture-project","message":{"role":"user","content":"<command-name>/flow:pr</command-name>\n<command-message>pr</command-message>\n<command-args></command-args>"}}
+this line is not json {"type":"user"
+{"type":"assistant","isSidechain":false,"sessionId":"fixture-session-c","timestamp":"2026-08-25T14:00:10.000Z","cwd":"/tmp/fixture-project","message":{"role":"assistant","content":[{"type":"text","text":"The PR pipeline reported nothing to do."}]}}
+{"type":"user","isSidechain":false,"sessionId":"fixture-session-c","timestamp":"2026-08-25T14:01:00.000Z","cwd":"/tmp/fixture-project","message":{"role":"user","content":"<command-name>/flow:pr</command-name>\n<command-message>pr</command-message>\n<command-args></command-args>"}}
+{"type":"assistant","isSidechain":false,"sessionId":"fixture-session-c","timestamp":"2026-08-25T14:01:10.000Z","cwd":"/tmp/fixture-project","message":{"role":"assistant","content":[{"type":"text","text":"Opened PR #1 with the current branch."}]}}
+{"type":"user","isSidechain":false,"sessionId":"fixture-session-c","timestamp":"2026-08-25T14:02:00.000Z","cwd":"/tmp/fixture-project","message":{"role":"user","content":"ok, merging it myself"}}

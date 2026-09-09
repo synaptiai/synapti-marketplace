@@ -96,10 +96,13 @@ for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_
   fi
   rm -f "$STDERR_TMP" 2>/dev/null
 
-  # Treat jq's "null" output as not-found so callers can use
-  # `.flow.workflows.enabled // null` (recognizes explicit false) instead of
-  # `// empty` (which swallows false alongside null). Backward compatible:
-  # callers still using `// empty` produce "" and fall through as before.
+  # Treat jq's "null" output as not-found. Boolean callers MUST use a BARE
+  # expression (`.flow.workflows.enabled`): jq then prints "false" verbatim
+  # and an explicit project-level false wins over a lower-precedence true.
+  # Both `// empty` and `// null` treat false as falsy and swallow it, so a
+  # project's `enabled: false` would fall through to the plugin default.
+  # `// empty` remains fine for string/number keys (tests/flow-cycle14-
+  # behavioral.test.sh pins both behaviours).
   if [ -n "$RESULT" ] && [ "$RESULT" != "null" ]; then
     printf '%s\n' "$RESULT"
     exit 0

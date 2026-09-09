@@ -16,11 +16,25 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 
 ## Required Skills
 
-- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
+- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `pr-lifecycle` — pre-flight, PR body, reviewer suggestion
 - `code-review-methodology` — 6-facet review synthesis
 - `capability-discovery` — detect quality commands and agents
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 3)
+- `run-state-management` — FlowRun/FlowActivity records at phase boundaries (v3 runtime)
+- `runtime-verification` — mandatory build/run/smoke/E2E verification (Phase 4); owns the three-category skip whitelist
+- `visual-verification` — screenshot-analyze-verify loop for UI-relevant diffs (Phase 4)
+
+```!
+# Inline the Required Skills above so their rules are in context before the
+# first phase runs (commands cannot preload skills from frontmatter). Ambient
+# skills load whole; dispatched skills (context: fork / agent:) load their
+# `## Contract` section and run in full when this command invokes
+# Skill(<name>). Output per `references/command-output-format.md`.
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" llm-operator-principles pr-lifecycle code-review-methodology capability-discovery holdout-validation run-state-management runtime-verification visual-verification
+
+true
+```
 
 ## References
 
@@ -273,7 +287,7 @@ After agents return, TaskUpdate each review task with findings.
    ```
    After agent returns:
    - If visual verification task was created in Phase 2: `TaskUpdate(visualVerificationTaskId, status: "completed", result: "{agent's visual verification findings}")`
-   - Record screenshot paths from agent results as evidence
+   - Record screenshot paths and the per-viewport `Observed:` blocks from agent results as evidence — they become the bundle's `### Visual analysis` subsection (`references/evidence-bundle-format.md`)
 3. **TaskList**: Confirm all review tasks complete (including visual verification if created)
 4. **Runtime verification**: If integration-verifier returns SKIP without justification, run runtime verification directly (build, start, smoke test). Runtime verification must pass before PR creation.
 5. **Visual verification enforcement**: If `visualVerification.requireVisualVerification` is `true` and integration-verifier returned visual verification as BLOCKED:
@@ -393,7 +407,7 @@ Display PR URL and next steps.
 | Pre-flight checks (branch, commits, PR existence) | 1 | Autonomous; blocks on failure |
 | Phase 1 FlowGoal State section (v3 opt-in) | 1 | Autonomous read; sets GATE=pass\|block sentinel |
 | Multi-agent review fan-out (5 reviewers + holdout-validation) | 1 | Autonomous; Tasks tracked |
-| `Skill(integration-verifier)` runtime + visual verification | 1 | Autonomous |
+| `Agent(integration-verifier)` runtime + visual verification | 1 | Autonomous |
 | File edits (fix-forward for P1/P2 findings) | 1 | Autonomous |
 | Commits (`fix:` from fix-forward) | 1 | Autonomous, logged by hook |
 | FlowGoal gate AskUserQuestion (Phase 4 step 7a, fires only when GATE=block) | 2 | Asks via `AskUserQuestion`; outcome (proceed/cancel) journaled |

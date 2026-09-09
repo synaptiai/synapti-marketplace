@@ -34,6 +34,10 @@ specification:
     - 'malformed query'
   interface_contracts:
     - 'search(q: string) -> Promise<Result[]>'
+  risk_map:
+    - area: 'query normalisation'
+      plausible_wrong_version: 'lowercasing the query also strips diacritics, so accented terms stop matching'
+      discriminating_check: 'search("café") returns the café record while search("cafe") does not'
 constraints:
   tdd_required: true
   require_all_pass: true

@@ -104,7 +104,7 @@ See [Settings Cascade](#settings-cascade) below for the full precedence rules an
 
 ## Quality Gates
 
-Flow enforces eight quality gates across the workflow lifecycle. Gates are structural -- they block progression until satisfied.
+Flow enforces ten quality gates across the workflow lifecycle. Gates are structural -- they block progression until satisfied.
 
 ### 1. Spec Validation Gate (EXPLORE phase)
 
@@ -136,7 +136,7 @@ Runtime verification (dev server startup, API smoke tests, E2E tests, browser ch
 
 ### 5. Evidence Completeness (VERIFY phase)
 
-Every criterion's evidence bundle must include three completeness subsections: "What was NOT tested," "Known limitations," and "Negative/adversarial cases." The verdict-judge FAILs any criterion whose evidence is missing these subsections.
+Every criterion's evidence bundle must include five completeness subsections: "What was NOT tested," "Known limitations," "Negative/adversarial cases," "Test inputs and expected values" (with the source of each expected value), and "Risk map coverage." The verdict-judge FAILs any criterion whose evidence is missing these subsections, whose expected values are self-referential (copied from the implementation), or whose risk-map rows have no discriminating test. A `ui` criterion must additionally carry `### Visual analysis` (one `Viewport:` / `Screenshot:` / `Result:` / `Observed:` block per configured viewport copied from the visual-verification result); the verdict-judge has no file tools and judges the `Observed:` sentences, never the image.
 
 **Blocks:** PASS verdict on the affected criterion (judge-side, not pre-submission)
 **Override:** None. Add the missing subsections.
@@ -167,6 +167,24 @@ Scans for `FLOW_RESOLUTION_CYCLE` markers in the codebase. Blocks merge when the
 | Setting | Default | Notes |
 |---------|---------|-------|
 | `merge.markerTrust.allowedAssociations` | `["OWNER","MEMBER","COLLABORATOR"]` | Read from the standard cascade (see "Settings Cascade" below). Used by `commands/merge.md` and `commands/status.md` to filter forgeable `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE` markers by GitHub `author_association`. |
+
+### 9. Task-Completion Quality Ledger (every session)
+
+`hooks/scripts/verify-task-completion.sh` (TaskCompleted) refuses to mark a task complete while the working tree changed in this session after the last PASSING quality-command run. The per-session ledger under `${FLOW_STATE_DIR:-~/.claude/flow-state}/sessions/<session_id>/quality-ledger.jsonl` is written by `log-file-changes.sh` (PostToolUse `Edit|Write|NotebookEdit`) and `record-quality-run.sh` (PostToolUse **and** PostToolUseFailure `Bash`: test/lint/typecheck/build commands matched at command position only, with their exit code, a `masked` flag for `|| true`, a `failed` flag for the failure event, and a sha256 digest of the git working tree). A run passes only when it exited 0, unmasked, and did not fail. The digest is a git tree id of the working tree contents (HEAD excluded), recomputed by the gate, so edits made through Bash (`sed -i`, heredocs, `git apply`) and checkouts after the last passing run block too, while committing the edits that run already tested does not. Journal, `.flow/`, and `.screenshots/` writes never dirty the gate (they are excluded from the digest as well). `session-end-state.sh` prunes session ledgers idle for 14 days once per day. This is the one gate that runs with or without a FlowGoal.
+
+**Blocks:** `TaskUpdate(completed)` (exit 2, the changed paths named on stderr)
+**Configuration:** `testing.taskCompletionGate` = `block` (default) / `warn` / `off`; `testing.qualityCommandPatterns` adds project-specific ERE patterns.
+
+### 10. Issue-Create Ask Gate (active FlowGoal)
+
+`hooks/scripts/ask-issue-create.sh` (PreToolUse, Bash) turns `gh issue create` into a permission prompt while a FlowGoal is active, naming the goal and the operator rule (findings are fixed in this PR, not filed as follow-ups). Approve for a genuine product decision or work outside the goal's scope; deny and fix it here otherwise.
+
+**Blocks:** nothing on its own; it asks. Never fires when `minimalScope: true` or when no goal is active.
+**Override:** `minimalScope: true`.
+
+### Stop hook posture (FlowGoal evidence)
+
+`hooks/scripts/flow-goal-stop.sh` ships in `warn` mode and says so: the reason starts with `FLOW_GOAL_INCOMPLETE — stop ALLOWED (stopHookEnforcement=warn)` and is echoed to stderr. `block` is opt-in (`flow.goals.stopHookEnforcement: block`). In block mode, verification commands execute only for goals recorded in the user-local trust ledger (`bin/flow-goal-trust.sh`, written automatically when flow creates the goal) or when `flow.goals.executeVerificationCommands` is true; consecutive blocks are capped by `flow.goals.failAfterStuckTurns`. See [`stop-hook-goal-enforcement.md`](stop-hook-goal-enforcement.md).
 
 ### Settings Cascade
 
@@ -239,6 +257,8 @@ Reviewers will see the change in the PR diff. Anyone can override with their own
 | 6 | Missing-Criterion Scan | Verdict | Verdict evaluation |
 | 7 | Holdout Validation | VERIFY/review/address | Self-review acceptance |
 | 8 | Finding-Ledger Merge | Merge | PR merge |
+| 9 | Task-Completion Quality Ledger | Every session | Task completion |
+| 10 | Issue-Create Ask Gate | Active goal | Asks before `gh issue create` |
 
 ## Hook Override
 

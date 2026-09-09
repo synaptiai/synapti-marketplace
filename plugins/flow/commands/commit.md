@@ -15,9 +15,20 @@ Classify changes, flag anomalies, and create atomic conventional commits. Follow
 
 ## Required Skills
 
-- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
+- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `change-classification` — signal-based change analysis
 - `convention-enforcement` — commit message validation
+
+```!
+# Inline the Required Skills above so their rules are in context before the
+# first phase runs (commands cannot preload skills from frontmatter). Ambient
+# skills load whole; dispatched skills (context: fork / agent:) load their
+# `## Contract` section and run in full when this command invokes
+# Skill(<name>). Output per `references/command-output-format.md`.
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" llm-operator-principles change-classification convention-enforcement
+
+true
+```
 
 ## References
 

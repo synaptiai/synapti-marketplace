@@ -15,9 +15,21 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 
 ## Required Skills
 
-- `llm-operator-principles` — foundational operator stance: convergence = zero findings, in-PR fixes by default, no calendar-time estimates, narrow escalation triggers. MUST be consulted before any other phase
+- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `code-review-methodology` — 6-facet review, finding synthesis, adversarial protocol
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 3)
+- `run-state-management` — FlowRun/FlowActivity records at phase boundaries (v3 runtime)
+
+```!
+# Inline the Required Skills above so their rules are in context before the
+# first phase runs (commands cannot preload skills from frontmatter). Ambient
+# skills load whole; dispatched skills (context: fork / agent:) load their
+# `## Contract` section and run in full when this command invokes
+# Skill(<name>). Output per `references/command-output-format.md`.
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" llm-operator-principles code-review-methodology holdout-validation run-state-management
+
+true
+```
 
 ## Phase 1: EXPLORE
 
@@ -443,7 +455,7 @@ Each returns a structured finding list. Index returned findings by facet for the
 
 Including holdout in challenge would either (a) produce vacuous AGREE responses (re-check confirms what we already established) or (b) confuse the protocol (DISAGREE based on what — the file state changed? the claim was parsed differently?). The asymmetry is principled and intentional. The two holdout lenses (skeptic + verifier) DO produce a confidence signal: when both lenses raise the same finding the disposition is `consensus`; when only one lens raises it the disposition is `unchallenged` (meaning the OTHER lens parsed the claim differently or weighted holdout-scenario priority differently — itself a useful signal worth investigating, but not via AGREE/DISAGREE voting).
 
-Consequently, the cost table in `team-coordination/SKILL.md` lists **10** challenge calls rather than 12 — the 2-call savings is the principled exclusion, not a tooling shortcut. Holdout findings emit at A.4 with `consensus` (both lenses raised it independently) or `unchallenged` (one lens only); they NEVER carry `validated` / `refined` / `kept` because those dispositions are challenge-round outputs.
+Consequently, the cost table in `references/paired-review-protocol.md` (the `team-coordination` protocol detail) lists **10** challenge calls rather than 12 — the 2-call savings is the principled exclusion, not a tooling shortcut. Holdout findings emit at A.4 with `consensus` (both lenses raised it independently) or `unchallenged` (one lens only); they NEVER carry `validated` / `refined` / `kept` because those dispositions are challenge-round outputs.
 
 **Post-condition on returned IDs**: each variant's findings must have IDs matching `^[A-Za-z][A-Za-z0-9_-]*$` before A.2 consumes them — the same allowlist that downstream consumers (`status.md:104-117`, `merge.md`) enforce. IDs that fail validation are skipped at A.2 with a `LEDGER_WARN: PR#{N} A.1 rejected non-conforming ID '{safe-id}' from {variant}` to stderr. This avoids producing markers that get silently dropped downstream and makes the A.2 lexicographic tiebreaker safe against pathological IDs.
 
@@ -520,7 +532,7 @@ Each challenge call returns a list of `{finding-id, disposition, optional reason
 
 #### A.4 — Consolidation
 
-Apply the consolidation table from `team-coordination/SKILL.md` Phase 4. For each finding, look up its origin and the other variant's disposition:
+Apply the consolidation table from `references/paired-review-protocol.md` (Synthesize). For each finding, look up its origin and the other variant's disposition:
 
 | Origin | Other variant's disposition | Confidence | Marker disposition vocab |
 |--------|------------------------------|------------|--------------------------|
@@ -550,7 +562,7 @@ Repeat once per dropped finding. The freeform `## Dropped after challenge` secti
 
 #### A.5 — Per-facet fallback application
 
-If any of A.1's variants failed (timeout, error, did-not-spawn), apply the fallback semantics from `team-coordination/SKILL.md` per facet — never block the review:
+If any of A.1's variants failed (timeout, error, did-not-spawn), apply the fallback semantics from `references/paired-review-protocol.md` per facet — never block the review:
 
 | Failure | Action |
 |---------|--------|

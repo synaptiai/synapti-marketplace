@@ -8,7 +8,7 @@ A FlowGoal is a durable, schema-validated YAML file at `.flow/goals/<id>.goal.ya
 
 1. **Outcome** — one-sentence verifiable success statement
 2. **Acceptance criteria** — list of ACs with `verification_command` and `must_pass` flags; criteria from the issue / PR / ad-hoc invocation
-3. **Specification** — non-goals, failure modes, interface contracts (lifted from `specification-capture` skill output)
+3. **Specification** — non-goals, failure modes, interface contracts, and the risk map (`risk_map`: one row per area with the plausible wrong version and the check that discriminates it) — all lifted from the journal section `specification-capture` writes; `risk_map` is omitted when the journal has no `### Risk map`
 4. **Constraints** — denied paths, allowed paths, no-Tier-3-without-confirmation
 5. **Evaluator binding** — which agent runs the satisfaction check, what context is denied to it
 6. **Continuation policy** — what to do on incomplete/blocked/complete (mark achieved, escalate, etc.)
@@ -37,7 +37,7 @@ As of v3.1, `/flow:start` records FlowGoals automatically — `flow.goals.goalCr
 - `goalCreation: always` — create a goal unconditionally; a degenerate goal (no verifiable ACs) is allowed but flagged in the compact summary.
 - `goalCreation: off` — never auto-create; manual `/flow:goal create` still works.
 - `flow.goals.enabled: false` — disables the whole feature (Stop hook fast-paths, `/flow:goal` disabled). Distinct from `goalCreation: off`, which keeps the feature on and only suppresses auto-creation.
-- `executeVerificationCommands: true` — lets the Stop hook's deterministic-checks runner execute each AC's `verification_command` rather than reporting `not_executed`. Governs only the Stop hook path (`bin/flow-run-deterministic-checks.sh`); `/flow:goal evaluate` and `Skill(goal-evaluator)` execute verification commands when present regardless. Set `true` only when you trust the source of `.flow/goals/*.goal.yaml` (Stop hook fires on every turn — running unvetted commands every turn is a hostile-fork attack surface).
+- `executeVerificationCommands: true` — lets the Stop hook's deterministic-checks runner execute every goal's `verification_command` strings, trusted or not. Governs only the Stop hook path (`hooks/scripts/flow-run-deterministic-checks.sh`); `/flow:goal evaluate` and `Skill(goal-evaluator)` execute verification commands when present regardless. You rarely need it: goals created through flow are recorded in the per-user **trust ledger** (`bin/flow-goal-trust.sh`, `${FLOW_STATE_DIR:-~/.claude/flow-state}/goal-trust.jsonl`) and the Stop hook executes a trusted goal's commands with the flag left `false`. A goal that arrived with a checkout is untrusted; its ACs are reported `not_executed` until you run `bin/flow-goal-trust.sh record --goal-file .flow/goals/<id>.goal.yaml` (also required after editing a `verification_command` by hand). Set the flag `true` only when every `.flow/goals/*.goal.yaml` source is trusted — the Stop hook fires on every turn, so unvetted commands run every turn.
 
 > **Upgrading from the v3.0 `requireGoalForStart` flag?** It is mapped read-only — `true` → `always`, `false` → `off`, absent → `auto` — and your settings file is never rewritten. See `migration-v2-to-v3.md`.
 
@@ -68,7 +68,72 @@ See [`flow-goals-quickstart.md`](flow-goals-quickstart.md) for a 5-minute walkth
        Resumable: {waiting_for_user, waiting_for_ci, blocked}
 ```
 
-State transitions are mediated through the `goal-lifecycle` skill — every transition writes a `goal-evaluation` artifact to the linked decision journal. See `plugins/flow/skills/goal-lifecycle/SKILL.md` for the full state machine + allowed-transition table.
+State transitions are mediated through the `goal-lifecycle` skill — every transition writes a `goal-evaluation` artifact to the linked decision journal. The allowed-transition table, the disallowed transitions, and the evaluator's verdict → status mapping live in [`goal-lifecycle-transitions.md`](goal-lifecycle-transitions.md); `bin/flow-goal-record.sh` enforces the same table.
+
+## Goal YAML example
+
+```yaml
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-42
+  created_at: '2026-05-20T14:30:00Z'
+  created_by: /flow:start
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-42-search-fix
+  issue: 42
+  journal: .decisions/issue-42.md
+objective:
+  outcome: Issue #42 is implemented and verified.
+  acceptance_criteria:
+    - id: AC1
+      text: Searching for an exact match returns the match.
+      verification_command: npm test -- --grep search
+      must_pass: true
+      status: pending
+      evidence_ref: null
+specification:
+  non_goals:
+    - Do not refactor unrelated search index code.
+  failure_modes:
+    - timeout
+    - malformed query
+  interface_contracts:
+    - 'search(q: string) -> Promise<Result[]>'
+  risk_map:                       # lifted from the journal's "### Risk map" table; omitted when absent
+    - area: query normalisation
+      plausible_wrong_version: lowercasing the query also strips diacritics, so accented terms stop matching
+      discriminating_check: search("café") returns the café record while search("cafe") does not
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+  denied_paths: ['.env*', 'infra/prod/**']
+evaluator:
+  type: flow_verdict_judge
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context: [implementation_rationale, self_review_findings]
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: active
+  current_phase: explore
+  turns_evaluated: 0
+  last_evaluation:
+    result: incomplete
+    reason: Goal created; evidence not yet collected.
+    at: '2026-05-20T14:30:00Z'
+```
+
+Each `risk_map` row carries the three columns of the journal table (`Area | Plausible wrong version | Discriminating check`) as `area`, `plausible_wrong_version`, `discriminating_check`; all three are required and non-empty when the key is present. Goals written before the risk map existed simply lack the key.
 
 ## Commands
 
@@ -89,11 +154,11 @@ The Stop hook (`hooks/scripts/flow-goal-stop.sh`) fires after every conversation
 
 | Mode | Behavior | Cost | When to use |
 |---|---|---|---|
-| `warn` (default) | Reads `.flow/goals/*.goal.yaml`, runs deterministic checks, emits warning when active goal lacks evidence | $0/turn | Most teams. Nudges without forcing. |
-| `block` | Same check, but uses `decision:block` to inject warning as next-turn prompt | $0/turn | Stricter UX. Forces evidence capture before continuing. |
+| `warn` (default) | Runs deterministic checks; when the active goal lacks evidence it **allows the stop** with a reason that starts `FLOW_GOAL_INCOMPLETE — stop ALLOWED (stopHookEnforcement=warn)` and ends with how to enforce, printed to stderr too. Never blocks. | $0/turn | Most teams. Nudges without forcing. |
+| `block` | Same checks; `decision:block` on failing ACs, path violations, or ACs with no `verification_command`, so the reason becomes the next-turn prompt. Verification commands run for trusted goals (trust ledger) without `executeVerificationCommands`; an untrusted goal's not-executed ACs never block on their own. Consecutive blocks per session and goal are capped at `failAfterStuckTurns`, then the stop is allowed with `FLOW_GOAL_BLOCK_CAP`. | $0/turn | Stricter UX. Keeps the agent working until the contract has evidence. |
 | `evaluator-loop` | Active mode — spawns Haiku judge per turn; `decision:block` on `not_achieved` continues the agent loop | ~$0.001/turn | True Claude `/goal` UX parity. Opt-in. |
 
-See `references/stop-hook-goal-enforcement.md` for the full Stop hook architecture, recursion guard, throttling, and budget enforcement.
+See `references/stop-hook-goal-enforcement.md` for the full Stop hook architecture, the trust ledger, the block cap, recursion guard, throttling, and budget enforcement.
 
 ## Verdict delta semantics
 
@@ -128,7 +193,8 @@ All settings live under `flow.goals.*` and resolve via `bin/cascade-resolve.sh` 
 | `flow.goals.enabled` | `true` | Master switch for FlowGoal feature |
 | `flow.goals.goalCreation` | `auto` | `auto` (create iff ≥1 verifiable AC) \| `always` \| `off`. Replaces the deprecated `requireGoalForStart` (migrated read-only: `true`→`always`, `false`→`off`) |
 | `flow.goals.stopHookEnforcement` | `warn` | `warn \| block \| evaluator-loop` |
-| `flow.goals.failAfterStuckTurns` | `3` | evaluator-loop fails goal after N turns of unchanged pass-set |
+| `flow.goals.failAfterStuckTurns` | `3` | evaluator-loop fails the goal after N turns of unchanged pass-set; `block` mode allows the stop (`FLOW_GOAL_BLOCK_CAP`) after N consecutive blocks |
+| `flow.goals.executeVerificationCommands` | `false` | Stop hook runs every goal's `verification_command` strings, trusted or not. Normally unnecessary — trusted goals (trust ledger) already execute |
 | `flow.goals.judge.model` | `haiku` | Judge subprocess model |
 | `flow.goals.judge.timeoutSeconds` | `60` | Judge subprocess timeout |
 
@@ -175,5 +241,7 @@ If your needs require any of the above, FlowGoal is the wrong primitive — esca
 - `plugins/flow/schemas/v1/goal.schema.json` — schema definition
 - `plugins/flow/hooks/scripts/flow-goal-stop.sh` — passive warn mode hook
 - `plugins/flow/hooks/scripts/flow-goal-evaluator.sh` — opt-in active loop hook
-- `plugins/flow/bin/flow-goal-record.sh` — atomic goal writer
+- `plugins/flow/bin/flow-goal-record.sh` — atomic goal writer (records the goal in the trust ledger on `--create`)
+- `plugins/flow/bin/flow-goal-trust.sh` — per-user trust ledger: `record | check | list`
+- `plugins/flow/references/goal-lifecycle-transitions.md` — transition tables and verdict → status mapping
 - `docs/plans/flow-v3-goals-workflows-triggers-plan.md` — full v3 design (local-only; not committed)
