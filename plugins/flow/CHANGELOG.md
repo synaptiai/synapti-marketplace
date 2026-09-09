@@ -147,6 +147,17 @@ expected value.
   `references/correctness-eval.md` states what is measured, how to read `summary.md`, the decision
   rule for the `tddMode` default, cost expectations, and limitations.
 
+- **Second round of the harness.** The runner now scores each run's *own* tests against the trap
+  variants (`own-test-traps.json`; a trap counts as caught only by tests that also pass on the
+  reference), records the billed model from `modelUsage`, keys results by model
+  (`runs/<model>/<arm>/<case>/<n>/`; `--models a,b` runs a plan on several models; `migrate-layout`
+  moves first-round results), and reports per model × arm with an "Own tests catch traps" column.
+  The decision rule gains a secondary signal: when hidden pass rates tie within the spread, the
+  own-test trap catch rate decides. New case `interval-algebra` (30 hidden tests, 13 traps) is the
+  first to clear a calibration bar: the Sonnet 5 baseline failed hidden tests in 2 of 3 runs on
+  sweep-order rules its own tests never probed. Three other candidates (changeset applier, canonical
+  line diff, RFC 5545 recurrence expander) were built, calibrated, and retired because the baseline
+  solved them 3/3 even after revision; `references/correctness-eval.md` records what was tried.
 - **First full run recorded** (`evals/results-2026-09-09/`): 63 runs, $68.12, verdict
   `keep-enforce`. Every arm, the no-plugin baseline included, passed 100% of the hidden tests, so
   the tasks are at ceiling for this model and the rule keeps `testing.tddMode: enforce` and

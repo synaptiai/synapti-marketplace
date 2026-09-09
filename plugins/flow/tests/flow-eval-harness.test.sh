@@ -9,9 +9,9 @@
 #     project snapshot)
 #   - aggregation + decision rule on canned run results, grouped by model,
 #     with the own-test secondary signal, and the legacy layout + migrate-layout
-#   - --dry-run plan shape (models × 7 arms × 5 cases × N runs) and arm settings
+#   - --dry-run plan shape (models × 7 arms × 4 cases × N runs) and arm settings
 #   - hidden suites pass against every reference impl and fail against every
-#     trap variant on the tests traps.json lists for it (all five cases)
+#     trap variant on the tests traps.json lists for it (all four cases)
 #   - case layout matches the documented `claude plugin eval` shape
 
 RUNNER="$REPO_ROOT/plugins/flow/bin/flow-eval-run.sh"
@@ -471,12 +471,12 @@ assert_not_contains "were read from the older" "$(cat "$LEG/summary.md")" "no le
 assert_contains '"runs": 4' "$OUT" "all four runs still aggregated"
 
 # --- 5. dry-run plan ----------------------------------------------------------
-_flow_test_begin "--dry-run: 7 arms x 5 cases x N runs, no claude call"
+_flow_test_begin "--dry-run: 7 arms x 4 cases x N runs, no claude call"
 OUT=$(PATH="$TMP/nobin:$PATH" "$RUNNER" --dry-run --runs 2 --out "$TMP/dry" 2>&1)
 EXIT=$?
 assert_exit 0 "$EXIT" "dry run exits 0 without claude on PATH"
-assert_contains "PLAN  70 run(s): 1 model(s) × 7 arm(s) × 5 case(s)" "$OUT" "70 = 1 × 7 × 5 × 2"
-assert_equal "70" "$(printf '%s\n' "$OUT" | grep -c '^RUN   ')" "one RUN line per planned run"
+assert_contains "PLAN  56 run(s): 1 model(s) × 7 arm(s) × 4 case(s)" "$OUT" "56 = 1 × 7 × 4 × 2"
+assert_equal "56" "$(printf '%s\n' "$OUT" | grep -c '^RUN   ')" "one RUN line per planned run"
 for arm in baseline enforce-risk enforce-norisk suggest-risk suggest-norisk off-risk off-norisk; do
   assert_contains "RUN   default/$arm/money-allocator/2" "$OUT" "arm $arm planned under the default model"
 done
@@ -564,7 +564,7 @@ for case in $ALL_CASES; do
 done
 assert_contains '"reference": "25/25"' "$OUT" "four-stream/allocator reference 25/25"
 assert_contains '"reference": "23/23"' "$OUT" "limiter reference 23/23"
-assert_equal "2" "$(printf '%s\n' "$OUT" | grep -c '"reference": "30/30"')" "both new cases' references pass 30/30"
+assert_equal "1" "$(printf '%s\n' "$OUT" | grep -c '"reference": "30/30"')" "the new case's reference passes 30/30"
 
 _flow_test_begin "hidden-run: trap variants are caught, reference is not"
 OUT=$(python3 "$HELPER" hidden-run --case-dir "$EVALS/four-stream-codec" --impl "$EVALS/four-stream-codec/hidden/traps/transposed_order.py")

@@ -14,7 +14,7 @@ eval measures both.
 
 ## What is measured
 
-Seven arms, five cases, N runs each (default 3), on one or more models:
+Seven arms, four cases, N runs each (default 3), on one or more models:
 
 | Arm | `testing.tddMode` | `testing.tddModeOptOut` | `specFirst.riskMap` | Plugin loaded |
 |---|---|---|---|---|
@@ -37,25 +37,41 @@ Cases (`plugins/flow/evals/<case>/expected.md` has the trap tables):
 | `sliding-window-limiter` | `ratelimit.py` — per-key sliding window with `(now-window, now]` semantics | 23 | inclusive boundary, fixed buckets, counting denied requests, shared counter, limit off-by-one, retry from newest, no monotonic check |
 | `money-allocator` | `allocate.py` — largest-remainder split with index-order ties | 25 | round-half-up, ties last-first, ties by weight, sorted output, float arithmetic, divide-first, hardcoded places, accepts non-positive weights |
 | `interval-algebra` | `intervals.py` — union/intersection/difference with independently open/closed ends, canonical output | 30 | merge only overlapping, merge any touching, point dropped, half-open point kept, intersection closed-or, difference keeps closedness, intersection not normalized, unsorted output, sort by lower only, equal lower takes farther flag, shorthand half-open, no validation, float endpoints |
-| `recurrence-expander` | `rrule.py` — RFC 5545 RRULE subset (DAILY/WEEKLY/MONTHLY/YEARLY, interval, wkst, bymonth/bymonthday/byday/bysetpos, count/until) | 30 | dtstart always included, until exclusive, day-31 clamped, negative monthday off by one, byday/monthday union, wkst ignored, interval from first occurrence, setpos global, setpos after drop, yearly ordinal month-relative Under calibration on the branch (three Sonnet baseline runs passed 30/30, so it has not yet cleared the bar and is not shipped); it joins the suite once a revision clears it. |
 
 The first three cases were solved by every arm on the first full run (see
-Results below). `interval-algebra` and `recurrence-expander` were added for
-the second run and had to clear a bar first: the no-plugin baseline (Sonnet
-5, 3 runs) must fail at least one hidden test in at least one run. Their
-`expected.md` records that calibration. What cleared the bar was not
-rule count but order-sensitive algorithms: a sweep whose result depends on
-the sort key when a point interval sits between two open ends, and
-calendar periods whose alignment depends on `wkst` and `interval`. Two
-other candidates were built, calibrated and retired because Sonnet 5 solved
-them three times out of three: a line-based changeset applier (original-
-text coordinates, id-ordered same-line inserts, overlap error, per-line
-CRLF/LF inheritance; 3/3 at 100% before and after a revision that removed
-the worked example and added interaction rules) and a canonical line diff
-(minimal edit script with a lexicographic tie-break, unified hunks; 3/3 at
-100% once a `context=True` assertion that relied on `bool` being an `int`
-was removed as unfair). Both kept their own tests catching 90-100% of their
-trap variants: rules that can be read can be implemented.
+Results below). A case added for the second run has to clear a bar first:
+the no-plugin baseline (Sonnet 5, 3 runs) must fail at least one hidden
+test in at least one run, recorded in its `expected.md`. `interval-algebra`
+cleared it (100%, 93.3%, 96.7%): two of three runs sorted the sweep by lower
+bound only and mis-merged a closed point listed after the open-ended
+interval it should join, and one of them kept the wrong closed flag at an
+equal lower bound. Three other candidates, 30 hidden tests and 9-11 trap
+variants each, were built, calibrated and retired because Sonnet 5 solved
+them three times out of three (each got the one revision the bar allows):
+
+- a line-based changeset applier (original-text coordinates, id-ordered
+  same-line inserts, overlap error with a canonical message, per-line
+  CRLF/LF inheritance, a trailing-terminator invariant): 3/3 at 100%
+  before and after a revision that removed the worked example and added
+  two interaction rules; own tests caught 90-100% of the variants;
+- a canonical line diff (minimal edit script with a lexicographic
+  tie-break under `=` < `-` < `+`, unified hunks with the `2*context` join
+  rule and zero-length range numbering): 3/3 at 100% once a `context=True`
+  assertion that relied on `bool` being an `int` was dropped as unfair;
+  every run implemented the suffix-cost tie-break correctly;
+- an RFC 5545 recurrence expander (DAILY/WEEKLY/MONTHLY/YEARLY, `interval`,
+  `wkst`, `bymonth`/`bymonthday`/`byday` with ordinals, `bysetpos`,
+  `count`/`until`; reference cross-checked against python-dateutil on 2,229
+  random rules): 3/3 at 100% before and after a revision that probed
+  `interval` counting calendar periods rather than matching ones; own tests
+  caught 82-90% of the variants.
+
+The pattern: rules that can be read are implemented, however many there
+are; what beat the baseline was an order-sensitive sweep on an input shape
+the agent never constructed (its own tests fed sorted intervals only). The
+retired cases live in the branch history of this file's commit, not in
+`evals/`; a future case should be built around that pattern, not around
+rule count.
 
 Every trap passes the degenerate inputs agents reach for first (identical
 streams, palindromes, equal weights, a single request, `len % 4 == 0`, a
@@ -131,14 +147,14 @@ any single test.
 plugins/flow/bin/flow-eval-run.sh --check-cases
 
 # print the plan (model × arm × case × run) and the exact command line per run, no API calls
-plugins/flow/bin/flow-eval-run.sh --dry-run --models claude-sonnet-5,claude-opus-4-1
+plugins/flow/bin/flow-eval-run.sh --dry-run --models claude-sonnet-5,claude-opus-5
 
-# full comparison on two models: 2 × 7 arms × 5 cases × 3 runs = 210 runs
-plugins/flow/bin/flow-eval-run.sh --models claude-sonnet-5,claude-opus-4-1 --arm all --case all --runs 3 \
-  --max-total-usd 400 --out plugins/flow/evals/results/full-2
+# full comparison on two models: 2 × 7 arms × 4 cases × 3 runs = 168 runs (see Cost expectations for the caps)
+plugins/flow/bin/flow-eval-run.sh --models claude-sonnet-5,claude-opus-5 --arm all --case all --runs 3 \
+  --max-budget-usd 12 --max-total-usd 600 --out plugins/flow/evals/results/full-2
 
 # one arm on one case, resuming an interrupted run (completed result.json files are skipped, per model)
-plugins/flow/bin/flow-eval-run.sh --model claude-sonnet-5 --arm enforce-risk --case changeset-applier --out plugins/flow/evals/results/full-2
+plugins/flow/bin/flow-eval-run.sh --model claude-sonnet-5 --arm enforce-risk --case interval-algebra --out plugins/flow/evals/results/full-2
 
 # re-aggregate an existing results directory
 plugins/flow/bin/flow-eval-run.sh --aggregate-only --out plugins/flow/evals/results/full-2
@@ -273,16 +289,33 @@ win by more than the spread.
 
 ## Cost expectations
 
-Smoke run on 2026-09-09 (Claude Code 2.1.266, CLI default model, sandbox
-proxy): `--arm baseline --case money-allocator --runs 1 --max-turns 3` cost
-**$0.078** and took 31 s for 4 turns; the agent wrote a correct `allocate.py`
-in its first Write and the hidden suite scored 25/25 before `--max-turns`
-stopped it (recorded as `error_max_turns`, which the full run's 60-turn cap
-avoids). A one-turn probe that ran one Bash command cost $0.12. A complete
-run that loads two skills, writes tests and iterates should land well under
-the $4 per-run cap; with 63 runs the default `--max-total-usd 250` is the hard
-ceiling, and the expected total for the full comparison is in the low tens of
-dollars. `--dry-run` prints every command line without spending anything.
+Measured (all Claude Code 2.1.266, sandbox proxy, list prices):
+
+- First full run, 2026-09-09, Sonnet 5, 63 runs on the three original cases:
+  **$68.12**, i.e. $0.17 per baseline run and $1.23 per plugin-arm run on
+  average (`enforce-*` $1.6-1.8, `suggest-*` $1.3-1.4, `off-*` $0.6).
+- `interval-algebra` calibration, Sonnet 5, baseline: $0.61, $0.50, $0.47
+  (mean **$0.53**, 3.1x the original cases' baseline; 8-21 turns, 33-39 own
+  tests). The retired candidates cost $0.34-0.93 per baseline run.
+
+Estimate for the second full comparison (7 arms x 4 cases x 3 runs = 84
+runs per model), derived from those figures:
+
+| Model | Original three cases (measured) | `interval-algebra` (21 runs) | Total |
+|---|---|---|---|
+| `claude-sonnet-5` ($2/$10 per MTok) | $68 | baseline 3 x $0.53 = $1.6; plugin arms 18 x $1.6-$3.8 = $29-$69 (lower bound: plugin overhead fixed, task work 3.1x; upper: everything 3.1x) | **$100-$140** |
+| `claude-opus-5` ($5/$25 per MTok, 2.5x Sonnet at equal token use) | $170 | $75-$175 | **$250-$350** |
+
+Both models together: **$350-$490**; the `--max-total-usd` cap must be
+raised above the default 250 (600 leaves headroom for re-runs after
+session-limit errors, which cost eight runs on the first comparison). The
+per-run cap must rise too: `enforce-*` runs already reach $1.8 on Sonnet, so
+Opus `enforce-*` runs on the harder case can pass $4 (`--max-budget-usd 12`
+keeps a runaway run bounded without cutting normal ones short). The unittest
+gate fix shipped in 3.3.0 should lower the enforce arms' turn counts (40 on
+the first run) and with them the plugin-arm costs, so the lower bounds are
+the better guess. `--dry-run` prints every command line without spending
+anything, and `summary.md` reports the actual total per model.
 
 ## Results: 2026-09-09, flow 3.3.0, Claude Code 2.1.266, CLI default model
 
@@ -338,7 +371,7 @@ What the numbers actually say:
 
 ## Limitations
 
-- **Five tasks, one language.** All cases are small, single-module,
+- **Four tasks, one language.** All cases are small, single-module,
   standard-library Python. Effects on multi-file or typed-language work are
   not measured.
 - **Own-test scoring needs the spec's public surface.** A suite that reaches
