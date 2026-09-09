@@ -45,3 +45,19 @@ Hidden scenarios for validating behavioral acceptance criteria. These probe comm
 **What to check:** Does the test verify what the user/caller would observe (return values, output, side effects visible at the boundary) or does it verify internal state (private variables, internal method calls, implementation order)?
 
 **Signals:** Extensive mocking of internal modules, assertions on private/internal properties, test that breaks when implementation is refactored even though behavior is unchanged, spy/stub on internal methods.
+
+### 6. Self-Referential Expected Values
+
+**Failure mode:** Agent claims "test verifies the correct result" but the expected literals were produced by running the implementation and pasting its output. The test can only confirm that the code still does what it did, so a wrong implementation passes its own test.
+
+**What to check:** Read the `Source of expected` column in the evidence bundle's `### Test inputs and expected values` table for this criterion, then open the cited test. Does the test (comment, fixture reference, or derivation) support the stated source? Could the literal have been derived from the spec, a reference implementation, hand computation, an existing fixture, or an external standard without running the code?
+
+**Signals:** Expected values that equal the implementation's output for an obviously-wrong intermediate result, snapshot-like literals (long hashes, serialized blobs, floats with many digits) with no derivation, a `Source of expected` of `none` on a behavioral criterion, a test commit that adds the expectation and the implementation together with literals only the code could have produced.
+
+### 7. Degenerate Inputs
+
+**Failure mode:** Agent claims "behavior tested" but every input is identical, symmetric, palindromic, zero, a single value repeated in every slot, or the simplest possible case. Such inputs produce the same output under a reversed, transposed, or off-by-one implementation, so the test cannot fail for the bug it is meant to catch.
+
+**What to check:** For each row of the specification's `### Risk map` that maps to this criterion (mirrored in the evidence bundle's `### Risk map coverage` subsection), does at least one test input distinguish the right implementation from that row's stated plausible wrong version? Apply the wrong version to the input by hand: if it yields the same expected value, the input is degenerate for that row.
+
+**Signals:** Inputs such as `[1, 1, 1]`, `"aba"`, `0`, all-equal streams or partitions, identity matrices, a single element, or `{}`; order-sensitive behavior tested only with sorted or uniform data; `### Risk map coverage` rows marked `none` for behavioral criteria; every test using the same shape of input.

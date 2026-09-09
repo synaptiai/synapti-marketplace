@@ -80,6 +80,10 @@ For each changed file, analyze:
 - Cleanup on failure?
 - Async error handling?
 
+**Test adequacy** (derive the expected behavior from the issue/spec before reading the tests, then apply `references/test-review-checklist.md`):
+- Source of expected: does every expected value have a stated source (spec, reference implementation, hand computation, fixture, external standard)? A literal copied from the implementation's output, or with no source on a behavioral criterion, is P1.
+- Discriminating inputs: for order-, position-, or value-sensitive behavior, would the input still pass under a reversed, transposed, or off-by-one implementation? Identical, symmetric, zero, or single-value inputs are P1; a `Risk areas:` row with no discriminating test is P2.
+
 ### Step 5: Report
 
 Emit findings using the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md) — a **two-column** `Finding | Suggested Fix` table per priority. Pack the metadata into the Finding cell: a bold first line `{ID} · {category} · `{location}``, then the problem prose after a `<br>`. Assign IDs with the `F` prefix (`F1`, `F2`, `F3`) per the schema's recommended provenance convention. Escape any literal `|` in a cell as `\|` (shell pipes like `grep \| head` otherwise break the row).

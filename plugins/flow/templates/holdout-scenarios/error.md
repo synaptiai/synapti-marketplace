@@ -45,3 +45,11 @@ Hidden scenarios for validating error-handling acceptance criteria. These probe 
 **What to check:** Read the retry logic. Is there a maximum retry count? Is there a delay between retries? Does the delay increase (exponential backoff)? Is there jitter to prevent thundering herd?
 
 **Signals:** `while (retry)` without a counter, retry delay of 0 or a fixed small value, no exponential increase, retry count > 10 without justification, no jitter.
+
+### 6. Rejection-Path-Only Inputs
+
+**Failure mode:** Agent claims "error handling and validation tested" but every test input is malformed, so every test lands in the rejection path. The success-path logic that runs after validation passes is never exercised, and a validator that rejects everything (or a handler whose main branch is wrong) passes all tests.
+
+**What to check:** List the test inputs for this criterion. How many reach the code after the validation/guard clauses? Is there at least one well-formed input whose expected result is derived independently of the implementation? For randomized inputs, do the generators produce structured values that pass validation, or raw bytes that all fail it?
+
+**Signals:** Every assertion is `throws`, `rejects`, `status >= 400`, or `isErr`; no test asserts a successful result value; fuzz or random inputs that are unstructured bytes; test names all beginning with "rejects" or "fails"; success-path branches with no coverage in the test output.

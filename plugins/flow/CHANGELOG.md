@@ -57,6 +57,26 @@ expected value.
   the plugin default. The stale comment in `bin/cascade-resolve.sh` claiming `// null` preserves
   false is corrected: boolean keys are read with a bare expression.
 
+### Changed: tests must discriminate, and expected values must have a source
+
+- **tdd-patterns states where expected values come from.** An expected value is derived from the
+  spec, a reference implementation, hand computation, an existing fixture, or an external standard,
+  and the test says which; running the implementation and pasting its output is a finding. Inputs
+  must discriminate the plausible wrong version named in the task's `Risk areas:` rows; identical,
+  symmetric, palindromic, zero, or single-value inputs do not count as coverage of order-, position-,
+  or value-sensitive behavior. RED is redefined: a test is red only when it fails for the intended
+  reason, its expected value has a stated source, and its input is not degenerate. Randomized inputs
+  are biased toward interesting state, and no technique is named as an instruction.
+- **holdout-validation cross-references the new evidence-bundle subsections.** An unsupported
+  `Source of expected` or a sourceless literal is P1; a risk-map row with no discriminating test is
+  P2 (P1 for a behavioral criterion's core logic). New hidden scenarios: behavioral 6
+  (self-referential expected values) and 7 (degenerate inputs), data 6 (fixed-point inputs), error 6
+  (rejection-path-only inputs).
+- **Reviewers derive expected behavior from the spec before reading the tests.**
+  `code-review-methodology`'s Tests facet, `code-reviewer` Step 4 (test adequacy), and
+  `references/test-review-checklist.md` flag copied or sourceless expectations and degenerate inputs
+  as P1 and a risk row without a discriminating test as P2.
+
 ### Added: learning from where corrections actually live
 
 - **`/flow:learn` reads session transcripts, not only flow's own journal.** New

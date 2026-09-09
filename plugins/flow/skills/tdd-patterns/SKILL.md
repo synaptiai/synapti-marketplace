@@ -1,6 +1,6 @@
 ---
 name: tdd-patterns
-description: "Guide test-driven development through the mandatory Red-Green-Refactor cycle (failing test before code), enforce test quality (one behavior per test, real code over mocks, no implementation-detail testing), and enforce test runner discipline (run mode, no watch mode). Use when implementing features or fixing bugs (with `testing.tddMode='enforce'` blocking implementation without a failing test). This skill MUST be consulted because test-first is the primary quality enforcement point; tests that pass on first write are suspect (likely testing the wrong thing)."
+description: "Guide test-driven development through the mandatory Red-Green-Refactor cycle: a test is RED only when it fails for the intended reason, its expected value has a stated source (spec, reference implementation, hand computation, fixture, or standard — never the implementation's own output), and its input discriminates the right implementation from the plausible wrong one. Also enforces run-mode test runners and the `testing.tddMode` opt-out. Use when implementing features or fixing bugs (with `testing.tddMode='enforce'` blocking implementation without a failing test). This skill MUST be consulted because test-first is the primary quality enforcement point; tests that pass on first write, tests with self-referential expectations, and tests on degenerate inputs are the observed ways agents write tests that cannot fail."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, TaskCreate, TaskList, TaskUpdate
 context: fork
 agent: general-purpose
@@ -19,165 +19,60 @@ paths:
 
 # TDD Patterns
 
-Domain skill for test-driven development: Red-Green-Refactor cycle, test quality, and runner discipline.
+## Contract
+
+Iron law: if you did not watch the test fail, you do not know it tests the right thing. Invoked by `/flow:start` Phase 3 CODE step 3 (per task, before production code) and by `/flow:address` for behavior-changing fixes; `testing.tddMode` governs enforcement. Returns, per behavior, three tracked tasks: a RED test with a sourced expected value and a non-degenerate input, GREEN code, REFACTOR with all tests passing. Permitted skips: `tddMode=off`; `tddMode=suggest` with `tddModeOptOut=true` plus an explicit user decision; refactors (existing tests suffice); config changes without behavior change.
 
 ## Iron Law
 
 **IF YOU DIDN'T WATCH THE TEST FAIL, YOU DON'T KNOW IF IT TESTS THE RIGHT THING.**
 
-A test that has never failed might pass for the wrong reason. The RED phase exists to prove the test is valid.
+## Where expected values come from
 
-## Red-Green-Refactor Cycle
+An expected value is derived from the spec, a reference implementation, hand computation, an existing fixture, or an external standard, and the test states which (test comment; evidence-bundle column `Source of expected`). Never run the implementation and paste its output as the expectation. A literal with no stated source is a finding.
 
-For each feature or fix, track the TDD cycle with tasks:
+## Inputs must discriminate
 
-```
-TaskCreate("RED: Write failing test for {behavior}", "Minimal test describing desired behavior. MUST fail on first run.")
-TaskCreate("GREEN: Implement {behavior}", "Simplest code to make the test pass. No cleverness.")
-TaskCreate("REFACTOR: Clean up {behavior}", "Improve quality. All tests must still pass after each step.")
-```
+Before testing a risky area (the task's `Risk areas:` rows, from the specification's `### Risk map`), state the plausible wrong implementation and choose an input on which right and wrong differ. Degenerate inputs (identical elements, symmetric or palindromic data, zero, one value repeated in every slot, the simplest possible case) are not coverage of order-, position-, or value-sensitive behavior. Bias randomized inputs toward interesting state and code paths rather than one shared rejection path; prefer structured generators over raw bytes.
 
-### RED: Write a Failing Test
+## Red-Green-Refactor
 
-TaskUpdate(RED task, status: "in_progress")
-
-1. Write the **minimal** test that describes the desired behavior
-2. Run it — it MUST fail
-3. Verify it fails for the **right reason** (not a syntax error, not wrong import)
-
-TaskUpdate(RED task, status: "completed")
-
-### GREEN: Make It Pass
-
-TaskUpdate(GREEN task, status: "in_progress")
-
-1. Write the **simplest** code that makes the test pass
-2. No cleverness. No optimization. No "while I'm here" improvements.
-3. Run the test — it MUST pass now
-
-TaskUpdate(GREEN task, status: "completed")
-
-### REFACTOR: Clean Up
-
-TaskUpdate(REFACTOR task, status: "in_progress")
-
-1. Improve code quality (naming, structure, duplication)
-2. Run ALL tests after each refactor step — they must still pass
-3. No new functionality during refactor — that's a new RED phase
-
-TaskUpdate(REFACTOR task, status: "completed")
-Use TaskList to confirm the full cycle completed before moving to the next behavior.
-
-**The cycle is non-negotiable.** RED → GREEN → REFACTOR. Always in this order.
-
-## Test Runner Discipline
-
-**Always use `run` mode, never `watch` mode:**
-
-| Framework | Correct | Wrong |
-|-----------|---------|-------|
-| Vitest | `vitest run` | `vitest` (watch) |
-| Jest | `CI=true jest` or `jest --watchAll=false` | `jest` (watch) |
-| Pytest | `pytest` | — |
-| RSpec | `rspec` | `guard` (watch) |
-
-Watch mode leaves orphan processes. Verify cleanup:
-
-```bash
-pgrep -f "vitest|jest|pytest" && echo "ORPHAN PROCESS — kill it"
-```
-
-## Test Quality Standards
-
-### One Behavior Per Test
+Three tasks per behavior:
 
 ```
-# GOOD: Each test verifies one thing
-test "returns empty array when no items match"
-test "returns matching items sorted by relevance"
-
-# BAD: Multiple behaviors in one test
-test "search works correctly"  # What does "correctly" mean?
+TaskCreate("RED: Failing test for {behavior}", "Sourced expectation, discriminating input, fails first.")
+TaskCreate("GREEN: Implement {behavior}", "Simplest passing code.")
+TaskCreate("REFACTOR: Clean up {behavior}", "All tests still pass.")
 ```
 
-### Descriptive Names
+A test is RED only when (a) it fails on first run for the intended reason, (b) its expected value has a stated source, and (c) its input is not degenerate for the behavior under test. A test that passes on first write is checked by breaking the implementation deliberately and watching it fail. REFACTOR runs ALL tests after each step; new functionality is a new RED. TaskList confirms the cycle before the next behavior.
 
-Test names should read as specifications:
-- "creates user with valid email"
-- "rejects duplicate usernames"
-- "returns 404 when resource not found"
+## Independent re-derivation
 
-### Real Code Over Mocks
+After implementing, for each `Risk areas:` row re-derive the expected result without reading the production code (from the spec, by hand, or with a throwaway independent computation) and compare with the test's assertion. Resolve mismatches before completing the task.
 
-- Mock ONLY at external boundaries (APIs, databases, file system)
-- Never mock the code under test
-- Never mock internal collaborators unless they have side effects
-- If you need many mocks, the design needs improvement
+These rules are the behavior; never name techniques as instructions ("use property-based testing"): naming yields the surface, not the checks.
 
-### No Testing Implementation Details
+## Runner discipline
 
-- Test behavior (what), not implementation (how)
-- Don't assert on internal state, private methods, or call counts
-- If refactoring breaks tests but not behavior, the tests are wrong
+Run mode only, never watch mode: `vitest run`, `CI=true jest`, `pytest`, `rspec` (not `guard`). Watch mode leaves orphans: `pgrep -f "vitest|jest|pytest"`.
 
-## When TDD Applies
+## When TDD applies
 
-| Scenario | TDD? | Notes |
-|----------|------|-------|
-| New feature | **Always** | Define behavior before implementing |
-| Bug fix | **Always** | Write reproducing test first |
-| Refactor | Existing tests | Ensure tests pass before AND after |
-| Prototype/spike | Optional | But write tests before merging |
-| Config changes | No | Unless behavior changes |
+Feature or bug fix: always (reproducing test first). Refactor: existing tests before and after. Spike: tests before merging. Config: only if behavior changes. Mock only external boundaries, never the module under test.
 
-## Process Enforcement
+## `testing.tddMode`
 
-Check `settings.json` → `testing.tddMode`:
-
-| Mode | Default? | Behavior |
-|------|----------|----------|
-| `enforce` | **Yes** | Block implementation without a failing test. No exceptions. The RED phase must produce a failing test before any production code is written. |
-| `suggest` | No (opt-in) | Recommend TDD. Allow override with explicit user decision. |
-| `off` | No (opt-in) | No TDD guidance. Tests still run in verification. |
-
-### Opt-out mechanism
-
-`enforce` is the default because skipping the RED phase is the #1 source of tests that pass for the wrong reason. Teams that need the old `suggest` behavior can opt out:
+`enforce` (default): no production code without a RED test. `suggest`: recommend TDD; override needs an explicit user decision. `off`: no TDD guidance; tests still run in verification. Opt-out needs both fields; while `tddModeOptOut` is `false` (default), `tddMode` stays `enforce`:
 
 ```json
-{
-  "testing": {
-    "tddMode": "suggest",
-    "tddModeOptOut": true
-  }
-}
+{ "testing": { "tddMode": "suggest", "tddModeOptOut": true } }
 ```
 
-Set `testing.tddModeOptOut` to `true` in `settings.json` to switch `tddMode` back to `suggest`. When `tddModeOptOut` is `false` (the default), `tddMode` must remain `enforce`. This two-field design ensures the opt-out is an explicit, auditable decision rather than a silent default change.
-
-## Coverage Targets
-
-Aim for meaningful coverage, not vanity metrics:
-
-- **80%+** for branches, functions, lines, statements
-- **100%** for critical paths (auth, payments, data mutations)
-- **0%** is acceptable for generated code, config files, type definitions
-
-## Rationalization Prevention
-
-| Excuse | Response |
-|--------|----------|
-| "Skip TDD just this once" | Delete the code. Start over. The cycle is the discipline. |
-| "This is too simple to test" | Simple code, simple test. Write it in 30 seconds. |
-| "I'll write tests after" | You won't. And if you do, they'll test what you wrote, not what you should have written. |
-| "Tests slow me down" | Tests slow you down NOW. Bugs slow you down FOREVER. |
-| "The test passes on first try" | That's a red flag. It should have failed first. Check: is it testing the right thing? |
-
-## Stop Conditions
+## Stop conditions
 
 | Trigger | Action |
-|---------|--------|
-| Test passes immediately on first write | Test is suspect. Verify it fails when you break the code intentionally. |
-| >3 tests needed for one function | Function may be doing too much. Consider splitting. |
-| Mocking >2 dependencies | Design smell. Refactor to reduce coupling. |
-| Test is harder to write than the code | Step back. Either the interface is wrong or the test is testing implementation. |
+|---|---|
+| Test passes on first write | Break the code deliberately; if it still passes, rewrite the test. |
+| "Skip TDD just this once" | Delete the code; start from RED. |
+| Risk area tested only with degenerate inputs, or literal without source | Fix the test before GREEN. |
