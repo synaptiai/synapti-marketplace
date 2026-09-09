@@ -136,7 +136,7 @@ Runtime verification (dev server startup, API smoke tests, E2E tests, browser ch
 
 ### 5. Evidence Completeness (VERIFY phase)
 
-Every criterion's evidence bundle must include three completeness subsections: "What was NOT tested," "Known limitations," and "Negative/adversarial cases." The verdict-judge FAILs any criterion whose evidence is missing these subsections.
+Every criterion's evidence bundle must include five completeness subsections: "What was NOT tested," "Known limitations," "Negative/adversarial cases," "Test inputs and expected values" (with the source of each expected value), and "Risk map coverage." The verdict-judge FAILs any criterion whose evidence is missing these subsections, whose expected values are self-referential (copied from the implementation), or whose risk-map rows have no discriminating test.
 
 **Blocks:** PASS verdict on the affected criterion (judge-side, not pre-submission)
 **Override:** None. Add the missing subsections.

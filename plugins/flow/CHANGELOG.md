@@ -30,6 +30,12 @@ expected value.
   `paired-review-protocol.md` (team-coordination), `review-cycle-parsing.md` and
   `holdout-lens-dispositions.md` (code-review-methodology / holdout-validation),
   `specification-journal-format.md` (specification-capture).
+  Also: `architecture-decision-record.md`, `lsp-capability-probes.md`, `run-state-templates.md`,
+  `runtime-verification-probes.md`, `visual-verification-output.md`, `workflow-validation-shim.md`,
+  `verdict-output-format.md`, `goal-lifecycle-transitions.md`. Two corrections surfaced by the trim:
+  `run-state-management` claimed the SessionEnd hook sets `blocked_reason` (it only appends a
+  `session_end` event), and `pr-lifecycle` advertised a seven-section PR body that
+  `templates/pr-body.md` does not have.
 
 ### Changed: hooks that hold the line
 
@@ -56,6 +62,29 @@ expected value.
   key with `// empty`, which jq treats as falsy, so a project's `enabled: false` fell through to
   the plugin default. The stale comment in `bin/cascade-resolve.sh` claiming `// null` preserves
   false is corrected: boolean keys are read with a bare expression.
+
+### Added: the risk map, and a judge that sees test inputs
+
+- **Risk map is the fourth specification element.** `specification-capture` drafts 2-6 rows of
+  `| Area | Plausible wrong version | Discriminating check |` (where the logic is most likely to be
+  subtly wrong, what the plausible wrong implementation would do, and an input on which right and
+  wrong differ) and writes them under `### Risk map`; the four failure-mode categories (timeouts,
+  partial failures, invalid input, missing context) are infrastructure error paths and do not cover
+  it. `implementation-planner` copies rows into each task as `Risk areas:` and requires one
+  discriminating test per row; the Stranger Test fails a task that names a risk area without one.
+  FlowGoal YAML gains `specification.risk_map`. `specFirst.riskMap` (default true) toggles the whole
+  chain so the eval can compare with and without. Canonical shape:
+  `references/specification-journal-format.md`.
+- **Evidence bundles carry `### Test inputs and expected values` and `### Risk map coverage`.**
+  Both mandatory (auto-FAIL when blank); `none — <reason>` is allowed for test inputs only on ui and
+  config criteria, and for risk-map coverage only with the `specFirst.riskMap=false` marker.
+  `verdict-judge` stays blind to the implementation and to test source but now FAILs a
+  self-referential oracle (every expected value sourced from implementation output), all-degenerate
+  inputs on an order-, position-, or value-sensitive criterion, and a behavioral criterion whose
+  risk-map rows have no discriminating test. Output shape: `references/verdict-output-format.md`.
+- **`specification-capture` journal re-read bug fixed.** The old `awk '/^## Specification$/,/^## /'`
+  matched its own start line as the end and returned only the heading; the verification gate now
+  uses a flag-based range.
 
 ### Changed: tests must discriminate, and expected values must have a source
 
