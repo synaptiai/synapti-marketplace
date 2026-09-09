@@ -287,7 +287,7 @@ After agents return, TaskUpdate each review task with findings.
    ```
    After agent returns:
    - If visual verification task was created in Phase 2: `TaskUpdate(visualVerificationTaskId, status: "completed", result: "{agent's visual verification findings}")`
-   - Record screenshot paths from agent results as evidence
+   - Record screenshot paths and the per-viewport `Observed:` blocks from agent results as evidence — they become the bundle's `### Visual analysis` subsection (`references/evidence-bundle-format.md`)
 3. **TaskList**: Confirm all review tasks complete (including visual verification if created)
 4. **Runtime verification**: If integration-verifier returns SKIP without justification, run runtime verification directly (build, start, smoke test). Runtime verification must pass before PR creation.
 5. **Visual verification enforcement**: If `visualVerification.requireVisualVerification` is `true` and integration-verifier returned visual verification as BLOCKED:

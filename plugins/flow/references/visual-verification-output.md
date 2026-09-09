@@ -1,6 +1,6 @@
 # Visual Verification Output and Task Tracking
 
-Supporting reference for `skills/visual-verification/SKILL.md`. The skill states the rules (detection, browser-tool cascade, loop bounds, result vocabulary); this file holds the full output template, the task-tracking wording, the viewport table, and the rationale for the external-plugin cascade entries.
+Supporting reference for `skills/visual-verification/SKILL.md`. The skill states the rules (detection, browser-tool cascade, loop bounds, result vocabulary); this file holds the full output template, the per-viewport `Observed:` block the evidence bundle copies, the task-tracking wording, the viewport table, and the rationale for the external-plugin cascade entries.
 
 ## Viewports
 
@@ -45,15 +45,28 @@ TaskUpdate(responsiveTaskId, status: "completed", result: "BLOCKED")
 
 # Loop ran:
 TaskUpdate(visualVerificationTaskId, status: "in_progress")
-# ... for each page: screenshot → analyze → record findings ...
-TaskUpdate(visualVerificationTaskId, status: "completed", result: "PASS/FAIL — {pages} checked, P1:{n} P2:{n} P3:{n}")
+# ... for each page: screenshot → analyze → write the Observed: block → record findings ...
+TaskUpdate(visualVerificationTaskId, status: "completed", result: "PASS/FAIL — {pages} checked, P1:{n} P2:{n} P3:{n}\n{one Viewport/Screenshot/Result/Observed block per page and viewport}")
 
 TaskUpdate(responsiveTaskId, status: "in_progress")
-# ... for each viewport: resize → screenshot → analyze ...
-TaskUpdate(responsiveTaskId, status: "completed", result: "PASS/FAIL — {viewports} tested, findings: {summary}")
+# ... for each viewport: resize → screenshot → analyze → write the Observed: block ...
+TaskUpdate(responsiveTaskId, status: "completed", result: "PASS/FAIL — {viewports} tested, findings: {summary}\n{one Viewport/Screenshot/Result/Observed block per viewport}")
 ```
 
-Run `TaskList` afterwards to confirm every visual sub-task reached a terminal state.
+Run `TaskList` afterwards to confirm every visual sub-task reached a terminal state. The `Observed:` blocks live in the task result so the evidence-bundle producer (`commands/start.md` Phase 4 step 5) copies them into `### Visual analysis` without re-deriving anything from the image.
+
+## Per-viewport `Observed:` block
+
+One block per page and viewport, in exactly this shape (the bundle's `### Visual analysis` subsection in `references/evidence-bundle-format.md` consumes it verbatim):
+
+```
+Viewport: {name} {width}x{height}
+Screenshot: {path under visualVerification.screenshotDir}
+Result: {PASS | FAIL}
+Observed: {two to four plain sentences describing what is on screen relative to the criterion — element present, text, state, layout, console errors}
+```
+
+`Result:` is `FAIL` when the viewport produced a P1 or P2 finding, `PASS` otherwise. `Observed:` names the element the criterion asks for (or states that it is absent), quotes visible text, and mentions console errors or their absence. `Screenshot:` is a path only — the verdict-judge has no file tools and reads the sentences, never the image.
 
 ## Full output template
 
@@ -70,6 +83,13 @@ Run `TaskList` afterwards to confirm every visual sub-task reached a terminal st
 ### Visual Evidence
 | Page | Viewport | Screenshot | Status | Findings |
 |---|---|---|---|---|
+
+### Visual analysis
+
+Viewport: {name} {width}x{height}
+Screenshot: {path}
+Result: {PASS | FAIL}
+Observed: {two to four sentences}
 
 ### Visual Findings (canonical finding-schema)
 

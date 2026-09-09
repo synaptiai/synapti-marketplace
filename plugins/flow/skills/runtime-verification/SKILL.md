@@ -9,7 +9,7 @@ agent: Explore
 
 ## Contract
 
-Iron law: **no completion until the code builds, runs, and behaves correctly; if you cannot verify it, build the infrastructure to verify it.** Invoked after quality checks pass by `/flow:start` Phase 4 step 2, `/flow:pr` Phase 4 via `Agent(integration-verifier)`, and the `address-pr`, `debug`, and `start-issue` workflows. Returns the Runtime Verification Results and Acceptance Criteria Verification tables, with failures as P1 findings (`category=runtime`). Permitted skips: only `markdown-only`, `config-only`, or `dependency-bump-only`, each with its listed evidence; any other skip needs an approved six-field escalation via `AskUserQuestion`. If in doubt, run it.
+Iron law: **no completion until the code builds, runs, and behaves correctly; if you cannot verify it, build the infrastructure to verify it.** Invoked after quality checks pass by `/flow:start` Phase 4 step 2, `/flow:pr` Phase 4 via `Agent(integration-verifier)`, and the `address-pr`, `debug`, and `start-issue` workflows. Returns the Runtime Verification Results and Acceptance Criteria Verification tables, with failures as P1 findings (`category=runtime`). Permitted skips: only `markdown-only`, `config-only`, or `dependency-bump-only`, each with its listed evidence; any other skip needs an approved six-field escalation via `AskUserQuestion`.
 
 ## Skip Whitelist
 
@@ -26,7 +26,7 @@ Mixed diffs (a whitelisted category plus one `.py` file, a new dependency, or a 
 ## Sequence
 
 1. **Fast path**: an executable `verify.sh` or `scripts/verify.sh` is run and its results returned.
-2. **Build** (mandatory, every project type; per-stack commands and tables in [`runtime-verification-probes.md`](../../references/runtime-verification-probes.md)). Build failure IS the finding: read errors, fix, rebuild up to `closedLoop.maxBuildIterations` (default 5); never proceed while broken.
+2. **Build** (mandatory, every project type; per-stack commands and tables in [`runtime-verification-probes.md`](../../references/runtime-verification-probes.md)). Build failure IS the finding: read errors, fix, rebuild up to `closedLoop.maxBuildIterations` (default 5).
 3. **LSP diagnostics** when `lsp.enabled` and `lsp.diagnosticsAsQuality` (both default `true`): Error=P1, Warning=P2, Info/Hint=P3, deduplicated against CLI output, bounded by `lsp.timeout` (default 5000 ms); timeout or no server is N/A, never a block.
 4. **Dev server**: use `capability-discovery` output. Won't start: read the error, fix, retry up to `closedLoop.maxServerRetries` (default 3); port busy: another port; startup wait `timeouts.devServerStartup` seconds (default 30).
 5. **Smoke**: `curl` `/health` and `/`; non-200 is a P1 finding (`references/finding-schema.md`).
@@ -37,9 +37,9 @@ On any failure: read the full error, root-cause it (`debugging-patterns`), fix, 
 
 ## Completion
 
-UI-relevant diffs (rules in `skills/visual-verification/SKILL.md`) also run `Skill(visual-verification)` in parallel; if the dev server cannot start, that skill returns `SKIP` ("dev server unavailable") and the server failure is the primary finding; the two tables render side by side. `visualVerification.*` settings belong there.
+UI-relevant diffs (rules in `skills/visual-verification/SKILL.md`) also run `Skill(visual-verification)` in parallel; if the dev server cannot start, that skill returns `SKIP` ("dev server unavailable") and the server failure is the primary finding; tables render side by side. `visualVerification.*` settings belong there.
 
-Complete only when every testable criterion has Pass/Fail/N/A with a reason (never a shortcut) and every failure, including a dev server that won't start, is a P1 finding.
+Complete only when every testable criterion has Pass/Fail/N/A with a reason and every failure, including a dev server that won't start, is a P1 finding.
 
 ## Output Format
 
@@ -57,4 +57,5 @@ Complete only when every testable criterion has Pass/Fail/N/A with a reason (nev
 ### Acceptance Criteria Verification
 | # | Criterion | Verified | Method |
 |---|-----------|----------|--------|
+| {n} | {ui criterion} | Pass/Fail | visual-verification `Observed:` blocks → bundle `### Visual analysis` |
 ```

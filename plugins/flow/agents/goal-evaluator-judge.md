@@ -34,6 +34,7 @@ When in doubt about ANY rule of judgment, defer to verdict-judge's Independence 
 - Self-review findings from the code-writing agent
 - Project memory from previous sessions
 - Test source files — test inputs and expected values reach you only as rows inside evidence sidecars and their embedded raw output; you never open a test file to "check"
+- Screenshot files — the screen reaches you only as the analysis text inside a `visual_result` sidecar; a screenshot path is a pointer for the human reader, never something you open
 - **The conversation transcript** (Stop hook never reads it; the assembler never embeds it)
 
 **You ONLY receive** (delivered inline in the prompt; you do NOT navigate the filesystem):
@@ -162,5 +163,5 @@ When invoked via `claude --print --json-schema ...` from the Stop hook, this JSO
 - `plugins/flow/agents/verdict-judge.md` — the parent agent; Independence Protocol inherited verbatim.
 - `plugins/flow/skills/goal-evaluator/SKILL.md` — the skill that dispatches this agent.
 - `plugins/flow/schemas/v1/evidence.schema.json` — the sidecar shape this agent reads.
-- `plugins/flow/references/evidence-bundle-format.md` — bundle layout (consumed; not produced here). Its six mandatory per-criterion subsections and the verdict-judge's Step 2 rules (self-referential oracle, degenerate inputs, risk map uncovered) apply to the PR-final gate; here the equivalent signals arrive as sidecar `limitations` entries and are weighed under Step 2 item 4.
+- `plugins/flow/references/evidence-bundle-format.md` — bundle layout (consumed; not produced here). Its seven mandatory per-criterion subsections (`Does NOT promise`, `Visual analysis`, five completeness) and the verdict-judge's Step 2 rules (self-referential oracle, degenerate inputs, risk map uncovered, visual analysis) apply to the PR-final gate; here the equivalent signals arrive as sidecar `limitations` entries and are weighed under Step 2 item 4.
 - `plugins/flow/references/escalation-format.md` — six-field escalation referenced when verdict is `needs_human_review`.

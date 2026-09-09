@@ -105,6 +105,15 @@ expected value.
   matched its own start line as the end and returned only the heading; the verification gate now
   uses a flag-based range.
 
+- **verdict-judge has no file tools.** `agents/verdict-judge.md` drops `Read` (`tools: []`), so the
+  Independence Protocol is enforced by the tool list rather than prose: everything the judge evaluates
+  is inside the evidence bundle. The bundle gains a mandatory `### Visual analysis` subsection (after
+  `### Output`) carrying, per viewport, `Viewport:` / `Screenshot:` / `Result:` / `Observed:` blocks
+  copied from the `visual-verification` skill's result tasks; `none — criterion type {type} has no
+  visual surface` on non-ui types; missing or blank on a `ui` criterion is an auto-FAIL. A criterion
+  whose evidence is not in the bundle is FAIL `evidence not in bundle`, never NEEDS-HUMAN-REVIEW. New
+  static lint `tests/verdict-judge-independence.test.sh`.
+
 ### Changed: tests must discriminate, and expected values must have a source
 
 - **tdd-patterns states where expected values come from.** An expected value is derived from the
