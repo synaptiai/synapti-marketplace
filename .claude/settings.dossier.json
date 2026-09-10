@@ -83,7 +83,7 @@
         ]
       },
       "traceCount": 10,
-      "maxRounds": 3
+      "maxRounds": 5
     },
     "gate": {
       "minScore": 95,

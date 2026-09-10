@@ -30,7 +30,7 @@ Two facts frame this document, and both are unusual enough to state before any t
 | Command | One Markdown file invoked as `/plugin:name` | the plugin | git | filename | Declares the skills it invokes | [EV-0093] |
 | Agent definition | A subagent's system prompt, tool list, and skill list | the plugin | git | filename | Names the skills it may load | [EV-0093] |
 | Hook registration | An event-to-script binding | `hooks/hooks.json` | git | event kind plus matcher | Points to a script under `hooks/scripts/` | [EV-0093] |
-| Decision record | One journal entry written by the flow plugin | `.decisions/` | git | filename | 11 records tracked in this repository | [EV-0046] |
+| Decision record | One journal entry written by the flow plugin | `.decisions/` | git | filename | 21 records tracked in this repository | [EV-0169] |
 
 ```mermaid
 %% Cardinalities restate the Relationships column above. Nothing here is enforced
@@ -55,7 +55,7 @@ Every entity above is a file in git. There is no database, no serialization form
 | This git repository | git / GitHub | All plugin content and history | Daniel Bentes | GitHub, public | Public | indefinite | Append-only history; `main` carried no protection as of 2026-07-26 | [EV-0016], [EV-0044] |
 | GitHub Releases | GitHub | Release tags and desktop-skill ZIP assets | Daniel Bentes | GitHub, public | Public | indefinite | v4.9.0 and v4.10.0 published 2026-09-10 | [EV-0066] |
 | `docs/dossier/` | git | This documentation package, 24 files carrying headers | Daniel Bentes | GitHub, public | Public | indefinite | Rewritten by each refresh run | [EV-0088] |
-| `.decisions/` | git | 11 decision records written by the flow plugin | Daniel Bentes | GitHub, public | Public | indefinite | Appended during development | [EV-0046] |
+| `.decisions/` | git | 21 decision records written by the flow plugin | Daniel Bentes | GitHub, public | Public | indefinite | Appended during development | [EV-0169] |
 | `.dossier/runs/` | Local filesystem, untracked | 3 dossier run records, all dated 2026-07-26 | Daniel Bentes | The maintainer's machine | Internal | not defined | Written per run | [EV-0124] |
 | Untracked plugin residue | Local filesystem | `plugins/agent-capability-standard/`, 42 `SKILL.md` files | The operator | The maintainer's machine | Public content | Until deleted by hand | Left behind by submodule removal; gitignored | [EV-0060], [EV-0094] |
 | Operator's plugin cache | Local filesystem | A copy of installed plugins | The operator | The operator's machine | Public content | Until uninstalled; refreshed by `autoUpdate` | Not controlled by this project | [EV-0051], [EV-0052] |

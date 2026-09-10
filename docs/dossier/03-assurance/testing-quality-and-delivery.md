@@ -14,9 +14,13 @@ related: [02-architecture/infrastructure-and-deployment.md, 03-assurance/securit
 # Testing, Quality, and Delivery
 <!-- contract: references/package-contract-03-assurance.md#testing-quality-and-delivery -->
 
-Both authored suites pass. The flow suite reports `pass=2336 fail=0` at `af6e632` [EV-0098]. The dossier suite reports `pass=1951 fail=0` at the same commit [EV-0107]. Both runs happened on macOS 25.6 under `/bin/bash` 3.2.57 [EV-0098], [EV-0107]. GitHub Actions concluded `success` on `ubuntu-latest` for every commit this range added to `main` [EV-0126].
+Both authored plugin suites pass. The flow suite reports `pass=2336 fail=0` at `af6e632` from a checkout at a short absolute path [EV-0098]. The dossier suite reports `pass=1951 fail=0` at the same commit [EV-0107]. Both runs happened on macOS 25.6 under `/bin/bash` 3.2.57 [EV-0098], [EV-0107]. GitHub Actions concluded `success` on `ubuntu-latest` for every commit this range added to `main` [EV-0126].
 
 Those are two separate results and this document keeps them separate. The macOS figures are operator-machine observations. The Linux figures come from Actions run history, read by the session operator outside the engagement's `networkAccess: false` ceiling (AQ-0012) [EV-0126].
+
+The flow figure carries a condition. From a deep checkout the same commit reports `pass=2335 fail=1`, for the reason set out under "Path-length sensitivity" below. Ledger row requested.
+
+A third body of tests exists and no workflow runs it. The repository-root `tests/` directory holds 140 assertions, 3 of which fail at `b1e716e`. Ledger row requested.
 
 Both currently published releases carry the pre-fix flow scripts that `16b4dc4` repaired [EV-0144]. The numbers stay narrower than they look. They cover 2 of the 6 in-tree plugins [EV-0010], [EV-0058]. They assert structure far more than behaviour [EV-0107]. No check is required for merge: `main` carries no branch protection and no rulesets [EV-0131].
 
@@ -64,6 +68,7 @@ Four dimensions are genuine `N/A` for a project with no runtime, no data, and no
 | Script unit | `bash -n`, executable bit, `set -u`, usage header, bash 3.2 portability, exit code 2 | Daniel Bentes | same | [EV-0107] |
 | Script behaviour | Real fixtures in temporary directories. Cascade precedence, gate refusal, patch validation | Daniel Bentes | same | [EV-0107] |
 | Invariant | Cross-artifact properties over verification agents and their skill loads | Daniel Bentes | dossier suite | [EV-0107] |
+| Gate and parser contract | flow's settings cascade, marker parsers, journal helper, hook symlink refusal, skill input contracts, finding-row schema | Daniel Bentes | The repository-root `tests/` directory. **No workflow reaches it** | Ledger row requested |
 | Manifest consistency | Every marketplace entry's version against its source's own `plugin.json` | Daniel Bentes | `marketplace-manifest.yml` | [EV-0080], [EV-0081] |
 | Static analysis | CodeQL over `actions` and `python`, both `build-mode: none` | GitHub | `codeql.yml` | [EV-0134] |
 | Python unit | The upstream `agent-capability-standard` pytest suite | upstream | nowhere in this repository's CI | [EV-0011], AQ-0001 |
@@ -77,8 +82,9 @@ No coverage measurement exists for either suite. Neither run reports lines, bran
 
 | Area | Assertions | Coverage measure | Gap | Consequence | Evidence |
 |---|---|---|---|---|---|
-| flow | 2336 | none | No behavioural coverage. No Windows environment | A skill can pass every assertion and still be unhelpful | [EV-0098], AQ-0008 |
+| flow | 2336 at a short checkout path | none | No behavioural coverage. No Windows environment. One assertion is sensitive to the checkout's path length | A skill can pass every assertion and still be unhelpful | [EV-0098], AQ-0008 |
 | dossier | 1951 | none | Its headline capability has never run (AQ-0002) | The plugin's central claim stays unverified | [EV-0107], [EV-0045] |
+| repository-root `tests/` | 140, of which 3 fail at `b1e716e` | none | Runs in no workflow and on no schedule | flow's settings cascade is asserted and nobody sees the result | Ledger row requested |
 | gh-workflow | none | none | total | 7 skills, 14 commands, 4 agents unverified | [EV-0010], [EV-0162] |
 | decipon | none | none | total | 2 skills, 7 commands, 5 agents unverified | [EV-0010], [EV-0162] |
 | context-ledger | none | none | total | 5 skills, 8 commands, 5 agents unverified | [EV-0010], [EV-0162] |
@@ -101,6 +107,48 @@ Four in-tree plugins ship no test suite at all [EV-0010], [EV-0058]. That row wa
 | The dossier gate cannot self-certify | yes | `bin-scripts.test.sh` anti-theater assertion | [EV-0107] |
 | A plugin installs and loads from a clean profile | **no** | — | AQ-0003 |
 
+## The repository-root `tests/` directory
+
+`tests/` at the repository root holds 29 tracked files and 11 tracked executables. Ten of them name `plugins/flow` paths directly. None sits under `plugins/flow/tests/`. Ledger row requested.
+
+The exception is `tests/finding-schema/validate.sh`, which validates fixtures against a schema copy in its own directory and names neither plugin. Both `plugins/flow/references/finding-schema.md` and `plugins/dossier/references/finding-schema.md` exist, so `Unknown:` which one it tracks. AQ row requested.
+
+`flow-tests.yml` path-filters on `plugins/flow/bin/**`, `commands/**`, `references/**`, `skills/**` and `tests/**`, and it runs `plugins/flow/tests/run.sh`. The repository-root `tests/` directory matches no filter in any workflow and no runner invokes it. Ledger row requested.
+
+All 11 were executed on 2026-09-10 on macOS 25.6 under `/bin/bash` 3.2.57, at commit `b1e716e`. `tests/` is blob-identical from `691bcdb` and `7ee4923` to that commit. `plugins/flow/` differs only by one line of `README.md`. These results therefore describe the tree this package is stamped against.
+
+| Script | What it asserts | Result |
+|---|---|---|
+| `tests/agentteams-gate/test.sh` | `review.md`'s `agentTeams` gate resolves settings through the four-tier cascade | **21 PASS / 3 FAIL, exit 1** |
+| `tests/markertrust-gate/test.sh` | `merge.md`'s `markerTrust.allowedAssociations` gate resolves through the same cascade | 15 PASS / 0 FAIL |
+| `tests/cascade-resolve/test.sh` | `bin/cascade-resolve.sh` tier precedence, parse-error warnings, defaults, output modes | 12 PASS / 0 FAIL |
+| `tests/journal-orchestration/test.sh` | Every artifact type in the journal schema is reachable through `bin/journal-record.sh` | 22 passed / 0 failed |
+| `tests/hooks-symlink/test.sh` | `log-commits.sh` and `log-file-changes.sh` refuse to append through a symlink | 6 passed / 0 failed |
+| `tests/issue-86/verify.sh` | The `FLOW_REVIEW_CYCLE` marker parser tolerates the schema extension | 16 passed / 0 failed |
+| `tests/status-parser/test.sh` | `status.md` and `merge.md` derive the same findings from one marker corpus | 10 passed / 0 failed |
+| `tests/finding-schema/validate.sh` | Reviewer-agent finding rows match `references/finding-schema.md` | 14 passed / 0 failed |
+| `tests/skills/criterion-verification-map/test.sh` | The skill's input contract accepts valid and rejects malformed input | 6 passed / 0 failed |
+| `tests/skills/holdout-validation/test.sh` | The same contract, for `holdout-validation` | 9 passed / 0 failed |
+| `tests/skills/specification-capture/test.sh` | The same contract, for `specification-capture` | 6 passed / 0 failed |
+
+The three failures in `agentteams-gate` are `S4c`, `S6` and `S7b`. They reproduce in a clean detached worktree at `b1e716e` on a short path, so neither working-tree state nor path length explains them. Ledger row requested.
+
+`Unknown:` whether those three are a regression in `plugins/flow/commands/review.md` or drift in the test's own expectations. The directory's last commit is dated 2026-05-08 and nothing has run it since, so the failure has no observed start date. AQ row requested.
+
+`Unknown:` whether `tests/cascade-resolve/test.sh` and `plugins/flow/tests/cascade-resolve.test.sh` duplicate each other or cover different ground. AQ row requested.
+
+`Unknown:` whether this directory is meant to move under `plugins/flow/tests/` or to stay a manual set. Nothing in the repository states an intent. AQ row requested.
+
+## Path-length sensitivity in the flow suite
+
+`plugins/flow/tests/flow-mine-corrections.test.sh:50` asserts that the miner's Markdown table cites `session-corrections.jsonl:5`. The miner renders that cell through `cell(c['transcript_path'], 200)` at `plugins/flow/bin/flow-mine-corrections.sh:445`, and its `truncate` keeps the first 199 characters. The fixture path is absolute, so a deep checkout pushes the filename past the cut.
+
+Executed on 2026-09-10: a detached worktree at a 163-character root produced a 229-character fixture path and `TOTAL pass=2335 fail=1`. That one failure is the assertion above. A second worktree of the same tree, at a 119-character root and a 185-character fixture path, produced `TOTAL pass=2336 fail=0`. Ledger rows requested.
+
+`Inferred:` the threshold is a checkout root longer than 134 characters, because the fixture suffix is 66 characters and the cut falls at 200. Derived from the two observed lengths, not from a boundary run.
+
+The route out for a contributor is a shorter checkout root, and it is recorded in the onboarding document's troubleshooting table.
+
 ## Quality gates
 
 | Stage | Gate | Blocking | Bypassable | Bypass requires | Evidence |
@@ -110,7 +158,7 @@ Four in-tree plugins ship no test suite at all [EV-0010], [EV-0058]. That row wa
 | Release | None. A tag and a release can be cut regardless of CI state | no | — | Nothing | [EV-0032] |
 | Production | N/A — `main` is production, and the push is the deploy | no | — | Nothing | [EV-0131] |
 
-This table is the core finding. The project has good tests and no gate anywhere that stops a change. 4287 assertions across the two suites are information, not enforcement [EV-0098], [EV-0107].
+This table is the core finding. The project has good tests and no gate anywhere that stops a change. 4287 assertions across the two plugin suites are information, not enforcement [EV-0098], [EV-0107]. The repository-root `tests/` directory adds 140 more that no workflow ever executes. Ledger row requested.
 
 `main` carried no branch protection, no rulesets and 0 Actions secrets when read live on 2026-09-10 [EV-0131]. That read sits 45 days past the July rows' stated freshness bound and found no change [EV-0016], [EV-0017], [EV-0131].
 
@@ -155,6 +203,7 @@ At `af6e632` it passes: 8 plugins checked, 0 failed, 0 unverifiable, exit 0 [EV-
 | Linux environment | GitHub-hosted `ubuntu-latest`, both test workflows | no | [EV-0126] |
 | Windows environment | **None.** Both test workflows declare `runs-on: ubuntu-latest` | — | [EV-0126], AQ-0008 |
 | Python dependency | `run.sh` puts the per-user site-packages tree on `PYTHONPATH` | no | [EV-0099], [EV-0100] |
+| Checkout path length | The flow suite's transcript fixture path must stay under 200 characters, so the checkout root must stay under about 134 | no | Ledger row requested |
 | Fixtures and seeds | Inline heredocs and generated JSON. Credential patterns appear in scanner fixtures | no | [EV-0037] |
 
 ## Flaky tests, quarantines, and manual gates
@@ -165,11 +214,12 @@ At `af6e632` it passes: 8 plugins checked, 0 failed, 0 unverifiable, exit 0 [EV-
 | Temp directories leaked every run | harness defect | flow | since the harness was written | Daniel Bentes | flow leaked ~254 directories per run. Fixed in dossier, not re-checked in flow | [EV-0056] |
 | No quarantined or skipped test | — | — | — | — | Both suites report 0 failures and no deliberate skips | [EV-0098], [EV-0107] |
 | Conditional degradation on missing PyYAML | graceful skip | `workflow-template.test.sh` | since the test was written | Daniel Bentes | The YAML parse check records a pass with a reason where PyYAML is absent | [EV-0107] |
-| Stale `expectedPluginVersion` pin | manual gate | `.claude/settings.dossier.json` | unrecorded | Daniel Bentes | Pins 1.0.0 while dossier ships 1.2.0. The config validator still passes | [EV-0085], [EV-0086] |
+| ~~Stale `expectedPluginVersion` pin~~ | manual gate | `.claude/settings.dossier.json` | unrecorded | Daniel Bentes | **Closed at `d5a5166`**, which raised the pin to 1.2.0 and matched the plugin. Residual: the config validator reports the file valid against either value, so it would not catch the next drift | [EV-0139], [EV-0085], [EV-0086] |
+| Path-length-sensitive assertion | environment-dependent failure | `flow-mine-corrections.test.sh:50` | since the assertion was written | Daniel Bentes | A checkout root over roughly 134 characters turns the whole flow suite red | Ledger row requested |
 | External pin currency | manual gate | `marketplace.json` | always | Daniel Bentes | The CI check confirms the pin matches, never that it is current (AQ-0006) | [EV-0080], [EV-0127] |
 | README accuracy | manual gate | `README.md` | always | Daniel Bentes | **Already failed** — 4 stale facts on 2026-07-26 | [EV-0022]–[EV-0025] |
 
-Two of these gates have already failed at least once. The stale configuration pin is the sharper case, because a validator reports `pass` over it [EV-0085], [EV-0086].
+Two of these gates have already failed at least once. The configuration pin was the sharper case, because a validator reported `pass` over the stale value [EV-0085], [EV-0086]. It has since been corrected at `d5a5166` [EV-0139]. The validator's blind spot is what remains [EV-0086].
 
 ## Delivery pipeline
 
@@ -208,7 +258,7 @@ The manifest check does not cover releases. It compares entry versions against t
 | Lead time to production | Effectively zero — a push to `main` is production | live | I — inferred from the absence of any gate | [EV-0131] |
 | Deployment frequency | 193 commits over roughly 7 months, each a deployment | 2025-12-19 to 2026-07-25 | V | [EV-0034] |
 | Merged pull requests | 62 | to 2026-07-25 | V | [EV-0050] |
-| Test assertions executed per run | 4287 across both suites | per run at `af6e632` | V | [EV-0098], [EV-0107] |
+| Test assertions executed per run | 4287 across both plugin suites, at a short checkout path | per run at `af6e632` | V | [EV-0098], [EV-0107] |
 
 Three of the seven metrics are `unknown`, and they are the three that measure whether quality is achieved rather than attempted. Two more rest on counts observed on 2026-07-26 and are not extended to today.
 
@@ -216,7 +266,10 @@ Three of the seven metrics are `unknown`, and they are the three that measure wh
 
 | Command | Purpose | Environment | Date | Result | Output |
 |---|---|---|---|---|---|
-| `bash plugins/flow/tests/run.sh` (CHK-51) | Verify flow's suite | macOS 25.6, bash 3.2.57 | 2026-09-10 | pass | `TOTAL pass=2336 fail=0` |
+| `bash plugins/flow/tests/run.sh` (CHK-51) | Verify flow's suite | macOS 25.6, bash 3.2.57 | 2026-09-10 | pass | `TOTAL pass=2336 fail=0` at a short checkout root |
+| `plugins/flow/tests/run.sh` in worktrees at a 163- and a 119-character root | Test the flow suite's sensitivity to path length | macOS 25.6, bash 3.2.57 | 2026-09-10 | fail, then pass | `TOTAL pass=2335 fail=1`, then `TOTAL pass=2336 fail=0`. Ledger row requested |
+| Every executable under the repository-root `tests/` | Establish whether that directory passes at `b1e716e` | macOS 25.6, bash 3.2.57 | 2026-09-10 | fail | 10 of 11 exit 0, `agentteams-gate` 21 PASS / 3 FAIL. Ledger row requested |
+| `git ls-files -s tests/` | Count the tracked files and executables there | git | 2026-09-10 | pass | 29 files, 11 with mode 100755. Ledger row requested |
 | `bash plugins/dossier/tests/run.sh` (CHK-54) | Verify dossier's suite | macOS 25.6, bash 3.2.57 | 2026-09-10 | pass | `TOTAL pass=1951 fail=0` |
 | `python3 -m site --user-site` (CHK-52) | Locate PyYAML on this machine | macOS 25.6 | 2026-09-10 | pass | Resolves only from the user-site tree |
 | `git diff --stat 15bcb24..af6e632` (CHK-53) | Establish the tree delta | git | 2026-09-10 | pass | 11 files, no dossier test file |
@@ -278,6 +331,8 @@ Every claim in this document that rests on an earlier round cites one of these. 
 
 `Recommendation:` add a `windows-latest` job to both test workflows, so AQ-0008 stops resting on user reports.
 
-`Recommendation:` update `.claude/settings.dossier.json` to pin 1.2.0, and make the config validator fail on a pin below the installed plugin version [EV-0085], [EV-0086].
+`Recommendation:` make the config validator fail on a pin below the installed plugin version. The pin itself was corrected at `d5a5166` [EV-0139], and nothing stops the next one drifting the same way [EV-0086].
+
+`Recommendation:` run the repository-root `tests/` directory in CI, or move it under `plugins/flow/tests/`. Three of its assertions have failed since some unobserved point and no workflow would have said so.
 
 `Recommendation:` extend the existing shellcheck step to flow. Flow's hooks run as blocking `PreToolUse` calls on a contributor's machine, and nothing lints them [EV-0165], [EV-0162] (AQ-0019).

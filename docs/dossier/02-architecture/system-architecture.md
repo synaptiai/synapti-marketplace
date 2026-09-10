@@ -22,7 +22,13 @@ The architecture in one line: a manifest, eight plugin entries, three source res
 
 ## Evidence vintage
 
-This refresh re-checked the manifest, the artifact counts, the hook inventory and the manifest check. It could not re-check anything requiring network reads. The engagement's action ceiling sets `networkAccess` false [EV-0077].
+This refresh re-checked the manifest, the artifact counts, the hook inventory and the manifest check. The dispatched collectors re-checked nothing on the GitHub side. The session operator performed those reads directly.
+
+The action ceiling did not forbid them. It sets `networkAccess` false [EV-0077], and under that setting it denies network clients and mutating `gh` verbs while permitting read-only `gh` and `git` [EV-0196]. Unknown: no evidence records why the collectors did not run those reads themselves (AQ-0012).
+
+A second fact applies to this engagement. Both dossier enforcement hooks exit 0 unless `<outputRoot>/00-control/.scope.json` exists, and none existed here, so the ceiling was inert throughout [EV-0091], [EV-0124], [EV-0194], [EV-0195].
+
+Citations written `[EV-pending R4-NN]` name a fact executed during the round-4 repair whose ledger row is not yet appended. Full treatment is in `03-assurance/security-privacy-and-compliance.md`.
 
 | Claim area | Last observed | Re-checked in this refresh | Note |
 |---|---|---|---|
@@ -31,7 +37,7 @@ This refresh re-checked the manifest, the artifact counts, the hook inventory an
 | Open issues, merged pull requests | 2026-07-26 | no | [EV-0049], [EV-0050]. Freshness window is days |
 | Tags and latest release | 2026-07-26 | no | [EV-0032]. Marketplace metadata has since moved to 4.10.0 [EV-0057] |
 | Client install state on the assessment machine | 2026-07-26 | no | [EV-0051], [EV-0052]. `autoUpdate` is true, so the clone has moved since |
-| Linux CI results, manifest check result | 2026-09-10 | yes, by the operator | [EV-0126], [EV-0127]. Collected outside the agent action ceiling — see AQ-0012 |
+| Linux CI results, manifest check result | 2026-09-10 | yes, by the operator | [EV-0126], [EV-0127]. Collected by the session operator directly, not by a dispatched collector — see AQ-0012 |
 
 ## Goals, constraints, and quality attributes
 
@@ -137,6 +143,8 @@ Hooks are the only mechanism in this project that changes an operator's session 
 Unknown: no ledger row names the purpose of dossier's fifth hook script, which is new since [EV-0039] was observed. The count of five is established [EV-0129]. The purpose is not.
 
 Read the distinction carefully. These hooks bound what **agent code inside a session** may do. They do not sandbox the plugin itself. A hook runs with the operator's full privileges, and nothing in this project constrains it.
+
+They also bound nothing at all under two conditions. dossier's two enforcement hooks exit 0 unless a run has written `<outputRoot>/00-control/.scope.json`, and none existed in this checkout [EV-0091], [EV-0194], [EV-0195]. Eleven of the 19 hook scripts across both plugins have a further silent path. A missing `jq`, `python3` or PyYAML disables each of them without a message [EV-0197], [EV-0198], [EV-0199]. The posture table in `03-assurance/security-privacy-and-compliance.md` names each one.
 
 ### Primary flow walkthrough
 

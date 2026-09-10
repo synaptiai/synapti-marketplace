@@ -89,9 +89,29 @@ The action ceiling is this project's own control over what an agent may do in a 
 
 `runSecurityScan` and `runCodeQualityScan` are absent from `.claude/settings.dossier.json` and fall to their false defaults [EV-0077]. The ceiling was resolved through `bin/dossier-resolve-config.sh`, not by reading a settings file directly.
 
-At least three rows this document cites were observed outside that ceiling. They are the Linux Actions conclusions [EV-0126], the marketplace manifest check result [EV-0127], and the live repository-settings read [EV-0131]. The session operator produced each by running GitHub commands directly. The dispatched collectors could not, because `networkAccess` is false.
+Citations written `[EV-pending R4-NN]` below name a fact executed during this repair round whose ledger row is not yet appended. They will not resolve until the coordinator writes it.
 
-Each row names that provenance. AQ-0012 records the open question, with a decision due before the next refresh. Several of this document's strongest claims bypassed the control the document otherwise describes.
+### The ceiling is inert without a scope file, and none existed here
+
+Both enforcement hooks test for `<outputRoot>/00-control/.scope.json` and exit 0 when it is absent. The tests are at `enforce-allowed-actions.sh:53` and `enforce-output-root.sh:39` [EV-0194], [EV-0195]. No such file exists in this checkout, and `.gitignore:49` excludes it from tracking [EV-0091], [EV-0124], [EV-0194], [EV-0195].
+
+An executed pair settles it. One network-client payload fed to the ceiling hook in a scratch fixture holding no scope file exits 0 and prints nothing. The same payload, after writing a scope file into that fixture, exits 2 with the BLOCKED text [EV-0194], [EV-0195]. The output-root hook behaves the same way against a write outside the root [EV-0194], [EV-0195].
+
+**Neither control enforced anything while this package was produced**. The seven resolved values in the table above describe an intent the drafting agents observed by discipline, not a control that ran.
+
+The contrast worth naming: the same two scripts fail **closed** on a missing `jq` and fail **open** on a missing scope file. Without `jq` on `PATH` each prints BLOCKED and exits 2 [EV-0197], [EV-0198], [EV-0199]. Without a scope file each exits 0 in silence. The failure an operator would notice is the harmless one. The failure that disables the whole ceiling says nothing.
+
+The `jq` check sits at `:15`, ahead of the scope test at `:53`. A machine without `jq` is therefore refused every Bash call, even with no dossier run active [EV-0197], [EV-0198], [EV-0199].
+
+### Three rows came from the operator's own shell
+
+Three rows this document cites were produced by the session operator running GitHub commands directly. They are the Linux Actions conclusions [EV-0126], the marketplace manifest check result [EV-0127], and the live repository-settings read [EV-0131].
+
+The ceiling did not forbid that work. It denies network clients, `git push`, `git remote add`, `git clone` and mutating `gh` verbs, and permits read-only `gh` and `git` [EV-0196]. Executed against the hook with a scope file in place: `gh api` and `git log` exit 0, while `gh pr create` and a `git push` exit 2 [EV-0196].
+
+AQ-0012 records the open question. Its premise — that a dispatched collector could not perform these reads because `networkAccess` is false — does not hold [EV-0196].
+
+Unknown: no evidence records why the dispatched collectors did not perform the reads themselves (AQ-0012). The provenance still matters. Three of this document's strongest claims came from one operator's shell rather than from a dispatched collector, and no evidence class names that route.
 
 ## Assets, actors, and trust boundaries
 
@@ -127,7 +147,7 @@ Each row names that provenance. AQ-0012 records the open question, with a decisi
 | Prompt injection through content an agent reads | The operator's session and repository | Anyone who can place text where an agent reads it | Untrusted text is interpreted as instruction | dossier marks untrusted evidence explicitly and passes paths rather than content. flow's hooks block destructive commands and force-pushes at `PreToolUse` | implemented in 2 plugins. The other 4 in-tree plugins state no injection posture | Medium | [EV-0120], [EV-0129], [EV-0058] |
 | Credential exfiltration by an agent's own output | The operator's secrets | An injected or mistaken agent | Agent writes a secret into a file, a commit, or a public document | flow's `block-secrets.sh` at `PreToolUse`. dossier's claim scan gates `06-public/**` behind an approved register | implemented in 2 of 8 published plugins | Medium | [EV-0038], [EV-0039] |
 | Destructive command executed by an agent | The operator's filesystem and git history | An injected or mistaken agent | `rm -rf`, force-push, history rewrite | flow's `block-destructive.sh` and `block-force-push.sh`, registered at `PreToolUse` | registered, and asserted by the suite. Whether the client honours the exit code is AQ-0025 | Low, for operators who installed flow | [EV-0038] |
-| An agent runs a denied action through a disguised spelling | The action ceiling itself | An injected or mistaken agent | Quoting, backslashes, ANSI-C escapes, or a `find` exec-family wrapper | `enforce-allowed-actions.sh` rejects eleven disguised spellings and the four `find` exec-family flags | implemented and executed | **High. Three shell expansion forms are still permitted** — same severity as the gaps table | [EV-0148] to [EV-0153] |
+| An agent runs a denied action through a disguised spelling | The action ceiling itself | An injected or mistaken agent | Quoting, backslashes, ANSI-C escapes, or a `find` exec-family wrapper | `enforce-allowed-actions.sh` rejects eleven disguised spellings and the four `find` exec-family flags | **implemented and executed, and active only when `<outputRoot>/00-control/.scope.json` exists.** Without that file the hook exits 0 [EV-0194], [EV-0195] | **High. Three shell expansion forms are still permitted, and the whole hook is inert without a scope file.** None existed during this engagement | [EV-0148] to [EV-0153], [EV-0091], [EV-0194], [EV-0195] |
 | A published release ships a known runtime defect | Operators who installed at that release | not adversarial | A release is cut before a fix merges | none. Releases are cut on demand with no gate | **not implemented.** v4.9.0 and v4.10.0 both predate `16b4dc4` and carry the pre-fix flow scripts | Medium, bounded to macOS operators | [EV-0144] |
 | Test-suite state escapes into the repository | This repository | not adversarial | A suite writes outside its fixture root | dossier's `mktemp` guard aborts a fixture whose scratch directory is invalid | implemented in dossier, 128 guarded call sites. **flow's suite leaked two branches and 3 commits into this repository** | Low for the repository, Medium as a signal about flow's isolation | [EV-0145], [EV-0146], [EV-0147], [EV-0164] |
 | Secret committed to this repository | This repository | maintainer error | `git commit` | flow's `block-secrets.sh`, only when flow is active in the session | implemented in-session. **No CI secret scan exists** | Low | [EV-0037], [EV-0038] |
@@ -139,7 +159,7 @@ Each row names that provenance. AQ-0012 records the open question, with a decisi
 |---|---|---|---|---|---|---|
 | Authentication | GitHub accounts for writes. The operating-system user for execution | maintainer, CI | GitHub, the operator's OS | implemented | 2026-07-26 | [EV-0035] |
 | Authorization | GitHub repository write permission | pushes, merges, tags, releases | GitHub | **implemented but ungated.** Write permission alone is sufficient for every operation | 2026-09-10 | [EV-0131] |
-| Agent action ceiling | `dossier.engagement.allowedActions`, resolved per repository | agents running dossier engagements here | `bin/dossier-resolve-config.sh` and `enforce-allowed-actions.sh` | implemented. 6 of 7 actions resolve false, and the hook rejects eleven disguised spellings of a denied word | 2026-09-10 | [EV-0077], [EV-0150], [EV-0151] |
+| Agent action ceiling | `dossier.engagement.allowedActions`, resolved per repository | agents running dossier engagements here | `bin/dossier-resolve-config.sh` and `enforce-allowed-actions.sh` | **implemented, conditionally active.** When a run has written `<outputRoot>/00-control/.scope.json`, 6 of 7 actions resolve false and the hook rejects eleven disguised spellings. Without that file the hook exits 0. **No scope file existed during this engagement, so the ceiling was inactive throughout** | 2026-09-10 | [EV-0077], [EV-0150], [EV-0151], [EV-0091], [EV-0124], [EV-0194], [EV-0195] |
 | Tenancy separation | N/A | — | — | N/A — the project has no tenants and no server-side identity | — | [EV-0044] |
 | Isolation | **None.** Hook and `bin/` scripts run with the operator's full privileges. This project applies no sandbox | operator machines | none | not implemented | 2026-09-10 | [EV-0040], [EV-0129] |
 | Session management | N/A | — | — | N/A — the project holds no sessions | — | [EV-0044] |
@@ -169,11 +189,35 @@ The signing row is the one that matters for a distribution channel. Plugins arri
 | Layer | Controls present | State | Gaps | Evidence |
 |---|---|---|---|---|
 | Network | HTTPS via GitHub | inherited | Nothing this project controls | [EV-0051] |
-| Application | flow's 14 hook scripts, of which `block-destructive.sh`, `block-secrets.sh` and `block-force-push.sh` are restrictive by design. dossier's 5 hook scripts cover output-root containment, the action ceiling, claim registration, header staleness, and local-merge detection | implemented in 2 plugins, plus the pinned external plugin's own two hooks | The other 4 in-tree plugins ship no controls and state no posture | [EV-0129], [EV-0038], [EV-0039], [EV-0166], [EV-0168] |
+| Application | flow's 14 hook scripts, of which `block-destructive.sh`, `block-secrets.sh` and `block-force-push.sh` are restrictive by design. dossier's 5 hook scripts cover output-root containment, the action ceiling, claim registration, header staleness, and local-merge detection. **Enforcement is not one posture — see the table below** | implemented in 2 plugins, plus the pinned external plugin's own two hooks | The other 4 in-tree plugins ship no controls and state no posture. 13 of the 19 examined scripts have a path that disables them in silence, and 2 more disable with a message [EV-0197], [EV-0198], [EV-0199] | [EV-0129], [EV-0038], [EV-0039], [EV-0166], [EV-0168], [EV-0197], [EV-0198], [EV-0199] |
 | Infrastructure | Workflow `permissions` blocks. `marketplace-manifest.yml` declares `contents: read`. `codeql.yml` declares no top-level block, but its `analyze` job scopes to `actions: read`, `contents: read`, `security-events: write` | partially implemented | `release-desktop-skills.yml` is the one workflow requesting `contents: write`, and it still interpolates a release tag name into a `run:` body | [EV-0081], [EV-0134], [EV-0133], CT-0004 |
 | Supply chain | 0 declared dependencies — no manifest is tracked [EV-0186]. 1 undeclared runtime requirement, `pyyaml`, reached from flow's hooks [EV-0189]. 2 third-party action sources. 2 external plugin sources, each pinned to a sha and checked in CI | partially implemented | No SHA pinning of actions. No `dependabot.yml`. **No dependency declaration of any kind, and no dependency scanning of any kind** | [EV-0186], [EV-0189], [EV-0042], [EV-0058], [EV-0080], [EV-0121], [EV-0036] |
 | Endpoint | N/A for the project. The operator's machine is the endpoint and is outside its control | not applicable | The project ships code that runs there and can constrain nothing about it | [EV-0040] |
 | Physical | N/A — GitHub-hosted | inherited | — | [EV-0044] |
+
+### Hook enforcement postures
+
+All 19 scripts under the two plugins' `hooks/scripts/` directories were run at HEAD with an empty `PATH`. Exit code, stdout and stderr were recorded for each [EV-0197], [EV-0198], [EV-0199]. The two dossier enforcement hooks were also run with and without a scope file [EV-0194], [EV-0195]. Disable conditions past the first one a run hits are taken from the cited lines rather than from a run.
+
+17 of the 19 are registered in a `hooks.json`. `flow-goal-evaluator.sh` and `flow-run-deterministic-checks.sh` are not: the goal hooks and commands call them.
+
+A hook that refuses is a control. A hook that disables itself is not. Both shapes are present here, and only the first was previously recorded.
+
+| Posture | Hooks | Disable condition | What the operator sees | Evidence |
+|---|---|---|---|---|
+| Fail closed | flow `block-destructive.sh:8`, `block-secrets.sh:8`, `block-force-push.sh:8`; dossier `enforce-allowed-actions.sh:15`, `enforce-output-root.sh:17`, `block-unregistered-claim.sh:19` | `jq` not on `PATH` | Exit 2 and a `BLOCKED:` line naming the missing tool | [EV-0197], [EV-0198], [EV-0199] |
+| Fail open, no message | flow `verify-task-completion.sh:43`, `ask-issue-create.sh:52`, `log-commits.sh:8`, `log-file-changes.sh:14`, `nudge-idle-teammate.sh:14`, `record-quality-run.sh:59`, `session-end-learn.sh:27`; dossier `detect-local-merge.sh:19`, `stale-header-stamp.sh:16` | `jq` not on `PATH` | Exit 0. Nothing on stdout or stderr | [EV-0197], [EV-0198], [EV-0199] |
+| Fail open, no message | flow `session-end-state.sh:47-48` | `python3` absent, or PyYAML not importable | Exit 0. Nothing on stdout or stderr | [EV-0197], [EV-0198], [EV-0199] |
+| Fail open, reason on stdout only | flow `flow-goal-evaluator.sh:38-41` and `:61` | `jq`, `python3`, the `claude` CLI, PyYAML, or `timeout`/`gtimeout` absent | `{"decision":"approve","reason":"…"}` on stdout, nothing on stderr. Whether the client surfaces the reason is unestablished, as AQ-0025 records for hook behaviour generally | [EV-0197], [EV-0198], [EV-0199] |
+| Fail open, one stderr warning | flow `flow-goal-stop.sh:52-54` | `jq`, `python3` or PyYAML absent | An approve decision plus one warning per dependency per session | [EV-0197], [EV-0198], [EV-0199] |
+| Fail open, message on stderr | flow `flow-run-deterministic-checks.sh:38-45`, a helper the goal hooks call | `python3` absent, or PyYAML not importable | `{}` on stdout, an error object on stderr, exit 0 | [EV-0197], [EV-0198], [EV-0199] |
+| Fail open, no message | dossier `enforce-allowed-actions.sh:53`, `enforce-output-root.sh:39` | `<outputRoot>/00-control/.scope.json` absent | Exit 0. Nothing on stdout or stderr | [EV-0194], [EV-0195] |
+
+The last two dossier rows are the same two scripts as the first row. Each fails closed on a missing `jq` and open on a missing scope file. The precondition an operator cannot see is the one that silences the control.
+
+Four flow scripts depend on PyYAML, which no manifest in this repository declares [EV-0186], [EV-0187]. Missing it disables the FlowGoal gate rather than reporting an error, and `session-end-state.sh` states nothing at all.
+
+Not every exit 0 here is a defect. Logging and nudge hooks that skip when `jq` is absent lose telemetry, not enforcement. The gate hooks are the ones whose silence removes a control.
 
 ## Secure development and vulnerability management
 
@@ -292,13 +336,13 @@ No regulatory applicability above was assumed from the project's category. Each 
 |---|---|---|---|---|---|---|
 | flow hook and script behaviour, macOS | 2026-09-10 | this assessment | `plugins/flow/tests/run.sh` | 2336 pass, 0 fail, exit 0 | on change | [EV-0098] |
 | dossier hook and script behaviour, macOS | 2026-09-10 | this assessment | `plugins/dossier/tests/run.sh` | 1951 pass, 0 fail, exit 0 | on change | [EV-0107] |
-| Both suites plus CodeQL, Linux | 2026-09-10 | the session operator, outside the action ceiling (AQ-0012) | GitHub Actions run history | All six runs `conclusion: success` | every merge | [EV-0126] |
-| Marketplace manifest check | 2026-09-10 | the session operator, outside the action ceiling (AQ-0012) | `scripts/check-plugin-versions.sh` | 8 plugins, 0 failed, 0 unverifiable, exit 0 | on manifest change and weekly | [EV-0127] |
+| Both suites plus CodeQL, Linux | 2026-09-10 | the session operator directly (AQ-0012) | GitHub Actions run history | All six runs `conclusion: success` | every merge | [EV-0126] |
+| Marketplace manifest check | 2026-09-10 | the session operator directly (AQ-0012) | `scripts/check-plugin-versions.sh` | 8 plugins, 0 failed, 0 unverifiable, exit 0 | on manifest change and weekly | [EV-0127] |
 | Prompt injection in the untrusted evidence bundle | 2026-09-10 | this assessment | Pattern scan over all 11 untrusted files | 2 hits, both descriptive prose, neither a directive | every refresh | [EV-0120] |
 | Dossier configuration validity | 2026-09-10 | this assessment | `bin/dossier-validate-config.sh` | pass, 0 findings | on config change | [EV-0086] |
 | The five dossier security fixes | 2026-09-10 | this assessment | 6 shipped suites, `mktemp-guard`, `hooks`, `dossier-policy`, `workflow-template`, `rotation-check`, `disclosure-gate` | all passing | on change to any hardened script | [EV-0147], [EV-0149] to [EV-0152], [EV-0154], [EV-0156], [EV-0158], [EV-0160] |
 | CodeQL findings | 2026-09-10 | not recorded in the check row | Code-scanning analyses and alerts, read through the GitHub REST API | 3 analyses, `results_count` 0 each, 0 open alerts | every merge | [EV-0140] |
-| Branch protection, rulesets, Actions secrets | 2026-09-10 | the session operator, outside the action ceiling (AQ-0012) | GitHub REST reads | **404 not protected**, empty rulesets, 0 secrets | on settings change | [EV-0131] |
+| Branch protection, rulesets, Actions secrets | 2026-09-10 | the session operator directly (AQ-0012) | GitHub REST reads | **404 not protected**, empty rulesets, 0 secrets | on settings change | [EV-0131] |
 | Commit and tag signing | 2026-09-10 | this assessment | `git log --format=%G?` and the REST verification field | Author commits unsigned, GitHub merge commits `valid`, tags unsigned | on release | [EV-0138] |
 | Vulnerability scan | **never** | — | — | **not executed.** `runSecurityScan` is false | before any release claim | [EV-0121], [EV-0073] |
 | Code-quality scan | **never** | — | — | not executed. `runCodeQualityScan` is false | — | [EV-0074] |
@@ -316,12 +360,14 @@ No regulatory applicability above was assumed from the project's category. Each 
 | **No vulnerability scan has ever been run** | **High** | Certain — it is a present-state fact | Nothing in this package supports any statement about the project's vulnerability status. The release gate correctly refuses to pass on it | Supply chain, every operator machine | Enable `runSecurityScan`, or install the refresh template's `scan` job, or add `dependabot.yml` | Daniel Bentes | [EV-0121], [EV-0073], [EV-0072], [EV-0036] |
 | No gate on `main`: no protection, no rulesets, no required checks, no required review | **High** | Medium | Any change reaches every installer's machine as executable code, with no check having to pass. Every green workflow is advisory | Every operator machine | Enable branch protection requiring both test workflows and the manifest check | Daniel Bentes | [EV-0131], [EV-0126] |
 | No security disclosure channel | **High** | Medium | A researcher who finds a flaw in a hook that runs on operator machines must disclose publicly or not at all | Every operator machine | Add `SECURITY.md` with one contact address | Daniel Bentes | [EV-0036] |
+| **The action ceiling enforced nothing during this engagement** | **High** | Certain — it is a present-state fact | Both enforcement hooks exit 0 unless `<outputRoot>/00-control/.scope.json` exists. The file is gitignored and absent, so the seven resolved allowed-action values bound no agent while this package was drafted. The control inventory previously read as though they did | The action ceiling, the output-root containment, and this package's own production record | Write the scope file in Phase 0 of every run, or make both hooks report their inertness on stderr the way they report a missing `jq` | Daniel Bentes | [EV-0091], [EV-0124], [EV-0194], [EV-0195] |
+| **13 hook scripts can disable themselves in silence** | Medium | Medium | Six hooks exit 2 with `BLOCKED:` when `jq` is missing. Thirteen have a path that exits 0 instead, ten of them printing nothing at all. The two ceiling hooks are in both groups: closed on a missing `jq`, open on a missing scope file. A gate that is off looks exactly like a gate that passed | The FlowGoal gate, task-completion verification, session-state capture, and both dossier enforcement hooks | Emit one warning per disabled hook per session, as `flow-goal-stop.sh` already does | Daniel Bentes | [EV-0197], [EV-0198], [EV-0199] |
 | **Three shell expansion forms bypass the action ceiling** | **High** | Medium | Brace expansion, default-value expansion and command substitution each pass the hook that rejects eleven other disguises. The control reads as comprehensive and is not | The action ceiling, on any machine running a dossier engagement | Extend the normalizer to those three forms, or state the residual in the hook's own operator-facing output | Daniel Bentes | [EV-0153], [EV-0150] |
 | flow's shell is not statically analysed | Medium | Medium | shellcheck covers dossier's 25 scripts. flow's 34 are unlinted, and flow's hooks are the blocking `PreToolUse` ones | flow's `bin/` and hook scripts | Add the same shellcheck step to `flow-tests.yml` | Daniel Bentes | [EV-0165], [EV-0162], AQ-0019 |
 | Both published releases carry known runtime defects | Medium | Certain | v4.9.0 and v4.10.0 were cut hours before the fix merged, so an operator installing today gets the pre-fix flow scripts | Operators on macOS | Cut a release, or state the defect on the existing ones | Daniel Bentes | [EV-0144] |
 | Hook blocking is assumed, not observed | Medium | Certain | Every hook-based control in this document rests on the client refusing a tool call on a non-zero exit, and nothing establishes it | The whole control-point argument | One observed hook rejection, or a citation to client documentation | Daniel Bentes | AQ-0025 |
 | flow's test suite leaks state into the repository | Low | Certain | Two branches and 3 commits authored by a test identity reached this repository. The branches were deleted; the suite defect was not fixed | This repository, and any repository running flow's suite | Scope the suite's git fixtures to a scratch root, as dossier's `mktemp` guard does | Daniel Bentes | [EV-0164], [EV-0146] |
-| Two evidence rows were observed outside the action ceiling | Medium | Certain | The package's two strongest CI claims did not come through the control the package describes | This package's own integrity | Decide whether to raise `networkAccess` for read-only reads, or to accept operator-observed rows as a distinct class | Daniel Bentes | AQ-0012, [EV-0126], [EV-0127] |
+| Three evidence rows came from the operator's shell, not from a dispatched collector | Medium | Certain | The package's strongest CI, manifest and repository-settings claims took a route the ledger does not name. The ceiling permits read-only `gh` and `git`, so nothing forbade a collector from producing them [EV-0196] | This package's own integrity | Record operator-observed rows as a named evidence class, and correct AQ-0012, whose premise does not hold | Daniel Bentes | AQ-0012, [EV-0126], [EV-0127], [EV-0131], [EV-0196] |
 | External pins are verified consistent, never verified current | Medium | Medium | A stale pin ships to installers and the check reports rather than fails | Installers of 2 plugins | Decide whether staleness should fail the check | Daniel Bentes | [EV-0080], [EV-0127], AQ-0006 |
 | Third-party actions pinned by tag, not SHA | Medium | Low | A moved tag executes in CI, including in the `contents: write` release job | This repository's CI | Pin to commit SHAs | Daniel Bentes | [EV-0042] |
 | Four of six in-tree plugins have no tests and state no security posture | Medium | Medium | A change to them is unverified by anything, including their structural validity | Installers of those 4 | Add a structural suite per plugin | Daniel Bentes | [EV-0010], [EV-0058] |
@@ -335,7 +381,8 @@ No regulatory applicability above was assumed from the project's category. Each 
 | Control state | Count | Notes |
 |---|---|---|
 | Implemented and evidenced by an executed check | 14 | Both test suites [EV-0098], [EV-0107], [EV-0126]. The marketplace manifest check [EV-0127]. CodeQL, matrix-bounded [EV-0134], [EV-0140]. shellcheck over dossier [EV-0165]. Nine hardened dossier controls [EV-0145] to [EV-0158] |
-| Registered to block, blocking behaviour unobserved | 5 | flow's `block-destructive.sh`, `block-secrets.sh` and `block-force-push.sh` [EV-0038]. dossier's output-root containment and its action ceiling hook [EV-0129], [EV-0077]. Each is asserted by its suite. Whether the client honours a non-zero exit is AQ-0025 |
+| Registered to block, fail closed on a missing dependency, blocking behaviour unobserved | 6 | flow's `block-destructive.sh`, `block-secrets.sh` and `block-force-push.sh` [EV-0038]. dossier's `enforce-allowed-actions.sh`, `enforce-output-root.sh` and `block-unregistered-claim.sh` [EV-0129], [EV-0077]. Each exits 2 with a `BLOCKED:` line when `jq` is absent [EV-0197], [EV-0198], [EV-0199]. Whether the client honours a non-zero exit is AQ-0025 |
+| Registered, but disables itself in silence when a precondition is missing | 13 | Ten hooks exit 0 with no message when `jq`, `python3` or PyYAML is absent, and `flow-goal-evaluator.sh` approves with a reason on stdout only [EV-0197], [EV-0198], [EV-0199]. dossier's two enforcement hooks also exit 0 with no message when no scope file exists — and none did here [EV-0194], [EV-0195]. See the posture table above |
 | Implemented, evidenced by a file read rather than a run | 4 | Release gate G01–G19 [EV-0071]. G19's inconclusive handling [EV-0072]. Scan isolation in the CI template [EV-0075]. Guard ordering in that template [EV-0156] |
 | Test coverage improved, control unchanged | 1 | The disclosure-gate fix changed no production code. It made the suite able to detect a regression it previously passed through [EV-0160] |
 | Policy-only — documented, implementation not evidenced | 3 | Code review, commit and branch conventions, and the flow/gh-workflow coexistence rule. Each is stated in `.claude/CLAUDE.md` and enforced by nothing [EV-0131], [EV-0163] |
@@ -355,7 +402,11 @@ Recommendation: enable branch protection on `main` requiring both test suites an
 
 Recommendation: run shellcheck over flow's `bin/` and hook scripts in `flow-tests.yml`, on the same terms `dossier-tests.yml` already uses [EV-0165].
 
-Recommendation: settle AQ-0012 before the next refresh. Either raise `networkAccess` for read-only GitHub queries, or record operator-observed rows as a named class in the ledger schema.
+Recommendation: write the scope file at the start of every dossier run, or make both enforcement hooks announce their own inertness. A control that is off should not be indistinguishable from a control that passed [EV-0194], [EV-0195].
+
+Recommendation: give every fail-open hook one warning per session on the terms `flow-goal-stop.sh` already uses. Ten of them currently say nothing at all [EV-0197], [EV-0198], [EV-0199].
+
+Recommendation: correct AQ-0012 rather than settle it as written. Read-only `gh` and `git` are already permitted, so the first branch of its question is moot [EV-0196]. What remains is whether operator-observed rows get a named evidence class.
 
 Recommendation: settle AQ-0025 before the next refresh. Every hook-based control in this document rests on an unestablished client behaviour.
 

@@ -16,9 +16,11 @@ related: [05-due-diligence/technical-due-diligence-report.md, 03-assurance/secur
 
 Two facts govern every table below.
 
-**The licence position is settled in the tree.** A `LICENSE` file carrying the canonical Apache-2.0 text sits at the repository root [EV-0019]. The README badge and licence section point at it and resolve [EV-0020]. As read on 2026-07-26 at commit `f57126f`, 7 plugin manifests and 8 marketplace entries all declared Apache-2.0 [EV-0021].
+**The licence position is settled in the tree.** A `LICENSE` file carrying the canonical Apache-2.0 text sits at the repository root [EV-0019]. The README badge and licence section point at it and resolve [EV-0020]. As read on 2026-07-26 at commit `f57126f`, 7 in-tree plugin manifests and 8 marketplace entries all declared Apache-2.0 [EV-0021]. Six in-tree manifests remain at this HEAD [EV-0182]. The seventh left the tree when `agent-capability-standard` became an externally sourced entry [EV-0058], [EV-0059].
 
 Unknown: GitHub's repository-level licence detection is computed from the default branch, and it was not re-read at this HEAD (AQ-0011). Do not treat the repository badge as confirming Apache-2.0.
+
+Unknown: no evidence row re-reads the licence field of the 6 remaining in-tree manifests at this HEAD. The blob-identity chain that carries other plugin claims forward does not reach back to `f57126f` [EV-0143], [EV-0174]. No register row yet — an AQ row is requested in this draft's handback.
 
 **The dependency surface is undeclared and it is unscanned.** No dependency manifest of any kind is tracked in the repository [EV-0186]. No `.dossier/scan/` directory exists, and no SARIF, osv-scanner or Dependabot artifact is tracked anywhere [EV-0121]. An undeclared surface is not a bounded one. Nothing in this document says the supply chain has no known vulnerabilities.
 
@@ -55,9 +57,9 @@ Counts are tracked-tree counts unless the row says otherwise.
 | 2 shell test suites | quality asset | Daniel Bentes | Written here | high | active. 2336 flow assertions and 1951 dossier assertions pass | git | [EV-0098], [EV-0107] |
 | `agent-capability-standard` tree | borrowed IP | Daniel Bentes, separate repository | `github` source pinned to sha `9e2f65b`. Not vendored here | medium | pinned. Reports 1.2.0 [EV-0127] | the upstream repository | [EV-0058], [EV-0059], [EV-0127] |
 | `prompt-decorators` plugin | borrowed IP | Daniel Bentes, separate repository | `git-subdir` source pinned to sha `9c792fe`. Not present here | medium | pinned. Reports 0.1.1 [EV-0127]. Contents never inspected (AQ-0005) | the upstream repository | [EV-0058], [EV-0127] |
-| 57 release tags and their assets | distribution asset | Daniel Bentes | Built by CI on publish | medium | latest `v4.6.2`, as read 2026-07-26 | Rebuildable from any tag | [EV-0032] |
+| 63 git tags | distribution asset | Daniel Bentes | Built by CI on publish | medium | 63 tags at `d3fc744`, all merged into it, and the GitHub tags endpoint returns the same 63 [EV-0177]. The two most recent releases, v4.9.0 and v4.10.0, were published 2026-09-10 [EV-0066]. Unknown: no evidence row counts the assets attached to those tags | Rebuildable from any tag | [EV-0177], [EV-0066] |
 | The `synaptiai/synapti-marketplace` name | brand asset | Daniel Bentes | GitHub namespace | high | active | Not recoverable if the namespace is lost | [EV-0051] |
-| 11 decision records | knowledge asset | Daniel Bentes | Produced by the flow plugin during development | low | active, as read 2026-07-26 | git | [EV-0046] |
+| 21 decision records | knowledge asset | Daniel Bentes | Produced by the flow plugin during development | low | active. `.decisions/` holds 21 tracked `issue-*.md` records at `7ee4923`, superseding the count of 11 read on 2026-07-26 | git | [EV-0169] |
 
 Asset classes with no instance in this project, and one that was not inspected:
 
@@ -121,7 +123,7 @@ All three channels carry the same terms. A recipient's rights do not depend on w
 |---|---|---|---|---|
 | Anthropic | The Claude Code client that executes every artifact | Whether distributing plugins that instruct the client has any term attached | The project's entire distribution depends on it. No review of its terms is recorded anywhere | Daniel Bentes |
 | Anyone who cloned or forked before 2026-07-26 | Their grant of rights for that copy | Whether a copy taken while no `LICENSE` file existed is covered by the licence added afterwards | This is a question of law, not of code | Daniel Bentes |
-| Contributors, if any join | Copyright assignment or inbound licence | No CLA, no DCO, no `CONTRIBUTING.md`. A contribution's terms would be undefined | AQ-0007. Untested, because no external contribution has occurred | Daniel Bentes |
+| Contributors, if any join | Copyright assignment or inbound licence | No CLA, no DCO, no `CONTRIBUTING.md`. A contribution's terms would be undefined | AQ-0007. No commit authored by a third party is established [EV-0192], so nothing has tested the path. 22 commits carry an assistant co-author identity whose rights position is unexamined [EV-0192] | Daniel Bentes |
 
 ## Generated, copied, vendored, and contributed material
 
@@ -132,7 +134,11 @@ All three channels carry the same terms. A recipient's rights do not depend on w
 | `plugins/agent-capability-standard/**` | `synaptiai/agent-capability-standard` | **not vendored at HEAD.** Fetched by the client from a `github` source at sha `9e2f65b` | Apache-2.0 per its marketplace entry | Not established at the pinned sha | unverified | [EV-0058], [EV-0059], [EV-0060] |
 | `prompt-decorators` | `synaptiai/prompt-decorators` | referenced at sha `9c792fe`, not vendored | Apache-2.0 per its marketplace entry | Not verifiable from here (AQ-0005) | unverified | [EV-0058] |
 | `dist/desktop/**` | every `SKILL.md`, via `package-desktop-skills.sh` | generated | Apache-2.0, inherited from the project | N/A | yes | [EV-0019], [EV-0123] |
-| External contributions | — | none exist. All commits across all refs carry one author identity | — | — | — | [EV-0035] |
+| Commits carrying a second author identity | this repository's own history | 22 of the 480 commits across all refs carry `Claude <noreply@anthropic.com>`, which the ledger records as an assistant co-author trailer rather than a third-party contributor [EV-0192]. `main`'s 214 commits carry one identity [EV-0163] | Unknown: no evidence row establishes the terms these commits arrived under (AQ-0007) | yes, as a commit trailer [EV-0192] | no. Flagged for counsel below | [EV-0163], [EV-0192] |
+
+No evidence row establishes a commit authored by a person other than the owner [EV-0192]. That is a narrower statement than "no external contribution exists". An identity count is not a contributor count, and [EV-0192] says so on its own row.
+
+Unknown: whether the 22 commits under the assistant identity change this project's inbound-rights position. The nearest register row is AQ-0007, which asks a different question: whether the contribution path works for anyone but the maintainer. No row asks the rights question directly. A dedicated AQ row is requested in this draft's handback, and the question is carried to counsel below.
 
 Unknown: whether the two `cascade-resolve.sh` copies still diverge (AQ-pending). The debt register carries the item as [TD-05]. Either way this is a maintenance hazard, not a licensing one.
 
@@ -155,12 +161,14 @@ No SBOM exists and no tooling produces one. There is also no declared list to co
 | Scan | Tool | Scope | Date | Findings by severity | Source of advisory data | Evidence |
 |---|---|---|---|---|---|---|
 | Dependency vulnerability scan | **no vulnerability-scan output located** | — | — | — | — | [EV-0121] |
-| Static analysis | CodeQL | **Unknown.** No row records the configured language set (AQ-pending) | runs green across the range, 2026-09-10 | **Unknown.** A green run means the analysis completed, not that it reported nothing (AQ-pending) | GitHub Advisory Database | [EV-0123], [EV-0126] |
+| Static analysis | CodeQL | `actions` and `python`, both `build-mode: none`. flow's 3 `bin/*.py` files sit under the scanned path. The 37 tracked `bin/*.sh` files do not [EV-0176], [EV-0175] | runs green across the range, 2026-09-10 | **Unknown.** A green run means the analysis completed, not that it reported nothing (AQ-pending) | GitHub Advisory Database | [EV-0123], [EV-0126] |
 | Credential scan | `git grep` over the project's own detector pattern set | all tracked files | 2026-07-26 | 0 | the project's own patterns | [EV-0037] |
-| Shell analysis | none exists. No `shellcheck` runs in CI | — | — | — | — | [EV-0123] |
+| Shell analysis | shellcheck v0.11.0 at `-S warning`, installed by pinned release URL in `dossier-tests.yml`. No other workflow runs it [EV-0165] | dossier's 20 `bin/` and 5 hook scripts, plus dossier's tests with `-x`. flow's 17 `.sh` bin scripts and 14 hook scripts are outside it [EV-0165], [EV-0175], [EV-0129] | present in the workflow at `7ee4923` [EV-0165]. **Unknown:** no evidence row records a run of this step | **Unknown.** No evidence row records the step's finding count | shellcheck's own rule set | [EV-0165], [EV-0175], [EV-0129] |
 | Workflow injection scan | `awk` run-block scanner, executed during the 2026-07-26 round | the 4 workflows then present | 2026-07-26 | 1, in `release-desktop-skills.yml` | this assessment | [EV-0015] |
 
-Three limits on this table. First, no dependency-vulnerability scan has ever run here [EV-0121], [EV-0078]. Second, no evidence row establishes CodeQL's configured language set, so shell coverage of the 37 tracked plugin scripts is unestablished [EV-0093]. Third, the credential and workflow-injection results are dated 2026-07-26 against a 4-workflow tree. Five workflows exist at HEAD [EV-0123], and neither check was re-run at this HEAD.
+Three limits on this table. First, no dependency-vulnerability scan has ever run here [EV-0121], [EV-0078]. Second, CodeQL configures `actions` and `python` only [EV-0176], and no configured language covers the 37 tracked `bin/*.sh` files. shellcheck covers 20 of those 37, all of them in dossier [EV-0165], [EV-0175].
+
+Third, the credential and workflow-injection results are dated 2026-07-26 against a 4-workflow tree. Five workflows exist at HEAD [EV-0123], and neither check was re-run at this HEAD.
 
 Unknown: the CodeQL finding count at this HEAD. Alerts do not fail the workflow, so a green run does not establish zero.
 
@@ -206,6 +214,7 @@ Unknown provenance is a material diligence risk here, not a bookkeeping gap. Two
 | Copies taken before the licence was added | What is the position of anyone who installed or forked while the README's MIT badge pointed at a file that did not exist? | Whether a metadata declaration was legally operative, and whether a later licence covers an earlier copy, are questions of law | Daniel Bentes |
 | Relicensing six plugins from MIT to Apache-2.0 | The sole author holds copyright in all of them. Does the change bind a recipient who took a copy under the earlier declaration? | Relicensing analysis | Daniel Bentes |
 | Inbound contribution terms | Should a CLA or DCO be adopted before the first external contribution? | A policy question with legal consequences | Daniel Bentes |
+| Commits recorded under an assistant co-author identity | Do 22 commits carrying `Claude <noreply@anthropic.com>` [EV-0192] affect authorship, copyright ownership, or the inbound licence position for this repository? | Authorship and copyrightability of machine-assisted contributions is a question of law, not of code | Daniel Bentes |
 | Redistribution of two externally sourced plugins | Does publishing a marketplace entry that causes a client to fetch third-party code constitute distribution of that code? | The repository no longer carries either tree [EV-0058], [EV-0059]. Whether that changes the obligation is a legal question | Daniel Bentes |
 
 ## Recommendations
