@@ -122,7 +122,7 @@ This table is the core finding. The project has good tests and no gate anywhere 
 | Manifest version drift | `check-plugin-versions.sh` | All 8 marketplace entries | no | 8 checked, 0 failed, 0 unverifiable | [EV-0127] |
 | Formatting | none | — | — | — | [EV-0123] |
 | Shell linting | shellcheck v0.11.0 | dossier `bin/`, hooks and tests only | no | Runs in `dossier-tests.yml` | [EV-0165] |
-| Type checking | N/A for Markdown and shell | — | — | — | [EV-0041] |
+| Type checking | N/A for Markdown and shell. The three Python files under plugin `bin/` are unchecked; no type checker is configured for them and no manifest declares one [EV-0186] | — | — | — | [EV-0186] |
 | Dependency scanning | **none.** No `dependabot.yml` | — | — | — | [EV-0036] |
 | Vulnerability scanning | **none executed** | — | — | No artifact exists | [EV-0121] |
 | Action pinning | GitHub | 2 third-party action sources | — | Pinned by major tag, not by commit sha | [EV-0042] |

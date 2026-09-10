@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer
 confidentiality: Internal
 owner: Daniel Bentes
 status: partially verified
-project-version: 691bcdb
+project-version: 7ee4923
 last-verified: 2026-09-10
 review-trigger: Any red flag changes state; a release is cut; the maintainer count changes
 related: [01-project/executive-project-brief.md, 04-operating/decisions-technical-debt-and-risks.md, 05-due-diligence/assets-dependencies-and-licenses.md, 07-verification/documentation-verification-report.md]
@@ -117,7 +117,7 @@ The submodule finding matters beyond its own scope. `02-architecture/components-
 | Control area | Finding | Evidence | State |
 |---|---|---|---|
 | Dependency vulnerability scanning | **None exists.** No `.dossier/scan/` directory is present and no SARIF, osv-scanner or Dependabot artifact is tracked [EV-0121]. `runSecurityScan` resolves false, so `dossier-scan-security.sh` emits `disabled` and invokes nothing [EV-0073]. This is the absence of a scan, not a clean result | [EV-0121], [EV-0073] | V |
-| Declared dependency surface | One declared third-party runtime dependency, `pyyaml>=6.0`, as read at `95f7ac2` [EV-0041]. That is the old submodule pointer. The current pin `9e2f65b` was not fetched (AQ-0006) | [EV-0041], [EV-0058] | V |
+| Dependency surface | **Undeclared, not absent.** No dependency manifest of any kind is tracked [EV-0186]. PyYAML is a hard runtime requirement of the flow plugin's Python entrypoints, declared nowhere an operator would see [EV-0187], [EV-0189]. `plugins/flow/bin/_journal_atomic.py:51` imports it at module scope, unguarded. Several `bin/` scripts and the `SessionEnd` hook `session-end-state.sh` reach that import [EV-0189]. The only pin is `pyyaml==6.0.2` in the two CI workflows, which govern CI and not an install [EV-0187]. CT-0025 records the correction. CL-0048 replaces the public claim and is pending approval | [EV-0186], [EV-0187], [EV-0189] | V |
 | Third-party CI actions | 2 action sources, `actions/checkout@v4` and `github/codeql-action@v3`, pinned by major tag rather than by sha | [EV-0042] | V |
 | Supply-chain pinning of plugin sources | Both external sources now carry a sha [EV-0058], and both pinned trees report their advertised versions [EV-0127] | [EV-0058], [EV-0127] | V |
 | Credential exposure | No credential matching the project's own detector pattern set appears in tracked files, as observed 2026-07-26 | [EV-0037] | V |
@@ -194,7 +194,6 @@ Inferred: four of the six in-tree entries have no shell test suite, reasoned fro
 | Auditable execution surface | 37 plugin `bin/` scripts, all plain shell, with no binaries or bundles. An installer can read what will run before trusting it | [EV-0093], [EV-0044] | V |
 | Restrictive-by-default safety model | Blocking hooks for secrets, destructive commands and force-push, plus an action ceiling whose capabilities default to false | [EV-0038], [EV-0039], [EV-0077] | V |
 | Supply chain pinned and checked | Both external sources carry shas, both match their advertised versions, and a CI check enforces the pairing | [EV-0058], [EV-0080], [EV-0081], [EV-0127] | V |
-| Minimal declared dependency surface | One declared third-party runtime dependency, read at `95f7ac2` rather than at the current pin (AQ-0006) | [EV-0041] | V |
 | A real evaluation harness exists for flow | 4 cases with hidden tests and trap variants, driven by a runner and 82 tracked files. Rare in a prompt-shipping project | [EV-0095] | V |
 | The project's own tooling finds its own defects | This refresh, produced by the plugin under review, corrected a submodule description (CT-0005) and a claim that nothing validates the manifest (CT-0006) | [EV-0059], [EV-0080] | V |
 
@@ -203,6 +202,7 @@ Inferred: four of the six in-tree entries have no shell test suite, reasoned fro
 | Weakness | Why it is material | How it would surface | Evidence | State |
 |---|---|---|---|---|
 | The dependency surface has never been scanned | A diligence reader cannot be told anything about this project's vulnerability status, in either direction | The first advisory against any shipped or pinned dependency | [EV-0121], [EV-0073] | V |
+| A hard runtime dependency is declared nowhere | No manifest is tracked [EV-0186], and flow's Python entrypoints require PyYAML at runtime [EV-0187], [EV-0189]. No file declares the requirement to an operator installing the plugin [EV-0187] | An import failure on an operator machine without PyYAML, including from the `SessionEnd` hook, with no operator action | [EV-0186], [EV-0187], [EV-0189] | V |
 | Nothing gates `main` | Any change reaches every installer's machine as executable code with no check having to pass, and `autoUpdate` was on by default when last observed | A mistaken commit, or one compromised account | [EV-0016], [EV-0017], [EV-0051] | V |
 | No security disclosure channel | The project ships hooks that execute on other machines and offers no private reporting route | The first researcher who finds something | [EV-0036] | V |
 | Bus factor of one | One identity across every ref, no backup owner on any component, no escalation path | Any absence of one person | [EV-0035] | V |
@@ -221,7 +221,7 @@ The four registers are kept separate here on purpose. Collapsing them is what ma
 
 Both suite results and their Linux confirmation [EV-0098], [EV-0107], [EV-0126]. The tracked artifact inventory [EV-0093], [EV-0129]. Marketplace shape and source pinning [EV-0057], [EV-0058], [EV-0059], [EV-0060].
 
-The manifest version check and its passing result [EV-0080], [EV-0081], [EV-0127]. The workflow set [EV-0123]. Licence text and declarations [EV-0019], [EV-0021]. The absence of any scan artifact [EV-0121], [EV-0073]. The action ceiling [EV-0077].
+The manifest version check and its passing result [EV-0080], [EV-0081], [EV-0127]. The workflow set [EV-0123]. Licence text and declarations [EV-0019], [EV-0021]. The absence of any scan artifact [EV-0121], [EV-0073]. The action ceiling [EV-0077]. The absence of any tracked dependency manifest, and PyYAML as an undeclared runtime requirement of flow [EV-0186], [EV-0187], [EV-0189].
 
 ### Reported, not independently verified
 

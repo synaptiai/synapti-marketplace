@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer, Installing operator
 confidentiality: Internal
 owner: Daniel Bentes
 status: partially verified
-project-version: d3fc744
+project-version: 7ee4923
 last-verified: 2026-09-10
 review-trigger: The project acquires a runtime, a hosted service, or any telemetry; a new failure mode is reported by an operator
 related: [02-architecture/system-architecture.md, 02-architecture/infrastructure-and-deployment.md, 04-operating/operations-and-incident-response.md, 00-control/evidence-ledger.md]

@@ -94,7 +94,7 @@ No ledger row records a planned capability. The one pending decision, whether a 
 | GitHub | technical | Hosting, distribution, releases, and the only execution environment the project itself operates | low | [EV-0123], [EV-0132] |
 | Single maintainer | organizational | 214 commits on `main` under one identity, and no component has a backup owner. No release, merge or security response happens without that person | none | [EV-0163] |
 | Two externally sourced entries | technical | `agent-capability-standard` and `prompt-decorators` ship under this marketplace's name from other repositories. Both are sha-pinned, and CI checks both at their pin | moderate | [EV-0058], [EV-0127], AQ-0005 |
-| `pyyaml>=6.0` | technical | The only declared third-party runtime dependency reachable from the manifest. It belongs to the upstream `agent-capability-standard` tree, not to tracked repository content. Observed at the previous pin `95f7ac2`, and not re-read at the current pin `9e2f65b` | high | [EV-0041], [EV-0058] |
+| PyYAML | technical | flow's journal, FlowRun state and FlowGoal machinery require it at runtime, and no file in the repository declares it for an operator installing the plugin [EV-0186], [EV-0187], [EV-0189]. A SessionEnd hook reaches that requirement without the operator invoking anything [EV-0189] | high | [EV-0186], [EV-0187], [EV-0189] |
 | Apache-2.0 | legal | GitHub now detects Apache-2.0 for the repository, and the plugin manifests, marketplace entries and README all match the file | resolved | [EV-0132], [EV-0021] |
 | No spend control on induced model usage | commercial | The project pays nothing. Operators pay for whatever the plugins induce, unmeasured | none | [EV-0044], AQ-0004 |
 

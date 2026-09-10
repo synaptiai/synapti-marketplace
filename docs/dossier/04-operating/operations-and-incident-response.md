@@ -6,7 +6,7 @@ audience: Maintainer, Reviewer, Installing operator
 confidentiality: Internal
 owner: Daniel Bentes
 status: partially verified
-project-version: d3fc744
+project-version: 7ee4923
 last-verified: 2026-09-10
 review-trigger: The project acquires a runtime or a service, a security disclosure channel is established, or an incident occurs
 related: [02-architecture/infrastructure-and-deployment.md, 03-assurance/reliability-performance-and-observability.md, 03-assurance/security-privacy-and-compliance.md]
@@ -45,7 +45,7 @@ One author identity carries all 214 commits on `main` [EV-0163]. Every escalatio
 | `prompt-decorators` `git-subdir` source at sha `9c792fe` | high, for one plugin | Daniel Bentes | Installers receive the pinned tree. Contents are unverified from this repository (AQ-0005) | move the pin | [EV-0058], [EV-0127] |
 | `agent-capability-standard` `github` source at sha `9e2f65b` | medium | Daniel Bentes | The pinned upstream tree is what installs. It registers its own hooks, so it executes on the operator's machine | move the pin | [EV-0058], [EV-0127], [EV-0168] |
 | `actions/checkout@v4`, `github/codeql-action@v3` | medium | third party | CI cannot run. Merges are unaffected because no check is required | pin to SHAs | [EV-0042], observed 2026-07-26 |
-| `pyyaml>=6.0` | low | PyPI | Upstream `agent-capability-standard` content, not repository content. Locally it supplies one flow test leg through a per-user site-packages path | vendor or pin | [EV-0041], [EV-0099], [EV-0100] |
+| `pyyaml` | high | PyPI | flow's journal, FlowRun state and FlowGoal machinery do not run without it [EV-0189]. `hooks/scripts/session-end-state.sh` reaches the requirement without the operator invoking anything, so a machine without it is affected before any command is typed [EV-0189]. No file in the repository declares it [EV-0186], [EV-0187] | `pip install --user pyyaml` on the operator's machine. Whether to declare, guard or remove the requirement is open (AQ-0032) | [EV-0186], [EV-0187], [EV-0189] |
 
 The `agent-capability-standard` row was a git submodule until commit efb4f75. There is no `.gitmodules` in the tracked tree [EV-0059]. The leftover directory on the assessment machine is untracked and gitignored [EV-0060]. The manifest entry is a `github` source pinned to `9e2f65b` [EV-0058].
 

@@ -6,7 +6,7 @@ audience: Contributor, Maintainer
 confidentiality: Internal
 owner: Daniel Bentes
 status: partially verified
-project-version: 691bcdb
+project-version: 7ee4923
 last-verified: 2026-09-10
 review-trigger: A prerequisite, test command, or repository convention changes
 related: [02-architecture/components-and-codebase.md, 03-assurance/testing-quality-and-delivery.md, 04-operating/decisions-technical-debt-and-risks.md]
@@ -39,7 +39,7 @@ One caveat frames the whole document. Unknown: whether the contribution path wor
 | `git` | any recent | Preinstalled on macOS and Linux | Everything | [EV-0034] |
 | `bash` | 3.2 or later | Preinstalled | Both test suites and every script | [EV-0098], [EV-0107] |
 | `jq` | any recent | `brew install jq`, `apt install jq` | Helper scripts and the version check | [EV-0080] |
-| `python3` with `pyyaml` | 3.x | `pip install --user pyyaml` | Optional. Enables the YAML-parse leg of dossier's workflow test | [EV-0099], [EV-0100] |
+| `python3` with `pyyaml` | 3.x | `pip install --user pyyaml` | **Required.** flow's journal, FlowRun state and FlowGoal machinery need it at runtime [EV-0189]. It also enables the YAML-parse leg of dossier's workflow test [EV-0107] | [EV-0186], [EV-0187], [EV-0189] |
 | `gh` CLI, authenticated | any recent | `brew install gh`, then `gh auth login` | `scripts/check-plugin-versions.sh` and flow's GitHub commands | [EV-0080] |
 | Claude Code | any recent | Anthropic | Using the plugins as an operator | [EV-0051] |
 | Windows | **untested** | — | Issues #100 and #130 report Git Bash failures. No CI leg exists (AQ-0008) | [EV-0049], [EV-0126] |
@@ -173,6 +173,7 @@ Step 4 is the interesting one. The machine-readable pair already agrees [EV-0064
 | A script fails with `declare: -A: invalid option` | macOS `bash` 3.2 meeting a `bash` 4 construct | Rewrite without associative arrays. Both suites assert against this | yes [EV-0098], [EV-0107] |
 | A hook does not fire | The file lacks the executable bit | `chmod +x`. Both suites check this | yes [EV-0107] |
 | The YAML-parse leg of the workflow test is skipped | `pyyaml` is missing from the interpreter the suite uses | Install it for the user site directory. The suite adds that directory to `PYTHONPATH` | yes [EV-0099], [EV-0100] |
+| A flow command that records journal, FlowRun or FlowGoal data does not do its work | `pyyaml` is missing. flow's journal and run-state machinery requires it, and no file in the repository declares it [EV-0186], [EV-0187], [EV-0189] | `pip install --user pyyaml`, then re-run the command | yes [EV-0189] |
 | `check-plugin-versions.sh` reports an entry unverifiable | `gh` is unauthenticated, or network access is unavailable | Run `gh auth login`. Six local entries still resolve without it | yes [EV-0127] |
 | `dossier-package-check.sh` reports many findings on a fresh scaffold | The scaffold writes 23 files with placeholder headers [EV-0047] | Draft the documents | Inferred: the findings follow from the placeholders, and were not re-counted today |
 | Anything on Windows | Issues #100 and #130 report Git Bash failures [EV-0049] | **No resolution exists.** Use macOS or Linux | Unknown: reported, never reproduced or measured (AQ-0008) |

@@ -6,7 +6,7 @@ audience: Maintainer, Reviewer, Prospective contributor
 confidentiality: Internal
 owner: Daniel Bentes
 status: partially verified
-project-version: d3fc744
+project-version: 7ee4923
 last-verified: 2026-09-10
 review-trigger: A plugin is added or removed; a plugin's stated purpose or description changes; the intended audience changes
 related: [01-project/executive-project-brief.md, 00-control/terminology-and-ownership.md, 02-architecture/components-and-codebase.md, 04-operating/decisions-technical-debt-and-risks.md]

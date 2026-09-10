@@ -6,7 +6,7 @@ audience: Reviewer, Installing operator, Maintainer
 confidentiality: Internal
 owner: Daniel Bentes
 status: partially verified
-project-version: 691bcdb
+project-version: 7ee4923
 last-verified: 2026-09-10
 review-trigger: A plugin gains or loses hooks; a new plugin source kind is added; the Claude Code plugin resolution model changes
 related: [02-architecture/components-and-codebase.md, 02-architecture/interfaces-and-integrations.md, 02-architecture/infrastructure-and-deployment.md, 03-assurance/security-privacy-and-compliance.md, 00-control/evidence-ledger.md]

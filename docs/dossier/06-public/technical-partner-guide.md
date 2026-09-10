@@ -2,8 +2,8 @@
 dossier-header: public-v1
 title: Technical Partner Guide
 audience: Plugin authors, integrators, and operators evaluating the marketplace
-product-version: 06b1586
-last-updated: 2026-07-26
+product-version: 4.10.0
+last-updated: 2026-09-10
 ---
 # Technical Partner Guide
 <!-- contract: references/package-contract-06-public.md#technical-partner-guide -->
@@ -12,9 +12,9 @@ Every statement in this guide maps to an approved claim backed by a verified evi
 
 ## What this is
 
-The marketplace publishes eight Claude Code plugins. *The published `main` manifest carries seven entries; the eighth exists only on the branch this guide was produced from.*
+The marketplace publishes eight Claude Code plugins. *Each entry's advertised version is checked against its source in continuous integration.* The published `main` manifest carries all eight entries.
 
-Six plugins are versioned in this repository. Two are published from external sources — one git submodule and one `git-subdir` entry.
+Six plugins are versioned in this repository. Two are published from other repositories, each pinned to a commit sha. *The manifest uses three resolution mechanisms: six relative paths, one `github` source, one `git-subdir` source.*
 
 ## How an integration fits together
 
@@ -34,8 +34,8 @@ graph LR
 | Use case | What it enables | Supported | Not supported |
 |---|---|---|---|
 | Installing a plugin into Claude Code | A worked-out method, its commands, and its safety hooks become available in your sessions | yes | Any client other than Claude Code, except the packaged skill export for Claude Desktop |
-| Reading the source before trusting it | Every executable artifact is plain shell or Markdown | yes | Signature or checksum verification — none is published |
-| Pinning to a specific version | In-repository plugins resolve to the commit your client reads | yes | The `prompt-decorators` entry, which floats — see below |
+| Reading the source before trusting it | Every executable artifact ships as plain text you can read | yes | Signature or checksum verification — none is published |
+| Pinning to a specific version | In-repository plugins resolve to the commit your client reads, and both externally sourced plugins are pinned to a commit sha | yes | — |
 | Running on macOS or Linux | bash 3.2 and later | yes | **Windows** — see Known limitations |
 
 ## Prerequisites and access
@@ -58,11 +58,9 @@ Add the marketplace, then install individual plugins by name. *Verified on a pro
 
 ## What ships in each plugin
 
-The flow plugin ships 32 skills, 23 commands, 9 agents, and 12 hook scripts. *Counts are file counts — a skill directory without a `SKILL.md` is not a skill.*
+The flow plugin ships 32 skills, 23 commands, 9 agents, and 14 hook scripts. *Counts are file counts — a skill directory without a `SKILL.md` is not a skill.*
 
-The repository's only declared third-party runtime dependency is `pyyaml`, required by the agent-capability-standard plugin. *This covers declared dependencies, not what the Claude Code client itself requires.*
-
-The prompt-decorators entry is pinned to the floating ref `main`, so two installs performed on different days need not resolve to the same contents.
+Both externally sourced plugins are pinned to a commit sha, so two installs performed on different days resolve the same tree.
 
 ## Public interfaces
 
@@ -80,15 +78,14 @@ Helper scripts under each plugin's `bin/` are internal. They are executable and 
 
 Plugins run inside your own Claude Code session. The marketplace operates no service and collects no telemetry.
 
-Three plugins register hooks — shell scripts the Claude Code client runs on your machine at defined lifecycle points.
+Two of the plugins in this repository register hooks — shell scripts the Claude Code client runs on your machine at defined lifecycle points — and so does the externally sourced agent-capability-standard.
 
 **Hooks execute without you invoking them.** They run with your user privileges, in your shell, with access to whatever you have access to. There is no sandbox.
 
 Two things bound that risk, and you should verify both yourself.
 
-- Every hook is plain shell you can read before installing. There are no binaries and no bundles.
+- Every hook ships as plain text you can read before installing. There are no binaries and no bundles.
 - The hooks in the flow plugin are restrictive by design — they block destructive commands, force-pushes, and writes containing credential patterns.
-- Two of the three hook-shipping plugins carry test suites; the third does not have one in this repository.
 
 ## Authentication and authorization
 
@@ -108,7 +105,9 @@ Two things bound that risk, and you should verify both yourself.
 | Deprecation notice period | **None defined.** No plugin has been deprecated or removed to date |
 | How changes are announced | GitHub releases and per-plugin CHANGELOGs. There is no announcement channel, mailing list, or status page |
 
-The marketplace has published 57 tags; the most recent release is v4.6.2, dated 2026-05-29.
+The marketplace has published 63 tags; the most recent release is v4.10.0, dated 2026-09-10.
+
+Every marketplace entry's advertised version is checked against its source in continuous integration, on manifest changes, weekly, and on demand.
 
 Claude Code's plugin client defaults to auto-updating an added marketplace. Changes reach you without your acting, on the client's schedule.
 
@@ -135,16 +134,16 @@ Claude Code's plugin client defaults to auto-updating an added marketplace. Chan
 | Facility | What it offers | Differences from production | How to get access |
 |---|---|---|---|
 | The repository itself | Clone it and run the test suites directly | None — the repository is the artifact; there is no build step | Public |
-| flow and dossier test suites | `plugins/<name>/tests/run.sh` | Runs against the working tree rather than an installed copy | Public |
+| flow and dossier test suites | Each plugin ships a runnable suite | Runs against the working tree rather than an installed copy | Public |
 | A scratch repository | Install the plugins and exercise the commands against work you do not mind changing | None | Your own |
 
 There is no sandbox environment and no staging marketplace. A scratch repository is the recommended way to evaluate a workflow plugin before pointing it at anything you care about.
 
 ## Quality signals
 
-The flow and dossier plugins ship automated test suites — 1022 and 1241 assertions respectively — both passing at the assessed commit. *Assertion counts describe the suites, not coverage of the plugins they guard.*
+The flow and dossier plugins ship automated test suites — 2336 and 1951 assertions respectively — both passing. *Assertion counts describe the suites, not coverage of the plugins they guard. The macOS results were observed on one machine; the Linux results are GitHub Actions runs.*
 
-Five of the seven in-repository plugins ship no automated test suite.
+Four of the six in-repository plugins ship no automated test suite.
 
 ## Security and data responsibility
 
@@ -161,8 +160,8 @@ Five of the seven in-repository plugins ship no automated test suite.
 | Aspect | Detail |
 |---|---|
 | Support channel | GitHub issues, public |
-| Response expectations | **None stated.** The project is maintained by one person |
-| Escalation path | None — there is no second person |
+| Response expectations | **None stated** |
+| Escalation path | **None defined** |
 | Status page | None |
 | Maintenance notification | None |
 
@@ -190,8 +189,6 @@ This is an open-source project published without warranty or commitment.
 | The `main` branch carries no branch protection and no rulesets, so both test workflows are advisory rather than required | Any change reaches installers without a check having to pass, and the client auto-updates by default | Pin your own copy, or review the diff between syncs |
 | The dossier plugin's post-merge documentation automation has never been executed end to end. Its components are tested; the assembled behaviour is not | Do not depend on it working until you have run it yourself | Run it once in a scratch repository first |
 | Two open issues report that the shipped shell scripts fail under Windows and Git Bash, and neither test workflow runs on Windows | Windows operators should expect failures | Use macOS or Linux |
-| No LICENSE file is published | See the trust guide — this affects your right to fork or vendor | Ask before relying on it |
-| The `prompt-decorators` entry floats on `main` | Installs are not reproducible for that plugin | Vendor it, or wait for a pinned ref |
 
 ## Troubleshooting
 
@@ -201,4 +198,3 @@ This is an open-source project published without warranty or commitment.
 | A hook never fires | The file lacks the executable bit | Report it — both maintained suites check for this |
 | A command cannot find its plugin root | An environment variable the client does not always set | The maintained plugins ship a fallback resolver; report it if you hit it |
 | Anything on Windows | Known and unresolved | Use macOS or Linux |
-| A plugin installs different content than yesterday | You installed `prompt-decorators`, which floats on `main` | Expected. Vendor it if you need reproducibility |

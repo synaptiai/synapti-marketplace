@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer, Contributor
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: e104483
+project-version: 7ee4923
 last-verified: 2026-09-10
 review-trigger: A plugin is added, renamed, or removed; ownership of any component changes
 related: [00-control/evidence-ledger.md, 02-architecture/components-and-codebase.md, 04-operating/decisions-technical-debt-and-risks.md]
@@ -45,7 +45,7 @@ An owner is never invented. `unassigned` is the correct value where no evidence 
 | TM-0020 | Synapti Plugin Marketplace | product | This repository, published at `synaptiai/synapti-marketplace`, distributing 8 plugin entries | synapti-marketplace | Daniel Bentes | Daniel Bentes | `.claude-plugin/marketplace.json` | [EV-0001] | current |
 | TM-0021 | flow | plugin | GitHub development workflow: 32 skills, 23 commands, 9 agents, 14 hook scripts, its own settings schema and test suite. The largest and most depended-on plugin | — | Daniel Bentes | Daniel Bentes | `plugins/flow/` | [EV-0129], [EV-0098] | current |
 | TM-0022 | dossier | plugin | Evidence-first documentation and post-merge documentation automation: 10 skills, 9 commands, 6 agents, 5 hook scripts, 20 `bin/` scripts | — | Daniel Bentes | Daniel Bentes | `plugins/dossier/` | [EV-0129], [EV-0107] | current |
-| TM-0023 | agent-capability-standard | plugin | 42 skills at the pinned sha [EV-0183]. Distributed as a `github` marketplace source pinned to sha `9e2f65b`, not vendored in this repository; Apache-2.0. The `pyyaml>=6.0` manifest behind [EV-0041] is upstream content at the pinned tree, not repository content — nothing of this plugin is tracked here | grounded-agency (package name) | Daniel Bentes | Daniel Bentes | The `agent-capability-standard` entry in `.claude-plugin/marketplace.json` | [EV-0058], [EV-0059], [EV-0127], [EV-0041] | current |
+| TM-0023 | agent-capability-standard | plugin | 42 skills at the pinned sha [EV-0183]. Distributed as a `github` marketplace source pinned to sha `9e2f65b`, not vendored in this repository; Apache-2.0. Nothing of this plugin is tracked here — including the `pyproject.toml` that was once this repository's only dependency manifest, which left the tree with it [EV-0186] | grounded-agency (package name) | Daniel Bentes | Daniel Bentes | The `agent-capability-standard` entry in `.claude-plugin/marketplace.json` | [EV-0058], [EV-0059], [EV-0127], [EV-0186] | current |
 | TM-0024 | ai-first-org-design-kit | plugin | 15 skills for organizational design. Its published description said fourteen until 7ee4923 and now says fifteen [EV-0170]; CT-0003 is resolved | — | Daniel Bentes | Daniel Bentes | `plugins/ai-first-org-design-kit/` | [EV-0027] | current |
 | TM-0025 | gh-workflow | plugin | 7 skills, 14 commands, 4 agents. Predates flow and overlaps it; the project instructions state only one may be enabled at a time | — | Daniel Bentes | Daniel Bentes | `plugins/gh-workflow/` | [EV-0004] | current |
 | TM-0026 | decipon | plugin | 2 skills, 7 commands, 5 agents for manipulation and disinformation analysis | — | Daniel Bentes | Daniel Bentes | `plugins/decipon/` | [EV-0004] | current |

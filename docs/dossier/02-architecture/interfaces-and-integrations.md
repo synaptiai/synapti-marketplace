@@ -6,7 +6,7 @@ audience: Contributor, Installing operator, Reviewer
 confidentiality: Internal
 owner: Daniel Bentes
 status: partially verified
-project-version: d3fc744
+project-version: 7ee4923
 last-verified: 2026-09-10
 review-trigger: A command, hook event, settings key, or manifest field is added, renamed, or removed
 related: [02-architecture/system-architecture.md, 02-architecture/components-and-codebase.md, 06-public/technical-partner-guide.md, 00-control/claim-and-disclosure-register.md]
@@ -145,7 +145,7 @@ All three observed refusals were false positives of one kind: `block-destructive
 | `jq` | flow and dossier helper scripts | package manager | immediate | [EV-0175] |
 | `bash` 3.2 or later | every shell script | preinstalled | immediate | [EV-0098], [EV-0107] |
 | `gh` CLI, authenticated | flow's GitHub commands; dossier's setup preflight; the manifest check's reads of external sources | `gh auth login` | minutes | [EV-0080], [EV-0125] |
-| `python3` with `pyyaml` | optional. Used by dossier's workflow-template test, by flow's test suite and eval harness, and by `agent-capability-standard` upstream | package manager | minutes | [EV-0099], [EV-0100], [EV-0041] |
+| `python3` with `pyyaml` | **required, not optional.** flow's journal, FlowRun state and FlowGoal machinery refuse to run without it [EV-0189]. dossier's workflow-template test uses it for one leg and skips that leg when it is absent [EV-0107] | package manager | minutes | [EV-0186], [EV-0187], [EV-0189] |
 | An Anthropic API key as a repository secret | dossier's post-merge CI only | Anthropic console | minutes | [EV-0045] |
 
 | Behaviour | Local | Test | Staging | Production | Evidence |
@@ -191,7 +191,8 @@ Two of the results in this table were produced outside the engagement's own acti
 | `github/codeql-action@v3` | Static analysis of `actions` and `python` | medium | No analysis; nothing blocks | Actions default | none | implicitly; 0 results at each of the three merge commits in this range | [EV-0134], [EV-0140] |
 | GitHub REST API | The manifest check's reads of external plugin manifests at their pinned sha | medium | The check reports an entry it cannot fetch as unverifiable rather than as matching; the run at `af6e632` reported 0 unverifiable [EV-0127]. `Unknown:` what exit status an unverifiable entry produces — no row records it | GitHub's | none | yes — 0 unverifiable at `af6e632` | [EV-0080], [EV-0127] |
 | `synaptiai/agent-capability-standard` at `9e2f65b` | One published plugin entry, resolved by the client and not by this repository | medium | `Unknown:` what the client does when a `github` source is unreachable (AQ-0023). The predecessor failure is on record: the gitlink resolved to 0 entries in a plain clone, so the advertised plugin could not install [EV-0167] | client-controlled | none | no | [EV-0058], [EV-0167] |
-| `pyyaml>=6.0` | `agent-capability-standard` upstream at the pinned tree, not repository content (TM-0023); dossier's workflow test optionally; flow's suite, which resolves it from the per-user site-packages directory | low | The dossier test degrades gracefully — it records a pass with "parse check skipped" and continues structural checks | none | Structural checks continue | yes, by the skip path itself | [EV-0041], [EV-0099], [EV-0100] |
+| `pyyaml`, on flow's runtime path | flow's journal writes, FlowRun state and FlowGoal enforcement, reached through `_journal_atomic.py` and `_flow_evidence_bundle.py` | high | flow's journal and run-state machinery does not run [EV-0189]. Whether to declare, guard or remove the requirement is open (AQ-0032) | none | none — no file in the repository declares the dependency for an operator [EV-0186], [EV-0187] | no | [EV-0186], [EV-0187], [EV-0189] |
+| `pyyaml`, on dossier's test path | One leg of `workflow-template.test.sh` | low | The leg records a pass with "parse check skipped" and the structural checks continue [EV-0107] | none | Structural checks continue | yes, by the skip path itself | [EV-0107] |
 | `jq` | flow and dossier helper scripts | high | Scripts exit non-zero with a stated reason | none | none | yes | [EV-0175] |
 | `gh` CLI | flow's GitHub commands; dossier's setup preflight; the manifest check's reads of external sources | medium | Commands report a blocked state with the reason rather than proceeding; the manifest check could not run at all under this engagement's ceiling [EV-0125] | none | Manual GitHub use | partially | [EV-0080], [EV-0125] |
 

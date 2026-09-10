@@ -6,7 +6,7 @@ audience: Maintainer, Reviewer
 confidentiality: Internal
 owner: Daniel Bentes
 status: partially verified
-project-version: d3fc744
+project-version: 7ee4923
 last-verified: 2026-09-10
 review-trigger: A risk changes state; a debt item is remediated; a decision is made, reversed, or recorded
 related: [01-project/executive-project-brief.md, 03-assurance/security-privacy-and-compliance.md, 05-due-diligence/technical-due-diligence-report.md, 00-control/assumptions-questions-and-contradictions.md]

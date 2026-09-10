@@ -65,7 +65,9 @@ This section states an absence. Read it as an absence, not as a result.
 | Is there a dependency-alerting fallback? | No `dependabot.yml` exists | [EV-0036] |
 | Is the code-quality scan any different? | No. `runCodeQualityScan` also resolves false, and `bin/dossier-scan-quality.sh` emits `disabled` on the same terms | [EV-0074], [EV-0077] |
 
-**Nothing here supports any statement about this project's vulnerability status.** The declared dependency surface bounds the exposure. That surface is one package, `pyyaml>=6.0` [EV-0041]. Evidence does not bound it, because none was gathered.
+**Nothing here supports any statement about this project's vulnerability status.** Two separate gaps compound here. No dependency manifest of any kind is tracked in this repository, so nothing enumerates what the project depends on [EV-0186]. The one runtime requirement found, PyYAML, was found by reading flow's Python entrypoints rather than any declaration [EV-0187]. Nothing bounds the exposure: not a declaration, and not a measurement.
+
+Inferred: even a scan would have nothing to read, because the scanner the refresh template installs detects packages from manifest and lockfile files [EV-0075], and this tree holds none [EV-0186].
 
 CodeQL is not a substitute, and its scope is now measured rather than assumed. Its matrix analyses `actions` and `python` with `build-mode: none` [EV-0134]. Three analyses across this range each report 0 results, and the repository holds 0 open code-scanning alerts [EV-0140].
 
@@ -121,7 +123,7 @@ Each row names that provenance. AQ-0012 records the open question, with a decisi
 | Manifest tampering redirects a plugin source | All installers | Same as above | Edit one `source` or `sha` field | The marketplace manifest check, on pull requests, on manifest pushes, weekly, and on demand | **implemented and executed.** 8 plugins checked, 0 failed, 0 unverifiable. It parses no prose, so a stale README passes it | Medium. The check runs, but it is advisory: no status check is required on `main` | [EV-0080], [EV-0081], [EV-0127], [EV-0170] |
 | A pinned external source becomes stale rather than wrong | Installers of 2 plugins | not adversarial | A pin stays self-consistent while upstream moves | The manifest check reports staleness rather than failing on it | implemented, with a stated limit | Medium. The pin is verified consistent, never verified current | [EV-0080], [EV-0127], AQ-0006 |
 | Third-party action tag is moved | This repository's CI, including a `contents: write` job | Whoever controls the action's repository | `@v4` or `@v3` resolves to a moved tag | none | **not implemented** — no SHA pinning | Low-to-medium. Requires compromising a major GitHub org | [EV-0042] |
-| A known vulnerability ships in a dependency | Operator machines | not adversarial, then adversarial | A published advisory against `pyyaml` or a transitive package goes unnoticed | none. No scan, no `dependabot.yml` | **not implemented** | Medium. One declared dependency bounds the surface, but nothing would detect a change to that | [EV-0121], [EV-0036], [EV-0041] |
+| A known vulnerability ships in a dependency | Operator machines | not adversarial, then adversarial | A published advisory against `pyyaml`, or against a package this project depends on but never enumerates, goes unnoticed | none. No scan, no `dependabot.yml`, and no manifest for a scanner to read | **not implemented** | **Medium-to-high.** Nothing enumerates the surface, so its size is unstated rather than small [EV-0186]. `pyyaml` is on it, reached through a SessionEnd hook without operator action [EV-0189], and the only version pin is CI's `pyyaml==6.0.2`, so an operator install runs whatever version that machine already carries [EV-0187] | [EV-0121], [EV-0036], [EV-0186], [EV-0187], [EV-0189] |
 | Prompt injection through content an agent reads | The operator's session and repository | Anyone who can place text where an agent reads it | Untrusted text is interpreted as instruction | dossier marks untrusted evidence explicitly and passes paths rather than content. flow's hooks block destructive commands and force-pushes at `PreToolUse` | implemented in 2 plugins. The other 4 in-tree plugins state no injection posture | Medium | [EV-0120], [EV-0129], [EV-0058] |
 | Credential exfiltration by an agent's own output | The operator's secrets | An injected or mistaken agent | Agent writes a secret into a file, a commit, or a public document | flow's `block-secrets.sh` at `PreToolUse`. dossier's claim scan gates `06-public/**` behind an approved register | implemented in 2 of 8 published plugins | Medium | [EV-0038], [EV-0039] |
 | Destructive command executed by an agent | The operator's filesystem and git history | An injected or mistaken agent | `rm -rf`, force-push, history rewrite | flow's `block-destructive.sh` and `block-force-push.sh`, registered at `PreToolUse` | registered, and asserted by the suite. Whether the client honours the exit code is AQ-0025 | Low, for operators who installed flow | [EV-0038] |
@@ -169,7 +171,7 @@ The signing row is the one that matters for a distribution channel. Plugins arri
 | Network | HTTPS via GitHub | inherited | Nothing this project controls | [EV-0051] |
 | Application | flow's 14 hook scripts, of which `block-destructive.sh`, `block-secrets.sh` and `block-force-push.sh` are restrictive by design. dossier's 5 hook scripts cover output-root containment, the action ceiling, claim registration, header staleness, and local-merge detection | implemented in 2 plugins, plus the pinned external plugin's own two hooks | The other 4 in-tree plugins ship no controls and state no posture | [EV-0129], [EV-0038], [EV-0039], [EV-0166], [EV-0168] |
 | Infrastructure | Workflow `permissions` blocks. `marketplace-manifest.yml` declares `contents: read`. `codeql.yml` declares no top-level block, but its `analyze` job scopes to `actions: read`, `contents: read`, `security-events: write` | partially implemented | `release-desktop-skills.yml` is the one workflow requesting `contents: write`, and it still interpolates a release tag name into a `run:` body | [EV-0081], [EV-0134], [EV-0133], CT-0004 |
-| Supply chain | 1 declared dependency. 2 third-party action sources. 2 external plugin sources, each pinned to a sha and checked in CI | partially implemented | No SHA pinning of actions. No `dependabot.yml`. **No dependency scanning of any kind** | [EV-0041], [EV-0042], [EV-0058], [EV-0080], [EV-0121], [EV-0036] |
+| Supply chain | 0 declared dependencies — no manifest is tracked [EV-0186]. 1 undeclared runtime requirement, `pyyaml`, reached from flow's hooks [EV-0189]. 2 third-party action sources. 2 external plugin sources, each pinned to a sha and checked in CI | partially implemented | No SHA pinning of actions. No `dependabot.yml`. **No dependency declaration of any kind, and no dependency scanning of any kind** | [EV-0186], [EV-0189], [EV-0042], [EV-0058], [EV-0080], [EV-0121], [EV-0036] |
 | Endpoint | N/A for the project. The operator's machine is the endpoint and is outside its control | not applicable | The project ships code that runs there and can constrain nothing about it | [EV-0040] |
 | Physical | N/A — GitHub-hosted | inherited | — | [EV-0044] |
 
@@ -271,7 +273,7 @@ No privacy regulation attaches to this project's own operations, because it proc
 | `synaptiai/prompt-decorators` | One published plugin, resolved from a `git-subdir` source pinned to sha `9c792fe` | none | GitHub | Same owner | **no** — contents never inspected from here (AQ-0005). The pin is verified consistent with the advertised version | [EV-0058], [EV-0127] |
 | `synaptiai/agent-capability-standard` | One published plugin, resolved from a `github` source pinned to sha `9e2f65b` | none | GitHub | Same owner | partially. The pinned tree reports the advertised 1.2.0. What separates that sha from tag `v1.2.0` is unexamined (AQ-0006) | [EV-0058], [EV-0127] |
 | `actions/checkout`, `github/codeql-action` | CI steps | Repository contents during a run | GitHub | Open source | no | [EV-0042] |
-| `pyyaml` | Runtime dependency of one plugin | none | PyPI | Open source | **no.** No vulnerability scan has ever covered it | [EV-0041], [EV-0121] |
+| `pyyaml` | Runtime requirement of the flow plugin's journal and run-state machinery, reached through a SessionEnd hook without operator action | none | PyPI | Open source | **no.** No vulnerability scan has ever covered it, and no file an operator sees declares it | [EV-0189], [EV-0187], [EV-0121] |
 
 ## Applicable requirements
 
@@ -365,14 +367,15 @@ None of the above is implemented. Each is a proposal.
 |---|---|---|
 | Plugins run inside the operator's own Claude Code session. The marketplace operates no service and collects no telemetry | The marketplace itself, not the client or the model provider | CL-0007 |
 | Three plugins register hooks — shell scripts the client runs on the operator's machine at defined lifecycle points | All 8 published plugins | CL-0008 |
-| The only declared third-party runtime dependency is `pyyaml` | Declared dependencies, not what the client itself requires | CL-0009 |
 | No credential matching the project's own detector pattern set appears in any tracked file | Tracked files, enumerated patterns. **Must ship with that qualification** | CL-0016 |
 | The `main` branch carries no branch protection and no rulesets | Live repository settings, as read 2026-07-26 | CL-0013 |
 | The repository publishes no security policy and no private disclosure channel | Current state | CL-0015 |
 | The marketplace holds no personal data — no accounts, no server, no database | The marketplace itself | CL-0019 |
 | Hooks execute without the operator invoking them, with the operator's privileges, with no sandbox | The hook mechanism. **Must ship adjacent to the hook inventory** | CL-0020 |
 
-**No approved claim covers the vulnerability-scan position.** A public statement that this project has no known vulnerabilities would be false. No scan has run [EV-0121]. Publishing the absence itself needs a new `CL-` row, which is not proposed here.
+**No approved claim covers the vulnerability-scan position.** A public statement that this project has no known vulnerabilities would be false. No scan has run [EV-0121]. Publishing the absence itself rests on CL-0047, which was presented on 2026-09-10 and held, so it remains pending and ships nowhere.
+
+**No approved claim covers the dependency surface either.** CL-0009 and CL-0022 are superseded, because the manifest that supported them left the tree with `agent-capability-standard` [EV-0186], [EV-0162]. Their replacement CL-0048 is pending approval, so it may be cited here and must not appear in `06-public/**`.
 
 | Must not be disclosed | Why |
 |---|---|

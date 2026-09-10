@@ -6,7 +6,7 @@ audience: Reviewer, Maintainer
 confidentiality: Internal
 owner: Daniel Bentes
 status: partially verified
-project-version: 691bcdb
+project-version: 7ee4923
 last-verified: 2026-09-10
 review-trigger: A dependency, plugin source, or licence declaration changes; a LICENSE file is added
 related: [05-due-diligence/technical-due-diligence-report.md, 03-assurance/security-privacy-and-compliance.md, 00-control/assumptions-questions-and-contradictions.md]
@@ -20,7 +20,7 @@ Two facts govern every table below.
 
 Unknown: GitHub's repository-level licence detection is computed from the default branch, and it was not re-read at this HEAD (AQ-0011). Do not treat the repository badge as confirming Apache-2.0.
 
-**The dependency surface is small and it is unscanned.** No `.dossier/scan/` directory exists [EV-0121]. No SARIF, osv-scanner or Dependabot artifact is tracked anywhere in the repository [EV-0121]. A short dependency list is not a cleared one. Nothing in this document says the supply chain has no known vulnerabilities.
+**The dependency surface is undeclared and it is unscanned.** No dependency manifest of any kind is tracked in the repository [EV-0186]. No `.dossier/scan/` directory exists, and no SARIF, osv-scanner or Dependabot artifact is tracked anywhere [EV-0121]. An undeclared surface is not a bounded one. Nothing in this document says the supply chain has no known vulnerabilities.
 
 ## Plugin sources and pins
 
@@ -76,26 +76,34 @@ Backup owner is `unassigned` for every component in the ownership model. That is
 
 | Dependency | Kind | Direct or transitive | Version | License | Support status | End of life | Known restrictions | Replacement difficulty | Evidence |
 |---|---|---|---|---|---|---|---|---|---|
-| `pyyaml` | runtime, one plugin | direct | `>=6.0` | MIT | actively maintained | none stated | none | low | [EV-0041] |
-| `claude-agent-sdk` | optional extra | direct | unpinned | per its own terms | active | none stated | none | medium | [EV-0041] |
-| `pytest`, `mypy`, `ruff`, `hypothesis`, `jsonschema`, `types-PyYAML` | development, one plugin | direct | pinned by floor | permissive | active | none stated | none | low | [EV-0041] |
+| `pyyaml` | runtime, the flow plugin | direct | undeclared. No floor exists anywhere in the tree [EV-0186]. The two CI workflows pin `6.0.2`, which governs CI and not an install [EV-0187] | Unknown: no evidence row establishes it (AQ-pending) | Unknown: not established (AQ-pending) | Unknown (AQ-pending) | Not declared where an operator installing the plugin would see it [EV-0187] | Inferred: not low. It carries flow's journal and run-state machinery [EV-0189, I] | [EV-0186], [EV-0187], [EV-0189] |
 | `actions/checkout` | CI | direct | `@v4`, a major tag rather than a commit sha | MIT | active | none stated | none | low | [EV-0042] |
 | `github/codeql-action` | CI | direct | `@v3`, a major tag rather than a commit sha | MIT | active | none stated | GitHub's terms for CodeQL on private repositories. This repository is public | low | [EV-0042] |
-| `git`, `bash`, `jq`, `gh` | tooling | direct | unpinned, and not enumerated by any manifest | permissive | active | none stated | Inferred: required by the shell scripts, from [EV-0093]. No row enumerates the set | low | [EV-0093] |
+| `git`, `bash`, `jq`, `gh`, `python3` | tooling | direct | unpinned, and not enumerated by any manifest [EV-0186] | permissive | active | none stated | `python3` runs the flow entrypoints that import PyYAML [EV-0187]. Inferred: the other four are required by the shell scripts, from [EV-0093]. No row enumerates the set | low | [EV-0093], [EV-0186], [EV-0187] |
 | Claude Code client | platform | direct | whatever the operator has | proprietary, Anthropic | active | none stated | Inferred: total lock-in. Nothing here functions without it | no replacement exists | [EV-0043, I] |
 | GitHub | platform | direct | — | proprietary | active | none stated | Hosting, distribution, CI, releases | low to medium | [EV-0051] |
 
-The only declared third-party runtime dependency is `pyyaml>=6.0` [EV-0041]. Scope that sentence carefully. It was read on 2026-07-26 from `agent-capability-standard`'s `pyproject.toml` at revision `95f7ac2`. That tree is no longer in the repository, and its manifest was not re-read at the pinned `9e2f65b`.
+Nothing in this repository declares a third-party dependency. No `requirements` file, `pyproject.toml`, `package.json`, `Gemfile`, `go.mod`, `Cargo.toml`, `setup.py` or `Pipfile` is tracked [EV-0186]. The `pyproject.toml` that carried `pyyaml>=6.0` belonged to `agent-capability-standard`, which left the tree when that plugin became an externally sourced entry [EV-0186], [EV-0162]. No development dependency is declared either [EV-0186].
 
-CI consumes two third-party action sources, both pinned by major tag rather than by commit sha [EV-0042]. A major tag is mutable. The publisher can move `v4` to any commit, and this repository's CI will execute it without a review here. That is a supply-chain exposure, and it is the sharpest one on this page now that both plugin sources are sha-pinned.
+One package is required all the same. PyYAML is a hard runtime requirement of the flow plugin's journal and run-state machinery, not an optional test dependency [EV-0189]. Two flow Python entrypoints import it, and no file an operator reads before installing names it [EV-0187]. The register carries this as CL-0048, which is pending approval and therefore stays out of the public documents.
+
+Unknown: whether `jsonschema` is a second undeclared requirement of the same shape. No evidence row covers it (AQ-pending).
+
+One dossier test does degrade gracefully when PyYAML is absent. `workflow-template.test.sh` records a pass with a skip reason [EV-0107]. That is one leg of one test, and it describes that test rather than the dependency surface.
+
+CI consumes two third-party action sources, both pinned by major tag rather than by commit sha [EV-0042]. A major tag is mutable. The publisher can move `v4` to any commit, and this repository's CI will execute it without a review here. That is a supply-chain exposure. It sits beside the undeclared PyYAML requirement above [EV-0186], [EV-0187], and both plugin sources are sha-pinned by comparison.
 
 ## License obligations
 
 | License | Dependencies under it | Obligation | Triggered by | Does this project trigger it | Evidence |
 |---|---|---|---|---|---|
-| MIT | `pyyaml`, `actions/checkout`, `github/codeql-action` | Preserve copyright and licence text on redistribution | Redistribution of the covered code | No copy of any of the three is tracked in this repository. The actions are referenced by workflows [EV-0042], and `pyyaml` is a manifest declaration [EV-0041] | [EV-0041], [EV-0042] |
+| MIT | `actions/checkout`, `github/codeql-action` | Preserve copyright and licence text on redistribution | Redistribution of the covered code | No copy of either is tracked in this repository. Both are referenced by workflow files [EV-0042] | [EV-0042] |
 | Apache-2.0 | `agent-capability-standard`, `prompt-decorators` | Preserve notices, state changes, include the licence | Distribution of the covered code | Neither tree is tracked in this repository [EV-0059], [EV-0060]. The manifest declares an external source and a sha for each [EV-0058]. Whether publishing such an entry is itself distribution is flagged for counsel below | [EV-0058], [EV-0059], [EV-0060] |
 | Apache-2.0, the project's own licence | Its own 71 skills, 61 commands, 29 agents, 37 scripts | Preserve notices, state changes, include the licence. The patent grant and its termination clause bind both directions | Publishing source publicly, and any redistribution by a recipient | The licence text is present at the repository root [EV-0019], and the manifests declare the same identifier as read 2026-07-26 [EV-0021] | [EV-0019], [EV-0020], [EV-0021], [EV-0093] |
+
+PyYAML has no row in this table. Its licence was previously read from a manifest that is no longer in the tree [EV-0186], and it is imported rather than redistributed [EV-0187].
+
+Unknown: PyYAML's licence terms, and whether any vendored copy exists here. No evidence row establishes either (AQ-pending).
 
 Unknown: whether the `agent-capability-standard` tree at sha `9e2f65b` carries its own `LICENSE` file (AQ-pending). EV-0127 established the version that tree reports, not its licence text. The only local copy is untracked residue at an older pointer [EV-0060].
 
@@ -140,7 +148,7 @@ Unknown: whether the two `cascade-resolve.sh` copies still diverge (AQ-pending).
 | Scope not covered | — |
 | Location | — |
 
-No SBOM exists and no tooling produces one. The declared list is short. It holds one runtime dependency, two CI actions, two sha-pinned plugin sources, and four command-line tools [EV-0041], [EV-0042], [EV-0058]. A short list is an argument about the cost of producing an SBOM. It is not an argument that the supply chain is controlled.
+No SBOM exists and no tooling produces one. There is also no declared list to convert into one, because the repository declares nothing [EV-0186]. What the system actually requires is PyYAML [EV-0187], [EV-0189], two CI actions [EV-0042], two sha-pinned plugin sources [EV-0058], and five command-line tools including `python3` [EV-0093], [EV-0187]. That set was assembled by reading code, which is the work an SBOM exists to avoid repeating.
 
 ## Vulnerability evidence
 
@@ -166,7 +174,7 @@ The green-run result was observed by the session operator outside this engagemen
 | `actions/checkout@v4`, `github/codeql-action@v3` | Mutable major tags. The publisher can move the tag under this repository's CI | continuous | GitHub | CI executes code that was never reviewed here | Pin each to a commit sha | [EV-0042] |
 | `synaptiai/agent-capability-standard` at `9e2f65b` | The pin is reproducible, but the distance from tag `v1.2.0` is unexamined | `v1.2.0` | Daniel Bentes | Installers receive a tree nobody here has read | Read the diff, or move the pin to the tag | [EV-0058], [EV-0127], AQ-0006 |
 | `synaptiai/prompt-decorators` at `9c792fe` | The pin is reproducible. The contents have never been inspected from here | unknown from here | Daniel Bentes | Installers receive a plugin published under this marketplace's name and unread | Inspect the subdirectory upstream | [EV-0058], AQ-0005 |
-| `pyyaml` | The only declared third-party runtime dependency, and it now sits outside this repository | active | community | One plugin's runtime path fails | Vendor it, or drop the YAML path | [EV-0041] |
+| `pyyaml` | Required at runtime by code inside this repository, and declared by no file an operator installing the plugin reads [EV-0187], [EV-0189] | Unknown (AQ-pending) | Unknown (AQ-pending) | Flow's journal and run-state machinery stops working on a machine without it [EV-0189]. Unknown: the failure mode each caller presents is not established by any evidence row (AQ-pending) | Declare it in a manifest, vendor it, or drop the YAML path | [EV-0186], [EV-0187], [EV-0189] |
 
 Both external plugin sources are repositories under the same owner. Each is fixable by one edit, by the person who already owns them.
 
@@ -189,7 +197,7 @@ Unknown provenance is a material diligence risk here, not a bookkeeping gap. Two
 | The distance from `v1.2.0` to `9e2f65b` | What those commits change | The pin is reproducible but unreviewed | `git log v1.2.0..9e2f65b` upstream | AQ-0006 |
 | GitHub's derived licence field | Whether the repository badge and automated scanners report Apache-2.0 | Every licence scanner reads the derived field, not the file | Re-reading `gh api repos/…` once this branch merges | AQ-0011 |
 | Inbound contribution terms | What terms a contribution would arrive under | No contribution has occurred, so nothing has tested it | A `CONTRIBUTING.md` stating inbound terms | AQ-0007 |
-| Dependency vulnerability status | Whether any declared dependency has a known advisory | No vulnerability-scan artifact was located [EV-0078, U], [EV-0121] | One `osv-scanner` run, or enabling Dependabot | AQ-pending |
+| Dependency vulnerability status | Whether PyYAML [EV-0187] or either CI action [EV-0042] carries a known advisory | No vulnerability-scan artifact was located [EV-0078, U], [EV-0121] | One `osv-scanner` run, or enabling Dependabot | AQ-pending |
 
 ## Items flagged for qualified legal review
 
@@ -203,6 +211,8 @@ Unknown provenance is a material diligence risk here, not a bookkeeping gap. Two
 ## Recommendations
 
 Recommendation: pin `actions/checkout` and `github/codeql-action` to commit shas rather than major tags. Both are mutable today [EV-0042].
+
+Recommendation: declare PyYAML in a manifest an operator reads before installing the flow plugin. Nothing in the repository declares it today [EV-0186], [EV-0187].
 
 Recommendation: run one dependency-vulnerability scan and retain its output. None has ever run [EV-0121].
 

@@ -6,8 +6,8 @@ audience: Reviewer, Maintainer, Contributor, Installing operator
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: 06b1586
-last-verified: 2026-07-26
+project-version: 7ee4923
+last-verified: 2026-09-10
 review-trigger: Any document is added, removed, or re-verified; the gate verdict changes
 related: []
 ---
