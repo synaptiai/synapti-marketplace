@@ -1291,7 +1291,7 @@ verdict.
 |---|---|---|---|
 | Contract-required canonical documents | 23 filenames extracted from `plugins/dossier/references/package-contract-0*.md` | all 23 present, none missing, no extras beyond the package README | none |
 | Document headers | 23 parsed; every required field present and non-empty, every `last-verified`/`last-updated` a valid date, every `status` a valid value | — | none |
-| Internal markdown links | every `[](…)` target resolved from its own file's directory | 0 broken | none |
+| Internal markdown links | every inline-link target resolved from its own file's directory | 0 broken | none |
 | Backticked canonical path references | every `NN-dir/file.md` reference resolved | 0 broken | none |
 | Mermaid diagrams | 6 blocks — data-and-ai 1, infrastructure 1, system-architecture 3, partner guide 1 | all fenced and well-formed; the partner guide's five nodes and four edges match the distribution shape in the terminology register | none |
 | Evidence rows | 249 (EV-0001..EV-0249), 0 dangling citations, 33 uncited outside the ledger | index reports 193 and 27 | C3 |
