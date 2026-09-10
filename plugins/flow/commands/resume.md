@@ -110,15 +110,15 @@ Flow records its own artifacts under `.flow/` and the decision journal under `.d
 ```!
 # Treat any porcelain entry whose path is NOT under .flow/ or .decisions/ as
 # unlinked. Conservative by design (simple prefix test rather than diffing
-# against the run's recorded paths): better to ask once too often than to
-# absorb a human's unrelated edits into a resumed workflow.
+# against the run recorded paths): better to ask once too often than to
+# absorb a human unrelated edits into a resumed workflow.
 #
-# Capture git's exit code separately: a git failure (not a repo, git missing)
+# Capture git is exit code separately: a git failure (not a repo, git missing)
 # must NOT be read as "clean tree" — that would silently skip the guard. The
 # rename-arrow strip is gated to R/C status lines so a file literally named
-# `x -> .flow/y` can't masquerade as a flow-owned path and slip the filter.
-# Capture git output and exit code BEFORE piping, so a git failure isn't masked
-# by awk's exit status (the pipeline runs in a subshell where PIPESTATUS would
+# `x -> .flow/y` cannot masquerade as a flow-owned path and slip the filter.
+# Capture git output and exit code BEFORE piping, so a git failure is not masked
+# by awk exit status (the pipeline runs in a subshell where PIPESTATUS would
 # not survive the command-substitution assignment).
 PORCELAIN=$(git -c core.quotePath=false status --porcelain 2>/dev/null); GIT_EXIT=$?
 UNLINKED=$(printf '%s\n' "$PORCELAIN" | awk '

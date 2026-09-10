@@ -50,7 +50,7 @@ Determine invocation mode from `$ARGUMENTS`:
 # safe set [a-zA-Z0-9._/-] (covers digit-only PR numbers AND typical branch
 # names like `feature/foo-bar.v2`). A token containing shell metacharacters
 # (`;`, `|`, `$`, spaces, etc.) is rejected with empty RESOLVE_TARGET so the
-# trailing context can't reach downstream shell. Trailing prose after the
+# trailing context cannot reach downstream shell. Trailing prose after the
 # first whitespace is fine.
 #
 # Output: `###`-headed sections + KEY=value per
@@ -147,7 +147,7 @@ if [ -n "$CONFLICTED_LIST" ]; then
   while IFS= read -r f; do
     if [ -f "$f" ]; then
       # `grep -c` always prints a number; the `|| echo 0` form would ALSO
-      # fire on grep's exit 1 (no matches) and produce a multi-line `0\n0`.
+      # fire on grep exit 1 (no matches) and produce a multi-line `0\n0`.
       HUNKS=$(grep -c '<<<<<<<' "$f" 2>/dev/null || true)
       [ -z "$HUNKS" ] && HUNKS=0
       echo "HUNKS=file=$f count=$HUNKS"

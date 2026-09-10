@@ -46,7 +46,7 @@ true
 ```!
 # Output: `###`-headed sections + KEY=value per
 # `references/command-output-format.md`. STATE=blocked when on default branch
-# (can't create a PR from main); STATE=ok otherwise.
+# (cannot create a PR from main); STATE=ok otherwise.
 
 echo "### Branch Context"
 BRANCH=$(git branch --show-current 2>/dev/null)
@@ -97,7 +97,7 @@ else
   # Capture gh exit separately. The `|| echo "0"` fallback fails to fire when
   # gh succeeds but returns "" (impossible here — gh returns [] for empty
   # success) OR when jq receives empty input from a failed gh call (jq 1.8
-  # produces no output + exit 0, so `||` doesn't trigger and the section
+  # produces no output + exit 0, so `||` does not trigger and the section
   # silently leaks `EXISTING_PR_COUNT=`).
   EXISTING=$(gh pr list --head "$BRANCH" --state open --json number,url 2>/dev/null); GH_EXIT=$?
   if [ $GH_EXIT -ne 0 ]; then
@@ -129,7 +129,7 @@ else
   fi
 
   # Section: FlowGoal State (v3) — gate on goal existence.
-  # Surface the active goal's lifecycle so Phase 4 can gate PR creation on goal
+  # Surface the active goal lifecycle so Phase 4 can gate PR creation on goal
   # achievement WHEN a goal exists; a branch with no goal is not blocked. The
   # gate is disabled when flow.goals.enabled is false or goalCreation is off,
   # preserving the v2 (requireGoalForStart:false) UX.

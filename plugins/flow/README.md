@@ -135,6 +135,42 @@ Set these in `.claude/settings.flow.json` or `.claude/settings.flow.local.json`.
 
 See [gate-configuration.md](references/gate-configuration.md) for full gate details.
 
+## Requirements
+
+| Tool | Needed for | If it is missing |
+|---|---|---|
+| `bash` 3.2 or newer | every command, hook and script | flow does not run |
+| `git` | branch, commit and diff operations | flow does not run |
+| `gh` (GitHub CLI, authenticated) | issues, pull requests, reviews, merges | any command that touches GitHub fails |
+| `jq` | reading settings and GitHub JSON | commands fall back to a narrower path or stop |
+| `python3` with **PyYAML** | the decision journal, FlowRun state, FlowGoal contracts and evidence bundles | those writes are skipped; commands still run, but the history they would have left is lost |
+| `python3` with `jsonschema` | strict validation of evidence and skill input against `schemas/` | validation falls back to a narrower structural check |
+
+Install the Python packages with the pinned versions flow is tested against:
+
+```bash
+# From a clone of the marketplace repository:
+python3 -m pip install --user --break-system-packages -r plugins/flow/requirements.txt
+
+# From a marketplace install, where the plugin lives under ~/.claude/plugins:
+python3 -m pip install --user --break-system-packages -r "${CLAUDE_PLUGIN_ROOT:?run this from a Claude Code session, or use the clone form above}/requirements.txt"
+
+# Or without the manifest at all — these are the two packages and their pins:
+python3 -m pip install --user --break-system-packages 'pyyaml==6.0.2' 'jsonschema==4.23.0'
+```
+
+PyYAML is the one that is easy to miss, because nothing announces itself when it
+is absent. `bin/_journal_atomic.py` is the atomic write path behind
+`journal-record.sh`, `flow-record-activity.sh`, `flow-record-evidence.sh`,
+`flow-record-verdict.sh` and `flow-goal-record.sh`, and behind the SessionEnd and
+Stop hooks. Each of those checks for PyYAML before calling it and exits quietly
+when it is not there, so the symptom is an empty `.decisions/` and `.flow/` tree
+rather than an error. Confirm it with:
+
+```bash
+python3 -c "import yaml; print(yaml.__version__)"
+```
+
 ## Quick Start
 
 ```bash

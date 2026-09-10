@@ -53,7 +53,7 @@ echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
 # Section: My Issues (Open)
 # Capture gh exit separately across all three sections below: gh failure
 # (auth, network, non-repo CWD) returns "" with non-zero exit; jq on empty
-# input produces no output + exit 0 (jq 1.8), so `|| echo "0"` doesn't fire
+# input produces no output + exit 0 (jq 1.8), so `|| echo "0"` does not fire
 # and the section silently leaks `<KEY>_COUNT=` (bare empty). Distinguish
 # `STATE=unavailable` (gh failed) from `STATE=empty` (gh ok, no records) per
 # `references/command-output-format.md` closed-vocab contract.
@@ -132,7 +132,7 @@ else
 fi
 
 # Section: FlowGoal State (v3, gated behind flow.goals.enabled)
-# When goals are enabled, surface the active FlowGoal's lifecycle + per-AC
+# When goals are enabled, surface the active FlowGoal lifecycle + per-AC
 # pass/fail so the user sees what the Stop hook is watching. v2 projects
 # (flag false/unset) emit STATE=disabled and the section renders as "(v3 not enabled)".
 echo ""
@@ -175,7 +175,7 @@ fi
 
 # Section: Recent Runs (last 3 by modification time)
 # The .flow/runs/ directory holds FlowActivity ledgers per workflow invocation.
-# Surface the latest 3 so the user can see what's happening in flight.
+# Surface the latest 3 so the user can see what is happening in flight.
 echo ""
 echo "### Recent Runs"
 if [ ! -d ".flow/runs" ]; then
@@ -195,7 +195,7 @@ else
       [ -z "$run" ] && continue
       RUN_DIR=".flow/runs/$run"
       [ -d "$RUN_DIR" ] || continue
-      # Surface the run's last verdict if available.
+      # Surface the run last verdict if available.
       VERDICT="-"
       if [ -f "$RUN_DIR/last-verdict.json" ]; then
         VERDICT=$(jq -r '.verdict // "-"' "$RUN_DIR/last-verdict.json" 2>/dev/null)
@@ -278,7 +278,7 @@ for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PL
   fi
   [ -z "$CONFIGURED" ] && continue
   if echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
-    # Warn (don't block) when an element falls outside the known GitHub
+    # Warn (do not block) when an element falls outside the known GitHub
     # `author_association` vocabulary — same defense-in-depth check as
     # commands/merge.md, mirrored here so a typo surfaces during the
     # aggregator pass too (matches the /flow:status read-only contract).
@@ -297,7 +297,7 @@ done
 # MARKERTRUST_GATE_END
 
 # Enumerate PRs (author OR assignee). Capture gh exit code separately so a
-# silent gh failure (auth, network) doesn't masquerade as "no PRs".
+# silent gh failure (auth, network) does not masquerade as "no PRs".
 LEDGER_PRS_RAW=$(gh pr list --state open --limit 100 --json number,author,assignees 2>/dev/null)
 GH_EXIT=$?
 if [ $GH_EXIT -ne 0 ] || [ -z "$LEDGER_PRS_RAW" ]; then
@@ -314,14 +314,14 @@ elif [ -z "$LEDGER_PRS" ]; then
   echo "LEDGER_STATE=no_open_prs"
 else
   # Sanitize attacker-controlled fields before display/echo: cap length and
-  # strip non-printable bytes so a hostile review-body can't inject ANSI
+  # strip non-printable bytes so a hostile review-body cannot inject ANSI
   # escapes into LEDGER_WARN output. Defined once for the whole loop.
   safe() { printf '%s' "$1" | tr -cd '[:print:]' | cut -c1-64; }
   # Generate the PRIORITY|STATE tally to a variable so we can distinguish
   # "no markers" (empty TALLY) from "findings present" (non-empty) and emit
   # the right LEDGER_STATE sentinel for each.
   #
-  # Wrapped in a function because bash's `$(...)` paren-matching collides
+  # Wrapped in a function because bash `$(...)` paren-matching collides
   # with the `*)` patterns in the nested `case` statements below — the outer
   # substitution would close on the first case-arm paren. Function isolation
   # gives the case statements their own parse scope.
@@ -342,7 +342,7 @@ else
     DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DISPUTED:\[//;s/\]$//'  | tr -d ' ')
 
     # CAT and LOC are parsed but unused inside this loop — drop them with `_`
-    # so future code additions can't accidentally interpolate attacker-controlled
+    # so future code additions cannot accidentally interpolate attacker-controlled
     # fields without first applying `safe()` sanitization. If a future change
     # needs them, replace `_ _` with named vars AND wrap each use with `safe()`.
     echo "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY _ _ STATUS; do

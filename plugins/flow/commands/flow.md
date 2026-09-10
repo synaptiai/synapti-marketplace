@@ -82,7 +82,7 @@ echo ""
 echo "### Assigned Issues"
 # Capture gh exit code separately: gh success with no records returns `[]` exit 0;
 # gh failure (auth, network, non-repo CWD) returns "" with non-zero exit and jq
-# 1.8 on empty input produces NO output and exits 0 — so `|| echo 0` doesn't
+# 1.8 on empty input produces NO output and exits 0 — so `|| echo 0` does not
 # fire and COUNT stays empty, leaking a bare `ASSIGNED_COUNT=` line.
 ASSIGNED_JSON=$(gh issue list --assignee @me --state open --limit 5 --json number,title 2>/dev/null); GH_EXIT=$?
 if [ $GH_EXIT -ne 0 ]; then

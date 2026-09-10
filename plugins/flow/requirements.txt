@@ -1,0 +1,26 @@
+# Python dependencies for the flow plugin.
+#
+# Install, from a clone of the marketplace repository:
+#   python3 -m pip install --user --break-system-packages -r plugins/flow/requirements.txt
+#
+# From a marketplace install, where this file sits under ~/.claude/plugins:
+#   python3 -m pip install --user --break-system-packages -r "$CLAUDE_PLUGIN_ROOT/requirements.txt"
+#
+# These pins are the single place the versions are written down. Both
+# .github/workflows/flow-tests.yml and .github/workflows/dossier-tests.yml
+# install the same strings, and plugins/flow/tests/python-requirements.test.sh
+# fails when the three drift apart.
+#
+# pyyaml — REQUIRED at run time. Every flow command that writes to the decision
+# journal, the FlowRun state, the FlowGoal contract or the evidence bundle goes
+# through bin/_journal_atomic.py, which reads and writes YAML. Without it those
+# writes do not happen. Each entry point checks for it first and degrades with a
+# message naming this install command rather than raising, so a missing PyYAML
+# costs you journal and run-state history, not a crash.
+pyyaml==6.0.2
+
+# jsonschema — OPTIONAL. bin/flow-record-evidence.sh and bin/validate-skill-input.sh
+# validate against the JSON schemas under plugins/flow/schemas/ when it is
+# importable, and fall back to a narrower structural check when it is not. CI
+# installs it so the strict path is the one under test.
+jsonschema==4.23.0
