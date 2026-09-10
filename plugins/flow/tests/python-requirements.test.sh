@@ -78,8 +78,12 @@ else
   _flow_assert_fail "$INSTALL_LINES install-from-manifest lines for $JOB_COUNT jobs — a job that does not install PyYAML fails on any runner image that does not ship it, which is how the root-tests job first went red on macOS and green on Ubuntu"
 fi
 
+# Quote-agnostic on purpose. An earlier version anchored on single quotes, so a
+# pin written the ordinary way — `pip install pyyaml==9.9.9` — was invisible to
+# it, and the must-fire mutant below appended a QUOTED pin, which proved only
+# that the regex saw quoted pins.
 _flow_test_begin "flow-tests.yml carries no second copy of a version"
-INLINE=$(grep -oE "'(pyyaml|jsonschema)==[0-9][0-9A-Za-z.]*'" "$FLOW_WF" || true)
+INLINE=$(grep -oE "(pyyaml|jsonschema)==[0-9][0-9A-Za-z.]*" "$FLOW_WF" || true)
 if [ -z "$INLINE" ]; then
   _flow_assert_pass "no inline pins in flow-tests.yml"
 else
@@ -104,12 +108,13 @@ if [ -z "$MUT_FLOW" ]; then
 fi
 PYREQ_CLEANUP+=("$MUT_FLOW")
 cp "$FLOW_WF" "$MUT_FLOW"
-printf "%s\n" "            'pyyaml==6.0.2' \\" >> "$MUT_FLOW"
-MUT_INLINE=$(grep -oE "'(pyyaml|jsonschema)==[0-9][0-9A-Za-z.]*'" "$MUT_FLOW" || true)
+# Unquoted, which is how someone would actually type it back in.
+printf "%s\n" "          python3 -m pip install pyyaml==9.9.9" >> "$MUT_FLOW"
+MUT_INLINE=$(grep -oE "(pyyaml|jsonschema)==[0-9][0-9A-Za-z.]*" "$MUT_FLOW" || true)
 if [ -n "$MUT_INLINE" ]; then
   _flow_assert_pass "a reintroduced inline pin is seen as $MUT_INLINE"
 else
-  _flow_assert_fail "the inline-pin check cannot see an inline pin, so its silence on the real file means nothing"
+  _flow_assert_fail "the inline-pin check cannot see an unquoted inline pin, so its silence on the real file means nothing"
 fi
 
 _flow_test_begin "the install-line check detects a job that installs nothing"
@@ -133,10 +138,20 @@ fi
 # --- The guards in the Python entry points stay in place ---------------------
 for PY in "$REPO_ROOT/plugins/flow/bin/_journal_atomic.py" "$REPO_ROOT/plugins/flow/bin/_flow_evidence_bundle.py"; do
   _flow_test_begin "$(basename "$PY") guards its yaml import and names the install command"
-  if grep -q 'except ImportError' "$PY" && grep -q 'pip install' "$PY"; then
-    _flow_assert_pass "import is guarded and the message carries an install command"
+  # Tied to the yaml import specifically. Two independent greps would pass on a
+  # file whose guarded import was something else entirely and whose `pip
+  # install` sat in an unrelated comment.
+  GUARD_BLOCK=$(awk '
+    /^try:/ { buf = ""; depth = 1 }
+    depth { buf = buf "\n" $0 }
+    depth && /^except ImportError/ { seen = 1 }
+    depth && seen && /pip install/ { print buf; exit }
+    /^[^[:space:]#]/ && depth && !/^try:/ && !/^except/ { if (!seen) depth = 0 }
+  ' "$PY")
+  if printf '%s' "$GUARD_BLOCK" | grep -q 'import yaml'; then
+    _flow_assert_pass "the guarded import is yaml and its message carries an install command"
   else
-    _flow_assert_fail "$(basename "$PY") imports yaml without a guard naming the package and install command"
+    _flow_assert_fail "$(basename "$PY") has no try/except ImportError around 'import yaml' whose message names an install command"
   fi
 done
 

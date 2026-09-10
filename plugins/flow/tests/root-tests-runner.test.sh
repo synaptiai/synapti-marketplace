@@ -125,6 +125,67 @@ else
   _flow_assert_fail "runner did not fail on a failing check (exit $FAIL_RC): $FAIL_OUT"
 fi
 
+# --- the exit-2 paths, each proven to fire ------------------------------------
+# The runner distinguishes "a check found a defect" (exit 1) from "a check could
+# not run" (exit 2), because every one of these scripts already uses exit 2 for a
+# missing prerequisite and collapsing the two throws that signal away. Each path
+# below is exercised; without this the classification would be untested code.
+_flow_test_begin "a check that could not run is a runner error, not a failure"
+printf '#!/usr/bin/env bash\necho "FATAL: jq missing"\nexit 2\n' > "$SCRATCH/tests/newcheck/test.sh"
+PREREQ_OUT=$("$SCRATCH/tests/run-all.sh" 2>&1); PREREQ_RC=$?
+if [ "$PREREQ_RC" -eq 2 ] && printf '%s' "$PREREQ_OUT" | grep -q 'could not run'; then
+  _flow_assert_pass "exit 2 from a check produces exit 2 and says it could not run"
+else
+  _flow_assert_fail "a check exiting 2 was reported as an ordinary failure (runner exit $PREREQ_RC)"
+fi
+
+_flow_test_begin "a check that exits 0 having examined nothing is a runner error"
+printf '#!/usr/bin/env bash\necho "RESULT: 0 passed, 0 failed"\nexit 0\n' > "$SCRATCH/tests/newcheck/test.sh"
+VACUOUS_OUT=$("$SCRATCH/tests/run-all.sh" 2>&1); VACUOUS_RC=$?
+if [ "$VACUOUS_RC" -eq 2 ] && printf '%s' "$VACUOUS_OUT" | grep -q 'examined nothing'; then
+  _flow_assert_pass "a zero-assertion check is caught rather than counted as a pass"
+else
+  _flow_assert_fail "a check reporting 0 assertions passed was counted as a pass (runner exit $VACUOUS_RC)"
+fi
+
+_flow_test_begin "a check that reports real work is not caught by that rule"
+printf '#!/usr/bin/env bash\necho "RESULT: 3 passed, 0 failed"\nexit 0\n' > "$SCRATCH/tests/newcheck/test.sh"
+"$SCRATCH/tests/run-all.sh" >/dev/null 2>&1; REAL_RC=$?
+if [ "$REAL_RC" -eq 0 ]; then
+  _flow_assert_pass "a check reporting 3 assertions passes"
+else
+  _flow_assert_fail "a check reporting real work was rejected (exit $REAL_RC) — the zero-assertion rule is too broad"
+fi
+
+_flow_test_begin "an unknown argument is refused rather than ignored"
+ARG_OUT=$("$SCRATCH/tests/run-all.sh" --bogus 2>&1); ARG_RC=$?
+if [ "$ARG_RC" -eq 2 ] && printf '%s' "$ARG_OUT" | grep -q 'unknown argument'; then
+  _flow_assert_pass "an unrecognised argument exits 2 and is named"
+else
+  _flow_assert_fail "an unrecognised argument was ignored and the suite ran anyway (exit $ARG_RC)"
+fi
+
+_flow_test_begin "a shared helper under lib/ is not treated as a stray script"
+mkdir -p "$SCRATCH/tests/lib"
+printf '#!/usr/bin/env bash\n: helper\n' > "$SCRATCH/tests/lib/common.sh"
+printf '#!/usr/bin/env bash\necho "RESULT: 1 passed, 0 failed"\nexit 0\n' > "$SCRATCH/tests/newcheck/test.sh"
+"$SCRATCH/tests/run-all.sh" >/dev/null 2>&1; LIB_RC=$?
+if [ "$LIB_RC" -eq 0 ]; then
+  _flow_assert_pass "a lib/ helper is exempt from the stray-script refusal"
+else
+  _flow_assert_fail "a lib/ helper made the runner refuse (exit $LIB_RC)"
+fi
+rm -r -- "$SCRATCH/tests/lib"
+
+_flow_test_begin "an invalid timeout is refused rather than silently disabling the ceiling"
+printf '#!/usr/bin/env bash\necho "RESULT: 1 passed, 0 failed"\nexit 0\n' > "$SCRATCH/tests/newcheck/test.sh"
+TMO_OUT=$(ROOT_TESTS_TIMEOUT=0 "$SCRATCH/tests/run-all.sh" 2>&1); TMO_RC=$?
+if [ "$TMO_RC" -eq 2 ] && printf '%s' "$TMO_OUT" | grep -q 'positive integer'; then
+  _flow_assert_pass "ROOT_TESTS_TIMEOUT=0 is refused (to timeout it means no limit at all)"
+else
+  _flow_assert_fail "ROOT_TESTS_TIMEOUT=0 was accepted, so the ceiling is reported but not enforced (exit $TMO_RC)"
+fi
+
 _flow_test_begin "runner reports how much it examined"
 if printf '%s' "$FAIL_OUT" | grep -qE 'examined [0-9]+ entry points'; then
   _flow_assert_pass "run summary states the number of entry points examined"

@@ -40,11 +40,31 @@ trap _rgate_cleanup EXIT
 # cannot read as a clean scan.
 _rgate_scan() {
   awk '
+    BEGIN { SQ = sprintf("%c", 39) }
     /^[[:space:]]*```!$/ { inblock = 1; blocks++; next }
     /^[[:space:]]*```$/  { inblock = 0; next }
-    inblock && /^[[:space:]]*#/ {
-      n = gsub(/'"'"'/, "&")
-      if (n % 2 == 1) printf "%d:%s\n", FNR, $0
+    inblock {
+      # Find where a comment starts, tracking quotes on the way. A `#` inside a
+      # string is not a comment, and a comment does not have to start the line:
+      # `echo ok  # do not` breaks on the Windows executor exactly as a
+      # whole-line comment does, and an earlier version of this scan only
+      # matched lines beginning with #.
+      line = $0; n = length(line); q = ""; cpos = 0
+      for (i = 1; i <= n; i++) {
+        c = substr(line, i, 1)
+        if (q != "") { if (c == q) q = ""; continue }
+        if (c == "\"" || c == SQ) { q = c; continue }
+        if (c == "#") {
+          prev = (i == 1) ? "" : substr(line, i - 1, 1)
+          if (prev == "" || prev == " " || prev == "\t" || prev == ";" ||
+              prev == "|" || prev == "&" || prev == "(" || prev == ")") { cpos = i; break }
+        }
+      }
+      if (cpos > 0) {
+        comment = substr(line, cpos)
+        k = gsub(SQ, "&", comment)
+        if (k % 2 == 1) printf "%d:%s\n", FNR, line
+      }
     }
     END { printf "BLOCKS=%d\n", blocks + 0 }
   ' "$1"
@@ -100,26 +120,35 @@ if [ -z "$BLOCK_TMP" ]; then
   _flow_assert_fail "mktemp failed; cannot extract a block to parse"
 else
   RGATE_CLEANUP+=("$BLOCK_TMP")
+  PARSED=0
   for f in $CMD_FILES; do
+    # The fence count comes from the same scan that reported BLOCKS above, so
+    # the loop below runs a known number of times rather than stopping at the
+    # first empty block. An empty ```! fence used to end the walk for that whole
+    # file, silently skipping every later block in it.
+    FENCES=$(_rgate_scan "$f" | sed -n 's/^BLOCKS=//p')
     IDX=0
-    while :; do
+    while [ "$IDX" -lt "${FENCES:-0}" ]; do
       IDX=$((IDX + 1))
       awk -v want="$IDX" '
         /^[[:space:]]*```!$/ { n++; if (n == want) { inb = 1; next } }
         /^[[:space:]]*```$/  { if (inb) exit; next }
         inb { print }
       ' "$f" > "$BLOCK_TMP"
-      [ -s "$BLOCK_TMP" ] || break
+      PARSED=$((PARSED + 1))
+      [ -s "$BLOCK_TMP" ] && continue_check=1 || continue
       if ! bash -n "$BLOCK_TMP" 2>/dev/null; then
         PARSE_FAILS="$PARSE_FAILS
 ${f#"$REPO_ROOT"/} block $IDX: $(bash -n "$BLOCK_TMP" 2>&1 | head -2)"
       fi
     done
   done
-  if [ -z "$PARSE_FAILS" ]; then
-    _flow_assert_pass "all blocks parse"
-  else
+  if [ -z "$PARSE_FAILS" ] && [ "$PARSED" -ge 40 ]; then
+    _flow_assert_pass "$PARSED blocks parse"
+  elif [ -n "$PARSE_FAILS" ]; then
     _flow_assert_fail "blocks that do not parse:$PARSE_FAILS"
+  else
+    _flow_assert_fail "only $PARSED blocks reached the parser — a silent zero here would read exactly like a clean parse"
   fi
 fi
 
@@ -144,6 +173,50 @@ else
     _flow_assert_pass "the one unpaired comment line is found, and the paired one is not"
   else
     _flow_assert_fail "expected exactly 1 offending line in the mutant, found ${M_HITS:-0} — the scan cannot detect the defect it exists for"
+  fi
+fi
+
+# A comment does not have to start the line. `echo ok  # do not` breaks on the
+# Windows executor exactly as a whole-line comment does, and the first version
+# of this scan matched only lines beginning with #.
+_flow_test_begin "the scan catches an apostrophe in a trailing comment"
+TRAILING=$(mktemp -t review-gate-trailing.XXXXXX 2>/dev/null) || TRAILING=""
+if [ -z "$TRAILING" ]; then
+  _flow_assert_fail "mktemp failed; cannot build the trailing-comment mutant"
+else
+  RGATE_CLEANUP+=("$TRAILING")
+  {
+    printf '%s\n' '```!'
+    printf '%s\n' "echo ok  # this trailing comment is what the executor cannot parse: it's unpaired"
+    printf '%s\n' '```'
+  } > "$TRAILING"
+  T_HITS=$(_rgate_scan "$TRAILING" | grep -v '^BLOCKS=' | grep -c . || true)
+  if [ "${T_HITS:-0}" -eq 1 ]; then
+    _flow_assert_pass "a trailing comment is scanned like any other"
+  else
+    _flow_assert_fail "the trailing-comment defect was not found (hits: ${T_HITS:-0})"
+  fi
+fi
+
+# The counterpart to the widened scan: a `#` inside a string is not a comment,
+# and treating it as one would flag ordinary code.
+_flow_test_begin "a hash inside a string does not start a comment"
+HASHSTR=$(mktemp -t review-gate-hash.XXXXXX 2>/dev/null) || HASHSTR=""
+if [ -z "$HASHSTR" ]; then
+  _flow_assert_fail "mktemp failed; cannot build the hash-in-string case"
+else
+  RGATE_CLEANUP+=("$HASHSTR")
+  {
+    printf '%s\n' '```!'
+    printf '%s\n' 'ISSUE=$(printf "%s" "#42 is the user'"'"'s issue")'
+    printf '%s\n' 'grep -oE "#[0-9]+" body.txt'
+    printf '%s\n' '```'
+  } > "$HASHSTR"
+  H_HITS=$(_rgate_scan "$HASHSTR" | grep -v '^BLOCKS=' | grep -c . || true)
+  if [ "${H_HITS:-0}" -eq 0 ]; then
+    _flow_assert_pass "a hash inside a quoted string is left alone"
+  else
+    _flow_assert_fail "flagged $H_HITS line(s) where the hash is inside a string"
   fi
 fi
 
