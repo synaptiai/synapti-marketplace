@@ -1,7 +1,10 @@
 # Python dependencies for the flow plugin.
 #
-# Install:
+# Install, from a clone of the marketplace repository:
 #   python3 -m pip install --user --break-system-packages -r plugins/flow/requirements.txt
+#
+# From a marketplace install, where this file sits under ~/.claude/plugins:
+#   python3 -m pip install --user --break-system-packages -r "$CLAUDE_PLUGIN_ROOT/requirements.txt"
 #
 # These pins are the single place the versions are written down. Both
 # .github/workflows/flow-tests.yml and .github/workflows/dossier-tests.yml

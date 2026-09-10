@@ -23,7 +23,7 @@ echo "### Resolved Paths"
 # JOURNAL_DIR and PROPOSAL_DIR resolve via the standard settings cascade.
 # settings.json may store paths with a leading `~` (literal — JSON has no
 # tilde-expansion semantics). The cascade helper returns the value verbatim
-# without expansion, so downstream tools that don't auto-expand tildes
+# without expansion, so downstream tools that do not auto-expand tildes
 # (Read/Write/Edit, Python os.path) would fail. Manually expand `~` to
 # $HOME so the agent always receives an absolute path.
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
@@ -40,7 +40,7 @@ else
   echo "ERROR=cascade-resolve.sh missing or non-executable; using built-in defaults"
 fi
 # Expand leading `~` to $HOME so downstream Read/Write/Edit tools (which
-# don't tilde-expand) receive absolute paths.
+# do not tilde-expand) receive absolute paths.
 JOURNAL_DIR="${JOURNAL_DIR/#\~/$HOME}"
 PROPOSAL_DIR="${PROPOSAL_DIR/#\~/$HOME}"
 echo "JOURNAL_DIR=$JOURNAL_DIR"
@@ -70,7 +70,7 @@ fi
 
 # Section: FlowRun Events + FlowGoals (v3)
 # Gated behind flow.goals.enabled — when v3 is enabled, surface the goal
-# YAMLs + run-event ledgers so Phase 2's Goal Failure Patterns can detect
+# YAMLs + run-event ledgers so the Phase 2 Goal Failure Patterns can detect
 # recurring failed ACs, stuck-detection hits, and not_executed warnings.
 echo ""
 echo "### FlowRun Events"
@@ -96,7 +96,7 @@ fi
 
 # Section: Transcript Corrections
 # learning.sources (JSON array, default ["journal","transcripts"]) selects the
-# evidence sources this command reads. Session transcripts are Claude Code's
+# evidence sources this command reads. Session transcripts are the Claude Code
 # own logs under ~/.claude/projects/<slug>/ (override: learning.transcriptDir,
 # empty = auto) — read-only, user-scoped, never written here. The miner keeps
 # recall-oriented candidates; Phase 2 does the judging.

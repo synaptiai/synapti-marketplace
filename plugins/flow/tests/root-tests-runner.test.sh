@@ -8,6 +8,16 @@
 # assertions below compare the runner's own list against the tree, and then
 # check that the runner refuses a script it would not have run.
 
+# Cleanup is an EXIT trap, matching cascade-resolve.test.sh and
+# commit-journal-churn.test.sh. A trailing `rm` only runs when the file reaches
+# its last line, which is exactly not the case on the path that matters.
+RTRUN_CLEANUP=()
+_rtrun_cleanup() {
+  local p
+  for p in "${RTRUN_CLEANUP[@]:-}"; do [ -n "$p" ] && rm -rf "$p" 2>/dev/null; done
+}
+trap _rtrun_cleanup EXIT
+
 RUNNER="$REPO_ROOT/tests/run-all.sh"
 ROOT_TESTS="$REPO_ROOT/tests"
 
@@ -16,7 +26,7 @@ if [ -x "$RUNNER" ]; then
   _flow_assert_pass "tests/run-all.sh is executable"
 else
   _flow_assert_fail "tests/run-all.sh missing or not executable at $RUNNER"
-  return 0 2>/dev/null || true
+  return 0
 fi
 
 _flow_test_begin "the workflow invokes the runner"
@@ -73,7 +83,14 @@ fi
 
 # --- Mutant that must fire: an entry point the runner cannot classify --------
 _flow_test_begin "runner refuses a shell script it would not have run"
-SCRATCH=$(mktemp -d -t root-tests-mutant.XXXXXX)
+SCRATCH=$(mktemp -d -t root-tests-mutant.XXXXXX 2>/dev/null) || SCRATCH=""
+# An unguarded mktemp turns the paths below into /tests/..., which is a no-op
+# on a Mac and a write to the filesystem root in a root container.
+if [ -z "$SCRATCH" ] || [ ! -d "$SCRATCH" ]; then
+  _flow_assert_fail "mktemp -d failed; cannot build the mutant tree"
+  return 0
+fi
+RTRUN_CLEANUP+=("$SCRATCH")
 mkdir -p "$SCRATCH/tests/newcheck"
 cp "$RUNNER" "$SCRATCH/tests/run-all.sh"
 chmod +x "$SCRATCH/tests/run-all.sh"
@@ -115,4 +132,3 @@ else
   _flow_assert_fail "run summary does not say how much was examined — a discovery that found nothing would look like a clean run"
 fi
 
-rm -rf "$SCRATCH"

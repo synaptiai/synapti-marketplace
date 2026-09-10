@@ -11,6 +11,16 @@
 # single variable read twice, because two readings of the same source can never
 # disagree and would make this check unable to fail.
 
+# Cleanup is an EXIT trap, matching cascade-resolve.test.sh and
+# commit-journal-churn.test.sh. A trailing `rm` only runs when the file reaches
+# its last line, which is exactly not the case on the path that matters.
+PYREQ_CLEANUP=()
+_pyreq_cleanup() {
+  local p
+  for p in "${PYREQ_CLEANUP[@]:-}"; do [ -n "$p" ] && rm -rf "$p" 2>/dev/null; done
+}
+trap _pyreq_cleanup EXIT
+
 REQ="$REPO_ROOT/plugins/flow/requirements.txt"
 FLOW_WF="$REPO_ROOT/.github/workflows/flow-tests.yml"
 DOSSIER_WF="$REPO_ROOT/.github/workflows/dossier-tests.yml"
@@ -20,7 +30,7 @@ if [ -f "$REQ" ]; then
   _flow_assert_pass "plugins/flow/requirements.txt is present"
 else
   _flow_assert_fail "no dependency manifest at $REQ — the PyYAML requirement is undeclared again"
-  return 0 2>/dev/null || true
+  return 0
 fi
 
 # Parse the manifest: non-comment, non-blank lines of the form name==version.
@@ -76,50 +86,23 @@ else
   _flow_assert_fail "flow-tests.yml pins versions inline as well as reading the manifest: $(printf '%s' "$INLINE" | tr '\n' ' ')"
 fi
 
-# --- the dossier workflow keeps its own pins, so those are checked for drift ---
-# Pointing the dossier suite at the flow plugin manifest would couple two
-# plugins that are otherwise independent. It keeps its own copy, and a copy is
-# exactly the thing that drifts, so it is compared.
-_wf_pin() {
-  grep -oE "'${2}==[0-9][0-9A-Za-z.]*'" "$1" 2>/dev/null | head -1 | tr -d "'"
-}
-
-for PKG_LINE in $(_manifest_pins); do
-  PKG="${PKG_LINE%%==*}"
-  DOSSIER_PIN=$(_wf_pin "$DOSSIER_WF" "$PKG")
-  [ -z "$DOSSIER_PIN" ] && continue
-  _flow_test_begin "dossier-tests.yml pins $PKG at the version the manifest declares"
-  if [ "$DOSSIER_PIN" = "$PKG_LINE" ]; then
-    _flow_assert_pass "manifest=$PKG_LINE, dossier-tests.yml=$DOSSIER_PIN"
-  else
-    _flow_assert_fail "manifest says $PKG_LINE but dossier-tests.yml installs $DOSSIER_PIN"
-  fi
-done
+# --- Nothing here asserts anything about another plugin ----------------------
+# An earlier version compared dossier-tests.yml against this manifest. That made
+# a PyYAML bump in flow turn the flow suite red for a reason living entirely in
+# another plugin, fixable only by editing dossier — the coupling this repository
+# forbids at run time, imposed through a test instead. dossier owns its own
+# pins; if they need guarding, the guard belongs in dossier.
 
 # --- Mutant that must fire ---------------------------------------------------
-# Both checks above pass trivially if the parsers match nothing — an empty grep
-# is indistinguishable from agreement. Prove each can see a real disagreement.
-_flow_test_begin "the drift check detects a mutated dossier pin"
-MUT_WF=$(mktemp -t requirements-mutant.XXXXXX)
-sed "s/'pyyaml==[0-9.]*'/'pyyaml==0.0.1'/" "$DOSSIER_WF" > "$MUT_WF"
-MUT_PIN=$(_wf_pin "$MUT_WF" "pyyaml")
-if [ "$MUT_PIN" = "pyyaml==0.0.1" ] && [ "$MUT_PIN" != "$PYYAML_PIN" ]; then
-  _flow_assert_pass "a drifted pin is read as $MUT_PIN and differs from the manifest"
-else
-  _flow_assert_fail "the workflow parser did not read the mutated pin (got '$MUT_PIN') — it cannot detect drift"
-fi
-rm -f "$MUT_WF"
-
-_flow_test_begin "the drift check found a real pin to compare against"
-REAL_DOSSIER_PIN=$(_wf_pin "$DOSSIER_WF" "pyyaml")
-if [ -n "$REAL_DOSSIER_PIN" ]; then
-  _flow_assert_pass "dossier-tests.yml installs $REAL_DOSSIER_PIN"
-else
-  _flow_assert_fail "no pyyaml pin found in dossier-tests.yml — either it stopped installing PyYAML or the parser no longer matches the file, and the comparison above was vacuous"
-fi
-
+# Both checks above pass trivially if their greps match nothing: an empty grep
+# reads exactly like agreement. Prove each can see the thing it looks for.
 _flow_test_begin "the inline-pin check detects a reintroduced copy"
-MUT_FLOW=$(mktemp -t requirements-inline-mutant.XXXXXX)
+MUT_FLOW=$(mktemp -t requirements-inline-mutant.XXXXXX 2>/dev/null) || MUT_FLOW=""
+if [ -z "$MUT_FLOW" ]; then
+  _flow_assert_fail "mktemp failed; cannot build the comparison file"
+  return 0
+fi
+PYREQ_CLEANUP+=("$MUT_FLOW")
 cp "$FLOW_WF" "$MUT_FLOW"
 printf "%s\n" "            'pyyaml==6.0.2' \\" >> "$MUT_FLOW"
 MUT_INLINE=$(grep -oE "'(pyyaml|jsonschema)==[0-9][0-9A-Za-z.]*'" "$MUT_FLOW" || true)
@@ -128,7 +111,24 @@ if [ -n "$MUT_INLINE" ]; then
 else
   _flow_assert_fail "the inline-pin check cannot see an inline pin, so its silence on the real file means nothing"
 fi
-rm -f "$MUT_FLOW"
+
+_flow_test_begin "the install-line check detects a job that installs nothing"
+MUT_JOB=$(mktemp -t requirements-job-mutant.XXXXXX 2>/dev/null) || MUT_JOB=""
+if [ -z "$MUT_JOB" ]; then
+  _flow_assert_fail "mktemp failed; cannot build the comparison file"
+  return 0
+fi
+PYREQ_CLEANUP+=("$MUT_JOB")
+# Strip the install line from the second job only, which is exactly the shape
+# that passed on Ubuntu and failed on macOS the first time the job ran.
+awk '/pip install .*-r plugins\/flow\/requirements\.txt/ { n++; if (n == 2) next } { print }' \
+  "$FLOW_WF" > "$MUT_JOB"
+MUT_INSTALLS=$(grep -cE 'pip install .*-r plugins/flow/requirements\.txt' "$MUT_JOB" || true)
+if [ "${MUT_INSTALLS:-0}" -eq 1 ]; then
+  _flow_assert_pass "a job missing its install is visible as $MUT_INSTALLS install line(s)"
+else
+  _flow_assert_fail "the mutant did not reduce the install count (got ${MUT_INSTALLS:-0}); the per-job check cannot detect a job that installs nothing"
+fi
 
 # --- The guards in the Python entry points stay in place ---------------------
 for PY in "$REPO_ROOT/plugins/flow/bin/_journal_atomic.py" "$REPO_ROOT/plugins/flow/bin/_flow_evidence_bundle.py"; do

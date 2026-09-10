@@ -74,6 +74,11 @@ jobs:
           awk --version 2>/dev/null | head -1 || echo "awk: BSD/POSIX (no --version)"
           python3 -c "import yaml; print('PyYAML', yaml.__version__)"
           python3 -c "import jsonschema; print('jsonschema', jsonschema.__version__)"
+          # The install reads a manifest from the pull request's own checkout,
+          # so the log has to name what actually got installed. With --quiet on
+          # the install step and nothing here, an added third package would
+          # arrive with no trace in the run.
+          python3 -m pip list --format=freeze
 
       - name: Report the shell the suite will run under
         # macOS ships bash 3.2 as /bin/bash. Printing it makes a
@@ -120,6 +125,7 @@ jobs:
           jq --version
           git --version
           python3 -c "import yaml; print('PyYAML', yaml.__version__)"
+          python3 -m pip list --format=freeze
 
       - name: Run root tests
         run: tests/run-all.sh

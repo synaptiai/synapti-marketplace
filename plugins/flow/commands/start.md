@@ -327,7 +327,7 @@ fi
 # default (auto) applies. `else null` — NOT "auto" — is load-bearing: it lets a
 # settings source carrying NEITHER key fall through to the next cascade source
 # instead of short-circuiting and masking a lower-precedence requireGoalForStart.
-# Never rewrites the user's settings file, so configured projects are never
+# Never rewrites the user settings file, so configured projects are never
 # re-prompted or silently changed.
 GOAL_MODE=$("$CASCADE" --default "auto" '.flow.goals.goalCreation // (if .flow.goals.requireGoalForStart == true then "always" elif .flow.goals.requireGoalForStart == false then "off" else null end)' 2>/dev/null)
 case "$GOAL_MODE" in auto|always|off) ;; *) GOAL_MODE="auto" ;; esac

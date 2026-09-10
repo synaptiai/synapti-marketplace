@@ -78,7 +78,7 @@ else
   echo "### Inline Review Comments"
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   # Capture gh exit separately. gh failure ⇒ "" + non-zero exit; jq on empty
-  # stdin produces no output + exit 0, so `|| echo "0"` doesn't fire and the
+  # stdin produces no output + exit 0, so `|| echo "0"` does not fire and the
   # block silently emits a bare `INLINE_COUNT=` line. Distinguish unavailable
   # (gh failed) from empty (gh ok, no records).
   INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUM/comments" 2>/dev/null); GH_EXIT=$?

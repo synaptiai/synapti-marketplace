@@ -73,7 +73,7 @@ else
   echo "### Previous Reviews"
   # Capture gh exit separately. Without this, `jq 'length' | echo "0"` on a
   # failed gh call (auth, network) produces no output (jq 1.8 empty-input
-  # ⇒ exit 0) so `||` doesn't fire, COUNT stays empty, and the section
+  # ⇒ exit 0) so `||` does not fire, COUNT stays empty, and the section
   # silently leaks `REVIEW_COUNT=` (bare empty).
   PREV_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
   if [ $GH_EXIT -ne 0 ]; then
@@ -239,9 +239,18 @@ echo "### Path A Gate"
 #      so a hostile fork PR via `gh pr checkout` cannot inject it (it is the
 #      machine-local pin belonging to the user).
 #   2. .claude/settings.flow.json — project-shared; committed with team
-#      preferences. Visible in PR review like any other repo file.
+#      preferences. Visible in PR review like any other repo file. Being
+#      committed, it also arrives with a fork branch checked out via
+#      `gh pr checkout`, and it outranks the user-global tier: a pull request
+#      carrying "agentTeams": false downgrades the review of itself from paired
+#      to single-reviewer. The gate prints the source file it used, and the file
+#      shows up in the diff, so the downgrade is visible in both places rather
+#      than silent.
 #   3. $HOME/.claude/settings.flow.json — user-global default across projects.
-#   4. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json — plugin default.
+#   4. $CLAUDE_PLUGIN_ROOT/settings.json when that variable is set, or the
+#      discovered install when it is not. When neither resolves, there is no
+#      plugin tier at all — rather than a settings file at the filesystem root,
+#      which is what the empty discovery result used to produce.
 # The plugin tier is a settings FILE, so CLAUDE_PLUGIN_ROOT is taken at its
 # word when it is set. The shared plugin-root resolver is not used here: it
 # accepts a directory only when that directory holds an executable
@@ -257,7 +266,17 @@ USE_PATH_A=0
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
 USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
-PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done)}/settings.json"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done)}"
+# An empty root means no plugin tier. Appending to it would build the absolute
+# path /settings.json, which the diagnostics below would then print back to the
+# operator as the file to go and look at.
+if [ -n "$PLUGIN_ROOT" ]; then
+  PLUGIN_SETTINGS="${PLUGIN_ROOT%/}/settings.json"
+  PLUGIN_SETTINGS_DISPLAY="$PLUGIN_SETTINGS"
+else
+  PLUGIN_SETTINGS=""
+  PLUGIN_SETTINGS_DISPLAY="(no flow install found)"
+fi
 AGENT_TEAMS=""
 SOURCE_USED=""
 
@@ -265,6 +284,7 @@ if ! command -v jq >/dev/null 2>&1; then
   echo "WARN: jq not installed; Path A unavailable, using Path B (single-session)" >&2
 else
   for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
+    [ -n "$SETTINGS_PATH" ] || continue
     [ -f "$SETTINGS_PATH" ] || continue
     # `// empty` so absent fields fall through to the next source. A parse
     # error is per-source: WARN names the failing file and the loop continues
@@ -306,7 +326,7 @@ else
     # because the user expected the plugin to be reachable. State (b) is just
     # informational ("you have not opted in yet").
     PLUGIN_ROOT_BROKEN=0
-    if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ ! -f "$PLUGIN_SETTINGS" ]; then
+    if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && { [ -z "$PLUGIN_SETTINGS" ] || [ ! -f "$PLUGIN_SETTINGS" ]; }; then
       PLUGIN_ROOT_BROKEN=1
     fi
     ANY_USER_FILE_EXISTS=0
@@ -317,11 +337,11 @@ else
     if [ $PLUGIN_ROOT_BROKEN -eq 1 ]; then
       # Always WARN about broken plugin root — even when user-tier files exist
       # without the key, the broken root is still actionable info.
-      echo "WARN: CLAUDE_PLUGIN_ROOT=$CLAUDE_PLUGIN_ROOT but $PLUGIN_SETTINGS does not exist — plugin install may be corrupted. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
-    elif [ $ANY_USER_FILE_EXISTS -eq 0 ] && [ ! -f "$PLUGIN_SETTINGS" ]; then
-      echo "WARN: agentTeams not set in any cascade source. CLAUDE_PLUGIN_ROOT is unset and $PLUGIN_SETTINGS does not exist — flow plugin may not be installed in this CWD. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
+      echo "WARN: CLAUDE_PLUGIN_ROOT=$CLAUDE_PLUGIN_ROOT but $PLUGIN_SETTINGS_DISPLAY does not exist — plugin install may be corrupted. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
+    elif [ $ANY_USER_FILE_EXISTS -eq 0 ] && { [ -z "$PLUGIN_SETTINGS" ] || [ ! -f "$PLUGIN_SETTINGS" ]; }; then
+      echo "WARN: agentTeams not set in any cascade source. CLAUDE_PLUGIN_ROOT is unset and the plugin tier resolved to $PLUGIN_SETTINGS_DISPLAY — flow plugin may not be installed in this CWD. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
     else
-      echo "Path A skipped: agentTeams not declared in any cascade source ($LOCAL_SETTINGS, $PROJECT_SETTINGS, $USER_SETTINGS, $PLUGIN_SETTINGS). Add \"agentTeams\": true to any of them to opt in."
+      echo "Path A skipped: agentTeams not declared in any cascade source ($LOCAL_SETTINGS, $PROJECT_SETTINGS, $USER_SETTINGS, $PLUGIN_SETTINGS_DISPLAY). Add \"agentTeams\": true to any of them to opt in."
     fi
   else
     case "$AGENT_TEAMS" in

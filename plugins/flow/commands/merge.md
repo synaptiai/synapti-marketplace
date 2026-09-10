@@ -70,7 +70,7 @@ else
   echo "### Reviews"
   # Capture gh exit separately; gh failure must surface as STATE=unavailable
   # rather than collapse to STATE=empty (the merge gate must close, not open,
-  # when reviews can't be read).
+  # when reviews cannot be read).
   REVIEWS_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
   if [ $GH_EXIT -ne 0 ]; then
     echo "REVIEW_COUNT=0"
@@ -130,12 +130,12 @@ else
   # NAME and unsubstituted-placeholder prose like `FLOW_REVIEW_CYCLE:{N}` (which the new
   # self-review template carries in its format-guide comment), so neither inflates the
   # count nor produces a spurious diagnostic. The seed is intentionally a touch stricter
-  # than the gate's `test("FLOW_*_CYCLE:")` select — the gate tolerates prose by extracting
+  # than the gate `test("FLOW_*_CYCLE:")` select — the gate tolerates prose by extracting
   # an empty FINDINGS list, whereas a human-facing preview should only count real markers.
   #
   # Capture gh exit separately per endpoint. Same reason as the Reviews section: the
   # merge gate must close (STATE=unavailable) rather than open (STATE=empty) when
-  # markers can't be read.
+  # markers cannot be read.
   SEED_COMMENTS=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:[0-9]|FLOW_REVIEW_CYCLE:[0-9]")) | {id, body, surface: "issue-comments"}]' 2>/dev/null); GH_EXIT_C=$?
   SEED_REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:[0-9]|FLOW_REVIEW_CYCLE:[0-9]")) | {id, body, surface: "reviews"}]' 2>/dev/null); GH_EXIT_R=$?
   echo "SEED_SCANNED=reviews,issue-comments"
@@ -144,7 +144,7 @@ else
     echo "STATE=unavailable"
     echo "SEED_UNAVAILABLE=comments_exit=$GH_EXIT_C reviews_exit=$GH_EXIT_R"
   else
-    # Union both streams into one array for counting + per-marker emission. Capture jq's
+    # Union both streams into one array for counting + per-marker emission. Capture jq
     # exit so a malformed-JSON operand fails CLOSED (STATE=unavailable) rather than open:
     # without this, a jq error swallowed by 2>/dev/null leaves SEED_JSON empty and the
     # block would mislabel a real marker stream as STATE=empty ("no markers"). Mirrors the
@@ -156,7 +156,7 @@ else
       echo "STATE=unavailable"
       echo "SEED_UNAVAILABLE=union_jq_exit=$SEED_JQ_EXIT"
     else
-      # Capture the count's jq exit too, for the same fail-closed reason — a length()
+      # Capture the count jq exit too, for the same fail-closed reason — a length()
       # failure must not collapse to a false STATE=empty.
       SEED_COUNT=$(echo "$SEED_JSON" | jq 'length' 2>/dev/null); SEED_COUNT_EXIT=$?
       if [ $SEED_COUNT_EXIT -ne 0 ]; then
@@ -245,10 +245,10 @@ for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PL
   fi
   [ -z "$CONFIGURED" ] && continue
   if echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
-    # Warn (don't block) when an element falls outside the known GitHub
+    # Warn (do not block) when an element falls outside the known GitHub
     # `author_association` vocabulary. A typo such as `"owner"` (lowercase)
     # or `"MAINTAINER"` (not a real value) passes the type check above but
-    # would match no real author, silently disabling trust for the typo'd
+    # would match no real author, silently disabling trust for the mistyped
     # entry. Use the same WARN-and-continue pattern as the HIGH_RISK check
     # below — the gate already fails closed via the "untrusted-only"
     # branch when nothing matches.
@@ -283,17 +283,17 @@ if [ -n "${TRUST_SOURCE:-}" ]; then
 fi
 # MARKERTRUST_GATE_END
 
-# Trust filter applied via jq's `index()` exact-match (no regex surface).
-# `--paginate` keeps fetching pages so a noisy thread can't hide forgeries.
+# Trust filter applied via jq `index()` exact-match (no regex surface).
+# `--paginate` keeps fetching pages so a noisy thread cannot hide forgeries.
 #
 # Fetch each endpoint once; reuse the cached JSON for both filter passes
-# (trusted + untrusted-counting). Capturing `gh`'s exit code via `$?` directly
+# (trusted + untrusted-counting). Capturing the gh exit code via `$?` directly
 # after the command substitution is the only reliable way to detect a silent
 # gh failure: `VAR=$(gh ... | jq ...)` then `${PIPESTATUS[0]}` does NOT capture
-# gh's inner exit — bash resets PIPESTATUS to reflect only the outer assignment
+# gh inner exit — bash resets PIPESTATUS to reflect only the outer assignment
 # (verified: `X=$(false | true); echo ${PIPESTATUS[0]}` → 0). Without the cache
-# split, a gh stderr-only failure with empty stdout would let `jq -s 'add //
-# empty'` succeed on null input and the gate would pass open.
+# split, a gh stderr-only failure with empty stdout would let the jq add-or-empty
+# reduction succeed on null input and the gate would pass open.
 GH_RES_RAW=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null)
 GH_EXIT_RES=$?
 RESOLUTION_BODY=$(printf '%s' "$GH_RES_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
@@ -423,7 +423,7 @@ else
         ;;
       1)
         # No active goal on this branch — gate not applicable: the gate keys
-        # on goal existence. A PR without a FlowGoal is not blocked; the PR's
+        # on goal existence. A PR without a FlowGoal is not blocked; the PR
         # own review state remains the durable record. This intentionally
         # replaces the prior fail-closed so default installs (goalCreation:auto)
         # do not start blocking goal-less merges.

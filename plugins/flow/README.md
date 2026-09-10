@@ -149,7 +149,14 @@ See [gate-configuration.md](references/gate-configuration.md) for full gate deta
 Install the Python packages with the pinned versions flow is tested against:
 
 ```bash
+# From a clone of the marketplace repository:
 python3 -m pip install --user --break-system-packages -r plugins/flow/requirements.txt
+
+# From a marketplace install, where the plugin lives under ~/.claude/plugins:
+python3 -m pip install --user --break-system-packages -r "${CLAUDE_PLUGIN_ROOT:?run this from a Claude Code session, or use the clone form above}/requirements.txt"
+
+# Or without the manifest at all — these are the two packages and their pins:
+python3 -m pip install --user --break-system-packages 'pyyaml==6.0.2' 'jsonschema==4.23.0'
 ```
 
 PyYAML is the one that is easy to miss, because nothing announces itself when it

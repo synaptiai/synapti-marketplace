@@ -1,105 +1,182 @@
-# Tests for the Path A gate block in plugins/flow/commands/review.md (issue #130).
+# Tests that every inline-`!` block in every flow command parses on Windows
+# under Git Bash (issue #130).
 #
 # Claude Code hands an inline `!` block to `bash -c` as one string. On Windows
-# under Git Bash the executor mangles `#` comment handling, and an apostrophe
-# that bash would have ignored inside a comment becomes a live quote character.
-# With an odd number of single quotes in the block, one quote never closes and
-# the whole block dies with "unexpected EOF while looking for matching '" before
-# any review work starts.
+# the executor mangles `#` comment handling, and an apostrophe that bash would
+# have ignored inside a comment becomes a live quote character. A comment line
+# carrying an ODD number of apostrophes therefore opens a quote that never
+# closes, and the whole block dies with "unexpected EOF while looking for
+# matching '" before any work starts. That is what made `/flow:review` abort on
+# every run under Git Bash.
 #
-# The property that keeps the block portable is therefore not "it parses" — it
-# parses on Linux and macOS either way. It is:
+# The property is per comment line, not per block:
 #
-#   1. no `#` comment line inside the block contains an apostrophe, and
-#   2. the block's total single-quote count is even.
+#   - An odd count on a comment line is the defect. The quote runs past the end
+#     of the line and swallows whatever follows.
+#   - An even count on a comment line is harmless. `grep -c '.'` inside a
+#     comment opens and closes on that line, so only comment text is consumed.
+#   - Apostrophes in CODE are none of this check's business. `echo "don't"` is
+#     ordinary bash, and an earlier version of this test measured whole-block
+#     quote parity instead, which flagged that as a defect and — because it read
+#     only the span between two markers — missed three real defects in the same
+#     file, in a block that runs earlier.
 #
-# Property 2 is the one that actually matters at run time; property 1 is what a
-# future editor will break first, and it is the actionable message.
+# Scope is every ```! fence in every plugins/flow/commands/*.md. Issue #130
+# named one block in one file; the same defect was in sixteen blocks across nine
+# files, which is why this scans rather than checking a known list.
 
-GATE_FILE="$REPO_ROOT/plugins/flow/commands/review.md"
+CMD_DIR="$REPO_ROOT/plugins/flow/commands"
 
-_flow_test_begin "gate block is extractable by its markers"
-if [ ! -f "$GATE_FILE" ]; then
-  _flow_assert_fail "review.md not found at $GATE_FILE"
-  return 0 2>/dev/null || true
-fi
+RGATE_CLEANUP=()
+_rgate_cleanup() {
+  local p
+  for p in "${RGATE_CLEANUP[@]:-}"; do [ -n "$p" ] && rm -rf "$p" 2>/dev/null; done
+}
+trap _rgate_cleanup EXIT
 
-GATE_TMP=$(mktemp -t review-gate.XXXXXX)
-awk '/# AGENTTEAMS_GATE_BEGIN/,/# AGENTTEAMS_GATE_END/' "$GATE_FILE" > "$GATE_TMP"
-GATE_LINES=$(wc -l < "$GATE_TMP" | tr -d ' ')
-if [ "${GATE_LINES:-0}" -gt 20 ]; then
-  _flow_assert_pass "extracted $GATE_LINES lines between the gate markers"
+# _rgate_scan <file> — prints one "<line-number>:<text>" per offending comment
+# line, and nothing when the file is clean. Also counts the blocks it looked at
+# on stderr-free stdout via the BLOCKS= line, so a scan that reached nothing
+# cannot read as a clean scan.
+_rgate_scan() {
+  awk '
+    /^[[:space:]]*```!$/ { inblock = 1; blocks++; next }
+    /^[[:space:]]*```$/  { inblock = 0; next }
+    inblock && /^[[:space:]]*#/ {
+      n = gsub(/'"'"'/, "&")
+      if (n % 2 == 1) printf "%d:%s\n", FNR, $0
+    }
+    END { printf "BLOCKS=%d\n", blocks + 0 }
+  ' "$1"
+}
+
+_flow_test_begin "command files are present to scan"
+CMD_FILES=$(find "$CMD_DIR" -maxdepth 1 -type f -name '*.md' | LC_ALL=C sort)
+CMD_COUNT=$(printf '%s\n' "$CMD_FILES" | grep -c . || true)
+[ -z "$CMD_COUNT" ] && CMD_COUNT=0
+if [ "$CMD_COUNT" -ge 10 ]; then
+  _flow_assert_pass "$CMD_COUNT command files found"
 else
-  _flow_assert_fail "expected the gate block to be more than 20 lines, extracted $GATE_LINES"
+  _flow_assert_fail "only $CMD_COUNT command files found under $CMD_DIR — the scan below would be reporting on almost nothing"
 fi
 
-# --- Property 1: no apostrophe inside a comment line -------------------------
-# Counted across the whole block rather than checked against the five lines that
-# were wrong when this was reported. A fix that rewords exactly those five and
-# leaves a sixth elsewhere would pass a five-line check and still ship an odd
-# quote count.
-_flow_test_begin "no # comment line inside the gate block contains an apostrophe"
-COMMENT_APOSTROPHES=$(grep -cE "^[[:space:]]*#.*'" "$GATE_TMP" || true)
-[ -z "$COMMENT_APOSTROPHES" ] && COMMENT_APOSTROPHES=0
-if [ "$COMMENT_APOSTROPHES" -eq 0 ]; then
-  _flow_assert_pass "0 comment lines carry an apostrophe"
+# --- The property, across every block -----------------------------------------
+_flow_test_begin "no inline-! comment line carries an odd number of apostrophes"
+OFFENDERS=""
+TOTAL_BLOCKS=0
+for f in $CMD_FILES; do
+  OUT=$(_rgate_scan "$f")
+  FILE_BLOCKS=$(printf '%s\n' "$OUT" | sed -n 's/^BLOCKS=//p')
+  TOTAL_BLOCKS=$((TOTAL_BLOCKS + ${FILE_BLOCKS:-0}))
+  HITS=$(printf '%s\n' "$OUT" | grep -v '^BLOCKS=' | grep . || true)
+  if [ -n "$HITS" ]; then
+    OFFENDERS="$OFFENDERS
+${f#"$REPO_ROOT"/}:
+$HITS"
+  fi
+done
+
+if [ -z "$OFFENDERS" ]; then
+  _flow_assert_pass "clean across $TOTAL_BLOCKS inline-! blocks in $CMD_COUNT files"
 else
-  _flow_assert_fail "$COMMENT_APOSTROPHES comment line(s) carry an apostrophe; the inline-! executor on Windows treats them as live quotes:
-$(grep -nE "^[[:space:]]*#.*'" "$GATE_TMP")"
+  _flow_assert_fail "comment lines with an unpaired apostrophe (each one kills its block on the Windows executor):$OFFENDERS"
 fi
 
-# --- Property 2: even total single-quote count -------------------------------
-# The expected value is a parity, not a number: every quote in shell code pairs
-# with another, so any odd total means one is unpaired. Source: the reproduction
-# in issue #130, which measured 23 and named the five comment apostrophes that
-# made it odd.
-_flow_test_begin "gate block has an even number of single quotes"
-QUOTE_COUNT=$(grep -o "'" "$GATE_TMP" | wc -l | tr -d ' ')
-[ -z "$QUOTE_COUNT" ] && QUOTE_COUNT=0
-if [ $((QUOTE_COUNT % 2)) -eq 0 ]; then
-  _flow_assert_pass "single-quote count is $QUOTE_COUNT (even)"
+# A scan that found no blocks would report the same clean result as a scan that
+# found many. Pin the floor: issue #130 counted the blocks in review.md alone,
+# and the sweep that fixed it covered sixteen across nine files.
+_flow_test_begin "the scan actually reached the blocks"
+if [ "$TOTAL_BLOCKS" -ge 40 ]; then
+  _flow_assert_pass "$TOTAL_BLOCKS inline-! blocks examined"
 else
-  _flow_assert_fail "single-quote count is $QUOTE_COUNT (odd) — one quote is unpaired, so the block dies with 'unexpected EOF' wherever # comments are not honoured"
+  _flow_assert_fail "only $TOTAL_BLOCKS inline-! blocks examined — the extraction no longer matches the fences, so the result above means nothing"
 fi
 
-# --- The block still parses --------------------------------------------------
-_flow_test_begin "gate block passes bash -n"
-if bash -n "$GATE_TMP" 2>/dev/null; then
-  _flow_assert_pass "bash -n exits 0"
+# --- Every block still parses -------------------------------------------------
+_flow_test_begin "every inline-! block passes bash -n"
+PARSE_FAILS=""
+BLOCK_TMP=$(mktemp -t review-gate-block.XXXXXX 2>/dev/null) || BLOCK_TMP=""
+if [ -z "$BLOCK_TMP" ]; then
+  _flow_assert_fail "mktemp failed; cannot extract a block to parse"
 else
-  _flow_assert_fail "bash -n rejected the extracted block: $(bash -n "$GATE_TMP" 2>&1 | head -3)"
+  RGATE_CLEANUP+=("$BLOCK_TMP")
+  for f in $CMD_FILES; do
+    IDX=0
+    while :; do
+      IDX=$((IDX + 1))
+      awk -v want="$IDX" '
+        /^[[:space:]]*```!$/ { n++; if (n == want) { inb = 1; next } }
+        /^[[:space:]]*```$/  { if (inb) exit; next }
+        inb { print }
+      ' "$f" > "$BLOCK_TMP"
+      [ -s "$BLOCK_TMP" ] || break
+      if ! bash -n "$BLOCK_TMP" 2>/dev/null; then
+        PARSE_FAILS="$PARSE_FAILS
+${f#"$REPO_ROOT"/} block $IDX: $(bash -n "$BLOCK_TMP" 2>&1 | head -2)"
+      fi
+    done
+  done
+  if [ -z "$PARSE_FAILS" ]; then
+    _flow_assert_pass "all blocks parse"
+  else
+    _flow_assert_fail "blocks that do not parse:$PARSE_FAILS"
+  fi
 fi
 
-# --- Mutant that must fire ---------------------------------------------------
-# A check that only ever confirms is not a check. Feed the two properties a
-# block that reintroduces exactly the reported defect and require both to fail
-# on it. Without this, a grep that silently matched nothing would report a clean
-# block forever.
-_flow_test_begin "both properties fail on a block with an apostrophe in a comment"
-MUTANT=$(mktemp -t review-gate-mutant.XXXXXX)
-cp "$GATE_TMP" "$MUTANT"
-printf '%s\n' "# this comment reintroduces the defect: it is the user's pin" >> "$MUTANT"
-M_COMMENTS=$(grep -cE "^[[:space:]]*#.*'" "$MUTANT" || true)
-M_QUOTES=$(grep -o "'" "$MUTANT" | wc -l | tr -d ' ')
-if [ "${M_COMMENTS:-0}" -gt 0 ] && [ $((M_QUOTES % 2)) -eq 1 ]; then
-  _flow_assert_pass "mutant is caught by both properties (comments=$M_COMMENTS, quotes=$M_QUOTES)"
+# --- Mutant that must fire ----------------------------------------------------
+# A check that can only confirm is not a check. Feed the scanner a block that
+# reintroduces the reported defect and require it to be found.
+_flow_test_begin "the scan catches an apostrophe reintroduced in a comment"
+MUTANT=$(mktemp -t review-gate-mutant.XXXXXX 2>/dev/null) || MUTANT=""
+if [ -z "$MUTANT" ]; then
+  _flow_assert_fail "mktemp failed; cannot build the mutant"
 else
-  _flow_assert_fail "mutant escaped: comments=$M_COMMENTS quotes=$M_QUOTES — the properties above cannot detect the defect they exist for"
+  RGATE_CLEANUP+=("$MUTANT")
+  {
+    printf '%s\n' '```!'
+    printf '%s\n' "# this comment reintroduces the defect: it is the pin of the user"
+    printf '%s\n' "# and this one is the real problem, because it's unpaired"
+    printf '%s\n' 'echo ok'
+    printf '%s\n' '```'
+  } > "$MUTANT"
+  M_HITS=$(_rgate_scan "$MUTANT" | grep -v '^BLOCKS=' | grep -c . || true)
+  if [ "${M_HITS:-0}" -eq 1 ]; then
+    _flow_assert_pass "the one unpaired comment line is found, and the paired one is not"
+  else
+    _flow_assert_fail "expected exactly 1 offending line in the mutant, found ${M_HITS:-0} — the scan cannot detect the defect it exists for"
+  fi
 fi
 
-# --- Mutant that must NOT fire -----------------------------------------------
-# The counterpart: an ordinary edit that adds a balanced quoted string in code
-# must leave both properties satisfied, or the check would block routine work.
-_flow_test_begin "properties stay satisfied when a balanced quoted string is added"
-BENIGN=$(mktemp -t review-gate-benign.XXXXXX)
-cp "$GATE_TMP" "$BENIGN"
-printf '%s\n' "AGENT_TEAMS_NOTE=\$(printf '%s' ok)" >> "$BENIGN"
-B_COMMENTS=$(grep -cE "^[[:space:]]*#.*'" "$BENIGN" || true)
-B_QUOTES=$(grep -o "'" "$BENIGN" | wc -l | tr -d ' ')
-if [ "${B_COMMENTS:-0}" -eq 0 ] && [ $((B_QUOTES % 2)) -eq 0 ]; then
-  _flow_assert_pass "benign edit passes both properties (comments=$B_COMMENTS, quotes=$B_QUOTES)"
+# --- Mutant that must NOT fire ------------------------------------------------
+# The counterpart, and the case the earlier whole-block parity check got wrong:
+# apostrophes in code, and balanced pairs inside a comment, are ordinary bash
+# and must not be flagged.
+_flow_test_begin "code apostrophes and balanced comment quotes are not flagged"
+BENIGN=$(mktemp -t review-gate-benign.XXXXXX 2>/dev/null) || BENIGN=""
+if [ -z "$BENIGN" ]; then
+  _flow_assert_fail "mktemp failed; cannot build the benign case"
 else
-  _flow_assert_fail "benign edit was flagged: comments=$B_COMMENTS quotes=$B_QUOTES — the properties are too strict for ordinary edits"
+  RGATE_CLEANUP+=("$BENIGN")
+  {
+    printf '%s\n' '```!'
+    printf '%s\n' "# a balanced pair inside a comment closes on this line: grep -c '.'"
+    printf '%s\n' 'echo "do not worry"'
+    printf '%s\n' "MSG=\$(printf '%s' ok)"
+    printf '%s\n' 'echo "an apostrophe in code is fine: don'"'"'t"'
+    printf '%s\n' '```'
+  } > "$BENIGN"
+  B_HITS=$(_rgate_scan "$BENIGN" | grep -v '^BLOCKS=' | grep -c . || true)
+  if [ "${B_HITS:-0}" -eq 0 ]; then
+    _flow_assert_pass "ordinary code and balanced comment quotes pass"
+  else
+    _flow_assert_fail "flagged $B_HITS ordinary line(s) — the check is too strict for everyday edits"
+  fi
 fi
 
-rm -f "$GATE_TMP" "$MUTANT" "$BENIGN"
+# --- The block issue #130 named is still covered ------------------------------
+_flow_test_begin "the Path A gate block is inside the scanned set"
+if grep -q '# AGENTTEAMS_GATE_BEGIN' "$CMD_DIR/review.md"; then
+  _flow_assert_pass "review.md still carries the gate the issue reported"
+else
+  _flow_assert_fail "the AGENTTEAMS_GATE markers are gone from review.md; confirm the gate moved rather than vanished"
+fi
