@@ -1498,3 +1498,39 @@ TOTAL=50.6/100  MIN_DIMENSION_MET=no
 D4 reaches 0.0 by arithmetic while its anchor reads 3. The rubric directs taking the lower of the two constraints, so 0.0 stands; both numbers are reported here because the divergence is itself the signal — nine independent consistency findings against a package whose documents do not describe mutually exclusive systems.
 
 Gate conditions I can see failing from this pass alone: G02 on seven dimensions, G03 on two Critical and nine High findings, G04 and G10 on C1 and C8, G07 on C2, C5 and C7, G18 on C19. I issue no gate verdict; that is `dossier-scorer`'s alone.
+
+---
+
+## Gate result — round 5, 2026-09-10
+
+```
+GATE_VERDICT=not ready
+GATE_RESULT=FAIL
+GATE_FAILED_CONDITIONS=G03,G05,G18
+GATE_INCONCLUSIVE_COUNT=8 judgment + G19
+SCORER_VERDICT_PRESENT=no
+TOTAL_SCORE=not issued  MIN_DIMENSION_MET=no
+```
+
+Pinned revision `ae0ead4`. Eleven of nineteen conditions were decidable mechanically: eight passed, three failed. **The scorer was not dispatched.** `bin/dossier-gate.sh` exited 1, and the command's contract is that a mechanical failure stops the run without spending scorer budget, because the judgment set cannot rescue a failed mechanical condition. The eight judgment conditions are therefore `INCONCLUSIVE` — not evaluated, which is an absence of assurance rather than a condition to attach.
+
+G10 failed on the first run and was repaired before this record: six approved claims cited evidence that was refuted or inferred. Four were rows naming their own superseded predecessor in a decision-basis note, which the rule reads as a citation; those were reworded. Two were real — CL-0057 rested on an inferred asset count and CL-0063 on an inferred uninstall outcome. The asset count was then observed directly (71, 71 and 70 `.zip` bundles at v4.10.0, v4.9.0 and v4.7.0) and EV-0225 promoted from `I` to `V`.
+
+### Blockers
+
+| Condition | Why it fails | Exact next action | Owner | Evidence required |
+|---|---|---|---|---|
+| G03 | 18 Critical and High findings from rounds 4 and 5 are recorded open. Round 5's are unreconciled by design — the approver chose to gate rather than start a repair cycle that had twice introduced new defects | Reconcile round 5 and repair, or record an explicit acceptance for each of the 18 with a named accepting authority | Daniel Bentes | None. The findings and their evidence already exist |
+| G05 | CL-0043 and CL-0047 are held pending by approver decision; four items need an owner — AQ-0033 (a red test's contract), AQ-0034 (what the root test directory is for), AQ-0035 (a CI path filter), AQ-0036 (the 178 unread claim fragments) | Decide each, or record a risk acceptance | Daniel Bentes | None. Each is a decision, not a missing observation |
+| G18 | 163 hard-category prose-clarity violations, of which **124 are in this file** and are verbatim audit-pass output the orchestrator is forbidden to modify | Nothing at this revision. The condition and the verbatim-collection rule cannot both be satisfied; tracked as issue #180 | plugin maintainer | None |
+| G19 | No dependency-vulnerability scan artifact exists in the ledger | Run a scan and ingest it via `dossier-vuln-evidence.sh`, or record why none is available | Daniel Bentes | A scan artifact |
+
+### On G18
+
+The condition fails harder the more thorough the audit is. A package that ran no audit has an empty verification report and passes G18 comfortably; this one ran six passes across two rounds and carries their reasoning verbatim. The 124 violations are semicolons, long sentences and long paragraphs in the auditors' own analytical prose. Rewriting them to pass a lint would destroy the evidence that the audit happened, which is the property the verbatim rule exists to protect.
+
+### What the verdict means
+
+`not ready` is correct and is not a formality. Eighteen Critical and High findings are open, six decisions are unmade, and no scorer has ever run against this revision — so no total score exists for this package at `ae0ead4` and none should be quoted.
+
+What the branch does carry: four repository defects found, reproduced and filed (#175, #177, #178, #179), two plugin defects filed (#176, #180), an evidence ledger grown from 97 rows to 249, eight false sentences removed from the public guides, and two independent audit rounds whose findings are published before their repairs. The package is more honest than it was and it is not releasable. Both statements are in the record.
