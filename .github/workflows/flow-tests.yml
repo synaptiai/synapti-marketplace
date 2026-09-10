@@ -9,6 +9,7 @@ on:
       - 'plugins/flow/references/**'
       - 'plugins/flow/skills/**'
       - 'plugins/flow/tests/**'
+      - 'tests/**'
       - '.github/workflows/flow-tests.yml'
   push:
     branches:
@@ -20,6 +21,7 @@ on:
       - 'plugins/flow/references/**'
       - 'plugins/flow/skills/**'
       - 'plugins/flow/tests/**'
+      - 'tests/**'
       - '.github/workflows/flow-tests.yml'
 
 permissions:
@@ -84,3 +86,29 @@ jobs:
 
       - name: Run flow tests
         run: plugins/flow/tests/run.sh
+
+  root-tests:
+    # The repository-root tests/ tree holds eleven standalone checks that no
+    # workflow reached until issue #177. They are kept where they are and where
+    # they were written; tests/run-all.sh discovers and runs them.
+    #
+    # Same two-OS matrix as the flow suite: these scripts are bash, and the
+    # macOS runner pins bash 3.2, which is the floor the plugins claim.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify prerequisites
+        run: |
+          /bin/bash --version | head -1
+          jq --version
+          git --version
+
+      - name: Run root tests
+        run: tests/run-all.sh
