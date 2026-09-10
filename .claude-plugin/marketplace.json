@@ -179,7 +179,8 @@
         "source": "git-subdir",
         "url": "https://github.com/synaptiai/prompt-decorators.git",
         "path": "claude-code-plugin",
-        "ref": "main"
+        "ref": "main",
+        "sha": "9c792feb7e6db8feb42d26c98728dc6a29420e41"
       },
       "description": "Automatically enhance prompts with composable, categorized decorators (143 across 14 categories - reasoning, structure, tone, verification, minimal, meta, and eight developer categories). Inline `::Name` / `+++Name` syntax, always-on config, and an opt-in Haiku-powered auto-selector using a two-pass (keyword filter + small-model) selector.",
       "version": "0.1.1",

@@ -52,3 +52,13 @@ plugins/flow/**/__pycache__/
 # The marketplace fetches it from its own repo (see .claude-plugin/marketplace.json);
 # this directory must never be committed as a gitlink again.
 /plugins/agent-capability-standard/
+
+# Local environment overrides.
+.env.local
+
+# Centralized local git worktrees.
+.worktrees/
+
+# Local flow test harness checkout. It is its own git repository; committing
+# it records a gitlink this repository has no submodule entry for.
+/flow-harness/

@@ -1,0 +1,46 @@
+name: Marketplace Manifest
+
+# Checks that every plugin the marketplace lists advertises the version its own
+# plugin.json reports, and that plugins sourced from other repositories are
+# pinned to a commit.
+#
+# The schedule matters as much as the pull-request trigger: an external source
+# can stop being valid without anything changing here — a force-push away from
+# a pinned sha, a deleted repository, a plugin.json edited upstream. Only a
+# run on a timer catches that.
+
+on:
+  pull_request:
+    paths:
+      - '.claude-plugin/marketplace.json'
+      - 'plugins/*/.claude-plugin/plugin.json'
+      - 'scripts/check-plugin-versions.sh'
+      - '.github/workflows/marketplace-manifest.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.claude-plugin/marketplace.json'
+      - 'plugins/*/.claude-plugin/plugin.json'
+      - 'scripts/check-plugin-versions.sh'
+      - '.github/workflows/marketplace-manifest.yml'
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-versions:
+    name: Plugin versions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check plugin versions and external pins
+        env:
+          # The script reads other repositories' plugin.json through `gh api`.
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/check-plugin-versions.sh
