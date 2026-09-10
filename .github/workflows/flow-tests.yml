@@ -55,9 +55,9 @@ jobs:
         # - `python3 -m pip` guarantees the install targets the same
         #   interpreter the helpers will use (avoids the case where bare
         #   `pip` resolves to a different Python on the runner image).
-        # - Versions are pinned to known-good releases so a CI run cannot
-        #   be silently affected by an upstream regression or a hostile
-        #   PyPI release. Bump intentionally when refreshing.
+        # - Versions come from plugins/flow/requirements.txt, the manifest an
+        #   operator installs from, so CI and a real install can never be
+        #   running different versions. Bump there, once.
         # - `--break-system-packages` is defensive against future runner
         #   images that enforce PEP 668 "externally-managed-environment"
         #   on the system Python (Ubuntu 24.04+). On current runners the
@@ -65,9 +65,7 @@ jobs:
         #   install path without requiring a venv setup step.
         run: |
           python3 --version
-          python3 -m pip install --quiet --break-system-packages \
-            'pyyaml==6.0.2' \
-            'jsonschema==4.23.0'
+          python3 -m pip install --quiet --break-system-packages -r plugins/flow/requirements.txt
 
       - name: Verify test prerequisites
         run: |
@@ -104,11 +102,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install Python prerequisites
+        # tests/journal-orchestration/test.sh exercises the PyYAML-backed
+        # journal writer and its sys.path hardening, so PyYAML is a hard
+        # prerequisite for this job, not an optional strict path. The Ubuntu
+        # runner image happens to ship it and the macOS image does not, which is
+        # why this job passed on one runner and failed on the other the first
+        # time it ran. Installed from the plugin manifest so the version here is
+        # the version the manifest declares.
+        run: |
+          python3 --version
+          python3 -m pip install --quiet --break-system-packages -r plugins/flow/requirements.txt
+
       - name: Verify prerequisites
         run: |
           /bin/bash --version | head -1
           jq --version
           git --version
+          python3 -c "import yaml; print('PyYAML', yaml.__version__)"
 
       - name: Run root tests
         run: tests/run-all.sh

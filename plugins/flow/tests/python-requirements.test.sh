@@ -43,39 +43,66 @@ else
   _flow_assert_fail "manifest does not say pyyaml is required at run time — an operator reading it cannot tell which lines are optional"
 fi
 
-# --- Pin agreement across the three files ------------------------------------
-# Each workflow is read with its own grep against its own file. A package named
-# in the manifest but installed at a different version in either workflow is the
-# defect; a package named in the manifest and absent from a workflow is not
-# (dossier does not have to install everything flow needs).
+# --- flow's own workflow installs from the manifest, not from its own copy ---
+# Drift between a manifest and a workflow is only possible while both write the
+# version down. flow-tests.yml no longer does: it installs -r the manifest, so
+# there is one string and nothing to drift. The assertion is therefore about the
+# absence of a second copy, not about two copies agreeing.
+_flow_test_begin "flow-tests.yml installs from the manifest in every job"
+INSTALL_LINES=$(grep -cE 'pip install .*-r plugins/flow/requirements\.txt' "$FLOW_WF" || true)
+[ -z "$INSTALL_LINES" ] && INSTALL_LINES=0
+# Job keys are the two-space-indented mapping keys under the top-level `jobs:`
+# block. Counting every two-space key in the file would also count pull_request
+# and push under `on:`, which is how the first version of this assertion
+# reported three jobs for a two-job workflow.
+JOB_COUNT=$(awk '
+  /^jobs:/ { in_jobs = 1; next }
+  /^[^[:space:]#]/ { in_jobs = 0 }
+  in_jobs && /^  [A-Za-z_][A-Za-z0-9_-]*:[[:space:]]*$/ { n++ }
+  END { print n + 0 }
+' "$FLOW_WF")
+[ -z "$JOB_COUNT" ] && JOB_COUNT=0
+if [ "$INSTALL_LINES" -ge 2 ] && [ "$INSTALL_LINES" -eq "$JOB_COUNT" ]; then
+  _flow_assert_pass "$INSTALL_LINES of $JOB_COUNT jobs install from the manifest"
+else
+  _flow_assert_fail "$INSTALL_LINES install-from-manifest lines for $JOB_COUNT jobs — a job that does not install PyYAML fails on any runner image that does not ship it, which is how the root-tests job first went red on macOS and green on Ubuntu"
+fi
+
+_flow_test_begin "flow-tests.yml carries no second copy of a version"
+INLINE=$(grep -oE "'(pyyaml|jsonschema)==[0-9][0-9A-Za-z.]*'" "$FLOW_WF" || true)
+if [ -z "$INLINE" ]; then
+  _flow_assert_pass "no inline pins in flow-tests.yml"
+else
+  _flow_assert_fail "flow-tests.yml pins versions inline as well as reading the manifest: $(printf '%s' "$INLINE" | tr '\n' ' ')"
+fi
+
+# --- the dossier workflow keeps its own pins, so those are checked for drift ---
+# Pointing the dossier suite at the flow plugin manifest would couple two
+# plugins that are otherwise independent. It keeps its own copy, and a copy is
+# exactly the thing that drifts, so it is compared.
 _wf_pin() {
-  # $1 = workflow path, $2 = package name
   grep -oE "'${2}==[0-9][0-9A-Za-z.]*'" "$1" 2>/dev/null | head -1 | tr -d "'"
 }
 
 for PKG_LINE in $(_manifest_pins); do
   PKG="${PKG_LINE%%==*}"
-  _flow_test_begin "pin for $PKG agrees between the manifest and both workflows"
-  FLOW_PIN=$(_wf_pin "$FLOW_WF" "$PKG")
   DOSSIER_PIN=$(_wf_pin "$DOSSIER_WF" "$PKG")
-  MISMATCH=""
-  [ -n "$FLOW_PIN" ] && [ "$FLOW_PIN" != "$PKG_LINE" ] && MISMATCH="$MISMATCH flow-tests.yml=$FLOW_PIN"
-  [ -n "$DOSSIER_PIN" ] && [ "$DOSSIER_PIN" != "$PKG_LINE" ] && MISMATCH="$MISMATCH dossier-tests.yml=$DOSSIER_PIN"
-  if [ -z "$MISMATCH" ]; then
-    _flow_assert_pass "manifest=$PKG_LINE, flow-tests.yml=${FLOW_PIN:-not installed}, dossier-tests.yml=${DOSSIER_PIN:-not installed}"
+  [ -z "$DOSSIER_PIN" ] && continue
+  _flow_test_begin "dossier-tests.yml pins $PKG at the version the manifest declares"
+  if [ "$DOSSIER_PIN" = "$PKG_LINE" ]; then
+    _flow_assert_pass "manifest=$PKG_LINE, dossier-tests.yml=$DOSSIER_PIN"
   else
-    _flow_assert_fail "manifest says $PKG_LINE but$MISMATCH"
+    _flow_assert_fail "manifest says $PKG_LINE but dossier-tests.yml installs $DOSSIER_PIN"
   fi
 done
 
 # --- Mutant that must fire ---------------------------------------------------
-# The comparison above passes trivially if _wf_pin returns empty for every
-# package, which is what a changed workflow quoting style would produce. Prove
-# the comparison can see a real disagreement.
-_flow_test_begin "pin comparison detects a drifted workflow pin"
+# Both checks above pass trivially if the parsers match nothing — an empty grep
+# is indistinguishable from agreement. Prove each can see a real disagreement.
+_flow_test_begin "the drift check detects a mutated dossier pin"
 MUT_WF=$(mktemp -t requirements-mutant.XXXXXX)
-sed "s/'pyyaml==[0-9.]*'/'pyyaml==0.0.1'/" "$FLOW_WF" > "$MUT_WF"
-MUT_PIN=$(grep -oE "'pyyaml==[0-9][0-9A-Za-z.]*'" "$MUT_WF" | head -1 | tr -d "'")
+sed "s/'pyyaml==[0-9.]*'/'pyyaml==0.0.1'/" "$DOSSIER_WF" > "$MUT_WF"
+MUT_PIN=$(_wf_pin "$MUT_WF" "pyyaml")
 if [ "$MUT_PIN" = "pyyaml==0.0.1" ] && [ "$MUT_PIN" != "$PYYAML_PIN" ]; then
   _flow_assert_pass "a drifted pin is read as $MUT_PIN and differs from the manifest"
 else
@@ -83,15 +110,25 @@ else
 fi
 rm -f "$MUT_WF"
 
-_flow_test_begin "workflow pin parser actually found something in the real workflow"
-# The counterpart guard: if _wf_pin returns empty on the unmutated file, every
-# agreement assertion above was vacuous.
-REAL_FLOW_PIN=$(_wf_pin "$FLOW_WF" "pyyaml")
-if [ -n "$REAL_FLOW_PIN" ]; then
-  _flow_assert_pass "flow-tests.yml installs $REAL_FLOW_PIN"
+_flow_test_begin "the drift check found a real pin to compare against"
+REAL_DOSSIER_PIN=$(_wf_pin "$DOSSIER_WF" "pyyaml")
+if [ -n "$REAL_DOSSIER_PIN" ]; then
+  _flow_assert_pass "dossier-tests.yml installs $REAL_DOSSIER_PIN"
 else
-  _flow_assert_fail "no pyyaml pin found in flow-tests.yml — either CI stopped installing it or the parser no longer matches the file"
+  _flow_assert_fail "no pyyaml pin found in dossier-tests.yml — either it stopped installing PyYAML or the parser no longer matches the file, and the comparison above was vacuous"
 fi
+
+_flow_test_begin "the inline-pin check detects a reintroduced copy"
+MUT_FLOW=$(mktemp -t requirements-inline-mutant.XXXXXX)
+cp "$FLOW_WF" "$MUT_FLOW"
+printf "%s\n" "            'pyyaml==6.0.2' \\" >> "$MUT_FLOW"
+MUT_INLINE=$(grep -oE "'(pyyaml|jsonschema)==[0-9][0-9A-Za-z.]*'" "$MUT_FLOW" || true)
+if [ -n "$MUT_INLINE" ]; then
+  _flow_assert_pass "a reintroduced inline pin is seen as $MUT_INLINE"
+else
+  _flow_assert_fail "the inline-pin check cannot see an inline pin, so its silence on the real file means nothing"
+fi
+rm -f "$MUT_FLOW"
 
 # --- The guards in the Python entry points stay in place ---------------------
 for PY in "$REPO_ROOT/plugins/flow/bin/_journal_atomic.py" "$REPO_ROOT/plugins/flow/bin/_flow_evidence_bundle.py"; do

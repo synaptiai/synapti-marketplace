@@ -86,6 +86,16 @@ fi
 # git toplevel and one of them shells out to git.
 cd "$REPO_ROOT" || { echo "run-all.sh: cannot cd to $REPO_ROOT" >&2; exit 2; }
 
+# tests/journal-orchestration/test.sh drives the PyYAML-backed journal writer and
+# does not skip when the module is absent — it reports thirteen failures that all
+# say the same thing. Say it once, up front, so the output is legible.
+if command -v python3 >/dev/null 2>&1 && ! python3 -c "import yaml" >/dev/null 2>&1; then
+  echo "run-all.sh: WARN PyYAML is not importable by $(command -v python3)." >&2
+  echo "run-all.sh: WARN tests/journal-orchestration/test.sh needs it and will fail without it." >&2
+  echo "run-all.sh: WARN python3 -m pip install --user --break-system-packages -r plugins/flow/requirements.txt" >&2
+  echo "" >&2
+fi
+
 echo "run-all.sh: ${#ENTRY_POINTS[@]} entry points under tests/"
 echo ""
 

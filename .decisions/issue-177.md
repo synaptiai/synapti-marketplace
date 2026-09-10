@@ -104,3 +104,5 @@ PASS — 5 tasks reviewed.
 <!-- auto-log: 2026-09-10 22:30 commit "test(flow): run the repository-root checks in CI" -->
 
 <!-- auto-log: 2026-09-10 22:30 commit "docs(flow): declare the PyYAML runtime requirement" -->
+
+<!-- auto-log: 2026-09-10 22:37 Edit /Users/danielbentes/synapti-marketplace/tests/run-all.sh -->
