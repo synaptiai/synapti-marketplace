@@ -111,6 +111,29 @@ assert_contains "CHANGED_SINCE=1" "$OUT" "same file twice counts once"
 assert_contains "CHANGED_FILE=/work/src/b.js" "$OUT" "names b.js"
 assert_not_contains "CHANGED_FILE=/work/src/a.js" "$OUT" "a.js (before the run) not listed"
 
+_flow_test_begin "the same file under a logical and a physical path counts once"
+# Regression for #179. Ledger file_change paths are LOGICAL (from $PWD or a
+# caller argument); git status paths are PHYSICAL (from `git rev-parse
+# --show-toplevel`). Where the two spellings differ -- macOS /var is a symlink
+# to /private/var, so anything under TMPDIR has both -- a string-keyed seen set
+# never collapsed them and one edit was reported as "2 file(s) changed".
+#
+# Built with an explicit symlink rather than relying on /var, so the case runs
+# identically on Linux, where no such symlink exists and the bug is invisible.
+STATE=$(_ql_state)
+_QL_REAL=$(mktemp -d "${TMPDIR:-/tmp}/flow-ql-real.XXXXXX")
+_QL_LINK="${_QL_REAL}-link"
+ln -s "$_QL_REAL" "$_QL_LINK"
+mkdir -p "$_QL_REAL/src"
+: > "$_QL_REAL/src/a.js"
+_run s1 2026-09-09T10:00:00Z 0
+_change s1 2026-09-09T10:01:00Z "$_QL_LINK/src/a.js"
+_change s1 2026-09-09T10:02:00Z "$_QL_REAL/src/a.js"
+OUT=$(_ql status --session s1)
+assert_contains "CHANGED_SINCE=1" "$OUT" "one file, not two"
+rm -f "$_QL_LINK"
+rm -rf "$_QL_REAL"
+
 _flow_test_begin "failing run after change -> still dirty; LAST_RUN_EXIT reports failure"
 STATE=$(_ql_state)
 _run s1 2026-09-09T10:00:00Z 0

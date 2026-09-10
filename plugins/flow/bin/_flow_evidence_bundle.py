@@ -50,7 +50,15 @@ from typing import Optional
 # already imported, this guards against any future `import x` lines.
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
-import yaml  # PyYAML; required by every flow Python entrypoint
+try:
+    import yaml  # PyYAML
+except ImportError:  # pragma: no cover - environment-dependent
+    raise SystemExit(
+        "flow: PyYAML is required by the FlowGoal evidence bundle but is not installed.\n"
+        "  python3 -m pip install --user --break-system-packages pyyaml\n"
+        "Callers normally preflight this; reaching here means the module was\n"
+        "imported directly. No manifest declares the dependency (see issue #175)."
+    )
 
 # Hard cap on per-evidence raw output bytes embedded in the bundle.
 # 8KB per entry × typical 4-6 ACs = ~32-48KB ceiling on evidence content.
