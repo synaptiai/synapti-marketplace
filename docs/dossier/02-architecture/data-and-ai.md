@@ -1,14 +1,14 @@
 ---
 dossier-header: internal-v1
 title: Data and AI
-purpose: Lets a reader establish what data the marketplace holds and what AI behaviour it induces in an operator's session, before they install it.
+purpose: Lets a reader establish what state this project holds and what model behaviour it induces in an operator's session, before they install it.
 audience: Reviewer, Installing operator, Maintainer
-confidentiality: Public
+confidentiality: Internal
 owner: Daniel Bentes
-status: verified
-project-version: 06b1586
-last-verified: 2026-07-26
-review-trigger: A plugin begins storing data, invoking a model directly, or shipping an evaluation suite
+status: partially verified
+project-version: 7ee4923
+last-verified: 2026-09-10
+review-trigger: A plugin begins storing data, invoking a model directly, or changing its evaluation harness
 related: [02-architecture/system-architecture.md, 03-assurance/security-privacy-and-compliance.md, 00-control/evidence-ledger.md]
 ---
 # Data and AI
@@ -16,25 +16,26 @@ related: [02-architecture/system-architecture.md, 03-assurance/security-privacy-
 
 Two facts frame this document, and both are unusual enough to state before any table.
 
-**The marketplace holds no data.** It has no store, no schema, no migration, no backup, and no retention policy, because it has no runtime [EV-0044]. Sections that would describe those things are `N/A` with the reason, not omitted.
+**The marketplace holds no user data and runs no database.** It has no runtime process. Every shipped artifact is Markdown, JSON, or shell. Each one executes inside the operator's own Claude Code session [EV-0044]. What state exists is agent-authored: files in this repository and files on the operator's machine. Sections that would describe a data layer are `N/A` with the reason, not omitted.
 
-**It is nonetheless an AI system, of an unusual kind.** Its entire product is 112 skill files, 61 command files, and 29 agent definitions [EV-0004], [EV-0005], [EV-0006] — prompts that a model reads and acts on. The project invokes no model itself and pays for no inference. It ships *instructions* that change how someone else's model behaves inside someone else's session. The AI risk section below is written against that shape, and it is the section a reviewer should read.
+**It is an AI system of an unusual kind.** The tracked tree holds 71 `SKILL.md` files, 61 command definitions, and 29 agent definitions [EV-0093]. These are prompts that a model reads and acts on. The plugins invoke no model at an operator's runtime [EV-0044]. Development of the flow plugin does invoke paid models: `plugins/flow/evals/` holds a correctness evaluation harness of 4 cases and 82 tracked files [EV-0095]. The AI risk section below is written against that shape.
 
 ## Data model
 
 | Entity | Definition | Owning component | Store | Key | Relationships | Evidence |
 |---|---|---|---|---|---|---|
-| Plugin entry | One installable unit advertised in the manifest | `marketplace.json` | git | `name` | Points to exactly one source: a repository path, a submodule, or an external subdirectory | [EV-0001], [EV-0003] |
-| Plugin manifest | A plugin's own identity record | `plugins/*/.claude-plugin/plugin.json` | git | `name` | Must agree with its marketplace entry's `version` | [EV-0026] |
-| Skill | One `SKILL.md`: frontmatter plus body | the plugin | git | directory name | Belongs to one plugin; referenced by commands and agents | [EV-0004] |
-| Command | One Markdown file invoked as `/plugin:name` | the plugin | git | filename | Declares the skills it invokes | [EV-0005] |
-| Agent definition | A subagent's system prompt, tool list, and skill list | the plugin | git | filename | Names the skills it may load | [EV-0006] |
-| Hook registration | An event-to-script binding | `hooks/hooks.json` | git | event kind plus matcher | Points to a script under `hooks/scripts/` | [EV-0040] |
+| Plugin entry | One installable unit advertised in the manifest | `marketplace.json` | git | `name` | Points to one source: a repository-relative path, or a pinned external source | [EV-0057], [EV-0058] |
+| Plugin manifest | A plugin's own identity record | `plugins/*/.claude-plugin/plugin.json` | git | `name` | Must agree with its marketplace entry's `version` | [EV-0064] |
+| Skill | One `SKILL.md`: frontmatter plus body | the plugin | git | directory name | Belongs to one plugin; referenced by commands and agents | [EV-0093] |
+| Command | One Markdown file invoked as `/plugin:name` | the plugin | git | filename | Declares the skills it invokes | [EV-0093] |
+| Agent definition | A subagent's system prompt, tool list, and skill list | the plugin | git | filename | Names the skills it may load | [EV-0093] |
+| Hook registration | An event-to-script binding | `hooks/hooks.json` | git | event kind plus matcher | Points to a script under `hooks/scripts/` | [EV-0093] |
+| Decision record | One journal entry written by the flow plugin | `.decisions/` | git | filename | 21 records tracked in this repository | [EV-0169] |
 
 ```mermaid
-%% Cardinalities restate the Relationships column above; every entity is one of
-%% its rows. Nothing here is enforced by a schema — the manifest-to-plugin pair
-%% is held together by a test, and an artifact belongs to one plugin by its path.
+%% Cardinalities restate the Relationships column above. Nothing here is enforced
+%% by a schema. The manifest-to-plugin version pair is enforced by a CI script
+%% (TM-0033); an artifact belongs to one plugin by its path.
 erDiagram
   PLUGIN_ENTRY ||--|| PLUGIN_MANIFEST : "version must agree"
   PLUGIN_MANIFEST ||--o{ SKILL : "contains"
@@ -51,23 +52,30 @@ Every entity above is a file in git. There is no database, no serialization form
 
 | Store | Technology | Data held | Owner | Residency | Classification | Retention | Lifecycle | Evidence |
 |---|---|---|---|---|---|---|---|---|
-| This git repository | git / GitHub | All plugin content and history | Daniel Bentes | GitHub, public | Public | indefinite | Append-only history; `main` is unprotected | [EV-0016], [EV-0044] |
-| GitHub Releases | GitHub | 57 tags and their desktop-skill ZIP assets | Daniel Bentes | GitHub, public | Public | indefinite | Assets overwritten by `--clobber` on re-upload | [EV-0032] |
+| This git repository | git / GitHub | All plugin content and history | Daniel Bentes | GitHub, public | Public | indefinite | Append-only history; `main` carried no protection as of 2026-07-26 | [EV-0016], [EV-0044] |
+| GitHub Releases | GitHub | Release tags and desktop-skill ZIP assets | Daniel Bentes | GitHub, public | Public | indefinite | v4.9.0 and v4.10.0 published 2026-09-10 | [EV-0066] |
+| `docs/dossier/` | git | This documentation package, 24 files carrying headers | Daniel Bentes | GitHub, public | Public | indefinite | Rewritten by each refresh run | [EV-0088] |
+| `.decisions/` | git | 21 decision records written by the flow plugin | Daniel Bentes | GitHub, public | Public | indefinite | Appended during development | [EV-0169] |
+| `.dossier/runs/` | Local filesystem, untracked | 3 dossier run records, all dated 2026-07-26 | Daniel Bentes | The maintainer's machine | Internal | not defined | Written per run | [EV-0124] |
+| Untracked plugin residue | Local filesystem | `plugins/agent-capability-standard/`, 42 `SKILL.md` files | The operator | The maintainer's machine | Public content | Until deleted by hand | Left behind by submodule removal; gitignored | [EV-0060], [EV-0094] |
 | Operator's plugin cache | Local filesystem | A copy of installed plugins | The operator | The operator's machine | Public content | Until uninstalled; refreshed by `autoUpdate` | Not controlled by this project | [EV-0051], [EV-0052] |
 
-**No store owned by this project holds personal data, credentials, customer data, or telemetry.** There is nowhere for such data to be held.
+**No store owned by this project holds personal data, credentials, customer data, or telemetry.** There is nowhere for such data to be held [EV-0044].
+
+Unknown: whether the flow plugin's `.flow/` run and goal directories are written into a consuming repository, and what they hold. No ledger row covers them (AQ-0016).
 
 ## Sources, sinks, and lineage
 
 | Flow | Source | Transformation | Sink | Trigger | Synchronization | Evidence |
 |---|---|---|---|---|---|---|
-| Publish | Maintainer's working tree | none | `main` | `git push` | Immediate; ungated | [EV-0016] |
+| Publish | Maintainer's working tree | none | `main` | `git push` | Immediate; ungated as of 2026-07-26 | [EV-0016] |
 | Distribute | `main` | none | Operator's plugin cache | `plugin install`, or `autoUpdate` re-sync | Eventually consistent, client-scheduled | [EV-0051] |
-| Desktop packaging | Every `SKILL.md` | Claude Code-specific frontmatter stripped; reference files bundled; ZIP created | GitHub release assets | Release published | One-shot per release | [EV-0012] |
-| Submodule sync | `synaptiai/agent-capability-standard` | none | The submodule pointer in this repository | Manual `git submodule update` | Currently 2 commits past `v1.2.0` | [EV-0031] |
-| External subdir sync | `synaptiai/prompt-decorators` at `main` | none | Operator's plugin cache, directly | Every install | **Unsynchronized** — this repository never observes what is fetched | [EV-0030] |
+| Desktop packaging | Every `SKILL.md` | Claude Code frontmatter stripped; references bundled; ZIP created | GitHub release assets | Release published | One-shot per release | [EV-0012] |
+| External source resolution | `agent-capability-standard` at sha `9e2f65b`, `prompt-decorators` at sha `9c792fe` | none | Operator's plugin cache, directly | Every install | Pinned; the content never enters this repository | [EV-0058] |
 
-The last row is the only lineage gap in the system: content reaches an operator under this marketplace's name without ever passing through this repository, and nothing here records which commit they received.
+The last row is the lineage boundary of the system. Content reaches an operator under this marketplace's name without passing through this repository. Since PR #166 the pins are checked: `scripts/check-plugin-versions.sh` reads each external source at its pinned sha and compares the advertised version [EV-0080]. It passed at HEAD with 8 plugins checked and 0 failures [EV-0127]. That result was observed by the session operator, outside this engagement's action ceiling (AQ-0012). Matching is not the same as current — the script reports a stale pin rather than failing on it [EV-0080].
+
+The former git submodule is gone. No `.gitmodules` file exists in the tracked tree [EV-0059], and the `agent-capability-standard` entry is a pinned `github` source [EV-0058]. Any description of a `git submodule update` step for this project is out of date (CT-0005).
 
 ## Consistency, caching, indexing, and search
 
@@ -75,83 +83,97 @@ The last row is the only lineage gap in the system: content reaches an operator 
 |---|---|---|---|---|---|
 | Client marketplace clone | The whole manifest | The client keeps a local clone and re-syncs it | Client-determined; `autoUpdate: true` on the observed profile | Client-internal | [EV-0051] |
 | Client plugin cache | Installed plugins | A materialized copy per installed plugin | Until the client re-syncs | Reinstall | [EV-0052] |
-| Floating `main` ref | `prompt-decorators` only | Resolves to whatever upstream `main` is at install time | Unbounded | None — there is no version to invalidate against | [EV-0030] |
+| Pinned external sha | Both external entries | Resolves to one fixed revision at install time | Until the pin is moved by hand | Manifest edit | [EV-0058] |
 
-There is no index and no search. There is no cache this project controls.
+There is no index and no search. There is no cache this project controls. The two client rows were observed on the assessment machine on 2026-07-26 and have not been re-checked since.
 
 | Transactional boundary | Spans | What is not atomic across it | Compensation | Evidence |
 |---|---|---|---|---|
 | A single git commit | Every file changed together | Nothing within one commit | N/A | [EV-0034] |
-| A version bump | `plugin.json` **and** the matching `marketplace.json` entry | These are two files. Nothing enforces that both change together; the pair was verified by hand during this assessment | Manual correction after discovery | [EV-0026] |
-| A release | Tag, GitHub release, and `marketplace.json` `metadata.version` | Three separate acts. Version 4.7.0 currently exists in the manifest with no corresponding tag | Publish the tag, or revert the manifest | [EV-0033] |
+| A version bump | `plugin.json` and the matching `marketplace.json` entry | Two files. Nothing forces both to change in one commit | CI detects the mismatch afterwards | [EV-0064], [EV-0081] |
+| A release | Tag, GitHub release, and `marketplace.json` `metadata.version` | Three separate acts | Publish the tag, or revert the manifest | [EV-0057], [EV-0066] |
 
-The version-bump row is the only real atomicity hazard in the project, and it is a documented convention rather than a mechanism.
+The version-bump row is no longer an unguarded hazard. The pair is compared on every pull request and push touching the manifest, on a weekly cron, and on manual dispatch [EV-0081]. The guard is after the fact rather than atomic: a commit can land with the two files disagreeing, and CI then fails.
 
 ## Migrations, backup, restore, archival, deletion, and retention
 
 | Operation | Procedure | Frequency | Last executed | Verified how | Reversible | Evidence |
 |---|---|---|---|---|---|---|
 | Migration | N/A — no schema and no persisted data exist to migrate | — | — | — | — | [EV-0044] |
-| Backup | N/A for the project. The repository is hosted on GitHub and cloned by every installer, which is redundancy without being a backup policy | — | — | — | — | [EV-0044] |
+| Backup | N/A for the project. The repository is hosted on GitHub and cloned by every installer. That is redundancy, not a backup policy | — | — | — | — | [EV-0044] |
 | Restore | `git revert` or `git reset` on a branch | as needed | not measured | Working-tree comparison | yes | [EV-0034] |
 | Archival | N/A | — | — | — | — | [EV-0044] |
-| Deletion | N/A — there is no personal or customer data to delete, and no deletion request can arise | — | — | — | — | [EV-0044] |
+| Deletion | N/A — no personal or customer data exists to delete, and no deletion request can arise | — | — | — | — | [EV-0044] |
 
-No backup or restore test has ever been performed, and none is meaningful: the recovery procedure for this project is `git clone`.
+No backup or restore test has been recorded, and none is meaningful here: the recovery procedure for this project is `git clone`.
 
 ## Analytics and reporting
 
 | Pipeline | Source | Destination | Schedule | Owner | Data classification | Evidence |
 |---|---|---|---|---|---|---|
-| N/A | — | — | — | — | — | No analytics pipeline exists. The project collects no usage data, and GitHub exposes no install telemetry for plugin marketplaces (AQ-0004) [EV-0044] |
+| N/A | — | — | — | — | — | No analytics pipeline exists. The project collects no usage data (AQ-0004) [EV-0044] |
 
-The consequence is worth naming rather than leaving implicit: **there is no measurement of whether any plugin is used, by whom, or whether any of them work in practice.** Every quality signal in this package is a property of the artifacts, not of their use.
+The consequence deserves stating. **There is no measurement of whether any plugin is used, by whom, or whether it helps**. Every quality signal in this package is a property of the artifacts, with one exception. The flow plugin's eval harness measures model behaviour under its own prompts, on cases the harness itself defines [EV-0095].
 
 ## Sensitive and regulated data
 
 | Data class | Examples (categories, never values) | Where stored | Where transits | Legal basis | Controls | Evidence |
 |---|---|---|---|---|---|---|
 | none held by the project | — | — | — | — | — | [EV-0044], [EV-0037] |
-| Credential *patterns* (not values) | Regular expressions matching API key and private-key formats | `plugins/flow/hooks/scripts/block-secrets.sh`, `plugins/dossier/bin/dossier-validate-patch.sh`, and their test fixtures | never | N/A | These are detectors. `dossier-claim-scan.sh` redacts any matched value before reporting it, so a scan cannot leak what it finds | [EV-0037], [EV-0039] |
-| Operator data reachable at runtime | Anything on the operator's machine that a hook could read | not stored by this project | not transmitted by this project | N/A | **None enforced by this project.** Hooks run with the operator's privileges; the control is that every script is readable plain text before install | [EV-0040], [EV-0007] |
+| Credential patterns, not values | Regular expressions matching API key and private-key formats | flow and dossier hook scripts and their test fixtures | never | N/A | These are detectors. `dossier-claim-scan.sh` redacts a matched value before reporting it | [EV-0037], [EV-0039] |
+| Operator data reachable at runtime | Anything on the operator's machine a hook could read | not stored by this project | not transmitted by this project | N/A | Partial. Hooks run with the operator's privileges; every script is readable plain text before install | [EV-0093], [EV-0007] |
 
-The third row is the honest answer to "does this handle sensitive data". The project holds none, and simultaneously ships code that could reach any of it on an operator's machine. Both are true and the second is the one that matters.
+The third row is the honest position on sensitive data. The project holds none, and ships code that could reach any of it on an operator's machine.
+
+**Required determination — does any sensitive class reach logs, caches, search indexes, backups, or analytics?** The project operates none of those stores [EV-0044]. There is no index, no search, no analytics pipeline, and no backup system. The only cache in the picture is the operator's own plugin cache, which holds public plugin content [EV-0052].
+
+One control does bound the dossier plugin inside this repository. The resolved action ceiling sets `readSecrets`, `writeOutsideOutputRoot`, `networkAccess`, `runSecurityScan` and `runCodeQualityScan` to false. Only `runTests` is true [EV-0077]. That ceiling governs dossier's own agents. It does not govern the flow plugin, and it does not govern an operator's session.
 
 ## Data quality
 
 | Control | What it checks | Where it runs | On failure | Coverage gap | Evidence |
 |---|---|---|---|---|---|
-| flow test suite | 1022 assertions over the flow tree's structure and script behaviour | Locally and in `flow-tests.yml` | Non-zero exit; **advisory, since no check is required for merge** | Covers only flow | [EV-0008], [EV-0016] |
-| dossier test suite | 1241 assertions, including frontmatter shape, cross-reference resolution, and script portability | Locally and in `dossier-tests.yml` | Non-zero exit; advisory | Covers only dossier | [EV-0009] |
-| CodeQL | Static analysis over `actions` and `python` | `codeql.yml` on push, pull request, and schedule | Alerts | Does not analyse shell, which is the language of all 26 `bin/` scripts and all 16 hook scripts | [EV-0012], [EV-0007] |
-| Manifest validation | — | nowhere | — | **Total gap.** Nothing validates that `marketplace.json` parses, that every `source` resolves, or that versions agree | [EV-0026] |
-| README accuracy | — | nowhere | — | **Total gap.** Four verified-stale facts are live today | [EV-0022], [EV-0023], [EV-0024], [EV-0025] |
+| flow test suite | 2336 assertions over flow's structure and script behaviour | Locally and in `flow-tests.yml` | Non-zero exit; advisory, since no check is required for merge | Covers only flow | [EV-0098], [EV-0016] |
+| dossier test suite | 1951 assertions, including frontmatter shape and script portability | Locally and in `dossier-tests.yml` | Non-zero exit; advisory | Covers only dossier | [EV-0107] |
+| Linux CI confirmation | Both suites plus the manifest check, green on `ubuntu-latest` | GitHub Actions, on every merge in this range | Run marked failed | Operator-observed read, outside the action ceiling (AQ-0012) | [EV-0126] |
+| Manifest validation | Every entry's advertised version against its source's `plugin.json` | `marketplace-manifest.yml`, on push, pull request, weekly cron | Non-zero exit | A pin that is stale but self-consistent still passes | [EV-0080], [EV-0081], [EV-0127] |
+| CodeQL | Static analysis configured for `actions` and `python` | `codeql.yml` | Alerts | Does not analyse shell, the language of all 37 plugin `bin/` scripts | [EV-0063], [EV-0093] |
+| README accuracy | — | nowhere | — | Total gap. Four stale facts were verified live on 2026-07-26 | [EV-0022], [EV-0023], [EV-0024], [EV-0025] |
+| flow eval harness | Model output on 4 correctness cases with hidden tests and trap variants | `bin/flow-eval-run.sh`, by hand | Case verdict | Covers flow only; costs money per run | [EV-0095] |
 
-The two total gaps are the highest-value data-quality work available, and both are small: one workflow step each.
+Unknown: whether CodeQL still analyses any Python after the submodule removal. `codeql.yml` carries no `submodules:` key on its checkout step, and the only Python in the tree came from the removed source [EV-0063].
+
+Manifest validation is no longer a gap. A statement elsewhere in this package that nothing validates the manifest is out of date (CT-0006).
 
 ## AI architecture
 
 | Element | Description | Version | Owner | Evidence |
 |---|---|---|---|---|
-| Models | **None invoked by this project.** The plugins run inside a Claude Code session whose model the operator chose and pays for. One documented exception is opt-in and lives outside this repository: the `prompt-decorators` auto-selector, described by its marketplace entry as using a small model to pick decorators | N/A | Anthropic, not this project | [EV-0044], [EV-0030] |
-| Agents | 29 agent definitions across 6 plugins. Each is a system prompt plus a tool allowlist and a skill allowlist, dispatched into a separate context | per plugin | Daniel Bentes | [EV-0006] |
-| Prompts | 112 skills and 61 commands. This is the product | per plugin | Daniel Bentes | [EV-0004], [EV-0005] |
-| Tools | Declared per skill via `allowed-tools` and per agent via `tools:`. The plugins define no tools of their own; they constrain which of the client's tools each artifact may use | per plugin | Daniel Bentes | [EV-0004] |
-| Retrieval | None. Skills reference `references/*.md` files by path, read by the model as ordinary files. There is no embedding, no vector store, and no retrieval ranking | N/A | — | [EV-0004] |
-| Memory | The flow plugin writes durable state to `.flow/` and `.decisions/` in the consuming repository; dossier's verification agents are declared `memory: none` so that independent passes cannot converge | per plugin | Daniel Bentes | [EV-0046], [EV-0009] |
-| Evaluation | **No behavioural evaluation exists for any plugin.** The 2,263 assertions test structure and script behaviour, not whether a skill produces good output when a model reads it | — | — | [EV-0008], [EV-0009] |
+| Models, operator runtime | **None invoked by the plugins.** They run inside a Claude Code session whose model the operator chose and pays for | N/A | Anthropic, not this project | [EV-0044] |
+| Models, development time | Reported: flow's retained eval summary names `claude-opus-5` and `claude-sonnet-5` across 105 runs | dated 2026-09-09 | Daniel Bentes | [EV-0096, R] |
+| Agents | 29 agent definitions across the in-tree plugins. flow ships 9, dossier 6 | per plugin | Daniel Bentes | [EV-0093], [EV-0129] |
+| Prompts | 71 skills and 61 commands. This is the product | per plugin | Daniel Bentes | [EV-0093] |
+| Tools | Declared per skill via `allowed-tools` and per agent via `tools:`. The plugins define no tools of their own | per plugin | Daniel Bentes | [EV-0093] |
+| Retrieval | None. Skills reference `references/*.md` by path, read as ordinary files. No embedding and no vector store | N/A | — | [EV-0093] |
+| Memory | dossier's verification agents are declared `memory: none`, so independent passes cannot converge | per plugin | Daniel Bentes | [EV-0129] |
+| Evaluation | flow ships a behavioural harness: 4 cases, per-case hidden tests and trap variants, 82 tracked files | new in this range | Daniel Bentes | [EV-0095] |
 
-The evaluation row is the most important line in this document. This is a prompt-engineering product with a large structural test suite and **no measurement of prompt efficacy at all**. A skill can pass every assertion, load correctly, and still make a model behave worse than it would have unaided; nothing here would detect that.
+Reported: the harness summary records 105 runs across 2 models, 7 arms and 4 cases. It records a total cost of $184.65 and a `keep-enforce` verdict for both models [EV-0096, R]. The summary's own text calls the comparison incomplete, because not every arm has three runs on every case, and calls its reading provisional. That result was not re-executed for this package.
+
+Inferred: no plugin other than flow carries a behavioural evaluation. The chain is that EV-0095 names only `plugins/flow/evals/`, and no ledger row records an eval harness anywhere else. This is reasoning from one row's scope, not an executed search for absence.
+
+Unknown: how the flow 3.3.0 goal-evaluation loop works as an AI subsystem — its goal contract, its deterministic check report, its judge agent, and the model each agent resolves to. Directory listings at HEAD show the artifacts exist, but no ledger row covers them, so no claim about their behaviour belongs here (AQ-0016).
 
 ## Model and dataset provenance
 
 | Asset | Origin | License or terms | Permitted uses | Restrictions | Evidence |
 |---|---|---|---|---|---|
-| Skills, commands, agents (in-tree) | Written for this repository | Apache-2.0, declared in every plugin manifest and carried by the `LICENSE` file at the repository root | Use, modify, redistribute, with notice and change-statement obligations | Patent grant terminates on patent litigation against the project | [EV-0019], [EV-0021] |
-| `agent-capability-standard` | `synaptiai/agent-capability-standard` | Apache-2.0, declared in both `plugin.json` and `pyproject.toml` | Per Apache-2.0 | Per Apache-2.0 | [EV-0021], [EV-0041] |
-| `prompt-decorators` | `synaptiai/prompt-decorators` | Apache-2.0 per its marketplace entry | Per Apache-2.0 | Not verified from here (AQ-0005) | [EV-0030] |
+| Skills, commands, agents (in-tree) | Written for this repository | Apache-2.0, declared in every plugin manifest and in the root `LICENSE` | Use, modify, redistribute, with notice and change-statement obligations | Patent grant terminates on patent litigation | [EV-0019], [EV-0021] |
+| `agent-capability-standard` | `synaptiai/agent-capability-standard` at sha `9e2f65b` | Apache-2.0 per its marketplace entry | Per Apache-2.0 | Contents not read from here; version match confirmed by CI | [EV-0058], [EV-0127] |
+| `prompt-decorators` | `synaptiai/prompt-decorators` at sha `9c792fe` | Apache-2.0 per its marketplace entry | Per Apache-2.0 | Contents not verified from here (AQ-0005) | [EV-0058], [EV-0127] |
+| Eval cases | Written for `plugins/flow/evals/`: four-stream-codec, interval-algebra, money-allocator, sliding-window-limiter | Same repository, Apache-2.0 | Per Apache-2.0 | Hidden tests and trap variants ship with the cases | [EV-0095], [EV-0021] |
 | Training data | **None.** No model is trained, fine-tuned, or distilled by this project | N/A | N/A | N/A | [EV-0044] |
-| Datasets | None | N/A | N/A | N/A | [EV-0044] |
+| Datasets | None beyond the eval cases above | N/A | N/A | N/A | [EV-0044], [EV-0095] |
 
 ## Lifecycle: training through rollback
 
@@ -159,43 +181,68 @@ The evaluation row is the most important line in this document. This is a prompt
 |---|---|---|---|---|---|
 | Training | N/A — no model is trained | — | — | — | [EV-0044] |
 | Fine-tuning | N/A | — | — | — | [EV-0044] |
-| Inference | Performed by the operator's Claude Code session, on the operator's account, with the model the operator selected | Operator action | The operator | Whatever the operator's client retains | [EV-0044] |
-| Evaluation | **None exists.** No prompt, skill, or agent has a behavioural evaluation | — | — | — | [EV-0008], [EV-0009] |
+| Inference, operator path | Performed by the operator's session, on the operator's account, with the model the operator selected | Operator action | The operator | Whatever the operator's client retains | [EV-0044] |
+| Inference, eval path | Reported: the harness ran 105 model runs on 2026-09-09 [EV-0096, R] | Maintainer runs `bin/flow-eval-run.sh` | Daniel Bentes | A retained summary under `plugins/flow/evals/` | [EV-0095], [EV-0096] |
+| Evaluation | flow only, by the harness above. Inferred: no other plugin has one | Manual | Daniel Bentes | Case results and summary | [EV-0095] |
 | Monitoring | None. No telemetry is emitted or collected | — | — | — | [EV-0044] |
-| Feedback | GitHub issues only. 2 are open, both about shell portability | Operator files an issue | Daniel Bentes | The issue thread | [EV-0049] |
-| Rollback | `git revert` plus a push. Installers pick it up on their next `autoUpdate` sync — **the propagation delay is client-controlled and unknown to this project** | Maintainer decision | Daniel Bentes | git history | [EV-0051] |
+| Feedback | GitHub issues. 2 were open on 2026-07-26, both about shell portability | Operator files an issue | Daniel Bentes | The issue thread | [EV-0049] |
+| Rollback | `git revert` plus a push. Installers pick it up on their next sync; the delay is client-controlled | Maintainer decision | Daniel Bentes | git history | [EV-0051] |
 
 ## AI risk controls
 
 | Risk | Exposure in this system | Control | Implemented / policy-only / planned / unknown | Tested | Evidence |
 |---|---|---|---|---|---|
-| Prompt injection | Real and specific. Skills instruct a model that then reads untrusted content — issue bodies, pull-request titles, diffs, third-party files. The dossier CI template is the sharpest case: it passes a *static* prompt carrying a path, never content, and marks untrusted values in an explicit `untrusted: []` array in the evidence manifest | Static prompts; untrusted data passed as data with explicit marking; a tool allowlist and denylist per invocation; the agent job holds no write token | implemented for dossier's CI path; **unknown for the other 7 plugins**, none of which state an injection posture | Structurally, in the dossier suite. **Never behaviourally** | [EV-0009], [EV-0045] |
-| Data leakage through model or logs | An operator's session reads their own repository; a skill could instruct the model to copy sensitive content into an output file or a public document | flow's `block-secrets.sh` blocks writes matching credential patterns; dossier's `dossier-claim-scan.sh` redacts matched values before reporting and gates `06-public/**` behind an approved claim register | implemented in 2 of 8 plugins | Structurally | [EV-0038], [EV-0039] |
-| Unsafe or harmful output | Low intrinsic exposure — the plugins produce documentation, commits, and reviews, not user-facing content. `decipon` analyses manipulation and disinformation, so its outputs are judgments about content | None specific to the plugins | none | no | [EV-0004] |
-| Excessive autonomy | The central risk of a workflow harness. flow can commit, push, open pull requests, and merge; dossier can write files and open documentation pull requests | Tiered actions — Tier 1 autonomous, Tier 2 journalled, Tier 3 requires explicit confirmation. Merge and release are Tier 3 in flow. `PreToolUse` hooks block destructive commands and force-pushes. dossier's `enforce-allowed-actions.sh` enforces a configured action ceiling whose defaults are all `false` except reading source | implemented in flow and dossier | Structurally, in both suites | [EV-0038], [EV-0039], [EV-0008], [EV-0009] |
-| Model drift | The operator's model changes under the plugins without notice — a new model version can read the same skill and behave differently | **None.** There is no evaluation suite to detect it, and no pinned model anywhere | none | no | [EV-0008], [EV-0009] |
-| Human oversight | Every plugin runs interactively in a human's session by default. The exception is dossier's post-merge CI path, which runs headless | Tier 3 confirmations; the CI design splits privilege across three jobs so the agent job never holds a write token, and every patch is validated against a path allowlist twice | implemented in design; **the CI path has never executed end to end** (AQ-0002) | Structurally only | [EV-0045], [EV-0009] |
+| Prompt injection | Real. Skills instruct a model that then reads untrusted content: issue bodies, pull-request titles, diffs, third-party files | dossier's evidence bundle marks untrusted files in a `manifest.json` array, and each refresh scans those 11 files for injection patterns | implemented for dossier's refresh path. Unknown for the other plugins, none of which states a posture | Structurally, in the dossier suite. Never behaviourally | [EV-0120] |
+| Data leakage through model or logs | A session reads the operator's own repository; a skill could copy sensitive content into an output file | flow's `block-secrets.sh` blocks writes matching credential patterns; dossier redacts matched values and gates `06-public/**` behind an approved claim register | implemented in 2 of the 6 in-tree plugins | Structurally | [EV-0038], [EV-0039], [EV-0093] |
+| Unsafe or harmful output | Low intrinsic exposure. The plugins produce documentation, commits, and reviews, not user-facing content | None specific to the plugins | none | no | [EV-0093] |
+| Excessive autonomy | The central risk of a workflow harness. flow can commit, push, open pull requests, and merge | Tiered actions, with merge and release requiring confirmation. `PreToolUse` hooks block destructive commands and force-pushes. dossier enforces a configured action ceiling | implemented in flow and dossier | Structurally, in both suites | [EV-0038], [EV-0039], [EV-0077] |
+| Model drift | The operator's model changes under the plugins without notice. A new version reads the same skill and behaves differently | flow's eval harness can detect a behaviour change on its 4 cases. Nothing covers the other plugins, and no model is pinned | implemented for flow; none elsewhere | Last run 2026-09-09, Reported only | [EV-0095], [EV-0096] |
+| Human oversight | Every plugin runs interactively in a human's session by default. dossier's post-merge CI path runs headless | The shipped CI template separates the `scan` job from the `policy` job. Its wider design is not established by any ledger row | unknown. The CI path has never executed end to end (AQ-0002), and no refresh workflow is installed here | Structurally only | [EV-0075], [EV-0084] |
 
-Two rows carry the weight. **Model drift is entirely uncontrolled**, and for a product made of prompts that is the sharpest architectural risk in the project: the artifact is stable while its interpreter changes underneath it. And the excessive-autonomy controls, which are genuinely well-designed, are verified structurally rather than behaviourally — the tests prove the hook is registered and the script is portable, not that it blocks the right thing when a live model tries.
+Two rows carry the weight. Model drift moved from uncontrolled to partly measured. It covers 4 cases in 1 of 6 in-tree plugins, at $184.65 for the one retained run [EV-0095], [EV-0096, R]. The autonomy controls are verified structurally, not behaviourally. The suites prove a hook is registered and portable. They do not prove it blocks the right thing when a live model tries.
+
+The prompt-injection scan is a negative result over an enumerated pattern set across 11 untrusted files, which is not proof that no injection exists [EV-0120]. No dossier docs-refresh workflow is installed in this repository, so that scan runs only when a refresh is driven by hand [EV-0084], [EV-0123].
 
 ## Model limitations, cost, latency, and vendor dependency
 
 | Aspect | Current state | Measured or estimated | Fallback | Evidence |
 |---|---|---|---|---|
-| Known limitations | Skills consume context in the operator's session. 112 skills exist, loaded on demand rather than eagerly, but a heavily-loaded session pays for what it triggers | estimated — never measured | Operator installs fewer plugins | [EV-0004] |
-| Cost per unit of work | Borne entirely by the operator; the project pays nothing and observes nothing. The one exception is dossier's CI path, where a refresh run's cost lands on the consuming repository's API key with a per-run turn cap but no spend cap | not measured — never executed (AQ-0002) | The plugin's own documentation points at the Anthropic console budget rather than claiming a guarantee | [EV-0045] |
-| Latency | `PreToolUse` hooks block the operator's tool call while they run. All 16 are shell scripts doing local inspection | not measured | none | [EV-0040] |
-| Vendor dependency | Total on Anthropic. The plugins are meaningless without Claude Code, whose manifest schema, resolution order, cache layout, and hook contract are all external and can change without notice | not measured | none, and none is possible | [EV-0043] |
+| Known limitations | Skills consume context in the operator's session. 71 skills exist, loaded on demand rather than eagerly | estimated — never measured | Operator installs fewer plugins | [EV-0093] |
+| Cost, operator path | Borne entirely by the operator. The project pays nothing and observes nothing | not measured | Operator's own budget controls | [EV-0044] |
+| Cost, eval path | Reported: $184.65 for 105 runs, about $1.76 per run [EV-0096, R] | reported by the harness summary, not re-executed | Run fewer arms | [EV-0096] |
+| Cost, CI path | A refresh run's cost would land on the consuming repository's key, with a per-run turn cap and no spend cap | not measured — never executed (AQ-0002) | The plugin documents the Anthropic console budget | [EV-0084] |
+| Latency | `PreToolUse` hooks block the operator's tool call while they run. flow ships 14 hook scripts, dossier 5 | not measured | none | [EV-0129] |
+| Vendor dependency | Total on Anthropic. The plugins are meaningless without Claude Code, whose schemas and hook contract are external | not measured | none, and none is possible | [EV-0043] |
 
 ## Reproducibility and versioning
 
 | Artifact | Versioning scheme | Pinned where | Reproducible from | Evidence |
 |---|---|---|---|---|
-| In-tree plugin | semver in `plugin.json`, mirrored in `marketplace.json` | Both files, agreeing today by hand-checked convention | The repository commit | [EV-0026] |
-| Marketplace | semver in `metadata.version`, plus a git tag | Currently 4.7.0 in the manifest with **no matching tag** | The commit | [EV-0033] |
-| `agent-capability-standard` | Advertised as 1.2.0; the submodule points at `95f7ac2`, which is 2 commits past tag `v1.2.0` | `.gitmodules` plus the pointer | The pinned commit — reproducible, but **not the version advertised** | [EV-0031] |
-| `prompt-decorators` | Advertised as 0.1.1; the source pins `ref: main` | Nothing | **Not reproducible.** Two installs on different days may differ | [EV-0030] |
+| In-tree plugin | semver in `plugin.json`, mirrored in `marketplace.json` | Both files, agreeing at HEAD and checked in CI | The repository commit | [EV-0064], [EV-0081] |
+| Marketplace | semver in `metadata.version`, plus a git tag | 4.10.0 in the manifest; v4.10.0 published 2026-09-10 | The commit | [EV-0057], [EV-0066] |
+| `agent-capability-standard` | Advertised as 1.2.0; the source pins sha `9e2f65b` | The marketplace entry | The pinned sha, which reports 1.2.0 | [EV-0058], [EV-0127] |
+| `prompt-decorators` | Advertised as 0.1.1; the source pins sha `9c792fe` | The marketplace entry | The pinned sha, which reports 0.1.1 | [EV-0058], [EV-0127] |
 | Desktop skill ZIPs | Attached per release tag | The release | `bash scripts/package-desktop-skills.sh --clean` | [EV-0012] |
-| Session behaviour | Not versioned. The model the plugins instruct is chosen by the operator and changes over time | nowhere | not reproducible | [EV-0044] |
+| Eval results | Directory name carries the date and round | `plugins/flow/evals/results-2026-09-09-round2/` | Not reproducible — model versions move and each run costs money | [EV-0095], [EV-0096] |
+| Session behaviour | Not versioned. The model the plugins instruct is chosen by the operator | nowhere | not reproducible | [EV-0044] |
 
-Three of the six rows are not reproducible, and the reasons differ: one is an unpublished version, one is a pointer that drifted past its label, and one is a floating ref by design. Only the last is a deliberate choice, and it is the one an installer is least able to detect.
+Reproducibility improved in this range. Both external sources moved from unpinned or drifting references to fixed shas that CI resolves and compares [EV-0058], [EV-0127]. Two rows remain irreproducible, and both concern model behaviour rather than repository content. That is the boundary of what this project can pin.
+
+## Open unknowns
+
+| Question | Why it matters here | Register |
+|---|---|---|
+| What the flow 3.3.0 goal-evaluation subsystem does | It is the newest model-facing surface, and no evidence row describes it | AQ-0016 (proposed) |
+| What `.flow/` holds in a consuming repository | It is agent-authored state on someone else's machine | AQ-0016 (proposed) |
+| Whether CodeQL still analyses any Python | The only Python left with the removed source | [EV-0063] |
+| Whether the dossier CI path works end to end | Its cost, oversight and leakage claims rest on a design, not a run | AQ-0002 |
+| Whether `prompt-decorators` content matches its description | It is published to installers from this manifest | AQ-0005 |
+| Whether CI results may ground this package | They were read outside the engagement's action ceiling | AQ-0012 |
+
+## Recommendations
+
+Recommendation: extend the eval harness beyond flow, or record that the other five in-tree plugins have no behavioural measurement. Today the position is inferred rather than stated.
+
+Recommendation: add shell to the CodeQL language list, or record why 37 shell scripts are out of scope for static analysis.
+
+Recommendation: write the flow goal-evaluation subsystem into the terminology register and the evidence ledger. The next refresh could then describe it rather than defer it.

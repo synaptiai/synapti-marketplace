@@ -83,7 +83,7 @@
         ]
       },
       "traceCount": 10,
-      "maxRounds": 3
+      "maxRounds": 5
     },
     "gate": {
       "minScore": 95,
@@ -127,7 +127,7 @@
       "writeAllowlist": [
         "docs/dossier/**"
       ],
-      "expectedPluginVersion": "1.0.0"
+      "expectedPluginVersion": "1.2.0"
     },
     "local": {
       "onLocalMerge": "suggest"

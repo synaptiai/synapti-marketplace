@@ -151,7 +151,7 @@ claude plugins add ./plugins/flow
 ## Architecture
 
 ```
-SKILL LIBRARY (33 skills, every body <= 600 words)
+SKILL LIBRARY (32 skills, every body <= 600 words)
   ├── Ambient (no context: fork / agent:) — inlined WHOLE into a command's prompt
   │   │                                    when the command lists them as Required
   │   ├── llm-operator-principles (operator stance — convergence, anti-deferral, anti-estimation)
