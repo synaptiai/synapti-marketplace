@@ -173,6 +173,24 @@ _sha256_stdin() {
   fi
 }
 
+# _physical_path <path>: print <path> with its existing directory part resolved
+# through any symlinks, so it can be compared against a path git reported.
+# The trailing component is never required to exist — an --ignore-prefix may
+# name a directory that has not been created yet.
+_physical_path() {
+  local p="$1" d b
+  if [ -d "$p" ]; then
+    (cd "$p" 2>/dev/null && pwd -P) || printf '%s' "$p"
+    return
+  fi
+  d=$(dirname "$p"); b=$(basename "$p")
+  if [ -d "$d" ]; then
+    printf '%s/%s' "$(cd "$d" 2>/dev/null && pwd -P || printf '%s' "$d")" "$b"
+  else
+    printf '%s' "$p"
+  fi
+}
+
 # _worktree_digest <dir> [ignore-prefix...]: prints the hex digest, or
 # nothing (return 1). Ignore prefixes (absolute, or relative to $PWD like
 # the status reader resolves them) inside the repository become
@@ -198,6 +216,13 @@ _worktree_digest() {
       *) abs="$PWD/$pre" ;;
     esac
     abs="${abs%/}"
+    # Match git's own spelling of the path before comparing against $top.
+    # `git rev-parse` reports the PHYSICAL path, while $PWD and any caller-
+    # supplied absolute path are LOGICAL: on macOS /var is a symlink to
+    # /private/var, so a repository under TMPDIR is /var/folders/... to the
+    # shell and /private/var/folders/... to git. The prefix then never matched
+    # "$top"/* and every --ignore-prefix was silently discarded.
+    abs=$(_physical_path "$abs")
     case "$abs" in
       "$top"/*) rel="${abs#"$top"/}"; spec+=(":(exclude)$rel"); excluded+=("$rel") ;;
       *) ;;   # outside this repository: nothing to exclude

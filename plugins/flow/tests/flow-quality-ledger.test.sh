@@ -43,6 +43,13 @@ _ql_state() {
     kill -INT $$ 2>/dev/null
     exit 2
   fi
+  # Resolve symlinks in the temp path. On macOS TMPDIR sits under /var, which
+  # is a symlink to /private/var, so mktemp hands back a LOGICAL path while
+  # `git rev-parse` reports the PHYSICAL one. The two never compare equal, and
+  # every path assertion below — which mixes shell-built paths with paths git
+  # printed — fails for that reason alone rather than for anything the helper
+  # did. Linux has no such symlink, which is why CI never saw it.
+  d=$(cd "$d" && pwd -P)
   QL_CLEANUP+=("$d"); printf '%s' "$d"
 }
 _ql() { FLOW_STATE_DIR="$STATE" "$HELPER" "$@"; }
@@ -416,6 +423,15 @@ else
   _flow_assert_pass "SKIP: git not installed"
 fi
 
+# `touch -d` with a relative date is GNU-only: BSD touch rejects it outright
+# ("out of range or illegal time specification"), so on macOS nothing was aged,
+# nothing became eligible for pruning, and every prune assertion below failed
+# for a reason unrelated to prune. Both touch implementations accept
+# -t [[CC]YY]MMDDhhmm, so compute the stamp and pass that.
+_days_ago_stamp() {   # <n-days> -> YYYYMMDDhhmm
+  date -v-"$1"d +%Y%m%d%H%M 2>/dev/null || date -d "-$1 days" +%Y%m%d%H%M
+}
+
 # --- prune ---------------------------------------------------------------------
 _flow_test_begin "prune: removes session dirs idle longer than --max-age-days, keeps fresh ones, skips symlinks"
 STATE=$(_ql_state)
@@ -423,13 +439,13 @@ mkdir -p "$STATE/sessions/old-a" "$STATE/sessions/old-b/nested" "$STATE/sessions
 : > "$STATE/sessions/old-a/quality-ledger.jsonl"
 : > "$STATE/sessions/old-b/nested/x"
 : > "$STATE/sessions/old-but-recent-file/quality-ledger.jsonl"
-touch -d '-20 days' "$STATE/sessions/old-a/quality-ledger.jsonl" "$STATE/sessions/old-a" \
+touch -t "$(_days_ago_stamp 20)" "$STATE/sessions/old-a/quality-ledger.jsonl" "$STATE/sessions/old-a" \
   "$STATE/sessions/old-b/nested/x" "$STATE/sessions/old-b/nested" "$STATE/sessions/old-b" \
   "$STATE/sessions/old-but-recent-file"
 OUTSIDE=$(_ql_state)
 : > "$OUTSIDE/victim"
 ln -s "$OUTSIDE" "$STATE/sessions/link-to-outside"
-touch -h -d '-20 days' "$STATE/sessions/link-to-outside" 2>/dev/null || true
+touch -h -t "$(_days_ago_stamp 20)" "$STATE/sessions/link-to-outside" 2>/dev/null || true
 OUT=$(_ql prune); EXIT=$?
 assert_exit 0 "$EXIT" "exit 0"
 assert_equal "PRUNED=2" "$OUT" "two idle dirs pruned"
@@ -441,7 +457,7 @@ assert_equal "PRUNED=2" "$OUT" "two idle dirs pruned"
 assert_file_exists "$OUTSIDE/victim" "symlink target untouched"
 OUT=$(_ql prune --max-age-days 1)
 assert_equal "PRUNED=0" "$OUT" "nothing older than 1 day left"
-touch -d '-3 days' "$STATE/sessions/fresh"
+touch -t "$(_days_ago_stamp 3)" "$STATE/sessions/fresh"
 OUT=$(_ql prune --max-age-days 2)
 assert_equal "PRUNED=1" "$OUT" "custom window prunes the 3-day-old dir"
 
@@ -469,14 +485,14 @@ STATE=$(_ql_state)
 WORK=$(_ql_state)
 mkdir -p "$STATE/sessions/stale"
 : > "$STATE/sessions/stale/quality-ledger.jsonl"
-touch -d '-20 days' "$STATE/sessions/stale/quality-ledger.jsonl" "$STATE/sessions/stale"
+touch -t "$(_days_ago_stamp 20)" "$STATE/sessions/stale/quality-ledger.jsonl" "$STATE/sessions/stale"
 OUT=$(cd "$WORK" && printf '{"session_id":"x","reason":"other"}' | FLOW_STATE_DIR="$STATE" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" "$SESSION_END" 2>&1); EXIT=$?
 assert_exit 0 "$EXIT" "hook exit 0"
 [ ! -e "$STATE/sessions/stale" ] && _flow_assert_pass "stale session pruned at session end" || _flow_assert_fail "stale session still present"
 assert_file_exists "$STATE/.prune-stamp" "sentinel written"
 assert_equal "$(date -u +%Y-%m-%d)" "$(cat "$STATE/.prune-stamp")" "sentinel holds today's UTC date"
 mkdir -p "$STATE/sessions/stale2"
-touch -d '-20 days' "$STATE/sessions/stale2"
+touch -t "$(_days_ago_stamp 20)" "$STATE/sessions/stale2"
 (cd "$WORK" && printf '{}' | FLOW_STATE_DIR="$STATE" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" "$SESSION_END" >/dev/null 2>&1)
 [ -d "$STATE/sessions/stale2" ] && _flow_assert_pass "second run the same day does not sweep" || _flow_assert_fail "swept twice in one day"
 printf '2000-01-01\n' > "$STATE/.prune-stamp"

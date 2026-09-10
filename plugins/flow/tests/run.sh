@@ -34,6 +34,25 @@ if [ -z "${LC_ALL:-}" ]; then
   fi
 fi
 
+# Several suites override HOME to isolate flow state. python3 derives its
+# per-user site-packages from HOME, so on a machine where PyYAML was installed
+# with `pip install --user` the override also hides PyYAML: flow-active-goal.sh
+# then exits 2 (infrastructure error), hooks fall back to allowing, and dozens
+# of assertions fail for a reason that has nothing to do with the code. Resolve
+# the user site directory now, while HOME is still the real one, and put it on
+# PYTHONPATH so it survives. A system-wide or virtualenv PyYAML is unaffected,
+# which is why CI never needed this.
+if command -v python3 >/dev/null 2>&1; then
+  _flow_user_site=$(python3 -m site --user-site 2>/dev/null || true)
+  if [ -n "$_flow_user_site" ] && [ -d "$_flow_user_site" ]; then
+    case ":${PYTHONPATH:-}:" in
+      *":$_flow_user_site:"*) ;;
+      *) export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$_flow_user_site" ;;
+    esac
+  fi
+  unset _flow_user_site
+fi
+
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$TESTS_DIR/lib/assert.sh"
 

@@ -84,6 +84,8 @@ CMD_POS='(^|[;&|({])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|time|
 # `cargo tests-helper` do not. Patterns below spell it as ([[:space:]]|$) and
 # the loop widens that to CMD_END.
 CMD_END='([[:space:]]|[;&|)]|$)'
+# What the patterns below literally spell, and what the loop widens to CMD_END.
+CMD_END_TOKEN='([[:space:]]|$)'
 
 # Built-in patterns, `kind|ERE`. Every ERE is prefixed with CMD_POS at match
 # time. First match wins; order groups by tool so the kind is the
@@ -124,7 +126,18 @@ BUILTIN_PATTERNS=(
 KIND=""
 for entry in "${BUILTIN_PATTERNS[@]}"; do
   pattern="${entry#*|}"
-  pattern="${pattern//'([[:space:]]|$)'/"$CMD_END"}"   # quoted: keeps & literal under bash 5.2 patsub_replacement
+  # Widen the spelled command-end to CMD_END by suffix removal, not by
+  # ${var//search/replacement}. CMD_END contains `&`, which bash 5.2's
+  # patsub_replacement expands to the matched text; quoting the replacement to
+  # prevent that is correct under bash 5.2 but leaves the quote characters in
+  # the result under bash 3.2, which is what macOS ships as /bin/bash. That
+  # produced `bats"([[:space:]]|[;&|)]|$)"` — a regex containing literal double
+  # quotes, matching no command at all, so nothing was ever classified and no
+  # ledger row was written. Suffix removal has no replacement side, so neither
+  # shell can reinterpret it.
+  if [ "${pattern%"$CMD_END_TOKEN"}" != "$pattern" ]; then
+    pattern="${pattern%"$CMD_END_TOKEN"}$CMD_END"
+  fi
   if grep -qE -- "${CMD_POS}${pattern}" <<<"$STRIPPED" 2>/dev/null; then
     KIND="${entry%%|*}"
     break
