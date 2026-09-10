@@ -98,3 +98,9 @@ PASS — 5 tasks reviewed.
 <!-- auto-log: 2026-09-10 22:27 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/python-requirements.test.sh -->
 
 <!-- auto-log: 2026-09-10 22:28 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/dc7f4a8b-35f7-421a-bb8a-d409456c7eb7/scratchpad/pr-a-body.md -->
+
+<!-- auto-log: 2026-09-10 22:30 commit "fix(flow): the agentTeams gate lost its plugin tier, and its block would not parse on Windows" -->
+
+<!-- auto-log: 2026-09-10 22:30 commit "test(flow): run the repository-root checks in CI" -->
+
+<!-- auto-log: 2026-09-10 22:30 commit "docs(flow): declare the PyYAML runtime requirement" -->
