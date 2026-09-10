@@ -3,95 +3,136 @@ dossier-header: internal-v1
 title: Assets, Dependencies, and Licenses
 purpose: Establishes what the project owns, what it borrows, and on what terms — the questions a fork, an acquisition, or a legal review would ask first.
 audience: Reviewer, Maintainer
-confidentiality: Public
+confidentiality: Internal
 owner: Daniel Bentes
-status: verified
-project-version: 06b1586
-last-verified: 2026-07-26
+status: partially verified
+project-version: 691bcdb
+last-verified: 2026-09-10
 review-trigger: A dependency, plugin source, or licence declaration changes; a LICENSE file is added
 related: [05-due-diligence/technical-due-diligence-report.md, 03-assurance/security-privacy-and-compliance.md, 00-control/assumptions-questions-and-contradictions.md]
 ---
 # Assets, Dependencies, and Licenses
 <!-- contract: references/package-contract-05-due-diligence.md#assets-dependencies-and-licenses -->
 
-The headline finding of the first round governed every other row: the repository published no `LICENSE` file while the README asserted MIT with a badge linking to a file that did not exist, so under default copyright no installer or forker had a grant of rights whatever the manifests said.
+Two facts govern every table below.
 
-**That is now resolved.** A `LICENSE` file carrying the canonical Apache-2.0 text sits at the repository root [EV-0019], the README badge and licence section point at it and resolve [EV-0020], and every declaration was aligned to it — 7 plugin manifests and 8 marketplace entries, all Apache-2.0 [EV-0021]. One thing remains pending and cannot be forced: GitHub computes repository-level licence detection from the default branch, so its derived field reports the licence only after this branch merges (AQ-0011).
+**The licence position is settled in the tree.** A `LICENSE` file carrying the canonical Apache-2.0 text sits at the repository root [EV-0019]. The README badge and licence section point at it and resolve [EV-0020]. As read on 2026-07-26 at commit `f57126f`, 7 plugin manifests and 8 marketplace entries all declared Apache-2.0 [EV-0021].
+
+Unknown: GitHub's repository-level licence detection is computed from the default branch, and it was not re-read at this HEAD (AQ-0011). Do not treat the repository badge as confirming Apache-2.0.
+
+**The dependency surface is small and it is unscanned.** No `.dossier/scan/` directory exists [EV-0121]. No SARIF, osv-scanner or Dependabot artifact is tracked anywhere in the repository [EV-0121]. A short dependency list is not a cleared one. Nothing in this document says the supply chain has no known vulnerabilities.
+
+## Plugin sources and pins
+
+The manifest publishes 8 plugin entries. Six are sources inside this repository. Two are external, and both carry a commit sha.
+
+| Entry | Source kind at HEAD | Pin | Reproducible across days | Evidence |
+|---|---|---|---|---|
+| `agent-capability-standard` | `github` source, not a submodule and not vendored | sha `9e2f65b` | yes, per the manifest | [EV-0058], [EV-0059], [EV-0060] |
+| `prompt-decorators` | `git-subdir` source | sha `9c792fe` | yes, per the manifest | [EV-0058] |
+| the other 6 entries | relative-path sources inside this repository | the commit itself | yes | [EV-0058] |
+
+No `.gitmodules` file exists in the tracked tree [EV-0059]. A populated `plugins/agent-capability-standard/` directory is present on the assessment machine, but it is untracked and ignored by `.gitignore` [EV-0060]. It is working-tree residue, not repository content.
+
+Both pinned trees report the version the marketplace advertises. `agent-capability-standard` resolves to 1.2.0 at `9e2f65b`, and `prompt-decorators` resolves to 0.1.1 at `9c792fe` [EV-0127]. That check was executed by the session operator outside this engagement's action ceiling, because `networkAccess` is false (AQ-0012).
+
+Inferred: two installs on different days now resolve the same tree for both entries. Each source carries a commit sha rather than a branch name [EV-0058]. This reads the manifest. No evidence row here observes the Claude Code client performing such an install at the pinned sha.
+
+Unknown: what separates the pinned sha `9e2f65b` from upstream tag `v1.2.0` has not been examined (AQ-0006).
 
 ## Asset inventory
 
+Counts are tracked-tree counts unless the row says otherwise.
+
 | Asset | Class | Owner of record | Provenance | Criticality | Maintenance status | Recovery path if lost | Evidence |
 |---|---|---|---|---|---|---|---|
-| 112 skill files | intellectual property | Daniel Bentes | Written for this repository | critical | active — most recent commit 2026-07-25 | git history in any clone | [EV-0004], [EV-0034] |
-| 61 command files | intellectual property | Daniel Bentes | Written here | critical | active | git | [EV-0005] |
-| 29 agent definitions | intellectual property | Daniel Bentes | Written here | high | active | git | [EV-0006] |
-| 26 helper scripts | code | Daniel Bentes | Written here; `cascade-resolve.sh` exists twice by deliberate copy | high | active | git | [EV-0007] |
-| 16 hook scripts | code | Daniel Bentes | Written here | **critical to trust** — they execute on operator machines | active | git | [EV-0040] |
-| `marketplace.json` | distribution asset | Daniel Bentes | Written here | critical | active | git | [EV-0001] |
-| 2 test suites | quality asset | Daniel Bentes | Written here; dossier's harness copied from flow | high | active | git | [EV-0008], [EV-0009] |
-| `agent-capability-standard` tree | borrowed IP | Daniel Bentes, separate repository | Git submodule at `95f7ac2` | medium | pinned 2 commits past `v1.2.0` | the upstream repository | [EV-0031] |
-| `prompt-decorators` plugin | borrowed IP | Daniel Bentes, separate repository | `git-subdir` at ref `main` | medium | **never inspected from here** (AQ-0005) | the upstream repository | [EV-0030] |
-| 57 release tags and their assets | distribution asset | Daniel Bentes | Built by CI on publish | medium | active — latest v4.6.2 | Rebuildable from any tag | [EV-0032] |
+| 71 skill files | intellectual property | Daniel Bentes | Written for this repository | critical | active | git history in any clone | [EV-0093] |
+| 61 command files | intellectual property | Daniel Bentes | Written here | critical | active | git | [EV-0093] |
+| 29 agent definitions | intellectual property | Daniel Bentes | Written here | high | active | git | [EV-0093] |
+| 37 plugin `bin/` shell scripts | code | Daniel Bentes | Written here | high | active | git | [EV-0093] |
+| Hook scripts: 14 in `flow`, 5 in `dossier`, under 2 `hooks.json` manifests | code | Daniel Bentes | Written here | critical to trust, because they execute on operator machines | active | git | [EV-0093], [EV-0129] |
+| `marketplace.json` | distribution asset | Daniel Bentes | Written here | critical | active. Entry-versus-source version drift is checked in CI (TM-0033) | git | [EV-0057], [EV-0080], [EV-0081] |
+| 2 shell test suites | quality asset | Daniel Bentes | Written here | high | active. 2336 flow assertions and 1951 dossier assertions pass | git | [EV-0098], [EV-0107] |
+| `agent-capability-standard` tree | borrowed IP | Daniel Bentes, separate repository | `github` source pinned to sha `9e2f65b`. Not vendored here | medium | pinned. Reports 1.2.0 [EV-0127] | the upstream repository | [EV-0058], [EV-0059], [EV-0127] |
+| `prompt-decorators` plugin | borrowed IP | Daniel Bentes, separate repository | `git-subdir` source pinned to sha `9c792fe`. Not present here | medium | pinned. Reports 0.1.1 [EV-0127]. Contents never inspected (AQ-0005) | the upstream repository | [EV-0058], [EV-0127] |
+| 57 release tags and their assets | distribution asset | Daniel Bentes | Built by CI on publish | medium | latest `v4.6.2`, as read 2026-07-26 | Rebuildable from any tag | [EV-0032] |
 | The `synaptiai/synapti-marketplace` name | brand asset | Daniel Bentes | GitHub namespace | high | active | Not recoverable if the namespace is lost | [EV-0051] |
-| 11 decision records | knowledge asset | Daniel Bentes | Produced by the flow plugin during development | low | active | git | [EV-0046] |
+| 11 decision records | knowledge asset | Daniel Bentes | Produced by the flow plugin during development | low | active, as read 2026-07-26 | git | [EV-0046] |
+
+Asset classes with no instance in this project, and one that was not inspected:
+
+| Asset class | Status | Basis |
+|---|---|---|
+| Deployed services, infrastructure, reserved capacity | N/A | The marketplace has no runtime process. Shipped artifacts execute inside the operator's own client session [EV-0044] |
+| Package-registry artifacts | N/A | The project publishes to no package registry. Distribution is a git read by the client [EV-0043, I] |
+| Datasets, trained models, model weights | N/A | No dataset or model artifact is tracked. The shipped artifacts are Markdown, JSON and shell [EV-0044] |
+| Schemas | N/A as a separate asset | The only declarative contracts are `marketplace.json` and the plugin manifests, inventoried above [EV-0057] |
+| Domains, TLS certificates, cloud accounts | Unknown | Not inspected. The project's only observed hosting is the GitHub namespace [EV-0051] (AQ-pending) |
+| Device or hardware assets | N/A | No hardware component. The product is plugin content for a client application [EV-0044] |
+
+Backup owner is `unassigned` for every component in the ownership model. That is a single-person concentration, not an oversight of this document.
 
 ## Dependencies
 
 | Dependency | Kind | Direct or transitive | Version | License | Support status | End of life | Known restrictions | Replacement difficulty | Evidence |
 |---|---|---|---|---|---|---|---|---|---|
-| `pyyaml` | runtime, one plugin | direct | `>=6.0` | MIT | actively maintained | none | none | low | [EV-0041] |
-| `claude-agent-sdk` | optional extra | direct | unpinned | per its own terms | active | none | none | medium | [EV-0041] |
-| `pytest`, `mypy`, `ruff`, `hypothesis`, `jsonschema`, `types-PyYAML` | development, one plugin | direct | pinned by floor | permissive | active | none | none | low | [EV-0041] |
-| `actions/checkout` | CI | direct | `@v4` — **major tag, not a SHA** | MIT | active | none | none | low | [EV-0042] |
-| `github/codeql-action` | CI | direct | `@v3` — major tag | MIT | active | none | GitHub's terms for CodeQL on private repositories; this repository is public | low | [EV-0042] |
-| `git`, `bash`, `jq`, `gh` | tooling | direct | unpinned | permissive | active | none | none | low | [EV-0007] |
-| Claude Code client | platform | direct | whatever the operator has | proprietary, Anthropic | active | none | **Total lock-in.** Nothing in this project functions without it | **none — no replacement exists** | [EV-0043] |
-| GitHub | platform | direct | — | proprietary | active | none | Hosting, distribution, CI, releases | low-to-medium | [EV-0051] |
+| `pyyaml` | runtime, one plugin | direct | `>=6.0` | MIT | actively maintained | none stated | none | low | [EV-0041] |
+| `claude-agent-sdk` | optional extra | direct | unpinned | per its own terms | active | none stated | none | medium | [EV-0041] |
+| `pytest`, `mypy`, `ruff`, `hypothesis`, `jsonschema`, `types-PyYAML` | development, one plugin | direct | pinned by floor | permissive | active | none stated | none | low | [EV-0041] |
+| `actions/checkout` | CI | direct | `@v4`, a major tag rather than a commit sha | MIT | active | none stated | none | low | [EV-0042] |
+| `github/codeql-action` | CI | direct | `@v3`, a major tag rather than a commit sha | MIT | active | none stated | GitHub's terms for CodeQL on private repositories. This repository is public | low | [EV-0042] |
+| `git`, `bash`, `jq`, `gh` | tooling | direct | unpinned, and not enumerated by any manifest | permissive | active | none stated | Inferred: required by the shell scripts, from [EV-0093]. No row enumerates the set | low | [EV-0093] |
+| Claude Code client | platform | direct | whatever the operator has | proprietary, Anthropic | active | none stated | Inferred: total lock-in. Nothing here functions without it | no replacement exists | [EV-0043, I] |
+| GitHub | platform | direct | — | proprietary | active | none stated | Hosting, distribution, CI, releases | low to medium | [EV-0051] |
 
-**One declared third-party runtime dependency in the entire repository** [EV-0041]. That is a genuinely strong position for a supply-chain review: the attack surface is not the dependency tree, it is the two external plugin sources and the two unpinned CI actions.
+The only declared third-party runtime dependency is `pyyaml>=6.0` [EV-0041]. Scope that sentence carefully. It was read on 2026-07-26 from `agent-capability-standard`'s `pyproject.toml` at revision `95f7ac2`. That tree is no longer in the repository, and its manifest was not re-read at the pinned `9e2f65b`.
+
+CI consumes two third-party action sources, both pinned by major tag rather than by commit sha [EV-0042]. A major tag is mutable. The publisher can move `v4` to any commit, and this repository's CI will execute it without a review here. That is a supply-chain exposure, and it is the sharpest one on this page now that both plugin sources are sha-pinned.
 
 ## License obligations
 
 | License | Dependencies under it | Obligation | Triggered by | Does this project trigger it | Evidence |
 |---|---|---|---|---|---|
-| MIT | `pyyaml`, `actions/checkout`, `github/codeql-action` | Preserve copyright and licence text when redistributing | Redistribution of the covered code | **No** — none of these is redistributed. They are consumed at CI time or installed separately by the operator | [EV-0041], [EV-0042] |
-| Apache-2.0 | `agent-capability-standard` (submodule), `prompt-decorators` (external entry) | Preserve notices; state changes; include the licence | Distribution of the covered code | **Yes for the submodule** — its tree is present in this repository and is cloned by every installer. Its own `LICENSE` and manifest travel with it, which satisfies the obligation at the plugin level. It is **not** restated at repository level, where the missing root `LICENSE` compounds the ambiguity | [EV-0021], [EV-0031] |
-| **Apache-2.0, the project's own licence** | its own 112 skills, 61 commands, 29 agents, 42 scripts | Preserve notices; state changes; include the licence; the patent grant and its termination clause bind both directions | Publishing source publicly, and any redistribution by a recipient | **Yes, and it is now satisfiable** — the licence text is present at the root and every manifest declares the same identifier | [EV-0019], [EV-0020], [EV-0021] |
+| MIT | `pyyaml`, `actions/checkout`, `github/codeql-action` | Preserve copyright and licence text on redistribution | Redistribution of the covered code | No copy of any of the three is tracked in this repository. The actions are referenced by workflows [EV-0042], and `pyyaml` is a manifest declaration [EV-0041] | [EV-0041], [EV-0042] |
+| Apache-2.0 | `agent-capability-standard`, `prompt-decorators` | Preserve notices, state changes, include the licence | Distribution of the covered code | Neither tree is tracked in this repository [EV-0059], [EV-0060]. The manifest declares an external source and a sha for each [EV-0058]. Whether publishing such an entry is itself distribution is flagged for counsel below | [EV-0058], [EV-0059], [EV-0060] |
+| Apache-2.0, the project's own licence | Its own 71 skills, 61 commands, 29 agents, 37 scripts | Preserve notices, state changes, include the licence. The patent grant and its termination clause bind both directions | Publishing source publicly, and any redistribution by a recipient | The licence text is present at the repository root [EV-0019], and the manifests declare the same identifier as read 2026-07-26 [EV-0021] | [EV-0019], [EV-0020], [EV-0021], [EV-0093] |
+
+Unknown: whether the `agent-capability-standard` tree at sha `9e2f65b` carries its own `LICENSE` file (AQ-pending). EV-0127 established the version that tree reports, not its licence text. The only local copy is untracked residue at an older pointer [EV-0060].
 
 | Distribution mode | What is distributed | To whom | Obligations that attach |
 |---|---|---|---|
-| Git clone by the Claude Code client | The whole repository, including the submodule tree | Any operator who adds the marketplace | Apache-2.0: retain the licence and notices, state changes on modification |
+| Git clone by the Claude Code client | This repository and its 6 in-tree plugin sources. The manifest points the other 2 entries at external repositories [EV-0058] | Any operator who adds the marketplace | Apache-2.0. Retain the licence and notices, state changes on modification |
 | GitHub release assets | Desktop skill ZIPs built from `SKILL.md` files | Anyone who downloads a release | Same |
-| Public repository browsing | Everything | Anyone | Same |
+| Public repository browsing | Everything tracked | Anyone | Same |
 
-All three channels now carry the same terms, which is the point of resolving CT-0001: a recipient's rights no longer depend on which channel they arrived through.
+All three channels carry the same terms. A recipient's rights do not depend on which channel they arrived through.
 
 ## Commercial terms requiring human review
 
 | Party | What is licensed or contracted | Term that needs review | Why | Owner |
 |---|---|---|---|---|
-| Anthropic | The Claude Code client that executes every artifact | Whether distributing plugins that instruct the client has any term attached | The project's entire distribution depends on it, and no review of its terms is recorded anywhere | Daniel Bentes |
-| Anyone who cloned or forked before 2026-07-26 | Their grant of rights for that copy | Whether a copy taken while no `LICENSE` file existed is covered retroactively by the licence added afterwards | The licence now applies going forward; what governs an earlier copy is a question of law, not of code | Daniel Bentes |
-| Contributors, if any join | Copyright assignment or inbound licence | No CLA, no DCO, no `CONTRIBUTING.md` — a contribution's terms would be undefined | AQ-0007 — untested because no external contribution has occurred | Daniel Bentes |
+| Anthropic | The Claude Code client that executes every artifact | Whether distributing plugins that instruct the client has any term attached | The project's entire distribution depends on it. No review of its terms is recorded anywhere | Daniel Bentes |
+| Anyone who cloned or forked before 2026-07-26 | Their grant of rights for that copy | Whether a copy taken while no `LICENSE` file existed is covered by the licence added afterwards | This is a question of law, not of code | Daniel Bentes |
+| Contributors, if any join | Copyright assignment or inbound licence | No CLA, no DCO, no `CONTRIBUTING.md`. A contribution's terms would be undefined | AQ-0007. Untested, because no external contribution has occurred | Daniel Bentes |
 
 ## Generated, copied, vendored, and contributed material
 
 | Material | Origin | Kind | License of origin | Attribution present | Cleared | Evidence |
 |---|---|---|---|---|---|---|
-| `plugins/dossier/bin/cascade-resolve.sh` | `plugins/flow/bin/cascade-resolve.sh` | copied, then diverged | same project | **no** — neither file records that the other exists | N/A — same owner | [EV-0007] |
-| `plugins/dossier/tests/{run.sh,lib/assert.sh}` | the flow test harness | copied, identifiers renamed | same project | no | N/A | [EV-0009] |
-| `plugins/agent-capability-standard/**` | `synaptiai/agent-capability-standard` | vendored via submodule | Apache-2.0 | yes — its own `LICENSE` and manifest travel with the tree | yes | [EV-0031] |
-| `prompt-decorators` | `synaptiai/prompt-decorators` | referenced, not vendored | Apache-2.0 per its marketplace entry | Not verifiable from here (AQ-0005) | unverified | [EV-0030] |
-| `dist/desktop/**` | every `SKILL.md`, via `package-desktop-skills.sh` | generated | Apache-2.0, inherited from the project | N/A | yes | [EV-0012], [EV-0019] |
-| External contributions | — | **none exist** | — | — | — | [EV-0035] |
+| `plugins/dossier/bin/cascade-resolve.sh` | `plugins/flow/bin/cascade-resolve.sh` | Unknown: no evidence row records the copy or its divergence at this HEAD (AQ-pending) | same project | unestablished | N/A, same owner | [EV-0093] |
+| `plugins/dossier/tests/{run.sh,lib/assert.sh}` | the flow test harness | Unknown: no evidence row records the copy (AQ-pending) | same project | unestablished | N/A, same owner | [EV-0107] |
+| `plugins/agent-capability-standard/**` | `synaptiai/agent-capability-standard` | **not vendored at HEAD.** Fetched by the client from a `github` source at sha `9e2f65b` | Apache-2.0 per its marketplace entry | Not established at the pinned sha | unverified | [EV-0058], [EV-0059], [EV-0060] |
+| `prompt-decorators` | `synaptiai/prompt-decorators` | referenced at sha `9c792fe`, not vendored | Apache-2.0 per its marketplace entry | Not verifiable from here (AQ-0005) | unverified | [EV-0058] |
+| `dist/desktop/**` | every `SKILL.md`, via `package-desktop-skills.sh` | generated | Apache-2.0, inherited from the project | N/A | yes | [EV-0019], [EV-0123] |
+| External contributions | — | none exist. All commits across all refs carry one author identity | — | — | — | [EV-0035] |
 
-The first row is a maintenance hazard rather than a licensing one, and it has already materialized: the two copies have diverged, dossier's carries a fix flow's does not, and neither points at the other [TD-05].
+Unknown: whether the two `cascade-resolve.sh` copies still diverge (AQ-pending). The debt register carries the item as [TD-05]. Either way this is a maintenance hazard, not a licensing one.
 
 ## Software bill of materials
 
 | Field | Value |
 |---|---|
-| SBOM produced | **no** |
+| SBOM produced | no |
 | Format | — |
 | Generated by | — |
 | Generated on | — |
@@ -99,55 +140,82 @@ The first row is a maintenance hazard rather than a licensing one, and it has al
 | Scope not covered | — |
 | Location | — |
 
-No SBOM exists and no tooling produces one. The mitigating fact is that the complete dependency list fits in the table above — one runtime dependency, two CI actions, and four standard command-line tools [EV-0041], [EV-0042]. An SBOM here would be short enough to be uninteresting, which is a reasonable argument for not having one and not an argument that the supply chain is controlled.
+No SBOM exists and no tooling produces one. The declared list is short. It holds one runtime dependency, two CI actions, two sha-pinned plugin sources, and four command-line tools [EV-0041], [EV-0042], [EV-0058]. A short list is an argument about the cost of producing an SBOM. It is not an argument that the supply chain is controlled.
 
 ## Vulnerability evidence
 
 | Scan | Tool | Scope | Date | Findings by severity | Source of advisory data | Evidence |
 |---|---|---|---|---|---|---|
-| Static analysis | CodeQL | `actions`, `python` | 2026-07-25 | 0 reported | GitHub Advisory Database | [EV-0012] |
+| Dependency vulnerability scan | **no vulnerability-scan output located** | — | — | — | — | [EV-0121] |
+| Static analysis | CodeQL | **Unknown.** No row records the configured language set (AQ-pending) | runs green across the range, 2026-09-10 | **Unknown.** A green run means the analysis completed, not that it reported nothing (AQ-pending) | GitHub Advisory Database | [EV-0123], [EV-0126] |
 | Credential scan | `git grep` over the project's own detector pattern set | all tracked files | 2026-07-26 | 0 | the project's own patterns | [EV-0037] |
-| Dependency scan | **none exists** — no `dependabot.yml`, no scanning workflow | — | — | — | — | [EV-0036] |
-| Shell analysis | **none exists** — no `shellcheck` | — | — | — | — | [EV-0007] |
-| Workflow injection scan | `awk` run-block scanner, executed during this assessment | all 4 workflows | 2026-07-26 | **1** — `release-desktop-skills.yml` line 24 | this assessment | [EV-0015] |
+| Shell analysis | none exists. No `shellcheck` runs in CI | — | — | — | — | [EV-0123] |
+| Workflow injection scan | `awk` run-block scanner, executed during the 2026-07-26 round | the 4 workflows then present | 2026-07-26 | 1, in `release-desktop-skills.yml` | this assessment | [EV-0015] |
 
-CodeQL's clean result covers `actions` and `python`. It does not cover shell, which is the language of all 42 executable files this project ships to operator machines. That gap is the reason the workflow-injection finding was found by hand rather than by a tool.
+Three limits on this table. First, no dependency-vulnerability scan has ever run here [EV-0121], [EV-0078]. Second, no evidence row establishes CodeQL's configured language set, so shell coverage of the 37 tracked plugin scripts is unestablished [EV-0093]. Third, the credential and workflow-injection results are dated 2026-07-26 against a 4-workflow tree. Five workflows exist at HEAD [EV-0123], and neither check was re-run at this HEAD.
+
+Unknown: the CodeQL finding count at this HEAD. Alerts do not fail the workflow, so a green run does not establish zero.
+
+The green-run result was observed by the session operator outside this engagement's action ceiling [EV-0126] (AQ-0012).
 
 ## Fragile dependencies
 
 | Dependency | Concern | Last upstream release | Maintainers | Consequence if abandoned | Alternative | Evidence |
 |---|---|---|---|---|---|---|
-| Claude Code client | Total lock-in. Its manifest schema, resolution order, cache layout, and hook contract are external contracts that can change without notice | continuous | Anthropic | Every plugin stops working; nothing in this project can adapt in advance | **none** | [EV-0043] |
-| `synaptiai/prompt-decorators` at `ref: main` | Content reaches installers with no commit, review, or record here | unknown from here | Daniel Bentes | Installers of that plugin receive whatever is upstream, including nothing | Pin a tag, or vendor it | [EV-0030] |
-| `agent-capability-standard` submodule | Pointer sits 2 commits past the version the marketplace advertises | `v1.2.0` plus 2 commits | Daniel Bentes | The advertised version is not what installs | Move the pointer to the tag | [EV-0031] |
-| `pyyaml` | The only third-party runtime dependency | active | community | One plugin's runtime; one optional test leg degrades with a stated skip | vendor, or drop the YAML path | [EV-0041] |
+| Claude Code client | Inferred: total lock-in. Its manifest schema, resolution order, cache layout, and hook contract can change without notice | continuous | Anthropic | Every plugin stops working. Nothing here can adapt in advance | none | [EV-0043, I] |
+| `actions/checkout@v4`, `github/codeql-action@v3` | Mutable major tags. The publisher can move the tag under this repository's CI | continuous | GitHub | CI executes code that was never reviewed here | Pin each to a commit sha | [EV-0042] |
+| `synaptiai/agent-capability-standard` at `9e2f65b` | The pin is reproducible, but the distance from tag `v1.2.0` is unexamined | `v1.2.0` | Daniel Bentes | Installers receive a tree nobody here has read | Read the diff, or move the pin to the tag | [EV-0058], [EV-0127], AQ-0006 |
+| `synaptiai/prompt-decorators` at `9c792fe` | The pin is reproducible. The contents have never been inspected from here | unknown from here | Daniel Bentes | Installers receive a plugin published under this marketplace's name and unread | Inspect the subdirectory upstream | [EV-0058], AQ-0005 |
+| `pyyaml` | The only declared third-party runtime dependency, and it now sits outside this repository | active | community | One plugin's runtime path fails | Vendor it, or drop the YAML path | [EV-0041] |
 
-Two of the four fragile dependencies are the project's own repositories, which is unusual and is the good news: both are fixable by one edit each, by the person who already owns them.
+Both external plugin sources are repositories under the same owner. Each is fixable by one edit, by the person who already owns them.
 
 ## External services and lock-in
 
 | Service | Function | Substitutable | Migration cost driver | Contractual exit terms | Continuity if unavailable | Evidence |
 |---|---|---|---|---|---|---|
-| Claude Code client | Resolves, installs, and executes everything | **no** | The product is defined in terms of the client's plugin model | none — no contract exists | **The product ceases to function** | [EV-0043] |
-| GitHub | Hosting, distribution, CI, releases | partially | The marketplace source kind is git; the client's `github` source form and the Actions workflows are GitHub-specific | standard terms | Existing installs keep working; nothing new publishes | [EV-0051] |
-| GitHub Actions | Tests, analysis, release packaging | yes | 4 short workflows | standard terms | Tests run locally; releases are manual | [EV-0012] |
-| Anthropic API | Consumed by operators, and by dossier's CI path in a consuming repository | no | — | the operator's own agreement | Plugins that need inference stop working for that operator | [EV-0044] |
+| Claude Code client | Resolves, installs, and executes everything | no | The product is defined in terms of the client's plugin model | none. No contract exists | Inferred: the product ceases to function | [EV-0043, I], [EV-0044] |
+| GitHub | Hosting, distribution, CI, releases | partially | The client's `github` and `git-subdir` source forms and the Actions workflows are GitHub-specific | standard terms | Existing installs keep working. Nothing new publishes | [EV-0051], [EV-0058] |
+| GitHub Actions | Tests, analysis, release packaging, manifest check | yes | 5 short workflows | standard terms | Tests run locally. Releases become manual | [EV-0123], [EV-0126] |
+| Anthropic API | Consumed by operators, and by dossier's CI path in a consuming repository | no | — | the operator's own agreement | Plugins needing inference stop working for that operator | [EV-0044] |
 
 ## Unknown provenance and ownership
 
+Unknown provenance is a material diligence risk here, not a bookkeeping gap. Two of eight published plugins are fetched from outside this repository, and neither tree has been read from here.
+
 | Item | What is unknown | Why it matters to the decision | What would resolve it | Register ID |
 |---|---|---|---|---|
-| `prompt-decorators` contents | Whether the published entry matches what it describes, and whether its Apache-2.0 declaration is present in the source | It is published to installers from this manifest under this marketplace's name | Inspecting the `claude-code-plugin` subdirectory upstream | AQ-0005 |
-| The 2 commits past `v1.2.0` | What they change | The marketplace advertises a version it does not ship | `git log v1.2.0..95f7ac2` upstream | AQ-0006 |
-| GitHub's derived licence field | Whether the repository badge and automated scanners report Apache-2.0 | Every licence scanner reads the derived field rather than the file | Merging this branch, then re-reading `gh api repos/…` | AQ-0011 |
+| `prompt-decorators` contents at `9c792fe` | Whether the published entry matches what it describes, and whether its Apache-2.0 declaration appears in the source | It is published to installers under this marketplace's name | Inspecting the `claude-code-plugin` subdirectory at that sha | AQ-0005 |
+| The distance from `v1.2.0` to `9e2f65b` | What those commits change | The pin is reproducible but unreviewed | `git log v1.2.0..9e2f65b` upstream | AQ-0006 |
+| GitHub's derived licence field | Whether the repository badge and automated scanners report Apache-2.0 | Every licence scanner reads the derived field, not the file | Re-reading `gh api repos/…` once this branch merges | AQ-0011 |
 | Inbound contribution terms | What terms a contribution would arrive under | No contribution has occurred, so nothing has tested it | A `CONTRIBUTING.md` stating inbound terms | AQ-0007 |
+| Dependency vulnerability status | Whether any declared dependency has a known advisory | No vulnerability-scan artifact was located [EV-0078, U], [EV-0121] | One `osv-scanner` run, or enabling Dependabot | AQ-pending |
 
 ## Items flagged for qualified legal review
 
 | Item | Question for counsel | Why it exceeds a technical assessment | Owner |
 |---|---|---|---|
-| Copies taken before the licence was added | What is the position of anyone who installed or forked while the README's MIT badge pointed at a file that did not exist? | Whether a metadata declaration was legally operative, and whether a later licence covers an earlier copy, are questions of law. This assessment can establish only what the repository carried on each date | Daniel Bentes |
-| Relicensing six plugins from MIT to Apache-2.0 | The sole author holds copyright in all of them, but does the change bind a recipient who took a copy under the earlier declaration? | Relicensing analysis | Daniel Bentes |
+| Copies taken before the licence was added | What is the position of anyone who installed or forked while the README's MIT badge pointed at a file that did not exist? | Whether a metadata declaration was legally operative, and whether a later licence covers an earlier copy, are questions of law | Daniel Bentes |
+| Relicensing six plugins from MIT to Apache-2.0 | The sole author holds copyright in all of them. Does the change bind a recipient who took a copy under the earlier declaration? | Relicensing analysis | Daniel Bentes |
 | Inbound contribution terms | Should a CLA or DCO be adopted before the first external contribution? | A policy question with legal consequences | Daniel Bentes |
+| Redistribution of two externally sourced plugins | Does publishing a marketplace entry that causes a client to fetch third-party code constitute distribution of that code? | The repository no longer carries either tree [EV-0058], [EV-0059]. Whether that changes the obligation is a legal question | Daniel Bentes |
 
-Three items, all downstream of the same absent file — and the file now exists. What remains is retrospective: the licence governs every copy taken from 2026-07-26 onward, and only the position of earlier copies needs counsel.
+## Recommendations
+
+Recommendation: pin `actions/checkout` and `github/codeql-action` to commit shas rather than major tags. Both are mutable today [EV-0042].
+
+Recommendation: run one dependency-vulnerability scan and retain its output. None has ever run [EV-0121].
+
+Recommendation: read the upstream diff from `v1.2.0` to `9e2f65b`, and inspect `prompt-decorators` at `9c792fe`. Both close standing provenance gaps (AQ-0005, AQ-0006).
+
+None of the above is implemented. Each describes a change, not the present state.
+
+## Canonical sources of truth
+
+| Question | Where the answer lives |
+|---|---|
+| What each plugin's source and pin is | `.claude-plugin/marketplace.json` |
+| Whether an entry's advertised version matches its source | `scripts/check-plugin-versions.sh`, run by `marketplace-manifest.yml` [EV-0080], [EV-0081] |
+| The project's licence text | `LICENSE` at the repository root [EV-0019] |
+| Entity names, owners, and boundaries | `00-control/terminology-and-ownership.md` |
+| Every claim above | `00-control/evidence-ledger.md` |
