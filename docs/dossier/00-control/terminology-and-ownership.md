@@ -6,8 +6,8 @@ audience: Reviewer, Maintainer, Contributor
 confidentiality: Public
 owner: Daniel Bentes
 status: verified
-project-version: 06b1586
-last-verified: 2026-07-26
+project-version: e104483
+last-verified: 2026-09-10
 review-trigger: A plugin is added, renamed, or removed; ownership of any component changes
 related: [00-control/evidence-ledger.md, 02-architecture/components-and-codebase.md, 04-operating/decisions-technical-debt-and-risks.md]
 ---
@@ -42,30 +42,31 @@ An owner is never invented. `unassigned` is the correct value where no evidence 
 | ID | Canonical name | Class | Definition | Aliases | Owner | Decision rights | Source of truth | Evidence | Status |
 |---|---|---|---|---|---|---|---|---|---|
 | TM-0020 | Synapti Plugin Marketplace | product | This repository, published at `synaptiai/synapti-marketplace`, distributing 8 plugin entries | synapti-marketplace | Daniel Bentes | Daniel Bentes | `.claude-plugin/marketplace.json` | [EV-0001] | current |
-| TM-0021 | flow | plugin | GitHub development workflow: 32 skills, 23 commands, 9 agents, 12 hook scripts, its own settings schema and test suite. The largest and most depended-on plugin | — | Daniel Bentes | Daniel Bentes | `plugins/flow/` | [EV-0004], [EV-0008] | current |
-| TM-0022 | dossier | plugin | Evidence-first documentation and post-merge documentation automation: 9 skills, 9 commands, 6 agents, 4 hook scripts, 14 shell scripts | — | Daniel Bentes | Daniel Bentes | `plugins/dossier/` | [EV-0009] | current |
-| TM-0023 | agent-capability-standard | plugin | 42 skills. Distributed as a **git submodule** from `synaptiai/agent-capability-standard`; Apache-2.0; carries the repository's only dependency manifest | grounded-agency (package name) | Daniel Bentes | Daniel Bentes | `.gitmodules`, submodule tree | [EV-0031], [EV-0041] | current |
+| TM-0021 | flow | plugin | GitHub development workflow: 32 skills, 23 commands, 9 agents, 14 hook scripts, its own settings schema and test suite. The largest and most depended-on plugin | — | Daniel Bentes | Daniel Bentes | `plugins/flow/` | [EV-0129], [EV-0098] | current |
+| TM-0022 | dossier | plugin | Evidence-first documentation and post-merge documentation automation: 10 skills, 9 commands, 6 agents, 5 hook scripts, 20 `bin/` scripts | — | Daniel Bentes | Daniel Bentes | `plugins/dossier/` | [EV-0129], [EV-0107] | current |
+| TM-0023 | agent-capability-standard | plugin | 42 skills. Distributed as a `github` marketplace source pinned to sha `9e2f65b`, not vendored in this repository; Apache-2.0; carries the repository's only dependency manifest | grounded-agency (package name) | Daniel Bentes | Daniel Bentes | The `agent-capability-standard` entry in `.claude-plugin/marketplace.json` | [EV-0058], [EV-0059], [EV-0127], [EV-0041] | current |
 | TM-0024 | ai-first-org-design-kit | plugin | 15 skills for organizational design. Its published description says fourteen — see CT-0003 | — | Daniel Bentes | Daniel Bentes | `plugins/ai-first-org-design-kit/` | [EV-0027] | current |
 | TM-0025 | gh-workflow | plugin | 7 skills, 14 commands, 4 agents. Predates flow and overlaps it; the project instructions state only one may be enabled at a time | — | Daniel Bentes | Daniel Bentes | `plugins/gh-workflow/` | [EV-0004] | current |
 | TM-0026 | decipon | plugin | 2 skills, 7 commands, 5 agents for manipulation and disinformation analysis | — | Daniel Bentes | Daniel Bentes | `plugins/decipon/` | [EV-0004] | current |
 | TM-0027 | context-ledger | plugin | 5 skills, 8 commands, 5 agents for evidence-based product development | — | Daniel Bentes | Daniel Bentes | `plugins/context-ledger/` | [EV-0004] | current |
-| TM-0028 | prompt-decorators | plugin | Published from a `git-subdir` source in `synaptiai/prompt-decorators`, pinned to the floating ref `main`. Not present in this repository | — | Daniel Bentes | Daniel Bentes | marketplace entry only | [EV-0030], AQ-0005 | current |
+| TM-0028 | prompt-decorators | plugin | Published from a `git-subdir` source in `synaptiai/prompt-decorators`, pinned to sha `9c792fe`. Not present in this repository | — | Daniel Bentes | Daniel Bentes | marketplace entry only | [EV-0058], [EV-0127], AQ-0005 | current |
 | TM-0029 | `main` | environment | The default branch. The only ref from which scheduled workflows run and from which releases are cut. Carries no branch protection and no rulesets | — | Daniel Bentes | Daniel Bentes | `api:branches/main` | [EV-0016], [EV-0017] | current |
-| TM-0030 | GitHub Actions | external system | The only execution environment the project itself operates: 4 workflows, 2 third-party action sources | CI | Daniel Bentes | Daniel Bentes | `.github/workflows/` | [EV-0012], [EV-0042] | current |
+| TM-0030 | GitHub Actions | external system | The only execution environment the project itself operates: 5 workflows, 2 third-party action sources | CI | Daniel Bentes | Daniel Bentes | `.github/workflows/` | [EV-0123], [EV-0126], [EV-0042] | current |
 | TM-0031 | Claude Code plugin client | external system | Reads `marketplace.json`, resolves each entry's source, and executes skills, commands, agents, and hooks on the operator's machine. Not built or controlled by this project | — | Anthropic | Anthropic | — | [EV-0043] | current |
+| TM-0033 | marketplace manifest check | component | `scripts/check-plugin-versions.sh` and the `marketplace-manifest.yml` workflow that runs it. Compares every marketplace entry's advertised version against its source's own `plugin.json`, reading external sources at their pinned sha, and fails when any entry disagrees or an external source carries no `sha` | version check | Daniel Bentes | Daniel Bentes | `scripts/check-plugin-versions.sh`, `.github/workflows/marketplace-manifest.yml` | [EV-0080], [EV-0081], [EV-0127] | current |
 | TM-0032 | `.decisions/` | component | 11 tracked decision records written by the flow plugin's journal during development of this repository | decision journal | Daniel Bentes | Daniel Bentes | `.decisions/` | [EV-0046] | current |
 
 ## Component and capability ownership
 
 | Component or capability | Owner | Backup owner | Criticality | Evidence for ownership | Note |
 |---|---|---|---|---|---|
-| `marketplace.json` manifest | Daniel Bentes | unassigned | critical | Sole commit identity [EV-0035] | A malformed manifest breaks discovery for every plugin at once |
-| flow plugin | Daniel Bentes | unassigned | critical | [EV-0035] | 1022 assertions guard it; no second reviewer exists |
-| dossier plugin | Daniel Bentes | unassigned | high | [EV-0035] | 1241 assertions; headline capability unproven end to end (AQ-0002) |
+| `marketplace.json` manifest | Daniel Bentes | unassigned | critical | Sole commit identity [EV-0035] | A malformed manifest breaks discovery for every plugin at once. Version drift between an entry and its source is now checked in CI (TM-0033) |
+| flow plugin | Daniel Bentes | unassigned | critical | [EV-0035] | 2336 assertions guard it [EV-0098]; no second reviewer exists |
+| dossier plugin | Daniel Bentes | unassigned | high | [EV-0035] | 1951 assertions [EV-0107]; headline capability unproven end to end (AQ-0002) |
 | gh-workflow, decipon, context-ledger, ai-first-org-design-kit | Daniel Bentes | unassigned | medium | [EV-0035] | No test suite [EV-0010] |
-| agent-capability-standard | Daniel Bentes | unassigned | medium | `.gitmodules`, upstream repository under the same owner | Submodule pointer sits 2 commits past the advertised tag [EV-0031] |
+| agent-capability-standard | Daniel Bentes | unassigned | medium | Marketplace entry, upstream repository under the same owner | Pinned at sha `9e2f65b`, whose tree reports the advertised 1.2.0 [EV-0127]. What separates that sha from tag `v1.2.0` upstream is still unexamined (AQ-0006) |
 | prompt-decorators | Daniel Bentes | unassigned | medium | Marketplace entry author field | Contents unverified from here (AQ-0005) |
-| CI workflows | Daniel Bentes | unassigned | high | [EV-0012], [EV-0035] | Advisory only — no required status checks exist [EV-0016] |
+| CI workflows | Daniel Bentes | unassigned | high | [EV-0123], [EV-0035] | Advisory only — no required status checks exist [EV-0016] |
 | Release process | Daniel Bentes | unassigned | high | 57 tags, single identity [EV-0032], [EV-0035] | |
 | Desktop skill packaging | Daniel Bentes | unassigned | low | `scripts/package-desktop-skills.sh` | Runs only on release publication |
 
