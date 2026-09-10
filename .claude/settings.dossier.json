@@ -127,7 +127,7 @@
       "writeAllowlist": [
         "docs/dossier/**"
       ],
-      "expectedPluginVersion": "1.0.0"
+      "expectedPluginVersion": "1.2.0"
     },
     "local": {
       "onLocalMerge": "suggest"
