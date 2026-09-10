@@ -5,7 +5,7 @@ purpose: Tells a reader how much this package's own claims are worth, by recordi
 audience: Reviewer, Maintainer
 confidentiality: Public
 owner: Daniel Bentes
-status: verified
+status: partially verified
 project-version: 06b1586
 last-verified: 2026-07-26
 review-trigger: Any re-run of the verification passes, or any correction applied to a document after this report was written
@@ -13,6 +13,8 @@ related: [00-control/evidence-ledger.md, 00-control/assumptions-questions-and-co
 ---
 # Documentation Verification Report
 <!-- contract: references/package-contract-07-verification.md#documentation-verification-report -->
+
+> **The sections above the round-4 heading describe the July package and have not been re-derived.** They report "two of seventeen conditions" against a gate that now defines nineteen, and "all 35 claims approved" against a register carrying 33 approved of 48. The header is pinned to `06b1586`, a squashed branch commit that `git cat-file` cannot resolve in any clone (CT-0019). They are retained unmodified because the pre-repair record of an earlier round is the evidence that the round happened; they are not a current statement about this package. Round 4 begins below.
 
 ## Scope
 
