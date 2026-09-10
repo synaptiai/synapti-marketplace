@@ -268,7 +268,7 @@ fi
 
 _flow_test_begin "a long heredoc body is content and does not slow the hook"
 BDG_START=$(date +%s)
-_run_hook "cat > out.txt <<EOF
+_run_hook "cat <<EOF
 $BIG
 git reset --hard
 EOF"
@@ -286,3 +286,171 @@ _run_hook "/usr/bin/git reset --hard"; assert_exit 2 "$?" "absolute git binary b
 _run_hook "git -c core.pager=cat reset --hard"; assert_exit 2 "$?" "reset --hard behind -c key=value blocked"
 _run_hook "sudo git clean -fd"; assert_exit 2 "$?" "clean --force behind sudo blocked"
 _run_hook "git \"reset\" --hard"; assert_exit 2 "$?" "quoted subcommand blocked"
+
+# --- the false allows three reviewers constructed -----------------------------
+# Each of these is a command that main blocks and an earlier version of this
+# change let through. They are grouped because they share one cause: the
+# stripper deciding a span was text when it was code, and every rule reading
+# only what survives stripping. The rule now is that anything uncertain is kept.
+
+_flow_test_begin "a here-string is not a heredoc"
+_run_hook "grep foo <<<\"\$VAR\"
+git reset --hard"
+assert_exit 2 "$?" "a command after a here-string is still examined"
+_run_hook "cmd <<<word
+git reset --hard"
+assert_exit 2 "$?" "the unquoted here-string form too"
+
+_flow_test_begin "a left shift is arithmetic, not a heredoc introducer"
+_run_hook "echo \$((1 << 3))
+git reset --hard"
+assert_exit 2 "$?" "a command after \$((a << b)) is still examined"
+_run_hook "(( x << 2 ))
+rm -rf /important"
+assert_exit 2 "$?" "a command after a bare arithmetic command is still examined"
+_run_hook "let x=1<<3
+git reset --hard"
+assert_exit 2 "$?" "a command after let x=1<<3 is still examined"
+
+_flow_test_begin "a heredoc that never terminates keeps everything it swallowed"
+_run_hook "cat <<EOF
+git reset --hard"
+assert_exit 2 "$?" "an unterminated heredoc does not hide the command inside it"
+_run_hook "cat <<\\EOF
+text
+EOF
+git reset --hard"
+assert_exit 2 "$?" "a backslash-quoted delimiter is not recognised, so its body is kept"
+
+_flow_test_begin "an escaped quote does not desynchronise the scan"
+_run_hook "echo \"he said \\\"a << EOF b\\\"\"
+git reset --hard"
+assert_exit 2 "$?" "a command after an escaped quote is still examined"
+_run_hook "echo \"\$(echo \"\$(date)\") <<EOF\"
+git reset --hard"
+assert_exit 2 "$?" "a command after a nested substitution is still examined"
+
+# --- a heredoc body is only text when its owner is a text sink ----------------
+# The question is not "does this line name an interpreter" but "who owns the
+# heredoc". `gh pr create --body "$(cat <<EOF` is owned by cat and is text;
+# everything below runs its body, on this machine or another one.
+_flow_test_begin "a heredoc handed to something that runs it is examined"
+for RUNNER in "bash" "sh" "ssh host" "sudo -s" "docker exec -i c1" "make -f -"; do
+  _run_hook "$RUNNER <<EOF
+git reset --hard
+EOF"
+  assert_exit 2 "$?" "heredoc to '$RUNNER' is examined"
+done
+_run_hook "\$SHELL <<EOF
+git reset --hard
+EOF"
+assert_exit 2 "$?" "heredoc to a shell named by a variable is examined"
+_run_hook "cat <<EOF | bash
+git reset --hard
+EOF"
+assert_exit 2 "$?" "heredoc piped into a shell is examined"
+_run_hook "cat > /tmp/x.sh <<EOF
+git reset --hard
+EOF"
+assert_exit 2 "$?" "heredoc written to a file is examined — something later runs that file"
+
+_flow_test_begin "a heredoc owned by a text sink is still content"
+_run_hook "cat <<EOF
+git restore $DOT
+EOF"
+assert_exit 0 "$?" "cat is a sink"
+_run_hook "tee notes.txt <<EOF
+git reset --hard
+EOF"
+assert_exit 0 "$?" "tee is a sink"
+
+# --- an interpreter handed its script as a quoted argument --------------------
+_flow_test_begin "a command inside an interpreter argument is examined"
+_run_hook "bash -c \"git reset --hard\""
+assert_exit 2 "$?" "bash -c with a double-quoted script"
+_run_hook "sh -c 'git clean -fd'"
+assert_exit 2 "$?" "sh -c with a single-quoted script"
+_run_hook "ssh host \"git checkout -- $DOT\""
+assert_exit 2 "$?" "ssh with a quoted remote command"
+_run_hook "eval \"git reset --hard\""
+assert_exit 2 "$?" "eval with a quoted command"
+_run_hook "bash -c \"git status\""
+assert_exit 0 "$?" "an ordinary command inside an interpreter argument is allowed"
+
+# --- git accepts abbreviated long options -------------------------------------
+# Verified against real git: `git reset --har` performs a hard reset and
+# `git clean --forc` deletes untracked files. Matching only the full spelling
+# let both through.
+_flow_test_begin "an abbreviated long option is the option"
+_run_hook "git reset --har HEAD";        assert_exit 2 "$?" "git reset --har blocked"
+_run_hook "git reset --ha HEAD";         assert_exit 2 "$?" "git reset --ha blocked"
+_run_hook "git clean --forc -d";         assert_exit 2 "$?" "git clean --forc blocked"
+_run_hook "git clean --fo -d";           assert_exit 2 "$?" "git clean --fo blocked"
+_run_hook "git restore --stag --workt $DOT"
+assert_exit 2 "$?" "abbreviated --staged --worktree still writes the tree"
+
+_flow_test_begin "an abbreviation that is not the option is not blocked"
+_run_hook "git reset --soft HEAD~1";     assert_exit 0 "$?" "--soft is not a prefix of --hard"
+_run_hook "git clean -n";                assert_exit 0 "$?" "clean dry run still allowed"
+_run_hook "git restore --stag $DOT";     assert_exit 0 "$?" "abbreviated --staged alone touches the index only"
+
+# --- whole-tree pathspec spellings --------------------------------------------
+_flow_test_begin "every spelling of the whole tree is the whole tree"
+_run_hook "git checkout $DOT";           assert_exit 2 "$?" "checkout with no separator"
+_run_hook "git checkout ${DOT}/";        assert_exit 2 "$?" "checkout ./ with no separator"
+_run_hook "git checkout -f $DOT";        assert_exit 2 "$?" "checkout -f ."
+_run_hook "git checkout -- ${DOT}/$DOT"; assert_exit 2 "$?" "checkout -- ./."
+_run_hook "git checkout -- ${DOT}//";    assert_exit 2 "$?" "checkout -- .//"
+_run_hook "git restore '*'";             assert_exit 2 "$?" "restore of a glob"
+_run_hook "git checkout -- '*'";         assert_exit 2 "$?" "checkout of a glob"
+_run_hook "git restore ':'";             assert_exit 2 "$?" "restore of the : pathspec"
+_run_hook "git restore ':(top)'";        assert_exit 2 "$?" "restore of :(top)"
+_run_hook "git checkout -- ':/*'";       assert_exit 2 "$?" "checkout of :/*"
+
+_flow_test_begin "branch names and ordinary paths are still not the whole tree"
+_run_hook "git checkout main";           assert_exit 0 "$?" "switching branches"
+_run_hook "git checkout -b feature/x";   assert_exit 0 "$?" "creating a branch"
+_run_hook "git checkout ${DOT}decisions/x.md"; assert_exit 0 "$?" "a dotted path with no separator"
+_run_hook "git checkout -- src/a.py";    assert_exit 0 "$?" "an ordinary path"
+
+# --- CRLF ---------------------------------------------------------------------
+# The two tokeniser paths disagreed about the carriage return, so the same
+# command got a different verdict depending on whether a quote happened to
+# appear in it.
+_flow_test_begin "a CRLF command is read like an LF one"
+_run_hook "git reset --hard$(printf '\r')"
+assert_exit 2 "$?" "a trailing CR does not hide the option"
+_run_hook "echo \"x\"$(printf '\r')
+git reset --hard$(printf '\r')"
+assert_exit 2 "$?" "CRLF on every line does not hide the command"
+
+# --- the branch rule ----------------------------------------------------------
+_flow_test_begin "a redirection target is not a branch name"
+ERR=$(_run_hook_stderr "git branch -D somebranch > out.txt")
+assert_contains "BLOCKED:" "$ERR" "still refused, but"
+if printf '%s' "$ERR" | grep -q "out.txt"; then
+  _flow_assert_fail "the redirection target was collected as a branch name: $ERR"
+else
+  _flow_assert_pass "out.txt was not read as a branch name"
+fi
+
+# --- the hook refuses when it cannot see --------------------------------------
+_flow_test_begin "a missing scanner blocks rather than allowing"
+NOAWK=$(mktemp -d -t flow-noawk.XXXXXX 2>/dev/null) || NOAWK=""
+if [ -z "$NOAWK" ]; then
+  _flow_assert_fail "mktemp failed; cannot build the no-awk environment"
+else
+  BDG_CLEAN_NOAWK="$NOAWK"
+  for TOOL in jq git bash sed grep basename printf; do
+    TP=$(command -v "$TOOL" 2>/dev/null) && ln -sf "$TP" "$NOAWK/$TOOL" 2>/dev/null
+  done
+  JSON=$(printf '%s' "git reset --hard" | jq -Rs .)
+  printf '{"tool_input":{"command":%s}}' "$JSON" | PATH="$NOAWK" bash "$HOOK" >/dev/null 2>&1
+  NOAWK_RC=$?
+  if [ "$NOAWK_RC" -eq 2 ]; then
+    _flow_assert_pass "with no awk on PATH the hook exits 2 rather than falling through"
+  else
+    _flow_assert_fail "with no awk on PATH the hook exited $NOAWK_RC — a hook that cannot see must not allow"
+  fi
+  rm -r -- "$NOAWK" 2>/dev/null
+fi

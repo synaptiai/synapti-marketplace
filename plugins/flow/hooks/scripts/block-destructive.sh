@@ -10,6 +10,14 @@ if ! command -v jq &>/dev/null; then
   exit 2
 fi
 
+# Same posture for awk. Every rule below reads the command through an awk pass;
+# without it the scan produces nothing, and nothing scanned would mean nothing
+# blocked. A hook that cannot see must not wave things through.
+if ! command -v awk >/dev/null 2>&1; then
+  echo "BLOCKED: awk not available — cannot verify command safety. Install awk to proceed." >&2
+  exit 2
+fi
+
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
@@ -132,129 +140,158 @@ _rm_tokenise() {
 #
 # Quoting, word splitting and redirections are left to _rm_tokenise below.
 # ---------------------------------------------------------------------------
-# The scanner runs in awk, not in bash. It has to look at every character of
-# every Bash command the hook sees, and a bash loop doing that pays a string
-# concatenation per character: a 40KB quoted argument took 22 seconds, on a hook
-# that runs before every command. The same pass in awk is one process and one
-# linear walk. It also keeps the shell out of the business of comparing single
-# characters, which is where the quoting gets delicate.
+# Does this word name something that will run a script handed to it? Used for
+# the quoted-argument expansion below, not for heredoc stripping — the heredoc
+# rule asks the opposite question (is the owner a text sink?) and answers it
+# with a much shorter list, because there "keep" is the safe default and here
+# "examine" is.
+_bd_is_interpreter() {
+  case "${1##*/}" in
+    sh|bash|zsh|ksh|dash|ash|busybox|python|python2|python3|perl|ruby|node|deno|bun)
+      return 0 ;;
+    eval|source|.|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at)
+      return 0 ;;
+  esac
+  return 1
+}
+
+# Non-code stripping, rebuilt.
 #
-# The pass removes exactly two things and copies everything else through:
-#   - from an unquoted `#` that opens a word, to the end of that line
-#   - a heredoc body and its terminator, unless the introducing line names an
-#     interpreter, in which case the body is code and is kept
+# Every rule below judges BD_CODE, so anything this pass removes is a thing no
+# rule can see. That makes each removal a potential false allow, and a false
+# allow on this hook costs the tree. The design is therefore: remove only what
+# is unambiguously text, and when anything at all is uncertain, keep it.
 #
-# Output is assembled from substring slices around the removed ranges rather
-# than character by character, so a long line costs a few concatenations.
+# Two things are removed.
+#
+# A `#` comment, from an unquoted `#` that opens a word to end of line. The
+# scan tracks quotes and backslash escapes, so `HEAD#1`, a URL fragment, and a
+# `#` inside a string are arguments rather than comments.
+#
+# A heredoc body, and only when every one of these holds:
+#   - the line ends with the introducer, so the body starts on the next line;
+#   - exactly one `<<` introducer is on that line;
+#   - the delimiter is a plain word, optionally quoted with ' or ". A
+#     backslash-quoted `<<\EOF` is not recognised, so its body is kept;
+#   - the word immediately before `<<` is a text sink — cat, tee, echo, printf
+#     or gh. This is the owner of the heredoc, not the first word of the line,
+#     which is what makes `gh pr create --body "$(cat <<EOF" ` a sink while
+#     `git commit -m "$(cat <<EOF" ` is one too, and `bash <<EOF`,
+#     `ssh host <<EOF`, `sudo -s <<EOF`, `docker exec -i c1 <<EOF`,
+#     `make -f - <<EOF` and `$SHELL <<EOF` are not;
+#   - the line carries no `|` and no `>`, so the body is not piped into an
+#     interpreter and not written to a file that something later runs;
+#   - and the terminator is actually found. A heredoc that never terminates
+#     keeps every line it consumed, because "I lost track" must never mean "so
+#     nothing here counts".
+#
+# `<<<` is a here-string, not a heredoc: the delimiter pattern requires a word
+# character after the `<<`, so `<<<word` never matches. `$(( a << b ))`, bare
+# `(( a << b ))` and `let x=1<<3` do not match either — a shift operand is not
+# a sink and the line does not end with the introducer.
+#
+# Carriage returns are stripped first, so a CRLF command is read the same way a
+# LF one is. Both tokeniser paths then agree about where words end.
 _bd_strip_noncode() {
   BD_CODE=$(printf '%s\n' "$1" | awk '
-    function is_interp(w,   b) {
-      b = w
-      sub(/^.*\//, "", b)
-      sub(/^\\/, "", b)
-      return (b == "sh" || b == "bash" || b == "zsh" || b == "ksh" || b == "dash" ||
-              b == "ash" || b == "busybox" || b == "python" || b == "python2" ||
-              b == "python3" || b == "perl" || b == "ruby" || b == "node" ||
-              b == "deno" || b == "bun" || b == "eval" || b == "source" || b == "." ||
-              b == "ssh" || b == "su" || b == "doas")
+    function owner_word(str,   n, parts, seg) {
+      # The heredoc belongs to the innermost command, which is the first word
+      # after the last separator. Reading the word immediately before the `<<`
+      # gets `tee notes.txt <<EOF` wrong (the owner is tee, not the filename),
+      # and reading the first word of the line gets `echo x && bash <<EOF`
+      # wrong in the dangerous direction.
+      n = split(str, parts, /[;&|(`]/)
+      seg = (n > 0) ? parts[n] : str
+      gsub(/^[ \t]+/, "", seg)
+      gsub(/[ \t]+$/, "", seg)
+      if (seg == "") return ""
+      n = split(seg, parts, /[ \t]+/)
+      return (n > 0) ? parts[1] : ""
     }
-    function is_break(c) {
-      return (c == " " || c == "\t" || c == ";" || c == "|" || c == "&" ||
-              c == "<" || c == ">" || c == "(" || c == ")")
+    function is_sink(w,   SQ2) {
+      SQ2 = sprintf("%c", 39)
+      # The owner of a heredoc is commonly reached through a substitution:
+      # `gh pr create --body "$(cat <<EOF` has `"$(cat` as the word before the
+      # introducer. Strip the syntax that leads up to the command word, then
+      # its directory, before comparing.
+      gsub(/^[("`$]+/, "", w)
+      gsub(/^["]+/, "", w)
+      gsub("^" SQ2 "+", "", w)
+      gsub(/^[($`]+/, "", w)
+      sub(/^.*\//, "", w)
+      return (w == "cat" || w == "tee" || w == "echo" || w == "printf" || w == "gh")
     }
-    function opens_word(c) {
-      return (c == "" || c == " " || c == "\t" || c == ";" || c == "|" ||
-              c == "&" || c == "(" || c == ")")
-    }
-    BEGIN { hd_n = 0; hd_i = 0; SQ = sprintf("%c", 39) }
+    BEGIN { SQ = sprintf("%c", 39); inhd = 0; buf = ""; delim = ""; tabs = 0 }
     {
       line = $0
-      if (hd_i < hd_n) {
+      sub(/\r$/, "", line)
+
+      if (inhd) {
         cand = line
-        if (hd_tabs[hd_i]) sub(/^\t+/, "", cand)
-        if (cand == hd_delim[hd_i]) { hd_i++; next }
-        if (hd_keep[hd_i]) print line
+        if (tabs) sub(/^\t+/, "", cand)
+        if (cand == delim) { inhd = 0; buf = ""; next }
+        buf = buf line "\n"
         next
       }
 
-      n = length(line)
-      q = ""; prev = ""; cut = 0; nr = 0; first_new = hd_n
-      paren = 0; outer_q = ""
+      # --- is this line a droppable heredoc introducer? --------------------
+      probe = line
+      hits = gsub(/<</, "<<", probe)
+      if (hits == 1 && line !~ /[|>]/ &&
+          match(line, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*$/)) {
+        intro = substr(line, RSTART)
+        owner = owner_word(substr(line, 1, RSTART - 1))
+        if (is_sink(owner)) {
+          d = intro
+          sub(/^<</, "", d)
+          tabs = 0
+          if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
+          gsub(/^["]|["][ \t]*$/, "", d)
+          gsub(/[ \t]+$/, "", d)
+          if (d != "") { inhd = 1; delim = d; buf = "" }
+        }
+      }
+      # The same shape with a single-quoted delimiter. Written separately
+      # because embedding an apostrophe in this program would end it.
+      if (!inhd && hits == 1 && line !~ /[|>]/ &&
+          match(line, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*$")) {
+        intro = substr(line, RSTART)
+        owner = owner_word(substr(line, 1, RSTART - 1))
+        if (is_sink(owner)) {
+          d = intro
+          sub(/^<</, "", d)
+          tabs = 0
+          if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
+          gsub(SQ, "", d)
+          gsub(/[ \t]+$/, "", d)
+          if (d != "") { inhd = 1; delim = d; buf = "" }
+        }
+      }
+
+      # --- remove a comment, tracking quotes and backslash escapes ---------
+      n = length(line); q = ""; cut = 0
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1)
-        if (q != "") {
-          # `$(` inside a double-quoted string opens code again. This is the
-          # shape almost every PR body and commit message takes:
-          #   gh pr create --body "$(cat <<EOF ... EOF)"
-          # Without this, the heredoc introducer is inside quotes, no heredoc is
-          # recorded, and the body lines are read as commands — which is exactly
-          # how writing the issue that asked for this fix got refused three times.
-          if (q == "\"" && c == "$" && substr(line, i + 1, 1) == "(") {
-            outer_q = q; q = ""; paren = 1; i++; prev = "("
-            continue
-          }
-          if (c == q) q = ""
-          prev = c
-          continue
+        if (c == "\\" && q != SQ) { i++; continue }
+        if (q != "") { if (c == q) q = ""; continue }
+        if (c == "\"" || c == SQ) { q = c; continue }
+        if (c == "#") {
+          prev = (i == 1) ? "" : substr(line, i - 1, 1)
+          if (prev == "" || prev == " " || prev == "\t" || prev == ";" ||
+              prev == "|" || prev == "&" || prev == "(" || prev == ")") { cut = i; break }
         }
-        if (paren > 0) {
-          if (c == "(") paren++
-          else if (c == ")") {
-            paren--
-            if (paren == 0) { q = outer_q; outer_q = ""; prev = c; continue }
-          }
-        }
-        if (c == "\"" || c == SQ) { q = c; prev = c; continue }
-        if (c == "#" && opens_word(prev)) { cut = i; break }
-        if (c == "<" && substr(line, i + 1, 1) == "<" && substr(line, i + 2, 1) != "<") {
-          j = i + 2; tabs = 0; dq = ""; word = ""
-          if (substr(line, j, 1) == "-") { tabs = 1; j++ }
-          while (substr(line, j, 1) == " " || substr(line, j, 1) == "\t") j++
-          cc = substr(line, j, 1)
-          if (cc == "\"" || cc == SQ) { dq = cc; j++ }
-          while (j <= n) {
-            cc = substr(line, j, 1)
-            if (dq != "") { if (cc == dq) { j++; break } }
-            else if (is_break(cc)) break
-            word = word cc
-            j++
-          }
-          if (word != "") {
-            hd_delim[hd_n] = word; hd_tabs[hd_n] = tabs; hd_keep[hd_n] = 0; hd_n++
-          }
-          nr++; rs[nr] = i; re[nr] = j - 1
-          i = j - 1
-          prev = " "
-          continue
-        }
-        prev = c
       }
-
-      end = (cut > 0) ? cut - 1 : n
-      out = ""
-      pos = 1
-      for (k = 1; k <= nr; k++) {
-        if (rs[k] > end) break
-        out = out substr(line, pos, rs[k] - pos) " "
-        pos = re[k] + 1
-        if (pos > end + 1) pos = end + 1
-      }
-      out = out substr(line, pos, end - pos + 1)
-
-      if (hd_n > first_new) {
-        tmp = out
-        gsub(/["]/, " ", tmp)
-        gsub(SQ, " ", tmp)
-        # Split on the characters that separate a command word from the syntax
-        # around it, so `$(bash` and `OUT=$(sh` are seen as bash and sh.
-        m = split(tmp, parts, /[ \t()`;|&]+/)
-        keep = 0
-        for (k = 1; k <= m; k++) if (is_interp(parts[k])) { keep = 1; break }
-        if (keep) for (k = first_new; k < hd_n; k++) hd_keep[k] = 1
-      }
-      print out
+      print (cut > 0) ? substr(line, 1, cut - 1) : line
     }
-  ')
+    END {
+      # An unterminated heredoc keeps everything it swallowed. Dropping it would
+      # turn one mis-recognised introducer into a hook that sees nothing at all.
+      if (inhd && buf != "") printf "%s", buf
+    }
+  ') || {
+    echo "BLOCKED: could not scan the command (awk failed) — refusing rather than guessing." >&2
+    exit 2
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -307,8 +344,44 @@ _bd_git_parse() {
 # — .github/workflows/ci.yml, .decisions/issue-749.md — is an ordinary path, and
 # reading it as the whole tree was the defect reported in issue #167.
 _bd_is_whole_tree() {
-  case "$1" in
-    .|./|:/|:/.) return 0 ;;
+  local p="$1"
+  # Normalise before comparing. `./.` and `.//` are the same tree as `.`, and
+  # comparing against a list of literals missed both.
+  while :; do
+    case "$p" in
+      */) p="${p%/}"; [ -z "$p" ] && p="/" ;;
+      ./*) p="${p#./}" ;;
+      *//*) p="$(printf '%s' "$p" | sed 's#//*#/#g')" ;;
+      *) break ;;
+    esac
+  done
+  case "$p" in
+    ''|.|/|:|:/|:/.|:/\*|'*'|'**'|:\(top\)|':(top)'|'.') return 0 ;;
+  esac
+  # An absolute path naming the repository root is the whole tree too.
+  if [ "${p#/}" != "$p" ] && command -v git >/dev/null 2>&1; then
+    local top
+    top=$(git rev-parse --show-toplevel 2>/dev/null || true)
+    if [ -n "$top" ] && [ "$p" = "$top" ]; then return 0; fi
+  fi
+  return 1
+}
+
+# git accepts any unambiguous abbreviation of a long option: `git reset --har`
+# performs a hard reset and `git clean --forc` deletes untracked files. Matching
+# the full spelling only is how both got through. The rm rule already matched
+# prefixes; this brings the git rules onto the same footing.
+# _bd_is_opt <token> <full-option> <shortest-accepted>
+_bd_is_opt() {
+  local tok="${1%%=*}" full="$2" min="$3"
+  case "$tok" in
+    --*) ;;
+    *) return 1 ;;
+  esac
+  [ "${#tok}" -ge "${#min}" ] || return 1
+  [ "${#tok}" -le "${#full}" ] || return 1
+  case "$full" in
+    "$tok"*) return 0 ;;
   esac
   return 1
 }
@@ -392,6 +465,39 @@ _rm_segment_is_destructive() {
 # Strip comments and heredoc bodies once; every rule below reads BD_CODE.
 _bd_strip_noncode "$COMMAND"
 
+# An interpreter handed its script as a single quoted argument — `bash -c "git
+# reset --hard"`, `sh -c '...'`, `ssh host "..."`, `eval "..."` — is one word to
+# the tokeniser, so no rule could see the command inside it. Append the contents
+# of those arguments as further lines, which the segmenting below then treats as
+# ordinary commands. One level deep is enough for every real form; deeper
+# nesting arrives here as its own quoted argument on the next pass anyway.
+_bd_expand_interpreter_args() {
+  local seg tok i n found
+  local -a TOK=()
+  local extra=""
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+    case "$seg" in *[\'\"]*) ;; *) continue ;; esac
+    _rm_tokenise "$seg"
+    n=${#TOK[@]}
+    found=0
+    for ((i = 0; i < n; i++)); do
+      tok="${TOK[i]}"
+      if [ "${#tok}" -le 4096 ] && _bd_is_interpreter "${tok#\\}"; then found=1; continue; fi
+      if [ "$found" = "1" ]; then
+        case "$tok" in
+          *[[:space:]]*) extra="$extra
+$tok" ;;
+        esac
+      fi
+    done
+  done <<BD_EXPAND_EOF
+$BD_CODE
+BD_EXPAND_EOF
+  if [ -n "$extra" ]; then BD_CODE="$BD_CODE$extra"; fi
+}
+_bd_expand_interpreter_args
+
 RM_DESTRUCTIVE=0
 while IFS= read -r SEG; do
   [ -z "$SEG" ] && continue
@@ -422,13 +528,17 @@ while IFS= read -r SEG; do
   [ -z "$SEG" ] && continue
   _bd_git_parse "$SEG" || continue
   [ "$GIT_SUB" = "branch" ] || continue
-  BR_BIG_D=0; BR_SMALL_D=0; BR_FORCE=0; BR_TARGETS=""
+  BR_BIG_D=0; BR_SMALL_D=0; BR_FORCE=0; BR_TARGETS=""; BR_SKIP=0
   for ((BI = 0; BI < GIT_ARGN; BI++)); do
     BTOK="${GIT_ARGS[BI]}"
-    if _bd_is_redirection "$BTOK"; then continue; fi
+    if [ "$BR_SKIP" = "1" ]; then BR_SKIP=0; continue; fi
     case "$BTOK" in
-      --delete) BR_SMALL_D=1; continue ;;
-      --force) BR_FORCE=1; continue ;;
+      '>'|'>>'|'<'|[0-9]'>'|[0-9]'>>') BR_SKIP=1; continue ;;
+    esac
+    if _bd_is_redirection "$BTOK"; then continue; fi
+    if _bd_is_opt "$BTOK" "--delete" "--d"; then BR_SMALL_D=1; continue; fi
+    if _bd_is_opt "$BTOK" "--force" "--f"; then BR_FORCE=1; continue; fi
+    case "$BTOK" in
       --*) continue ;;
       -?*)
         case "$BTOK" in *D*) BR_BIG_D=1 ;; esac
@@ -571,17 +681,22 @@ while IFS= read -r SEG; do
 
   case "$GIT_SUB" in
     checkout)
+      # No `--` is required. `git checkout .` discards every working-tree change
+      # exactly as `git checkout -- .` does, and the old regex demanded the
+      # separator, so the commoner and shorter spelling went through. A
+      # whole-tree pathspec is never a branch name, so `git checkout main` and
+      # `git checkout -b feature/x` are unaffected.
       SEEN_SEP=0; WHOLE=0
       for ((GI = 0; GI < GIT_ARGN; GI++)); do
         GTOK="${GIT_ARGS[GI]}"
         _bd_is_redirection "$GTOK" && continue
         if [ "$SEEN_SEP" = "0" ]; then
           [ "$GTOK" = "--" ] && { SEEN_SEP=1; continue; }
-          continue
+          case "$GTOK" in -*) continue ;; esac
         fi
         _bd_is_whole_tree "$GTOK" && WHOLE=1
       done
-      if [ "$SEEN_SEP" = "1" ] && [ "$WHOLE" = "1" ]; then
+      if [ "$WHOLE" = "1" ]; then
         echo "BLOCKED: Discarding all changes detected. Use selective checkout or stash instead." >&2
         exit 2
       fi
@@ -595,9 +710,12 @@ while IFS= read -r SEG; do
         if [ "$SEEN_SEP" = "0" ]; then
           case "$GTOK" in
             --) SEEN_SEP=1; continue ;;
-            --staged) STAGED=1; continue ;;
-            --worktree) WORKTREE=1; continue ;;
+            --source=*) continue ;;
             --source|-s) GI=$((GI + 1)); continue ;;
+          esac
+          if _bd_is_opt "$GTOK" "--staged" "--st"; then STAGED=1; continue; fi
+          if _bd_is_opt "$GTOK" "--worktree" "--w"; then WORKTREE=1; continue; fi
+          case "$GTOK" in
             --*) continue ;;
             -?*)
               case "$GTOK" in *S*) STAGED=1 ;; esac
@@ -616,7 +734,7 @@ while IFS= read -r SEG; do
 
     reset)
       for ((GI = 0; GI < GIT_ARGN; GI++)); do
-        if [ "${GIT_ARGS[GI]}" = "--hard" ]; then
+        if _bd_is_opt "${GIT_ARGS[GI]}" "--hard" "--ha"; then
           echo "BLOCKED: Hard reset detected. This discards uncommitted work. Run manually if intended." >&2
           exit 2
         fi
@@ -624,15 +742,19 @@ while IFS= read -r SEG; do
       ;;
 
     clean)
+      exit_clean=0
       for ((GI = 0; GI < GIT_ARGN; GI++)); do
         GTOK="${GIT_ARGS[GI]}"
         _bd_is_redirection "$GTOK" && continue
-        case "$GTOK" in
-          --force) exit_clean=1 ;;
-          --*) continue ;;
-          -?*) case "$GTOK" in *f*) exit_clean=1 ;; *) continue ;; esac ;;
-          *) continue ;;
-        esac
+        if _bd_is_opt "$GTOK" "--force" "--f"; then
+          exit_clean=1
+        else
+          case "$GTOK" in
+            --*) continue ;;
+            -?*) case "$GTOK" in *f*) exit_clean=1 ;; *) continue ;; esac ;;
+            *) continue ;;
+          esac
+        fi
         if [ "${exit_clean:-0}" = "1" ]; then
           echo "BLOCKED: Force clean detected. This removes untracked files permanently. Run manually if intended." >&2
           exit 2

@@ -87,18 +87,43 @@ describes for the git matchers.
 | Comment stripping | Strip everything after any `#`, including a `#` inside a quoted path or a URL fragment | A destructive command whose argument contains `#` must still block |
 | restore semantics | Treat `--staged` as making every restore safe, so `--staged --worktree .` is allowed | Both spellings in the same run, with opposite expected verdicts |
 
+## Findings from review, and the rework they caused
+
+Three independent reviews of the first implementation found the same thing from
+three angles: it **allowed destructive commands that `main` blocks**. A
+differential harness over 65 commands measured 34 such cases. The cause was one
+design mistake — the stripper removed spans it was not certain about, and every
+rule reads only what survives stripping, so each mis-read span became a command
+nobody examined.
+
+The stripper is rebuilt around the opposite rule: remove only what is
+unambiguously text, and keep anything uncertain. A heredoc body is removed only
+when the line ends with the introducer, exactly one introducer is on it, the
+delimiter is a plain optionally-quoted word, the line carries no pipe and no
+redirection, the terminator is actually found, and the command that owns the
+heredoc is a text sink. An unterminated heredoc keeps every line it consumed.
+A here-string, a shift inside arithmetic, a bare arithmetic command and a `let`
+assignment are no longer read as introducers.
+
+The owner is the command word of the innermost command, not the word before the
+introducer and not the first word of the line. The first reading gets
+`tee notes.txt` wrong; the second gets `echo x && bash` wrong in the dangerous
+direction.
+
+Also closed, each verified against real git: abbreviated long options (git
+accepts any unambiguous prefix, so the short spellings performed a hard reset
+and deleted untracked files while passing); six further whole-tree pathspec
+spellings; the whole-tree checkout written without the separator; a command
+passed as a quoted argument to an interpreter; CRLF, which the two tokeniser
+paths read differently; and a missing awk, which made the hook exit 127 instead
+of blocking.
+
+The harness now reports 65 of 65 correct and zero unsafe. Run against `main` it
+reports 11 unsafe and 9 otherwise wrong, which is the bar this had to clear.
+
 ## Stranger Test
 
 PASS — 6 tasks reviewed.
-
-
-
-
-
-
-
-
-
 
 
 
