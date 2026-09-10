@@ -1,5 +1,65 @@
 # Changelog
 
+## 3.3.1 (2026-09-10)
+
+Four macOS defects, three of which had shipped. Every one was invisible on Linux, and every
+workflow ran on Linux only — so this release is really about the CI job that found them.
+
+### Fixed: the task-completion gate deadlocked on macOS
+
+`record-quality-run.sh` recorded nothing under bash 3.2: a quoted-replacement substitution left
+literal `"` characters inside the regex, so the match never fired. Correct under bash 5.2, and
+invisible to both `bash -n` and shellcheck.
+
+The consequence was not a quiet no-op. After a passing test run and one edit, the gate blocked
+with "no quality command has run this session" — and **re-running the suite could not clear it**,
+because the recording was the broken step. The only in-session exits were setting
+`testing.taskCompletionGate` to `warn` or `off`. Both v4.9.0 and v4.10.0 carry this.
+
+### Fixed: one edited file reported as two
+
+`flow-quality-ledger.sh` built its changed-file list from ledger paths (logical, from `$PWD`) and
+`git status` paths (physical, from `git rev-parse --show-toplevel`), then de-duplicated by string.
+On macOS `/var` is a symlink to `/private/var`, so one file under `TMPDIR` arrived as both
+spellings and neither collapsed. Both sides are now canonicalised for the de-duplication key only;
+the reported path keeps the spelling the operator recognises.
+
+### Fixed: settings migration could not run on stock macOS
+
+`flow-migrate-settings.sh` locked with `flock`, which is util-linux and which macOS does not ship.
+The migration silently never applied, and the error blamed a lock *timeout* — sending anyone
+debugging it after contention rather than after a missing binary. Replaced with a `mkdir` advisory
+lock, which is atomic on any POSIX filesystem and needs no external tool. The message now
+distinguishes a held lock from a missing tool, because those need opposite responses.
+
+### Fixed: the FlowGoal gate stopped gating in silence
+
+`flow-goal-evaluator.sh` fails open on five conditions — `jq`, `python3`, the `claude` CLI, PyYAML
+and `timeout` — each emitting `{"decision":"approve"}`. Failing open is deliberate: a missing
+optional dependency must not wedge a session. Doing it with no signal is not. `flow-goal-stop.sh`
+had warned once per dependency since it was written; the evaluator never did, so an operator
+without PyYAML had a gate that approved everything and said nothing. It now uses the same sentinel.
+
+`_journal_atomic.py` and `_flow_evidence_bundle.py` also guard their `yaml` import and name the
+package and the install command. The dependency itself remains undeclared — no manifest is tracked
+— which is issue #175 and a decision, not a bug fix.
+
+### Added: macOS CI, and hooks in the path filter
+
+`flow-tests.yml` now runs a `ubuntu-latest` + `macos-latest` matrix with `fail-fast: false`, and
+prints the shell version and checkout-root length so a bash-3.2 construct or a path-length failure
+is legible rather than mysterious. It found two of the four defects above on its first run.
+
+`plugins/flow/hooks/**` is added to both path filters. It was absent, so changing a blocking
+`PreToolUse` hook did not run the suite — the highest-consequence shell in the plugin was the
+shell whose changes were untested.
+
+### Note on the test suite's own numbers
+
+The suite's total depends on the length of your checkout path: 2337 assertions pass from a short
+root, and one fails from a root beyond roughly 200 characters, because a test asserts on a cell
+truncated at 199. The figure is honest for ordinary checkouts and is not unconditional.
+
 ## 3.3.0 (2026-09-09)
 
 Fewer words, loaded unconditionally, checked by machine, then measured. Two findings drove this
