@@ -90,19 +90,19 @@ _fjs_write_goal "$GOAL"
 # jsonschema from sys.modules.
 
 CUSTOM_DIR=$(_fjs_mkdir)
-cat > "$CUSTOM_DIR/sitecustomize.py" <<'PYEOF'
-# Test stub — blocks `import jsonschema` so we can exercise the WARN path.
-import sys, importlib.abc, importlib.machinery
-class _BlockJsonschema(importlib.abc.MetaPathFinder, importlib.abc.Loader):
-    def find_spec(self, fullname, path, target=None):
-        if fullname == "jsonschema" or fullname.startswith("jsonschema."):
-            return importlib.machinery.ModuleSpec(fullname, self)
-        return None
-    def create_module(self, spec):
-        raise ImportError(f"test stub: {spec.name} blocked")
-    def exec_module(self, module):
-        raise ImportError(f"test stub: {module} blocked")
-sys.meta_path.insert(0, _BlockJsonschema())
+# Block `import jsonschema` by SHADOWING it on PYTHONPATH, not via
+# sitecustomize.py. sitecustomize is only honoured when the interpreter's
+# `site` processing picks it up, and on the macos-latest runner it did not —
+# the stub never loaded, the real jsonschema imported, validation succeeded,
+# and the WARN this test exists to check was never printed. The test then
+# failed for a reason that had nothing to do with the code under test.
+#
+# A module of this name earlier on sys.path is honoured by any interpreter
+# that honours PYTHONPATH at all, which is the condition the rest of the
+# harness already depends on.
+cat > "$CUSTOM_DIR/jsonschema.py" <<'PYEOF'
+# Test stub — shadows the real jsonschema so the helper takes its WARN path.
+raise ImportError("test stub: jsonschema blocked")
 PYEOF
 
 # WARN dedup uses per-day file sentinel at $TMPDIR/. Isolate TMPDIR
