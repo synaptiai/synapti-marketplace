@@ -1,10 +1,15 @@
 name: "CodeQL"
 
-# Advanced setup (replaces GitHub's CodeQL "default setup"). Default setup's
-# checkout did not authenticate the git submodule fetch, so the python analysis
-# died at "Checkout repository" — the repo's only python lives in the
-# `plugins/agent-capability-standard` submodule. This workflow checks the
-# submodule out explicitly with credentials so CodeQL can scan it.
+# Advanced setup (replaces GitHub's CodeQL "default setup"), scanning this
+# repository's own code.
+#
+# This previously checked out the `plugins/agent-capability-standard` git
+# submodule so the python analysis had something to scan. The marketplace now
+# fetches that plugin from its own repository (see
+# `.claude-plugin/marketplace.json`), which runs its own CodeQL python analysis
+# against its current code; scanning it from here only ever covered whatever
+# commit the submodule pointer happened to sit on. The python analysis stays —
+# it now scans this repository's own python, under `plugins/flow/`.
 on:
   push:
     branches: [main]
@@ -32,13 +37,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          # The repo's python lives in a submodule; CodeQL needs it present to
-          # scan. persist-credentials keeps the token so the submodule fetch
-          # authenticates (the default-setup checkout failed here with
-          # "could not read Username for https://github.com").
-          submodules: recursive
-          persist-credentials: true
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
@@ -46,8 +44,7 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
           # Default query suite — matches the prior default-setup config
-          # (query_suite: default). This change fixes the submodule checkout
-          # only; it does not widen scan scope.
+          # (query_suite: default).
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

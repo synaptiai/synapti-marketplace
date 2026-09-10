@@ -4,7 +4,9 @@
     "project": {
       "name": "Synapti Plugin Marketplace",
       "mission": "A curated Claude Code plugin marketplace. Distributes eight plugins of skills, commands, agents, and safety hooks that give Claude Code operators reusable harnesses for GitHub development workflow, organizational design, content analysis, prompt engineering, and evidence-first documentation.",
-      "sources": ["./"],
+      "sources": [
+        "./"
+      ],
       "outputRoot": "docs/dossier",
       "versionOrCommit": "auto",
       "type": "mixed"
@@ -13,14 +15,26 @@
       "deliveryMode": "full",
       "dueDiligenceContext": "Self-assessment of an open-source marketplace against its own documentation standard. Decision maker: the repository owner. Materiality threshold: anything an installing operator would be misled by. Horizon: immediate.",
       "stakeholders": [
-        { "name": "Daniel Bentes", "role": "Owner and sole maintainer", "audience": "internal-eng" },
-        { "name": "unknown", "role": "Installing Claude Code operator", "audience": "external-user" },
-        { "name": "unknown", "role": "Contributor", "audience": "external-contributor" }
+        {
+          "name": "Daniel Bentes",
+          "role": "Owner and sole maintainer",
+          "audience": "internal-eng"
+        },
+        {
+          "name": "unknown",
+          "role": "Installing Claude Code operator",
+          "audience": "external-user"
+        },
+        {
+          "name": "unknown",
+          "role": "Contributor",
+          "audience": "external-contributor"
+        }
       ],
       "constraints": [
         "no production telemetry — the marketplace has no runtime and emits no metrics",
         "no install analytics — download and install counts are not observable from the repository",
-        "one plugin (agent-capability-standard) is a git submodule and one (prompt-decorators) is an external git-subdir source; neither is inspected in depth from this repository",
+        "two plugins (agent-capability-standard, prompt-decorators) are sourced from external repositories rather than this one; neither is inspected in depth from here",
         "assessment runs on the feature/dossier-documentation-plugin branch, not on main"
       ],
       "regulatory": [],
@@ -46,8 +60,16 @@
       "headerStyle": "internal-v1"
     },
     "verification": {
-      "passes": ["A", "B", "C"],
-      "passModels": { "A": "inherit", "B": "inherit", "C": "inherit" },
+      "passes": [
+        "A",
+        "B",
+        "C"
+      ],
+      "passModels": {
+        "A": "inherit",
+        "B": "inherit",
+        "C": "inherit"
+      },
       "claimSample": {
         "minRows": 30,
         "percent": 10,
@@ -67,7 +89,10 @@
       "minScore": 95,
       "minDimensionPercent": 80,
       "requireAllConditions": true,
-      "failOn": ["Critical", "High"]
+      "failOn": [
+        "Critical",
+        "High"
+      ]
     },
     "refresh": {
       "stalenessDays": 90
@@ -99,7 +124,9 @@
         "plugins/*/schema.json",
         "plugins/*/hooks/hooks.json"
       ],
-      "writeAllowlist": ["docs/dossier/**"],
+      "writeAllowlist": [
+        "docs/dossier/**"
+      ],
       "expectedPluginVersion": "1.0.0"
     },
     "local": {

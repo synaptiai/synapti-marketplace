@@ -47,3 +47,8 @@ plugins/flow/**/__pycache__/
 # Per-run dossier scope file. It lives inside the tracked output root but is
 # ephemeral run state, and the enforcement hooks key off its mere existence.
 **/00-control/.scope.json
+
+# Local checkout of the agent-capability-standard plugin repo.
+# The marketplace fetches it from its own repo (see .claude-plugin/marketplace.json);
+# this directory must never be committed as a gitlink again.
+/plugins/agent-capability-standard/
