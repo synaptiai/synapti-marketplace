@@ -139,7 +139,12 @@
     },
     {
       "name": "agent-capability-standard",
-      "source": "./plugins/agent-capability-standard",
+      "source": {
+        "source": "github",
+        "repo": "synaptiai/agent-capability-standard",
+        "ref": "main",
+        "sha": "9e2f65b087cd3d92ca01a4073a7da26489dca50c"
+      },
       "description": "Grounded Agency: 36 atomic capabilities with typed contracts, safety-by-construction, and grounded reasoning for reliable AI agents",
       "version": "1.2.0",
       "author": {
