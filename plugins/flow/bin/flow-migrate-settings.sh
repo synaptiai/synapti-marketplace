@@ -114,7 +114,8 @@ fi
 
 # Atomic write: tmpfile in the SAME directory as the target (so the final mv is
 # a same-filesystem atomic rename, not a cross-FS copy+unlink), validate, then
-# mv. flock guards the read-modify-write window against concurrent writers.
+# mv. An advisory lock guards the read-modify-write window against concurrent
+# writers; see the mkdir lock below for why it is not flock.
 TMP=$(mktemp "${SETTINGS_DIR}/.flow-migrate-settings.XXXXXX" 2>/dev/null) || {
   echo "flow-migrate-settings.sh: mktemp failed in $SETTINGS_DIR" >&2; exit 2; }
 LOCK="${SETTINGS}.lock"
@@ -124,9 +125,23 @@ LOCK="${SETTINGS}.lock"
 if [ -L "$LOCK" ]; then
   echo "flow-migrate-settings.sh: refusing — $LOCK is a symlink" >&2; exit 2
 fi
-trap 'rm -f "$TMP" "$LOCK"' EXIT INT TERM
+# Advisory lock via mkdir, not flock. `flock` is util-linux and macOS does not
+# ship it, so on a stock Mac the lock silently failed and the migration never
+# applied — while the message blamed a timeout, sending anyone debugging it
+# after contention instead of after a missing binary (#183). mkdir(2) is
+# atomic on every POSIX filesystem and needs no external tool.
+LOCKDIR="${LOCK}.d"
+trap 'rm -f "$TMP" "$LOCK"; rmdir "$LOCKDIR" 2>/dev/null' EXIT INT TERM
+_flow_waited=0
+until mkdir "$LOCKDIR" 2>/dev/null; do
+  if [ "$_flow_waited" -ge 10 ]; then
+    echo "flow-migrate-settings.sh: $LOCKDIR is held by another process — $SETTINGS unchanged" >&2
+    exit 2
+  fi
+  sleep 1
+  _flow_waited=$((_flow_waited + 1))
+done
 (
-  flock -x -w 10 9 || { echo "flow-migrate-settings.sh: failed to acquire $LOCK (timeout)" >&2; exit 2; }
   # Re-check the symlink under the lock, immediately before the read+rename, to
   # close the TOCTOU window since the initial check. `mv` replaces the name via
   # rename(2) (it does NOT write through a symlink), but a symlink swapped in
@@ -144,10 +159,11 @@ trap 'rm -f "$TMP" "$LOCK"' EXIT INT TERM
   if ! mv "$TMP" "$SETTINGS"; then
     echo "flow-migrate-settings.sh: mv failed — $SETTINGS unchanged" >&2; exit 2
   fi
-) 9>"$LOCK"
+)
 RC=$?
 trap - EXIT INT TERM
 rm -f "$TMP" "$LOCK"
+rmdir "$LOCKDIR" 2>/dev/null
 [ "$RC" -ne 0 ] && exit 2
 
 echo "MIGRATE_APPLIED=1"

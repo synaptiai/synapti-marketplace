@@ -477,11 +477,34 @@ for i, (etype, _at, _path, run) in enumerate(entries):
         last_pass_run = run
 
 changed = []
+def canonical(path):
+    """One spelling per file, for de-duplication only.
+
+    Ledger `file_change` paths are LOGICAL (they come from $PWD or a caller
+    argument); `git status` paths are PHYSICAL (built from `git rev-parse
+    --show-toplevel`). On macOS /var is a symlink to /private/var, so one
+    edited file under TMPDIR arrives as both /var/folders/... and
+    /private/var/folders/... and a string-keyed `seen` set never collapsed
+    them — the operator was told `2 file(s) changed` for one edit.
+
+    realpath is used for the KEY only. The reported path keeps its original
+    spelling, which is the one the operator recognises."""
+    try:
+        return os.path.realpath(path)
+    except (OSError, TypeError, ValueError):
+        return path
+
+
 seen = set()
 for etype, _at, path, _run in entries[last_pass_idx + 1:]:
-    if etype != "file_change" or path in seen or ignored(path):
+    # Type first: a non-file_change entry carries path=None, and
+    # canonicalising it raises before the guard that would have skipped it.
+    if etype != "file_change" or ignored(path):
         continue
-    seen.add(path)
+    key = canonical(path)
+    if key in seen:
+        continue
+    seen.add(key)
     changed.append(path)
 
 
@@ -529,9 +552,10 @@ if last_pass_run is not None and last_pass_run.digest and current_digest:
     else:
         worktree = "changed"
         for path in git_status_paths(cwd):
-            if path in seen or ignored(path):
+            key = canonical(path)
+            if key in seen or ignored(path):
                 continue
-            seen.add(path)
+            seen.add(key)
             changed.append(path)
 
 dirty = bool(changed) or worktree == "changed"

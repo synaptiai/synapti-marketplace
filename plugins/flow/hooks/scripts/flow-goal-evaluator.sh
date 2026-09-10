@@ -35,10 +35,25 @@ _flow_cleanup_tmpfiles() {
 }
 trap _flow_cleanup_tmpfiles EXIT INT TERM
 
-command -v jq      >/dev/null 2>&1 || { echo '{"decision":"approve","reason":"jq unavailable"}'; exit 0; }
-command -v python3 >/dev/null 2>&1 || { echo '{"decision":"approve","reason":"python3 unavailable"}'; exit 0; }
-command -v claude  >/dev/null 2>&1 || { echo '{"decision":"approve","reason":"claude CLI unavailable; evaluator-loop requires it"}'; exit 0; }
-python3 -c "import yaml" >/dev/null 2>&1 || { echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
+# Every branch below FAILS OPEN: the evaluator approves the stop it was
+# registered to evaluate. That is deliberate — a missing optional dependency
+# must not wedge a session — but it means the gate silently stops gating, so
+# each one warns on stderr the first time it fires. The sentinel keeps a
+# degraded machine from printing the same line on every stop.
+# Matches flow-goal-stop.sh, which has warned since it was written; this
+# script did not, and an operator whose interpreter lacked PyYAML had a
+# FlowGoal gate that approved everything and said nothing.
+_flow_warned_once() {
+  sentinel="${HOME}/.claude/flow-degraded-${1}"
+  [ -e "$sentinel" ] && return 0
+  mkdir -p "$(dirname "$sentinel")" 2>/dev/null && : > "$sentinel" 2>/dev/null
+  return 1
+}
+
+command -v jq      >/dev/null 2>&1 || { _flow_warned_once jq      || echo "flow: jq unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"jq unavailable"}'; exit 0; }
+command -v python3 >/dev/null 2>&1 || { _flow_warned_once python3 || echo "flow: python3 unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"python3 unavailable"}'; exit 0; }
+command -v claude  >/dev/null 2>&1 || { _flow_warned_once claude  || echo "flow: claude CLI unavailable — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"claude CLI unavailable; evaluator-loop requires it"}'; exit 0; }
+python3 -c "import yaml" >/dev/null 2>&1 || { _flow_warned_once pyyaml || echo "flow: PyYAML unavailable (python3 -m pip install --user --break-system-packages pyyaml) — FlowGoal enforcement disabled" >&2; echo '{"decision":"approve","reason":"PyYAML unavailable"}'; exit 0; }
 
 # Resolve the timeout binary. GNU coreutils ships `timeout`; macOS does not
 # ship it by default — `brew install coreutils` provides `gtimeout`. Without

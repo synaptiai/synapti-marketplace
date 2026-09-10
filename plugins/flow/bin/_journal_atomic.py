@@ -48,7 +48,15 @@ import os
 import sys
 import tempfile
 
-import yaml
+try:
+    import yaml  # PyYAML
+except ImportError:  # pragma: no cover - environment-dependent
+    raise SystemExit(
+        "flow: PyYAML is required by flow journal and run-state writes but is not installed.\n"
+        "  python3 -m pip install --user --break-system-packages pyyaml\n"
+        "Callers normally preflight this; reaching here means the module was\n"
+        "imported directly. No manifest declares the dependency (see issue #175)."
+    )
 
 
 class JournalAtomicError(RuntimeError):

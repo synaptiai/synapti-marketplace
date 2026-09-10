@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'plugins/flow/bin/**'
+      - 'plugins/flow/hooks/**'
       - 'plugins/flow/commands/**'
       - 'plugins/flow/references/**'
       - 'plugins/flow/skills/**'
@@ -14,6 +15,7 @@ on:
       - main
     paths:
       - 'plugins/flow/bin/**'
+      - 'plugins/flow/hooks/**'
       - 'plugins/flow/commands/**'
       - 'plugins/flow/references/**'
       - 'plugins/flow/skills/**'
@@ -25,8 +27,18 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # macOS is not decoration. Both published releases carry defects that only
+    # appear there — a bash 3.2 parameter substitution that recorded nothing
+    # (#179) and a logical-vs-physical path comparison under /var (#179 again).
+    # Neither is visible on Linux, and every workflow ran on Linux only, so
+    # both shipped. macOS also pins bash 3.2, which is the floor the plugins
+    # claim to support.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -62,6 +74,13 @@ jobs:
           awk --version 2>/dev/null | head -1 || echo "awk: BSD/POSIX (no --version)"
           python3 -c "import yaml; print('PyYAML', yaml.__version__)"
           python3 -c "import jsonschema; print('jsonschema', jsonschema.__version__)"
+
+      - name: Report the shell the suite will run under
+        # macOS ships bash 3.2 as /bin/bash. Printing it makes a
+        # bash-4-only construct's failure legible instead of mysterious.
+        run: |
+          /bin/bash --version | head -1
+          echo "checkout root length: ${#GITHUB_WORKSPACE}"
 
       - name: Run flow tests
         run: plugins/flow/tests/run.sh
