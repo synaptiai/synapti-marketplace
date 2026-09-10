@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-10
+
 ### Added
 
 - **Vulnerability-scan evidence ingestion**, citation-only —
@@ -43,6 +45,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   ingestion path directly; the quality scan's output is an artifact only —
   a deliberate, narrower scope, with no evidence-ledger citation and no new
   gate condition for code-quality findings in this release.
+- **Rolling-branch rotation telemetry**, observational only —
+  `bin/dossier-rotation-check.sh` determines whether the rolling documentation
+  branch would currently warrant rotation and records that determination; it
+  never closes a pull request, deletes a branch, or recreates one. The
+  determination is tri-state (`true` / `false` / `unknown`), so an unmeasured
+  branch age is never silently coerced into a confident `false`. Metrics
+  (`age_days`, `accumulated_files`, `accumulated_lines`) are emitted in a
+  stable format in every state — including when rotation is disabled — so an
+  observation period produces usable data before any acting-on-it capability
+  is designed. Wired as an unconditional step in the refresh workflow's
+  `policy` job within its existing `contents: read` / `pull-requests: read`
+  scope, and exposed as `rotation_*` job outputs so the telemetry is queryable
+  across runs. New `dossier.ci.thresholds.rotationMaxAccumulatedLines`
+  setting (default 5000).
 
 ### Fixed
 
@@ -62,6 +78,74 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   already ingested `osv-scanner` output will see previously-`INCONCLUSIVE`
   G19 evaluations (from `vuln-finding-unresolved` rows) become `FAIL` where
   a real, previously-hidden Critical/High finding now resolves correctly.
+
+- **`enforce-allowed-actions.sh`'s action ceiling could be bypassed by
+  disguising the spelling of a denied command.** The boundary anchor tested
+  the command as written, not as bash executes it, so quoting (`"curl"`,
+  `cu''rl`, `cu"r"l`), backslash escaping (`\curl`, `c\url`),
+  backslash-newline continuation, and bash's own ANSI-C quoting (`$'\143url'`,
+  `$'\x63url'`) each ran the denied command for real — eight spellings across
+  six mechanisms, confirmed live, and independent of any wrapper token. A new
+  dequoting pass reverses bash's own quote, escape, and ANSI-C removal before
+  the anchor is tested. One deliberate trade-off is documented in-file and
+  covered by a test: removing a quote mark can bring a boundary character and
+  a denied word into contact when the quote was the entire gap between them.
+  A categorically different residual — brace expansion, parameter-expansion
+  defaults, and command substitution — is confirmed pre-existing, documented
+  in-file, and tracked separately rather than left implicit.
+
+- **`find -exec` bypassed the same action ceiling**, because `find` was not
+  classified as a wrapper command. It now joins `xargs` / `env` / `sudo` /
+  `timeout` in the shared wrapper token list — extending the existing
+  structural mechanism by one command name rather than enumerating flags.
+  Relatedly, a `jq` parse failure in the same hook was indistinguishable from
+  "no command field present"; both allowed the action, contradicting the
+  file's declared fail-closed posture. Parse failure now fails closed.
+
+- **A same-named fork pull request could hijack the docs-refresh publish
+  flow.** `dossier-policy.sh`'s existing-PR lookup queried by head branch
+  without scoping to the repository, so a fork's branch of the same name
+  matched. Now filtered on cross-repository origin. The same lookup also
+  swallowed its own exit code, making a transient API failure
+  indistinguishable from a genuine no-PR result — and the publish job reads
+  that emptiness as license to delete and recreate the documentation branch,
+  which is exactly the steady state whenever a real docs PR is open. A
+  failure is now reported distinctly and the publish job refuses the recreate
+  path when it is set.
+
+- **The test suite's temporary-directory guard could not abort its caller.**
+  `_dossier_safe_mktemp_dir` exits 2 on any internal failure precisely so a
+  caller can never receive an empty path — but `exit 2` inside `$(...)` kills
+  only the subshell, and `cd ""` returns 0 in bash, so an unchecked caller
+  proceeded against the real working directory instead of its sandbox. This
+  corrupted this repository's own working tree twice during development. A
+  new `_dossier_require_mktemp_dir` does the capture-and-check once as a plain
+  function call; 110 unguarded call sites across nine test files were
+  converted, along with two wrapper functions that reintroduced the same bug
+  one level up and an out-parameter handoff that reintroduced it a second
+  time. A static lint now fails the suite if any future helper reintroduces
+  the pattern.
+
+- **`dossier-rotation-check.sh` could not reach a private repository.** Its
+  `git ls-remote` and `git fetch` calls against `origin` ran unauthenticated,
+  so on a private repository the branch age silently degraded to `unknown`
+  rather than surfacing a configuration problem — even though the token was
+  already present in the step's environment. Git's network calls now
+  authenticate with it, using Basic auth (Bearer is rejected by GitHub,
+  verified live against a real private repository), passed through
+  per-subprocess environment variables rather than a command-line flag, and
+  scoped to origin's own scheme and host so the credential is never sent to
+  any other host the invocation happens to touch. Non-HTTP(S) origins fall
+  through unauthenticated.
+
+- **A disclosure-gate test passed for the wrong reason.** Its fixture was
+  written to the wrong directory, so the heredoc redirect failed silently, the
+  register was never written, and the scan fell through the unrelated "no
+  register present" path. Correcting the path alone was not enough: the probe
+  sentence independently tripped the prohibited-vocabulary scanner, so the
+  exit code could not distinguish "wrongly approved" from "correctly
+  rejected" either way. Both are fixed, and the assertion is now verified to
+  fail when the rejected-row filtering logic is deliberately broken.
 
 ## [1.1.0] - 2026-07-28
 
@@ -382,6 +466,8 @@ First run against a real project — this repository — surfaced nine defects t
 - Secret-scan patterns miss novel credential formats. The agent has no network egress and the documentation pull request is human-reviewed, which are the backstops.
 - A plugin cannot guarantee a different model for verification. In-plugin passes give independent context with a configurable model; `/dossier:audit --external` renders a self-contained prompt for genuinely cross-model review. Which tier was used is recorded in the verification report.
 
+[1.2.0]: https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/dossier
+[1.1.0]: https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/dossier
 [1.0.2]: https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/dossier
 [1.0.1]: https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/dossier
 [1.0.0]: https://github.com/synaptiai/synapti-marketplace/tree/main/plugins/dossier
