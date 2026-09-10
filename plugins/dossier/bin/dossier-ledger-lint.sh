@@ -78,12 +78,29 @@ emit() { # severity | line | message
   esac
 }
 
-# Extract data rows: lines starting with `| EV-`. Deliberately anchored on the
-# ID prefix rather than on position so the ledger's other tables (executed
-# checks, stale evidence) are skipped without needing a section parser.
+# Extract data rows: lines starting with `| EV-` inside the `## Evidence table`
+# section only.
+#
+# This used to anchor on the ID prefix alone, with a comment claiming that
+# skipped the ledger's other tables "without needing a section parser". It does
+# not: a Stale-evidence row whose first cell is a bare EV id also begins with
+# `| EV-`, and was then parsed as a 13-column evidence row and reported as
+# malformed. The only reason it has not fired here is that those rows happen to
+# be written with backticked ids. Track the section instead, so the shape of a
+# row in some other table cannot decide whether the ledger lints.
+# Starts at 1, not 0: a ledger need not carry any headings at all — a bare
+# header row and separator is a valid ledger, and the lint's own fixtures are
+# exactly that. Requiring the heading would make the lint silently examine
+# nothing, which is the failure mode it exists to prevent.
 LINENO_=0
+IN_EVIDENCE_TABLE=1
 while IFS= read -r line; do
   LINENO_=$((LINENO_ + 1))
+  case "$line" in
+    "## Evidence table"*) IN_EVIDENCE_TABLE=1; continue ;;
+    "## "*)               IN_EVIDENCE_TABLE=0; continue ;;
+  esac
+  [ "$IN_EVIDENCE_TABLE" = "1" ] || continue
   case "$line" in
     "| EV-"*) ;;
     *) continue ;;

@@ -98,11 +98,27 @@ fi
 echo "### Verification"
 VR="$OUTPUT_ROOT/07-verification/documentation-verification-report.md"
 if [ -f "$VR" ]; then
-  echo "AUDIT_ROUNDS=$(grep -c '<!-- DOSSIER_AUDIT' "$VR" 2>/dev/null || echo 0)"
+  # A verification report exists, so this package has been through the
+  # verification path at least once. Whether the machine-readable markers are
+  # present is a separate question: a report written before those markers
+  # existed, or by hand, carries its rounds and its gate result in prose only.
+  # Reporting 0 and never-run for such a report is a FALSE NEGATIVE — it was
+  # doing exactly that for a package whose report records three rounds and a
+  # gate result of FAIL, which reads as "nothing has gone wrong yet" when the
+  # opposite is true. Unparsed is reported as unknown, never as zero.
+  VR_ROUNDS=$(grep -c '<!-- DOSSIER_AUDIT' "$VR" 2>/dev/null || echo 0)
+  if [ "${VR_ROUNDS:-0}" -gt 0 ] 2>/dev/null; then
+    echo "AUDIT_ROUNDS=$VR_ROUNDS"
+  else
+    echo "AUDIT_ROUNDS=unknown"
+    echo "AUDIT_ROUNDS_REASON=report present but carries no DOSSIER_AUDIT markers"
+  fi
   echo "FINDINGS_OPEN=$(grep -cE '\bOpen\b' "$VR" 2>/dev/null || echo 0)"
-  echo "LAST_GATE_VERDICT=$(grep -m1 'GATE_VERDICT=' "$VR" 2>/dev/null | cut -d= -f2 || echo none)"
+  VR_VERDICT=$(grep -m1 'GATE_VERDICT=' "$VR" 2>/dev/null | cut -d= -f2)
+  echo "LAST_GATE_VERDICT=${VR_VERDICT:-unknown}"
 else
   echo "AUDIT_ROUNDS=0"
+  echo "FINDINGS_OPEN=0"
   echo "LAST_GATE_VERDICT=never-run"
 fi
 
@@ -160,6 +176,7 @@ Derive the next action from state rather than listing every command. Highest-val
 Two signals deserve explicit callouts because they are quiet failures rather than loud ones:
 
 - **`DOCUMENTS_UNDATED > 0`** — a document with no verification date cannot be checked for staleness, so it will never appear in the stale count. It is invisible, not fresh.
+- **`AUDIT_ROUNDS=unknown` or `LAST_GATE_VERDICT=unknown`** — a verification report exists but carries no machine-readable marker, so this command cannot say how many rounds ran or how the gate ruled. Say "unknown", never "never audited": the report may record a FAILED gate, and reporting that as never-run inverts its meaning. Point the reader at the report itself.
 - **`MANAGED=dirty`** — the workflow was hand-edited after setup generated it, so re-running `/dossier:setup` will ask before overwriting. Say which file, so the user is not surprised later.
 
 ## Tier Classification

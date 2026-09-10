@@ -148,7 +148,14 @@ STALENESS_DAYS=$(cfg '.dossier.refresh.stalenessDays' '90')
 GENERATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 GH_AVAILABLE="false"
-if command -v gh >/dev/null 2>&1 && [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
+# Ask gh whether it is authenticated rather than looking for a token in the
+# environment. CI exports GH_TOKEN, but a developer who ran `gh auth login`
+# keeps the credential in the system keyring and has no such variable — the
+# env-only probe called that "unauthenticated" while every `gh api` call would
+# have succeeded, and silently degraded the bundle to commit-message-derived
+# pull-request data with no bodies, labels or review state. `gh auth status`
+# is satisfied by either arrangement.
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   GH_AVAILABLE="true"
 else
   note 'The GitHub CLI was unavailable or unauthenticated. pull-requests.json and releases.json are derived from commit messages and tags only; PR bodies, labels and review state are absent from this bundle.'

@@ -57,7 +57,11 @@ done
 
 [ -n "$CHANGED" ] || { echo "dossier-blast-radius: --changed-files is required" >&2; exit 2; }
 [ -n "$OUT" ]     || { echo "dossier-blast-radius: --out is required" >&2; exit 2; }
-[ -f "$CHANGED" ] || { echo "dossier-blast-radius: changed-files list not found: $CHANGED" >&2; exit 2; }
+# Readable, not necessarily regular: commands/refresh.md documents this as
+#   --changed-files <(jq -r '.[].path' .dossier/evidence/changed-files.json)
+# and process substitution yields a pipe, which `[ -f ]` rejects on every
+# platform — so the documented command exited 2 for anyone who followed it.
+[ -r "$CHANGED" ] || { echo "dossier-blast-radius: changed-files list not readable: $CHANGED" >&2; exit 2; }
 command -v jq >/dev/null 2>&1 || { echo "dossier-blast-radius: jq is not installed." >&2; exit 1; }
 
 TMPD=$(mktemp -d -t dossier-blast.XXXXXX) || {
@@ -65,6 +69,19 @@ TMPD=$(mktemp -d -t dossier-blast.XXXXXX) || {
 }
 mkdir -p "$TMPD" 2>/dev/null
 cleanup() { rm -rf "$TMPD" 2>/dev/null; }
+
+# The list below is read several times — once per event pattern, then again to
+# sort and to count. A pipe yields its contents once and is empty on every
+# read after the first, which would report zero matched and zero unmatched
+# files rather than failing: silently wrong output from a command the docs
+# tell people to run. Copy a non-regular input to a real file first.
+if [ ! -f "$CHANGED" ]; then
+  if ! cat -- "$CHANGED" > "$TMPD/changed-files.txt" 2>/dev/null; then
+    echo "dossier-blast-radius: cannot read the changed-files stream: $CHANGED" >&2
+    exit 2
+  fi
+  CHANGED="$TMPD/changed-files.txt"
+fi
 trap cleanup EXIT
 
 # ---------------------------------------------------------------------------
