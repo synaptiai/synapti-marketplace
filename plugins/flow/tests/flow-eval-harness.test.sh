@@ -326,7 +326,11 @@ assert_exit 0 "$EXIT" "missing tests/ exits 0"
 assert_contains '"catch_rate": null' "$OUT" "null rate without tests/"
 assert_contains 'no tests/ directory' "$OUT" "reason names the missing directory"
 make_agent_project "$TMP/agent3"
-sed -i 's/^import mini$/import calc as mini/' "$TMP/agent3/tests/test_mini.py"
+# `sed -i` with no backup suffix is GNU-only; BSD sed reads the script as the
+# suffix, errors, and leaves the file untouched — so this rewrite silently did
+# not happen on macOS and the assertions below tested the wrong fixture.
+sed 's/^import mini$/import calc as mini/' "$TMP/agent3/tests/test_mini.py" > "$TMP/agent3/tests/test_mini.py.new"
+mv "$TMP/agent3/tests/test_mini.py.new" "$TMP/agent3/tests/test_mini.py"
 cp "$TMP/agent3/mini.py" "$TMP/agent3/calc.py"
 OUT=$(python3 "$HELPER" own-test-traps --case-dir "$MINI" --project-dir "$TMP/agent3")
 assert_contains '"catch_rate": null' "$OUT" "null rate when the tests import another module name"

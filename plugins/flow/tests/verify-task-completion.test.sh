@@ -227,7 +227,14 @@ assert_equal "0" "$(find "$STATE" -name quality-ledger.jsonl | wc -l | tr -d ' '
 # --- record-quality-run.sh classification ------------------------------------
 # _classify <command> [exit_code_json] -> prints "<kind>|<exit_code>" or "none"
 _classify() {
-  local cmd="$1" resp="${2:-{\"exit_code\":0\}}"
+  # The default is assigned on its own line rather than inline as
+  # ${2:-{\"exit_code\":0\}}. Escaping the closing brace inside a parameter
+  # expansion is handled by bash 5 but not by bash 3.2, which macOS ships as
+  # /bin/bash: there the backslash survives, giving {"exit_code":0\} — invalid
+  # JSON, so jq --argjson failed, the payload came out empty and every
+  # classification below read back "none".
+  local cmd="$1" resp="${2-}"
+  [ -n "$resp" ] || resp='{"exit_code":0}'
   _case
   _hook "$RECORD" "$(jq -cn --arg sid "$SID" --arg cwd "$REPO" --arg cmd "$cmd" --argjson resp "$resp" \
     '{session_id:$sid,cwd:$cwd,tool_name:"Bash",tool_input:{command:$cmd},tool_response:$resp}')"
