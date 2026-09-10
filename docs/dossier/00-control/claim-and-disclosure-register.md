@@ -192,12 +192,12 @@ CL-0022 no longer appears anywhere and is superseded. CL-0043, CL-0047 and CL-00
 
 Pending: CL-0043 and CL-0047, both presented on 2026-09-10 and held by the approver. Neither subject appears in either guide in any form.
 
-**The last line cannot be answered by `dossier-claim-scan.sh` alone.** The check that exists to answer it examines roughly one claim in ten of these two documents. Measured on the shipped text:
+**The last line cannot be answered by `dossier-claim-scan.sh` alone.** The check that exists to answer it reads 38 per cent of the claim-length fragments in these two documents. Measured on the shipped text:
 
-> A clean `dossier-claim-scan.sh` result establishes that no *paragraph* in these two documents makes an unregistered claim, and nothing more: 224 claim-length fragments sit in table rows, bullets and blockquotes that the registration check never reads, 194 of them match no approved register row, and the identical fabricated sentence scores 0 as a table row and 1 as a paragraph — so on these documents the check examines roughly one claim in ten, and the zero is a statement about paragraph prose, not about the documents.
+> A clean `dossier-claim-scan.sh` result establishes that no *paragraph* in these two documents makes an unregistered claim, and nothing more. Measured by instrumenting the shipped scanner: it reads 111 of the 289 claim-length fragments in the two guides — 38 per cent — and never reaches the other 178, which sit in table rows, bullets and blockquotes. The identical fabricated sentence scores 0 as a table row and non-zero as a paragraph.
 
 That was demonstrated, not inferred. Three fabricated claims — third-party security audits, formal verification, and 99.99% availability — were appended to the guides as a table row, a bullet and a blockquote, and the check returned zero. The same sentences as paragraphs were caught and named. Issue #176 tracks the fix.
 
-The 194 unregistered fragments are structural rather than a backlog: capability tables, permission and role tables, the data question-and-answer table, the versioning policy, the exit-code table, and troubleshooting. None is false as far as reading establishes. None is registered. Until the scanner reads table rows or those claims get rows, the honest status of both guides is **reviewed by reading, partially checked by machine** (AQ-0036).
+The 178 unread fragments are structural rather than a backlog: capability tables, permission and role tables, the data question-and-answer table, the versioning policy, the exit-code table, and troubleshooting. None is false as far as reading establishes. None is registered. Until the scanner reads table rows or those claims get rows, the honest status of both guides is **reviewed by reading, partially checked by machine** (AQ-0036).
 
 **Historical note.** Earlier in this refresh a clean scan result was reported here as verified and as falsified by canary. Both were true and together they established nothing, because the canary was a paragraph — the one line class never at risk. That is the error the measurement above exists to prevent repeating.
