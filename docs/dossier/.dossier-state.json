@@ -1,0 +1,116 @@
+{
+  "schema": "dossier-state/v1",
+  "last_documented_sha": "7ee4923",
+  "package_head": "d03954bcb2f450275a26c054091a834bad88ebb4",
+  "note": "last_documented_sha is the last commit that changed the project rather than the documentation, which is what document-headers.md defines project-version to mean. package_head is the commit these fingerprints were taken at.",
+  "evidence_cutoff": "2026-09-10",
+  "package_version": "1.1.0",
+  "rounds_run": 5,
+  "last_gate": {
+    "round": 5,
+    "result": "FAIL",
+    "verdict": "not ready",
+    "failed_conditions": [
+      "G03",
+      "G05",
+      "G18"
+    ],
+    "scorer_verdict_present": false,
+    "total_score": null,
+    "note": "No scorer ran against this revision. The gate stopped at the mechanical failure by contract, so eight judgment conditions are inconclusive and no total score exists."
+  },
+  "documents": {
+    "00-control/assumptions-questions-and-contradictions.md": {
+      "sha256": "94f335c515d96e7f60786f3eb984ea26d0d7b60f2617c2f545ccf131cf346931",
+      "bytes": 71179
+    },
+    "00-control/claim-and-disclosure-register.md": {
+      "sha256": "64689eaa26f78d50e8a44e0bcc559a60381f0b15967ea0532f4c9339c8ac0f81",
+      "bytes": 49916
+    },
+    "00-control/documentation-index.md": {
+      "sha256": "3152724b18e35c43956ad2a8db8a0efc3514f60942694264b3ed31e7438c003e",
+      "bytes": 15916
+    },
+    "00-control/evidence-ledger.md": {
+      "sha256": "a680afa729341bff41f197c40698ad77cc400cb02ad83c97d29e89a7472577d8",
+      "bytes": 200259
+    },
+    "00-control/terminology-and-ownership.md": {
+      "sha256": "c3c24e818bbb26e3ccedd76c5bee0d7efd90b09e645e1cc5b13fb80bbf0c6967",
+      "bytes": 15815
+    },
+    "01-project/executive-project-brief.md": {
+      "sha256": "9c5aeb7dbce1a450ea83d90571921bf1d9392941c84f45b88a7a925a3b7debbf",
+      "bytes": 18254
+    },
+    "01-project/product-and-domain.md": {
+      "sha256": "d3e42ab79d8487a7f6ce37e5d3290f2505649c4be89c48446766e8595b0119e2",
+      "bytes": 29920
+    },
+    "02-architecture/components-and-codebase.md": {
+      "sha256": "12bf90eddc699df64d715940572dc6e2c5b104a2114d8ef1ffb37d1dfc31eff3",
+      "bytes": 30609
+    },
+    "02-architecture/data-and-ai.md": {
+      "sha256": "8029e958a9cd0cd0c4d65b0c05612271fd696be44ce6e939afb355c1e87c06c3",
+      "bytes": 26381
+    },
+    "02-architecture/infrastructure-and-deployment.md": {
+      "sha256": "eae98037fb81e2443033e0a6c40e8c4232614356848bd84190d6e761e847e94d",
+      "bytes": 23444
+    },
+    "02-architecture/interfaces-and-integrations.md": {
+      "sha256": "922386fb45d88fbe273b0aa68127eeefb866960959e09f0e42067982e8445f52",
+      "bytes": 32796
+    },
+    "02-architecture/system-architecture.md": {
+      "sha256": "759b1608f65494547714ba26f49328b898e9b4110083d1adb3bd733c37f85fe6",
+      "bytes": 31849
+    },
+    "03-assurance/reliability-performance-and-observability.md": {
+      "sha256": "73eadea73f7141ce4c038ed9a48a7a443599f6d25e4d095a2e1c3232b1cc3e26",
+      "bytes": 22040
+    },
+    "03-assurance/security-privacy-and-compliance.md": {
+      "sha256": "3dc76543cca659d39ec54eb744380500c39a067b41ea44116c4916c306488e1b",
+      "bytes": 62510
+    },
+    "03-assurance/testing-quality-and-delivery.md": {
+      "sha256": "20f258c0e50ff9d3384b51d71b855fd4c895085b6a2af085e303030a898be5f6",
+      "bytes": 33471
+    },
+    "04-operating/decisions-technical-debt-and-risks.md": {
+      "sha256": "6d8ca2467042bdd1fc9ee24103ff26081bd1263e0c5fa6899a94305c184b0a6b",
+      "bytes": 29499
+    },
+    "04-operating/onboarding-and-local-development.md": {
+      "sha256": "d097052210928f3d597633d2f20c6b965c3f846de8eeca6a4e70dd8fd9d20b21",
+      "bytes": 23198
+    },
+    "04-operating/operations-and-incident-response.md": {
+      "sha256": "ec08a8234a402fbe17aed4cce1b703fb372538b47e89ff1d4eb6d8be778359ff",
+      "bytes": 21692
+    },
+    "05-due-diligence/assets-dependencies-and-licenses.md": {
+      "sha256": "a8a12825a14f4150a00f650c9cd9d0278c04783c862fedddcc9ad48c3fa265fe",
+      "bytes": 27284
+    },
+    "05-due-diligence/technical-due-diligence-report.md": {
+      "sha256": "f78e677ead361cde30fbb805ac5a4dcf812e09ca6c366e2f5f8ff73ec141ab15",
+      "bytes": 38327
+    },
+    "06-public/customer-product-and-trust-guide.md": {
+      "sha256": "331ff314559021987523182a1c4bc750de683aa83b43a106f8c5e0665e8a856f",
+      "bytes": 12086
+    },
+    "06-public/technical-partner-guide.md": {
+      "sha256": "164c628baccee6067e4b2a7ad3d5d00b2abb8e21f78380e575d0f3b42e857117",
+      "bytes": 15675
+    },
+    "07-verification/documentation-verification-report.md": {
+      "sha256": "bd20b140547a04e3310b14d71ff3620af4fa90f5862bc1a9b7e096fe556b105a",
+      "bytes": 315855
+    }
+  }
+}
