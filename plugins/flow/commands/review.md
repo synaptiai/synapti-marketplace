@@ -236,21 +236,28 @@ echo "### Path A Gate"
 # Resolve agentTeams from the standard Claude Code settings cascade.
 # Precedence (highest first — first non-empty value wins):
 #   1. .claude/settings.flow.local.json — project-local override; gitignored
-#      so a hostile fork PR via `gh pr checkout` cannot inject it (it's the
-#      user's machine-local pin).
+#      so a hostile fork PR via `gh pr checkout` cannot inject it (it is the
+#      machine-local pin belonging to the user).
 #   2. .claude/settings.flow.json — project-shared; committed with team
 #      preferences. Visible in PR review like any other repo file.
 #   3. $HOME/.claude/settings.flow.json — user-global default across projects.
 #   4. ${CLAUDE_PLUGIN_ROOT:-plugins/flow}/settings.json — plugin default.
+# The plugin tier is a settings FILE, so CLAUDE_PLUGIN_ROOT is taken at its
+# word when it is set. The shared plugin-root resolver is not used here: it
+# accepts a directory only when that directory holds an executable
+# bin/cascade-resolve.sh, which is the right test for locating the binaries of
+# flow and the wrong one for locating a settings file. Under that resolver a
+# CLAUDE_PLUGIN_ROOT holding only settings.json was discarded and the plugin
+# tier vanished. Discovery still runs when CLAUDE_PLUGIN_ROOT is unset.
 # Two-key gate is preserved at the env-var layer: enabling Path A still
-# requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS in the user's shell on top
+# requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS in the shell on top
 # of agentTeams: true from any tier. The env var alone (no agentTeams:true
 # anywhere) cannot enable Path A.
 USE_PATH_A=0
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
 USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
-PLUGIN_SETTINGS="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/settings.json"
+PLUGIN_SETTINGS="${CLAUDE_PLUGIN_ROOT:-$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done)}/settings.json"
 AGENT_TEAMS=""
 SOURCE_USED=""
 
@@ -293,11 +300,11 @@ else
 
   if [ -z "$SOURCE_USED" ]; then
     # Diagnostic states — surface what the user can act on:
-    # (a) Plugin install missing/broken (CLAUDE_PLUGIN_ROOT path doesn't exist)
+    # (a) Plugin install missing/broken (CLAUDE_PLUGIN_ROOT path does not exist)
     # (b) Files exist but no agentTeams key set
     # State (a) is always WARN-worthy regardless of whether user-tier files exist
     # because the user expected the plugin to be reachable. State (b) is just
-    # informational ("you haven't opted in yet").
+    # informational ("you have not opted in yet").
     PLUGIN_ROOT_BROKEN=0
     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ ! -f "$PLUGIN_SETTINGS" ]; then
       PLUGIN_ROOT_BROKEN=1
