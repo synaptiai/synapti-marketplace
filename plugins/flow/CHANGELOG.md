@@ -1,5 +1,129 @@
 # Changelog
 
+## 3.4.0 (2026-09-11)
+
+Seven reported problems, and a pattern running through most of them: a check that
+could only confirm. In each case something was being matched rather than read,
+and the result looked identical whether the check worked or not.
+
+### Fixed: ten commands could not run on Windows
+
+An apostrophe inside a `#` comment becomes a live quote on the Windows executor,
+and a block with an unpaired one dies with `unexpected EOF while looking for
+matching '` before it runs. `/flow:review` was the one reported. The real count
+was 47 comment lines across 15 inline blocks in 10 commands — `/flow:address`,
+`/flow:merge`, `/flow:pr`, `/flow:start`, `/flow:status`, `/flow:learn`,
+`/flow:resolve`, `/flow:resume`, `/flow:flow` and `/flow:review`, all of which
+aborted under Git Bash.
+
+`bash -n` passes on every one of them, so validity was never the property to
+check. A test now scans every inline block in every command for a comment line
+with an unpaired apostrophe.
+
+### Fixed: the destructive-command hook read text, not commands
+
+A path beginning with a dot was treated as the whole working tree, so
+`git checkout -- .decisions/x.md` and `git restore .github/workflows/ci.yml`
+were both refused — the common case in a repository that uses those directories.
+The person who reported it had fallen back to a longer spelling that also
+overwrites the index, which is strictly more dangerous than the command that was
+blocked.
+
+Any command whose *text* contained a flagged pattern was refused, whether or not
+it ran anything. Writing the bug report hit this three times.
+
+Every rule now decides from a parsed command. A comment, a heredoc body and a
+quoted string are content; `gh pr create --body "$(cat <<EOF ... EOF)"` — the
+shape nearly every PR body takes — is content, while a body handed to `bash`,
+`sh` or `ssh` is still examined, because that body runs.
+
+Reading a command was also quadratic: a 40KB quoted argument merely containing
+the letters `rm` took 59 seconds before the guarded command could start. It now
+takes 0.2 seconds.
+
+### Fixed: the agentTeams gate lost its plugin tier
+
+The gate resolved its settings file through the shared plugin-root resolver,
+which accepts a directory only when it holds an executable binary — the right
+test for finding programs, the wrong one for finding a settings file. Three of
+the twenty-four assertions in the gate's own test had been failing on that one
+absence.
+
+### Fixed: `/flow:learn` looked in one place for its evidence
+
+Transcripts live under `~/.claude/projects` on some machines and
+`~/.claude-work/projects` on others. The miner probed the first only, so on a
+machine using the second layout it reported "missing" and the whole correction
+phase ran against zero rows — the half of the evidence that carries the
+behavioural signal, absent, with nothing looking wrong.
+
+The root is a candidate list now, and it probes for transcripts rather than for
+a directory: a slug directory that exists and holds nothing is not a match. When
+nothing matches, every root that was tried is named, because "never found" and
+"found and empty" are different findings.
+
+### Fixed: promotion opened a pull request on the wrong repository
+
+`bin/promote-proposal.sh` resolved its target against whatever repository you
+were standing in. Flow is almost always used from a consuming project, so the
+common case would have added a `plugins/flow/` tree to a project that never had
+one and opened a pull request its reviewers had no context for. Every guard in
+that script fired on overwriting an existing skill; none on the target being in
+the wrong repository.
+
+### Fixed: a merge could proceed with its checks still running
+
+`/flow:merge` reads the check rollup, but that only covers merges going through
+the command. A `gh pr merge` typed into Bash consulted nothing, which is how a
+pull request was merged with twelve jobs still queued.
+
+A `PreToolUse` hook now refuses a merge while any check is unfinished or has not
+passed, and refuses `--auto` where the base branch requires no checks — because
+auto-merge waits for *required* checks, so where none are required it merges at
+once, the opposite of what the flag is reached for.
+
+### Fixed: preflight data could belong to a different repository
+
+Every preflight `gh` call resolved against whatever repository `gh` picked for
+the invoking shell, and a wrong answer did not look wrong — the same well-formed
+output either way. In a workspace of sibling checkouts that produced a preflight
+reporting zero reviews on a pull request that had three.
+
+Each preflight resolves the repository once, prints it, pins every call to it,
+and cross-checks it against `git remote get-url origin` — parsed independently,
+because two readings of one source can never disagree.
+
+### Added: a reply-style check, off by default
+
+A project can state a reply-style rule once and have it checked when a reply is
+written rather than only when the session starts. A `Stop` hook reads the final
+assistant text, matches a short list of literal constructions, and warns through
+`systemMessage`. It never blocks and carries no decision field.
+
+Every pattern is deliberately narrow: a check that fires on ordinary sentences
+teaches the reader to ignore it. Eighteen ordinary technical sentences are a
+must-stay-silent test.
+
+### Added: a declared Windows support policy
+
+`docs/windows-support.md` names the three surfaces a plugin can expose to the
+shell and the three acceptable strategies. flow is the reference implementation
+on "Git Bash required", and a job on a Windows runner executes its hooks under
+Git Bash so the claim is tested rather than asserted.
+
+### Added: PyYAML is declared
+
+It was required at run time and written down only inside two CI workflows, which
+nobody installing the plugin reads. `plugins/flow/requirements.txt` declares it,
+both CI jobs install from that manifest, and the README says what breaks without
+each prerequisite.
+
+### Also
+
+The repository-root `tests/` directory — eleven checks that no workflow reached,
+one of which had been failing for an unknown length of time — now runs in CI on
+both Ubuntu and macOS.
+
 ## 3.3.1 (2026-09-10)
 
 Four macOS defects, three of which had shipped. Every one was invisible on Linux, and every
