@@ -100,11 +100,26 @@ T=$(_rs_transcript "Fixed in #142 and the key insight is plugins/flow/x.sh")
 _rs_run "$P" "$T"; OUT="$RS_OUT"
 assert_exit 0 "$RS_RC" "exit 0 even when it has something to say"
 STDOUT=$( cd "$P" && printf '{"transcript_path":"%s","session_id":"s1"}' "$T" | bash "$HOOK" 2>/dev/null )
-if printf '%s' "$STDOUT" | grep -q 'block'; then
-  _flow_assert_fail "the hook emitted a block decision: $STDOUT"
+# Parsed, not grepped. The findings text contains the words "nothing was
+# blocked", so a substring search for "block" fails on a correct hook.
+DECISION=$(printf '%s' "$STDOUT" | jq -r '.decision // "none"' 2>/dev/null)
+if [ "$DECISION" = "none" ]; then
+  _flow_assert_pass "no decision field — it cannot override another Stop hook"
 else
-  _flow_assert_pass "no block decision on stdout"
+  _flow_assert_fail "the hook emitted decision=$DECISION"
 fi
+
+# stderr goes to the debug log and is shown to nobody, so a warning delivered
+# only that way is a warning nobody receives. The finding has to be on stdout as
+# systemMessage.
+_flow_test_begin "the finding is delivered where a Stop hook can be heard"
+SYSMSG=$(printf '%s' "$STDOUT" | jq -r '.systemMessage // empty' 2>/dev/null)
+if [ -n "$SYSMSG" ]; then
+  _flow_assert_pass "systemMessage carries the finding"
+else
+  _flow_assert_fail "nothing on stdout: stderr alone reaches no one. stdout was: $STDOUT"
+fi
+assert_contains "reply-style check" "$SYSMSG" "and it is the finding text"
 assert_contains "warning only" "$OUT" "and the message says so"
 
 # --- what it catches ----------------------------------------------------------
@@ -121,8 +136,16 @@ assert_contains "not-x-but-y" "$OUT" "flagged"
 _flow_test_begin "staged emphasis is flagged wherever it sits in a sentence"
 _rs_run "$P" "$(_rs_transcript "The key insight is that it never ran.")"; OUT="$RS_OUT"
 assert_contains "staged-emphasis" "$OUT" "sentence-initial, capitalised"
-_rs_run "$P" "$(_rs_transcript "Here the real problem is the ordering.")"; OUT="$RS_OUT"
+_rs_run "$P" "$(_rs_transcript "Here the real reason is the ordering.")"; OUT="$RS_OUT"
 assert_contains "staged-emphasis" "$OUT" "mid-sentence, lowercase"
+# "problem" and "issue" are not in the noun list, because "the real problem is
+# solved" is a statement of fact and no pattern tells it from the tic.
+_rs_run "$P" "$(_rs_transcript "The real problem is the ordering.")"; OUT="$RS_OUT"
+if printf '%s' "$OUT" | grep -q 'staged-emphasis'; then
+  _flow_assert_fail "flagged a noun deliberately left out of the list"
+else
+  _flow_assert_pass "the ambiguous nouns are left alone, by design"
+fi
 
 _flow_test_begin "coined compounds and surface-as-a-noun are flagged"
 _rs_run "$P" "$(_rs_transcript "It is a load-bearing constraint.")"; OUT="$RS_OUT"
@@ -284,4 +307,112 @@ if [ -x "$HOOK" ]; then
   _flow_assert_pass "executable"
 else
   _flow_assert_fail "not executable, so the hook runner cannot start it"
+fi
+
+# --- ordinary prose that must stay silent --------------------------------------
+# Each of these was flagged by an earlier version of a pattern. They are the
+# reason the patterns are narrow: a check that fires on sentences like these
+# teaches the reader to ignore it, which is worse than the prose it guards
+# against. Table-driven so adding a case is one line.
+_flow_test_begin "ordinary technical sentences are not flagged"
+PQUIET=$(_rs_project "$ON")
+FP_CASES=(
+  "It is not clear, but we can check the logs."
+  "The result was not cached, but the second call still returned quickly."
+  "Failure was not silent, but logged to stderr."
+  "The key file is missing from the archive."
+  "The real problem is solved now."
+  "The central column is empty."
+  "The attack surface is small."
+  "The API surface changed in v2."
+  "Widths are set on the drawing surface."
+  "The wall is load-bearing."
+  "The endpoint is rate-gated by the proxy."
+  "The feature is flag-gated for now."
+  "Docs live at https://example.com/guide/setup.md for the moment."
+  "Install @scope/pkg.js from the registry."
+  "The theme color is #123456 in the palette."
+  "Priority #1 in the queue."
+  # "Room #205" is not in this list. A hash followed by digits cannot be told
+  # from an issue number without knowing what the sentence is about, and the
+  # cost of missing a real issue reference is higher than the cost of one odd
+  # flag on a sentence about rooms. Stated rather than quietly dropped.
+  "We pinned it at 1.2.3 after the regression."
+)
+FP_FLAGGED=""
+for CASE in "${FP_CASES[@]}"; do
+  _rs_run "$PQUIET" "$(_rs_transcript "$CASE")"
+  if [ -n "$RS_OUT" ]; then
+    FP_FLAGGED="$FP_FLAGGED
+  \"$CASE\"
+$(printf '%s' "$RS_OUT" | grep -E 'line [0-9]+:' | head -2)"
+  fi
+done
+if [ -z "$FP_FLAGGED" ]; then
+  _flow_assert_pass "${#FP_CASES[@]} ordinary sentences, none flagged"
+else
+  _flow_assert_fail "ordinary prose was flagged:$FP_FLAGGED"
+fi
+
+_flow_test_begin "an unterminated code fence is still code"
+UNTERM=$(printf 'Here is the change:\n\n```python\nx = open("plugins/flow/x.sh")\nthe key insight is wrong here')
+_rs_run "$PQUIET" "$(_rs_transcript "$UNTERM")"
+if [ -z "$RS_OUT" ]; then
+  _flow_assert_pass "a reply ending mid-fence is not scanned as prose"
+else
+  _flow_assert_fail "scanned inside an unterminated fence: $RS_OUT"
+fi
+
+_flow_test_begin "line numbers survive a code block"
+NUMBERED=$(printf 'First line.\n\n```\na\nb\nc\n```\n\nFixed in #142.')
+_rs_run "$PQUIET" "$(_rs_transcript "$NUMBERED")"
+if printf '%s' "$RS_OUT" | grep -q 'line 9:'; then
+  _flow_assert_pass "the reported line number points at the real line"
+else
+  _flow_assert_fail "expected the match on line 9; got: $(printf '%s' "$RS_OUT" | grep -E 'line [0-9]+:' | head -1)"
+fi
+
+_flow_test_begin "a pathological project pattern cannot hang the stop"
+PSLOW=$(_rs_project '{"replyStyle":{"enabled":true,"constructions":[],"extraPatterns":[{"name":"redos","pattern":"(x+x+)+y"}]}}')
+LONG=$(awk 'BEGIN { s=""; while (length(s) < 200) s = s "x"; print s "z" }')
+RS_START=$(date +%s)
+_rs_run "$PSLOW" "$(_rs_transcript "$LONG")"
+RS_ELAPSED=$(( $(date +%s) - RS_START ))
+assert_exit 0 "$RS_RC" "still exits 0"
+if [ "$RS_ELAPSED" -le 20 ]; then
+  _flow_assert_pass "returned in ${RS_ELAPSED}s — the watchdog bounds it"
+else
+  _flow_assert_fail "took ${RS_ELAPSED}s; a project regex can hang every stop"
+fi
+
+_flow_test_begin "a non-list constructions value narrows to nothing, never to everything"
+PBAD=$(_rs_project '{"replyStyle":{"enabled":true,"constructions":"issue-references"}}')
+_rs_run "$PBAD" "$(_rs_transcript "Fixed in #142 and the review surface grew.")"
+assert_exit 0 "$RS_RC" "exits 0"
+if printf '%s' "$RS_OUT" | grep -q 'line [0-9]*: '; then
+  _flow_assert_fail "a malformed config enabled the checks instead of skipping them: $RS_OUT"
+else
+  _flow_assert_pass "a malformed config skips rather than falling open"
+fi
+
+_flow_test_begin "an unknown construction name is reported, not silently ignored"
+PUNK=$(_rs_project '{"replyStyle":{"enabled":true,"constructions":["issue-refs"]}}')
+_rs_run "$PUNK" "$(_rs_transcript "Fixed in #142.")"
+assert_contains "names nothing known" "$RS_OUT" "the typo is named"
+
+_flow_test_begin "a subagent reply is not the reply the user sees"
+SIDE=$(mktemp "$RS_BASE/side.XXXXXX")
+python3 - "$SIDE" <<'PY'
+import json,sys
+with open(sys.argv[1],"w") as f:
+    f.write(json.dumps({"type":"assistant","isSidechain":True,"message":{"role":"assistant",
+        "content":[{"type":"text","text":"Subagent says fixed in #142 in plugins/flow/x.sh"}]}})+"\n")
+    f.write(json.dumps({"type":"assistant","message":{"role":"assistant",
+        "content":[{"type":"text","text":"A clean final reply."}]}})+"\n")
+PY
+_rs_run "$PQUIET" "$SIDE"
+if [ -z "$RS_OUT" ]; then
+  _flow_assert_pass "a sidechain record is skipped"
+else
+  _flow_assert_fail "scanned a subagent reply: $RS_OUT"
 fi

@@ -482,8 +482,15 @@ results have pushed it out.
 Off unless `enabled` is `true`. It matches a short list of literal constructions
 — issue and PR numbers, bare repository paths, `not X but Y`, staged emphasis
 (`the key thing is`), coined compounds, `surface` used as a noun for a component
-— names where each appeared, and warns. It never blocks: a false positive that
-stops a reply is worse than the prose it was guarding against.
+— names where each appeared, and warns through `systemMessage`. It never blocks
+and carries no `decision` field, so it cannot override another `Stop` hook.
+
+Every pattern is deliberately narrow, because a check that fires on ordinary
+sentences teaches the reader to ignore it. `the real problem is solved` and
+`it is not clear, but we can check` are ordinary prose and are not flagged;
+`attack surface`, `rate-gated` and a `load-bearing` wall are terms of art and
+are not flagged either. A project regex runs under a watchdog, so one that
+backtracks cannot hang the session.
 
 It reads only the final assistant text. Tool calls, their output, fenced code
 and inline code are not prose the reader reads, and a path the reader is being
