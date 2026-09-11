@@ -1,0 +1,69 @@
+name: Windows Hook Smoke
+
+# Proves the claim in docs/windows-support.md rather than asserting it.
+#
+# Claude Code silently skips a hook that fails to start, so a plugin whose
+# scripts cannot run on Windows produces no error — only an absence of the
+# guards the user installed it for. That is not a failure any amount of reading
+# will find, so it is checked on the platform.
+#
+# The matrix runs Ubuntu and macOS as well as Windows on purpose: when the
+# Windows leg goes red, the other two say whether the cause is the platform or
+# the change.
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/flow/hooks/**'
+      - 'plugins/flow/bin/**'
+      - 'plugins/flow/tests/windows-hooks-smoke.sh'
+      - 'docs/windows-support.md'
+      - '.github/workflows/windows-hooks.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugins/flow/hooks/**'
+      - 'plugins/flow/bin/**'
+      - 'plugins/flow/tests/windows-hooks-smoke.sh'
+      - 'docs/windows-support.md'
+      - '.github/workflows/windows-hooks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  hooks-start:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    # Git Bash on the Windows runner, which is the shell the policy commits to.
+    # `shell: bash` on windows-latest resolves to the Git Bash that ships with
+    # Git for Windows — the same shell a user who installed Git has.
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Python prerequisites
+        run: |
+          python3 --version
+          python3 -m pip install --quiet --break-system-packages -r plugins/flow/requirements.txt
+
+      - name: Report the environment
+        run: |
+          bash --version | head -1
+          echo "OS: ${{ matrix.os }}"
+          jq --version
+          git --version
+          python3 -c "import yaml; print('PyYAML', yaml.__version__)"
+
+      - name: Hooks start and answer
+        run: plugins/flow/tests/windows-hooks-smoke.sh
