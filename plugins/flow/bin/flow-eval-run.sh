@@ -9,7 +9,7 @@
 #
 # Usage:
 #   flow-eval-run.sh [--arm <name>|all] [--case <name>|all] [--runs N]
-#                    [--model <m> | --models <a,b>] [--max-turns N] [--max-budget-usd X]
+#                    [--model <m> | --models <a,b>] [--effort <level>] [--max-turns N] [--max-budget-usd X]
 #                    [--max-total-usd X] [--timeout-seconds S] [--out <dir>]
 #                    [--permission-mode acceptEdits|bypassPermissions]
 #                    [--dry-run] [--keep-temp] [--aggregate-only] [--check-cases]
@@ -27,7 +27,10 @@
 # --max-turns 60 (or prompt.md `max_turns`), --max-budget-usd 4 per run,
 # --max-total-usd 250, --timeout-seconds 1800 (or prompt.md `timeout_seconds`),
 # --out plugins/flow/evals/results/<UTC timestamp>/. --model is passed through
-# only when given; otherwise the CLI default model is used. --models a,b runs
+# only when given; otherwise the CLI default model is used. --effort is passed
+# through only when given (low|medium|high|xhigh|max); otherwise the child
+# inherits the operator's saved effort setting, which result.json cannot see,
+# so pin it whenever runs will be compared. --models a,b runs
 # the whole plan once per model, sequentially; results are keyed by model.
 #
 # Permissions: the child runs headless with `--permission-mode acceptEdits
@@ -107,6 +110,7 @@ RUNS=""
 MODEL=""
 MODELS_LIST=""
 MODELS_GIVEN=0
+EFFORT=""
 MAX_TURNS=""
 MAX_BUDGET="4"
 MAX_TOTAL="250"
@@ -134,6 +138,7 @@ while [ $# -gt 0 ]; do
     --runs) need_value "$@"; RUNS="$2"; shift 2 ;;
     --model) need_value "$@"; MODEL="$2"; shift 2 ;;
     --models) need_value "$@"; MODELS_LIST="$2"; MODELS_GIVEN=1; shift 2 ;;
+    --effort) need_value "$@"; EFFORT="$2"; shift 2 ;;
     --max-turns) need_value "$@"; MAX_TURNS="$2"; shift 2 ;;
     --max-budget-usd) need_value "$@"; MAX_BUDGET="$2"; shift 2 ;;
     --max-total-usd) need_value "$@"; MAX_TOTAL="$2"; shift 2 ;;
@@ -164,6 +169,10 @@ if [ "$MODELS_GIVEN" = "1" ]; then
 else
   MODELS=("$MODEL")
 fi
+case "$EFFORT" in
+  ''|low|medium|high|xhigh|max) ;;
+  *) echo "flow-eval-run: --effort must be one of low, medium, high, xhigh, max; got '$EFFORT'" >&2; exit 1 ;;
+esac
 for n in "$MAX_BUDGET" "$MAX_TOTAL"; do
   [[ "$n" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "flow-eval-run: budget values must be numbers, got '$n'" >&2; exit 1; }
 done
@@ -291,6 +300,7 @@ build_command() {
     CLAUDE_CMD+=(--permission-mode acceptEdits --allowedTools "$run_allowed_tools")
   fi
   [ -n "$run_model" ] && CLAUDE_CMD+=(--model "$run_model")
+  [ -n "$EFFORT" ] && CLAUDE_CMD+=(--effort "$EFFORT")
   [ "$arm" != "baseline" ] && CLAUDE_CMD+=(--plugin-dir "$PLUGIN_ROOT")
   return 0
 }
@@ -331,7 +341,7 @@ run_one() {
   if [ "$DRY_RUN" = "1" ]; then
     local plugin_note="(no plugin)"
     [ "$arm" != "baseline" ] && plugin_note="settings=$(arm_settings "$arm")"
-    echo "RUN   $label/$arm/$case/$n  model=${run_model:-<cli default>}  timeout=${run_timeout}s  $plugin_note"
+    echo "RUN   $label/$arm/$case/$n  model=${run_model:-<cli default>}  effort=${EFFORT:-<cli default>}  timeout=${run_timeout}s  $plugin_note"
     local unset_list=""
     for v in "${STRIP_ENV[@]}"; do unset_list="$unset_list -u $v"; done
     printf '      cd <temp copy of %s> && env%s FLOW_STATE_DIR=<temp>/.flow-state timeout %s %s < prompt.txt > %s/stream.jsonl\n' \
@@ -361,7 +371,7 @@ run_one() {
   python3 "$HELPER" case-prompt "$case_dir" --arm "$arm" > "$run_dir/prompt.txt"
   printf '%s\n' "${CLAUDE_CMD[*]}" > "$run_dir/command.txt"
 
-  echo "flow-eval-run: [$label/$arm/$case/$n] starting (model ${run_model:-<cli default>}; total so far \$$total; max-turns $run_max_turns; timeout ${run_timeout}s)"
+  echo "flow-eval-run: [$label/$arm/$case/$n] starting (model ${run_model:-<cli default>}; effort ${EFFORT:-<cli default>}; total so far \$$total; max-turns $run_max_turns; timeout ${run_timeout}s)"
   local start end exit_code timed_out=0
   start=$(date +%s)
   local unset_args=()
@@ -376,6 +386,7 @@ run_one() {
   local finalize_args=(finalize-run --run-dir "$run_dir" --case-dir "$case_dir" --project-dir "$tmp"
     --arm "$arm" --case "$case" --run "$n" --exit-code "$exit_code" --duration "$((end - start))")
   [ -n "$run_model" ] && finalize_args+=(--model-requested "$run_model")
+  [ -n "$EFFORT" ] && finalize_args+=(--effort-requested "$EFFORT")
   [ "$timed_out" = "1" ] && finalize_args+=(--timed-out)
   [ "$KEEP_TEMP" = "1" ] && finalize_args+=(--temp-dir "$tmp")
   local grade

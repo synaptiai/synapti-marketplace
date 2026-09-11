@@ -978,10 +978,44 @@ def models_from_result_event(result_event):
     return primary, names
 
 
+def tokens_from_result_event(result_event):
+    """Billed token counts summed over every modelUsage entry of a claude
+    result event, falling back to the event's top-level `usage` (the last
+    request only) when modelUsage carries no token fields.
+
+    Returns {"input", "cache_read", "cache_creation", "output",
+    "cache_hit_rate"} — counts are None when nothing was recorded;
+    cache_hit_rate is cache_read over all input-side tokens."""
+    empty = {"input": None, "cache_read": None, "cache_creation": None, "output": None, "cache_hit_rate": None}
+    if not isinstance(result_event, dict):
+        return empty
+    fields = {"input": "inputTokens", "cache_read": "cacheReadInputTokens",
+              "cache_creation": "cacheCreationInputTokens", "output": "outputTokens"}
+    totals = {k: None for k in fields}
+    usage = result_event.get("modelUsage")
+    if isinstance(usage, dict):
+        for entry in usage.values():
+            if not isinstance(entry, dict):
+                continue
+            for key, name in fields.items():
+                value = num(entry, name)
+                if value is not None:
+                    totals[key] = (totals[key] or 0) + value
+    if all(v is None for v in totals.values()):
+        top = result_event.get("usage")
+        if isinstance(top, dict):
+            snake = {"input": "input_tokens", "cache_read": "cache_read_input_tokens",
+                     "cache_creation": "cache_creation_input_tokens", "output": "output_tokens"}
+            totals = {key: num(top, name) for key, name in snake.items()}
+    input_side = sum(totals[k] or 0 for k in ("input", "cache_read", "cache_creation"))
+    totals["cache_hit_rate"] = ((totals["cache_read"] or 0) / input_side) if input_side else None
+    return totals
+
+
 def cmd_finalize_run(args):
     opts = parse_opts(args, ["--run-dir", "--case-dir", "--project-dir", "--arm", "--case", "--run",
                              "--exit-code", "--duration", "--temp-dir", "--hidden-timeout", "--model-requested",
-                             "--own-timeout"],
+                             "--effort-requested", "--own-timeout"],
                       flags=["--timed-out"])
     for key in ("--run-dir", "--case-dir", "--project-dir", "--arm", "--case", "--run"):
         if not opts.get(key):
@@ -993,6 +1027,7 @@ def cmd_finalize_run(args):
     if result_event is not None:
         write_json(os.path.join(run_dir, "claude.json"), result_event)
     model, models_used = models_from_result_event(result_event)
+    tokens = tokens_from_result_event(result_event)
 
     hidden, raw = run_hidden(opts["--case-dir"], opts["--project-dir"], None, int(opts.get("--hidden-timeout") or 120))
     with open(os.path.join(run_dir, "hidden.txt"), "w", encoding="utf-8") as fh:
@@ -1032,7 +1067,9 @@ def cmd_finalize_run(args):
         "model": model,
         "models_used": models_used,
         "model_requested": opts.get("--model-requested") or None,
+        "effort_requested": opts.get("--effort-requested") or None,
         "cost_usd": cost,
+        "tokens": tokens,
         "num_turns": turns,
         "session_id": result_event.get("session_id") if result_event else None,
         "is_error": is_error,
@@ -1194,6 +1231,9 @@ def summarize_runs(rs):
         "cost_usd_mean": mean([r["cost_usd"] for r in rs]),
         "cost_usd_total": sum(r["cost_usd"] or 0 for r in rs),
         "num_turns_mean": mean([r["num_turns"] for r in rs]),
+        "cache_hit_rate_mean": mean([(r.get("tokens") or {}).get("cache_hit_rate") for r in rs]),
+        "output_tokens_mean": mean([(r.get("tokens") or {}).get("output") for r in rs]),
+        "effort_requested": sorted({str(r["effort_requested"]) for r in rs if r.get("effort_requested")}),
         "errors": sum(1 for r in rs if r.get("error")),
         "skills_invoked": sorted({s for r in rs for s in r.get("skills_invoked", [])}),
     }

@@ -135,6 +135,13 @@ Per run, the harness records (`runs/<model>/<arm>/<case>/<n>/result.json`;
   the largest cost among the `modelUsage` keys of the claude result event
   (a subagent on another model appears as a second key in `models_used`);
   `model_requested` is what `--model` asked for.
+- **effort_requested** — what `--effort` asked for; `null` when the run
+  inherited the operator's saved effort setting, which the record cannot
+  see. Runs compared against each other should carry the same pinned value.
+- **tokens** — `input`, `cache_read`, `cache_creation`, `output`, summed over
+  every `modelUsage` entry of the claude result event, and `cache_hit_rate`
+  (cache reads over all input-side tokens). Per-arm `summary.json` carries
+  `cache_hit_rate_mean` and `output_tokens_mean`.
 - **cost_usd, num_turns, session_id, is_error, error, permission_denials,
   tool_counts, skills_invoked** — from the `stream-json` transcript
   (`stream.jsonl`, final event saved as `claude.json`). `skills_invoked` empty
@@ -222,7 +229,8 @@ python3 plugins/flow/bin/_flow_eval.py migrate-layout --out plugins/flow/evals/r
 Flags: `--arm <name|all>` (comma lists allowed), `--case <name|all>`, `--runs N`
 (default 3 or prompt.md `runs`), `--model <m>` (default: the CLI default; no
 model is hardcoded) or `--models <a,b>` (the whole plan once per model, in
-order; results keyed by model), `--max-turns N` (default 60),
+order; results keyed by model), `--effort low|medium|high|xhigh|max` (default:
+not passed; the child inherits the operator's saved effort setting), `--max-turns N` (default 60),
 `--max-budget-usd X` per run (default 4), `--max-total-usd X` (default 250,
 summed over every model in `--out`; the runner stops with exit 3 before a run
 that could exceed it), `--timeout-seconds S` per run (default 1800), `--out

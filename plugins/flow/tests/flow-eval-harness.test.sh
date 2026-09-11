@@ -446,9 +446,9 @@ RUN7="$TMP/run7"; mkdir -p "$RUN7"
 cat > "$RUN7/stream.jsonl" <<'EOF'
 {"type":"system","subtype":"init","session_id":"s7"}
 {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{}},{"type":"tool_use","name":"Skill","input":{"skill":"flow:tdd-patterns"}}]}}
-{"type":"result","subtype":"success","is_error":false,"num_turns":5,"total_cost_usd":0.25,"session_id":"s7","result":"done IMPLEMENTATION COMPLETE","permission_denials":[],"modelUsage":{"claude-test-model":{"costUSD":0.2},"claude-helper-model":{"costUSD":0.05}}}
+{"type":"result","subtype":"success","is_error":false,"num_turns":5,"total_cost_usd":0.25,"session_id":"s7","result":"done IMPLEMENTATION COMPLETE","permission_denials":[],"modelUsage":{"claude-test-model":{"costUSD":0.2,"inputTokens":100,"outputTokens":40,"cacheReadInputTokens":700,"cacheCreationInputTokens":200},"claude-helper-model":{"costUSD":0.05,"inputTokens":50,"outputTokens":10,"cacheReadInputTokens":0,"cacheCreationInputTokens":0}}}
 EOF
-OUT=$(python3 "$HELPER" finalize-run --run-dir "$RUN7" --case-dir "$MINI" --project-dir "$TMP/agent7" --arm off-risk --case mini --run 1 --exit-code 0 --duration 12 --model-requested claude-test-model)
+OUT=$(python3 "$HELPER" finalize-run --run-dir "$RUN7" --case-dir "$MINI" --project-dir "$TMP/agent7" --arm off-risk --case mini --run 1 --exit-code 0 --duration 12 --model-requested claude-test-model --effort-requested medium)
 assert_contains '"model": "claude-test-model"' "$OUT" "primary model = the modelUsage key with the largest cost"
 assert_file_exists "$RUN7/result.json" "result.json written"
 assert_file_exists "$RUN7/own-test-traps.json" "own-test-traps.json written"
@@ -457,6 +457,12 @@ assert_file_exists "$RUN7/project/tests/test_mini.py" "project snapshot keeps th
 assert_equal "claude-test-model" "$(json_get "$RUN7/result.json" 'd["model"]')" "result.json model"
 assert_equal "['claude-helper-model', 'claude-test-model']" "$(json_get "$RUN7/result.json" 'd["models_used"]')" "every billed model recorded"
 assert_equal "claude-test-model" "$(json_get "$RUN7/result.json" 'd["model_requested"]')" "requested model recorded"
+assert_equal "medium" "$(json_get "$RUN7/result.json" 'd["effort_requested"]')" "requested effort recorded"
+assert_equal "150" "$(json_get "$RUN7/result.json" 'd["tokens"]["input"]')" "input tokens summed over every billed model"
+assert_equal "700" "$(json_get "$RUN7/result.json" 'd["tokens"]["cache_read"]')" "cache reads recorded"
+assert_equal "200" "$(json_get "$RUN7/result.json" 'd["tokens"]["cache_creation"]')" "cache writes recorded"
+assert_equal "50" "$(json_get "$RUN7/result.json" 'd["tokens"]["output"]')" "output tokens summed"
+assert_equal "0.667" "$(json_get "$RUN7/result.json" 'round(d["tokens"]["cache_hit_rate"], 3)')" "cache hit rate = reads / (input + reads + writes)"
 assert_equal "0.667" "$(json_get "$RUN7/result.json" 'round(d["own_test_trap_catch_rate"], 3)')" "own-test catch rate in result.json"
 assert_equal "True" "$(json_get "$RUN7/result.json" 'd["own_test_traps"]["caught"]["add_wrong"]')" "per-trap own-test verdict in result.json"
 assert_equal "1.0" "$(json_get "$RUN7/result.json" 'd["hidden"]["pass_rate"]')" "hidden suite still the primary score"
@@ -719,7 +725,7 @@ done
 for case in $ALL_CASES; do
   assert_contains "RUN   default/baseline/$case/1" "$OUT" "case $case planned"
 done
-assert_contains "RUN   default/baseline/four-stream-codec/1  model=<cli default>  timeout=1800s  (no plugin)" "$OUT" "baseline has no plugin"
+assert_contains "RUN   default/baseline/four-stream-codec/1  model=<cli default>  effort=<cli default>  timeout=1800s  (no plugin)" "$OUT" "baseline has no plugin"
 assert_contains 'settings={"testing":{"tddMode":"suggest","tddModeOptOut":true},"specFirst":{"riskMap":false}}' "$OUT" "suggest-norisk two-field opt-out"
 assert_contains 'settings={"testing":{"tddMode":"enforce","tddModeOptOut":false},"specFirst":{"riskMap":true}}' "$OUT" "enforce-risk settings"
 assert_contains 'settings={"testing":{"tddMode":"off","tddModeOptOut":true},"specFirst":{"riskMap":true}}' "$OUT" "off-risk settings"
@@ -767,6 +773,14 @@ assert_contains "PLAN  2 run(s): 1 model(s) × 2 arm(s) × 1 case(s)" "$OUT" "fi
 assert_contains "--model my-model" "$OUT" "explicit model passed through"
 assert_contains "RUN   my-model/baseline/money-allocator/1" "$OUT" "runs keyed by the requested model"
 assert_contains "--max-turns 9" "$OUT" "explicit max-turns overrides prompt.md"
+assert_not_contains "--effort " "$OUT" "no effort passed unless asked"
+assert_contains "effort=<cli default>" "$OUT" "plan line says effort is inherited"
+OUT=$("$RUNNER" --dry-run --arm baseline --case money-allocator --runs 1 --effort medium --out "$TMP/dry5e" 2>&1)
+assert_contains "--effort medium" "$OUT" "explicit effort passed through"
+assert_contains "effort=medium" "$OUT" "plan line names the pinned effort"
+ERR=$("$RUNNER" --dry-run --effort turbo 2>&1 >/dev/null); EXIT=$?
+assert_exit 1 "$EXIT" "unknown effort -> exit 1"
+assert_contains "--effort must be one of" "$ERR" "names the allowed levels"
 mkdir -p "$TMP/dry6/runs/default/baseline/money-allocator/1" && echo '{}' > "$TMP/dry6/runs/default/baseline/money-allocator/1/result.json"
 OUT=$("$RUNNER" --dry-run --arm baseline --case money-allocator --runs 2 --out "$TMP/dry6" 2>&1)
 assert_contains "SKIP  default/baseline/money-allocator/1 (result.json exists)" "$OUT" "completed run skipped on resume"
