@@ -46,8 +46,12 @@ case "$1 $2" in
 esac
 if [ "$1" = "api" ]; then
   case "$2" in
-    *protection/required_status_checks) [ -s "$D/prot.json" ] && cat "$D/prot.json" && exit 0; exit 1 ;;
-    *rules/branches/*) [ -s "$D/rules.json" ] && cat "$D/rules.json" && exit 0; exit 1 ;;
+    *protection/required_status_checks)
+      [ -s "$D/prot.json" ] && cat "$D/prot.json" && exit 0
+      echo "gh: Branch not protected (HTTP 404)" >&2; exit 1 ;;
+    *rules/branches/*)
+      [ -s "$D/rules.json" ] && cat "$D/rules.json" && exit 0
+      echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
   esac
 fi
 exit 1
@@ -105,7 +109,7 @@ S=$(_bum_stub "$FAILING" "" "")
 _bum_run "$S" "gh pr merge 7 --squash"
 assert_exit 2 "$?" "failing check blocks the merge"
 ERR=$(_bum_stderr "$S" "gh pr merge 7 --squash")
-assert_contains "failing checks" "$ERR" "the message says the check failed"
+assert_contains "did not pass" "$ERR" "the message says the check did not pass"
 
 # A legacy StatusContext carries `state`, not `status`/`conclusion`. A rollup
 # reader that selects only CheckRun sees an empty list here and calls it green.
@@ -213,4 +217,28 @@ if [ -x "$HOOK" ]; then
   _flow_assert_pass "mode allows execution"
 else
   _flow_assert_fail "$HOOK is not executable, so the hook runner cannot start it"
+fi
+
+# --- the bypass matrix --------------------------------------------------------
+# Twenty-seven commands that two reviewers constructed against an earlier
+# version of this hook, each of which let a merge through. They live in a
+# python fixture rather than here because each needs a gh stub that answers
+# differently per selector and LOGS ITS ARGV — the discriminating input this
+# file could not see, because the stub above matches on "$1 $2" and ignores
+# everything after it. That is why a green run of this file was not evidence.
+_flow_test_begin "every known bypass is closed"
+MATRIX="$REPO_ROOT/plugins/flow/tests/fixtures/merge-bypass-matrix.py"
+if ! command -v python3 >/dev/null 2>&1; then
+  _flow_assert_pass "SKIP: python3 unavailable"
+elif [ ! -f "$MATRIX" ]; then
+  _flow_assert_fail "the bypass matrix is missing at $MATRIX"
+else
+  MOUT=$(python3 "$MATRIX" "$HOOK" 2>&1); MRC=$?
+  MCOUNT=$(printf '%s' "$MOUT" | sed -n 's/^\([0-9]*\) bypass cases.*/\1/p')
+  if [ "$MRC" -eq 0 ] && [ "${MCOUNT:-0}" -ge 25 ]; then
+    _flow_assert_pass "$MCOUNT bypass cases, all correct"
+  else
+    _flow_assert_fail "bypass matrix failed (exit $MRC, ${MCOUNT:-0} cases):
+$(printf '%s' "$MOUT" | grep -E '^  BAD|wrong$' | head -12)"
+  fi
 fi

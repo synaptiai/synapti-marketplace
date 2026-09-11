@@ -164,6 +164,12 @@ true
 Then check out the PR branch (mutating, runs inline):
 
 ```bash
+# $REPO does not survive from the preflight block: each fence is its own
+# shell. Resolved again here, because `gh --repo ""` falls back to the default
+# resolution of gh without complaining — an unset REPO reads as pinned and behaves
+# as unpinned, which is the failure this pinning exists to prevent.
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 gh pr checkout "$PR_NUM" --repo "$REPO"
 ```
 
@@ -203,6 +209,12 @@ When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.f
 ## Review Cycle Tracking
 
 ```!
+# $REPO does not survive from the preflight block: each fence is its own
+# shell. Resolved again here, because `gh --repo ""` falls back to the default
+# resolution of gh without complaining — an unset REPO reads as pinned and behaves
+# as unpinned, which is the failure this pinning exists to prevent.
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 # Digit-validate PR_NUM (matches Phase 1 block).
 _RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
 ARG1="${_RAW%% *}"
@@ -400,6 +412,12 @@ Even in minimal-scope mode, P1 and P2 findings in untouched files are always fix
    ```
 9. **Post resolution comment** (MANDATORY) using the template structure from `templates/resolution-comment.md`:
    ```bash
+   # $REPO does not survive from the preflight block: each fence is its own
+   # shell. Resolved again here, because `gh --repo ""` falls back to gh's own
+   # resolution without complaining — an unset REPO reads as pinned and behaves
+   # as unpinned, which is the failure this pinning exists to prevent.
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+   [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
    gh pr comment "$PR_NUM" --repo "$REPO" --body "$BODY"
    ```
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")

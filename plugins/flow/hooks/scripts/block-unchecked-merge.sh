@@ -57,53 +57,99 @@ case "$COMMAND" in *merge*) ;; *) exit 0 ;; esac
 
 _bd_strip_noncode "$COMMAND"
 
-# --- find a `gh pr merge`, in command position -------------------------------
+# --- find every `gh pr merge`, in command position ----------------------------
+#
+# Three things this has to get right, each of which it got wrong first:
+#
+#   - gh has its own value-taking options, at the root (`-R`, `--repo`) and on
+#     the subcommand (`-t`, `-b`, `-F`, `--match-head-commit`, ...). Skipping a
+#     `-x` without also skipping its value made the value look like the pull
+#     request selector: `gh --repo owner/repo pr merge 3` was read as merging
+#     "owner/repo", so the subcommand never matched and the hook allowed it.
+#   - The selector is whatever the merge command says: a number, a branch, or a
+#     URL. Dropping the non-numeric ones made the probe resolve the current
+#     branch instead, so the hook reported on one pull request while the human
+#     merged another.
+#   - A command can hold more than one merge. Stopping at the first left the
+#     rest unchecked.
+#
+# The repository is the command's own `--repo` when it carries one, because
+# forcing the session's repository onto the probe checks the wrong place.
+
+# Options that consume the following token, at either level.
+_bum_takes_value() {
+  case "$1" in
+    -R|--repo|-t|--subject|-b|--body|-F|--body-file|-A|--author-email|--match-head-commit)
+      return 0 ;;
+  esac
+  return 1
+}
+
 MERGE_FOUND=0
-PR_ARG=""
-HAS_AUTO=0
+MERGE_N=0
+MERGE_SEL=()
+MERGE_REPO=()
+MERGE_AUTO=()
 
 while IFS= read -r SEG; do
   [ -z "$SEG" ] && continue
-  case "$SEG" in *gh*) ;; *) continue ;; esac
   TOK=()
   _rm_tokenise "$SEG"
   n=${#TOK[@]}
+  [ "$n" -gt 0 ] || continue
+
+  # Command position, after tokenising rather than before: `g""h` is one token
+  # spelled gh, and the basename compare is case-insensitive because a
+  # case-insensitive filesystem will happily run `GH`.
   idx=-1
   for ((i = 0; i < n; i++)); do
     [ "${#TOK[i]}" -le 4096 ] || continue
     base="${TOK[i]##*/}"
     base="${base#\\}"
+    base=$(printf '%s' "$base" | tr 'A-Z' 'a-z')
     if [ "$base" = "gh" ]; then idx=$i; break; fi
   done
   [ "$idx" -lt 0 ] && continue
-  # gh pr merge — the two words must follow, options aside.
-  sub1=""; sub2=""
-  for ((i = idx + 1; i < n; i++)); do
-    case "${TOK[i]}" in -*) continue ;; esac
-    if [ -z "$sub1" ]; then sub1="${TOK[i]}"; continue; fi
-    sub2="${TOK[i]}"; break
-  done
-  [ "$sub1" = "pr" ] || continue
-  [ "$sub2" = "merge" ] || continue
-  MERGE_FOUND=1
-  seen_merge=0
-  for ((i = idx + 1; i < n; i++)); do
+
+  # Walk the arguments once: collect the positional words, the repo if the
+  # command names one, and whether auto-merge was asked for.
+  seg_repo=""
+  seg_auto=0
+  words=()
+  i=$((idx + 1))
+  while [ $i -lt $n ]; do
     tok="${TOK[i]}"
     case "$tok" in
-      --auto) HAS_AUTO=1; continue ;;
-      -*) continue ;;
+      --auto|--auto=true|--auto=1|--auto=yes) seg_auto=1; i=$((i + 1)); continue ;;
+      --auto=*) i=$((i + 1)); continue ;;          # --auto=false and friends
+      --repo=*|-R=*) seg_repo="${tok#*=}"; i=$((i + 1)); continue ;;
+      --) i=$((i + 1)); continue ;;
     esac
-    if [ "$seen_merge" = "0" ]; then
+    if _bum_takes_value "$tok"; then
       case "$tok" in
-        pr) continue ;;
-        merge) seen_merge=1; continue ;;
+        -R|--repo) seg_repo="${TOK[i+1]:-}" ;;
       esac
-      continue
+      i=$((i + 2)); continue
     fi
-    _bd_is_redirection "$tok" && continue
-    [ -z "$PR_ARG" ] && PR_ARG="$tok"
+    case "$tok" in
+      -*) i=$((i + 1)); continue ;;
+    esac
+    if ! _bd_is_redirection "$tok"; then
+      words+=("$tok")
+    fi
+    i=$((i + 1))
   done
-  break
+
+  # `gh pr merge [selector]`
+  [ "${#words[@]}" -ge 2 ] || continue
+  [ "${words[0]}" = "pr" ] || continue
+  [ "${words[1]}" = "merge" ] || continue
+
+  MERGE_FOUND=1
+  MERGE_SEL[$MERGE_N]="${words[2]:-}"
+  MERGE_REPO[$MERGE_N]="$seg_repo"
+  MERGE_AUTO[$MERGE_N]="$seg_auto"
+  MERGE_N=$((MERGE_N + 1))
 done < <(printf '%s\n' "$BD_CODE" | tr ';|&()`' '\n')
 
 [ "$MERGE_FOUND" = "1" ] || exit 0
@@ -113,88 +159,157 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 2
 fi
 
-# --- resolve the pull request ------------------------------------------------
-# A merge with no explicit number targets the current branch. Say which pull
-# request was judged, so a wrong-PR case is visible rather than silent.
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-if [ -z "$REPO" ]; then
-  echo "BLOCKED: gh pr merge, but the repository could not be resolved — the checks cannot be read, so the merge is refused rather than guessed at." >&2
-  exit 2
-fi
+# Only consulted when the command names no repository of its own.
+SESSION_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null || true)
 
-PR_SEL=()
-case "$PR_ARG" in
-  ''|*[!0-9]*) ;;                       # no number, or a branch/URL: let gh resolve it
-  *) PR_SEL=("$PR_ARG") ;;
-esac
+for ((M = 0; M < MERGE_N; M++)); do
+  SEL="${MERGE_SEL[M]}"
+  RREPO="${MERGE_REPO[M]}"
+  AUTO="${MERGE_AUTO[M]}"
 
-ROLLUP=$(gh pr view "${PR_SEL[@]:-}" --repo "$REPO" \
-  --json number,baseRefName,statusCheckRollup 2>/dev/null)
-if [ -z "$ROLLUP" ]; then
-  echo "BLOCKED: gh pr merge, but the checks for that pull request could not be read (gh returned nothing). A gate that cannot see must not open." >&2
-  exit 2
-fi
-
-PR_NUMBER=$(printf '%s' "$ROLLUP" | jq -r '.number // empty')
-BASE=$(printf '%s' "$ROLLUP" | jq -r '.baseRefName // empty')
-
-# Every entry, not only CheckRun. A legacy StatusContext carries `state`
-# instead of `status`/`conclusion`, and counting only CheckRun made a pending
-# StatusContext invisible.
-UNFINISHED=$(printf '%s' "$ROLLUP" | jq -r '
-  [ .statusCheckRollup[]?
-    | if .__typename == "CheckRun"
-      then select(.status != "COMPLETED") | "\(.name) [\(.status | ascii_downcase)]"
-      else select(.state == "PENDING" or .state == "EXPECTED") | "\(.context) [pending]"
-      end ]
-  | join(", ")' 2>/dev/null)
-
-FAILED=$(printf '%s' "$ROLLUP" | jq -r '
-  [ .statusCheckRollup[]?
-    | if .__typename == "CheckRun"
-      then select(.conclusion == "FAILURE" or .conclusion == "TIMED_OUT" or .conclusion == "CANCELLED" or .conclusion == "STARTUP_FAILURE") | .name
-      else select(.state == "FAILURE" or .state == "ERROR") | .context
-      end ]
-  | join(", ")' 2>/dev/null)
-
-TOTAL=$(printf '%s' "$ROLLUP" | jq -r '[.statusCheckRollup[]?] | length' 2>/dev/null)
-[ -z "$TOTAL" ] && TOTAL=0
-
-if [ -n "$UNFINISHED" ]; then
-  echo "BLOCKED: PR #$PR_NUMBER has checks that have not finished: $UNFINISHED" >&2
-  echo "Wait for them (gh pr checks $PR_NUMBER --watch) and merge after they report." >&2
-  exit 2
-fi
-
-if [ -n "$FAILED" ]; then
-  echo "BLOCKED: PR #$PR_NUMBER has failing checks: $FAILED" >&2
-  exit 2
-fi
-
-# --- --auto on a repository where it cannot wait ------------------------------
-if [ "$HAS_AUTO" = "1" ]; then
-  REQUIRED=""
-  PROT=$(gh api "repos/$REPO/branches/$BASE/protection/required_status_checks" 2>/dev/null)
-  if [ -n "$PROT" ]; then
-    REQUIRED=$(printf '%s' "$PROT" | jq -r '[.contexts[]?] | join(", ")' 2>/dev/null)
+  # Build the same view the merge itself will resolve. With no selector and no
+  # --repo, gh resolves the current branch — so the probe must do that too,
+  # which means passing neither. `gh pr view --repo X` with no selector is an
+  # error, so the two travel together.
+  VIEW=(pr view)
+  [ -n "$SEL" ] && VIEW+=("$SEL")
+  # A URL names its own repository; pairing it with --repo is redundant at best
+  # and a conflict at worst.
+  case "$SEL" in
+    http://*|https://*) SEL_IS_URL=1 ;;
+    *) SEL_IS_URL=0 ;;
+  esac
+  if [ "$SEL_IS_URL" = "1" ]; then
+    :
+  elif [ -n "$RREPO" ]; then
+    VIEW+=(--repo "$RREPO")
+  elif [ -n "$SEL" ] && [ -n "$SESSION_REPO" ]; then
+    VIEW+=(--repo "$SESSION_REPO")
   fi
-  if [ -z "$REQUIRED" ]; then
-    # Branch protection is not the only way to require a check; a ruleset can
-    # too. Asking only the protection endpoint would report "none required" on
-    # a repository that requires plenty.
-    RULES=$(gh api "repos/$REPO/rules/branches/$BASE" 2>/dev/null)
-    if [ -n "$RULES" ]; then
-      REQUIRED=$(printf '%s' "$RULES" | jq -r '
-        [ .[]? | select(.type == "required_status_checks")
-          | .parameters.required_status_checks[]?.context ] | join(", ")' 2>/dev/null)
-    fi
-  fi
-  if [ -z "$REQUIRED" ]; then
-    echo "BLOCKED: --auto on PR #$PR_NUMBER, but '$BASE' requires no status checks." >&2
-    echo "Auto-merge waits for REQUIRED checks. With none required it merges immediately, which is the opposite of what --auto is usually reached for." >&2
-    echo "Every check on this PR has already passed ($TOTAL of $TOTAL), so merge without --auto if that is what you want." >&2
+  VIEW+=(--json number,baseRefName,statusCheckRollup)
+
+  ROLLUP=$(gh "${VIEW[@]}" 2>/dev/null); GH_RC=$?
+  if [ "$GH_RC" -ne 0 ] || [ -z "$ROLLUP" ]; then
+    echo "BLOCKED: gh pr merge${SEL:+ $SEL}, but its checks could not be read (gh exit $GH_RC). A gate that cannot see must not open." >&2
     exit 2
   fi
-fi
+  # gh can exit 0 having printed something that is not the object expected —
+  # an error body, a truncated stream. Emptiness is not the only way to fail.
+  if ! printf '%s' "$ROLLUP" | jq -e 'type == "object" and has("number") and (.statusCheckRollup | type == "array")' >/dev/null 2>&1; then
+    echo "BLOCKED: gh pr merge${SEL:+ $SEL}, but the check rollup did not parse as expected. Refusing rather than guessing." >&2
+    exit 2
+  fi
 
-exit 0
+  PR_NUMBER=$(printf '%s' "$ROLLUP" | jq -r '.number')
+  BASE=$(printf '%s' "$ROLLUP" | jq -r '.baseRefName // empty')
+  if [ -z "$BASE" ]; then
+    echo "BLOCKED: the base branch of PR #$PR_NUMBER could not be read, so its required checks cannot be established." >&2
+    exit 2
+  fi
+
+  # An allow-list, not a deny-list. A conclusion this does not recognise —
+  # ACTION_REQUIRED and STALE were the two that got through, and GitHub can add
+  # more — must land in "not passing", never in "fine". Same for an entry whose
+  # __typename is missing.
+  UNFINISHED=$(printf '%s' "$ROLLUP" | jq -r '
+    [ .statusCheckRollup[]
+      | if .__typename == "CheckRun"
+        then select(.status != "COMPLETED") | "\(.name // "check") [\(.status // "unknown" | ascii_downcase)]"
+        elif .__typename == "StatusContext"
+        then select(.state == "PENDING" or .state == "EXPECTED") | "\(.context // "status") [pending]"
+        else "\(.name // .context // "unrecognised check") [unknown shape]"
+        end ]
+    | join(", ")')
+
+  NOT_PASSING=$(printf '%s' "$ROLLUP" | jq -r '
+    [ .statusCheckRollup[]
+      | if .__typename == "CheckRun"
+        then select(.status == "COMPLETED")
+             | select((.conclusion // "") | IN("SUCCESS","SKIPPED","NEUTRAL") | not)
+             | "\(.name // "check") [\(.conclusion // "no conclusion" | ascii_downcase)]"
+        elif .__typename == "StatusContext"
+        then select(.state != "PENDING" and .state != "EXPECTED" and .state != "SUCCESS")
+             | "\(.context // "status") [\(.state // "unknown" | ascii_downcase)]"
+        else empty
+        end ]
+    | join(", ")')
+
+  TOTAL=$(printf '%s' "$ROLLUP" | jq -r '.statusCheckRollup | length')
+
+  if [ -n "$UNFINISHED" ]; then
+    echo "BLOCKED: PR #$PR_NUMBER has checks that have not finished: $UNFINISHED" >&2
+    echo "Wait for them (gh pr checks $PR_NUMBER --watch) and merge after they report." >&2
+    exit 2
+  fi
+  if [ -n "$NOT_PASSING" ]; then
+    echo "BLOCKED: PR #$PR_NUMBER has checks that did not pass: $NOT_PASSING" >&2
+    exit 2
+  fi
+
+  # What does this base branch require? Both branch protection and rulesets,
+  # because asking only the first reports "none required" on a repository that
+  # requires plenty. The endpoints are also consulted for the empty-rollup case
+  # below, so the probe runs whether or not --auto was asked for.
+  # `gh api` exits 1 for a 404 and for a 403 alike, and the difference matters:
+  # a 404 means this branch genuinely requires nothing, a 403 means we are not
+  # allowed to know. Reading the status line separates them. Anything else —
+  # a network failure, a rate limit — is also "cannot tell".
+  _bum_required() {   # $1 = endpoint, $2 = jq filter. Sets REQ_OUT, REQ_STATE.
+    local body errf rc
+    errf=$(mktemp -t flow-bum-err.XXXXXX 2>/dev/null) || { REQ_STATE=unknown; REQ_OUT=""; return; }
+    body=$(gh api "$1" 2>"$errf"); rc=$?
+    if [ "$rc" -eq 0 ]; then
+      REQ_STATE=read
+      REQ_OUT=$(printf '%s' "$body" | jq -r "$2" 2>/dev/null || true)
+    elif grep -q '(HTTP 404)' "$errf" 2>/dev/null; then
+      REQ_STATE=absent          # definitively nothing configured here
+      REQ_OUT=""
+    else
+      REQ_STATE=unknown
+      REQ_OUT=""
+    fi
+    rm -f "$errf"
+  }
+
+  PROBE_REPO="${RREPO:-$SESSION_REPO}"
+  REQUIRED=""
+  REQ_READABLE=0
+  if [ -n "$PROBE_REPO" ]; then
+    _bum_required "repos/$PROBE_REPO/branches/$BASE/protection/required_status_checks" \
+      '[(.contexts[]?), (.checks[]?.context)] | unique | join(", ")'
+    [ "$REQ_STATE" != "unknown" ] && REQ_READABLE=1
+    REQUIRED="$REQ_OUT"
+    if [ -z "$REQUIRED" ]; then
+      _bum_required "repos/$PROBE_REPO/rules/branches/$BASE" \
+        '[ .[]? | select(.type == "required_status_checks") | .parameters.required_status_checks[]?.context ] | join(", ")'
+      [ "$REQ_STATE" != "unknown" ] && REQ_READABLE=1
+      REQUIRED="$REQ_OUT"
+    fi
+  fi
+
+  # An empty rollup is "no checks" on a repository with no CI, and "not
+  # reported yet" in the seconds after a push. Where the base requires checks,
+  # the second reading is the one that matters.
+  if [ "$TOTAL" = "0" ] && [ -n "$REQUIRED" ]; then
+    echo "BLOCKED: PR #$PR_NUMBER reports no checks yet, but '$BASE' requires: $REQUIRED" >&2
+    echo "They have not been created on this commit. Wait for them to appear." >&2
+    exit 2
+  fi
+
+  if [ "$AUTO" = "1" ] && [ -z "$REQUIRED" ]; then
+    if [ "$REQ_READABLE" = "0" ]; then
+      echo "BLOCKED: --auto on PR #$PR_NUMBER, but whether '$BASE' requires any checks could not be read (no access, or the request failed)." >&2
+      echo "Auto-merge waits only for required checks, so this cannot be established as a wait. Merge without --auto once you are satisfied." >&2
+    else
+      echo "BLOCKED: --auto on PR #$PR_NUMBER, but '$BASE' requires no status checks." >&2
+      echo "Auto-merge waits for REQUIRED checks. With none required it merges immediately, which is the opposite of what --auto is usually reached for." >&2
+      if [ "$TOTAL" = "0" ]; then
+        echo "This pull request has no checks at all, so there is nothing to wait for." >&2
+      else
+        echo "Every check on this PR has already passed ($TOTAL of $TOTAL), so merge without --auto if that is what you want." >&2
+      fi
+    fi
+    exit 2
+  fi
+done
+

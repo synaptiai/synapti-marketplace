@@ -625,6 +625,12 @@ Use the AskUserQuestion tool with contextual options to confirm: "PR #$PR_NUM is
 Only after the user confirms via the tool:
 
 ```bash
+# $REPO does not survive from the preflight block: each fence is its own
+# shell. Resolved again here, because `gh --repo ""` falls back to the default
+# resolution of gh without complaining — an unset REPO reads as pinned and behaves
+# as unpinned, which is the failure this pinning exists to prevent.
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 # Read merge settings
 STRATEGY="squash"  # or from settings
 DELETE_FLAG="--delete-branch"  # or from settings
@@ -638,6 +644,12 @@ gh pr merge "$PR_NUM" --repo "$REPO" --$STRATEGY $DELETE_FLAG
 ## Phase 4: Post-Merge
 
 ```bash
+# $REPO does not survive from the preflight block: each fence is its own
+# shell. Resolved again here, because `gh --repo ""` falls back to the default
+# resolution of gh without complaining — an unset REPO reads as pinned and behaves
+# as unpinned, which is the failure this pinning exists to prevent.
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 # Verify merge
 gh pr view "$PR_NUM" --repo "$REPO" --json state --jq '.state'
 
@@ -652,6 +664,12 @@ git pull origin $DEFAULT_BRANCH
 **Manifest emit** — if this merge resolved any escalations (a Proactive-Autonomy escalation surfaced via `AskUserQuestion` during Phase 1's finding-ledger check, Phase 2's stale-approval warning, or the conflict-resolution path closed because the user provided one of the six canonical fields), record an `escalation-resolved` artifact for each:
 
 ```bash
+# $REPO does not survive from the preflight block: each fence is its own
+# shell. Resolved again here, because `gh --repo ""` falls back to the default
+# resolution of gh without complaining — an unset REPO reads as pinned and behaves
+# as unpinned, which is the failure this pinning exists to prevent.
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 ISSUE=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
 if [ -n "$ISSUE" ]; then
   # Repeat once per escalation that closed during this merge run.

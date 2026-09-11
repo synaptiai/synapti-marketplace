@@ -147,6 +147,12 @@ true
 Then check out the PR branch (mutating, runs inline):
 
 ```bash
+# $REPO does not survive from the preflight block: each fence is its own
+# shell. Resolved again here, because `gh --repo ""` falls back to the default
+# resolution of gh without complaining — an unset REPO reads as pinned and behaves
+# as unpinned, which is the failure this pinning exists to prevent.
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 gh pr checkout "$PR_NUM" --repo "$REPO"
 ```
 
@@ -157,6 +163,12 @@ Check for previous reviews — if this is a follow-up review, focus on changes s
 **Parse structured findings from previous review/resolution cycles** (follow-up reviews only).
 
 ```!
+# $REPO does not survive from the preflight block: each fence is its own
+# shell. Resolved again here, because `gh --repo ""` falls back to the default
+# resolution of gh without complaining — an unset REPO reads as pinned and behaves
+# as unpinned, which is the failure this pinning exists to prevent.
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 # Parse previous review findings + resolution outcomes. PR_NUM is digit-validated
 # (matches Phase 1 block); a non-digit token rejects rather than reaching shell.
 _RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
@@ -705,6 +717,12 @@ TaskUpdate each review task as agents complete.
 4. **Determine review mode** — compare PR author vs current user:
 
    ```bash
+   # $REPO does not survive from the preflight block: each fence is its own
+   # shell. Resolved again here, because `gh --repo ""` falls back to gh's own
+   # resolution without complaining — an unset REPO reads as pinned and behaves
+   # as unpinned, which is the failure this pinning exists to prevent.
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+   [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
    PR_AUTHOR=$(gh pr view "$PR_NUM" --repo "$REPO" --json author --jq '.author.login')
    CURRENT_USER=$(gh api user --jq '.login')
    ```
@@ -805,6 +823,12 @@ TaskUpdate each review task as agents complete.
    - `DISPUTED:[]` — empty for self-review (there is no second actor to dispute).
 
    ```bash
+   # $REPO does not survive from the preflight block: each fence is its own
+   # shell. Resolved again here, because `gh --repo ""` falls back to gh's own
+   # resolution without complaining — an unset REPO reads as pinned and behaves
+   # as unpinned, which is the failure this pinning exists to prevent.
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+   [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
    # $CYCLE_NUMBER is the same cycle the FLOW_REVIEW_CYCLE marker above used.
    # RESOLVED/ESCALATED are comma-separated finding IDs (e.g. F1,F2,F3).
    RES_BODY="$(build from templates/resolution-comment.md with the self-review cycle metrics)"
@@ -825,6 +849,12 @@ TaskUpdate each review task as agents complete.
    **Manifest emit** — record the review-cycle artifact in the issue's journal manifest. Use the issue number associated with this PR (parse from PR body: `gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#'`):
 
    ```bash
+   # $REPO does not survive from the preflight block: each fence is its own
+   # shell. Resolved again here, because `gh --repo ""` falls back to gh's own
+   # resolution without complaining — an unset REPO reads as pinned and behaves
+   # as unpinned, which is the failure this pinning exists to prevent.
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+   [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
    ISSUE=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
    if [ -n "$ISSUE" ]; then
      "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
