@@ -258,7 +258,8 @@ EXIT=$?
 # Exit must be 0 — random name guarantees the target dir does not exist.
 assert_exit 0 "$EXIT" "exit 0 for dry-run with valid never-before-seen name"
 assert_contains "DRY-RUN: validation passed for '$UNIQUE_NAME'" "$OUT" "dry-run prints the validated name"
-assert_contains "would copy" "$OUT" "dry-run describes the next step"
+assert_contains "would transform" "$OUT" "dry-run describes the next step"
+assert_contains "the promoted skill is well-formed" "$OUT" "and it ran the real transform rather than only validating"
 assert_contains "feature/learn-promote-$UNIQUE_NAME" "$OUT" "dry-run names the planned branch"
 
 # --- Test 12: target SKILL.md already exists → exit 1 (refuse to overwrite)
@@ -312,27 +313,35 @@ assert_equal "stray content" "$(cat "$TARGET_DIR/references/foo.md")" "stray con
 # bin/promote-proposal.sh and run the shipped code against a temp file.
 _flow_test_begin "the proposal → skill transform"
 TRANSFORM_DIR=$(_pp_mktemp_dir)
-TRANSFORM="$TRANSFORM_DIR/transform.py"
-awk '/^python3 - "\$TARGET" "\$EVIDENCE_FILE" <<.PYTHON.$/ {on=1; next} on && /^PYTHON$/ {exit} on {print}' \
-  "$HELPER" > "$TRANSFORM"
-if [ ! -s "$TRANSFORM" ]; then
-  _flow_assert_fail "could not extract the transform from $HELPER — the heredoc marker moved"
+TRANSFORM="$REPO_ROOT/plugins/flow/bin/lib/promote_transform.py"
+if [ ! -f "$TRANSFORM" ]; then
+  _flow_assert_fail "missing $TRANSFORM"
 else
-  _flow_assert_pass "extracted the transform ($(wc -l < "$TRANSFORM" | tr -d ' ') lines) from the shipped script"
+  _flow_assert_pass "the shipped transform is a file the tests can run directly"
 fi
 
-# Run the shipped transform over a copy of a proposal. Sets TF_RC, TF_OUT,
-# TF_BODY, TF_EVIDENCE as globals — a command substitution would swallow the
-# exit code the assertions need.
+# Run the shipped transform. Sets TF_RC, TF_OUT, TF_BODY, TF_EVIDENCE as
+# globals — a command substitution would discard the exit code the assertions
+# need. PYTHONSAFEPATH matches what bin/promote-proposal.sh exports, so the
+# tests do not give the code an environment production never gives it.
 _pp_transform() {
   local src="$1"
   TF_TARGET="$TRANSFORM_DIR/target-$RANDOM.md"
   TF_EV="$TRANSFORM_DIR/evidence-$RANDOM.txt"
-  cp "$src" "$TF_TARGET"
-  TF_OUT=$(python3 "$TRANSFORM" "$TF_TARGET" "$TF_EV" 2>&1)
+  TF_OUT=""; TF_RC=0; TF_BODY=""; TF_EVIDENCE=""
+  # A silent cp failure leaves TF_BODY empty, and assert_not_contains passes on
+  # an empty haystack — so every "... is removed" row would pass while the
+  # transform was never run.
+  if ! cp "$src" "$TF_TARGET"; then
+    _flow_assert_fail "_pp_transform: cannot copy $src to $TF_TARGET"
+    TF_RC=99
+    return 1
+  fi
+  TF_OUT=$(PYTHONSAFEPATH=1 python3 "$TRANSFORM" "$TF_TARGET" "$TF_EV" 2>&1)
   TF_RC=$?
-  TF_BODY=$(cat "$TF_TARGET" 2>/dev/null)
-  TF_EVIDENCE=$(cat "$TF_EV" 2>/dev/null)
+  TF_BODY=$(cat "$TF_TARGET")
+  [ -f "$TF_EV" ] && TF_EVIDENCE=$(cat "$TF_EV")
+  return 0
 }
 
 # Must-stay-silent: a well-formed proposal transforms cleanly.
@@ -344,6 +353,12 @@ assert_exit 0 "$TF_RC" "exit 0"
 assert_contains "status: promoted" "$TF_BODY" "status rewritten to promoted"
 assert_contains "## Contract" "$TF_BODY" "the Contract survives"
 assert_contains "## Knowledge" "$TF_BODY" "the Knowledge survives"
+# Those two rows pass on an untransformed file, so they carry no power alone.
+# This one cannot: the proposal has no `promoted:` key until the transform adds
+# it, and the provenance keys are gone only after it runs.
+assert_contains "promoted:" "$TF_BODY" "the transform actually ran on this file"
+assert_not_contains "source-sessions" "$TF_BODY" "provenance frontmatter is removed too"
+assert_contains "source-sessions" "$TF_EVIDENCE" "and lands in the removed-material block"
 assert_not_contains "## Pattern Detected" "$TF_BODY" "Pattern Detected is removed"
 assert_not_contains "## Promotion Checklist" "$TF_BODY" "Promotion Checklist is removed"
 assert_not_contains "## Evidence" "$TF_BODY" "Evidence is removed"
@@ -367,7 +382,7 @@ open(p, "w").write(s.replace("## Contract", "## Preamble", 1))
 PY
 _pp_transform "$NOCONTRACT"
 assert_exit 1 "$TF_RC" "exit 1"
-assert_contains "expected '## Contract'" "$TF_OUT" "stderr names the missing Contract"
+assert_contains "expected 'Contract'" "$TF_OUT" "stderr names the missing Contract"
 
 # Must-fire: an over-budget body. A promoted skill is loaded into context like
 # any other, so an unbounded one costs every session that triggers it.
@@ -398,3 +413,259 @@ PY
 _pp_transform "$LONGC"
 assert_exit 1 "$TF_RC" "exit 1"
 assert_contains "max 120" "$TF_OUT" "stderr names the Contract budget"
+
+
+# --- Test 19: a `## ` line inside a fenced block is not a section boundary
+#
+# The regression this guards: the transform split on the fenced heading, moved
+# the rest of ## Knowledge (including the closing fence) into the evidence file,
+# and wrote a skill ending mid-fence — exit 0, "promoted" on stdout. The shape
+# checks all still passed, because the word count went DOWN and the first H2 was
+# still Contract. Only an assertion about content fidelity catches it.
+_flow_test_begin "a fenced heading does not split the section"
+FENCED="$TRANSFORM_DIR/fenced.md"
+_write_valid_proposal "$FENCED" "test-fake-fenced"
+python3 - "$FENCED" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+s = s.replace("""## Knowledge
+
+Do the thing.""", """## Knowledge
+
+Proposals often quote the section layout:
+
+```markdown
+## Evidence
+
+- not a real citation
+```
+
+KEEP-THIS-SENTENCE after the fence.""", 1)
+open(p, "w").write(s)
+PY
+_pp_transform "$FENCED"
+assert_exit 0 "$TF_RC" "exit 0"
+assert_contains "KEEP-THIS-SENTENCE" "$TF_BODY" "prose after the fenced heading stays in the skill"
+assert_not_contains "KEEP-THIS-SENTENCE" "$TF_EVIDENCE" "and is not relocated into the commit message"
+assert_contains "not a real citation" "$TF_BODY" "the fenced example survives intact"
+_flow_test_begin "the promoted body has no unterminated fence"
+FENCE_COUNT=$(printf '%s\n' "$TF_BODY" | grep -c '^```' || true)
+if [ $((FENCE_COUNT % 2)) -eq 0 ]; then
+  _flow_assert_pass "$FENCE_COUNT fence markers — balanced"
+else
+  _flow_assert_fail "$FENCE_COUNT fence markers — the body ends inside a code fence"
+fi
+
+# --- Test 20: the validator and the transform agree on what a section is
+_flow_test_begin "a near-miss section name is refused, not silently shipped"
+NEARMISS="$TRANSFORM_DIR/near-miss.md"
+_write_valid_proposal "$NEARMISS" "test-fake-nearmiss"
+python3 - "$NEARMISS" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(s.replace("## Evidence", "## Evidence (journal citations)", 1))
+PY
+ERR=$("$HELPER" --proposal "$NEARMISS" --dry-run 2>&1 >/dev/null)
+EXIT=$?
+assert_exit 1 "$EXIT" "exit 1"
+assert_contains "missing required body sections" "$ERR" "the substring lookalike no longer satisfies the validator"
+
+_flow_test_begin "an H3 does not satisfy a required H2"
+H3="$TRANSFORM_DIR/h3.md"
+_write_valid_proposal "$H3" "test-fake-h3"
+python3 - "$H3" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(s.replace("## Verification", "### Verification", 1))
+PY
+ERR=$("$HELPER" --proposal "$H3" --dry-run 2>&1 >/dev/null)
+EXIT=$?
+assert_exit 1 "$EXIT" "exit 1"
+assert_contains "Verification" "$ERR" "the H3 is named as missing"
+
+_flow_test_begin "a proposal ending inside a fence is refused"
+UNTERM="$TRANSFORM_DIR/unterminated.md"
+_write_valid_proposal "$UNTERM" "test-fake-unterm"
+printf '\n```\nopen forever\n' >> "$UNTERM"
+ERR=$("$HELPER" --proposal "$UNTERM" --dry-run 2>&1 >/dev/null)
+EXIT=$?
+assert_exit 1 "$EXIT" "exit 1"
+assert_contains "unterminated code fence" "$ERR" "stderr names the open fence"
+
+# --- Test 21: the budget is measured on the promoted body, not the proposal
+#
+# A mutant that counted words BEFORE stripping the proposal-only sections
+# survived the whole suite, because the fixture's removed sections are only a
+# few words each. A real proposal carries paragraphs of Pattern Detected and
+# Evidence, so a pre-strip gate would refuse a skill that is well under budget.
+# This fixture makes the two measurements differ by more than the budget.
+_flow_test_begin "the word budget is measured after the reviewer sections come out"
+FAT_EVIDENCE="$TRANSFORM_DIR/fat-evidence.md"
+_write_valid_proposal "$FAT_EVIDENCE" "test-fake-fatevidence"
+python3 - "$FAT_EVIDENCE" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+# 700 words of Evidence: pre-strip the body is far over 600, post-strip it is
+# the fixture's own ~30. Only a post-strip measurement accepts this.
+s = s.replace("Cite one journal entry.", "journal " * 700, 1)
+open(p, "w").write(s)
+PY
+_pp_transform "$FAT_EVIDENCE"
+assert_exit 0 "$TF_RC" "accepted: the promoted body is small even though the proposal is not"
+assert_not_contains "journal journal" "$TF_BODY" "the bulk is not in the skill"
+assert_contains "journal journal" "$TF_EVIDENCE" "it is in the removed material"
+
+# --- Test 22: the budget boundary
+#
+# Both comparisons could be flipped from `>` to `>=` and every test still
+# passed — no fixture sat on the boundary. These two do.
+_flow_test_begin "exactly at the budget passes, one word over fails"
+BOUNDARY="$TRANSFORM_DIR/boundary.md"
+python3 - "$BOUNDARY" "$REPO_ROOT/plugins/flow/bin/lib" <<'PY'
+import sys
+
+HEAD = """---
+name: "test-fake-boundary"
+description: "[flow-learned] boundary fixture"
+source-sessions:
+  - "2026-05-18 test session"
+evidence-count: 1
+status: proposal
+proposed: "2026-05-18"
+---
+
+# Boundary
+
+## Contract
+
+"""
+TAIL = """
+
+## Pattern Detected
+
+p
+
+## Evidence
+
+e
+
+## Verification
+
+v
+
+## Promotion Checklist
+
+- [ ] Reviewed
+"""
+
+
+def build(body_words):
+    # Headings and the fixed words below count toward the body budget, so the
+    # filler is solved for rather than guessed: build, measure, adjust.
+    filler = "word " * body_words
+    return HEAD + "contract words here.\n\n## Knowledge\n\n" + filler + TAIL
+
+
+def body_of(text):
+    end = text.find("\n---\n", 4)
+    return text[end + 5:]
+
+
+# Remove the sections the transform removes, then count, so the target is the
+# promoted body's length rather than the proposal's.
+DROP = ("Pattern Detected", "Evidence", "Promotion Checklist")
+sys.path.insert(0, sys.argv[2])
+import proposal_sections as ps
+
+
+def promoted_words(text):
+    pre, secs = ps.split(body_of(text))
+    kept = [x for x in secs if x.title not in DROP]
+    return len(ps.render(pre, kept).split())
+
+
+n = 500
+for _ in range(4000):
+    w = promoted_words(build(n))
+    if w == 600:
+        break
+    n += 600 - w
+else:
+    print("could not land on 600", file=sys.stderr)
+    sys.exit(2)
+
+open(sys.argv[1], "w").write(build(n))
+open(sys.argv[1] + ".over", "w").write(build(n + 1))
+PY
+if [ ! -s "$BOUNDARY" ] || [ ! -s "$BOUNDARY.over" ]; then
+  _flow_assert_fail "the boundary fixture was not built — nothing below tests the boundary"
+fi
+_pp_transform "$BOUNDARY"
+assert_exit 0 "$TF_RC" "a body of exactly 600 words is accepted"
+assert_contains "600 body words" "$TF_OUT" "and it really is 600"
+_pp_transform "$BOUNDARY.over"
+assert_exit 1 "$TF_RC" "601 words is refused"
+assert_contains "601 words (max 600)" "$TF_OUT" "and the message names the boundary"
+
+# --- Test 23: the Contract budget boundary
+#
+# Flipping `>` to `>=` on the Contract comparison survived every test: no
+# fixture had a Contract of exactly 120 words. These two do.
+_flow_test_begin "a Contract of exactly 120 words passes, 121 fails"
+CBOUND="$TRANSFORM_DIR/contract-boundary.md"
+python3 - "$CBOUND" <<'PY'
+import sys
+
+TEMPLATE = """---
+name: "test-fake-cboundary"
+description: "[flow-learned] contract boundary fixture"
+source-sessions:
+  - "2026-05-18 test session"
+evidence-count: 1
+status: proposal
+proposed: "2026-05-18"
+---
+
+# Contract boundary
+
+## Contract
+
+{contract}
+
+## Knowledge
+
+k
+
+## Pattern Detected
+
+p
+
+## Evidence
+
+e
+
+## Verification
+
+v
+
+## Promotion Checklist
+
+- [ ] Reviewed
+"""
+
+# The Contract section's word count is the words between its heading and the
+# next H2, which is exactly the filler plus nothing else.
+at = TEMPLATE.format(contract="word " * 120)
+over = TEMPLATE.format(contract="word " * 121)
+open(sys.argv[1], "w").write(at)
+open(sys.argv[1] + ".over", "w").write(over)
+PY
+_pp_transform "$CBOUND"
+assert_exit 0 "$TF_RC" "a Contract of exactly 120 words is accepted"
+_pp_transform "$CBOUND.over"
+assert_exit 1 "$TF_RC" "121 words is refused"
+assert_contains "121 words (max 120)" "$TF_OUT" "and the message names the boundary"

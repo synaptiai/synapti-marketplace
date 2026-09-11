@@ -19,9 +19,9 @@ in any `plugins/flow/skills/*/SKILL.md`.}
 
 ## Pattern Detected
 
-{Removed from the promoted skill by `bin/promote-proposal.sh` and recorded in the
-promotion commit instead — this section argues for promotion, and the promoted
-file is read by an agent about to act.}
+{Removed from the promoted skill by `bin/promote-proposal.sh` and published in
+the promotion pull request instead — this section argues for promotion, and the
+promoted file is read by an agent about to act.}
 
 {Description of the recurring pattern that was identified from decision journal analysis.}
 
@@ -43,9 +43,14 @@ file is read by an agent about to act.}
 
 ## Evidence
 
-{Removed from the promoted skill and recorded in the promotion commit. Journal
-paths name issues in the project the pattern was mined from; they resolve in no
-repository the skill is later installed into.}
+{Removed from the promoted skill and published in the promotion pull request
+body instead. Journal paths name issues in the project the pattern was mined
+from; they resolve in no repository the skill is later installed into.
+
+This text becomes public when the pull request opens. `/flow:learn` mines
+whatever project you were standing in, which may be private — quote only what a
+reader outside that project may see, and run `--dry-run` first to read exactly
+what would be published.}
 
 ### Journal Citations
 
@@ -90,7 +95,8 @@ repository the skill is later installed into.}
 ## Promotion Checklist
 
 {Removed from the promoted skill — the last two boxes describe the PR that
-carries it.}
+carries it. `source-sessions`, `evidence-count` and `proposed` are removed from
+the frontmatter for the same reason and published alongside this section.}
 
 - [ ] Reviewed by human
 - [ ] Evidence is compelling (not coincidental)
