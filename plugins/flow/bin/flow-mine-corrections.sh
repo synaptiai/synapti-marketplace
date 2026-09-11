@@ -109,6 +109,30 @@ elif [ -d "$PROJECT_DIR" ]; then
   PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 fi
 
+# Defined before the root resolution below, which calls it: the HOME guard
+# there was dead code while this sat 23 lines further down, so an unset HOME
+# produced 'command not found' and then died on $HOME under set -u — with
+# none of the keys a caller parses, breaking the exit-0 contract the `!`
+# blocks and the SessionEnd hook rely on.
+# Missing inputs are a normal state (fresh machine, transcripts pruned,
+# non-standard install). Report zero candidates and exit 0 so callers in `!`
+# blocks and SessionEnd hooks never fail because of it.
+_report_missing() {
+  echo "flow-mine-corrections.sh: $1" >&2
+  if [ "$FORMAT" = "markdown" ]; then
+    echo "TRANSCRIPT_DIR=${ONE_FILE:-$TRANSCRIPT_DIR}"
+    echo "TRANSCRIPT_DIR_STATE=missing"
+    # Name every root that was probed. "Not found" and "found and empty" are
+    # different facts, and reporting one path made them look identical.
+      # The roots are named whether or not one matched — see the success-path
+    # emit below for why.
+    [ -z "$ONE_FILE" ] && [ -n "${TRANSCRIPT_ROOTS_TRIED:-}" ] && echo "TRANSCRIPT_ROOTS_TRIED=$TRANSCRIPT_ROOTS_TRIED"
+    echo "CANDIDATE_COUNT=0"
+    echo "SESSION_COUNT=0"
+    echo "SESSIONS_WITH_CANDIDATES=0"
+  fi
+  exit 0
+}
 # Default transcript dir: <root>/<slug>. The slug replaces every character
 # that is not [A-Za-z0-9] with `-` (so /home/user/repo -> -home-user-repo).
 #
@@ -163,23 +187,6 @@ if [ -z "$TRANSCRIPT_DIR" ]; then
   fi
 fi
 
-# Missing inputs are a normal state (fresh machine, transcripts pruned,
-# non-standard install). Report zero candidates and exit 0 so callers in `!`
-# blocks and SessionEnd hooks never fail because of it.
-_report_missing() {
-  echo "flow-mine-corrections.sh: $1" >&2
-  if [ "$FORMAT" = "markdown" ]; then
-    echo "TRANSCRIPT_DIR=${ONE_FILE:-$TRANSCRIPT_DIR}"
-    echo "TRANSCRIPT_DIR_STATE=missing"
-    # Name every root that was probed. "Not found" and "found and empty" are
-    # different facts, and reporting one path made them look identical.
-    [ -z "$ONE_FILE" ] && [ -n "${TRANSCRIPT_ROOTS_TRIED:-}" ] && echo "TRANSCRIPT_ROOTS_TRIED=$TRANSCRIPT_ROOTS_TRIED"
-    echo "CANDIDATE_COUNT=0"
-    echo "SESSION_COUNT=0"
-    echo "SESSIONS_WITH_CANDIDATES=0"
-  fi
-  exit 0
-}
 if [ -n "$ONE_FILE" ]; then
   [ -L "$ONE_FILE" ] && _report_missing "--file is a symlink; refusing to follow it: $ONE_FILE"
   [ -f "$ONE_FILE" ] || _report_missing "transcript file not found: $ONE_FILE"
@@ -198,7 +205,7 @@ else
 fi
 
 # Everything user-controlled travels via argv, never via source interpolation.
-python3 - "$PROJECT_DIR" "$TRANSCRIPT_DIR" "$ONE_FILE" "$SINCE" "$MAX_SESSIONS" "$FORMAT" "$MIN_CHARS" <<'PYTHON'
+python3 - "$PROJECT_DIR" "$TRANSCRIPT_DIR" "$ONE_FILE" "$SINCE" "$MAX_SESSIONS" "$FORMAT" "$MIN_CHARS" "${TRANSCRIPT_ROOTS_TRIED:-}" <<'PYTHON'
 import datetime
 import json
 import os
@@ -494,6 +501,13 @@ def cell(s, n):
 
 print(f"TRANSCRIPT_DIR={one_file or transcript_dir}")
 print("TRANSCRIPT_DIR_STATE=ok")
+# Which roots were searched, on the success path as well as the failure one.
+# "Searched both and found nothing" and "found it, and it is empty" are
+# different findings, and naming the roots only when nothing matched left them
+# reading the same here — the confusion issue #168 is about, one level down.
+_roots = sys.argv[8] if len(sys.argv) > 8 else ""
+if _roots and not one_file:
+    print(f"TRANSCRIPT_ROOTS_TRIED={_roots}")
 print(f"CANDIDATE_COUNT={len(candidates)}")
 print(f"SESSION_COUNT={len(files)}")
 print(f"SESSIONS_WITH_CANDIDATES={sessions_with}")

@@ -336,18 +336,27 @@ cleanup_promote() {
   fi
   if [ "$rc" -ne 0 ] && [ "$BRANCH_CREATED" -eq 1 ]; then
     echo "promote-proposal.sh: cleanup — restoring '$ORIGINAL_BRANCH', dropping partial branch '$BRANCH'" >&2
-    git checkout "$ORIGINAL_BRANCH" >/dev/null 2>&1 || true
-    git branch -D "$BRANCH" >/dev/null 2>&1 || true
+    git -C "$REPO_ROOT" checkout "$ORIGINAL_BRANCH" >/dev/null 2>&1 || true
+    git -C "$REPO_ROOT" branch -D "$BRANCH" >/dev/null 2>&1 || true
   fi
   if [ -n "$TMP_BODY" ]; then
     rm -f "$TMP_BODY" "$TMP_BODY.bak" 2>/dev/null || true
   fi
   exit "$rc"
 }
+# --abbrev-ref prints the literal string HEAD on a detached checkout, which is a
+# plausible state for the worktree this now supports. Restoring "HEAD" restores
+# nothing, so the commit is recorded instead.
 ORIGINAL_BRANCH=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD) || {
   echo "promote-proposal.sh: cannot read HEAD in $REPO_ROOT" >&2
   exit 2
 }
+if [ "$ORIGINAL_BRANCH" = "HEAD" ]; then
+  ORIGINAL_BRANCH=$(git -C "$REPO_ROOT" rev-parse HEAD) || {
+    echo "promote-proposal.sh: cannot read the detached HEAD commit in $REPO_ROOT" >&2
+    exit 2
+  }
+fi
 BRANCH="feature/learn-promote-$PROPOSAL_NAME"
 trap cleanup_promote EXIT
 
