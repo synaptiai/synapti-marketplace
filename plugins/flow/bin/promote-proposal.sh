@@ -23,7 +23,8 @@
 # Exits:
 #   0 — promotion succeeded (or dry-run completed without errors)
 #   1 — validation failed (proposal malformed, refused to overwrite, etc.)
-#   2 — infrastructure error (file not found, repo not detected, gh failure)
+#   2 — infrastructure error (file not found, no flow checkout to promote into,
+#       an unreadable checkout, gh failure)
 
 set -euo pipefail
 
@@ -51,6 +52,7 @@ done
 [ -z "$PROPOSAL" ] && { echo "promote-proposal.sh: --proposal is required" >&2; exit 1; }
 [ ! -f "$PROPOSAL" ] && { echo "promote-proposal.sh: proposal file not found: $PROPOSAL" >&2; exit 2; }
 
+
 # Reject newline-bearing paths upfront. The PR-body sed substitution at the
 # end of this script cannot escape literal newlines in `$PROPOSAL` cleanly,
 # and by the time we reach that step we have already pushed a remote branch.
@@ -62,10 +64,110 @@ case "$PROPOSAL" in
     ;;
 esac
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
-  echo "promote-proposal.sh: not inside a git repository" >&2
-  exit 2
+# ---------------------------------------------------------------------------
+# Where does the promotion land?
+#
+# In flow's own repository, or nowhere. /flow:learn writes proposals to a
+# user-scoped directory, so they accumulate from whichever project the user
+# happened to be in, and flow is almost always used from a consuming project
+# rather than from the marketplace checkout. Resolving the target against the
+# current repository therefore aimed the common case at the wrong place: it
+# would add a plugins/flow/ tree to a project that never had one, commit, push a
+# branch and open a pull request whose reviewers have no context for it, while
+# the proposal never reached flow at all.
+#
+# Nothing caught it, because every guard in this script fires on OVERWRITING an
+# existing skill and none on the target being in the wrong repository — and a
+# fresh proposal name always passes that (issue #169).
+#
+# Resolution order, first hit wins:
+#   1. FLOW_REPO_ROOT, for a checkout in a place this cannot guess.
+#   2. The current repository, but only when it already contains
+#      plugins/flow/skills — that is what makes it the marketplace rather than
+#      a project that merely uses flow.
+#   3. The repository containing this script, found by walking up from it. A
+#      marketplace clone reaches its own root this way even when the user is
+#      standing somewhere else entirely.
+#
+# A plugin installed under ~/.claude/plugins is a cache, not a checkout: it has
+# no git remote to open a pull request against, so it is refused with the
+# reason rather than written into.
+# A checkout of flow: it holds the skills tree and git recognises it. `.git` is
+# tested with -e rather than -d because a worktree and a submodule both use a
+# .git FILE, and this repository has a worktree — requiring a directory rejected
+# a legitimate flow checkout on all three resolution paths.
+_pp_is_flow_repo() {
+  [ -n "$1" ] || return 1
+  [ -d "$1/plugins/flow/skills" ] || return 1
+  [ -e "$1/.git" ] || return 1
+  return 0
 }
+
+# Which half failed? A refusal that names the wrong cause sends the reader to
+# the wrong fix: the first version reported "it has no plugins/flow/skills" for
+# a worktree that plainly had one.
+_pp_why_not() {
+  if [ -z "$1" ]; then printf 'no path'; return; fi
+  if [ ! -d "$1/plugins/flow/skills" ]; then printf 'it has no plugins/flow/skills'; return; fi
+  if [ ! -e "$1/.git" ]; then printf 'it is not a git checkout (no .git)'; return; fi
+  printf 'unknown'
+}
+
+FLOW_ROOT=""
+PROMOTE_SOURCE=""
+
+if [ -n "${FLOW_REPO_ROOT:-}" ]; then
+  if _pp_is_flow_repo "$FLOW_REPO_ROOT"; then
+    FLOW_ROOT="$FLOW_REPO_ROOT"; PROMOTE_SOURCE="FLOW_REPO_ROOT"
+  else
+    echo "promote-proposal.sh: FLOW_REPO_ROOT=$FLOW_REPO_ROOT is not a flow checkout — $(_pp_why_not "$FLOW_REPO_ROOT")" >&2
+    exit 2
+  fi
+fi
+
+CWD_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$FLOW_ROOT" ] && _pp_is_flow_repo "$CWD_ROOT"; then
+  FLOW_ROOT="$CWD_ROOT"; PROMOTE_SOURCE="current repository"
+fi
+
+if [ -z "$FLOW_ROOT" ]; then
+  # Resolve symlinks first. `~/bin/promote-proposal.sh -> .../plugins/flow/bin/`
+  # is an ordinary install shape, and walking up from the link's own directory
+  # loses this resolution path entirely. bash 3.2 has no `readlink -f`.
+  _pp_src="${BASH_SOURCE[0]}"
+  _pp_hops=0
+  while [ -L "$_pp_src" ] && [ "$_pp_hops" -lt 32 ]; do
+    _pp_target="$(readlink "$_pp_src")"
+    case "$_pp_target" in
+      /*) _pp_src="$_pp_target" ;;
+      *)  _pp_src="$(dirname "$_pp_src")/$_pp_target" ;;
+    esac
+    _pp_hops=$((_pp_hops + 1))
+  done
+  _pp_dir="$(cd "$(dirname "$_pp_src")" && pwd)" || {
+    echo "promote-proposal.sh: cannot resolve the directory of this script" >&2
+    exit 2
+  }
+  while [ -n "$_pp_dir" ] && [ "$_pp_dir" != "/" ]; do
+    if _pp_is_flow_repo "$_pp_dir"; then
+      FLOW_ROOT="$_pp_dir"; PROMOTE_SOURCE="the checkout containing this script"; break
+    fi
+    _pp_dir="$(dirname "$_pp_dir")"
+  done
+  unset _pp_dir _pp_src _pp_target _pp_hops
+fi
+
+if [ -z "$FLOW_ROOT" ]; then
+  echo "promote-proposal.sh: could not find a flow checkout to promote into." >&2
+  if [ -n "$CWD_ROOT" ]; then
+    echo "promote-proposal.sh: the current repository ($CWD_ROOT) is not one — $(_pp_why_not "$CWD_ROOT")." >&2
+    echo "promote-proposal.sh: promoting here would add a plugins/flow/ tree it never had and open a pull request on it." >&2
+  fi
+  echo "promote-proposal.sh: clone the marketplace and re-run from there, or set FLOW_REPO_ROOT to an existing clone." >&2
+  exit 2
+fi
+
+REPO_ROOT="$FLOW_ROOT"
 LEARNED_DIR="$REPO_ROOT/plugins/flow/skills/learned"
 
 if ! python3 -c "import yaml" >/dev/null 2>&1; then
@@ -181,15 +283,27 @@ fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "DRY-RUN: validation passed for '$PROPOSAL_NAME'"
+  # Name the repository and how it was chosen. A dry run whose output does not
+  # say where the promotion lands cannot answer the question it is asked.
+  echo "DRY-RUN: flow checkout: $REPO_ROOT (resolved from $PROMOTE_SOURCE)"
   echo "DRY-RUN: would copy $PROPOSAL → $TARGET"
   echo "DRY-RUN: would create branch feature/learn-promote-$PROPOSAL_NAME"
   echo "DRY-RUN: would commit + push + open draft PR"
   exit 0
 fi
 
-# Pre-flight: clean working tree (otherwise checkout -b will mix changes in)
-if [ -n "$(git status --porcelain)" ]; then
-  echo "promote-proposal.sh: working tree is not clean — commit or stash before promoting" >&2
+# Pre-flight: clean working tree (otherwise checkout -b will mix changes in).
+# -C "$REPO_ROOT" because that is now the repository being written to, which is
+# not necessarily the one the caller is standing in. Without it the gate
+# inspected the caller's tree: a dirty flow checkout passed and its changes were
+# swept into the promotion commit, while a dirty consuming project blocked a
+# promotion that had nothing to do with it.
+PP_STATUS=$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null) || {
+  echo "promote-proposal.sh: cannot read the working tree of $REPO_ROOT" >&2
+  exit 2
+}
+if [ -n "$PP_STATUS" ]; then
+  echo "promote-proposal.sh: the working tree of $REPO_ROOT is not clean — commit or stash before promoting" >&2
   exit 1
 fi
 
@@ -222,15 +336,27 @@ cleanup_promote() {
   fi
   if [ "$rc" -ne 0 ] && [ "$BRANCH_CREATED" -eq 1 ]; then
     echo "promote-proposal.sh: cleanup — restoring '$ORIGINAL_BRANCH', dropping partial branch '$BRANCH'" >&2
-    git checkout "$ORIGINAL_BRANCH" >/dev/null 2>&1 || true
-    git branch -D "$BRANCH" >/dev/null 2>&1 || true
+    git -C "$REPO_ROOT" checkout "$ORIGINAL_BRANCH" >/dev/null 2>&1 || true
+    git -C "$REPO_ROOT" branch -D "$BRANCH" >/dev/null 2>&1 || true
   fi
   if [ -n "$TMP_BODY" ]; then
     rm -f "$TMP_BODY" "$TMP_BODY.bak" 2>/dev/null || true
   fi
   exit "$rc"
 }
-ORIGINAL_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+# --abbrev-ref prints the literal string HEAD on a detached checkout, which is a
+# plausible state for the worktree this now supports. Restoring "HEAD" restores
+# nothing, so the commit is recorded instead.
+ORIGINAL_BRANCH=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD) || {
+  echo "promote-proposal.sh: cannot read HEAD in $REPO_ROOT" >&2
+  exit 2
+}
+if [ "$ORIGINAL_BRANCH" = "HEAD" ]; then
+  ORIGINAL_BRANCH=$(git -C "$REPO_ROOT" rev-parse HEAD) || {
+    echo "promote-proposal.sh: cannot read the detached HEAD commit in $REPO_ROOT" >&2
+    exit 2
+  }
+fi
 BRANCH="feature/learn-promote-$PROPOSAL_NAME"
 trap cleanup_promote EXIT
 

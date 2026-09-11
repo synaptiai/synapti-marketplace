@@ -17,7 +17,10 @@
 # Flags:
 #   --project-dir <cwd>    project whose transcripts to scan (default: $PWD)
 #   --transcript-dir <dir> directory holding <session>.jsonl files. Default:
-#                          ${CLAUDE_TRANSCRIPT_DIR:-$HOME/.claude/projects}/<slug>
+#                          CLAUDE_TRANSCRIPT_DIR/<slug> when that is set,
+#                          otherwise the first of $HOME/.claude/projects/<slug>
+#                          and $HOME/.claude-work/projects/<slug> that actually
+#                          holds transcripts
 #                          where <slug> is --project-dir with every
 #                          non-alphanumeric character replaced by `-`
 #   --file <path>          scan exactly this one transcript (ignores the dir)
@@ -106,14 +109,11 @@ elif [ -d "$PROJECT_DIR" ]; then
   PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 fi
 
-# Default transcript dir: <root>/<slug>. The slug replaces every character
-# that is not [A-Za-z0-9] with `-` (so /home/user/repo -> -home-user-repo),
-# matching the layout under ~/.claude/projects.
-if [ -z "$TRANSCRIPT_DIR" ]; then
-  SLUG=$(printf '%s' "$PROJECT_DIR" | sed 's/[^A-Za-z0-9]/-/g')
-  TRANSCRIPT_DIR="${CLAUDE_TRANSCRIPT_DIR:-$HOME/.claude/projects}/$SLUG"
-fi
-
+# Defined before the root resolution below, which calls it: the HOME guard
+# there was dead code while this sat 23 lines further down, so an unset HOME
+# produced 'command not found' and then died on $HOME under set -u — with
+# none of the keys a caller parses, breaking the exit-0 contract the `!`
+# blocks and the SessionEnd hook rely on.
 # Missing inputs are a normal state (fresh machine, transcripts pruned,
 # non-standard install). Report zero candidates and exit 0 so callers in `!`
 # blocks and SessionEnd hooks never fail because of it.
@@ -122,21 +122,90 @@ _report_missing() {
   if [ "$FORMAT" = "markdown" ]; then
     echo "TRANSCRIPT_DIR=${ONE_FILE:-$TRANSCRIPT_DIR}"
     echo "TRANSCRIPT_DIR_STATE=missing"
+    # Name every root that was probed. "Not found" and "found and empty" are
+    # different facts, and reporting one path made them look identical.
+      # The roots are named whether or not one matched — see the success-path
+    # emit below for why.
+    [ -z "$ONE_FILE" ] && [ -n "${TRANSCRIPT_ROOTS_TRIED:-}" ] && echo "TRANSCRIPT_ROOTS_TRIED=$TRANSCRIPT_ROOTS_TRIED"
     echo "CANDIDATE_COUNT=0"
     echo "SESSION_COUNT=0"
     echo "SESSIONS_WITH_CANDIDATES=0"
   fi
   exit 0
 }
+# Default transcript dir: <root>/<slug>. The slug replaces every character
+# that is not [A-Za-z0-9] with `-` (so /home/user/repo -> -home-user-repo).
+#
+# The root is a LIST, not one path. Claude Code stores transcripts under
+# ~/.claude/projects on some machines and ~/.claude-work/projects on others, and
+# probing only the first meant that on a machine using the second layout the
+# miner reported TRANSCRIPT_STATE=missing and /flow:learn ran its whole
+# correction phase against zero rows. Nothing looked wrong: the run completed,
+# proposals were produced, and the half carrying the behavioural signal was one
+# line in a status table. On the machine where this was measured the default
+# path held nothing and the real directory held 8 sessions and 46 candidate
+# rows (issue #168).
+#
+# CLAUDE_TRANSCRIPT_DIR and --transcript-dir still override the list outright.
+# TRANSCRIPT_ROOTS_TRIED records every root probed so a genuinely empty result
+# is distinguishable from a directory that was never found.
+TRANSCRIPT_ROOTS_TRIED=""
+TRANSCRIPT_ROOTS_SEARCHED=0
+if [ -z "$TRANSCRIPT_DIR" ]; then
+  SLUG=$(printf '%s' "$PROJECT_DIR" | sed 's/[^A-Za-z0-9]/-/g')
+  if [ -n "${CLAUDE_TRANSCRIPT_DIR:-}" ]; then
+    TRANSCRIPT_DIR="$CLAUDE_TRANSCRIPT_DIR/$SLUG"
+  else
+    TRANSCRIPT_ROOTS_SEARCHED=1
+    # Probe for CONTENT, not for the directory. On the machine that reported
+    # this issue, ~/.claude/projects/<slug> exists and holds only a memory/
+    # subdirectory -- zero transcripts -- while ~/.claude-work/projects/<slug>
+    # holds them. A directory-existence probe picks the first, reports
+    # TRANSCRIPT_STATE=ok with SESSION_COUNT=0, and the whole evidence source
+    # stays invisible behind a result that reads like "found and empty". That is
+    # the exact confusion issue #168 is about, so the probe has to ask the
+    # question the issue asks: which root actually has the transcripts.
+    _first_existing=""
+    if [ -z "${HOME:-}" ]; then
+      _report_missing "HOME is unset, so the transcript roots cannot be located; pass --transcript-dir or set CLAUDE_TRANSCRIPT_DIR"
+    fi
+    for _root in "$HOME/.claude/projects" "$HOME/.claude-work/projects"; do
+      TRANSCRIPT_ROOTS_TRIED="${TRANSCRIPT_ROOTS_TRIED:+$TRANSCRIPT_ROOTS_TRIED, }$_root"
+      if ls "$_root/$SLUG"/*.jsonl >/dev/null 2>&1; then
+        TRANSCRIPT_DIR="$_root/$SLUG"
+        break
+      fi
+      # Remember the first root whose directory exists, so a genuinely empty
+      # project still reports a path someone can go and look at.
+      [ -z "$_first_existing" ] && [ -d "$_root/$SLUG" ] && _first_existing="$_root/$SLUG"
+    done
+    if [ -z "$TRANSCRIPT_DIR" ]; then
+      TRANSCRIPT_DIR="${_first_existing:-$HOME/.claude/projects/$SLUG}"
+    fi
+    unset _first_existing
+    unset _root
+  fi
+fi
+
 if [ -n "$ONE_FILE" ]; then
   [ -L "$ONE_FILE" ] && _report_missing "--file is a symlink; refusing to follow it: $ONE_FILE"
   [ -f "$ONE_FILE" ] || _report_missing "transcript file not found: $ONE_FILE"
 else
-  [ -d "$TRANSCRIPT_DIR" ] || _report_missing "transcript dir not found: $TRANSCRIPT_DIR (set --transcript-dir or CLAUDE_TRANSCRIPT_DIR)"
+  if [ ! -d "$TRANSCRIPT_DIR" ]; then
+    # Two different facts, two different sentences. When the caller named the
+    # directory, say that directory is not there. When the roots were searched,
+    # name every one of them — "not found" and "found and empty" look identical
+    # otherwise, which is how a whole evidence source stayed invisible.
+    if [ "$TRANSCRIPT_ROOTS_SEARCHED" = "1" ]; then
+      _report_missing "no transcript dir for this project under any known root (tried: $TRANSCRIPT_ROOTS_TRIED); set --transcript-dir or CLAUDE_TRANSCRIPT_DIR to point at it"
+    else
+      _report_missing "transcript dir not found: $TRANSCRIPT_DIR (set --transcript-dir or CLAUDE_TRANSCRIPT_DIR)"
+    fi
+  fi
 fi
 
 # Everything user-controlled travels via argv, never via source interpolation.
-python3 - "$PROJECT_DIR" "$TRANSCRIPT_DIR" "$ONE_FILE" "$SINCE" "$MAX_SESSIONS" "$FORMAT" "$MIN_CHARS" <<'PYTHON'
+python3 - "$PROJECT_DIR" "$TRANSCRIPT_DIR" "$ONE_FILE" "$SINCE" "$MAX_SESSIONS" "$FORMAT" "$MIN_CHARS" "${TRANSCRIPT_ROOTS_TRIED:-}" <<'PYTHON'
 import datetime
 import json
 import os
@@ -432,6 +501,13 @@ def cell(s, n):
 
 print(f"TRANSCRIPT_DIR={one_file or transcript_dir}")
 print("TRANSCRIPT_DIR_STATE=ok")
+# Which roots were searched, on the success path as well as the failure one.
+# "Searched both and found nothing" and "found it, and it is empty" are
+# different findings, and naming the roots only when nothing matched left them
+# reading the same here — the confusion issue #168 is about, one level down.
+_roots = sys.argv[8] if len(sys.argv) > 8 else ""
+if _roots and not one_file:
+    print(f"TRANSCRIPT_ROOTS_TRIED={_roots}")
 print(f"CANDIDATE_COUNT={len(candidates)}")
 print(f"SESSION_COUNT={len(files)}")
 print(f"SESSIONS_WITH_CANDIDATES={sessions_with}")
