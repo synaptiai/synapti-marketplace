@@ -87,9 +87,18 @@ for NAME in "$@"; do
   esac
   FILE="${SKILLS_DIR}/${NAME}/SKILL.md"
   if [ ! -f "$FILE" ]; then
-    RECORDS="${RECORDS}SKILL_LOAD_ERROR=${NAME} reason=not-found"$'\n'
-    PROBLEMS=$((PROBLEMS+1))
-    continue
+    # A skill promoted by bin/promote-proposal.sh lives one level deeper, in
+    # skills/learned/<name>/. The `*/*` guard above rejects the qualified form,
+    # so without this fallback nothing this loader is asked for by plain name
+    # can ever resolve to a learned skill. The name is already charset-checked
+    # by that guard, so the path cannot escape SKILLS_DIR.
+    if [ -f "${SKILLS_DIR}/learned/${NAME}/SKILL.md" ]; then
+      FILE="${SKILLS_DIR}/learned/${NAME}/SKILL.md"
+    else
+      RECORDS="${RECORDS}SKILL_LOAD_ERROR=${NAME} reason=not-found"$'\n'
+      PROBLEMS=$((PROBLEMS+1))
+      continue
+    fi
   fi
   FM=$(_frontmatter "$FILE")
   if printf '%s\n' "$FM" | grep -qE '^(context:[[:space:]]*fork|agent:[[:space:]]*[^[:space:]])'; then

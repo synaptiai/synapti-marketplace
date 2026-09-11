@@ -16,8 +16,18 @@
 #   status, proposed
 # - status MUST equal "proposal" (the script will rewrite to "promoted")
 # - name MUST match kebab-case pattern `^[a-z][a-z0-9-]*$`
-# - Body MUST include sections: Pattern Detected, Knowledge, Evidence,
+# - Body MUST include sections: Contract, Pattern Detected, Knowledge, Evidence,
 #   Verification, Promotion Checklist
+# - Pattern Detected, Evidence, Enforcement point and Promotion Checklist are
+#   written for the promotion reviewer, so they are stripped from the promoted
+#   skill and published in the pull request body instead, together with the
+#   source-sessions / evidence-count / proposed frontmatter that names the
+#   project the pattern was mined in. The PR body stays editable until merge;
+#   a commit message would need a history rewrite.
+# - --dry-run runs the real transform against a throwaway copy and prints what
+#   the pull request would publish
+# - The promoted body MUST be skill-shaped: Contract first, <=120 contract
+#   words, <=600 body words
 # - Target `plugins/flow/skills/learned/<name>/SKILL.md` MUST NOT already exist
 #
 # Exits:
@@ -178,12 +188,44 @@ fi
 # Validate the proposal AND extract its name in one Python pass. The script
 # emits the validated name on stdout (for bash to consume) and any errors on
 # stderr. Validation failure exits 1; infra failure exits 2.
+# Both python passes below import bin/lib/proposal_sections.py so the validator
+# and the transform cannot disagree about what a section is. FLOW_BIN_LIB is
+# passed explicitly rather than derived inside python, because the defensive
+# sys.path filter strips the script-directory entry.
+# Prefer the lib beside this script — an installed copy promotes into a
+# separate checkout, and the parser that validates must be the one that
+# transforms. Fall back to the target checkout's copy when this script was
+# invoked through a path whose sibling lib is absent.
+_pp_lib_src="${BASH_SOURCE[0]}"
+_pp_lib_hops=0
+while [ -L "$_pp_lib_src" ] && [ "$_pp_lib_hops" -lt 32 ]; do
+  _pp_lib_target="$(readlink "$_pp_lib_src")"
+  case "$_pp_lib_target" in
+    /*) _pp_lib_src="$_pp_lib_target" ;;
+    *)  _pp_lib_src="$(dirname "$_pp_lib_src")/$_pp_lib_target" ;;
+  esac
+  _pp_lib_hops=$((_pp_lib_hops + 1))
+done
+FLOW_BIN_LIB="$(cd "$(dirname "$_pp_lib_src")" && pwd)/lib"
+if [ ! -f "$FLOW_BIN_LIB/proposal_sections.py" ]; then
+  FLOW_BIN_LIB="$REPO_ROOT/plugins/flow/bin/lib"
+fi
+unset _pp_lib_src _pp_lib_target _pp_lib_hops
+if [ ! -f "$FLOW_BIN_LIB/proposal_sections.py" ]; then
+  echo "promote-proposal.sh: cannot find proposal_sections.py (looked beside this script and in $REPO_ROOT/plugins/flow/bin/lib)" >&2
+  exit 2
+fi
+export FLOW_BIN_LIB
+
 PROPOSAL_NAME=$(python3 - "$PROPOSAL" <<'PYTHON'
+import os
 import sys
 
 # Defensive sys.path filter — see bin/validate-skill-input.sh for rationale.
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+sys.path.insert(0, os.environ["FLOW_BIN_LIB"])
 
+import proposal_sections
 import yaml
 
 proposal = sys.argv[1]
@@ -219,23 +261,41 @@ if fm.get("status") != "proposal":
     print(f"ERROR: proposal status must be 'proposal' (got: {fm.get('status')!r})", file=sys.stderr)
     sys.exit(1)
 
-# Body section requirements per templates/skill-proposal.md
+# Body section requirements per templates/skill-proposal.md.
+#
+# Matched as exact H2 titles through the shared parser, not as substrings. A
+# substring scan accepted "## Evidence (journal citations)" and "### Evidence",
+# neither of which the transform would recognise as the section to remove — so
+# the proposal passed validation and shipped its journal paths inside the skill.
 body = content[end + 5:]
 required_sections = [
-    "## Pattern Detected",
-    "## Knowledge",
-    "## Evidence",
-    "## Verification",
-    "## Promotion Checklist",
+    "Contract",
+    "Pattern Detected",
+    "Knowledge",
+    "Evidence",
+    "Verification",
+    "Promotion Checklist",
 ]
-missing_sections = [s for s in required_sections if s not in body]
+present = proposal_sections.titles(body)
+missing_sections = [s for s in required_sections if s not in present]
 if missing_sections:
     print(f"ERROR: proposal missing required body sections: {missing_sections}", file=sys.stderr)
+    print(f"  found: {present}", file=sys.stderr)
+    sys.exit(1)
+
+if proposal_sections.unclosed_fence(body):
+    print("ERROR: proposal ends inside an unterminated code fence", file=sys.stderr)
     sys.exit(1)
 
 import re
 name = fm["name"]
-if not re.match(r"^[a-z][a-z0-9-]*$", name):
+if not isinstance(name, str):
+    print(f"ERROR: proposal name must be a string (got {type(name).__name__}: {name!r})", file=sys.stderr)
+    sys.exit(1)
+# fullmatch, not match: `$` also matches before a trailing newline, so
+# re.match accepted "foo\n" as kebab-case. Harmless today only because command
+# substitution strips it — two accidents deep for a path-construction guard.
+if not re.fullmatch(r"[a-z][a-z0-9-]*", name):
     print(f"ERROR: proposal name '{name}' must be kebab-case (^[a-z][a-z0-9-]*$)", file=sys.stderr)
     sys.exit(1)
 
@@ -286,7 +346,40 @@ if [ "$DRY_RUN" -eq 1 ]; then
   # Name the repository and how it was chosen. A dry run whose output does not
   # say where the promotion lands cannot answer the question it is asked.
   echo "DRY-RUN: flow checkout: $REPO_ROOT (resolved from $PROMOTE_SOURCE)"
-  echo "DRY-RUN: would copy $PROPOSAL → $TARGET"
+  echo "DRY-RUN: would transform $PROPOSAL → $TARGET"
+
+  # Run the real transform against a throwaway copy. Without this the dry run
+  # could not detect any of the ways promotion refuses — a proposal with no
+  # leading Contract or an over-budget body printed "validation passed" and
+  # failed only on the real run. It also prints what the pull request will
+  # publish, which is the last point before it is public.
+  DR_DIR=$(mktemp -d -t flow-promote-dryrun.XXXXXX) || {
+    echo "promote-proposal.sh: mktemp -d failed" >&2
+    exit 2
+  }
+  _dr_clean() { [ -n "${DR_DIR:-}" ] && rm -r "$DR_DIR" 2>/dev/null; }
+  cp "$PROPOSAL" "$DR_DIR/SKILL.md" || {
+    echo "promote-proposal.sh: cannot copy the proposal for the dry run" >&2
+    _dr_clean
+    exit 2
+  }
+  if python3 "$FLOW_BIN_LIB/promote_transform.py" "$DR_DIR/SKILL.md" "$DR_DIR/evidence.md"; then
+    echo "DRY-RUN: the promoted skill is well-formed"
+    if [ -s "$DR_DIR/evidence.md" ]; then
+      echo "DRY-RUN: this would be published in the pull request body ---"
+      sed 's/^/DRY-RUN: | /' "$DR_DIR/evidence.md"
+      echo "DRY-RUN: --- end of removed material"
+    else
+      echo "DRY-RUN: nothing would be removed from the proposal"
+    fi
+  else
+    DR_RC=$?
+    _dr_clean
+    echo "DRY-RUN: the proposal would NOT promote to a well-formed skill (see above)" >&2
+    exit "$DR_RC"
+  fi
+  _dr_clean
+
   echo "DRY-RUN: would create branch feature/learn-promote-$PROPOSAL_NAME"
   echo "DRY-RUN: would commit + push + open draft PR"
   exit 0
@@ -326,13 +419,21 @@ fi
 # don't mask the original failure code propagated to the caller.
 TARGET_WRITTEN=0
 BRANCH_CREATED=0
+BRANCH_PUSHED=0
 TMP_BODY=""
+EVIDENCE_FILE=""
 cleanup_promote() {
   local rc=$?
   if [ "$rc" -ne 0 ] && [ "$TARGET_WRITTEN" -eq 1 ] && [ "$BRANCH_CREATED" -eq 0 ]; then
     # Pre-branch failure — drop the orphan target so a retry sees a clean tree.
     echo "promote-proposal.sh: cleanup — removing orphan $TARGET_DIR (pre-branch failure)" >&2
     rm -rf "$TARGET_DIR" 2>/dev/null || true
+  fi
+  if [ "$rc" -ne 0 ] && [ "$BRANCH_PUSHED" -eq 1 ]; then
+    # The local branch is about to be deleted, but the pushed one is not ours
+    # to remove (deleting a remote branch is Tier 3). Name the recovery.
+    echo "promote-proposal.sh: cleanup — '$BRANCH' was already pushed and no PR was opened." >&2
+    echo "promote-proposal.sh: remove it with: git push origin --delete $BRANCH" >&2
   fi
   if [ "$rc" -ne 0 ] && [ "$BRANCH_CREATED" -eq 1 ]; then
     echo "promote-proposal.sh: cleanup — restoring '$ORIGINAL_BRANCH', dropping partial branch '$BRANCH'" >&2
@@ -341,6 +442,9 @@ cleanup_promote() {
   fi
   if [ -n "$TMP_BODY" ]; then
     rm -f "$TMP_BODY" "$TMP_BODY.bak" 2>/dev/null || true
+  fi
+  if [ -n "$EVIDENCE_FILE" ]; then
+    rm -f "$EVIDENCE_FILE" 2>/dev/null || true
   fi
   exit "$rc"
 }
@@ -365,31 +469,20 @@ mkdir -p "$TARGET_DIR"
 cp "$PROPOSAL" "$TARGET"
 TARGET_WRITTEN=1
 
-# Rewrite frontmatter status: proposal → promoted, add `promoted: <date>`
-python3 - "$TARGET" <<'PYTHON'
-import datetime
-import sys
-
-# Defensive sys.path filter — see bin/validate-skill-input.sh for rationale.
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
-
-import yaml
-
-target = sys.argv[1]
-with open(target, "r", encoding="utf-8") as f:
-    content = f.read()
-
-end = content.find("\n---\n", 4)
-fm = yaml.safe_load(content[4:end])
-body = content[end + 5:]
-
-fm["status"] = "promoted"
-fm["promoted"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-
-front = yaml.safe_dump(fm, sort_keys=False, default_flow_style=False, allow_unicode=True)
-with open(target, "w", encoding="utf-8") as f:
-    f.write(f"---\n{front}---\n{body}")
-PYTHON
+# Transform the proposal into a skill. Frontmatter status proposal → promoted,
+# and the proposal-only sections come out: they address a reviewer deciding
+# whether to promote, while the file they land in addresses an agent about to
+# act. The evidence is not discarded — it is written to $EVIDENCE_FILE and goes
+# into the commit message, where the audit trail belongs.
+EVIDENCE_FILE=$(mktemp -t flow-promote-evidence.XXXXXX) || {
+  echo "promote-proposal.sh: mktemp failed — cannot stage the removed material" >&2
+  exit 2
+}
+[ -n "$EVIDENCE_FILE" ] || {
+  echo "promote-proposal.sh: mktemp returned an empty path" >&2
+  exit 2
+}
+python3 "$FLOW_BIN_LIB/promote_transform.py" "$TARGET" "$EVIDENCE_FILE"
 
 echo "OK: promoted '$PROPOSAL_NAME' → $TARGET"
 
@@ -425,23 +518,32 @@ git add "$TARGET"
 COMMIT_DATE=$(date -u +%Y-%m-%d)
 {
   printf 'feat(flow): promote learned skill — %s\n\n' "$PROPOSAL_NAME"
-  printf 'Promoted from proposal: %s\n' "$PROPOSAL"
+  # basename only: the absolute path discloses the OS account name and local
+  # layout in a public commit, and tells a reviewer nothing.
+  printf 'Promoted from proposal: %s\n' "$(basename "$PROPOSAL")"
   printf 'Status: proposal → promoted (%s)\n\n' "$COMMIT_DATE"
   printf 'Validation passed by bin/promote-proposal.sh:\n'
   printf '%s\n' \
     '- Frontmatter: required fields present, status=proposal' \
-    '- Body sections: Pattern Detected, Knowledge, Evidence, Verification, Promotion Checklist all present' \
+    '- Body sections: Contract, Pattern Detected, Knowledge, Evidence, Verification, Promotion Checklist all present' \
+    '- Promoted body: Contract first, <=120 contract words, <=600 body words' \
     '- Name: matches kebab-case pattern ^[a-z][a-z0-9-]*$' \
     "- Target: plugins/flow/skills/learned/$PROPOSAL_NAME/SKILL.md did not exist before promotion"
-} | git commit -F -
+  printf '\nThe material removed from the skill is in the pull request body,\n'
+  printf 'where it can still be edited before merge.\n'
+} | git commit --cleanup=whitespace -F -
 
 git push -u origin "$BRANCH"
+BRANCH_PUSHED=1
 
 # Render the PR body via a temp file. Heredoc-inside-$() with both backticks
 # and apostrophes triggered bash parser ambiguity in earlier iterations; the
 # temp-file approach (with sed substitution for placeholders) is unambiguous
 # and matches gh's recommended `--body-file` pattern for multi-line bodies.
-TMP_BODY=$(mktemp -t flow-promote-body.XXXXXX)
+TMP_BODY=$(mktemp -t flow-promote-body.XXXXXX) || {
+  echo "promote-proposal.sh: mktemp failed while building the PR body" >&2
+  exit 2
+}
 # (TMP_BODY cleanup is handled by the cleanup_promote trap registered above
 #  alongside branch rollback — a single trap covers both partial-state windows.)
 
@@ -453,7 +555,8 @@ Auto-generated draft PR by `bin/promote-proposal.sh` for the learned-skill promo
 
 ## Validation passed
 - Frontmatter: required fields present (`name`, `description`, `source-sessions`, `evidence-count`, `status`, `proposed`); status was `proposal`
-- Body sections: `## Pattern Detected`, `## Knowledge`, `## Evidence`, `## Verification`, `## Promotion Checklist` all present
+- Body sections: `## Contract`, `## Pattern Detected`, `## Knowledge`, `## Evidence`, `## Verification`, `## Promotion Checklist` all present
+- Promoted body is skill-shaped: `## Contract` first, at most 120 contract words and 600 body words
 - Name: matches kebab-case pattern `^[a-z][a-z0-9-]*$`
 - Target: `plugins/flow/skills/learned/__NAME__/SKILL.md` did not exist before promotion
 
@@ -461,7 +564,8 @@ Auto-generated draft PR by `bin/promote-proposal.sh` for the learned-skill promo
 - [ ] Pattern is general (not issue-specific) and applies to future sessions, not just the source ones
 - [ ] Evidence is compelling — multiple journal entries cite the same pattern, not coincidental
 - [ ] Knowledge does not duplicate an existing skill (search `plugins/flow/skills/` for overlap)
-- [ ] Skill body fits within context window budget (target <500 lines for the SKILL.md, supporting material in `references/`)
+- [ ] Skill body fits within context window budget (checked mechanically at 600 words; supporting material goes in `references/`)
+- [ ] The promoted body reads as instructions to an agent, not as a case for promotion. `## Pattern Detected`, `## Evidence`, `## Enforcement point` and `## Promotion Checklist` were removed by the script and appear in the commit message instead
 - [ ] Frontmatter description leads with the artifact and includes either a "MUST be consulted" or "Use when..." trigger clause
 
 ## Tier classification
@@ -485,6 +589,20 @@ sed -i.bak \
     -e "s|__PATH__|$PATH_ESC|g" \
     "$TMP_BODY"
 rm -f "$TMP_BODY.bak"
+
+# The removed material goes here rather than into the commit message. A
+# proposal is mined from whatever project the author was standing in, which may
+# be private, and this repository is public. In the PR body a mistake is a text
+# edit; in a commit message it is a history rewrite.
+if [ -s "$EVIDENCE_FILE" ]; then
+  {
+    printf '\n## Removed from the skill, kept for review\n\n'
+    printf 'The transform removed the sections below, and the frontmatter that names\n'
+    printf 'the project this pattern was mined in. Read them before marking this ready:\n'
+    printf 'if any of it should not be published, edit this PR body now.\n\n'
+    cat "$EVIDENCE_FILE"
+  } >> "$TMP_BODY"
+fi
 
 gh pr create --draft \
   --title "feat(flow): promote learned skill — $PROPOSAL_NAME" \

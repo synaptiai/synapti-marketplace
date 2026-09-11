@@ -194,11 +194,84 @@ if [ "$SCANNED" -lt 20 ]; then
   _flow_assert_fail "only $SCANNED dispatched skills scanned (expected 20+)"
 fi
 
+# --- promoted learned skills are held to the same shape as hand-written ones
+# The two loops above glob "$SKILLS_DIR"/*/SKILL.md, which never reaches
+# learned/<name>/SKILL.md one level deeper, so nothing here saw a promoted
+# skill at all. Two separate load paths reach one: Claude Code's own plugin
+# discovery, and this repo's flow-load-skills.sh via its learned/ fallback
+# (asserted below — without it the budget enforced here would apply to a load
+# path that does not exist). Both mean the same budgets apply, and none of the
+# proposal scaffolding, which belongs in the promotion PR.
+# Count words the way bin/promote-proposal.sh does. `wc -w` and python
+# str.split() split differently on unicode whitespace — U+180E splits under BSD
+# wc but not under python, so a body the promoter measured at 600 came to 850
+# here. The budget a promotion is accepted against has to be the budget CI
+# applies, so this defers to python and falls back to wc only without it.
+_fls_wordcount() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import sys; print(len(sys.stdin.read().split()))'
+  else
+    wc -w | tr -d ' '
+  fi
+}
+
+_flow_test_begin "promoted learned skills carry skill shape, not proposal shape"
+if [ -d "$SKILLS_DIR/learned" ]; then
+  _flow_assert_pass "$SKILLS_DIR/learned exists — the walk below has somewhere to go"
+else
+  _flow_assert_fail "$SKILLS_DIR/learned is missing; the counts below would both be 0 and pass vacuously"
+fi
+LEARNED_FOUND=$(find "$SKILLS_DIR/learned" -name SKILL.md -type f 2>/dev/null | wc -l | tr -d ' ')
+LEARNED_SCANNED=0
+for FILE in "$SKILLS_DIR"/learned/*/SKILL.md; do
+  [ -f "$FILE" ] || continue
+  LEARNED_SCANNED=$((LEARNED_SCANNED + 1))
+  NAME=$(basename "$(dirname "$FILE")")
+  BODY=$(awk 'BEGIN{fm=0} NR==1 && /^---$/ {fm=1; next} fm==1 { if (/^---$/) {fm=2}; next } {print}' "$FILE")
+  # Every property is evaluated and reported together. Short-circuiting on the
+  # first failure lets one assertion mask another: a leftover "## Promotion
+  # Checklist" also pushes the body over the word budget, so a word-count
+  # failure reported first would hide the scaffolding that caused it.
+  PROBLEMS=""
+  # Title only, trailing whitespace stripped: bin/promote-proposal.sh matches on
+  # the stripped title, so comparing the raw line here made a `## Contract `
+  # heading promote cleanly and then fail CI. Two gates, one definition.
+  FIRST_H2=$(printf '%s\n' "$BODY" | awk '/^## /{sub(/^##[ \t]+/,""); sub(/[ \t]+$/,""); print; exit}')
+  [ "$FIRST_H2" = "Contract" ] || PROBLEMS="$PROBLEMS; first H2 is '$FIRST_H2', expected 'Contract'"
+  CWORDS=$(printf '%s\n' "$BODY" | awk '/^## Contract[[:space:]]*$/ {on=1; next} on && /^## / {exit} on {print}' | _fls_wordcount)
+  [ "$CWORDS" -le 120 ] || PROBLEMS="$PROBLEMS; Contract is $CWORDS words (max 120)"
+  BWORDS=$(printf '%s\n' "$BODY" | _fls_wordcount)
+  [ "$BWORDS" -le 600 ] || PROBLEMS="$PROBLEMS; body is $BWORDS words (max 600)"
+  LEFTOVER=$(printf '%s\n' "$BODY" | grep -E '^## (Promotion Checklist|Evidence|Pattern Detected)$' | tr '\n' ' ')
+  [ -z "$LEFTOVER" ] || PROBLEMS="$PROBLEMS; proposal scaffolding survived promotion: $LEFTOVER"
+  if [ -n "$PROBLEMS" ]; then
+    _flow_assert_fail "learned/$NAME:${PROBLEMS#;}"
+  else
+    _flow_assert_pass "learned/$NAME: Contract first ($CWORDS w), body $BWORDS w, no proposal sections"
+  fi
+done
+# The loops above could pass by reaching nothing. Assert the walk saw every file
+# that is actually there rather than asserting a non-zero count, because an empty
+# learned/ is a legitimate state.
+if [ "$LEARNED_SCANNED" -eq "$LEARNED_FOUND" ]; then
+  _flow_assert_pass "scanned $LEARNED_SCANNED of $LEARNED_FOUND learned skills on disk"
+else
+  # Name the paths, not just the counts: "1 of 4" does not tell anyone which
+  # three the glob could not reach. Reachable means exactly
+  # learned/<name>/SKILL.md, so anything at another depth is what is missing.
+  MISSED=$(find "$SKILLS_DIR/learned" -name SKILL.md -type f 2>/dev/null \
+    | sed "s#^$SKILLS_DIR/##" \
+    | awk -F/ 'NF != 3 { printf "%s ", $0 }')
+  _flow_assert_fail "scanned $LEARNED_SCANNED learned skills but $LEARNED_FOUND exist on disk; unreachable: ${MISSED:-(could not determine)}"
+fi
+
 # --- every skill body stays within the 600-word budget
 _flow_test_begin "skill bodies stay within 600 words"
 for FILE in "$SKILLS_DIR"/*/SKILL.md; do
   NAME=$(basename "$(dirname "$FILE")")
-  case "$NAME" in learned) continue ;; esac
+  # No `learned` skip here: this glob stops one level above
+  # learned/<name>/SKILL.md and cannot reach a promoted skill. Those are
+  # scanned by the learned-skill block above, which applies the same budget.
   WORDS=$(awk 'BEGIN{fm=0} NR==1 && /^---$/ {fm=1; next} fm==1 { if (/^---$/) {fm=2}; next } {print}' "$FILE" | wc -w | tr -d ' ')
   if [ "$WORDS" -gt 600 ]; then
     _flow_assert_fail "$NAME: body is $WORDS words (max 600)"
@@ -206,3 +279,30 @@ for FILE in "$SKILLS_DIR"/*/SKILL.md; do
     _flow_assert_pass "$NAME: $WORDS words"
   fi
 done
+
+# --- the loader reaches a promoted skill by its plain name
+# flow-load-skills.sh resolves ${SKILLS_DIR}/${NAME}/SKILL.md and rejects any
+# name containing a slash, so before the learned/ fallback neither
+# `a-check-that-can-only-confirm` nor `learned/a-check-that-can-only-confirm`
+# could resolve: not-found and invalid-name respectively.
+_flow_test_begin "flow-load-skills.sh resolves a promoted learned skill"
+LOADER="$REPO_ROOT/plugins/flow/bin/flow-load-skills.sh"
+if [ ! -x "$LOADER" ] && [ ! -f "$LOADER" ]; then
+  _flow_assert_fail "missing $LOADER"
+else
+  FIRST_LEARNED=$(find "$SKILLS_DIR/learned" -name SKILL.md -type f 2>/dev/null | head -1)
+  if [ -z "$FIRST_LEARNED" ]; then
+    _flow_assert_pass "SKIP: no promoted skill to resolve"
+  else
+    LNAME=$(basename "$(dirname "$FIRST_LEARNED")")
+    LOUT=$(bash "$LOADER" --check "$LNAME" 2>&1)
+    assert_contains "SKILL_LOADED=$LNAME" "$LOUT" "resolves by plain name"
+    # Must-stay-silent: the fallback must not become a traversal.
+    TOUT=$(bash "$LOADER" --check "../../../etc/passwd" 2>&1)
+    assert_contains "reason=invalid-name" "$TOUT" "a traversing name is still refused"
+    # Input removal: a name that exists nowhere must still be not-found, or the
+    # fallback would be resolving something it invented.
+    NOUT=$(bash "$LOADER" --check "definitely-not-a-skill-$$" 2>&1)
+    assert_contains "reason=not-found" "$NOUT" "an absent name is still not-found"
+  fi
+fi

@@ -11,9 +11,16 @@ proposed: "2026-05-06"
 
 # Test Promote Fixture
 
+## Contract
+
+Iron law: a fixture that no longer matches the shape it documents stops being a
+fixture. Applies whenever `bin/promote-proposal.sh` is exercised in a test.
+Returns a known-good proposal payload that passes validation and promotes to a
+well-formed skill. Permitted skips: none.
+
 ## Pattern Detected
 
-This is a fixture for `bin/promote-proposal.sh` testing. It demonstrates the canonical proposal shape: frontmatter has all required fields (name, description, source-sessions, evidence-count, status, proposed), status is `proposal` (the validator rejects anything else), the body has all five required sections in order.
+This is a fixture for `bin/promote-proposal.sh` testing. It demonstrates the canonical proposal shape: frontmatter has all required fields (name, description, source-sessions, evidence-count, status, proposed), status is `proposal` (the validator rejects anything else), the body has all six required sections, Contract first.
 
 ## Knowledge
 

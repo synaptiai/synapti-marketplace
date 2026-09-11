@@ -115,6 +115,18 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
   fi
 
   echo "=== $(basename "$TEST_FILE") ==="
+  # Parse before sourcing. `source` on a file with a syntax error stops at the
+  # error but leaves the subshell alive, so _flow_test_summary still prints a
+  # well-formed SUMMARY counting only the assertions that ran — a file bash
+  # cannot parse reported "pass=71 fail=0" and the truncation was invisible.
+  if ! PARSE_ERR=$(bash -n "$TEST_FILE" 2>&1); then
+    echo "run.sh: $(basename "$TEST_FILE") does not parse — no assertion in it ran:" >&2
+    printf '%s\n' "$PARSE_ERR" >&2
+    RUNNER_ERR=1
+    TOTAL_FAIL=$((TOTAL_FAIL + 1))
+    FAILED_FILES+=("$(basename "$TEST_FILE")")
+    continue
+  fi
   # Capture stdout AND stderr together: stderr from awk/grep/jq inside test
   # bodies otherwise interleaves out-of-order with the SUMMARY extraction
   # below and is invisible to CI artifact capture (T4/EV2). Also capture the
