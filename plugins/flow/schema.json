@@ -9,30 +9,100 @@
       "description": "Enable agent team support for adversarial review and parallel implementation"
     },
     "agentTeamModel": {
-      "enum": ["haiku", "sonnet", "opus", "inherit"],
+      "enum": [
+        "haiku",
+        "sonnet",
+        "opus",
+        "inherit"
+      ],
       "default": "sonnet",
-      "description": "Model used by the Path A agent-team review agents in /flow:review (paired skeptic/verifier reviewers + challenge round). Resolved via the standard settings cascade (local > project > user > plugin default). Default is 'sonnet' because a paired-reviewer run dispatches ~20 agents — inheriting an Opus session would multiply Opus-rate tokens ~4x for marginal review value. Use 'inherit' to reproduce the pre-configuration behavior (agents run on the main session's model). Mirrors the configurable-model pattern of flow.goals.judge.model. Scoped to Path A only: Path B (single-session, default) agents always inherit the session model."
+      "description": "Model used by the Path A agent-team review agents in /flow:review (paired skeptic/verifier reviewers + challenge round). Resolved via the standard settings cascade (local > project > user > plugin default). Default is 'sonnet' because a paired-reviewer run dispatches ~20 agents \u2014 inheriting an Opus session would multiply Opus-rate tokens ~4x for marginal review value. Use 'inherit' to reproduce the pre-configuration behavior (agents run on the main session's model). Mirrors the configurable-model pattern of flow.goals.judge.model. Scoped to Path A only: Path B (single-session, default) agents always inherit the session model."
     },
     "tiers": {
       "type": "object",
       "description": "Safety tier classification for actions",
       "properties": {
-        "push": { "enum": ["autonomous", "journal", "confirm"], "default": "journal" },
-        "prCreate": { "enum": ["autonomous", "journal", "confirm"], "default": "journal" },
-        "issueAssign": { "enum": ["autonomous", "journal", "confirm"], "default": "journal" },
-        "issueCreate": { "enum": ["autonomous", "journal", "confirm"], "default": "journal" },
-        "merge": { "enum": ["autonomous", "journal", "confirm"], "default": "confirm" },
-        "release": { "enum": ["autonomous", "journal", "confirm"], "default": "confirm" }
+        "push": {
+          "enum": [
+            "autonomous",
+            "journal",
+            "confirm"
+          ],
+          "default": "journal"
+        },
+        "prCreate": {
+          "enum": [
+            "autonomous",
+            "journal",
+            "confirm"
+          ],
+          "default": "journal"
+        },
+        "issueAssign": {
+          "enum": [
+            "autonomous",
+            "journal",
+            "confirm"
+          ],
+          "default": "journal"
+        },
+        "issueCreate": {
+          "enum": [
+            "autonomous",
+            "journal",
+            "confirm"
+          ],
+          "default": "journal"
+        },
+        "merge": {
+          "enum": [
+            "autonomous",
+            "journal",
+            "confirm"
+          ],
+          "default": "confirm"
+        },
+        "release": {
+          "enum": [
+            "autonomous",
+            "journal",
+            "confirm"
+          ],
+          "default": "confirm"
+        }
       },
-      "additionalProperties": { "enum": ["autonomous", "journal", "confirm"] }
+      "additionalProperties": {
+        "enum": [
+          "autonomous",
+          "journal",
+          "confirm"
+        ]
+      }
     },
     "timeouts": {
       "type": "object",
       "properties": {
-        "devServerStartup": { "type": "integer", "default": 30, "minimum": 5 },
-        "e2eTest": { "type": "integer", "default": 120, "minimum": 10 },
-        "qualityCheckMaxIterations": { "type": "integer", "default": 3, "minimum": 1, "maximum": 10 },
-        "teammateTimeout": { "type": "integer", "default": 300, "minimum": 60 }
+        "devServerStartup": {
+          "type": "integer",
+          "default": 30,
+          "minimum": 5
+        },
+        "e2eTest": {
+          "type": "integer",
+          "default": 120,
+          "minimum": 10
+        },
+        "qualityCheckMaxIterations": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 10
+        },
+        "teammateTimeout": {
+          "type": "integer",
+          "default": 300,
+          "minimum": 60
+        }
       }
     },
     "conventions": {
@@ -40,20 +110,47 @@
       "properties": {
         "commitTypes": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build", "revert", "improve"]
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "feat",
+            "fix",
+            "docs",
+            "style",
+            "refactor",
+            "test",
+            "chore",
+            "perf",
+            "ci",
+            "build",
+            "revert",
+            "improve"
+          ]
         },
         "branchPatterns": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       }
     },
     "merge": {
       "type": "object",
       "properties": {
-        "strategy": { "enum": ["merge", "squash", "rebase"], "default": "squash" },
-        "deleteBranch": { "type": "boolean", "default": true },
+        "strategy": {
+          "enum": [
+            "merge",
+            "squash",
+            "rebase"
+          ],
+          "default": "squash"
+        },
+        "deleteBranch": {
+          "type": "boolean",
+          "default": true
+        },
         "markerTrust": {
           "type": "object",
           "description": "Trust filter for FLOW_REVIEW_CYCLE / FLOW_RESOLUTION_CYCLE markers honored by /flow:merge and /flow:status. SECURITY PIN: read from plugins/flow/settings.json ONLY (does NOT use the standard cascade) so a hostile fork PR cannot ship a permissive trust list via .claude/settings.flow.local.json after gh pr checkout. See references/gate-configuration.md for the threat model.",
@@ -61,9 +158,22 @@
             "allowedAssociations": {
               "type": "array",
               "items": {
-                "enum": ["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "MANNEQUIN", "NONE"]
+                "enum": [
+                  "OWNER",
+                  "MEMBER",
+                  "COLLABORATOR",
+                  "CONTRIBUTOR",
+                  "FIRST_TIME_CONTRIBUTOR",
+                  "FIRST_TIMER",
+                  "MANNEQUIN",
+                  "NONE"
+                ]
               },
-              "default": ["OWNER", "MEMBER", "COLLABORATOR"],
+              "default": [
+                "OWNER",
+                "MEMBER",
+                "COLLABORATOR"
+              ],
               "description": "GitHub author_association values whose marker comments are honored. Lower-trust associations (CONTRIBUTOR, NONE) are excluded by default to prevent forgery from forks."
             }
           }
@@ -73,7 +183,10 @@
     "release": {
       "type": "object",
       "properties": {
-        "tagPrefix": { "type": "string", "default": "v" }
+        "tagPrefix": {
+          "type": "string",
+          "default": "v"
+        }
       }
     },
     "conflictResolution": {
@@ -96,12 +209,26 @@
     "learning": {
       "type": "object",
       "properties": {
-        "enabled": { "type": "boolean", "default": true },
-        "proposalDir": { "type": "string", "default": "~/.claude/flow-proposals" },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "proposalDir": {
+          "type": "string",
+          "default": "~/.claude/flow-proposals"
+        },
         "sources": {
           "type": "array",
-          "items": { "enum": ["journal", "transcripts"] },
-          "default": ["journal", "transcripts"],
+          "items": {
+            "enum": [
+              "journal",
+              "transcripts"
+            ]
+          },
+          "default": [
+            "journal",
+            "transcripts"
+          ],
           "description": "Where /flow:learn mines patterns from. 'journal' reads .decisions/*.md and .flow/runs/*/events.jsonl (what flow wrote). 'transcripts' reads the session transcripts under ~/.claude/projects/<project>/ via bin/flow-mine-corrections.sh, which is where user corrections actually live. Both are read-only and local."
         },
         "transcriptDir": {
@@ -114,7 +241,10 @@
     "journal": {
       "type": "object",
       "properties": {
-        "dir": { "type": "string", "default": ".decisions" }
+        "dir": {
+          "type": "string",
+          "default": ".decisions"
+        }
       }
     },
     "specFirst": {
@@ -128,14 +258,19 @@
         },
         "allowSpecFreeLabels": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["documentation", "chore"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "documentation",
+            "chore"
+          ],
           "description": "Issue labels that allow proceeding without acceptance criteria (e.g., docs-only changes)"
         },
         "riskMap": {
           "type": "boolean",
           "default": true,
-          "description": "Capture the fourth specification element, the risk map (area / plausible wrong version / discriminating check), during /flow:start Phase 1 and require one discriminating test per row in the evidence bundle's '### Risk map coverage' subsection. When false the subsection is 'none — risk map disabled (specFirst.riskMap=false)' and is not an auto-FAIL. Exists so the correctness eval (references/correctness-eval.md) can compare arms with and without it."
+          "description": "Capture the fourth specification element, the risk map (area / plausible wrong version / discriminating check), during /flow:start Phase 1 and require one discriminating test per row in the evidence bundle's '### Risk map coverage' subsection. When false the subsection is 'none \u2014 risk map disabled (specFirst.riskMap=false)' and is not an auto-FAIL. Exists so the correctness eval (references/correctness-eval.md) can compare arms with and without it."
         }
       }
     },
@@ -158,20 +293,33 @@
     "testing": {
       "type": "object",
       "properties": {
-        "tddMode": { "enum": ["enforce", "suggest", "off"], "default": "enforce" },
+        "tddMode": {
+          "enum": [
+            "enforce",
+            "suggest",
+            "off"
+          ],
+          "default": "enforce"
+        },
         "tddModeOptOut": {
           "type": "boolean",
           "default": false,
           "description": "When true with tddMode=suggest, suppresses warnings about missing tests."
         },
         "taskCompletionGate": {
-          "enum": ["block", "warn", "off"],
+          "enum": [
+            "block",
+            "warn",
+            "off"
+          ],
           "default": "block",
-          "description": "TaskCompleted hook posture (hooks/scripts/verify-task-completion.sh). 'block': refuse to mark a task complete while the working tree changed in this session after the last passing quality-command run (exit 2 with the changed paths). 'warn': same check, stderr warning, completion allowed. 'off': no check. A run passes only with exit code 0, not masked by a trailing `|| true`, and not recorded from PostToolUseFailure. Changes are detected two ways: file_change entries from the PostToolUse Edit|Write|NotebookEdit hook (log-file-changes.sh), and a sha256 digest of the working tree contents (a git tree id built in a temporary index: every tracked and untracked file with its mode, HEAD excluded) that record-quality-run.sh (PostToolUse and PostToolUseFailure, Bash) stores with each run and the gate recomputes — so edits made through Bash (sed -i, heredocs, git apply) and checkouts count too, while committing edits a passing run already tested does not. The session ledger lives under ${FLOW_STATE_DIR:-~/.claude/flow-state}/sessions/<session_id>/ and is pruned by session-end-state.sh (`flow-quality-ledger.sh prune`, 14 days)."
+          "description": "TaskCompleted hook posture (hooks/scripts/verify-task-completion.sh). 'block': refuse to mark a task complete while the working tree changed in this session after the last passing quality-command run (exit 2 with the changed paths). 'warn': same check, stderr warning, completion allowed. 'off': no check. A run passes only with exit code 0, not masked by a trailing `|| true`, and not recorded from PostToolUseFailure. Changes are detected two ways: file_change entries from the PostToolUse Edit|Write|NotebookEdit hook (log-file-changes.sh), and a sha256 digest of the working tree contents (a git tree id built in a temporary index: every tracked and untracked file with its mode, HEAD excluded) that record-quality-run.sh (PostToolUse and PostToolUseFailure, Bash) stores with each run and the gate recomputes \u2014 so edits made through Bash (sed -i, heredocs, git apply) and checkouts count too, while committing edits a passing run already tested does not. The session ledger lives under ${FLOW_STATE_DIR:-~/.claude/flow-state}/sessions/<session_id>/ and is pruned by session-end-state.sh (`flow-quality-ledger.sh prune`, 14 days)."
         },
         "qualityCommandPatterns": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Extra POSIX ERE patterns that classify a Bash command as a quality run (test/lint/typecheck/build) for the task-completion gate, in addition to the built-in list in hooks/scripts/record-quality-run.sh. Example: [\"^\\./scripts/ci\\.sh\"]."
         }
@@ -180,7 +328,12 @@
     "debugging": {
       "type": "object",
       "properties": {
-        "maxHypotheses": { "type": "integer", "default": 3, "minimum": 1, "maximum": 5 }
+        "maxHypotheses": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 5
+        }
       }
     },
     "lsp": {
@@ -202,7 +355,7 @@
         "diagnosticsAsQuality": {
           "type": "boolean",
           "default": true,
-          "description": "Consume LSP diagnostics as a quality signal during VERIFY phase (errors→P1, warnings→P2)"
+          "description": "Consume LSP diagnostics as a quality signal during VERIFY phase (errors\u2192P1, warnings\u2192P2)"
         }
       }
     },
@@ -226,16 +379,40 @@
           "items": {
             "type": "object",
             "properties": {
-              "name": { "type": "string" },
-              "width": { "type": "integer", "minimum": 320 },
-              "height": { "type": "integer", "minimum": 480 }
+              "name": {
+                "type": "string"
+              },
+              "width": {
+                "type": "integer",
+                "minimum": 320
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 480
+              }
             },
-            "required": ["name", "width", "height"]
+            "required": [
+              "name",
+              "width",
+              "height"
+            ]
           },
           "default": [
-            { "name": "desktop", "width": 1280, "height": 720 },
-            { "name": "tablet", "width": 768, "height": 1024 },
-            { "name": "mobile", "width": 375, "height": 812 }
+            {
+              "name": "desktop",
+              "width": 1280,
+              "height": 720
+            },
+            {
+              "name": "tablet",
+              "width": 768,
+              "height": 1024
+            },
+            {
+              "name": "mobile",
+              "width": 375,
+              "height": 812
+            }
           ]
         },
         "maxIterations": {
@@ -256,24 +433,42 @@
       "type": "object",
       "description": "Closed-loop verification settings",
       "properties": {
-        "enabled": { "type": "boolean", "default": true },
-        "maxBuildIterations": { "type": "integer", "default": 5, "minimum": 1 },
-        "maxServerRetries": { "type": "integer", "default": 3, "minimum": 1 },
-        "maxDebugIterations": { "type": "integer", "default": 5, "minimum": 1 },
-        "requireRuntimeVerification": { "type": "boolean", "default": true }
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "maxBuildIterations": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1
+        },
+        "maxServerRetries": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 1
+        },
+        "maxDebugIterations": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1
+        },
+        "requireRuntimeVerification": {
+          "type": "boolean",
+          "default": true
+        }
       }
     },
     "reviewCycleLimit": {
       "type": "integer",
       "default": 10,
       "minimum": 1,
-      "description": "Maximum review-and-address cycles between code-reviewer and code-author roles. Defaults to 10 because the ceiling is a safety net against true infinite loops, not a planned stop point — LLM operators iterate cheaply. See skills/llm-operator-principles/SKILL.md."
+      "description": "Maximum review-and-address cycles between code-reviewer and code-author roles. Defaults to 10 because the ceiling is a safety net against true infinite loops, not a planned stop point \u2014 LLM operators iterate cheaply. See skills/llm-operator-principles/SKILL.md."
     },
     "fixForwardMaxIterations": {
       "type": "integer",
       "default": 10,
       "minimum": 1,
-      "description": "Maximum fix-forward iterations on self-review or holdout-validation findings. Defaults to 10 because the ceiling is a safety net, not a budget — convergence means zero findings, not exhausted budget. See skills/llm-operator-principles/SKILL.md."
+      "description": "Maximum fix-forward iterations on self-review or holdout-validation findings. Defaults to 10 because the ceiling is a safety net, not a budget \u2014 convergence means zero findings, not exhausted budget. See skills/llm-operator-principles/SKILL.md."
     },
     "autonomous": {
       "type": "boolean",
@@ -287,7 +482,7 @@
     },
     "flow": {
       "type": "object",
-      "description": "Flow v3 runtime layer — goals, workflows, triggers. v3.0 wires goals into hooks + commands. See plugins/flow/references/flow-goals.md and references/stop-hook-goal-enforcement.md.",
+      "description": "Flow v3 runtime layer \u2014 goals, workflows, triggers. v3.0 wires goals into hooks + commands. See plugins/flow/references/flow-goals.md and references/stop-hook-goal-enforcement.md.",
       "properties": {
         "runtime": {
           "type": "object",
@@ -300,7 +495,7 @@
             "stateDir": {
               "type": "string",
               "default": ".flow",
-              "description": "Project-local directory for runtime state (relative to repo root). Changing this is rare — most teams should keep the default to maintain compatibility with the gitignore policy."
+              "description": "Project-local directory for runtime state (relative to repo root). Changing this is rare \u2014 most teams should keep the default to maintain compatibility with the gitignore policy."
             },
             "runRetentionDays": {
               "type": "integer",
@@ -320,17 +515,25 @@
               "description": "Master switch for the FlowGoal feature. When false, /flow:goal is disabled and the Stop hook fast-paths to approve."
             },
             "goalCreation": {
-              "enum": ["auto", "always", "off"],
+              "enum": [
+                "auto",
+                "always",
+                "off"
+              ],
               "default": "auto",
-              "description": "Controls /flow:start FlowGoal auto-creation. 'auto' (default): create a goal iff the Spec Validation Gate passed with >=1 acceptance criterion carrying a verification_command (labels do not veto); spec-free issues yielding zero verifiable ACs are skipped silently. 'always': create unconditionally (a degenerate goal is allowed but flagged in the compact summary). 'off': never auto-create; manual /flow:goal create still works. Distinct from goals.enabled:false, which disables the whole feature. There is no consent prompt — invisible-auto is the default."
+              "description": "Controls /flow:start FlowGoal auto-creation. 'auto' (default): create a goal iff the Spec Validation Gate passed with >=1 acceptance criterion carrying a verification_command (labels do not veto); spec-free issues yielding zero verifiable ACs are skipped silently. 'always': create unconditionally (a degenerate goal is allowed but flagged in the compact summary). 'off': never auto-create; manual /flow:goal create still works. Distinct from goals.enabled:false, which disables the whole feature. There is no consent prompt \u2014 invisible-auto is the default."
             },
             "requireGoalForStart": {
               "type": "boolean",
               "x-deprecated": true,
-              "description": "DEPRECATED — superseded by goalCreation. Still accepted for backward compatibility via a read-only migration: true maps to goalCreation 'always', false maps to 'off'. Absence maps to 'auto'. Set goalCreation directly in new configs."
+              "description": "DEPRECATED \u2014 superseded by goalCreation. Still accepted for backward compatibility via a read-only migration: true maps to goalCreation 'always', false maps to 'off'. Absence maps to 'auto'. Set goalCreation directly in new configs."
             },
             "stopHookEnforcement": {
-              "enum": ["warn", "block", "evaluator-loop"],
+              "enum": [
+                "warn",
+                "block",
+                "evaluator-loop"
+              ],
               "default": "warn",
               "description": "Stop hook posture. 'warn' (default): the stop is always allowed; when the active goal lacks evidence the reason starts 'FLOW_GOAL_INCOMPLETE \u2014 stop ALLOWED (stopHookEnforcement=warn)' and is printed to stderr. 'block': decision:block on failing ACs, path violations, or ACs with no verification_command; verification commands run for goals in the per-user trust ledger (bin/flow-goal-trust.sh) without executeVerificationCommands; an untrusted goal's not-executed ACs never block on their own; consecutive blocks per session and goal are capped at failAfterStuckTurns (FLOW_GOAL_BLOCK_CAP). 'evaluator-loop': active Haiku judge per turn, ~$0.001/eval, opt-in. See references/stop-hook-goal-enforcement.md."
             },
@@ -349,7 +552,11 @@
               "type": "object",
               "properties": {
                 "model": {
-                  "enum": ["haiku", "sonnet", "opus"],
+                  "enum": [
+                    "haiku",
+                    "sonnet",
+                    "opus"
+                  ],
                   "default": "haiku",
                   "description": "Claude model used by the evaluator-loop judge subprocess. Haiku is the cost-effective default (~$0.001/eval); sonnet/opus available for harder rubrics."
                 },
@@ -387,15 +594,26 @@
             "allowedTypes": {
               "type": "array",
               "items": {
-                "enum": ["manual", "hook", "loop_prompt", "github_actions", "local_cron", "local_daemon"]
+                "enum": [
+                  "manual",
+                  "hook",
+                  "loop_prompt",
+                  "github_actions",
+                  "local_cron",
+                  "local_daemon"
+                ]
               },
-              "default": ["manual", "hook", "loop_prompt"],
+              "default": [
+                "manual",
+                "hook",
+                "loop_prompt"
+              ],
               "description": "Trigger types allowed in this project. v3.0 supports manual/hook/loop_prompt; github_actions/local_cron/local_daemon are deferred to v3.1+."
             },
             "allowAutonomousMerge": {
               "type": "boolean",
               "default": false,
-              "description": "Non-negotiable in v3.0 — Tier 3 actions (merge, release) require explicit AskUserQuestion confirmation; no trigger can grant merge autonomy."
+              "description": "Non-negotiable in v3.0 \u2014 Tier 3 actions (merge, release) require explicit AskUserQuestion confirmation; no trigger can grant merge autonomy."
             },
             "allowTriggerCreationFromTriggeredRun": {
               "type": "boolean",
@@ -403,7 +621,11 @@
               "description": "Recursion policy: by default, runs initiated by a trigger may NOT create new triggers. Prevents trigger-creates-trigger loops."
             },
             "defaultConcurrency": {
-              "enum": ["skip_if_running", "queue", "cancel_previous"],
+              "enum": [
+                "skip_if_running",
+                "queue",
+                "cancel_previous"
+              ],
               "default": "skip_if_running",
               "description": "Default concurrency policy when a trigger fires while a prior run is in flight."
             },
@@ -418,6 +640,61 @@
         }
       },
       "additionalProperties": false
+    },
+    "replyStyle": {
+      "type": "object",
+      "description": "Check the reply that was just written against a short list of literal constructions (Stop hook). Warns, never blocks. Off unless enabled.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run the check. Off by default: a project has to ask for it."
+        },
+        "constructions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "issue-references",
+              "repo-paths",
+              "not-x-but-y",
+              "staged-emphasis",
+              "gated-compounds",
+              "surface-as-noun"
+            ]
+          },
+          "description": "Which built-in constructions to check. Omit for all of them; [] for none, which is how a project says only its own extraPatterns matter."
+        },
+        "extraPatterns": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "pattern"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "pattern": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Python regular expression, matched case-insensitively against the reply prose."
+              },
+              "advice": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "What to say instead. A warning that only names the match teaches nothing."
+              }
+            }
+          },
+          "description": "Project-specific constructions, added to whatever `constructions` selects."
+        }
+      }
     }
   },
   "additionalProperties": false

@@ -460,6 +460,40 @@ Example project settings in `.claude/settings.flow.json`:
 
 See `schema.json` for full configuration reference.
 
+### Reply-style check (opt-in)
+
+A project can state a house writing style once and have it checked when a reply
+is written, rather than only when the session starts. The rule is in context at
+session start; the violations happen deep into long sessions, after many tool
+results have pushed it out.
+
+```json
+{
+  "replyStyle": {
+    "enabled": true,
+    "constructions": ["issue-references", "repo-paths", "not-x-but-y"],
+    "extraPatterns": [
+      { "name": "house-tic", "pattern": "\\bsynergy\\b", "advice": "say what it does." }
+    ]
+  }
+}
+```
+
+Off unless `enabled` is `true`. It matches a short list of literal constructions
+— issue and PR numbers, bare repository paths, `not X but Y`, staged emphasis
+(`the key thing is`), coined compounds, `surface` used as a noun for a component
+— names where each appeared, and warns. It never blocks: a false positive that
+stops a reply is worse than the prose it was guarding against.
+
+It reads only the final assistant text. Tool calls, their output, fenced code
+and inline code are not prose the reader reads, and a path the reader is being
+told to open or run is an instruction rather than process noise. Omit
+`constructions` for the full built-in set, or give `[]` to run only your own
+`extraPatterns`.
+
+It does not judge clarity, rewrite anything, or look at what was committed —
+code and commit messages are a different check with different rules.
+
 ## Comparison with gh-workflow
 
 | Aspect | gh-workflow | flow |
