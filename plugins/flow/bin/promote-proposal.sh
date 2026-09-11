@@ -16,8 +16,13 @@
 #   status, proposed
 # - status MUST equal "proposal" (the script will rewrite to "promoted")
 # - name MUST match kebab-case pattern `^[a-z][a-z0-9-]*$`
-# - Body MUST include sections: Pattern Detected, Knowledge, Evidence,
+# - Body MUST include sections: Contract, Pattern Detected, Knowledge, Evidence,
 #   Verification, Promotion Checklist
+# - Pattern Detected, Evidence, Enforcement point and Promotion Checklist are
+#   written for the promotion reviewer, so they are stripped from the promoted
+#   skill and recorded in the commit message instead
+# - The promoted body MUST be skill-shaped: Contract first, <=120 contract
+#   words, <=600 body words
 # - Target `plugins/flow/skills/learned/<name>/SKILL.md` MUST NOT already exist
 #
 # Exits:
@@ -222,6 +227,7 @@ if fm.get("status") != "proposal":
 # Body section requirements per templates/skill-proposal.md
 body = content[end + 5:]
 required_sections = [
+    "## Contract",
     "## Pattern Detected",
     "## Knowledge",
     "## Evidence",
@@ -327,6 +333,7 @@ fi
 TARGET_WRITTEN=0
 BRANCH_CREATED=0
 TMP_BODY=""
+EVIDENCE_FILE=""
 cleanup_promote() {
   local rc=$?
   if [ "$rc" -ne 0 ] && [ "$TARGET_WRITTEN" -eq 1 ] && [ "$BRANCH_CREATED" -eq 0 ]; then
@@ -341,6 +348,9 @@ cleanup_promote() {
   fi
   if [ -n "$TMP_BODY" ]; then
     rm -f "$TMP_BODY" "$TMP_BODY.bak" 2>/dev/null || true
+  fi
+  if [ -n "$EVIDENCE_FILE" ]; then
+    rm -f "$EVIDENCE_FILE" 2>/dev/null || true
   fi
   exit "$rc"
 }
@@ -365,9 +375,15 @@ mkdir -p "$TARGET_DIR"
 cp "$PROPOSAL" "$TARGET"
 TARGET_WRITTEN=1
 
-# Rewrite frontmatter status: proposal → promoted, add `promoted: <date>`
-python3 - "$TARGET" <<'PYTHON'
+# Transform the proposal into a skill. Frontmatter status proposal → promoted,
+# and the proposal-only sections come out: they address a reviewer deciding
+# whether to promote, while the file they land in addresses an agent about to
+# act. The evidence is not discarded — it is written to $EVIDENCE_FILE and goes
+# into the commit message, where the audit trail belongs.
+EVIDENCE_FILE=$(mktemp -t flow-promote-evidence.XXXXXX)
+python3 - "$TARGET" "$EVIDENCE_FILE" <<'PYTHON'
 import datetime
+import re
 import sys
 
 # Defensive sys.path filter — see bin/validate-skill-input.sh for rationale.
@@ -375,8 +391,16 @@ sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 import yaml
 
-target = sys.argv[1]
-with open(target, "r", encoding="utf-8") as f:
+target, evidence_path = sys.argv[1], sys.argv[2]
+
+# Sections written for the promotion reviewer, not for the skill's reader.
+# "Evidence" cites journal paths from the project the pattern was mined in,
+# which exist in no repository the skill is later installed into.
+PROPOSAL_ONLY = ("Pattern Detected", "Evidence", "Enforcement point", "Promotion Checklist")
+CONTRACT_MAX_WORDS = 120
+BODY_MAX_WORDS = 600
+
+with open(target, encoding="utf-8") as f:
     content = f.read()
 
 end = content.find("\n---\n", 4)
@@ -386,9 +410,47 @@ body = content[end + 5:]
 fm["status"] = "promoted"
 fm["promoted"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
 
+# Split on H2 boundaries. index 0 is whatever precedes the first H2 (the H1).
+parts = re.split(r"(?m)^(## .+)$", body)
+head, sections = parts[0], list(zip(parts[1::2], parts[2::2]))
+
+kept, dropped = [], []
+for heading, text in sections:
+    name = heading[3:].strip()
+    (dropped if name in PROPOSAL_ONLY else kept).append((heading, text))
+
+with open(evidence_path, "w", encoding="utf-8") as f:
+    for heading, text in dropped:
+        f.write(f"{heading}\n{text}".rstrip() + "\n\n")
+
+body = head + "".join(f"{h}\n{t}" for h, t in kept)
+
+# Verify the result is shaped like a skill rather than trusting the transform.
+# A silent pass here would install an unreadable skill, which is the defect this
+# transform exists to prevent.
+problems = []
+if not kept or kept[0][0].strip() != "## Contract":
+    first = kept[0][0].strip() if kept else "(no H2 sections)"
+    problems.append(f"first H2 after promotion is {first!r}, expected '## Contract'")
+else:
+    cwords = len(kept[0][1].split())
+    if cwords > CONTRACT_MAX_WORDS:
+        problems.append(f"Contract is {cwords} words (max {CONTRACT_MAX_WORDS})")
+bwords = len(body.split())
+if bwords > BODY_MAX_WORDS:
+    problems.append(f"body is {bwords} words (max {BODY_MAX_WORDS})")
+if problems:
+    print("ERROR: proposal does not promote to a well-formed skill:", file=sys.stderr)
+    for p in problems:
+        print(f"  - {p}", file=sys.stderr)
+    print("  Fix the proposal and re-run; see templates/skill-proposal.md.", file=sys.stderr)
+    sys.exit(1)
+
 front = yaml.safe_dump(fm, sort_keys=False, default_flow_style=False, allow_unicode=True)
 with open(target, "w", encoding="utf-8") as f:
-    f.write(f"---\n{front}---\n{body}")
+    f.write(f"---\n{front}---\n{body.rstrip()}\n")
+
+print(f"promote: kept {len(kept)} sections, moved {len(dropped)} to the commit message, {bwords} body words", file=sys.stderr)
 PYTHON
 
 echo "OK: promoted '$PROPOSAL_NAME' → $TARGET"
@@ -430,9 +492,17 @@ COMMIT_DATE=$(date -u +%Y-%m-%d)
   printf 'Validation passed by bin/promote-proposal.sh:\n'
   printf '%s\n' \
     '- Frontmatter: required fields present, status=proposal' \
-    '- Body sections: Pattern Detected, Knowledge, Evidence, Verification, Promotion Checklist all present' \
+    '- Body sections: Contract, Pattern Detected, Knowledge, Evidence, Verification, Promotion Checklist all present' \
+    '- Promoted body: Contract first, <=120 contract words, <=600 body words' \
     '- Name: matches kebab-case pattern ^[a-z][a-z0-9-]*$' \
     "- Target: plugins/flow/skills/learned/$PROPOSAL_NAME/SKILL.md did not exist before promotion"
+  # The sections the transform removed from the skill live here instead. They
+  # record where the pattern was mined and why it was believed; that is history,
+  # and history is what a commit message is for.
+  if [ -s "$EVIDENCE_FILE" ]; then
+    printf '\nRemoved from the skill body and recorded here:\n\n'
+    cat "$EVIDENCE_FILE"
+  fi
 } | git commit -F -
 
 git push -u origin "$BRANCH"
@@ -453,7 +523,8 @@ Auto-generated draft PR by `bin/promote-proposal.sh` for the learned-skill promo
 
 ## Validation passed
 - Frontmatter: required fields present (`name`, `description`, `source-sessions`, `evidence-count`, `status`, `proposed`); status was `proposal`
-- Body sections: `## Pattern Detected`, `## Knowledge`, `## Evidence`, `## Verification`, `## Promotion Checklist` all present
+- Body sections: `## Contract`, `## Pattern Detected`, `## Knowledge`, `## Evidence`, `## Verification`, `## Promotion Checklist` all present
+- Promoted body is skill-shaped: `## Contract` first, at most 120 contract words and 600 body words
 - Name: matches kebab-case pattern `^[a-z][a-z0-9-]*$`
 - Target: `plugins/flow/skills/learned/__NAME__/SKILL.md` did not exist before promotion
 
@@ -461,7 +532,8 @@ Auto-generated draft PR by `bin/promote-proposal.sh` for the learned-skill promo
 - [ ] Pattern is general (not issue-specific) and applies to future sessions, not just the source ones
 - [ ] Evidence is compelling — multiple journal entries cite the same pattern, not coincidental
 - [ ] Knowledge does not duplicate an existing skill (search `plugins/flow/skills/` for overlap)
-- [ ] Skill body fits within context window budget (target <500 lines for the SKILL.md, supporting material in `references/`)
+- [ ] Skill body fits within context window budget (checked mechanically at 600 words; supporting material goes in `references/`)
+- [ ] The promoted body reads as instructions to an agent, not as a case for promotion. `## Pattern Detected`, `## Evidence`, `## Enforcement point` and `## Promotion Checklist` were removed by the script and appear in the commit message instead
 - [ ] Frontmatter description leads with the artifact and includes either a "MUST be consulted" or "Use when..." trigger clause
 
 ## Tier classification

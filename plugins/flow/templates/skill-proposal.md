@@ -10,7 +10,18 @@ proposed: "{YYYY-MM-DD}"
 
 # {Skill Name}
 
+## Contract
+
+{At most 120 words, and the first H2 in the file — promotion refuses a proposal
+without it. Iron law in one sentence; when the knowledge applies; what following
+it produces; permitted skips (usually "none"). Match the shape of the Contract
+in any `plugins/flow/skills/*/SKILL.md`.}
+
 ## Pattern Detected
+
+{Removed from the promoted skill by `bin/promote-proposal.sh` and recorded in the
+promotion commit instead — this section argues for promotion, and the promoted
+file is read by an agent about to act.}
 
 {Description of the recurring pattern that was identified from decision journal analysis.}
 
@@ -31,6 +42,10 @@ proposed: "{YYYY-MM-DD}"
 {Anti-patterns or mistakes this knowledge helps prevent.}
 
 ## Evidence
+
+{Removed from the promoted skill and recorded in the promotion commit. Journal
+paths name issues in the project the pattern was mined from; they resolve in no
+repository the skill is later installed into.}
 
 ### Journal Citations
 
@@ -57,7 +72,7 @@ proposed: "{YYYY-MM-DD}"
 
 ## Enforcement point
 
-{Enforcement proposals only — delete this section for a new-skill proposal. Use it when Phase 2 labelled the pattern `rule exists in <skill>`: the rule was already written down and still broken, so the proposal is to make it mechanical rather than to write it again.}
+{Removed from the promoted skill. Enforcement proposals only — delete this section for a new-skill proposal. Use it when Phase 2 labelled the pattern `rule exists in <skill>`: the rule was already written down and still broken, so the proposal is to make it mechanical rather than to write it again.}
 
 - **Rule already stated in**: `plugins/flow/skills/{skill}/SKILL.md` — "{the sentence that states the rule}"
 - **Check point**: {hook event (`PreToolUse` / `PostToolUse` / `Stop` / `TaskCompleted` / `SessionEnd`) or command gate/phase, e.g. `/flow:pr` Phase 3}
@@ -73,6 +88,9 @@ proposed: "{YYYY-MM-DD}"
 - [ ] {Verification criterion 2}
 
 ## Promotion Checklist
+
+{Removed from the promoted skill — the last two boxes describe the PR that
+carries it.}
 
 - [ ] Reviewed by human
 - [ ] Evidence is compelling (not coincidental)

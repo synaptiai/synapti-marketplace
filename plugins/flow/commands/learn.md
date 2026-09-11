@@ -243,9 +243,9 @@ To promote a proposal to an active skill, use the canonical helper:
 
 The script:
 1. Validates the proposal frontmatter (required fields, status: proposal, kebab-case name)
-2. Validates the body (must contain `## Pattern Detected`, `## Knowledge`, `## Evidence`, `## Verification`, `## Promotion Checklist` sections per `templates/skill-proposal.md`)
+2. Validates the body (must contain `## Contract`, `## Pattern Detected`, `## Knowledge`, `## Evidence`, `## Verification`, `## Promotion Checklist` sections per `templates/skill-proposal.md`)
 3. Refuses to overwrite an existing learned skill at the target name
-4. Copies the proposal to `plugins/flow/skills/learned/{name}/SKILL.md`, rewriting `status: proposal` -> `status: promoted` with today's date
+4. Writes `plugins/flow/skills/learned/{name}/SKILL.md`, rewriting `status: proposal` -> `status: promoted` with today's date and removing `## Pattern Detected`, `## Evidence`, `## Enforcement point` and `## Promotion Checklist` — those argue for promotion and are recorded in the promotion commit, while the installed file is read by an agent about to act. It then refuses the promotion unless the result is skill-shaped: `## Contract` first, at most 120 contract words and 600 body words.
 5. Creates a feature branch `feature/learn-promote-{name}`, commits, pushes, and opens a **draft** PR for human review
 
 The PR is **always draft** — `bin/promote-proposal.sh` is Tier 2 (journal-and-proceed) and never marks the PR ready or merges it. A human reviewer must mark the PR ready and merge it explicitly. This prevents `/flow:learn` from autonomously reshaping Claude's behavior without explicit consent.

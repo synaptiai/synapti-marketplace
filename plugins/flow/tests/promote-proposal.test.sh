@@ -57,6 +57,11 @@ proposed: "2026-05-18"
 
 # Test fake proposal
 
+## Contract
+
+Iron law: do the thing. Applies whenever the thing is not done. Returns the
+thing, done. Permitted skips: none.
+
 ## Pattern Detected
 
 Something keeps happening.
@@ -298,3 +303,98 @@ assert_exit 1 "$EXIT" "exit 1 when target dir is non-empty"
 assert_contains "exists and is non-empty" "$ERR" "stderr names the clobber refusal"
 # Confirm the stray content was not touched.
 assert_equal "stray content" "$(cat "$TARGET_DIR/references/foo.md")" "stray content preserved"
+
+# --- Tests 14-18: the proposal → skill transform
+#
+# The transform runs after the --dry-run exit, so every test above stops short
+# of it and it shipped unexercised. Rather than re-implement it here (a copy
+# would pass while the script was broken), extract the PYTHON heredoc from
+# bin/promote-proposal.sh and run the shipped code against a temp file.
+_flow_test_begin "the proposal → skill transform"
+TRANSFORM_DIR=$(_pp_mktemp_dir)
+TRANSFORM="$TRANSFORM_DIR/transform.py"
+awk '/^python3 - "\$TARGET" "\$EVIDENCE_FILE" <<.PYTHON.$/ {on=1; next} on && /^PYTHON$/ {exit} on {print}' \
+  "$HELPER" > "$TRANSFORM"
+if [ ! -s "$TRANSFORM" ]; then
+  _flow_assert_fail "could not extract the transform from $HELPER — the heredoc marker moved"
+else
+  _flow_assert_pass "extracted the transform ($(wc -l < "$TRANSFORM" | tr -d ' ') lines) from the shipped script"
+fi
+
+# Run the shipped transform over a copy of a proposal. Sets TF_RC, TF_OUT,
+# TF_BODY, TF_EVIDENCE as globals — a command substitution would swallow the
+# exit code the assertions need.
+_pp_transform() {
+  local src="$1"
+  TF_TARGET="$TRANSFORM_DIR/target-$RANDOM.md"
+  TF_EV="$TRANSFORM_DIR/evidence-$RANDOM.txt"
+  cp "$src" "$TF_TARGET"
+  TF_OUT=$(python3 "$TRANSFORM" "$TF_TARGET" "$TF_EV" 2>&1)
+  TF_RC=$?
+  TF_BODY=$(cat "$TF_TARGET" 2>/dev/null)
+  TF_EVIDENCE=$(cat "$TF_EV" 2>/dev/null)
+}
+
+# Must-stay-silent: a well-formed proposal transforms cleanly.
+_flow_test_begin "a well-formed proposal promotes to a skill"
+GOOD="$TRANSFORM_DIR/good.md"
+_write_valid_proposal "$GOOD" "test-fake-transform"
+_pp_transform "$GOOD"
+assert_exit 0 "$TF_RC" "exit 0"
+assert_contains "status: promoted" "$TF_BODY" "status rewritten to promoted"
+assert_contains "## Contract" "$TF_BODY" "the Contract survives"
+assert_contains "## Knowledge" "$TF_BODY" "the Knowledge survives"
+assert_not_contains "## Pattern Detected" "$TF_BODY" "Pattern Detected is removed"
+assert_not_contains "## Promotion Checklist" "$TF_BODY" "Promotion Checklist is removed"
+assert_not_contains "## Evidence" "$TF_BODY" "Evidence is removed"
+
+# The evidence is moved, not destroyed — losing the audit trail would be a
+# worse outcome than leaving it in the skill.
+_flow_test_begin "removed sections are recorded, not discarded"
+assert_contains "## Evidence" "$TF_EVIDENCE" "Evidence lands in the evidence file"
+assert_contains "## Pattern Detected" "$TF_EVIDENCE" "Pattern Detected lands in the evidence file"
+assert_contains "Cite one journal entry" "$TF_EVIDENCE" "with its content intact"
+
+# Must-fire: a proposal whose Contract is not first.
+_flow_test_begin "a proposal without a leading Contract is refused"
+NOCONTRACT="$TRANSFORM_DIR/no-contract.md"
+_write_valid_proposal "$NOCONTRACT" "test-fake-nocontract"
+python3 - "$NOCONTRACT" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(s.replace("## Contract", "## Preamble", 1))
+PY
+_pp_transform "$NOCONTRACT"
+assert_exit 1 "$TF_RC" "exit 1"
+assert_contains "expected '## Contract'" "$TF_OUT" "stderr names the missing Contract"
+
+# Must-fire: an over-budget body. A promoted skill is loaded into context like
+# any other, so an unbounded one costs every session that triggers it.
+_flow_test_begin "an over-budget body is refused"
+FAT="$TRANSFORM_DIR/fat.md"
+_write_valid_proposal "$FAT" "test-fake-fat"
+python3 - "$FAT" <<'PY'
+import sys
+p = sys.argv[1]
+with open(p, "a") as f:
+    f.write("\n## Knowledge\n\n" + ("filler " * 700) + "\n")
+PY
+_pp_transform "$FAT"
+assert_exit 1 "$TF_RC" "exit 1"
+assert_contains "max 600" "$TF_OUT" "stderr names the word budget"
+
+# Must-fire: an over-long Contract. The Contract is what a dispatched skill
+# shows before its body loads, so a bloated one defeats the point.
+_flow_test_begin "an over-long Contract is refused"
+LONGC="$TRANSFORM_DIR/long-contract.md"
+_write_valid_proposal "$LONGC" "test-fake-longcontract"
+python3 - "$LONGC" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(s.replace("Permitted skips: none.", "Permitted skips: none. " + ("word " * 150), 1))
+PY
+_pp_transform "$LONGC"
+assert_exit 1 "$TF_RC" "exit 1"
+assert_contains "max 120" "$TF_OUT" "stderr names the Contract budget"
