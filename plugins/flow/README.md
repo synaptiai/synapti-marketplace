@@ -139,7 +139,7 @@ See [gate-configuration.md](references/gate-configuration.md) for full gate deta
 
 | Tool | Needed for | If it is missing |
 |---|---|---|
-| `bash` 3.2 or newer | every command, hook and script | flow does not run |
+| `bash` 3.2 or newer | every command, hook and script | flow does not run. On Windows this means Git Bash, which Git for Windows installs — see [docs/windows-support.md](../../docs/windows-support.md). Without a POSIX shell, Claude Code skips the hooks silently: no journal, no guards, and no error either |
 | `git` | branch, commit and diff operations | flow does not run |
 | `gh` (GitHub CLI, authenticated) | issues, pull requests, reviews, merges | any command that touches GitHub fails |
 | `jq` | reading settings and GitHub JSON | commands fall back to a narrower path or stop |
