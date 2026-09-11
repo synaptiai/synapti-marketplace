@@ -239,7 +239,9 @@ fi
 _flow_test_begin "skill bodies stay within 600 words"
 for FILE in "$SKILLS_DIR"/*/SKILL.md; do
   NAME=$(basename "$(dirname "$FILE")")
-  case "$NAME" in learned) continue ;; esac
+  # No `learned` skip here: this glob stops one level above
+  # learned/<name>/SKILL.md and cannot reach a promoted skill. Those are
+  # scanned by the learned-skill block above, which applies the same budget.
   WORDS=$(awk 'BEGIN{fm=0} NR==1 && /^---$/ {fm=1; next} fm==1 { if (/^---$/) {fm=2}; next } {print}' "$FILE" | wc -w | tr -d ' ')
   if [ "$WORDS" -gt 600 ]; then
     _flow_assert_fail "$NAME: body is $WORDS words (max 600)"
