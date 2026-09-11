@@ -66,17 +66,47 @@ else
   echo "STATE=ok"
   echo "PR_NUM=$PR_NUM"
 
+  # Section: Repository — resolved once here, printed, and pinned onto every gh
+  # call below. Without the pin each call resolves against whatever repository
+  # gh picks for the invoking shell, and a wrong answer does not look wrong: it
+  # is the same TITLE=/REVIEW_COUNT= shape either way. In a workspace holding
+  # sibling checkouts that is how a preflight reported zero reviews on a pull
+  # request that had three.
+  #
+  # The cross-check parses `git remote get-url origin` independently rather than
+  # reading `gh repo view` twice — two readings of one source can never disagree.
+  echo ""
+  echo "### Repository"
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null); GH_EXIT=$?
+  GIT_REPO=$(git remote get-url origin 2>/dev/null | sed -E -e 's#\.git$##' -e 's#^.*[:/]([^/]+/[^/]+)$#\1#')
+  if [ $GH_EXIT -ne 0 ] || [ -z "$REPO" ]; then
+    echo "REPO="
+    echo "REPO_STATE=unavailable"
+    echo "ERROR=could not resolve the repository (gh repo view failed); every field below would be unattributable"
+  else
+    echo "REPO=$REPO"
+    if [ -z "$GIT_REPO" ]; then
+      echo "REPO_CROSSCHECK=unavailable"
+      echo "REPO_CROSSCHECK_DETAIL=no origin remote to compare against"
+    elif [ "$(printf '%s' "$GIT_REPO" | tr 'A-Z' 'a-z')" = "$(printf '%s' "$REPO" | tr 'A-Z' 'a-z')" ]; then
+      echo "REPO_CROSSCHECK=ok"
+    else
+      echo "REPO_CROSSCHECK=mismatch"
+      echo "REPO_CROSSCHECK_DETAIL=git origin is $GIT_REPO but gh resolved $REPO"
+      echo "REPO_STATE=blocked"
+    fi
+  fi
+
   # Section: PR Details
   echo ""
   echo "### PR Details"
-  gh pr view "$PR_NUM" --json headRefName,baseRefName,title,body --jq '
+  gh pr view "$PR_NUM" --repo "$REPO" --json headRefName,baseRefName,title,body --jq '
     "TITLE=\"\(.title)\"\nHEAD_BRANCH=\(.headRefName)\nBASE_BRANCH=\(.baseRefName)\nBODY_LENGTH=\(.body | length)"
   ' 2>/dev/null
 
   # Section: Inline Review Comments
   echo ""
   echo "### Inline Review Comments"
-  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   # Capture gh exit separately. gh failure ⇒ "" + non-zero exit; jq on empty
   # stdin produces no output + exit 0, so `|| echo "0"` does not fire and the
   # block silently emits a bare `INLINE_COUNT=` line. Distinguish unavailable
@@ -102,7 +132,7 @@ else
   # Section: Review Summaries
   echo ""
   echo "### Review Summaries"
-  REVIEWS_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
+  REVIEWS_JSON=$(gh pr view "$PR_NUM" --repo "$REPO" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
   if [ $GH_EXIT -ne 0 ]; then
     echo "REVIEW_COUNT=0"
     echo "STATE=unavailable"
@@ -134,7 +164,7 @@ true
 Then check out the PR branch (mutating, runs inline):
 
 ```bash
-gh pr checkout "$PR_NUM"
+gh pr checkout "$PR_NUM" --repo "$REPO"
 ```
 
 **Agent(Explore)**: "Pre-resolve check — for each review comment, verify the feedback still applies to the current code. Some comments may already be addressed by later commits."
@@ -187,7 +217,7 @@ if [ -z "$PR_NUM" ]; then
   echo "ERROR=PR number required (all-digit)"
 else
   echo "STATE=ok"
-  CYCLE_COUNT=$(gh pr view "$PR_NUM" --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length' 2>/dev/null)
+  CYCLE_COUNT=$(gh pr view "$PR_NUM" --repo "$REPO" --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length' 2>/dev/null)
   echo "PR_NUM=$PR_NUM"
   echo "REVIEW_CYCLE=$CYCLE_COUNT"
 fi
@@ -370,11 +400,11 @@ Even in minimal-scope mode, P1 and P2 findings in untouched files are always fix
    ```
 9. **Post resolution comment** (MANDATORY) using the template structure from `templates/resolution-comment.md`:
    ```bash
-   gh pr comment "$PR_NUM" --body "$BODY"
+   gh pr comment "$PR_NUM" --repo "$REPO" --body "$BODY"
    ```
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
 10. **Update PR body review cycle state** (if `### Review Cycle History` exists in the PR body):
-   - Fetch current body: `gh pr view "$PR_NUM" --json body --jq '.body'`
+   - Fetch current body: `gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body'`
    - If the body contains `### Review Cycle History`, replace content between that heading and the next `##` heading with the cycle metrics table (received/fixed/discussed/escalated)
    - If the heading does not exist, append a `### Review Cycle History` section under `## Review Findings`
    - Update: `gh pr edit "$PR_NUM" --body "$UPDATED_BODY"`

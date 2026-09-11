@@ -56,10 +56,42 @@ else
   echo "STATE=ok"
   echo "PR_NUM=$PR_NUM"
 
+  # Section: Repository — resolved once here, printed, and pinned onto every gh
+  # call below. Without the pin each call resolves against whatever repository
+  # gh picks for the invoking shell, and a wrong answer does not look wrong: it
+  # is the same TITLE=/REVIEW_COUNT= shape either way. In a workspace holding
+  # sibling checkouts that is how a preflight reported zero reviews on a pull
+  # request that had three, and reported another repository pull request
+  # under the number it was asked about.
+  #
+  # The cross-check parses `git remote get-url origin` independently rather than
+  # reading `gh repo view` twice — two readings of one source can never disagree.
+  echo ""
+  echo "### Repository"
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null); GH_EXIT=$?
+  GIT_REPO=$(git remote get-url origin 2>/dev/null | sed -E -e 's#\.git$##' -e 's#^.*[:/]([^/]+/[^/]+)$#\1#')
+  if [ $GH_EXIT -ne 0 ] || [ -z "$REPO" ]; then
+    echo "REPO="
+    echo "REPO_STATE=unavailable"
+    echo "ERROR=could not resolve the repository (gh repo view failed); every field below would be unattributable"
+  else
+    echo "REPO=$REPO"
+    if [ -z "$GIT_REPO" ]; then
+      echo "REPO_CROSSCHECK=unavailable"
+      echo "REPO_CROSSCHECK_DETAIL=no origin remote to compare against"
+    elif [ "$(printf '%s' "$GIT_REPO" | tr 'A-Z' 'a-z')" = "$(printf '%s' "$REPO" | tr 'A-Z' 'a-z')" ]; then
+      echo "REPO_CROSSCHECK=ok"
+    else
+      echo "REPO_CROSSCHECK=mismatch"
+      echo "REPO_CROSSCHECK_DETAIL=git origin is $GIT_REPO but gh resolved $REPO"
+      echo "REPO_STATE=blocked"
+    fi
+  fi
+
   # Section: PR Status
   echo ""
   echo "### PR Status"
-  gh pr view "$PR_NUM" --json reviewDecision,statusCheckRollup,mergeable,mergeStateStatus,title,headRefName --jq '
+  gh pr view "$PR_NUM" --repo "$REPO" --json reviewDecision,statusCheckRollup,mergeable,mergeStateStatus,title,headRefName --jq '
     [.statusCheckRollup[]? | select(.__typename == "CheckRun")] as $checks |
     (if (.reviewDecision // "") == "" then "(none)" else .reviewDecision end) as $review |
     "TITLE=\"\(.title)\"\nHEAD_BRANCH=\(.headRefName)\nMERGEABLE=\(.mergeable)\nMERGE_STATE_STATUS=\(.mergeStateStatus)\nREVIEW_DECISION=\($review)\nCHECKS_PASSED=\($checks | map(select(.conclusion == "SUCCESS")) | length)\nCHECKS_FAILED=\($checks | map(select(.conclusion == "FAILURE")) | length)\nCHECKS_TOTAL=\($checks | length)"
@@ -71,7 +103,7 @@ else
   # Capture gh exit separately; gh failure must surface as STATE=unavailable
   # rather than collapse to STATE=empty (the merge gate must close, not open,
   # when reviews cannot be read).
-  REVIEWS_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
+  REVIEWS_JSON=$(gh pr view "$PR_NUM" --repo "$REPO" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
   if [ $GH_EXIT -ne 0 ]; then
     echo "REVIEW_COUNT=0"
     echo "STATE=unavailable"
@@ -89,7 +121,6 @@ else
   # Section: Unresolved Conversations (GraphQL — reviewThreads not in REST)
   echo ""
   echo "### Unresolved Conversations"
-  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   OWNER=$(echo "$REPO" | cut -d/ -f1)
   NAME=$(echo "$REPO" | cut -d/ -f2)
   UNRESOLVED_COUNT=$(gh api graphql -f query="query { repository(owner: \"$OWNER\", name: \"$NAME\") { pullRequest(number: $PR_NUM) { reviewThreads(first: 100) { nodes { isResolved } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' 2>/dev/null); GH_EXIT=$?
@@ -105,7 +136,7 @@ else
   # Section: Stale Approval Check
   echo ""
   echo "### Stale Approval Check"
-  gh pr view "$PR_NUM" --json reviews,commits --jq '
+  gh pr view "$PR_NUM" --repo "$REPO" --json reviews,commits --jq '
     ([.reviews[] | select(.state == "APPROVED")] | sort_by(.submittedAt) | last | .submittedAt // "none") as $la |
     (.commits | last | .committedDate) as $lc |
     "LAST_APPROVAL=\($la)\nLAST_COMMIT=\($lc)\nSTALE=\(if $la == "none" then "n/a" elif $la < $lc then "true" else "false" end)"
@@ -519,8 +550,10 @@ When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.f
 
 | Check | Status | Details |
 |-------|--------|---------|
+| Repository | {Pass/Fail} | {owner/name, cross-check ok / mismatch} |
 | Approval | {Pass/Fail} | {N approvals, latest by @X} |
-| CI Checks | {Pass/Fail} | {N passed, M failed} |
+| CI Checks | {Pass/Fail} | {N passed, M failed, K unfinished} |
+| Required Checks | {Yes/None} | {required contexts, or "none required on `<base>`"} |
 | Mergeable | {Pass/Fail} | {No conflicts / Has conflicts} |
 | Conversations | {Pass/Fail} | {All resolved / N unresolved} |
 | Stale Approval | {OK/Warning} | {Fresh / Commits after approval} |
@@ -529,6 +562,37 @@ When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.f
 **Merge strategy**: {from settings.merge.strategy, default: squash}
 **Delete branch**: {from settings.merge.deleteBranch, default: true}
 ```
+
+The Repository row exists because every field above it was read from one
+repository, and until it is named nobody can tell which. `REPO_CROSSCHECK` in
+the preflight compares what `gh` resolved against what `git remote get-url
+origin` says; on `mismatch` the preflight sets `STATE=blocked` and this command
+stops rather than reporting a well-formed answer about a different repository.
+
+### Why `--auto` is not a way to wait
+
+GitHub auto-merge waits for **required** status checks. On a repository with no
+branch protection and no ruleset requiring one, nothing is required, so
+`gh pr merge --auto` merges immediately. That is the opposite of what the flag
+is usually reached for, and it is how a pull request came to be merged with
+twelve jobs still queued (issue #170).
+
+Either confirm the checks have finished — `gh pr checks <N> --watch` — and merge
+without the flag, or require the checks on the base branch so the flag has
+something to wait for. Whether a repository configures required checks is the
+repository's decision; the point is not to mistake their absence for a passing
+gate.
+
+The `block-unchecked-merge.sh` PreToolUse hook enforces both halves for merges
+that do not come through this command: it refuses a `gh pr merge` while any
+check is queued, running or failed, and refuses `--auto` on a base branch that
+requires nothing.
+
+The Required Checks row is not decoration. "All checks passed" and "no checks
+are required here" are different facts, and only the first is a gate. Where the
+base branch requires nothing, say so — and never reach for `--auto` there,
+because auto-merge waits for required checks and merges at once when there are
+none.
 
 If any check fails, explain what needs to be fixed and suggest actions.
 
@@ -565,14 +629,17 @@ Only after the user confirms via the tool:
 STRATEGY="squash"  # or from settings
 DELETE_FLAG="--delete-branch"  # or from settings
 
-gh pr merge "$PR_NUM" --$STRATEGY $DELETE_FLAG
+# No --auto. It waits for REQUIRED checks, so on a repository that requires
+# none it merges immediately; the gate above is what establishes the checks
+# have finished. --repo pins the merge to the repository the preflight read.
+gh pr merge "$PR_NUM" --repo "$REPO" --$STRATEGY $DELETE_FLAG
 ```
 
 ## Phase 4: Post-Merge
 
 ```bash
 # Verify merge
-gh pr view "$PR_NUM" --json state --jq '.state'
+gh pr view "$PR_NUM" --repo "$REPO" --json state --jq '.state'
 
 # Switch to default branch
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
@@ -585,7 +652,7 @@ git pull origin $DEFAULT_BRANCH
 **Manifest emit** — if this merge resolved any escalations (a Proactive-Autonomy escalation surfaced via `AskUserQuestion` during Phase 1's finding-ledger check, Phase 2's stale-approval warning, or the conflict-resolution path closed because the user provided one of the six canonical fields), record an `escalation-resolved` artifact for each:
 
 ```bash
-ISSUE=$(gh pr view "$PR_NUM" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+ISSUE=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
 if [ -n "$ISSUE" ]; then
   # Repeat once per escalation that closed during this merge run.
   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \

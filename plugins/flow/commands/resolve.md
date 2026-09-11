@@ -82,7 +82,7 @@ true
 ```bash
 # Fetch PR details and attempt merge. Uses $RESOLVE_TARGET extracted by the
 # Phase 0 `!` block above (digit-or-safe-branch-name; trailing context stripped).
-gh pr view "$RESOLVE_TARGET" --json headRefName,baseRefName,mergeable,title
+gh pr view "$RESOLVE_TARGET" --repo "$REPO" --json headRefName,baseRefName,mergeable,title
 git fetch origin
 git checkout <headRefName>
 git merge origin/<baseRefName> --no-commit --no-ff
