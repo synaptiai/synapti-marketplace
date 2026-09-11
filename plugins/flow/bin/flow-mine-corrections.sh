@@ -107,11 +107,40 @@ elif [ -d "$PROJECT_DIR" ]; then
 fi
 
 # Default transcript dir: <root>/<slug>. The slug replaces every character
-# that is not [A-Za-z0-9] with `-` (so /home/user/repo -> -home-user-repo),
-# matching the layout under ~/.claude/projects.
+# that is not [A-Za-z0-9] with `-` (so /home/user/repo -> -home-user-repo).
+#
+# The root is a LIST, not one path. Claude Code stores transcripts under
+# ~/.claude/projects on some machines and ~/.claude-work/projects on others, and
+# probing only the first meant that on a machine using the second layout the
+# miner reported TRANSCRIPT_STATE=missing and /flow:learn ran its whole
+# correction phase against zero rows. Nothing looked wrong: the run completed,
+# proposals were produced, and the half carrying the behavioural signal was one
+# line in a status table. On the machine where this was measured the default
+# path held nothing and the real directory held 8 sessions and 46 candidate
+# rows (issue #168).
+#
+# CLAUDE_TRANSCRIPT_DIR and --transcript-dir still override the list outright.
+# TRANSCRIPT_ROOTS_TRIED records every root probed so a genuinely empty result
+# is distinguishable from a directory that was never found.
+TRANSCRIPT_ROOTS_TRIED=""
 if [ -z "$TRANSCRIPT_DIR" ]; then
   SLUG=$(printf '%s' "$PROJECT_DIR" | sed 's/[^A-Za-z0-9]/-/g')
-  TRANSCRIPT_DIR="${CLAUDE_TRANSCRIPT_DIR:-$HOME/.claude/projects}/$SLUG"
+  if [ -n "${CLAUDE_TRANSCRIPT_DIR:-}" ]; then
+    TRANSCRIPT_DIR="$CLAUDE_TRANSCRIPT_DIR/$SLUG"
+    TRANSCRIPT_ROOTS_TRIED="$CLAUDE_TRANSCRIPT_DIR"
+  else
+    for _root in "$HOME/.claude/projects" "$HOME/.claude-work/projects"; do
+      TRANSCRIPT_ROOTS_TRIED="${TRANSCRIPT_ROOTS_TRIED:+$TRANSCRIPT_ROOTS_TRIED, }$_root"
+      if [ -d "$_root/$SLUG" ]; then
+        TRANSCRIPT_DIR="$_root/$SLUG"
+        break
+      fi
+    done
+    # None matched: report against the first root, which is the one an operator
+    # expects, and let the missing-state line name every root that was tried.
+    [ -z "$TRANSCRIPT_DIR" ] && TRANSCRIPT_DIR="$HOME/.claude/projects/$SLUG"
+    unset _root
+  fi
 fi
 
 # Missing inputs are a normal state (fresh machine, transcripts pruned,
@@ -122,6 +151,9 @@ _report_missing() {
   if [ "$FORMAT" = "markdown" ]; then
     echo "TRANSCRIPT_DIR=${ONE_FILE:-$TRANSCRIPT_DIR}"
     echo "TRANSCRIPT_DIR_STATE=missing"
+    # Name every root that was probed. "Not found" and "found and empty" are
+    # different facts, and reporting one path made them look identical.
+    [ -n "${TRANSCRIPT_ROOTS_TRIED:-}" ] && echo "TRANSCRIPT_ROOTS_TRIED=$TRANSCRIPT_ROOTS_TRIED"
     echo "CANDIDATE_COUNT=0"
     echo "SESSION_COUNT=0"
     echo "SESSIONS_WITH_CANDIDATES=0"
@@ -132,7 +164,17 @@ if [ -n "$ONE_FILE" ]; then
   [ -L "$ONE_FILE" ] && _report_missing "--file is a symlink; refusing to follow it: $ONE_FILE"
   [ -f "$ONE_FILE" ] || _report_missing "transcript file not found: $ONE_FILE"
 else
-  [ -d "$TRANSCRIPT_DIR" ] || _report_missing "transcript dir not found: $TRANSCRIPT_DIR (set --transcript-dir or CLAUDE_TRANSCRIPT_DIR)"
+  if [ ! -d "$TRANSCRIPT_DIR" ]; then
+    # Two different facts, two different sentences. When the caller named the
+    # directory, say that directory is not there. When the roots were searched,
+    # name every one of them — "not found" and "found and empty" look identical
+    # otherwise, which is how a whole evidence source stayed invisible.
+    if [ -n "$TRANSCRIPT_ROOTS_TRIED" ]; then
+      _report_missing "no transcript dir for this project under any known root (tried: $TRANSCRIPT_ROOTS_TRIED); set --transcript-dir or CLAUDE_TRANSCRIPT_DIR to point at it"
+    else
+      _report_missing "transcript dir not found: $TRANSCRIPT_DIR (set --transcript-dir or CLAUDE_TRANSCRIPT_DIR)"
+    fi
+  fi
 fi
 
 # Everything user-controlled travels via argv, never via source interpolation.

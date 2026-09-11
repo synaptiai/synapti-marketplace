@@ -51,6 +51,7 @@ done
 [ -z "$PROPOSAL" ] && { echo "promote-proposal.sh: --proposal is required" >&2; exit 1; }
 [ ! -f "$PROPOSAL" ] && { echo "promote-proposal.sh: proposal file not found: $PROPOSAL" >&2; exit 2; }
 
+
 # Reject newline-bearing paths upfront. The PR-body sed substitution at the
 # end of this script cannot escape literal newlines in `$PROPOSAL` cleanly,
 # and by the time we reach that step we have already pushed a remote branch.
@@ -62,10 +63,78 @@ case "$PROPOSAL" in
     ;;
 esac
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
-  echo "promote-proposal.sh: not inside a git repository" >&2
-  exit 2
+# ---------------------------------------------------------------------------
+# Where does the promotion land?
+#
+# In flow's own repository, or nowhere. /flow:learn writes proposals to a
+# user-scoped directory, so they accumulate from whichever project the user
+# happened to be in, and flow is almost always used from a consuming project
+# rather than from the marketplace checkout. Resolving the target against the
+# current repository therefore aimed the common case at the wrong place: it
+# would add a plugins/flow/ tree to a project that never had one, commit, push a
+# branch and open a pull request whose reviewers have no context for it, while
+# the proposal never reached flow at all.
+#
+# Nothing caught it, because every guard in this script fires on OVERWRITING an
+# existing skill and none on the target being in the wrong repository — and a
+# fresh proposal name always passes that (issue #169).
+#
+# Resolution order, first hit wins:
+#   1. FLOW_REPO_ROOT, for a checkout in a place this cannot guess.
+#   2. The current repository, but only when it already contains
+#      plugins/flow/skills — that is what makes it the marketplace rather than
+#      a project that merely uses flow.
+#   3. The repository containing this script, found by walking up from it. A
+#      marketplace clone reaches its own root this way even when the user is
+#      standing somewhere else entirely.
+#
+# A plugin installed under ~/.claude/plugins is a cache, not a checkout: it has
+# no git remote to open a pull request against, so it is refused with the
+# reason rather than written into.
+_pp_is_flow_repo() {
+  [ -n "$1" ] && [ -d "$1/plugins/flow/skills" ] && [ -d "$1/.git" ]
 }
+
+FLOW_ROOT=""
+PROMOTE_SOURCE=""
+
+if [ -n "${FLOW_REPO_ROOT:-}" ]; then
+  if _pp_is_flow_repo "$FLOW_REPO_ROOT"; then
+    FLOW_ROOT="$FLOW_REPO_ROOT"; PROMOTE_SOURCE="FLOW_REPO_ROOT"
+  else
+    echo "promote-proposal.sh: FLOW_REPO_ROOT=$FLOW_REPO_ROOT is not a flow checkout" >&2
+    echo "promote-proposal.sh: expected it to contain plugins/flow/skills and .git" >&2
+    exit 2
+  fi
+fi
+
+CWD_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$FLOW_ROOT" ] && _pp_is_flow_repo "$CWD_ROOT"; then
+  FLOW_ROOT="$CWD_ROOT"; PROMOTE_SOURCE="current repository"
+fi
+
+if [ -z "$FLOW_ROOT" ]; then
+  _pp_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  while [ "$_pp_dir" != "/" ]; do
+    if _pp_is_flow_repo "$_pp_dir"; then
+      FLOW_ROOT="$_pp_dir"; PROMOTE_SOURCE="the checkout containing this script"; break
+    fi
+    _pp_dir="$(dirname "$_pp_dir")"
+  done
+  unset _pp_dir
+fi
+
+if [ -z "$FLOW_ROOT" ]; then
+  echo "promote-proposal.sh: could not find a flow checkout to promote into." >&2
+  if [ -n "$CWD_ROOT" ]; then
+    echo "promote-proposal.sh: the current repository ($CWD_ROOT) is not one — it has no plugins/flow/skills." >&2
+    echo "promote-proposal.sh: promoting here would add a plugins/flow/ tree it never had and open a pull request on it." >&2
+  fi
+  echo "promote-proposal.sh: clone the marketplace and re-run from there, or set FLOW_REPO_ROOT to an existing clone." >&2
+  exit 2
+fi
+
+REPO_ROOT="$FLOW_ROOT"
 LEARNED_DIR="$REPO_ROOT/plugins/flow/skills/learned"
 
 if ! python3 -c "import yaml" >/dev/null 2>&1; then
@@ -181,6 +250,9 @@ fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "DRY-RUN: validation passed for '$PROPOSAL_NAME'"
+  # Name the repository and how it was chosen. A dry run whose output does not
+  # say where the promotion lands cannot answer the question it is asked.
+  echo "DRY-RUN: flow checkout: $REPO_ROOT (resolved from $PROMOTE_SOURCE)"
   echo "DRY-RUN: would copy $PROPOSAL → $TARGET"
   echo "DRY-RUN: would create branch feature/learn-promote-$PROPOSAL_NAME"
   echo "DRY-RUN: would commit + push + open draft PR"

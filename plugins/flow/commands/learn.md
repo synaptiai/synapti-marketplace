@@ -273,7 +273,13 @@ If no journal entries found:
 - "No decision journal entries found. Journal entries are created automatically during `/flow:start`, `/flow:commit`, and `/flow:address` workflows."
 - Suggest running a workflow first.
 
-If `TRANSCRIPT_STATE=ok` and `CANDIDATE_COUNT=0`: "No correction candidates in the last `SESSION_COUNT` transcripts." If `TRANSCRIPT_STATE=missing`: report the `TRANSCRIPT_DIR` that was looked for and that `learning.transcriptDir` overrides it. If `disabled`: say transcripts are off via `learning.sources`.
+State the transcript half plainly, because it is the half that carries the behavioural signal and the half that fails silently.
+
+- `TRANSCRIPT_STATE=ok` and `CANDIDATE_COUNT=0`: "No correction candidates in the last `SESSION_COUNT` transcripts." The source was read and held nothing.
+- `TRANSCRIPT_STATE=missing`: say the transcript half produced nothing **and why** — name every root from `TRANSCRIPT_ROOTS_TRIED`, not just the one path, and say that `learning.transcriptDir` or `CLAUDE_TRANSCRIPT_DIR` points at it. Do not let this read as "no corrections found": the corrections a user actually made live in the transcripts, so a run without them has seen only what flow wrote about itself.
+- `disabled`: say transcripts are off via `learning.sources`.
+
+The two states are different findings. One says the evidence was read and was empty; the other says the evidence was never reached.
 
 ## Tier Classification
 
