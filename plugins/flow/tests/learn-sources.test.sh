@@ -59,6 +59,42 @@ $OUT"
 fi
 assert_contains ".claude-work/projects" "$OUT" "and the resolved path is reported"
 
+# The production shape, and the one the shipped -d probe got wrong: the first
+# root's slug directory EXISTS but holds no transcripts (on the machine that
+# reported #168 it holds only a memory/ subdirectory), while the second root
+# holds them. A directory-existence probe picks the first and reports
+# TRANSCRIPT_STATE=ok with zero sessions, which reads as "found and empty" —
+# the exact confusion the issue is about. This test fails on that probe.
+_flow_test_begin "an existing but transcript-less first root does not win"
+BASE1B=$(_ls_tmp)
+PROJ1B="$BASE1B/proj"; mkdir -p "$PROJ1B"
+SLUG1B=$(printf '%s' "$PROJ1B" | sed 's/[^A-Za-z0-9]/-/g')
+mkdir -p "$BASE1B/home/.claude/projects/$SLUG1B/memory"   # exists, no .jsonl
+_ls_seed "$BASE1B/home/.claude-work/projects" "$PROJ1B"
+OUT=$(HOME="$BASE1B/home" "$MINER" --project-dir "$PROJ1B" --format markdown 2>/dev/null)
+assert_contains "TRANSCRIPT_DIR_STATE=ok" "$OUT" "the transcripts are found"
+if printf '%s' "$OUT" | grep -q '\.claude-work/projects'; then
+  _flow_assert_pass "the root holding transcripts wins over one that merely exists"
+else
+  _flow_assert_fail "picked a root with no transcripts in it:
+$OUT"
+fi
+if printf '%s' "$OUT" | grep -q 'SESSION_COUNT=0'; then
+  _flow_assert_fail "reported zero sessions while a root held transcripts — the silent-loss shape"
+else
+  _flow_assert_pass "sessions are counted"
+fi
+
+# A project with no transcripts anywhere still reports a path someone can look
+# at, rather than inventing one.
+_flow_test_begin "a genuinely empty project reports the directory that exists"
+BASE1C=$(_ls_tmp)
+PROJ1C="$BASE1C/proj"; mkdir -p "$PROJ1C"
+SLUG1C=$(printf '%s' "$PROJ1C" | sed 's/[^A-Za-z0-9]/-/g')
+mkdir -p "$BASE1C/home/.claude-work/projects/$SLUG1C"
+OUT=$(HOME="$BASE1C/home" "$MINER" --project-dir "$PROJ1C" --format markdown 2>/dev/null)
+assert_contains ".claude-work/projects" "$OUT" "the existing directory is the one reported"
+
 _flow_test_begin "the first root still wins when it has the transcript"
 BASE2=$(_ls_tmp)
 PROJ2="$BASE2/proj"; mkdir -p "$PROJ2"
@@ -142,15 +178,18 @@ mkdir -p "$CONS"
 _ls_consumer "$CONS"
 OUT=$( cd "$CONS" && "$PROMOTER" --proposal "$PROPOSAL_FIXTURE" --dry-run 2>&1 )
 RC=$?
+# rc=0 is the only correct outcome: the promoter lives inside $REPO_ROOT, so
+# resolution path 3 must find it. An earlier version of this assertion also
+# accepted rc=2, which meant it passed both when the walk-up worked and when it
+# was broken — including the worktree case, where requiring a .git DIRECTORY
+# rejected a legitimate checkout.
 if printf '%s' "$OUT" | grep -q "$CONS/plugins/flow"; then
   _flow_assert_fail "the promotion targeted the consuming project:
 $OUT"
 elif [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q "$REPO_ROOT/plugins/flow/skills/learned"; then
   _flow_assert_pass "it resolved to the flow checkout holding the script"
-elif [ "$RC" -eq 2 ]; then
-  _flow_assert_pass "it refused with exit 2 rather than writing to the wrong repository"
 else
-  _flow_assert_fail "unexpected result (exit $RC):
+  _flow_assert_fail "expected exit 0 targeting $REPO_ROOT, got exit $RC:
 $OUT"
 fi
 

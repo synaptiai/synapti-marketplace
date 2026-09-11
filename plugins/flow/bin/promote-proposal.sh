@@ -23,7 +23,8 @@
 # Exits:
 #   0 — promotion succeeded (or dry-run completed without errors)
 #   1 — validation failed (proposal malformed, refused to overwrite, etc.)
-#   2 — infrastructure error (file not found, repo not detected, gh failure)
+#   2 — infrastructure error (file not found, no flow checkout to promote into,
+#       an unreadable checkout, gh failure)
 
 set -euo pipefail
 
@@ -91,8 +92,25 @@ esac
 # A plugin installed under ~/.claude/plugins is a cache, not a checkout: it has
 # no git remote to open a pull request against, so it is refused with the
 # reason rather than written into.
+# A checkout of flow: it holds the skills tree and git recognises it. `.git` is
+# tested with -e rather than -d because a worktree and a submodule both use a
+# .git FILE, and this repository has a worktree — requiring a directory rejected
+# a legitimate flow checkout on all three resolution paths.
 _pp_is_flow_repo() {
-  [ -n "$1" ] && [ -d "$1/plugins/flow/skills" ] && [ -d "$1/.git" ]
+  [ -n "$1" ] || return 1
+  [ -d "$1/plugins/flow/skills" ] || return 1
+  [ -e "$1/.git" ] || return 1
+  return 0
+}
+
+# Which half failed? A refusal that names the wrong cause sends the reader to
+# the wrong fix: the first version reported "it has no plugins/flow/skills" for
+# a worktree that plainly had one.
+_pp_why_not() {
+  if [ -z "$1" ]; then printf 'no path'; return; fi
+  if [ ! -d "$1/plugins/flow/skills" ]; then printf 'it has no plugins/flow/skills'; return; fi
+  if [ ! -e "$1/.git" ]; then printf 'it is not a git checkout (no .git)'; return; fi
+  printf 'unknown'
 }
 
 FLOW_ROOT=""
@@ -102,8 +120,7 @@ if [ -n "${FLOW_REPO_ROOT:-}" ]; then
   if _pp_is_flow_repo "$FLOW_REPO_ROOT"; then
     FLOW_ROOT="$FLOW_REPO_ROOT"; PROMOTE_SOURCE="FLOW_REPO_ROOT"
   else
-    echo "promote-proposal.sh: FLOW_REPO_ROOT=$FLOW_REPO_ROOT is not a flow checkout" >&2
-    echo "promote-proposal.sh: expected it to contain plugins/flow/skills and .git" >&2
+    echo "promote-proposal.sh: FLOW_REPO_ROOT=$FLOW_REPO_ROOT is not a flow checkout — $(_pp_why_not "$FLOW_REPO_ROOT")" >&2
     exit 2
   fi
 fi
@@ -114,20 +131,36 @@ if [ -z "$FLOW_ROOT" ] && _pp_is_flow_repo "$CWD_ROOT"; then
 fi
 
 if [ -z "$FLOW_ROOT" ]; then
-  _pp_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  while [ "$_pp_dir" != "/" ]; do
+  # Resolve symlinks first. `~/bin/promote-proposal.sh -> .../plugins/flow/bin/`
+  # is an ordinary install shape, and walking up from the link's own directory
+  # loses this resolution path entirely. bash 3.2 has no `readlink -f`.
+  _pp_src="${BASH_SOURCE[0]}"
+  _pp_hops=0
+  while [ -L "$_pp_src" ] && [ "$_pp_hops" -lt 32 ]; do
+    _pp_target="$(readlink "$_pp_src")"
+    case "$_pp_target" in
+      /*) _pp_src="$_pp_target" ;;
+      *)  _pp_src="$(dirname "$_pp_src")/$_pp_target" ;;
+    esac
+    _pp_hops=$((_pp_hops + 1))
+  done
+  _pp_dir="$(cd "$(dirname "$_pp_src")" && pwd)" || {
+    echo "promote-proposal.sh: cannot resolve the directory of this script" >&2
+    exit 2
+  }
+  while [ -n "$_pp_dir" ] && [ "$_pp_dir" != "/" ]; do
     if _pp_is_flow_repo "$_pp_dir"; then
       FLOW_ROOT="$_pp_dir"; PROMOTE_SOURCE="the checkout containing this script"; break
     fi
     _pp_dir="$(dirname "$_pp_dir")"
   done
-  unset _pp_dir
+  unset _pp_dir _pp_src _pp_target _pp_hops
 fi
 
 if [ -z "$FLOW_ROOT" ]; then
   echo "promote-proposal.sh: could not find a flow checkout to promote into." >&2
   if [ -n "$CWD_ROOT" ]; then
-    echo "promote-proposal.sh: the current repository ($CWD_ROOT) is not one — it has no plugins/flow/skills." >&2
+    echo "promote-proposal.sh: the current repository ($CWD_ROOT) is not one — $(_pp_why_not "$CWD_ROOT")." >&2
     echo "promote-proposal.sh: promoting here would add a plugins/flow/ tree it never had and open a pull request on it." >&2
   fi
   echo "promote-proposal.sh: clone the marketplace and re-run from there, or set FLOW_REPO_ROOT to an existing clone." >&2
@@ -259,9 +292,18 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-# Pre-flight: clean working tree (otherwise checkout -b will mix changes in)
-if [ -n "$(git status --porcelain)" ]; then
-  echo "promote-proposal.sh: working tree is not clean — commit or stash before promoting" >&2
+# Pre-flight: clean working tree (otherwise checkout -b will mix changes in).
+# -C "$REPO_ROOT" because that is now the repository being written to, which is
+# not necessarily the one the caller is standing in. Without it the gate
+# inspected the caller's tree: a dirty flow checkout passed and its changes were
+# swept into the promotion commit, while a dirty consuming project blocked a
+# promotion that had nothing to do with it.
+PP_STATUS=$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null) || {
+  echo "promote-proposal.sh: cannot read the working tree of $REPO_ROOT" >&2
+  exit 2
+}
+if [ -n "$PP_STATUS" ]; then
+  echo "promote-proposal.sh: the working tree of $REPO_ROOT is not clean — commit or stash before promoting" >&2
   exit 1
 fi
 
@@ -302,7 +344,10 @@ cleanup_promote() {
   fi
   exit "$rc"
 }
-ORIGINAL_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+ORIGINAL_BRANCH=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD) || {
+  echo "promote-proposal.sh: cannot read HEAD in $REPO_ROOT" >&2
+  exit 2
+}
 BRANCH="feature/learn-promote-$PROPOSAL_NAME"
 trap cleanup_promote EXIT
 
