@@ -194,6 +194,47 @@ if [ "$SCANNED" -lt 20 ]; then
   _flow_assert_fail "only $SCANNED dispatched skills scanned (expected 20+)"
 fi
 
+# --- promoted learned skills are held to the same shape as hand-written ones
+# The two loops above glob "$SKILLS_DIR"/*/SKILL.md, which never reaches
+# learned/<name>/SKILL.md one level deeper. A promoted skill is loaded by name
+# like any other, so it gets the same Contract-first, 120-word, 600-word budget
+# — and none of the proposal scaffolding, which belongs in the promotion PR.
+_flow_test_begin "promoted learned skills carry skill shape, not proposal shape"
+LEARNED_FOUND=$(find "$SKILLS_DIR/learned" -name SKILL.md -type f 2>/dev/null | wc -l | tr -d ' ')
+LEARNED_SCANNED=0
+for FILE in "$SKILLS_DIR"/learned/*/SKILL.md; do
+  [ -f "$FILE" ] || continue
+  LEARNED_SCANNED=$((LEARNED_SCANNED + 1))
+  NAME=$(basename "$(dirname "$FILE")")
+  BODY=$(awk 'BEGIN{fm=0} NR==1 && /^---$/ {fm=1; next} fm==1 { if (/^---$/) {fm=2}; next } {print}' "$FILE")
+  # Every property is evaluated and reported together. Short-circuiting on the
+  # first failure lets one assertion mask another: a leftover "## Promotion
+  # Checklist" also pushes the body over the word budget, so a word-count
+  # failure reported first would hide the scaffolding that caused it.
+  PROBLEMS=""
+  FIRST_H2=$(printf '%s\n' "$BODY" | awk '/^## / {print; exit}')
+  [ "$FIRST_H2" = "## Contract" ] || PROBLEMS="$PROBLEMS; first H2 is '$FIRST_H2', expected '## Contract'"
+  CWORDS=$(printf '%s\n' "$BODY" | awk '/^## Contract[[:space:]]*$/ {on=1; next} on && /^## / {exit} on {print}' | wc -w | tr -d ' ')
+  [ "$CWORDS" -le 120 ] || PROBLEMS="$PROBLEMS; Contract is $CWORDS words (max 120)"
+  BWORDS=$(printf '%s\n' "$BODY" | wc -w | tr -d ' ')
+  [ "$BWORDS" -le 600 ] || PROBLEMS="$PROBLEMS; body is $BWORDS words (max 600)"
+  LEFTOVER=$(printf '%s\n' "$BODY" | grep -E '^## (Promotion Checklist|Evidence|Pattern Detected)$' | tr '\n' ' ')
+  [ -z "$LEFTOVER" ] || PROBLEMS="$PROBLEMS; proposal scaffolding survived promotion: $LEFTOVER"
+  if [ -n "$PROBLEMS" ]; then
+    _flow_assert_fail "learned/$NAME:${PROBLEMS#;}"
+  else
+    _flow_assert_pass "learned/$NAME: Contract first ($CWORDS w), body $BWORDS w, no proposal sections"
+  fi
+done
+# The loops above could pass by reaching nothing. Assert the walk saw every file
+# that is actually there rather than asserting a non-zero count, because an empty
+# learned/ is a legitimate state.
+if [ "$LEARNED_SCANNED" -eq "$LEARNED_FOUND" ]; then
+  _flow_assert_pass "scanned $LEARNED_SCANNED of $LEARNED_FOUND learned skills on disk"
+else
+  _flow_assert_fail "scanned $LEARNED_SCANNED learned skills but $LEARNED_FOUND exist on disk"
+fi
+
 # --- every skill body stays within the 600-word budget
 _flow_test_begin "skill bodies stay within 600 words"
 for FILE in "$SKILLS_DIR"/*/SKILL.md; do
