@@ -256,6 +256,107 @@ _bd_strip_noncode() {
   }
 }
 
+# _bd_segments <text>
+# Prints one simple command per line.
+#
+# Splits on `;` `|` `&` where the shell would — outside quotes — and treats a
+# command substitution as BOTH things it is: a command in its own right, emitted
+# as its own segment, and a word in the command containing it, which therefore
+# survives as `__BD_SUBST__` rather than being torn in half.
+#
+# That second half matters. `tr ';|&()\`' '\n'`, and a first attempt that merely
+# respected quoting, both split `gh --repo $(gh repo view -q .n) pr merge 42`
+# into a fragment with no `pr merge` and a fragment with no `gh` — so a hook
+# looking for a merge found none and allowed it. A separator inside a quoted
+# argument did the same to the selector: `gh pr merge -b "a; b" 42` lost the 42,
+# and a probe that wants to know WHICH pull request asked about another one.
+#
+# BD_UNBALANCED is 1 when the text ends inside a quote or an unclosed
+# substitution. A caller that cannot afford to guess should treat that as
+# "unparsable" rather than as "nothing found".
+_bd_segments() {
+  BD_UNBALANCED=0
+  local out
+  out=$(printf '%s\n' "$1" | awk '
+    # depth must start as the NUMBER 0. Left uninitialised it is the empty
+    # string, so buf[depth] is buf[""] at the outer level and buf["0"] once a
+    # substitution has closed — different slots, and everything written before
+    # the substitution is silently dropped.
+    BEGIN { SQ = sprintf("%c", 39); depth = 0; unbal = 0 }
+    function flush(   i) {
+      if (buf[depth] != "") { print buf[depth]; buf[depth] = "" }
+    }
+    {
+      line = $0
+      n = length(line)
+      for (i = 1; i <= n; i++) {
+        c = substr(line, i, 1)
+
+        # A backslash escapes the next character everywhere but inside single
+        # quotes.
+        if (c == "\\" && q[depth] != SQ) {
+          buf[depth] = buf[depth] c
+          i++
+          if (i <= n) buf[depth] = buf[depth] substr(line, i, 1)
+          continue
+        }
+
+        if (q[depth] != "") {
+          # `$(` re-opens code inside a double-quoted string.
+          if (q[depth] == "\"" && c == "$" && substr(line, i + 1, 1) == "(") {
+            depth++; buf[depth] = ""; q[depth] = ""
+            i++
+            continue
+          }
+          buf[depth] = buf[depth] c
+          if (c == q[depth]) q[depth] = ""
+          continue
+        }
+
+        if (c == "\"" || c == SQ) { q[depth] = c; buf[depth] = buf[depth] c; continue }
+
+        if (c == "$" && substr(line, i + 1, 1) == "(") {
+          depth++; buf[depth] = ""; q[depth] = ""
+          i++
+          continue
+        }
+        if (c == "`") {
+          if (depth > 0 && tick[depth]) { flush(); depth--; buf[depth] = buf[depth] " __BD_SUBST__ " ; continue }
+          depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 1
+          continue
+        }
+        if (c == ")") {
+          if (depth > 0) {
+            flush(); depth--
+            # The substitution stood where a word stood, so a word goes back.
+            buf[depth] = buf[depth] " __BD_SUBST__ "
+            continue
+          }
+          flush()
+          continue
+        }
+        if (c == "(" ) { flush(); continue }
+        if (c == ";" || c == "|" || c == "&") { flush(); continue }
+
+        buf[depth] = buf[depth] c
+      }
+      flush()
+    }
+    END {
+      while (depth > 0) { if (buf[depth] != "") print buf[depth]; depth-- ; unbal = 1 }
+      if (buf[0] != "") print buf[0]
+      if (unbal || q[0] != "") print "__BD_UNBALANCED__"
+    }
+  ')
+  case "$out" in
+    *__BD_UNBALANCED__*)
+      BD_UNBALANCED=1
+      out=$(printf '%s\n' "$out" | grep -v '^__BD_UNBALANCED__$')
+      ;;
+  esac
+  printf '%s\n' "$out"
+}
+
 # ---------------------------------------------------------------------------
 # git command parsing.
 #

@@ -145,12 +145,26 @@ while IFS= read -r SEG; do
   [ "${words[0]}" = "pr" ] || continue
   [ "${words[1]}" = "merge" ] || continue
 
+  # A selector supplied from somewhere this hook cannot read — xargs, or a
+  # substitution the segmenter replaced with a placeholder — is not "no
+  # selector, so the current branch". It is "unknown", and a gate that cannot
+  # tell which pull request is being merged must not open.
+  case "$SEG" in
+    *xargs*|*__BD_SUBST__*)
+      if [ -z "${words[2]:-}" ]; then
+        echo "BLOCKED: a gh pr merge whose pull request comes from somewhere this hook cannot read (xargs, or a command substitution)." >&2
+        echo "Name the pull request explicitly so its checks can be verified." >&2
+        exit 2
+      fi
+      ;;
+  esac
+
   MERGE_FOUND=1
   MERGE_SEL[$MERGE_N]="${words[2]:-}"
   MERGE_REPO[$MERGE_N]="$seg_repo"
   MERGE_AUTO[$MERGE_N]="$seg_auto"
   MERGE_N=$((MERGE_N + 1))
-done < <(printf '%s\n' "$BD_CODE" | tr ';|&()`' '\n')
+done < <(_bd_segments "$BD_CODE")
 
 [ "$MERGE_FOUND" = "1" ] || exit 0
 
@@ -195,7 +209,10 @@ for ((M = 0; M < MERGE_N; M++)); do
   fi
   # gh can exit 0 having printed something that is not the object expected —
   # an error body, a truncated stream. Emptiness is not the only way to fail.
-  if ! printf '%s' "$ROLLUP" | jq -e 'type == "object" and has("number") and (.statusCheckRollup | type == "array")' >/dev/null 2>&1; then
+  # Entries must be objects too. A rollup of `["ci"]` satisfies "is an array"
+          # and then kills the classifiers below with a type error, leaving both
+          # empty — which reads as "nothing wrong".
+  if ! printf '%s' "$ROLLUP" | jq -e 'type == "object" and has("number") and (.statusCheckRollup | type == "array") and (all(.statusCheckRollup[]; type == "object"))' >/dev/null 2>&1; then
     echo "BLOCKED: gh pr merge${SEL:+ $SEL}, but the check rollup did not parse as expected. Refusing rather than guessing." >&2
     exit 2
   fi
@@ -211,6 +228,9 @@ for ((M = 0; M < MERGE_N; M++)); do
   # ACTION_REQUIRED and STALE were the two that got through, and GitHub can add
   # more — must land in "not passing", never in "fine". Same for an entry whose
   # __typename is missing.
+  # Each classifier's exit status is checked. An empty result must mean "jq
+  # looked and found none", never "jq fell over". That distinction is the whole
+  # difference between a gate and a formality.
   UNFINISHED=$(printf '%s' "$ROLLUP" | jq -r '
     [ .statusCheckRollup[]
       | if .__typename == "CheckRun"
@@ -219,7 +239,10 @@ for ((M = 0; M < MERGE_N; M++)); do
         then select(.state == "PENDING" or .state == "EXPECTED") | "\(.context // "status") [pending]"
         else "\(.name // .context // "unrecognised check") [unknown shape]"
         end ]
-    | join(", ")')
+    | join(", ")') || {
+    echo "BLOCKED: the check rollup for PR #$PR_NUMBER could not be classified. Refusing rather than guessing." >&2
+    exit 2
+  }
 
   NOT_PASSING=$(printf '%s' "$ROLLUP" | jq -r '
     [ .statusCheckRollup[]
@@ -232,9 +255,17 @@ for ((M = 0; M < MERGE_N; M++)); do
              | "\(.context // "status") [\(.state // "unknown" | ascii_downcase)]"
         else empty
         end ]
-    | join(", ")')
+    | join(", ")') || {
+    echo "BLOCKED: the check rollup for PR #$PR_NUMBER could not be classified. Refusing rather than guessing." >&2
+    exit 2
+  }
 
-  TOTAL=$(printf '%s' "$ROLLUP" | jq -r '.statusCheckRollup | length')
+  TOTAL=$(printf '%s' "$ROLLUP" | jq -r '.statusCheckRollup | length') || TOTAL=""
+  case "$TOTAL" in
+    ''|*[!0-9]*)
+      echo "BLOCKED: could not count the checks on PR #$PR_NUMBER." >&2
+      exit 2 ;;
+  esac
 
   if [ -n "$UNFINISHED" ]; then
     echo "BLOCKED: PR #$PR_NUMBER has checks that have not finished: $UNFINISHED" >&2
@@ -290,10 +321,21 @@ for ((M = 0; M < MERGE_N; M++)); do
   # An empty rollup is "no checks" on a repository with no CI, and "not
   # reported yet" in the seconds after a push. Where the base requires checks,
   # the second reading is the one that matters.
-  if [ "$TOTAL" = "0" ] && [ -n "$REQUIRED" ]; then
-    echo "BLOCKED: PR #$PR_NUMBER reports no checks yet, but '$BASE' requires: $REQUIRED" >&2
-    echo "They have not been created on this commit. Wait for them to appear." >&2
-    exit 2
+  if [ "$TOTAL" = "0" ]; then
+    if [ -n "$REQUIRED" ]; then
+      echo "BLOCKED: PR #$PR_NUMBER reports no checks yet, but '$BASE' requires: $REQUIRED" >&2
+      echo "They have not been created on this commit. Wait for them to appear." >&2
+      exit 2
+    fi
+    # An empty rollup means "no CI here" on a repository with none, and "not
+    # reported yet" in the seconds after a push — which is the window this hook
+    # was written for. Telling them apart depends on knowing what the base
+    # requires, so when that could not be read, neither reading is available.
+    if [ "$REQ_READABLE" = "0" ]; then
+      echo "BLOCKED: PR #$PR_NUMBER reports no checks, and whether '$BASE' requires any could not be read." >&2
+      echo "No checks yet and no checks at all look identical from here. Re-run once the requirements are readable, or merge deliberately." >&2
+      exit 2
+    fi
   fi
 
   if [ "$AUTO" = "1" ] && [ -z "$REQUIRED" ]; then

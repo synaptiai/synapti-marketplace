@@ -116,6 +116,21 @@ CASES.append(("empty rollup, base requires checks",
 CASES.append(("quote-split command word", stub(QUEUED), 'g""h pr merge 9', 2))
 CASES.append(("uppercase GH", stub(QUEUED), "GH pr merge 9", 2))
 CASES.append(("absolute path", stub(QUEUED), "/usr/local/bin/gh pr merge 9", 2))
+# The two the segmenter was hiding: a separator inside a substitution or a
+# quoted argument tore the command in half.
+CASES.append(("--repo from a command substitution",
+              stub(GREEN, {"42": QUEUED}),
+              "gh --repo $(gh repo view --json nameWithOwner -q .nameWithOwner) pr merge 42 --squash", 2))
+CASES.append(("a semicolon inside a quoted body",
+              stub(GREEN, {"42": QUEUED}),
+              'gh pr merge -t merge -b "some; merge body" 42', 2))
+CASES.append(("a pipe inside a quoted body",
+              stub(GREEN, {"42": QUEUED}),
+              'gh pr merge -b "a | b" 42', 2))
+# A selector supplied by xargs cannot be known from the command text.
+CASES.append(("selector arrives via xargs",
+              stub(GREEN, {"42": QUEUED}), "echo 42 | xargs gh pr merge --squash", 2))
+
 # Must stay allowed.
 CASES.append(("green merges", stub(GREEN), "gh pr merge 7 --squash", 0))
 CASES.append(("green merge, no selector", stub(GREEN), "gh pr merge --squash", 0))

@@ -180,7 +180,7 @@ RM_DESTRUCTIVE=0
 while IFS= read -r SEG; do
   [ -z "$SEG" ] && continue
   if _rm_segment_is_destructive "$SEG"; then RM_DESTRUCTIVE=1; break; fi
-done < <(printf '%s\n' "$BD_CODE" | tr ';|&()`' '\n')
+done < <(_bd_segments "$BD_CODE")
 if [ "$RM_DESTRUCTIVE" = "1" ]; then
   echo "BLOCKED: Destructive rm -rf (recursive + force) detected. Review the target path and run manually if intended." >&2
   exit 2
@@ -230,14 +230,14 @@ while IFS= read -r SEG; do
     IS_FORCE_DELETE=1
     TARGETS="$TARGETS$BR_TARGETS"
   fi
-done < <(printf '%s\n' "$BD_CODE" | tr ';|&()`' '\n')
+done < <(_bd_segments "$BD_CODE")
 
 # A force delete is irreversible and is allowed only on a branch this hook can
 # prove is merged. That proof covers the branch, not the rest of the line, so a
 # force delete chained to anything else is refused rather than used to greenlight
 # the chain. This used to fall out of the target parser by accident: a compound
 # left junk words that failed the show-ref check. It is a rule, so it says so.
-BD_SEGMENT_COUNT=$(printf '%s\n' "$BD_CODE" | tr ';|&()`' '\n' | grep -c '[^[:space:]]' || true)
+BD_SEGMENT_COUNT=$(_bd_segments "$BD_CODE" | grep -c '[^[:space:]]' || true)
 [ -z "$BD_SEGMENT_COUNT" ] && BD_SEGMENT_COUNT=0
 
 if [ "$IS_FORCE_DELETE" = "1" ]; then
@@ -440,6 +440,6 @@ while IFS= read -r SEG; do
       done
       ;;
   esac
-done < <(printf '%s\n' "$BD_CODE" | tr ';|&()`' '\n')
+done < <(_bd_segments "$BD_CODE")
 
 exit 0
