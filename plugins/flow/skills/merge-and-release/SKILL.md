@@ -30,7 +30,7 @@ Plus the `pr-lifecycle` finding-ledger check: non-empty `ESCALATED` or unmatched
 
 ## Stop Conditions
 
-Any prerequisite fails, stale approval, unresolved conversations > 0, or ledger gate fails: stop. No "override the gate" option exists in autonomous mode.
+Any prerequisite fails, stale approval, unresolved conversations > 0, unfinished checks, or ledger gate fails: stop. No "override the gate" option exists in autonomous mode. Never `--auto`: it waits only for *required* checks (`commands/merge.md`).
 
 ## Merge Execution (Phases 2–4)
 

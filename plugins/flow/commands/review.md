@@ -57,15 +57,47 @@ else
   echo "STATE=ok"
   echo "PR_NUM=$PR_NUM"
 
+  # Section: Repository — resolved once here, printed, and pinned onto every gh
+  # call below. Without the pin each call resolves against whatever repository
+  # gh picks for the invoking shell, and a wrong answer does not look wrong: it
+  # is the same TITLE=/REVIEW_COUNT= shape either way. In a workspace holding
+  # sibling checkouts that is how a preflight reported zero reviews on a pull
+  # request that had three, and reported another repository pull request
+  # under the number it was asked about.
+  #
+  # The cross-check parses `git remote get-url origin` independently rather than
+  # reading `gh repo view` twice — two readings of one source can never disagree.
+  echo ""
+  echo "### Repository"
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null); GH_EXIT=$?
+  GIT_REPO=$(git remote get-url origin 2>/dev/null | sed -E -e 's#\.git$##' -e 's#^.*[:/]([^/]+/[^/]+)$#\1#')
+  if [ $GH_EXIT -ne 0 ] || [ -z "$REPO" ]; then
+    echo "REPO="
+    echo "REPO_STATE=unavailable"
+    echo "ERROR=could not resolve the repository (gh repo view failed); every field below would be unattributable"
+  else
+    echo "REPO=$REPO"
+    if [ -z "$GIT_REPO" ]; then
+      echo "REPO_CROSSCHECK=unavailable"
+      echo "REPO_CROSSCHECK_DETAIL=no origin remote to compare against"
+    elif [ "$(printf '%s' "$GIT_REPO" | tr 'A-Z' 'a-z')" = "$(printf '%s' "$REPO" | tr 'A-Z' 'a-z')" ]; then
+      echo "REPO_CROSSCHECK=ok"
+    else
+      echo "REPO_CROSSCHECK=mismatch"
+      echo "REPO_CROSSCHECK_DETAIL=git origin is $GIT_REPO but gh resolved $REPO"
+      echo "REPO_STATE=blocked"
+    fi
+  fi
+
   # Section: PR Details
   echo ""
   echo "### PR Details"
-  gh pr view "$PR_NUM" --json title,headRefName,baseRefName,changedFiles,additions,deletions,labels,author,reviews --jq '"TITLE=\"\(.title)\"\nHEAD_BRANCH=\(.headRefName)\nBASE_BRANCH=\(.baseRefName)\nAUTHOR=@\(.author.login)\nCHANGED_FILES=\(.changedFiles)\nADDITIONS=\(.additions)\nDELETIONS=\(.deletions)\nLABELS=\([.labels[].name] | join(","))\nREVIEW_COUNT=\(.reviews | length)"' 2>/dev/null
+  gh pr view "$PR_NUM" --repo "$REPO" --json title,headRefName,baseRefName,changedFiles,additions,deletions,labels,author,reviews --jq '"TITLE=\"\(.title)\"\nHEAD_BRANCH=\(.headRefName)\nBASE_BRANCH=\(.baseRefName)\nAUTHOR=@\(.author.login)\nCHANGED_FILES=\(.changedFiles)\nADDITIONS=\(.additions)\nDELETIONS=\(.deletions)\nLABELS=\([.labels[].name] | join(","))\nREVIEW_COUNT=\(.reviews | length)"' 2>/dev/null
 
   # Section: Linked Issue (parsed from PR body)
   echo ""
   echo "### Linked Issue"
-  LINKED=$(gh pr view "$PR_NUM" --json body --jq '.body' 2>/dev/null | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+  LINKED=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null | grep -oE '#[0-9]+' | head -1 | tr -d '#')
   echo "LINKED_ISSUE=${LINKED:-none}"
 
   # Section: Previous Reviews (follow-up detection)
@@ -75,7 +107,7 @@ else
   # failed gh call (auth, network) produces no output (jq 1.8 empty-input
   # ⇒ exit 0) so `||` does not fire, COUNT stays empty, and the section
   # silently leaks `REVIEW_COUNT=` (bare empty).
-  PREV_JSON=$(gh pr view "$PR_NUM" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
+  PREV_JSON=$(gh pr view "$PR_NUM" --repo "$REPO" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
   if [ $GH_EXIT -ne 0 ]; then
     echo "REVIEW_COUNT=0"
     echo "STATE=unavailable"
@@ -93,7 +125,7 @@ else
   # Section: Diff Files
   echo ""
   echo "### Diff Files"
-  DIFF_FILES=$(gh pr diff "$PR_NUM" --name-only 2>/dev/null)
+  DIFF_FILES=$(gh pr diff "$PR_NUM" --repo "$REPO" --name-only 2>/dev/null)
   # `grep -c '.' || echo 0` produces multi-line `0\n0` on empty input — use
   # explicit empty-check.
   if [ -z "$DIFF_FILES" ]; then
@@ -115,7 +147,13 @@ true
 Then check out the PR branch (mutating, runs inline):
 
 ```bash
-gh pr checkout "$PR_NUM"
+# $REPO does not survive from the preflight block: each fence is its own
+# shell. Resolved again here, because `gh --repo ""` falls back to the default
+# resolution of gh without complaining — an unset REPO reads as pinned and behaves
+# as unpinned, which is the failure this pinning exists to prevent.
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+gh pr checkout "$PR_NUM" --repo "$REPO"
 ```
 
 **Agent(Explore)**: "Read the changed files in this PR and understand the context. What modules are affected? What patterns are being followed or changed?"
@@ -125,6 +163,12 @@ Check for previous reviews — if this is a follow-up review, focus on changes s
 **Parse structured findings from previous review/resolution cycles** (follow-up reviews only).
 
 ```!
+# $REPO does not survive from the preflight block: each fence is its own
+# shell. Resolved again here, because `gh --repo ""` falls back to the default
+# resolution of gh without complaining — an unset REPO reads as pinned and behaves
+# as unpinned, which is the failure this pinning exists to prevent.
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 # Parse previous review findings + resolution outcomes. PR_NUM is digit-validated
 # (matches Phase 1 block); a non-digit token rejects rather than reaching shell.
 _RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
@@ -140,7 +184,6 @@ if [ -z "$PR_NUM" ]; then
   echo "ERROR=PR number required (all-digit)"
 else
   echo "STATE=ok"
-  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 
   # Sub-section: review-cycle markers (in PR review bodies)
   echo ""
@@ -674,7 +717,13 @@ TaskUpdate each review task as agents complete.
 4. **Determine review mode** — compare PR author vs current user:
 
    ```bash
-   PR_AUTHOR=$(gh pr view "$PR_NUM" --json author --jq '.author.login')
+   # $REPO does not survive from the preflight block: each fence is its own
+   # shell. Resolved again here, because `gh --repo ""` falls back to gh's own
+   # resolution without complaining — an unset REPO reads as pinned and behaves
+   # as unpinned, which is the failure this pinning exists to prevent.
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+   [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+   PR_AUTHOR=$(gh pr view "$PR_NUM" --repo "$REPO" --json author --jq '.author.login')
    CURRENT_USER=$(gh api user --jq '.login')
    ```
 
@@ -774,11 +823,17 @@ TaskUpdate each review task as agents complete.
    - `DISPUTED:[]` — empty for self-review (there is no second actor to dispute).
 
    ```bash
+   # $REPO does not survive from the preflight block: each fence is its own
+   # shell. Resolved again here, because `gh --repo ""` falls back to gh's own
+   # resolution without complaining — an unset REPO reads as pinned and behaves
+   # as unpinned, which is the failure this pinning exists to prevent.
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+   [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
    # $CYCLE_NUMBER is the same cycle the FLOW_REVIEW_CYCLE marker above used.
    # RESOLVED/ESCALATED are comma-separated finding IDs (e.g. F1,F2,F3).
    RES_BODY="$(build from templates/resolution-comment.md with the self-review cycle metrics)"
    [ -n "$RES_BODY" ] || { echo "ERROR: empty resolution body — refusing to post a marker-less comment" >&2; }
-   gh pr comment "$PR_NUM" --body "$RES_BODY"; RES_EXIT=$?
+   gh pr comment "$PR_NUM" --repo "$REPO" --body "$RES_BODY"; RES_EXIT=$?
    ```
 
    The resolution comment body MUST end with:
@@ -791,10 +846,16 @@ TaskUpdate each review task as agents complete.
 
    TaskUpdate(resolutionCommentTaskId, status: "completed", result: "PASS — self-review resolution marker posted")
 
-   **Manifest emit** — record the review-cycle artifact in the issue's journal manifest. Use the issue number associated with this PR (parse from PR body: `gh pr view "$PR_NUM" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#'`):
+   **Manifest emit** — record the review-cycle artifact in the issue's journal manifest. Use the issue number associated with this PR (parse from PR body: `gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#'`):
 
    ```bash
-   ISSUE=$(gh pr view "$PR_NUM" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+   # $REPO does not survive from the preflight block: each fence is its own
+   # shell. Resolved again here, because `gh --repo ""` falls back to gh's own
+   # resolution without complaining — an unset REPO reads as pinned and behaves
+   # as unpinned, which is the failure this pinning exists to prevent.
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+   [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+   ISSUE=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
    if [ -n "$ISSUE" ]; then
      "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
        --issue $ISSUE \

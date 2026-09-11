@@ -80,9 +80,15 @@ true
 ### PR Mode Setup
 
 ```bash
+# $REPO does not survive from the preflight block: each fence is its own
+# shell. Resolved again here, because `gh --repo ""` falls back to the default
+# resolution of gh without complaining — an unset REPO reads as pinned and behaves
+# as unpinned, which is the failure this pinning exists to prevent.
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 # Fetch PR details and attempt merge. Uses $RESOLVE_TARGET extracted by the
 # Phase 0 `!` block above (digit-or-safe-branch-name; trailing context stripped).
-gh pr view "$RESOLVE_TARGET" --json headRefName,baseRefName,mergeable,title
+gh pr view "$RESOLVE_TARGET" --repo "$REPO" --json headRefName,baseRefName,mergeable,title
 git fetch origin
 git checkout <headRefName>
 git merge origin/<baseRefName> --no-commit --no-ff
