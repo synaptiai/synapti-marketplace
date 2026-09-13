@@ -148,13 +148,16 @@ Per run, the harness records (`runs/<model>/<arm>/<case>/<n>/result.json`;
   request, not the run), `null` when nothing was recorded. `entries_skipped`
   counts `modelUsage` entries that were not objects; above zero, a billed model
   is missing from the totals.
-- Per-arm `summary.json` carries `cache_hit_rate_mean` and
-  `output_tokens_mean` over the `source: modelUsage` runs only — averaging
-  last-request counts with whole-run counts understates the cell — plus
-  `token_scored_runs` (how many of the cell's `runs` recorded whole-run
-  totals at all), `token_fallback_runs`, and `token_entries_skipped`.
-  `summary.md` carries the two means with that coverage in the cell, and the
-  effort behind every arm, so no cost mean is read without its setting. `effort_requested` lists
+
+Per-arm `summary.json` carries `cache_hit_rate_mean` and `output_tokens_mean`
+over the `source: modelUsage` runs only — averaging last-request counts with
+whole-run counts understates the cell — each with its own coverage count
+(`cache_hit_rate_scored_runs`, `output_tokens_scored_runs`), plus
+`token_scored_runs` (runs that recorded whole-run totals at all),
+`token_fallback_runs`, and `token_entries_skipped`. `summary.md` renders the
+two means with their coverage and the effort behind every arm, and prints a
+`Token totals are partial` line under the arm table whenever any run fell back
+to last-request counts or lost a billed model to a malformed entry. `effort_requested` lists
   the pinned levels behind the cell, with `unpinned` for runs that inherited
   the operator's setting, so a cell mixing the two is visibly mixed.
 - **cost_usd, num_turns, session_id, is_error, error, permission_denials,
@@ -300,10 +303,16 @@ path.
    verdict and which signal decided it, the risk-map difference, the baseline
    comparison (hidden pass rate and own-test catch rate), and a provisional
    flag when any arm has fewer than 3 runs on any case.
-2. **Per model × arm** — mean hidden pass rate, share of all-pass runs,
+2. **Per model × arm** — **Effort** (the levels behind the cell, `unpinned`
+   for runs that inherited the operator's setting; a cell reading
+   `high, unpinned` is mixed and its cost mean is not comparable), mean
+   hidden pass rate, share of all-pass runs,
    **own tests catch traps** (mean own-test trap catch rate, with how many
    runs were scorable, e.g. `67% (8/9)`), mean own-test count, mean
-   degenerate share, mean cost, mean turns, error count (timeouts,
+   degenerate share, mean cost, mean turns, **Cache hits** and **Output
+   tokens** (each a mean with how many of the cell's runs it covers, in the
+   same `90% (2/3)` form — coverage is per mean, since a run can hold
+   whole-run totals and still be missing one field), error count (timeouts,
    `is_error`, non-zero exit, `error_max_turns`), and **Incomplete** — how
    many runs' hidden suite did not finish, with the reasons (`2 (timeout)`).
    Those runs are scored over the full suite as observed passes, so a cell

@@ -446,7 +446,7 @@ RUN7="$TMP/run7"; mkdir -p "$RUN7"
 cat > "$RUN7/stream.jsonl" <<'EOF'
 {"type":"system","subtype":"init","session_id":"s7"}
 {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{}},{"type":"tool_use","name":"Skill","input":{"skill":"flow:tdd-patterns"}}]}}
-{"type":"result","subtype":"success","is_error":false,"num_turns":5,"total_cost_usd":0.25,"session_id":"s7","result":"done IMPLEMENTATION COMPLETE","permission_denials":[],"modelUsage":{"claude-test-model":{"costUSD":0.2,"inputTokens":100,"outputTokens":40,"cacheReadInputTokens":700,"cacheCreationInputTokens":200},"claude-helper-model":{"costUSD":0.05,"inputTokens":50,"outputTokens":10,"cacheReadInputTokens":0,"cacheCreationInputTokens":0}}}
+{"type":"result","subtype":"success","is_error":false,"num_turns":5,"total_cost_usd":0.25,"session_id":"s7","result":"done IMPLEMENTATION COMPLETE","permission_denials":[],"modelUsage":{"claude-test-model":{"costUSD":0.2,"inputTokens":100,"outputTokens":40,"cacheReadInputTokens":700,"cacheCreationInputTokens":200},"claude-helper-model":{"costUSD":0.05,"inputTokens":50,"outputTokens":10,"cacheReadInputTokens":140,"cacheCreationInputTokens":60}},"usage":{"input_tokens":1,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"output_tokens":4}}
 EOF
 OUT=$(python3 "$HELPER" finalize-run --run-dir "$RUN7" --case-dir "$MINI" --project-dir "$TMP/agent7" --arm off-risk --case mini --run 1 --exit-code 0 --duration 12 --model-requested claude-test-model --effort-requested medium)
 assert_contains '"model": "claude-test-model"' "$OUT" "primary model = the modelUsage key with the largest cost"
@@ -459,11 +459,14 @@ assert_equal "['claude-helper-model', 'claude-test-model']" "$(json_get "$RUN7/r
 assert_equal "claude-test-model" "$(json_get "$RUN7/result.json" 'd["model_requested"]')" "requested model recorded"
 assert_equal "medium" "$(json_get "$RUN7/result.json" 'd["effort_requested"]')" "requested effort recorded"
 assert_equal "150" "$(json_get "$RUN7/result.json" 'd["tokens"]["input"]')" "input tokens summed over every billed model"
-assert_equal "700" "$(json_get "$RUN7/result.json" 'd["tokens"]["cache_read"]')" "cache reads recorded"
-assert_equal "200" "$(json_get "$RUN7/result.json" 'd["tokens"]["cache_creation"]')" "cache writes recorded"
+assert_equal "840" "$(json_get "$RUN7/result.json" 'd["tokens"]["cache_read"]')" "cache reads summed over every billed model"
+assert_equal "260" "$(json_get "$RUN7/result.json" 'd["tokens"]["cache_creation"]')" "cache writes summed over every billed model"
 assert_equal "50" "$(json_get "$RUN7/result.json" 'd["tokens"]["output"]')" "output tokens summed"
-assert_equal "0.667" "$(json_get "$RUN7/result.json" 'round(d["tokens"]["cache_hit_rate"], 3)')" "cache hit rate = reads / (input + reads + writes)"
+assert_equal "0.672" "$(json_get "$RUN7/result.json" 'round(d["tokens"]["cache_hit_rate"], 3)')" "cache hit rate = reads / (input + reads + writes)"
 assert_equal "modelUsage" "$(json_get "$RUN7/result.json" 'd["tokens"]["source"]')" "whole-run totals are labelled modelUsage"
+# The stream also carries a top-level usage object with deliberately different
+# numbers: whole-run totals must win over the last request when both exist.
+assert_equal "150" "$(json_get "$RUN7/result.json" 'd["tokens"]["input"]')" "modelUsage wins over the top-level usage object"
 assert_equal "0" "$(json_get "$RUN7/result.json" 'd["tokens"]["entries_skipped"]')" "no billed model dropped"
 assert_equal "0.667" "$(json_get "$RUN7/result.json" 'round(d["own_test_trap_catch_rate"], 3)')" "own-test catch rate in result.json"
 assert_equal "True" "$(json_get "$RUN7/result.json" 'd["own_test_traps"]["caught"]["add_wrong"]')" "per-trap own-test verdict in result.json"
@@ -595,7 +598,7 @@ assert_contains "| claude-a | enforce-risk | unpinned | 6 | 65% | 0% | 50% (6/6)
 assert_contains "| claude-a | suggest-risk | unpinned | 6 | 95% | 50% | 25% (6/6) |" "$MD" "per-arm row: suggest-risk own-test mean over 0.0/0.5"
 assert_contains "| claude-a | suggest-norisk | unpinned | 3 | 90% | 0% | - (0/3) |" "$MD" "unscored own tests render as - with 0 scored runs"
 assert_contains "| claude-a | off-norisk | unpinned | 3 | 80% | 0% | 50% (3/3) | 5.0 | 0% | \$0.60 | 12.0 | - (0/3) | - (0/3) | 3 |" "$MD" "per-arm row: 8/10 runs are not all-pass; errors counted"
-assert_contains "| claude-a | enforce-risk | c1 | 2 | 65% (60%–70%) |" "$MD" "per-cell row shows min–max"
+assert_contains "| claude-a | enforce-risk | c1 | unpinned | 2 | 65% (60%–70%) |" "$MD" "per-cell row shows min–max"
 assert_contains "## Trap catch rate" "$MD" "trap section present"
 assert_contains "### claude-a — c1" "$MD" "trap tables keyed by model and case"
 assert_contains "| enforce-risk | 100% | 0% |" "$MD" "trap catch rates per arm"
@@ -663,19 +666,51 @@ PY
 }
 T="$AGGT/runs/model-t/enforce-risk"
 add_tokens "$T/c1/1/result.json" '{"effort_requested":"high","tokens":{"input":100,"cache_read":900,"cache_creation":0,"output":40,"cache_hit_rate":0.9,"source":"modelUsage","entries_skipped":0}}'
-add_tokens "$T/c2/1/result.json" '{"effort_requested":"high","tokens":{"input":100,"cache_read":700,"cache_creation":200,"output":60,"cache_hit_rate":0.7,"source":"modelUsage","entries_skipped":1}}'
+# c2 holds whole-run totals but never recorded a cache-read count: it belongs
+# in the output mean and NOT in the hit-rate mean, so the two coverage counts
+# must differ. A single shared count cannot render this cell correctly.
+add_tokens "$T/c2/1/result.json" '{"effort_requested":"high","tokens":{"input":100,"cache_read":null,"cache_creation":200,"output":60,"cache_hit_rate":null,"source":"modelUsage","entries_skipped":1}}'
 add_tokens "$T/c3/1/result.json" '{"tokens":{"input":11,"cache_read":33,"cache_creation":0,"output":7,"cache_hit_rate":0.75,"source":"usage","entries_skipped":0}}'
 OUT=$(python3 "$HELPER" aggregate --out "$AGGT")
 ARM='d["per_model"]["model-t"]["per_arm"]["enforce-risk"]'
 assert_equal "3" "$(json_get "$AGGT/summary.json" "$ARM"'["runs"]')" "the cell still reports every run"
 assert_equal "2" "$(json_get "$AGGT/summary.json" "$ARM"'["token_scored_runs"]')" "only the whole-run totals are scored"
-assert_equal "0.8" "$(json_get "$AGGT/summary.json" "round($ARM"'["cache_hit_rate_mean"], 3)')" "hit-rate mean excludes the last-request run"
+assert_equal "0.9" "$(json_get "$AGGT/summary.json" "round($ARM"'["cache_hit_rate_mean"], 3)')" "hit-rate mean excludes the last-request run and the run with no read count"
 assert_equal "50.0" "$(json_get "$AGGT/summary.json" "round($ARM"'["output_tokens_mean"], 1)')" "output mean excludes the last-request run"
+# Coverage is per mean: the same cell backs one mean with 1 run and the other with 2.
+assert_equal "1" "$(json_get "$AGGT/summary.json" "$ARM"'["cache_hit_rate_scored_runs"]')" "hit-rate coverage counts only runs that recorded a read count"
+assert_equal "2" "$(json_get "$AGGT/summary.json" "$ARM"'["output_tokens_scored_runs"]')" "output coverage counts both whole-run records"
 assert_equal "1" "$(json_get "$AGGT/summary.json" "$ARM"'["token_fallback_runs"]')" "the last-request run is counted, not hidden"
 assert_equal "1" "$(json_get "$AGGT/summary.json" "$ARM"'["token_entries_skipped"]')" "dropped billed models surface in the cell"
 assert_equal "['high', 'unpinned']" "$(json_get "$AGGT/summary.json" "$ARM"'["effort_requested"]')" "a cell mixing pinned and unpinned runs says so"
 assert_equal "['unpinned']" "$(json_get "$AGGT/summary.json" 'd["per_model"]["model-t"]["per_arm"]["suggest-risk"]["effort_requested"]')" "an all-unpinned cell is not an empty list"
 assert_equal "None" "$(json_get "$AGGT/summary.json" 'd["per_model"]["model-t"]["per_arm"]["suggest-risk"]["cache_hit_rate_mean"]')" "no token data means no mean, not zero"
+# The markdown is what an operator reads, so assert on it, not only on the JSON.
+MDT=$(cat "$AGGT/summary.md")
+assert_contains "Effort: \`high\`, \`unpinned\`" "$MDT" "the header names every effort in the run"
+assert_contains "| model-t | enforce-risk | high, unpinned | 3 |" "$MDT" "a mixed cell reads as mixed in the table"
+assert_contains "| 90% (1/3) | 50 (2/3) |" "$MDT" "each token mean carries its own coverage"
+assert_contains "Token totals are partial" "$MDT" "a fallback run and a dropped model are disclosed under the table"
+assert_contains "1 run(s) recorded only the last request" "$MDT" "the caveat counts the fallback run"
+assert_contains "missing a billed model" "$MDT" "the caveat names the dropped entry"
+
+_flow_test_begin "aggregate: a run record cannot forge rows in the summary it is rendered into"
+# result.json is collected data, not authored text: --aggregate-only runs over
+# directories this machine did not produce, and a bare | in a model name would
+# split the row even with no attacker.
+AGGX="$TMP/aggx"
+EVIL='m | 100% | 0% |'
+for case in c1 c2 c3; do
+  write_result "$AGGX" "$EVIL" enforce-risk "$case" 1 9 10 10 0.3 1.0 20 null false false 0.5 true false
+  write_result "$AGGX" "$EVIL" suggest-risk "$case" 1 9 10 6 0.3 1.0 20 null false false 0.5 true false
+done
+python3 "$HELPER" aggregate --out "$AGGX" >/dev/null
+MDX=$(cat "$AGGX/summary.md")
+assert_contains 'm \| 100% \| 0% \|' "$MDX" "pipes in a record field are escaped, not rendered as cell borders"
+# The payload's own unescaped form must appear nowhere: that string is what
+# would have read as three extra cells.
+RAW=$(printf '%s\n' "$MDX" | grep -c 'm | 100% | 0% |' || true)
+assert_equal "0" "$RAW" "the unescaped payload reaches no line of the summary"
 
 _flow_test_begin "aggregate: secondary signal decides a hidden-pass-rate tie"
 AGG3="$TMP/agg3"
@@ -746,11 +781,11 @@ assert_equal "0" "$(json_get "$AGG8/summary.json" 'd["per_model"]["m"]["per_arm"
 assert_equal "1" "$(json_get "$AGG8/summary.json" 'd["per_model"]["m"]["per_cell"]["enforce-risk/c1"]["own_test_incomplete_runs"]')" "own-suite incomplete runs counted per cell"
 assert_equal "3" "$(json_get "$AGG8/summary.json" 'd["per_model"]["m"]["per_arm"]["enforce-risk"]["own_test_incomplete_runs"]')" "own-suite incomplete runs counted per arm"
 MD=$(cat "$AGG8/summary.md")
-assert_contains "| Turns (mean) | Cache hits | Output tokens | Errors | Incomplete |" "$MD" "per-arm table has the Incomplete column"
+assert_contains "| Turns (mean) | Cache hits | Output tokens | Errors | Incomplete |" "$MD" "per-arm table has the token and Incomplete columns"
 assert_contains "| Turns | Errors | Incomplete |" "$MD" "per-cell table has the Incomplete column"
 assert_contains "| m | enforce-risk | unpinned | 9 | 38% | 33% | 50% (6/9) | 10.0 | 30% | \$1.00 | 20.0 | - (0/9) | - (0/9) | 0 | 6 (timeout, unknown) |" "$MD" "per-arm row: (4/30 + 0 + 1)/3 = 38%, six incomplete runs with reasons"
 assert_contains "| m | suggest-risk | unpinned | 6 | 100% | 100% | 50% (6/6) | 6.0 | 30% | \$1.00 | 20.0 | - (0/6) | - (0/6) | 0 | 0 |" "$MD" "per-arm row: zero incomplete"
-assert_contains "| m | enforce-risk | c1 | 3 | 38% (0%–100%) | 33% | 50% (2/3) | 10.0 | 30% | \$1.00 | 20.0 | 0 | 2 (timeout, unknown) |" "$MD" "per-cell row carries the count"
+assert_contains "| m | enforce-risk | c1 | unpinned | 3 | 38% (0%–100%) | 33% | 50% (2/3) | 10.0 | 30% | \$1.00 | 20.0 | 0 | 2 (timeout, unknown) |" "$MD" "per-cell row carries the count"
 assert_contains "Incomplete: runs whose hidden suite did not finish" "$MD" "column explained under the table"
 assert_contains "| enforce-risk | 2/3, 1 incomplete |" "$MD" "own-test scored-runs cell flags the incomplete own run"
 assert_contains "| suggest-risk | 2/2 |" "$MD" "own-test cell unchanged when nothing was incomplete"
@@ -852,6 +887,57 @@ OUT=$("$RUNNER" --dry-run --arm baseline --case money-allocator --runs 2 --out "
 assert_contains "SKIP  default/baseline/money-allocator/1 (result.json exists)" "$OUT" "completed run skipped on resume"
 assert_contains "RUN   default/baseline/money-allocator/2" "$OUT" "remaining run still planned"
 assert_contains "1 already complete" "$OUT" "plan line counts skips"
+_flow_test_begin "resume: a recorded run whose effort differs from the plan is refused before anything runs"
+# The guard runs during --dry-run, so this needs no claude and costs nothing.
+RES="$TMP/resume-effort"
+seed_run() {
+  # seed_run <arm> <n> <effort-json>
+  local d="$RES/runs/claude-x/$1/money-allocator/$2"
+  mkdir -p "$d"
+  printf '{"arm":"%s","case":"money-allocator","run":%s,"effort_requested":%s}\n' "$1" "$2" "$3" > "$d/result.json"
+}
+seed_run baseline 1 '"high"'
+OUT=$("$RUNNER" --dry-run --model claude-x --arm baseline --case money-allocator --runs 2 --effort high --out "$RES" 2>&1); EXIT=$?
+assert_exit 0 "$EXIT" "matching effort resumes normally"
+assert_contains "SKIP  claude-x/baseline/money-allocator/1" "$OUT" "the recorded run is skipped"
+ERR=$("$RUNNER" --dry-run --model claude-x --arm baseline --case money-allocator --runs 2 --effort low --out "$RES" 2>&1 >/dev/null); EXIT=$?
+assert_exit 1 "$EXIT" "a different effort -> exit 1"
+assert_contains "was recorded at effort 'high' but this plan asks for 'low'" "$ERR" "names both efforts"
+assert_contains "refusing to resume" "$ERR" "refuses the whole plan"
+assert_not_contains "RUN   claude-x" "$ERR" "refuses before planning any run"
+ERR=$("$RUNNER" --dry-run --model claude-x --arm baseline --case money-allocator --runs 2 --out "$RES" 2>&1 >/dev/null); EXIT=$?
+assert_exit 1 "$EXIT" "an unpinned plan over a pinned run -> exit 1"
+assert_contains "asks for 'unpinned'" "$ERR" "unpinned is named, not blank"
+# Every mismatch is reported, not just the first — an operator fixes one --out, not N.
+seed_run off-risk 1 '"high"'
+ERR=$("$RUNNER" --dry-run --model claude-x --arm baseline,off-risk --case money-allocator --runs 1 --effort low --out "$RES" 2>&1 >/dev/null)
+assert_contains "2 recorded run(s) do not match" "$ERR" "counts every mismatching run"
+# A corrupt record is reported as corrupt, never as an effort mismatch.
+printf 'not json' > "$RES/runs/claude-x/baseline/money-allocator/1/result.json"
+ERR=$("$RUNNER" --dry-run --model claude-x --arm baseline --case money-allocator --runs 1 --effort high --out "$RES" 2>&1 >/dev/null); EXIT=$?
+assert_exit 1 "$EXIT" "an unreadable result.json -> exit 1"
+assert_contains "has an unreadable result.json" "$ERR" "diagnoses the parse failure, not an effort mismatch"
+assert_not_contains "recorded at effort" "$ERR" "does not blame effort for a corrupt file"
+
+_flow_test_begin "--help prints the whole header, and --effort is preflighted against the installed CLI"
+HELP=$("$RUNNER" --help 2>&1)
+assert_contains "Requires: bash, python3, git, claude" "$HELP" "--help reaches the last header line (a fixed window cut this)"
+assert_contains "--effort" "$HELP" "--help documents the effort flag"
+# Prepended, not replaced: the runner needs the real coreutils on PATH; only
+# `claude` is stubbed.
+MOCKBIN="$TMP/mockbin"; mkdir -p "$MOCKBIN"
+printf '#!/usr/bin/env bash\necho "usage: claude [--model <m>]"\n' > "$MOCKBIN/claude"
+chmod +x "$MOCKBIN/claude"
+ERR=$(PATH="$MOCKBIN:$PATH" "$RUNNER" --arm baseline --case money-allocator --runs 1 --effort high --out "$TMP/preflight1" 2>&1 >/dev/null); EXIT=$?
+assert_exit 2 "$EXIT" "a CLI without --effort -> exit 2"
+assert_contains "no --effort flag" "$ERR" "names the missing flag"
+printf '#!/usr/bin/env bash\necho "claude: not authenticated; run /login" >&2\nexit 1\n' > "$MOCKBIN/claude"
+ERR=$(PATH="$MOCKBIN:$PATH" "$RUNNER" --arm baseline --case money-allocator --runs 1 --effort high --out "$TMP/preflight2" 2>&1 >/dev/null); EXIT=$?
+assert_exit 2 "$EXIT" "a failing claude --help -> exit 2"
+assert_contains "'claude --help' failed" "$ERR" "reports the CLI's own failure"
+assert_contains "not authenticated" "$ERR" "relays what claude said"
+assert_not_contains "no --effort flag" "$ERR" "does not misdiagnose an auth failure as a missing flag"
+
 mkdir -p "$TMP/dry7/runs/m1/baseline/money-allocator/1" && echo '{}' > "$TMP/dry7/runs/m1/baseline/money-allocator/1/result.json"
 OUT=$("$RUNNER" --dry-run --models m1,m2 --arm baseline --case money-allocator --runs 1 --out "$TMP/dry7" 2>&1)
 assert_contains "SKIP  m1/baseline/money-allocator/1" "$OUT" "resume is per model"

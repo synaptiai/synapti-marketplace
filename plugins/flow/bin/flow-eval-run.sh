@@ -246,10 +246,20 @@ if [ "$DRY_RUN" != "1" ]; then
   done
   # Fail the whole plan here rather than one run at a time: an unknown flag
   # kills every child session identically, and each failure costs a full
-  # timeout before it is recorded as "no result event".
-  if [ -n "$EFFORT" ] && ! claude --help 2>/dev/null | grep -q -- '--effort'; then
-    echo "flow-eval-run: this Claude Code CLI has no --effort flag; drop --effort or upgrade the CLI" >&2
-    exit 2
+  # timeout before it is recorded as "no result event". The help text is
+  # captured rather than piped so a claude that fails (unauthenticated, say)
+  # is reported as itself instead of as a missing flag.
+  if [ -n "$EFFORT" ]; then
+    CLAUDE_HELP=$(timeout 30 claude --help 2>&1); HELP_RC=$?
+    if [ "$HELP_RC" != "0" ]; then
+      echo "flow-eval-run: 'claude --help' failed (exit $HELP_RC) — cannot confirm --effort is supported:" >&2
+      printf '%s\n' "$CLAUDE_HELP" | head -5 >&2
+      exit 2
+    fi
+    case "$CLAUDE_HELP" in
+      *--effort*) ;;
+      *) echo "flow-eval-run: this Claude Code CLI has no --effort flag; drop --effort or upgrade the CLI" >&2; exit 2 ;;
+    esac
   fi
 fi
 
@@ -287,6 +297,55 @@ for dirpath, _, names in os.walk(root) if os.path.isdir(root) else []:
             pass
 print("%.4f" % total)
 EOF
+}
+
+recorded_effort() {
+  # recorded_effort <result.json> — the run's effort_requested; empty when the
+  # run was not pinned, __unreadable__ when the record cannot be parsed (so a
+  # corrupt record is never reported as an effort mismatch).
+  python3 - "$1" <<'EOF'
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        print(json.load(fh).get("effort_requested") or "")
+except Exception:
+    print("__unreadable__")
+EOF
+}
+
+check_resume_effort() {
+  # Every planned run that already has a result.json must carry the effort this
+  # plan asks for. Checked once, before anything executes: discovering a
+  # mismatch mid-plan would mean runs already paid for against a matrix that
+  # cannot be aggregated. Reports every mismatch, not just the first.
+  local bad=0 model label case arm n run_dir recorded case_runs
+  for model in "${MODELS[@]}"; do
+    label="$(model_label "$model")"
+    for case in $CASES; do
+      case_runs="${RUNS:-$(case_meta "$case" runs)}"; case_runs="${case_runs:-3}"
+      for arm in $ARMS; do
+        n=1
+        while [ "$n" -le "$case_runs" ]; do
+          run_dir="$OUT_DIR/runs/$label/$arm/$case/$n"
+          if [ -f "$run_dir/result.json" ]; then
+            recorded=$(recorded_effort "$run_dir/result.json")
+            if [ "$recorded" = "__unreadable__" ]; then
+              echo "flow-eval-run: $label/$arm/$case/$n has an unreadable result.json ($run_dir/result.json) — delete that run directory or use a fresh --out" >&2
+              bad=$((bad + 1))
+            elif [ "$recorded" != "$EFFORT" ]; then
+              echo "flow-eval-run: $label/$arm/$case/$n was recorded at effort '${recorded:-unpinned}' but this plan asks for '${EFFORT:-unpinned}'" >&2
+              bad=$((bad + 1))
+            fi
+          fi
+          n=$((n + 1))
+        done
+      done
+    done
+  done
+  if [ "$bad" != "0" ]; then
+    echo "flow-eval-run: refusing to resume — $bad recorded run(s) do not match --effort '${EFFORT:-unpinned}'; resume with the same --effort, or use a fresh --out" >&2
+    exit 1
+  fi
 }
 
 would_exceed() {
@@ -342,19 +401,8 @@ run_one() {
 
   PLANNED=$((PLANNED + 1))
   if [ -f "$run_dir/result.json" ]; then
-    # Resume must not merge incomparable runs. Model has its own directory, so
-    # only effort can silently differ between the recorded run and this plan;
-    # a cell averaging two effort levels is a measurement bug, not a result.
-    local recorded
-    recorded=$(python3 -c 'import json,sys
-try:
-    print(json.load(open(sys.argv[1])).get("effort_requested") or "")
-except Exception:
-    print("")' "$run_dir/result.json" 2>/dev/null)
-    if [ "$recorded" != "$EFFORT" ]; then
-      echo "flow-eval-run: $label/$arm/$case/$n was recorded at effort '${recorded:-unpinned}' but this plan asks for '${EFFORT:-unpinned}' — resume with the same --effort, or use a fresh --out" >&2
-      exit 1
-    fi
+    # Effort comparability is enforced by check_resume_effort before the plan
+    # starts, so by here an existing record is known to match.
     SKIPPED=$((SKIPPED + 1))
     [ "$DRY_RUN" = "1" ] && echo "SKIP  $label/$arm/$case/$n (result.json exists)"
     return 0
@@ -391,7 +439,9 @@ except Exception:
   ( cd "$tmp" && git init -q && git add -A && git -c user.name=flow-eval -c user.email=flow-eval@localhost commit -q -m "scaffold" ) \
     || { echo "flow-eval-run: git init failed in $tmp" >&2; rm -rf "$tmp"; return 1; }
   python3 "$HELPER" case-prompt "$case_dir" --arm "$arm" > "$run_dir/prompt.txt"
-  printf '%s\n' "${CLAUDE_CMD[*]}" > "$run_dir/command.txt"
+  # %q, not a space-join: command.txt is the operator's record of what ran, and
+  # a space-joined line re-executes as a different command when pasted back.
+  { printf '%q ' "${CLAUDE_CMD[@]}"; printf '\n'; } > "$run_dir/command.txt"
 
   echo "flow-eval-run: [$label/$arm/$case/$n] starting (model ${run_model:-<cli default>}; effort ${EFFORT:-<cli default>}; total so far \$$total; max-turns $run_max_turns; timeout ${run_timeout}s)"
   local start end exit_code timed_out=0
@@ -434,6 +484,8 @@ mkdir -p "$OUT_DIR"
 # "prompt.txt: No such file or directory" before claude started.)
 OUT_DIR=$(cd "$OUT_DIR" && pwd -P) || { echo "flow-eval-run: cannot resolve --out $OUT_DIR" >&2; exit 2; }
 [ "$DRY_RUN" = "1" ] && echo "PLAN  out=$OUT_DIR  per-run cap=\$$MAX_BUDGET  total cap=\$$MAX_TOTAL  plugin=$PLUGIN_ROOT  models=$(for m in "${MODELS[@]}"; do printf '%s ' "$(model_label "$m")"; done)"
+check_resume_effort
+
 for model in "${MODELS[@]}"; do
   for case in $CASES; do
     case_runs="${RUNS:-$(case_meta "$case" runs)}"; case_runs="${case_runs:-3}"
