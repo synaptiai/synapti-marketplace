@@ -2,7 +2,7 @@
 #
 # Contract under test:
 #   - settings.json carries a top-level `agentTeamModel` defaulting to "sonnet".
-#   - schema.json constrains it to enum [haiku,sonnet,opus,inherit], default sonnet.
+#   - schema.json constrains it to enum [haiku,sonnet,opus,fable,inherit], default sonnet.
 #   - commands/review.md Path A gate resolves the key via cascade-resolve.sh into
 #     AGENT_TEAM_MODEL, validates it against the enum (rejecting invalid values
 #     with a WARN + sonnet fallback — NOT silent), and the A.1/A.3 dispatches
@@ -45,7 +45,7 @@ assert_equal "sonnet" "$VAL" "settings.json agentTeamModel default is sonnet"
 # --- schema.json: enum + default
 _flow_test_begin "schema.json constrains agentTeamModel enum + default"
 ENUM=$(jq -r '.properties.agentTeamModel.enum | join(",")' "$SCHEMA" 2>/dev/null)
-assert_equal "haiku,sonnet,opus,inherit" "$ENUM" "schema enum is haiku,sonnet,opus,inherit"
+assert_equal "haiku,sonnet,opus,fable,inherit" "$ENUM" "schema enum is haiku,sonnet,opus,fable,inherit"
 DEF=$(jq -r '.properties.agentTeamModel.default // empty' "$SCHEMA" 2>/dev/null)
 assert_equal "sonnet" "$DEF" "schema default is sonnet"
 
@@ -63,7 +63,7 @@ assert_contains ".agentTeamModel" "$REVIEW_CONTENT" "gate resolves the agentTeam
 assert_contains "AGENT_TEAM_MODEL=" "$REVIEW_CONTENT" "gate emits AGENT_TEAM_MODEL"
 # Bind to the actual case-allowlist construct, not just any prose mention of
 # the model names (which appear throughout the file).
-assert_contains "haiku|sonnet|opus|inherit) ;;" "$REVIEW_CONTENT" "gate validates against the enum allowlist case arm"
+assert_contains "haiku|sonnet|opus|fable|inherit) ;;" "$REVIEW_CONTENT" "gate validates against the enum allowlist case arm"
 
 _flow_test_begin "review.md fenced dispatches carry the resolved model"
 # The param must travel with the copy-ready Agent(...) examples, not live only
@@ -78,7 +78,7 @@ assert_match '^(1[0-9]|[2-9])$' "$DISPATCH_WITH_MODEL" "at least several fenced 
 DISPATCH_WITHOUT_MODEL=$(printf '%s\n' "$REVIEW_CONTENT" | grep -E 'Agent\([a-z-]+(-skeptic|-verifier)[):]' | grep -vc 'model=\$AGENT_TEAM_MODEL')
 assert_equal "0" "$DISPATCH_WITHOUT_MODEL" "no paired-reviewer dispatch omits the model param"
 
-_flow_test_begin "review.md omits the model override when inherit (dispatch enum is sonnet|opus|haiku)"
+_flow_test_begin "review.md omits the model override when inherit (dispatch enum is sonnet|opus|haiku|fable)"
 # The Agent tool's per-invocation model override accepts only sonnet|opus|haiku;
 # 'inherit' must be expressed by dropping the override, never by passing
 # model=inherit (which would be an invalid dispatch and break the inherit case).

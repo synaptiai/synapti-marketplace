@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: "Review code changes for quality, logic correctness, edge cases, security, and error handling. Return P1/P2/P3 findings using the canonical two-column finding table from `references/finding-schema.md` (Finding | Suggested Fix, with id/category/location packed into the Finding cell)."
+description: "Review code changes for quality, logic correctness, edge cases, security, and error handling. Use when reviewing a branch diff before PR creation or during /flow:review. Do not use for a security-only or error-handling-only pass; dispatch security-reviewer or error-handler-inspector for those. Return P1/P2/P3 findings using the canonical two-column finding table from `references/finding-schema.md` (Finding | Suggested Fix, with id/category/location packed into the Finding cell)."
 model: inherit
 tools: Read, Bash, Grep, Glob, LSP
 skills: code-review-methodology, evidence-based-development

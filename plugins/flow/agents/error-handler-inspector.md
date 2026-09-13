@@ -1,6 +1,6 @@
 ---
 name: error-handler-inspector
-description: "Inspect code for unhandled errors, missing edge cases, silent failures, and exception handling gaps. Return P1/P2/P3 findings with file:line citations."
+description: "Inspect code for unhandled errors, missing edge cases, silent failures, and exception handling gaps. Use when dispatching the error-handling facet of a parallel review. Do not use for a full-scope code review. Return P1/P2/P3 findings with file:line citations."
 model: inherit
 tools: Read, Bash, Grep, Glob, LSP
 skills: debugging-patterns, evidence-based-development
@@ -27,12 +27,12 @@ Use Grep to find patterns in changed files:
 
 **Empty catch blocks:**
 ```bash
-grep -rn "catch\s*(" --include="*.{ts,js,tsx,jsx}" | grep -v "catch\s*(.*)\s*{[^}]"
+grep -rn "catch\s*(" --include='*.ts' --include='*.js' --include='*.tsx' --include='*.jsx' | grep -v "catch\s*(.*)\s*{[^}]"
 ```
 
 **Unhandled promises:**
 ```bash
-grep -rn "\.then(" --include="*.{ts,js,tsx,jsx}" | grep -v "\.catch\|await"
+grep -rn "\.then(" --include='*.ts' --include='*.js' --include='*.tsx' --include='*.jsx' | grep -v "\.catch\|await"
 ```
 
 **Silent rescues (Ruby):**

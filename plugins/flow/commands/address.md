@@ -4,11 +4,6 @@ argument-hint: <pr-number> [free-form context]
 allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Skill, Grep, Glob
 ---
 
-<!--
-PARALLEL EXECUTION RULE:
-Execute independent operations simultaneously.
--->
-
 # Address Review Feedback for PR #$ARGUMENTS
 
 Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
@@ -382,7 +377,7 @@ Even in minimal-scope mode, P1 and P2 findings in untouched files are always fix
    **Blocking treatment** (same as start.md):
    - P1/P2 holdout findings → fix immediately before proceeding
    - After fixes: re-run holdout-validation to confirm resolution
-   - P3 findings → note, do not block
+   - P3 findings → fix in-PR in the same convergence loop
 4. **Convergence check** (bounded by `fixForwardMaxIterations`, default 10 — this is a safety net against true infinite loops, NOT a planned stop point; see `skills/llm-operator-principles/SKILL.md`):
    - Self-review finds P1 → fix NOW (don't re-request with known P1s)
    - Holdout-validation finds P1/P2 → fix NOW (same blocking treatment as self-review P1)

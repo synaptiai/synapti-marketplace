@@ -161,7 +161,7 @@ For each language in the detected tech stack, check if the binary is already ins
 
 ```bash
 # Check each relevant binary (only for detected languages)
-command -v typescript-language-server 2>/dev/null && echo "VTSLS: installed" || echo "VTSLS: missing"
+command -v vtsls 2>/dev/null && echo "VTSLS: installed" || echo "VTSLS: missing"
 command -v pyright 2>/dev/null && echo "PYRIGHT: installed" || echo "PYRIGHT: missing"
 command -v gopls 2>/dev/null && echo "GOPLS: installed" || echo "GOPLS: missing"
 command -v rust-analyzer 2>/dev/null && echo "RUST-ANALYZER: installed" || echo "RUST-ANALYZER: missing"
@@ -266,7 +266,7 @@ After installation, verify each server is accessible:
 
 ```bash
 # Re-check binaries
-command -v typescript-language-server 2>/dev/null && echo "vtsls: OK"
+command -v vtsls 2>/dev/null && echo "vtsls: OK"
 command -v pyright 2>/dev/null && echo "pyright: OK"
 command -v gopls 2>/dev/null && echo "gopls: OK"
 command -v rust-analyzer 2>/dev/null && echo "rust-analyzer: OK"

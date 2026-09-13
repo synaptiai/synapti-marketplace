@@ -4,12 +4,6 @@ argument-hint: [description-or-topic]
 allowed-tools: Bash, Read, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Skill, Grep, Glob
 ---
 
-<!--
-PARALLEL EXECUTION RULE:
-When performing multiple independent operations, invoke ALL relevant tools
-simultaneously in a single message rather than sequentially.
--->
-
 # Create Issue: $ARGUMENTS
 
 Skill-driven issue creation. Follows the Explore > Plan > Code > Verify loop with issue-crafting skill knowledge.

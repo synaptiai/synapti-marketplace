@@ -23,10 +23,6 @@ paths:
 
 Iron law: if you did not watch the test fail, you do not know it tests the right thing. Invoked by `/flow:start` Phase 3 CODE step 3 (per task, before production code) and by `/flow:address` for behavior-changing fixes; `testing.tddMode` governs enforcement. Returns, per behavior, three tracked tasks: a RED test with a sourced expected value and a non-degenerate input, GREEN code, REFACTOR with all tests passing. Permitted skips: `tddMode=off`; `tddMode=suggest` with `tddModeOptOut=true` plus an explicit user decision; refactors (existing tests suffice); config changes without behavior change.
 
-## Iron Law
-
-**IF YOU DIDN'T WATCH THE TEST FAIL, YOU DON'T KNOW IF IT TESTS THE RIGHT THING.**
-
 ## Where expected values come from
 
 An expected value is derived from the spec, a reference implementation, hand computation, an existing fixture, or an external standard, and the test states which (test comment; evidence-bundle column `Source of expected`). Never run the implementation and paste its output as the expectation. A literal with no stated source is a finding.

@@ -120,10 +120,9 @@ When `visualVerification.requireVisualVerification: true` and no cascade positio
 
 ## External dependency: compound-engineering (documented, not vendored)
 
-Cascade positions 4 and 5 (`compound-engineering:test-browser`, `compound-engineering:agent-browser`) come from the `compound-engineering` plugin in the same Synapti marketplace.
+Cascade positions 4 and 5 (`compound-engineering:test-browser`, `compound-engineering:agent-browser`) come from the third-party `compound-engineering` plugin, which is not part of this marketplace; both positions are skipped when it is not installed.
 
 - Without it installed: positions 1–3 (Playwright MCP, Chrome DevTools MCP, CLI fallback) carry the loop; positions 4–5 are skipped silently.
 - With it installed: positions 4–5 become fallbacks when 1–3 are unavailable.
 - Why not vendor: a copied implementation would diverge silently from the upstream plugin's browser-tool surface, and flow would inherit maintenance for code it did not author. Documenting the dependency lets users in tooling-constrained environments install it as a remediation step instead of discovering the gap at verification time.
 
-The README lists `compound-engineering` as a recommended companion plugin in the Hook Compatibility / Dependencies section.

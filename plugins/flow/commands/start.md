@@ -5,10 +5,6 @@ allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreat
 ---
 
 <!--
-PARALLEL EXECUTION RULE:
-When performing multiple independent operations (reads, API calls, TaskCreate),
-invoke ALL relevant tools simultaneously in a single message rather than sequentially.
-
 VARIABLE PERSISTENCE NOTE:
 Bash variables do NOT persist across separate tool calls. Each Bash invocation
 is independent. Store values mentally and substitute in subsequent commands.
@@ -675,7 +671,7 @@ Prove everything works with fix-forward:
       convention violations. Return P1/P2/P3 findings with file:line."
    ```
    **Fix-forward** (bounded by `fixForwardMaxIterations`, default 10 — safety net against true infinite loops, NOT a planned stop point; see `skills/llm-operator-principles/SKILL.md`):
-   - P1 findings → fix immediately (you just wrote this code, no "pre-existing" excuse)
+   - P1 findings → fix immediately; you wrote this code in this PR, so "pre-existing" is not available as a disposition
    - P2 findings → fix immediately
    - P3 findings → fix immediately (same disposition as P1/P2 — the proximity test is not a deferral mechanism). Cosmetic P3 in untouched files only: fix if bounded (<10 lines) or document inline in the PR body under `### Known cosmetic notes`. Finding triage is NEVER a valid escalation trigger.
    - After fixes: re-run quality commands, then targeted re-review on files changed by fixes

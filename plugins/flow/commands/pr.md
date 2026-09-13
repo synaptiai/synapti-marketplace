@@ -4,12 +4,6 @@ argument-hint: [title]
 allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Skill, Grep, Glob
 ---
 
-<!--
-PARALLEL EXECUTION RULE:
-When performing multiple independent operations, invoke ALL relevant tools
-simultaneously in a single message rather than sequentially.
--->
-
 # Create Pull Request
 
 Full PR creation workflow with multi-faceted review, quality gates, and structured PR body. Follows Explore > Plan > Code > Verify loop.

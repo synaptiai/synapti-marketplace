@@ -139,7 +139,7 @@ print()
 print("COMPLETION GATE (advisory documentation, not enforced)")
 print("------------------------------------------------------")
 gate = wf.get('completion_gate', {}) or {}
-# Accept legacy field name during v3.0.x deprecation window (drop in v3.1).
+# 'requires' is the deprecated legacy name for 'documented_requirements'.
 reqs = gate.get('documented_requirements') or gate.get('requires') or []
 for req in reqs:
     print(f"  - {req}")

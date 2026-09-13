@@ -25,7 +25,7 @@ Iron law: **UI changes are visually verified or explicitly skipped with a struct
 
 Either activates:
 
-1. `git diff --name-only HEAD~1..HEAD | grep -iE '\.(tsx|jsx|vue|html|css|scss|svelte)$'`
+1. `git diff --name-only "origin/${DEFAULT_BRANCH:-main}"...HEAD | grep -iE '\.(tsx|jsx|vue|html|css|scss|svelte)$'`
 2. Acceptance criteria containing: UI, page, display, render, visual, layout, responsive, component, style.
 
 Neither: `SKIP — no UI-relevant changes detected.`

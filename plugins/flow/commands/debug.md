@@ -4,12 +4,6 @@ argument-hint: [description-or-error-message]
 allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Grep, Glob
 ---
 
-<!--
-PARALLEL EXECUTION RULE:
-When performing multiple independent operations, invoke ALL relevant tools
-simultaneously in a single message rather than sequentially.
--->
-
 # Debug: $ARGUMENTS
 
 Structured debugging with root cause analysis. Follows Explore > Plan > Code > Verify loop.
