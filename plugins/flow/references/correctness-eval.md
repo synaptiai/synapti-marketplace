@@ -135,6 +135,31 @@ Per run, the harness records (`runs/<model>/<arm>/<case>/<n>/result.json`;
   the largest cost among the `modelUsage` keys of the claude result event
   (a subagent on another model appears as a second key in `models_used`);
   `model_requested` is what `--model` asked for.
+- **effort_requested** — what `--effort` asked for; `null` when the run
+  inherited the operator's saved effort setting, which the record cannot
+  see. Runs compared against each other should carry the same pinned value.
+- **tokens** — `input`, `cache_read`, `cache_creation`, `output`, and
+  `cache_hit_rate` (cache reads over all input-side tokens). A count that was
+  never recorded stays `null` rather than becoming a zero, and the hit rate is
+  `null` unless the cache-read count itself was recorded — an unknown rate must
+  not read as a confirmed 0%. `source` says what scope the counts have:
+  `modelUsage` for whole-run totals summed over every billed model, `usage`
+  when only the result event's top-level usage object carried them (the last
+  request, not the run), `null` when nothing was recorded. `entries_skipped`
+  counts `modelUsage` entries that were not objects; above zero, a billed model
+  is missing from the totals.
+
+Per-arm `summary.json` carries `cache_hit_rate_mean` and `output_tokens_mean`
+over the `source: modelUsage` runs only — averaging last-request counts with
+whole-run counts understates the cell — each with its own coverage count
+(`cache_hit_rate_scored_runs`, `output_tokens_scored_runs`), plus
+`token_scored_runs` (runs that recorded whole-run totals at all),
+`token_fallback_runs`, and `token_entries_skipped`. `summary.md` renders the
+two means with their coverage and the effort behind every arm, and prints a
+`Token totals are partial` line under the arm table whenever any run fell back
+to last-request counts or lost a billed model to a malformed entry. `effort_requested` lists
+  the pinned levels behind the cell, with `unpinned` for runs that inherited
+  the operator's setting, so a cell mixing the two is visibly mixed.
 - **cost_usd, num_turns, session_id, is_error, error, permission_denials,
   tool_counts, skills_invoked** — from the `stream-json` transcript
   (`stream.jsonl`, final event saved as `claude.json`). `skills_invoked` empty
@@ -222,7 +247,8 @@ python3 plugins/flow/bin/_flow_eval.py migrate-layout --out plugins/flow/evals/r
 Flags: `--arm <name|all>` (comma lists allowed), `--case <name|all>`, `--runs N`
 (default 3 or prompt.md `runs`), `--model <m>` (default: the CLI default; no
 model is hardcoded) or `--models <a,b>` (the whole plan once per model, in
-order; results keyed by model), `--max-turns N` (default 60),
+order; results keyed by model), `--effort low|medium|high|xhigh|max` (default:
+not passed; the child inherits the operator's saved effort setting), `--max-turns N` (default 60),
 `--max-budget-usd X` per run (default 4), `--max-total-usd X` (default 250,
 summed over every model in `--out`; the runner stops with exit 3 before a run
 that could exceed it), `--timeout-seconds S` per run (default 1800), `--out
@@ -277,10 +303,16 @@ path.
    verdict and which signal decided it, the risk-map difference, the baseline
    comparison (hidden pass rate and own-test catch rate), and a provisional
    flag when any arm has fewer than 3 runs on any case.
-2. **Per model × arm** — mean hidden pass rate, share of all-pass runs,
+2. **Per model × arm** — **Effort** (the levels behind the cell, `unpinned`
+   for runs that inherited the operator's setting; a cell reading
+   `high, unpinned` is mixed and its cost mean is not comparable), mean
+   hidden pass rate, share of all-pass runs,
    **own tests catch traps** (mean own-test trap catch rate, with how many
    runs were scorable, e.g. `67% (8/9)`), mean own-test count, mean
-   degenerate share, mean cost, mean turns, error count (timeouts,
+   degenerate share, mean cost, mean turns, **Cache hits** and **Output
+   tokens** (each a mean with how many of the cell's runs it covers, in the
+   same `90% (2/3)` form — coverage is per mean, since a run can hold
+   whole-run totals and still be missing one field), error count (timeouts,
    `is_error`, non-zero exit, `error_max_turns`), and **Incomplete** — how
    many runs' hidden suite did not finish, with the reasons (`2 (timeout)`).
    Those runs are scored over the full suite as observed passes, so a cell

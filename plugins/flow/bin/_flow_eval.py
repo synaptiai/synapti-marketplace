@@ -65,6 +65,7 @@ comprehensions) are not classified at all.
 """
 import ast
 import json
+import math
 import os
 import re
 import shutil
@@ -978,10 +979,77 @@ def models_from_result_event(result_event):
     return primary, names
 
 
+def tokens_from_result_event(result_event):
+    """Billed token counts for one run, and where they came from.
+
+    `source` is "modelUsage" when the counts are whole-run totals summed over
+    every billed model, "usage" when only the result event's top-level usage
+    object carried them (the LAST REQUEST, not the run — a different scope, so
+    aggregation keeps the two apart), and None when nothing was recorded.
+    `entries_skipped` counts modelUsage entries that were not objects; a
+    non-zero value means the totals are missing a billed model.
+
+    Counts stay None when unrecorded rather than collapsing to zero, and
+    cache_hit_rate (cache reads over all input-side tokens) is None unless the
+    cache-read count itself was recorded — an unknown rate must not read as a
+    confirmed 0%."""
+    empty = {"input": None, "cache_read": None, "cache_creation": None, "output": None,
+             "cache_hit_rate": None, "source": None, "entries_skipped": 0}
+    if not isinstance(result_event, dict):
+        return empty
+    fields = {"input": "inputTokens", "cache_read": "cacheReadInputTokens",
+              "cache_creation": "cacheCreationInputTokens", "output": "outputTokens"}
+    totals = {k: None for k in fields}
+    source = None
+    skipped = 0
+    usage = result_event.get("modelUsage")
+    if isinstance(usage, dict):
+        for entry in usage.values():
+            if not isinstance(entry, dict):
+                skipped += 1
+                continue
+            for key, name in fields.items():
+                value = num(entry, name)
+                if value is not None:
+                    totals[key] = (totals[key] or 0) + value
+    if any(v is not None for v in totals.values()):
+        source = "modelUsage"
+    else:
+        top = result_event.get("usage")
+        if isinstance(top, dict):
+            snake = {"input": "input_tokens", "cache_read": "cache_read_input_tokens",
+                     "cache_creation": "cache_creation_input_tokens", "output": "output_tokens"}
+            totals = {key: num(top, name) for key, name in snake.items()}
+            if any(v is not None for v in totals.values()):
+                source = "usage"
+    input_side = sum(totals[k] or 0 for k in ("input", "cache_read", "cache_creation"))
+    totals["cache_hit_rate"] = (totals["cache_read"] / input_side) \
+        if (totals["cache_read"] is not None and input_side) else None
+    totals["source"] = source
+    totals["entries_skipped"] = skipped
+    return totals
+
+
+def all_tokens(record):
+    """The run's token block whatever its scope, or {} when it has none."""
+    tokens = record.get("tokens")
+    return tokens if isinstance(tokens, dict) else {}
+
+
+def run_tokens(record):
+    """The run's token block when it holds whole-run totals, else {}.
+
+    Runs that fell back to the last request's `usage`, and runs recorded before
+    the token fields existed, are excluded: averaging last-request counts with
+    whole-run counts understates the cell by whatever the fallback missed."""
+    tokens = all_tokens(record)
+    return tokens if tokens.get("source") == "modelUsage" else {}
+
+
 def cmd_finalize_run(args):
     opts = parse_opts(args, ["--run-dir", "--case-dir", "--project-dir", "--arm", "--case", "--run",
                              "--exit-code", "--duration", "--temp-dir", "--hidden-timeout", "--model-requested",
-                             "--own-timeout"],
+                             "--effort-requested", "--own-timeout"],
                       flags=["--timed-out"])
     for key in ("--run-dir", "--case-dir", "--project-dir", "--arm", "--case", "--run"):
         if not opts.get(key):
@@ -993,6 +1061,7 @@ def cmd_finalize_run(args):
     if result_event is not None:
         write_json(os.path.join(run_dir, "claude.json"), result_event)
     model, models_used = models_from_result_event(result_event)
+    tokens = tokens_from_result_event(result_event)
 
     hidden, raw = run_hidden(opts["--case-dir"], opts["--project-dir"], None, int(opts.get("--hidden-timeout") or 120))
     with open(os.path.join(run_dir, "hidden.txt"), "w", encoding="utf-8") as fh:
@@ -1032,7 +1101,9 @@ def cmd_finalize_run(args):
         "model": model,
         "models_used": models_used,
         "model_requested": opts.get("--model-requested") or None,
+        "effort_requested": opts.get("--effort-requested") or None,
         "cost_usd": cost,
+        "tokens": tokens,
         "num_turns": turns,
         "session_id": result_event.get("session_id") if result_event else None,
         "is_error": is_error,
@@ -1068,7 +1139,11 @@ def cmd_finalize_run(args):
 
 def num(obj, key):
     value = obj.get(key)
-    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    # json.load parses bare NaN/Infinity; either would poison every mean it
+    # reaches and write a literal json.dump cannot round-trip.
+    return value if math.isfinite(value) else None
 
 
 # ----------------------------------------------------------------- aggregate
@@ -1134,7 +1209,9 @@ def load_results(out_dir):
         try:
             with open(path, encoding="utf-8") as fh:
                 record = json.load(fh)
-        except ValueError:
+        except (ValueError, OSError):
+            # One unreadable record must not cost the aggregation of every
+            # other run; the sibling helpers already catch both.
             sys.stderr.write("_flow_eval: skipping unreadable %s\n" % path)
             continue
         if not isinstance(record, dict) or "arm" not in record or "case" not in record:
@@ -1194,6 +1271,16 @@ def summarize_runs(rs):
         "cost_usd_mean": mean([r["cost_usd"] for r in rs]),
         "cost_usd_total": sum(r["cost_usd"] or 0 for r in rs),
         "num_turns_mean": mean([r["num_turns"] for r in rs]),
+        "cache_hit_rate_mean": mean([run_tokens(r).get("cache_hit_rate") for r in rs]),
+        "output_tokens_mean": mean([run_tokens(r).get("output") for r in rs]),
+        "token_scored_runs": sum(1 for r in rs if run_tokens(r)),
+        # Coverage is per mean, not per run: a run can carry whole-run totals
+        # and still be missing the one field a given mean averages.
+        "cache_hit_rate_scored_runs": sum(1 for r in rs if run_tokens(r).get("cache_hit_rate") is not None),
+        "output_tokens_scored_runs": sum(1 for r in rs if run_tokens(r).get("output") is not None),
+        "token_fallback_runs": sum(1 for r in rs if all_tokens(r).get("source") == "usage"),
+        "token_entries_skipped": sum(all_tokens(r).get("entries_skipped") or 0 for r in rs),
+        "effort_requested": sorted({str(r.get("effort_requested") or "unpinned") for r in rs}),
         "errors": sum(1 for r in rs if r.get("error")),
         "skills_invoked": sorted({s for r in rs for s in r.get("skills_invoked", [])}),
     }
@@ -1373,9 +1460,12 @@ def decide(arm_summary, spread, cases, own_spread=None):
 
 def render_summary_md(s):
     lines = ["# Flow correctness eval — summary", ""]
-    lines.append("Runs: %d across %d model(s), %d arm(s) and %d case(s). Total cost: $%.2f. Models: %s."
+    efforts = sorted({e for m in s["per_model"].values() for a in m["per_arm"].values()
+                      for e in (a.get("effort_requested") or [])})
+    lines.append("Runs: %d across %d model(s), %d arm(s) and %d case(s). Total cost: $%.2f. Models: %s. Effort: %s."
                  % (s["runs"], len(s["models"]), len(s["arms"]), len(s["cases"]), s["total_cost_usd"],
-                    ", ".join("`%s`" % m for m in s["models"]) or "none"))
+                    ", ".join("`%s`" % md_cell(m) for m in s["models"]) or "none",
+                    ", ".join("`%s`" % md_cell(e) for e in efforts) or "none"))
     if s.get("legacy_layout_runs"):
         lines.append("")
         lines.append("%d run(s) were read from the older `runs/<arm>/<case>/<n>` layout; `_flow_eval.py migrate-layout --out <dir>` moves them under their model." % s["legacy_layout_runs"])
@@ -1385,10 +1475,10 @@ def render_summary_md(s):
     for model in s["models"]:
         m = s["per_model"][model]
         lines.append("**%s** (%d runs, $%.2f, run-to-run spread %s, own-test spread %s): %s"
-                     % (model, m["runs"], m["total_cost_usd"], fmt(m["run_to_run_spread"], pct=True),
+                     % (md_cell(model), m["runs"], m["total_cost_usd"], fmt(m["run_to_run_spread"], pct=True),
                         fmt(m["own_test_trap_spread"], pct=True), m["decision"]["reading"]))
         lines.append("")
-        lines.append("Verdict for `%s`: `%s`%s" % (model, m["decision"]["verdict"],
+        lines.append("Verdict for `%s`: `%s`%s" % (md_cell(model), m["decision"]["verdict"],
                      (" (decided by the %s signal)" % m["decision"]["decided_by"]) if m["decision"].get("decided_by") else ""))
         lines.append("")
     if not s["models"]:
@@ -1396,23 +1486,36 @@ def render_summary_md(s):
         lines.append("")
     lines.append("## Per model × arm")
     lines.append("")
-    lines.append("| Model | Arm | Runs | Hidden pass rate | All-pass runs | Own tests catch traps | Own tests (mean) | Degenerate share | Cost (mean) | Turns (mean) | Errors | Incomplete |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| Model | Arm | Effort | Runs | Hidden pass rate | All-pass runs | Own tests catch traps | Own tests (mean) | Degenerate share | Cost (mean) | Turns (mean) | Cache hits | Output tokens | Errors | Incomplete |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for model in s["models"]:
         m = s["per_model"][model]
         for arm in m["arms"]:
             a = m["per_arm"][arm]
-            lines.append("| %s | %s | %d | %s | %s | %s | %s | %s | $%s | %s | %d | %s |" % (
-                model, arm, a["runs"], fmt(a["hidden_pass_rate_mean"], pct=True), fmt(a["all_pass_rate"], pct=True),
+            lines.append("| %s | %s | %s | %d | %s | %s | %s | %s | %s | $%s | %s | %s | %s | %d | %s |" % (
+                md_cell(model), md_cell(arm), effort_cell(a), a["runs"], fmt(a["hidden_pass_rate_mean"], pct=True),
+                fmt(a["all_pass_rate"], pct=True),
                 own_cell(a), fmt(a["own_tests_mean"], 1), fmt(a["degenerate_share_mean"], pct=True), fmt(a["cost_usd_mean"]),
-                fmt(a["num_turns_mean"], 1), a["errors"], incomplete_cell(a)))
+                fmt(a["num_turns_mean"], 1),
+                token_cell(a, "cache_hit_rate_mean", "cache_hit_rate_scored_runs", pct=True),
+                token_cell(a, "output_tokens_mean", "output_tokens_scored_runs"),
+                a["errors"], incomplete_cell(a)))
     lines.append("")
     lines.append(INCOMPLETE_NOTE)
+    # Only shown when it applies: a reader who never sees this line can take the
+    # token columns at face value.
+    fallback = sum(a.get("token_fallback_runs") or 0
+                   for m in s["per_model"].values() for a in m["per_arm"].values())
+    skipped = sum(a.get("token_entries_skipped") or 0
+                  for m in s["per_model"].values() for a in m["per_arm"].values())
+    if fallback or skipped:
+        lines.append("")
+        lines.append(token_caveat(fallback, skipped))
     lines.append("")
     lines.append("## Per model × arm × case")
     lines.append("")
-    lines.append("| Model | Arm | Case | Runs | Hidden pass rate (min–max) | All-pass | Own tests catch traps | Own tests | Degenerate share | Cost | Turns | Errors | Incomplete |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| Model | Arm | Case | Effort | Runs | Hidden pass rate (min–max) | All-pass | Own tests catch traps | Own tests | Degenerate share | Cost | Turns | Errors | Incomplete |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for model in s["models"]:
         m = s["per_model"][model]
         for arm in m["arms"]:
@@ -1420,8 +1523,8 @@ def render_summary_md(s):
                 c = m["per_cell"].get("%s/%s" % (arm, case))
                 if not c:
                     continue
-                lines.append("| %s | %s | %s | %d | %s (%s–%s) | %s | %s | %s | %s | $%s | %s | %d | %s |" % (
-                    model, arm, case, c["runs"], fmt(c["hidden_pass_rate_mean"], pct=True), fmt(c["hidden_pass_rate_min"], pct=True),
+                lines.append("| %s | %s | %s | %s | %d | %s (%s–%s) | %s | %s | %s | %s | $%s | %s | %d | %s |" % (
+                    md_cell(model), md_cell(arm), md_cell(case), effort_cell(c), c["runs"], fmt(c["hidden_pass_rate_mean"], pct=True), fmt(c["hidden_pass_rate_min"], pct=True),
                     fmt(c["hidden_pass_rate_max"], pct=True), fmt(c["all_pass_rate"], pct=True), own_cell(c), fmt(c["own_tests_mean"], 1),
                     fmt(c["degenerate_share_mean"], pct=True), fmt(c["cost_usd_mean"]), fmt(c["num_turns_mean"], 1), c["errors"],
                     incomplete_cell(c)))
@@ -1434,7 +1537,7 @@ def render_summary_md(s):
             traps = sorted({t for c in m["per_cell"].values() if c["case"] == case for t in c["trap_catch_rate"]})
             if not traps:
                 continue
-            lines.append("### %s — %s" % (model, case))
+            lines.append("### %s — %s" % (md_cell(model), md_cell(case)))
             lines.append("")
             lines.append("| Arm | " + " | ".join(traps) + " |")
             lines.append("|---|" + "---|" * len(traps))
@@ -1454,7 +1557,7 @@ def render_summary_md(s):
             traps = sorted({t for c in m["per_cell"].values() if c["case"] == case for t in c["own_test_trap_catch"]})
             if not traps:
                 continue
-            lines.append("### %s — %s" % (model, case))
+            lines.append("### %s — %s" % (md_cell(model), md_cell(case)))
             lines.append("")
             lines.append("| Arm | scored runs | " + " | ".join(traps) + " |")
             lines.append("|---|---|" + "---|" * len(traps))
@@ -1483,6 +1586,64 @@ def own_cell(entry):
     if entry["own_test_trap_catch_rate"] is None:
         return "- (0/%d)" % entry["runs"]
     return "%s (%d/%d)" % (fmt(entry["own_test_trap_catch_rate"], pct=True), entry["own_test_trap_scored_runs"], entry["runs"])
+
+
+def path_component(value):
+    """A result.json string made safe to use as one directory name.
+
+    `model` comes from the run record, so `..` or an empty value would move a
+    run out of runs/ where the aggregate can no longer find it — the run then
+    disappears from the measurement silently.
+    """
+    text = str(value).replace("/", "_").replace("\\", "_").strip()
+    return text if text and text not in (".", "..") else "default"
+
+
+def md_cell(value):
+    """A result.json string rendered safely into a markdown table cell.
+
+    Values here come from run records, which are data the harness collected,
+    not text it authored: a `|` in a model name would split the row, and
+    `--aggregate-only` runs over directories this machine did not produce.
+    """
+    text = str(value)
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", text).replace("|", "\\|").strip()
+    return (text[:117] + "...") if len(text) > 120 else text
+
+
+def token_caveat(fallback, skipped):
+    """The one-line warning under the arm table when token totals are partial."""
+    parts = []
+    if fallback:
+        parts.append("%d run(s) recorded only the last request's counts and are outside the "
+                     "token means (`tokens.source: usage` in their result.json)" % fallback)
+    if skipped:
+        parts.append("%d malformed `modelUsage` entr(y/ies) were dropped, so those runs' totals "
+                     "are missing a billed model" % skipped)
+    return "Token totals are partial: " + "; ".join(parts) + "."
+
+
+def effort_cell(entry):
+    """'high' or 'high, unpinned' — the effort levels behind the cell.
+
+    A cell mixing levels is not a result; it reads as mixed here so nobody
+    compares its cost mean against another cell's."""
+    levels = [md_cell(level) for level in (entry.get("effort_requested") or [])]
+    return ", ".join(levels) if levels else "-"
+
+
+def token_cell(entry, key, count_key, pct=False):
+    """'90% (2/3)' — a token mean and how many of the cell's runs it covers.
+
+    The count is per mean, not per run: a run can carry whole-run totals and
+    still be missing this mean's field, and a mean over one of three runs is
+    not the cell.
+    """
+    value = entry.get(key)
+    scored = entry.get(count_key) or 0
+    if value is None:
+        return "- (0/%d)" % entry["runs"]
+    return "%s (%d/%d)" % (fmt(value, pct=pct) if pct else fmt(value, 0), scored, entry["runs"])
 
 
 def scored_cell(entry):
@@ -1542,7 +1703,7 @@ def migrate_layout(out_dir):
         if layout == "model":
             continue
         arm, case, n = os.path.relpath(run_dir, root).split(os.sep)
-        dest = os.path.join(root, model.replace("/", "_"), arm, case, n)
+        dest = os.path.join(root, path_component(model), arm, case, n)
         if os.path.exists(dest):
             sys.stderr.write("_flow_eval: not moving %s: %s exists\n" % (run_dir, dest))
             continue

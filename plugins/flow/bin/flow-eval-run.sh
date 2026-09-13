@@ -9,7 +9,7 @@
 #
 # Usage:
 #   flow-eval-run.sh [--arm <name>|all] [--case <name>|all] [--runs N]
-#                    [--model <m> | --models <a,b>] [--max-turns N] [--max-budget-usd X]
+#                    [--model <m> | --models <a,b>] [--effort <level>] [--max-turns N] [--max-budget-usd X]
 #                    [--max-total-usd X] [--timeout-seconds S] [--out <dir>]
 #                    [--permission-mode acceptEdits|bypassPermissions]
 #                    [--dry-run] [--keep-temp] [--aggregate-only] [--check-cases]
@@ -27,7 +27,10 @@
 # --max-turns 60 (or prompt.md `max_turns`), --max-budget-usd 4 per run,
 # --max-total-usd 250, --timeout-seconds 1800 (or prompt.md `timeout_seconds`),
 # --out plugins/flow/evals/results/<UTC timestamp>/. --model is passed through
-# only when given; otherwise the CLI default model is used. --models a,b runs
+# only when given; otherwise the CLI default model is used. --effort is passed
+# through only when given (low|medium|high|xhigh|max); otherwise the child
+# inherits the operator's saved effort setting, which result.json cannot see,
+# so pin it whenever runs will be compared. --models a,b runs
 # the whole plan once per model, sequentially; results are keyed by model.
 #
 # Permissions: the child runs headless with `--permission-mode acceptEdits
@@ -72,7 +75,10 @@
 # missing or case check failed; 3 stopped by --max-total-usd; 4 at least one
 # run errored (claude non-zero, timeout, no result event).
 #
-# Requires: bash, python3, git, claude (on PATH). jq is not needed.
+# Requires: bash, python3, git, claude and GNU timeout (on PATH). jq is not
+# needed. macOS has no timeout of its own: `brew install coreutils` and put
+# /opt/homebrew/opt/coreutils/libexec/gnubin on PATH, or the runner refuses
+# to start.
 
 set -uo pipefail
 export PYTHONSAFEPATH=1
@@ -107,6 +113,7 @@ RUNS=""
 MODEL=""
 MODELS_LIST=""
 MODELS_GIVEN=0
+EFFORT=""
 MAX_TURNS=""
 MAX_BUDGET="4"
 MAX_TOTAL="250"
@@ -120,7 +127,9 @@ AGGREGATE_ONLY=0
 CHECK_CASES=0
 
 usage() {
-  sed -n '2,60p' "$0" | sed 's/^# \{0,1\}//'
+  # Print the whole header comment, however long it grows — a fixed line
+  # window silently truncates --help the next time a flag is documented.
+  sed -n '2,$p' "$0" | sed -n '/^[^#]/q;p' | sed 's/^# \{0,1\}//'
 }
 
 need_value() {
@@ -134,6 +143,7 @@ while [ $# -gt 0 ]; do
     --runs) need_value "$@"; RUNS="$2"; shift 2 ;;
     --model) need_value "$@"; MODEL="$2"; shift 2 ;;
     --models) need_value "$@"; MODELS_LIST="$2"; MODELS_GIVEN=1; shift 2 ;;
+    --effort) need_value "$@"; EFFORT="$2"; shift 2 ;;
     --max-turns) need_value "$@"; MAX_TURNS="$2"; shift 2 ;;
     --max-budget-usd) need_value "$@"; MAX_BUDGET="$2"; shift 2 ;;
     --max-total-usd) need_value "$@"; MAX_TOTAL="$2"; shift 2 ;;
@@ -164,6 +174,10 @@ if [ "$MODELS_GIVEN" = "1" ]; then
 else
   MODELS=("$MODEL")
 fi
+case "$EFFORT" in
+  ''|low|medium|high|xhigh|max) ;;
+  *) echo "flow-eval-run: --effort must be one of low, medium, high, xhigh, max; got '$EFFORT'" >&2; exit 1 ;;
+esac
 for n in "$MAX_BUDGET" "$MAX_TOTAL"; do
   [[ "$n" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "flow-eval-run: budget values must be numbers, got '$n'" >&2; exit 1; }
 done
@@ -233,6 +247,23 @@ if [ "$DRY_RUN" != "1" ]; then
   for tool in claude git timeout; do
     command -v "$tool" >/dev/null 2>&1 || { echo "flow-eval-run: $tool is required" >&2; exit 2; }
   done
+  # Fail the whole plan here rather than one run at a time: an unknown flag
+  # kills every child session identically, and each failure costs a full
+  # timeout before it is recorded as "no result event". The help text is
+  # captured rather than piped so a claude that fails (unauthenticated, say)
+  # is reported as itself instead of as a missing flag.
+  if [ -n "$EFFORT" ]; then
+    CLAUDE_HELP=$(timeout 30 claude --help 2>&1); HELP_RC=$?
+    if [ "$HELP_RC" != "0" ]; then
+      echo "flow-eval-run: 'claude --help' failed (exit $HELP_RC) — cannot confirm --effort is supported:" >&2
+      printf '%s\n' "$CLAUDE_HELP" | head -5 >&2
+      exit 2
+    fi
+    case "$CLAUDE_HELP" in
+      *--effort*) ;;
+      *) echo "flow-eval-run: this Claude Code CLI has no --effort flag; drop --effort or upgrade the CLI" >&2; exit 2 ;;
+    esac
+  fi
 fi
 
 # --- helpers -----------------------------------------------------------------
@@ -271,6 +302,55 @@ print("%.4f" % total)
 EOF
 }
 
+recorded_effort() {
+  # recorded_effort <result.json> — the run's effort_requested; empty when the
+  # run was not pinned, __unreadable__ when the record cannot be parsed (so a
+  # corrupt record is never reported as an effort mismatch).
+  python3 - "$1" <<'EOF'
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        print(json.load(fh).get("effort_requested") or "")
+except Exception:
+    print("__unreadable__")
+EOF
+}
+
+check_resume_effort() {
+  # Every planned run that already has a result.json must carry the effort this
+  # plan asks for. Checked once, before anything executes: discovering a
+  # mismatch mid-plan would mean runs already paid for against a matrix that
+  # cannot be aggregated. Reports every mismatch, not just the first.
+  local bad=0 model label case arm n run_dir recorded case_runs
+  for model in "${MODELS[@]}"; do
+    label="$(model_label "$model")"
+    for case in $CASES; do
+      case_runs="${RUNS:-$(case_meta "$case" runs)}"; case_runs="${case_runs:-3}"
+      for arm in $ARMS; do
+        n=1
+        while [ "$n" -le "$case_runs" ]; do
+          run_dir="$OUT_DIR/runs/$label/$arm/$case/$n"
+          if [ -f "$run_dir/result.json" ]; then
+            recorded=$(recorded_effort "$run_dir/result.json")
+            if [ "$recorded" = "__unreadable__" ]; then
+              echo "flow-eval-run: $label/$arm/$case/$n has an unreadable result.json ($run_dir/result.json) — delete that run directory or use a fresh --out" >&2
+              bad=$((bad + 1))
+            elif [ "$recorded" != "$EFFORT" ]; then
+              echo "flow-eval-run: $label/$arm/$case/$n was recorded at effort '${recorded:-unpinned}' but this plan asks for '${EFFORT:-unpinned}'" >&2
+              bad=$((bad + 1))
+            fi
+          fi
+          n=$((n + 1))
+        done
+      done
+    done
+  done
+  if [ "$bad" != "0" ]; then
+    echo "flow-eval-run: refusing to resume — $bad recorded run(s) do not match --effort '${EFFORT:-unpinned}'; resume with the same --effort, or use a fresh --out" >&2
+    exit 1
+  fi
+}
+
 would_exceed() {
   # would_exceed <total> <per-run> <cap> -> exit 0 when total + per-run > cap
   python3 - "$1" "$2" "$3" <<'EOF'
@@ -291,6 +371,7 @@ build_command() {
     CLAUDE_CMD+=(--permission-mode acceptEdits --allowedTools "$run_allowed_tools")
   fi
   [ -n "$run_model" ] && CLAUDE_CMD+=(--model "$run_model")
+  [ -n "$EFFORT" ] && CLAUDE_CMD+=(--effort "$EFFORT")
   [ "$arm" != "baseline" ] && CLAUDE_CMD+=(--plugin-dir "$PLUGIN_ROOT")
   return 0
 }
@@ -323,6 +404,8 @@ run_one() {
 
   PLANNED=$((PLANNED + 1))
   if [ -f "$run_dir/result.json" ]; then
+    # Effort comparability is enforced by check_resume_effort before the plan
+    # starts, so by here an existing record is known to match.
     SKIPPED=$((SKIPPED + 1))
     [ "$DRY_RUN" = "1" ] && echo "SKIP  $label/$arm/$case/$n (result.json exists)"
     return 0
@@ -331,7 +414,7 @@ run_one() {
   if [ "$DRY_RUN" = "1" ]; then
     local plugin_note="(no plugin)"
     [ "$arm" != "baseline" ] && plugin_note="settings=$(arm_settings "$arm")"
-    echo "RUN   $label/$arm/$case/$n  model=${run_model:-<cli default>}  timeout=${run_timeout}s  $plugin_note"
+    echo "RUN   $label/$arm/$case/$n  model=${run_model:-<cli default>}  effort=${EFFORT:-<cli default>}  timeout=${run_timeout}s  $plugin_note"
     local unset_list=""
     for v in "${STRIP_ENV[@]}"; do unset_list="$unset_list -u $v"; done
     printf '      cd <temp copy of %s> && env%s FLOW_STATE_DIR=<temp>/.flow-state timeout %s %s < prompt.txt > %s/stream.jsonl\n' \
@@ -359,9 +442,11 @@ run_one() {
   ( cd "$tmp" && git init -q && git add -A && git -c user.name=flow-eval -c user.email=flow-eval@localhost commit -q -m "scaffold" ) \
     || { echo "flow-eval-run: git init failed in $tmp" >&2; rm -rf "$tmp"; return 1; }
   python3 "$HELPER" case-prompt "$case_dir" --arm "$arm" > "$run_dir/prompt.txt"
-  printf '%s\n' "${CLAUDE_CMD[*]}" > "$run_dir/command.txt"
+  # %q, not a space-join: command.txt is the operator's record of what ran, and
+  # a space-joined line re-executes as a different command when pasted back.
+  { printf '%q ' "${CLAUDE_CMD[@]}"; printf '\n'; } > "$run_dir/command.txt"
 
-  echo "flow-eval-run: [$label/$arm/$case/$n] starting (model ${run_model:-<cli default>}; total so far \$$total; max-turns $run_max_turns; timeout ${run_timeout}s)"
+  echo "flow-eval-run: [$label/$arm/$case/$n] starting (model ${run_model:-<cli default>}; effort ${EFFORT:-<cli default>}; total so far \$$total; max-turns $run_max_turns; timeout ${run_timeout}s)"
   local start end exit_code timed_out=0
   start=$(date +%s)
   local unset_args=()
@@ -376,6 +461,7 @@ run_one() {
   local finalize_args=(finalize-run --run-dir "$run_dir" --case-dir "$case_dir" --project-dir "$tmp"
     --arm "$arm" --case "$case" --run "$n" --exit-code "$exit_code" --duration "$((end - start))")
   [ -n "$run_model" ] && finalize_args+=(--model-requested "$run_model")
+  [ -n "$EFFORT" ] && finalize_args+=(--effort-requested "$EFFORT")
   [ "$timed_out" = "1" ] && finalize_args+=(--timed-out)
   [ "$KEEP_TEMP" = "1" ] && finalize_args+=(--temp-dir "$tmp")
   local grade
@@ -401,6 +487,8 @@ mkdir -p "$OUT_DIR"
 # "prompt.txt: No such file or directory" before claude started.)
 OUT_DIR=$(cd "$OUT_DIR" && pwd -P) || { echo "flow-eval-run: cannot resolve --out $OUT_DIR" >&2; exit 2; }
 [ "$DRY_RUN" = "1" ] && echo "PLAN  out=$OUT_DIR  per-run cap=\$$MAX_BUDGET  total cap=\$$MAX_TOTAL  plugin=$PLUGIN_ROOT  models=$(for m in "${MODELS[@]}"; do printf '%s ' "$(model_label "$m")"; done)"
+check_resume_effort
+
 for model in "${MODELS[@]}"; do
   for case in $CASES; do
     case_runs="${RUNS:-$(case_meta "$case" runs)}"; case_runs="${case_runs:-3}"
