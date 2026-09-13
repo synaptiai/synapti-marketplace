@@ -924,8 +924,13 @@ HELP=$("$RUNNER" --help 2>&1)
 assert_contains "Requires: bash, python3, git, claude" "$HELP" "--help reaches the last header line (a fixed window cut this)"
 assert_contains "--effort" "$HELP" "--help documents the effort flag"
 # Prepended, not replaced: the runner needs the real coreutils on PATH; only
-# `claude` is stubbed.
+# `claude` and `timeout` are stubbed. `timeout` is stubbed because it is GNU-only
+# and absent from a stock macOS — without this the runner exits at its
+# prerequisite check and the preflight below is never reached, which is how
+# these assertions passed locally and failed on macOS CI.
 MOCKBIN="$TMP/mockbin"; mkdir -p "$MOCKBIN"
+printf '#!/usr/bin/env bash\nshift\nexec "$@"\n' > "$MOCKBIN/timeout"
+chmod +x "$MOCKBIN/timeout"
 printf '#!/usr/bin/env bash\necho "usage: claude [--model <m>]"\n' > "$MOCKBIN/claude"
 chmod +x "$MOCKBIN/claude"
 ERR=$(PATH="$MOCKBIN:$PATH" "$RUNNER" --arm baseline --case money-allocator --runs 1 --effort high --out "$TMP/preflight1" 2>&1 >/dev/null); EXIT=$?

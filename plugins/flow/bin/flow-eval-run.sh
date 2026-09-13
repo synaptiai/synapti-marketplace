@@ -75,7 +75,10 @@
 # missing or case check failed; 3 stopped by --max-total-usd; 4 at least one
 # run errored (claude non-zero, timeout, no result event).
 #
-# Requires: bash, python3, git, claude (on PATH). jq is not needed.
+# Requires: bash, python3, git, claude and GNU timeout (on PATH). jq is not
+# needed. macOS has no timeout of its own: `brew install coreutils` and put
+# /opt/homebrew/opt/coreutils/libexec/gnubin on PATH, or the runner refuses
+# to start.
 
 set -uo pipefail
 export PYTHONSAFEPATH=1
