@@ -979,37 +979,64 @@ def models_from_result_event(result_event):
 
 
 def tokens_from_result_event(result_event):
-    """Billed token counts summed over every modelUsage entry of a claude
-    result event, falling back to the event's top-level `usage` (the last
-    request only) when modelUsage carries no token fields.
+    """Billed token counts for one run, and where they came from.
 
-    Returns {"input", "cache_read", "cache_creation", "output",
-    "cache_hit_rate"} — counts are None when nothing was recorded;
-    cache_hit_rate is cache_read over all input-side tokens."""
-    empty = {"input": None, "cache_read": None, "cache_creation": None, "output": None, "cache_hit_rate": None}
+    `source` is "modelUsage" when the counts are whole-run totals summed over
+    every billed model, "usage" when only the result event's top-level usage
+    object carried them (the LAST REQUEST, not the run — a different scope, so
+    aggregation keeps the two apart), and None when nothing was recorded.
+    `entries_skipped` counts modelUsage entries that were not objects; a
+    non-zero value means the totals are missing a billed model.
+
+    Counts stay None when unrecorded rather than collapsing to zero, and
+    cache_hit_rate (cache reads over all input-side tokens) is None unless the
+    cache-read count itself was recorded — an unknown rate must not read as a
+    confirmed 0%."""
+    empty = {"input": None, "cache_read": None, "cache_creation": None, "output": None,
+             "cache_hit_rate": None, "source": None, "entries_skipped": 0}
     if not isinstance(result_event, dict):
         return empty
     fields = {"input": "inputTokens", "cache_read": "cacheReadInputTokens",
               "cache_creation": "cacheCreationInputTokens", "output": "outputTokens"}
     totals = {k: None for k in fields}
+    source = None
+    skipped = 0
     usage = result_event.get("modelUsage")
     if isinstance(usage, dict):
         for entry in usage.values():
             if not isinstance(entry, dict):
+                skipped += 1
                 continue
             for key, name in fields.items():
                 value = num(entry, name)
                 if value is not None:
                     totals[key] = (totals[key] or 0) + value
-    if all(v is None for v in totals.values()):
+    if any(v is not None for v in totals.values()):
+        source = "modelUsage"
+    else:
         top = result_event.get("usage")
         if isinstance(top, dict):
             snake = {"input": "input_tokens", "cache_read": "cache_read_input_tokens",
                      "cache_creation": "cache_creation_input_tokens", "output": "output_tokens"}
             totals = {key: num(top, name) for key, name in snake.items()}
+            if any(v is not None for v in totals.values()):
+                source = "usage"
     input_side = sum(totals[k] or 0 for k in ("input", "cache_read", "cache_creation"))
-    totals["cache_hit_rate"] = ((totals["cache_read"] or 0) / input_side) if input_side else None
+    totals["cache_hit_rate"] = (totals["cache_read"] / input_side) \
+        if (totals["cache_read"] is not None and input_side) else None
+    totals["source"] = source
+    totals["entries_skipped"] = skipped
     return totals
+
+
+def run_tokens(record):
+    """The run's token block when it holds whole-run totals, else {}.
+
+    Runs that fell back to the last request's `usage`, and runs recorded before
+    the token fields existed, are excluded: averaging last-request counts with
+    whole-run counts understates the cell by whatever the fallback missed."""
+    tokens = record.get("tokens") or {}
+    return tokens if tokens.get("source") == "modelUsage" else {}
 
 
 def cmd_finalize_run(args):
@@ -1231,9 +1258,12 @@ def summarize_runs(rs):
         "cost_usd_mean": mean([r["cost_usd"] for r in rs]),
         "cost_usd_total": sum(r["cost_usd"] or 0 for r in rs),
         "num_turns_mean": mean([r["num_turns"] for r in rs]),
-        "cache_hit_rate_mean": mean([(r.get("tokens") or {}).get("cache_hit_rate") for r in rs]),
-        "output_tokens_mean": mean([(r.get("tokens") or {}).get("output") for r in rs]),
-        "effort_requested": sorted({str(r["effort_requested"]) for r in rs if r.get("effort_requested")}),
+        "cache_hit_rate_mean": mean([run_tokens(r).get("cache_hit_rate") for r in rs]),
+        "output_tokens_mean": mean([run_tokens(r).get("output") for r in rs]),
+        "token_scored_runs": sum(1 for r in rs if run_tokens(r)),
+        "token_fallback_runs": sum(1 for r in rs if (r.get("tokens") or {}).get("source") == "usage"),
+        "token_entries_skipped": sum((r.get("tokens") or {}).get("entries_skipped") or 0 for r in rs),
+        "effort_requested": sorted({str(r.get("effort_requested") or "unpinned") for r in rs}),
         "errors": sum(1 for r in rs if r.get("error")),
         "skills_invoked": sorted({s for r in rs for s in r.get("skills_invoked", [])}),
     }
@@ -1413,9 +1443,12 @@ def decide(arm_summary, spread, cases, own_spread=None):
 
 def render_summary_md(s):
     lines = ["# Flow correctness eval — summary", ""]
-    lines.append("Runs: %d across %d model(s), %d arm(s) and %d case(s). Total cost: $%.2f. Models: %s."
+    efforts = sorted({e for m in s["per_model"].values() for a in m["per_arm"].values()
+                      for e in (a.get("effort_requested") or [])})
+    lines.append("Runs: %d across %d model(s), %d arm(s) and %d case(s). Total cost: $%.2f. Models: %s. Effort: %s."
                  % (s["runs"], len(s["models"]), len(s["arms"]), len(s["cases"]), s["total_cost_usd"],
-                    ", ".join("`%s`" % m for m in s["models"]) or "none"))
+                    ", ".join("`%s`" % m for m in s["models"]) or "none",
+                    ", ".join("`%s`" % e for e in efforts) or "none"))
     if s.get("legacy_layout_runs"):
         lines.append("")
         lines.append("%d run(s) were read from the older `runs/<arm>/<case>/<n>` layout; `_flow_eval.py migrate-layout --out <dir>` moves them under their model." % s["legacy_layout_runs"])
@@ -1436,16 +1469,18 @@ def render_summary_md(s):
         lines.append("")
     lines.append("## Per model × arm")
     lines.append("")
-    lines.append("| Model | Arm | Runs | Hidden pass rate | All-pass runs | Own tests catch traps | Own tests (mean) | Degenerate share | Cost (mean) | Turns (mean) | Errors | Incomplete |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| Model | Arm | Effort | Runs | Hidden pass rate | All-pass runs | Own tests catch traps | Own tests (mean) | Degenerate share | Cost (mean) | Turns (mean) | Cache hits | Output tokens | Errors | Incomplete |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for model in s["models"]:
         m = s["per_model"][model]
         for arm in m["arms"]:
             a = m["per_arm"][arm]
-            lines.append("| %s | %s | %d | %s | %s | %s | %s | %s | $%s | %s | %d | %s |" % (
-                model, arm, a["runs"], fmt(a["hidden_pass_rate_mean"], pct=True), fmt(a["all_pass_rate"], pct=True),
+            lines.append("| %s | %s | %s | %d | %s | %s | %s | %s | %s | $%s | %s | %s | %s | %d | %s |" % (
+                model, arm, effort_cell(a), a["runs"], fmt(a["hidden_pass_rate_mean"], pct=True),
+                fmt(a["all_pass_rate"], pct=True),
                 own_cell(a), fmt(a["own_tests_mean"], 1), fmt(a["degenerate_share_mean"], pct=True), fmt(a["cost_usd_mean"]),
-                fmt(a["num_turns_mean"], 1), a["errors"], incomplete_cell(a)))
+                fmt(a["num_turns_mean"], 1), token_cell(a, "cache_hit_rate_mean", pct=True),
+                token_cell(a, "output_tokens_mean"), a["errors"], incomplete_cell(a)))
     lines.append("")
     lines.append(INCOMPLETE_NOTE)
     lines.append("")
@@ -1523,6 +1558,27 @@ def own_cell(entry):
     if entry["own_test_trap_catch_rate"] is None:
         return "- (0/%d)" % entry["runs"]
     return "%s (%d/%d)" % (fmt(entry["own_test_trap_catch_rate"], pct=True), entry["own_test_trap_scored_runs"], entry["runs"])
+
+
+def effort_cell(entry):
+    """'high' or 'high, unpinned' — the effort levels behind the cell.
+
+    A cell mixing levels is not a result; it reads as mixed here so nobody
+    compares its cost mean against another cell's."""
+    levels = entry.get("effort_requested") or []
+    return ", ".join(levels) if levels else "-"
+
+
+def token_cell(entry, key, pct=False):
+    """'90% (2/3)' — a token mean and how many of the cell's runs it covers.
+
+    Runs that recorded no whole-run totals are outside the mean, so the count
+    is part of the number: a mean over one of three runs is not the cell."""
+    value = entry.get(key)
+    scored = entry.get("token_scored_runs") or 0
+    if value is None:
+        return "- (0/%d)" % entry["runs"]
+    return "%s (%d/%d)" % (fmt(value, pct=pct) if pct else fmt(value, 0), scored, entry["runs"])
 
 
 def scored_cell(entry):

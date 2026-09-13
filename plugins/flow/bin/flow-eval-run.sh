@@ -124,7 +124,9 @@ AGGREGATE_ONLY=0
 CHECK_CASES=0
 
 usage() {
-  sed -n '2,60p' "$0" | sed 's/^# \{0,1\}//'
+  # Print the whole header comment, however long it grows — a fixed line
+  # window silently truncates --help the next time a flag is documented.
+  sed -n '2,$p' "$0" | sed -n '/^[^#]/q;p' | sed 's/^# \{0,1\}//'
 }
 
 need_value() {
@@ -242,6 +244,13 @@ if [ "$DRY_RUN" != "1" ]; then
   for tool in claude git timeout; do
     command -v "$tool" >/dev/null 2>&1 || { echo "flow-eval-run: $tool is required" >&2; exit 2; }
   done
+  # Fail the whole plan here rather than one run at a time: an unknown flag
+  # kills every child session identically, and each failure costs a full
+  # timeout before it is recorded as "no result event".
+  if [ -n "$EFFORT" ] && ! claude --help 2>/dev/null | grep -q -- '--effort'; then
+    echo "flow-eval-run: this Claude Code CLI has no --effort flag; drop --effort or upgrade the CLI" >&2
+    exit 2
+  fi
 fi
 
 # --- helpers -----------------------------------------------------------------
@@ -333,6 +342,19 @@ run_one() {
 
   PLANNED=$((PLANNED + 1))
   if [ -f "$run_dir/result.json" ]; then
+    # Resume must not merge incomparable runs. Model has its own directory, so
+    # only effort can silently differ between the recorded run and this plan;
+    # a cell averaging two effort levels is a measurement bug, not a result.
+    local recorded
+    recorded=$(python3 -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1])).get("effort_requested") or "")
+except Exception:
+    print("")' "$run_dir/result.json" 2>/dev/null)
+    if [ "$recorded" != "$EFFORT" ]; then
+      echo "flow-eval-run: $label/$arm/$case/$n was recorded at effort '${recorded:-unpinned}' but this plan asks for '${EFFORT:-unpinned}' — resume with the same --effort, or use a fresh --out" >&2
+      exit 1
+    fi
     SKIPPED=$((SKIPPED + 1))
     [ "$DRY_RUN" = "1" ] && echo "SKIP  $label/$arm/$case/$n (result.json exists)"
     return 0

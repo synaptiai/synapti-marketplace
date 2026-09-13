@@ -138,10 +138,25 @@ Per run, the harness records (`runs/<model>/<arm>/<case>/<n>/result.json`;
 - **effort_requested** — what `--effort` asked for; `null` when the run
   inherited the operator's saved effort setting, which the record cannot
   see. Runs compared against each other should carry the same pinned value.
-- **tokens** — `input`, `cache_read`, `cache_creation`, `output`, summed over
-  every `modelUsage` entry of the claude result event, and `cache_hit_rate`
-  (cache reads over all input-side tokens). Per-arm `summary.json` carries
-  `cache_hit_rate_mean` and `output_tokens_mean`.
+- **tokens** — `input`, `cache_read`, `cache_creation`, `output`, and
+  `cache_hit_rate` (cache reads over all input-side tokens). A count that was
+  never recorded stays `null` rather than becoming a zero, and the hit rate is
+  `null` unless the cache-read count itself was recorded — an unknown rate must
+  not read as a confirmed 0%. `source` says what scope the counts have:
+  `modelUsage` for whole-run totals summed over every billed model, `usage`
+  when only the result event's top-level usage object carried them (the last
+  request, not the run), `null` when nothing was recorded. `entries_skipped`
+  counts `modelUsage` entries that were not objects; above zero, a billed model
+  is missing from the totals.
+- Per-arm `summary.json` carries `cache_hit_rate_mean` and
+  `output_tokens_mean` over the `source: modelUsage` runs only — averaging
+  last-request counts with whole-run counts understates the cell — plus
+  `token_scored_runs` (how many of the cell's `runs` recorded whole-run
+  totals at all), `token_fallback_runs`, and `token_entries_skipped`.
+  `summary.md` carries the two means with that coverage in the cell, and the
+  effort behind every arm, so no cost mean is read without its setting. `effort_requested` lists
+  the pinned levels behind the cell, with `unpinned` for runs that inherited
+  the operator's setting, so a cell mixing the two is visibly mixed.
 - **cost_usd, num_turns, session_id, is_error, error, permission_denials,
   tool_counts, skills_invoked** — from the `stream-json` transcript
   (`stream.jsonl`, final event saved as `claude.json`). `skills_invoked` empty
