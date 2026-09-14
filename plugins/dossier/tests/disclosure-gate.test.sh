@@ -211,6 +211,26 @@ reg "$T" '| CL-0001 | the api supports oauth 20 device flow | capability | EV-00
 scan "$T"
 assert_equal "0" "$?" "a registered claim written as a table cell still matches its approved wording"
 
+# A held row's finding must be attributed to the line it actually appeared on,
+# not the line where the hold happened to resolve. Row 1 of a `|`-prefixed
+# run is held pending row 2's separator check; when row 2 turns out NOT to be
+# a separator (this fixture: two genuine data rows, no separator ever), row 1
+# is flushed and scored from inside the code path handling row 2 — a `$LN`
+# read at that point would attribute row 1's finding to row 2's line number.
+T="$W/table-line-attribution"; mkpkg "$T"
+reg "$T" ''
+{
+  printf 'This is the first row and it carries a genuine unregistered claim' | sed 's/^/| /; s/$/ |/'
+  printf '\n'
+  printf 'This is the second row and it also carries a genuine unregistered claim' | sed 's/^/| /; s/$/ |/'
+  printf '\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_contains "technical-partner-guide.md:1 \"this is the first row" "$OUT" \
+  "row 1's finding is attributed to line 1, the line it actually appeared on"
+assert_contains "technical-partner-guide.md:2 \"this is the second row" "$OUT" \
+  "row 2's finding is attributed to line 2"
+
 # --- issue #176: a blockquote is prose with a marker, not structural markup --
 T="$W/blockquote-claim"; mkpkg "$T"
 reg "$T" ''

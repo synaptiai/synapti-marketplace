@@ -310,6 +310,21 @@ scan_table_row() {
   done
 }
 
+# A held row (see TABLE_HELD_LINE below) is scored later than the line it
+# came from — sometimes many lines later, if a fence opens before the hold
+# resolves. `scan_text` reports findings against the CURRENT `$LN`, so
+# flushing a held row without first restoring `$LN` to the line it was held
+# from would attribute its findings to wherever the flush happens to occur,
+# not to the line a reader would need to open to find the claim.
+flush_held_table_row() {
+  [ -n "$TABLE_HELD_LINE" ] || return 0
+  RESUME_LN=$LN
+  LN=$TABLE_HELD_LN
+  scan_table_row "$TABLE_HELD_LINE"
+  LN=$RESUME_LN
+  TABLE_HELD_LINE=""
+}
+
 for f in $TARGETS; do
   IN_FENCE=0
   # The header is structured metadata, not prose. `title:` and `audience:` are
@@ -327,6 +342,7 @@ for f in $TARGETS; do
   # header (discarded) or plain data (flushed alongside row 2). Once that
   # determination is made, every further `|`-prefixed row is scored directly.
   TABLE_HELD_LINE=""
+  TABLE_HELD_LN=0
   TABLE_ROWS_SEEN=0
   # `|| [ -n "$line" ]` picks up a final line with no trailing newline: `read`
   # still populates $line with its content but returns non-zero at EOF, and a
@@ -352,13 +368,13 @@ for f in $TARGETS; do
         case "$TABLE_ROWS_SEEN" in
           1)
             TABLE_HELD_LINE="$line"
+            TABLE_HELD_LN=$LN
             ;;
           2)
             if is_table_separator "$line"; then
               TABLE_HELD_LINE=""
             else
-              scan_table_row "$TABLE_HELD_LINE"
-              TABLE_HELD_LINE=""
+              flush_held_table_row
               scan_table_row "$line"
             fi
             ;;
@@ -371,10 +387,7 @@ for f in $TARGETS; do
     esac
     # Left the table, if one was open: flush any row still held (it was never
     # followed by a separator, so it was data all along, not a header).
-    if [ -n "$TABLE_HELD_LINE" ]; then
-      scan_table_row "$TABLE_HELD_LINE"
-      TABLE_HELD_LINE=""
-    fi
+    flush_held_table_row
     TABLE_ROWS_SEEN=0
 
     case "$line" in
@@ -388,10 +401,7 @@ for f in $TARGETS; do
   done < "$f"
   # A file can end mid-table (its last line is still-held row 1, never
   # confirmed a header because there was no row 2 to check).
-  if [ -n "$TABLE_HELD_LINE" ]; then
-    scan_table_row "$TABLE_HELD_LINE"
-    TABLE_HELD_LINE=""
-  fi
+  flush_held_table_row
 done
 
 UNREGISTERED=$(grep -c '^unregistered' "$HITS_FILE" 2>/dev/null || true)
