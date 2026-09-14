@@ -172,7 +172,9 @@ write_settings "$S6_CWD/.claude/settings.flow.json" '{"journal":{"dir":"recovere
 write_settings "$S6_PLUG/settings.json" '{"journal":{"dir":"plugin-dir"}}'
 
 S6_STDERR=$(mktemp)
-TEMP_DIRS+=("$(dirname "$S6_STDERR")")
+# The file itself, never its directory: dirname of a bare mktemp is the system
+# temp directory, and cleanup() runs rm -rf on every entry in this list.
+TEMP_DIRS+=("$S6_STDERR")
 S6_RESULT=$(run_helper "$S6_CWD" "$S6_HOME" "$S6_PLUG" '.journal.dir // empty' 2>"$S6_STDERR")
 assert_eq "S6: parse error in local falls through to project-shared" "recovered" "$S6_RESULT"
 assert_stderr_contains "S6: WARN names settings.flow.local.json as failing source" "settings.flow.local.json" "$S6_STDERR"
