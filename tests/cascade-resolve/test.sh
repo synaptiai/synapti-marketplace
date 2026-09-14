@@ -24,14 +24,17 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 2
 fi
 
-TEMP_DIRS=()
+# Every sandbox lives under one root made here, at file scope. new_sandbox is
+# called as S=$(new_sandbox), a subshell, so anything it appended to a cleanup
+# list was gone before the EXIT trap read it and each run left its sandboxes.
+SANDBOX_ROOT=$(mktemp -d -t cascade-resolve.XXXXXX) || { echo "FATAL: mktemp -d failed" >&2; exit 2; }
+TEMP_DIRS=("$SANDBOX_ROOT")
 cleanup() { for d in "${TEMP_DIRS[@]}"; do rm -rf "$d" 2>/dev/null; done; }
 trap cleanup EXIT
 
 new_sandbox() {
   local d
-  d=$(mktemp -d -t cascade-resolve.XXXXXX)
-  TEMP_DIRS+=("$d")
+  d=$(mktemp -d "$SANDBOX_ROOT/sandbox.XXXXXX") || return 1
   printf '%s' "$d"
 }
 
