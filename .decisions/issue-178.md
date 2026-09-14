@@ -118,3 +118,5 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-14 23:44 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
 
 <!-- auto-log: 2026-09-14 23:44 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-178.md -->
+
+<!-- auto-log: 2026-09-14 23:44 commit "fix(dossier): stop a TOCTOU race from leaking a redirection error to stderr" -->
