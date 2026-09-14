@@ -21,19 +21,20 @@ fi
 
 HOOK="$REPO_ROOT/plugins/flow/hooks/scripts/block-unchecked-merge.sh"
 
-BUM_CLEANUP=()
-_bum_cleanup() {
-  local p
-  for p in "${BUM_CLEANUP[@]:-}"; do [ -n "$p" ] && rm -rf "$p" 2>/dev/null; done
-}
-trap _bum_cleanup EXIT
+# Every stub lives under one directory made here, at file scope. The stubs are
+# built inside $(...), so a cleanup list appended to there never reached the
+# EXIT trap and each run left its directories behind.
+BUM_ROOT=$(mktemp -d -t flow-bum.XXXXXX 2>/dev/null)
+if [ -z "$BUM_ROOT" ] || [ ! -d "$BUM_ROOT" ]; then
+  _flow_test_begin "stub directory"; _flow_assert_fail "mktemp -d failed; no test below could run honestly"; return 0
+fi
+trap 'rm -rf "$BUM_ROOT" 2>/dev/null' EXIT
 
 # _bum_stub <rollup-json> <protection-json> <rules-json>
 # Builds a directory holding a `gh` stub and prints its path.
 _bum_stub() {
   local rollup="$1" prot="$2" rules="$3" d
-  d=$(mktemp -d -t flow-bum.XXXXXX 2>/dev/null) || { printf ''; return 1; }
-  BUM_CLEANUP+=("$d")
+  d=$(mktemp -d "$BUM_ROOT/stub.XXXXXX" 2>/dev/null) || { printf ''; return 1; }
   printf '%s' "$rollup" > "$d/rollup.json"
   printf '%s' "$prot"   > "$d/prot.json"
   printf '%s' "$rules"  > "$d/rules.json"
@@ -188,31 +189,42 @@ assert_exit 2 "$?" "an unreadable rollup blocks rather than allowing"
 ERR=$(_bum_stderr "$S" "gh pr merge 7 --squash")
 assert_contains "cannot see must not open" "$ERR" "and says why"
 
-# --- a value it cannot expand is named, not blamed on the checks (#195) --------
+# --- a value it cannot read is named, not blamed on the checks (#195) ---------
 # The hook reads text. `"$REPO"` reached the probe as the literal `$REPO`, the
 # lookup failed, and the refusal said the checks could not be read — which sent
-# the reader to CI. The stub here records whether it was called at all: a probe
-# for a value that was never expanded can only fail, so it must not run.
-_bum_called_stub() {
+# the reader to CI. The stub here marks whether the checks were looked up: a
+# lookup for a value that was never expanded can only fail, so it must not run.
+_bum_probe_stub() {
   local d
   d=$(_bum_stub "$GREEN" "$PROT" "") || return 1
-  { printf '#!/usr/bin/env bash\ntouch "$(dirname "$0")/called"\n'; tail -n +2 "$d/gh"; } > "$d/gh.new"
-  mv "$d/gh.new" "$d/gh"; chmod +x "$d/gh"
+  [ -n "$d" ] && [ -f "$d/gh" ] || return 1
+  { printf '#!/usr/bin/env bash\n[ "$1 $2" = "pr view" ] && touch "$(dirname "$0")/probed"\n'; tail -n +2 "$d/gh"; } > "$d/gh.new" \
+    && mv "$d/gh.new" "$d/gh" && chmod +x "$d/gh" || return 1
   printf '%s' "$d"
 }
 
-_flow_test_begin "a merge whose pull request or repository is a variable is refused by name"
+_flow_test_begin "a merge naming a value this hook cannot read is refused by name"
 for CASE in \
   'pull request|$PR_NUM|gh pr merge "$PR_NUM" --squash' \
   'repository|$REPO|gh pr merge 7 --repo "$REPO" --squash' \
   'pull request|$PR_NUM|gh pr merge "$PR_NUM" --repo "$REPO" --squash --delete-branch' \
   'repository|${REPO}|gh pr merge 7 -R ${REPO}' \
   'repository|$REPO|gh pr merge 7 --repo=$REPO' \
+  'repository|$REPO|gh pr merge 7 -R"$REPO"' \
   'repository|$(...)|gh pr merge 7 --repo "$(gh repo view --json nameWithOwner -q .nameWithOwner)"' \
+  'repository|acme/$(...)|gh pr merge 7 --repo acme/$(printf w)' \
   'pull request|$(...)|gh pr merge `cat pr.txt` --repo acme/widgets' \
-  'repository|acme/$R|gh --repo "acme/$R" pr merge 7'; do
+  'pull request|7 $EXTRA|gh pr merge 7 $EXTRA --repo acme/widgets' \
+  'pull request|7 $(...)|gh pr merge 7 $(echo --repo other/x)' \
+  'repository|acme/$R|gh --repo "acme/$R" pr merge 7' \
+  'repository|$REPO|GH_REPO=$REPO gh pr merge 7' \
+  'GitHub host|$H|GH_HOST=$H gh pr merge 7 --repo acme/widgets' \
+  'gh command|$GH|GH=gh; $GH pr merge 7 --repo acme/widgets' \
+  'api endpoint|repos/acme/widgets/pulls/$N/merge|gh api -X PUT repos/acme/widgets/pulls/$N/merge'; do
   WHAT="${CASE%%|*}"; REST="${CASE#*|}"; SHOWN="${REST%%|*}"; CMD="${REST#*|}"
-  S=$(_bum_called_stub)
+  if ! S=$(_bum_probe_stub); then
+    _flow_assert_fail "could not build the gh stub for: $CMD"; continue
+  fi
   ERR=$(_bum_stderr "$S" "$CMD"); RC=$?
   if [ "$RC" -ne 2 ]; then
     _flow_assert_fail "exit $RC, expected 2, for: $CMD"
@@ -220,48 +232,106 @@ for CASE in \
     _flow_assert_fail "refusal does not name the $WHAT \"$SHOWN\" for: $CMD — got: $ERR"
   elif [[ "$ERR" == *"could not be read"* ]]; then
     _flow_assert_fail "refusal still blames the checks for: $CMD"
-  elif [ -e "$S/called" ]; then
-    _flow_assert_fail "gh was called for a value that was never expanded: $CMD"
+  elif [ -e "$S/probed" ]; then
+    _flow_assert_fail "the checks were looked up for a value that was never expanded: $CMD"
   else
-    _flow_assert_pass "refused by name without a probe: $CMD"
+    _flow_assert_pass "refused by name without a lookup: $CMD"
   fi
 done
 
-_flow_test_begin "literal values are unaffected by the variable rule"
-S=$(_bum_called_stub)
-_bum_run "$S" "gh pr merge 7 --repo acme/widgets --squash --delete-branch"
-assert_exit 0 "$?" "a literal number and repository on a green PR merge"
-if [ -e "$S/called" ]; then
-  _flow_assert_pass "and the checks were actually probed"
+_flow_test_begin "an unfilled placeholder is named as one"
+S=$(_bum_probe_stub) || S=""
+if [ -z "$S" ]; then
+  _flow_assert_fail "could not build the gh stub"
 else
-  _flow_assert_fail "a literal merge was allowed without probing its checks"
+  ERR=$(_bum_stderr "$S" "gh pr merge {PR_NUMBER} --repo {OWNER/NAME} --squash"); RC=$?
+  assert_exit 2 "$RC" "a merge still carrying {PR_NUMBER} is refused"
+  assert_contains "a placeholder that was not filled in" "$ERR" "and the refusal says so"
+  if [ -e "$S/probed" ]; then
+    _flow_assert_fail "the checks were looked up for an unfilled placeholder"
+  else
+    _flow_assert_pass "without a lookup"
+  fi
 fi
-_bum_run "$S" 'gh pr merge 7 --repo acme/widgets --squash --body "saves $5 a month"'
-assert_exit 0 "$?" "a \$ in the merge body is not the selector or the repository"
+
+_flow_test_begin "the refused value is shown safely"
+S=$(_bum_probe_stub) || S=""
+LONG="\$$(printf 'x%.0s' $(seq 1 5000))"
+ERR=$(_bum_stderr "$S" "gh pr merge $LONG --repo acme/widgets")
+if [ "${#ERR}" -lt 1000 ]; then
+  _flow_assert_pass "a 5000-character value is cut short (${#ERR} bytes of stderr)"
+else
+  _flow_assert_fail "a 5000-character value produced ${#ERR} bytes of stderr"
+fi
+assert_contains "Write it literally" "$ERR" "and the instruction after it survives"
+# No `;` in the escape sequence: it would split the command, and the case would
+# pass without the refusal ever running.
+ERR=$(_bum_stderr "$S" "$(printf 'gh pr merge a\033[31mb\007$X --repo acme/widgets')")
+case "$ERR" in
+  *"is given as"*) ;;
+  *) _flow_assert_fail "the control-character case was not refused by name: $ERR" ;;
+esac
+case "$ERR" in
+  *$'\033'*|*$'\007'*) _flow_assert_fail "control characters from the command reached stderr" ;;
+  *"is given as"*) _flow_assert_pass "control characters are replaced" ;;
+esac
+
+_flow_test_begin "literal values are unaffected by the variable rule"
+if ! S=$(_bum_probe_stub); then
+  _flow_assert_fail "could not build the gh stub"
+else
+  _bum_run "$S" "gh pr merge 7 --repo acme/widgets --squash --delete-branch"
+  assert_exit 0 "$?" "a literal number and repository on a green PR merge"
+  if [ -e "$S/probed" ]; then
+    _flow_assert_pass "and its checks were looked up"
+  else
+    _flow_assert_fail "a literal merge was allowed without looking up its checks"
+  fi
+fi
+if ! S=$(_bum_probe_stub); then
+  _flow_assert_fail "could not build the gh stub"
+else
+  _bum_run "$S" 'gh pr merge 7 --repo acme/widgets --squash --body "saves $5 a month"'
+  assert_exit 0 "$?" "a \$ in the merge body is not the selector or the repository"
+  if [ -e "$S/probed" ]; then
+    _flow_assert_pass "and its checks were looked up"
+  else
+    _flow_assert_fail "the body case was allowed without looking up its checks"
+  fi
+fi
 
 # The merge step /flow:merge documents is what a model runs. If it goes back to
 # variables, every merge through the command is refused again.
 _flow_test_begin "the merge step in /flow:merge passes this hook"
 MERGE_MD="$REPO_ROOT/plugins/flow/commands/merge.md"
-DOC_LINE=$(awk '/^## Phase 3/ { p = 1 } /^## Phase 4/ { p = 0 } p && /^gh pr merge / { print; exit }' "$MERGE_MD")
-if [ -z "$DOC_LINE" ]; then
+DOC_LINES=$(awk '/^## Phase 3/ { p = 1 } /^## Phase 4/ { p = 0 } p && /^gh pr merge / { print }' "$MERGE_MD")
+if [ -z "$DOC_LINES" ]; then
   _flow_assert_fail "no gh pr merge line found in merge.md Phase 3"
 else
-  case "$DOC_LINE" in
-    *'$'*) _flow_assert_fail "the documented merge line uses a shell expansion: $DOC_LINE" ;;
-    *--repo*) _flow_assert_pass "documented merge line is literal and keeps --repo" ;;
-    *) _flow_assert_fail "the documented merge line lost its --repo pin: $DOC_LINE" ;;
-  esac
-  FILLED="${DOC_LINE//\{PR_NUMBER\}/7}"
-  FILLED="${FILLED//\{OWNER\/NAME\}/acme/widgets}"
-  FILLED="${FILLED//\{squash|merge|rebase\}/squash}"
-  case "$FILLED" in
-    *'{'*|*'}'*) _flow_assert_fail "a placeholder this test does not know is left in: $FILLED" ;;
-    *)
-      S=$(_bum_stub "$GREEN" "" "")
-      _bum_run "$S" "$FILLED"
-      assert_exit 0 "$?" "the documented merge, values filled in, is allowed on a green PR" ;;
-  esac
+  while IFS= read -r DOC_LINE; do
+    case "$DOC_LINE" in
+      *'$'*) _flow_assert_fail "the documented merge line uses a shell expansion: $DOC_LINE"; continue ;;
+      *--repo*) _flow_assert_pass "documented merge line is literal and keeps --repo" ;;
+      *) _flow_assert_fail "the documented merge line lost its --repo pin: $DOC_LINE"; continue ;;
+    esac
+    # Filled in both ways the instructions allow: with the branch deleted, and
+    # with the placeholder removed when the setting is false.
+    for DELETE in "--delete-branch" ""; do
+      FILLED="${DOC_LINE//\{PR_NUMBER\}/7}"
+      FILLED="${FILLED//\{OWNER\/NAME\}/acme/widgets}"
+      FILLED="${FILLED//\{STRATEGY\}/squash}"
+      FILLED="${FILLED//\{DELETE_BRANCH\}/$DELETE}"
+      case "$FILLED" in
+        *'{'*|*'}'*) _flow_assert_fail "a placeholder this test does not know is left in: $FILLED" ;;
+        *)
+          S=$(_bum_stub "$GREEN" "" "")
+          _bum_run "$S" "$FILLED"
+          assert_exit 0 "$?" "the documented merge, filled in as: $FILLED" ;;
+      esac
+    done
+  done <<DOC_EOF
+$DOC_LINES
+DOC_EOF
 fi
 
 # --- registered where it will actually run ------------------------------------

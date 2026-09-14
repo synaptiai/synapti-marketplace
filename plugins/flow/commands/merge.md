@@ -566,7 +566,7 @@ When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.f
 The Repository row exists because every field above it was read from one
 repository, and until it is named nobody can tell which. `REPO_CROSSCHECK` in
 the preflight compares what `gh` resolved against what `git remote get-url
-origin` says; on `mismatch` the preflight sets `STATE=blocked` and this command
+origin` says; on `mismatch` the preflight sets `REPO_STATE=blocked` and this command
 stops rather than reporting a well-formed answer about a different repository.
 
 ### Why `--auto` is not a way to wait
@@ -621,21 +621,36 @@ If Option 1: after resolution completes, re-run Phase 1 to verify PR is now merg
 
 ## Phase 3: Confirm and Execute
 
-Use the AskUserQuestion tool with contextual options to confirm: "PR #$PR_NUM is ready to merge. Proceed with squash merge and branch deletion?"
+Stop here, without asking, unless the preflight printed `REPO_CROSSCHECK=ok`.
+`REPO_STATE=unavailable` means no repository was resolved, `REPO_STATE=blocked`
+means `gh` and `git` named different ones, and `REPO_CROSSCHECK=unavailable`
+means there was no origin remote to verify against. In each case the merge
+below would have to name a repository nobody verified. Report the state and
+what the user can do about it.
+
+Use the AskUserQuestion tool with contextual options to confirm, naming what
+will actually run: "PR #{PR_NUMBER} in {OWNER/NAME} is ready to merge. Proceed
+with a {strategy} merge{, deleting the branch}?" — the strategy and the branch
+clause come from the report's **Merge strategy** and **Delete branch** lines,
+so the user approves the same merge that runs.
 
 Only after the user confirms via the tool, run the merge with every value
-written literally: the PR number, the repository from the report's Repository
-row (which `REPO_CROSSCHECK` verified), and the strategy and delete flag from
-the settings shown in the report. Replace each `{…}` below before running.
+written literally. Replace each `{…}` below before running:
+
+- `{PR_NUMBER}` — the PR number from the report
+- `{OWNER/NAME}` — the report's Repository row
+- `{STRATEGY}` — `squash`, `merge` or `rebase`, from **Merge strategy**
+- `{DELETE_BRANCH}` — `--delete-branch` when **Delete branch** is true; remove
+  it when false
 
 ```bash
 # Literal values, not $PR_NUM or $REPO. block-unchecked-merge.sh reads this
-# command as text and cannot expand a variable, so a variable here is refused.
-# --repo pins the merge to the repository the preflight read.
-# No --auto. It waits for REQUIRED checks, so on a repository that requires
-# none it merges immediately; the gate above is what establishes the checks
-# have finished. Drop --delete-branch when settings.merge.deleteBranch is false.
-gh pr merge {PR_NUMBER} --repo {OWNER/NAME} --{squash|merge|rebase} --delete-branch
+# command as text and cannot expand a variable, so a variable (or a {…} left
+# unfilled) is refused. --repo pins the merge to the repository the preflight
+# read. No --auto: it waits for REQUIRED checks, so on a repository that
+# requires none it merges immediately; the gate above is what establishes the
+# checks have finished.
+gh pr merge {PR_NUMBER} --repo {OWNER/NAME} --{STRATEGY} {DELETE_BRANCH}
 ```
 
 ## Phase 4: Post-Merge
@@ -647,6 +662,14 @@ gh pr merge {PR_NUMBER} --repo {OWNER/NAME} --{squash|merge|rebase} --delete-bra
 # as unpinned, which is the failure this pinning exists to prevent.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+# PR_NUM does not survive either. Without it `gh pr view ""` resolves the
+# current branch and reports on a different pull request, or on none.
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) echo "ERROR: PR number required (all-digit)" >&2; exit 1 ;;
+  *) PR_NUM="$ARG1" ;;
+esac
 # Verify merge
 gh pr view "$PR_NUM" --repo "$REPO" --json state --jq '.state'
 
@@ -667,6 +690,12 @@ git pull origin $DEFAULT_BRANCH
 # as unpinned, which is the failure this pinning exists to prevent.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+_RAW="$ARGUMENTS"  # PR_NUM does not survive from earlier blocks either
+ARG1="${_RAW%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) echo "ERROR: PR number required (all-digit)" >&2; exit 1 ;;
+  *) PR_NUM="$ARG1" ;;
+esac
 ISSUE=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
 if [ -n "$ISSUE" ]; then
   # Repeat once per escalation that closed during this merge run.
