@@ -156,6 +156,28 @@ assert_exit 2 "$?" "a hash inside a quoted argument does not hide the command"
 _run_hook "git restore $DOT # discard everything"
 assert_exit 2 "$?" "a comment after a real command does not excuse it"
 
+# A backslash-newline and a newline inside quotes are both one command to the
+# shell. Read as line breaks, the first split `git reset` from `--hard`, and the
+# second turned everything after a multi-line message into quoted text.
+_flow_test_begin "a command written across lines is read as one"
+_run_hook "git reset \\
+  --hard HEAD~3"
+assert_exit 2 "$?" "a reset continued onto a second line still blocked"
+_run_hook "git commit -m \"Summary
+
+Details\" && git reset --hard HEAD~1"
+assert_exit 2 "$?" "a reset after a multi-line commit message still blocked"
+_run_hook "git commit -m \"Fixes it.
+Closes #12\" && git reset --hard HEAD~1"
+assert_exit 2 "$?" "a # inside a multi-line message does not cut the reset off"
+_run_hook "git commit -m \"Summary
+
+Details\""
+assert_exit 0 "$?" "a multi-line commit message on its own allowed"
+_run_hook "echo done \\\\
+git status"
+assert_exit 0 "$?" "an escaped backslash at a line end does not join the next line"
+
 _flow_test_begin "command substitution runs git and is examined"
 _run_hook "echo \$(git restore $DOT)"
 assert_exit 2 "$?" "restore inside a command substitution blocked"

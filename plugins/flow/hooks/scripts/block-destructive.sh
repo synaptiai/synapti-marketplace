@@ -71,6 +71,14 @@ if [ ! -r "$_BD_LIB" ]; then
 fi
 # shellcheck source=lib/command-parse.sh
 . "$_BD_LIB"
+# Readable is not the same as loaded: a truncated library defines nothing, and
+# the first call to it would exit 127, which lets the command run.
+for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise _bd_git_parse _bd_is_whole_tree _bd_is_redirection _bd_is_opt; do
+  if ! type "$_bd_fn" >/dev/null 2>&1; then
+    echo "BLOCKED: the command parser did not load ($_bd_fn is undefined), so command safety cannot be verified." >&2
+    exit 2
+  fi
+done
 
 # _rm_segment_is_destructive <simple-command>
 # Returns 0 when the segment runs rm with recursive+force and at least one

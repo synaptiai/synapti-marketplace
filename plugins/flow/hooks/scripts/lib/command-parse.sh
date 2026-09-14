@@ -185,10 +185,22 @@ _bd_strip_noncode() {
       sub(/^.*\//, "", w)
       return (w == "cat" || w == "tee" || w == "echo" || w == "printf" || w == "gh")
     }
-    BEGIN { SQ = sprintf("%c", 39); inhd = 0; buf = ""; delim = ""; tabs = 0 }
+    BEGIN { SQ = sprintf("%c", 39); inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = "" }
     {
       line = $0
       sub(/\r$/, "", line)
+
+      # A line ending in an odd number of backslashes, outside a heredoc body
+      # and outside single quotes, continues on the next line. The shell reads
+      # the two as one; reading them as two put `gh pr \` and `merge 9` in
+      # different commands, and neither was a merge.
+      if (!inhd) {
+        if (pend != "") { line = pend line; pend = "" }
+        if (q != SQ && match(line, /\\+$/) && (RLENGTH % 2) == 1) {
+          pend = substr(line, 1, length(line) - 1)
+          next
+        }
+      }
 
       if (inhd) {
         cand = line
@@ -199,8 +211,12 @@ _bd_strip_noncode() {
       }
 
       # --- is this line a droppable heredoc introducer? --------------------
+      # Only on a line that starts outside quotes: a `<<EOF` inside a string
+      # that runs across lines is text, and treating it as an introducer would
+      # drop the lines after it as a body.
       probe = line
       hits = gsub(/<</, "<<", probe)
+      if (q != "") hits = 0
       if (hits == 1 && line !~ /[|>]/ &&
           match(line, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*$/)) {
         intro = substr(line, RSTART)
@@ -233,7 +249,11 @@ _bd_strip_noncode() {
       }
 
       # --- remove a comment, tracking quotes and backslash escapes ---------
-      n = length(line); q = ""; cut = 0
+      # Quote state carries from one line to the next, as it does in the shell:
+      # `--body "Ready.` then `Closes #12" && gh pr merge 9` has its `#` inside
+      # the string, and cutting there removed the merge. Carrying can only keep
+      # more text than resetting did, never less.
+      n = length(line); cut = 0
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1)
         if (c == "\\" && q != SQ) { i++; continue }
@@ -248,6 +268,8 @@ _bd_strip_noncode() {
       print (cut > 0) ? substr(line, 1, cut - 1) : line
     }
     END {
+      # A continuation with nothing after it is still a command.
+      if (pend != "") print pend
       # An unterminated heredoc keeps everything it swallowed. Dropping it would
       # turn one mis-recognised introducer into a hook that sees nothing at all.
       if (inhd && buf != "") printf "%s", buf
@@ -279,7 +301,26 @@ _bd_strip_noncode() {
 _bd_segments() {
   BD_UNBALANCED=0
   local out
-  out=$(printf '%s\n' "$1" | awk '
+  # Two readings of line ends, and the segments of both are printed.
+  #
+  # A newline inside a quoted string is part of the string, so reading it as
+  # the end of a command tore `gh pr merge --body "Summary` from `Details" 9`
+  # and neither half was a merge. Joining those lines is the shell's reading.
+  # But a heredoc body kept by _bd_strip_noncode is not quoted text, and one
+  # apostrophe in it would glue every later command into a "string" nobody
+  # examines. Printing both readings means a command seen by either is seen:
+  # the union can only find more than either alone, never less.
+  out=$( { printf '%s\n' "$1" | awk -v join=0 "$_BD_SEG_AWK"; printf '%s\n' "$1" | awk -v join=1 "$_BD_SEG_AWK"; } | awk '!seen[$0]++')
+  case "$out" in
+    *__BD_UNBALANCED__*)
+      BD_UNBALANCED=1
+      out=$(printf '%s\n' "$out" | grep -v '^__BD_UNBALANCED__$')
+      ;;
+  esac
+  printf '%s\n' "$out"
+}
+
+_BD_SEG_AWK='
     # depth must start as the NUMBER 0. Left uninitialised it is the empty
     # string, so buf[depth] is buf[""] at the outer level and buf["0"] once a
     # substitution has closed — different slots, and everything written before
@@ -342,22 +383,15 @@ _bd_segments() {
 
         buf[depth] = buf[depth] c
       }
-      flush()
+      if (join && q[depth] != "") buf[depth] = buf[depth] " "
+      else flush()
     }
     END {
       while (depth > 0) { if (buf[depth] != "") print buf[depth]; depth-- ; unbal = 1 }
       if (buf[0] != "") print buf[0]
       if (unbal || q[0] != "") print "__BD_UNBALANCED__"
     }
-  ')
-  case "$out" in
-    *__BD_UNBALANCED__*)
-      BD_UNBALANCED=1
-      out=$(printf '%s\n' "$out" | grep -v '^__BD_UNBALANCED__$')
-      ;;
-  esac
-  printf '%s\n' "$out"
-}
+'
 
 # _bd_expand_interpreter_args
 # Appends to BD_CODE the contents of every quoted argument handed to something
