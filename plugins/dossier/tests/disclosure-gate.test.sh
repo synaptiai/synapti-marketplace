@@ -292,6 +292,44 @@ printf 'Use sk-ant-api03-abcdefghijklmnop to begin.\n||\n' \
 scan "$T"
 assert_equal "2" "$?" "a leak earlier in the file is still reported (exit 2) despite a later degenerate table row"
 
+# --- error-handler-inspector review (issue #176 PR): table state must not --
+# leak across a fenced code block. The fence-toggle and in-fence-skip
+# branches both `continue` BEFORE the "leave the table" cleanup
+# (flush_held_table_row + reset) runs, so a held row from before the fence
+# survives, uncleared, into whatever `|`-shaped line appears after the fence
+# closes. If that later line independently looks like a GFM separator, the
+# held row is discarded as "the header this separator confirms" — even
+# though the two were never part of the same table — and the genuine claim
+# is silently dropped: this issue's own core failure mode, reintroduced by
+# its own fix's table-state machine.
+T="$W/table-state-across-fence"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '| A genuine claim held pending its own separator right here |\n'
+  printf '```text\nsome code\n```\n'
+  printf '|---|---|\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "a claim held before a fence is not silently discarded by an unrelated separator-shaped line after the fence"
+
+# The same defect's mirror effect: a genuine table header row landing right
+# after a fence gets misread as data (scored) instead of exempted, because
+# the stale TABLE_ROWS_SEEN=1 makes it look like "row 2, deciding the
+# earlier held line was a header" instead of "row 1 of a fresh table".
+T="$W/table-header-after-fence"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '| A genuine claim held pending its own separator right here |\n'
+  printf '```text\nsome code\n```\n'
+  printf '| Supported Since Version Column | Another Header Cell Here |\n'
+  printf '|---|---|\n'
+  printf '| Row | Cell |\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_not_contains "supported since version column" "$OUT" \
+  "a genuine header row right after a fence is still exempted, not scored as data"
+
 # --- issue #176 self-review: a `|` inside a code span must not split a cell -
 # Splitting on every raw `|` before code-span stripping (which normally
 # happens inside scan_text, per-cell, too late to undo an already-wrong

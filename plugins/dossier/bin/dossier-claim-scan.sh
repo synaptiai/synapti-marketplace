@@ -418,9 +418,27 @@ for f in $TARGETS; do
       continue
     fi
     case "$line" in
-      '```'*) IN_FENCE=$((1 - IN_FENCE)); continue ;;
+      '```'*)
+        # A fence line is never a table row, so it leaves any open table
+        # exactly like the non-fence "left the table" branch below does.
+        # Skipping this flush (issue #176 PR review) let TABLE_HELD_LINE and
+        # TABLE_ROWS_SEEN survive across the fence: the first `|`-line after
+        # the fence then resumed counting from the stale TABLE_ROWS_SEEN
+        # instead of starting a fresh table, so an unrelated later separator-
+        # shaped line could discard a genuine claim held from BEFORE the
+        # fence as if it were that later "table"'s own header — silently
+        # dropping a claim, the exact failure mode this issue exists to fix.
+        flush_held_table_row
+        TABLE_ROWS_SEEN=0
+        IN_FENCE=$((1 - IN_FENCE))
+        continue
+        ;;
     esac
-    [ "$IN_FENCE" -eq 1 ] && continue
+    if [ "$IN_FENCE" -eq 1 ]; then
+      flush_held_table_row
+      TABLE_ROWS_SEEN=0
+      continue
+    fi
 
     case "$line" in
       '|'*)
