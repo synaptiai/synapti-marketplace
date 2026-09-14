@@ -1,5 +1,102 @@
 # Changelog
 
+## 3.5.0 (2026-09-14)
+
+The merge gate added in 3.4.0 refused the merge step of `/flow:merge` itself.
+Fixing that showed the gate could be pointed at one pull request while `gh`
+merged another, so it now reads a merge in one written form. Also in this
+release: the eval runner records effort and token counts, a prompt audit repairs
+commands that could not work, and learned skills promote cleanly.
+
+### Changed: a merge must name its repository
+
+`/flow:merge` told the model to run `gh pr merge "$PR_NUM" --repo "$REPO"`. The
+merge gate reads the command as text and cannot expand a variable, so it looked
+up a pull request literally named `$PR_NUM`, failed, and blocked with a message
+about unreadable checks. Following the documented step was always refused.
+
+The same limit let a merge be checked against the wrong pull request: a `cd`,
+`GH_REPO`, `bash -c`, or `-R` glued to its value each changed what `gh` merged
+without changing what the gate read. The gate now accepts a merge only as
+
+```
+gh pr merge <number> --repo owner/name --squash|--merge|--rebase
+```
+
+with optional `--delete-branch`, `--admin`, `--auto`, `--subject`, `--body`,
+`--body-file`, `--author-email` and `--match-head-commit`, `gh` as the first
+word, and every value written out. Any other merge is refused with that form in
+the message, and a variable in the number or repository is named.
+
+**What you will notice:** `gh pr merge 7 --squash` without `--repo` is now
+refused. Add `--repo owner/name`. `/flow:merge` writes the number and
+repository out itself and asks one confirmation that names the merge strategy.
+
+`gh api` calls that merge (`pulls/N/merge`, `repos/o/r/merges`, and the
+`mergePullRequest`, `enablePullRequestAutoMerge`, `enqueuePullRequest` and
+`mergeBranch` mutations) are refused, as is an endpoint that is wholly a
+variable and a GraphQL query read from a file. Reads such as `autoMergeRequest`
+or `.mergeable_state` are not affected.
+
+### Fixed: both command hooks read multi-line commands the way the shell does
+
+The parser shared by the merge gate and the destructive-command hook read each
+line on its own. A merge, `rm -rf`, `git reset --hard` or `git clean -fdx` could
+be hidden by a backslash continuation, a string spanning lines, a heredoc body
+with an apostrophe in it, or a dollar-quoted string such as `$'it\'s'`. Both
+hooks now read these the way bash does.
+
+Both hooks also refuse when their parser fails, instead of reading a failure as
+nothing to check. Claude Code runs a command whose hook crashes, and a 300-line
+command with a quote on every line used to crash both hooks.
+
+The merge gate no longer slows long commands down: a 9KB PR comment took 49
+seconds under macOS bash 3.2 and now takes under a tenth of a second.
+
+Known limit: a heredoc body written to a file that contains a line such as
+`Use gh pr merge once CI is green` is refused as a merge in the wrong form.
+Writing the same text through `gh pr create --body-file -` is not.
+
+### Fixed: commands that could not work, found by a prompt audit
+
+- The error-handler inspector's four scans used a brace glob inside quotes,
+  which the shell never expands, so every scan read zero files.
+- Two agents and one skill compared only the last commit rather than the whole
+  branch, so a branch with several commits under-reported its changes.
+- Language-server setup checked for a binary its package does not provide, so
+  it reported the server missing right after installing it.
+- The secret-file rule refused `.env.example`, which the plugin elsewhere treats
+  as committable configuration.
+- The `model` setting accepted `fable` in the review command but not in the
+  settings schema, so a valid setting failed validation.
+
+Several false statements were removed, among them a claim that three skills are
+always loaded and a skill table that disagreed with every command's own list.
+
+### New: effort and token counts in the eval runner
+
+`flow-eval-run.sh --effort <low|medium|high|xhigh|max>` pins the effort of every
+child session, which previously inherited whatever the operator had saved, so
+two runs of the same arm were not comparable on cost. Each run records the
+effort requested and its input, cache-read, cache-creation and output tokens,
+with the cache hit rate. A count that was never recorded shows as missing, not
+as zero. Resuming a results directory under a different effort is refused.
+
+### New: learned skill a-check-that-can-only-confirm
+
+A learned skill for writing guards, tests and scans that are able to fail. Each
+check gets an input that must make it fire, a similar correct input that must
+leave it silent, a run with its input removed, and an asserted count of what it
+examined, because a check that reached nothing passes exactly like one that
+found nothing wrong.
+
+Promoting it exposed faults in the promoter, now fixed. The installed skill
+carried the proposal's evidence section, with journal paths from the project it
+was mined in. Two parsers disagreed about what a section is, so a fenced example
+could cut a skill off mid-fence at exit 0. `--dry-run` now shows exactly what
+the pull request would publish. A skill in `skills/learned/` could not be loaded
+by name; it can now.
+
 ## 3.4.0 (2026-09-11)
 
 Seven reported problems, and a pattern running through most of them: a check that
