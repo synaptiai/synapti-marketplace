@@ -36,13 +36,15 @@ objective:
     text: The script's header comment (dossier-scaffold.sh) no longer states scaffolding
       unconditionally "never overwrites" an existing file; it states the actual, fence-conditional
       behavior.
-    verification_command: '! grep -q "NEVER overwritten, never truncated" plugins/dossier/bin/dossier-scaffold.sh'
+    verification_command: '! grep -q "NEVER overwritten, never truncated" plugins/dossier/bin/dossier-scaffold.sh
+      && grep -q "frontmatter-fenced" plugins/dossier/bin/dossier-scaffold.sh'
     must_pass: true
     status: pending
   - id: AC4
     text: The doc-package-contract skill's matching claim (plugins/dossier/skills/doc-package-contract/SKILL.md)
       is corrected the same way.
-    verification_command: '! grep -q "never overwrites an existing file" plugins/dossier/skills/doc-package-contract/SKILL.md'
+    verification_command: '! grep -q "never overwrites an existing file" plugins/dossier/skills/doc-package-contract/SKILL.md
+      && grep -q "frontmatter-fenced existing file untouched but repairs" plugins/dossier/skills/doc-package-contract/SKILL.md'
     must_pass: true
     status: pending
   - id: AC5
@@ -137,8 +139,15 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
-  current_phase: explore
-  current_activity: plan
-  turns_evaluated: 0
-  last_evaluation: {}
+  status: achieved
+  current_phase: verify
+  current_activity: runtime_verification
+  turns_evaluated: 2
+  last_evaluation:
+    result: pass
+    reason: All 5 ACs pass on deterministic command_result sidecars (exit_code 0),
+      independently corroborated (274/274 tests, clean shellcheck). AC3/AC4 evidence
+      strengthened on a second judge pass to prove positive presence of the corrected
+      wording, not just absence of the old wording. Confirmed via goal-evaluator-judge,
+      confidence 0.90.
+    at: '2026-09-14T22:00:01Z'

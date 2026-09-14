@@ -14,6 +14,12 @@ artifacts:
   captured_at: '2026-09-14T20:51:10Z'
   goal_id: issue-178
   source: start
+- type: goal-evaluation
+  captured_at: '2026-09-14T21:58:48Z'
+  goal_id: issue-178
+  result: achieved
+  evidence_bundle: .flow/runs/2026-09-14T215033Z-issue-178
+  failures: none
 ---
 # Issue #178 — scaffold overwrites non-frontmatter files and reports them as CREATED, not REPAIRED
 
