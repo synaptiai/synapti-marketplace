@@ -410,11 +410,27 @@ for f in $TARGETS; do
   # dropping the last line of any file that isn't newline-terminated.
   while IFS= read -r line || [ -n "$line" ]; do
     LN=$((LN + 1))
+    # `read` splits on the actual newline byte only, so a CRLF-terminated
+    # file leaves a trailing \r on every line. Left in place, it defeats
+    # every exact-string and pattern match downstream: the frontmatter
+    # opener/closer compare (`"$line" = "---"`), the fence toggle, and the
+    # table separator check all silently fail to match, and — for the
+    # frontmatter closer specifically — IN_HEADER then never clears, so
+    # every subsequent line in the file is silently skipped via `continue`
+    # with no error and exit 0 (issue #176 PR review: found via a
+    # mixed-CRLF/LF fixture, the same "clean result whose true coverage
+    # doesn't match" failure this whole issue exists to fix).
+    line=${line%$'\r'}
     if [ "$FIRST_LINE" -eq 1 ]; then
       FIRST_LINE=0
-      if [ "$line" = "---" ]; then IN_HEADER=1; continue; fi
+      # `${line%%[[:space:]]*}` drops everything from the first whitespace
+      # character onward, so a closer with trailing spaces or tabs (e.g. a
+      # trailing-whitespace-on-save editor artifact) still matches — the
+      # \r-strip above already handles CRLF, this handles ordinary trailing
+      # whitespace the same way.
+      if [ "${line%%[[:space:]]*}" = "---" ]; then IN_HEADER=1; continue; fi
     elif [ "$IN_HEADER" -eq 1 ]; then
-      [ "$line" = "---" ] && IN_HEADER=0
+      [ "${line%%[[:space:]]*}" = "---" ] && IN_HEADER=0
       continue
     fi
     case "$line" in

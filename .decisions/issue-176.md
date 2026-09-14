@@ -175,3 +175,25 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-14 21:18 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
 
 <!-- auto-log: 2026-09-14 21:20 commit "docs(dossier): describe the final state in CHANGELOG, not just the first fix" -->
+
+<!-- auto-log: 2026-09-14 21:28 Write /tmp/pr-176-body.md -->
+
+<!-- auto-log: 2026-09-14 21:45 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_dossier_redact_coverage_gap_internal_locators.md -->
+
+<!-- auto-log: 2026-09-14 21:45 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-14 21:45 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_dossier_claim_scan_scope_gaps.md -->
+
+<!-- auto-log: 2026-09-14 21:45 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-14 21:46 Write /tmp/issue198-addendum.md -->
+
+<!-- auto-log: 2026-09-14 21:47 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/feedback_sequential_suites.md -->
+
+<!-- auto-log: 2026-09-14 21:47 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 21:48 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 21:49 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 21:49 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->

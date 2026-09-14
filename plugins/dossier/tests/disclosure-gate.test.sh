@@ -485,6 +485,45 @@ OUT=$(scanout "$T")
 assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
   "a headerless document is scanned from its first line"
 
+# error-handler-inspector review (PR #201): the frontmatter closer is an
+# exact string compare (`[ "$line" = "---" ]`). A closer line with a stray
+# trailing `\r` (mixed CRLF/LF) or trailing space never matches, so
+# IN_HEADER=1 sticks for the rest of the file — every subsequent line,
+# including genuine unregistered claims, is silently skipped via `continue`
+# with no error and exit 0. The failure mode this whole issue exists to
+# fix (a clean-looking result whose true coverage doesn't match), just
+# triggered by a line-ending quirk instead of a line class.
+# Opener is clean LF (so it matches and sets IN_HEADER=1, isolating the
+# closer-specific bug) — only the CLOSER carries a stray \r, the shape a
+# mostly-LF file with one CRLF-tainted line (a tool that normalized only
+# some lines) would actually produce. A fixture with \r on BOTH lines would
+# pass for the wrong reason: the opener would also fail to match, so
+# IN_HEADER never engages at all and the "header" lines fall through to be
+# scanned as ordinary short prose — a different bug, not what's tested here.
+T="$W/header-crlf-closer"; mkdir -p "$T/docs/dossier/06-public" 2>/dev/null
+printf -- '---\ntitle: A Guide\n---\r\nThe product supports every integration pattern a partner needs.\n' \
+  > "$T/docs/dossier/06-public/g.md" 2>/dev/null
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "a CRLF-terminated frontmatter closer does not leave the rest of the file silently unscanned"
+
+T="$W/header-trailing-space-closer"; mkdir -p "$T/docs/dossier/06-public" 2>/dev/null
+printf -- '---\ntitle: A Guide\n--- \nThe product supports every integration pattern a partner needs.\n' \
+  > "$T/docs/dossier/06-public/g.md" 2>/dev/null
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "a frontmatter closer with trailing whitespace does not leave the rest of the file silently unscanned"
+
+# Same root cause, table side: a CRLF-terminated separator row splits into
+# an extra empty phantom cell and fails the separator check, so the header
+# row above it is scored as data instead of being exempted.
+T="$W/table-separator-crlf"; mkdir -p "$T/docs/dossier/06-public" 2>/dev/null
+printf -- '| What the reader should expect | What this guarantees today |\r\n|---|---|\r\n| Region availability details | Nothing is promised beyond the current region |\n' \
+  > "$T/docs/dossier/06-public/g.md" 2>/dev/null
+OUT=$(scanout "$T")
+assert_not_contains "what the reader should expect" "$OUT" \
+  "a CRLF-terminated table header row is still exempted, not scored as data"
+
 # A document whose last line has no trailing newline must still be scanned to
 # its end. `while read` returns failure on a final line with no newline but
 # still populates the variable with its content; a loop that treats that
