@@ -67,8 +67,11 @@ Merge an approved pull request with standardized settings.
 
 7. **Execute merge** (based on user choice):
    ```bash
-   gh pr merge $ARGUMENTS --squash --delete-branch
+   gh pr merge $ARGUMENTS --repo synaptiai/synapti-marketplace --squash --delete-branch
    ```
+   Drop `--delete-branch` for "Merge but keep branch". Keep `--repo` and write
+   the PR number literally: the flow plugin's merge hook, which this repository
+   runs, checks a merge only in that shape and refuses any other.
 
 8. **Post-merge actions**:
    - Confirm successful merge

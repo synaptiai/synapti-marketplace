@@ -94,55 +94,53 @@ RULES='[{"type":"required_status_checks","parameters":{"required_status_checks":
 # --- the case that prompted the issue -----------------------------------------
 _flow_test_begin "a merge is refused while a check is queued"
 S=$(_bum_stub "$QUEUED" "" "")
-_bum_run "$S" "gh pr merge 7 --squash"
+_bum_run "$S" "gh pr merge 7 --repo acme/widgets --squash"
 assert_exit 2 "$?" "queued check blocks the merge"
-ERR=$(_bum_stderr "$S" "gh pr merge 7 --squash")
+ERR=$(_bum_stderr "$S" "gh pr merge 7 --repo acme/widgets --squash")
 assert_contains "build" "$ERR" "the message names the unfinished check"
 assert_contains "queued" "$ERR" "and says what state it is in"
 
 _flow_test_begin "a merge is refused while a check is running"
 S=$(_bum_stub "$RUNNING" "" "")
-_bum_run "$S" "gh pr merge 7 --squash"
+_bum_run "$S" "gh pr merge 7 --repo acme/widgets --squash"
 assert_exit 2 "$?" "in-progress check blocks the merge"
 
 _flow_test_begin "a merge is refused when a check failed"
 S=$(_bum_stub "$FAILING" "" "")
-_bum_run "$S" "gh pr merge 7 --squash"
+_bum_run "$S" "gh pr merge 7 --repo acme/widgets --squash"
 assert_exit 2 "$?" "failing check blocks the merge"
-ERR=$(_bum_stderr "$S" "gh pr merge 7 --squash")
+ERR=$(_bum_stderr "$S" "gh pr merge 7 --repo acme/widgets --squash")
 assert_contains "did not pass" "$ERR" "the message says the check did not pass"
 
 # A legacy StatusContext carries `state`, not `status`/`conclusion`. A rollup
 # reader that selects only CheckRun sees an empty list here and calls it green.
 _flow_test_begin "a pending legacy status is not invisible"
 S=$(_bum_stub "$LEGACY_PENDING" "" "")
-_bum_run "$S" "gh pr merge 7 --squash"
+_bum_run "$S" "gh pr merge 7 --repo acme/widgets --squash"
 assert_exit 2 "$?" "pending StatusContext blocks the merge"
-ERR=$(_bum_stderr "$S" "gh pr merge 7 --squash")
+ERR=$(_bum_stderr "$S" "gh pr merge 7 --repo acme/widgets --squash")
 assert_contains "ci/jenkins" "$ERR" "the message names it"
 
 # --- green passes, by any route -----------------------------------------------
 _flow_test_begin "a fully green pull request merges"
 S=$(_bum_stub "$GREEN" "" "")
-_bum_run "$S" "gh pr merge 7 --squash --delete-branch"
+_bum_run "$S" "gh pr merge 7 --repo acme/widgets --squash --delete-branch"
 assert_exit 0 "$?" "green merge allowed"
-_bum_run "$S" "gh pr merge --squash"
-assert_exit 0 "$?" "green merge with no explicit number allowed"
-_bum_run "$S" "gh pr merge 7 --merge"
+_bum_run "$S" "gh pr merge 7 --repo acme/widgets --merge"
 assert_exit 0 "$?" "strategy does not matter"
 
 # --- --auto, with and without required checks ---------------------------------
 _flow_test_begin "--auto is refused where nothing is required"
 S=$(_bum_stub "$GREEN" "" "")
-_bum_run "$S" "gh pr merge 7 --auto --squash"
+_bum_run "$S" "gh pr merge 7 --repo acme/widgets --auto --squash"
 assert_exit 2 "$?" "--auto blocked when the base requires no checks"
-ERR=$(_bum_stderr "$S" "gh pr merge 7 --auto --squash")
+ERR=$(_bum_stderr "$S" "gh pr merge 7 --repo acme/widgets --auto --squash")
 assert_contains "requires no status checks" "$ERR" "the message says that is why"
 assert_contains "merges immediately" "$ERR" "and what --auto would actually do"
 
 _flow_test_begin "--auto is allowed where branch protection requires checks"
 S=$(_bum_stub "$GREEN" "$PROT" "")
-_bum_run "$S" "gh pr merge 7 --auto --squash"
+_bum_run "$S" "gh pr merge 7 --repo acme/widgets --auto --squash"
 assert_exit 0 "$?" "--auto allowed with required checks from branch protection"
 
 # Branch protection is not the only way to require a check. Asking only the
@@ -150,14 +148,14 @@ assert_exit 0 "$?" "--auto allowed with required checks from branch protection"
 # plenty through a ruleset.
 _flow_test_begin "--auto is allowed where a ruleset requires checks"
 S=$(_bum_stub "$GREEN" "" "$RULES")
-_bum_run "$S" "gh pr merge 7 --auto --squash"
+_bum_run "$S" "gh pr merge 7 --repo acme/widgets --auto --squash"
 assert_exit 0 "$?" "--auto allowed with required checks from a ruleset"
 
 _flow_test_begin "a pull request with no checks at all is not called green"
 S=$(_bum_stub "$NO_CHECKS" "" "")
-_bum_run "$S" "gh pr merge 7 --squash"
+_bum_run "$S" "gh pr merge 7 --repo acme/widgets --squash"
 assert_exit 0 "$?" "no checks is not a failure — nothing is pending"
-_bum_run "$S" "gh pr merge 7 --auto --squash"
+_bum_run "$S" "gh pr merge 7 --repo acme/widgets --auto --squash"
 assert_exit 2 "$?" "but --auto still has nothing to wait for"
 
 # --- the hook reads commands, not text ----------------------------------------
@@ -176,17 +174,17 @@ assert_exit 0 "$?" "another gh subcommand is untouched"
 
 _flow_test_begin "a merge inside a compound command is still examined"
 S=$(_bum_stub "$QUEUED" "" "")
-_bum_run "$S" "git fetch && gh pr merge 7 --squash"
+_bum_run "$S" "git fetch && gh pr merge 7 --repo acme/widgets --squash"
 assert_exit 2 "$?" "after && the merge is still found"
-_bum_run "$S" "/usr/bin/gh pr merge 7 --squash"
+_bum_run "$S" "/usr/bin/gh pr merge 7 --repo acme/widgets --squash"
 assert_exit 2 "$?" "an absolute gh path is still gh"
 
 # --- it refuses rather than guessing ------------------------------------------
 _flow_test_begin "a gate that cannot see refuses"
 S=$(_bum_stub "" "" "")
-_bum_run "$S" "gh pr merge 7 --squash"
+_bum_run "$S" "gh pr merge 7 --repo acme/widgets --squash"
 assert_exit 2 "$?" "an unreadable rollup blocks rather than allowing"
-ERR=$(_bum_stderr "$S" "gh pr merge 7 --squash")
+ERR=$(_bum_stderr "$S" "gh pr merge 7 --repo acme/widgets --squash")
 assert_contains "cannot see must not open" "$ERR" "and says why"
 
 # --- a value it cannot read is named, not blamed on the checks (#195) ---------
@@ -218,10 +216,7 @@ for CASE in \
   'pull request|7 $EXTRA|gh pr merge 7 $EXTRA --repo acme/widgets' \
   'pull request|7 $(...)|gh pr merge 7 $(echo --repo other/x)' \
   'repository|acme/$R|gh --repo "acme/$R" pr merge 7' \
-  'repository|$REPO|GH_REPO=$REPO gh pr merge 7' \
-  'GitHub host|$H|GH_HOST=$H gh pr merge 7 --repo acme/widgets' \
-  'gh command|$GH|GH=gh; $GH pr merge 7 --repo acme/widgets' \
-  'api endpoint|repos/acme/widgets/pulls/$N/merge|gh api -X PUT repos/acme/widgets/pulls/$N/merge'; do
+  'gh command|$GH|GH=gh; $GH pr merge 7 --repo acme/widgets'; do
   WHAT="${CASE%%|*}"; REST="${CASE#*|}"; SHOWN="${REST%%|*}"; CMD="${REST#*|}"
   if ! S=$(_bum_probe_stub); then
     _flow_assert_fail "could not build the gh stub for: $CMD"; continue
@@ -256,27 +251,29 @@ else
 fi
 
 _flow_test_begin "the refused value is shown safely"
-S=$(_bum_probe_stub) || S=""
-[ -n "$S" ] || _flow_assert_fail "could not build the gh stub"
-LONG="\$$(printf 'x%.0s' $(seq 1 5000))"
-ERR=$(_bum_stderr "$S" "gh pr merge $LONG --repo acme/widgets")
-if [ "${#ERR}" -lt 1000 ]; then
-  _flow_assert_pass "a 5000-character value is cut short (${#ERR} bytes of stderr)"
+if ! S=$(_bum_probe_stub); then
+  _flow_assert_fail "could not build the gh stub"
 else
-  _flow_assert_fail "a 5000-character value produced ${#ERR} bytes of stderr"
+  LONG="\$$(printf 'x%.0s' $(seq 1 5000))"
+  ERR=$(_bum_stderr "$S" "gh pr merge $LONG --repo acme/widgets")
+  if [ "${#ERR}" -lt 1000 ]; then
+    _flow_assert_pass "a 5000-character value is cut short (${#ERR} bytes of stderr)"
+  else
+    _flow_assert_fail "a 5000-character value produced ${#ERR} bytes of stderr"
+  fi
+  assert_contains "Write it literally" "$ERR" "and the instruction after it survives"
+  # No `;` in the escape sequence: it would split the command, and the case would
+  # pass without the refusal ever running.
+  ERR=$(_bum_stderr "$S" "$(printf 'gh pr merge a\033[31mb\007$X --repo acme/widgets')")
+  case "$ERR" in
+    *"is given as"*) ;;
+    *) _flow_assert_fail "the control-character case was not refused by name: $ERR" ;;
+  esac
+  case "$ERR" in
+    *$'\033'*|*$'\007'*) _flow_assert_fail "control characters from the command reached stderr" ;;
+    *"is given as"*) _flow_assert_pass "control characters are replaced" ;;
+  esac
 fi
-assert_contains "Write it literally" "$ERR" "and the instruction after it survives"
-# No `;` in the escape sequence: it would split the command, and the case would
-# pass without the refusal ever running.
-ERR=$(_bum_stderr "$S" "$(printf 'gh pr merge a\033[31mb\007$X --repo acme/widgets')")
-case "$ERR" in
-  *"is given as"*) ;;
-  *) _flow_assert_fail "the control-character case was not refused by name: $ERR" ;;
-esac
-case "$ERR" in
-  *$'\033'*|*$'\007'*) _flow_assert_fail "control characters from the command reached stderr" ;;
-  *"is given as"*) _flow_assert_pass "control characters are replaced" ;;
-esac
 
 _flow_test_begin "literal values are unaffected by the variable rule"
 if ! S=$(_bum_probe_stub); then
@@ -334,6 +331,159 @@ else
   done <<DOC_EOF
 $DOC_LINES
 DOC_EOF
+fi
+
+# --- one shape: anything else that is a merge is refused with the shape --------
+# A merge is checked only as `gh pr merge <number> --repo owner/name
+# --squash|--merge|--rebase ...`. Every case below is a merge gh would run, and
+# each once reached GitHub checked against a pull request other than the one
+# merged, or not checked at all. The stub is green, so only a refusal passes.
+_flow_test_begin "a merge in any other shape is refused, and the refusal gives the shape"
+for CASE in \
+  'names no --repo|gh pr merge 7 --squash' \
+  'names no pull request number|gh pr merge --repo acme/widgets --squash' \
+  'not a number|gh pr merge some-branch --repo acme/widgets --squash' \
+  'not a number|gh pr merge https://github.com/acme/widgets/pull/7 --repo acme/widgets --squash' \
+  'exactly one of --squash|gh pr merge 7 --repo acme/widgets' \
+  'exactly one of --squash|gh pr merge 7 --repo acme/widgets --squash --rebase' \
+  'more than once|gh pr merge 7 --repo acme/widgets --repo other/repo --squash' \
+  'not one of the options|gh pr merge 7 -R other/repo --squash' \
+  'not one of the options|gh pr merge 7 -Rother/repo --squash' \
+  'not one of the options|gh pr merge 7 --repo acme/widgets -ds' \
+  'not one of the options|gh pr merge 7 --repo acme/widgets --squash -dR other/repo' \
+  'not owner/name|gh pr merge 7 --repo widgets --squash' \
+  'comes before gh|GH_REPO=other/repo gh pr merge 7 --repo acme/widgets --squash' \
+  'comes before gh|env GH_HOST=ghe.example.com gh pr merge 7 --repo acme/widgets --squash' \
+  'comes before gh|sudo gh pr merge 7 --repo acme/widgets --squash' \
+  'comes before gh|timeout 60 env GH_REPO=other/repo gh pr merge 7 --repo acme/widgets --squash' \
+  'comes before gh|echo 7 | xargs gh pr merge --repo acme/widgets --squash' \
+  'is not pr merge followed by one|gh pr merge 7 8 --repo acme/widgets --squash'; do
+  WANT="${CASE%%|*}"; CMD="${CASE#*|}"
+  if ! S=$(_bum_probe_stub); then
+    _flow_assert_fail "could not build the gh stub for: $CMD"; continue
+  fi
+  ERR=$(_bum_stderr "$S" "$CMD"); RC=$?
+  if [ "$RC" -ne 2 ]; then
+    _flow_assert_fail "exit $RC, expected 2, for: $CMD"
+  elif [[ "$ERR" != *"$WANT"* ]]; then
+    _flow_assert_fail "refusal does not say \"$WANT\" for: $CMD — got: $ERR"
+  elif [[ "$ERR" != *"gh pr merge <number> --repo owner/name"* ]]; then
+    _flow_assert_fail "refusal does not give the shape for: $CMD"
+  elif [ -e "$S/probed" ]; then
+    _flow_assert_fail "the checks were looked up for a merge refused on its shape: $CMD"
+  else
+    _flow_assert_pass "refused on its shape: $CMD"
+  fi
+done
+
+# The shape is strict about form, not about ordinary ways of running it.
+_flow_test_begin "the shape still reads ordinary merges"
+for CMD in \
+  'gh pr merge 7 --repo acme/widgets --squash --delete-branch' \
+  'gh --repo acme/widgets pr merge 7 --rebase' \
+  'gh pr merge 7 --repo=acme/widgets --merge --admin' \
+  'gh pr merge 7 --repo github.example.com/acme/widgets --squash' \
+  'cd /tmp/elsewhere && gh pr merge 7 --repo acme/widgets --squash' \
+  'gh pr merge 7 --repo acme/widgets --squash > "$TMPDIR/merge.log" 2>&1' \
+  'gh pr merge 7 --repo acme/widgets --squash --subject "Merge: widgets" --body "fixes #3"' \
+  'bash -c "gh pr merge 7 --repo acme/widgets --squash"'; do
+  if ! S=$(_bum_probe_stub); then
+    _flow_assert_fail "could not build the gh stub for: $CMD"; continue
+  fi
+  ERR=$(_bum_stderr "$S" "$CMD"); RC=$?
+  if [ "$RC" -ne 0 ]; then
+    _flow_assert_fail "exit $RC, expected 0, for: $CMD — got: $ERR"
+  elif [ ! -e "$S/probed" ]; then
+    _flow_assert_fail "allowed without looking up its checks: $CMD"
+  else
+    _flow_assert_pass "read and checked: $CMD"
+  fi
+done
+
+# A newline inside a quoted body, or a backslash continuing a line, is one
+# command to the shell. Reading either as two commands lost the merge.
+_flow_test_begin "a merge written across lines is still found"
+S=$(_bum_stub "$QUEUED" "" "")
+_bum_run "$S" "$(printf 'gh pr merge 7 --repo acme/widgets --squash --body "Summary\n\nDetails"')"
+assert_exit 2 "$?" "a multi-line --body does not hide a queued merge"
+_bum_run "$S" "$(printf 'gh pr comment 7 --body "Ready.\nCloses #12" && gh pr merge 7 --repo acme/widgets --squash')"
+assert_exit 2 "$?" "a # inside a multi-line string is not a comment that cuts the merge off"
+_bum_run "$S" "$(printf 'gh pr \\\nmerge 7 --repo acme/widgets --squash')"
+assert_exit 2 "$?" "a backslash continuation between pr and merge does not hide it"
+_bum_run "$S" "$(printf 'gh pr merge 7 \\\n  --repo acme/widgets \\\n  --squash')"
+assert_exit 2 "$?" "a merge continued over three lines is read as one"
+S=$(_bum_stub "$GREEN" "" "")
+_bum_run "$S" "$(printf 'gh pr merge 7 \\\n  --repo acme/widgets \\\n  --squash')"
+assert_exit 0 "$?" "and the same merge on a green PR is allowed, so it was read whole"
+_bum_run "$S" "$(printf 'echo done \\\\\ngh pr view 7')"
+assert_exit 0 "$?" "an escaped backslash at a line end does not continue the line"
+
+_flow_test_begin "quote-split spellings of merge are still read"
+S=$(_bum_stub "$QUEUED" "" "")
+_bum_run "$S" 'gh pr me""rge 7 --repo acme/widgets --squash'
+assert_exit 2 "$?" "me\"\"rge is merge"
+
+# --- gh api and gh alias: refused, not parsed ----------------------------------
+_flow_test_begin "gh api on a merge is refused outright"
+for CMD in \
+  'gh api -X PUT repos/acme/widgets/pulls/7/merge' \
+  'gh api -X=PUT repos/acme/widgets/pulls/7/merge' \
+  'gh api --method PUT https://api.github.com/repos/acme/widgets/pulls/7/merge' \
+  'gh api -X PUT repos/{owner}/{repo}/pulls/7/merge' \
+  'gh api /graphql -f query="mutation { mergePullRequest(input: {pullRequestId: \"x\"}) { clientMutationId } }"' \
+  'gh api graphql -f query="mutation { enablePullRequestAutoMerge(input: {pullRequestId: \"x\"}) { clientMutationId } }"' \
+  'gh api graphql -f query="mutation { enqueuePullRequest(input: {pullRequestId: \"x\"}) { clientMutationId } }"' \
+  'gh api graphql -F query=@merge.graphql' \
+  'gh api graphql --input q.json' \
+  'gh api graphql -f query="$Q"' \
+  'gh api -X POST repos/acme/widgets/merges -f base=main -f head=feature' \
+  'EP=repos/acme/widgets/pulls/7/merge; gh api -X PUT "$EP"' \
+  "gh alias set m 'pr merge'"; do
+  if ! S=$(_bum_probe_stub); then
+    _flow_assert_fail "could not build the gh stub for: $CMD"; continue
+  fi
+  ERR=$(_bum_stderr "$S" "$CMD"); RC=$?
+  if [ "$RC" -ne 2 ]; then
+    _flow_assert_fail "exit $RC, expected 2, for: $CMD"
+  elif [ -e "$S/called" ]; then
+    _flow_assert_fail "gh was called for a refused api call: $CMD"
+  else
+    _flow_assert_pass "refused: $CMD"
+  fi
+done
+S=$(_bum_stub "$QUEUED" "" "")
+_bum_run "$S" 'gh api repos/acme/widgets/pulls/7 --jq .mergeable_state'
+assert_exit 0 "$?" "an api read whose only merge is a field name is untouched"
+_bum_run "$S" 'gh api repos/acme/widgets/pulls/7 --jq .state'
+assert_exit 0 "$?" "an api call with no merge in it is untouched"
+_bum_run "$S" 'gh api graphql -f query="{ viewer { login } }"'
+assert_exit 0 "$?" "an inline GraphQL query with no merge in it is untouched"
+
+# --- the parser must actually load ---------------------------------------------
+_flow_test_begin "a parser that did not load refuses"
+BROKEN="$BUM_ROOT/broken"
+mkdir -p "$BROKEN/lib"
+cp "$HOOK" "$BROKEN/block-unchecked-merge.sh"
+printf '# truncated\n' > "$BROKEN/lib/command-parse.sh"
+S=$(_bum_stub "$GREEN" "" "")
+JSON=$(printf '%s' "gh pr merge 7 --repo acme/widgets --squash" | jq -Rs .)
+ERR=$(printf '{"tool_input":{"command":%s}}' "$JSON" | PATH="$S:$PATH" bash "$BROKEN/block-unchecked-merge.sh" 2>&1 >/dev/null); RC=$?
+assert_exit 2 "$RC" "a library that defines nothing blocks rather than allows"
+assert_contains "did not load" "$ERR" "and says so"
+
+# --- a long command costs linear time ------------------------------------------
+_flow_test_begin "a merge after thousands of words is checked in reasonable time"
+S=$(_bum_stub "$QUEUED" "" "")
+FILES=$(seq 1 20000 | sed 's/^/f/' | tr '\n' ' ')
+START=$(date +%s)
+_bum_run "$S" "git add $FILES && gh pr merge 7 --repo acme/widgets --squash"
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+assert_exit 2 "$RC" "the merge at the end is found"
+if [ "$ELAPSED" -le 20 ]; then
+  _flow_assert_pass "20000 words took ${ELAPSED}s"
+else
+  _flow_assert_fail "20000 words took ${ELAPSED}s; the hook's own timeout would let the merge through"
 fi
 
 # --- registered where it will actually run ------------------------------------

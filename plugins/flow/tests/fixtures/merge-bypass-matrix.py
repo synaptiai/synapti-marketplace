@@ -11,6 +11,9 @@ import sys
 import tempfile
 
 HOOK = sys.argv[1]
+# One directory for every stub, removed when the run ends. A mkdtemp per case
+# left dozens behind on every run.
+_ROOT = tempfile.TemporaryDirectory(prefix="flow-bum-matrix.")
 
 GREEN = {"number": 7, "baseRefName": "main", "statusCheckRollup": [
     {"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SUCCESS"}]}
@@ -26,7 +29,7 @@ EMPTY = {"number": 7, "baseRefName": "main", "statusCheckRollup": []}
 
 
 def stub(default, by_selector=None, prot=None, rules=None, gh_rc=0, raw=None):
-    d = tempfile.mkdtemp()
+    d = tempfile.mkdtemp(dir=_ROOT.name)
     json.dump({"default": default, "by_selector": by_selector or {}}, open(d + "/data.json", "w"))
     open(d + "/prot.json", "w").write(json.dumps(prot) if prot else "")
     open(d + "/rules.json", "w").write(json.dumps(rules) if rules else "")
@@ -66,8 +69,12 @@ exit 1
 
 def run(d, cmd):
     env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"])
-    r = subprocess.run(["bash", HOOK], input=json.dumps({"tool_input": {"command": cmd}}),
-                       capture_output=True, text=True, env=env)
+    try:
+        r = subprocess.run(["bash", HOOK], input=json.dumps({"tool_input": {"command": cmd}}),
+                           capture_output=True, text=True, env=env, timeout=60)
+    except subprocess.TimeoutExpired:
+        # A hook that hangs is a hook whose timeout lets the command run.
+        return -1, "hook timed out after 60s", ""
     log = ""
     if os.path.exists(d + "/calls.log"):
         log = open(d + "/calls.log").read()
@@ -75,117 +82,122 @@ def run(d, cmd):
 
 
 CASES = []
+R = "--repo acme/widgets --squash"
 # The four P1 selector bypasses. #9 is queued; a hook that probes the wrong PR
-# sees the green default and allows.
+# sees the green default and allows. The fifth element, when present, is text
+# the probe log must contain: an exit code alone cannot tell a probe of the
+# right pull request from a probe of the wrong one.
 CASES.append(("root --repo before the subcommand",
-              stub(GREEN, {"3": QUEUED}), "gh --repo other/repo pr merge 3", 2))
-CASES.append(("-R before the subcommand",
-              stub(GREEN, {"3": QUEUED}), "gh -R other/repo pr merge 3", 2))
-CASES.append(("branch name as the selector",
-              stub(GREEN, {"some-red-branch": QUEUED}), "gh pr merge some-red-branch --squash", 2))
-CASES.append(("URL as the selector",
-              stub(GREEN, {"https://github.com/o/r/pull/9": QUEUED}),
-              "gh pr merge https://github.com/o/r/pull/9", 2))
-CASES.append(("value-taking option before the number",
-              stub(GREEN, {"3": QUEUED}), "gh pr merge -t 'subject here' 3", 2))
+              stub(GREEN, {"3": QUEUED}), "gh --repo other/repo pr merge 3 --squash", 2, "pr view 3 --repo other/repo"))
 CASES.append(("--repo on the merge subcommand",
-              stub(GREEN, {"3": QUEUED}), "gh pr merge 3 --repo other/repo", 2))
+              stub(GREEN, {"3": QUEUED}), "gh pr merge 3 --repo other/repo --squash", 2, "pr view 3 --repo other/repo"))
+CASES.append(("value-taking option before the number",
+              stub(GREEN, {"3": QUEUED}), f"gh pr merge --subject 'subject here' 3 {R}", 2, "pr view 3 --repo acme/widgets"))
 CASES.append(("second merge in one command",
-              stub(GREEN, {"5": QUEUED}), "gh pr merge 3 && gh pr merge 5", 2))
+              stub(GREEN, {"5": QUEUED}), f"gh pr merge 3 {R} && gh pr merge 5 {R}", 2, "pr view 5"))
 # Conclusions that are not success.
-CASES.append(("ACTION_REQUIRED is not green", stub(ACTION_REQ), "gh pr merge 7", 2))
-CASES.append(("STALE is not green", stub(STALE), "gh pr merge 7", 2))
-CASES.append(("an entry with no __typename", stub(NOTYPE), "gh pr merge 7", 2))
-# --auto spellings.
-CASES.append(("--auto=true", stub(GREEN), "gh pr merge 7 --auto=true", 2))
-CASES.append(("--auto=1", stub(GREEN), "gh pr merge 7 --auto=1", 2))
-CASES.append(("--auto=false is not --auto", stub(GREEN), "gh pr merge 7 --auto=false", 0))
+CASES.append(("ACTION_REQUIRED is not green", stub(ACTION_REQ), f"gh pr merge 7 {R}", 2))
+CASES.append(("STALE is not green", stub(STALE), f"gh pr merge 7 {R}", 2))
+CASES.append(("an entry with no __typename", stub(NOTYPE), f"gh pr merge 7 {R}", 2))
+# --auto.
 CASES.append(("--auto with a ruleset requiring checks",
               stub(GREEN, rules=[{"type": "required_status_checks",
                                   "parameters": {"required_status_checks": [{"context": "test"}]}}]),
-              "gh pr merge 7 --auto", 0))
+              f"gh pr merge 7 {R} --auto", 0))
+CASES.append(("--auto with nothing required", stub(GREEN), f"gh pr merge 7 {R} --auto", 2))
 # Malformed and unreadable output.
-CASES.append(("truncated JSON", stub(GREEN, raw='{"number":7,"statusCheck'), "gh pr merge 7", 2))
-CASES.append(("an error body on stdout", stub(GREEN, raw='{"message":"Not Found"}'), "gh pr merge 7", 2))
-CASES.append(("gh exits non-zero", stub(GREEN, gh_rc=1), "gh pr merge 7", 2))
+CASES.append(("truncated JSON", stub(GREEN, raw='{"number":7,"statusCheck'), f"gh pr merge 7 {R}", 2))
+CASES.append(("an error body on stdout", stub(GREEN, raw='{"message":"Not Found"}'), f"gh pr merge 7 {R}", 2))
+CASES.append(("gh exits non-zero", stub(GREEN, gh_rc=1), f"gh pr merge 7 {R}", 2))
 # Empty rollup: fine with nothing required, not fine when the base requires.
-CASES.append(("empty rollup, nothing required", stub(EMPTY), "gh pr merge 7", 0))
+CASES.append(("empty rollup, nothing required", stub(EMPTY), f"gh pr merge 7 {R}", 0))
 CASES.append(("empty rollup, base requires checks",
-              stub(EMPTY, prot={"contexts": ["test"]}), "gh pr merge 7", 2))
+              stub(EMPTY, prot={"contexts": ["test"]}), f"gh pr merge 7 {R}", 2))
 # Command-word spellings.
-CASES.append(("quote-split command word", stub(QUEUED), 'g""h pr merge 9', 2))
-CASES.append(("uppercase GH", stub(QUEUED), "GH pr merge 9", 2))
-CASES.append(("absolute path", stub(QUEUED), "/usr/local/bin/gh pr merge 9", 2))
-# The two the segmenter was hiding: a separator inside a substitution or a
-# quoted argument tore the command in half.
-CASES.append(("--repo from a command substitution",
-              stub(GREEN, {"42": QUEUED}),
-              "gh --repo $(gh repo view --json nameWithOwner -q .nameWithOwner) pr merge 42 --squash", 2))
+CASES.append(("quote-split command word", stub(QUEUED), f'g""h pr merge 9 {R}', 2, "pr view 9"))
+CASES.append(("quote-split subcommand", stub(QUEUED), f'gh pr me""rge 9 {R}', 2, "pr view 9"))
+CASES.append(("uppercase GH", stub(QUEUED), f"GH pr merge 9 {R}", 2, "pr view 9"))
+CASES.append(("absolute path", stub(QUEUED), f"/usr/local/bin/gh pr merge 9 {R}", 2, "pr view 9"))
+# Separators inside a substitution or a quoted argument once tore the command.
 CASES.append(("a semicolon inside a quoted body",
-              stub(GREEN, {"42": QUEUED}),
-              'gh pr merge -t merge -b "some; merge body" 42', 2))
+              stub(GREEN, {"42": QUEUED}), f'gh pr merge --subject merge --body "some; merge body" 42 {R}', 2, "pr view 42"))
 CASES.append(("a pipe inside a quoted body",
-              stub(GREEN, {"42": QUEUED}),
-              'gh pr merge -b "a | b" 42', 2))
-# A selector supplied by xargs cannot be known from the command text.
-CASES.append(("selector arrives via xargs",
-              stub(GREEN, {"42": QUEUED}), "echo 42 | xargs gh pr merge --squash", 2))
+              stub(GREEN, {"42": QUEUED}), f'gh pr merge --body "a | b" 42 {R}', 2, "pr view 42"))
+# Lines: a newline inside quotes, a backslash continuation, a heredoc body.
+CASES.append(("a multi-line --body before the number",
+              stub(GREEN, {"9": QUEUED}), 'gh pr merge --squash --body "Summary\n\nDetails" 9 --repo acme/widgets', 2, "pr view 9"))
+CASES.append(("a # inside a multi-line string before the merge",
+              stub(GREEN, {"9": QUEUED}), f'gh pr comment 9 --body "Ready.\nCloses #12" && gh pr merge 9 {R}', 2, "pr view 9"))
+CASES.append(("backslash continuation between pr and merge",
+              stub(GREEN, {"9": QUEUED}), f"gh pr \\\nmerge 9 {R}", 2, "pr view 9"))
+CASES.append(("backslash continuation before --repo",
+              stub(GREEN), "gh pr merge 9 \\\n  --repo other/repo \\\n  --squash", 0, "pr view 9 --repo other/repo"))
+CASES.append(("a kept heredoc body with an apostrophe, then a merge",
+              stub(GREEN, {"9": QUEUED}), f"cat > notes.md <<'EOF'\ndon't\nEOF\ngh pr merge 9 {R}", 2, "pr view 9"))
 
-# Ways to change which pull request gh means without changing the merge's
-# words, and ways to run a merge that are not `gh pr merge` in command position
-# (#195). The fifth element, when present, is text the probe log must contain:
-# the exit code alone cannot tell a probe of the right pull request from a probe
-# of the wrong one.
-CASES.append(("attached -R names the repository",
-              stub(GREEN), "gh pr merge 7 -Rother/repo --squash", 0, "pr view 7 --repo other/repo"))
-CASES.append(("GH_REPO on the merge names the repository",
-              stub(GREEN), "GH_REPO=other/repo gh pr merge 7", 0, "pr view 7 --repo other/repo"))
-CASES.append(("env GH_REPO on the merge names the repository",
-              stub(GREEN), "env GH_REPO=other/repo gh pr merge 7", 0, "pr view 7 --repo other/repo"))
-CASES.append(("--repo wins over GH_REPO, as in gh",
-              stub(GREEN), "GH_REPO=x/y gh pr merge 7 --repo other/repo", 0, "pr view 7 --repo other/repo"))
-CASES.append(("GH_HOST on the merge reaches the probe",
-              stub(GREEN), "GH_HOST=ghe.example.com gh pr merge 7 --repo o/r", 0, "[host=ghe.example.com] pr view 7"))
-CASES.append(("GH_REPO exported earlier, merge names no repository",
-              stub(GREEN), "export GH_REPO=other/repo; gh pr merge 7", 2))
-# GREEN everywhere: a hook that used the subshell's repository for the probe
-# would see green and allow, so only a refusal passes.
-CASES.append(("GH_REPO set in a subshell that is gone by the merge",
-              stub(GREEN), "(export GH_REPO=green/repo); gh pr merge 7", 2))
-CASES.append(("GH_REPO exported earlier, merge names its own repository",
-              stub(GREEN), "export GH_REPO=x/y; gh pr merge 7 --repo acme/widgets", 0))
-CASES.append(("cd before a merge with no repository",
-              stub(GREEN), "cd /tmp/otherrepo && gh pr merge 7", 2))
-CASES.append(("cd before a merge with no selector",
-              stub(GREEN), "cd /tmp/otherrepo && gh pr merge --squash", 2))
+# Refused on the shape: each of these once reached GitHub checked against a
+# pull request other than the one merged, or not checked at all (#195). The
+# stubs are green, so only a refusal gets exit 2.
+for label, cmd in [
+    ("no --repo", "gh pr merge 7 --squash"),
+    ("no selector", "gh pr merge --repo acme/widgets --squash"),
+    ("branch name as the selector", "gh pr merge some-red-branch --repo acme/widgets --squash"),
+    ("URL as the selector", "gh pr merge https://github.com/o/r/pull/9 --squash"),
+    ("-R before the subcommand", "gh -R other/repo pr merge 3 --squash"),
+    ("attached -R", "gh pr merge 7 -Rother/repo --squash"),
+    ("grouped short flags", "gh pr merge 7 --repo acme/widgets -sdR other/repo"),
+    ("-t before the number", "gh pr merge -t 'subject here' 3 --repo acme/widgets --squash"),
+    ("--auto=true", "gh pr merge 7 --repo acme/widgets --squash --auto=true"),
+    ("--auto=false", "gh pr merge 7 --repo acme/widgets --squash --auto=false"),
+    ("no strategy", "gh pr merge 7 --repo acme/widgets"),
+    ("GH_REPO on the merge", "GH_REPO=other/repo gh pr merge 7 --squash"),
+    ("env GH_REPO on the merge", "env GH_REPO=other/repo gh pr merge 7 --repo acme/widgets --squash"),
+    ("GH_HOST on the merge", "GH_HOST=ghe.example.com gh pr merge 7 --repo o/r --squash"),
+    ("wrapper before gh", "timeout 60 env GH_REPO=other/repo gh pr merge 7 --repo acme/widgets --squash"),
+    ("GH_REPO exported, merge names no repository", "export GH_REPO=other/repo; gh pr merge 7 --squash"),
+    ("GH_REPO in a subshell, merge names no repository", "(export GH_REPO=green/repo); gh pr merge 7 --squash"),
+    ("cd, merge names no repository", "cd /tmp/otherrepo && gh pr merge 7 --squash"),
+    ("GH_REPO before bash -c", "GH_REPO=a/b bash -c 'gh pr merge 7 --squash'"),
+    ("selector via xargs", "echo 42 | xargs gh pr merge --repo acme/widgets --squash"),
+    ("--repo from a command substitution",
+     "gh --repo $(gh repo view --json nameWithOwner -q .nameWithOwner) pr merge 42 --squash"),
+    ("merge under a variable command name", "G=gh; $G pr merge 7 --repo acme/widgets --squash"),
+    ("merge under a substituted command name", "$(which gh) pr merge 7 --repo acme/widgets --squash"),
+    ("REST merge endpoint", "gh api -X PUT repos/o/r/pulls/9/merge"),
+    ("REST merge endpoint, -X=PUT", "gh api -X=PUT repos/o/r/pulls/9/merge"),
+    ("REST merge endpoint, full URL", "gh api --method PUT https://api.github.com/repos/o/r/pulls/9/merge"),
+    ("REST merge endpoint, placeholders", "gh api --method PUT /repos/{owner}/{repo}/pulls/9/merge"),
+    ("REST merge endpoint, even as a GET", "gh api repos/o/r/pulls/9/merge"),
+    ("REST branch merge", "gh api -X POST repos/o/r/merges -f base=main -f head=x"),
+    ("GraphQL merge mutation",
+     "gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: \"x\"}) { clientMutationId } }'"),
+    ("GraphQL at /graphql",
+     "gh api /graphql -f query='mutation { mergePullRequest(input: {pullRequestId: \"x\"}) { clientMutationId } }'"),
+    ("GraphQL auto-merge mutation",
+     "gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {pullRequestId: \"x\"}) { clientMutationId } }'"),
+    ("GraphQL query from a file", "gh api graphql -F query=@merge.graphql"),
+    ("gh alias for a merge", "gh alias set m 'pr merge' && gh m 9"),
+]:
+    CASES.append((label, stub(GREEN), cmd, 2))
+
+# Must stay allowed, and checked against the right pull request.
+CASES.append(("green merges", stub(GREEN), f"gh pr merge 7 {R}", 0, "pr view 7 --repo acme/widgets"))
+CASES.append(("eval of a merge in the shape",
+              stub(GREEN, {"9": QUEUED}), "eval 'gh pr merge 9 --repo o/r --squash'", 2, "pr view 9 --repo o/r"))
+CASES.append(("bash -c of a merge in the shape, green",
+              stub(GREEN), "bash -c 'gh pr merge 7 --repo o/r --squash'", 0, "pr view 7 --repo o/r"))
+CASES.append(("sh -c of a merge in the shape, queued",
+              stub(GREEN, {"9": QUEUED}), 'sh -c "gh pr merge 9 --repo o/r --squash"', 2, "pr view 9 --repo o/r"))
 CASES.append(("cd before a merge that names its repository",
-              stub(GREEN), "cd /tmp/x && gh pr merge 7 --repo acme/widgets", 0))
-CASES.append(("merge inside eval", stub(QUEUED), "eval 'gh pr merge 9'", 2))
-CASES.append(("merge inside bash -c", stub(QUEUED), "bash -c 'gh pr merge 9'", 2))
-CASES.append(("merge inside sh -c", stub(QUEUED), 'sh -c "gh pr merge 9 --squash"', 2))
-CASES.append(("merge under a variable command name", stub(GREEN), "G=gh; $G pr merge 7", 2))
-CASES.append(("merge under a substituted command name", stub(GREEN), "$(which gh) pr merge 7", 2))
-CASES.append(("REST merge endpoint on a queued PR",
-              stub(GREEN, {"9": QUEUED}), "gh api -X PUT repos/o/r/pulls/9/merge", 2, "pr view 9 --repo o/r"))
-CASES.append(("REST merge endpoint, --method, placeholders",
-              stub(GREEN, {"9": QUEUED}), "gh api --method PUT /repos/{owner}/{repo}/pulls/9/merge", 2, "pr view 9"))
-CASES.append(("REST merge endpoint, attached -XPUT, green",
-              stub(GREEN), "gh api -XPUT repos/o/r/pulls/7/merge", 0, "pr view 7 --repo o/r"))
-CASES.append(("GET on the merge endpoint only asks whether it merged",
-              stub(QUEUED), "gh api repos/o/r/pulls/9/merge", 0))
-CASES.append(("GraphQL merge mutation",
-              stub(GREEN),
-              "gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: \"x\"}) { clientMutationId } }'", 2))
-CASES.append(("GraphQL auto-merge mutation",
-              stub(GREEN),
-              "gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {pullRequestId: \"x\"}) { clientMutationId } }'", 2))
-
-# Must stay allowed.
-CASES.append(("green merges", stub(GREEN), "gh pr merge 7 --squash", 0))
-CASES.append(("green merge, no selector", stub(GREEN), "gh pr merge --squash", 0))
+              stub(GREEN), f"cd /tmp/x && gh pr merge 7 {R}", 0, "pr view 7 --repo acme/widgets"))
+CASES.append(("GH_REPO exported, merge names its own repository",
+              stub(GREEN), f"export GH_REPO=x/y; gh pr merge 7 {R}", 0, "pr view 7 --repo acme/widgets"))
+CASES.append(("a redirect target is not a selector",
+              stub(GREEN), f"gh pr merge 7 {R} > merge.log 2>&1", 0, "pr view 7 --repo acme/widgets"))
 CASES.append(("quoted text is not a merge", stub(QUEUED), 'echo "gh pr merge 9"', 0))
 CASES.append(("git merge is a different command", stub(QUEUED), "git merge --no-ff x", 0))
 CASES.append(("another gh subcommand", stub(QUEUED), "gh pr view 9", 0))
+CASES.append(("an api read naming a merge field", stub(QUEUED), "gh api repos/o/r/pulls/9 --jq .mergeable_state", 0))
 
 bad = 0
 for case in CASES:

@@ -20,21 +20,36 @@
 #      says so explicitly — but neither is letting its absence read as a
 #      passing gate.
 #
-# What is NOT refused: a merge of a fully green pull request, by any route.
-# `/flow:merge` on a green PR passes through untouched.
+# What is NOT refused: a merge of a fully green pull request, written in the
+# one shape this hook can read (below). `/flow:merge` writes that shape.
 #
 # The command is parsed, not matched. `echo "gh pr merge 3"` runs no merge, and
 # a hook that reads text rather than commands refuses the bug report that
 # describes it — the lesson of issues #167 and #142, whose parser this shares.
 #
-# Reading text has a cost: a shell variable cannot be expanded. A merge whose
-# pull request or repository is `$PR_NUM`, `${REPO}` or `$(...)` is refused, and
-# the refusal names that value, so write merge commands with literal values.
-# The same goes for anything that changes which pull request gh means without
-# changing the merge's words — a `cd` or an exported GH_REPO earlier in the
-# command — and for a merge gh is told to run some other way: through
-# `bash -c` or `eval`, under a variable command name, or by `gh api` on the
-# merge endpoint (#195).
+# One shape (#195). Reading text cannot expand a variable, see a `cd`, know
+# what GH_REPO holds, or follow every way gh accepts a flag. Each of those let a
+# merge be checked against one pull request while gh merged another, and
+# closing them one spelling at a time never ended. So a merge is accepted only
+# as
+#
+#   gh pr merge <number> --repo [host/]owner/name --squash|--merge|--rebase
+#      [--delete-branch] [--admin] [--auto] [--subject S] [--body B]
+#      [--body-file F] [--author-email E] [--match-head-commit SHA]
+#
+# with gh as the first word, long options only, and every value literal.
+# `--repo` is required because it outranks GH_REPO, GH_HOST, the working
+# directory and `gh repo set-default` alike: with it written, none of them
+# matter. Anything else that is a merge is refused with the shape to use, and a
+# value that cannot be read is named. `gh api` on a merge endpoint or a merge
+# mutation is refused outright, as is one whose endpoint or query cannot be read.
+#
+# Not covered, by design. This hook catches merges written in good faith, or
+# misdirected by a variable or a directory. It does not stop deliberate
+# evasion: a quote or backslash inside the word (`m\erge`), a command held in a
+# variable and run as `$CMD`, a gh alias defined in an earlier call, a script
+# piped into a shell, a gh extension, or curl to the REST API. Branch protection
+# with required checks is the mechanism for that, as #170 says.
 
 set -uo pipefail
 
@@ -56,54 +71,38 @@ if [ ! -r "$_BD_LIB" ]; then
 fi
 # shellcheck source=lib/command-parse.sh
 . "$_BD_LIB"
+# Readable is not the same as loaded. A truncated or broken library defines
+# nothing, every call below fails, no merge is found, and the hook allows.
+for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise _bd_is_redirection; do
+  if ! type "$_bd_fn" >/dev/null 2>&1; then
+    echo "BLOCKED: the command parser did not load ($_bd_fn is undefined), so merge readiness cannot be verified." >&2
+    exit 2
+  fi
+done
 
 INPUT=$(cat)
 COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty')
 [ -z "$COMMAND" ] && exit 0
 
-# Cheap reject before any parsing: this hook runs before every Bash call.
-# Any case: the GraphQL auto-merge mutation is spelled enablePullRequestAutoMerge.
-case "$COMMAND" in *[Mm][Ee][Rr][Gg][Ee]*) ;; *) exit 0 ;; esac
+# Cheap reject before any parsing: this hook runs before every Bash call. On the
+# text without quotes and backslashes, so `me""rge` still reaches the parser,
+# and in any case, because the GraphQL auto-merge mutation is spelled
+# enablePullRequestAutoMerge. `graphql` too: a query read from a file never
+# shows the word merge.
+_BUM_BARE="${COMMAND//[\'\"\\]/}"
+case "$_BUM_BARE" in
+  *[Mm][Ee][Rr][Gg][Ee]*|*[Gg][Rr][Aa][Pp][Hh][Qq][Ll]*) ;;
+  *) exit 0 ;;
+esac
 
 _bd_strip_noncode "$COMMAND"
-
-# --- find every `gh pr merge`, in command position ----------------------------
-#
-# Three things this has to get right, each of which it got wrong first:
-#
-#   - gh has its own value-taking options, at the root (`-R`, `--repo`) and on
-#     the subcommand (`-t`, `-b`, `-F`, `--match-head-commit`, ...). Skipping a
-#     `-x` without also skipping its value made the value look like the pull
-#     request selector: `gh --repo owner/repo pr merge 3` was read as merging
-#     "owner/repo", so the subcommand never matched and the hook allowed it.
-#   - The selector is whatever the merge command says: a number, a branch, or a
-#     URL. Dropping the non-numeric ones made the probe resolve the current
-#     branch instead, so the hook reported on one pull request while the human
-#     merged another.
-#   - A command can hold more than one merge. Stopping at the first left the
-#     rest unchecked.
-#
-# The repository is the command's own `--repo` when it carries one, because
-# forcing the session's repository onto the probe checks the wrong place.
-
-# Options that consume the following token, at either level — the root, `pr
-# merge`, and `api`, whose merge endpoint is checked too.
-_bum_takes_value() {
-  case "$1" in
-    -R|--repo|-t|--subject|-b|--body|-F|--body-file|-A|--author-email|--match-head-commit)
-      return 0 ;;
-    -X|--method|-f|--raw-field|--field|-H|--header|--input|-q|--jq|--template|--hostname|-p|--preview|--cache)
-      return 0 ;;
-  esac
-  return 1
-}
+# `bash -c 'gh pr merge 9'` and `eval '...'` hide the merge inside one quoted
+# word. Expand those first, so the merge is a command like any other.
+_bd_expand_interpreter_args
 
 # A value this hook cannot know without running a shell: a variable, or a
 # substitution (the segmenter leaves `__BD_SUBST__` where `$(...)` or a backtick
-# pair stood). Quoting is gone by this point, so `'$X'` counts too. A pull
-# request number and a repository name cannot contain `$`; a branch name can,
-# and is refused anyway, because from the text it is indistinguishable from a
-# variable. The refusal says to merge such a branch by number.
+# pair stood). Quoting is gone by this point, so `'$X'` counts too.
 _bum_unreadable() {
   case "$1" in
     *'$'*|*'`'*|*__BD_SUBST__*) return 0 ;;
@@ -111,7 +110,7 @@ _bum_unreadable() {
   return 1
 }
 
-# A `{…}` left in the value: a documented command template run before its
+# A `{…}` left in a value: a documented command template run before its
 # placeholders were filled in.
 _bum_placeholder() {
   case "$1" in
@@ -120,32 +119,61 @@ _bum_placeholder() {
   return 1
 }
 
-# The value as the refusal should show it: substitutions spelled as the reader
-# wrote them, no control characters (the stderr goes back into a transcript),
-# and not so long that the instruction after it is lost.
+# Text as a refusal may show it: substitutions spelled as the reader wrote them,
+# control characters and line breaks replaced (stderr goes back into a
+# transcript, and a check name is written by whoever wrote the workflow), and
+# not so long that the instruction after it is lost. $2 is the length limit.
 _bum_show() {
-  local v="$1"
+  local v="$1" max="${2:-200}"
   v="${v// __BD_SUBST__ /\$(...)}"
   v="${v//__BD_SUBST__/\$(...)}"
   v="${v//[[:cntrl:]]/?}"
   v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
-  if [ "${#v}" -gt 200 ]; then v="${v:0:200}..."; fi
+  if [ "${#v}" -gt "$max" ]; then v="${v:0:$max}..."; fi
   printf '%s' "$v"
 }
 
-_bum_refuse_unreadable() {   # $1 = what, $2 = value
-  echo "BLOCKED: gh pr merge, but the $1 is given as \"$(_bum_show "$2")\", which this hook reads as text and cannot expand." >&2
-  echo "Write it literally (e.g. gh pr merge 123 --repo owner/name) so its checks can be verified. A branch whose name contains \$ or a backtick cannot be told from a variable here; merge it by number." >&2
+_BUM_SHAPE="gh pr merge <number> --repo owner/name --squash (or --merge, --rebase), with any of --delete-branch, --admin, --auto, --subject, --body, --body-file, --author-email, --match-head-commit"
+
+# Every refusal about a merge's form goes through here. In a fragment (see the
+# loop) the first one is kept for later instead of ending the hook.
+_bum_refuse() {              # $1, $2 = the two lines
+  if [ "${BUM_FRAG:-0}" = "1" ]; then
+    [ -z "$BUM_DEFER1" ] && { BUM_DEFER1="$1"; BUM_DEFER2="$2"; }
+    return 1
+  fi
+  echo "$1" >&2
+  echo "$2" >&2
   exit 2
+}
+
+_bum_refuse_unreadable() {   # $1 = what, $2 = value
+  _bum_refuse "BLOCKED: gh pr merge, but the $1 is given as \"$(_bum_show "$2")\", which this hook reads as text and cannot expand." \
+    "Write it literally so its checks can be verified: $_BUM_SHAPE."
 }
 
 _bum_refuse_placeholder() {  # $1 = what, $2 = value
-  echo "BLOCKED: gh pr merge, but the $1 is \"$(_bum_show "$2")\", a placeholder that was not filled in." >&2
-  echo "Replace it with the real value before running the merge." >&2
-  exit 2
+  _bum_refuse "BLOCKED: gh pr merge, but the $1 is \"$(_bum_show "$2")\", a placeholder that was not filled in." \
+    "Replace it with the real value before running the merge."
 }
 
-# Is this token an assignment (NAME=value) rather than a word?
+_bum_refuse_shape() {        # $1 = what is wrong
+  _bum_refuse "BLOCKED: gh pr merge, but $1." \
+    "This hook checks a merge only in one shape, so write it as: $_BUM_SHAPE."
+}
+
+# Is this word gh? A path to it counts, a leading backslash counts, and the
+# compare ignores case, because a case-insensitive filesystem will run `GH`. A
+# case pattern rather than a subprocess per word: this runs on every word of a
+# command that mentions merge, and a `git add` of thousands of files followed by
+# a merge took seconds when each word forked `tr`.
+_bum_is_gh() {
+  local b="${1##*/}"
+  b="${b#\\}"
+  case "$b" in [Gg][Hh]) return 0 ;; esac
+  return 1
+}
+
 _bum_is_assignment() {
   case "$1" in
     [A-Za-z_]*=*)
@@ -156,30 +184,143 @@ _bum_is_assignment() {
   return 1
 }
 
-MERGE_FOUND=0
+# gh's own options that take a value, at the root or on a subcommand, for
+# finding the subcommand words past them.
+_bum_takes_value() {
+  case "$1" in
+    -R|--repo|-t|--subject|-b|--body|-F|--body-file|-A|--author-email|--match-head-commit)
+      return 0 ;;
+  esac
+  return 1
+}
+
+# The subcommand words after index $1: fills SUB with up to three words, past
+# options and their values.
+_bum_subwords() {
+  local j="$1" t
+  SUB=()
+  while [ "$j" -lt "$n" ] && [ "${#SUB[@]}" -lt 3 ]; do
+    t="${TOK[j]}"
+    if _bum_takes_value "$t"; then j=$((j + 2)); continue; fi
+    case "$t" in -*) j=$((j + 1)); continue ;; esac
+    SUB+=("$t")
+    j=$((j + 1))
+  done
+}
+
+# Does this simple command end inside an open quote?
+_bum_unterminated() {
+  printf '%s\n' "$1" | awk '
+    BEGIN { SQ = sprintf("%c", 39); q = "" }
+    {
+      n = length($0)
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        if (c == "\\" && q != SQ) { i++; continue }
+        if (q != "") { if (c == q) q = ""; continue }
+        if (c == "\"" || c == SQ) q = c
+      }
+    }
+    END { exit (q != "" ? 0 : 1) }'
+}
+
+# The walk and every rule of the shape, for the command in TOK whose gh stands
+# at index c. Sets sel, repo and auto and returns 0 for a merge in the shape.
+# Otherwise it refuses; a refusal exits the hook, except in a fragment, where it
+# is recorded and this returns 1.
+_bum_judge_merge() {
+  if [ "$c" -gt 0 ] || ! _bum_is_gh "${TOK[0]}"; then
+    if _bum_unreadable "${TOK[c]}"; then
+      { _bum_refuse_unreadable "gh command" "${TOK[c]}"; return 1; }
+    fi
+    { _bum_refuse_shape "\"$(_bum_show "${TOK[*]:0:$c}")\" comes before gh, and whatever runs first can change which pull request gh merges"; return 1; }
+  fi
+
+  repo=""; repo_n=0; strat_n=0; auto=0; bad=""; badrepo=""
+  words=()
+  i=1
+  while [ "$i" -lt "$n" ]; do
+    tok="${TOK[i]}"
+    nxt="${TOK[i+1]:-}"
+    # A bare redirection operator takes the next word as its target, which is
+    # a file name and not a selector.
+    case "$tok" in
+      '>'|'>>'|'<'|'<<<'|[0-9]'>'|[0-9]'>>'|[0-9]'<') i=$((i + 2)); continue ;;
+    esac
+    if _bd_is_redirection "$tok"; then i=$((i + 1)); continue; fi
+    case "$tok" in
+      --repo)
+        repo="$nxt"; repo_n=$((repo_n + 1)); i=$((i + 2))
+        # An unquoted `$(...)` joined to the value is split off by the
+        # segmenter; the repository is the two together.
+        [ "${TOK[i]:-}" = "__BD_SUBST__" ] && { repo="$repo${TOK[i]}"; i=$((i + 1)); }
+        continue ;;
+      --repo=*)
+        repo="${tok#--repo=}"; repo_n=$((repo_n + 1)); i=$((i + 1))
+        [ "${TOK[i]:-}" = "__BD_SUBST__" ] && { repo="$repo${TOK[i]}"; i=$((i + 1)); }
+        continue ;;
+      --squash|--merge|--rebase) strat_n=$((strat_n + 1)) ;;
+      --delete-branch|--admin) ;;
+      --auto) auto=1 ;;
+      --subject|--body|--body-file|--author-email|--match-head-commit)
+        i=$((i + 2)); continue ;;
+      --subject=*|--body=*|--body-file=*|--author-email=*|--match-head-commit=*) ;;
+      # -R is not in the shape, but its value is still the repository: when that
+      # value cannot be read, naming it says more than naming the option.
+      -R)
+        [ -z "$bad" ] && bad="$tok"
+        _bum_unreadable "$nxt" && [ -z "$badrepo" ] && badrepo="$nxt"
+        i=$((i + 2)); continue ;;
+      -R?*)
+        [ -z "$bad" ] && bad="$tok"
+        _bum_unreadable "${tok#-R}" && [ -z "$badrepo" ] && badrepo="${tok#-R}" ;;
+      -*) [ -z "$bad" ] && bad="$tok" ;;
+      *) words+=("$tok") ;;
+    esac
+    i=$((i + 1))
+  done
+
+  # Values first, by name, before anything else is said about the merge: that
+  # is what tells the reader which word to fix.
+  sel="${words[2]:-}"
+  for ((w = 3; w < ${#words[@]}; w++)); do
+    if _bum_unreadable "${words[w]}"; then sel="${words[*]:2}"; break; fi
+  done
+  _bum_unreadable "$sel" && { _bum_refuse_unreadable "pull request" "$sel"; return 1; }
+  _bum_unreadable "$repo" && { _bum_refuse_unreadable "repository" "$repo"; return 1; }
+  [ -n "$badrepo" ] && { _bum_refuse_unreadable "repository" "$badrepo"; return 1; }
+  _bum_placeholder "$sel" && { _bum_refuse_placeholder "pull request" "$sel"; return 1; }
+  _bum_placeholder "$repo" && { _bum_refuse_placeholder "repository" "$repo"; return 1; }
+
+  [ -z "$bad" ] || { _bum_refuse_shape "\"$(_bum_show "$bad")\" is not one of the options it reads (long options only)"; return 1; }
+  if [ "${#words[@]}" -ne 3 ] || [ "${words[0]}" != "pr" ] || [ "${words[1]}" != "merge" ]; then
+    if [ "${#words[@]}" -lt 3 ]; then
+      { _bum_refuse_shape "it names no pull request number"; return 1; }
+    fi
+    { _bum_refuse_shape "\"$(_bum_show "${words[*]}")\" is not pr merge followed by one pull request number"; return 1; }
+  fi
+  case "$sel" in
+    ''|*[!0-9]*) _bum_refuse_shape "the pull request is \"$(_bum_show "$sel")\", not a number"; return 1 ;;
+  esac
+  [ "$repo_n" -ge 1 ] || { _bum_refuse_shape "it names no --repo, so the repository would come from the directory or GH_REPO, which this hook cannot see"; return 1; }
+  [ "$repo_n" -eq 1 ] || { _bum_refuse_shape "--repo is given more than once"; return 1; }
+  case "$repo" in
+    */*/*/*|''|/*|*/) _bum_refuse_shape "the repository \"$(_bum_show "$repo")\" is not owner/name or host/owner/name"; return 1 ;;
+    */*) ;;
+    *) _bum_refuse_shape "the repository \"$(_bum_show "$repo")\" is not owner/name or host/owner/name"; return 1 ;;
+  esac
+  [ "$strat_n" -eq 1 ] || { _bum_refuse_shape "it needs exactly one of --squash, --merge or --rebase"; return 1; }
+
+  return 0
+}
+
+BUM_FRAG=0
+BUM_DEFER1=""
+BUM_DEFER2=""
 MERGE_N=0
 MERGE_SEL=()
 MERGE_REPO=()
-MERGE_HOST=()
 MERGE_AUTO=()
-
-# State that one simple command leaves for the ones after it. gh reads GH_REPO
-# and GH_HOST from the environment when no --repo is given, and resolves the
-# repository from the working directory when neither is — so an `export`, or a
-# `cd`, earlier in the same command changes which pull request a later merge
-# means, even though the merge's own words are unchanged.
-#
-# Whether such an assignment reaches the merge is not something text can
-# settle: `(export GH_REPO=x); gh pr merge 7` sets it in a subshell that is gone
-# by the time gh runs. So an earlier assignment is not used for the probe. It
-# only means a merge that does not name its own repository is refused.
-CARRY_REPO_SET=0
-CARRY_HOST_SET=0
-CHDIR=0
-
-# `bash -c 'gh pr merge 9'` and `eval '...'` hide the merge inside one quoted
-# word. Expand those first, so the merge is a command like any other.
-_bd_expand_interpreter_args
 
 while IFS= read -r SEG; do
   [ -z "$SEG" ] && continue
@@ -188,291 +329,140 @@ while IFS= read -r SEG; do
   n=${#TOK[@]}
   [ "$n" -gt 0 ] || continue
 
-  # Leading assignments, and the first word that is not one: `GH_REPO=x gh ...`
-  # sets it for that gh alone; `export GH_REPO=x` or a bare `GH_REPO=x` sets it
-  # for what follows.
-  first=""
-  declared=0
-  seg_env_repo=""; seg_env_repo_set=0; seg_env_host=""; seg_env_host_set=0
-  for ((i = 0; i < n; i++)); do
-    tok="${TOK[i]}"
-    if _bum_is_assignment "$tok"; then
-      case "$tok" in
-        GH_REPO=*) seg_env_repo="${tok#GH_REPO=}"; seg_env_repo_set=1 ;;
-        GH_HOST=*) seg_env_host="${tok#GH_HOST=}"; seg_env_host_set=1 ;;
-      esac
-      continue
-    fi
-    case "$tok" in
-      env) continue ;;
-      export|declare|typeset|readonly) declared=1; continue ;;
-      -*) [ "$declared" = "1" ] && continue ;;
-    esac
-    first="$tok"
-    break
-  done
-  case "${first##*/}" in
-    cd|pushd|popd) CHDIR=1; continue ;;
-  esac
-  if [ -z "$first" ]; then
-    [ "$seg_env_repo_set" = "1" ] && CARRY_REPO_SET=1
-    [ "$seg_env_host_set" = "1" ] && CARRY_HOST_SET=1
-    continue
-  fi
-
-  # Command position, after tokenising rather than before: `g""h` is one token
-  # spelled gh, and the basename compare is case-insensitive because a
-  # case-insensitive filesystem will happily run `GH`. A word this hook cannot
-  # read (`$GH`, `$(which gh)`) is a candidate too: whatever it expands to, if
-  # the words after it are `pr merge`, it is a merge nobody can check.
-  matched=0
-  for ((c = 0; c < n; c++)); do
-    [ "${#TOK[c]}" -le 4096 ] || continue
-    base="${TOK[c]##*/}"
-    base="${base#\\}"
-    base=$(printf '%s' "$base" | tr 'A-Z' 'a-z')
-    cmd_var=0
-    if [ "$base" != "gh" ]; then
-      _bum_is_assignment "${TOK[c]}" && continue
-      _bum_unreadable "${TOK[c]}" || continue
-      cmd_var=1
-    fi
-
-    # Walk the arguments once: positional words, the repository and host if the
-    # command names them, whether auto-merge was asked for, and the method an
-    # api call uses.
-    seg_repo=""; seg_repo_set=0
-    seg_host=""
-    seg_auto=0
-    seg_method=""
-    words=()
-    i=$((c + 1))
-    while [ $i -lt $n ]; do
-      tok="${TOK[i]}"
-      nxt="${TOK[i+1]:-}"
-      case "$tok" in
-        --auto|--auto=true|--auto=1|--auto=yes) seg_auto=1; i=$((i + 1)); continue ;;
-        --auto=*) i=$((i + 1)); continue ;;          # --auto=false and friends
-        --repo=*|-R=*)
-          seg_repo="${tok#*=}"; seg_repo_set=1
-          # An unquoted `$(...)` joined to the value is split off by the
-          # segmenter; the repository is the two together, and the split-off
-          # half is consumed here rather than read again as a selector.
-          i=$((i + 1))
-          [ "$nxt" = "__BD_SUBST__" ] && { seg_repo="$seg_repo$nxt"; i=$((i + 1)); }
-          continue ;;
-        --method=*) seg_method="${tok#*=}"; i=$((i + 1)); continue ;;
-        --hostname=*) seg_host="${tok#*=}"; i=$((i + 1)); continue ;;
-        --) i=$((i + 1)); continue ;;
-      esac
-      if _bum_takes_value "$tok"; then
-        case "$tok" in
-          -R|--repo)
-            seg_repo="$nxt"; seg_repo_set=1
-            [ "${TOK[i+2]:-}" = "__BD_SUBST__" ] && { seg_repo="$seg_repo${TOK[i+2]}"; i=$((i + 1)); } ;;
-          -X|--method) seg_method="$nxt" ;;
-          --hostname) seg_host="$nxt" ;;
-        esac
-        i=$((i + 2)); continue
-      fi
-      case "$tok" in
-        # gh also takes a short option's value attached: -Rowner/name, -XPUT.
-        -R?*) seg_repo="${tok#-R}"; seg_repo_set=1
-              i=$((i + 1))
-              [ "$nxt" = "__BD_SUBST__" ] && { seg_repo="$seg_repo$nxt"; i=$((i + 1)); }
-              continue ;;
-        -X?*) seg_method="${tok#-X}"; i=$((i + 1)); continue ;;
-        -*) i=$((i + 1)); continue ;;
-      esac
-      if ! _bd_is_redirection "$tok"; then
-        words+=("$tok")
-      fi
-      i=$((i + 1))
-    done
-
-    # `gh pr merge [selector]`, or `gh api` on the merge endpoint.
-    kind=""
-    sel=""
-    api_repo=""
-    if [ "${words[0]:-}" = "pr" ] && [ "${words[1]:-}" = "merge" ]; then
-      kind=merge
-      sel="${words[2]:-}"
-      # gh takes one selector. A second word, if it cannot be read, may expand
-      # into anything at all — `--repo other/x`, `--auto` — so it is the
-      # selector's problem too.
-      for ((w = 3; w < ${#words[@]}; w++)); do
-        if _bum_unreadable "${words[w]}"; then sel="${words[*]:2}"; break; fi
-      done
-    elif [ "${words[0]:-}" = "api" ]; then
-      ep="${words[1]:-}"
-      if [ "$ep" = "graphql" ]; then
-        # A merge through GraphQL names the pull request by node id, which the
-        # checks lookup cannot take. Refuse it rather than guess.
-        for ((t = c + 1; t < n; t++)); do
-          case "${TOK[t]}" in
-            *mergePullRequest*|*enablePullRequestAutoMerge*)
-              echo "BLOCKED: a pull request merge through gh api graphql. Its checks cannot be verified from here." >&2
-              echo "Use gh pr merge <number> --repo owner/name instead." >&2
-              exit 2 ;;
-          esac
-        done
-        continue
-      fi
-      case "$ep" in *merge*) ;; *) continue ;; esac
-      if _bum_unreadable "$ep"; then _bum_refuse_unreadable "api endpoint" "$ep"; fi
-      if _bum_unreadable "$seg_method"; then _bum_refuse_unreadable "api method" "$seg_method"; fi
-      [ "$(printf '%s' "$seg_method" | tr 'a-z' 'A-Z')" = "PUT" ] || continue
-      ep="${ep#/}"; ep="${ep%%\?*}"; ep="${ep%/}"
-      case "$ep" in
-        repos/*/*/pulls/*/merge) ;;
-        *) continue ;;
-      esac
-      rest="${ep#repos/}"
-      api_owner="${rest%%/*}"; rest="${rest#*/}"
-      api_name="${rest%%/*}"; rest="${rest#*/pulls/}"
-      sel="${rest%/merge}"
-      case "$sel" in ''|*[!0-9]*) continue ;; esac
-      # gh fills {owner} and {repo} from the environment or the directory, the
-      # same way it resolves a merge without --repo.
-      if [ "$api_owner" != "{owner}" ] && [ "$api_name" != "{repo}" ]; then
-        api_repo="$api_owner/$api_name"
-      fi
-      kind=api
+  # --- is there a merge in this command, wherever gh stands? -----------------
+  # gh anywhere, or a word this hook cannot read that might expand to gh, then
+  # `pr merge`, `api`, or `alias`. Finding it anywhere, rather than only first,
+  # is what lets `sudo gh pr merge` or `xargs gh pr merge` be refused instead of
+  # passed over.
+  c=-1
+  kind=""
+  for ((k = 0; k < n; k++)); do
+    [ "${#TOK[k]}" -le 4096 ] || continue
+    if _bum_is_gh "${TOK[k]}"; then
+      :
+    elif _bum_unreadable "${TOK[k]}" && ! _bum_is_assignment "${TOK[k]}"; then
+      :
     else
       continue
     fi
-    matched=1
-    break
+    _bum_subwords $((k + 1))
+    case "${SUB[0]:-} ${SUB[1]:-}" in
+      "pr merge") c=$k; kind="merge"; break ;;
+    esac
+    case "${SUB[0]:-}" in
+      api)   _bum_is_gh "${TOK[k]}" && { c=$k; kind="api"; break; } ;;
+      alias) _bum_is_gh "${TOK[k]}" && { c=$k; kind="alias"; break; } ;;
+    esac
   done
-  [ "$matched" = "1" ] || continue
+  [ "$c" -ge 0 ] || continue
 
-  if [ "$cmd_var" = "1" ]; then
-    _bum_refuse_unreadable "gh command" "${TOK[c]}"
-  fi
-
-  # Which repository gh will use: --repo, then an api endpoint's own, then
-  # GH_REPO on this very command.
-  if [ "$kind" = "api" ] && [ -n "$api_repo" ]; then
-    seg_repo="$api_repo"; seg_repo_set=1
-  fi
-  if [ "$seg_repo_set" = "0" ] && [ "$seg_env_repo_set" = "1" ]; then
-    seg_repo="$seg_env_repo"; seg_repo_set=1
-  fi
-  [ -z "$seg_host" ] && seg_host="$seg_env_host"
-
-  # A value this hook cannot read is named, before anything else is said about
-  # the merge and before any probe: `"$REPO"` reaches a lookup as the literal
-  # string `$REPO`, the lookup fails, and the refusal used to blame the checks.
-  _bum_unreadable "$sel" && _bum_refuse_unreadable "pull request" "$sel"
-  _bum_unreadable "$seg_repo" && _bum_refuse_unreadable "repository" "$seg_repo"
-  _bum_unreadable "$seg_host" && _bum_refuse_unreadable "GitHub host" "$seg_host"
-  _bum_placeholder "$sel" && _bum_refuse_placeholder "pull request" "$sel"
-  _bum_placeholder "$seg_repo" && _bum_refuse_placeholder "repository" "$seg_repo"
-
-  # A selector supplied from somewhere this hook cannot read — xargs, or a
-  # substitution the segmenter replaced with a placeholder — is not "no
-  # selector, so the current branch". It is "unknown", and a gate that cannot
-  # tell which pull request is being merged must not open.
-  case "$SEG" in
-    *xargs*|*__BD_SUBST__*)
-      if [ -z "$sel" ]; then
-        echo "BLOCKED: a gh pr merge whose pull request comes from somewhere this hook cannot read (xargs, or a command substitution)." >&2
-        echo "Name the pull request explicitly so its checks can be verified." >&2
+  # --- gh api, gh alias: refused, not parsed ---------------------------------
+  if [ "$kind" = "api" ]; then
+    # A merge endpoint (pulls/N/merge, and repos/o/r/merges, which merges one
+    # branch into another with no pull request at all), or a merge mutation by
+    # name. Not the bare word: `--jq .mergeable_state` is an ordinary read.
+    is_graphql=0
+    for ((k = c + 1; k < n; k++)); do
+      case "${TOK[k]}" in
+        */[Mm][Ee][Rr][Gg][Ee]|*/[Mm][Ee][Rr][Gg][Ee][/?]*|*/[Mm][Ee][Rr][Gg][Ee][Ss]|*/[Mm][Ee][Rr][Gg][Ee][Ss][/?]*|\
+        *[Mm]erge[Pp]ull[Rr]equest*|*[Aa]uto[Mm]erge*|*[Ee]nqueue[Pp]ull[Rr]equest*)
+          echo "BLOCKED: gh api on a merge endpoint or mutation. Its checks cannot be verified from here." >&2
+          echo "To merge: $_BUM_SHAPE. To ask whether it merged: gh pr view <number> --repo owner/name --json mergedAt." >&2
+          exit 2 ;;
+        graphql|/graphql|*://*/graphql) is_graphql=1 ;;
+      esac
+    done
+    # A value this hook cannot read may be a merge endpoint or a merge query.
+    # This runs only on a command that mentions merge or graphql, so an
+    # ordinary api call with a variable in it never gets here.
+    for ((k = c + 1; k < n; k++)); do
+      if _bum_unreadable "${TOK[k]}"; then
+        echo "BLOCKED: gh api with a value given as \"$(_bum_show "${TOK[k]}")\". Whether it merges cannot be read from the command." >&2
+        echo "Write it literally, or merge with: $_BUM_SHAPE." >&2
         exit 2
       fi
-      ;;
-  esac
+    done
+    if [ "$is_graphql" = "1" ]; then
+      for ((k = c + 1; k < n; k++)); do
+        case "${TOK[k]}" in
+          --input|--input=*|@*|*=@*)
+            echo "BLOCKED: gh api graphql with its query in a file or on stdin. Whether it merges cannot be read from the command." >&2
+            echo "Pass the query inline, or merge with: $_BUM_SHAPE." >&2
+            exit 2 ;;
+        esac
+      done
+    fi
+    continue
+  fi
+  if [ "$kind" = "alias" ]; then
+    for ((k = c + 1; k < n; k++)); do
+      case "${TOK[k]}" in
+        *[Mm][Ee][Rr][Gg][Ee]*)
+          echo "BLOCKED: a gh alias that mentions merge. A merge run through an alias never shows the word merge, so this hook could not check it." >&2
+          echo "Merge with: $_BUM_SHAPE." >&2
+          exit 2 ;;
+      esac
+    done
+    continue
+  fi
 
-  # After a `cd`, gh resolves the repository — and, with no selector, the
-  # branch — from a directory this hook is not in. Unless the merge names its
-  # repository, the probe would check a pull request other than the one merged.
-  case "$sel" in http://*|https://*) sel_is_url=1 ;; *) sel_is_url=0 ;; esac
-  if [ "$CHDIR" = "1" ] && [ "$seg_repo_set" = "0" ] && [ "$sel_is_url" = "0" ]; then
-    echo "BLOCKED: gh pr merge after a cd in the same command. gh will resolve the repository from that directory, which this hook cannot see." >&2
-    echo "Name it: gh pr merge <number> --repo owner/name." >&2
-    exit 2
-  fi
-  if [ "$CARRY_REPO_SET" = "1" ] && [ "$seg_repo_set" = "0" ] && [ "$sel_is_url" = "0" ]; then
-    echo "BLOCKED: gh pr merge after GH_REPO was set earlier in the same command. Whether it reaches the merge cannot be read from the text." >&2
-    echo "Name the repository on the merge itself: gh pr merge <number> --repo owner/name." >&2
-    exit 2
-  fi
-  if [ "$CARRY_HOST_SET" = "1" ] && [ -z "$seg_host" ]; then
-    echo "BLOCKED: gh pr merge after GH_HOST was set earlier in the same command. Whether it reaches the merge cannot be read from the text." >&2
-    echo "Set it on the merge itself (GH_HOST=host gh pr merge ...) or run the two separately." >&2
-    exit 2
-  fi
+  # --- a merge: is it the one shape? -----------------------------------------
+  # A segment that ends inside an open quote is the per-line reading of a
+  # command whose string runs on (see _bd_segments). The joined reading of the
+  # same command is the shell's, so this fragment's refusal waits: it stands
+  # only if no merge in the shape is found anywhere else in the command.
+  BUM_FRAG=0
+  _bum_unterminated "$SEG" && BUM_FRAG=1
+  _bum_judge_merge || continue
 
-  MERGE_FOUND=1
   MERGE_SEL[$MERGE_N]="$sel"
-  MERGE_REPO[$MERGE_N]="$seg_repo"
-  MERGE_HOST[$MERGE_N]="$seg_host"
-  MERGE_AUTO[$MERGE_N]="$seg_auto"
+  MERGE_REPO[$MERGE_N]="$repo"
+  MERGE_AUTO[$MERGE_N]="$auto"
   MERGE_N=$((MERGE_N + 1))
 done < <(_bd_segments "$BD_CODE")
 
-[ "$MERGE_FOUND" = "1" ] || exit 0
-
-# The probe asks the host the merge will go to. RHOST is set per merge below.
-_bum_gh() {
-  if [ -n "${RHOST:-}" ]; then
-    GH_HOST="$RHOST" gh "$@"
-  else
-    gh "$@"
+if [ "$MERGE_N" -eq 0 ]; then
+  # Only fragments were found, and none of them was a merge in the shape. The
+  # joined reading found no merge either, so the fragment's refusal stands.
+  if [ -n "$BUM_DEFER1" ]; then
+    echo "$BUM_DEFER1" >&2
+    echo "$BUM_DEFER2" >&2
+    exit 2
   fi
-}
+  exit 0
+fi
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "BLOCKED: gh pr merge, but the gh CLI is not on PATH — merge readiness cannot be checked." >&2
   exit 2
 fi
 
-# Only consulted when the command names no repository of its own.
-SESSION_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null || true)
-
 for ((M = 0; M < MERGE_N; M++)); do
   SEL="${MERGE_SEL[M]}"
   RREPO="${MERGE_REPO[M]}"
-  RHOST="${MERGE_HOST[M]}"
   AUTO="${MERGE_AUTO[M]}"
 
-  # Build the same view the merge itself will resolve. With no selector and no
-  # --repo, gh resolves the current branch — so the probe must do that too,
-  # which means passing neither. `gh pr view --repo X` with no selector is an
-  # error, so the two travel together.
-  VIEW=(pr view)
-  [ -n "$SEL" ] && VIEW+=("$SEL")
-  # A URL names its own repository; pairing it with --repo is redundant at best
-  # and a conflict at worst.
-  case "$SEL" in
-    http://*|https://*) SEL_IS_URL=1 ;;
-    *) SEL_IS_URL=0 ;;
-  esac
-  if [ "$SEL_IS_URL" = "1" ]; then
-    :
-  elif [ -n "$RREPO" ]; then
-    VIEW+=(--repo "$RREPO")
-  elif [ -n "$SEL" ] && [ -n "$SESSION_REPO" ]; then
-    VIEW+=(--repo "$SESSION_REPO")
-  fi
-  VIEW+=(--json "number,baseRefName,statusCheckRollup")
-
-  ROLLUP=$(_bum_gh "${VIEW[@]}" 2>/dev/null); GH_RC=$?
+  # The same pull request the merge names, in the repository it names. Both
+  # are required by the shape above, so there is nothing left to resolve.
+  ROLLUP=$(gh pr view "$SEL" --repo "$RREPO" --json "number,baseRefName,statusCheckRollup" 2>/dev/null); GH_RC=$?
   if [ "$GH_RC" -ne 0 ] || [ -z "$ROLLUP" ]; then
-    echo "BLOCKED: gh pr merge${SEL:+ $SEL}, but its checks could not be read (gh exit $GH_RC). A gate that cannot see must not open." >&2
+    echo "BLOCKED: gh pr merge $SEL --repo $RREPO, but its checks could not be read (gh exit $GH_RC). A gate that cannot see must not open." >&2
     exit 2
   fi
   # gh can exit 0 having printed something that is not the object expected —
   # an error body, a truncated stream. Emptiness is not the only way to fail.
   # Entries must be objects too. A rollup of `["ci"]` satisfies "is an array"
-          # and then kills the classifiers below with a type error, leaving both
-          # empty — which reads as "nothing wrong".
+  # and then kills the classifiers below with a type error, leaving both
+  # empty — which reads as "nothing wrong".
   if ! printf '%s' "$ROLLUP" | jq -e 'type == "object" and has("number") and (.statusCheckRollup | type == "array") and (all(.statusCheckRollup[]; type == "object"))' >/dev/null 2>&1; then
-    echo "BLOCKED: gh pr merge${SEL:+ $SEL}, but the check rollup did not parse as expected. Refusing rather than guessing." >&2
+    echo "BLOCKED: gh pr merge $SEL --repo $RREPO, but the check rollup did not parse as expected. Refusing rather than guessing." >&2
     exit 2
   fi
 
   PR_NUMBER=$(printf '%s' "$ROLLUP" | jq -r '.number')
+  case "$PR_NUMBER" in ''|*[!0-9]*) PR_NUMBER="$SEL" ;; esac
+  # Everything below that came from the API is shown through _bum_show: a
+  # branch or check name is written by whoever opened the pull request.
   BASE=$(printf '%s' "$ROLLUP" | jq -r '.baseRefName // empty')
   if [ -z "$BASE" ]; then
     echo "BLOCKED: the base branch of PR #$PR_NUMBER could not be read, so its required checks cannot be established." >&2
@@ -523,12 +513,12 @@ for ((M = 0; M < MERGE_N; M++)); do
   esac
 
   if [ -n "$UNFINISHED" ]; then
-    echo "BLOCKED: PR #$PR_NUMBER has checks that have not finished: $UNFINISHED" >&2
+    echo "BLOCKED: PR #$PR_NUMBER has checks that have not finished: $(_bum_show "$UNFINISHED" 1000)" >&2
     echo "Wait for them (gh pr checks $PR_NUMBER --watch) and merge after they report." >&2
     exit 2
   fi
   if [ -n "$NOT_PASSING" ]; then
-    echo "BLOCKED: PR #$PR_NUMBER has checks that did not pass: $NOT_PASSING" >&2
+    echo "BLOCKED: PR #$PR_NUMBER has checks that did not pass: $(_bum_show "$NOT_PASSING" 1000)" >&2
     exit 2
   fi
 
@@ -542,22 +532,22 @@ for ((M = 0; M < MERGE_N; M++)); do
   # a network failure, a rate limit — is also "cannot tell".
   _bum_required() {   # $1 = endpoint, $2 = jq filter. Sets REQ_OUT, REQ_STATE.
     local body errf rc
-    errf=$(mktemp -t flow-bum-err.XXXXXX 2>/dev/null) || { REQ_STATE=unknown; REQ_OUT=""; return; }
-    body=$(_bum_gh api "$1" 2>"$errf"); rc=$?
+    errf=$(mktemp -t flow-bum-err.XXXXXX 2>/dev/null) || { REQ_STATE="unknown"; REQ_OUT=""; return; }
+    body=$(gh api "$1" 2>"$errf"); rc=$?
     if [ "$rc" -eq 0 ]; then
       REQ_STATE="read"
       REQ_OUT=$(printf '%s' "$body" | jq -r "$2" 2>/dev/null || true)
     elif grep -q '(HTTP 404)' "$errf" 2>/dev/null; then
-      REQ_STATE=absent          # definitively nothing configured here
+      REQ_STATE="absent"        # definitively nothing configured here
       REQ_OUT=""
     else
-      REQ_STATE=unknown
+      REQ_STATE="unknown"
       REQ_OUT=""
     fi
     rm -f "$errf"
   }
 
-  PROBE_REPO="${RREPO:-$SESSION_REPO}"
+  PROBE_REPO="$RREPO"
   REQUIRED=""
   REQ_READABLE=0
   if [ -n "$PROBE_REPO" ]; then
@@ -578,7 +568,7 @@ for ((M = 0; M < MERGE_N; M++)); do
   # the second reading is the one that matters.
   if [ "$TOTAL" = "0" ]; then
     if [ -n "$REQUIRED" ]; then
-      echo "BLOCKED: PR #$PR_NUMBER reports no checks yet, but '$BASE' requires: $REQUIRED" >&2
+      echo "BLOCKED: PR #$PR_NUMBER reports no checks yet, but '$(_bum_show "$BASE")' requires: $(_bum_show "$REQUIRED" 1000)" >&2
       echo "They have not been created on this commit. Wait for them to appear." >&2
       exit 2
     fi
@@ -587,7 +577,7 @@ for ((M = 0; M < MERGE_N; M++)); do
     # was written for. Telling them apart depends on knowing what the base
     # requires, so when that could not be read, neither reading is available.
     if [ "$REQ_READABLE" = "0" ]; then
-      echo "BLOCKED: PR #$PR_NUMBER reports no checks, and whether '$BASE' requires any could not be read." >&2
+      echo "BLOCKED: PR #$PR_NUMBER reports no checks, and whether '$(_bum_show "$BASE")' requires any could not be read." >&2
       echo "No checks yet and no checks at all look identical from here. Re-run once the requirements are readable, or merge deliberately." >&2
       exit 2
     fi
@@ -595,10 +585,10 @@ for ((M = 0; M < MERGE_N; M++)); do
 
   if [ "$AUTO" = "1" ] && [ -z "$REQUIRED" ]; then
     if [ "$REQ_READABLE" = "0" ]; then
-      echo "BLOCKED: --auto on PR #$PR_NUMBER, but whether '$BASE' requires any checks could not be read (no access, or the request failed)." >&2
+      echo "BLOCKED: --auto on PR #$PR_NUMBER, but whether '$(_bum_show "$BASE")' requires any checks could not be read (no access, or the request failed)." >&2
       echo "Auto-merge waits only for required checks, so this cannot be established as a wait. Merge without --auto once you are satisfied." >&2
     else
-      echo "BLOCKED: --auto on PR #$PR_NUMBER, but '$BASE' requires no status checks." >&2
+      echo "BLOCKED: --auto on PR #$PR_NUMBER, but '$(_bum_show "$BASE")' requires no status checks." >&2
       echo "Auto-merge waits for REQUIRED checks. With none required it merges immediately, which is the opposite of what --auto is usually reached for." >&2
       if [ "$TOTAL" = "0" ]; then
         echo "This pull request has no checks at all, so there is nothing to wait for." >&2

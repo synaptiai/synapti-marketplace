@@ -182,6 +182,17 @@ Scans for `FLOW_RESOLUTION_CYCLE` markers in the codebase. Blocks merge when the
 **Blocks:** nothing on its own; it asks. Never fires when `minimalScope: true` or when no goal is active.
 **Override:** `minimalScope: true`.
 
+### 11. Unchecked-Merge Gate (every session)
+
+`hooks/scripts/block-unchecked-merge.sh` (PreToolUse, Bash) refuses a merge while any of its checks is queued, running or failed, and refuses `--auto` on a base branch that requires no checks, because auto-merge then merges at once. It applies to merges typed into Bash, not only to `/flow:merge`.
+
+It reads the command as text, so it checks a merge in one shape only: `gh pr merge <number> --repo [host/]owner/name --squash|--merge|--rebase`, with gh as the first word, long options, and literal values. `--repo` is required because it outranks `GH_REPO`, `GH_HOST`, the working directory and `gh repo set-default`, none of which the hook can see. Any other merge is refused with the shape to use, and a variable or substitution in the pull request or repository is named. `gh api` on a merge endpoint or merge mutation is refused outright.
+
+It is not a defence against deliberate evasion (an alias, a command held in a variable, a script piped into a shell, curl to the REST API). Required status checks on the base branch are.
+
+**Blocks:** `gh pr merge` in Bash, `gh api` merge calls
+**Override:** None in settings. Merge a pull request whose checks have finished, in the shape above.
+
 ### Stop hook posture (FlowGoal evidence)
 
 `hooks/scripts/flow-goal-stop.sh` ships in `warn` mode and says so: the reason starts with `FLOW_GOAL_INCOMPLETE — stop ALLOWED (stopHookEnforcement=warn)` and is echoed to stderr. `block` is opt-in (`flow.goals.stopHookEnforcement: block`). In block mode, verification commands execute only for goals recorded in the user-local trust ledger (`bin/flow-goal-trust.sh`, written automatically when flow creates the goal) or when `flow.goals.executeVerificationCommands` is true; consecutive blocks are capped by `flow.goals.failAfterStuckTurns`. See [`stop-hook-goal-enforcement.md`](stop-hook-goal-enforcement.md).
@@ -259,6 +270,7 @@ Reviewers will see the change in the PR diff. Anyone can override with their own
 | 8 | Finding-Ledger Merge | Merge | PR merge |
 | 9 | Task-Completion Quality Ledger | Every session | Task completion |
 | 10 | Issue-Create Ask Gate | Active goal | Asks before `gh issue create` |
+| 11 | Unchecked-Merge Gate | Every session | `gh pr merge` with unfinished checks, or in another shape |
 
 ## Hook Override
 
