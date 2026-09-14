@@ -28,6 +28,8 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 - Not adding a `--json` output mode — `dossier-scaffold.sh` has no JSON mode today, and this fix stays within the existing plain-text `KEY=value` + `ACTIONS` contract.
 - Not changing the `DEST_INTACT` / empty-file detection logic (introduced in the 1.0.2 fix for truncated files) — only the reporting of what happens after a file is judged damaged.
 
+**Accepted residual risk** — the README's two failure branches (missing template, failed copy) increment `SCAFFOLD_FAILED` without a matching `FAILED README.md (...)` `ACTIONS` line, unlike every other failure path in the script. Confirmed genuinely pre-existing (predates PR #201/issue #176) and untouched by this PR's diff — not worsened in kind. Tracked as a follow-up: issue #203.
+
 ### Failure modes
 
 - **Timeouts** — none; local filesystem copy operations only, no network.
@@ -76,3 +78,43 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-14 23:00 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
 
 <!-- auto-log: 2026-09-14 23:00 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
+
+<!-- auto-log: 2026-09-14 23:13 commit "fix(dossier): scaffold no longer double-counts a repaired file as CREATED" -->
+
+<!-- auto-log: 2026-09-14 23:18 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-14 23:18 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-09-14 23:19 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-14 23:19 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-09-14 23:19 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_dossier_status_line_before_outcome_known.md -->
+
+<!-- auto-log: 2026-09-14 23:19 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/MEMORY.md -->
+
+<!-- auto-log: 2026-09-14 23:20 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-09-14 23:21 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-14 23:28 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-09-14 23:28 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-14 23:29 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-14 23:30 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-09-14 23:30 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-14 23:30 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-14 23:37 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
+
+<!-- auto-log: 2026-09-14 23:37 commit "fix(dossier): scaffold refuses symlinks/non-files, never double-reports a failed repair" -->
+
+<!-- auto-log: 2026-09-14 23:38 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-14 23:44 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
+
+<!-- auto-log: 2026-09-14 23:44 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-178.md -->

@@ -19,6 +19,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Known residual risk
 
 - The registration check's approved-wording match (`grep -qF`, normalized literal substring) can silently approve an unscoped document sentence that happens to be a literal substring of a longer, differently-scoped approved wording. Pre-existing since 2026-07-26, unrelated to the fixes above, not worsened in kind by them — tracked in issue #200.
+- `dossier-scaffold.sh`'s two README-failure branches (missing template, failed copy) increment `SCAFFOLD_FAILED` without an accompanying `FAILED README.md (...)` `ACTIONS` line, unlike every other failure path in the script. Pre-existing before this release, unrelated to the fixes above, not worsened in kind by them — tracked in issue #203.
 
 ## [1.2.0] - 2026-09-10
 

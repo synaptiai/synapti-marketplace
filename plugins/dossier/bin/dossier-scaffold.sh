@@ -213,7 +213,7 @@ for REL in $CANONICAL_FILES; do
       continue
     fi
     IS_REPAIR=1
-    REPAIR_BYTES=$(wc -c < "$DEST" 2>/dev/null | tr -d '[:space:]')
+    REPAIR_BYTES=$(wc -c 2>/dev/null < "$DEST" | tr -d '[:space:]')
     if [ "$DRY_RUN" -eq 1 ]; then
       printf 'dossier-scaffold: would repair %s (replacing %s bytes)\n' "$REL" "${REPAIR_BYTES:-unknown}" >&2
     else
