@@ -316,6 +316,7 @@ mkdir -p "$SWORK" 2>/dev/null
 SOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SWORK/docs" 2>&1)
 assert_contains "SCAFFOLD_README=created" "$SOUT" "scaffold reports the README as created"
 assert_contains "SCAFFOLD_CREATED=23" "$SOUT" "the README does not inflate the canonical count"
+assert_contains "SCAFFOLD_REPAIRED=0" "$SOUT" "a clean first scaffold repairs nothing (issue #178)"
 assert_file_exists "$SWORK/docs/README.md" "README lands at the output root"
 
 # Never overwritten, the same guarantee the canonical files carry. A signpost a
@@ -452,7 +453,10 @@ SW=$(mktemp -d)
 "$BIN/dossier-scaffold.sh" --output-root "$SW/pkg" >/dev/null 2>&1
 : > "$SW/pkg/00-control/evidence-ledger.md"
 printf 'no frontmatter here\n' > "$SW/pkg/01-project/product-and-domain.md"
-SOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SW/pkg" 2>&1)
+LEDGER_BYTES=$(wc -c < "$SW/pkg/00-control/evidence-ledger.md" | tr -d '[:space:]')
+DOMAIN_BYTES=$(wc -c < "$SW/pkg/01-project/product-and-domain.md" | tr -d '[:space:]')
+SOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SW/pkg" 2>"$SW/stderr.log")
+SERR=$(cat "$SW/stderr.log" 2>/dev/null)
 assert_contains "REPAIRED 00-control/evidence-ledger.md" "$SOUT" "an empty canonical file is repaired, not skipped"
 assert_contains "REPAIRED 01-project/product-and-domain.md" "$SOUT" "a headerless canonical file is repaired, not skipped"
 if [ -s "$SW/pkg/00-control/evidence-ledger.md" ]; then
@@ -460,6 +464,40 @@ if [ -s "$SW/pkg/00-control/evidence-ledger.md" ]; then
 else
   _dossier_assert_fail "the repaired file is still empty"
 fi
+
+# --- A repair is counted as REPAIRED, never also as CREATED (issue #178) ------
+# The repair branch fell through into the same copy logic untouched files use,
+# so a damaged file was reported REPAIRED *and* CREATED, and counted in
+# SCAFFOLD_CREATED — indistinguishable from a clean first scaffold in the
+# machine-readable summary.
+assert_contains "SCAFFOLD_REPAIRED=2" "$SOUT" "both damaged files are counted in the new REPAIRED total"
+assert_contains "SCAFFOLD_CREATED=0" "$SOUT" "repairs are excluded from CREATED — the other 21 files are already intact and report SKIPPED, not CREATED"
+assert_not_contains "CREATED 00-control/evidence-ledger.md" "$SOUT" "a repaired file produces no CREATED line"
+assert_not_contains "CREATED 01-project/product-and-domain.md" "$SOUT" "a repaired file produces no CREATED line"
+
+# --- The repair path reports what it replaced, on stderr (issue #178) --------
+# The overwrite was invisible: nothing on stderr said a file had content before
+# it was destroyed. Two different byte counts (0 and a real one) rule out an
+# implementation that reports a fixed placeholder instead of the true size.
+assert_contains "00-control/evidence-ledger.md" "$SERR" "stderr names the empty file being repaired"
+assert_contains "$LEDGER_BYTES bytes" "$SERR" "stderr reports the empty file's true byte count"
+assert_contains "01-project/product-and-domain.md" "$SERR" "stderr names the headerless file being repaired"
+assert_contains "$DOMAIN_BYTES bytes" "$SERR" "stderr reports the headerless file's true byte count"
 rm -rf "$SW" 2>/dev/null
+
+# --- A frontmatter-fenced canonical file is never touched by a repair (issue #178) ---
+# The fix changes what happens after a file is judged damaged; it must not
+# also change what happens to a file judged intact.
+SK=$(mktemp -d)
+"$BIN/dossier-scaffold.sh" --output-root "$SK/pkg" >/dev/null 2>&1
+BEFORE_CONTENT=$(cat "$SK/pkg/00-control/evidence-ledger.md" 2>/dev/null)
+SOUT4=$("$BIN/dossier-scaffold.sh" --output-root "$SK/pkg" 2>&1)
+AFTER_CONTENT=$(cat "$SK/pkg/00-control/evidence-ledger.md" 2>/dev/null)
+assert_contains "SCAFFOLD_SKIPPED=23" "$SOUT4" "an already-intact package is fully skipped, nothing repaired"
+assert_contains "SCAFFOLD_REPAIRED=0" "$SOUT4" "an intact frontmatter-fenced file is never counted as repaired"
+assert_not_contains "REPAIRED 00-control/evidence-ledger.md" "$SOUT4" "an intact file produces no REPAIRED line"
+assert_not_contains "CREATED 00-control/evidence-ledger.md" "$SOUT4" "an intact file produces no CREATED line"
+assert_equal "$BEFORE_CONTENT" "$AFTER_CONTENT" "an intact canonical file is byte-identical after a second scaffold run"
+rm -rf "$SK" 2>/dev/null
 
 _dossier_test_summary

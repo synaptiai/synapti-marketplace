@@ -2,10 +2,13 @@
 # dossier-scaffold.sh — create the canonical 8-directory / 23-file documentation
 # package under an output root by copying the plugin's templates.
 #
-# Idempotent and non-destructive: an existing file is NEVER overwritten, never
-# truncated, and never merged. Re-running after a partial scaffold fills only the
-# gaps. This is deliberate — the package holds hand-written evidence, and a
-# scaffold that clobbers is a scaffold nobody dares re-run.
+# Idempotent, but overwrite-safety is conditional, not absolute: an existing file
+# whose first line is exactly "---" (frontmatter-fenced) is left untouched and
+# reported SKIPPED. An existing file that is empty, or lacks that fence, is
+# treated as damaged — a process killed mid-write, or content placed at a
+# canonical path by hand — and is overwritten, reported REPAIRED (never
+# CREATED). Re-running after a partial scaffold fills gaps and repairs damage;
+# it does not preserve arbitrary non-fenced content at a canonical path.
 #
 # A README.md signpost is written at the output root alongside the canonical 23.
 # It is supplemental, not canonical: it asserts no fact about the project, so it
@@ -30,12 +33,16 @@
 #   SCAFFOLD_ROOT=<path>
 #   SCAFFOLD_DRY_RUN=0|1
 #   SCAFFOLD_EXPECTED=23
-#   SCAFFOLD_CREATED=<n>          (canonical files only)
+#   SCAFFOLD_CREATED=<n>          (canonical files newly created; excludes repairs)
+#   SCAFFOLD_REPAIRED=<n>         (canonical files that existed but were damaged —
+#                                  empty, or missing the frontmatter fence — and
+#                                  were overwritten)
 #   SCAFFOLD_SKIPPED=<n>          (canonical files only)
 #   SCAFFOLD_FAILED=<n>
 #   SCAFFOLD_README=created|skipped|failed
-#   CREATED <relative-path>   (one line per created file)
-#   SKIPPED <relative-path>   (one line per pre-existing file)
+#   CREATED <relative-path>   (one line per newly created file)
+#   REPAIRED <relative-path>  (one line per damaged file that was overwritten)
+#   SKIPPED <relative-path>   (one line per pre-existing, intact file)
 #   FAILED  <relative-path>   (one line per copy failure)
 #
 # Exit:
@@ -147,6 +154,7 @@ if [ -z "$README_TEMPLATE" ]; then
 fi
 
 CREATED=0
+REPAIRED=0
 SKIPPED=0
 FAILED=0
 ACTIONS=""
@@ -163,6 +171,7 @@ fi
 for REL in $CANONICAL_FILES; do
   SRC="$TEMPLATE_DIR/$REL"
   DEST="$OUTPUT_ROOT/$REL"
+  IS_REPAIR=0
 
   # Presence is not completeness. A process killed mid-write leaves a file that
   # exists and holds nothing, and `-e` alone cannot tell that from a correctly
@@ -182,6 +191,9 @@ for REL in $CANONICAL_FILES; do
 "
       continue
     fi
+    IS_REPAIR=1
+    REPAIR_BYTES=$(wc -c < "$DEST" 2>/dev/null | tr -d '[:space:]')
+    printf 'dossier-scaffold: repairing %s (replacing %s bytes)\n' "$REL" "${REPAIR_BYTES:-0}" >&2
     ACTIONS="${ACTIONS}REPAIRED $REL
 "
   fi
@@ -194,16 +206,24 @@ for REL in $CANONICAL_FILES; do
   fi
 
   if [ "$DRY_RUN" -eq 1 ]; then
-    CREATED=$((CREATED + 1))
-    ACTIONS="${ACTIONS}CREATED $REL
+    if [ "$IS_REPAIR" -eq 1 ]; then
+      REPAIRED=$((REPAIRED + 1))
+    else
+      CREATED=$((CREATED + 1))
+      ACTIONS="${ACTIONS}CREATED $REL
 "
+    fi
     continue
   fi
 
   if cp "$SRC" "$DEST" 2>/dev/null; then
-    CREATED=$((CREATED + 1))
-    ACTIONS="${ACTIONS}CREATED $REL
+    if [ "$IS_REPAIR" -eq 1 ]; then
+      REPAIRED=$((REPAIRED + 1))
+    else
+      CREATED=$((CREATED + 1))
+      ACTIONS="${ACTIONS}CREATED $REL
 "
+    fi
   else
     FAILED=$((FAILED + 1))
     ACTIONS="${ACTIONS}FAILED  $REL (copy failed)
@@ -232,6 +252,7 @@ printf 'SCAFFOLD_ROOT=%s\n' "$OUTPUT_ROOT"
 printf 'SCAFFOLD_DRY_RUN=%s\n' "$DRY_RUN"
 printf 'SCAFFOLD_EXPECTED=23\n'
 printf 'SCAFFOLD_CREATED=%s\n' "$CREATED"
+printf 'SCAFFOLD_REPAIRED=%s\n' "$REPAIRED"
 printf 'SCAFFOLD_SKIPPED=%s\n' "$SKIPPED"
 printf 'SCAFFOLD_FAILED=%s\n' "$FAILED"
 printf 'SCAFFOLD_README=%s\n' "$README_STATE"

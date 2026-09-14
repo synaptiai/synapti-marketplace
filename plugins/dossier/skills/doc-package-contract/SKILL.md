@@ -102,7 +102,7 @@ Decorative diagrams, generic textbook illustrations, and exhaustive file trees h
 
 ## Output Format
 
-Scaffold via `bin/dossier-scaffold.sh --output-root <path>`, which never overwrites an existing file. Verify via `bin/dossier-package-check.sh`.
+Scaffold via `bin/dossier-scaffold.sh --output-root <path>`, which leaves a frontmatter-fenced existing file untouched but repairs (overwrites) one that is empty or missing the fence. Verify via `bin/dossier-package-check.sh`.
 
 ```markdown
 ### Package Structure
