@@ -26,6 +26,10 @@
 # The command is parsed, not matched. `echo "gh pr merge 3"` runs no merge, and
 # a hook that reads text rather than commands refuses the bug report that
 # describes it — the lesson of issues #167 and #142, whose parser this shares.
+#
+# Reading text has a cost: a shell variable cannot be expanded. A merge whose
+# pull request or repository is `$PR_NUM`, `${REPO}` or `$(...)` is refused, and
+# the refusal names that value, so write merge commands with literal values.
 
 set -uo pipefail
 
@@ -81,6 +85,17 @@ _bum_takes_value() {
   case "$1" in
     -R|--repo|-t|--subject|-b|--body|-F|--body-file|-A|--author-email|--match-head-commit)
       return 0 ;;
+  esac
+  return 1
+}
+
+# A value this hook cannot know without running a shell: a variable, or a
+# substitution (the segmenter leaves `__BD_SUBST__` where `$(...)` or a backtick
+# pair stood). Quoting is gone by this point, so `'$X'` counts too; neither a
+# pull request number nor a repository name can contain `$`.
+_bum_unreadable() {
+  case "$1" in
+    *'$'*|*'`'*|*__BD_SUBST__*) return 0 ;;
   esac
   return 1
 }
@@ -159,6 +174,22 @@ while IFS= read -r SEG; do
       ;;
   esac
 
+  # The same holds when the selector or the repository is a shell variable or a
+  # substitution. This hook reads text, so `"$REPO"` reaches the probe as the
+  # literal string `$REPO`, the lookup fails, and the refusal used to blame the
+  # checks. Name the value instead, and skip a probe that can only fail (#195).
+  for pair in "pull request:${words[2]:-}" "repository:$seg_repo"; do
+    what="${pair%%:*}"
+    val="${pair#*:}"
+    if _bum_unreadable "$val"; then
+      val="${val//__BD_SUBST__/\$(...)}"
+      val="${val#"${val%%[![:space:]]*}"}"; val="${val%"${val##*[![:space:]]}"}"
+      echo "BLOCKED: gh pr merge — the $what is given as \"$val\", which this hook reads as text and cannot expand." >&2
+      echo "Write the value literally (e.g. gh pr merge 123 --repo owner/name) so its checks can be verified." >&2
+      exit 2
+    fi
+  done
+
   MERGE_FOUND=1
   MERGE_SEL[$MERGE_N]="${words[2]:-}"
   MERGE_REPO[$MERGE_N]="$seg_repo"
@@ -200,7 +231,7 @@ for ((M = 0; M < MERGE_N; M++)); do
   elif [ -n "$SEL" ] && [ -n "$SESSION_REPO" ]; then
     VIEW+=(--repo "$SESSION_REPO")
   fi
-  VIEW+=(--json number,baseRefName,statusCheckRollup)
+  VIEW+=(--json "number,baseRefName,statusCheckRollup")
 
   ROLLUP=$(gh "${VIEW[@]}" 2>/dev/null); GH_RC=$?
   if [ "$GH_RC" -ne 0 ] || [ -z "$ROLLUP" ]; then
@@ -290,7 +321,7 @@ for ((M = 0; M < MERGE_N; M++)); do
     errf=$(mktemp -t flow-bum-err.XXXXXX 2>/dev/null) || { REQ_STATE=unknown; REQ_OUT=""; return; }
     body=$(gh api "$1" 2>"$errf"); rc=$?
     if [ "$rc" -eq 0 ]; then
-      REQ_STATE=read
+      REQ_STATE="read"
       REQ_OUT=$(printf '%s' "$body" | jq -r "$2" 2>/dev/null || true)
     elif grep -q '(HTTP 404)' "$errf" 2>/dev/null; then
       REQ_STATE=absent          # definitively nothing configured here

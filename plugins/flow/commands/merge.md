@@ -585,7 +585,9 @@ gate.
 The `block-unchecked-merge.sh` PreToolUse hook enforces both halves for merges
 that do not come through this command: it refuses a `gh pr merge` while any
 check is queued, running or failed, and refuses `--auto` on a base branch that
-requires nothing.
+requires nothing. It reads the command as text, so it also refuses a merge whose
+pull request or repository is a shell variable; the merge in Phase 3 writes both
+literally.
 
 The Required Checks row is not decoration. "All checks passed" and "no checks
 are required here" are different facts, and only the first is a gate. Where the
@@ -621,23 +623,19 @@ If Option 1: after resolution completes, re-run Phase 1 to verify PR is now merg
 
 Use the AskUserQuestion tool with contextual options to confirm: "PR #$PR_NUM is ready to merge. Proceed with squash merge and branch deletion?"
 
-Only after the user confirms via the tool:
+Only after the user confirms via the tool, run the merge with every value
+written literally: the PR number, the repository from the report's Repository
+row (which `REPO_CROSSCHECK` verified), and the strategy and delete flag from
+the settings shown in the report. Replace each `{…}` below before running.
 
 ```bash
-# $REPO does not survive from the preflight block: each fence is its own
-# shell. Resolved again here, because `gh --repo ""` falls back to the default
-# resolution of gh without complaining — an unset REPO reads as pinned and behaves
-# as unpinned, which is the failure this pinning exists to prevent.
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
-# Read merge settings
-STRATEGY="squash"  # or from settings
-DELETE_FLAG="--delete-branch"  # or from settings
-
+# Literal values, not $PR_NUM or $REPO. block-unchecked-merge.sh reads this
+# command as text and cannot expand a variable, so a variable here is refused.
+# --repo pins the merge to the repository the preflight read.
 # No --auto. It waits for REQUIRED checks, so on a repository that requires
 # none it merges immediately; the gate above is what establishes the checks
-# have finished. --repo pins the merge to the repository the preflight read.
-gh pr merge "$PR_NUM" --repo "$REPO" --$STRATEGY $DELETE_FLAG
+# have finished. Drop --delete-branch when settings.merge.deleteBranch is false.
+gh pr merge {PR_NUMBER} --repo {OWNER/NAME} --{squash|merge|rebase} --delete-branch
 ```
 
 ## Phase 4: Post-Merge
