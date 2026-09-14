@@ -157,6 +157,22 @@ pub "$T" '* This vendor performs full formal verification on every release.'
 scan "$T"
 assert_equal "1" "$?" "an unregistered claim written with a * bullet marker is detected"
 
+# A REGISTERED bullet claim must pass, not just an unregistered one score
+# non-zero. With no register present, an unregistered-only assertion cannot
+# tell "the marker was stripped" apart from "the marker was left in place" —
+# both produce a non-zero hit either way. `normalize()` incidentally strips a
+# stray `*` (it removes `[*_#>]` unconditionally) but never strips `-`, so a
+# `- ` marker left un-stripped survives into the normalized sentence as
+# "- the api supports..." — a string the approved wording "the api
+# supports..." does not contain as a substring, and the literal-substring
+# match at :grep -qF would then wrongly report an approved claim as
+# unregistered. This is the fixture that catches that specific failure.
+T="$W/bullet-registered"; mkpkg "$T"
+reg "$T" '| CL-0001 | the api supports oauth 20 device flow | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+pub "$T" '- The API supports OAuth 20 device flow'
+scan "$T"
+assert_equal "0" "$?" "a registered claim written as a bullet still matches its approved wording"
+
 # --- issue #176: a table cell is prose with a delimiter, not structural markup
 T="$W/table-claim"; mkpkg "$T"
 reg "$T" ''
@@ -182,12 +198,35 @@ OUT=$(scanout "$T")
 assert_not_contains "what the reader should expect" "$OUT" "the table header row is not treated as a claim"
 assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" "only the data cell is an unregistered claim, not the header"
 
+# A REGISTERED table-cell claim must pass — proves cell splitting/trimming
+# produces text that round-trips through the literal-substring match, not
+# just that cell text is detected at all.
+T="$W/table-registered"; mkpkg "$T"
+reg "$T" '| CL-0001 | the api supports oauth 20 device flow | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+{
+  printf '| Claim | Detail |\n'
+  printf '|---|---|\n'
+  printf '| Availability | The API supports OAuth 20 device flow |\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "0" "$?" "a registered claim written as a table cell still matches its approved wording"
+
 # --- issue #176: a blockquote is prose with a marker, not structural markup --
 T="$W/blockquote-claim"; mkpkg "$T"
 reg "$T" ''
 pub "$T" '> This product has completed a formal third-party security audit.'
 scan "$T"
 assert_equal "1" "$?" "an unregistered claim written as a blockquote is detected"
+
+# A REGISTERED blockquote claim must pass, for the same marker-stripping-
+# residue reason as the bullet case above (`>` is stripped by normalize()
+# incidentally, but only after the `-`-equivalent leading-space concern is
+# ruled out by explicit marker removal, not relied upon).
+T="$W/blockquote-registered"; mkpkg "$T"
+reg "$T" '| CL-0001 | the api supports oauth 20 device flow | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+pub "$T" '> The API supports OAuth 20 device flow'
+scan "$T"
+assert_equal "0" "$?" "a registered claim written as a blockquote still matches its approved wording"
 
 # --- issue #176: the scan's own coverage scope must be legible in its output -
 # A `0` result must not be misreadable as "every line class was checked" when
