@@ -27,6 +27,12 @@ artifacts:
   path: B
   findings_count: 7
   pr: 201
+- type: goal-evaluation
+  captured_at: '2026-09-14T20:28:21Z'
+  goal_id: issue-176
+  result: achieved
+  evidence_bundle: .flow/runs/2026-09-14T145858Z-issue-176
+  failures: none
 ---
 # Issue #176 — claim-scan cannot see bullets or table rows
 
@@ -253,3 +259,7 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-14 22:07 Edit /tmp/pr201-review-comment.md -->
 
 <!-- auto-log: 2026-09-14 22:07 Write /tmp/pr201-resolution-comment.md -->
+
+<!-- auto-log: 2026-09-14 22:15 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-176.goal.yaml -->
+
+<!-- auto-log: 2026-09-14 22:16 commit "chore(dossier): include the goal file itself in issue-176's allowed_paths" -->

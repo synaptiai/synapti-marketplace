@@ -23,63 +23,63 @@ objective:
       from bullet lines (- / * markers stripped), not just paragraph prose.
     verification_command: bash plugins/dossier/tests/run.sh disclosure-gate.test.sh
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-09-14T145858Z-issue-176/evidence/evidence-ac1-eval-1.evidence.yaml
+    last_evaluated_at: '2026-09-14T20:30:00Z'
+    last_result: pass
   - id: AC2
     text: The registration check extracts candidate sentences from table cells (row
       split on |, header and separator rows skipped).
     verification_command: bash plugins/dossier/tests/run.sh disclosure-gate.test.sh
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-09-14T145858Z-issue-176/evidence/evidence-ac2-eval-1.evidence.yaml
+    last_evaluated_at: '2026-09-14T20:30:00Z'
+    last_result: pass
   - id: AC3
     text: Blockquote lines (> marker stripped) are also examined as candidate prose.
     verification_command: bash plugins/dossier/tests/run.sh disclosure-gate.test.sh
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-09-14T145858Z-issue-176/evidence/evidence-ac3-eval-1.evidence.yaml
+    last_evaluated_at: '2026-09-14T20:30:00Z'
+    last_result: pass
   - id: AC4
     text: Headings (#) and fenced code block content remain exempt from the registration
       check (no regression).
     verification_command: bash plugins/dossier/tests/run.sh disclosure-gate.test.sh
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-09-14T145858Z-issue-176/evidence/evidence-ac4-eval-1.evidence.yaml
+    last_evaluated_at: '2026-09-14T20:30:00Z'
+    last_result: pass
   - id: AC5
     text: Table header rows and the --- separator row are not themselves treated as
       candidate claims.
     verification_command: bash plugins/dossier/tests/run.sh disclosure-gate.test.sh
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-09-14T145858Z-issue-176/evidence/evidence-ac5-eval-1.evidence.yaml
+    last_evaluated_at: '2026-09-14T20:30:00Z'
+    last_result: pass
   - id: AC6
     text: The script emits which line classes were examined alongside CLAIM_SCAN_UNREGISTERED_SENTENCES,
       in both the plain-text summary and --json output.
     verification_command: bash plugins/dossier/tests/run.sh disclosure-gate.test.sh
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-09-14T145858Z-issue-176/evidence/evidence-ac6-eval-1.evidence.yaml
+    last_evaluated_at: '2026-09-14T20:30:00Z'
+    last_result: pass
   - id: AC7
     text: shellcheck -S warning plugins/dossier/bin/dossier-claim-scan.sh passes with
       no new warnings.
     verification_command: shellcheck -S warning plugins/dossier/bin/dossier-claim-scan.sh
     must_pass: true
-    status: pending
-    evidence_ref: null
-    last_evaluated_at: null
-    last_result: null
+    status: pass
+    evidence_ref: .flow/runs/2026-09-14T145858Z-issue-176/evidence/evidence-ac7-eval-1.evidence.yaml
+    last_evaluated_at: '2026-09-14T20:30:00Z'
+    last_result: pass
 specification:
   non_goals:
   - Not fixing dossier-package-check.sh's analogous "clean result, invisible scope"
@@ -166,5 +166,11 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
-  current_phase: explore
+  status: achieved
+  last_evaluation:
+    result: pass
+    reason: All 7 must_pass ACs pass on deterministic command_result sidecars (exit_code
+      0), cross-checked against the trusted deterministic report (7/7 passing, 0 failing,
+      0 incomplete, 0 path violations). Confirmed via goal-evaluator-judge, confidence
+      0.90.
+    at: '2026-09-14T20:28:17Z'
