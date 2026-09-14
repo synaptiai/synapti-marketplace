@@ -134,9 +134,17 @@ This is the only path to true cross-model independence, and it is worth saying p
 
 ## Phase 5 — Hand off
 
-Append each pass's section to `07-verification/documentation-verification-report.md` under the round heading. Sections stay separate and unmerged until reconciliation.
+Append each pass's section to `07-verification/documentation-verification-report.md` under the round heading, wrapped in `<!-- DOSSIER_VERBATIM_BEGIN -->` / `<!-- DOSSIER_VERBATIM_END -->` markers — the collected pass content only, never the round heading or the summary block below. This is what lets `bin/dossier-prose-lint.sh` exempt the auditors' own prose from G18's hard-category checks (see `references/release-gate-conditions.md` G18) without exempting anything else in the package: the exemption is scoped to this one file by the linter itself, and to this one appended block by the markers. Sections stay separate and unmerged until reconciliation.
 
 ```markdown
+<!-- DOSSIER_VERBATIM_BEGIN -->
+{pass-A.md content}
+
+{pass-B.md content}
+
+{pass-C.md content}
+<!-- DOSSIER_VERBATIM_END -->
+
 ### Audit complete — round {n}
 
 PASSES_RUN={A,B,C}  INDEPENDENCE_TIER={in-plugin|external}
