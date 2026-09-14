@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # plugins/flow/hooks/scripts/lib/command-parse.sh
+# shellcheck disable=SC2034  # BD_CODE, BD_KEPT_BODY, BD_UNBALANCED, GIT_* are outputs read by the sourcing hook
 #
 # Reading a shell command the way the shell reads it: words, quoting, comments,
 # heredoc bodies, and where a command word actually sits. Sourced by the hooks
@@ -12,7 +13,8 @@
 # which also means one place to fix when the hard part turns out to be wrong.
 #
 # Contract for callers:
-#   _bd_strip_noncode <command>   -> sets BD_CODE
+#   _bd_strip_noncode <command>   -> sets BD_CODE, and BD_KEPT_BODY=1 when a heredoc
+#                                    body was kept as text
 #   _rm_tokenise <simple-command> -> fills TOK
 #   _bd_git_parse <simple-command> -> sets GIT_SUB, GIT_ARGS, GIT_ARGN; 1 if not git
 #   _bd_is_whole_tree <pathspec>  -> 0 when the pathspec is the whole tree
@@ -20,6 +22,9 @@
 #   _bd_is_opt <token> <full> <min> -> 0 when the token is that long option,
 #                                    including any unambiguous abbreviation
 #   _bd_is_interpreter <word>     -> 0 when the word names something that runs a script
+#   _bd_expand_interpreter_args   -> appends quoted interpreter arguments to BD_CODE
+#   _bd_segments <text>           -> one simple command per line, plus marker lines
+#                                    (__BD_UNBALANCED__, __BD_SEG_FAIL__)
 #
 # Every rule that reads BD_CODE inherits its posture: it removes only what is
 # unambiguously text, and keeps anything uncertain. See the comments below.
@@ -51,17 +56,35 @@ _rm_tokenise() {
       return 0 ;;
   esac
 
-  local _tok_line
-  while IFS= read -r _tok_line; do
-    TOK+=("${_tok_line#T}")
-  done < <(printf '%s\n' "$1" | awk '
-    BEGIN { SQ = sprintf("%c", 39) }
+  # The awk output is captured before it is read, not read through `< <(...)`.
+  # A process substitution loses awk's exit status, so an awk that died left
+  # TOK empty, and an empty TOK reads as a command with nothing in it: under
+  # bash 3.2 a few hundred of these calls in one hook run crashed that hook,
+  # and the commands after the crash were never checked. Every caller runs in
+  # the hook's own shell, so the exit below refuses the command.
+  local _tok_line _tok_out
+  if ! _tok_out=$(printf '%s\n' "$1" | awk '
+    # Does the quote at i open a dollar-quoted string? Only when the character
+    # before it is a dollar sign that no backslash escapes.
+    function dq_open(s, i,   j, b) {
+      if (i < 2 || substr(s, i - 1, 1) != "$") return 0
+      b = 0
+      for (j = i - 2; j >= 1 && substr(s, j, 1) == "\\"; j--) b++
+      return (b % 2) == 0
+    }
+    BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ }
     {
       s = $0; n = length(s); q = ""; cur = ""; in_word = 0; pos = 1
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1)
         if (q != "") {
-          if (c == q) { cur = cur substr(s, pos, i - pos); pos = i + 1; q = "" }
+          # In a dollar-quoted string (q is DQ) a backslash escapes the quote.
+          if (q == DQ && c == "\\") { i++; continue }
+          if (c == q || (q == DQ && c == SQ)) { cur = cur substr(s, pos, i - pos); pos = i + 1; q = "" }
+          continue
+        }
+        if (c == SQ && dq_open(s, i)) {
+          cur = cur substr(s, pos, i - pos); pos = i + 1; q = DQ; in_word = 1
           continue
         }
         if (c == "\"" || c == SQ) {
@@ -81,7 +104,14 @@ _rm_tokenise() {
       cur = cur substr(s, pos, n - pos + 1)
       if (in_word) print "T" cur
     }
-  ')
+  '); then
+    echo "BLOCKED: could not split a command into words (awk failed) — refusing rather than guessing." >&2
+    exit 2
+  fi
+  [ -n "$_tok_out" ] || return 0
+  while IFS= read -r _tok_line; do
+    TOK+=("${_tok_line#T}")
+  done <<< "$_tok_out"
 }
 
 # ---------------------------------------------------------------------------
@@ -183,7 +213,15 @@ _bd_strip_noncode() {
       sub(/^.*\//, "", w)
       return (w == "cat" || w == "tee" || w == "echo" || w == "printf" || w == "gh")
     }
-    BEGIN { SQ = sprintf("%c", 39); inhd = 0; buf = ""; delim = ""; tabs = 0 }
+    # Does the quote at i open a dollar-quoted string? Only when the character
+    # before it is a dollar sign that no backslash escapes.
+    function dq_open(s, i,   j, b) {
+      if (i < 2 || substr(s, i - 1, 1) != "$") return 0
+      b = 0
+      for (j = i - 2; j >= 1 && substr(s, j, 1) == "\\"; j--) b++
+      return (b % 2) == 0
+    }
+    BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ; inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = ""; q0 = "" }
     {
       line = $0
       sub(/\r$/, "", line)
@@ -196,13 +234,68 @@ _bd_strip_noncode() {
         next
       }
 
+      # A continued line is scanned again with the line it continues, from the
+      # quote state that line started in, so nothing is counted twice.
+      if (pend == "") q0 = q
+      line = pend line
+      pend = ""
+      q = q0
+
+      # --- remove a comment, tracking quotes and backslash escapes ---------
+      # Two quote states. `q` carries from one line to the next, as the shell
+      # does: `--body "Ready.` then `Closes #12" && gh pr merge 9` has its `#`
+      # inside the string. `ql` starts fresh on every line, as this scan always
+      # did: a heredoc body kept as text is not quoted text, and one apostrophe
+      # in it (the word dont, spelled with an apostrophe) would otherwise leave `q` open and turn the `#` in a
+      # later `-m "Refs #12" written with single quotes` into a comment that cuts the command after it.
+      # A `#` is a comment only when both say it is outside quotes. Either
+      # alone can only be wrong in the direction of keeping text.
+      n = length(line); cut = 0; ql = ""; eq = 0; el = 0
+      for (i = 1; i <= n; i++) {
+        c = substr(line, i, 1)
+        bq = eq; bl = el; oq = (q == ""); ol = (ql == "")
+        # q or ql is DQ inside a dollar-quoted string, where a backslash
+        # escapes the quote that would otherwise close it.
+        dq = (c == SQ && dq_open(line, i))
+        if (eq) eq = 0
+        else if (c == "\\" && q != SQ) eq = 1
+        else if (q != "") { if (c == q || (q == DQ && c == SQ)) q = "" }
+        else if (dq) q = DQ
+        else if (c == "\"" || c == SQ) q = c
+        if (el) el = 0
+        else if (c == "\\" && ql != SQ) el = 1
+        else if (ql != "") { if (c == ql || (ql == DQ && c == SQ)) ql = "" }
+        else if (dq) ql = DQ
+        else if (c == "\"" || c == SQ) ql = c
+        if (c == "#" && oq && ol && !bq && !bl) {
+          prev = (i == 1) ? "" : substr(line, i - 1, 1)
+          if (prev == "" || prev == " " || prev == "\t" || prev == ";" ||
+              prev == "|" || prev == "&" || prev == "(" || prev == ")") { cut = i; break }
+        }
+      }
+      out = (cut > 0) ? substr(line, 1, cut - 1) : line
+
+      # A line ending in an odd number of backslashes, outside single quotes,
+      # continues on the next line; reading the two as two put `gh pr \` and
+      # `merge 9` in different commands. Decided after the comment: a comment
+      # ending in a backslash does not continue, in bash or in sh, and joining
+      # it swallowed the next line whole.
+      if (cut == 0 && q != SQ && match(out, /\\+$/) && (RLENGTH % 2) == 1) {
+        pend = substr(out, 1, length(out) - 1)
+        next
+      }
+
       # --- is this line a droppable heredoc introducer? --------------------
-      probe = line
+      # Only on a line that starts outside quotes by both readings: a `<<EOF`
+      # inside a string that runs across lines is text, and treating it as an
+      # introducer would drop the lines after it as a body.
+      probe = out
       hits = gsub(/<</, "<<", probe)
-      if (hits == 1 && line !~ /[|>]/ &&
-          match(line, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*$/)) {
-        intro = substr(line, RSTART)
-        owner = owner_word(substr(line, 1, RSTART - 1))
+      if (q0 != "") hits = 0
+      if (hits == 1 && out !~ /[|>]/ &&
+          match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*$/)) {
+        intro = substr(out, RSTART)
+        owner = owner_word(substr(out, 1, RSTART - 1))
         if (is_sink(owner)) {
           d = intro
           sub(/^<</, "", d)
@@ -215,10 +308,10 @@ _bd_strip_noncode() {
       }
       # The same shape with a single-quoted delimiter. Written separately
       # because embedding an apostrophe in this program would end it.
-      if (!inhd && hits == 1 && line !~ /[|>]/ &&
-          match(line, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*$")) {
-        intro = substr(line, RSTART)
-        owner = owner_word(substr(line, 1, RSTART - 1))
+      if (!inhd && hits == 1 && out !~ /[|>]/ &&
+          match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*$")) {
+        intro = substr(out, RSTART)
+        owner = owner_word(substr(out, 1, RSTART - 1))
         if (is_sink(owner)) {
           d = intro
           sub(/^<</, "", d)
@@ -229,31 +322,32 @@ _bd_strip_noncode() {
           if (d != "") { inhd = 1; delim = d; buf = "" }
         }
       }
-
-      # --- remove a comment, tracking quotes and backslash escapes ---------
-      n = length(line); q = ""; cut = 0
-      for (i = 1; i <= n; i++) {
-        c = substr(line, i, 1)
-        if (c == "\\" && q != SQ) { i++; continue }
-        if (q != "") { if (c == q) q = ""; continue }
-        if (c == "\"" || c == SQ) { q = c; continue }
-        if (c == "#") {
-          prev = (i == 1) ? "" : substr(line, i - 1, 1)
-          if (prev == "" || prev == " " || prev == "\t" || prev == ";" ||
-              prev == "|" || prev == "&" || prev == "(" || prev == ")") { cut = i; break }
-        }
-      }
-      print (cut > 0) ? substr(line, 1, cut - 1) : line
+      # A heredoc this pass did not drop keeps its body in the output, and that
+      # body is text, not shell: its quotes do not pair with anything. Say so,
+      # so the segmenter does not read one apostrophe in it as a quote that
+      # hides the commands after it. Anything shaped like an introducer counts,
+      # including a shift such as 1<<x; that costs only a second reading.
+      if (!inhd && (out ~ /(^|[^<])<<-?[ \t]*[\\"]?[A-Za-z_]/ ||
+                    out ~ ("(^|[^<])<<-?[ \t]*" SQ "[A-Za-z_]"))) kept = 1
+      print out
     }
     END {
+      # A continuation with nothing after it is still a command.
+      if (pend != "") print pend
       # An unterminated heredoc keeps everything it swallowed. Dropping it would
       # turn one mis-recognised introducer into a hook that sees nothing at all.
-      if (inhd && buf != "") printf "%s", buf
+      if (inhd && buf != "") { printf "%s", buf; kept = 1 }
+      if (kept) print "__BD_KEPT_BODY__"
     }
   ') || {
     echo "BLOCKED: could not scan the command (awk failed) — refusing rather than guessing." >&2
     exit 2
   }
+  BD_KEPT_BODY=0
+  case "$BD_CODE" in
+    __BD_KEPT_BODY__) BD_KEPT_BODY=1; BD_CODE="" ;;
+    *$'\n'__BD_KEPT_BODY__) BD_KEPT_BODY=1; BD_CODE="${BD_CODE%$'\n'__BD_KEPT_BODY__}" ;;
+  esac
 }
 
 # _bd_segments <text>
@@ -271,24 +365,78 @@ _bd_strip_noncode() {
 # argument did the same to the selector: `gh pr merge -b "a; b" 42` lost the 42,
 # and a probe that wants to know WHICH pull request asked about another one.
 #
-# BD_UNBALANCED is 1 when the text ends inside a quote or an unclosed
-# substitution. A caller that cannot afford to guess should treat that as
-# "unparsable" rather than as "nothing found".
+# Two marker lines can appear among the segments: `__BD_UNBALANCED__` when the
+# text ends inside a quote or an unclosed substitution, and `__BD_SEG_FAIL__`
+# when the parse itself failed. BD_UNBALANCED is also set, for a caller that
+# runs this in its own shell rather than behind `< <(...)`.
 _bd_segments() {
   BD_UNBALANCED=0
-  local out
-  out=$(printf '%s\n' "$1" | awk '
+  local joined perline
+  # How line ends are read.
+  #
+  # A newline inside a quoted string is part of the string, so the shell reads
+  # `gh pr merge --body "Summary` and `Details" 9` as one command. When the text
+  # balances, that joined reading is the only one printed: the lines of a
+  # multi-line commit message are text, and reading them as commands refused
+  # messages that merely mention one.
+  #
+  # Two things make the joined reading untrustworthy, and both come from the
+  # same cause: text that is not shell being scanned as if it were.
+  #
+  #   - The text does not balance.
+  #   - _bd_strip_noncode kept a heredoc body (BD_KEPT_BODY=1). A body is text,
+  #     so its quotes pair with nothing, yet this scan pairs them: one apostrophe
+  #     in a body glues every later command into a "string", and a second body,
+  #     or a comment with an apostrophe in it, closes that string again. The
+  #     text then balances with the commands between hidden inside it, which is
+  #     how a merge or an rm between two commit bodies went unseen. Balance
+  #     alone cannot detect this; only knowing a body was kept can.
+  #
+  # In either case the per-line reading, which forgets quotes at each line end,
+  # is printed too. When the text does not balance, a `__BD_UNBALANCED__` line
+  # follows: a caller that cannot afford to guess treats that as "unparsable"
+  # rather than as "nothing found".
+  #
+  # A failed awk prints `__BD_SEG_FAIL__`. The caller reads this through
+  # `$(...)`, and an empty result would read as "no commands", so the marker is
+  # how a failure reaches it.
+  joined=$(printf '%s\n' "$1" | awk -v join=1 "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
+  case "$joined" in
+    *__BD_UNBALANCED__*) BD_UNBALANCED=1 ;;
+  esac
+  if [ "$BD_UNBALANCED" = "1" ] || [ "${BD_KEPT_BODY:-0}" = "1" ]; then
+    perline=$(printf '%s\n' "$1" | awk -v join=0 "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
+    { printf '%s\n' "$joined"; printf '%s\n' "$perline"; } | grep -v '^__BD_UNBALANCED__$' | awk '!seen[$0]++' \
+      || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
+    [ "$BD_UNBALANCED" = "1" ] && printf '%s\n' "__BD_UNBALANCED__"
+  else
+    printf '%s\n' "$joined"
+  fi
+  return 0
+}
+
+_BD_SEG_AWK='
     # depth must start as the NUMBER 0. Left uninitialised it is the empty
     # string, so buf[depth] is buf[""] at the outer level and buf["0"] once a
     # substitution has closed — different slots, and everything written before
     # the substitution is silently dropped.
-    BEGIN { SQ = sprintf("%c", 39); depth = 0; unbal = 0 }
+    # Does the quote at i open a dollar-quoted string? Only when the character
+    # before it is a dollar sign that no backslash escapes.
+    function dq_open(s, i,   j, b) {
+      if (i < 2 || substr(s, i - 1, 1) != "$") return 0
+      b = 0
+      for (j = i - 2; j >= 1 && substr(s, j, 1) == "\\"; j--) b++
+      return (b % 2) == 0
+    }
+    BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ; depth = 0; unbal = 0 }
     function flush(   i) {
       if (buf[depth] != "") { print buf[depth]; buf[depth] = "" }
     }
     {
       line = $0
       n = length(line)
+      # The per-line reading forgets quotes at each line end.
+      if (!join) q[depth] = ""
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1)
 
@@ -309,10 +457,14 @@ _bd_segments() {
             continue
           }
           buf[depth] = buf[depth] c
-          if (c == q[depth]) q[depth] = ""
+          if (c == q[depth] || (q[depth] == DQ && c == SQ)) q[depth] = ""
           continue
         }
 
+        # A dollar-quoted string is recorded as A: inside it a backslash
+        # escapes the quote (the escape rule above already applies, since A is
+        # not a single quote), and only a quote closes it.
+        if (c == SQ && dq_open(line, i)) { q[depth] = DQ; buf[depth] = buf[depth] c; continue }
         if (c == "\"" || c == SQ) { q[depth] = c; buf[depth] = buf[depth] c; continue }
 
         if (c == "$" && substr(line, i + 1, 1) == "(") {
@@ -340,21 +492,52 @@ _bd_segments() {
 
         buf[depth] = buf[depth] c
       }
-      flush()
+      if (join && q[depth] != "") buf[depth] = buf[depth] " "
+      else flush()
     }
     END {
       while (depth > 0) { if (buf[depth] != "") print buf[depth]; depth-- ; unbal = 1 }
       if (buf[0] != "") print buf[0]
       if (unbal || q[0] != "") print "__BD_UNBALANCED__"
     }
-  ')
-  case "$out" in
-    *__BD_UNBALANCED__*)
-      BD_UNBALANCED=1
-      out=$(printf '%s\n' "$out" | grep -v '^__BD_UNBALANCED__$')
-      ;;
-  esac
-  printf '%s\n' "$out"
+'
+
+# _bd_expand_interpreter_args
+# Appends to BD_CODE the contents of every quoted argument handed to something
+# that runs it.
+#
+# An interpreter handed its script as a single quoted argument — `bash -c "git
+# reset --hard"`, `sh -c '...'`, `ssh host "..."`, `eval "..."` — is one word to
+# the tokeniser, so no rule could see the command inside it. Append the contents
+# of those arguments as further lines, which the segmenting then treats as
+# ordinary commands. One level deep is enough for every real form; deeper
+# nesting arrives here as its own quoted argument on the next pass anyway.
+# Shared because every hook that reads commands has the same blind spot: the
+# merge gate let `bash -c 'gh pr merge 9'` through until it called this too.
+_bd_expand_interpreter_args() {
+  local seg tok i n found
+  local -a TOK=()
+  local extra=""
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+    case "$seg" in *[\'\"]*) ;; *) continue ;; esac
+    _rm_tokenise "$seg"
+    n=${#TOK[@]}
+    found=0
+    for ((i = 0; i < n; i++)); do
+      tok="${TOK[i]}"
+      if [ "${#tok}" -le 4096 ] && _bd_is_interpreter "${tok#\\}"; then found=1; continue; fi
+      if [ "$found" = "1" ]; then
+        case "$tok" in
+          *[[:space:]]*) extra="$extra
+$tok" ;;
+        esac
+      fi
+    done
+  done <<BD_EXPAND_EOF
+$BD_CODE
+BD_EXPAND_EOF
+  if [ -n "$extra" ]; then BD_CODE="$BD_CODE$extra"; fi
 }
 
 # ---------------------------------------------------------------------------
@@ -419,7 +602,7 @@ _bd_is_whole_tree() {
     esac
   done
   case "$p" in
-    ''|.|/|:|:/|:/.|:/\*|'*'|'**'|:\(top\)|':(top)'|'.') return 0 ;;
+    ''|.|/|:|:/|:/.|:/\*|'*'|'**'|':(top)') return 0 ;;
   esac
   # An absolute path naming the repository root is the whole tree too.
   if [ "${p#/}" != "$p" ] && command -v git >/dev/null 2>&1; then

@@ -543,6 +543,42 @@ When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.f
 
 **Linked-run completion check** (Phase 2 / verify): before allowing merge, verify that every FlowRun linked to this PR's branch (the `start-issue` run and any `address-pr` / `review-pr` runs) has reached `state.status: completed`. If any linked run is still `active`, refuse the merge — this is Tier 3, so there is **no override** beyond the standard merge confirmation. Surface the still-active run id and point to `/flow:resume`.
 
+### Merge Settings
+
+The strategy and branch deletion the confirmation names, and the merge in Phase 3 uses. Read here so both come from the settings rather than from a default the model assumes.
+
+```!
+echo "### Merge Settings"
+CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+if [ ! -x "$CASCADE" ]; then
+  echo "MERGE_SETTINGS_STATE=blocked"
+  echo "ERROR=cascade-resolve.sh missing or non-executable at $CASCADE; the merge settings cannot be read"
+  true; exit 0
+fi
+MERGE_STRATEGY=$("$CASCADE" --default "squash" '.merge.strategy' 2>/dev/null)
+DELETE_BRANCH=$("$CASCADE" --default "true" '.merge.deleteBranch' 2>/dev/null)
+case "$MERGE_STRATEGY" in
+  squash|merge|rebase) ;;
+  *)
+    echo "MERGE_SETTINGS_STATE=blocked"
+    echo "ERROR=merge.strategy is '$MERGE_STRATEGY'; it must be squash, merge or rebase"
+    true; exit 0 ;;
+esac
+case "$DELETE_BRANCH" in
+  true|false) ;;
+  *)
+    echo "MERGE_SETTINGS_STATE=blocked"
+    echo "ERROR=merge.deleteBranch is '$DELETE_BRANCH'; it must be true or false"
+    true; exit 0 ;;
+esac
+echo "MERGE_SETTINGS_STATE=ok"
+echo "MERGE_STRATEGY=$MERGE_STRATEGY"
+echo "DELETE_BRANCH=$DELETE_BRANCH"
+true
+```
+
+On `MERGE_SETTINGS_STATE=blocked`, report the error and stop: a merge whose strategy is unknown cannot be confirmed.
+
 ## Phase 2: Display Assessment
 
 ```markdown
@@ -559,15 +595,16 @@ When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.f
 | Stale Approval | {OK/Warning} | {Fresh / Commits after approval} |
 | Finding Ledger | {Pass/Fail} | {All resolved / N unresolved, M escalated} |
 
-**Merge strategy**: {from settings.merge.strategy, default: squash}
-**Delete branch**: {from settings.merge.deleteBranch, default: true}
+**Merge strategy**: {MERGE_STRATEGY from Merge Settings}
+**Delete branch**: {DELETE_BRANCH from Merge Settings}
 ```
 
 The Repository row exists because every field above it was read from one
 repository, and until it is named nobody can tell which. `REPO_CROSSCHECK` in
 the preflight compares what `gh` resolved against what `git remote get-url
-origin` says; on `mismatch` the preflight sets `STATE=blocked` and this command
-stops rather than reporting a well-formed answer about a different repository.
+origin` says; on `mismatch` the preflight sets `REPO_STATE=blocked` and this
+command stops rather than reporting a well-formed answer about a different
+repository.
 
 ### Why `--auto` is not a way to wait
 
@@ -585,7 +622,10 @@ gate.
 The `block-unchecked-merge.sh` PreToolUse hook enforces both halves for merges
 that do not come through this command: it refuses a `gh pr merge` while any
 check is queued, running or failed, and refuses `--auto` on a base branch that
-requires nothing.
+requires nothing. It reads the command as text, so it checks a merge only in
+one shape — `gh pr merge <number> --repo owner/name --squash|--merge|--rebase`
+with long options and literal values — and refuses any other. The merge in
+Phase 3 is written in that shape.
 
 The Required Checks row is not decoration. "All checks passed" and "no checks
 are required here" are different facts, and only the first is a gate. Where the
@@ -619,25 +659,41 @@ If Option 1: after resolution completes, re-run Phase 1 to verify PR is now merg
 
 ## Phase 3: Confirm and Execute
 
-Use the AskUserQuestion tool with contextual options to confirm: "PR #$PR_NUM is ready to merge. Proceed with squash merge and branch deletion?"
+Stop here, without asking, unless the preflight printed `REPO_CROSSCHECK=ok`
+and Merge Settings printed `MERGE_SETTINGS_STATE=ok`.
+`REPO_STATE=unavailable` means no repository was resolved, `REPO_STATE=blocked`
+means `gh` and `git` named different ones, and `REPO_CROSSCHECK=unavailable`
+means there was no origin remote to verify against. In each case the merge
+below would have to name a repository nobody verified. Report the state and
+what the user can do about it.
 
-Only after the user confirms via the tool:
+Use the AskUserQuestion tool with contextual options to confirm, naming what
+will actually run: "PR #{PR_NUMBER} in {OWNER/NAME} is ready to merge. Proceed
+with a {strategy} merge{, deleting the branch}?" — the strategy and the branch
+clause come from `MERGE_STRATEGY` and `DELETE_BRANCH` in Merge Settings, so the
+user approves the same merge that runs.
+
+Only after the user confirms via the tool, run the merge with every value
+written literally. Replace each `{…}` below before running:
+
+- `{PR_NUMBER}` — the PR number from the report
+- `{OWNER/NAME}` — the report's Repository row
+- `{STRATEGY}` — `MERGE_STRATEGY` from Merge Settings
+- `{DELETE_BRANCH}` — `--delete-branch` when `DELETE_BRANCH=true`; remove it
+  when false
+
+If the merge is refused — by the hook, or by GitHub — stop and report the
+refusal as it was printed. Do not run Phase 4, and do not retry the merge in
+another form.
 
 ```bash
-# $REPO does not survive from the preflight block: each fence is its own
-# shell. Resolved again here, because `gh --repo ""` falls back to the default
-# resolution of gh without complaining — an unset REPO reads as pinned and behaves
-# as unpinned, which is the failure this pinning exists to prevent.
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
-# Read merge settings
-STRATEGY="squash"  # or from settings
-DELETE_FLAG="--delete-branch"  # or from settings
-
-# No --auto. It waits for REQUIRED checks, so on a repository that requires
-# none it merges immediately; the gate above is what establishes the checks
-# have finished. --repo pins the merge to the repository the preflight read.
-gh pr merge "$PR_NUM" --repo "$REPO" --$STRATEGY $DELETE_FLAG
+# Literal values, not $PR_NUM or $REPO. block-unchecked-merge.sh reads this
+# command as text and cannot expand a variable, so a variable (or a {…} left
+# unfilled) is refused. --repo pins the merge to the repository the preflight
+# read. No --auto: it waits for REQUIRED checks, so on a repository that
+# requires none it merges immediately; the gate above is what establishes the
+# checks have finished.
+gh pr merge {PR_NUMBER} --repo {OWNER/NAME} --{STRATEGY} {DELETE_BRANCH}
 ```
 
 ## Phase 4: Post-Merge
@@ -649,8 +705,18 @@ gh pr merge "$PR_NUM" --repo "$REPO" --$STRATEGY $DELETE_FLAG
 # as unpinned, which is the failure this pinning exists to prevent.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
-# Verify merge
-gh pr view "$PR_NUM" --repo "$REPO" --json state --jq '.state'
+# PR_NUM does not survive either. Without it `gh pr view ""` resolves the
+# current branch and reports on a different pull request, or on none.
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) echo "ERROR: PR number required (all-digit)" >&2; exit 1 ;;
+  *) PR_NUM="$ARG1" ;;
+esac
+# Verify merge. Switching branches after a merge that did not happen would
+# leave the work checked out nowhere useful and report success anyway.
+STATE=$(gh pr view "$PR_NUM" --repo "$REPO" --json state --jq '.state' 2>/dev/null)
+[ "$STATE" = "MERGED" ] || { echo "ERROR: PR #$PR_NUM in $REPO is '${STATE:-unreadable}', not MERGED; stopping before any checkout" >&2; exit 1; }
 
 # Switch to default branch
 DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
@@ -669,14 +735,24 @@ git pull origin $DEFAULT_BRANCH
 # as unpinned, which is the failure this pinning exists to prevent.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+# PR_NUM does not survive from earlier blocks either.
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) echo "ERROR: PR number required (all-digit)" >&2; exit 1 ;;
+  *) PR_NUM="$ARG1" ;;
+esac
 ISSUE=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
 if [ -n "$ISSUE" ]; then
-  # Repeat once per escalation that closed during this merge run.
+  # Repeat once per escalation that closed during this merge run. Replace
+  # {FIELD} with the one canonical field that gated it: situation, tried,
+  # options, recommendation, blocking or risk. Replace {OUTCOME} with a one-line
+  # summary of the user's answer.
   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
     --issue $ISSUE \
     --type escalation-resolved \
-    --metadata escalation_field={situation|tried|options|recommendation|blocking|risk} \
-    --metadata outcome="$USER_RESPONSE_SUMMARY"
+    --metadata "escalation_field={FIELD}" \
+    --metadata "outcome={OUTCOME}"
 fi
 ```
 

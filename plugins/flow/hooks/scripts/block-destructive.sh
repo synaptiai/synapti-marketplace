@@ -71,6 +71,18 @@ if [ ! -r "$_BD_LIB" ]; then
 fi
 # shellcheck source=lib/command-parse.sh
 . "$_BD_LIB"
+# Readable is not the same as loaded: a truncated library defines nothing, and
+# the first call to it would exit 127, which lets the command run.
+for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise _bd_git_parse _bd_is_whole_tree _bd_is_redirection _bd_is_opt; do
+  if ! type "$_bd_fn" >/dev/null 2>&1; then
+    echo "BLOCKED: the command parser did not load ($_bd_fn is undefined), so command safety cannot be verified." >&2
+    exit 2
+  fi
+done
+if [ -z "${_BD_SEG_AWK:-}" ]; then
+  echo "BLOCKED: the command parser did not load (its segmenter program is empty), so command safety cannot be verified." >&2
+  exit 2
+fi
 
 # _rm_segment_is_destructive <simple-command>
 # Returns 0 when the segment runs rm with recursive+force and at least one
@@ -143,44 +155,24 @@ _rm_segment_is_destructive() {
 # Strip comments and heredoc bodies once; every rule below reads BD_CODE.
 _bd_strip_noncode "$COMMAND"
 
-# An interpreter handed its script as a single quoted argument — `bash -c "git
-# reset --hard"`, `sh -c '...'`, `ssh host "..."`, `eval "..."` — is one word to
-# the tokeniser, so no rule could see the command inside it. Append the contents
-# of those arguments as further lines, which the segmenting below then treats as
-# ordinary commands. One level deep is enough for every real form; deeper
-# nesting arrives here as its own quoted argument on the next pass anyway.
-_bd_expand_interpreter_args() {
-  local seg tok i n found
-  local -a TOK=()
-  local extra=""
-  while IFS= read -r seg; do
-    [ -z "$seg" ] && continue
-    case "$seg" in *[\'\"]*) ;; *) continue ;; esac
-    _rm_tokenise "$seg"
-    n=${#TOK[@]}
-    found=0
-    for ((i = 0; i < n; i++)); do
-      tok="${TOK[i]}"
-      if [ "${#tok}" -le 4096 ] && _bd_is_interpreter "${tok#\\}"; then found=1; continue; fi
-      if [ "$found" = "1" ]; then
-        case "$tok" in
-          *[[:space:]]*) extra="$extra
-$tok" ;;
-        esac
-      fi
-    done
-  done <<BD_EXPAND_EOF
-$BD_CODE
-BD_EXPAND_EOF
-  if [ -n "$extra" ]; then BD_CODE="$BD_CODE$extra"; fi
-}
+# An interpreter handed its script as a single quoted argument (`bash -c "..."`,
+# `eval "..."`) hides that script from the tokeniser; see lib/command-parse.sh.
 _bd_expand_interpreter_args
+
+# Segment once; every rule below reads BD_SEGS. A parse that failed says so in a
+# marker line, because an empty list would read as "nothing to check".
+BD_SEGS=$(_bd_segments "$BD_CODE")
+case "$BD_SEGS" in
+  *__BD_SEG_FAIL__*)
+    echo "BLOCKED: could not split the command into simple commands — refusing rather than guessing." >&2
+    exit 2 ;;
+esac
 
 RM_DESTRUCTIVE=0
 while IFS= read -r SEG; do
   [ -z "$SEG" ] && continue
   if _rm_segment_is_destructive "$SEG"; then RM_DESTRUCTIVE=1; break; fi
-done < <(_bd_segments "$BD_CODE")
+done <<< "$BD_SEGS"
 if [ "$RM_DESTRUCTIVE" = "1" ]; then
   echo "BLOCKED: Destructive rm -rf (recursive + force) detected. Review the target path and run manually if intended." >&2
   exit 2
@@ -230,14 +222,14 @@ while IFS= read -r SEG; do
     IS_FORCE_DELETE=1
     TARGETS="$TARGETS$BR_TARGETS"
   fi
-done < <(_bd_segments "$BD_CODE")
+done <<< "$BD_SEGS"
 
 # A force delete is irreversible and is allowed only on a branch this hook can
 # prove is merged. That proof covers the branch, not the rest of the line, so a
 # force delete chained to anything else is refused rather than used to greenlight
 # the chain. This used to fall out of the target parser by accident: a compound
 # left junk words that failed the show-ref check. It is a rule, so it says so.
-BD_SEGMENT_COUNT=$(_bd_segments "$BD_CODE" | grep -c '[^[:space:]]' || true)
+BD_SEGMENT_COUNT=$(printf '%s\n' "$BD_SEGS" | grep -v '^__BD_' | grep -c '[^[:space:]]' || true)
 [ -z "$BD_SEGMENT_COUNT" ] && BD_SEGMENT_COUNT=0
 
 if [ "$IS_FORCE_DELETE" = "1" ]; then
@@ -440,6 +432,6 @@ while IFS= read -r SEG; do
       done
       ;;
   esac
-done < <(_bd_segments "$BD_CODE")
+done <<< "$BD_SEGS"
 
 exit 0

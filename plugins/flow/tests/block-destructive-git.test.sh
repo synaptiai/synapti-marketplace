@@ -156,6 +156,91 @@ assert_exit 2 "$?" "a hash inside a quoted argument does not hide the command"
 _run_hook "git restore $DOT # discard everything"
 assert_exit 2 "$?" "a comment after a real command does not excuse it"
 
+# A backslash-newline and a newline inside quotes are both one command to the
+# shell. Read as line breaks, the first split `git reset` from `--hard`, and the
+# second turned everything after a multi-line message into quoted text.
+_flow_test_begin "a command written across lines is read as one"
+_run_hook "git reset \\
+  --hard HEAD~3"
+assert_exit 2 "$?" "a reset continued onto a second line still blocked"
+_run_hook "git commit -m \"Summary
+
+Details\" && git reset --hard HEAD~1"
+assert_exit 2 "$?" "a reset after a multi-line commit message still blocked"
+_run_hook "git commit -m \"Fixes it.
+Closes #12\" && git reset --hard HEAD~1"
+assert_exit 2 "$?" "a # inside a multi-line message does not cut the reset off"
+_run_hook "git commit -m \"Summary
+
+Details\""
+assert_exit 0 "$?" "a multi-line commit message on its own allowed"
+_run_hook "echo done \\\\
+git status"
+assert_exit 0 "$?" "an escaped backslash at a line end does not join the next line"
+
+_flow_test_begin "a comment ending in a backslash does not swallow the next line"
+_run_hook "# tidy up \\
+git reset --hard HEAD~3"
+assert_exit 2 "$?" "a reset after a comment ending in a backslash still blocked"
+_run_hook "cd /tmp # go \\
+git reset --hard HEAD~3"
+assert_exit 2 "$?" "a reset after a trailing comment ending in a backslash still blocked"
+
+_flow_test_begin "an apostrophe in a kept heredoc body does not hide what follows"
+_run_hook "git commit -F - <<EOF
+Don't ship yet
+EOF
+git commit --amend -m 'Refs #12' && git reset --hard HEAD~1"
+assert_exit 2 "$?" "a quoted # after the heredoc does not cut the reset off"
+_run_hook "cat <<EOF > notes.txt
+Don't forget
+EOF
+git commit -am 'wip' && git reset --hard HEAD~1"
+assert_exit 2 "$?" "a reset joined to a commit after the heredoc is still examined"
+# Two bodies with one apostrophe each, or one body and a comment with one, pair
+# up and balance, so the text looks balanced with the command between hidden.
+_run_hook "git commit -F - <<'EOF'
+fix: don't drop the cache
+EOF
+rm -rf src
+git commit -F - <<'EOF'
+docs: it's documented now
+EOF"
+assert_exit 2 "$?" "an rm between two commit bodies with an apostrophe each is examined"
+_run_hook "$(printf "git commit -F - <<'EOF'\r\nfix: don't drop the cache\r\nEOF\r\nrm -rf src\r\ngit commit -F - <<'EOF'\r\ndocs: it's documented now\r\nEOF\r\n")"
+assert_exit 2 "$?" "and with CRLF line endings"
+for CMD in "git reset --hard origin/main" "git clean -fdx" "git checkout -- ." "rm -rf src"; do
+  _run_hook "cat > notes.md <<'EOF'
+Don't merge before CI.
+EOF
+$CMD   # we're green"
+  assert_exit 2 "$?" "$CMD after a body with an apostrophe and a comment with one is examined"
+done
+
+_flow_test_begin "a dollar-quoted string ends where the shell ends it"
+_run_hook "echo \$'it\\'s' && rm -rf src && echo \$'don\\'t'"
+assert_exit 2 "$?" "an rm between two dollar-quoted strings with escaped quotes is examined"
+_run_hook "echo \$'it\\'s fine' && ls"
+assert_exit 0 "$?" "a dollar-quoted string on its own is allowed"
+# Letters inside the string are text. A capital A once ended the string early.
+_run_hook "git stash push -m \$'Autosave before reset' && git reset --hard origin/main"
+assert_exit 2 "$?" "a reset after a dollar-quoted string containing A is examined"
+_run_hook "printf \$'Cleaning ARTIFACTS\\n'; rm -rf src"
+assert_exit 2 "$?" "an rm after a dollar-quoted string in capitals is examined"
+_run_hook "echo \\\$'x\\' ; git reset --hard origin/main"
+assert_exit 2 "$?" "an escaped dollar before a quote does not open a dollar-quoted string"
+
+_flow_test_begin "a long command with a quote on every line is checked, not crashed"
+LONG=""
+for _ in $(seq 1 300); do LONG="$LONG"'echo "it'"'"'s perform'$'\n'; done
+_run_hook "${LONG}rm -rf src"
+RC=$?
+if [ "$RC" -eq 2 ]; then
+  _flow_assert_pass "300 quoted lines then rm -rf: exit 2"
+else
+  _flow_assert_fail "300 quoted lines then rm -rf: exit $RC, expected 2 (a hook that crashes lets the command run)"
+fi
+
 _flow_test_begin "command substitution runs git and is examined"
 _run_hook "echo \$(git restore $DOT)"
 assert_exit 2 "$?" "restore inside a command substitution blocked"
