@@ -192,13 +192,14 @@ assert_contains "cannot see must not open" "$ERR" "and says why"
 # --- a value it cannot read is named, not blamed on the checks (#195) ---------
 # The hook reads text. `"$REPO"` reached the probe as the literal `$REPO`, the
 # lookup failed, and the refusal said the checks could not be read — which sent
-# the reader to CI. The stub here marks whether the checks were looked up: a
-# lookup for a value that was never expanded can only fail, so it must not run.
+# the reader to CI. The stub marks any gh call (`called`) and the checks lookup
+# itself (`probed`). A refusal for a value that was never expanded must make no
+# call at all; a merge that is allowed must have looked its checks up.
 _bum_probe_stub() {
   local d
   d=$(_bum_stub "$GREEN" "$PROT" "") || return 1
   [ -n "$d" ] && [ -f "$d/gh" ] || return 1
-  { printf '#!/usr/bin/env bash\n[ "$1 $2" = "pr view" ] && touch "$(dirname "$0")/probed"\n'; tail -n +2 "$d/gh"; } > "$d/gh.new" \
+  { printf '#!/usr/bin/env bash\ntouch "$(dirname "$0")/called"\n[ "$1 $2" = "pr view" ] && touch "$(dirname "$0")/probed"\n'; tail -n +2 "$d/gh"; } > "$d/gh.new" \
     && mv "$d/gh.new" "$d/gh" && chmod +x "$d/gh" || return 1
   printf '%s' "$d"
 }
@@ -232,10 +233,10 @@ for CASE in \
     _flow_assert_fail "refusal does not name the $WHAT \"$SHOWN\" for: $CMD — got: $ERR"
   elif [[ "$ERR" == *"could not be read"* ]]; then
     _flow_assert_fail "refusal still blames the checks for: $CMD"
-  elif [ -e "$S/probed" ]; then
-    _flow_assert_fail "the checks were looked up for a value that was never expanded: $CMD"
+  elif [ -e "$S/called" ]; then
+    _flow_assert_fail "gh was called for a value that was never expanded: $CMD"
   else
-    _flow_assert_pass "refused by name without a lookup: $CMD"
+    _flow_assert_pass "refused by name without calling gh: $CMD"
   fi
 done
 
@@ -247,15 +248,16 @@ else
   ERR=$(_bum_stderr "$S" "gh pr merge {PR_NUMBER} --repo {OWNER/NAME} --squash"); RC=$?
   assert_exit 2 "$RC" "a merge still carrying {PR_NUMBER} is refused"
   assert_contains "a placeholder that was not filled in" "$ERR" "and the refusal says so"
-  if [ -e "$S/probed" ]; then
-    _flow_assert_fail "the checks were looked up for an unfilled placeholder"
+  if [ -e "$S/called" ]; then
+    _flow_assert_fail "gh was called for an unfilled placeholder"
   else
-    _flow_assert_pass "without a lookup"
+    _flow_assert_pass "without calling gh"
   fi
 fi
 
 _flow_test_begin "the refused value is shown safely"
 S=$(_bum_probe_stub) || S=""
+[ -n "$S" ] || _flow_assert_fail "could not build the gh stub"
 LONG="\$$(printf 'x%.0s' $(seq 1 5000))"
 ERR=$(_bum_stderr "$S" "gh pr merge $LONG --repo acme/widgets")
 if [ "${#ERR}" -lt 1000 ]; then

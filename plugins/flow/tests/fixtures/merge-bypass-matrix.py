@@ -148,8 +148,10 @@ CASES.append(("GH_HOST on the merge reaches the probe",
               stub(GREEN), "GH_HOST=ghe.example.com gh pr merge 7 --repo o/r", 0, "[host=ghe.example.com] pr view 7"))
 CASES.append(("GH_REPO exported earlier, merge names no repository",
               stub(GREEN), "export GH_REPO=other/repo; gh pr merge 7", 2))
+# GREEN everywhere: a hook that used the subshell's repository for the probe
+# would see green and allow, so only a refusal passes.
 CASES.append(("GH_REPO set in a subshell that is gone by the merge",
-              stub(GREEN, {"9": QUEUED}), "(export GH_REPO=green/repo); gh pr merge 9", 2))
+              stub(GREEN), "(export GH_REPO=green/repo); gh pr merge 7", 2))
 CASES.append(("GH_REPO exported earlier, merge names its own repository",
               stub(GREEN), "export GH_REPO=x/y; gh pr merge 7 --repo acme/widgets", 0))
 CASES.append(("cd before a merge with no repository",
