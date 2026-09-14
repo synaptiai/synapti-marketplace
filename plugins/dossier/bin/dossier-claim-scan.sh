@@ -90,10 +90,17 @@ hit() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$HITS_FILE"; }
 # provider-specific prefixes.
 scan_class() { # file | class | severity | regex
   local f="$1" class="$2" sev="$3" re="$4"
-  local out
+  local out grepflags="-nE"
+  # Prohibited vocabulary is prose a drafter capitalizes without thinking
+  # about it — a heading, a bolded lead, title case in a bullet — and the
+  # pattern list itself is written all-lowercase, so "Zero Downtime" or
+  # "Bank-Grade" must still match. Leak patterns stay case-sensitive: two are
+  # case-sensitive by construction (`AKIA[0-9A-Z]{16}`, the PEM armour), and
+  # folding them would themselves start matching unrelated lowercase text.
+  [ "$sev" = "prohibited" ] && grepflags="-inE"
   # `--` terminates option parsing: several patterns below start with a hyphen
   # (the PEM armour), and without it grep reads the pattern as flags.
-  out=$(grep -nE -- "$re" "$f" 2>/dev/null | cut -d: -f1) || return 0
+  out=$(grep $grepflags -- "$re" "$f" 2>/dev/null | cut -d: -f1) || return 0
   local ln
   for ln in $out; do
     hit "$sev" "$f" "$ln" "$class"
@@ -217,21 +224,27 @@ redact() {
 }
 
 # Line classes this scan actually examines for registration (issue #176):
-# paragraph prose, bullets, blockquotes, and table cells. Headings and fenced
-# code stay structurally exempt — they are markup, not claims. Reported
-# alongside CLAIM_SCAN_UNREGISTERED_SENTENCES so a `0` cannot be misread as
-# "every line class was checked" when it only means "every line class this
-# scanner is capable of checking was checked" — the exact ambiguity the issue
-# reports, discovered when identical claim text scored 0 as a table row and
-# non-zero as a paragraph with no way to tell from the output alone.
-LINE_CLASSES_EXAMINED="paragraph,bullet,blockquote,table-cell"
+# paragraph prose, bullets, blockquotes, and table DATA cells specifically —
+# a confirmed table header row is deliberately excluded (see scan loop below),
+# so "table-cell" alone would overstate this scanner's own coverage exactly
+# the way the pre-fix scanner overstated it: a claim-shaped header would read
+# as "examined" when it structurally never reaches scan_text. Headings and
+# fenced code stay structurally exempt too — they are markup, not claims.
+# Reported alongside CLAIM_SCAN_UNREGISTERED_SENTENCES so a `0` cannot be
+# misread as "every line class was checked" when it only means "every line
+# class this scanner is capable of checking was checked" — the exact
+# ambiguity the issue reports, discovered when identical claim text scored 0
+# as a table row and non-zero as a paragraph with no way to tell from the
+# output alone.
+LINE_CLASSES_EXAMINED="paragraph,bullet,blockquote,table-data-cell"
 
 # One sentence per check. Declarative only: a heading or a fragment is not a
 # claim, and flagging them would drown the real findings. Shared by paragraph,
 # bullet, blockquote, and table-cell text alike (issue #176) — all four are
 # prose, just with different structural markers to strip before this point.
 scan_text() {
-  text="$1"
+  local text="$1"
+  local SPLITTABLE
   # Code spans come out BEFORE the split. A bare `tr '.' '\n'` cuts inside
   # `SKILL.md`, `plugin.json`, and `3.2.2`, producing fragments like
   # "md` is not a skill" — reported as unregistered claims that no drafter
@@ -261,6 +274,23 @@ scan_text() {
   done
 }
 
+# A placeholder byte standing in for a `|` that must survive the cell split:
+# one that came from inside a code span (already-stripped below, so this only
+# matters for the ESCAPED-pipe case) or an explicit `\|` escape. SOH (0x01)
+# never appears in real markdown prose.
+PIPE_ESCAPE_MARK=$(printf '\001')
+
+# Table rows split into cells on this file's declared markdown pipe syntax:
+# an unescaped `|` outside a code span. Splitting on every raw `|` first and
+# only stripping code spans later (inside scan_text, per already-broken
+# fragments) can silently drop a claim — `Zero downtime \`x|y\` guaranteed
+# system.` splits into two halves, each short enough afterward to fall under
+# the four-word floor, so the whole sentence is never checked. Code spans are
+# stripped and `\|` escapes are protected on the FULL row, before the split.
+strip_table_row_delimiters() {
+  printf '%s' "$1" | sed -e 's/`[^`]*`/ /g' -e "s/\\\\|/${PIPE_ESCAPE_MARK}/g"
+}
+
 # A GFM separator row (`|---|---|`, optionally with `:` alignment markers) —
 # every cell, once trimmed, is nothing but colons and dashes with at least one
 # dash. This is structure, not prose, and must never become a "claim" even
@@ -268,8 +298,10 @@ scan_text() {
 # because they contain no words at all — this check exists for correctness
 # and intent, not because the word floor leaves a gap here).
 is_table_separator() {
-  row=$1
-  body=${row#|}
+  local row=$1 body OLD_IFS sepcell trimmed
+  local -a sepcells
+  body=$(strip_table_row_delimiters "$row")
+  body=${body#|}
   body=${body%|}
   OLD_IFS=$IFS
   IFS='|'
@@ -278,6 +310,13 @@ is_table_separator() {
   sepcells=($body)
   set +f
   IFS=$OLD_IFS
+  # A row that splits to zero cells (e.g. a bare `|` or `||`) is not a valid
+  # separator. Checked via ${#arr[@]}, not "${arr[@]}" directly: on bash 3.2,
+  # an empty `arr=($empty)` leaves the array UNSET, and under this script's
+  # `set -u` a bare "${arr[@]}" expansion on an unset array is a fatal
+  # unbound-variable error that kills the whole scan mid-run — silently
+  # dropping every remaining file, including any leak already found earlier.
+  [ "${#sepcells[@]}" -eq 0 ] && return 1
   for sepcell in "${sepcells[@]}"; do
     trimmed=$(printf '%s' "$sepcell" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
     case "$trimmed" in
@@ -294,8 +333,10 @@ is_table_separator() {
 # the shell-native `IFS='|'` + `set -f` + array-split idiom already used by
 # dossier-ledger-lint.sh for the same "split a markdown table row" problem.
 scan_table_row() {
-  row=$1
-  body=${row#|}
+  local row=$1 body OLD_IFS rowcell trimmed
+  local -a rowcells
+  body=$(strip_table_row_delimiters "$row")
+  body=${body#|}
   body=${body%|}
   OLD_IFS=$IFS
   IFS='|'
@@ -304,8 +345,11 @@ scan_table_row() {
   rowcells=($body)
   set +f
   IFS=$OLD_IFS
+  # See is_table_separator for why this is ${#arr[@]}, not a direct "${arr[@]}".
+  [ "${#rowcells[@]}" -eq 0 ] && return 0
   for rowcell in "${rowcells[@]}"; do
-    trimmed=$(printf '%s' "$rowcell" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    trimmed=$(printf '%s' "$rowcell" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+      -e "s/${PIPE_ESCAPE_MARK}/|/g")
     [ -n "$trimmed" ] && scan_text "$trimmed"
   done
 }
@@ -317,6 +361,7 @@ scan_table_row() {
 # from would attribute its findings to wherever the flush happens to occur,
 # not to the line a reader would need to open to find the claim.
 flush_held_table_row() {
+  local RESUME_LN
   [ -n "$TABLE_HELD_LINE" ] || return 0
   RESUME_LN=$LN
   LN=$TABLE_HELD_LN

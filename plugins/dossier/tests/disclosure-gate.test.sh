@@ -83,6 +83,24 @@ else
 fi
 assert_contains "VOCABULARY" "$(scanout "$T")" "the vocabulary finding is labelled"
 
+# Prohibited vocabulary is prose a drafter capitalizes without thinking about
+# it — a heading, a bolded lead sentence, title case in a bullet. The pattern
+# list is written in all-lowercase; matching only the exact case lets "Zero
+# Downtime" or "Bank-Grade" through a check whose entire purpose is to catch
+# this vocabulary regardless of how it's cased (self-review finding, issue
+# #176 PR — pre-existing, found incidentally while reviewing this file).
+T="$W/vocab-case"; mkpkg "$T"
+reg "$T" ''
+pub "$T" "This offering provides Bank-Grade encryption for every customer."
+OUT=$(scanout "$T")
+# CLAIM_SCAN_PROHIBITED_VOCABULARY=0 would itself satisfy a bare
+# assert_contains "VOCABULARY" check (the field name contains the word) —
+# pinned to =1 and to the bracketed finding line specifically so a
+# regression back to case-sensitive matching fails this assertion.
+assert_contains "CLAIM_SCAN_PROHIBITED_VOCABULARY=1" "$OUT" \
+  "prohibited vocabulary is flagged regardless of capitalization"
+assert_contains "[VOCABULARY]" "$OUT" "the case-insensitive match is reported as a finding"
+
 # --- registration ------------------------------------------------------------
 # An approved row whose wording matches exactly.
 T="$W/registered"; mkpkg "$T"
@@ -198,6 +216,22 @@ OUT=$(scanout "$T")
 assert_not_contains "what the reader should expect" "$OUT" "the table header row is not treated as a claim"
 assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" "only the data cell is an unregistered claim, not the header"
 
+# A separator row using alignment colons (`:---`, `---:`, `:---:`) must be
+# recognized too, not just a bare `---` — is_table_separator explicitly
+# special-cases `:` alongside `-`, and this is the only fixture exercising it.
+T="$W/table-separator-alignment"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '| What the reader should expect | What this guarantees today |\n'
+  printf '|:---|---:|\n'
+  printf '| Region availability details | Nothing is promised beyond the current region |\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_not_contains "what the reader should expect" "$OUT" \
+  "the header row is exempt even when the separator uses alignment colons"
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "only the data cell is unregistered when the separator uses alignment colons"
+
 # A REGISTERED table-cell claim must pass — proves cell splitting/trimming
 # produces text that round-trips through the literal-substring match, not
 # just that cell text is detected at all.
@@ -231,6 +265,52 @@ assert_contains "technical-partner-guide.md:1 \"this is the first row" "$OUT" \
 assert_contains "technical-partner-guide.md:2 \"this is the second row" "$OUT" \
   "row 2's finding is attributed to line 2"
 
+# --- issue #176 self-review: a degenerate table row must not crash the scan -
+# `|` alone (or `||`) as a table row splits to a zero-cell body. Under bash
+# 3.2's `set -u`, `arr=($empty_body)` leaves the array variable UNSET rather
+# than a zero-length array, and a later `"${arr[@]}"` expansion is then a
+# fatal unbound-variable error that kills the entire script mid-run — before
+# the report is ever printed and before leakage already detected earlier in
+# the same file is ever surfaced. This is exactly the "malformed table row
+# ... must not crash" failure mode the issue's own specification calls out.
+T="$W/table-degenerate-row"; mkpkg "$T"
+reg "$T" ''
+printf 'A real claim about our uptime that clears the word floor easily.\n|\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_not_contains "unbound variable" "$OUT" "a bare | table row does not crash the scan"
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=" "$OUT" \
+  "the script still completes and prints its report after a degenerate table row"
+
+# A leak already detected earlier in the file must not be swallowed by a
+# later crash — verified separately from the generic no-crash check above,
+# since "the script didn't crash" and "the leak is still reported" are two
+# different properties that could fail independently.
+T="$W/table-degenerate-row-with-leak"; mkpkg "$T"
+printf 'Use sk-ant-api03-abcdefghijklmnop to begin.\n||\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "2" "$?" "a leak earlier in the file is still reported (exit 2) despite a later degenerate table row"
+
+# --- issue #176 self-review: a `|` inside a code span must not split a cell -
+# Splitting on every raw `|` before code-span stripping (which normally
+# happens inside scan_text, per-cell, too late to undo an already-wrong
+# split) can silently drop a claim: `Zero downtime `x|y` guaranteed system.`
+# splits into two halves, each short enough after the split to fall under
+# the four-word floor — reproducing the exact "0 doesn't mean it was
+# checked" failure this issue exists to fix, just moved one level down (a
+# claim hidden inside a single cell instead of hidden by line class).
+T="$W/table-cell-code-span-pipe"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '| Guarantee |\n'
+  printf '|---|\n'
+  printf '| Zero downtime `x|y` guaranteed system. |\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "a claim is still detected whole even when a code span inside the cell contains a pipe"
+
 # --- issue #176: a blockquote is prose with a marker, not structural markup --
 T="$W/blockquote-claim"; mkpkg "$T"
 reg "$T" ''
@@ -259,11 +339,11 @@ pub "$T" "A simple paragraph sentence with no claims at all here."
 OUT=$(scanout "$T")
 assert_contains "CLAIM_SCAN_LINE_CLASSES_EXAMINED=" "$OUT" "the scan reports which line classes it examined"
 assert_contains "bullet" "$OUT" "bullets are listed among the examined line classes"
-assert_contains "table-cell" "$OUT" "table cells are listed among the examined line classes"
+assert_contains "table-data-cell" "$OUT" "table data cells are listed among the examined line classes"
 if command -v jq >/dev/null 2>&1; then
   J=$(cd "$T" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --json 2>/dev/null)
   CLASSES=$(printf '%s' "$J" | jq -r '(.line_classes_examined // []) | join(",")' 2>/dev/null)
-  assert_contains "table-cell" "$CLASSES" "the json output reports table-cell among examined line classes"
+  assert_contains "table-data-cell" "$CLASSES" "the json output reports table-data-cell among examined line classes"
 fi
 
 # --- single-file mode --------------------------------------------------------
