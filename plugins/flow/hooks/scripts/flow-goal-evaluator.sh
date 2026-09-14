@@ -455,7 +455,6 @@ EOF
 
 # Run deterministic checks.
 REPORT=$("${PLUGIN_ROOT}/hooks/scripts/flow-run-deterministic-checks.sh" "${ACTIVE_GOAL}" 2>/dev/null || echo '{}')
-GOAL_NAME=$(basename "${ACTIVE_GOAL}" .goal.yaml)
 FAILING=$(echo "$REPORT"   | jq -r '.failing[]?'       2>/dev/null)
 INCOMPLETE=$(echo "$REPORT" | jq -r '.incomplete_acs[]?' 2>/dev/null)
 VIOLATIONS=$(echo "$REPORT" | jq -r '.path_violations[]?' 2>/dev/null)

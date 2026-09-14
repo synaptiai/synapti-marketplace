@@ -14,7 +14,6 @@ set -euo pipefail
 command -v jq &>/dev/null || exit 0
 
 INPUT=$(cat)
-TEAMMATE_ID=$(echo "$INPUT" | jq -r '.teammate.id // empty')
 IDLE_SECONDS=$(echo "$INPUT" | jq -r '.idle_seconds // 0')
 
 # Only nudge after significant idle time (>60s)
