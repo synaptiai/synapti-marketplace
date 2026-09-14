@@ -26,6 +26,12 @@ artifacts:
   path: B
   findings_count: 6
   pr: 204
+- type: review-cycle
+  captured_at: '2026-09-14T22:42:06Z'
+  cycle: 2
+  path: B
+  findings_count: 6
+  pr: 204
 ---
 # Issue #178 — scaffold overwrites non-frontmatter files and reports them as CREATED, not REPAIRED
 
