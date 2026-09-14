@@ -18,7 +18,7 @@ Evaluate in order: red flags, primary, secondary, default → uncertain.
 
 | Category | Signal | Result |
 |----------|--------|--------|
-| Red flag | `.env*`, `credentials*`, `*secret*`, key files | BLOCK — never commit |
+| Red flag | `.env`, `.env.<environment>` (not `.env.example` / `.env.sample`, which are committable templates), `credentials*`, `*secret*`, key files | BLOCK — never commit |
 | Red flag | `*.lock`, `package-lock.json`, files >1MB, auto-generated | WARN — verify intentional |
 | Primary | In branch diff (`git diff --name-only $DEFAULT_BRANCH...HEAD`) | in-context |
 | Primary | Path matches issue title/body keywords | in-context |
@@ -40,7 +40,7 @@ A file is "first touch" when `git log $DEFAULT_BRANCH..HEAD -- file` is empty AN
 |------|---------------|--------|-------|
 | src/auth/login.rb | in-context | matches issue keywords | |
 | src/utils/format.rb | out-of-context | unrelated directory | first-touch |
-| .env.example | RED FLAG | secret pattern | NEVER COMMIT |
+| .env.local | RED FLAG | secret pattern | NEVER COMMIT |
 ```
 
 ## Out-of-Context Handling

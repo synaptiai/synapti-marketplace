@@ -13,6 +13,7 @@
         "haiku",
         "sonnet",
         "opus",
+        "fable",
         "inherit"
       ],
       "default": "sonnet",

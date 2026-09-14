@@ -1,6 +1,6 @@
 ---
 name: integration-verifier
-description: "Verify end-to-end functionality beyond unit tests. Start dev servers, run E2E suites, perform smoke tests, and validate acceptance criteria at runtime."
+description: "Verify end-to-end functionality beyond unit tests. Start dev servers, run E2E suites, perform smoke tests, and validate acceptance criteria at runtime. Use after unit-level quality checks pass, when a change has runtime surface. Do not use for markdown-, config-, or dependency-only changes."
 model: inherit
 tools: Bash, Read, Glob, Grep, TaskCreate, TaskList, TaskUpdate
 skills: runtime-verification, evidence-based-development
@@ -41,9 +41,10 @@ Check if a server is already running:
 curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health 2>/dev/null || echo "NO_SERVER"
 ```
 
-If no server, start one with timeout from `settings.json` → `timeouts.devServerStartup`:
+If no server, start one with the timeout from `settings.json` → `timeouts.devServerStartup`:
 
 ```bash
+DEV_SERVER_TIMEOUT=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh" --default 30 '.timeouts.devServerStartup // empty')
 # Detect start command
 grep -A2 '"start"\|"dev"\|"serve"' package.json 2>/dev/null
 # Start in background with timeout
@@ -90,7 +91,7 @@ Visual verification is owned by the `visual-verification` skill (`skills/visual-
 ```
 Skill(visual-verification):
   Inputs:
-  - Branch diff: {file list from git diff --name-only HEAD~1..HEAD}
+  - Branch diff: {file list from git diff --name-only "origin/$DEFAULT_BRANCH"...HEAD}
   - Acceptance criteria: {criteria list from issue body, if applicable}
   - Dev server URL: {URL from Step 3, or "unavailable" if Step 3 failed}
 ```

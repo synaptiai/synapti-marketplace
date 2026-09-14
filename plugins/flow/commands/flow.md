@@ -4,12 +4,6 @@ argument-hint: <verb> [target]
 allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Grep, Glob
 ---
 
-<!--
-PARALLEL EXECUTION RULE:
-When performing multiple independent operations, invoke ALL relevant tools
-simultaneously in a single message rather than sequentially.
--->
-
 # Flow: Skill-Driven Workflow
 
 Universal dispatcher for the flow plugin. Parses intent from `$ARGUMENTS` and routes to the appropriate sub-command with required skills.
@@ -22,24 +16,7 @@ _None — dispatcher only. Sub-commands declare their own Required Skills (see S
 
 Each verb requires specific domain skills. The dispatcher invokes these deterministically:
 
-| Verb | Required Skills | Command |
-|------|----------------|---------|
-| start | branch-and-task-management, change-classification, capability-discovery | /flow:start |
-| commit | change-classification, convention-enforcement | /flow:commit |
-| pr | pr-lifecycle, code-review-methodology, capability-discovery | /flow:pr |
-| review | code-review-methodology | /flow:review |
-| address | feedback-resolution, change-classification, capability-discovery | /flow:address |
-| merge | merge-and-release | /flow:merge |
-| resolve | merge-conflict-resolution, capability-discovery | /flow:resolve |
-| release | merge-and-release | /flow:release |
-| status | (none — read-only) | /flow:status |
-| learn | (none — analysis only) | /flow:learn |
-| setup | capability-discovery | /flow:setup |
-| explain | (none — read-only) | /flow:explain |
-| debug | debugging-patterns, change-classification | /flow:debug |
-| design | architecture-patterns, capability-discovery | /flow:design |
-| brainstorm | brainstorming, capability-discovery | /flow:brainstorm |
-| issue | issue-crafting | /flow:issue |
+`references/skill-manifests.md` is the authority: it is generated from the loader and drift-tested. Each command also lists its own skills under `## Required Skills`.
 
 ## Routing Logic
 
@@ -139,13 +116,6 @@ If the verb doesn't match any known command, attempt to infer intent:
 - "design this" / "architecture" → route to design
 
 Use the AskUserQuestion tool with contextual options to confirm: "I understood your request as '{inferred verb}'. Is that correct?"
-
-## Foundation Skills
-
-All flow commands operate under three always-loaded foundation skills:
-- **evidence-based-development**: Show evidence, cite file:line, P1/P2/P3
-- **autonomous-workflow**: Explore>Plan>Code>Verify, Task tools, three-tier safety
-- **code-quality-principles**: Surgical changes, no secrets, atomic commits
 
 ## Tier Classification
 

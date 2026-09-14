@@ -574,8 +574,7 @@ stops rather than reporting a well-formed answer about a different repository.
 GitHub auto-merge waits for **required** status checks. On a repository with no
 branch protection and no ruleset requiring one, nothing is required, so
 `gh pr merge --auto` merges immediately. That is the opposite of what the flag
-is usually reached for, and it is how a pull request came to be merged with
-twelve jobs still queued (issue #170).
+is usually reached for.
 
 Either confirm the checks have finished — `gh pr checks <N> --watch` — and merge
 without the flag, or require the checks on the base branch so the flag has

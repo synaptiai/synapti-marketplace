@@ -56,7 +56,7 @@ When invoked because a verification step failed (build, test, server start, smok
 |---------|--------|
 | 3+ failed fix attempts | Stop fixing forward; the problem is architectural. Return to EXPLORE. |
 | Cannot explain current behavior | Do not guess. Add logging and assertions; investigate more. |
-| Tunnel vision (>30 min on one theory) | Step back; list what you KNOW vs what you ASSUME. |
+| Tunnel vision (three tests of one theory with no new evidence) | Step back; list what you KNOW vs what you ASSUME. |
 | Fix works but you cannot explain why | Revert. An unexplained fix is a time bomb. |
 
 ## Not Fixes

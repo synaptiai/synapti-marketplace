@@ -4,11 +4,6 @@ argument-hint: [message]
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, Skill, Grep, Glob
 ---
 
-<!--
-PARALLEL EXECUTION RULE:
-Execute all independent queries in a single message with parallel tool calls.
--->
-
 # Context-Aware Commit
 
 Classify changes, flag anomalies, and create atomic conventional commits. Follows the Explore > Verify pattern (lightweight — no plan/code phases needed).
@@ -120,7 +115,7 @@ Show classification table BEFORE any action:
 |------|--------|---------------|--------|-------|
 | src/auth/login.rb | M | in-context | branch diff | |
 | src/utils/helper.rb | M | uncertain | sibling only | first-touch |
-| .env.example | M | RED FLAG | secret pattern | BLOCKED |
+| .env.local | M | RED FLAG | secret pattern | BLOCKED |
 ```
 
 **If uncertain or out-of-context files exist:**

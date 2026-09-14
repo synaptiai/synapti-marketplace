@@ -4,12 +4,6 @@ argument-hint: [feature-description-or-issue-number]
 allowed-tools: Bash, Read, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Grep, Glob
 ---
 
-<!--
-PARALLEL EXECUTION RULE:
-When performing multiple independent operations, invoke ALL relevant tools
-simultaneously in a single message rather than sequentially.
--->
-
 # Design: $ARGUMENTS
 
 Architecture discussion and design validation. Follows Explore > Plan > Review > Decide loop.

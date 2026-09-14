@@ -15,7 +15,7 @@ Iron law: **every change traces to a specific review comment or passes the Boy S
 ## Collect
 
 ```bash
-PR_NUM=$ARGUMENTS
+PR_NUM="${PR_NUM:?pass the PR number from the invoking command}"
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 gh api repos/$REPO/pulls/$PR_NUM/comments --jq '.[] | {id: .id, path: .path, line: .line, body: .body, author: .user.login}'
 gh pr view $PR_NUM --json reviews --jq '.reviews[] | {state: .state, body: .body, author: .author.login}'

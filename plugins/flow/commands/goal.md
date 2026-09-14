@@ -125,7 +125,7 @@ Read-only deep dump:
 
 Invoke `Skill(goal-evaluator)` with `trigger=command`. The skill runs deterministic checks, optionally dispatches `Agent(goal-evaluator-judge)`, and transitions lifecycle. This is the primary user-facing way to advance a goal's state.
 
-After the skill produces a verdict, **the command (not the skill) persists it via `bin/flow-record-verdict.sh`**. The skill returns the structured verdict in-memory; the command is the single owner of the write. This eliminates the prior double-write where both the skill's Step 8 and the command's heredoc wrote sequentially, with the command's write silently winning. See `skills/goal-evaluator/SKILL.md` Step 8 for the current contract.
+After the skill produces a verdict, **the command (not the skill) persists it via `bin/flow-record-verdict.sh`**. The skill returns the structured verdict in-memory; the command is the single owner of the write. See `skills/goal-evaluator/SKILL.md` Step 8 for the current contract.
 
 ```bash
 # After Skill(goal-evaluator) returns the structured verdict, write it
@@ -193,7 +193,7 @@ Print the resulting verdict + per-AC table. If lifecycle transitioned to `achiev
 
 **When any AC has `last_result.reason: not_executed`** (the Stop hook's deterministic-checks runner skipped the command because `flow.goals.executeVerificationCommands` defaults to `false`), append this hint to the printed output:
 
-> Set `flow.goals.executeVerificationCommands: true` in `.claude/settings.flow.json` to let the Stop hook auto-run each AC's `verification_command` during evaluator-loop and deterministic-check passes. This setting governs the Stop hook path (`bin/flow-run-deterministic-checks.sh`); `/flow:goal evaluate` always executes verification commands when present, so the hint applies only to ACs whose last evaluation came from a Stop hook pass.
+> Set `flow.goals.executeVerificationCommands: true` in `.claude/settings.flow.json` to let the Stop hook auto-run each AC's `verification_command` during evaluator-loop and deterministic-check passes. This setting governs the Stop hook path (`hooks/scripts/flow-run-deterministic-checks.sh`); `/flow:goal evaluate` always executes verification commands when present, so the hint applies only to ACs whose last evaluation came from a Stop hook pass.
 
 ### `/flow:goal pause <id>`
 

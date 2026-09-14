@@ -1,6 +1,6 @@
 ---
 name: convention-checker
-description: "Validate Git conventions including commit messages, branch naming, PR format, and code patterns. Report convention violations with severity."
+description: "Validate Git conventions including commit messages, branch naming, PR format, and code patterns. Use when preparing a commit or PR, or when auditing branch history for convention compliance. Do not use for code-quality review. Report convention violations with severity."
 model: inherit
 tools: Bash, Read
 skills: convention-enforcement

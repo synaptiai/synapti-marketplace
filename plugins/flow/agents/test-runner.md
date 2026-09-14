@@ -48,7 +48,7 @@ Priority: CLAUDE.md commands > package.json scripts > standard tools.
 
 ### Step 4: Execute (Parallel)
 
-Run all discovered commands in parallel (separate Bash calls in single message):
+Run the discovered commands as separate Bash calls in a single message:
 
 ```bash
 # Each as separate parallel Bash call:

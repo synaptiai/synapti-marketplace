@@ -4,12 +4,6 @@ argument-hint: [pr-number-or-branch] [free-form context]
 allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Grep, Glob
 ---
 
-<!--
-PARALLEL EXECUTION RULE:
-When performing multiple independent operations, invoke ALL relevant tools
-simultaneously in a single message rather than sequentially.
--->
-
 # Resolve Merge Conflicts
 
 4-phase EXPLORE > PLAN > CODE > VERIFY workflow for merge conflict resolution.

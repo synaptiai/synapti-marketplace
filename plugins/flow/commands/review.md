@@ -4,11 +4,6 @@ argument-hint: <pr-number> [free-form context]
 allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Skill, Grep, Glob
 ---
 
-<!--
-PARALLEL EXECUTION RULE:
-Execute independent operations simultaneously.
--->
-
 # Review PR #$ARGUMENTS
 
 Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code > Verify loop.
@@ -433,9 +428,9 @@ fi
 if [ "$USE_PATH_A" = "1" ]; then
   AGENT_TEAM_MODEL=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh" --default sonnet '.agentTeamModel // empty' 2>/dev/null)
   case "$AGENT_TEAM_MODEL" in
-    haiku|sonnet|opus|inherit) ;;
+    haiku|sonnet|opus|fable|inherit) ;;
     *)
-      echo "WARN: agentTeamModel='$AGENT_TEAM_MODEL' is not one of haiku|sonnet|opus|inherit; rejecting and using sonnet. Set a valid value in .claude/settings.flow.local.json, .claude/settings.flow.json, \$HOME/.claude/settings.flow.json, or the plugin settings.json." >&2
+      echo "WARN: agentTeamModel='$AGENT_TEAM_MODEL' is not one of haiku|sonnet|opus|fable|inherit; rejecting and using sonnet. Set a valid value in .claude/settings.flow.local.json, .claude/settings.flow.json, \$HOME/.claude/settings.flow.json, or the plugin settings.json." >&2
       AGENT_TEAM_MODEL=sonnet
       ;;
   esac
@@ -448,7 +443,7 @@ true
 
 If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.
 
-**Model selection.** When `USE_PATH_A=1`, the gate emits `AGENT_TEAM_MODEL` (default `sonnet`). Dispatch every Path A agent below — both the A.1 paired reviewers and the A.3 challenge rounds — passing `AGENT_TEAM_MODEL` as the Agent tool's per-invocation `model` override (the `model=...` shown in the `Agent(...)` examples maps to that tool argument). The override takes precedence over each agent's `model: inherit` frontmatter (precedence: dispatch override > frontmatter > session model), so the reviewers run on `AGENT_TEAM_MODEL` regardless of the session's model. **When `AGENT_TEAM_MODEL=inherit`, OMIT the `model` argument entirely** — the dispatch-time override accepts only `sonnet`/`opus`/`haiku`, and the session model (the behavior before this setting existed) is expressed by dropping the override, NOT by passing `model=inherit`. The two `Skill(holdout-validation)` invocations are unaffected (skills run inline in the parent context, not as model-dispatched subagents).
+**Model selection.** When `USE_PATH_A=1`, the gate emits `AGENT_TEAM_MODEL` (default `sonnet`). Dispatch every Path A agent below — both the A.1 paired reviewers and the A.3 challenge rounds — passing `AGENT_TEAM_MODEL` as the Agent tool's per-invocation `model` override (the `model=...` shown in the `Agent(...)` examples maps to that tool argument). The override takes precedence over each agent's `model: inherit` frontmatter (precedence: dispatch override > frontmatter > session model), so the reviewers run on `AGENT_TEAM_MODEL` regardless of the session's model. **When `AGENT_TEAM_MODEL=inherit`, OMIT the `model` argument entirely** — the dispatch-time override accepts only `sonnet`/`opus`/`haiku`/`fable`, and the session model (the behavior before this setting existed) is expressed by dropping the override, NOT by passing `model=inherit`. The two `Skill(holdout-validation)` invocations are unaffected (skills run inline in the parent context, not as model-dispatched subagents).
 
 #### A.1 — Independent Analysis (paired reviewers, parallel dispatch)
 
@@ -527,7 +522,7 @@ Including holdout in challenge would either (a) produce vacuous AGREE responses 
 
 Consequently, the cost table in `references/paired-review-protocol.md` (the `team-coordination` protocol detail) lists **10** challenge calls rather than 12 — the 2-call savings is the principled exclusion, not a tooling shortcut. Holdout findings emit at A.4 with `consensus` (both lenses raised it independently) or `unchallenged` (one lens only); they NEVER carry `validated` / `refined` / `kept` because those dispositions are challenge-round outputs.
 
-**Post-condition on returned IDs**: each variant's findings must have IDs matching `^[A-Za-z][A-Za-z0-9_-]*$` before A.2 consumes them — the same allowlist that downstream consumers (`status.md:104-117`, `merge.md`) enforce. IDs that fail validation are skipped at A.2 with a `LEDGER_WARN: PR#{N} A.1 rejected non-conforming ID '{safe-id}' from {variant}` to stderr. This avoids producing markers that get silently dropped downstream and makes the A.2 lexicographic tiebreaker safe against pathological IDs.
+**Post-condition on returned IDs**: each variant's findings must have IDs matching `^[A-Za-z][A-Za-z0-9_-]*$` before A.2 consumes them — the same allowlist the `case "$ID"` guard in `status.md` and `references/finding-ledger-parser.md` enforce (`merge.md` consumes the IDs without re-validating them). IDs that fail validation are skipped at A.2 with a `LEDGER_WARN: PR#{N} A.1 rejected non-conforming ID '{safe-id}' from {variant}` to stderr. This avoids producing markers that get silently dropped downstream and makes the A.2 lexicographic tiebreaker safe against pathological IDs.
 
 #### A.2 — Auto-consensus detection
 
@@ -656,7 +651,7 @@ After A.6 completes, jump to Phase 4 with the consolidated finding set.
 
 ### Path B: Single Session (default)
 
-Path B dispatch is intentionally unchanged — its agents carry no `model` parameter and inherit the session model via frontmatter. The `agentTeamModel` setting applies to Path A only.
+Path B agents carry no `model` parameter and inherit the session model via frontmatter. The `agentTeamModel` setting applies to Path A only.
 
 **Parallel Agent dispatch** — 5 agents in single message:
 
@@ -694,7 +689,7 @@ TaskUpdate each review task as agents complete.
 
 ## Phase 4: VERIFY
 
-**CRITICAL: Posting review findings to the PR is MANDATORY. NEVER skip posting. The review is not complete until `gh pr review` has been executed and TaskUpdate confirms the post task is completed. Do not suggest next steps until posting is verified.**
+**Post the review before suggesting next steps.** The review is complete only once `gh pr review` has run and TaskUpdate confirms the post task, because the merge finding-ledger gate reads the posted marker.
 
 1. **TaskList**: Confirm all review facets complete
 2. **Synthesize findings**: Deduplicate by file:line, prioritize P1/P2/P3

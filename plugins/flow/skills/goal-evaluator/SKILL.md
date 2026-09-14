@@ -60,7 +60,7 @@ Map the candidate and judge verdict to a status with the table in `references/go
 
 ### Step 8: Return the verdict (the skill does NOT write `last-verdict.json`)
 
-Return verdict, confidence, delta, reason, and next_step_hint. The caller, `commands/goal.md` (`source: "command"`) or `flow-goal-evaluator.sh` (`source: "evaluator-loop"`), invokes `bin/flow-record-verdict.sh` and treats a helper failure as non-fatal. One owner per write prevents the last-writer-wins race that lost the skill's verdict before.
+Return verdict, confidence, delta, reason, and next_step_hint. The caller, `commands/goal.md` (`source: "command"`) or `flow-goal-evaluator.sh` (`source: "evaluator-loop"`), invokes `bin/flow-record-verdict.sh` and treats a helper failure as non-fatal. One owner per write; two writers race and the last one wins.
 
 ### Step 9: Stuck detection (stop-hook only)
 

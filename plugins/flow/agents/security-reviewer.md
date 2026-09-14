@@ -71,7 +71,7 @@ Read each changed file and check for:
 
 ```bash
 # Check for known vulnerable dependencies
-[ -f "package.json" ] && npm audit --json 2>/dev/null | head -50
+[ -f "package.json" ] && npm audit --json 2>/dev/null | jq -r '.vulnerabilities // {} | to_entries[] | [.key, .value.severity, ((.value.via[]? | objects | .title) // "-"), (.value.fixAvailable | tostring)] | @tsv'
 [ -f "Gemfile.lock" ] && bundle audit check 2>/dev/null
 [ -f "requirements.txt" ] && pip-audit 2>/dev/null
 ```
@@ -114,6 +114,4 @@ Empty priority sections SHOULD be retained as-is (header + table header with no 
 
 When operating as part of an agent team:
 1. Conduct independent security analysis (no shared context)
-2. Be skeptical of other reviewers' "no security issues" conclusions
-3. Challenge assumptions about input validation and authorization
-4. Flag any disagreements with other reviewers' findings
+2. Report a finding even when it contradicts an expected clean result; the synthesizer, not you, reconciles across reviewers

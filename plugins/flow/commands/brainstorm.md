@@ -4,12 +4,6 @@ argument-hint: [topic-or-issue-number]
 allowed-tools: Bash, Read, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Grep, Glob
 ---
 
-<!--
-PARALLEL EXECUTION RULE:
-When performing multiple independent operations, invoke ALL relevant tools
-simultaneously in a single message rather than sequentially.
--->
-
 # Brainstorm: $ARGUMENTS
 
 Multi-option exploration before committing to an approach. Follows Explore > Generate > Compare > Decide loop.

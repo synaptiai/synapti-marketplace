@@ -202,9 +202,9 @@ Correction patterns from Phase 2 use their own threshold (≥3 verified instance
 
 ### Fatigue Circuit Breaker
 
-If >5 proposals would be generated in one session:
-- Generate only the top 5 (by occurrence count)
-- Note: "High activity session — additional patterns detected but deferred"
+When a session yields more proposals than you can evidence well, propose the patterns
+with the strongest transcript evidence and say in the output which patterns were seen
+but not written up, so the next run can pick them up.
 
 ## Phase 4: Generate Proposals
 

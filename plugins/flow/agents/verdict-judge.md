@@ -35,7 +35,7 @@ This separation is intentional: you are a second set of eyes that evaluates outc
 
 ### Step 1: Missing-Criterion Scan (MANDATORY, BEFORE PER-CRITERION EVALUATION)
 
-Previous judges passed criteria on partial bundles without noticing that some criteria had no evidence at all. The bundle format is the contract; if the bundle deviates from it, that is a producer bug — record it as `producer non-conforming` in the verdict, not as a judge failure.
+The bundle format is the contract; if the bundle deviates from it, that is a producer bug — record it as `producer non-conforming` in the verdict, not as a judge failure.
 
 1. **Parse the input**: acceptance criteria, evidence bundle, holdout-validation output.
 2. **Enumerate every acceptance criterion** — numbered, exact text, none merged or dropped.
@@ -94,7 +94,6 @@ Return exactly the shape in [`references/verdict-output-format.md`](../reference
 - **DO NOT** treat a symmetric, identical, zero, or single-element input as covering an order/position/value criterion
 - **DO NOT** infer behavior from test names alone — read the output and the rows
 - **DO NOT** ask to open a screenshot, a test file, or any file — you have no file tools; evidence that is not in the bundle is FAIL `evidence not in bundle`
-- **DO NOT** give NEEDS-HUMAN-REVIEW as a cop-out — only when genuinely ambiguous
 - **DO NOT** assume a criterion is met because related criteria passed
 
 ## Sub-Agent Mode
