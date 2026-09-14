@@ -216,6 +216,100 @@ redact() {
     -e 's/-----BEGIN [A-Z ]*PRIVATE KEY-----/[REDACTED:private-key-block]/g'
 }
 
+# Line classes this scan actually examines for registration (issue #176):
+# paragraph prose, bullets, blockquotes, and table cells. Headings and fenced
+# code stay structurally exempt — they are markup, not claims. Reported
+# alongside CLAIM_SCAN_UNREGISTERED_SENTENCES so a `0` cannot be misread as
+# "every line class was checked" when it only means "every line class this
+# scanner is capable of checking was checked" — the exact ambiguity the issue
+# reports, discovered when identical claim text scored 0 as a table row and
+# non-zero as a paragraph with no way to tell from the output alone.
+LINE_CLASSES_EXAMINED="paragraph,bullet,blockquote,table-cell"
+
+# One sentence per check. Declarative only: a heading or a fragment is not a
+# claim, and flagging them would drown the real findings. Shared by paragraph,
+# bullet, blockquote, and table-cell text alike (issue #176) — all four are
+# prose, just with different structural markers to strip before this point.
+scan_text() {
+  text="$1"
+  # Code spans come out BEFORE the split. A bare `tr '.' '\n'` cuts inside
+  # `SKILL.md`, `plugin.json`, and `3.2.2`, producing fragments like
+  # "md` is not a skill" — reported as unregistered claims that no drafter
+  # could resolve, because they are not sentences.
+  SPLITTABLE=$(printf '%s' "$text" | sed 's/`[^`]*`/ /g')
+  printf '%s\n' "$SPLITTABLE" | tr '.' '\n' | while IFS= read -r sentence; do
+    norm=$(printf '%s' "$sentence" | normalize)
+    [ -z "$norm" ] && continue
+    words=$(printf '%s' "$norm" | wc -w | tr -d ' ')
+    [ "$words" -lt 4 ] && continue
+
+    if [ "$REGISTER_PRESENT" -eq 1 ] && [ -s "$APPROVED_FILE" ]; then
+      if grep -qF "$norm" "$APPROVED_FILE" 2>/dev/null; then
+        continue
+      fi
+    fi
+    # Redact the ORIGINAL sentence, not the normalized one. `normalize`
+    # lowercases, and two of the credential patterns are case-sensitive by
+    # construction — `AKIA[0-9A-Z]{16}` and the PEM header cannot match text
+    # that has already been folded to lower case. Redacting after normalizing
+    # therefore printed AWS keys and private-key headers into the findings
+    # output verbatim-but-lowercased: still recognisable, still reconstructable,
+    # and destined for a CI log. This is the exact failure the redactor exists
+    # to prevent, so the excerpt is built from the raw sentence.
+    printf 'unregistered\t%s\t%s\t%s\n' "$f" "$LN" \
+      "$(printf '%s' "$sentence" | redact | normalize | cut -c1-80)" >> "$HITS_FILE"
+  done
+}
+
+# A GFM separator row (`|---|---|`, optionally with `:` alignment markers) —
+# every cell, once trimmed, is nothing but colons and dashes with at least one
+# dash. This is structure, not prose, and must never become a "claim" even
+# though its dashes are stable across cells (they'd otherwise clear no bar
+# because they contain no words at all — this check exists for correctness
+# and intent, not because the word floor leaves a gap here).
+is_table_separator() {
+  row=$1
+  body=${row#|}
+  body=${body%|}
+  OLD_IFS=$IFS
+  IFS='|'
+  set -f          # a bare glob in a cell must stay literal, not expand
+  # shellcheck disable=SC2206
+  sepcells=($body)
+  set +f
+  IFS=$OLD_IFS
+  for sepcell in "${sepcells[@]}"; do
+    trimmed=$(printf '%s' "$sepcell" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    case "$trimmed" in
+      *[!:-]*) return 1 ;;   # contains something other than ':' or '-'
+      *-*) ;;                # must contain at least one '-'
+      *) return 1 ;;
+    esac
+  done
+  return 0
+}
+
+# Split a table row into cells and feed each non-empty cell through the same
+# candidate-sentence check as prose (issue #176). Table-cell splitting follows
+# the shell-native `IFS='|'` + `set -f` + array-split idiom already used by
+# dossier-ledger-lint.sh for the same "split a markdown table row" problem.
+scan_table_row() {
+  row=$1
+  body=${row#|}
+  body=${body%|}
+  OLD_IFS=$IFS
+  IFS='|'
+  set -f
+  # shellcheck disable=SC2206
+  rowcells=($body)
+  set +f
+  IFS=$OLD_IFS
+  for rowcell in "${rowcells[@]}"; do
+    trimmed=$(printf '%s' "$rowcell" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    [ -n "$trimmed" ] && scan_text "$trimmed"
+  done
+}
+
 for f in $TARGETS; do
   IN_FENCE=0
   # The header is structured metadata, not prose. `title:` and `audience:` are
@@ -226,7 +320,19 @@ for f in $TARGETS; do
   IN_HEADER=0
   FIRST_LINE=1
   LN=0
-  while IFS= read -r line; do
+  # Table state (issue #176): a GFM table's header row is only distinguishable
+  # from a data row by what follows it — the separator row. Since this loop
+  # has no lookahead, the first row of a run of `|`-prefixed lines is held
+  # rather than scored immediately; row 2 then decides whether row 1 was a
+  # header (discarded) or plain data (flushed alongside row 2). Once that
+  # determination is made, every further `|`-prefixed row is scored directly.
+  TABLE_HELD_LINE=""
+  TABLE_ROWS_SEEN=0
+  # `|| [ -n "$line" ]` picks up a final line with no trailing newline: `read`
+  # still populates $line with its content but returns non-zero at EOF, and a
+  # bare `while read` loop condition treats that as "nothing left," silently
+  # dropping the last line of any file that isn't newline-terminated.
+  while IFS= read -r line || [ -n "$line" ]; do
     LN=$((LN + 1))
     if [ "$FIRST_LINE" -eq 1 ]; then
       FIRST_LINE=0
@@ -239,41 +345,53 @@ for f in $TARGETS; do
       '```'*) IN_FENCE=$((1 - IN_FENCE)); continue ;;
     esac
     [ "$IN_FENCE" -eq 1 ] && continue
+
     case "$line" in
-      ''|'#'*|'|'*|'---'*|'<!--'*|'- '*|'* '*|'> '*) continue ;;
+      '|'*)
+        TABLE_ROWS_SEEN=$((TABLE_ROWS_SEEN + 1))
+        case "$TABLE_ROWS_SEEN" in
+          1)
+            TABLE_HELD_LINE="$line"
+            ;;
+          2)
+            if is_table_separator "$line"; then
+              TABLE_HELD_LINE=""
+            else
+              scan_table_row "$TABLE_HELD_LINE"
+              TABLE_HELD_LINE=""
+              scan_table_row "$line"
+            fi
+            ;;
+          *)
+            scan_table_row "$line"
+            ;;
+        esac
+        continue
+        ;;
+    esac
+    # Left the table, if one was open: flush any row still held (it was never
+    # followed by a separator, so it was data all along, not a header).
+    if [ -n "$TABLE_HELD_LINE" ]; then
+      scan_table_row "$TABLE_HELD_LINE"
+      TABLE_HELD_LINE=""
+    fi
+    TABLE_ROWS_SEEN=0
+
+    case "$line" in
+      ''|'#'*|'---'*|'<!--'*) continue ;;
+      '- '*) scan_text "${line#- }"; continue ;;
+      '* '*) scan_text "${line#\* }"; continue ;;
+      '> '*) scan_text "${line#> }"; continue ;;
     esac
 
-    # One sentence per check. Declarative only: a heading or a fragment is not
-    # a claim, and flagging them would drown the real findings.
-    #
-    # Code spans come out BEFORE the split. A bare `tr '.' '\n'` cuts inside
-    # `SKILL.md`, `plugin.json`, and `3.2.2`, producing fragments like
-    # "md` is not a skill" — reported as unregistered claims that no drafter
-    # could resolve, because they are not sentences.
-    SPLITTABLE=$(printf '%s' "$line" | sed 's/`[^`]*`/ /g')
-    printf '%s\n' "$SPLITTABLE" | tr '.' '\n' | while IFS= read -r sentence; do
-      norm=$(printf '%s' "$sentence" | normalize)
-      [ -z "$norm" ] && continue
-      words=$(printf '%s' "$norm" | wc -w | tr -d ' ')
-      [ "$words" -lt 4 ] && continue
-
-      if [ "$REGISTER_PRESENT" -eq 1 ] && [ -s "$APPROVED_FILE" ]; then
-        if grep -qF "$norm" "$APPROVED_FILE" 2>/dev/null; then
-          continue
-        fi
-      fi
-      # Redact the ORIGINAL sentence, not the normalized one. `normalize`
-      # lowercases, and two of the credential patterns are case-sensitive by
-      # construction — `AKIA[0-9A-Z]{16}` and the PEM header cannot match text
-      # that has already been folded to lower case. Redacting after normalizing
-      # therefore printed AWS keys and private-key headers into the findings
-      # output verbatim-but-lowercased: still recognisable, still reconstructable,
-      # and destined for a CI log. This is the exact failure the redactor exists
-      # to prevent, so the excerpt is built from the raw sentence.
-      printf 'unregistered\t%s\t%s\t%s\n' "$f" "$LN" \
-        "$(printf '%s' "$sentence" | redact | normalize | cut -c1-80)" >> "$HITS_FILE"
-    done
+    scan_text "$line"
   done < "$f"
+  # A file can end mid-table (its last line is still-held row 1, never
+  # confirmed a header because there was no row 2 to check).
+  if [ -n "$TABLE_HELD_LINE" ]; then
+    scan_table_row "$TABLE_HELD_LINE"
+    TABLE_HELD_LINE=""
+  fi
 done
 
 UNREGISTERED=$(grep -c '^unregistered' "$HITS_FILE" 2>/dev/null || true)
@@ -281,8 +399,13 @@ UNREGISTERED=$(grep -c '^unregistered' "$HITS_FILE" 2>/dev/null || true)
 
 # --- Report ------------------------------------------------------------------
 if [ "$WANT_JSON" -eq 1 ]; then
-  printf '{"leaks":%s,"prohibited":%s,"unregistered":%s,"register_present":%s,"hits":[' \
-    "$LEAKS" "$PROHIBITED" "$UNREGISTERED" "$REGISTER_PRESENT"
+  CLASSES_JSON=$(printf '%s' "$LINE_CLASSES_EXAMINED" | awk -F',' '{
+    out = "["
+    for (i = 1; i <= NF; i++) { if (i > 1) out = out ","; out = out "\"" $i "\"" }
+    print out "]"
+  }')
+  printf '{"leaks":%s,"prohibited":%s,"unregistered":%s,"register_present":%s,"line_classes_examined":%s,"hits":[' \
+    "$LEAKS" "$PROHIBITED" "$UNREGISTERED" "$REGISTER_PRESENT" "$CLASSES_JSON"
   first=1
   while IFS=$'\t' read -r sev file ln detail; do
     [ $first -eq 0 ] && printf ','
@@ -296,6 +419,7 @@ elif [ "$QUIET" -eq 0 ]; then
   echo "CLAIM_SCAN_PROHIBITED_VOCABULARY=$PROHIBITED"
   echo "CLAIM_SCAN_UNREGISTERED_SENTENCES=$UNREGISTERED"
   echo "CLAIM_SCAN_REGISTER_PRESENT=$REGISTER_PRESENT"
+  echo "CLAIM_SCAN_LINE_CLASSES_EXAMINED=$LINE_CLASSES_EXAMINED"
   if [ -s "$HITS_FILE" ]; then
     echo ""
     echo "Findings (matched values are never printed):"

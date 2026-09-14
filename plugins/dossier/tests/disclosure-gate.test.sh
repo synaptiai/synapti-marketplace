@@ -112,8 +112,11 @@ pub "$T" "The service handles multi-region failover automatically."
 OUT=$(scanout "$T")
 assert_contains "no claim register" "$OUT" "a missing register is called out explicitly"
 
-# --- headings, code fences, and tables are not claims ------------------------
-# Flagging them would drown the real findings.
+# --- headings and code fences are not claims; tables and bullets now are -----
+# Only headings and fenced code stay structurally exempt (issue #176). This
+# fixture's table cells are all under the four-word floor on their own merits,
+# so it stays a green regression check for the exemption boundary even though
+# table cells are no longer blanket-skipped.
 T="$W/structure"; mkpkg "$T"
 reg "$T" ''
 {
@@ -123,7 +126,86 @@ reg "$T" ''
   printf '```bash\ncurl https://api.example.com/v1/ping\n```\n'
 } > "$T/docs/dossier/06-public/technical-partner-guide.md"
 scan "$T"
-assert_equal "0" "$?" "headings, tables, and code fences are not treated as claims"
+assert_equal "0" "$?" "short table cells under the word floor still pass clean"
+
+# --- headings and fenced code stay exempt even with claim-shaped text --------
+# The regression this issue's fix must not introduce: widening the selector to
+# cover bullets/tables/blockquotes must not also widen it to headings or fences.
+T="$W/heading-fence-exempt"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '# This product guarantees 9999 percent uptime annually\n\n'
+  printf '```text\nThis product guarantees 9999 percent uptime annually\n```\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "0" "$?" "claim-shaped text in a heading or fenced code block is still exempt"
+
+# --- issue #176: a bullet is prose with a marker, not structural markup ------
+# The exact shape reported in the issue: a claim written as a `- ` bullet
+# scored 0 while the identical sentence as a paragraph scored non-zero.
+T="$W/bullet-claim"; mkpkg "$T"
+reg "$T" ''
+pub "$T" '- There are no binaries and no bundles; you can read every hook before you install it.'
+scan "$T"
+assert_equal "1" "$?" "an unregistered claim written as a - bullet is now detected"
+assert_contains "UNREGISTERED" "$(scanout "$T")" "the bullet claim is labelled"
+
+# The `* ` bullet marker must be handled too, not just `- `.
+T="$W/bullet-star-claim"; mkpkg "$T"
+reg "$T" ''
+pub "$T" '* This vendor performs full formal verification on every release.'
+scan "$T"
+assert_equal "1" "$?" "an unregistered claim written with a * bullet marker is detected"
+
+# --- issue #176: a table cell is prose with a delimiter, not structural markup
+T="$W/table-claim"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '| Property | Description |\n'
+  printf '|---|---|\n'
+  printf '| Availability | This service guarantees 9999 percent uptime annually |\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "1" "$?" "an unregistered claim written as a table cell is detected"
+assert_contains "UNREGISTERED" "$(scanout "$T")" "the table-cell claim is labelled"
+
+# The table's own header row and separator row must never become "claims"
+# themselves, even when the header wording clears the four-word floor.
+T="$W/table-header-not-claim"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '| What the reader should expect | What this guarantees today |\n'
+  printf '|---|---|\n'
+  printf '| Region availability details | Nothing is promised beyond the current region |\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_not_contains "what the reader should expect" "$OUT" "the table header row is not treated as a claim"
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" "only the data cell is an unregistered claim, not the header"
+
+# --- issue #176: a blockquote is prose with a marker, not structural markup --
+T="$W/blockquote-claim"; mkpkg "$T"
+reg "$T" ''
+pub "$T" '> This product has completed a formal third-party security audit.'
+scan "$T"
+assert_equal "1" "$?" "an unregistered claim written as a blockquote is detected"
+
+# --- issue #176: the scan's own coverage scope must be legible in its output -
+# A `0` result must not be misreadable as "every line class was checked" when
+# it only ever meant "every paragraph was checked" (the exact failure mode the
+# issue reports — three separate measurements of this scanner's own output
+# disagreed on how much of the document it covered).
+T="$W/line-classes-field"; mkpkg "$T"
+reg "$T" ''
+pub "$T" "A simple paragraph sentence with no claims at all here."
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_LINE_CLASSES_EXAMINED=" "$OUT" "the scan reports which line classes it examined"
+assert_contains "bullet" "$OUT" "bullets are listed among the examined line classes"
+assert_contains "table-cell" "$OUT" "table cells are listed among the examined line classes"
+if command -v jq >/dev/null 2>&1; then
+  J=$(cd "$T" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --json 2>/dev/null)
+  CLASSES=$(printf '%s' "$J" | jq -r '(.line_classes_examined // []) | join(",")' 2>/dev/null)
+  assert_contains "table-cell" "$CLASSES" "the json output reports table-cell among examined line classes"
+fi
 
 # --- single-file mode --------------------------------------------------------
 T="$W/single"; mkpkg "$T"
@@ -182,6 +264,19 @@ printf -- '# Guide\n\nThe product supports every integration pattern a partner n
 OUT=$(scanout "$T")
 assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
   "a headerless document is scanned from its first line"
+
+# A document whose last line has no trailing newline must still be scanned to
+# its end. `while read` returns failure on a final line with no newline but
+# still populates the variable with its content; a loop that treats that
+# failure as "nothing left to read" silently drops exactly one line — always
+# the last one — matching this issue's own theme of a scan whose true
+# coverage does not match what its clean result implies.
+T="$W/no-trailing-newline"; mkdir -p "$T/docs/dossier/06-public" 2>/dev/null
+printf -- 'This is the only line and it carries a real unregistered claim.' \
+  > "$T/docs/dossier/06-public/g.md" 2>/dev/null
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "the last line is still scanned even with no trailing newline"
 
 
 # --- An approved wording containing markdown must be matchable ---------------

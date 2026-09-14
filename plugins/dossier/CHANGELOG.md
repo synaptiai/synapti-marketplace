@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- `dossier-claim-scan.sh` skipped every table row, bullet, and blockquote before its registration check ran, so a public document built from those line classes reported `CLAIM_SCAN_UNREGISTERED_SENTENCES=0` no matter what it claimed — an audit found 3 fabricated claims (security audits, formal verification, 99.99% availability) that passed the gate written as a table and a list. Bullets, blockquotes, and table cells (header/separator rows excluded) are now examined the same as paragraph prose; headings and fenced code remain exempt. The scan now also reports `CLAIM_SCAN_LINE_CLASSES_EXAMINED` (plain-text and `--json`) alongside the count, so a clean result states its own scope instead of being misread as broader than it is.
+- `dossier-claim-scan.sh` silently dropped the last line of any document with no trailing newline — `while read` returns failure on that line but still populates it, and the loop treated the failure as end-of-input.
+
 ## [1.2.0] - 2026-09-10
 
 ### Added
