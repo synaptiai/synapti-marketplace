@@ -392,6 +392,23 @@ pub "$T" '> The API supports OAuth 20 device flow'
 scan "$T"
 assert_equal "0" "$?" "a registered claim written as a blockquote still matches its approved wording"
 
+# The risk map's own stated discriminating check for blockquote handling
+# (a two-line blockquote whose lines carry distinct claims) had no fixture
+# pinning it — found during PR-gate review. Each line stays independently
+# evaluated per the existing per-line architecture; this proves both lines
+# are actually reached, not just that a single-line blockquote works.
+T="$W/blockquote-two-lines"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '> This product has never had a security incident of any kind.\n'
+  printf '> Every customer receives a dedicated support engineer at all times.\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_contains "technical-partner-guide.md:1 \"this product has never had a security incident" "$OUT" \
+  "the first line of a two-line blockquote is independently detected"
+assert_contains "technical-partner-guide.md:2 \"every customer receives a dedicated support engineer" "$OUT" \
+  "the second line of a two-line blockquote is independently detected"
+
 # --- issue #176: the scan's own coverage scope must be legible in its output -
 # A `0` result must not be misreadable as "every line class was checked" when
 # it only ever meant "every paragraph was checked" (the exact failure mode the

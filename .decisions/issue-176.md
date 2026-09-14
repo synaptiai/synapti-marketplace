@@ -31,7 +31,7 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 ### Non-goals
 
 - Not fixing `dossier-package-check.sh`'s analogous "clean result, invisible scope" shape (`CHECK_RESULT=CLEAN` with `CHECK_LINKS_CHECKED=0`) — noted in the issue as related but explicitly out of scope for this fix.
-- Not changing the registration match algorithm itself (normalized literal-substring `grep -qF` against the approved-wording pool) — only which lines are fed into it.
+- Not changing the registration match algorithm itself (normalized literal-substring `grep -qF` against the approved-wording pool) — only which lines are fed into it. **Accepted residual risk** (confirmed live at PR-gate review, not merely theoretical): the substring match can silently approve an unscoped document sentence that happens to be a literal substring of a longer, differently-scoped approved wording — pre-existing since 2026-07-26, unrelated to this issue, made no worse in kind by this fix, but this fix increases exposure since table cells and bullets are the terse, fragment-like shape most likely to trigger it. Tracked as issue #200; a correct fix needs symmetric sentence-boundary handling on both the document and register sides, not a mechanical swap to exact matching.
 - Not adding fuzzy/semantic matching for claims.
 - Not changing the claim register file format or the `## Required qualifications` handling.
 - Not touching frontmatter/header skip logic (`IN_HEADER`, lines 219-237) — that is a separate, correct mechanism.
@@ -159,3 +159,11 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-14 20:20 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
 
 <!-- auto-log: 2026-09-14 20:22 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-14 20:23 commit "fix(dossier): flush table state before crossing a fenced code block" -->
+
+<!-- auto-log: 2026-09-14 20:33 Write /tmp/followup-substring-match.md -->
+
+<!-- auto-log: 2026-09-14 20:42 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-176.md -->
+
+<!-- auto-log: 2026-09-14 20:45 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
