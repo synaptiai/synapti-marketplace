@@ -21,6 +21,12 @@ artifacts:
   workflow: start-issue
   run_id: 2026-09-14T145858Z-issue-176
   status: active
+- type: review-cycle
+  captured_at: '2026-09-14T20:07:42Z'
+  cycle: 1
+  path: B
+  findings_count: 7
+  pr: 201
 ---
 # Issue #176 — claim-scan cannot see bullets or table rows
 
@@ -237,3 +243,13 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-14 21:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
 
 <!-- auto-log: 2026-09-14 21:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 21:55 commit "refactor(dossier): drop dead flush branch, strip review-round narrative from comments" -->
+
+<!-- auto-log: 2026-09-14 21:55 Write /tmp/followup-tilde-fence.md -->
+
+<!-- auto-log: 2026-09-14 22:07 Write /tmp/pr201-review-comment.md -->
+
+<!-- auto-log: 2026-09-14 22:07 Edit /tmp/pr201-review-comment.md -->
+
+<!-- auto-log: 2026-09-14 22:07 Write /tmp/pr201-resolution-comment.md -->
