@@ -40,7 +40,9 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 - Not adding a `--json` output mode — `dossier-scaffold.sh` has no JSON mode today, and this fix stays within the existing plain-text `KEY=value` + `ACTIONS` contract.
 - Not changing the `DEST_INTACT` / empty-file detection logic (introduced in the 1.0.2 fix for truncated files) — only the reporting of what happens after a file is judged damaged.
 
-**Accepted residual risk** — the README's two failure branches (missing template, failed copy) increment `SCAFFOLD_FAILED` without a matching `FAILED README.md (...)` `ACTIONS` line, unlike every other failure path in the script. Confirmed genuinely pre-existing (predates PR #201/issue #176) and untouched by this PR's diff — not worsened in kind. Tracked as a follow-up: issue #203.
+**Resolved during review (was: accepted residual risk)** — the README's failure branches originally incremented `SCAFFOLD_FAILED` without a matching `FAILED README.md (...)` `ACTIONS` line. Initially filed as a genuinely pre-existing, untouched-by-this-diff follow-up (issue #203), but a second review cycle added a new symlink guard directly above that same block (closing a directory-level symlink bypass, and a template-source symlink gap — see risk-map addendum below), which brought the block back into this PR's active scope. Fixed in-PR instead of carried forward: all three README failure branches (symlink, missing template, copy failed) now emit a matching `ACTIONS` line and stderr diagnostic. Issue #203 remains open as a historical record but is closed by this PR's diff.
+
+**Accepted residual risk** — `dossier-scaffold.sh`'s template-directory resolution falls back to a bare CWD-relative path (`plugins/dossier/templates/package`) when neither `CLAUDE_PLUGIN_ROOT` nor a `$SCRIPT_DIR`-relative candidate resolves. Confirmed genuinely pre-existing (predates PR #201/issue #176) and untouched by this PR's diff — not worsened in kind. Tracked as a follow-up: issue #205.
 
 ### Failure modes
 
@@ -134,3 +136,31 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-14 23:44 commit "fix(dossier): stop a TOCTOU race from leaking a redirection error to stderr" -->
 
 <!-- auto-log: 2026-09-15 00:01 Write /tmp/pr-178-body.md -->
+
+<!-- auto-log: 2026-09-15 00:16 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-15 00:16 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-15 00:16 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-15 00:17 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-09-15 00:17 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-09-15 00:19 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-15 00:19 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-09-15 00:26 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-15 00:26 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-15 00:26 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-scaffold.sh -->
+
+<!-- auto-log: 2026-09-15 00:27 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-09-15 00:27 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/bin-scripts.test.sh -->
+
+<!-- auto-log: 2026-09-15 00:28 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
+
+<!-- auto-log: 2026-09-15 00:28 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-178.md -->

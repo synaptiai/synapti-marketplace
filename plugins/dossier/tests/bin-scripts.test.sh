@@ -543,9 +543,11 @@ SF=$(mktemp -d)
 BROKEN_TPL=$(mktemp -d)
 cp -a plugins/dossier/templates/package/. "$BROKEN_TPL/"
 rm -f "$BROKEN_TPL/00-control/evidence-ledger.md"
-FOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SF/pkg" --templates "$BROKEN_TPL" 2>/dev/null)
+FOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SF/pkg" --templates "$BROKEN_TPL" 2>"$SF/stderr.log")
+FERR=$(cat "$SF/stderr.log" 2>/dev/null)
 assert_contains "FAILED  00-control/evidence-ledger.md (template missing" "$FOUT" "a repair whose template is missing is reported FAILED"
 assert_not_contains "REPAIRED 00-control/evidence-ledger.md" "$FOUT" "a failed repair does not also claim REPAIRED for the same path"
+assert_not_contains "repairing" "$FERR" "a failed repair attempt never announces on stderr — the message is deferred to confirmed success (issue #178)"
 rm -rf "$SF" "$BROKEN_TPL" 2>/dev/null
 
 # --- A symlink at a canonical path is never written through (issue #178) ----
@@ -604,5 +606,132 @@ else
   _dossier_assert_fail "the directory at the canonical path was replaced or written into"
 fi
 rm -rf "$SDIR" 2>/dev/null
+
+# --- A symlinked directory segment is refused, not just a symlinked leaf file
+# --- (issue #178) -------------------------------------------------------------
+# `mkdir -p` on a directory reached through a symlink succeeds silently
+# (nothing new is created), and a leaf-only `-L "$DEST"` check inspects only
+# the final path component — so a symlinked *directory* segment bypassed the
+# leaf-level guard entirely, landing every file under it outside
+# $OUTPUT_ROOT undetected. Both --dry-run and a real run must refuse it.
+SDIRSYM=$(mktemp -d)
+mkdir -p "$SDIRSYM/outside-dir" "$SDIRSYM/pkg"
+ln -s "$SDIRSYM/outside-dir" "$SDIRSYM/pkg/00-control"
+DSOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SDIRSYM/pkg" 2>/dev/null)
+assert_contains "FAILED  00-control/documentation-index.md" "$DSOUT" "a file under a symlinked directory segment is refused, not created-through"
+assert_not_contains "CREATED 00-control/documentation-index.md" "$DSOUT" "a file under a symlinked directory segment is never reported CREATED"
+if [ -e "$SDIRSYM/outside-dir/documentation-index.md" ]; then
+  _dossier_assert_fail "the symlinked directory's outside target was written into"
+else
+  _dossier_assert_pass "the symlinked directory's outside target is never written into"
+fi
+
+DSDRY=$(mktemp -d)
+mkdir -p "$DSDRY/outside-dir2" "$DSDRY/pkg2"
+ln -s "$DSDRY/outside-dir2" "$DSDRY/pkg2/00-control"
+DSDRYOUT=$("$BIN/dossier-scaffold.sh" --output-root "$DSDRY/pkg2" --dry-run 2>/dev/null)
+assert_contains "FAILED  00-control/documentation-index.md" "$DSDRYOUT" "--dry-run also refuses a file under a symlinked directory segment"
+rm -rf "$SDIRSYM" "$DSDRY" 2>/dev/null
+
+# --- Writes go through a temp file + atomic rename, so no temp files are ever
+# --- left behind (issue #178) --------------------------------------------------
+# Canonical files and the README are now written via a same-directory temp
+# file plus an atomic rename rather than a direct cp onto the destination,
+# so a rename() replaces whatever is at the destination outright (including
+# a symlink planted there after the earlier -L check ran) instead of `cp`
+# writing through it. A leaked *.dossier-scaffold.tmp.* file would mean the
+# cleanup path never ran.
+STMP=$(mktemp -d)
+"$BIN/dossier-scaffold.sh" --output-root "$STMP/pkg" >/dev/null 2>&1
+TMP_LEFTOVERS=$(find "$STMP/pkg" -name '*.dossier-scaffold.tmp.*' 2>/dev/null | wc -l | tr -d '[:space:]')
+assert_equal "0" "$TMP_LEFTOVERS" "a successful scaffold leaves no .dossier-scaffold.tmp.* files behind"
+rm -rf "$STMP" 2>/dev/null
+
+SPERM=$(mktemp -d)
+mkdir -p "$SPERM/pkg/00-control"
+chmod 555 "$SPERM/pkg/00-control"
+PERMOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SPERM/pkg" 2>/dev/null)
+chmod 755 "$SPERM/pkg/00-control"
+assert_contains "FAILED  00-control/documentation-index.md (copy failed)" "$PERMOUT" "a write that cannot create its temp file is reported FAILED"
+TMP_LEFTOVERS2=$(find "$SPERM/pkg" -name '*.dossier-scaffold.tmp.*' 2>/dev/null | wc -l | tr -d '[:space:]')
+assert_equal "0" "$TMP_LEFTOVERS2" "a failed write leaves no .dossier-scaffold.tmp.* file behind"
+rm -rf "$SPERM" 2>/dev/null
+
+# --- A symlinked template source is never read through (issue #178) ---------
+# `-f "$SRC"` follows a symlink, so a symlinked template would have its
+# target's content silently copied into a canonical document — the read-side
+# mirror of the write-side symlink guard on $DEST.
+SSRC=$(mktemp -d)
+mkdir -p "$SSRC/templates"
+cp -a plugins/dossier/templates/package/. "$SSRC/templates/"
+OUTSIDE_TPL="$SSRC/outside-template.md"
+printf 'attacker content\n' > "$OUTSIDE_TPL"
+ln -sf "$OUTSIDE_TPL" "$SSRC/templates/00-control/documentation-index.md"
+SRCOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SSRC/pkg" --templates "$SSRC/templates" 2>/dev/null)
+assert_contains "FAILED  00-control/documentation-index.md (refusing to read a symlinked template)" "$SRCOUT" "a symlinked template source is refused, not read through"
+assert_not_contains "CREATED 00-control/documentation-index.md" "$SRCOUT" "a symlinked template source is never reported CREATED"
+if [ -e "$SSRC/pkg/00-control/documentation-index.md" ]; then
+  _dossier_assert_fail "content from the symlinked template was copied into the package"
+else
+  _dossier_assert_pass "no content from the symlinked template is copied into the package"
+fi
+rm -rf "$SSRC" 2>/dev/null
+
+# --- A live symlink at the README path is refused, target untouched (issue #178) ---
+# The dangling-symlink case was already tested; this pins the live-symlink
+# case too, with content-preservation verification mirroring the canonical-
+# file live-symlink test above.
+SLR=$(mktemp -d)
+OUTSIDE_README_LIVE="$SLR/outside-readme-live.txt"
+printf 'do not touch my readme either\n' > "$OUTSIDE_README_LIVE"
+mkdir -p "$SLR/pkg"
+ln -s "$OUTSIDE_README_LIVE" "$SLR/pkg/README.md"
+LRO=$("$BIN/dossier-scaffold.sh" --output-root "$SLR/pkg" 2>/dev/null)
+assert_contains "SCAFFOLD_README=failed" "$LRO" "a live symlink at the README path is refused, not written through"
+assert_equal "do not touch my readme either" "$(cat "$OUTSIDE_README_LIVE" 2>/dev/null)" "the README symlink's live target outside the package is never overwritten"
+rm -rf "$SLR" 2>/dev/null
+
+# --- A directory at the README path is never treated as an intact README
+# --- (issue #178) --------------------------------------------------------------
+# -e is true for a directory too; without a regular-file check, a directory
+# at the README path would be misreported SKIPPED — a clean bill of health
+# with no README signpost actually present.
+SRDIR=$(mktemp -d)
+mkdir -p "$SRDIR/pkg/README.md"
+RDIROUT=$("$BIN/dossier-scaffold.sh" --output-root "$SRDIR/pkg" 2>/dev/null)
+assert_contains "SCAFFOLD_README=failed" "$RDIROUT" "a directory at the README path is reported failed, not skipped"
+assert_contains "FAILED  README.md (not a regular file)" "$RDIROUT" "the README type-confusion failure is named in ACTIONS"
+if [ -d "$SRDIR/pkg/README.md" ]; then
+  _dossier_assert_pass "the directory at the README path is left alone"
+else
+  _dossier_assert_fail "the directory at the README path was replaced or written into"
+fi
+rm -rf "$SRDIR" 2>/dev/null
+
+# --- Every README failure path is named in ACTIONS, matching every other
+# --- FAILED path in the script (issue #178, closes #203) ----------------------
+# The symlink, missing-template, and copy-failed README branches previously
+# incremented SCAFFOLD_FAILED with no ACTIONS line and (for copy-failed) no
+# stderr diagnostic either — unlike every other FAILED path in the script.
+SRMISS=$(mktemp -d)
+MOUT=$("$BIN/dossier-scaffold.sh" --output-root "$SRMISS/pkg" --readme-template "$SRMISS/nonexistent.md" 2>/dev/null)
+assert_contains "FAILED  README.md (template missing)" "$MOUT" "a missing README template is named in ACTIONS"
+rm -rf "$SRMISS" 2>/dev/null
+
+# A read-only $OUTPUT_ROOT would also fail the mkdir loop for the 8
+# canonical directories, aborting before the README is ever reached — so
+# the fixture scaffolds normally first (creating everything, including the
+# 8 directories the mkdir loop no-ops on when they already exist), removes
+# only the README, then locks the root down. The 23 canonical files stay
+# SKIPPED (no write needed); only the missing README's temp-file create
+# needs write access to the now-read-only root.
+SRPERM=$(mktemp -d)
+"$BIN/dossier-scaffold.sh" --output-root "$SRPERM/pkg" >/dev/null 2>&1
+rm -f "$SRPERM/pkg/README.md"
+chmod 555 "$SRPERM/pkg"
+COUT=$("$BIN/dossier-scaffold.sh" --output-root "$SRPERM/pkg" 2>/dev/null)
+chmod 755 "$SRPERM/pkg"
+assert_contains "FAILED  README.md (copy failed)" "$COUT" "a README copy failure is named in ACTIONS"
+rm -rf "$SRPERM" 2>/dev/null
 
 _dossier_test_summary
