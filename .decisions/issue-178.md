@@ -20,6 +20,12 @@ artifacts:
   result: achieved
   evidence_bundle: .flow/runs/2026-09-14T215033Z-issue-178
   failures: none
+- type: review-cycle
+  captured_at: '2026-09-14T22:01:24Z'
+  cycle: 1
+  path: B
+  findings_count: 6
+  pr: 204
 ---
 # Issue #178 — scaffold overwrites non-frontmatter files and reports them as CREATED, not REPAIRED
 
@@ -126,3 +132,5 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-14 23:44 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-178.md -->
 
 <!-- auto-log: 2026-09-14 23:44 commit "fix(dossier): stop a TOCTOU race from leaking a redirection error to stderr" -->
+
+<!-- auto-log: 2026-09-15 00:01 Write /tmp/pr-178-body.md -->
