@@ -167,3 +167,9 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-14 20:42 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-176.md -->
 
 <!-- auto-log: 2026-09-14 20:45 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 20:48 commit "docs(dossier): pin two-line blockquote coverage, annotate accepted risk" -->
+
+<!-- auto-log: 2026-09-14 21:10 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/feedback_sequential_suites.md -->
+
+<!-- auto-log: 2026-09-14 21:18 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
