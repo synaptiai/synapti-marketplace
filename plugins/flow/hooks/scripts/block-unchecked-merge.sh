@@ -93,8 +93,12 @@ COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty')
 # text without quotes and backslashes, so `me""rge` still reaches the parser,
 # and in any case, because the GraphQL auto-merge mutation is spelled
 # enablePullRequestAutoMerge. `graphql` too: a query read from a file never
-# shows the word merge.
-_BUM_BARE="${COMMAND//[\'\"\\]/}"
+# shows the word merge. The quotes are removed with tr, not with a bash pattern
+# substitution, which on bash 3.2 takes tens of seconds on a PR body of a few KB.
+# If tr fails, the text is kept whole and parsed rather than let through.
+if ! _BUM_BARE=$(printf '%s' "$COMMAND" | LC_ALL=C tr -d "'\"\\\\"); then
+  _BUM_BARE=merge
+fi
 case "$_BUM_BARE" in
   *[Mm][Ee][Rr][Gg][Ee]*|*[Gg][Rr][Aa][Pp][Hh][Qq][Ll]*) ;;
   *) exit 0 ;;
@@ -209,6 +213,9 @@ _bum_subwords() {
 
 # Does this simple command end inside an open quote?
 _bum_unterminated() {
+  # Exit 3 means balanced. Any other status, a crashed awk included, is read
+  # as unterminated, so a failure refuses rather than lets the merge through.
+  local rc=0
   printf '%s\n' "$1" | awk '
     BEGIN { SQ = sprintf("%c", 39); q = "" }
     {
@@ -216,11 +223,14 @@ _bum_unterminated() {
       for (i = 1; i <= n; i++) {
         c = substr($0, i, 1)
         if (c == "\\" && q != SQ) { i++; continue }
-        if (q != "") { if (c == q) q = ""; continue }
-        if (c == "\"" || c == SQ) q = c
+        if (q != "") { if (c == q || (q == "A" && c == SQ)) q = ""; continue }
+        # A dollar-quoted string: inside it a backslash escapes the quote.
+        if (c == SQ && i > 1 && substr($0, i - 1, 1) == "$") q = "A"
+        else if (c == "\"" || c == SQ) q = c
       }
     }
-    END { exit (q != "" ? 0 : 1) }'
+    END { exit (q != "" ? 0 : 3) }' || rc=$?
+  [ "$rc" -ne 3 ]
 }
 
 # The walk and every rule of the shape, for the command in TOK whose gh stands
@@ -369,12 +379,15 @@ while IFS= read -r SEG; do
   if [ "$kind" = "api" ]; then
     # A merge endpoint (pulls/N/merge, and repos/o/r/merges, which merges one
     # branch into another with no pull request at all), or a merge mutation by
-    # name. Not the bare word: `--jq .mergeable_state` is an ordinary read.
+    # name. Not the bare word: `--jq .mergeable_state` is an ordinary read, and
+    # so are the fields autoMergeRequest, autoMergeAllowed and
+    # viewerCanEnableAutoMerge, which is why the auto-merge mutation is matched
+    # by its whole name.
     is_graphql=0
     for ((k = c + 1; k < n; k++)); do
       case "${TOK[k]}" in
         */[Mm][Ee][Rr][Gg][Ee]|*/[Mm][Ee][Rr][Gg][Ee][/?]*|*/[Mm][Ee][Rr][Gg][Ee][Ss]|*/[Mm][Ee][Rr][Gg][Ee][Ss][/?]*|\
-        *[Mm]erge[Pp]ull[Rr]equest*|*[Aa]uto[Mm]erge*|*[Ee]nqueue[Pp]ull[Rr]equest*)
+        *[Mm]erge[Pp]ull[Rr]equest*|*[Mm]erge[Bb]ranch*|*[Ee]nable[Pp]ull[Rr]equest[Aa]uto[Mm]erge*|*[Ee]nqueue[Pp]ull[Rr]equest*)
           echo "BLOCKED: gh api on a merge endpoint or mutation. Its checks cannot be verified from here." >&2
           echo "To merge: $_BUM_SHAPE. To ask whether it merged: gh pr view <number> --repo owner/name --json mergedAt." >&2
           exit 2 ;;
@@ -434,9 +447,14 @@ while IFS= read -r SEG; do
   fi
 
   # --- a merge: is it the one shape? -----------------------------------------
-  # `gh pr merge --help` merges nothing.
+  # `gh pr merge --help` merges nothing. Only as an option: the value of
+  # `--subject -h` is a commit subject, and after `--` a word is an argument.
   for ((k = c + 1; k < n; k++)); do
-    case "${TOK[k]}" in --help|-h) continue 2 ;; esac
+    case "${TOK[k]}" in
+      --help|-h) continue 2 ;;
+      --) break ;;
+    esac
+    _bum_takes_value "${TOK[k]}" && k=$((k + 1))
   done
   # Text that does not balance is read line by line as well (see _bd_segments),
   # and a merge found in a line that ends inside an open quote may be half of

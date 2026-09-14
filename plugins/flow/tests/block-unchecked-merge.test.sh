@@ -434,6 +434,7 @@ for CMD in \
   'gh api /graphql -f query="mutation { mergePullRequest(input: {pullRequestId: \"x\"}) { clientMutationId } }"' \
   'gh api graphql -f query="mutation { enablePullRequestAutoMerge(input: {pullRequestId: \"x\"}) { clientMutationId } }"' \
   'gh api graphql -f query="mutation { enqueuePullRequest(input: {pullRequestId: \"x\"}) { clientMutationId } }"' \
+  'gh api graphql -f query="mutation { mergeBranch(input: {repositoryId: \"x\", base: \"main\", head: \"feature\"}) { clientMutationId } }"' \
   'gh api graphql -F query=@merge.graphql' \
   'gh api graphql --input q.json' \
   'echo merge next && gh api -X PUT "$EP"' \
@@ -465,6 +466,12 @@ _bum_run "$S" 'gh api "repos/$REPO/pulls/$PR" --jq .mergeable'
 assert_exit 0 "$?" "an endpoint with variables in its path is not a merge endpoint"
 _bum_run "$S" 'gh api "repos/$REPO/issues/$PR_NUM/comments" && git log --merges -1'
 assert_exit 0 "$?" "a merge elsewhere in the command does not make an api read with variables a merge"
+_bum_run "$S" "gh api graphql -f query='query(\$owner:String!,\$name:String!,\$pr:Int!){repository(owner:\$owner,name:\$name){pullRequest(number:\$pr){autoMergeRequest{enabledAt mergeMethod}}}}' -f owner=acme -f name=widgets -F pr=7"
+assert_exit 0 "$?" "reading a pull request's autoMergeRequest is a query, not the auto-merge mutation"
+_bum_run "$S" "gh api graphql -f query='{ repository(owner:\"acme\", name:\"widgets\") { autoMergeAllowed mergeCommitAllowed squashMergeAllowed } }'"
+assert_exit 0 "$?" "reading a repository's merge settings is a query"
+_bum_run "$S" "gh api graphql -f query='{ repository(owner:\"acme\", name:\"widgets\") { pullRequest(number: 7) { viewerCanEnableAutoMerge } } }'"
+assert_exit 0 "$?" "reading viewerCanEnableAutoMerge is a query"
 
 # --- lines, comments and heredocs, read the way the shell reads them ----------
 # Each of these once lost a merge, or refused text that only mentions one.
@@ -482,6 +489,27 @@ assert_exit 2 "$?" "a quoted # after a kept heredoc with an apostrophe does not 
 S=$(_bum_stub "$GREEN" "" "")
 _bum_run "$S" "$(printf "cat > notes.md <<'X'\nit's done\nX\ngh pr merge 3 --repo acme/widgets --squash\ngh pr merge 7 --repo acme/widgets --squash --body \"Summary")"
 assert_exit 2 "$?" "a merge in a command whose quotes do not balance is refused, even beside one in the shape"
+# Two bodies with one apostrophe each, or a body and a comment with one, pair up
+# and balance, so the text looks balanced with the merge between hidden.
+S=$(_bum_stub "$QUEUED" "" "")
+_bum_run "$S" "$(printf "git commit -F - <<'EOF'\nfix: don't drop the cache\nEOF\ngh pr merge 9 --repo acme/widgets --squash\ngit commit -F - <<'EOF'\ndocs: it's documented now\nEOF")"
+assert_exit 2 "$?" "a merge between two commit bodies with an apostrophe each is checked"
+_bum_run "$S" "$(printf "git commit -F - <<'EOF'\r\nfix: don't drop the cache\r\nEOF\r\ngh pr merge 9 --repo acme/widgets --squash\r\ngit commit -F - <<'EOF'\r\ndocs: it's documented now\r\nEOF\r\n")"
+assert_exit 2 "$?" "and with CRLF line endings"
+_bum_run "$S" "$(printf "cat > notes.md <<'EOF'\nDon't merge before CI.\nEOF\ngh pr merge 9 --repo acme/widgets --squash   # we're green")"
+assert_exit 2 "$?" "a merge after a body with an apostrophe, carrying a comment with one, is checked"
+_bum_run "$S" "$(printf "cat <<EOF | tee x.md\nWe're shipping\nEOF\ngh pr merge 9 --repo acme/widgets --squash\necho 'merged' # that's it")"
+assert_exit 2 "$?" "a merge after a piped body with an apostrophe is checked"
+
+_flow_test_begin "a dollar-quoted string ends where the shell ends it"
+S=$(_bum_stub "$QUEUED" "" "")
+_bum_run "$S" "echo \$'it\\'s' && gh pr merge 9 --repo acme/widgets --squash && echo \$'don\\'t'"
+assert_exit 2 "$?" "a merge between two dollar-quoted strings with escaped quotes is checked"
+
+_flow_test_begin "-h as the value of an option is not a request for help"
+S=$(_bum_stub "$QUEUED" "" "")
+_bum_run "$S" "gh pr merge 9 --repo acme/widgets --squash --subject -h"
+assert_exit 2 "$?" "--subject -h merges, so it is checked"
 
 _flow_test_begin "text that mentions a merge on a middle line is text"
 S=$(_bum_stub "$QUEUED" "" "")
@@ -542,6 +570,28 @@ if [ "$ELAPSED" -le 20 ]; then
   _flow_assert_pass "20000 words took ${ELAPSED}s"
 else
   _flow_assert_fail "20000 words took ${ELAPSED}s; the hook's own timeout would let the merge through"
+fi
+
+# Every Bash call passes through this hook, so a long PR body or comment that
+# never merges anything must not wait on it. A bash pattern substitution over
+# such a body once took 49s for 9KB under a UTF-8 locale.
+_flow_test_begin "a long PR comment with no merge in it passes quickly"
+S=$(_bum_stub "$QUEUED" "" "")
+PARA="Reviewed the gate — it’s “fine”; don't worry, it's ok. The checks pass and this body is long."
+BODY=""
+for _ in $(seq 1 100); do BODY="$BODY$PARA"$'\n'; done
+START=$(date +%s)
+LC_ALL=en_US.UTF-8 _bum_run "$S" "gh pr comment 7 --repo acme/widgets --body \"\$(cat <<'EOF'
+$BODY
+EOF
+)\""
+RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+assert_exit 0 "$RC" "the comment is allowed"
+if [ "$ELAPSED" -le 3 ]; then
+  _flow_assert_pass "a ${#BODY}-character comment took ${ELAPSED}s"
+else
+  _flow_assert_fail "a ${#BODY}-character comment took ${ELAPSED}s; every ordinary gh call would stall on this hook"
 fi
 
 # --- registered where it will actually run ------------------------------------

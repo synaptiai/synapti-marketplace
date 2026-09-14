@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # plugins/flow/hooks/scripts/lib/command-parse.sh
-# shellcheck disable=SC2034  # BD_CODE, BD_UNBALANCED, GIT_* are outputs read by the sourcing hook
+# shellcheck disable=SC2034  # BD_CODE, BD_KEPT_BODY, BD_UNBALANCED, GIT_* are outputs read by the sourcing hook
 #
 # Reading a shell command the way the shell reads it: words, quoting, comments,
 # heredoc bodies, and where a command word actually sits. Sourced by the hooks
@@ -13,7 +13,8 @@
 # which also means one place to fix when the hard part turns out to be wrong.
 #
 # Contract for callers:
-#   _bd_strip_noncode <command>   -> sets BD_CODE
+#   _bd_strip_noncode <command>   -> sets BD_CODE, and BD_KEPT_BODY=1 when a heredoc
+#                                    body was kept as text
 #   _rm_tokenise <simple-command> -> fills TOK
 #   _bd_git_parse <simple-command> -> sets GIT_SUB, GIT_ARGS, GIT_ARGN; 1 if not git
 #   _bd_is_whole_tree <pathspec>  -> 0 when the pathspec is the whole tree
@@ -55,17 +56,27 @@ _rm_tokenise() {
       return 0 ;;
   esac
 
-  local _tok_line
-  while IFS= read -r _tok_line; do
-    TOK+=("${_tok_line#T}")
-  done < <(printf '%s\n' "$1" | awk '
+  # The awk output is captured before it is read, not read through `< <(...)`.
+  # A process substitution loses awk's exit status, so an awk that died left
+  # TOK empty, and an empty TOK reads as a command with nothing in it: under
+  # bash 3.2 a few hundred of these calls in one hook run crashed that hook,
+  # and the commands after the crash were never checked. Every caller runs in
+  # the hook's own shell, so the exit below refuses the command.
+  local _tok_line _tok_out
+  if ! _tok_out=$(printf '%s\n' "$1" | awk '
     BEGIN { SQ = sprintf("%c", 39) }
     {
       s = $0; n = length(s); q = ""; cur = ""; in_word = 0; pos = 1
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1)
         if (q != "") {
-          if (c == q) { cur = cur substr(s, pos, i - pos); pos = i + 1; q = "" }
+          # In a dollar-quoted string (q is A) a backslash escapes the quote.
+          if (q == "A" && c == "\\") { i++; continue }
+          if (c == q || (q == "A" && c == SQ)) { cur = cur substr(s, pos, i - pos); pos = i + 1; q = "" }
+          continue
+        }
+        if (c == SQ && i > 1 && substr(s, i - 1, 1) == "$") {
+          cur = cur substr(s, pos, i - pos); pos = i + 1; q = "A"; in_word = 1
           continue
         }
         if (c == "\"" || c == SQ) {
@@ -85,7 +96,14 @@ _rm_tokenise() {
       cur = cur substr(s, pos, n - pos + 1)
       if (in_word) print "T" cur
     }
-  ')
+  '); then
+    echo "BLOCKED: could not split a command into words (awk failed) — refusing rather than guessing." >&2
+    exit 2
+  fi
+  [ -n "$_tok_out" ] || return 0
+  while IFS= read -r _tok_line; do
+    TOK+=("${_tok_line#T}")
+  done <<< "$_tok_out"
 }
 
 # ---------------------------------------------------------------------------
@@ -220,13 +238,18 @@ _bd_strip_noncode() {
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1)
         bq = eq; bl = el; oq = (q == ""); ol = (ql == "")
+        # q or ql is A inside a dollar-quoted string, where a backslash
+        # escapes the quote that would otherwise close it.
+        dq = (c == SQ && i > 1 && substr(line, i - 1, 1) == "$")
         if (eq) eq = 0
         else if (c == "\\" && q != SQ) eq = 1
-        else if (q != "") { if (c == q) q = "" }
+        else if (q != "") { if (c == q || (q == "A" && c == SQ)) q = "" }
+        else if (dq) q = "A"
         else if (c == "\"" || c == SQ) q = c
         if (el) el = 0
         else if (c == "\\" && ql != SQ) el = 1
-        else if (ql != "") { if (c == ql) ql = "" }
+        else if (ql != "") { if (c == ql || (ql == "A" && c == SQ)) ql = "" }
+        else if (dq) ql = "A"
         else if (c == "\"" || c == SQ) ql = c
         if (c == "#" && oq && ol && !bq && !bl) {
           prev = (i == 1) ? "" : substr(line, i - 1, 1)
@@ -283,6 +306,13 @@ _bd_strip_noncode() {
           if (d != "") { inhd = 1; delim = d; buf = "" }
         }
       }
+      # A heredoc this pass did not drop keeps its body in the output, and that
+      # body is text, not shell: its quotes do not pair with anything. Say so,
+      # so the segmenter does not read one apostrophe in it as a quote that
+      # hides the commands after it. Anything shaped like an introducer counts,
+      # including a shift such as 1<<x; that costs only a second reading.
+      if (!inhd && (out ~ /(^|[^<])<<-?[ \t]*[\\"]?[A-Za-z_]/ ||
+                    out ~ ("(^|[^<])<<-?[ \t]*" SQ "[A-Za-z_]"))) kept = 1
       print out
     }
     END {
@@ -290,12 +320,18 @@ _bd_strip_noncode() {
       if (pend != "") print pend
       # An unterminated heredoc keeps everything it swallowed. Dropping it would
       # turn one mis-recognised introducer into a hook that sees nothing at all.
-      if (inhd && buf != "") printf "%s", buf
+      if (inhd && buf != "") { printf "%s", buf; kept = 1 }
+      if (kept) print "__BD_KEPT_BODY__"
     }
   ') || {
     echo "BLOCKED: could not scan the command (awk failed) — refusing rather than guessing." >&2
     exit 2
   }
+  BD_KEPT_BODY=0
+  case "$BD_CODE" in
+    __BD_KEPT_BODY__) BD_KEPT_BODY=1; BD_CODE="" ;;
+    *$'\n'__BD_KEPT_BODY__) BD_KEPT_BODY=1; BD_CODE="${BD_CODE%$'\n'__BD_KEPT_BODY__}" ;;
+  esac
 }
 
 # _bd_segments <text>
@@ -328,29 +364,39 @@ _bd_segments() {
   # multi-line commit message are text, and reading them as commands refused
   # messages that merely mention one.
   #
-  # When the text does not balance, something this parser treats as quoted is
-  # not: a heredoc body kept by _bd_strip_noncode is not quoted text, and one
-  # apostrophe in it glues every later command into a "string". Then the
-  # per-line reading, which forgets quotes at each line end, is printed too, and
-  # so is a `__BD_UNBALANCED__` line: a caller that cannot afford to guess
-  # treats that as "unparsable" rather than as "nothing found".
+  # Two things make the joined reading untrustworthy, and both come from the
+  # same cause: text that is not shell being scanned as if it were.
+  #
+  #   - The text does not balance.
+  #   - _bd_strip_noncode kept a heredoc body (BD_KEPT_BODY=1). A body is text,
+  #     so its quotes pair with nothing, yet this scan pairs them: one apostrophe
+  #     in a body glues every later command into a "string", and a second body,
+  #     or a comment with an apostrophe in it, closes that string again. The
+  #     text then balances with the commands between hidden inside it, which is
+  #     how a merge or an rm between two commit bodies went unseen. Balance
+  #     alone cannot detect this; only knowing a body was kept can.
+  #
+  # In either case the per-line reading, which forgets quotes at each line end,
+  # is printed too. When the text does not balance, a `__BD_UNBALANCED__` line
+  # follows: a caller that cannot afford to guess treats that as "unparsable"
+  # rather than as "nothing found".
   #
   # A failed awk prints `__BD_SEG_FAIL__`. The caller reads this through
-  # `< <(...)`, where an exit status is lost, so the marker is the only way a
-  # failure reaches it; an empty result would read as "no commands".
+  # `$(...)`, and an empty result would read as "no commands", so the marker is
+  # how a failure reaches it.
   joined=$(printf '%s\n' "$1" | awk -v join=1 "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
   case "$joined" in
-    *__BD_UNBALANCED__*)
-      BD_UNBALANCED=1
-      perline=$(printf '%s\n' "$1" | awk -v join=0 "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
-      { printf '%s\n' "$joined"; printf '%s\n' "$perline"; } | grep -v '^__BD_UNBALANCED__$' | awk '!seen[$0]++' \
-        || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
-      printf '%s\n' "__BD_UNBALANCED__"
-      ;;
-    *)
-      printf '%s\n' "$joined"
-      ;;
+    *__BD_UNBALANCED__*) BD_UNBALANCED=1 ;;
   esac
+  if [ "$BD_UNBALANCED" = "1" ] || [ "${BD_KEPT_BODY:-0}" = "1" ]; then
+    perline=$(printf '%s\n' "$1" | awk -v join=0 "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
+    { printf '%s\n' "$joined"; printf '%s\n' "$perline"; } | grep -v '^__BD_UNBALANCED__$' | awk '!seen[$0]++' \
+      || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
+    [ "$BD_UNBALANCED" = "1" ] && printf '%s\n' "__BD_UNBALANCED__"
+  else
+    printf '%s\n' "$joined"
+  fi
+  return 0
 }
 
 _BD_SEG_AWK='
@@ -387,10 +433,14 @@ _BD_SEG_AWK='
             continue
           }
           buf[depth] = buf[depth] c
-          if (c == q[depth]) q[depth] = ""
+          if (c == q[depth] || (q[depth] == "A" && c == SQ)) q[depth] = ""
           continue
         }
 
+        # A dollar-quoted string is recorded as A: inside it a backslash
+        # escapes the quote (the escape rule above already applies, since A is
+        # not a single quote), and only a quote closes it.
+        if (c == SQ && i > 1 && substr(line, i - 1, 1) == "$") { q[depth] = "A"; buf[depth] = buf[depth] c; continue }
         if (c == "\"" || c == SQ) { q[depth] = c; buf[depth] = buf[depth] c; continue }
 
         if (c == "$" && substr(line, i + 1, 1) == "(") {
