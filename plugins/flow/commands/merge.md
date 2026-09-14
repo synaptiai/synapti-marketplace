@@ -659,7 +659,8 @@ If Option 1: after resolution completes, re-run Phase 1 to verify PR is now merg
 
 ## Phase 3: Confirm and Execute
 
-Stop here, without asking, unless the preflight printed `REPO_CROSSCHECK=ok`.
+Stop here, without asking, unless the preflight printed `REPO_CROSSCHECK=ok`
+and Merge Settings printed `MERGE_SETTINGS_STATE=ok`.
 `REPO_STATE=unavailable` means no repository was resolved, `REPO_STATE=blocked`
 means `gh` and `git` named different ones, and `REPO_CROSSCHECK=unavailable`
 means there was no origin remote to verify against. In each case the merge

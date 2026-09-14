@@ -22,6 +22,8 @@
 #                                    including any unambiguous abbreviation
 #   _bd_is_interpreter <word>     -> 0 when the word names something that runs a script
 #   _bd_expand_interpreter_args   -> appends quoted interpreter arguments to BD_CODE
+#   _bd_segments <text>           -> one simple command per line, plus marker lines
+#                                    (__BD_UNBALANCED__, __BD_SEG_FAIL__)
 #
 # Every rule that reads BD_CODE inherits its posture: it removes only what is
 # unambiguously text, and keeps anything uncertain. See the comments below.
@@ -185,22 +187,10 @@ _bd_strip_noncode() {
       sub(/^.*\//, "", w)
       return (w == "cat" || w == "tee" || w == "echo" || w == "printf" || w == "gh")
     }
-    BEGIN { SQ = sprintf("%c", 39); inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = "" }
+    BEGIN { SQ = sprintf("%c", 39); inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = ""; q0 = "" }
     {
       line = $0
       sub(/\r$/, "", line)
-
-      # A line ending in an odd number of backslashes, outside a heredoc body
-      # and outside single quotes, continues on the next line. The shell reads
-      # the two as one; reading them as two put `gh pr \` and `merge 9` in
-      # different commands, and neither was a merge.
-      if (!inhd) {
-        if (pend != "") { line = pend line; pend = "" }
-        if (q != SQ && match(line, /\\+$/) && (RLENGTH % 2) == 1) {
-          pend = substr(line, 1, length(line) - 1)
-          next
-        }
-      }
 
       if (inhd) {
         cand = line
@@ -210,17 +200,63 @@ _bd_strip_noncode() {
         next
       }
 
+      # A continued line is scanned again with the line it continues, from the
+      # quote state that line started in, so nothing is counted twice.
+      if (pend == "") q0 = q
+      line = pend line
+      pend = ""
+      q = q0
+
+      # --- remove a comment, tracking quotes and backslash escapes ---------
+      # Two quote states. `q` carries from one line to the next, as the shell
+      # does: `--body "Ready.` then `Closes #12" && gh pr merge 9` has its `#`
+      # inside the string. `ql` starts fresh on every line, as this scan always
+      # did: a heredoc body kept as text is not quoted text, and one apostrophe
+      # in it (the word dont, spelled with an apostrophe) would otherwise leave `q` open and turn the `#` in a
+      # later `-m "Refs #12" written with single quotes` into a comment that cuts the command after it.
+      # A `#` is a comment only when both say it is outside quotes. Either
+      # alone can only be wrong in the direction of keeping text.
+      n = length(line); cut = 0; ql = ""; eq = 0; el = 0
+      for (i = 1; i <= n; i++) {
+        c = substr(line, i, 1)
+        bq = eq; bl = el; oq = (q == ""); ol = (ql == "")
+        if (eq) eq = 0
+        else if (c == "\\" && q != SQ) eq = 1
+        else if (q != "") { if (c == q) q = "" }
+        else if (c == "\"" || c == SQ) q = c
+        if (el) el = 0
+        else if (c == "\\" && ql != SQ) el = 1
+        else if (ql != "") { if (c == ql) ql = "" }
+        else if (c == "\"" || c == SQ) ql = c
+        if (c == "#" && oq && ol && !bq && !bl) {
+          prev = (i == 1) ? "" : substr(line, i - 1, 1)
+          if (prev == "" || prev == " " || prev == "\t" || prev == ";" ||
+              prev == "|" || prev == "&" || prev == "(" || prev == ")") { cut = i; break }
+        }
+      }
+      out = (cut > 0) ? substr(line, 1, cut - 1) : line
+
+      # A line ending in an odd number of backslashes, outside single quotes,
+      # continues on the next line; reading the two as two put `gh pr \` and
+      # `merge 9` in different commands. Decided after the comment: a comment
+      # ending in a backslash does not continue, in bash or in sh, and joining
+      # it swallowed the next line whole.
+      if (cut == 0 && q != SQ && match(out, /\\+$/) && (RLENGTH % 2) == 1) {
+        pend = substr(out, 1, length(out) - 1)
+        next
+      }
+
       # --- is this line a droppable heredoc introducer? --------------------
-      # Only on a line that starts outside quotes: a `<<EOF` inside a string
-      # that runs across lines is text, and treating it as an introducer would
-      # drop the lines after it as a body.
-      probe = line
+      # Only on a line that starts outside quotes by both readings: a `<<EOF`
+      # inside a string that runs across lines is text, and treating it as an
+      # introducer would drop the lines after it as a body.
+      probe = out
       hits = gsub(/<</, "<<", probe)
-      if (q != "") hits = 0
-      if (hits == 1 && line !~ /[|>]/ &&
-          match(line, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*$/)) {
-        intro = substr(line, RSTART)
-        owner = owner_word(substr(line, 1, RSTART - 1))
+      if (q0 != "") hits = 0
+      if (hits == 1 && out !~ /[|>]/ &&
+          match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*$/)) {
+        intro = substr(out, RSTART)
+        owner = owner_word(substr(out, 1, RSTART - 1))
         if (is_sink(owner)) {
           d = intro
           sub(/^<</, "", d)
@@ -233,10 +269,10 @@ _bd_strip_noncode() {
       }
       # The same shape with a single-quoted delimiter. Written separately
       # because embedding an apostrophe in this program would end it.
-      if (!inhd && hits == 1 && line !~ /[|>]/ &&
-          match(line, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*$")) {
-        intro = substr(line, RSTART)
-        owner = owner_word(substr(line, 1, RSTART - 1))
+      if (!inhd && hits == 1 && out !~ /[|>]/ &&
+          match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*$")) {
+        intro = substr(out, RSTART)
+        owner = owner_word(substr(out, 1, RSTART - 1))
         if (is_sink(owner)) {
           d = intro
           sub(/^<</, "", d)
@@ -247,25 +283,7 @@ _bd_strip_noncode() {
           if (d != "") { inhd = 1; delim = d; buf = "" }
         }
       }
-
-      # --- remove a comment, tracking quotes and backslash escapes ---------
-      # Quote state carries from one line to the next, as it does in the shell:
-      # `--body "Ready.` then `Closes #12" && gh pr merge 9` has its `#` inside
-      # the string, and cutting there removed the merge. Carrying can only keep
-      # more text than resetting did, never less.
-      n = length(line); cut = 0
-      for (i = 1; i <= n; i++) {
-        c = substr(line, i, 1)
-        if (c == "\\" && q != SQ) { i++; continue }
-        if (q != "") { if (c == q) q = ""; continue }
-        if (c == "\"" || c == SQ) { q = c; continue }
-        if (c == "#") {
-          prev = (i == 1) ? "" : substr(line, i - 1, 1)
-          if (prev == "" || prev == " " || prev == "\t" || prev == ";" ||
-              prev == "|" || prev == "&" || prev == "(" || prev == ")") { cut = i; break }
-        }
-      }
-      print (cut > 0) ? substr(line, 1, cut - 1) : line
+      print out
     }
     END {
       # A continuation with nothing after it is still a command.
@@ -295,29 +313,44 @@ _bd_strip_noncode() {
 # argument did the same to the selector: `gh pr merge -b "a; b" 42` lost the 42,
 # and a probe that wants to know WHICH pull request asked about another one.
 #
-# BD_UNBALANCED is 1 when the text ends inside a quote or an unclosed
-# substitution. A caller that cannot afford to guess should treat that as
-# "unparsable" rather than as "nothing found".
+# Two marker lines can appear among the segments: `__BD_UNBALANCED__` when the
+# text ends inside a quote or an unclosed substitution, and `__BD_SEG_FAIL__`
+# when the parse itself failed. BD_UNBALANCED is also set, for a caller that
+# runs this in its own shell rather than behind `< <(...)`.
 _bd_segments() {
   BD_UNBALANCED=0
-  local out
-  # Two readings of line ends, and the segments of both are printed.
+  local joined perline
+  # How line ends are read.
   #
-  # A newline inside a quoted string is part of the string, so reading it as
-  # the end of a command tore `gh pr merge --body "Summary` from `Details" 9`
-  # and neither half was a merge. Joining those lines is the shell's reading.
-  # But a heredoc body kept by _bd_strip_noncode is not quoted text, and one
-  # apostrophe in it would glue every later command into a "string" nobody
-  # examines. Printing both readings means a command seen by either is seen:
-  # the union can only find more than either alone, never less.
-  out=$( { printf '%s\n' "$1" | awk -v join=0 "$_BD_SEG_AWK"; printf '%s\n' "$1" | awk -v join=1 "$_BD_SEG_AWK"; } | awk '!seen[$0]++')
-  case "$out" in
+  # A newline inside a quoted string is part of the string, so the shell reads
+  # `gh pr merge --body "Summary` and `Details" 9` as one command. When the text
+  # balances, that joined reading is the only one printed: the lines of a
+  # multi-line commit message are text, and reading them as commands refused
+  # messages that merely mention one.
+  #
+  # When the text does not balance, something this parser treats as quoted is
+  # not: a heredoc body kept by _bd_strip_noncode is not quoted text, and one
+  # apostrophe in it glues every later command into a "string". Then the
+  # per-line reading, which forgets quotes at each line end, is printed too, and
+  # so is a `__BD_UNBALANCED__` line: a caller that cannot afford to guess
+  # treats that as "unparsable" rather than as "nothing found".
+  #
+  # A failed awk prints `__BD_SEG_FAIL__`. The caller reads this through
+  # `< <(...)`, where an exit status is lost, so the marker is the only way a
+  # failure reaches it; an empty result would read as "no commands".
+  joined=$(printf '%s\n' "$1" | awk -v join=1 "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
+  case "$joined" in
     *__BD_UNBALANCED__*)
       BD_UNBALANCED=1
-      out=$(printf '%s\n' "$out" | grep -v '^__BD_UNBALANCED__$')
+      perline=$(printf '%s\n' "$1" | awk -v join=0 "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
+      { printf '%s\n' "$joined"; printf '%s\n' "$perline"; } | grep -v '^__BD_UNBALANCED__$' | awk '!seen[$0]++' \
+        || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
+      printf '%s\n' "__BD_UNBALANCED__"
+      ;;
+    *)
+      printf '%s\n' "$joined"
       ;;
   esac
-  printf '%s\n' "$out"
 }
 
 _BD_SEG_AWK='
@@ -332,6 +365,8 @@ _BD_SEG_AWK='
     {
       line = $0
       n = length(line)
+      # The per-line reading forgets quotes at each line end.
+      if (!join) q[depth] = ""
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1)
 

@@ -132,6 +132,11 @@ CASES.append(("backslash continuation between pr and merge",
               stub(GREEN, {"9": QUEUED}), f"gh pr \\\nmerge 9 {R}", 2, "pr view 9"))
 CASES.append(("backslash continuation before --repo",
               stub(GREEN), "gh pr merge 9 \\\n  --repo other/repo \\\n  --squash", 0, "pr view 9 --repo other/repo"))
+CASES.append(("a comment ending in a backslash, then a merge",
+              stub(GREEN, {"9": QUEUED}), f"# tidy up \\\ngh pr merge 9 {R}", 2, "pr view 9"))
+CASES.append(("a quoted # after a kept heredoc with an apostrophe, then a merge",
+              stub(GREEN, {"9": QUEUED}),
+              f"git commit -F - <<EOF\nDon't ship yet\nEOF\ngit commit --amend -m 'Refs #12' && gh pr merge 9 {R}", 2, "pr view 9"))
 CASES.append(("a kept heredoc body with an apostrophe, then a merge",
               stub(GREEN, {"9": QUEUED}), f"cat > notes.md <<'EOF'\ndon't\nEOF\ngh pr merge 9 {R}", 2, "pr view 9"))
 
@@ -177,6 +182,10 @@ for label, cmd in [
      "gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {pullRequestId: \"x\"}) { clientMutationId } }'"),
     ("GraphQL query from a file", "gh api graphql -F query=@merge.graphql"),
     ("gh alias for a merge", "gh alias set m 'pr merge' && gh m 9"),
+    ("host/owner/name, whose required checks cannot be read", "gh pr merge 7 --repo github.com/o/r --squash"),
+    ("whole endpoint in a variable", 'EP=repos/o/r/pulls/9/merge; gh api -X PUT "$EP"'),
+    ("a merge after a heredoc whose apostrophe unbalances the command, beside one in the shape",
+     "cat > notes.md <<'X'\nit's done\nX\ngh pr merge 7 --repo o/r --squash\ngh pr merge 8 --repo o/r --squash --body \"Summary"),
 ]:
     CASES.append((label, stub(GREEN), cmd, 2))
 
@@ -198,6 +207,10 @@ CASES.append(("quoted text is not a merge", stub(QUEUED), 'echo "gh pr merge 9"'
 CASES.append(("git merge is a different command", stub(QUEUED), "git merge --no-ff x", 0))
 CASES.append(("another gh subcommand", stub(QUEUED), "gh pr view 9", 0))
 CASES.append(("an api read naming a merge field", stub(QUEUED), "gh api repos/o/r/pulls/9 --jq .mergeable_state", 0))
+CASES.append(("an api read with variables in its path", stub(QUEUED), 'gh api "repos/$REPO/pulls/$PR" --jq .mergeable', 0))
+CASES.append(("a multi-line commit message naming a merge", stub(QUEUED),
+              'git commit -m "fix\n\nThe hook now reads gh pr merge 9 --squash.\nCloses #195"', 0))
+CASES.append(("gh pr merge --help", stub(QUEUED), "gh pr merge --help", 0))
 
 bad = 0
 for case in CASES:

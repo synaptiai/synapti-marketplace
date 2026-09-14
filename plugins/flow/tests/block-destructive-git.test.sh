@@ -178,6 +178,26 @@ _run_hook "echo done \\\\
 git status"
 assert_exit 0 "$?" "an escaped backslash at a line end does not join the next line"
 
+_flow_test_begin "a comment ending in a backslash does not swallow the next line"
+_run_hook "# tidy up \\
+git reset --hard HEAD~3"
+assert_exit 2 "$?" "a reset after a comment ending in a backslash still blocked"
+_run_hook "cd /tmp # go \\
+git reset --hard HEAD~3"
+assert_exit 2 "$?" "a reset after a trailing comment ending in a backslash still blocked"
+
+_flow_test_begin "an apostrophe in a kept heredoc body does not hide what follows"
+_run_hook "git commit -F - <<EOF
+Don't ship yet
+EOF
+git commit --amend -m 'Refs #12' && git reset --hard HEAD~1"
+assert_exit 2 "$?" "a quoted # after the heredoc does not cut the reset off"
+_run_hook "cat <<EOF > notes.txt
+Don't forget
+EOF
+git commit -am 'wip' && git reset --hard HEAD~1"
+assert_exit 2 "$?" "a reset joined to a commit after the heredoc is still examined"
+
 _flow_test_begin "command substitution runs git and is examined"
 _run_hook "echo \$(git restore $DOT)"
 assert_exit 2 "$?" "restore inside a command substitution blocked"

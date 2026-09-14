@@ -4,7 +4,8 @@
 # and `--auto` is refused on a base branch that requires no status checks —
 # because GitHub's auto-merge waits for REQUIRED checks, so where none are
 # required it merges at once, which is the opposite of what --auto is reached
-# for. A fully green pull request merges by any route.
+# for. A fully green pull request merges when the merge is written in the one
+# shape the hook reads (#195); any other merge is refused with that shape.
 #
 # `gh` is stubbed so the scenarios are exact and offline: each case writes a
 # small script named `gh` onto PATH that answers the three calls the hook makes
@@ -352,6 +353,7 @@ for CASE in \
   'not one of the options|gh pr merge 7 --repo acme/widgets -ds' \
   'not one of the options|gh pr merge 7 --repo acme/widgets --squash -dR other/repo' \
   'not owner/name|gh pr merge 7 --repo widgets --squash' \
+  'not owner/name|gh pr merge 7 --repo github.example.com/acme/widgets --squash' \
   'comes before gh|GH_REPO=other/repo gh pr merge 7 --repo acme/widgets --squash' \
   'comes before gh|env GH_HOST=ghe.example.com gh pr merge 7 --repo acme/widgets --squash' \
   'comes before gh|sudo gh pr merge 7 --repo acme/widgets --squash' \
@@ -382,7 +384,6 @@ for CMD in \
   'gh pr merge 7 --repo acme/widgets --squash --delete-branch' \
   'gh --repo acme/widgets pr merge 7 --rebase' \
   'gh pr merge 7 --repo=acme/widgets --merge --admin' \
-  'gh pr merge 7 --repo github.example.com/acme/widgets --squash' \
   'cd /tmp/elsewhere && gh pr merge 7 --repo acme/widgets --squash' \
   'gh pr merge 7 --repo acme/widgets --squash > "$TMPDIR/merge.log" 2>&1' \
   'gh pr merge 7 --repo acme/widgets --squash --subject "Merge: widgets" --body "fixes #3"' \
@@ -435,7 +436,7 @@ for CMD in \
   'gh api graphql -f query="mutation { enqueuePullRequest(input: {pullRequestId: \"x\"}) { clientMutationId } }"' \
   'gh api graphql -F query=@merge.graphql' \
   'gh api graphql --input q.json' \
-  'gh api graphql -f query="$Q"' \
+  'echo merge next && gh api -X PUT "$EP"' \
   'gh api -X POST repos/acme/widgets/merges -f base=main -f head=feature' \
   'EP=repos/acme/widgets/pulls/7/merge; gh api -X PUT "$EP"' \
   "gh alias set m 'pr merge'"; do
@@ -458,6 +459,63 @@ _bum_run "$S" 'gh api repos/acme/widgets/pulls/7 --jq .state'
 assert_exit 0 "$?" "an api call with no merge in it is untouched"
 _bum_run "$S" 'gh api graphql -f query="{ viewer { login } }"'
 assert_exit 0 "$?" "an inline GraphQL query with no merge in it is untouched"
+_bum_run "$S" 'gh api graphql -f query="query(\$o:String!){ repository(owner:\$o,name:\"widgets\"){ pullRequest(number:7){ mergeable } } }" -F o=acme'
+assert_exit 0 "$?" "a GraphQL query with variables is a query, not an unreadable merge"
+_bum_run "$S" 'gh api "repos/$REPO/pulls/$PR" --jq .mergeable'
+assert_exit 0 "$?" "an endpoint with variables in its path is not a merge endpoint"
+_bum_run "$S" 'gh api "repos/$REPO/issues/$PR_NUM/comments" && git log --merges -1'
+assert_exit 0 "$?" "a merge elsewhere in the command does not make an api read with variables a merge"
+
+# --- lines, comments and heredocs, read the way the shell reads them ----------
+# Each of these once lost a merge, or refused text that only mentions one.
+_flow_test_begin "a comment ending in a backslash does not swallow the next line"
+S=$(_bum_stub "$QUEUED" "" "")
+_bum_run "$S" "$(printf '# clean up first \\\ngh pr merge 7 --repo acme/widgets --squash')"
+assert_exit 2 "$?" "a merge after a comment ending in a backslash is still checked"
+_bum_run "$S" "$(printf 'ls # list \\\ngh pr merge 7 --repo acme/widgets --squash')"
+assert_exit 2 "$?" "and after a trailing comment ending in a backslash"
+
+_flow_test_begin "an apostrophe in a heredoc body does not hide what follows"
+S=$(_bum_stub "$QUEUED" "" "")
+_bum_run "$S" "$(printf "git commit -F - <<EOF\nDon't ship yet\nEOF\ngit commit --amend -m 'Refs #12' && gh pr merge 7 --repo acme/widgets --squash")"
+assert_exit 2 "$?" "a quoted # after a kept heredoc with an apostrophe does not cut the merge off"
+S=$(_bum_stub "$GREEN" "" "")
+_bum_run "$S" "$(printf "cat > notes.md <<'X'\nit's done\nX\ngh pr merge 3 --repo acme/widgets --squash\ngh pr merge 7 --repo acme/widgets --squash --body \"Summary")"
+assert_exit 2 "$?" "a merge in a command whose quotes do not balance is refused, even beside one in the shape"
+
+_flow_test_begin "text that mentions a merge on a middle line is text"
+S=$(_bum_stub "$QUEUED" "" "")
+_bum_run "$S" "$(printf 'git commit -m "fix(flow): the gate\n\nThe hook now reads gh pr merge 9 --squash.\nCloses #195"')"
+assert_exit 0 "$?" "a multi-line commit message naming a merge is not a merge"
+_bum_run "$S" "$(printf 'gh pr create --title t --body "## Summary\n- gate reads gh pr merge 9"')"
+assert_exit 0 "$?" "a multi-line PR body naming a merge is not a merge"
+_bum_run "$S" 'gh pr merge --help'
+assert_exit 0 "$?" "asking gh how to merge merges nothing"
+
+# The preflight blocks of /flow:merge run the gh calls a model also runs. None of
+# them is a merge, so none may be refused.
+_flow_test_begin "the preflight blocks of /flow:merge pass this hook"
+S=$(_bum_stub "$QUEUED" "" "")
+BLOCKS_DIR="$BUM_ROOT/merge-md-blocks"
+mkdir -p "$BLOCKS_DIR"
+awk -v dir="$BLOCKS_DIR" '
+  /^```!$/ { inb = 1; nb++; f = sprintf("%s/block-%02d.sh", dir, nb); next }
+  inb && /^```$/ { inb = 0; close(f); next }
+  inb { print > f }
+' "$REPO_ROOT/plugins/flow/commands/merge.md"
+NBLOCKS=$(ls "$BLOCKS_DIR" | wc -l | tr -d ' ')
+if [ "$NBLOCKS" -lt 3 ]; then
+  _flow_assert_fail "found only $NBLOCKS preflight blocks in merge.md"
+else
+  for B in "$BLOCKS_DIR"/block-*.sh; do
+    ERR=$(_bum_stderr "$S" "$(cat "$B")"); RC=$?
+    if [ "$RC" -eq 0 ]; then
+      _flow_assert_pass "$(basename "$B") passes"
+    else
+      _flow_assert_fail "$(basename "$B") of merge.md is refused (exit $RC): $ERR"
+    fi
+  done
+fi
 
 # --- the parser must actually load ---------------------------------------------
 _flow_test_begin "a parser that did not load refuses"

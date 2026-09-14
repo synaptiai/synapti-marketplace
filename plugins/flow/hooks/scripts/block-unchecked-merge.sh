@@ -33,7 +33,7 @@
 # closing them one spelling at a time never ended. So a merge is accepted only
 # as
 #
-#   gh pr merge <number> --repo [host/]owner/name --squash|--merge|--rebase
+#   gh pr merge <number> --repo owner/name --squash|--merge|--rebase
 #      [--delete-branch] [--admin] [--auto] [--subject S] [--body B]
 #      [--body-file F] [--author-email E] [--match-head-commit SHA]
 #
@@ -42,7 +42,8 @@
 # directory and `gh repo set-default` alike: with it written, none of them
 # matter. Anything else that is a merge is refused with the shape to use, and a
 # value that cannot be read is named. `gh api` on a merge endpoint or a merge
-# mutation is refused outright, as is one whose endpoint or query cannot be read.
+# mutation is refused outright, as is one whose whole endpoint is a variable, or
+# a GraphQL call whose query comes from a file.
 #
 # Not covered, by design. This hook catches merges written in good faith, or
 # misdirected by a variable or a directory. It does not stop deliberate
@@ -79,6 +80,10 @@ for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tok
     exit 2
   fi
 done
+if [ -z "${_BD_SEG_AWK:-}" ]; then
+  echo "BLOCKED: the command parser did not load (its segmenter program is empty), so merge readiness cannot be verified." >&2
+  exit 2
+fi
 
 INPUT=$(cat)
 COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty')
@@ -135,13 +140,7 @@ _bum_show() {
 
 _BUM_SHAPE="gh pr merge <number> --repo owner/name --squash (or --merge, --rebase), with any of --delete-branch, --admin, --auto, --subject, --body, --body-file, --author-email, --match-head-commit"
 
-# Every refusal about a merge's form goes through here. In a fragment (see the
-# loop) the first one is kept for later instead of ending the hook.
 _bum_refuse() {              # $1, $2 = the two lines
-  if [ "${BUM_FRAG:-0}" = "1" ]; then
-    [ -z "$BUM_DEFER1" ] && { BUM_DEFER1="$1"; BUM_DEFER2="$2"; }
-    return 1
-  fi
   echo "$1" >&2
   echo "$2" >&2
   exit 2
@@ -225,9 +224,8 @@ _bum_unterminated() {
 }
 
 # The walk and every rule of the shape, for the command in TOK whose gh stands
-# at index c. Sets sel, repo and auto and returns 0 for a merge in the shape.
-# Otherwise it refuses; a refusal exits the hook, except in a fragment, where it
-# is recorded and this returns 1.
+# at index c. Sets sel, repo and auto for a merge in the shape; any other
+# refuses, and a refusal exits the hook.
 _bum_judge_merge() {
   if [ "$c" -gt 0 ] || ! _bum_is_gh "${TOK[0]}"; then
     if _bum_unreadable "${TOK[c]}"; then
@@ -304,19 +302,29 @@ _bum_judge_merge() {
   esac
   [ "$repo_n" -ge 1 ] || { _bum_refuse_shape "it names no --repo, so the repository would come from the directory or GH_REPO, which this hook cannot see"; return 1; }
   [ "$repo_n" -eq 1 ] || { _bum_refuse_shape "--repo is given more than once"; return 1; }
+  # owner/name only. A host/owner/name form reads the pull request from the
+  # right host, but the required-checks lookup is a REST path on the default
+  # host, where it 404s, and a 404 reads as "nothing required".
   case "$repo" in
-    */*/*/*|''|/*|*/) _bum_refuse_shape "the repository \"$(_bum_show "$repo")\" is not owner/name or host/owner/name"; return 1 ;;
+    */*/*|''|/*|*/) _bum_refuse_shape "the repository \"$(_bum_show "$repo")\" is not owner/name"; return 1 ;;
     */*) ;;
-    *) _bum_refuse_shape "the repository \"$(_bum_show "$repo")\" is not owner/name or host/owner/name"; return 1 ;;
+    *) _bum_refuse_shape "the repository \"$(_bum_show "$repo")\" is not owner/name"; return 1 ;;
   esac
   [ "$strat_n" -eq 1 ] || { _bum_refuse_shape "it needs exactly one of --squash, --merge or --rebase"; return 1; }
 
   return 0
 }
 
-BUM_FRAG=0
-BUM_DEFER1=""
-BUM_DEFER2=""
+# Segment once. A parse that failed says so in a marker line, because an empty
+# list would read as "no merge here"; `__BD_UNBALANCED__` means the per-line
+# reading is in the list too (see _bd_segments).
+BD_SEGS=$(_bd_segments "$BD_CODE")
+case "$BD_SEGS" in
+  *__BD_SEG_FAIL__*)
+    echo "BLOCKED: could not split the command into simple commands, so merge readiness cannot be verified." >&2
+    exit 2 ;;
+esac
+
 MERGE_N=0
 MERGE_SEL=()
 MERGE_REPO=()
@@ -324,6 +332,7 @@ MERGE_AUTO=()
 
 while IFS= read -r SEG; do
   [ -z "$SEG" ] && continue
+  case "$SEG" in __BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
   TOK=()
   _rm_tokenise "$SEG"
   n=${#TOK[@]}
@@ -372,16 +381,34 @@ while IFS= read -r SEG; do
         graphql|/graphql|*://*/graphql) is_graphql=1 ;;
       esac
     done
-    # A value this hook cannot read may be a merge endpoint or a merge query.
-    # This runs only on a command that mentions merge or graphql, so an
-    # ordinary api call with a variable in it never gets here.
+    # An endpoint that is wholly a variable or a substitution may be a merge
+    # endpoint. Only the whole endpoint: `repos/$REPO/pulls/$PR` is not a merge
+    # whatever it expands to, since `/merge` would have to be written, and a
+    # GraphQL query with `$id` in it is a query with variables. Values of -f
+    # and -F are not read for `$` either; a merge mutation is caught by name.
+    # The endpoint is the first word after `api` that is not an option or an
+    # option's value; gh api's own value-taking options are skipped here.
+    ep=""
+    seen_api=0
     for ((k = c + 1; k < n; k++)); do
-      if _bum_unreadable "${TOK[k]}"; then
-        echo "BLOCKED: gh api with a value given as \"$(_bum_show "${TOK[k]}")\". Whether it merges cannot be read from the command." >&2
-        echo "Write it literally, or merge with: $_BUM_SHAPE." >&2
-        exit 2
-      fi
+      t="${TOK[k]}"
+      if [ "$seen_api" = "0" ]; then [ "$t" = "api" ] && seen_api=1; continue; fi
+      case "$t" in
+        -X|--method|-f|--raw-field|-F|--field|-H|--header|--input|-q|--jq|-t|--template|--hostname|-p|--preview|--cache)
+          k=$((k + 1)); continue ;;
+        -*) continue ;;
+      esac
+      ep="$t"; break
     done
+    case "$ep" in
+      */*) ;;
+      *)
+        if _bum_unreadable "$ep"; then
+          echo "BLOCKED: gh api with its endpoint given as \"$(_bum_show "$ep")\". Whether it merges cannot be read from the command." >&2
+          echo "Write the endpoint literally, or merge with: $_BUM_SHAPE." >&2
+          exit 2
+        fi ;;
+    esac
     if [ "$is_graphql" = "1" ]; then
       for ((k = c + 1; k < n; k++)); do
         case "${TOK[k]}" in
@@ -407,30 +434,26 @@ while IFS= read -r SEG; do
   fi
 
   # --- a merge: is it the one shape? -----------------------------------------
-  # A segment that ends inside an open quote is the per-line reading of a
-  # command whose string runs on (see _bd_segments). The joined reading of the
-  # same command is the shell's, so this fragment's refusal waits: it stands
-  # only if no merge in the shape is found anywhere else in the command.
-  BUM_FRAG=0
-  _bum_unterminated "$SEG" && BUM_FRAG=1
+  # `gh pr merge --help` merges nothing.
+  for ((k = c + 1; k < n; k++)); do
+    case "${TOK[k]}" in --help|-h) continue 2 ;; esac
+  done
+  # Text that does not balance is read line by line as well (see _bd_segments),
+  # and a merge found in a line that ends inside an open quote may be half of
+  # one: which half gh would run cannot be read. Refused, with how to write it.
+  if _bum_unterminated "$SEG"; then
+    _bum_refuse "BLOCKED: gh pr merge, but the command around it does not balance its quotes, so where the merge ends cannot be read." \
+      "Run the merge as its own command, with the number and --repo before any value that spans lines (or use --body-file): $_BUM_SHAPE."
+  fi
   _bum_judge_merge || continue
 
   MERGE_SEL[$MERGE_N]="$sel"
   MERGE_REPO[$MERGE_N]="$repo"
   MERGE_AUTO[$MERGE_N]="$auto"
   MERGE_N=$((MERGE_N + 1))
-done < <(_bd_segments "$BD_CODE")
+done <<< "$BD_SEGS"
 
-if [ "$MERGE_N" -eq 0 ]; then
-  # Only fragments were found, and none of them was a merge in the shape. The
-  # joined reading found no merge either, so the fragment's refusal stands.
-  if [ -n "$BUM_DEFER1" ]; then
-    echo "$BUM_DEFER1" >&2
-    echo "$BUM_DEFER2" >&2
-    exit 2
-  fi
-  exit 0
-fi
+[ "$MERGE_N" -gt 0 ] || exit 0
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "BLOCKED: gh pr merge, but the gh CLI is not on PATH — merge readiness cannot be checked." >&2
