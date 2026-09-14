@@ -278,7 +278,7 @@ scan_text() {
 # split: a `|` that came from inside a code span (already-stripped below) or
 # an explicit `\|` escape, and a `\` that was itself escaped (`\\`). SOH
 # (0x01) and STX (0x02) never appear in real markdown prose. Known, accepted
-# limitation (security review, issue #176 PR): a document whose raw bytes
+# limitation: a document whose raw bytes
 # already contain a literal 0x01/0x02 would have that byte silently swapped
 # for `|`/`\` in the printed excerpt — cosmetic corruption of the quoted
 # text, not a security bypass (redaction and leak detection are unaffected;
@@ -417,9 +417,8 @@ for f in $TARGETS; do
     # table separator check all silently fail to match, and — for the
     # frontmatter closer specifically — IN_HEADER then never clears, so
     # every subsequent line in the file is silently skipped via `continue`
-    # with no error and exit 0 (issue #176 PR review: found via a
-    # mixed-CRLF/LF fixture, the same "clean result whose true coverage
-    # doesn't match" failure this whole issue exists to fix).
+    # with no error and exit 0 — the same "clean result whose true coverage
+    # doesn't match" failure this whole issue exists to fix.
     line=${line%$'\r'}
     if [ "$FIRST_LINE" -eq 1 ]; then
       FIRST_LINE=0
@@ -437,7 +436,7 @@ for f in $TARGETS; do
       '```'*)
         # A fence line is never a table row, so it leaves any open table
         # exactly like the non-fence "left the table" branch below does.
-        # Skipping this flush (issue #176 PR review) let TABLE_HELD_LINE and
+        # Skipping this flush would let TABLE_HELD_LINE and
         # TABLE_ROWS_SEEN survive across the fence: the first `|`-line after
         # the fence then resumed counting from the stale TABLE_ROWS_SEEN
         # instead of starting a fresh table, so an unrelated later separator-
@@ -450,19 +449,19 @@ for f in $TARGETS; do
         continue
         ;;
     esac
-    if [ "$IN_FENCE" -eq 1 ]; then
-      flush_held_table_row
-      TABLE_ROWS_SEEN=0
-      continue
-    fi
+    # No flush/reset needed here: the fence-toggle branch above already did
+    # it before setting IN_FENCE=1, and the table-row case below (the only
+    # thing that could re-populate TABLE_HELD_LINE) is unreachable while
+    # this branch's `continue` fires on every subsequent fenced-interior line.
+    [ "$IN_FENCE" -eq 1 ] && continue
 
     # Every marker match below is column-0 only. Left un-stripped, an
     # indented bullet or an indented table (e.g. nested under a list item)
     # falls through to scan_text/table-splitting with its leading
     # whitespace still attached, which defeats the literal-substring
-    # registration match the same way an un-stripped `- ` marker does
-    # (code review, issue #176 PR) — the whitespace is content-irrelevant
-    # for every classification below, so it's dropped once, here, rather
+    # registration match the same way an un-stripped `- ` marker does.
+    # The whitespace is content-irrelevant for every classification below,
+    # so it's dropped once, here, rather
     # than in each branch. Fenced-code detection above is deliberately NOT
     # given this treatment: an indented fence is a different, unimplemented
     # CommonMark construct (4-space indented code blocks), not a stray-
@@ -506,9 +505,9 @@ for f in $TARGETS; do
         # BOTH markers stripped, not just the blockquote's — piping the
         # stripped body straight into scan_text left the `- `/`* ` prefix
         # in place, defeating the registration match the same way an
-        # un-stripped top-level bullet marker does (code review, issue
-        # #176 PR). New in this PR: on main, blockquotes were skipped
-        # entirely, so this specific false positive could not occur before.
+        # un-stripped top-level bullet marker does. New in this PR: on
+        # main, blockquotes were skipped entirely, so this specific false
+        # positive could not occur before.
         BQ_BODY="${line#> }"
         case "$BQ_BODY" in
           '- '*) scan_text "${BQ_BODY#- }" ;;

@@ -205,3 +205,35 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-14 21:51 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
 
 <!-- auto-log: 2026-09-14 21:51 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-14 21:51 commit "fix(dossier): strip leading whitespace and nested markers from bullets/tables" -->
+
+<!-- auto-log: 2026-09-14 21:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-14 21:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-14 21:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-14 21:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-14 21:53 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-14 21:53 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 21:53 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 21:53 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 21:53 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 21:53 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 21:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-14 21:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 21:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 21:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 21:54 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->

@@ -87,8 +87,8 @@ assert_contains "VOCABULARY" "$(scanout "$T")" "the vocabulary finding is labell
 # it — a heading, a bolded lead sentence, title case in a bullet. The pattern
 # list is written in all-lowercase; matching only the exact case lets "Zero
 # Downtime" or "Bank-Grade" through a check whose entire purpose is to catch
-# this vocabulary regardless of how it's cased (self-review finding, issue
-# #176 PR — pre-existing, found incidentally while reviewing this file).
+# this vocabulary regardless of how it's cased (pre-existing, found
+# incidentally while reviewing this file).
 T="$W/vocab-case"; mkpkg "$T"
 reg "$T" ''
 pub "$T" "This offering provides Bank-Grade encryption for every customer."
@@ -265,7 +265,7 @@ assert_contains "technical-partner-guide.md:1 \"this is the first row" "$OUT" \
 assert_contains "technical-partner-guide.md:2 \"this is the second row" "$OUT" \
   "row 2's finding is attributed to line 2"
 
-# --- issue #176 self-review: a degenerate table row must not crash the scan -
+# --- a degenerate table row must not crash the scan ---------------------------
 # `|` alone (or `||`) as a table row splits to a zero-cell body. Under bash
 # 3.2's `set -u`, `arr=($empty_body)` leaves the array variable UNSET rather
 # than a zero-length array, and a later `"${arr[@]}"` expansion is then a
@@ -292,8 +292,8 @@ printf 'Use sk-ant-api03-abcdefghijklmnop to begin.\n||\n' \
 scan "$T"
 assert_equal "2" "$?" "a leak earlier in the file is still reported (exit 2) despite a later degenerate table row"
 
-# --- error-handler-inspector review (issue #176 PR): table state must not --
-# leak across a fenced code block. The fence-toggle and in-fence-skip
+# --- table state must not leak across a fenced code block --------------------
+# The fence-toggle and in-fence-skip
 # branches both `continue` BEFORE the "leave the table" cleanup
 # (flush_held_table_row + reset) runs, so a held row from before the fence
 # survives, uncleared, into whatever `|`-shaped line appears after the fence
@@ -330,7 +330,7 @@ OUT=$(scanout "$T")
 assert_not_contains "supported since version column" "$OUT" \
   "a genuine header row right after a fence is still exempted, not scored as data"
 
-# --- issue #176 self-review: a `|` inside a code span must not split a cell -
+# --- a `|` inside a code span must not split a cell ----------------------------
 # Splitting on every raw `|` before code-span stripping (which normally
 # happens inside scan_text, per-cell, too late to undo an already-wrong
 # split) can silently drop a claim: `Zero downtime `x|y` guaranteed system.`
@@ -349,8 +349,8 @@ OUT=$(scanout "$T")
 assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
   "a claim is still detected whole even when a code span inside the cell contains a pipe"
 
-# --- security review (issue #176 PR): an escaped backslash before a real ---
-# delimiter must not be misread as an escaped pipe. `\\|` is GFM for "a
+# --- an escaped backslash before a real delimiter must not be misread ------
+# as an escaped pipe. `\\|` is GFM for "a
 # literal backslash" (`\\`) followed by an ordinary cell delimiter (`|`), not
 # an escaped pipe — but a naive `s/\\|/MARK/` match on the raw two-character
 # sequence `\|` fires on the SECOND backslash of `\\|` too, mistaking the
@@ -364,9 +364,9 @@ assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=2" "$OUT" \
   "an escaped backslash before a real delimiter still splits into two cells, not one merged cell"
 
 # The primary case the escape mechanism exists for: a lone `\|` must keep the
-# cell whole, not split (holdout-validation finding — the sibling test above
-# only proved the counter-case; nothing pinned the single-backslash case a
-# future refactor of the two-pass sed logic could silently break).
+# cell whole, not split — the sibling test above only proved the counter-case;
+# nothing pinned the single-backslash case a future refactor of the two-pass
+# sed logic could silently break.
 T="$W/table-cell-escaped-pipe"; mkpkg "$T"
 reg "$T" ''
 printf '| cell one text here \\| cell two text here |\n' \
@@ -392,11 +392,11 @@ pub "$T" '> The API supports OAuth 20 device flow'
 scan "$T"
 assert_equal "0" "$?" "a registered claim written as a blockquote still matches its approved wording"
 
-# The risk map's own stated discriminating check for blockquote handling
-# (a two-line blockquote whose lines carry distinct claims) had no fixture
-# pinning it — found during PR-gate review. Each line stays independently
-# evaluated per the existing per-line architecture; this proves both lines
-# are actually reached, not just that a single-line blockquote works.
+# The risk map's own stated discriminating check for blockquote handling:
+# a two-line blockquote whose lines carry distinct claims. Each line stays
+# independently evaluated per the existing per-line architecture; this
+# proves both lines are actually reached, not just that a single-line
+# blockquote works.
 T="$W/blockquote-two-lines"; mkpkg "$T"
 reg "$T" ''
 {
@@ -485,7 +485,7 @@ OUT=$(scanout "$T")
 assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
   "a headerless document is scanned from its first line"
 
-# error-handler-inspector review (PR #201): the frontmatter closer is an
+# The frontmatter closer is an
 # exact string compare (`[ "$line" = "---" ]`). A closer line with a stray
 # trailing `\r` (mixed CRLF/LF) or trailing space never matches, so
 # IN_HEADER=1 sticks for the rest of the file — every subsequent line,
@@ -524,8 +524,8 @@ OUT=$(scanout "$T")
 assert_not_contains "what the reader should expect" "$OUT" \
   "a CRLF-terminated table header row is still exempted, not scored as data"
 
-# code-reviewer review (PR #201): every structural line-class dispatch
-# matches only at column 0 (`'|'*`, `'- '*`, `'* '*`, `'> '*`). A registered
+# Every structural line-class dispatch matches only at column 0
+# (`'|'*`, `'- '*`, `'* '*`, `'> '*`). A registered
 # claim indented under a list item, or nested inside a blockquote, or an
 # indented table, all defeat the marker strip and get wrongly reported
 # unregistered — the un-stripped leading whitespace/marker survives
