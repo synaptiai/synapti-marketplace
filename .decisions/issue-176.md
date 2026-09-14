@@ -137,3 +137,17 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-14 18:11 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
 
 <!-- auto-log: 2026-09-14 18:12 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-14 18:13 commit "fix(dossier): protect escaped backslashes from the table-cell pipe split" -->
+
+<!-- auto-log: 2026-09-14 18:13 Write /tmp/followup-redact-residue.md -->
+
+<!-- auto-log: 2026-09-14 18:13 Write /tmp/followup-scan-perf.md -->
+
+<!-- auto-log: 2026-09-14 18:14 Edit /tmp/followup-scan-perf.md -->
+
+<!-- auto-log: 2026-09-14 18:14 Edit /tmp/followup-scan-perf.md -->
+
+<!-- auto-log: 2026-09-14 19:57 Write /tmp/evidence-bundle-176.md -->
+
+<!-- auto-log: 2026-09-14 20:03 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->

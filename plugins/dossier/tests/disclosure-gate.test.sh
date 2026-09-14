@@ -325,6 +325,18 @@ OUT=$(scanout "$T")
 assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=2" "$OUT" \
   "an escaped backslash before a real delimiter still splits into two cells, not one merged cell"
 
+# The primary case the escape mechanism exists for: a lone `\|` must keep the
+# cell whole, not split (holdout-validation finding — the sibling test above
+# only proved the counter-case; nothing pinned the single-backslash case a
+# future refactor of the two-pass sed logic could silently break).
+T="$W/table-cell-escaped-pipe"; mkpkg "$T"
+reg "$T" ''
+printf '| cell one text here \\| cell two text here |\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "an escaped pipe keeps the cell whole, not split into two"
+
 # --- issue #176: a blockquote is prose with a marker, not structural markup --
 T="$W/blockquote-claim"; mkpkg "$T"
 reg "$T" ''
