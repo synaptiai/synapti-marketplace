@@ -151,3 +151,5 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-14 19:57 Write /tmp/evidence-bundle-176.md -->
 
 <!-- auto-log: 2026-09-14 20:03 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 20:04 commit "test(dossier): pin the escaped-pipe no-split case the escape marker exists for" -->
