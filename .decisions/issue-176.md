@@ -127,3 +127,13 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-14 17:52 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
 
 <!-- auto-log: 2026-09-14 17:53 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 17:54 commit "fix(dossier): fix crash and code-span mis-split found in code review" -->
+
+<!-- auto-log: 2026-09-14 18:10 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-14 18:11 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-14 18:11 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-14 18:12 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->

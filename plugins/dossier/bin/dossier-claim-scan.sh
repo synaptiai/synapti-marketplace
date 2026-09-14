@@ -274,11 +274,19 @@ scan_text() {
   done
 }
 
-# A placeholder byte standing in for a `|` that must survive the cell split:
-# one that came from inside a code span (already-stripped below, so this only
-# matters for the ESCAPED-pipe case) or an explicit `\|` escape. SOH (0x01)
-# never appears in real markdown prose.
+# Placeholder bytes standing in for characters that must survive the cell
+# split: a `|` that came from inside a code span (already-stripped below) or
+# an explicit `\|` escape, and a `\` that was itself escaped (`\\`). SOH
+# (0x01) and STX (0x02) never appear in real markdown prose. Known, accepted
+# limitation (security review, issue #176 PR): a document whose raw bytes
+# already contain a literal 0x01/0x02 would have that byte silently swapped
+# for `|`/`\` in the printed excerpt — cosmetic corruption of the quoted
+# text, not a security bypass (redaction and leak detection are unaffected;
+# both run on the original bytes, not the placeholder-substituted copy).
+# Such a byte cannot occur from normal markdown authoring, so this is not
+# hardened against further.
 PIPE_ESCAPE_MARK=$(printf '\001')
+BACKSLASH_ESCAPE_MARK=$(printf '\002')
 
 # Table rows split into cells on this file's declared markdown pipe syntax:
 # an unescaped `|` outside a code span. Splitting on every raw `|` first and
@@ -287,8 +295,15 @@ PIPE_ESCAPE_MARK=$(printf '\001')
 # system.` splits into two halves, each short enough afterward to fall under
 # the four-word floor, so the whole sentence is never checked. Code spans are
 # stripped and `\|` escapes are protected on the FULL row, before the split.
+#
+# `\\` (an escaped backslash) is marked BEFORE `\|` is matched, and in that
+# order: `\\|` is GFM for "a literal backslash, then an ordinary delimiter
+# pipe" — matching `\|` first would misread the second backslash of that
+# pair as escaping the pipe, merging two cells that should stay separate.
 strip_table_row_delimiters() {
-  printf '%s' "$1" | sed -e 's/`[^`]*`/ /g' -e "s/\\\\|/${PIPE_ESCAPE_MARK}/g"
+  printf '%s' "$1" | sed -e 's/`[^`]*`/ /g' \
+    -e "s/\\\\\\\\/${BACKSLASH_ESCAPE_MARK}/g" \
+    -e "s/\\\\|/${PIPE_ESCAPE_MARK}/g"
 }
 
 # A GFM separator row (`|---|---|`, optionally with `:` alignment markers) —
@@ -349,7 +364,7 @@ scan_table_row() {
   [ "${#rowcells[@]}" -eq 0 ] && return 0
   for rowcell in "${rowcells[@]}"; do
     trimmed=$(printf '%s' "$rowcell" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
-      -e "s/${PIPE_ESCAPE_MARK}/|/g")
+      -e "s/${PIPE_ESCAPE_MARK}/|/g" -e "s/${BACKSLASH_ESCAPE_MARK}/\\\\/g")
     [ -n "$trimmed" ] && scan_text "$trimmed"
   done
 }

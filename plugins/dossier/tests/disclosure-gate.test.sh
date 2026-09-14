@@ -311,6 +311,20 @@ OUT=$(scanout "$T")
 assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
   "a claim is still detected whole even when a code span inside the cell contains a pipe"
 
+# --- security review (issue #176 PR): an escaped backslash before a real ---
+# delimiter must not be misread as an escaped pipe. `\\|` is GFM for "a
+# literal backslash" (`\\`) followed by an ordinary cell delimiter (`|`), not
+# an escaped pipe — but a naive `s/\\|/MARK/` match on the raw two-character
+# sequence `\|` fires on the SECOND backslash of `\\|` too, mistaking the
+# real delimiter for an escape and merging two cells into one.
+T="$W/table-cell-escaped-backslash"; mkpkg "$T"
+reg "$T" ''
+printf '| This cell has content today \\\\| And this is a separate cell over here |\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=2" "$OUT" \
+  "an escaped backslash before a real delimiter still splits into two cells, not one merged cell"
+
 # --- issue #176: a blockquote is prose with a marker, not structural markup --
 T="$W/blockquote-claim"; mkpkg "$T"
 reg "$T" ''
