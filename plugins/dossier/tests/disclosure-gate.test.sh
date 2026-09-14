@@ -524,6 +524,42 @@ OUT=$(scanout "$T")
 assert_not_contains "what the reader should expect" "$OUT" \
   "a CRLF-terminated table header row is still exempted, not scored as data"
 
+# code-reviewer review (PR #201): every structural line-class dispatch
+# matches only at column 0 (`'|'*`, `'- '*`, `'* '*`, `'> '*`). A registered
+# claim indented under a list item, or nested inside a blockquote, or an
+# indented table, all defeat the marker strip and get wrongly reported
+# unregistered — the un-stripped leading whitespace/marker survives
+# normalize() (which strips `*`/`_`/`#`/`>` but not `-` or plain spaces)
+# and defeats the literal-substring match. Fails safe (over-flags a
+# registered claim; never lets an unapproved one through), but a registered
+# claim reporting unregistered is still a real correctness bug.
+reg_wording='| CL-0001 | the api supports oauth 20 device flow | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+
+T="$W/bullet-nested"; mkpkg "$T"
+reg "$T" "$reg_wording"
+pub "$T" '  - The API supports OAuth 20 device flow'
+scan "$T"
+assert_equal "0" "$?" "a registered claim written as an indented bullet still matches its approved wording"
+
+T="$W/bullet-in-blockquote"; mkpkg "$T"
+reg "$T" "$reg_wording"
+pub "$T" '> - The API supports OAuth 20 device flow'
+scan "$T"
+assert_equal "0" "$?" "a registered claim written as a bullet nested inside a blockquote still matches its approved wording"
+
+T="$W/table-indented"; mkpkg "$T"
+reg "$T" "$reg_wording"
+{
+  printf '  | Claim | Detail |\n'
+  printf '  |---|---|\n'
+  printf '  | Availability | The API supports OAuth 20 device flow |\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_not_contains "claim | detail" "$OUT" \
+  "an indented table's header row is still exempted, not scored as a claim"
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=0" "$OUT" \
+  "a registered claim written in an indented table still matches its approved wording"
+
 # A document whose last line has no trailing newline must still be scanned to
 # its end. `while read` returns failure on a final line with no newline but
 # still populates the variable with its content; a loop that treats that

@@ -456,6 +456,19 @@ for f in $TARGETS; do
       continue
     fi
 
+    # Every marker match below is column-0 only. Left un-stripped, an
+    # indented bullet or an indented table (e.g. nested under a list item)
+    # falls through to scan_text/table-splitting with its leading
+    # whitespace still attached, which defeats the literal-substring
+    # registration match the same way an un-stripped `- ` marker does
+    # (code review, issue #176 PR) — the whitespace is content-irrelevant
+    # for every classification below, so it's dropped once, here, rather
+    # than in each branch. Fenced-code detection above is deliberately NOT
+    # given this treatment: an indented fence is a different, unimplemented
+    # CommonMark construct (4-space indented code blocks), not a stray-
+    # whitespace variant of the backtick fence this script already detects.
+    line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//')
+
     case "$line" in
       '|'*)
         TABLE_ROWS_SEEN=$((TABLE_ROWS_SEEN + 1))
@@ -488,7 +501,22 @@ for f in $TARGETS; do
       ''|'#'*|'---'*|'<!--'*) continue ;;
       '- '*) scan_text "${line#- }"; continue ;;
       '* '*) scan_text "${line#\* }"; continue ;;
-      '> '*) scan_text "${line#> }"; continue ;;
+      '> '*)
+        # A bullet nested inside a blockquote (`> - claim text`) must have
+        # BOTH markers stripped, not just the blockquote's — piping the
+        # stripped body straight into scan_text left the `- `/`* ` prefix
+        # in place, defeating the registration match the same way an
+        # un-stripped top-level bullet marker does (code review, issue
+        # #176 PR). New in this PR: on main, blockquotes were skipped
+        # entirely, so this specific false positive could not occur before.
+        BQ_BODY="${line#> }"
+        case "$BQ_BODY" in
+          '- '*) scan_text "${BQ_BODY#- }" ;;
+          '* '*) scan_text "${BQ_BODY#\* }" ;;
+          *) scan_text "$BQ_BODY" ;;
+        esac
+        continue
+        ;;
     esac
 
     scan_text "$line"
