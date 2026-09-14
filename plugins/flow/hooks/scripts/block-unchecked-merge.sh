@@ -217,15 +217,23 @@ _bum_unterminated() {
   # as unterminated, so a failure refuses rather than lets the merge through.
   local rc=0
   printf '%s\n' "$1" | awk '
-    BEGIN { SQ = sprintf("%c", 39); q = "" }
+    # Does the quote at i open a dollar-quoted string? Only when the character
+    # before it is a dollar sign that no backslash escapes.
+    function dq_open(s, i,   j, b) {
+      if (i < 2 || substr(s, i - 1, 1) != "$") return 0
+      b = 0
+      for (j = i - 2; j >= 1 && substr(s, j, 1) == "\\"; j--) b++
+      return (b % 2) == 0
+    }
+    BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ; q = "" }
     {
       n = length($0)
       for (i = 1; i <= n; i++) {
         c = substr($0, i, 1)
         if (c == "\\" && q != SQ) { i++; continue }
-        if (q != "") { if (c == q || (q == "A" && c == SQ)) q = ""; continue }
+        if (q != "") { if (c == q || (q == DQ && c == SQ)) q = ""; continue }
         # A dollar-quoted string: inside it a backslash escapes the quote.
-        if (c == SQ && i > 1 && substr($0, i - 1, 1) == "$") q = "A"
+        if (c == SQ && dq_open($0, i)) q = DQ
         else if (c == "\"" || c == SQ) q = c
       }
     }

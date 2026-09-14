@@ -222,6 +222,13 @@ _run_hook "echo \$'it\\'s' && rm -rf src && echo \$'don\\'t'"
 assert_exit 2 "$?" "an rm between two dollar-quoted strings with escaped quotes is examined"
 _run_hook "echo \$'it\\'s fine' && ls"
 assert_exit 0 "$?" "a dollar-quoted string on its own is allowed"
+# Letters inside the string are text. A capital A once ended the string early.
+_run_hook "git stash push -m \$'Autosave before reset' && git reset --hard origin/main"
+assert_exit 2 "$?" "a reset after a dollar-quoted string containing A is examined"
+_run_hook "printf \$'Cleaning ARTIFACTS\\n'; rm -rf src"
+assert_exit 2 "$?" "an rm after a dollar-quoted string in capitals is examined"
+_run_hook "echo \\\$'x\\' ; git reset --hard origin/main"
+assert_exit 2 "$?" "an escaped dollar before a quote does not open a dollar-quoted string"
 
 _flow_test_begin "a long command with a quote on every line is checked, not crashed"
 LONG=""

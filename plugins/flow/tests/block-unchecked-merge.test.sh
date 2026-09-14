@@ -505,6 +505,12 @@ _flow_test_begin "a dollar-quoted string ends where the shell ends it"
 S=$(_bum_stub "$QUEUED" "" "")
 _bum_run "$S" "echo \$'it\\'s' && gh pr merge 9 --repo acme/widgets --squash && echo \$'don\\'t'"
 assert_exit 2 "$?" "a merge between two dollar-quoted strings with escaped quotes is checked"
+_bum_run "$S" "echo \$'All checks green'; gh pr merge 9 --repo acme/widgets --squash"
+assert_exit 2 "$?" "a merge after a dollar-quoted string containing A is checked"
+_bum_run "$S" "git commit -m \$'Add merge gate\\n\\nRefs #195' && gh pr merge 9 --repo acme/widgets --squash"
+assert_exit 2 "$?" "a merge after a dollar-quoted commit message with a # is checked"
+_bum_run "$S" "echo \\\$'x\\' ; gh pr merge 9 --repo acme/widgets --squash"
+assert_exit 2 "$?" "an escaped dollar before a quote does not open a dollar-quoted string"
 
 _flow_test_begin "-h as the value of an option is not a request for help"
 S=$(_bum_stub "$QUEUED" "" "")

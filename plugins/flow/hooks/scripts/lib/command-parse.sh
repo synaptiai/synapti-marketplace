@@ -64,19 +64,27 @@ _rm_tokenise() {
   # the hook's own shell, so the exit below refuses the command.
   local _tok_line _tok_out
   if ! _tok_out=$(printf '%s\n' "$1" | awk '
-    BEGIN { SQ = sprintf("%c", 39) }
+    # Does the quote at i open a dollar-quoted string? Only when the character
+    # before it is a dollar sign that no backslash escapes.
+    function dq_open(s, i,   j, b) {
+      if (i < 2 || substr(s, i - 1, 1) != "$") return 0
+      b = 0
+      for (j = i - 2; j >= 1 && substr(s, j, 1) == "\\"; j--) b++
+      return (b % 2) == 0
+    }
+    BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ }
     {
       s = $0; n = length(s); q = ""; cur = ""; in_word = 0; pos = 1
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1)
         if (q != "") {
-          # In a dollar-quoted string (q is A) a backslash escapes the quote.
-          if (q == "A" && c == "\\") { i++; continue }
-          if (c == q || (q == "A" && c == SQ)) { cur = cur substr(s, pos, i - pos); pos = i + 1; q = "" }
+          # In a dollar-quoted string (q is DQ) a backslash escapes the quote.
+          if (q == DQ && c == "\\") { i++; continue }
+          if (c == q || (q == DQ && c == SQ)) { cur = cur substr(s, pos, i - pos); pos = i + 1; q = "" }
           continue
         }
-        if (c == SQ && i > 1 && substr(s, i - 1, 1) == "$") {
-          cur = cur substr(s, pos, i - pos); pos = i + 1; q = "A"; in_word = 1
+        if (c == SQ && dq_open(s, i)) {
+          cur = cur substr(s, pos, i - pos); pos = i + 1; q = DQ; in_word = 1
           continue
         }
         if (c == "\"" || c == SQ) {
@@ -205,7 +213,15 @@ _bd_strip_noncode() {
       sub(/^.*\//, "", w)
       return (w == "cat" || w == "tee" || w == "echo" || w == "printf" || w == "gh")
     }
-    BEGIN { SQ = sprintf("%c", 39); inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = ""; q0 = "" }
+    # Does the quote at i open a dollar-quoted string? Only when the character
+    # before it is a dollar sign that no backslash escapes.
+    function dq_open(s, i,   j, b) {
+      if (i < 2 || substr(s, i - 1, 1) != "$") return 0
+      b = 0
+      for (j = i - 2; j >= 1 && substr(s, j, 1) == "\\"; j--) b++
+      return (b % 2) == 0
+    }
+    BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ; inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = ""; q0 = "" }
     {
       line = $0
       sub(/\r$/, "", line)
@@ -238,18 +254,18 @@ _bd_strip_noncode() {
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1)
         bq = eq; bl = el; oq = (q == ""); ol = (ql == "")
-        # q or ql is A inside a dollar-quoted string, where a backslash
+        # q or ql is DQ inside a dollar-quoted string, where a backslash
         # escapes the quote that would otherwise close it.
-        dq = (c == SQ && i > 1 && substr(line, i - 1, 1) == "$")
+        dq = (c == SQ && dq_open(line, i))
         if (eq) eq = 0
         else if (c == "\\" && q != SQ) eq = 1
-        else if (q != "") { if (c == q || (q == "A" && c == SQ)) q = "" }
-        else if (dq) q = "A"
+        else if (q != "") { if (c == q || (q == DQ && c == SQ)) q = "" }
+        else if (dq) q = DQ
         else if (c == "\"" || c == SQ) q = c
         if (el) el = 0
         else if (c == "\\" && ql != SQ) el = 1
-        else if (ql != "") { if (c == ql || (ql == "A" && c == SQ)) ql = "" }
-        else if (dq) ql = "A"
+        else if (ql != "") { if (c == ql || (ql == DQ && c == SQ)) ql = "" }
+        else if (dq) ql = DQ
         else if (c == "\"" || c == SQ) ql = c
         if (c == "#" && oq && ol && !bq && !bl) {
           prev = (i == 1) ? "" : substr(line, i - 1, 1)
@@ -404,7 +420,15 @@ _BD_SEG_AWK='
     # string, so buf[depth] is buf[""] at the outer level and buf["0"] once a
     # substitution has closed — different slots, and everything written before
     # the substitution is silently dropped.
-    BEGIN { SQ = sprintf("%c", 39); depth = 0; unbal = 0 }
+    # Does the quote at i open a dollar-quoted string? Only when the character
+    # before it is a dollar sign that no backslash escapes.
+    function dq_open(s, i,   j, b) {
+      if (i < 2 || substr(s, i - 1, 1) != "$") return 0
+      b = 0
+      for (j = i - 2; j >= 1 && substr(s, j, 1) == "\\"; j--) b++
+      return (b % 2) == 0
+    }
+    BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ; depth = 0; unbal = 0 }
     function flush(   i) {
       if (buf[depth] != "") { print buf[depth]; buf[depth] = "" }
     }
@@ -433,14 +457,14 @@ _BD_SEG_AWK='
             continue
           }
           buf[depth] = buf[depth] c
-          if (c == q[depth] || (q[depth] == "A" && c == SQ)) q[depth] = ""
+          if (c == q[depth] || (q[depth] == DQ && c == SQ)) q[depth] = ""
           continue
         }
 
         # A dollar-quoted string is recorded as A: inside it a backslash
         # escapes the quote (the escape rule above already applies, since A is
         # not a single quote), and only a quote closes it.
-        if (c == SQ && i > 1 && substr(line, i - 1, 1) == "$") { q[depth] = "A"; buf[depth] = buf[depth] c; continue }
+        if (c == SQ && dq_open(line, i)) { q[depth] = DQ; buf[depth] = buf[depth] c; continue }
         if (c == "\"" || c == SQ) { q[depth] = c; buf[depth] = buf[depth] c; continue }
 
         if (c == "$" && substr(line, i + 1, 1) == "(") {
