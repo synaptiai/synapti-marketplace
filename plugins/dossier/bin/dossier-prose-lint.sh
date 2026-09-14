@@ -45,6 +45,18 @@
 #   dossier-prose-lint.sh --output-root <path> [--json] [--quiet]
 #
 # Exit: 0 clean · 1 hard-category violations found · 2 usage error
+#
+# VERBATIM MARKERS: when scanning 07-verification/documentation-verification-
+# report.md specifically (matched by path suffix, for both --file and
+# --output-root — inert everywhere else in the package), text between a
+# <!-- DOSSIER_VERBATIM_BEGIN --> line and a matching <!-- DOSSIER_VERBATIM_END
+# --> line is excluded from every hard category. This is how /dossier:audit's
+# Phase 3 "collect pass output unmodified" rule coexists with G18's
+# zero-violations gate. --json reports verbatim_blocks and
+# verbatim_lines_skipped (package totals, and per file when nonzero) so the
+# exemption is never indistinguishable from a clean scan. An unclosed or
+# nested BEGIN is a scan error, never a silent exemption; a stray END with no
+# open BEGIN is ignored.
 
 set -uo pipefail
 
@@ -66,7 +78,7 @@ while [ $# -gt 0 ]; do
       SINGLE_FILE="$2"; shift 2 ;;
     --json) WANT_JSON=1; shift ;;
     --quiet) QUIET=1; shift ;;
-    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,/^$/p' "$0"; exit 0 ;;
     *) echo "dossier-prose-lint: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -114,6 +126,7 @@ cat > "$AWK_PROG" <<'AWKEOF'
 BEGIN {
   in_header = 0; first_line = 1; in_fence = 0; para_sentences = 0
   semi = 0; emdash = 0
+  in_verbatim = 0; nested_verbatim = 0; verbatim_blocks = 0; verbatim_lines_skipped = 0
 }
 {
   line = $0
@@ -126,6 +139,22 @@ BEGIN {
   }
   if (substr(line, 1, 3) == "```") { in_fence = !in_fence; next }
   if (in_fence) next
+  # DOSSIER_VERBATIM_BEGIN/END: honored only when the caller (bash side, via
+  # a path-suffix match) sets honor_verbatim for this file — everywhere else
+  # these are ordinary single-line HTML comments, caught by the generic
+  # `<!--` skip further down, and inert. A BEGIN nested inside an already-open
+  # block, and a BEGIN left unclosed at EOF, are reported via sentinels rather
+  # than silently exempting the rest of the file (see END block below) — the
+  # same asymmetry as the unclosed-frontmatter-fence guard for in_header.
+  if (honor_verbatim) {
+    if (in_verbatim) {
+      if (line ~ /^<!-- DOSSIER_VERBATIM_BEGIN/) { nested_verbatim = 1; print "NESTED_VERBATIM\t1"; exit }
+      if (line ~ /^<!-- DOSSIER_VERBATIM_END/) { in_verbatim = 0; para_sentences = 0; next }
+      verbatim_lines_skipped++
+      next
+    }
+    if (line ~ /^<!-- DOSSIER_VERBATIM_BEGIN/) { in_verbatim = 1; verbatim_blocks++; para_sentences = 0; next }
+  }
   if (line == "") { para_sentences = 0; next }
   c1 = substr(line, 1, 1)
   if (c1 == "#" || c1 == "|") next
@@ -179,7 +208,10 @@ END {
   # was silently skipped as "still in the header" — the rest of the document
   # was never scanned. Report it rather than let that read as a clean file.
   if (in_header) print "UNCLOSED_HEADER\t1"
-  print "SUMMARY\t" semi "\t" emdash
+  # nested_verbatim already reported (and exited) above; guarded here so a
+  # nested-BEGIN file is never double-counted as also unclosed.
+  if (in_verbatim && !nested_verbatim) print "UNCLOSED_VERBATIM\t1"
+  print "SUMMARY\t" semi "\t" emdash "\t" verbatim_blocks "\t" verbatim_lines_skipped
 }
 AWKEOF
 
@@ -199,6 +231,7 @@ count_matches() { # <text> <ERE pattern> — occurrence count, not line count
 H_MARKETING=0; H_PHRASAL=0; H_FILLER=0; H_LATINATE=0; H_SEMICOLON=0
 H_LONG_SENT=0; H_LONG_PARA=0; H_SCAN_ERROR=0
 A_PASSIVE=0; A_NOMINALIZE=0; A_EMDASH=0
+V_BLOCKS=0; V_LINES_SKIPPED=0
 FILES_JSON=""
 FIRST_FILE=1
 FINDINGS=""
@@ -233,11 +266,21 @@ lint_file() { # <path>
   local awk_out awk_err awk_rc sent_buf summary_line semi emdash errmsg
   local f_marketing f_phrasal f_filler f_latinate f_semicolon
   local f_long_sent f_long_para f_passive f_nominalize f_emdash f_blocking
+  local honor_verbatim f_verbatim_blocks f_verbatim_lines_skipped file_obj
 
   FILES_SCANNED=$((FILES_SCANNED + 1))
 
+  # DOSSIER_VERBATIM markers are honored only in the one file the audit
+  # command actually appends collected pass output to — everywhere else in
+  # the package they must stay inert, or any document could dodge G18 by
+  # wrapping its own prose in the same markers.
+  honor_verbatim=0
+  case "$f" in
+    */07-verification/documentation-verification-report.md) honor_verbatim=1 ;;
+  esac
+
   awk_err=$(mktemp -t dossier-prose-lint-awkerr.XXXXXX 2>/dev/null) || awk_err=/dev/null
-  awk_out=$(awk -f "$AWK_PROG" "$f" 2>"$awk_err")
+  awk_out=$(awk -v honor_verbatim="$honor_verbatim" -f "$AWK_PROG" "$f" 2>"$awk_err")
   awk_rc=$?
   if [ "$awk_rc" -ne 0 ]; then
     # A binary file, or one that turned unreadable mid-run, is the case this
@@ -257,6 +300,20 @@ lint_file() { # <path>
     return
   fi
 
+  if printf '%s\n' "$awk_out" | grep -q $'^NESTED_VERBATIM\t'; then
+    # A second BEGIN before the first block's END means the exemption's
+    # boundaries are ambiguous — never silently pick one interpretation.
+    scan_error_hit "$f" "nested DOSSIER_VERBATIM_BEGIN — a verbatim block was already open"
+    return
+  fi
+
+  if printf '%s\n' "$awk_out" | grep -q $'^UNCLOSED_VERBATIM\t'; then
+    # An opened-but-never-closed block would otherwise exempt every line to
+    # EOF from every hard category — indistinguishable from a clean scan.
+    scan_error_hit "$f" "verbatim block opened but never closed"
+    return
+  fi
+
   sent_buf=$(printf '%s\n' "$awk_out" | grep $'^S\t' | cut -f2-)
   f_long_sent=$(printf '%s\n' "$awk_out" | grep -c $'^E\tlong_sentence\t')
   f_filler=$(printf '%s\n' "$awk_out" | grep -c $'^E\tfiller_hedge\t')
@@ -266,6 +323,10 @@ lint_file() { # <path>
   emdash=$(printf '%s' "$summary_line" | cut -f3)
   f_semicolon=${semi:-0}
   f_emdash=${emdash:-0}
+  f_verbatim_blocks=$(printf '%s' "$summary_line" | cut -f4)
+  f_verbatim_lines_skipped=$(printf '%s' "$summary_line" | cut -f5)
+  f_verbatim_blocks=${f_verbatim_blocks:-0}
+  f_verbatim_lines_skipped=${f_verbatim_lines_skipped:-0}
 
   f_marketing=$(count_matches "$sent_buf" "$MARKETING_RE")
   f_phrasal=$(count_matches "$sent_buf" "$PHRASAL_RE")
@@ -279,6 +340,7 @@ lint_file() { # <path>
   H_LONG_PARA=$((H_LONG_PARA + f_long_para))
   A_PASSIVE=$((A_PASSIVE + f_passive)); A_NOMINALIZE=$((A_NOMINALIZE + f_nominalize))
   A_EMDASH=$((A_EMDASH + f_emdash))
+  V_BLOCKS=$((V_BLOCKS + f_verbatim_blocks)); V_LINES_SKIPPED=$((V_LINES_SKIPPED + f_verbatim_lines_skipped))
 
   f_blocking=$((f_marketing + f_phrasal + f_filler + f_latinate + f_semicolon + f_long_sent + f_long_para))
 
@@ -293,7 +355,14 @@ lint_file() { # <path>
     # Escaped: an unescaped path containing a double quote or backslash would
     # otherwise emit malformed JSON.
     f_esc=$(printf '%s' "$f" | LC_ALL=C sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
-    FILES_JSON="$FILES_JSON{\"file\":\"$f_esc\",\"blocking_violations\":$f_blocking,\"hard\":{\"marketing_adjective\":$f_marketing,\"phrasal_verb\":$f_phrasal,\"filler_hedge\":$f_filler,\"latinate_word\":$f_latinate,\"semicolon\":$f_semicolon,\"long_sentence\":$f_long_sent,\"long_paragraph\":$f_long_para},\"advisory\":{\"passive_voice\":$f_passive,\"nominalization\":$f_nominalize,\"em_dash\":$f_emdash}}"
+    file_obj="{\"file\":\"$f_esc\",\"blocking_violations\":$f_blocking,\"hard\":{\"marketing_adjective\":$f_marketing,\"phrasal_verb\":$f_phrasal,\"filler_hedge\":$f_filler,\"latinate_word\":$f_latinate,\"semicolon\":$f_semicolon,\"long_sentence\":$f_long_sent,\"long_paragraph\":$f_long_para},\"advisory\":{\"passive_voice\":$f_passive,\"nominalization\":$f_nominalize,\"em_dash\":$f_emdash}"
+    # A skip must never look like a clean scan: the per-file mirror is
+    # present only when this file actually had a verbatim block, so an
+    # exemption is always visible in the JSON, never inferred from silence.
+    if [ "$f_verbatim_blocks" -gt 0 ] || [ "$f_verbatim_lines_skipped" -gt 0 ]; then
+      file_obj="$file_obj,\"verbatim_blocks\":$f_verbatim_blocks,\"verbatim_lines_skipped\":$f_verbatim_lines_skipped"
+    fi
+    FILES_JSON="$FILES_JSON$file_obj}"
   fi
 }
 
@@ -323,8 +392,8 @@ fi
 BLOCKING=$((H_MARKETING + H_PHRASAL + H_FILLER + H_LATINATE + H_SEMICOLON + H_LONG_SENT + H_LONG_PARA + H_SCAN_ERROR))
 
 if [ "$WANT_JSON" -eq 1 ]; then
-  printf '{"blocking_violations":%s,"files_scanned":%s,"scan_errors":%s,"hard":{"marketing_adjective":%s,"phrasal_verb":%s,"filler_hedge":%s,"latinate_word":%s,"semicolon":%s,"long_sentence":%s,"long_paragraph":%s},"advisory":{"passive_voice":%s,"nominalization":%s,"em_dash":%s},"files":[%s]}\n' \
-    "$BLOCKING" "$FILES_SCANNED" "$H_SCAN_ERROR" "$H_MARKETING" "$H_PHRASAL" "$H_FILLER" "$H_LATINATE" "$H_SEMICOLON" "$H_LONG_SENT" "$H_LONG_PARA" \
+  printf '{"blocking_violations":%s,"files_scanned":%s,"scan_errors":%s,"verbatim_blocks":%s,"verbatim_lines_skipped":%s,"hard":{"marketing_adjective":%s,"phrasal_verb":%s,"filler_hedge":%s,"latinate_word":%s,"semicolon":%s,"long_sentence":%s,"long_paragraph":%s},"advisory":{"passive_voice":%s,"nominalization":%s,"em_dash":%s},"files":[%s]}\n' \
+    "$BLOCKING" "$FILES_SCANNED" "$H_SCAN_ERROR" "$V_BLOCKS" "$V_LINES_SKIPPED" "$H_MARKETING" "$H_PHRASAL" "$H_FILLER" "$H_LATINATE" "$H_SEMICOLON" "$H_LONG_SENT" "$H_LONG_PARA" \
     "$A_PASSIVE" "$A_NOMINALIZE" "$A_EMDASH" "$FILES_JSON"
 elif [ "$QUIET" -eq 0 ]; then
   echo "PROSE_LINT_BLOCKING_VIOLATIONS=$BLOCKING"

@@ -200,6 +200,135 @@ else
   _dossier_assert_fail "prose-clarity's word lists overlap disclosure-gating's prohibited vocabulary:$OVERLAP"
 fi
 
+# --- verbatim markers: excluded only inside the verification report ----------
+# Resolves issue #180: /dossier:audit's Phase 3 "collect pass output verbatim,
+# do not reorder or reconcile" rule conflicts with G18's zero-violations gate,
+# because the auditors' own analytical prose routinely trips the hard
+# categories. Explicit DOSSIER_VERBATIM_BEGIN/END markers, honored only inside
+# 07-verification/documentation-verification-report.md, resolve the conflict
+# without exempting prose anywhere else in the package.
+VERIFY_DIR="$W/pkg-a/07-verification"
+mkdir -p "$VERIFY_DIR"
+VERIFY_REPORT="$VERIFY_DIR/documentation-verification-report.md"
+cat > "$VERIFY_REPORT" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+This seamless platform helps you. Some other analytical prose lives here too.
+<!-- DOSSIER_VERBATIM_END -->
+
+This seamless platform helps you again, outside the markers.
+EOF
+"$LINT" --file "$VERIFY_REPORT" >/dev/null 2>&1
+assert_equal "1" "$?" "the sentence outside the markers still fails the file"
+J=$(lint_json "$VERIFY_REPORT")
+assert_equal "1" "$(count_of "$J" marketing_adjective)" "only the sentence outside the markers is counted"
+assert_equal "1" "$(count_of "$J" verbatim_blocks)" "one verbatim block is recorded"
+assert_equal "1" "$(count_of "$J" verbatim_lines_skipped)" "one body line inside the block is recorded as skipped"
+
+OUT_JSON=$("$LINT" --output-root "$W/pkg-a" --json 2>/dev/null)
+assert_equal "1" "$(count_of "$OUT_JSON" verbatim_blocks)" "--output-root invocation also honors the marker via the same path-suffix match"
+
+NONVERIFY_DIR="$W/pkg-b/04-operating"
+mkdir -p "$NONVERIFY_DIR"
+NONVERIFY_FILE="$NONVERIFY_DIR/onboarding-and-local-development.md"
+cat > "$NONVERIFY_FILE" <<'EOF'
+# Onboarding
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+This seamless platform helps you.
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+"$LINT" --file "$NONVERIFY_FILE" >/dev/null 2>&1
+assert_equal "1" "$?" "markers are inert outside the verification report -- the sentence between them still fails"
+J=$(lint_json "$NONVERIFY_FILE")
+assert_equal "1" "$(count_of "$J" marketing_adjective)" "the sentence between inert markers is still counted"
+assert_equal "0" "$(count_of "$J" verbatim_blocks)" "no verbatim block is recorded outside the verification report"
+
+UNCLOSED_VERBATIM_DIR="$W/pkg-c/07-verification"
+mkdir -p "$UNCLOSED_VERBATIM_DIR"
+UNCLOSED_VERBATIM="$UNCLOSED_VERBATIM_DIR/documentation-verification-report.md"
+cat > "$UNCLOSED_VERBATIM" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+This seamless platform helps you.
+EOF
+"$LINT" --file "$UNCLOSED_VERBATIM" >/dev/null 2>&1
+assert_equal "1" "$?" "an unclosed verbatim marker exits 1, never a false clean pass"
+J=$(lint_json "$UNCLOSED_VERBATIM")
+assert_equal "1" "$(count_of "$J" scan_errors)" "the unclosed verbatim block is counted as a scan error"
+
+NESTED_VERBATIM_DIR="$W/pkg-d/07-verification"
+mkdir -p "$NESTED_VERBATIM_DIR"
+NESTED_VERBATIM="$NESTED_VERBATIM_DIR/documentation-verification-report.md"
+cat > "$NESTED_VERBATIM" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+Some line.
+<!-- DOSSIER_VERBATIM_BEGIN -->
+More content.
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+"$LINT" --file "$NESTED_VERBATIM" >/dev/null 2>&1
+assert_equal "1" "$?" "a nested verbatim BEGIN exits 1, never a false clean pass"
+J=$(lint_json "$NESTED_VERBATIM")
+assert_equal "1" "$(count_of "$J" scan_errors)" "a nested BEGIN is counted as a scan error"
+
+STRAY_END_DIR="$W/pkg-e/07-verification"
+mkdir -p "$STRAY_END_DIR"
+STRAY_END="$STRAY_END_DIR/documentation-verification-report.md"
+cat > "$STRAY_END" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_END -->
+
+The cache compares the meaning of a new prompt with the prompts already stored.
+EOF
+"$LINT" --file "$STRAY_END" >/dev/null 2>&1
+assert_equal "0" "$?" "a stray END with no open BEGIN is ignored, not an error"
+J=$(lint_json "$STRAY_END")
+assert_equal "0" "$(count_of "$J" scan_errors)" "a stray END produces no scan error"
+assert_equal "0" "$(count_of "$J" verbatim_blocks)" "a stray END records no verbatim block"
+
+PARA_DIR="$W/pkg-f/07-verification"
+mkdir -p "$PARA_DIR"
+PARA_BOUNDARY="$PARA_DIR/documentation-verification-report.md"
+cat > "$PARA_BOUNDARY" <<'EOF'
+# Verification
+
+Sentence one here. Sentence two here. Sentence three here.
+<!-- DOSSIER_VERBATIM_BEGIN -->
+Verbatim body line, not counted.
+<!-- DOSSIER_VERBATIM_END -->
+Sentence four here. Sentence five here. Sentence six here. Sentence seven here.
+EOF
+J=$(lint_json "$PARA_BOUNDARY")
+assert_equal "0" "$(count_of "$J" long_paragraph)" "the verbatim toggle resets the paragraph counter, so 7 sentences split around it never trips the 7-sentence cap"
+
+FENCE_DIR="$W/pkg-g/07-verification"
+mkdir -p "$FENCE_DIR"
+FENCE_VERBATIM="$FENCE_DIR/documentation-verification-report.md"
+cat > "$FENCE_VERBATIM" <<'EOF'
+# Verification
+
+```text
+<!-- DOSSIER_VERBATIM_BEGIN -->
+```
+
+This seamless platform helps you.
+EOF
+"$LINT" --file "$FENCE_VERBATIM" >/dev/null 2>&1
+assert_equal "1" "$?" "marker text inside a fenced code block does not toggle verbatim state -- the real prose after the fence still fails"
+J=$(lint_json "$FENCE_VERBATIM")
+assert_equal "0" "$(count_of "$J" scan_errors)" "the fence-embedded marker text produces no scan error"
+assert_equal "1" "$(count_of "$J" marketing_adjective)" "the real sentence after the fence is still flagged"
+assert_equal "0" "$(count_of "$J" verbatim_blocks)" "the fence-embedded marker text never toggles verbatim state"
+
+"$LINT" --help 2>&1 | grep -q "DOSSIER_VERBATIM"
+assert_equal "0" "$?" "--help documents the verbatim-marker mechanism (regression guard: the self-terminating sed range must reach the new header text)"
+
 rm -rf "$W" 2>/dev/null
 
 _dossier_test_summary
