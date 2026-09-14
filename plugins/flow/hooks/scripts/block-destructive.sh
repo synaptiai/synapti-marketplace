@@ -143,37 +143,8 @@ _rm_segment_is_destructive() {
 # Strip comments and heredoc bodies once; every rule below reads BD_CODE.
 _bd_strip_noncode "$COMMAND"
 
-# An interpreter handed its script as a single quoted argument — `bash -c "git
-# reset --hard"`, `sh -c '...'`, `ssh host "..."`, `eval "..."` — is one word to
-# the tokeniser, so no rule could see the command inside it. Append the contents
-# of those arguments as further lines, which the segmenting below then treats as
-# ordinary commands. One level deep is enough for every real form; deeper
-# nesting arrives here as its own quoted argument on the next pass anyway.
-_bd_expand_interpreter_args() {
-  local seg tok i n found
-  local -a TOK=()
-  local extra=""
-  while IFS= read -r seg; do
-    [ -z "$seg" ] && continue
-    case "$seg" in *[\'\"]*) ;; *) continue ;; esac
-    _rm_tokenise "$seg"
-    n=${#TOK[@]}
-    found=0
-    for ((i = 0; i < n; i++)); do
-      tok="${TOK[i]}"
-      if [ "${#tok}" -le 4096 ] && _bd_is_interpreter "${tok#\\}"; then found=1; continue; fi
-      if [ "$found" = "1" ]; then
-        case "$tok" in
-          *[[:space:]]*) extra="$extra
-$tok" ;;
-        esac
-      fi
-    done
-  done <<BD_EXPAND_EOF
-$BD_CODE
-BD_EXPAND_EOF
-  if [ -n "$extra" ]; then BD_CODE="$BD_CODE$extra"; fi
-}
+# An interpreter handed its script as a single quoted argument (`bash -c "..."`,
+# `eval "..."`) hides that script from the tokeniser; see lib/command-parse.sh.
 _bd_expand_interpreter_args
 
 RM_DESTRUCTIVE=0
