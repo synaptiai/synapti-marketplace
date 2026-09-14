@@ -2,10 +2,13 @@
 # dossier-scaffold.sh — create the canonical 8-directory / 23-file documentation
 # package under an output root by copying the plugin's templates.
 #
-# Idempotent and non-destructive: an existing file is NEVER overwritten, never
-# truncated, and never merged. Re-running after a partial scaffold fills only the
-# gaps. This is deliberate — the package holds hand-written evidence, and a
-# scaffold that clobbers is a scaffold nobody dares re-run.
+# Idempotent, but overwrite-safety is conditional, not absolute: an existing file
+# whose first line is exactly "---" (frontmatter-fenced) is left untouched and
+# reported SKIPPED. An existing file that is empty, or lacks that fence, is
+# treated as damaged — a process killed mid-write, or content placed at a
+# canonical path by hand — and is overwritten, reported REPAIRED (never
+# CREATED). Re-running after a partial scaffold fills gaps and repairs damage;
+# it does not preserve arbitrary non-fenced content at a canonical path.
 #
 # A README.md signpost is written at the output root alongside the canonical 23.
 # It is supplemental, not canonical: it asserts no fact about the project, so it
@@ -30,16 +33,22 @@
 #   SCAFFOLD_ROOT=<path>
 #   SCAFFOLD_DRY_RUN=0|1
 #   SCAFFOLD_EXPECTED=23
-#   SCAFFOLD_CREATED=<n>          (canonical files only)
+#   SCAFFOLD_CREATED=<n>          (canonical files newly created; excludes repairs)
+#   SCAFFOLD_REPAIRED=<n>         (canonical files that existed but were damaged —
+#                                  empty, or missing the frontmatter fence — and
+#                                  were overwritten)
 #   SCAFFOLD_SKIPPED=<n>          (canonical files only)
 #   SCAFFOLD_FAILED=<n>
 #   SCAFFOLD_README=created|skipped|failed
-#   CREATED <relative-path>   (one line per created file)
-#   SKIPPED <relative-path>   (one line per pre-existing file)
-#   FAILED  <relative-path>   (one line per copy failure)
+#   CREATED <relative-path>   (one line per newly created file)
+#   REPAIRED <relative-path>  (one line per damaged file that was overwritten)
+#   SKIPPED <relative-path>   (one line per pre-existing, intact file)
+#   FAILED  <relative-path>   (one line per file that could not be created:
+#                              symlink refusal, wrong type, missing template,
+#                              or copy failure)
 #
 # Exit:
-#   0 — every canonical file is present (created or already there)
+#   0 — every canonical file is present (created, repaired, or already there)
 #   1 — one or more files could not be created
 #   2 — infrastructure error (missing argument, template dir unreadable)
 
@@ -94,7 +103,7 @@ while [ $# -gt 0 ]; do
     --dry-run)
       DRY_RUN=1; shift ;;
     -h|--help)
-      sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     --) shift; break ;;
     *)
@@ -147,6 +156,7 @@ if [ -z "$README_TEMPLATE" ]; then
 fi
 
 CREATED=0
+REPAIRED=0
 SKIPPED=0
 FAILED=0
 ACTIONS=""
@@ -163,6 +173,31 @@ fi
 for REL in $CANONICAL_FILES; do
   SRC="$TEMPLATE_DIR/$REL"
   DEST="$OUTPUT_ROOT/$REL"
+  DIR_PART="${REL%/*}"
+  IS_REPAIR=0
+
+  # A symlink anywhere on a canonical path — the leaf file itself, or the
+  # single directory segment above it — is never trusted. `cp`/`mkdir -p`
+  # both follow symlinks transparently: `mkdir -p` on a directory reached
+  # through a symlink succeeds silently (nothing new is created), and a
+  # leaf-only `-L "$DEST"` check inspects just the final path component, so
+  # a file underneath a symlinked directory still reads as an ordinary
+  # regular file — a repair could silently overwrite a file outside
+  # $OUTPUT_ROOT, and a dangling link fails `-e` (looks absent), so an
+  # unguarded create would silently write through it too. The 23 canonical
+  # paths, and their 8 directory segments, are public in the plugin source,
+  # so a poisoned source repo can plant either kind of link at a
+  # predictable path and wait for a victim to scaffold against it. Checked
+  # with `-L` before `-e`, since `-e` follows the link and reports false
+  # for a dangling one; checked unconditionally (not gated on --dry-run,
+  # since --dry-run must report what a real run would refuse, not silently
+  # skip the check because the write itself doesn't happen).
+  if [ -L "$OUTPUT_ROOT/$DIR_PART" ] || [ -L "$DEST" ]; then
+    FAILED=$((FAILED + 1))
+    ACTIONS="${ACTIONS}FAILED  $REL (refusing to write through a symlink)
+"
+    continue
+  fi
 
   # Presence is not completeness. A process killed mid-write leaves a file that
   # exists and holds nothing, and `-e` alone cannot tell that from a correctly
@@ -171,6 +206,12 @@ for REL in $CANONICAL_FILES; do
   # empty file, or one with no frontmatter fence on its first line, is treated
   # as absent and rewritten.
   if [ -e "$DEST" ]; then
+    if [ ! -f "$DEST" ]; then
+      FAILED=$((FAILED + 1))
+      ACTIONS="${ACTIONS}FAILED  $REL (not a regular file at canonical path)
+"
+      continue
+    fi
     DEST_INTACT=1
     [ -s "$DEST" ] || DEST_INTACT=0
     if [ "$DEST_INTACT" -eq 1 ]; then
@@ -182,8 +223,24 @@ for REL in $CANONICAL_FILES; do
 "
       continue
     fi
-    ACTIONS="${ACTIONS}REPAIRED $REL
+    IS_REPAIR=1
+    # Captured now (before any overwrite) so it stays accurate even though
+    # the announcement itself is deferred below to the confirmed-success
+    # branches — the same discipline the REPAIRED action line already
+    # follows, so an attempt that turns out FAILED never claims it happened.
+    REPAIR_BYTES=$(wc -c 2>/dev/null < "$DEST" | tr -d '[:space:]')
+  fi
+
+  # The read side gets the same treatment as the write side: `-f` follows a
+  # symlink, so a symlinked template would be silently accepted and its
+  # target's content copied into a canonical document. Templates are
+  # normally the plugin's own trusted install, but --templates is a
+  # supported override pointing wherever the caller names.
+  if [ -L "$SRC" ]; then
+    FAILED=$((FAILED + 1))
+    ACTIONS="${ACTIONS}FAILED  $REL (refusing to read a symlinked template)
 "
+    continue
   fi
 
   if [ ! -f "$SRC" ]; then
@@ -194,17 +251,40 @@ for REL in $CANONICAL_FILES; do
   fi
 
   if [ "$DRY_RUN" -eq 1 ]; then
-    CREATED=$((CREATED + 1))
-    ACTIONS="${ACTIONS}CREATED $REL
+    if [ "$IS_REPAIR" -eq 1 ]; then
+      REPAIRED=$((REPAIRED + 1))
+      ACTIONS="${ACTIONS}REPAIRED $REL
 "
+      printf 'dossier-scaffold: would repair %s (replacing %s bytes)\n' "$REL" "${REPAIR_BYTES:-unknown}" >&2
+    else
+      CREATED=$((CREATED + 1))
+      ACTIONS="${ACTIONS}CREATED $REL
+"
+    fi
     continue
   fi
 
-  if cp "$SRC" "$DEST" 2>/dev/null; then
-    CREATED=$((CREATED + 1))
-    ACTIONS="${ACTIONS}CREATED $REL
+  # Written via a same-directory temp file and an atomic rename rather than
+  # a direct `cp` onto $DEST. `cp` follows a destination symlink and writes
+  # through it; a rename() on the same filesystem replaces whatever is at
+  # $DEST outright — including a symlink planted there after the `-L` check
+  # above ran — without ever dereferencing it, closing that check/write
+  # race rather than merely narrowing it. The temp name includes $$ so two
+  # concurrent scaffold runs cannot collide on it.
+  TMP_DEST="$DEST.dossier-scaffold.tmp.$$"
+  if cp "$SRC" "$TMP_DEST" 2>/dev/null && mv -f "$TMP_DEST" "$DEST" 2>/dev/null; then
+    if [ "$IS_REPAIR" -eq 1 ]; then
+      REPAIRED=$((REPAIRED + 1))
+      ACTIONS="${ACTIONS}REPAIRED $REL
 "
+      printf 'dossier-scaffold: repairing %s (replacing %s bytes)\n' "$REL" "${REPAIR_BYTES:-unknown}" >&2
+    else
+      CREATED=$((CREATED + 1))
+      ACTIONS="${ACTIONS}CREATED $REL
+"
+    fi
   else
+    rm -f "$TMP_DEST" 2>/dev/null
     FAILED=$((FAILED + 1))
     ACTIONS="${ACTIONS}FAILED  $REL (copy failed)
 "
@@ -217,21 +297,51 @@ done
 README_STATE="created"
 README_DEST="$OUTPUT_ROOT/$README_REL"
 
-if [ -e "$README_DEST" ]; then
-  README_STATE="skipped"
+if [ -L "$README_DEST" ]; then
+  README_STATE="failed"
+  FAILED=$((FAILED + 1))
+  ACTIONS="${ACTIONS}FAILED  $README_REL (refusing to write through a symlink)
+"
+  echo "dossier-scaffold: refusing to write the README through a symlink at $README_DEST" >&2
+elif [ -e "$README_DEST" ]; then
+  if [ -f "$README_DEST" ]; then
+    README_STATE="skipped"
+  else
+    # Same type-confusion guard the canonical-file loop applies: -e is true
+    # for a directory too, and treating one as an intact README would be a
+    # silent no-op over a broken package, the exact failure mode this whole
+    # fix exists to close.
+    README_STATE="failed"
+    FAILED=$((FAILED + 1))
+    ACTIONS="${ACTIONS}FAILED  $README_REL (not a regular file)
+"
+    echo "dossier-scaffold: $README_DEST exists but is not a regular file" >&2
+  fi
 elif [ -z "$README_TEMPLATE" ] || [ ! -f "$README_TEMPLATE" ]; then
   README_STATE="failed"
   FAILED=$((FAILED + 1))
+  ACTIONS="${ACTIONS}FAILED  $README_REL (template missing)
+"
   echo "dossier-scaffold: README template not found (looked at --readme-template, CLAUDE_PLUGIN_ROOT, script dir, and plugins/dossier)" >&2
-elif [ "$DRY_RUN" -eq 0 ] && ! cp "$README_TEMPLATE" "$README_DEST" 2>/dev/null; then
-  README_STATE="failed"
-  FAILED=$((FAILED + 1))
+elif [ "$DRY_RUN" -eq 0 ]; then
+  README_TMP_DEST="$README_DEST.dossier-scaffold.tmp.$$"
+  if cp "$README_TEMPLATE" "$README_TMP_DEST" 2>/dev/null && mv -f "$README_TMP_DEST" "$README_DEST" 2>/dev/null; then
+    :
+  else
+    rm -f "$README_TMP_DEST" 2>/dev/null
+    README_STATE="failed"
+    FAILED=$((FAILED + 1))
+    ACTIONS="${ACTIONS}FAILED  $README_REL (copy failed)
+"
+    echo "dossier-scaffold: failed to write README at $README_DEST" >&2
+  fi
 fi
 
 printf 'SCAFFOLD_ROOT=%s\n' "$OUTPUT_ROOT"
 printf 'SCAFFOLD_DRY_RUN=%s\n' "$DRY_RUN"
 printf 'SCAFFOLD_EXPECTED=23\n'
 printf 'SCAFFOLD_CREATED=%s\n' "$CREATED"
+printf 'SCAFFOLD_REPAIRED=%s\n' "$REPAIRED"
 printf 'SCAFFOLD_SKIPPED=%s\n' "$SKIPPED"
 printf 'SCAFFOLD_FAILED=%s\n' "$FAILED"
 printf 'SCAFFOLD_README=%s\n' "$README_STATE"
