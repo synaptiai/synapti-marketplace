@@ -173,3 +173,5 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-14 21:10 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/feedback_sequential_suites.md -->
 
 <!-- auto-log: 2026-09-14 21:18 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
+
+<!-- auto-log: 2026-09-14 21:20 commit "docs(dossier): describe the final state in CHANGELOG, not just the first fix" -->
