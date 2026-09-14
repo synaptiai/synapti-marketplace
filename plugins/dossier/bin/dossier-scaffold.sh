@@ -46,7 +46,7 @@
 #   FAILED  <relative-path>   (one line per copy failure)
 #
 # Exit:
-#   0 — every canonical file is present (created or already there)
+#   0 — every canonical file is present (created, repaired, or already there)
 #   1 — one or more files could not be created
 #   2 — infrastructure error (missing argument, template dir unreadable)
 
@@ -101,7 +101,7 @@ while [ $# -gt 0 ]; do
     --dry-run)
       DRY_RUN=1; shift ;;
     -h|--help)
-      sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,51p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     --) shift; break ;;
     *)
@@ -173,6 +173,21 @@ for REL in $CANONICAL_FILES; do
   DEST="$OUTPUT_ROOT/$REL"
   IS_REPAIR=0
 
+  # A symlink at a canonical path — live or dangling — is never trusted.
+  # `cp` follows it, so a repair could silently overwrite a file outside
+  # $OUTPUT_ROOT, and a dangling link fails `-e` (looks absent), so an
+  # unguarded create would silently write through it too. The 23 canonical
+  # paths are public in the plugin source, so a poisoned source repo can
+  # plant one at a predictable path and wait for a victim to scaffold
+  # against it. Checked with `-L` before `-e`, since `-e` follows the link
+  # and reports false for a dangling one.
+  if [ -L "$DEST" ]; then
+    FAILED=$((FAILED + 1))
+    ACTIONS="${ACTIONS}FAILED  $REL (refusing to write through a symlink)
+"
+    continue
+  fi
+
   # Presence is not completeness. A process killed mid-write leaves a file that
   # exists and holds nothing, and `-e` alone cannot tell that from a correctly
   # scaffolded one — so the retry that exists to "fill only the gaps" reported
@@ -180,6 +195,12 @@ for REL in $CANONICAL_FILES; do
   # empty file, or one with no frontmatter fence on its first line, is treated
   # as absent and rewritten.
   if [ -e "$DEST" ]; then
+    if [ ! -f "$DEST" ]; then
+      FAILED=$((FAILED + 1))
+      ACTIONS="${ACTIONS}FAILED  $REL (not a regular file at canonical path)
+"
+      continue
+    fi
     DEST_INTACT=1
     [ -s "$DEST" ] || DEST_INTACT=0
     if [ "$DEST_INTACT" -eq 1 ]; then
@@ -193,9 +214,11 @@ for REL in $CANONICAL_FILES; do
     fi
     IS_REPAIR=1
     REPAIR_BYTES=$(wc -c < "$DEST" 2>/dev/null | tr -d '[:space:]')
-    printf 'dossier-scaffold: repairing %s (replacing %s bytes)\n' "$REL" "${REPAIR_BYTES:-0}" >&2
-    ACTIONS="${ACTIONS}REPAIRED $REL
-"
+    if [ "$DRY_RUN" -eq 1 ]; then
+      printf 'dossier-scaffold: would repair %s (replacing %s bytes)\n' "$REL" "${REPAIR_BYTES:-unknown}" >&2
+    else
+      printf 'dossier-scaffold: repairing %s (replacing %s bytes)\n' "$REL" "${REPAIR_BYTES:-unknown}" >&2
+    fi
   fi
 
   if [ ! -f "$SRC" ]; then
@@ -208,6 +231,8 @@ for REL in $CANONICAL_FILES; do
   if [ "$DRY_RUN" -eq 1 ]; then
     if [ "$IS_REPAIR" -eq 1 ]; then
       REPAIRED=$((REPAIRED + 1))
+      ACTIONS="${ACTIONS}REPAIRED $REL
+"
     else
       CREATED=$((CREATED + 1))
       ACTIONS="${ACTIONS}CREATED $REL
@@ -219,6 +244,8 @@ for REL in $CANONICAL_FILES; do
   if cp "$SRC" "$DEST" 2>/dev/null; then
     if [ "$IS_REPAIR" -eq 1 ]; then
       REPAIRED=$((REPAIRED + 1))
+      ACTIONS="${ACTIONS}REPAIRED $REL
+"
     else
       CREATED=$((CREATED + 1))
       ACTIONS="${ACTIONS}CREATED $REL
@@ -237,7 +264,11 @@ done
 README_STATE="created"
 README_DEST="$OUTPUT_ROOT/$README_REL"
 
-if [ -e "$README_DEST" ]; then
+if [ -L "$README_DEST" ]; then
+  README_STATE="failed"
+  FAILED=$((FAILED + 1))
+  echo "dossier-scaffold: refusing to write the README through a symlink at $README_DEST" >&2
+elif [ -e "$README_DEST" ]; then
   README_STATE="skipped"
 elif [ -z "$README_TEMPLATE" ] || [ ! -f "$README_TEMPLATE" ]; then
   README_STATE="failed"
