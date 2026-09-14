@@ -164,3 +164,5 @@ _Captured by specification-capture skill on 2026-09-14. Source: mixed (extracted
 <!-- auto-log: 2026-09-15 00:28 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
 
 <!-- auto-log: 2026-09-15 00:28 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-178.md -->
+
+<!-- auto-log: 2026-09-15 00:40 commit "fix(dossier): close the directory-symlink, hardlink, and template-source gaps the first review round left open" -->
