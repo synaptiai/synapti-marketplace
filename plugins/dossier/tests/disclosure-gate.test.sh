@@ -83,6 +83,24 @@ else
 fi
 assert_contains "VOCABULARY" "$(scanout "$T")" "the vocabulary finding is labelled"
 
+# Prohibited vocabulary is prose a drafter capitalizes without thinking about
+# it — a heading, a bolded lead sentence, title case in a bullet. The pattern
+# list is written in all-lowercase; matching only the exact case lets "Zero
+# Downtime" or "Bank-Grade" through a check whose entire purpose is to catch
+# this vocabulary regardless of how it's cased (pre-existing, found
+# incidentally while reviewing this file).
+T="$W/vocab-case"; mkpkg "$T"
+reg "$T" ''
+pub "$T" "This offering provides Bank-Grade encryption for every customer."
+OUT=$(scanout "$T")
+# CLAIM_SCAN_PROHIBITED_VOCABULARY=0 would itself satisfy a bare
+# assert_contains "VOCABULARY" check (the field name contains the word) —
+# pinned to =1 and to the bracketed finding line specifically so a
+# regression back to case-sensitive matching fails this assertion.
+assert_contains "CLAIM_SCAN_PROHIBITED_VOCABULARY=1" "$OUT" \
+  "prohibited vocabulary is flagged regardless of capitalization"
+assert_contains "[VOCABULARY]" "$OUT" "the case-insensitive match is reported as a finding"
+
 # --- registration ------------------------------------------------------------
 # An approved row whose wording matches exactly.
 T="$W/registered"; mkpkg "$T"
@@ -112,8 +130,11 @@ pub "$T" "The service handles multi-region failover automatically."
 OUT=$(scanout "$T")
 assert_contains "no claim register" "$OUT" "a missing register is called out explicitly"
 
-# --- headings, code fences, and tables are not claims ------------------------
-# Flagging them would drown the real findings.
+# --- headings and code fences are not claims; tables and bullets now are -----
+# Only headings and fenced code stay structurally exempt (issue #176). This
+# fixture's table cells are all under the four-word floor on their own merits,
+# so it stays a green regression check for the exemption boundary even though
+# table cells are no longer blanket-skipped.
 T="$W/structure"; mkpkg "$T"
 reg "$T" ''
 {
@@ -123,7 +144,288 @@ reg "$T" ''
   printf '```bash\ncurl https://api.example.com/v1/ping\n```\n'
 } > "$T/docs/dossier/06-public/technical-partner-guide.md"
 scan "$T"
-assert_equal "0" "$?" "headings, tables, and code fences are not treated as claims"
+assert_equal "0" "$?" "short table cells under the word floor still pass clean"
+
+# --- headings and fenced code stay exempt even with claim-shaped text --------
+# The regression this issue's fix must not introduce: widening the selector to
+# cover bullets/tables/blockquotes must not also widen it to headings or fences.
+T="$W/heading-fence-exempt"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '# This product guarantees 9999 percent uptime annually\n\n'
+  printf '```text\nThis product guarantees 9999 percent uptime annually\n```\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "0" "$?" "claim-shaped text in a heading or fenced code block is still exempt"
+
+# --- issue #176: a bullet is prose with a marker, not structural markup ------
+# The exact shape reported in the issue: a claim written as a `- ` bullet
+# scored 0 while the identical sentence as a paragraph scored non-zero.
+T="$W/bullet-claim"; mkpkg "$T"
+reg "$T" ''
+pub "$T" '- There are no binaries and no bundles; you can read every hook before you install it.'
+scan "$T"
+assert_equal "1" "$?" "an unregistered claim written as a - bullet is now detected"
+assert_contains "UNREGISTERED" "$(scanout "$T")" "the bullet claim is labelled"
+
+# The `* ` bullet marker must be handled too, not just `- `.
+T="$W/bullet-star-claim"; mkpkg "$T"
+reg "$T" ''
+pub "$T" '* This vendor performs full formal verification on every release.'
+scan "$T"
+assert_equal "1" "$?" "an unregistered claim written with a * bullet marker is detected"
+
+# A REGISTERED bullet claim must pass, not just an unregistered one score
+# non-zero. With no register present, an unregistered-only assertion cannot
+# tell "the marker was stripped" apart from "the marker was left in place" —
+# both produce a non-zero hit either way. `normalize()` incidentally strips a
+# stray `*` (it removes `[*_#>]` unconditionally) but never strips `-`, so a
+# `- ` marker left un-stripped survives into the normalized sentence as
+# "- the api supports..." — a string the approved wording "the api
+# supports..." does not contain as a substring, and the literal-substring
+# match at :grep -qF would then wrongly report an approved claim as
+# unregistered. This is the fixture that catches that specific failure.
+T="$W/bullet-registered"; mkpkg "$T"
+reg "$T" '| CL-0001 | the api supports oauth 20 device flow | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+pub "$T" '- The API supports OAuth 20 device flow'
+scan "$T"
+assert_equal "0" "$?" "a registered claim written as a bullet still matches its approved wording"
+
+# --- issue #176: a table cell is prose with a delimiter, not structural markup
+T="$W/table-claim"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '| Property | Description |\n'
+  printf '|---|---|\n'
+  printf '| Availability | This service guarantees 9999 percent uptime annually |\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "1" "$?" "an unregistered claim written as a table cell is detected"
+assert_contains "UNREGISTERED" "$(scanout "$T")" "the table-cell claim is labelled"
+
+# The table's own header row and separator row must never become "claims"
+# themselves, even when the header wording clears the four-word floor.
+T="$W/table-header-not-claim"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '| What the reader should expect | What this guarantees today |\n'
+  printf '|---|---|\n'
+  printf '| Region availability details | Nothing is promised beyond the current region |\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_not_contains "what the reader should expect" "$OUT" "the table header row is not treated as a claim"
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" "only the data cell is an unregistered claim, not the header"
+
+# A separator row using alignment colons (`:---`, `---:`, `:---:`) must be
+# recognized too, not just a bare `---` — is_table_separator explicitly
+# special-cases `:` alongside `-`, and this is the only fixture exercising it.
+T="$W/table-separator-alignment"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '| What the reader should expect | What this guarantees today |\n'
+  printf '|:---|---:|\n'
+  printf '| Region availability details | Nothing is promised beyond the current region |\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_not_contains "what the reader should expect" "$OUT" \
+  "the header row is exempt even when the separator uses alignment colons"
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "only the data cell is unregistered when the separator uses alignment colons"
+
+# A REGISTERED table-cell claim must pass — proves cell splitting/trimming
+# produces text that round-trips through the literal-substring match, not
+# just that cell text is detected at all.
+T="$W/table-registered"; mkpkg "$T"
+reg "$T" '| CL-0001 | the api supports oauth 20 device flow | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+{
+  printf '| Claim | Detail |\n'
+  printf '|---|---|\n'
+  printf '| Availability | The API supports OAuth 20 device flow |\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "0" "$?" "a registered claim written as a table cell still matches its approved wording"
+
+# A held row's finding must be attributed to the line it actually appeared on,
+# not the line where the hold happened to resolve. Row 1 of a `|`-prefixed
+# run is held pending row 2's separator check; when row 2 turns out NOT to be
+# a separator (this fixture: two genuine data rows, no separator ever), row 1
+# is flushed and scored from inside the code path handling row 2 — a `$LN`
+# read at that point would attribute row 1's finding to row 2's line number.
+T="$W/table-line-attribution"; mkpkg "$T"
+reg "$T" ''
+{
+  printf 'This is the first row and it carries a genuine unregistered claim' | sed 's/^/| /; s/$/ |/'
+  printf '\n'
+  printf 'This is the second row and it also carries a genuine unregistered claim' | sed 's/^/| /; s/$/ |/'
+  printf '\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_contains "technical-partner-guide.md:1 \"this is the first row" "$OUT" \
+  "row 1's finding is attributed to line 1, the line it actually appeared on"
+assert_contains "technical-partner-guide.md:2 \"this is the second row" "$OUT" \
+  "row 2's finding is attributed to line 2"
+
+# --- a degenerate table row must not crash the scan ---------------------------
+# `|` alone (or `||`) as a table row splits to a zero-cell body. Under bash
+# 3.2's `set -u`, `arr=($empty_body)` leaves the array variable UNSET rather
+# than a zero-length array, and a later `"${arr[@]}"` expansion is then a
+# fatal unbound-variable error that kills the entire script mid-run — before
+# the report is ever printed and before leakage already detected earlier in
+# the same file is ever surfaced. This is exactly the "malformed table row
+# ... must not crash" failure mode the issue's own specification calls out.
+T="$W/table-degenerate-row"; mkpkg "$T"
+reg "$T" ''
+printf 'A real claim about our uptime that clears the word floor easily.\n|\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_not_contains "unbound variable" "$OUT" "a bare | table row does not crash the scan"
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=" "$OUT" \
+  "the script still completes and prints its report after a degenerate table row"
+
+# A leak already detected earlier in the file must not be swallowed by a
+# later crash — verified separately from the generic no-crash check above,
+# since "the script didn't crash" and "the leak is still reported" are two
+# different properties that could fail independently.
+T="$W/table-degenerate-row-with-leak"; mkpkg "$T"
+printf 'Use sk-ant-api03-abcdefghijklmnop to begin.\n||\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "2" "$?" "a leak earlier in the file is still reported (exit 2) despite a later degenerate table row"
+
+# --- table state must not leak across a fenced code block --------------------
+# The fence-toggle and in-fence-skip
+# branches both `continue` BEFORE the "leave the table" cleanup
+# (flush_held_table_row + reset) runs, so a held row from before the fence
+# survives, uncleared, into whatever `|`-shaped line appears after the fence
+# closes. If that later line independently looks like a GFM separator, the
+# held row is discarded as "the header this separator confirms" — even
+# though the two were never part of the same table — and the genuine claim
+# is silently dropped: this issue's own core failure mode, reintroduced by
+# its own fix's table-state machine.
+T="$W/table-state-across-fence"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '| A genuine claim held pending its own separator right here |\n'
+  printf '```text\nsome code\n```\n'
+  printf '|---|---|\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "a claim held before a fence is not silently discarded by an unrelated separator-shaped line after the fence"
+
+# The same defect's mirror effect: a genuine table header row landing right
+# after a fence gets misread as data (scored) instead of exempted, because
+# the stale TABLE_ROWS_SEEN=1 makes it look like "row 2, deciding the
+# earlier held line was a header" instead of "row 1 of a fresh table".
+T="$W/table-header-after-fence"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '| A genuine claim held pending its own separator right here |\n'
+  printf '```text\nsome code\n```\n'
+  printf '| Supported Since Version Column | Another Header Cell Here |\n'
+  printf '|---|---|\n'
+  printf '| Row | Cell |\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_not_contains "supported since version column" "$OUT" \
+  "a genuine header row right after a fence is still exempted, not scored as data"
+
+# --- a `|` inside a code span must not split a cell ----------------------------
+# Splitting on every raw `|` before code-span stripping (which normally
+# happens inside scan_text, per-cell, too late to undo an already-wrong
+# split) can silently drop a claim: `Zero downtime `x|y` guaranteed system.`
+# splits into two halves, each short enough after the split to fall under
+# the four-word floor — reproducing the exact "0 doesn't mean it was
+# checked" failure this issue exists to fix, just moved one level down (a
+# claim hidden inside a single cell instead of hidden by line class).
+T="$W/table-cell-code-span-pipe"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '| Guarantee |\n'
+  printf '|---|\n'
+  printf '| Zero downtime `x|y` guaranteed system. |\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "a claim is still detected whole even when a code span inside the cell contains a pipe"
+
+# --- an escaped backslash before a real delimiter must not be misread ------
+# as an escaped pipe. `\\|` is GFM for "a
+# literal backslash" (`\\`) followed by an ordinary cell delimiter (`|`), not
+# an escaped pipe — but a naive `s/\\|/MARK/` match on the raw two-character
+# sequence `\|` fires on the SECOND backslash of `\\|` too, mistaking the
+# real delimiter for an escape and merging two cells into one.
+T="$W/table-cell-escaped-backslash"; mkpkg "$T"
+reg "$T" ''
+printf '| This cell has content today \\\\| And this is a separate cell over here |\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=2" "$OUT" \
+  "an escaped backslash before a real delimiter still splits into two cells, not one merged cell"
+
+# The primary case the escape mechanism exists for: a lone `\|` must keep the
+# cell whole, not split — the sibling test above only proved the counter-case;
+# nothing pinned the single-backslash case a future refactor of the two-pass
+# sed logic could silently break.
+T="$W/table-cell-escaped-pipe"; mkpkg "$T"
+reg "$T" ''
+printf '| cell one text here \\| cell two text here |\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "an escaped pipe keeps the cell whole, not split into two"
+
+# --- issue #176: a blockquote is prose with a marker, not structural markup --
+T="$W/blockquote-claim"; mkpkg "$T"
+reg "$T" ''
+pub "$T" '> This product has completed a formal third-party security audit.'
+scan "$T"
+assert_equal "1" "$?" "an unregistered claim written as a blockquote is detected"
+
+# A REGISTERED blockquote claim must pass, for the same marker-stripping-
+# residue reason as the bullet case above (`>` is stripped by normalize()
+# incidentally, but only after the `-`-equivalent leading-space concern is
+# ruled out by explicit marker removal, not relied upon).
+T="$W/blockquote-registered"; mkpkg "$T"
+reg "$T" '| CL-0001 | the api supports oauth 20 device flow | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+pub "$T" '> The API supports OAuth 20 device flow'
+scan "$T"
+assert_equal "0" "$?" "a registered claim written as a blockquote still matches its approved wording"
+
+# The risk map's own stated discriminating check for blockquote handling:
+# a two-line blockquote whose lines carry distinct claims. Each line stays
+# independently evaluated per the existing per-line architecture; this
+# proves both lines are actually reached, not just that a single-line
+# blockquote works.
+T="$W/blockquote-two-lines"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '> This product has never had a security incident of any kind.\n'
+  printf '> Every customer receives a dedicated support engineer at all times.\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_contains "technical-partner-guide.md:1 \"this product has never had a security incident" "$OUT" \
+  "the first line of a two-line blockquote is independently detected"
+assert_contains "technical-partner-guide.md:2 \"every customer receives a dedicated support engineer" "$OUT" \
+  "the second line of a two-line blockquote is independently detected"
+
+# --- issue #176: the scan's own coverage scope must be legible in its output -
+# A `0` result must not be misreadable as "every line class was checked" when
+# it only ever meant "every paragraph was checked" (the exact failure mode the
+# issue reports — three separate measurements of this scanner's own output
+# disagreed on how much of the document it covered).
+T="$W/line-classes-field"; mkpkg "$T"
+reg "$T" ''
+pub "$T" "A simple paragraph sentence with no claims at all here."
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_LINE_CLASSES_EXAMINED=" "$OUT" "the scan reports which line classes it examined"
+assert_contains "bullet" "$OUT" "bullets are listed among the examined line classes"
+assert_contains "table-data-cell" "$OUT" "table data cells are listed among the examined line classes"
+if command -v jq >/dev/null 2>&1; then
+  J=$(cd "$T" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --json 2>/dev/null)
+  CLASSES=$(printf '%s' "$J" | jq -r '(.line_classes_examined // []) | join(",")' 2>/dev/null)
+  assert_contains "table-data-cell" "$CLASSES" "the json output reports table-data-cell among examined line classes"
+fi
 
 # --- single-file mode --------------------------------------------------------
 T="$W/single"; mkpkg "$T"
@@ -182,6 +484,94 @@ printf -- '# Guide\n\nThe product supports every integration pattern a partner n
 OUT=$(scanout "$T")
 assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
   "a headerless document is scanned from its first line"
+
+# The frontmatter closer is an
+# exact string compare (`[ "$line" = "---" ]`). A closer line with a stray
+# trailing `\r` (mixed CRLF/LF) or trailing space never matches, so
+# IN_HEADER=1 sticks for the rest of the file — every subsequent line,
+# including genuine unregistered claims, is silently skipped via `continue`
+# with no error and exit 0. The failure mode this whole issue exists to
+# fix (a clean-looking result whose true coverage doesn't match), just
+# triggered by a line-ending quirk instead of a line class.
+# Opener is clean LF (so it matches and sets IN_HEADER=1, isolating the
+# closer-specific bug) — only the CLOSER carries a stray \r, the shape a
+# mostly-LF file with one CRLF-tainted line (a tool that normalized only
+# some lines) would actually produce. A fixture with \r on BOTH lines would
+# pass for the wrong reason: the opener would also fail to match, so
+# IN_HEADER never engages at all and the "header" lines fall through to be
+# scanned as ordinary short prose — a different bug, not what's tested here.
+T="$W/header-crlf-closer"; mkdir -p "$T/docs/dossier/06-public" 2>/dev/null
+printf -- '---\ntitle: A Guide\n---\r\nThe product supports every integration pattern a partner needs.\n' \
+  > "$T/docs/dossier/06-public/g.md" 2>/dev/null
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "a CRLF-terminated frontmatter closer does not leave the rest of the file silently unscanned"
+
+T="$W/header-trailing-space-closer"; mkdir -p "$T/docs/dossier/06-public" 2>/dev/null
+printf -- '---\ntitle: A Guide\n--- \nThe product supports every integration pattern a partner needs.\n' \
+  > "$T/docs/dossier/06-public/g.md" 2>/dev/null
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "a frontmatter closer with trailing whitespace does not leave the rest of the file silently unscanned"
+
+# Same root cause, table side: a CRLF-terminated separator row splits into
+# an extra empty phantom cell and fails the separator check, so the header
+# row above it is scored as data instead of being exempted.
+T="$W/table-separator-crlf"; mkdir -p "$T/docs/dossier/06-public" 2>/dev/null
+printf -- '| What the reader should expect | What this guarantees today |\r\n|---|---|\r\n| Region availability details | Nothing is promised beyond the current region |\n' \
+  > "$T/docs/dossier/06-public/g.md" 2>/dev/null
+OUT=$(scanout "$T")
+assert_not_contains "what the reader should expect" "$OUT" \
+  "a CRLF-terminated table header row is still exempted, not scored as data"
+
+# Every structural line-class dispatch matches only at column 0
+# (`'|'*`, `'- '*`, `'* '*`, `'> '*`). A registered
+# claim indented under a list item, or nested inside a blockquote, or an
+# indented table, all defeat the marker strip and get wrongly reported
+# unregistered — the un-stripped leading whitespace/marker survives
+# normalize() (which strips `*`/`_`/`#`/`>` but not `-` or plain spaces)
+# and defeats the literal-substring match. Fails safe (over-flags a
+# registered claim; never lets an unapproved one through), but a registered
+# claim reporting unregistered is still a real correctness bug.
+reg_wording='| CL-0001 | the api supports oauth 20 device flow | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+
+T="$W/bullet-nested"; mkpkg "$T"
+reg "$T" "$reg_wording"
+pub "$T" '  - The API supports OAuth 20 device flow'
+scan "$T"
+assert_equal "0" "$?" "a registered claim written as an indented bullet still matches its approved wording"
+
+T="$W/bullet-in-blockquote"; mkpkg "$T"
+reg "$T" "$reg_wording"
+pub "$T" '> - The API supports OAuth 20 device flow'
+scan "$T"
+assert_equal "0" "$?" "a registered claim written as a bullet nested inside a blockquote still matches its approved wording"
+
+T="$W/table-indented"; mkpkg "$T"
+reg "$T" "$reg_wording"
+{
+  printf '  | Claim | Detail |\n'
+  printf '  |---|---|\n'
+  printf '  | Availability | The API supports OAuth 20 device flow |\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_not_contains "claim | detail" "$OUT" \
+  "an indented table's header row is still exempted, not scored as a claim"
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=0" "$OUT" \
+  "a registered claim written in an indented table still matches its approved wording"
+
+# A document whose last line has no trailing newline must still be scanned to
+# its end. `while read` returns failure on a final line with no newline but
+# still populates the variable with its content; a loop that treats that
+# failure as "nothing left to read" silently drops exactly one line — always
+# the last one — matching this issue's own theme of a scan whose true
+# coverage does not match what its clean result implies.
+T="$W/no-trailing-newline"; mkdir -p "$T/docs/dossier/06-public" 2>/dev/null
+printf -- 'This is the only line and it carries a real unregistered claim.' \
+  > "$T/docs/dossier/06-public/g.md" 2>/dev/null
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "the last line is still scanned even with no trailing newline"
 
 
 # --- An approved wording containing markdown must be matchable ---------------

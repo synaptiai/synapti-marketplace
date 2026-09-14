@@ -90,10 +90,17 @@ hit() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$HITS_FILE"; }
 # provider-specific prefixes.
 scan_class() { # file | class | severity | regex
   local f="$1" class="$2" sev="$3" re="$4"
-  local out
+  local out grepflags="-nE"
+  # Prohibited vocabulary is prose a drafter capitalizes without thinking
+  # about it — a heading, a bolded lead, title case in a bullet — and the
+  # pattern list itself is written all-lowercase, so "Zero Downtime" or
+  # "Bank-Grade" must still match. Leak patterns stay case-sensitive: two are
+  # case-sensitive by construction (`AKIA[0-9A-Z]{16}`, the PEM armour), and
+  # folding them would themselves start matching unrelated lowercase text.
+  [ "$sev" = "prohibited" ] && grepflags="-inE"
   # `--` terminates option parsing: several patterns below start with a hyphen
   # (the PEM armour), and without it grep reads the pattern as flags.
-  out=$(grep -nE -- "$re" "$f" 2>/dev/null | cut -d: -f1) || return 0
+  out=$(grep $grepflags -- "$re" "$f" 2>/dev/null | cut -d: -f1) || return 0
   local ln
   for ln in $out; do
     hit "$sev" "$f" "$ln" "$class"
@@ -216,6 +223,168 @@ redact() {
     -e 's/-----BEGIN [A-Z ]*PRIVATE KEY-----/[REDACTED:private-key-block]/g'
 }
 
+# Line classes this scan actually examines for registration (issue #176):
+# paragraph prose, bullets, blockquotes, and table DATA cells specifically —
+# a confirmed table header row is deliberately excluded (see scan loop below),
+# so "table-cell" alone would overstate this scanner's own coverage exactly
+# the way the pre-fix scanner overstated it: a claim-shaped header would read
+# as "examined" when it structurally never reaches scan_text. Headings and
+# fenced code stay structurally exempt too — they are markup, not claims.
+# Reported alongside CLAIM_SCAN_UNREGISTERED_SENTENCES so a `0` cannot be
+# misread as "every line class was checked" when it only means "every line
+# class this scanner is capable of checking was checked" — the exact
+# ambiguity the issue reports, discovered when identical claim text scored 0
+# as a table row and non-zero as a paragraph with no way to tell from the
+# output alone.
+LINE_CLASSES_EXAMINED="paragraph,bullet,blockquote,table-data-cell"
+
+# One sentence per check. Declarative only: a heading or a fragment is not a
+# claim, and flagging them would drown the real findings. Shared by paragraph,
+# bullet, blockquote, and table-cell text alike (issue #176) — all four are
+# prose, just with different structural markers to strip before this point.
+scan_text() {
+  local text="$1"
+  local SPLITTABLE
+  # Code spans come out BEFORE the split. A bare `tr '.' '\n'` cuts inside
+  # `SKILL.md`, `plugin.json`, and `3.2.2`, producing fragments like
+  # "md` is not a skill" — reported as unregistered claims that no drafter
+  # could resolve, because they are not sentences.
+  SPLITTABLE=$(printf '%s' "$text" | sed 's/`[^`]*`/ /g')
+  printf '%s\n' "$SPLITTABLE" | tr '.' '\n' | while IFS= read -r sentence; do
+    norm=$(printf '%s' "$sentence" | normalize)
+    [ -z "$norm" ] && continue
+    words=$(printf '%s' "$norm" | wc -w | tr -d ' ')
+    [ "$words" -lt 4 ] && continue
+
+    if [ "$REGISTER_PRESENT" -eq 1 ] && [ -s "$APPROVED_FILE" ]; then
+      if grep -qF "$norm" "$APPROVED_FILE" 2>/dev/null; then
+        continue
+      fi
+    fi
+    # Redact the ORIGINAL sentence, not the normalized one. `normalize`
+    # lowercases, and two of the credential patterns are case-sensitive by
+    # construction — `AKIA[0-9A-Z]{16}` and the PEM header cannot match text
+    # that has already been folded to lower case. Redacting after normalizing
+    # therefore printed AWS keys and private-key headers into the findings
+    # output verbatim-but-lowercased: still recognisable, still reconstructable,
+    # and destined for a CI log. This is the exact failure the redactor exists
+    # to prevent, so the excerpt is built from the raw sentence.
+    printf 'unregistered\t%s\t%s\t%s\n' "$f" "$LN" \
+      "$(printf '%s' "$sentence" | redact | normalize | cut -c1-80)" >> "$HITS_FILE"
+  done
+}
+
+# Placeholder bytes standing in for characters that must survive the cell
+# split: a `|` that came from inside a code span (already-stripped below) or
+# an explicit `\|` escape, and a `\` that was itself escaped (`\\`). SOH
+# (0x01) and STX (0x02) never appear in real markdown prose. Known, accepted
+# limitation: a document whose raw bytes
+# already contain a literal 0x01/0x02 would have that byte silently swapped
+# for `|`/`\` in the printed excerpt — cosmetic corruption of the quoted
+# text, not a security bypass (redaction and leak detection are unaffected;
+# both run on the original bytes, not the placeholder-substituted copy).
+# Such a byte cannot occur from normal markdown authoring, so this is not
+# hardened against further.
+PIPE_ESCAPE_MARK=$(printf '\001')
+BACKSLASH_ESCAPE_MARK=$(printf '\002')
+
+# Table rows split into cells on this file's declared markdown pipe syntax:
+# an unescaped `|` outside a code span. Splitting on every raw `|` first and
+# only stripping code spans later (inside scan_text, per already-broken
+# fragments) can silently drop a claim — `Zero downtime \`x|y\` guaranteed
+# system.` splits into two halves, each short enough afterward to fall under
+# the four-word floor, so the whole sentence is never checked. Code spans are
+# stripped and `\|` escapes are protected on the FULL row, before the split.
+#
+# `\\` (an escaped backslash) is marked BEFORE `\|` is matched, and in that
+# order: `\\|` is GFM for "a literal backslash, then an ordinary delimiter
+# pipe" — matching `\|` first would misread the second backslash of that
+# pair as escaping the pipe, merging two cells that should stay separate.
+strip_table_row_delimiters() {
+  printf '%s' "$1" | sed -e 's/`[^`]*`/ /g' \
+    -e "s/\\\\\\\\/${BACKSLASH_ESCAPE_MARK}/g" \
+    -e "s/\\\\|/${PIPE_ESCAPE_MARK}/g"
+}
+
+# A GFM separator row (`|---|---|`, optionally with `:` alignment markers) —
+# every cell, once trimmed, is nothing but colons and dashes with at least one
+# dash. This is structure, not prose, and must never become a "claim" even
+# though its dashes are stable across cells (they'd otherwise clear no bar
+# because they contain no words at all — this check exists for correctness
+# and intent, not because the word floor leaves a gap here).
+is_table_separator() {
+  local row=$1 body OLD_IFS sepcell trimmed
+  local -a sepcells
+  body=$(strip_table_row_delimiters "$row")
+  body=${body#|}
+  body=${body%|}
+  OLD_IFS=$IFS
+  IFS='|'
+  set -f          # a bare glob in a cell must stay literal, not expand
+  # shellcheck disable=SC2206
+  sepcells=($body)
+  set +f
+  IFS=$OLD_IFS
+  # A row that splits to zero cells (e.g. a bare `|` or `||`) is not a valid
+  # separator. Checked via ${#arr[@]}, not "${arr[@]}" directly: on bash 3.2,
+  # an empty `arr=($empty)` leaves the array UNSET, and under this script's
+  # `set -u` a bare "${arr[@]}" expansion on an unset array is a fatal
+  # unbound-variable error that kills the whole scan mid-run — silently
+  # dropping every remaining file, including any leak already found earlier.
+  [ "${#sepcells[@]}" -eq 0 ] && return 1
+  for sepcell in "${sepcells[@]}"; do
+    trimmed=$(printf '%s' "$sepcell" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    case "$trimmed" in
+      *[!:-]*) return 1 ;;   # contains something other than ':' or '-'
+      *-*) ;;                # must contain at least one '-'
+      *) return 1 ;;
+    esac
+  done
+  return 0
+}
+
+# Split a table row into cells and feed each non-empty cell through the same
+# candidate-sentence check as prose (issue #176). Table-cell splitting follows
+# the shell-native `IFS='|'` + `set -f` + array-split idiom already used by
+# dossier-ledger-lint.sh for the same "split a markdown table row" problem.
+scan_table_row() {
+  local row=$1 body OLD_IFS rowcell trimmed
+  local -a rowcells
+  body=$(strip_table_row_delimiters "$row")
+  body=${body#|}
+  body=${body%|}
+  OLD_IFS=$IFS
+  IFS='|'
+  set -f
+  # shellcheck disable=SC2206
+  rowcells=($body)
+  set +f
+  IFS=$OLD_IFS
+  # See is_table_separator for why this is ${#arr[@]}, not a direct "${arr[@]}".
+  [ "${#rowcells[@]}" -eq 0 ] && return 0
+  for rowcell in "${rowcells[@]}"; do
+    trimmed=$(printf '%s' "$rowcell" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+      -e "s/${PIPE_ESCAPE_MARK}/|/g" -e "s/${BACKSLASH_ESCAPE_MARK}/\\\\/g")
+    [ -n "$trimmed" ] && scan_text "$trimmed"
+  done
+}
+
+# A held row (see TABLE_HELD_LINE below) is scored later than the line it
+# came from — sometimes many lines later, if a fence opens before the hold
+# resolves. `scan_text` reports findings against the CURRENT `$LN`, so
+# flushing a held row without first restoring `$LN` to the line it was held
+# from would attribute its findings to wherever the flush happens to occur,
+# not to the line a reader would need to open to find the claim.
+flush_held_table_row() {
+  local RESUME_LN
+  [ -n "$TABLE_HELD_LINE" ] || return 0
+  RESUME_LN=$LN
+  LN=$TABLE_HELD_LN
+  scan_table_row "$TABLE_HELD_LINE"
+  LN=$RESUME_LN
+  TABLE_HELD_LINE=""
+}
+
 for f in $TARGETS; do
   IN_FENCE=0
   # The header is structured metadata, not prose. `title:` and `audience:` are
@@ -226,54 +395,134 @@ for f in $TARGETS; do
   IN_HEADER=0
   FIRST_LINE=1
   LN=0
-  while IFS= read -r line; do
+  # Table state (issue #176): a GFM table's header row is only distinguishable
+  # from a data row by what follows it — the separator row. Since this loop
+  # has no lookahead, the first row of a run of `|`-prefixed lines is held
+  # rather than scored immediately; row 2 then decides whether row 1 was a
+  # header (discarded) or plain data (flushed alongside row 2). Once that
+  # determination is made, every further `|`-prefixed row is scored directly.
+  TABLE_HELD_LINE=""
+  TABLE_HELD_LN=0
+  TABLE_ROWS_SEEN=0
+  # `|| [ -n "$line" ]` picks up a final line with no trailing newline: `read`
+  # still populates $line with its content but returns non-zero at EOF, and a
+  # bare `while read` loop condition treats that as "nothing left," silently
+  # dropping the last line of any file that isn't newline-terminated.
+  while IFS= read -r line || [ -n "$line" ]; do
     LN=$((LN + 1))
+    # `read` splits on the actual newline byte only, so a CRLF-terminated
+    # file leaves a trailing \r on every line. Left in place, it defeats
+    # every exact-string and pattern match downstream: the frontmatter
+    # opener/closer compare (`"$line" = "---"`), the fence toggle, and the
+    # table separator check all silently fail to match, and — for the
+    # frontmatter closer specifically — IN_HEADER then never clears, so
+    # every subsequent line in the file is silently skipped via `continue`
+    # with no error and exit 0 — the same "clean result whose true coverage
+    # doesn't match" failure this whole issue exists to fix.
+    line=${line%$'\r'}
     if [ "$FIRST_LINE" -eq 1 ]; then
       FIRST_LINE=0
-      if [ "$line" = "---" ]; then IN_HEADER=1; continue; fi
+      # `${line%%[[:space:]]*}` drops everything from the first whitespace
+      # character onward, so a closer with trailing spaces or tabs (e.g. a
+      # trailing-whitespace-on-save editor artifact) still matches — the
+      # \r-strip above already handles CRLF, this handles ordinary trailing
+      # whitespace the same way.
+      if [ "${line%%[[:space:]]*}" = "---" ]; then IN_HEADER=1; continue; fi
     elif [ "$IN_HEADER" -eq 1 ]; then
-      [ "$line" = "---" ] && IN_HEADER=0
+      [ "${line%%[[:space:]]*}" = "---" ] && IN_HEADER=0
       continue
     fi
     case "$line" in
-      '```'*) IN_FENCE=$((1 - IN_FENCE)); continue ;;
+      '```'*)
+        # A fence line is never a table row, so it leaves any open table
+        # exactly like the non-fence "left the table" branch below does.
+        # Skipping this flush would let TABLE_HELD_LINE and
+        # TABLE_ROWS_SEEN survive across the fence: the first `|`-line after
+        # the fence then resumed counting from the stale TABLE_ROWS_SEEN
+        # instead of starting a fresh table, so an unrelated later separator-
+        # shaped line could discard a genuine claim held from BEFORE the
+        # fence as if it were that later "table"'s own header — silently
+        # dropping a claim, the exact failure mode this issue exists to fix.
+        flush_held_table_row
+        TABLE_ROWS_SEEN=0
+        IN_FENCE=$((1 - IN_FENCE))
+        continue
+        ;;
     esac
+    # No flush/reset needed here: the fence-toggle branch above already did
+    # it before setting IN_FENCE=1, and the table-row case below (the only
+    # thing that could re-populate TABLE_HELD_LINE) is unreachable while
+    # this branch's `continue` fires on every subsequent fenced-interior line.
     [ "$IN_FENCE" -eq 1 ] && continue
+
+    # Every marker match below is column-0 only. Left un-stripped, an
+    # indented bullet or an indented table (e.g. nested under a list item)
+    # falls through to scan_text/table-splitting with its leading
+    # whitespace still attached, which defeats the literal-substring
+    # registration match the same way an un-stripped `- ` marker does.
+    # The whitespace is content-irrelevant for every classification below,
+    # so it's dropped once, here, rather
+    # than in each branch. Fenced-code detection above is deliberately NOT
+    # given this treatment: an indented fence is a different, unimplemented
+    # CommonMark construct (4-space indented code blocks), not a stray-
+    # whitespace variant of the backtick fence this script already detects.
+    line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//')
+
     case "$line" in
-      ''|'#'*|'|'*|'---'*|'<!--'*|'- '*|'* '*|'> '*) continue ;;
+      '|'*)
+        TABLE_ROWS_SEEN=$((TABLE_ROWS_SEEN + 1))
+        case "$TABLE_ROWS_SEEN" in
+          1)
+            TABLE_HELD_LINE="$line"
+            TABLE_HELD_LN=$LN
+            ;;
+          2)
+            if is_table_separator "$line"; then
+              TABLE_HELD_LINE=""
+            else
+              flush_held_table_row
+              scan_table_row "$line"
+            fi
+            ;;
+          *)
+            scan_table_row "$line"
+            ;;
+        esac
+        continue
+        ;;
+    esac
+    # Left the table, if one was open: flush any row still held (it was never
+    # followed by a separator, so it was data all along, not a header).
+    flush_held_table_row
+    TABLE_ROWS_SEEN=0
+
+    case "$line" in
+      ''|'#'*|'---'*|'<!--'*) continue ;;
+      '- '*) scan_text "${line#- }"; continue ;;
+      '* '*) scan_text "${line#\* }"; continue ;;
+      '> '*)
+        # A bullet nested inside a blockquote (`> - claim text`) must have
+        # BOTH markers stripped, not just the blockquote's — piping the
+        # stripped body straight into scan_text left the `- `/`* ` prefix
+        # in place, defeating the registration match the same way an
+        # un-stripped top-level bullet marker does. New in this PR: on
+        # main, blockquotes were skipped entirely, so this specific false
+        # positive could not occur before.
+        BQ_BODY="${line#> }"
+        case "$BQ_BODY" in
+          '- '*) scan_text "${BQ_BODY#- }" ;;
+          '* '*) scan_text "${BQ_BODY#\* }" ;;
+          *) scan_text "$BQ_BODY" ;;
+        esac
+        continue
+        ;;
     esac
 
-    # One sentence per check. Declarative only: a heading or a fragment is not
-    # a claim, and flagging them would drown the real findings.
-    #
-    # Code spans come out BEFORE the split. A bare `tr '.' '\n'` cuts inside
-    # `SKILL.md`, `plugin.json`, and `3.2.2`, producing fragments like
-    # "md` is not a skill" — reported as unregistered claims that no drafter
-    # could resolve, because they are not sentences.
-    SPLITTABLE=$(printf '%s' "$line" | sed 's/`[^`]*`/ /g')
-    printf '%s\n' "$SPLITTABLE" | tr '.' '\n' | while IFS= read -r sentence; do
-      norm=$(printf '%s' "$sentence" | normalize)
-      [ -z "$norm" ] && continue
-      words=$(printf '%s' "$norm" | wc -w | tr -d ' ')
-      [ "$words" -lt 4 ] && continue
-
-      if [ "$REGISTER_PRESENT" -eq 1 ] && [ -s "$APPROVED_FILE" ]; then
-        if grep -qF "$norm" "$APPROVED_FILE" 2>/dev/null; then
-          continue
-        fi
-      fi
-      # Redact the ORIGINAL sentence, not the normalized one. `normalize`
-      # lowercases, and two of the credential patterns are case-sensitive by
-      # construction — `AKIA[0-9A-Z]{16}` and the PEM header cannot match text
-      # that has already been folded to lower case. Redacting after normalizing
-      # therefore printed AWS keys and private-key headers into the findings
-      # output verbatim-but-lowercased: still recognisable, still reconstructable,
-      # and destined for a CI log. This is the exact failure the redactor exists
-      # to prevent, so the excerpt is built from the raw sentence.
-      printf 'unregistered\t%s\t%s\t%s\n' "$f" "$LN" \
-        "$(printf '%s' "$sentence" | redact | normalize | cut -c1-80)" >> "$HITS_FILE"
-    done
+    scan_text "$line"
   done < "$f"
+  # A file can end mid-table (its last line is still-held row 1, never
+  # confirmed a header because there was no row 2 to check).
+  flush_held_table_row
 done
 
 UNREGISTERED=$(grep -c '^unregistered' "$HITS_FILE" 2>/dev/null || true)
@@ -281,8 +530,13 @@ UNREGISTERED=$(grep -c '^unregistered' "$HITS_FILE" 2>/dev/null || true)
 
 # --- Report ------------------------------------------------------------------
 if [ "$WANT_JSON" -eq 1 ]; then
-  printf '{"leaks":%s,"prohibited":%s,"unregistered":%s,"register_present":%s,"hits":[' \
-    "$LEAKS" "$PROHIBITED" "$UNREGISTERED" "$REGISTER_PRESENT"
+  CLASSES_JSON=$(printf '%s' "$LINE_CLASSES_EXAMINED" | awk -F',' '{
+    out = "["
+    for (i = 1; i <= NF; i++) { if (i > 1) out = out ","; out = out "\"" $i "\"" }
+    print out "]"
+  }')
+  printf '{"leaks":%s,"prohibited":%s,"unregistered":%s,"register_present":%s,"line_classes_examined":%s,"hits":[' \
+    "$LEAKS" "$PROHIBITED" "$UNREGISTERED" "$REGISTER_PRESENT" "$CLASSES_JSON"
   first=1
   while IFS=$'\t' read -r sev file ln detail; do
     [ $first -eq 0 ] && printf ','
@@ -296,6 +550,7 @@ elif [ "$QUIET" -eq 0 ]; then
   echo "CLAIM_SCAN_PROHIBITED_VOCABULARY=$PROHIBITED"
   echo "CLAIM_SCAN_UNREGISTERED_SENTENCES=$UNREGISTERED"
   echo "CLAIM_SCAN_REGISTER_PRESENT=$REGISTER_PRESENT"
+  echo "CLAIM_SCAN_LINE_CLASSES_EXAMINED=$LINE_CLASSES_EXAMINED"
   if [ -s "$HITS_FILE" ]; then
     echo ""
     echo "Findings (matched values are never printed):"
