@@ -37,6 +37,12 @@ artifacts:
   goal_id: issue-180
   result: achieved
   note: evidence_refreshed_post_review_fixes
+- type: review-cycle
+  captured_at: '2026-09-15T08:57:11Z'
+  cycle: 1
+  path: B
+  findings_count: 12
+  pr: 208
 ---
 # Issue #180 — G18 and the verbatim-collection rule are in direct conflict
 
