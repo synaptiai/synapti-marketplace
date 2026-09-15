@@ -49,6 +49,11 @@ artifacts:
   captured_at: '2026-09-15T15:47:05Z'
   reason: ac1_text_scoped_to_match_already_authorized_connection_string_deferral
   by: goal-evaluator-judge-feedback
+- type: goal-evaluation
+  captured_at: '2026-09-15T16:02:10Z'
+  goal_id: issue-198
+  result: achieved
+  evidence_bundle: .flow/runs/2026-09-15T110500Z-issue-198
 ---
 # Issue #198 — claim-scan's redact() leaves fragments past an interrupting character
 
