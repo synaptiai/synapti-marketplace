@@ -25,7 +25,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - The registration check's approved-wording match (`grep -qF`, normalized literal substring) can silently approve an unscoped document sentence that happens to be a literal substring of a longer, differently-scoped approved wording. Pre-existing since 2026-07-26, unrelated to the fixes above, not worsened in kind by them — tracked in issue #200.
 - `dossier-scaffold.sh`'s template-directory resolution falls back to a bare CWD-relative path when neither `CLAUDE_PLUGIN_ROOT` nor a `$SCRIPT_DIR`-relative candidate resolves — if the CWD (typically the repository being documented) happens to contain a matching `plugins/dossier/templates/package/` tree, content is silently sourced from there instead of the real plugin install. Pre-existing, unrelated to the fixes above, not worsened in kind by them — tracked in issue #205.
-- The same hardcoded-`--help`-range bug fixed above in `dossier-prose-lint.sh` and `dossier-scaffold.sh` is present in 17 other `plugins/dossier/bin/*.sh` scripts. Pre-existing, unrelated to the fixes above, not worsened in kind by them — tracked in issue #206.
+- The same hardcoded-`--help`-range bug fixed above in `dossier-prose-lint.sh` and `dossier-scaffold.sh` is present in 16 other `plugins/dossier/bin/*.sh` scripts. Pre-existing, unrelated to the fixes above, not worsened in kind by them — tracked in issue #206.
 
 ## [1.2.0] - 2026-09-10
 

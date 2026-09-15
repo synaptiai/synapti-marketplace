@@ -91,7 +91,7 @@ specification:
   - Not adding abuse-detection tooling for hand-inserted fake markers -- mitigated
     structurally by scoping marker-honoring to the verification report only.
   - Not changing dossier-claim-scan.sh or any other linter to honor the same markers.
-  - Not touching the --help hardcoded-range truncation bug present in 17 other plugins/dossier/bin/*.sh
+  - Not touching the --help hardcoded-range truncation bug present in 16 other plugins/dossier/bin/*.sh
     scripts -- only dossier-prose-lint.sh's own --help is fixed here; the rest are
     filed as a separate follow-up issue.
   failure_modes:
