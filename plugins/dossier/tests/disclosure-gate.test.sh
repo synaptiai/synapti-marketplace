@@ -749,8 +749,28 @@ T="$W/frag-conn"; mkpkg "$T"
 pub "$T" "The staging URI is postgres://admin:Sup3rSecretPass@db.internal:5432/prod and the broken copy reads postgres://admin:Sup3rSecr etPass@db.internal:5432/prod."
 OUT=$(scanout "$T")
 assert_not_contains "Sup3rSecretPass" "$OUT" "connection-string: the matched password never reaches the output"
+assert_not_contains "sup3rsecretpass" "$OUT" "nor its lowercased form"
 assert_not_contains "Sup3rSecr" "$OUT" "connection-string: the non-matching corrupted password never reaches the output"
+assert_not_contains "sup3rsecr" "$OUT" "nor its lowercased form"
 assert_contains "connection-string" "$OUT" "the class is still named"
+
+# --- a credential-shaped match straddling the '.'-based sentence split (#198) --
+# scan_text() splits on every literal '.' before redact() ever runs. A
+# credential whose own matched span contains a '.' -- a JWT's two internal
+# periods, sitting inside bearer-token's own [A-Za-z0-9._-] charset -- would
+# otherwise land on both sides of that split: the "Bearer " prefix (and
+# therefore a match) survives on the first fragment, but the payload and
+# signature segments lose that prefix and pass through as plain fragments on
+# the next two. This is the general form of the frag-conn gap above (any
+# class whose charset or adjacent context permits '.'), not a
+# connection-string-specific one.
+T="$W/frag-jwt"; mkpkg "$T"
+pub "$T" "Send requests with Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c as the auth header for staging traffic."
+OUT=$(scanout "$T")
+assert_not_contains "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" "$OUT" "jwt: the header segment never reaches the output"
+assert_not_contains "eyJzdWIiOiIxMjM0NTY3ODkwIn0" "$OUT" "jwt: the payload segment never reaches the output"
+assert_not_contains "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c" "$OUT" "jwt: the signature segment never reaches the output"
+assert_contains "bearer-token" "$OUT" "the class is still named"
 
 # --- two different classes in one sentence: neither leaks ---------------------
 T="$W/frag-multi"; mkpkg "$T"
@@ -758,8 +778,7 @@ pub "$T" "The service uses AKIAIOSFODNN7EXAMPLE for AWS and xoxb-123456789012abc
 OUT=$(scanout "$T")
 assert_not_contains "AKIAIOSFODNN7EXAMPLE" "$OUT" "multi-class: the AWS key never reaches the output"
 assert_not_contains "123456789012abcdefghij" "$OUT" "multi-class: the Slack token never reaches the output"
-printf '%s' "$OUT" | grep -qE "aws-access-key|slack-token"
-assert_equal "0" "$?" "multi-class: at least one class tag is still named"
+assert_contains "aws-access-key" "$OUT" "multi-class: aws-access-key wins, first in CRED_PATTERNS' priority order"
 
 # --- a clean sentence is untouched ---------------------------------------------
 T="$W/frag-clean"; mkpkg "$T"

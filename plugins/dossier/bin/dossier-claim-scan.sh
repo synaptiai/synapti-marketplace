@@ -211,8 +211,59 @@ fi
 # contain both an unregistered claim AND a credential. Without this, the tool
 # that exists to stop leaks would copy the leak into its own output — which is
 # then pasted into a CI log, an issue, or a review comment.
-# Each of the 8 patterns below stops matching at the first character outside
-# its own class (e.g. a `|`, a comma, a reflow-introduced space). Substituting
+#
+# One array is the source of truth for both layers of this defense (#198):
+# redact()'s per-candidate-sentence check below, and scan_text()'s whole-line
+# pre-check (before the '.'-based sentence split — see scan_text for why that
+# split needed its own check, not just this one). Two hand-maintained copies
+# of this pattern list previously drifting apart was this file's own risk
+# map's third row; one array, iterated by both call sites, removes the drift
+# instead of documenting it.
+CRED_CLASSES=(
+  anthropic-key
+  github-token
+  aws-access-key
+  slack-token
+  bearer-token
+  connection-string
+  secret-assignment
+  private-key-block
+)
+CRED_PATTERNS=(
+  'sk-ant-[A-Za-z0-9_-]{8,}'
+  '(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{16,}'
+  'AKIA[0-9A-Z]{16}'
+  'xox[baprs]-[A-Za-z0-9-]{10,}'
+  '(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}'
+  '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[^[:space:]@]+@'
+  '(api[_-]?key|secret|password|passwd|token|credential)([[:space:]]*[:=][[:space:]]*)["'"'"']?[A-Za-z0-9/_+=-]{12,}'
+  '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+)
+# Built once from CRED_PATTERNS, not retyped: a single combined-alternation
+# grep against this union is the fast path both call sites run first. The
+# common case — no credential-shaped content at all — costs one process
+# fork, the same cost class as a single `sed` invocation. The per-class loop
+# below, needed only to name which class matched, runs solely on the rare
+# path where the union already found something.
+CRED_UNION_PATTERN=$(IFS='|'; printf '%s' "${CRED_PATTERNS[*]}")
+
+# Prints (stdout) the class name of the first CRED_PATTERNS entry matching
+# $1, in priority order; exits 1 if none match. Only reachable when
+# CRED_UNION_PATTERN — built from this same array — matched but no individual
+# entry does, which the shared array makes structurally impossible today.
+cred_match_class() {
+  local input="$1" i
+  for i in "${!CRED_PATTERNS[@]}"; do
+    if printf '%s' "$input" | grep -qE "${CRED_PATTERNS[$i]}"; then
+      printf '%s' "${CRED_CLASSES[$i]}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Each of the 8 patterns stops matching at the first character outside its
+# own class (e.g. a `|`, a comma, a reflow-introduced space). Substituting
 # only the matched span -- the old behavior -- left everything past that
 # interrupting character untouched: a real fragment of the original secret,
 # printed right next to the [REDACTED:...] tag it was supposed to replace.
@@ -220,56 +271,29 @@ fi
 # sentence (e.g. a truncated AWS key alongside a valid one) had the same
 # problem, since the substitution only ever touched the span it matched.
 #
-# redact() now decides per whole candidate sentence, not per matched span: if
-# ANY of the 8 patterns matches anywhere in the input, the ENTIRE input is
-# discarded and replaced by exactly one [REDACTED:<class>] tag (the first
-# class to match, in the priority order below); otherwise the input passes
-# through unchanged. No fragment of the original value -- on either side of
-# an interrupting character, or from an unrelated second occurrence -- can
-# survive, because nothing of the original sentence survives a match.
+# redact() decides per whole candidate sentence, not per matched span: if ANY
+# pattern matches anywhere in the input, the ENTIRE input is discarded and
+# replaced by exactly one [REDACTED:<class>] tag (the first class to match,
+# in CRED_PATTERNS' priority order); otherwise the input passes through
+# unchanged. No fragment of the original value -- on either side of an
+# interrupting character, or from an unrelated second occurrence -- can
+# survive a match, because nothing of the original sentence does.
 #
-# Performance: a single combined-alternation grep (the union of all 8
-# patterns) runs first. The common case -- no credential-shaped content at
-# all -- costs one process fork, the same cost class as the single `sed`
-# invocation this replaced. The 8 individual per-class checks, needed only to
-# name which class matched, run solely on the rare path where that combined
-# check already found something.
+# This guarantee holds only within the candidate sentence redact() is given.
+# It does not by itself protect a credential whose own matched span crosses
+# the '.'-based split that produces that candidate sentence (a JWT's two
+# internal periods, a connection string's dotted hostname) — that gap is
+# closed one layer up, by scan_text()'s pre-split pre-check, before this
+# function ever runs.
 redact() {
-  local input
+  local input class
   input=$(cat)
-  if ! printf '%s' "$input" | grep -qE \
-    'sk-ant-[A-Za-z0-9_-]{8,}|(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{16,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}|(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[^[:space:]@]+@|(api[_-]?key|secret|password|passwd|token|credential)([[:space:]]*[:=][[:space:]]*)["'"'"']?[A-Za-z0-9/_+=-]{12,}|-----BEGIN [A-Z ]*PRIVATE KEY-----'; then
+  if ! printf '%s' "$input" | grep -qE "$CRED_UNION_PATTERN"; then
     printf '%s' "$input"
     return
   fi
-  if printf '%s' "$input" | grep -qE 'sk-ant-[A-Za-z0-9_-]{8,}'; then
-    printf '[REDACTED:anthropic-key]'; return
-  fi
-  if printf '%s' "$input" | grep -qE '(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{16,}'; then
-    printf '[REDACTED:github-token]'; return
-  fi
-  if printf '%s' "$input" | grep -qE 'AKIA[0-9A-Z]{16}'; then
-    printf '[REDACTED:aws-access-key]'; return
-  fi
-  if printf '%s' "$input" | grep -qE 'xox[baprs]-[A-Za-z0-9-]{10,}'; then
-    printf '[REDACTED:slack-token]'; return
-  fi
-  if printf '%s' "$input" | grep -qE '(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}'; then
-    printf '[REDACTED:bearer-token]'; return
-  fi
-  if printf '%s' "$input" | grep -qE '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[^[:space:]@]+@'; then
-    printf '[REDACTED:connection-string]'; return
-  fi
-  if printf '%s' "$input" | grep -qE '(api[_-]?key|secret|password|passwd|token|credential)([[:space:]]*[:=][[:space:]]*)["'"'"']?[A-Za-z0-9/_+=-]{12,}'; then
-    printf '[REDACTED:secret-assignment]'; return
-  fi
-  if printf '%s' "$input" | grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'; then
-    printf '[REDACTED:private-key-block]'; return
-  fi
-  # Unreachable while the combined check above is kept as the exact union of
-  # these eight patterns. If the two ever drift apart, fail toward redaction
-  # rather than silently falling through to a raw-input pass-through.
-  printf '[REDACTED:unknown]'
+  class=$(cred_match_class "$input") || class=unknown
+  printf '[REDACTED:%s]' "$class"
 }
 
 # Line classes this scan actually examines for registration (issue #176):
@@ -293,12 +317,30 @@ LINE_CLASSES_EXAMINED="paragraph,bullet,blockquote,table-data-cell"
 # prose, just with different structural markers to strip before this point.
 scan_text() {
   local text="$1"
-  local SPLITTABLE
+  local SPLITTABLE class
   # Code spans come out BEFORE the split. A bare `tr '.' '\n'` cuts inside
   # `SKILL.md`, `plugin.json`, and `3.2.2`, producing fragments like
   # "md` is not a skill" — reported as unregistered claims that no drafter
   # could resolve, because they are not sentences.
   SPLITTABLE=$(printf '%s' "$text" | sed 's/`[^`]*`/ /g')
+
+  # A credential whose own matched span contains a literal '.' — a JWT's two
+  # internal periods (bearer-token's charset explicitly allows '.'), a
+  # connection string's dotted hostname between scheme and '@' — has part of
+  # itself on each side of the '.'-based split below. redact() only ever
+  # sees one post-split fragment at a time: it can discard the fragment it's
+  # given, but it cannot reassemble the whole line to see a credential the
+  # split itself broke in two (#198). Checking the whole line here, before
+  # the split, closes that gap: on a match, the entire line is redacted as
+  # one unit and the per-sentence loop below — with its own register and
+  # word-count rules, which exist to judge claim-drafting quality, not
+  # credential safety — never runs on it.
+  if printf '%s' "$SPLITTABLE" | grep -qE "$CRED_UNION_PATTERN"; then
+    class=$(cred_match_class "$SPLITTABLE") || class=unknown
+    printf 'unregistered\t%s\t%s\t%s\n' "$f" "$LN" "[REDACTED:$class]" >> "$HITS_FILE"
+    return
+  fi
+
   printf '%s\n' "$SPLITTABLE" | tr '.' '\n' | while IFS= read -r sentence; do
     norm=$(printf '%s' "$sentence" | normalize)
     [ -z "$norm" ] && continue
