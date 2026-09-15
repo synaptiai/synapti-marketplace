@@ -219,9 +219,14 @@ _fc_phase4_step() {
   ' "${2:-$REVIEW_MD}"
 }
 
-# _fc_block <NAME> [file] — the lines between `# <NAME>_BEGIN` and `# <NAME>_END`.
+# _fc_block <NAME> [file] — the lines between `# <NAME>_BEGIN` and
+# `# <NAME>_END`; the markers may be indented, as they are inside list items.
 _fc_block() {
-  awk -v b="# $1_BEGIN" -v e="# $1_END" '$0 == b { f = 1; next } $0 == e { f = 0 } f' "${2:-$REVIEW_MD}"
+  awk -v b="# $1_BEGIN" -v e="# $1_END" '
+    { t = $0; sub(/^[ \t]+/, "", t) }
+    t == b { f = 1; next }
+    t == e { f = 0 }
+    f' "${2:-$REVIEW_MD}"
 }
 
 STEP6=$(_fc_phase4_step 6)
@@ -262,6 +267,14 @@ cat > "$FC_STUB/gh" <<'STUB'
 #!/usr/bin/env bash
 case "$1 $2" in
   "repo view") echo "o/r"; exit 0 ;;
+  "api user") printf '%s\n' "${STUB_USER:-}"; exit 0 ;;
+  "issue list") exit 0 ;;
+  "pr view")
+    case "$*" in
+      *author*) printf '%s\n' "${STUB_AUTHOR:-}"; exit 0 ;;
+      *number*) echo "55"; exit 0 ;;
+    esac
+    exit 1 ;;
   "pr review")
     printf '%s\n' "$@" > "$GH_LOG"
     while [ $# -gt 0 ]; do
@@ -413,4 +426,106 @@ if command -v zsh >/dev/null 2>&1; then
   unset FC_SHELL
 else
   _flow_assert_pass "SKIP: zsh not installed"
+fi
+
+# --- AC3: own-PR LOW findings end fixed, refuted or escalated -----------------
+
+_flow_test_begin "missing context: step 4 refuses to choose a review mode from empty identities"
+_fc_block "REVIEW_MODE_BLOCK" > "$FC_TMP/mode-block.sh"
+assert_match '[^[:space:]]' "$(cat "$FC_TMP/mode-block.sh")" "review-mode block extracted"
+_fc_mode() {
+  MODE_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" STUB_AUTHOR="$1" STUB_USER="$2" PR_NUM=7 \
+    bash "$FC_TMP/mode-block.sh" 2>"$FC_TMP/mode.err")
+  MODE_CODE=$?
+  MODE_ERR=$(cat "$FC_TMP/mode.err")
+}
+_fc_mode "" ""
+assert_exit 1 "$MODE_CODE" "author and user both empty → refused"
+assert_not_contains "REVIEW_MODE=self" "$MODE_OUT" "two empty strings are not treated as the same person"
+assert_contains "ERROR" "$MODE_ERR" "says why"
+_fc_mode "alice" ""
+assert_exit 1 "$MODE_CODE" "empty current user → refused"
+_fc_mode "" "alice"
+assert_exit 1 "$MODE_CODE" "empty PR author → refused"
+_fc_mode "alice" "alice"
+assert_exit 0 "$MODE_CODE" "same person"
+assert_contains "REVIEW_MODE=self" "$MODE_OUT" "own PR → self"
+_fc_mode "alice" "bob"
+assert_exit 0 "$MODE_CODE" "different people"
+assert_contains "REVIEW_MODE=external" "$MODE_OUT" "someone else's PR → external"
+
+STEP5=$(_fc_phase4_step 5)
+_flow_test_begin "AC3: step 5 ends every LOW finding fixed (HIGH), refuted or escalated"
+assert_match '[^[:space:]]' "$STEP5" "step 5 extracted"
+assert_contains "fails on the current code" "$STEP5" "confirmation is a failing test or command"
+assert_contains "re-record the finding HIGH" "$STEP5" "a confirmed finding is fixed and recorded HIGH"
+assert_contains "reason=self-review-refuted" "$STEP5" "a refuted finding is recorded as dropped-finding"
+assert_contains "--type dropped-finding" "$STEP5" "the record is a dropped-finding artifact"
+assert_contains "re-record it MEDIUM" "$STEP5" "an unsettled finding is escalated at MEDIUM"
+assert_contains "ESCALATED" "$STEP5" "the escalated id goes to the resolution marker"
+assert_contains "--mode self" "$STEP5" "the routing in step 7 blocks unresolved LOW rows"
+assert_not_contains "#### Needs investigation" "$STEP5" "own-PR LOW findings are not posted as open investigations"
+
+_flow_test_begin "risk: exclusion scope — a refuted own-PR finding is journaled as dropped-finding"
+_fc_block "DROPPED_FINDING_BLOCK" > "$FC_TMP/dropped-block.sh"
+assert_match '[^[:space:]]' "$(cat "$FC_TMP/dropped-block.sh")" "dropped-finding block extracted"
+mkdir -p "$FC_TMP/journal-repo"
+(cd "$FC_TMP/journal-repo" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F1 FACET=code-reviewer \
+  bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/dropped.err"); DROP_CODE=$?
+assert_exit 0 "$DROP_CODE" "block ran"
+_fc_last_artifact() {
+  python3 - "$1" <<'PY'
+import sys, yaml
+c = open(sys.argv[1]).read()
+end = c.find("\n---\n", 4)
+art = yaml.safe_load(c[4:end])["artifacts"][-1]
+print(" ".join("{}={}".format(k, art[k]) for k in ("type", "reason", "finding_id", "facet", "cycle", "pr")))
+PY
+}
+if [ -f "$FC_TMP/journal-repo/.decisions/issue-42.md" ]; then
+  assert_equal "type=dropped-finding reason=self-review-refuted finding_id=F1 facet=code-reviewer cycle=1 pr=7" \
+    "$(_fc_last_artifact "$FC_TMP/journal-repo/.decisions/issue-42.md")" "artifact read back from the journal manifest"
+else
+  _flow_assert_fail "no journal written: $(cat "$FC_TMP/dropped.err")"
+fi
+(cd "$FC_TMP/journal-repo" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE=42 CYCLE_NUMBER=1 PR_NUM=7 FACET=code-reviewer \
+  bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); DROP_CODE=$?
+assert_exit 1 "$DROP_CODE" "missing FINDING_ID refused"
+
+_flow_test_begin "AC3: the journal schema documents self-review-refuted"
+JOURNAL_SCHEMA=$(cat "$PLUGIN_DIR/references/decision-journal-schema.md")
+DROPPED_ROW=$(grep '^| `dropped-finding`' <<<"$JOURNAL_SCHEMA")
+assert_contains "Phase 4 step 5" "$DROPPED_ROW" "row names the self-review producer"
+assert_contains "pr.md" "$DROPPED_ROW" "row names the /flow:pr producer"
+assert_contains '`self-review-refuted`' "$JOURNAL_SCHEMA" "reason value documented"
+
+_flow_test_begin "/flow:pr applies the same LOW protocol and journals refuted findings"
+PR_MD="$PLUGIN_DIR/commands/pr.md"
+PR_PHASE3=$(awk '/^## Phase 3/ { f = 1 } /^## Phase 4/ { f = 0 } f' "$PR_MD")
+assert_equal "3" "$(grep -c 'confidence (HIGH, MEDIUM or LOW) per finding' <<<"$PR_PHASE3")" "code-reviewer, security-reviewer and error-handler-inspector prompts ask for confidence"
+PR_STEP6=$(awk '/^6\. \*\*Display findings\*\*/ { f = 1; print; next } f && /^7\. \*\*/ { exit } f' "$PR_MD")
+assert_contains "fails on the current code" "$PR_STEP6" "confirmation rule"
+assert_contains "REFUTED" "$PR_STEP6" "refuted findings are carried to the manifest step"
+assert_contains "### Needs investigation" "$PR_STEP6" "outcomes are listed in the PR body"
+_fc_block "PR_MANIFEST_BLOCK" "$PR_MD" > "$FC_TMP/pr-manifest.sh"
+assert_match '[^[:space:]]' "$(cat "$FC_TMP/pr-manifest.sh")" "manifest block extracted"
+mkdir -p "$FC_TMP/pr-repo"
+(cd "$FC_TMP/pr-repo" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" BRANCH=fix/issue-42-x TOTAL_FINDINGS=3 \
+  REFUTED="F3:code-reviewer,ERR-2:error-handler-inspector" bash "$FC_TMP/pr-manifest.sh" >/dev/null 2>"$FC_TMP/pr.err"); PRM_CODE=$?
+assert_exit 0 "$PRM_CODE" "manifest block ran"
+if [ -f "$FC_TMP/pr-repo/.decisions/issue-42.md" ]; then
+  PR_ARTIFACTS=$(python3 - "$FC_TMP/pr-repo/.decisions/issue-42.md" <<'PY'
+import sys, yaml
+c = open(sys.argv[1]).read()
+end = c.find("\n---\n", 4)
+for a in yaml.safe_load(c[4:end])["artifacts"]:
+    print(" ".join("{}={}".format(k, a.get(k)) for k in ("type", "finding_id", "facet", "reason", "pr")))
+PY
+)
+  assert_contains "type=review-cycle finding_id=None facet=None reason=None pr=55" "$PR_ARTIFACTS" "review-cycle recorded"
+  assert_contains "type=dropped-finding finding_id=F3 facet=code-reviewer reason=self-review-refuted pr=55" "$PR_ARTIFACTS" "first refuted finding"
+  assert_contains "type=dropped-finding finding_id=ERR-2 facet=error-handler-inspector reason=self-review-refuted pr=55" "$PR_ARTIFACTS" "second refuted finding"
+  assert_equal "2" "$(grep -c 'type=dropped-finding' <<<"$PR_ARTIFACTS")" "exactly two drops"
+else
+  _flow_assert_fail "no journal written: $(cat "$FC_TMP/pr.err")"
 fi

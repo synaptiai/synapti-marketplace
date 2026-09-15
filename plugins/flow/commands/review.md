@@ -715,6 +715,7 @@ TaskUpdate each review task as agents complete.
 4. **Determine review mode** — compare PR author vs current user:
 
    ```bash
+   # REVIEW_MODE_BLOCK_BEGIN
    # $REPO does not survive from the preflight block: each fence is its own
    # shell. Resolved again here, because `gh --repo ""` falls back to gh's own
    # resolution without complaining — an unset REPO reads as pinned and behaves
@@ -723,11 +724,46 @@ TaskUpdate each review task as agents complete.
    [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
    PR_AUTHOR=$(gh pr view "$PR_NUM" --repo "$REPO" --json author --jq '.author.login')
    CURRENT_USER=$(gh api user --jq '.login')
+   # Two empty strings compare equal, which would take the self-review path and
+   # fix-forward onto someone else's branch. Refuse instead.
+   [ -n "$PR_AUTHOR" ] || { echo "ERROR: cannot resolve the pull request author; refusing to choose a review mode" >&2; exit 1; }
+   [ -n "$CURRENT_USER" ] || { echo "ERROR: cannot resolve the current GitHub user; refusing to choose a review mode" >&2; exit 1; }
+   if [ "$PR_AUTHOR" = "$CURRENT_USER" ]; then echo "REVIEW_MODE=self"; else echo "REVIEW_MODE=external"; fi
+   # REVIEW_MODE_BLOCK_END
    ```
 
 5. **Self-review (own PR — PR_AUTHOR == CURRENT_USER)**:
 
-   Fix-forward approach (bounded by `fixForwardMaxIterations`, default 10 — a safety net against true infinite loops, not a budget; see `skills/llm-operator-principles/SKILL.md`):
+   **LOW findings first.** On your own pull request a LOW-confidence finding is investigated before anything posts; it is never listed as an open investigation and never posted as LOW. For each one:
+   - Write a test (for a prose or configuration finding, a command) that fails on the current code if the finding is real.
+   - It fails → confirmed: fix it, keep the test, and re-record the finding HIGH. From here it is a fix-forwarded finding like the rest.
+   - It passes → refuted: keep the test, cite its passing output as the evidence in the self-review body, remove the finding from the routing rows, and record it with the block below.
+   - No test or command can reproduce or refute it → escalate it with the six-field structure (`references/escalation-format.md`), re-record it MEDIUM, and list its ID in `ESCALATED` of the resolution marker. It is never left LOW and never recorded HIGH.
+
+   Step 7's routing block runs `bin/flow-finding-route.sh --mode self`, which stops and names every LOW finding still in the rows, so nothing posts until each has one of these outcomes.
+
+```bash
+# DROPPED_FINDING_BLOCK_BEGIN
+# Carried from earlier steps: ISSUE (the issue this PR addresses), CYCLE_NUMBER,
+# PR_NUM, FINDING_ID and FACET (the reviewer agent that raised the finding).
+for __name in ISSUE CYCLE_NUMBER PR_NUM FINDING_ID FACET; do
+  eval "__value=\${$__name:-}"
+  [ -n "$__value" ] || { echo "ERROR: $__name is not set; refusing to record a dropped finding" >&2; exit 1; }
+done
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
+  --issue "$ISSUE" \
+  --type dropped-finding \
+  --metadata cycle="$CYCLE_NUMBER" \
+  --metadata finding_id="$FINDING_ID" \
+  --metadata facet="$FACET" \
+  --metadata reason=self-review-refuted \
+  --metadata pr="$PR_NUM"
+# DROPPED_FINDING_BLOCK_END
+```
+
+   Run it once per refuted finding.
+
+   Fix-forward approach for every HIGH and MEDIUM finding, including the confirmed ones (bounded by `fixForwardMaxIterations`, default 10 — a safety net against true infinite loops, not a budget; see `skills/llm-operator-principles/SKILL.md`):
    - P1 findings → fix immediately
    - P2 findings → fix immediately
    - P3 findings → fix immediately (the proximity test is not a deferral mechanism — P3 in touched files gets the same disposition as P1/P2)

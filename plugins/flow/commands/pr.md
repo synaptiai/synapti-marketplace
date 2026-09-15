@@ -232,7 +232,8 @@ git diff "$DEFAULT_BRANCH"...HEAD
 Agent(code-reviewer):
   "Review the branch diff against $DEFAULT_BRANCH for code quality,
    logic correctness, edge cases, and security. Return P1/P2/P3 findings
-   with file:line citations."
+   with file:line citations and a confidence (HIGH, MEDIUM or LOW) per finding
+   per references/finding-schema.md."
 
 Agent(convention-checker):
   "Validate commit messages, branch naming, and code conventions
@@ -245,11 +246,13 @@ Agent(test-runner):
 Agent(security-reviewer):
   "Review the branch diff against $DEFAULT_BRANCH for OWASP Top 10,
    secrets, auth/authz, input validation, dependency vulnerabilities.
-   Return P1/P2/P3 findings with file:line."
+   Return P1/P2/P3 findings with file:line and a confidence (HIGH, MEDIUM or LOW) per finding
+   per references/finding-schema.md."
 
 Agent(error-handler-inspector):
   "Inspect changed files for error handling gaps, silent failures,
-   unhandled exceptions. Return P1/P2/P3 findings."
+   unhandled exceptions. Return P1/P2/P3 findings with a
+   confidence (HIGH, MEDIUM or LOW) per finding per references/finding-schema.md."
 
 Skill(holdout-validation):
   Inputs:
@@ -303,6 +306,7 @@ After agents return, TaskUpdate each review task with findings.
    - Based on response → `TaskUpdate` visual tasks to SKIP_USER_APPROVED or MANUAL, or provide installation guidance and retry
    - The PR body should note whether visual verification was PASS, MANUAL, SKIP_USER_APPROVED, or SKIP_WARN
 6. **Display findings** (finding-first pattern; fix-forward bounded by `fixForwardMaxIterations`, default 10 — safety net, not a budget; see `skills/llm-operator-principles/SKILL.md`):
+   - LOW-confidence findings, at any priority → investigate each one first, as `commands/review.md` Phase 4 step 5 does on your own PR: a test (or, for prose, a command) that fails on the current code confirms it (fix it, keep the test, record it HIGH); one that passes refutes it (keep the test, and add `ID:agent` to `REFUTED` for step 13's journal emit); when neither can settle it, escalate with the six-field structure and record it MEDIUM. List every outcome under `### Needs investigation` in the PR body, separate from the P1/P2/P3 counts. Findings from holdout-validation, convention-checker and test-runner are MEDIUM.
    - P1 findings → must fix before PR
    - P2 findings → fix before PR (continue iterating until zero remain; finding triage is NEVER a valid escalation trigger)
    - P3 findings → fix in-PR by default. Cosmetic P3 in untouched files only: fix if bounded (<10 lines) or document inline in the PR body under `### Known cosmetic notes`. Do NOT add a "Known issues" section that defers fixable P2s.
@@ -374,6 +378,10 @@ After agents return, TaskUpdate each review task with findings.
 13. **Manifest emit** — record the review-cycle artifact for the parallel-review pass that ran during PR creation. Same emit shape as `commands/review.md` Phase 4 step 7 — the PR-creation flow runs an inline review and is morally a cycle:
 
     ```bash
+    # PR_MANIFEST_BLOCK_BEGIN
+    # Carried from earlier steps: BRANCH, TOTAL_FINDINGS, and REFUTED (the LOW
+    # findings refuted in step 6 as comma-separated ID:agent pairs, for example
+    # F3:code-reviewer; empty when none were refuted).
     PR_NUMBER=$(gh pr view --json number --jq '.number')
     ISSUE=$(gh issue list --state open --search "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
     if [ -z "$ISSUE" ]; then
@@ -387,7 +395,18 @@ After agents return, TaskUpdate each review task with findings.
         --metadata path=B \
         --metadata findings_count=$TOTAL_FINDINGS \
         --metadata pr=$PR_NUMBER
+      for PAIR in $(printf '%s' "${REFUTED:-}" | tr ',' ' '); do
+        "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
+          --issue "$ISSUE" \
+          --type dropped-finding \
+          --metadata cycle=1 \
+          --metadata finding_id="${PAIR%%:*}" \
+          --metadata facet="${PAIR#*:}" \
+          --metadata reason=self-review-refuted \
+          --metadata pr="$PR_NUMBER"
+      done
     fi
+    # PR_MANIFEST_BLOCK_END
     ```
 
     The emit is best-effort — if the issue cannot be inferred from the branch name, skip rather than fail. PR-creation flow uses Path B (single-session 5-agent dispatch); subsequent `/flow:review` invocations may re-emit with `path=A` if paired-reviewer mode is enabled.
