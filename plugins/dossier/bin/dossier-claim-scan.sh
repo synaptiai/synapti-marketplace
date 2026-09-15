@@ -429,7 +429,7 @@ scan_text() {
     fi
     # Redact the ORIGINAL sentence, not the normalized one. `normalize`
     # lowercases, and two of the credential patterns are case-sensitive by
-    # construction — `AKIA[0-9A-Z]{16}` and the PEM header cannot match text
+    # construction — the AKIA prefix and the PEM armour cannot match text
     # that has already been folded to lower case. Redacting after normalizing
     # therefore printed AWS keys and private-key headers into the findings
     # output verbatim-but-lowercased: still recognisable, still reconstructable,
