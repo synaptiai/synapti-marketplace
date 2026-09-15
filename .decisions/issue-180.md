@@ -189,3 +189,5 @@ Task boundaries: Task 1 bundles AC1+AC2+AC3 (one awk-program edit region, one te
 <!-- auto-log: 2026-09-15 10:24 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-180.md -->
 
 <!-- auto-log: 2026-09-15 10:26 commit "docs(dossier): correct the --help truncation follow-up's script count" -->
+
+<!-- auto-log: 2026-09-15 10:33 Write /tmp/pr-180-body.md -->
