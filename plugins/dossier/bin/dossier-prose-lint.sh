@@ -146,6 +146,11 @@ BEGIN {
   # block, and a BEGIN left unclosed at EOF, are reported via sentinels rather
   # than silently exempting the rest of the file (see END block below) — the
   # same asymmetry as the unclosed-frontmatter-fence guard for in_header.
+  # Column-0 assumption: the regexes below match only a marker that starts
+  # the line (no leading whitespace) — deliberately, since audit.md's Phase 5
+  # template always emits them at column 0. An indented marker (e.g. under a
+  # list item) is never recognized; it falls through as ordinary text, which
+  # fails safe (scanned normally, or an unclosed real BEGIN still errors).
   if (honor_verbatim) {
     if (in_verbatim) {
       if (line ~ /^<!-- DOSSIER_VERBATIM_BEGIN/) { nested_verbatim = 1; print "NESTED_VERBATIM\t1"; exit }
@@ -208,6 +213,14 @@ END {
   # was silently skipped as "still in the header" — the rest of the document
   # was never scanned. Report it rather than let that read as a clean file.
   if (in_header) print "UNCLOSED_HEADER\t1"
+  # An unbalanced code fence has the same "silently treats the rest of the
+  # file as skipped content" shape as an unclosed header, including a nested
+  # failure mode this PR introduces: a fence left open inside a verbatim
+  # block swallows the real END marker line (fenced content is skipped
+  # before the verbatim check ever sees it), so both sentinels can fire
+  # together. Reported before UNCLOSED_VERBATIM below so the more root-cause
+  # reason — the fence, not the marker — is what the caller sees.
+  if (in_fence) print "UNCLOSED_FENCE\t1"
   # nested_verbatim already reported (and exited) above; guarded here so a
   # nested-BEGIN file is never double-counted as also unclosed.
   if (in_verbatim && !nested_verbatim) print "UNCLOSED_VERBATIM\t1"
@@ -276,7 +289,12 @@ lint_file() { # <path>
   # wrapping its own prose in the same markers.
   honor_verbatim=0
   case "$f" in
-    */07-verification/documentation-verification-report.md) honor_verbatim=1 ;;
+    # Two alternatives, not one glob: a bare relative path exactly matching
+    # the suffix (no leading directory, e.g. --file invoked from the
+    # verification report's own parent directory) has no "/" for */... to
+    # match against.
+    */07-verification/documentation-verification-report.md | 07-verification/documentation-verification-report.md)
+      honor_verbatim=1 ;;
   esac
 
   awk_err=$(mktemp -t dossier-prose-lint-awkerr.XXXXXX 2>/dev/null) || awk_err=/dev/null
@@ -297,6 +315,14 @@ lint_file() { # <path>
     # was silently treated as "still in the header" and never reached the
     # rest of the checks — the document was not actually scanned past line 1.
     scan_error_hit "$f" "frontmatter fence opened but never closed"
+    return
+  fi
+
+  if printf '%s\n' "$awk_out" | grep -q $'^UNCLOSED_FENCE\t'; then
+    # Checked before NESTED_VERBATIM/UNCLOSED_VERBATIM: an unbalanced fence
+    # is the more fundamental cause when both fire (it can swallow the real
+    # END marker), so this is the reason a caller should see first.
+    scan_error_hit "$f" "code fence opened but never closed"
     return
   fi
 

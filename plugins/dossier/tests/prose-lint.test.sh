@@ -14,6 +14,11 @@ lint_json() { # <path>
   "$LINT" --file "$1" --json 2>/dev/null
 }
 count_of() { # <json> <field>
+  # Greedy and unanchored: on JSON naming the same field at both top level
+  # and inside a per-file files[] entry (e.g. verbatim_blocks), this returns
+  # the LAST occurrence, not the top-level one. Every fixture here scans
+  # exactly one file via lint_json's --file, so the two always coincide --
+  # this is not safe to reuse as-is for a multi-file --output-root fixture.
   printf '%s' "$1" | LC_ALL=C sed -n "s/.*\"$2\":\([0-9]*\).*/\1/p" | head -1
 }
 
@@ -328,6 +333,62 @@ assert_equal "0" "$(count_of "$J" verbatim_blocks)" "the fence-embedded marker t
 
 "$LINT" --help 2>&1 | grep -q "DOSSIER_VERBATIM"
 assert_equal "0" "$?" "--help documents the verbatim-marker mechanism (regression guard: the self-terminating sed range must reach the new header text)"
+
+# --- an unclosed code fence must never read as clean -------------------------
+# Found in review: unlike in_header, in_fence had no "unclosed" sentinel, so
+# an unbalanced ``` silently skipped every remaining line as "still fenced"
+# and the dictionary-hit prose after it was never scanned -- indistinguishable
+# from a file that was actually clean.
+UNCLOSED_FENCE="$W/unclosed-fence.md"
+printf '# Test\n\nA short clean sentence here.\n\n```text\nThis seamless robust platform utilizes cutting-edge technology.\n' > "$UNCLOSED_FENCE"
+"$LINT" --file "$UNCLOSED_FENCE" >/dev/null 2>&1
+assert_equal "1" "$?" "an unclosed code fence exits 1, never a false clean pass"
+J=$(lint_json "$UNCLOSED_FENCE")
+assert_equal "1" "$(count_of "$J" scan_errors)" "the unclosed fence is counted as a scan error, not a silent 0"
+
+# --- an unclosed fence inside a verbatim block reports the root cause --------
+# A fence left open inside a verbatim block swallows the real END marker
+# (fenced content is skipped before the verbatim check ever sees it), so
+# without the fence sentinel this read as "verbatim block opened but never
+# closed" -- misleading, since the marker text is actually present.
+FENCE_IN_VERBATIM_DIR="$W/pkg-i/07-verification"
+mkdir -p "$FENCE_IN_VERBATIM_DIR"
+FENCE_IN_VERBATIM="$FENCE_IN_VERBATIM_DIR/documentation-verification-report.md"
+cat > "$FENCE_IN_VERBATIM" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+Some verbatim body text.
+
+```text
+fenced content that never closes
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+"$LINT" --file "$FENCE_IN_VERBATIM" >/dev/null 2>&1
+assert_equal "1" "$?" "an unclosed fence that swallows the real END marker still exits 1"
+J=$(lint_json "$FENCE_IN_VERBATIM")
+assert_equal "1" "$(count_of "$J" scan_errors)" "exactly one scan error is reported, not two"
+printf '%s' "$J" | grep -q "code fence opened but never closed"
+assert_equal "0" "$?" "the reported reason names the fence, the actual root cause"
+printf '%s' "$J" | grep -q "verbatim block opened but never closed"
+assert_equal "1" "$?" "the misleading verbatim-block reason is not what gets reported when a fence is also unclosed"
+
+# --- file-scoping: a bare relative path with no leading directory ------------
+# case "$f" in */07-verification/...) requires a literal "/" before the
+# suffix; a path that IS exactly "07-verification/documentation-verification-
+# report.md" (e.g. --file invoked from the file's own parent directory) has
+# no "/" for */... to match against.
+BARE_DIR="$W/pkg-h"
+mkdir -p "$BARE_DIR/07-verification"
+cat > "$BARE_DIR/07-verification/documentation-verification-report.md" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+This seamless platform helps you.
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+BARE_JSON=$(cd "$BARE_DIR" && "$LINT" --file "07-verification/documentation-verification-report.md" --json 2>/dev/null)
+assert_equal "1" "$(count_of "$BARE_JSON" verbatim_blocks)" "a bare relative path exactly matching the suffix, with no leading directory, still honors the marker"
 
 rm -rf "$W" 2>/dev/null
 
