@@ -200,3 +200,217 @@ assert_contains "Two emitters" "$PARSER_CONTENT" "resolution-marker emitter anch
 assert_contains "issue-comments stream" "$PARSER_CONTENT" "resolution-marker placement anchor kept"
 assert_not_contains "omitted (Path B 5-field marker)" "$(cat "$REPO_ROOT/tests/finding-schema/row-schema.json")" "row schema describes disposition on both paths"
 assert_not_contains "6-field finding data model" "$(cat "$PLUGIN_DIR/README.md")" "README counts the seven agent fields"
+
+# --- AC2 / AC7: review.md routes and posts through flow-finding-route.sh -----
+
+REVIEW_MD="$PLUGIN_DIR/commands/review.md"
+
+# _fc_phase4_step <n> — the text of Phase 4 step <n>, from its `<n>. **`
+# line to the next step's line (or the next `## ` heading). Headings inside
+# fenced code blocks are example text, not document structure.
+_fc_phase4_step() {
+  awk -v n="$1" '
+    /^[[:space:]]*```/ { fence = !fence }
+    /^## Phase 4: VERIFY/ { p4 = 1; next }
+    p4 && !fence && /^## / { exit }
+    p4 && $0 ~ ("^" n "\\. \\*\\*") { f = 1; print; next }
+    p4 && f && $0 ~ ("^" (n + 1) "\\. \\*\\*") { exit }
+    f { print }
+  ' "${2:-$REVIEW_MD}"
+}
+
+# _fc_block <NAME> [file] — the lines between `# <NAME>_BEGIN` and `# <NAME>_END`.
+_fc_block() {
+  awk -v b="# $1_BEGIN" -v e="# $1_END" '$0 == b { f = 1; next } $0 == e { f = 0 } f' "${2:-$REVIEW_MD}"
+}
+
+STEP6=$(_fc_phase4_step 6)
+STEP7=$(_fc_phase4_step 7)
+
+_flow_test_begin "step extraction reaches its input (and fails when a step heading is removed)"
+assert_match '[^[:space:]]' "$STEP6" "step 6 extracted"
+assert_match '[^[:space:]]' "$STEP7" "step 7 extracted"
+FC_TMP=$(mktemp -d -t finding-confidence.XXXXXX)
+trap 'rm -rf "$FC_TMP"' EXIT
+grep -v '^6\. \*\*' "$REVIEW_MD" > "$FC_TMP/review-no-step6.md"
+assert_equal "" "$(_fc_phase4_step 6 "$FC_TMP/review-no-step6.md")" "no step 6 heading → nothing extracted"
+
+_flow_test_begin "AC2: step 6 routes LOW findings on an external PR to Needs investigation"
+assert_contains 'On an external review, LOW-confidence findings at any priority go to a `#### Needs investigation` section and are excluded from the review decision and from the `FLOW_REVIEW_CYCLE` marker; their priority is shown there and never changed.' "$STEP6" "the routing rule is stated"
+assert_contains "flow-finding-route.sh" "$STEP6" "names the script"
+assert_contains "--mode external" "$STEP6" "names the external mode"
+
+_flow_test_begin "AC2: step 7 states the marker exclusion and posts through the script"
+assert_contains 'No LOW-confidence row is written to the `FLOW_REVIEW_CYCLE` marker.' "$STEP7" "exclusion stated in the marker step"
+assert_contains "# FINDING_ROUTE_BLOCK_BEGIN" "$STEP7" "routing block lives in step 7"
+assert_contains "# FINDING_POST_BLOCK_BEGIN" "$STEP7" "posting block lives in step 7"
+assert_not_contains 'legacy **5-field** marker' "$STEP7" "Path B no longer emits 5-field"
+assert_not_contains "5-field form is preserved ONLY" "$(cat "$REVIEW_MD")" "A.6 no longer reserves 5-field for Path B"
+assert_contains "names the orchestration that ran" "$STEP7" "review-cycle path metadata is the orchestration"
+assert_not_contains '(7-field marker), `B` when Path B (5-field marker)' "$STEP7" "path is no longer inferred from marker width"
+
+_flow_test_begin "AC4: Path B prompts ask the schema agents for confidence"
+PATH_B=$(awk '/^### Path B: Single Session/ { f = 1 } /^## Phase 4/ { f = 0 } f' "$REVIEW_MD")
+assert_equal "3" "$(grep -c 'confidence (HIGH, MEDIUM or LOW) per finding' <<<"$PATH_B")" "code-reviewer, error-handler-inspector and security-reviewer prompts"
+assert_contains "Needs investigation: {N}" "$(_fc_phase4_step 3)" "step 3 display header carries the separate LOW count"
+
+# --- executable blocks ---------------------------------------------------------
+
+FC_STUB="$FC_TMP/bin"
+mkdir -p "$FC_STUB"
+cat > "$FC_STUB/gh" <<'STUB'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "repo view") echo "o/r"; exit 0 ;;
+  "pr review")
+    printf '%s\n' "$@" > "$GH_LOG"
+    while [ $# -gt 0 ]; do
+      if [ "$1" = "--body-file" ]; then cp "$2" "$GH_BODY"; fi
+      shift
+    done
+    exit 0 ;;
+esac
+exit 1
+STUB
+chmod +x "$FC_STUB/gh"
+
+_fc_block "FINDING_ROUTE_BLOCK" > "$FC_TMP/route-block.sh"
+_fc_block "FINDING_POST_BLOCK" > "$FC_TMP/post-block.sh"
+
+# _fc_route <mode> <rows> — runs the routing block with its heredoc
+# placeholder replaced by <rows>. Sets ROUTE_OUT, ROUTE_ERR, ROUTE_CODE.
+_fc_route() {
+  printf '%s\n' "$2" > "$FC_TMP/rows.in"
+  awk -v rows="$FC_TMP/rows.in" '
+    /^\{one row per consolidated finding/ { while ((getline l < rows) > 0) print l; next }
+    { print }
+  ' "$FC_TMP/route-block.sh" > "$FC_TMP/route-run.sh"
+  ROUTE_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+    REVIEW_MODE="$1" PR_NUM=7 "${FC_SHELL:-bash}" "$FC_TMP/route-run.sh" 2>"$FC_TMP/route.err")
+  ROUTE_CODE=$?
+  ROUTE_ERR=$(cat "$FC_TMP/route.err")
+}
+
+# _fc_post <mode> <rows> <finding-total> <body> — runs the posting block.
+# Sets POST_OUT, POST_ERR, POST_CODE, GH_ARGS (empty when gh was not called)
+# and POSTED (the body gh received).
+_fc_post() {
+  printf '%s\n' "$2" > "$FC_TMP/rows"
+  printf '%s\n' "$4" > "$FC_TMP/body.md"
+  rm -f "$FC_TMP/gh.log" "$FC_TMP/gh.body"
+  POST_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+    GH_LOG="$FC_TMP/gh.log" GH_BODY="$FC_TMP/gh.body" \
+    REVIEW_MODE="$1" PR_NUM=7 CYCLE_NUMBER=2 FINDING_ROWS_FILE="$FC_TMP/rows" \
+    FINDING_TOTAL="$3" BODY_FILE="$FC_TMP/body.md" "${FC_SHELL:-bash}" "$FC_TMP/post-block.sh" 2>"$FC_TMP/post.err")
+  POST_CODE=$?
+  POST_ERR=$(cat "$FC_TMP/post.err")
+  GH_ARGS=$(cat "$FC_TMP/gh.log" 2>/dev/null)
+  POSTED=$(cat "$FC_TMP/gh.body" 2>/dev/null)
+}
+
+FC_MIXED='F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer
+F2|P1|correctness|src/c.sh:9|LOW|kept|code-reviewer'
+FC_MIXED_BODY='## Review: PR #7
+
+### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 1
+
+#### P2 — Important
+| Finding | Suggested Fix |
+|---------|---------------|
+| **F1 · correctness · `src/b.sh:4`**<br>Wrong bound. _(HIGH · consensus)_ | Use `<`. |
+
+#### Needs investigation
+- **F2 · P1 · correctness · `src/c.sh:9`** — Looks like a race.
+  Pattern: shared counter without a lock. Confirm or refute: a concurrent test.'
+
+_flow_test_begin "routing block: writes the rows and prints the routed values"
+assert_match '[^[:space:]]' "$(cat "$FC_TMP/route-block.sh")" "routing block extracted"
+_fc_route external "$FC_MIXED"
+assert_exit 0 "$ROUTE_CODE" "routed"
+assert_match '^FINDING_ROWS_FILE=.+' "$ROUTE_OUT" "prints the rows file path"
+assert_contains "NEEDS_INVESTIGATION=F2" "$ROUTE_OUT" "prints the investigation ids"
+assert_contains "DECISION=REQUEST_CHANGES" "$ROUTE_OUT" "prints the decision"
+assert_contains "FINDINGS_HEADER=P1: 0, P2: 1, P3: 0 · Needs investigation: 1" "$ROUTE_OUT" "prints the header the body must carry"
+_fc_route self 'F1|P2|edge-case|src/e.sh:5|LOW|unchallenged|code-reviewer'
+assert_exit 1 "$ROUTE_CODE" "self mode with a LOW row stops"
+assert_contains "return to step 5" "$ROUTE_ERR" "sends the reviewer back to step 5"
+
+_flow_test_begin "risk: marker vs decision — the posted marker carries no LOW row"
+assert_match '[^[:space:]]' "$(cat "$FC_TMP/post-block.sh")" "posting block extracted"
+_fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
+assert_exit 0 "$POST_CODE" "posted"
+assert_contains "<!-- FLOW_REVIEW_CYCLE:2 FINDINGS:[F1|P2|correctness|src/b.sh:4|open|HIGH|consensus] -->" "$POSTED" "marker holds F1 only"
+assert_not_contains "F2|" "$POSTED" "no F2 marker row"
+assert_contains "--request-changes" "$GH_ARGS" "decision from the HIGH P2"
+assert_contains "--repo" "$GH_ARGS" "repository pinned"
+
+_flow_test_begin "risk: header counts — a body that counts the LOW finding is refused"
+WRONG_BODY=${FC_MIXED_BODY/P1: 0, P2: 1, P3: 0 · Needs investigation: 1/P1: 1, P2: 1, P3: 0 · Needs investigation: 0}
+_fc_post external "$FC_MIXED" 2 "$WRONG_BODY"
+assert_exit 1 "$POST_CODE" "refused"
+assert_contains "P1: 0, P2: 1, P3: 0 · Needs investigation: 1" "$POST_ERR" "names the header the counts require"
+assert_equal "" "$GH_ARGS" "gh was not called"
+
+_flow_test_begin "a LOW finding missing from the Needs investigation section is refused"
+NO_ENTRY_BODY=$(grep -v '^- \*\*F2 · ' <<<"$FC_MIXED_BODY")
+_fc_post external "$FC_MIXED" 2 "$NO_ENTRY_BODY"
+assert_exit 1 "$POST_CODE" "refused"
+assert_contains "F2" "$POST_ERR" "names the missing id"
+assert_equal "" "$GH_ARGS" "gh was not called"
+
+_flow_test_begin "risk: only-LOW decision — an external review whose only finding is LOW approves"
+_fc_post external 'F1|P1|security|src/d.sh:2|LOW|kept|security-reviewer' 1 '## Review: PR #7
+
+### Findings: P1: 0, P2: 0, P3: 0 · Needs investigation: 1
+
+#### Needs investigation
+- **F1 · P1 · security · `src/d.sh:2`** — Possible injection.
+  Pattern: string concatenation into a query. Confirm or refute: a payload test.'
+assert_exit 0 "$POST_CODE" "posted"
+assert_contains "--approve" "$GH_ARGS" "approves"
+assert_not_contains "--request-changes" "$GH_ARGS" "does not request changes"
+assert_contains "FINDINGS:[] -->" "$POSTED" "empty marker"
+
+_flow_test_begin "posting block refuses unsafe or inconsistent input, and posts a plain comment"
+_fc_post self 'F1|P2|edge-case|src/e.sh:5|LOW|unchallenged|code-reviewer' 1 '## Self-Review Summary'
+assert_exit 1 "$POST_CODE" "own PR with a LOW row refused"
+assert_contains "return to step 5" "$POST_ERR" "sends the reviewer back to step 5"
+assert_equal "" "$GH_ARGS" "gh not called for an unresolved LOW row"
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 2 '### Findings: P1: 0, P2: 0, P3: 1 · Needs investigation: 0'
+assert_exit 1 "$POST_CODE" "synthesized 2 findings but the rows file holds 1"
+assert_equal "" "$GH_ARGS" "gh not called on a count mismatch"
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 '### Findings: P1: 0, P2: 0, P3: 1 · Needs investigation: 0
+<!-- FLOW_REVIEW_CYCLE:1 FINDINGS:[] -->'
+assert_exit 1 "$POST_CODE" "a body that already carries a marker is refused"
+assert_equal "" "$GH_ARGS" "gh not called when the body has a marker"
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 '### Findings: P1: 0, P2: 0, P3: 1 · Needs investigation: 0'
+assert_exit 0 "$POST_CODE" "a MEDIUM P3 posts"
+assert_contains "--comment" "$GH_ARGS" "as a comment"
+_fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer' 1 '## Self-Review Summary'
+assert_exit 0 "$POST_CODE" "own PR with the finding re-recorded HIGH posts"
+assert_contains "--comment" "$GH_ARGS" "self-review is a comment"
+assert_contains "F1|P2|edge-case|src/e.sh:5|open|HIGH|unchallenged" "$POSTED" "7-field row"
+POST_ERR_SAVED=""
+(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" GH_LOG="$FC_TMP/gh.log" GH_BODY="$FC_TMP/gh.body" \
+  REVIEW_MODE=external PR_NUM=7 FINDING_ROWS_FILE="$FC_TMP/rows" FINDING_TOTAL=1 BODY_FILE="$FC_TMP/body.md" \
+  bash "$FC_TMP/post-block.sh" >/dev/null 2>"$FC_TMP/post.err"); MISSING_CODE=$?
+assert_exit 1 "$MISSING_CODE" "unset CYCLE_NUMBER refused"
+assert_contains "CYCLE_NUMBER" "$(cat "$FC_TMP/post.err")" "names the missing value"
+
+# The model runs these fences in the user's shell, which is often zsh.
+_flow_test_begin "routing and posting blocks behave the same under zsh"
+if command -v zsh >/dev/null 2>&1; then
+  FC_SHELL=zsh
+  _fc_route external "$FC_MIXED"
+  assert_exit 0 "$ROUTE_CODE" "zsh: routed"
+  assert_contains "FINDINGS_HEADER=P1: 0, P2: 1, P3: 0 · Needs investigation: 1" "$ROUTE_OUT" "zsh: header"
+  _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
+  assert_exit 0 "$POST_CODE" "zsh: posted"
+  assert_contains "<!-- FLOW_REVIEW_CYCLE:2 FINDINGS:[F1|P2|correctness|src/b.sh:4|open|HIGH|consensus] -->" "$POSTED" "zsh: marker holds F1 only"
+  assert_contains "--request-changes" "$GH_ARGS" "zsh: decision"
+  _fc_post external "$FC_MIXED" 2 "$NO_ENTRY_BODY"
+  assert_exit 1 "$POST_CODE" "zsh: missing Needs investigation entry refused"
+  unset FC_SHELL
+else
+  _flow_assert_pass "SKIP: zsh not installed"
+fi

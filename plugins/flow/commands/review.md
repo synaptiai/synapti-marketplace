@@ -639,13 +639,13 @@ If any of A.1's variants failed (timeout, error, did-not-spawn), apply the fallb
 
 #### A.6 — Emit consolidated output
 
-Use the synthesized findings (with confidence + disposition) for steps in Phase 4 below. The FLOW_REVIEW_CYCLE marker emitted in Phase 4 step 7 uses the 7-field form when paired-reviewer mode produced the findings (example exercises three disposition values):
+Use the synthesized findings (with confidence + disposition) for steps in Phase 4 below. The FLOW_REVIEW_CYCLE marker built in Phase 4 step 7 is 7-field (example exercises three disposition values):
 
 ```
-<!-- FLOW_REVIEW_CYCLE:{N} FINDINGS:[F1|P1|security|src/auth.ts:42|open|HIGH|consensus,F2|P2|correctness|src/api.ts:88|open|MEDIUM|refined,F3|P1|race|src/job.ts:17|open|LOW|kept] -->
+<!-- FLOW_REVIEW_CYCLE:{N} FINDINGS:[F1|P1|security|src/auth.ts:42|open|HIGH|consensus,F2|P2|correctness|src/api.ts:88|open|MEDIUM|refined,F3|P1|race|src/job.ts:17|open|MEDIUM|unchallenged] -->
 ```
 
-When Path A is the orchestrator, the marker is **uniformly 7-field** — including for findings produced by per-facet fallbacks (which carry `MEDIUM|unchallenged`). The 5-field form is preserved ONLY for full Path B runs (gate failed at the top of this section). Mixing 5-field and 7-field rows within a single marker is forbidden — pad fallback findings to 7 fields with `MEDIUM|unchallenged` so all rows match. This rule is restated at Phase 4 step 7.
+Both paths write 7-field rows: findings from per-facet fallbacks carry `MEDIUM|unchallenged`, and every Path B row carries disposition `unchallenged`. A `kept` finding is LOW, so it never reaches the marker as LOW: on someone else's pull request it is listed under Needs investigation, and on your own pull request step 5 confirms, refutes or escalates it first. This rule is restated at Phase 4 step 7.
 
 After A.6 completes, jump to Phase 4 with the consolidated finding set.
 
@@ -658,7 +658,8 @@ Path B agents carry no `model` parameter and inherit the session model via front
 ```
 Agent(code-reviewer):
   "Review PR #$ARGUMENTS diff for quality, logic, edge cases, security.
-   Return P1/P2/P3 findings with file:line."
+   Return P1/P2/P3 findings with file:line and a confidence (HIGH, MEDIUM or LOW) per finding
+   per references/finding-schema.md."
 
 Agent(convention-checker):
   "Validate commits, branch naming, conventions for PR #$ARGUMENTS."
@@ -668,11 +669,13 @@ Agent(test-runner):
 
 Agent(error-handler-inspector):
   "Inspect changed files in PR #$ARGUMENTS for error handling gaps,
-   silent failures, unhandled exceptions. Return P1/P2/P3 findings."
+   silent failures, unhandled exceptions. Return P1/P2/P3 findings with a
+   confidence (HIGH, MEDIUM or LOW) per finding per references/finding-schema.md."
 
 Agent(security-reviewer):
   "Review PR #$ARGUMENTS diff for OWASP Top 10, secrets, auth/authz,
-   input validation, dependency vulnerabilities. Return P1/P2/P3 with file:line."
+   input validation, dependency vulnerabilities. Return P1/P2/P3 with file:line
+   and a confidence (HIGH, MEDIUM or LOW) per finding per references/finding-schema.md."
 
 Skill(holdout-validation):
   Inputs:
@@ -692,13 +695,13 @@ TaskUpdate each review task as agents complete.
 **Post the review before suggesting next steps.** The review is complete only once `gh pr review` has run and TaskUpdate confirms the post task, because the merge finding-ledger gate reads the posted marker.
 
 1. **TaskList**: Confirm all review facets complete
-2. **Synthesize findings**: Deduplicate by file:line, prioritize P1/P2/P3
-3. **Display findings** (finding-first pattern):
+2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. Every finding keeps its confidence. Findings from producers outside the finding schema (holdout-validation, convention-checker, test-runner) are stamped MEDIUM here; a schema agent's finding with no confidence is left blank so step 7's routing warns about it.
+3. **Display findings** (finding-first pattern). LOW findings are counted separately, never in P1/P2/P3:
 
 ```markdown
 ## Review Summary for PR #$PR_NUM
 
-### Findings: P1: {X}, P2: {Y}, P3: {Z}
+### Findings: P1: {X}, P2: {Y}, P3: {Z} · Needs investigation: {N}
 
 ### P1 — Critical
 | Finding | Suggested Fix |
@@ -740,6 +743,7 @@ TaskUpdate each review task as agents complete.
 6. **External review (someone else's PR — PR_AUTHOR != CURRENT_USER)**:
 
    - TaskCreate("Post review comment", "Post structured review findings to PR via gh pr review")
+   - On an external review, LOW-confidence findings at any priority go to a `#### Needs investigation` section and are excluded from the review decision and from the `FLOW_REVIEW_CYCLE` marker; their priority is shown there and never changed. Each entry names what triggered it (`Pattern:`) and what would settle it (`Confirm or refute:`). `bin/flow-finding-route.sh --mode external` decides this in step 7; the rules below apply to HIGH and MEDIUM findings.
    - P1/P2/P3 in already-touched files → REQUEST_CHANGES (P1/P2) or COMMENT with fix-expected language (P3) — the author must fix
    - Cosmetic P3 in untouched files → COMMENT with fix-if-bounded-or-document-inline language (default mode) OR follow-up issue workflow (only when `minimalScope: true` or the PR author has explicitly invoked minimal scope)
    - P1/P2 in untouched files → REQUEST_CHANGES; author must address in-PR (finding triage is NEVER a valid escalation trigger; see `skills/llm-operator-principles/SKILL.md`)
@@ -776,21 +780,103 @@ TaskUpdate each review task as agents complete.
    ```
    Cross-reference each prior finding's location against `git diff` to verify resolution.
 
-   Build `$BODY` using the appropriate template:
-   - Self-review: `templates/self-review-comment.md`
-   - External review: `templates/review-comment.md`
+   **Route the findings.** Every consolidated finding, on both paths and in both review modes, goes through `bin/flow-finding-route.sh`, which applies the decision table in `skills/code-review-methodology/SKILL.md`: HIGH and MEDIUM findings are counted at their priority, and on an external review LOW findings go to Needs investigation. Both paths write 7-field marker rows (`ID|priority|category|location|status|confidence|disposition`; Path B rows carry disposition `unchallenged`). No LOW-confidence row is written to the `FLOW_REVIEW_CYCLE` marker. Replace the placeholder line with one row per consolidated finding, `ID|PRIORITY|category|location|CONFIDENCE|disposition|agent` (write a literal `|` as `\|`; `agent` names the reviewer that raised it), and run:
 
-   **Marker form selection** (FLOW_REVIEW_CYCLE):
-   - If Path A produced the findings (paired-reviewer mode), emit the **7-field** marker with Confidence + Disposition fields per finding. Render the Confidence + Disposition columns in the P1/P2/P3 tables.
-   - If Path B produced the findings (single-session, fallback, or `agentTeams: false`), emit the legacy **5-field** marker. Omit the Confidence + Disposition columns.
-   - When Path A had per-facet fallbacks, individual findings from fallback facets carry `unchallenged` disposition with MEDIUM confidence — emit them in the 7-field form alongside the rest. Mixed-form rows within a single marker are NOT permitted (parsers tolerate variable field count, but emitting both forms in one row list would be confusing); pad fallback findings to 7 fields with `MEDIUM|unchallenged`.
+```bash
+# FINDING_ROUTE_BLOCK_BEGIN
+# REVIEW_MODE (external or self, printed by step 4) and PR_NUM are carried
+# from earlier steps: each fence is its own shell.
+[ -n "${REVIEW_MODE:-}" ] || { echo "ERROR: REVIEW_MODE is not set; refusing to route findings" >&2; exit 1; }
+[ -n "${PR_NUM:-}" ] || { echo "ERROR: PR_NUM is not set; refusing to route findings" >&2; exit 1; }
+FINDING_ROWS_FILE=$(mktemp "${TMPDIR:-/tmp}/flow-review-findings.XXXXXX") || { echo "ERROR: cannot create the findings file" >&2; exit 1; }
+cat > "$FINDING_ROWS_FILE" <<'FLOW_FINDING_ROWS'
+{one row per consolidated finding: ID|PRIORITY|category|location|CONFIDENCE|disposition|agent}
+FLOW_FINDING_ROWS
+ROUTE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-finding-route.sh"
+[ -x "$ROUTE" ] || { echo "ERROR: flow-finding-route.sh not found; refusing to route findings" >&2; exit 1; }
+echo "FINDING_ROWS_FILE=$FINDING_ROWS_FILE"
+ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --input "$FINDING_ROWS_FILE" --allow-empty)
+ROUTE_EXIT=$?
+printf '%s\n' "$ROUTED"
+if [ "$ROUTE_EXIT" -eq 3 ]; then
+  echo "ERROR: LOW-confidence findings on your own pull request are unresolved; return to step 5 for: $(sed -n 's/^UNRESOLVED_LOW=//p' <<<"$ROUTED")" >&2
+  exit 1
+fi
+[ "$ROUTE_EXIT" -eq 0 ] || { echo "ERROR: flow-finding-route.sh exited $ROUTE_EXIT" >&2; exit 1; }
+echo "FINDINGS_HEADER=P1: $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED"), P2: $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED"), P3: $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") · Needs investigation: $(sed -n 's/^COUNT_NEEDS_INVESTIGATION=//p' <<<"$ROUTED")"
+# FINDING_ROUTE_BLOCK_END
+```
 
-   Post the review:
-   - Self-review → `gh pr review "$PR_NUM" --comment --body "$BODY"`
-   - External + P1 findings → `gh pr review "$PR_NUM" --request-changes --body "$BODY"`
-   - External + P2 findings (no P1) → `gh pr review "$PR_NUM" --request-changes --body "$BODY"`
-   - External + P3 only → `gh pr review "$PR_NUM" --comment --body "$BODY"` (fix-expected, not approve-with-nits)
-   - External + No findings → `gh pr review "$PR_NUM" --approve --body "$BODY"`
+   Any `LEDGER_WARN` line it prints names a schema agent that left out or garbled a confidence; the finding was counted as MEDIUM. Carry the printed `FINDING_ROWS_FILE` path into the posting block.
+
+   **Render the body** from the routed values, using the template for the mode — self-review: `templates/self-review-comment.md`; external review: `templates/review-comment.md`. The external body carries the `FINDINGS_HEADER` text in its `### Findings:` line, lists only counted findings in the P1/P2/P3 tables with their `_(CONFIDENCE · disposition)_` suffix, and lists every `NEEDS_INVESTIGATION` id under `#### Needs investigation` as `- **{ID} · {priority} · {category} · `{location}`** — {problem}` followed by `Pattern:` and `Confirm or refute:`. Write the body to a file without the marker; the posting block appends it.
+
+   **Post the review.** The block routes the same rows again, so what is posted is exactly what was routed, and it refuses to post when the rows file lost a finding, when the external body's header or Needs investigation section disagrees with the routing, or when the body already carries a marker:
+
+```bash
+# FINDING_POST_BLOCK_BEGIN
+# Carried from earlier steps (each fence is its own shell): REVIEW_MODE and
+# PR_NUM, CYCLE_NUMBER (the review cycle), FINDING_ROWS_FILE (printed by the
+# routing block), FINDING_TOTAL (the number of rows that file should hold,
+# counted from the synthesized findings) and BODY_FILE (the rendered body).
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+[ -n "${REVIEW_MODE:-}" ] || { echo "ERROR: REVIEW_MODE is not set; refusing to post" >&2; exit 1; }
+[ -n "${PR_NUM:-}" ] || { echo "ERROR: PR_NUM is not set; refusing to post" >&2; exit 1; }
+[ -n "${CYCLE_NUMBER:-}" ] || { echo "ERROR: CYCLE_NUMBER is not set; refusing to post" >&2; exit 1; }
+[ -n "${FINDING_TOTAL:-}" ] || { echo "ERROR: FINDING_TOTAL is not set; refusing to post" >&2; exit 1; }
+[ -r "${FINDING_ROWS_FILE:-}" ] || { echo "ERROR: FINDING_ROWS_FILE is not readable; refusing to post" >&2; exit 1; }
+[ -r "${BODY_FILE:-}" ] || { echo "ERROR: BODY_FILE is not readable; refusing to post" >&2; exit 1; }
+if grep -q 'FLOW_REVIEW_CYCLE:' "$BODY_FILE"; then
+  echo "ERROR: the body already carries a FLOW_REVIEW_CYCLE marker; this block appends it" >&2
+  exit 1
+fi
+ROUTE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-finding-route.sh"
+[ -x "$ROUTE" ] || { echo "ERROR: flow-finding-route.sh not found; refusing to post" >&2; exit 1; }
+ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --input "$FINDING_ROWS_FILE" --allow-empty)
+ROUTE_EXIT=$?
+if [ "$ROUTE_EXIT" -eq 3 ]; then
+  echo "ERROR: LOW-confidence findings on your own pull request are unresolved; return to step 5 for: $(sed -n 's/^UNRESOLVED_LOW=//p' <<<"$ROUTED")" >&2
+  exit 1
+fi
+[ "$ROUTE_EXIT" -eq 0 ] || { echo "ERROR: flow-finding-route.sh exited $ROUTE_EXIT; nothing posted" >&2; exit 1; }
+ROWS_READ=$(sed -n 's/^ROWS_READ=//p' <<<"$ROUTED")
+if [ "$ROWS_READ" != "$FINDING_TOTAL" ]; then
+  echo "ERROR: the rows file holds $ROWS_READ findings but FINDING_TOTAL is $FINDING_TOTAL; nothing posted" >&2
+  exit 1
+fi
+NEEDS=$(sed -n 's/^NEEDS_INVESTIGATION=//p' <<<"$ROUTED")
+HEADER="P1: $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED"), P2: $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED"), P3: $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") · Needs investigation: $(sed -n 's/^COUNT_NEEDS_INVESTIGATION=//p' <<<"$ROUTED")"
+if [ "$REVIEW_MODE" = "external" ]; then
+  if ! grep -qF "$HEADER" "$BODY_FILE"; then
+    echo "ERROR: the body findings header must read: $HEADER" >&2
+    exit 1
+  fi
+  SECTION=$(awk '/^#### Needs investigation/ { f = 1; next } /^#### / { f = 0 } f' "$BODY_FILE")
+  for ID in $(printf '%s' "$NEEDS" | tr ',' ' '); do
+    if ! printf '%s\n' "$SECTION" | grep -qF "**$ID · "; then
+      echo "ERROR: $ID is LOW-confidence but has no entry under #### Needs investigation" >&2
+      exit 1
+    fi
+  done
+fi
+case "$(sed -n 's/^DECISION=//p' <<<"$ROUTED")" in
+  APPROVE) FLAG="--approve" ;;
+  COMMENT) FLAG="--comment" ;;
+  REQUEST_CHANGES) FLAG="--request-changes" ;;
+  *) echo "ERROR: no decision from flow-finding-route.sh; nothing posted" >&2; exit 1 ;;
+esac
+POST_FILE=$(mktemp "${TMPDIR:-/tmp}/flow-review-body.XXXXXX") || { echo "ERROR: cannot create the post body file" >&2; exit 1; }
+{ cat "$BODY_FILE"; printf '\n<!-- FLOW_REVIEW_CYCLE:%s FINDINGS:[%s] -->\n' "$CYCLE_NUMBER" "$(sed -n 's/^MARKER_ROWS=//p' <<<"$ROUTED")"; } > "$POST_FILE"
+gh pr review "$PR_NUM" --repo "$REPO" "$FLAG" --body-file "$POST_FILE"
+POST_EXIT=$?
+rm -f "$POST_FILE"
+echo "POSTED_AS=$FLAG POST_EXIT=$POST_EXIT"
+[ "$POST_EXIT" -eq 0 ] || exit 1
+# FINDING_POST_BLOCK_END
+```
+
+   The decision maps to the review event: external with a counted P1 or P2 → `--request-changes`; external with counted P3 only → `--comment` (fix-expected, not approve-with-nits); external with no counted findings, including a review whose only findings are LOW → `--approve` with the Needs investigation section; self-review → always `--comment`.
 
    TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — review posted as {approve/request-changes/comment}")
 
@@ -862,7 +948,7 @@ TaskUpdate each review task as agents complete.
    fi
    ```
 
-   The `path` value is `A` when paired-reviewer mode produced the findings (7-field marker), `B` when Path B (5-field marker) produced them. `findings_count` is the total across P1+P2+P3 in the cycle. If the PR body does not link an issue, skip the emit (the marker on the PR comment is sufficient for that PR's own state; the manifest is keyed by issue, not PR).
+   The `path` value names the orchestration that ran: `A` when Path A's paired reviewers produced the findings (per-facet fallbacks included), `B` for a Path B run. Both paths write 7-field markers, so the marker's width does not tell them apart. `findings_count` is `COUNT_P1+COUNT_P2+COUNT_P3` from the routing block: the number of rows in the marker. If the PR body does not link an issue, skip the emit (the marker on the PR comment is sufficient for that PR's own state; the manifest is keyed by issue, not PR).
 
 8. **Verify posting**: TaskList — confirm the posting task(s) are completed. Do NOT proceed to step 9 until verified. For external review: "Post review comment". For self-review: BOTH "Post self-review comment" AND "Post self-review resolution marker" must be `completed` — the resolution marker is what balances the merge finding-ledger gate, so a self-review that posted the review body but not the resolution marker is NOT done (it would false-block at merge). Mirror `commands/address.md` step 11's "ALL tasks including the resolution comment" gate.
 
