@@ -131,3 +131,49 @@ PASS — 7 tasks reviewed. Each task names its files, contract, failure modes, r
 <!-- auto-log: 2026-09-15 21:04 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-finding-route.test.sh -->
 
 <!-- auto-log: 2026-09-15 21:05 Write /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-finding-route.sh -->
+
+<!-- auto-log: 2026-09-15 21:17 commit "fix(flow): add flow-finding-route.sh so confidence decides what a review finding may demand" -->
+
+<!-- auto-log: 2026-09-15 21:22 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/code-review-methodology/SKILL.md -->
+
+<!-- auto-log: 2026-09-15 21:22 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/code-review-methodology/SKILL.md -->
+
+<!-- auto-log: 2026-09-15 21:34 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/finding-confidence.test.sh -->
+
+<!-- auto-log: 2026-09-15 21:36 commit "fix(flow): give code-review-methodology one confidence rule and a decision table that agrees with it" -->
+
+<!-- auto-log: 2026-09-15 21:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
+
+<!-- auto-log: 2026-09-15 21:47 commit "fix(flow): require confidence of the four reviewer agents and write 7-field markers on both paths" -->
+
+<!-- auto-log: 2026-09-15 21:54 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/finding-confidence.test.sh -->
+
+<!-- auto-log: 2026-09-15 22:02 commit "fix(flow): route and post /flow:review findings through flow-finding-route.sh" -->
+
+<!-- auto-log: 2026-09-15 22:06 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/pr.md -->
+
+<!-- auto-log: 2026-09-15 22:08 commit "fix(flow): end every own-PR LOW finding fixed, refuted or escalated, and stop empty identities choosing self-review" -->
+
+<!-- auto-log: 2026-09-15 22:13 commit "fix(flow): give the review templates a Needs investigation section apart from the counts" -->
+
+<!-- auto-log: 2026-09-15 22:32 commit "fix(flow): tidy the #212 review blocks after shellcheck and a read-through" -->
+
+<!-- auto-log: 2026-09-15 22:54 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-15 23:02 commit "fix(flow): close the posting-block gaps the #212 self-review found" -->
+
+## Phase 4 self-review (code-reviewer, reviewed at 96988fe)
+
+P1: 0, P2: 4, P3: 8 — all fixed in 8d965c9, each with a test that failed on 96988fe.
+
+- The posting block let a body quote `FINDINGS:[…]`; the merge gate reads ids from the whole body, so a LOW id could reach Check 2 that way. The block now refuses any quoted ledger array.
+- The header check matched a substring (`Needs investigation: 12` passed for 1); it now matches the whole `### Findings:` line.
+- `CYCLE_NUMBER` was only checked for being non-empty and could close the HTML comment; it must now be a positive integer.
+- A LOW finding could also appear in a priority table; the block refuses one outside Needs investigation.
+- The route script matched ids with locale-dependent ranges (`Fé1` passed under UTF-8); ids are checked under the C locale.
+- The dropped-finding block required an `ISSUE` nothing set; it resolves the linked issue and skips when there is none.
+- `findings_count=$TOTAL` read an unset variable; both blocks print `COUNT_TOTAL` and the manifest uses it.
+- Stamping MEDIUM on holdout findings would have overwritten Path A's HIGH `consensus`; the stamp now applies only when the producer gave none.
+- `/flow:pr` could loop on an escalated LOW finding; escalated findings stay in the PR body and do not re-enter the fix loop.
+- The parser reference, finding schema and a merge.md comment still described the first draft; corrected, and marker percent-encoding is documented.
+- An assertion (`assert_contains "MEDIUM"`) could only confirm; it now asserts the absent-confidence sentence.
