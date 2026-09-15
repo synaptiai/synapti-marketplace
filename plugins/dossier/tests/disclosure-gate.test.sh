@@ -375,6 +375,27 @@ OUT=$(scanout "$T")
 assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
   "an escaped pipe keeps the cell whole, not split into two"
 
+# A credential interrupted by an escaped pipe inside a table cell (#198,
+# found in review). Section A's scan_class calls grep the RAW file line
+# directly and never see the table-cell escape unwound -- so `AKIA\|...`
+# (backslash before the pipe, needed to stay in one cell) never matches
+# there. scan_text()'s pre-check DOES see it, on the already-unescaped cell
+# content (`AKIA|...`), and correctly redacts it -- but before this fix
+# only counted it as an unregistered claim (exit 1), not a leak (exit 2),
+# because the pre-check never incremented LEAKS. Same misclassification bug
+# already found and fixed twice elsewhere in this issue (bearer-token case
+# sensitivity, section A's stale AKIA/PEM patterns) -- this closes it for
+# the pre-check's own hits too.
+T="$W/table-cell-interrupted-credential"; mkpkg "$T"
+reg "$T" ''
+printf '| Key | Environment |\n|---|---|\n| AKIA\\|1234567890123456 | staging |\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "2" "$?" "a credential interrupted by an escaped pipe in a table cell is still flagged as leakage (exit 2), not just a registration gap"
+OUT=$(scanout "$T")
+assert_not_contains "1234567890123456" "$OUT" "the key body never reaches the output"
+assert_contains "[REDACTED:aws-access-key]" "$OUT" "the class is still named"
+
 # --- issue #176: a blockquote is prose with a marker, not structural markup --
 T="$W/blockquote-claim"; mkpkg "$T"
 reg "$T" ''

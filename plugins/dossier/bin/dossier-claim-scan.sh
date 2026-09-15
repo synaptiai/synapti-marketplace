@@ -90,7 +90,7 @@ hit() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$HITS_FILE"; }
 # provider-specific prefixes.
 scan_class() { # file | class | severity | regex
   local f="$1" class="$2" sev="$3" re="$4"
-  local out grepflags="-nE"
+  local out rc grepflags="-nE"
   # Prohibited vocabulary is prose a drafter capitalizes without thinking
   # about it — a heading, a bolded lead, title case in a bullet — and the
   # pattern list itself is written all-lowercase, so "Zero Downtime" or
@@ -100,15 +100,31 @@ scan_class() { # file | class | severity | regex
   [ "$sev" = "prohibited" ] && grepflags="-inE"
   # `--` terminates option parsing: several patterns below start with a hyphen
   # (the PEM armour), and without it grep reads the pattern as flags.
-  out=$(grep $grepflags -- "$re" "$f" 2>/dev/null | cut -d: -f1) || return 0
-  local ln
-  for ln in $out; do
+  #
+  # No pipe here on purpose: piping through `cut` would put grep's exit
+  # status one command away from `$?`, and — because PIPESTATUS does not
+  # survive a `$(...)` command substitution boundary (verified: it resets to
+  # the substitution's own subshell value, not the caller's) — there would
+  # be no way to tell "no match" (exit 1, fine) from a real read failure
+  # (exit >1: the file vanished between `find` and here, an unreadable
+  # permission bit) apart, silently reporting the latter as "0 hits" too.
+  out=$(grep $grepflags -- "$re" "$f" 2>/dev/null)
+  rc=$?
+  if [ "$rc" -gt 1 ]; then
+    echo "dossier-claim-scan: warning: grep exited $rc reading $f for class $class -- treating as no match, but this may be a real read failure, not a clean miss" >&2
+  fi
+  [ "$rc" -eq 0 ] || return 0
+  local ln entry
+  while IFS= read -r entry; do
+    ln=${entry%%:*}
     hit "$sev" "$f" "$ln" "$class"
     case "$sev" in
       leak) LEAKS=$((LEAKS + 1)) ;;
       prohibited) PROHIBITED=$((PROHIBITED + 1)) ;;
     esac
-  done
+  done <<EOF
+$out
+EOF
 }
 
 for f in $TARGETS; do
@@ -360,6 +376,17 @@ cred_match_class() {
 # path to this function that skips the pre-check (e.g. a future call site,
 # or the pre-check being refactored out from under this one) — the same
 # fail-toward-redaction stance as the [REDACTED:unknown] fallback above.
+#
+# Known untested gap in that dormant layer: its output flows through
+# `| normalize | cut -c1-80` at its one call site (normalize() lowercases
+# everything), so if this branch ever does fire, the tag would print as
+# `[redacted:<class>]`, not `[REDACTED:<class>]` — the literal-case form
+# every current fixture asserts, all of which exercise the pre-check, not
+# this function. No fixture calls redact() directly to pin this branch's
+# own output shape; adding one needs a way to invoke it in isolation this
+# script doesn't currently expose (it isn't designed to be sourced as a
+# library — every top-level line below runs on `source`, not just function
+# definitions).
 redact() {
   local input class
   input=$(cat)
@@ -413,6 +440,20 @@ scan_text() {
   if printf '%s' "$SPLITTABLE" | grep -qE -- "$CRED_UNION_PATTERN"; then
     class=$(cred_match_class "$SPLITTABLE") || class=unknown
     printf 'unregistered\t%s\t%s\t%s\n' "$f" "$LN" "[REDACTED:$class]" >> "$HITS_FILE"
+    # Also count as a leak (exit 2), not just an unregistered claim (exit 1).
+    # Section A's scan_class calls grep the RAW file lines directly and never
+    # see markdown transforms this function's caller already applied (a
+    # table cell's escaped `\|` unescaped to `|`, a code span stripped) --
+    # so a credential this pre-check catches only on the transformed text
+    # (e.g. an AKIA key whose interrupting `|` was written `\|` to survive
+    # table-cell splitting) is invisible to section A's raw-text grep and,
+    # without this line, silently downgrades to exit 1 (registration gap)
+    # instead of 2 (leakage detected) -- the exact severity-misclassification
+    # bug class this issue already found and fixed twice elsewhere (bearer-
+    # token case sensitivity, the -- guard fallthrough). $LEAKS is a plain
+    # global here, not a subshell copy: this function's caller reads its
+    # input via `done < "$f"`, not a pipe, so the increment persists.
+    LEAKS=$((LEAKS + 1))
     return
   fi
 
