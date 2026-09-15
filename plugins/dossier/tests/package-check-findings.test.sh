@@ -39,7 +39,7 @@ done
 
 expect_code() { # code | file | mutation-description
   check
-  if printf '%s' "$CK_OUT" | grep -q "FINDING $1"; then
+  if grep -q "FINDING $1" <<<"$CK_OUT"; then
     _dossier_assert_pass "$3 produces $1"
   else
     _dossier_assert_fail "$3 did not produce $1"
@@ -135,7 +135,7 @@ lines.insert(end, f'{field}: placeholder')
 open(p, 'w').write('\n'.join(lines))
 PY
   check
-  if printf '%s' "$CK_OUT" | grep -q "LEAKED-FIELD.*'$FIELD'"; then
+  if grep -q "LEAKED-FIELD.*'$FIELD'" <<<"$CK_OUT"; then
     _dossier_assert_pass "internal-only field '$FIELD' is refused in a public document"
   else
     _dossier_assert_fail "internal-only field '$FIELD' reached a public document unflagged"
