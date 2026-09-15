@@ -111,3 +111,23 @@ Task boundaries: Task 1 bundles AC1+AC2+AC3 (one awk-program edit region, one te
 <!-- auto-log: 2026-09-15 07:40 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
 
 <!-- auto-log: 2026-09-15 07:41 commit "docs(dossier): CHANGELOG entry for the G18 verbatim-collection fix" -->
+
+<!-- auto-log: 2026-09-15 08:01 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-prose-lint.sh -->
+
+<!-- auto-log: 2026-09-15 08:01 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-prose-lint.sh -->
+
+<!-- auto-log: 2026-09-15 08:01 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-prose-lint.sh -->
+
+<!-- auto-log: 2026-09-15 08:01 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-prose-lint.sh -->
+
+<!-- auto-log: 2026-09-15 08:01 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/prose-lint.test.sh -->
+
+<!-- auto-log: 2026-09-15 08:01 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/references/release-gate-conditions.md -->
+
+<!-- auto-log: 2026-09-15 08:01 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/skills/prose-clarity/SKILL.md -->
+
+<!-- auto-log: 2026-09-15 08:02 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/prose-lint.test.sh -->
+
+<!-- auto-log: 2026-09-15 08:03 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
+
+<!-- auto-log: 2026-09-15 08:04 commit "fix(dossier): unclosed-fence scan error and bare-relative-path scoping" -->
