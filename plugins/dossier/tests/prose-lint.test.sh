@@ -418,6 +418,40 @@ assert_equal "1" "$?" "a decoy file at a non-canonical path sharing the suffix s
 DECOY_OUT_JSON=$("$LINT" --output-root "$DECOY_ROOT" --json 2>/dev/null)
 assert_equal "0" "$(count_of "$DECOY_OUT_JSON" verbatim_blocks)" "the decoy's marker pair is not honored -- only the real canonical path is"
 
+# --- marker regex must not match a look-alike prefix -------------------------
+# Found in review: ^<!-- DOSSIER_VERBATIM_BEGIN with no trailing delimiter
+# matches any line starting with that prefix, including an unrelated comment
+# like <!-- DOSSIER_VERBATIM_BEGINNING_OF_SOMETHING_ELSE -->. That opens a
+# real exemption for prose that was never meant to be marked verbatim.
+LOOKALIKE_BEGIN_DIR="$W/pkg-k/07-verification"
+mkdir -p "$LOOKALIKE_BEGIN_DIR"
+LOOKALIKE_BEGIN="$LOOKALIKE_BEGIN_DIR/documentation-verification-report.md"
+cat > "$LOOKALIKE_BEGIN" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGINNING_OF_SOMETHING_ELSE -->
+This seamless platform helps you.
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+J=$(lint_json "$LOOKALIKE_BEGIN")
+assert_equal "1" "$(count_of "$J" marketing_adjective)" "a BEGIN look-alike prefix does not open a real verbatim block -- the sentence after it is still counted"
+assert_equal "0" "$(count_of "$J" verbatim_blocks)" "a BEGIN look-alike prefix is not recognized as a marker"
+
+LOOKALIKE_END_DIR="$W/pkg-l/07-verification"
+mkdir -p "$LOOKALIKE_END_DIR"
+LOOKALIKE_END="$LOOKALIKE_END_DIR/documentation-verification-report.md"
+cat > "$LOOKALIKE_END" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+Verbatim body line one.
+<!-- DOSSIER_VERBATIM_ENDING_OF_SOMETHING -->
+This seamless platform helps you, still inside the real block.
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+J=$(lint_json "$LOOKALIKE_END")
+assert_equal "0" "$(count_of "$J" marketing_adjective)" "an END look-alike prefix does not close the block early -- the sentence after it stays exempt until the real END"
+
 rm -rf "$W" 2>/dev/null
 
 _dossier_test_summary

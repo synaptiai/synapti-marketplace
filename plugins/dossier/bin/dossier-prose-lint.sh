@@ -157,13 +157,23 @@ BEGIN {
   # list item) is never recognized; it falls through as ordinary text, which
   # fails safe (scanned normally, or an unclosed real BEGIN still errors).
   if (honor_verbatim) {
+    # Delimiter-anchored, not a bare prefix: an unrelated comment like
+    # <!-- DOSSIER_VERBATIM_BEGINNING_OF_SOMETHING_ELSE --> would otherwise
+    # also match "^<!-- DOSSIER_VERBATIM_BEGIN" and open a real exemption for
+    # prose that was never meant to be marked verbatim.
     if (in_verbatim) {
-      if (line ~ /^<!-- DOSSIER_VERBATIM_BEGIN/) { nested_verbatim = 1; print "NESTED_VERBATIM\t1"; exit }
-      if (line ~ /^<!-- DOSSIER_VERBATIM_END/) { in_verbatim = 0; para_sentences = 0; next }
+      if (line ~ /^<!-- DOSSIER_VERBATIM_BEGIN([ \t]|-->|$)/) { nested_verbatim = 1; print "NESTED_VERBATIM\t1"; exit }
+      if (line ~ /^<!-- DOSSIER_VERBATIM_END([ \t]|-->|$)/) { in_verbatim = 0; para_sentences = 0; next }
+      # A fenced code span inside a verbatim block is caught by the in_fence
+      # `next` above before reaching here, so it is never added to this
+      # count — same as everywhere else in this script, fenced content is
+      # simply not accounted line-by-line. verbatim_lines_skipped therefore
+      # undercounts a block whose body includes a fence; it is a coarse
+      # "something was exempted here" signal, not an exact line count.
       verbatim_lines_skipped++
       next
     }
-    if (line ~ /^<!-- DOSSIER_VERBATIM_BEGIN/) { in_verbatim = 1; verbatim_blocks++; para_sentences = 0; next }
+    if (line ~ /^<!-- DOSSIER_VERBATIM_BEGIN([ \t]|-->|$)/) { in_verbatim = 1; verbatim_blocks++; para_sentences = 0; next }
   }
   if (line == "") { para_sentences = 0; next }
   c1 = substr(line, 1, 1)
