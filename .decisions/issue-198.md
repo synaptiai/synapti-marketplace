@@ -33,6 +33,11 @@ artifacts:
   - 'Locator scope (issue title vs body mismatch): the 4 locator classes stay out
     of #198''s scope -- the issue body''s own acceptance criteria never asked for
     excerpt-redaction of locators, only for the credential-interruption fix'
+- type: holdout-validation
+  captured_at: '2026-09-15T17:30:00Z'
+  result: PASS
+  finding_fixed_during_check: stale AKIA literal-pattern reference in a comment,
+    dossier-claim-scan.sh:432
 ---
 # Issue #198 — claim-scan's redact() leaves fragments past an interrupting character
 
@@ -206,3 +211,11 @@ artifacts:
 <!-- auto-log: 2026-09-15 17:07 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
 
 <!-- auto-log: 2026-09-15 17:18 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-198.md -->
+
+<!-- auto-log: 2026-09-15 17:18 commit "fix(dossier): tolerate an interrupt before the PRIVATE/KEY space too" -->
+
+<!-- auto-log: 2026-09-15 17:22 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-15 17:25 commit "docs(dossier): fix stale literal-pattern reference in scan_text's comment" -->
+
+<!-- auto-log: 2026-09-15 17:28 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-198.md -->
