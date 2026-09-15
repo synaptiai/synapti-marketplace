@@ -27,6 +27,11 @@ artifacts:
   captured_at: '2026-09-14T23:14:19Z'
   result: PASS
   task_count: 5
+- type: goal-evaluation
+  captured_at: '2026-09-15T07:55:16Z'
+  goal_id: issue-180
+  result: achieved
+  evidence_bundle: .flow/runs/2026-09-15T000000Z-issue-180
 ---
 # Issue #180 — G18 and the verbatim-collection rule are in direct conflict
 

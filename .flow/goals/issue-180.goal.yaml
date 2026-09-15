@@ -18,118 +18,114 @@ objective:
     title: 'fix(dossier): G18 and the verbatim-collection rule are in direct conflict'
   acceptance_criteria:
   - id: AC1
-    text: dossier-prose-lint.sh recognizes a DOSSIER_VERBATIM_BEGIN/END marker pair only when scanning
-      07-verification/documentation-verification-report.md and excludes every hard-category check for
-      text between them, while continuing to scan the rest of that file and all other files normally;
-      in any other file the markers are inert.
-    verification_command: bash plugins/dossier/tests/run.sh prose-lint.test.sh && bash plugins/dossier/tests/run.sh
-      bin-scripts.test.sh
+    text: dossier-prose-lint.sh recognizes a DOSSIER_VERBATIM_BEGIN/END marker pair
+      only when scanning 07-verification/documentation-verification-report.md and
+      excludes every hard-category check for text between them, while continuing to
+      scan the rest of that file and all other files normally; in any other file the
+      markers are inert.
+    verification_command: bash plugins/dossier/tests/run.sh prose-lint.test.sh &&
+      bash plugins/dossier/tests/run.sh bin-scripts.test.sh
     must_pass: true
     status: evidence_collected
     evidence_ref: .flow/runs/2026-09-15T000000Z-issue-180/evidence/evidence-ac1-1.evidence.yaml
     last_evaluated_at: '2026-09-15T08:30:00Z'
-    last_result:
-      exit_code: 0
-      reason: command_result
+    last_result: exit_code=0 reason=command_result
   - id: AC2
-    text: dossier-prose-lint.sh --json reports verbatim_blocks and verbatim_lines_skipped (per file and
-      as package totals) whenever a marker pair is honored, so the exemption is never indistinguishable
-      from a clean scan.
-    verification_command: bash plugins/dossier/tests/run.sh prose-lint.test.sh && bash plugins/dossier/tests/run.sh
-      bin-scripts.test.sh
+    text: dossier-prose-lint.sh --json reports verbatim_blocks and verbatim_lines_skipped
+      (per file and as package totals) whenever a marker pair is honored, so the exemption
+      is never indistinguishable from a clean scan.
+    verification_command: bash plugins/dossier/tests/run.sh prose-lint.test.sh &&
+      bash plugins/dossier/tests/run.sh bin-scripts.test.sh
     must_pass: true
     status: evidence_collected
     evidence_ref: .flow/runs/2026-09-15T000000Z-issue-180/evidence/evidence-ac2-1.evidence.yaml
     last_evaluated_at: '2026-09-15T08:30:00Z'
-    last_result:
-      exit_code: 0
-      reason: command_result
+    last_result: exit_code=0 reason=command_result
   - id: AC3
-    text: Malformed markers never produce a silent exemption -- an unclosed BEGIN is a scan error, a BEGIN
-      nested inside an already-open block is a scan error, and a stray END with no open BEGIN is ignored
-      with no state change.
-    verification_command: bash plugins/dossier/tests/run.sh prose-lint.test.sh && bash plugins/dossier/tests/run.sh
-      bin-scripts.test.sh
+    text: Malformed markers never produce a silent exemption -- an unclosed BEGIN
+      is a scan error, a BEGIN nested inside an already-open block is a scan error,
+      and a stray END with no open BEGIN is ignored with no state change.
+    verification_command: bash plugins/dossier/tests/run.sh prose-lint.test.sh &&
+      bash plugins/dossier/tests/run.sh bin-scripts.test.sh
     must_pass: true
     status: evidence_collected
     evidence_ref: .flow/runs/2026-09-15T000000Z-issue-180/evidence/evidence-ac3-1.evidence.yaml
     last_evaluated_at: '2026-09-15T08:30:00Z'
-    last_result:
-      exit_code: 0
-      reason: command_result
+    last_result: exit_code=0 reason=command_result
   - id: AC4
     text: /dossier:audit Phase 5 wraps each pass's appended section in 07-verification/documentation-verification-report.md
       with the verbatim markers.
-    verification_command: 'P5=$(awk ''/^## Phase 5/{f=1} f{print} /^## Tier Classification/{exit}'' plugins/dossier/commands/audit.md);
-      B=$(printf ''%s\n'' "$P5" | grep -n "^<!-- DOSSIER_VERBATIM_BEGIN" | head -1 | cut -d: -f1); C=$(printf
-      ''%s\n'' "$P5" | grep -n "pass-A.md content" | head -1 | cut -d: -f1); E=$(printf ''%s\n'' "$P5"
-      | grep -n "^<!-- DOSSIER_VERBATIM_END" | head -1 | cut -d: -f1); S=$(printf ''%s\n'' "$P5" | grep
-      -n "^### Audit complete" | head -1 | cut -d: -f1); [ -n "$B" ] && [ -n "$C" ] && [ -n "$E" ] &&
-      [ -n "$S" ] && [ "$B" -lt "$C" ] && [ "$C" -lt "$E" ] && [ "$E" -lt "$S" ]'
+    verification_command: 'P5=$(awk ''/^## Phase 5/{f=1} f{print} /^## Tier Classification/{exit}''
+      plugins/dossier/commands/audit.md); B=$(printf ''%s\n'' "$P5" | grep -n "^<!--
+      DOSSIER_VERBATIM_BEGIN" | head -1 | cut -d: -f1); C=$(printf ''%s\n'' "$P5"
+      | grep -n "pass-A.md content" | head -1 | cut -d: -f1); E=$(printf ''%s\n''
+      "$P5" | grep -n "^<!-- DOSSIER_VERBATIM_END" | head -1 | cut -d: -f1); S=$(printf
+      ''%s\n'' "$P5" | grep -n "^### Audit complete" | head -1 | cut -d: -f1); [ -n
+      "$B" ] && [ -n "$C" ] && [ -n "$E" ] && [ -n "$S" ] && [ "$B" -lt "$C" ] &&
+      [ "$C" -lt "$E" ] && [ "$E" -lt "$S" ]'
     must_pass: true
     status: evidence_collected
     evidence_ref: .flow/runs/2026-09-15T000000Z-issue-180/evidence/evidence-ac4-2.evidence.yaml
     last_evaluated_at: '2026-09-15T09:00:00Z'
-    last_result:
-      exit_code: 0
-      reason: command_result
+    last_result: exit_code=0 reason=command_result
   - id: AC5
-    text: references/release-gate-conditions.md (G18) and skills/prose-clarity/SKILL.md document the verbatim-marker
-      exclusion, its scoping to the verification report, and that it is specific to dossier-prose-lint.sh.
+    text: references/release-gate-conditions.md (G18) and skills/prose-clarity/SKILL.md
+      document the verbatim-marker exclusion, its scoping to the verification report,
+      and that it is specific to dossier-prose-lint.sh.
     verification_command: grep -Eq "only.*when scanning.*07-verification/documentation-verification-report\.md"
-      plugins/dossier/references/release-gate-conditions.md && grep -Eq "specific to.*dossier-prose-lint\.sh"
-      plugins/dossier/references/release-gate-conditions.md && grep -Eq "only when scanning that one file"
-      plugins/dossier/skills/prose-clarity/SKILL.md && grep -Eq "specific to.*dossier-prose-lint\.sh"
-      plugins/dossier/skills/prose-clarity/SKILL.md
+      plugins/dossier/references/release-gate-conditions.md && grep -Eq "specific
+      to.*dossier-prose-lint\.sh" plugins/dossier/references/release-gate-conditions.md
+      && grep -Eq "only when scanning that one file" plugins/dossier/skills/prose-clarity/SKILL.md
+      && grep -Eq "specific to.*dossier-prose-lint\.sh" plugins/dossier/skills/prose-clarity/SKILL.md
     must_pass: true
     status: evidence_collected
     evidence_ref: .flow/runs/2026-09-15T000000Z-issue-180/evidence/evidence-ac5-2.evidence.yaml
     last_evaluated_at: '2026-09-15T09:00:00Z'
-    last_result:
-      exit_code: 0
-      reason: command_result
+    last_result: exit_code=0 reason=command_result
 specification:
   non_goals:
-  - Not implementing Option 1's heading/round-based scoping instead of explicit markers -- the chosen
-    design is the intersection of Option 1's scoping and Option 2's mechanism.
+  - Not implementing Option 1's heading/round-based scoping instead of explicit markers
+    -- the chosen design is the intersection of Option 1's scoping and Option 2's
+    mechanism.
   - Not implementing Option 3 -- rejected per the issue's own reasoning.
-  - Not adding abuse-detection tooling for hand-inserted fake markers -- mitigated structurally by scoping
-    marker-honoring to the verification report only.
+  - Not adding abuse-detection tooling for hand-inserted fake markers -- mitigated
+    structurally by scoping marker-honoring to the verification report only.
   - Not changing dossier-claim-scan.sh or any other linter to honor the same markers.
   - Not touching the --help hardcoded-range truncation bug present in 17 other plugins/dossier/bin/*.sh
-    scripts -- only dossier-prose-lint.sh's own --help is fixed here; the rest are filed as a separate
-    follow-up issue.
+    scripts -- only dossier-prose-lint.sh's own --help is fixed here; the rest are
+    filed as a separate follow-up issue.
   failure_modes:
   - 'Timeouts: none -- pure text-processing change.'
   - 'Partial failures: n/a.'
-  - 'Invalid input: a marker pair present in a file other than the verification report -- handled by file-scoping;
-    markers are inert there.'
+  - 'Invalid input: a marker pair present in a file other than the verification report
+    -- handled by file-scoping; markers are inert there.'
   - 'Missing context: none -- self-contained within dossier-prose-lint.sh and commands/audit.md.'
   interface_contracts:
-  - 'New JSON fields: top-level verbatim_blocks (int) and verbatim_lines_skipped (int), mirrored per-file
-    when nonzero. Additive only.'
-  - 'Marker literal text: <!-- DOSSIER_VERBATIM_BEGIN --> and <!-- DOSSIER_VERBATIM_END -->, matched as
-    a line-start prefix.'
+  - 'New JSON fields: top-level verbatim_blocks (int) and verbatim_lines_skipped (int),
+    mirrored per-file when nonzero. Additive only.'
+  - 'Marker literal text: <!-- DOSSIER_VERBATIM_BEGIN --> and <!-- DOSSIER_VERBATIM_END
+    -->, matched as a line-start prefix.'
   - 'File-scoping match: a path-suffix test for */07-verification/documentation-verification-report.md.'
-  - 'Malformed-marker disposition: unclosed BEGIN -> scan_error; nested BEGIN -> scan_error; stray END
-    -> ignored.'
+  - 'Malformed-marker disposition: unclosed BEGIN -> scan_error; nested BEGIN -> scan_error;
+    stray END -> ignored.'
   risk_map:
   - area: File-scoping
     plausible_wrong_version: Marker honored in every file, reopening the gaming surface
-    discriminating_check: 'fixture: violating sentence inside markers in a non-07-verification file ->
-      right: still flagged; wrong: 0'
+    discriminating_check: 'fixture: violating sentence inside markers in a non-07-verification
+      file -> right: still flagged; wrong: 0'
   - area: Malformed-marker exit
-    plausible_wrong_version: Unclosed or nested BEGIN silently exempts the rest of the file
-    discriminating_check: 'fixture: BEGIN with no END, violating prose after -> right: scan_error; wrong:
-      0'
+    plausible_wrong_version: Unclosed or nested BEGIN silently exempts the rest of
+      the file
+    discriminating_check: 'fixture: BEGIN with no END, violating prose after -> right:
+      scan_error; wrong: 0'
   - area: Paragraph-count boundary
     plausible_wrong_version: para_sentences not reset at the verbatim toggle
-    discriminating_check: 'fixture: 3 sentences, verbatim block, 4 sentences (7 total) -> right: no long_paragraph;
-      wrong: fires or is suppressed incorrectly'
+    discriminating_check: 'fixture: 3 sentences, verbatim block, 4 sentences (7 total)
+      -> right: no long_paragraph; wrong: fires or is suppressed incorrectly'
   - area: Code-fence interaction
     plausible_wrong_version: Marker text recognized inside a fenced code block
-    discriminating_check: 'fixture: marker-looking text in a fence, real prose after -> right: fence text
-      inert, prose still flagged; wrong: state toggled'
+    discriminating_check: 'fixture: marker-looking text in a fence, real prose after
+      -> right: fence text inert, prose still flagged; wrong: state toggled'
 constraints:
   tdd_required: true
   require_all_pass: true
@@ -160,7 +156,12 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
-  current_phase: explore
-  current_activity: specification_capture
-  turns_evaluated: 0
+  status: achieved
+  current_phase: verify
+  current_activity: runtime_verification
+  last_evaluation:
+    result: pass
+    reason: All 5 ACs pass on deterministic evidence after two rounds of judge-driven
+      evidence strengthening (AC4/AC5 upgraded from substring presence to structural/phrase-specific
+      checks). Confirmed via goal-evaluator-judge, confidence 0.80.
+    at: '2026-09-15T07:56:01Z'
