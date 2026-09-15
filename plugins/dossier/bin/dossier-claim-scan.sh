@@ -199,10 +199,47 @@ normalize() { # strip markdown emphasis/code/links, collapse space, lowercase
       -e 's/^ //' -e 's/ $//' | tr '[:upper:]' '[:lower:]'
 }
 
+# Splits raw text into candidate sentence fragments on '.' boundaries, after
+# stripping markdown code spans first -- so a period inside `SKILL.md`,
+# `plugin.json`, or `3.2.2` is not mistaken for a sentence boundary. Emits one
+# RAW (not yet normalize()'d) fragment per output line, including an empty
+# trailing fragment when the text ends in a period; callers drop empty/short
+# fragments themselves, same as the pre-extraction inline version below did.
+#
+# Shared by scan_text() (document sentences, further down) and the
+# approved-wording register loader (just below this function) -- issue #200.
+# Matching a normalized document sentence against a normalized-but-UNSPLIT
+# register row with `grep -qF` (substring) let an unscoped document sentence
+# silently pass as registered whenever it was a literal substring of a
+# longer, differently-scoped approved wording. Switching straight to an exact
+# match (`grep -qFx`) without also splitting the register side the same way
+# the document side already is breaks approvals that are still genuinely
+# correct: normalize() never strips a trailing '.', so an approved row kept
+# as one unsplit string carries a full stop a split document sentence
+# structurally cannot have, and a register cell holding more than one
+# sentence can never equal any single split-out document sentence. Splitting
+# BOTH sides through this same function before normalize() makes exact
+# matching sound. See .decisions/issue-200.md for the full analysis.
+split_candidate_sentences() {
+  local text="$1" SPLITTABLE
+  SPLITTABLE=$(printf '%s' "$text" | sed 's/`[^`]*`/ /g')
+  printf '%s\n' "$SPLITTABLE" | tr '.' '\n'
+}
+
 REGISTER_PRESENT=0
 if [ -f "$CLAIMS" ]; then
   REGISTER_PRESENT=1
-  # Approved wordings go through the SAME normalization as document sentences.
+  # Approved wordings go through the SAME sentence-splitting AND the SAME
+  # normalization as document sentences (issue #200) before either side is
+  # compared. A register cell is free text just like a document line: it can
+  # end in a period a split document sentence never keeps, and it can pack
+  # more than one sentence into a single cell. Splitting it with
+  # split_candidate_sentences() first -- the identical function scan_text()
+  # uses on document text -- and normalize()ing each resulting fragment
+  # separately is what makes the exact match below (`grep -qFx`) sound: it
+  # replaces an earlier unanchored substring match (`grep -qF`) that let an
+  # unscoped document sentence silently pass as registered whenever it was a
+  # literal substring of a longer, differently-scoped approved wording.
   # Lowercasing alone left the register's markdown intact while the document side
   # had it stripped, so any claim containing a code span, bold, or a link could
   # never match its own approved row — the check could not pass for a realistic
@@ -222,7 +259,12 @@ if [ -f "$CLAIMS" ]; then
       *"| approved |"*|*"|approved|"*) ;;
       *) continue ;;
     esac
-    printf '%s' "$row" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$3); print $3}' | normalize
+    wording=$(printf '%s' "$row" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$3); print $3}')
+    split_candidate_sentences "$wording" | while IFS= read -r sentence; do
+      norm=$(printf '%s' "$sentence" | normalize)
+      [ -z "$norm" ] && continue
+      printf '%s\n' "$norm"
+    done
   done >> "$APPROVED_FILE"
 
   # Required qualifications are approved text too, and the contract *mandates*
@@ -230,6 +272,8 @@ if [ -f "$CLAIMS" ]; then
   # carry no `approved` cell of their own, so matching only claim rows made every
   # mandated qualification an unregistered sentence — the register requiring a
   # sentence the scan then reported. Column 2 of that table is the qualification.
+  # Same split-then-normalize treatment as the claims block above, for the
+  # same reason (issue #200): a qualification cell is free text too.
   awk '
     /^## Required qualifications/ { inq = 1; next }
     inq && /^## / { inq = 0 }
@@ -237,7 +281,13 @@ if [ -f "$CLAIMS" ]; then
       n = split($0, f, "|")
       if (n >= 3) { gsub(/^[ \t]+|[ \t]+$/, "", f[3]); print f[3] }
     }
-  ' "$CLAIMS" 2>/dev/null | normalize >> "$APPROVED_FILE"
+  ' "$CLAIMS" 2>/dev/null | while IFS= read -r wording; do
+    split_candidate_sentences "$wording" | while IFS= read -r sentence; do
+      norm=$(printf '%s' "$sentence" | normalize)
+      [ -z "$norm" ] && continue
+      printf '%s\n' "$norm"
+    done
+  done >> "$APPROVED_FILE"
 fi
 
 # Redact credential-shaped substrings before any sentence text is echoed.
@@ -457,14 +507,24 @@ scan_text() {
     return
   fi
 
-  printf '%s\n' "$SPLITTABLE" | tr '.' '\n' | while IFS= read -r sentence; do
+  # split_candidate_sentences() reproduces exactly what used to be inlined
+  # here (strip code spans, split on '.') -- factored out so the approved-
+  # wording register loader above can put a register row through the
+  # identical split before normalize()/exact-match, not just this document
+  # side (issue #200).
+  split_candidate_sentences "$text" | while IFS= read -r sentence; do
     norm=$(printf '%s' "$sentence" | normalize)
     [ -z "$norm" ] && continue
     words=$(printf '%s' "$norm" | wc -w | tr -d ' ')
     [ "$words" -lt 4 ] && continue
 
+    # Exact match, not substring (issue #200): $APPROVED_FILE now holds one
+    # normalized SENTENCE per line (the register loader above splits each
+    # approved row the same way this function just split $text), so an exact
+    # line match is meaningful and no longer lets an unscoped sentence ride
+    # in as a substring of a longer, differently-scoped approved wording.
     if [ "$REGISTER_PRESENT" -eq 1 ] && [ -s "$APPROVED_FILE" ]; then
-      if grep -qF "$norm" "$APPROVED_FILE" 2>/dev/null; then
+      if grep -qFx "$norm" "$APPROVED_FILE" 2>/dev/null; then
         continue
       fi
     fi

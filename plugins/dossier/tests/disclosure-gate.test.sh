@@ -124,6 +124,36 @@ pub "$T" "The API supports OAuth 20 device flow."
 scan "$T"
 assert_equal "1" "$?" "a pending claim does not count as registered"
 
+# --- issue #200: an unscoped sentence must not ride in on a scoped approval --
+# The registration check (`grep -qF` against APPROVED_FILE) was an unanchored
+# SUBSTRING match, not an exact match: a short, unscoped document sentence
+# that happens to be a literal run of characters inside a longer, more
+# narrowly scoped approved wording was silently treated as registered, even
+# though it asserts something materially broader than what was approved. This
+# is the issue's own reproduction verbatim: the approved wording restricts the
+# claim to enterprise customers in the us region only; the document sentence
+# drops both qualifiers and must be reported unregistered, not pass silently.
+T="$W/unscoped-substring-of-scoped"; mkpkg "$T"
+reg "$T" '| CL-0001 | the api supports oauth 20 device flow for enterprise customers only in the us region | capability | EV-0001 | 1.0 | all | scoped | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+pub "$T" "The API supports OAuth 20 device flow."
+OUT=$(scanout "$T")
+RC=$?
+assert_equal "1" "$RC" \
+  "an unscoped sentence that is a literal substring of a scoped approved wording is NOT silently approved"
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "the unscoped sentence is counted as unregistered, not folded into the scoped approval"
+assert_contains "UNREGISTERED" "$OUT" "the unscoped sentence is labelled, not silently approved"
+
+# The mirror case: the actual scoped wording, written out in full, must still
+# match its own approved row. This is the discriminating check that a fix
+# narrowing the match (e.g. to exact-match) hasn't gone too far and broken
+# registration of the very claim that IS approved.
+T="$W/scoped-claim-matches-its-own-approval"; mkpkg "$T"
+reg "$T" '| CL-0001 | the api supports oauth 20 device flow for enterprise customers only in the us region | capability | EV-0001 | 1.0 | all | scoped | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+pub "$T" "The API supports OAuth 20 device flow for enterprise customers only in the US region."
+scan "$T"
+assert_equal "0" "$?" "the fully-scoped sentence still matches its own approved wording exactly"
+
 # --- no register at all ------------------------------------------------------
 T="$W/noreg"; mkpkg "$T"
 pub "$T" "The service handles multi-region failover automatically."
