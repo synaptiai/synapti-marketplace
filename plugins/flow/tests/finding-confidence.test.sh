@@ -344,6 +344,8 @@ assert_match '^FINDING_ROWS_FILE=.+' "$ROUTE_OUT" "prints the rows file path"
 assert_contains "NEEDS_INVESTIGATION=F2" "$ROUTE_OUT" "prints the investigation ids"
 assert_contains "DECISION=REQUEST_CHANGES" "$ROUTE_OUT" "prints the decision"
 assert_contains "FINDINGS_HEADER=P1: 0, P2: 1, P3: 0 · Needs investigation: 1" "$ROUTE_OUT" "prints the header the body must carry"
+_fc_route external '{one row per consolidated finding: ID|PRIORITY|category|location|CONFIDENCE|disposition|agent}'
+assert_exit 1 "$ROUTE_CODE" "a placeholder left unreplaced is rejected, not routed as a clean review"
 _fc_route self 'F1|P2|edge-case|src/e.sh:5|LOW|unchallenged|code-reviewer'
 assert_exit 1 "$ROUTE_CODE" "self mode with a LOW row stops"
 assert_contains "return to step 5" "$ROUTE_ERR" "sends the reviewer back to step 5"
@@ -356,6 +358,7 @@ assert_contains "<!-- FLOW_REVIEW_CYCLE:2 FINDINGS:[F1|P2|correctness|src/b.sh:4
 assert_not_contains "F2|" "$POSTED" "no F2 marker row"
 assert_contains "--request-changes" "$GH_ARGS" "decision from the HIGH P2"
 assert_contains "--repo" "$GH_ARGS" "repository pinned"
+assert_contains "POSTED_AS=--request-changes POST_EXIT=0" "$POST_OUT" "block reports what it posted"
 
 _flow_test_begin "risk: header counts — a body that counts the LOW finding is refused"
 WRONG_BODY=${FC_MIXED_BODY/P1: 0, P2: 1, P3: 0 · Needs investigation: 1/P1: 1, P2: 1, P3: 0 · Needs investigation: 0}
@@ -403,7 +406,6 @@ _fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer' 1 '##
 assert_exit 0 "$POST_CODE" "own PR with the finding re-recorded HIGH posts"
 assert_contains "--comment" "$GH_ARGS" "self-review is a comment"
 assert_contains "F1|P2|edge-case|src/e.sh:5|open|HIGH|unchallenged" "$POSTED" "7-field row"
-POST_ERR_SAVED=""
 (cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" GH_LOG="$FC_TMP/gh.log" GH_BODY="$FC_TMP/gh.body" \
   REVIEW_MODE=external PR_NUM=7 FINDING_ROWS_FILE="$FC_TMP/rows" FINDING_TOTAL=1 BODY_FILE="$FC_TMP/body.md" \
   bash "$FC_TMP/post-block.sh" >/dev/null 2>"$FC_TMP/post.err"); MISSING_CODE=$?

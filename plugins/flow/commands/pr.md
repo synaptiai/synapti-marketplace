@@ -389,12 +389,12 @@ After agents return, TaskUpdate each review task with findings.
     fi
     if [ -n "$ISSUE" ]; then
       "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
-        --issue $ISSUE \
+        --issue "$ISSUE" \
         --type review-cycle \
         --metadata cycle=1 \
         --metadata path=B \
-        --metadata findings_count=$TOTAL_FINDINGS \
-        --metadata pr=$PR_NUMBER
+        --metadata findings_count="$TOTAL_FINDINGS" \
+        --metadata pr="$PR_NUMBER"
       for PAIR in $(printf '%s' "${REFUTED:-}" | tr ',' ' '); do
         "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
           --issue "$ISSUE" \
