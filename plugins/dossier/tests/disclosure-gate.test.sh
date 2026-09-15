@@ -539,6 +539,72 @@ if command -v jq >/dev/null 2>&1; then
   assert_contains "table-data-cell" "$CLASSES" "the json output reports table-data-cell among examined line classes"
 fi
 
+# A genuinely clean, ordinary document must default to CLAIM_SCAN_TRUNCATED=0
+# and never print a TRUNCATED_FILES line at all — the cap this issue adds
+# must be invisible to any document nowhere near it (issue #199).
+T="$W/truncated-field-default"; mkpkg "$T"
+reg "$T" '| CL-0001 | the api supports oauth 20 device flow | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+pub "$T" "The API supports OAuth 20 device flow."
+scan "$T"
+assert_equal "0" "$?" "an ordinary registered document is unaffected by the truncation cap"
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_TRUNCATED=0" "$OUT" "an untruncated scan explicitly reports CLAIM_SCAN_TRUNCATED=0, not just an absent field"
+assert_not_contains "CLAIM_SCAN_TRUNCATED_FILES=" "$OUT" "no truncated-files line is printed when nothing was truncated"
+
+# --- issue #199: a pathological table row's per-cell cost is bounded ---------
+# One table row with far more cells than MAX_CANDIDATES_PER_FILE (500 in the
+# shipped script) must stop scan_text()'s expensive per-candidate work partway
+# through, not run it unbounded on every cell (the issue's own 5000-cell/~88s
+# reproduction). Each cell here is deliberately only two words ("ok N"), below
+# scan_text()'s four-word floor, so NOT ONE of the 500 candidates actually
+# examined can ever be reported as an unregistered sentence — this isolates
+# the truncation contract (AC2) from the registration check (already covered
+# above): a scan that is truncated but found nothing bad must still be
+# distinguishable from a scan that completed and found nothing bad.
+T="$W/table-row-truncated"; mkpkg "$T"
+reg "$T" ''
+ROW=$(printf '|'; i=1; while [ "$i" -le 520 ]; do printf ' ok %s |' "$i"; i=$((i + 1)); done)
+printf '%s\n' "$ROW" > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+RC=$?
+assert_equal "3" "$RC" \
+  "a truncated-but-otherwise-clean file exits 3, never 0 -- indistinguishable-from-clean is exactly what AC2 forbids"
+assert_contains "CLAIM_SCAN_TRUNCATED=1" "$OUT" "the truncation field is set when the per-file cap is reached"
+assert_contains "CLAIM_SCAN_TRUNCATED_FILES=" "$OUT" "the truncated file is named"
+assert_contains "technical-partner-guide.md" "$OUT" "the truncated-files list names the actual file"
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=0" "$OUT" \
+  "nothing past the cap was examined, so the sentence count reflects only the 500 examined candidates, not a false 'nothing wrong' signal"
+assert_contains "CLAIM_SCAN_ERROR=" "$OUT" "a human-readable reason accompanies the truncation"
+assert_contains "cap" "$OUT" "the truncation reason names the cap, not a generic error"
+
+# dossier-gate.sh's G06 condition parses CLAIM_SCAN_ERROR= out of --quiet
+# output (bin/dossier-gate.sh) to explain an INCONCLUSIVE verdict -- the
+# field must survive --quiet exactly like the pre-existing "no public
+# directory" exit-3 path already does, or a downstream gate wired to
+# --strict would see no evidence at all for why G06 came back INCONCLUSIVE.
+QOUT=$(cd "$T" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --quiet 2>&1)
+QRC=$?
+assert_equal "3" "$QRC" "--quiet: truncation still exits 3"
+assert_contains "CLAIM_SCAN_ERROR=" "$QOUT" "--quiet: the truncation reason still prints even though --quiet suppresses the rest of the report"
+
+if command -v jq >/dev/null 2>&1; then
+  J=$(cd "$T" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --json 2>/dev/null)
+  assert_contains '"truncated":true' "$J" "--json: truncated is reported as a JSON boolean"
+  TFILES=$(printf '%s' "$J" | jq -r '(.truncated_files // []) | join(",")' 2>/dev/null)
+  assert_contains "technical-partner-guide.md" "$TFILES" "--json: the truncated file is named in truncated_files"
+fi
+
+# A leak found before the cap was reached must still take priority over the
+# truncation exit code -- a real finding is worse than "we stopped looking",
+# and must not be masked by it.
+T="$W/table-row-truncated-with-leak"; mkpkg "$T"
+reg "$T" ''
+LEAK_ROW=$(printf '| Use sk-ant-api03-abcdefghijklmnop to authenticate |'; i=1; while [ "$i" -le 520 ]; do printf ' ok %s |' "$i"; i=$((i + 1)); done)
+printf '%s\n' "$LEAK_ROW" > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "2" "$?" \
+  "a leak in a cell before the cap is reached still reports exit 2, not the weaker truncation exit 3"
+
 # --- single-file mode --------------------------------------------------------
 T="$W/single"; mkpkg "$T"
 pub "$T" "Use sk-ant-api03-zzzzzzzzzzzzzzzz for access."

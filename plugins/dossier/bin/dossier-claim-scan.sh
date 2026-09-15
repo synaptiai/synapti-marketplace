@@ -22,10 +22,22 @@
 #   dossier-claim-scan.sh [--output-root <path>] [--file <path>] [--json] [--quiet]
 #
 # Exit: 0 clean · 1 registration gaps only · 2 leakage detected · 3 infra error
+#   or scan truncated (see below)
 #
 # 2 and 3 are separate because the gate turns this exit code into published
 # evidence. Reporting "leakage detected" for a package that simply has no
 # public directory yet names a security incident that did not happen.
+#
+# A per-file candidate cap (MAX_CANDIDATES_PER_FILE, issue #199) bounds the
+# subprocess cost a single pathological file -- e.g. one markdown table row
+# with thousands of cells -- can force onto this scan. A file that hits the
+# cap is reported via CLAIM_SCAN_TRUNCATED=1 / CLAIM_SCAN_TRUNCATED_FILES=,
+# and if that file would otherwise have reported fully clean (no leak, no
+# registration gap, no prohibited vocabulary from what WAS examined), the
+# scan exits 3, not 0 -- an incomplete scan of a truncated file must never
+# be indistinguishable from a genuinely complete, clean one. A leak or
+# registration gap found before the cap was reached still reports its own
+# exit code (2 or 1) even on a truncated file.
 
 set -uo pipefail
 
@@ -499,6 +511,47 @@ redact() {
 # output alone.
 LINE_CLASSES_EXAMINED="paragraph,bullet,blockquote,table-data-cell"
 
+# Upper bound on how many scan_text() calls a single file may trigger before
+# this scan stops examining that file's remaining candidates and reports it
+# as truncated instead (issue #199).
+#
+# Before issue #176, a table row was skipped entirely, so scan_text()'s cost
+# per file was bounded by the file's own line count. #176 made every table
+# DATA cell its own scan_text() call (scan_table_row(), below) -- correctly,
+# since a cell is prose that can carry an unregistered claim -- but a single
+# markdown table ROW can hold arbitrarily many cells on ONE line, so that
+# per-cell fan-out is not bounded by the file's line count at all. Each
+# scan_text() call forks roughly a dozen subprocesses (code-span strip,
+# whole-line credential pre-check, sentence split, normalize, word count, the
+# approved-pool lookup, and -- on the unregistered path -- redact()) that
+# this scanner's own history (see the comments through this file) has needed
+# for correctness, not accident, so the fix here is a bound on CALLS, not a
+# cheaper scan_text().
+#
+# Empirically timed on this repository's hardware (single foreground run,
+# not part of the test suite): a synthetic single-row table with 300 cells
+# (~12KB), each cell a short unregistered-shaped phrase, took ~7.0s real
+# time end-to-end through the unmodified scanner -- about 23ms per cell,
+# consistent with the issue's own reproduction (~17.6ms/cell at 5000 cells,
+# ~88s). 500 was chosen as the cap: it bounds a single pathological file to
+# roughly 500 * 23ms =~ 11.5s worst case (was unbounded, and empirically
+# minutes at 5000+ candidates) while comfortably exceeding the candidate
+# count of any real, human-authored public document this plugin's own
+# 06-public/ packages contain today (none of which approach even 500
+# distinct declarative sentences, bullets, and table cells combined in one
+# file) -- see .decisions/issue-199.md for the full sizing rationale.
+MAX_CANDIDATES_PER_FILE=500
+
+# Running total of scan_text() calls for the file currently being scanned;
+# reset to 0 at the top of each iteration of the `for f in $TARGETS` loop
+# below. FILE_TRUNCATED tracks whether THIS file has already been counted in
+# TRUNCATED_FILE_COUNT / TRUNCATED_FILES, so a file with thousands of cells
+# past the cap is recorded once, not once per skipped candidate.
+CANDIDATES_EXAMINED=0
+FILE_TRUNCATED=0
+TRUNCATED_FILE_COUNT=0
+TRUNCATED_FILES=""
+
 # One sentence per check. Declarative only: a heading or a fragment is not a
 # claim, and flagging them would drown the real findings. Shared by paragraph,
 # bullet, blockquote, and table-cell text alike (issue #176) — all four are
@@ -506,6 +559,27 @@ LINE_CLASSES_EXAMINED="paragraph,bullet,blockquote,table-data-cell"
 scan_text() {
   local text="$1"
   local SPLITTABLE class
+
+  # Bound the per-file subprocess cost (issue #199) before any of it is
+  # spent. A pathological table row can turn one line into thousands of
+  # scan_text() calls (see MAX_CANDIDATES_PER_FILE above) -- once this
+  # file's budget is spent, further candidates in it are not examined for
+  # EITHER check this function performs (the credential pre-check below, or
+  # the registration loop): a partial subprocess-heavy scan is still an
+  # unbounded one on a wide enough row, just with a higher constant. The
+  # file is recorded as truncated exactly once, and the exit-code cascade at
+  # the bottom of this script makes sure a truncated-but-otherwise-clean
+  # file is never reported the same way as a genuinely fully-scanned one.
+  CANDIDATES_EXAMINED=$((CANDIDATES_EXAMINED + 1))
+  if [ "$CANDIDATES_EXAMINED" -gt "$MAX_CANDIDATES_PER_FILE" ]; then
+    if [ "$FILE_TRUNCATED" -eq 0 ]; then
+      FILE_TRUNCATED=1
+      TRUNCATED_FILE_COUNT=$((TRUNCATED_FILE_COUNT + 1))
+      TRUNCATED_FILES="${TRUNCATED_FILES}${TRUNCATED_FILES:+,}$f"
+    fi
+    return
+  fi
+
   # Code spans come out BEFORE the split. A bare `tr '.' '\n'` cuts inside
   # `SKILL.md`, `plugin.json`, and `3.2.2`, producing fragments like
   # "md` is not a skill" — reported as unregistered claims that no drafter
@@ -689,6 +763,11 @@ flush_held_table_row() {
 }
 
 for f in $TARGETS; do
+  # Per-file budget (issue #199): each file gets its own MAX_CANDIDATES_PER_FILE
+  # allowance, so one pathological file cannot spend a cap sized for the whole
+  # scan and truncate every OTHER (possibly perfectly ordinary) file to zero.
+  CANDIDATES_EXAMINED=0
+  FILE_TRUNCATED=0
   IN_FENCE=0
   # Which fence character (backtick or tilde) opened the currently-open
   # fence, "" when none is open. CommonMark requires a fence's closer to use
@@ -881,6 +960,12 @@ done
 UNREGISTERED=$(grep -c '^unregistered' "$HITS_FILE" 2>/dev/null || true)
 [ -z "$UNREGISTERED" ] && UNREGISTERED=0
 
+# Whether ANY file hit MAX_CANDIDATES_PER_FILE (issue #199). Reported and
+# acted on regardless of --json/--quiet -- see the unconditional
+# CLAIM_SCAN_ERROR block below the report section for why.
+TRUNCATED=0
+[ -n "$TRUNCATED_FILES" ] && TRUNCATED=1
+
 # --- Report ------------------------------------------------------------------
 if [ "$WANT_JSON" -eq 1 ]; then
   CLASSES_JSON=$(printf '%s' "$LINE_CLASSES_EXAMINED" | awk -F',' '{
@@ -888,8 +973,29 @@ if [ "$WANT_JSON" -eq 1 ]; then
     for (i = 1; i <= NF; i++) { if (i > 1) out = out ","; out = out "\"" $i "\"" }
     print out "]"
   }')
-  printf '{"leaks":%s,"prohibited":%s,"unregistered":%s,"register_present":%s,"line_classes_examined":%s,"hits":[' \
-    "$LEAKS" "$PROHIBITED" "$UNREGISTERED" "$REGISTER_PRESENT" "$CLASSES_JSON"
+  TRUNCATED_JSON=$([ "$TRUNCATED" -eq 1 ] && printf 'true' || printf 'false')
+  # Explicit empty check, not left to awk alone: `printf '%s' ""` writes zero
+  # bytes with no trailing newline, so awk sees no input RECORD at all (not
+  # one empty record) and its `{...}` main rule never runs once -- the
+  # untruncated (overwhelmingly common) case would otherwise leave
+  # TRUNCATED_FILES_JSON as an empty string instead of "[]", producing
+  # `"truncated_files":,"hits":[...` -- a bare comma where a JSON value must
+  # be, invalid for every ordinary scan. Confirmed by live reproduction
+  # (disclosure-gate.test.sh's --json fixtures) before this guard was added.
+  # Paths are also escaped the same way hit details are below (they can
+  # carry the caller's own filesystem structure), though not split-safe
+  # against an embedded literal comma -- the same assumption TRUNCATED_FILES
+  # itself already makes when joining paths.
+  TRUNCATED_FILES_JSON="[]"
+  if [ -n "$TRUNCATED_FILES" ]; then
+    TRUNCATED_FILES_JSON=$(printf '%s' "$TRUNCATED_FILES" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | awk -F',' '{
+      out = "["
+      for (i = 1; i <= NF; i++) { if (i > 1) out = out ","; out = out "\"" $i "\"" }
+      print out "]"
+    }')
+  fi
+  printf '{"leaks":%s,"prohibited":%s,"unregistered":%s,"register_present":%s,"line_classes_examined":%s,"truncated":%s,"truncated_files":%s,"hits":[' \
+    "$LEAKS" "$PROHIBITED" "$UNREGISTERED" "$REGISTER_PRESENT" "$CLASSES_JSON" "$TRUNCATED_JSON" "$TRUNCATED_FILES_JSON"
   first=1
   while IFS=$'\t' read -r sev file ln detail; do
     [ $first -eq 0 ] && printf ','
@@ -904,6 +1010,8 @@ elif [ "$QUIET" -eq 0 ]; then
   echo "CLAIM_SCAN_UNREGISTERED_SENTENCES=$UNREGISTERED"
   echo "CLAIM_SCAN_REGISTER_PRESENT=$REGISTER_PRESENT"
   echo "CLAIM_SCAN_LINE_CLASSES_EXAMINED=$LINE_CLASSES_EXAMINED"
+  echo "CLAIM_SCAN_TRUNCATED=$TRUNCATED"
+  [ "$TRUNCATED" -eq 1 ] && echo "CLAIM_SCAN_TRUNCATED_FILES=$TRUNCATED_FILES"
   if [ -s "$HITS_FILE" ]; then
     echo ""
     echo "Findings (matched values are never printed):"
@@ -919,9 +1027,32 @@ elif [ "$QUIET" -eq 0 ]; then
     echo ""
     echo "NOTE: no claim register at $CLAIMS — every public sentence is unregistered by definition."
   fi
+  if [ "$TRUNCATED" -eq 1 ]; then
+    echo ""
+    echo "NOTE: $TRUNCATED_FILE_COUNT file(s) exceeded the $MAX_CANDIDATES_PER_FILE-candidate-per-file scan cap ($TRUNCATED_FILES) and were not fully examined -- see CLAIM_SCAN_TRUNCATED."
+  fi
+fi
+
+# A truncated file was not fully examined by EITHER check scan_text()
+# performs (issue #199) -- a 0 in CLAIM_SCAN_LEAKS/CLAIM_SCAN_UNREGISTERED_
+# SENTENCES for that file proves nothing about the candidates the cap
+# skipped. Printed unconditionally (ignores --quiet and --json), matching
+# the "no public directory" exit-3 path above (line ~72): dossier-gate.sh's
+# G06 condition parses this exact CLAIM_SCAN_ERROR= field out of --quiet
+# output to explain an INCONCLUSIVE verdict, so it must be findable
+# regardless of how this script was invoked. See .decisions/issue-199.md
+# for why exit 3 (not a new exit code, and not exit 1) is what makes this
+# actually change the caller's behavior.
+if [ "$TRUNCATED" -eq 1 ]; then
+  echo "CLAIM_SCAN_ERROR=scan truncated: per-file candidate cap ($MAX_CANDIDATES_PER_FILE) reached in $TRUNCATED_FILE_COUNT file(s) ($TRUNCATED_FILES) -- not all content was examined; a clean result for these files does not mean a complete scan"
 fi
 
 [ "$LEAKS" -gt 0 ] && exit 2
 [ "$UNREGISTERED" -gt 0 ] && exit 1
 [ "$PROHIBITED" -gt 0 ] && exit 1
+# Never let "we stopped looking" read the same as "we looked and found
+# nothing" (issue #199 AC2). Checked last, after every real finding above,
+# so a genuine leak or registration gap still reports its own more specific
+# exit code even when the same file was also truncated.
+[ "$TRUNCATED" -eq 1 ] && exit 3
 exit 0
