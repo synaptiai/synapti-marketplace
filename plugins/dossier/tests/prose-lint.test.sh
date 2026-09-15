@@ -390,6 +390,34 @@ EOF
 BARE_JSON=$(cd "$BARE_DIR" && "$LINT" --file "07-verification/documentation-verification-report.md" --json 2>/dev/null)
 assert_equal "1" "$(count_of "$BARE_JSON" verbatim_blocks)" "a bare relative path exactly matching the suffix, with no leading directory, still honors the marker"
 
+# --- file-scoping: a decoy file must not get the exemption in --output-root --
+# Found in review: the suffix-only case "$f" in */07-verification/...) match
+# has no path-boundary anchor, so ANY file under the output root whose tail
+# happens to be 07-verification/documentation-verification-report.md -- not
+# just the one real canonical file -- was honored too. --output-root walks
+# the whole tree (find "$OUTPUT_ROOT" -name '*.md'), so a decoy nested at
+# <root>/decoy/07-verification/documentation-verification-report.md could
+# dodge G18 for its own violating prose, exactly what the file-scoping
+# restriction exists to prevent.
+DECOY_ROOT="$W/pkg-j"
+mkdir -p "$DECOY_ROOT/07-verification" "$DECOY_ROOT/decoy/07-verification"
+cat > "$DECOY_ROOT/07-verification/documentation-verification-report.md" <<'EOF'
+# Verification
+
+Clean prose here.
+EOF
+cat > "$DECOY_ROOT/decoy/07-verification/documentation-verification-report.md" <<'EOF'
+# Decoy
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+This seamless platform helps you.
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+"$LINT" --output-root "$DECOY_ROOT" >/dev/null 2>&1
+assert_equal "1" "$?" "a decoy file at a non-canonical path sharing the suffix still fails the package"
+DECOY_OUT_JSON=$("$LINT" --output-root "$DECOY_ROOT" --json 2>/dev/null)
+assert_equal "0" "$(count_of "$DECOY_OUT_JSON" verbatim_blocks)" "the decoy's marker pair is not honored -- only the real canonical path is"
+
 rm -rf "$W" 2>/dev/null
 
 _dossier_test_summary

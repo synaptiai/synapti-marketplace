@@ -47,16 +47,21 @@
 # Exit: 0 clean · 1 hard-category violations found · 2 usage error
 #
 # VERBATIM MARKERS: when scanning 07-verification/documentation-verification-
-# report.md specifically (matched by path suffix, for both --file and
-# --output-root — inert everywhere else in the package), text between a
-# <!-- DOSSIER_VERBATIM_BEGIN --> line and a matching <!-- DOSSIER_VERBATIM_END
-# --> line is excluded from every hard category. This is how /dossier:audit's
-# Phase 3 "collect pass output unmodified" rule coexists with G18's
-# zero-violations gate. --json reports verbatim_blocks and
-# verbatim_lines_skipped (package totals, and per file when nonzero) so the
-# exemption is never indistinguishable from a clean scan. An unclosed or
-# nested BEGIN is a scan error, never a silent exemption; a stray END with no
-# open BEGIN is ignored.
+# report.md specifically — under --output-root, anchored to that exact path
+# so a decoy file elsewhere in the tree sharing the filename cannot claim the
+# exemption; under --file, matched by path suffix, since every call site in
+# this plugin passes an agent-chosen canonical path rather than an
+# externally-influenced one (--file scoping is caller-trust-based, not
+# defense-in-depth) — text between a <!-- DOSSIER_VERBATIM_BEGIN --> line and
+# a matching <!-- DOSSIER_VERBATIM_END --> line is excluded from every hard
+# category. This is how /dossier:audit's Phase 3 "collect pass output
+# unmodified" rule coexists with G18's zero-violations gate. --json reports
+# verbatim_blocks and verbatim_lines_skipped (package totals, and per file
+# when nonzero) so the exemption is never indistinguishable from a clean
+# scan. An unclosed or nested BEGIN is a scan error, never a silent
+# exemption; a stray END with no open BEGIN is ignored. The exemption trusts
+# that whatever sits between the markers in the one file it honors was
+# genuinely written by Phase 3 — it is not a content check.
 
 set -uo pipefail
 
@@ -288,14 +293,27 @@ lint_file() { # <path>
   # the package they must stay inert, or any document could dodge G18 by
   # wrapping its own prose in the same markers.
   honor_verbatim=0
-  case "$f" in
-    # Two alternatives, not one glob: a bare relative path exactly matching
-    # the suffix (no leading directory, e.g. --file invoked from the
-    # verification report's own parent directory) has no "/" for */... to
-    # match against.
-    */07-verification/documentation-verification-report.md | 07-verification/documentation-verification-report.md)
-      honor_verbatim=1 ;;
-  esac
+  if [ -n "$OUTPUT_ROOT" ]; then
+    # --output-root mode walks the whole tree (find "$OUTPUT_ROOT" -name
+    # '*.md'), so a suffix-only match would also honor a decoy file nested
+    # anywhere under the root whose tail happens to match — e.g.
+    # <root>/decoy/07-verification/documentation-verification-report.md —
+    # letting it dodge G18 for its own prose. Anchor to the exact, singular
+    # canonical path instead; there is exactly one, so no suffix match is
+    # needed here.
+    if [ "$f" = "${OUTPUT_ROOT%/}/07-verification/documentation-verification-report.md" ]; then
+      honor_verbatim=1
+    fi
+  else
+    # --file mode: the caller supplies the path directly. Every call site in
+    # this plugin passes an agent-chosen canonical document path, never an
+    # externally-influenced string, so a suffix match is sufficient here and
+    # supports the bare-relative-path form (no leading directory) too.
+    case "$f" in
+      */07-verification/documentation-verification-report.md | 07-verification/documentation-verification-report.md)
+        honor_verbatim=1 ;;
+    esac
+  fi
 
   awk_err=$(mktemp -t dossier-prose-lint-awkerr.XXXXXX 2>/dev/null) || awk_err=/dev/null
   awk_out=$(awk -v honor_verbatim="$honor_verbatim" -f "$AWK_PROG" "$f" 2>"$awk_err")
