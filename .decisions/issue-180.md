@@ -69,6 +69,7 @@ artifacts:
 | Code-fence interaction | Marker text recognized even inside a ` ``` ` fenced code block, letting an example snippet accidentally toggle verbatim state | Fixture: marker-looking text inside a fenced code block, with real violating prose immediately after the fence closes → the fenced text does not toggle state; the real prose after the fence is still scanned and flagged |
 | Unclosed code fence (added post-self-review, F1) | An unbalanced ` ``` ` reads as clean instead of erroring — the pre-existing `in_fence` toggle had no unclosed sentinel (unlike `in_header`), so every remaining line silently reads as still-fenced and dictionary-hit prose after it is never scanned; a fence left open inside a verbatim block can also swallow the real `END` marker | Fixture: unclosed fence with dictionary-hit prose after it → `scan_error`, not `0`. Second fixture: unclosed fence inside a verbatim block, swallowing the real `END` → exactly one `scan_error`, reported as the fence (root cause), not the verbatim block |
 | File-scoping, bare relative path (added post-self-review, F2) | The `case "$f" in */07-verification/...` pattern requires a literal `/` before the suffix, so a bare relative path exactly equal to the suffix (no leading directory) loses the exemption | Fixture: `cd` into the fixture package root, invoke `--file` with the bare relative path → `verbatim_blocks == 1`, not `0` |
+| File-scoping, decoy path in `--output-root` (added post-security-review, SEC-1) | The suffix-only `case` match had no path-boundary anchor, so `--output-root` (which walks the whole tree) honored the exemption for ANY file whose tail matched the suffix, not just the one real canonical file — a decoy nested at `<root>/decoy/07-verification/documentation-verification-report.md` could dodge G18 for its own violating prose | Fixture: a clean canonical file plus a decoy file at a non-canonical path sharing only the filename, both under one `--output-root`, violating prose in the decoy's markers → package still fails (`blocking_violations > 0`), decoy's `verbatim_blocks == 0` |
 
 ## Stranger Test
 
@@ -142,3 +143,23 @@ Task boundaries: Task 1 bundles AC1+AC2+AC3 (one awk-program edit region, one te
 <!-- auto-log: 2026-09-15 08:04 commit "docs(dossier): correct claim-scan scoping claim, tighten exemption wording" -->
 
 <!-- auto-log: 2026-09-15 08:07 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-180.md -->
+
+<!-- auto-log: 2026-09-15 10:06 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_dossier_verbatim_marker_path_scoping_gap.md -->
+
+<!-- auto-log: 2026-09-15 10:06 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-15 10:08 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/prose-lint.test.sh -->
+
+<!-- auto-log: 2026-09-15 10:08 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/feedback_dossier_bin_verification_technique.md -->
+
+<!-- auto-log: 2026-09-15 10:08 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/MEMORY.md -->
+
+<!-- auto-log: 2026-09-15 10:08 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-prose-lint.sh -->
+
+<!-- auto-log: 2026-09-15 10:09 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/references/release-gate-conditions.md -->
+
+<!-- auto-log: 2026-09-15 10:09 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-prose-lint.sh -->
+
+<!-- auto-log: 2026-09-15 10:11 commit "fix(dossier): anchor --output-root verbatim scoping to the exact path" -->
+
+<!-- auto-log: 2026-09-15 10:11 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-180.md -->
