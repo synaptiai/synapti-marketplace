@@ -796,20 +796,25 @@ assert_contains "[REDACTED:secret-assignment]" "$OUT" "the class is still named"
 # Found in review (round 2): a SINGLE stray character anywhere inside an
 # otherwise-exact match makes the whole pattern fail to match at all -- not
 # a fragment leak, a non-detection, with the raw value printed verbatim and
-# no leak flagged. aws-access-key and private-key-block are now rewritten
-# (CRED_PATTERNS, dossier-claim-scan.sh) to tolerate exactly one interrupting
-# character after any position while still requiring the same 16 real key
-# characters / the same literal "PRIVATE KEY" letters -- both closed below
-# with a LONE (unpaired) interrupted occurrence, the shape that used to slip
-# through entirely undetected. connection-string is NOT fixed here: loosening
-# its password charset the same way creates false positives on ordinary
+# no leak flagged. aws-access-key and private-key-block were rewritten in
+# #198 (CRED_PATTERNS, dossier-claim-scan.sh) to tolerate exactly one
+# interrupting character after any position while still requiring the same
+# 16 real key characters / the same literal "PRIVATE KEY" letters -- both
+# closed below with a LONE (unpaired) interrupted occurrence, the shape that
+# used to slip through entirely undetected. connection-string was
+# deliberately left out of #198: loosening its password charset the same
+# naive way (any run up to the next `@`) creates false positives on ordinary
 # scheme mentions with no credential at all (e.g. a sentence that just names
-# a `postgres://host:port/db` with no user:pass@) -- tracked as a follow-up
-# issue instead, per explicit product decision (see .decisions/issue-198.md).
+# a `postgres://host:port/db` with no user:pass@) -- tracked as issue #210
+# and fixed below (frag-conn-lone), with a matching charset narrowed to keep
+# the interrupter slot bounded to exactly one character per position instead
+# of an unbounded run, closing #198's deferred gap without reopening the
+# false positive it was deferred to avoid (frag-conn-false-positive tests
+# that guard directly; see .decisions/issue-210.md for the full tradeoff).
 # The paired-occurrence fixtures below (a second, non-matching-but-
 # credential-shaped occurrence alongside a valid match) still hold for all
-# three classes regardless of that gap, since the valid occurrence alone
-# triggers whole-line redaction.
+# three classes regardless, since the valid occurrence alone triggers
+# whole-line redaction.
 
 T="$W/frag-aws"; mkpkg "$T"
 pub "$T" "The archived key was AKIAOLDFRAGMENT and the active one is AKIAIOSFODNN7EXAMPLE for now."
@@ -925,6 +930,52 @@ assert_not_contains "sup3rsecretpass" "$OUT" "nor its lowercased form"
 assert_not_contains "Sup3rSecr" "$OUT" "connection-string: the non-matching corrupted password never reaches the output"
 assert_not_contains "sup3rsecr" "$OUT" "nor its lowercased form"
 assert_contains "[REDACTED:connection-string]" "$OUT" "the class is still named"
+
+# A LONE, unpaired occurrence, interrupted mid-password -- issue #210. Unlike
+# the paired frag-conn case above (a second, non-matching-but-credential-
+# shaped occurrence triggers whole-line redaction as a side effect even when
+# the interrupted one alone would slip through), this fixture has no valid
+# partner on the line. Before this fix, connection-string's required trailing
+# `@` meant a single stray character anywhere in the password made the WHOLE
+# pattern fail to match -- not a fragment leak, a full non-detection: the raw
+# password printed verbatim in the excerpt with LEAKS=0 and exit 1
+# (registration gap only), not exit 2 (leakage) -- confirmed live against the
+# pre-fix pattern. connection-string is now rewritten (CRED_PATTERNS,
+# dossier-claim-scan.sh) to tolerate exactly one interrupting character
+# (space, `|`, or `,`) at any single position in the password segment,
+# mirroring #198's own bound for aws-access-key/private-key-block -- see
+# .decisions/issue-210.md for the false-positive tradeoff this bound exists
+# to avoid.
+T="$W/frag-conn-lone"; mkpkg "$T"
+pub "$T" "The staging URI is postgres://admin:Sup3rSecret Pass@dbhost:5432/prod for now."
+scan "$T"
+assert_equal "2" "$?" "connection-string: a lone interrupted password is still flagged as leakage (exit 2), not just a registration gap"
+OUT=$(scanout "$T")
+assert_not_contains "Sup3rSecret Pass" "$OUT" "conn-lone: the interrupted password never reaches the output"
+assert_not_contains "sup3rsecret pass" "$OUT" "nor its lowercased form"
+assert_contains "[REDACTED:connection-string]" "$OUT" "the class is still named"
+
+# The false-positive guard this bound exists to prevent (issue #210's own
+# reproduction of the rejected wider option): a sentence that merely mentions
+# a scheme, with NO embedded user:pass@ credential at all, must NOT be
+# flagged as a connection-string leak. The comma-then-space between "app,"
+# and "ops" is exactly TWO consecutive interrupting characters at one
+# position -- outside the "exactly one" bound this fix implements -- so the
+# password class cannot bridge from ":5432/app" across both characters to
+# the unrelated "@" in "ops@corp". If this ever starts matching, the bound
+# has been loosened past the point #198 and this issue's product decision
+# both rejected.
+T="$W/frag-conn-false-positive"; mkpkg "$T"
+pub "$T" "Connect via postgres://db:5432/app, ops@corp for support."
+scan "$T"
+RC=$?
+if [ "$RC" -eq 2 ]; then
+  _dossier_assert_fail "conn-false-positive: a bare scheme mention with no credential was wrongly flagged as connection-string leakage (exit 2)"
+else
+  _dossier_assert_pass "conn-false-positive: a bare scheme mention with no credential is not flagged as connection-string leakage"
+fi
+OUT=$(scanout "$T")
+assert_not_contains "[REDACTED:connection-string]" "$OUT" "conn-false-positive: no connection-string redaction fires on a bare scheme mention"
 
 # --- a credential-shaped match straddling the '.'-based sentence split (#198) --
 # scan_text() splits on every literal '.' before redact() ever runs. A
