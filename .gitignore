@@ -48,6 +48,10 @@ plugins/flow/**/__pycache__/
 # ephemeral run state, and the enforcement hooks key off its mere existence.
 **/00-control/.scope.json
 
+# Agent-tool isolated worktrees (created under the repo root for
+# isolation:"worktree" subagents). Ephemeral scratch, never committed.
+.claude/worktrees/
+
 # Local checkout of the agent-capability-standard plugin repo.
 # The marketplace fetches it from its own repo (see .claude-plugin/marketplace.json);
 # this directory must never be committed as a gitlink again.
