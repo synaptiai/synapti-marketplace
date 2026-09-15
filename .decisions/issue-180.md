@@ -62,6 +62,8 @@ artifacts:
 | Malformed-marker exit | Unclosed or nested `BEGIN` silently exempts the rest of the file (reads as 0 violations) instead of erroring | Fixture: `BEGIN` with no matching `END`, followed by clearly-violating prose → `scan_error` recorded; the file's contribution to `blocking_violations` reflects the error path, never a clean 0 |
 | Paragraph-count boundary | The `para_sentences` counter is not reset when entering/leaving a verbatim block, so a paragraph whose sentences straddle the block boundary mis-triggers (or wrongly suppresses) `long_paragraph` | Fixture: 3 short sentences, a verbatim block, then 4 more short sentences (7 total — the exact count that trips `para_sentences==7` if counted continuously) → no `long_paragraph` finding, because the toggle resets the counter on both sides |
 | Code-fence interaction | Marker text recognized even inside a ` ``` ` fenced code block, letting an example snippet accidentally toggle verbatim state | Fixture: marker-looking text inside a fenced code block, with real violating prose immediately after the fence closes → the fenced text does not toggle state; the real prose after the fence is still scanned and flagged |
+| Unclosed code fence (added post-self-review, F1) | An unbalanced ` ``` ` reads as clean instead of erroring — the pre-existing `in_fence` toggle had no unclosed sentinel (unlike `in_header`), so every remaining line silently reads as still-fenced and dictionary-hit prose after it is never scanned; a fence left open inside a verbatim block can also swallow the real `END` marker | Fixture: unclosed fence with dictionary-hit prose after it → `scan_error`, not `0`. Second fixture: unclosed fence inside a verbatim block, swallowing the real `END` → exactly one `scan_error`, reported as the fence (root cause), not the verbatim block |
+| File-scoping, bare relative path (added post-self-review, F2) | The `case "$f" in */07-verification/...` pattern requires a literal `/` before the suffix, so a bare relative path exactly equal to the suffix (no leading directory) loses the exemption | Fixture: `cd` into the fixture package root, invoke `--file` with the bare relative path → `verbatim_blocks == 1`, not `0` |
 
 ## Stranger Test
 
@@ -131,3 +133,7 @@ Task boundaries: Task 1 bundles AC1+AC2+AC3 (one awk-program edit region, one te
 <!-- auto-log: 2026-09-15 08:03 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->
 
 <!-- auto-log: 2026-09-15 08:04 commit "fix(dossier): unclosed-fence scan error and bare-relative-path scoping" -->
+
+<!-- auto-log: 2026-09-15 08:04 commit "docs(dossier): correct claim-scan scoping claim, tighten exemption wording" -->
+
+<!-- auto-log: 2026-09-15 08:07 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-180.md -->
