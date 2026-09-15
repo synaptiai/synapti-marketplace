@@ -1,0 +1,172 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-198
+  created_at: '2026-09-15T11:05:00Z'
+  created_by: /flow:start
+  owner: daniel.bentes@synapti.ai
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-198-redact-fragment-leak
+  issue: 198
+  journal: .decisions/issue-198.md
+objective:
+  outcome: 'Issue #198 is implemented and verified.'
+  source:
+    type: github_issue
+    number: 198
+    title: 'fix(dossier): claim-scan''s redact() has incomplete coverage -- leaves
+      fragments and misses 4 whole leak classes'
+  acceptance_criteria:
+  - id: AC1
+    text: 'A credential-shaped string interrupted by any non-token character (not
+      just |) produces no fragment of the original value in the findings excerpt,
+      in either --json or plain-text output, for the 7 credential classes whose patterns
+      support this (anthropic-key, github-token, aws-access-key, slack-token, bearer-token,
+      secret-assignment, private-key-block). connection-string''s exact-format pattern
+      does not yet cover a lone interrupted occurrence -- deferred to issue #210 per
+      explicit product decision (a naive fix creates a real false-positive on an ordinary
+      scheme mention with no credential).'
+    verification_command: bash plugins/dossier/tests/run.sh disclosure-gate.test.sh
+    must_pass: true
+    status: evidence_collected
+    last_result: 'exit_code=0 reason=disclosure-gate.test.sh 161/161 pass, including
+      11 new interrupted-token fixtures across all 8 credential classes; AC1 satisfied
+      for 7 of 8 classes (connection-string exact-format gap deliberately deferred
+      to issue #210, user-authorized)'
+    evidence_ref: .flow/runs/2026-09-15T110500Z-issue-198/evidence/evidence-ac1-ac2-ac3-disclosure-gate-turn3.evidence.yaml
+  - id: AC2
+    text: Existing disclosure-gate.test.sh redaction assertions continue to pass unchanged.
+    verification_command: bash plugins/dossier/tests/run.sh disclosure-gate.test.sh
+    must_pass: true
+    status: evidence_collected
+    last_result: 'exit_code=0 reason=disclosure-gate.test.sh 161/161 pass, including
+      11 new interrupted-token fixtures across all 8 credential classes; AC1 satisfied
+      for 7 of 8 classes (connection-string exact-format gap deliberately deferred
+      to issue #210, user-authorized)'
+    evidence_ref: .flow/runs/2026-09-15T110500Z-issue-198/evidence/evidence-ac1-ac2-ac3-disclosure-gate-turn3.evidence.yaml
+  - id: AC3
+    text: New test coverage for at least one interrupted-token case per credential
+      class currently defined in redact().
+    verification_command: bash plugins/dossier/tests/run.sh disclosure-gate.test.sh
+    must_pass: true
+    status: evidence_collected
+    last_result: 'exit_code=0 reason=disclosure-gate.test.sh 161/161 pass, including
+      11 new interrupted-token fixtures across all 8 credential classes; AC1 satisfied
+      for 7 of 8 classes (connection-string exact-format gap deliberately deferred
+      to issue #210, user-authorized)'
+    evidence_ref: .flow/runs/2026-09-15T110500Z-issue-198/evidence/evidence-ac1-ac2-ac3-disclosure-gate-turn3.evidence.yaml
+specification:
+  non_goals:
+  - Does NOT change section A's scan_class leak-detection path -- unaffected, already
+    never prints matched values.
+  - Does NOT add new credential classes beyond the 8 already defined.
+  - 'REVISED mid-review: scan_text()''s ''.''-based sentence split is now IN scope.
+    Both self-review agents independently found the split (run before redact() ever
+    sees the text) is the actual leak mechanism for any credential whose matched span
+    contains a literal ''.'' -- same bug class this issue exists to close. See risk
+    map row 5.'
+  - Does NOT preserve the old secret-assignment pattern's key-name/separator prefix
+    -- whole sentence becomes the placeholder.
+  failure_modes:
+  - 'Timeouts: none -- pure text-processing change.'
+  - 'Partial failures: n/a.'
+  - 'Invalid input: pre-stripped by scan_text upstream, not this function''s concern.'
+  - 'Missing context: none -- self-contained within redact() and its one call site.'
+  interface_contracts:
+  - redact() changes from inline substitution to whole-sentence replacement on any
+    of the 8 patterns matching; unchanged pass-through otherwise. Same call site,
+    same stdin/stdout contract.
+  - The 8 placeholder tags and their regex patterns are unchanged -- only the surrounding-sentence
+    handling changes.
+  - 'Performance: single combined-alternation fast-path grep runs first; the 8 individual
+    class-identification checks only run when the fast path already matched.'
+  risk_map:
+  - area: Interrupted token, per class
+    plausible_wrong_version: Fix only closes the specific | shape, not all 8 classes
+      or other interrupting characters
+    discriminating_check: 'fixture: one interrupted-token sentence per class (8),
+      each broken by a different character -> excerpt contains neither fragment, only
+      the class tag'
+  - area: Multi-match sentence
+    plausible_wrong_version: A sentence with two different credential-shaped substrings
+      leaks the second one
+    discriminating_check: 'fixture: one sentence with both an AWS key and a Slack
+      token -> excerpt contains neither raw value'
+  - area: Fast-path/slow-path pattern drift
+    plausible_wrong_version: The combined fast-path regex and the 8 individual patterns
+      drift apart
+    discriminating_check: 'fixture: every individual pattern''s matching input also
+      trips the combined fast-path check'
+  - area: Non-credential sentence, unaffected
+    plausible_wrong_version: The rewrite starts flagging ordinary prose or breaks
+      pass-through for clean sentences
+    discriminating_check: 'fixture: a sentence with no credential-shaped substring
+      -> output byte-identical to input'
+  - area: Credential span crossing the '.'-based split
+    plausible_wrong_version: A credential whose matched span (or adjacent context)
+      contains a literal '.' -- a JWT's two internal periods, a connection string's
+      dotted hostname -- has part of itself on each side of scan_text()'s pre-existing
+      split; redact() only sees one post-split fragment at a time and cannot reassemble
+      the credential the split broke apart. Found independently by both self-review
+      agents, not anticipated at spec time.
+    discriminating_check: 'fixture: a JWT-shaped bearer token (two literal periods)
+      -> no segment reaches the excerpt, only the class tag. fixture: frag-conn''s
+      two connection-string occurrences separated by a dotted hostname -> neither
+      password (matched or corrupted, either case) reaches the excerpt.'
+  - area: Exact-format pattern, lone interrupted occurrence (round 2 review)
+    plausible_wrong_version: aws-access-key, private-key-block, and connection-string
+      require an unbroken exact match (fixed count or literal suffix), not an open-ended
+      class -- a single interrupting character in a LONE unpaired occurrence makes
+      the whole pattern fail to match at all, so the raw value prints verbatim with
+      no leak flagged (exit 1, not 2). User-confirmed disposition -- fix aws-access-key
+      and private-key-block now (both verified with no false positive found); defer
+      connection-string to follow-up issue 210 (loosening its password charset the
+      same way creates a real false positive on a bare scheme mention with no credential).
+    discriminating_check: 'fixture: a lone interrupted AKIA key and a lone interrupted
+      PEM header -> both exit 2 (leakage), not just a registration gap, no fragment
+      in the excerpt. connection-string''s lone-occurrence case is NOT covered by
+      a passing fixture in this PR -- tracked separately in follow-up issue 210.'
+  - area: Severity/exit-code drift between scan_class (section A) and CRED_PATTERNS
+      (round 2 review)
+    plausible_wrong_version: scan_class is a third, hand-maintained pattern copy that
+      can drift from CRED_PATTERNS -- a credential the excerpt correctly redacts can
+      still fail to increment LEAKS, exiting 1 instead of 2. Found independently by
+      both self-review agents for bearer-token (case-sensitive-only in scan_class,
+      case-insensitive in CRED_PATTERNS).
+    discriminating_check: 'fixture: a lowercase-only bearer token credential -> exit
+      2, not 1.'
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+  allowed_paths:
+  - plugins/dossier/bin/dossier-claim-scan.sh
+  - plugins/dossier/tests/disclosure-gate.test.sh
+  - plugins/dossier/CHANGELOG.md
+  - .decisions/issue-198.md
+  - .flow/goals/issue-198.goal.yaml
+evaluator:
+  type: flow_verdict_judge
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: achieved
+  last_evaluation:
+    result: pass
+    reason: 'All 3 ACs pass on FlowEvidence sidecar evidence-ac1-ac2-ac3-disclosure-gate-turn3
+      (161/161 disclosure-gate.test.sh, exit 0). AC1 text scoped to 7 of 8 classes,
+      connection-string deferred to open issue #210 per explicit product decision.
+      User-confirmed via F10 AskUserQuestion.'
+    at: '2026-09-15T16:01:37Z'

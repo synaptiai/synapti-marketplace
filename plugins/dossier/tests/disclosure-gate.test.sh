@@ -375,6 +375,27 @@ OUT=$(scanout "$T")
 assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
   "an escaped pipe keeps the cell whole, not split into two"
 
+# A credential interrupted by an escaped pipe inside a table cell (#198,
+# found in review). Section A's scan_class calls grep the RAW file line
+# directly and never see the table-cell escape unwound -- so `AKIA\|...`
+# (backslash before the pipe, needed to stay in one cell) never matches
+# there. scan_text()'s pre-check DOES see it, on the already-unescaped cell
+# content (`AKIA|...`), and correctly redacts it -- but before this fix
+# only counted it as an unregistered claim (exit 1), not a leak (exit 2),
+# because the pre-check never incremented LEAKS. Same misclassification bug
+# already found and fixed twice elsewhere in this issue (bearer-token case
+# sensitivity, section A's stale AKIA/PEM patterns) -- this closes it for
+# the pre-check's own hits too.
+T="$W/table-cell-interrupted-credential"; mkpkg "$T"
+reg "$T" ''
+printf '| Key | Environment |\n|---|---|\n| AKIA\\|1234567890123456 | staging |\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "2" "$?" "a credential interrupted by an escaped pipe in a table cell is still flagged as leakage (exit 2), not just a registration gap"
+OUT=$(scanout "$T")
+assert_not_contains "1234567890123456" "$OUT" "the key body never reaches the output"
+assert_contains "[REDACTED:aws-access-key]" "$OUT" "the class is still named"
+
 # --- issue #176: a blockquote is prose with a marker, not structural markup --
 T="$W/blockquote-claim"; mkpkg "$T"
 reg "$T" ''
@@ -674,6 +695,262 @@ T="$W/redact-ant"; mkpkg "$T"
 pub "$T" "The token sk-ant-abcdefgh12345678 is stored in the vault for safekeeping."
 OUT=$(scanout "$T")
 assert_not_contains "sk-ant-abcdefgh12345678" "$OUT" "an anthropic key never reaches the findings output"
+
+# --- the whole excerpt is replaced, not just the matched span (#198) ---------
+# Every one of CRED_PATTERNS' 8 patterns stops matching at the first
+# character outside its own class. Substituting only the matched span left
+# the tail -- a real fragment of the original value -- in the clear right
+# next to the tag. scan_text()'s pre-split pre-check (and, as a second,
+# currently-unreachable layer, redact() itself -- see its header comment in
+# dossier-claim-scan.sh for why) now discards the ENTIRE candidate line on
+# any match, emitting only the class tag, so no fragment on either side of
+# an interrupting character (or of a second, non-matching occurrence in the
+# same line) can survive. The fixtures below exercise the pre-check, which
+# runs before the per-sentence split and is what every one of these
+# single-sentence fixtures actually goes through.
+
+T="$W/frag-anthropic"; mkpkg "$T"
+pub "$T" "Use sk-ant-api03-ABCDEFGHIJKLMNOP|QRSTUVWX for authorization here."
+OUT=$(scanout "$T")
+assert_not_contains "ABCDEFGHIJKLMNOP" "$OUT" "anthropic: the pre-interruption fragment never reaches the output"
+assert_not_contains "abcdefghijklmnop" "$OUT" "nor its lowercased form"
+assert_not_contains "QRSTUVWX" "$OUT" "anthropic: the post-interruption fragment never reaches the output"
+assert_not_contains "qrstuvwx" "$OUT" "nor its lowercased form"
+assert_contains "[REDACTED:anthropic-key]" "$OUT" "the class is still named"
+
+T="$W/frag-github"; mkpkg "$T"
+pub "$T" "The value is ghp_ABCDEFGHIJKLMNOP,QRSTUVWXYZ01234 for now."
+OUT=$(scanout "$T")
+assert_not_contains "ABCDEFGHIJKLMNOP" "$OUT" "github: the pre-interruption fragment never reaches the output"
+assert_not_contains "QRSTUVWXYZ01234" "$OUT" "github: the post-interruption fragment never reaches the output"
+assert_not_contains "qrstuvwxyz01234" "$OUT" "nor its lowercased form"
+assert_contains "[REDACTED:github-token]" "$OUT" "the class is still named"
+
+T="$W/frag-slack"; mkpkg "$T"
+pub "$T" "The bot token xoxb-123456789012,abcdefghijkl was issued today."
+OUT=$(scanout "$T")
+assert_not_contains "123456789012" "$OUT" "slack: the pre-interruption fragment never reaches the output"
+assert_not_contains "abcdefghijkl" "$OUT" "slack: the post-interruption fragment never reaches the output"
+assert_contains "[REDACTED:slack-token]" "$OUT" "the class is still named"
+
+T="$W/frag-bearer"; mkpkg "$T"
+pub "$T" "Send requests with Bearer ABCDEFGHIJKLMNOPQRST|UVWXYZ012345 as the header."
+OUT=$(scanout "$T")
+assert_not_contains "ABCDEFGHIJKLMNOPQRST" "$OUT" "bearer: the pre-interruption fragment never reaches the output"
+assert_not_contains "UVWXYZ012345" "$OUT" "bearer: the post-interruption fragment never reaches the output"
+assert_not_contains "uvwxyz012345" "$OUT" "nor its lowercased form"
+assert_contains "[REDACTED:bearer-token]" "$OUT" "the class is still named"
+
+# A lowercase "bearer" still counts as a LEAK, not just a registration gap.
+# Section A's own leak-counter (scan_class, dossier-claim-scan.sh) was
+# case-sensitive-only ('Bearer', capital only) while scan_text()'s pre-check
+# used the case-insensitive CRED_PATTERNS version -- a lowercase match got
+# redacted correctly here but never counted as a leak there, so the scan
+# exited 1 instead of 2. Found independently by both review agents.
+T="$W/frag-bearer-lowercase-leak"; mkpkg "$T"
+pub "$T" "Send requests with bearer ABCDEFGHIJKLMNOPQRSTUVWXYZ012345 as the header."
+scan "$T"
+assert_equal "2" "$?" "a lowercase bearer token is still flagged as leakage (exit 2), not just a registration gap"
+
+T="$W/frag-secret-assignment"; mkpkg "$T"
+pub "$T" "Set password: Sup3rSecretVal|ueHere123 before deploying."
+OUT=$(scanout "$T")
+assert_not_contains "Sup3rSecretVal" "$OUT" "secret-assignment: the pre-interruption fragment never reaches the output"
+assert_not_contains "sup3rsecretval" "$OUT" "nor its lowercased form"
+assert_not_contains "ueHere123" "$OUT" "secret-assignment: the post-interruption fragment never reaches the output"
+assert_contains "[REDACTED:secret-assignment]" "$OUT" "the class is still named"
+
+# The remaining three classes are exact-format, not an open-ended character
+# class: a fixed {16} count or a literal multi-char suffix, rather than a
+# `{N,}` minimum that still matches a truncated prefix when interrupted.
+# Found in review (round 2): a SINGLE stray character anywhere inside an
+# otherwise-exact match makes the whole pattern fail to match at all -- not
+# a fragment leak, a non-detection, with the raw value printed verbatim and
+# no leak flagged. aws-access-key and private-key-block are now rewritten
+# (CRED_PATTERNS, dossier-claim-scan.sh) to tolerate exactly one interrupting
+# character after any position while still requiring the same 16 real key
+# characters / the same literal "PRIVATE KEY" letters -- both closed below
+# with a LONE (unpaired) interrupted occurrence, the shape that used to slip
+# through entirely undetected. connection-string is NOT fixed here: loosening
+# its password charset the same way creates false positives on ordinary
+# scheme mentions with no credential at all (e.g. a sentence that just names
+# a `postgres://host:port/db` with no user:pass@) -- tracked as a follow-up
+# issue instead, per explicit product decision (see .decisions/issue-198.md).
+# The paired-occurrence fixtures below (a second, non-matching-but-
+# credential-shaped occurrence alongside a valid match) still hold for all
+# three classes regardless of that gap, since the valid occurrence alone
+# triggers whole-line redaction.
+
+T="$W/frag-aws"; mkpkg "$T"
+pub "$T" "The archived key was AKIAOLDFRAGMENT and the active one is AKIAIOSFODNN7EXAMPLE for now."
+OUT=$(scanout "$T")
+assert_not_contains "AKIAOLDFRAGMENT" "$OUT" "aws: the non-matching second occurrence never reaches the output"
+assert_not_contains "akiaoldfragment" "$OUT" "nor its lowercased form"
+assert_not_contains "AKIAIOSFODNN7EXAMPLE" "$OUT" "aws: the matched occurrence never reaches the output"
+assert_contains "[REDACTED:aws-access-key]" "$OUT" "the class is still named"
+
+# A LONE, unpaired occurrence, interrupted -- no valid partner on the line to
+# trigger whole-line redaction as a side effect. Before the interrupt-
+# tolerant AKIA pattern, this printed the raw key verbatim with LEAKS=0 and
+# exit 1 (registration gap only), not exit 2 (leakage) -- confirmed live
+# against the pre-fix pattern.
+T="$W/frag-aws-lone"; mkpkg "$T"
+pub "$T" "The archived key was AKIAIOSFOD NN7EXAMPLE for backup access only."
+scan "$T"
+assert_equal "2" "$?" "aws: a lone interrupted key is still flagged as leakage (exit 2), not just a registration gap"
+OUT=$(scanout "$T")
+assert_not_contains "AKIAIOSFOD" "$OUT" "aws-lone: the pre-interruption fragment never reaches the output"
+assert_not_contains "NN7EXAMPLE" "$OUT" "aws-lone: the post-interruption fragment never reaches the output"
+assert_contains "[REDACTED:aws-access-key]" "$OUT" "the class is still named"
+
+# The first interrupt-tolerant draft of this pattern only tolerated a stray
+# character BETWEEN the 16 body characters, not at the boundary right after
+# the literal "AKIA" prefix -- a distinct position, missed by frag-aws-lone
+# above (which interrupts mid-body) and found live in round-3 review.
+T="$W/frag-aws-lone-prefix"; mkpkg "$T"
+pub "$T" "The leaked key was AKIA ABCDEFGHIJKLMNOP for backup access."
+scan "$T"
+assert_equal "2" "$?" "aws: an interrupt right after the AKIA prefix is still flagged as leakage (exit 2)"
+OUT=$(scanout "$T")
+assert_not_contains "ABCDEFGHIJKLMNOP" "$OUT" "aws-lone-prefix: the key body never reaches the output"
+assert_contains "[REDACTED:aws-access-key]" "$OUT" "the class is still named"
+
+T="$W/frag-pem"; mkpkg "$T"
+pub "$T" "The backup starts with -----BEGIN RSA PRIVATE KEY----- while the corrupted copy reads -----BEGIN RSA PRIVATE K3Y-----."
+OUT=$(scanout "$T")
+assert_not_contains "BEGIN RSA PRIVATE KEY" "$OUT" "pem: the matched header never reaches the output"
+assert_not_contains "BEGIN RSA PRIVATE K3Y" "$OUT" "pem: the non-matching corrupted header never reaches the output"
+assert_contains "[REDACTED:private-key-block]" "$OUT" "the class is still named"
+
+# A LONE, unpaired occurrence, interrupted mid-word -- same rationale as
+# frag-aws-lone above.
+T="$W/frag-pem-lone"; mkpkg "$T"
+pub "$T" "The backup starts with -----BEGIN RSA PRI VATE KEY----- for safekeeping."
+scan "$T"
+assert_equal "2" "$?" "pem: a lone interrupted header is still flagged as leakage (exit 2), not just a registration gap"
+OUT=$(scanout "$T")
+assert_not_contains "BEGIN RSA PRI VATE KEY" "$OUT" "pem-lone: the interrupted header never reaches the output"
+assert_contains "[REDACTED:private-key-block]" "$OUT" "the class is still named"
+
+# Two more boundary positions the first interrupt-tolerant draft missed,
+# found live in round-3 review alongside frag-aws-lone-prefix above: the
+# boundary right before the trailing dashes, and within the armor-type
+# region between "BEGIN" and "PRIVATE".
+T="$W/frag-pem-lone-tail"; mkpkg "$T"
+pub "$T" "The backup starts with -----BEGIN RSA PRIVATE KEY,----- for safekeeping."
+scan "$T"
+assert_equal "2" "$?" "pem: an interrupt right before the trailing dashes is still flagged as leakage (exit 2)"
+OUT=$(scanout "$T")
+assert_not_contains "PRIVATE KEY" "$OUT" "pem-lone-tail: the header never reaches the output"
+assert_contains "[REDACTED:private-key-block]" "$OUT" "the class is still named"
+
+T="$W/frag-pem-lone-armor"; mkpkg "$T"
+pub "$T" "The backup starts with -----BEGIN RSA, PRIVATE KEY----- for safekeeping."
+scan "$T"
+assert_equal "2" "$?" "pem: an interrupt in the armor-type region is still flagged as leakage (exit 2)"
+OUT=$(scanout "$T")
+assert_not_contains "BEGIN RSA" "$OUT" "pem-lone-armor: the header never reaches the output"
+assert_contains "[REDACTED:private-key-block]" "$OUT" "the class is still named"
+
+# A fourth boundary the first three round-3 fixtures missed: the mandatory
+# space between "PRIVATE" and "KEY" only had an interrupter slot AFTER it,
+# not before -- a comma or pipe placed directly after "PRIVATE" (before the
+# space) matched none of frag-pem-lone/-tail/-armor above, found live in a
+# second round-3 review pass after the first three landed.
+T="$W/frag-pem-lone-wordgap"; mkpkg "$T"
+pub "$T" "The backup starts with -----BEGIN RSA PRIVATE, KEY----- for safekeeping."
+scan "$T"
+assert_equal "2" "$?" "pem: an interrupt before the PRIVATE/KEY space is still flagged as leakage (exit 2)"
+OUT=$(scanout "$T")
+assert_not_contains "PRIVATE" "$OUT" "pem-lone-wordgap: the header never reaches the output"
+assert_contains "[REDACTED:private-key-block]" "$OUT" "the class is still named"
+
+# Every lone-occurrence fixture above uses only space or comma as the
+# interrupter -- '|' (pipe, the third interrupter this issue's own
+# reproduction uses) was never exercised for either exact-format pattern's
+# lone case. Found in round-3 review: narrowing either pattern's interrupter
+# class to drop '|' support left every existing assertion green, so a
+# regression here would ship undetected without these.
+T="$W/frag-aws-lone-pipe"; mkpkg "$T"
+pub "$T" "The leaked key was AKIA|ABCDEFGHIJKLMNOP for backup access."
+scan "$T"
+assert_equal "2" "$?" "aws: a pipe interrupt right after the AKIA prefix is still flagged as leakage (exit 2)"
+OUT=$(scanout "$T")
+assert_not_contains "ABCDEFGHIJKLMNOP" "$OUT" "aws-lone-pipe: the key body never reaches the output"
+assert_contains "[REDACTED:aws-access-key]" "$OUT" "the class is still named"
+
+T="$W/frag-pem-lone-pipe"; mkpkg "$T"
+pub "$T" "The backup starts with -----BEGIN RSA PRIVATE| KEY----- for safekeeping."
+scan "$T"
+assert_equal "2" "$?" "pem: a pipe interrupt at the word gap is still flagged as leakage (exit 2)"
+OUT=$(scanout "$T")
+assert_not_contains "PRIVATE" "$OUT" "pem-lone-pipe: the header never reaches the output"
+assert_contains "[REDACTED:private-key-block]" "$OUT" "the class is still named"
+
+T="$W/frag-conn"; mkpkg "$T"
+pub "$T" "The staging URI is postgres://admin:Sup3rSecretPass@db.internal:5432/prod and the broken copy reads postgres://admin:Sup3rSecr etPass@db.internal:5432/prod."
+OUT=$(scanout "$T")
+assert_not_contains "Sup3rSecretPass" "$OUT" "connection-string: the matched password never reaches the output"
+assert_not_contains "sup3rsecretpass" "$OUT" "nor its lowercased form"
+assert_not_contains "Sup3rSecr" "$OUT" "connection-string: the non-matching corrupted password never reaches the output"
+assert_not_contains "sup3rsecr" "$OUT" "nor its lowercased form"
+assert_contains "[REDACTED:connection-string]" "$OUT" "the class is still named"
+
+# --- a credential-shaped match straddling the '.'-based sentence split (#198) --
+# scan_text() splits on every literal '.' before redact() ever runs. A
+# credential whose own matched span contains a '.' -- a JWT's two internal
+# periods, sitting inside bearer-token's own [A-Za-z0-9._-] charset -- would
+# otherwise land on both sides of that split: the "Bearer " prefix (and
+# therefore a match) survives on the first fragment, but the payload and
+# signature segments lose that prefix and pass through as plain fragments on
+# the next two. This is the general form of the frag-conn gap above (any
+# class whose charset or adjacent context permits '.'), not a
+# connection-string-specific one.
+T="$W/frag-jwt"; mkpkg "$T"
+pub "$T" "Send requests with Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c as the auth header for staging traffic."
+OUT=$(scanout "$T")
+assert_not_contains "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" "$OUT" "jwt: the header segment never reaches the output"
+assert_not_contains "eyJzdWIiOiIxMjM0NTY3ODkwIn0" "$OUT" "jwt: the payload segment never reaches the output"
+assert_not_contains "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c" "$OUT" "jwt: the signature segment never reaches the output"
+assert_contains "[REDACTED:bearer-token]" "$OUT" "the class is still named"
+
+# --- two different classes in one sentence: neither leaks ---------------------
+T="$W/frag-multi"; mkpkg "$T"
+pub "$T" "The service uses AKIAIOSFODNN7EXAMPLE for AWS and xoxb-123456789012abcdefghij for Slack notifications."
+OUT=$(scanout "$T")
+assert_not_contains "AKIAIOSFODNN7EXAMPLE" "$OUT" "multi-class: the AWS key never reaches the output"
+assert_not_contains "123456789012abcdefghij" "$OUT" "multi-class: the Slack token never reaches the output"
+assert_contains "[REDACTED:aws-access-key]" "$OUT" "multi-class: aws-access-key wins, first in CRED_PATTERNS' priority order"
+
+# --- a clean sentence is untouched ---------------------------------------------
+T="$W/frag-clean"; mkpkg "$T"
+pub "$T" "The service handles requests reliably and logs each event for later review."
+OUT=$(scanout "$T")
+assert_contains "handles requests reliably" "$OUT" "a sentence with no credential-shaped content passes through unchanged"
+
+# --- a credential is redacted even in an otherwise-approved/registered line ----
+# The pre-split pre-check runs before scan_text()'s register lookup, on
+# purpose: credential safety is not a claim-drafting concern, and a
+# credential is not made safe to print by being part of an approved claim's
+# wording. Registering the exact sentence below (word-for-word, including
+# the credential) would, pre-#198, have made it skip both redaction AND the
+# unregistered-claim report; it must still be redacted and reported now.
+T="$W/frag-registered"; mkpkg "$T"
+reg "$T" '| CL-0001 | The token sk-ant-api03-abcdefghijklmnop authenticates every request. | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+pub "$T" "The token sk-ant-api03-abcdefghijklmnop authenticates every request."
+OUT=$(scanout "$T")
+assert_not_contains "abcdefghijklmnop" "$OUT" "a credential in an approved/registered line is still never printed"
+assert_contains "[REDACTED:anthropic-key]" "$OUT" "the class is still named"
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" "a credential-bearing line is reported as unregistered even though its wording is otherwise approved"
+
+# --- the fragment guarantee holds in --json output too -------------------------
+T="$W/frag-json"; mkpkg "$T"
+pub "$T" "Use sk-ant-api03-ABCDEFGHIJKLMNOP|QRSTUVWX for authorization here."
+JOUT=$(cd "$T" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --json 2>&1)
+assert_not_contains "ABCDEFGHIJKLMNOP" "$JOUT" "--json: the pre-interruption fragment never reaches JSON output"
+assert_not_contains "QRSTUVWX" "$JOUT" "--json: the post-interruption fragment never reaches JSON output"
+assert_not_contains "qrstuvwx" "$JOUT" "nor its lowercased form"
+assert_contains "[REDACTED:anthropic-key]" "$JOUT" "--json: the class is still named"
 
 # --- A rejected row must not be read as an approved claim ---------------------
 # `CL-` rows appear in two tables with different column layouts, and the
