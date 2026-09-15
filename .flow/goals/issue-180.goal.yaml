@@ -25,7 +25,12 @@ objective:
     verification_command: bash plugins/dossier/tests/run.sh prose-lint.test.sh && bash plugins/dossier/tests/run.sh
       bin-scripts.test.sh
     must_pass: true
-    status: pending
+    status: evidence_collected
+    evidence_ref: .flow/runs/2026-09-15T000000Z-issue-180/evidence/evidence-ac1-1.evidence.yaml
+    last_evaluated_at: '2026-09-15T08:30:00Z'
+    last_result:
+      exit_code: 0
+      reason: command_result
   - id: AC2
     text: dossier-prose-lint.sh --json reports verbatim_blocks and verbatim_lines_skipped (per file and
       as package totals) whenever a marker pair is honored, so the exemption is never indistinguishable
@@ -33,7 +38,12 @@ objective:
     verification_command: bash plugins/dossier/tests/run.sh prose-lint.test.sh && bash plugins/dossier/tests/run.sh
       bin-scripts.test.sh
     must_pass: true
-    status: pending
+    status: evidence_collected
+    evidence_ref: .flow/runs/2026-09-15T000000Z-issue-180/evidence/evidence-ac2-1.evidence.yaml
+    last_evaluated_at: '2026-09-15T08:30:00Z'
+    last_result:
+      exit_code: 0
+      reason: command_result
   - id: AC3
     text: Malformed markers never produce a silent exemption -- an unclosed BEGIN is a scan error, a BEGIN
       nested inside an already-open block is a scan error, and a stray END with no open BEGIN is ignored
@@ -41,21 +51,43 @@ objective:
     verification_command: bash plugins/dossier/tests/run.sh prose-lint.test.sh && bash plugins/dossier/tests/run.sh
       bin-scripts.test.sh
     must_pass: true
-    status: pending
+    status: evidence_collected
+    evidence_ref: .flow/runs/2026-09-15T000000Z-issue-180/evidence/evidence-ac3-1.evidence.yaml
+    last_evaluated_at: '2026-09-15T08:30:00Z'
+    last_result:
+      exit_code: 0
+      reason: command_result
   - id: AC4
     text: /dossier:audit Phase 5 wraps each pass's appended section in 07-verification/documentation-verification-report.md
       with the verbatim markers.
-    verification_command: grep -q "DOSSIER_VERBATIM_BEGIN" plugins/dossier/commands/audit.md && grep -q
-      "DOSSIER_VERBATIM_END" plugins/dossier/commands/audit.md
+    verification_command: 'P5=$(awk ''/^## Phase 5/{f=1} f{print} /^## Tier Classification/{exit}'' plugins/dossier/commands/audit.md);
+      B=$(printf ''%s\n'' "$P5" | grep -n "^<!-- DOSSIER_VERBATIM_BEGIN" | head -1 | cut -d: -f1); C=$(printf
+      ''%s\n'' "$P5" | grep -n "pass-A.md content" | head -1 | cut -d: -f1); E=$(printf ''%s\n'' "$P5"
+      | grep -n "^<!-- DOSSIER_VERBATIM_END" | head -1 | cut -d: -f1); S=$(printf ''%s\n'' "$P5" | grep
+      -n "^### Audit complete" | head -1 | cut -d: -f1); [ -n "$B" ] && [ -n "$C" ] && [ -n "$E" ] &&
+      [ -n "$S" ] && [ "$B" -lt "$C" ] && [ "$C" -lt "$E" ] && [ "$E" -lt "$S" ]'
     must_pass: true
-    status: pending
+    status: evidence_collected
+    evidence_ref: .flow/runs/2026-09-15T000000Z-issue-180/evidence/evidence-ac4-2.evidence.yaml
+    last_evaluated_at: '2026-09-15T09:00:00Z'
+    last_result:
+      exit_code: 0
+      reason: command_result
   - id: AC5
     text: references/release-gate-conditions.md (G18) and skills/prose-clarity/SKILL.md document the verbatim-marker
       exclusion, its scoping to the verification report, and that it is specific to dossier-prose-lint.sh.
-    verification_command: grep -q "DOSSIER_VERBATIM" plugins/dossier/references/release-gate-conditions.md
-      && grep -q "DOSSIER_VERBATIM" plugins/dossier/skills/prose-clarity/SKILL.md
+    verification_command: grep -Eq "only.*when scanning.*07-verification/documentation-verification-report\.md"
+      plugins/dossier/references/release-gate-conditions.md && grep -Eq "specific to.*dossier-prose-lint\.sh"
+      plugins/dossier/references/release-gate-conditions.md && grep -Eq "only when scanning that one file"
+      plugins/dossier/skills/prose-clarity/SKILL.md && grep -Eq "specific to.*dossier-prose-lint\.sh"
+      plugins/dossier/skills/prose-clarity/SKILL.md
     must_pass: true
-    status: pending
+    status: evidence_collected
+    evidence_ref: .flow/runs/2026-09-15T000000Z-issue-180/evidence/evidence-ac5-2.evidence.yaml
+    last_evaluated_at: '2026-09-15T09:00:00Z'
+    last_result:
+      exit_code: 0
+      reason: command_result
 specification:
   non_goals:
   - Not implementing Option 1's heading/round-based scoping instead of explicit markers -- the chosen
