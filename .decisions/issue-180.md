@@ -66,9 +66,9 @@ artifacts:
 ### Interface contracts
 
 - New CLI-observable JSON fields added by `dossier-prose-lint.sh --json`: top-level `verbatim_blocks` (int) and `verbatim_lines_skipped` (int); mirrored per-file inside each `files[]` entry when nonzero for that file. Additive only — no existing field removed or renamed, so `dossier-gate.sh`'s G18 check (which reads only `blocking_violations` via an anchored `sed` extraction) is unaffected.
-- Marker literal text: `<!-- DOSSIER_VERBATIM_BEGIN -->` and `<!-- DOSSIER_VERBATIM_END -->`, matched as a line-start prefix (`^<!-- DOSSIER_VERBATIM_BEGIN`, `^<!-- DOSSIER_VERBATIM_END`) — consistent with the existing single-line `<!-- DOSSIER_AUDIT ... -->` marker convention already used in `commands/audit.md` Phase 3.
-- File-scoping match: a path-suffix test equivalent to `case "$f" in */07-verification/documentation-verification-report.md)` — works whether the linter is invoked via `--output-root` (full relative path under the package root) or `--file` (any path ending in that suffix, including test fixtures).
-- Malformed-marker disposition (fixed contract, not left to implementation discretion): unclosed `BEGIN` → scan_error; `BEGIN` nested inside an already-open block → scan_error; stray `END` with no open `BEGIN` → ignored, no state change, no error.
+- Marker literal text: `<!-- DOSSIER_VERBATIM_BEGIN -->` and `<!-- DOSSIER_VERBATIM_END -->`, matched at column 0 with a required delimiter immediately after the keyword (`^<!-- DOSSIER_VERBATIM_BEGIN([ \t]|-->|$)`, same for `END`) — consistent with the existing single-line `<!-- DOSSIER_AUDIT ... -->` marker convention already used in `commands/audit.md` Phase 3, and tight enough that an unrelated comment sharing the prefix (e.g. `DOSSIER_VERBATIM_BEGINNING_OF_SOMETHING_ELSE`) is never mistaken for a real marker. Indented markers are never recognized — fails safe (scanned normally, never a silent exemption).
+- File-scoping match differs by invocation mode: `--output-root` compares each discovered path against the single exact expected path (`"$OUTPUT_ROOT/07-verification/documentation-verification-report.md"`), so a decoy file elsewhere in the tree sharing only the filename cannot claim the exemption; `--file` uses a path-suffix match (`case "$f" in */07-verification/documentation-verification-report.md | 07-verification/documentation-verification-report.md)`) since every call site in this plugin passes an agent-chosen canonical path, never an externally-influenced one.
+- Malformed-marker disposition (fixed contract, not left to implementation discretion): unclosed `BEGIN` → scan_error; `BEGIN` nested inside an already-open block → scan_error; stray `END` with no open `BEGIN` → ignored, no state change, no error; unclosed code fence → scan_error, checked before an unclosed-verbatim sentinel it may have caused.
 
 ### Risk map
 
@@ -197,3 +197,19 @@ Task boundaries: Task 1 bundles AC1+AC2+AC3 (one awk-program edit region, one te
 <!-- auto-log: 2026-09-15 10:26 commit "docs(dossier): correct the --help truncation follow-up's script count" -->
 
 <!-- auto-log: 2026-09-15 10:33 Write /tmp/pr-180-body.md -->
+
+<!-- auto-log: 2026-09-15 10:59 Edit /tmp/pr-180-body.md -->
+
+<!-- auto-log: 2026-09-15 10:59 Edit /tmp/pr-180-body.md -->
+
+<!-- auto-log: 2026-09-15 11:02 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/9e40ee39-9361-48e5-9ea5-5209a55ee23d/scratchpad/regex_test.awk -->
+
+<!-- auto-log: 2026-09-15 11:13 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/prose-lint.test.sh -->
+
+<!-- auto-log: 2026-09-15 11:13 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/prose-lint.test.sh -->
+
+<!-- auto-log: 2026-09-15 11:13 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/prose-lint.test.sh -->
+
+<!-- auto-log: 2026-09-15 11:14 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-180.md -->
+
+<!-- auto-log: 2026-09-15 11:20 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/prose-lint.test.sh -->

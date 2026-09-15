@@ -232,7 +232,7 @@ assert_equal "1" "$(count_of "$J" verbatim_blocks)" "one verbatim block is recor
 assert_equal "1" "$(count_of "$J" verbatim_lines_skipped)" "one body line inside the block is recorded as skipped"
 
 OUT_JSON=$("$LINT" --output-root "$W/pkg-a" --json 2>/dev/null)
-assert_equal "1" "$(count_of "$OUT_JSON" verbatim_blocks)" "--output-root invocation also honors the marker via the same path-suffix match"
+assert_equal "1" "$(count_of "$OUT_JSON" verbatim_blocks)" "--output-root invocation also honors the marker via its exact-path compare (distinct from --file's suffix match)"
 
 NONVERIFY_DIR="$W/pkg-b/04-operating"
 mkdir -p "$NONVERIFY_DIR"
@@ -416,6 +416,12 @@ EOF
 "$LINT" --output-root "$DECOY_ROOT" >/dev/null 2>&1
 assert_equal "1" "$?" "a decoy file at a non-canonical path sharing the suffix still fails the package"
 DECOY_OUT_JSON=$("$LINT" --output-root "$DECOY_ROOT" --json 2>/dev/null)
+# count_of() is documented as unsafe for a multi-file payload in general
+# (it can return the last occurrence of a repeated key, not the top-level
+# one) -- correct here only because neither file in this fixture ends up
+# with a nonzero per-file verbatim_blocks mirror, so the field appears
+# exactly once, at the top level. Not a guarantee this extraction gives in
+# general; see count_of()'s own header comment.
 assert_equal "0" "$(count_of "$DECOY_OUT_JSON" verbatim_blocks)" "the decoy's marker pair is not honored -- only the real canonical path is"
 
 # --- marker regex must not match a look-alike prefix -------------------------
@@ -451,6 +457,58 @@ This seamless platform helps you, still inside the real block.
 EOF
 J=$(lint_json "$LOOKALIKE_END")
 assert_equal "0" "$(count_of "$J" marketing_adjective)" "an END look-alike prefix does not close the block early -- the sentence after it stays exempt until the real END"
+
+# --- marker match is column-0 only, and fails safe when indented ------------
+# Deliberate design choice (audit.md's Phase 5 template always emits markers
+# at column 0), pinned here per this script family's recurring gap class:
+# untested indented/nested input has repeatedly turned out to behave
+# differently than column-0 input. An indented BEGIN must be ignored --
+# never silently exempt anything -- and the sentence after it must still be
+# scanned normally.
+INDENTED_DIR="$W/pkg-m/07-verification"
+mkdir -p "$INDENTED_DIR"
+INDENTED="$INDENTED_DIR/documentation-verification-report.md"
+printf '# Verification\n\n  <!-- DOSSIER_VERBATIM_BEGIN -->\nThis seamless platform helps you.\n' > "$INDENTED"
+J=$(lint_json "$INDENTED")
+assert_equal "1" "$(count_of "$J" marketing_adjective)" "an indented BEGIN is not recognized -- the sentence after it is still counted"
+assert_equal "0" "$(count_of "$J" verbatim_blocks)" "an indented BEGIN never opens an exemption"
+
+# --- edge cases manually verified during security review, now pinned -------
+
+# A trailing slash on --output-root must not break the exact-path anchor
+# (${OUTPUT_ROOT%/} normalization).
+TRAILING_ROOT_DIR="$W/pkg-n"
+mkdir -p "$TRAILING_ROOT_DIR/07-verification"
+cat > "$TRAILING_ROOT_DIR/07-verification/documentation-verification-report.md" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+This seamless platform helps you.
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+TRAILING_JSON=$("$LINT" --output-root "$TRAILING_ROOT_DIR/" --json 2>/dev/null)
+assert_equal "1" "$(count_of "$TRAILING_JSON" verbatim_blocks)" "a trailing slash on --output-root does not break the exact-path anchor"
+
+# CRLF line endings must not prevent marker recognition.
+CRLF_DIR="$W/pkg-o/07-verification"
+mkdir -p "$CRLF_DIR"
+CRLF_FILE="$CRLF_DIR/documentation-verification-report.md"
+printf '# Verification\r\n\r\n<!-- DOSSIER_VERBATIM_BEGIN -->\r\nThis seamless platform helps you.\r\n<!-- DOSSIER_VERBATIM_END -->\r\n' > "$CRLF_FILE"
+J=$(lint_json "$CRLF_FILE")
+assert_equal "1" "$(count_of "$J" verbatim_blocks)" "CRLF line endings do not prevent marker recognition"
+assert_equal "0" "$(count_of "$J" marketing_adjective)" "the CRLF-terminated sentence inside the block is still exempted"
+
+# BEGIN and END on the same line: the whole line is consumed as the BEGIN
+# match, so the same-line END is never seen -- must fail closed (scan_error
+# for an unclosed block), never a silent exemption.
+SAMELINE_DIR="$W/pkg-p/07-verification"
+mkdir -p "$SAMELINE_DIR"
+SAMELINE_FILE="$SAMELINE_DIR/documentation-verification-report.md"
+printf '# Verification\n\n<!-- DOSSIER_VERBATIM_BEGIN --> some text <!-- DOSSIER_VERBATIM_END -->\n' > "$SAMELINE_FILE"
+"$LINT" --file "$SAMELINE_FILE" >/dev/null 2>&1
+assert_equal "1" "$?" "BEGIN and END on the same line exits 1, never a false clean pass"
+J=$(lint_json "$SAMELINE_FILE")
+assert_equal "1" "$(count_of "$J" scan_errors)" "BEGIN and END on the same line fails closed as an unclosed block, not a silent exemption"
 
 rm -rf "$W" 2>/dev/null
 
