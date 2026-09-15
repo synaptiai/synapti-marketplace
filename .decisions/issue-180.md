@@ -43,6 +43,12 @@ artifacts:
   path: B
   findings_count: 12
   pr: 208
+- type: review-cycle
+  captured_at: '2026-09-15T10:45:17Z'
+  cycle: 2
+  path: B
+  findings_count: 9
+  pr: 208
 ---
 # Issue #180 — G18 and the verbatim-collection rule are in direct conflict
 
@@ -213,3 +219,19 @@ Task boundaries: Task 1 bundles AC1+AC2+AC3 (one awk-program edit region, one te
 <!-- auto-log: 2026-09-15 11:14 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-180.md -->
 
 <!-- auto-log: 2026-09-15 11:20 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/prose-lint.test.sh -->
+
+<!-- auto-log: 2026-09-15 11:39 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-prose-lint.sh -->
+
+<!-- auto-log: 2026-09-15 11:40 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-prose-lint.sh -->
+
+<!-- auto-log: 2026-09-15 11:40 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-prose-lint.sh -->
+
+<!-- auto-log: 2026-09-15 11:40 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/prose-lint.test.sh -->
+
+<!-- auto-log: 2026-09-15 12:02 commit "fix(dossier): reject combined --file/--output-root, fix stale comments" -->
+
+<!-- auto-log: 2026-09-15 12:41 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/feedback_sequential_suites.md -->
+
+<!-- auto-log: 2026-09-15 12:44 Write /tmp/review-comment-208.md -->
+
+<!-- auto-log: 2026-09-15 12:45 Write /tmp/resolution-comment-208.md -->
