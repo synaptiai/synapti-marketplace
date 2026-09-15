@@ -32,6 +32,10 @@ Passive voice, nominalization, em-dash count. Both grammar checks are heuristic 
 
 `references/source-authority-and-claim-states.md` requires specific hedge phrases as structural markers for `Interpreted`-state claims: `"This suggests…"`, `"The most likely reading is…"`, `"Inferred from…"`, and the prose prefixes `Inferred:`, `Unknown:`, `Recommendation:`. These are the package's epistemic-honesty mechanism, not slop. A line opening with one of these markers is exempt from the hedge-phrase and sentence-length rules, in every mode, unconditionally. The full allow-list lives in `references/prose-style-and-vocabulary.md` — check it before ever touching a flagged hedge.
 
+## The verbatim-collection exemption
+
+`07-verification/documentation-verification-report.md` carries pass output that `/dossier:audit` Phase 3 requires to be collected unmodified. `bin/dossier-prose-lint.sh` recognizes an explicit `<!-- DOSSIER_VERBATIM_BEGIN -->` / `<!-- DOSSIER_VERBATIM_END -->` marker pair and exempts only the text between them from this skill's hard categories, and only when scanning that one file — the round heading and summary block outside the markers, and every other document in the package, are still linted normally. The markers are ordinary inert HTML comments everywhere else, so this is not a general "wrap it to exempt it" mechanism available to a document under revision. This exemption is specific to `dossier-prose-lint.sh` — it is not honored by `bin/dossier-claim-scan.sh` or any other dossier check. See `references/release-gate-conditions.md` G18 for the full mechanism and its malformed-marker handling.
+
 ## Precedence
 
 Iron Rules from other skills always outrank this one. Where this skill and `disclosure-gating` appear to disagree on a public document, `disclosure-gating` wins — truth and legal exposure over style. Cross-document synonym rotation stays `project-modeling`'s and `dossier-pass-c-audience`'s job; this skill only concerns the document currently being drafted.

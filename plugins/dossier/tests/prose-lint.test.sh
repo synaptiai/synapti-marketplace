@@ -14,6 +14,11 @@ lint_json() { # <path>
   "$LINT" --file "$1" --json 2>/dev/null
 }
 count_of() { # <json> <field>
+  # Greedy and unanchored: on JSON naming the same field at both top level
+  # and inside a per-file files[] entry (e.g. verbatim_blocks), this returns
+  # the LAST occurrence, not the top-level one. Every fixture here scans
+  # exactly one file via lint_json's --file, so the two always coincide --
+  # this is not safe to reuse as-is for a multi-file --output-root fixture.
   printf '%s' "$1" | LC_ALL=C sed -n "s/.*\"$2\":\([0-9]*\).*/\1/p" | head -1
 }
 
@@ -171,6 +176,13 @@ assert_equal "1" "$(count_of "$J" scan_errors)" "zero files scanned is itself re
 "$LINT" --nonexistent-flag >/dev/null 2>&1
 assert_equal "2" "$?" "an unknown flag exits 2"
 
+# --file and --output-root together is rejected, not silently resolved --
+# combining them would let the scan target follow --file while the
+# verbatim-exemption check follows --output-root's exact-path branch against
+# an unrelated root.
+"$LINT" --file "$C" --output-root "$W" >/dev/null 2>&1
+assert_equal "2" "$?" "--file and --output-root together exits 2, not a silently-resolved combination"
+
 # --- --json emits valid JSON ----------------------------------------------------
 if command -v python3 >/dev/null 2>&1; then
   if lint_json "$C" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
@@ -199,6 +211,311 @@ if [ -z "$OVERLAP" ]; then
 else
   _dossier_assert_fail "prose-clarity's word lists overlap disclosure-gating's prohibited vocabulary:$OVERLAP"
 fi
+
+# --- verbatim markers: excluded only inside the verification report ----------
+# Resolves issue #180: /dossier:audit's Phase 3 "collect pass output verbatim,
+# do not reorder or reconcile" rule conflicts with G18's zero-violations gate,
+# because the auditors' own analytical prose routinely trips the hard
+# categories. Explicit DOSSIER_VERBATIM_BEGIN/END markers, honored only inside
+# 07-verification/documentation-verification-report.md, resolve the conflict
+# without exempting prose anywhere else in the package.
+VERIFY_DIR="$W/pkg-a/07-verification"
+mkdir -p "$VERIFY_DIR"
+VERIFY_REPORT="$VERIFY_DIR/documentation-verification-report.md"
+cat > "$VERIFY_REPORT" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+This seamless platform helps you. Some other analytical prose lives here too.
+<!-- DOSSIER_VERBATIM_END -->
+
+This seamless platform helps you again, outside the markers.
+EOF
+"$LINT" --file "$VERIFY_REPORT" >/dev/null 2>&1
+assert_equal "1" "$?" "the sentence outside the markers still fails the file"
+J=$(lint_json "$VERIFY_REPORT")
+assert_equal "1" "$(count_of "$J" marketing_adjective)" "only the sentence outside the markers is counted"
+assert_equal "1" "$(count_of "$J" verbatim_blocks)" "one verbatim block is recorded"
+assert_equal "1" "$(count_of "$J" verbatim_lines_skipped)" "one body line inside the block is recorded as skipped"
+
+OUT_JSON=$("$LINT" --output-root "$W/pkg-a" --json 2>/dev/null)
+assert_equal "1" "$(count_of "$OUT_JSON" verbatim_blocks)" "--output-root invocation also honors the marker via its exact-path compare (distinct from --file's suffix match)"
+
+NONVERIFY_DIR="$W/pkg-b/04-operating"
+mkdir -p "$NONVERIFY_DIR"
+NONVERIFY_FILE="$NONVERIFY_DIR/onboarding-and-local-development.md"
+cat > "$NONVERIFY_FILE" <<'EOF'
+# Onboarding
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+This seamless platform helps you.
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+"$LINT" --file "$NONVERIFY_FILE" >/dev/null 2>&1
+assert_equal "1" "$?" "markers are inert outside the verification report -- the sentence between them still fails"
+J=$(lint_json "$NONVERIFY_FILE")
+assert_equal "1" "$(count_of "$J" marketing_adjective)" "the sentence between inert markers is still counted"
+assert_equal "0" "$(count_of "$J" verbatim_blocks)" "no verbatim block is recorded outside the verification report"
+
+UNCLOSED_VERBATIM_DIR="$W/pkg-c/07-verification"
+mkdir -p "$UNCLOSED_VERBATIM_DIR"
+UNCLOSED_VERBATIM="$UNCLOSED_VERBATIM_DIR/documentation-verification-report.md"
+cat > "$UNCLOSED_VERBATIM" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+This seamless platform helps you.
+EOF
+"$LINT" --file "$UNCLOSED_VERBATIM" >/dev/null 2>&1
+assert_equal "1" "$?" "an unclosed verbatim marker exits 1, never a false clean pass"
+J=$(lint_json "$UNCLOSED_VERBATIM")
+assert_equal "1" "$(count_of "$J" scan_errors)" "the unclosed verbatim block is counted as a scan error"
+
+NESTED_VERBATIM_DIR="$W/pkg-d/07-verification"
+mkdir -p "$NESTED_VERBATIM_DIR"
+NESTED_VERBATIM="$NESTED_VERBATIM_DIR/documentation-verification-report.md"
+cat > "$NESTED_VERBATIM" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+Some line.
+<!-- DOSSIER_VERBATIM_BEGIN -->
+More content.
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+"$LINT" --file "$NESTED_VERBATIM" >/dev/null 2>&1
+assert_equal "1" "$?" "a nested verbatim BEGIN exits 1, never a false clean pass"
+J=$(lint_json "$NESTED_VERBATIM")
+assert_equal "1" "$(count_of "$J" scan_errors)" "a nested BEGIN is counted as a scan error"
+
+STRAY_END_DIR="$W/pkg-e/07-verification"
+mkdir -p "$STRAY_END_DIR"
+STRAY_END="$STRAY_END_DIR/documentation-verification-report.md"
+cat > "$STRAY_END" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_END -->
+
+The cache compares the meaning of a new prompt with the prompts already stored.
+EOF
+"$LINT" --file "$STRAY_END" >/dev/null 2>&1
+assert_equal "0" "$?" "a stray END with no open BEGIN is ignored, not an error"
+J=$(lint_json "$STRAY_END")
+assert_equal "0" "$(count_of "$J" scan_errors)" "a stray END produces no scan error"
+assert_equal "0" "$(count_of "$J" verbatim_blocks)" "a stray END records no verbatim block"
+
+PARA_DIR="$W/pkg-f/07-verification"
+mkdir -p "$PARA_DIR"
+PARA_BOUNDARY="$PARA_DIR/documentation-verification-report.md"
+cat > "$PARA_BOUNDARY" <<'EOF'
+# Verification
+
+Sentence one here. Sentence two here. Sentence three here.
+<!-- DOSSIER_VERBATIM_BEGIN -->
+Verbatim body line, not counted.
+<!-- DOSSIER_VERBATIM_END -->
+Sentence four here. Sentence five here. Sentence six here. Sentence seven here.
+EOF
+J=$(lint_json "$PARA_BOUNDARY")
+assert_equal "0" "$(count_of "$J" long_paragraph)" "the verbatim toggle resets the paragraph counter, so 7 sentences split around it never trips the 7-sentence cap"
+
+FENCE_DIR="$W/pkg-g/07-verification"
+mkdir -p "$FENCE_DIR"
+FENCE_VERBATIM="$FENCE_DIR/documentation-verification-report.md"
+cat > "$FENCE_VERBATIM" <<'EOF'
+# Verification
+
+```text
+<!-- DOSSIER_VERBATIM_BEGIN -->
+```
+
+This seamless platform helps you.
+EOF
+"$LINT" --file "$FENCE_VERBATIM" >/dev/null 2>&1
+assert_equal "1" "$?" "marker text inside a fenced code block does not toggle verbatim state -- the real prose after the fence still fails"
+J=$(lint_json "$FENCE_VERBATIM")
+assert_equal "0" "$(count_of "$J" scan_errors)" "the fence-embedded marker text produces no scan error"
+assert_equal "1" "$(count_of "$J" marketing_adjective)" "the real sentence after the fence is still flagged"
+assert_equal "0" "$(count_of "$J" verbatim_blocks)" "the fence-embedded marker text never toggles verbatim state"
+
+"$LINT" --help 2>&1 | grep -q "DOSSIER_VERBATIM"
+assert_equal "0" "$?" "--help documents the verbatim-marker mechanism (regression guard: the self-terminating sed range must reach the new header text)"
+
+# --- an unclosed code fence must never read as clean -------------------------
+# Found in review: unlike in_header, in_fence had no "unclosed" sentinel, so
+# an unbalanced ``` silently skipped every remaining line as "still fenced"
+# and the dictionary-hit prose after it was never scanned -- indistinguishable
+# from a file that was actually clean.
+UNCLOSED_FENCE="$W/unclosed-fence.md"
+printf '# Test\n\nA short clean sentence here.\n\n```text\nThis seamless robust platform utilizes cutting-edge technology.\n' > "$UNCLOSED_FENCE"
+"$LINT" --file "$UNCLOSED_FENCE" >/dev/null 2>&1
+assert_equal "1" "$?" "an unclosed code fence exits 1, never a false clean pass"
+J=$(lint_json "$UNCLOSED_FENCE")
+assert_equal "1" "$(count_of "$J" scan_errors)" "the unclosed fence is counted as a scan error, not a silent 0"
+
+# --- an unclosed fence inside a verbatim block reports the root cause --------
+# A fence left open inside a verbatim block swallows the real END marker
+# (fenced content is skipped before the verbatim check ever sees it), so
+# without the fence sentinel this read as "verbatim block opened but never
+# closed" -- misleading, since the marker text is actually present.
+FENCE_IN_VERBATIM_DIR="$W/pkg-i/07-verification"
+mkdir -p "$FENCE_IN_VERBATIM_DIR"
+FENCE_IN_VERBATIM="$FENCE_IN_VERBATIM_DIR/documentation-verification-report.md"
+cat > "$FENCE_IN_VERBATIM" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+Some verbatim body text.
+
+```text
+fenced content that never closes
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+"$LINT" --file "$FENCE_IN_VERBATIM" >/dev/null 2>&1
+assert_equal "1" "$?" "an unclosed fence that swallows the real END marker still exits 1"
+J=$(lint_json "$FENCE_IN_VERBATIM")
+assert_equal "1" "$(count_of "$J" scan_errors)" "exactly one scan error is reported, not two"
+printf '%s' "$J" | grep -q "code fence opened but never closed"
+assert_equal "0" "$?" "the reported reason names the fence, the actual root cause"
+printf '%s' "$J" | grep -q "verbatim block opened but never closed"
+assert_equal "1" "$?" "the misleading verbatim-block reason is not what gets reported when a fence is also unclosed"
+
+# --- file-scoping: a bare relative path with no leading directory ------------
+# case "$f" in */07-verification/...) requires a literal "/" before the
+# suffix; a path that IS exactly "07-verification/documentation-verification-
+# report.md" (e.g. --file invoked from the file's own parent directory) has
+# no "/" for */... to match against.
+BARE_DIR="$W/pkg-h"
+mkdir -p "$BARE_DIR/07-verification"
+cat > "$BARE_DIR/07-verification/documentation-verification-report.md" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+This seamless platform helps you.
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+BARE_JSON=$(cd "$BARE_DIR" && "$LINT" --file "07-verification/documentation-verification-report.md" --json 2>/dev/null)
+assert_equal "1" "$(count_of "$BARE_JSON" verbatim_blocks)" "a bare relative path exactly matching the suffix, with no leading directory, still honors the marker"
+
+# --- file-scoping: a decoy file must not get the exemption in --output-root --
+# Found in review: the suffix-only case "$f" in */07-verification/...) match
+# has no path-boundary anchor, so ANY file under the output root whose tail
+# happens to be 07-verification/documentation-verification-report.md -- not
+# just the one real canonical file -- was honored too. --output-root walks
+# the whole tree (find "$OUTPUT_ROOT" -name '*.md'), so a decoy nested at
+# <root>/decoy/07-verification/documentation-verification-report.md could
+# dodge G18 for its own violating prose, exactly what the file-scoping
+# restriction exists to prevent.
+DECOY_ROOT="$W/pkg-j"
+mkdir -p "$DECOY_ROOT/07-verification" "$DECOY_ROOT/decoy/07-verification"
+cat > "$DECOY_ROOT/07-verification/documentation-verification-report.md" <<'EOF'
+# Verification
+
+Clean prose here.
+EOF
+cat > "$DECOY_ROOT/decoy/07-verification/documentation-verification-report.md" <<'EOF'
+# Decoy
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+This seamless platform helps you.
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+"$LINT" --output-root "$DECOY_ROOT" >/dev/null 2>&1
+assert_equal "1" "$?" "a decoy file at a non-canonical path sharing the suffix still fails the package"
+DECOY_OUT_JSON=$("$LINT" --output-root "$DECOY_ROOT" --json 2>/dev/null)
+# count_of() is documented as unsafe for a multi-file payload in general
+# (it can return the last occurrence of a repeated key, not the top-level
+# one) -- correct here only because neither file in this fixture ends up
+# with a nonzero per-file verbatim_blocks mirror, so the field appears
+# exactly once, at the top level. Not a guarantee this extraction gives in
+# general; see count_of()'s own header comment.
+assert_equal "0" "$(count_of "$DECOY_OUT_JSON" verbatim_blocks)" "the decoy's marker pair is not honored -- only the real canonical path is"
+
+# --- marker regex must not match a look-alike prefix -------------------------
+# Found in review: ^<!-- DOSSIER_VERBATIM_BEGIN with no trailing delimiter
+# matches any line starting with that prefix, including an unrelated comment
+# like <!-- DOSSIER_VERBATIM_BEGINNING_OF_SOMETHING_ELSE -->. That opens a
+# real exemption for prose that was never meant to be marked verbatim.
+LOOKALIKE_BEGIN_DIR="$W/pkg-k/07-verification"
+mkdir -p "$LOOKALIKE_BEGIN_DIR"
+LOOKALIKE_BEGIN="$LOOKALIKE_BEGIN_DIR/documentation-verification-report.md"
+cat > "$LOOKALIKE_BEGIN" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGINNING_OF_SOMETHING_ELSE -->
+This seamless platform helps you.
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+J=$(lint_json "$LOOKALIKE_BEGIN")
+assert_equal "1" "$(count_of "$J" marketing_adjective)" "a BEGIN look-alike prefix does not open a real verbatim block -- the sentence after it is still counted"
+assert_equal "0" "$(count_of "$J" verbatim_blocks)" "a BEGIN look-alike prefix is not recognized as a marker"
+
+LOOKALIKE_END_DIR="$W/pkg-l/07-verification"
+mkdir -p "$LOOKALIKE_END_DIR"
+LOOKALIKE_END="$LOOKALIKE_END_DIR/documentation-verification-report.md"
+cat > "$LOOKALIKE_END" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+Verbatim body line one.
+<!-- DOSSIER_VERBATIM_ENDING_OF_SOMETHING -->
+This seamless platform helps you, still inside the real block.
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+J=$(lint_json "$LOOKALIKE_END")
+assert_equal "0" "$(count_of "$J" marketing_adjective)" "an END look-alike prefix does not close the block early -- the sentence after it stays exempt until the real END"
+
+# --- marker match is column-0 only, and fails safe when indented ------------
+# Deliberate design choice (audit.md's Phase 5 template always emits markers
+# at column 0), pinned here per this script family's recurring gap class:
+# untested indented/nested input has repeatedly turned out to behave
+# differently than column-0 input. An indented BEGIN must be ignored --
+# never silently exempt anything -- and the sentence after it must still be
+# scanned normally.
+INDENTED_DIR="$W/pkg-m/07-verification"
+mkdir -p "$INDENTED_DIR"
+INDENTED="$INDENTED_DIR/documentation-verification-report.md"
+printf '# Verification\n\n  <!-- DOSSIER_VERBATIM_BEGIN -->\nThis seamless platform helps you.\n' > "$INDENTED"
+J=$(lint_json "$INDENTED")
+assert_equal "1" "$(count_of "$J" marketing_adjective)" "an indented BEGIN is not recognized -- the sentence after it is still counted"
+assert_equal "0" "$(count_of "$J" verbatim_blocks)" "an indented BEGIN never opens an exemption"
+
+# --- edge cases manually verified during security review, now pinned -------
+
+# A trailing slash on --output-root must not break the exact-path anchor
+# (${OUTPUT_ROOT%/} normalization).
+TRAILING_ROOT_DIR="$W/pkg-n"
+mkdir -p "$TRAILING_ROOT_DIR/07-verification"
+cat > "$TRAILING_ROOT_DIR/07-verification/documentation-verification-report.md" <<'EOF'
+# Verification
+
+<!-- DOSSIER_VERBATIM_BEGIN -->
+This seamless platform helps you.
+<!-- DOSSIER_VERBATIM_END -->
+EOF
+TRAILING_JSON=$("$LINT" --output-root "$TRAILING_ROOT_DIR/" --json 2>/dev/null)
+assert_equal "1" "$(count_of "$TRAILING_JSON" verbatim_blocks)" "a trailing slash on --output-root does not break the exact-path anchor"
+
+# CRLF line endings must not prevent marker recognition.
+CRLF_DIR="$W/pkg-o/07-verification"
+mkdir -p "$CRLF_DIR"
+CRLF_FILE="$CRLF_DIR/documentation-verification-report.md"
+printf '# Verification\r\n\r\n<!-- DOSSIER_VERBATIM_BEGIN -->\r\nThis seamless platform helps you.\r\n<!-- DOSSIER_VERBATIM_END -->\r\n' > "$CRLF_FILE"
+J=$(lint_json "$CRLF_FILE")
+assert_equal "1" "$(count_of "$J" verbatim_blocks)" "CRLF line endings do not prevent marker recognition"
+assert_equal "0" "$(count_of "$J" marketing_adjective)" "the CRLF-terminated sentence inside the block is still exempted"
+
+# BEGIN and END on the same line: the whole line is consumed as the BEGIN
+# match, so the same-line END is never seen -- must fail closed (scan_error
+# for an unclosed block), never a silent exemption.
+SAMELINE_DIR="$W/pkg-p/07-verification"
+mkdir -p "$SAMELINE_DIR"
+SAMELINE_FILE="$SAMELINE_DIR/documentation-verification-report.md"
+printf '# Verification\n\n<!-- DOSSIER_VERBATIM_BEGIN --> some text <!-- DOSSIER_VERBATIM_END -->\n' > "$SAMELINE_FILE"
+"$LINT" --file "$SAMELINE_FILE" >/dev/null 2>&1
+assert_equal "1" "$?" "BEGIN and END on the same line exits 1, never a false clean pass"
+J=$(lint_json "$SAMELINE_FILE")
+assert_equal "1" "$(count_of "$J" scan_errors)" "BEGIN and END on the same line fails closed as an unclosed block, not a silent exemption"
 
 rm -rf "$W" 2>/dev/null
 
