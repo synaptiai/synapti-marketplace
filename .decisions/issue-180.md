@@ -49,6 +49,12 @@ artifacts:
   path: B
   findings_count: 9
   pr: 208
+- type: workflow-run
+  captured_at: '2026-09-15T10:57:21Z'
+  workflow: merge-pr
+  run_id: 2026-09-15T104730Z-merge-pr-208
+  status: completed
+  pr: 208
 ---
 # Issue #180 — G18 and the verbatim-collection rule are in direct conflict
 
