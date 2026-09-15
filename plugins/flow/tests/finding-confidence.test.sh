@@ -529,3 +529,102 @@ PY
 else
   _flow_assert_fail "no journal written: $(cat "$FC_TMP/pr.err")"
 fi
+
+# --- AC5: templates keep LOW findings out of the counts ------------------------
+
+TEMPLATES="$PLUGIN_DIR/templates"
+REVIEW_TMPL=$(cat "$TEMPLATES/review-comment.md")
+
+_flow_test_begin "risk: header counts — the external template counts LOW findings separately"
+assert_contains "### Findings: P1: {p1_count}, P2: {p2_count}, P3: {p3_count} · Needs investigation: {needs_investigation_count}" "$REVIEW_TMPL" "header carries a separate Needs investigation count"
+_fc_line() { grep -n -m1 -F "$1" "$2" | cut -d: -f1; }
+P3_LINE=$(_fc_line "#### P3" "$TEMPLATES/review-comment.md")
+NI_LINE=$(_fc_line "#### Needs investigation" "$TEMPLATES/review-comment.md")
+RA_LINE=$(_fc_line "#### Requirements Adherence" "$TEMPLATES/review-comment.md")
+if [ -n "$P3_LINE" ] && [ -n "$NI_LINE" ] && [ -n "$RA_LINE" ] && [ "$P3_LINE" -lt "$NI_LINE" ] && [ "$NI_LINE" -lt "$RA_LINE" ]; then
+  _flow_assert_pass "Needs investigation sits after P3 and before Requirements Adherence"
+else
+  _flow_assert_fail "section order P3=$P3_LINE NeedsInvestigation=$NI_LINE Requirements=$RA_LINE"
+fi
+NI_SECTION=$(awk '/^#### Needs investigation/ { f = 1; next } /^#### / { f = 0 } f' "$TEMPLATES/review-comment.md")
+assert_contains "Pattern:" "$NI_SECTION" "entry names the triggering pattern"
+assert_contains "Confirm or refute:" "$NI_SECTION" "entry names what would settle it"
+assert_contains "**{ID} · {priority} · {category}" "$NI_SECTION" "entry shape matches what the posting block checks"
+
+_flow_test_begin "AC5: self-review and PR-body templates list LOW outcomes apart from the counts"
+SELF_TMPL_TEXT=$(cat "$TEMPLATES/self-review-comment.md")
+SELF_NI=$(awk '/^### Needs investigation/ { f = 1; next } /^### / { f = 0 } f' "$TEMPLATES/self-review-comment.md")
+assert_contains "Confirmed" "$SELF_NI" "confirmed outcome"
+assert_contains "Refuted" "$SELF_NI" "refuted outcome"
+assert_contains "Unsettled" "$SELF_NI" "escalated outcome"
+assert_contains "Every LOW-confidence finding confirmed, refuted or escalated" "$SELF_TMPL_TEXT" "verification checklist item"
+PR_BODY_FILE="$TEMPLATES/pr-body.md"
+LAST_P3_ROW=$(grep -n '^| P3 |' "$PR_BODY_FILE" | tail -1 | cut -d: -f1)
+PR_NI_LINE=$(_fc_line "### Needs investigation" "$PR_BODY_FILE")
+if [ -n "$LAST_P3_ROW" ] && [ -n "$PR_NI_LINE" ] && [ "$PR_NI_LINE" -gt "$LAST_P3_ROW" ]; then
+  _flow_assert_pass "pr-body Needs investigation follows the count table"
+else
+  _flow_assert_fail "pr-body order: P3 row=$LAST_P3_ROW NeedsInvestigation=$PR_NI_LINE"
+fi
+assert_not_contains "| Needs investigation" "$(cat "$PR_BODY_FILE")" "LOW findings are not a row of the count table"
+
+_flow_test_begin "no template carries a marker the posting block would refuse"
+TEMPLATES_EXAMINED=0
+for T in "$TEMPLATES"/*.md; do
+  TEMPLATES_EXAMINED=$((TEMPLATES_EXAMINED + 1))
+  assert_not_contains "FLOW_REVIEW_CYCLE:" "$(cat "$T")" "$(basename "$T") has no FLOW_REVIEW_CYCLE marker"
+done
+assert_match '^[1-9][0-9]*$' "$TEMPLATES_EXAMINED" "templates examined: $TEMPLATES_EXAMINED"
+
+# --- sweep: retired statements and LOW marker rows ------------------------------
+
+# _fc_sweep <dir>... — scans markdown, YAML and shell files for statements
+# #212 made false and for FLOW_REVIEW_CYCLE rows whose confidence is LOW.
+# Marker rows are parsed into fields, so LOW in a category or path is not a
+# hit. Prints FILES=<n> MARKERS=<n> HITS=<n>, then one line per hit.
+_fc_sweep() {
+  local files
+  files=$(find "$@" -type f \( -name '*.md' -o -name '*.yaml' -o -name '*.sh' \) ! -name CHANGELOG.md 2>/dev/null | sort)
+  if [ -z "$files" ]; then
+    echo "FILES=0 MARKERS=0 HITS=0"
+    return
+  fi
+  printf '%s\n' "$files" | while IFS= read -r f; do printf '%s\0' "$f"; done | xargs -0 awk '
+    BEGIN {
+      n = split("5-field form is preserved ONLY|paired-reviewer mode only|Path B emits 5-field|only in paired-reviewer / Path A mode|legacy **5-field** marker|Only High-confidence P1s block merge|only P1 findings with HIGH confidence should block merge|Agents SHOULD assign|MEDIUM at best|Single-session reviews omit it", retired, "|")
+    }
+    FNR == 1 { files++ }
+    {
+      for (i = 1; i <= n; i++) if (index($0, retired[i])) { hits++; out = out FILENAME ":" FNR ": retired: " retired[i] "\n" }
+      line = $0
+      while (match(line, /FINDINGS:\[[^]]*\]/)) {
+        block = substr(line, RSTART + 10, RLENGTH - 11)
+        line = substr(line, RSTART + RLENGTH)
+        markers++
+        rc = split(block, rows, ",")
+        for (r = 1; r <= rc; r++) {
+          fc = split(rows[r], f, "|")
+          if (fc >= 7 && f[6] == "LOW") { hits++; out = out FILENAME ":" FNR ": LOW marker row: " rows[r] "\n" }
+        }
+      }
+    }
+    END { printf "FILES=%d MARKERS=%d HITS=%d\n%s", files, markers, hits, out }
+  '
+}
+
+_flow_test_begin "sweep: fires on planted wording, stays silent on look-alikes, reports an empty input"
+SWEEP=$(_fc_sweep "$FC_FIXTURES/sweep-fire")
+assert_match '^FILES=1 MARKERS=1 HITS=2$' "$(head -1 <<<"$SWEEP")" "planted retired phrase and LOW row both caught"
+SWEEP=$(_fc_sweep "$FC_FIXTURES/sweep-silent")
+assert_equal "FILES=1 MARKERS=1 HITS=0" "$(head -1 <<<"$SWEEP")" "LOW in a category or path is not a LOW row"
+mkdir -p "$FC_TMP/empty-sweep"
+SWEEP=$(_fc_sweep "$FC_TMP/empty-sweep")
+assert_equal "FILES=0 MARKERS=0 HITS=0" "$(head -1 <<<"$SWEEP")" "nothing to scan is reported as zero files"
+
+_flow_test_begin "sweep: the flow plugin carries no retired statement and no LOW marker row"
+SWEEP=$(_fc_sweep "$PLUGIN_DIR/commands" "$PLUGIN_DIR/agents" "$PLUGIN_DIR/references" "$PLUGIN_DIR/skills" "$PLUGIN_DIR/templates" "$PLUGIN_DIR/workflows" "$PLUGIN_DIR/README.md")
+SWEEP_HEAD=$(head -1 <<<"$SWEEP")
+EXPECTED_FILES=$(find "$PLUGIN_DIR/commands" "$PLUGIN_DIR/agents" "$PLUGIN_DIR/references" "$PLUGIN_DIR/skills" "$PLUGIN_DIR/templates" "$PLUGIN_DIR/workflows" "$PLUGIN_DIR/README.md" -type f \( -name '*.md' -o -name '*.yaml' -o -name '*.sh' \) | wc -l | tr -d ' ')
+assert_match "^FILES=$EXPECTED_FILES " "$SWEEP_HEAD" "every file found by an independent find was scanned ($SWEEP_HEAD)"
+assert_match ' MARKERS=[1-9][0-9]* ' "$SWEEP_HEAD" "marker examples were reached"
+assert_match ' HITS=0$' "$SWEEP_HEAD" "no hits: $(tail -n +2 <<<"$SWEEP" | head -5)"

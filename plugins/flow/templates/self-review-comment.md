@@ -26,7 +26,15 @@ Verdict: N/A (independent verdict not enabled)
 ### Findings Found & Fixed
 | Finding | Fix Applied |
 |---------|-------------|
-| **{n} · {P1/P2/P3} · `{file:line}`**<br>{issue} | {fix description} |
+| **{n} · {P1/P2/P3} · `{file:line}`**<br>{issue} _({HIGH\|MEDIUM} · {disposition})_ | {fix description} |
+
+### Needs investigation
+{Every LOW-confidence finding raised on this PR and how it ended. A LOW finding counts as a fixed defect only when a test confirmed it; a refuted one is not a defect and is not in the table above.}
+| Finding | Outcome |
+|---------|---------|
+| **{ID} · {P1/P2/P3} · `{file:line}`**<br>{issue} | Confirmed — test `{test path}` failed on the unfixed code; fixed, recorded HIGH, listed above. |
+| **{ID} · {P1/P2/P3} · `{file:line}`**<br>{issue} | Refuted — test `{test path}` passes on the current code; recorded as `dropped-finding` (`self-review-refuted`). |
+| **{ID} · {P1/P2/P3} · `{file:line}`**<br>{issue} | Unsettled — no test or command could decide it; escalated below and recorded MEDIUM. |
 
 ### Escalated for Human Judgment
 {Only populated if findings could not be fixed in-PR. Each escalation uses the six-field Proactive-Autonomy structure.}
@@ -43,18 +51,18 @@ Verdict: N/A (independent verdict not enabled)
 - [x] Quality commands pass after fixes
 - [x] No new issues introduced
 - [x] All P1/P2/P3 findings in touched files fixed in-PR or escalated
+- [x] Every LOW-confidence finding confirmed, refuted or escalated
 
 <!--
-This review body carries the FLOW_REVIEW_CYCLE marker (what was FOUND, status `open`).
+Do not write the review-cycle marker (FLOW_REVIEW_CYCLE) into this body. The posting
+block in commands/review.md Phase 4 step 7 appends it (what was FOUND, status `open`)
+and refuses a body that already carries one. Its rows are 7-field on both review paths,
+  {ID}|{priority}|{category}|{file:line}|{status}|{confidence}|{disposition}
+and no LOW row is written: a refuted LOW finding is dropped, a confirmed one is HIGH.
 Self-review is raise + resolve in one action: the fix-forwarded findings are recorded as
 RESOLVED in a separate FLOW_RESOLUTION_CYCLE marker, posted as a PR issue comment via
 `gh pr comment` (built from templates/resolution-comment.md) — the same marker/placement
 /flow:address uses, and the only surface the merge finding-ledger gate reads RESOLVED from.
-Marker has two valid forms — see references/finding-ledger-parser.md:
-  Legacy 5-field (single-session reviews):
-    FLOW_REVIEW_CYCLE:{N} FINDINGS:[{ID}|{priority}|{category}|{file:line}|{status},...]
-  Extended 7-field (paired-reviewer mode only):
-    FLOW_REVIEW_CYCLE:{N} FINDINGS:[{ID}|{priority}|{category}|{file:line}|{status}|{confidence}|{disposition},...]
-Parsers tolerate both.
+An escalated LOW finding (recorded MEDIUM) goes in that marker's ESCALATED list.
+Parsers also accept legacy 5-field rows; see references/finding-ledger-parser.md.
 -->
-<!-- FLOW_REVIEW_CYCLE:{cycle_number} FINDINGS:[{F1}|{priority}|{category}|{file:line}|{open}{|HIGH|consensus},{F2}|{priority}|{category}|{file:line}|{open}{|LOW|kept}] -->

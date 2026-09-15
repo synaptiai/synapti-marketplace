@@ -1,21 +1,26 @@
 ## Review: PR #{pr_number}
 
-### Findings: P1: {p1_count}, P2: {p2_count}, P3: {p3_count}
+### Findings: P1: {p1_count}, P2: {p2_count}, P3: {p3_count} · Needs investigation: {needs_investigation_count}
 
-> **Note**: The `_(CONFIDENCE · disposition)_` suffix on a finding appears only when paired-reviewer mode (`agentTeams: true` AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`) produced it. Single-session reviews omit it and emit the legacy 5-field FLOW_REVIEW_CYCLE marker. Escape any literal `|` in a cell as `\|`.
+> **Note**: Take the counts from the `FINDINGS_HEADER` printed by `commands/review.md` Phase 4 step 7; LOW-confidence findings are not in P1/P2/P3 and appear only under Needs investigation. Every counted finding ends with a `_(CONFIDENCE · disposition)_` suffix on both review paths (Path B's disposition is `unchallenged`). Escape any literal `|` in a cell as `\|`.
 
 #### P1 — Critical (Blocks Merge)
 | Finding | Suggested Fix |
 |---------|---------------|
-| **{ID} · {category} · `{file:line}`**<br>{issue} {_({HIGH\|MEDIUM\|LOW} · {consensus\|validated\|refined\|kept\|unchallenged})_ — paired-reviewer mode only; omit otherwise} | {fix} |
+| **{ID} · {category} · `{file:line}`**<br>{issue} _({HIGH\|MEDIUM} · {consensus\|validated\|refined\|kept\|unchallenged})_ | {fix} |
 
 #### P2 — Important
 | Finding | Suggested Fix |
 |---------|---------------|
-| **{ID} · {category} · `{file:line}`**<br>{issue} {_({HIGH\|MEDIUM\|LOW} · {consensus\|validated\|refined\|kept\|unchallenged})_ — paired-reviewer mode only; omit otherwise} | {fix} |
+| **{ID} · {category} · `{file:line}`**<br>{issue} _({HIGH\|MEDIUM} · {consensus\|validated\|refined\|kept\|unchallenged})_ | {fix} |
 
 #### P3 — Suggestions
-- {suggestion} {(Confidence: HIGH/MEDIUM/LOW · Disposition: consensus/validated/refined/kept/unchallenged) — paired-reviewer mode only}
+- {suggestion} _({HIGH|MEDIUM} · {consensus|validated|refined|kept|unchallenged})_
+
+#### Needs investigation
+{LOW-confidence findings, at any priority. They are not counted above, do not decide the review, and are not in the review-cycle marker, so they never block the merge. One entry per finding:}
+- **{ID} · {priority} · {category} · `{file:line}`** — {problem}
+  Pattern: {what triggered the finding}. Confirm or refute: {the test or check that would settle it}.
 
 #### Requirements Adherence
 | # | Criterion | Status | Evidence |
@@ -29,11 +34,10 @@
 - #{issue_number}: {title} — {if any out-of-scope issues were created}
 
 <!--
-Marker has two valid forms — see references/finding-ledger-parser.md:
-  Legacy 5-field (single-session reviews):
-    FLOW_REVIEW_CYCLE:{N} FINDINGS:[{ID}|{priority}|{category}|{file:line}|{status},...]
-  Extended 7-field (paired-reviewer mode only):
-    FLOW_REVIEW_CYCLE:{N} FINDINGS:[{ID}|{priority}|{category}|{file:line}|{status}|{confidence}|{disposition},...]
-Parsers tolerate both.
+Do not write the review-cycle marker (FLOW_REVIEW_CYCLE) into this body. The posting
+block in commands/review.md Phase 4 step 7 appends it from bin/flow-finding-route.sh
+and refuses a body that already carries one. Its rows are 7-field on both review paths,
+  {ID}|{priority}|{category}|{file:line}|{status}|{confidence}|{disposition}
+and no LOW row is ever written. Parsers also accept legacy 5-field rows; see
+references/finding-ledger-parser.md.
 -->
-<!-- FLOW_REVIEW_CYCLE:{cycle_number} FINDINGS:[{F1}|{priority}|{category}|{file:line}|{open}{|HIGH|consensus},{F2}|{priority}|{category}|{file:line}|{open}{|LOW|kept}] -->
