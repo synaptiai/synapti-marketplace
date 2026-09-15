@@ -641,11 +641,12 @@ _fc_post external "$FC_MIXED" 2 "$SMUGGLE_BODY"
 assert_exit 1 "$POST_CODE" "refused"
 assert_contains "FINDINGS:[" "$POST_ERR" "names the marker syntax found"
 assert_equal "" "$GH_ARGS" "gh not called"
-for LEDGER_KEY in RESOLVED ESCALATED DISPUTED; do
-  _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY
-  quoted $LEDGER_KEY:[F9]"
-  assert_exit 1 "$POST_CODE" "$LEDGER_KEY:[ in the body refused"
-done
+# RESOLVED, ESCALATED and DISPUTED are read only from issue comments
+# (merge.md, status.md), never from a review body, so mentioning them posts.
+_fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer' 1 '## Self-Review Summary
+
+The resolution comment will carry RESOLVED:[F1] ESCALATED:[] DISPUTED:[].'
+assert_exit 0 "$POST_CODE" "a self-review body naming the resolution arrays posts"
 
 _flow_test_begin "posting: the findings header must match the routed counts as a whole line"
 PADDED_BODY=${FC_MIXED_BODY/Needs investigation: 1/Needs investigation: 12}
@@ -675,12 +676,36 @@ _fc_post external "$FC_MIXED" 2 "$LEAK_BODY"
 assert_exit 1 "$POST_CODE" "refused"
 assert_contains "F2" "$POST_ERR" "names the leaked id"
 assert_equal "" "$GH_ARGS" "gh not called"
+# The same row without a LOW suffix: only the id check can catch it.
+_fc_post external "$FC_MIXED" 2 "${LEAK_BODY/_(LOW · kept)_/_(HIGH · kept)_}"
+assert_exit 1 "$POST_CODE" "a LOW id relabelled HIGH in a priority table is refused"
+assert_contains "is rendered outside" "$POST_ERR" "by the id check"
+# A deeper-than-#### boundary: a ### table after the section still lies outside it.
+_fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY
+
+### Blocking findings
+| Finding | Suggested Fix |
+|---------|---------------|
+| **F2 · correctness · \`src/c.sh:9\`**<br>Looks like a race. _(LOW · kept)_ | Add a lock. |"
+assert_exit 1 "$POST_CODE" "a ### heading ends the Needs investigation section"
+assert_equal "" "$GH_ARGS" "gh not called"
+# A heading-looking line inside a code fence is not a heading.
+_fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY
+  \`\`\`
+  ### not a heading
+  \`\`\`
+  Still part of the F2 entry."
+assert_exit 0 "$POST_CODE" "a fenced '### ' line does not end the section"
 
 _flow_test_begin "routing and posting print the counted total for the review-cycle manifest"
+_fc_route external 'F1|P1|security|src/a.sh:1|HIGH|consensus|security-reviewer
+F2|P3|docs|a.md:2|MEDIUM|unchallenged|code-reviewer
+F3|P2|correctness|src/c.sh:9|LOW|kept|code-reviewer'
+assert_equal "COUNT_TOTAL=2" "$(grep '^COUNT_TOTAL=' <<<"$ROUTE_OUT")" "P1 + P3 counted, the LOW P2 not (hand count: 2)"
 _fc_route external "$FC_MIXED"
-assert_contains "COUNT_TOTAL=1" "$ROUTE_OUT" "routing block: one counted finding (the LOW one is not counted)"
+assert_equal "COUNT_TOTAL=1" "$(grep '^COUNT_TOTAL=' <<<"$ROUTE_OUT")" "routing block: one counted finding (the LOW one is not counted)"
 _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
-assert_contains "COUNT_TOTAL=1" "$POST_OUT" "posting block prints the same total"
+assert_equal "COUNT_TOTAL=1" "$(grep '^COUNT_TOTAL=' <<<"$POST_OUT")" "posting block prints the same total"
 STEP7_NOW=$(_fc_phase4_step 7)
 assert_contains 'findings_count="$COUNT_TOTAL"' "$STEP7_NOW" "manifest emit uses the printed total"
 assert_not_contains 'findings_count=$TOTAL' "$STEP7_NOW" "no unset TOTAL"
@@ -713,4 +738,82 @@ assert_contains "%5D" "$PARSER_NOW" "percent-encoding of category and location d
 assert_contains "%5D" "$(cat "$PLUGIN_DIR/references/finding-schema.md")" "percent-encoding documented in the finding schema"
 assert_contains "only when the producer gave none" "$(_fc_phase4_step 2)" "step 2 keeps a producer's confidence (Path A holdout consensus stays HIGH)"
 assert_contains "do not re-enter step 7" "$(awk '/^6\. \*\*Display findings\*\*/ { f = 1; print; next } f && /^7\. \*\*/ { exit } f' "$PLUGIN_DIR/commands/pr.md")" "escalated LOW findings do not loop in /flow:pr"
-assert_not_contains "which the new" "$(sed -n '150,170p' "$PLUGIN_DIR/commands/merge.md")" "merge seed comment no longer says a template carries a marker"
+assert_match '^7\. \*\*If P1 or P2 findings that are not escalated\*\*' "$(cat "$PLUGIN_DIR/commands/pr.md")" "step 7's condition excludes escalated findings"
+MERGE_TEXT=$(cat "$PLUGIN_DIR/commands/merge.md")
+assert_not_contains "self-review template carries in its format-guide comment" "$MERGE_TEXT" "merge seed comment no longer says a template carries a marker"
+assert_contains "the form the" "$MERGE_TEXT" "merge seed comment names where the placeholder form appears"
+
+# --- second self-review round -------------------------------------------------
+
+_flow_test_begin "dropped-finding block fails closed when the pull request cannot be read"
+cat > "$FC_STUB/gh-fail" <<'STUB'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "repo view") echo "o/r"; exit 0 ;;
+  "pr view") echo "HTTP 502" >&2; exit 1 ;;
+esac
+exit 1
+STUB
+chmod +x "$FC_STUB/gh-fail"
+mkdir -p "$FC_TMP/failstub" "$FC_TMP/journal-repo4"
+cp "$FC_STUB/gh-fail" "$FC_TMP/failstub/gh"
+(cd "$FC_TMP/journal-repo4" && PATH="$FC_TMP/failstub:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >"$FC_TMP/d4.out" 2>"$FC_TMP/d4.err"); D4_CODE=$?
+assert_exit 1 "$D4_CODE" "an unreadable pull request is an error"
+assert_not_contains "skipped" "$(cat "$FC_TMP/d4.out")" "not reported as a pull request without an issue"
+
+_flow_test_begin "the linked issue is the one a closing keyword names, not the first #N"
+mkdir -p "$FC_TMP/journal-repo5"
+(cd "$FC_TMP/journal-repo5" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="Follows up on #210 and the #333 colour.
+
+Closes #212" CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/d5.err"); D5_CODE=$?
+assert_exit 0 "$D5_CODE" "recorded"
+assert_file_exists "$FC_TMP/journal-repo5/.decisions/issue-212.md" "recorded against the closed issue"
+assert_equal "" "$(ls "$FC_TMP/journal-repo5/.decisions" 2>/dev/null | grep -v '^issue-212\.md' | grep -v '\.lock$')" "nothing recorded against #210 or #333"
+mkdir -p "$FC_TMP/journal-repo6"
+(cd "$FC_TMP/journal-repo6" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="Related to #210 only." \
+  CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >"$FC_TMP/d6.out" 2>/dev/null)
+assert_contains "DROPPED_FINDING=skipped" "$(cat "$FC_TMP/d6.out")" "a mention without a closing keyword links no issue"
+
+_flow_test_begin "review-cycle manifest block refuses empty or non-numeric values"
+_fc_block "REVIEW_CYCLE_MANIFEST_BLOCK" > "$FC_TMP/manifest-block.sh"
+assert_match '[^[:space:]]' "$(cat "$FC_TMP/manifest-block.sh")" "manifest block extracted"
+sed 's/path={A|B}/path=B/' "$FC_TMP/manifest-block.sh" > "$FC_TMP/manifest-run.sh"
+mkdir -p "$FC_TMP/journal-repo7"
+(cd "$FC_TMP/journal-repo7" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="Closes #42" \
+  CYCLE_NUMBER=2 PR_NUM=7 bash "$FC_TMP/manifest-run.sh" >/dev/null 2>"$FC_TMP/m1.err"); M1_CODE=$?
+assert_exit 1 "$M1_CODE" "COUNT_TOTAL unset → refused"
+assert_equal "" "$(ls "$FC_TMP/journal-repo7/.decisions" 2>/dev/null)" "nothing written"
+(cd "$FC_TMP/journal-repo7" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="Closes #42" \
+  CYCLE_NUMBER=2 PR_NUM=7 COUNT_TOTAL=3 bash "$FC_TMP/manifest-run.sh" >/dev/null 2>"$FC_TMP/m2.err"); M2_CODE=$?
+assert_exit 0 "$M2_CODE" "valid values recorded"
+if [ -f "$FC_TMP/journal-repo7/.decisions/issue-42.md" ]; then
+  M_ART=$(python3 - "$FC_TMP/journal-repo7/.decisions/issue-42.md" <<'PY'
+import sys, yaml
+c = open(sys.argv[1]).read()
+end = c.find("\n---\n", 4)
+a = yaml.safe_load(c[4:end])["artifacts"][-1]
+print("type={} cycle={!r} findings_count={!r} path={} pr={!r}".format(a["type"], a["cycle"], a["findings_count"], a["path"], a["pr"]))
+PY
+)
+  assert_equal "type=review-cycle cycle=2 findings_count=3 path=B pr=7" "$M_ART" "integers recorded, read back from the manifest"
+else
+  _flow_assert_fail "no manifest written: $(cat "$FC_TMP/m2.err")"
+fi
+
+_flow_test_begin "real template: a body rendered from review-comment.md posts through the block"
+awk '
+  /^\{/ { next }
+  { gsub(/\{p1_count\}/, "0"); gsub(/\{p2_count\}/, "1"); gsub(/\{p3_count\}/, "0"); gsub(/\{needs_investigation_count\}/, "1"); gsub(/\{pr_number\}/, "7") }
+  /^\| \*\*\{ID\} · \{category\}/ { next }
+  /^- \{suggestion\}/ { next }
+  /^- \*\*\{ID\} · \{priority\}/ { print "- **F2 · P1 · correctness · `src/c.sh:9`** — Looks like a race."; next }
+  /^  Pattern: \{what triggered/ { print "  Pattern: shared counter without a lock. Confirm or refute: a concurrent test."; next }
+  /^#### P2 — Important/ { print; getline; print; getline; print; print "| **F1 · correctness · `src/b.sh:4`**<br>Wrong bound. _(HIGH · consensus)_ | Use `<`. |"; next }
+  { print }
+' "$TEMPLATES/review-comment.md" > "$FC_TMP/rendered-review.md"
+assert_contains "### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 1" "$(cat "$FC_TMP/rendered-review.md")" "rendered header"
+_fc_post external "$FC_MIXED" 2 "$(cat "$FC_TMP/rendered-review.md")"
+assert_exit 0 "$POST_CODE" "the rendered template posts (its closing comment trips no guard): $POST_ERR"
+assert_contains "--request-changes" "$GH_ARGS" "decision from the HIGH P2"
+assert_equal "1" "$(grep -c 'FLOW_REVIEW_CYCLE:2 FINDINGS:\[' <<<"$POSTED")" "exactly one marker in the posted body"

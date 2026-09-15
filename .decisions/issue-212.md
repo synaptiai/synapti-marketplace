@@ -162,9 +162,9 @@ PASS — 7 tasks reviewed. Each task names its files, contract, failure modes, r
 
 <!-- auto-log: 2026-09-15 23:02 commit "fix(flow): close the posting-block gaps the #212 self-review found" -->
 
-## Phase 4 self-review (code-reviewer, reviewed at 96988fe)
+## Phase 4 self-review, round 1 (code-reviewer, reviewed at 1ac4203)
 
-P1: 0, P2: 4, P3: 8 — all fixed in 8d965c9, each with a test that failed on 96988fe.
+P1: 0, P2: 4, P3: 8 — all fixed in 4118d39, each with a test that failed on 1ac4203.
 
 - The posting block let a body quote `FINDINGS:[…]`; the merge gate reads ids from the whole body, so a LOW id could reach Check 2 that way. The block now refuses any quoted ledger array.
 - The header check matched a substring (`Needs investigation: 12` passed for 1); it now matches the whole `### Findings:` line.
@@ -177,3 +177,21 @@ P1: 0, P2: 4, P3: 8 — all fixed in 8d965c9, each with a test that failed on 96
 - `/flow:pr` could loop on an escalated LOW finding; escalated findings stay in the PR body and do not re-enter the fix loop.
 - The parser reference, finding schema and a merge.md comment still described the first draft; corrected, and marker percent-encoding is documented.
 - An assertion (`assert_contains "MEDIUM"`) could only confirm; it now asserts the absent-confidence sentence.
+
+<!-- auto-log: 2026-09-15 23:24 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-15 23:24 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+## Phase 4 self-review, round 2 (targeted re-review of 4118d39)
+
+P1: 0, P2: 2, P3: 7 — all fixed, each with a test that failed before the fix.
+
+The same defect class appeared twice: posting guards that check less than a review body can contain. The cause was that each guard matched lines against an assumed body shape (a section ends at `####`; the first `#N` is the linked issue), and each had one hand-written test body built from the same assumption. The fixes address the cause as well as the instances:
+
+- The Needs investigation section is found by splitting the body at markdown headings of any level, skipping code fences, so a `###` table after it is outside it.
+- A body rendered from `templates/review-comment.md` itself is posted through the block in the tests, so the real template's structure and closing comment are exercised.
+- The linked issue is the one a closing keyword names (`Closes #N`), in both the dropped-finding and review-cycle manifest blocks; a failed `gh pr view` is an error, not "no linked issue".
+- The review-cycle manifest block refuses a non-numeric `PR_NUM`, `CYCLE_NUMBER` or `COUNT_TOTAL`.
+- The ledger-syntax refusal covers only `FINDINGS:[`: `RESOLVED`, `ESCALATED` and `DISPUTED` are read only from issue comments, so a self-review body may name them.
+- `/flow:pr` step 7's condition excludes escalated findings.
+- Tests: the id-outside check is tested on its own (a LOW id relabelled HIGH), `COUNT_TOTAL` is checked across P1, P3 and a LOW P2, and the merge.md comment check reads the whole file.

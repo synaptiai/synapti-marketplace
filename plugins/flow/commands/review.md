@@ -754,7 +754,10 @@ done
 if [ -z "${ISSUE:-}" ]; then
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
-  ISSUE=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+  PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body') || { echo "ERROR: cannot read pull request $PR_NUM; refusing to guess its linked issue" >&2; exit 1; }
+  # The linked issue is the one a closing keyword names (Closes #N), not the
+  # first #N in the body: a summary may mention other issues first.
+  ISSUE=$(printf '%s\n' "$PR_BODY" | grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]+' | head -1 | grep -oE '[0-9]+')
 fi
 if [ -z "$ISSUE" ]; then
   echo "DROPPED_FINDING=skipped (the pull request links no issue; the self-review body carries the evidence)"
@@ -858,7 +861,7 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
 
    **Render the body** from the routed values, using the template for the mode — self-review: `templates/self-review-comment.md`; external review: `templates/review-comment.md`. The external body carries the `FINDINGS_HEADER` text in its `### Findings:` line, lists only counted findings in the P1/P2/P3 tables with their `_(CONFIDENCE · disposition)_` suffix, and lists every `NEEDS_INVESTIGATION` id under `#### Needs investigation` in the template's entry shape (a bullet opening with the bold `{ID} · {priority} · {category} · {location}` line, then `Pattern:` and `Confirm or refute:`); the posting block checks for the bold `{ID} · ` opening. Write the body to a file without the marker; the posting block appends it.
 
-   **Post the review.** The block routes the same rows again, so what is posted is exactly what was routed. It refuses to post when the rows file lost a finding, when the cycle number is not a positive integer, when the body quotes marker syntax the merge parser would read (`FINDINGS:[`, `RESOLVED:[`, `ESCALATED:[`, `DISPUTED:[`, or a review-cycle marker), and, on an external review, when the `### Findings:` line differs from the routed counts, a LOW finding has no Needs investigation entry, or a LOW finding appears outside that section. Set `FINDING_TOTAL` to the synthesized findings minus any refuted in step 5:
+   **Post the review.** The block routes the same rows again, so what is posted is exactly what was routed. It refuses to post when the rows file lost a finding, when the cycle number is not a positive integer, when the body quotes marker syntax the merge gate reads from a review body (`FINDINGS:[` or a review-cycle marker), and, on an external review, when the `### Findings:` line differs from the routed counts, a LOW finding has no Needs investigation entry, or a LOW finding appears outside that section. Set `FINDING_TOTAL` to the synthesized findings minus any refuted in step 5:
 
 ```bash
 # FINDING_POST_BLOCK_BEGIN
@@ -880,11 +883,12 @@ if grep -q 'FLOW_REVIEW_CYCLE:' "$BODY_FILE"; then
   echo "ERROR: the body already carries a FLOW_REVIEW_CYCLE marker; this block appends it" >&2
   exit 1
 fi
-# The merge gate reads ids from every FINDINGS:[...] in the body, not only the
-# marker, so quoted ledger syntax would put an unrouted id in front of it.
-QUOTED=$(grep -oE '(FINDINGS|RESOLVED|ESCALATED|DISPUTED):\[' "$BODY_FILE" | head -1)
-if [ -n "$QUOTED" ]; then
-  echo "ERROR: the body quotes ledger syntax ($QUOTED) that the merge gate would parse; reword it (for example with a space before the bracket)" >&2
+# The merge gate and /flow:status read ids from every FINDINGS:[...] in a
+# review body, not only the marker, so a quoted array would put an unrouted id
+# in front of them. RESOLVED, ESCALATED and DISPUTED are read only from issue
+# comments, so a review body may mention those.
+if grep -q 'FINDINGS:\[' "$BODY_FILE"; then
+  echo "ERROR: the body quotes FINDINGS:[ which the merge gate would parse as findings; reword it (for example with a space before the bracket)" >&2
   exit 1
 fi
 ROUTE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-finding-route.sh"
@@ -908,8 +912,13 @@ if [ "$REVIEW_MODE" = "external" ]; then
     echo "ERROR: the body needs this exact line: ### Findings: $HEADER" >&2
     exit 1
   fi
-  SECTION=$(awk '/^#### Needs investigation/ { f = 1; next } /^#### / { f = 0 } f' "$BODY_FILE")
-  OUTSIDE=$(awk '/^#### Needs investigation/ { f = 1; next } /^#### / { f = 0 } !f' "$BODY_FILE")
+  # Split the body at markdown headings of any level (not inside code fences):
+  # the Needs investigation section runs from its heading to the next heading.
+  SPLIT='/^ ? ? ?(```|~~~)/ { fence = !fence }
+    !fence && /^ ? ? ?#+([ \t]|$)/ { t = $0; sub(/^ *#+[ \t]*/, "", t); sub(/[ \t#]*$/, "", t); inside = (t == "Needs investigation"); next }
+    inside == want { print }'
+  SECTION=$(awk -v want=1 "$SPLIT" "$BODY_FILE")
+  OUTSIDE=$(awk -v want=0 "$SPLIT" "$BODY_FILE")
   LEAKED=$(printf '%s\n' "$OUTSIDE" | grep -F '_(LOW' | head -1)
   if [ -n "$LEAKED" ]; then
     echo "ERROR: a LOW-confidence finding is rendered outside #### Needs investigation: $LEAKED" >&2
@@ -994,16 +1003,28 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
 
    TaskUpdate(resolutionCommentTaskId, status: "completed", result: "PASS — self-review resolution marker posted")
 
-   **Manifest emit** — record the review-cycle artifact in the issue's journal manifest. Use the issue number associated with this PR (parse from PR body: `gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#'`):
+   **Manifest emit** — record the review-cycle artifact in the issue's journal manifest, keyed by the issue the PR body closes (`Closes #N`, `Fixes #N` or `Resolves #N`):
 
    ```bash
+   # REVIEW_CYCLE_MANIFEST_BLOCK_BEGIN
+   # Carried from earlier steps (each fence is its own shell): PR_NUM,
+   # CYCLE_NUMBER and COUNT_TOTAL (printed by the posting block).
+   for __name in PR_NUM CYCLE_NUMBER COUNT_TOTAL; do
+     eval "__value=\${$__name:-}"
+     case "$__value" in
+       ''|*[!0-9]*) echo "ERROR: $__name must be a number, got '$__value'; refusing to record the review cycle" >&2; exit 1 ;;
+     esac
+   done
    # $REPO does not survive from the preflight block: each fence is its own
    # shell. Resolved again here, because `gh --repo ""` falls back to gh's own
    # resolution without complaining — an unset REPO reads as pinned and behaves
    # as unpinned, which is the failure this pinning exists to prevent.
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
    [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
-   ISSUE=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+   PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body') || { echo "ERROR: cannot read pull request $PR_NUM; refusing to guess its linked issue" >&2; exit 1; }
+   # The linked issue is the one a closing keyword names (Closes #N), not the
+   # first #N in the body: a summary may mention other issues first.
+   ISSUE=$(printf '%s\n' "$PR_BODY" | grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]+' | head -1 | grep -oE '[0-9]+')
    if [ -n "$ISSUE" ]; then
      "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
        --issue "$ISSUE" \
@@ -1013,6 +1034,7 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
        --metadata findings_count="$COUNT_TOTAL" \
        --metadata pr="$PR_NUM"
    fi
+   # REVIEW_CYCLE_MANIFEST_BLOCK_END
    ```
 
    The `path` value names the orchestration that ran: `A` when Path A's paired reviewers produced the findings (per-facet fallbacks included), `B` for a Path B run. Both paths write 7-field markers, so the marker's width does not tell them apart. `findings_count` is the `COUNT_TOTAL` the routing and posting blocks print (`COUNT_P1+COUNT_P2+COUNT_P3`): the number of rows in the marker. If the PR body does not link an issue, skip the emit (the marker on the PR comment is sufficient for that PR's own state; the manifest is keyed by issue, not PR).
