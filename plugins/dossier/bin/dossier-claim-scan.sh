@@ -94,9 +94,9 @@ scan_class() { # file | class | severity | regex
   # Prohibited vocabulary is prose a drafter capitalizes without thinking
   # about it — a heading, a bolded lead, title case in a bullet — and the
   # pattern list itself is written all-lowercase, so "Zero Downtime" or
-  # "Bank-Grade" must still match. Leak patterns stay case-sensitive: two are
-  # case-sensitive by construction (`AKIA[0-9A-Z]{16}`, the PEM armour), and
-  # folding them would themselves start matching unrelated lowercase text.
+  # "Bank-Grade" must still match. Leak patterns stay case-sensitive: two
+  # (the AKIA prefix and the PEM armour) are case-sensitive by construction,
+  # and folding them would themselves start matching unrelated lowercase text.
   [ "$sev" = "prohibited" ] && grepflags="-inE"
   # `--` terminates option parsing: several patterns below start with a hyphen
   # (the PEM armour), and without it grep reads the pattern as flags.
@@ -125,9 +125,9 @@ for f in $TARGETS; do
   # bearer-token: a lone interrupted key that redact() now correctly
   # redacts would otherwise still exit 1 ("registration gap") instead of 2
   # ("leakage detected") here.
-  scan_class "$f" "aws-access-key"     leak 'AKIA([0-9A-Z][ |,]?){16}'
+  scan_class "$f" "aws-access-key"     leak 'AKIA[ |,]?([0-9A-Z][ |,]?){16}'
   scan_class "$f" "slack-token"        leak 'xox[baprs]-[A-Za-z0-9-]{10,}'
-  scan_class "$f" "private-key-block"  leak '-----BEGIN [A-Z ]*P[ |,]?R[ |,]?I[ |,]?V[ |,]?A[ |,]?T[ |,]?E[[:space:]][ |,]?K[ |,]?E[ |,]?Y-----'
+  scan_class "$f" "private-key-block"  leak '-----BEGIN[ |,]?[A-Z ,|]*P[ |,]?R[ |,]?I[ |,]?V[ |,]?A[ |,]?T[ |,]?E[[:space:]][ |,]?K[ |,]?E[ |,]?Y[ |,]?-----'
   scan_class "$f" "generic-secret-assignment" leak \
     '(api[_-]?key|secret|password|passwd|token|credential)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9/_+=-]{12,}'
   # Case-insensitive on this one word only (Bearer|bearer), same as
@@ -269,9 +269,16 @@ CRED_CLASSES=(
 # regression, but squarely inside this issue's "interrupted by any
 # non-token character" acceptance criterion. Both are rewritten below to
 # tolerate exactly one interrupting character (space, `|`, or `,` -- the
-# same three this issue's own fixtures use) after any position, while still
-# requiring the same 16 real key characters / the same literal "PRIVATE
-# KEY" letters, so an unrelated short string still can't match by accident.
+# same three this issue's own fixtures use) after any position -- including
+# the anchor/body boundary immediately after the literal prefix, and (for
+# private-key-block) the boundary before the trailing dashes and within the
+# armor-type region between "BEGIN" and "PRIVATE": an interrupt-tolerant
+# first draft of both patterns covered only the interior of the body and
+# missed these boundaries, found live in review round 3 by re-testing the
+# fix's own stated scope rather than trusting its test fixtures, which
+# happened not to cover a boundary position -- while still requiring the
+# same 16 real key characters / the same literal "PRIVATE KEY" letters, so
+# an unrelated short string still can't match by accident.
 # connection-string has the same exact-format problem (a required trailing
 # `@`) but loosening its charset creates real false positives on ordinary
 # scheme mentions with no credential at all -- tracked as a follow-up issue
@@ -279,12 +286,12 @@ CRED_CLASSES=(
 CRED_PATTERNS=(
   'sk-ant-[A-Za-z0-9_-]{8,}'
   '(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{16,}'
-  'AKIA([0-9A-Z][ |,]?){16}'
+  'AKIA[ |,]?([0-9A-Z][ |,]?){16}'
   'xox[baprs]-[A-Za-z0-9-]{10,}'
   '(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}'
   '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[^[:space:]@]+@'
   '(api[_-]?key|secret|password|passwd|token|credential)([[:space:]]*[:=][[:space:]]*)["'"'"']?[A-Za-z0-9/_+=-]{12,}'
-  '-----BEGIN [A-Z ]*P[ |,]?R[ |,]?I[ |,]?V[ |,]?A[ |,]?T[ |,]?E[[:space:]][ |,]?K[ |,]?E[ |,]?Y-----'
+  '-----BEGIN[ |,]?[A-Z ,|]*P[ |,]?R[ |,]?I[ |,]?V[ |,]?A[ |,]?T[ |,]?E[[:space:]][ |,]?K[ |,]?E[ |,]?Y[ |,]?-----'
 )
 # Built once from CRED_PATTERNS, not retyped: a single combined-alternation
 # grep against this union is the fast path both call sites run first. The

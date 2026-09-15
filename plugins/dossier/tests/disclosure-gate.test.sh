@@ -782,6 +782,18 @@ assert_not_contains "AKIAIOSFOD" "$OUT" "aws-lone: the pre-interruption fragment
 assert_not_contains "NN7EXAMPLE" "$OUT" "aws-lone: the post-interruption fragment never reaches the output"
 assert_contains "[REDACTED:aws-access-key]" "$OUT" "the class is still named"
 
+# The first interrupt-tolerant draft of this pattern only tolerated a stray
+# character BETWEEN the 16 body characters, not at the boundary right after
+# the literal "AKIA" prefix -- a distinct position, missed by frag-aws-lone
+# above (which interrupts mid-body) and found live in round-3 review.
+T="$W/frag-aws-lone-prefix"; mkpkg "$T"
+pub "$T" "The leaked key was AKIA ABCDEFGHIJKLMNOP for backup access."
+scan "$T"
+assert_equal "2" "$?" "aws: an interrupt right after the AKIA prefix is still flagged as leakage (exit 2)"
+OUT=$(scanout "$T")
+assert_not_contains "ABCDEFGHIJKLMNOP" "$OUT" "aws-lone-prefix: the key body never reaches the output"
+assert_contains "[REDACTED:aws-access-key]" "$OUT" "the class is still named"
+
 T="$W/frag-pem"; mkpkg "$T"
 pub "$T" "The backup starts with -----BEGIN RSA PRIVATE KEY----- while the corrupted copy reads -----BEGIN RSA PRIVATE K3Y-----."
 OUT=$(scanout "$T")
@@ -797,6 +809,26 @@ scan "$T"
 assert_equal "2" "$?" "pem: a lone interrupted header is still flagged as leakage (exit 2), not just a registration gap"
 OUT=$(scanout "$T")
 assert_not_contains "BEGIN RSA PRI VATE KEY" "$OUT" "pem-lone: the interrupted header never reaches the output"
+assert_contains "[REDACTED:private-key-block]" "$OUT" "the class is still named"
+
+# Two more boundary positions the first interrupt-tolerant draft missed,
+# found live in round-3 review alongside frag-aws-lone-prefix above: the
+# boundary right before the trailing dashes, and within the armor-type
+# region between "BEGIN" and "PRIVATE".
+T="$W/frag-pem-lone-tail"; mkpkg "$T"
+pub "$T" "The backup starts with -----BEGIN RSA PRIVATE KEY,----- for safekeeping."
+scan "$T"
+assert_equal "2" "$?" "pem: an interrupt right before the trailing dashes is still flagged as leakage (exit 2)"
+OUT=$(scanout "$T")
+assert_not_contains "PRIVATE KEY" "$OUT" "pem-lone-tail: the header never reaches the output"
+assert_contains "[REDACTED:private-key-block]" "$OUT" "the class is still named"
+
+T="$W/frag-pem-lone-armor"; mkpkg "$T"
+pub "$T" "The backup starts with -----BEGIN RSA, PRIVATE KEY----- for safekeeping."
+scan "$T"
+assert_equal "2" "$?" "pem: an interrupt in the armor-type region is still flagged as leakage (exit 2)"
+OUT=$(scanout "$T")
+assert_not_contains "BEGIN RSA" "$OUT" "pem-lone-armor: the header never reaches the output"
 assert_contains "[REDACTED:private-key-block]" "$OUT" "the class is still named"
 
 T="$W/frag-conn"; mkpkg "$T"
