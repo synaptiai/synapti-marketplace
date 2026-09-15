@@ -120,3 +120,9 @@ artifacts:
 <!-- auto-log: 2026-09-15 15:38 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
 
 <!-- auto-log: 2026-09-15 15:38 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-198.md -->
+
+<!-- auto-log: 2026-09-15 15:40 commit "fix(dossier): restore -- guard lost in the redact() pattern-array refactor" -->
+
+<!-- auto-log: 2026-09-15 15:52 Write /Users/danielbentes/.claude-work/projects/-Users-danielbentes-synapti-marketplace/memory/project_issue_queue_reorder_207_release.md -->
+
+<!-- auto-log: 2026-09-15 15:54 commit "fix(dossier): restore -- guard lost in the redact() pattern-array refactor" -->
