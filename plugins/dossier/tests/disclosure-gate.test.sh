@@ -831,6 +831,41 @@ OUT=$(scanout "$T")
 assert_not_contains "BEGIN RSA" "$OUT" "pem-lone-armor: the header never reaches the output"
 assert_contains "[REDACTED:private-key-block]" "$OUT" "the class is still named"
 
+# A fourth boundary the first three round-3 fixtures missed: the mandatory
+# space between "PRIVATE" and "KEY" only had an interrupter slot AFTER it,
+# not before -- a comma or pipe placed directly after "PRIVATE" (before the
+# space) matched none of frag-pem-lone/-tail/-armor above, found live in a
+# second round-3 review pass after the first three landed.
+T="$W/frag-pem-lone-wordgap"; mkpkg "$T"
+pub "$T" "The backup starts with -----BEGIN RSA PRIVATE, KEY----- for safekeeping."
+scan "$T"
+assert_equal "2" "$?" "pem: an interrupt before the PRIVATE/KEY space is still flagged as leakage (exit 2)"
+OUT=$(scanout "$T")
+assert_not_contains "PRIVATE" "$OUT" "pem-lone-wordgap: the header never reaches the output"
+assert_contains "[REDACTED:private-key-block]" "$OUT" "the class is still named"
+
+# Every lone-occurrence fixture above uses only space or comma as the
+# interrupter -- '|' (pipe, the third interrupter this issue's own
+# reproduction uses) was never exercised for either exact-format pattern's
+# lone case. Found in round-3 review: narrowing either pattern's interrupter
+# class to drop '|' support left every existing assertion green, so a
+# regression here would ship undetected without these.
+T="$W/frag-aws-lone-pipe"; mkpkg "$T"
+pub "$T" "The leaked key was AKIA|ABCDEFGHIJKLMNOP for backup access."
+scan "$T"
+assert_equal "2" "$?" "aws: a pipe interrupt right after the AKIA prefix is still flagged as leakage (exit 2)"
+OUT=$(scanout "$T")
+assert_not_contains "ABCDEFGHIJKLMNOP" "$OUT" "aws-lone-pipe: the key body never reaches the output"
+assert_contains "[REDACTED:aws-access-key]" "$OUT" "the class is still named"
+
+T="$W/frag-pem-lone-pipe"; mkpkg "$T"
+pub "$T" "The backup starts with -----BEGIN RSA PRIVATE| KEY----- for safekeeping."
+scan "$T"
+assert_equal "2" "$?" "pem: a pipe interrupt at the word gap is still flagged as leakage (exit 2)"
+OUT=$(scanout "$T")
+assert_not_contains "PRIVATE" "$OUT" "pem-lone-pipe: the header never reaches the output"
+assert_contains "[REDACTED:private-key-block]" "$OUT" "the class is still named"
+
 T="$W/frag-conn"; mkpkg "$T"
 pub "$T" "The staging URI is postgres://admin:Sup3rSecretPass@db.internal:5432/prod and the broken copy reads postgres://admin:Sup3rSecr etPass@db.internal:5432/prod."
 OUT=$(scanout "$T")

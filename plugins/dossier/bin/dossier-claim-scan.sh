@@ -127,7 +127,7 @@ for f in $TARGETS; do
   # ("leakage detected") here.
   scan_class "$f" "aws-access-key"     leak 'AKIA[ |,]?([0-9A-Z][ |,]?){16}'
   scan_class "$f" "slack-token"        leak 'xox[baprs]-[A-Za-z0-9-]{10,}'
-  scan_class "$f" "private-key-block"  leak '-----BEGIN[ |,]?[A-Z ,|]*P[ |,]?R[ |,]?I[ |,]?V[ |,]?A[ |,]?T[ |,]?E[[:space:]][ |,]?K[ |,]?E[ |,]?Y[ |,]?-----'
+  scan_class "$f" "private-key-block"  leak '-----BEGIN[ |,]?[A-Z ,|]*P[ |,]?R[ |,]?I[ |,]?V[ |,]?A[ |,]?T[ |,]?E[ |,]?[[:space:]][ |,]?K[ |,]?E[ |,]?Y[ |,]?-----'
   scan_class "$f" "generic-secret-assignment" leak \
     '(api[_-]?key|secret|password|passwd|token|credential)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9/_+=-]{12,}'
   # Case-insensitive on this one word only (Bearer|bearer), same as
@@ -291,7 +291,7 @@ CRED_PATTERNS=(
   '(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}'
   '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[^[:space:]@]+@'
   '(api[_-]?key|secret|password|passwd|token|credential)([[:space:]]*[:=][[:space:]]*)["'"'"']?[A-Za-z0-9/_+=-]{12,}'
-  '-----BEGIN[ |,]?[A-Z ,|]*P[ |,]?R[ |,]?I[ |,]?V[ |,]?A[ |,]?T[ |,]?E[[:space:]][ |,]?K[ |,]?E[ |,]?Y[ |,]?-----'
+  '-----BEGIN[ |,]?[A-Z ,|]*P[ |,]?R[ |,]?I[ |,]?V[ |,]?A[ |,]?T[ |,]?E[ |,]?[[:space:]][ |,]?K[ |,]?E[ |,]?Y[ |,]?-----'
 )
 # Built once from CRED_PATTERNS, not retyped: a single combined-alternation
 # grep against this union is the fast path both call sites run first. The
