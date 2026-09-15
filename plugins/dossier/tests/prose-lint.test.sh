@@ -176,6 +176,13 @@ assert_equal "1" "$(count_of "$J" scan_errors)" "zero files scanned is itself re
 "$LINT" --nonexistent-flag >/dev/null 2>&1
 assert_equal "2" "$?" "an unknown flag exits 2"
 
+# --file and --output-root together is rejected, not silently resolved --
+# combining them would let the scan target follow --file while the
+# verbatim-exemption check follows --output-root's exact-path branch against
+# an unrelated root.
+"$LINT" --file "$C" --output-root "$W" >/dev/null 2>&1
+assert_equal "2" "$?" "--file and --output-root together exits 2, not a silently-resolved combination"
+
 # --- --json emits valid JSON ----------------------------------------------------
 if command -v python3 >/dev/null 2>&1; then
   if lint_json "$C" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then

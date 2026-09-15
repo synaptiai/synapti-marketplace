@@ -88,6 +88,17 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Combining the two would let the scan target follow --file while the
+# verbatim-exemption check follows --output-root's exact-path branch against
+# an unrelated root -- never a bypass (it only denies the exemption more
+# often), but confusing and not a supported invocation shape. Reject it
+# rather than let the two modes silently disagree about which root governs
+# which decision.
+if [ -n "$SINGLE_FILE" ] && [ -n "$OUTPUT_ROOT" ]; then
+  echo "dossier-prose-lint: --file and --output-root are mutually exclusive" >&2
+  exit 2
+fi
+
 if [ -n "$SINGLE_FILE" ]; then
   [ -f "$SINGLE_FILE" ] || { echo "dossier-prose-lint: no such file: $SINGLE_FILE" >&2; exit 2; }
   TARGETS="$SINGLE_FILE"
@@ -125,7 +136,7 @@ trap 'rm -rf "$WORK" 2>/dev/null' EXIT
 #   E\tlong_sentence\t<file>
 #   E\tfiller_hedge\t<file>
 #   E\tlong_paragraph\t<file>
-#   SUMMARY\t<semicolons>\t<em-dashes>
+#   SUMMARY\t<semicolons>\t<em-dashes>\t<verbatim_blocks>\t<verbatim_lines_skipped>
 AWK_PROG="$WORK/lint.awk"
 cat > "$AWK_PROG" <<'AWKEOF'
 BEGIN {
@@ -145,7 +156,8 @@ BEGIN {
   if (substr(line, 1, 3) == "```") { in_fence = !in_fence; next }
   if (in_fence) next
   # DOSSIER_VERBATIM_BEGIN/END: honored only when the caller (bash side, via
-  # a path-suffix match) sets honor_verbatim for this file — everywhere else
+  # an exact-path match under --output-root or a suffix match under --file)
+  # sets honor_verbatim for this file — everywhere else
   # these are ordinary single-line HTML comments, caught by the generic
   # `<!--` skip further down, and inert. A BEGIN nested inside an already-open
   # block, and a BEGIN left unclosed at EOF, are reported via sentinels rather
