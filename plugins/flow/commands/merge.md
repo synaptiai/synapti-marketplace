@@ -158,8 +158,8 @@ else
   #
   # The select requires a digit after the colon (FLOW_*_CYCLE:[0-9]) so a "marker" is, by
   # definition, NAME:<cycle-number>. This excludes both bare prose mentions of the marker
-  # NAME and unsubstituted-placeholder prose like `FLOW_REVIEW_CYCLE:{N}` (which the new
-  # self-review template carries in its format-guide comment), so neither inflates the
+  # NAME and unsubstituted-placeholder prose like `FLOW_REVIEW_CYCLE:{N}` (the form the
+  # reference documentation uses), so neither inflates the
   # count nor produces a spurious diagnostic. The seed is intentionally a touch stricter
   # than the gate `test("FLOW_*_CYCLE:")` select — the gate tolerates prose by extracting
   # an empty FINDINGS list, whereas a human-facing preview should only count real markers.

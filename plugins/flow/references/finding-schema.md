@@ -27,7 +27,7 @@ LEDGER_WARN: PR#<N> finding '<id>' from <agent> has no confidence — treated as
 LEDGER_WARN: PR#<N> finding '<id>' from <agent> has invalid confidence '<value>' — treated as MEDIUM
 ```
 
-Findings from producers outside this schema (holdout-validation, and convention-checker or test-runner rows mapped into the ledger) are stamped MEDIUM by the orchestrator before routing, so the warning names only a schema agent that left out confidence. The orchestrator may still change an agent's confidence when it consolidates paired reviewers: Path A A.4 assigns confidence from the consolidation table.
+Findings from producers outside this schema (holdout-validation, and convention-checker or test-runner rows mapped into the ledger) are stamped MEDIUM by the orchestrator before routing when they carry no confidence of their own, so the warning names only a schema agent that left out confidence. A confidence Path A's consolidation assigned, such as HIGH for a holdout finding both lenses raised, is kept. The orchestrator may still change an agent's confidence when it consolidates paired reviewers: Path A A.4 assigns confidence from the consolidation table.
 
 ## Marker-only fields (added by `commands/review.md` Phase 4 step 7)
 
@@ -44,7 +44,7 @@ The marker pipe-separated form follows `references/finding-ledger-parser.md`:
 F1|P1|security|src/auth.ts:42|open|HIGH|consensus
 ```
 
-This is the same field order as the table columns above (id, priority, category, location, status, confidence, disposition), so the same row reads consistently in both presentations.
+This is the same field order as the table columns above (id, priority, category, location, status, confidence, disposition), so the same row reads consistently in both presentations. In a marker row, `category` and `location` are percent-encoded outside `[A-Za-z0-9._~/:@+= -]`, so `app/[id]/page.tsx:4` is written `app/%5Bid%5D/page.tsx:4`; a comma, `]`, `|` or `>` would otherwise split the row or end the marker. The rendered tables keep the original text.
 
 ## Category vocabulary
 

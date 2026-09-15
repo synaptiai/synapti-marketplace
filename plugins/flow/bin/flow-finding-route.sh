@@ -70,6 +70,20 @@ safe() {
   printf '%s' "${s:0:80}"
 }
 
+# An id is ASCII [A-Za-z][A-Za-z0-9_-]*. Bracket ranges follow the caller's
+# locale, where [A-Za-z] can match a letter such as é, so match under C.
+valid_id() {
+  local LC_ALL=C
+  case "$1" in
+    [A-Za-z]*) ;;
+    *) return 1 ;;
+  esac
+  case "$1" in
+    *[!A-Za-z0-9_-]*) return 1 ;;
+  esac
+  return 0
+}
+
 trim() {
   local s="$1"
   s="${s#"${s%%[![:space:]]*}"}"
@@ -159,13 +173,10 @@ while IFS= read -r line || [ -n "$line" ]; do
   f_disp=$(trim "${f_disp//$US/|}")
   f_agent=$(trim "${f_agent//$US/|}")
 
-  case "$f_id" in
-    [A-Za-z]*) ;;
-    *) echo "$PROG: line $LINE_NO: finding id '$(safe "$f_id")' must match [A-Za-z][A-Za-z0-9_-]*" >&2; exit 1 ;;
-  esac
-  case "$f_id" in
-    *[!A-Za-z0-9_-]*) echo "$PROG: line $LINE_NO: finding id '$(safe "$f_id")' must match [A-Za-z][A-Za-z0-9_-]*" >&2; exit 1 ;;
-  esac
+  if ! valid_id "$f_id"; then
+    echo "$PROG: line $LINE_NO: finding id '$(safe "$f_id")' must match [A-Za-z][A-Za-z0-9_-]*" >&2
+    exit 1
+  fi
   case "$SEEN" in
     *",$f_id,"*) echo "$PROG: line $LINE_NO: duplicate finding id '$f_id'" >&2; exit 1 ;;
   esac

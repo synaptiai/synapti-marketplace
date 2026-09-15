@@ -199,6 +199,12 @@ F1|P3|correctness|src/a.sh:2|HIGH|unchallenged|code-reviewer' --mode external --
 assert_exit 1 "$CODE" "duplicate id"
 assert_not_contains "MARKER_ROWS=" "$OUT" "nothing routed after a rejection"
 
+_flow_test_begin "ids are ASCII whatever the caller's locale"
+BAD_ID_ROW="$(printf 'F\xc3\xa91|P2|correctness|src/a.sh:1|HIGH|unchallenged|code-reviewer')"
+printf '%s' "$BAD_ID_ROW" > "$FFR_DIR/in"
+LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 "$HELPER" --mode external --pr 7 < "$FFR_DIR/in" > "$FFR_DIR/out" 2> "$FFR_DIR/err"
+assert_exit 1 "$?" "a non-ASCII letter in an id is rejected under a UTF-8 locale"
+
 _flow_test_begin "valid ids, dispositions and agent defaults route silently"
 _route 'SEC-1|P2|security|src/a.sh:1|HIGH|unchallenged|security-reviewer
 C-F1|P3|correctness|src/a.sh:2|MEDIUM||code-reviewer

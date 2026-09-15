@@ -113,7 +113,7 @@ CONF_SECTION=$(_fc_section "$METHODOLOGY" '## Confidence and signal')
 assert_not_contains "Only High-confidence P1s block merge" "$CONF_SECTION" "the retired phrase is gone (a MEDIUM P1 blocks too)"
 assert_not_contains "include only as P1" "$CONF_SECTION" "LOW is no longer limited to P1"
 assert_contains "Needs investigation" "$CONF_SECTION" "LOW findings go to Needs investigation"
-assert_contains "MEDIUM" "$CONF_SECTION" "absent confidence counts as MEDIUM"
+assert_contains "Absent or invalid confidence is MEDIUM" "$CONF_SECTION" "absent confidence counts as MEDIUM (the sentence itself, not any MEDIUM)"
 assert_contains "commands/review.md\` Phase 4 step 5" "$CONF_SECTION" "points own-PR handling to the self-review step (asserted under AC3)"
 assert_contains "flow-finding-route.sh" "$CONF_SECTION" "names the script that applies the rule"
 
@@ -272,6 +272,7 @@ case "$1 $2" in
   "pr view")
     case "$*" in
       *author*) printf '%s\n' "${STUB_AUTHOR:-}"; exit 0 ;;
+      *body*) printf '%s\n' "${STUB_BODY:-}"; exit 0 ;;
       *number*) echo "55"; exit 0 ;;
     esac
     exit 1 ;;
@@ -313,7 +314,7 @@ _fc_post() {
   rm -f "$FC_TMP/gh.log" "$FC_TMP/gh.body"
   POST_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
     GH_LOG="$FC_TMP/gh.log" GH_BODY="$FC_TMP/gh.body" \
-    REVIEW_MODE="$1" PR_NUM=7 CYCLE_NUMBER=2 FINDING_ROWS_FILE="$FC_TMP/rows" \
+    REVIEW_MODE="$1" PR_NUM=7 CYCLE_NUMBER="${FC_CYCLE:-2}" FINDING_ROWS_FILE="$FC_TMP/rows" \
     FINDING_TOTAL="$3" BODY_FILE="$FC_TMP/body.md" "${FC_SHELL:-bash}" "$FC_TMP/post-block.sh" 2>"$FC_TMP/post.err")
   POST_CODE=$?
   POST_ERR=$(cat "$FC_TMP/post.err")
@@ -630,3 +631,86 @@ EXPECTED_FILES=$(find "$PLUGIN_DIR/commands" "$PLUGIN_DIR/agents" "$PLUGIN_DIR/r
 assert_match "^FILES=$EXPECTED_FILES " "$SWEEP_HEAD" "every file found by an independent find was scanned ($SWEEP_HEAD)"
 assert_match ' MARKERS=[1-9][0-9]* ' "$SWEEP_HEAD" "marker examples were reached"
 assert_match ' HITS=0$' "$SWEEP_HEAD" "no hits: $(tail -n +2 <<<"$SWEEP" | head -5)"
+
+# --- self-review findings on the first draft of #212 ---------------------------
+
+_flow_test_begin "posting: a body quoting marker syntax cannot smuggle a LOW id to the merge parser"
+SMUGGLE_BODY="$FC_MIXED_BODY
+  The old marker read FINDINGS:[F2|P1|x|y|open] before this change."
+_fc_post external "$FC_MIXED" 2 "$SMUGGLE_BODY"
+assert_exit 1 "$POST_CODE" "refused"
+assert_contains "FINDINGS:[" "$POST_ERR" "names the marker syntax found"
+assert_equal "" "$GH_ARGS" "gh not called"
+for LEDGER_KEY in RESOLVED ESCALATED DISPUTED; do
+  _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY
+  quoted $LEDGER_KEY:[F9]"
+  assert_exit 1 "$POST_CODE" "$LEDGER_KEY:[ in the body refused"
+done
+
+_flow_test_begin "posting: the findings header must match the routed counts as a whole line"
+PADDED_BODY=${FC_MIXED_BODY/Needs investigation: 1/Needs investigation: 12}
+_fc_post external "$FC_MIXED" 2 "$PADDED_BODY"
+assert_exit 1 "$POST_CODE" "one extra digit is refused"
+assert_equal "" "$GH_ARGS" "gh not called"
+
+_flow_test_begin "posting: the cycle number must be a positive integer"
+for BAD_CYCLE in '{N} -->' 0 2a; do
+  FC_CYCLE="$BAD_CYCLE" _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
+  assert_exit 1 "$POST_CODE" "cycle '$BAD_CYCLE' refused"
+  assert_equal "" "$GH_ARGS" "gh not called for cycle '$BAD_CYCLE'"
+done
+FC_CYCLE=11 _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
+assert_exit 0 "$POST_CODE" "cycle 11 accepted"
+assert_contains "FLOW_REVIEW_CYCLE:11 FINDINGS:[" "$POSTED" "marker carries cycle 11"
+
+_flow_test_begin "posting: a LOW finding rendered in a priority table is refused"
+LEAK_BODY="$FC_MIXED_BODY"
+LEAK_BODY=${LEAK_BODY/'#### P2 — Important'/'#### P1 — Critical (Blocks Merge)
+| Finding | Suggested Fix |
+|---------|---------------|
+| **F2 · correctness · `src/c.sh:9`**<br>Looks like a race. _(LOW · kept)_ | Add a lock. |
+
+#### P2 — Important'}
+_fc_post external "$FC_MIXED" 2 "$LEAK_BODY"
+assert_exit 1 "$POST_CODE" "refused"
+assert_contains "F2" "$POST_ERR" "names the leaked id"
+assert_equal "" "$GH_ARGS" "gh not called"
+
+_flow_test_begin "routing and posting print the counted total for the review-cycle manifest"
+_fc_route external "$FC_MIXED"
+assert_contains "COUNT_TOTAL=1" "$ROUTE_OUT" "routing block: one counted finding (the LOW one is not counted)"
+_fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
+assert_contains "COUNT_TOTAL=1" "$POST_OUT" "posting block prints the same total"
+STEP7_NOW=$(_fc_phase4_step 7)
+assert_contains 'findings_count="$COUNT_TOTAL"' "$STEP7_NOW" "manifest emit uses the printed total"
+assert_not_contains 'findings_count=$TOTAL' "$STEP7_NOW" "no unset TOTAL"
+assert_contains 'the synthesized findings minus any refuted in step 5' "$STEP7_NOW" "FINDING_TOTAL excludes refuted findings"
+
+_flow_test_begin "dropped-finding block resolves the linked issue itself and skips cleanly without one"
+mkdir -p "$FC_TMP/journal-repo2"
+(cd "$FC_TMP/journal-repo2" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="Fixes the thing. Closes #43" \
+  CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >"$FC_TMP/d2.out" 2>"$FC_TMP/d2.err"); D2_CODE=$?
+assert_exit 0 "$D2_CODE" "issue resolved from the PR body"
+if [ -f "$FC_TMP/journal-repo2/.decisions/issue-43.md" ]; then
+  assert_equal "type=dropped-finding reason=self-review-refuted finding_id=F4 facet=security-reviewer cycle=1 pr=7" \
+    "$(_fc_last_artifact "$FC_TMP/journal-repo2/.decisions/issue-43.md")" "recorded against issue 43"
+else
+  _flow_assert_fail "no journal for issue 43: $(cat "$FC_TMP/d2.err")"
+fi
+mkdir -p "$FC_TMP/journal-repo3"
+(cd "$FC_TMP/journal-repo3" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="No issue link here." \
+  CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >"$FC_TMP/d3.out" 2>"$FC_TMP/d3.err"); D3_CODE=$?
+assert_exit 0 "$D3_CODE" "no linked issue is not an error"
+assert_contains "DROPPED_FINDING=skipped" "$(cat "$FC_TMP/d3.out")" "says the record was skipped"
+assert_equal "" "$(ls "$FC_TMP/journal-repo3/.decisions" 2>/dev/null)" "no journal written"
+
+_flow_test_begin "prose made false by the first draft is corrected"
+PARSER_NOW=$(cat "$PLUGIN_DIR/references/finding-ledger-parser.md")
+assert_not_contains 'Source: `templates/review-comment.md`' "$PARSER_NOW" "marker source is the posting block, not a template"
+assert_not_contains "They are emitted by review and resolution templates" "$PARSER_NOW" "emitters named correctly"
+assert_not_contains "No emitter pre-validates the disposition string" "$PARSER_NOW" "emitter-side validation documented"
+assert_contains "%5D" "$PARSER_NOW" "percent-encoding of category and location documented in the parser reference"
+assert_contains "%5D" "$(cat "$PLUGIN_DIR/references/finding-schema.md")" "percent-encoding documented in the finding schema"
+assert_contains "only when the producer gave none" "$(_fc_phase4_step 2)" "step 2 keeps a producer's confidence (Path A holdout consensus stays HIGH)"
+assert_contains "do not re-enter step 7" "$(awk '/^6\. \*\*Display findings\*\*/ { f = 1; print; next } f && /^7\. \*\*/ { exit } f' "$PLUGIN_DIR/commands/pr.md")" "escalated LOW findings do not loop in /flow:pr"
+assert_not_contains "which the new" "$(sed -n '150,170p' "$PLUGIN_DIR/commands/merge.md")" "merge seed comment no longer says a template carries a marker"

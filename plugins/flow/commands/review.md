@@ -695,7 +695,7 @@ TaskUpdate each review task as agents complete.
 **Post the review before suggesting next steps.** The review is complete only once `gh pr review` has run and TaskUpdate confirms the post task, because the merge finding-ledger gate reads the posted marker.
 
 1. **TaskList**: Confirm all review facets complete
-2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. Every finding keeps its confidence. Findings from producers outside the finding schema (holdout-validation, convention-checker, test-runner) are stamped MEDIUM here; a schema agent's finding with no confidence is left blank so step 7's routing warns about it.
+2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. Every finding keeps its confidence. A finding from a producer outside the finding schema (holdout-validation, convention-checker, test-runner) is stamped MEDIUM here only when the producer gave none; a confidence Path A's consolidation assigned (A.4, including HIGH for a holdout finding both lenses raised) is kept. A schema agent's finding with no confidence is left blank so step 7's routing warns about it.
 3. **Display findings** (finding-first pattern). LOW findings are counted separately, never in P1/P2/P3:
 
 ```markdown
@@ -744,12 +744,22 @@ TaskUpdate each review task as agents complete.
 
 ```bash
 # DROPPED_FINDING_BLOCK_BEGIN
-# Carried from earlier steps: ISSUE (the issue this PR addresses), CYCLE_NUMBER,
-# PR_NUM, FINDING_ID and FACET (the reviewer agent that raised the finding).
-for __name in ISSUE CYCLE_NUMBER PR_NUM FINDING_ID FACET; do
+# Carried from earlier steps: CYCLE_NUMBER, PR_NUM, FINDING_ID and FACET (the
+# reviewer agent that raised the finding). ISSUE is optional: when unset it is
+# read from the pull request body, and with no linked issue the record is skipped.
+for __name in CYCLE_NUMBER PR_NUM FINDING_ID FACET; do
   eval "__value=\${$__name:-}"
   [ -n "$__value" ] || { echo "ERROR: $__name is not set; refusing to record a dropped finding" >&2; exit 1; }
 done
+if [ -z "${ISSUE:-}" ]; then
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+  [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+  ISSUE=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+fi
+if [ -z "$ISSUE" ]; then
+  echo "DROPPED_FINDING=skipped (the pull request links no issue; the self-review body carries the evidence)"
+  exit 0
+fi
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
   --issue "$ISSUE" \
   --type dropped-finding \
@@ -761,7 +771,7 @@ done
 # DROPPED_FINDING_BLOCK_END
 ```
 
-   Run it once per refuted finding.
+   Run it once per refuted finding. When the pull request links no issue there is no journal to write to; the block says so and the self-review body's Needs investigation section is the record.
 
    Fix-forward approach for every HIGH and MEDIUM finding, including the confirmed ones (bounded by `fixForwardMaxIterations`, default 10 — a safety net against true infinite loops, not a budget; see `skills/llm-operator-principles/SKILL.md`):
    - P1 findings → fix immediately
@@ -840,6 +850,7 @@ if [ "$ROUTE_EXIT" -eq 3 ]; then
 fi
 [ "$ROUTE_EXIT" -eq 0 ] || { echo "ERROR: flow-finding-route.sh exited $ROUTE_EXIT" >&2; exit 1; }
 echo "FINDINGS_HEADER=P1: $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED"), P2: $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED"), P3: $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") · Needs investigation: $(sed -n 's/^COUNT_NEEDS_INVESTIGATION=//p' <<<"$ROUTED")"
+echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") ))"
 # FINDING_ROUTE_BLOCK_END
 ```
 
@@ -847,24 +858,33 @@ echo "FINDINGS_HEADER=P1: $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED"), P2: $(sed -n
 
    **Render the body** from the routed values, using the template for the mode — self-review: `templates/self-review-comment.md`; external review: `templates/review-comment.md`. The external body carries the `FINDINGS_HEADER` text in its `### Findings:` line, lists only counted findings in the P1/P2/P3 tables with their `_(CONFIDENCE · disposition)_` suffix, and lists every `NEEDS_INVESTIGATION` id under `#### Needs investigation` in the template's entry shape (a bullet opening with the bold `{ID} · {priority} · {category} · {location}` line, then `Pattern:` and `Confirm or refute:`); the posting block checks for the bold `{ID} · ` opening. Write the body to a file without the marker; the posting block appends it.
 
-   **Post the review.** The block routes the same rows again, so what is posted is exactly what was routed, and it refuses to post when the rows file lost a finding, when the external body's header or Needs investigation section disagrees with the routing, or when the body already carries a marker:
+   **Post the review.** The block routes the same rows again, so what is posted is exactly what was routed. It refuses to post when the rows file lost a finding, when the cycle number is not a positive integer, when the body quotes marker syntax the merge parser would read (`FINDINGS:[`, `RESOLVED:[`, `ESCALATED:[`, `DISPUTED:[`, or a review-cycle marker), and, on an external review, when the `### Findings:` line differs from the routed counts, a LOW finding has no Needs investigation entry, or a LOW finding appears outside that section. Set `FINDING_TOTAL` to the synthesized findings minus any refuted in step 5:
 
 ```bash
 # FINDING_POST_BLOCK_BEGIN
 # Carried from earlier steps (each fence is its own shell): REVIEW_MODE and
 # PR_NUM, CYCLE_NUMBER (the review cycle), FINDING_ROWS_FILE (printed by the
-# routing block), FINDING_TOTAL (the number of rows that file should hold,
-# counted from the synthesized findings) and BODY_FILE (the rendered body).
+# routing block), FINDING_TOTAL (the number of rows that file should hold:
+# the synthesized findings minus any refuted in step 5) and BODY_FILE.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 [ -n "${REVIEW_MODE:-}" ] || { echo "ERROR: REVIEW_MODE is not set; refusing to post" >&2; exit 1; }
 [ -n "${PR_NUM:-}" ] || { echo "ERROR: PR_NUM is not set; refusing to post" >&2; exit 1; }
-[ -n "${CYCLE_NUMBER:-}" ] || { echo "ERROR: CYCLE_NUMBER is not set; refusing to post" >&2; exit 1; }
+case "${CYCLE_NUMBER:-}" in
+  ''|0*|*[!0-9]*) echo "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to post" >&2; exit 1 ;;
+esac
 [ -n "${FINDING_TOTAL:-}" ] || { echo "ERROR: FINDING_TOTAL is not set; refusing to post" >&2; exit 1; }
 [ -r "${FINDING_ROWS_FILE:-}" ] || { echo "ERROR: FINDING_ROWS_FILE is not readable; refusing to post" >&2; exit 1; }
 [ -r "${BODY_FILE:-}" ] || { echo "ERROR: BODY_FILE is not readable; refusing to post" >&2; exit 1; }
 if grep -q 'FLOW_REVIEW_CYCLE:' "$BODY_FILE"; then
   echo "ERROR: the body already carries a FLOW_REVIEW_CYCLE marker; this block appends it" >&2
+  exit 1
+fi
+# The merge gate reads ids from every FINDINGS:[...] in the body, not only the
+# marker, so quoted ledger syntax would put an unrouted id in front of it.
+QUOTED=$(grep -oE '(FINDINGS|RESOLVED|ESCALATED|DISPUTED):\[' "$BODY_FILE" | head -1)
+if [ -n "$QUOTED" ]; then
+  echo "ERROR: the body quotes ledger syntax ($QUOTED) that the merge gate would parse; reword it (for example with a space before the bracket)" >&2
   exit 1
 fi
 ROUTE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-finding-route.sh"
@@ -884,14 +904,24 @@ fi
 NEEDS=$(sed -n 's/^NEEDS_INVESTIGATION=//p' <<<"$ROUTED")
 HEADER="P1: $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED"), P2: $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED"), P3: $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") · Needs investigation: $(sed -n 's/^COUNT_NEEDS_INVESTIGATION=//p' <<<"$ROUTED")"
 if [ "$REVIEW_MODE" = "external" ]; then
-  if ! grep -qF "$HEADER" "$BODY_FILE"; then
-    echo "ERROR: the body findings header must read: $HEADER" >&2
+  if ! grep -qxF "### Findings: $HEADER" "$BODY_FILE"; then
+    echo "ERROR: the body needs this exact line: ### Findings: $HEADER" >&2
     exit 1
   fi
   SECTION=$(awk '/^#### Needs investigation/ { f = 1; next } /^#### / { f = 0 } f' "$BODY_FILE")
+  OUTSIDE=$(awk '/^#### Needs investigation/ { f = 1; next } /^#### / { f = 0 } !f' "$BODY_FILE")
+  LEAKED=$(printf '%s\n' "$OUTSIDE" | grep -F '_(LOW' | head -1)
+  if [ -n "$LEAKED" ]; then
+    echo "ERROR: a LOW-confidence finding is rendered outside #### Needs investigation: $LEAKED" >&2
+    exit 1
+  fi
   for ID in $(printf '%s' "$NEEDS" | tr ',' ' '); do
     if ! printf '%s\n' "$SECTION" | grep -qF "**$ID · "; then
       echo "ERROR: $ID is LOW-confidence but has no entry under #### Needs investigation" >&2
+      exit 1
+    fi
+    if printf '%s\n' "$OUTSIDE" | grep -qF "**$ID · "; then
+      echo "ERROR: $ID is LOW-confidence but is rendered outside #### Needs investigation" >&2
       exit 1
     fi
   done
@@ -908,6 +938,7 @@ gh pr review "$PR_NUM" --repo "$REPO" "$FLAG" --body-file "$POST_FILE"
 POST_EXIT=$?
 rm -f "$POST_FILE"
 echo "POSTED_AS=$FLAG POST_EXIT=$POST_EXIT"
+echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") ))"
 [ "$POST_EXIT" -eq 0 ] || exit 1
 # FINDING_POST_BLOCK_END
 ```
@@ -975,16 +1006,16 @@ echo "POSTED_AS=$FLAG POST_EXIT=$POST_EXIT"
    ISSUE=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
    if [ -n "$ISSUE" ]; then
      "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
-       --issue $ISSUE \
+       --issue "$ISSUE" \
        --type review-cycle \
-       --metadata cycle=$CYCLE_NUMBER \
+       --metadata cycle="$CYCLE_NUMBER" \
        --metadata path={A|B} \
-       --metadata findings_count=$TOTAL \
+       --metadata findings_count="$COUNT_TOTAL" \
        --metadata pr="$PR_NUM"
    fi
    ```
 
-   The `path` value names the orchestration that ran: `A` when Path A's paired reviewers produced the findings (per-facet fallbacks included), `B` for a Path B run. Both paths write 7-field markers, so the marker's width does not tell them apart. `findings_count` is `COUNT_P1+COUNT_P2+COUNT_P3` from the routing block: the number of rows in the marker. If the PR body does not link an issue, skip the emit (the marker on the PR comment is sufficient for that PR's own state; the manifest is keyed by issue, not PR).
+   The `path` value names the orchestration that ran: `A` when Path A's paired reviewers produced the findings (per-facet fallbacks included), `B` for a Path B run. Both paths write 7-field markers, so the marker's width does not tell them apart. `findings_count` is the `COUNT_TOTAL` the routing and posting blocks print (`COUNT_P1+COUNT_P2+COUNT_P3`): the number of rows in the marker. If the PR body does not link an issue, skip the emit (the marker on the PR comment is sufficient for that PR's own state; the manifest is keyed by issue, not PR).
 
 8. **Verify posting**: TaskList — confirm the posting task(s) are completed. Do NOT proceed to step 9 until verified. For external review: "Post review comment". For self-review: BOTH "Post self-review comment" AND "Post self-review resolution marker" must be `completed` — the resolution marker is what balances the merge finding-ledger gate, so a self-review that posted the review body but not the resolution marker is NOT done (it would false-block at merge). Mirror `commands/address.md` step 11's "ALL tasks including the resolution comment" gate.
 

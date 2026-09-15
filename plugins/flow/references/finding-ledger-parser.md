@@ -16,11 +16,11 @@ This filter trusts the configured association levels uniformly. It does not prot
 
 ## Marker Schemas
 
-Two HTML-comment markers carry the finding state. They are emitted by review and resolution templates and are the only ledger source-of-truth. Markers from untrusted authors are ignored — see Trust Boundary above.
+Two HTML-comment markers carry the finding state. The review-cycle marker is appended by the posting block in `commands/review.md` Phase 4 step 7 from the rows `bin/flow-finding-route.sh` prints; the resolution marker ends the resolution comment built from `templates/resolution-comment.md`. They are the only ledger source-of-truth. Markers from untrusted authors are ignored — see Trust Boundary above.
 
 ### FLOW_REVIEW_CYCLE — emitted in PR review bodies
 
-Source: `templates/review-comment.md`. Lists all findings raised in cycle `N` with their priority and location.
+Source: `commands/review.md` Phase 4 step 7 (the review templates carry no marker). Lists every counted finding raised in cycle `N` with its priority and location.
 
 ```
 <!-- FLOW_REVIEW_CYCLE:{N} FINDINGS:[{ID}|{priority}|{category}|{file:line}|{status}[|{confidence}|{disposition}],...] -->
@@ -40,15 +40,17 @@ Source: `templates/review-comment.md`. Lists all findings raised in cycle `N` wi
 
 `commands/review.md` writes the 7-field form on both Path A (paired reviewers) and Path B (single session, disposition `unchallenged`), through `bin/flow-finding-route.sh`. No LOW row is written: on someone else's pull request a LOW finding is listed under Needs investigation instead, and on the author's own pull request it is confirmed (re-recorded HIGH), refuted (dropped) or escalated (re-recorded MEDIUM) before the marker is built. Legacy 5-field rows in markers posted before this rule still parse.
 
+In `category` and `location` the emitter percent-encodes every byte outside `[A-Za-z0-9._~/:@+= -]`: `app/[id]/page.tsx:4` is written `app/%5Bid%5D/page.tsx:4`, and a comma, `]`, `|` or `>` becomes `%2C`, `%5D`, `%7C` or `%3E`, so no value can split a row or end the marker. Parsers read only `ID` and `priority`; decode the other two only for display.
+
 **Disposition vocabulary is fixed (no free text)** — the field is parsed positionally and must not contain commas (the row delimiter) or pipes (the field delimiter). The five values above are the complete v1 vocabulary; new values require a schema bump.
 
-**Vocabulary enforcement is consumer-side, not emitter-side.** No emitter pre-validates the disposition string before posting a marker. If a trusted reviewer (the only kind whose markers reach parsing — see Trust Boundary above) hand-edits a posted marker and inserts an out-of-vocabulary disposition or injects extra rows via embedded `]`/`,`, the consumer parsers degrade safely:
+**Vocabulary is enforced on both sides.** The emitter, `bin/flow-finding-route.sh`, rejects a row whose ID or priority fails the allowlist, rewrites an out-of-vocabulary disposition to `unchallenged` with a `LEDGER_WARN`, and encodes category and location as above; the posting block also refuses a review body that quotes `FINDINGS:[`, `RESOLVED:[`, `ESCALATED:[` or `DISPUTED:[`. If a trusted reviewer (the only kind whose markers reach parsing — see Trust Boundary above) hand-edits a posted marker afterwards and inserts an out-of-vocabulary disposition or injects extra rows via embedded `]`/`,`, the consumer parsers still degrade safely:
 
 - `grep -o 'FINDINGS:\[[^]]*\]'` (used by `status.md`, `merge.md`, `tests/issue-86/verify.sh`) terminates at the first unescaped `]`, truncating any row containing one. The truncated row then fails the consumer's ID/priority allowlist (`[A-Za-z][A-Za-z0-9_-]*` for IDs, `P1|P2|P3` for priority) and is rejected with a `LEDGER_WARN` to stderr.
 - A comma in disposition splits into a phantom row that is similarly caught by the ID/priority allowlists.
 - Out-of-vocabulary dispositions parse without error but carry no semantic meaning to consumers (the field is currently display-only — only `ID` and `PRIORITY` reach merge-gate logic).
 
-This means the closed-vocabulary contract is enforced by the consumer's allowlist + grep-truncation behavior, not by an explicit validator. Adding emitter-side validation would defense-in-depth this; the current architecture is safe but documented for transparency.
+The consumer allowlists and grep truncation stay the backstop for a marker edited after it was posted.
 
 ### FLOW_RESOLUTION_CYCLE — emitted in PR comments
 
