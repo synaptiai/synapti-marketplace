@@ -110,6 +110,11 @@ Cell construction:
   On someone else's pull request a LOW finding is not rendered in the priority tables: it is listed
   under `Needs investigation` (`commands/review.md` Phase 4 step 6). (These replace the old
   `Confidence` and `Disposition` columns.)
+- **Needs investigation entry:** `- **{ID} · {priority} · {category} · `{location}`** — {problem}`,
+  with the routed priority in the second position and no confidence suffix. A counted finding, in a
+  table or a P3 bullet, opens `**{ID} · {category} · ` instead. The two shapes are what the posting
+  block checks: a LOW id appears exactly once, in the entry shape at its routed priority, and no
+  line in the body carries a `_(LOW` suffix.
 - **Suggested Fix cell:** the `suggested_fix` prose, or `—` when non-obvious (then append a
   `**{ID} context:** …` paragraph below the table explaining the trade-off, as before).
 

@@ -15,7 +15,7 @@
 | **{ID} · {category} · `{file:line}`**<br>{issue} _({HIGH\|MEDIUM} · {consensus\|validated\|refined\|kept\|unchallenged})_ | {fix} |
 
 #### P3 — Suggestions
-- {suggestion} _({HIGH|MEDIUM} · {consensus|validated|refined|kept|unchallenged})_
+- **{ID} · {category} · `{file:line}`** — {suggestion} _({HIGH|MEDIUM} · {consensus|validated|refined|kept|unchallenged})_
 
 #### Needs investigation
 {LOW-confidence findings, at any priority. They are not counted above, do not decide the review, and are not in the review-cycle marker, so they never block the merge. One entry per finding:}

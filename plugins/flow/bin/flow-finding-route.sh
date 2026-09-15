@@ -30,7 +30,11 @@
 #
 # Output (stdout, one KEY=value per line, in this order):
 #   ROWS_READ  COUNT_P1  COUNT_P2  COUNT_P3  COUNT_NEEDS_INVESTIGATION
-#   NEEDS_INVESTIGATION  DECISION  MARKER_ROWS  [UNRESOLVED_LOW, self mode]
+#   NEEDS_INVESTIGATION  NEEDS_INVESTIGATION_PRIORITIES  DECISION  MARKER_ROWS
+#   [UNRESOLVED_LOW, self mode]
+# NEEDS_INVESTIGATION lists the LOW ids in input order, comma-joined;
+# NEEDS_INVESTIGATION_PRIORITIES lists the same findings as ID:PRIORITY, so a
+# rendered entry can be checked against the priority it was routed with.
 # MARKER_ROWS holds 7-field rows `ID|PRIORITY|category|location|open|CONFIDENCE|disposition`
 # joined by commas, ready for `FINDINGS:[...]`. In category and location every
 # byte outside [A-Za-z0-9._~/:@+= -] is percent-encoded, so a comma, a `]`,
@@ -146,6 +150,7 @@ COUNT_P1=0
 COUNT_P2=0
 COUNT_P3=0
 NEEDS=""
+NEEDS_PRIORITIES=""
 NEEDS_COUNT=0
 UNRESOLVED=""
 MARKER=""
@@ -228,6 +233,7 @@ while IFS= read -r line || [ -n "$line" ]; do
       UNRESOLVED="${UNRESOLVED:+$UNRESOLVED,}$f_id"
     else
       NEEDS="${NEEDS:+$NEEDS,}$f_id"
+      NEEDS_PRIORITIES="${NEEDS_PRIORITIES:+$NEEDS_PRIORITIES,}$f_id:$f_pri"
       NEEDS_COUNT=$((NEEDS_COUNT + 1))
     fi
     continue
@@ -271,6 +277,7 @@ echo "COUNT_P2=$COUNT_P2"
 echo "COUNT_P3=$COUNT_P3"
 echo "COUNT_NEEDS_INVESTIGATION=$NEEDS_COUNT"
 echo "NEEDS_INVESTIGATION=$NEEDS"
+echo "NEEDS_INVESTIGATION_PRIORITIES=$NEEDS_PRIORITIES"
 echo "DECISION=$DECISION"
 echo "MARKER_ROWS=$MARKER"
 if [ "$MODE" = "self" ]; then

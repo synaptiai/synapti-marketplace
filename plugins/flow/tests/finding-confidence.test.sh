@@ -271,6 +271,13 @@ case "$1 $2" in
   "issue list") exit 0 ;;
   "pr view")
     case "$*" in
+      *closingIssuesReferences*)
+        # Apply --jq the way gh does, to the closing references in STUB_CLOSING.
+        while [ $# -gt 0 ]; do [ "$1" = "--jq" ] && FILTER="$2"; shift; done
+        CLOSING=${STUB_CLOSING:-}
+        [ -n "$CLOSING" ] || CLOSING='{"closingIssuesReferences":[]}'
+        printf '%s' "$CLOSING" | jq -r "$FILTER"
+        exit ;;
       *author*) printf '%s\n' "${STUB_AUTHOR:-}"; exit 0 ;;
       *body*) printf '%s\n' "${STUB_BODY:-}"; exit 0 ;;
       *number*) echo "55"; exit 0 ;;
@@ -287,6 +294,16 @@ esac
 exit 1
 STUB
 chmod +x "$FC_STUB/gh"
+
+# _fc_closing <number>... — closingIssuesReferences JSON naming issues of o/r,
+# the repository the stub's `gh repo view` reports.
+_fc_closing() {
+  local refs="" n
+  for n in "$@"; do
+    refs="${refs:+$refs,}{\"number\":$n,\"repository\":{\"name\":\"r\",\"owner\":{\"login\":\"o\"}}}"
+  done
+  printf '{"closingIssuesReferences":[%s]}' "$refs"
+}
 
 _fc_block "FINDING_ROUTE_BLOCK" > "$FC_TMP/route-block.sh"
 _fc_block "FINDING_POST_BLOCK" > "$FC_TMP/post-block.sh"
@@ -665,37 +682,82 @@ assert_exit 0 "$POST_CODE" "cycle 11 accepted"
 assert_contains "FLOW_REVIEW_CYCLE:11 FINDINGS:[" "$POSTED" "marker carries cycle 11"
 
 _flow_test_begin "posting: a LOW finding rendered in a priority table is refused"
+LEAK_ROW='| **F2 · correctness · `src/c.sh:9`**<br>Looks like a race. _(LOW · kept)_ | Add a lock. |'
 LEAK_BODY="$FC_MIXED_BODY"
-LEAK_BODY=${LEAK_BODY/'#### P2 — Important'/'#### P1 — Critical (Blocks Merge)
+LEAK_BODY=${LEAK_BODY/'#### P2 — Important'/"#### P1 — Critical (Blocks Merge)
 | Finding | Suggested Fix |
 |---------|---------------|
-| **F2 · correctness · `src/c.sh:9`**<br>Looks like a race. _(LOW · kept)_ | Add a lock. |
+$LEAK_ROW
 
-#### P2 — Important'}
+#### P2 — Important"}
 _fc_post external "$FC_MIXED" 2 "$LEAK_BODY"
 assert_exit 1 "$POST_CODE" "refused"
-assert_contains "F2" "$POST_ERR" "names the leaked id"
+assert_contains "_(LOW" "$POST_ERR" "names the leaked line"
 assert_equal "" "$GH_ARGS" "gh not called"
-# The same row without a LOW suffix: only the id check can catch it.
+_fc_post external "$FC_MIXED" 2 "${LEAK_BODY/_(LOW · kept)_/_(low · kept)_}"
+assert_exit 1 "$POST_CODE" "a lower-case low suffix is refused too"
+# The same row without a LOW suffix: only the id count can catch it.
 _fc_post external "$FC_MIXED" 2 "${LEAK_BODY/_(LOW · kept)_/_(HIGH · kept)_}"
 assert_exit 1 "$POST_CODE" "a LOW id relabelled HIGH in a priority table is refused"
-assert_contains "is rendered outside" "$POST_ERR" "by the id check"
-# A deeper-than-#### boundary: a ### table after the section still lies outside it.
-_fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY
+assert_contains "F2" "$POST_ERR" "names the id"
+assert_equal "" "$GH_ARGS" "gh not called"
 
-### Blocking findings
+_flow_test_begin "posting: no markdown construct hides a relabelled LOW row (round-3 bodies)"
+# Each construct made the earlier heading parser lose track of where the
+# Needs investigation section ended. The checks now read the whole body, so
+# every one of these is refused whatever the construct.
+HIGH_ROW='| **F2 · correctness · `src/c.sh:9`**<br>Looks like a race. _(HIGH · kept)_ | Add a lock. |'
+FC_ROUND3=0
+for CONSTRUCT in \
+  $'~~~\n```\n~~~' \
+  $'```diff\n```bash\n```' \
+  $'````\n```\n````' \
+  $'Blocking findings\n---' \
+  $'Blocking findings\n===' \
+  '> ### Blocking findings' \
+  '<h3>Blocking findings</h3>' \
+  '####### Seven hashes'; do
+  _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY
+
+$CONSTRUCT
+
 | Finding | Suggested Fix |
 |---------|---------------|
-| **F2 · correctness · \`src/c.sh:9\`**<br>Looks like a race. _(LOW · kept)_ | Add a lock. |"
-assert_exit 1 "$POST_CODE" "a ### heading ends the Needs investigation section"
-assert_equal "" "$GH_ARGS" "gh not called"
-# A heading-looking line inside a code fence is not a heading.
+$HIGH_ROW"
+  assert_exit 1 "$POST_CODE" "refused after: $(printf '%s' "$CONSTRUCT" | tr '\n' ' ')"
+  assert_equal "" "$GH_ARGS" "gh not called after: $(printf '%s' "$CONSTRUCT" | tr '\n' ' ')"
+  FC_ROUND3=$((FC_ROUND3 + 1))
+done
+assert_equal "8" "$FC_ROUND3" "all eight constructs examined"
+
+_flow_test_begin "posting: a LOW finding needs exactly one entry, in the entry shape, at its routed priority"
+# Entry removed, row present: no entry.
+_fc_post external "$FC_MIXED" 2 "$(grep -v '^- \*\*F2 · ' <<<"$FC_MIXED_BODY")
+$HIGH_ROW"
+assert_exit 1 "$POST_CODE" "a LOW id present only as a table row is refused"
+assert_contains "no Needs investigation entry" "$POST_ERR" "says the entry is missing"
+# The priority shown must be the routed one (F2 is P1).
+PRI_BODY=${FC_MIXED_BODY/\*\*F2 · P1 · /**F2 · P3 · }
+assert_contains "- **F2 · P3 · correctness" "$PRI_BODY" "the entry under test shows P3 in the entry shape"
+_fc_post external "$FC_MIXED" 2 "$PRI_BODY"
+assert_exit 1 "$POST_CODE" "an entry that changes the priority is refused"
+assert_contains "no Needs investigation entry opening: - **F2 · P1 · " "$POST_ERR" "names the routed priority"
+# A P3 bullet in the table's id shape counts as a second rendering.
 _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY
-  \`\`\`
-  ### not a heading
-  \`\`\`
-  Still part of the F2 entry."
-assert_exit 0 "$POST_CODE" "a fenced '### ' line does not end the section"
+
+#### P3 — Suggestions
+- **F2 · correctness · \`src/c.sh:9\`** — Looks like a race. _(MEDIUM · kept)_"
+assert_exit 1 "$POST_CODE" "a LOW id repeated as a P3 bullet is refused"
+# Two entries for one id.
+_fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY
+- **F2 · P1 · correctness · \`src/c.sh:9\`** — Looks like a race."
+assert_exit 1 "$POST_CODE" "a LOW id rendered twice is refused"
+# F21 is not F2: an id that extends another id is not a second rendering.
+_fc_post external "F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer
+F21|P2|docs|a.md:3|HIGH|consensus|code-reviewer
+F2|P1|correctness|src/c.sh:9|LOW|kept|code-reviewer" 3 "${FC_MIXED_BODY/P2: 1, P3: 0/P2: 2, P3: 0}
+| **F21 · docs · \`a.md:3\`**<br>Stale link. _(HIGH · consensus)_ | Update it. |"
+assert_exit 0 "$POST_CODE" "F21 beside a LOW F2 posts: $POST_ERR"
 
 _flow_test_begin "routing and posting print the counted total for the review-cycle manifest"
 _fc_route external 'F1|P1|security|src/a.sh:1|HIGH|consensus|security-reviewer
@@ -713,7 +775,7 @@ assert_contains 'the synthesized findings minus any refuted in step 5' "$STEP7_N
 
 _flow_test_begin "dropped-finding block resolves the linked issue itself and skips cleanly without one"
 mkdir -p "$FC_TMP/journal-repo2"
-(cd "$FC_TMP/journal-repo2" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="Fixes the thing. Closes #43" \
+(cd "$FC_TMP/journal-repo2" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 43)" \
   CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >"$FC_TMP/d2.out" 2>"$FC_TMP/d2.err"); D2_CODE=$?
 assert_exit 0 "$D2_CODE" "issue resolved from the PR body"
 if [ -f "$FC_TMP/journal-repo2/.decisions/issue-43.md" ]; then
@@ -723,10 +785,10 @@ else
   _flow_assert_fail "no journal for issue 43: $(cat "$FC_TMP/d2.err")"
 fi
 mkdir -p "$FC_TMP/journal-repo3"
-(cd "$FC_TMP/journal-repo3" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="No issue link here." \
+(cd "$FC_TMP/journal-repo3" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing)" STUB_BODY="Closes #43" \
   CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >"$FC_TMP/d3.out" 2>"$FC_TMP/d3.err"); D3_CODE=$?
 assert_exit 0 "$D3_CODE" "no linked issue is not an error"
-assert_contains "DROPPED_FINDING=skipped" "$(cat "$FC_TMP/d3.out")" "says the record was skipped"
+assert_contains "DROPPED_FINDING=skipped" "$(cat "$FC_TMP/d3.out")" "says the record was skipped (body text does not link an issue)"
 assert_equal "" "$(ls "$FC_TMP/journal-repo3/.decisions" 2>/dev/null)" "no journal written"
 
 _flow_test_begin "prose made false by the first draft is corrected"
@@ -762,29 +824,72 @@ cp "$FC_STUB/gh-fail" "$FC_TMP/failstub/gh"
 assert_exit 1 "$D4_CODE" "an unreadable pull request is an error"
 assert_not_contains "skipped" "$(cat "$FC_TMP/d4.out")" "not reported as a pull request without an issue"
 
-_flow_test_begin "the linked issue is the one a closing keyword names, not the first #N"
-mkdir -p "$FC_TMP/journal-repo5"
-(cd "$FC_TMP/journal-repo5" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="Follows up on #210 and the #333 colour.
-
-Closes #212" CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/d5.err"); D5_CODE=$?
-assert_exit 0 "$D5_CODE" "recorded"
-assert_file_exists "$FC_TMP/journal-repo5/.decisions/issue-212.md" "recorded against the closed issue"
-assert_equal "" "$(ls "$FC_TMP/journal-repo5/.decisions" 2>/dev/null | grep -v '^issue-212\.md' | grep -v '\.lock$')" "nothing recorded against #210 or #333"
+_flow_test_begin "the linked issue is one GitHub lists as closing, never text in the body"
+# Bodies that fooled a keyword regex: a mention before the keyword, a word
+# ending in a keyword, and a keyword quoted in a code span or a fence.
+FC_TRAPS=0
+for TRAP_BODY in \
+  $'Follows up on #210 and the #333 colour.\n\nCloses #212' \
+  'hotfix #210, see Closes #212' \
+  'unresolved #210 (Closes #212)' \
+  $'`Closes #12` is the old form.\n\nCloses #212' \
+  $'```\nFixes #12\n```\nCloses #212'; do
+  FC_TRAPS=$((FC_TRAPS + 1))
+  mkdir -p "$FC_TMP/journal-trap-$FC_TRAPS"
+  (cd "$FC_TMP/journal-trap-$FC_TRAPS" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="$TRAP_BODY" STUB_CLOSING="$(_fc_closing 212)" \
+    CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/d5.err"); D5_CODE=$?
+  assert_exit 0 "$D5_CODE" "trap $FC_TRAPS recorded: $(cat "$FC_TMP/d5.err")"
+  assert_equal "issue-212.md" "$(ls "$FC_TMP/journal-trap-$FC_TRAPS/.decisions" 2>/dev/null | grep -v '\.lock$')" "trap $FC_TRAPS: only issue 212's journal"
+done
+assert_equal "5" "$FC_TRAPS" "all five bodies examined"
 mkdir -p "$FC_TMP/journal-repo6"
-(cd "$FC_TMP/journal-repo6" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="Related to #210 only." \
-  CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >"$FC_TMP/d6.out" 2>/dev/null)
-assert_contains "DROPPED_FINDING=skipped" "$(cat "$FC_TMP/d6.out")" "a mention without a closing keyword links no issue"
+(cd "$FC_TMP/journal-repo6" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 219 213)" \
+  CYCLE_NUMBER=1 PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >/dev/null 2>"$FC_TMP/d6.err")
+assert_equal "issue-213.md" "$(ls "$FC_TMP/journal-repo6/.decisions" 2>/dev/null | grep -v '\.lock$')" "a pull request closing two issues records against the lower"
+mkdir -p "$FC_TMP/journal-bad"
+for BAD in '' 0 07 7a; do
+  (cd "$FC_TMP/journal-bad" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 213)" \
+    CYCLE_NUMBER="$BAD" PR_NUM=7 FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); D7_CODE=$?
+  assert_exit 1 "$D7_CODE" "dropped-finding block refuses CYCLE_NUMBER '$BAD'"
+  (cd "$FC_TMP/journal-bad" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 213)" \
+    CYCLE_NUMBER=1 PR_NUM="$BAD" FINDING_ID=F4 FACET=security-reviewer bash "$FC_TMP/dropped-block.sh" >/dev/null 2>&1); D7_CODE=$?
+  assert_exit 1 "$D7_CODE" "dropped-finding block refuses PR_NUM '$BAD'"
+done
+assert_equal "" "$(ls "$FC_TMP/journal-bad/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing recorded for a bad number"
 
 _flow_test_begin "review-cycle manifest block refuses empty or non-numeric values"
 _fc_block "REVIEW_CYCLE_MANIFEST_BLOCK" > "$FC_TMP/manifest-block.sh"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/manifest-block.sh")" "manifest block extracted"
 sed 's/path={A|B}/path=B/' "$FC_TMP/manifest-block.sh" > "$FC_TMP/manifest-run.sh"
 mkdir -p "$FC_TMP/journal-repo7"
-(cd "$FC_TMP/journal-repo7" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="Closes #42" \
+(cd "$FC_TMP/journal-repo7" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 42)" \
   CYCLE_NUMBER=2 PR_NUM=7 bash "$FC_TMP/manifest-run.sh" >/dev/null 2>"$FC_TMP/m1.err"); M1_CODE=$?
 assert_exit 1 "$M1_CODE" "COUNT_TOTAL unset → refused"
 assert_equal "" "$(ls "$FC_TMP/journal-repo7/.decisions" 2>/dev/null)" "nothing written"
-(cd "$FC_TMP/journal-repo7" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="Closes #42" \
+# _fc_manifest <PR_NUM> <CYCLE_NUMBER> <COUNT_TOTAL> — runs the block in a
+# scratch repository; sets M_CODE.
+mkdir -p "$FC_TMP/journal-manifest-bad" "$FC_TMP/journal-manifest-zero"
+_fc_manifest() {
+  (cd "$FC_TMP/${4:-journal-manifest-bad}" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 42)" \
+    PR_NUM="$1" CYCLE_NUMBER="$2" COUNT_TOTAL="$3" bash "$FC_TMP/manifest-run.sh" >/dev/null 2>&1)
+  M_CODE=$?
+}
+FC_BAD_VALUES=0
+for BAD in '' 7a '{N} -->' -1 0 08; do
+  _fc_manifest "$BAD" 2 3; assert_exit 1 "$M_CODE" "PR_NUM '$BAD' refused"
+  _fc_manifest 7 "$BAD" 3; assert_exit 1 "$M_CODE" "CYCLE_NUMBER '$BAD' refused"
+  FC_BAD_VALUES=$((FC_BAD_VALUES + 1))
+done
+for BAD in '' 7a '{N} -->' -1 08; do
+  _fc_manifest 7 2 "$BAD"; assert_exit 1 "$M_CODE" "COUNT_TOTAL '$BAD' refused"
+  FC_BAD_VALUES=$((FC_BAD_VALUES + 1))
+done
+assert_equal "11" "$FC_BAD_VALUES" "every bad value examined"
+assert_equal "" "$(ls "$FC_TMP/journal-manifest-bad/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing written for a bad value"
+_fc_manifest 7 2 0 journal-manifest-zero
+assert_exit 0 "$M_CODE" "COUNT_TOTAL 0 is a clean review, not an error"
+assert_file_exists "$FC_TMP/journal-manifest-zero/.decisions/issue-42.md" "the clean review is recorded"
+(cd "$FC_TMP/journal-repo7" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 42)" \
   CYCLE_NUMBER=2 PR_NUM=7 COUNT_TOTAL=3 bash "$FC_TMP/manifest-run.sh" >/dev/null 2>"$FC_TMP/m2.err"); M2_CODE=$?
 assert_exit 0 "$M2_CODE" "valid values recorded"
 if [ -f "$FC_TMP/journal-repo7/.decisions/issue-42.md" ]; then
@@ -801,12 +906,68 @@ else
   _flow_assert_fail "no manifest written: $(cat "$FC_TMP/m2.err")"
 fi
 
+_flow_test_begin "every issue lookup asks GitHub for the closing issue: A.4, Phase 1, merge"
+_fc_block "CHALLENGE_DROPPED_FINDING_BLOCK" > "$FC_TMP/challenge-dropped.sh"
+assert_match '[^[:space:]]' "$(cat "$FC_TMP/challenge-dropped.sh")" "A.4 dropped-finding block extracted"
+mkdir -p "$FC_TMP/journal-a4"
+(cd "$FC_TMP/journal-a4" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY="hotfix #210" STUB_CLOSING="$(_fc_closing 212)" \
+  CYCLE_NUMBER=3 PR_NUM=7 FINDING_ID=F9 FACET=code-reviewer REASON="both variants disagreed" bash "$FC_TMP/challenge-dropped.sh" >"$FC_TMP/a4.out" 2>"$FC_TMP/a4.err"); A4_CODE=$?
+assert_exit 0 "$A4_CODE" "A.4 block records: $(cat "$FC_TMP/a4.err")"
+if [ -f "$FC_TMP/journal-a4/.decisions/issue-212.md" ]; then
+  assert_equal "type=dropped-finding reason=both variants disagreed finding_id=F9 facet=code-reviewer cycle=3 pr=7" \
+    "$(_fc_last_artifact "$FC_TMP/journal-a4/.decisions/issue-212.md")" "recorded against the closing issue, reason kept whole"
+else
+  _flow_assert_fail "A.4 block wrote no journal for issue 212: $(cat "$FC_TMP/a4.err")"
+fi
+mkdir -p "$FC_TMP/journal-a4-none"
+(cd "$FC_TMP/journal-a4-none" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing)" \
+  CYCLE_NUMBER=3 PR_NUM=7 FINDING_ID=F9 FACET=code-reviewer REASON="both variants disagreed" bash "$FC_TMP/challenge-dropped.sh" >"$FC_TMP/a4n.out" 2>/dev/null); A4N_CODE=$?
+assert_exit 0 "$A4N_CODE" "no closing issue is not an error"
+assert_contains "DROPPED_FINDING=skipped" "$(cat "$FC_TMP/a4n.out")" "A.4 block says it skipped"
+(cd "$FC_TMP/journal-a4-none" && PATH="$FC_TMP/failstub:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  CYCLE_NUMBER=3 PR_NUM=7 FINDING_ID=F9 FACET=code-reviewer REASON=x bash "$FC_TMP/challenge-dropped.sh" >/dev/null 2>&1); A4F_CODE=$?
+assert_exit 1 "$A4F_CODE" "A.4 block fails closed when GitHub cannot be read"
+(cd "$FC_TMP/journal-a4-none" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 212)" \
+  CYCLE_NUMBER=3 PR_NUM=7 FINDING_ID=F9 FACET=code-reviewer bash "$FC_TMP/challenge-dropped.sh" >/dev/null 2>&1); A4R_CODE=$?
+assert_exit 1 "$A4R_CODE" "A.4 block refuses a missing REASON"
+assert_equal "" "$(ls "$FC_TMP/journal-a4-none/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing recorded by the refused runs"
+
+_fc_block "ESCALATION_RESOLVED_BLOCK" "$PLUGIN_DIR/commands/merge.md" > "$FC_TMP/merge-escalation.sh"
+assert_match '[^[:space:]]' "$(cat "$FC_TMP/merge-escalation.sh")" "merge escalation block extracted"
+sed -e 's/"\$ARGUMENTS"/"7"/' -e 's/{FIELD}/options/' -e 's/{OUTCOME}/kept the fix/' "$FC_TMP/merge-escalation.sh" > "$FC_TMP/merge-escalation-run.sh"
+mkdir -p "$FC_TMP/journal-merge"
+(cd "$FC_TMP/journal-merge" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY=$'Follows #210.\n\nCloses #212' STUB_CLOSING="$(_fc_closing 212)" \
+  bash "$FC_TMP/merge-escalation-run.sh" >/dev/null 2>"$FC_TMP/merge.err"); MERGE_CODE=$?
+assert_exit 0 "$MERGE_CODE" "merge block records: $(cat "$FC_TMP/merge.err")"
+assert_equal "issue-212.md" "$(ls "$FC_TMP/journal-merge/.decisions" 2>/dev/null | grep -v '\.lock$')" "merge records against the closing issue, not the first #N"
+
+PREFLIGHT_LINK=$(awk '/### Linked Issue/ { f = 1 } f { print } f && /LINKED_ISSUE=/ { exit }' "$REVIEW_MD")
+assert_contains "flow-pr-linked-issue.sh" "$PREFLIGHT_LINK" "Phase 1 prints the issue the helper resolves"
+assert_contains "flow-pr-linked-issue.sh" "$(_fc_phase4_step 7)" "the review-cycle manifest resolves the issue with the helper"
+assert_contains "flow-pr-linked-issue.sh" "$(awk '/^\*\*FlowRun terminal transition\*\*/ { print }' "$REVIEW_MD")" "the workflow-run record names the helper"
+
+_flow_test_begin "sweep: no command parses an issue number out of pull request text"
+# _fc_lookup_sweep <dir> — prints FILES=<examined> HITS=<lines that grep a
+# #N or a closing keyword out of text>.
+_fc_lookup_sweep() {
+  local files hits
+  files=$(find "$1" -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
+  hits=$(grep -rnE "grep -[A-Za-z]*o[A-Za-z]* +'[^']*#\[0-9\]\+" "$1" --include='*.md' 2>/dev/null | wc -l | tr -d ' ')
+  printf 'FILES=%s HITS=%s' "$files" "$hits"
+}
+assert_equal "FILES=1 HITS=2" "$(_fc_lookup_sweep "$FC_FIXTURES/lookup-sweep-fire")" "fires on both retired lookups"
+assert_equal "FILES=1 HITS=0" "$(_fc_lookup_sweep "$FC_FIXTURES/lookup-sweep-silent")" "silent on the helper call and on prose mentioning #N"
+assert_equal "FILES=0 HITS=0" "$(_fc_lookup_sweep "$FC_TMP/no-such-dir")" "an empty input examines nothing"
+FC_LOOKUP=$(_fc_lookup_sweep "$PLUGIN_DIR/commands")
+assert_match '^FILES=([2-9][0-9]|[1-9][0-9][0-9]) ' "$FC_LOOKUP" "the command directory was examined"
+assert_contains "HITS=0" "$FC_LOOKUP" "no command greps an issue number out of text"
+
 _flow_test_begin "real template: a body rendered from review-comment.md posts through the block"
 awk '
   /^\{/ { next }
   { gsub(/\{p1_count\}/, "0"); gsub(/\{p2_count\}/, "1"); gsub(/\{p3_count\}/, "0"); gsub(/\{needs_investigation_count\}/, "1"); gsub(/\{pr_number\}/, "7") }
   /^\| \*\*\{ID\} · \{category\}/ { next }
-  /^- \{suggestion\}/ { next }
+  /^- \*\*\{ID\} · \{category\}/ { next }
   /^- \*\*\{ID\} · \{priority\}/ { print "- **F2 · P1 · correctness · `src/c.sh:9`** — Looks like a race."; next }
   /^  Pattern: \{what triggered/ { print "  Pattern: shared counter without a lock. Confirm or refute: a concurrent test."; next }
   /^#### P2 — Important/ { print; getline; print; getline; print; print "| **F1 · correctness · `src/b.sh:4`**<br>Wrong bound. _(HIGH · consensus)_ | Use `<`. |"; next }

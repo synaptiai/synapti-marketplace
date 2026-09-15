@@ -729,6 +729,7 @@ git pull origin $DEFAULT_BRANCH
 **Manifest emit** — if this merge resolved any escalations (a Proactive-Autonomy escalation surfaced via `AskUserQuestion` during Phase 1's finding-ledger check, Phase 2's stale-approval warning, or the conflict-resolution path closed because the user provided one of the six canonical fields), record an `escalation-resolved` artifact for each:
 
 ```bash
+# ESCALATION_RESOLVED_BLOCK_BEGIN
 # $REPO does not survive from the preflight block: each fence is its own
 # shell. Resolved again here, because `gh --repo ""` falls back to the default
 # resolution of gh without complaining — an unset REPO reads as pinned and behaves
@@ -742,18 +743,22 @@ case "$ARG1" in
   ''|*[!0-9]*) echo "ERROR: PR number required (all-digit)" >&2; exit 1 ;;
   *) PR_NUM="$ARG1" ;;
 esac
-ISSUE=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+# The issue GitHub lists the pull request as closing (the lowest when there
+# are several), never the first #N in the body.
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$REPO") || { echo "ERROR: cannot read the issues pull request $PR_NUM closes; refusing to guess its linked issue" >&2; exit 1; }
 if [ -n "$ISSUE" ]; then
   # Repeat once per escalation that closed during this merge run. Replace
   # {FIELD} with the one canonical field that gated it: situation, tried,
   # options, recommendation, blocking or risk. Replace {OUTCOME} with a one-line
   # summary of the user's answer.
-  "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
-    --issue $ISSUE \
+  "$FLOW_ROOT/bin/journal-record.sh" \
+    --issue "$ISSUE" \
     --type escalation-resolved \
     --metadata "escalation_field={FIELD}" \
     --metadata "outcome={OUTCOME}"
 fi
+# ESCALATION_RESOLVED_BLOCK_END
 ```
 
 The emit is conditional — most merges run cleanly without escalations, in which case skip this step. When it does fire, the manifest captures both *that* an escalation closed and *which canonical field* was the gate, enabling `/flow:learn` to detect recurring escalation patterns (e.g., the same field gating multiple merges → process or tooling improvement opportunity).

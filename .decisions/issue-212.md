@@ -195,3 +195,59 @@ The same defect class appeared twice: posting guards that check less than a revi
 - The ledger-syntax refusal covers only `FINDINGS:[`: `RESOLVED`, `ESCALATED` and `DISPUTED` are read only from issue comments, so a self-review body may name them.
 - `/flow:pr` step 7's condition excludes escalated findings.
 - Tests: the id-outside check is tested on its own (a LOW id relabelled HIGH), `COUNT_TOTAL` is checked across P1, P3 and a LOW P2, and the merge.md comment check reads the whole file.
+
+<!-- auto-log: 2026-09-15 23:31 commit "fix(flow): parse review-body headings and closing keywords instead of assuming their shape" -->
+
+
+## Phase 4 self-review, round 3 (targeted re-review of 2f52452)
+
+P1: 0, P2: 5, P3: 1 — all fixed, each with a test that failed before the fix.
+
+Cause: the guard parsed structure it only needed to shape-match. Three rounds ran on the same
+defect — a posting guard that has to know where the Needs investigation section ends, and an issue
+lookup that has to know which `#N` in free text is the linked one. Each round taught the parser one
+more markdown construct (code fences, then heading levels, then setext headings, blockquote
+headings and `<h1-6>`), and each round the next construct got past it. What the guard has to enforce
+never needed a section: a LOW finding is rendered as a Needs investigation entry and nowhere else.
+
+- The posting block no longer splits the body. It refuses any line carrying a `_(LOW` suffix, and
+  requires each LOW id to appear exactly once, in the entry shape `- **{ID} · {priority} · ` at the
+  priority it was routed with. A counted finding opens `**{ID} · {category} · `, so a second
+  occurrence of `**{ID} · ` is that finding rendered as a counted one, whatever surrounds it.
+  `bin/flow-finding-route.sh` prints `NEEDS_INVESTIGATION_PRIORITIES` (`F2:P1`) for the priority check.
+- P3 bullets in `templates/review-comment.md` now carry the finding id, so the same count covers them.
+- The linked issue comes from GitHub, not from body text: `bin/flow-pr-linked-issue.sh` reads the
+  pull request's `closingIssuesReferences`, keeps the issues in the same repository, and prints the
+  lowest number (a NOTE on stderr names them all when there are several). Every call site uses it:
+  `/flow:review` Phase 1, the A.4 dropped-finding record, the step 5 dropped-finding record, the
+  review-cycle manifest, the workflow-run record, and `/flow:merge`'s escalation-resolved record. A
+  pull request into a branch other than the default closes no issue, so GitHub lists none and the
+  record is skipped; a failed `gh` call is an error, never "no issue".
+- The A.4 record was a snippet referencing an `$ISSUE` nothing set; it is now a block that validates
+  its inputs, resolves the issue and skips cleanly, like the step 5 one.
+- `CYCLE_NUMBER` and `PR_NUM` must be positive integers in the manifest and dropped-finding blocks
+  (`0`, `08` and `-1` are refused); `COUNT_TOTAL` still accepts `0`, which is a clean review.
+- Tests: the eight round-3 bodies (odd fences, setext, blockquote and HTML headings) are posted
+  through the block and refused; the five body texts that fooled a keyword regex (`hotfix #210`,
+  `unresolved #210`, a quoted `Closes #12`, a fenced `Fixes #12`, a mention before the keyword) are
+  recorded against the issue GitHub lists; a sweep over `commands/` finds no lookup that greps an
+  issue number out of text, and fires on a fixture that plants both retired lookups. Ten mutants
+  were run against the new checks and the helper — all ten were caught.
+
+<!-- auto-log: 2026-09-15 23:58 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-15 23:58 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 00:17 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-pr-linked-issue.test.sh -->
+
+<!-- auto-log: 2026-09-16 00:19 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests.py -->
+
+<!-- auto-log: 2026-09-16 00:22 Write /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-pr-linked-issue.sh -->
+
+<!-- auto-log: 2026-09-16 00:23 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-09-16 00:26 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/finding-confidence.test.sh -->
+
+<!-- auto-log: 2026-09-16 00:27 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants.sh -->
+
+<!-- auto-log: 2026-09-16 00:51 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/journal_round3.py -->

@@ -150,6 +150,7 @@ _flow_test_begin "investigation ids keep input order"
 _route 'F3|P2|correctness|src/f.sh:1|LOW|unchallenged|code-reviewer
 F1|P1|correctness|src/f.sh:2|LOW|unchallenged|code-reviewer' --mode external --pr 7
 assert_equal "F3,F1" "$(_key NEEDS_INVESTIGATION)" "input order, not sorted"
+assert_equal "F3:P2,F1:P1" "$(_key NEEDS_INVESTIGATION_PRIORITIES)" "each investigation keeps its own priority, in input order"
 assert_equal "2" "$(_key COUNT_NEEDS_INVESTIGATION)" "two investigations"
 
 # --- risk row: exclusion scope (own PR) -------------------------------------
@@ -272,7 +273,7 @@ assert_equal "3" "$(_key ROWS_READ)" "3 rows read, blank lines skipped"
 _flow_test_begin "--input reads the same rows as stdin"
 printf '%s\n' "$MIXED" > "$FFR_DIR/rows"
 "$HELPER" --mode external --pr 7 --input "$FFR_DIR/rows" > "$FFR_DIR/out2" 2>/dev/null </dev/null
-assert_equal "$(printf 'ROWS_READ=2\nCOUNT_P1=0\nCOUNT_P2=1\nCOUNT_P3=0\nCOUNT_NEEDS_INVESTIGATION=1\nNEEDS_INVESTIGATION=F2\nDECISION=REQUEST_CHANGES\nMARKER_ROWS=F1|P2|correctness|src/b.sh:4|open|HIGH|consensus')" "$(cat "$FFR_DIR/out2")" "full stdout, keys in contract order"
+assert_equal "$(printf 'ROWS_READ=2\nCOUNT_P1=0\nCOUNT_P2=1\nCOUNT_P3=0\nCOUNT_NEEDS_INVESTIGATION=1\nNEEDS_INVESTIGATION=F2\nNEEDS_INVESTIGATION_PRIORITIES=F2:P1\nDECISION=REQUEST_CHANGES\nMARKER_ROWS=F1|P2|correctness|src/b.sh:4|open|HIGH|consensus')" "$(cat "$FFR_DIR/out2")" "full stdout, keys in contract order"
 
 # --- a real posted marker -----------------------------------------------------
 
