@@ -19,8 +19,13 @@ objective:
       4 whole leak classes'
   acceptance_criteria:
   - id: AC1
-    text: A credential-shaped string interrupted by any non-token character (not just |) produces no fragment
-      of the original value in the findings excerpt, in either --json or plain-text output.
+    text: 'A credential-shaped string interrupted by any non-token character (not just |) produces no
+      fragment of the original value in the findings excerpt, in either --json or plain-text output, for
+      the 7 credential classes whose patterns support this (anthropic-key, github-token, aws-access-key,
+      slack-token, bearer-token, secret-assignment, private-key-block). connection-string''s exact-format
+      pattern does not yet cover a lone interrupted occurrence -- deferred to issue #210 per explicit
+      product decision (a naive fix creates a real false-positive on an ordinary scheme mention with no
+      credential).'
     verification_command: bash plugins/dossier/tests/run.sh disclosure-gate.test.sh
     must_pass: true
     status: evidence_collected

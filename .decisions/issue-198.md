@@ -45,6 +45,10 @@ artifacts:
   - AC1
   - AC2
   - AC3
+- type: goal-amendment
+  captured_at: '2026-09-15T15:47:05Z'
+  reason: ac1_text_scoped_to_match_already_authorized_connection_string_deferral
+  by: goal-evaluator-judge-feedback
 ---
 # Issue #198 — claim-scan's redact() leaves fragments past an interrupting character
 
