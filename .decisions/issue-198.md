@@ -28,16 +28,23 @@ artifacts:
   question: exact_format_pattern_disposition_and_locator_scope
   decisions:
   - 'F1 (exact-format lone-interrupted gap): fix aws-access-key and private-key-block
-    now; defer connection-string to issue #210 (real false-positive tradeoff, no
-    tolerance level picked unilaterally)'
+    now; defer connection-string to issue #210 (real false-positive tradeoff, no tolerance
+    level picked unilaterally)'
   - 'Locator scope (issue title vs body mismatch): the 4 locator classes stay out
     of #198''s scope -- the issue body''s own acceptance criteria never asked for
     excerpt-redaction of locators, only for the credential-interruption fix'
 - type: holdout-validation
   captured_at: '2026-09-15T17:30:00Z'
   result: PASS
-  finding_fixed_during_check: stale AKIA literal-pattern reference in a comment,
-    dossier-claim-scan.sh:432
+  finding_fixed_during_check: stale AKIA literal-pattern reference in a comment, dossier-claim-scan.sh:432
+- type: evidence-captured
+  captured_at: '2026-09-15T15:39:58Z'
+  evidence_id: evidence-ac1-ac2-ac3-disclosure-gate-turn3
+  goal_id: issue-198
+  proves:
+  - AC1
+  - AC2
+  - AC3
 ---
 # Issue #198 — claim-scan's redact() leaves fragments past an interrupting character
 

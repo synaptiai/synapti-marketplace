@@ -23,27 +23,30 @@ objective:
       of the original value in the findings excerpt, in either --json or plain-text output.
     verification_command: bash plugins/dossier/tests/run.sh disclosure-gate.test.sh
     must_pass: true
-    status: pass
+    status: evidence_collected
     last_result: 'exit_code=0 reason=disclosure-gate.test.sh 161/161 pass, including 11 new interrupted-token
       fixtures across all 8 credential classes; AC1 satisfied for 7 of 8 classes (connection-string exact-format
       gap deliberately deferred to issue #210, user-authorized)'
+    evidence_ref: .flow/runs/2026-09-15T110500Z-issue-198/evidence/evidence-ac1-ac2-ac3-disclosure-gate-turn3.evidence.yaml
   - id: AC2
     text: Existing disclosure-gate.test.sh redaction assertions continue to pass unchanged.
     verification_command: bash plugins/dossier/tests/run.sh disclosure-gate.test.sh
     must_pass: true
-    status: pass
+    status: evidence_collected
     last_result: 'exit_code=0 reason=disclosure-gate.test.sh 161/161 pass, including 11 new interrupted-token
       fixtures across all 8 credential classes; AC1 satisfied for 7 of 8 classes (connection-string exact-format
       gap deliberately deferred to issue #210, user-authorized)'
+    evidence_ref: .flow/runs/2026-09-15T110500Z-issue-198/evidence/evidence-ac1-ac2-ac3-disclosure-gate-turn3.evidence.yaml
   - id: AC3
     text: New test coverage for at least one interrupted-token case per credential class currently defined
       in redact().
     verification_command: bash plugins/dossier/tests/run.sh disclosure-gate.test.sh
     must_pass: true
-    status: pass
+    status: evidence_collected
     last_result: 'exit_code=0 reason=disclosure-gate.test.sh 161/161 pass, including 11 new interrupted-token
       fixtures across all 8 credential classes; AC1 satisfied for 7 of 8 classes (connection-string exact-format
       gap deliberately deferred to issue #210, user-authorized)'
+    evidence_ref: .flow/runs/2026-09-15T110500Z-issue-198/evidence/evidence-ac1-ac2-ac3-disclosure-gate-turn3.evidence.yaml
 specification:
   non_goals:
   - Does NOT change section A's scan_class leak-detection path -- unaffected, already never prints matched
