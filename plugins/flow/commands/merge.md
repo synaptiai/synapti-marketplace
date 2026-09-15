@@ -747,7 +747,9 @@ esac
 # are several), never the first #N in the body.
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
 ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$REPO") || { echo "ERROR: cannot read the issues pull request $PR_NUM closes; refusing to guess its linked issue" >&2; exit 1; }
-if [ -n "$ISSUE" ]; then
+if [ -z "$ISSUE" ]; then
+  echo "ESCALATION_RECORD=skipped (GitHub lists no issue this pull request closes, so there is no journal to record it in)"
+else
   # Repeat once per escalation that closed during this merge run. Replace
   # {FIELD} with the one canonical field that gated it: situation, tried,
   # options, recommendation, blocking or risk. Replace {OUTCOME} with a one-line

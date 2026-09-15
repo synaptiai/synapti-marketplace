@@ -900,7 +900,7 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
 
    **Render the body** from the routed values, using the template for the mode — self-review: `templates/self-review-comment.md`; external review: `templates/review-comment.md`. The external body carries the `FINDINGS_HEADER` text in its `### Findings:` line, lists only counted findings in the P1/P2 tables and P3 bullets, each opening with the bold `{ID} · {category} · {location}` and ending with its `_(CONFIDENCE · disposition)_` suffix, and lists every `NEEDS_INVESTIGATION` id under `#### Needs investigation` in the template's entry shape (a bullet opening with the bold `{ID} · {priority} · {category} · {location}` line, then `Pattern:` and `Confirm or refute:`); the posting block checks that each LOW id appears exactly once, in that entry shape at its routed priority, and that no line carries a LOW suffix. Write the body to a file without the marker; the posting block appends it.
 
-   **Post the review.** The block routes the same rows again, so what is posted is exactly what was routed. It refuses to post when the rows file lost a finding, when the cycle number is not a positive integer, when the body quotes marker syntax the merge gate reads from a review body (`FINDINGS:[` or a review-cycle marker), and, on an external review, when the `### Findings:` line differs from the routed counts, a LOW finding has no Needs investigation entry at its routed priority, a LOW finding is rendered a second time, or any line carries a LOW suffix. Set `FINDING_TOTAL` to the synthesized findings minus any refuted in step 5:
+   **Post the review.** The block routes the same rows again, so what is posted is exactly what was routed. It refuses to post when the rows file lost a finding, when the cycle number is not a positive integer, when the body quotes marker syntax the merge gate reads from a review body (`FINDINGS:[` or a review-cycle marker), and, on an external review, when the `### Findings:` line differs from the routed counts, a LOW finding has no Needs investigation entry at its routed priority or is rendered above the `#### Needs investigation` heading, a priority section opens after that heading, a counted finding is missing, rendered twice or rendered in the entry shape, or any line carries a LOW suffix. Two limits are deliberate: a body that invents a heading of its own after the section and files an entry under it is not seen (the template never does), and a fenced `#### P1` line after the section is refused although it is not a heading — a refusal the reviewer can reword, never a silent post. Set `FINDING_TOTAL` to the synthesized findings minus any refuted in step 5:
 
 ```bash
 # FINDING_POST_BLOCK_BEGIN
@@ -956,8 +956,27 @@ if [ "$REVIEW_MODE" = "external" ]; then
   # counted finding is HIGH or MEDIUM.
   LEAKED=$(grep -inF '_(LOW' "$BODY_FILE" | head -1)
   if [ -n "$LEAKED" ]; then
-    echo "ERROR: a LOW-confidence finding is rendered as a counted finding (line ${LEAKED%%:*}): ${LEAKED#*:}" >&2
+    echo "ERROR: line ${LEAKED%%:*} carries a LOW confidence suffix; no line of a review body may, because a Needs investigation entry carries none. If this is prose quoting the suffix, break it up. Line: ${LEAKED#*:}" >&2
     exit 1
+  fi
+  # Where the LOW entries sit, by the template's own heading lines: the section
+  # is last among the findings, so every entry follows its heading and no
+  # priority section opens after it. This is line order against two literal
+  # strings, not a reading of the markdown around them; a body that invents a
+  # heading of its own after the section is outside what these checks see.
+  NI_LINE=""
+  if [ -n "$NEEDS_PRIORITIES" ]; then
+    NI_COUNT=$(grep -cxF '#### Needs investigation' "$BODY_FILE" | tr -d ' ')
+    if [ "$NI_COUNT" != 1 ]; then
+      echo "ERROR: the body needs exactly one '#### Needs investigation' heading to hold the LOW findings; it has $NI_COUNT" >&2
+      exit 1
+    fi
+    NI_LINE=$(grep -nxF '#### Needs investigation' "$BODY_FILE" | head -1 | cut -d: -f1)
+    LATE=$(awk -v n="$NI_LINE" 'NR > n && /^#### P[123]([ \t]|$)/ { print NR; exit }' "$BODY_FILE")
+    if [ -n "$LATE" ]; then
+      echo "ERROR: a priority section opens at line $LATE, after #### Needs investigation at line $NI_LINE; the LOW findings are the last findings in the body" >&2
+      exit 1
+    fi
   fi
   # A LOW finding appears once, as its entry `- **ID · PRIORITY · ...` at the
   # priority it was routed with. A counted finding opens `**ID · category · `,
@@ -967,12 +986,30 @@ if [ "$REVIEW_MODE" = "external" ]; then
     ID=${ENTRY%%:*}
     PRIORITY=${ENTRY#*:}
     SEEN=$(grep -oF "**$ID · " "$BODY_FILE" | wc -l | tr -d ' ')
-    if [ "$SEEN" -eq 0 ] || ! grep -qE "^[[:space:]]*[-*+][[:space:]]+\*\*$ID · $PRIORITY · " "$BODY_FILE"; then
+    ENTRY_LINE=$(grep -nE "^[[:space:]]*[-*+][[:space:]]+\*\*$ID · $PRIORITY · " "$BODY_FILE" | head -1 | cut -d: -f1)
+    if [ "$SEEN" -eq 0 ] || [ -z "$ENTRY_LINE" ]; then
       echo "ERROR: $ID is a LOW-confidence $PRIORITY finding with no Needs investigation entry opening: - **$ID · $PRIORITY · " >&2
+      exit 1
+    fi
+    if [ "$ENTRY_LINE" -lt "$NI_LINE" ]; then
+      echo "ERROR: $ID is LOW-confidence but its entry is at line $ENTRY_LINE, above #### Needs investigation at line $NI_LINE" >&2
       exit 1
     fi
     if [ "$SEEN" -ne 1 ]; then
       echo "ERROR: $ID is LOW-confidence and must appear once, as its Needs investigation entry; the body renders it $SEEN times" >&2
+      exit 1
+    fi
+  done
+  # The counted findings are the other half of the same contract: each is
+  # rendered once, and never in the entry shape that says "does not block".
+  for ID in $(sed -n 's/^MARKER_ROWS=//p' <<<"$ROUTED" | tr ',' '\n' | cut -d'|' -f1); do
+    SEEN=$(grep -oF "**$ID · " "$BODY_FILE" | wc -l | tr -d ' ')
+    if [ "$SEEN" -ne 1 ]; then
+      echo "ERROR: $ID is a counted finding and must be rendered once, opening **$ID · {category} · ; the body renders it $SEEN times" >&2
+      exit 1
+    fi
+    if grep -qE "^[[:space:]]*[-*+][[:space:]]+\*\*$ID · P[123] · " "$BODY_FILE"; then
+      echo "ERROR: $ID is a counted finding rendered in the Needs investigation entry shape, which says it does not block the merge; its marker row does" >&2
       exit 1
     fi
   done
@@ -1069,7 +1106,9 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
    [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
    FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
    ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$REPO") || { echo "ERROR: cannot read the issues pull request $PR_NUM closes; refusing to guess its linked issue" >&2; exit 1; }
-   if [ -n "$ISSUE" ]; then
+   if [ -z "$ISSUE" ]; then
+     echo "REVIEW_CYCLE_RECORD=skipped (GitHub lists no issue this pull request closes; the marker on the review is that cycle's record)"
+   else
      "$FLOW_ROOT/bin/journal-record.sh" \
        --issue "$ISSUE" \
        --type review-cycle \

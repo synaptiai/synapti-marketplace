@@ -238,6 +238,37 @@ never needed a section: a LOW finding is rendered as a Needs investigation entry
 
 <!-- auto-log: 2026-09-15 23:58 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
 
+
+## Phase 4 self-review, round 4 (targeted re-review of 4a76ba1)
+
+P1: 1, P2: 2, P3: 4 — all fixed, each with a test that failed before the fix.
+
+Cause: round 3 replaced a body parser with shape checks and dropped a clause the contract still
+needed. The shape checks say what a LOW entry looks like, not where it sits, so a LOW finding filed
+as a bullet under `#### P1 — Critical` posted (P1 above, reproduced before the fix). The parent
+commit refused that body; it was a regression, not an inherited gap.
+
+- Placement is now checked by line order against two literal template strings: exactly one
+  `#### Needs investigation` heading when there are LOW findings, every entry below it, and no
+  `#### P1|P2|P3` heading after it. This is ordering, not a reading of the markdown in between.
+- The counted findings are checked as well, which no round had done: each id in `MARKER_ROWS` is
+  rendered exactly once and never in the entry shape. A counted finding shown as an entry would
+  tell the author it does not block the merge while its marker row blocks `/flow:merge`; a counted
+  finding omitted altogether would block on an id the author never saw.
+- Two limits are named in the step 7 prose and here, so round 5 does not rediscover them as new: a
+  body that invents a heading of its own after the section and files an entry under it is not seen
+  (the template never does), and a fenced `#### P1` line after the section is refused although it is
+  not a heading — a refusal a reviewer can reword, never a silent post.
+- The LOW-suffix refusal now names the rule and the way out; the helper's header claims only what
+  was observed, with GitHub's documentation cited for the default-branch case rather than asserted.
+- The review-cycle and merge-escalation blocks print `…_RECORD=skipped (…)` when GitHub lists no
+  issue, so a missing journal artifact is distinguishable from a block that never ran.
+- Tests the reviewer showed were confirm-only are now discriminating: the bullet anchor (a table row
+  carrying the priority field, inside the section), the helper's numeric guard (`12,x`, `null`,
+  `{}`), and the lookup sweep (which missed the double-quoted and `sed` spellings — the fixture
+  carries all four now). The mutation set is 20 mutants over the posting checks, the helper, the
+  route script and both manifest blocks; all 20 are caught, and it is scripted for the next round.
+
 <!-- auto-log: 2026-09-16 00:17 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-pr-linked-issue.test.sh -->
 
 <!-- auto-log: 2026-09-16 00:19 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests.py -->
@@ -251,3 +282,15 @@ never needed a section: a LOW finding is rendered as a Needs investigation entry
 <!-- auto-log: 2026-09-16 00:27 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants.sh -->
 
 <!-- auto-log: 2026-09-16 00:51 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/journal_round3.py -->
+
+<!-- auto-log: 2026-09-16 00:51 commit "fix(flow): check the rendered shapes instead of parsing the review body" -->
+
+<!-- auto-log: 2026-09-16 00:58 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/probe.sh -->
+
+<!-- auto-log: 2026-09-16 01:04 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 01:11 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/fixtures/finding-confidence/lookup-sweep-fire/cmd.md -->
+
+<!-- auto-log: 2026-09-16 01:14 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_round4.py -->
+
+<!-- auto-log: 2026-09-16 01:15 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants.py -->

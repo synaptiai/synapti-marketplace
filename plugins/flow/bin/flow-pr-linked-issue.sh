@@ -6,9 +6,10 @@
 # phrases them (`Closes #N`, `Fixes owner/repo#N`, an issue URL, or a link made
 # in the sidebar). The body text is never parsed, so a mention before the
 # closing keyword, a word such as `hotfix #210`, or a keyword quoted in a code
-# span cannot choose the journal a record is written to. GitHub lists closing
-# references only for a pull request into the default branch; a pull request
-# into another branch closes nothing on merge and prints nothing here.
+# span cannot choose the journal a record is written to. When GitHub lists no
+# issue, this prints nothing and the caller skips its record; GitHub's own
+# documentation says a closing keyword links an issue only in a pull request
+# into the default branch, so that is one case where nothing is listed.
 #
 # Only issues in --repo count. When several are listed, the lowest number is
 # printed and a NOTE on stderr names them all, so every caller that records

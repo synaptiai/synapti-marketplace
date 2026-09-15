@@ -341,6 +341,12 @@ _fc_post() {
 
 FC_MIXED='F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer
 F2|P1|correctness|src/c.sh:9|LOW|kept|code-reviewer'
+# A one-finding external body: the P3 bullet renders the counted finding.
+FC_P3_BODY='### Findings: P1: 0, P2: 0, P3: 1 · Needs investigation: 0
+
+#### P3 — Suggestions
+- **F1 · docs · `a.md:1`** — Stale link. _(MEDIUM · unchallenged)_'
+
 FC_MIXED_BODY='## Review: PR #7
 
 ### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 1
@@ -410,15 +416,15 @@ _fc_post self 'F1|P2|edge-case|src/e.sh:5|LOW|unchallenged|code-reviewer' 1 '## 
 assert_exit 1 "$POST_CODE" "own PR with a LOW row refused"
 assert_contains "return to step 5" "$POST_ERR" "sends the reviewer back to step 5"
 assert_equal "" "$GH_ARGS" "gh not called for an unresolved LOW row"
-_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 2 '### Findings: P1: 0, P2: 0, P3: 1 · Needs investigation: 0'
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 2 "$FC_P3_BODY"
 assert_exit 1 "$POST_CODE" "synthesized 2 findings but the rows file holds 1"
 assert_equal "" "$GH_ARGS" "gh not called on a count mismatch"
-_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 '### Findings: P1: 0, P2: 0, P3: 1 · Needs investigation: 0
-<!-- FLOW_REVIEW_CYCLE:1 FINDINGS:[] -->'
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY
+<!-- FLOW_REVIEW_CYCLE:1 FINDINGS:[] -->"
 assert_exit 1 "$POST_CODE" "a body that already carries a marker is refused"
 assert_equal "" "$GH_ARGS" "gh not called when the body has a marker"
-_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 '### Findings: P1: 0, P2: 0, P3: 1 · Needs investigation: 0'
-assert_exit 0 "$POST_CODE" "a MEDIUM P3 posts"
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY"
+assert_exit 0 "$POST_CODE" "a MEDIUM P3 posts: $POST_ERR"
 assert_contains "--comment" "$GH_ARGS" "as a comment"
 _fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer' 1 '## Self-Review Summary'
 assert_exit 0 "$POST_CODE" "own PR with the finding re-recorded HIGH posts"
@@ -759,6 +765,75 @@ F2|P1|correctness|src/c.sh:9|LOW|kept|code-reviewer" 3 "${FC_MIXED_BODY/P2: 1, P
 | **F21 · docs · \`a.md:3\`**<br>Stale link. _(HIGH · consensus)_ | Update it. |"
 assert_exit 0 "$POST_CODE" "F21 beside a LOW F2 posts: $POST_ERR"
 
+_flow_test_begin "posting: a LOW finding filed under a priority heading is refused (round 4)"
+# The entry shape alone says what a LOW finding looks like, not where it sits.
+UNDER_P1='## Review: PR #7
+
+### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 1
+
+#### P1 — Critical (Blocks Merge)
+- **F2 · P1 · correctness · `src/c.sh:9`** — Looks like a race.
+
+#### P2 — Important
+| Finding | Suggested Fix |
+|---------|---------------|
+| **F1 · correctness · `src/b.sh:4`**<br>Wrong bound. _(HIGH · consensus)_ | Use `<`. |
+
+#### Needs investigation
+(none)'
+_fc_post external "$FC_MIXED" 2 "$UNDER_P1"
+assert_exit 1 "$POST_CODE" "an entry under #### P1 is refused"
+assert_equal "" "$GH_ARGS" "gh not called"
+# No Needs investigation heading at all.
+_fc_post external "$FC_MIXED" 2 "$(grep -v '^#### Needs investigation$' <<<"$FC_MIXED_BODY")"
+assert_exit 1 "$POST_CODE" "a body with no #### Needs investigation heading is refused"
+assert_contains "Needs investigation" "$POST_ERR" "names the missing heading"
+# Two headings: which one holds the entry is not knowable from a count.
+_fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY
+
+#### Needs investigation
+(none)"
+assert_exit 1 "$POST_CODE" "two Needs investigation headings are refused"
+# A priority section opened after the Needs investigation heading.
+_fc_post external "$FC_MIXED" 2 "$(grep -v '^- \*\*F2 · ' <<<"$FC_MIXED_BODY")
+
+#### P1 — Critical (Blocks Merge)
+- **F2 · P1 · correctness · \`src/c.sh:9\`** — Looks like a race."
+assert_exit 1 "$POST_CODE" "a priority heading after the section is refused"
+assert_equal "" "$GH_ARGS" "gh not called"
+# A table row that carries the priority field, with no entry: the bullet anchor
+# is the only check that separates it from an entry.
+_fc_post external "$FC_MIXED" 2 "$(grep -v '^- \*\*F2 · ' <<<"$FC_MIXED_BODY")
+| **F2 · P1 · correctness · \`src/c.sh:9\`**<br>Looks like a race. | Add a lock. |"
+assert_exit 1 "$POST_CODE" "a table row in the section is not an entry"
+assert_contains "no Needs investigation entry" "$POST_ERR" "says the entry is missing"
+
+_flow_test_begin "posting: a counted finding is rendered once, and never in the entry shape (round 4)"
+# A counted finding rendered only as a Needs investigation entry would tell the
+# author it never blocks the merge, while its marker row blocks /flow:merge.
+COUNTED_AS_ENTRY='## Review: PR #7
+
+### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 1
+
+#### Needs investigation
+- **F1 · P2 · correctness · `src/b.sh:4`** — Wrong bound.
+- **F2 · P1 · correctness · `src/c.sh:9`** — Looks like a race.'
+_fc_post external "$FC_MIXED" 2 "$COUNTED_AS_ENTRY"
+assert_exit 1 "$POST_CODE" "a counted finding in the entry shape is refused"
+assert_contains "F1" "$POST_ERR" "names the counted id"
+assert_equal "" "$GH_ARGS" "gh not called"
+# Absent altogether: the marker would carry an id the author never saw.
+_fc_post external "$FC_MIXED" 2 "$(grep -v '^| \*\*F1 · ' <<<"$FC_MIXED_BODY")"
+assert_exit 1 "$POST_CODE" "a counted finding missing from the body is refused"
+assert_contains "F1" "$POST_ERR" "names the missing id"
+# Rendered twice.
+_fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY
+Repeated: **F1 · correctness · src/b.sh:4** — Wrong bound."
+assert_exit 1 "$POST_CODE" "a counted finding rendered twice is refused"
+# The counted finding rendered as a P3 bullet, in the template's shape, posts.
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY"
+assert_exit 0 "$POST_CODE" "a P3 bullet carrying the id posts: $POST_ERR"
+
 _flow_test_begin "routing and posting print the counted total for the review-cycle manifest"
 _fc_route external 'F1|P1|security|src/a.sh:1|HIGH|consensus|security-reviewer
 F2|P3|docs|a.md:2|MEDIUM|unchallenged|code-reviewer
@@ -924,6 +999,11 @@ mkdir -p "$FC_TMP/journal-a4-none"
   CYCLE_NUMBER=3 PR_NUM=7 FINDING_ID=F9 FACET=code-reviewer REASON="both variants disagreed" bash "$FC_TMP/challenge-dropped.sh" >"$FC_TMP/a4n.out" 2>/dev/null); A4N_CODE=$?
 assert_exit 0 "$A4N_CODE" "no closing issue is not an error"
 assert_contains "DROPPED_FINDING=skipped" "$(cat "$FC_TMP/a4n.out")" "A.4 block says it skipped"
+mkdir -p "$FC_TMP/journal-manifest-none"
+(cd "$FC_TMP/journal-manifest-none" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing)" \
+  PR_NUM=7 CYCLE_NUMBER=2 COUNT_TOTAL=1 bash "$FC_TMP/manifest-run.sh" >"$FC_TMP/mn.out" 2>/dev/null); MN_CODE=$?
+assert_exit 0 "$MN_CODE" "no closing issue is not an error for the manifest"
+assert_contains "REVIEW_CYCLE_RECORD=skipped" "$(cat "$FC_TMP/mn.out")" "the manifest block says it skipped"
 (cd "$FC_TMP/journal-a4-none" && PATH="$FC_TMP/failstub:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
   CYCLE_NUMBER=3 PR_NUM=7 FINDING_ID=F9 FACET=code-reviewer REASON=x bash "$FC_TMP/challenge-dropped.sh" >/dev/null 2>&1); A4F_CODE=$?
 assert_exit 1 "$A4F_CODE" "A.4 block fails closed when GitHub cannot be read"
@@ -940,6 +1020,11 @@ mkdir -p "$FC_TMP/journal-merge"
   bash "$FC_TMP/merge-escalation-run.sh" >/dev/null 2>"$FC_TMP/merge.err"); MERGE_CODE=$?
 assert_exit 0 "$MERGE_CODE" "merge block records: $(cat "$FC_TMP/merge.err")"
 assert_equal "issue-212.md" "$(ls "$FC_TMP/journal-merge/.decisions" 2>/dev/null | grep -v '\.lock$')" "merge records against the closing issue, not the first #N"
+mkdir -p "$FC_TMP/journal-merge-none"
+(cd "$FC_TMP/journal-merge-none" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing)" \
+  bash "$FC_TMP/merge-escalation-run.sh" >"$FC_TMP/en.out" 2>/dev/null); EN_CODE=$?
+assert_exit 0 "$EN_CODE" "no closing issue is not an error for the merge record"
+assert_contains "ESCALATION_RECORD=skipped" "$(cat "$FC_TMP/en.out")" "the merge block says it skipped"
 
 PREFLIGHT_LINK=$(awk '/### Linked Issue/ { f = 1 } f { print } f && /LINKED_ISSUE=/ { exit }' "$REVIEW_MD")
 assert_contains "flow-pr-linked-issue.sh" "$PREFLIGHT_LINK" "Phase 1 prints the issue the helper resolves"
@@ -952,10 +1037,10 @@ _flow_test_begin "sweep: no command parses an issue number out of pull request t
 _fc_lookup_sweep() {
   local files hits
   files=$(find "$1" -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
-  hits=$(grep -rnE "grep -[A-Za-z]*o[A-Za-z]* +'[^']*#\[0-9\]\+" "$1" --include='*.md' 2>/dev/null | wc -l | tr -d ' ')
+  hits=$(grep -rnE '(grep -[A-Za-z]*o[A-Za-z]*|sed )' "$1" --include='*.md' 2>/dev/null | grep -cE '#\\?\(?\[0-9\]' | tr -d ' ')
   printf 'FILES=%s HITS=%s' "$files" "$hits"
 }
-assert_equal "FILES=1 HITS=2" "$(_fc_lookup_sweep "$FC_FIXTURES/lookup-sweep-fire")" "fires on both retired lookups"
+assert_equal "FILES=1 HITS=4" "$(_fc_lookup_sweep "$FC_FIXTURES/lookup-sweep-fire")" "fires on all four spellings of the retired lookups"
 assert_equal "FILES=1 HITS=0" "$(_fc_lookup_sweep "$FC_FIXTURES/lookup-sweep-silent")" "silent on the helper call and on prose mentioning #N"
 assert_equal "FILES=0 HITS=0" "$(_fc_lookup_sweep "$FC_TMP/no-such-dir")" "an empty input examines nothing"
 FC_LOOKUP=$(_fc_lookup_sweep "$PLUGIN_DIR/commands")

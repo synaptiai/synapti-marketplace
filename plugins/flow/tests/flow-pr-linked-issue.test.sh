@@ -47,6 +47,7 @@ while [ $# -gt 0 ]; do
   [ "$1" = "--jq" ] && FILTER="$2"
   shift
 done
+[ -n "${STUB_RAW+x}" ] && { printf '%s\n' "$STUB_RAW"; exit 0; }
 [ -n "$FILTER" ] || { cat "$STUB_JSON_FILE"; exit 0; }
 jq -r "$FILTER" "$STUB_JSON_FILE"
 STUB
@@ -127,6 +128,26 @@ CODE=$?
 assert_exit 2 "$CODE" "exit 2"
 assert_equal "" "$(cat "$FPL_DIR/out")" "nothing on stdout"
 assert_contains "228" "$(cat "$FPL_DIR/err")" "the error names the pull request"
+
+_flow_test_begin "a result that is not a list of numbers is exit 2, never an issue number"
+# The filter is the only thing shaping this value; a gh or jq change that makes
+# it something else must not be recorded as an issue.
+for RAW in '12,x' 'null' '{"number":12}' '12 13'; do
+  : > "$FPL_DIR/gh.log"
+  PATH="$FPL_DIR/bin:$PATH" STUB_LOG="$FPL_DIR/gh.log" STUB_RAW="$RAW" STUB_JSON_FILE="$FIXTURES/pr-228.json" \
+    "$HELPER" --pr 7 --repo o/r > "$FPL_DIR/out" 2> "$FPL_DIR/err"
+  CODE=$?
+  assert_exit 2 "$CODE" "a result of '$RAW' is an infrastructure error"
+  assert_equal "" "$(cat "$FPL_DIR/out")" "nothing on stdout for '$RAW'"
+done
+
+_flow_test_begin "a pull request with no closingIssuesReferences field fails closed"
+for JSON in '{}' '{"closingIssuesReferences":null}'; do
+  J=$(_json nofield "$JSON")
+  _linked "$J" --pr 7 --repo o/r
+  assert_exit 2 "$CODE" "$JSON is an infrastructure error, not 'no issue'"
+  assert_equal "" "$OUT" "nothing on stdout for $JSON"
+done
 
 _flow_test_begin "input validation"
 for BAD in '' 0 07 7a -1 '{N}'; do
