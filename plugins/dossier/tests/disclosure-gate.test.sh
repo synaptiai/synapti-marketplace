@@ -675,6 +675,107 @@ pub "$T" "The token sk-ant-abcdefgh12345678 is stored in the vault for safekeepi
 OUT=$(scanout "$T")
 assert_not_contains "sk-ant-abcdefgh12345678" "$OUT" "an anthropic key never reaches the findings output"
 
+# --- redact() replaces the whole excerpt, not just the matched span (#198) ---
+# Every one of redact()'s 8 patterns stops matching at the first character
+# outside its own class. Substituting only the matched span left the tail --
+# a real fragment of the original value -- in the clear right next to the
+# tag. redact() now discards the ENTIRE candidate sentence on any match,
+# emitting only the class tag, so no fragment on either side of an
+# interrupting character (or of a second, non-matching occurrence in the
+# same sentence) can survive.
+
+T="$W/frag-anthropic"; mkpkg "$T"
+pub "$T" "Use sk-ant-api03-ABCDEFGHIJKLMNOP|QRSTUVWX for authorization here."
+OUT=$(scanout "$T")
+assert_not_contains "ABCDEFGHIJKLMNOP" "$OUT" "anthropic: the pre-interruption fragment never reaches the output"
+assert_not_contains "abcdefghijklmnop" "$OUT" "nor its lowercased form"
+assert_not_contains "QRSTUVWX" "$OUT" "anthropic: the post-interruption fragment never reaches the output"
+assert_not_contains "qrstuvwx" "$OUT" "nor its lowercased form"
+assert_contains "anthropic-key" "$OUT" "the class is still named"
+
+T="$W/frag-github"; mkpkg "$T"
+pub "$T" "The value is ghp_ABCDEFGHIJKLMNOP,QRSTUVWXYZ01234 for now."
+OUT=$(scanout "$T")
+assert_not_contains "ABCDEFGHIJKLMNOP" "$OUT" "github: the pre-interruption fragment never reaches the output"
+assert_not_contains "QRSTUVWXYZ01234" "$OUT" "github: the post-interruption fragment never reaches the output"
+assert_not_contains "qrstuvwxyz01234" "$OUT" "nor its lowercased form"
+assert_contains "github-token" "$OUT" "the class is still named"
+
+T="$W/frag-slack"; mkpkg "$T"
+pub "$T" "The bot token xoxb-123456789012,abcdefghijkl was issued today."
+OUT=$(scanout "$T")
+assert_not_contains "123456789012" "$OUT" "slack: the pre-interruption fragment never reaches the output"
+assert_not_contains "abcdefghijkl" "$OUT" "slack: the post-interruption fragment never reaches the output"
+assert_contains "slack-token" "$OUT" "the class is still named"
+
+T="$W/frag-bearer"; mkpkg "$T"
+pub "$T" "Send requests with Bearer ABCDEFGHIJKLMNOPQRST|UVWXYZ012345 as the header."
+OUT=$(scanout "$T")
+assert_not_contains "ABCDEFGHIJKLMNOPQRST" "$OUT" "bearer: the pre-interruption fragment never reaches the output"
+assert_not_contains "UVWXYZ012345" "$OUT" "bearer: the post-interruption fragment never reaches the output"
+assert_not_contains "uvwxyz012345" "$OUT" "nor its lowercased form"
+assert_contains "bearer-token" "$OUT" "the class is still named"
+
+T="$W/frag-secret-assignment"; mkpkg "$T"
+pub "$T" "Set password: Sup3rSecretVal|ueHere123 before deploying."
+OUT=$(scanout "$T")
+assert_not_contains "Sup3rSecretVal" "$OUT" "secret-assignment: the pre-interruption fragment never reaches the output"
+assert_not_contains "sup3rsecretval" "$OUT" "nor its lowercased form"
+assert_not_contains "ueHere123" "$OUT" "secret-assignment: the post-interruption fragment never reaches the output"
+assert_contains "secret-assignment" "$OUT" "the class is still named"
+
+# The remaining three classes use exact-length or structural patterns rather
+# than an open-ended character class, so "interrupted" here means a second,
+# non-matching (but still credential-shaped) occurrence in the same
+# sentence as a valid match -- the shape the old per-span substitution left
+# fully exposed, since it only ever touched the one span it matched.
+
+T="$W/frag-aws"; mkpkg "$T"
+pub "$T" "The archived key was AKIAOLDFRAGMENT and the active one is AKIAIOSFODNN7EXAMPLE for now."
+OUT=$(scanout "$T")
+assert_not_contains "AKIAOLDFRAGMENT" "$OUT" "aws: the non-matching second occurrence never reaches the output"
+assert_not_contains "akiaoldfragment" "$OUT" "nor its lowercased form"
+assert_not_contains "AKIAIOSFODNN7EXAMPLE" "$OUT" "aws: the matched occurrence never reaches the output"
+assert_contains "aws-access-key" "$OUT" "the class is still named"
+
+T="$W/frag-pem"; mkpkg "$T"
+pub "$T" "The backup starts with -----BEGIN RSA PRIVATE KEY----- while the corrupted copy reads -----BEGIN RSA PRIVATE K3Y-----."
+OUT=$(scanout "$T")
+assert_not_contains "BEGIN RSA PRIVATE KEY" "$OUT" "pem: the matched header never reaches the output"
+assert_not_contains "BEGIN RSA PRIVATE K3Y" "$OUT" "pem: the non-matching corrupted header never reaches the output"
+assert_contains "private-key-block" "$OUT" "the class is still named"
+
+T="$W/frag-conn"; mkpkg "$T"
+pub "$T" "The staging URI is postgres://admin:Sup3rSecretPass@db.internal:5432/prod and the broken copy reads postgres://admin:Sup3rSecr etPass@db.internal:5432/prod."
+OUT=$(scanout "$T")
+assert_not_contains "Sup3rSecretPass" "$OUT" "connection-string: the matched password never reaches the output"
+assert_not_contains "Sup3rSecr" "$OUT" "connection-string: the non-matching corrupted password never reaches the output"
+assert_contains "connection-string" "$OUT" "the class is still named"
+
+# --- two different classes in one sentence: neither leaks ---------------------
+T="$W/frag-multi"; mkpkg "$T"
+pub "$T" "The service uses AKIAIOSFODNN7EXAMPLE for AWS and xoxb-123456789012abcdefghij for Slack notifications."
+OUT=$(scanout "$T")
+assert_not_contains "AKIAIOSFODNN7EXAMPLE" "$OUT" "multi-class: the AWS key never reaches the output"
+assert_not_contains "123456789012abcdefghij" "$OUT" "multi-class: the Slack token never reaches the output"
+printf '%s' "$OUT" | grep -qE "aws-access-key|slack-token"
+assert_equal "0" "$?" "multi-class: at least one class tag is still named"
+
+# --- a clean sentence is untouched ---------------------------------------------
+T="$W/frag-clean"; mkpkg "$T"
+pub "$T" "The service handles requests reliably and logs each event for later review."
+OUT=$(scanout "$T")
+assert_contains "handles requests reliably" "$OUT" "a sentence with no credential-shaped content passes through unchanged"
+
+# --- the fragment guarantee holds in --json output too -------------------------
+T="$W/frag-json"; mkpkg "$T"
+pub "$T" "Use sk-ant-api03-ABCDEFGHIJKLMNOP|QRSTUVWX for authorization here."
+JOUT=$(cd "$T" && CLAUDE_PLUGIN_ROOT="$PLUGIN_ABS" "$SCAN" --output-root docs/dossier --json 2>&1)
+assert_not_contains "ABCDEFGHIJKLMNOP" "$JOUT" "--json: the pre-interruption fragment never reaches JSON output"
+assert_not_contains "QRSTUVWX" "$JOUT" "--json: the post-interruption fragment never reaches JSON output"
+assert_not_contains "qrstuvwx" "$JOUT" "nor its lowercased form"
+assert_contains "anthropic-key" "$JOUT" "--json: the class is still named"
+
 # --- A rejected row must not be read as an approved claim ---------------------
 # `CL-` rows appear in two tables with different column layouts, and the
 # approval test is a literal substring match. A rejected row whose free-text

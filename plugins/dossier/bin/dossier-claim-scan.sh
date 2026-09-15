@@ -211,16 +211,65 @@ fi
 # contain both an unregistered claim AND a credential. Without this, the tool
 # that exists to stop leaks would copy the leak into its own output — which is
 # then pasted into a CI log, an issue, or a review comment.
+# Each of the 8 patterns below stops matching at the first character outside
+# its own class (e.g. a `|`, a comma, a reflow-introduced space). Substituting
+# only the matched span -- the old behavior -- left everything past that
+# interrupting character untouched: a real fragment of the original secret,
+# printed right next to the [REDACTED:...] tag it was supposed to replace.
+# A second, non-matching-but-credential-shaped occurrence in the same
+# sentence (e.g. a truncated AWS key alongside a valid one) had the same
+# problem, since the substitution only ever touched the span it matched.
+#
+# redact() now decides per whole candidate sentence, not per matched span: if
+# ANY of the 8 patterns matches anywhere in the input, the ENTIRE input is
+# discarded and replaced by exactly one [REDACTED:<class>] tag (the first
+# class to match, in the priority order below); otherwise the input passes
+# through unchanged. No fragment of the original value -- on either side of
+# an interrupting character, or from an unrelated second occurrence -- can
+# survive, because nothing of the original sentence survives a match.
+#
+# Performance: a single combined-alternation grep (the union of all 8
+# patterns) runs first. The common case -- no credential-shaped content at
+# all -- costs one process fork, the same cost class as the single `sed`
+# invocation this replaced. The 8 individual per-class checks, needed only to
+# name which class matched, run solely on the rare path where that combined
+# check already found something.
 redact() {
-  sed -E \
-    -e 's/sk-ant-[A-Za-z0-9_-]{8,}/[REDACTED:anthropic-key]/g' \
-    -e 's/(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{16,}/[REDACTED:github-token]/g' \
-    -e 's/AKIA[0-9A-Z]{16}/[REDACTED:aws-access-key]/g' \
-    -e 's/xox[baprs]-[A-Za-z0-9-]{10,}/[REDACTED:slack-token]/g' \
-    -e 's/(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}/[REDACTED:bearer-token]/g' \
-    -e 's#(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[^[:space:]@]+@#[REDACTED:connection-string]@#g' \
-    -e 's/(api[_-]?key|secret|password|passwd|token|credential)([[:space:]]*[:=][[:space:]]*)["'"'"']?[A-Za-z0-9\/_+=-]{12,}/\1\2[REDACTED:secret-assignment]/g' \
-    -e 's/-----BEGIN [A-Z ]*PRIVATE KEY-----/[REDACTED:private-key-block]/g'
+  local input
+  input=$(cat)
+  if ! printf '%s' "$input" | grep -qE \
+    'sk-ant-[A-Za-z0-9_-]{8,}|(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{16,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}|(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[^[:space:]@]+@|(api[_-]?key|secret|password|passwd|token|credential)([[:space:]]*[:=][[:space:]]*)["'"'"']?[A-Za-z0-9/_+=-]{12,}|-----BEGIN [A-Z ]*PRIVATE KEY-----'; then
+    printf '%s' "$input"
+    return
+  fi
+  if printf '%s' "$input" | grep -qE 'sk-ant-[A-Za-z0-9_-]{8,}'; then
+    printf '[REDACTED:anthropic-key]'; return
+  fi
+  if printf '%s' "$input" | grep -qE '(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{16,}'; then
+    printf '[REDACTED:github-token]'; return
+  fi
+  if printf '%s' "$input" | grep -qE 'AKIA[0-9A-Z]{16}'; then
+    printf '[REDACTED:aws-access-key]'; return
+  fi
+  if printf '%s' "$input" | grep -qE 'xox[baprs]-[A-Za-z0-9-]{10,}'; then
+    printf '[REDACTED:slack-token]'; return
+  fi
+  if printf '%s' "$input" | grep -qE '(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}'; then
+    printf '[REDACTED:bearer-token]'; return
+  fi
+  if printf '%s' "$input" | grep -qE '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[^[:space:]@]+@'; then
+    printf '[REDACTED:connection-string]'; return
+  fi
+  if printf '%s' "$input" | grep -qE '(api[_-]?key|secret|password|passwd|token|credential)([[:space:]]*[:=][[:space:]]*)["'"'"']?[A-Za-z0-9/_+=-]{12,}'; then
+    printf '[REDACTED:secret-assignment]'; return
+  fi
+  if printf '%s' "$input" | grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'; then
+    printf '[REDACTED:private-key-block]'; return
+  fi
+  # Unreachable while the combined check above is kept as the exact union of
+  # these eight patterns. If the two ever drift apart, fail toward redaction
+  # rather than silently falling through to a raw-input pass-through.
+  printf '[REDACTED:unknown]'
 }
 
 # Line classes this scan actually examines for registration (issue #176):
