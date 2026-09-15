@@ -84,7 +84,7 @@ while [ $# -gt 0 ]; do
             SCAN="$2"; shift 2 ;;
     --out)  [ $# -lt 2 ] && { echo "dossier-vuln-evidence: --out requires a path" >&2; exit 2; }
             OUT="$2"; shift 2 ;;
-    -h|--help) sed -n '2,74p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,/^$/p' "$0"; exit 0 ;;
     *) echo "dossier-vuln-evidence: unknown argument: $1" >&2; exit 2 ;;
   esac
 done

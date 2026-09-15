@@ -42,7 +42,7 @@ while [ $# -gt 0 ]; do
       CONFIG_PATH="$2"; shift 2 ;;
     --quiet) QUIET=1; shift ;;
     -h|--help)
-      sed -n '2,25p' "$0"; exit 0 ;;
+      sed -n '2,/^$/p' "$0"; exit 0 ;;
     *) echo "dossier-validate-config: unknown argument: $1" >&2; exit 2 ;;
   esac
 done

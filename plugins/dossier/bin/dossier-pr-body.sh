@@ -42,7 +42,7 @@ while [ $# -gt 0 ]; do
     --existing-pr)   [ $# -lt 2 ] && { echo "dossier-pr-body: --existing-pr requires a value" >&2; exit 2; }; EXISTING_PR="$2"; shift 2 ;;
     --previous-body) [ $# -lt 2 ] && { echo "dossier-pr-body: --previous-body requires a value" >&2; exit 2; }; PREVIOUS_BODY="$2"; shift 2 ;;
     --evidence)      [ $# -lt 2 ] && { echo "dossier-pr-body: --evidence requires a value" >&2; exit 2; }; EVIDENCE="$2"; shift 2 ;;
-    -h|--help)       sed -n '2,33p' "$0"; exit 0 ;;
+    -h|--help)       sed -n '2,/^$/p' "$0"; exit 0 ;;
     *) echo "dossier-pr-body: unknown argument: $1" >&2; exit 2 ;;
   esac
 done

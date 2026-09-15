@@ -72,7 +72,7 @@ while [ $# -gt 0 ]; do
       [ $# -lt 2 ] && { echo "dossier-staleness-check: --single-file requires a value" >&2; exit 2; }
       SINGLE_FILE="$2"; shift 2 ;;
     -h|--help)
-      sed -n '2,41p' "$0"; exit 0 ;;
+      sed -n '2,/^$/p' "$0"; exit 0 ;;
     *)
       echo "dossier-staleness-check: unknown argument: $1" >&2; exit 2 ;;
   esac

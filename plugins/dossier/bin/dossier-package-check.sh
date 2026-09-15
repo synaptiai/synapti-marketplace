@@ -95,7 +95,7 @@ while [ $# -gt 0 ]; do
       REF_ROOT="$2"; shift 2 ;;
     --quiet) QUIET=1; shift ;;
     -h|--help)
-      sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     --) shift; break ;;
     *)
