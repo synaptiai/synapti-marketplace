@@ -702,6 +702,52 @@ OUT=$(scanout "$T")
 assert_not_contains "what the reader should expect" "$OUT" \
   "a CRLF-terminated table header row is still exempted, not scored as data"
 
+# --- CRLF normalization refactor (issue #221) --------------------------------
+# The two fixtures above are pre-existing regression coverage for SYMPTOMS of
+# an un-stripped trailing \r (a header closer or table separator that fails
+# an exact-string compare). Issue #221 replaced the per-line bash-native
+# `${line%$'\r'}` suffix strip itself (superlinear on very long lines in bash
+# 3.2) with a single `sed $'s/\r$//'` pass over the whole file, so the
+# fixtures below cover the refactor directly: plain declarative sentences,
+# not just structural marker lines, still register/unregister correctly when
+# every line in the file is CRLF-terminated.
+T="$W/registered-crlf"; mkpkg "$T"
+reg "$T" '| CL-0001 | the api supports oauth 20 device flow | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+printf -- 'The API supports OAuth 20 device flow.\r\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "0" "$?" \
+  "a CRLF-terminated sentence that exactly matches an approved claim still passes"
+
+T="$W/unregistered-crlf"; mkpkg "$T"
+reg "$T" ''
+printf -- 'The API supports OAuth 20 device flow.\r\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "1" "$?" "a CRLF-terminated sentence with no matching register row still exits 1"
+assert_contains "UNREGISTERED" "$(scanout "$T")" \
+  "the CRLF-terminated unregistered sentence is still labelled, not silently dropped"
+
+# An embedded \r NOT at the very end of a line -- e.g. a stray control
+# character mid-sentence, not a CRLF line terminator -- must not be silently
+# glued into its neighbouring word. The original per-line `${line%$'\r'}`
+# only ever stripped a TRAILING \r, leaving an embedded one untouched;
+# normalize()'s `[[:space:]]` collapse (`\r` IS in POSIX [[:space:]]) then
+# turns that surviving \r into the space between "two" and "words" below.
+# `tr -d '\r'` -- the issue's other suggested fix, and the one this PR
+# deliberately did NOT take -- would delete the embedded \r outright, so
+# normalize() would have nothing left to collapse into a space and the two
+# words would glue into "splitstwowords", breaking the exact-match register
+# row below. See .decisions/issue-221.md for the direct empirical comparison
+# of `sed $'s/\r$//'` against `tr -d '\r'` on exactly this input.
+T="$W/embedded-mid-line-cr"; mkpkg "$T"
+reg "$T" '| CL-0001 | the system reports remain accurate even when a stray return character splits two words | capability | EV-0001 | 1.0 | all | none | VP Eng | Public | 06-public/technical-partner-guide.md | approved | verified |'
+printf -- 'The system reports remain accurate even when a stray return character splits two\rwords.\r\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "0" "$?" \
+  "an embedded mid-line \\r is preserved (and collapsed to a space by normalize()), not deleted outright"
+
 # Every structural line-class dispatch matches only at column 0
 # (`'|'*`, `'- '*`, `'* '*`, `'> '*`). A registered
 # claim indented under a list item, or nested inside a blockquote, or an

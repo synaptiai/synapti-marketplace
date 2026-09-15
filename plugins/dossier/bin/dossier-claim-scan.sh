@@ -797,25 +797,48 @@ for f in $TARGETS; do
   # still populates $line with its content but returns non-zero at EOF, and a
   # bare `while read` loop condition treats that as "nothing left," silently
   # dropping the last line of any file that isn't newline-terminated.
+  #
+  # `read` splits on the actual newline byte only, so a CRLF-terminated file
+  # leaves a trailing \r on every line. Left in place, it defeats every
+  # exact-string and pattern match downstream: the frontmatter opener/closer
+  # compare (`"$line" = "---"`), the fence toggle, and the table separator
+  # check all silently fail to match, and — for the frontmatter closer
+  # specifically — IN_HEADER then never clears, so every subsequent line in
+  # the file is silently skipped via `continue` with no error and exit 0 —
+  # the same "clean result whose true coverage doesn't match" failure this
+  # whole issue exists to fix.
+  #
+  # The strip used to happen HERE, per line, via bash's own `${line%$'\r'}`
+  # pattern-matching suffix removal. On bash 3.2 — this script's declared
+  # target, macOS's stock /bin/bash — that op is superlinear in the LENGTH of
+  # a single line: a 732,000-byte line measured ~98s in isolation, in bash
+  # 3.2, for the strip alone (issue #221). `read` itself, and every other op
+  # in this loop, stay linear regardless of bash version, so one very long
+  # line — a pasted JSON blob, a long table row, a base64 fragment — was
+  # enough on its own to hang the scan for minutes with no timeout and no
+  # diagnostic.
+  #
+  # `sed $'s/\r$//'` is an external, linear-time tool; running it ONCE over
+  # the whole file, in the `done < <(...)` redirection below, strips a
+  # trailing \r from every line before `read` ever sees the data, so there is
+  # no per-line bash-native pattern match left to be quadratic on. Anchored
+  # trailing-only (`$`), not `tr -d '\r'`: `tr` deletes every \r byte in the
+  # file, including one embedded mid-line (not at the very end) — a real
+  # input for e.g. a pasted terminal transcript with progress-bar \r's in a
+  # fenced code block — which `tr` would silently corrupt but the original
+  # per-line `${line%$'\r'}` never touched (verified empirically: `sed
+  # $'s/\r$//'` reproduces the original's output byte-for-byte on a mid-line
+  # \r, a doubled trailing \r\r, and a final line with no trailing newline;
+  # `tr -d '\r'` diverges on the first two — see .decisions/issue-221.md).
   while IFS= read -r line || [ -n "$line" ]; do
     LN=$((LN + 1))
-    # `read` splits on the actual newline byte only, so a CRLF-terminated
-    # file leaves a trailing \r on every line. Left in place, it defeats
-    # every exact-string and pattern match downstream: the frontmatter
-    # opener/closer compare (`"$line" = "---"`), the fence toggle, and the
-    # table separator check all silently fail to match, and — for the
-    # frontmatter closer specifically — IN_HEADER then never clears, so
-    # every subsequent line in the file is silently skipped via `continue`
-    # with no error and exit 0 — the same "clean result whose true coverage
-    # doesn't match" failure this whole issue exists to fix.
-    line=${line%$'\r'}
     if [ "$FIRST_LINE" -eq 1 ]; then
       FIRST_LINE=0
       # `${line%%[[:space:]]*}` drops everything from the first whitespace
       # character onward, so a closer with trailing spaces or tabs (e.g. a
       # trailing-whitespace-on-save editor artifact) still matches — the
-      # \r-strip above already handles CRLF, this handles ordinary trailing
-      # whitespace the same way.
+      # `sed $'s/\r$//'` in the read redirection already handles CRLF, this
+      # handles ordinary trailing whitespace the same way.
       if [ "${line%%[[:space:]]*}" = "---" ]; then IN_HEADER=1; continue; fi
     elif [ "$IN_HEADER" -eq 1 ]; then
       [ "${line%%[[:space:]]*}" = "---" ] && IN_HEADER=0
@@ -951,7 +974,16 @@ for f in $TARGETS; do
     esac
 
     scan_text "$line"
-  done < "$f"
+  # `<(sed $'s/\r$//' < "$f")` (issue #221), not a plain `| sed ...` pipe
+  # into the loop: piping would run the `while` as the last stage of a
+  # pipeline, which bash executes in a SUBSHELL, so every counter and flag
+  # this loop sets (CANDIDATES_EXAMINED, LN, IN_HEADER, IN_FENCE, TABLE_*,
+  # ...) would vanish when the loop exits instead of persisting into the
+  # rest of this `for f` iteration -- the same subshell hazard already
+  # called out above for `done < "$f"`. Process substitution keeps the
+  # `while` itself in the current shell; only the `sed` filter runs in a
+  # subshell of its own.
+  done < <(sed $'s/\r$//' < "$f")
   # A file can end mid-table (its last line is still-held row 1, never
   # confirmed a header because there was no row 2 to check).
   flush_held_table_row
