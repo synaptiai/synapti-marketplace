@@ -269,6 +269,35 @@ commit refused that body; it was a regression, not an inherited gap.
   carries all four now). The mutation set is 20 mutants over the posting checks, the helper, the
   route script and both manifest blocks; all 20 are caught, and it is scripted for the next round.
 
+
+## Phase 4 self-review, round 5 (targeted re-review of a931ae0)
+
+P1: 1, P2: 1, P3: 1 — all fixed, each with a test that failed before the fix.
+
+Cause: round 4 gave the Needs investigation section a start and no end, and matched the headings
+after it by their text. So a counted finding rendered inside the section posted (it reads as "does
+not block the merge" while its marker row blocks `/flow:merge`), and a LOW entry posted when it sat
+under any following heading the match did not recognise — `#### What Looks Good`, and the priority
+spellings `#### P1: Critical` and `#### P1—Critical`, which is round 4's bug at the level of the
+check meant to prevent it.
+
+- The section now has both edges: from `#### Needs investigation` to the next `#### ` line, whatever
+  that line says. LOW findings must sit inside it, counted findings outside it. Matching on heading
+  text is gone, and with it the `#### P[123]` regex.
+- Two `#### Needs investigation` headings are refused whether or not the review has LOW findings:
+  which one bounds the section is not readable.
+- The "rendered N times" message now prints the line numbers, and the Previous Feedback Status prose
+  says to write prior-cycle ids plainly: ids restart at F1 each cycle, so a prior id written in the
+  bold finding form reads as a second rendering of this cycle's finding (it fails closed, but the
+  reviewer should not have to guess why).
+- The limits are unchanged and stay documented: a section opened with a heading the template never
+  writes (setext, HTML, another level) is not seen, and a fenced `#### ` line after the section ends
+  it although it is not a heading.
+- The mutation set is now 27 mutants and all 27 are caught. Four of the reviewer's five extra
+  mutants had survived: the marker loop reading only the first id, the two whole-line heading
+  matches, and the heading-text boundary. Each has a test now, and the driver is checked against the
+  current code so the next round starts from a live set.
+
 <!-- auto-log: 2026-09-16 00:17 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-pr-linked-issue.test.sh -->
 
 <!-- auto-log: 2026-09-16 00:19 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests.py -->
@@ -294,3 +323,11 @@ commit refused that body; it was a regression, not an inherited gap.
 <!-- auto-log: 2026-09-16 01:14 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_round4.py -->
 
 <!-- auto-log: 2026-09-16 01:15 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants.py -->
+
+<!-- auto-log: 2026-09-16 01:24 commit "fix(flow): check where a finding is rendered, not only what it looks like" -->
+
+<!-- auto-log: 2026-09-16 01:35 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests5.py -->
+
+<!-- auto-log: 2026-09-16 01:36 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_round5.py -->
+
+<!-- auto-log: 2026-09-16 01:42 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants.py -->

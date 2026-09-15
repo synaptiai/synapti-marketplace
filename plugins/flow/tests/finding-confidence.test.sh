@@ -759,10 +759,10 @@ _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY
 - **F2 · P1 · correctness · \`src/c.sh:9\`** — Looks like a race."
 assert_exit 1 "$POST_CODE" "a LOW id rendered twice is refused"
 # F21 is not F2: an id that extends another id is not a second rendering.
+F21_BODY=$(awk '/^\| \*\*F1 · / { print; print "| **F21 · docs · `a.md:3`**<br>Stale link. _(HIGH · consensus)_ | Update it. |"; next } { print }' <<<"${FC_MIXED_BODY/P2: 1, P3: 0/P2: 2, P3: 0}")
 _fc_post external "F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer
 F21|P2|docs|a.md:3|HIGH|consensus|code-reviewer
-F2|P1|correctness|src/c.sh:9|LOW|kept|code-reviewer" 3 "${FC_MIXED_BODY/P2: 1, P3: 0/P2: 2, P3: 0}
-| **F21 · docs · \`a.md:3\`**<br>Stale link. _(HIGH · consensus)_ | Update it. |"
+F2|P1|correctness|src/c.sh:9|LOW|kept|code-reviewer" 3 "$F21_BODY"
 assert_exit 0 "$POST_CODE" "F21 beside a LOW F2 posts: $POST_ERR"
 
 _flow_test_begin "posting: a LOW finding filed under a priority heading is refused (round 4)"
@@ -833,6 +833,82 @@ assert_exit 1 "$POST_CODE" "a counted finding rendered twice is refused"
 # The counted finding rendered as a P3 bullet, in the template's shape, posts.
 _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY"
 assert_exit 0 "$POST_CODE" "a P3 bullet carrying the id posts: $POST_ERR"
+
+_flow_test_begin "posting: the Needs investigation section has an end as well as a start (round 5)"
+# The section runs from its heading to the next #### heading, whatever that
+# heading says. A finding on the wrong side of either edge is refused.
+FC_ROUND5=0
+# A counted finding rendered inside the section reads as "does not block the
+# merge" while its marker row blocks /flow:merge.
+_fc_post external "$FC_MIXED" 2 '## Review: PR #7
+
+### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 1
+
+#### Needs investigation
+- **F1 · correctness · `src/b.sh:4`** — Wrong bound. _(HIGH · consensus)_
+- **F2 · P1 · correctness · `src/c.sh:9`** — Looks like a race.'
+assert_exit 1 "$POST_CODE" "a counted finding inside the section is refused"
+assert_contains "F1" "$POST_ERR" "names the counted id"
+assert_equal "" "$GH_ARGS" "gh not called"
+FC_ROUND5=$((FC_ROUND5 + 1))
+# A LOW entry below the section, under whatever heading follows it. The last
+# two spellings are priority headings the old `#### P1 ` match did not see.
+for LATE_HEADING in '#### What Looks Good' '#### P1: Critical (Blocks Merge)' '#### P1—Critical (Blocks Merge)' '#### Requirements Adherence'; do
+  _fc_post external "$FC_MIXED" 2 "$(grep -v '^- \*\*F2 · ' <<<"$FC_MIXED_BODY")
+(none)
+
+$LATE_HEADING
+- **F2 · P1 · correctness · \`src/c.sh:9\`** — Looks like a race."
+  assert_exit 1 "$POST_CODE" "an entry under '$LATE_HEADING' is refused"
+  assert_equal "" "$GH_ARGS" "gh not called for '$LATE_HEADING'"
+  FC_ROUND5=$((FC_ROUND5 + 1))
+done
+assert_equal "5" "$FC_ROUND5" "all five placements examined"
+# A line that quotes the heading inline is not the heading: the body posts, and
+# the entry below the real heading is found.
+_fc_post external "$FC_MIXED" 2 "Its LOW findings are listed under #### Needs investigation below.
+
+$FC_MIXED_BODY"
+assert_exit 0 "$POST_CODE" "a prose mention of the heading does not move the section: $POST_ERR"
+assert_contains "--request-changes" "$GH_ARGS" "posted"
+
+# Two headings, with or without LOW findings: which one bounds the section is
+# not readable, so nothing is posted.
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY
+
+#### Needs investigation
+(none)
+
+#### Needs investigation
+(none)"
+assert_exit 1 "$POST_CODE" "two headings are refused even with no LOW finding"
+assert_equal "" "$GH_ARGS" "gh not called"
+
+_flow_test_begin "posting: every counted finding is checked, not only the first (round 5)"
+FC_TWO_COUNTED='F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer
+F3|P3|docs|a.md:2|MEDIUM|unchallenged|code-reviewer'
+FC_TWO_COUNTED_BODY='## Review: PR #7
+
+### Findings: P1: 0, P2: 1, P3: 1 · Needs investigation: 0
+
+#### P2 — Important
+| Finding | Suggested Fix |
+|---------|---------------|
+| **F1 · correctness · `src/b.sh:4`**<br>Wrong bound. _(HIGH · consensus)_ | Use `<`. |
+
+#### P3 — Suggestions
+- **F3 · docs · `a.md:2`** — Stale link. _(MEDIUM · unchallenged)_'
+_fc_post external "$FC_TWO_COUNTED" 2 "$FC_TWO_COUNTED_BODY"
+assert_exit 0 "$POST_CODE" "both counted findings rendered: $POST_ERR"
+# A counted finding written in the entry shape outside the section says the
+# same wrong thing as one written inside it.
+_fc_post external "$FC_TWO_COUNTED" 2 "${FC_TWO_COUNTED_BODY/- \*\*F3 · docs · /- **F3 · P3 · docs · }"
+assert_exit 1 "$POST_CODE" "a counted finding in the entry shape under a priority heading is refused"
+assert_contains "F3" "$POST_ERR" "names the id"
+_fc_post external "$FC_TWO_COUNTED" 2 "$(grep -v '^- \*\*F3 · ' <<<"$FC_TWO_COUNTED_BODY")"
+assert_exit 1 "$POST_CODE" "the second counted finding missing is refused"
+assert_contains "F3" "$POST_ERR" "names the second id, not only the first"
+assert_equal "" "$GH_ARGS" "gh not called"
 
 _flow_test_begin "routing and posting print the counted total for the review-cycle manifest"
 _fc_route external 'F1|P1|security|src/a.sh:1|HIGH|consensus|security-reviewer
@@ -1028,6 +1104,7 @@ assert_contains "ESCALATION_RECORD=skipped" "$(cat "$FC_TMP/en.out")" "the merge
 
 PREFLIGHT_LINK=$(awk '/### Linked Issue/ { f = 1 } f { print } f && /LINKED_ISSUE=/ { exit }' "$REVIEW_MD")
 assert_contains "flow-pr-linked-issue.sh" "$PREFLIGHT_LINK" "Phase 1 prints the issue the helper resolves"
+assert_contains "never in the bold" "$STEP7" "step 7 tells the reviewer how to write prior-cycle ids"
 assert_contains "flow-pr-linked-issue.sh" "$(_fc_phase4_step 7)" "the review-cycle manifest resolves the issue with the helper"
 assert_contains "flow-pr-linked-issue.sh" "$(awk '/^\*\*FlowRun terminal transition\*\*/ { print }' "$REVIEW_MD")" "the workflow-run record names the helper"
 
