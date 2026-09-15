@@ -720,6 +720,17 @@ assert_not_contains "UVWXYZ012345" "$OUT" "bearer: the post-interruption fragmen
 assert_not_contains "uvwxyz012345" "$OUT" "nor its lowercased form"
 assert_contains "[REDACTED:bearer-token]" "$OUT" "the class is still named"
 
+# A lowercase "bearer" still counts as a LEAK, not just a registration gap.
+# Section A's own leak-counter (scan_class, dossier-claim-scan.sh) was
+# case-sensitive-only ('Bearer', capital only) while scan_text()'s pre-check
+# used the case-insensitive CRED_PATTERNS version -- a lowercase match got
+# redacted correctly here but never counted as a leak there, so the scan
+# exited 1 instead of 2. Found independently by both review agents.
+T="$W/frag-bearer-lowercase-leak"; mkpkg "$T"
+pub "$T" "Send requests with bearer ABCDEFGHIJKLMNOPQRSTUVWXYZ012345 as the header."
+scan "$T"
+assert_equal "2" "$?" "a lowercase bearer token is still flagged as leakage (exit 2), not just a registration gap"
+
 T="$W/frag-secret-assignment"; mkpkg "$T"
 pub "$T" "Set password: Sup3rSecretVal|ueHere123 before deploying."
 OUT=$(scanout "$T")
@@ -728,11 +739,26 @@ assert_not_contains "sup3rsecretval" "$OUT" "nor its lowercased form"
 assert_not_contains "ueHere123" "$OUT" "secret-assignment: the post-interruption fragment never reaches the output"
 assert_contains "[REDACTED:secret-assignment]" "$OUT" "the class is still named"
 
-# The remaining three classes use exact-length or structural patterns rather
-# than an open-ended character class, so "interrupted" here means a second,
-# non-matching (but still credential-shaped) occurrence in the same
-# sentence as a valid match -- the shape the old per-span substitution left
-# fully exposed, since it only ever touched the one span it matched.
+# The remaining three classes are exact-format, not an open-ended character
+# class: a fixed {16} count or a literal multi-char suffix, rather than a
+# `{N,}` minimum that still matches a truncated prefix when interrupted.
+# Found in review (round 2): a SINGLE stray character anywhere inside an
+# otherwise-exact match makes the whole pattern fail to match at all -- not
+# a fragment leak, a non-detection, with the raw value printed verbatim and
+# no leak flagged. aws-access-key and private-key-block are now rewritten
+# (CRED_PATTERNS, dossier-claim-scan.sh) to tolerate exactly one interrupting
+# character after any position while still requiring the same 16 real key
+# characters / the same literal "PRIVATE KEY" letters -- both closed below
+# with a LONE (unpaired) interrupted occurrence, the shape that used to slip
+# through entirely undetected. connection-string is NOT fixed here: loosening
+# its password charset the same way creates false positives on ordinary
+# scheme mentions with no credential at all (e.g. a sentence that just names
+# a `postgres://host:port/db` with no user:pass@) -- tracked as a follow-up
+# issue instead, per explicit product decision (see .decisions/issue-198.md).
+# The paired-occurrence fixtures below (a second, non-matching-but-
+# credential-shaped occurrence alongside a valid match) still hold for all
+# three classes regardless of that gap, since the valid occurrence alone
+# triggers whole-line redaction.
 
 T="$W/frag-aws"; mkpkg "$T"
 pub "$T" "The archived key was AKIAOLDFRAGMENT and the active one is AKIAIOSFODNN7EXAMPLE for now."
@@ -742,11 +768,35 @@ assert_not_contains "akiaoldfragment" "$OUT" "nor its lowercased form"
 assert_not_contains "AKIAIOSFODNN7EXAMPLE" "$OUT" "aws: the matched occurrence never reaches the output"
 assert_contains "[REDACTED:aws-access-key]" "$OUT" "the class is still named"
 
+# A LONE, unpaired occurrence, interrupted -- no valid partner on the line to
+# trigger whole-line redaction as a side effect. Before the interrupt-
+# tolerant AKIA pattern, this printed the raw key verbatim with LEAKS=0 and
+# exit 1 (registration gap only), not exit 2 (leakage) -- confirmed live
+# against the pre-fix pattern.
+T="$W/frag-aws-lone"; mkpkg "$T"
+pub "$T" "The archived key was AKIAIOSFOD NN7EXAMPLE for backup access only."
+scan "$T"
+assert_equal "2" "$?" "aws: a lone interrupted key is still flagged as leakage (exit 2), not just a registration gap"
+OUT=$(scanout "$T")
+assert_not_contains "AKIAIOSFOD" "$OUT" "aws-lone: the pre-interruption fragment never reaches the output"
+assert_not_contains "NN7EXAMPLE" "$OUT" "aws-lone: the post-interruption fragment never reaches the output"
+assert_contains "[REDACTED:aws-access-key]" "$OUT" "the class is still named"
+
 T="$W/frag-pem"; mkpkg "$T"
 pub "$T" "The backup starts with -----BEGIN RSA PRIVATE KEY----- while the corrupted copy reads -----BEGIN RSA PRIVATE K3Y-----."
 OUT=$(scanout "$T")
 assert_not_contains "BEGIN RSA PRIVATE KEY" "$OUT" "pem: the matched header never reaches the output"
 assert_not_contains "BEGIN RSA PRIVATE K3Y" "$OUT" "pem: the non-matching corrupted header never reaches the output"
+assert_contains "[REDACTED:private-key-block]" "$OUT" "the class is still named"
+
+# A LONE, unpaired occurrence, interrupted mid-word -- same rationale as
+# frag-aws-lone above.
+T="$W/frag-pem-lone"; mkpkg "$T"
+pub "$T" "The backup starts with -----BEGIN RSA PRI VATE KEY----- for safekeeping."
+scan "$T"
+assert_equal "2" "$?" "pem: a lone interrupted header is still flagged as leakage (exit 2), not just a registration gap"
+OUT=$(scanout "$T")
+assert_not_contains "BEGIN RSA PRI VATE KEY" "$OUT" "pem-lone: the interrupted header never reaches the output"
 assert_contains "[REDACTED:private-key-block]" "$OUT" "the class is still named"
 
 T="$W/frag-conn"; mkpkg "$T"
@@ -803,7 +853,7 @@ pub "$T" "The token sk-ant-api03-abcdefghijklmnop authenticates every request."
 OUT=$(scanout "$T")
 assert_not_contains "abcdefghijklmnop" "$OUT" "a credential in an approved/registered line is still never printed"
 assert_contains "[REDACTED:anthropic-key]" "$OUT" "the class is still named"
-assert_contains "UNREGISTERED" "$OUT" "a credential-bearing line is reported as unregistered even though its wording is otherwise approved"
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" "a credential-bearing line is reported as unregistered even though its wording is otherwise approved"
 
 # --- the fragment guarantee holds in --json output too -------------------------
 T="$W/frag-json"; mkpkg "$T"

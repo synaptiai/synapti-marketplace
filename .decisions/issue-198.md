@@ -23,6 +23,16 @@ artifacts:
   captured_at: '2026-09-15T15:35:00Z'
   reason: sentence_split_non_goal_reversed_by_review_findings
   by: self-review-fix-forward
+- type: user-decision
+  captured_at: '2026-09-15T16:10:00Z'
+  question: exact_format_pattern_disposition_and_locator_scope
+  decisions:
+  - 'F1 (exact-format lone-interrupted gap): fix aws-access-key and private-key-block
+    now; defer connection-string to issue #210 (real false-positive tradeoff, no
+    tolerance level picked unilaterally)'
+  - 'Locator scope (issue title vs body mismatch): the 4 locator classes stay out
+    of #198''s scope -- the issue body''s own acceptance criteria never asked for
+    excerpt-redaction of locators, only for the credential-interruption fix'
 ---
 # Issue #198 — claim-scan's redact() leaves fragments past an interrupting character
 
@@ -60,6 +70,8 @@ artifacts:
 | Fast-path/slow-path pattern drift | The fast-path combined-alternation regex and the 8 individual slow-path patterns are maintained as two separate copies and drift apart, so a class matches individually but not in the combined check (or vice versa) — the "unreachable" fallback becomes reachable | Fixture: every one of the 8 individual patterns' matching input also trips the combined fast-path check (i.e., the fast path never wrongly takes the pass-through branch for a real credential) |
 | Non-credential sentence, unaffected | The rewrite accidentally starts flagging/discarding ordinary prose that merely resembles one of the 8 patterns loosely, or stops passing through genuinely clean sentences unchanged | Fixture: a sentence with no credential-shaped substring → output is byte-identical to the input (pass-through still works) |
 | Credential span crossing the `.`-based split | A credential whose matched span (or, for connection-string, its adjacent context) contains a literal `.` — a JWT's two internal periods (`bearer-token`'s charset explicitly permits `.`), a connection string's dotted hostname between scheme and `@` — has part of itself on each side of `scan_text()`'s pre-existing `tr '.' '\n'` split; `redact()` only ever sees one post-split fragment at a time, so it discards the fragment it's given but cannot reassemble the whole line to see the credential the split broke apart, and the fragment without the class-identifying prefix (e.g. a JWT's payload/signature segments, which lose the leading `Bearer `) passes through unredacted. Found independently by both self-review agents (SEC-1, F1), not anticipated at spec time — see the revised non-goal above. | Fixture: a JWT-shaped bearer token (`Bearer eyJ....eyJ....SflK...`, two literal periods) → no segment (header, payload, or signature) reaches the excerpt, only the class tag. Fixture: `frag-conn`'s two connection-string occurrences separated by a dotted hostname → neither password (matched or corrupted) reaches the excerpt, including its lowercased form. Both closed by `scan_text()` checking the whole unsplit line against `CRED_PATTERNS` before the split runs, redacting the whole line as one unit on a match. |
+| Exact-format pattern, lone interrupted occurrence (found in round 2 review) | `aws-access-key`, `private-key-block`, and `connection-string` are exact-format (a fixed `{16}` count, a literal multi-char suffix, or a required trailing `@`), not an open-ended character class — unlike the other 5 classes, a SINGLE interrupting character anywhere inside an otherwise-exact, UNPAIRED occurrence (no valid partner on the same line) makes the whole pattern fail to match, so neither the union fast-path nor `cred_match_class` ever fires: not a fragment leak, a full non-detection, with the raw value printed verbatim and `LEAKS=0`/exit 1 instead of exit 2. Found independently by both self-review agents (code-reviewer's F1, live-reproduced by both reviewers and by the implementer). Product decision (user-confirmed via AskUserQuestion): fix `aws-access-key` and `private-key-block` now — both rewritten to tolerate exactly one interrupting character (space, `\|`, or `,`) after any position while still requiring the same number of real characters, verified with no false-positive found. `connection-string` is deliberately NOT fixed here — the equivalent loosening of its password charset creates a real false positive (a bare scheme mention with no credential at all, e.g. `postgres://db:5432/app, ops@corp`, would wrongly match) — tracked as issue #210 instead. | Fixture: a LONE, unpaired, space-interrupted `AKIA...` key (`frag-aws-lone`) and a lone interrupted PEM header (`frag-pem-lone`) → both exit 2 (leakage, not just a registration gap) and no fragment reaches the excerpt. `frag-conn` (paired-occurrence case) continues to pass; the lone-occurrence connection-string case is explicitly NOT covered by a passing fixture in this PR — see #210. |
+| Severity/exit-code drift between `scan_class` (section A) and `CRED_PATTERNS` (found in round 2 review) | Section A's `scan_class` calls are a third, hand-maintained copy of the credential patterns (by necessity — they run before `CRED_PATTERNS` exists in load order, and never print a matched value so don't share its redaction contract) that can silently drift from `CRED_PATTERNS`: a credential `scan_text()`'s pre-check correctly redacts in the excerpt can still fail to increment `LEAKS`, so the scan exits 1 (registration gap) instead of 2 (leakage) for an actual credential. Found independently by both self-review agents (security-reviewer's SEC-1, code-reviewer's F2): `scan_class`'s `bearer-token` pattern was case-sensitive-only (`Bearer`) while `CRED_PATTERNS`' was not (`Bearer\|bearer`). Fixed by making `scan_class`'s `bearer-token`, `aws-access-key`, and `private-key-block` patterns text-identical to their `CRED_PATTERNS` counterparts (kept as separate literals, not a shared array — see the header comment above `CRED_CLASSES` in `dossier-claim-scan.sh` for why iterating one array from both places is a bigger change than this issue's scope). | Fixture: a lowercase-only `bearer TOKEN...` credential (`frag-bearer-lowercase-leak`) → exit 2, not 1. |
 
 <!-- auto-log: 2026-09-15 13:03 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-198.md -->
 
@@ -126,3 +138,41 @@ artifacts:
 <!-- auto-log: 2026-09-15 15:52 Write /Users/danielbentes/.claude-work/projects/-Users-danielbentes-synapti-marketplace/memory/project_issue_queue_reorder_207_release.md -->
 
 <!-- auto-log: 2026-09-15 15:54 commit "fix(dossier): restore -- guard lost in the redact() pattern-array refactor" -->
+
+<!-- auto-log: 2026-09-15 15:58 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_dossier_redact_tr_split_fragment_leak.md -->
+
+<!-- auto-log: 2026-09-15 15:59 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_dossier_claim_scan_scope_gaps.md -->
+
+<!-- auto-log: 2026-09-15 15:59 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_dossier_redact_tr_split_fragment_leak.md -->
+
+<!-- auto-log: 2026-09-15 15:59 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_dossier_bearer_pattern_third_copy_drift.md -->
+
+<!-- auto-log: 2026-09-15 15:59 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-15 16:06 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-15 16:06 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-15 16:16 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-15 16:16 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-15 16:17 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-15 16:17 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-15 16:18 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-15 16:18 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-15 16:18 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-15 16:22 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-198.md -->
+
+<!-- auto-log: 2026-09-15 16:23 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-198.md -->
+
+<!-- auto-log: 2026-09-15 16:23 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-198.goal.yaml -->
+
+<!-- auto-log: 2026-09-15 16:24 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-198.goal.yaml -->
+
+<!-- auto-log: 2026-09-15 16:25 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/CHANGELOG.md -->

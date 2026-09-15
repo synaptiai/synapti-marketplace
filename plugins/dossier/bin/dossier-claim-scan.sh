@@ -115,12 +115,31 @@ for f in $TARGETS; do
   # --- A. Leakage ---
   scan_class "$f" "anthropic-key"      leak 'sk-ant-[A-Za-z0-9_-]{8,}'
   scan_class "$f" "github-token"       leak '(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{16,}'
-  scan_class "$f" "aws-access-key"     leak 'AKIA[0-9A-Z]{16}'
+  # aws-access-key and private-key-block use the same interrupt-tolerant
+  # patterns as CRED_PATTERNS (dossier-claim-scan.sh, redact() section) --
+  # kept pattern-identical by hand rather than sharing the array (this loop
+  # runs before CRED_PATTERNS is defined, and this path never prints a
+  # matched value, so it doesn't share that array's redaction contract; see
+  # the comment above CRED_PATTERNS). Letting these two drift from their
+  # CRED_PATTERNS counterparts is exactly the bug fixed below for
+  # bearer-token: a lone interrupted key that redact() now correctly
+  # redacts would otherwise still exit 1 ("registration gap") instead of 2
+  # ("leakage detected") here.
+  scan_class "$f" "aws-access-key"     leak 'AKIA([0-9A-Z][ |,]?){16}'
   scan_class "$f" "slack-token"        leak 'xox[baprs]-[A-Za-z0-9-]{10,}'
-  scan_class "$f" "private-key-block"  leak '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+  scan_class "$f" "private-key-block"  leak '-----BEGIN [A-Z ]*P[ |,]?R[ |,]?I[ |,]?V[ |,]?A[ |,]?T[ |,]?E[[:space:]][ |,]?K[ |,]?E[ |,]?Y-----'
   scan_class "$f" "generic-secret-assignment" leak \
     '(api[_-]?key|secret|password|passwd|token|credential)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9/_+=-]{12,}'
-  scan_class "$f" "bearer-token"       leak 'Bearer[[:space:]]+[A-Za-z0-9._-]{20,}'
+  # Case-insensitive on this one word only (Bearer|bearer), same as
+  # CRED_PATTERNS' bearer-token entry -- global $grepflags stays
+  # case-sensitive here (see the comment on scan_class above: AKIA and the
+  # PEM armour would false-positive on unrelated lowercase text if folded).
+  # Was 'Bearer[[:space:]]+...' (capital-only): a lowercase-only match still
+  # got redacted correctly by scan_text()'s pre-check (which does use the
+  # case-insensitive CRED_PATTERNS version) but was never counted as a leak
+  # here, so the scan exited 1 instead of 2 for a real bearer-token leak --
+  # found independently by both review agents in round 2 of this issue.
+  scan_class "$f" "bearer-token"       leak '(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}'
   scan_class "$f" "connection-string"  leak '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[^[:space:]@]+@'
   # Internal locators: evidence and register IDs must never appear publicly —
   # they expose the internal register structure and are useless to a reader.
@@ -212,13 +231,23 @@ fi
 # that exists to stop leaks would copy the leak into its own output — which is
 # then pasted into a CI log, an issue, or a review comment.
 #
-# One array is the source of truth for both layers of this defense (#198):
+# One array is the source of truth for two of this defense's layers (#198):
 # redact()'s per-candidate-sentence check below, and scan_text()'s whole-line
 # pre-check (before the '.'-based sentence split — see scan_text for why that
 # split needed its own check, not just this one). Two hand-maintained copies
-# of this pattern list previously drifting apart was this file's own risk
-# map's third row; one array, iterated by both call sites, removes the drift
-# instead of documenting it.
+# of this pattern list drifting apart was this file's own risk map's third
+# row; one array, iterated by both call sites, removes that drift.
+#
+# Section A's `scan_class ... leak` calls (below, in the main scan loop) are
+# a THIRD copy, by necessity, not oversight: they run once per whole file as
+# boolean leak-counters, before CRED_PATTERNS exists in the script's load
+# order, and unlike this array's callers they never print a matched value,
+# so they don't share this array's redaction contract. They DO need to stay
+# pattern-identical to their CRED_PATTERNS counterpart, or the two paths
+# disagree about the same credential's severity (a real bug found in review:
+# section A's bearer-token check was case-sensitive-only while this array's
+# was not, so a lowercase match got redacted correctly here but never
+# counted as a leak there, exiting 1 instead of 2).
 CRED_CLASSES=(
   anthropic-key
   github-token
@@ -229,15 +258,33 @@ CRED_CLASSES=(
   secret-assignment
   private-key-block
 )
+# aws-access-key and private-key-block (below) are exact-format patterns, not
+# open-ended character classes: the other 6 patterns' `{N,}` quantifiers still
+# match a truncated PREFIX when interrupted (the old bug this issue started
+# from -- a fragment survives, but at least something matches so redaction
+# fires). A fixed `{16}` count or a literal multi-char suffix does not: one
+# stray character anywhere inside either shape makes the WHOLE pattern fail
+# to match, so the pre-check and redact() never even see a hit and the raw
+# value passes straight through -- confirmed identical on main, not a
+# regression, but squarely inside this issue's "interrupted by any
+# non-token character" acceptance criterion. Both are rewritten below to
+# tolerate exactly one interrupting character (space, `|`, or `,` -- the
+# same three this issue's own fixtures use) after any position, while still
+# requiring the same 16 real key characters / the same literal "PRIVATE
+# KEY" letters, so an unrelated short string still can't match by accident.
+# connection-string has the same exact-format problem (a required trailing
+# `@`) but loosening its charset creates real false positives on ordinary
+# scheme mentions with no credential at all -- tracked as a follow-up issue
+# instead of fixed here; see the risk map in .decisions/issue-198.md.
 CRED_PATTERNS=(
   'sk-ant-[A-Za-z0-9_-]{8,}'
   '(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{16,}'
-  'AKIA[0-9A-Z]{16}'
+  'AKIA([0-9A-Z][ |,]?){16}'
   'xox[baprs]-[A-Za-z0-9-]{10,}'
   '(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}'
   '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[^[:space:]@]+@'
   '(api[_-]?key|secret|password|passwd|token|credential)([[:space:]]*[:=][[:space:]]*)["'"'"']?[A-Za-z0-9/_+=-]{12,}'
-  '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+  '-----BEGIN [A-Z ]*P[ |,]?R[ |,]?I[ |,]?V[ |,]?A[ |,]?T[ |,]?E[[:space:]][ |,]?K[ |,]?E[ |,]?Y-----'
 )
 # Built once from CRED_PATTERNS, not retyped: a single combined-alternation
 # grep against this union is the fast path both call sites run first. The
@@ -309,7 +356,7 @@ cred_match_class() {
 redact() {
   local input class
   input=$(cat)
-  if ! printf '%s' "$input" | grep -qE "$CRED_UNION_PATTERN"; then
+  if ! printf '%s' "$input" | grep -qE -- "$CRED_UNION_PATTERN"; then
     printf '%s' "$input"
     return
   fi
@@ -356,7 +403,7 @@ scan_text() {
   # one unit and the per-sentence loop below — with its own register and
   # word-count rules, which exist to judge claim-drafting quality, not
   # credential safety — never runs on it.
-  if printf '%s' "$SPLITTABLE" | grep -qE "$CRED_UNION_PATTERN"; then
+  if printf '%s' "$SPLITTABLE" | grep -qE -- "$CRED_UNION_PATTERN"; then
     class=$(cred_match_class "$SPLITTABLE") || class=unknown
     printf 'unregistered\t%s\t%s\t%s\n' "$f" "$LN" "[REDACTED:$class]" >> "$HITS_FILE"
     return
