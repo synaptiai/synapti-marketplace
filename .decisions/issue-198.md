@@ -54,6 +54,10 @@ artifacts:
   goal_id: issue-198
   result: achieved
   evidence_bundle: .flow/runs/2026-09-15T110500Z-issue-198
+- type: pr-created
+  captured_at: '2026-09-15T16:06:59Z'
+  pr_number: 220
+  branch: feature/issue-198-redact-fragment-leak
 ---
 # Issue #198 — claim-scan's redact() leaves fragments past an interrupting character
 
@@ -235,3 +239,7 @@ artifacts:
 <!-- auto-log: 2026-09-15 17:25 commit "docs(dossier): fix stale literal-pattern reference in scan_text's comment" -->
 
 <!-- auto-log: 2026-09-15 17:28 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-198.md -->
+
+<!-- auto-log: 2026-09-15 18:05 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/9e40ee39-9361-48e5-9ea5-5209a55ee23d/scratchpad/pr-198-body.md -->
+
+<!-- auto-log: 2026-09-15 18:05 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/9e40ee39-9361-48e5-9ea5-5209a55ee23d/scratchpad/pr-198-body.md -->
