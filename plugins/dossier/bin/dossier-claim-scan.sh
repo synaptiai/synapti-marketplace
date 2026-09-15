@@ -156,7 +156,14 @@ for f in $TARGETS; do
   # here, so the scan exited 1 instead of 2 for a real bearer-token leak --
   # found independently by both review agents in round 2 of this issue.
   scan_class "$f" "bearer-token"       leak '(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}'
-  scan_class "$f" "connection-string"  leak '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[^[:space:]@]+@'
+  # connection-string uses the same interrupt-tolerant password segment as
+  # CRED_PATTERNS (below) -- kept pattern-identical by hand for the same
+  # reason aws-access-key/private-key-block are (see the comment above those
+  # two calls): this loop runs before CRED_PATTERNS is defined, and this path
+  # never prints a matched value, so it doesn't share that array's redaction
+  # contract. See the comment above CRED_PATTERNS' connection-string entry
+  # (issue #210) for what the bounded charset does and why.
+  scan_class "$f" "connection-string"  leak '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[ |,]?([^[:space:]@|,][ |,]?)+@'
   # Internal locators: evidence and register IDs must never appear publicly —
   # they expose the internal register structure and are useless to a reader.
   scan_class "$f" "internal-evidence-id"  leak '\b(EV|AQ|CT|CL|TM)-[0-9]{4,}\b'
@@ -346,16 +353,45 @@ CRED_CLASSES=(
 # same 16 real key characters / the same literal "PRIVATE KEY" letters, so
 # an unrelated short string still can't match by accident.
 # connection-string has the same exact-format problem (a required trailing
-# `@`) but loosening its charset creates real false positives on ordinary
-# scheme mentions with no credential at all -- tracked as a follow-up issue
-# instead of fixed here; see the risk map in .decisions/issue-198.md.
+# `@`) as aws-access-key/private-key-block above -- issue #210. Unlike those
+# two, its password segment has no fixed length to bound a naive
+# `[interrupt]?` loosening: applying the same technique to the *entire*
+# password charset (any run of non-space characters up to the next `@`)
+# lets the pattern bridge straight past unrelated punctuation to an
+# unrelated `@` later in the sentence -- a real false positive on a bare
+# scheme mention with no credential at all, e.g.
+# `postgres://db:5432/app, ops@corp` (no user:pass@ present) would wrongly
+# match, since the loosened class could span from the `:` after `db` all
+# the way to the `@` in `ops@corp`. #198 deferred this class rather than
+# risk that false-positive surface (see .decisions/issue-198.md's risk map).
+#
+# Fixed here by mirroring #198's technique -- (real-char, optional single
+# interrupter) pairs -- but as an open-ended `+` instead of a fixed `{16}`
+# count, since the password has no fixed length. The real-char class is
+# narrowed to exclude the three interrupter characters (space, `|`, `,`) so
+# an interrupter can only occupy the single slot attached to the character
+# immediately before it, never chain into a second slot: two interrupting
+# characters in a row (e.g. `, ` -- the exact shape of the false-positive
+# reproduction above, between "app," and "ops") can never both be consumed,
+# because the second one isn't a real-char (so it can't start a new
+# iteration) and the current iteration's one interrupter slot is already
+# spent. This tolerates exactly ONE interrupting character at any single
+# position in the password (including right at the host/password boundary,
+# the colon -- mirroring #198 round 3's finding that the prefix/body
+# boundary needs its own tolerance slot distinct from the interior), while
+# still rejecting two-or-more consecutive interrupters at the same spot --
+# a deliberate tradeoff, not an oversight: it catches the realistic case (a
+# line-wrap or copy-paste artifact inserting one stray character) and still
+# misses a password mangled by two-or-more consecutive interruptions, but
+# that residual gap is exactly what keeps the false positive above
+# rejected. See .decisions/issue-210.md for the full analysis.
 CRED_PATTERNS=(
   'sk-ant-[A-Za-z0-9_-]{8,}'
   '(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{16,}'
   'AKIA[ |,]?([0-9A-Z][ |,]?){16}'
   'xox[baprs]-[A-Za-z0-9-]{10,}'
   '(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}'
-  '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[^[:space:]@]+@'
+  '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[ |,]?([^[:space:]@|,][ |,]?)+@'
   '(api[_-]?key|secret|password|passwd|token|credential)([[:space:]]*[:=][[:space:]]*)["'"'"']?[A-Za-z0-9/_+=-]{12,}'
   '-----BEGIN[ |,]?[A-Z ,|]*P[ |,]?R[ |,]?I[ |,]?V[ |,]?A[ |,]?T[ |,]?E[ |,]?[[:space:]][ |,]?K[ |,]?E[ |,]?Y[ |,]?-----'
 )
