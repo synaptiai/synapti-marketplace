@@ -734,4 +734,43 @@ chmod 755 "$SRPERM/pkg"
 assert_contains "FAILED  README.md (copy failed)" "$COUT" "a README copy failure is named in ACTIONS"
 rm -rf "$SRPERM" 2>/dev/null
 
+# --- The CWD-relative template/README fallback is never trusted (issue #205) --
+# When CLAUDE_PLUGIN_ROOT is unset and the script's own location cannot
+# resolve a templates dir alongside it (e.g. it was invoked from a copy with
+# no ../templates next to it — the shape a corrupted/partial install, or an
+# unusual invocation, would produce), the scaffolder used to fall back to a
+# bare CWD-relative "plugins/dossier/templates/..." path with no check that
+# it actually belongs to the plugin's own install. The scaffolder's normal
+# CWD is the project repository being documented — a repository this tool
+# otherwise treats as untrusted input (see the symlink guards above, issue
+# #178) — so a repo that happens to contain a tree at that exact path (by
+# coincidence or by design) had its content silently substituted for the
+# real plugin templates. Fixture: an isolated copy of the script (no
+# sibling templates dir, so the $SCRIPT_DIR-relative candidate cannot
+# resolve either) run with CLAUDE_PLUGIN_ROOT unset from a CWD that plants
+# an unrelated plugins/dossier/templates/package tree at the predictable
+# path.
+SCWD=$(mktemp -d)
+mkdir -p "$SCWD/isolated-bin"
+cp "$BIN/dossier-scaffold.sh" "$SCWD/isolated-bin/dossier-scaffold.sh"
+chmod +x "$SCWD/isolated-bin/dossier-scaffold.sh"
+mkdir -p "$SCWD/attacker-repo/plugins/dossier/templates/package/00-control"
+printf -- '---\nATTACKER CONTENT: should never be read\n' \
+  > "$SCWD/attacker-repo/plugins/dossier/templates/package/00-control/documentation-index.md"
+printf 'ATTACKER README CONTENT: should never be read\n' \
+  > "$SCWD/attacker-repo/plugins/dossier/templates/package-readme.md"
+CWDOUT=$(cd "$SCWD/attacker-repo" && env -u CLAUDE_PLUGIN_ROOT \
+  "$SCWD/isolated-bin/dossier-scaffold.sh" --output-root "$SCWD/attacker-repo/out" 2>&1)
+CWDRC=$?
+assert_exit "2" "$CWDRC" "no CLAUDE_PLUGIN_ROOT + no resolvable \$SCRIPT_DIR templates + a CWD-local attacker tree fails closed, not silently succeeds (issue #205)"
+assert_contains "template directory not found" "$CWDOUT" "the scaffolder reports the standard infra-error message rather than silently using CWD-local content"
+assert_not_contains "ATTACKER CONTENT" "$CWDOUT" "attacker-controlled CWD-local template content never appears in scaffold output"
+if [ -e "$SCWD/attacker-repo/out/00-control/documentation-index.md" ]; then
+  CWDFILE=$(cat "$SCWD/attacker-repo/out/00-control/documentation-index.md" 2>/dev/null)
+  assert_not_contains "ATTACKER CONTENT" "$CWDFILE" "no file in the scaffolded output was sourced from the CWD-local attacker tree"
+else
+  _dossier_assert_pass "no output file was created from the CWD-local attacker tree"
+fi
+rm -rf "$SCWD" 2>/dev/null
+
 _dossier_test_summary
