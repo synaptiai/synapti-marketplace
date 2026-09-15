@@ -101,7 +101,7 @@ while [ $# -gt 0 ]; do
     --out)    [ $# -lt 2 ] && { echo "dossier-scan-security: --out requires a path" >&2; exit 2; }
               OUT="$2"; shift 2 ;;
     --offline) OFFLINE=1; shift ;;
-    -h|--help) sed -n '2,86p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,/^$/p' "$0"; exit 0 ;;
     *) echo "dossier-scan-security: unknown argument: $1" >&2; exit 2 ;;
   esac
 done

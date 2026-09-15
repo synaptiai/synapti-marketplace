@@ -284,6 +284,40 @@ SCAFFOLD_HELP=$("$BIN/dossier-scaffold.sh" --help 2>&1)
 assert_contains "Exit:" "$SCAFFOLD_HELP" "scaffold --help renders through the Exit codes section, not a stale truncated range"
 assert_contains "SCAFFOLD_REPAIRED" "$SCAFFOLD_HELP" "scaffold --help documents the SCAFFOLD_REPAIRED output line"
 
+# --- Same fix, sixteen more scripts (issue #206) -----------------------------
+# `dossier-scaffold.sh` and `dossier-prose-lint.sh` were fixed first (issues
+# #178/#180) by replacing the hardcoded `sed -n '2,Np'` range with a
+# self-terminating `sed -n '2,/^$/p'` one that always reads to the header's
+# first blank line. The other sixteen `bin/` scripts still carried the
+# hardcoded-range bug at the time this was written. For each, this pins the
+# header's actual LAST documented line — not an early one a stale-but-still-
+# reaching bound would also pass — in that script's own `--help` output.
+h206_line="" h206_script="" h206_needle="" h206_out=""
+while IFS= read -r h206_line; do
+  [ -z "$h206_line" ] && continue
+  h206_script="${h206_line%% :: *}"
+  h206_needle="${h206_line#* :: }"
+  h206_out=$("$BIN/$h206_script" --help 2>&1)
+  assert_contains "$h206_needle" "$h206_out" "$h206_script --help reaches its header's last documented line (issue #206)"
+done <<'EOF'
+dossier-blast-radius.sh :: #   2 — missing or invalid argument
+dossier-claim-scan.sh :: # public directory yet names a security incident that did not happen.
+dossier-evidence.sh :: #   2 — missing or invalid argument
+dossier-gate.sh :: # Exit: 0 PASS · 1 FAIL · 2 usage error · 3 INCONCLUSIVE (--strict maps 3 -> 1)
+dossier-ledger-lint.sh :: # Exit: 0 clean · 1 findings · 2 infrastructure error
+dossier-managed-file.sh :: #   2 — missing or invalid argument
+dossier-package-check.sh :: 2 — infrastructure error (missing argument, unreadable root or references)
+dossier-policy.sh :: #   2 — missing or invalid argument
+dossier-pr-body.sh :: #   2 — missing or invalid argument
+dossier-rotation-check.sh :: #   2 — bad arguments
+dossier-scan-quality.sh :: # test fixtures — not part of the dossier.* config surface).
+dossier-scan-security.sh :: # test fixtures — not part of the dossier.* config surface).
+dossier-staleness-check.sh :: #   2 — infrastructure error (missing prerequisite tool, bad argument)
+dossier-validate-config.sh :: #   2 — infrastructure error (jq missing, config unreadable)
+dossier-validate-patch.sh :: #   2 — missing or invalid argument
+dossier-vuln-evidence.sh :: #       · 2 missing or invalid argument
+EOF
+
 # =============================================================================
 # The output-root signpost
 # =============================================================================

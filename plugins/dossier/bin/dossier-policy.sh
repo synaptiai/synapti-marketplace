@@ -75,7 +75,7 @@ while [ $# -gt 0 ]; do
       [ $# -lt 2 ] && { echo "dossier-policy: --base requires a value" >&2; exit 2; }
       BASE_OVERRIDE="$2"; shift 2 ;;
     -h|--help)
-      sed -n '2,40p' "$0"; exit 0 ;;
+      sed -n '2,/^$/p' "$0"; exit 0 ;;
     *)
       echo "dossier-policy: unknown argument: $1" >&2; exit 2 ;;
   esac

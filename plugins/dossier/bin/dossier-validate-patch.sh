@@ -66,7 +66,7 @@ while [ $# -gt 0 ]; do
     --allowlist)     [ $# -lt 2 ] && { echo "dossier-validate-patch: --allowlist requires a value" >&2; exit 2; }; ALLOWLIST_ARG="$2"; shift 2 ;;
     --github-output) [ $# -lt 2 ] && { echo "dossier-validate-patch: --github-output requires a value" >&2; exit 2; }; GITHUB_OUTPUT_FILE="$2"; shift 2 ;;
     --summary)       [ $# -lt 2 ] && { echo "dossier-validate-patch: --summary requires a value" >&2; exit 2; }; SUMMARY_FILE="$2"; shift 2 ;;
-    -h|--help)       sed -n '2,42p' "$0"; exit 0 ;;
+    -h|--help)       sed -n '2,/^$/p' "$0"; exit 0 ;;
     *) echo "dossier-validate-patch: unknown argument: $1" >&2; exit 2 ;;
   esac
 done

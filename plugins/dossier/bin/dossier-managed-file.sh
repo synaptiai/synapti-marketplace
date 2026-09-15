@@ -53,7 +53,7 @@ while [ $# -gt 0 ]; do
     --comment)
       [ $# -lt 2 ] && { echo "dossier-managed-file: --comment requires a value" >&2; exit 2; }
       COMMENT_STYLE="$2"; shift 2 ;;
-    -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,/^$/p' "$0"; exit 0 ;;
     *) echo "dossier-managed-file: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
