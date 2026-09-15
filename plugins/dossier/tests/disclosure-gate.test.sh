@@ -188,6 +188,67 @@ reg "$T" ''
 scan "$T"
 assert_equal "0" "$?" "claim-shaped text in a heading or fenced code block is still exempt"
 
+# --- issue #202: ~~~ fences must be exempt too, same as backtick fences -----
+# The reproduction in the issue verbatim: a `~~~`-delimited fence's contents
+# fell through to the ordinary prose path because the fence-toggle only
+# recognized backticks.
+T="$W/tilde-fence-exempt"; mkpkg "$T"
+reg "$T" ''
+printf '~~~text\nThis product guarantees 9999 percent uptime annually\n~~~\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "0" "$?" "claim-shaped text in a ~~~ fenced code block is exempt, same as a backtick fence"
+
+# --- issue #202: mismatched fence characters must not cross-close ------------
+# CommonMark requires a fence's closer to use the SAME character as its
+# opener. A naive extension that shares one toggle between both characters
+# mis-toggles on a decoy marker of the OTHER character inside a real fence —
+# verified directly: that naive version not only over-reports the decoy
+# fence's own remaining content (tolerable, the issue's own "safe direction")
+# but also flips IN_FENCE back on at the real closer, silently treating the
+# genuine prose that follows the fence as still-fenced and never scanning it
+# at all -- the dangerous direction this scanner exists to prevent. A
+# backtick fence containing a line that merely LOOKS like a tilde fence
+# opener must stay open through it, and the prose after the real closer must
+# still be scanned.
+T="$W/mismatched-fence-backtick-then-tilde-decoy"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '```text\n'
+  printf 'some code\n'
+  printf '~~~ this looks like a tilde marker but is just a code comment\n'
+  printf '```\n'
+  printf 'This product guarantees 9999 percent uptime annually.\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "a decoy tilde-looking line inside a real backtick fence does not close it early, and the real prose after the true closer is still scanned"
+
+# The mirror case: a `~~~` fence containing a line that merely looks like a
+# backtick fence opener must likewise stay open through it.
+T="$W/mismatched-fence-tilde-then-backtick-decoy"; mkpkg "$T"
+reg "$T" ''
+{
+  printf '~~~text\n'
+  printf 'some code\n'
+  printf '```python this looks like a backtick marker but is just a code comment\n'
+  printf '~~~\n'
+  printf 'This product guarantees 9999 percent uptime annually.\n'
+} > "$T/docs/dossier/06-public/technical-partner-guide.md"
+OUT=$(scanout "$T")
+assert_contains "CLAIM_SCAN_UNREGISTERED_SENTENCES=1" "$OUT" \
+  "a decoy backtick-looking line inside a real ~~~ fence does not close it early, and the real prose after the true closer is still scanned"
+
+# --- issue #202: fence markers tolerate 1-3 leading spaces (CommonMark) ------
+# A fence marker indented by up to 3 spaces is still a fence per CommonMark's
+# fence-indentation rule; claim-shaped text inside it must stay exempt.
+T="$W/tilde-fence-indented"; mkpkg "$T"
+reg "$T" ''
+printf '  ~~~text\nThis product guarantees 9999 percent uptime annually\n  ~~~\n' \
+  > "$T/docs/dossier/06-public/technical-partner-guide.md"
+scan "$T"
+assert_equal "0" "$?" "a ~~~ fence indented by up to 3 spaces is still recognized as a fence"
+
 # --- issue #176: a bullet is prose with a marker, not structural markup ------
 # The exact shape reported in the issue: a claim written as a `- ` bullet
 # scored 0 while the identical sentence as a paragraph scored non-zero.

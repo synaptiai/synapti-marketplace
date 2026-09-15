@@ -690,6 +690,13 @@ flush_held_table_row() {
 
 for f in $TARGETS; do
   IN_FENCE=0
+  # Which fence character (backtick or tilde) opened the currently-open
+  # fence, "" when none is open. CommonMark requires a fence's closer to use
+  # the SAME character as its opener -- see the fence-toggle case below for
+  # why this matters once a second fence character is recognized (issue
+  # #202; see .decisions/issue-202.md for the empirical trace of what a
+  # naive shared-toggle extension does wrong without this).
+  FENCE_CHAR=""
   # The header is structured metadata, not prose. `title:` and `audience:` are
   # long enough to clear the word floor and match no approved wording, so every
   # public document would report two unregistered "sentences" that no drafter
@@ -735,20 +742,62 @@ for f in $TARGETS; do
       [ "${line%%[[:space:]]*}" = "---" ] && IN_HEADER=0
       continue
     fi
-    case "$line" in
-      '```'*)
-        # A fence line is never a table row, so it leaves any open table
-        # exactly like the non-fence "left the table" branch below does.
-        # Skipping this flush would let TABLE_HELD_LINE and
-        # TABLE_ROWS_SEEN survive across the fence: the first `|`-line after
-        # the fence then resumed counting from the stale TABLE_ROWS_SEEN
-        # instead of starting a fresh table, so an unrelated later separator-
-        # shaped line could discard a genuine claim held from BEFORE the
-        # fence as if it were that later "table"'s own header — silently
-        # dropping a claim, the exact failure mode this issue exists to fix.
-        flush_held_table_row
-        TABLE_ROWS_SEEN=0
-        IN_FENCE=$((1 - IN_FENCE))
+    # Fence detection tolerates 0-3 leading spaces before the marker, per
+    # CommonMark's own fence-indentation rule (issue #202) -- a narrower,
+    # CAPPED tolerance than the unconditional leading-whitespace strip
+    # further down (for bullets/tables/blockquotes): 4+ leading spaces is a
+    # different, unimplemented CommonMark construct (an indented code
+    # block), not a stray-whitespace variant of a fence, and must NOT be
+    # recognized as one. FENCE_PROBE strips at most 3 leading spaces (never
+    # more, and $line itself is left untouched for every other branch below)
+    # so a 4th leading space survives the strip and correctly fails to match
+    # either fence pattern.
+    FENCE_PROBE=$line
+    case "$FENCE_PROBE" in
+      '   '*) FENCE_PROBE=${FENCE_PROBE#???} ;;
+      '  '*)  FENCE_PROBE=${FENCE_PROBE#??} ;;
+      ' '*)   FENCE_PROBE=${FENCE_PROBE#?} ;;
+    esac
+    case "$FENCE_PROBE" in
+      '```'*|'~~~'*)
+        # A fence line is never a table row, so an open/close transition
+        # leaves any open table exactly like the non-fence "left the table"
+        # branch below does. Skipping this flush would let TABLE_HELD_LINE
+        # and TABLE_ROWS_SEEN survive across the fence: the first `|`-line
+        # after the fence then resumed counting from the stale
+        # TABLE_ROWS_SEEN instead of starting a fresh table, so an unrelated
+        # later separator-shaped line could discard a genuine claim held
+        # from BEFORE the fence as if it were that later "table"'s own
+        # header — silently dropping a claim (issue #176).
+        #
+        # CommonMark requires a fence's closer to use the SAME character as
+        # its opener. This case has one arm per character rather than a
+        # single shared toggle: while a fence is already open, a line of the
+        # OTHER character (e.g. a `~~~`-looking code comment inside a real
+        # backtick fence) still matches this case -- so it's still consumed
+        # as fence syntax, not fed to the prose scanner below -- but does
+        # NOT close the fence, because FENCE_CHAR doesn't match. Sharing one
+        # toggle between both characters (verified directly, not assumed;
+        # see .decisions/issue-202.md) mis-closes on exactly that decoy line
+        # and then silently treats the genuine prose after the REAL closer
+        # as still-fenced, skipping it entirely -- the dangerous direction
+        # this scanner exists to prevent, not the issue's own "safe
+        # direction" over-reporting.
+        case "$FENCE_PROBE" in
+          '```'*) THIS_FENCE_CHAR='`' ;;
+          *)      THIS_FENCE_CHAR='~' ;;
+        esac
+        if [ "$IN_FENCE" -eq 0 ]; then
+          flush_held_table_row
+          TABLE_ROWS_SEEN=0
+          IN_FENCE=1
+          FENCE_CHAR=$THIS_FENCE_CHAR
+        elif [ "$FENCE_CHAR" = "$THIS_FENCE_CHAR" ]; then
+          flush_held_table_row
+          TABLE_ROWS_SEEN=0
+          IN_FENCE=0
+          FENCE_CHAR=""
+        fi
         continue
         ;;
     esac
@@ -765,10 +814,11 @@ for f in $TARGETS; do
     # registration match the same way an un-stripped `- ` marker does.
     # The whitespace is content-irrelevant for every classification below,
     # so it's dropped once, here, rather
-    # than in each branch. Fenced-code detection above is deliberately NOT
-    # given this treatment: an indented fence is a different, unimplemented
-    # CommonMark construct (4-space indented code blocks), not a stray-
-    # whitespace variant of the backtick fence this script already detects.
+    # than in each branch. This is a different, UNCAPPED strip from the
+    # fence detection above (issue #202): fence detection caps its own
+    # tolerance at 3 leading spaces, matching CommonMark's fence-indentation
+    # rule exactly, and runs (and `continue`s) before this point, so it
+    # never sees this unconditional strip.
     line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//')
 
     case "$line" in
