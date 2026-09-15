@@ -6,7 +6,7 @@ Reference document. The canonical shape every reviewer agent emits, and the cano
 
 ## Required fields
 
-Every finding emitted by a reviewer agent MUST include these six fields:
+Every finding emitted by a reviewer agent MUST include these seven fields:
 
 | Field | Type | Description |
 |---|---|---|
@@ -16,12 +16,18 @@ Every finding emitted by a reviewer agent MUST include these six fields:
 | `location` | string | `file:line` or `file:line-range` (e.g., `src/auth.ts:42` or `src/auth.ts:42-56`). For file-level findings (e.g., "this file lacks a README"), use `file` with no `:N` suffix. |
 | `problem` | string | One-line description of the issue. Concrete enough that a reader can locate the defect without reading the full review. |
 | `suggested_fix` | string | One-line proposed fix. May be empty (`—`) when the fix is non-obvious; in that case the agent should append a paragraph below the table explaining the trade-offs. |
+| `confidence` | enum | `HIGH` \| `MEDIUM` \| `LOW`, assigned under the three-tier rule in "Confidence guidance" below and rendered as a trailing `_(HIGH)_` suffix on the Finding cell. Confidence decides what a finding may demand (`skills/code-review-methodology/SKILL.md` § Confidence and signal); it never changes `priority`. |
 
-## Optional field (added by orchestrator, not agent)
+## Absent or invalid confidence
 
-| Field | Type | Description |
-|---|---|---|
-| `confidence` | enum | `HIGH` (verified by running code/test, or LSP-confirmed) \| `MEDIUM` (verified by reading the code path) \| `LOW` (pattern-match only — needs investigation). Agents SHOULD assign `confidence` when they can; the orchestrator may override when consolidating across paired reviewers (Path A A.4 sets `confidence` based on the consolidation table). |
+A finding whose confidence is missing, or is anything other than HIGH, MEDIUM or LOW in any letter case, is treated as MEDIUM: never LOW, which would silently drop it from the review decision, and never HIGH. `bin/flow-finding-route.sh` applies the rule and prints one warning per finding on stderr:
+
+```
+LEDGER_WARN: PR#<N> finding '<id>' from <agent> has no confidence — treated as MEDIUM
+LEDGER_WARN: PR#<N> finding '<id>' from <agent> has invalid confidence '<value>' — treated as MEDIUM
+```
+
+Findings from producers outside this schema (holdout-validation, and convention-checker or test-runner rows mapped into the ledger) are stamped MEDIUM by the orchestrator before routing, so the warning names only a schema agent that left out confidence. The orchestrator may still change an agent's confidence when it consolidates paired reviewers: Path A A.4 assigns confidence from the consolidation table.
 
 ## Marker-only fields (added by `commands/review.md` Phase 4 step 7)
 
@@ -66,9 +72,9 @@ vertically and breaking `location` mid-path. Two columns give each prose column 
 the short metadata (id, category, location, confidence, disposition) is packed into the first cell and
 the two prose fields (problem, suggested_fix) each get a full column.
 
-This is a **rendering** decision only. The data model is unchanged (the eight fields above), and the
-`FLOW_REVIEW_CYCLE` marker grammar is unchanged (still pipe-delimited 5-field / 7-field rows — see
-`references/finding-ledger-parser.md`). Do not confuse the rendered table's two columns with the
+This is a **rendering** decision only. The data model is the fields above, and the `FLOW_REVIEW_CYCLE`
+marker is pipe-delimited 7-field rows on both review paths (parsers still accept legacy 5-field rows —
+see `references/finding-ledger-parser.md`). Do not confuse the rendered table's two columns with the
 marker's field count; they are independent.
 
 Every reviewer agent's output section uses three priority-ordered tables plus a summary:
@@ -79,7 +85,7 @@ Every reviewer agent's output section uses three priority-ordered tables plus a 
 ### P1 — Critical (Blocks Merge)
 | Finding | Suggested Fix |
 |---------|---------------|
-| **F1 · security · `src/auth.ts:42`**<br>SQL injection via string interpolation. | Use parameterized query (`$1`, `$2`). |
+| **F1 · security · `src/auth.ts:42`**<br>SQL injection via string interpolation. _(HIGH)_ | Use parameterized query (`$1`, `$2`). |
 
 ### P2 — Should Fix
 | Finding | Suggested Fix |
@@ -99,9 +105,11 @@ Cell construction:
 - **Finding cell, line 1 (bold):** `{ID} · {category} · `{location}``. Priority is NOT repeated in
   the cell — the `### P1/P2/P3` section header already carries it.
 - **Finding cell, line 2** (after `<br>`): the `problem` prose.
-- **Confidence + disposition:** appended to the Finding cell as a trailing `_(HIGH · consensus)_`
-  **only in paired-reviewer / Path A mode**. Single-session / Path B omits the trailing italic. (These
-  replace the old `Confidence` and `Disposition` columns.)
+- **Confidence + disposition:** agents end the Finding cell with `_(HIGH)_`, `_(MEDIUM)_` or `_(LOW)_`.
+  The posted review renders `_(HIGH · consensus)_` on both paths; Path B's disposition is `unchallenged`.
+  On someone else's pull request a LOW finding is not rendered in the priority tables: it is listed
+  under `Needs investigation` (`commands/review.md` Phase 4 step 6). (These replace the old
+  `Confidence` and `Disposition` columns.)
 - **Suggested Fix cell:** the `suggested_fix` prose, or `—` when non-obvious (then append a
   `**{ID} context:** …` paragraph below the table explaining the trade-off, as before).
 
@@ -137,10 +145,10 @@ Reviewers assign confidence based on the strength of their signal:
 | LSP diagnostic (error/warning from language server) | HIGH |
 | LSP `findReferences` confirmed all callers are or are not handled | HIGH |
 | Verified by reading the full code path | MEDIUM |
-| Pattern-match only (looks like a bug, fits a known anti-pattern) | LOW (only flag at P1 with explicit `needs investigation` note) |
+| Pattern-match only (looks like a bug, fits a known anti-pattern) | LOW, at any priority: listed under Needs investigation and never decides the review |
 | Style preference, naming, formatting | N/A — only as P3, never blocks merge |
 
-Per `skills/code-review-methodology/SKILL.md`: only P1 findings with HIGH confidence should block merge.
+How confidence enters the review decision: `skills/code-review-methodology/SKILL.md` § Review decision. HIGH and MEDIUM findings decide at their priority; LOW findings never do.
 
 ## What this schema does NOT cover
 
@@ -150,5 +158,5 @@ Per `skills/code-review-methodology/SKILL.md`: only P1 findings with HIGH confid
 
 ## Compatibility
 
-- The `FLOW_REVIEW_CYCLE` marker schema (`references/finding-ledger-parser.md`) tolerates 5-field (legacy) and 7-field (with confidence + disposition) rows. Path B emits 5-field; Path A emits uniformly 7-field. This schema is the normative reference for which fields are which.
+- The `FLOW_REVIEW_CYCLE` marker schema (`references/finding-ledger-parser.md`) tolerates 5-field (legacy) and 7-field (with confidence + disposition) rows. Both review paths write 7-field rows through `bin/flow-finding-route.sh`; Path B rows carry disposition `unchallenged`, and no LOW row is written. This schema is the normative reference for which fields are which.
 - Existing `tests/issue-86/markers/*.txt` fixtures continue to parse without changes — the schema documented here matches the fixture shapes and the parsers in `commands/merge.md` and `commands/status.md`.

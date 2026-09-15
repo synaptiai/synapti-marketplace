@@ -33,12 +33,12 @@ Source: `templates/review-comment.md`. Lists all findings raised in cycle `N` wi
 | `category` | Free text (e.g., `security`, `correctness`, `convention`) | yes |
 | `file:line` | Location citation | yes |
 | `status` | `open` at review time | yes |
-| `confidence` | `HIGH` \| `MEDIUM` \| `LOW` | no — paired-reviewer mode only |
-| `disposition` | `consensus` \| `validated` \| `refined` \| `kept` \| `unchallenged` | no — paired-reviewer mode only |
+| `confidence` | `HIGH` \| `MEDIUM` \| `LOW` (`LOW` appears only in markers posted before the routing rule below) | written on both review paths; absent in legacy rows |
+| `disposition` | `consensus` \| `validated` \| `refined` \| `kept` \| `unchallenged` | written on both review paths; absent in legacy rows |
 
 **Backwards-compat rule (mandatory for parsers):** Readers MUST tolerate variable field count. The legacy 5-field row `ID|P1|category|file:line|open` and the extended 7-field row `ID|P1|category|file:line|open|HIGH|consensus` MUST both parse successfully. Trailing fields beyond the parser's known set are silently ignored (or surfaced for display when the parser knows them).
 
-The 7-field form is emitted only when `commands/review.md` runs Path A (paired-reviewer + challenge protocol, gated on `agentTeams: true` AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`). All other emitters continue to produce the 5-field form.
+`commands/review.md` writes the 7-field form on both Path A (paired reviewers) and Path B (single session, disposition `unchallenged`), through `bin/flow-finding-route.sh`. No LOW row is written: on someone else's pull request a LOW finding is listed under Needs investigation instead, and on the author's own pull request it is confirmed (re-recorded HIGH), refuted (dropped) or escalated (re-recorded MEDIUM) before the marker is built. Legacy 5-field rows in markers posted before this rule still parse.
 
 **Disposition vocabulary is fixed (no free text)** — the field is parsed positionally and must not contain commas (the row delimiter) or pipes (the field delimiter). The five values above are the complete v1 vocabulary; new values require a schema bump.
 
@@ -64,7 +64,7 @@ Arrays carry IDs only; priority must be looked up from the matching `FLOW_REVIEW
 
 - **Two-actor flow** — `/flow:address` (`commands/address.md` step 9) posts it after the PR author
   resolves a reviewer's findings.
-- **Self-review / fix-forward** — `/flow:review` (and the inline review in `/flow:pr`) on your *own*
+- **Self-review / fix-forward** — `/flow:review` on your *own*
   PR posts it too (`commands/review.md` Phase 4 step 7, self-review branch). Self-review is raise +
   resolve in one action: the `FLOW_REVIEW_CYCLE` marker in the review body records what was found
   (status `open`), and this `FLOW_RESOLUTION_CYCLE` issue comment records the fix-forwarded IDs as

@@ -45,7 +45,7 @@
     "disposition": {
       "type": "string",
       "enum": ["consensus", "validated", "refined", "kept", "unchallenged"],
-      "description": "Marker-only field added by commands/review.md Phase 4 step 7 (Path A) or omitted (Path B 5-field marker)."
+      "description": "Marker-only field stamped by commands/review.md Phase 4 step 7 on both review paths (Path B rows carry unchallenged); absent in legacy 5-field rows."
     }
   }
 }

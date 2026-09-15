@@ -119,7 +119,7 @@ For UI-related criteria, reference screenshot paths from Step 6 as evidence.
 
 ### Step 8: Report
 
-Integration-verifier produces TWO output artifacts: (1) the per-check **results table** below (PASS/FAIL/SKIP per verification activity — this is verification telemetry, not findings) and (2) a **findings table** when verification surfaces issues that need to enter the finding ledger (e.g., a console error from visual verification, a smoke-test failure that maps to a missing input check). The findings table follows the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md). Assign IDs with the `INT-` prefix (`INT-1`, `INT-2`, ...). Use `category=runtime` for backend/build failures and `category=visual` for UI render issues.
+Integration-verifier produces TWO output artifacts: (1) the per-check **results table** below (PASS/FAIL/SKIP per verification activity — this is verification telemetry, not findings) and (2) a **findings table** when verification surfaces issues that need to enter the finding ledger (e.g., a console error from visual verification, a smoke-test failure that maps to a missing input check). The findings table follows the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md). Assign IDs with the `INT-` prefix (`INT-1`, `INT-2`, ...). Use `category=runtime` for backend/build failures and `category=visual` for UI render issues. Every finding MUST carry a confidence suffix `_(HIGH|MEDIUM|LOW)_` under the three-tier rule in `references/finding-schema.md`: running code or a test, or an LSP diagnostic → HIGH; reading the code path → MEDIUM; pattern match only → LOW. A failure you reproduced by running the build, server, test or browser is HIGH.
 
 ```markdown
 ## Integration Verification Results
@@ -141,8 +141,8 @@ Two-column `Finding | Suggested Fix` per priority (canonical schema; escape any 
 #### P1 — Critical (Blocks Merge)
 | Finding | Suggested Fix |
 |---------|---------------|
-| **INT-1 · runtime · `dist/server.js:1`**<br>Build succeeds but server crashes on start: `TypeError: Cannot read property 'listen' of undefined`. | Add null check on `app` import in `src/server.ts:14`. |
-| **INT-2 · visual · `http://localhost:3000/`**<br>Console error on page load: `Uncaught ReferenceError: GA_TRACKING_ID is not defined` (screenshot evidence). | Stub `window.GA_TRACKING_ID` in dev or guard the analytics call. |
+| **INT-1 · runtime · `dist/server.js:1`**<br>Build succeeds but server crashes on start: `TypeError: Cannot read property 'listen' of undefined`. _(HIGH)_ | Add null check on `app` import in `src/server.ts:14`. |
+| **INT-2 · visual · `http://localhost:3000/`**<br>Console error on page load: `Uncaught ReferenceError: GA_TRACKING_ID is not defined` (screenshot evidence). _(HIGH)_ | Stub `window.GA_TRACKING_ID` in dev or guard the analytics call. |
 
 #### P2 — Should Fix
 | Finding | Suggested Fix |

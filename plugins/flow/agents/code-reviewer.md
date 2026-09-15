@@ -86,7 +86,7 @@ For each changed file, analyze:
 
 ### Step 5: Report
 
-Emit findings using the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md) — a **two-column** `Finding | Suggested Fix` table per priority. Pack the metadata into the Finding cell: a bold first line `{ID} · {category} · `{location}``, then the problem prose after a `<br>`. Assign IDs with the `F` prefix (`F1`, `F2`, `F3`) per the schema's recommended provenance convention. Escape any literal `|` in a cell as `\|` (shell pipes like `grep \| head` otherwise break the row).
+Emit findings using the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md) — a **two-column** `Finding | Suggested Fix` table per priority. Pack the metadata into the Finding cell: a bold first line `{ID} · {category} · `{location}``, then the problem prose after a `<br>`. Assign IDs with the `F` prefix (`F1`, `F2`, `F3`) per the schema's recommended provenance convention. Escape any literal `|` in a cell as `\|` (shell pipes like `grep \| head` otherwise break the row). Every finding MUST carry a confidence suffix `_(HIGH|MEDIUM|LOW)_` under the three-tier rule in `references/finding-schema.md`: running code or a test, or an LSP diagnostic → HIGH; reading the code path → MEDIUM; pattern match only → LOW.
 
 When a finding needs a paragraph of context (e.g., to explain a trade-off the suggested fix introduces), append it below the table as `**F{n} context:** ...` rather than inflating the cell.
 
@@ -96,7 +96,7 @@ When a finding needs a paragraph of context (e.g., to explain a trade-off the su
 ### P1 — Critical (Blocks Merge)
 | Finding | Suggested Fix |
 |---------|---------------|
-| **F1 · security · `src/auth.ts:42`**<br>SQL injection via string interpolation. | Use parameterized query (`$1`, `$2`). |
+| **F1 · security · `src/auth.ts:42`**<br>SQL injection via string interpolation. _(HIGH)_ | Use parameterized query (`$1`, `$2`). |
 
 ### P2 — Should Fix
 | Finding | Suggested Fix |
