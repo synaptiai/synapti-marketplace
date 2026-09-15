@@ -46,7 +46,8 @@ artifacts:
 ### Interface contracts
 
 - `redact()`'s contract changes from "stream filter: substitute each matched span in place, pass everything else through unchanged" to "detector: if ANY of the 8 patterns matches anywhere in the input, discard the entire input and emit exactly one fixed placeholder `[REDACTED:<class>]` for the first-matching class; otherwise pass the input through unchanged." Still reads all of stdin and writes to stdout, still called the same way (`printf '%s' "$sentence" | redact | normalize | cut -c1-80`) — no call-site change. This guarantee holds only within the candidate sentence `redact()` is given; it does not by itself protect a credential whose matched span crosses the `.`-based split that produces that candidate sentence. See the next point.
-- **Added mid-review**: `scan_text()` gets a second, higher-level check with the same contract, run against the whole unsplit line before the `.`-based split: if ANY of the 8 patterns matches, the entire line is redacted as one unit and reported as a single `unregistered` hit, and the per-sentence loop (word-count minimum, register lookup) never runs on that line. `redact()` and this pre-check share one array (`CRED_PATTERNS`/`CRED_CLASSES` in `dossier-claim-scan.sh`) as their pattern source, so the two layers cannot drift apart the way the old fast-path/slow-path pair could (risk map row 3).
+- **Added mid-review**: `scan_text()` gets a second, higher-level check with the same contract, run against the whole unsplit line before the `.`-based split: if ANY of the 8 patterns matches, the entire line is redacted as one unit and reported as a single `unregistered` hit, and the per-sentence loop (word-count minimum, register lookup) never runs on that line — deliberately: credential safety is not a claim-drafting concern, so a credential in an otherwise-approved/registered line's wording is still redacted and still reported (tested by `frag-registered`). `redact()` and this pre-check share one array (`CRED_PATTERNS`/`CRED_CLASSES` in `dossier-claim-scan.sh`) as their pattern source, so the two layers cannot drift apart the way the old fast-path/slow-path pair could (risk map row 3).
+- **Consequence of the above, noted for the reviewer**: because the pre-check runs an unanchored match against the whole line and every candidate sentence is a substring of that line, `redact()`'s own redaction branch (its `CRED_UNION_PATTERN` match succeeding) is currently unreachable from its one call site — if the pre-check found nothing, no substring of the line can match either. `redact()` is kept anyway as a second, currently-dormant layer (documented as such in its own header comment) rather than removed, matching this file's existing fail-toward-redaction stance for the `[REDACTED:unknown]` fallback: it is what protects a credential if `scan_text()` ever gains a second call path to `redact()` that bypasses the pre-check.
 - The 8 placeholder tags (`anthropic-key`, `github-token`, `aws-access-key`, `slack-token`, `bearer-token`, `connection-string`, `secret-assignment`, `private-key-block`) and their exact regex patterns are unchanged — only what happens to the surrounding sentence (or, for the new pre-check, the surrounding line) on a match changes.
 - Performance: a fast-path single combined-alternation `grep -qE` (the union of all 8 patterns) runs first; the 8 individual checks (to identify which class) only run when that combined check already matched. The common case (no credential in the sentence) still costs one process fork, matching the current single-`sed`-invocation cost class rather than paying for 8 forks per sentence unconditionally. The new pre-check adds one more such fork per *line* (not per sentence) in `scan_text()`, on the same cost-class reasoning.
 
@@ -103,3 +104,19 @@ artifacts:
 <!-- auto-log: 2026-09-15 15:28 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-198.goal.yaml -->
 
 <!-- auto-log: 2026-09-15 15:28 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-198.goal.yaml -->
+
+<!-- auto-log: 2026-09-15 15:29 commit "fix(dossier): close credential-fragment leak across scan_text's sentence split" -->
+
+<!-- auto-log: 2026-09-15 15:33 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-15 15:35 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-15 15:35 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-15 15:36 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/bin/dossier-claim-scan.sh -->
+
+<!-- auto-log: 2026-09-15 15:37 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-15 15:38 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/disclosure-gate.test.sh -->
+
+<!-- auto-log: 2026-09-15 15:38 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-198.md -->

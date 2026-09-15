@@ -251,10 +251,19 @@ CRED_UNION_PATTERN=$(IFS='|'; printf '%s' "${CRED_PATTERNS[*]}")
 # $1, in priority order; exits 1 if none match. Only reachable when
 # CRED_UNION_PATTERN — built from this same array — matched but no individual
 # entry does, which the shared array makes structurally impossible today.
+#
+# `grep -qE --` is required, not decorative: private-key-block's own pattern
+# ('-----BEGIN ...') starts with a literal '-', and without `--` grep parses
+# it as an (unrecognized) option instead of a pattern, exits 2, and the `if`
+# reads that as "no match" -- silently falling through to the next class
+# instead of matching. A private key block would still get redacted (the
+# union check runs an unanchored, unsplit alternation that starts with
+# `sk-ant-`, so it isn't fooled), but tagged [REDACTED:unknown] instead of
+# [REDACTED:private-key-block].
 cred_match_class() {
   local input="$1" i
   for i in "${!CRED_PATTERNS[@]}"; do
-    if printf '%s' "$input" | grep -qE "${CRED_PATTERNS[$i]}"; then
+    if printf '%s' "$input" | grep -qE -- "${CRED_PATTERNS[$i]}"; then
       printf '%s' "${CRED_CLASSES[$i]}"
       return 0
     fi
@@ -285,6 +294,18 @@ cred_match_class() {
 # internal periods, a connection string's dotted hostname) — that gap is
 # closed one layer up, by scan_text()'s pre-split pre-check, before this
 # function ever runs.
+#
+# As of that pre-check's addition, this function's redaction branch is
+# UNREACHABLE from its one call site (scan_text()'s per-sentence loop):
+# CRED_UNION_PATTERN is an unanchored match, every candidate sentence is a
+# substring of the whole line scan_text() already checked, and a pattern
+# that fails to match a superstring cannot match any of its substrings —
+# so if the pre-check found nothing, no sentence the split produces can
+# find something either. redact() is kept anyway, deliberately, as a second
+# layer: it is what protects a credential if scan_text() ever gains another
+# path to this function that skips the pre-check (e.g. a future call site,
+# or the pre-check being refactored out from under this one) — the same
+# fail-toward-redaction stance as the [REDACTED:unknown] fallback above.
 redact() {
   local input class
   input=$(cat)
