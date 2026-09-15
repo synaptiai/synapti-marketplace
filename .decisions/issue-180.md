@@ -32,6 +32,11 @@ artifacts:
   goal_id: issue-180
   result: achieved
   evidence_bundle: .flow/runs/2026-09-15T000000Z-issue-180
+- type: goal-evaluation
+  captured_at: '2026-09-15T08:33:00Z'
+  goal_id: issue-180
+  result: achieved
+  note: evidence_refreshed_post_review_fixes
 ---
 # Issue #180 — G18 and the verbatim-collection rule are in direct conflict
 
@@ -182,3 +187,5 @@ Task boundaries: Task 1 bundles AC1+AC2+AC3 (one awk-program edit region, one te
 <!-- auto-log: 2026-09-15 10:24 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-180.goal.yaml -->
 
 <!-- auto-log: 2026-09-15 10:24 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-180.md -->
+
+<!-- auto-log: 2026-09-15 10:26 commit "docs(dossier): correct the --help truncation follow-up's script count" -->
