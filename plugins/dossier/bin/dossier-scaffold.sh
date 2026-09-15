@@ -123,12 +123,23 @@ fi
 # always <plugin-root>/bin.
 SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)
 
-# Resolve the template directory.
+# Resolve the template directory. Deliberately only two candidates, both
+# anchored to something that identifies the plugin's own install
+# (CLAUDE_PLUGIN_ROOT, or this script's own on-disk location) — never a bare
+# CWD-relative guess. This script's normal CWD is the project repository
+# being *documented*, a repository this tool otherwise treats as untrusted
+# input (see the symlink guards below, issue #178): a CWD-relative
+# "plugins/dossier/templates/package" candidate used to be tried as a last
+# resort, so a documented repo that happened to contain a tree at that exact
+# public path — by coincidence or by design — had its content silently
+# substituted for the real plugin templates, with no check that it belonged
+# to the plugin's own install (issue #205). If neither anchored candidate
+# resolves, this is an infrastructure error, not a reason to guess from the
+# CWD.
 if [ -z "$TEMPLATE_DIR" ]; then
   for CANDIDATE in \
     "${CLAUDE_PLUGIN_ROOT:-}/templates/package" \
-    "${SCRIPT_DIR:-}/../templates/package" \
-    "plugins/dossier/templates/package"
+    "${SCRIPT_DIR:-}/../templates/package"
   do
     case "$CANDIDATE" in /templates/package|"") continue ;; esac
     if [ -d "$CANDIDATE" ]; then TEMPLATE_DIR="$CANDIDATE"; break; fi
@@ -136,19 +147,19 @@ if [ -z "$TEMPLATE_DIR" ]; then
 fi
 
 if [ -z "$TEMPLATE_DIR" ] || [ ! -d "$TEMPLATE_DIR" ]; then
-  echo "dossier-scaffold: template directory not found (looked at CLAUDE_PLUGIN_ROOT, script dir, and plugins/dossier)" >&2
+  echo "dossier-scaffold: template directory not found (looked at CLAUDE_PLUGIN_ROOT and script dir; refusing to guess from the current working directory — see issue #205)" >&2
   exit 2
 fi
 
 # The README template is resolved independently of --templates: a caller
 # pointing --templates at a fixture still gets the real signpost, and a caller
-# who wants a different one says so explicitly.
+# who wants a different one says so explicitly. Same anchored-only rule as
+# above — no bare CWD-relative candidate (issue #205).
 if [ -z "$README_TEMPLATE" ]; then
   for CANDIDATE in \
     "$TEMPLATE_DIR/../package-readme.md" \
     "${CLAUDE_PLUGIN_ROOT:-}/templates/package-readme.md" \
-    "${SCRIPT_DIR:-}/../templates/package-readme.md" \
-    "plugins/dossier/templates/package-readme.md"
+    "${SCRIPT_DIR:-}/../templates/package-readme.md"
   do
     case "$CANDIDATE" in /templates/package-readme.md|"") continue ;; esac
     if [ -f "$CANDIDATE" ]; then README_TEMPLATE="$CANDIDATE"; break; fi
@@ -322,7 +333,7 @@ elif [ -z "$README_TEMPLATE" ] || [ ! -f "$README_TEMPLATE" ]; then
   FAILED=$((FAILED + 1))
   ACTIONS="${ACTIONS}FAILED  $README_REL (template missing)
 "
-  echo "dossier-scaffold: README template not found (looked at --readme-template, CLAUDE_PLUGIN_ROOT, script dir, and plugins/dossier)" >&2
+  echo "dossier-scaffold: README template not found (looked at --readme-template, CLAUDE_PLUGIN_ROOT, and script dir; refusing to guess from the current working directory — see issue #205)" >&2
 elif [ "$DRY_RUN" -eq 0 ]; then
   README_TMP_DEST="$README_DEST.dossier-scaffold.tmp.$$"
   if cp "$README_TEMPLATE" "$README_TMP_DEST" 2>/dev/null && mv -f "$README_TMP_DEST" "$README_DEST" 2>/dev/null; then
