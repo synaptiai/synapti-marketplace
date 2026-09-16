@@ -152,11 +152,15 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
-  current_phase: plan
-  current_activity: task-decomposition
-  turns_evaluated: 0
+  status: achieved
+  current_phase: verify
+  current_activity: verdict-recorded
+  turns_evaluated: 1
   last_evaluation:
-    result: incomplete
-    reason: Goal active; implementation not started.
-    at: '2026-09-16T10:16:00Z'
+    result: pass
+    reason: 'All six acceptance criteria PASS on an independent verdict at commit
+      468a717, against an evidence bundle in the format references/evidence-bundle-format.md
+      defines. Holdout validation was re-run at that tree and reported P3 only (a
+      documentation call count, since fixed). The full suite passes in one invocation:
+      3784 assertions, 0 failures.'
+    at: '2026-09-16T21:05:00Z'

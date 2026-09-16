@@ -10,6 +10,11 @@ artifacts:
   - failure-modes
   - interface-contracts
   - risk-map
+- type: goal-evaluation
+  captured_at: '2026-09-16T18:13:01Z'
+  goal_id: issue-213
+  result: achieved
+  trigger: command
 ---
 # Decision Journal — Issue #213
 
@@ -349,3 +354,5 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 19:34 commit "test(flow): every state says why, and both vocabularies can report a miss" -->
 
 <!-- auto-log: 2026-09-16 19:56 commit "docs(flow): the failure modes count the calls the block makes" -->
+
+<!-- auto-log: 2026-09-16 20:11 commit "test(flow): a goal whose issue number begins with this one is not this one" -->
