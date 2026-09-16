@@ -270,6 +270,13 @@ F2|P3|docs|a.md:2|HIGH|unchallenged|code-reviewer
 F3|P3|docs|a.md:3|HIGH|unchallenged|code-reviewer' --mode external --pr 7
 assert_equal "3" "$(_key ROWS_READ)" "3 rows read, blank lines skipped"
 
+_flow_test_begin "an empty --input is an error, not a fall back to stdin"
+# The header promises a caller that lost its input cannot post an empty marker
+# that reads as a clean review; falling back to stdin would do exactly that.
+"$HELPER" --mode external --pr 7 --input "" --allow-empty > "$FFR_DIR/out_empty" 2> "$FFR_DIR/err_empty" < /dev/null
+assert_exit 2 "$?" "--input '' is an infrastructure error"
+assert_equal "" "$(cat "$FFR_DIR/out_empty")" "nothing on stdout"
+
 _flow_test_begin "--input reads the same rows as stdin"
 printf '%s\n' "$MIXED" > "$FFR_DIR/rows"
 "$HELPER" --mode external --pr 7 --input "$FFR_DIR/rows" > "$FFR_DIR/out2" 2>/dev/null </dev/null

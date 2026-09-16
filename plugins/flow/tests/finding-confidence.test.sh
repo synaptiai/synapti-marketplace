@@ -108,7 +108,8 @@ _flow_test_begin "AC1: code-review-methodology carries one confidence rule"
 _fc_run_check "$METHODOLOGY"
 assert_exit 0 "$CHECK_CODE" "rule and decision table agree"
 assert_contains "SECTIONS=2" "$CHECK_OUT" "both sections present"
-assert_contains "TABLE_ROWS=4" "$CHECK_OUT" "four decision rows"
+assert_contains "TABLE_ROWS=5" "$CHECK_OUT" "five decision rows (four external, plus the self-review row the script implements)"
+assert_contains "Your own pull request" "$(_fc_section "$METHODOLOGY" '## Review decision')" "the table states what --mode self does: COMMENT at any priority"
 CONF_SECTION=$(_fc_section "$METHODOLOGY" '## Confidence and signal')
 assert_not_contains "Only High-confidence P1s block merge" "$CONF_SECTION" "the retired phrase is gone (a MEDIUM P1 blocks too)"
 assert_not_contains "include only as P1" "$CONF_SECTION" "LOW is no longer limited to P1"
@@ -283,6 +284,9 @@ case "$1 $2" in
       *number*) echo "55"; exit 0 ;;
     esac
     exit 1 ;;
+  "pr comment")
+    printf '%s\n' "$@" > "$GH_LOG"
+    exit "${STUB_COMMENT_EXIT:-0}" ;;
   "pr review")
     printf '%s\n' "$@" > "$GH_LOG"
     while [ $# -gt 0 ]; do
@@ -317,7 +321,8 @@ _fc_route() {
     { print }
   ' "$FC_TMP/route-block.sh" > "$FC_TMP/route-run.sh"
   ROUTE_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
-    REVIEW_MODE="$1" PR_NUM=7 "${FC_SHELL:-bash}" "$FC_TMP/route-run.sh" 2>"$FC_TMP/route.err")
+    REVIEW_MODE="$1" PR_NUM=7 FINDING_TOTAL="${FC_ROUTE_TOTAL-$(grep -c . "$FC_TMP/rows.in")}" \
+    "${FC_SHELL:-bash}" "$FC_TMP/route-run.sh" 2>"$FC_TMP/route.err")
   ROUTE_CODE=$?
   ROUTE_ERR=$(cat "$FC_TMP/route.err")
 }
@@ -1039,6 +1044,54 @@ assert_exit 1 "$POST_CODE" "the second counted finding missing is refused"
 assert_contains "F3" "$POST_ERR" "names the second id, not only the first"
 assert_equal "" "$GH_ARGS" "gh not called"
 
+_flow_test_begin "routing: an empty rows file is a lost input unless the review found nothing"
+# --allow-empty was passed unconditionally, so the zero-rows refusal in
+# bin/flow-finding-route.sh could never fire at its only caller.
+FC_ROUTE_TOTAL=2 _fc_route external ''
+assert_exit 1 "$ROUTE_CODE" "no rows but two findings synthesized → refused"
+assert_equal "" "$(grep '^DECISION=' <<<"$ROUTE_OUT")" "no decision printed"
+FC_ROUTE_TOTAL=0 _fc_route external ''
+assert_exit 0 "$ROUTE_CODE" "a review that found nothing routes: $ROUTE_ERR"
+assert_contains "DECISION=APPROVE" "$ROUTE_OUT" "and approves"
+FC_ROUTE_TOTAL='' _fc_route external "$FC_MIXED"
+assert_exit 1 "$ROUTE_CODE" "an unset FINDING_TOTAL is refused"
+FC_ROUTE_TOTAL=3 _fc_route external "$FC_MIXED"
+assert_exit 1 "$ROUTE_CODE" "a rows file that lost a finding is refused"
+assert_contains "2" "$ROUTE_ERR" "names what it read"
+
+_flow_test_begin "posting: the counted total is printed only when the review posted"
+# The review-cycle manifest keys off COUNT_TOTAL; printing it after a failed
+# post would record a cycle whose marker is not on the pull request.
+FC_REVIEW_EXIT=1 _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
+assert_exit 1 "$POST_CODE" "a failed gh pr review is an error"
+assert_contains "POST_EXIT=1" "$POST_OUT" "the attempt is reported"
+assert_equal "" "$(grep '^COUNT_TOTAL=' <<<"$POST_OUT")" "no counted total after a failed post"
+FC_REVIEW_EXIT=0 _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
+assert_contains "COUNT_TOTAL=1" "$POST_OUT" "and it is printed after a successful one"
+
+_flow_test_begin "the self-review resolution comment refuses an empty body and reports gh's exit"
+_fc_block "RESOLUTION_COMMENT_BLOCK" > "$FC_TMP/resolution-block.sh"
+assert_match '[^[:space:]]' "$(cat "$FC_TMP/resolution-block.sh")" "resolution block extracted"
+# _fc_resolution <res-body> [gh-exit] — sets RES_OUT, RES_CODE, RES_GH.
+_fc_resolution() {
+  rm -f "$FC_TMP/gh.log"
+  RES_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+    GH_LOG="$FC_TMP/gh.log" GH_BODY="$FC_TMP/gh.body" STUB_COMMENT_EXIT="${2:-0}" \
+    PR_NUM=7 RES_BODY="$1" bash "$FC_TMP/resolution-block.sh" 2>"$FC_TMP/res.err")
+  RES_CODE=$?
+  RES_GH=$(cat "$FC_TMP/gh.log" 2>/dev/null)
+}
+_fc_resolution ""
+assert_exit 1 "$RES_CODE" "an empty resolution body is refused"
+assert_equal "" "$RES_GH" "gh not called"
+_fc_resolution "Resolved: F1. <!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->" 1
+assert_exit 1 "$RES_CODE" "a failed gh pr comment is an error"
+assert_contains "RES_EXIT=1" "$RES_OUT" "the exit is reported, not swallowed"
+_fc_resolution "Resolved: F1. <!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->" 0
+assert_exit 0 "$RES_CODE" "a posted resolution marker succeeds"
+assert_contains "RES_EXIT=0" "$RES_OUT" "and reports it"
+assert_equal "pr comment" "$(head -2 <<<"$RES_GH" | tr '\n' ' ' | sed 's/ $//')" "posted as an issue comment"
+
 _flow_test_begin "routing and posting print the counted total for the review-cycle manifest"
 _fc_route external 'F1|P1|security|src/a.sh:1|HIGH|consensus|security-reviewer
 F2|P3|docs|a.md:2|MEDIUM|unchallenged|code-reviewer
@@ -1140,7 +1193,7 @@ assert_equal "" "$(ls "$FC_TMP/journal-bad/.decisions" 2>/dev/null | grep -v '\.
 _flow_test_begin "review-cycle manifest block refuses empty or non-numeric values"
 _fc_block "REVIEW_CYCLE_MANIFEST_BLOCK" > "$FC_TMP/manifest-block.sh"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/manifest-block.sh")" "manifest block extracted"
-sed 's/path={A|B}/path=B/' "$FC_TMP/manifest-block.sh" > "$FC_TMP/manifest-run.sh"
+cp "$FC_TMP/manifest-block.sh" "$FC_TMP/manifest-run.sh"
 mkdir -p "$FC_TMP/journal-repo7"
 (cd "$FC_TMP/journal-repo7" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 42)" \
   CYCLE_NUMBER=2 PR_NUM=7 bash "$FC_TMP/manifest-run.sh" >/dev/null 2>"$FC_TMP/m1.err"); M1_CODE=$?
@@ -1151,9 +1204,17 @@ assert_equal "" "$(ls "$FC_TMP/journal-repo7/.decisions" 2>/dev/null)" "nothing 
 mkdir -p "$FC_TMP/journal-manifest-bad" "$FC_TMP/journal-manifest-zero"
 _fc_manifest() {
   (cd "$FC_TMP/${4:-journal-manifest-bad}" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 42)" \
-    PR_NUM="$1" CYCLE_NUMBER="$2" COUNT_TOTAL="$3" bash "$FC_TMP/manifest-run.sh" >/dev/null 2>&1)
+    PR_NUM="$1" CYCLE_NUMBER="$2" COUNT_TOTAL="$3" REVIEW_PATH="${FC_REVIEW_PATH-B}" \
+    bash "$FC_TMP/manifest-run.sh" >/dev/null 2>&1)
   M_CODE=$?
 }
+# The path is a value the block validates, not a placeholder the reviewer edits:
+# an unquoted {A|B} made the metadata argument a shell pipeline.
+for BAD_PATH in '' '{A|B}' 'C' 'A B'; do
+  FC_REVIEW_PATH="$BAD_PATH" _fc_manifest 7 2 3
+  assert_exit 1 "$M_CODE" "REVIEW_PATH '$BAD_PATH' refused"
+done
+assert_not_contains 'path={A|B}' "$(cat "$FC_TMP/manifest-block.sh")" "no unquoted placeholder survives in the block"
 FC_BAD_VALUES=0
 for BAD in '' 7a '{N} -->' -1 0 08; do
   _fc_manifest "$BAD" 2 3; assert_exit 1 "$M_CODE" "PR_NUM '$BAD' refused"
@@ -1170,7 +1231,7 @@ _fc_manifest 7 2 0 journal-manifest-zero
 assert_exit 0 "$M_CODE" "COUNT_TOTAL 0 is a clean review, not an error"
 assert_file_exists "$FC_TMP/journal-manifest-zero/.decisions/issue-42.md" "the clean review is recorded"
 (cd "$FC_TMP/journal-repo7" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 42)" \
-  CYCLE_NUMBER=2 PR_NUM=7 COUNT_TOTAL=3 bash "$FC_TMP/manifest-run.sh" >/dev/null 2>"$FC_TMP/m2.err"); M2_CODE=$?
+  CYCLE_NUMBER=2 PR_NUM=7 COUNT_TOTAL=3 REVIEW_PATH=A bash "$FC_TMP/manifest-run.sh" >/dev/null 2>"$FC_TMP/m2.err"); M2_CODE=$?
 assert_exit 0 "$M2_CODE" "valid values recorded"
 if [ -f "$FC_TMP/journal-repo7/.decisions/issue-42.md" ]; then
   M_ART=$(python3 - "$FC_TMP/journal-repo7/.decisions/issue-42.md" <<'PY'
@@ -1181,7 +1242,7 @@ a = yaml.safe_load(c[4:end])["artifacts"][-1]
 print("type={} cycle={!r} findings_count={!r} path={} pr={!r}".format(a["type"], a["cycle"], a["findings_count"], a["path"], a["pr"]))
 PY
 )
-  assert_equal "type=review-cycle cycle=2 findings_count=3 path=B pr=7" "$M_ART" "integers recorded, read back from the manifest"
+  assert_equal "type=review-cycle cycle=2 findings_count=3 path=A pr=7" "$M_ART" "integers and the path recorded, read back from the manifest"
 else
   _flow_assert_fail "no manifest written: $(cat "$FC_TMP/m2.err")"
 fi
@@ -1206,7 +1267,7 @@ assert_exit 0 "$A4N_CODE" "no closing issue is not an error"
 assert_contains "DROPPED_FINDING=skipped" "$(cat "$FC_TMP/a4n.out")" "A.4 block says it skipped"
 mkdir -p "$FC_TMP/journal-manifest-none"
 (cd "$FC_TMP/journal-manifest-none" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing)" \
-  PR_NUM=7 CYCLE_NUMBER=2 COUNT_TOTAL=1 bash "$FC_TMP/manifest-run.sh" >"$FC_TMP/mn.out" 2>/dev/null); MN_CODE=$?
+  PR_NUM=7 CYCLE_NUMBER=2 COUNT_TOTAL=1 REVIEW_PATH=B bash "$FC_TMP/manifest-run.sh" >"$FC_TMP/mn.out" 2>/dev/null); MN_CODE=$?
 assert_exit 0 "$MN_CODE" "no closing issue is not an error for the manifest"
 assert_contains "REVIEW_CYCLE_RECORD=skipped" "$(cat "$FC_TMP/mn.out")" "the manifest block says it skipped"
 (cd "$FC_TMP/journal-a4-none" && PATH="$FC_TMP/failstub:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
@@ -1219,15 +1280,25 @@ assert_equal "" "$(ls "$FC_TMP/journal-a4-none/.decisions" 2>/dev/null | grep -v
 
 _fc_block "ESCALATION_RESOLVED_BLOCK" "$PLUGIN_DIR/commands/merge.md" > "$FC_TMP/merge-escalation.sh"
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/merge-escalation.sh")" "merge escalation block extracted"
-sed -e 's/"\$ARGUMENTS"/"7"/' -e 's/{FIELD}/options/' -e 's/{OUTCOME}/kept the fix/' "$FC_TMP/merge-escalation.sh" > "$FC_TMP/merge-escalation-run.sh"
+sed -e 's/"\$ARGUMENTS"/"7"/' "$FC_TMP/merge-escalation.sh" > "$FC_TMP/merge-escalation-run.sh"
 mkdir -p "$FC_TMP/journal-merge"
 (cd "$FC_TMP/journal-merge" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_BODY=$'Follows #210.\n\nCloses #212' STUB_CLOSING="$(_fc_closing 212)" \
-  bash "$FC_TMP/merge-escalation-run.sh" >/dev/null 2>"$FC_TMP/merge.err"); MERGE_CODE=$?
+  ESCALATION_FIELD=options OUTCOME="kept the fix" bash "$FC_TMP/merge-escalation-run.sh" >/dev/null 2>"$FC_TMP/merge.err"); MERGE_CODE=$?
 assert_exit 0 "$MERGE_CODE" "merge block records: $(cat "$FC_TMP/merge.err")"
 assert_equal "issue-212.md" "$(ls "$FC_TMP/journal-merge/.decisions" 2>/dev/null | grep -v '\.lock$')" "merge records against the closing issue, not the first #N"
 mkdir -p "$FC_TMP/journal-merge-none"
 (cd "$FC_TMP/journal-merge-none" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing)" \
-  bash "$FC_TMP/merge-escalation-run.sh" >"$FC_TMP/en.out" 2>/dev/null); EN_CODE=$?
+  ESCALATION_FIELD=options OUTCOME="kept the fix" bash "$FC_TMP/merge-escalation-run.sh" >"$FC_TMP/en.out" 2>/dev/null); EN_CODE=$?
+mkdir -p "$FC_TMP/journal-merge-bad"
+for BAD in '' '{FIELD}' 'situation extra'; do
+  (cd "$FC_TMP/journal-merge-bad" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 212)" \
+    ESCALATION_FIELD="$BAD" OUTCOME="kept the fix" bash "$FC_TMP/merge-escalation-run.sh" >/dev/null 2>&1); MB_CODE=$?
+  assert_exit 1 "$MB_CODE" "ESCALATION_FIELD '''$BAD''' refused"
+done
+(cd "$FC_TMP/journal-merge-bad" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" STUB_CLOSING="$(_fc_closing 212)" \
+  ESCALATION_FIELD=options OUTCOME="{OUTCOME}" bash "$FC_TMP/merge-escalation-run.sh" >/dev/null 2>&1); MB_CODE=$?
+assert_exit 1 "$MB_CODE" "an unsubstituted OUTCOME is refused"
+assert_equal "" "$(ls "$FC_TMP/journal-merge-bad/.decisions" 2>/dev/null | grep -v '''\.lock$''')" "nothing recorded for a bad value"
 assert_exit 0 "$EN_CODE" "no closing issue is not an error for the merge record"
 assert_contains "ESCALATION_RECORD=skipped" "$(cat "$FC_TMP/en.out")" "the merge block says it skipped"
 
@@ -1236,6 +1307,22 @@ assert_contains "flow-pr-linked-issue.sh" "$PREFLIGHT_LINK" "Phase 1 prints the 
 assert_contains "never in the bold" "$STEP7" "step 7 tells the reviewer how to write prior-cycle ids"
 assert_contains "flow-pr-linked-issue.sh" "$(_fc_phase4_step 7)" "the review-cycle manifest resolves the issue with the helper"
 assert_contains "flow-pr-linked-issue.sh" "$(awk '/^\*\*FlowRun terminal transition\*\*/ { print }' "$REVIEW_MD")" "the workflow-run record names the helper"
+
+_flow_test_begin "sweep: no metadata argument carries an unquoted alternation"
+# `--metadata path={A|B}` is not a placeholder the reviewer edits: the `|` is a
+# shell pipe, so the recorder gets a truncated argument list and the rest of the
+# line runs as a command.
+_fc_placeholder_sweep() {
+  local files hits
+  files=$(find "$1" -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
+  hits=$(grep -rnE -- '--metadata +"?[a-z_]+=\{[^}]*\|' "$1" --include='*.md' 2>/dev/null | wc -l | tr -d ' ')
+  printf 'FILES=%s HITS=%s' "$files" "$hits"
+}
+assert_equal "FILES=1 HITS=2" "$(_fc_placeholder_sweep "$FC_FIXTURES/placeholder-sweep-fire")" "fires on both planted placeholders"
+assert_equal "FILES=1 HITS=0" "$(_fc_placeholder_sweep "$FC_FIXTURES/placeholder-sweep-silent")" "silent on quoted values and on prose"
+FC_PLACEHOLDERS=$(_fc_placeholder_sweep "$PLUGIN_DIR/commands")
+assert_match '^FILES=([2-9][0-9]|[1-9][0-9][0-9]) ' "$FC_PLACEHOLDERS" "the command directory was examined"
+assert_contains "HITS=0" "$FC_PLACEHOLDERS" "no command records an unquoted alternation"
 
 _flow_test_begin "sweep: no command parses an issue number out of pull request text"
 # _fc_lookup_sweep <dir> — prints FILES=<examined> HITS=<lines that grep a

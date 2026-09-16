@@ -876,6 +876,15 @@ fi
 # from earlier steps: each fence is its own shell.
 [ -n "${REVIEW_MODE:-}" ] || { echo "ERROR: REVIEW_MODE is not set; refusing to route findings" >&2; exit 1; }
 [ -n "${PR_NUM:-}" ] || { echo "ERROR: PR_NUM is not set; refusing to route findings" >&2; exit 1; }
+# FINDING_TOTAL is how many findings the synthesis produced (minus any refuted
+# in step 5). An empty rows file is only a clean review when that number is 0;
+# any other time it is a caller that lost its input, and a marker posted from
+# it would read as a review that found nothing.
+case "${FINDING_TOTAL:-}" in
+  ''|*[!0-9]*|0?*) echo "ERROR: FINDING_TOTAL must be the number of synthesized findings, got '${FINDING_TOTAL:-}'; refusing to route" >&2; exit 1 ;;
+esac
+ALLOW_EMPTY=""
+[ "$FINDING_TOTAL" = 0 ] && ALLOW_EMPTY="--allow-empty"
 FINDING_ROWS_FILE=$(mktemp "${TMPDIR:-/tmp}/flow-review-findings.XXXXXX") || { echo "ERROR: cannot create the findings file" >&2; exit 1; }
 cat > "$FINDING_ROWS_FILE" <<'FLOW_FINDING_ROWS'
 {one row per consolidated finding: ID|PRIORITY|category|location|CONFIDENCE|disposition|agent}
@@ -883,7 +892,7 @@ FLOW_FINDING_ROWS
 ROUTE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-finding-route.sh"
 [ -x "$ROUTE" ] || { echo "ERROR: flow-finding-route.sh not found; refusing to route findings" >&2; exit 1; }
 echo "FINDING_ROWS_FILE=$FINDING_ROWS_FILE"
-ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --input "$FINDING_ROWS_FILE" --allow-empty)
+ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --input "$FINDING_ROWS_FILE" $ALLOW_EMPTY)
 ROUTE_EXIT=$?
 printf '%s\n' "$ROUTED"
 if [ "$ROUTE_EXIT" -eq 3 ]; then
@@ -891,12 +900,17 @@ if [ "$ROUTE_EXIT" -eq 3 ]; then
   exit 1
 fi
 [ "$ROUTE_EXIT" -eq 0 ] || { echo "ERROR: flow-finding-route.sh exited $ROUTE_EXIT" >&2; exit 1; }
+ROWS_READ=$(sed -n 's/^ROWS_READ=//p' <<<"$ROUTED")
+if [ "$ROWS_READ" != "$FINDING_TOTAL" ]; then
+  echo "ERROR: the rows file holds $ROWS_READ findings but the synthesis produced $FINDING_TOTAL; the rows are not the findings" >&2
+  exit 1
+fi
 echo "FINDINGS_HEADER=P1: $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED"), P2: $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED"), P3: $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") · Needs investigation: $(sed -n 's/^COUNT_NEEDS_INVESTIGATION=//p' <<<"$ROUTED")"
 echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") ))"
 # FINDING_ROUTE_BLOCK_END
 ```
 
-   Any `LEDGER_WARN` line it prints names a schema agent that left out or garbled a confidence; the finding was counted as MEDIUM. Carry the printed `FINDING_ROWS_FILE` path into the posting block.
+   Any `LEDGER_WARN` line it prints names a schema agent that left out or garbled a confidence; the finding was counted as MEDIUM. Carry the printed `FINDING_ROWS_FILE` path into the posting block. Set `FINDING_TOTAL` (the synthesized findings minus any refuted in step 5) before running the block: it decides whether an empty rows file is a clean review or a lost input, and the block refuses rows that do not match it.
 
    **Render the body** from the routed values, using the template for the mode — self-review: `templates/self-review-comment.md`; external review: `templates/review-comment.md`. The external body carries the `FINDINGS_HEADER` text in its `### Findings:` line, lists only counted findings in the P1/P2 tables and P3 bullets, each opening with the bold `{ID} · {category} · {location}` and ending with its `_(CONFIDENCE · disposition)_` suffix, and lists every `NEEDS_INVESTIGATION` id under `#### Needs investigation` in the template's entry shape (a bullet opening with the bold `{ID} · {priority} · {category} · {location}` line, then `Pattern:` and `Confirm or refute:`); the posting block checks that each LOW id appears exactly once, in that entry shape at its routed priority, and that no line carries a LOW suffix. Write the body to a file without the marker; the posting block appends it.
 
@@ -1035,8 +1049,10 @@ gh pr review "$PR_NUM" --repo "$REPO" "$FLAG" --body-file "$POST_FILE"
 POST_EXIT=$?
 rm -f "$POST_FILE"
 echo "POSTED_AS=$FLAG POST_EXIT=$POST_EXIT"
-echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") ))"
 [ "$POST_EXIT" -eq 0 ] || exit 1
+# Printed only after a successful post: the review-cycle manifest keys off this
+# value, and a cycle with no marker on the pull request must not be recorded.
+echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") ))"
 # FINDING_POST_BLOCK_END
 ```
 
@@ -1068,17 +1084,25 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
    - `DISPUTED:[]` — empty for self-review (there is no second actor to dispute).
 
    ```bash
+   # RESOLUTION_COMMENT_BLOCK_BEGIN
    # $REPO does not survive from the preflight block: each fence is its own
    # shell. Resolved again here, because `gh --repo ""` falls back to gh's own
    # resolution without complaining — an unset REPO reads as pinned and behaves
    # as unpinned, which is the failure this pinning exists to prevent.
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
    [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+   [ -n "${PR_NUM:-}" ] || { echo "ERROR: PR_NUM is not set; refusing to post a resolution marker" >&2; exit 1; }
    # $CYCLE_NUMBER is the same cycle the FLOW_REVIEW_CYCLE marker above used.
    # RESOLVED/ESCALATED are comma-separated finding IDs (e.g. F1,F2,F3).
-   RES_BODY="$(build from templates/resolution-comment.md with the self-review cycle metrics)"
-   [ -n "$RES_BODY" ] || { echo "ERROR: empty resolution body — refusing to post a marker-less comment" >&2; }
+   # Set RES_BODY from templates/resolution-comment.md with the self-review
+   # cycle metrics before running this block.
+   [ -n "${RES_BODY:-}" ] || { echo "ERROR: empty resolution body — refusing to post a marker-less comment" >&2; exit 1; }
    gh pr comment "$PR_NUM" --repo "$REPO" --body "$RES_BODY"; RES_EXIT=$?
+   echo "RES_EXIT=$RES_EXIT"
+   # A silently absent resolution marker re-introduces the merge false-block
+   # this emission exists to prevent, so a failed comment is an error here.
+   [ "$RES_EXIT" -eq 0 ] || exit 1
+   # RESOLUTION_COMMENT_BLOCK_END
    ```
 
    The resolution comment body MUST end with:
@@ -1097,6 +1121,14 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
    # REVIEW_CYCLE_MANIFEST_BLOCK_BEGIN
    # Carried from earlier steps (each fence is its own shell): PR_NUM,
    # CYCLE_NUMBER and COUNT_TOTAL (printed by the posting block).
+   # `path` names the orchestration that ran. It is a value this block
+   # validates, not a placeholder to edit in place: an unquoted {A|B} makes the
+   # metadata argument a shell pipeline, which records a truncated artifact and
+   # reports a "command not found" that names nothing the reader can act on.
+   case "${REVIEW_PATH:-}" in
+     A|B) ;;
+     *) echo "ERROR: REVIEW_PATH must be A or B, got '${REVIEW_PATH:-}'; refusing to record the review cycle" >&2; exit 1 ;;
+   esac
    for __name in PR_NUM CYCLE_NUMBER; do
      eval "__value=\${$__name:-}"
      case "$__value" in
@@ -1122,14 +1154,14 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
        --issue "$ISSUE" \
        --type review-cycle \
        --metadata cycle="$CYCLE_NUMBER" \
-       --metadata path={A|B} \
+       --metadata path="$REVIEW_PATH" \
        --metadata findings_count="$COUNT_TOTAL" \
        --metadata pr="$PR_NUM"
    fi
    # REVIEW_CYCLE_MANIFEST_BLOCK_END
    ```
 
-   The `path` value names the orchestration that ran: `A` when Path A's paired reviewers produced the findings (per-facet fallbacks included), `B` for a Path B run. Both paths write 7-field markers, so the marker's width does not tell them apart. `findings_count` is the `COUNT_TOTAL` the routing and posting blocks print (`COUNT_P1+COUNT_P2+COUNT_P3`): the number of rows in the marker. If GitHub lists no issue the PR closes (a PR into a branch other than the default closes none), skip the emit (the marker on the PR comment is sufficient for that PR's own state; the manifest is keyed by issue, not PR).
+   Set `REVIEW_PATH` before running the block: `A` when Path A's paired reviewers produced the findings (per-facet fallbacks included), `B` for a Path B run. Both paths write 7-field markers, so the marker's width does not tell them apart. `findings_count` is the `COUNT_TOTAL` the posting block prints after it posts (`COUNT_P1+COUNT_P2+COUNT_P3`): the number of rows in the marker. The posting block prints it only on a successful post, so its absence means there is no cycle to record. If GitHub lists no issue the PR closes (a PR into a branch other than the default closes none), skip the emit (the marker on the PR comment is sufficient for that PR's own state; the manifest is keyed by issue, not PR).
 
 8. **Verify posting**: TaskList — confirm the posting task(s) are completed. Do NOT proceed to step 9 until verified. For external review: "Post review comment". For self-review: BOTH "Post self-review comment" AND "Post self-review resolution marker" must be `completed` — the resolution marker is what balances the merge finding-ledger gate, so a self-review that posted the review body but not the resolution marker is NOT done (it would false-block at merge). Mirror `commands/address.md` step 11's "ALL tasks including the resolution comment" gate.
 

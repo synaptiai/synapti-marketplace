@@ -382,13 +382,33 @@ After agents return, TaskUpdate each review task with findings.
     # Carried from earlier steps: BRANCH, TOTAL_FINDINGS, and REFUTED (the LOW
     # findings refuted in step 6 as comma-separated ID:agent pairs, for example
     # F3:code-reviewer; empty when none were refuted).
-    PR_NUMBER=$(gh pr view --json number --jq '.number')
-    ISSUE=$(gh issue list --state open --search "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+    [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to record against an unattributable pull request" >&2; exit 1; }
+    PR_NUMBER=$(gh pr view --repo "$REPO" --json number --jq '.number') || { echo "ERROR: cannot read the pull request just created" >&2; exit 1; }
+    case "$PR_NUMBER" in
+      ''|0*|*[!0-9]*) echo "ERROR: PR_NUMBER must be a positive integer, got '$PR_NUMBER'; refusing to record" >&2; exit 1 ;;
+    esac
+    case "${TOTAL_FINDINGS:-}" in
+      ''|*[!0-9]*|0?*) echo "ERROR: TOTAL_FINDINGS must be a count, got '${TOTAL_FINDINGS:-}'; refusing to record" >&2; exit 1 ;;
+    esac
+    FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+    # The issue GitHub lists this pull request as closing, never a search hit:
+    # `gh issue list --search "$BRANCH"` returns whatever matches the branch
+    # text, so an unrelated open issue could take the slot, and its `2>/dev/null
+    # || echo ""` read every gh failure as "no issue".
+    ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUMBER" --repo "$REPO") || { echo "ERROR: cannot read the issues pull request $PR_NUMBER closes; refusing to guess" >&2; exit 1; }
     if [ -z "$ISSUE" ]; then
-      ISSUE=$(echo "$BRANCH" | grep -oE 'issue-([0-9]+)' | head -1 | sed 's/issue-//')
+      # GitHub lists no closing issue for a pull request into a branch other
+      # than the default, and the branch name is what /flow:start keyed the
+      # work to, so it is the documented fallback rather than a guess.
+      ISSUE=$(printf '%s' "${BRANCH:-}" | grep -oE 'issue-[0-9]+' | head -1 | sed 's/issue-//')
+    fi
+    if [ -z "$ISSUE" ]; then
+      echo "PR_MANIFEST=skipped (GitHub lists no issue this pull request closes and the branch name names none)"
+      exit 0
     fi
     if [ -n "$ISSUE" ]; then
-      "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
+      "$FLOW_ROOT/bin/journal-record.sh" \
         --issue "$ISSUE" \
         --type review-cycle \
         --metadata cycle=1 \
@@ -396,7 +416,13 @@ After agents return, TaskUpdate each review task with findings.
         --metadata findings_count="$TOTAL_FINDINGS" \
         --metadata pr="$PR_NUMBER"
       for PAIR in $(printf '%s' "${REFUTED:-}" | tr ',' ' '); do
-        "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
+        # REFUTED entries are ID:agent. Without the colon the id would be
+        # recorded as the facet too, and /flow:learn aggregates that field.
+        case "$PAIR" in
+          *:*) ;;
+          *) echo "WARN: REFUTED entry '$PAIR' is not ID:agent; skipping" >&2; continue ;;
+        esac
+        "$FLOW_ROOT/bin/journal-record.sh" \
           --issue "$ISSUE" \
           --type dropped-finding \
           --metadata cycle=1 \
@@ -409,7 +435,7 @@ After agents return, TaskUpdate each review task with findings.
     # PR_MANIFEST_BLOCK_END
     ```
 
-    The emit is best-effort — if the issue cannot be inferred from the branch name, skip rather than fail. PR-creation flow uses Path B (single-session 5-agent dispatch); subsequent `/flow:review` invocations may re-emit with `path=A` if paired-reviewer mode is enabled.
+The block records against the issue GitHub lists the pull request as closing, falling back to the branch name when GitHub lists none (a pull request into a branch other than the default closes nothing). If neither names an issue it says so and skips; a gh failure is an error, not a skip. PR-creation flow uses Path B (single-session 5-agent dispatch); subsequent `/flow:review` invocations may re-emit with `path=A` if paired-reviewer mode is enabled.
 
 Display PR URL and next steps.
 

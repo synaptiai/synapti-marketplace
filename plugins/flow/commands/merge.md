@@ -750,15 +750,23 @@ ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$REPO") 
 if [ -z "$ISSUE" ]; then
   echo "ESCALATION_RECORD=skipped (GitHub lists no issue this pull request closes, so there is no journal to record it in)"
 else
-  # Repeat once per escalation that closed during this merge run. Replace
-  # {FIELD} with the one canonical field that gated it: situation, tried,
-  # options, recommendation, blocking or risk. Replace {OUTCOME} with a one-line
-  # summary of the user's answer.
+  # Repeat once per escalation that closed during this merge run. Set
+  # ESCALATION_FIELD to the one canonical field that gated it and OUTCOME to a
+  # one-line summary of the user's answer; they are values this block
+  # validates, not placeholders to edit in place, so an unsubstituted one
+  # cannot be recorded as the field name.
+  case "${ESCALATION_FIELD:-}" in
+    situation|tried|options|recommendation|blocking|risk) ;;
+    *) echo "ERROR: ESCALATION_FIELD must be one of situation, tried, options, recommendation, blocking, risk; got '${ESCALATION_FIELD:-}'" >&2; exit 1 ;;
+  esac
+  case "${OUTCOME:-}" in
+    ''|*'{'*|*'}'*) echo "ERROR: OUTCOME must be a one-line summary of the user's answer, got '${OUTCOME:-}'" >&2; exit 1 ;;
+  esac
   "$FLOW_ROOT/bin/journal-record.sh" \
     --issue "$ISSUE" \
     --type escalation-resolved \
-    --metadata "escalation_field={FIELD}" \
-    --metadata "outcome={OUTCOME}"
+    --metadata "escalation_field=$ESCALATION_FIELD" \
+    --metadata "outcome=$OUTCOME"
 fi
 # ESCALATION_RESOLVED_BLOCK_END
 ```

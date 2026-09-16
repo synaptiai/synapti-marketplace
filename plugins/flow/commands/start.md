@@ -569,13 +569,17 @@ If ANY task fails the Stranger Test, the plan is incomplete. The agent must eith
 
 Record the Stranger Test result to `.decisions/issue-$ISSUE_NUM.md` under a `## Stranger Test` heading with either "PASS — {N} tasks reviewed" or "BLOCK — {task id}: {failure mode}".
 
-**Manifest emit** — append the stranger-test artifact (alongside the freeform `## Stranger Test` section) so the manifest captures the gate's outcome:
+**Manifest emit** — append the stranger-test artifact (alongside the freeform `## Stranger Test` section) so the manifest captures the gate's outcome. Set `GATE_RESULT` to `PASS` or `BLOCK` first: it is a value the block validates, not a placeholder to edit in place, because an unquoted `{PASS|BLOCK}` makes the metadata argument a shell pipeline.
 
 ```bash
+case "${GATE_RESULT:-}" in
+  PASS|BLOCK) ;;
+  *) echo "ERROR: GATE_RESULT must be PASS or BLOCK, got '${GATE_RESULT:-}'" >&2; exit 1 ;;
+esac
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
   --issue "$ISSUE_NUM" \
   --type stranger-test \
-  --metadata result={PASS|BLOCK} \
+  --metadata result="$GATE_RESULT" \
   --metadata task_count=$N
 ```
 
@@ -729,13 +733,17 @@ Prove everything works with fix-forward:
        > 1. Approve — these criteria are met (I've reviewed the evidence)
        > 2. Reject — fix these criteria before proceeding
      - Based on response: proceed or enter fix loop
-   **Manifest emit** — record the verdict artifact after the verdict-judge returns (and any fix-loop iterations have settled):
+   **Manifest emit** — record the verdict artifact after the verdict-judge returns (and any fix-loop iterations have settled). Set `VERDICT_RESULT` to the judge's overall verdict first, for the same reason.
 
    ```bash
+   case "${VERDICT_RESULT:-}" in
+     PASS|FAIL|NEEDS-HUMAN-REVIEW) ;;
+     *) echo "ERROR: VERDICT_RESULT must be PASS, FAIL or NEEDS-HUMAN-REVIEW, got '${VERDICT_RESULT:-}'" >&2; exit 1 ;;
+   esac
    "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
      --issue "$ISSUE_NUM" \
      --type verdict \
-     --metadata result={PASS|FAIL|NEEDS-HUMAN-REVIEW}
+     --metadata result="$VERDICT_RESULT"
    ```
 
    Add `--metadata pr=$PR_NUMBER` when a PR exists (Phase 4 may run before or after PR creation depending on the workflow). When the verdict is FAIL after the fix loop exhausted iterations, add `--metadata failures=criterion-1,criterion-2` listing the criteria that did not converge — the manifest then carries enough context for `/flow:status` to surface the open verdicts without re-running the judge.

@@ -166,3 +166,20 @@ _linked "$FIXTURES/pr-228.json" --repo o/r
 assert_exit 1 "$CODE" "--pr is required"
 _linked "$FIXTURES/pr-228.json" --pr 7 --repo o/r --bogus
 assert_exit 1 "$CODE" "an unknown flag is refused"
+
+_flow_test_begin "the repository is validated whole, not line by line"
+# The value is written into the jq filter, so a line-oriented check would let
+# every other line of a multi-line value through unexamined.
+for BAD in "$(printf 'a/b\nevil')" "$(printf 'evil\na/b')" "$(printf 'a/b\n") ) ] | [{"number":42} #')" "$(printf 'a/b\r')"; do
+  _linked "$FIXTURES/pr-228.json" --pr 7 --repo "$BAD"
+  assert_exit 1 "$CODE" "a multi-line --repo is a usage error, not a filter"
+  assert_equal "" "$OUT" "nothing on stdout"
+  assert_equal "" "$LOG" "gh not called"
+done
+
+_flow_test_begin "an empty --input-style value is an error, never a silent fallback"
+# (--repo is the only value-taking flag here besides --pr; both must refuse an
+# empty value rather than fall back to a default.)
+_linked "$FIXTURES/pr-228.json" --pr 7 --repo ""
+assert_exit 1 "$CODE" "an empty --repo is refused"
+assert_equal "" "$LOG" "gh not called"

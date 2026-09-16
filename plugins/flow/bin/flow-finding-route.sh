@@ -111,13 +111,14 @@ encode() {
 MODE=""
 PR=""
 INPUT=""
+INPUT_SET=0
 ALLOW_EMPTY=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --mode) MODE="${2:-}"; shift 2 || { usage; exit 1; } ;;
     --pr) PR="${2:-}"; shift 2 || { usage; exit 1; } ;;
-    --input) INPUT="${2:-}"; shift 2 || { usage; exit 1; } ;;
+    --input) INPUT="${2:-}"; INPUT_SET=1; shift 2 || { usage; exit 1; } ;;
     --allow-empty) ALLOW_EMPTY=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "$PROG: unknown argument '$(safe "$1")'" >&2; usage; exit 1 ;;
@@ -134,8 +135,10 @@ case "$PR" in
   ""|0*|*[!0-9]*) echo "$PROG: --pr must be a positive integer, got '$(safe "$PR")'" >&2; exit 1 ;;
 esac
 
-if [ -n "$INPUT" ]; then
-  if [ ! -r "$INPUT" ] || [ -d "$INPUT" ]; then
+# An empty --input is a caller that lost its path, not a request for stdin:
+# falling back here would read an empty stdin and post a clean-looking review.
+if [ "$INPUT_SET" = 1 ]; then
+  if [ -z "$INPUT" ] || [ ! -r "$INPUT" ] || [ -d "$INPUT" ]; then
     echo "$PROG: cannot read --input '$(safe "$INPUT")'" >&2
     exit 2
   fi

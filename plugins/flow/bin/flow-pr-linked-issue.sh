@@ -53,9 +53,20 @@ done
 case "$PR" in
   ''|0*|*[!0-9]*) echo "$PROG: --pr must be a positive integer" >&2; exit 1 ;;
 esac
-# The repository is written into the jq filter below, so only the characters
-# GitHub allows in an owner and a repository name are accepted.
-if ! LC_ALL=C printf '%s' "$REPO" | grep -Eqx '[A-Za-z0-9._-]+/[A-Za-z0-9._-]+'; then
+# The repository is written into the jq filter below, so the whole value is
+# matched against the characters GitHub allows in an owner and a repository
+# name. A line-oriented check would pass a multi-line value on one good line
+# and hand jq the rest; a `case` glob matches the value entire, newline
+# included. Bracket ranges follow the locale, so match under C.
+valid_repo() {
+  local LC_ALL=C
+  case "$1" in
+    *[!A-Za-z0-9._/-]*|''|/*|*/|*/*/*) return 1 ;;
+    */*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+if ! valid_repo "$REPO"; then
   echo "$PROG: --repo must be owner/name" >&2
   exit 1
 fi

@@ -366,6 +366,45 @@ is no longer finding defects. Three independent passes on this code remain befor
 holdout-validation, the five-agent fan-out in /flow:pr, and /flow:review, whose zero-finding cycle is
 the merge gate agreed for this epic. A posting-block defect found there is fixed there.
 
+
+## /flow:pr review fan-out (five agents, at b2857ca)
+
+P1: 0, P2: 4, P3: 7 — all fixed in this PR. The fan-out reached what seven rounds of targeted
+self-review had not: the two helpers as standalone programs, and the fences outside the posting
+block. Two findings were raised independently by two agents each.
+
+- `--metadata path={A|B}` was unquoted, so the `|` was a shell pipe: the recorder got a truncated
+  argument list, wrote `path: '{A'` with no `findings_count` and no `pr`, and the block reported
+  `B}: command not found`. The path is now a validated `REVIEW_PATH` value. The same defect was in
+  `commands/start.md` twice (`{PASS|BLOCK}`, `{PASS|FAIL|NEEDS-HUMAN-REVIEW}`) and is fixed there
+  too, and a sweep over `commands/` now fires on any `--metadata key={a|b}`.
+- The self-review resolution fence printed "refusing to post a marker-less comment" and then posted,
+  and ended with an assignment, so a failed `gh pr comment` exited 0 and `RES_EXIT` never reached
+  the reader. It has markers, an `exit 1` on both paths, and a test that drives it with a failing gh.
+- `commands/pr.md` still resolved the issue with `gh issue list --search "$BRANCH"`, whose
+  `2>/dev/null || echo ""` read every gh failure as "no issue" — and that guess now drove the
+  dropped-finding records this branch added. It uses `flow-pr-linked-issue.sh`, falls back to the
+  branch name (GitHub lists no closing issue for a pull request into a branch other than the
+  default), and refuses a `REFUTED` entry that is not `ID:agent`.
+- `--allow-empty` was passed unconditionally, so the zero-rows refusal could never fire at its only
+  caller. The routing block now takes `FINDING_TOTAL`, passes the flag only when it is 0, and
+  refuses a rows file that does not match it.
+- `flow-pr-linked-issue.sh` validated `--repo` with `grep -Eqx`, which anchors per line: a
+  multi-line value passed on one good line and the rest went into the jq filter. The reviewer
+  demonstrated `--repo $'a/b\n") ) ] | [{"number":42} #'` making the helper print `42`, an issue
+  number that appears nowhere in the data. The whole value is matched with a `case` glob now.
+- `flow-finding-route.sh` treated `--input ""` as "no --input" and read stdin — the lost-input case
+  its header promises to catch. An empty value is now the unreadable-file error.
+- `COUNT_TOTAL` was printed before the post-failure guard, so a failed `gh pr review` still handed
+  the manifest the value it keys on. It prints after the guard; its absence means no cycle to record.
+- `merge.md` recorded `{FIELD}` and `{OUTCOME}` verbatim if the reviewer left them; both are
+  validated values now.
+- Docs: the row schema still said "6 fields"; the decision table had no self-review row although
+  the script it cites returns COMMENT in self mode at any priority. Both corrected, the skill body
+  trimmed back to its 600-word budget.
+
+Suite at the fix: 3450 pass / 0 fail, root 11 of 11, shellcheck clean, 38 of 38 mutants caught.
+
 <!-- auto-log: 2026-09-16 00:17 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-pr-linked-issue.test.sh -->
 
 <!-- auto-log: 2026-09-16 00:19 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests.py -->
@@ -439,3 +478,31 @@ the merge gate agreed for this epic. A posting-block defect found there is fixed
 <!-- auto-log: 2026-09-16 03:04 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/build_bundle.py -->
 
 <!-- auto-log: 2026-09-16 03:16 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_bundle.py -->
+
+<!-- auto-log: 2026-09-16 03:22 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 03:22 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/feedback_claude_attribution_blocking.md -->
+
+<!-- auto-log: 2026-09-16 03:27 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/sec/postprobe.sh -->
+
+<!-- auto-log: 2026-09-16 03:29 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_flow_ci_gates.md -->
+
+<!-- auto-log: 2026-09-16 03:29 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_shellcheck_command_blocks.md -->
+
+<!-- auto-log: 2026-09-16 03:29 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/feedback_sequential_suites.md -->
+
+<!-- auto-log: 2026-09-16 03:29 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 03:30 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_flow_review_body_marker_guard.md -->
+
+<!-- auto-log: 2026-09-16 03:30 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 03:38 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 03:38 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 03:43 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fanout_tests.py -->
+
+<!-- auto-log: 2026-09-16 03:44 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_review_fanout.py -->
+
+<!-- auto-log: 2026-09-16 03:47 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_pr_merge.py -->
