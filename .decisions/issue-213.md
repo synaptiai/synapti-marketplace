@@ -541,3 +541,7 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 23:29 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-active-goal.test.sh -->
 
 <!-- auto-log: 2026-09-16 23:34 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-merge-seed.test.sh -->
+
+<!-- auto-log: 2026-09-16 23:35 commit "fix(flow): a gate that cannot read its input does not pass" -->
+
+<!-- auto-log: 2026-09-16 23:53 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/finding-confidence.test.sh -->

@@ -1485,8 +1485,10 @@ if command -v jq >/dev/null 2>&1; then
   MERGE_MD="$PLUGIN_DIR/commands/merge.md"
   # The filters as merge.md runs them, taken from the file so the test cannot
   # drift from the gate.
-  RES_FILTER=$(grep -m1 'FLOW_RESOLUTION_CYCLE.*last | .body' "$MERGE_MD" | sed "s/^ *'//;s/')$//")
-  REV_FILTER=$(grep -m1 'FLOW_REVIEW_CYCLE.*last | .body' "$MERGE_MD" | sed "s/^ *'//;s/')$//")
+  # Strip from the closing `')` onward: the line may also capture the filter's
+  # own exit status after it, which is part of the gate but not of the filter.
+  RES_FILTER=$(grep -m1 'FLOW_RESOLUTION_CYCLE.*last | .body' "$MERGE_MD" | sed "s/^ *'//;s/').*$//")
+  REV_FILTER=$(grep -m1 'FLOW_REVIEW_CYCLE.*last | .body' "$MERGE_MD" | sed "s/^ *'//;s/').*$//")
   assert_match 'last' "$RES_FILTER" "resolution filter extracted"
   assert_match 'last' "$REV_FILTER" "review filter extracted"
   # A real marker, then a later comment that merely names the token in prose.
