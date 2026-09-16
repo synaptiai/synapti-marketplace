@@ -320,6 +320,44 @@ fi
 true
 ```
 
+### Deriving the risk map when the goal has none
+
+When the `### FlowGoal` section reports `RISK_MAP_SOURCE=issue-text` — the goal carried no risk map,
+or there is no goal — derive the rows here, before any dispatch. When it reports
+`RISK_MAP_SOURCE=goal`, skip this step: the section already printed the rows the team wrote.
+
+Read the issue text (`gh issue view "$LINKED" --repo "$REPO" --json title,body`) and write 2-6 rows in
+the same shape the goal rows use:
+
+```
+RISK_MAP=<area>|<plausible wrong version>|<discriminating check>|issue-text
+```
+
+Each row names where the core logic is most likely to be subtly wrong, what the plausible wrong
+version does (reversed order, transposed arguments, off-by-one, wrong rounding, wrong precedence,
+wrong empty case), and one concrete input on which the right and the wrong version differ. This is
+the same rule `skills/specification-capture/SKILL.md` step 3 applies; the difference is the source,
+and the source is what the `issue-text` label records.
+
+Every row derived here ends `|issue-text`, and the label travels with the row into the dispatches
+below. A derived row is a reading of the issue, not something the team wrote down: a finding that
+rests on one says so, and never quotes it as specification. With no issue body to read — no linked
+issue, or the fetch failed — derive nothing and say so; an invented risk area is worse than none.
+
+### When the pull request changes its own goal
+
+The goal is trusted because it is tracked and a weakening shows up in the diff, which holds only
+while someone looks at the diff. The `### FlowGoal` section reports what this pull request does to
+the goal it is being reviewed against:
+
+| `GOAL_EDITED` | What it means | What the review does |
+|---|---|---|
+| `no` | The pull request does not touch this goal | Nothing |
+| `created` | The pull request adds this goal | Nothing — a spec-first pull request writes its goal, and there is no earlier version to weaken |
+| `modified` | The pull request changes a goal that already existed on the base | Read the goal diff (`gh pr diff "$PR_NUM" --repo "$REPO" -- "$GOAL_PATH"`) and raise a P2 `scope` finding naming `GOAL_PATH` and each acceptance criterion, non-goal or risk row that was removed or weakened, citing the goal's `file:line`. A criterion added or tightened is not a finding; say so in the same line so the reader can tell the two apart |
+| `removed` | The pull request deletes the goal it is judged by | Raise a P1 `scope` finding naming `GOAL_PATH` |
+| `unavailable` | The pull request file list could not be read | Say so in the review body next to the requirements map; absence of evidence here is not evidence the goal is untouched |
+
 Then check out the PR branch (mutating, runs inline):
 
 ```bash
@@ -649,11 +687,33 @@ Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL):
 
 Agent(code-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
   "PR #$ARGUMENTS as SKEPTIC. Assume broken; flag logic/quality/edge-case
-   issues you cannot prove correct. P1/P2/P3 + file:line + category."
+   issues you cannot prove correct. P1/P2/P3 + file:line + category.
+   Treat each risk area below as unproven until a test in this pull request
+   distinguishes it from its plausible wrong version.
+   Risk areas: {one line per `RISK_MAP=` row — from the Phase 1 `### FlowGoal`
+   section, or derived from the issue text by the step above — as
+   `<area> | <plausible wrong version> | <discriminating check> | <source>`;
+   `none` when there is no goal and no issue body. A row whose source is
+   `issue-text` was derived from the issue, not written by the team: say so in
+   any finding that rests on it.}
+   Non-goals: {`NON_GOAL=` lines; a change that implements one is `scope` P2.}
+   Interface contracts: {`CONTRACT=` lines; altering one without the
+   specification being updated is `breaking-change` P1.}"
 
 Agent(code-reviewer-verifier, model=$AGENT_TEAM_MODEL):
   "PR #$ARGUMENTS as VERIFIER. Assume correct; look only for missed edge cases
-   and unenforced invariants. P1/P2/P3 + file:line + category."
+   and unenforced invariants. P1/P2/P3 + file:line + category.
+   Assume each risk area below is handled, and look for the one whose
+   discriminating check no test in this pull request actually runs.
+   Risk areas: {one line per `RISK_MAP=` row — from the Phase 1 `### FlowGoal`
+   section, or derived from the issue text by the step above — as
+   `<area> | <plausible wrong version> | <discriminating check> | <source>`;
+   `none` when there is no goal and no issue body. A row whose source is
+   `issue-text` was derived from the issue, not written by the team: say so in
+   any finding that rests on it.}
+   Non-goals: {`NON_GOAL=` lines; a change that implements one is `scope` P2.}
+   Interface contracts: {`CONTRACT=` lines; altering one without the
+   specification being updated is `breaking-change` P1.}"
 
 Agent(convention-checker-skeptic, model=$AGENT_TEAM_MODEL):
   "PR #$ARGUMENTS as SKEPTIC. Flag every convention violation (commits, branch
@@ -682,14 +742,16 @@ Agent(error-handler-inspector-verifier, model=$AGENT_TEAM_MODEL):
 Skill(holdout-validation):
   Inputs (skeptic lens):
   - Self-review findings: {existing P1/P2/P3 findings}
-  - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list when the Phase 1 `### FlowGoal` section reported one: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or `none`. Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
+  - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list when the Phase 1 `### FlowGoal` section reported one: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or
+    `none — {reason}` (a bare `none` reads as an unexplained coverage gap). Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
   - File list: {all files changed in this PR}
   - Lens: SKEPTIC — assume claims are unsupported until proven
 
 Skill(holdout-validation):
   Inputs (verifier lens):
   - Self-review findings: {existing P1/P2/P3 findings}
-  - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list when the Phase 1 `### FlowGoal` section reported one: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or `none`. Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
+  - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list when the Phase 1 `### FlowGoal` section reported one: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or
+    `none — {reason}` (a bare `none` reads as an unexplained coverage gap). Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
   - File list: {all files changed in this PR}
   - Lens: VERIFIER — assume claims are supported; look for missed cross-references
 ```
@@ -897,11 +959,16 @@ Agent(security-reviewer):
 Skill(holdout-validation):
   Inputs:
   - Self-review findings: {P1/P2/P3 findings from code-reviewer agent}
-  - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list when the Phase 1 `### FlowGoal` section reported one: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or `none`. Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
+  - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list when the Phase 1 `### FlowGoal` section reported one: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or
+    `none — {reason}` (a bare `none` reads as an unexplained coverage gap). Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
   - File list: {all files changed in this PR}
 ```
 
-**Main thread**: Requirements compliance — map acceptance criteria to implementation.
+**Main thread**: Requirements compliance — map acceptance criteria to implementation. When the
+Phase 1 `### FlowGoal` section reported `STATE=ok`, the criteria are its `AC=` lines (`<id>|<text>|
+<verification_command>`), read at the head commit the section names; run each `verification_command`
+that the project already trusts rather than judging the criterion by eye. Otherwise they are the
+issue body.
 
 TaskUpdate each review task as agents complete.
 

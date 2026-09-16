@@ -349,6 +349,71 @@ RG_STEP4=$(printf '%s\n' "$RG_REVIEWER" | awk '/^### Step 4/ { f = 1 } f && /^##
 assert_contains 'Risk areas:' "$RG_STEP4" "Step 4 names the input"
 assert_contains 'source' "$RG_STEP4" "and says a derived row is marked as derived"
 
+_flow_test_begin "every reviewer that can check the risk map is handed it"
+# Path B was handed the rows; the two Path A code-reviewer variants were not, so
+# on the agent-teams path — the one this project reviews itself with — the
+# reviewer's Inputs block read "no goal" even when Phase 1 had printed one.
+RG_CR_DISPATCH=$(printf '%s\n' "$RG_REVIEW" | grep -c '^Agent(code-reviewer')
+assert_equal "3" "$RG_CR_DISPATCH" "three code-reviewer dispatches: two Path A lenses and Path B"
+RG_CR_WITH_RISK=$(printf '%s\n' "$RG_REVIEW" | awk '
+  /^Agent\(code-reviewer/ { n++; have[n] = 0 }
+  n && /Risk areas:/ { have[n] = 1 }
+  END { c = 0; for (i = 1; i <= n; i++) c += have[i]; print c }')
+assert_equal "3" "$RG_CR_WITH_RISK" "each one is handed the risk areas"
+RG_CR_WITH_NG=$(printf '%s\n' "$RG_REVIEW" | awk '
+  /^Agent\(code-reviewer/ { n++; have[n] = 0 }
+  n && /Non-goals:/ { have[n] = 1 }
+  END { c = 0; for (i = 1; i <= n; i++) c += have[i]; print c }')
+assert_equal "3" "$RG_CR_WITH_NG" "and the non-goals"
+RG_CR_WITH_CT=$(printf '%s\n' "$RG_REVIEW" | awk '
+  /^Agent\(code-reviewer/ { n++; have[n] = 0 }
+  n && /Interface contracts:/ { have[n] = 1 }
+  END { c = 0; for (i = 1; i <= n; i++) c += have[i]; print c }')
+assert_equal "3" "$RG_CR_WITH_CT" "and the interface contracts"
+
+_flow_test_begin "an empty risk-map coverage list says why it is empty"
+# holdout-validation step 5 treats a bare `none` as a coverage gap, and
+# references/evidence-bundle-format.md accepts only `none — {reason}`.
+RG_BARE_NONE=$(printf '%s\n' "$RG_REVIEW" | grep -c "discriminating check, or \`none\`\.")
+assert_equal "0" "$RG_BARE_NONE" "no dispatch offers a bare none"
+RG_REASONED_NONE=$(printf '%s\n' "$RG_REVIEW" | grep -c 'none — ')
+assert_equal "3" "$RG_REASONED_NONE" "all three dispatches ask for a reason with it"
+
+_flow_test_begin "with no risk map in the goal, a step derives the rows from the issue text"
+# The user decision is that the rows are derived from the issue text rather than
+# reported as absent. The block cannot derive them — it emits the scalar
+# RISK_MAP_SOURCE=issue-text — so a step has to, and every row it renders has to
+# carry the label that keeps a derived row from reading as specification.
+RG_DERIVE=$(printf '%s\n' "$RG_REVIEW" | awk '/^### Deriving the risk map/ { f = 1; next } f && /^#{1,3} / { f = 0 } f')
+assert_match '[^[:space:]]' "$RG_DERIVE" "the derivation step exists"
+assert_contains 'RISK_MAP_SOURCE=issue-text' "$RG_DERIVE" "it fires on the state the block reports"
+assert_contains 'gh issue view' "$RG_DERIVE" "it reads the issue body, which Phase 1 does not fetch"
+assert_contains '|issue-text' "$RG_DERIVE" "every row it renders is labelled as derived"
+assert_match 'RISK_MAP=<area>' "$RG_DERIVE" "in the same shape the goal rows use"
+assert_contains 'plausible' "$RG_DERIVE" "a row names the plausible wrong version"
+assert_contains 'discriminating' "$RG_DERIVE" "and the input that tells right from wrong"
+assert_contains 'RISK_MAP_SOURCE=goal' "$RG_DERIVE" "and it does not fire when the goal carried rows"
+# The derived rows have to reach the same two consumers the goal rows reach, or
+# deriving them changes nothing.
+assert_contains 'issue-text' "$RG_REVIEW" "the label travels to the dispatches"
+
+_flow_test_begin "a pull request that changes its own goal raises a finding"
+# GOAL_EDITED was printed and never read: no phase, dispatch or template
+# mentioned it, so the trust decision stopped at the flag.
+RG_CONSUME=$(printf '%s\n' "$RG_REVIEW" | grep -c 'GOAL_EDITED')
+assert_match '^[2-9]|^[0-9][0-9]' "$RG_CONSUME" "GOAL_EDITED is read somewhere, not only printed"
+RG_TRUST=$(printf '%s\n' "$RG_REVIEW" | awk '/^### When the pull request changes its own goal/ { f = 1; next } f && /^#{1,3} / { f = 0 } f')
+assert_match '[^[:space:]]' "$RG_TRUST" "a named step reads the flag"
+assert_contains 'modified' "$RG_TRUST" "and keys on the modified state"
+assert_contains 'finding' "$RG_TRUST" "and raises a finding"
+assert_contains 'GOAL_PATH' "$RG_TRUST" "naming the goal file"
+assert_contains 'created' "$RG_TRUST" "while creating a goal is not a finding"
+assert_contains 'unavailable' "$RG_TRUST" "and an unreadable file list is not silence"
+
+_flow_test_begin "the requirements step is pointed at the criteria Phase 1 read"
+RG_REQ=$(printf '%s\n' "$RG_REVIEW" | grep -c 'AC=` lines\|`AC=` lines')
+assert_match '^[1-9]' "$RG_REQ" "the requirements step names the AC= lines as its source"
+
 # --- #213 AC4: one true statement about which commands create goals ----------
 
 _flow_test_begin "the references do not claim review or address creates a goal"
