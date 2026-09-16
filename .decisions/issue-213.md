@@ -182,3 +182,5 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 14:09 commit "docs(flow): the goal states the contract the review actually implements" -->
 
 <!-- auto-log: 2026-09-16 14:43 commit "fix(flow): the goal-edited flag is reported whatever the goal state is" -->
+
+<!-- auto-log: 2026-09-16 14:59 commit "fix(flow): the rows are derived from the issue text whenever no goal supplied them" -->
