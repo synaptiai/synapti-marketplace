@@ -247,6 +247,47 @@ EXIT=$?
 assert_equal "0" "$EXIT" "exit 0 — sibling goal found despite malformed neighbor"
 assert_equal "issue-good" "$OUT" "id reads the valid goal"
 
+# --- Test 12b: the sole goal being unreadable is NOT "no goal"
+# Exit 1 means "no applicable goal", and commands/merge.md reads it as "gate not
+# applicable" and merges. A goal sitting on disk that nobody could parse is a
+# different fact, and the merge gate blocks on any exit it does not recognise.
+_flow_test_begin "an unreadable goal is not reported as no goal"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+echo "{ this: is: not: valid: yaml }" > "$DIR/.flow/goals/broken.goal.yaml"
+EXIT=$(cd "$DIR" && bash "$HELPER" --status >/dev/null 2>&1; echo $?)
+assert_equal "4" "$EXIT" "exit 4 — a goal exists but could not be read"
+ERR=$(cd "$DIR" && bash "$HELPER" --status 2>&1 >/dev/null)
+assert_contains "broken.goal.yaml" "$ERR" "and stderr names the file that could not be read"
+
+# Valid YAML of the wrong shape reaches the same arm: `lifecycle` as a scalar
+# raises on .get, which is not a parse error but is just as unreadable.
+_flow_test_begin "a goal of the wrong shape is unreadable, not absent"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+printf 'metadata: {id: issue-9}\nlifecycle: active\nscope: {branch: main}\n' \
+  > "$DIR/.flow/goals/issue-9.goal.yaml"
+EXIT=$(cd "$DIR" && bash "$HELPER" --status >/dev/null 2>&1; echo $?)
+assert_equal "4" "$EXIT" "a scalar lifecycle is unreadable, not a goal that does not exist"
+
+# And an empty goals directory still answers 1 — the distinction only means
+# something if the absent case keeps its own code.
+_flow_test_begin "no goal at all is still exit 1, not exit 4"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+EXIT=$(cd "$DIR" && bash "$HELPER" --status >/dev/null 2>&1; echo $?)
+assert_equal "1" "$EXIT" "an empty goals directory is no goal, which is a real answer"
+
+# --branch-strict takes the same care: a goal owning no branch plus one that
+# could not be read must not answer "this branch has no goal".
+_flow_test_begin "--branch-strict does not read an unreadable goal as no goal"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-other.goal.yaml" "active" "issue-other" "feature/elsewhere"
+echo "{ broken: [" > "$DIR/.flow/goals/issue-broken.goal.yaml"
+EXIT=$(cd "$DIR" && bash "$HELPER" --status --branch-strict --branch feature/mine >/dev/null 2>&1; echo $?)
+assert_equal "4" "$EXIT" "exit 4 — the unreadable goal might have been this branch's"
+
 # --- Test 13: unknown mode flag → exit 2
 _flow_test_begin "unknown mode flag → exit 2"
 DIR=$(_fag_mkdir)

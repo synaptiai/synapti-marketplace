@@ -219,15 +219,38 @@ if mode == "create":
         try:
             existing_content = _read_with_no_follow(target)
             existing = yaml.safe_load(existing_content)
-            if isinstance(existing, dict):
-                existing_status = (existing.get("lifecycle") or {}).get("status")
-                if existing_status in ("draft", "active", "waiting_for_user", "waiting_for_ci", "blocked"):
-                    print(
-                        f"flow-goal-record.sh: refusing to overwrite — {target} exists with non-terminal status '{existing_status}'",
-                        file=sys.stderr,
-                    )
-                    print("flow-goal-record.sh: use /flow:goal clear to cancel before re-creating", file=sys.stderr)
-                    sys.exit(1)
+            if not isinstance(existing, dict):
+                # Valid YAML that is not a mapping — a list, a scalar, an empty
+                # document. Falling through here overwrote it, which is the same
+                # destructive answer as "no file exists" for a file that does.
+                # Unreadable is unreadable however it got that way; the handler
+                # below refuses for the parse-error form of exactly this.
+                print(
+                    f"flow-goal-record.sh: refusing to overwrite — existing goal at {target} is not a mapping "
+                    f"({type(existing).__name__}); its status cannot be determined; investigate manually.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            existing_lifecycle = existing.get("lifecycle")
+            if existing_lifecycle is not None and not isinstance(existing_lifecycle, dict):
+                # `lifecycle: active` written as a scalar raises AttributeError on
+                # .get below, which this handler does not catch; and treating it
+                # as absent would read a goal whose status nobody can determine
+                # as a goal safe to clobber.
+                print(
+                    f"flow-goal-record.sh: refusing to overwrite — existing goal at {target} has a lifecycle that is "
+                    f"not a mapping ({type(existing_lifecycle).__name__}); investigate manually.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            existing_status = (existing_lifecycle or {}).get("status")
+            if existing_status in ("draft", "active", "waiting_for_user", "waiting_for_ci", "blocked"):
+                print(
+                    f"flow-goal-record.sh: refusing to overwrite — {target} exists with non-terminal status '{existing_status}'",
+                    file=sys.stderr,
+                )
+                print("flow-goal-record.sh: use /flow:goal clear to cancel before re-creating", file=sys.stderr)
+                sys.exit(1)
         except (JournalAtomicError, yaml.YAMLError) as e:
             # If we can't read the existing file, REFUSE rather than fall
             # through and overwrite — we can't determine the on-disk status.
@@ -281,7 +304,23 @@ elif mode == "update-lifecycle":
         # states are immutable; out-of-table transitions are refused. If
         # --from-status was provided, also assert it matches the on-disk
         # state (race detection for concurrent updates).
-        current_status = (existing.get("lifecycle") or {}).get("status")
+        # An absent lifecycle is a goal mid-creation and reads as status None.
+        # A lifecycle that is PRESENT but is not a mapping — `lifecycle: []`,
+        # `lifecycle: ""`, `lifecycle: 0`, a scalar — is falsy too, so `or {}`
+        # collapsed it to the same None. Every guard below keys off
+        # current_status, and the transition table is explicitly skipped when it
+        # is None, so that collapse accepted any new status at all, including
+        # active → achieved with no evaluation behind it.
+        existing_lifecycle = existing.get("lifecycle")
+        if existing_lifecycle is not None and not isinstance(existing_lifecycle, dict):
+            print(
+                f"flow-goal-record.sh: refusing — existing goal {target} has a lifecycle that is not a mapping "
+                f"({type(existing_lifecycle).__name__}); its current status cannot be determined, so no "
+                f"transition can be checked against it.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        current_status = (existing_lifecycle or {}).get("status")
         new_status = (lifecycle_fragment.get("lifecycle") or {}).get("status")
 
         if from_status_arg and from_status_arg != current_status:

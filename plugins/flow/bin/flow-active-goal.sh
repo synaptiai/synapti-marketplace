@@ -24,6 +24,13 @@
 #   returned. Exit 3 (degenerate) fires ONLY when >1 active goal share the
 #   current branch — concurrent goals on different branches/worktrees each
 #   resolve cleanly.
+#   Exit codes: 0 resolved · 1 no applicable goal · 2 refused (symlink, bad
+#   arguments) · 3 degenerate (>1 active on this branch) · 4 a goal file exists
+#   but could not be read, and no other goal answered. 4 is distinct from 1
+#   because callers gate on existence: the merge gate treats 1 as "no goal, not
+#   applicable" and proceeds, which is the wrong answer when a goal is sitting
+#   there unreadable. Unreadable goals are still skipped when some other goal
+#   does answer, so one corrupt file never blocks a legitimate sibling.
 #   --branch <name>    override the detected current branch (test-only / scripting)
 #   --allow-terminal   also consider a terminal `achieved` goal, but ONLY when it
 #                      owns the current branch (never cross-branch) — lets the
@@ -144,6 +151,7 @@ active = []
 # both answer the gate with an unrelated goal and be influenceable through file
 # mtime.
 terminal = []
+unreadable = []
 for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
     if os.path.islink(path):
         print(f"flow-active-goal.sh: refusing — {path} is a symlink", file=sys.stderr)
@@ -161,11 +169,25 @@ for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
             active.append((path, data, branch, mtime))
         elif allow_terminal and status == "achieved":
             terminal.append((path, data, branch, mtime))
-    except Exception:
+    except Exception as exc:
         # Tolerate unparseable goals — they would block lookup of a sibling
         # legitimate goal. The Stop hook + status subcommand follow the same
-        # tolerate-and-continue pattern.
+        # tolerate-and-continue pattern. But remember that it happened: a goal
+        # skipped here is not a goal that does not exist, and the difference
+        # decides a merge. `except Exception` also catches every wrong shape —
+        # `lifecycle: active` as a scalar raises AttributeError on .get — so
+        # this arm is much wider than "unparseable".
+        unreadable.append((path, exc))
         continue
+
+# Nothing matched. Whether that means "no goal" or "a goal nobody could read"
+# is the whole question for a caller that gates on existence: the merge gate
+# reads exit 1 as "not applicable" and proceeds. Say the second thing when it
+# is true, and let the caller decide.
+if not active and not terminal and unreadable:
+    for path, exc in unreadable:
+        print(f"flow-active-goal.sh: {path} could not be read: {exc}", file=sys.stderr)
+    sys.exit(4)
 
 if not active and not terminal:
     sys.exit(1)
@@ -216,6 +238,13 @@ else:
     # Either only terminal goals exist and none own the current branch, or
     # --branch-strict with a KNOWN current branch that owns no goal -> the
     # caller must treat this as "no applicable goal for this branch".
+    # A goal skipped as unreadable could have been the one that owns this
+    # branch; nobody can say it did not. Report that rather than "no goal",
+    # which the merge gate reads as "not applicable" and proceeds on.
+    if unreadable:
+        for path, exc in unreadable:
+            print(f"flow-active-goal.sh: {path} could not be read: {exc}", file=sys.stderr)
+        sys.exit(4)
     sys.exit(1)
 
 path, data = chosen[0], chosen[1]

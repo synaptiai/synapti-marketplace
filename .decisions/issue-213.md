@@ -515,3 +515,29 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 22:53 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-v3-integration.test.sh -->
 
 <!-- auto-log: 2026-09-16 22:58 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-213.md -->
+
+<!-- auto-log: 2026-09-16 22:58 commit "fix(flow): a specification the section cannot read is not an empty one" -->
+
+<!-- auto-log: 2026-09-16 23:26 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-09-16 23:26 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-09-16 23:27 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-09-16 23:27 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
+
+<!-- auto-log: 2026-09-16 23:27 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
+
+<!-- auto-log: 2026-09-16 23:27 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
+
+<!-- auto-log: 2026-09-16 23:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-active-goal.sh -->
+
+<!-- auto-log: 2026-09-16 23:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-goal-record.sh -->
+
+<!-- auto-log: 2026-09-16 23:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-goal-record.sh -->
+
+<!-- auto-log: 2026-09-16 23:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-goal-record.sh -->
+
+<!-- auto-log: 2026-09-16 23:29 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-active-goal.test.sh -->
+
+<!-- auto-log: 2026-09-16 23:34 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-merge-seed.test.sh -->
