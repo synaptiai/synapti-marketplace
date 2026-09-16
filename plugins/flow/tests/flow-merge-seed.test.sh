@@ -36,6 +36,10 @@ else
   # prose or a `:{N}` placeholder is excluded (no false count, no spurious
   # diagnostic).
   assert_contains 'test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ |<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")' "$CONTENT" "seed select is the gate's marker shape"
+  # Both streams are seeded, so both selects must carry that shape — one of the
+  # two reverting to the bare token would still satisfy a single-occurrence check.
+  assert_equal "2" "$(grep -c 'test("<!-- FLOW_RESOLUTION_CYCLE:\[0-9\]+ |<!-- FLOW_REVIEW_CYCLE:\[0-9\]+ ")' "$MERGE_MD")" "both seed selects carry it"
+  assert_equal "0" "$(grep -c 'test("FLOW_RESOLUTION_CYCLE:\[0-9\]|FLOW_REVIEW_CYCLE:\[0-9\]")' "$MERGE_MD")" "the looser form is gone"
   # Both jq steps (union + count) fail closed on malformed JSON, not STATE=empty.
   assert_contains "SEED_JQ_EXIT" "$CONTENT" "union jq exit captured (fail-closed on malformed JSON)"
   assert_contains "union_jq_exit=" "$CONTENT" "malformed union surfaces as STATE=unavailable"
