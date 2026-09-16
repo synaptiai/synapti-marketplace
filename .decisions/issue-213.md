@@ -314,3 +314,5 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 16:38 commit "fix(flow): the review never runs what the goal carries, and a goal cannot flood it" -->
 
 <!-- auto-log: 2026-09-16 17:31 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mut3.py -->
+
+<!-- auto-log: 2026-09-16 19:00 commit "test(flow): the tests decide the answer, not the stub that feeds them" -->
