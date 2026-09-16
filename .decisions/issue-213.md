@@ -134,7 +134,49 @@ bound sits above the longest value any goal in this repository carries, so an or
 shortened, and when either bound does bite the section prints `GOAL_TRUNCATED=` naming how many
 values and rows were lost and where to read the whole thing. The requirements step is told to read a
 shortened value at `GOAL_REF` before mapping it. Nothing in three cycles and 72 mutants had pinned
-this, because no test fed the section a value longer than the cap.
+this. A fixture did feed the section a value far longer than the cap — the 20 000-character
+`wide.yaml` — but it asserted only that one value cannot make one line unbounded. No test asserted
+what became of the content, so the bound was pinned and the loss was not.
+
+## Cycle 5 (commit a5c50f4, delta 768eaef..a5c50f4)
+
+Zero new findings, which is the convergence signal. The cycle handed over seven items it declined to
+raise under the third-cycle rule, and three of them were mutants that survived the new tests: a cap
+of 730 (the fixture was 720 characters while the comment named 737, so any cap in between passed
+while cutting this repository's own criteria), a dropped `…` (asserted on the legend, never on a
+value), and a row count of 1 in place of the number actually withheld. The first is the same defect
+as the one it was written to catch: a test that passes for a weaker reason than its label. The
+fixture now derives its length from `.flow/goals/` and the cap is compared against that, so a cap
+below what this project writes fails regardless of what any fixture happens to be.
+
+Two more were the silent-drop family one level up from the case cycle 2 fixed. `sequence()` returned
+`[]` for anything that was not a list, so `acceptance_criteria` written as a mapping — or `non_goals`
+written as prose — printed `STATE=ok` with no rows, which the requirements step reads as "the goal
+names none". Risk rows were filtered by shape for the same result, and that filter also made the
+withheld-row count wrong. Both now raise, and the reason names the key. An absent key still means
+none, because that is a real answer; only a key that is present and unreadable is unavailable.
+
+One existing assertion had to change with them. The `shape3.yaml` case asserted `STATE=ok` for a
+goal whose `non_goals` was a string, under the label "a string is not iterated one character per
+non-goal". That guard is still right and still holds; what it also encoded was the silent drop. It
+now asserts `STATE=unavailable` with the key named, and keeps the per-character guard.
+
+A separate test-adequacy sweep, re-run at the same commit, reached the risk-row finding
+independently and raised one more the cycles had not: the goal-path match in the file-list query
+could be loosened from an equality to a containment with every assertion still passing. The existing
+prefix case does not discriminate the two, because `issue-420`'s path does not contain `issue-42`'s.
+A path that does contain it is the discriminating input, and this repository ships one — a fixture
+goal nested under a tests directory — so a pull request touching that fixture would have reported
+the goal under review as modified. Two cases now pin it, nested and suffixed; the containment
+mutant fails on exactly those two and nothing else.
+
+Two items from that sweep are recorded as having nothing to pin rather than fixed. The `LC_ALL=C`
+in `kind_of()` guards pattern matching against locale-dependent collation, but no pattern in the
+function uses a character range or class, so no input distinguishes the pinned locale from an
+unpinned one. It stays as a guard for patterns added later; a test asserting it today would pass for
+a weaker reason than its label, which is the defect this branch spent three cycles removing. The
+`[ -t 0 ]` usage guard needs a controlling terminal to exercise, and the test asserts its source text
+and says so at the assertion.
 
 ## Verdict (issue #213, commit 468a717)
 
@@ -387,3 +429,41 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 20:44 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
 
 <!-- auto-log: 2026-09-16 20:54 commit "fix(flow): a goal the section had to shorten says so" -->
+
+<!-- auto-log: 2026-09-16 20:59 commit "fix(flow): the new comment keeps its apostrophes paired" -->
+
+<!-- auto-log: 2026-09-16 21:04 Write /Users/danielbentes/.claude-work/projects/-Users-danielbentes-synapti-marketplace/memory/feedback_grep_masks_test_failure.md -->
+
+<!-- auto-log: 2026-09-16 21:17 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/forge.py -->
+
+<!-- auto-log: 2026-09-16 21:19 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/cycle5-finding.txt -->
+
+<!-- auto-log: 2026-09-16 21:21 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 21:21 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 21:26 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-16 21:26 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-16 21:27 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-16 21:27 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-16 21:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-16 21:29 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-09-16 21:29 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-09-16 21:29 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-09-16 21:29 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-09-16 21:30 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-16 21:35 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-213.md -->
+
+<!-- auto-log: 2026-09-16 22:04 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-16 22:21 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-213.md -->

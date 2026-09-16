@@ -281,10 +281,17 @@ def mapping(v):
     return v if isinstance(v, dict) else {}
 
 
-def sequence(v):
+def sequence(v, what):
+    # A key that is absent is a goal that names none of that thing, which is a
+    # real answer. A key that is present but is not a list is a goal nobody can
+    # read: returning nothing would report "the goal names no criteria" about a
+    # goal that names three — the same silent drop the per-item check below
+    # refuses, one level up.
     global cut_rows
-    if not isinstance(v, list):
+    if v is None:
         return []
+    if not isinstance(v, list):
+        raise ValueError("%s is not a list, so it cannot be read" % what)
     if len(v) > MAX_ROWS:
         cut_rows += len(v) - MAX_ROWS
     return v[:MAX_ROWS]
@@ -332,20 +339,25 @@ try:
     # Zero acceptance criteria is a goal that names none, not an unreadable
     # file. A criterion of the wrong shape is a different thing: dropping it
     # would report a goal that named two as a goal that named none.
-    for ac in sequence(objective.get("acceptance_criteria")):
+    for ac in sequence(objective.get("acceptance_criteria"), "acceptance_criteria"):
         if not isinstance(ac, dict):
             raise ValueError("a criterion is not a mapping, so the criteria cannot be read")
         out.append("AC=%s|%s|%s" % (one_line(ac.get("id")), one_line(ac.get("text")),
                                     one_line(ac.get("verification_command"))))
 
     spec = mapping(doc.get("specification"))
-    for ng in sequence(spec.get("non_goals")):
+    for ng in sequence(spec.get("non_goals"), "non_goals"):
         out.append("NON_GOAL=%s" % one_line(ng))
-    for ct in sequence(spec.get("interface_contracts")):
+    for ct in sequence(spec.get("interface_contracts"), "interface_contracts"):
         out.append("CONTRACT=%s" % one_line(ct))
 
-    rows = [r for r in sequence(spec.get("risk_map")) if isinstance(r, dict)]
+    # Filtering the rows by shape rather than checking them would report
+    # RISK_MAP_SOURCE=issue-text — "derive the rows from prose" — about a goal
+    # whose team wrote five, and would make the withheld-row count above a lie.
+    rows = sequence(spec.get("risk_map"), "risk_map")
     for r in rows:
+        if not isinstance(r, dict):
+            raise ValueError("a risk row is not a mapping, so the risk map cannot be read")
         out.append("RISK_MAP=%s|%s|%s|goal" % (one_line(r.get("area")),
                                                one_line(r.get("plausible_wrong_version")),
                                                one_line(r.get("discriminating_check"))))
@@ -364,8 +376,12 @@ print("STATE=ok")
 if cut_values or cut_rows:
     # Say what was lost and where the whole thing is, so a reader who needs the
     # exact wording knows to go and get it rather than assuming this is all of it.
-    print("GOAL_TRUNCATED=%d value(s) over %d characters end in …, %d row(s) not printed; "
-          "read the whole goal at GOAL_PATH as of GOAL_REF above"
+    # "shortened to", not "over": the length measured is the length after a
+    # literal pipe becomes %7C, so a value counted here can be shorter than
+    # that in the file, and a reader who goes to GOAL_PATH to find the cut
+    # should not be told to look for a length the file does not have.
+    print("GOAL_TRUNCATED=%d value(s) shortened to %d characters and ending in …, "
+          "%d row(s) not printed; read the whole goal at GOAL_PATH as of GOAL_REF above"
           % (cut_values, MAX_VALUE, cut_rows))
 for line in out:
     print(line)

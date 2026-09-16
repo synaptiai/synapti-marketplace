@@ -500,6 +500,10 @@ assert_match 'GOAL_TRUNCATED=.*GOAL_PATH|GOAL_TRUNCATED=.*GOAL_REF|GOAL_TRUNCATE
   "and where the whole thing can be read"
 assert_contains "ENCODING=" "$RG_OUT" "the encoding legend is still there"
 assert_match 'ENCODING=.*…' "$RG_OUT" "and it explains the mark a shortened value ends with"
+# The legend promises the mark; the value has to carry it. Asserting it only on
+# the legend passes on a section that never marks a value at all.
+assert_equal "1" "$(printf '%s\n' "$RG_OUT" | grep -c '^AC=.*…')" \
+  "the shortened value itself ends in the mark the legend describes"
 
 # More rows than the section prints is the silent half: it left no mark at all.
 {
@@ -516,6 +520,11 @@ STUB_GOAL_FILE="$RG_TMP/manyrows.yaml" _rg_run "$RG_BARE" 42
 assert_contains "STATE=ok" "$RG_OUT" "a goal with many criteria reads"
 assert_contains "GOAL_TRUNCATED=" "$RG_OUT" "and a goal with more rows than the section prints says so too"
 assert_match 'GOAL_TRUNCATED=.*row' "$RG_OUT" "naming the rows"
+# The count is the claim. 150 criteria with 100 printed is 50 withheld, and a
+# notice that says "1 row" about 50 is a notice a reader cannot act on.
+assert_match 'GOAL_TRUNCATED=.*[^0-9]50 row' "$RG_OUT" "and how many rows were withheld"
+assert_equal "100" "$(printf '%s\n' "$RG_OUT" | grep -c '^AC=')" \
+  "exactly the rows the cap allows are printed"
 
 # A goal the section did NOT shorten must not claim it did, or the notice is
 # noise and a reader learns to skip it.
@@ -525,11 +534,48 @@ assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^GOAL_TRUNCATED=')" \
   "a goal that fits is not reported as shortened"
 
 _flow_test_begin "FlowGoal: the values this repository's own goals carry are not shortened"
-# The longest value in any goal in .flow/goals/ today is 737 characters. A cap
-# that cuts them makes every review of this repository read a shortened
-# specification — which is what the cycle-4 review reproduced against the goal
-# of this very pull request.
-RG_REAL=$(awk 'BEGIN { while (i++ < 60) printf "twelve chars" }')   # 720 characters
+# A cap below the length this project actually writes makes every review of this
+# repository read a shortened specification — which is what the cycle-4 review
+# reproduced against the goal of this very pull request. A fixture of some fixed
+# length pins nothing: the goals grow, and any cap between that fixture and the
+# real longest value passes while cutting real goals. So the length comes from
+# the goals themselves, and the cap comes from the block.
+RG_LONGEST=$(python3 - "$REPO_ROOT/.flow/goals" <<'RG_LONGEST_PY' 2>/dev/null
+import glob, os, sys, yaml
+longest, files = 0, sorted(glob.glob(os.path.join(sys.argv[1], "*.goal.yaml")))
+def walk(v):
+    global longest
+    if isinstance(v, dict):
+        for x in v.values():
+            walk(x)
+    elif isinstance(v, list):
+        for x in v:
+            walk(x)
+    elif v is not None:
+        # The same shaping the block applies before it measures.
+        longest = max(longest, len(" ".join(str(v).splitlines()).replace("|", "%7C").strip()))
+for f in files:
+    with open(f, "rb") as fh:
+        walk(yaml.safe_load(fh))
+print("%d %d" % (len(files), longest))
+RG_LONGEST_PY
+)
+RG_GOAL_COUNT=${RG_LONGEST%% *}
+RG_LONGEST=${RG_LONGEST##* }
+# A derivation that found no goals would make every assertion below vacuous.
+if [ "${RG_GOAL_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+  _flow_assert_pass "the repository's own goals were read ($RG_GOAL_COUNT files, longest value $RG_LONGEST chars)"
+else
+  _flow_assert_fail "no goal in .flow/goals/ could be read, so the cap is compared against nothing"
+fi
+RG_CAP=$(sed -n 's/^MAX_VALUE = \([0-9][0-9]*\).*/\1/p' "$RG_TMP/flowgoal.sh" | head -1)
+if [ -n "$RG_CAP" ] && [ -n "$RG_LONGEST" ] && [ "$RG_CAP" -gt "$RG_LONGEST" ] 2>/dev/null; then
+  _flow_assert_pass "the value cap ($RG_CAP) is above the longest value this repository writes ($RG_LONGEST)"
+else
+  _flow_assert_fail "value cap ${RG_CAP:-unreadable} does not clear this repository's longest value ${RG_LONGEST:-unreadable}"
+fi
+# And the section proves it on a criterion of exactly that length.
+RG_REAL=$(python3 -c 'import sys; n=int(sys.argv[1]); print(("twelve chars"*((n//12)+1))[:n])' "$RG_LONGEST")
 {
   printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowGoal\nmetadata: {id: issue-42}\n'
   printf 'objective:\n  outcome: x\n  acceptance_criteria:\n    - id: AC1\n      text: "%s"\n' "$RG_REAL"
@@ -537,8 +583,9 @@ RG_REAL=$(awk 'BEGIN { while (i++ < 60) printf "twelve chars" }')   # 720 charac
 } > "$RG_TMP/reallength.yaml"
 STUB_GOAL_FILE="$RG_TMP/reallength.yaml" _rg_run "$RG_BARE" 42
 assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^GOAL_TRUNCATED=')" \
-  "a 720-character criterion — the length this repository actually writes — is printed whole"
+  "a criterion the length this repository actually writes is printed whole"
 assert_contains "twelve charstwelve chars" "$RG_OUT" "and its text is there"
+assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^AC=.*…')" "with no shortening mark on it"
 
 _flow_test_begin "FlowGoal: a criterion of the wrong shape is not silently dropped"
 # Announcing STATE=ok with no AC= line says "this goal names no criteria",
@@ -558,6 +605,84 @@ YAML
 STUB_GOAL_FILE="$RG_TMP/acstrings.yaml" _rg_run "$RG_BARE" 42
 assert_contains "STATE=unavailable" "$RG_OUT" "criteria of the wrong shape make the goal unreadable"
 assert_not_contains "STATE=ok" "$RG_OUT" "rather than a goal that names none"
+
+_flow_test_begin "FlowGoal: a list written as something other than a list is not silently dropped"
+# The per-item case above is only half of it. A container of the wrong shape —
+# acceptance_criteria written as a mapping, or as one string — was returned as
+# an empty list, so a goal naming three criteria printed STATE=ok and no AC=
+# line, which the requirements step reads as "the goal names no criteria".
+cat > "$RG_TMP/acmapping.yaml" <<'YAML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-42}
+objective:
+  outcome: x
+  acceptance_criteria:
+    AC1: do the thing
+    AC2: and the other
+lifecycle: {status: active}
+YAML
+STUB_GOAL_FILE="$RG_TMP/acmapping.yaml" _rg_run "$RG_BARE" 42
+assert_contains "STATE=unavailable" "$RG_OUT" "criteria written as a mapping make the goal unreadable"
+assert_not_contains "STATE=ok" "$RG_OUT" "rather than a goal that names none"
+assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^AC=')" "and no criterion is claimed"
+
+cat > "$RG_TMP/ngstring.yaml" <<'YAML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-42}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - {id: AC1, text: do the thing, verification_command: make test}
+specification:
+  non_goals: this is prose, not a list
+lifecycle: {status: active}
+YAML
+STUB_GOAL_FILE="$RG_TMP/ngstring.yaml" _rg_run "$RG_BARE" 42
+assert_contains "STATE=unavailable" "$RG_OUT" "non-goals written as prose make the goal unreadable"
+assert_not_contains "NON_GOAL=" "$RG_OUT" "rather than a goal that names no non-goals"
+
+# An absent key is the opposite case and must stay ordinary: a goal with no
+# specification block at all names no non-goals, and that is a real answer.
+cat > "$RG_TMP/nospec.yaml" <<'YAML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-42}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - {id: AC1, text: do the thing, verification_command: make test}
+lifecycle: {status: active}
+YAML
+STUB_GOAL_FILE="$RG_TMP/nospec.yaml" _rg_run "$RG_BARE" 42
+assert_contains "STATE=ok" "$RG_OUT" "a goal carrying no specification block still reads"
+assert_contains "AC=AC1|" "$RG_OUT" "and its criterion is printed"
+assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^NON_GOAL=')" "with no non-goals, which is the truth"
+assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "and the risk rows come from the issue text"
+
+_flow_test_begin "FlowGoal: a risk row of the wrong shape is not silently dropped"
+# Risk rows were filtered by shape rather than checked: a goal whose risk map is
+# a list of strings printed STATE=ok, no RISK_MAP= row, and
+# RISK_MAP_SOURCE=issue-text — telling the review to derive rows from prose
+# while the team had written five.
+cat > "$RG_TMP/riskstrings.yaml" <<'YAML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-42}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - {id: AC1, text: do the thing, verification_command: make test}
+specification:
+  risk_map:
+    - 'the parser might be wrong'
+    - 'the cap might be wrong'
+lifecycle: {status: active}
+YAML
+STUB_GOAL_FILE="$RG_TMP/riskstrings.yaml" _rg_run "$RG_BARE" 42
+assert_contains "STATE=unavailable" "$RG_OUT" "risk rows of the wrong shape make the goal unreadable"
+assert_not_contains "STATE=ok" "$RG_OUT" "rather than a goal whose risk map is derived from prose"
 
 _flow_test_begin "FlowGoal: a reader that dies says so"
 # The reader is a child process. If it is killed — out of memory, a crash — and
@@ -613,8 +738,12 @@ specification:
 lifecycle: {status: active}
 YAML
 STUB_GOAL_FILE="$RG_TMP/shape3.yaml" _rg_run "$RG_BARE" 42
-assert_contains "STATE=ok" "$RG_OUT" "the goal still reads"
-assert_equal "1" "$(printf '%s\n' "$RG_OUT" | grep -c '^AC=')" "and the criterion is reached"
+# Two things must both hold, and only one of them used to. A string must not be
+# iterated one character per row — and it must not be dropped in silence
+# either, which reported a goal whose non-goals nobody could read as a goal
+# that had none.
+assert_contains "STATE=unavailable" "$RG_OUT" "a string where a list belongs makes the goal unreadable"
+assert_match 'REASON=.*non_goals' "$RG_OUT" "and the reason names the key that could not be read"
 assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^NON_GOAL=')" \
   "a string is not iterated one character per non-goal"
 assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^CONTRACT=')" \
@@ -707,6 +836,18 @@ assert_contains "GOAL_EDITED=no" "$RG_OUT" "a different issue goal in the same p
 # A select that narrowed to a prefix instead of an equality would answer for it.
 STUB_CHANGED_FILE=".flow/goals/issue-420.goal.yaml" STUB_FILE_STATUS=modified _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=no" "$RG_OUT" "nor does a goal whose issue number merely begins with this one"
+# The prefix case above does not discriminate an equality from a containment:
+# issue-420's path does not contain issue-42's. A path that DOES contain it is
+# the one that matters, and this repository already ships one — a fixture goal
+# nested under a tests directory. A containment test would report the goal of
+# the pull request as modified because a fixture beneath it changed.
+STUB_CHANGED_FILE="plugins/flow/tests/fixtures/blast-radius/.flow/goals/issue-42.goal.yaml" \
+  STUB_FILE_STATUS=modified _rg_run "$RG_BARE" 42
+assert_contains "GOAL_EDITED=no" "$RG_OUT" \
+  "a fixture goal nested under another directory does not answer for the real goal"
+# Same shape, suffixed rather than nested: a backup or a generated sibling.
+STUB_CHANGED_FILE=".flow/goals/issue-42.goal.yaml.bak" STUB_FILE_STATUS=modified _rg_run "$RG_BARE" 42
+assert_contains "GOAL_EDITED=no" "$RG_OUT" "nor does a file whose name merely starts with the goal path"
 STUB_CONTENT_MODE=404 STUB_FILE_STATUS="" _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=no" "$RG_OUT" "the flag is reported even when there is no goal to read"
 STUB_HEAD_SHA="" STUB_FILE_STATUS=modified _rg_run "$RG_BARE" 42
