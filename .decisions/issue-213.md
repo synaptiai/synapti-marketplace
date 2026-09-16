@@ -33,9 +33,10 @@ docs stop disagreeing about whether review creates a goal
 
 ### Failure modes
 
-- **Timeouts**: the goal is fetched over the API, so Phase 1 makes up to three `gh` calls it did not
-  make before (head commit, goal contents, pull request file list; a failed contents call adds a
-  fourth to tell an absent goal from an unreachable one). They carry no explicit timeout, which is
+- **Timeouts**: the goal is fetched over the API, so Phase 1 makes three `gh` calls it did not make
+  before: the head commit, the goal contents at that commit, and the pull request file list. The
+  contents call carries its response status (`gh api -i`), so telling an absent goal from an
+  unreachable one costs no extra call. They carry no explicit timeout, which is
   what every other `gh` call in this fence does; a call that fails or hangs is reported as
   `STATE=unavailable` or `GOAL_EDITED=unavailable` rather than as an answer. No agent call is
   introduced. LSP probes keep the existing `lsp.timeout`; a probe that times out is reported as the
@@ -318,3 +319,5 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 19:00 commit "test(flow): the tests decide the answer, not the stub that feeds them" -->
 
 <!-- auto-log: 2026-09-16 19:29 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/bundle-213.md -->
+
+<!-- auto-log: 2026-09-16 19:34 commit "test(flow): every state says why, and both vocabularies can report a miss" -->
