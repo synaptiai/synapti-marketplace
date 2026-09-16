@@ -350,6 +350,22 @@ only test asserts an exit code on a body that trips a different guard first.
 
 The mutation set is 38 and all 38 are caught.
 
+
+## Phase 4 self-review: convergence
+
+Behaviour converged at round 6 and round 7 confirmed it. Both rounds drove more than a dozen bodies
+through the posting block under /bin/bash 3.2.57 and zsh 5.9 — the rendered template, follow-up
+bodies with a Previous Feedback Status table, zero, one and two LOW findings, the section edges, a
+body with no trailing newline — and neither produced a wrong post or a wrong refusal. Their findings
+were checks whose deletion the suite did not notice, all fixed; the mutation set stands at 38 of 38
+caught (driver kept with the session artifacts, listed in the evidence bundle).
+
+Further targeted rounds are not run. A mutation-adequacy pass has no fixed point: each round finds a
+few more unmutated branches because the last round added checks, so the stream never empties and it
+is no longer finding defects. Three independent passes on this code remain before merge —
+holdout-validation, the five-agent fan-out in /flow:pr, and /flow:review, whose zero-finding cycle is
+the merge gate agreed for this epic. A posting-block defect found there is fixed there.
+
 <!-- auto-log: 2026-09-16 00:17 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-pr-linked-issue.test.sh -->
 
 <!-- auto-log: 2026-09-16 00:19 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests.py -->
@@ -413,3 +429,5 @@ The mutation set is 38 and all 38 are caught.
 <!-- auto-log: 2026-09-16 02:30 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants7.py -->
 
 <!-- auto-log: 2026-09-16 02:43 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/journal_round7.py -->
+
+<!-- auto-log: 2026-09-16 02:43 commit "test(flow): reach the posting guards a passing body never reached" -->
