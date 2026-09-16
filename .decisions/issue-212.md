@@ -431,3 +431,11 @@ the merge gate agreed for this epic. A posting-block defect found there is fixed
 <!-- auto-log: 2026-09-16 02:43 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/journal_round7.py -->
 
 <!-- auto-log: 2026-09-16 02:43 commit "test(flow): reach the posting guards a passing body never reached" -->
+
+<!-- auto-log: 2026-09-16 02:44 Write /Users/danielbentes/.claude-work/projects/-Users-danielbentes-synapti-marketplace/memory/feedback_test_the_check_not_the_defect.md -->
+
+<!-- auto-log: 2026-09-16 02:58 commit "test(flow): post a body rendered from the self-review template through the block" -->
+
+<!-- auto-log: 2026-09-16 03:04 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/build_bundle.py -->
+
+<!-- auto-log: 2026-09-16 03:16 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_bundle.py -->

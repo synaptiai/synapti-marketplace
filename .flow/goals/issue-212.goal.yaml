@@ -38,8 +38,9 @@ objective:
     evidence_ref: null
   - id: AC3
     text: commands/review.md Phase 4 step 5 (self-review) requires each LOW finding
-      to end as fixed (HIGH) or as a `dropped-finding` artifact with `reason=self-review-refuted`;
-      references/decision-journal-schema.md documents that reason value.
+      to end as fixed (HIGH), as a `dropped-finding` artifact with `reason=self-review-refuted`,
+      or escalated and recorded MEDIUM; references/decision-journal-schema.md documents
+      that reason value.
     verification_command: bash plugins/flow/tests/run.sh plugins/flow/tests/finding-confidence.test.sh
     must_pass: true
     status: pending
