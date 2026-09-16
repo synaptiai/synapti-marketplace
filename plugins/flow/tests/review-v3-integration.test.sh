@@ -352,6 +352,52 @@ STUB_GOAL_FILE="$RG_TMP/shape3.yaml" _rg_run "$RG_BARE" 42
 assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^NON_GOAL=.$')" \
   "a string is not iterated one character per non-goal"
 
+_flow_test_begin "FlowGoal: a goal written in prose still reads on an ascii stdout"
+# Goal text is written by people and carries em dashes, quotes and accents. When
+# the interpreter resolves stdout to ascii — a C locale with the PEP 538
+# coercion turned off, which is a shape CI runners come in — printing such a
+# value raises, and it raises AFTER the section has said it read the goal.
+cat > "$RG_TMP/prose.yaml" <<'YAML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-42}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - id: AC1
+      text: 'the fence runs before the checkout — so the tree is not the pull request'
+      verification_command: 'make test'
+specification:
+  non_goals: ['no cross-repository consumers — flow has no linked-repository model']
+lifecycle: {status: active}
+YAML
+RG_OUT=$(cd "$RG_BARE" && PATH="$RG_STUB:$PATH" LINKED=42 PR_NUM=7 REPO=o/r   STUB_GOAL_FILE="$RG_TMP/prose.yaml"   PYTHONCOERCECLOCALE=0 PYTHONUTF8=0 LC_ALL=C LANG=C   bash "$RG_TMP/flowgoal.sh" 2>"$RG_TMP/rg.err")
+assert_equal "1" "$(printf '%s\n' "$RG_OUT" | grep -c '^AC=')" \
+  "the criterion is printed, not lost to an encoding error"
+assert_contains "STATE=ok" "$RG_OUT" "and the goal reads"
+assert_equal "0" "$(grep -c 'UnicodeEncodeError' "$RG_TMP/rg.err")" "with no encoding error"
+assert_contains "NON_GOAL=" "$RG_OUT" "and extraction continues past the criterion"
+
+_flow_test_begin "FlowGoal: a goal that names no criteria is a goal, not an unreadable file"
+# The specification calls zero acceptance criteria valid input: the review falls
+# back to the issue text. Reporting it as unreadable would say the goal is
+# broken when it is merely empty.
+cat > "$RG_TMP/nocrit.yaml" <<'YAML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-42}
+objective:
+  outcome: x
+  acceptance_criteria: []
+specification:
+  non_goals: ['one non-goal']
+lifecycle: {status: active}
+YAML
+STUB_GOAL_FILE="$RG_TMP/nocrit.yaml" _rg_run "$RG_BARE" 42
+assert_contains "STATE=ok" "$RG_OUT" "a goal with no criteria still reads"
+assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^AC=')" "and prints no criteria"
+assert_contains "NON_GOAL=one non-goal" "$RG_OUT" "while the rest of the specification is still handed over"
+
 _flow_test_begin "FlowGoal: the block is inert without python3 or PyYAML"
 mkdir -p "$RG_TMP/nopy"
 cat > "$RG_TMP/nopy/python3" <<'NOPY'

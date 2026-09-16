@@ -219,6 +219,16 @@ import io
 import os
 import yaml
 
+# Goal text is written by people: em dashes, quotes, accents. Under a C locale
+# with the PEP 538 coercion disabled the interpreter resolves stdout to ascii
+# and printing such a value raises — after the section has already said it read
+# the goal. Say what the encoding is rather than inheriting whatever the caller
+# happened to have, and never let an unprintable character end the section.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:                      # pragma: no cover - Python without it
+    pass
+
 
 def one_line(v):
     # Values are printed on one pipe-delimited line, so a literal pipe or a
@@ -248,13 +258,12 @@ try:
 
     out.append("GOAL_STATUS=%s" % one_line(mapping(doc.get("lifecycle")).get("status", "unknown")))
 
-    objective = mapping(doc.get("objective"))
-    if not objective:
+    if not isinstance(doc.get("objective"), dict):
         raise ValueError("the goal has no objective mapping")
-    criteria = sequence(objective.get("acceptance_criteria"))
-    if not criteria:
-        raise ValueError("the goal names no acceptance criteria")
-    for ac in criteria:
+    objective = mapping(doc.get("objective"))
+    # Zero acceptance criteria is a goal that names none, not an unreadable
+    # file. The requirements step falls back to the issue text and says so.
+    for ac in sequence(objective.get("acceptance_criteria")):
         if not isinstance(ac, dict):
             continue
         out.append("AC=%s|%s|%s" % (one_line(ac.get("id")), one_line(ac.get("text")),
@@ -983,8 +992,10 @@ Skill(holdout-validation):
 **Main thread**: Requirements compliance — map acceptance criteria to implementation. When the
 Phase 1 `### FlowGoal` section reported `STATE=ok`, the criteria are its `AC=` lines (`<id>|<text>|
 <verification_command>`), read at the head commit the section names; run each `verification_command`
-that the project already trusts rather than judging the criterion by eye. Otherwise they are the
-issue body.
+that the project already trusts rather than judging the criterion by eye. `STATE=ok` with no `AC=`
+line is a goal that names no criteria: fall back to the issue body and say in the requirements map
+that the goal named none, so an empty goal is never read as a change with nothing to meet. On any
+other state the criteria are the issue body.
 
 TaskUpdate each review task as agents complete.
 

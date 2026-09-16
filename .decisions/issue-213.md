@@ -33,8 +33,13 @@ docs stop disagreeing about whether review creates a goal
 
 ### Failure modes
 
-- **Timeouts**: none added — no network or agent call is introduced. LSP probes keep the existing
-  `lsp.timeout`; a probe that times out is reported as the tool that was used, not as zero callers.
+- **Timeouts**: the goal is fetched over the API, so Phase 1 makes up to three `gh` calls it did not
+  make before (head commit, goal contents, pull request file list; a failed contents call adds a
+  fourth to tell an absent goal from an unreachable one). They carry no explicit timeout, which is
+  what every other `gh` call in this fence does; a call that fails or hangs is reported as
+  `STATE=unavailable` or `GOAL_EDITED=unavailable` rather than as an answer. No agent call is
+  introduced. LSP probes keep the existing `lsp.timeout`; a probe that times out is reported as the
+  tool that was used, not as zero callers.
 - **Partial failures**: a goal that exists but cannot be read — malformed YAML, valid YAML of the
   wrong shape, missing `python3` or `yaml` module, or a fetch that fails for any reason other than
   404 — yields `STATE=unavailable` with the reason, and the review falls back to the issue-text
@@ -87,6 +92,22 @@ docs stop disagreeing about whether review creates a goal
 - **No risk map**: derive risk areas from the issue text rather than emitting `none`. Every derived
   row is labelled `source=issue-text` in the section and in the review body, so a derived row is
   never mistaken for one the team wrote.
+
+## Holdout validation (cycle 2)
+
+Three claims did not survive cross-referencing against file state.
+
+- **A goal written in prose did not read on an ascii stdout.** Goal text carries em dashes and
+  accents, and under a C locale with the PEP 538 coercion disabled the interpreter resolves stdout
+  to ascii; printing such a value raised `UnicodeEncodeError` after `STATE=ok` had been printed, so
+  the section announced a goal it had read and then listed none of its criteria. That is the same
+  failure the buffering was meant to close, reached by another route. Reproduced through the block,
+  then fixed by writing UTF-8 explicitly and replacing anything unprintable.
+- **A goal naming no criteria was reported as unreadable.** The specification calls zero acceptance
+  criteria valid input; the reader raised on it. Now it reads, prints no `AC=` line, and the
+  requirements step is told what that means.
+- **The failure-modes section said no network call was introduced.** Three are, and the section now
+  says so along with what happens when one fails.
 
 ## Self-review resolution (cycle 1)
 
@@ -184,3 +205,7 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 14:43 commit "fix(flow): the goal-edited flag is reported whatever the goal state is" -->
 
 <!-- auto-log: 2026-09-16 14:59 commit "fix(flow): the rows are derived from the issue text whenever no goal supplied them" -->
+
+<!-- auto-log: 2026-09-16 15:48 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/evidence-213.md -->
+
+<!-- auto-log: 2026-09-16 15:52 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/stub/gh -->
