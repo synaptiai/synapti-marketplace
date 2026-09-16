@@ -231,8 +231,16 @@ for BR_CAT in $BR_INSTRUCTED; do
   case "$BR_JSON_CATS" in *"$BR_CAT"*) ;; *) BR_MISSING="$BR_MISSING json:$BR_CAT" ;; esac
 done
 assert_equal "" "$BR_MISSING" "every instructed category ($BR_CHECKED checked) is in both vocabularies"
-# The check has to be able to fail: a category that is deliberately not in the
-# vocabulary must be reported as missing.
+# The check has to be able to fail, on BOTH halves: a negative control that only
+# re-implements the markdown lookup says nothing about the JSON one.
 BR_FAKE=""
-printf '%s\n' "$BR_VOCAB" | grep -qx "not-a-category" || BR_FAKE="missing"
-assert_equal "missing" "$BR_FAKE" "and an unknown category would be caught"
+printf '%s\n' "$BR_VOCAB" | grep -qx "not-a-category" || BR_FAKE="${BR_FAKE}md:not-a-category "
+case "$BR_JSON_CATS" in *"not-a-category"*) ;; *) BR_FAKE="${BR_FAKE}json:not-a-category" ;; esac
+assert_equal "md:not-a-category json:not-a-category" "$BR_FAKE" \
+  "an unknown category is reported missing by both vocabularies, not just one"
+# The JSON half matches a substring, so a category that is a fragment of another
+# word would pass without being listed. Pin the boundary.
+case "$BR_JSON_CATS" in *"breaking-change"*) _flow_assert_pass "the JSON list names breaking-change" ;;
+  *) _flow_assert_fail "the JSON list does not name breaking-change" ;; esac
+case "$BR_JSON_CATS" in *"breaking-chang, "*|*" breaking-chang,"*) _flow_assert_fail "a fragment matched as if it were a category" ;;
+  *) _flow_assert_pass "and a fragment of it is not itself a listed category" ;; esac

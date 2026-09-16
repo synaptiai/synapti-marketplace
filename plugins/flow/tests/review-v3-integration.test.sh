@@ -223,7 +223,9 @@ RG_STALE="$RG_TMP/stale-tree"
 mkdir -p "$RG_STALE/.flow/goals"
 printf 'lifecycle: {status: STALE-TREE-COPY}\n' > "$RG_STALE/.flow/goals/issue-42.goal.yaml"
 _rg_run "$RG_STALE" 42
+assert_contains "STATE=ok" "$RG_OUT" "the run succeeded, so the assertion below means something"
 assert_not_contains "STALE-TREE-COPY" "$RG_OUT" "the working-tree copy is never the one read"
+assert_contains "GOAL_STATUS=active" "$RG_OUT" "and the status came from the head goal, not the tree copy"
 
 _flow_test_begin "FlowGoal: reading a goal cannot execute code the pull request ships"
 # `gh pr checkout` leaves the pull request in the tree, so an interpreter that
@@ -358,6 +360,7 @@ assert_contains "ENCODING=" "$RG_OUT" "and the section says how an escaped value
 _flow_test_begin "FlowGoal: absent, unreadable and unfetchable are three different answers"
 STUB_CONTENT_MODE=404 _rg_run "$RG_BARE" 42
 assert_contains "STATE=none" "$RG_OUT" "no goal at the head is STATE=none"
+assert_match 'REASON=.*carries no goal file' "$RG_OUT" "and says which question it answered"
 # The rows are derived from the issue text whenever the goal did not supply
 # them, and "no goal at all" is the commonest case of that. Without the line
 # here the derivation step has nothing to fire on and silently does not run.
@@ -381,6 +384,7 @@ printf ': not: yaml:\n  - [\n' > "$RG_TMP/bad2.yaml"
 STUB_GOAL_FILE="$RG_TMP/bad2.yaml" _rg_run "$RG_BARE" 42
 assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" \
   "and so does a goal that will not parse — which is exactly when the rows must be derived"
+assert_match 'REASON=.*did not read as a goal' "$RG_OUT" "and that one does blame the goal text, because it is the goal"
 RG_BIG=$(awk 'BEGIN { while (i++ < 30000) printf "wide-and-long-enough-to-pass-the-cap " }')
 printf 'objective: {outcome: "%s"}\n' "$RG_BIG" > "$RG_TMP/big.yaml"
 STUB_GOAL_FILE="$RG_TMP/big.yaml" _rg_run "$RG_BARE" 42
@@ -398,7 +402,11 @@ assert_equal "0" "$(printf '%s\n' "$RG_SRC_NOW" | grep -c 'RISK_MAP_SOURCE=none'
 STUB_CONTENT_MODE=403 _rg_run "$RG_BARE" 42
 assert_contains "STATE=unavailable" "$RG_OUT" "a refusal is unavailable, not an absent goal"
 assert_not_contains "STATE=none" "$RG_OUT" "and is never read as absent"
-assert_contains "403" "$RG_OUT" "and the reason names the status"
+assert_match 'REASON=.*403' "$RG_OUT" "and the reason names the status"
+assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "and it asks for derived rows like every other non-ok state"
+# Two states that both read `unavailable` must not read alike: a refusal is not
+# a goal that will not parse, and a reader sent to the wrong one wastes its time.
+assert_not_contains "did not read as a goal" "$RG_OUT" "a refusal does not blame the goal text"
 STUB_CONTENT_MODE=fail _rg_run "$RG_BARE" 42
 assert_contains "STATE=unavailable" "$RG_OUT" "a failed fetch is unavailable, not absent"
 assert_not_contains "STATE=none" "$RG_OUT" "never reported as no goal"
@@ -415,6 +423,7 @@ assert_not_contains "did not read as a goal:" "$RG_OUT" "rather than blaming the
 STUB_HEAD_SHA="" _rg_run "$RG_BARE" 42
 assert_contains "STATE=unavailable" "$RG_OUT" "no resolvable head commit is unavailable"
 assert_not_contains "STATE=none" "$RG_OUT" "and not reported as no goal"
+assert_match 'REASON=.*head commit' "$RG_OUT" "and the reason names what could not be resolved"
 _rg_run "$RG_BARE" none
 assert_contains "STATE=none" "$RG_OUT" "no linked issue is STATE=none"
 # `unavailable` is what the linked-issue helper returns when the LOOKUP failed —
@@ -423,6 +432,7 @@ assert_contains "STATE=none" "$RG_OUT" "no linked issue is STATE=none"
 # never established, and drops the goal silently.
 _rg_run "$RG_BARE" unavailable
 assert_contains "STATE=unavailable" "$RG_OUT" "a failed linked-issue lookup is unavailable"
+assert_match 'REASON=.*linked issue could not be resolved' "$RG_OUT" "and names the lookup, not the goal"
 assert_not_contains "STATE=none" "$RG_OUT" "never the claim that no issue is linked"
 assert_contains "GOAL_EDITED=unavailable" "$RG_OUT" "and what the pull request does to its goal is unknown too"
 assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "while the derivation step still has its trigger"
@@ -617,6 +627,12 @@ STUB_FILE_STATUS=added _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=created" "$RG_OUT" "adding the goal in this pull request is not an edit"
 STUB_FILE_STATUS=modified _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=modified" "$RG_OUT" "changing an existing goal is"
+# `changed` is a status the API also returns, and an unknown status must resolve
+# the same way: toward the answer that asks someone to look.
+STUB_FILE_STATUS=changed _rg_run "$RG_BARE" 42
+assert_contains "GOAL_EDITED=modified" "$RG_OUT" "and so is a status the API spells differently"
+STUB_FILE_STATUS=copied _rg_run "$RG_BARE" 42
+assert_contains "GOAL_EDITED=created" "$RG_OUT" "a copied goal is a created one"
 # A deleted goal is not fetchable at the head, so this is the only shape the
 # removed case can arrive in: the content 404s and the file list says removed.
 STUB_FILE_STATUS=removed STUB_CONTENT_MODE=404 _rg_run "$RG_BARE" 42
@@ -741,7 +757,10 @@ RG_DERIVE=$(printf '%s\n' "$RG_REVIEW" | awk '/^### Deriving the risk map/ { f =
 assert_match '[^[:space:]]' "$RG_DERIVE" "the derivation step exists"
 assert_contains 'RISK_MAP_SOURCE=issue-text' "$RG_DERIVE" "it fires on the state the block reports"
 assert_contains 'gh issue view' "$RG_DERIVE" "it reads the issue body, which Phase 1 does not fetch"
-assert_contains '|issue-text' "$RG_DERIVE" "every row it renders is labelled as derived"
+assert_contains '|issue-text' "$RG_DERIVE" "the row shape ends with the label"
+# One occurrence of the label is the template line. The sentence that carries
+# the rule is what a reader follows.
+assert_contains 'Every row derived here ends' "$RG_DERIVE" "and the rule says every row carries it"
 assert_match 'RISK_MAP=<area>' "$RG_DERIVE" "in the same shape the goal rows use"
 assert_contains 'plausible' "$RG_DERIVE" "a row names the plausible wrong version"
 assert_contains 'discriminating' "$RG_DERIVE" "and the input that tells right from wrong"
