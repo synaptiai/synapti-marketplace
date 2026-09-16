@@ -41,6 +41,40 @@ for PAIR in \
 done
 assert_equal "7" "$BR_EXAMINED" "all seven patterns examined"
 
+_flow_test_begin "contract-file detection: every extension and directory the helper claims"
+# The seven fixtures above cover one spelling per kind. The helper advertises
+# more, and each alternative that no input distinguishes can be deleted with
+# every assertion still passing — verified by mutation for the migration
+# extensions and the openapi directory block. These are strings, not files:
+# what is under test is the classifier, not the filesystem.
+BR_SPELLINGS=0
+for PAIR in \
+  "api/openapi.yml|openapi" \
+  "api/openapi.json|openapi" \
+  "api/swagger.yaml|openapi" \
+  "api/swagger.yml|openapi" \
+  "spec/openapi/users.yaml|openapi" \
+  "spec/openapi/users.json|openapi" \
+  "spec/swagger/users.yml|openapi" \
+  "api/queries.gql|graphql" \
+  "schemas/order.schema.yaml|schema" \
+  "schemas/order.schema.yml|schema" \
+  "schemas/order.avsc|schema" \
+  "schemas/order.xsd|schema" \
+  "db/migrations/002_users.rb|migration" \
+  "db/migrations/003_users.py|migration" \
+  "db/migrations/004_users.js|migration" \
+  "db/migrations/005_users.ts|migration" \
+  "db/migrations/006_users.go|migration" \
+  "db/migrate/007_users.sql|migration"; do
+  BR_PATH=${PAIR%%|*}
+  BR_WANT=${PAIR#*|}
+  BR_OUT=$(printf '%s\n' "$BR_PATH" | "$HELPER")
+  assert_equal "CONTRACT_FILE=$BR_PATH|$BR_WANT" "$BR_OUT" "$BR_PATH is a $BR_WANT contract file"
+  BR_SPELLINGS=$((BR_SPELLINGS + 1))
+done
+assert_equal "18" "$BR_SPELLINGS" "all eighteen further spellings examined"
+
 _flow_test_begin "contract-file detection: ordinary source is not a contract change"
 # A file that merely lives near a contract, or shares a word with one, must not
 # trigger a blast-radius section — that would make the section noise.

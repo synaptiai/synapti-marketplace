@@ -126,13 +126,33 @@ RG_STUB="$RG_TMP/stub"
 cat > "$RG_STUB/gh" <<'STUB'
 #!/usr/bin/env bash
 ARGS="$*"
+
+# Pull the caller's own --jq filter out of the arguments, so the filter under
+# test is what decides the answer. A stub that answers from its own variables
+# tests the stub.
+jq_filter() {
+  local prev=""
+  for a in "$@"; do
+    [ "$prev" = "--jq" ] && { printf '%s' "$a"; return 0; }
+    prev="$a"
+  done
+  return 1
+}
+
 case "$ARGS" in
   *"pr view"*headRefOid*)
     [ -n "${STUB_HEAD_SHA-}" ] || { echo "gh: no head" >&2; exit 1; }
     printf '%s\n' "$STUB_HEAD_SHA"; exit 0 ;;
   *contents/*)
-    # `gh api -i` answers with the status line, the headers, a blank line and
-    # the body — the shape the block reads the HTTP status out of.
+    # Serve the head only to a request that asked for the head. A block that
+    # drops ?ref= is asking the default branch, and gets told so.
+    case "$ARGS" in
+      *"ref=${STUB_HEAD_SHA:-__no_sha__}"*) ;;
+      *)
+        printf 'HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n'
+        printf '{"content":"%s"}\n' "$(printf 'lifecycle: {status: STALE-DEFAULT-BRANCH}\n' | base64 | tr -d '\n')"
+        exit 0 ;;
+    esac
     case "${STUB_CONTENT_MODE:-ok}" in
       404)  printf 'HTTP/2.0 404 Not Found\r\nContent-Type: application/json\r\n\r\n'
             printf '%s\n' '{"message":"Not Found","status":"404"}'
@@ -149,11 +169,22 @@ case "$ARGS" in
     esac ;;
   *pulls/*files*)
     [ "${STUB_FILES_EXIT:-0}" = "0" ] || { echo "gh: api error" >&2; exit "${STUB_FILES_EXIT}"; }
-    # Reproduce the server-side select: the caller passes the path it cares
-    # about inside the jq filter, and gets a status back only for that path.
-    case "$ARGS" in
-      *"${STUB_CHANGED_FILE:-__none__}"*) [ -n "${STUB_FILE_STATUS-}" ] && printf '%s\n' "$STUB_FILE_STATUS" ;;
-    esac
+    # A real pull request file list: one ordinary file, plus the goal entry the
+    # case under test asked for. The caller's jq select decides which matches.
+    STUB_FILES='[{"filename":"plugins/flow/commands/review.md","status":"modified"}'
+    if [ -n "${STUB_CHANGED_FILE-}" ] && [ -n "${STUB_FILE_STATUS-}" ]; then
+      STUB_FILES="$STUB_FILES,{\"filename\":\"$STUB_CHANGED_FILE\",\"status\":\"$STUB_FILE_STATUS\""
+      [ -n "${STUB_PREV_FILE-}" ] && STUB_FILES="$STUB_FILES,\"previous_filename\":\"$STUB_PREV_FILE\""
+      STUB_FILES="$STUB_FILES}"
+    fi
+    if [ -n "${STUB_CHANGED_FILE2-}" ] && [ -n "${STUB_FILE_STATUS2-}" ]; then
+      STUB_FILES="$STUB_FILES,{\"filename\":\"$STUB_CHANGED_FILE2\",\"status\":\"$STUB_FILE_STATUS2\""
+      [ -n "${STUB_PREV_FILE2-}" ] && STUB_FILES="$STUB_FILES,\"previous_filename\":\"$STUB_PREV_FILE2\""
+      STUB_FILES="$STUB_FILES}"
+    fi
+    STUB_FILES="$STUB_FILES]"
+    STUB_FILTER=$(jq_filter "$@") || { echo "stub: no --jq filter" >&2; exit 9; }
+    printf '%s' "$STUB_FILES" | jq -r "$STUB_FILTER"
     exit 0 ;;
 esac
 echo "gh: unstubbed call: $ARGS" >&2
@@ -202,11 +233,31 @@ _flow_test_begin "FlowGoal: reading a goal cannot execute code the pull request 
 RG_HOSTILE="$RG_TMP/hostile-import"
 RG_MARKER="$RG_TMP/hostile-import-ran"
 mkdir -p "$RG_HOSTILE"
+# The forged document is a COMPLETE goal: with a half-shaped one the reader
+# raises before printing, and the assertion below would pass whether or not the
+# hostile module was imported.
 cat > "$RG_HOSTILE/yaml.py" <<PYEVIL
 import os
 open("$RG_MARKER", "w").write("executed")
+
+class YAMLError(Exception):
+    pass
+
+class SafeLoader(object):
+    def __init__(self, *a, **k):
+        pass
+
+class events(object):
+    AliasEvent = object()
+
 def safe_load(*a, **k):
-    return {"lifecycle": {"status": "FORGED"}}
+    return load()
+
+def load(*a, **k):
+    return {"lifecycle": {"status": "FORGED"},
+            "objective": {"outcome": "x",
+                          "acceptance_criteria": [{"id": "AC1", "text": "FORGED", "verification_command": "x"}]},
+            "specification": {"non_goals": ["FORGED"]}}
 PYEVIL
 _rg_run "$RG_HOSTILE" 42
 if [ -e "$RG_MARKER" ]; then
@@ -317,6 +368,29 @@ STUB_CONTENT_MODE=fail _rg_run "$RG_BARE" 42
 assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "and so does a goal that could not be read"
 STUB_HEAD_SHA="" _rg_run "$RG_BARE" 42
 assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "and so does an unresolvable head commit"
+# Every arm that does not read a goal, not only the ones with a convenient
+# fixture: deleting any one of these echoes disabled the derivation step for
+# that state, and the suite stayed green.
+_rg_run "$RG_BARE" not-a-number
+assert_contains "STATE=none" "$RG_OUT" "a linked issue that is not a number is none"
+assert_contains "REASON=the linked issue is not a number" "$RG_OUT" "and says why"
+assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "and still asks for derived rows"
+STUB_CONTENT_MODE=empty _rg_run "$RG_BARE" 42
+assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "so does an empty response"
+printf ': not: yaml:\n  - [\n' > "$RG_TMP/bad2.yaml"
+STUB_GOAL_FILE="$RG_TMP/bad2.yaml" _rg_run "$RG_BARE" 42
+assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" \
+  "and so does a goal that will not parse — which is exactly when the rows must be derived"
+RG_BIG=$(awk 'BEGIN { while (i++ < 30000) printf "wide-and-long-enough-to-pass-the-cap " }')
+printf 'objective: {outcome: "%s"}\n' "$RG_BIG" > "$RG_TMP/big.yaml"
+STUB_GOAL_FILE="$RG_TMP/big.yaml" _rg_run "$RG_BARE" 42
+assert_contains "STATE=unavailable" "$RG_OUT" "a goal too large to hand to the reader is unavailable"
+# Without the cap the oversized value reaches the exec and fails there instead,
+# which is also unavailable — so the reason is what distinguishes the guard
+# from the crash it exists to prevent.
+assert_contains "REASON=the goal is too large to read" "$RG_OUT" "refused before it is handed over"
+assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "and still asks for derived rows"
+
 RG_SRC_NOW=$(cat "$RG_TMP/flowgoal.sh")
 assert_equal "0" "$(printf '%s\n' "$RG_SRC_NOW" | grep -c 'RISK_MAP_SOURCE=none')" \
   "there is no fourth answer: the rows come from the goal or from the issue text"
@@ -444,14 +518,38 @@ printf 'lifecycle: active\n' > "$RG_TMP/shape1.yaml"
 STUB_GOAL_FILE="$RG_TMP/shape1.yaml" _rg_run "$RG_BARE" 42
 assert_contains "STATE=unavailable" "$RG_OUT" "a scalar where a mapping belongs is unavailable"
 assert_not_contains "STATE=ok" "$RG_OUT" "never announced as read"
+# Nothing the reader extracted may reach the section when the read failed: a
+# leaked GOAL_STATUS= is a partial read presented as fact.
+assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^GOAL_STATUS=')" \
+  "and nothing it had already extracted leaks out"
 printf 'objective: not-a-mapping\nlifecycle: {status: active}\n' > "$RG_TMP/shape2.yaml"
 STUB_GOAL_FILE="$RG_TMP/shape2.yaml" _rg_run "$RG_BARE" 42
 assert_contains "STATE=unavailable" "$RG_OUT" "an objective that is not a mapping is unavailable"
 assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^STATE=ok')" "no STATE=ok was printed first"
-printf 'specification:\n  non_goals: a string\nlifecycle: {status: active}\n' > "$RG_TMP/shape3.yaml"
+# The objective has to be there, or the reader raises before the non-goals loop
+# and the assertion below passes for the wrong reason.
+cat > "$RG_TMP/shape3.yaml" <<'YAML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-42}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - id: AC1
+      text: 'a criterion'
+      verification_command: 'make test'
+specification:
+  non_goals: a string
+  interface_contracts: another string
+lifecycle: {status: active}
+YAML
 STUB_GOAL_FILE="$RG_TMP/shape3.yaml" _rg_run "$RG_BARE" 42
-assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^NON_GOAL=.$')" \
+assert_contains "STATE=ok" "$RG_OUT" "the goal still reads"
+assert_equal "1" "$(printf '%s\n' "$RG_OUT" | grep -c '^AC=')" "and the criterion is reached"
+assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^NON_GOAL=')" \
   "a string is not iterated one character per non-goal"
+assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^CONTRACT=')" \
+  "nor one character per interface contract"
 
 _flow_test_begin "FlowGoal: a goal written in prose still reads on an ascii stdout"
 # Goal text is written by people and carries em dashes, quotes and accents. When
@@ -534,13 +632,31 @@ STUB_CONTENT_MODE=404 STUB_FILE_STATUS="" _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=no" "$RG_OUT" "the flag is reported even when there is no goal to read"
 STUB_HEAD_SHA="" STUB_FILE_STATUS=modified _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=modified" "$RG_OUT" "and even when the head commit cannot be resolved"
+# A goal renamed away is reported under its NEW name, with the path under review
+# in previous_filename. A select that looks only at filename sees nothing and
+# says the pull request leaves the goal alone.
+STUB_CHANGED_FILE=".flow/goals/issue-42-renamed.goal.yaml" STUB_PREV_FILE=".flow/goals/issue-42.goal.yaml" \
+  STUB_FILE_STATUS=renamed _rg_run "$RG_BARE" 42
+assert_contains "GOAL_EDITED=renamed" "$RG_OUT" "a goal renamed away from its path is seen"
+assert_not_contains "GOAL_EDITED=no" "$RG_OUT" "not reported as untouched"
+# Two entries can match at once: the goal renamed away, and a new file created
+# at the path under review. The section reports one answer, deterministically.
+STUB_CHANGED_FILE=".flow/goals/issue-42-old.goal.yaml" STUB_PREV_FILE=".flow/goals/issue-42.goal.yaml" \
+  STUB_FILE_STATUS=renamed \
+  STUB_CHANGED_FILE2=".flow/goals/issue-42.goal.yaml" STUB_FILE_STATUS2=added \
+  _rg_run "$RG_BARE" 42
+assert_equal "1" "$(printf '%s\n' "$RG_OUT" | grep -c '^GOAL_EDITED=')" \
+  "two matching entries still produce exactly one answer"
+assert_contains "GOAL_EDITED=renamed" "$RG_OUT" "and it is the first the file list reported"
+
 STUB_FILES_EXIT=4 _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=unavailable" "$RG_OUT" "a failed file-list call is unavailable"
 assert_not_contains "GOAL_EDITED=no" "$RG_OUT" \
   "never 'no' — that is the answer meaning this pull request does not weaken its goal"
 
 unset STUB_HEAD_SHA STUB_GOAL_FILE STUB_FILE_STATUS STUB_CHANGED_FILE \
-      STUB_CONTENT_MODE STUB_FILES_EXIT
+      STUB_CONTENT_MODE STUB_FILES_EXIT STUB_PREV_FILE STUB_CHANGED_FILE2 \
+      STUB_FILE_STATUS2 STUB_PREV_FILE2
 
 # --- #213 AC2: the risk map reaches the two places that can check it ----------
 
@@ -606,8 +722,13 @@ assert_equal "3" "$RG_CR_WITH_CT" "and the interface contracts"
 _flow_test_begin "an empty risk-map coverage list says why it is empty"
 # holdout-validation step 5 treats a bare `none` as a coverage gap, and
 # references/evidence-bundle-format.md accepts only `none — {reason}`.
-RG_BARE_NONE=$(printf '%s\n' "$RG_REVIEW" | grep -c "discriminating check, or \`none\`\.")
-assert_equal "0" "$RG_BARE_NONE" "no dispatch offers a bare none"
+# The dispatches wrap, so a line-oriented grep for the phrase cannot match its
+# own layout. Join the lines first.
+RG_JOINED=$(printf '%s\n' "$RG_REVIEW" | tr '\n' ' ')
+case "$RG_JOINED" in
+  *"discriminating check, or \`none\`."*) _flow_assert_fail "a dispatch offers a bare none" ;;
+  *) _flow_assert_pass "no dispatch offers a bare none" ;;
+esac
 RG_REASONED_NONE=$(printf '%s\n' "$RG_REVIEW" | grep -c 'none — ')
 assert_equal "3" "$RG_REASONED_NONE" "all three dispatches ask for a reason with it"
 
@@ -638,8 +759,14 @@ assert_equal "0" "$(printf '%s\n' "$RG_REVIEW" | grep -c 'gh pr diff[^|]*--[[:sp
 _flow_test_begin "a pull request that changes its own goal raises a finding"
 # GOAL_EDITED was printed and never read: no phase, dispatch or template
 # mentioned it, so the trust decision stopped at the flag.
-RG_CONSUME=$(printf '%s\n' "$RG_REVIEW" | grep -c 'GOAL_EDITED')
-assert_match '^[2-9]|^[0-9][0-9]' "$RG_CONSUME" "GOAL_EDITED is read somewhere, not only printed"
+# Counting every mention counts the block's own echoes, so a review with no
+# consumer at all still passed. Count the mentions OUTSIDE the block.
+RG_OUTSIDE=$(printf '%s\n' "$RG_REVIEW" | awk '
+  /# FLOWGOAL_BLOCK_BEGIN/ { inblock = 1 }
+  /# FLOWGOAL_BLOCK_END/   { inblock = 0; next }
+  !inblock && /GOAL_EDITED/ { n++ }
+  END { print n + 0 }')
+assert_match '^[1-9]' "$RG_OUTSIDE" "GOAL_EDITED is read outside the block that prints it"
 RG_TRUST=$(printf '%s\n' "$RG_REVIEW" | awk '/^### When the pull request changes its own goal/ { f = 1; next } f && /^#{1,3} / { f = 0 } f')
 assert_match '[^[:space:]]' "$RG_TRUST" "a named step reads the flag"
 assert_contains 'modified' "$RG_TRUST" "and keys on the modified state"

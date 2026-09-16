@@ -142,6 +142,30 @@ reads as another contract. The agent also resolves the plugin root instead of as
 directory — it runs in the project under review, where `bin/flow-contract-files.sh` does not exist,
 so the blast-radius step would have failed everywhere except this checkout.
 
+## Test adequacy (cycle 2)
+
+A 72-mutant sweep with 19 sanity controls, all 19 caught, so a survivor meant the tests were blind
+rather than the harness. It found assertions that could not fail, and the worst of them were mine.
+
+- **The stub decided the answer the filter was supposed to decide.** The `gh` stub replied to the
+  file-list call from its own variables, so four loosenings of the real `jq` select — a prefix match,
+  `contains()`, dropping `previous_filename`, dropping `head -1` — all left the suite green. The stub
+  now runs the caller's own filter over a fixture array, so the code under test decides.
+- **The head-revision read was pinned only against reading from disk.** The stub answered any
+  contents request, so deleting `?ref=` — reading the default branch while printing the head SHA —
+  stayed green. The stub now serves a decoy to any request that did not ask for the head.
+- **A fixture never reached the loop it was written for.** The wrong-shaped-specification goal had no
+  `objective`, so the reader raised before the non-goals loop; the assertion that a string is not
+  iterated one character at a time passed because there were no lines at all, not because the guard
+  worked.
+- **Two assertions could not fail by construction:** the forged-goal check (the hostile module
+  returned a half-shaped document the reader discarded before printing) and the GOAL_EDITED consumer
+  count (it counted the block's own echoes, so a review with no consumer still passed).
+
+Five of the nine `RISK_MAP_SOURCE=issue-text` emissions, the non-numeric-issue arm, the size cap, and
+six of the helper's patterns had no input that distinguished them from their absence. All are pinned
+now, and the fifteen mutants written against them are all caught.
+
 ## Self-review resolution (cycle 1)
 
 An 18-finding self-review of the branch at 5fa26bc. Every finding is fixed in this pull request;
@@ -286,3 +310,7 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 16:35 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/test-adequacy-findings.txt -->
 
 <!-- auto-log: 2026-09-16 16:37 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_revert_harness.md -->
+
+<!-- auto-log: 2026-09-16 16:38 commit "fix(flow): the review never runs what the goal carries, and a goal cannot flood it" -->
+
+<!-- auto-log: 2026-09-16 17:31 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mut3.py -->
