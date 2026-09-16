@@ -289,7 +289,7 @@ case "$1 $2" in
       if [ "$1" = "--body-file" ]; then cp "$2" "$GH_BODY"; fi
       shift
     done
-    exit 0 ;;
+    exit "${STUB_REVIEW_EXIT:-0}" ;;
 esac
 exit 1
 STUB
@@ -332,6 +332,7 @@ _fc_post() {
   POST_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
     GH_LOG="$FC_TMP/gh.log" GH_BODY="$FC_TMP/gh.body" \
     REVIEW_MODE="$1" PR_NUM=7 CYCLE_NUMBER="${FC_CYCLE:-2}" FINDING_ROWS_FILE="$FC_TMP/rows" \
+    STUB_REVIEW_EXIT="${FC_REVIEW_EXIT:-0}" \
     FINDING_TOTAL="$3" BODY_FILE="$FC_TMP/body.md" "${FC_SHELL:-bash}" "$FC_TMP/post-block.sh" 2>"$FC_TMP/post.err")
   POST_CODE=$?
   POST_ERR=$(cat "$FC_TMP/post.err")
@@ -684,6 +685,80 @@ _fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer' 1 '##
 The resolution comment will carry RESOLVED:[F1] ESCALATED:[] DISPUTED:[].'
 assert_exit 0 "$POST_CODE" "a self-review body naming the resolution arrays posts"
 
+_flow_test_begin "posting: guards that nothing had pinned (round 7)"
+# The merge gate and /flow:status select review bodies on the bare token, so a
+# body quoting it is refused even with no FINDINGS:[ array beside it.
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 '### Findings: P1: 0, P2: 0, P3: 1 · Needs investigation: 0
+
+Cycle 1 posted FLOW_REVIEW_CYCLE:1 with no findings.
+
+#### P3 — Suggestions
+- **F1 · docs · `a.md:1`** — Stale link. _(MEDIUM · unchallenged)_'
+assert_exit 1 "$POST_CODE" "a body quoting the review-cycle token is refused"
+assert_contains "FLOW_REVIEW_CYCLE" "$POST_ERR" "names the token found"
+assert_equal "" "$GH_ARGS" "gh not called"
+# A finding rendered twice inside one line is rendered twice.
+_fc_post external "$FC_MIXED" 2 '## Review: PR #7
+
+### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 1
+
+#### P2 — Important
+| Finding | Suggested Fix |
+|---------|---------------|
+| **F1 · correctness · `src/b.sh:4`**<br>Wrong bound. _(HIGH · consensus)_ | Use `<`, as **F1 · correctness · `src/b.sh:4`** says. |
+
+#### Needs investigation
+- **F2 · P1 · correctness · `src/c.sh:9`** — Looks like a race.'
+assert_exit 1 "$POST_CODE" "a counted id twice on one line is refused"
+assert_contains "renders it 2 times" "$POST_ERR" "counts occurrences, not lines"
+# The repeat shares the entry's own line, so only an occurrence count sees it.
+_fc_post external "$FC_MIXED" 2 '## Review: PR #7
+
+### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 1
+
+#### P2 — Important
+| Finding | Suggested Fix |
+|---------|---------------|
+| **F1 · correctness · `src/b.sh:4`**<br>Wrong bound. _(HIGH · consensus)_ | Use `<`. |
+
+#### Needs investigation
+- **F2 · P1 · correctness · `src/c.sh:9`** — Looks like a race; see **F2 · P1 · correctness · `src/c.sh:9`**.'
+assert_exit 1 "$POST_CODE" "a LOW id twice on one line is refused"
+assert_contains "renders it 2 times" "$POST_ERR" "counts occurrences, not lines"
+# A failed `gh pr review` is not a posted review: the block exits non-zero so
+# step 7 does not go on to record a review cycle that never happened.
+FC_REVIEW_EXIT=1 _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
+assert_exit 1 "$POST_CODE" "a failed gh pr review is an error"
+assert_contains "POST_EXIT=1" "$POST_OUT" "the block still reports what it attempted"
+FC_REVIEW_EXIT=0 _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
+assert_exit 0 "$POST_CODE" "and a successful one posts: $POST_ERR"
+
+_flow_test_begin "posting: two LOW findings are both checked (round 7)"
+# Every earlier fixture has exactly one LOW row, so the loop over the routed
+# LOW findings was never seen to iterate.
+FC_TWO_LOW='F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer
+F2|P1|correctness|src/c.sh:9|LOW|kept|code-reviewer
+F3|P3|docs|a.md:2|LOW|kept|code-reviewer'
+FC_TWO_LOW_BODY='## Review: PR #7
+
+### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 2
+
+#### P2 — Important
+| Finding | Suggested Fix |
+|---------|---------------|
+| **F1 · correctness · `src/b.sh:4`**<br>Wrong bound. _(HIGH · consensus)_ | Use `<`. |
+
+#### Needs investigation
+- **F2 · P1 · correctness · `src/c.sh:9`** — Looks like a race.
+- **F3 · P3 · docs · `a.md:2`** — Stale link.'
+_fc_post external "$FC_TWO_LOW" 3 "$FC_TWO_LOW_BODY"
+assert_exit 0 "$POST_CODE" "both LOW findings entered: $POST_ERR"
+assert_contains "--request-changes" "$GH_ARGS" "posted"
+_fc_post external "$FC_TWO_LOW" 3 "$(grep -v '^- \*\*F3 · ' <<<"$FC_TWO_LOW_BODY")"
+assert_exit 1 "$POST_CODE" "the second LOW finding missing its entry is refused"
+assert_contains "F3" "$POST_ERR" "names the second id, not only the first"
+assert_equal "" "$GH_ARGS" "gh not called"
+
 _flow_test_begin "posting: the findings header must match the routed counts as a whole line"
 PADDED_BODY=${FC_MIXED_BODY/Needs investigation: 1/Needs investigation: 12}
 _fc_post external "$FC_MIXED" 2 "$PADDED_BODY"
@@ -920,8 +995,10 @@ _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 '### F
 assert_exit 1 "$POST_CODE" "a counted finding inside the section is refused with no LOW finding to bound it"
 assert_contains "F1" "$POST_ERR" "names the counted id"
 assert_equal "" "$GH_ARGS" "gh not called"
-# A counted finding below the closing heading is where it belongs: the section
-# ends there, so this body posts.
+# The section ends at the closing heading, so a counted finding below it is
+# outside the section and posts. The template puts its counted findings above
+# the section instead; the template's own shape is rendered and posted by the
+# "real template" test below.
 _fc_post external "$FC_MIXED" 2 '## Review: PR #7
 
 ### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 1

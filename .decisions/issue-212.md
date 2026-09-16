@@ -324,6 +324,32 @@ in the suite rendered one there), and the line numbers in the duplicate message.
   both directions: each refusal fires on a body that earns it, and each check is shown to permit the
   body the template renders.
 
+
+## Phase 4 self-review, round 7 (targeted re-review of c1c237e)
+
+P1: 0, P2: 3, P3: 2 — all fixed. No body produced a wrong post or a wrong refusal from the code as
+it stands; every finding was a guard nothing pinned, or a comment that described the wrong reason.
+
+Round 6 closed the four mutants it was given and the commit claimed every posting check was pinned
+in both directions. It was not, and the three that were missed share a shape: each is a guard whose
+only test asserts an exit code on a body that trips a different guard first.
+
+- The `FLOW_REVIEW_CYCLE:` refusal was reached only by a body that also quoted `FINDINGS:[`. A body
+  quoting the bare token now has its own case: the merge gate and `/flow:status` select review
+  bodies on that token, so quoting it in prose has to be refused on its own.
+- The loop over the routed LOW findings had never iterated: every fixture carried exactly one LOW
+  row. Two LOW findings now post together, and the same body missing the second entry is refused.
+- `[ "$POST_EXIT" -eq 0 ] || exit 1` had never run: the gh stub always succeeded. It takes
+  `STUB_REVIEW_EXIT` now, so a failed `gh pr review` is shown to stop step 7 before it records a
+  review cycle that never happened.
+- `SEEN` counts occurrences, not lines, on both the LOW and the counted side. Each is pinned by a
+  body that renders an id twice on one line.
+- The comment on the counted-below-the-section case said the template renders that shape. It does
+  not: the template puts every counted finding above the section. The case pins the section's upper
+  edge; the template's own shape is covered by the test that renders the real file.
+
+The mutation set is 38 and all 38 are caught.
+
 <!-- auto-log: 2026-09-16 00:17 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-pr-linked-issue.test.sh -->
 
 <!-- auto-log: 2026-09-16 00:19 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests.py -->
@@ -367,3 +393,23 @@ in the suite rendered one there), and the line numbers in the duplicate message.
 <!-- auto-log: 2026-09-16 02:06 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants6.py -->
 
 <!-- auto-log: 2026-09-16 02:16 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/journal_round6.py -->
+
+<!-- auto-log: 2026-09-16 02:16 commit "test(flow): pin both directions of every posting check" -->
+
+<!-- auto-log: 2026-09-16 02:21 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants7.py -->
+
+<!-- auto-log: 2026-09-16 02:25 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/probe7.sh -->
+
+<!-- auto-log: 2026-09-16 02:26 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants7b.py -->
+
+<!-- auto-log: 2026-09-16 02:28 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 02:28 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 02:29 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_round7.py -->
+
+<!-- auto-log: 2026-09-16 02:30 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants7.py -->
+
+<!-- auto-log: 2026-09-16 02:30 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants7.py -->
+
+<!-- auto-log: 2026-09-16 02:43 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/journal_round7.py -->
