@@ -239,7 +239,7 @@ except Exception:                      # pragma: no cover - Python without it
 
 # Bounds on what one goal can print. The alias refusal above already bounds the
 # total, so these two only stop a single value or a single list running away.
-# The value bound is set above the longest value this project's own goals carry,
+# The value bound is set above the longest value the goals in this repository carry,
 # so an ordinary goal is never shortened; when either bound does bite, the
 # section says so — a specification quietly handed over short would be read as
 # the whole specification.

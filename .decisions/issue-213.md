@@ -385,3 +385,5 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 20:44 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
 
 <!-- auto-log: 2026-09-16 20:44 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 20:54 commit "fix(flow): a goal the section had to shorten says so" -->
