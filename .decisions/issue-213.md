@@ -87,6 +87,49 @@ docs stop disagreeing about whether review creates a goal
   row is labelled `source=issue-text` in the section and in the review body, so a derived row is
   never mistaken for one the team wrote.
 
+## Self-review resolution (cycle 1)
+
+An 18-finding self-review of the branch at 5fa26bc. Every finding is fixed in this pull request;
+the two that were P1 both changed the design rather than a line.
+
+- **The goal was read from the working tree.** The Phase 1 fence runs when the command loads, which
+  is before the `gh pr checkout` further down, so the block read whatever branch the reviewer was on
+  — reproduced from a worktree at origin/main, which reported `STATE=none` for a pull request whose
+  head carries the goal. The goal is now fetched at the head commit over the API, and the section
+  reports which commit under `GOAL_REF=`. AC1 was Not Met for any review that was not already on the
+  branch, which is the ordinary external-review case.
+- **Reading the goal could run code the pull request ships.** Both interpreter invocations ran with
+  the repository as the working directory, so a pull request adding `yaml.py` at the root executed
+  arbitrary code the moment Phase 1 read the goal; `gh pr checkout` leaves exactly that in the tree.
+  Reproduced with a marker-writing `yaml.py` that also forged `STATE=ok`. Both invocations now set
+  `PYTHONSAFEPATH` and scrub the import path, and the test runs the hostile module against an
+  interpreter that ignores `PYTHONSAFEPATH`, because that variable is honoured only from Python 3.11
+  and the scrub is the half that has to hold on its own.
+
+Three answers were wrong in the direction that reads as "nothing to see": a goal that was valid YAML
+but not a goal announced `STATE=ok` and then failed partway; a failed file-list call printed
+`GOAL_EDITED=no`, which is the answer meaning this pull request does not weaken its goal; and the
+goal-edited probe matched any goal path including additions, so it fired on every spec-first pull
+request. Each now has its own answer, and `GOAL_EDITED` takes five values rather than two.
+
+**The derivation the decision asked for was not implemented.** The section reported
+`RISK_MAP_SOURCE=issue-text` and stopped: no step derived rows, so no row labelled `issue-text` could
+exist, and the test asserted the absence rather than the rule. A named step now reads the issue body
+and renders the rows. The user decision is unchanged; what changed is where the rows are produced —
+prose derivation is not something the `!` block can do, so the block reports the state and the step
+next to it does the work. The spec check reads accordingly: the block invents no rows, and every row
+the step renders ends `|issue-text`.
+
+**Acceptance criteria corrected in flight.** AC1 described a goal file on disk and AC3 named a
+heading level the template does not render. Both are tightened rather than weakened, and this is the
+case the new `GOAL_EDITED=modified` rule exists to surface — recorded here because a goal edited by
+the pull request it judges should never be a silent edit.
+
+Five guards that mutation testing had shown were free are now pinned, and the 18 mutants written for
+this round are all caught: the goal-file location check, the migration extension list, the field
+separator escaping, the interpreter guard, and the N=0 rule, which had been asserted by its token
+rather than by its clause.
+
 <!-- auto-log: 2026-09-16 12:26 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/goal213.py -->
 
 <!-- auto-log: 2026-09-16 12:29 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ac1_tests.py -->
@@ -132,3 +175,5 @@ docs stop disagreeing about whether review creates a goal
 <!-- auto-log: 2026-09-16 13:59 commit "refactor(flow): the goal reader leaves nothing behind and asks the API what happened" -->
 
 <!-- auto-log: 2026-09-16 14:05 commit "test(flow): the import-path scrub is pinned on an interpreter that ignores PYTHONSAFEPATH" -->
+
+<!-- auto-log: 2026-09-16 14:06 commit "test(flow): an empty API response is told apart from a goal that will not parse" -->

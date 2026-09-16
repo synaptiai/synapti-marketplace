@@ -15,46 +15,46 @@ objective:
   outcome: Issue
   acceptance_criteria:
   - id: AC1
-    text: commands/review.md Phase 1 contains a `### FlowGoal` ! block that prints
-      GOAL_PATH, GOAL_STATUS, one AC= line per criterion, NON_GOAL= lines, CONTRACT=
-      lines and RISK_MAP= rows when the goal file exists, and STATE=none when it does
-      not. tests/review-v3-integration.test.sh executes the block against tests/fixtures/goal/valid.yaml
-      and against no goal, and asserts the block applies no eval, bash -c, sh -c or
-      command substitution to a verification_command value.
+    text: commands/review.md Phase 1 contains a `### FlowGoal` ! block that reads the goal at the pull
+      request head commit over the API — the fence runs before the checkout, so the working tree is not
+      the pull request — and prints GOAL_PATH, GOAL_REF, GOAL_STATUS, one AC= line per criterion, NON_GOAL=
+      lines, CONTRACT= lines and RISK_MAP= rows; STATE=none when the head carries no goal, and STATE=unavailable
+      when one exists but cannot be read. tests/review-v3-integration.test.sh runs the block from a tree
+      with no .flow/ directory at all, and asserts it applies no eval, bash -c, sh -c or command substitution
+      to a verification_command value and imports no module the pull request ships, including on an interpreter
+      that ignores PYTHONSAFEPATH.
     verification_command: bash plugins/flow/tests/run.sh plugins/flow/tests/review-v3-integration.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
   - id: AC2
-    text: The Path A and Path B holdout-validation dispatch text hands over an evidence-bundle
-      draft containing `### Risk map coverage` when a goal exists, and agents/code-reviewer.md
-      Step 4 names `Risk areas:` as an input; a test asserts both.
+    text: The Path A and Path B holdout-validation dispatch text hands over an evidence-bundle draft containing
+      `### Risk map coverage` when a goal exists, and agents/code-reviewer.md Step 4 names `Risk areas:`
+      as an input; a test asserts both.
     verification_command: bash plugins/flow/tests/run.sh plugins/flow/tests/review-v3-integration.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
   - id: AC3
-    text: 'agents/code-reviewer.md Step 2b requires the `callers examined: N (<tool>)`
-      line per modified public symbol in the Summary, states the N=0-with-LSP rule,
-      and lists the contract-file patterns that trigger a `### Blast radius` section;
-      templates/review-comment.md carries the section; references/finding-schema.md
+    text: 'agents/code-reviewer.md Step 2b requires the `callers examined: N (<tool>)` line per modified
+      public symbol in the Summary, states the N=0-with-LSP rule, and lists the contract-file patterns
+      that trigger a `#### Blast radius` section; templates/review-comment.md carries the section; references/finding-schema.md
       adds breaking-change to the category vocabulary; a test asserts each.'
     verification_command: bash plugins/flow/tests/run.sh plugins/flow/tests/review-blast-radius.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
   - id: AC4
-    text: references/flow-goals.md no longer states that /flow:review or /flow:address
-      creates a goal, and a test asserts the strings pr-<N>-review.goal.yaml and pr-<N>-address.goal.yaml
-      are absent from plugins/flow/references/.
+    text: references/flow-goals.md no longer states that /flow:review or /flow:address creates a goal,
+      and a test asserts the strings pr-<N>-review.goal.yaml and pr-<N>-address.goal.yaml are absent from
+      plugins/flow/references/.
     verification_command: bash plugins/flow/tests/run.sh plugins/flow/tests/review-v3-integration.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
   - id: AC5
-    text: workflows/review-pr.workflow.yaml documents the optional goal input and
-      /flow:workflow validate passes (the shipped workflows are validated against
-      schemas/v1/workflow.schema.json by flow-schemas.test.sh).
+    text: workflows/review-pr.workflow.yaml documents the optional goal input and /flow:workflow validate
+      passes (the shipped workflows are validated against schemas/v1/workflow.schema.json by flow-schemas.test.sh).
     verification_command: bash plugins/flow/tests/run.sh plugins/flow/tests/flow-schemas.test.sh
     must_pass: true
     status: pending
@@ -67,61 +67,56 @@ objective:
     evidence_ref: null
 specification:
   non_goals:
-  - 'Cross-repository consumers: flow has no linked-repository model and this issue
-    does not add one.'
-  - 'Executing anything the goal carries: the block reads the YAML and never runs,
-    expands or substitutes a verification_command.'
-  - 'Changing which commands create goals: /flow:review and /flow:address stay FlowRun-only;
-    only references/flow-goals.md changes.'
+  - 'Cross-repository consumers: flow has no linked-repository model and this issue does not add one.'
+  - 'Executing anything the goal carries: the block reads the YAML and never runs, expands or substitutes
+    a verification_command.'
+  - 'Changing which commands create goals: /flow:review and /flow:address stay FlowRun-only; only references/flow-goals.md
+    changes.'
   - 'Changing what holdout-validation loads: #207 owns the scenario templates.'
   - Re-litigating the finding vocabulary beyond adding breaking-change.
   failure_modes:
-  - 'Timeouts: none added — no network or agent call is introduced; LSP probes keep
-    lsp.timeout.'
-  - 'Partial failures: a goal that exists but does not parse yields STATE=unavailable
-    with the reason and falls back to the issue-text path, never STATE=none.'
-  - 'Invalid input: a goal with no acceptance criteria or no risk map is valid; risk
-    rows are derived from the issue text and labelled source=issue-text. A goal file
-    modified by the pull request raises a finding.'
-  - 'Missing context: no linked issue means no goal path to resolve, which is STATE=none
-    and today behaviour.'
+  - 'Timeouts: none added — no network or agent call is introduced; LSP probes keep lsp.timeout.'
+  - 'Partial failures: a goal that exists but does not parse yields STATE=unavailable with the reason
+    and falls back to the issue-text path, never STATE=none.'
+  - 'Invalid input: a goal with no acceptance criteria or no risk map is valid; risk rows are derived
+    from the issue text and labelled source=issue-text. A goal file modified by the pull request raises
+    a finding.'
+  - 'Missing context: no linked issue means no goal path to resolve, which is STATE=none and today behaviour.'
   interface_contracts:
   - '### FlowGoal section: STATE=ok|none|unavailable, GOAL_PATH=, GOAL_STATUS=, AC=<id>|<text>|<verification_command>,
     NON_GOAL=<text>, CONTRACT=<text>, RISK_MAP=<area>|<plausible_wrong_version>|<discriminating_check>|<source>,
-    GOAL_EDITED=yes|no.'
-  - 'code-reviewer Summary: "callers examined: N (findReferences|incomingCalls|grep)"
-    per modified exported or public symbol.'
-  - 'Review body carries a ### Blast radius section, present in templates/review-comment.md.'
+    GOAL_EDITED=no|created|modified|removed|unavailable.'
+  - 'code-reviewer Summary: "callers examined: N (findReferences|incomingCalls|grep)" per modified exported
+    or public symbol.'
+  - 'Review body carries a #### Blast radius section, present in templates/review-comment.md.'
   - references/finding-schema.md category vocabulary gains breaking-change.
-  - 'Evidence-bundle draft handed to holdout-validation carries ### Risk map coverage:
-    <area> -> <test file:line> per row, or none.'
+  - 'Evidence-bundle draft handed to holdout-validation carries ### Risk map coverage: <area> -> <test
+    file:line> per row, or none.'
   risk_map:
   - area: goal parsing
-    plausible_wrong_version: the block expands or executes a verification_command
-      while reading it
-    discriminating_check: a goal whose verification_command is $(touch /tmp/flow-pwned)
-      prints that string verbatim and leaves no file on disk
+    plausible_wrong_version: the block expands or executes a verification_command while reading it
+    discriminating_check: a goal whose verification_command is $(touch /tmp/flow-pwned) prints that string
+      verbatim and leaves no file on disk
   - area: goal trust
-    plausible_wrong_version: a pull request that weakens its own acceptance criteria
-      passes unflagged
-    discriminating_check: a diff that modifies .flow/goals/issue-213.goal.yaml sets
-      GOAL_EDITED=yes and raises a finding naming the file; a diff that does not sets
-      GOAL_EDITED=no
+    plausible_wrong_version: a pull request that weakens its own acceptance criteria passes unflagged
+    discriminating_check: a pull request whose file list reports modified for .flow/goals/issue-213.goal.yaml
+      sets GOAL_EDITED=modified and raises a finding naming the file; one that only adds it sets created;
+      one that touches another issue goal sets no; a failed file-list call sets unavailable, never no
   - area: risk-map provenance
-    plausible_wrong_version: rows derived from issue text are presented as if the
-      team wrote them
-    discriminating_check: with a goal carrying no risk map every RISK_MAP row ends
-      |issue-text, and with the fixture goal's one row it ends |goal
+    plausible_wrong_version: rows derived from issue text are presented as if the team wrote them
+    discriminating_check: with a goal carrying no risk map the section reports RISK_MAP_SOURCE=issue-text
+      and every row the derivation step renders ends |issue-text; with the fixture goal the section rows
+      end |goal
   - area: blast radius honesty
-    plausible_wrong_version: 'callers examined: 0 from a failed or absent LSP reads
-      as no callers and all fine'
-    discriminating_check: a symbol that Grep finds referenced in another file while
-      the LSP reported zero callers raises a finding rather than passing
+    plausible_wrong_version: 'callers examined: 0 from a failed or absent LSP reads as no callers and
+      all fine'
+    discriminating_check: a symbol that Grep finds referenced in another file while the LSP reported zero
+      callers raises a finding rather than passing
   - area: goal absent vs unreadable
-    plausible_wrong_version: a malformed goal is reported as no goal, so the review
-      silently drops the specification
-    discriminating_check: 'a goal file containing ": not: yaml:" yields STATE=unavailable
-      with a reason, not STATE=none'
+    plausible_wrong_version: a malformed goal is reported as no goal, so the review silently drops the
+      specification
+    discriminating_check: 'a goal file containing ": not: yaml:" yields STATE=unavailable with a reason,
+      not STATE=none'
 constraints:
   tdd_required: true
   require_all_pass: true
