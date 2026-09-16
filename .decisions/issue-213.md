@@ -110,6 +110,32 @@ Three claims did not survive cross-referencing against file state.
 - **The failure-modes section said no network call was introduced.** Three are, and the section now
   says so along with what happens when one fails.
 
+## Verdict (issue #213, commit 468a717)
+
+All six acceptance criteria PASS. The judge reached that in four passes, and the first three are worth
+recording because none of them was about the code.
+
+The first invocation was mis-made: I handed the judge file paths, and it runs without file tools. It
+refused to emit a degenerate all-FAIL and said so, which was the right call — six FAILs would have
+reported the work unverified when the evidence simply had not been delivered.
+
+The second returned FAIL on all six because the bundle was ad-hoc prose rather than the shape
+`references/evidence-bundle-format.md` defines: no per-criterion sections, none of the mandatory
+subsections that force a producer to state what was NOT tested and what the evidence does not
+promise. Rebuilding it to the format is what surfaced the real gaps — the holdout findings had been
+retired by my assertion rather than by a re-run, and several criteria had no captured output at all.
+
+The third returned five PASSes and one FAIL, for a hole the format is designed to expose: the goal's
+`Goal trust` risk row cited a test but no table anywhere stated its inputs, its expected values or
+the wrong version they discriminate. The row is now documented with its eight file-list inputs, and
+one more was added afterwards on the judge's advisory — a goal whose issue number merely begins with
+this one, which a select narrowed from equality to a prefix would answer for.
+
+The holdout validation was re-run at the current tree rather than assumed: it confirmed the two
+earlier P1s and the P2 as fixed against file state, and raised one P3 of its own — the failure-modes
+section described four network calls where the block makes three, a leftover from the commit-probe
+design that the response status replaced.
+
 ## Review cycle 2 (five reviewers plus holdout validation)
 
 Twenty-four findings, all fixed here. The two that mattered most were introduced by cycle 1 fixes.
@@ -321,3 +347,5 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 19:29 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/bundle-213.md -->
 
 <!-- auto-log: 2026-09-16 19:34 commit "test(flow): every state says why, and both vocabularies can report a miss" -->
+
+<!-- auto-log: 2026-09-16 19:56 commit "docs(flow): the failure modes count the calls the block makes" -->

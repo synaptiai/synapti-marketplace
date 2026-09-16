@@ -644,6 +644,10 @@ assert_contains "GOAL_EDITED=no" "$RG_OUT" "a pull request that leaves it alone 
 # let any goal in the pull request set the flag for the goal under review.
 STUB_CHANGED_FILE=".flow/goals/issue-999.goal.yaml" STUB_FILE_STATUS=modified _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=no" "$RG_OUT" "a different issue goal in the same pull request does not set the flag"
+# And one whose number merely starts with this one: issue-420 is not issue-42.
+# A select that narrowed to a prefix instead of an equality would answer for it.
+STUB_CHANGED_FILE=".flow/goals/issue-420.goal.yaml" STUB_FILE_STATUS=modified _rg_run "$RG_BARE" 42
+assert_contains "GOAL_EDITED=no" "$RG_OUT" "nor does a goal whose issue number merely begins with this one"
 STUB_CONTENT_MODE=404 STUB_FILE_STATUS="" _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=no" "$RG_OUT" "the flag is reported even when there is no goal to read"
 STUB_HEAD_SHA="" STUB_FILE_STATUS=modified _rg_run "$RG_BARE" 42
