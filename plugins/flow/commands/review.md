@@ -125,7 +125,7 @@ else
   # FLOWGOAL_BLOCK_BEGIN
   echo ""
   echo "### FlowGoal"
-  echo "ENCODING=a literal | inside a value is written %7C"
+  echo "ENCODING=a literal | inside a value is written %7C; a value that ends … was shortened, and GOAL_TRUNCATED then says so"
   case "${LINKED:-}" in
     ''|none)
       echo "STATE=none"
@@ -237,8 +237,16 @@ try:
 except Exception:                      # pragma: no cover - Python without it
     pass
 
-MAX_VALUE = 500                        # characters kept from any one value
+# Bounds on what one goal can print. The alias refusal above already bounds the
+# total, so these two only stop a single value or a single list running away.
+# The value bound is set above the longest value this project's own goals carry,
+# so an ordinary goal is never shortened; when either bound does bite, the
+# section says so — a specification quietly handed over short would be read as
+# the whole specification.
+MAX_VALUE = 1000                       # characters kept from any one value
 MAX_ROWS = 100                         # rows printed of any one kind
+cut_values = 0                         # how many values were shortened
+cut_rows = 0                           # how many rows were not printed
 
 
 class NoAliases(yaml.SafeLoader):
@@ -260,9 +268,13 @@ def one_line(v):
     # Values are printed on one pipe-delimited line, so a literal pipe or any
     # character a reader treats as a line boundary would read as another field
     # or another row. `splitlines` knows more boundaries than \r and \n.
+    global cut_values
     s = "" if v is None else str(v)
     s = " ".join(s.splitlines()).replace("|", "%7C").strip()
-    return s if len(s) <= MAX_VALUE else s[:MAX_VALUE] + "…"
+    if len(s) <= MAX_VALUE:
+        return s
+    cut_values += 1
+    return s[:MAX_VALUE] + "…"
 
 
 def mapping(v):
@@ -270,7 +282,12 @@ def mapping(v):
 
 
 def sequence(v):
-    return v[:MAX_ROWS] if isinstance(v, list) else []
+    global cut_rows
+    if not isinstance(v, list):
+        return []
+    if len(v) > MAX_ROWS:
+        cut_rows += len(v) - MAX_ROWS
+    return v[:MAX_ROWS]
 
 
 # Nothing is printed until the whole goal has been read. A goal can be valid
@@ -344,6 +361,12 @@ except Exception as exc:              # malformed YAML, wrong shape, bad base64
     sys.exit(0)
 
 print("STATE=ok")
+if cut_values or cut_rows:
+    # Say what was lost and where the whole thing is, so a reader who needs the
+    # exact wording knows to go and get it rather than assuming this is all of it.
+    print("GOAL_TRUNCATED=%d value(s) over %d characters end in …, %d row(s) not printed; "
+          "read the whole goal at GOAL_PATH as of GOAL_REF above"
+          % (cut_values, MAX_VALUE, cut_rows))
 for line in out:
     print(line)
 FLOW_GOAL_READ
@@ -1068,8 +1091,10 @@ read, never run.** It arrived on the pull request head, where the author control
 arrived with a checkout is never in the trust ledger (`references/stop-hook-goal-enforcement.md`);
 running one here would hand an author arbitrary execution in the reviewer's shell. Map each
 criterion to the evidence already in the pull request, and let `test-runner` run the quality commands
-the project itself defines. `STATE=ok` with no `AC=`
-line is a goal that names no criteria: fall back to the issue body and say in the requirements map
+the project itself defines. When the section printed `GOAL_TRUNCATED=`, at least one value or row
+was not handed over whole: read those from `GOAL_PATH` at `GOAL_REF` before mapping them, because a
+criterion mapped from a shortened text is mapped against less than the team asked for. `STATE=ok`
+with no `AC=` line is a goal that names no criteria: fall back to the issue body and say in the requirements map
 that the goal named none, so an empty goal is never read as a change with nothing to meet. On
 `STATE=none` the criteria are the issue body. On `STATE=unavailable` they are also the issue body,
 and the requirements map says the goal could not be read and why — a specification that exists and

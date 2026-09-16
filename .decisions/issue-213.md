@@ -115,6 +115,27 @@ Three claims did not survive cross-referencing against file state.
 - **The failure-modes section said no network call was introduced.** Three are, and the section now
   says so along with what happens when one fails.
 
+## Review cycle 4 (the delta since cycle 2)
+
+One new P1, in the fix for the alias bomb. `MAX_VALUE` and `MAX_ROWS` bounded the output — and
+shortened the specification while still reporting `STATE=ok`, which hands the review less than the
+goal carries and calls it the goal. It was live on this repository: reviewing this very pull
+request, AC1 (737 characters) lost its tail, including the clause about the interpreter hardening
+that the same delta added; the interface contract lost the `GOAL_EDITED` values this delta changed.
+The row half was worse — a goal with more criteria than the cap printed the first hundred and said
+nothing at all.
+
+That contradicted the sibling change in the same commit, which made a wrong-shaped criterion raise
+rather than be dropped, with the comment "dropping it would report a goal that named two as a goal
+that named none".
+
+The bounds stay, because the reason for them stays. What changed is that they are honest: the value
+bound sits above the longest value any goal in this repository carries, so an ordinary goal is never
+shortened, and when either bound does bite the section prints `GOAL_TRUNCATED=` naming how many
+values and rows were lost and where to read the whole thing. The requirements step is told to read a
+shortened value at `GOAL_REF` before mapping it. Nothing in three cycles and 72 mutants had pinned
+this, because no test fed the section a value longer than the cap.
+
 ## Verdict (issue #213, commit 468a717)
 
 All six acceptance criteria PASS. The judge reached that in four passes, and the first three are worth
@@ -358,3 +379,9 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 20:11 commit "test(flow): a goal whose issue number begins with this one is not this one" -->
 
 <!-- auto-log: 2026-09-16 20:14 commit "chore(flow): the goal records the verdict that closed it" -->
+
+<!-- auto-log: 2026-09-16 20:43 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/cycle4-finding.txt -->
+
+<!-- auto-log: 2026-09-16 20:44 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 20:44 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->

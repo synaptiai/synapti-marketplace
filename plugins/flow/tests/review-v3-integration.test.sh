@@ -481,6 +481,65 @@ else
   _flow_assert_fail "a single value printed $WIDE_LINE characters on one line"
 fi
 
+_flow_test_begin "FlowGoal: a goal the section had to shorten says so"
+# The caps exist to bound the output, and a bound that shortens the
+# specification while still reporting STATE=ok hands the review less than the
+# goal carries and calls it the goal. The same commit made a wrong-shaped
+# criterion raise rather than be dropped, for exactly this reason.
+RG_LONG=$(awk 'BEGIN { while (i++ < 260) printf "long-enough-to-pass-the-value-cap " }')
+{
+  printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowGoal\nmetadata: {id: issue-42}\n'
+  printf 'objective:\n  outcome: x\n  acceptance_criteria:\n    - id: AC1\n      text: "%s"\n' "$RG_LONG"
+  printf '      verification_command: make test\nlifecycle: {status: active}\n'
+} > "$RG_TMP/longvalue.yaml"
+STUB_GOAL_FILE="$RG_TMP/longvalue.yaml" _rg_run "$RG_BARE" 42
+assert_contains "STATE=ok" "$RG_OUT" "the goal still reads"
+assert_contains "GOAL_TRUNCATED=" "$RG_OUT" "and the section says it had to shorten something"
+assert_match 'GOAL_TRUNCATED=.*value' "$RG_OUT" "naming what was shortened"
+assert_match 'GOAL_TRUNCATED=.*GOAL_PATH|GOAL_TRUNCATED=.*GOAL_REF|GOAL_TRUNCATED=.*full goal' "$RG_OUT" \
+  "and where the whole thing can be read"
+assert_contains "ENCODING=" "$RG_OUT" "the encoding legend is still there"
+assert_match 'ENCODING=.*…' "$RG_OUT" "and it explains the mark a shortened value ends with"
+
+# More rows than the section prints is the silent half: it left no mark at all.
+{
+  printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowGoal\nmetadata: {id: issue-42}\n'
+  printf 'objective:\n  outcome: x\n  acceptance_criteria:\n'
+  RG_I=0
+  while [ "$RG_I" -lt 150 ]; do
+    RG_I=$((RG_I + 1))
+    printf '    - id: AC%s\n      text: criterion %s\n      verification_command: make test\n' "$RG_I" "$RG_I"
+  done
+  printf 'lifecycle: {status: active}\n'
+} > "$RG_TMP/manyrows.yaml"
+STUB_GOAL_FILE="$RG_TMP/manyrows.yaml" _rg_run "$RG_BARE" 42
+assert_contains "STATE=ok" "$RG_OUT" "a goal with many criteria reads"
+assert_contains "GOAL_TRUNCATED=" "$RG_OUT" "and a goal with more rows than the section prints says so too"
+assert_match 'GOAL_TRUNCATED=.*row' "$RG_OUT" "naming the rows"
+
+# A goal the section did NOT shorten must not claim it did, or the notice is
+# noise and a reader learns to skip it.
+_rg_run "$RG_BARE" 42
+assert_contains "STATE=ok" "$RG_OUT" "the ordinary fixture reads"
+assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^GOAL_TRUNCATED=')" \
+  "a goal that fits is not reported as shortened"
+
+_flow_test_begin "FlowGoal: the values this repository's own goals carry are not shortened"
+# The longest value in any goal in .flow/goals/ today is 737 characters. A cap
+# that cuts them makes every review of this repository read a shortened
+# specification — which is what the cycle-4 review reproduced against the goal
+# of this very pull request.
+RG_REAL=$(awk 'BEGIN { while (i++ < 60) printf "twelve chars" }')   # 720 characters
+{
+  printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowGoal\nmetadata: {id: issue-42}\n'
+  printf 'objective:\n  outcome: x\n  acceptance_criteria:\n    - id: AC1\n      text: "%s"\n' "$RG_REAL"
+  printf '      verification_command: make test\nlifecycle: {status: active}\n'
+} > "$RG_TMP/reallength.yaml"
+STUB_GOAL_FILE="$RG_TMP/reallength.yaml" _rg_run "$RG_BARE" 42
+assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^GOAL_TRUNCATED=')" \
+  "a 720-character criterion — the length this repository actually writes — is printed whole"
+assert_contains "twelve charstwelve chars" "$RG_OUT" "and its text is there"
+
 _flow_test_begin "FlowGoal: a criterion of the wrong shape is not silently dropped"
 # Announcing STATE=ok with no AC= line says "this goal names no criteria",
 # which is what an empty list means. A goal whose criteria are strings named
