@@ -213,6 +213,38 @@ else
 fi
 assert_not_contains "FORGED" "$RG_OUT" "and cannot forge the section the reviewer reads"
 
+# PYTHONSAFEPATH is honoured from Python 3.11. On anything older it is ignored
+# and the import path is whatever the interpreter built, so the scrub inside the
+# reader is the half that has to hold on its own. This stub is an interpreter
+# that ignores the variable, which is what an older python3 is.
+mkdir -p "$RG_TMP/oldpy"
+RG_REAL_PY=$(command -v python3)
+cat > "$RG_TMP/oldpy/python3" <<OLDPY
+#!/usr/bin/env bash
+exec env -u PYTHONSAFEPATH "$RG_REAL_PY" "\$@"
+OLDPY
+chmod +x "$RG_TMP/oldpy/python3"
+RG_MARKER_OLD="$RG_TMP/hostile-import-ran-old"
+cat > "$RG_HOSTILE/yaml.py" <<PYEVIL
+import os
+open("$RG_MARKER_OLD", "w").write("executed")
+def safe_load(*a, **k):
+    return {"lifecycle": {"status": "FORGED"}}
+PYEVIL
+RG_OUT=$(cd "$RG_HOSTILE" && PATH="$RG_TMP/oldpy:$RG_STUB:$PATH" LINKED=42 PR_NUM=7 REPO=o/r   bash "$RG_TMP/flowgoal.sh" 2>/dev/null)
+if [ -e "$RG_MARKER_OLD" ]; then
+  _flow_assert_fail "on an interpreter that ignores PYTHONSAFEPATH the shipped yaml.py ran"
+else
+  _flow_assert_pass "the import-path scrub holds on its own, so the guard is not version-dependent"
+fi
+assert_contains "STATE=ok" "$RG_OUT" "and the real yaml module still read the goal"
+# PYTHONSAFEPATH is the convention the other flow scripts follow, and it covers
+# the same ground from the other side. Nothing observable distinguishes its
+# presence while the scrub holds, so this is a source assertion, and says so.
+RG_BLOCK_SRC=$(cat "$RG_TMP/flowgoal.sh")
+assert_equal "2" "$(printf '%s\n' "$RG_BLOCK_SRC" | grep -c 'PYTHONSAFEPATH=1')" \
+  "both interpreter invocations set PYTHONSAFEPATH, as the other flow scripts do"
+
 _flow_test_begin "FlowGoal: a verification_command is data, never a command"
 RG_PWNED="$RG_TMP/pwned-marker"
 cat > "$RG_TMP/evil.yaml" <<YAML
