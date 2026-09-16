@@ -147,9 +147,14 @@ BR_VOCAB=$(printf '%s\n' "$BR_SCHEMA" | awk -F'|' '/^\| `[a-z-]+` \|/ { gsub(/[ 
 assert_match '[^[:space:]]' "$BR_VOCAB" "the vocabulary table was read"
 BR_JSON_CATS=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['properties']['category']['description'])" \
   "$REPO_ROOT/tests/finding-schema/row-schema.json")
-BR_INSTRUCTED=$(grep -rhoE '`[a-z][a-z-]+` P[123]' \
-  "$REPO_ROOT/plugins/flow/agents/code-reviewer.md" \
-  "$REPO_ROOT/plugins/flow/commands/review.md" | sed -E 's/`([a-z-]+)` P[123]/\1/' | sort -u)
+# Both word orders appear in the instructions: "`scope` P2" and "P2 `scope`".
+BR_INSTRUCTED=$( { grep -rhoE '`[a-z][a-z-]+` P[123]' \
+    "$REPO_ROOT/plugins/flow/agents/code-reviewer.md" \
+    "$REPO_ROOT/plugins/flow/commands/review.md" | sed -E 's/`([a-z-]+)` P[123]/\1/'
+  grep -rhoE 'P[123] `[a-z][a-z-]+`' \
+    "$REPO_ROOT/plugins/flow/agents/code-reviewer.md" \
+    "$REPO_ROOT/plugins/flow/commands/review.md" | sed -E 's/P[123] `([a-z-]+)`/\1/'
+  } | sort -u)
 assert_match '[^[:space:]]' "$BR_INSTRUCTED" "at least one category is instructed by name"
 BR_MISSING=""
 BR_CHECKED=0

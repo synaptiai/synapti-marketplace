@@ -298,6 +298,20 @@ assert_contains "ENCODING=" "$RG_OUT" "and the section says how an escaped value
 _flow_test_begin "FlowGoal: absent, unreadable and unfetchable are three different answers"
 STUB_CONTENT_MODE=404 _rg_run "$RG_BARE" 42
 assert_contains "STATE=none" "$RG_OUT" "no goal at the head is STATE=none"
+# The rows are derived from the issue text whenever the goal did not supply
+# them, and "no goal at all" is the commonest case of that. Without the line
+# here the derivation step has nothing to fire on and silently does not run.
+assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "no goal at the head still asks for derived rows"
+_rg_run "$RG_BARE" none
+assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "and so does a pull request with no linked issue"
+STUB_CONTENT_MODE=fail STUB_COMMIT_OK=0 _rg_run "$RG_BARE" 42
+assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "and so does a goal that could not be read"
+STUB_HEAD_SHA="" _rg_run "$RG_BARE" 42
+assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "and so does an unresolvable head commit"
+RG_SRC_NOW=$(cat "$RG_TMP/flowgoal.sh")
+assert_equal "0" "$(printf '%s\n' "$RG_SRC_NOW" | grep -c 'RISK_MAP_SOURCE=none')" \
+  "there is no fourth answer: the rows come from the goal or from the issue text"
+
 STUB_CONTENT_MODE=404 STUB_COMMIT_OK=0 _rg_run "$RG_BARE" 42
 assert_contains "STATE=unavailable" "$RG_OUT" "a 404 that is really an unreachable API is unavailable"
 assert_not_contains "STATE=none" "$RG_OUT" "and is not read as an absent goal"
@@ -378,6 +392,9 @@ assert_contains "GOAL_EDITED=unavailable" "$RG_OUT" "a failed file-list call is 
 assert_not_contains "GOAL_EDITED=no" "$RG_OUT" \
   "never 'no' — that is the answer meaning this pull request does not weaken its goal"
 
+unset STUB_HEAD_SHA STUB_GOAL_FILE STUB_FILE_STATUS STUB_CHANGED_FILE \
+      STUB_CONTENT_MODE STUB_FILES_EXIT STUB_COMMIT_OK
+
 # --- #213 AC2: the risk map reaches the two places that can check it ----------
 
 _flow_test_begin "holdout-validation is handed risk-map coverage, and the reviewer is handed the rows"
@@ -447,6 +464,12 @@ assert_contains 'RISK_MAP_SOURCE=goal' "$RG_DERIVE" "and it does not fire when t
 # The derived rows have to reach the same two consumers the goal rows reach, or
 # deriving them changes nothing.
 assert_contains 'issue-text' "$RG_REVIEW" "the label travels to the dispatches"
+
+_flow_test_begin "the review never tells anyone to run a gh call that gh rejects"
+# `gh pr diff <N> -- <path>` is "accepts at most 1 arg(s), received 2". The goal
+# hunk comes from the file list the section already reads.
+assert_equal "0" "$(printf '%s\n' "$RG_REVIEW" | grep -c 'gh pr diff[^|]*--[[:space:]]\+[^-]')" \
+  "no instruction passes a pathspec to gh pr diff"
 
 _flow_test_begin "a pull request that changes its own goal raises a finding"
 # GOAL_EDITED was printed and never read: no phase, dispatch or template

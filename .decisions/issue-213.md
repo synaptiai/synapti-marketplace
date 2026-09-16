@@ -54,8 +54,9 @@ docs stop disagreeing about whether review creates a goal
   `AC=<id>|<text>|<verification_command>` (one per criterion, the command printed as text and never
   executed, with a literal `|` inside any value written `%7C`), `NON_GOAL=<text>`, `CONTRACT=<text>`,
   `RISK_MAP=<area>|<plausible_wrong_version>|<discriminating_check>|<source>` where `source` is
-  `goal` or `issue-text`, and `GOAL_EDITED=no|created|modified|removed|unavailable` for what this
-  pull request does to the goal file it is reviewed against. The goal is read at the pull request
+  `goal` or `issue-text` (and `issue-text` in every state where no goal was read, so the derivation
+  step fires), `GOAL_EDITED=no|created|modified|removed|unavailable` for what this pull request does
+  to the goal file it is reviewed against, with `GOAL_EDITED_REASON=` when that is `unavailable`. The goal is read at the pull request
   head commit over the API, not from the working tree: the Phase 1 fence runs before the checkout.
 - `code-reviewer` Summary: `callers examined: N (findReferences|incomingCalls|grep)` per modified
   exported or public symbol.
@@ -179,3 +180,5 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 14:06 commit "test(flow): an empty API response is told apart from a goal that will not parse" -->
 
 <!-- auto-log: 2026-09-16 14:09 commit "docs(flow): the goal states the contract the review actually implements" -->
+
+<!-- auto-log: 2026-09-16 14:43 commit "fix(flow): the goal-edited flag is reported whatever the goal state is" -->

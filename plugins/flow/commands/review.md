@@ -118,7 +118,10 @@ else
   #
   # Absent goal, unreadable goal and unfetchable goal are three different
   # answers: reporting a malformed or unreachable goal as absent would silently
-  # drop the specification.
+  # drop the specification. Every one of them still prints
+  # RISK_MAP_SOURCE=issue-text, because no goal is the commonest reason for the
+  # rows to come from the issue text, and the step that derives them fires on
+  # that line.
   # FLOWGOAL_BLOCK_BEGIN
   echo ""
   echo "### FlowGoal"
@@ -127,10 +130,12 @@ else
     ''|none|unavailable)
       echo "STATE=none"
       echo "REASON=the pull request links no issue, so there is no goal path to resolve"
+      echo "RISK_MAP_SOURCE=issue-text"
       ;;
     *[!0-9]*)
       echo "STATE=none"
       echo "REASON=the linked issue is not a number"
+      echo "RISK_MAP_SOURCE=issue-text"
       ;;
     *)
       # LINKED is all digits by the case above, so the path below carries no
@@ -162,12 +167,14 @@ else
       if [ -z "$FLOW_GOAL_SHA" ]; then
         echo "STATE=unavailable"
         echo "REASON=the pull request head commit could not be resolved, so there is no revision to read the goal at"
+        echo "RISK_MAP_SOURCE=issue-text"
       elif ! command -v python3 >/dev/null 2>&1 || \
            ! PYTHONSAFEPATH=1 python3 -c 'import sys
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 import yaml' >/dev/null 2>&1; then
         echo "STATE=unavailable"
         echo "REASON=python3 with PyYAML is required to read a goal, and one of them is missing"
+        echo "RISK_MAP_SOURCE=issue-text"
       else
         echo "GOAL_REF=$FLOW_GOAL_SHA"
         FLOW_GOAL_B64=$(gh api "repos/$REPO/contents/$FLOW_GOAL_PATH?ref=$FLOW_GOAL_SHA" --jq '.content' 2>/dev/null); FLOW_GOAL_GH=$?
@@ -181,18 +188,22 @@ import yaml' >/dev/null 2>&1; then
           if gh api "repos/$REPO/commits/$FLOW_GOAL_SHA" --jq '.sha' >/dev/null 2>&1; then
             echo "STATE=none"
             echo "REASON=the head commit reads but carries no goal file at that path"
+            echo "RISK_MAP_SOURCE=issue-text"
           else
             echo "STATE=unavailable"
             echo "REASON=neither the goal nor its head commit could be read from the API"
+            echo "RISK_MAP_SOURCE=issue-text"
           fi
         elif [ -z "$FLOW_GOAL_B64" ]; then
           echo "STATE=unavailable"
           echo "REASON=the contents API returned no content for the goal, which is what it does for a file over 1MB"
+          echo "RISK_MAP_SOURCE=issue-text"
         elif [ "${#FLOW_GOAL_B64}" -gt 262144 ]; then
           # The encoded goal is handed to the reader in the environment, which
           # shares the exec argument limit. A goal this large is not a goal.
           echo "STATE=unavailable"
           echo "REASON=the goal is too large to read (over 192KB of YAML)"
+          echo "RISK_MAP_SOURCE=issue-text"
         else
           FLOW_GOAL_B64="$FLOW_GOAL_B64" PYTHONSAFEPATH=1 python3 - <<'FLOW_GOAL_READ'
 import sys
@@ -268,6 +279,7 @@ try:
 except Exception as exc:              # malformed YAML, wrong shape, bad base64
     print("STATE=unavailable")
     print("REASON=the goal at the pull request head did not parse as a goal: %s" % one_line(exc))
+    print("RISK_MAP_SOURCE=issue-text")
     sys.exit(0)
 
 print("STATE=ok")
@@ -358,7 +370,7 @@ the goal it is being reviewed against:
 |---|---|---|
 | `no` | The pull request does not touch this goal | Nothing |
 | `created` | The pull request adds this goal | Nothing — a spec-first pull request writes its goal, and there is no earlier version to weaken |
-| `modified` | The pull request changes a goal that already existed on the base | Read the goal diff (`gh pr diff "$PR_NUM" --repo "$REPO" -- "$GOAL_PATH"`) and raise a P2 `scope` finding naming `GOAL_PATH` and each acceptance criterion, non-goal or risk row that was removed or weakened, citing the goal's `file:line`. A criterion added or tightened is not a finding; say so in the same line so the reader can tell the two apart |
+| `modified` | The pull request changes a goal that already existed on the base | Read the goal hunk (`gh api --paginate "repos/$REPO/pulls/$PR_NUM/files?per_page=100" --jq '.[] | select(.filename=="<GOAL_PATH>") | .patch'` — `gh pr diff` takes no pathspec) and raise a P2 `scope` finding naming `GOAL_PATH` and each acceptance criterion, non-goal or risk row that was removed or weakened, citing the goal's `file:line`. A criterion added or tightened is not a finding; say so in the same line so the reader can tell the two apart |
 | `removed` | The pull request deletes the goal it is judged by | Raise a P1 `scope` finding naming `GOAL_PATH` |
 | `unavailable` | The pull request file list could not be read | Say so in the review body next to the requirements map; absence of evidence here is not evidence the goal is untouched |
 
