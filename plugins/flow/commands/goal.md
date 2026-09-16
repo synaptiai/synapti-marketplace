@@ -59,23 +59,74 @@ Equivalent to `/flow:goal status`. Shows the active goal for the current branch/
 Read-only summary of the active goal:
 
 ```bash
-ACTIVE_GOAL=$(python3 - <<'PYEOF'
+# GOAL_SCAN_BLOCK_BEGIN
+# A goal file the scan cannot read is not a goal that is not there. Swallowing
+# the unreadable ones printed "No active FlowGoal" over a directory that may
+# well hold an active goal, and invited the user to create the goal already on
+# disk. Every file that failed to read is named on its own line, and the scan
+# then says it does not know rather than answering "none".
+GOAL_SCAN=$(python3 - <<'PYEOF'
 import sys, glob, yaml
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+
+
+def one_line(v):
+    return " ".join(str(v).splitlines()).strip()[:200]
+
+
+active = ""
+unreadable = []
 for path in sorted(glob.glob('.flow/goals/*.goal.yaml')):
     try:
-        with open(path) as f:
-            data = yaml.safe_load(f) or {}
-        if data.get('lifecycle', {}).get('status') == 'active':
-            print(path)
-            break
-    except Exception:
-        continue
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if data is None:
+            data = {}
+        if not isinstance(data, dict):
+            raise ValueError("the goal is not a mapping")
+        lifecycle = data.get('lifecycle')
+        # `lifecycle:` with nothing under it parses as None, and a .get default
+        # does not fire on a key that is present and null — .get('status') on
+        # that None raised, and the raise was swallowed as "not active".
+        if lifecycle is None:
+            lifecycle = {}
+        if not isinstance(lifecycle, dict):
+            raise ValueError("lifecycle is not a mapping")
+        # Every file is read, not just those before the first active one: which
+        # unreadable goals got reported would otherwise depend on filename order.
+        if lifecycle.get('status') == 'active' and not active:
+            active = path
+    except Exception as exc:
+        unreadable.append("GOAL_UNREADABLE=%s — %s" % (path, one_line(exc)))
+
+for line in unreadable:
+    print(line)
+if active:
+    print("STATE=ok")
+    print("ACTIVE_GOAL=%s" % active)
+elif unreadable:
+    print("STATE=unavailable")
+    print("REASON=%d goal file(s) could not be read, so whether one of them is active is unknown" % len(unreadable))
+else:
+    print("STATE=none")
 PYEOF
-)
+); GOAL_SCAN_EXIT=$?
+# A scan that died (python3 or PyYAML missing, interpreter killed) prints
+# nothing at all, which reads exactly like "there is no active goal".
+if [ "$GOAL_SCAN_EXIT" -ne 0 ] || [ "$(printf '%s\n' "$GOAL_SCAN" | grep -c '^STATE=')" != "1" ]; then
+  GOAL_SCAN="STATE=unavailable
+REASON=the goal scan did not complete (exit $GOAL_SCAN_EXIT), so whether a goal is active is unknown"
+fi
+printf '%s\n' "$GOAL_SCAN"
+ACTIVE_GOAL=$(printf '%s\n' "$GOAL_SCAN" | sed -n 's/^ACTIVE_GOAL=//p')
+# GOAL_SCAN_BLOCK_END
 ```
 
-If no active goal: print `No active FlowGoal. Use /flow:goal create to start one.`
+Render the scan:
+
+- `STATE=none` — print `No active FlowGoal. Use /flow:goal create to start one.`
+- `STATE=unavailable` — print `Cannot tell whether a FlowGoal is active: <REASON>`, then one line per `GOAL_UNREADABLE=<path> — <reason>` so the user sees which file could not be read. Do NOT offer `/flow:goal create`: one of the files named may already hold an active goal.
+- `STATE=ok` — read the path from `ACTIVE_GOAL=` and format as below. Any `GOAL_UNREADABLE=` lines still print above it.
 
 If active goal exists, format:
 

@@ -47,33 +47,86 @@ If `$ARGUMENTS` is supplied: use it as the run-id directly. Verify `.flow/runs/<
 If no arguments: find the most-recently-modified `run.yaml` with `state.status` in `{active, blocked}`.
 
 ```bash
+# RESUME_SCAN_BLOCK_BEGIN
 RUN_ID="$ARGUMENTS"  # bare form so Claude Code substitutes it (a default-operator form would NOT be substituted); empty when no arg passed
+RUN_SCAN_STATE=""
 if [ -z "$RUN_ID" ]; then
-  RUN_ID=$(python3 - <<'PYEOF'
+  # A run.yaml the scan cannot read is not a run in a terminal status. Skipping
+  # the unreadable ones and then announcing "All runs are in terminal status"
+  # asserts about every skipped file the one thing the scan never established.
+  RUN_SCAN=$(python3 - <<'PYEOF'
 import os, glob, sys, yaml
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+
+
+def one_line(v):
+    return " ".join(str(v).splitlines()).strip()[:200]
+
+
 candidates = []
-for run_yaml in glob.glob(".flow/runs/*/run.yaml"):
+unreadable = []
+for run_yaml in sorted(glob.glob(".flow/runs/*/run.yaml")):
     try:
-        with open(run_yaml) as f:
-            data = yaml.safe_load(f) or {}
-        status = (data.get("state") or {}).get("status")
-        if status in ("active", "blocked"):
-            mtime = os.path.getmtime(run_yaml)
-            candidates.append((mtime, data.get("metadata", {}).get("id", "")))
-    except Exception:
-        continue
+        with open(run_yaml, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if data is None:
+            data = {}
+        if not isinstance(data, dict):
+            raise ValueError("the run is not a mapping")
+        state = data.get("state")
+        if state is None:
+            state = {}
+        if not isinstance(state, dict):
+            raise ValueError("state is not a mapping")
+        if state.get("status") in ("active", "blocked"):
+            metadata = data.get("metadata")
+            if metadata is None:
+                metadata = {}
+            if not isinstance(metadata, dict):
+                raise ValueError("metadata is not a mapping")
+            run_id = metadata.get("id")
+            # A run that is active but carries no id cannot be resumed and
+            # cannot be named. Appended as a blank candidate it emptied RUN_ID,
+            # and the caller then said every run had reached a terminal status.
+            if not run_id:
+                raise ValueError("the run is active but carries no metadata.id")
+            candidates.append((os.path.getmtime(run_yaml), str(run_id)))
+    except Exception as exc:
+        unreadable.append("RUN_UNREADABLE=%s — %s" % (run_yaml, one_line(exc)))
+
+for line in unreadable:
+    print(line)
 if candidates:
     candidates.sort(reverse=True)
-    print(candidates[0][1])
+    print("STATE=ok")
+    print("RUN_ID=%s" % candidates[0][1])
+elif unreadable:
+    print("STATE=unavailable")
+    print("REASON=%d run file(s) could not be read, so whether every run has finished is unknown" % len(unreadable))
+else:
+    print("STATE=none")
 PYEOF
-  )
+  ); RUN_SCAN_EXIT=$?
+  # A scan that died (python3 or PyYAML missing, interpreter killed) prints
+  # nothing at all, which reads exactly like "every run has finished".
+  if [ "$RUN_SCAN_EXIT" -ne 0 ] || [ "$(printf '%s\n' "$RUN_SCAN" | grep -c '^STATE=')" != "1" ]; then
+    RUN_SCAN="STATE=unavailable
+REASON=the run scan did not complete (exit $RUN_SCAN_EXIT), so whether every run has finished is unknown"
+  fi
+  printf '%s\n' "$RUN_SCAN"
+  RUN_SCAN_STATE=$(printf '%s\n' "$RUN_SCAN" | sed -n 's/^STATE=//p' | head -1)
+  RUN_ID=$(printf '%s\n' "$RUN_SCAN" | sed -n 's/^RUN_ID=//p')
 fi
 
 if [ -z "$RUN_ID" ]; then
-  echo "No active or blocked FlowRuns found. All runs are in terminal status."
+  if [ "$RUN_SCAN_STATE" = "unavailable" ]; then
+    echo "No resumable FlowRun was identified, and the run files named above could not be read — whether they are in a terminal status is unknown."
+  else
+    echo "No active or blocked FlowRuns found. All runs are in terminal status."
+  fi
   exit 0
 fi
+# RESUME_SCAN_BLOCK_END
 ```
 
 ### Step 2: Read the run document

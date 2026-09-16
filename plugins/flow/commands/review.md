@@ -536,6 +536,7 @@ case "$ARG1" in
   *) PR_NUM="$ARG1" ;;
 esac
 
+# PREVIOUS_CYCLES_BLOCK_BEGIN
 echo "### Previous Review Cycles"
 if [ -z "$PR_NUM" ]; then
   echo "STATE=blocked"
@@ -550,12 +551,21 @@ else
     [.[] | select(.body | test("FLOW_REVIEW_CYCLE")) | {
       cycle: (.body | capture("FLOW_REVIEW_CYCLE:(?<n>[0-9]+)") | .n),
       findings: (.body | capture("FINDINGS:\\[(?<f>[^\\]]+)\\]") | .f)
-    }]' 2>/dev/null)
-  REVIEW_CYCLE_COUNT=$(echo "$REVIEW_CYCLES" | jq 'length' 2>/dev/null || echo "0")
-  echo "REVIEW_CYCLE_COUNT=$REVIEW_CYCLE_COUNT"
-  if [ "$REVIEW_CYCLE_COUNT" = "0" ]; then
+    }]' 2>/dev/null); REVIEW_GH_EXIT=$?
+  REVIEW_CYCLE_COUNT=$(echo "$REVIEW_CYCLES" | jq 'length' 2>/dev/null); REVIEW_JQ_EXIT=$?
+  # A call that failed and a pull request with no markers both leave the count
+  # empty, and STATE=empty says "there are no previous cycles" — which decides
+  # whether this review is a first pass or a follow-up. Say unavailable when
+  # nobody could tell.
+  if [ "$REVIEW_GH_EXIT" -ne 0 ] || [ "$REVIEW_JQ_EXIT" -ne 0 ]; then
+    echo "REVIEW_CYCLE_COUNT=0"
+    echo "STATE=unavailable"
+    echo "REASON=the review markers could not be read (gh exit=$REVIEW_GH_EXIT, jq exit=$REVIEW_JQ_EXIT), so whether earlier cycles exist is unknown"
+  elif [ "$REVIEW_CYCLE_COUNT" = "0" ]; then
+    echo "REVIEW_CYCLE_COUNT=0"
     echo "STATE=empty"
   else
+    echo "REVIEW_CYCLE_COUNT=$REVIEW_CYCLE_COUNT"
     echo "$REVIEW_CYCLES" | jq -r '.[] | "REVIEW_CYCLE=cycle=\(.cycle) findings=\"\(.findings)\""' 2>/dev/null
   fi
 
@@ -567,15 +577,22 @@ else
       cycle: (.body | capture("FLOW_RESOLUTION_CYCLE:(?<n>[0-9]+)") | .n),
       resolved: (.body | capture("RESOLVED:\\[(?<r>[^\\]]*?)\\]") | .r),
       escalated: (.body | capture("ESCALATED:\\[(?<e>[^\\]]*?)\\]") | .e)
-    }]' 2>/dev/null)
-  RESOLUTION_CYCLE_COUNT=$(echo "$RESOLUTION_CYCLES" | jq 'length' 2>/dev/null || echo "0")
-  echo "RESOLUTION_CYCLE_COUNT=$RESOLUTION_CYCLE_COUNT"
-  if [ "$RESOLUTION_CYCLE_COUNT" = "0" ]; then
+    }]' 2>/dev/null); RESOLUTION_GH_EXIT=$?
+  RESOLUTION_CYCLE_COUNT=$(echo "$RESOLUTION_CYCLES" | jq 'length' 2>/dev/null); RESOLUTION_JQ_EXIT=$?
+  # Same reasoning as the review markers above.
+  if [ "$RESOLUTION_GH_EXIT" -ne 0 ] || [ "$RESOLUTION_JQ_EXIT" -ne 0 ]; then
+    echo "RESOLUTION_CYCLE_COUNT=0"
+    echo "STATE=unavailable"
+    echo "REASON=the resolution markers could not be read (gh exit=$RESOLUTION_GH_EXIT, jq exit=$RESOLUTION_JQ_EXIT), so whether earlier cycles exist is unknown"
+  elif [ "$RESOLUTION_CYCLE_COUNT" = "0" ]; then
+    echo "RESOLUTION_CYCLE_COUNT=0"
     echo "STATE=empty"
   else
+    echo "RESOLUTION_CYCLE_COUNT=$RESOLUTION_CYCLE_COUNT"
     echo "$RESOLUTION_CYCLES" | jq -r '.[] | "RESOLUTION_CYCLE=cycle=\(.cycle) resolved=\"\(.resolved // "")\" escalated=\"\(.escalated // "")\""' 2>/dev/null
   fi
 fi
+# PREVIOUS_CYCLES_BLOCK_END
 
 true
 ```

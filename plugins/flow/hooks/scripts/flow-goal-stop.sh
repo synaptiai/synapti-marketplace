@@ -65,9 +65,25 @@ if [ "${CLAUDE_HOOK_GOAL_JUDGE_MODE:-}" = "true" ]; then
   exit 0
 fi
 
-# Resolve mode from settings cascade.
-MODE=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "warn" '.flow.goals.stopHookEnforcement // empty' 2>/dev/null)
+# Resolve mode from settings cascade. cascade-resolve.sh warns on stderr and
+# skips a settings file it cannot parse; every caller discards that warning with
+# 2>/dev/null, which is harmless where the default is the safer answer. Here it
+# is not: the default is `warn`, so a project whose settings.flow.json asks for
+# `block` silently drops to `warn` when that file is corrupt — the enforcement
+# the project asked for, off, with nothing said. Keep the warning and surface it.
+_CASCADE_OUT=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "warn" '.flow.goals.stopHookEnforcement // empty' 2>&1)
+# The resolved value goes to stdout, the skip notices to stderr with a WARN
+# prefix. Merging and splitting on that prefix keeps both without a temp file
+# in a hook that fires on every stop.
+MODE=$(printf '%s\n' "$_CASCADE_OUT" | grep -v 'WARN:' | head -1)
+CASCADE_WARN=$(printf '%s\n' "$_CASCADE_OUT" | grep 'WARN:' | head -3)
 [ -z "$MODE" ] && MODE="warn"
+if [ -n "$CASCADE_WARN" ]; then
+  # Not fatal: the cascade still resolved something. But the user is told, so a
+  # settings file that stopped being read does not look like a setting nobody set.
+  printf 'flow-goal-stop.sh: settings could not be fully read, enforcement mode resolved to %s — %s\n' \
+    "$MODE" "$(printf '%s' "$CASCADE_WARN" | tr '\n' ' ')" >&2
+fi
 
 # Read Stop event payload. We tolerate missing fields — the hook fires in
 # many shapes (compact replays, harness tests, etc.).
@@ -85,17 +101,44 @@ import os, glob, sys, yaml
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 if not os.path.isdir(".flow/goals"):
     sys.exit(0)
+unreadable = []
 for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
-        if data.get("lifecycle", {}).get("status") == "active":
+        # `lifecycle:` written with no value yields None, and the {} default
+        # only fires for an ABSENT key — so .get on it raises, and the handler
+        # below used to turn that into "no active goal".
+        lifecycle = data.get("lifecycle")
+        if isinstance(lifecycle, dict) and lifecycle.get("status") == "active":
             print(path)
             sys.exit(0)
+        if lifecycle is not None and not isinstance(lifecycle, dict):
+            unreadable.append(path)
     except Exception:
+        # Skipping is right — one corrupt goal must not hide an active sibling
+        # further down the list. Reporting nothing is not: a goal nobody could
+        # read is not the same fact as no goal, and the caller says one of them
+        # out loud.
+        unreadable.append(path)
         continue
+# No active goal. Say whether that was determined or merely not contradicted.
+if unreadable:
+    print("!unreadable:" + unreadable[0])
 PYEOF
 )
+
+# A goal file that could not be read is not "no active flow goal" — the hook
+# cannot tell whether the one it could not parse was the active one.
+case "${ACTIVE_GOAL}" in
+  '!unreadable:'*)
+    UNREADABLE_GOAL=${ACTIVE_GOAL#\!unreadable:}
+    REASON="FLOW_GOAL_UNCHECKED — stop ALLOWED; ${UNREADABLE_GOAL} could not be read, so whether a goal is active is unknown"
+    printf '%s\n' "$REASON" >&2
+    jq -nc --arg r "$REASON" '{decision:"approve", reason:$r}'
+    exit 0
+    ;;
+esac
 
 # Fast-path: no .flow/goals or no active goal — be silent.
 if [ -z "${ACTIVE_GOAL}" ]; then
@@ -146,7 +189,18 @@ _write_block_count() {
 # ---------------------------------------------------------------------------
 # Deterministic report. Shared by warn, block, and the unknown-mode fallback.
 _run_report() {
-  REPORT=$("${PLUGIN_ROOT}/hooks/scripts/flow-run-deterministic-checks.sh" "${ACTIVE_GOAL}" 2>/dev/null || echo '{}')
+  # The checks script prints {"error": ...} AND exits non-zero when it cannot
+  # read the goal, so `|| echo '{}'` left TWO json documents in REPORT: every
+  # extractor below then came back empty, the count coerced to 0, and both
+  # callers reported "goal evidence complete" about a goal nobody could read.
+  # Keep the exit, and let the callers say what actually happened.
+  REPORT_ERROR=""
+  REPORT=$("${PLUGIN_ROOT}/hooks/scripts/flow-run-deterministic-checks.sh" "${ACTIVE_GOAL}" 2>/dev/null); REPORT_EXIT=$?
+  if [ "$REPORT_EXIT" -ne 0 ]; then
+    REPORT_ERROR=$(printf '%s' "$REPORT" | jq -r '.error // empty' 2>/dev/null)
+    [ -n "$REPORT_ERROR" ] || REPORT_ERROR="the deterministic checks exited ${REPORT_EXIT}"
+    REPORT='{}'
+  fi
   INCOMPLETE=$(echo "$REPORT" | jq -r '.incomplete_acs[]?' 2>/dev/null | head -5)
   FAILING=$(echo "$REPORT"    | jq -r '.failing[]?'        2>/dev/null | head -5)
   PATH_VIOLATIONS=$(echo "$REPORT" | jq -r '.path_violations[]?' 2>/dev/null | head -5)
@@ -198,7 +252,13 @@ ENFORCE_HINT='To enforce, set flow.goals.stopHookEnforcement to block.'
 _warn_mode() {
   local header="$1"
   _run_report
-  if [ -n "${INCOMPLETE}" ] || [ -n "${FAILING}" ] || [ -n "${PATH_VIOLATIONS}" ]; then
+  if [ -n "${REPORT_ERROR}" ]; then
+    # Not "complete" — unknown. Saying complete here is worse than saying
+    # nothing, because the user reads it as a check that ran and passed.
+    REASON="FLOW_GOAL_UNCHECKED — stop ALLOWED; the goal could not be checked: ${REPORT_ERROR}"
+    printf '%s\n' "$REASON" >&2
+    jq -nc --arg r "$REASON" '{decision:"approve", reason:$r}'
+  elif [ -n "${INCOMPLETE}" ] || [ -n "${FAILING}" ] || [ -n "${PATH_VIOLATIONS}" ]; then
     REASON=$(_compose_reason "$header" "$INCOMPLETE" "$FAILING" "$PATH_VIOLATIONS" "$NOT_EXECUTED_COUNT" "$TRUSTED" "$ENFORCE_HINT")
     printf '%s\n' "$REASON" >&2
     jq -nc --arg r "$REASON" '{decision:"approve", reason:$r}'
@@ -217,7 +277,12 @@ case "${MODE}" in
     CAP=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "3" '.flow.goals.failAfterStuckTurns // empty' 2>/dev/null)
     case "$CAP" in ''|*[!0-9]*|0) CAP=3 ;; esac
 
-    if [ -n "${FAILING}" ] || [ -n "${PATH_VIOLATIONS}" ] || [ -n "${BLOCKING_INCOMPLETE}" ]; then
+    # A goal that could not be checked is not a goal with nothing blockable.
+    # stopHookEnforcement=block asks for a stop to be refused while the evidence
+    # is incomplete, and evidence nobody could read is not complete evidence.
+    # The consecutive-block cap below bounds this, so an unreadable goal cannot
+    # trap the session.
+    if [ -n "${REPORT_ERROR}" ] || [ -n "${FAILING}" ] || [ -n "${PATH_VIOLATIONS}" ] || [ -n "${BLOCKING_INCOMPLETE}" ]; then
       # A block is consecutive only when Claude Code tells us a Stop hook
       # already blocked this turn; otherwise the chain restarts at zero.
       PRIOR=0
@@ -230,8 +295,12 @@ case "${MODE}" in
         exit 0
       fi
       COUNT=$((PRIOR + 1))
-      REASON=$(_compose_reason "FLOW_GOAL_INCOMPLETE — stop BLOCKED (stopHookEnforcement=block; block ${COUNT} of ${CAP})" \
-        "$BLOCKING_INCOMPLETE" "$FAILING" "$PATH_VIOLATIONS" "$NOT_EXECUTED_COUNT" "$TRUSTED" "")
+      if [ -n "${REPORT_ERROR}" ]; then
+        REASON="FLOW_GOAL_UNCHECKED — stop BLOCKED (stopHookEnforcement=block; block ${COUNT} of ${CAP}); the goal could not be checked: ${REPORT_ERROR}"
+      else
+        REASON=$(_compose_reason "FLOW_GOAL_INCOMPLETE — stop BLOCKED (stopHookEnforcement=block; block ${COUNT} of ${CAP})" \
+          "$BLOCKING_INCOMPLETE" "$FAILING" "$PATH_VIOLATIONS" "$NOT_EXECUTED_COUNT" "$TRUSTED" "")
+      fi
       printf '%s\n' "$REASON" >&2
       _write_block_count "$COUNT"
       jq -nc --arg r "$REASON" '{decision:"block", reason:$r}'

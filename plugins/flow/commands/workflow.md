@@ -44,12 +44,48 @@ fi
 List all plugin-shipped workflows + any project-local overrides:
 
 ```bash
+# WORKFLOW_LIST_BLOCK_BEGIN
 echo "Plugin-shipped workflows:"
 for f in "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/workflows/"*.workflow.yaml; do
+  # An unmatched glob leaves $f as the literal pattern. Without this the row
+  # below would say that pattern could not be read, when in fact the plugin
+  # ships no workflow at all. Matches the project-local loop further down.
+  [ -f "$f" ] || continue
   ID=$(basename "$f" .workflow.yaml)
-  CMD=$(python3 -c "import yaml; print(yaml.safe_load(open('$f'))['metadata']['command'])" 2>/dev/null)
-  DESC=$(python3 -c "import yaml; print(yaml.safe_load(open('$f'))['metadata']['description'])" 2>/dev/null)
-  printf '  %-15s %-20s %s\n' "$ID" "$CMD" "$DESC"
+  # A workflow the reader could not parse printed its id with two blank
+  # columns — exactly what a workflow declaring neither a command nor a
+  # description looks like. Say that it could not be read instead.
+  META=$(python3 - "$f" <<'PYEOF' 2>/dev/null
+import sys, yaml
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+
+
+def one_line(v):
+    return " ".join(str(v).splitlines()).strip()[:200]
+
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    wf = yaml.safe_load(fh)
+if not isinstance(wf, dict):
+    raise ValueError("the workflow is not a mapping")
+metadata = wf.get("metadata")
+if metadata is None:
+    metadata = {}
+if not isinstance(metadata, dict):
+    raise ValueError("metadata is not a mapping")
+# A field that is absent, or present and null, is a real answer and keeps its
+# blank column; only a workflow nobody can read takes the row below.
+print(one_line(metadata.get("command") or ""))
+print(one_line(metadata.get("description") or ""))
+PYEOF
+  ); META_EXIT=$?
+  if [ "$META_EXIT" -ne 0 ]; then
+    printf '  %-15s %s\n' "$ID" "(could not be read: $f)"
+  else
+    CMD=$(printf '%s\n' "$META" | sed -n 1p)
+    DESC=$(printf '%s\n' "$META" | sed -n 2p)
+    printf '  %-15s %-20s %s\n' "$ID" "$CMD" "$DESC"
+  fi
 done
 
 if [ -d .flow/workflows ]; then
@@ -61,6 +97,7 @@ if [ -d .flow/workflows ]; then
     echo "  $ID (overrides plugin default)"
   done
 fi
+# WORKFLOW_LIST_BLOCK_END
 ```
 
 ### `/flow:workflow inspect <id>`

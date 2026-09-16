@@ -434,9 +434,38 @@ lifecycle: { status: active }
 EOF
 OUT=$(cd "$DIR" && bash "$HELPER" --verifiable-count --branch feature/test 2>/dev/null); EXIT=$?
 assert_equal "0" "$EXIT" "non-list acceptance_criteria does not crash --verifiable-count"
-assert_equal "0/0" "$OUT" "scalar acceptance_criteria treated as zero ACs"
+# Not crashing is half of it. The count feeds a gate that flags a goal with
+# zero verifiable ACs as degenerate, and "0/0 because nobody could read the
+# criteria" is a different fact from "0/0 because there are none" — the bare
+# count cannot carry both, so the unreadable case says so.
+assert_contains "0/0" "$OUT" "the count is still zero"
+assert_contains "unreadable" "$OUT" "and says the criteria could not be read"
 OUT=$(cd "$DIR" && bash "$HELPER" --ac-summary --branch feature/test 2>/dev/null); EXIT=$?
 assert_equal "0" "$EXIT" "non-list acceptance_criteria does not crash --ac-summary"
+assert_contains "unreadable" "$OUT" "--ac-summary emits a row rather than nothing"
+assert_contains "not a list" "$OUT" "naming the shape it found"
+
+# A criterion of the wrong shape inside a proper list is the per-item case.
+_flow_test_begin "--ac-summary reports a criterion it had to skip"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+cat > "$DIR/.flow/goals/issue-skip.goal.yaml" <<'EOF'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: { id: issue-skip, created_at: "2026-05-21T00:00:00Z" }
+scope: { repo: owner/example, branch: feature/test }
+objective:
+  outcome: Test outcome
+  acceptance_criteria:
+    - { id: AC1, text: a real one, status: pending }
+    - just a string
+evaluator: { type: hybrid }
+lifecycle: { status: active }
+EOF
+OUT=$(cd "$DIR" && bash "$HELPER" --ac-summary --branch feature/test 2>/dev/null)
+assert_contains "AC1|" "$OUT" "the readable criterion is still listed"
+assert_contains "unreadable" "$OUT" "and the skipped one is not simply missing"
+assert_contains "index 1" "$OUT" "with its position named"
 
 _flow_test_begin "legacy goal with no scope.branch resolves via the most-recent-active fallback"
 DIR=$(_fag_mkdir)

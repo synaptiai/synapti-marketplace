@@ -1128,3 +1128,57 @@ print('goal_path' in i, (i.get('goal_path') or {}).get('required'))
 else
   _flow_assert_pass "SKIP: PyYAML unavailable"
 fi
+
+_flow_test_begin "FlowGoal: previous cycles that could not be read are not reported as none"
+# The cycle-marker counts decide whether this review is a first pass or a
+# follow-up, and on the third cycle onward the methodology narrows to new P1s
+# only. A gh call that failed and a pull request with no markers both left the
+# count empty, and STATE=empty says "there are no previous cycles" — so an
+# unreachable API silently turned a sixth review into a first one.
+# Run the block rather than reading it: a condition disabled in place leaves
+# every string a source scan looks for exactly where it was.
+RG_CYC_DIR="$RG_TMP/cycles"
+mkdir -p "$RG_CYC_DIR/stub"
+awk -v b="# PREVIOUS_CYCLES_BLOCK_BEGIN" -v e="# PREVIOUS_CYCLES_BLOCK_END" '
+  { t = $0; sub(/^[ \t]+/, "", t) }
+  t == b { f = 1; next }
+  t == e { f = 0 }
+  f' "$RG_MD" > "$RG_CYC_DIR/cycles.sh"
+assert_match '[^[:space:]]' "$(cat "$RG_CYC_DIR/cycles.sh")" "previous-cycles block extracted"
+
+# A gh that fails: the markers cannot be read, so whether earlier cycles exist
+# is unknown.
+cat > "$RG_CYC_DIR/stub/gh" <<'STUB'
+#!/usr/bin/env bash
+exit 4
+STUB
+chmod +x "$RG_CYC_DIR/stub/gh"
+RG_CYC_OUT=$(cd "$RG_CYC_DIR" && PATH="$RG_CYC_DIR/stub:$PATH" REPO=o/r PR_NUM=7 bash cycles.sh 2>/dev/null)
+assert_contains "STATE=unavailable" "$RG_CYC_OUT" "a failed marker read is unavailable"
+assert_not_contains "STATE=empty" "$RG_CYC_OUT" "and never empty, which would mean there are none"
+assert_match 'REASON=the review markers could not be read' "$RG_CYC_OUT" "the review read says why"
+assert_match 'REASON=the resolution markers could not be read' "$RG_CYC_OUT" "so does the resolution read"
+assert_equal "2" "$(printf '%s\n' "$RG_CYC_OUT" | grep -c '^STATE=unavailable')" "both reads report it"
+
+# A gh that succeeds with no markers: genuinely empty, and still said so.
+cat > "$RG_CYC_DIR/stub/gh" <<'STUB'
+#!/usr/bin/env bash
+echo "[]"
+STUB
+chmod +x "$RG_CYC_DIR/stub/gh"
+RG_CYC_OUT=$(cd "$RG_CYC_DIR" && PATH="$RG_CYC_DIR/stub:$PATH" REPO=o/r PR_NUM=7 bash cycles.sh 2>/dev/null)
+assert_equal "2" "$(printf '%s\n' "$RG_CYC_OUT" | grep -c '^STATE=empty')" \
+  "a pull request with no markers is still empty"
+assert_not_contains "STATE=unavailable" "$RG_CYC_OUT" "and not reported as unreadable"
+assert_equal "2" "$(printf '%s\n' "$RG_CYC_OUT" | grep -c 'CYCLE_COUNT=0')" "with a zero count"
+
+# A gh that succeeds with a real marker: the count is reported, not zero.
+cat > "$RG_CYC_DIR/stub/gh" <<'STUB'
+#!/usr/bin/env bash
+# gh applies the --jq filter itself, so the block receives the filtered shape.
+echo '[{"cycle":"1","findings":"F1|P2|correctness|a.sh:1|open|HIGH|consensus"}]'
+STUB
+chmod +x "$RG_CYC_DIR/stub/gh"
+RG_CYC_OUT=$(cd "$RG_CYC_DIR" && PATH="$RG_CYC_DIR/stub:$PATH" REPO=o/r PR_NUM=7 bash cycles.sh 2>/dev/null)
+assert_contains "REVIEW_CYCLE_COUNT=1" "$RG_CYC_OUT" "a marker that is there is counted"
+assert_contains "REVIEW_CYCLE=cycle=1" "$RG_CYC_OUT" "and its cycle is reported"

@@ -141,18 +141,34 @@ def commands_sha256(goal):
     sorted by AC id. Compact separators + sorted keys make the encoding
     stable across PyYAML round-trips and hand edits that only reflow the
     file; any change to an AC id or command changes the digest."""
-    acs = (goal.get("objective") or {}).get("acceptance_criteria") or []
+    acs_raw = (goal.get("objective") or {}).get("acceptance_criteria")
+    problems = []
+    if acs_raw is None:
+        acs = []
+    elif not isinstance(acs_raw, list):
+        # Written as a mapping or a scalar. Iterating it yields keys or
+        # characters, every one of which is skipped below, so the digest is the
+        # hash of an empty list — and `record` then reports success over
+        # nothing hashed.
+        acs = []
+        problems.append(f"acceptance_criteria is {type(acs_raw).__name__}, not a list")
+    else:
+        acs = acs_raw
     rows = []
+    skipped = 0
     for ac in acs:
         if not isinstance(ac, dict):
+            skipped += 1
             continue
         rows.append({
             "id": str(ac.get("id", "")),
             "verification_command": ac.get("verification_command"),
         })
+    if skipped:
+        problems.append(f"{skipped} acceptance criteria are not mappings and were not hashed")
     rows.sort(key=lambda r: r["id"])
     canonical = json.dumps(rows, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest(), len(rows), problems
 
 
 def refuse_symlinked_ledger():
@@ -191,23 +207,30 @@ def read_entries():
 if subcommand == "record":
     goal, goal_id = load_goal(goal_file)
     refuse_symlinked_ledger()
+    _digest, _n_hashed, _problems = commands_sha256(goal)
     entry = {
         "recorded_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "repo": repo,
         "goal_id": goal_id,
-        "commands_sha256": commands_sha256(goal),
+        "commands_sha256": _digest,
         "session_id": session_id,
     }
     try:
         append_jsonl(ledger, entry)
     except JournalAtomicError as e:
         fail(str(e), e.exit_code)
-    print(f"flow-goal-trust.sh: recorded {goal_id} ({entry['commands_sha256'][:12]}…) in {ledger}", file=sys.stderr)
+    # Say how much was actually hashed. "recorded" over a digest of zero rows
+    # reads as a goal whose verification commands are now trusted, when nothing
+    # was covered at all.
+    _note = f", {_n_hashed} verification command(s) hashed"
+    print(f"flow-goal-trust.sh: recorded {goal_id} ({entry['commands_sha256'][:12]}…{_note}) in {ledger}", file=sys.stderr)
+    for _p in _problems:
+        print(f"flow-goal-trust.sh: WARN: {_p}; those criteria are NOT covered by this trust record", file=sys.stderr)
     sys.exit(0)
 
 if subcommand == "check":
     goal, goal_id = load_goal(goal_file)
-    digest = commands_sha256(goal)
+    digest, _n_hashed, _problems = commands_sha256(goal)
     for entry in read_entries():
         if (
             entry.get("repo") == repo

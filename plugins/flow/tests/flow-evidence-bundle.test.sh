@@ -588,3 +588,131 @@ else
   _flow_assert_fail "projected previous-verdict is invalid JSON (truncation regression)"
 fi
 assert_contains "made_progress" "$PROJECTED" "core verdict fields preserved in projection"
+
+# --- a sidecar that exists but cannot be parsed is not "no sidecar"
+# The coverage header is what the judge reads before any sidecar content, and
+# `none` there means "no evidence was produced — mark incomplete". A sidecar
+# that was written but is malformed produced exactly that line, so evidence
+# that exists and is broken was indistinguishable from evidence never written.
+_flow_test_begin "an unparseable sidecar is reported, not silently dropped"
+DIR=$(_feb_mktemp_dir)
+mkdir -p "$DIR/.flow/runs/r9/evidence"
+cat > "$DIR/goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-9}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - id: AC1
+      text: a criterion
+lifecycle: {status: active}
+YML
+printf '{ this: is: not: valid: yaml }\n' > "$DIR/.flow/runs/r9/evidence/broken.evidence.yaml"
+BUNDLE=$(_assemble "$DIR" "goal.yaml" '{}' ".flow/runs/r9")
+assert_contains "unreadable sidecar" "$BUNDLE" "the header names it as unreadable"
+assert_contains "broken.evidence.yaml" "$BUNDLE" "and says which file"
+assert_contains "MUST NOT count it as evidence" "$BUNDLE" "and tells the judge what that means"
+
+# A sidecar that parses but is not a mapping carries no `proves` and no
+# `evidence` either — same answer.
+_flow_test_begin "a sidecar that is not a mapping is reported too"
+DIR=$(_feb_mktemp_dir)
+mkdir -p "$DIR/.flow/runs/r10/evidence"
+cat > "$DIR/goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-10}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - id: AC1
+      text: a criterion
+lifecycle: {status: active}
+YML
+printf -- '- just\n- a list\n' > "$DIR/.flow/runs/r10/evidence/list.evidence.yaml"
+BUNDLE=$(_assemble "$DIR" "goal.yaml" '{}' ".flow/runs/r10")
+assert_contains "unreadable sidecar" "$BUNDLE" "a non-mapping sidecar is called out"
+assert_contains "not a mapping" "$BUNDLE" "with the shape named"
+
+# --- a goal the bundle could not read is not a goal with no criteria
+# The per-AC problem reporting works by iterating the ACs, so a goal that
+# yields zero ACs reports nothing at all — the judge is handed an empty
+# coverage header and no indication the contract was unreadable.
+_flow_test_begin "a goal whose acceptance_criteria are not a list is reported to the judge"
+DIR=$(_feb_mktemp_dir)
+mkdir -p "$DIR/.flow/runs/r11/evidence"
+cat > "$DIR/goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-11}
+objective:
+  outcome: x
+  acceptance_criteria:
+    AC1: written as a mapping
+    AC2: not as a list
+lifecycle: {status: active}
+YML
+BUNDLE=$(_assemble "$DIR" "goal.yaml" '{}' ".flow/runs/r11")
+assert_contains "acceptance_criteria" "$BUNDLE" "the header names the key it could not read"
+assert_contains "not a list" "$BUNDLE" "and the shape it found"
+
+_flow_test_begin "a goal whose objective is not a mapping is reported to the judge"
+DIR=$(_feb_mktemp_dir)
+mkdir -p "$DIR/.flow/runs/r12/evidence"
+cat > "$DIR/goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-12}
+objective: written as prose instead of a mapping
+lifecycle: {status: active}
+YML
+BUNDLE=$(_assemble "$DIR" "goal.yaml" '{}' ".flow/runs/r12")
+assert_contains "objective" "$BUNDLE" "the header names the objective"
+assert_contains "not a mapping" "$BUNDLE" "and the shape it found"
+
+# --- the budget the judge is told matches the budget the evaluator enforces
+# The evaluator does int(max_iterations or 20), so a numeric string is honoured
+# and an unset key means 20. The bundle said "(unbounded)" for both, telling the
+# judge it had no budget in exactly the two cases where one is enforced.
+_flow_test_begin "max_iterations written as a string is not reported as unbounded"
+DIR=$(_feb_mktemp_dir)
+cat > "$DIR/goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-13}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - id: AC1
+      text: a criterion
+continuation:
+  max_iterations: "5"
+lifecycle:
+  status: active
+  turns_evaluated: 2
+YML
+BUNDLE=$(_assemble "$DIR" "goal.yaml" '{}')
+assert_not_contains "remaining: (unbounded)" "$BUNDLE" "a budget of 5 is not unbounded"
+assert_contains "max_iterations: 5" "$BUNDLE" "the budget the evaluator enforces is the one reported"
+assert_contains "remaining: 3" "$BUNDLE" "and remaining counts from it"
+
+_flow_test_begin "an unset max_iterations reports the default the evaluator applies"
+DIR=$(_feb_mktemp_dir)
+cat > "$DIR/goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-14}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - id: AC1
+      text: a criterion
+lifecycle:
+  status: active
+  turns_evaluated: 1
+YML
+BUNDLE=$(_assemble "$DIR" "goal.yaml" '{}')
+assert_not_contains "remaining: (unbounded)" "$BUNDLE" "unset is not unbounded — the evaluator applies 20"
+assert_contains "max_iterations: 20" "$BUNDLE" "the default is named"
+assert_contains "remaining: 19" "$BUNDLE" "and counted from"

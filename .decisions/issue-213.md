@@ -192,6 +192,46 @@ the reviewer named, and the twin four lines above it was not examined — which 
 sixth cycle. The rule now carried into future sessions is to name the defect class in a sentence and
 sweep every sibling of that shape before pushing.
 
+## The plugin-wide sweep (user decision, 2026-09-17)
+
+Cycle 6 closed the silent-drop class inside the FlowGoal reader. The user then asked for the rest of
+the plugin to be audited for the same shape in this pull request rather than as a follow-up. Eighteen
+files that parse YAML or JSON were read; fifteen instances were found and all are fixed here, each
+with a test that fails without its fix.
+
+Four of them fail OPEN on a Tier-3 operation, which is why the sweep was worth doing:
+
+- `commands/merge.md` ran four jq passes over the finding-ledger markers and checked only the `gh`
+  exit. One comment with a null body aborts `.body | test(...)` with jq exit 5 while `gh` exits 0,
+  leaving an empty resolution body and an empty untrusted count — read downstream as "no findings and
+  nothing untrusted", which opens the gate. The seed block 150 lines above already captured its jq
+  exit and documented exactly this reasoning; the authoritative gate did not.
+- `bin/flow-active-goal.sh` reported a goal it could not read as no goal, exit 1, which the merge
+  gate reads as "gate not applicable" and proceeds on. Now exit 4, which the gate's existing
+  catch-all blocks. The sibling tolerance is kept: it escalates only when nothing else answered.
+- `bin/flow-goal-record.sh` refused to overwrite a goal it could not parse, but a goal that is valid
+  YAML and not a mapping took neither branch and was overwritten.
+- `bin/flow-goal-record.sh` read a lifecycle that was present but falsy as absent, and the transition
+  table is skipped when the current status is None — so any transition was accepted, including
+  `active → achieved` with no evaluation. The test demonstrates that jump.
+
+The rest: the Stop hook told the user "goal evidence complete" over a deterministic check that had
+errored (`|| echo '{}'` put two JSON documents in one variable, so every extractor came back empty);
+the same hook reported an unreadable goal as no active goal; a project asking for `block` enforcement
+degraded silently to `warn` when its settings file was corrupt; the evidence bundle reported a
+malformed sidecar as no sidecar and an unreadable goal contract as a goal with no criteria, in both
+cases to the judge, in the header the judge reads first; the trust ledger printed "recorded" over a
+digest of nothing; `--ac-summary` and `--verifiable-count` dropped criteria of the wrong shape;
+`/flow:review` read a failed marker query as "no previous cycles", which would silently turn a sixth
+review into a first one; and four display paths reported unreadable input as absent input.
+
+Two notes on method. A test of mine passed against its own mutant: it asserted the source *contains*
+the fail-closed condition, and disabling that condition in place leaves every string where it was. It
+was replaced with one that extracts the block and runs it against a failing `gh`. And two existing
+assertions had to change, both of which encoded a silent drop under a label about something else
+("tolerate a non-list", "treated as zero ACs"); each kept its real guarantee and lost the half that
+pinned the bug.
+
 ## The goal's terminal record
 
 `.flow/goals/issue-213.goal.yaml` carries `last_evaluation` naming commit `468a717` and 3784
@@ -545,3 +585,87 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 23:35 commit "fix(flow): a gate that cannot read its input does not pass" -->
 
 <!-- auto-log: 2026-09-16 23:53 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/finding-confidence.test.sh -->
+
+<!-- auto-log: 2026-09-16 23:58 commit "test(flow): the gate filter is read without its exit capture" -->
+
+<!-- auto-log: 2026-09-17 00:05 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/flow-goal-stop.sh -->
+
+<!-- auto-log: 2026-09-17 00:05 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/flow-goal-stop.sh -->
+
+<!-- auto-log: 2026-09-17 00:05 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/flow-goal-stop.sh -->
+
+<!-- auto-log: 2026-09-17 00:06 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/flow-goal-stop.sh -->
+
+<!-- auto-log: 2026-09-17 00:06 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/flow-goal-stop.sh -->
+
+<!-- auto-log: 2026-09-17 00:07 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/flow-goal-stop.sh -->
+
+<!-- auto-log: 2026-09-17 00:08 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/flow-goal-stop.sh -->
+
+<!-- auto-log: 2026-09-17 00:08 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/flow-goal-stop.sh -->
+
+<!-- auto-log: 2026-09-17 00:10 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/flow-goal-stop.sh -->
+
+<!-- auto-log: 2026-09-17 00:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-goal-stop.test.sh -->
+
+<!-- auto-log: 2026-09-17 00:13 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/goal.md -->
+
+<!-- auto-log: 2026-09-17 00:14 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/resume.md -->
+
+<!-- auto-log: 2026-09-17 00:14 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-09-17 00:14 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-09-17 00:14 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-09-17 00:14 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-09-17 00:14 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-09-17 00:14 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-09-17 00:15 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-09-17 00:15 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/status.md -->
+
+<!-- auto-log: 2026-09-17 00:15 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/workflow.md -->
+
+<!-- auto-log: 2026-09-17 00:15 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/workflow.md -->
+
+<!-- auto-log: 2026-09-17 00:15 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/workflow.md -->
+
+<!-- auto-log: 2026-09-17 00:16 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/_flow_evidence_bundle.py -->
+
+<!-- auto-log: 2026-09-17 00:16 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/_flow_evidence_bundle.py -->
+
+<!-- auto-log: 2026-09-17 00:16 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/_flow_evidence_bundle.py -->
+
+<!-- auto-log: 2026-09-17 00:16 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/_flow_evidence_bundle.py -->
+
+<!-- auto-log: 2026-09-17 00:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/_flow_evidence_bundle.py -->
+
+<!-- auto-log: 2026-09-17 00:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/_flow_evidence_bundle.py -->
+
+<!-- auto-log: 2026-09-17 00:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/_flow_evidence_bundle.py -->
+
+<!-- auto-log: 2026-09-17 00:18 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/_flow_evidence_bundle.py -->
+
+<!-- auto-log: 2026-09-17 00:18 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/status-display-unreadable.test.sh -->
+
+<!-- auto-log: 2026-09-17 00:19 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-goal-trust.sh -->
+
+<!-- auto-log: 2026-09-17 00:22 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-active-goal.test.sh -->
+
+<!-- auto-log: 2026-09-17 00:25 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/workflow.md -->
+
+<!-- auto-log: 2026-09-17 00:26 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/status-display-unreadable.test.sh -->
+
+<!-- auto-log: 2026-09-17 00:26 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/status-display-unreadable.test.sh -->
+
+<!-- auto-log: 2026-09-17 00:29 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/status-display-unreadable.test.sh -->
+
+<!-- auto-log: 2026-09-17 00:29 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/status-display-unreadable.test.sh -->
+
+<!-- auto-log: 2026-09-17 00:30 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/status-display-unreadable.test.sh -->
+
+<!-- auto-log: 2026-09-17 00:39 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-213.md -->

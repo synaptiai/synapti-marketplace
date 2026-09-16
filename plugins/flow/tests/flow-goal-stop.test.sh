@@ -529,3 +529,75 @@ if [ -e "$DIR/escape/stop-blocks.json" ] || [ -e "$DIR/.flow-state/escape/stop-b
 else
   _flow_assert_pass "no traversal outside sessions dir"
 fi
+
+# --- an unreadable goal is not "no active flow goal"
+# The scan skips a goal it cannot parse so one corrupt file does not hide an
+# active sibling. Reporting nothing was the defect: the hook cannot tell whether
+# the file it could not read was the active one, and "no active flow goal" says
+# it could.
+_flow_test_begin "a goal that cannot be parsed is not reported as no active goal"
+DIR=$(_fgs_mktemp_dir)
+mkdir -p "$DIR/.flow/goals"
+echo "{ this: is: not: valid: yaml }" > "$DIR/.flow/goals/broken.goal.yaml"
+OUT=$(_run_hook "$DIR" '{"session_id":"test"}')
+assert_equal "approve" "$(echo "$OUT" | jq -r '.decision')" "the stop is still allowed"
+REASON=$(echo "$OUT" | jq -r '.reason')
+assert_not_contains "no active flow goal" "$REASON" "it does not claim there is no goal"
+assert_contains "could not be read" "$REASON" "it says the goal could not be read"
+assert_contains "broken.goal.yaml" "$REASON" "and names the file"
+
+# Valid YAML of the wrong shape reaches the same answer. `lifecycle: active`
+# written as a scalar raises on .get, which the handler turned into "no goal".
+# (A bare `lifecycle:` with no value is null, which is a key written that says
+# nothing — that stays absent, matching how the FlowGoal reader treats it.)
+_flow_test_begin "a goal whose lifecycle is a scalar is not reported as no active goal"
+DIR=$(_fgs_mktemp_dir)
+mkdir -p "$DIR/.flow/goals"
+printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowGoal\nmetadata: {id: issue-1}\nlifecycle: active\n' \
+  > "$DIR/.flow/goals/issue-1.goal.yaml"
+OUT=$(_run_hook "$DIR" '{"session_id":"test"}')
+assert_not_contains "no active flow goal" "$(echo "$OUT" | jq -r '.reason')" \
+  "a scalar lifecycle is unreadable, not absent"
+assert_contains "could not be read" "$(echo "$OUT" | jq -r '.reason')" "and says so"
+
+# A goal that is genuinely absent keeps its own answer, or the distinction above
+# means nothing.
+_flow_test_begin "an empty goals directory still says no active flow goal"
+DIR=$(_fgs_mktemp_dir)
+mkdir -p "$DIR/.flow/goals"
+OUT=$(_run_hook "$DIR" '{"session_id":"test"}')
+assert_contains "no active flow goal" "$(echo "$OUT" | jq -r '.reason')" "absence is still absence"
+
+# --- the deterministic report cannot be read → not "evidence complete"
+# The checks script prints {"error": ...} AND exits non-zero, so `|| echo '{}'`
+# put two json documents in the variable: every extractor came back empty, the
+# not-executed count coerced to 0, and the hook told the user the goal evidence
+# was complete over a check that never ran.
+_flow_test_begin "a deterministic check that fails is not reported as evidence complete"
+DIR=$(_fgs_mktemp_dir)
+mkdir -p "$DIR/.flow/goals"
+cat > "$DIR/.flow/goals/issue-2.goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-2
+scope:
+  repo: owner/example
+objective:
+  outcome: x
+  acceptance_criteria:
+    - id: AC1
+      text: a criterion
+      status: pending
+lifecycle:
+  status: active
+YML
+# Break the goal for the checks script only: it re-reads the file itself, and a
+# goal that parses for the scan above but not for the checks is exactly the
+# split this tests. Simplest faithful trigger: make the checks script unable to
+# produce a report by pointing the plugin root at a tree without it.
+OUT=$( (cd "$DIR" && export CLAUDE_PLUGIN_ROOT="$DIR/nonexistent-plugin-root" FLOW_STATE_DIR="$DIR/.flow-state" \
+  && printf '%s' '{"session_id":"test"}' | "$HOOK" 2>/dev/null) )
+REASON=$(echo "$OUT" | jq -r '.reason // ""')
+assert_not_contains "goal evidence complete" "$REASON" \
+  "a report that could not be produced is not evidence that is complete"

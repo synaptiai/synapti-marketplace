@@ -244,3 +244,53 @@ if [ -e /tmp/flow-trust-pwn ]; then
 else
   _flow_assert_pass "no RCE via hostile AC id"
 fi
+
+# --- recording says how much was actually hashed
+# The digest covers [{id, verification_command}, ...]. A criterion of the wrong
+# shape is skipped, and criteria written as a mapping rather than a list are all
+# skipped — leaving the sha256 of an empty list. "recorded <id> (<digest>)" then
+# reads as a goal whose verification commands are trusted, when none were
+# covered at all. It fails closed (the executor skips the same criteria), so the
+# defect is the claim, not the trust decision.
+_flow_test_begin "record says how many verification commands were hashed"
+DIR=$(_fgt_mktemp_dir)
+_fgt_write_goal "$DIR/goal.yaml"
+_run_trust "$DIR" record --goal-file goal.yaml >/dev/null
+assert_contains "verification command(s) hashed" "$(_fgt_err)" "the count is stated on a normal record"
+
+_flow_test_begin "record over criteria written as a mapping warns that nothing was covered"
+DIR=$(_fgt_mktemp_dir)
+cat > "$DIR/goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-shape}
+objective:
+  outcome: x
+  acceptance_criteria:
+    AC1: do the thing
+    AC2: and the other
+lifecycle: {status: active}
+YML
+_run_trust "$DIR" record --goal-file goal.yaml >/dev/null
+ERR=$(_fgt_err)
+assert_contains "0 verification command(s) hashed" "$ERR" "it says nothing was hashed"
+assert_contains "not a list" "$ERR" "and why"
+assert_contains "NOT covered" "$ERR" "and what that means for trust"
+
+_flow_test_begin "record over a criterion of the wrong shape says one was skipped"
+DIR=$(_fgt_mktemp_dir)
+cat > "$DIR/goal.yaml" <<'YML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-skip}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - {id: AC1, text: a real one, verification_command: make test}
+    - just a string
+lifecycle: {status: active}
+YML
+_run_trust "$DIR" record --goal-file goal.yaml >/dev/null
+ERR=$(_fgt_err)
+assert_contains "1 verification command(s) hashed" "$ERR" "the readable criterion is hashed"
+assert_contains "are not mappings and were not hashed" "$ERR" "and the skipped one is named"

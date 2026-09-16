@@ -268,16 +268,20 @@ elif mode == "--ac-summary":
     def _sanitize(value):
         s = " ".join(str(value).split())  # collapse all whitespace incl. newlines
         return s.replace("|", "│")
-    acs = ((data.get("objective") or {}).get("acceptance_criteria") or [])
-    if not isinstance(acs, list):
-        # A non-list acceptance_criteria (e.g. a scalar in malformed user YAML)
-        # would raise TypeError on iteration — outside the parse loop's try.
-        acs = []
-    for ac in acs:
+    acs_raw = (data.get("objective") or {}).get("acceptance_criteria")
+    acs = acs_raw if isinstance(acs_raw, list) else []
+    if acs_raw is not None and not isinstance(acs_raw, list):
+        # A non-list acceptance_criteria would raise TypeError on iteration —
+        # outside the parse loop's try. Printing nothing was the other half of
+        # the bug: a goal naming three criteria in the wrong shape rendered as
+        # a goal naming none, under a status line that says the goal is fine.
+        print(f"?|unreadable|-|acceptance_criteria is {type(acs_raw).__name__}, not a list")
+    for idx, ac in enumerate(acs):
         if not isinstance(ac, dict):
-            # tolerate malformed AC
-            # shapes (string instead of dict) rather than crashing with
-            # AttributeError outside the try/except in the search loop.
+            # Tolerate a malformed AC shape rather than crashing, but say that
+            # one was skipped — a criterion nobody could read is not a
+            # criterion that is not there.
+            print(f"?|unreadable|-|criterion at index {idx} is {type(ac).__name__}, not a mapping")
             continue
         ac_id = _sanitize(ac.get("id", "?"))
         status = _sanitize(ac.get("status", "pending"))
@@ -289,19 +293,29 @@ elif mode == "--verifiable-count":
     # goal (0 ACs, or 0 ACs carrying a non-empty verification_command) without
     # re-parsing the YAML. A verification_command of "" or whitespace is not
     # verifiable.
-    acs = ((data.get("objective") or {}).get("acceptance_criteria") or [])
-    if not isinstance(acs, list):
-        acs = []   # non-list (scalar) acceptance_criteria -> treat as zero ACs
+    acs_raw = (data.get("objective") or {}).get("acceptance_criteria")
+    acs = acs_raw if isinstance(acs_raw, list) else []
+    unreadable_acs = 0
+    if acs_raw is not None and not isinstance(acs_raw, list):
+        unreadable_acs = 1
     total = 0
     verifiable = 0
     for ac in acs:
         if not isinstance(ac, dict):
+            unreadable_acs += 1
             continue
         total += 1
         vc = ac.get("verification_command")
         if isinstance(vc, str) and vc.strip():
             verifiable += 1
-    print(f"{total}/{verifiable}")
+    # The caller flags a degenerate goal on a zero here. "0/0 because the
+    # criteria could not be read" and "0/0 because there are none" are
+    # different facts, and the count alone cannot carry that, so say it
+    # alongside rather than letting the zero speak for both.
+    if unreadable_acs:
+        print(f"{total}/{verifiable} ({unreadable_acs} unreadable)")
+    else:
+        print(f"{total}/{verifiable}")
 else:
     print(f"flow-active-goal.sh: unknown mode {mode}", file=sys.stderr)
     sys.exit(2)
