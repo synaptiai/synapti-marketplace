@@ -578,8 +578,14 @@ case "${GATE_RESULT:-}" in
   *) echo "ERROR: GATE_RESULT must be PASS or BLOCK, got '${GATE_RESULT:-}'" >&2; exit 1 ;;
 esac
 case "${TASK_COUNT:-}" in
-  ''|*[!0-9]*) echo "ERROR: TASK_COUNT must be the number of tasks reviewed, got '${TASK_COUNT:-}'" >&2; exit 1 ;;
+  ''|*[!0-9]*|0?*) echo "ERROR: TASK_COUNT must be the number of tasks reviewed, got '${TASK_COUNT:-}'" >&2; exit 1 ;;
 esac
+# Only when the gate blocked: the task that failed it.
+if [ "$GATE_RESULT" = BLOCK ]; then
+  case "${TASK_ID:-}" in
+    ''|*[![:alnum:]_-]*) echo "ERROR: TASK_ID must name the task that failed the gate, got '${TASK_ID:-}'" >&2; exit 1 ;;
+  esac
+fi
 case "${ISSUE_NUM:-}" in
   ''|0*|*[!0-9]*) echo "ERROR: ISSUE_NUM must be a positive integer, got '${ISSUE_NUM:-}'" >&2; exit 1 ;;
 esac
@@ -593,7 +599,7 @@ FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" 
 # STRANGER_TEST_EMIT_BLOCK_END
 ```
 
-Set `TASK_COUNT` to the number of tasks reviewed before running the block; it is validated like `GATE_RESULT`, because an unquoted value word-splits into stray arguments and `journal-record.sh` takes the last `--issue` it is given. Add `--metadata failed_task="$TASK_ID"` when result is BLOCK (the task ID that failed the gate, so downstream readers can locate the offending task without re-parsing the body).
+Set `TASK_COUNT` to the number of tasks reviewed before running the block; it is validated like `GATE_RESULT`, because an unquoted value word-splits into stray arguments and `journal-record.sh` takes the last `--issue` it is given. Add `--metadata failed_task="$TASK_ID"` to the block when the result is BLOCK (the task ID that failed the gate); the block validates `TASK_ID` in that case.
 
 Display task plan. Proceed unless user objects.
 

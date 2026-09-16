@@ -668,3 +668,11 @@ Suite at the fix: 3511 pass / 0 fail, root 11 of 11.
 <!-- auto-log: 2026-09-16 06:05 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle3.py -->
 
 <!-- auto-log: 2026-09-16 06:06 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle3_tests.py -->
+
+<!-- auto-log: 2026-09-16 06:13 commit "fix(flow): make each guard as strict as the consumer it protects" -->
+
+<!-- auto-log: 2026-09-16 06:13 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants2.py -->
+
+<!-- auto-log: 2026-09-16 06:14 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_marker_guard_drift.md -->
+
+<!-- auto-log: 2026-09-16 06:17 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle3b.py -->

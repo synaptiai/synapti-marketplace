@@ -1244,6 +1244,12 @@ _fc_resolution "Nothing disputed, DISPUTED:[F8] was cycle 1.
 
 <!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F9] ESCALATED:[] DISPUTED:[] -->"
 assert_exit 1 "$RES_CODE" "a second DISPUTED rendering is refused"
+# A marker the merge gate accepts must not be refused here: the gate selects on
+# the prefix, so the space before the closing --> is not part of the contract.
+_fc_resolution "Resolved F1.
+
+<!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[]-->"
+assert_exit 0 "$RES_CODE" "a marker with no space before --> posts, as the gate reads it: $RES_ERR"
 # A cycle number that is not a positive integer is refused even when the body
 # carries a marker that matches it literally.
 FC_RES_CYCLE=0 _fc_resolution "Resolved: F1. <!-- FLOW_RESOLUTION_CYCLE:0 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->" 0
@@ -1519,6 +1525,11 @@ _fc_stranger ''
 assert_exit 1 "$ST_CODE" "an unset task count is refused"
 _fc_stranger '3' 'MAYBE'
 assert_exit 1 "$ST_CODE" "an invalid gate result is refused"
+_fc_stranger '007'
+assert_exit 1 "$ST_CODE" "a leading zero is refused, as the sibling count validators do"
+(cd "$FC_TMP/stranger" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" ISSUE_NUM=42 GATE_RESULT=BLOCK TASK_COUNT=3 \
+  TASK_ID="task 9; rm -rf" bash "$FC_TMP/stranger-emit.sh" >/dev/null 2>&1)
+assert_exit 1 "$?" "a BLOCK result with a malformed TASK_ID is refused"
 _fc_stranger '3'
 assert_exit 0 "$ST_CODE" "a valid pair records"
 assert_file_exists "$FC_TMP/stranger/.decisions/issue-42.md" "recorded against the issue"

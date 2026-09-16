@@ -167,8 +167,8 @@ else
   # Capture gh exit separately per endpoint. Same reason as the Reviews section: the
   # merge gate must close (STATE=unavailable) rather than open (STATE=empty) when
   # markers cannot be read.
-  SEED_COMMENTS=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:[0-9]|FLOW_REVIEW_CYCLE:[0-9]")) | {id, body, surface: "issue-comments"}]' 2>/dev/null); GH_EXIT_C=$?
-  SEED_REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:[0-9]|FLOW_REVIEW_CYCLE:[0-9]")) | {id, body, surface: "reviews"}]' 2>/dev/null); GH_EXIT_R=$?
+  SEED_COMMENTS=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '[.[] | select(.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ |<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")) | {id, body, surface: "issue-comments"}]' 2>/dev/null); GH_EXIT_C=$?
+  SEED_REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" --jq '[.[] | select(.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ |<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")) | {id, body, surface: "reviews"}]' 2>/dev/null); GH_EXIT_R=$?
   echo "SEED_SCANNED=reviews,issue-comments"
   if [ $GH_EXIT_C -ne 0 ] || [ $GH_EXIT_R -ne 0 ]; then
     echo "SEED_MARKER_COUNT=0"

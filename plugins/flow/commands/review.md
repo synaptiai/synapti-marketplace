@@ -1109,7 +1109,10 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
    # (`commands/merge.md`), so a body carrying the bare token, or the marker
    # without the HTML comment around it, is invisible to the gate and leaves
    # every fix-forwarded finding reading unresolved.
-   RES_MARKERS=$(grep -oE "<!-- FLOW_RESOLUTION_CYCLE:$CYCLE_NUMBER RESOLVED:\[[^]]*\] ESCALATED:\[[^]]*\] DISPUTED:\[[^]]*\] -->" <<<"$RES_BODY" | wc -l | tr -d ' ')
+   # The gate selects on the `<!-- FLOW_RESOLUTION_CYCLE:N ` prefix, so the guard
+   # must not demand more than that around the arrays: the whitespace before
+   # `-->` is optional, or a marker the gate accepts would be refused here.
+   RES_MARKERS=$(grep -oE "<!-- FLOW_RESOLUTION_CYCLE:$CYCLE_NUMBER RESOLVED:\[[^]]*\] ESCALATED:\[[^]]*\] DISPUTED:\[[^]]*\] *-->" <<<"$RES_BODY" | wc -l | tr -d ' ')
    if [ "$RES_MARKERS" != 1 ]; then
      echo "ERROR: the resolution body carries $RES_MARKERS markers of the shape the merge gate selects; it needs exactly one: <!-- FLOW_RESOLUTION_CYCLE:$CYCLE_NUMBER RESOLVED:[...] ESCALATED:[...] DISPUTED:[...] -->" >&2
      exit 1
@@ -1118,11 +1121,9 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
    # finds, so a second rendering anywhere — including later on the same line —
    # adds ids nobody resolved. Count occurrences, not lines.
    for __array in 'RESOLVED:[' 'ESCALATED:[' 'DISPUTED:['; do
+     # The marker matched above already carries each array once, so this counts
+     # the renderings beside it rather than their presence.
      __rendered=$(grep -oF "$__array" <<<"$RES_BODY" | wc -l | tr -d ' ')
-     if [ "$__rendered" = 0 ]; then
-       echo "ERROR: the resolution body does not render $__array at all; the merge gate reads all three arrays out of this comment" >&2
-       exit 1
-     fi
      if [ "$__rendered" != 1 ]; then
        echo "ERROR: the resolution body renders $__array $__rendered times; the merge gate unions every rendering, so ids nobody resolved would read as resolved — reword the prose (for example with a space before the bracket)" >&2
        exit 1
