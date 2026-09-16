@@ -386,11 +386,19 @@ After agents return, TaskUpdate each review task with findings.
     [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to record against an unattributable pull request" >&2; exit 1; }
     # `gh pr view --repo` needs the pull request named, so ask by head branch
     # rather than dropping the pin: an unpinned call resolves against whatever
-    # repository gh picks for the invoking shell.
-    PR_NUMBER=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq '.[0].number') || { echo "ERROR: cannot read the pull request for $BRANCH" >&2; exit 1; }
+    # repository gh picks for the invoking shell. BRANCH is what selects the
+    # pull request, so it is validated like the rest: gh DROPS an empty --head
+    # filter and answers with the first open pull request in the repository,
+    # and `git branch --show-current` prints nothing on a detached HEAD.
+    [ -n "${BRANCH:-}" ] || { echo "ERROR: BRANCH is not set; refusing to pick a pull request by an empty head filter" >&2; exit 1; }
+    PR_LINE=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number,headRefName --jq '.[0] | "\(.number) \(.headRefName)"') || { echo "ERROR: cannot read the pull request for $BRANCH" >&2; exit 1; }
+    PR_NUMBER=${PR_LINE%% *}
+    PR_HEAD=${PR_LINE#* }
     case "$PR_NUMBER" in
-      ''|0*|*[!0-9]*) echo "ERROR: PR_NUMBER must be a positive integer, got '$PR_NUMBER'; refusing to record" >&2; exit 1 ;;
+      ''|0*|*[!0-9]*) echo "ERROR: no open pull request for branch '$BRANCH'; refusing to record" >&2; exit 1 ;;
     esac
+    # gh answered: confirm it answered about this branch and not another.
+    [ "$PR_HEAD" = "$BRANCH" ] || { echo "ERROR: pull request $PR_NUMBER has head '$PR_HEAD', not '$BRANCH'; refusing to record" >&2; exit 1; }
     case "${TOTAL_FINDINGS:-}" in
       ''|*[!0-9]*|0?*) echo "ERROR: TOTAL_FINDINGS must be a count, got '${TOTAL_FINDINGS:-}'; refusing to record" >&2; exit 1 ;;
     esac
@@ -417,7 +425,7 @@ After agents return, TaskUpdate each review task with findings.
         --metadata cycle=1 \
         --metadata path=B \
         --metadata findings_count="$TOTAL_FINDINGS" \
-        --metadata pr="$PR_NUMBER"
+        --metadata pr="$PR_NUMBER" || { echo "ERROR: cannot record the review cycle for issue $ISSUE" >&2; exit 1; }
       for PAIR in $(printf '%s' "${REFUTED:-}" | tr ',' ' '); do
         # REFUTED entries are ID:agent. Without the colon the id would be
         # recorded as the facet too, and /flow:learn aggregates that field.
@@ -432,7 +440,7 @@ After agents return, TaskUpdate each review task with findings.
           --metadata finding_id="${PAIR%%:*}" \
           --metadata facet="${PAIR#*:}" \
           --metadata reason=self-review-refuted \
-          --metadata pr="$PR_NUMBER"
+          --metadata pr="$PR_NUMBER" || { echo "ERROR: cannot record the dropped finding ${PAIR%%:*} for issue $ISSUE" >&2; exit 1; }
       done
     fi
     # PR_MANIFEST_BLOCK_END

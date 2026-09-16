@@ -576,14 +576,17 @@ case "${GATE_RESULT:-}" in
   PASS|BLOCK) ;;
   *) echo "ERROR: GATE_RESULT must be PASS or BLOCK, got '${GATE_RESULT:-}'" >&2; exit 1 ;;
 esac
+case "${TASK_COUNT:-}" in
+  ''|*[!0-9]*) echo "ERROR: TASK_COUNT must be the number of tasks reviewed, got '${TASK_COUNT:-}'" >&2; exit 1 ;;
+esac
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
   --issue "$ISSUE_NUM" \
   --type stranger-test \
   --metadata result="$GATE_RESULT" \
-  --metadata task_count=$N
+  --metadata task_count="$TASK_COUNT"
 ```
 
-Add `--metadata failed_task=$TASK_ID` when result is BLOCK (the task ID that failed the gate, so downstream readers can locate the offending task without re-parsing the body).
+Set `TASK_COUNT` to the number of tasks reviewed before running the block; it is validated like `GATE_RESULT`, because an unquoted value word-splits into stray arguments and `journal-record.sh` takes the last `--issue` it is given. Add `--metadata failed_task="$TASK_ID"` when result is BLOCK (the task ID that failed the gate, so downstream readers can locate the offending task without re-parsing the body).
 
 Display task plan. Proceed unless user objects.
 

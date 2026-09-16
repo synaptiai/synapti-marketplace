@@ -906,7 +906,10 @@ if [ "$ROWS_READ" != "$FINDING_TOTAL" ]; then
   exit 1
 fi
 echo "FINDINGS_HEADER=P1: $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED"), P2: $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED"), P3: $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") · Needs investigation: $(sed -n 's/^COUNT_NEEDS_INVESTIGATION=//p' <<<"$ROUTED")"
-echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") ))"
+# Named apart from the posting block's COUNT_TOTAL on purpose: the review-cycle
+# manifest treats COUNT_TOTAL as evidence that the review posted, and this value
+# exists before anything is posted.
+echo "ROUTED_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") ))"
 # FINDING_ROUTE_BLOCK_END
 ```
 
@@ -1097,6 +1100,25 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
    # Set RES_BODY from templates/resolution-comment.md with the self-review
    # cycle metrics before running this block.
    [ -n "${RES_BODY:-}" ] || { echo "ERROR: empty resolution body — refusing to post a marker-less comment" >&2; exit 1; }
+   case "${CYCLE_NUMBER:-}" in
+     ''|0*|*[!0-9]*) echo "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to post a resolution marker" >&2; exit 1 ;;
+   esac
+   # "Marker-less" is the condition the message names, so test it: the merge
+   # gate reads RESOLVED and ESCALATED out of this comment, and a body without
+   # the marker leaves every fix-forwarded finding reading unresolved.
+   RES_MARKERS=$(grep -c "FLOW_RESOLUTION_CYCLE:$CYCLE_NUMBER RESOLVED:\[" <<<"$RES_BODY")
+   if [ "$RES_MARKERS" != 1 ]; then
+     echo "ERROR: the resolution body carries $RES_MARKERS FLOW_RESOLUTION_CYCLE:$CYCLE_NUMBER markers; the merge gate reads RESOLVED only from exactly one" >&2
+     exit 1
+   fi
+   # The gate reads the arrays with a plain grep over the whole comment, so a
+   # second rendering in prose would be read instead of the marker's.
+   for __array in 'RESOLVED:\[' 'ESCALATED:\[' 'DISPUTED:\['; do
+     if [ "$(grep -c "$__array" <<<"$RES_BODY")" != 1 ]; then
+       echo "ERROR: the resolution body renders $__array more than once; the merge gate cannot tell which is the marker's — reword the prose (for example with a space before the bracket)" >&2
+       exit 1
+     fi
+   done
    gh pr comment "$PR_NUM" --repo "$REPO" --body "$RES_BODY"; RES_EXIT=$?
    echo "RES_EXIT=$RES_EXIT"
    # A silently absent resolution marker re-introduces the merge false-block
@@ -1120,7 +1142,9 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
    ```bash
    # REVIEW_CYCLE_MANIFEST_BLOCK_BEGIN
    # Carried from earlier steps (each fence is its own shell): PR_NUM,
-   # CYCLE_NUMBER and COUNT_TOTAL (printed by the posting block).
+   # CYCLE_NUMBER and COUNT_TOTAL. COUNT_TOTAL comes from the posting block,
+   # which prints it only after a successful post — the routing block's own
+   # total is ROUTED_TOTAL and must not be substituted here.
    # `path` names the orchestration that ran. It is a value this block
    # validates, not a placeholder to edit in place: an unquoted {A|B} makes the
    # metadata argument a shell pipeline, which records a truncated artifact and

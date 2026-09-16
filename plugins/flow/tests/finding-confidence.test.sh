@@ -270,7 +270,27 @@ case "$1 $2" in
   "repo view") echo "o/r"; exit 0 ;;
   "api user") printf '%s\n' "${STUB_USER:-}"; exit 0 ;;
   "issue list") exit 0 ;;
-  "pr list") printf '%s\n' "${STUB_PR_NUMBER:-55}"; exit 0 ;;
+  "pr list")
+    printf '%s\n' "$@" > "${GH_LIST_LOG:-/dev/null}"
+    # Real gh drops an empty --head filter and answers with the first open pull
+    # request, which is the failure the caller must not walk into.
+    __head=""; __seen=0
+    for __a in "$@"; do
+      [ "$__seen" = 1 ] && { __head="$__a"; __seen=0; }
+      [ "$__a" = "--head" ] && __seen=1
+    done
+    # Answer in the shape the caller asked for: `--json number` alone yields the
+    # number, `number,headRefName` yields both, the way gh's --jq would.
+    case "$*" in
+      *headRefName*) __fmt='%s %s\n' ;;
+      *) __fmt='%s\n' ;;
+    esac
+    case "$__head" in
+      "") printf "$__fmt" "${STUB_FIRST_OPEN_PR:-999}" "${STUB_FIRST_OPEN_BRANCH:-someone-elses-branch}" ;;
+      "${STUB_BRANCH:-fix/issue-42-x}") printf "$__fmt" "${STUB_PR_NUMBER:-55}" "$__head" ;;
+      *) ;;
+    esac
+    exit 0 ;;
   "pr view")
     # Real gh requires the pull request to be named when --repo is given.
     case "$*" in
@@ -695,6 +715,58 @@ _fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer' 1 '##
 The resolution comment will carry RESOLVED:[F1] ESCALATED:[] DISPUTED:[].'
 assert_exit 0 "$POST_CODE" "a self-review body naming the resolution arrays posts"
 
+_flow_test_begin "the PR manifest asks for the pull request by branch, and refuses without one (cycle 2)"
+_fc_block "PR_MANIFEST_BLOCK" "$PR_MD" > "$FC_TMP/pr-manifest-c2.sh"
+mkdir -p "$FC_TMP/manifest-branch"
+# _fc_pr_manifest <BRANCH value, unset with the literal UNSET> — sets PM_CODE, PM_ERR, PM_LIST.
+_fc_pr_manifest() {
+  rm -f "$FC_TMP/gh-list.log"
+  if [ "$1" = UNSET ]; then
+    (cd "$FC_TMP/manifest-branch" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+      GH_LIST_LOG="$FC_TMP/gh-list.log" STUB_CLOSING="$(_fc_closing 42)" \
+      TOTAL_FINDINGS=1 REFUTED="" bash "$FC_TMP/pr-manifest-c2.sh" >/dev/null 2>"$FC_TMP/pm.err")
+  else
+    (cd "$FC_TMP/manifest-branch" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+      GH_LIST_LOG="$FC_TMP/gh-list.log" STUB_CLOSING="$(_fc_closing 42)" STUB_BRANCH="fix/issue-42-x" \
+      BRANCH="$1" TOTAL_FINDINGS=1 REFUTED="" bash "$FC_TMP/pr-manifest-c2.sh" >/dev/null 2>"$FC_TMP/pm.err")
+  fi
+  PM_CODE=$?
+  PM_ERR=$(cat "$FC_TMP/pm.err")
+  PM_LIST=$(cat "$FC_TMP/gh-list.log" 2>/dev/null)
+}
+# An unset or empty branch must not become "whichever pull request is first".
+_fc_pr_manifest UNSET
+assert_exit 1 "$PM_CODE" "an unset BRANCH is refused"
+assert_contains "BRANCH" "$PM_ERR" "the message names the missing value"
+assert_equal "" "$(ls "$FC_TMP/manifest-branch/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing recorded"
+_fc_pr_manifest ""
+assert_exit 1 "$PM_CODE" "an empty BRANCH is refused"
+assert_equal "" "$(ls "$FC_TMP/manifest-branch/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing recorded"
+# The query is scoped to the branch, and the answer is checked against it.
+_fc_pr_manifest "fix/issue-42-x"
+assert_exit 0 "$PM_CODE" "a branch with an open pull request records: $PM_ERR"
+assert_contains "--head" "$PM_LIST" "the query carries a head filter"
+assert_contains "fix/issue-42-x" "$PM_LIST" "scoped to this branch"
+assert_file_exists "$FC_TMP/manifest-branch/.decisions/issue-42.md" "recorded against the branch's own pull request"
+# A branch with no open pull request is not another pull request.
+_fc_pr_manifest "fix/issue-99-none"
+assert_exit 1 "$PM_CODE" "a branch with no open pull request is refused, not answered with another"
+assert_not_contains "999" "$PM_ERR" "never the first open pull request"
+
+_flow_test_begin "the PR manifest fails when the journal record fails (cycle 2)"
+# A failing recorder must not be swallowed by the REFUTED loop that follows it.
+mkdir -p "$FC_TMP/fakeroot/bin" "$FC_TMP/manifest-failrec"
+printf '#!/bin/sh\nexit 0\n' > "$FC_TMP/fakeroot/bin/cascade-resolve.sh"
+printf '#!/bin/sh\necho "journal-record: disk on fire" >&2\nexit 1\n' > "$FC_TMP/fakeroot/bin/journal-record.sh"
+cp "$PLUGIN_DIR/bin/flow-pr-linked-issue.sh" "$FC_TMP/fakeroot/bin/flow-pr-linked-issue.sh"
+chmod +x "$FC_TMP/fakeroot/bin"/*.sh
+for FC_REFUTED in "" "F3:code-reviewer"; do
+  (cd "$FC_TMP/manifest-failrec" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$FC_TMP/fakeroot" \
+    GH_LIST_LOG=/dev/null STUB_CLOSING="$(_fc_closing 42)" STUB_BRANCH="fix/issue-42-x" \
+    BRANCH="fix/issue-42-x" TOTAL_FINDINGS=1 REFUTED="$FC_REFUTED" bash "$FC_TMP/pr-manifest-c2.sh" >/dev/null 2>&1)
+  assert_exit 1 "$?" "a failed journal record is an error (REFUTED='$FC_REFUTED')"
+done
+
 _flow_test_begin "posting: guards that nothing had pinned (round 7)"
 # The merge gate and /flow:status select review bodies on the bare token, so a
 # body quoting it is refused even with no FINDINGS:[ array beside it.
@@ -1060,6 +1132,7 @@ assert_exit 0 "$ROUTE_CODE" "a review that found nothing routes: $ROUTE_ERR"
 assert_contains "DECISION=APPROVE" "$ROUTE_OUT" "and approves"
 FC_ROUTE_TOTAL='' _fc_route external "$FC_MIXED"
 assert_exit 1 "$ROUTE_CODE" "an unset FINDING_TOTAL is refused"
+assert_contains "FINDING_TOTAL" "$ROUTE_ERR" "the message names the value to set, not the rows file"
 FC_ROUTE_TOTAL=3 _fc_route external "$FC_MIXED"
 assert_exit 1 "$ROUTE_CODE" "a rows file that lost a finding is refused"
 assert_contains "2" "$ROUTE_ERR" "names what it read"
@@ -1082,18 +1155,38 @@ _fc_resolution() {
   rm -f "$FC_TMP/gh.log"
   RES_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
     GH_LOG="$FC_TMP/gh.log" GH_BODY="$FC_TMP/gh.body" STUB_COMMENT_EXIT="${2:-0}" \
-    PR_NUM=7 RES_BODY="$1" bash "$FC_TMP/resolution-block.sh" 2>"$FC_TMP/res.err")
+    PR_NUM=7 CYCLE_NUMBER="${FC_RES_CYCLE-1}" RES_BODY="$1" bash "$FC_TMP/resolution-block.sh" 2>"$FC_TMP/res.err")
   RES_CODE=$?
+  RES_ERR=$(cat "$FC_TMP/res.err" 2>/dev/null)
   RES_GH=$(cat "$FC_TMP/gh.log" 2>/dev/null)
 }
 _fc_resolution ""
 assert_exit 1 "$RES_CODE" "an empty resolution body is refused"
 assert_equal "" "$RES_GH" "gh not called"
+# The guard says "marker-less"; a body with prose but no marker is marker-less.
+_fc_resolution "Self-review complete. Every finding was fixed in fix-forward."
+assert_exit 1 "$RES_CODE" "a body carrying no resolution marker is refused"
+assert_contains "FLOW_RESOLUTION_CYCLE" "$RES_ERR" "the message names the marker the merge gate reads"
+assert_equal "" "$RES_GH" "gh not called"
+# The merge gate reads the arrays out of the comment, so a second rendering of
+# them in prose would be read instead of the marker's.
+_fc_resolution "Resolved F1 and F2, so RESOLVED:[F1,F2] below.
+
+<!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->"
+assert_exit 1 "$RES_CODE" "a body quoting the resolution arrays outside the marker is refused"
+assert_equal "" "$RES_GH" "gh not called"
 _fc_resolution "Resolved: F1. <!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->" 1
 assert_exit 1 "$RES_CODE" "a failed gh pr comment is an error"
 assert_contains "RES_EXIT=1" "$RES_OUT" "the exit is reported, not swallowed"
+for BAD_CYCLE in '' 0 '2a'; do
+  FC_RES_CYCLE="$BAD_CYCLE" _fc_resolution "Resolved: F1. <!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->" 0
+  assert_exit 1 "$RES_CODE" "cycle '$BAD_CYCLE' refused"
+done
+# The marker must be this cycle's, not an earlier one copied forward.
+FC_RES_CYCLE=2 _fc_resolution "Resolved: F1. <!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->" 0
+assert_exit 1 "$RES_CODE" "a marker from another cycle is refused"
 _fc_resolution "Resolved: F1. <!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->" 0
-assert_exit 0 "$RES_CODE" "a posted resolution marker succeeds"
+assert_exit 0 "$RES_CODE" "a posted resolution marker succeeds: $RES_ERR"
 assert_contains "RES_EXIT=0" "$RES_OUT" "and reports it"
 assert_equal "pr comment" "$(head -2 <<<"$RES_GH" | tr '\n' ' ' | sed 's/ $//')" "posted as an issue comment"
 
@@ -1101,9 +1194,10 @@ _flow_test_begin "routing and posting print the counted total for the review-cyc
 _fc_route external 'F1|P1|security|src/a.sh:1|HIGH|consensus|security-reviewer
 F2|P3|docs|a.md:2|MEDIUM|unchallenged|code-reviewer
 F3|P2|correctness|src/c.sh:9|LOW|kept|code-reviewer'
-assert_equal "COUNT_TOTAL=2" "$(grep '^COUNT_TOTAL=' <<<"$ROUTE_OUT")" "P1 + P3 counted, the LOW P2 not (hand count: 2)"
+assert_equal "ROUTED_TOTAL=2" "$(grep '^ROUTED_TOTAL=' <<<"$ROUTE_OUT")" "P1 + P3 counted, the LOW P2 not (hand count: 2)"
+assert_equal "" "$(grep '^COUNT_TOTAL=' <<<"$ROUTE_OUT")" "the routing block does not print the value the manifest reads as proof the review posted"
 _fc_route external "$FC_MIXED"
-assert_equal "COUNT_TOTAL=1" "$(grep '^COUNT_TOTAL=' <<<"$ROUTE_OUT")" "routing block: one counted finding (the LOW one is not counted)"
+assert_equal "ROUTED_TOTAL=1" "$(grep '^ROUTED_TOTAL=' <<<"$ROUTE_OUT")" "routing block: one counted finding (the LOW one is not counted)"
 _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
 assert_equal "COUNT_TOTAL=1" "$(grep '^COUNT_TOTAL=' <<<"$POST_OUT")" "posting block prints the same total"
 STEP7_NOW=$(_fc_phase4_step 7)
@@ -1312,6 +1406,32 @@ assert_contains "flow-pr-linked-issue.sh" "$PREFLIGHT_LINK" "Phase 1 prints the 
 assert_contains "never in the bold" "$STEP7" "step 7 tells the reviewer how to write prior-cycle ids"
 assert_contains "flow-pr-linked-issue.sh" "$(_fc_phase4_step 7)" "the review-cycle manifest resolves the issue with the helper"
 assert_contains "flow-pr-linked-issue.sh" "$(awk '/^\*\*FlowRun terminal transition\*\*/ { print }' "$REVIEW_MD")" "the workflow-run record names the helper"
+
+_flow_test_begin "the merge ledger gate selects the marker, not a comment that mentions it (cycle 2)"
+if command -v jq >/dev/null 2>&1; then
+  MERGE_MD="$PLUGIN_DIR/commands/merge.md"
+  # The filters as merge.md runs them, taken from the file so the test cannot
+  # drift from the gate.
+  RES_FILTER=$(grep -m1 'FLOW_RESOLUTION_CYCLE.*last | .body' "$MERGE_MD" | sed "s/^ *'//;s/')$//")
+  REV_FILTER=$(grep -m1 'FLOW_REVIEW_CYCLE.*last | .body' "$MERGE_MD" | sed "s/^ *'//;s/')$//")
+  assert_match 'last' "$RES_FILTER" "resolution filter extracted"
+  assert_match 'last' "$REV_FILTER" "review filter extracted"
+  # A real marker, then a later comment that merely names the token in prose.
+  cat > "$FC_TMP/ledger-comments.json" <<'JSON'
+[{"author_association":"OWNER","body":"Fixed everything.\n\n<!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1,F2] ESCALATED:[] DISPUTED:[] -->"},
+ {"author_association":"OWNER","body":"Reminder: every self-review must end with a FLOW_RESOLUTION_CYCLE: marker."}]
+JSON
+  LEDGER_PICK=$(jq -s -r --argjson trust '["OWNER"]' "$RES_FILTER" "$FC_TMP/ledger-comments.json")
+  assert_contains "RESOLVED:[F1,F2]" "$LEDGER_PICK" "the marker comment is selected, not the prose that follows it"
+  cat > "$FC_TMP/ledger-reviews.json" <<'JSON'
+[{"author_association":"OWNER","body":"Findings.\n\n<!-- FLOW_REVIEW_CYCLE:1 FINDINGS:[F1|P2|correctness|a.sh:1|open|HIGH|consensus] -->"},
+ {"author_association":"OWNER","body":"See the FLOW_REVIEW_CYCLE: marker above for the finding list."}]
+JSON
+  REVIEW_PICK=$(jq -s -r --argjson trust '["OWNER"]' "$REV_FILTER" "$FC_TMP/ledger-reviews.json")
+  assert_contains "F1|P2|correctness" "$REVIEW_PICK" "the review marker is selected, not the prose that follows it"
+else
+  _flow_assert_pass "SKIP: jq not installed"
+fi
 
 _flow_test_begin "sweep: no metadata argument carries an unquoted alternation"
 # `--metadata path={A|B}` is not a placeholder the reviewer edits: the `|` is a
