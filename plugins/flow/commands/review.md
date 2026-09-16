@@ -101,16 +101,28 @@ else
   fi
   echo "LINKED_ISSUE=${LINKED:-none}"
 
-  # Section: FlowGoal — the specification the team wrote for this issue, when it
-  # travelled here with the checkout (.flow/goals/ is tracked). Everything below
-  # is READ. A goal on a pull request head is data the author controls, so no
-  # value from it is run, expanded or substituted; the reader sees each
-  # verification command as text, and `test-runner` keeps running the quality
-  # commands the project itself defines. Absent goal and unreadable goal are different answers: reporting a
-  # malformed goal as absent would silently drop the specification.
+  # Section: FlowGoal — the specification the team wrote for this issue, read at
+  # the revision under review. This fence runs when the command loads, which is
+  # BEFORE the `gh pr checkout` further down, so the working tree here is
+  # whatever branch the reviewer happened to be on: the goal is fetched over the
+  # API at the pull request head commit rather than read from disk. The fetch is
+  # a read, which is what this fence promises.
+  #
+  # Everything below is READ. A goal on a pull request head is data the author
+  # controls, so no value from it is run, expanded or substituted; the reader
+  # sees each verification command as text, and `test-runner` keeps running the
+  # quality commands the project itself defines. The interpreter is hardened
+  # twice over, because `gh pr checkout` leaves author-controlled files in the tree:
+  # PYTHONSAFEPATH covers Python 3.11 and newer, and the sys.path scrub covers
+  # the rest, so a `yaml.py` shipped by the pull request is never imported.
+  #
+  # Absent goal, unreadable goal and unfetchable goal are three different
+  # answers: reporting a malformed or unreachable goal as absent would silently
+  # drop the specification.
   # FLOWGOAL_BLOCK_BEGIN
   echo ""
   echo "### FlowGoal"
+  echo "ENCODING=a literal | inside a value is written %7C"
   case "${LINKED:-}" in
     ''|none|unavailable)
       echo "STATE=none"
@@ -121,17 +133,55 @@ else
       echo "REASON=the linked issue is not a number"
       ;;
     *)
+      # LINKED is all digits by the case above, so the path below carries no
+      # value that could reshape the jq filter or the request it goes into.
       FLOW_GOAL_PATH=".flow/goals/issue-$LINKED.goal.yaml"
       echo "GOAL_PATH=$FLOW_GOAL_PATH"
-      if [ ! -f "$FLOW_GOAL_PATH" ]; then
-        echo "STATE=none"
-        echo "REASON=no goal file on this pull request head"
-      elif ! command -v python3 >/dev/null 2>&1 || ! python3 -c 'import yaml' >/dev/null 2>&1; then
+      FLOW_GOAL_TMP=$(mktemp -t flowgoal.XXXXXX 2>/dev/null) || FLOW_GOAL_TMP=""
+      FLOW_GOAL_SHA=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null)
+      if [ -z "$FLOW_GOAL_TMP" ]; then
+        echo "STATE=unavailable"
+        echo "REASON=no temporary file could be created to hold the fetched goal"
+      elif [ -z "$FLOW_GOAL_SHA" ]; then
+        echo "STATE=unavailable"
+        echo "REASON=the pull request head commit could not be resolved, so there is no revision to read the goal at"
+      elif ! command -v python3 >/dev/null 2>&1 || \
+           ! PYTHONSAFEPATH=1 python3 -c 'import sys
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+import yaml' >/dev/null 2>&1; then
         echo "STATE=unavailable"
         echo "REASON=python3 with PyYAML is required to read a goal, and one of them is missing"
       else
-        python3 - "$FLOW_GOAL_PATH" <<'FLOW_GOAL_READ'
-import sys, yaml
+        echo "GOAL_REF=$FLOW_GOAL_SHA"
+        FLOW_GOAL_B64=$(gh api "repos/$REPO/contents/$FLOW_GOAL_PATH?ref=$FLOW_GOAL_SHA" --jq '.content' 2>"$FLOW_GOAL_TMP"); FLOW_GOAL_GH=$?
+        if [ "$FLOW_GOAL_GH" -ne 0 ]; then
+          # gh prints the error body on stdout as well, so the exit status is
+          # the only trustworthy signal that the fetch failed.
+          if grep -qi 'not found\|404' "$FLOW_GOAL_TMP" 2>/dev/null; then
+            echo "STATE=none"
+            echo "REASON=no goal file at the pull request head commit"
+          else
+            echo "STATE=unavailable"
+            echo "REASON=the goal could not be fetched at the head commit: $(head -1 "$FLOW_GOAL_TMP" 2>/dev/null | tr -d '\r' | cut -c1-160)"
+          fi
+        elif [ -z "$FLOW_GOAL_B64" ]; then
+          echo "STATE=unavailable"
+          echo "REASON=the contents API returned no content for the goal, which is what it does for a file over 1MB"
+        else
+          printf '%s' "$FLOW_GOAL_B64" > "$FLOW_GOAL_TMP"
+          PYTHONSAFEPATH=1 python3 - "$FLOW_GOAL_TMP" <<'FLOW_GOAL_READ'
+import sys
+
+# The pull request under review is checked out around this call, so the author
+# controls what sits in the working directory. Drop it from the import path
+# before importing anything that is not built in. PYTHONSAFEPATH does this from
+# Python 3.11; this line does it everywhere.
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+
+import base64
+import io
+import yaml
+
 
 def one_line(v):
     # Values are printed on one pipe-delimited line, so a literal pipe or a
@@ -139,48 +189,88 @@ def one_line(v):
     s = "" if v is None else str(v)
     return s.replace("|", "%7C").replace("\r", " ").replace("\n", " ").strip()
 
+
+def mapping(v):
+    return v if isinstance(v, dict) else {}
+
+
+def sequence(v):
+    return v if isinstance(v, list) else []
+
+
+# Nothing is printed until the whole goal has been read. A goal can be valid
+# YAML and still not be a goal; announcing STATE=ok and then failing partway
+# reads exactly like a goal with no criteria, and the review would proceed
+# believing it had the specification.
+out = []
 try:
-    doc = yaml.safe_load(open(sys.argv[1])) or {}
+    raw = base64.b64decode(open(sys.argv[1], "rb").read())
+    doc = yaml.safe_load(io.BytesIO(raw))
     if not isinstance(doc, dict):
         raise ValueError("the goal is not a mapping")
-except Exception as exc:                      # malformed YAML, unreadable file
+
+    out.append("GOAL_STATUS=%s" % one_line(mapping(doc.get("lifecycle")).get("status", "unknown")))
+
+    objective = mapping(doc.get("objective"))
+    if not objective:
+        raise ValueError("the goal has no objective mapping")
+    criteria = sequence(objective.get("acceptance_criteria"))
+    if not criteria:
+        raise ValueError("the goal names no acceptance criteria")
+    for ac in criteria:
+        if not isinstance(ac, dict):
+            continue
+        out.append("AC=%s|%s|%s" % (one_line(ac.get("id")), one_line(ac.get("text")),
+                                    one_line(ac.get("verification_command"))))
+
+    spec = mapping(doc.get("specification"))
+    for ng in sequence(spec.get("non_goals")):
+        out.append("NON_GOAL=%s" % one_line(ng))
+    for ct in sequence(spec.get("interface_contracts")):
+        out.append("CONTRACT=%s" % one_line(ct))
+
+    rows = [r for r in sequence(spec.get("risk_map")) if isinstance(r, dict)]
+    for r in rows:
+        out.append("RISK_MAP=%s|%s|%s|goal" % (one_line(r.get("area")),
+                                               one_line(r.get("plausible_wrong_version")),
+                                               one_line(r.get("discriminating_check"))))
+    # A goal may carry no risk map (specFirst.riskMap false, or an older goal).
+    # The rows are then derived from the issue text by the step below this
+    # section and labelled issue-text, so a derived row is never read as one the
+    # team wrote.
+    out.append("RISK_MAP_SOURCE=%s" % ("goal" if rows else "issue-text"))
+except Exception as exc:              # malformed YAML, wrong shape, bad base64
     print("STATE=unavailable")
-    print("REASON=the goal file did not parse: %s" % one_line(exc))
+    print("REASON=the goal at the pull request head did not parse as a goal: %s" % one_line(exc))
     sys.exit(0)
 
 print("STATE=ok")
-print("GOAL_STATUS=%s" % one_line((doc.get("lifecycle") or {}).get("status", "unknown")))
-
-for ac in (doc.get("objective") or {}).get("acceptance_criteria") or []:
-    if not isinstance(ac, dict):
-        continue
-    print("AC=%s|%s|%s" % (one_line(ac.get("id")), one_line(ac.get("text")),
-                           one_line(ac.get("verification_command"))))
-
-spec = doc.get("specification") or {}
-for ng in spec.get("non_goals") or []:
-    print("NON_GOAL=%s" % one_line(ng))
-for ct in spec.get("interface_contracts") or []:
-    print("CONTRACT=%s" % one_line(ct))
-
-rows = [r for r in (spec.get("risk_map") or []) if isinstance(r, dict)]
-for r in rows:
-    print("RISK_MAP=%s|%s|%s|goal" % (one_line(r.get("area")),
-                                      one_line(r.get("plausible_wrong_version")),
-                                      one_line(r.get("discriminating_check"))))
-# A goal may carry no risk map (specFirst.riskMap false, or an older goal). The
-# rows are then derived from the issue text by the reviewer and labelled
-# issue-text, so a derived row is never read as one the team wrote.
-print("RISK_MAP_SOURCE=%s" % ("goal" if rows else "issue-text"))
+for line in out:
+    print(line)
 FLOW_GOAL_READ
-        # Whether this pull request edits the goal it is reviewed against. The
-        # goal is trusted because it is tracked and a weakening shows up in the
-        # diff — which is only true while someone looks at the diff.
-        if gh pr diff "$PR_NUM" --repo "$REPO" --name-only 2>/dev/null | grep -q '^\.flow/goals/'; then
-          echo "GOAL_EDITED=yes"
-        else
-          echo "GOAL_EDITED=no"
+          # Whether this pull request changes the goal it is reviewed against.
+          # The goal is trusted because it is tracked and a weakening shows up
+          # in the diff — which is only true while someone looks at the diff.
+          # Creating a goal and weakening one are different acts: a spec-first
+          # pull request creates its own goal, so `added` is not a trust signal
+          # and `modified` is. The status comes from the pull request file list,
+          # matched on this goal path exactly, so another issue goal changed in
+          # the same pull request does not answer for this one.
+          FLOW_GOAL_FILE_STATE=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/files?per_page=100" \
+            --jq ".[] | select(.filename==\"$FLOW_GOAL_PATH\" or .previous_filename==\"$FLOW_GOAL_PATH\") | .status" 2>/dev/null); FLOW_GOAL_GH=$?
+          if [ "$FLOW_GOAL_GH" -ne 0 ]; then
+            echo "GOAL_EDITED=unavailable"
+            echo "GOAL_EDITED_REASON=the pull request file list could not be read, so whether this pull request changes its own goal is unknown"
+          else
+            case "$(printf '%s' "$FLOW_GOAL_FILE_STATE" | head -1)" in
+              '')                          echo "GOAL_EDITED=no" ;;
+              added|copied)                echo "GOAL_EDITED=created" ;;
+              removed)                     echo "GOAL_EDITED=removed" ;;
+              *)                           echo "GOAL_EDITED=modified" ;;
+            esac
+          fi
         fi
+        rm -f "$FLOW_GOAL_TMP" 2>/dev/null
       fi
       ;;
   esac

@@ -35,10 +35,11 @@ docs stop disagreeing about whether review creates a goal
 
 - **Timeouts**: none added — no network or agent call is introduced. LSP probes keep the existing
   `lsp.timeout`; a probe that times out is reported as the tool that was used, not as zero callers.
-- **Partial failures**: a goal file that exists but does not parse (malformed YAML, missing
-  `python3`, missing `yaml` module) yields `STATE=unavailable` with the reason, and the review falls
-  back to the issue-text path. It never reports `STATE=none`, which would say "no goal exists" about
-  a goal that does exist.
+- **Partial failures**: a goal that exists but cannot be read — malformed YAML, valid YAML of the
+  wrong shape, missing `python3` or `yaml` module, or a fetch that fails for any reason other than
+  404 — yields `STATE=unavailable` with the reason, and the review falls back to the issue-text
+  path. It never reports `STATE=none`, which would say "no goal exists" about a goal that does
+  exist. Only a 404 at the head commit is `STATE=none`.
 - **Invalid input**: a goal with zero acceptance criteria, or with no risk map, is valid input —
   the risk rows are then derived from the issue text and every row carries `source=issue-text`
   (user decision, 2026-09-16). A goal whose own file is modified by the pull request under review
@@ -49,10 +50,13 @@ docs stop disagreeing about whether review creates a goal
 ### Interface contracts
 
 - `### FlowGoal` section (Phase 1, printed): `STATE=ok|none|unavailable`, `GOAL_PATH=`,
-  `GOAL_STATUS=`, `AC=<id>|<text>|<verification_command>` (one per criterion, the command printed
-  verbatim and never executed), `NON_GOAL=<text>`, `CONTRACT=<text>`,
+  `GOAL_REF=<head commit>`, `ENCODING=`, `GOAL_STATUS=`,
+  `AC=<id>|<text>|<verification_command>` (one per criterion, the command printed as text and never
+  executed, with a literal `|` inside any value written `%7C`), `NON_GOAL=<text>`, `CONTRACT=<text>`,
   `RISK_MAP=<area>|<plausible_wrong_version>|<discriminating_check>|<source>` where `source` is
-  `goal` or `issue-text`, and `GOAL_EDITED=yes|no` for whether the diff modifies the goal file.
+  `goal` or `issue-text`, and `GOAL_EDITED=no|created|modified|removed|unavailable` for what this
+  pull request does to the goal file it is reviewed against. The goal is read at the pull request
+  head commit over the API, not from the working tree: the Phase 1 fence runs before the checkout.
 - `code-reviewer` Summary: `callers examined: N (findReferences|incomingCalls|grep)` per modified
   exported or public symbol.
 - Review body: a `### Blast radius` section listing each consumer of a changed contract, present in
@@ -66,8 +70,8 @@ docs stop disagreeing about whether review creates a goal
 | Area | Plausible wrong version | Discriminating check |
 |---|---|---|
 | Goal parsing | The block expands or executes a `verification_command` while reading it | A goal whose `verification_command` is `$(touch /tmp/flow-pwned)` prints that string verbatim and leaves no file on disk |
-| Goal trust | A pull request that weakens its own acceptance criteria passes unflagged | A diff that modifies `.flow/goals/issue-213.goal.yaml` sets `GOAL_EDITED=yes` and raises a finding naming the file; a diff that does not sets `GOAL_EDITED=no` |
-| Risk-map provenance | Rows derived from issue text are presented as if the team wrote them | With a goal carrying no risk map, every `RISK_MAP=` row ends `|issue-text`, and with the fixture goal's one row it ends `|goal` |
+| Goal trust | A pull request that weakens its own acceptance criteria passes unflagged | A pull request whose file list reports `modified` for `.flow/goals/issue-213.goal.yaml` sets `GOAL_EDITED=modified` and raises a finding naming the file; one that only adds it sets `created`; one that touches another issue goal sets `no`; a failed file-list call sets `unavailable`, never `no` |
+| Risk-map provenance | Rows derived from issue text are presented as if the team wrote them | With a goal carrying no risk map, the section reports `RISK_MAP_SOURCE=issue-text` and every row the derivation step renders ends `|issue-text`; with the fixture goal the section's own rows end `|goal` |
 | Blast radius honesty | `callers examined: 0` from a failed or absent LSP reads as "no callers, all fine" | A symbol that Grep finds referenced in another file while the LSP reported zero callers raises a finding rather than passing |
 | Goal absent vs unreadable | A malformed goal is reported as no goal, so the review silently drops the specification | A goal file containing `: not: yaml:` yields `STATE=unavailable` with a reason, not `STATE=none` |
 
@@ -102,3 +106,17 @@ docs stop disagreeing about whether review creates a goal
 <!-- auto-log: 2026-09-16 12:38 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ac3_impl.py -->
 
 <!-- auto-log: 2026-09-16 12:44 commit "feat(flow): a contract change lists who depends on it" -->
+
+<!-- auto-log: 2026-09-16 13:03 commit "docs(flow): the references stop claiming review and address create goals" -->
+
+<!-- auto-log: 2026-09-16 13:22 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/review-213-findings.md -->
+
+<!-- auto-log: 2026-09-16 13:22 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/review-213-findings.md -->
+
+<!-- auto-log: 2026-09-16 13:23 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/review-213-findings.md -->
+
+<!-- auto-log: 2026-09-16 13:23 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/review-213-findings.md -->
+
+<!-- auto-log: 2026-09-16 13:27 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/review-213-findings.md -->
+
+<!-- auto-log: 2026-09-16 13:41 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
