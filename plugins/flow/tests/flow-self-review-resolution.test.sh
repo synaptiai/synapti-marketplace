@@ -5,7 +5,9 @@
 #     PR issue comment (gh pr comment), recording fix-forwarded finding IDs as RESOLVED — the
 #     same marker/placement /flow:address uses and the only surface the merge gate reads RESOLVED
 #     from. Without it, a solo-authored PR whose every finding was fix-forwarded false-blocks.
-#   - templates/self-review-comment.md carries the FLOW_REVIEW_CYCLE marker (previously missing).
+#   - the self-review body gets the FLOW_REVIEW_CYCLE marker: review.md's posting block appends
+#     it, and templates/self-review-comment.md says so without carrying a marker of its own
+#     (a body that already has one is refused by that block).
 #   - references/finding-ledger-parser.md documents the two-emitter (address + self-review) model.
 #   - The merge gate's classification logic is UNCHANGED — the fix is purely on the emit side.
 #
@@ -58,13 +60,16 @@ CONTENT=$(cat "$REVIEW_MD")
 assert_contains "FLOW_REVIEW_CYCLE" "$CONTENT" "review-body marker retained (records what was found)"
 
 # --- self-review template carries the review marker --------------------------
-_flow_test_begin "self-review-comment.md carries the FLOW_REVIEW_CYCLE marker"
+_flow_test_begin "self-review body gets the FLOW_REVIEW_CYCLE marker from the posting block"
 if [ ! -f "$SELF_TMPL" ]; then
   _flow_assert_fail "self-review-comment.md missing"
 else
   TMPL=$(cat "$SELF_TMPL")
-  assert_contains "FLOW_REVIEW_CYCLE:" "$TMPL" "template emits the review-cycle marker"
+  assert_contains "FLOW_REVIEW_CYCLE" "$TMPL" "template names the review-cycle marker"
+  assert_contains "appends it" "$TMPL" "template says the posting block appends the marker"
+  assert_not_contains "FLOW_REVIEW_CYCLE:" "$TMPL" "template carries no marker, so the posting block does not refuse the body"
   assert_contains "FLOW_RESOLUTION_CYCLE" "$TMPL" "template explains the separate resolution marker"
+  assert_contains "FLOW_REVIEW_CYCLE:%s FINDINGS:[%s]" "$(cat "$REVIEW_MD")" "review.md posting block appends the marker in both modes"
 fi
 
 # --- parser reference documents the two-emitter model ------------------------

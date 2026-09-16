@@ -104,16 +104,16 @@ Lead writes the per-priority finding tables, folding confidence and disposition 
 | Finding | Suggested Fix |
 |---------|---------------|
 | **F1 · security · `src/auth.ts:42`**<br>... _(HIGH · consensus)_ | ... |
-| **F2 · correctness · `src/api.ts:88`**<br>... _(LOW · kept — B disagreed: "off-by-one is intentional")_ | ... |
+| **F2 · correctness · `src/api.ts:88`**<br>... _(MEDIUM · refined — B lowered P1 to P2)_ | ... |
 ```
 
 And the extended `FLOW_REVIEW_CYCLE` marker (7 fields per row; example exercises three disposition values):
 
 ```
-<!-- FLOW_REVIEW_CYCLE:{N} FINDINGS:[F1|P1|security|src/auth.ts:42|open|HIGH|validated,F2|P2|correctness|src/api.ts:88|open|MEDIUM|refined,F3|P1|race|src/job.ts:17|open|LOW|kept] -->
+<!-- FLOW_REVIEW_CYCLE:{N} FINDINGS:[F1|P1|security|src/auth.ts:42|open|HIGH|validated,F2|P2|correctness|src/api.ts:88|open|MEDIUM|refined,F3|P1|race|src/job.ts:17|open|HIGH|kept] -->
 ```
 
-DROPPED findings do NOT appear in the marker; they are logged in the decision journal under `## Dropped after challenge` for traceability.
+A `kept` finding is LOW after consolidation, so it reaches the marker only after the author's own review confirms it (F3 above, re-recorded HIGH); on someone else's pull request it is listed under Needs investigation instead (`commands/review.md` Phase 4 steps 6-7). DROPPED findings do NOT appear in the marker; they are logged in the decision journal under `## Dropped after challenge` for traceability.
 
 ## Cognitive Bias Awareness
 

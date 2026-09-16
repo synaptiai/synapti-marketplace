@@ -28,51 +28,47 @@ Stage 1 runs first on the main thread; facets fan out in parallel:
 | **Quality** | Logic correctness, edge cases | code-reviewer |
 | **Conventions** | Commit format, branch naming, PR structure | convention-checker |
 | **Tests** | Coverage, quality commands pass, test adequacy | test-runner |
-| **Error handling** | Unhandled errors, silent failures, error-path edge cases | error-handler-inspector |
-| **Claim verification** | Self-review claims vs actual file state | holdout-validation (skill) |
+| **Error handling** | Unhandled errors, silent failures, error paths | error-handler-inspector |
+| **Claim verification** | Self-review claims vs file state | holdout-validation (skill) |
 
-**Tests facet rule:** derive the expected behavior from the issue/spec BEFORE reading the tests, then check each test's expected value and input against that derivation. Treating the tests as the spec is the failure mode: an expectation copied from the implementation's output confirms nothing. Checklist: `references/test-review-checklist.md`.
+**Tests facet rule:** derive the expected behavior from the issue/spec BEFORE reading the tests, then check each expected value and input against it; an expectation copied from the implementation's output confirms nothing. See `references/test-review-checklist.md`.
 
 ## Synthesis
 
-1. Deduplicate by `file:line`: same location, keep highest priority
-2. Order P1, P2, P3
-3. Group by file
-4. Count per priority; counts must match table rows
-
-## Finding format
-
-Emit the two-column `Finding | Suggested Fix` tables per priority defined in `references/finding-schema.md`.
+1. Deduplicate by `file:line`, keeping the highest priority
+2. Order P1, P2, P3, grouped by file
+3. Count per priority; counts must match the `Finding | Suggested Fix` table rows (`references/finding-schema.md`)
 
 ## Confidence and signal
 
-High (verified by running code/test, or LSP diagnostic / find-references): always include. Medium (verified by reading the code path): include for P1/P2. Low (pattern match only): include only as P1 marked "needs investigation". Style preferences are P3 at most. Only High-confidence P1s block merge. A finding with no `file:line` and no concrete harm scenario is noise; drop it.
+HIGH (ran code, a test or LSP) and MEDIUM (read the code path) findings decide at their priority. LOW (pattern match) findings, any priority, go to Needs investigation, outside the decision and the `FLOW_REVIEW_CYCLE` marker; own-PR handling: `commands/review.md` Phase 4 step 5. Absent or invalid confidence is MEDIUM. `bin/flow-finding-route.sh` applies this and the table below. Style is P3 at most; a finding with no `file:line` and no harm scenario is noise.
 
 ## Boy Scout recognition
 
-APPROVE `improve:` commits that pass the proximity test (file already modified, self-evidently correct, <10 lines, no API change); P2 "scope creep" only when it fails.
+APPROVE `improve:` commits passing the proximity test (file already modified, self-evidently correct, <10 lines, no API change); P2 "scope creep" only when it fails.
 
 ## Review cycle awareness
 
-Count prior `FLOW_REVIEW_CYCLE` markers for the cycle number; review only the delta, verify each claimed resolution against `git diff`, and on the 3rd+ cycle raise only new P1s. Parsing commands and the Previous Feedback Status table: `references/review-cycle-parsing.md`.
+Count prior `FLOW_REVIEW_CYCLE` markers for the cycle number; review only the delta, verify each claimed resolution against `git diff`, and on the 3rd+ cycle raise only new P1s. See `references/review-cycle-parsing.md`.
 
 ## Stop conditions
 
-- Stage 1 finds >3 unmet acceptance criteria: REQUEST_CHANGES immediately, skip Stage 2
-- PR modifies files unrelated to the issue: flag as out-of-context, ask for a split (`improve:` commits in already-modified files are in context)
+- Stage 1 finds >3 unmet criteria: REQUEST_CHANGES immediately, skip Stage 2
+- PR modifies files unrelated to the issue: out-of-context, ask for a split (`improve:` commits in modified files are in context)
 - Diff >500 lines with no test changes: P1 "untested large change"
 
 ## Review decision
 
 | Findings | Decision |
 |---|---|
-| Any P1 | REQUEST_CHANGES |
-| Any P2 | REQUEST_CHANGES |
-| P3 only | COMMENT; author fixes every P3 in-PR, not "approve with nits" |
-| None | APPROVE |
+| Any HIGH or MEDIUM P1 | REQUEST_CHANGES |
+| Any HIGH or MEDIUM P2 | REQUEST_CHANGES |
+| HIGH or MEDIUM P3 only | COMMENT; the author fixes every P3 in-PR, never "approve with nits" |
+| None, or LOW only | APPROVE |
+| Your own pull request | COMMENT at any priority — GitHub takes neither verdict from an author |
 
-Finding triage is never an escalation trigger (`skills/llm-operator-principles/SKILL.md`, `references/escalation-format.md`).
+Finding triage is never an escalation trigger (`skills/llm-operator-principles/SKILL.md`).
 
 ## Adversarial protocol
 
-With agent teams enabled, apply `skills/team-coordination/SKILL.md`: independent reviewers, mutual challenge, disputed findings escalate to a human.
+With agent teams enabled, apply `skills/team-coordination/SKILL.md`: independent reviewers, mutual challenge, disputed findings escalate.

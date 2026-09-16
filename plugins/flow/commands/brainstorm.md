@@ -212,7 +212,7 @@ ENTRY
        --type brainstorm-decision \
        --metadata topic="$TOPIC" \
        --metadata chosen="$CHOSEN_APPROACH" \
-       --metadata options_considered=$N_OPTIONS
+       --metadata options_considered="$N_OPTIONS"
    fi
    ```
 

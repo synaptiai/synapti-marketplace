@@ -232,7 +232,8 @@ git diff "$DEFAULT_BRANCH"...HEAD
 Agent(code-reviewer):
   "Review the branch diff against $DEFAULT_BRANCH for code quality,
    logic correctness, edge cases, and security. Return P1/P2/P3 findings
-   with file:line citations."
+   with file:line citations and a confidence (HIGH, MEDIUM or LOW) per finding
+   per references/finding-schema.md."
 
 Agent(convention-checker):
   "Validate commit messages, branch naming, and code conventions
@@ -245,11 +246,13 @@ Agent(test-runner):
 Agent(security-reviewer):
   "Review the branch diff against $DEFAULT_BRANCH for OWASP Top 10,
    secrets, auth/authz, input validation, dependency vulnerabilities.
-   Return P1/P2/P3 findings with file:line."
+   Return P1/P2/P3 findings with file:line and a confidence (HIGH, MEDIUM or LOW) per finding
+   per references/finding-schema.md."
 
 Agent(error-handler-inspector):
   "Inspect changed files for error handling gaps, silent failures,
-   unhandled exceptions. Return P1/P2/P3 findings."
+   unhandled exceptions. Return P1/P2/P3 findings with a
+   confidence (HIGH, MEDIUM or LOW) per finding per references/finding-schema.md."
 
 Skill(holdout-validation):
   Inputs:
@@ -303,10 +306,11 @@ After agents return, TaskUpdate each review task with findings.
    - Based on response → `TaskUpdate` visual tasks to SKIP_USER_APPROVED or MANUAL, or provide installation guidance and retry
    - The PR body should note whether visual verification was PASS, MANUAL, SKIP_USER_APPROVED, or SKIP_WARN
 6. **Display findings** (finding-first pattern; fix-forward bounded by `fixForwardMaxIterations`, default 10 — safety net, not a budget; see `skills/llm-operator-principles/SKILL.md`):
+   - LOW-confidence findings, at any priority → investigate each one first, as `commands/review.md` Phase 4 step 5 does on your own PR: a test (or, for prose, a command) that fails on the current code confirms it (fix it, keep the test, record it HIGH); one that passes refutes it (keep the test, and add `ID:agent` to `REFUTED` for step 13's journal emit); when neither can settle it, escalate with the six-field structure and record it MEDIUM. List every outcome, with the confidence the finding ended with, under `### Needs investigation` in the PR body, separate from the P1/P2/P3 counts; /flow:pr posts no marker, so the PR body is where that confidence is recorded. Escalated findings stay listed there and do not re-enter step 7's fix loop. Findings from holdout-validation, convention-checker and test-runner are MEDIUM.
    - P1 findings → must fix before PR
    - P2 findings → fix before PR (continue iterating until zero remain; finding triage is NEVER a valid escalation trigger)
    - P3 findings → fix in-PR by default. Cosmetic P3 in untouched files only: fix if bounded (<10 lines) or document inline in the PR body under `### Known cosmetic notes`. Do NOT add a "Known issues" section that defers fixable P2s.
-7. **If P1 or P2 findings**: Fix them, re-run review
+7. **If P1 or P2 findings that are not escalated**: Fix them, re-run review. An escalated finding keeps its priority but stays listed in the PR body and does not send the flow back here.
 
 7a. **FlowGoal gate (v3, opt-in)** — when the Phase 1 `### FlowGoal State` section reported `GATE=block`, the active FlowGoal is not yet `achieved`. Do NOT push or create the PR with an incomplete goal — use the AskUserQuestion tool with these options:
 
@@ -374,23 +378,80 @@ After agents return, TaskUpdate each review task with findings.
 13. **Manifest emit** — record the review-cycle artifact for the parallel-review pass that ran during PR creation. Same emit shape as `commands/review.md` Phase 4 step 7 — the PR-creation flow runs an inline review and is morally a cycle:
 
     ```bash
-    PR_NUMBER=$(gh pr view --json number --jq '.number')
-    ISSUE=$(gh issue list --state open --search "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+    # PR_MANIFEST_BLOCK_BEGIN
+    # Carried from earlier steps: BRANCH, TOTAL_FINDINGS, and REFUTED (the LOW
+    # findings refuted in step 6 as comma-separated ID:agent pairs, for example
+    # F3:code-reviewer; empty when none were refuted).
+    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+    [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to record against an unattributable pull request" >&2; exit 1; }
+    # `gh pr view --repo` needs the pull request named, so ask by head branch
+    # rather than dropping the pin: an unpinned call resolves against whatever
+    # repository gh picks for the invoking shell. BRANCH is what selects the
+    # pull request, so it is validated like the rest: gh DROPS an empty --head
+    # filter and answers with the first open pull request in the repository,
+    # and `git branch --show-current` prints nothing on a detached HEAD.
+    [ -n "${BRANCH:-}" ] || { echo "ERROR: BRANCH is not set; refusing to pick a pull request by an empty head filter" >&2; exit 1; }
+    # `--head` matches the branch name across forks, and a fork pull request has
+    # the same headRefName, so ask for isCrossRepository too and refuse it.
+    PR_LINE=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number,headRefName,isCrossRepository --jq '.[0] | "\(.number) \(.headRefName) \(.isCrossRepository)"') || { echo "ERROR: cannot read the pull request for $BRANCH" >&2; exit 1; }
+    PR_NUMBER=${PR_LINE%% *}
+    PR_REST=${PR_LINE#* }
+    PR_HEAD=${PR_REST%% *}
+    PR_FORK=${PR_REST##* }
+    case "$PR_NUMBER" in
+      ''|0*|*[!0-9]*) echo "ERROR: no open pull request for branch '$BRANCH'; refusing to record" >&2; exit 1 ;;
+    esac
+    # gh answered: confirm it answered about this branch and not another.
+    [ "$PR_HEAD" = "$BRANCH" ] || { echo "ERROR: pull request $PR_NUMBER has head '$PR_HEAD', not '$BRANCH'; refusing to record" >&2; exit 1; }
+    [ "$PR_FORK" = false ] || { echo "ERROR: pull request $PR_NUMBER comes from a fork with the same branch name; refusing to record against it" >&2; exit 1; }
+    case "${TOTAL_FINDINGS:-}" in
+      ''|*[!0-9]*|0?*) echo "ERROR: TOTAL_FINDINGS must be a count, got '${TOTAL_FINDINGS:-}'; refusing to record" >&2; exit 1 ;;
+    esac
+    FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+    # The issue GitHub lists this pull request as closing, never a search hit:
+    # `gh issue list --search "$BRANCH"` returns whatever matches the branch
+    # text, so an unrelated open issue could take the slot, and its `2>/dev/null
+    # || echo ""` read every gh failure as "no issue".
+    ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUMBER" --repo "$REPO") || { echo "ERROR: cannot read the issues pull request $PR_NUMBER closes; refusing to guess" >&2; exit 1; }
     if [ -z "$ISSUE" ]; then
-      ISSUE=$(echo "$BRANCH" | grep -oE 'issue-([0-9]+)' | head -1 | sed 's/issue-//')
+      # GitHub lists no closing issue for a pull request into a branch other
+      # than the default, and the branch name is what /flow:start keyed the
+      # work to, so it is the documented fallback rather than a guess.
+      ISSUE=$(printf '%s' "${BRANCH:-}" | grep -oE 'issue-[0-9]+' | head -1 | sed 's/issue-//')
+    fi
+    if [ -z "$ISSUE" ]; then
+      echo "PR_MANIFEST=skipped (GitHub lists no issue this pull request closes and the branch name names none)"
+      exit 0
     fi
     if [ -n "$ISSUE" ]; then
-      "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
-        --issue $ISSUE \
+      "$FLOW_ROOT/bin/journal-record.sh" \
+        --issue "$ISSUE" \
         --type review-cycle \
         --metadata cycle=1 \
         --metadata path=B \
-        --metadata findings_count=$TOTAL_FINDINGS \
-        --metadata pr=$PR_NUMBER
+        --metadata findings_count="$TOTAL_FINDINGS" \
+        --metadata pr="$PR_NUMBER" || { echo "ERROR: cannot record the review cycle for issue $ISSUE" >&2; exit 1; }
+      for PAIR in $(printf '%s' "${REFUTED:-}" | tr ',' ' '); do
+        # REFUTED entries are ID:agent. Without the colon the id would be
+        # recorded as the facet too, and /flow:learn aggregates that field.
+        case "$PAIR" in
+          *:*) ;;
+          *) echo "WARN: REFUTED entry '$PAIR' is not ID:agent; skipping" >&2; continue ;;
+        esac
+        "$FLOW_ROOT/bin/journal-record.sh" \
+          --issue "$ISSUE" \
+          --type dropped-finding \
+          --metadata cycle=1 \
+          --metadata finding_id="${PAIR%%:*}" \
+          --metadata facet="${PAIR#*:}" \
+          --metadata reason=self-review-refuted \
+          --metadata pr="$PR_NUMBER" || { echo "ERROR: cannot record the dropped finding ${PAIR%%:*} for issue $ISSUE" >&2; exit 1; }
+      done
     fi
+    # PR_MANIFEST_BLOCK_END
     ```
 
-    The emit is best-effort — if the issue cannot be inferred from the branch name, skip rather than fail. PR-creation flow uses Path B (single-session 5-agent dispatch); subsequent `/flow:review` invocations may re-emit with `path=A` if paired-reviewer mode is enabled.
+The block records against the issue GitHub lists the pull request as closing, falling back to the branch name when GitHub lists none (a pull request into a branch other than the default closes nothing). If neither names an issue it says so and skips; a gh failure is an error, not a skip. PR-creation flow uses Path B (single-session 5-agent dispatch); subsequent `/flow:review` invocations may re-emit with `path=A` if paired-reviewer mode is enabled.
 
 Display PR URL and next steps.
 

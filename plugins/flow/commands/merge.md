@@ -158,8 +158,8 @@ else
   #
   # The select requires a digit after the colon (FLOW_*_CYCLE:[0-9]) so a "marker" is, by
   # definition, NAME:<cycle-number>. This excludes both bare prose mentions of the marker
-  # NAME and unsubstituted-placeholder prose like `FLOW_REVIEW_CYCLE:{N}` (which the new
-  # self-review template carries in its format-guide comment), so neither inflates the
+  # NAME and unsubstituted-placeholder prose like `FLOW_REVIEW_CYCLE:{N}` (the form the
+  # reference documentation uses), so neither inflates the
   # count nor produces a spurious diagnostic. The seed is intentionally a touch stricter
   # than the gate `test("FLOW_*_CYCLE:")` select — the gate tolerates prose by extracting
   # an empty FINDINGS list, whereas a human-facing preview should only count real markers.
@@ -167,8 +167,8 @@ else
   # Capture gh exit separately per endpoint. Same reason as the Reviews section: the
   # merge gate must close (STATE=unavailable) rather than open (STATE=empty) when
   # markers cannot be read.
-  SEED_COMMENTS=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:[0-9]|FLOW_REVIEW_CYCLE:[0-9]")) | {id, body, surface: "issue-comments"}]' 2>/dev/null); GH_EXIT_C=$?
-  SEED_REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" --jq '[.[] | select(.body | test("FLOW_RESOLUTION_CYCLE:[0-9]|FLOW_REVIEW_CYCLE:[0-9]")) | {id, body, surface: "reviews"}]' 2>/dev/null); GH_EXIT_R=$?
+  SEED_COMMENTS=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '[.[] | select(.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ |<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")) | {id, body, surface: "issue-comments"}]' 2>/dev/null); GH_EXIT_C=$?
+  SEED_REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" --jq '[.[] | select(.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ |<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")) | {id, body, surface: "reviews"}]' 2>/dev/null); GH_EXIT_R=$?
   echo "SEED_SCANNED=reviews,issue-comments"
   if [ $GH_EXIT_C -ne 0 ] || [ $GH_EXIT_R -ne 0 ]; then
     echo "SEED_MARKER_COUNT=0"
@@ -328,9 +328,9 @@ fi
 GH_RES_RAW=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null)
 GH_EXIT_RES=$?
 RESOLUTION_BODY=$(printf '%s' "$GH_RES_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
-    'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | last | .body // ""')
+    'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ ")))] | last | .body // ""')
 RES_UNTRUSTED=$(printf '%s' "$GH_RES_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
-    'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | length')
+    'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ ")))] | length')
 
 # Extract ESCALATED array contents (portable POSIX grep+sed; BSD grep has no -P).
 # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
@@ -340,9 +340,9 @@ ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ES
 GH_REV_RAW=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null)
 GH_EXIT_REV=$?
 REVIEW_BODY=$(printf '%s' "$GH_REV_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
-    'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_REVIEW_CYCLE:")))] | last | .body // ""')
+    'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")))] | last | .body // ""')
 REV_UNTRUSTED=$(printf '%s' "$GH_REV_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
-    'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("FLOW_REVIEW_CYCLE:")))] | length')
+    'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")))] | length')
 
 # Fail closed if either gh call failed — better to block a legitimate merge
 # than silently let a regression through when the gate state is unknowable.
@@ -729,6 +729,7 @@ git pull origin $DEFAULT_BRANCH
 **Manifest emit** — if this merge resolved any escalations (a Proactive-Autonomy escalation surfaced via `AskUserQuestion` during Phase 1's finding-ledger check, Phase 2's stale-approval warning, or the conflict-resolution path closed because the user provided one of the six canonical fields), record an `escalation-resolved` artifact for each:
 
 ```bash
+# ESCALATION_RESOLVED_BLOCK_BEGIN
 # $REPO does not survive from the preflight block: each fence is its own
 # shell. Resolved again here, because `gh --repo ""` falls back to the default
 # resolution of gh without complaining — an unset REPO reads as pinned and behaves
@@ -742,18 +743,32 @@ case "$ARG1" in
   ''|*[!0-9]*) echo "ERROR: PR number required (all-digit)" >&2; exit 1 ;;
   *) PR_NUM="$ARG1" ;;
 esac
-ISSUE=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' | grep -oE '#[0-9]+' | head -1 | tr -d '#')
-if [ -n "$ISSUE" ]; then
-  # Repeat once per escalation that closed during this merge run. Replace
-  # {FIELD} with the one canonical field that gated it: situation, tried,
-  # options, recommendation, blocking or risk. Replace {OUTCOME} with a one-line
-  # summary of the user's answer.
-  "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
-    --issue $ISSUE \
+# The issue GitHub lists the pull request as closing (the lowest when there
+# are several), never the first #N in the body.
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$REPO") || { echo "ERROR: cannot read the issues pull request $PR_NUM closes; refusing to guess its linked issue" >&2; exit 1; }
+if [ -z "$ISSUE" ]; then
+  echo "ESCALATION_RECORD=skipped (GitHub lists no issue this pull request closes, so there is no journal to record it in)"
+else
+  # Repeat once per escalation that closed during this merge run. Set
+  # ESCALATION_FIELD to the one canonical field that gated it and OUTCOME to a
+  # one-line summary of the user's answer; they are values this block
+  # validates, not placeholders to edit in place, so an unsubstituted one
+  # cannot be recorded as the field name.
+  case "${ESCALATION_FIELD:-}" in
+    situation|tried|options|recommendation|blocking|risk) ;;
+    *) echo "ERROR: ESCALATION_FIELD must be one of situation, tried, options, recommendation, blocking, risk; got '${ESCALATION_FIELD:-}'" >&2; exit 1 ;;
+  esac
+  case "${OUTCOME:-}" in
+    ''|*'{'*|*'}'*) echo "ERROR: OUTCOME must be a one-line summary of the user's answer, got '${OUTCOME:-}'" >&2; exit 1 ;;
+  esac
+  "$FLOW_ROOT/bin/journal-record.sh" \
+    --issue "$ISSUE" \
     --type escalation-resolved \
-    --metadata "escalation_field={FIELD}" \
-    --metadata "outcome={OUTCOME}"
+    --metadata "escalation_field=$ESCALATION_FIELD" \
+    --metadata "outcome=$OUTCOME"
 fi
+# ESCALATION_RESOLVED_BLOCK_END
 ```
 
 The emit is conditional — most merges run cleanly without escalations, in which case skip this step. When it does fire, the manifest captures both *that* an escalation closed and *which canonical field* was the gate, enabling `/flow:learn` to detect recurring escalation patterns (e.g., the same field gating multiple merges → process or tooling improvement opportunity).

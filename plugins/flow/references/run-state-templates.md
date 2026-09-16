@@ -38,9 +38,9 @@ events:
 Journal artifact emitted alongside creation, and again on the terminal transition with the final `status`:
 
 ```bash
-bin/journal-record.sh --issue ${N} --type workflow-run \
-  --metadata workflow=${WORKFLOW_ID} \
-  --metadata run_id=${RUN_ID} \
+bin/journal-record.sh --issue "${N}" --type workflow-run \
+  --metadata workflow="${WORKFLOW_ID}" \
+  --metadata run_id="${RUN_ID}" \
   --metadata status=active
 ```
 

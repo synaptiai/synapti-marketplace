@@ -53,6 +53,12 @@ Closes #{issue_number}
 | P2 | {Y} | {Summary} |
 | P3 | {Z} | {Summary} |
 
+A LOW-confidence finding is counted in this table only after a test confirmed it and it was fixed.
+
+### Needs investigation
+
+{Every LOW-confidence finding from the pre-PR review and how it ended — `{ID} · {priority} · file:line — {problem}`, then one of: confirmed (test `{path}` failed on the unfixed code; fixed and counted above as HIGH), refuted (test `{path}` passes on the current code; journaled as `dropped-finding`, `self-review-refuted`), or unsettled (escalated; recorded MEDIUM). Write "None" when the review raised no LOW finding.}
+
 ### Known cosmetic notes
 
 {Cosmetic P3 findings in untouched files that the agent determined were not bounded enough to fix in-PR (>10 lines) — listed as `file:line — one-line description`. Empty if all P3 were fixed or no cosmetic-P3-in-untouched findings surfaced. NEVER use this section to defer fixable P1/P2 findings or any finding in a touched file; those MUST be fixed before PR creation per `skills/llm-operator-principles/SKILL.md`.}

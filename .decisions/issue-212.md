@@ -1,0 +1,678 @@
+---
+issue: 212
+created: '2026-09-15T17:59:32Z'
+artifacts:
+- type: specification
+  captured_at: '2026-09-15T17:59:32Z'
+  by: specification-capture
+  elements:
+  - non-goals
+  - failure-modes
+  - interface-contracts
+  - risk-map
+- type: goal-created
+  captured_at: '2026-09-15T18:07:16Z'
+  goal_id: issue-212
+  source: github_issue
+  ac_count: 7
+- type: workflow-run
+  captured_at: '2026-09-15T18:07:57Z'
+  workflow: start-issue
+  run_id: 2026-09-15T172641Z-issue-212
+  status: active
+- type: stranger-test
+  captured_at: '2026-09-15T19:00:16Z'
+  result: PASS
+  task_count: 7
+- type: review-cycle
+  captured_at: '2026-09-16T02:05:33Z'
+  cycle: 1
+  path: B
+  findings_count: 11
+  pr: 230
+- type: verdict
+  captured_at: '2026-09-16T02:23:15Z'
+  result: PASS
+  pr: 230
+---
+# Issue #212 — finding confidence is display-only, and the review rules disagree about whether it blocks
+
+## Design decisions (user-confirmed 2026-09-15)
+
+- **Confidence on every path.** Path B's `FLOW_REVIEW_CYCLE` marker becomes 7-field like Path A's, with disposition `unchallenged`, and the rendered finding tables carry the `_(CONFIDENCE · disposition)_` suffix on both paths. Chosen over a render-only suffix and over routing without rendering.
+- **LOW at any priority** goes to `Needs investigation`; priority is shown there for triage and is never changed by confidence.
+- **External review with only LOW findings** posts APPROVE with the `Needs investigation` section, as the issue is written.
+- **Confirming a LOW finding on the agent's own PR** means a test (or, for prose, a command) that fails on the current code. Fails → fixed and recorded HIGH. Passes → refuted, the test stays and is cited as evidence for `dropped-finding` with `reason=self-review-refuted`.
+- **Reason spelling** is `self-review-refuted` (hyphen), matching #214's closed set; the issue body was edited to match.
+- **The routing rule is a script, and the prose calls it.** `bin/flow-finding-route.sh` reads the consolidated finding rows and the review mode and prints the per-priority counts, the `Needs investigation` ids, the decision, the 7-field marker rows and any `LEDGER_WARN` lines. `commands/review.md` steps 6 and 7 run it. Chosen over prose-only (the ACs as written) and over prose plus a table-parsing test, because the risk-map rows for absent confidence, marker exclusion, header counts and the only-LOW decision can then be tested as input → output rather than as wording.
+
+## Specification
+
+_Captured by specification-capture skill on 2026-09-15. Source: mixed._
+
+### Non-goals
+
+- Merge gate Check 1 (ESCALATED) and Check 2 (FINDINGS − RESOLVED) and `DISPUTED` semantics are unchanged; dismissals belong to #214.
+- The marker parsers in `commands/merge.md`, `commands/status.md` and `references/finding-ledger-parser.md` are unchanged: they already accept 7-field rows and read only ID and priority. LOW routing happens where the marker is written, not where it is read.
+- Confidence never changes a finding's priority or category; a LOW P1 stays P1 inside `Needs investigation`.
+- No numeric or calibrated confidence score and no threshold setting: three words only (#211 rejected `min_confidence_score`).
+- Path A's consolidation table (which disposition earns which confidence) is unchanged.
+- `convention-checker` and `test-runner` are not moved onto the confidence rule; they are not on the finding schema.
+- `/flow:address` resolution handling is unchanged.
+
+### Failure modes
+
+- **Timeouts** — none — the change adds no network or agent call; Path A reviewer timeouts keep today's fallback (`MEDIUM|unchallenged`).
+- **Partial failures** — an agent gives confidence on some findings and not others: each missing one becomes MEDIUM with its own `LEDGER_WARN` naming the agent, and the rest keep their values. A self-review LOW finding that no test or command can reproduce or refute is escalated with the six-field structure and listed in `ESCALATED` of the resolution marker; it is never left LOW and never recorded HIGH.
+- **Invalid input** — a confidence other than HIGH, MEDIUM or LOW (matched case-insensitively, so `high` is HIGH, while `0.8`, `maybe` and `Medium-High` are invalid) is treated as absent: MEDIUM plus a `LEDGER_WARN` naming the agent and the value.
+- **Missing context** — `PR_AUTHOR` or `CURRENT_USER` resolves empty (gh auth or network failure): Phase 4 step 4 halts with an error instead of comparing two empty strings as equal and taking the self-review path, which would fix-forward onto someone else's branch.
+
+### Interface contracts
+
+- Agent finding row (`code-reviewer`, `security-reviewer`, `error-handler-inspector`, `integration-verifier`): Finding cell `**{ID} · {category} · `{location}`**<br>{problem} _({HIGH|MEDIUM|LOW})_`; the confidence suffix is required. The orchestrator renders `_({CONFIDENCE} · {disposition})_` on both paths.
+- `FLOW_REVIEW_CYCLE` marker: 7-field on Path A and Path B, `ID|priority|category|location|status|confidence|disposition`; Path B disposition is `unchallenged`. No LOW row is written: on an external review LOW findings are excluded, and on the agent's own PR each is re-recorded HIGH or dropped. Legacy 5-field rows still parse.
+- External review body: a `#### Needs investigation` section after P3 with one entry per LOW finding: id · priority · category · location, the problem, `Pattern:` (what triggered it) and `Confirm or refute:` (what would settle it). Header line `P1: X, P2: Y, P3: Z · Needs investigation: N`, with LOW findings excluded from X, Y and Z.
+- Decision table: any HIGH or MEDIUM P1 → REQUEST_CHANGES; any HIGH or MEDIUM P2 → REQUEST_CHANGES; HIGH or MEDIUM P3 only → COMMENT; none, or LOW only → APPROVE.
+- `dropped-finding` journal artifact: `cycle`, `finding_id`, `facet`, `reason=self-review-refuted`, `pr`, written with `bin/journal-record.sh`.
+- `LEDGER_WARN: PR#<N> finding '<id>' from <agent> has no confidence — treated as MEDIUM` and `LEDGER_WARN: PR#<N> finding '<id>' from <agent> has invalid confidence '<value>' — treated as MEDIUM`.
+- `review-cycle` journal `path` metadata names the orchestration that ran (`A` or `B`); it is no longer inferred from marker width.
+- `templates/pr-body.md` and `templates/self-review-comment.md`: a `Needs investigation` section listing each LOW finding and its outcome (confirmed → fixed with a test; refuted → evidence), separate from the P1/P2/P3 counts.
+
+### Risk map
+
+| Area | Plausible wrong version | Discriminating check |
+|---|---|---|
+| absent confidence | treats a missing confidence as LOW (demotion by omission) | external PR, one P1 with no confidence → right: MEDIUM, REQUEST_CHANGES, marker row present, `LEDGER_WARN` naming the agent; wrong: listed under Needs investigation, APPROVE, no marker row |
+| exclusion scope | excludes LOW findings on the agent's own PR too | own PR, one LOW P2 → right: ends fixed and HIGH with a test, or `dropped-finding` `reason=self-review-refuted`; wrong: listed as an open investigation |
+| marker vs decision | drops LOW from the decision but still writes its marker row | external PR, F1 HIGH P2 and F2 LOW P1 → right: `FINDINGS:[F1|…]` only; wrong: F2 in the marker, so merge Check 2 blocks on it |
+| header counts | counts LOW findings in the P1/P2/P3 counts | same PR → right: `P1: 0, P2: 1, P3: 0 · Needs investigation: 1`; wrong: `P1: 1, P2: 1` |
+| contradiction test | the test can only confirm (checks the phrase's absence only) | fixture with the phrase and an `Any P1` row → fires; fixture with conditional rows and one rule → silent; fixture with no decision table → fails |
+| only-LOW decision | posts COMMENT or REQUEST_CHANGES when every finding is LOW | external PR, only F1 LOW P1 → right: `--approve` with the section; wrong: `--request-changes` |
+
+<!-- auto-log: 2026-09-15 19:59 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-212.md -->
+
+<!-- auto-log: 2026-09-15 20:05 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-212.md -->
+
+<!-- auto-log: 2026-09-15 20:25 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-implementation-planner/project_no_task_tools_in_planner.md -->
+
+<!-- auto-log: 2026-09-15 20:25 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-implementation-planner/feedback_serialize_shared_test_files.md -->
+
+<!-- auto-log: 2026-09-15 20:25 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-implementation-planner/MEMORY.md -->
+
+<!-- auto-log: 2026-09-15 20:27 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-implementation-planner/project_no_task_tools_in_planner.md -->
+
+<!-- auto-log: 2026-09-15 20:28 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-implementation-planner/MEMORY.md -->
+
+## Plan decisions (2026-09-15)
+
+User-confirmed:
+
+- **`/flow:pr` applies the same LOW rule as self-review.** Phase 4 step 6 confirms each LOW finding with a failing test (fixed, HIGH), refutes it with a passing test, or escalates it; its reviewer prompts ask for confidence; refuted drops are journaled once `gh pr create` returns the PR number; `pr-body.md` lists each outcome.
+- **Rows from producers outside the finding schema** (holdout-validation, convention-checker, test-runner) are stamped MEDIUM by the orchestrator before routing, so `LEDGER_WARN` fires only when one of the four schema agents omits confidence.
+- **Marker-breaking characters are percent-encoded in the marker row only.** In category and location, `%` → `%25`, `,` → `%2C`, `]` → `%5D`, and an escaped `\|` in the input → `%7C`. Parsers read only ID and priority; the rendered body keeps the real text. A row is never rejected for these characters.
+
+Settled from the specification and the code:
+
+- An escalated self-review LOW finding is written as MEDIUM, status `open`, and listed in `ESCALATED` (merge Check 1 blocks on it).
+- A Path A `kept` finding confirmed in self-review keeps disposition `kept`; confidence records the verification, disposition the challenge history.
+- `tests/finding-schema/row-schema.json` keeps `confidence` optional (the runtime rule tolerates absence); only its description changes.
+- The real methodology file is also asserted free of "Only High-confidence P1s block merge", which is wrong on its own now that a MEDIUM P1 blocks.
+- `facet` on a Path B `dropped-finding` is the name of the agent that raised the finding.
+- `findings_count` in the `review-cycle` artifact is `COUNT_P1+COUNT_P2+COUNT_P3`, the number of marker rows.
+
+## Plan
+
+Route script contract: `flow-finding-route.sh --mode external|self --pr <N> [--input <file>] [--allow-empty]`; rows `ID|PRIORITY|category|location|CONFIDENCE|disposition|agent` on stdin or file; exit 0 routed, 1 usage/validation/zero rows without `--allow-empty`, 2 unreadable input, 3 self mode with unresolved LOW rows (stdout then carries only `ROWS_READ` and `UNRESOLVED_LOW`, no marker). Stdout keys in order: `ROWS_READ`, `COUNT_P1`, `COUNT_P2`, `COUNT_P3`, `COUNT_NEEDS_INVESTIGATION`, `NEEDS_INVESTIGATION`, `DECISION`, `MARKER_ROWS`. Bash 3.2 compatible.
+
+1. Route script and `tests/flow-finding-route.test.sh` (AC7; risk rows absent confidence, exclusion scope, marker vs decision, header counts, only-LOW decision).
+2. One confidence rule in `code-review-methodology` and a contradiction checker with must-fire, must-stay-silent and input-removal fixtures (AC1; contradiction test).
+3. Confidence required in `finding-schema.md` and the four agents; 7-field on both paths in `finding-ledger-parser.md`, `paired-review-protocol.md`, `row-schema.json` description and README (AC4; absent confidence).
+4. `review.md` A.6, Path B prompts, step 3 header, steps 6 and 7 run the script through an extractable block; non-schema rows stamped MEDIUM; `path` metadata names the orchestration (AC2, AC7; marker vs decision, header counts, only-LOW decision).
+5. `review.md` step 4 identity guard, step 5 LOW protocol with an extractable `dropped-finding` block; `decision-journal-schema.md` documents `self-review-refuted`; `pr.md` Phase 4 step 6 and step 13 carry the same protocol (AC3; exclusion scope).
+6. Needs investigation sections in the three templates and a sweep for retired wording and LOW marker rows (AC5; header counts).
+7. Full suite, root tests, bash 3.2 syntax check, read-through of review.md Phase 4, CI on both OS jobs (AC6).
+
+## Stranger Test
+
+PASS — 7 tasks reviewed. Each task names its files, contract, failure modes, risk rows with a discriminating input and the source of its expected value, and the verification command from the goal. Gaps found in the planner's draft and closed before this result: `/flow:pr` had no LOW protocol (added to task 5), rows from non-schema producers had no confidence source (task 4), and bracketed locations had no marker encoding (task 1).
+
+<!-- auto-log: 2026-09-15 21:04 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-finding-route.test.sh -->
+
+<!-- auto-log: 2026-09-15 21:04 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-finding-route.test.sh -->
+
+<!-- auto-log: 2026-09-15 21:05 Write /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-finding-route.sh -->
+
+<!-- auto-log: 2026-09-15 21:17 commit "fix(flow): add flow-finding-route.sh so confidence decides what a review finding may demand" -->
+
+<!-- auto-log: 2026-09-15 21:22 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/code-review-methodology/SKILL.md -->
+
+<!-- auto-log: 2026-09-15 21:22 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/code-review-methodology/SKILL.md -->
+
+<!-- auto-log: 2026-09-15 21:34 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/finding-confidence.test.sh -->
+
+<!-- auto-log: 2026-09-15 21:36 commit "fix(flow): give code-review-methodology one confidence rule and a decision table that agrees with it" -->
+
+<!-- auto-log: 2026-09-15 21:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
+
+<!-- auto-log: 2026-09-15 21:47 commit "fix(flow): require confidence of the four reviewer agents and write 7-field markers on both paths" -->
+
+<!-- auto-log: 2026-09-15 21:54 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/finding-confidence.test.sh -->
+
+<!-- auto-log: 2026-09-15 22:02 commit "fix(flow): route and post /flow:review findings through flow-finding-route.sh" -->
+
+<!-- auto-log: 2026-09-15 22:06 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/pr.md -->
+
+<!-- auto-log: 2026-09-15 22:08 commit "fix(flow): end every own-PR LOW finding fixed, refuted or escalated, and stop empty identities choosing self-review" -->
+
+<!-- auto-log: 2026-09-15 22:13 commit "fix(flow): give the review templates a Needs investigation section apart from the counts" -->
+
+<!-- auto-log: 2026-09-15 22:32 commit "fix(flow): tidy the #212 review blocks after shellcheck and a read-through" -->
+
+<!-- auto-log: 2026-09-15 22:54 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-15 23:02 commit "fix(flow): close the posting-block gaps the #212 self-review found" -->
+
+## Phase 4 self-review, round 1 (code-reviewer, reviewed at 1ac4203)
+
+P1: 0, P2: 4, P3: 8 — all fixed in 4118d39, each with a test that failed on 1ac4203.
+
+- The posting block let a body quote `FINDINGS:[…]`; the merge gate reads ids from the whole body, so a LOW id could reach Check 2 that way. The block now refuses any quoted ledger array.
+- The header check matched a substring (`Needs investigation: 12` passed for 1); it now matches the whole `### Findings:` line.
+- `CYCLE_NUMBER` was only checked for being non-empty and could close the HTML comment; it must now be a positive integer.
+- A LOW finding could also appear in a priority table; the block refuses one outside Needs investigation.
+- The route script matched ids with locale-dependent ranges (`Fé1` passed under UTF-8); ids are checked under the C locale.
+- The dropped-finding block required an `ISSUE` nothing set; it resolves the linked issue and skips when there is none.
+- `findings_count=$TOTAL` read an unset variable; both blocks print `COUNT_TOTAL` and the manifest uses it.
+- Stamping MEDIUM on holdout findings would have overwritten Path A's HIGH `consensus`; the stamp now applies only when the producer gave none.
+- `/flow:pr` could loop on an escalated LOW finding; escalated findings stay in the PR body and do not re-enter the fix loop.
+- The parser reference, finding schema and a merge.md comment still described the first draft; corrected, and marker percent-encoding is documented.
+- An assertion (`assert_contains "MEDIUM"`) could only confirm; it now asserts the absent-confidence sentence.
+
+<!-- auto-log: 2026-09-15 23:24 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-15 23:24 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+## Phase 4 self-review, round 2 (targeted re-review of 4118d39)
+
+P1: 0, P2: 2, P3: 7 — all fixed, each with a test that failed before the fix.
+
+The same defect class appeared twice: posting guards that check less than a review body can contain. The cause was that each guard matched lines against an assumed body shape (a section ends at `####`; the first `#N` is the linked issue), and each had one hand-written test body built from the same assumption. The fixes address the cause as well as the instances:
+
+- The Needs investigation section is found by splitting the body at markdown headings of any level, skipping code fences, so a `###` table after it is outside it.
+- A body rendered from `templates/review-comment.md` itself is posted through the block in the tests, so the real template's structure and closing comment are exercised.
+- The linked issue is the one a closing keyword names (`Closes #N`), in both the dropped-finding and review-cycle manifest blocks; a failed `gh pr view` is an error, not "no linked issue".
+- The review-cycle manifest block refuses a non-numeric `PR_NUM`, `CYCLE_NUMBER` or `COUNT_TOTAL`.
+- The ledger-syntax refusal covers only `FINDINGS:[`: `RESOLVED`, `ESCALATED` and `DISPUTED` are read only from issue comments, so a self-review body may name them.
+- `/flow:pr` step 7's condition excludes escalated findings.
+- Tests: the id-outside check is tested on its own (a LOW id relabelled HIGH), `COUNT_TOTAL` is checked across P1, P3 and a LOW P2, and the merge.md comment check reads the whole file.
+
+<!-- auto-log: 2026-09-15 23:31 commit "fix(flow): parse review-body headings and closing keywords instead of assuming their shape" -->
+
+
+## Phase 4 self-review, round 3 (targeted re-review of 2f52452)
+
+P1: 0, P2: 5, P3: 1 — all fixed, each with a test that failed before the fix.
+
+Cause: the guard parsed structure it only needed to shape-match. Three rounds ran on the same
+defect — a posting guard that has to know where the Needs investigation section ends, and an issue
+lookup that has to know which `#N` in free text is the linked one. Each round taught the parser one
+more markdown construct (code fences, then heading levels, then setext headings, blockquote
+headings and `<h1-6>`), and each round the next construct got past it. What the guard has to enforce
+never needed a section: a LOW finding is rendered as a Needs investigation entry and nowhere else.
+
+- The posting block no longer splits the body. It refuses any line carrying a `_(LOW` suffix, and
+  requires each LOW id to appear exactly once, in the entry shape `- **{ID} · {priority} · ` at the
+  priority it was routed with. A counted finding opens `**{ID} · {category} · `, so a second
+  occurrence of `**{ID} · ` is that finding rendered as a counted one, whatever surrounds it.
+  `bin/flow-finding-route.sh` prints `NEEDS_INVESTIGATION_PRIORITIES` (`F2:P1`) for the priority check.
+- P3 bullets in `templates/review-comment.md` now carry the finding id, so the same count covers them.
+- The linked issue comes from GitHub, not from body text: `bin/flow-pr-linked-issue.sh` reads the
+  pull request's `closingIssuesReferences`, keeps the issues in the same repository, and prints the
+  lowest number (a NOTE on stderr names them all when there are several). Every call site uses it:
+  `/flow:review` Phase 1, the A.4 dropped-finding record, the step 5 dropped-finding record, the
+  review-cycle manifest, the workflow-run record, and `/flow:merge`'s escalation-resolved record. A
+  pull request into a branch other than the default closes no issue, so GitHub lists none and the
+  record is skipped; a failed `gh` call is an error, never "no issue".
+- The A.4 record was a snippet referencing an `$ISSUE` nothing set; it is now a block that validates
+  its inputs, resolves the issue and skips cleanly, like the step 5 one.
+- `CYCLE_NUMBER` and `PR_NUM` must be positive integers in the manifest and dropped-finding blocks
+  (`0`, `08` and `-1` are refused); `COUNT_TOTAL` still accepts `0`, which is a clean review.
+- Tests: the eight round-3 bodies (odd fences, setext, blockquote and HTML headings) are posted
+  through the block and refused; the five body texts that fooled a keyword regex (`hotfix #210`,
+  `unresolved #210`, a quoted `Closes #12`, a fenced `Fixes #12`, a mention before the keyword) are
+  recorded against the issue GitHub lists; a sweep over `commands/` finds no lookup that greps an
+  issue number out of text, and fires on a fixture that plants both retired lookups. Ten mutants
+  were run against the new checks and the helper — all ten were caught.
+
+<!-- auto-log: 2026-09-15 23:58 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-15 23:58 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+
+## Phase 4 self-review, round 4 (targeted re-review of 4a76ba1)
+
+P1: 1, P2: 2, P3: 4 — all fixed, each with a test that failed before the fix.
+
+Cause: round 3 replaced a body parser with shape checks and dropped a clause the contract still
+needed. The shape checks say what a LOW entry looks like, not where it sits, so a LOW finding filed
+as a bullet under `#### P1 — Critical` posted (P1 above, reproduced before the fix). The parent
+commit refused that body; it was a regression, not an inherited gap.
+
+- Placement is now checked by line order against two literal template strings: exactly one
+  `#### Needs investigation` heading when there are LOW findings, every entry below it, and no
+  `#### P1|P2|P3` heading after it. This is ordering, not a reading of the markdown in between.
+- The counted findings are checked as well, which no round had done: each id in `MARKER_ROWS` is
+  rendered exactly once and never in the entry shape. A counted finding shown as an entry would
+  tell the author it does not block the merge while its marker row blocks `/flow:merge`; a counted
+  finding omitted altogether would block on an id the author never saw.
+- Two limits are named in the step 7 prose and here, so round 5 does not rediscover them as new: a
+  body that invents a heading of its own after the section and files an entry under it is not seen
+  (the template never does), and a fenced `#### P1` line after the section is refused although it is
+  not a heading — a refusal a reviewer can reword, never a silent post.
+- The LOW-suffix refusal now names the rule and the way out; the helper's header claims only what
+  was observed, with GitHub's documentation cited for the default-branch case rather than asserted.
+- The review-cycle and merge-escalation blocks print `…_RECORD=skipped (…)` when GitHub lists no
+  issue, so a missing journal artifact is distinguishable from a block that never ran.
+- Tests the reviewer showed were confirm-only are now discriminating: the bullet anchor (a table row
+  carrying the priority field, inside the section), the helper's numeric guard (`12,x`, `null`,
+  `{}`), and the lookup sweep (which missed the double-quoted and `sed` spellings — the fixture
+  carries all four now). The mutation set is 20 mutants over the posting checks, the helper, the
+  route script and both manifest blocks; all 20 are caught, and it is scripted for the next round.
+
+
+## Phase 4 self-review, round 5 (targeted re-review of a931ae0)
+
+P1: 1, P2: 1, P3: 1 — all fixed, each with a test that failed before the fix.
+
+Cause: round 4 gave the Needs investigation section a start and no end, and matched the headings
+after it by their text. So a counted finding rendered inside the section posted (it reads as "does
+not block the merge" while its marker row blocks `/flow:merge`), and a LOW entry posted when it sat
+under any following heading the match did not recognise — `#### What Looks Good`, and the priority
+spellings `#### P1: Critical` and `#### P1—Critical`, which is round 4's bug at the level of the
+check meant to prevent it.
+
+- The section now has both edges: from `#### Needs investigation` to the next `#### ` line, whatever
+  that line says. LOW findings must sit inside it, counted findings outside it. Matching on heading
+  text is gone, and with it the `#### P[123]` regex.
+- Two `#### Needs investigation` headings are refused whether or not the review has LOW findings:
+  which one bounds the section is not readable.
+- The "rendered N times" message now prints the line numbers, and the Previous Feedback Status prose
+  says to write prior-cycle ids plainly: ids restart at F1 each cycle, so a prior id written in the
+  bold finding form reads as a second rendering of this cycle's finding (it fails closed, but the
+  reviewer should not have to guess why).
+- The limits are unchanged and stay documented: a section opened with a heading the template never
+  writes (setext, HTML, another level) is not seen, and a fenced `#### ` line after the section ends
+  it although it is not a heading.
+- The mutation set is now 27 mutants and all 27 are caught. Four of the reviewer's five extra
+  mutants had survived: the marker loop reading only the first id, the two whole-line heading
+  matches, and the heading-text boundary. Each has a test now, and the driver is checked against the
+  current code so the next round starts from a live set.
+
+
+## Phase 4 self-review, round 6 (targeted re-review of 689fe69)
+
+P1: 0, P2: 3, P3: 3 — all fixed. The behaviour of the fix was verified correct: the reviewer drove
+14 bodies through the posting block under /bin/bash 3.2.57 and zsh 5.9 — the rendered template with
+all seven sections, follow-up bodies with the Previous Feedback Status table above and below the
+section, zero LOW, two LOW, the section last with and without a trailing newline, an empty section,
+entries and counted findings on the section edges, `F1` beside `F10` — and found no body that posts
+wrongly and none wrongly refused. Every finding was a missing test or a prose omission.
+
+Cause: the tests were written against the defect each round found, not against the check each round
+added. Four mutations of the new code survived the suite — the `+ 1` in the end-of-body fallback (a
+counted finding on the very last line escaped the bound), re-gating the section computation on there
+being LOW findings (the counted-inside check never ran on a zero-LOW review), the upper edge of the
+counted-inside test (every counted finding below the section would have been refused, and no body
+in the suite rendered one there), and the line numbers in the duplicate message.
+
+- Tests added: a counted finding on the last line of a section that ends the body; a counted finding
+  inside the section on a review with no LOW findings; a counted finding below the closing heading,
+  which is where the template puts it and which must post; the duplicate message naming both lines;
+  and a zsh run that exercises the section boundary and the counted-inside refusal.
+- The step 7 prose now lists the two-headings refusal it had left out.
+- The mutation set is 32 and all 32 are caught. It now covers every branch of the posting checks in
+  both directions: each refusal fires on a body that earns it, and each check is shown to permit the
+  body the template renders.
+
+
+## Phase 4 self-review, round 7 (targeted re-review of c1c237e)
+
+P1: 0, P2: 3, P3: 2 — all fixed. No body produced a wrong post or a wrong refusal from the code as
+it stands; every finding was a guard nothing pinned, or a comment that described the wrong reason.
+
+Round 6 closed the four mutants it was given and the commit claimed every posting check was pinned
+in both directions. It was not, and the three that were missed share a shape: each is a guard whose
+only test asserts an exit code on a body that trips a different guard first.
+
+- The `FLOW_REVIEW_CYCLE:` refusal was reached only by a body that also quoted `FINDINGS:[`. A body
+  quoting the bare token now has its own case: the merge gate and `/flow:status` select review
+  bodies on that token, so quoting it in prose has to be refused on its own.
+- The loop over the routed LOW findings had never iterated: every fixture carried exactly one LOW
+  row. Two LOW findings now post together, and the same body missing the second entry is refused.
+- `[ "$POST_EXIT" -eq 0 ] || exit 1` had never run: the gh stub always succeeded. It takes
+  `STUB_REVIEW_EXIT` now, so a failed `gh pr review` is shown to stop step 7 before it records a
+  review cycle that never happened.
+- `SEEN` counts occurrences, not lines, on both the LOW and the counted side. Each is pinned by a
+  body that renders an id twice on one line.
+- The comment on the counted-below-the-section case said the template renders that shape. It does
+  not: the template puts every counted finding above the section. The case pins the section's upper
+  edge; the template's own shape is covered by the test that renders the real file.
+
+The mutation set is 38 and all 38 are caught.
+
+
+## Phase 4 self-review: convergence
+
+Behaviour converged at round 6 and round 7 confirmed it. Both rounds drove more than a dozen bodies
+through the posting block under /bin/bash 3.2.57 and zsh 5.9 — the rendered template, follow-up
+bodies with a Previous Feedback Status table, zero, one and two LOW findings, the section edges, a
+body with no trailing newline — and neither produced a wrong post or a wrong refusal. Their findings
+were checks whose deletion the suite did not notice, all fixed; the mutation set stands at 38 of 38
+caught (driver kept with the session artifacts, listed in the evidence bundle).
+
+Further targeted rounds are not run. A mutation-adequacy pass has no fixed point: each round finds a
+few more unmutated branches because the last round added checks, so the stream never empties and it
+is no longer finding defects. Three independent passes on this code remain before merge —
+holdout-validation, the five-agent fan-out in /flow:pr, and /flow:review, whose zero-finding cycle is
+the merge gate agreed for this epic. A posting-block defect found there is fixed there.
+
+
+## /flow:pr review fan-out (five agents, at b2857ca)
+
+P1: 0, P2: 4, P3: 7 — all fixed in this PR. The fan-out reached what seven rounds of targeted
+self-review had not: the two helpers as standalone programs, and the fences outside the posting
+block. Two findings were raised independently by two agents each.
+
+- `--metadata path={A|B}` was unquoted, so the `|` was a shell pipe: the recorder got a truncated
+  argument list, wrote `path: '{A'` with no `findings_count` and no `pr`, and the block reported
+  `B}: command not found`. The path is now a validated `REVIEW_PATH` value. The same defect was in
+  `commands/start.md` twice (`{PASS|BLOCK}`, `{PASS|FAIL|NEEDS-HUMAN-REVIEW}`) and is fixed there
+  too, and a sweep over `commands/` now fires on any `--metadata key={a|b}`.
+- The self-review resolution fence printed "refusing to post a marker-less comment" and then posted,
+  and ended with an assignment, so a failed `gh pr comment` exited 0 and `RES_EXIT` never reached
+  the reader. It has markers, an `exit 1` on both paths, and a test that drives it with a failing gh.
+- `commands/pr.md` still resolved the issue with `gh issue list --search "$BRANCH"`, whose
+  `2>/dev/null || echo ""` read every gh failure as "no issue" — and that guess now drove the
+  dropped-finding records this branch added. It uses `flow-pr-linked-issue.sh`, falls back to the
+  branch name (GitHub lists no closing issue for a pull request into a branch other than the
+  default), and refuses a `REFUTED` entry that is not `ID:agent`.
+- `--allow-empty` was passed unconditionally, so the zero-rows refusal could never fire at its only
+  caller. The routing block now takes `FINDING_TOTAL`, passes the flag only when it is 0, and
+  refuses a rows file that does not match it.
+- `flow-pr-linked-issue.sh` validated `--repo` with `grep -Eqx`, which anchors per line: a
+  multi-line value passed on one good line and the rest went into the jq filter. The reviewer
+  demonstrated `--repo $'a/b\n") ) ] | [{"number":42} #'` making the helper print `42`, an issue
+  number that appears nowhere in the data. The whole value is matched with a `case` glob now.
+- `flow-finding-route.sh` treated `--input ""` as "no --input" and read stdin — the lost-input case
+  its header promises to catch. An empty value is now the unreadable-file error.
+- `COUNT_TOTAL` was printed before the post-failure guard, so a failed `gh pr review` still handed
+  the manifest the value it keys on. It prints after the guard; its absence means no cycle to record.
+- `merge.md` recorded `{FIELD}` and `{OUTCOME}` verbatim if the reviewer left them; both are
+  validated values now.
+- Docs: the row schema still said "6 fields"; the decision table had no self-review row although
+  the script it cites returns COMMENT in self mode at any priority. Both corrected, the skill body
+  trimmed back to its 600-word budget.
+
+Suite at the fix: 3450 pass / 0 fail, root 11 of 11, shellcheck clean, 38 of 38 mutants caught.
+
+
+## Verdict (a0db576, pull request #230)
+
+verdict-judge: PASS on all seven criteria, no failures, nothing referred for human review. AC6 rests
+on CI run 35046689842 — `test (ubuntu-latest)` and `test (macos-latest)` both success, all 10 checks
+green — not on the local macOS run, which is the distinction that matters in this repository.
+
+The judge's first run was a producer error of mine, not a result: it has no file tools and I handed
+it a path, so it fail-closed on all seven and said so. Its second run failed three criteria on
+evidence the bundle had truncated (each `### Output` was capped, hiding tests that the bundle's own
+rows cite) and referred a fourth for the same reason; it also caught that the issue's AC3 stated two
+outcomes for an own-PR LOW finding where the implementation has three. The issue text and the goal
+file now name the escalation outcome, and the bundle is regenerated at the branch head with output
+selected by test name rather than capped. The three formatting deviations the passing run noted are
+fixed in the bundle.
+
+FlowGoal issue-212: lifecycle achieved, last_evaluation pass.
+
+
+## /flow:review cycle 2 (PR #230, at 95f136b)
+
+P1: 0, P2: 5, P3: 3 — all fixed in this pull request. Five agents plus the holdout lens; three of the
+five P2s were raised independently by two or three of them.
+
+Cause: a guard whose message claims more than its predicate tests, and a carried value that selects
+an object but is never validated. Both are the shape the earlier rounds were fixing, one level out.
+
+- `BRANCH` selects the pull request the `/flow:pr` manifest records against, and gh drops an empty
+  `--head` filter and answers with the first open pull request in the repository — verified live.
+  `git branch --show-current` is also empty on a detached HEAD. It is validated now, and the answer
+  is checked against the branch that was asked about.
+- The routing block still printed `COUNT_TOTAL`, so the review-cycle manifest's premise — that the
+  value exists only after a successful post — was false, and the earlier fix was half a fix. The
+  routing block's value is `ROUTED_TOTAL` now. The suite had been pinning the leak.
+- The `journal-record.sh` exit in `/flow:pr`'s manifest was swallowed by the `REFUTED` loop this
+  branch added: an empty loop returns 0. Both records propagate their exit now.
+- The resolution fence said it refused a marker-less comment but tested only emptiness. It now
+  requires exactly one marker for this cycle, refuses a second rendering of the arrays the merge gate
+  greps, and validates `CYCLE_NUMBER`.
+- `commands/merge.md`'s ledger gate selected the last body matching the bare `FLOW_*_CYCLE:` token,
+  so a comment that merely mentions the token shadowed the real marker — on the resolution side that
+  blocks a clean pull request, on the review side it lets the gate pass with findings unresolved. It
+  selects the marker's shape now, and the rationale comment no longer claims a tolerance the
+  resolution path does not have.
+- `commands/start.md`'s `task_count` was unquoted and unvalidated beside the two values this branch
+  had just hardened; `journal-record.sh` takes the last `--issue` it is given, so a value carrying
+  one redirects the record.
+- The pull request body carried counts generated at an earlier commit; regenerated against the head.
+
+Mutation: the set is 50 and all 50 are caught. Four survived the first run. Each was a real gap, and
+one — the dropped-finding record's exit — was only observable with two refuted findings, because
+with one the loop's last command carries the exit anyway. The first version of that test passed
+under the mutant for a reason that had nothing to do with the code: the fake recorder failed every
+call, so the block exited at an earlier guard.
+
+Suite at the fix: 3489 pass / 0 fail, root 11 of 11, shellcheck clean.
+
+
+## /flow:review cycle 3 (PR #230, at a31cf08)
+
+P1: 0, P2: 5, P3: 7 — all fixed. Cycle 2's five findings were verified closed with tests observing
+them. The new findings are one shape, stated by the error-handling pass: **a guard that validates a
+weaker predicate than the consumer it protects.**
+
+- The resolution guard greped the bare token while `commands/merge.md` selects
+  `<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ `. A body carrying the token without the comment wrapper, or
+  `<!--FLOW_...` with no space, passed the guard and was invisible to the gate — the merge false-block
+  the emission exists to prevent, one notch weaker than before the cycle-2 fix. The guard now matches
+  the marker shape the gate selects.
+- The same guard counted renderings with `grep -c`, which counts lines: two renderings on one line
+  passed, and the gate unions every rendering, so ids nobody resolved would read as resolved. It
+  counts occurrences now — the same mutation the suite already kills in the posting block.
+- `references/finding-ledger-parser.md` (the normative parser `merge.md` cites) and `commands/status.md`
+  still specified the loose filter, so the three consumers disagreed on the same fixture: merge read
+  the marker, the reference and `/flow:status` read the trailing prose comment and found nothing.
+- `gh pr list --head` matches head branches across forks and a fork pull request has the same
+  `headRefName`, so cycle 2's head check could not tell them apart; the query asks for
+  `isCrossRepository` now and refuses a fork.
+- The placeholder sweep this branch added matched only brace alternations, never `=$VAR` — so the
+  suite reported the class swept while three instances sat under it (`start.md` prose, `brainstorm.md`
+  in a live fence, and the run-state template a future caller copies). The sweep sees both shapes
+  now, runs over `references/` as well, and the three instances are quoted.
+- The two `start.md` emits were prose nothing executed; they have block markers, validate `ISSUE_NUM`,
+  guard the resolver, and are run by the suite against `3`, `two`, `''` and `3 --issue 9`.
+
+Also: the "renders more than once" message fired on zero renderings, and printed the regex escape
+`\[` at the reader. Zero and many are separate messages now.
+
+Suite at the fix: 3511 pass / 0 fail, root 11 of 11.
+
+<!-- auto-log: 2026-09-16 00:17 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-pr-linked-issue.test.sh -->
+
+<!-- auto-log: 2026-09-16 00:19 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests.py -->
+
+<!-- auto-log: 2026-09-16 00:22 Write /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-pr-linked-issue.sh -->
+
+<!-- auto-log: 2026-09-16 00:23 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-09-16 00:26 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/finding-confidence.test.sh -->
+
+<!-- auto-log: 2026-09-16 00:27 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants.sh -->
+
+<!-- auto-log: 2026-09-16 00:51 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/journal_round3.py -->
+
+<!-- auto-log: 2026-09-16 00:51 commit "fix(flow): check the rendered shapes instead of parsing the review body" -->
+
+<!-- auto-log: 2026-09-16 00:58 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/probe.sh -->
+
+<!-- auto-log: 2026-09-16 01:04 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 01:11 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/fixtures/finding-confidence/lookup-sweep-fire/cmd.md -->
+
+<!-- auto-log: 2026-09-16 01:14 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_round4.py -->
+
+<!-- auto-log: 2026-09-16 01:15 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants.py -->
+
+<!-- auto-log: 2026-09-16 01:24 commit "fix(flow): check where a finding is rendered, not only what it looks like" -->
+
+<!-- auto-log: 2026-09-16 01:35 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests5.py -->
+
+<!-- auto-log: 2026-09-16 01:36 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_round5.py -->
+
+<!-- auto-log: 2026-09-16 01:42 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants.py -->
+
+<!-- auto-log: 2026-09-16 01:51 commit "fix(flow): bound the Needs investigation section at both ends" -->
+
+<!-- auto-log: 2026-09-16 02:00 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/r6/mutants6.py -->
+
+<!-- auto-log: 2026-09-16 02:05 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_round6.py -->
+
+<!-- auto-log: 2026-09-16 02:06 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants6.py -->
+
+<!-- auto-log: 2026-09-16 02:16 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/journal_round6.py -->
+
+<!-- auto-log: 2026-09-16 02:16 commit "test(flow): pin both directions of every posting check" -->
+
+<!-- auto-log: 2026-09-16 02:21 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants7.py -->
+
+<!-- auto-log: 2026-09-16 02:25 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/probe7.sh -->
+
+<!-- auto-log: 2026-09-16 02:26 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants7b.py -->
+
+<!-- auto-log: 2026-09-16 02:28 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 02:28 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 02:29 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_round7.py -->
+
+<!-- auto-log: 2026-09-16 02:30 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants7.py -->
+
+<!-- auto-log: 2026-09-16 02:30 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants7.py -->
+
+<!-- auto-log: 2026-09-16 02:43 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/journal_round7.py -->
+
+<!-- auto-log: 2026-09-16 02:43 commit "test(flow): reach the posting guards a passing body never reached" -->
+
+<!-- auto-log: 2026-09-16 02:44 Write /Users/danielbentes/.claude-work/projects/-Users-danielbentes-synapti-marketplace/memory/feedback_test_the_check_not_the_defect.md -->
+
+<!-- auto-log: 2026-09-16 02:58 commit "test(flow): post a body rendered from the self-review template through the block" -->
+
+<!-- auto-log: 2026-09-16 03:04 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/build_bundle.py -->
+
+<!-- auto-log: 2026-09-16 03:16 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_bundle.py -->
+
+<!-- auto-log: 2026-09-16 03:22 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 03:22 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/feedback_claude_attribution_blocking.md -->
+
+<!-- auto-log: 2026-09-16 03:27 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/sec/postprobe.sh -->
+
+<!-- auto-log: 2026-09-16 03:29 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_flow_ci_gates.md -->
+
+<!-- auto-log: 2026-09-16 03:29 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_shellcheck_command_blocks.md -->
+
+<!-- auto-log: 2026-09-16 03:29 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/feedback_sequential_suites.md -->
+
+<!-- auto-log: 2026-09-16 03:29 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 03:30 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_flow_review_body_marker_guard.md -->
+
+<!-- auto-log: 2026-09-16 03:30 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 03:38 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 03:38 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 03:43 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fanout_tests.py -->
+
+<!-- auto-log: 2026-09-16 03:44 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_review_fanout.py -->
+
+<!-- auto-log: 2026-09-16 03:47 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_pr_merge.py -->
+
+<!-- auto-log: 2026-09-16 04:02 commit "fix(flow): close the defects the review fan-out found" -->
+
+<!-- auto-log: 2026-09-16 04:03 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/pr-body.md -->
+
+<!-- auto-log: 2026-09-16 04:06 commit "fix(flow): ask for the pull request by head branch when the repo is pinned" -->
+
+<!-- auto-log: 2026-09-16 04:29 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/lib.sh -->
+
+<!-- auto-log: 2026-09-16 04:30 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/feedback_pr_body_counts_and_labels.md -->
+
+<!-- auto-log: 2026-09-16 04:30 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 04:32 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reverts.py -->
+
+<!-- auto-log: 2026-09-16 04:32 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_journal_record_metadata_arg_injection.md -->
+
+<!-- auto-log: 2026-09-16 04:35 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 04:35 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 04:41 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_shellcheck_command_blocks.md -->
+
+<!-- auto-log: 2026-09-16 04:42 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_revert_harness.md -->
+
+<!-- auto-log: 2026-09-16 04:42 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 04:42 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/feedback_sequential_suites.md -->
+
+<!-- auto-log: 2026-09-16 04:42 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/results-230.txt -->
+
+<!-- auto-log: 2026-09-16 04:45 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/results-230.txt -->
+
+<!-- auto-log: 2026-09-16 04:46 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle2_tests.py -->
+
+<!-- auto-log: 2026-09-16 04:47 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle2_fixes.py -->
+
+<!-- auto-log: 2026-09-16 04:49 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants_c2.py -->
+
+<!-- auto-log: 2026-09-16 04:59 commit "fix(flow): validate the values that select what gets recorded" -->
+
+<!-- auto-log: 2026-09-16 05:09 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_survivor_tests.py -->
+
+<!-- auto-log: 2026-09-16 05:36 commit "test(flow): observe the guards the mutation run showed unobserved" -->
+
+<!-- auto-log: 2026-09-16 06:00 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_marker_guard_drift.md -->
+
+<!-- auto-log: 2026-09-16 06:00 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 06:00 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/c3/findings-notes.txt -->
+
+<!-- auto-log: 2026-09-16 06:02 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 06:02 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 06:02 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 06:02 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 06:05 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle3.py -->
+
+<!-- auto-log: 2026-09-16 06:06 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle3_tests.py -->
+
+<!-- auto-log: 2026-09-16 06:13 commit "fix(flow): make each guard as strict as the consumer it protects" -->
+
+<!-- auto-log: 2026-09-16 06:13 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants2.py -->
+
+<!-- auto-log: 2026-09-16 06:14 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_marker_guard_drift.md -->
+
+<!-- auto-log: 2026-09-16 06:17 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle3b.py -->

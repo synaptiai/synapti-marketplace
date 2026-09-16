@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/synaptiai/synapti-marketplace/tests/finding-schema/row-schema.json",
   "title": "Canonical finding row (per references/finding-schema.md)",
-  "description": "Validates a single finding row in the JSON form that downstream tooling parses out of the markdown tables emitted by reviewer agents. The marker schema (FLOW_REVIEW_CYCLE pipe-delimited form) adds `status` and `disposition` fields stamped on by commands/review.md Phase 4 step 7; this row schema covers the agent-emitted shape (6 fields) and accepts the marker-only fields when present.",
+  "description": "Validates a single finding row in the JSON form that downstream tooling parses out of the markdown tables emitted by reviewer agents. The marker schema (FLOW_REVIEW_CYCLE pipe-delimited form) adds `status` and `disposition` fields stamped on by commands/review.md Phase 4 step 7; this row schema covers the agent-emitted shape (7 fields, per plugins/flow/references/finding-schema.md; confidence is deliberately absent from `required` because an absent confidence routes as MEDIUM) and accepts the marker-only fields when present.",
   "type": "object",
   "required": ["id", "priority", "category", "location", "problem"],
   "properties": {
@@ -45,7 +45,7 @@
     "disposition": {
       "type": "string",
       "enum": ["consensus", "validated", "refined", "kept", "unchallenged"],
-      "description": "Marker-only field added by commands/review.md Phase 4 step 7 (Path A) or omitted (Path B 5-field marker)."
+      "description": "Marker-only field stamped by commands/review.md Phase 4 step 7 on both review paths (Path B rows carry unchallenged); absent in legacy 5-field rows."
     }
   }
 }

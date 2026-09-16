@@ -115,7 +115,7 @@ artifacts:
 | `specification` | `by: specification-capture`, `elements: [non-goals, failure-modes, interface-contracts]` | `specification-capture` skill via `bin/journal-record.sh` | start.md Phase 1 (and design/brainstorm when they capture missing elements) |
 | `stranger-test` | `result: PASS\|BLOCK`, `task_count: <int>`, optionally `failed_task: <id>` | `start.md` Phase 2 end-of-PLAN gate | start.md Phase 2 |
 | `review-cycle` | `cycle: <int>`, `path: A\|B`, `findings_count: <int>`, optionally `pr: <int>` | `review.md` Phase 4 step 7 (after FLOW_REVIEW_CYCLE marker is posted) | review.md, pr.md |
-| `dropped-finding` | `cycle: <int>`, `finding_id: <string>`, `facet: <string>`, `reason: <string>`, `pr: <int>` | `review.md` Path A A.4 (DROPPED rows) | review.md A.4 |
+| `dropped-finding` | `cycle: <int>`, `finding_id: <string>`, `facet: <string>`, `reason: <string>`, `pr: <int>` | `review.md` Path A A.4 (DROPPED rows); `review.md` Phase 4 step 5 and `pr.md` step 13 (a LOW finding refuted on the author's own PR) | review.md A.4, review.md Phase 4 step 5, pr.md |
 | `consolidation-gap` | `cycle: <int>`, `pr: <int>`, `finding_id: <string>`, `reason: <string>` | `review.md` Path A A.5 fallback table | review.md A.5 |
 | `design-decision` | `decision: <string>`, `category: architecture` | `design.md` Phase 4 | design.md |
 | `brainstorm-decision` | `topic: <string>`, `chosen: <string>`, `options_considered: <int>` | `brainstorm.md` Phase 4 | brainstorm.md |
@@ -129,6 +129,8 @@ artifacts:
 | `activity-completed` | `run_id: <ISO-timestamp-id>`, `activity_id: <string>`, `status: passed\|failed\|skipped\|blocked` | `flow-record-activity.sh` | end of each FlowActivity phase boundary |
 | `evidence-captured` | `evidence_id: <string>`, optionally `goal_id: <string>`, `proves: [<criterion-id>...]` | `flow-record-evidence.sh` | when a verification command output is captured as FlowEvidence |
 | `run-state-transition` | `run_id: <ISO-timestamp-id>`, `from_state: <string>`, `to_state: <string>`, optionally `reason: <string>` | `run-state-management` skill | every FlowRun.state.status transition |
+
+`dropped-finding` reason values: Path A A.4 records the two DISAGREE reasons as free text. `self-review-refuted` marks a LOW-confidence finding on the author's own pull request that a test or command refuted by passing on the current code; the test stays in the PR and its output is the evidence, and `facet` names the reviewer agent that raised the finding.
 
 Adding a new artifact type means adding the row above and using the matching `--metadata key=value` arguments to `bin/journal-record.sh`. The helper does not enforce a closed enum — it accepts any `--type` value — but the table here is the contract reviewers check during PR review.
 

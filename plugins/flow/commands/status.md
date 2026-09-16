@@ -329,13 +329,13 @@ else
     for PR_NUM in $LEDGER_PRS; do
     REVIEW_BODY=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null \
       | jq -s -r --argjson trust "$TRUST_LIST" \
-          'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_REVIEW_CYCLE:")))] | last | .body // ""')
+          'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")))] | last | .body // ""')
     FINDINGS_RAW=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//')
     [ -z "$FINDINGS_RAW" ] && continue
 
     RESOLUTION_BODY=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null \
       | jq -s -r --argjson trust "$TRUST_LIST" \
-          'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | last | .body // ""')
+          'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ ")))] | last | .body // ""')
     # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
     RESOLVED=$(echo "$RESOLUTION_BODY"  | grep -o 'RESOLVED:\[[^]]*\]'  | sed 's/^RESOLVED:\[//;s/\]$//'  | tr -d ' ')
     ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
