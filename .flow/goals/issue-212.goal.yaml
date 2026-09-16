@@ -180,11 +180,13 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
-  current_phase: explore
-  current_activity: specification-capture
-  turns_evaluated: 0
+  status: achieved
+  current_phase: verify
+  current_activity: verdict-recorded
+  turns_evaluated: 1
   last_evaluation:
-    result: incomplete
-    reason: Goal created; evidence not yet collected.
-    at: '2026-09-15T18:05:00Z'
+    result: pass
+    reason: 'verdict-judge returned PASS on all 7 criteria against the evidence bundle
+      at a0db576; AC6 rests on CI run 35046689842 (pull request #230, all 10 checks
+      success).'
+    at: '2026-09-16T04:05:00Z'

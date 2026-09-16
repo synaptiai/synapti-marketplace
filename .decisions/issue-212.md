@@ -30,6 +30,10 @@ artifacts:
   path: B
   findings_count: 11
   pr: 230
+- type: verdict
+  captured_at: '2026-09-16T02:23:15Z'
+  result: PASS
+  pr: 230
 ---
 # Issue #212 — finding confidence is display-only, and the review rules disagree about whether it blocks
 
@@ -411,6 +415,24 @@ block. Two findings were raised independently by two agents each.
 
 Suite at the fix: 3450 pass / 0 fail, root 11 of 11, shellcheck clean, 38 of 38 mutants caught.
 
+
+## Verdict (a0db576, pull request #230)
+
+verdict-judge: PASS on all seven criteria, no failures, nothing referred for human review. AC6 rests
+on CI run 35046689842 — `test (ubuntu-latest)` and `test (macos-latest)` both success, all 10 checks
+green — not on the local macOS run, which is the distinction that matters in this repository.
+
+The judge's first run was a producer error of mine, not a result: it has no file tools and I handed
+it a path, so it fail-closed on all seven and said so. Its second run failed three criteria on
+evidence the bundle had truncated (each `### Output` was capped, hiding tests that the bundle's own
+rows cite) and referred a fourth for the same reason; it also caught that the issue's AC3 stated two
+outcomes for an own-PR LOW finding where the implementation has three. The issue text and the goal
+file now name the escalation outcome, and the bundle is regenerated at the branch head with output
+selected by test name rather than capped. The three formatting deviations the passing run noted are
+fixed in the bundle.
+
+FlowGoal issue-212: lifecycle achieved, last_evaluation pass.
+
 <!-- auto-log: 2026-09-16 00:17 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-pr-linked-issue.test.sh -->
 
 <!-- auto-log: 2026-09-16 00:19 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests.py -->
@@ -516,3 +538,5 @@ Suite at the fix: 3450 pass / 0 fail, root 11 of 11, shellcheck clean, 38 of 38 
 <!-- auto-log: 2026-09-16 04:02 commit "fix(flow): close the defects the review fan-out found" -->
 
 <!-- auto-log: 2026-09-16 04:03 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/pr-body.md -->
+
+<!-- auto-log: 2026-09-16 04:06 commit "fix(flow): ask for the pull request by head branch when the repo is pinned" -->
