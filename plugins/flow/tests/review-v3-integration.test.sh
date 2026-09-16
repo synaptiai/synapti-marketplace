@@ -139,6 +139,11 @@ case "$ARGS" in
       *)    [ -f "${STUB_GOAL_FILE-}" ] || { echo "stub: STUB_GOAL_FILE unset" >&2; exit 9; }
             base64 < "$STUB_GOAL_FILE"; exit 0 ;;
     esac ;;
+  *commits/*)
+    # The classifier the block uses to tell "no goal there" from "cannot read
+    # anything": the commit reads unless the stub is told otherwise.
+    [ "${STUB_COMMIT_OK:-1}" = "1" ] || { echo "gh: unreachable" >&2; exit 1; }
+    printf '%s\n' "${STUB_HEAD_SHA-}"; exit 0 ;;
   *pulls/*files*)
     [ "${STUB_FILES_EXIT:-0}" = "0" ] || { echo "gh: api error" >&2; exit "${STUB_FILES_EXIT}"; }
     # Reproduce the server-side select: the caller passes the path it cares
@@ -261,7 +266,10 @@ assert_contains "ENCODING=" "$RG_OUT" "and the section says how an escaped value
 _flow_test_begin "FlowGoal: absent, unreadable and unfetchable are three different answers"
 STUB_CONTENT_MODE=404 _rg_run "$RG_BARE" 42
 assert_contains "STATE=none" "$RG_OUT" "no goal at the head is STATE=none"
-STUB_CONTENT_MODE=fail _rg_run "$RG_BARE" 42
+STUB_CONTENT_MODE=404 STUB_COMMIT_OK=0 _rg_run "$RG_BARE" 42
+assert_contains "STATE=unavailable" "$RG_OUT" "a 404 that is really an unreachable API is unavailable"
+assert_not_contains "STATE=none" "$RG_OUT" "and is not read as an absent goal"
+STUB_CONTENT_MODE=fail STUB_COMMIT_OK=0 _rg_run "$RG_BARE" 42
 assert_contains "STATE=unavailable" "$RG_OUT" "a failed fetch is unavailable, not absent"
 assert_not_contains "STATE=none" "$RG_OUT" "never reported as no goal"
 assert_contains "REASON=" "$RG_OUT" "and says why"

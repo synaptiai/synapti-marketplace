@@ -137,12 +137,8 @@ else
       # value that could reshape the jq filter or the request it goes into.
       FLOW_GOAL_PATH=".flow/goals/issue-$LINKED.goal.yaml"
       echo "GOAL_PATH=$FLOW_GOAL_PATH"
-      FLOW_GOAL_TMP=$(mktemp -t flowgoal.XXXXXX 2>/dev/null) || FLOW_GOAL_TMP=""
       FLOW_GOAL_SHA=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null)
-      if [ -z "$FLOW_GOAL_TMP" ]; then
-        echo "STATE=unavailable"
-        echo "REASON=no temporary file could be created to hold the fetched goal"
-      elif [ -z "$FLOW_GOAL_SHA" ]; then
+      if [ -z "$FLOW_GOAL_SHA" ]; then
         echo "STATE=unavailable"
         echo "REASON=the pull request head commit could not be resolved, so there is no revision to read the goal at"
       elif ! command -v python3 >/dev/null 2>&1 || \
@@ -153,23 +149,31 @@ import yaml' >/dev/null 2>&1; then
         echo "REASON=python3 with PyYAML is required to read a goal, and one of them is missing"
       else
         echo "GOAL_REF=$FLOW_GOAL_SHA"
-        FLOW_GOAL_B64=$(gh api "repos/$REPO/contents/$FLOW_GOAL_PATH?ref=$FLOW_GOAL_SHA" --jq '.content' 2>"$FLOW_GOAL_TMP"); FLOW_GOAL_GH=$?
+        FLOW_GOAL_B64=$(gh api "repos/$REPO/contents/$FLOW_GOAL_PATH?ref=$FLOW_GOAL_SHA" --jq '.content' 2>/dev/null); FLOW_GOAL_GH=$?
         if [ "$FLOW_GOAL_GH" -ne 0 ]; then
-          # gh prints the error body on stdout as well, so the exit status is
-          # the only trustworthy signal that the fetch failed.
-          if grep -qi 'not found\|404' "$FLOW_GOAL_TMP" 2>/dev/null; then
+          # gh prints its error body on stdout as well, so the exit status is
+          # the only trustworthy signal that the fetch failed. A fetch fails
+          # both when the goal is not there and when nothing can be reached at
+          # all, and those are different answers — so ask whether the commit
+          # itself reads. Asking the API beats matching the text of an error
+          # message, which changes with the gh version and the locale.
+          if gh api "repos/$REPO/commits/$FLOW_GOAL_SHA" --jq '.sha' >/dev/null 2>&1; then
             echo "STATE=none"
-            echo "REASON=no goal file at the pull request head commit"
+            echo "REASON=the head commit reads but carries no goal file at that path"
           else
             echo "STATE=unavailable"
-            echo "REASON=the goal could not be fetched at the head commit: $(head -1 "$FLOW_GOAL_TMP" 2>/dev/null | tr -d '\r' | cut -c1-160)"
+            echo "REASON=neither the goal nor its head commit could be read from the API"
           fi
         elif [ -z "$FLOW_GOAL_B64" ]; then
           echo "STATE=unavailable"
           echo "REASON=the contents API returned no content for the goal, which is what it does for a file over 1MB"
+        elif [ "${#FLOW_GOAL_B64}" -gt 262144 ]; then
+          # The encoded goal is handed to the reader in the environment, which
+          # shares the exec argument limit. A goal this large is not a goal.
+          echo "STATE=unavailable"
+          echo "REASON=the goal is too large to read (over 192KB of YAML)"
         else
-          printf '%s' "$FLOW_GOAL_B64" > "$FLOW_GOAL_TMP"
-          PYTHONSAFEPATH=1 python3 - "$FLOW_GOAL_TMP" <<'FLOW_GOAL_READ'
+          FLOW_GOAL_B64="$FLOW_GOAL_B64" PYTHONSAFEPATH=1 python3 - <<'FLOW_GOAL_READ'
 import sys
 
 # The pull request under review is checked out around this call, so the author
@@ -180,6 +184,7 @@ sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
 import base64
 import io
+import os
 import yaml
 
 
@@ -204,7 +209,7 @@ def sequence(v):
 # believing it had the specification.
 out = []
 try:
-    raw = base64.b64decode(open(sys.argv[1], "rb").read())
+    raw = base64.b64decode(os.environ["FLOW_GOAL_B64"])
     doc = yaml.safe_load(io.BytesIO(raw))
     if not isinstance(doc, dict):
         raise ValueError("the goal is not a mapping")
@@ -270,7 +275,6 @@ FLOW_GOAL_READ
             esac
           fi
         fi
-        rm -f "$FLOW_GOAL_TMP" 2>/dev/null
       fi
       ;;
   esac

@@ -126,3 +126,5 @@ docs stop disagreeing about whether review creates a goal
 <!-- auto-log: 2026-09-16 13:44 commit "feat(flow): the risk map, the non-goals and the goal-trust flag are acted on" -->
 
 <!-- auto-log: 2026-09-16 13:46 commit "fix(flow): a contract file git had to quote is still a contract file" -->
+
+<!-- auto-log: 2026-09-16 13:47 commit "fix(flow): the categories the review instructs are the categories it defines" -->
