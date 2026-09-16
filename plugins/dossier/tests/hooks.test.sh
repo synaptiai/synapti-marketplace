@@ -597,6 +597,70 @@ else
   _dossier_assert_fail "internal-path is implemented in only one of the hook and the scanner"
 fi
 
+# --- Disclosure hook's interrupt-tolerant patterns match the batch scanner's -
+# Issue #221's follow-up: aws-access-key, private-key-block, and
+# connection-string were fixed for interrupted-credential fragments in
+# dossier-claim-scan.sh (issues #198, #210) but this live pre-write hook kept
+# its own, stale copies -- a public document could pass through this hook
+# untouched with exactly the fragment the batch scanner was fixed to catch.
+# These three reproduce the scanner's own regression fixtures against the
+# hook directly.
+
+# aws-access-key: a lone space inside the 16-character key body.
+RC=0
+OUT=$(printf '%s' '{"tool_input":{"file_path":"docs/dossier/06-public/guide.md","content":"The leaked key was AKIAIOSFOD NN7EXAMPLE for backup access only."}}' \
+        | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/block-unregistered-claim.sh" 2>&1) || RC=$?
+assert_equal "2" "$RC" "block-unregistered-claim blocks an interrupted AWS access key, not just an unbroken one"
+assert_not_contains "AKIAIOSFOD" "$OUT" "the matched fragment is never printed"
+assert_contains "aws-access-key" "$OUT" "the pattern class is named"
+
+# private-key-block: a lone comma between the armor type and the trailing dashes.
+RC=0
+OUT=$(printf '%s' '{"tool_input":{"file_path":"docs/dossier/06-public/guide.md","content":"The backup starts with -----BEGIN RSA PRIVATE KEY,----- for safekeeping."}}' \
+        | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/block-unregistered-claim.sh" 2>&1) || RC=$?
+assert_equal "2" "$RC" "block-unregistered-claim blocks an interrupted PEM header, not just an unbroken one"
+assert_contains "private-key-block" "$OUT" "the pattern class is named"
+
+# connection-string: a lone space inside the password segment.
+RC=0
+OUT=$(printf '%s' '{"tool_input":{"file_path":"docs/dossier/06-public/guide.md","content":"The staging URI is postgres://admin:Sup3rSecret Pass@dbhost:5432/prod for now."}}' \
+        | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/block-unregistered-claim.sh" 2>&1) || RC=$?
+assert_equal "2" "$RC" "block-unregistered-claim blocks an interrupted connection-string password, not just an unbroken one"
+assert_not_contains "Sup3rSecret Pass" "$OUT" "the matched fragment is never printed"
+assert_contains "connection-string" "$OUT" "the pattern class is named"
+
+# The false-positive guard the interrupt-tolerance bound exists to preserve
+# (issue #210): a bare scheme mention with no embedded credential, where the
+# only "interruption" is two consecutive characters (a comma then a space)
+# bridging to an unrelated `@` later in the sentence, must stay unblocked.
+RC=0
+(printf '%s' '{"tool_input":{"file_path":"docs/dossier/06-public/guide.md","content":"Connect via postgres://db:5432/app, ops@corp for support."}}' \
+   | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/block-unregistered-claim.sh" >/dev/null 2>&1) || RC=$?
+assert_equal "0" "$RC" "block-unregistered-claim does not flag a bare scheme mention with no credential as a connection-string leak"
+
+# The hook and the batch scanner must use pattern-identical regexes for these
+# three classes, or the drift this fix closes can silently reopen. Compares
+# the actual regex strings verbatim (parallel arrays, not a delimited string --
+# the patterns themselves contain literal `|` characters, which would corrupt
+# any single-character-delimited split), not just that both files mention the
+# class name.
+DRIFT_CLASSES=(aws-access-key private-key-block connection-string)
+DRIFT_PATTERNS=(
+  'AKIA[ |,]?([0-9A-Z][ |,]?){16}'
+  '-----BEGIN[ |,]?[A-Z ,|]*P[ |,]?R[ |,]?I[ |,]?V[ |,]?A[ |,]?T[ |,]?E[ |,]?[[:space:]][ |,]?K[ |,]?E[ |,]?Y[ |,]?-----'
+  '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[ |,]?([^[:space:]@|,][ |,]?)+@'
+)
+for I in "${!DRIFT_CLASSES[@]}"; do
+  CLASS="${DRIFT_CLASSES[$I]}"
+  PATTERN="${DRIFT_PATTERNS[$I]}"
+  if grep -qF -- "$PATTERN" "$HS/block-unregistered-claim.sh" \
+     && grep -qF -- "$PATTERN" "$PLUGIN/bin/dossier-claim-scan.sh"; then
+    _dossier_assert_pass "hook and batch scanner use a pattern-identical $CLASS regex"
+  else
+    _dossier_assert_fail "hook and batch scanner have drifted apart on the $CLASS regex"
+  fi
+done
+
 # --- The stamp hook warns, never blocks --------------------------------------
 mkdir -p "$WORK/docs/dossier/01-project" 2>/dev/null
 printf -- '---\ndossier-header: internal-v1\nlast-verified: 2020-01-01\n---\n# X\n' \
