@@ -47,7 +47,7 @@ callers examined: N (findReferences | incomingCalls | grep)
 A run that traced every caller and a run that traced none look identical in a review that reports
 neither, so the count and the tool are both required. **`N=0` from an available LSP is a finding, not
 a clean result**, whenever `Grep` finds the symbol referenced outside the diff: the trace failed, and
-what failed is the review, not necessarily the code. Report it as `tooling` P2 naming both numbers.
+what failed is the review, not necessarily the code. Report it as `tests` P2 naming both numbers.
 With no LSP at all, say `grep` and give the Grep count — an honest smaller claim.
 
 **Blast radius.** Some changes are to something other code depends on. Run

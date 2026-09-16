@@ -124,3 +124,5 @@ docs stop disagreeing about whether review creates a goal
 <!-- auto-log: 2026-09-16 13:42 commit "fix(flow): the review reads the goal at the pull request head, safely" -->
 
 <!-- auto-log: 2026-09-16 13:44 commit "feat(flow): the risk map, the non-goals and the goal-trust flag are acted on" -->
+
+<!-- auto-log: 2026-09-16 13:46 commit "fix(flow): a contract file git had to quote is still a contract file" -->

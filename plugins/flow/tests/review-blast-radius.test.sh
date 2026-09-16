@@ -138,3 +138,29 @@ assert_equal "2" "$(grep -c '`#### Blast radius`' "$REPO_ROOT/plugins/flow/agent
   "both prose sites name the one the template renders"
 BR_SCHEMA=$(cat "$REPO_ROOT/plugins/flow/references/finding-schema.md")
 assert_contains 'breaking-change' "$BR_SCHEMA" "breaking-change is in the category vocabulary"
+
+_flow_test_begin "every category the review instructs exists in both vocabularies"
+# A rule that says "report it as `x` P2" invents a category unless `x` is in the
+# vocabulary the ledger is searched by. Two were invented alongside the one that
+# was added properly, which is how they went unnoticed.
+BR_VOCAB=$(printf '%s\n' "$BR_SCHEMA" | awk -F'|' '/^\| `[a-z-]+` \|/ { gsub(/[ `]/, "", $2); print $2 }' | sort -u)
+assert_match '[^[:space:]]' "$BR_VOCAB" "the vocabulary table was read"
+BR_JSON_CATS=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['properties']['category']['description'])" \
+  "$REPO_ROOT/tests/finding-schema/row-schema.json")
+BR_INSTRUCTED=$(grep -rhoE '`[a-z][a-z-]+` P[123]' \
+  "$REPO_ROOT/plugins/flow/agents/code-reviewer.md" \
+  "$REPO_ROOT/plugins/flow/commands/review.md" | sed -E 's/`([a-z-]+)` P[123]/\1/' | sort -u)
+assert_match '[^[:space:]]' "$BR_INSTRUCTED" "at least one category is instructed by name"
+BR_MISSING=""
+BR_CHECKED=0
+for BR_CAT in $BR_INSTRUCTED; do
+  BR_CHECKED=$((BR_CHECKED + 1))
+  printf '%s\n' "$BR_VOCAB" | grep -qx "$BR_CAT" || BR_MISSING="$BR_MISSING md:$BR_CAT"
+  case "$BR_JSON_CATS" in *"$BR_CAT"*) ;; *) BR_MISSING="$BR_MISSING json:$BR_CAT" ;; esac
+done
+assert_equal "" "$BR_MISSING" "every instructed category ($BR_CHECKED checked) is in both vocabularies"
+# The check has to be able to fail: a category that is deliberately not in the
+# vocabulary must be reported as missing.
+BR_FAKE=""
+printf '%s\n' "$BR_VOCAB" | grep -qx "not-a-category" || BR_FAKE="missing"
+assert_equal "missing" "$BR_FAKE" "and an unknown category would be caught"
