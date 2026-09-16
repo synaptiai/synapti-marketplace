@@ -31,9 +31,11 @@ else
   assert_contains 'repos/$REPO/issues/$PR_NUM/comments' "$CONTENT" "seed queries the issue-comments stream"
   assert_contains "SEED_SCANNED=reviews,issue-comments" "$CONTENT" "seed names both scanned surfaces"
   assert_contains "DIAGNOSTIC PREVIEW ONLY" "$CONTENT" "seed documents it is a preview, not the gate"
-  # A marker is NAME:<digits> — the select requires a digit after the colon so prose and
-  # `:{N}` placeholders are excluded (no false count, no spurious diagnostic).
-  assert_contains 'test("FLOW_RESOLUTION_CYCLE:[0-9]|FLOW_REVIEW_CYCLE:[0-9]")' "$CONTENT" "seed select requires a digit after the colon"
+  # A marker is `<!-- NAME:<digits> ` — the seed uses the same shape the gate
+  # selects on, so the preview cannot count a marker the gate would drop, and
+  # prose or a `:{N}` placeholder is excluded (no false count, no spurious
+  # diagnostic).
+  assert_contains 'test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ |<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")' "$CONTENT" "seed select is the gate's marker shape"
   # Both jq steps (union + count) fail closed on malformed JSON, not STATE=empty.
   assert_contains "SEED_JQ_EXIT" "$CONTENT" "union jq exit captured (fail-closed on malformed JSON)"
   assert_contains "union_jq_exit=" "$CONTENT" "malformed union surfaces as STATE=unavailable"
