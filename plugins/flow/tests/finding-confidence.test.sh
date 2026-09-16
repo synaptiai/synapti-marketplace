@@ -287,7 +287,7 @@ case "$1 $2" in
     esac
     case "$__head" in
       "") printf "$__fmt" "${STUB_FIRST_OPEN_PR:-999}" "${STUB_FIRST_OPEN_BRANCH:-someone-elses-branch}" ;;
-      "${STUB_BRANCH:-fix/issue-42-x}") printf "$__fmt" "${STUB_PR_NUMBER:-55}" "$__head" ;;
+      "${STUB_BRANCH:-fix/issue-42-x}") printf "$__fmt" "${STUB_PR_NUMBER:-55}" "${STUB_ANSWER_HEAD-$__head}" ;;
       *) ;;
     esac
     exit 0 ;;
@@ -752,12 +752,32 @@ assert_file_exists "$FC_TMP/manifest-branch/.decisions/issue-42.md" "recorded ag
 _fc_pr_manifest "fix/issue-99-none"
 assert_exit 1 "$PM_CODE" "a branch with no open pull request is refused, not answered with another"
 assert_not_contains "999" "$PM_ERR" "never the first open pull request"
+# And an answer about a different branch is refused rather than recorded.
+rm -f "$FC_TMP/gh-list.log"
+(cd "$FC_TMP/manifest-branch" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  GH_LIST_LOG="$FC_TMP/gh-list.log" STUB_CLOSING="$(_fc_closing 42)" STUB_BRANCH="fix/issue-42-x" \
+  STUB_ANSWER_HEAD="someone-elses-branch" BRANCH="fix/issue-42-x" TOTAL_FINDINGS=1 REFUTED="" \
+  bash "$FC_TMP/pr-manifest-c2.sh" >/dev/null 2>"$FC_TMP/pm.err"); PM_CODE=$?
+assert_exit 1 "$PM_CODE" "a pull request whose head is another branch is refused"
+assert_contains "someone-elses-branch" "$(cat "$FC_TMP/pm.err")" "the message names the head that came back"
 
 _flow_test_begin "the PR manifest fails when the journal record fails (cycle 2)"
 # A failing recorder must not be swallowed by the REFUTED loop that follows it.
 mkdir -p "$FC_TMP/fakeroot/bin" "$FC_TMP/manifest-failrec"
 printf '#!/bin/sh\nexit 0\n' > "$FC_TMP/fakeroot/bin/cascade-resolve.sh"
-printf '#!/bin/sh\necho "journal-record: disk on fire" >&2\nexit 1\n' > "$FC_TMP/fakeroot/bin/journal-record.sh"
+cat > "$FC_TMP/fakeroot/bin/journal-record.sh" <<'REC'
+#!/bin/sh
+# Fails for the artifact type named in FAIL_TYPE (default: every type), so the
+# review-cycle record can succeed while the dropped-finding record fails.
+for __a in "$@"; do
+  case "$__a" in
+    "${FAIL_TYPE:-}"|"finding_id=${FAIL_ID:-}") echo "journal-record: disk on fire" >&2; exit 1 ;;
+  esac
+done
+# With neither selector set, every call fails (the blanket case above).
+[ -n "${FAIL_TYPE:-}${FAIL_ID:-}" ] || { echo "journal-record: disk on fire" >&2; exit 1; }
+exit 0
+REC
 cp "$PLUGIN_DIR/bin/flow-pr-linked-issue.sh" "$FC_TMP/fakeroot/bin/flow-pr-linked-issue.sh"
 chmod +x "$FC_TMP/fakeroot/bin"/*.sh
 for FC_REFUTED in "" "F3:code-reviewer"; do
@@ -766,6 +786,18 @@ for FC_REFUTED in "" "F3:code-reviewer"; do
     BRANCH="fix/issue-42-x" TOTAL_FINDINGS=1 REFUTED="$FC_REFUTED" bash "$FC_TMP/pr-manifest-c2.sh" >/dev/null 2>&1)
   assert_exit 1 "$?" "a failed journal record is an error (REFUTED='$FC_REFUTED')"
 done
+# The dropped-finding record has its own exit to propagate: let the review-cycle
+# record succeed and fail only that one.
+(cd "$FC_TMP/manifest-failrec" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$FC_TMP/fakeroot" \
+  GH_LIST_LOG=/dev/null STUB_CLOSING="$(_fc_closing 42)" STUB_BRANCH="fix/issue-42-x" FAIL_TYPE=dropped-finding \
+  BRANCH="fix/issue-42-x" TOTAL_FINDINGS=1 REFUTED="F3:code-reviewer" bash "$FC_TMP/pr-manifest-c2.sh" >/dev/null 2>&1)
+assert_exit 1 "$?" "a failed dropped-finding record is an error too"
+# A failure in the middle of the loop: the later success must not bury it.
+(cd "$FC_TMP/manifest-failrec" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$FC_TMP/fakeroot" \
+  GH_LIST_LOG=/dev/null STUB_CLOSING="$(_fc_closing 42)" STUB_BRANCH="fix/issue-42-x" FAIL_ID=F3 \
+  BRANCH="fix/issue-42-x" TOTAL_FINDINGS=1 REFUTED="F3:code-reviewer,F4:security-reviewer" \
+  bash "$FC_TMP/pr-manifest-c2.sh" >/dev/null 2>&1)
+assert_exit 1 "$?" "a record that fails before the last one is still an error"
 
 _flow_test_begin "posting: guards that nothing had pinned (round 7)"
 # The merge gate and /flow:status select review bodies on the bare token, so a
@@ -1182,6 +1214,11 @@ for BAD_CYCLE in '' 0 '2a'; do
   FC_RES_CYCLE="$BAD_CYCLE" _fc_resolution "Resolved: F1. <!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->" 0
   assert_exit 1 "$RES_CODE" "cycle '$BAD_CYCLE' refused"
 done
+# A cycle number that is not a positive integer is refused even when the body
+# carries a marker that matches it literally.
+FC_RES_CYCLE=0 _fc_resolution "Resolved: F1. <!-- FLOW_RESOLUTION_CYCLE:0 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->" 0
+assert_exit 1 "$RES_CODE" "cycle 0 is refused even with a marker that says 0"
+assert_contains "CYCLE_NUMBER" "$RES_ERR" "the message names the value"
 # The marker must be this cycle's, not an earlier one copied forward.
 FC_RES_CYCLE=2 _fc_resolution "Resolved: F1. <!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->" 0
 assert_exit 1 "$RES_CODE" "a marker from another cycle is refused"
@@ -1432,6 +1469,14 @@ JSON
 else
   _flow_assert_pass "SKIP: jq not installed"
 fi
+
+_flow_test_begin "the stranger-test emit validates and quotes its values (cycle 2)"
+START_MD=$(cat "$PLUGIN_DIR/commands/start.md")
+assert_contains 'TASK_COUNT must be the number of tasks reviewed' "$START_MD" "the task count is validated"
+assert_contains '--metadata task_count="$TASK_COUNT"' "$START_MD" "and quoted, so it cannot word-split into a second --issue"
+assert_contains '--metadata result="$GATE_RESULT"' "$START_MD" "the gate result is quoted"
+assert_contains '--metadata result="$VERDICT_RESULT"' "$START_MD" "the verdict result is quoted"
+assert_not_contains '--metadata task_count=$N' "$START_MD" "the unquoted form is gone"
 
 _flow_test_begin "sweep: no metadata argument carries an unquoted alternation"
 # `--metadata path={A|B}` is not a placeholder the reviewer edits: the `|` is a

@@ -433,6 +433,45 @@ fixed in the bundle.
 
 FlowGoal issue-212: lifecycle achieved, last_evaluation pass.
 
+
+## /flow:review cycle 2 (PR #230, at 95f136b)
+
+P1: 0, P2: 5, P3: 3 — all fixed in this pull request. Five agents plus the holdout lens; three of the
+five P2s were raised independently by two or three of them.
+
+Cause: a guard whose message claims more than its predicate tests, and a carried value that selects
+an object but is never validated. Both are the shape the earlier rounds were fixing, one level out.
+
+- `BRANCH` selects the pull request the `/flow:pr` manifest records against, and gh drops an empty
+  `--head` filter and answers with the first open pull request in the repository — verified live.
+  `git branch --show-current` is also empty on a detached HEAD. It is validated now, and the answer
+  is checked against the branch that was asked about.
+- The routing block still printed `COUNT_TOTAL`, so the review-cycle manifest's premise — that the
+  value exists only after a successful post — was false, and the earlier fix was half a fix. The
+  routing block's value is `ROUTED_TOTAL` now. The suite had been pinning the leak.
+- The `journal-record.sh` exit in `/flow:pr`'s manifest was swallowed by the `REFUTED` loop this
+  branch added: an empty loop returns 0. Both records propagate their exit now.
+- The resolution fence said it refused a marker-less comment but tested only emptiness. It now
+  requires exactly one marker for this cycle, refuses a second rendering of the arrays the merge gate
+  greps, and validates `CYCLE_NUMBER`.
+- `commands/merge.md`'s ledger gate selected the last body matching the bare `FLOW_*_CYCLE:` token,
+  so a comment that merely mentions the token shadowed the real marker — on the resolution side that
+  blocks a clean pull request, on the review side it lets the gate pass with findings unresolved. It
+  selects the marker's shape now, and the rationale comment no longer claims a tolerance the
+  resolution path does not have.
+- `commands/start.md`'s `task_count` was unquoted and unvalidated beside the two values this branch
+  had just hardened; `journal-record.sh` takes the last `--issue` it is given, so a value carrying
+  one redirects the record.
+- The pull request body carried counts generated at an earlier commit; regenerated against the head.
+
+Mutation: the set is 50 and all 50 are caught. Four survived the first run. Each was a real gap, and
+one — the dropped-finding record's exit — was only observable with two refuted findings, because
+with one the loop's last command carries the exit anyway. The first version of that test passed
+under the mutant for a reason that had nothing to do with the code: the fake recorder failed every
+call, so the block exited at an earlier guard.
+
+Suite at the fix: 3489 pass / 0 fail, root 11 of 11, shellcheck clean.
+
 <!-- auto-log: 2026-09-16 00:17 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-pr-linked-issue.test.sh -->
 
 <!-- auto-log: 2026-09-16 00:19 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests.py -->
@@ -540,3 +579,39 @@ FlowGoal issue-212: lifecycle achieved, last_evaluation pass.
 <!-- auto-log: 2026-09-16 04:03 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/pr-body.md -->
 
 <!-- auto-log: 2026-09-16 04:06 commit "fix(flow): ask for the pull request by head branch when the repo is pinned" -->
+
+<!-- auto-log: 2026-09-16 04:29 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/lib.sh -->
+
+<!-- auto-log: 2026-09-16 04:30 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/feedback_pr_body_counts_and_labels.md -->
+
+<!-- auto-log: 2026-09-16 04:30 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 04:32 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reverts.py -->
+
+<!-- auto-log: 2026-09-16 04:32 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_journal_record_metadata_arg_injection.md -->
+
+<!-- auto-log: 2026-09-16 04:35 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 04:35 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 04:41 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_shellcheck_command_blocks.md -->
+
+<!-- auto-log: 2026-09-16 04:42 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_revert_harness.md -->
+
+<!-- auto-log: 2026-09-16 04:42 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 04:42 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/feedback_sequential_suites.md -->
+
+<!-- auto-log: 2026-09-16 04:42 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/results-230.txt -->
+
+<!-- auto-log: 2026-09-16 04:45 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/results-230.txt -->
+
+<!-- auto-log: 2026-09-16 04:46 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle2_tests.py -->
+
+<!-- auto-log: 2026-09-16 04:47 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle2_fixes.py -->
+
+<!-- auto-log: 2026-09-16 04:49 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants_c2.py -->
+
+<!-- auto-log: 2026-09-16 04:59 commit "fix(flow): validate the values that select what gets recorded" -->
+
+<!-- auto-log: 2026-09-16 05:09 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_survivor_tests.py -->
