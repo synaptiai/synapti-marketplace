@@ -384,7 +384,10 @@ After agents return, TaskUpdate each review task with findings.
     # F3:code-reviewer; empty when none were refuted).
     REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
     [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to record against an unattributable pull request" >&2; exit 1; }
-    PR_NUMBER=$(gh pr view --repo "$REPO" --json number --jq '.number') || { echo "ERROR: cannot read the pull request just created" >&2; exit 1; }
+    # `gh pr view --repo` needs the pull request named, so ask by head branch
+    # rather than dropping the pin: an unpinned call resolves against whatever
+    # repository gh picks for the invoking shell.
+    PR_NUMBER=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq '.[0].number') || { echo "ERROR: cannot read the pull request for $BRANCH" >&2; exit 1; }
     case "$PR_NUMBER" in
       ''|0*|*[!0-9]*) echo "ERROR: PR_NUMBER must be a positive integer, got '$PR_NUMBER'; refusing to record" >&2; exit 1 ;;
     esac

@@ -270,7 +270,12 @@ case "$1 $2" in
   "repo view") echo "o/r"; exit 0 ;;
   "api user") printf '%s\n' "${STUB_USER:-}"; exit 0 ;;
   "issue list") exit 0 ;;
+  "pr list") printf '%s\n' "${STUB_PR_NUMBER:-55}"; exit 0 ;;
   "pr view")
+    # Real gh requires the pull request to be named when --repo is given.
+    case "$*" in
+      *--repo*) case "$3" in ''|--*) echo "argument required when using the --repo flag" >&2; exit 1 ;; esac ;;
+    esac
     case "$*" in
       *closingIssuesReferences*)
         # Apply --jq the way gh does, to the closing references in STUB_CLOSING.

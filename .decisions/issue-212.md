@@ -24,6 +24,12 @@ artifacts:
   captured_at: '2026-09-15T19:00:16Z'
   result: PASS
   task_count: 7
+- type: review-cycle
+  captured_at: '2026-09-16T02:05:33Z'
+  cycle: 1
+  path: B
+  findings_count: 11
+  pr: 230
 ---
 # Issue #212 — finding confidence is display-only, and the review rules disagree about whether it blocks
 
