@@ -449,6 +449,19 @@ if command -v zsh >/dev/null 2>&1; then
   assert_contains "--request-changes" "$GH_ARGS" "zsh: decision"
   _fc_post external "$FC_MIXED" 2 "$NO_ENTRY_BODY"
   assert_exit 1 "$POST_CODE" "zsh: missing Needs investigation entry refused"
+  # The section boundary (awk) and the counted-inside check run under zsh too.
+  _fc_post external "$FC_MIXED" 2 '## Review: PR #7
+
+### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 1
+
+#### Needs investigation
+- **F2 · P1 · correctness · `src/c.sh:9`** — Looks like a race.
+| **F1 · correctness · `src/b.sh:4`**<br>Wrong bound. _(HIGH · consensus)_ | Use `<`. |
+
+#### What Looks Good
+- The tests read well.'
+  assert_exit 1 "$POST_CODE" "zsh: a counted finding inside the section is refused"
+  assert_contains "F1" "$POST_ERR" "zsh: names the counted id"
   unset FC_SHELL
 else
   _flow_assert_pass "SKIP: zsh not installed"
@@ -827,9 +840,12 @@ _fc_post external "$FC_MIXED" 2 "$(grep -v '^| \*\*F1 · ' <<<"$FC_MIXED_BODY")"
 assert_exit 1 "$POST_CODE" "a counted finding missing from the body is refused"
 assert_contains "F1" "$POST_ERR" "names the missing id"
 # Rendered twice.
-_fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY
+DUP_BODY="$FC_MIXED_BODY
 Repeated: **F1 · correctness · src/b.sh:4** — Wrong bound."
+DUP_LINES=$(printf '%s\n' "$DUP_BODY" | grep -nF '**F1 · ' | cut -d: -f1 | tr '\n' ' ')
+_fc_post external "$FC_MIXED" 2 "$DUP_BODY"
 assert_exit 1 "$POST_CODE" "a counted finding rendered twice is refused"
+assert_contains "at line(s) $DUP_LINES" "$POST_ERR" "the message names both lines, so the reviewer knows which to reword"
 # The counted finding rendered as a P3 bullet, in the template's shape, posts.
 _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY"
 assert_exit 0 "$POST_CODE" "a P3 bullet carrying the id posts: $POST_ERR"
@@ -883,6 +899,42 @@ _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P
 (none)"
 assert_exit 1 "$POST_CODE" "two headings are refused even with no LOW finding"
 assert_equal "" "$GH_ARGS" "gh not called"
+
+# The section's end is one line past the body when nothing follows it, so a
+# counted finding on the very last line is still inside it.
+_fc_post external "$FC_MIXED" 2 '## Review: PR #7
+
+### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 1
+
+#### Needs investigation
+- **F2 · P1 · correctness · `src/c.sh:9`** — Looks like a race.
+| **F1 · correctness · `src/b.sh:4`**<br>Wrong bound. _(HIGH · consensus)_ | Use `<`. |'
+assert_exit 1 "$POST_CODE" "a counted finding on the last line of the section is refused"
+assert_contains "F1" "$POST_ERR" "names the counted id"
+assert_equal "" "$GH_ARGS" "gh not called"
+# The section is bounded whether or not the review has LOW findings.
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 '### Findings: P1: 0, P2: 0, P3: 1 · Needs investigation: 0
+
+#### Needs investigation
+- **F1 · docs · `a.md:1`** — Stale link. _(MEDIUM · unchallenged)_'
+assert_exit 1 "$POST_CODE" "a counted finding inside the section is refused with no LOW finding to bound it"
+assert_contains "F1" "$POST_ERR" "names the counted id"
+assert_equal "" "$GH_ARGS" "gh not called"
+# A counted finding below the closing heading is where it belongs: the section
+# ends there, so this body posts.
+_fc_post external "$FC_MIXED" 2 '## Review: PR #7
+
+### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 1
+
+#### Needs investigation
+- **F2 · P1 · correctness · `src/c.sh:9`** — Looks like a race.
+
+#### P2 — Important
+| Finding | Suggested Fix |
+|---------|---------------|
+| **F1 · correctness · `src/b.sh:4`**<br>Wrong bound. _(HIGH · consensus)_ | Use `<`. |'
+assert_exit 0 "$POST_CODE" "a counted finding below the closing heading posts: $POST_ERR"
+assert_contains "--request-changes" "$GH_ARGS" "posted"
 
 _flow_test_begin "posting: every counted finding is checked, not only the first (round 5)"
 FC_TWO_COUNTED='F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer

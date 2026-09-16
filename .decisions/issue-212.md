@@ -298,6 +298,32 @@ check meant to prevent it.
   matches, and the heading-text boundary. Each has a test now, and the driver is checked against the
   current code so the next round starts from a live set.
 
+
+## Phase 4 self-review, round 6 (targeted re-review of 689fe69)
+
+P1: 0, P2: 3, P3: 3 — all fixed. The behaviour of the fix was verified correct: the reviewer drove
+14 bodies through the posting block under /bin/bash 3.2.57 and zsh 5.9 — the rendered template with
+all seven sections, follow-up bodies with the Previous Feedback Status table above and below the
+section, zero LOW, two LOW, the section last with and without a trailing newline, an empty section,
+entries and counted findings on the section edges, `F1` beside `F10` — and found no body that posts
+wrongly and none wrongly refused. Every finding was a missing test or a prose omission.
+
+Cause: the tests were written against the defect each round found, not against the check each round
+added. Four mutations of the new code survived the suite — the `+ 1` in the end-of-body fallback (a
+counted finding on the very last line escaped the bound), re-gating the section computation on there
+being LOW findings (the counted-inside check never ran on a zero-LOW review), the upper edge of the
+counted-inside test (every counted finding below the section would have been refused, and no body
+in the suite rendered one there), and the line numbers in the duplicate message.
+
+- Tests added: a counted finding on the last line of a section that ends the body; a counted finding
+  inside the section on a review with no LOW findings; a counted finding below the closing heading,
+  which is where the template puts it and which must post; the duplicate message naming both lines;
+  and a zsh run that exercises the section boundary and the counted-inside refusal.
+- The step 7 prose now lists the two-headings refusal it had left out.
+- The mutation set is 32 and all 32 are caught. It now covers every branch of the posting checks in
+  both directions: each refusal fires on a body that earns it, and each check is shown to permit the
+  body the template renders.
+
 <!-- auto-log: 2026-09-16 00:17 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-pr-linked-issue.test.sh -->
 
 <!-- auto-log: 2026-09-16 00:19 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests.py -->
@@ -331,3 +357,13 @@ check meant to prevent it.
 <!-- auto-log: 2026-09-16 01:36 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_round5.py -->
 
 <!-- auto-log: 2026-09-16 01:42 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants.py -->
+
+<!-- auto-log: 2026-09-16 01:51 commit "fix(flow): bound the Needs investigation section at both ends" -->
+
+<!-- auto-log: 2026-09-16 02:00 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/r6/mutants6.py -->
+
+<!-- auto-log: 2026-09-16 02:05 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_round6.py -->
+
+<!-- auto-log: 2026-09-16 02:06 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants6.py -->
+
+<!-- auto-log: 2026-09-16 02:16 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/journal_round6.py -->
