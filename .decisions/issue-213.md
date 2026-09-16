@@ -88,3 +88,17 @@ docs stop disagreeing about whether review creates a goal
 <!-- auto-log: 2026-09-16 12:29 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ac1_tests.py -->
 
 <!-- auto-log: 2026-09-16 12:30 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ac1_impl.py -->
+
+<!-- auto-log: 2026-09-16 12:32 commit "feat(flow): /flow:review Phase 1 reads the FlowGoal it is reviewing against" -->
+
+<!-- auto-log: 2026-09-16 12:35 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ac2_impl.py -->
+
+<!-- auto-log: 2026-09-16 12:36 commit "feat(flow): hand the risk map to the two passes that can check it" -->
+
+<!-- auto-log: 2026-09-16 12:37 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-blast-radius.test.sh -->
+
+<!-- auto-log: 2026-09-16 12:38 Write /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-contract-files.sh -->
+
+<!-- auto-log: 2026-09-16 12:38 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ac3_impl.py -->
+
+<!-- auto-log: 2026-09-16 12:44 commit "feat(flow): a contract change lists who depends on it" -->

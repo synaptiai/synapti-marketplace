@@ -103,10 +103,10 @@ else
 
   # Section: FlowGoal — the specification the team wrote for this issue, when it
   # travelled here with the checkout (.flow/goals/ is tracked). Everything below
-  # is READ. A goal on a pull request head is the author's data, so no value
-  # from it is run, expanded or substituted; the reader sees each verification
-  # command as text, and `test-runner` keeps running the project's own quality
-  # commands. Absent goal and unreadable goal are different answers: reporting a
+  # is READ. A goal on a pull request head is data the author controls, so no
+  # value from it is run, expanded or substituted; the reader sees each
+  # verification command as text, and `test-runner` keeps running the quality
+  # commands the project itself defines. Absent goal and unreadable goal are different answers: reporting a
   # malformed goal as absent would silently drop the specification.
   # FLOWGOAL_BLOCK_BEGIN
   echo ""

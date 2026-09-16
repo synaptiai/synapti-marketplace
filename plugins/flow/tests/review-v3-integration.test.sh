@@ -229,3 +229,38 @@ assert_contains 'Inputs' "$RG_REVIEWER" "Step 4 states its inputs"
 RG_STEP4=$(printf '%s\n' "$RG_REVIEWER" | awk '/^### Step 4/ { f = 1 } f && /^### Step 5/ { f = 0 } f')
 assert_contains 'Risk areas:' "$RG_STEP4" "Step 4 names the input"
 assert_contains 'source' "$RG_STEP4" "and says a derived row is marked as derived"
+
+# --- #213 AC4: one true statement about which commands create goals ----------
+
+_flow_test_begin "the references do not claim review or address creates a goal"
+# commands/review.md and commands/address.md both say they are FlowRun-only and
+# create no FlowGoal; flow-goals.md said the opposite, and a reader had no way
+# to tell which was true.
+RG_REFS=$(grep -rl '' "$REPO_ROOT/plugins/flow/references/" | wc -l | tr -d ' ')
+assert_match '^[1-9]' "$RG_REFS" "the references directory was examined"
+assert_equal "0" "$(grep -rc 'pr-<N>-review\.goal\.yaml' "$REPO_ROOT/plugins/flow/references/" 2>/dev/null | awk -F: '{t+=$2} END {print t+0}')" \
+  "no reference claims review creates a goal"
+assert_equal "0" "$(grep -rc 'pr-<N>-address\.goal\.yaml' "$REPO_ROOT/plugins/flow/references/" 2>/dev/null | awk -F: '{t+=$2} END {print t+0}')" \
+  "no reference claims address creates a goal"
+RG_GOALS_DOC=$(cat "$REPO_ROOT/plugins/flow/references/flow-goals.md")
+assert_contains 'FlowRun-only' "$RG_GOALS_DOC" "and it states what they do instead"
+
+# --- #213 AC5: the review workflow declares the goal it may read -------------
+
+_flow_test_begin "review-pr.workflow.yaml documents the optional goal input"
+RG_WF="$REPO_ROOT/plugins/flow/workflows/review-pr.workflow.yaml"
+assert_file_exists "$RG_WF" "the workflow exists"
+RG_WF_TXT=$(cat "$RG_WF")
+assert_contains 'goal' "$RG_WF_TXT" "the goal input is declared"
+assert_match 'required: false' "$RG_WF_TXT" "and is optional — a pull request without a goal still reviews"
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
+  RG_WF_INPUTS=$(python3 -c "
+import yaml, sys
+d = yaml.safe_load(open('$RG_WF'))
+i = (d.get('inputs') or {})
+print('goal_path' in i, (i.get('goal_path') or {}).get('required'))
+")
+  assert_equal "True False" "$RG_WF_INPUTS" "goal_path is declared and not required"
+else
+  _flow_assert_pass "SKIP: PyYAML unavailable"
+fi

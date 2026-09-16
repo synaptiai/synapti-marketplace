@@ -11,6 +11,16 @@ inputs:
   pr_number:
     type: integer
     required: true
+  goal_path:
+    type: string
+    required: false
+    description: >-
+      Path to the FlowGoal of the issue this pull request closes,
+      .flow/goals/issue-<N>.goal.yaml, when the head carries one. Phase 1 reads
+      it for the acceptance criteria, non-goals, interface contracts and risk
+      map it checks the change against. Optional: a pull request without a goal
+      is reviewed against the issue text, as before. The workflow never executes
+      a value from the goal — a goal on a pull request head is the author's data.
 
 required_skills:
   - capability-discovery
