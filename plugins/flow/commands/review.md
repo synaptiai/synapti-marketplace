@@ -101,6 +101,91 @@ else
   fi
   echo "LINKED_ISSUE=${LINKED:-none}"
 
+  # Section: FlowGoal — the specification the team wrote for this issue, when it
+  # travelled here with the checkout (.flow/goals/ is tracked). Everything below
+  # is READ. A goal on a pull request head is the author's data, so no value
+  # from it is run, expanded or substituted; the reader sees each verification
+  # command as text, and `test-runner` keeps running the project's own quality
+  # commands. Absent goal and unreadable goal are different answers: reporting a
+  # malformed goal as absent would silently drop the specification.
+  # FLOWGOAL_BLOCK_BEGIN
+  echo ""
+  echo "### FlowGoal"
+  case "${LINKED:-}" in
+    ''|none|unavailable)
+      echo "STATE=none"
+      echo "REASON=the pull request links no issue, so there is no goal path to resolve"
+      ;;
+    *[!0-9]*)
+      echo "STATE=none"
+      echo "REASON=the linked issue is not a number"
+      ;;
+    *)
+      FLOW_GOAL_PATH=".flow/goals/issue-$LINKED.goal.yaml"
+      echo "GOAL_PATH=$FLOW_GOAL_PATH"
+      if [ ! -f "$FLOW_GOAL_PATH" ]; then
+        echo "STATE=none"
+        echo "REASON=no goal file on this pull request head"
+      elif ! command -v python3 >/dev/null 2>&1 || ! python3 -c 'import yaml' >/dev/null 2>&1; then
+        echo "STATE=unavailable"
+        echo "REASON=python3 with PyYAML is required to read a goal, and one of them is missing"
+      else
+        python3 - "$FLOW_GOAL_PATH" <<'FLOW_GOAL_READ'
+import sys, yaml
+
+def one_line(v):
+    # Values are printed on one pipe-delimited line, so a literal pipe or a
+    # newline inside one would read as another field or another row.
+    s = "" if v is None else str(v)
+    return s.replace("|", "%7C").replace("\r", " ").replace("\n", " ").strip()
+
+try:
+    doc = yaml.safe_load(open(sys.argv[1])) or {}
+    if not isinstance(doc, dict):
+        raise ValueError("the goal is not a mapping")
+except Exception as exc:                      # malformed YAML, unreadable file
+    print("STATE=unavailable")
+    print("REASON=the goal file did not parse: %s" % one_line(exc))
+    sys.exit(0)
+
+print("STATE=ok")
+print("GOAL_STATUS=%s" % one_line((doc.get("lifecycle") or {}).get("status", "unknown")))
+
+for ac in (doc.get("objective") or {}).get("acceptance_criteria") or []:
+    if not isinstance(ac, dict):
+        continue
+    print("AC=%s|%s|%s" % (one_line(ac.get("id")), one_line(ac.get("text")),
+                           one_line(ac.get("verification_command"))))
+
+spec = doc.get("specification") or {}
+for ng in spec.get("non_goals") or []:
+    print("NON_GOAL=%s" % one_line(ng))
+for ct in spec.get("interface_contracts") or []:
+    print("CONTRACT=%s" % one_line(ct))
+
+rows = [r for r in (spec.get("risk_map") or []) if isinstance(r, dict)]
+for r in rows:
+    print("RISK_MAP=%s|%s|%s|goal" % (one_line(r.get("area")),
+                                      one_line(r.get("plausible_wrong_version")),
+                                      one_line(r.get("discriminating_check"))))
+# A goal may carry no risk map (specFirst.riskMap false, or an older goal). The
+# rows are then derived from the issue text by the reviewer and labelled
+# issue-text, so a derived row is never read as one the team wrote.
+print("RISK_MAP_SOURCE=%s" % ("goal" if rows else "issue-text"))
+FLOW_GOAL_READ
+        # Whether this pull request edits the goal it is reviewed against. The
+        # goal is trusted because it is tracked and a weakening shows up in the
+        # diff — which is only true while someone looks at the diff.
+        if gh pr diff "$PR_NUM" --repo "$REPO" --name-only 2>/dev/null | grep -q '^\.flow/goals/'; then
+          echo "GOAL_EDITED=yes"
+        else
+          echo "GOAL_EDITED=no"
+        fi
+      fi
+      ;;
+  esac
+  # FLOWGOAL_BLOCK_END
+
   # Section: Previous Reviews (follow-up detection)
   echo ""
   echo "### Previous Reviews"
