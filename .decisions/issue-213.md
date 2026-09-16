@@ -356,3 +356,5 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 19:56 commit "docs(flow): the failure modes count the calls the block makes" -->
 
 <!-- auto-log: 2026-09-16 20:11 commit "test(flow): a goal whose issue number begins with this one is not this one" -->
+
+<!-- auto-log: 2026-09-16 20:14 commit "chore(flow): the goal records the verdict that closed it" -->
