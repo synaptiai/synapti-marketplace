@@ -328,9 +328,9 @@ fi
 GH_RES_RAW=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null)
 GH_EXIT_RES=$?
 RESOLUTION_BODY=$(printf '%s' "$GH_RES_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
-    'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ ")))] | last | .body // ""')
+    'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ ")))] | last | .body // ""'); JQ_EXIT_RES=$?
 RES_UNTRUSTED=$(printf '%s' "$GH_RES_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
-    'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ ")))] | length')
+    'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ ")))] | length'); JQ_EXIT_RES_U=$?
 
 # Extract ESCALATED array contents (portable POSIX grep+sed; BSD grep has no -P).
 # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
@@ -340,17 +340,24 @@ ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ES
 GH_REV_RAW=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null)
 GH_EXIT_REV=$?
 REVIEW_BODY=$(printf '%s' "$GH_REV_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
-    'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")))] | last | .body // ""')
+    'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")))] | last | .body // ""'); JQ_EXIT_REV=$?
 REV_UNTRUSTED=$(printf '%s' "$GH_REV_RAW" | jq -s -r --argjson trust "$TRUST_LIST" \
-    'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")))] | length')
+    'add | [.[] | select((.author_association as $a | $trust | index($a) | not) and (.body | test("<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")))] | length'); JQ_EXIT_REV_U=$?
 
 # Fail closed if either gh call failed — better to block a legitimate merge
 # than silently let a regression through when the gate state is unknowable.
-# Both `_UNTRUSTED` counting calls share the same gh exit code as their primary
-# (they re-filter the cached JSON), so a single per-endpoint exit check covers
-# all four filter passes.
 if [ $GH_EXIT_RES -ne 0 ] || [ $GH_EXIT_REV -ne 0 ]; then
   emit_block "gh API unavailable — cannot verify finding ledger (resolution exit=$GH_EXIT_RES, review exit=$GH_EXIT_REV)"
+fi
+
+# And fail closed if any of the four filter passes failed. gh exiting 0 does not
+# mean the filter ran: one comment with a null body aborts `.body | test(...)`
+# with jq exit 5, leaving RESOLUTION_BODY empty and RES_UNTRUSTED empty — which
+# reads downstream as "no findings and nothing untrusted", the answer that opens
+# the gate. Each pass is checked separately because each can fail alone. This is
+# the posture the seed block above already takes for the same reason.
+if [ $JQ_EXIT_RES -ne 0 ] || [ $JQ_EXIT_RES_U -ne 0 ] || [ $JQ_EXIT_REV -ne 0 ] || [ $JQ_EXIT_REV_U -ne 0 ]; then
+  emit_block "finding-ledger markers could not be parsed — cannot verify finding ledger (jq exits: resolution=$JQ_EXIT_RES/$JQ_EXIT_RES_U, review=$JQ_EXIT_REV/$JQ_EXIT_REV_U)"
 fi
 
 # Surface "untrusted-only" markers as a block reason rather than silently

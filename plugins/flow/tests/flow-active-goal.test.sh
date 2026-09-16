@@ -247,6 +247,47 @@ EXIT=$?
 assert_equal "0" "$EXIT" "exit 0 — sibling goal found despite malformed neighbor"
 assert_equal "issue-good" "$OUT" "id reads the valid goal"
 
+# --- Test 12b: the sole goal being unreadable is NOT "no goal"
+# Exit 1 means "no applicable goal", and commands/merge.md reads it as "gate not
+# applicable" and merges. A goal sitting on disk that nobody could parse is a
+# different fact, and the merge gate blocks on any exit it does not recognise.
+_flow_test_begin "an unreadable goal is not reported as no goal"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+echo "{ this: is: not: valid: yaml }" > "$DIR/.flow/goals/broken.goal.yaml"
+EXIT=$(cd "$DIR" && bash "$HELPER" --status >/dev/null 2>&1; echo $?)
+assert_equal "4" "$EXIT" "exit 4 — a goal exists but could not be read"
+ERR=$(cd "$DIR" && bash "$HELPER" --status 2>&1 >/dev/null)
+assert_contains "broken.goal.yaml" "$ERR" "and stderr names the file that could not be read"
+
+# Valid YAML of the wrong shape reaches the same arm: `lifecycle` as a scalar
+# raises on .get, which is not a parse error but is just as unreadable.
+_flow_test_begin "a goal of the wrong shape is unreadable, not absent"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+printf 'metadata: {id: issue-9}\nlifecycle: active\nscope: {branch: main}\n' \
+  > "$DIR/.flow/goals/issue-9.goal.yaml"
+EXIT=$(cd "$DIR" && bash "$HELPER" --status >/dev/null 2>&1; echo $?)
+assert_equal "4" "$EXIT" "a scalar lifecycle is unreadable, not a goal that does not exist"
+
+# And an empty goals directory still answers 1 — the distinction only means
+# something if the absent case keeps its own code.
+_flow_test_begin "no goal at all is still exit 1, not exit 4"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+EXIT=$(cd "$DIR" && bash "$HELPER" --status >/dev/null 2>&1; echo $?)
+assert_equal "1" "$EXIT" "an empty goals directory is no goal, which is a real answer"
+
+# --branch-strict takes the same care: a goal owning no branch plus one that
+# could not be read must not answer "this branch has no goal".
+_flow_test_begin "--branch-strict does not read an unreadable goal as no goal"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+_fag_write_goal "$DIR/.flow/goals/issue-other.goal.yaml" "active" "issue-other" "feature/elsewhere"
+echo "{ broken: [" > "$DIR/.flow/goals/issue-broken.goal.yaml"
+EXIT=$(cd "$DIR" && bash "$HELPER" --status --branch-strict --branch feature/mine >/dev/null 2>&1; echo $?)
+assert_equal "4" "$EXIT" "exit 4 — the unreadable goal might have been this branch's"
+
 # --- Test 13: unknown mode flag → exit 2
 _flow_test_begin "unknown mode flag → exit 2"
 DIR=$(_fag_mkdir)
@@ -393,9 +434,38 @@ lifecycle: { status: active }
 EOF
 OUT=$(cd "$DIR" && bash "$HELPER" --verifiable-count --branch feature/test 2>/dev/null); EXIT=$?
 assert_equal "0" "$EXIT" "non-list acceptance_criteria does not crash --verifiable-count"
-assert_equal "0/0" "$OUT" "scalar acceptance_criteria treated as zero ACs"
+# Not crashing is half of it. The count feeds a gate that flags a goal with
+# zero verifiable ACs as degenerate, and "0/0 because nobody could read the
+# criteria" is a different fact from "0/0 because there are none" — the bare
+# count cannot carry both, so the unreadable case says so.
+assert_contains "0/0" "$OUT" "the count is still zero"
+assert_contains "unreadable" "$OUT" "and says the criteria could not be read"
 OUT=$(cd "$DIR" && bash "$HELPER" --ac-summary --branch feature/test 2>/dev/null); EXIT=$?
 assert_equal "0" "$EXIT" "non-list acceptance_criteria does not crash --ac-summary"
+assert_contains "unreadable" "$OUT" "--ac-summary emits a row rather than nothing"
+assert_contains "not a list" "$OUT" "naming the shape it found"
+
+# A criterion of the wrong shape inside a proper list is the per-item case.
+_flow_test_begin "--ac-summary reports a criterion it had to skip"
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+cat > "$DIR/.flow/goals/issue-skip.goal.yaml" <<'EOF'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: { id: issue-skip, created_at: "2026-05-21T00:00:00Z" }
+scope: { repo: owner/example, branch: feature/test }
+objective:
+  outcome: Test outcome
+  acceptance_criteria:
+    - { id: AC1, text: a real one, status: pending }
+    - just a string
+evaluator: { type: hybrid }
+lifecycle: { status: active }
+EOF
+OUT=$(cd "$DIR" && bash "$HELPER" --ac-summary --branch feature/test 2>/dev/null)
+assert_contains "AC1|" "$OUT" "the readable criterion is still listed"
+assert_contains "unreadable" "$OUT" "and the skipped one is not simply missing"
+assert_contains "index 1" "$OUT" "with its position named"
 
 _flow_test_begin "legacy goal with no scope.branch resolves via the most-recent-active fallback"
 DIR=$(_fag_mkdir)

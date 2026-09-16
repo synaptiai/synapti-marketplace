@@ -22,6 +22,18 @@
 - **{ID} · {priority} · {category} · `{file:line}`** — {problem}
   Pattern: {what triggered the finding}. Confirm or refute: {the test or check that would settle it}.
 
+#### Blast radius
+
+{Only when the diff changes a contract — an exported signature, or a file `bin/flow-contract-files.sh`
+names (openapi, graphql, protobuf, migration, schema, goal-contract), or a symbol in the goal's
+interface contracts. One row per consumer found. A consumer absent from the diff is a
+`breaking-change` P1 above, and this row cites the same location. Say which tool found the consumers;
+omit the section entirely when no contract changed.}
+
+| Contract changed | Consumer | In this PR? | Found by |
+|---|---|---|---|
+| `{file:line}` ({kind}) | `{consumer file:line}` | {yes / no — F{n}} | {findReferences \| incomingCalls \| grep} |
+
 #### Requirements Adherence
 | # | Criterion | Status | Evidence |
 |---|-----------|--------|----------|

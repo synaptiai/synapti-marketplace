@@ -24,6 +24,13 @@
 #   returned. Exit 3 (degenerate) fires ONLY when >1 active goal share the
 #   current branch — concurrent goals on different branches/worktrees each
 #   resolve cleanly.
+#   Exit codes: 0 resolved · 1 no applicable goal · 2 refused (symlink, bad
+#   arguments) · 3 degenerate (>1 active on this branch) · 4 a goal file exists
+#   but could not be read, and no other goal answered. 4 is distinct from 1
+#   because callers gate on existence: the merge gate treats 1 as "no goal, not
+#   applicable" and proceeds, which is the wrong answer when a goal is sitting
+#   there unreadable. Unreadable goals are still skipped when some other goal
+#   does answer, so one corrupt file never blocks a legitimate sibling.
 #   --branch <name>    override the detected current branch (test-only / scripting)
 #   --allow-terminal   also consider a terminal `achieved` goal, but ONLY when it
 #                      owns the current branch (never cross-branch) — lets the
@@ -144,6 +151,7 @@ active = []
 # both answer the gate with an unrelated goal and be influenceable through file
 # mtime.
 terminal = []
+unreadable = []
 for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
     if os.path.islink(path):
         print(f"flow-active-goal.sh: refusing — {path} is a symlink", file=sys.stderr)
@@ -161,11 +169,25 @@ for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
             active.append((path, data, branch, mtime))
         elif allow_terminal and status == "achieved":
             terminal.append((path, data, branch, mtime))
-    except Exception:
+    except Exception as exc:
         # Tolerate unparseable goals — they would block lookup of a sibling
         # legitimate goal. The Stop hook + status subcommand follow the same
-        # tolerate-and-continue pattern.
+        # tolerate-and-continue pattern. But remember that it happened: a goal
+        # skipped here is not a goal that does not exist, and the difference
+        # decides a merge. `except Exception` also catches every wrong shape —
+        # `lifecycle: active` as a scalar raises AttributeError on .get — so
+        # this arm is much wider than "unparseable".
+        unreadable.append((path, exc))
         continue
+
+# Nothing matched. Whether that means "no goal" or "a goal nobody could read"
+# is the whole question for a caller that gates on existence: the merge gate
+# reads exit 1 as "not applicable" and proceeds. Say the second thing when it
+# is true, and let the caller decide.
+if not active and not terminal and unreadable:
+    for path, exc in unreadable:
+        print(f"flow-active-goal.sh: {path} could not be read: {exc}", file=sys.stderr)
+    sys.exit(4)
 
 if not active and not terminal:
     sys.exit(1)
@@ -216,6 +238,13 @@ else:
     # Either only terminal goals exist and none own the current branch, or
     # --branch-strict with a KNOWN current branch that owns no goal -> the
     # caller must treat this as "no applicable goal for this branch".
+    # A goal skipped as unreadable could have been the one that owns this
+    # branch; nobody can say it did not. Report that rather than "no goal",
+    # which the merge gate reads as "not applicable" and proceeds on.
+    if unreadable:
+        for path, exc in unreadable:
+            print(f"flow-active-goal.sh: {path} could not be read: {exc}", file=sys.stderr)
+        sys.exit(4)
     sys.exit(1)
 
 path, data = chosen[0], chosen[1]
@@ -239,16 +268,20 @@ elif mode == "--ac-summary":
     def _sanitize(value):
         s = " ".join(str(value).split())  # collapse all whitespace incl. newlines
         return s.replace("|", "│")
-    acs = ((data.get("objective") or {}).get("acceptance_criteria") or [])
-    if not isinstance(acs, list):
-        # A non-list acceptance_criteria (e.g. a scalar in malformed user YAML)
-        # would raise TypeError on iteration — outside the parse loop's try.
-        acs = []
-    for ac in acs:
+    acs_raw = (data.get("objective") or {}).get("acceptance_criteria")
+    acs = acs_raw if isinstance(acs_raw, list) else []
+    if acs_raw is not None and not isinstance(acs_raw, list):
+        # A non-list acceptance_criteria would raise TypeError on iteration —
+        # outside the parse loop's try. Printing nothing was the other half of
+        # the bug: a goal naming three criteria in the wrong shape rendered as
+        # a goal naming none, under a status line that says the goal is fine.
+        print(f"?|unreadable|-|acceptance_criteria is {type(acs_raw).__name__}, not a list")
+    for idx, ac in enumerate(acs):
         if not isinstance(ac, dict):
-            # tolerate malformed AC
-            # shapes (string instead of dict) rather than crashing with
-            # AttributeError outside the try/except in the search loop.
+            # Tolerate a malformed AC shape rather than crashing, but say that
+            # one was skipped — a criterion nobody could read is not a
+            # criterion that is not there.
+            print(f"?|unreadable|-|criterion at index {idx} is {type(ac).__name__}, not a mapping")
             continue
         ac_id = _sanitize(ac.get("id", "?"))
         status = _sanitize(ac.get("status", "pending"))
@@ -260,19 +293,29 @@ elif mode == "--verifiable-count":
     # goal (0 ACs, or 0 ACs carrying a non-empty verification_command) without
     # re-parsing the YAML. A verification_command of "" or whitespace is not
     # verifiable.
-    acs = ((data.get("objective") or {}).get("acceptance_criteria") or [])
-    if not isinstance(acs, list):
-        acs = []   # non-list (scalar) acceptance_criteria -> treat as zero ACs
+    acs_raw = (data.get("objective") or {}).get("acceptance_criteria")
+    acs = acs_raw if isinstance(acs_raw, list) else []
+    unreadable_acs = 0
+    if acs_raw is not None and not isinstance(acs_raw, list):
+        unreadable_acs = 1
     total = 0
     verifiable = 0
     for ac in acs:
         if not isinstance(ac, dict):
+            unreadable_acs += 1
             continue
         total += 1
         vc = ac.get("verification_command")
         if isinstance(vc, str) and vc.strip():
             verifiable += 1
-    print(f"{total}/{verifiable}")
+    # The caller flags a degenerate goal on a zero here. "0/0 because the
+    # criteria could not be read" and "0/0 because there are none" are
+    # different facts, and the count alone cannot carry that, so say it
+    # alongside rather than letting the zero speak for both.
+    if unreadable_acs:
+        print(f"{total}/{verifiable} ({unreadable_acs} unreadable)")
+    else:
+        print(f"{total}/{verifiable}")
 else:
     print(f"flow-active-goal.sh: unknown mode {mode}", file=sys.stderr)
     sys.exit(2)

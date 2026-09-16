@@ -227,8 +227,8 @@ If your needs require any of the above, FlowGoal is the wrong primitive — esca
 ## Compose with other flow features
 
 - **`/flow:start <issue>`** — under `goalCreation: auto` (default), creates `.flow/goals/issue-<N>.goal.yaml` after the Spec Validation Gate **iff** ≥1 AC carries a `verification_command`. Lifecycle stays `active` through Phase 4 (CODE, VERIFY); `verdict-judge` PASS transitions to `achieved`.
-- **`/flow:review <PR>`** — creates a `pr-<N>-review.goal.yaml` with review-checklist ACs.
-- **`/flow:address <PR>`** — creates a `pr-<N>-address.goal.yaml` with one AC per unresolved finding.
+- **`/flow:review <PR>`** — creates no goal. A review is FlowRun-only: it is bounded by the pull request, and the posted review with its `FLOW_REVIEW_CYCLE` marker is the durable record of what it found. When the pull request head carries `.flow/goals/issue-<N>.goal.yaml`, Phase 1 **reads** it — the acceptance criteria, non-goals, interface contracts and risk map become what the review checks the change against — and never executes anything it contains.
+- **`/flow:address <PR>`** — creates no goal, for the same reason: the resolution comment and its `FLOW_RESOLUTION_CYCLE` marker are the record.
 - **`/flow:debug`** — Goal with `outcome: "The reported failure is reproduced, root-caused, and a fix is verified."` and ACs derived from the bug hypothesis.
 
 ## Architectural references

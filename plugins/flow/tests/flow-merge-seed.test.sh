@@ -115,3 +115,46 @@ fi
 # And the normal one-empty-stream case must NOT trip the guard (exit 0).
 printf '%s\n%s\n' '[]' '[{"id":1}]' | jq -s 'add // []' >/dev/null 2>&1
 assert_equal "0" "$?" "an empty stream + a populated stream unions cleanly (exit 0)"
+
+# --- the authoritative gate captures its jq exits too ------------------------
+# The seed above is a preview and fails closed. The gate 150 lines below it ran
+# four jq filter passes and checked only gh's exit. gh exiting 0 does not mean
+# the filter ran: one comment with a null body aborts `.body | test(...)` with
+# jq exit 5, and the gate then reads an empty RESOLUTION_BODY as "no findings"
+# and an empty RES_UNTRUSTED as "nothing untrusted" — the pair that opens it.
+_flow_test_begin "merge.md's finding-ledger gate fails closed when a jq pass fails"
+CONTENT=$(cat "$MERGE_MD")
+assert_contains "JQ_EXIT_RES=" "$CONTENT" "the resolution body filter captures its exit"
+assert_contains "JQ_EXIT_RES_U=" "$CONTENT" "so does the untrusted-resolution count"
+assert_contains "JQ_EXIT_REV=" "$CONTENT" "so does the review body filter"
+assert_contains "JQ_EXIT_REV_U=" "$CONTENT" "so does the untrusted-review count"
+# All four are named in one fail-closed condition. Scoped to the matching line
+# so a failure prints that line, not the whole command file.
+GATE_COND=$(grep -n 'JQ_EXIT_RES -ne 0' "$MERGE_MD" | head -1)
+assert_contains "JQ_EXIT_RES_U -ne 0" "$GATE_COND" "the untrusted-resolution pass is in the same condition"
+assert_contains "JQ_EXIT_REV -ne 0" "$GATE_COND" "so is the review pass"
+assert_contains "JQ_EXIT_REV_U -ne 0" "$GATE_COND" "so is the untrusted-review pass"
+# And that condition blocks rather than warns.
+GATE_ACTION=$(grep -A2 'JQ_EXIT_RES -ne 0' "$MERGE_MD" | head -3)
+assert_contains "emit_block" "$GATE_ACTION" "a failed pass blocks the merge"
+
+# Functional: the real filter against the real trigger. A null body is what a
+# deleted or restricted comment serves, and it is not hypothetical — the gate
+# reads every comment on the PR.
+_flow_test_begin "a null comment body aborts the gate filter rather than reading as empty"
+GATE_FILTER='add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ ")))] | last | .body // ""'
+TRUST='["OWNER","MEMBER","COLLABORATOR"]'
+# A healthy stream resolves normally.
+GOOD='[{"author_association":"OWNER","body":"<!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] -->"}]'
+BODY=$(printf '%s' "$GOOD" | jq -s -r --argjson trust "$TRUST" "$GATE_FILTER" 2>/dev/null); GOOD_EXIT=$?
+assert_equal "0" "$GOOD_EXIT" "the filter succeeds on a well-formed stream"
+assert_contains "RESOLVED:[F1]" "$BODY" "and returns the marker body"
+# One null body and the whole pass aborts.
+NULLED='[{"author_association":"OWNER","body":null},{"author_association":"OWNER","body":"<!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] -->"}]'
+BODY2=$(printf '%s' "$NULLED" | jq -s -r --argjson trust "$TRUST" "$GATE_FILTER" 2>/dev/null); NULL_EXIT=$?
+if [ "$NULL_EXIT" -ne 0 ]; then
+  _flow_assert_pass "a null body makes the filter exit non-zero ($NULL_EXIT), which the gate must catch"
+else
+  _flow_assert_fail "expected the filter to fail on a null body; it exited 0 and returned '$BODY2'"
+fi
+assert_equal "" "$BODY2" "and it returns nothing — indistinguishable from 'no findings' unless the exit is read"

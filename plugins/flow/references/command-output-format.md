@@ -56,7 +56,7 @@ KEY=value                        # only when STATE=ok
 | `STATE=blocked` | input validation failed; section cannot proceed | use after permissive-arg-extraction rejects a non-digit `$PR_NUM`, missing required positional, etc. |
 | `STATE=unavailable` | infrastructure failure; cannot determine state | use when `gh` exits non-zero, the network is unreachable, or a required helper is missing |
 
-Per-section state variables (e.g., `LEDGER_STATE=`, `PREFLIGHT_STATE=`) follow the same vocabulary when they signal the same conditions (`ok`, `empty`, `blocked`, `unavailable`). The bare `STATE=` variable is always restricted to the four sentinels above. For richer domain-specific state machines, see "Domain-specific state vocabularies" below.
+Per-section state variables (e.g., `LEDGER_STATE=`, `PREFLIGHT_STATE=`) follow the same vocabulary when they signal the same conditions (`ok`, `empty`, `blocked`, `unavailable`). The bare `STATE=` variable carries those four plus `none`, which says the thing asked about does not exist — as distinct from `empty` (it exists and holds nothing) and from `unavailable` (nobody could find out). A section that reads something optional needs all three: `commands/review.md` § FlowGoal reports `none` for a pull request whose head carries no goal, `unavailable` when the goal exists but could not be read, and `ok` when it was. Anything beyond these five belongs in a `<DOMAIN>_STATE=` variable. For richer domain-specific state machines, see "Domain-specific state vocabularies" below.
 
 ### Domain-specific state vocabularies
 

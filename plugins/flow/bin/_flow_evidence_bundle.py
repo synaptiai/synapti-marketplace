@@ -318,7 +318,30 @@ def _safe_ac_id(ac_id: str) -> str:
     return safe or "(unparseable AC id)"
 
 
-def _render_coverage_header(coverage: dict, malformed: list = None, orphan_proves: list = None) -> str:
+def _safe_line(value, cap: int = 200) -> str:
+    """Render arbitrary text as a single safe line inside the coverage header.
+
+    The header is the one part of the evidence ledger that is flow's own
+    analysis rather than quoted data, and it carries the judge's MUST and
+    MUST NOT directives. Anything spliced into it that can contain a newline
+    can end the list item and continue on its own line, where a forged
+    `- AC1: deterministic evidence present` is indistinguishable from a real
+    verdict.
+
+    A `yaml.YAMLError` is exactly that kind of value: it is multi-line, it
+    quotes the offending file back in two snippet excerpts, and an alias or
+    tag name inside it is unbounded and entirely author-chosen. Collapse every
+    kind of line break and cap the result. Unlike `_safe_ac_id` this keeps
+    punctuation, because a filename that renders as `a?evidence?yaml` cannot be
+    matched against the sidecar it names further down the ledger.
+    """
+    s = " ".join(str(value).splitlines())
+    s = " ".join(s.split())
+    return s[:cap] or "(no detail)"
+
+
+def _render_coverage_header(coverage: dict, malformed: list = None, orphan_proves: list = None,
+                            unreadable: list = None) -> str:
     """Render the per-AC coverage analysis as a markdown header.
 
     Emitted at the TOP of <<<UNTRUSTED_EVIDENCE_LEDGER>>> so the judge
@@ -339,8 +362,9 @@ def _render_coverage_header(coverage: dict, malformed: list = None, orphan_prove
     """
     malformed = malformed or []
     orphan_proves = orphan_proves or []
+    unreadable = unreadable or []
 
-    if not coverage and not malformed and not orphan_proves:
+    if not coverage and not malformed and not orphan_proves and not unreadable:
         return "### Evidence coverage analysis\n(no acceptance_criteria declared in goal contract)"
 
     lines = ["### Evidence coverage analysis"]
@@ -363,6 +387,21 @@ def _render_coverage_header(coverage: dict, malformed: list = None, orphan_prove
     for idx, reason in malformed:
         lines.append(f"- (malformed AC at index {idx}): {reason} — judge MUST mark as incomplete")
 
+    # Surface sidecars that exist but could not be parsed. Without this an
+    # unreadable sidecar is indistinguishable from no sidecar at all, so an AC
+    # whose evidence was written but is malformed reads as "no sidecar" — the
+    # judge is told nothing was produced when something was. The raw text is
+    # still fenced into the ledger below; this is the header that decides how
+    # the judge reads it.
+    for rel_name, reason in unreadable:
+        # Both fields are author-controlled and both are sanitised. The name is
+        # kept readable so it can be matched against the fenced content below;
+        # the reason carries the parser's own message, which quotes the file.
+        lines.append(
+            f"- (unreadable: {_safe_line(rel_name, 120)}): {_safe_line(reason)} — "
+            f"NOT evidence for any acceptance criterion; judge MUST NOT credit it"
+        )
+
     # Surface orphan-prove sidecars so the judge knows there's evidence
     # in the ledger that doesn't map to any declared AC.
     if orphan_proves:
@@ -376,7 +415,7 @@ def _render_coverage_header(coverage: dict, malformed: list = None, orphan_prove
     return "\n".join(lines)
 
 
-def _assemble_evidence_section(run_dir: str, goal_acs: list) -> str:
+def _assemble_evidence_section(run_dir: str, goal_acs: list, goal_unreadable: list = None) -> str:
     """Concatenate every evidence sidecar (and its raw output, if any)
     into a single fenced section, prefixed with a per-AC coverage
     analysis header.
@@ -400,7 +439,7 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list) -> str:
     files = _list_evidence_files(run_dir)
     if not files:
         coverage, malformed, orphans = _compute_evidence_coverage(goal_acs, [])
-        header = _render_coverage_header(coverage, malformed, orphans)
+        header = _render_coverage_header(coverage, malformed, orphans, goal_unreadable)
         return _fence("evidence", f"{header}\n\n(no evidence sidecars in this run)")
 
     # First pass: parse every sidecar to build the classification list.
@@ -408,6 +447,7 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list) -> str:
     # appears BEFORE any sidecar content (the judge sees coverage first).
     classified = []
     parsed_sidecars = []  # list of (rel_name, sidecar_text, sidecar_dict_or_None, path)
+    unreadable_sidecars = []  # list of (rel_name, reason) — exists but carries no usable evidence
     for sidecar_path in files:
         rel_name = os.path.basename(sidecar_path)
         try:
@@ -417,14 +457,21 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list) -> str:
             continue
         try:
             sidecar = yaml.safe_load(sidecar_text)
-        except yaml.YAMLError:
+        except yaml.YAMLError as e:
             sidecar = None
+            unreadable_sidecars.append((rel_name, f"YAML parse error: {e}"))
         if isinstance(sidecar, dict):
             classified.append(_classify_sidecar(sidecar))
+        elif sidecar is not None:
+            # Parsed, but not a mapping — a list or a scalar cannot carry
+            # `proves` or `evidence`, so it contributes nothing and must not
+            # look like a sidecar that simply covered no AC.
+            unreadable_sidecars.append((rel_name, f"not a mapping ({type(sidecar).__name__})"))
         parsed_sidecars.append((rel_name, sidecar_text, sidecar, sidecar_path, None))
 
     coverage, malformed, orphans = _compute_evidence_coverage(goal_acs, classified)
-    parts.append(_render_coverage_header(coverage, malformed, orphans))
+    parts.append(_render_coverage_header(coverage, malformed, orphans,
+                                         (goal_unreadable or []) + unreadable_sidecars))
     parts.append("")  # blank line between header and sidecars
 
     for rel_name, sidecar_text, sidecar, sidecar_path, read_err in parsed_sidecars:
@@ -538,12 +585,36 @@ def _assemble_budget_section(goal: dict) -> str:
     if not isinstance(continuation, dict):
         continuation = {}
     turns = int(lifecycle.get("turns_evaluated") or 0)
-    max_iter = continuation.get("max_iterations")
-    if isinstance(max_iter, int):
-        remaining = max(0, max_iter - turns)
-        body = f"turns_evaluated: {turns}\nmax_iterations: {max_iter}\nremaining: {remaining}"
+    raw_max = continuation.get("max_iterations")
+    # Mirror the enforcer, hooks/scripts/flow-goal-evaluator.sh:
+    # `int(continuation.get("max_iterations") or 20)`. It honours a numeric
+    # string and falls back to 20 when the key is unset, so reporting
+    # "(unbounded)" here told the judge it had no budget in exactly the two
+    # cases where one is enforced: `max_iterations: "5"` and no key at all.
+    # Two readers of the same field must not disagree about what it says.
+    EVALUATOR_DEFAULT_MAX_ITERATIONS = 20
+    if raw_max is None or raw_max == "":
+        max_iter = EVALUATOR_DEFAULT_MAX_ITERATIONS
+        note = f" (unset; the evaluator applies {EVALUATOR_DEFAULT_MAX_ITERATIONS})"
+    elif isinstance(raw_max, bool):
+        max_iter = None
+        note = ""
     else:
-        body = f"turns_evaluated: {turns}\nmax_iterations: (unset)\nremaining: (unbounded)"
+        try:
+            max_iter = int(raw_max)
+            note = "" if isinstance(raw_max, int) else f" (read from {raw_max!r})"
+        except (TypeError, ValueError):
+            max_iter = None
+            note = ""
+    if max_iter is None:
+        body = (f"turns_evaluated: {turns}\n"
+                f"max_iterations: (unreadable: {raw_max!r} — the evaluator will refuse it)\n"
+                f"remaining: (unknown)")
+    else:
+        remaining = max(0, max_iter - turns)
+        body = (f"turns_evaluated: {turns}\n"
+                f"max_iterations: {max_iter}{note}\n"
+                f"remaining: {remaining}")
     return _fence("budget", body)
 
 
@@ -568,9 +639,19 @@ def assemble_bundle(
       A single string ready to feed to `claude --print` via stdin.
     """
     goal_text = _read_no_follow(goal_yaml_path)
+    # A goal that cannot be read is not a goal with no criteria. Collapsing both
+    # to {} handed the judge an empty coverage header, and the honest-reporting
+    # machinery below reports per-AC problems by iterating the ACs — so with
+    # zero ACs it reports nothing at all. The raw goal is still fenced into the
+    # bundle, but the header the judge reads first has to say this.
+    goal_unreadable = []
     try:
         goal = yaml.safe_load(goal_text) or {}
-    except yaml.YAMLError:
+    except yaml.YAMLError as e:
+        goal = {}
+        goal_unreadable.append(("goal.yaml", f"YAML parse error: {e}"))
+    if not isinstance(goal, dict):
+        goal_unreadable.append(("goal.yaml", f"not a mapping ({type(goal).__name__})"))
         goal = {}
 
     # Extract acceptance criteria for the evidence coverage analysis. The
@@ -582,9 +663,14 @@ def assemble_bundle(
     # otherwise raise AttributeError on `.get()` — fail-safe to empty
     # bundles rather than crashing the hook with no useful message.
     objective = goal.get("objective")
+    if objective is not None and not isinstance(objective, dict):
+        goal_unreadable.append(("goal.yaml:objective", f"not a mapping ({type(objective).__name__})"))
     if not isinstance(objective, dict):
         objective = {}
     goal_acs = objective.get("acceptance_criteria")
+    if goal_acs is not None and not isinstance(goal_acs, list):
+        goal_unreadable.append(
+            ("goal.yaml:acceptance_criteria", f"not a list ({type(goal_acs).__name__})"))
     if not isinstance(goal_acs, list):
         goal_acs = []
 
@@ -602,7 +688,7 @@ def assemble_bundle(
 
     # Evidence + previous verdict sections are scoped to the run dir.
     if run_dir and os.path.isdir(run_dir):
-        sections.append(_assemble_evidence_section(run_dir, goal_acs))
+        sections.append(_assemble_evidence_section(run_dir, goal_acs, goal_unreadable))
         sections.append("")
         prev = _assemble_previous_verdict_section(run_dir)
         if prev:
@@ -612,7 +698,7 @@ def assemble_bundle(
         # Even without a run dir, render the coverage header so the judge
         # sees per-AC status (all "no sidecar — judge MUST mark as incomplete").
         coverage, malformed, orphans = _compute_evidence_coverage(goal_acs, [])
-        header = _render_coverage_header(coverage, malformed, orphans)
+        header = _render_coverage_header(coverage, malformed, orphans, goal_unreadable)
         sections.append(_fence("evidence", f"{header}\n\n(no run directory; evidence ledger unavailable)"))
         sections.append("")
 

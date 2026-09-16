@@ -18,7 +18,7 @@
     "category": {
       "type": "string",
       "minLength": 1,
-      "description": "Domain tag. The recommended controlled list (see references/finding-schema.md): security, correctness, edge-case, error-handling, performance, tests, runtime, visual, conventions, claim-verification. Free-form values are permitted but reduce searchability."
+      "description": "Domain tag. The recommended controlled list (see references/finding-schema.md): security, correctness, edge-case, error-handling, performance, tests, runtime, visual, breaking-change, scope, conventions, claim-verification. Free-form values are permitted but reduce searchability."
     },
     "location": {
       "type": "string",

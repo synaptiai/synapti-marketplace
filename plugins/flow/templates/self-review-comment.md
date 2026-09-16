@@ -28,6 +28,18 @@ Verdict: N/A (independent verdict not enabled)
 |---------|-------------|
 | **{n} · {P1/P2/P3} · `{file:line}`**<br>{issue} _({HIGH\|MEDIUM} · {disposition})_ | {fix description} |
 
+### Blast radius
+
+{Only when the diff changes a contract — an exported signature, or a file `bin/flow-contract-files.sh`
+names (openapi, graphql, protobuf, migration, schema, goal-contract), or a symbol in the goal's
+interface contracts. One row per consumer found. A consumer absent from the diff is a
+`breaking-change` finding above, and this row cites the same location. Say which tool found the
+consumers; omit the section entirely when no contract changed.}
+
+| Contract changed | Consumer | In this PR? | Found by |
+|---|---|---|---|
+| `{file:line}` ({kind}) | `{consumer file:line}` | {yes / no — {n}} | {findReferences \| incomingCalls \| grep} |
+
 ### Needs investigation
 {Every LOW-confidence finding raised on this PR and how it ended. A LOW finding counts as a fixed defect only when a test confirmed it; a refuted one is not a defect and is not in the table above.}
 | Finding | Outcome |

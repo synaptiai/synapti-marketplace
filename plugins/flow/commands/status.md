@@ -178,6 +178,7 @@ fi
 # Surface the latest 3 so the user can see what is happening in flight.
 echo ""
 echo "### Recent Runs"
+# RECENT_RUNS_BLOCK_BEGIN
 if [ ! -d ".flow/runs" ]; then
   echo "STATE=empty"
 else
@@ -196,9 +197,16 @@ else
       RUN_DIR=".flow/runs/$run"
       [ -d "$RUN_DIR" ] || continue
       # Surface the run last verdict if available.
+      # A verdict file jq cannot read is not a run that recorded no verdict:
+      # unparseable JSON exits non-zero with no output, an empty file exits zero
+      # with no output, and both left VERDICT bare-empty under the same
+      # `verdict=` the absent case renders. Name the unreadable one.
       VERDICT="-"
       if [ -f "$RUN_DIR/last-verdict.json" ]; then
-        VERDICT=$(jq -r '.verdict // "-"' "$RUN_DIR/last-verdict.json" 2>/dev/null)
+        VERDICT=$(jq -r '.verdict // "-"' "$RUN_DIR/last-verdict.json" 2>/dev/null); VERDICT_EXIT=$?
+        if [ "$VERDICT_EXIT" -ne 0 ] || [ -z "$VERDICT" ]; then
+          VERDICT="unreadable"
+        fi
       fi
       # Surface activity count.
       ACT_COUNT=0
@@ -207,6 +215,7 @@ else
     done
   fi
 fi
+# RECENT_RUNS_BLOCK_END
 
 # Section: Active Triggers (v3, gated behind flow.triggers.enabled)
 # Surface registered triggers under .flow/triggers/*.trigger.yaml so the user
@@ -214,6 +223,7 @@ fi
 # emit STATE=disabled.
 echo ""
 echo "### Active Triggers"
+# TRIGGERS_BLOCK_BEGIN
 TRIG_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
 TRIGGERS_ENABLED="false"
 [ -x "$TRIG_HELPER" ] && TRIGGERS_ENABLED=$("$TRIG_HELPER" --default "false" '.flow.triggers.enabled' 2>/dev/null)
@@ -231,7 +241,7 @@ else
       [ -f "$tf" ] || continue
       # [ -L ] symlink defense — matches the reader guards elsewhere.
       [ -L "$tf" ] && { echo "TRIGGER=skipped (symlink rejected): $tf"; continue; }
-      python3 - "$tf" <<'PY' 2>/dev/null
+      TRIG_OUT=$(python3 - "$tf" <<'PY' 2>/dev/null
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
 m = d.get("metadata", {}) or {}
@@ -240,12 +250,23 @@ ttype = (d.get("trigger", {}) or {}).get("type", "?")
 enabled = m.get("enabled", True)
 print(f"TRIGGER=id={tid} type={ttype} enabled={enabled}")
 PY
+      ); TRIG_EXIT=$?
+      # A trigger the reader could not parse is still a registered trigger. With
+      # no line at all it vanished from the section under STATE=ok, which reads
+      # as "this trigger is not registered" — the same silent drop the symlink
+      # arm above refuses, which is why this reports in the same shape.
+      if [ "$TRIG_EXIT" -ne 0 ] || [ -z "$TRIG_OUT" ]; then
+        echo "TRIGGER=skipped (unreadable): $tf"
+      else
+        printf '%s\n' "$TRIG_OUT"
+      fi
     done
   else
     echo "STATE=degraded"
     echo "REASON=python3/PyYAML unavailable — cannot parse trigger yamls"
   fi
 fi
+# TRIGGERS_BLOCK_END
 
 true
 ```
@@ -479,6 +500,8 @@ The complete verbose dashboard (every section):
 |--------|---------|------------|
 | `{run}` | `{verdict}` | {activities} |
 
+`verdict=-` means the run recorded no verdict; `verdict=unreadable` means it recorded one that could not be read. Render them differently — never collapse the second into the first.
+
 ### Active Triggers
 {When STATE=disabled: render "(Triggers v3 not enabled — set `flow.triggers.enabled: true` in `.claude/settings.flow.json` to opt in)"}
 {When STATE=empty: render "No triggers registered."}
@@ -488,6 +511,8 @@ The complete verbose dashboard (every section):
 | Trigger | Type | Enabled |
 |---------|------|---------|
 | `{id}` | `{type}` | {enabled} |
+
+A `TRIGGER=skipped (...): {path}` line is a registered trigger the reader refused or could not parse. Give it its own row with the path in the Trigger column and the reason in place of the type — dropping it would report a registered trigger as one that does not exist.
 
 ### Findings Ledger
 {single line: `P1: {n}[ (annotation)]    P2: {n}[ (annotation)]    P3: {n}[ (annotation)]` — annotations are omitted when count is 0; see render rules below}

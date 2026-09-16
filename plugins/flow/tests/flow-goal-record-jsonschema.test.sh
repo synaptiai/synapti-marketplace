@@ -234,3 +234,52 @@ assert_contains "trust ledger record failed" "$OUT" "stderr notes the ledger fai
 assert_contains "flow-goal-trust.sh record --goal-file .flow/goals/issue-trust-symlink.goal.yaml" "$OUT" "note gives the re-record command"
 assert_contains "symlink" "$OUT" "note carries the underlying reason"
 assert_equal "0" "$(wc -c < "$DIR4/victim.jsonl" | tr -d ' ')" "nothing written through the symlink"
+
+# --- Test 5: an existing goal of the wrong shape is not clobbered
+# The helper refuses to overwrite a goal it cannot read, so that an active
+# goal's contract and evidence history are never lost to a re-create. That
+# refusal covered parse errors only: a file that is valid YAML but not a
+# mapping took neither the status branch nor the except branch, fell through,
+# and was overwritten — the same answer the helper gives when no file exists.
+_flow_test_begin "--create refuses to overwrite a goal that is valid YAML but not a mapping"
+DIR5=$(_fjs_mkdir)
+mkdir -p "$DIR5/.flow/goals" "$DIR5/.flow-state"
+GOAL5="$DIR5/issue-shape.yaml"
+_fjs_write_goal "$GOAL5"
+sed -i.bak 's/issue-jsonschema-test/issue-shape/' "$GOAL5" && rm -f "$GOAL5.bak"
+# The file already on disk is a list, not a mapping.
+printf -- '- not: a goal\n- just: a list\n' > "$DIR5/.flow/goals/issue-shape.goal.yaml"
+BEFORE=$(cat "$DIR5/.flow/goals/issue-shape.goal.yaml")
+OUT=$(cd "$DIR5" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR5/.flow-state" \
+  bash "$HELPER" --create --goal-file "$GOAL5" 2>&1); RC=$?
+assert_exit 2 "$RC" "refuses with the same code as an unreadable goal"
+assert_contains "not a mapping" "$OUT" "and says what is wrong with it"
+assert_equal "$BEFORE" "$(cat "$DIR5/.flow/goals/issue-shape.goal.yaml")" "the file on disk is untouched"
+
+# --- Test 6: a lifecycle that is present but not a mapping blocks the transition
+# Every guard on an update keys off current_status, and the transition table is
+# skipped entirely when it is None. `lifecycle: []` is falsy, so `or {}` made it
+# None — indistinguishable from a goal mid-creation — and any new status was
+# accepted, including a jump straight to achieved with no evaluation behind it.
+_flow_test_begin "--update-lifecycle refuses a goal whose lifecycle is not a mapping"
+DIR6=$(_fjs_mkdir)
+mkdir -p "$DIR6/.flow/goals" "$DIR6/.flow-state"
+_fjs_write_goal "$DIR6/.flow/goals/issue-falsy.goal.yaml"
+python3 - "$DIR6/.flow/goals/issue-falsy.goal.yaml" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+s = s.replace("id: issue-jsonschema-test", "id: issue-falsy")
+s = s.replace("lifecycle:\n  status: draft\n", "lifecycle: []\n")
+open(p, "w", encoding="utf-8").write(s)
+PY
+cat > "$DIR6/frag.yaml" <<'YAML'
+lifecycle:
+  status: achieved
+YAML
+OUT=$(cd "$DIR6" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" FLOW_STATE_DIR="$DIR6/.flow-state" \
+  bash "$HELPER" --update-lifecycle --goal-id issue-falsy --lifecycle-file "$DIR6/frag.yaml" 2>&1); RC=$?
+assert_exit 1 "$RC" "the update is refused"
+assert_contains "not a mapping" "$OUT" "and the reason names the shape"
+assert_not_contains "status: achieved" "$(cat "$DIR6/.flow/goals/issue-falsy.goal.yaml")" \
+  "the goal did not reach achieved without an evaluation"
