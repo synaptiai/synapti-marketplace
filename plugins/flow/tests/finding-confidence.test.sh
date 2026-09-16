@@ -1502,6 +1502,32 @@ JSON
 JSON
   REVIEW_PICK=$(jq -s -r --argjson trust '["OWNER"]' "$REV_FILTER" "$FC_TMP/ledger-reviews.json")
   assert_contains "F1|P2|correctness" "$REVIEW_PICK" "the review marker is selected, not the prose that follows it"
+  # merge.md is one of three implementers of this select. /flow:status and the
+  # reference merge.md cites as canonical must agree, or the gate and the status
+  # report answer differently about the same comment and nothing notices.
+  FC_SELECTS=0
+  for SRC_FILE in "$PLUGIN_DIR/commands/status.md" "$PLUGIN_DIR/references/finding-ledger-parser.md"; do
+    for PAIR in "FLOW_RESOLUTION_CYCLE|$FC_TMP/ledger-comments.json|RESOLVED:[F1,F2]" \
+                "FLOW_REVIEW_CYCLE|$FC_TMP/ledger-reviews.json|F1|P2|correctness"; do
+      MARKER=${PAIR%%|*}
+      REST=${PAIR#*|}
+      FIXTURE=${REST%%|*}
+      WANT=${REST#*|}
+      FILTER=$(grep -m1 "$MARKER.*last | .body" "$SRC_FILE" | sed "s/^ *'//;s/')$//")
+      if [ -z "$FILTER" ]; then
+        _flow_assert_fail "no $MARKER select found in $(basename "$SRC_FILE")"
+        continue
+      fi
+      PICK=$(jq -s -r --argjson trust '["OWNER"]' "$FILTER" "$FIXTURE")
+      assert_contains "$WANT" "$PICK" "$(basename "$SRC_FILE") selects the $MARKER marker, not the prose after it"
+      FC_SELECTS=$((FC_SELECTS + 1))
+    done
+  done
+  assert_equal "4" "$FC_SELECTS" "both selects examined in both of the other implementers"
+  # The seed query previews what the gate will read, so it must not count a
+  # marker the gate drops.
+  SEED_LINE=$(grep -m1 'SEED_COMMENTS=' "$MERGE_MD")
+  assert_contains '<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ ' "$SEED_LINE" "the seed selects the same marker shape as the gate"
 else
   _flow_assert_pass "SKIP: jq not installed"
 fi
