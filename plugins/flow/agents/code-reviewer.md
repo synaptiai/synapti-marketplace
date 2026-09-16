@@ -53,6 +53,17 @@ Only report findings in **Introduced** and **Pre-existing** scope. Never report 
 
 ### Step 4: Review
 
+**Inputs** (from the dispatch; `none` when the caller had no FlowGoal to read):
+
+- `Risk areas:` — one row per risk the specification names,
+  `<area> | <plausible wrong version> | <discriminating check> | <source>`. A row
+  whose `source` is `issue-text` was derived from the issue body rather than
+  written by the team; a finding that rests on such a row says so, so a derived
+  row is never quoted as specification.
+- `Non-goals:` — what the change is not for. Implementing one is `scope` P2.
+- `Interface contracts:` — the shapes the change must honour. Altering one
+  without the specification being updated is `breaking-change` P1.
+
 For each changed file, analyze:
 
 **Logic Correctness**:

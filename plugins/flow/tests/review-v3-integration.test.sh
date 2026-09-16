@@ -207,3 +207,25 @@ STUB_DIFF_FILES=".flow/goals/issue-42.goal.yaml" _rg_run "$RG_REPO" 42
 assert_contains "GOAL_EDITED=yes" "$RG_OUT" "editing the goal under review is reported"
 _rg_run "$RG_REPO" 42
 assert_contains "GOAL_EDITED=no" "$RG_OUT" "a diff that leaves it alone is not"
+
+# --- #213 AC2: the risk map reaches the two places that can check it ----------
+
+_flow_test_begin "holdout-validation is handed risk-map coverage, and the reviewer is handed the rows"
+RG_REVIEW=$(cat "$RG_MD")
+# Every holdout dispatch — both Path A lenses and Path B — must offer the
+# coverage list, or the skill's risk-map step has nothing to read and skips.
+RG_DISPATCHES=$(printf '%s\n' "$RG_REVIEW" | grep -c 'Evidence bundle draft:')
+assert_equal "3" "$RG_DISPATCHES" "three dispatches: two Path A lenses and Path B"
+RG_WITH_COVERAGE=$(printf '%s\n' "$RG_REVIEW" | grep -c 'Evidence bundle draft:.*Risk map coverage')
+assert_equal "3" "$RG_WITH_COVERAGE" "each one hands over the coverage list"
+assert_contains 'area> → <test file:line' "$RG_REVIEW" "the shape of a coverage row is stated"
+assert_contains 'RISK_MAP_SOURCE' "$RG_REVIEW" "and the reviewer is told where the rows came from"
+
+RG_REVIEWER=$(cat "$REPO_ROOT/plugins/flow/agents/code-reviewer.md")
+assert_match 'Risk areas:' "$RG_REVIEWER" "the reviewer names Risk areas"
+assert_contains 'Inputs' "$RG_REVIEWER" "Step 4 states its inputs"
+# The rule at Step 4 already consumes `Risk areas:` rows; the gap was that
+# nothing handed them over, so the rule could never fire.
+RG_STEP4=$(printf '%s\n' "$RG_REVIEWER" | awk '/^### Step 4/ { f = 1 } f && /^### Step 5/ { f = 0 } f')
+assert_contains 'Risk areas:' "$RG_STEP4" "Step 4 names the input"
+assert_contains 'source' "$RG_STEP4" "and says a derived row is marked as derived"

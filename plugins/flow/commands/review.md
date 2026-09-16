@@ -592,13 +592,15 @@ Agent(error-handler-inspector-verifier, model=$AGENT_TEAM_MODEL):
 Skill(holdout-validation):
   Inputs (skeptic lens):
   - Self-review findings: {existing P1/P2/P3 findings}
-  - Evidence bundle draft: {requirements compliance map}
+  - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list when the Phase 1 `### FlowGoal` section reported one: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or `none`. Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
   - File list: {all files changed in this PR}
   - Lens: SKEPTIC — assume claims are unsupported until proven
 
 Skill(holdout-validation):
   Inputs (verifier lens):
-  - Same inputs
+  - Self-review findings: {existing P1/P2/P3 findings}
+  - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list when the Phase 1 `### FlowGoal` section reported one: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or `none`. Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
+  - File list: {all files changed in this PR}
   - Lens: VERIFIER — assume claims are supported; look for missed cross-references
 ```
 
@@ -776,7 +778,15 @@ Path B agents carry no `model` parameter and inherit the session model via front
 Agent(code-reviewer):
   "Review PR #$ARGUMENTS diff for quality, logic, edge cases, security.
    Return P1/P2/P3 findings with file:line and a confidence (HIGH, MEDIUM or LOW) per finding
-   per references/finding-schema.md."
+   per references/finding-schema.md.
+   Risk areas: {one line per `RISK_MAP=` row from the Phase 1 `### FlowGoal`
+   section — `<area> | <plausible wrong version> | <discriminating check> |
+   <source>`; `none` when Phase 1 reported no goal. A row whose source is
+   `issue-text` was derived from the issue body, not written by the team: say so
+   in any finding that rests on it.}
+   Non-goals: {`NON_GOAL=` lines; a change that implements one is `scope` P2.}
+   Interface contracts: {`CONTRACT=` lines; altering one without the
+   specification being updated is `breaking-change` P1.}"
 
 Agent(convention-checker):
   "Validate commits, branch naming, conventions for PR #$ARGUMENTS."
@@ -797,7 +807,7 @@ Agent(security-reviewer):
 Skill(holdout-validation):
   Inputs:
   - Self-review findings: {P1/P2/P3 findings from code-reviewer agent}
-  - Evidence bundle draft: {per-criterion evidence from requirements review}
+  - Evidence bundle draft: {requirements compliance map, plus a `### Risk map coverage` list when the Phase 1 `### FlowGoal` section reported one: `<area> → <test file:line>` per `RISK_MAP=` row, naming the test in this pull request whose input is that row's discriminating check, or `none`. Carry `RISK_MAP_SOURCE` with it, so a row derived from the issue text is never read as one the team wrote. Without it the skill's risk-map step has nothing to read and skips silently.}
   - File list: {all files changed in this PR}
 ```
 
