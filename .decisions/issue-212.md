@@ -676,3 +676,27 @@ Suite at the fix: 3511 pass / 0 fail, root 11 of 11.
 <!-- auto-log: 2026-09-16 06:14 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_marker_guard_drift.md -->
 
 <!-- auto-log: 2026-09-16 06:17 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle3b.py -->
+
+<!-- auto-log: 2026-09-16 06:22 commit "fix(flow): keep every implementer of the marker select in step" -->
+
+<!-- auto-log: 2026-09-16 06:27 commit "test(flow): the seed assertion follows the gate's marker shape" -->
+
+<!-- auto-log: 2026-09-16 08:42 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/add_select_test.py -->
+
+<!-- auto-log: 2026-09-16 08:44 commit "test(flow): observe the marker select in all four implementers" -->
+
+<!-- auto-log: 2026-09-16 08:53 commit "test(flow): both seed selects must carry the gate's marker shape" -->
+
+<!-- auto-log: 2026-09-16 09:42 commit "test(flow): both seed selects must carry the gate's marker shape" -->
+
+<!-- auto-log: 2026-09-16 09:43 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 09:43 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 09:47 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ql_race.sh -->
+
+<!-- auto-log: 2026-09-16 09:50 commit "test(flow): both seed selects must carry the gate's marker shape" -->
+
+<!-- auto-log: 2026-09-16 09:50 commit "test(flow): both seed selects must carry the gate's marker shape" -->
+
+<!-- auto-log: 2026-09-16 11:01 commit "fix(flow): preserve the index mtime when seeding the digest index" -->
