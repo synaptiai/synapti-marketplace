@@ -39,19 +39,33 @@ CONTENT=$(printf '%s' "$INPUT" | jq -r '
 
 HITS=""
 check() { # class | regex
-  if printf '%s' "$CONTENT" | grep -qE "$2" 2>/dev/null; then
+  # `--` is required, not decorative: private-key-block's own pattern starts
+  # with a literal '-----BEGIN...', and without `--` grep parses it as an
+  # (unrecognized) option instead of a pattern, exits 2, and the `if` reads
+  # that as "no match" -- silently never blocking a private key. Mirrors
+  # dossier-claim-scan.sh's cred_match_class(), which documents the same
+  # requirement for the same reason.
+  if printf '%s' "$CONTENT" | grep -qE -- "$2" 2>/dev/null; then
     HITS="$HITS
   - $1"
   fi
 }
 
+# aws-access-key, private-key-block, and connection-string are kept
+# pattern-identical to dossier-claim-scan.sh's CRED_PATTERNS entries of the
+# same name (issues #198, #210), not just tolerance-equivalent. A prior,
+# documented bug (see the CRED_PATTERNS comment in dossier-claim-scan.sh)
+# came from this exact kind of drift: this live pre-write hook and the batch
+# scanner disagreeing on the same credential's shape, so one path redacted a
+# match the other never even flagged. Do not hand-tune these three here --
+# copy the fix from dossier-claim-scan.sh's CRED_PATTERNS array verbatim.
 check "anthropic-key"        'sk-ant-[A-Za-z0-9_-]{8,}'
 check "github-token"         '(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{16,}'
-check "aws-access-key"       'AKIA[0-9A-Z]{16}'
+check "aws-access-key"       'AKIA[ |,]?([0-9A-Z][ |,]?){16}'
 check "slack-token"          'xox[baprs]-[A-Za-z0-9-]{10,}'
-check "private-key-block"    'BEGIN [A-Z ]*PRIVATE KEY'
-check "bearer-token"         'Bearer[[:space:]]+[A-Za-z0-9._-]{20,}'
-check "connection-string"    '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[^[:space:]@]+@'
+check "private-key-block"    '-----BEGIN[ |,]?[A-Z ,|]*P[ |,]?R[ |,]?I[ |,]?V[ |,]?A[ |,]?T[ |,]?E[ |,]?[[:space:]][ |,]?K[ |,]?E[ |,]?Y[ |,]?-----'
+check "bearer-token"         '(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}'
+check "connection-string"    '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[ |,]?([^[:space:]@|,][ |,]?)+@'
 check "secret-assignment"    '(api[_-]?key|secret|password|passwd|token|credential)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9/_+=-]{12,}'
 check "internal-register-id" '\b(EV|AQ|CT|CL|TM)-[0-9]{4,}\b'
 # disclosure-policy-levels.md names internal repository paths alongside register
