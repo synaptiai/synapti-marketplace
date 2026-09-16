@@ -282,12 +282,13 @@ case "$1 $2" in
     # Answer in the shape the caller asked for: `--json number` alone yields the
     # number, `number,headRefName` yields both, the way gh's --jq would.
     case "$*" in
+      *isCrossRepository*) __fmt='%s %s %s\n' ;;
       *headRefName*) __fmt='%s %s\n' ;;
       *) __fmt='%s\n' ;;
     esac
     case "$__head" in
-      "") printf "$__fmt" "${STUB_FIRST_OPEN_PR:-999}" "${STUB_FIRST_OPEN_BRANCH:-someone-elses-branch}" ;;
-      "${STUB_BRANCH:-fix/issue-42-x}") printf "$__fmt" "${STUB_PR_NUMBER:-55}" "${STUB_ANSWER_HEAD-$__head}" ;;
+      "") printf "$__fmt" "${STUB_FIRST_OPEN_PR:-999}" "${STUB_FIRST_OPEN_BRANCH:-someone-elses-branch}" "${STUB_FORK:-false}" ;;
+      "${STUB_BRANCH:-fix/issue-42-x}") printf "$__fmt" "${STUB_PR_NUMBER:-55}" "${STUB_ANSWER_HEAD-$__head}" "${STUB_FORK:-false}" ;;
       *) ;;
     esac
     exit 0 ;;
@@ -760,6 +761,13 @@ rm -f "$FC_TMP/gh-list.log"
   bash "$FC_TMP/pr-manifest-c2.sh" >/dev/null 2>"$FC_TMP/pm.err"); PM_CODE=$?
 assert_exit 1 "$PM_CODE" "a pull request whose head is another branch is refused"
 assert_contains "someone-elses-branch" "$(cat "$FC_TMP/pm.err")" "the message names the head that came back"
+# A fork pull request carries the same head branch name, so the head check alone
+# cannot tell them apart.
+(cd "$FC_TMP/manifest-branch" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  GH_LIST_LOG=/dev/null STUB_CLOSING="$(_fc_closing 42)" STUB_BRANCH="fix/issue-42-x" STUB_FORK=true \
+  BRANCH="fix/issue-42-x" TOTAL_FINDINGS=1 REFUTED="" bash "$FC_TMP/pr-manifest-c2.sh" >/dev/null 2>"$FC_TMP/pm.err"); PM_CODE=$?
+assert_exit 1 "$PM_CODE" "a fork pull request with the same branch name is refused"
+assert_contains "fork" "$(cat "$FC_TMP/pm.err")" "the message says why"
 
 _flow_test_begin "the PR manifest fails when the journal record fails (cycle 2)"
 # A failing recorder must not be swallowed by the REFUTED loop that follows it.
@@ -1214,6 +1222,28 @@ for BAD_CYCLE in '' 0 '2a'; do
   FC_RES_CYCLE="$BAD_CYCLE" _fc_resolution "Resolved: F1. <!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->" 0
   assert_exit 1 "$RES_CODE" "cycle '$BAD_CYCLE' refused"
 done
+# The guard's predicate must be the consumer's: the merge gate selects on the
+# HTML-comment marker, so a body carrying the bare token is invisible to it.
+_fc_resolution "Resolved F1. FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[]"
+assert_exit 1 "$RES_CODE" "the bare token without the comment wrapper is refused"
+assert_equal "" "$RES_GH" "gh not called"
+_fc_resolution "Resolved F1.
+
+<!--FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[]-->"
+assert_exit 1 "$RES_CODE" "a marker the gate's pattern does not match is refused"
+# Occurrences, not lines: a second rendering on the same line counts.
+_fc_resolution "Reviewer asked about F2 as well: RESOLVED:[F1,F2] — see the marker. <!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->"
+assert_exit 1 "$RES_CODE" "two renderings on one line are refused"
+assert_contains "2 times" "$RES_ERR" "the message counts them"
+# Each array leg is checked, not only RESOLVED.
+_fc_resolution "Nothing needed escalating, so ESCALATED:[F9] from cycle 1 is closed.
+
+<!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F9] ESCALATED:[] DISPUTED:[] -->"
+assert_exit 1 "$RES_CODE" "a second ESCALATED rendering is refused"
+_fc_resolution "Nothing disputed, DISPUTED:[F8] was cycle 1.
+
+<!-- FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F9] ESCALATED:[] DISPUTED:[] -->"
+assert_exit 1 "$RES_CODE" "a second DISPUTED rendering is refused"
 # A cycle number that is not a positive integer is refused even when the body
 # carries a marker that matches it literally.
 FC_RES_CYCLE=0 _fc_resolution "Resolved: F1. <!-- FLOW_RESOLUTION_CYCLE:0 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->" 0
@@ -1470,6 +1500,37 @@ else
   _flow_assert_pass "SKIP: jq not installed"
 fi
 
+_flow_test_begin "the stranger-test emit runs, and refuses what it says it refuses (cycle 3)"
+_fc_block "STRANGER_TEST_EMIT_BLOCK" "$PLUGIN_DIR/commands/start.md" > "$FC_TMP/stranger-emit.sh"
+assert_match '[^[:space:]]' "$(cat "$FC_TMP/stranger-emit.sh")" "stranger-test emit extracted"
+mkdir -p "$FC_TMP/stranger"
+# _fc_stranger <TASK_COUNT> [GATE_RESULT] — sets ST_CODE.
+_fc_stranger() {
+  (cd "$FC_TMP/stranger" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+    ISSUE_NUM=42 GATE_RESULT="${2:-PASS}" TASK_COUNT="$1" bash "$FC_TMP/stranger-emit.sh" >/dev/null 2>&1)
+  ST_CODE=$?
+}
+_fc_stranger '3 --issue 9'
+assert_exit 1 "$ST_CODE" "a task count carrying a second --issue is refused"
+assert_equal "" "$(ls "$FC_TMP/stranger/.decisions" 2>/dev/null | grep -v '\.lock$')" "nothing recorded"
+_fc_stranger 'two'
+assert_exit 1 "$ST_CODE" "a non-numeric task count is refused"
+_fc_stranger ''
+assert_exit 1 "$ST_CODE" "an unset task count is refused"
+_fc_stranger '3' 'MAYBE'
+assert_exit 1 "$ST_CODE" "an invalid gate result is refused"
+_fc_stranger '3'
+assert_exit 0 "$ST_CODE" "a valid pair records"
+assert_file_exists "$FC_TMP/stranger/.decisions/issue-42.md" "recorded against the issue"
+assert_equal "type=stranger-test result=PASS task_count=3" \
+  "$(python3 - "$FC_TMP/stranger/.decisions/issue-42.md" <<'PY'
+import sys, yaml
+c = open(sys.argv[1]).read()
+a = yaml.safe_load(c[4:c.find("\n---\n", 4)])["artifacts"][-1]
+print("type={} result={} task_count={!r}".format(a["type"], a["result"], a["task_count"]).replace("'", ""))
+PY
+)" "the count lands as a number, not a split argument"
+
 _flow_test_begin "the stranger-test emit validates and quotes its values (cycle 2)"
 START_MD=$(cat "$PLUGIN_DIR/commands/start.md")
 assert_contains 'TASK_COUNT must be the number of tasks reviewed' "$START_MD" "the task count is validated"
@@ -1485,14 +1546,23 @@ _flow_test_begin "sweep: no metadata argument carries an unquoted alternation"
 _fc_placeholder_sweep() {
   local files hits
   files=$(find "$1" -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
-  hits=$(grep -rnE -- '--metadata +"?[a-z_]+=\{[^}]*\|' "$1" --include='*.md' 2>/dev/null | wc -l | tr -d ' ')
+  # Two shapes: a brace alternation (the `|` is a shell pipe) and a bare `$VAR`
+  # (it word-splits, and journal-record.sh takes the last --issue it is given).
+  # Two shapes fire: a brace alternation (the `|` is a shell pipe) and a bare
+  # `$VAR` with no quote after the `=` (it word-splits, and journal-record.sh
+  # takes the last --issue it is given). `key="$VAR"` and `"key=$VAR"` are safe.
+  hits=$(grep -rnE -- '--metadata +("?[a-z_]+=\{[^}]*\||[a-z_]+=\$)' "$1" --include='*.md' 2>/dev/null | wc -l | tr -d ' ')
   printf 'FILES=%s HITS=%s' "$files" "$hits"
 }
-assert_equal "FILES=1 HITS=2" "$(_fc_placeholder_sweep "$FC_FIXTURES/placeholder-sweep-fire")" "fires on both planted placeholders"
+assert_equal "FILES=1 HITS=4" "$(_fc_placeholder_sweep "$FC_FIXTURES/placeholder-sweep-fire")" "fires on both shapes: brace alternations and bare variables"
 assert_equal "FILES=1 HITS=0" "$(_fc_placeholder_sweep "$FC_FIXTURES/placeholder-sweep-silent")" "silent on quoted values and on prose"
 FC_PLACEHOLDERS=$(_fc_placeholder_sweep "$PLUGIN_DIR/commands")
 assert_match '^FILES=([2-9][0-9]|[1-9][0-9][0-9]) ' "$FC_PLACEHOLDERS" "the command directory was examined"
-assert_contains "HITS=0" "$FC_PLACEHOLDERS" "no command records an unquoted alternation"
+assert_contains "HITS=0" "$FC_PLACEHOLDERS" "no command records an unquoted value"
+# The references are copy sources for the next caller, so they are swept too.
+FC_PLACEHOLDERS_REF=$(_fc_placeholder_sweep "$PLUGIN_DIR/references")
+assert_match '^FILES=[1-9]' "$FC_PLACEHOLDERS_REF" "the references directory was examined"
+assert_contains "HITS=0" "$FC_PLACEHOLDERS_REF" "no reference template shows an unquoted value"
 
 _flow_test_begin "sweep: no command parses an issue number out of pull request text"
 # _fc_lookup_sweep <dir> — prints FILES=<examined> HITS=<lines that grep a
@@ -1509,6 +1579,16 @@ assert_equal "FILES=0 HITS=0" "$(_fc_lookup_sweep "$FC_TMP/no-such-dir")" "an em
 FC_LOOKUP=$(_fc_lookup_sweep "$PLUGIN_DIR/commands")
 assert_match '^FILES=([2-9][0-9]|[1-9][0-9][0-9]) ' "$FC_LOOKUP" "the command directory was examined"
 assert_contains "HITS=0" "$FC_LOOKUP" "no command greps an issue number out of text"
+
+_flow_test_begin "real template: a body rendered from resolution-comment.md passes the resolution guard"
+awk '
+  { gsub(/\{N\}/, "1"); gsub(/\{F1\}/, "F1"); gsub(/\{F2\}/, "F2"); gsub(/\{F3\}/, "F3") }
+  /^\{/ { next }
+  { print }
+' "$TEMPLATES/resolution-comment.md" > "$FC_TMP/rendered-resolution.md"
+assert_contains "FLOW_RESOLUTION_CYCLE:1 RESOLVED:[F1,F2]" "$(cat "$FC_TMP/rendered-resolution.md")" "rendered the marker"
+_fc_resolution "$(cat "$FC_TMP/rendered-resolution.md")"
+assert_exit 0 "$RES_CODE" "the shipped template passes the guard it must pass: $RES_ERR"
 
 _flow_test_begin "real template: a body rendered from self-review-comment.md posts through the block"
 # The self-review path posts through the same block. Its template carries

@@ -472,6 +472,39 @@ call, so the block exited at an earlier guard.
 
 Suite at the fix: 3489 pass / 0 fail, root 11 of 11, shellcheck clean.
 
+
+## /flow:review cycle 3 (PR #230, at a31cf08)
+
+P1: 0, P2: 5, P3: 7 — all fixed. Cycle 2's five findings were verified closed with tests observing
+them. The new findings are one shape, stated by the error-handling pass: **a guard that validates a
+weaker predicate than the consumer it protects.**
+
+- The resolution guard greped the bare token while `commands/merge.md` selects
+  `<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ `. A body carrying the token without the comment wrapper, or
+  `<!--FLOW_...` with no space, passed the guard and was invisible to the gate — the merge false-block
+  the emission exists to prevent, one notch weaker than before the cycle-2 fix. The guard now matches
+  the marker shape the gate selects.
+- The same guard counted renderings with `grep -c`, which counts lines: two renderings on one line
+  passed, and the gate unions every rendering, so ids nobody resolved would read as resolved. It
+  counts occurrences now — the same mutation the suite already kills in the posting block.
+- `references/finding-ledger-parser.md` (the normative parser `merge.md` cites) and `commands/status.md`
+  still specified the loose filter, so the three consumers disagreed on the same fixture: merge read
+  the marker, the reference and `/flow:status` read the trailing prose comment and found nothing.
+- `gh pr list --head` matches head branches across forks and a fork pull request has the same
+  `headRefName`, so cycle 2's head check could not tell them apart; the query asks for
+  `isCrossRepository` now and refuses a fork.
+- The placeholder sweep this branch added matched only brace alternations, never `=$VAR` — so the
+  suite reported the class swept while three instances sat under it (`start.md` prose, `brainstorm.md`
+  in a live fence, and the run-state template a future caller copies). The sweep sees both shapes
+  now, runs over `references/` as well, and the three instances are quoted.
+- The two `start.md` emits were prose nothing executed; they have block markers, validate `ISSUE_NUM`,
+  guard the resolver, and are run by the suite against `3`, `two`, `''` and `3 --issue 9`.
+
+Also: the "renders more than once" message fired on zero renderings, and printed the regex escape
+`\[` at the reader. Zero and many are separate messages now.
+
+Suite at the fix: 3511 pass / 0 fail, root 11 of 11.
+
 <!-- auto-log: 2026-09-16 00:17 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-pr-linked-issue.test.sh -->
 
 <!-- auto-log: 2026-09-16 00:19 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests.py -->
@@ -615,3 +648,23 @@ Suite at the fix: 3489 pass / 0 fail, root 11 of 11, shellcheck clean.
 <!-- auto-log: 2026-09-16 04:59 commit "fix(flow): validate the values that select what gets recorded" -->
 
 <!-- auto-log: 2026-09-16 05:09 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_survivor_tests.py -->
+
+<!-- auto-log: 2026-09-16 05:36 commit "test(flow): observe the guards the mutation run showed unobserved" -->
+
+<!-- auto-log: 2026-09-16 06:00 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_marker_guard_drift.md -->
+
+<!-- auto-log: 2026-09-16 06:00 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 06:00 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/c3/findings-notes.txt -->
+
+<!-- auto-log: 2026-09-16 06:02 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 06:02 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 06:02 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 06:02 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 06:05 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle3.py -->
+
+<!-- auto-log: 2026-09-16 06:06 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle3_tests.py -->

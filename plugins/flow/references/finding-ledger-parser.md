@@ -114,7 +114,7 @@ PR_NUM=42
 # the consumer from plugin settings.
 REVIEW_BODY=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" \
   | jq -s -r --argjson trust "$TRUST_LIST" \
-      'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_REVIEW_CYCLE:")))] | last | .body // ""')
+      'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")))] | last | .body // ""')
 # Portable extraction (POSIX grep + sed — works on BSD/macOS and GNU/Linux).
 # Avoids `grep -P` / `\K` which BSD grep does not support.
 # Empty input + grep no-match still produces empty stdout (sed exits 0 on empty),
@@ -128,7 +128,7 @@ FINDINGS_RAW=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FIND
 ```bash
 RESOLUTION_BODY=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" \
   | jq -s -r --argjson trust "$TRUST_LIST" \
-      'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("FLOW_RESOLUTION_CYCLE:")))] | last | .body // ""')
+      'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ ")))] | last | .body // ""')
 
 # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match the
 # `,F1,` containment check used in classification.

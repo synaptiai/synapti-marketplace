@@ -391,14 +391,19 @@ After agents return, TaskUpdate each review task with findings.
     # filter and answers with the first open pull request in the repository,
     # and `git branch --show-current` prints nothing on a detached HEAD.
     [ -n "${BRANCH:-}" ] || { echo "ERROR: BRANCH is not set; refusing to pick a pull request by an empty head filter" >&2; exit 1; }
-    PR_LINE=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number,headRefName --jq '.[0] | "\(.number) \(.headRefName)"') || { echo "ERROR: cannot read the pull request for $BRANCH" >&2; exit 1; }
+    # `--head` matches the branch name across forks, and a fork pull request has
+    # the same headRefName, so ask for isCrossRepository too and refuse it.
+    PR_LINE=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number,headRefName,isCrossRepository --jq '.[0] | "\(.number) \(.headRefName) \(.isCrossRepository)"') || { echo "ERROR: cannot read the pull request for $BRANCH" >&2; exit 1; }
     PR_NUMBER=${PR_LINE%% *}
-    PR_HEAD=${PR_LINE#* }
+    PR_REST=${PR_LINE#* }
+    PR_HEAD=${PR_REST%% *}
+    PR_FORK=${PR_REST##* }
     case "$PR_NUMBER" in
       ''|0*|*[!0-9]*) echo "ERROR: no open pull request for branch '$BRANCH'; refusing to record" >&2; exit 1 ;;
     esac
     # gh answered: confirm it answered about this branch and not another.
     [ "$PR_HEAD" = "$BRANCH" ] || { echo "ERROR: pull request $PR_NUMBER has head '$PR_HEAD', not '$BRANCH'; refusing to record" >&2; exit 1; }
+    [ "$PR_FORK" = false ] || { echo "ERROR: pull request $PR_NUMBER comes from a fork with the same branch name; refusing to record against it" >&2; exit 1; }
     case "${TOTAL_FINDINGS:-}" in
       ''|*[!0-9]*|0?*) echo "ERROR: TOTAL_FINDINGS must be a count, got '${TOTAL_FINDINGS:-}'; refusing to record" >&2; exit 1 ;;
     esac

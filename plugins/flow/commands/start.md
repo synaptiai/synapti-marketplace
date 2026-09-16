@@ -572,6 +572,7 @@ Record the Stranger Test result to `.decisions/issue-$ISSUE_NUM.md` under a `## 
 **Manifest emit** — append the stranger-test artifact (alongside the freeform `## Stranger Test` section) so the manifest captures the gate's outcome. Set `GATE_RESULT` to `PASS` or `BLOCK` first: it is a value the block validates, not a placeholder to edit in place, because an unquoted `{PASS|BLOCK}` makes the metadata argument a shell pipeline.
 
 ```bash
+# STRANGER_TEST_EMIT_BLOCK_BEGIN
 case "${GATE_RESULT:-}" in
   PASS|BLOCK) ;;
   *) echo "ERROR: GATE_RESULT must be PASS or BLOCK, got '${GATE_RESULT:-}'" >&2; exit 1 ;;
@@ -579,11 +580,17 @@ esac
 case "${TASK_COUNT:-}" in
   ''|*[!0-9]*) echo "ERROR: TASK_COUNT must be the number of tasks reviewed, got '${TASK_COUNT:-}'" >&2; exit 1 ;;
 esac
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
+case "${ISSUE_NUM:-}" in
+  ''|0*|*[!0-9]*) echo "ERROR: ISSUE_NUM must be a positive integer, got '${ISSUE_NUM:-}'" >&2; exit 1 ;;
+esac
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+[ -x "$FLOW_ROOT/bin/journal-record.sh" ] || { echo "ERROR: journal-record.sh not found; the flow plugin root did not resolve" >&2; exit 1; }
+"$FLOW_ROOT/bin/journal-record.sh" \
   --issue "$ISSUE_NUM" \
   --type stranger-test \
   --metadata result="$GATE_RESULT" \
   --metadata task_count="$TASK_COUNT"
+# STRANGER_TEST_EMIT_BLOCK_END
 ```
 
 Set `TASK_COUNT` to the number of tasks reviewed before running the block; it is validated like `GATE_RESULT`, because an unquoted value word-splits into stray arguments and `journal-record.sh` takes the last `--issue` it is given. Add `--metadata failed_task="$TASK_ID"` when result is BLOCK (the task ID that failed the gate, so downstream readers can locate the offending task without re-parsing the body).
@@ -739,17 +746,24 @@ Prove everything works with fix-forward:
    **Manifest emit** — record the verdict artifact after the verdict-judge returns (and any fix-loop iterations have settled). Set `VERDICT_RESULT` to the judge's overall verdict first, for the same reason.
 
    ```bash
+   # VERDICT_EMIT_BLOCK_BEGIN
    case "${VERDICT_RESULT:-}" in
      PASS|FAIL|NEEDS-HUMAN-REVIEW) ;;
      *) echo "ERROR: VERDICT_RESULT must be PASS, FAIL or NEEDS-HUMAN-REVIEW, got '${VERDICT_RESULT:-}'" >&2; exit 1 ;;
    esac
-   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
+   case "${ISSUE_NUM:-}" in
+     ''|0*|*[!0-9]*) echo "ERROR: ISSUE_NUM must be a positive integer, got '${ISSUE_NUM:-}'" >&2; exit 1 ;;
+   esac
+   FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+   [ -x "$FLOW_ROOT/bin/journal-record.sh" ] || { echo "ERROR: journal-record.sh not found; the flow plugin root did not resolve" >&2; exit 1; }
+   "$FLOW_ROOT/bin/journal-record.sh" \
      --issue "$ISSUE_NUM" \
      --type verdict \
      --metadata result="$VERDICT_RESULT"
+   # VERDICT_EMIT_BLOCK_END
    ```
 
-   Add `--metadata pr=$PR_NUMBER` when a PR exists (Phase 4 may run before or after PR creation depending on the workflow). When the verdict is FAIL after the fix loop exhausted iterations, add `--metadata failures=criterion-1,criterion-2` listing the criteria that did not converge — the manifest then carries enough context for `/flow:status` to surface the open verdicts without re-running the judge.
+   Add `--metadata pr="$PR_NUMBER"` when a PR exists (Phase 4 may run before or after PR creation depending on the workflow). When the verdict is FAIL after the fix loop exhausted iterations, add `--metadata failures=criterion-1,criterion-2` listing the criteria that did not converge — the manifest then carries enough context for `/flow:status` to surface the open verdicts without re-running the judge.
 
 7. **TaskList** — confirm all tasks show status: completed
 8. **Visual verification** — when UI-relevant changes detected (changed `.tsx`/`.jsx`/`.vue`/`.html`/`.css`/`.scss`/`.svelte` files OR acceptance criteria mention UI/page/render/display/visual/layout/responsive/component/style):

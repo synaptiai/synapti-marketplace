@@ -1103,19 +1103,28 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
    case "${CYCLE_NUMBER:-}" in
      ''|0*|*[!0-9]*) echo "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to post a resolution marker" >&2; exit 1 ;;
    esac
-   # "Marker-less" is the condition the message names, so test it: the merge
-   # gate reads RESOLVED and ESCALATED out of this comment, and a body without
-   # the marker leaves every fix-forwarded finding reading unresolved.
-   RES_MARKERS=$(grep -c "FLOW_RESOLUTION_CYCLE:$CYCLE_NUMBER RESOLVED:\[" <<<"$RES_BODY")
+   # "Marker-less" is the condition the message names, so test it — and test it
+   # with the predicate the consumer uses, not a looser one. The merge gate
+   # selects this comment with `test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ ")`
+   # (`commands/merge.md`), so a body carrying the bare token, or the marker
+   # without the HTML comment around it, is invisible to the gate and leaves
+   # every fix-forwarded finding reading unresolved.
+   RES_MARKERS=$(grep -oE "<!-- FLOW_RESOLUTION_CYCLE:$CYCLE_NUMBER RESOLVED:\[[^]]*\] ESCALATED:\[[^]]*\] DISPUTED:\[[^]]*\] -->" <<<"$RES_BODY" | wc -l | tr -d ' ')
    if [ "$RES_MARKERS" != 1 ]; then
-     echo "ERROR: the resolution body carries $RES_MARKERS FLOW_RESOLUTION_CYCLE:$CYCLE_NUMBER markers; the merge gate reads RESOLVED only from exactly one" >&2
+     echo "ERROR: the resolution body carries $RES_MARKERS markers of the shape the merge gate selects; it needs exactly one: <!-- FLOW_RESOLUTION_CYCLE:$CYCLE_NUMBER RESOLVED:[...] ESCALATED:[...] DISPUTED:[...] -->" >&2
      exit 1
    fi
-   # The gate reads the arrays with a plain grep over the whole comment, so a
-   # second rendering in prose would be read instead of the marker's.
-   for __array in 'RESOLVED:\[' 'ESCALATED:\[' 'DISPUTED:\['; do
-     if [ "$(grep -c "$__array" <<<"$RES_BODY")" != 1 ]; then
-       echo "ERROR: the resolution body renders $__array more than once; the merge gate cannot tell which is the marker's — reword the prose (for example with a space before the bracket)" >&2
+   # The gate greps the arrays out of the whole comment and unions what it
+   # finds, so a second rendering anywhere — including later on the same line —
+   # adds ids nobody resolved. Count occurrences, not lines.
+   for __array in 'RESOLVED:[' 'ESCALATED:[' 'DISPUTED:['; do
+     __rendered=$(grep -oF "$__array" <<<"$RES_BODY" | wc -l | tr -d ' ')
+     if [ "$__rendered" = 0 ]; then
+       echo "ERROR: the resolution body does not render $__array at all; the merge gate reads all three arrays out of this comment" >&2
+       exit 1
+     fi
+     if [ "$__rendered" != 1 ]; then
+       echo "ERROR: the resolution body renders $__array $__rendered times; the merge gate unions every rendering, so ids nobody resolved would read as resolved — reword the prose (for example with a space before the bracket)" >&2
        exit 1
      fi
    done
