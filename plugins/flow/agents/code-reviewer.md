@@ -51,14 +51,23 @@ what failed is the review, not necessarily the code. Report it as `tests` P2 nam
 With no LSP at all, say `grep` and give the Grep count — an honest smaller claim.
 
 **Blast radius.** Some changes are to something other code depends on. Run
-`bin/flow-contract-files.sh` over the changed paths (`git -c core.quotePath=off diff --name-only
-<base>...HEAD | bin/flow-contract-files.sh` — without that flag git quotes any non-ASCII path and the
-helper is handed `"api/sch\303\251ma.graphql"`); it names each contract file and its kind — `openapi`, `graphql`,
+`bin/flow-contract-files.sh` over the changed paths. You run with the working directory set to the
+project under review, not to the plugin, so resolve the plugin root the way every other agent does
+and keep `core.quotePath=off` — without it git quotes any non-ASCII path and the helper is handed
+`"api/sch\303\251ma.graphql"`:
+
+```bash
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+git -c core.quotePath=off diff --name-only <base>...HEAD | "$FLOW_ROOT/bin/flow-contract-files.sh"
+```
+
+A listing that fails is not the same as a diff with no contract in it: the helper exits 1 for both,
+so check that `git diff` itself succeeded before reporting no contract change; it names each contract file and its kind — `openapi`, `graphql`,
 `protobuf`, `migration`, `schema`, `goal-contract` — by path and extension, and says nothing about
 ordinary source. A changed exported signature counts too, and so does a symbol named in the goal's
 `Interface contracts:` input.
 
-When any of those changed, the review body carries a `#### Blast radius` section listing every
+When any of those changed, the external review body carries a `#### Blast radius` section listing every
 consumer you found, and each consumer either appears in the diff or earns a `breaking-change` P1
 finding citing the consumer's `file:line`. List the consumers you actually traced and say which tool
 found them; do not imply a complete list when the trace was a Grep.
@@ -149,6 +158,9 @@ When a finding needs a paragraph of context (e.g., to explain a trade-off the su
 
 ### Summary
 - Files reviewed: {N}
+- callers examined: {N} ({findReferences | incomingCalls | grep}) — one line per modified exported
+  or public symbol, per Step 2b. A run that traced every caller and a run that traced none look
+  identical without it
 - Total findings: P1: {X}, P2: {Y}, P3: {Z}
 - Recommendation: {APPROVE | COMMENT | REQUEST_CHANGES}
 ```

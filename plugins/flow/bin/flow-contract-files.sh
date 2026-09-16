@@ -25,6 +25,9 @@
 #
 # Output: one line per contract file, in input order:
 #   CONTRACT_FILE=<path>|<kind>
+# A path is author-controlled and may contain the field separator or a line
+# break, so a literal `|` is written `%7C` and any line break becomes a space —
+# otherwise a crafted filename forges a second row, or splits the kind field.
 # kind is one of: openapi, graphql, protobuf, migration, schema, goal-contract.
 #
 # Exits:
@@ -104,12 +107,20 @@ unquote_path() {
   printf '%s' "$p"
 }
 
+# Make a value safe to print on one pipe-delimited line.
+one_line() {
+  local s="$1"
+  s=${s//|/%7C}
+  s=$(printf '%s' "$s" | tr '\r\n\v\f' '    ')
+  printf '%s' "$s"
+}
+
 emit() {
   local p="$1" k
   [ -n "$p" ] || return 0
   p=$(unquote_path "$p")
   if k=$(kind_of "$p"); then
-    printf 'CONTRACT_FILE=%s|%s\n' "$p" "$k"
+    printf 'CONTRACT_FILE=%s|%s\n' "$(one_line "$p")" "$k"
     FOUND=1
   fi
 }

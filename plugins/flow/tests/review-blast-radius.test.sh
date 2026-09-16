@@ -91,7 +91,35 @@ BR_QUOTED_TAB=$(printf '%s\n' '"db/migrations/001\tadd.sql"' | "$HELPER")
 assert_contains 'migration' "$BR_QUOTED_TAB" "a quoted tab is decoded too"
 # The reliable fix is at the caller, so the instruction has to be there as well.
 assert_contains 'core.quotePath' "$BR_REVIEWER_SRC" "the documented pipeline turns path quoting off"
+assert_contains 'CLAUDE_PLUGIN_ROOT' "$BR_REVIEWER_SRC" \
+  "and the helper is found by resolving the plugin root, not by assuming the working directory"
+assert_contains 'A listing that fails is not the same as a diff with no contract in it' "$BR_REVIEWER_SRC" \
+  "and a failed listing is not reported as no contract change"
 assert_match 'git -c core\.quotePath=off diff' "$BR_REVIEWER_SRC" "with the flag written out"
+
+_flow_test_begin "contract-file detection: paths as arguments work like paths on stdin"
+# The header documents both. Deleting the whole argv branch left every assertion
+# passing, because every case piped its paths in.
+BR_ARGV=$("$HELPER" "src/app.ts" "api/service.proto" "db/migrations/001_add_users.sql")
+assert_equal "2" "$(printf '%s\n' "$BR_ARGV" | grep -c '^CONTRACT_FILE=')" "two of three arguments are contracts"
+assert_contains "api/service.proto|protobuf" "$BR_ARGV" "the proto is named"
+assert_contains "db/migrations/001_add_users.sql|migration" "$BR_ARGV" "and the migration"
+"$HELPER" "api/service.proto" >/dev/null 2>&1
+assert_exit 0 "$?" "a contract among the arguments is exit 0"
+"$HELPER" "src/app.ts" "README.md" >/dev/null 2>&1
+assert_exit 1 "$?" "no contract among the arguments is exit 1"
+
+_flow_test_begin "contract-file detection: a crafted path cannot forge a row"
+# The path comes from the pull request. A newline in it would print a second
+# CONTRACT_FILE line the reviewer reads as another contract; a literal pipe
+# would split the kind field. The goal reader encodes both, and so does this.
+BR_FORGE=$(printf '%s\n' '"api/x\nCONTRACT_FILE=forged|openapi\ny.graphql"' | "$HELPER")
+assert_equal "1" "$(printf '%s\n' "$BR_FORGE" | grep -c '^CONTRACT_FILE=')" \
+  "a newline in a path does not become a second row"
+assert_not_contains "CONTRACT_FILE=forged|openapi" "$BR_FORGE" "and the forged row is not produced"
+BR_PIPE=$(printf '%s\n' 'api/a|b.graphql' | "$HELPER")
+assert_equal "CONTRACT_FILE=api/a%7Cb.graphql|graphql" "$BR_PIPE" \
+  "a pipe in a path is escaped, so the kind field stays the kind field"
 
 _flow_test_begin "contract-file detection: no input is a usage error, not a wait"
 # With no arguments and a terminal on stdin the script would block on read with
@@ -125,6 +153,11 @@ assert_contains 'breaking-change' "$BR_STEP2B" "with the finding category to use
 assert_contains 'Cross-repository' "$BR_STEP2B" "cross-repository consumers are out of scope"
 
 _flow_test_begin "the review body and the finding vocabulary carry the new section and category"
+# Step 2b requires the section of any review that finds a contract change, and
+# a self-review is a review: without the section there, the requirement has
+# nowhere to land on the path /flow:pr uses.
+BR_SELF=$(cat "$REPO_ROOT/plugins/flow/templates/self-review-comment.md")
+assert_match '^### Blast radius$' "$BR_SELF" "the self-review template carries the section too"
 BR_TPL=$(cat "$REPO_ROOT/plugins/flow/templates/review-comment.md")
 # `assert_contains '### Blast radius'` also passes on `###### Blast radius`, so
 # pin the whole line: the siblings in this template are all `####`.

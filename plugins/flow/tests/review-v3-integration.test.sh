@@ -131,19 +131,22 @@ case "$ARGS" in
     [ -n "${STUB_HEAD_SHA-}" ] || { echo "gh: no head" >&2; exit 1; }
     printf '%s\n' "$STUB_HEAD_SHA"; exit 0 ;;
   *contents/*)
+    # `gh api -i` answers with the status line, the headers, a blank line and
+    # the body — the shape the block reads the HTTP status out of.
     case "${STUB_CONTENT_MODE:-ok}" in
-      404)  printf '%s\n' '{"message":"Not Found","status":"404"}'
+      404)  printf 'HTTP/2.0 404 Not Found\r\nContent-Type: application/json\r\n\r\n'
+            printf '%s\n' '{"message":"Not Found","status":"404"}'
             echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
       fail) echo "gh: could not connect to api.github.com" >&2; exit 4 ;;
-      empty) printf '\n'; exit 0 ;;
+      403)  printf 'HTTP/2.0 403 Forbidden\r\nContent-Type: application/json\r\n\r\n'
+            printf '%s\n' '{"message":"API rate limit exceeded"}'
+            echo "gh: Forbidden (HTTP 403)" >&2; exit 1 ;;
+      empty) printf 'HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n'
+            printf '%s\n' '{"content":""}'; exit 0 ;;
       *)    [ -f "${STUB_GOAL_FILE-}" ] || { echo "stub: STUB_GOAL_FILE unset" >&2; exit 9; }
-            base64 < "$STUB_GOAL_FILE"; exit 0 ;;
+            printf 'HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n'
+            printf '{"content":"%s"}\n' "$(base64 < "$STUB_GOAL_FILE" | tr -d '\n')"; exit 0 ;;
     esac ;;
-  *commits/*)
-    # The classifier the block uses to tell "no goal there" from "cannot read
-    # anything": the commit reads unless the stub is told otherwise.
-    [ "${STUB_COMMIT_OK:-1}" = "1" ] || { echo "gh: unreachable" >&2; exit 1; }
-    printf '%s\n' "${STUB_HEAD_SHA-}"; exit 0 ;;
   *pulls/*files*)
     [ "${STUB_FILES_EXIT:-0}" = "0" ] || { echo "gh: api error" >&2; exit "${STUB_FILES_EXIT}"; }
     # Reproduce the server-side select: the caller passes the path it cares
@@ -293,6 +296,12 @@ assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^RISK_MAP=forged')" \
 assert_equal "1" "$(printf '%s\n' "$RG_OUT" | grep -c '^STATE=')" \
   "nor a second STATE line"
 assert_contains "%7C" "$RG_OUT" "the pipe is escaped rather than dropped"
+# This goal parses and carries no risk map, so the reader — not one of the shell
+# arms — decides the source. Without a case that reaches it, the reader could
+# hardcode `goal` and nothing would notice.
+assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" \
+  "a goal that reads but carries no risk map asks for derived rows"
+assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^RISK_MAP=')" "and the reader invents none"
 assert_contains "ENCODING=" "$RG_OUT" "and the section says how an escaped value reads"
 
 _flow_test_begin "FlowGoal: absent, unreadable and unfetchable are three different answers"
@@ -304,7 +313,7 @@ assert_contains "STATE=none" "$RG_OUT" "no goal at the head is STATE=none"
 assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "no goal at the head still asks for derived rows"
 _rg_run "$RG_BARE" none
 assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "and so does a pull request with no linked issue"
-STUB_CONTENT_MODE=fail STUB_COMMIT_OK=0 _rg_run "$RG_BARE" 42
+STUB_CONTENT_MODE=fail _rg_run "$RG_BARE" 42
 assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "and so does a goal that could not be read"
 STUB_HEAD_SHA="" _rg_run "$RG_BARE" 42
 assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "and so does an unresolvable head commit"
@@ -312,10 +321,11 @@ RG_SRC_NOW=$(cat "$RG_TMP/flowgoal.sh")
 assert_equal "0" "$(printf '%s\n' "$RG_SRC_NOW" | grep -c 'RISK_MAP_SOURCE=none')" \
   "there is no fourth answer: the rows come from the goal or from the issue text"
 
-STUB_CONTENT_MODE=404 STUB_COMMIT_OK=0 _rg_run "$RG_BARE" 42
-assert_contains "STATE=unavailable" "$RG_OUT" "a 404 that is really an unreachable API is unavailable"
-assert_not_contains "STATE=none" "$RG_OUT" "and is not read as an absent goal"
-STUB_CONTENT_MODE=fail STUB_COMMIT_OK=0 _rg_run "$RG_BARE" 42
+STUB_CONTENT_MODE=403 _rg_run "$RG_BARE" 42
+assert_contains "STATE=unavailable" "$RG_OUT" "a refusal is unavailable, not an absent goal"
+assert_not_contains "STATE=none" "$RG_OUT" "and is never read as absent"
+assert_contains "403" "$RG_OUT" "and the reason names the status"
+STUB_CONTENT_MODE=fail _rg_run "$RG_BARE" 42
 assert_contains "STATE=unavailable" "$RG_OUT" "a failed fetch is unavailable, not absent"
 assert_not_contains "STATE=none" "$RG_OUT" "never reported as no goal"
 assert_contains "REASON=" "$RG_OUT" "and says why"
@@ -323,17 +333,108 @@ STUB_CONTENT_MODE=empty _rg_run "$RG_BARE" 42
 assert_contains "STATE=unavailable" "$RG_OUT" "empty content (a goal over 1MB) is unavailable"
 # Without its own arm this lands on the parser and reports a parse failure, which
 # sends a reader looking for a syntax error in a file that is fine.
-assert_match 'REASON=.*1MB' "$RG_OUT" "and the reason names what the API actually did"
-assert_not_contains "did not parse" "$RG_OUT" "rather than blaming the goal text"
+# An empty file and a file too large to serve both arrive as empty content, so
+# the reason names both rather than sending a reader to look for a 1MB file that
+# is zero bytes.
+assert_match 'REASON=.*(empty|no content)' "$RG_OUT" "and the reason names what the API actually did"
+assert_not_contains "did not read as a goal:" "$RG_OUT" "rather than blaming the goal text"
 STUB_HEAD_SHA="" _rg_run "$RG_BARE" 42
 assert_contains "STATE=unavailable" "$RG_OUT" "no resolvable head commit is unavailable"
 assert_not_contains "STATE=none" "$RG_OUT" "and not reported as no goal"
 _rg_run "$RG_BARE" none
 assert_contains "STATE=none" "$RG_OUT" "no linked issue is STATE=none"
+# `unavailable` is what the linked-issue helper returns when the LOOKUP failed —
+# no repository resolved, helper missing, or gh could not read the pull request.
+# Answering that with "the pull request links no issue" asserts a fact that was
+# never established, and drops the goal silently.
+_rg_run "$RG_BARE" unavailable
+assert_contains "STATE=unavailable" "$RG_OUT" "a failed linked-issue lookup is unavailable"
+assert_not_contains "STATE=none" "$RG_OUT" "never the claim that no issue is linked"
+assert_contains "GOAL_EDITED=unavailable" "$RG_OUT" "and what the pull request does to its goal is unknown too"
+assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "while the derivation step still has its trigger"
 printf ': not: yaml:\n  - [\n' > "$RG_TMP/bad.yaml"
 STUB_GOAL_FILE="$RG_TMP/bad.yaml" _rg_run "$RG_BARE" 42
 assert_contains "STATE=unavailable" "$RG_OUT" "a goal that does not parse is unavailable"
 assert_not_contains "STATE=ok" "$RG_OUT" "and is never announced as read"
+
+_flow_test_begin "FlowGoal: a goal cannot make the section unbounded"
+# yaml.safe_load shares alias nodes, so the load is cheap; str() on the result
+# is not. Six levels of ten aliases in a few hundred bytes expands to megabytes
+# on one line, and each further level multiplies it.
+{
+  printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowGoal\nmetadata: {id: issue-42}\n'
+  printf 'x0: &a0 [zzzzzzzzzz, zzzzzzzzzz, zzzzzzzzzz, zzzzzzzzzz, zzzzzzzzzz]\n'
+  for BOMB_I in 1 2 3 4 5 6; do
+    printf 'x%s: &a%s [*a%s, *a%s, *a%s, *a%s, *a%s, *a%s, *a%s, *a%s, *a%s, *a%s]\n' \
+      "$BOMB_I" "$BOMB_I" $(($BOMB_I - 1)) $(($BOMB_I - 1)) $(($BOMB_I - 1)) $(($BOMB_I - 1)) \
+      $(($BOMB_I - 1)) $(($BOMB_I - 1)) $(($BOMB_I - 1)) $(($BOMB_I - 1)) $(($BOMB_I - 1)) $(($BOMB_I - 1))
+  done
+  printf 'objective:\n  outcome: x\n  acceptance_criteria:\n    - id: AC1\n      text: *a6\n'
+  printf '      verification_command: make test\nlifecycle: {status: active}\n'
+} > "$RG_TMP/bomb.yaml"
+STUB_GOAL_FILE="$RG_TMP/bomb.yaml" _rg_run "$RG_BARE" 42
+assert_contains "STATE=unavailable" "$RG_OUT" "a goal built out of aliases does not read"
+assert_not_contains "STATE=ok" "$RG_OUT" "and is never announced as read"
+BOMB_BYTES=$(printf '%s' "$RG_OUT" | wc -c | tr -d ' ')
+if [ "$BOMB_BYTES" -lt 16384 ]; then
+  _flow_assert_pass "the section stays bounded ($BOMB_BYTES bytes)"
+else
+  _flow_assert_fail "the section expanded to $BOMB_BYTES bytes"
+fi
+# A single enormous scalar is the other way to flood the section.
+{
+  printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowGoal\nmetadata: {id: issue-42}\n'
+  printf 'objective:\n  outcome: x\n  acceptance_criteria:\n    - id: AC1\n      text: "'
+  BOMB_PAD=$(awk 'BEGIN { while (i++ < 4000) printf "wide " }')
+  printf '%s' "$BOMB_PAD"
+  printf '"\n      verification_command: make test\nlifecycle: {status: active}\n'
+} > "$RG_TMP/wide.yaml"
+STUB_GOAL_FILE="$RG_TMP/wide.yaml" _rg_run "$RG_BARE" 42
+WIDE_LINE=$(printf '%s\n' "$RG_OUT" | awk '{ if (length($0) > m) m = length($0) } END { print m + 0 }')
+if [ "$WIDE_LINE" -lt 4096 ]; then
+  _flow_assert_pass "one value cannot make one line unbounded ($WIDE_LINE chars)"
+else
+  _flow_assert_fail "a single value printed $WIDE_LINE characters on one line"
+fi
+
+_flow_test_begin "FlowGoal: a criterion of the wrong shape is not silently dropped"
+# Announcing STATE=ok with no AC= line says "this goal names no criteria",
+# which is what an empty list means. A goal whose criteria are strings named
+# two, and the review would be told it named none.
+cat > "$RG_TMP/acstrings.yaml" <<'YAML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-42}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - 'do the thing'
+    - 'and the other'
+lifecycle: {status: active}
+YAML
+STUB_GOAL_FILE="$RG_TMP/acstrings.yaml" _rg_run "$RG_BARE" 42
+assert_contains "STATE=unavailable" "$RG_OUT" "criteria of the wrong shape make the goal unreadable"
+assert_not_contains "STATE=ok" "$RG_OUT" "rather than a goal that names none"
+
+_flow_test_begin "FlowGoal: a reader that dies says so"
+# The reader is a child process. If it is killed — out of memory, a crash — and
+# prints nothing, the section would end after GOAL_REF= with no STATE= line at
+# all, and every rule keyed on those lines silently does not fire.
+mkdir -p "$RG_TMP/deadpy"
+cat > "$RG_TMP/deadpy/python3" <<'DEADPY'
+#!/usr/bin/env bash
+# The import probe succeeds; the reader (fed a script on stdin) dies mutely.
+case "$*" in
+  *"import yaml"*) exit 0 ;;
+esac
+cat >/dev/null
+exit 137
+DEADPY
+chmod +x "$RG_TMP/deadpy/python3"
+RG_OUT=$(cd "$RG_BARE" && PATH="$RG_TMP/deadpy:$RG_STUB:$PATH" LINKED=42 PR_NUM=7 REPO=o/r   bash "$RG_TMP/flowgoal.sh" 2>/dev/null)
+assert_contains "STATE=unavailable" "$RG_OUT" "a reader that dies is unavailable"
+assert_equal "1" "$(printf '%s\n' "$RG_OUT" | grep -c '^STATE=')" "exactly one STATE line, always"
+assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "and the derivation step still has its trigger"
 
 _flow_test_begin "FlowGoal: valid YAML of the wrong shape is unavailable, not ok"
 # A hand-edited goal can be valid YAML and still not be a goal. Announcing
@@ -439,7 +540,7 @@ assert_not_contains "GOAL_EDITED=no" "$RG_OUT" \
   "never 'no' — that is the answer meaning this pull request does not weaken its goal"
 
 unset STUB_HEAD_SHA STUB_GOAL_FILE STUB_FILE_STATUS STUB_CHANGED_FILE \
-      STUB_CONTENT_MODE STUB_FILES_EXIT STUB_COMMIT_OK
+      STUB_CONTENT_MODE STUB_FILES_EXIT
 
 # --- #213 AC2: the risk map reaches the two places that can check it ----------
 
@@ -451,11 +552,19 @@ RG_DISPATCHES=$(printf '%s\n' "$RG_REVIEW" | grep -c 'Evidence bundle draft:')
 assert_equal "3" "$RG_DISPATCHES" "three dispatches: two Path A lenses and Path B"
 RG_WITH_COVERAGE=$(printf '%s\n' "$RG_REVIEW" | grep -c 'Evidence bundle draft:.*Risk map coverage')
 assert_equal "3" "$RG_WITH_COVERAGE" "each one hands over the coverage list"
+# Gating the list on "Phase 1 reported one" omits it on every pull request whose
+# rows were derived, and the skill's coverage step then silently skips.
+assert_equal "3" "$(printf '%s\n' "$RG_REVIEW" | grep -c 'Risk map coverage.*derivation step above produced them')" \
+  "and offers it for derived rows as well as goal rows"
 assert_contains 'area> → <test file:line' "$RG_REVIEW" "the shape of a coverage row is stated"
 assert_contains 'RISK_MAP_SOURCE' "$RG_REVIEW" "and the reviewer is told where the rows came from"
 
 RG_REVIEWER=$(cat "$REPO_ROOT/plugins/flow/agents/code-reviewer.md")
 assert_match 'Risk areas:' "$RG_REVIEWER" "the reviewer names Risk areas"
+# A line the agent is required to emit needs a slot in the template it copies,
+# or the requirement has nowhere to land.
+RG_SUMMARY=$(printf '%s\n' "$RG_REVIEWER" | awk '/^### Summary/ { f = 1; next } f && /^#{1,3} / { f = 0 } f')
+assert_contains 'callers examined:' "$RG_SUMMARY" "the Summary template carries the caller-count line"
 assert_contains 'Inputs' "$RG_REVIEWER" "Step 4 states its inputs"
 # The rule at Step 4 already consumes `Risk areas:` rows; the gap was that
 # nothing handed them over, so the rule could never fire.
@@ -474,6 +583,15 @@ RG_CR_WITH_RISK=$(printf '%s\n' "$RG_REVIEW" | awk '
   n && /Risk areas:/ { have[n] = 1 }
   END { c = 0; for (i = 1; i <= n; i++) c += have[i]; print c }')
 assert_equal "3" "$RG_CR_WITH_RISK" "each one is handed the risk areas"
+# A dispatch that says `none` when Phase 1 reported no goal excludes exactly the
+# rows the derivation step exists to produce, which is the commonest case.
+RG_CR_DERIVED=$(printf '%s\n' "$RG_REVIEW" | awk '
+  /^Agent\(code-reviewer/ { n++; have[n] = 0 }
+  n && /derived from the issue text by the step above/ { have[n] = 1 }
+  END { c = 0; for (i = 1; i <= n; i++) c += have[i]; print c }')
+assert_equal "3" "$RG_CR_DERIVED" "and each one counts the derived rows as rows"
+assert_equal "0" "$(printf '%s\n' "$RG_REVIEW" | grep -c '`none` when Phase 1 reported no goal')" \
+  "no dispatch tells the reviewer there are no rows when the derivation step makes some"
 RG_CR_WITH_NG=$(printf '%s\n' "$RG_REVIEW" | awk '
   /^Agent\(code-reviewer/ { n++; have[n] = 0 }
   n && /Non-goals:/ { have[n] = 1 }
@@ -529,10 +647,28 @@ assert_contains 'finding' "$RG_TRUST" "and raises a finding"
 assert_contains 'GOAL_PATH' "$RG_TRUST" "naming the goal file"
 assert_contains 'created' "$RG_TRUST" "while creating a goal is not a finding"
 assert_contains 'unavailable' "$RG_TRUST" "and an unreadable file list is not silence"
+assert_contains 'renamed' "$RG_TRUST" "and a rename is read together with the goal state"
+assert_contains 'removed or weakened' "$RG_TRUST" "a modification earns a finding only if it weakens something"
+# gh pr diff takes no pathspec; the hunk comes from the file list.
+assert_equal "0" "$(printf '%s\n' "$RG_TRUST" | grep -c 'gh pr diff.*--')" \
+  "and the hunk is not asked of a command that cannot filter"
+RG_REQ_STATE=$(printf '%s\n' "$RG_REVIEW" | grep -c 'STATE=unavailable.*could not be read\|goal could not be read')
+assert_match '^[1-9]' "$RG_REQ_STATE" "an unreadable goal is recorded in the requirements map, not passed over"
 
 _flow_test_begin "the requirements step is pointed at the criteria Phase 1 read"
 RG_REQ=$(printf '%s\n' "$RG_REVIEW" | grep -c 'AC=` lines\|`AC=` lines')
 assert_match '^[1-9]' "$RG_REQ" "the requirements step names the AC= lines as its source"
+
+_flow_test_begin "nothing in the review runs a value the goal carried"
+# The goal is fetched from the pull request head, so a verification_command is
+# author-controlled text. The block never executes one; neither may any step
+# that reads the section, and `allowed-tools: Bash` means an instruction to run
+# one would be obeyed without a prompt.
+assert_equal "0" "$(printf '%s\n' "$RG_REVIEW" | grep -ci 'run each .verification_command\|execute the verification_command\|run the goal.s verification')" \
+  "no step is told to run a verification_command"
+assert_contains 'read, never run' "$RG_REVIEW" "and the requirements step says so where it uses them"
+RG_NONGOAL_EXEC=$(printf '%s\n' "$RG_REVIEW" | grep -c 'no value from it is run, expanded or substituted')
+assert_match '^[1-9]' "$RG_NONGOAL_EXEC" "the block still states the same rule for itself"
 
 # --- #213 AC4: one true statement about which commands create goals ----------
 

@@ -109,6 +109,39 @@ Three claims did not survive cross-referencing against file state.
 - **The failure-modes section said no network call was introduced.** Three are, and the section now
   says so along with what happens when one fails.
 
+## Review cycle 2 (five reviewers plus holdout validation)
+
+Twenty-four findings, all fixed here. The two that mattered most were introduced by cycle 1 fixes.
+
+- **The requirements step told the reviewer to run a `verification_command`.** Those strings come
+  from the goal at the pull request head, `allowed-tools: Bash` pre-approves execution, and a goal
+  that arrived with a checkout is never in the trust ledger — so the one sentence handed an author
+  arbitrary execution in the reviewer shell, while three other places in the same change said the
+  goal is never executed. The sentence is gone: criteria are read, and `test-runner` keeps running
+  the quality commands the project defines.
+- **A goal built out of YAML aliases had no bound.** `safe_load` shares alias nodes, so the load is
+  cheap and `str()` is not: a few hundred bytes expanded to 72MB on one `AC=` line, and each further
+  alias level multiplies it. The reader refuses aliases (nothing flow writes uses an anchor), caps
+  any one value, and caps how many rows of a kind it prints.
+
+Three agents independently found the same defect one level up from cycle 1's: `LINKED=unavailable`
+means the linked-issue lookup FAILED, and it was folded in with "no issue linked", so an unreachable
+API was reported as the positive claim that the pull request links no issue. It has its own answer
+now, as does a reader that dies without printing (the section took its output without checking that
+it exited or said anything), a criterion of the wrong shape (dropped silently, so a goal naming two
+criteria read as a goal naming none), and a rename.
+
+Telling an absent goal from an unreadable one no longer rests on a second API call or on the wording
+of an error message: `gh api -i` carries the HTTP status, so 404 is absent and 403, 5xx and a dead
+network are unreadable. The size cap was above Linux's per-string exec limit, so a goal between
+128KB and 256KB would have passed the guard and failed the exec.
+
+`bin/flow-contract-files.sh` now encodes what it prints, for the same reason the goal reader does: a
+path is author-controlled, and a newline in one forged a second `CONTRACT_FILE=` row that a reviewer
+reads as another contract. The agent also resolves the plugin root instead of assuming the working
+directory — it runs in the project under review, where `bin/flow-contract-files.sh` does not exist,
+so the blast-radius step would have failed everywhere except this checkout.
+
 ## Self-review resolution (cycle 1)
 
 An 18-finding self-review of the branch at 5fa26bc. Every finding is fixed in this pull request;
@@ -209,3 +242,47 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 15:48 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/evidence-213.md -->
 
 <!-- auto-log: 2026-09-16 15:52 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/stub/gh -->
+
+<!-- auto-log: 2026-09-16 15:53 commit "fix(flow): a goal written in prose reads whatever the locale resolved to" -->
+
+<!-- auto-log: 2026-09-16 15:53 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/convention-findings.md -->
+
+<!-- auto-log: 2026-09-16 15:54 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/pr-body-213.md -->
+
+<!-- auto-log: 2026-09-16 15:59 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants.py -->
+
+<!-- auto-log: 2026-09-16 15:59 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/convention-findings.md -->
+
+<!-- auto-log: 2026-09-16 16:01 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/sec/evidence.md -->
+
+<!-- auto-log: 2026-09-16 16:03 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_flow_goal_trust_ledger_threat_model.md -->
+
+<!-- auto-log: 2026-09-16 16:03 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants2.py -->
+
+<!-- auto-log: 2026-09-16 16:04 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 16:08 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-16 16:08 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 16:08 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/err-inspector-draft.md -->
+
+<!-- auto-log: 2026-09-16 16:10 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/cycle2-fixes.md -->
+
+<!-- auto-log: 2026-09-16 16:12 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/err-inspector-draft.md -->
+
+<!-- auto-log: 2026-09-16 16:13 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_unavailable_collapse.md -->
+
+<!-- auto-log: 2026-09-16 16:13 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 16:16 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_revert_harness.md -->
+
+<!-- auto-log: 2026-09-16 16:16 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_revert_harness.md -->
+
+<!-- auto-log: 2026-09-16 16:24 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/test-adequacy-findings.txt -->
+
+<!-- auto-log: 2026-09-16 16:25 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reader.py -->
+
+<!-- auto-log: 2026-09-16 16:35 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/test-adequacy-findings.txt -->
+
+<!-- auto-log: 2026-09-16 16:37 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_revert_harness.md -->

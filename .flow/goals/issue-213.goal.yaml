@@ -90,9 +90,13 @@ specification:
   - 'Missing context: no linked issue means no goal path to resolve, which is STATE=none
     and today behaviour.'
   interface_contracts:
-  - '### FlowGoal section: STATE=ok|none|unavailable, GOAL_PATH=, GOAL_STATUS=, AC=<id>|<text>|<verification_command>,
-    NON_GOAL=<text>, CONTRACT=<text>, RISK_MAP=<area>|<plausible_wrong_version>|<discriminating_check>|<source>,
-    GOAL_EDITED=no|created|modified|removed|unavailable.'
+  - '### FlowGoal section (Phase 1, printed): STATE=ok|none|unavailable, GOAL_PATH=,
+    GOAL_REF=<head commit>, ENCODING=, REASON= on any non-ok state, GOAL_STATUS=,
+    AC=<id>|<text>|<verification_command> (one per criterion, the command printed
+    as text and never executed, a literal | written %7C), NON_GOAL=, CONTRACT=, RISK_MAP=<area>|<plausible_wrong_version>|<discriminating_check>|<source>,
+    RISK_MAP_SOURCE=goal|issue-text (issue-text in every state where no goal was read),
+    GOAL_EDITED=no|created|modified|removed|renamed|unavailable with GOAL_EDITED_REASON=
+    when unavailable.'
   - 'code-reviewer Summary: "callers examined: N (findReferences|incomingCalls|grep)"
     per modified exported or public symbol.'
   - 'Review body carries a #### Blast radius section, present in templates/review-comment.md.'
