@@ -25,17 +25,46 @@ git diff "origin/$DEFAULT_BRANCH"..HEAD
 
 Use the Read tool to read each changed file in full. Understand the context, not just the diff.
 
-### Step 2b: LSP-Enhanced Caller Verification
+### Step 2b: Caller Verification and Blast Radius
 
-When the LSP tool is available with `findReferences` support, use it to verify that all callers of modified functions are handled:
+When the LSP tool is available with `findReferences` support, use it to verify that all callers of
+modified functions are handled:
 
-1. For each modified function/method in the diff, use `LSP(findReferences)` at the function definition to find all call sites. Alternatively, use `LSP(incomingCalls)` for a more direct call hierarchy — it returns only callers (not type references or re-exports), making it more precise for verifying caller impact.
-2. Read each caller to verify it handles any new parameters, changed return types, or modified error behavior
-3. If `goToDefinition` is available, trace imports and dependencies to understand the full call chain. Use `LSP(outgoingCalls)` to map what a modified function calls, verifying downstream dependencies are compatible.
+1. For each modified function or method in the diff, use `LSP(findReferences)` at the definition to
+   find all call sites. `LSP(incomingCalls)` is more precise for this question — it returns callers
+   only, not type references or re-exports.
+2. For each call site, check whether the diff updates it, and whether it is still correct under the
+   new behaviour.
+3. Where the LSP is unavailable, or the symbol is not found, fall back to `Grep` for the symbol name.
 
-This provides semantic accuracy that grep-based searches cannot — it resolves aliases, re-exports, and indirect references.
+**Report what you examined.** For every modified exported or public symbol, the Summary carries one
+line:
 
-**Fallback**: If LSP is unavailable, continue with grep-based reference search (existing Step 2 behavior). LSP enhances but never replaces the review.
+```
+callers examined: N (findReferences | incomingCalls | grep)
+```
+
+A run that traced every caller and a run that traced none look identical in a review that reports
+neither, so the count and the tool are both required. **`N=0` from an available LSP is a finding, not
+a clean result**, whenever `Grep` finds the symbol referenced outside the diff: the trace failed, and
+what failed is the review, not necessarily the code. Report it as `tooling` P2 naming both numbers.
+With no LSP at all, say `grep` and give the Grep count — an honest smaller claim.
+
+**Blast radius.** Some changes are to something other code depends on. Run
+`bin/flow-contract-files.sh` over the changed paths (`git diff --name-only <base>...HEAD |
+bin/flow-contract-files.sh`); it names each contract file and its kind — `openapi`, `graphql`,
+`protobuf`, `migration`, `schema`, `goal-contract` — by path and extension, and says nothing about
+ordinary source. A changed exported signature counts too, and so does a symbol named in the goal's
+`Interface contracts:` input.
+
+When any of those changed, the review body carries a `### Blast radius` section listing every
+consumer you found, and each consumer either appears in the diff or earns a `breaking-change` P1
+finding citing the consumer's `file:line`. List the consumers you actually traced and say which tool
+found them; do not imply a complete list when the trace was a Grep.
+
+**Cross-repository consumers are out of scope.** Flow has no linked-repository model, so a consumer
+in another repository is neither traced nor reported as missing — saying nothing is honest, and a
+confident "no consumers" drawn from one repository would not be.
 
 ### Step 3: Scope Classification
 

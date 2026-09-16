@@ -60,6 +60,7 @@ Reviewers should pick from this controlled list when possible. Free-form categor
 | `tests` | test-runner / code-reviewer | Missing test, weak assertion, brittle test, mocked thing-under-test |
 | `runtime` | integration-verifier | Build failure, server startup failure, smoke-test failure, console error |
 | `visual` | integration-verifier (when visual-verification ran) | Render-blocking error, layout break at viewport, missing content |
+| `breaking-change` | code-reviewer | A changed contract — exported signature, schema, migration, OpenAPI, GraphQL, protobuf, or a symbol in the goal's interface contracts — with a consumer this pull request does not update. The finding cites the consumer's `file:line`, not the contract's. Cross-repository consumers are out of scope. |
 | `conventions` | convention-checker (when surfaced into ledger) | Non-conforming commit format, branch-name pattern violation |
 | `claim-verification` | holdout-validation | Self-review claim contradicted by file state |
 

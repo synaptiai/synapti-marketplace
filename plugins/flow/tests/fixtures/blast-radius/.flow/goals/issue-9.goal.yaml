@@ -1,0 +1,3 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-9}
