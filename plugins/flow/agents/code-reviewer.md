@@ -51,13 +51,14 @@ what failed is the review, not necessarily the code. Report it as `tooling` P2 n
 With no LSP at all, say `grep` and give the Grep count — an honest smaller claim.
 
 **Blast radius.** Some changes are to something other code depends on. Run
-`bin/flow-contract-files.sh` over the changed paths (`git diff --name-only <base>...HEAD |
-bin/flow-contract-files.sh`); it names each contract file and its kind — `openapi`, `graphql`,
+`bin/flow-contract-files.sh` over the changed paths (`git -c core.quotePath=off diff --name-only
+<base>...HEAD | bin/flow-contract-files.sh` — without that flag git quotes any non-ASCII path and the
+helper is handed `"api/sch\303\251ma.graphql"`); it names each contract file and its kind — `openapi`, `graphql`,
 `protobuf`, `migration`, `schema`, `goal-contract` — by path and extension, and says nothing about
 ordinary source. A changed exported signature counts too, and so does a symbol named in the goal's
 `Interface contracts:` input.
 
-When any of those changed, the review body carries a `### Blast radius` section listing every
+When any of those changed, the review body carries a `#### Blast radius` section listing every
 consumer you found, and each consumer either appears in the diff or earns a `breaking-change` P1
 finding citing the consumer's `file:line`. List the consumers you actually traced and say which tool
 found them; do not imply a complete list when the trace was a Grep.

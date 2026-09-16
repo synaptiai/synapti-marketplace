@@ -2,7 +2,7 @@
 # [flow] Name the contract files in a list of changed paths.
 #
 # A change to a contract is a change to something other code depends on, so the
-# review lists who depends on it (`### Blast radius` in the review body) and
+# review lists who depends on it (`#### Blast radius` in the review body) and
 # every consumer either appears in the diff or earns a `breaking-change`
 # finding. This script answers only the first question — which changed paths ARE
 # contracts — and answers it by path and extension alone.
@@ -18,7 +18,10 @@
 #
 # Usage:
 #   flow-contract-files.sh <path>...      # paths as arguments
-#   git diff --name-only | flow-contract-files.sh   # or on stdin
+#   git -c core.quotePath=off diff --name-only | flow-contract-files.sh   # or on stdin
+#
+# core.quotePath=off matters: with git's default the helper is handed
+# "api/sch\303\251ma.graphql", quotes and all.
 #
 # Output: one line per contract file, in input order:
 #   CONTRACT_FILE=<path>|<kind>
@@ -40,7 +43,8 @@ case "${1:-}" in
     ;;
 esac
 
-# Classify one path. Bracket ranges follow the locale, so match under C.
+# Classify one path. LC_ALL is pinned so that the case patterns below compare
+# bytes the same way under every locale the caller might have set.
 kind_of() {
   local LC_ALL=C p="$1" base
   base=${p##*/}
@@ -84,9 +88,26 @@ kind_of() {
   return 1
 }
 
+# Undo git path quoting. Under the default core.quotePath, `git diff --name-only`
+# renders any byte outside ASCII as "api/sch\303\251ma.graphql" — the trailing
+# quote alone is enough to make the basename match no pattern, so the file the
+# caller most needs named is the one that goes missing. The caller is told to
+# pass `-c core.quotePath=off`; this is here so that forgetting is not silent.
+unquote_path() {
+  local p="$1"
+  case "$p" in
+    \"*\") p=${p#\"}; p=${p%\"}
+        # %b decodes the octal and the C escapes git emits; \" and \\ are not
+        # among them, so they are handled first.
+        p=$(printf '%b' "${p//\\\"/\"}") ;;
+  esac
+  printf '%s' "$p"
+}
+
 emit() {
   local p="$1" k
   [ -n "$p" ] || return 0
+  p=$(unquote_path "$p")
   if k=$(kind_of "$p"); then
     printf 'CONTRACT_FILE=%s|%s\n' "$p" "$k"
     FOUND=1
@@ -94,6 +115,13 @@ emit() {
 }
 
 FOUND=0
+
+# With no arguments and nothing piped in, reading stdin would block on a
+# terminal with no prompt. The header documents exit 2 for a usage error.
+if [ "$#" -eq 0 ] && [ -t 0 ]; then
+  echo "usage: $PROG <path>... | <paths on stdin>" >&2
+  exit 2
+fi
 
 if [ "$#" -gt 0 ]; then
   for arg in "$@"; do

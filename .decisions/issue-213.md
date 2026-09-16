@@ -122,3 +122,5 @@ docs stop disagreeing about whether review creates a goal
 <!-- auto-log: 2026-09-16 13:41 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
 
 <!-- auto-log: 2026-09-16 13:42 commit "fix(flow): the review reads the goal at the pull request head, safely" -->
+
+<!-- auto-log: 2026-09-16 13:44 commit "feat(flow): the risk map, the non-goals and the goal-trust flag are acted on" -->
