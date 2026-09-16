@@ -1253,6 +1253,22 @@ FC_LOOKUP=$(_fc_lookup_sweep "$PLUGIN_DIR/commands")
 assert_match '^FILES=([2-9][0-9]|[1-9][0-9][0-9]) ' "$FC_LOOKUP" "the command directory was examined"
 assert_contains "HITS=0" "$FC_LOOKUP" "no command greps an issue number out of text"
 
+_flow_test_begin "real template: a body rendered from self-review-comment.md posts through the block"
+# The self-review path posts through the same block. Its template carries
+# tables, a checklist and prose that must trip no guard.
+awk '
+  /^\{/ { next }
+  /^\| \*\*\{n\} · / { print "| **F1 · P2 · `src/e.sh:5`**<br>Off-by-one. _(HIGH · unchallenged)_ | Used `<`. |"; next }
+  /^\| \*\*\{ID\} · / { next }
+  /^\{Only FAIL/ { next }
+  { print }
+' "$TEMPLATES/self-review-comment.md" > "$FC_TMP/rendered-self-review.md"
+assert_contains "Self-Review Summary" "$(cat "$FC_TMP/rendered-self-review.md")" "rendered the self-review template"
+_fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer' 1 "$(cat "$FC_TMP/rendered-self-review.md")"
+assert_exit 0 "$POST_CODE" "the rendered self-review template posts: $POST_ERR"
+assert_contains "--comment" "$GH_ARGS" "self-review posts as a comment"
+assert_equal "1" "$(grep -c 'FLOW_REVIEW_CYCLE:2 FINDINGS:\[' <<<"$POSTED")" "exactly one marker in the posted body"
+
 _flow_test_begin "real template: a body rendered from review-comment.md posts through the block"
 awk '
   /^\{/ { next }
