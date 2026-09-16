@@ -396,6 +396,33 @@ if command -v git >/dev/null 2>&1; then
   OUT=$(_ql status --session s1 --cwd "$WORK")
   assert_contains "STATE=dirty" "$OUT" "checking out different contents -> dirty"
 
+  _flow_test_begin "digest: an overwrite git's stat cache cannot see still moves the digest"
+  # The digest seeds a temp index from the real one so unchanged files keep their
+  # stat cache. Git re-reads an entry only when its mtime is not older than the
+  # index file's own ("racily clean"); a copy stamped with the current time makes
+  # every entry look safely old, so a file rewritten in the same second at the
+  # same size is never re-hashed and the digest reports the tree before the edit
+  # — the gate then calls an untested edit clean. This is what turned
+  # `test (macos-latest)` red on pull request #230.
+  #
+  # Two checks, because the hazard itself cannot be constructed reliably: git
+  # also compares ctime, which no tool can set, so whether the race bites
+  # depends on two writes landing in the same clock second. The first check is
+  # the mechanism (deterministic), the second is the behaviour (probabilistic).
+  assert_match 'cp -p "\$gitdir/index"' "$(cat "$HELPER")" "the index copy preserves mtime, so racily-clean detection still fires"
+  RACE=$(_ql_repo)
+  RACE_STALE=0
+  RACE_ROUNDS=20
+  for _i in $(seq 1 "$RACE_ROUNDS"); do
+    printf 'edited\n' > "$RACE/a.txt"
+    _git -C "$RACE" add -A >/dev/null 2>&1
+    D_BEFORE=$(_ql digest --cwd "$RACE")
+    printf 'tested\n' > "$RACE/a.txt"          # same size, usually the same second
+    D_AFTER=$(_ql digest --cwd "$RACE")
+    [ -n "$D_BEFORE" ] && [ "$D_BEFORE" = "$D_AFTER" ] && RACE_STALE=$((RACE_STALE + 1))
+  done
+  assert_equal "0" "$RACE_STALE" "no stale digest across $RACE_ROUNDS same-size overwrites"
+
   _flow_test_begin "digest/status --ignore-prefix: bookkeeping writes under ignored prefixes move neither the digest nor the state"
   STATE=$(_ql_state)
   WORK=$(_ql_repo)

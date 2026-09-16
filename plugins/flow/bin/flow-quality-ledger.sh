@@ -232,8 +232,15 @@ _worktree_digest() {
   # Seed from the real index so unchanged files keep their stat cache and
   # only modified or new files are re-hashed. A missing index (unborn
   # repository) means every file is hashed, which is still correct.
+  #
+  # -p matters: git treats an index entry as "racily clean" when its mtime is
+  # not older than the index file's own mtime, and re-reads such a file instead
+  # of trusting the stat cache. A plain `cp` stamps the copy with the current
+  # time, so entries written moments ago look safely old and a file overwritten
+  # in the same second at the same size is never re-hashed — the digest then
+  # reports the pre-edit tree and the gate calls an untested edit clean.
   if [ -f "$gitdir/index" ]; then
-    cp "$gitdir/index" "$tmpidx" 2>/dev/null || { rm -f "$tmpidx"; return 1; }
+    cp -p "$gitdir/index" "$tmpidx" 2>/dev/null || cp "$gitdir/index" "$tmpidx" 2>/dev/null || { rm -f "$tmpidx"; return 1; }
   fi
   tree=""
   if GIT_INDEX_FILE="$tmpidx" git -C "$top" add -A --ignore-errors "${spec[@]}" >/dev/null 2>&1; then
