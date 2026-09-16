@@ -170,7 +170,41 @@ goal nested under a tests directory — so a pull request touching that fixture 
 the goal under review as modified. Two cases now pin it, nested and suffixed; the containment
 mutant fails on exactly those two and nothing else.
 
-Two items from that sweep are recorded as having nothing to pin rather than fixed. The `LC_ALL=C`
+## Review cycle 6 (the delta since cycle 5)
+
+One P1, and it is the same class again, one key up. `mapping()` returned `{}` for anything that was
+not a mapping, so a `specification:` written as prose or as a list swallowed the non-goals, the
+interface contracts and the risk map in a single step — and the section still printed `STATE=ok`.
+That is strictly more loss than the `sequence()` case fixed in cycle 5, and after that fix the two
+disagreed: `non_goals: prose` was unavailable while `specification: prose` was ok. The consumer harm
+is the one this block exists to prevent: the `scope` and `breaking-change` rules key off the
+`NON_GOAL=` and `CONTRACT=` lines, so an altered contract had nothing to be flagged against.
+
+`mapping()` now mirrors `sequence()`: absent is `{}`, present-but-wrong-shaped raises with the key
+named. Every shape check in the reader has now been enumerated, and each one either raises or is the
+absent-key arm — the class is closed in this file. One adjacent behaviour changed deliberately: a
+`lifecycle:` written as a scalar was `GOAL_STATUS=unknown` and is now `STATE=unavailable`, which
+matches `schemas/v1/goal.schema.json` typing it as an object. A goal with no lifecycle block at all
+still reads, with the status honestly unknown.
+
+The lesson recorded from this cycle is not about the code. Cycle 5's fix was applied to the instance
+the reviewer named, and the twin four lines above it was not examined — which is what bought this
+sixth cycle. The rule now carried into future sessions is to name the defect class in a sentence and
+sweep every sibling of that shape before pushing.
+
+## The goal's terminal record
+
+`.flow/goals/issue-213.goal.yaml` carries `last_evaluation` naming commit `468a717` and 3784
+assertions, which is two fixes and 33 assertions behind this branch. It stays that way: the goal
+reached `achieved`, and `bin/flow-goal-record.sh` refuses to update a terminal goal, per the
+goal-lifecycle iron law. That record is the vintage of the verdict that closed the goal, not a claim
+about the head commit, and hand-editing it would both bypass the helper and untrust the goal in the
+trust ledger. The later cycles are recorded here instead.
+
+Worth noting as a property of flow rather than of this issue: a goal marked terminal cannot record
+findings that arrive afterwards, and two cycles did arrive afterwards here.
+
+Two items from an adequacy sweep are recorded as having nothing to pin rather than fixed. The `LC_ALL=C`
 in `kind_of()` guards pattern matching against locale-dependent collation, but no pattern in the
 function uses a character range or class, so no input distinguishes the pinned locale from an
 unpinned one. It stays as a guard for patterns added later; a test asserting it today would pass for
@@ -467,3 +501,17 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 22:04 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-v3-integration.test.sh -->
 
 <!-- auto-log: 2026-09-16 22:21 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-213.md -->
+
+<!-- auto-log: 2026-09-16 22:22 commit "fix(flow): a list the section cannot read is not a goal that names none" -->
+
+<!-- auto-log: 2026-09-16 22:38 Write /Users/danielbentes/.claude-work/projects/-Users-danielbentes-synapti-marketplace/memory/feedback_sweep_the_defect_class.md -->
+
+<!-- auto-log: 2026-09-16 22:39 Edit /Users/danielbentes/.claude-work/projects/-Users-danielbentes-synapti-marketplace/memory/feedback_test_the_check_not_the_defect.md -->
+
+<!-- auto-log: 2026-09-16 22:39 Edit /Users/danielbentes/.claude-work/projects/-Users-danielbentes-synapti-marketplace/memory/MEMORY.md -->
+
+<!-- auto-log: 2026-09-16 22:52 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-09-16 22:53 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-16 22:58 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-213.md -->

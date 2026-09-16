@@ -661,6 +661,80 @@ assert_contains "AC=AC1|" "$RG_OUT" "and its criterion is printed"
 assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^NON_GOAL=')" "with no non-goals, which is the truth"
 assert_contains "RISK_MAP_SOURCE=issue-text" "$RG_OUT" "and the risk rows come from the issue text"
 
+# The mapping one key up loses more than any of the lists below it. A
+# specification written as prose swallows the non-goals, the contracts and the
+# risk map in one step — and a section that reports STATE=ok over that tells the
+# review to derive risk rows from the issue text for a goal whose team wrote
+# five, and leaves an altered contract with nothing to flag it against.
+cat > "$RG_TMP/specstring.yaml" <<'YAML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-42}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - {id: AC1, text: do the thing, verification_command: make test}
+specification: 'non-goals: none. contracts: the CLI prints STATE=.'
+lifecycle: {status: active}
+YAML
+STUB_GOAL_FILE="$RG_TMP/specstring.yaml" _rg_run "$RG_BARE" 42
+assert_contains "STATE=unavailable" "$RG_OUT" "a specification written as prose makes the goal unreadable"
+assert_match 'REASON=.*specification' "$RG_OUT" "and the reason names the key that could not be read"
+assert_not_contains "STATE=ok" "$RG_OUT" "rather than a goal whose specification is empty"
+assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^CONTRACT=')" "no contract is claimed"
+assert_equal "0" "$(printf '%s\n' "$RG_OUT" | grep -c '^RISK_MAP=')" "and no risk row is"
+
+# Same key, written as a list rather than a string: the other way to lose it.
+cat > "$RG_TMP/speclist.yaml" <<'YAML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-42}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - {id: AC1, text: do the thing, verification_command: make test}
+specification:
+  - non_goals: none
+  - risk_map: none
+lifecycle: {status: active}
+YAML
+STUB_GOAL_FILE="$RG_TMP/speclist.yaml" _rg_run "$RG_BARE" 42
+assert_contains "STATE=unavailable" "$RG_OUT" "a specification written as a list makes the goal unreadable"
+assert_match 'REASON=.*specification' "$RG_OUT" "and names the key"
+
+# The lifecycle is a mapping in the schema, so a scalar there is unreadable too.
+# Before this it reported GOAL_STATUS=unknown, which reads as a goal whose status
+# nobody set rather than a goal nobody can read.
+cat > "$RG_TMP/lifescalar.yaml" <<'YAML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-42}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - {id: AC1, text: do the thing, verification_command: make test}
+lifecycle: active
+YAML
+STUB_GOAL_FILE="$RG_TMP/lifescalar.yaml" _rg_run "$RG_BARE" 42
+assert_contains "STATE=unavailable" "$RG_OUT" "a lifecycle written as a scalar makes the goal unreadable"
+assert_match 'REASON=.*lifecycle' "$RG_OUT" "and names that key"
+assert_not_contains "GOAL_STATUS=unknown" "$RG_OUT" "rather than a status nobody set"
+
+# And the absent-mapping arm stays ordinary, or the rule above would make every
+# goal without a lifecycle block unreadable.
+cat > "$RG_TMP/nolifecycle.yaml" <<'YAML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata: {id: issue-42}
+objective:
+  outcome: x
+  acceptance_criteria:
+    - {id: AC1, text: do the thing, verification_command: make test}
+YAML
+STUB_GOAL_FILE="$RG_TMP/nolifecycle.yaml" _rg_run "$RG_BARE" 42
+assert_contains "STATE=ok" "$RG_OUT" "a goal carrying no lifecycle block still reads"
+assert_contains "GOAL_STATUS=unknown" "$RG_OUT" "and its status is honestly unknown"
+
 _flow_test_begin "FlowGoal: a risk row of the wrong shape is not silently dropped"
 # Risk rows were filtered by shape rather than checked: a goal whose risk map is
 # a list of strings printed STATE=ok, no RISK_MAP= row, and

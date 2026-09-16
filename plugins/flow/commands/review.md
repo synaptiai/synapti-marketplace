@@ -277,8 +277,17 @@ def one_line(v):
     return s[:MAX_VALUE] + "…"
 
 
-def mapping(v):
-    return v if isinstance(v, dict) else {}
+def mapping(v, what):
+    # Same rule as sequence() below, one key up. An absent mapping names nothing
+    # and is a real answer; a mapping written as a string or a list is a goal
+    # nobody can read. Returning {} for it swallowed every key underneath in one
+    # step — a `specification` written as prose lost the non-goals, the contracts
+    # and the risk map together, while the section still said STATE=ok.
+    if v is None:
+        return {}
+    if not isinstance(v, dict):
+        raise ValueError("%s is not a mapping, so it cannot be read" % what)
+    return v
 
 
 def sequence(v, what):
@@ -331,11 +340,11 @@ try:
     if not isinstance(doc, dict):
         raise ValueError("the goal is not a mapping")
 
-    out.append("GOAL_STATUS=%s" % one_line(mapping(doc.get("lifecycle")).get("status", "unknown")))
+    out.append("GOAL_STATUS=%s" % one_line(mapping(doc.get("lifecycle"), "lifecycle").get("status", "unknown")))
 
     if not isinstance(doc.get("objective"), dict):
         raise ValueError("the goal has no objective mapping")
-    objective = mapping(doc.get("objective"))
+    objective = mapping(doc.get("objective"), "objective")
     # Zero acceptance criteria is a goal that names none, not an unreadable
     # file. A criterion of the wrong shape is a different thing: dropping it
     # would report a goal that named two as a goal that named none.
@@ -345,7 +354,7 @@ try:
         out.append("AC=%s|%s|%s" % (one_line(ac.get("id")), one_line(ac.get("text")),
                                     one_line(ac.get("verification_command"))))
 
-    spec = mapping(doc.get("specification"))
+    spec = mapping(doc.get("specification"), "specification")
     for ng in sequence(spec.get("non_goals"), "non_goals"):
         out.append("NON_GOAL=%s" % one_line(ng))
     for ct in sequence(spec.get("interface_contracts"), "interface_contracts"):
