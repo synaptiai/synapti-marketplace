@@ -307,6 +307,10 @@ assert_not_contains "STATE=none" "$RG_OUT" "never reported as no goal"
 assert_contains "REASON=" "$RG_OUT" "and says why"
 STUB_CONTENT_MODE=empty _rg_run "$RG_BARE" 42
 assert_contains "STATE=unavailable" "$RG_OUT" "empty content (a goal over 1MB) is unavailable"
+# Without its own arm this lands on the parser and reports a parse failure, which
+# sends a reader looking for a syntax error in a file that is fine.
+assert_match 'REASON=.*1MB' "$RG_OUT" "and the reason names what the API actually did"
+assert_not_contains "did not parse" "$RG_OUT" "rather than blaming the goal text"
 STUB_HEAD_SHA="" _rg_run "$RG_BARE" 42
 assert_contains "STATE=unavailable" "$RG_OUT" "no resolvable head commit is unavailable"
 assert_not_contains "STATE=none" "$RG_OUT" "and not reported as no goal"

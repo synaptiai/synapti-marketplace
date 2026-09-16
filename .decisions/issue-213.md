@@ -130,3 +130,5 @@ docs stop disagreeing about whether review creates a goal
 <!-- auto-log: 2026-09-16 13:47 commit "fix(flow): the categories the review instructs are the categories it defines" -->
 
 <!-- auto-log: 2026-09-16 13:59 commit "refactor(flow): the goal reader leaves nothing behind and asks the API what happened" -->
+
+<!-- auto-log: 2026-09-16 14:05 commit "test(flow): the import-path scrub is pinned on an interpreter that ignores PYTHONSAFEPATH" -->
