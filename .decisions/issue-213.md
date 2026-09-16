@@ -177,3 +177,5 @@ rather than by its clause.
 <!-- auto-log: 2026-09-16 14:05 commit "test(flow): the import-path scrub is pinned on an interpreter that ignores PYTHONSAFEPATH" -->
 
 <!-- auto-log: 2026-09-16 14:06 commit "test(flow): an empty API response is told apart from a goal that will not parse" -->
+
+<!-- auto-log: 2026-09-16 14:09 commit "docs(flow): the goal states the contract the review actually implements" -->

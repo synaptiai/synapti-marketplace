@@ -358,14 +358,21 @@ STUB_FILE_STATUS=added _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=created" "$RG_OUT" "adding the goal in this pull request is not an edit"
 STUB_FILE_STATUS=modified _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=modified" "$RG_OUT" "changing an existing goal is"
-STUB_FILE_STATUS=removed _rg_run "$RG_BARE" 42
+# A deleted goal is not fetchable at the head, so this is the only shape the
+# removed case can arrive in: the content 404s and the file list says removed.
+STUB_FILE_STATUS=removed STUB_CONTENT_MODE=404 _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=removed" "$RG_OUT" "so is deleting it"
+assert_contains "STATE=none" "$RG_OUT" "and the goal is correctly absent at the head"
 STUB_FILE_STATUS="" _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=no" "$RG_OUT" "a pull request that leaves it alone is not"
 # The probe must answer for THIS goal. A path test that matched the directory
 # let any goal in the pull request set the flag for the goal under review.
 STUB_CHANGED_FILE=".flow/goals/issue-999.goal.yaml" STUB_FILE_STATUS=modified _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=no" "$RG_OUT" "a different issue goal in the same pull request does not set the flag"
+STUB_CONTENT_MODE=404 STUB_FILE_STATUS="" _rg_run "$RG_BARE" 42
+assert_contains "GOAL_EDITED=no" "$RG_OUT" "the flag is reported even when there is no goal to read"
+STUB_HEAD_SHA="" STUB_FILE_STATUS=modified _rg_run "$RG_BARE" 42
+assert_contains "GOAL_EDITED=modified" "$RG_OUT" "and even when the head commit cannot be resolved"
 STUB_FILES_EXIT=4 _rg_run "$RG_BARE" 42
 assert_contains "GOAL_EDITED=unavailable" "$RG_OUT" "a failed file-list call is unavailable"
 assert_not_contains "GOAL_EDITED=no" "$RG_OUT" \

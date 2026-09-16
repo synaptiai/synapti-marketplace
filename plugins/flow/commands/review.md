@@ -137,6 +137,27 @@ else
       # value that could reshape the jq filter or the request it goes into.
       FLOW_GOAL_PATH=".flow/goals/issue-$LINKED.goal.yaml"
       echo "GOAL_PATH=$FLOW_GOAL_PATH"
+      # Whether this pull request changes the goal it is reviewed against.
+      # The goal is trusted because it is tracked and a weakening shows up
+      # in the diff — which is only true while someone looks at the diff.
+      # Creating a goal and weakening one are different acts: a spec-first
+      # pull request creates its own goal, so `added` is not a trust signal
+      # and `modified` is. The status comes from the pull request file list,
+      # matched on this goal path exactly, so another issue goal changed in
+      # the same pull request does not answer for this one.
+      FLOW_GOAL_FILE_STATE=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/files?per_page=100" \
+        --jq ".[] | select(.filename==\"$FLOW_GOAL_PATH\" or .previous_filename==\"$FLOW_GOAL_PATH\") | .status" 2>/dev/null); FLOW_GOAL_GH=$?
+      if [ "$FLOW_GOAL_GH" -ne 0 ]; then
+        echo "GOAL_EDITED=unavailable"
+        echo "GOAL_EDITED_REASON=the pull request file list could not be read, so whether this pull request changes its own goal is unknown"
+      else
+        case "$(printf '%s' "$FLOW_GOAL_FILE_STATE" | head -1)" in
+          '')                          echo "GOAL_EDITED=no" ;;
+          added|copied)                echo "GOAL_EDITED=created" ;;
+          removed)                     echo "GOAL_EDITED=removed" ;;
+          *)                           echo "GOAL_EDITED=modified" ;;
+        esac
+      fi
       FLOW_GOAL_SHA=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null)
       if [ -z "$FLOW_GOAL_SHA" ]; then
         echo "STATE=unavailable"
@@ -253,27 +274,6 @@ print("STATE=ok")
 for line in out:
     print(line)
 FLOW_GOAL_READ
-          # Whether this pull request changes the goal it is reviewed against.
-          # The goal is trusted because it is tracked and a weakening shows up
-          # in the diff — which is only true while someone looks at the diff.
-          # Creating a goal and weakening one are different acts: a spec-first
-          # pull request creates its own goal, so `added` is not a trust signal
-          # and `modified` is. The status comes from the pull request file list,
-          # matched on this goal path exactly, so another issue goal changed in
-          # the same pull request does not answer for this one.
-          FLOW_GOAL_FILE_STATE=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/files?per_page=100" \
-            --jq ".[] | select(.filename==\"$FLOW_GOAL_PATH\" or .previous_filename==\"$FLOW_GOAL_PATH\") | .status" 2>/dev/null); FLOW_GOAL_GH=$?
-          if [ "$FLOW_GOAL_GH" -ne 0 ]; then
-            echo "GOAL_EDITED=unavailable"
-            echo "GOAL_EDITED_REASON=the pull request file list could not be read, so whether this pull request changes its own goal is unknown"
-          else
-            case "$(printf '%s' "$FLOW_GOAL_FILE_STATE" | head -1)" in
-              '')                          echo "GOAL_EDITED=no" ;;
-              added|copied)                echo "GOAL_EDITED=created" ;;
-              removed)                     echo "GOAL_EDITED=removed" ;;
-              *)                           echo "GOAL_EDITED=modified" ;;
-            esac
-          fi
         fi
       fi
       ;;
