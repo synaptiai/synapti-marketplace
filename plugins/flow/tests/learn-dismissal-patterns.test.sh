@@ -149,3 +149,80 @@ if [ -s "$D3/block.sh" ]; then
   assert_not_contains "STATE=empty" "$OUT3" \
     "and the section does not claim the project has no dismissals"
 fi
+
+# --- one must-fail input per guard -------------------------------------------
+# All four hardening guards survived the suite when they were added: nothing
+# here could tell whether they fired. A guard no test can break is a guard
+# nobody will notice losing.
+
+_flow_test_begin "a table separator is not a damaged manifest fence"
+# `"---" in text` matched a GFM separator, so 8 of the 41 journals in this
+# repository reported unreadable and the section said degraded on healthy data.
+D4=$(mktemp -d -t flow-ld4.XXXXXX); LD_CLEANUP+=("$D4")
+mkdir -p "$D4/.decisions"
+cat > "$D4/.decisions/issue-5.md" <<'MD'
+# Notes with no frontmatter
+
+| Area | Wrong version | Check |
+|---|---|---|
+| a | b | c |
+MD
+_ld_block > "$D4/block.sh"
+OUT4=$(cd "$D4" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+assert_not_contains "JOURNAL_UNREADABLE=" "$OUT4" "a table separator does not make a journal unreadable"
+assert_contains "STATE=empty" "$OUT4" "and the section reports an honest empty"
+
+_flow_test_begin "a damaged manifest fence IS reported"
+D5=$(mktemp -d -t flow-ld5.XXXXXX); LD_CLEANUP+=("$D5")
+mkdir -p "$D5/.decisions"
+printf 'stray preamble\n---\nissue: 6\nartifacts:\n- type: finding-dismissed\n---\n' \
+  > "$D5/.decisions/issue-6.md"
+_ld_block > "$D5/block.sh"
+OUT5=$(cd "$D5" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+assert_contains "JOURNAL_UNREADABLE=" "$OUT5" "a manifest that does not start the file is named"
+assert_contains "STATE=degraded" "$OUT5" "and the counts are reported as a floor"
+
+_flow_test_begin "a manifest using YAML aliases is refused"
+# A few hundred bytes of nested aliases becomes megabytes when str() runs.
+D6=$(mktemp -d -t flow-ld6.XXXXXX); LD_CLEANUP+=("$D6")
+mkdir -p "$D6/.decisions"
+cat > "$D6/.decisions/issue-7.md" <<'MD'
+---
+issue: 7
+a: &x ["aaaaaaaa","aaaaaaaa","aaaaaaaa"]
+b: &y [*x,*x,*x]
+c: &z [*y,*y,*y]
+artifacts:
+- type: finding-dismissed
+  pr: *z
+---
+# seven
+MD
+_ld_block > "$D6/block.sh"
+OUT6=$(cd "$D6" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+assert_contains "JOURNAL_UNREADABLE=" "$OUT6" "an alias-bearing manifest is refused"
+assert_match 'alias' "$OUT6" "and the reason names why"
+
+_flow_test_begin "a missing journal directory is unavailable, not empty"
+D7=$(mktemp -d -t flow-ld7.XXXXXX); LD_CLEANUP+=("$D7")
+_ld_block > "$D7/block.sh"
+OUT7=$(cd "$D7" && JOURNAL_DIR="no-such-dir" bash block.sh 2>&1)
+assert_contains "STATE=unavailable" "$OUT7" "a directory that is not there is not a project with no dismissals"
+assert_not_contains "STATE=empty" "$OUT7" "and never empty"
+
+_flow_test_begin "a reader with no PyYAML reports unavailable rather than nothing"
+D8=$(mktemp -d -t flow-ld8.XXXXXX); LD_CLEANUP+=("$D8")
+mkdir -p "$D8/.decisions" "$D8/nopy"
+# A python3 on PATH whose `import yaml` fails, so the probe fires.
+cat > "$D8/nopy/python3" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  *"import yaml"*) exit 1 ;;
+esac
+exit 0
+STUB
+chmod +x "$D8/nopy/python3"
+_ld_block > "$D8/block.sh"
+OUT8=$(cd "$D8" && PATH="$D8/nopy:$PATH" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+assert_contains "STATE=unavailable" "$OUT8" "no PyYAML is reported, not silently zero"
+assert_match 'PyYAML' "$OUT8" "and the reason names the dependency"

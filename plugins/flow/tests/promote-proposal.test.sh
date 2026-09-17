@@ -846,3 +846,66 @@ fi
 assert_match 'empty scope glob|unscoped' "$ERR" "and the reason names it"
 assert_equal "0" "$([ -f "$REPO_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
   "nothing was written"
+
+_flow_test_begin "a body that looks like frontmatter cannot redirect the promotion"
+# A sed scan over the fence read a body line that merely looked like
+# frontmatter, and the type it found decided which repository the run targets —
+# before the proposal was validated, and without re-checking the target is a
+# flow checkout.
+# Two distinct directories, or the assertion cannot tell which one was chosen —
+# which is the whole question the test exists to answer.
+DIR=$(_pp_mktemp_dir)
+FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
+_pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
+PROP="$DIR/spoof.md"
+_write_valid_proposal "$PROP" "test-spoof-body"
+python3 - "$PROP" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+s = s.replace("## Pattern Detected\n", "## Pattern Detected\n\n---\ntype: exception\n---\n\n")
+open(p, "w", encoding="utf-8").write(s)
+PY
+OUT=$(cd "$PROJ_D" && FLOW_REPO_ROOT="$FLOW_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1)
+# Assert on the resolution line, not the published preview: the dry run prints
+# the whole transformed body, so the spoof text appears there legitimately and
+# an assertion over the full output would fail for the wrong reason.
+RESOLVED=$(printf '%s\n' "$OUT" | grep 'flow checkout:' | head -1)
+assert_contains "$FLOW_D" "$RESOLVED" "the run targets the flow checkout"
+assert_not_contains "$PROJ_D" "$RESOLVED" "not the project the body asked for"
+assert_contains "would transform" "$OUT" "a proposal with no type key still takes the skill path"
+assert_equal "0" "$([ -f "$PROJ_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
+  "and nothing was written to a contract file"
+
+_flow_test_begin "a legal trailing comment on the type does not refuse a real exception"
+# `type: exception  # learned from #214` is legal YAML. A text scan mangled it
+# into something matching nothing, and a genuine exception promotion from a
+# consuming project was refused with advice to clone the marketplace.
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+PROP="$DIR/comment.md"
+_write_exception_proposal "$PROP" "test-exc-comment"
+python3 - "$PROP" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(s.replace("type: exception\n", "type: exception  # learned from #214\n"))
+PY
+OUT=$(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1); EXIT=$?
+assert_exit 0 "$EXIT" "the promotion validates"
+assert_contains "type: exception" "$OUT" "the type is read through the comment"
+assert_not_contains "clone the marketplace" "$OUT" "and it is not sent to the wrong repository"
+
+_flow_test_begin "a predictable temp name cannot redirect the contract write"
+# The atomic-write fix wrote to $EXC_FILE.$$.tmp, which is guessable and not
+# gitignored: a pull request could ship it as a tracked symlink, the writes
+# landed outside the repository, and mv moved the symlink into place.
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+mkdir -p "$DIR/outside"
+ln -s "$DIR/outside/stolen.md" "$REPO_D/.flow/review-exceptions.md.$$.tmp" 2>/dev/null || true
+PROP="$DIR/sym.md"
+_write_exception_proposal "$PROP" "test-exc-symlink"
+(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" >/dev/null 2>&1)
+assert_equal "0" "$([ -L "$REPO_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
+  "the contract is a real file, not a symlink"
+assert_equal "0" "$([ -s "$DIR/outside/stolen.md" ] && echo 1 || echo 0)" \
+  "and nothing was written outside the repository"

@@ -172,7 +172,30 @@ fi
 # promotion from a consuming project, which is where exceptions are learned.
 # The type is read from the frontmatter here rather than waiting for the full
 # validation pass below, which runs after this gate.
-PROPOSAL_TYPE_PEEK=$(sed -n '/^---$/,/^---$/p' "$PROPOSAL" 2>/dev/null | sed -n 's/^type:[[:space:]]*//p' | head -1 | tr -d '"'"'"' ')
+# One parser decides the type. A `sed` scan over the frontmatter fence read a
+# body line that merely looked like frontmatter (so a proposal could point
+# FLOW_ROOT at a repository nobody chose), and mangled a legal trailing comment
+# (`type: exception  # from #214`) into something that matched nothing, which
+# refused a real exception with advice to clone the marketplace. This is the
+# same yaml.safe_load the authoritative pass below uses, so the two cannot
+# disagree.
+PROPOSAL_TYPE_PEEK=$(PROPOSAL="$PROPOSAL" python3 - <<'PEEKEOF' 2>/dev/null || true
+import os, sys
+sys.path[:] = [q for q in sys.path if q not in ("", ".")]
+import yaml
+text = open(os.environ["PROPOSAL"], encoding="utf-8").read()
+if not text.startswith("---"):
+    sys.exit(0)
+parts = text.split("---", 2)
+if len(parts) < 3:
+    sys.exit(0)
+fm = yaml.safe_load(parts[1])
+if isinstance(fm, dict):
+    t = fm.get("type")
+    if isinstance(t, str):
+        print(t.strip())
+PEEKEOF
+)
 if [ "$PROPOSAL_TYPE_PEEK" = "exception" ]; then
   FLOW_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
   PROMOTE_SOURCE="the project this exception was learned in"
@@ -345,6 +368,17 @@ PYTHON
 ) || exit $?
 PROPOSAL_TYPE=$(printf '%s\n' "$PROPOSAL_NAME" | sed -n '2p')
 PROPOSAL_NAME=$(printf '%s\n' "$PROPOSAL_NAME" | sed -n '1p')
+# The peek decided which repository this run targets, before the proposal was
+# fully validated. If the authoritative parse disagrees, that decision was made
+# on a different reading of the same file and nothing downstream is trustworthy.
+if [ "$PROPOSAL_TYPE_PEEK" = "exception" ] && [ "$PROPOSAL_TYPE" != "exception" ]; then
+  echo "promote-proposal.sh: refusing — the frontmatter type was read as 'exception' before validation and as '$PROPOSAL_TYPE' after; the two readings must agree" >&2
+  exit 1
+fi
+if [ "$PROPOSAL_TYPE" = "exception" ] && [ "$PROPOSAL_TYPE_PEEK" != "exception" ]; then
+  echo "promote-proposal.sh: refusing — the frontmatter type was read as '$PROPOSAL_TYPE_PEEK' before validation and as 'exception' after; the two readings must agree" >&2
+  exit 1
+fi
 
 # Defense in depth: the python pass already validates name against
 # `^[a-z][a-z0-9-]*$`, but a contributor adding a stray `print(...)` to that
@@ -368,7 +402,10 @@ if [ "$PROPOSAL_TYPE" = "exception" ]; then
   # repository no review of the project ever reads, and, once committed, applied
   # it to everyone reviewing flow instead. The goal for this work lists
   # "Cross-repository exceptions" as an explicit non-goal.
-  EXC_REPO=$(git rev-parse --show-toplevel 2>/dev/null)
+  # `|| true`: under `set -e` a failed git call terminates the script, so the
+  # guard below and its message could never run — exit 128 with no output at
+  # all, which is outside this script's documented exit set.
+  EXC_REPO=$(git rev-parse --show-toplevel 2>/dev/null || true)
   if [ -z "$EXC_REPO" ]; then
     echo "promote-proposal.sh: refusing — an exception belongs to the project it was learned in, and this directory is not a git repository" >&2
     echo "promote-proposal.sh: run this from the project whose team dismissed the finding" >&2
@@ -467,7 +504,18 @@ PYEOF
   # contract is either the old one or the new one. Writing the header and the
   # row as two appends left a truncated header behind on a failure between
   # them, and the next run skipped the header because the file now existed.
-  EXC_TMP="$EXC_FILE.$$.tmp"
+  # mktemp, not a predictable name. `$EXC_FILE.$$.tmp` is guessable and is not
+  # gitignored, so a pull request can ship it as a tracked symlink: the writes
+  # below then land outside the repository and `mv` moves the SYMLINK into
+  # place, leaving the contract file pointing wherever the attacker chose —
+  # past both guards above, and reported as success. mktemp refuses to reuse an
+  # existing path, and the trap stops a failure between here and the mv from
+  # leaving the temp behind.
+  EXC_TMP=$(mktemp "$EXC_REPO/.flow/.review-exceptions.XXXXXX" 2>/dev/null) || {
+    echo "promote-proposal.sh: mktemp failed in $EXC_REPO/.flow" >&2
+    exit 2
+  }
+  trap 'rm -f "$EXC_TMP"' EXIT
   if [ -f "$EXC_FILE" ]; then
     cat "$EXC_FILE" > "$EXC_TMP" || { echo "promote-proposal.sh: cannot read $EXC_FILE" >&2; exit 2; }
   fi
@@ -493,6 +541,7 @@ PYEOF
     echo "promote-proposal.sh: cannot move $EXC_TMP into place" >&2
     exit 2
   }
+  trap - EXIT
   echo "promote-proposal.sh: appended the exception to $EXC_FILE"
   echo "promote-proposal.sh:   $EXC_ROW"
   echo "promote-proposal.sh: commit it — reviews read the file at the base commit, so an"

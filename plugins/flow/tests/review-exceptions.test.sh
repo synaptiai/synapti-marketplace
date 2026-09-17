@@ -346,3 +346,53 @@ for A in code-reviewer error-handler-inspector security-reviewer; do
   assert_match 'never suppress|annotate a security finding, never|not suppress' "$AC" \
     "$A states they do not suppress"
 done
+
+# --- --ref mode is what /flow:pr uses, and nothing exercised it ---------------
+_flow_test_begin "--ref resolves the commit the branch points at"
+# Only the string "--ref" in pr.md was asserted; replacing the whole branch body
+# with a hardcoded sha survived the suite.
+D11=$(mktemp -d "$RX_TMP/refmode.XXXXXX"); mkdir -p "$D11/stub"
+cat > "$D11/stub/gh" <<'STUBEOF'
+#!/usr/bin/env bash
+case "$*" in
+  *commits/main*) echo "1dea1dea1dea" ;;
+  *"ref=1dea1dea1dea"*)
+    printf 'HTTP/2.0 200 OK\r\n\r\n'
+    printf '{"content":"%s"}\n' "$(printf '%s' '| Only via ref | src/** | why | issue-7 |' | base64 | tr -d '\n')"
+    ;;
+  *contents*) printf 'HTTP/2.0 404 Not Found\r\n\r\n{}\n' ;;
+  *) echo "" ;;
+esac
+STUBEOF
+chmod +x "$D11/stub/gh"
+OUT11=$(cd "$D11" && PATH="$D11/stub:$PATH" "$HELPER" --repo o/r --ref main 2>/dev/null)
+assert_contains "EXCEPTIONS_REF=1dea1dea1dea" "$OUT11" "the ref is resolved to the commit it points at"
+assert_contains "STATE=ok" "$OUT11" "and the file is read there"
+assert_contains "Only via ref" "$OUT11" "with its rules printed"
+# A ref that resolves to nothing is unavailable, not none.
+D12=$(mktemp -d "$RX_TMP/badref.XXXXXX"); mkdir -p "$D12/stub"
+cat > "$D12/stub/gh" <<'STUBEOF'
+#!/usr/bin/env bash
+case "$*" in
+  *commits/*) echo '{"message":"No commit found for SHA","status":"422"}' ;;
+  *) echo "" ;;
+esac
+STUBEOF
+chmod +x "$D12/stub/gh"
+OUT12=$(cd "$D12" && PATH="$D12/stub:$PATH" "$HELPER" --repo o/r --ref nope 2>/dev/null)
+assert_contains "STATE=unavailable" "$OUT12" "an unresolvable ref is unavailable"
+assert_not_contains "EXCEPTIONS_REF={" "$OUT12" "and a JSON error blob is never announced as a commit"
+
+_flow_test_begin "the row cap is the documented number, and the notice counts what was cut"
+D13=$(mktemp -d "$RX_TMP/cap.XXXXXX")
+CAP_TABLE=$(python3 -c "
+rows = ['| Rule | Scope (path glob) | Why | Source |', '|---|---|---|---|']
+for i in range(101):
+    rows.append('| rule %d | src/** | why | issue-%d |' % (i, i))
+print(chr(10).join(rows))
+")
+_rx_stub "$D13" "$CAP_TABLE" "unused"
+OUT13=$(cd "$D13" && PATH="$D13/stub:$PATH" "$HELPER" --repo o/r --pr 7 2>/dev/null)
+assert_equal "100" "$(printf '%s\n' "$OUT13" | grep -c '^EXCEPTION=')" \
+  "exactly the documented cap is printed"
+assert_match 'EXCEPTIONS_TRUNCATED=1 rule' "$OUT13" "and the notice counts the one that was cut"

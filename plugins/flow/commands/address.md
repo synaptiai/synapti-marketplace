@@ -197,7 +197,11 @@ else
   TRUST_LIST='["OWNER","MEMBER","COLLABORATOR"]'
   for SETTINGS_PATH in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "${HOME:-/nonexistent}/.claude/settings.flow.json"; do
     [ -f "$SETTINGS_PATH" ] || continue
-    CONFIGURED=$(jq -c '.flow.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_PATH" 2>/dev/null)
+    # `.merge...`, not `.flow.merge...`: commands/merge.md and
+    # references/gate-configuration.md both use the top-level key, and reading a
+    # different one meant a team that widened trust had every real CONTRIBUTOR
+    # marker read as untrusted here while the merge gate accepted it.
+    CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_PATH" 2>/dev/null)
     if [ -n "$CONFIGURED" ] && printf '%s' "$CONFIGURED" | jq -e 'type == "array" and length > 0 and all(type == "string")' >/dev/null 2>&1; then
       TRUST_LIST="$CONFIGURED"
       break
@@ -219,7 +223,7 @@ else
       "MARKER_TRUSTED=" + (if $m == null then "0" else "1" end),
       (if $m == null then empty
        else ($m.body | capture("<!-- FLOW_REVIEW_CYCLE:(?<c>[0-9]+) ") | .c) as $cycle
-         | ($m.body | [scan("FINDINGS:\\[([^\\]]*)\\]")] | first | first) as $rows
+         | ($m.body | [scan("<!-- FLOW_REVIEW_CYCLE:[0-9]+ FINDINGS:\\[([^\\]]*)\\]")] | first | first) as $rows
          | if $rows == null then "MARKER_ROWS=unparsed"
            else ($rows | split(",") | .[] | select(length > 0) | "FINDING=cycle=" + $cycle + " " + .)
            end

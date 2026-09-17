@@ -76,6 +76,13 @@ if [ -n "$PR_NUM" ]; then
   # exceptions, target it, collect the exemptions, then retarget to the default
   # branch. The ref is trusted only when the base IS the repository default.
   BASE_INFO=$(gh pr view "$PR_NUM" --repo "$REPO" --json baseRefOid,baseRefName --jq '"\(.baseRefOid) \(.baseRefName)"' 2>/dev/null)
+  if [ -z "$BASE_INFO" ]; then
+    # Distinct from an untrusted base: nothing was read, so nothing is known
+    # about what the author chose.
+    echo "STATE=unavailable"
+    echo "REASON=the pull request could not be read, so the base it targets is unknown"
+    exit 0
+  fi
   BASE_SHA=${BASE_INFO%% *}
   BASE_NAME=${BASE_INFO#* }
   DEFAULT_NAME=$(gh repo view "$REPO" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null)

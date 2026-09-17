@@ -168,6 +168,7 @@ else
 DISMISSAL_OUT=$(python3 - "$DISMISSAL_JOURNAL_DIR" <<'DISMISSAL_PY'
 import glob
 import os
+import re
 import sys
 
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
@@ -210,10 +211,13 @@ for path in sorted(glob.glob(os.path.join(journal_dir, "*.md"))):
     try:
         text = open(path, encoding="utf-8").read()
         if not text.startswith("---"):
-            # A file with no frontmatter at all is not a journal. One that has
-            # `---` somewhere else is a journal whose fence was damaged, and
-            # counting that as zero hides the evidence this block looks for.
-            if "---" in text:
+            # A file with no frontmatter at all is not a journal. One whose
+            # fence was DAMAGED is, and counting that as zero hides the evidence
+            # this block looks for — but "--- appears somewhere" is not damage:
+            # it matches a GFM table separator, and 8 of the 41 journals in this
+            # repository carry one under a risk-map heading. Require both a
+            # fence-shaped line and a manifest key before calling it damaged.
+            if re.search(r"(?m)^---[ \t]*$", text) and re.search(r"(?m)^artifacts:", text):
                 raise ValueError("the manifest fence does not start the file")
             continue
         fm = yaml.load(text.split("---", 2)[1], Loader=NoAliases)
