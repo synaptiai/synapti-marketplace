@@ -559,3 +559,33 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-17 20:43 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
 
 <!-- auto-log: 2026-09-17 20:44 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 21:24 commit "fix(flow): the check that cannot fail loudly is worse than no check" -->
+
+<!-- auto-log: 2026-09-17 21:30 Write /Users/danielbentes/.claude-work/projects/-Users-danielbentes-synapti-marketplace/memory/feedback_a_fence_is_code.md -->
+
+<!-- auto-log: 2026-09-17 21:49 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_flow_settings_newline_injection.md -->
+
+<!-- auto-log: 2026-09-17 21:49 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_flow_fence_marker_test_counts_only_bash.md -->
+
+<!-- auto-log: 2026-09-17 21:49 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-17 21:50 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_marker_guard_drift.md -->
+
+<!-- auto-log: 2026-09-17 21:51 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_unavailable_collapse.md -->
+
+<!-- auto-log: 2026-09-17 21:51 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/MEMORY.md -->
+
+<!-- auto-log: 2026-09-17 21:53 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mut.sh -->
+
+<!-- auto-log: 2026-09-17 21:54 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/feedback_green_gate_numbers_vs_ci.md -->
+
+<!-- auto-log: 2026-09-17 21:54 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/feedback_fence_marker_test_scope.md -->
+
+<!-- auto-log: 2026-09-17 21:54 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/MEMORY.md -->
+
+<!-- auto-log: 2026-09-17 21:54 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/feedback_verify_quoted_repo_counts.md -->
+
+<!-- auto-log: 2026-09-17 22:01 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/f5-verdict.txt -->
+
+<!-- auto-log: 2026-09-17 22:03 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/f3/verdict.md -->

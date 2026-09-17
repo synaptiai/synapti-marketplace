@@ -463,13 +463,20 @@ done
 case "$PR_NUM" in ''|0*|*[!0-9]*) echo "FINDING_DISMISSED=skipped (PR_NUM must be a positive integer with no leading zero)" >&2; exit 1 ;; esac
 case "$CYCLE_NUMBER" in ''|*[!0-9]*) echo "FINDING_DISMISSED=skipped (CYCLE_NUMBER is not a number)" >&2; exit 1 ;; esac
 # The id ends up in the DISPUTED:[...] array that the Phase 5 emitter builds
-# from this artifact, and references/finding-ledger-parser.md parses that array
-# by splitting on `,` and `]` and matching with a POSIX case glob. An id
-# carrying a comma injects rows into the merge gate, and an id of `*` matches
-# every RESOLVED list, so the finding disappears from the tally instead of
-# blocking. Same allowlist and same LC_ALL=C as valid_id in
-# bin/flow-finding-route.sh: bracket ranges follow the locale of the caller,
+# from this artifact, and the consumers in references/finding-ledger-parser.md
+# split that array on `,` and `]`. An id carrying a comma injects extra rows
+# into every consumer that does `tr ',' '\n'`, and a `]` truncates the
+# `grep -o 'DISPUTED:\[[^]]*\]'` those consumers extract with, silently
+# dropping the rest of the array. Same allowlist and same LC_ALL=C as valid_id
+# in bin/flow-finding-route.sh: bracket ranges follow the locale of the caller,
 # where [A-Za-z] can match a letter such as e-acute.
+#
+# It is NOT about glob expansion. status.md's containment check writes the id as
+# `*",$ID,"*`, where the quotes make it a literal, and commands/merge.md has no
+# glob at all — its gate is `comm` over sorted lists. An earlier version of this
+# comment claimed an id of `*` "matches every RESOLVED list"; that was never
+# true of any consumer, and the same claim was corrected in
+# bin/_journal_manifest.py in the same round.
 if ! ( LC_ALL=C
        case "$FINDING_ID" in [A-Za-z]*) ;; *) exit 1 ;; esac
        case "$FINDING_ID" in *[!A-Za-z0-9_-]*) exit 1 ;; esac ); then
@@ -647,7 +654,7 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    ```
 9. **Post resolution comment** (MANDATORY) using the template structure from `templates/resolution-comment.md`.
 
-   The trailing marker carries four arrays, and `DISPUTED:[...]` is the one for findings this run
+   The trailing marker carries three arrays, and `DISPUTED:[...]` is the one for findings this run
    pushed back on. It is **not** transcribed by hand: the block below builds it from the
    `finding-dismissed` artifacts Phase 3 wrote, so the journal and the marker cannot disagree about
    what was dismissed. Copying ids across by hand is a step nothing can check.
@@ -747,7 +754,7 @@ esac
 # root, so the substitution yields nothing. It does not cover the helper
 # failing internally: with --default it prints the default and exits 0 even
 # with jq missing.
-DISPUTED_DIR=$("$FLOW_ROOT/bin/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty')
+DISPUTED_DIR=$("$FLOW_ROOT/bin/cascade-resolve.sh" --scalar --default ".decisions" '.journal.dir // empty')
 if [ -z "$DISPUTED_DIR" ]; then
   echo "DISPUTED_STATE=unavailable"
   echo "REASON=the journal directory could not be resolved, so the file recording the dismissals cannot be located"
@@ -910,6 +917,14 @@ true
    # as unpinned, which is the failure this pinning exists to prevent.
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
    [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+   # Both values are re-checked here. commands/review.md's emitter validates them
+   # and this one did not: `gh pr comment ""` is not an error to gh, it falls back
+   # to inferring the pull request from the branch, so an unset PR_NUM posts the
+   # comment on whichever pull request happens to be checked out.
+   [ -n "${PR_NUM:-}" ] || { echo "ERROR: PR_NUM is not set; refusing to post a resolution marker" >&2; exit 1; }
+   case "${CYCLE_NUMBER:-}" in
+     ''|0*|*[!0-9]*) echo "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to post a resolution marker" >&2; exit 1 ;;
+   esac
    # $BODY is composed prose, and templates/resolution-comment.md invites
    # verbatim reviewer text into it. The merge gate greps the arrays out of the
    # whole comment and unions every rendering, so a second `RESOLVED:[` anywhere
@@ -919,7 +934,12 @@ true
    # Both now call the same script.
    "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-check-resolution-body.sh" \
      --cycle "$CYCLE_NUMBER" <<<"$BODY" || exit 1
-   gh pr comment "$PR_NUM" --repo "$REPO" --body "$BODY"
+   gh pr comment "$PR_NUM" --repo "$REPO" --body "$BODY"; RES_EXIT=$?
+   echo "RES_EXIT=$RES_EXIT"
+   # A silently absent resolution marker re-introduces the merge false-block this
+   # emission exists to prevent, so a failed comment is an error here. The sibling
+   # emitter in commands/review.md reports the same way.
+   [ "$RES_EXIT" -eq 0 ] || exit 1
    # POST_RESOLUTION_BLOCK_END
    ```
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")

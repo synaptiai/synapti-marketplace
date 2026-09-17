@@ -1241,6 +1241,51 @@ GHSTUB
   _post_run "no marker at all"
   assert_equal "1" "$POST_CODE" "a marker-less body is refused"
   assert_equal "" "$POST_GH" "and gh is never called for it either"
+  # The values the block uses. `gh pr comment ""` is not an error to gh — it
+  # falls back to inferring the pull request from the branch — so an unset
+  # PR_NUM would post the marker on whichever pull request is checked out.
+  GOOD_BODY="Resolved: F1. <!-- FLOW_RESOLUTION_CYCLE:3 RESOLVED:[F1] ESCALATED:[] DISPUTED:[] -->"
+  for BAD in '' 0 03 3x; do
+    POST_OUT=$(cd "$WORKPR" && PATH="$WORKPR/stubbin:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+      GH_LOG="$WORKPR/gh.log" PR_NUM=234 CYCLE_NUMBER="$BAD" BODY="$GOOD_BODY" bash "$WORKPR/post.sh" 2>&1); POST_CODE=$?
+    assert_equal "1" "$POST_CODE" "CYCLE_NUMBER='$BAD' is refused"
+  done
+  POST_GH=$(cat "$WORKPR/gh.log" 2>/dev/null)
+  assert_equal "" "$POST_GH" "and none of those reached gh"
+  POST_OUT=$(cd "$WORKPR" && PATH="$WORKPR/stubbin:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+    GH_LOG="$WORKPR/gh.log" CYCLE_NUMBER=3 BODY="$GOOD_BODY" bash "$WORKPR/post.sh" 2>&1); POST_CODE=$?
+  assert_equal "1" "$POST_CODE" "an unset PR_NUM is refused"
+  # A failed post must not read as a successful one: the marker is what the merge
+  # gate balances, so a comment that never landed leaves the ledger short.
+  cat > "$WORKPR/stubbin/gh" <<'GHFAIL'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "repo view") echo "acme/widgets"; exit 0 ;;
+esac
+exit 7
+GHFAIL
+  chmod +x "$WORKPR/stubbin/gh"
+  POST_OUT=$(cd "$WORKPR" && PATH="$WORKPR/stubbin:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+    PR_NUM=234 CYCLE_NUMBER=3 BODY="$GOOD_BODY" bash "$WORKPR/post.sh" 2>&1); POST_CODE=$?
+  assert_equal "1" "$POST_CODE" "a failed gh pr comment is an error, not a silent success"
+  assert_contains "RES_EXIT=7" "$POST_OUT" "and the exit is reported"
+fi
+
+_flow_test_begin "the resolution-body checker returns when its stdin is closed"
+# `$(cat)` deadlocks here: with fd 0 closed, command substitution allocates the
+# pipe read end AS fd 0, and the parent then blocks on the substitution holding
+# the write end. A merge-gate helper that hangs is worse than one that refuses.
+if command -v timeout >/dev/null 2>&1 || command -v gtimeout >/dev/null 2>&1; then
+  TMO7=$(command -v timeout || command -v gtimeout)
+  ( "$TMO7" 6 bash "$CHECKER" --cycle 3 0<&- >/dev/null 2>&1 ); RC_HANG=$?
+  if [ "$RC_HANG" -eq 124 ]; then
+    _flow_assert_fail "the checker hung on a closed stdin (timed out after 6s)"
+  else
+    _flow_assert_pass "the checker returns rather than waiting for input that cannot come"
+    assert_equal "1" "$RC_HANG" "and refuses, because an unread body is an empty one"
+  fi
+else
+  _flow_assert_pass "SKIP: neither timeout nor gtimeout is installed"
 fi
 
 _flow_test_begin "every runnable fence in step 9 is a marked, testable block"
@@ -1249,7 +1294,10 @@ _flow_test_begin "every runnable fence in step 9 is a marked, testable block"
 # exit status, and the prose read its empty stdout as "nothing to worry about" —
 # the exact defect class this issue exists to remove, in the fix for it.
 # A fence the agent is told to run is code. Unmarked code is untested code.
-STEP9_FENCES=$(awk '/^9\. \*\*Post resolution comment\*\*/{f=1} f && /^10\./{f=0} f && /^ *```bash/{c++} END{print c+0}' "$ADDRESS_MD")
+# Every fence type that RUNS. A ```! fence is pre-executed at command load, so it
+# is the more dangerous of the two and the one the first version of this test
+# missed — it counted ```bash only, and an unmarked ```! fence sailed through.
+STEP9_FENCES=$(awk '/^9\. \*\*Post resolution comment\*\*/{f=1} f && /^10\./{f=0} f && /^ *```(bash|!)$/{c++} END{print c+0}' "$ADDRESS_MD")
 STEP9_MARKED=$(awk '/^9\. \*\*Post resolution comment\*\*/{f=1} f && /^10\./{f=0} f && /_BLOCK_BEGIN/{c++} END{print c+0}' "$ADDRESS_MD")
 assert_equal "$STEP9_FENCES" "$STEP9_MARKED" "every bash fence in step 9 carries BEGIN/END markers"
 

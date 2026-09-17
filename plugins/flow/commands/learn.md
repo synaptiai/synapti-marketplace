@@ -30,8 +30,13 @@ HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||
 JOURNAL_DIR=".decisions"
 PROPOSAL_DIR="$HOME/.claude/flow-proposals"
 if [ -x "$HELPER" ]; then
-  JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
-  PROPOSAL_DIR=$("$HELPER" --default "$HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
+  # --scalar: both values are printed below as `KEY=value` lines, and
+  # .claude/settings.flow.json is a tracked file, so a fork pull request chooses
+  # them. Without the flag a newline in journal.dir closed the JOURNAL_DIR= line
+  # and opened a forged `### Dismissal Artifacts` section — with its own STATE=ok
+  # and its own DISMISSED= rows — above the real one.
+  JOURNAL_DIR=$("$HELPER" --scalar --default ".decisions" '.journal.dir // empty')
+  PROPOSAL_DIR=$("$HELPER" --scalar --default "$HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
   echo "STATE=ok"
 else
   # Helper missing or non-executable — using compile-time defaults. Surface
@@ -187,7 +192,7 @@ else
 DISMISSAL_OUT=$(PYTHONSAFEPATH=1 python3 - "$FLOW_ROOT/bin" "$DISMISSAL_JOURNAL_DIR" <<'DISMISSAL_PY'
 import sys
 
-# The scrub sits ABOVE the other imports on purpose: glob and os happen to be
+# The scrub sits ABOVE the other imports on purpose: os happens to be
 # preloaded by CPython today, which is an interpreter detail, not a promise.
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
@@ -199,7 +204,7 @@ sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 # sibling reader "opens the same way" while the two had already diverged.
 sys.path.insert(0, sys.argv[1])
 
-import glob
+import errno
 import os
 
 from _journal_manifest import ManifestError, one_line, read_artifacts
@@ -223,13 +228,35 @@ dismissed = []
 dropped = []
 unreadable = []
 
-# glob.escape on the DIRECTORY, not on the "*.md" that follows it. isdir above
-# stats the literal path while glob treats [ ? and * inside it as pattern
-# syntax, so a directory that genuinely exists and genuinely holds journals
-# matched nothing and the block reported a project with no dismissals — the
-# defect class this issue exists to remove, reached through the path rather
-# than through the file.
-for path in sorted(glob.glob(os.path.join(glob.escape(journal_dir), "*.md"))):
+# os.listdir, not glob. Two reasons, both the same defect class this issue
+# exists to remove — an unreadable input answering like a legitimately absent
+# one:
+#
+#   1. glob treats [ ? and * inside the pattern as syntax, so a directory that
+#      genuinely exists and genuinely holds journals matched nothing and the
+#      block reported a project with no dismissals.
+#   2. glob SWALLOWS the OSError from a directory it cannot read, returning an
+#      empty list. A directory holding recorded dismissals that the process may
+#      not list therefore reported DISMISSED_COUNT=0 / STATE=empty, byte for
+#      byte what a project with nothing recorded reports.
+#
+# listdir raises for the second and needs no escaping for the first. The
+# leading-dot skip preserves the behaviour glob had: `*` does not match a leading dot,
+# so a `.hidden.md` in the journal directory was and remains ignored.
+try:
+    _entries = sorted(os.listdir(journal_dir))
+except OSError as exc:
+    print("DISMISSED_COUNT=0")
+    print("DROPPED_COUNT=0")
+    print("STATE=unavailable")
+    print("REASON=the journal directory %s could not be listed (%s), so whether this "
+          "project has recorded dismissals is unknown" % (one_line(journal_dir), errno.errorcode.get(exc.errno, "OSError")))
+    sys.exit(0)
+
+for _name in _entries:
+    if _name.startswith(".") or not _name.endswith(".md"):
+        continue
+    path = os.path.join(journal_dir, _name)
     try:
         for a in read_artifacts(path):
             if not isinstance(a, dict):

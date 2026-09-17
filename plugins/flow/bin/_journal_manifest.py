@@ -196,9 +196,10 @@ def read_artifacts(path):
     if manifest is None:
         # No opening fence. Damage is told apart the way it always was: a
         # fence-shaped line PLUS a manifest key means a manifest that was
-        # mangled. "`---` appears somewhere" is not damage on its own — it
-        # matches a GFM table separator, and 8 of the 41 journals in this
-        # repository carry one under a risk-map heading.
+        # mangled. "`---` appears somewhere" is not damage on its own: a `---`
+        # line is a markdown horizontal rule, and 33 of this repository's own 41
+        # journals carry one. (A GFM table separator is `|---|`, which this
+        # regex does not match at all; 23 of the 41 have one of those.)
         if re.search(r"(?m)^---[ \t]*$", text) and re.search(r"(?m)^artifacts:", text):
             raise ManifestError("the manifest fence does not start the file")
         return []
@@ -272,11 +273,13 @@ def finding_id(a):
                             % one_line(fid[:MAX_FINDING_ID]))
     # Every other file-derived value this module prints is bounded; this one was
     # not, and it is the value that goes into a GitHub comment as part of the
-    # array. The bound is the same one the writer applies, so the reader still
-    # refuses exactly what the writer refuses — a reader stricter than its writer
-    # is the disagreement this module exists to remove.
+    # array. MAX_FINDING_ID is the same number commands/address.md's
+    # FINDING_DISMISSED_BLOCK enforces when it records the artifact, so the
+    # reader refuses exactly what that writer refuses. It is NOT
+    # bin/journal-record.sh's number: that helper takes the metadata pairs it is
+    # given and applies no id bound of its own.
     if len(fid) > MAX_FINDING_ID:
         raise ManifestError("the journal records a dismissal whose finding id is %d characters, "
-                            "more than the %d the writer accepts; refusing to build an array from it"
-                            % (len(fid), MAX_FINDING_ID))
+                            "more than the %d the recording block accepts; refusing to build an "
+                            "array from it" % (len(fid), MAX_FINDING_ID))
     return fid

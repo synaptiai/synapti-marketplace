@@ -45,7 +45,14 @@ case "$CYCLE" in
   *[!0-9]*) echo "ERROR: --cycle must be all digits, got '$CYCLE'" >&2; exit 2 ;;
 esac
 
-BODY=$(cat)
+# `read -d ''`, NOT `$(cat)`. With fd 0 closed, command substitution allocates
+# the pipe read end AS fd 0 and the parent then blocks on the substitution that
+# holds the write end — a deadlock, reproduced here with `0<&-` (rc=124 under a
+# 6s timeout). `read` reports EBADF and returns immediately, leaving BODY empty
+# so the empty-body refusal below fires. With a live stdin it reads to EOF and
+# preserves every byte, trailing newline included, exactly as `cat` did.
+BODY=""
+IFS= read -r -d '' BODY || true
 
 if [ -z "$BODY" ]; then
   echo "ERROR: the resolution body is empty; refusing to post a marker-less comment" >&2
