@@ -151,6 +151,40 @@ else
   else
     echo "$THREADS"
   fi
+
+  # Section: Review-Cycle Findings
+  echo ""
+  echo "### Review-Cycle Findings"
+  # A review comment carries a GitHub comment id. A finding carries a ledger id
+  # (F1, SEC-2), and the ledger id is the only thing that joins a dismissal to
+  # the finding that caused it, survives across cycles, and matches the
+  # DISPUTED array that /flow:merge gates on. Marker shape and the trusted-author
+  # filter are defined in `references/finding-ledger-parser.md`.
+  FINDINGS_RAW=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null); FIND_GH=$?
+  FINDINGS_ROWS=$(printf '%s' "$FINDINGS_RAW" | jq -s -r '
+    add
+    | [.[] | select(.body | test("<!-- FLOW_REVIEW_CYCLE:[0-9]+ "))]
+    | last
+    | if . == null then empty
+      else (.body | capture("FLOW_REVIEW_CYCLE:(?<c>[0-9]+)") | .c) as $cycle
+        | (.body | capture("FINDINGS:\\[(?<f>[^\\]]*)\\]") | .f) as $rows
+        | ($rows | split(",") | .[] | select(length > 0) | "FINDING=cycle=" + $cycle + " " + .)
+      end' 2>/dev/null); FIND_JQ=$?
+  if [ "$FIND_GH" -ne 0 ] || [ "$FIND_JQ" -ne 0 ]; then
+    # A failed read and a pull request with no markers both leave this empty,
+    # and STATE=empty says "this pull request has no findings" — which would let
+    # a Pushback be recorded against an id nobody read.
+    echo "FINDING_COUNT=0"
+    echo "STATE=unavailable"
+    echo "REASON=the review-cycle markers could not be read (gh exit=$FIND_GH, jq exit=$FIND_JQ), so no finding id is known"
+  elif [ -z "$FINDINGS_ROWS" ]; then
+    echo "FINDING_COUNT=0"
+    echo "STATE=empty"
+  else
+    echo "FINDING_COUNT=$(printf '%s\n' "$FINDINGS_ROWS" | grep -c '^FINDING=')"
+    echo "STATE=ok"
+    printf '%s\n' "$FINDINGS_ROWS"
+  fi
 fi
 
 true
@@ -304,7 +338,74 @@ TaskUpdate(testCoverageTaskId, status: "completed", result: "Tests written/updat
 
 For **Question** items: prepare a response comment (no code change needed).
 
-For **Pushback** items: explain reasoning in response comment.
+For **Pushback** items: explain reasoning in response comment — and record the dismissal, so the
+same finding does not have to be argued down again next cycle.
+
+`skills/feedback-resolution/SKILL.md` already requires a Pushback to stand on one of three grounds:
+the finding is factually incorrect (cite the `file:line`), applying it would break a named test, or
+it contradicts a quoted rule in CLAUDE.md. Those grounds are the evidence the artifact records —
+nothing extra is asked of the author.
+
+For each Pushback item:
+
+1. Take the finding id from the `### Review-Cycle Findings` section of Phase 1 — the ledger id
+   (`F1`, `SEC-2`), never the GitHub comment id. When that section printed `STATE=empty` or
+   `STATE=unavailable` there is no id to key the dismissal to: reply in the thread as usual, say in
+   the reply that no finding id was available, and do NOT invent one. A dismissal recorded against a
+   made-up id joins to nothing and pollutes every later cluster.
+2. Run the block below once per dismissed finding.
+3. Add the id to the `DISPUTED:[...]` array of the resolution marker when the comment is posted
+   (step 4 of Phase 5). `templates/resolution-comment.md` already carries the array and
+   `references/finding-ledger-parser.md` already gives it precedence below `RESOLVED` and
+   `ESCALATED`; `/flow:merge` blocks on a disputed id until a human overrides, which is the point —
+   a dismissal is the author's claim, and the merge gate is where a human confirms it.
+
+```!
+# FINDING_DISMISSED_BLOCK_BEGIN
+# Records one rejected finding. Every value arrives as an environment variable
+# rather than interpolated text: a finding location or a quoted rule is
+# author-controlled and must never reach a shell as code.
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+for _v in PR_NUM CYCLE_NUMBER FINDING_ID CATEGORY LOCATION REASON EVIDENCE; do
+  eval "_val=\${$_v:-}"
+  [ -n "$_val" ] || { echo "FINDING_DISMISSED=skipped ($_v is unset)" >&2; exit 1; }
+done
+case "$PR_NUM" in ''|*[!0-9]*) echo "FINDING_DISMISSED=skipped (PR_NUM is not a number)" >&2; exit 1 ;; esac
+case "$CYCLE_NUMBER" in ''|*[!0-9]*) echo "FINDING_DISMISSED=skipped (CYCLE_NUMBER is not a number)" >&2; exit 1 ;; esac
+# The reason vocabulary is closed because /flow:learn clusters on it. A free-text
+# reason clusters with nothing, so it is refused here rather than recorded and
+# silently ignored later.
+case "$REASON" in
+  factually-incorrect|breaks-test|contradicts-claude-md|critic-evidence|critic-unrefuted-concern|self-review-refuted) ;;
+  *) echo "FINDING_DISMISSED=refused (reason '$REASON' is outside the closed set in references/decision-journal-schema.md)" >&2; exit 2 ;;
+esac
+# A pull request that closes no issue has no journal to write to. Same posture
+# as the dropped-finding blocks in review.md: say so and skip, never guess.
+if [ -z "${ISSUE:-}" ]; then
+  ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" 2>/dev/null)
+fi
+case "${ISSUE:-}" in
+  ''|*[!0-9]*) echo "FINDING_DISMISSED=skipped (pull request #$PR_NUM closes no issue, so there is no journal)" >&2; exit 0 ;;
+esac
+"$FLOW_ROOT/bin/journal-record.sh" \
+  --issue "$ISSUE" \
+  --type finding-dismissed \
+  --metadata pr="$PR_NUM" \
+  --metadata cycle="$CYCLE_NUMBER" \
+  --metadata finding_id="$FINDING_ID" \
+  --metadata category="$CATEGORY" \
+  --metadata location="$LOCATION" \
+  --metadata by=address \
+  --metadata reason="$REASON" \
+  --metadata evidence="$EVIDENCE"
+# FINDING_DISMISSED_BLOCK_END
+
+true
+```
+
+A failure here is reported and does not fail the run — the same posture the trust-ledger note in
+`pr.md` takes. The reply in the thread is what the reviewer sees; the artifact is what
+`/flow:learn` reads.
 
 For **Out-of-scope** items — finding triage is NEVER a valid escalation trigger; the default action for every finding is fix in this PR:
 
@@ -405,7 +506,19 @@ Even in minimal-scope mode, P1 and P2 findings in untouched files are always fix
    gh api "repos/$REPO/pulls/$PR_NUM/comments/{comment_id}/replies" \
      -f body="{response text}"
    ```
-9. **Post resolution comment** (MANDATORY) using the template structure from `templates/resolution-comment.md`:
+9. **Post resolution comment** (MANDATORY) using the template structure from `templates/resolution-comment.md`.
+
+   The trailing marker carries four arrays, and `DISPUTED:[...]` is the one for findings this run
+   pushed back on. Put every id passed to the `FINDING_DISMISSED_BLOCK` in Phase 3 there — the same
+   ledger ids, so the artifact and the marker agree about what was dismissed. Leaving it empty while
+   the journal records a dismissal means `/flow:merge` never learns a human rejected the finding,
+   and the merge gate passes on a finding nobody resolved.
+
+   `references/finding-ledger-parser.md` gives `RESOLVED` precedence over `ESCALATED` over
+   `DISPUTED`, so an id that was actually fixed belongs in `RESOLVED` even if it was argued about
+   first. A disputed id blocks the merge until a human overrides, which is the intended gate: a
+   dismissal is the author's claim, and the merge confirmation is where someone else agrees.
+
    ```bash
    # $REPO does not survive from the preflight block: each fence is its own
    # shell. Resolved again here, because `gh --repo ""` falls back to gh's own
