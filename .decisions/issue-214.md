@@ -491,3 +491,5 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-17 19:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/_journal_manifest.py -->
 
 <!-- auto-log: 2026-09-17 19:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-17 19:32 commit "fix(flow): one reader, and it agrees with the writer about what a manifest is" -->

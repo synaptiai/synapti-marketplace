@@ -155,9 +155,11 @@ echo "### Dismissal Artifacts"
 # rejected it on stated grounds. Only the second is evidence for an exception,
 # so they are counted apart.
 DISMISSAL_JOURNAL_DIR="${JOURNAL_DIR:-.decisions}"
-# The reader is bin/_journal_manifest.py, shared with address.md's
-# DISPUTED_ARRAY_BLOCK and taking its fence predicate from bin/_journal_atomic.py.
+# The reader is bin/_journal_manifest.py, shared with the DISPUTED_ARRAY_BLOCK
+# in address.md and taking its fence predicate from bin/_journal_atomic.py.
 # Resolved the same way every other helper in this command is.
+# No apostrophes in these comments: this is an inline-! block, and an unpaired
+# one kills the whole block on the Windows executor.
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
 # Probed for the same reason PyYAML is below: the import sits above the first
 # print, so on an install where the reader is missing this block would die
@@ -189,12 +191,12 @@ import sys
 # preloaded by CPython today, which is an interpreter detail, not a promise.
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
-# The reader lives in the plugin's own bin/, and takes its fence predicate from
-# bin/_journal_atomic.py — the module every journal write goes through. This
-# block used to carry its own copy. The copies drifted every review round: this
-# one never gained the O_NONBLOCK that stops a FIFO in the journal directory
-# hanging the read forever, and its comment claimed the sibling "opens the same
-# way" while the two had already diverged.
+# The reader lives in the bin/ directory of the plugin, and takes its fence
+# predicate from bin/_journal_atomic.py — the module every journal write goes
+# through. This block used to carry its own copy. The copies drifted every
+# review round: this one never gained the O_NONBLOCK that stops a FIFO in the
+# journal directory hanging the read forever, and the comment here claimed the
+# sibling reader "opens the same way" while the two had already diverged.
 sys.path.insert(0, sys.argv[1])
 
 import glob
