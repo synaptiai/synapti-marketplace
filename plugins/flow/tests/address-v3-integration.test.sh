@@ -92,7 +92,10 @@ done
 
 _flow_test_begin "the finding-dismissed reason vocabulary is a closed set"
 # Free text clusters with nothing, which is the whole point of recording it.
-for R in factually-incorrect breaks-test contradicts-claude-md critic-evidence critic-unrefuted-concern self-review-refuted; do
+# self-review-refuted is deliberately NOT here: review.md writes dropped-finding
+# for that case, and documenting a reason nothing emits is how a contract starts
+# lying about what it carries.
+for R in factually-incorrect breaks-test contradicts-claude-md critic-evidence critic-unrefuted-concern; do
   assert_contains "\`$R\`" "$SCHEMA" "reason '$R' is documented"
 done
 assert_contains "closed set" "$SCHEMA" "the schema says the set is closed"

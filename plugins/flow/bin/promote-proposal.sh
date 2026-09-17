@@ -388,7 +388,11 @@ if [ "$PROPOSAL_TYPE" = "exception" ]; then
   EXC_ROW=$(PROPOSAL="$PROPOSAL" python3 - <<'PYEOF'
 import os, re, sys
 sys.path[:] = [q for q in sys.path if q not in ("", ".")]
-text = open(os.environ["PROPOSAL"], encoding="utf-8").read()
+try:
+    text = open(os.environ["PROPOSAL"], encoding="utf-8").read()
+except OSError as exc:
+    print("promote-proposal.sh: cannot read the proposal: %s" % exc, file=sys.stderr)
+    sys.exit(2)
 # The row is the first table row under `## Exception row` that is not the
 # header or its separator.
 section = re.split(r"^##\s+Exception row\s*$", text, flags=re.M)
@@ -446,7 +450,11 @@ PYEOF
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "DRY-RUN: validation passed for '$PROPOSAL_NAME' (type: exception)"
     echo "DRY-RUN: flow checkout: $REPO_ROOT (resolved from $PROMOTE_SOURCE)"
-    echo "DRY-RUN: would append to $EXC_FILE:"
+    if [ -f "$EXC_FILE" ]; then
+      echo "DRY-RUN: would append to $EXC_FILE:"
+    else
+      echo "DRY-RUN: would CREATE $EXC_FILE with its table header, then append:"
+    fi
     echo "DRY-RUN:   $EXC_ROW"
     exit 0
   fi
@@ -455,6 +463,14 @@ PYEOF
     echo "promote-proposal.sh: cannot create $(dirname "$EXC_FILE")" >&2
     exit 2
   }
+  # Build the whole file beside the target and move it into place, so the
+  # contract is either the old one or the new one. Writing the header and the
+  # row as two appends left a truncated header behind on a failure between
+  # them, and the next run skipped the header because the file now existed.
+  EXC_TMP="$EXC_FILE.$$.tmp"
+  if [ -f "$EXC_FILE" ]; then
+    cat "$EXC_FILE" > "$EXC_TMP" || { echo "promote-proposal.sh: cannot read $EXC_FILE" >&2; exit 2; }
+  fi
   if [ ! -f "$EXC_FILE" ]; then
     # The header is the documented column order. Writing the row without it
     # would leave a file nothing can parse.
@@ -467,10 +483,14 @@ PYEOF
       echo ""
       echo "| Rule | Scope (path glob) | Why | Source |"
       echo "|---|---|---|---|"
-    } > "$EXC_FILE" || { echo "promote-proposal.sh: cannot write $EXC_FILE" >&2; exit 2; }
+    } > "$EXC_TMP" || { echo "promote-proposal.sh: cannot write $EXC_TMP" >&2; exit 2; }
   fi
-  printf '%s\n' "$EXC_ROW" >> "$EXC_FILE" || {
-    echo "promote-proposal.sh: cannot append to $EXC_FILE" >&2
+  printf '%s\n' "$EXC_ROW" >> "$EXC_TMP" || {
+    echo "promote-proposal.sh: cannot append to $EXC_TMP" >&2
+    exit 2
+  }
+  mv "$EXC_TMP" "$EXC_FILE" || {
+    echo "promote-proposal.sh: cannot move $EXC_TMP into place" >&2
     exit 2
   }
   echo "promote-proposal.sh: appended the exception to $EXC_FILE"

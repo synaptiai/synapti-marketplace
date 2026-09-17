@@ -441,7 +441,7 @@ case "$CYCLE_NUMBER" in ''|*[!0-9]*) echo "FINDING_DISMISSED=skipped (CYCLE_NUMB
 # reason clusters with nothing, so it is refused here rather than recorded and
 # silently ignored later.
 case "$REASON" in
-  factually-incorrect|breaks-test|contradicts-claude-md|critic-evidence|critic-unrefuted-concern|self-review-refuted) ;;
+  factually-incorrect|breaks-test|contradicts-claude-md|critic-evidence|critic-unrefuted-concern) ;;
   *) echo "FINDING_DISMISSED=refused (reason '$REASON' is outside the closed set in references/decision-journal-schema.md)" >&2; exit 2 ;;
 esac
 # A pull request that closes no issue has no journal to write to. Same posture

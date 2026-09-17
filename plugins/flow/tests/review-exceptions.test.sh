@@ -164,14 +164,22 @@ assert_not_contains "STATE=none" "$OUT3" \
 assert_match 'REASON=.*403' "$OUT3" "and the reason names the status"
 
 _flow_test_begin "a literal pipe in a rule cannot forge a column"
+# The input must contain a REAL pipe. Feeding already-encoded %7C proved
+# nothing: deleting the escaping entirely still produced one row and the test
+# still passed.
 D4=$(mktemp -d "$RX_TMP/pipe.XXXXXX")
 PIPE_TABLE='| Rule | Scope (path glob) | Why | Source |
 |---|---|---|---|
-| Allow a %7C%7C b shortcut | src/** | idiom | issue-1 |'
+| Allow a \| b shortcut | src/** | idiom | issue-1 |'
 _rx_stub "$D4" "$PIPE_TABLE" "unused"
 OUT4=$(cd "$D4" && PATH="$D4/stub:$PATH" "$HELPER" --repo o/r --pr 7 2>/dev/null)
+ROW4=$(printf '%s\n' "$OUT4" | grep '^EXCEPTION=' | head -1)
 assert_equal "1" "$(printf '%s\n' "$OUT4" | grep -c '^EXCEPTION=')" \
   "one row in, one row out"
+assert_contains "%7C" "$ROW4" "the literal pipe is encoded, not passed through"
+assert_equal "4" "$(printf '%s' "${ROW4#EXCEPTION=}" | awk -F'|' '{print NF}')" \
+  "and the row still has exactly four fields"
+assert_contains "src/**" "$ROW4" "with the scope glob in its own column"
 
 _flow_test_begin "a row missing a column is named, not dropped"
 # The glob is what bounds which files a rule may ever apply to. A row without

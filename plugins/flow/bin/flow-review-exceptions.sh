@@ -26,6 +26,9 @@
 #   STATE=ok|none|unavailable
 #   REASON=<why>                       (unavailable and none)
 #   EXCEPTION=<rule>|<glob>|<why>|<source>        (one per row, STATE=ok)
+#     A cell longer than 1000 characters is cut and ends in an ellipsis; a
+#     literal pipe inside a cell is written %7C, and the GFM escape \| is
+#     read as one pipe rather than a column break.
 #   EXCEPTION_MALFORMED=<line>         (a row with fewer than four columns)
 #   EXCEPTIONS_TRUNCATED=<n> row(s) not printed   (over the row cap)
 #
@@ -63,7 +66,7 @@ if [ -n "$PR_NUM" ]; then
   esac
 fi
 
-echo "ENCODING=a literal | inside a value is written %7C"
+echo "ENCODING=a literal | inside a value is written %7C; a value that ends … was cut at 1000 characters"
 echo "EXCEPTIONS_PATH=$EXC_PATH"
 
 if [ -n "$PR_NUM" ]; then
