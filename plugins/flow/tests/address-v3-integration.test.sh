@@ -345,7 +345,7 @@ mkdir -p "$WORKE/.decisions"
 _extract_dismissed_block > "$WORKE/dismiss.sh"
 _extract_disputed_block > "$WORKE/disputed.sh"
 _dismiss_one() {
-  ( cd "$WORKE" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  ( cd "$WORKE" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKE" \
       ISSUE=214 PR_NUM="$1" CYCLE_NUMBER="$2" FINDING_ID="$3" CATEGORY=c \
       LOCATION="a.sh:1" REASON=breaks-test EVIDENCE="e" \
       bash dismiss.sh >/dev/null 2>&1 )
@@ -354,7 +354,7 @@ _dismiss_one 234 2 F7
 _dismiss_one 234 3 F3
 # A dismissal on a DIFFERENT pull request, in the same journal, must not appear.
 _dismiss_one 999 1 F99
-DOUT2=$(cd "$WORKE" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+DOUT2=$(cd "$WORKE" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKE" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
 assert_contains "F7" "$DOUT2" "a dismissal from an earlier cycle is still in the array"
 assert_contains "F3" "$DOUT2" "and so is this cycle's"
@@ -376,7 +376,7 @@ artifacts:
 ---
 # journal
 JOURNAL
-DOUT3=$(cd "$WORKF" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+DOUT3=$(cd "$WORKF" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKF" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
 assert_not_contains "D1" "$DOUT3" "a dropped finding never reaches the array"
 assert_contains "DISPUTED_STATE=none" "$DOUT3" "and the journal read as having no dismissals"
@@ -388,7 +388,7 @@ _flow_test_begin "an array that could not be built is not an empty array"
 WORKG=$(mktemp -d -t flow-disp4.XXXXXX); ADDR_CLEANUP+=("$WORKG")
 mkdir -p "$WORKG/.decisions"
 _extract_disputed_block > "$WORKG/disputed.sh"
-_disputed_run() { ( cd "$WORKG" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+_disputed_run() { ( cd "$WORKG" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKG" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1 ); }
 
 OUT_A=$(_disputed_run)   # no journal file at all
@@ -418,7 +418,7 @@ assert_not_contains "DISPUTED=" "$OUT_D" "and offers no array"
 # A pull request that closes no issue: dismissals may have happened with nowhere
 # to record them, so this is unavailable, NOT none. ISSUE is set to a
 # non-numeric value so the branch is reached without a network call.
-OUT_E=$( cd "$WORKG" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+OUT_E=$( cd "$WORKG" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKG" \
   ISSUE=none PR_NUM=234 bash disputed.sh 2>&1 || true )
 assert_contains "DISPUTED_STATE=unavailable" "$OUT_E" "no linked issue is unavailable, not empty"
 assert_not_contains "DISPUTED=" "$OUT_E" "and offers no array"
@@ -485,12 +485,12 @@ artifacts:
 # journal
 JOURNAL
 # Confirm the fixture is not itself the reason: the happy path must work here.
-BASE=$(cd "$WORKI" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+BASE=$(cd "$WORKI" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKI" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
 assert_contains "DISPUTED=[F3]" "$BASE" "the fixture does produce an array when nothing is broken"
 
 # 1. A pull request number that is not a number.
-OUT_P=$(cd "$WORKI" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+OUT_P=$(cd "$WORKI" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKI" \
   ISSUE=214 PR_NUM="12x" bash disputed.sh 2>&1)
 assert_contains "DISPUTED_STATE=unavailable" "$OUT_P" "a non-numeric pull request number is unavailable"
 assert_not_contains "DISPUTED=" "$OUT_P" "and offers no array"
@@ -502,7 +502,7 @@ cat > "$WORKI/nopy/python3" <<'STUB'
 exit 127
 STUB
 chmod +x "$WORKI/nopy/python3"
-OUT_Y=$(cd "$WORKI" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" PATH="$WORKI/nopy:$PATH" \
+OUT_Y=$(cd "$WORKI" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" PATH="$WORKI/nopy:$PATH" HOME="$WORKI" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
 assert_contains "DISPUTED_STATE=unavailable" "$OUT_Y" "an unusable interpreter is unavailable"
 assert_match 'PyYAML|python3' "$OUT_Y" "and the reason names the dependency"
@@ -518,7 +518,7 @@ case "$*" in
 esac
 STUB
 chmod +x "$WORKI/nopy/python3"
-OUT_M=$(cd "$WORKI" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" PATH="$WORKI/nopy:$PATH" \
+OUT_M=$(cd "$WORKI" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" PATH="$WORKI/nopy:$PATH" HOME="$WORKI" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
 assert_contains "DISPUTED_STATE=unavailable" "$OUT_M" "a reader that dies mutely is unavailable"
 assert_not_contains "DISPUTED=" "$OUT_M" "and offers no array"
@@ -532,7 +532,7 @@ cat > "$WORKI/nogh/gh" <<'STUB'
 exit 1
 STUB
 chmod +x "$WORKI/nogh/gh"
-OUT_R=$(cd "$WORKI" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" PATH="$WORKI/nogh:$PATH" \
+OUT_R=$(cd "$WORKI" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" PATH="$WORKI/nogh:$PATH" HOME="$WORKI" \
   PR_NUM=234 bash disputed.sh 2>&1)
 assert_contains "DISPUTED_STATE=unavailable" "$OUT_R" "an unresolvable repository is unavailable"
 assert_not_contains "DISPUTED=" "$OUT_R" "and offers no array"
@@ -946,3 +946,21 @@ OUT_AFTER=$(cd "$WORKAB" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAB" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
 assert_contains "DISPUTED_STATE=unavailable" "$OUT_AFTER" "a vanished journal is unknown, not empty"
 assert_not_contains "DISPUTED=[]" "$OUT_AFTER" "and offers no array to post"
+
+_flow_test_begin "a settings file that cannot be parsed is reported, not swallowed"
+# bin/journal-record.sh lets cascade-resolve.sh's per-source parse WARN through
+# on the write side. A reader that hid it would leave a corrupt
+# .claude/settings.flow.json loud on one side and silent on the other. The
+# sibling marker block already has this test; this one was the exception.
+WORKAC=$(mktemp -d -t flow-disp25.XXXXXX); ADDR_CLEANUP+=("$WORKAC")
+mkdir -p "$WORKAC/.claude" "$WORKAC/.decisions"
+printf '%s\n' '{"journal": {"dir" BROKEN' > "$WORKAC/.claude/settings.flow.json"
+printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: F2\n---\n# j\n' \
+  > "$WORKAC/.decisions/issue-214.md"
+_extract_disputed_block > "$WORKAC/disputed.sh"
+ERR_W=$(cd "$WORKAC" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAC" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1 >/dev/null)
+OUT_W2=$(cd "$WORKAC" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAC" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>/dev/null)
+assert_match 'WARN' "$ERR_W" "the unparseable settings file is named on stderr"
+assert_contains "DISPUTED=[F2]" "$OUT_W2" "and the default directory still resolves"
