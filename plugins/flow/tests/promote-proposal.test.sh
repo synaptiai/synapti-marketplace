@@ -717,7 +717,11 @@ _flow_test_begin "an exception proposal appends a row and writes no skill"
 DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
 PROP="$DIR/exc.md"
 _write_exception_proposal "$PROP" "test-exc-one"
-OUT=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1); EXIT=$?
+# Run from inside the fake project: an exception belongs to the repository it
+# was learned in, so the target is resolved with `git rev-parse --show-toplevel`.
+# Running from anywhere else wrote the row into whatever repo happened to
+# contain the cwd — which is how this suite polluted its own checkout.
+OUT=$(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1); EXIT=$?
 assert_exit 0 "$EXIT" "the promotion succeeds"
 if [ -f "$REPO_D/.flow/review-exceptions.md" ]; then
   EXC=$(cat "$REPO_D/.flow/review-exceptions.md")
@@ -734,7 +738,7 @@ _flow_test_begin "an unknown proposal type is refused"
 DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
 PROP="$DIR/bogus.md"
 _write_exception_proposal "$PROP" "test-exc-bogus" "teapot"
-ERR=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
+ERR=$(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
 if [ "$EXIT" -eq 0 ]; then
   _flow_assert_fail "an unknown type was accepted; the vocabulary is not enforced"
 else
@@ -756,8 +760,8 @@ _flow_test_begin "the same exception is not appended twice"
 DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
 PROP="$DIR/dup.md"
 _write_exception_proposal "$PROP" "test-exc-dup"
-FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" >/dev/null 2>&1
-OUT2=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1); EXIT2=$?
+(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" >/dev/null 2>&1)
+OUT2=$(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1); EXIT2=$?
 COUNT=$(grep -c 'Prefer explicit loops' "$REPO_D/.flow/review-exceptions.md" 2>/dev/null || echo 0)
 assert_equal "1" "$COUNT" "the rule appears once, not twice"
 if [ "$EXIT2" -ne 0 ]; then
@@ -776,7 +780,7 @@ p = sys.argv[1]
 s = open(p, encoding="utf-8").read()
 open(p, "w", encoding="utf-8").write(s.split("## Exception row")[0])
 PY
-ERR=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
+ERR=$(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
 if [ "$EXIT" -ne 0 ]; then
   _flow_assert_pass "an exception proposal with nothing to append is refused (exit $EXIT)"
 else
@@ -789,3 +793,56 @@ assert_contains "type:" "$TPL" "the template carries a type key"
 for T in skill enforcement exception; do
   assert_contains "$T" "$TPL" "the template names the '$T' type"
 done
+
+_flow_test_begin "an exception lands in the project, not the flow checkout"
+# The row is a contract of the repository under review. Writing it into the flow
+# marketplace put it where no review of the project ever reads, and — once
+# committed — applied it to everyone reviewing flow instead. The goal for this
+# work lists cross-repository exceptions as an explicit non-goal.
+DIR=$(_pp_mktemp_dir)
+FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
+_pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
+PROP="$DIR/exc-target.md"
+_write_exception_proposal "$PROP" "test-exc-target"
+OUT=$(cd "$PROJ_D" && FLOW_REPO_ROOT="$FLOW_D" "$HELPER" --proposal "$PROP" 2>&1); EXIT=$?
+assert_exit 0 "$EXIT" "the promotion succeeds from the project"
+assert_equal "1" "$([ -f "$PROJ_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
+  "the row lands in the project being reviewed"
+assert_equal "0" "$([ -f "$FLOW_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
+  "and not in the flow checkout, which no review of the project reads"
+
+_flow_test_begin "an exception promotion outside a git repository is refused"
+DIR=$(_pp_mktemp_dir)
+PROP="$DIR/exc-norepo.md"
+_write_exception_proposal "$PROP" "test-exc-norepo"
+NOREPO="$DIR/plain"; mkdir -p "$NOREPO"
+ERR=$(cd "$NOREPO" && "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
+if [ "$EXIT" -ne 0 ]; then
+  _flow_assert_pass "refused outside a repository (exit $EXIT)"
+else
+  _flow_assert_fail "an exception was written with no project to own it"
+fi
+assert_match 'not a git repository|project' "$ERR" "and the reason says where it belongs"
+
+_flow_test_begin "an exception row with an empty scope glob is refused"
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+PROP="$DIR/exc-noglob.md"
+_write_exception_proposal "$PROP" "test-exc-noglob"
+python3 - "$PROP" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+# Four columns, but the scope is blank — an unscoped rule read as matching
+# everything is the widest rule anyone can write.
+s = s.replace("| plugins/flow/bin/** |", "|  |")
+open(p, "w", encoding="utf-8").write(s)
+PY
+ERR=$(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
+if [ "$EXIT" -ne 0 ]; then
+  _flow_assert_pass "an empty glob is refused (exit $EXIT)"
+else
+  _flow_assert_fail "an unscoped exception was written into the contract"
+fi
+assert_match 'empty scope glob|unscoped' "$ERR" "and the reason names it"
+assert_equal "0" "$([ -f "$REPO_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
+  "nothing was written"

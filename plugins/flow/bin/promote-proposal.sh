@@ -167,6 +167,24 @@ if [ -z "$FLOW_ROOT" ]; then
   unset _pp_dir _pp_src _pp_target _pp_hops
 fi
 
+# An exception proposal never touches the flow checkout — it appends a row to
+# the project's own contract file — so requiring one would refuse every
+# promotion from a consuming project, which is where exceptions are learned.
+# The type is read from the frontmatter here rather than waiting for the full
+# validation pass below, which runs after this gate.
+PROPOSAL_TYPE_PEEK=$(sed -n '/^---$/,/^---$/p' "$PROPOSAL" 2>/dev/null | sed -n 's/^type:[[:space:]]*//p' | head -1 | tr -d '"'"'"' ')
+if [ "$PROPOSAL_TYPE_PEEK" = "exception" ]; then
+  FLOW_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  PROMOTE_SOURCE="the project this exception was learned in"
+  if [ -z "$FLOW_ROOT" ]; then
+    # Say where it belongs rather than sending the user to clone the
+    # marketplace, which is the wrong repository for a review exception.
+    echo "promote-proposal.sh: refusing — an exception belongs to the project it was learned in, and this directory is not a git repository." >&2
+    echo "promote-proposal.sh: run this from the project whose team dismissed the finding." >&2
+    exit 2
+  fi
+fi
+
 if [ -z "$FLOW_ROOT" ]; then
   echo "promote-proposal.sh: could not find a flow checkout to promote into." >&2
   if [ -n "$CWD_ROOT" ]; then
@@ -343,9 +361,28 @@ fi
 # because none of that applies: there is no directory to create, nothing to
 # transform, and no SKILL.md to write.
 if [ "$PROPOSAL_TYPE" = "exception" ]; then
-  EXC_FILE="$REPO_ROOT/.flow/review-exceptions.md"
+  # A review exception is a contract of the PROJECT under review, not of the
+  # flow checkout. $REPO_ROOT is the flow marketplace clone (that is correct for
+  # a learned skill), but `bin/flow-review-exceptions.sh` reads the file back
+  # from the project being reviewed — so writing there put the rule in a
+  # repository no review of the project ever reads, and, once committed, applied
+  # it to everyone reviewing flow instead. The goal for this work lists
+  # "Cross-repository exceptions" as an explicit non-goal.
+  EXC_REPO=$(git rev-parse --show-toplevel 2>/dev/null)
+  if [ -z "$EXC_REPO" ]; then
+    echo "promote-proposal.sh: refusing — an exception belongs to the project it was learned in, and this directory is not a git repository" >&2
+    echo "promote-proposal.sh: run this from the project whose team dismissed the finding" >&2
+    exit 1
+  fi
+  EXC_FILE="$EXC_REPO/.flow/review-exceptions.md"
   if [ -L "$EXC_FILE" ]; then
     echo "promote-proposal.sh: refusing — $EXC_FILE is a symlink (potential redirect attack)" >&2
+    exit 1
+  fi
+  # mkdir -p and > both follow a symlinked DIRECTORY, so a pre-staged
+  # .flow -> elsewhere redirects the write out of the repository entirely.
+  if [ -L "$EXC_REPO/.flow" ]; then
+    echo "promote-proposal.sh: refusing — $EXC_REPO/.flow is a symlink (potential redirect attack)" >&2
     exit 1
   fi
   EXC_ROW=$(PROPOSAL="$PROPOSAL" python3 - <<'PYEOF'
@@ -364,7 +401,13 @@ for line in body.splitlines():
     line = line.strip()
     if not line.startswith("|"):
         continue
-    cells = [c.strip() for c in line.strip("|").split("|")]
+    # Split on unescaped pipes only, and unescape after: GFM writes a literal
+    # pipe inside a cell as a backslash-pipe, and splitting on every pipe
+    # shifted every column right of it — the rule kept a fragment, the glob
+    # became part of the rule, and the row written into the contract was a
+    # different rule from the one the team reviewed.
+    cells = [c.replace("\\|", "|").strip()
+             for c in re.split(r"(?<!\\)\|", line.strip("|"))]
     if not cells or set("".join(cells)) <= set("-: "):
         continue
     if cells[0].lower() == "rule":
@@ -376,7 +419,16 @@ for line in body.splitlines():
         print("ERROR: the exception row needs four columns "
               "(rule, scope glob, why, source); got %d" % len(cells), file=sys.stderr)
         sys.exit(1)
-    row = "| " + " | ".join(cells[:4]) + " |"
+    if not cells[1]:
+        # Counting columns is not enough: an EMPTY glob passes the count and is
+        # then read as matching everything, which is the widest possible rule.
+        print("ERROR: the exception row has an empty scope glob; an unscoped rule "
+              "applies everywhere, which is never what a dismissal established",
+              file=sys.stderr)
+        sys.exit(1)
+    # Re-escape on the way out so the round trip through the contract file is
+    # lossless and the reader sees the same four cells.
+    row = "| " + " | ".join(c.replace("|", "\\|") for c in cells[:4]) + " |"
     break
 if row is None:
     print("ERROR: the `## Exception row` section carries no table row", file=sys.stderr)

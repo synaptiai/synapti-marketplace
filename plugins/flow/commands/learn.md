@@ -155,7 +155,17 @@ echo "### Dismissal Artifacts"
 # rejected it on stated grounds. Only the second is evidence for an exception,
 # so they are counted apart.
 DISMISSAL_JOURNAL_DIR="${JOURNAL_DIR:-.decisions}"
-python3 - "$DISMISSAL_JOURNAL_DIR" <<'DISMISSAL_PY'
+# Probe before the heredoc. `import yaml` sits above the try below, so a machine
+# without PyYAML dies before the first print and the section is a bare heading —
+# no STATE line at all, which Phase 2 reads as "this project has dismissed
+# nothing". Every sibling block in start.md and status.md probes first.
+if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import yaml" >/dev/null 2>&1; then
+  echo "DISMISSED_COUNT=0"
+  echo "DROPPED_COUNT=0"
+  echo "STATE=unavailable"
+  echo "REASON=python3 with PyYAML is required to read the journal manifests, so whether this project has recorded dismissals is unknown"
+else
+DISMISSAL_OUT=$(python3 - "$DISMISSAL_JOURNAL_DIR" <<'DISMISSAL_PY'
 import glob
 import os
 import sys
@@ -163,8 +173,33 @@ import sys
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 import yaml
 
+
+class NoAliases(yaml.SafeLoader):
+    """A journal manifest is a record, not a program.
+
+    `yaml.safe_load` resolves aliases and shares the expansion in memory, but
+    `str()` materialises it: a few hundred bytes of nested aliases becomes
+    megabytes on one line, and each further level multiplies it. Nothing flow
+    writes uses an anchor. Same refusal the FlowGoal reader in review.md makes.
+    """
+
+    def compose_node(self, parent, index):
+        if self.check_event(yaml.events.AliasEvent):
+            raise yaml.YAMLError("the manifest uses YAML aliases, which a manifest does not need")
+        return super(NoAliases, self).compose_node(parent, index)
+
+
 journal_dir = sys.argv[1]
 dismissed, dropped, unreadable = [], [], []
+if not os.path.isdir(journal_dir):
+    # A directory that is not there is not a project with no dismissals. The
+    # journal dir comes from the settings cascade and falls back to a RELATIVE
+    # .decisions, so running from a subdirectory reproduces this.
+    print("DISMISSED_COUNT=0")
+    print("DROPPED_COUNT=0")
+    print("STATE=unavailable")
+    print("REASON=the journal directory %s does not exist, so whether this project has recorded dismissals is unknown" % journal_dir)
+    sys.exit(0)
 
 
 def one_line(v):
@@ -175,8 +210,13 @@ for path in sorted(glob.glob(os.path.join(journal_dir, "*.md"))):
     try:
         text = open(path, encoding="utf-8").read()
         if not text.startswith("---"):
+            # A file with no frontmatter at all is not a journal. One that has
+            # `---` somewhere else is a journal whose fence was damaged, and
+            # counting that as zero hides the evidence this block looks for.
+            if "---" in text:
+                raise ValueError("the manifest fence does not start the file")
             continue
-        fm = yaml.safe_load(text.split("---", 2)[1])
+        fm = yaml.load(text.split("---", 2)[1], Loader=NoAliases)
         if fm is None:
             continue
         if not isinstance(fm, dict):
@@ -188,6 +228,9 @@ for path in sorted(glob.glob(os.path.join(journal_dir, "*.md"))):
             raise ValueError("artifacts is not a list")
         for a in arts:
             if not isinstance(a, dict):
+                # One silently dropped entry can decide whether a cluster
+                # reaches the two-instance threshold.
+                unreadable.append((path, "an artifacts entry is %s, not a mapping" % type(a).__name__))
                 continue
             t = a.get("type")
             if t == "finding-dismissed":
@@ -222,6 +265,18 @@ for path, a in dropped:
         one_line(a.get("finding_id")), one_line(a.get("facet")),
         one_line(a.get("reason"))))
 DISMISSAL_PY
+); DISMISSAL_RC=$?
+  # A reader that died mutely leaves no STATE line, which reads as a project
+  # with nothing to report.
+  if [ "$DISMISSAL_RC" -ne 0 ] || [ "$(printf '%s\n' "$DISMISSAL_OUT" | grep -c '^STATE=')" != "1" ]; then
+    echo "DISMISSED_COUNT=0"
+    echo "DROPPED_COUNT=0"
+    echo "STATE=unavailable"
+    echo "REASON=the dismissal reader did not complete (exit $DISMISSAL_RC), so whether this project has recorded dismissals is unknown"
+  else
+    printf '%s\n' "$DISMISSAL_OUT"
+  fi
+fi
 # DISMISSAL_ARTIFACTS_BLOCK_END
 
 true

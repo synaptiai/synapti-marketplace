@@ -169,3 +169,15 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-17 10:05 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/learn-dismissal-patterns.test.sh -->
 
 <!-- auto-log: 2026-09-17 10:11 commit "feat(flow): a dismissal that repeats becomes a rule the reviewers are given" -->
+
+<!-- auto-log: 2026-09-17 10:23 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/gen_hostile.py -->
+
+<!-- auto-log: 2026-09-17 10:26 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/rx/mk.py -->
+
+<!-- auto-log: 2026-09-17 10:28 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/alias/mk_alias.py -->
+
+<!-- auto-log: 2026-09-17 10:33 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_unavailable_collapse.md -->
+
+<!-- auto-log: 2026-09-17 10:35 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-17 10:35 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
