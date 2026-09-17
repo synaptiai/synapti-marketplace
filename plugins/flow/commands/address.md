@@ -476,6 +476,15 @@ if ! ( LC_ALL=C
   echo "FINDING_DISMISSED=refused (finding id must match [A-Za-z][A-Za-z0-9_-]*, per references/finding-ledger-parser.md)" >&2
   exit 2
 fi
+# And bounded. The id is recorded here and later placed in the DISPUTED array of
+# a GitHub comment; nothing downstream caps it, so an unbounded id is an
+# unbounded marker. 64 is the same number bin/_journal_manifest.py enforces on
+# the way back out, so the reader refuses exactly what this refuses rather than
+# being stricter than the writer it reads for.
+if [ "${#FINDING_ID}" -gt 64 ]; then
+  echo "FINDING_DISMISSED=refused (finding id is ${#FINDING_ID} characters, more than the 64 the DISPUTED array carries)" >&2
+  exit 2
+fi
 # The reason vocabulary is closed because /flow:learn clusters on it. A free-text
 # reason clusters with nothing, so it is refused here rather than recorded and
 # silently ignored later.
@@ -717,7 +726,7 @@ case "${ISSUE:-}" in
   '')
     echo "DISPUTED_STATE=unavailable"
     echo "DISPUTED_REASON_CODE=no-linked-issue"
-    echo "REASON=pull request #$PR_NUM closes no issue, so there is no journal and which findings were dismissed is unknown"
+    echo "REASON=pull request #$PR_NUM closes no issue, so there is no journal to read; if it closed one in an earlier cycle, re-run with ISSUE=<that issue number> to include the dismissals recorded against it"
     exit 0 ;;
   0*|*[!0-9]*)
     echo "DISPUTED_STATE=unavailable"
@@ -816,16 +825,21 @@ try:
             seen.add(fid)
             ids.append(fid)
 except ManifestError as exc:
-    # Ours, and only ours. Safe to print through one_line.
-    bail(exc)
+    # Ours, and only ours. Safe to print through one_line. The module names the
+    # fault and this names the file — it reads one journal, so the path belongs
+    # in the reason rather than in every message the module raises.
+    bail("%s: %s" % (path, exc))
 except Exception as exc:
     # Everything else is derived from the file. A PyYAML error carries a Mark
     # snippet quoting it verbatim, and this REASON is printed and reported
     # onward, so only the exception CLASS goes out. A bare `except Exception` is
     # deliberate: the alternative is enumerating what a hostile manifest can
     # raise, and the previous attempt at that list missed three. The whole loop
-    # is inside it, not just the read — int() on a validated 5000-digit pr field
-    # still raises, and that one sat outside and crashed the block.
+    # is inside it, not just the read, because the per-row helpers evaluate
+    # file-derived values too. The 5000-digit pr field that first made this
+    # necessary is no longer an example: pr_matches now catches its ValueError
+    # and raises ManifestError, so it lands on the branch above with a reason
+    # that names the field.
     bail("the journal manifest could not be read (%s); its text is not echoed here, "
          "because a file that is not a manifest may hold anything" % type(exc).__name__)
 
@@ -861,25 +875,24 @@ true
      from nothing else. Match it line-anchored — `grep -qx 'DISPUTED_REASON_CODE=no-linked-issue'`
      — so the string appearing inside some other line does not count:
      - **`DISPUTED_REASON_CODE=no-linked-issue` is printed on its own line.** The pull request
-       closes no issue, so there is no journal to have recorded anything *now*. That is not quite
-       "no journal can ever have existed": a pull request can close an issue in cycle 2 and have
-       the closing keyword edited out of its body before cycle 3, and the cycle 2 dismissals are
-       still on record. Check before posting, and post `DISPUTED:[]` only if nothing comes back:
+       closes no issue, so there is no journal to have recorded anything. Post the comment with
+       `DISPUTED:[]` and note the `REASON` in the body.
 
-       ```bash
-       # Any EARLIER resolution comment on this PR carrying a non-empty DISPUTED array. The
-       # consumers in references/finding-ledger-parser.md read `| last`, so an empty array posted
-       # now replaces whatever an earlier cycle recorded. Trust filtering matches query 3 there.
-       gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" \
-         | jq -s -r --argjson trust "$TRUST_LIST" \
-             'add | [.[] | select((.author_association as $a | $trust | index($a))
-                      and (.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ ")))]
-                  | map(.body | capture("DISPUTED:\\[(?<d>[^]]*)\\]").d)
-                  | map(select(. != "")) | .[]'
-       ```
+       One case this does not cover, stated rather than denied: a pull request can close an issue
+       in cycle 2 and have the closing keyword edited out of its body before cycle 3, and those
+       cycle 2 dismissals are still on record under the old issue. `DISPUTED:[]` does not erase
+       them from the journal — the `finding-dismissed` artifacts stay where they were written and
+       `/flow:learn` still counts them — and it opens no gate, because `commands/merge.md` never
+       reads `DISPUTED` at all. What it loses is the `/flow:status` classification: those ids read
+       `in_fix_forward` instead of `disputed`. The `REASON` names the remedy, which is to re-run
+       the block with the earlier issue: `ISSUE=<n> PR_NUM=<pr>`. The block uses a pre-set `ISSUE`
+       as given and skips the lookup.
 
-       Nothing printed: post the comment with `DISPUTED:[]` and note the `REASON` in the body.
-       Anything printed: **stop**, and treat it as the case below — an empty array would erase it.
+       An earlier revision checked this automatically with an unmarked `gh api | jq` fence in this
+       prose. It referenced `$REPO` and `$TRUST_LIST`, which nothing in its own shell defined, and
+       checked no exit status — so it failed, printed nothing, and the instruction below read that
+       silence as "nothing to worry about". A check whose failure is indistinguishable from a clean
+       result is the defect this whole step exists to remove, so it is gone rather than repaired.
      - **No `DISPUTED_REASON_CODE` line.** **Stop. Do not post the comment.** Report the `REASON`
        and fix it first. Do NOT reason from "Phase 3 recorded nothing this run": the array is
        cumulative over the pull request, so a dismissal from cycle 2 that this read could not see
@@ -890,13 +903,24 @@ true
      leaves `/flow:merge` with no `RESOLVED` array at all.
 
    ```bash
+   # POST_RESOLUTION_BLOCK_BEGIN
    # $REPO does not survive from the preflight block: each fence is its own
    # shell. Resolved again here, because `gh --repo ""` falls back to gh's own
    # resolution without complaining — an unset REPO reads as pinned and behaves
    # as unpinned, which is the failure this pinning exists to prevent.
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
    [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+   # $BODY is composed prose, and templates/resolution-comment.md invites
+   # verbatim reviewer text into it. The merge gate greps the arrays out of the
+   # whole comment and unions every rendering, so a second `RESOLVED:[` anywhere
+   # in that quoted text adds ids nobody resolved. commands/review.md refuses
+   # such a body; this emitter did not, and the two are the same emitter wearing
+   # different hats — a rule enforced in one is a rule the other routes around.
+   # Both now call the same script.
+   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-check-resolution-body.sh" \
+     --cycle "$CYCLE_NUMBER" <<<"$BODY" || exit 1
    gh pr comment "$PR_NUM" --repo "$REPO" --body "$BODY"
+   # POST_RESOLUTION_BLOCK_END
    ```
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
 10. **Update PR body review cycle state** (if `### Review Cycle History` exists in the PR body):

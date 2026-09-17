@@ -74,6 +74,14 @@ class NoAliases(yaml.SafeLoader):
 # DISPUTED_REASON_CODE. Longest first, so a prefix never shadows a longer token.
 MARKER_TOKENS = ("DISPUTED_REASON_CODE", "ESCALATED", "DISPUTED", "RESOLVED")
 
+# The longest finding id the writer records and this reader will place in an
+# array. Both sides check it; neither invents its own. FINDINGS is deliberately
+# absent from MARKER_TOKENS above: references/finding-ledger-parser.md reads
+# that array from REVIEW BODIES only, never from the issue comments these two
+# blocks write, and escaping a token no consumer looks for here would be a
+# guard no test could tell from its own absence.
+MAX_FINDING_ID = 64
+
 
 def one_line(v):
     """Flatten a value to one printable line that cannot forge a ledger marker.
@@ -110,7 +118,13 @@ def one_line(v):
 
 
 def read_text(path):
-    """Return the journal's text, refusing anything that is not a plain file."""
+    """Return the journal's text, refusing anything that is not a plain file.
+
+    The messages name the fault, not the file. Callers name the file: commands/learn.md
+    prints `JOURNAL_UNREADABLE=<path> — <reason>` while iterating a directory, and
+    commands/address.md has one journal and says so in its REASON. Embedding the path
+    here as well printed it twice on the learn side.
+    """
     try:
         # O_NOFOLLOW, because bin/journal-record.sh refuses a symlinked journal
         # for exactly this reason: a pre-staged .decisions/issue-N.md pointing at
@@ -129,12 +143,12 @@ def read_text(path):
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError as exc:
         if exc.errno in (errno.ELOOP, errno.EMLINK):
-            raise ManifestError("the journal %s is a symlink, and a symlinked journal is refused" % path)
-        raise ManifestError("the journal %s could not be opened (%s)"
-                            % (path, errno.errorcode.get(exc.errno, "OSError")))
+            raise ManifestError("the journal is a symlink, and a symlinked journal is refused")
+        raise ManifestError("the journal could not be opened (%s)"
+                            % errno.errorcode.get(exc.errno, "OSError"))
     with os.fdopen(fd, "r", encoding="utf-8") as fh:
         if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
-            raise ManifestError("the journal %s is not a regular file" % path)
+            raise ManifestError("the journal is not a regular file")
         return fh.read()
 
 
@@ -170,11 +184,15 @@ def read_artifacts(path):
         # apart with the writer's own closing-fence test and say it in our words.
         if text.find("\n---\n", 4) == -1:
             raise ManifestError("the manifest fence does not open and close at the top of the file")
-        # A blank, comment-only, null, or non-mapping first fence. journal-record.sh
-        # refuses this file outright ("existing frontmatter is not a YAML mapping",
-        # exit 2), so a reader calling it an empty record accepts what the writer
-        # rejects. Damage, not absence.
-        raise ManifestError("the manifest fence is not a mapping, so it is not a manifest")
+        # Everything else parse_frontmatter refuses behind a closing fence:
+        # invalid YAML, and a fence that parses to a blank, comment-only, null,
+        # or non-mapping value. One message covers both, deliberately — telling
+        # them apart needs either a second parse (the duplicated predicate this
+        # module exists to remove) or string-matching the writer's exception
+        # text, and neither is worth a more specific sentence. journal-record.sh
+        # refuses the file outright either way, so a reader calling it an empty
+        # record accepts what the writer rejects. Damage, not absence.
+        raise ManifestError("the manifest fence does not hold a YAML mapping, so it is not a manifest")
     if manifest is None:
         # No opening fence. Damage is told apart the way it always was: a
         # fence-shaped line PLUS a manifest key means a manifest that was
@@ -214,7 +232,9 @@ def pr_matches(a, pr):
         return int(pr_val) == int(pr)
     except ValueError:
         # int() refuses a decimal string longer than
-        # sys.int_info.str_digits_check_threshold (4300 digits by default). The
+        # sys.get_int_max_str_digits() (4300 by default; the similarly-named
+        # sys.int_info.str_digits_check_threshold is 640 and is the floor that
+        # limit may be set to, not the limit). The
         # digit allowlist above admits any length, so this conversion is the one
         # place a validated value still raises; when it sat outside the caller's
         # handler the block died mid-run and printed a traceback beside a REASON
@@ -233,12 +253,30 @@ def finding_id(a):
                             "refusing to build an array from it" % type(fid).__name__)
     # The journal is a tracked file any contributor can edit, and the array it
     # feeds is parsed by splitting on `,` and `]`. Re-validate on the way out
-    # rather than trusting what the writer put in — a comma injects rows and a
-    # `*` matches every RESOLVED list in the POSIX glob the merge gate uses. One
-    # bad row refuses the whole array: a partial array understates the disputes,
-    # which is the failure this exists to prevent.
+    # rather than trusting what the writer put in: a comma injects extra rows
+    # into every consumer that does `tr ',' '\n'`, and a `]` truncates the
+    # `grep -o 'DISPUTED:\[[^]]*\]'` the consumers extract with, silently
+    # dropping the rest of the array. The allowlist is the one
+    # bin/flow-finding-route.sh, commands/status.md and
+    # references/finding-ledger-parser.md all apply, so this refuses what they
+    # would refuse instead of handing them a row they will drop.
+    #
+    # It is NOT about glob expansion: status.md's containment check writes the
+    # id as `*",$ID,"*`, where the quotes make it a literal, and merge.md has no
+    # glob at all — its gate is `comm` over sorted lists. One bad row refuses
+    # the whole array: a partial array understates the disputes, which is the
+    # failure this exists to prevent.
     if not re.match(r"[A-Za-z][A-Za-z0-9_-]*\Z", fid):
         raise ManifestError("the journal records a dismissal whose finding id %s does not match "
                             "[A-Za-z][A-Za-z0-9_-]*; refusing to build an array from it"
-                            % one_line(fid[:64]))
+                            % one_line(fid[:MAX_FINDING_ID]))
+    # Every other file-derived value this module prints is bounded; this one was
+    # not, and it is the value that goes into a GitHub comment as part of the
+    # array. The bound is the same one the writer applies, so the reader still
+    # refuses exactly what the writer refuses — a reader stricter than its writer
+    # is the disagreement this module exists to remove.
+    if len(fid) > MAX_FINDING_ID:
+        raise ManifestError("the journal records a dismissal whose finding id is %d characters, "
+                            "more than the %d the writer accepts; refusing to build an array from it"
+                            % (len(fid), MAX_FINDING_ID))
     return fid

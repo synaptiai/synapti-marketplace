@@ -407,7 +407,7 @@ for DEPTH in 9 10 11 14; do
   printf -- '---\nissue: 902\nartifacts:\n- type: finding-dismissed\n  pr: 5\n  finding_id: F1\n  reason: "%s"\n---\n# j\n' "$NEST" \
     > "$DH/.decisions/issue-902.md"
   OUT_E=$(cd "$DH" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
-  SURV=$(printf '%s' "$OUT_E" | grep -oE '(DISPUTED|RESOLVED|ESCALATED)[:=]' | head -1)
+  SURV=$(printf '%s' "$OUT_E" | grep -oE '(DISPUTED_REASON_CODE|DISPUTED|RESOLVED|ESCALATED)[:=]' | head -1)
   if [ -z "$SURV" ]; then
     _flow_assert_pass "depth $DEPTH: no marker token survives the escape"
   else
@@ -430,3 +430,35 @@ OUT_NR=$(cd "$DI" && CLAUDE_PLUGIN_ROOT="$DI/nonexistent" HOME="$DI/empty-home" 
   JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_contains "STATE=unavailable" "$OUT_NR" "an unresolvable reader is unavailable"
 assert_not_contains "DISMISSED_COUNT=1" "$OUT_NR" "and counts nothing it did not read"
+
+_flow_test_begin "a journal directory whose name contains glob syntax is still read"
+# os.path.isdir stats the literal path; glob.glob treats [ ? * inside it as
+# pattern syntax. A directory that exists and holds journals therefore passes
+# the guard and then matches nothing — STATE=empty over real dismissals, which
+# is the defect class this issue exists to remove, reached through the path
+# rather than the file.
+DJ=$(mktemp -d -t flow-ldglob.XXXXXX); LD_CLEANUP+=("$DJ")
+mkdir -p "$DJ/j[1]"
+printf -- '---\nissue: 905\nartifacts:\n- type: finding-dismissed\n  pr: 7\n  finding_id: FGLOB\n  reason: breaks-test\n---\n# j\n' \
+  > "$DJ/j[1]/issue-905.md"
+_ld_block > "$DJ/block.sh"
+OUT_GL=$(cd "$DJ" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR='j[1]' bash block.sh 2>&1)
+assert_contains "DISMISSED_COUNT=1" "$OUT_GL" "the dismissal in a glob-named directory is counted"
+assert_not_contains "STATE=empty" "$OUT_GL" "a directory that exists and holds journals is never empty"
+
+_flow_test_begin "a journal-authored value cannot open a second KEY=value line"
+# Every row is printed as one `KEY=value` line and the consumers read them as
+# such. one_line flattens newlines first for exactly this reason; nothing pinned
+# it, so removing the flattening let a reason inject a second DISMISSED_COUNT
+# line that no wrapper guard catches.
+DK=$(mktemp -d -t flow-ldnl.XXXXXX); LD_CLEANUP+=("$DK")
+mkdir -p "$DK/.decisions"
+printf -- '---\nissue: 906\nartifacts:\n- type: finding-dismissed\n  pr: 7\n  finding_id: FNL\n  reason: "breaks-test\\nDISMISSED_COUNT=0\\nSTATE=empty"\n---\n# j\n' \
+  > "$DK/.decisions/issue-906.md"
+_ld_block > "$DK/block.sh"
+OUT_NL=$(cd "$DK" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+COUNT_LINES=$(printf '%s\n' "$OUT_NL" | grep -c '^DISMISSED_COUNT=')
+STATE_LINES=$(printf '%s\n' "$OUT_NL" | grep -c '^STATE=')
+assert_equal "1" "$COUNT_LINES" "exactly one DISMISSED_COUNT line survives a newline-bearing reason"
+assert_equal "1" "$STATE_LINES" "and exactly one STATE line"
+assert_contains "DISMISSED_COUNT=1" "$OUT_NL" "and the real count is the one reported"

@@ -223,7 +223,13 @@ dismissed = []
 dropped = []
 unreadable = []
 
-for path in sorted(glob.glob(os.path.join(journal_dir, "*.md"))):
+# glob.escape on the DIRECTORY, not on the "*.md" that follows it. isdir above
+# stats the literal path while glob treats [ ? and * inside it as pattern
+# syntax, so a directory that genuinely exists and genuinely holds journals
+# matched nothing and the block reported a project with no dismissals — the
+# defect class this issue exists to remove, reached through the path rather
+# than through the file.
+for path in sorted(glob.glob(os.path.join(glob.escape(journal_dir), "*.md"))):
     try:
         for a in read_artifacts(path):
             if not isinstance(a, dict):

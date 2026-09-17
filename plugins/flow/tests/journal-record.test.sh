@@ -306,3 +306,25 @@ print(",".join(writers))
 PYEOF
 )
 assert_equal "alpha,beta" "$WRITERS" "both writers' artifacts persisted (no flock race)"
+
+_flow_test_begin "parse_frontmatter's default loader preserves scalar types"
+# The `loader` parameter was added so bin/_journal_manifest.py can refuse YAML
+# aliases without changing what any WRITE accepts. The reader side is pinned;
+# this pins the writer side. A default that resolved scalars differently — a
+# string loader, say — would rewrite every integer in an existing manifest as a
+# quoted string on the next append, silently, with every other suite green.
+TYPES=$(PYTHONSAFEPATH=1 PYTHONPATH="$REPO_ROOT/plugins/flow/bin:${PYTHONPATH:-}" python3 -c '
+import sys
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+from _journal_atomic import parse_frontmatter
+m, body = parse_frontmatter("---\nissue: 214\ncreated: \x272026-09-17T00:05:00Z\x27\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  cycle: 3\n---\n# body\n")
+a = m["artifacts"][0]
+print("issue=%s pr=%s cycle=%s created=%s body=%s" % (
+    type(m["issue"]).__name__, type(a["pr"]).__name__, type(a["cycle"]).__name__,
+    type(m["created"]).__name__, body.strip()))
+' 2>&1)
+assert_contains "issue=int" "$TYPES" "the issue number stays an integer"
+assert_contains "pr=int" "$TYPES" "and pr stays an integer, which is what the reader compares"
+assert_contains "cycle=int" "$TYPES" "and cycle too"
+assert_contains "created=str" "$TYPES" "a quoted timestamp stays a string"
+assert_contains "body=# body" "$TYPES" "and the body is returned intact"

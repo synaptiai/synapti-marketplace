@@ -1590,23 +1590,13 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
    # The gate selects on the `<!-- FLOW_RESOLUTION_CYCLE:N ` prefix, so the guard
    # must not demand more than that around the arrays: the whitespace before
    # `-->` is optional, or a marker the gate accepts would be refused here.
-   RES_MARKERS=$(grep -oE "<!-- FLOW_RESOLUTION_CYCLE:$CYCLE_NUMBER RESOLVED:\[[^]]*\] ESCALATED:\[[^]]*\] DISPUTED:\[[^]]*\] *-->" <<<"$RES_BODY" | wc -l | tr -d ' ')
-   if [ "$RES_MARKERS" != 1 ]; then
-     echo "ERROR: the resolution body carries $RES_MARKERS markers of the shape the merge gate selects; it needs exactly one: <!-- FLOW_RESOLUTION_CYCLE:$CYCLE_NUMBER RESOLVED:[...] ESCALATED:[...] DISPUTED:[...] -->" >&2
-     exit 1
-   fi
-   # The gate greps the arrays out of the whole comment and unions what it
-   # finds, so a second rendering anywhere — including later on the same line —
-   # adds ids nobody resolved. Count occurrences, not lines.
-   for __array in 'RESOLVED:[' 'ESCALATED:[' 'DISPUTED:['; do
-     # The marker matched above already carries each array once, so this counts
-     # the renderings beside it rather than their presence.
-     __rendered=$(grep -oF "$__array" <<<"$RES_BODY" | wc -l | tr -d ' ')
-     if [ "$__rendered" != 1 ]; then
-       echo "ERROR: the resolution body renders $__array $__rendered times; the merge gate unions every rendering, so ids nobody resolved would read as resolved — reword the prose (for example with a space before the bracket)" >&2
-       exit 1
-     fi
-   done
+   # The rule itself lives in bin/flow-check-resolution-body.sh, because
+   # commands/address.md step 9 emits the same marker and needs the same
+   # refusal. It lived here only, and that emitter posted whatever it had
+   # composed — a rule enforced in one of two emitters is a rule the other
+   # routes around.
+   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-check-resolution-body.sh" \
+     --cycle "$CYCLE_NUMBER" <<<"$RES_BODY" || exit 1
    gh pr comment "$PR_NUM" --repo "$REPO" --body "$RES_BODY"; RES_EXIT=$?
    echo "RES_EXIT=$RES_EXIT"
    # A silently absent resolution marker re-introduces the merge false-block
