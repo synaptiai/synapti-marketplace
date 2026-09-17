@@ -163,3 +163,7 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-17 09:54 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/pr.md -->
 
 <!-- auto-log: 2026-09-17 09:54 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/pr.md -->
+
+<!-- auto-log: 2026-09-17 10:00 commit "feat(flow): reviewers are handed the rules the team already rejected" -->
+
+<!-- auto-log: 2026-09-17 10:05 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/learn-dismissal-patterns.test.sh -->

@@ -140,6 +140,90 @@ else
   fi
 fi
 
+# Section: Dismissal Artifacts
+echo ""
+echo "### Dismissal Artifacts"
+# DISMISSAL_ARTIFACTS_BLOCK_BEGIN
+# Findings the team rejected. `review.md` has written `dropped-finding`
+# artifacts since it was added, with a comment saying it does so "so /flow:learn
+# can detect repeated drop reasons across cycles" — and nothing here read them.
+# This is the first category that reads the journal manifest rather than the
+# freeform body.
+#
+# The two types are different records and both matter: `dropped-finding` says a
+# finding did not survive the review machinery, `finding-dismissed` says a human
+# rejected it on stated grounds. Only the second is evidence for an exception,
+# so they are counted apart.
+DISMISSAL_JOURNAL_DIR="${JOURNAL_DIR:-.decisions}"
+python3 - "$DISMISSAL_JOURNAL_DIR" <<'DISMISSAL_PY'
+import glob
+import os
+import sys
+
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+import yaml
+
+journal_dir = sys.argv[1]
+dismissed, dropped, unreadable = [], [], []
+
+
+def one_line(v):
+    return " ".join(str(v).splitlines()).strip()[:200]
+
+
+for path in sorted(glob.glob(os.path.join(journal_dir, "*.md"))):
+    try:
+        text = open(path, encoding="utf-8").read()
+        if not text.startswith("---"):
+            continue
+        fm = yaml.safe_load(text.split("---", 2)[1])
+        if fm is None:
+            continue
+        if not isinstance(fm, dict):
+            raise ValueError("the manifest is not a mapping")
+        arts = fm.get("artifacts")
+        if arts is None:
+            continue
+        if not isinstance(arts, list):
+            raise ValueError("artifacts is not a list")
+        for a in arts:
+            if not isinstance(a, dict):
+                continue
+            t = a.get("type")
+            if t == "finding-dismissed":
+                dismissed.append((path, a))
+            elif t == "dropped-finding":
+                dropped.append((path, a))
+    except Exception as exc:
+        # A manifest nobody could read is not a project with no dismissals.
+        # Counting it as zero would hide the evidence this category exists to
+        # find, which is the whole failure mode being fixed here.
+        unreadable.append((path, exc))
+
+for path, exc in unreadable:
+    print("JOURNAL_UNREADABLE=%s — %s" % (one_line(path), one_line(exc)))
+print("DISMISSED_COUNT=%d" % len(dismissed))
+print("DROPPED_COUNT=%d" % len(dropped))
+if unreadable:
+    print("STATE=degraded")
+    print("REASON=%d journal file(s) could not be read, so the counts above are a floor, not a total" % len(unreadable))
+elif not dismissed and not dropped:
+    print("STATE=empty")
+else:
+    print("STATE=ok")
+for path, a in dismissed:
+    print("DISMISSED=journal=%s pr=%s cycle=%s finding_id=%s category=%s reason=%s by=%s" % (
+        one_line(path), one_line(a.get("pr")), one_line(a.get("cycle")),
+        one_line(a.get("finding_id")), one_line(a.get("category")),
+        one_line(a.get("reason")), one_line(a.get("by"))))
+for path, a in dropped:
+    print("DROPPED=journal=%s pr=%s cycle=%s finding_id=%s facet=%s reason=%s" % (
+        one_line(path), one_line(a.get("pr")), one_line(a.get("cycle")),
+        one_line(a.get("finding_id")), one_line(a.get("facet")),
+        one_line(a.get("reason"))))
+DISMISSAL_PY
+# DISMISSAL_ARTIFACTS_BLOCK_END
+
 true
 ```
 
@@ -184,6 +268,23 @@ Source: the `### Transcript Corrections` table from Phase 1, when `TRANSCRIPT_ST
 4. **Cross-reference existing skills.** For each qualifying cluster, search for the rule with 2–3 phrasings: `grep -ril '<key phrase>' plugins/flow/skills` (use the plugin root from Phase 1 when not running inside this repo). Label the cluster `rule exists in <skill>` when a skill already states the behaviour, otherwise `no rule`.
 5. Record per cluster: name, verified instance count, session count, cited lines (`transcript_path:line_no`), and the label. These feed Phase 3 and the Phase 5 table.
 
+### Dismissal patterns
+
+Read the `### Dismissal Artifacts` section from Phase 1. Cluster the `DISMISSED=` rows by
+`category` and `reason`; a cluster is a finding the team keeps rejecting for the same stated reason.
+
+`DROPPED=` rows are counted and shown but are **not** evidence for an exception. A dropped finding
+did not survive the review machinery — both variants disagreed, or consolidation lost it. A
+dismissed finding is one a human rejected on stated grounds. Only the second says anything about
+what this team wants, and conflating them would turn a reviewer disagreement into a standing rule.
+
+A cluster that recurs in one project becomes an `exception` proposal (below). A cluster that recurs
+across projects is knowledge rather than a local preference, and becomes a skill proposal as today.
+
+When Phase 1 reported `STATE=degraded`, say so alongside the counts: journals that could not be read
+mean the counts are a floor, and a cluster that just missed the threshold may only have missed it
+because a file was unreadable.
+
 ## Phase 3: Quality Filters
 
 A pattern qualifies for a skill proposal when:
@@ -199,6 +300,17 @@ Correction patterns from Phase 2 use their own threshold (≥3 verified instance
 
 - `no rule` → a standard skill proposal, with transcript citations as evidence.
 - `rule exists in <skill>` → **not** a new skill. The words were already in a skill and were still broken, so the proposal is of type `enforcement`: name the skill holding the rule, the mechanical check point (which hook — `PreToolUse`, `PostToolUse`, `Stop`, `TaskCompleted`, `SessionEnd` — or which command gate/phase), what the check reads, and what it blocks or warns on. Fill in the template's `## Enforcement point` section and cite transcript lines under `## Evidence`. Skip the proposal only when an existing hook or gate already enforces the rule mechanically — cite the script.
+
+### Dismissal Patterns
+
+Replaces filter 1 for the Dismissal patterns category. A cluster qualifies at
+**two or more dismissals across two or more pull requests**.
+Two dismissals on one pull request is one argument
+had twice, not a pattern — the same reviewer and the same author in the same conversation. Requiring
+two pull requests is what makes it a property of the project rather than of one exchange.
+
+Filter 2 is already satisfied: every `finding-dismissed` artifact carries its `evidence` field,
+which `references/decision-journal-schema.md` requires per reason.
 
 ### Fatigue Circuit Breaker
 
@@ -216,6 +328,24 @@ mkdir -p "$PROPOSAL_DIR"
 
 Write each proposal to `$PROPOSAL_DIR/YYYY-MM-DD-{topic}.md` using the skill-proposal template. Enforcement proposals (Phase 3) keep the same template and required sections, add the `## Enforcement point` section, and use the `-enforcement` topic suffix (e.g. `YYYY-MM-DD-verify-output-enforcement.md`) so reviewers can tell them from new-skill proposals at a glance.
 
+Set `type:` in the frontmatter — `skill`, `enforcement` or `exception`. It is what
+`bin/promote-proposal.sh` branches on, and the filename suffix alone is a convention the promoter
+cannot read.
+
+**Exception proposals** (from the Dismissal patterns category) use the `-exception` suffix and carry
+only `## Pattern Detected`, `## Evidence` and `## Exception row`. The other sections are skill-shaped
+and say nothing about a rule. The body of `## Exception row` is one table row for
+`.flow/review-exceptions.md`:
+
+```
+| {the rule, as a reviewer needs to read it} | {path glob it is scoped to} | {why the team rejected the finding} | {the pull requests it was dismissed on} |
+```
+
+The glob comes from where the dismissals actually happened — the `location` field of the clustered
+artifacts, narrowed to the directory they share. A rule scoped wider than the evidence supports is a
+rule that will suppress findings nobody dismissed. Promotion appends the row; it never writes a
+skill, and `/flow:learn` never writes `.flow/review-exceptions.md` itself.
+
 ## Phase 5: Display Summary
 
 ```markdown
@@ -230,7 +360,7 @@ Write each proposal to `$PROPOSAL_DIR/YYYY-MM-DD-{topic}.md` using the skill-pro
 ### Proposals Generated
 | # | Proposal | Type | Path |
 |---|----------|------|------|
-| 1 | {skill name} | skill \| enforcement | {proposal file path} |
+| 1 | {skill name} | skill \| enforcement \| exception | {proposal file path} |
 
 ### Promotion Workflow
 

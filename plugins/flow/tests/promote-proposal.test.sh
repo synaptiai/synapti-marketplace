@@ -669,3 +669,123 @@ assert_exit 0 "$TF_RC" "a Contract of exactly 120 words is accepted"
 _pp_transform "$CBOUND.over"
 assert_exit 1 "$TF_RC" "121 words is refused"
 assert_contains "121 words (max 120)" "$TF_OUT" "and the message names the boundary"
+
+# --- proposal type: skill | enforcement | exception -------------------------
+# The type was a filename suffix plus a marker section, and the promoter assumed
+# every proposal becomes a skills/learned/ SKILL.md. An exception is a row in a
+# team contract, not a skill — a proposal type nothing can promote is a proposal
+# that does nothing.
+
+_write_exception_proposal() {
+  local path="$1" name="${2:-test-exception}" type="${3:-exception}"
+  local rule="${4:-Prefer explicit loops over comprehensions}"
+  cat > "$path" <<PROPOSAL
+---
+name: "$name"
+description: "[flow-learned] Test exception proposal."
+type: $type
+source-sessions:
+  - "2026-09-17 test session"
+evidence-count: 2
+status: proposal
+proposed: "2026-09-17"
+---
+
+# $name
+
+## Pattern Detected
+
+The same finding was dismissed on two pull requests.
+
+## Evidence
+
+issue-1.md, issue-2.md
+
+## Exception row
+
+| $rule | plugins/flow/bin/** | team readability call | issue-1, issue-2 |
+PROPOSAL
+}
+
+_pp_fake_repo() {
+  local d="$1"
+  mkdir -p "$d/plugins/flow/skills/learned" "$d/.flow"
+  (cd "$d" && git init -q 2>/dev/null && git config user.email t@e.st && git config user.name T)
+}
+
+_flow_test_begin "an exception proposal appends a row and writes no skill"
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+PROP="$DIR/exc.md"
+_write_exception_proposal "$PROP" "test-exc-one"
+OUT=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1); EXIT=$?
+assert_exit 0 "$EXIT" "the promotion succeeds"
+if [ -f "$REPO_D/.flow/review-exceptions.md" ]; then
+  EXC=$(cat "$REPO_D/.flow/review-exceptions.md")
+  assert_contains "Prefer explicit loops" "$EXC" "the rule reached the exceptions file"
+  assert_contains "plugins/flow/bin/**" "$EXC" "with its scope glob"
+  assert_contains "| Rule | Scope (path glob) | Why | Source |" "$EXC" "and the file carries the documented header"
+else
+  _flow_assert_fail ".flow/review-exceptions.md was not written"
+fi
+assert_equal "0" "$([ -e "$REPO_D/plugins/flow/skills/learned/test-exc-one/SKILL.md" ] && echo 1 || echo 0)" \
+  "and no learned skill was created — an exception is not a skill"
+
+_flow_test_begin "an unknown proposal type is refused"
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+PROP="$DIR/bogus.md"
+_write_exception_proposal "$PROP" "test-exc-bogus" "teapot"
+ERR=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
+if [ "$EXIT" -eq 0 ]; then
+  _flow_assert_fail "an unknown type was accepted; the vocabulary is not enforced"
+else
+  _flow_assert_pass "an unknown type is refused (exit $EXIT)"
+fi
+assert_match 'teapot|type' "$ERR" "and the refusal names what was wrong"
+
+_flow_test_begin "a proposal with no type is still promoted as a skill"
+# Every proposal written before this key existed has no type. Refusing them
+# would strand the corpus.
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+PROP="$DIR/legacy.md"
+_write_valid_proposal "$PROP" "test-legacy-notype"
+OUT=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1); EXIT=$?
+assert_exit 0 "$EXIT" "a typeless proposal still validates"
+assert_contains "would transform" "$OUT" "and still targets the learned skill path"
+
+_flow_test_begin "the same exception is not appended twice"
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+PROP="$DIR/dup.md"
+_write_exception_proposal "$PROP" "test-exc-dup"
+FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" >/dev/null 2>&1
+OUT2=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1); EXIT2=$?
+COUNT=$(grep -c 'Prefer explicit loops' "$REPO_D/.flow/review-exceptions.md" 2>/dev/null || echo 0)
+assert_equal "1" "$COUNT" "the rule appears once, not twice"
+if [ "$EXIT2" -ne 0 ]; then
+  _flow_assert_pass "the second promotion is refused (exit $EXIT2)"
+else
+  _flow_assert_fail "a duplicate promotion was accepted silently"
+fi
+
+_flow_test_begin "an exception proposal with no row is refused"
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+PROP="$DIR/norow.md"
+_write_exception_proposal "$PROP" "test-exc-norow"
+python3 - "$PROP" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(s.split("## Exception row")[0])
+PY
+ERR=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
+if [ "$EXIT" -ne 0 ]; then
+  _flow_assert_pass "an exception proposal with nothing to append is refused (exit $EXIT)"
+else
+  _flow_assert_fail "an exception proposal with no row was accepted"
+fi
+
+_flow_test_begin "the proposal template documents the type key"
+TPL=$(cat "$REPO_ROOT/plugins/flow/templates/skill-proposal.md")
+assert_contains "type:" "$TPL" "the template carries a type key"
+for T in skill enforcement exception; do
+  assert_contains "$T" "$TPL" "the template names the '$T' type"
+done

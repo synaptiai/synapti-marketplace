@@ -257,6 +257,18 @@ if missing_fields:
     print(f"ERROR: proposal missing required frontmatter fields: {missing_fields}", file=sys.stderr)
     sys.exit(1)
 
+# `type` decides where the proposal lands. It is optional: every proposal
+# written before the key existed has none, and refusing those would strand the
+# corpus. An unknown value is refused rather than defaulted, because defaulting
+# a typo to `skill` writes a learned skill nobody asked for.
+PROPOSAL_TYPES = ("skill", "enforcement", "exception")
+proposal_type = fm.get("type", "skill")
+if proposal_type is None:
+    proposal_type = "skill"
+if proposal_type not in PROPOSAL_TYPES:
+    print(f"ERROR: proposal type {proposal_type!r} is not one of {list(PROPOSAL_TYPES)}", file=sys.stderr)
+    sys.exit(1)
+
 if fm.get("status") != "proposal":
     print(f"ERROR: proposal status must be 'proposal' (got: {fm.get('status')!r})", file=sys.stderr)
     sys.exit(1)
@@ -268,14 +280,24 @@ if fm.get("status") != "proposal":
 # neither of which the transform would recognise as the section to remove — so
 # the proposal passed validation and shipped its journal paths inside the skill.
 body = content[end + 5:]
-required_sections = [
-    "Contract",
-    "Pattern Detected",
-    "Knowledge",
-    "Evidence",
-    "Verification",
-    "Promotion Checklist",
-]
+if proposal_type == "exception":
+    # An exception is a row in a team contract, not a skill: Contract,
+    # Knowledge, Verification and Promotion Checklist are all skill-shaped and
+    # have nothing to say about one. What it must carry is the row itself.
+    required_sections = [
+        "Pattern Detected",
+        "Evidence",
+        "Exception row",
+    ]
+else:
+    required_sections = [
+        "Contract",
+        "Pattern Detected",
+        "Knowledge",
+        "Evidence",
+        "Verification",
+        "Promotion Checklist",
+    ]
 present = proposal_sections.titles(body)
 missing_sections = [s for s in required_sections if s not in present]
 if missing_sections:
@@ -300,8 +322,11 @@ if not re.fullmatch(r"[a-z][a-z0-9-]*", name):
     sys.exit(1)
 
 print(name)
+print(proposal_type)
 PYTHON
 ) || exit $?
+PROPOSAL_TYPE=$(printf '%s\n' "$PROPOSAL_NAME" | sed -n '2p')
+PROPOSAL_NAME=$(printf '%s\n' "$PROPOSAL_NAME" | sed -n '1p')
 
 # Defense in depth: the python pass already validates name against
 # `^[a-z][a-z0-9-]*$`, but a contributor adding a stray `print(...)` to that
@@ -311,6 +336,96 @@ if ! printf '%s' "$PROPOSAL_NAME" | grep -qE '^[a-z][a-z0-9-]*$'; then
   echo "promote-proposal.sh: invariant violated: PROPOSAL_NAME='$PROPOSAL_NAME' " \
        "failed bash-level kebab-case re-check after Python validation" >&2
   exit 2
+fi
+
+# An exception proposal promotes to a row in the team contract, not to a skill.
+# It branches here, before any of the learned-skill path construction below,
+# because none of that applies: there is no directory to create, nothing to
+# transform, and no SKILL.md to write.
+if [ "$PROPOSAL_TYPE" = "exception" ]; then
+  EXC_FILE="$REPO_ROOT/.flow/review-exceptions.md"
+  if [ -L "$EXC_FILE" ]; then
+    echo "promote-proposal.sh: refusing — $EXC_FILE is a symlink (potential redirect attack)" >&2
+    exit 1
+  fi
+  EXC_ROW=$(PROPOSAL="$PROPOSAL" python3 - <<'PYEOF'
+import os, re, sys
+sys.path[:] = [q for q in sys.path if q not in ("", ".")]
+text = open(os.environ["PROPOSAL"], encoding="utf-8").read()
+# The row is the first table row under `## Exception row` that is not the
+# header or its separator.
+section = re.split(r"^##\s+Exception row\s*$", text, flags=re.M)
+if len(section) < 2:
+    print("ERROR: exception proposal has no `## Exception row` section", file=sys.stderr)
+    sys.exit(1)
+body = re.split(r"^##\s+", section[1], flags=re.M)[0]
+row = None
+for line in body.splitlines():
+    line = line.strip()
+    if not line.startswith("|"):
+        continue
+    cells = [c.strip() for c in line.strip("|").split("|")]
+    if not cells or set("".join(cells)) <= set("-: "):
+        continue
+    if cells[0].lower() == "rule":
+        continue
+    if len(cells) < 4:
+        # The glob is what bounds the rule to the paths the team named. A row
+        # without one is unscoped, which is a different rule from the one the
+        # team agreed.
+        print("ERROR: the exception row needs four columns "
+              "(rule, scope glob, why, source); got %d" % len(cells), file=sys.stderr)
+        sys.exit(1)
+    row = "| " + " | ".join(cells[:4]) + " |"
+    break
+if row is None:
+    print("ERROR: the `## Exception row` section carries no table row", file=sys.stderr)
+    sys.exit(1)
+print(row)
+PYEOF
+) || exit $?
+
+  if [ -f "$EXC_FILE" ] && grep -Fqx "$EXC_ROW" "$EXC_FILE"; then
+    echo "promote-proposal.sh: refusing — that exception is already in $EXC_FILE" >&2
+    echo "promote-proposal.sh: an exception appended twice is two rules a reviewer must reconcile" >&2
+    exit 1
+  fi
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "DRY-RUN: validation passed for '$PROPOSAL_NAME' (type: exception)"
+    echo "DRY-RUN: flow checkout: $REPO_ROOT (resolved from $PROMOTE_SOURCE)"
+    echo "DRY-RUN: would append to $EXC_FILE:"
+    echo "DRY-RUN:   $EXC_ROW"
+    exit 0
+  fi
+
+  mkdir -p "$(dirname "$EXC_FILE")" || {
+    echo "promote-proposal.sh: cannot create $(dirname "$EXC_FILE")" >&2
+    exit 2
+  }
+  if [ ! -f "$EXC_FILE" ]; then
+    # The header is the documented column order. Writing the row without it
+    # would leave a file nothing can parse.
+    {
+      echo "# Review exceptions"
+      echo ""
+      echo "Rules this project has already rejected a review finding over. Read at the base"
+      echo "commit by every review, so a pull request cannot grant itself an exemption."
+      echo "Written by hand or by promoting a /flow:learn proposal; never by a review run."
+      echo ""
+      echo "| Rule | Scope (path glob) | Why | Source |"
+      echo "|---|---|---|---|"
+    } > "$EXC_FILE" || { echo "promote-proposal.sh: cannot write $EXC_FILE" >&2; exit 2; }
+  fi
+  printf '%s\n' "$EXC_ROW" >> "$EXC_FILE" || {
+    echo "promote-proposal.sh: cannot append to $EXC_FILE" >&2
+    exit 2
+  }
+  echo "promote-proposal.sh: appended the exception to $EXC_FILE"
+  echo "promote-proposal.sh:   $EXC_ROW"
+  echo "promote-proposal.sh: commit it — reviews read the file at the base commit, so an"
+  echo "promote-proposal.sh:   uncommitted exception is invisible to every review."
+  exit 0
 fi
 
 TARGET_DIR="$LEARNED_DIR/$PROPOSAL_NAME"
