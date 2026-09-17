@@ -193,3 +193,5 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-17 10:54 commit "fix(flow): the exceptions a reviewer is given come from a ref the author cannot choose" -->
 
 <!-- auto-log: 2026-09-17 10:57 commit "fix(flow): the contract stops describing a producer that does not exist" -->
+
+<!-- auto-log: 2026-09-17 11:16 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/pr-body-214.md -->
