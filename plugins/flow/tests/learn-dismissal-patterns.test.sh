@@ -331,3 +331,26 @@ assert_equal "2" "$(printf '%s\n' "$LD_SRC" | grep -c 'PYTHONSAFEPATH=1')" \
   "the probe and the reader are both invoked with PYTHONSAFEPATH"
 assert_equal "2" "$(printf '%s\n' "$LD_SRC" | grep -c 'sys.path\[:\]')" \
   "and both scrub sys.path explicitly, for interpreters older than 3.11"
+
+_flow_test_begin "a symlinked journal is refused, and never quoted back"
+# bin/journal-record.sh refuses a symlinked journal on the write side for this
+# reason; this reader followed it, and the parse error quoted the target.
+D13=$(mktemp -d -t flow-ld13.XXXXXX); LD_CLEANUP+=("$D13")
+mkdir -p "$D13/.decisions"
+printf -- '---\nSENSITIVEMARKER: value\n\tbad: indent\n---\n' > "$D13/elsewhere.yml"
+ln -s "$D13/elsewhere.yml" "$D13/.decisions/issue-7.md"
+_ld_block > "$D13/block.sh"
+OUT13=$(cd "$D13" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+assert_match 'symlink' "$OUT13" "the symlinked journal is named as such"
+assert_not_contains "SENSITIVEMARKER" "$OUT13" "and no byte of the target is echoed"
+assert_contains "STATE=degraded" "$OUT13" "and it is reported, not silently skipped"
+
+_flow_test_begin "an unreadable manifest is named without quoting its text"
+D14=$(mktemp -d -t flow-ld14.XXXXXX); LD_CLEANUP+=("$D14")
+mkdir -p "$D14/.decisions"
+printf -- '---\nartifacts: [unclosed SENSITIVEMARKER2\n---\n# j\n' > "$D14/.decisions/issue-7.md"
+_ld_block > "$D14/block.sh"
+OUT14=$(cd "$D14" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+assert_contains "JOURNAL_UNREADABLE=" "$OUT14" "the file is named"
+assert_not_contains "SENSITIVEMARKER2" "$OUT14" "but its contents are not quoted back"
+assert_contains "STATE=degraded" "$OUT14" "and the counts are reported as a floor"

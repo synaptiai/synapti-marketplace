@@ -747,12 +747,26 @@ import re
 import yaml
 
 
+class ManifestError(Exception):
+    """Raised only by this block, always with a message this block wrote.
+
+    Everything else that comes out of a parse is derived from the file, and the
+    file is author-controlled: yaml.load raises a plain ValueError out of its
+    typed-scalar constructors, UnicodeDecodeError is a ValueError subclass, and
+    an explicit tag such as !!bool raises KeyError or AttributeError carrying
+    the whole scalar. Catching ValueError and printing it verbatim echoed all
+    of those, and the last two were not caught at all.
+    """
+
+
 class NoAliases(yaml.SafeLoader):
     """A journal manifest is a record, not a program."""
 
     def compose_node(self, parent, index):
         if self.check_event(yaml.events.AliasEvent):
-            raise yaml.YAMLError("the manifest uses YAML aliases, which a manifest does not need")
+            # ManifestError, not YAMLError: this message is ours, and the
+            # handler prints only a class name for anything derived from the file.
+            raise ManifestError("the manifest uses YAML aliases, which a manifest does not need")
         return super(NoAliases, self).compose_node(parent, index)
 
 
@@ -761,12 +775,15 @@ path, pr = sys.argv[1], sys.argv[2]
 
 def one_line(v):
     out = " ".join(str(v).splitlines()).strip()[:200]
-    # Every REASON is printed on stdout, in the same place the DISPUTED= line
-    # would be, and the journal and the configured journal.dir are both
-    # author-controlled on a fork pull request. Without this, a finding id or a
-    # directory named `DISPUTED=[]` prints a pasteable empty array on the one
-    # path whose entire purpose is to offer none.
-    return out.replace("DISPUTED=", "DISPUTED%3D")
+    # Every REASON is printed on stdout, in the same place the array would be,
+    # and the journal and the configured journal.dir are both author-controlled
+    # on a fork pull request. Neutralise the block's own key AND the marker
+    # tokens the ledger parser greps for: references/finding-ledger-parser.md
+    # extracts `DISPUTED:[...]` with a grep, so guarding only `DISPUTED=` would
+    # be guarding the wrong spelling of the same attack.
+    for tok in ("DISPUTED", "RESOLVED", "ESCALATED"):
+        out = out.replace(tok + "=", tok + "%3D").replace(tok + ":", tok + "%3A")
+    return out
 
 
 def bail(reason):
@@ -782,6 +799,13 @@ try:
     # exactly this reason: a pre-staged .decisions/issue-N.md pointing at a
     # private key would otherwise be opened and its bytes echoed in a parse
     # error. bin/_journal_atomic.py reads the same way.
+    #
+    # This guards the FINAL component only. A symlinked .decisions DIRECTORY is
+    # still followed — deliberately, because journal-record.sh follows it too
+    # on the write side, and a reader that refused what the writer accepts is
+    # the same disagreement this block exists to remove. Ids are re-validated
+    # on the way out, so what such a directory can yield is a refusal or a
+    # well-formed id, not arbitrary text.
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
 except OSError as exc:
     import errno
@@ -794,34 +818,33 @@ try:
     with os.fdopen(fd, "r", encoding="utf-8") as fh:
         text = fh.read()
     if not text.startswith("---"):
-        raise ValueError("the manifest fence does not start the file")
+        raise ManifestError("the manifest fence does not start the file")
     # Match the closing fence as a LINE, rather than splitting on the first
     # "---" anywhere. A `---` inside a value (an evidence string quoting a diff
     # header, for instance) is ordinary content the writer accepts, and
     # splitting on it silently truncated the artifact list.
     fence = re.match(r"---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", text, re.S)
     if fence is None:
-        raise ValueError("the manifest fence does not open and close at the top of the file")
+        raise ManifestError("the manifest fence does not open and close at the top of the file")
     fm = yaml.load(fence.group(1), Loader=NoAliases)
     if not isinstance(fm, dict):
-        raise ValueError("the manifest is not a mapping")
+        raise ManifestError("the manifest is not a mapping")
     arts = fm.get("artifacts")
     if arts is None:
         arts = []
     if not isinstance(arts, list):
-        raise ValueError("artifacts is not a list")
-except ValueError as exc:
-    # Our own fixed strings, safe to print verbatim.
+        raise ManifestError("artifacts is not a list")
+except ManifestError as exc:
+    # Ours, and only ours. Safe to print verbatim.
     bail(exc)
-except yaml.YAMLError as exc:
-    # NOT the exception text: a PyYAML error carries a Mark snippet quoting the
-    # file verbatim, and this REASON is printed and reported onward. If the path
-    # was pointed at something that is not a manifest, those bytes are not ours
-    # to echo.
-    bail("the journal manifest did not parse (%s); its text is not echoed here, "
+except Exception as exc:
+    # Everything else is derived from the file. A PyYAML error carries a Mark
+    # snippet quoting it verbatim, and this REASON is printed and reported
+    # onward, so only the exception CLASS goes out. A bare `except Exception`
+    # is deliberate: the alternative is enumerating what a hostile manifest can
+    # raise, and the previous attempt at that list missed three.
+    bail("the journal manifest could not be read (%s); its text is not echoed here, "
          "because a file that is not a manifest may hold anything" % type(exc).__name__)
-except OSError as exc:
-    bail("the journal %s could not be read (%s)" % (path, type(exc).__name__))
 
 ids = []
 seen = set()

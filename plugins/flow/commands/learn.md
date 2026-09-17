@@ -175,11 +175,21 @@ import sys
 # be preloaded by CPython today, which is an interpreter detail, not a promise.
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
+import errno
 import glob
 import os
 import re
 
 import yaml
+
+
+class ManifestError(Exception):
+    """Raised only by this block, always with a message this block wrote.
+
+    Anything else out of a parse is derived from the file: a PyYAML error
+    carries a Mark snippet quoting it verbatim, and this block prints the
+    reason on stdout. Only the exception class goes out for those.
+    """
 
 
 class NoAliases(yaml.SafeLoader):
@@ -193,7 +203,9 @@ class NoAliases(yaml.SafeLoader):
 
     def compose_node(self, parent, index):
         if self.check_event(yaml.events.AliasEvent):
-            raise yaml.YAMLError("the manifest uses YAML aliases, which a manifest does not need")
+            # ManifestError, not YAMLError: this message is ours, and the
+            # handler prints only a class name for anything derived from the file.
+            raise ManifestError("the manifest uses YAML aliases, which a manifest does not need")
         return super(NoAliases, self).compose_node(parent, index)
 
 
@@ -211,12 +223,33 @@ if not os.path.isdir(journal_dir):
 
 
 def one_line(v):
-    return " ".join(str(v).splitlines()).strip()[:200]
+    out = " ".join(str(v).splitlines()).strip()[:200]
+    # Every REASON is printed on stdout, in the same place the array would be,
+    # and the journal and the configured journal.dir are both author-controlled
+    # on a fork pull request. Neutralise the key this block prints AND the marker
+    # tokens the ledger parser greps for: references/finding-ledger-parser.md
+    # extracts `DISPUTED:[...]` with a grep, so guarding only `DISPUTED=` would
+    # be guarding the wrong spelling of the same attack.
+    for tok in ("DISPUTED", "RESOLVED", "ESCALATED"):
+        out = out.replace(tok + "=", tok + "%3D").replace(tok + ":", tok + "%3A")
+    return out
 
 
 for path in sorted(glob.glob(os.path.join(journal_dir, "*.md"))):
     try:
-        text = open(path, encoding="utf-8").read()
+        # O_NOFOLLOW: bin/journal-record.sh refuses a symlinked journal because
+        # a pre-staged .decisions/issue-N.md can point anywhere, and the reason
+        # printed below reaches stdout. The sibling reader in address.md opens
+        # the same way.
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.EMLINK):
+                raise ManifestError("the journal is a symlink, and a symlinked journal is refused")
+            raise ManifestError("the journal could not be opened (%s)"
+                                % errno.errorcode.get(exc.errno, "OSError"))
+        with os.fdopen(fd, "r", encoding="utf-8") as fh:
+            text = fh.read()
         if not text.startswith("---"):
             # A file with no frontmatter at all is not a journal. One whose
             # fence was DAMAGED is, and counting that as zero hides the evidence
@@ -225,7 +258,7 @@ for path in sorted(glob.glob(os.path.join(journal_dir, "*.md"))):
             # repository carry one under a risk-map heading. Require both a
             # fence-shaped line and a manifest key before calling it damaged.
             if re.search(r"(?m)^---[ \t]*$", text) and re.search(r"(?m)^artifacts:", text):
-                raise ValueError("the manifest fence does not start the file")
+                raise ManifestError("the manifest fence does not start the file")
             continue
         # Match the closing fence as a LINE. Splitting on the first "---"
         # anywhere cuts the manifest at a `---` inside a value, which the
@@ -233,17 +266,17 @@ for path in sorted(glob.glob(os.path.join(journal_dir, "*.md"))):
         # it — an undercount that reads as a project with fewer dismissals.
         fence = re.match(r"---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", text, re.S)
         if fence is None:
-            raise ValueError("the manifest fence does not open and close at the top of the file")
+            raise ManifestError("the manifest fence does not open and close at the top of the file")
         fm = yaml.load(fence.group(1), Loader=NoAliases)
         if fm is None:
             continue
         if not isinstance(fm, dict):
-            raise ValueError("the manifest is not a mapping")
+            raise ManifestError("the manifest is not a mapping")
         arts = fm.get("artifacts")
         if arts is None:
             continue
         if not isinstance(arts, list):
-            raise ValueError("artifacts is not a list")
+            raise ManifestError("artifacts is not a list")
         for a in arts:
             if not isinstance(a, dict):
                 # One silently dropped entry can decide whether a cluster
@@ -255,11 +288,16 @@ for path in sorted(glob.glob(os.path.join(journal_dir, "*.md"))):
                 dismissed.append((path, a))
             elif t == "dropped-finding":
                 dropped.append((path, a))
-    except Exception as exc:
+    except ManifestError as exc:
         # A manifest nobody could read is not a project with no dismissals.
         # Counting it as zero would hide the evidence this category exists to
         # find, which is the whole failure mode being fixed here.
         unreadable.append((path, exc))
+    except Exception as exc:
+        # Not ours, so only the class goes out: the text of a parse error
+        # quotes the file, and the file may not be a manifest at all.
+        unreadable.append((path, "the manifest could not be read (%s); its text is not "
+                                 "echoed here" % type(exc).__name__))
 
 for path, exc in unreadable:
     print("JOURNAL_UNREADABLE=%s — %s" % (one_line(path), one_line(exc)))

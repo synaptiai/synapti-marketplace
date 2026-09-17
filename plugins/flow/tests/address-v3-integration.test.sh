@@ -741,3 +741,46 @@ assert_equal "2" "$(printf '%s\n' "$DISPUTED_SRC" | grep -c 'PYTHONSAFEPATH=1')"
   "the probe and the reader are both invoked with PYTHONSAFEPATH"
 assert_equal "2" "$(printf '%s\n' "$DISPUTED_SRC" | grep -c 'sys.path\[:\]')" \
   "and both scrub sys.path explicitly, for interpreters older than 3.11"
+
+_flow_test_begin "a manifest that is not a manifest is never quoted back"
+# The reason is printed on stdout and reported onward. yaml.load raises a plain
+# ValueError out of its typed-scalar constructors, UnicodeDecodeError is a
+# ValueError subclass, and an explicit tag raises KeyError carrying the whole
+# scalar — so catching ValueError and printing it echoed file bytes, and two of
+# these were not caught at all.
+WORKU=$(mktemp -d -t flow-disp18.XXXXXX); ADDR_CLEANUP+=("$WORKU")
+mkdir -p "$WORKU/.decisions"
+_extract_disputed_block > "$WORKU/disputed.sh"
+_echo_run() { ( cd "$WORKU" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKU" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1 ); }
+
+printf -- '---\nissue: 214\nartifacts: !!int "x LEAKMARKER y"\n---\n# j\n' > "$WORKU/.decisions/issue-214.md"
+OUT_V=$(_echo_run)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_V" "a typed-scalar failure is unavailable"
+assert_not_contains "LEAKMARKER" "$OUT_V" "and the scalar is not echoed"
+
+printf -- '---\nissue: 214\nartifacts: !!bool "LEAKMARKER2"\n---\n# j\n' > "$WORKU/.decisions/issue-214.md"
+OUT_W=$(_echo_run)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_W" "an explicit-tag failure is unavailable"
+assert_not_contains "LEAKMARKER2" "$OUT_W" "and the scalar is not echoed"
+assert_not_contains "Traceback" "$OUT_W" "and it is caught rather than crashing"
+
+printf -- '---\nLEAKMARKER3: \200\201\n---\n' > "$WORKU/.decisions/issue-214.md"
+OUT_X=$(_echo_run)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_X" "an undecodable journal is unavailable"
+assert_not_contains "LEAKMARKER3" "$OUT_X" "and the bytes are not echoed"
+
+_flow_test_begin "the marker token the parser reads is neutralised, not just the block's own"
+# references/finding-ledger-parser.md extracts the array with
+# grep -o 'DISPUTED:\[[^]]*\]'. Guarding only `DISPUTED=` guards the wrong
+# spelling of the same attack, and journal.dir is author-controlled through the
+# committed .claude/settings.flow.json.
+WORKV=$(mktemp -d -t flow-disp19.XXXXXX); ADDR_CLEANUP+=("$WORKV")
+mkdir -p "$WORKV/.claude"
+printf '%s\n' '{"journal":{"dir":"zz DISPUTED:[PWNED] zz"}}' > "$WORKV/.claude/settings.flow.json"
+_extract_disputed_block > "$WORKV/disputed.sh"
+OUT_TOK=$(cd "$WORKV" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKV" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_TOK" "the run reports unavailable"
+assert_not_contains "DISPUTED:[PWNED]" "$OUT_TOK" "the marker-shaped token does not survive"
+assert_contains "DISPUTED%3A" "$OUT_TOK" "it is percent-escaped instead"
