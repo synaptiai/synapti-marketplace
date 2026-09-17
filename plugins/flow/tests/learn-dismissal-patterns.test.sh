@@ -491,7 +491,7 @@ _flow_test_begin "a journal directory cannot forge a KEY=value line through the 
 # journal.dir. A newline in it closes the JOURNAL_DIR= line and opens a forged
 # `### Dismissal Artifacts` section — with its own STATE=ok and DISMISSED= rows —
 # above the real one, and Phase 2 reads the first section it finds. cascade-
-# resolve.sh --scalar refuses the value; this pins the consumer end to end.
+# resolve.sh refuses the value by default; this pins the consumer end to end.
 DN=$(mktemp -d -t flow-ldinj.XXXXXX); LD_CLEANUP+=("$DN")
 mkdir -p "$DN/.claude" "$DN/.decisions"
 python3 -c 'import json,sys
@@ -513,3 +513,40 @@ assert_equal "1" "$SEC_SECTIONS" "exactly one Dismissal Artifacts section reache
 # The hostile value is refused, so the resolved path is the default and there is
 # genuinely nothing to count. The point is that the refusal is REPORTED.
 assert_match 'WARN' "$OUT_INJ" "the refusal is surfaced rather than silent"
+
+_flow_test_begin "only .md journals are read, and hidden ones are still skipped"
+# os.listdir replaced glob, and the comment claims the leading-dot skip preserves
+# the behaviour glob had (`*` does not match a leading dot). Nothing pinned that,
+# nor the .md filter.
+DO=$(mktemp -d -t flow-ldskip.XXXXXX); LD_CLEANUP+=("$DO")
+mkdir -p "$DO/.decisions"
+printf -- '---\nissue: 908\nartifacts:\n- type: finding-dismissed\n  pr: 9\n  finding_id: FVISIBLE\n  reason: breaks-test\n---\n# j\n' \
+  > "$DO/.decisions/issue-908.md"
+printf -- '---\nissue: 909\nartifacts:\n- type: finding-dismissed\n  pr: 9\n  finding_id: FHIDDEN\n  reason: breaks-test\n---\n# j\n' \
+  > "$DO/.decisions/.hidden.md"
+printf 'not a journal\n' > "$DO/.decisions/notes.txt"
+printf 'not a journal\n' > "$DO/.decisions/issue-910.md.bak"
+_ld_block > "$DO/block.sh"
+OUT_SK=$(cd "$DO" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+assert_equal "1" "$(printf '%s\n' "$OUT_SK" | grep -c '^DISMISSED_COUNT=1' || true)" \
+  "only the visible .md journal is counted"
+assert_not_contains "FHIDDEN" "$OUT_SK" "a hidden journal is skipped, as glob skipped it"
+assert_not_contains "notes.txt" "$OUT_SK" "a non-.md file is not read"
+assert_not_contains "issue-910.md.bak" "$OUT_SK" "nor a file that merely ends in .md.bak"
+assert_contains "FVISIBLE" "$OUT_SK" "and the one it counted is reported by id"
+assert_contains "STATE=ok" "$OUT_SK" "the section reports ok, not degraded"
+
+_flow_test_begin "a directory named *.md is reported, not silently counted"
+# glob's *.md matched a DIRECTORY named that too, and read_artifacts then failed
+# on it. The failure must surface as an unreadable journal rather than as a
+# project with fewer dismissals.
+DP=$(mktemp -d -t flow-lddir.XXXXXX); LD_CLEANUP+=("$DP")
+mkdir -p "$DP/.decisions/nested.md"
+printf -- '---\nissue: 911\nartifacts:\n- type: finding-dismissed\n  pr: 9\n  finding_id: FREAL2\n  reason: breaks-test\n---\n# j\n' \
+  > "$DP/.decisions/issue-911.md"
+_ld_block > "$DP/block.sh"
+OUT_DIR=$(cd "$DP" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+assert_contains "JOURNAL_UNREADABLE=" "$OUT_DIR" "the directory is named as unreadable"
+assert_contains "nested.md" "$OUT_DIR" "by its path"
+assert_contains "STATE=degraded" "$OUT_DIR" "and the counts are declared a floor"
+assert_contains "DISMISSED_COUNT=1" "$OUT_DIR" "the real journal beside it is still counted"

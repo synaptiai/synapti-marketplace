@@ -1297,9 +1297,64 @@ _flow_test_begin "every runnable fence in step 9 is a marked, testable block"
 # Every fence type that RUNS. A ```! fence is pre-executed at command load, so it
 # is the more dangerous of the two and the one the first version of this test
 # missed — it counted ```bash only, and an unmarked ```! fence sailed through.
-STEP9_FENCES=$(awk '/^9\. \*\*Post resolution comment\*\*/{f=1} f && /^10\./{f=0} f && /^ *```(bash|!)$/{c++} END{print c+0}' "$ADDRESS_MD")
-STEP9_MARKED=$(awk '/^9\. \*\*Post resolution comment\*\*/{f=1} f && /^10\./{f=0} f && /_BLOCK_BEGIN/{c++} END{print c+0}' "$ADDRESS_MD")
-assert_equal "$STEP9_FENCES" "$STEP9_MARKED" "every bash fence in step 9 carries BEGIN/END markers"
+# The two counters live in variables, not inline, so the negative case below
+# runs THE SAME program over a mutated copy. An earlier version re-wrote the
+# regex inside the fixture, which pinned a copy of the rule rather than the rule:
+# narrowing the real scanner back to bare "```" left every assertion green.
+FENCE_SCAN='/^9\. \*\*Post resolution comment\*\*/{f=1} f && /^10\./{f=0} f && /^ *```(bash|!)[ \t]*$/{c++} END{print c+0}'
+MARKER_SCAN='/^9\. \*\*Post resolution comment\*\*/{f=1} f && /^10\./{f=0} f && /_BLOCK_BEGIN/{c++} END{print c+0}'
+STEP9_FENCES=$(awk "$FENCE_SCAN" "$ADDRESS_MD")
+STEP9_MARKED=$(awk "$MARKER_SCAN" "$ADDRESS_MD")
+assert_equal "$STEP9_FENCES" "$STEP9_MARKED" "every runnable fence in step 9 carries BEGIN/END markers"
+# The negative case: the same scan over a copy carrying an unmarked inline-! fence
+# inside step 9. An inline-! fence is pre-executed at command load, so it is the
+# more dangerous of the two to leave unmarked, and it is the arm this test added.
+WORKNEG=$(mktemp -d -t flow-fenceneg.XXXXXX); ADDR_CLEANUP+=("$WORKNEG")
+awk '{ if ($0 ~ /^10\. \*\*Update PR body review cycle state\*\*/ && !done) {
+         print "```!"
+         print "echo \"STATE=ok\""
+         print "```"
+         done=1
+       }
+       print }' "$ADDRESS_MD" > "$WORKNEG/address-bad.md"
+assert_match '[^[:space:]]' "$(cat "$WORKNEG/address-bad.md")" "the mutated copy exists"
+NEG_F=$(awk "$FENCE_SCAN" "$WORKNEG/address-bad.md")
+NEG_M=$(awk "$MARKER_SCAN" "$WORKNEG/address-bad.md")
+if [ "$NEG_F" -ne "$NEG_M" ]; then
+  _flow_assert_pass "the scan catches an unmarked inline-! fence ($NEG_F fences vs $NEG_M markers)"
+else
+  _flow_assert_fail "an unmarked inline-! fence was not counted ($NEG_F vs $NEG_M)"
+fi
+# A trailing space after the info string. CommonMark trims the info string, so
+# '```! ' is the same fence as '```!' to the executor while an exact-shape scan
+# misses it — a one-space bypass of the whole guard. The mutated copy uses the
+# form the exact-shape version would miss.
+awk '{ if ($0 ~ /^10\. \*\*Update PR body review cycle state\*\*/ && !done) {
+         print "```! "
+         print "echo \"STATE=ok\""
+         print "```"
+         done=1
+       }
+       print }' "$ADDRESS_MD" > "$WORKNEG/address-ws.md"
+NEG_WS_F=$(awk "$FENCE_SCAN" "$WORKNEG/address-ws.md")
+NEG_WS_M=$(awk "$MARKER_SCAN" "$WORKNEG/address-ws.md")
+if [ "$NEG_WS_F" -ne "$NEG_WS_M" ]; then
+  _flow_assert_pass "a trailing space after the info string does not hide a fence ($NEG_WS_F vs $NEG_WS_M)"
+else
+  _flow_assert_fail "an opener with a trailing space was not counted ($NEG_WS_F vs $NEG_WS_M)"
+fi
+# And the fence TYPES the shared scan recognises. Run through the SAME program as
+# the live check, so narrowing the real scanner breaks these too.
+for KNOWN in '```bash' '```!' '```bash   ' '```! '; do
+  printf '9. **Post resolution comment**\n%s\necho x\n```\n' "$KNOWN" > "$WORKNEG/probe.md"
+  N=$(awk "$FENCE_SCAN" "$WORKNEG/probe.md")
+  assert_equal "1" "$N" "the scan recognises the opener '$KNOWN'"
+done
+for UNKNOWN in '```sh' '```zsh' '``` shell'; do
+  printf '9. **Post resolution comment**\n%s\necho x\n```\n' "$UNKNOWN" > "$WORKNEG/probe.md"
+  N=$(awk "$FENCE_SCAN" "$WORKNEG/probe.md")
+  assert_equal "0" "$N" "the scan does not claim to recognise '$UNKNOWN'"
+done
 
 _flow_test_begin "an issue-less pull request is told how to include earlier dismissals"
 # A pull request can close an issue in cycle 2 and lose the keyword before cycle

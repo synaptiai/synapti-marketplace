@@ -30,13 +30,13 @@ HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||
 JOURNAL_DIR=".decisions"
 PROPOSAL_DIR="$HOME/.claude/flow-proposals"
 if [ -x "$HELPER" ]; then
-  # --scalar: both values are printed below as `KEY=value` lines, and
+  # Both values are printed below as `KEY=value` lines, and
   # .claude/settings.flow.json is a tracked file, so a fork pull request chooses
-  # them. Without the flag a newline in journal.dir closed the JOURNAL_DIR= line
-  # and opened a forged `### Dismissal Artifacts` section — with its own STATE=ok
-  # and its own DISMISSED= rows — above the real one.
-  JOURNAL_DIR=$("$HELPER" --scalar --default ".decisions" '.journal.dir // empty')
-  PROPOSAL_DIR=$("$HELPER" --scalar --default "$HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
+  # them. cascade-resolve.sh refuses a value carrying a newline by default —
+  # without that, one in journal.dir closed the JOURNAL_DIR= line and opened a
+  # forged `### Dismissal Artifacts` section above the real one.
+  JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
+  PROPOSAL_DIR=$("$HELPER" --default "$HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
   echo "STATE=ok"
 else
   # Helper missing or non-executable — using compile-time defaults. Surface
@@ -232,17 +232,20 @@ unreadable = []
 # exists to remove — an unreadable input answering like a legitimately absent
 # one:
 #
-#   1. glob treats [ ? and * inside the pattern as syntax, so a directory that
-#      genuinely exists and genuinely holds journals matched nothing and the
-#      block reported a project with no dismissals.
-#   2. glob SWALLOWS the OSError from a directory it cannot read, returning an
+#   1. glob SWALLOWS the OSError from a directory it cannot read, returning an
 #      empty list. A directory holding recorded dismissals that the process may
 #      not list therefore reported DISMISSED_COUNT=0 / STATE=empty, byte for
 #      byte what a project with nothing recorded reports.
+#   2. glob reads [ ? and * inside the pattern as syntax. The revision right
+#      before this one passed the directory through glob.escape, so that was
+#      handled there — but the escaping only existed because glob was the wrong
+#      tool, and the revision before THAT reported a project with no dismissals
+#      for a directory that genuinely held journals.
 #
-# listdir raises for the second and needs no escaping for the first. The
-# leading-dot skip preserves the behaviour glob had: `*` does not match a leading dot,
-# so a `.hidden.md` in the journal directory was and remains ignored.
+# listdir raises for the first and needs no escaping for the second. The
+# leading-dot skip preserves the behaviour glob had: `*` does not match a
+# leading dot, so a `.hidden.md` in the journal directory was and remains
+# ignored.
 try:
     _entries = sorted(os.listdir(journal_dir))
 except OSError as exc:

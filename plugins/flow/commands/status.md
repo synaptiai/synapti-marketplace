@@ -120,9 +120,7 @@ echo ""
 echo "### Decision Journal"
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
-# --scalar: JOURNAL_DIR is echoed as a KEY=value line below and the setting is
-# fork-controlled, so a newline in it would forge a line of the section.
-[ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --scalar --default ".decisions" '.journal.dir // empty')
+[ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
 JOURNAL_FILES=0
 [ -d "$JOURNAL_DIR" ] && JOURNAL_FILES=$(ls "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
 echo "JOURNAL_DIR=$JOURNAL_DIR"

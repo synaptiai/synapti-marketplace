@@ -86,7 +86,7 @@ fi
 
 # Discover journal directory via bin/cascade-resolve.sh.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-JOURNAL_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --scalar --default ".decisions" '.journal.dir // empty')
+JOURNAL_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty')
 
 # Defense-in-depth: warn (not block) when journal.dir contains ".." path
 # segments. The cascade visibility is the primary defense (settings changes

@@ -254,10 +254,10 @@ def finding_id(a):
                             "refusing to build an array from it" % type(fid).__name__)
     # The journal is a tracked file any contributor can edit, and the array it
     # feeds is parsed by splitting on `,` and `]`. Re-validate on the way out
-    # rather than trusting what the writer put in: a comma injects extra rows
-    # into every consumer that does `tr ',' '\n'`, and a `]` truncates the
+    # rather than trusting what the writer put in: a `]` truncates the
     # `grep -o 'DISPUTED:\[[^]]*\]'` the consumers extract with, silently
-    # dropping the rest of the array. The allowlist is the one
+    # dropping the rest of the array, and a comma splits one id into two for the
+    # `,`-delimited containment checks. The allowlist is the one
     # bin/flow-finding-route.sh, commands/status.md and
     # references/finding-ledger-parser.md all apply, so this refuses what they
     # would refuse instead of handing them a row they will drop.

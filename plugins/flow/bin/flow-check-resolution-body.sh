@@ -49,8 +49,13 @@ esac
 # the pipe read end AS fd 0 and the parent then blocks on the substitution that
 # holds the write end — a deadlock, reproduced here with `0<&-` (rc=124 under a
 # 6s timeout). `read` reports EBADF and returns immediately, leaving BODY empty
-# so the empty-body refusal below fires. With a live stdin it reads to EOF and
-# preserves every byte, trailing newline included, exactly as `cat` did.
+# so the empty-body refusal below fires.
+#
+# The two readers are NOT byte-identical, measured: `$(cat)` strips every
+# trailing newline and keeps an embedded NUL; `read -d ''` keeps trailing
+# newlines and stops at the first NUL. Neither difference is reachable from the
+# callers, which pass a shell variable — a variable cannot hold a NUL, so the
+# `<<<"$BODY"` here-string always ends in exactly one newline.
 BODY=""
 IFS= read -r -d '' BODY || true
 

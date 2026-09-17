@@ -26,7 +26,7 @@ git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 JOURNAL_DIR=".decisions"
 if [ -x "$SCRIPT_DIR/cascade-resolve.sh" ]; then
-  JOURNAL_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --scalar --default ".decisions" '.journal.dir // empty' 2>/dev/null)
+  JOURNAL_DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty' 2>/dev/null)
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 fi
 

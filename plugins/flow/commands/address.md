@@ -464,10 +464,11 @@ case "$PR_NUM" in ''|0*|*[!0-9]*) echo "FINDING_DISMISSED=skipped (PR_NUM must b
 case "$CYCLE_NUMBER" in ''|*[!0-9]*) echo "FINDING_DISMISSED=skipped (CYCLE_NUMBER is not a number)" >&2; exit 1 ;; esac
 # The id ends up in the DISPUTED:[...] array that the Phase 5 emitter builds
 # from this artifact, and the consumers in references/finding-ledger-parser.md
-# split that array on `,` and `]`. An id carrying a comma injects extra rows
-# into every consumer that does `tr ',' '\n'`, and a `]` truncates the
-# `grep -o 'DISPUTED:\[[^]]*\]'` those consumers extract with, silently
-# dropping the rest of the array. Same allowlist and same LC_ALL=C as valid_id
+# split that array on `,` and `]`. A `]` truncates the
+# `grep -o 'DISPUTED:\[[^]]*\]'` they extract with, silently dropping the rest
+# of the array; a comma splits one id into two for the `,`-delimited containment
+# checks (commands/status.md and references/finding-ledger-parser.md §3), so
+# neither half matches a finding. Same allowlist and same LC_ALL=C as valid_id
 # in bin/flow-finding-route.sh: bracket ranges follow the locale of the caller,
 # where [A-Za-z] can match a letter such as e-acute.
 #
@@ -754,7 +755,7 @@ esac
 # root, so the substitution yields nothing. It does not cover the helper
 # failing internally: with --default it prints the default and exits 0 even
 # with jq missing.
-DISPUTED_DIR=$("$FLOW_ROOT/bin/cascade-resolve.sh" --scalar --default ".decisions" '.journal.dir // empty')
+DISPUTED_DIR=$("$FLOW_ROOT/bin/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty')
 if [ -z "$DISPUTED_DIR" ]; then
   echo "DISPUTED_STATE=unavailable"
   echo "REASON=the journal directory could not be resolved, so the file recording the dismissals cannot be located"
@@ -942,6 +943,11 @@ true
    [ "$RES_EXIT" -eq 0 ] || exit 1
    # POST_RESOLUTION_BLOCK_END
    ```
+   Mark the task completed **only if `RES_EXIT` is `0`** — the fence prints it. If it is non-zero
+   (auth, network, rate limit) the comment never landed, so leave the task `in_progress` and retry
+   rather than advancing: a resolution marker that is silently absent re-introduces the merge
+   false-block this emission exists to prevent. commands/review.md's emitter says the same.
+
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
 10. **Update PR body review cycle state** (if `### Review Cycle History` exists in the PR body):
    - Fetch current body: `gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body'`

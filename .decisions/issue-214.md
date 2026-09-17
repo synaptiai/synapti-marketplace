@@ -589,3 +589,111 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-17 22:01 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/f5-verdict.txt -->
 
 <!-- auto-log: 2026-09-17 22:03 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/f3/verdict.md -->
+
+<!-- auto-log: 2026-09-17 22:43 commit "fix(flow): a directory that cannot be listed is not a project with nothing recorded" -->
+
+<!-- auto-log: 2026-09-17 22:56 Write /tmp/cr8/parity.sh -->
+
+<!-- auto-log: 2026-09-17 22:56 Write /tmp/cr8/args.txt -->
+
+<!-- auto-log: 2026-09-17 22:56 Write /tmp/cr8/inputs.txt -->
+
+<!-- auto-log: 2026-09-17 22:57 Write /tmp/cr8/scalar-probe.sh -->
+
+<!-- auto-log: 2026-09-17 22:58 Write /tmp/cr8/run-learn-forge.sh -->
+
+<!-- auto-log: 2026-09-17 22:58 Write /tmp/sec-scalar/.claude/settings.flow.json -->
+
+<!-- auto-log: 2026-09-17 22:58 Write /tmp/sec-scalar/mk.py -->
+
+<!-- auto-log: 2026-09-17 22:58 Write /tmp/sec-scalar/run.sh -->
+
+<!-- auto-log: 2026-09-17 22:58 Write /tmp/sec-scalar/mk.py -->
+
+<!-- auto-log: 2026-09-17 22:59 Write /tmp/cr8/run-learn-transcriptdir-forge.sh -->
+
+<!-- auto-log: 2026-09-17 22:59 Write /tmp/cr8/body-parity.sh -->
+
+<!-- auto-log: 2026-09-17 23:00 Write /tmp/cr8/check-body-battery.sh -->
+
+<!-- auto-log: 2026-09-17 23:00 Write /tmp/cr8/listdir-parity.py -->
+
+<!-- auto-log: 2026-09-17 23:00 Write /tmp/mut214.8m0iow/mut.sh -->
+
+<!-- auto-log: 2026-09-17 23:01 Write /tmp/sec-learn/fixture.sh -->
+
+<!-- auto-log: 2026-09-17 23:01 Write /tmp/cr8/dismissal-block-e2e.sh -->
+
+<!-- auto-log: 2026-09-17 23:01 Write /tmp/sec-learn/fixture.sh -->
+
+<!-- auto-log: 2026-09-17 23:01 Write /tmp/cr8/sweep-echo.sh -->
+
+<!-- auto-log: 2026-09-17 23:01 Write /tmp/cr8/sweep-echo.py -->
+
+<!-- auto-log: 2026-09-17 23:04 Write /tmp/cr8/fence-mutants.sh -->
+
+<!-- auto-log: 2026-09-17 23:04 Write /tmp/scalar-probe.sh -->
+
+<!-- auto-log: 2026-09-17 23:05 Write /tmp/merge-probe.sh -->
+
+<!-- auto-log: 2026-09-17 23:05 Write /tmp/sec-oneline/brute.py -->
+
+<!-- auto-log: 2026-09-17 23:06 Write /tmp/flow-err-unicode-test.sh -->
+
+<!-- auto-log: 2026-09-17 23:06 Write /tmp/apostrophe-scan.sh -->
+
+<!-- auto-log: 2026-09-17 23:06 Write /tmp/sec-learn/mkhostile.py -->
+
+<!-- auto-log: 2026-09-17 23:07 Write /tmp/flow-err-fixverify.sh -->
+
+<!-- auto-log: 2026-09-17 23:07 Write /tmp/sec-miner2/run.py -->
+
+<!-- auto-log: 2026-09-17 23:07 Write /tmp/flow-err-surr.sh -->
+
+<!-- auto-log: 2026-09-17 23:08 Write /tmp/flow-err-warn2.sh -->
+
+<!-- auto-log: 2026-09-17 23:09 Write /tmp/cr8/fence-count.sh -->
+
+<!-- auto-log: 2026-09-17 23:09 Write /tmp/flow-err-final.sh -->
+
+<!-- auto-log: 2026-09-17 23:09 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_flow_settings_newline_injection.md -->
+
+<!-- auto-log: 2026-09-17 23:10 Write /tmp/flow-err-final2.sh -->
+
+<!-- auto-log: 2026-09-17 23:10 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_dossier_concurrent_flow_sessions.md -->
+
+<!-- auto-log: 2026-09-17 23:10 Write /tmp/cr8/test-mutants.sh -->
+
+<!-- auto-log: 2026-09-17 23:10 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_unavailable_collapse.md -->
+
+<!-- auto-log: 2026-09-17 23:10 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_marker_guard_drift.md -->
+
+<!-- auto-log: 2026-09-17 23:10 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_unavailable_collapse.md -->
+
+<!-- auto-log: 2026-09-17 23:10 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/MEMORY.md -->
+
+<!-- auto-log: 2026-09-17 23:10 Write /tmp/flow-err-p1head.sh -->
+
+<!-- auto-log: 2026-09-17 23:11 Write /tmp/cr8/scalar-cli.sh -->
+
+<!-- auto-log: 2026-09-17 23:16 Write /tmp/err4-battery.sh -->
+
+<!-- auto-log: 2026-09-17 23:16 Write /tmp/err4-battery2.sh -->
+
+<!-- auto-log: 2026-09-17 23:17 Write /tmp/err4-fullfence.sh -->
+
+<!-- auto-log: 2026-09-17 23:21 commit "fix(flow): a directory that cannot be listed is not a project with nothing recorded" -->
+
+<!-- auto-log: 2026-09-17 23:22 commit "fix(flow): a directory that cannot be listed is not a project with nothing recorded" -->
+
+<!-- auto-log: 2026-09-17 23:23 commit "fix(flow): a directory that cannot be listed is not a project with nothing recorded" -->
+
+<!-- auto-log: 2026-09-17 23:24 commit "fix(flow): a directory that cannot be listed is not a project with nothing recorded" -->
+
+<!-- auto-log: 2026-09-17 23:24 commit "fix(flow): a directory that cannot be listed is not a project with nothing recorded" -->
+
+<!-- auto-log: 2026-09-17 23:24 commit "fix(flow): a directory that cannot be listed is not a project with nothing recorded" -->
+
+<!-- auto-log: 2026-09-17 23:35 Write /tmp/r8_cascade_block.sh -->
+
+<!-- auto-log: 2026-09-17 23:37 Write /tmp/r8_merge_block.sh -->

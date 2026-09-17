@@ -555,6 +555,7 @@ When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.f
 The strategy and branch deletion the confirmation names, and the merge in Phase 3 uses. Read here so both come from the settings rather than from a default the model assumes.
 
 ```!
+# MERGE_SETTINGS_BLOCK_BEGIN
 echo "### Merge Settings"
 CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
 if [ ! -x "$CASCADE" ]; then
@@ -567,6 +568,8 @@ DELETE_BRANCH=$("$CASCADE" --default "true" '.merge.deleteBranch' 2>/dev/null)
 case "$MERGE_STRATEGY" in
   squash|merge|rebase) ;;
   *)
+    # Safe to quote because cascade-resolve.sh refuses a value carrying a
+    # control character by default, so this can only ever be a single line.
     echo "MERGE_SETTINGS_STATE=blocked"
     echo "ERROR=merge.strategy is '$MERGE_STRATEGY'; it must be squash, merge or rebase"
     true; exit 0 ;;
@@ -581,6 +584,7 @@ esac
 echo "MERGE_SETTINGS_STATE=ok"
 echo "MERGE_STRATEGY=$MERGE_STRATEGY"
 echo "DELETE_BRANCH=$DELETE_BRANCH"
+# MERGE_SETTINGS_BLOCK_END
 true
 ```
 
