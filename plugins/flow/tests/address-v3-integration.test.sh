@@ -275,12 +275,173 @@ _flow_test_begin "a dismissed finding reaches the marker as well as the artifact
 # the resolution marker carries, or /flow:merge never learns the finding was
 # rejected and the gate passes over it.
 assert_contains "DISPUTED" "$CONTENT" "address.md names the DISPUTED array"
-# Phase 3 tells the author to add the id; Phase 5 is where the comment is posted.
-PHASE3_DISPUTED=$(awk '/^3\. Add the id to the/{f=1} f{print} f && /^```!/{exit}' "$ADDRESS_MD")
+# Phase 3 points at the emitter rather than asking for a hand copy; Phase 5 is
+# where the comment is posted.
+PHASE3_DISPUTED=$(awk '/^3\. The id reaches the/{f=1} f{print} f && /^```!/{exit}' "$ADDRESS_MD")
 assert_contains "DISPUTED" "$PHASE3_DISPUTED" "Phase 3 instructs that the id goes in the array"
+assert_contains "DISPUTED_ARRAY_BLOCK" "$PHASE3_DISPUTED" "naming the block that carries it there"
+assert_match 'do not transcribe|not transcribed' "$PHASE3_DISPUTED" "and saying not to copy it by hand"
 assert_match 'same ledger ids|ledger id' "$CONTENT" "and that it is the ledger id, not another"
 # Anchor on the numbered step, not the phrase: the first match of the phrase is
 # a TaskCreate subject far above it.
 POST_STEP=$(awk '/^9\. \*\*Post resolution comment\*\*/{f=1} f{print} f && /gh pr comment/{exit}' "$ADDRESS_MD")
 assert_contains "DISPUTED" "$POST_STEP" "and the posting step repeats it where the comment is built"
-assert_match 'FINDING_DISMISSED_BLOCK' "$POST_STEP" "naming the block whose ids it must match"
+# The posting step no longer names the WRITER block, because it no longer asks
+# anyone to copy ids across from it. It names the EMITTER, which derives the
+# array from the artifacts that block wrote.
+assert_match 'DISPUTED_ARRAY_BLOCK' "$POST_STEP" "naming the block that builds the array it posts"
+assert_match 'finding-dismissed' "$POST_STEP" "and the artifacts the array is derived from"
+
+# --- the artifact and the marker carry the same id ---------------------------
+# AC2 asks that a dismissed finding reach BOTH surfaces with the same id. That
+# was unassertable while the DISPUTED array was composed by hand in the comment
+# body: nothing could run, so nothing could fail. The array is now emitted from
+# the artifacts, and these tests run the writer and the emitter against one
+# journal in one sandbox.
+_extract_disputed_block() {
+  awk '/# DISPUTED_ARRAY_BLOCK_BEGIN/{f=1;next} /# DISPUTED_ARRAY_BLOCK_END/{f=0} f' "$ADDRESS_MD"
+}
+
+_flow_test_begin "a dismissed finding reaches the artifact and the marker with the same id"
+WORKD=$(mktemp -d -t flow-disp.XXXXXX); ADDR_CLEANUP+=("$WORKD")
+mkdir -p "$WORKD/.decisions"
+_extract_dismissed_block > "$WORKD/dismiss.sh"
+_extract_disputed_block > "$WORKD/disputed.sh"
+if [ ! -s "$WORKD/disputed.sh" ]; then
+  _flow_assert_fail "DISPUTED_ARRAY_BLOCK extracted empty — the emitter does not exist"
+else
+  # pr, cycle and finding_id are all different values, so an emitter that read
+  # the wrong field prints a visibly wrong array rather than an accidental match.
+  ( cd "$WORKD" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+      ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID=F3 CATEGORY=correctness \
+      LOCATION="plugins/flow/bin/x.sh:42" REASON=breaks-test \
+      EVIDENCE="tests/x.test.sh::asserts the guard fires" \
+      bash dismiss.sh >/dev/null 2>&1 )
+  MANIFEST=$(cd "$WORKD" && python3 -c "
+import yaml
+d=yaml.safe_load(open('.decisions/issue-214.md').read().split('---')[1])
+a=[x for x in (d.get('artifacts') or []) if x.get('type')=='finding-dismissed']
+print(a[-1] if a else 'NONE')
+" 2>/dev/null)
+  DOUT=$(cd "$WORKD" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+    ISSUE=214 PR_NUM=234 JOURNAL_DIR=.decisions bash disputed.sh 2>&1)
+  # Both halves of the conjunction, asserted on one run of one id.
+  assert_contains "'finding_id': 'F3'" "$MANIFEST" "the artifact carries the ledger id"
+  assert_contains "DISPUTED_STATE=ok" "$DOUT" "the emitter built an array"
+  assert_contains "DISPUTED=[F3]" "$DOUT" "and the marker carries the same id"
+  # The discriminators: neither the pull request number nor the cycle is the id.
+  assert_not_contains "DISPUTED=[234]" "$DOUT" "the array is not the pull request number"
+  assert_not_contains "DISPUTED=[3]" "$DOUT" "the array is not the cycle number"
+fi
+
+_flow_test_begin "the array is cumulative over the pull request, not just this cycle"
+# Both consumers in references/finding-ledger-parser.md take `| last`: the newest
+# resolution comment is read as the complete disposition. A cycle filter would
+# drop a cycle-2 dismissal from the cycle-3 marker and reclassify it as
+# in_fix_forward.
+WORKE=$(mktemp -d -t flow-disp2.XXXXXX); ADDR_CLEANUP+=("$WORKE")
+mkdir -p "$WORKE/.decisions"
+_extract_dismissed_block > "$WORKE/dismiss.sh"
+_extract_disputed_block > "$WORKE/disputed.sh"
+_dismiss_one() {
+  ( cd "$WORKE" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+      ISSUE=214 PR_NUM="$1" CYCLE_NUMBER="$2" FINDING_ID="$3" CATEGORY=c \
+      LOCATION="a.sh:1" REASON=breaks-test EVIDENCE="e" \
+      bash dismiss.sh >/dev/null 2>&1 )
+}
+_dismiss_one 234 2 F7
+_dismiss_one 234 3 F3
+# A dismissal on a DIFFERENT pull request, in the same journal, must not appear.
+_dismiss_one 999 1 F99
+DOUT2=$(cd "$WORKE" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  ISSUE=214 PR_NUM=234 JOURNAL_DIR=.decisions bash disputed.sh 2>&1)
+assert_contains "F7" "$DOUT2" "a dismissal from an earlier cycle is still in the array"
+assert_contains "F3" "$DOUT2" "and so is this cycle's"
+assert_not_contains "F99" "$DOUT2" "a dismissal on another pull request is not"
+
+_flow_test_begin "a dropped-finding is not a dispute"
+WORKF=$(mktemp -d -t flow-disp3.XXXXXX); ADDR_CLEANUP+=("$WORKF")
+mkdir -p "$WORKF/.decisions"
+_extract_disputed_block > "$WORKF/disputed.sh"
+cat > "$WORKF/.decisions/issue-214.md" <<'JOURNAL'
+---
+issue: 214
+artifacts:
+- type: dropped-finding
+  pr: 234
+  cycle: 1
+  finding_id: D1
+  reason: unchallenged
+---
+# journal
+JOURNAL
+DOUT3=$(cd "$WORKF" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  ISSUE=214 PR_NUM=234 JOURNAL_DIR=.decisions bash disputed.sh 2>&1)
+assert_not_contains "D1" "$DOUT3" "a dropped finding never reaches the array"
+assert_contains "DISPUTED_STATE=none" "$DOUT3" "and the journal read as having no dismissals"
+
+_flow_test_begin "an array that could not be built is not an empty array"
+# The whole defect class: a failed read that prints DISPUTED:[] tells the merge
+# gate nothing was disputed. Each of these must report unavailable AND print no
+# DISPUTED= line at all, so there is nothing for step 9 to paste.
+WORKG=$(mktemp -d -t flow-disp4.XXXXXX); ADDR_CLEANUP+=("$WORKG")
+mkdir -p "$WORKG/.decisions"
+_extract_disputed_block > "$WORKG/disputed.sh"
+_disputed_run() { ( cd "$WORKG" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  ISSUE=214 PR_NUM=234 JOURNAL_DIR=.decisions bash disputed.sh 2>&1 ); }
+
+OUT_A=$(_disputed_run)   # no journal file at all
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_A" "a missing journal is unavailable, not empty"
+assert_not_contains "DISPUTED=" "$OUT_A" "and no array is offered for pasting"
+
+printf -- '---\nissue: 214\nartifacts: [oops\n---\n# j\n' > "$WORKG/.decisions/issue-214.md"
+OUT_B=$(_disputed_run)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_B" "an unparseable manifest is unavailable"
+assert_not_contains "DISPUTED=" "$OUT_B" "and offers no array"
+
+printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: "F3,F9"\n---\n# j\n' > "$WORKG/.decisions/issue-214.md"
+OUT_C=$(_disputed_run)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_C" "a journal-injected id is refused"
+assert_not_contains "DISPUTED=" "$OUT_C" "and offers no array"
+
+printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: "*"\n---\n# j\n' > "$WORKG/.decisions/issue-214.md"
+OUT_D=$(_disputed_run)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_D" "a glob id is refused"
+
+# A pull request that closes no issue: dismissals may have happened with nowhere
+# to record them, so this is unavailable, NOT none. ISSUE is set to a
+# non-numeric value so the branch is reached without a network call.
+OUT_E=$( cd "$WORKG" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  ISSUE=none PR_NUM=234 JOURNAL_DIR=.decisions bash disputed.sh 2>&1 || true )
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_E" "no linked issue is unavailable, not empty"
+assert_not_contains "DISPUTED=" "$OUT_E" "and offers no array"
+
+_flow_test_begin "the writer refuses an id the marker parser cannot carry"
+# finding-ledger-parser.md splits the array on `,` and `]` and matches with a
+# POSIX case glob, so these ids inject rows or match every RESOLVED list.
+WORKH=$(mktemp -d -t flow-disp5.XXXXXX); ADDR_CLEANUP+=("$WORKH")
+mkdir -p "$WORKH/.decisions"
+_extract_dismissed_block > "$WORKH/dismiss.sh"
+for BAD in 'F3,F9' '*' 'F3]' '3F'; do
+  OUTB=$(cd "$WORKH" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+    ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID="$BAD" CATEGORY=c \
+    LOCATION="a.sh:1" REASON=breaks-test EVIDENCE="e" \
+    bash dismiss.sh 2>&1); RCB=$?
+  if [ "$RCB" -ne 0 ]; then
+    _flow_assert_pass "the id '$BAD' is refused (exit $RCB)"
+  else
+    _flow_assert_fail "the id '$BAD' was recorded; it would corrupt the DISPUTED array"
+  fi
+done
+# A legitimate hyphenated id is NOT refused, or the guard is just a blanket no.
+OUTOK=$(cd "$WORKH" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+  ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID="SEC-2" CATEGORY=c \
+  LOCATION="a.sh:1" REASON=breaks-test EVIDENCE="e" \
+  bash dismiss.sh 2>&1); RCOK=$?
+assert_exit 0 "$RCOK" "a hyphenated ledger id is still accepted"
+
+_flow_test_begin "step 9 refuses to post a marker whose array could not be built"
+STEP9=$(awk '/^9\. \*\*Post resolution comment\*\*/{f=1} f && /^10\./{f=0} f' "$ADDRESS_MD")
+assert_contains "DISPUTED_ARRAY_BLOCK" "$STEP9" "step 9 runs the emitter"
+assert_contains "DISPUTED_STATE=unavailable" "$STEP9" "and names the unavailable state"
+assert_match 'Do not post|do not post' "$STEP9" "and says not to post the comment on it"
