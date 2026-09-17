@@ -20,6 +20,14 @@ artifacts:
   workflow: start-issue
   run_id: 2026-09-16T235523Z-issue-214
   status: active
+- type: escalation-resolved
+  captured_at: '2026-09-17T09:14:21Z'
+  gate: flowgoal-pr
+  goal_status: active
+  outcome:
+  - 'user-approved: created the PR with the goal not yet achieved; AC8 is verifiable
+    only by CI'
+  - which needs the PR to exist
 ---
 # Decision Journal — Issue #214
 
@@ -183,3 +191,5 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-17 10:35 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
 
 <!-- auto-log: 2026-09-17 10:54 commit "fix(flow): the exceptions a reviewer is given come from a ref the author cannot choose" -->
+
+<!-- auto-log: 2026-09-17 10:57 commit "fix(flow): the contract stops describing a producer that does not exist" -->
