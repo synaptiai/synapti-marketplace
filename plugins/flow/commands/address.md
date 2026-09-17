@@ -231,10 +231,10 @@ else
     | "MARKERS_SEEN=" + ($any | tostring),
       "MARKER_TRUSTED=" + (if $m == null then "0" else "1" end),
       (if $m == null then empty
-       else ($m.body | capture("<!-- FLOW_REVIEW_CYCLE:(?<c>[0-9]+) FINDINGS:\\[") | .c) as $cycle
-         | ($m.body | [scan("<!-- FLOW_REVIEW_CYCLE:[0-9]+ FINDINGS:\\[([^\\]]*)\\]")] | first | first) as $rows
-         | if $rows == null then "MARKER_ROWS=unparsed"
-           else ($rows | split(",") | .[] | select(length > 0) | "FINDING=cycle=" + $cycle + " " + .)
+       else ($m.body | [scan("<!-- FLOW_REVIEW_CYCLE:([0-9]+) FINDINGS:\\[([^\\]]*)\\]")] | first) as $hit
+         | if $hit == null then "MARKER_ROWS=unparsed"
+           else ($hit[1] | split(",") | .[] | select(length > 0)
+                 | "FINDING=cycle=" + $hit[0] + " " + .)
            end
        end)' 2>/dev/null); FIND_JQ=$?
   MARKERS_SEEN=$(printf '%s\n' "$FIND_SUMMARY" | sed -n 's/^MARKERS_SEEN=//p')

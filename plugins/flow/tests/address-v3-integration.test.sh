@@ -232,3 +232,39 @@ OUT3=$(cd "$D3" && PATH="$D3/stub:$PATH" REPO=o/r PR_NUM=7 bash block.sh 2>/dev/
 assert_contains "REAL1" "$OUT3" "the marker's own ids are extracted"
 assert_not_contains "GHOST1" "$OUT3" "prose above it supplies nothing"
 assert_contains "FINDING=cycle=4" "$OUT3" "and the cycle comes from the marker too"
+
+_flow_test_begin "a marker with no FINDINGS array is unparsed, not empty"
+# Re-anchoring the capture in the previous round made this branch unreachable:
+# a trusted body matching the select but carrying no `FINDINGS:[` produced
+# nothing from the jq at all, so a truncated marker reported "this pull request
+# has no findings" instead of "the array did not parse".
+D4=$(mktemp -d -t flow-rcf4.XXXXXX); ADDR_CLEANUP+=("$D4")
+_rcf_stub "$D4" '[{"author_association":"OWNER","body":"<!-- FLOW_REVIEW_CYCLE:3 -->"}]'
+_rcf_block > "$D4/block.sh"
+OUT4=$(cd "$D4" && PATH="$D4/stub:$PATH" REPO=o/r PR_NUM=7 bash block.sh 2>/dev/null)
+assert_contains "STATE=unavailable" "$OUT4" "a marker whose array did not parse is unavailable"
+assert_not_contains "STATE=empty" "$OUT4" "not empty, which means the pull request has no findings"
+assert_match 'REASON=.*did not parse' "$OUT4" "and the reason says which"
+
+_flow_test_begin "the cycle number comes from the marker that carried the ids"
+# The cycle and the rows must come from one match: taking the cycle from the
+# first marker-like token anywhere labelled every dismissal with the wrong one.
+D5=$(mktemp -d -t flow-rcf5.XXXXXX); ADDR_CLEANUP+=("$D5")
+_rcf_stub "$D5" '[{"author_association":"OWNER","body":"<!-- FLOW_REVIEW_CYCLE:2 -->\n\nsuperseded by\n\n<!-- FLOW_REVIEW_CYCLE:5 FINDINGS:[F1|P2|correctness|a.sh:1|open|MEDIUM|consensus] -->"}]'
+_rcf_block > "$D5/block.sh"
+OUT5=$(cd "$D5" && PATH="$D5/stub:$PATH" REPO=o/r PR_NUM=7 bash block.sh 2>/dev/null)
+assert_contains "FINDING=cycle=5 F1" "$OUT5" "the cycle is the one whose array supplied the ids"
+assert_not_contains "cycle=2" "$OUT5" "not an earlier marker that carried none"
+
+_flow_test_begin "a settings file that cannot be parsed is warned about, not swallowed"
+# merge.md warns and falls through; this block used 2>/dev/null and said nothing,
+# so a typo narrowed who is trusted here while the merge gate accepted them.
+D6=$(mktemp -d -t flow-rcf6.XXXXXX); ADDR_CLEANUP+=("$D6")
+mkdir -p "$D6/.claude"
+printf '%s\n' '{"merge":{"markerTrust":{"allowedAssociations":[unclosed' > "$D6/.claude/settings.flow.json"
+_rcf_stub "$D6" '[{"author_association":"OWNER","body":"<!-- FLOW_REVIEW_CYCLE:1 FINDINGS:[F1|P2|x|a.sh:1|open|MEDIUM|consensus] -->"}]'
+_rcf_block > "$D6/block.sh"
+ERR6=$(cd "$D6" && PATH="$D6/stub:$PATH" REPO=o/r PR_NUM=7 bash block.sh 2>&1 >/dev/null)
+assert_match 'LEDGER_WARN' "$ERR6" "the unparseable settings file is reported on stderr"
+OUT6=$(cd "$D6" && PATH="$D6/stub:$PATH" REPO=o/r PR_NUM=7 bash block.sh 2>/dev/null)
+assert_contains "STATE=ok" "$OUT6" "and the default trust list still resolves the marker"
