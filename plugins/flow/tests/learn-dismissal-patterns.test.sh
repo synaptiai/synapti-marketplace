@@ -263,3 +263,71 @@ ROW_TEMPLATE=$(printf '%s\n' "$PHASE4" | grep '^| {' | head -1)
 assert_equal "4" "$(printf '%s' "${ROW_TEMPLATE#|}" | awk -F'|' '{print NF-1}')" \
   "the template row has exactly four columns"
 assert_match 'type:' "$PHASE4" "and tells the writer to set the type explicitly"
+
+# --- the two fixes this block inherited from its sibling in address.md ------
+_flow_test_begin "a --- inside a journal value does not truncate the manifest"
+# Journal values are writer-accepted free text, and an evidence string quoting a
+# diff header is ordinary content. Splitting the manifest on the first `---`
+# anywhere dropped every artifact after it, and an undercount here reads as a
+# project with fewer dismissals than it has — which is exactly the evidence this
+# category exists to find.
+D11=$(mktemp -d -t flow-ld11.XXXXXX); LD_CLEANUP+=("$D11")
+mkdir -p "$D11/.decisions"
+cat > "$D11/.decisions/issue-9.md" <<'YAML'
+---
+issue: 9
+artifacts:
+- type: finding-dismissed
+  pr: 30
+  cycle: 1
+  finding_id: F1
+  reason: factually-incorrect
+  evidence: the diff shows --- a/x.sh so the claim is wrong
+- type: finding-dismissed
+  pr: 30
+  cycle: 2
+  finding_id: F2
+  reason: breaks-test
+  evidence: plain
+---
+# nine
+YAML
+_ld_block > "$D11/block.sh"
+OUT11=$(cd "$D11" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+assert_contains "DISMISSED_COUNT=2" "$OUT11" "both dismissals are counted, not just the one before the ---"
+assert_contains "F2" "$OUT11" "the artifact after the --- bearing value is reported"
+
+_flow_test_begin "the reader does not import from the working tree"
+# /flow:learn runs in a repository whose working tree may hold anything, and
+# both `python3 -c` and a bare heredoc put the current directory on sys.path.
+D12=$(mktemp -d -t flow-ld12.XXXXXX); LD_CLEANUP+=("$D12")
+mkdir -p "$D12/.decisions"
+cat > "$D12/.decisions/issue-8.md" <<'YAML'
+---
+issue: 8
+artifacts:
+- type: finding-dismissed
+  pr: 31
+  cycle: 1
+  finding_id: F1
+  reason: breaks-test
+---
+# eight
+YAML
+cat > "$D12/yaml.py" <<'HOSTILE'
+import os
+open(os.path.join(os.path.dirname(__file__), "IMPORTED"), "w").write("x")
+def safe_load(*a, **k): return {}
+class SafeLoader: pass
+class YAMLError(Exception): pass
+HOSTILE
+_ld_block > "$D12/block.sh"
+OUT12=$(cd "$D12" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+assert_equal "0" "$([ -f "$D12/IMPORTED" ] && echo 1 || echo 0)" \
+  "a yaml.py in the working tree is never imported"
+assert_contains "DISMISSED_COUNT=1" "$OUT12" "and the real parser still read the journal"
+LD_SRC=$(_ld_block)
+assert_equal "2" "$(printf '%s\n' "$LD_SRC" | grep -c 'PYTHONSAFEPATH=1')" \
+  "the probe and the reader are both invoked with PYTHONSAFEPATH"
+assert_equal "2" "$(printf '%s\n' "$LD_SRC" | grep -c 'sys.path\[:\]')" \
+  "and both scrub sys.path explicitly, for interpreters older than 3.11"

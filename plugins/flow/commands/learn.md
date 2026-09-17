@@ -159,19 +159,26 @@ DISMISSAL_JOURNAL_DIR="${JOURNAL_DIR:-.decisions}"
 # without PyYAML dies before the first print and the section is a bare heading —
 # no STATE line at all, which Phase 2 reads as "this project has dismissed
 # nothing". Every sibling block in start.md and status.md probes first.
-if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import yaml" >/dev/null 2>&1; then
+if ! command -v python3 >/dev/null 2>&1 || \
+     ! PYTHONSAFEPATH=1 python3 -c 'import sys
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+import yaml' >/dev/null 2>&1; then
   echo "DISMISSED_COUNT=0"
   echo "DROPPED_COUNT=0"
   echo "STATE=unavailable"
   echo "REASON=python3 with PyYAML is required to read the journal manifests, so whether this project has recorded dismissals is unknown"
 else
-DISMISSAL_OUT=$(python3 - "$DISMISSAL_JOURNAL_DIR" <<'DISMISSAL_PY'
+DISMISSAL_OUT=$(PYTHONSAFEPATH=1 python3 - "$DISMISSAL_JOURNAL_DIR" <<'DISMISSAL_PY'
+import sys
+
+# The scrub sits ABOVE the other imports on purpose: glob, os and re happen to
+# be preloaded by CPython today, which is an interpreter detail, not a promise.
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+
 import glob
 import os
 import re
-import sys
 
-sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 import yaml
 
 
@@ -220,7 +227,14 @@ for path in sorted(glob.glob(os.path.join(journal_dir, "*.md"))):
             if re.search(r"(?m)^---[ \t]*$", text) and re.search(r"(?m)^artifacts:", text):
                 raise ValueError("the manifest fence does not start the file")
             continue
-        fm = yaml.load(text.split("---", 2)[1], Loader=NoAliases)
+        # Match the closing fence as a LINE. Splitting on the first "---"
+        # anywhere cuts the manifest at a `---` inside a value, which the
+        # writer accepts as ordinary content, and drops every artifact after
+        # it — an undercount that reads as a project with fewer dismissals.
+        fence = re.match(r"---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", text, re.S)
+        if fence is None:
+            raise ValueError("the manifest fence does not open and close at the top of the file")
+        fm = yaml.load(fence.group(1), Loader=NoAliases)
         if fm is None:
             continue
         if not isinstance(fm, dict):

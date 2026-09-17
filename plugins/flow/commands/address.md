@@ -437,8 +437,9 @@ For each Pushback item:
    `DISPUTED_ARRAY_BLOCK` in Phase 5 step 9, which reads it back out of the artifact this block
    writes — do not transcribe it by hand. `templates/resolution-comment.md` already carries the array and
    `references/finding-ledger-parser.md` already gives it precedence below `RESOLVED` and
-   `ESCALATED`; `/flow:merge` blocks on a disputed id until a human overrides, which is the point —
-   a dismissal is the author's claim, and the merge gate is where a human confirms it.
+   `ESCALATED`. A disputed id blocks the merge because it is unresolved — `commands/merge.md` reads
+   `ESCALATED` and `FINDINGS`-minus-`RESOLVED`, never `DISPUTED` — so listing it here is what makes
+   the finding report as disputed rather than as still being fixed.
 
 ```!
 # FINDING_DISMISSED_BLOCK_BEGIN
@@ -630,13 +631,25 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    The trailing marker carries four arrays, and `DISPUTED:[...]` is the one for findings this run
    pushed back on. It is **not** transcribed by hand: the block below builds it from the
    `finding-dismissed` artifacts Phase 3 wrote, so the journal and the marker cannot disagree about
-   what was dismissed. Copying ids across by hand is a step nothing can check, and an id dropped in
-   the copy reads to `/flow:merge` as a finding nobody disputed.
+   what was dismissed. Copying ids across by hand is a step nothing can check.
+
+   What reads the array is worth stating exactly, because it is easy to overclaim.
+   `commands/merge.md` does **not** read `DISPUTED` — its gate gets `ESCALATED` and
+   `FINDINGS`-minus-`RESOLVED`. A disputed id blocks the merge because it is unresolved, which it
+   would do whether or not it appeared here. What the array feeds is the classification in
+   `references/finding-ledger-parser.md`, which is what reports a finding as `disputed` rather than
+   as still being fixed. So an id missing from the array is a misreported finding, not an open
+   merge gate.
 
    `references/finding-ledger-parser.md` gives `RESOLVED` precedence over `ESCALATED` over
    `DISPUTED`, so an id that was actually fixed belongs in `RESOLVED` even if it was argued about
-   first. A disputed id blocks the merge until a human overrides, which is the intended gate: a
-   dismissal is the author's claim, and the merge confirmation is where someone else agrees.
+   first. A disputed id does block the merge, but because it is unresolved rather than because it is
+   listed here: a dismissal is the author's claim, and the merge confirmation is where someone else
+   agrees to it.
+
+   Run the block below **after** Phase 3, with `PR_NUM` set to the pull request number. Every
+   value arrives as an environment variable, exactly as the `FINDING_DISMISSED_BLOCK` in Phase 3
+   does; it derives `ISSUE` itself when that is not already set.
 
    The array is **cumulative over the pull request, not per cycle**. Both consumers in
    `references/finding-ledger-parser.md` take `| last` — the newest resolution comment is read as
@@ -644,14 +657,22 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    3 marker reclassifies as `in_fix_forward`. The block therefore emits every dismissal recorded
    against this pull request, whatever cycle it came from.
 
-```!
+```bash
 # DISPUTED_ARRAY_BLOCK_BEGIN
 # Builds the DISPUTED:[...] array for the resolution marker out of the
 # finding-dismissed artifacts, so the marker is a function of the journal
 # rather than of a transcription step.
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+# Unset and malformed are different faults and get different messages: the
+# first means this block was run without its input, the second means the input
+# it was given is wrong. Reporting the first as the second sent a reader looking
+# for a bad value that was never there.
 case "${PR_NUM:-}" in
-  ''|*[!0-9]*)
+  '')
+    echo "DISPUTED_STATE=unavailable"
+    echo "REASON=PR_NUM is not set; run this block with PR_NUM set to the pull request number, after Phase 3"
+    exit 0 ;;
+  *[!0-9]*)
     echo "DISPUTED_STATE=unavailable"
     echo "REASON=PR_NUM is not a number, so the dismissals recorded against this pull request cannot be looked up"
     exit 0 ;;
@@ -659,7 +680,10 @@ esac
 # Resolve the journal the same way Phase 3 wrote to it. The helper requires
 # BOTH --pr and --repo; called with one it prints usage and exits 1.
 if [ -z "${ISSUE:-}" ]; then
-  DISPUTED_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+  # `|| DISPUTED_REPO=""` is not decoration: under `set -e` a failing command
+  # substitution in an assignment terminates the shell, so the `[ -z ]` guard
+  # below would never run and the block would die printing nothing at all.
+  DISPUTED_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null) || DISPUTED_REPO=""
   if [ -z "$DISPUTED_REPO" ]; then
     echo "DISPUTED_STATE=unavailable"
     echo "REASON=cannot resolve the repository, so the journal holding the dismissals cannot be located"
@@ -681,20 +705,45 @@ case "${ISSUE:-}" in
     echo "REASON=pull request #$PR_NUM closes no issue, so there is no journal and which findings were dismissed is unknown"
     exit 0 ;;
 esac
-DISPUTED_JOURNAL="${JOURNAL_DIR:-.decisions}/issue-${ISSUE}.md"
+# The journal directory is resolved through the same cascade the writer uses.
+# bin/journal-record.sh OVERWRITES any inherited JOURNAL_DIR with this lookup,
+# so reading the environment variable here would disagree with where the
+# artifact was actually written whenever journal.dir is configured — and an
+# empty array from the wrong file is the failure this block exists to prevent.
+DISPUTED_DIR=$("$FLOW_ROOT/bin/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty' 2>/dev/null) || DISPUTED_DIR=""
+if [ -z "$DISPUTED_DIR" ]; then
+  echo "DISPUTED_STATE=unavailable"
+  echo "REASON=the journal directory could not be resolved, so the file recording the dismissals cannot be located"
+  exit 0
+fi
+DISPUTED_JOURNAL="$DISPUTED_DIR/issue-${ISSUE}.md"
 # Probe before the heredoc: `import yaml` sits above the first print, so a
 # machine without PyYAML would die before emitting any STATE line, and a
 # missing STATE line reads exactly like a clean empty array.
-if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import yaml" >/dev/null 2>&1; then
+if ! command -v python3 >/dev/null 2>&1 || \
+     ! PYTHONSAFEPATH=1 python3 -c 'import sys
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+import yaml' >/dev/null 2>&1; then
   echo "DISPUTED_STATE=unavailable"
   echo "REASON=python3 with PyYAML is required to read the journal manifest, so which findings were dismissed is unknown"
 else
-DISPUTED_OUT=$(python3 - "$DISPUTED_JOURNAL" "$PR_NUM" <<'DISPUTED_PY'
-import os
-import re
+# `if VAR=$(...)` rather than a bare assignment: under `set -e` a reader that
+# exits non-zero would otherwise kill the fence before the STATE check below,
+# and the block would print nothing — the mute death that check exists to catch.
+if DISPUTED_OUT=$(PYTHONSAFEPATH=1 python3 - "$DISPUTED_JOURNAL" "$PR_NUM" <<'DISPUTED_PY'
 import sys
 
+# The pull request under review is checked out around this call, so the author
+# controls what sits in the working directory. Drop it from the import path
+# before importing anything that is not built in. PYTHONSAFEPATH does this from
+# Python 3.11; this line does it everywhere. The scrub must sit ABOVE the other
+# imports, not below them: os and re happen to be preloaded by CPython today,
+# which is an interpreter detail and not a guarantee.
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+
+import os
+import re
+
 import yaml
 
 
@@ -711,7 +760,13 @@ path, pr = sys.argv[1], sys.argv[2]
 
 
 def one_line(v):
-    return " ".join(str(v).splitlines()).strip()[:200]
+    out = " ".join(str(v).splitlines()).strip()[:200]
+    # Every REASON is printed on stdout, in the same place the DISPUTED= line
+    # would be, and the journal and the configured journal.dir are both
+    # author-controlled on a fork pull request. Without this, a finding id or a
+    # directory named `DISPUTED=[]` prints a pasteable empty array on the one
+    # path whose entire purpose is to offer none.
+    return out.replace("DISPUTED=", "DISPUTED%3D")
 
 
 def bail(reason):
@@ -722,13 +777,32 @@ def bail(reason):
     sys.exit(0)
 
 
-if not os.path.isfile(path):
-    bail("the journal %s does not exist, so which findings were dismissed is unknown" % path)
 try:
-    text = open(path, encoding="utf-8").read()
+    # O_NOFOLLOW, because bin/journal-record.sh refuses a symlinked journal for
+    # exactly this reason: a pre-staged .decisions/issue-N.md pointing at a
+    # private key would otherwise be opened and its bytes echoed in a parse
+    # error. bin/_journal_atomic.py reads the same way.
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+except OSError as exc:
+    import errno
+    if exc.errno in (errno.ELOOP, errno.EMLINK):
+        bail("the journal %s is a symlink, and a symlinked journal is refused" % path)
+    if exc.errno == errno.ENOENT:
+        bail("the journal %s does not exist, so which findings were dismissed is unknown" % path)
+    bail("the journal %s could not be opened (%s)" % (path, errno.errorcode.get(exc.errno, "OSError")))
+try:
+    with os.fdopen(fd, "r", encoding="utf-8") as fh:
+        text = fh.read()
     if not text.startswith("---"):
         raise ValueError("the manifest fence does not start the file")
-    fm = yaml.load(text.split("---", 2)[1], Loader=NoAliases)
+    # Match the closing fence as a LINE, rather than splitting on the first
+    # "---" anywhere. A `---` inside a value (an evidence string quoting a diff
+    # header, for instance) is ordinary content the writer accepts, and
+    # splitting on it silently truncated the artifact list.
+    fence = re.match(r"---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", text, re.S)
+    if fence is None:
+        raise ValueError("the manifest fence does not open and close at the top of the file")
+    fm = yaml.load(fence.group(1), Loader=NoAliases)
     if not isinstance(fm, dict):
         raise ValueError("the manifest is not a mapping")
     arts = fm.get("artifacts")
@@ -736,8 +810,18 @@ try:
         arts = []
     if not isinstance(arts, list):
         raise ValueError("artifacts is not a list")
-except Exception as exc:
+except ValueError as exc:
+    # Our own fixed strings, safe to print verbatim.
     bail(exc)
+except yaml.YAMLError as exc:
+    # NOT the exception text: a PyYAML error carries a Mark snippet quoting the
+    # file verbatim, and this REASON is printed and reported onward. If the path
+    # was pointed at something that is not a manifest, those bytes are not ours
+    # to echo.
+    bail("the journal manifest did not parse (%s); its text is not echoed here, "
+         "because a file that is not a manifest may hold anything" % type(exc).__name__)
+except OSError as exc:
+    bail("the journal %s could not be read (%s)" % (path, type(exc).__name__))
 
 ids = []
 seen = set()
@@ -747,10 +831,21 @@ for a in arts:
              % type(a).__name__)
     if a.get("type") != "finding-dismissed":
         continue
+    if a.get("pr") is None:
+        # str(None) is "None", which compares unequal to every pull request
+        # number and silently dropped the row. A dismissal that does not say
+        # which pull request it belongs to cannot be placed, and leaving it out
+        # is the partial array this block refuses everywhere else.
+        bail("the journal records a dismissal with no pr field (finding id %s), so it cannot be "
+             "placed against a pull request" % one_line(a.get("finding_id")))
     if str(a.get("pr")) != pr:
         continue
     fid = a.get("finding_id")
-    fid = "" if fid is None else str(fid)
+    # str() first would turn the YAML boolean `yes` into "True", which passes
+    # the allowlist and lands an id in the array that matches no real finding.
+    if not isinstance(fid, str):
+        bail("the journal records a dismissal whose finding id is %s, not a string; "
+             "refusing to build an array from it" % type(fid).__name__)
     # The journal is a tracked file any contributor can edit, and this array is
     # parsed by splitting on `,` and `]`. Re-validate on the way out rather
     # than trusting what the writer put in. One bad row refuses the whole
@@ -766,7 +861,7 @@ for a in arts:
 print("DISPUTED_STATE=%s" % ("none" if not ids else "ok"))
 print("DISPUTED=[%s]" % ",".join(ids))
 DISPUTED_PY
-); DISPUTED_RC=$?
+); then DISPUTED_RC=0; else DISPUTED_RC=$?; fi
   # A reader that died mutely leaves no STATE line, which reads as an empty
   # array rather than as a failure.
   if [ "$DISPUTED_RC" -ne 0 ] || [ "$(printf '%s\n' "$DISPUTED_OUT" | grep -c '^DISPUTED_STATE=')" != "1" ]; then
@@ -788,8 +883,8 @@ true
      `DISPUTED:[]` is then a true statement.
    - `DISPUTED_STATE=unavailable` — **stop. Do not post the comment.** No `DISPUTED=` line is
      printed on this path, because an array that could not be built is not an empty one. Report the
-     `REASON` and fix it first: posting `DISPUTED:[]` here tells `/flow:merge` that nothing was
-     disputed, which is the exact failure the block exists to prevent.
+     `REASON` and fix it first: posting `DISPUTED:[]` here states that nothing was disputed when
+     nobody could tell, which is the exact failure the block exists to prevent.
 
    ```bash
    # $REPO does not survive from the preflight block: each fence is its own
