@@ -151,3 +151,15 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-17 09:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/address.md -->
 
 <!-- auto-log: 2026-09-17 09:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 09:47 commit "feat(flow): a rejected finding is recorded, not just replied to" -->
+
+<!-- auto-log: 2026-09-17 09:49 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-exceptions.test.sh -->
+
+<!-- auto-log: 2026-09-17 09:51 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
+
+<!-- auto-log: 2026-09-17 09:52 Write /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-review-exceptions.sh -->
+
+<!-- auto-log: 2026-09-17 09:54 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/pr.md -->
+
+<!-- auto-log: 2026-09-17 09:54 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/pr.md -->

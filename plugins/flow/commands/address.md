@@ -438,6 +438,15 @@ Even in minimal-scope mode, P1 and P2 findings in untouched files are always fix
 1. **Quality commands** (parallel): lint, test, typecheck
 2. **Comprehensive self-review** of ALL files touched on the branch — parallel agent dispatch matching `/flow:pr` Phase 3 fan-out so fix commits don't slip convention/test/error-handling regressions past automated re-review:
    ```
+
+**Review exceptions apply to every dispatch below.** Hand each reviewer the `EXCEPTION=` rows from the Phase 1 `### Review Exceptions` section verbatim, with this rule:
+
+> Do not raise a finding that matches a listed exception. An exception matches only when the file you are reporting on matches its `Scope (path glob)` — the glob is what bounds a rule to the paths the team named, so a rule never applies outside them. Within that scope, judge the `Rule` text against your finding. If you raise the finding anyway, label it `exception-override` and say in one line why this case is not what the team meant.
+>
+> Security findings are never withheld on the strength of an exception. `security-reviewer` reports a matching finding as it would any other, labels it `exception-override`, and names the exception it matched, so a human decides rather than the absence of a report deciding for them.
+
+When the section reported `STATE=none` there are no exceptions and this paragraph is a no-op. When it reported `STATE=unavailable` say so in the review output: reviewing as though the team has rejected nothing is a choice, not a default, and the reader should know it was made.
+
    Agent(code-reviewer):
      "Review the fix commits since the last review against $DEFAULT_BRANCH.
       Check for: logic errors, security issues, missing edge cases.

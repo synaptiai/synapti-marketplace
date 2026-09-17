@@ -16,8 +16,9 @@ ai-first-kit-workspace/*
 docs/flow-team-session/*.pdf
 
 # Flow v3 runtime state — per-developer; not committed.
-# .flow/goals/*.goal.yaml and .flow/workflows/*.workflow.yaml remain
-# tracked so teams can share goal contracts and workflow overrides;
+# .flow/goals/*.goal.yaml, .flow/workflows/*.workflow.yaml and
+# .flow/review-exceptions.md remain tracked so teams can share goal contracts,
+# workflow overrides and the review exceptions their reviews are held to;
 # runs/evidence/local-triggers are gitignored to avoid noise.
 .flow/runs/
 .flow/evidence/

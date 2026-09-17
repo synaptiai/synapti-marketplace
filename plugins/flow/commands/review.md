@@ -410,6 +410,25 @@ FLOW_GOAL_READ
   esac
   # FLOWGOAL_BLOCK_END
 
+  # Section: Review Exceptions
+  echo ""
+  echo "### Review Exceptions"
+  # REVIEW_EXCEPTIONS_BLOCK_BEGIN
+  # Rules the team has already rejected a finding over, so a reviewer does not
+  # raise the same one again. The helper reads them at the BASE commit, never
+  # the head: the head is the author side of this pull request, and a file read
+  # from there would let a pull request grant itself an exemption in the same
+  # diff a reviewer is judging. /flow:pr prints this section from the same
+  # helper, so the two cannot drift.
+  FLOW_RX_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-review-exceptions.sh"
+  if [ ! -x "$FLOW_RX_HELPER" ]; then
+    echo "STATE=unavailable"
+    echo "REASON=flow-review-exceptions.sh missing or non-executable, so whether the team has recorded any exception is unknown"
+  else
+    "$FLOW_RX_HELPER" --repo "$REPO" --pr "$PR_NUM"
+  fi
+  # REVIEW_EXCEPTIONS_BLOCK_END
+
   # Section: Previous Reviews (follow-up detection)
   echo ""
   echo "### Previous Reviews"
@@ -827,6 +846,14 @@ If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.
 
 #### A.1 — Independent Analysis (paired reviewers, parallel dispatch)
 
+**Review exceptions apply to every dispatch below.** Hand each reviewer the `EXCEPTION=` rows from the Phase 1 `### Review Exceptions` section verbatim, with this rule:
+
+> Do not raise a finding that matches a listed exception. An exception matches only when the file you are reporting on matches its `Scope (path glob)` — the glob is what bounds a rule to the paths the team named, so a rule never applies outside them. Within that scope, judge the `Rule` text against your finding. If you raise the finding anyway, label it `exception-override` and say in one line why this case is not what the team meant.
+>
+> Security findings are never withheld on the strength of an exception. `security-reviewer` reports a matching finding as it would any other, labels it `exception-override`, and names the exception it matched, so a human decides rather than the absence of a report deciding for them.
+
+When the section reported `STATE=none` there are no exceptions and this paragraph is a no-op. When it reported `STATE=unavailable` say so in the review output: reviewing as though the team has rejected nothing is a choice, not a default, and the reader should know it was made.
+
 Dispatch **12 invocations** (10 `Agent(...)` + 2 `Skill(holdout-validation)`) in a single parallel block — 5 agent facets × {skeptic, verifier} plus the holdout-validation skill in both lenses. Each variant carries an orthogonal lens; both run with no awareness of each other.
 
 Each `Agent(...)` call below carries `model=$AGENT_TEAM_MODEL` per **Model selection** above. (When the resolved value is `inherit`, drop the `model=` argument — the session model is the default when no override is passed.)
@@ -1082,6 +1109,14 @@ Both paths write 7-field rows: findings from per-facet fallbacks carry `MEDIUM|u
 After A.6 completes, jump to Phase 4 with the consolidated finding set.
 
 ### Path B: Single Session (default)
+
+**Review exceptions apply to every dispatch below.** Hand each reviewer the `EXCEPTION=` rows from the Phase 1 `### Review Exceptions` section verbatim, with this rule:
+
+> Do not raise a finding that matches a listed exception. An exception matches only when the file you are reporting on matches its `Scope (path glob)` — the glob is what bounds a rule to the paths the team named, so a rule never applies outside them. Within that scope, judge the `Rule` text against your finding. If you raise the finding anyway, label it `exception-override` and say in one line why this case is not what the team meant.
+>
+> Security findings are never withheld on the strength of an exception. `security-reviewer` reports a matching finding as it would any other, labels it `exception-override`, and names the exception it matched, so a human decides rather than the absence of a report deciding for them.
+
+When the section reported `STATE=none` there are no exceptions and this paragraph is a no-op. When it reported `STATE=unavailable` say so in the review output: reviewing as though the team has rejected nothing is a choice, not a default, and the reader should know it was made.
 
 Path B agents carry no `model` parameter and inherit the session model via frontmatter. The `agentTeamModel` setting applies to Path A only.
 

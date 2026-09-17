@@ -122,6 +122,32 @@ else
     echo "STATE=empty"
   fi
 
+  # Section: Review Exceptions
+  echo ""
+  echo "### Review Exceptions"
+  # REVIEW_EXCEPTIONS_BLOCK_BEGIN
+  # Rules the team has already rejected a finding over, handed to the self-review
+  # fan-out in Phase 3 so it does not raise one of them. Read at the default
+  # branch rather than the working tree: this command runs before the pull
+  # request exists, so there is no base commit to resolve, and the working tree
+  # is the change under review. /flow:review prints this section from the same
+  # helper, so the two cannot drift.
+  FLOW_RX_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-review-exceptions.sh"
+  # REPO is not set in this fence — it is resolved in a later one. `gh --repo ""`
+  # falls back to the default resolution of gh without complaining, so an unset
+  # value reads as pinned and behaves as unpinned.
+  FLOW_RX_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+  if [ ! -x "$FLOW_RX_HELPER" ]; then
+    echo "STATE=unavailable"
+    echo "REASON=flow-review-exceptions.sh missing or non-executable, so whether the team has recorded any exception is unknown"
+  elif [ -z "$FLOW_RX_REPO" ]; then
+    echo "STATE=unavailable"
+    echo "REASON=the repository could not be resolved, so there is no trusted ref to read the exceptions at"
+  else
+    "$FLOW_RX_HELPER" --repo "$FLOW_RX_REPO" --ref "$DEFAULT_BRANCH"
+  fi
+  # REVIEW_EXCEPTIONS_BLOCK_END
+
   # Section: FlowGoal State (v3) — gate on goal existence.
   # Surface the active goal lifecycle so Phase 4 can gate PR creation on goal
   # achievement WHEN a goal exists; a branch with no goal is not blocked. The
@@ -229,6 +255,15 @@ git diff "$DEFAULT_BRANCH"...HEAD
 **Parallel Agent dispatch** — 5 agents and skill in a single message (parity with `/flow:review` Path B):
 
 ```
+
+**Review exceptions apply to every dispatch below.** Hand each reviewer the `EXCEPTION=` rows from the Phase 1 `### Review Exceptions` section verbatim, with this rule:
+
+> Do not raise a finding that matches a listed exception. An exception matches only when the file you are reporting on matches its `Scope (path glob)` — the glob is what bounds a rule to the paths the team named, so a rule never applies outside them. Within that scope, judge the `Rule` text against your finding. If you raise the finding anyway, label it `exception-override` and say in one line why this case is not what the team meant.
+>
+> Security findings are never withheld on the strength of an exception. `security-reviewer` reports a matching finding as it would any other, labels it `exception-override`, and names the exception it matched, so a human decides rather than the absence of a report deciding for them.
+
+When the section reported `STATE=none` there are no exceptions and this paragraph is a no-op. When it reported `STATE=unavailable` say so in the review output: reviewing as though the team has rejected nothing is a choice, not a default, and the reader should know it was made.
+
 Agent(code-reviewer):
   "Review the branch diff against $DEFAULT_BRANCH for code quality,
    logic correctness, edge cases, and security. Return P1/P2/P3 findings
