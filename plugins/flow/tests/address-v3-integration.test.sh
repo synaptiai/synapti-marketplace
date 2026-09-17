@@ -280,7 +280,7 @@ _flow_test_begin "a dismissed finding reaches the marker as well as the artifact
 assert_contains "DISPUTED" "$CONTENT" "address.md names the DISPUTED array"
 # Phase 3 points at the emitter rather than asking for a hand copy; Phase 5 is
 # where the comment is posted.
-PHASE3_DISPUTED=$(awk '/^3\. The id reaches the/{f=1} f{print} f && /^```!/{exit}' "$ADDRESS_MD")
+PHASE3_DISPUTED=$(awk '/^3\. The id reaches the/{f=1} f{print} f && /^```bash/{exit}' "$ADDRESS_MD")
 assert_contains "DISPUTED" "$PHASE3_DISPUTED" "Phase 3 instructs that the id goes in the array"
 assert_contains "DISPUTED_ARRAY_BLOCK" "$PHASE3_DISPUTED" "naming the block that carries it there"
 assert_match 'do not transcribe|not transcribed' "$PHASE3_DISPUTED" "and saying not to copy it by hand"
@@ -397,8 +397,12 @@ _disputed_run() { ( cd "$WORKG" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1 ); }
 
 OUT_A=$(_disputed_run)   # no journal file at all
-assert_contains "DISPUTED_STATE=unavailable" "$OUT_A" "a missing journal is unavailable, not empty"
-assert_not_contains "DISPUTED=" "$OUT_A" "and no array is offered for pasting"
+# A journal that is not there is a journal nothing was recorded in: Phase 3
+# exits 4 and says so when a write is lost, and journal-record.sh seeds the
+# manifest on the first write. Reporting it as unavailable stopped the
+# resolution comment Phase 5 calls mandatory.
+assert_contains "DISPUTED_STATE=none" "$OUT_A" "a missing journal records no dismissal"
+assert_contains "DISPUTED=[]" "$OUT_A" "and the empty array is a true statement"
 
 printf -- '---\nissue: 214\nartifacts: [oops\n---\n# j\n' > "$WORKG/.decisions/issue-214.md"
 OUT_B=$(_disputed_run)
@@ -452,6 +456,13 @@ STEP9=$(awk '/^9\. \*\*Post resolution comment\*\*/{f=1} f && /^10\./{f=0} f' "$
 assert_contains "DISPUTED_ARRAY_BLOCK" "$STEP9" "step 9 runs the emitter"
 assert_contains "DISPUTED_STATE=unavailable" "$STEP9" "and names the unavailable state"
 assert_match 'Do not post|do not post' "$STEP9" "and says not to post the comment on it"
+# The refusal is conditional, and the condition matters: a pull request that
+# closes no issue has nothing to record AND nowhere to record it, so stopping
+# there would drop the comment Phase 5 calls mandatory on every issue-less pull
+# request. Step 9 must give both branches.
+assert_match 'no dismissal this run|recorded no dismissal' "$STEP9" "step 9 branches on whether anything was dismissed"
+assert_contains "FINDING_DISMISSED=recorded" "$STEP9" "naming the signal that decides it"
+assert_match 'mandatory' "$STEP9" "and says the comment is never skipped silently"
 
 _flow_test_begin "every remaining exit path is unavailable, and none offers an array"
 # The bundle claims EVERY failure path reports unavailable and prints no
@@ -776,11 +787,93 @@ _flow_test_begin "the marker token the parser reads is neutralised, not just the
 # spelling of the same attack, and journal.dir is author-controlled through the
 # committed .claude/settings.flow.json.
 WORKV=$(mktemp -d -t flow-disp19.XXXXXX); ADDR_CLEANUP+=("$WORKV")
-mkdir -p "$WORKV/.claude"
-printf '%s\n' '{"journal":{"dir":"zz DISPUTED:[PWNED] zz"}}' > "$WORKV/.claude/settings.flow.json"
+mkdir -p "$WORKV/.decisions"
 _extract_disputed_block > "$WORKV/disputed.sh"
+# Channel 1: the finding id, which the refusal quotes back.
+printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: "DISPUTED:[PWNED]"\n---\n# j\n' \
+  > "$WORKV/.decisions/issue-214.md"
 OUT_TOK=$(cd "$WORKV" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKV" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
-assert_contains "DISPUTED_STATE=unavailable" "$OUT_TOK" "the run reports unavailable"
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_TOK" "the forged id is refused"
 assert_not_contains "DISPUTED:[PWNED]" "$OUT_TOK" "the marker-shaped token does not survive"
 assert_contains "DISPUTED%3A" "$OUT_TOK" "it is percent-escaped instead"
+# Channel 2: the journal directory, which reaches the path-bearing messages.
+# journal.dir is author-controlled through the committed settings file.
+WORKV2=$(mktemp -d -t flow-disp19b.XXXXXX); ADDR_CLEANUP+=("$WORKV2")
+mkdir -p "$WORKV2/.claude" "$WORKV2/zz DISPUTED:[PWNED] zz"
+printf '%s\n' '{"journal":{"dir":"zz DISPUTED:[PWNED] zz"}}' > "$WORKV2/.claude/settings.flow.json"
+ln -s "$WORKV2/elsewhere.txt" "$WORKV2/zz DISPUTED:[PWNED] zz/issue-214.md"
+_extract_disputed_block > "$WORKV2/disputed.sh"
+OUT_TOK2=$(cd "$WORKV2" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKV2" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
+assert_not_contains "DISPUTED:[PWNED]" "$OUT_TOK2" "nor through the journal directory"
+assert_contains "DISPUTED%3A" "$OUT_TOK2" "which is escaped the same way"
+
+
+_flow_test_begin "a journal with no manifest is empty, not unreadable"
+# 9 of this repository own 41 journals have no manifest fence. Reporting that
+# shape as unavailable stopped the mandatory resolution comment on every pull
+# request whose issue had one.
+WORKX=$(mktemp -d -t flow-disp20.XXXXXX); ADDR_CLEANUP+=("$WORKX")
+mkdir -p "$WORKX/.decisions"
+_extract_disputed_block > "$WORKX/disputed.sh"
+printf '# Decision Journal\n\nsome prose, no frontmatter at all\n' > "$WORKX/.decisions/issue-214.md"
+OUT_NM=$(cd "$WORKX" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKX" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
+assert_contains "DISPUTED_STATE=none" "$OUT_NM" "a journal with no manifest records no dismissal"
+assert_contains "DISPUTED=[]" "$OUT_NM" "and the empty array is a true statement"
+# A DAMAGED fence is a different thing and must still be unreadable, or this
+# relaxation would swallow a mangled manifest too.
+printf 'stray preamble\n---\nartifacts:\n- type: finding-dismissed\n---\n' > "$WORKX/.decisions/issue-214.md"
+OUT_DM=$(cd "$WORKX" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKX" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_DM" "a damaged fence is still unreadable"
+assert_not_contains "DISPUTED=" "$OUT_DM" "and offers no array"
+
+_flow_test_begin "a pull request number with a leading zero is refused on both sides"
+# journal-record.sh coerces pr to an int, so PR_NUM=0234 wrote `pr: 234` and the
+# string comparison on read matched nothing: a confident empty array.
+WORKY=$(mktemp -d -t flow-disp21.XXXXXX); ADDR_CLEANUP+=("$WORKY")
+mkdir -p "$WORKY/.decisions"
+_extract_dismissed_block > "$WORKY/dismiss.sh"
+_extract_disputed_block > "$WORKY/disputed.sh"
+OUT_ZW=$(cd "$WORKY" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKY" \
+  ISSUE=214 PR_NUM=0234 CYCLE_NUMBER=3 FINDING_ID=F3 CATEGORY=c \
+  LOCATION="a.sh:1" REASON=breaks-test EVIDENCE="e" bash dismiss.sh 2>&1); RC_ZW=$?
+if [ "$RC_ZW" -ne 0 ]; then
+  _flow_assert_pass "the writer refuses a leading zero (exit $RC_ZW)"
+else
+  _flow_assert_fail "the writer recorded 0234 as 234; the reader will never find it"
+fi
+OUT_ZR=$(cd "$WORKY" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKY" \
+  ISSUE=214 PR_NUM=0234 bash disputed.sh 2>&1)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_ZR" "and the reader refuses it too"
+assert_not_contains "DISPUTED_STATE=none" "$OUT_ZR" "rather than reporting no dismissals"
+# The number is compared as a number, so a journal written by any other route
+# still matches.
+printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: F3\n---\n# j\n' \
+  > "$WORKY/.decisions/issue-214.md"
+OUT_ZN=$(cd "$WORKY" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKY" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
+assert_contains "DISPUTED=[F3]" "$OUT_ZN" "a well-formed number still matches"
+# The comparison is numeric, not textual, so the reader does not depend on the
+# writer guard above to stay correct. A journal not written by
+# bin/journal-record.sh can hold any YAML number for pr; under a string
+# comparison this row is silently skipped and the array comes back empty.
+printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234.0\n  finding_id: F8\n---\n# j\n' \
+  > "$WORKY/.decisions/issue-214.md"
+OUT_ZF=$(cd "$WORKY" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKY" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
+assert_contains "DISPUTED=[F8]" "$OUT_ZF" "the same number in another YAML spelling still matches"
+assert_not_contains "DISPUTED=[]" "$OUT_ZF" "rather than being skipped into an empty array"
+
+_flow_test_begin "a block the agent is told to run is one the agent can see"
+# references/command-output-format.md: a `!` block is pre-executed at command
+# load, its stdout REPLACES the fence, and the source is not visible to the
+# agent. A run-once-per-finding block in a `!` fence therefore runs once, at
+# load, with every value unset — and the agent never sees the block it is told
+# to run. Nothing pinned the fence type in either direction.
+for BLOCK in FINDING_DISMISSED_BLOCK DISPUTED_ARRAY_BLOCK; do
+  FENCE=$(grep -B1 "^# ${BLOCK}_BEGIN" "$ADDRESS_MD" | head -1)
+  assert_equal '```bash' "$FENCE" "$BLOCK is a bash fence, so the agent can run it"
+done
