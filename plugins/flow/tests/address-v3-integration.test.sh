@@ -268,3 +268,19 @@ ERR6=$(cd "$D6" && PATH="$D6/stub:$PATH" REPO=o/r PR_NUM=7 bash block.sh 2>&1 >/
 assert_match 'LEDGER_WARN' "$ERR6" "the unparseable settings file is reported on stderr"
 OUT6=$(cd "$D6" && PATH="$D6/stub:$PATH" REPO=o/r PR_NUM=7 bash block.sh 2>/dev/null)
 assert_contains "STATE=ok" "$OUT6" "and the default trust list still resolves the marker"
+
+_flow_test_begin "a dismissed finding reaches the marker as well as the artifact"
+# The artifact half is covered by the FINDING_DISMISSED_BLOCK test. This is the
+# other half of the same contract: the id the block records must also be the id
+# the resolution marker carries, or /flow:merge never learns the finding was
+# rejected and the gate passes over it.
+assert_contains "DISPUTED" "$CONTENT" "address.md names the DISPUTED array"
+# Phase 3 tells the author to add the id; Phase 5 is where the comment is posted.
+PHASE3_DISPUTED=$(awk '/^3\. Add the id to the/{f=1} f{print} f && /^```!/{exit}' "$ADDRESS_MD")
+assert_contains "DISPUTED" "$PHASE3_DISPUTED" "Phase 3 instructs that the id goes in the array"
+assert_match 'same ledger ids|ledger id' "$CONTENT" "and that it is the ledger id, not another"
+# Anchor on the numbered step, not the phrase: the first match of the phrase is
+# a TaskCreate subject far above it.
+POST_STEP=$(awk '/^9\. \*\*Post resolution comment\*\*/{f=1} f{print} f && /gh pr comment/{exit}' "$ADDRESS_MD")
+assert_contains "DISPUTED" "$POST_STEP" "and the posting step repeats it where the comment is built"
+assert_match 'FINDING_DISMISSED_BLOCK' "$POST_STEP" "naming the block whose ids it must match"

@@ -416,3 +416,26 @@ assert_contains "STATE=unavailable" "$OUT14" "a failed read is unavailable"
 assert_match 'REASON=.*could not be read' "$OUT14" "and the reason names the read failure"
 assert_not_contains "a base the author chose" "$OUT14" \
   "not a claim about a base nobody chose"
+
+_flow_test_begin "no block reads the exceptions file from the working tree"
+# The criterion asks for this directly. The base-versus-head fixture only
+# implies it: a block could read the working-tree copy and still pass that test
+# if the fixture's tree happened to match. Assert the absence explicitly.
+for F in "$REVIEW_MD" "$PR_MD" "$ADDRESS_MD"; do
+  B=$(_rx_block "$F")
+  BN=$(basename "$F")
+  # Any local read of the path — cat, <, read, grep, source — would bypass the ref.
+  assert_equal "0" "$(printf '%s\n' "$B" | grep -c 'cat .*review-exceptions')" \
+    "$BN does not cat the file"
+  assert_equal "0" "$(printf '%s\n' "$B" | grep -cE '<[[:space:]]*\.?/?\.flow/review-exceptions')" \
+    "$BN does not redirect from it"
+  assert_equal "0" "$(printf '%s\n' "$B" | grep -cE 'grep .*\.flow/review-exceptions')" \
+    "$BN does not grep it locally"
+  # The only path to the file is the helper, which reads at a ref.
+  assert_contains "flow-review-exceptions.sh" "$B" "$BN reaches the file only through the helper"
+done
+# And the helper itself never reads a local copy.
+H=$(cat "$HELPER")
+assert_equal "0" "$(printf '%s\n' "$H" | grep -cE '(cat|<)[[:space:]]+"?\$?\{?EXC_PATH')" \
+  "the helper does not read the path from disk"
+assert_match 'contents/.*ref=' "$H" "it reads over the API at a pinned ref"

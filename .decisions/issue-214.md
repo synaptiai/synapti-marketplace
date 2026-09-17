@@ -221,3 +221,5 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-17 13:14 commit "test(flow): the guards from the last round can now fail" -->
 
 <!-- auto-log: 2026-09-17 13:17 commit "fix(flow): a marker whose findings array did not parse says so again" -->
+
+<!-- auto-log: 2026-09-17 13:30 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/bundle-214.md -->

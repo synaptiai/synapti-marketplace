@@ -248,3 +248,18 @@ printf '# Notes\n\nartifacts: mentioned in prose, not as frontmatter\n' \
 _ld_block > "$D10/block.sh"
 OUT10=$(cd "$D10" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_not_contains "JOURNAL_UNREADABLE=" "$OUT10" "the key alone is not damage either"
+
+_flow_test_begin "Phase 4 states the exception proposal body is one table row"
+# The criterion names the body shape, and nothing asserted it: a proposal whose
+# body is not a single row reaches promote-proposal.sh and dies there, which is
+# a dead proposal rather than a corrupted contract, but the shape is part of the
+# contract learn.md writes.
+assert_contains "one table row" "$LEARN" "Phase 4 names the body shape"
+PHASE4=$(awk '/^## Phase 4: Generate Proposals/{f=1} f{print} /^## Phase 5/{if(f)exit}' "$LEARN_MD")
+assert_contains "Exception row" "$PHASE4" "and names the section that carries it"
+assert_contains "path glob" "$PHASE4" "with the scope column the reader needs"
+# Four columns, in the order the helper and the promoter both parse.
+ROW_TEMPLATE=$(printf '%s\n' "$PHASE4" | grep '^| {' | head -1)
+assert_equal "4" "$(printf '%s' "${ROW_TEMPLATE#|}" | awk -F'|' '{print NF-1}')" \
+  "the template row has exactly four columns"
+assert_match 'type:' "$PHASE4" "and tells the writer to set the type explicitly"

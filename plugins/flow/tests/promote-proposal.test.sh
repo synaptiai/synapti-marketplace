@@ -1010,3 +1010,47 @@ ERR=$(cd "$PROJ_D" && PATH="$DIR/nopy:$PATH" "$HELPER" --proposal "$PROP" 2>&1 >
 assert_exit 2 "$EXIT" "an unusable interpreter is an infrastructure error"
 assert_match 'PyYAML|python3' "$ERR" "and the reason names the dependency"
 assert_not_contains "clone the marketplace" "$ERR" "not a claim about the directory"
+
+_flow_test_begin "each type in the vocabulary is exercised, not just exception"
+# The type axis has three values and the promoter branches on all of them.
+# `enforcement` was a branch nothing exercised: a mis-route would have surfaced
+# only when a real /flow:learn proposal was promoted.
+DIR=$(_pp_mktemp_dir)
+FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
+_pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
+
+# type: skill, stated explicitly rather than inferred from an absent key.
+PROP_S="$DIR/skill.md"
+_write_valid_proposal "$PROP_S" "test-type-skill"
+python3 - "$PROP_S" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(s.replace('status: proposal', 'type: skill\nstatus: proposal', 1))
+PY
+OUT_S=$(cd "$PROJ_D" && FLOW_REPO_ROOT="$FLOW_D" "$HELPER" --proposal "$PROP_S" --dry-run 2>&1); RC_S=$?
+assert_exit 0 "$RC_S" "an explicit type: skill validates"
+assert_contains "would transform" "$OUT_S" "and takes the learned-skill path"
+RES_S=$(printf '%s\n' "$OUT_S" | grep 'flow checkout:' | head -1)
+assert_contains "$FLOW_D" "$RES_S" "targeting the flow checkout"
+assert_equal "0" "$([ -f "$PROJ_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
+  "and writing no exception row"
+
+# type: enforcement — same target as skill, and it must not be refused.
+PROP_E="$DIR/enforce.md"
+_write_valid_proposal "$PROP_E" "test-type-enforcement"
+python3 - "$PROP_E" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+s = s.replace('status: proposal', 'type: enforcement\nstatus: proposal', 1)
+s += "\n## Enforcement point\n\nWhere the rule is enforced.\n"
+open(p, "w", encoding="utf-8").write(s)
+PY
+OUT_E=$(cd "$PROJ_D" && FLOW_REPO_ROOT="$FLOW_D" "$HELPER" --proposal "$PROP_E" --dry-run 2>&1); RC_E=$?
+assert_exit 0 "$RC_E" "type: enforcement validates rather than being refused"
+assert_contains "would transform" "$OUT_E" "and takes the learned-skill path, as documented"
+RES_E=$(printf '%s\n' "$OUT_E" | grep 'flow checkout:' | head -1)
+assert_contains "$FLOW_D" "$RES_E" "targeting the flow checkout, not the project"
+assert_equal "0" "$([ -f "$PROJ_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
+  "and writing no exception row"
