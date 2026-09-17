@@ -51,11 +51,13 @@ esac
 # 6s timeout). `read` reports EBADF and returns immediately, leaving BODY empty
 # so the empty-body refusal below fires.
 #
-# The two readers are NOT byte-identical, measured: `$(cat)` strips every
-# trailing newline and keeps an embedded NUL; `read -d ''` keeps trailing
-# newlines and stops at the first NUL. Neither difference is reachable from the
-# callers, which pass a shell variable — a variable cannot hold a NUL, so the
-# `<<<"$BODY"` here-string always ends in exactly one newline.
+# The two readers are NOT byte-identical, measured. `$(cat)` strips every
+# trailing newline and DROPS an embedded NUL, keeping the text after it;
+# `read -d ''` keeps trailing newlines and STOPS at the first NUL. Neither
+# difference is reachable from the callers: a bash variable cannot hold a NUL at
+# all, and every check below reads tokens rather than counting newlines. The
+# here-string appends one newline to whatever the value already ends with, which
+# is why nothing here depends on the exact trailing count.
 BODY=""
 IFS= read -r -d '' BODY || true
 

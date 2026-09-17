@@ -257,7 +257,7 @@ def finding_id(a):
     # rather than trusting what the writer put in: a `]` truncates the
     # `grep -o 'DISPUTED:\[[^]]*\]'` the consumers extract with, silently
     # dropping the rest of the array, and a comma splits one id into two for the
-    # `,`-delimited containment checks. The allowlist is the one
+    # `,`-delimited containment checks, marking both halves as dismissed. The allowlist is the one
     # bin/flow-finding-route.sh, commands/status.md and
     # references/finding-ledger-parser.md all apply, so this refuses what they
     # would refuse instead of handing them a row they will drop.

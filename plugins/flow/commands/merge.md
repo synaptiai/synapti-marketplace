@@ -563,8 +563,27 @@ if [ ! -x "$CASCADE" ]; then
   echo "ERROR=cascade-resolve.sh missing or non-executable at $CASCADE; the merge settings cannot be read"
   true; exit 0
 fi
-MERGE_STRATEGY=$("$CASCADE" --default "squash" '.merge.strategy' 2>/dev/null)
-DELETE_BRANCH=$("$CASCADE" --default "true" '.merge.deleteBranch' 2>/dev/null)
+# Resolved WITHOUT --default, deliberately. A setting that is ABSENT should fall
+# back to squash/true; a setting that could not be READ — cascade-resolve.sh
+# refuses a value carrying a control character, exit 2 — must not, or this gate
+# prints MERGE_SETTINGS_STATE=ok for a settings file it could not read, which is
+# the same answer it prints for a valid one. That is the defect class this whole
+# change is about, so the two are told apart here: exit 2 is blocked, empty is
+# absent.
+MERGE_STRATEGY=$("$CASCADE" '.merge.strategy' 2>/dev/null); RC_STRATEGY=$?
+if [ "$RC_STRATEGY" -ne 0 ]; then
+  echo "MERGE_SETTINGS_STATE=blocked"
+  echo "ERROR=merge.strategy could not be read (cascade-resolve.sh exit $RC_STRATEGY — a value carrying a control character is refused); refusing to guess a strategy for an irreversible merge"
+  true; exit 0
+fi
+[ -n "$MERGE_STRATEGY" ] || MERGE_STRATEGY="squash"
+DELETE_BRANCH=$("$CASCADE" '.merge.deleteBranch' 2>/dev/null); RC_DELETE=$?
+if [ "$RC_DELETE" -ne 0 ]; then
+  echo "MERGE_SETTINGS_STATE=blocked"
+  echo "ERROR=merge.deleteBranch could not be read (cascade-resolve.sh exit $RC_DELETE — a value carrying a control character is refused); refusing to guess whether the branch is deleted"
+  true; exit 0
+fi
+[ -n "$DELETE_BRANCH" ] || DELETE_BRANCH="true"
 case "$MERGE_STRATEGY" in
   squash|merge|rebase) ;;
   *)

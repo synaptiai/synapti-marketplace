@@ -39,19 +39,20 @@
 #   an agent reads. A value containing a newline therefore closes the
 #   `KEY=value` line the agent is reading and opens another one.
 #
-#   Three review rounds found that class at a new call site each time. Round 6
-#   fixed it for `journal.dir` in commands/address.md and commands/learn.md;
-#   round 7 added an opt-in flag and passed it at seven sites; round 8 found it
-#   still live in commands/merge.md, where a newline in `.merge.strategy` forged
-#   the `MERGE_SETTINGS_STATE=ok` line the merge gate reads, and in
-#   `learning.transcriptDir`, which another process reprints. An opt-in guard is
-#   only as good as the list of sites someone remembered, and that list was
-#   wrong three times. So the refusal is the default and opting OUT is explicit.
+#   Three review rounds found that class at a new call site each time. The first
+#   fix guarded two sites by hand; the second added an opt-in flag, passed it at
+#   seven, and claimed in this header that every consumer passed it — a claim
+#   that was false when written, because commands/merge.md was still resolving
+#   `.merge.strategy` without it, so a newline there forged the
+#   `MERGE_SETTINGS_STATE=ok` line the merge gate reads. An opt-in guard is only
+#   as good as the list of sites someone remembered, and that list was wrong
+#   three times. So the refusal is the default and opting OUT is explicit.
 #
-#   Every expression any caller passes resolves a single scalar key — audited at
-#   the revision that made this the default; `--compact` returns JSON, which is
-#   one line by construction. A caller that genuinely needs raw bytes has
-#   --allow-control-chars.
+#   Every expression any caller passes selects a single key. `.learning.sources`
+#   resolves a JSON array and is read with --compact, whose `jq -c` output is one
+#   line — but one line is not the same as safe: `jq -c` escapes C0 controls and
+#   prints U+0085 and U+2028/U+2029 raw, so those are refused on this path too.
+#   A caller that genuinely needs raw bytes has --allow-control-chars.
 
 set -uo pipefail
 
@@ -157,20 +158,29 @@ for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_
       #
       # LC_ALL=C so [[:cntrl:]] is the C locale's byte class (0x00-0x1F, 0x7F)
       # rather than whatever the caller's locale makes of it — the same reason
-      # bin/flow-finding-route.sh pins LC_ALL for its bracket ranges. That class
-      # cannot express the Unicode separators, so the three that a consumer may
-      # treat as a line break are matched as their UTF-8 byte sequences: U+0085
-      # NEL, U+2028 LINE SEPARATOR, U+2029 PARAGRAPH SEPARATOR. Python's
-      # str.splitlines() — which bin/_journal_manifest.py uses — splits on all
-      # three, so a value carrying one is a forgery there even though a shell
-      # echo would print it as one line.
+      # bin/flow-finding-route.sh pins LC_ALL for its bracket ranges. Pinning it
+      # NARROWS the class: in a UTF-8 locale [[:cntrl:]] also covers the C1 range
+      # U+0080-U+009F, and a C1 character injected into an agent's output is an
+      # ANSI escape introducer (U+009B is CSI) as well as, for U+0085 NEL, a line
+      # break Python's str.splitlines() takes. So the C1 range is matched
+      # explicitly as its two-byte UTF-8 form, and the two Unicode separators
+      # that lie outside it (U+2028, U+2029) are matched the same way.
+      #
+      # The byte-class arms are what make this deterministic: the pattern means
+      # the same thing under every locale a caller might have.
       _REFUSED=0
       if ( LC_ALL=C
            case "$RESULT" in
              *[[:cntrl:]]*) exit 0 ;;
            esac
+           # C1 control characters, U+0080-U+009F, as two-byte UTF-8. One arm
+           # covers NEL (U+0085) as well as the escape introducers.
            case "$RESULT" in
-             *$'\302\205'*|*$'\342\200\250'*|*$'\342\200\251'*) exit 0 ;;
+             *$'\302'[$'\200'-$'\237']*) exit 0 ;;
+           esac
+           # U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR, outside C1.
+           case "$RESULT" in
+             *$'\342\200\250'*|*$'\342\200\251'*) exit 0 ;;
            esac
            exit 1 ); then _REFUSED=1; fi
       if [ "$_REFUSED" -eq 1 ]; then

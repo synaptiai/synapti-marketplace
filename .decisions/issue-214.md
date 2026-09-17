@@ -697,3 +697,95 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-17 23:35 Write /tmp/r8_cascade_block.sh -->
 
 <!-- auto-log: 2026-09-17 23:37 Write /tmp/r8_merge_block.sh -->
+
+<!-- auto-log: 2026-09-17 23:59 commit "fix(flow): refuse the forgery by default, because the list of call sites was wrong three times" -->
+
+<!-- auto-log: 2026-09-18 00:04 Write /Users/danielbentes/.claude-work/projects/-Users-danielbentes-synapti-marketplace/memory/feedback_make_the_safe_thing_the_default.md -->
+
+<!-- auto-log: 2026-09-18 00:06 Write /tmp/csec/mk.py -->
+
+<!-- auto-log: 2026-09-18 00:07 Write /tmp/csec/lcars.py -->
+
+<!-- auto-log: 2026-09-18 00:07 Write /tmp/csec/args.py -->
+
+<!-- auto-log: 2026-09-18 00:07 Write /tmp/errfac_mkvals.py -->
+
+<!-- auto-log: 2026-09-18 00:08 Write /tmp/errfac_drive.py -->
+
+<!-- auto-log: 2026-09-18 00:08 Write /tmp/r9mk.py -->
+
+<!-- auto-log: 2026-09-18 00:08 Write /tmp/errfac_callsites.py -->
+
+<!-- auto-log: 2026-09-18 00:09 Write /tmp/errfac_show_flagged.py -->
+
+<!-- auto-log: 2026-09-18 00:09 Write /tmp/errfac_scan2.py -->
+
+<!-- auto-log: 2026-09-18 00:12 Write /tmp/cycle9-mutate.sh -->
+
+<!-- auto-log: 2026-09-18 00:12 Write /tmp/r9probe.sh -->
+
+<!-- auto-log: 2026-09-18 00:13 Write /tmp/r9c1mk.py -->
+
+<!-- auto-log: 2026-09-18 00:14 Write /tmp/r9mut.py -->
+
+<!-- auto-log: 2026-09-18 00:14 Write /tmp/csec/bytes.sh -->
+
+<!-- auto-log: 2026-09-18 00:14 Write /tmp/csec/echoes.py -->
+
+<!-- auto-log: 2026-09-18 00:14 Write /tmp/csec/echoes2.py -->
+
+<!-- auto-log: 2026-09-18 00:14 Write /tmp/errfac_exitpaths.py -->
+
+<!-- auto-log: 2026-09-18 00:14 Write /tmp/csec/exprcheck.py -->
+
+<!-- auto-log: 2026-09-18 00:15 Write /tmp/csec/flagattack.sh -->
+
+<!-- auto-log: 2026-09-18 00:15 Write /tmp/errfac_merge_run.py -->
+
+<!-- auto-log: 2026-09-18 00:16 Write /tmp/csec/nulclaim.sh -->
+
+<!-- auto-log: 2026-09-18 00:16 Write /tmp/r9split.py -->
+
+<!-- auto-log: 2026-09-18 00:17 Write /tmp/errfac_compact.py -->
+
+<!-- auto-log: 2026-09-18 00:18 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-18 00:18 Write /tmp/csec/idglob.sh -->
+
+<!-- auto-log: 2026-09-18 00:18 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-18 00:19 Write /tmp/csec/mergeforge.sh -->
+
+<!-- auto-log: 2026-09-18 00:20 Write /tmp/spl.py -->
+
+<!-- auto-log: 2026-09-18 00:20 Write /tmp/cntrl_test.sh -->
+
+<!-- auto-log: 2026-09-18 00:20 Write /tmp/errfac_c1cmp.py -->
+
+<!-- auto-log: 2026-09-18 00:21 Write /tmp/csec/stopcmp.sh -->
+
+<!-- auto-log: 2026-09-18 00:21 Write /tmp/csec/commaid.sh -->
+
+<!-- auto-log: 2026-09-18 00:23 Write /tmp/errfac_count.py -->
+
+<!-- auto-log: 2026-09-18 00:23 Write /tmp/errfac_c1ship.py -->
+
+<!-- auto-log: 2026-09-18 00:24 Write /tmp/esc_mk.py -->
+
+<!-- auto-log: 2026-09-18 00:27 Write /tmp/err1/enctest.sh -->
+
+<!-- auto-log: 2026-09-18 00:29 Write /tmp/err2/repro.sh -->
+
+<!-- auto-log: 2026-09-18 00:29 Write /tmp/err1v2/invalidtest.sh -->
+
+<!-- auto-log: 2026-09-18 00:30 Write /tmp/err1v2/c1sweep.sh -->
+
+<!-- auto-log: 2026-09-18 00:32 Write /tmp/err4-final.sh -->
+
+<!-- auto-log: 2026-09-18 00:34 Write /tmp/err6_probe.py -->
+
+<!-- auto-log: 2026-09-18 00:35 Write /tmp/err6_probe2.py -->
+
+<!-- auto-log: 2026-09-18 00:47 Write /tmp/r9_sep_block.sh -->
+
+<!-- auto-log: 2026-09-18 01:03 Write /tmp/r9_mutants.sh -->

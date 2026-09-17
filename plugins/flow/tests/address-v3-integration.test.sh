@@ -1330,7 +1330,7 @@ fi
 # misses it — a one-space bypass of the whole guard. The mutated copy uses the
 # form the exact-shape version would miss.
 awk '{ if ($0 ~ /^10\. \*\*Update PR body review cycle state\*\*/ && !done) {
-         print "```! "
+         print "```!\t"
          print "echo \"STATE=ok\""
          print "```"
          done=1
@@ -1345,7 +1345,12 @@ else
 fi
 # And the fence TYPES the shared scan recognises. Run through the SAME program as
 # the live check, so narrowing the real scanner breaks these too.
-for KNOWN in '```bash' '```!' '```bash   ' '```! '; do
+# Tabs as well as spaces. The tolerance is a space-or-tab class, and fixtures
+# carrying only spaces pinned half of it: narrowing the shared scanner to spaces
+# left the whole suite green. CommonMark trims the info string's trailing
+# whitespace however it is spelled, so an inline-bang opener followed by a tab is
+# the same fence to an executor while a spaces-only scanner misses it.
+for KNOWN in '```bash' '```!' '```bash   ' '```! ' $'```!\t' $'```bash\t'; do
   printf '9. **Post resolution comment**\n%s\necho x\n```\n' "$KNOWN" > "$WORKNEG/probe.md"
   N=$(awk "$FENCE_SCAN" "$WORKNEG/probe.md")
   assert_equal "1" "$N" "the scan recognises the opener '$KNOWN'"

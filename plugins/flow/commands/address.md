@@ -467,8 +467,8 @@ case "$CYCLE_NUMBER" in ''|*[!0-9]*) echo "FINDING_DISMISSED=skipped (CYCLE_NUMB
 # split that array on `,` and `]`. A `]` truncates the
 # `grep -o 'DISPUTED:\[[^]]*\]'` they extract with, silently dropping the rest
 # of the array; a comma splits one id into two for the `,`-delimited containment
-# checks (commands/status.md and references/finding-ledger-parser.md §3), so
-# neither half matches a finding. Same allowlist and same LC_ALL=C as valid_id
+# checks (commands/status.md and references/finding-ledger-parser.md §3), so a
+# dismissal written with one marks both halves as dismissed. Same allowlist and same LC_ALL=C as valid_id
 # in bin/flow-finding-route.sh: bracket ranges follow the locale of the caller,
 # where [A-Za-z] can match a letter such as e-acute.
 #

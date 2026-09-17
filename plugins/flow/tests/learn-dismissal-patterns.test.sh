@@ -525,14 +525,20 @@ printf -- '---\nissue: 908\nartifacts:\n- type: finding-dismissed\n  pr: 9\n  fi
 printf -- '---\nissue: 909\nartifacts:\n- type: finding-dismissed\n  pr: 9\n  finding_id: FHIDDEN\n  reason: breaks-test\n---\n# j\n' \
   > "$DO/.decisions/.hidden.md"
 printf 'not a journal\n' > "$DO/.decisions/notes.txt"
-printf 'not a journal\n' > "$DO/.decisions/issue-910.md.bak"
+# A VALID manifest behind a name the filter must reject. When the .bak fixture
+# was plain text, dropping the .endswith('.md') half of the filter still produced
+# a passing suite, because an unreadable file changes nothing — the filter was
+# never exercised. A well-formed journal here means an unfiltered reader counts
+# it and the assertion goes red.
+printf -- '---\nissue: 910\nartifacts:\n- type: finding-dismissed\n  pr: 9\n  finding_id: FBADEXT\n  reason: breaks-test\n---\n# j\n' \
+  > "$DO/.decisions/issue-910.md.bak"
 _ld_block > "$DO/block.sh"
 OUT_SK=$(cd "$DO" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_equal "1" "$(printf '%s\n' "$OUT_SK" | grep -c '^DISMISSED_COUNT=1' || true)" \
   "only the visible .md journal is counted"
 assert_not_contains "FHIDDEN" "$OUT_SK" "a hidden journal is skipped, as glob skipped it"
 assert_not_contains "notes.txt" "$OUT_SK" "a non-.md file is not read"
-assert_not_contains "issue-910.md.bak" "$OUT_SK" "nor a file that merely ends in .md.bak"
+assert_not_contains "FBADEXT" "$OUT_SK" "nor a .md.bak holding a valid manifest"
 assert_contains "FVISIBLE" "$OUT_SK" "and the one it counted is reported by id"
 assert_contains "STATE=ok" "$OUT_SK" "the section reports ok, not degraded"
 

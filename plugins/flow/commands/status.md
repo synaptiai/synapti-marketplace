@@ -370,9 +370,12 @@ else
       [ -z "$ID" ] && continue
       # Reject IDs containing case-glob metacharacters (`*`, `?`, `[`, `]`) —
       # IDs are template-issued and should match [A-Za-z][A-Za-z0-9_-]*.
-      # Without this, a hostile finding ID of `*` would always match the
-      # `case ",$RESOLVED," in *",$ID,"*)` containment check and silently
-      # disappear from the tally.
+      # The allowlist bounds an id to the shape the writer emits, which keeps
+      # `,`, `]` and `|` out of the array the consumers split on — a `]`
+      # truncates their `grep -o` extraction and a comma splits one id into two,
+      # so neither half matches a finding. (It is not about globbing: the
+      # containment check writes the id inside quotes, `*",$ID,"*`, so a `*`
+      # there is a literal and matches nothing it should not.)
       case "$ID" in
         [A-Za-z]*) ;;
         *) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;;
