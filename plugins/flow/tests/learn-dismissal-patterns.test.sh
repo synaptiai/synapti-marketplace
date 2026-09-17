@@ -112,7 +112,7 @@ _ld_block > "$D/block.sh"
 if [ ! -s "$D/block.sh" ]; then
   _flow_assert_fail "DISMISSAL_ARTIFACTS_BLOCK extracted empty — the block does not exist yet"
 else
-  OUT=$(cd "$D" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+  OUT=$(cd "$D" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
   assert_contains "DISMISSED_COUNT=2" "$OUT" "both finding-dismissed artifacts are counted"
   assert_contains "DROPPED_COUNT=1" "$OUT" "and the dropped-finding artifact separately"
   assert_contains "STATE=ok" "$OUT" "the section reports a state"
@@ -130,7 +130,7 @@ mkdir -p "$D2/.decisions"
 printf -- '---\nissue: 3\nartifacts: []\n---\n# three\n' > "$D2/.decisions/issue-3.md"
 _ld_block > "$D2/block.sh"
 if [ -s "$D2/block.sh" ]; then
-  OUT2=$(cd "$D2" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+  OUT2=$(cd "$D2" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
   assert_contains "STATE=empty" "$OUT2" "a project with no dismissals reports empty"
   assert_contains "DISMISSED_COUNT=0" "$OUT2" "with a zero count"
 fi
@@ -143,7 +143,7 @@ mkdir -p "$D3/.decisions"
 printf -- '---\n{ this: is: not: valid: yaml }\n---\n# broken\n' > "$D3/.decisions/issue-4.md"
 _ld_block > "$D3/block.sh"
 if [ -s "$D3/block.sh" ]; then
-  OUT3=$(cd "$D3" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+  OUT3=$(cd "$D3" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
   assert_contains "JOURNAL_UNREADABLE=" "$OUT3" "the unreadable journal is named"
   assert_contains "issue-4.md" "$OUT3" "with its path"
   assert_not_contains "STATE=empty" "$OUT3" \
@@ -168,7 +168,7 @@ cat > "$D4/.decisions/issue-5.md" <<'MD'
 | a | b | c |
 MD
 _ld_block > "$D4/block.sh"
-OUT4=$(cd "$D4" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+OUT4=$(cd "$D4" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_not_contains "JOURNAL_UNREADABLE=" "$OUT4" "a table separator does not make a journal unreadable"
 assert_contains "STATE=empty" "$OUT4" "and the section reports an honest empty"
 
@@ -178,7 +178,7 @@ mkdir -p "$D5/.decisions"
 printf 'stray preamble\n---\nissue: 6\nartifacts:\n- type: finding-dismissed\n---\n' \
   > "$D5/.decisions/issue-6.md"
 _ld_block > "$D5/block.sh"
-OUT5=$(cd "$D5" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+OUT5=$(cd "$D5" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_contains "JOURNAL_UNREADABLE=" "$OUT5" "a manifest that does not start the file is named"
 assert_contains "STATE=degraded" "$OUT5" "and the counts are reported as a floor"
 
@@ -199,14 +199,14 @@ artifacts:
 # seven
 MD
 _ld_block > "$D6/block.sh"
-OUT6=$(cd "$D6" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+OUT6=$(cd "$D6" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_contains "JOURNAL_UNREADABLE=" "$OUT6" "an alias-bearing manifest is refused"
 assert_match 'alias' "$OUT6" "and the reason names why"
 
 _flow_test_begin "a missing journal directory is unavailable, not empty"
 D7=$(mktemp -d -t flow-ld7.XXXXXX); LD_CLEANUP+=("$D7")
 _ld_block > "$D7/block.sh"
-OUT7=$(cd "$D7" && JOURNAL_DIR="no-such-dir" bash block.sh 2>&1)
+OUT7=$(cd "$D7" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR="no-such-dir" bash block.sh 2>&1)
 assert_contains "STATE=unavailable" "$OUT7" "a directory that is not there is not a project with no dismissals"
 assert_not_contains "STATE=empty" "$OUT7" "and never empty"
 
@@ -223,7 +223,7 @@ exit 0
 STUB
 chmod +x "$D8/nopy/python3"
 _ld_block > "$D8/block.sh"
-OUT8=$(cd "$D8" && PATH="$D8/nopy:$PATH" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+OUT8=$(cd "$D8" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" PATH="$D8/nopy:$PATH" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_contains "STATE=unavailable" "$OUT8" "no PyYAML is reported, not silently zero"
 assert_match 'PyYAML' "$OUT8" "and the reason names the dependency"
 
@@ -236,7 +236,7 @@ mkdir -p "$D9/.decisions"
 printf '# Notes\n\nsome prose\n\n---\n\nmore prose after a horizontal rule\n' \
   > "$D9/.decisions/issue-8.md"
 _ld_block > "$D9/block.sh"
-OUT9=$(cd "$D9" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+OUT9=$(cd "$D9" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_not_contains "JOURNAL_UNREADABLE=" "$OUT9" "a horizontal rule alone is not damage"
 assert_contains "STATE=empty" "$OUT9" "and the corpus is not reported degraded"
 
@@ -246,7 +246,7 @@ mkdir -p "$D10/.decisions"
 printf '# Notes\n\nartifacts: mentioned in prose, not as frontmatter\n' \
   > "$D10/.decisions/issue-9.md"
 _ld_block > "$D10/block.sh"
-OUT10=$(cd "$D10" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+OUT10=$(cd "$D10" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_not_contains "JOURNAL_UNREADABLE=" "$OUT10" "the key alone is not damage either"
 
 _flow_test_begin "Phase 4 states the exception proposal body is one table row"
@@ -293,7 +293,7 @@ artifacts:
 # nine
 YAML
 _ld_block > "$D11/block.sh"
-OUT11=$(cd "$D11" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+OUT11=$(cd "$D11" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_contains "DISMISSED_COUNT=2" "$OUT11" "both dismissals are counted, not just the one before the ---"
 assert_contains "F2" "$OUT11" "the artifact after the --- bearing value is reported"
 
@@ -322,7 +322,7 @@ class SafeLoader: pass
 class YAMLError(Exception): pass
 HOSTILE
 _ld_block > "$D12/block.sh"
-OUT12=$(cd "$D12" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+OUT12=$(cd "$D12" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_equal "0" "$([ -f "$D12/IMPORTED" ] && echo 1 || echo 0)" \
   "a yaml.py in the working tree is never imported"
 assert_contains "DISMISSED_COUNT=1" "$OUT12" "and the real parser still read the journal"
@@ -340,7 +340,7 @@ mkdir -p "$D13/.decisions"
 printf -- '---\nSENSITIVEMARKER: value\n\tbad: indent\n---\n' > "$D13/elsewhere.yml"
 ln -s "$D13/elsewhere.yml" "$D13/.decisions/issue-7.md"
 _ld_block > "$D13/block.sh"
-OUT13=$(cd "$D13" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+OUT13=$(cd "$D13" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_match 'symlink' "$OUT13" "the symlinked journal is named as such"
 assert_not_contains "SENSITIVEMARKER" "$OUT13" "and no byte of the target is echoed"
 assert_contains "STATE=degraded" "$OUT13" "and it is reported, not silently skipped"
@@ -350,7 +350,83 @@ D14=$(mktemp -d -t flow-ld14.XXXXXX); LD_CLEANUP+=("$D14")
 mkdir -p "$D14/.decisions"
 printf -- '---\nartifacts: [unclosed SENSITIVEMARKER2\n---\n# j\n' > "$D14/.decisions/issue-7.md"
 _ld_block > "$D14/block.sh"
-OUT14=$(cd "$D14" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+OUT14=$(cd "$D14" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_contains "JOURNAL_UNREADABLE=" "$OUT14" "the file is named"
 assert_not_contains "SENSITIVEMARKER2" "$OUT14" "but its contents are not quoted back"
 assert_contains "STATE=degraded" "$OUT14" "and the counts are reported as a floor"
+
+_flow_test_begin "a journal that is not a regular file is refused, not waited on"
+# address.md's reader opens with O_NONBLOCK and refuses anything that is not a
+# regular file. This one did neither, and its comment claimed the sibling
+# "opens the same way". A FIFO left in the journal directory blocked the read
+# forever: /flow:learn hung with no output at all, which is worse than any
+# wrong answer it could have given.
+if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+  _flow_assert_pass "SKIP: neither timeout nor gtimeout is installed"
+else
+  TMO=$(command -v timeout || command -v gtimeout)
+  DF=$(mktemp -d -t flow-ldfifo.XXXXXX); LD_CLEANUP+=("$DF")
+  mkdir -p "$DF/.decisions"
+  mkfifo "$DF/.decisions/issue-900.md"
+  _ld_block > "$DF/block.sh"
+  OUT_FIFO=$(cd "$DF" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" "$TMO" 10 bash block.sh 2>&1); RC_FIFO=$?
+  if [ "$RC_FIFO" -eq 124 ]; then
+    _flow_assert_fail "the reader hung on a FIFO journal (timed out after 10s)"
+  else
+    _flow_assert_pass "the reader returns rather than waiting for a writer that never comes"
+  fi
+  assert_contains "STATE=" "$OUT_FIFO" "and still reports a state"
+  assert_not_contains "STATE=empty" "$OUT_FIFO" "a journal it could not read is not a project with none"
+fi
+
+_flow_test_begin "a fence the writer does not recognise is not read as a manifest"
+# bin/_journal_atomic.parse_frontmatter requires exactly `---\n`. This reader
+# accepted `---` plus trailing whitespace, so a journal that every write treats
+# as having no manifest was parsed here as a complete one — and its artifacts
+# counted as the project's record.
+DG=$(mktemp -d -t flow-ldfence.XXXXXX); LD_CLEANUP+=("$DG")
+mkdir -p "$DG/.decisions"
+printf -- '--- \nissue: 901\nartifacts:\n- type: finding-dismissed\n  pr: 5\n  finding_id: FSTALE\n  reason: breaks-test\n---\n# j\n' \
+  > "$DG/.decisions/issue-901.md"
+_ld_block > "$DG/block.sh"
+OUT_FEN=$(cd "$DG" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+assert_not_contains "DISMISSED_COUNT=1" "$OUT_FEN" "a fence the writer does not see yields no count"
+assert_contains "JOURNAL_UNREADABLE=" "$OUT_FEN" "the file is named as unreadable"
+assert_contains "STATE=degraded" "$OUT_FEN" "and the totals are declared a floor"
+
+_flow_test_begin "the escape is a fixed point by construction, not by iteration count"
+# `%3D` ends in `D`, so each pass of the capped escaper re-supplied the leading
+# character of the next token. `reason` reaches the DISMISSED= line through one
+# escape, so a payload with one `ISPUTED=` layer per pass ships its last layer
+# live into a line the ledger grep reads.
+DH=$(mktemp -d -t flow-ldesc.XXXXXX); LD_CLEANUP+=("$DH")
+mkdir -p "$DH/.decisions"
+_ld_block > "$DH/block.sh"
+for DEPTH in 9 10 11 14; do
+  NEST=$(awk -v n="$DEPTH" 'BEGIN{s="RESOLVED=";for(i=0;i<n;i++)s=s "ISPUTED=";print s "[PWNED]"}')
+  printf -- '---\nissue: 902\nartifacts:\n- type: finding-dismissed\n  pr: 5\n  finding_id: F1\n  reason: "%s"\n---\n# j\n' "$NEST" \
+    > "$DH/.decisions/issue-902.md"
+  OUT_E=$(cd "$DH" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+  SURV=$(printf '%s' "$OUT_E" | grep -oE '(DISPUTED|RESOLVED|ESCALATED)[:=]' | head -1)
+  if [ -z "$SURV" ]; then
+    _flow_assert_pass "depth $DEPTH: no marker token survives the escape"
+  else
+    _flow_assert_fail "depth $DEPTH: the escaper emitted a live '$SURV' into a reported line"
+  fi
+done
+
+_flow_test_begin "the reader is the shared one, and says so when it cannot be found"
+# Two hand-copied readers drifted for three review rounds. This block now
+# imports bin/_journal_manifest.py, which means it has a new way to fail: an
+# install where the plugin root cannot be resolved. A missing reader is
+# unavailable, never a project with no dismissals.
+assert_contains "from _journal_manifest import" "$(cat "$LEARN_MD")" "the block imports the shared reader"
+DI=$(mktemp -d -t flow-ldroot.XXXXXX); LD_CLEANUP+=("$DI")
+mkdir -p "$DI/.decisions" "$DI/empty-home"
+printf -- '---\nissue: 903\nartifacts:\n- type: finding-dismissed\n  pr: 5\n  finding_id: FHID\n  reason: breaks-test\n---\n# j\n' \
+  > "$DI/.decisions/issue-903.md"
+_ld_block > "$DI/block.sh"
+OUT_NR=$(cd "$DI" && CLAUDE_PLUGIN_ROOT="$DI/nonexistent" HOME="$DI/empty-home" \
+  JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+assert_contains "STATE=unavailable" "$OUT_NR" "an unresolvable reader is unavailable"
+assert_not_contains "DISMISSED_COUNT=1" "$OUT_NR" "and counts nothing it did not read"

@@ -415,13 +415,17 @@ OUT_D=$(_disputed_run)
 assert_contains "DISPUTED_STATE=unavailable" "$OUT_D" "a glob id is refused"
 assert_not_contains "DISPUTED=" "$OUT_D" "and offers no array"
 
-# A pull request that closes no issue: dismissals may have happened with nowhere
-# to record them, so this is unavailable, NOT none. ISSUE is set to a
-# non-numeric value so the branch is reached without a network call.
+# An ISSUE that is not a positive integer. This is the malformed-issue arm, not
+# the closes-no-issue arm — `none` fails the digit test, so the `''` case never
+# matches. Both are unavailable and neither offers an array, which is what this
+# asserts; the closes-no-issue arm and its DISPUTED_REASON_CODE are covered
+# separately, under a stub plugin root, because reaching it needs the
+# linked-issue helper to succeed and return nothing.
 OUT_E=$( cd "$WORKG" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKG" \
   ISSUE=none PR_NUM=234 bash disputed.sh 2>&1 || true )
-assert_contains "DISPUTED_STATE=unavailable" "$OUT_E" "no linked issue is unavailable, not empty"
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_E" "a malformed linked issue is unavailable, not empty"
 assert_not_contains "DISPUTED=" "$OUT_E" "and offers no array"
+assert_not_contains "DISPUTED_REASON_CODE=" "$OUT_E" "and does not claim the pull request closes no issue"
 
 _flow_test_begin "the writer refuses an id the marker parser cannot carry"
 # finding-ledger-parser.md splits the array on `,` and `]` and matches with a
@@ -455,11 +459,28 @@ assert_match 'Do not post|do not post' "$STEP9" "and says not to post the commen
 # The refusal is conditional, and the condition matters: a pull request that
 # closes no issue has nothing to record AND nowhere to record it, so stopping
 # there would drop the comment Phase 5 calls mandatory on every issue-less pull
-# request. Step 9 must give both branches.
-# The branch keys on the REASON, not on this run's activity: the array is
-# cumulative over the pull request, so "Phase 3 recorded nothing this run" says
-# nothing about cycle 2 and posting [] on it erases an earlier dismissal.
-assert_match 'closes no issue' "$STEP9" "step 9 branches on the one reason no journal can exist"
+# request. Step 9 must give both branches — and must give them the right way
+# round.
+#
+# Asserted PER BULLET, not per step. Matching "post the comment" and "do not
+# post" anywhere in step 9 passes just as well against a document that swaps
+# the two branches, which is the one error that matters here: it posts an empty
+# array on every unreadable journal and erases every earlier dismissal.
+BULLET_YES=$(printf '%s\n' "$STEP9" | awk '/- \*\*`DISPUTED_REASON_CODE=no-linked-issue`/{f=1} f && /- \*\*No `DISPUTED_REASON_CODE` line/{f=0} f')
+BULLET_NO=$(printf '%s\n' "$STEP9" | awk '/- \*\*No `DISPUTED_REASON_CODE` line/{f=1} f && /^     Never skip/{f=0} f')
+assert_match 'no-linked-issue' "$BULLET_YES" "the posting branch is the no-linked-issue code"
+assert_match 'post the comment' "$BULLET_YES" "and that branch posts"
+assert_not_contains "Do not post" "$BULLET_YES" "and is not also told to stop"
+assert_match 'Do not post|do not post' "$BULLET_NO" "the other branch stops"
+assert_not_contains "post the comment with" "$BULLET_NO" "and is not also told to post"
+# The branch keys on a code the block emits, not on REASON prose: REASON carries
+# journal-derived text, so "closes no issue" can be written into it by the file
+# being read.
+assert_match 'DISPUTED_REASON_CODE' "$STEP9" "step 9 branches on the machine-readable code"
+assert_match 'grep -qx|line-anchored' "$STEP9" "and matches it as a whole line"
+# Even the no-linked-issue branch is not unconditional: a pull request can close
+# an issue in cycle 2 and lose the keyword before cycle 3.
+assert_match 'FLOW_RESOLUTION_CYCLE' "$BULLET_YES" "it checks earlier cycles before posting an empty array"
 assert_match 'cumulative' "$STEP9" "and says why this run's activity is the wrong signal"
 assert_match 'mandatory' "$STEP9" "and says the comment is never skipped silently"
 
@@ -536,6 +557,28 @@ OUT_R=$(cd "$WORKI" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" PATH="$WORKI/nogh:$PATH"
   PR_NUM=234 bash disputed.sh 2>&1)
 assert_contains "DISPUTED_STATE=unavailable" "$OUT_R" "an unresolvable repository is unavailable"
 assert_not_contains "DISPUTED=" "$OUT_R" "and offers no array"
+
+# 5. An unresolvable plugin root, so cascade-resolve.sh cannot run and the
+#    journal directory comes back empty. The guard was written but nothing
+#    reached it, so nothing pinned that it reports rather than proceeding
+#    against an empty directory — which would have printed a clean empty array.
+mkdir -p "$WORKI/empty-home"
+OUT_NOROOT=$(cd "$WORKI" && CLAUDE_PLUGIN_ROOT="$WORKI/nonexistent" HOME="$WORKI/empty-home" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_NOROOT" "an unresolvable plugin root is unavailable"
+assert_not_contains "DISPUTED=" "$OUT_NOROOT" "and offers no array"
+
+# 6. The shared reader missing from an otherwise working plugin root. The import
+#    sits above the first print, so without this guard the block dies before any
+#    STATE line — and a missing STATE line reads exactly like an empty array.
+mkdir -p "$WORKI/halfroot/bin"
+cp "$PLUGIN_DIR/bin/cascade-resolve.sh" "$WORKI/halfroot/bin/cascade-resolve.sh"
+cp "$PLUGIN_DIR/bin/flow-pr-linked-issue.sh" "$WORKI/halfroot/bin/flow-pr-linked-issue.sh"
+chmod +x "$WORKI/halfroot/bin/cascade-resolve.sh" "$WORKI/halfroot/bin/flow-pr-linked-issue.sh"
+OUT_NOREADER=$(cd "$WORKI" && CLAUDE_PLUGIN_ROOT="$WORKI/halfroot" HOME="$WORKI" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_NOREADER" "a missing shared reader is unavailable"
+assert_not_contains "DISPUTED=" "$OUT_NOREADER" "and offers no array"
 
 
 # --- what the block derives, it must derive in the test too -----------------
@@ -795,7 +838,7 @@ OUT_TOK=$(cd "$WORKV" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKV" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
 assert_contains "DISPUTED_STATE=unavailable" "$OUT_TOK" "the forged id is refused"
 assert_not_contains "DISPUTED:[PWNED]" "$OUT_TOK" "the marker-shaped token does not survive"
-assert_contains "DISPUTED%3A" "$OUT_TOK" "it is percent-escaped instead"
+assert_contains "DISPUTED%3a" "$OUT_TOK" "it is percent-escaped instead, in the lowercase form that cannot re-form a token"
 # Channel 2: the journal directory, which reaches the path-bearing messages.
 # journal.dir is author-controlled through the committed settings file.
 WORKV2=$(mktemp -d -t flow-disp19b.XXXXXX); ADDR_CLEANUP+=("$WORKV2")
@@ -806,7 +849,7 @@ _extract_disputed_block > "$WORKV2/disputed.sh"
 OUT_TOK2=$(cd "$WORKV2" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKV2" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
 assert_not_contains "DISPUTED:[PWNED]" "$OUT_TOK2" "nor through the journal directory"
-assert_contains "DISPUTED%3A" "$OUT_TOK2" "which is escaped the same way"
+assert_contains "DISPUTED%3a" "$OUT_TOK2" "which is escaped the same way"
 
 
 _flow_test_begin "a journal with no manifest is empty, not unreadable"
@@ -865,7 +908,7 @@ for BADPR in 'yes' '234.7' '234.0'; do
   OUT_ZF=$(cd "$WORKY" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKY" \
     ISSUE=214 PR_NUM=1 bash disputed.sh 2>&1)
   assert_contains "DISPUTED_STATE=unavailable" "$OUT_ZF" "pr: $BADPR is refused, not coerced"
-  assert_not_contains "DISPUTED=[F8]" "$OUT_ZF" "and never joins a pull request it does not name"
+  assert_not_contains "DISPUTED=[F8]" "$OUT_ZF" "pr: $BADPR never joins a pull request it does not name"
 done
 # A digit string still works, for a journal written by some other route.
 printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: "234"\n  finding_id: F8\n---\n# j\n' \
@@ -922,8 +965,8 @@ for FENCE in '---\n\n---\n' '---\n# just a comment\n---\n' '---\nnull\n---\n'; d
     > "$WORKAA/.decisions/issue-214.md"
   OUT_BF=$(cd "$WORKAA" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAA" \
     ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
-  assert_contains "DISPUTED_STATE=unavailable" "$OUT_BF" "an empty first fence is unreadable, not empty"
-  assert_not_contains "DISPUTED=[]" "$OUT_BF" "and offers no array"
+  assert_contains "DISPUTED_STATE=unavailable" "$OUT_BF" "fence ${FENCE}: an empty first fence is unreadable, not empty"
+  assert_not_contains "DISPUTED=[]" "$OUT_BF" "fence ${FENCE}: and offers no array"
 done
 
 _flow_test_begin "a journal that disappears between the write and the read is not an absence"
@@ -931,6 +974,11 @@ _flow_test_begin "a journal that disappears between the write and the read is no
 # between the Phase 3 write and the Phase 5 read. If the journal goes away in
 # that window, `none` states that nothing was disputed when a dismissal was
 # recorded minutes earlier.
+#
+# This reaches the same ENOENT branch as the missing-journal case above. It is
+# kept because it pins the TRANSITION rather than the branch: the array is read
+# back first, so the file is shown to have been readable and to have named a
+# dismissal before it went away. The other case cannot show that.
 WORKAB=$(mktemp -d -t flow-disp24.XXXXXX); ADDR_CLEANUP+=("$WORKAB")
 mkdir -p "$WORKAB/.decisions"
 _extract_dismissed_block > "$WORKAB/dismiss.sh"
@@ -964,3 +1012,148 @@ OUT_W2=$(cd "$WORKAC" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAC" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>/dev/null)
 assert_match 'WARN' "$ERR_W" "the unparseable settings file is named on stderr"
 assert_contains "DISPUTED=[F2]" "$OUT_W2" "and the default directory still resolves"
+
+_flow_test_begin "the escape is a fixed point by construction, not by iteration count"
+# The iterated escaper had a cap. `%3D` ends in `D`, so each pass re-supplied
+# the leading character of the next token: a payload carrying one `ISPUTED=`
+# layer per pass walks straight through any finite number of passes and the
+# last layer ships unescaped. Ten layers defeat a ten-pass cap exactly.
+#
+# The channel is `journal.dir`, not a journal field. .claude/settings.flow.json
+# is a tracked file, so a fork pull request carries its own, and the path built
+# from it reaches the REASON through ONE escape. The artifact fields happen to
+# pass through two — the branch message escapes the field, then bail escapes
+# the message — so a payload aimed there needs twice the depth and is cut by
+# the 200-character truncation first. Two applications of a capped escape is
+# not a property anyone designed, and it holds only for the branches that
+# happen to nest; this test uses the branch that does not.
+#
+# The assertion is the PROPERTY, not the one payload: across every nesting
+# depth, no marker token in any spelling may survive into output that
+# references/finding-ledger-parser.md reads.
+WORKAD=$(mktemp -d -t flow-disp26.XXXXXX); ADDR_CLEANUP+=("$WORKAD")
+mkdir -p "$WORKAD/.decisions" "$WORKAD/.claude"
+_extract_disputed_block > "$WORKAD/disputed.sh"
+printf -- '---\nissue: 214\nartifacts: []\n---\n# j\n' > "$WORKAD/.decisions/issue-214.md"
+for DEPTH in 9 10 11 14; do
+  for TAIL in '[PWNED]' 'ISPUTED:[PWNED]'; do
+    NEST=$(awk -v n="$DEPTH" -v t="$TAIL" \
+      'BEGIN{s="RESOLVED=";for(i=0;i<n;i++)s=s "ISPUTED=";print s t}')
+    printf '{"journal": {"dir": "%s"}}\n' "$NEST" > "$WORKAD/.claude/settings.flow.json"
+    OUT_N=$(cd "$WORKAD" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAD" \
+      ISSUE=214 PR_NUM=234 bash disputed.sh 2>/dev/null)
+    assert_contains "DISPUTED_STATE=unavailable" "$OUT_N" "depth $DEPTH: a journal that is not there is unreadable"
+    SURVIVOR=$(printf '%s' "$OUT_N" | grep -v '^DISPUTED_STATE=' \
+      | grep -oE '(DISPUTED|RESOLVED|ESCALATED)[:=]' | head -1)
+    if [ -z "$SURVIVOR" ]; then
+      _flow_assert_pass "depth $DEPTH: no marker token survives the escape"
+    else
+      _flow_assert_fail "depth $DEPTH: the escaper emitted a live '$SURVIVOR' into REASON"
+    fi
+  done
+done
+
+_flow_test_begin "the reader calls a fence a manifest only where the writer does"
+# bin/_journal_atomic.parse_frontmatter requires exactly `---\n`; the readers
+# accepted `---` plus trailing whitespace. A journal opening `--- ` therefore
+# has NO manifest as far as every write is concerned — journal-record.sh
+# prepends a fresh one and keeps the old text as body — while the reader
+# parsed the old text as the whole truth. The array came back `ok` and short:
+# a confident partial answer, which is the defect class this issue exists to
+# remove.
+WORKAE=$(mktemp -d -t flow-disp27.XXXXXX); ADDR_CLEANUP+=("$WORKAE")
+mkdir -p "$WORKAE/.decisions"
+_extract_disputed_block > "$WORKAE/disputed.sh"
+printf -- '--- \nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: FSTALE\n---\n# j\n' \
+  > "$WORKAE/.decisions/issue-214.md"
+OUT_TS=$(cd "$WORKAE" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAE" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
+assert_not_contains "DISPUTED_STATE=ok" "$OUT_TS" "a fence the writer does not see is not read as a manifest"
+assert_not_contains "DISPUTED=[FSTALE]" "$OUT_TS" "and no array is built from it"
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_TS" "it is reported as damage, not as absence"
+# The predicate is the writer's own, so agreement is checked against the
+# writer rather than asserted about it.
+WRITER_SEES=$(cd "$WORKAE" && PYTHONSAFEPATH=1 PYTHONPATH="$PLUGIN_DIR/bin" python3 -c 'import sys
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+from _journal_atomic import parse_frontmatter
+m, _ = parse_frontmatter(open(".decisions/issue-214.md", encoding="utf-8").read())
+print("manifest" if m is not None else "no-manifest")' 2>/dev/null)
+assert_equal "no-manifest" "$WRITER_SEES" "the writer sees no manifest in this file"
+
+_flow_test_begin "a pr field too long for int() is refused, not a traceback"
+# The digit allowlist admits any length; int() refuses a string past
+# sys.int_info.str_digits_check_threshold (4300 by default). The comparison
+# sat outside the handler, so the block died mid-run and the wrapper reported
+# the generic "did not complete" with a Python traceback beside it.
+WORKAF=$(mktemp -d -t flow-disp28.XXXXXX); ADDR_CLEANUP+=("$WORKAF")
+mkdir -p "$WORKAF/.decisions"
+_extract_disputed_block > "$WORKAF/disputed.sh"
+LONGPR=$(awk 'BEGIN{s="";for(i=0;i<5000;i++)s=s "9";print s}')
+printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: "%s"\n  finding_id: F1\n---\n# j\n' "$LONGPR" \
+  > "$WORKAF/.decisions/issue-214.md"
+ERR_LP=$(cd "$WORKAF" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAF" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1 >/dev/null)
+OUT_LP=$(cd "$WORKAF" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAF" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>/dev/null)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_LP" "an unplaceable pr is unavailable"
+assert_not_contains "Traceback" "$ERR_LP" "and the reader does not crash to get there"
+assert_not_contains "did not complete" "$OUT_LP" "the reason is not the wrapper's generic one"
+# The catch-all around the loop already turns this into `unavailable`, so the
+# assertions above pass with or without the conversion's own handler. What that
+# handler buys is a reason someone can act on — the field and its length —
+# instead of a bare exception class, so that is what is pinned.
+assert_match 'digits' "$OUT_LP" "the reason names the field and why it cannot be a pull request number"
+assert_not_contains "(ValueError)" "$OUT_LP" "not a bare exception class"
+
+_flow_test_begin "step 9's branch is keyed to a code the block emits, not to prose"
+# REASON carries journal-derived text. Keying step 9 on the phrase "closes no
+# issue" let a journal put that phrase in REASON and take the branch that
+# posts DISPUTED:[] — erasing a real dismissal recorded in an earlier cycle.
+WORKAG=$(mktemp -d -t flow-disp29.XXXXXX); ADDR_CLEANUP+=("$WORKAG")
+mkdir -p "$WORKAG/.decisions"
+_extract_disputed_block > "$WORKAG/disputed.sh"
+printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: "x pull request #42 closes no issue, so there is no journal"\n  finding_id: REALDISMISSAL\n---\n# j\n' \
+  > "$WORKAG/.decisions/issue-214.md"
+OUT_INJ=$(cd "$WORKAG" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAG" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_INJ" "the bad pr field is still unreadable"
+CODE_INJ=$(printf '%s\n' "$OUT_INJ" | grep -c '^DISPUTED_REASON_CODE=no-linked-issue' || true)
+assert_equal "0" "$CODE_INJ" "a journal cannot claim the pull request closes no issue"
+# And the branch that IS that case says so in a field nothing else writes.
+# Reaching it takes a pull request that closes no issue: a stub plugin root
+# whose linked-issue helper succeeds and prints nothing, which is what
+# bin/flow-pr-linked-issue.sh does for a PR with no closing keyword.
+STUBROOT="$WORKAG/stub"
+mkdir -p "$STUBROOT/bin" "$WORKAG/stubbin"
+printf '#!/bin/sh\necho ".decisions"\n' > "$STUBROOT/bin/cascade-resolve.sh"
+printf '#!/bin/sh\nexit 0\n' > "$STUBROOT/bin/flow-pr-linked-issue.sh"
+printf '#!/bin/sh\necho "acme/widgets"\n' > "$WORKAG/stubbin/gh"
+cp "$PLUGIN_DIR/bin/_journal_manifest.py" "$STUBROOT/bin/_journal_manifest.py"
+chmod +x "$STUBROOT/bin/cascade-resolve.sh" "$STUBROOT/bin/flow-pr-linked-issue.sh" "$WORKAG/stubbin/gh"
+OUT_NOISS=$(cd "$WORKAG" && CLAUDE_PLUGIN_ROOT="$STUBROOT" HOME="$WORKAG" \
+  PATH="$WORKAG/stubbin:$PATH" ISSUE= PR_NUM=234 bash disputed.sh 2>&1)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_NOISS" "no linked issue is unavailable"
+assert_contains "DISPUTED_REASON_CODE=no-linked-issue" "$OUT_NOISS" "and carries a machine-readable code"
+# The code is the branch's own, so no other failure path may emit it.
+for OTHER in "$OUT_INJ" "$OUT_TS" "$OUT_LP"; do
+  assert_not_contains "DISPUTED_REASON_CODE=" "$OTHER" "no other failure path claims the no-issue branch"
+done
+
+_flow_test_begin "both readers share one implementation rather than one description"
+# Three review rounds running, a sweep across the two hand-copied readers
+# missed one: address.md gained O_NONBLOCK and learn.md did not, and both
+# drifted from the writer's fence. A copy that must be kept in step by hand
+# is the defect, not the symptom.
+MANIFEST_PY="$PLUGIN_DIR/bin/_journal_manifest.py"
+if [ -f "$MANIFEST_PY" ]; then
+  _flow_assert_pass "bin/_journal_manifest.py exists"
+  MAN_SRC=$(cat "$MANIFEST_PY")
+  assert_contains "from _journal_atomic import" "$MAN_SRC" "and takes the fence predicate from the writer"
+  for MD in "$ADDRESS_MD" "$PLUGIN_DIR/commands/learn.md"; do
+    assert_contains "from _journal_manifest import" "$(cat "$MD")" "$(basename "$MD") imports the shared reader"
+    COPIES=$(grep -c 'r"---\[ \\t\]\*\\n(.\*?)\\n---' "$MD" || true)
+    assert_equal "0" "$COPIES" "$(basename "$MD") carries no second copy of the fence regex"
+  done
+else
+  _flow_assert_fail "bin/_journal_manifest.py does not exist — the readers are still hand-copied"
+fi

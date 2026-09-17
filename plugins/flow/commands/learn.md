@@ -155,6 +155,20 @@ echo "### Dismissal Artifacts"
 # rejected it on stated grounds. Only the second is evidence for an exception,
 # so they are counted apart.
 DISMISSAL_JOURNAL_DIR="${JOURNAL_DIR:-.decisions}"
+# The reader is bin/_journal_manifest.py, shared with address.md's
+# DISPUTED_ARRAY_BLOCK and taking its fence predicate from bin/_journal_atomic.py.
+# Resolved the same way every other helper in this command is.
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+# Probed for the same reason PyYAML is below: the import sits above the first
+# print, so on an install where the reader is missing this block would die
+# before emitting any STATE line — and a missing STATE line reads exactly like
+# a project that has dismissed nothing.
+if [ ! -f "$FLOW_ROOT/bin/_journal_manifest.py" ]; then
+  echo "DISMISSED_COUNT=0"
+  echo "DROPPED_COUNT=0"
+  echo "STATE=unavailable"
+  echo "REASON=the shared journal reader could not be located, so whether this project has recorded dismissals is unknown"
+else
 # Probe before the heredoc. `import yaml` sits above the try below, so a machine
 # without PyYAML dies before the first print and the section is a bare heading —
 # no STATE line at all, which Phase 2 reads as "this project has dismissed
@@ -168,49 +182,28 @@ import yaml' >/dev/null 2>&1; then
   echo "STATE=unavailable"
   echo "REASON=python3 with PyYAML is required to read the journal manifests, so whether this project has recorded dismissals is unknown"
 else
-DISMISSAL_OUT=$(PYTHONSAFEPATH=1 python3 - "$DISMISSAL_JOURNAL_DIR" <<'DISMISSAL_PY'
+DISMISSAL_OUT=$(PYTHONSAFEPATH=1 python3 - "$FLOW_ROOT/bin" "$DISMISSAL_JOURNAL_DIR" <<'DISMISSAL_PY'
 import sys
 
-# The scrub sits ABOVE the other imports on purpose: glob, os and re happen to
-# be preloaded by CPython today, which is an interpreter detail, not a promise.
+# The scrub sits ABOVE the other imports on purpose: glob and os happen to be
+# preloaded by CPython today, which is an interpreter detail, not a promise.
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 
-import errno
+# The reader lives in the plugin's own bin/, and takes its fence predicate from
+# bin/_journal_atomic.py — the module every journal write goes through. This
+# block used to carry its own copy. The copies drifted every review round: this
+# one never gained the O_NONBLOCK that stops a FIFO in the journal directory
+# hanging the read forever, and its comment claimed the sibling "opens the same
+# way" while the two had already diverged.
+sys.path.insert(0, sys.argv[1])
+
 import glob
 import os
-import re
 
-import yaml
+from _journal_manifest import ManifestError, one_line, read_artifacts
 
+journal_dir = sys.argv[2]
 
-class ManifestError(Exception):
-    """Raised only by this block, always with a message this block wrote.
-
-    Anything else out of a parse is derived from the file: a PyYAML error
-    carries a Mark snippet quoting it verbatim, and this block prints the
-    reason on stdout. Only the exception class goes out for those.
-    """
-
-
-class NoAliases(yaml.SafeLoader):
-    """A journal manifest is a record, not a program.
-
-    `yaml.safe_load` resolves aliases and shares the expansion in memory, but
-    `str()` materialises it: a few hundred bytes of nested aliases becomes
-    megabytes on one line, and each further level multiplies it. Nothing flow
-    writes uses an anchor. Same refusal the FlowGoal reader in review.md makes.
-    """
-
-    def compose_node(self, parent, index):
-        if self.check_event(yaml.events.AliasEvent):
-            # ManifestError, not YAMLError: this message is ours, and the
-            # handler prints only a class name for anything derived from the file.
-            raise ManifestError("the manifest uses YAML aliases, which a manifest does not need")
-        return super(NoAliases, self).compose_node(parent, index)
-
-
-journal_dir = sys.argv[1]
-dismissed, dropped, unreadable = [], [], []
 if not os.path.isdir(journal_dir):
     # A directory that is not there is not a project with no dismissals. The
     # journal dir comes from the settings cascade and falls back to a RELATIVE
@@ -218,75 +211,19 @@ if not os.path.isdir(journal_dir):
     print("DISMISSED_COUNT=0")
     print("DROPPED_COUNT=0")
     print("STATE=unavailable")
-    print("REASON=the journal directory %s does not exist, so whether this project has recorded dismissals is unknown" % journal_dir)
+    # Through one_line: journal.dir is read from .claude/settings.flow.json, a
+    # tracked file, so a fork pull request chooses this string.
+    print("REASON=the journal directory %s does not exist, so whether this project has "
+          "recorded dismissals is unknown" % one_line(journal_dir))
     sys.exit(0)
 
-
-def one_line(v):
-    out = " ".join(str(v).splitlines()).strip()[:200]
-    # Every REASON is printed on stdout, in the same place the array would be,
-    # and the journal and the configured journal.dir are both author-controlled
-    # on a fork pull request. Neutralise the key this block prints AND the marker
-    # tokens the ledger parser greps for: references/finding-ledger-parser.md
-    # extracts `DISPUTED:[...]` with a grep, so guarding only `DISPUTED=` would
-    # be guarding the wrong spelling of the same attack.
-    # Iterated to a FIXED POINT, not applied once. `%3D` ends in D, so a single
-    # pass over `RESOLVED=ISPUTED:[X]` yields `RESOLVED%3DISPUTED:[X]` — the
-    # replacement text joins the payload and assembles the exact token
-    # references/finding-ledger-parser.md greps for. Escaping once manufactured
-    # what escaping exists to remove.
-    for _ in range(10):
-        prev = out
-        for tok in ("DISPUTED", "RESOLVED", "ESCALATED"):
-            out = out.replace(tok + "=", tok + "%3D").replace(tok + ":", tok + "%3A")
-        if out == prev:
-            break
-    return out
-
+dismissed = []
+dropped = []
+unreadable = []
 
 for path in sorted(glob.glob(os.path.join(journal_dir, "*.md"))):
     try:
-        # O_NOFOLLOW: bin/journal-record.sh refuses a symlinked journal because
-        # a pre-staged .decisions/issue-N.md can point anywhere, and the reason
-        # printed below reaches stdout. The sibling reader in address.md opens
-        # the same way.
-        try:
-            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-        except OSError as exc:
-            if exc.errno in (errno.ELOOP, errno.EMLINK):
-                raise ManifestError("the journal is a symlink, and a symlinked journal is refused")
-            raise ManifestError("the journal could not be opened (%s)"
-                                % errno.errorcode.get(exc.errno, "OSError"))
-        with os.fdopen(fd, "r", encoding="utf-8") as fh:
-            text = fh.read()
-        if not text.startswith("---"):
-            # A file with no frontmatter at all is not a journal. One whose
-            # fence was DAMAGED is, and counting that as zero hides the evidence
-            # this block looks for — but "--- appears somewhere" is not damage:
-            # it matches a GFM table separator, and 8 of the 41 journals in this
-            # repository carry one under a risk-map heading. Require both a
-            # fence-shaped line and a manifest key before calling it damaged.
-            if re.search(r"(?m)^---[ \t]*$", text) and re.search(r"(?m)^artifacts:", text):
-                raise ManifestError("the manifest fence does not start the file")
-            continue
-        # Match the closing fence as a LINE. Splitting on the first "---"
-        # anywhere cuts the manifest at a `---` inside a value, which the
-        # writer accepts as ordinary content, and drops every artifact after
-        # it — an undercount that reads as a project with fewer dismissals.
-        fence = re.match(r"---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", text, re.S)
-        if fence is None:
-            raise ManifestError("the manifest fence does not open and close at the top of the file")
-        fm = yaml.load(fence.group(1), Loader=NoAliases)
-        if fm is None:
-            continue
-        if not isinstance(fm, dict):
-            raise ManifestError("the manifest is not a mapping")
-        arts = fm.get("artifacts")
-        if arts is None:
-            continue
-        if not isinstance(arts, list):
-            raise ManifestError("artifacts is not a list")
-        for a in arts:
+        for a in read_artifacts(path):
             if not isinstance(a, dict):
                 # One silently dropped entry can decide whether a cluster
                 # reaches the two-instance threshold.
@@ -300,11 +237,14 @@ for path in sorted(glob.glob(os.path.join(journal_dir, "*.md"))):
     except ManifestError as exc:
         # A manifest nobody could read is not a project with no dismissals.
         # Counting it as zero would hide the evidence this category exists to
-        # find, which is the whole failure mode being fixed here.
+        # find, which is the whole failure mode being fixed here. A journal with
+        # no frontmatter at all is NOT this case — read_artifacts returns [] for
+        # it, because the writer prepends a manifest on the first write and a
+        # file without one has had nothing recorded in it.
         unreadable.append((path, exc))
     except Exception as exc:
-        # Not ours, so only the class goes out: the text of a parse error
-        # quotes the file, and the file may not be a manifest at all.
+        # Not ours, so only the class goes out: the text of a parse error quotes
+        # the file, and the file may not be a manifest at all.
         unreadable.append((path, "the manifest could not be read (%s); its text is not "
                                  "echoed here" % type(exc).__name__))
 
@@ -341,6 +281,7 @@ DISMISSAL_PY
   else
     printf '%s\n' "$DISMISSAL_OUT"
   fi
+fi
 fi
 # DISMISSAL_ARTIFACTS_BLOCK_END
 

@@ -223,3 +223,271 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-17 13:17 commit "fix(flow): a marker whose findings array did not parse says so again" -->
 
 <!-- auto-log: 2026-09-17 13:30 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/bundle-214.md -->
+
+<!-- auto-log: 2026-09-17 13:43 commit "test(flow): the criteria are tested where the bundle said they were not" -->
+
+<!-- auto-log: 2026-09-17 13:52 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_bundle.py -->
+
+<!-- auto-log: 2026-09-17 14:11 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_ac2.py -->
+
+<!-- auto-log: 2026-09-17 14:12 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_ac2.py -->
+
+<!-- auto-log: 2026-09-17 14:12 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_ac2.py -->
+
+<!-- auto-log: 2026-09-17 14:15 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ac2_tests.sh -->
+
+<!-- auto-log: 2026-09-17 14:15 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ac2_tests.sh -->
+
+<!-- auto-log: 2026-09-17 14:15 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ac2_tests.sh -->
+
+<!-- auto-log: 2026-09-17 14:15 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ac2_tests.sh -->
+
+<!-- auto-log: 2026-09-17 14:16 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-17 14:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-17 14:17 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants.sh -->
+
+<!-- auto-log: 2026-09-17 14:23 commit "fix(flow): the DISPUTED array is built from the artifacts, not transcribed" -->
+
+<!-- auto-log: 2026-09-17 14:31 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_bundle_v3.py -->
+
+<!-- auto-log: 2026-09-17 14:32 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_bundle_v3.py -->
+
+<!-- auto-log: 2026-09-17 14:32 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_bundle_v3.py -->
+
+<!-- auto-log: 2026-09-17 14:32 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/bundle-214.md -->
+
+<!-- auto-log: 2026-09-17 14:32 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/bundle-214.md -->
+
+<!-- auto-log: 2026-09-17 14:36 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ac2_paths.sh -->
+
+<!-- auto-log: 2026-09-17 14:38 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_sec.py -->
+
+<!-- auto-log: 2026-09-17 14:38 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_sec.py -->
+
+<!-- auto-log: 2026-09-17 14:38 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-17 14:38 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-17 14:38 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_sec.py -->
+
+<!-- auto-log: 2026-09-17 14:44 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_round2.py -->
+
+<!-- auto-log: 2026-09-17 14:46 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_tests2.py -->
+
+<!-- auto-log: 2026-09-17 14:47 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-17 14:48 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants2.sh -->
+
+<!-- auto-log: 2026-09-17 14:53 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-17 14:57 commit "fix(flow): the DISPUTED emitter reads the journal safely, and says so honestly" -->
+
+<!-- auto-log: 2026-09-17 15:00 Write /Users/danielbentes/.claude-work/projects/-Users-danielbentes-synapti-marketplace/memory/feedback_copy_from_the_hardened_sibling.md -->
+
+<!-- auto-log: 2026-09-17 15:20 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/security-rereview-28ca1fb.txt -->
+
+<!-- auto-log: 2026-09-17 15:25 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_round3.py -->
+
+<!-- auto-log: 2026-09-17 15:27 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-17 15:27 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-17 15:32 commit "fix(flow): a manifest that is not a manifest is never quoted back" -->
+
+<!-- auto-log: 2026-09-17 15:47 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_round4.py -->
+
+<!-- auto-log: 2026-09-17 15:54 commit "fix(flow): the writer is visible to the agent, and absence is not an unknown" -->
+
+<!-- auto-log: 2026-09-17 16:09 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutate.py -->
+
+<!-- auto-log: 2026-09-17 16:12 Write /Users/danielbentes/.claude-work/projects/-Users-danielbentes-synapti-marketplace/memory/feedback_verify_the_reviewer.md -->
+
+<!-- auto-log: 2026-09-17 16:17 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/audit/VERDICT.txt -->
+
+<!-- auto-log: 2026-09-17 16:19 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/b4b724c/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 16:20 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/verdict-R2-SEC-6.txt -->
+
+<!-- auto-log: 2026-09-17 16:21 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/repro1/drive.sh -->
+
+<!-- auto-log: 2026-09-17 16:21 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/r2sec8a/VERDICT.txt -->
+
+<!-- auto-log: 2026-09-17 16:24 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/r3f1a/VERDICT.txt -->
+
+<!-- auto-log: 2026-09-17 16:24 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/r3f2-evidence.txt -->
+
+<!-- auto-log: 2026-09-17 16:26 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/new/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 16:26 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/new/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 16:27 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/pin.r6oDpe/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 16:28 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/rev/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 16:28 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/rev/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 16:29 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/rev/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 16:29 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/verdict.txt -->
+
+<!-- auto-log: 2026-09-17 16:30 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/pin-85fe6ee-24353/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 16:30 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/pin-85fe6ee-24353/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 16:31 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutate.py -->
+
+<!-- auto-log: 2026-09-17 16:31 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mut/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 16:31 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/head/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 16:32 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/r2sec6-verdict.txt -->
+
+<!-- auto-log: 2026-09-17 16:36 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/r1/evidence.txt -->
+
+<!-- auto-log: 2026-09-17 16:42 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/enum.sh -->
+
+<!-- auto-log: 2026-09-17 16:42 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/t1.sh -->
+
+<!-- auto-log: 2026-09-17 16:43 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/writer.sh -->
+
+<!-- auto-log: 2026-09-17 16:43 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/t2.sh -->
+
+<!-- auto-log: 2026-09-17 16:45 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/verdict.txt -->
+
+<!-- auto-log: 2026-09-17 16:47 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/standalone_repro.sh -->
+
+<!-- auto-log: 2026-09-17 16:49 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/diff_harness.py -->
+
+<!-- auto-log: 2026-09-17 16:50 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ga-lens/VERDICT.txt -->
+
+<!-- auto-log: 2026-09-17 16:51 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reg2/harness.sh -->
+
+<!-- auto-log: 2026-09-17 16:51 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reg2/matrix.sh -->
+
+<!-- auto-log: 2026-09-17 16:52 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/roundtrip.sh -->
+
+<!-- auto-log: 2026-09-17 16:52 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/attribution.sh -->
+
+<!-- auto-log: 2026-09-17 16:52 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reg/VERDICT.txt -->
+
+<!-- auto-log: 2026-09-17 16:54 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/VERDICT.txt -->
+
+<!-- auto-log: 2026-09-17 16:54 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/VERDICT.txt -->
+
+<!-- auto-log: 2026-09-17 16:54 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/VERDICT.txt -->
+
+<!-- auto-log: 2026-09-17 16:56 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reglens/matrix.sh -->
+
+<!-- auto-log: 2026-09-17 17:02 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reglens/VERDICT.txt -->
+
+<!-- auto-log: 2026-09-17 17:04 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/nfm-notes.txt -->
+
+<!-- auto-log: 2026-09-17 17:06 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/regression-verdict.txt -->
+
+<!-- auto-log: 2026-09-17 17:07 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reglens-R1F4-verdict.txt -->
+
+<!-- auto-log: 2026-09-17 17:08 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/nfm-notes.txt -->
+
+<!-- auto-log: 2026-09-17 17:09 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/regression-verdict.txt -->
+
+<!-- auto-log: 2026-09-17 17:10 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mkfix.py -->
+
+<!-- auto-log: 2026-09-17 17:10 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/diffrun.sh -->
+
+<!-- auto-log: 2026-09-17 17:15 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/NOTES.txt -->
+
+<!-- auto-log: 2026-09-17 17:16 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/notes.md -->
+
+<!-- auto-log: 2026-09-17 17:17 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/work/r1f1-regression-verdict.txt -->
+
+<!-- auto-log: 2026-09-17 17:18 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reg1/harness.sh -->
+
+<!-- auto-log: 2026-09-17 17:19 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/notes.md -->
+
+<!-- auto-log: 2026-09-17 17:22 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reg1/VERDICT.txt -->
+
+<!-- auto-log: 2026-09-17 17:23 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/work/diffrun.sh -->
+
+<!-- auto-log: 2026-09-17 17:24 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/work/diffrun_learn.sh -->
+
+<!-- auto-log: 2026-09-17 17:25 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ga/verdict.txt -->
+
+<!-- auto-log: 2026-09-17 17:25 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/work/verdict.txt -->
+
+<!-- auto-log: 2026-09-17 17:26 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reg/run.sh -->
+
+<!-- auto-log: 2026-09-17 17:27 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/r3f3-regression-verdict.txt -->
+
+<!-- auto-log: 2026-09-17 17:30 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/r3f3-new-failure-mode.txt -->
+
+<!-- auto-log: 2026-09-17 17:31 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reglens2/matrix.sh -->
+
+<!-- auto-log: 2026-09-17 17:31 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/r3f3-new-failure-mode.txt -->
+
+<!-- auto-log: 2026-09-17 17:31 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/r3f3-new-failure-mode.txt -->
+
+<!-- auto-log: 2026-09-17 17:33 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reglens2/oserr.sh -->
+
+<!-- auto-log: 2026-09-17 17:33 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/repro-R2-SEC-7-regression.sh -->
+
+<!-- auto-log: 2026-09-17 17:33 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/nfm-findings.txt -->
+
+<!-- auto-log: 2026-09-17 17:35 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reglens2/ledger.sh -->
+
+<!-- auto-log: 2026-09-17 17:36 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/repro-R3-F2-newmode.sh -->
+
+<!-- auto-log: 2026-09-17 17:37 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/nfm-findings.txt -->
+
+<!-- auto-log: 2026-09-17 17:40 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/GUARANTEE_ASSUMED_FINDINGS.txt -->
+
+<!-- auto-log: 2026-09-17 17:43 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/GUARANTEE_ASSUMED_FINDINGS.txt -->
+
+<!-- auto-log: 2026-09-17 18:02 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_round5.py -->
+
+<!-- auto-log: 2026-09-17 18:06 commit "fix(flow): back out what the last two rounds broke, and pin what they missed" -->
+
+<!-- auto-log: 2026-09-17 18:16 commit "test(flow): pin the cascade warning, and stop the suite reading the real HOME" -->
+
+<!-- auto-log: 2026-09-17 19:09 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-17 19:11 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/_journal_atomic.py -->
+
+<!-- auto-log: 2026-09-17 19:11 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/_journal_atomic.py -->
+
+<!-- auto-log: 2026-09-17 19:12 Write /Users/danielbentes/synapti-marketplace/plugins/flow/bin/_journal_manifest.py -->
+
+<!-- auto-log: 2026-09-17 19:12 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/new_disputed_py.txt -->
+
+<!-- auto-log: 2026-09-17 19:13 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 19:13 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 19:14 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-17 19:14 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/new_dismissal_py.txt -->
+
+<!-- auto-log: 2026-09-17 19:14 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/learn.md -->
+
+<!-- auto-log: 2026-09-17 19:15 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/learn.md -->
+
+<!-- auto-log: 2026-09-17 19:16 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/learn.md -->
+
+<!-- auto-log: 2026-09-17 19:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 19:17 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-17 19:18 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-17 19:19 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/address.md -->
+
+<!-- auto-log: 2026-09-17 19:20 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/decision-journal-schema.md -->
+
+<!-- auto-log: 2026-09-17 19:21 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
+
+<!-- auto-log: 2026-09-17 19:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/_journal_manifest.py -->
+
+<!-- auto-log: 2026-09-17 19:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/_journal_manifest.py -->
+
+<!-- auto-log: 2026-09-17 19:28 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/address-v3-integration.test.sh -->
