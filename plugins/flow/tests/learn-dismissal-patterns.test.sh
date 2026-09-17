@@ -226,3 +226,25 @@ _ld_block > "$D8/block.sh"
 OUT8=$(cd "$D8" && PATH="$D8/nopy:$PATH" JOURNAL_DIR=".decisions" bash block.sh 2>&1)
 assert_contains "STATE=unavailable" "$OUT8" "no PyYAML is reported, not silently zero"
 assert_match 'PyYAML' "$OUT8" "and the reason names the dependency"
+
+_flow_test_begin "a bare horizontal rule with no artifacts key is not a damaged manifest"
+# The heuristic is a conjunction and each half needs its own kill input. This
+# repo carries a journal with a bare `---` rule and no `artifacts:` key; with
+# that half dropped it reports unreadable and the whole corpus goes degraded.
+D9=$(mktemp -d -t flow-ld9.XXXXXX); LD_CLEANUP+=("$D9")
+mkdir -p "$D9/.decisions"
+printf '# Notes\n\nsome prose\n\n---\n\nmore prose after a horizontal rule\n' \
+  > "$D9/.decisions/issue-8.md"
+_ld_block > "$D9/block.sh"
+OUT9=$(cd "$D9" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+assert_not_contains "JOURNAL_UNREADABLE=" "$OUT9" "a horizontal rule alone is not damage"
+assert_contains "STATE=empty" "$OUT9" "and the corpus is not reported degraded"
+
+_flow_test_begin "an artifacts key with no fence-shaped line is not a damaged manifest"
+D10=$(mktemp -d -t flow-ld10.XXXXXX); LD_CLEANUP+=("$D10")
+mkdir -p "$D10/.decisions"
+printf '# Notes\n\nartifacts: mentioned in prose, not as frontmatter\n' \
+  > "$D10/.decisions/issue-9.md"
+_ld_block > "$D10/block.sh"
+OUT10=$(cd "$D10" && JOURNAL_DIR=".decisions" bash block.sh 2>&1)
+assert_not_contains "JOURNAL_UNREADABLE=" "$OUT10" "the key alone is not damage either"

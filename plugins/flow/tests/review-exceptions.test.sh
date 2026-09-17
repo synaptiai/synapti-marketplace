@@ -396,3 +396,23 @@ OUT13=$(cd "$D13" && PATH="$D13/stub:$PATH" "$HELPER" --repo o/r --pr 7 2>/dev/n
 assert_equal "100" "$(printf '%s\n' "$OUT13" | grep -c '^EXCEPTION=')" \
   "exactly the documented cap is printed"
 assert_match 'EXCEPTIONS_TRUNCATED=1 rule' "$OUT13" "and the notice counts the one that was cut"
+
+_flow_test_begin "a failed pull-request read is reported as such, not as an author's base choice"
+# Without the empty-BASE_INFO guard the helper prints `targets , not the default
+# branch main; a base the author chose is not trusted` — a claim about a choice
+# nobody made, for what was actually a failed API read.
+D14=$(mktemp -d "$RX_TMP/prfail.XXXXXX"); mkdir -p "$D14/stub"
+cat > "$D14/stub/gh" <<'STUBEOF'
+#!/usr/bin/env bash
+case "$*" in
+  *baseRefOid*) exit 1 ;;
+  *defaultBranchRef*) echo "main" ;;
+  *) echo "" ;;
+esac
+STUBEOF
+chmod +x "$D14/stub/gh"
+OUT14=$(cd "$D14" && PATH="$D14/stub:$PATH" "$HELPER" --repo o/r --pr 7 2>/dev/null)
+assert_contains "STATE=unavailable" "$OUT14" "a failed read is unavailable"
+assert_match 'REASON=.*could not be read' "$OUT14" "and the reason names the read failure"
+assert_not_contains "a base the author chose" "$OUT14" \
+  "not a claim about a base nobody chose"

@@ -172,6 +172,15 @@ fi
 # promotion from a consuming project, which is where exceptions are learned.
 # The type is read from the frontmatter here rather than waiting for the full
 # validation pass below, which runs after this gate.
+# The peek below needs python3 and PyYAML, and it decides which repository this
+# run targets — so the probe has to come first. Without it a missing interpreter
+# produced an empty peek, which routed to "could not find a flow checkout …
+# clone the marketplace": an environment failure reported as a wrong directory.
+if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import yaml" >/dev/null 2>&1; then
+  echo "promote-proposal.sh: python3 with PyYAML is required (apt install python3-yaml / pip install pyyaml)" >&2
+  exit 2
+fi
+
 # One parser decides the type. A `sed` scan over the frontmatter fence read a
 # body line that merely looked like frontmatter (so a proposal could point
 # FLOW_ROOT at a repository nobody chose), and mangled a legal trailing comment
@@ -179,7 +188,7 @@ fi
 # refused a real exception with advice to clone the marketplace. This is the
 # same yaml.safe_load the authoritative pass below uses, so the two cannot
 # disagree.
-PROPOSAL_TYPE_PEEK=$(PROPOSAL="$PROPOSAL" python3 - <<'PEEKEOF' 2>/dev/null || true
+PROPOSAL_TYPE_PEEK=$(PROPOSAL="$PROPOSAL" python3 - <<'PEEKEOF' 2>/dev/null
 import os, sys
 sys.path[:] = [q for q in sys.path if q not in ("", ".")]
 import yaml
@@ -189,13 +198,24 @@ if not text.startswith("---"):
 parts = text.split("---", 2)
 if len(parts) < 3:
     sys.exit(0)
-fm = yaml.safe_load(parts[1])
+try:
+    fm = yaml.safe_load(parts[1])
+except Exception:
+    # Print a sentinel and exit 0. Exiting non-zero here terminates the whole
+    # script under `set -e` — the assignment takes the substitution's status,
+    # so the `$?` capture after it never runs and the caller sees rc=1 with no
+    # output at all.
+    print("unreadable")
+    sys.exit(0)
 if isinstance(fm, dict):
     t = fm.get("type")
     if isinstance(t, str):
         print(t.strip())
 PEEKEOF
-)
+) || PROPOSAL_TYPE_PEEK="unreadable"
+# `unreadable` routes nowhere special: the authoritative pass below reports why
+# the file could not be read, which is a better message than any this early
+# scan could produce.
 if [ "$PROPOSAL_TYPE_PEEK" = "exception" ]; then
   FLOW_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
   PROMOTE_SOURCE="the project this exception was learned in"
@@ -221,10 +241,6 @@ fi
 REPO_ROOT="$FLOW_ROOT"
 LEARNED_DIR="$REPO_ROOT/plugins/flow/skills/learned"
 
-if ! python3 -c "import yaml" >/dev/null 2>&1; then
-  echo "promote-proposal.sh: PyYAML not installed (apt install python3-yaml / pip install pyyaml)" >&2
-  exit 2
-fi
 
 # Validate the proposal AND extract its name in one Python pass. The script
 # emits the validated name on stdout (for bash to consume) and any errors on

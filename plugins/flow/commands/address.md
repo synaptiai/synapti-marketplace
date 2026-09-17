@@ -182,6 +182,7 @@ else
   # Section: Review-Cycle Findings
   echo ""
   echo "### Review-Cycle Findings"
+  # REVIEW_CYCLE_FINDINGS_BLOCK_BEGIN
   # A review comment carries a GitHub comment id. A finding carries a ledger id
   # (F1, SEC-2), and the ledger id is the only thing that joins a dismissal to
   # the finding that caused it, survives across cycles, and matches the
@@ -201,10 +202,18 @@ else
     # references/gate-configuration.md both use the top-level key, and reading a
     # different one meant a team that widened trust had every real CONTRIBUTOR
     # marker read as untrusted here while the merge gate accepted it.
-    CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_PATH" 2>/dev/null)
+    CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_PATH" 2>&1); CONF_JQ=$?
+    if [ "$CONF_JQ" -ne 0 ]; then
+      # merge.md warns and falls through here rather than failing silently: a
+      # typo in one tier should not quietly narrow who is trusted.
+      echo "LEDGER_WARN: cannot parse $SETTINGS_PATH (jq exit=$CONF_JQ); falling through to the next trust source" >&2
+      continue
+    fi
     if [ -n "$CONFIGURED" ] && printf '%s' "$CONFIGURED" | jq -e 'type == "array" and length > 0 and all(type == "string")' >/dev/null 2>&1; then
       TRUST_LIST="$CONFIGURED"
       break
+    elif [ -n "$CONFIGURED" ]; then
+      echo "LEDGER_WARN: invalid markerTrust configuration in $SETTINGS_PATH (must be a non-empty array of strings); falling through" >&2
     fi
   done
   FINDINGS_RAW=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null); FIND_GH=$?
@@ -222,7 +231,7 @@ else
     | "MARKERS_SEEN=" + ($any | tostring),
       "MARKER_TRUSTED=" + (if $m == null then "0" else "1" end),
       (if $m == null then empty
-       else ($m.body | capture("<!-- FLOW_REVIEW_CYCLE:(?<c>[0-9]+) ") | .c) as $cycle
+       else ($m.body | capture("<!-- FLOW_REVIEW_CYCLE:(?<c>[0-9]+) FINDINGS:\\[") | .c) as $cycle
          | ($m.body | [scan("<!-- FLOW_REVIEW_CYCLE:[0-9]+ FINDINGS:\\[([^\\]]*)\\]")] | first | first) as $rows
          | if $rows == null then "MARKER_ROWS=unparsed"
            else ($rows | split(",") | .[] | select(length > 0) | "FINDING=cycle=" + $cycle + " " + .)
@@ -254,6 +263,7 @@ else
     echo "STATE=ok"
     printf '%s\n' "$FINDINGS_ROWS"
   fi
+  # REVIEW_CYCLE_FINDINGS_BLOCK_END
 fi
 
 true

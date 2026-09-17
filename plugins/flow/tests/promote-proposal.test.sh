@@ -881,7 +881,9 @@ _flow_test_begin "a legal trailing comment on the type does not refuse a real ex
 # `type: exception  # learned from #214` is legal YAML. A text scan mangled it
 # into something matching nothing, and a genuine exception promotion from a
 # consuming project was refused with advice to clone the marketplace.
-DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+DIR=$(_pp_mktemp_dir)
+FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
+_pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
 PROP="$DIR/comment.md"
 _write_exception_proposal "$PROP" "test-exc-comment"
 python3 - "$PROP" <<'PY'
@@ -890,10 +892,13 @@ p = sys.argv[1]
 s = open(p, encoding="utf-8").read()
 open(p, "w", encoding="utf-8").write(s.replace("type: exception\n", "type: exception  # learned from #214\n"))
 PY
-OUT=$(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1); EXIT=$?
+OUT=$(cd "$PROJ_D" && FLOW_REPO_ROOT="$FLOW_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1); EXIT=$?
 assert_exit 0 "$EXIT" "the promotion validates"
 assert_contains "type: exception" "$OUT" "the type is read through the comment"
 assert_not_contains "clone the marketplace" "$OUT" "and it is not sent to the wrong repository"
+RESOLVED=$(printf '%s\n' "$OUT" | grep 'flow checkout:' | head -1)
+assert_contains "$PROJ_D" "$RESOLVED" "an exception targets the project it was learned in"
+assert_not_contains "$FLOW_D" "$RESOLVED" "not the flow checkout"
 
 _flow_test_begin "a predictable temp name cannot redirect the contract write"
 # The atomic-write fix wrote to $EXC_FILE.$$.tmp, which is guessable and not
@@ -901,11 +906,107 @@ _flow_test_begin "a predictable temp name cannot redirect the contract write"
 # landed outside the repository, and mv moved the symlink into place.
 DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
 mkdir -p "$DIR/outside"
-ln -s "$DIR/outside/stolen.md" "$REPO_D/.flow/review-exceptions.md.$$.tmp" 2>/dev/null || true
 PROP="$DIR/sym.md"
 _write_exception_proposal "$PROP" "test-exc-symlink"
-(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" >/dev/null 2>&1)
+# The decoy has to carry the HELPER's pid. `$$` inside `( ... )` reports the
+# PARENT shell, so a plain subshell stages the wrong name and the test passes
+# whatever the code does — verified: the predictable-name revert survived it.
+# `bash -c` is a fresh shell whose `$$` is its own pid, and `exec` hands that
+# same process to the helper.
+bash -c '
+  cd "$1" || exit 1
+  ln -s "$2/outside/stolen.md" "$1/.flow/review-exceptions.md.$$.tmp" 2>/dev/null
+  FLOW_REPO_ROOT="$1" exec "$3" --proposal "$4" >/dev/null 2>&1
+' _ "$REPO_D" "$DIR" "$HELPER" "$PROP"
+SYM_RC=$?
+assert_exit 0 "$SYM_RC" "the promotion still succeeds"
 assert_equal "0" "$([ -L "$REPO_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
   "the contract is a real file, not a symlink"
 assert_equal "0" "$([ -s "$DIR/outside/stolen.md" ] && echo 1 || echo 0)" \
   "and nothing was written outside the repository"
+# And the row actually landed, or the three assertions above hold vacuously for
+# a run that wrote nothing at all.
+if grep -Fq "Prefer explicit loops" "$REPO_D/.flow/review-exceptions.md" 2>/dev/null; then
+  _flow_assert_pass "the exception row reached the contract"
+else
+  _flow_assert_fail "the contract does not carry the row, so nothing above was tested"
+fi
+
+
+_flow_test_begin "two readings of the type that disagree are refused"
+# The peek routes the run before validation. A frontmatter whose value contains
+# `---` makes the peek's split cut early and read one type while the
+# authoritative parse reads the whole block and takes the last key — so the
+# routing decision and the validated type come from different readings of one
+# file. With the reconciliation gone, that promotes a learned skill into
+# whatever repository the cwd happens to be.
+DIR=$(_pp_mktemp_dir)
+FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
+_pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
+PROP="$DIR/disagree.md"
+cat > "$PROP" <<'PROPOSAL'
+---
+name: "test-disagree"
+description: "[flow-learned] t"
+type: exception
+note: a---b
+type: skill
+source-sessions:
+  - "s"
+evidence-count: 1
+status: proposal
+proposed: "2026-09-17"
+---
+# t
+
+## Contract
+
+Iron law: x. Permitted skips: none.
+
+## Pattern Detected
+
+p
+
+## Knowledge
+
+k
+
+## Evidence
+
+e
+
+## Verification
+
+v
+
+## Promotion Checklist
+
+- [ ] r
+PROPOSAL
+ERR=$(cd "$PROJ_D" && FLOW_REPO_ROOT="$FLOW_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null); EXIT=$?
+if [ "$EXIT" -ne 0 ]; then
+  _flow_assert_pass "disagreeing readings are refused (exit $EXIT)"
+else
+  _flow_assert_fail "the run proceeded on two different readings of the same file"
+fi
+assert_match 'must agree|readings' "$ERR" "and the refusal says why"
+assert_equal "0" "$([ -d "$PROJ_D/plugins/flow/skills/learned/test-disagree" ] && echo 1 || echo 0)" \
+  "nothing was written into the project"
+
+_flow_test_begin "a missing interpreter is reported as such, not as a wrong directory"
+# The peek needs python3 and PyYAML and decides the target repository, so an
+# environment failure used to surface as "could not find a flow checkout —
+# clone the marketplace".
+DIR=$(_pp_mktemp_dir); PROJ_D="$DIR/project"; _pp_fake_repo "$PROJ_D"
+mkdir -p "$DIR/nopy"
+cat > "$DIR/nopy/python3" <<'STUB'
+#!/usr/bin/env bash
+exit 127
+STUB
+chmod +x "$DIR/nopy/python3"
+PROP="$DIR/nopy.md"
+_write_exception_proposal "$PROP" "test-exc-nopy"
+ERR=$(cd "$PROJ_D" && PATH="$DIR/nopy:$PATH" "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
+assert_exit 2 "$EXIT" "an unusable interpreter is an infrastructure error"
+assert_match 'PyYAML|python3' "$ERR" "and the reason names the dependency"
+assert_not_contains "clone the marketplace" "$ERR" "not a claim about the directory"

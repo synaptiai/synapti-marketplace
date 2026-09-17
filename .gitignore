@@ -23,6 +23,9 @@ docs/flow-team-session/*.pdf
 .flow/runs/
 .flow/evidence/
 .flow/triggers/*.local.yaml
+# promote-proposal.sh builds the exceptions file beside the target and moves it
+# into place; a SIGKILL between the two would otherwise leave this behind.
+.flow/.review-exceptions.*
 
 # Flow decision-journal lockfiles (left by bin/_journal_atomic.py after the
 # flock is released), session audit trail, and scheduler lock — all ephemeral

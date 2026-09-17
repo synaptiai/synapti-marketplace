@@ -199,3 +199,15 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-17 11:42 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/findings.txt -->
 
 <!-- auto-log: 2026-09-17 11:54 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_spoof_test.py -->
+
+<!-- auto-log: 2026-09-17 11:55 commit "fix(flow): two fixes from the last round had opened new holes" -->
+
+<!-- auto-log: 2026-09-17 12:27 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
+
+<!-- auto-log: 2026-09-17 12:27 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
+
+<!-- auto-log: 2026-09-17 12:30 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_guard_tests.py -->
+
+<!-- auto-log: 2026-09-17 12:40 commit "fix(flow): two fixes from the last round had opened new holes" -->
+
+<!-- auto-log: 2026-09-17 12:45 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mut_anchor.py -->
