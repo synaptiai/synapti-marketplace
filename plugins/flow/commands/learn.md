@@ -230,8 +230,17 @@ def one_line(v):
     # tokens the ledger parser greps for: references/finding-ledger-parser.md
     # extracts `DISPUTED:[...]` with a grep, so guarding only `DISPUTED=` would
     # be guarding the wrong spelling of the same attack.
-    for tok in ("DISPUTED", "RESOLVED", "ESCALATED"):
-        out = out.replace(tok + "=", tok + "%3D").replace(tok + ":", tok + "%3A")
+    # Iterated to a FIXED POINT, not applied once. `%3D` ends in D, so a single
+    # pass over `RESOLVED=ISPUTED:[X]` yields `RESOLVED%3DISPUTED:[X]` — the
+    # replacement text joins the payload and assembles the exact token
+    # references/finding-ledger-parser.md greps for. Escaping once manufactured
+    # what escaping exists to remove.
+    for _ in range(10):
+        prev = out
+        for tok in ("DISPUTED", "RESOLVED", "ESCALATED"):
+            out = out.replace(tok + "=", tok + "%3D").replace(tok + ":", tok + "%3A")
+        if out == prev:
+            break
     return out
 
 

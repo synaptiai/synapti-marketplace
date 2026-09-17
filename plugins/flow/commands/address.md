@@ -451,12 +451,13 @@ for _v in PR_NUM CYCLE_NUMBER FINDING_ID CATEGORY LOCATION REASON EVIDENCE; do
   eval "_val=\${$_v:-}"
   [ -n "$_val" ] || { echo "FINDING_DISMISSED=skipped ($_v is unset)" >&2; exit 1; }
 done
-# `0*` is rejected, not just non-digits: journal-record.sh coerces pr to an
-# int, so a PR_NUM of 0234 is recorded as 234 and every later lookup by the
-# literal string misses it. commands/review.md and bin/flow-pr-linked-issue.sh
-# reject it the same way.
+# `0*` is rejected for PR_NUM and ISSUE, not just non-digits: journal-record.sh
+# coerces pr to an int and builds the journal filename from the raw ISSUE
+# string, so 0234 is recorded as 234 under issue-0234.md and every later lookup
+# misses it. commands/review.md and bin/flow-pr-linked-issue.sh reject it the
+# same way. CYCLE_NUMBER is deliberately NOT in this list: nothing reads it back.
 case "$PR_NUM" in ''|0*|*[!0-9]*) echo "FINDING_DISMISSED=skipped (PR_NUM must be a positive integer with no leading zero)" >&2; exit 1 ;; esac
-case "$CYCLE_NUMBER" in ''|0*|*[!0-9]*) echo "FINDING_DISMISSED=skipped (CYCLE_NUMBER must be a positive integer with no leading zero)" >&2; exit 1 ;; esac
+case "$CYCLE_NUMBER" in ''|*[!0-9]*) echo "FINDING_DISMISSED=skipped (CYCLE_NUMBER is not a number)" >&2; exit 1 ;; esac
 # The id ends up in the DISPUTED:[...] array that the Phase 5 emitter builds
 # from this artifact, and references/finding-ledger-parser.md parses that array
 # by splitting on `,` and `]` and matching with a POSIX case glob. An id
@@ -494,7 +495,8 @@ if [ -z "${ISSUE:-}" ]; then
   }
 fi
 case "${ISSUE:-}" in
-  ''|*[!0-9]*) echo "FINDING_DISMISSED=skipped (pull request #$PR_NUM closes no issue, so there is no journal)" >&2; exit 0 ;;
+  '') echo "FINDING_DISMISSED=skipped (pull request #$PR_NUM closes no issue, so there is no journal)" >&2; exit 0 ;;
+  0*|*[!0-9]*) echo "FINDING_DISMISSED=skipped (issue '$ISSUE' is not a positive integer with no leading zero; the journal filename is built from it)" >&2; exit 1 ;;
 esac
 "$FLOW_ROOT/bin/journal-record.sh" \
   --issue "$ISSUE" \
@@ -684,10 +686,7 @@ esac
 # Resolve the journal the same way Phase 3 wrote to it. The helper requires
 # BOTH --pr and --repo; called with one it prints usage and exits 1.
 if [ -z "${ISSUE:-}" ]; then
-  # `|| DISPUTED_REPO=""` is not decoration: under `set -e` a failing command
-  # substitution in an assignment terminates the shell, so the `[ -z ]` guard
-  # below would never run and the block would die printing nothing at all.
-  DISPUTED_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null) || DISPUTED_REPO=""
+  DISPUTED_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   if [ -z "$DISPUTED_REPO" ]; then
     echo "DISPUTED_STATE=unavailable"
     echo "REASON=cannot resolve the repository, so the journal holding the dismissals cannot be located"
@@ -704,9 +703,13 @@ fi
 # happened with nowhere to write them, and an empty array would state to the
 # merge gate that nothing was disputed.
 case "${ISSUE:-}" in
-  ''|*[!0-9]*)
+  '')
     echo "DISPUTED_STATE=unavailable"
     echo "REASON=pull request #$PR_NUM closes no issue, so there is no journal and which findings were dismissed is unknown"
+    exit 0 ;;
+  0*|*[!0-9]*)
+    echo "DISPUTED_STATE=unavailable"
+    echo "REASON=the linked issue is not a positive integer with no leading zero, so the journal holding the dismissals cannot be named"
     exit 0 ;;
 esac
 # The journal directory is resolved through the same cascade the writer uses.
@@ -717,11 +720,13 @@ esac
 # stderr is NOT swallowed: cascade-resolve.sh reports a settings file it could
 # not parse on stderr, bin/journal-record.sh lets that through, and a reader
 # that hid it would leave a corrupt .claude/settings.flow.json loud on the
-# write side and silent on the read side. `|| DISPUTED_DIR=""` stays because a
-# failing substitution in an assignment terminates the shell under set -e; with
-# --default the helper prints the default on every path, so the guard below is
-# defence in depth rather than a live branch.
-DISPUTED_DIR=$("$FLOW_ROOT/bin/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty') || DISPUTED_DIR=""
+# write side and silent on the read side.
+#
+# The guard below covers the helper being UNRUNNABLE — an unresolved plugin
+# root, so the substitution yields nothing. It does not cover the helper
+# failing internally: with --default it prints the default and exits 0 even
+# with jq missing.
+DISPUTED_DIR=$("$FLOW_ROOT/bin/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty')
 if [ -z "$DISPUTED_DIR" ]; then
   echo "DISPUTED_STATE=unavailable"
   echo "REASON=the journal directory could not be resolved, so the file recording the dismissals cannot be located"
@@ -738,10 +743,7 @@ import yaml' >/dev/null 2>&1; then
   echo "DISPUTED_STATE=unavailable"
   echo "REASON=python3 with PyYAML is required to read the journal manifest, so which findings were dismissed is unknown"
 else
-# `if VAR=$(...)` rather than a bare assignment: under `set -e` a reader that
-# exits non-zero would otherwise kill the fence before the STATE check below,
-# and the block would print nothing — the mute death that check exists to catch.
-if DISPUTED_OUT=$(PYTHONSAFEPATH=1 python3 - "$DISPUTED_JOURNAL" "$PR_NUM" <<'DISPUTED_PY'
+DISPUTED_OUT=$(PYTHONSAFEPATH=1 python3 - "$DISPUTED_JOURNAL" "$PR_NUM" <<'DISPUTED_PY'
 import sys
 
 # The pull request under review is checked out around this call, so the author
@@ -755,6 +757,7 @@ sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 import errno
 import os
 import re
+import stat
 
 import yaml
 
@@ -793,8 +796,17 @@ def one_line(v):
     # tokens the ledger parser greps for: references/finding-ledger-parser.md
     # extracts `DISPUTED:[...]` with a grep, so guarding only `DISPUTED=` would
     # be guarding the wrong spelling of the same attack.
-    for tok in ("DISPUTED", "RESOLVED", "ESCALATED"):
-        out = out.replace(tok + "=", tok + "%3D").replace(tok + ":", tok + "%3A")
+    # Iterated to a FIXED POINT, not applied once. `%3D` ends in D, so a single
+    # pass over `RESOLVED=ISPUTED:[X]` yields `RESOLVED%3DISPUTED:[X]` — the
+    # replacement text joins the payload and assembles the exact token
+    # references/finding-ledger-parser.md greps for. Escaping once manufactured
+    # what escaping exists to remove.
+    for _ in range(10):
+        prev = out
+        for tok in ("DISPUTED", "RESOLVED", "ESCALATED"):
+            out = out.replace(tok + "=", tok + "%3D").replace(tok + ":", tok + "%3A")
+        if out == prev:
+            break
     return out
 
 
@@ -809,17 +821,24 @@ def bail(reason):
 def read_artifacts(path):
     """Return the artifacts list, or [] when the record holds nothing.
 
-    An absent journal and a journal with no manifest are both REAL absences,
-    not unknowns, and must not be reported as unavailable. Phase 3 exits 4 and
-    says so when a write is lost, and bin/_journal_atomic.py seeds the manifest
-    on the first write — so if a dismissal had been recorded, the file and its
-    manifest would exist. 9 of this repository own 41 journals have no manifest
-    at all. Reporting those as unavailable stopped the resolution comment that
-    Phase 5 calls mandatory.
+    Exactly one shape is a real absence: a journal that EXISTS and has no
+    frontmatter at all. bin/_journal_atomic.py prepends a manifest on the first
+    write, so a file without one has had nothing recorded in it. 9 of this
+    repository's own 41 journals are in that shape, and reporting them as
+    unavailable stopped the resolution comment Phase 5 calls mandatory.
 
-    A DAMAGED fence is a different thing, and is told apart here the way
-    commands/learn.md tells it apart: a fence-shaped line plus a manifest key
-    means a manifest that was mangled, and that IS unreadable.
+    Everything else is an unknown. A journal that is not there is NOT an
+    absence: it is indistinguishable from reading the wrong path (a relative
+    .decisions resolved from a subdirectory) or from a journal that vanished
+    between the Phase 3 write and this read — Phase 4 runs the checked-out
+    pull request's own lint and test commands in that window. The earlier
+    version of this docstring claimed "Phase 3 exits 4 when a write is lost",
+    which covers only THIS run: the array is cumulative over the pull request,
+    so a dismissal recorded in an earlier cycle and lost since is never
+    re-written and nothing exits anything.
+
+    A damaged fence is told apart the way commands/learn.md tells it apart: a
+    fence-shaped line plus a manifest key means a manifest that was mangled.
     """
     try:
         # O_NOFOLLOW, because bin/journal-record.sh refuses a symlinked journal
@@ -831,15 +850,17 @@ def read_artifacts(path):
         # DIRECTORY is still followed — deliberately, because journal-record.sh
         # follows it too on the write side, and a reader that refused what the
         # writer accepts is the same disagreement this block exists to remove.
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        # O_NONBLOCK so a FIFO left at this path cannot hang the read waiting
+        # for a writer that never comes; the fstat below then refuses it.
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError as exc:
-        if exc.errno == errno.ENOENT:
-            return []
         if exc.errno in (errno.ELOOP, errno.EMLINK):
             raise ManifestError("the journal %s is a symlink, and a symlinked journal is refused" % path)
         raise ManifestError("the journal %s could not be opened (%s)"
                             % (path, errno.errorcode.get(exc.errno, "OSError")))
     with os.fdopen(fd, "r", encoding="utf-8") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            raise ManifestError("the journal %s is not a regular file" % path)
         text = fh.read()
     if not text.startswith("---"):
         if re.search(r"(?m)^---[ \t]*$", text) and re.search(r"(?m)^artifacts:", text):
@@ -854,7 +875,11 @@ def read_artifacts(path):
         raise ManifestError("the manifest fence does not open and close at the top of the file")
     fm = yaml.load(fence.group(1), Loader=NoAliases)
     if fm is None:
-        return []
+        # A blank, comment-only or null first fence. bin/journal-record.sh
+        # refuses this file outright ("existing frontmatter is not a YAML
+        # mapping", exit 2), so a reader calling it an empty record accepts
+        # what the writer rejects. Damage, not absence.
+        raise ManifestError("the manifest fence is empty, so it is not a manifest")
     if not isinstance(fm, dict):
         raise ManifestError("the manifest is not a mapping")
     arts = fm.get("artifacts")
@@ -894,11 +919,16 @@ for a in arts:
         # is the partial array this block refuses everywhere else.
         bail("the journal records a dismissal with no pr field (finding id %s), so it cannot be "
              "placed against a pull request" % one_line(a.get("finding_id")))
-    try:
-        same_pr = int(a.get("pr")) == int(pr)
-    except (TypeError, ValueError):
-        bail("the journal records a dismissal whose pr field %s is not a number, so it cannot be "
-             "placed against a pull request" % one_line(a.get("pr")))
+    pr_val = a.get("pr")
+    # bool is an int subclass, so int(True) is 1 and `pr: yes` joined pull
+    # request #1. A float truncates. Accept an int, or a string of digits for a
+    # journal written by some other route — nothing else.
+    if isinstance(pr_val, bool) or not (
+        isinstance(pr_val, int) or (isinstance(pr_val, str) and re.match(r"[0-9]+\Z", pr_val))
+    ):
+        bail("the journal records a dismissal whose pr field %s is not an integer, so it cannot "
+             "be placed against a pull request" % one_line(pr_val))
+    same_pr = int(pr_val) == int(pr)
     if not same_pr:
         continue
     fid = a.get("finding_id")
@@ -922,7 +952,7 @@ for a in arts:
 print("DISPUTED_STATE=%s" % ("none" if not ids else "ok"))
 print("DISPUTED=[%s]" % ",".join(ids))
 DISPUTED_PY
-); then DISPUTED_RC=0; else DISPUTED_RC=$?; fi
+); DISPUTED_RC=$?
   # A reader that died mutely leaves no STATE line, which reads as an empty
   # array rather than as a failure.
   if [ "$DISPUTED_RC" -ne 0 ] || [ "$(printf '%s\n' "$DISPUTED_OUT" | grep -c '^DISPUTED_STATE=')" != "1" ]; then
@@ -943,14 +973,15 @@ true
    - `DISPUTED_STATE=none` — the journal was read and recorded no dismissal for this pull request;
      `DISPUTED:[]` is then a true statement.
    - `DISPUTED_STATE=unavailable` — the array could not be built, and no `DISPUTED=` line is
-     printed, because an array that could not be built is not an empty one. Two cases:
-     - **Phase 3 recorded no dismissal this run** (no `FINDING_DISMISSED=recorded` line was
-       printed). Then there is nothing to lose: post the comment with `DISPUTED:[]`, which is true,
-       and note the `REASON` in the body. The commonest cause is a pull request that closes no
-       issue, which has no journal to record to and equally nothing to record.
-     - **Phase 3 recorded at least one dismissal.** **Stop. Do not post the comment.** Report the
-       `REASON` and fix it first: posting `DISPUTED:[]` here would state that nothing was disputed
-       when a dismissal is on record, which is the exact failure the block exists to prevent.
+     printed, because an array that could not be built is not an empty one. Two cases, and the
+     split is on the **`REASON`**, not on what this run happened to do:
+     - **`REASON` says the pull request closes no issue.** That is the one cause under which no
+       journal can ever have existed, in this cycle or any earlier one, so `DISPUTED:[]` is true.
+       Post the comment with the empty array and note the `REASON` in the body.
+     - **Any other `REASON`.** **Stop. Do not post the comment.** Report the `REASON` and fix it
+       first. Do NOT reason from "Phase 3 recorded nothing this run": the array is cumulative over
+       the pull request, so a dismissal from cycle 2 that this read could not see is erased by a
+       `DISPUTED:[]` posted in cycle 3, and it reclassifies from `disputed` to still-being-fixed.
 
      Never skip the comment silently — Phase 5 calls it mandatory, and a missing resolution comment
      leaves `/flow:merge` with no `RESOLVED` array at all.

@@ -117,11 +117,6 @@ _flow_test_begin "address.md Phase 1 parses the review-cycle markers"
 assert_contains "FLOW_REVIEW_CYCLE" "$CONTENT" "address.md reads the review-cycle markers"
 assert_contains "finding-ledger-parser" "$CONTENT" "and cites the canonical parser"
 
-_flow_test_begin "address.md Phase 3 fills the DISPUTED array"
-# The array already exists in templates/resolution-comment.md and /flow:merge
-# already gates on it; nothing filled it.
-assert_contains "DISPUTED" "$CONTENT" "address.md names the DISPUTED array"
-
 # --- functional: the emit block writes the artifact with the right fields
 _extract_dismissed_block() {
   awk '/# FINDING_DISMISSED_BLOCK_BEGIN/{f=1;next} /# FINDING_DISMISSED_BLOCK_END/{f=0} f' "$ADDRESS_MD"
@@ -397,12 +392,13 @@ _disputed_run() { ( cd "$WORKG" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1 ); }
 
 OUT_A=$(_disputed_run)   # no journal file at all
-# A journal that is not there is a journal nothing was recorded in: Phase 3
-# exits 4 and says so when a write is lost, and journal-record.sh seeds the
-# manifest on the first write. Reporting it as unavailable stopped the
-# resolution comment Phase 5 calls mandatory.
-assert_contains "DISPUTED_STATE=none" "$OUT_A" "a missing journal records no dismissal"
-assert_contains "DISPUTED=[]" "$OUT_A" "and the empty array is a true statement"
+# A journal that is not there is NOT an absence. It is indistinguishable from
+# reading the wrong path (a relative .decisions resolved from a subdirectory)
+# and from a journal that vanished between the Phase 3 write and this read.
+# The shape that IS a real absence — a journal that exists with no frontmatter
+# at all — is covered by its own case below.
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_A" "a missing journal is unknown, not empty"
+assert_not_contains "DISPUTED=" "$OUT_A" "and offers no array for pasting"
 
 printf -- '---\nissue: 214\nartifacts: [oops\n---\n# j\n' > "$WORKG/.decisions/issue-214.md"
 OUT_B=$(_disputed_run)
@@ -460,8 +456,11 @@ assert_match 'Do not post|do not post' "$STEP9" "and says not to post the commen
 # closes no issue has nothing to record AND nowhere to record it, so stopping
 # there would drop the comment Phase 5 calls mandatory on every issue-less pull
 # request. Step 9 must give both branches.
-assert_match 'no dismissal this run|recorded no dismissal' "$STEP9" "step 9 branches on whether anything was dismissed"
-assert_contains "FINDING_DISMISSED=recorded" "$STEP9" "naming the signal that decides it"
+# The branch keys on the REASON, not on this run's activity: the array is
+# cumulative over the pull request, so "Phase 3 recorded nothing this run" says
+# nothing about cycle 2 and posting [] on it erases an earlier dismissal.
+assert_match 'closes no issue' "$STEP9" "step 9 branches on the one reason no journal can exist"
+assert_match 'cumulative' "$STEP9" "and says why this run's activity is the wrong signal"
 assert_match 'mandatory' "$STEP9" "and says the comment is never skipped silently"
 
 _flow_test_begin "every remaining exit path is unavailable, and none offers an array"
@@ -856,16 +855,24 @@ printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  
 OUT_ZN=$(cd "$WORKY" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKY" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
 assert_contains "DISPUTED=[F3]" "$OUT_ZN" "a well-formed number still matches"
-# The comparison is numeric, not textual, so the reader does not depend on the
-# writer guard above to stay correct. A journal not written by
-# bin/journal-record.sh can hold any YAML number for pr; under a string
-# comparison this row is silently skipped and the array comes back empty.
-printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234.0\n  finding_id: F8\n---\n# j\n' \
+# pr is documented `<int>` in references/decision-journal-schema.md, and the
+# loop refuses a non-string finding_id ten lines further down. int() was wider
+# than both: bool is an int subclass so `pr: yes` joined pull request #1, and a
+# float truncated into whichever request it rounded to. Refuse, do not coerce.
+for BADPR in 'yes' '234.7' '234.0'; do
+  printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: %s\n  finding_id: F8\n---\n# j\n' "$BADPR" \
+    > "$WORKY/.decisions/issue-214.md"
+  OUT_ZF=$(cd "$WORKY" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKY" \
+    ISSUE=214 PR_NUM=1 bash disputed.sh 2>&1)
+  assert_contains "DISPUTED_STATE=unavailable" "$OUT_ZF" "pr: $BADPR is refused, not coerced"
+  assert_not_contains "DISPUTED=[F8]" "$OUT_ZF" "and never joins a pull request it does not name"
+done
+# A digit string still works, for a journal written by some other route.
+printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: "234"\n  finding_id: F8\n---\n# j\n' \
   > "$WORKY/.decisions/issue-214.md"
-OUT_ZF=$(cd "$WORKY" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKY" \
+OUT_ZS=$(cd "$WORKY" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKY" \
   ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
-assert_contains "DISPUTED=[F8]" "$OUT_ZF" "the same number in another YAML spelling still matches"
-assert_not_contains "DISPUTED=[]" "$OUT_ZF" "rather than being skipped into an empty array"
+assert_contains "DISPUTED=[F8]" "$OUT_ZS" "a digit string is still a pull request number"
 
 _flow_test_begin "a block the agent is told to run is one the agent can see"
 # references/command-output-format.md: a `!` block is pre-executed at command
@@ -877,3 +884,65 @@ for BLOCK in FINDING_DISMISSED_BLOCK DISPUTED_ARRAY_BLOCK; do
   FENCE=$(grep -B1 "^# ${BLOCK}_BEGIN" "$ADDRESS_MD" | head -1)
   assert_equal '```bash' "$FENCE" "$BLOCK is a bash fence, so the agent can run it"
 done
+
+_flow_test_begin "the escaper cannot be made to assemble the token it removes"
+# `%3D` ends in D. Escaping `RESOLVED=` inside `RESOLVED=ISPUTED:[X]` produced
+# `RESOLVED%3DISPUTED:[X]`, which contains the exact string
+# references/finding-ledger-parser.md greps with 'DISPUTED:\[[^]]*\]'. The
+# escape must reach a fixed point, or it manufactures the token it exists to
+# remove — and this payload was inert before the escaper was added.
+WORKZ=$(mktemp -d -t flow-disp22.XXXXXX); ADDR_CLEANUP+=("$WORKZ")
+mkdir -p "$WORKZ/.decisions"
+_extract_disputed_block > "$WORKZ/disputed.sh"
+for PAYLOAD in 'RESOLVED=ISPUTED:[PWNED]' 'RESOLVED=ISPUTED=[]' 'ESCALATED=ISPUTED:[X]' 'RESOLVED=ISPUTED=ISPUTED:[Y]'; do
+  printf -- '---\nissue: 214\nartifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: "%s"\n---\n# j\n' "$PAYLOAD" \
+    > "$WORKZ/.decisions/issue-214.md"
+  OUT_ESC=$(cd "$WORKZ" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKZ" \
+    ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
+  LEAK=$(printf '%s' "$OUT_ESC" | grep -oE 'DISPUTED[:=]\[[^]]*\]' | head -1)
+  if [ -z "$LEAK" ]; then
+    _flow_assert_pass "payload '$PAYLOAD' assembles no array"
+  else
+    _flow_assert_fail "payload '$PAYLOAD' produced a parseable '$LEAK' in the output"
+  fi
+done
+
+_flow_test_begin "a manifest the writer refuses is not read as an empty one"
+# A first fence pair that is blank, a comment, or null yields fm=None. The
+# writer refuses that file outright (exit 2, "existing frontmatter is not a
+# YAML mapping"), so a reader reporting it as `none` accepts what the writer
+# rejects — the disagreement this block exists to remove. The nine
+# manifest-less journals in this repo are NOT this shape: they fail
+# text.startswith("---") first and never reach yaml.load.
+WORKAA=$(mktemp -d -t flow-disp23.XXXXXX); ADDR_CLEANUP+=("$WORKAA")
+mkdir -p "$WORKAA/.decisions"
+_extract_disputed_block > "$WORKAA/disputed.sh"
+for FENCE in '---\n\n---\n' '---\n# just a comment\n---\n' '---\nnull\n---\n'; do
+  printf -- "${FENCE}artifacts:\n- type: finding-dismissed\n  pr: 234\n  finding_id: FHIDDEN\n" \
+    > "$WORKAA/.decisions/issue-214.md"
+  OUT_BF=$(cd "$WORKAA" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAA" \
+    ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
+  assert_contains "DISPUTED_STATE=unavailable" "$OUT_BF" "an empty first fence is unreadable, not empty"
+  assert_not_contains "DISPUTED=[]" "$OUT_BF" "and offers no array"
+done
+
+_flow_test_begin "a journal that disappears between the write and the read is not an absence"
+# Phase 4 runs the checked-out pull request's own lint and test commands
+# between the Phase 3 write and the Phase 5 read. If the journal goes away in
+# that window, `none` states that nothing was disputed when a dismissal was
+# recorded minutes earlier.
+WORKAB=$(mktemp -d -t flow-disp24.XXXXXX); ADDR_CLEANUP+=("$WORKAB")
+mkdir -p "$WORKAB/.decisions"
+_extract_dismissed_block > "$WORKAB/dismiss.sh"
+_extract_disputed_block > "$WORKAB/disputed.sh"
+( cd "$WORKAB" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAB" \
+    ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID=F1 CATEGORY=c \
+    LOCATION="a.sh:1" REASON=breaks-test EVIDENCE=e bash dismiss.sh >/dev/null 2>&1 )
+OUT_BEFORE=$(cd "$WORKAB" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAB" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
+assert_contains "DISPUTED=[F1]" "$OUT_BEFORE" "the dismissal is on record"
+rm -f "$WORKAB/.decisions/issue-214.md"
+OUT_AFTER=$(cd "$WORKAB" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" HOME="$WORKAB" \
+  ISSUE=214 PR_NUM=234 bash disputed.sh 2>&1)
+assert_contains "DISPUTED_STATE=unavailable" "$OUT_AFTER" "a vanished journal is unknown, not empty"
+assert_not_contains "DISPUTED=[]" "$OUT_AFTER" "and offers no array to post"
