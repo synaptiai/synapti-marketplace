@@ -185,8 +185,8 @@ else
   # REVIEW_CYCLE_FINDINGS_BLOCK_BEGIN
   # A review comment carries a GitHub comment id. A finding carries a ledger id
   # (F1, SEC-2), and the ledger id is the only thing that joins a dismissal to
-  # the finding that caused it, survives across cycles, and matches the
-  # DISPUTED array that /flow:merge gates on. Marker shape and the trusted-author
+  # the finding that caused it, survives across cycles, and reaches the
+  # DISPUTED array of the resolution marker. Marker shape and the trusted-author
   # filter are defined in `references/finding-ledger-parser.md`.
   # Both marker surfaces are reachable by any GitHub user with comment access
   # (`references/finding-ledger-parser.md`), so a marker is only a marker when a

@@ -299,9 +299,26 @@ while IFS= read -r h206_line; do
   h206_needle="${h206_line#* :: }"
   h206_out=$("$BIN/$h206_script" --help 2>&1)
   assert_contains "$h206_needle" "$h206_out" "$h206_script --help reaches its header's last documented line (issue #206)"
+  # The needle has to BE that last line, or the assertion above cannot fail for the
+  # reason its message gives: a needle on an interior line survives a truncation of
+  # the tail. `dossier-claim-scan.sh`'s did exactly that once its header grew.
+  # The last non-empty comment line of the header. A bare `#` separator or a
+  # whitespace-only comment is not a documented line and does not end the scan:
+  # stopping there would run it into the script body and compare the needle
+  # against body text, which is how a guard reports a failure from the wrong file.
+  h206_last=$(awk 'NR==1 {next} /^[[:space:]]*#/ {s=$0; sub(/^[[:space:]]*#[[:space:]]*/,"",s); if (s!="") last=s; next} {print last; exit}' "$BIN/$h206_script")
+  h206_needle_flat=$(printf '%s' "$h206_needle" | sed 's/^[[:space:]#]*//')
+  h206_last_flat=$(printf '%s' "$h206_last" | sed 's/^[[:space:]#]*//')
+  # Two empty strings are equal, so a needle that flattens to nothing would pass
+  # against a script with no header at all.
+  if [ -z "$h206_needle_flat" ] || [ -z "$h206_last_flat" ]; then
+    _dossier_assert_fail "$h206_script's needle or its header's last line flattens to empty, which would compare equal to anything"
+  else
+    assert_equal "$h206_last_flat" "$h206_needle_flat" "$h206_script's needle is the last documented line of its own header"
+  fi
 done <<'EOF'
 dossier-blast-radius.sh :: #   2 — missing or invalid argument
-dossier-claim-scan.sh :: # public directory yet names a security incident that did not happen.
+dossier-claim-scan.sh :: # exit code (2 or 1) even on a truncated file.
 dossier-evidence.sh :: #   2 — missing or invalid argument
 dossier-gate.sh :: # Exit: 0 PASS · 1 FAIL · 2 usage error · 3 INCONCLUSIVE (--strict maps 3 -> 1)
 dossier-ledger-lint.sh :: # Exit: 0 clean · 1 findings · 2 infrastructure error

@@ -37,6 +37,31 @@ for tool in awk grep sed mktemp; do
   fi
 done
 
+# Prerequisite check: a helper that did not load is invisible. `command not
+# found` returns 127, the test subshell has no `-e`, and the file still prints
+# a SUMMARY -- so a suite left running against half a library reports a clean
+# pass over assertions that never executed (deleting assert_equal used to leave
+# hooks.test.sh reporting pass=41 fail=0). Checked here rather than inside the
+# per-file subshell so a partial library exits as the harness error it is, not
+# as one more failed test file.
+MISSING_HELPERS=$(
+  set +e
+  # shellcheck source=lib/assert.sh
+  # Not silenced: a library that fails to parse is the likeliest reason helpers
+  # go missing, and swallowing its syntax error would report the symptom as the
+  # cause. A clean load prints nothing.
+  source "$LIB"
+  for _h in _dossier_test_begin _dossier_assert_pass _dossier_assert_fail \
+            assert_equal assert_match assert_contains assert_not_contains \
+            assert_exit assert_file_exists; do
+    declare -F "$_h" >/dev/null || printf '%s ' "$_h"
+  done
+)
+if [ -n "$MISSING_HELPERS" ]; then
+  echo "run.sh: $LIB loaded without: $MISSING_HELPERS-- refusing to run any test file against a partial library" >&2
+  exit 2
+fi
+
 # repo root is two levels up from tests/ (plugins/dossier/tests -> plugins/dossier -> repo).
 REPO_ROOT="$(cd "$TESTS_DIR/../../.." && pwd)"
 
