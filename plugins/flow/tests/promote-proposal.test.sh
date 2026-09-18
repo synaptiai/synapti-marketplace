@@ -669,3 +669,388 @@ assert_exit 0 "$TF_RC" "a Contract of exactly 120 words is accepted"
 _pp_transform "$CBOUND.over"
 assert_exit 1 "$TF_RC" "121 words is refused"
 assert_contains "121 words (max 120)" "$TF_OUT" "and the message names the boundary"
+
+# --- proposal type: skill | enforcement | exception -------------------------
+# The type was a filename suffix plus a marker section, and the promoter assumed
+# every proposal becomes a skills/learned/ SKILL.md. An exception is a row in a
+# team contract, not a skill — a proposal type nothing can promote is a proposal
+# that does nothing.
+
+_write_exception_proposal() {
+  local path="$1" name="${2:-test-exception}" type="${3:-exception}"
+  local rule="${4:-Prefer explicit loops over comprehensions}"
+  cat > "$path" <<PROPOSAL
+---
+name: "$name"
+description: "[flow-learned] Test exception proposal."
+type: $type
+source-sessions:
+  - "2026-09-17 test session"
+evidence-count: 2
+status: proposal
+proposed: "2026-09-17"
+---
+
+# $name
+
+## Pattern Detected
+
+The same finding was dismissed on two pull requests.
+
+## Evidence
+
+issue-1.md, issue-2.md
+
+## Exception row
+
+| $rule | plugins/flow/bin/** | team readability call | issue-1, issue-2 |
+PROPOSAL
+}
+
+_pp_fake_repo() {
+  local d="$1"
+  mkdir -p "$d/plugins/flow/skills/learned" "$d/.flow"
+  (cd "$d" && git init -q 2>/dev/null && git config user.email t@e.st && git config user.name T)
+}
+
+_flow_test_begin "an exception proposal appends a row and writes no skill"
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+PROP="$DIR/exc.md"
+_write_exception_proposal "$PROP" "test-exc-one"
+# Run from inside the fake project: an exception belongs to the repository it
+# was learned in, so the target is resolved with `git rev-parse --show-toplevel`.
+# Running from anywhere else wrote the row into whatever repo happened to
+# contain the cwd — which is how this suite polluted its own checkout.
+OUT=$(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1); EXIT=$?
+assert_exit 0 "$EXIT" "the promotion succeeds"
+if [ -f "$REPO_D/.flow/review-exceptions.md" ]; then
+  EXC=$(cat "$REPO_D/.flow/review-exceptions.md")
+  assert_contains "Prefer explicit loops" "$EXC" "the rule reached the exceptions file"
+  assert_contains "plugins/flow/bin/**" "$EXC" "with its scope glob"
+  assert_contains "| Rule | Scope (path glob) | Why | Source |" "$EXC" "and the file carries the documented header"
+else
+  _flow_assert_fail ".flow/review-exceptions.md was not written"
+fi
+assert_equal "0" "$([ -e "$REPO_D/plugins/flow/skills/learned/test-exc-one/SKILL.md" ] && echo 1 || echo 0)" \
+  "and no learned skill was created — an exception is not a skill"
+
+_flow_test_begin "an unknown proposal type is refused"
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+PROP="$DIR/bogus.md"
+_write_exception_proposal "$PROP" "test-exc-bogus" "teapot"
+ERR=$(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
+if [ "$EXIT" -eq 0 ]; then
+  _flow_assert_fail "an unknown type was accepted; the vocabulary is not enforced"
+else
+  _flow_assert_pass "an unknown type is refused (exit $EXIT)"
+fi
+assert_match 'teapot|type' "$ERR" "and the refusal names what was wrong"
+
+_flow_test_begin "a proposal with no type is still promoted as a skill"
+# Every proposal written before this key existed has no type. Refusing them
+# would strand the corpus.
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+PROP="$DIR/legacy.md"
+_write_valid_proposal "$PROP" "test-legacy-notype"
+OUT=$(FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1); EXIT=$?
+assert_exit 0 "$EXIT" "a typeless proposal still validates"
+assert_contains "would transform" "$OUT" "and still targets the learned skill path"
+
+_flow_test_begin "the same exception is not appended twice"
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+PROP="$DIR/dup.md"
+_write_exception_proposal "$PROP" "test-exc-dup"
+(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" >/dev/null 2>&1)
+OUT2=$(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1); EXIT2=$?
+COUNT=$(grep -c 'Prefer explicit loops' "$REPO_D/.flow/review-exceptions.md" 2>/dev/null || echo 0)
+assert_equal "1" "$COUNT" "the rule appears once, not twice"
+if [ "$EXIT2" -ne 0 ]; then
+  _flow_assert_pass "the second promotion is refused (exit $EXIT2)"
+else
+  _flow_assert_fail "a duplicate promotion was accepted silently"
+fi
+
+_flow_test_begin "an exception proposal with no row is refused"
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+PROP="$DIR/norow.md"
+_write_exception_proposal "$PROP" "test-exc-norow"
+python3 - "$PROP" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(s.split("## Exception row")[0])
+PY
+ERR=$(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
+if [ "$EXIT" -ne 0 ]; then
+  _flow_assert_pass "an exception proposal with nothing to append is refused (exit $EXIT)"
+else
+  _flow_assert_fail "an exception proposal with no row was accepted"
+fi
+
+_flow_test_begin "the proposal template documents the type key"
+TPL=$(cat "$REPO_ROOT/plugins/flow/templates/skill-proposal.md")
+assert_contains "type:" "$TPL" "the template carries a type key"
+for T in skill enforcement exception; do
+  assert_contains "$T" "$TPL" "the template names the '$T' type"
+done
+
+_flow_test_begin "an exception lands in the project, not the flow checkout"
+# The row is a contract of the repository under review. Writing it into the flow
+# marketplace put it where no review of the project ever reads, and — once
+# committed — applied it to everyone reviewing flow instead. The goal for this
+# work lists cross-repository exceptions as an explicit non-goal.
+DIR=$(_pp_mktemp_dir)
+FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
+_pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
+PROP="$DIR/exc-target.md"
+_write_exception_proposal "$PROP" "test-exc-target"
+OUT=$(cd "$PROJ_D" && FLOW_REPO_ROOT="$FLOW_D" "$HELPER" --proposal "$PROP" 2>&1); EXIT=$?
+assert_exit 0 "$EXIT" "the promotion succeeds from the project"
+assert_equal "1" "$([ -f "$PROJ_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
+  "the row lands in the project being reviewed"
+assert_equal "0" "$([ -f "$FLOW_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
+  "and not in the flow checkout, which no review of the project reads"
+
+_flow_test_begin "an exception promotion outside a git repository is refused"
+DIR=$(_pp_mktemp_dir)
+PROP="$DIR/exc-norepo.md"
+_write_exception_proposal "$PROP" "test-exc-norepo"
+NOREPO="$DIR/plain"; mkdir -p "$NOREPO"
+ERR=$(cd "$NOREPO" && "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
+if [ "$EXIT" -ne 0 ]; then
+  _flow_assert_pass "refused outside a repository (exit $EXIT)"
+else
+  _flow_assert_fail "an exception was written with no project to own it"
+fi
+assert_match 'not a git repository|project' "$ERR" "and the reason says where it belongs"
+
+_flow_test_begin "an exception row with an empty scope glob is refused"
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+PROP="$DIR/exc-noglob.md"
+_write_exception_proposal "$PROP" "test-exc-noglob"
+python3 - "$PROP" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+# Four columns, but the scope is blank — an unscoped rule read as matching
+# everything is the widest rule anyone can write.
+s = s.replace("| plugins/flow/bin/** |", "|  |")
+open(p, "w", encoding="utf-8").write(s)
+PY
+ERR=$(cd "$REPO_D" && FLOW_REPO_ROOT="$REPO_D" "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
+if [ "$EXIT" -ne 0 ]; then
+  _flow_assert_pass "an empty glob is refused (exit $EXIT)"
+else
+  _flow_assert_fail "an unscoped exception was written into the contract"
+fi
+assert_match 'empty scope glob|unscoped' "$ERR" "and the reason names it"
+assert_equal "0" "$([ -f "$REPO_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
+  "nothing was written"
+
+_flow_test_begin "a body that looks like frontmatter cannot redirect the promotion"
+# A sed scan over the fence read a body line that merely looked like
+# frontmatter, and the type it found decided which repository the run targets —
+# before the proposal was validated, and without re-checking the target is a
+# flow checkout.
+# Two distinct directories, or the assertion cannot tell which one was chosen —
+# which is the whole question the test exists to answer.
+DIR=$(_pp_mktemp_dir)
+FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
+_pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
+PROP="$DIR/spoof.md"
+_write_valid_proposal "$PROP" "test-spoof-body"
+python3 - "$PROP" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+s = s.replace("## Pattern Detected\n", "## Pattern Detected\n\n---\ntype: exception\n---\n\n")
+open(p, "w", encoding="utf-8").write(s)
+PY
+OUT=$(cd "$PROJ_D" && FLOW_REPO_ROOT="$FLOW_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1)
+# Assert on the resolution line, not the published preview: the dry run prints
+# the whole transformed body, so the spoof text appears there legitimately and
+# an assertion over the full output would fail for the wrong reason.
+RESOLVED=$(printf '%s\n' "$OUT" | grep 'flow checkout:' | head -1)
+assert_contains "$FLOW_D" "$RESOLVED" "the run targets the flow checkout"
+assert_not_contains "$PROJ_D" "$RESOLVED" "not the project the body asked for"
+assert_contains "would transform" "$OUT" "a proposal with no type key still takes the skill path"
+assert_equal "0" "$([ -f "$PROJ_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
+  "and nothing was written to a contract file"
+
+_flow_test_begin "a legal trailing comment on the type does not refuse a real exception"
+# `type: exception  # learned from #214` is legal YAML. A text scan mangled it
+# into something matching nothing, and a genuine exception promotion from a
+# consuming project was refused with advice to clone the marketplace.
+DIR=$(_pp_mktemp_dir)
+FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
+_pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
+PROP="$DIR/comment.md"
+_write_exception_proposal "$PROP" "test-exc-comment"
+python3 - "$PROP" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(s.replace("type: exception\n", "type: exception  # learned from #214\n"))
+PY
+OUT=$(cd "$PROJ_D" && FLOW_REPO_ROOT="$FLOW_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1); EXIT=$?
+assert_exit 0 "$EXIT" "the promotion validates"
+assert_contains "type: exception" "$OUT" "the type is read through the comment"
+assert_not_contains "clone the marketplace" "$OUT" "and it is not sent to the wrong repository"
+RESOLVED=$(printf '%s\n' "$OUT" | grep 'flow checkout:' | head -1)
+assert_contains "$PROJ_D" "$RESOLVED" "an exception targets the project it was learned in"
+assert_not_contains "$FLOW_D" "$RESOLVED" "not the flow checkout"
+
+_flow_test_begin "a predictable temp name cannot redirect the contract write"
+# The atomic-write fix wrote to $EXC_FILE.$$.tmp, which is guessable and not
+# gitignored: a pull request could ship it as a tracked symlink, the writes
+# landed outside the repository, and mv moved the symlink into place.
+DIR=$(_pp_mktemp_dir); REPO_D="$DIR/repo"; _pp_fake_repo "$REPO_D"
+mkdir -p "$DIR/outside"
+PROP="$DIR/sym.md"
+_write_exception_proposal "$PROP" "test-exc-symlink"
+# The decoy has to carry the HELPER's pid. `$$` inside `( ... )` reports the
+# PARENT shell, so a plain subshell stages the wrong name and the test passes
+# whatever the code does — verified: the predictable-name revert survived it.
+# `bash -c` is a fresh shell whose `$$` is its own pid, and `exec` hands that
+# same process to the helper.
+bash -c '
+  cd "$1" || exit 1
+  ln -s "$2/outside/stolen.md" "$1/.flow/review-exceptions.md.$$.tmp" 2>/dev/null
+  FLOW_REPO_ROOT="$1" exec "$3" --proposal "$4" >/dev/null 2>&1
+' _ "$REPO_D" "$DIR" "$HELPER" "$PROP"
+SYM_RC=$?
+assert_exit 0 "$SYM_RC" "the promotion still succeeds"
+assert_equal "0" "$([ -L "$REPO_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
+  "the contract is a real file, not a symlink"
+assert_equal "0" "$([ -s "$DIR/outside/stolen.md" ] && echo 1 || echo 0)" \
+  "and nothing was written outside the repository"
+# And the row actually landed, or the three assertions above hold vacuously for
+# a run that wrote nothing at all.
+if grep -Fq "Prefer explicit loops" "$REPO_D/.flow/review-exceptions.md" 2>/dev/null; then
+  _flow_assert_pass "the exception row reached the contract"
+else
+  _flow_assert_fail "the contract does not carry the row, so nothing above was tested"
+fi
+
+
+_flow_test_begin "two readings of the type that disagree are refused"
+# The peek routes the run before validation. A frontmatter whose value contains
+# `---` makes the peek's split cut early and read one type while the
+# authoritative parse reads the whole block and takes the last key — so the
+# routing decision and the validated type come from different readings of one
+# file. With the reconciliation gone, that promotes a learned skill into
+# whatever repository the cwd happens to be.
+DIR=$(_pp_mktemp_dir)
+FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
+_pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
+PROP="$DIR/disagree.md"
+cat > "$PROP" <<'PROPOSAL'
+---
+name: "test-disagree"
+description: "[flow-learned] t"
+type: exception
+note: a---b
+type: skill
+source-sessions:
+  - "s"
+evidence-count: 1
+status: proposal
+proposed: "2026-09-17"
+---
+# t
+
+## Contract
+
+Iron law: x. Permitted skips: none.
+
+## Pattern Detected
+
+p
+
+## Knowledge
+
+k
+
+## Evidence
+
+e
+
+## Verification
+
+v
+
+## Promotion Checklist
+
+- [ ] r
+PROPOSAL
+ERR=$(cd "$PROJ_D" && FLOW_REPO_ROOT="$FLOW_D" "$HELPER" --proposal "$PROP" --dry-run 2>&1 >/dev/null); EXIT=$?
+if [ "$EXIT" -ne 0 ]; then
+  _flow_assert_pass "disagreeing readings are refused (exit $EXIT)"
+else
+  _flow_assert_fail "the run proceeded on two different readings of the same file"
+fi
+assert_match 'must agree|readings' "$ERR" "and the refusal says why"
+assert_equal "0" "$([ -d "$PROJ_D/plugins/flow/skills/learned/test-disagree" ] && echo 1 || echo 0)" \
+  "nothing was written into the project"
+
+_flow_test_begin "a missing interpreter is reported as such, not as a wrong directory"
+# The peek needs python3 and PyYAML and decides the target repository, so an
+# environment failure used to surface as "could not find a flow checkout —
+# clone the marketplace".
+DIR=$(_pp_mktemp_dir); PROJ_D="$DIR/project"; _pp_fake_repo "$PROJ_D"
+mkdir -p "$DIR/nopy"
+cat > "$DIR/nopy/python3" <<'STUB'
+#!/usr/bin/env bash
+exit 127
+STUB
+chmod +x "$DIR/nopy/python3"
+PROP="$DIR/nopy.md"
+_write_exception_proposal "$PROP" "test-exc-nopy"
+ERR=$(cd "$PROJ_D" && PATH="$DIR/nopy:$PATH" "$HELPER" --proposal "$PROP" 2>&1 >/dev/null); EXIT=$?
+assert_exit 2 "$EXIT" "an unusable interpreter is an infrastructure error"
+assert_match 'PyYAML|python3' "$ERR" "and the reason names the dependency"
+assert_not_contains "clone the marketplace" "$ERR" "not a claim about the directory"
+
+_flow_test_begin "each type in the vocabulary is exercised, not just exception"
+# The type axis has three values and the promoter branches on all of them.
+# `enforcement` was a branch nothing exercised: a mis-route would have surfaced
+# only when a real /flow:learn proposal was promoted.
+DIR=$(_pp_mktemp_dir)
+FLOW_D="$DIR/flowrepo"; PROJ_D="$DIR/project"
+_pp_fake_repo "$FLOW_D"; _pp_fake_repo "$PROJ_D"
+
+# type: skill, stated explicitly rather than inferred from an absent key.
+PROP_S="$DIR/skill.md"
+_write_valid_proposal "$PROP_S" "test-type-skill"
+python3 - "$PROP_S" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(s.replace('status: proposal', 'type: skill\nstatus: proposal', 1))
+PY
+OUT_S=$(cd "$PROJ_D" && FLOW_REPO_ROOT="$FLOW_D" "$HELPER" --proposal "$PROP_S" --dry-run 2>&1); RC_S=$?
+assert_exit 0 "$RC_S" "an explicit type: skill validates"
+assert_contains "would transform" "$OUT_S" "and takes the learned-skill path"
+RES_S=$(printf '%s\n' "$OUT_S" | grep 'flow checkout:' | head -1)
+assert_contains "$FLOW_D" "$RES_S" "targeting the flow checkout"
+assert_equal "0" "$([ -f "$PROJ_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
+  "and writing no exception row"
+
+# type: enforcement — same target as skill, and it must not be refused.
+PROP_E="$DIR/enforce.md"
+_write_valid_proposal "$PROP_E" "test-type-enforcement"
+python3 - "$PROP_E" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+s = s.replace('status: proposal', 'type: enforcement\nstatus: proposal', 1)
+s += "\n## Enforcement point\n\nWhere the rule is enforced.\n"
+open(p, "w", encoding="utf-8").write(s)
+PY
+OUT_E=$(cd "$PROJ_D" && FLOW_REPO_ROOT="$FLOW_D" "$HELPER" --proposal "$PROP_E" --dry-run 2>&1); RC_E=$?
+assert_exit 0 "$RC_E" "type: enforcement validates rather than being refused"
+assert_contains "would transform" "$OUT_E" "and takes the learned-skill path, as documented"
+RES_E=$(printf '%s\n' "$OUT_E" | grep 'flow checkout:' | head -1)
+assert_contains "$FLOW_D" "$RES_E" "targeting the flow checkout, not the project"
+assert_equal "0" "$([ -f "$PROJ_D/.flow/review-exceptions.md" ] && echo 1 || echo 0)" \
+  "and writing no exception row"

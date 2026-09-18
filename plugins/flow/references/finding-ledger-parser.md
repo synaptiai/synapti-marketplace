@@ -155,9 +155,11 @@ DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DI
 safe() { printf '%s' "$1" | tr -cd '[:print:]' | cut -c1-64; }
 echo "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY CAT LOC STATUS; do
   [ -z "$ID" ] && continue
-  # Reject IDs that don't match [A-Za-z][A-Za-z0-9_-]*. Required because the
-  # containment checks below use POSIX `case` glob — an ID of `*` would
-  # spuriously match every RESOLVED list and silently disappear from the tally.
+  # Reject IDs that don't match [A-Za-z][A-Za-z0-9_-]*. Required because an id
+  # is interpolated into an array the consumers split on `,` and extract with
+  # `grep -o '...[^]]*\]'`: a comma splits one id into two and a `]` truncates
+  # the extraction, and marks both halves as dismissed. Not a globbing concern —
+  # the containment check quotes the expansion, `*",$ID,"*`.
   case "$ID" in [A-Za-z]*) ;; *) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;; esac
   case "$ID" in *[!A-Za-z0-9_-]*) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;; esac
   case "$PRIORITY" in

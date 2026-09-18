@@ -231,7 +231,7 @@ def coerce_metadata(metadata_pairs):
     return result
 
 
-def parse_frontmatter(content):
+def parse_frontmatter(content, loader=None):
     """Parse YAML frontmatter from journal content.
 
     Returns (manifest_dict_or_None, body_str). manifest_dict is None when
@@ -245,7 +245,17 @@ def parse_frontmatter(content):
     The refuse=True flag tells callers to append the
     "refusing to overwrite — fix manually" line, matching the original
     journal-record.sh:217-232 behavior.
+
+    `loader` defaults to yaml.SafeLoader, which is what every write path has
+    always used. bin/_journal_manifest.py passes a stricter subclass: a reader
+    prints what it parses, so it refuses aliases, and a read that refuses more
+    than a write accepts is safe in a way the reverse is not. It is a
+    parameter rather than a second fence test in the reader because the fence
+    predicate drifting between the two was the defect — a journal opening
+    `--- ` has no manifest here and had a complete one over there.
     """
+    if loader is None:
+        loader = yaml.SafeLoader
     if not content.startswith("---\n"):
         return None, content
     end_marker = content.find("\n---\n", 4)
@@ -261,7 +271,7 @@ def parse_frontmatter(content):
             refuse=True,
         )
     try:
-        manifest = yaml.safe_load(content[4:end_marker])
+        manifest = yaml.load(content[4:end_marker], Loader=loader)
     except yaml.YAMLError as e:
         raise JournalAtomicError(
             f"existing frontmatter is invalid YAML: {e}",

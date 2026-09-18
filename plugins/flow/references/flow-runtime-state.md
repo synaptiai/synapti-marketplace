@@ -36,6 +36,7 @@ The repo `.gitignore` excludes per-developer noise and tracks team contracts:
 # .flow/goals/*.goal.yaml
 # .flow/workflows/*.workflow.yaml
 # .flow/triggers/*.trigger.yaml (non-.local)
+# .flow/review-exceptions.md
 ```
 
 Rationale:

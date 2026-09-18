@@ -249,12 +249,29 @@ else:
 
 path, data = chosen[0], chosen[1]
 
+def _one_line(value):
+    """Collapse a value to a single line.
+
+    Every consumer of --id and --status embeds the result in a `KEY=value`
+    output grammar, and the command fences that do so run under zsh, whose
+    builtin echo rewrites the argument. A goal YAML is a tracked file, so a fork
+    pull request chooses it: `lifecycle.status` written with a backslash-n in a
+    double-quoted scalar becomes a REAL newline here, and a real newline forges a
+    whole extra line in /flow:start, /flow:status, /flow:merge and /flow:pr —
+    including the FLOW_GOAL_LIFECYCLE line that merge.md gates on. Collapsing in
+    the producer fixes every consumer at once; a caller cannot forget it, which
+    is the lesson this whole class has taught four times.
+    """
+    return " ".join(str(value).split())
+
+
 if mode == "--path":
-    print(path)
+    # Also one line: callers interpolate it into a path and into KEY=value lines.
+    print(_one_line(path))
 elif mode == "--id":
-    print((data.get("metadata") or {}).get("id", ""))
+    print(_one_line((data.get("metadata") or {}).get("id", "")))
 elif mode == "--status":
-    print((data.get("lifecycle") or {}).get("status", ""))
+    print(_one_line((data.get("lifecycle") or {}).get("status", "")))
 elif mode == "--json":
     print(json.dumps(data, sort_keys=True))
 elif mode == "--ac-summary":

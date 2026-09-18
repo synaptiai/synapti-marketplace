@@ -105,7 +105,7 @@ OLD_VAL=$(printf '%s' "$ORIGINAL" | jq -r 'if (.flow.goals | type) == "object" a
 NEW_VAL=$(printf '%s' "$MIGRATED" | jq -r '.flow.goals.goalCreation // "absent"' 2>/dev/null)
 echo "MIGRATE=requireGoalForStart->goalCreation"
 echo "MIGRATE_FROM=requireGoalForStart=$OLD_VAL"
-echo "MIGRATE_TO=goalCreation=$NEW_VAL"
+printf '%s\n' "MIGRATE_TO=goalCreation=$NEW_VAL"
 
 if [ "$APPLY" != "1" ]; then
   echo "MIGRATE_MODE=dry-run (re-run with --apply to write)"

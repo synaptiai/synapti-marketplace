@@ -123,7 +123,7 @@ JOURNAL_DIR=".decisions"
 [ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
 JOURNAL_FILES=0
 [ -d "$JOURNAL_DIR" ] && JOURNAL_FILES=$(ls "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
-echo "JOURNAL_DIR=$JOURNAL_DIR"
+printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 echo "JOURNAL_FILES=$JOURNAL_FILES"
 if [ -f "$HOME/.claude/flow-learn-pending" ]; then
   echo "LEARNING_PENDING=$(cat "$HOME/.claude/flow-learn-pending")"
@@ -153,8 +153,8 @@ else
       0)
         GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id 2>/dev/null)
         echo "STATE=ok"
-        echo "GOAL_ID=$GOAL_ID"
-        echo "GOAL_LIFECYCLE=$GOAL_STATUS"
+        printf '%s\n' "GOAL_ID=$GOAL_ID"
+        printf '%s\n' "GOAL_LIFECYCLE=$GOAL_STATUS"
         # AC summary: one line per AC in id|status|evidence_ref|last_result format.
         "$ACTIVE_GOAL_HELPER" --ac-summary 2>/dev/null | sed 's/^/AC=/'
         ;;
@@ -167,7 +167,7 @@ else
         ;;
       *)
         echo "STATE=unavailable"
-        echo "REASON=flow-active-goal.sh exited $GOAL_EXIT"
+        printf '%s\n' "REASON=flow-active-goal.sh exited $GOAL_EXIT"
         ;;
     esac
   fi
@@ -370,9 +370,12 @@ else
       [ -z "$ID" ] && continue
       # Reject IDs containing case-glob metacharacters (`*`, `?`, `[`, `]`) —
       # IDs are template-issued and should match [A-Za-z][A-Za-z0-9_-]*.
-      # Without this, a hostile finding ID of `*` would always match the
-      # `case ",$RESOLVED," in *",$ID,"*)` containment check and silently
-      # disappear from the tally.
+      # The allowlist bounds an id to the shape the writer emits, which keeps
+      # `,`, `]` and `|` out of the array the consumers split on — a `]`
+      # truncates their `grep -o` extraction and a comma splits one id into two,
+      # so one dismissal written with a comma marks both halves as dismissed.
+      # (It is not about globbing: the containment check writes the id inside
+      # quotes, `*",$ID,"*`, so a `*` there is a literal.)
       case "$ID" in
         [A-Za-z]*) ;;
         *) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;;

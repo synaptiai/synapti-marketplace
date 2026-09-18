@@ -167,6 +167,67 @@ if [ -z "$FLOW_ROOT" ]; then
   unset _pp_dir _pp_src _pp_target _pp_hops
 fi
 
+# An exception proposal never touches the flow checkout — it appends a row to
+# the project's own contract file — so requiring one would refuse every
+# promotion from a consuming project, which is where exceptions are learned.
+# The type is read from the frontmatter here rather than waiting for the full
+# validation pass below, which runs after this gate.
+# The peek below needs python3 and PyYAML, and it decides which repository this
+# run targets — so the probe has to come first. Without it a missing interpreter
+# produced an empty peek, which routed to "could not find a flow checkout …
+# clone the marketplace": an environment failure reported as a wrong directory.
+if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import yaml" >/dev/null 2>&1; then
+  echo "promote-proposal.sh: python3 with PyYAML is required (apt install python3-yaml / pip install pyyaml)" >&2
+  exit 2
+fi
+
+# One parser decides the type. A `sed` scan over the frontmatter fence read a
+# body line that merely looked like frontmatter (so a proposal could point
+# FLOW_ROOT at a repository nobody chose), and mangled a legal trailing comment
+# (`type: exception  # from #214`) into something that matched nothing, which
+# refused a real exception with advice to clone the marketplace. This is the
+# same yaml.safe_load the authoritative pass below uses, so the two cannot
+# disagree.
+PROPOSAL_TYPE_PEEK=$(PROPOSAL="$PROPOSAL" python3 - <<'PEEKEOF' 2>/dev/null
+import os, sys
+sys.path[:] = [q for q in sys.path if q not in ("", ".")]
+import yaml
+text = open(os.environ["PROPOSAL"], encoding="utf-8").read()
+if not text.startswith("---"):
+    sys.exit(0)
+parts = text.split("---", 2)
+if len(parts) < 3:
+    sys.exit(0)
+try:
+    fm = yaml.safe_load(parts[1])
+except Exception:
+    # Print a sentinel and exit 0. Exiting non-zero here terminates the whole
+    # script under `set -e` — the assignment takes the substitution's status,
+    # so the `$?` capture after it never runs and the caller sees rc=1 with no
+    # output at all.
+    print("unreadable")
+    sys.exit(0)
+if isinstance(fm, dict):
+    t = fm.get("type")
+    if isinstance(t, str):
+        print(t.strip())
+PEEKEOF
+) || PROPOSAL_TYPE_PEEK="unreadable"
+# `unreadable` routes nowhere special: the authoritative pass below reports why
+# the file could not be read, which is a better message than any this early
+# scan could produce.
+if [ "$PROPOSAL_TYPE_PEEK" = "exception" ]; then
+  FLOW_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  PROMOTE_SOURCE="the project this exception was learned in"
+  if [ -z "$FLOW_ROOT" ]; then
+    # Say where it belongs rather than sending the user to clone the
+    # marketplace, which is the wrong repository for a review exception.
+    echo "promote-proposal.sh: refusing — an exception belongs to the project it was learned in, and this directory is not a git repository." >&2
+    echo "promote-proposal.sh: run this from the project whose team dismissed the finding." >&2
+    exit 2
+  fi
+fi
+
 if [ -z "$FLOW_ROOT" ]; then
   echo "promote-proposal.sh: could not find a flow checkout to promote into." >&2
   if [ -n "$CWD_ROOT" ]; then
@@ -180,10 +241,6 @@ fi
 REPO_ROOT="$FLOW_ROOT"
 LEARNED_DIR="$REPO_ROOT/plugins/flow/skills/learned"
 
-if ! python3 -c "import yaml" >/dev/null 2>&1; then
-  echo "promote-proposal.sh: PyYAML not installed (apt install python3-yaml / pip install pyyaml)" >&2
-  exit 2
-fi
 
 # Validate the proposal AND extract its name in one Python pass. The script
 # emits the validated name on stdout (for bash to consume) and any errors on
@@ -257,6 +314,18 @@ if missing_fields:
     print(f"ERROR: proposal missing required frontmatter fields: {missing_fields}", file=sys.stderr)
     sys.exit(1)
 
+# `type` decides where the proposal lands. It is optional: every proposal
+# written before the key existed has none, and refusing those would strand the
+# corpus. An unknown value is refused rather than defaulted, because defaulting
+# a typo to `skill` writes a learned skill nobody asked for.
+PROPOSAL_TYPES = ("skill", "enforcement", "exception")
+proposal_type = fm.get("type", "skill")
+if proposal_type is None:
+    proposal_type = "skill"
+if proposal_type not in PROPOSAL_TYPES:
+    print(f"ERROR: proposal type {proposal_type!r} is not one of {list(PROPOSAL_TYPES)}", file=sys.stderr)
+    sys.exit(1)
+
 if fm.get("status") != "proposal":
     print(f"ERROR: proposal status must be 'proposal' (got: {fm.get('status')!r})", file=sys.stderr)
     sys.exit(1)
@@ -268,14 +337,24 @@ if fm.get("status") != "proposal":
 # neither of which the transform would recognise as the section to remove — so
 # the proposal passed validation and shipped its journal paths inside the skill.
 body = content[end + 5:]
-required_sections = [
-    "Contract",
-    "Pattern Detected",
-    "Knowledge",
-    "Evidence",
-    "Verification",
-    "Promotion Checklist",
-]
+if proposal_type == "exception":
+    # An exception is a row in a team contract, not a skill: Contract,
+    # Knowledge, Verification and Promotion Checklist are all skill-shaped and
+    # have nothing to say about one. What it must carry is the row itself.
+    required_sections = [
+        "Pattern Detected",
+        "Evidence",
+        "Exception row",
+    ]
+else:
+    required_sections = [
+        "Contract",
+        "Pattern Detected",
+        "Knowledge",
+        "Evidence",
+        "Verification",
+        "Promotion Checklist",
+    ]
 present = proposal_sections.titles(body)
 missing_sections = [s for s in required_sections if s not in present]
 if missing_sections:
@@ -300,8 +379,22 @@ if not re.fullmatch(r"[a-z][a-z0-9-]*", name):
     sys.exit(1)
 
 print(name)
+print(proposal_type)
 PYTHON
 ) || exit $?
+PROPOSAL_TYPE=$(printf '%s\n' "$PROPOSAL_NAME" | sed -n '2p')
+PROPOSAL_NAME=$(printf '%s\n' "$PROPOSAL_NAME" | sed -n '1p')
+# The peek decided which repository this run targets, before the proposal was
+# fully validated. If the authoritative parse disagrees, that decision was made
+# on a different reading of the same file and nothing downstream is trustworthy.
+if [ "$PROPOSAL_TYPE_PEEK" = "exception" ] && [ "$PROPOSAL_TYPE" != "exception" ]; then
+  echo "promote-proposal.sh: refusing — the frontmatter type was read as 'exception' before validation and as '$PROPOSAL_TYPE' after; the two readings must agree" >&2
+  exit 1
+fi
+if [ "$PROPOSAL_TYPE" = "exception" ] && [ "$PROPOSAL_TYPE_PEEK" != "exception" ]; then
+  echo "promote-proposal.sh: refusing — the frontmatter type was read as '$PROPOSAL_TYPE_PEEK' before validation and as 'exception' after; the two readings must agree" >&2
+  exit 1
+fi
 
 # Defense in depth: the python pass already validates name against
 # `^[a-z][a-z0-9-]*$`, but a contributor adding a stray `print(...)` to that
@@ -311,6 +404,165 @@ if ! printf '%s' "$PROPOSAL_NAME" | grep -qE '^[a-z][a-z0-9-]*$'; then
   echo "promote-proposal.sh: invariant violated: PROPOSAL_NAME='$PROPOSAL_NAME' " \
        "failed bash-level kebab-case re-check after Python validation" >&2
   exit 2
+fi
+
+# An exception proposal promotes to a row in the team contract, not to a skill.
+# It branches here, before any of the learned-skill path construction below,
+# because none of that applies: there is no directory to create, nothing to
+# transform, and no SKILL.md to write.
+if [ "$PROPOSAL_TYPE" = "exception" ]; then
+  # A review exception is a contract of the PROJECT under review, not of the
+  # flow checkout. $REPO_ROOT is the flow marketplace clone (that is correct for
+  # a learned skill), but `bin/flow-review-exceptions.sh` reads the file back
+  # from the project being reviewed — so writing there put the rule in a
+  # repository no review of the project ever reads, and, once committed, applied
+  # it to everyone reviewing flow instead. The goal for this work lists
+  # "Cross-repository exceptions" as an explicit non-goal.
+  # `|| true`: under `set -e` a failed git call terminates the script, so the
+  # guard below and its message could never run — exit 128 with no output at
+  # all, which is outside this script's documented exit set.
+  EXC_REPO=$(git rev-parse --show-toplevel 2>/dev/null || true)
+  if [ -z "$EXC_REPO" ]; then
+    echo "promote-proposal.sh: refusing — an exception belongs to the project it was learned in, and this directory is not a git repository" >&2
+    echo "promote-proposal.sh: run this from the project whose team dismissed the finding" >&2
+    exit 1
+  fi
+  EXC_FILE="$EXC_REPO/.flow/review-exceptions.md"
+  if [ -L "$EXC_FILE" ]; then
+    echo "promote-proposal.sh: refusing — $EXC_FILE is a symlink (potential redirect attack)" >&2
+    exit 1
+  fi
+  # mkdir -p and > both follow a symlinked DIRECTORY, so a pre-staged
+  # .flow -> elsewhere redirects the write out of the repository entirely.
+  if [ -L "$EXC_REPO/.flow" ]; then
+    echo "promote-proposal.sh: refusing — $EXC_REPO/.flow is a symlink (potential redirect attack)" >&2
+    exit 1
+  fi
+  EXC_ROW=$(PROPOSAL="$PROPOSAL" python3 - <<'PYEOF'
+import os, re, sys
+sys.path[:] = [q for q in sys.path if q not in ("", ".")]
+try:
+    text = open(os.environ["PROPOSAL"], encoding="utf-8").read()
+except OSError as exc:
+    print("promote-proposal.sh: cannot read the proposal: %s" % exc, file=sys.stderr)
+    sys.exit(2)
+# The row is the first table row under `## Exception row` that is not the
+# header or its separator.
+section = re.split(r"^##\s+Exception row\s*$", text, flags=re.M)
+if len(section) < 2:
+    print("ERROR: exception proposal has no `## Exception row` section", file=sys.stderr)
+    sys.exit(1)
+body = re.split(r"^##\s+", section[1], flags=re.M)[0]
+row = None
+for line in body.splitlines():
+    line = line.strip()
+    if not line.startswith("|"):
+        continue
+    # Split on unescaped pipes only, and unescape after: GFM writes a literal
+    # pipe inside a cell as a backslash-pipe, and splitting on every pipe
+    # shifted every column right of it — the rule kept a fragment, the glob
+    # became part of the rule, and the row written into the contract was a
+    # different rule from the one the team reviewed.
+    cells = [c.replace("\\|", "|").strip()
+             for c in re.split(r"(?<!\\)\|", line.strip("|"))]
+    if not cells or set("".join(cells)) <= set("-: "):
+        continue
+    if cells[0].lower() == "rule":
+        continue
+    if len(cells) < 4:
+        # The glob is what bounds the rule to the paths the team named. A row
+        # without one is unscoped, which is a different rule from the one the
+        # team agreed.
+        print("ERROR: the exception row needs four columns "
+              "(rule, scope glob, why, source); got %d" % len(cells), file=sys.stderr)
+        sys.exit(1)
+    if not cells[1]:
+        # Counting columns is not enough: an EMPTY glob passes the count and is
+        # then read as matching everything, which is the widest possible rule.
+        print("ERROR: the exception row has an empty scope glob; an unscoped rule "
+              "applies everywhere, which is never what a dismissal established",
+              file=sys.stderr)
+        sys.exit(1)
+    # Re-escape on the way out so the round trip through the contract file is
+    # lossless and the reader sees the same four cells.
+    row = "| " + " | ".join(c.replace("|", "\\|") for c in cells[:4]) + " |"
+    break
+if row is None:
+    print("ERROR: the `## Exception row` section carries no table row", file=sys.stderr)
+    sys.exit(1)
+print(row)
+PYEOF
+) || exit $?
+
+  if [ -f "$EXC_FILE" ] && grep -Fqx "$EXC_ROW" "$EXC_FILE"; then
+    echo "promote-proposal.sh: refusing — that exception is already in $EXC_FILE" >&2
+    echo "promote-proposal.sh: an exception appended twice is two rules a reviewer must reconcile" >&2
+    exit 1
+  fi
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "DRY-RUN: validation passed for '$PROPOSAL_NAME' (type: exception)"
+    echo "DRY-RUN: flow checkout: $REPO_ROOT (resolved from $PROMOTE_SOURCE)"
+    if [ -f "$EXC_FILE" ]; then
+      echo "DRY-RUN: would append to $EXC_FILE:"
+    else
+      echo "DRY-RUN: would CREATE $EXC_FILE with its table header, then append:"
+    fi
+    echo "DRY-RUN:   $EXC_ROW"
+    exit 0
+  fi
+
+  mkdir -p "$(dirname "$EXC_FILE")" || {
+    echo "promote-proposal.sh: cannot create $(dirname "$EXC_FILE")" >&2
+    exit 2
+  }
+  # Build the whole file beside the target and move it into place, so the
+  # contract is either the old one or the new one. Writing the header and the
+  # row as two appends left a truncated header behind on a failure between
+  # them, and the next run skipped the header because the file now existed.
+  # mktemp, not a predictable name. `$EXC_FILE.$$.tmp` is guessable and is not
+  # gitignored, so a pull request can ship it as a tracked symlink: the writes
+  # below then land outside the repository and `mv` moves the SYMLINK into
+  # place, leaving the contract file pointing wherever the attacker chose —
+  # past both guards above, and reported as success. mktemp refuses to reuse an
+  # existing path, and the trap stops a failure between here and the mv from
+  # leaving the temp behind.
+  EXC_TMP=$(mktemp "$EXC_REPO/.flow/.review-exceptions.XXXXXX" 2>/dev/null) || {
+    echo "promote-proposal.sh: mktemp failed in $EXC_REPO/.flow" >&2
+    exit 2
+  }
+  trap 'rm -f "$EXC_TMP"' EXIT
+  if [ -f "$EXC_FILE" ]; then
+    cat "$EXC_FILE" > "$EXC_TMP" || { echo "promote-proposal.sh: cannot read $EXC_FILE" >&2; exit 2; }
+  fi
+  if [ ! -f "$EXC_FILE" ]; then
+    # The header is the documented column order. Writing the row without it
+    # would leave a file nothing can parse.
+    {
+      echo "# Review exceptions"
+      echo ""
+      echo "Rules this project has already rejected a review finding over. Read at the base"
+      echo "commit by every review, so a pull request cannot grant itself an exemption."
+      echo "Written by hand or by promoting a /flow:learn proposal; never by a review run."
+      echo ""
+      echo "| Rule | Scope (path glob) | Why | Source |"
+      echo "|---|---|---|---|"
+    } > "$EXC_TMP" || { echo "promote-proposal.sh: cannot write $EXC_TMP" >&2; exit 2; }
+  fi
+  printf '%s\n' "$EXC_ROW" >> "$EXC_TMP" || {
+    echo "promote-proposal.sh: cannot append to $EXC_TMP" >&2
+    exit 2
+  }
+  mv "$EXC_TMP" "$EXC_FILE" || {
+    echo "promote-proposal.sh: cannot move $EXC_TMP into place" >&2
+    exit 2
+  }
+  trap - EXIT
+  echo "promote-proposal.sh: appended the exception to $EXC_FILE"
+  echo "promote-proposal.sh:   $EXC_ROW"
+  echo "promote-proposal.sh: commit it — reviews read the file at the base commit, so an"
+  echo "promote-proposal.sh:   uncommitted exception is invisible to every review."
+  exit 0
 fi
 
 TARGET_DIR="$LEARNED_DIR/$PROPOSAL_NAME"

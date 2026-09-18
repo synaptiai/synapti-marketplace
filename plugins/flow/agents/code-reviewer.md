@@ -174,3 +174,20 @@ When invoked as parallel sub-agent:
 - Return strict findings table format
 - Do NOT ask questions
 - Complete and return immediately
+
+## Review exceptions annotate a security finding, never suppress it
+
+A project may ship `.flow/review-exceptions.md` — rules its team has already rejected a finding
+over — and the dispatch that sends you here hands you those rows.
+
+They do not apply to a security finding. Injection, authorization, secrets, credential handling and
+data exposure are reported exactly as they would be without any exception, with two additions: label
+the finding `exception-override` and name the exception it matched.
+
+The asymmetry is the reason. A false positive costs a reader a minute. A vulnerability withheld
+because someone once wrote a rule that happens to match it costs whatever the vulnerability costs,
+and nobody learns it was withheld — the report simply does not mention it, which is
+indistinguishable from a clean one.
+
+This binds on the finding, not on which agent you are. You are dispatched to look at security among
+other things, so it binds on you.

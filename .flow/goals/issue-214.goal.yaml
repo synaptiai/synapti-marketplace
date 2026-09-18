@@ -1,0 +1,177 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-214
+  created_at: '2026-09-17T07:22:16Z'
+  created_by: /flow:start
+  owner: daniel.bentes@gmail.com
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-214-dismissed-findings-become-exceptions
+  issue: 214
+  journal: .decisions/issue-214.md
+objective:
+  outcome: 'Issue #214 is implemented and verified.'
+  acceptance_criteria:
+  - id: AC1
+    text: references/decision-journal-schema.md documents finding-dismissed with its
+      fields and the closed reason set; commands/address.md Phase 3 emits it for each
+      Pushback item via bin/journal-record.sh; the test asserts the emit and the reason
+      vocabulary.
+    verification_command: bash plugins/flow/tests/run.sh plugins/flow/tests/address-v3-integration.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC2
+    text: commands/address.md Phase 1 parses the FLOW_REVIEW_CYCLE markers per references/finding-ledger-parser.md
+      so a Pushback item carries the ledger finding id rather than a GitHub comment
+      id, and Phase 3 fills the DISPUTED array in templates/resolution-comment.md
+      that /flow:merge already gates on. A test asserts a dismissed finding reaches
+      both the artifact and the marker with the same id.
+    verification_command: bash plugins/flow/tests/run.sh plugins/flow/tests/address-v3-integration.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC3
+    text: commands/learn.md Phase 2 has a Dismissal patterns category reading both
+      dropped-finding and finding-dismissed artifacts, Phase 3 states the two-instances
+      / two-PRs threshold, Phase 4 writes exception-type proposals whose body is one
+      table row, and a test runs Phase 1 gathering against fixture journals carrying
+      both artifact types and asserts the counts it prints.
+    verification_command: bash plugins/flow/tests/run.sh plugins/flow/tests/learn-dismissal-patterns.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC4
+    text: 'templates/skill-proposal.md carries an explicit type frontmatter key (skill,
+      enforcement or exception) and bin/promote-proposal.sh branches on it: skill
+      and enforcement promote to skills/learned/, exception appends its row to .flow/review-exceptions.md,
+      and an unknown type is refused. A test covers each type and the refusal.'
+    verification_command: bash plugins/flow/tests/run.sh plugins/flow/tests/promote-proposal.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC5
+    text: commands/review.md and commands/pr.md Phase 1 print a Review Exceptions
+      section read at the base commit over the contents API, telling absent (404,
+      STATE=none) from unreadable (any other status, STATE=unavailable) by protocol.
+      A test executes the block in a fixture whose base holds one version and whose
+      head holds another, asserts the base version is printed, and asserts no block
+      reads the working-tree copy.
+    verification_command: bash plugins/flow/tests/run.sh plugins/flow/tests/review-exceptions.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC6
+    text: Every reviewer dispatch in commands/review.md (Path A A.1 and A.3, Path
+      B), commands/pr.md Phase 3 and commands/address.md Phase 4 includes the exceptions
+      with the exception-override rule; a parity test asserts all four fan-out blocks
+      carry them. agents/security-reviewer.md states that exceptions annotate, never
+      suppress, its findings.
+    verification_command: bash plugins/flow/tests/run.sh plugins/flow/tests/review-exceptions.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC7
+    text: references/flow-runtime-state.md and the root .gitignore comment list .flow/review-exceptions.md
+      as tracked.
+    verification_command: bash plugins/flow/tests/run.sh plugins/flow/tests/review-exceptions.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC8
+    text: plugins/flow/tests/run.sh passes.
+    verification_command: bash plugins/flow/tests/run.sh
+    status: pending
+    evidence_ref: null
+specification:
+  non_goals:
+  - An embeddings store - the corpus is tens of rules per project and an embedding
+    query is a network call, which bin/flow-mine-corrections.sh rules out by design.
+  - A fine-tuned rejection predictor - a LoRA classifier cannot ship inside a markdown
+    plugin.
+  - Suppressing security findings - an exception annotates a security finding and
+    names itself; it never removes one.
+  - A review run writing .flow/review-exceptions.md - the file is a team contract,
+    written by hand or by promoting a /flow:learn proposal.
+  - Cross-repository exceptions.
+  - Re-opening the finding-ledger marker grammar - DISPUTED already exists; this issue
+    fills it.
+  failure_modes:
+  - 'Timeouts: one new gh api call per review and pr Phase 1, no explicit timeout,
+    matching every other gh call in those fences; a failure reports STATE=unavailable,
+    never STATE=none.'
+  - 'Partial failures: an exceptions file that does not parse reports STATE=unavailable
+    with the reason rather than handing over half the rows; a journal-record.sh failure
+    while writing finding-dismissed must not fail the address run.'
+  - 'Invalid input: a reason outside the closed set, or a table row missing a column,
+    is named in the output rather than dropped.'
+  - 'Missing context: a pull request with no FLOW_REVIEW_CYCLE marker has no ledger
+    ids, and that is reported as the reason no artifact was written, not as a dismissal
+    with an invented id.'
+  interface_contracts:
+  - 'finding-dismissed artifact: pr, cycle, finding_id, category, location, by (address
+    or review), reason from the closed set, evidence.'
+  - 'Closed reason set: factually-incorrect, breaks-test, contradicts-claude-md, critic-evidence,
+    critic-unrefuted-concern, self-review-refuted.'
+  - '.flow/review-exceptions.md: a table with columns Rule, Scope (path glob), Why,
+    Source; tracked in git alongside goals.'
+  - 'Review Exceptions section: STATE=ok|none|unavailable, EXCEPTIONS_REF=<base sha>,
+    one EXCEPTION= line per row with a literal pipe written %7C, REASON= when unavailable.'
+  - 'templates/skill-proposal.md frontmatter gains type: skill, enforcement or exception;
+    bin/promote-proposal.sh branches on it and refuses an unknown type.'
+  - 'Every reviewer dispatch carries the exceptions plus the rule: do not raise a
+    finding that matches a listed exception; if you raise it anyway, label it exception-override
+    and say why.'
+  risk_map:
+  - area: Exception trust
+    plausible_wrong_version: The exceptions are read from the pull request head or
+      the working tree, so a pull request grants itself an exemption
+    discriminating_check: 'A fixture whose base and head hold different exceptions
+      files: the base rule is printed and the head-only rule does not appear anywhere
+      in the section'
+  - area: Absent vs unreadable
+    plausible_wrong_version: A failed read prints STATE=none, telling every reviewer
+      there are no exceptions when the team wrote several
+    discriminating_check: A 403 or 5xx prints STATE=unavailable naming the status;
+      only a 404 at the base commit is STATE=none
+  - area: Security suppression
+    plausible_wrong_version: An exception matching a security finding removes it from
+      the report
+    discriminating_check: A security finding whose text matches a listed exception
+      is still reported, labelled exception-override, with the matching exception
+      named
+  - area: Dispatch coverage
+    plausible_wrong_version: The exceptions reach some dispatch blocks and not others
+      - the existing Risk areas triplet is in 3 of 27 prompts today
+    discriminating_check: A parity test asserts all four fan-out blocks (review Path
+      A, review Path B, pr Phase 3, address Phase 4) carry the exceptions text
+  - area: Dismissal identity
+    plausible_wrong_version: finding_id is recorded as a GitHub comment id, so clusters
+      cannot join to the ledger and DISPUTED stays empty
+    discriminating_check: A dismissed finding carries the same ledger id in the artifact
+      and in the DISPUTED array of the resolution marker
+  - area: Proposal reachability
+    plausible_wrong_version: exception proposals are written but nothing can promote
+      them, so the loop never closes
+    discriminating_check: promote-proposal.sh on a type exception proposal appends
+      its row to .flow/review-exceptions.md and leaves skills/learned/ untouched
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+evaluator:
+  type: hybrid
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: achieved
+  last_evaluation:
+    result: pass
+    reason: 'Independent judge verdict: all 8 acceptance criteria pass on command_result
+      sidecars at f4f932f (290/88/122/107; full suite 4555, 0 failures).'
+    at: '2026-09-18T17:00:04Z'

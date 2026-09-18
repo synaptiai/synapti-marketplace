@@ -11,11 +11,17 @@
 #   4. ${CLAUDE_PLUGIN_ROOT}/settings.json — plugin default
 #
 # Usage:
-#   cascade-resolve.sh [--default <fallback>] [--compact] <jq-expression>
+#   cascade-resolve.sh [--default <fallback>] [--compact] [--allow-control-chars] <jq-expression>
 #
 # Flags:
-#   --default <value>   value printed on stdout when no source has the key
-#   --compact           use `jq -c` (preserves JSON quoting) instead of `jq -r`
+#   --default <value>     value printed on stdout when no source has the key
+#   --compact             use `jq -c` (preserves JSON quoting) instead of `jq -r`
+#   --allow-control-chars print a value containing a control character instead of
+#                         refusing it. See SECURITY below.
+#   --scalar              accepted and ignored: refusing such a value IS the
+#                         default now, and this flag is kept so that a call site
+#                         written against the revision that introduced it keeps
+#                         behaving as it did.
 #
 # Output:
 #   stdout: the resolved value (one line; the default if provided and no
@@ -24,13 +30,36 @@
 #
 # Exit:
 #   0 — resolved a value (or returned the default; both are normal)
-#   2 — infrastructure error (jq missing, no expression provided)
+#   2 — infrastructure error (jq missing, no expression provided, a leftover
+#       argument, or a refused value with no --default to fall back to)
+#
+# SECURITY — why refusing is the DEFAULT, and not a flag callers must remember:
+#   .claude/settings.flow.json is a tracked file, so a fork pull request chooses
+#   what is in it, and this helper prints a resolved string verbatim into output
+#   an agent reads. A value containing a newline therefore closes the
+#   `KEY=value` line the agent is reading and opens another one.
+#
+#   Three review rounds found that class at a new call site each time. The first
+#   fix guarded two sites by hand; the second added an opt-in flag, passed it at
+#   seven, and claimed in this header that every consumer passed it — a claim
+#   that was false when written, because commands/merge.md was still resolving
+#   `.merge.strategy` without it, so a newline there forged the
+#   `MERGE_SETTINGS_STATE=ok` line the merge gate reads. An opt-in guard is only
+#   as good as the list of sites someone remembered, and that list was wrong
+#   three times. So the refusal is the default and opting OUT is explicit.
+#
+#   Every expression any caller passes selects a single key. `.learning.sources`
+#   resolves a JSON array and is read with --compact, whose `jq -c` output is one
+#   line — but one line is not the same as safe: `jq -c` escapes C0 controls and
+#   prints U+0085 and U+2028/U+2029 raw, so those are refused on this path too.
+#   A caller that genuinely needs raw bytes has --allow-control-chars.
 
 set -uo pipefail
 
 MODE="-r"
 DEFAULT_VALUE=""
 DEFAULT_SET=0
+ALLOW_CONTROL=0
 
 while [ $# -gt 0 ]; do
   case "${1:-}" in
@@ -42,6 +71,15 @@ while [ $# -gt 0 ]; do
       ;;
     --compact)
       MODE="-c"
+      shift
+      ;;
+    --scalar)
+      # Now the default. Accepted so a call site written against the revision
+      # that introduced it is not broken by its own defensiveness.
+      shift
+      ;;
+    --allow-control-chars)
+      ALLOW_CONTROL=1
       shift
       ;;
     --)
@@ -63,6 +101,14 @@ EXPR="${1:-}"
   echo "cascade-resolve: missing <jq-expression>. Usage: $0 [--default <v>] [--compact] <jq-expression>" >&2
   exit 2
 }
+# Flags after the expression were silently ignored — the parse loop breaks at the
+# first non-flag — so `cascade-resolve '.journal.dir' --scalar` resolved without
+# the guard and reported nothing. A caller cannot be told about it by behaviour,
+# so it is refused.
+if [ $# -gt 1 ]; then
+  echo "cascade-resolve: unexpected argument after the expression: $2 (flags must precede it)" >&2
+  exit 2
+fi
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "cascade-resolve: WARN: jq not installed; cannot resolve cascade" >&2
@@ -104,6 +150,48 @@ for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_
   # `// empty` remains fine for string/number keys (tests/flow-cycle14-
   # behavioral.test.sh pins both behaviours).
   if [ -n "$RESULT" ] && [ "$RESULT" != "null" ]; then
+    if [ "$ALLOW_CONTROL" -eq 0 ]; then
+      # A control character here is either corruption or an injection. It is
+      # never part of a path, a name, or a flag, so refusing costs nothing a
+      # caller would miss, and refusing silently would be the failure this
+      # whole plugin is written to avoid: report it, then fall back.
+      #
+      # LC_ALL=C so [[:cntrl:]] is the C locale's byte class (0x00-0x1F, 0x7F)
+      # rather than whatever the caller's locale makes of it — the same reason
+      # bin/flow-finding-route.sh pins LC_ALL for its bracket ranges. Pinning it
+      # NARROWS the class: in a UTF-8 locale [[:cntrl:]] also covers the C1 range
+      # U+0080-U+009F, and a C1 character injected into an agent's output is an
+      # ANSI escape introducer (U+009B is CSI) as well as, for U+0085 NEL, a line
+      # break Python's str.splitlines() takes. So the C1 range is matched
+      # explicitly as its two-byte UTF-8 form, and the two Unicode separators
+      # that lie outside it (U+2028, U+2029) are matched the same way.
+      #
+      # The byte-class arms are what make this deterministic: the pattern means
+      # the same thing under every locale a caller might have.
+      _REFUSED=0
+      if ( LC_ALL=C
+           case "$RESULT" in
+             *[[:cntrl:]]*) exit 0 ;;
+           esac
+           # C1 control characters, U+0080-U+009F, as two-byte UTF-8. One arm
+           # covers NEL (U+0085) as well as the escape introducers.
+           case "$RESULT" in
+             *$'\302'[$'\200'-$'\237']*) exit 0 ;;
+           esac
+           # U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR, outside C1.
+           case "$RESULT" in
+             *$'\342\200\250'*|*$'\342\200\251'*) exit 0 ;;
+           esac
+           exit 1 ); then _REFUSED=1; fi
+      if [ "$_REFUSED" -eq 1 ]; then
+        echo "cascade-resolve: WARN: the value resolved for $EXPR from $SETTINGS contains a control character or a Unicode line separator (a newline forges a second KEY=value line for whoever reads this); refusing it" >&2
+        if [ $DEFAULT_SET -eq 1 ]; then
+          printf '%s\n' "$DEFAULT_VALUE"
+          exit 0
+        fi
+        exit 2
+      fi
+    fi
     printf '%s\n' "$RESULT"
     exit 0
   fi

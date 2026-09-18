@@ -1,6 +1,11 @@
 ---
 name: "{proposal-name}"
 description: "[flow-learned] {one-line description of the knowledge this skill captures}"
+# skill | enforcement | exception. Omitted means skill, so every proposal
+# written before this key existed still promotes. `exception` promotes to a row
+# in .flow/review-exceptions.md rather than to a learned skill, and needs only
+# the Pattern Detected, Evidence and Exception row sections below.
+type: skill
 source-sessions:
   - "{YYYY-MM-DD session identifier}"
 evidence-count: {N}
@@ -105,3 +110,16 @@ the frontmatter for the same reason and published alongside this section.}
 - [ ] Fits within context window budget
 - [ ] Copied to `plugins/flow/skills/learned/{name}/SKILL.md`
 - [ ] Committed and PR created
+
+## Exception row
+
+*Exception proposals only — delete this section for a skill or enforcement proposal.*
+
+One table row for `.flow/review-exceptions.md`, in its column order:
+
+```
+| {rule, as a reviewer would need to read it} | {path glob the rule is scoped to} | {why the team rejected the finding} | {issue or PR references} |
+```
+
+The glob is what bounds the rule to the paths the team named, so a rule never
+applies outside them. A row without one is unscoped and is refused.

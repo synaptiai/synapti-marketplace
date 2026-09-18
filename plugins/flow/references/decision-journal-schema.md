@@ -117,6 +117,7 @@ artifacts:
 | `review-cycle` | `cycle: <int>`, `path: A\|B`, `findings_count: <int>`, optionally `pr: <int>` | `review.md` Phase 4 step 7 (after FLOW_REVIEW_CYCLE marker is posted) | review.md, pr.md |
 | `dropped-finding` | `cycle: <int>`, `finding_id: <string>`, `facet: <string>`, `reason: <string>`, `pr: <int>` | `review.md` Path A A.4 (DROPPED rows); `review.md` Phase 4 step 5 and `pr.md` step 13 (a LOW finding refuted on the author's own PR) | review.md A.4, review.md Phase 4 step 5, pr.md |
 | `consolidation-gap` | `cycle: <int>`, `pr: <int>`, `finding_id: <string>`, `reason: <string>` | `review.md` Path A A.5 fallback table | review.md A.5 |
+| `finding-dismissed` | `pr: <int>`, `cycle: <int>`, `finding_id: <string>`, `category: <string>`, `location: <string>`, `by: address`, `reason: <closed set, below>`, `evidence: <string>` | `address.md` Phase 3 (each Pushback item) | address.md Phase 3 |
 | `design-decision` | `decision: <string>`, `category: architecture` | `design.md` Phase 4 | design.md |
 | `brainstorm-decision` | `topic: <string>`, `chosen: <string>`, `options_considered: <int>` | `brainstorm.md` Phase 4 | brainstorm.md |
 | `verdict` | `result: PASS\|FAIL\|NEEDS-HUMAN-REVIEW`, `pr: <int>` (optional), `failures: [<criterion>...]` (optional) | `start.md` Phase 4 step 6 (after Agent(verdict-judge) returns) | start.md Phase 4 |
@@ -131,6 +132,24 @@ artifacts:
 | `run-state-transition` | `run_id: <ISO-timestamp-id>`, `from_state: <string>`, `to_state: <string>`, optionally `reason: <string>` | `run-state-management` skill | every FlowRun.state.status transition |
 
 `dropped-finding` reason values: Path A A.4 records the two DISAGREE reasons as free text. `self-review-refuted` marks a LOW-confidence finding on the author's own pull request that a test or command refuted by passing on the current code; the test stays in the PR and its output is the evidence, and `facet` names the reviewer agent that raised the finding.
+
+`finding-dismissed` reason values are a **closed set**, because `/flow:learn` clusters on them and a free-text reason clusters with nothing:
+
+| `reason` | Means | Evidence the emitter must record |
+|---|---|---|
+| `factually-incorrect` | The finding states something the code does not do | The `file:line` that shows otherwise |
+| `breaks-test` | Applying the finding would break a test that passes today | The test name |
+| `contradicts-claude-md` | The finding asks for something a project rule forbids | The quoted rule |
+| `critic-evidence` | A critic pass produced evidence against the finding | What the critic ran and what it showed |
+| `critic-unrefuted-concern` | A critic raised a concern the finding never answered | The concern, and where the finding fails to address it |
+
+The first three mirror the three grounds `skills/feedback-resolution/SKILL.md` already requires for a Pushback, so a dismissal cannot be recorded on weaker grounds than a Pushback may be argued on.
+
+`pr` is written as an integer by `bin/journal-record.sh`. `/flow:address` step 9, which selects the dismissals belonging to one pull request, also accepts a plain digit string, for a journal written by some other route. Nothing else: a float truncates, and `yes` is a YAML boolean whose `int()` is 1, so both would join a dismissal to a pull request that does not name it. A value outside those two shapes makes the whole read unavailable rather than dropping the row, because a dismissal that cannot be placed is not one that belongs elsewhere. `/flow:learn` does not select on `pr` — it counts dismissals across every journal — so it neither applies these rules nor refuses a row for breaking them; it prints whatever the field holds.
+
+`by` is `address` because `/flow:address` is the only emitter. A review that drops a finding writes `dropped-finding` instead — including the `self-review-refuted` case, where a test refuted a LOW-confidence finding on the author's own pull request. That stays a `dropped-finding` on purpose: `/flow:learn` counts the two apart and only `finding-dismissed` is evidence for a review exception, because a finding the machinery dropped says nothing about what the team wants. If review-side dismissals should become evidence later, the emitter comes first and the vocabulary follows it — documenting a value nothing writes is how a contract starts lying.
+
+`dropped-finding` and `finding-dismissed` are different records and both are kept. `dropped-finding` says a finding did not survive the review's own machinery (both variants disagreed, or consolidation lost it); `finding-dismissed` says someone rejected it on stated grounds. `/flow:learn` reads both, and only the second is evidence for a review exception.
 
 Adding a new artifact type means adding the row above and using the matching `--metadata key=value` arguments to `bin/journal-record.sh`. The helper does not enforce a closed enum — it accepts any `--type` value — but the table here is the contract reviewers check during PR review.
 
