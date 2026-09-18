@@ -1,5 +1,156 @@
 # Changelog
 
+## 3.6.0 (2026-09-18)
+
+A review finding used to carry a confidence word for the reader and nothing
+else: a pattern-match guess reached the merge gate's ledger with the same weight
+as a reproduced failure, and an unresolved guess blocked the merge. Confidence
+now decides what a finding may demand. Also in this release: `/flow:review`
+checks a change against the goal written at the pull request's own head commit
+and names who depends on a contract the change alters, and a finding dismissed
+in `/flow:address` becomes a durable record that later reviews read and
+`/flow:learn` can promote into a standing exception.
+
+### Changed: confidence decides what a finding may demand
+
+The four reviewer agents — `code-reviewer`, `error-handler-inspector`,
+`security-reviewer` and `integration-verifier` — must now write a `confidence`
+field, and one rule covers all of them: ran code, a test or an LSP diagnostic is
+HIGH; read the code path is MEDIUM; a pattern match alone is LOW. An absent or
+invalid value is MEDIUM with a warning that names the agent, never LOW —
+demotion by omission would let a reviewer drop a finding out of the decision by
+leaving a field blank. Confidence never changes a finding's priority.
+
+Where a finding goes follows from that. On someone else's pull request a
+LOW-confidence finding is listed under `Needs investigation`, outside the review
+decision and outside the `FLOW_REVIEW_CYCLE` marker, so it cannot block a merge;
+it keeps its own priority there, so a LOW P1 stays P1. On your own pull request
+each one must be settled before the review is posted: confirmed by a test that
+fails on the unfixed code, refuted, or escalated.
+
+`bin/flow-finding-route.sh` applies the rule so the routing cannot drift from
+the prose describing it. It reads the consolidated findings and the review mode
+and prints the per-priority counts, the investigation ids and their priorities,
+the decision, and the 7-field marker rows. No LOW row is ever written to a
+marker. Category and location are percent-encoded in the marker, so a comma, a
+pipe or a `]` inside a finding can no longer split a row or end the marker.
+
+`/flow:review` Phase 4 step 7 now checks the rendered body before `gh pr review`
+runs: a LOW finding must appear exactly once, as its `Needs investigation` entry,
+at its routed priority, inside that section; a counted finding must appear
+exactly once, outside it, and never in the entry shape. A body that quotes the
+ledger's own syntax is refused, because the merge gate would read it as findings;
+two limits of that check are deliberate and stated in the step itself. Both
+review paths write the same 7-field marker rows, so the parsers no longer have to
+infer which orchestration ran, and the three review templates carry a `Needs
+investigation` section apart from the P1/P2/P3 counts.
+
+**What you will notice:** a review body that reports a finding without a
+`confidence` is now incomplete, and a LOW-confidence finding on someone else's
+pull request is listed for investigation instead of being counted and blocked on.
+
+### Fixed: the issue a pull request closes comes from GitHub, not from its prose
+
+`bin/flow-pr-linked-issue.sh` resolves the issue a pull request closes from
+GitHub's own closing references, filtered to the same repository, lowest number
+first. Every call site uses it — `/flow:review` Phase 1, the dropped-finding
+records, the review-cycle manifest, the workflow-run record, `/flow:pr`'s
+manifest and `/flow:merge`'s escalation record — so a `hotfix #210`, a quoted
+`Closes #12`, or a mention before the keyword can no longer file a journal
+record under the wrong issue.
+
+### Added: the review reads the goal at the pull request's head commit
+
+Phase 1's `!` fence runs when the command loads, before the `gh pr checkout`
+further down, so anything read from the working tree is whatever branch the
+reviewer happened to be on. The `### FlowGoal` section now fetches the goal at
+the head commit over the API and reports which commit it read under `GOAL_REF=`,
+so the specification a change is checked against is the one the change proposes.
+
+Reading it cannot run what the pull request ships. The goal is author-controlled
+data and `gh pr checkout` leaves the author's files in the tree, so the reader
+drops the working directory from the import path and writes its own output
+encoding; no value from the goal is run, expanded or substituted, a
+`verification_command` is printed as text, and a value containing `|` or a
+newline cannot forge a field in the section a reviewing model then parses.
+
+Absent, unreadable and unfetchable are three different answers. A file that is
+valid YAML but not a goal, a fetch that fails, an API that cannot be reached and
+a file too large to serve each report `STATE=unavailable` with a reason.
+`STATE=none` is reserved for a goal that is genuinely absent at the path (404) or
+underivable because the pull request links no issue, or links one that is not a
+number — the answer that means no goal exists. `GOAL_EDITED` separates creating a
+goal, the normal spec-first flow, from modifying or deleting one that already
+existed, and says
+`unavailable` when the file list could not be read rather than the answer that
+means the change does not weaken its own goal.
+
+The specification now reaches the reviewers: the risk map, the non-goals and the
+interface contracts are handed to both Path A code-reviewer lenses and to Path B,
+and the holdout-validation dispatches carry a `### Risk map coverage` list. Where
+the goal carries no risk map — including the commonest case, no goal at all — a
+named step derives the rows from the issue text and labels every one
+`issue-text`, so a row derived from prose is never quoted as something the team
+wrote.
+
+### Added: a contract change names its consumers
+
+`bin/flow-contract-files.sh` names the changed paths that are contracts —
+OpenAPI, GraphQL, protobuf, migrations, schemas and goal files — by path and
+extension alone, with no per-format parsing. `code-reviewer` Step 2b reports
+`callers examined: N (<tool>)` for each modified public symbol, treats `N=0` from
+an available LSP beside a Grep hit as a failed trace rather than as "no callers",
+and lists each consumer under `#### Blast radius`. A consumer the pull request
+does not update earns a `breaking-change` finding, a category now in the finding
+schema. `/flow:review` and `/flow:address` also stop claiming that they create
+goals.
+
+### Added: a dismissed finding becomes a durable review exception
+
+`/flow:address` Phase 1 parses the `FLOW_REVIEW_CYCLE` markers so a Pushback item
+carries the ledger finding id rather than a GitHub comment id, and Phase 3 emits
+a `finding-dismissed` journal artifact for each Pushback item. The id reaches the
+resolution marker's `DISPUTED` array in Phase 5 step 9, read back out of that
+artifact rather than transcribed by hand, so the finding reports as disputed
+rather than as one still being fixed. `/flow:merge` gates on `FINDINGS` minus
+`RESOLVED` and reads `DISPUTED` nowhere, so a disputed id blocks a merge by
+staying unresolved, not by being named in the gate. The reason is a closed set —
+`factually-incorrect`, `breaks-test`, `contradicts-claude-md`, `critic-evidence`,
+`critic-unrefuted-concern` — because
+`/flow:learn` clusters on it, and the first three mirror the grounds
+`feedback-resolution` already requires for a Pushback, so a dismissal cannot be
+recorded on weaker grounds than a Pushback may be argued on. A pull request with
+no ledger markers is reported as the reason no artifact was written, not as a
+dismissal with an invented id.
+
+`.flow/review-exceptions.md` is the team's standing contract, tracked and written
+by hand or by promoting a `/flow:learn` proposal. `/flow:review` and `/flow:pr`
+Phase 1 print a Review Exceptions section read over the contents API — at the
+pull request's base commit for `/flow:review`, and at the default branch for
+`/flow:pr`, which runs before the pull request exists and has no base commit to
+resolve — telling absent (404, `STATE=none`) from unreadable (any other status,
+`STATE=unavailable`). All four reviewer dispatch blocks carry the
+exceptions with the exception-override rule, and `security-reviewer` states that
+an exception annotates its findings and never suppresses one.
+
+`/flow:learn` gains a Dismissal patterns category that reads both
+`dropped-finding` and `finding-dismissed` artifacts, states the
+two-instances-across-two-pull-requests threshold, and writes exception-type
+proposals whose body is one table row. `templates/skill-proposal.md` now carries
+an explicit `type` frontmatter key, and `bin/promote-proposal.sh` branches on it:
+`skill` and `enforcement` promote to `skills/learned/`, `exception` appends its
+row to `.flow/review-exceptions.md`, and an unknown type is refused.
+
+Also fixed in this area: `/flow:address` was told to hand reviewers rows from a
+section it never printed, which sends an agent to the working tree; an empty
+scope glob passed both parsers by column count and read as matching everything;
+a GFM-escaped pipe shifted every column to its right; malformed rows were
+uncapped; content that is not a table reported `STATE=ok` with no rows; the
+exceptions file was written as two appends; and the schema documented a
+`by: review` producer and a `self-review-refuted` reason in the dismissal
+vocabulary, neither of which any dismissal emits — `self-review-refuted` is a
+`dropped-finding` reason, and stays one.
+
 ## 3.5.0 (2026-09-14)
 
 The merge gate added in 3.4.0 refused the merge step of `/flow:merge` itself.
