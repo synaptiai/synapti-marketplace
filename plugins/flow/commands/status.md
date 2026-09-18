@@ -123,7 +123,7 @@ JOURNAL_DIR=".decisions"
 [ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
 JOURNAL_FILES=0
 [ -d "$JOURNAL_DIR" ] && JOURNAL_FILES=$(ls "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
-echo "JOURNAL_DIR=$JOURNAL_DIR"
+printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 echo "JOURNAL_FILES=$JOURNAL_FILES"
 if [ -f "$HOME/.claude/flow-learn-pending" ]; then
   echo "LEARNING_PENDING=$(cat "$HOME/.claude/flow-learn-pending")"
@@ -373,9 +373,9 @@ else
       # The allowlist bounds an id to the shape the writer emits, which keeps
       # `,`, `]` and `|` out of the array the consumers split on — a `]`
       # truncates their `grep -o` extraction and a comma splits one id into two,
-      # so neither half matches a finding. (It is not about globbing: the
-      # containment check writes the id inside quotes, `*",$ID,"*`, so a `*`
-      # there is a literal and matches nothing it should not.)
+      # so one dismissal written with a comma marks both halves as dismissed.
+      # (It is not about globbing: the containment check writes the id inside
+      # quotes, `*",$ID,"*`, so a `*` there is a literal.)
       case "$ID" in
         [A-Za-z]*) ;;
         *) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;;

@@ -789,3 +789,127 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-18 00:47 Write /tmp/r9_sep_block.sh -->
 
 <!-- auto-log: 2026-09-18 01:03 Write /tmp/r9_mutants.sh -->
+
+<!-- auto-log: 2026-09-18 01:14 commit "fix(flow): an unreadable setting is not an absent one, at the one gate that acts on it" -->
+
+<!-- auto-log: 2026-09-18 01:19 Write /Users/danielbentes/.claude-work/projects/-Users-danielbentes-synapti-marketplace/memory/feedback_mutate_on_a_committed_tree.md -->
+
+<!-- auto-log: 2026-09-18 15:49 Write /tmp/r10.tX1UNX/scen.sh -->
+
+<!-- auto-log: 2026-09-18 15:50 Write /tmp/mgmatrix.JdYorB/matrix.sh -->
+
+<!-- auto-log: 2026-09-18 15:52 Write /tmp/r10.tX1UNX/c1sweep.py -->
+
+<!-- auto-log: 2026-09-18 15:52 Write /tmp/sec10.bZ7Ryn/jqclaim.py -->
+
+<!-- auto-log: 2026-09-18 15:54 Write /tmp/mgmatrix.JdYorB/c1probe.sh -->
+
+<!-- auto-log: 2026-09-18 15:54 Write /tmp/sec10.bZ7Ryn/parser_drive.sh -->
+
+<!-- auto-log: 2026-09-18 15:54 Edit /tmp/mgmatrix.JdYorB/c1probe.sh -->
+
+<!-- auto-log: 2026-09-18 15:55 Write /tmp/sec10.bZ7Ryn/more.sh -->
+
+<!-- auto-log: 2026-09-18 15:56 Write /tmp/sec10.bZ7Ryn/callsites.py -->
+
+<!-- auto-log: 2026-09-18 15:56 Write /tmp/wt214/mutate.sh -->
+
+<!-- auto-log: 2026-09-18 15:56 Write /tmp/r10.tX1UNX/mut.py -->
+
+<!-- auto-log: 2026-09-18 15:56 Write /tmp/mergegate/run_matrix.sh -->
+
+<!-- auto-log: 2026-09-18 15:56 Write /tmp/sec10.bZ7Ryn/jqmissing.sh -->
+
+<!-- auto-log: 2026-09-18 15:56 Write /tmp/sec10.bZ7Ryn/readerclaims.sh -->
+
+<!-- auto-log: 2026-09-18 15:56 Write /tmp/mergegate/run_matrix.sh -->
+
+<!-- auto-log: 2026-09-18 15:57 Edit /tmp/sec10wt/plugins/flow/bin/cascade-resolve.sh -->
+
+<!-- auto-log: 2026-09-18 15:58 Edit /tmp/sec10wt/plugins/flow/bin/cascade-resolve.sh -->
+
+<!-- auto-log: 2026-09-18 15:58 Edit /tmp/sec10wt/plugins/flow/bin/cascade-resolve.sh -->
+
+<!-- auto-log: 2026-09-18 15:58 Edit /tmp/sec10wt/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-09-18 15:58 Edit /tmp/sec10wt/plugins/flow/commands/merge.md -->
+
+<!-- auto-log: 2026-09-18 15:59 Write /tmp/sec10.bZ7Ryn/scalarcount.py -->
+
+<!-- auto-log: 2026-09-18 15:59 Write /tmp/sec10.bZ7Ryn/matrix_tail.sh -->
+
+<!-- auto-log: 2026-09-18 16:00 Write /tmp/sec10.bZ7Ryn/bodycheck.sh -->
+
+<!-- auto-log: 2026-09-18 16:01 Write /tmp/r10.tX1UNX/normalpath.sh -->
+
+<!-- auto-log: 2026-09-18 16:01 Write /tmp/mg/enumerate.sh -->
+
+<!-- auto-log: 2026-09-18 16:02 Write /tmp/r10.tX1UNX/truth.sh -->
+
+<!-- auto-log: 2026-09-18 16:02 Write /tmp/sec10.bZ7Ryn/final_repro.sh -->
+
+<!-- auto-log: 2026-09-18 16:03 Write /tmp/mg/mut.sh -->
+
+<!-- auto-log: 2026-09-18 16:03 Write /tmp/mg/mut.sh -->
+
+<!-- auto-log: 2026-09-18 16:03 Write /tmp/mg/m1a.old -->
+
+<!-- auto-log: 2026-09-18 16:03 Write /tmp/mg/m1a.new -->
+
+<!-- auto-log: 2026-09-18 16:03 Write /tmp/mg/m1b.old -->
+
+<!-- auto-log: 2026-09-18 16:03 Write /tmp/mg/m1b.new -->
+
+<!-- auto-log: 2026-09-18 16:03 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_unavailable_collapse.md -->
+
+<!-- auto-log: 2026-09-18 16:03 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_unavailable_collapse.md -->
+
+<!-- auto-log: 2026-09-18 16:03 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_unavailable_collapse.md -->
+
+<!-- auto-log: 2026-09-18 16:03 Write /tmp/sec10.bZ7Ryn/locale_id.sh -->
+
+<!-- auto-log: 2026-09-18 16:04 Write /tmp/mg/m4.old -->
+
+<!-- auto-log: 2026-09-18 16:04 Write /tmp/mg/m4.new -->
+
+<!-- auto-log: 2026-09-18 16:04 Write /tmp/mg/m5.old -->
+
+<!-- auto-log: 2026-09-18 16:04 Write /tmp/mg/m5.new -->
+
+<!-- auto-log: 2026-09-18 16:04 Write /tmp/mg/m6.new -->
+
+<!-- auto-log: 2026-09-18 16:05 Write /tmp/mg/m7.old -->
+
+<!-- auto-log: 2026-09-18 16:05 Write /tmp/mg/m7.new -->
+
+<!-- auto-log: 2026-09-18 16:05 Write /tmp/mg/m8.old -->
+
+<!-- auto-log: 2026-09-18 16:05 Write /tmp/mg/m8.new -->
+
+<!-- auto-log: 2026-09-18 16:05 Write /tmp/execprobe/.claude/commands/probe.md -->
+
+<!-- auto-log: 2026-09-18 16:07 Write /tmp/jqprobe/mk.py -->
+
+<!-- auto-log: 2026-09-18 16:08 Write /tmp/sec10.bZ7Ryn/forge_zsh.sh -->
+
+<!-- auto-log: 2026-09-18 16:08 Write /tmp/mg/control.sh -->
+
+<!-- auto-log: 2026-09-18 16:08 Write /tmp/mg/edit_m7b.py -->
+
+<!-- auto-log: 2026-09-18 16:08 Write /tmp/mg/edit_m8b.py -->
+
+<!-- auto-log: 2026-09-18 16:09 Write /tmp/f4probe/stub.sh -->
+
+<!-- auto-log: 2026-09-18 16:11 Write /tmp/mg/claims.py -->
+
+<!-- auto-log: 2026-09-18 16:12 Write /tmp/mg/claims2.sh -->
+
+<!-- auto-log: 2026-09-18 16:13 Write /tmp/mg/assert_inventory.py -->
+
+<!-- auto-log: 2026-09-18 16:15 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_revert_harness.md -->
+
+<!-- auto-log: 2026-09-18 16:20 Edit /tmp/wt-m10/plugins/flow/bin/cascade-resolve.sh -->
+
+<!-- auto-log: 2026-09-18 16:20 Edit /tmp/wt-m10p/plugins/flow/bin/cascade-resolve.sh -->
+
+<!-- auto-log: 2026-09-18 16:39 Write /tmp/r10_tests.sh -->

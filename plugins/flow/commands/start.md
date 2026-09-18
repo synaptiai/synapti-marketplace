@@ -330,7 +330,7 @@ case "$GOAL_MODE" in auto|always|off) ;; *) GOAL_MODE="auto" ;; esac
 # Master switch forces off when the whole feature is disabled.
 ENABLED=$("$CASCADE" --default "true" '.flow.goals.enabled' 2>/dev/null)
 [ "$ENABLED" != "true" ] && GOAL_MODE="off"
-echo "FLOW_GOAL_MODE=$GOAL_MODE"
+printf '%s\n' "FLOW_GOAL_MODE=$GOAL_MODE"
 
 _RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
 ARG1="${_RAW%% *}"

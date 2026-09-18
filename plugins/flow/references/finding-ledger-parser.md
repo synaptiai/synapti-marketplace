@@ -158,8 +158,8 @@ echo "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY CAT LOC S
   # Reject IDs that don't match [A-Za-z][A-Za-z0-9_-]*. Required because an id
   # is interpolated into an array the consumers split on `,` and extract with
   # `grep -o '...[^]]*\]'`: a comma splits one id into two and a `]` truncates
-  # the extraction, so neither half would match a finding. Not a globbing
-  # concern — the containment check quotes the expansion, `*",$ID,"*`.
+  # the extraction, and marks both halves as dismissed. Not a globbing concern —
+  # the containment check quotes the expansion, `*",$ID,"*`.
   case "$ID" in [A-Za-z]*) ;; *) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;; esac
   case "$ID" in *[!A-Za-z0-9_-]*) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;; esac
   case "$PRIORITY" in

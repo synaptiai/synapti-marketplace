@@ -48,8 +48,8 @@ fi
 # do not tilde-expand) receive absolute paths.
 JOURNAL_DIR="${JOURNAL_DIR/#\~/$HOME}"
 PROPOSAL_DIR="${PROPOSAL_DIR/#\~/$HOME}"
-echo "JOURNAL_DIR=$JOURNAL_DIR"
-echo "PROPOSAL_DIR=$PROPOSAL_DIR"
+printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
+printf '%s\n' "PROPOSAL_DIR=$PROPOSAL_DIR"
 
 echo ""
 echo "### Journal Files"
@@ -109,7 +109,7 @@ echo ""
 echo "### Transcript Corrections"
 LEARN_SOURCES='["journal","transcripts"]'
 [ -x "$HELPER" ] && LEARN_SOURCES=$("$HELPER" --compact --default '["journal","transcripts"]' '.learning.sources // empty' 2>/dev/null)
-echo "TRANSCRIPT_SOURCES=$LEARN_SOURCES"
+printf '%s\n' "TRANSCRIPT_SOURCES=$LEARN_SOURCES"
 TRANSCRIPTS_ON="false"
 if command -v jq >/dev/null 2>&1; then
   TRANSCRIPTS_ON=$(printf '%s' "$LEARN_SOURCES" | jq -r 'type == "array" and any(.[]; . == "transcripts")' 2>/dev/null)

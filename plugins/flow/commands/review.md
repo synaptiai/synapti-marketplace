@@ -813,7 +813,10 @@ else
         # got single-session anyway. Collapse multi-line values for log
         # scrapability.
         AGENT_TEAMS_DISPLAY=$(printf '%s' "$AGENT_TEAMS" | tr '\n' ' ' | cut -c1-80)
-        echo "WARN: agentTeams=$AGENT_TEAMS_DISPLAY (from $SOURCE_USED) is not the JSON boolean true/false; treating as false. Use \"agentTeams\": true (no quotes)." >&2
+        # printf, not echo: the collapse above turns REAL newlines into spaces,
+        # but the two printable characters backslash-n survive it, and the zsh
+        # that runs this fence expands those into a newline at print time.
+        printf '%s\n' "WARN: agentTeams=$AGENT_TEAMS_DISPLAY (from $SOURCE_USED) is not the JSON boolean true/false; treating as false. Use \"agentTeams\": true (no quotes)." >&2
         ;;
     esac
   fi
@@ -843,11 +846,11 @@ if [ "$USE_PATH_A" = "1" ]; then
   case "$AGENT_TEAM_MODEL" in
     haiku|sonnet|opus|fable|inherit) ;;
     *)
-      echo "WARN: agentTeamModel='$AGENT_TEAM_MODEL' is not one of haiku|sonnet|opus|fable|inherit; rejecting and using sonnet. Set a valid value in .claude/settings.flow.local.json, .claude/settings.flow.json, \$HOME/.claude/settings.flow.json, or the plugin settings.json." >&2
+      printf '%s\n' "WARN: agentTeamModel='$AGENT_TEAM_MODEL' is not one of haiku|sonnet|opus|fable|inherit; rejecting and using sonnet. Set a valid value in .claude/settings.flow.local.json, .claude/settings.flow.json, \$HOME/.claude/settings.flow.json, or the plugin settings.json." >&2
       AGENT_TEAM_MODEL=sonnet
       ;;
   esac
-  echo "AGENT_TEAM_MODEL=$AGENT_TEAM_MODEL"
+  printf '%s\n' "AGENT_TEAM_MODEL=$AGENT_TEAM_MODEL"
 fi
 # AGENTTEAM_MODEL_END
 

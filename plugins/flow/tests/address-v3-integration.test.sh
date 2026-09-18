@@ -1325,10 +1325,10 @@ if [ "$NEG_F" -ne "$NEG_M" ]; then
 else
   _flow_assert_fail "an unmarked inline-! fence was not counted ($NEG_F vs $NEG_M)"
 fi
-# A trailing space after the info string. CommonMark trims the info string, so
-# '```! ' is the same fence as '```!' to the executor while an exact-shape scan
-# misses it — a one-space bypass of the whole guard. The mutated copy uses the
-# form the exact-shape version would miss.
+# Trailing whitespace after the info string. CommonMark trims the info string, so
+# an opener followed by a space — or a tab, which is the form the mutated copy
+# below uses — is the same fence to the executor while an exact-shape scan misses
+# it: a one-byte bypass of the whole guard.
 awk '{ if ($0 ~ /^10\. \*\*Update PR body review cycle state\*\*/ && !done) {
          print "```!\t"
          print "echo \"STATE=ok\""
@@ -1339,9 +1339,9 @@ awk '{ if ($0 ~ /^10\. \*\*Update PR body review cycle state\*\*/ && !done) {
 NEG_WS_F=$(awk "$FENCE_SCAN" "$WORKNEG/address-ws.md")
 NEG_WS_M=$(awk "$MARKER_SCAN" "$WORKNEG/address-ws.md")
 if [ "$NEG_WS_F" -ne "$NEG_WS_M" ]; then
-  _flow_assert_pass "a trailing space after the info string does not hide a fence ($NEG_WS_F vs $NEG_WS_M)"
+  _flow_assert_pass "a trailing TAB after the info string does not hide a fence ($NEG_WS_F vs $NEG_WS_M)"
 else
-  _flow_assert_fail "an opener with a trailing space was not counted ($NEG_WS_F vs $NEG_WS_M)"
+  _flow_assert_fail "an opener with a trailing tab was not counted ($NEG_WS_F vs $NEG_WS_M)"
 fi
 # And the fence TYPES the shared scan recognises. Run through the SAME program as
 # the live check, so narrowing the real scanner breaks these too.

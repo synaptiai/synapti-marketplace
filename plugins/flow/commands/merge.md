@@ -559,8 +559,8 @@ The strategy and branch deletion the confirmation names, and the merge in Phase 
 echo "### Merge Settings"
 CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
 if [ ! -x "$CASCADE" ]; then
-  echo "MERGE_SETTINGS_STATE=blocked"
-  echo "ERROR=cascade-resolve.sh missing or non-executable at $CASCADE; the merge settings cannot be read"
+  printf '%s\n' "MERGE_SETTINGS_STATE=blocked"
+  printf '%s\n' "ERROR=cascade-resolve.sh missing or non-executable at $CASCADE; the merge settings cannot be read"
   true; exit 0
 fi
 # Resolved WITHOUT --default, deliberately. A setting that is ABSENT should fall
@@ -570,19 +570,52 @@ fi
 # the same answer it prints for a valid one. That is the defect class this whole
 # change is about, so the two are told apart here: exit 2 is blocked, empty is
 # absent.
-MERGE_STRATEGY=$("$CASCADE" '.merge.strategy' 2>/dev/null); RC_STRATEGY=$?
+# stderr is CAPTURED, not discarded. cascade-resolve.sh has three ways to fail to
+# hand back a value, and only one of them is an exit code: a refusal exits 2, but
+# a settings file that cannot be opened or cannot be PARSED is skipped with a
+# warning on stderr and exit 0, leaving empty output that reads exactly like an
+# absent key. Both are "this block could not read your settings" and neither may
+# look like "you did not set it". For an irreversible merge, any warning is
+# treated as unreadable.
+#
+# No temp file: `rm` is a destructive verb and this repository forbids those
+# inside an inline-bang block, with a test that enforces it. Merging the streams
+# is enough because the two are disjoint — a clean resolve prints the value and
+# nothing else, and every warning cascade-resolve emits is prefixed with its own
+# name, which no value accepted below can contain.
+MERGE_OUT=$("$CASCADE" '.merge.strategy' 2>&1); RC_STRATEGY=$?
+# Collapsed to one line: cascade-resolve emits one warning per source it had to
+# skip, so this is multi-line as soon as two are unreadable, and a multi-line
+# value here re-opens through the error path exactly the forgery this block was
+# hardened against.
+MERGE_OUT=$(printf '%s' "$MERGE_OUT" | tr '\n\r' '  ')
+case "$MERGE_OUT" in
+  *cascade-resolve:*)
+    printf '%s\n' "MERGE_SETTINGS_STATE=blocked"
+    printf '%s\n' "ERROR=merge.strategy could not be read (cascade-resolve.sh exit $RC_STRATEGY): $MERGE_OUT; refusing to guess a strategy for an irreversible merge"
+    true; exit 0 ;;
+esac
 if [ "$RC_STRATEGY" -ne 0 ]; then
-  echo "MERGE_SETTINGS_STATE=blocked"
-  echo "ERROR=merge.strategy could not be read (cascade-resolve.sh exit $RC_STRATEGY — a value carrying a control character is refused); refusing to guess a strategy for an irreversible merge"
+  printf '%s\n' "MERGE_SETTINGS_STATE=blocked"
+  printf '%s\n' "ERROR=merge.strategy could not be read (cascade-resolve.sh exit $RC_STRATEGY); refusing to guess a strategy for an irreversible merge"
   true; exit 0
 fi
+MERGE_STRATEGY="$MERGE_OUT"
 [ -n "$MERGE_STRATEGY" ] || MERGE_STRATEGY="squash"
-DELETE_BRANCH=$("$CASCADE" '.merge.deleteBranch' 2>/dev/null); RC_DELETE=$?
+MERGE_OUT=$("$CASCADE" '.merge.deleteBranch' 2>&1); RC_DELETE=$?
+MERGE_OUT=$(printf '%s' "$MERGE_OUT" | tr '\n\r' '  ')
+case "$MERGE_OUT" in
+  *cascade-resolve:*)
+    printf '%s\n' "MERGE_SETTINGS_STATE=blocked"
+    printf '%s\n' "ERROR=merge.deleteBranch could not be read (cascade-resolve.sh exit $RC_DELETE): $MERGE_OUT; refusing to guess whether the branch is deleted"
+    true; exit 0 ;;
+esac
 if [ "$RC_DELETE" -ne 0 ]; then
-  echo "MERGE_SETTINGS_STATE=blocked"
-  echo "ERROR=merge.deleteBranch could not be read (cascade-resolve.sh exit $RC_DELETE — a value carrying a control character is refused); refusing to guess whether the branch is deleted"
+  printf '%s\n' "MERGE_SETTINGS_STATE=blocked"
+  printf '%s\n' "ERROR=merge.deleteBranch could not be read (cascade-resolve.sh exit $RC_DELETE); refusing to guess whether the branch is deleted"
   true; exit 0
 fi
+DELETE_BRANCH="$MERGE_OUT"
 [ -n "$DELETE_BRANCH" ] || DELETE_BRANCH="true"
 case "$MERGE_STRATEGY" in
   squash|merge|rebase) ;;
@@ -590,19 +623,19 @@ case "$MERGE_STRATEGY" in
     # Safe to quote because cascade-resolve.sh refuses a value carrying a
     # control character by default, so this can only ever be a single line.
     echo "MERGE_SETTINGS_STATE=blocked"
-    echo "ERROR=merge.strategy is '$MERGE_STRATEGY'; it must be squash, merge or rebase"
+    printf '%s\n' "ERROR=merge.strategy is '$MERGE_STRATEGY'; it must be squash, merge or rebase"
     true; exit 0 ;;
 esac
 case "$DELETE_BRANCH" in
   true|false) ;;
   *)
     echo "MERGE_SETTINGS_STATE=blocked"
-    echo "ERROR=merge.deleteBranch is '$DELETE_BRANCH'; it must be true or false"
+    printf '%s\n' "ERROR=merge.deleteBranch is '$DELETE_BRANCH'; it must be true or false"
     true; exit 0 ;;
 esac
 echo "MERGE_SETTINGS_STATE=ok"
-echo "MERGE_STRATEGY=$MERGE_STRATEGY"
-echo "DELETE_BRANCH=$DELETE_BRANCH"
+printf '%s\n' "MERGE_STRATEGY=$MERGE_STRATEGY"
+printf '%s\n' "DELETE_BRANCH=$DELETE_BRANCH"
 # MERGE_SETTINGS_BLOCK_END
 true
 ```
