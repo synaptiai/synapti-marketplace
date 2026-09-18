@@ -639,16 +639,17 @@ RC=0
 assert_equal "0" "$RC" "block-unregistered-claim does not flag a bare scheme mention with no credential as a connection-string leak"
 
 # The hook and the batch scanner must use pattern-identical regexes for these
-# three classes, or the drift this fix closes can silently reopen. Compares
+# four classes, or the drift this fix closes can silently reopen. Compares
 # the actual regex strings verbatim (parallel arrays, not a delimited string --
 # the patterns themselves contain literal `|` characters, which would corrupt
 # any single-character-delimited split), not just that both files mention the
 # class name.
-DRIFT_CLASSES=(aws-access-key private-key-block connection-string)
+DRIFT_CLASSES=(aws-access-key private-key-block connection-string bearer-token)
 DRIFT_PATTERNS=(
   'AKIA[ |,]?([0-9A-Z][ |,]?){16}'
   '-----BEGIN[ |,]?[A-Z ,|]*P[ |,]?R[ |,]?I[ |,]?V[ |,]?A[ |,]?T[ |,]?E[ |,]?[[:space:]][ |,]?K[ |,]?E[ |,]?Y[ |,]?-----'
   '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[ |,]?([^[:space:]@|,][ |,]?)+@'
+  '(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}'
 )
 for I in "${!DRIFT_CLASSES[@]}"; do
   CLASS="${DRIFT_CLASSES[$I]}"
