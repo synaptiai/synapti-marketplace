@@ -647,6 +647,7 @@ RC=0
 OUT=$(printf '%s' '{"tool_input":{"file_path":"docs/dossier/06-public/guide.md","content":"Send it with authorization: bearer 8f3d9a2b7c1e4f60a5b8c3d2e1f09a7c to the gateway."}}' \
         | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/block-unregistered-claim.sh" 2>&1) || RC=$?
 assert_equal "2" "$RC" "block-unregistered-claim blocks a lowercase bearer token too"
+assert_contains "bearer-token" "$OUT" "the pattern class is named for the lowercase form too"
 
 # The false-positive guard the interrupt-tolerance bound exists to preserve
 # (issue #210): a bare scheme mention with no embedded credential, where the
@@ -670,6 +671,11 @@ DRIFT_PATTERNS=(
   '(postgres|postgresql|mysql|mongodb\+srv|redis|amqp)://[^[:space:]/]+:[ |,]?([^[:space:]@|,][ |,]?)+@'
   '(Bearer|bearer)[[:space:]]+[A-Za-z0-9._-]{20,}'
 )
+# The two arrays are indexed in parallel, so a pattern appended without its
+# class is never iterated and silently goes unchecked.
+if [ "${#DRIFT_CLASSES[@]}" -ne "${#DRIFT_PATTERNS[@]}" ]; then
+  _dossier_assert_fail "DRIFT_CLASSES has ${#DRIFT_CLASSES[@]} entries and DRIFT_PATTERNS has ${#DRIFT_PATTERNS[@]}, so a class would go unchecked"
+fi
 for I in "${!DRIFT_CLASSES[@]}"; do
   CLASS="${DRIFT_CLASSES[$I]}"
   PATTERN="${DRIFT_PATTERNS[$I]}"

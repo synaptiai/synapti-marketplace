@@ -302,10 +302,20 @@ while IFS= read -r h206_line; do
   # The needle has to BE that last line, or the assertion above cannot fail for the
   # reason its message gives: a needle on an interior line survives a truncation of
   # the tail. `dossier-claim-scan.sh`'s did exactly that once its header grew.
-  h206_last=$(awk 'NR>1 && /^#/ {l=$0; sub(/^# ?/,"",l); last=l} NR>1 && !/^#/ && last {print last; exit}' "$BIN/$h206_script")
+  # The last non-empty comment line of the header. A bare `#` separator or a
+  # whitespace-only comment is not a documented line and does not end the scan:
+  # stopping there would run it into the script body and compare the needle
+  # against body text, which is how a guard reports a failure from the wrong file.
+  h206_last=$(awk 'NR==1 {next} /^#/ {s=$0; sub(/^#[[:space:]]*/,"",s); if (s!="") last=s; next} {print last; exit}' "$BIN/$h206_script")
   h206_needle_flat=$(printf '%s' "$h206_needle" | sed 's/^[[:space:]#]*//')
   h206_last_flat=$(printf '%s' "$h206_last" | sed 's/^[[:space:]#]*//')
-  assert_equal "$h206_last_flat" "$h206_needle_flat" "$h206_script's needle is the last documented line of its own header"
+  # Two empty strings are equal, so a needle that flattens to nothing would pass
+  # against a script with no header at all.
+  if [ -z "$h206_needle_flat" ] || [ -z "$h206_last_flat" ]; then
+    _dossier_assert_fail "$h206_script's needle or its header's last line flattens to empty, which would compare equal to anything"
+  else
+    assert_equal "$h206_last_flat" "$h206_needle_flat" "$h206_script's needle is the last documented line of its own header"
+  fi
 done <<'EOF'
 dossier-blast-radius.sh :: #   2 — missing or invalid argument
 dossier-claim-scan.sh :: # exit code (2 or 1) even on a truncated file.

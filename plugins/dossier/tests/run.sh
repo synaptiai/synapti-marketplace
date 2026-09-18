@@ -106,6 +106,18 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
     set +e
     # shellcheck source=lib/assert.sh
     source "$LIB"
+    # A helper that did not load is invisible: `command not found` returns 127,
+    # this shell has no `-e`, and the file still prints a SUMMARY -- so a suite
+    # left running with half a library reports a clean pass over assertions that
+    # never executed. Check the helpers the files call before running any of them.
+    for _h in _dossier_test_begin _dossier_assert_pass _dossier_assert_fail \
+              assert_equal assert_match assert_contains assert_not_contains \
+              assert_exit assert_file_exists; do
+      if ! declare -F "$_h" >/dev/null; then
+        echo "run.sh: $LIB loaded without $_h -- refusing to run $(basename "$TEST_FILE") against a partial library" >&2
+        exit 2
+      fi
+    done
     # shellcheck disable=SC1090
     source "$TEST_FILE"
     _dossier_test_summary
