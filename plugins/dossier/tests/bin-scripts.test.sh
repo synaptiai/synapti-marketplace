@@ -306,7 +306,7 @@ while IFS= read -r h206_line; do
   # whitespace-only comment is not a documented line and does not end the scan:
   # stopping there would run it into the script body and compare the needle
   # against body text, which is how a guard reports a failure from the wrong file.
-  h206_last=$(awk 'NR==1 {next} /^#/ {s=$0; sub(/^#[[:space:]]*/,"",s); if (s!="") last=s; next} {print last; exit}' "$BIN/$h206_script")
+  h206_last=$(awk 'NR==1 {next} /^[[:space:]]*#/ {s=$0; sub(/^[[:space:]]*#[[:space:]]*/,"",s); if (s!="") last=s; next} {print last; exit}' "$BIN/$h206_script")
   h206_needle_flat=$(printf '%s' "$h206_needle" | sed 's/^[[:space:]#]*//')
   h206_last_flat=$(printf '%s' "$h206_last" | sed 's/^[[:space:]#]*//')
   # Two empty strings are equal, so a needle that flattens to nothing would pass
