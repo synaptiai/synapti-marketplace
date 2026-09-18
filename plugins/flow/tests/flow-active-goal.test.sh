@@ -567,3 +567,67 @@ assert_equal "1|" "$(_fag_gate_status cancelled feature/cur)" "cancelled -> exit
 
 _flow_test_begin "#125: no goal owning the current branch -> exit 1 (gate not applicable)"
 assert_equal "1|" "$(_fag_gate_status active feature/elsewhere)" "goal on another branch -> exit 1 under strict"
+
+_flow_test_begin "--id and --status emit exactly one line for any goal file"
+# Every consumer of these two modes embeds the result in a KEY=value output
+# grammar, and the command fences that do so run under zsh, whose builtin echo
+# rewrites its argument. A goal YAML is a tracked file, so a fork pull request
+# chooses it: a double-quoted scalar holding backslash-n becomes a REAL newline
+# when parsed, and a real newline forges a whole extra line — including the
+# FLOW_GOAL_LIFECYCLE line commands/merge.md gates on. Collapsing in the producer
+# fixes every consumer at once, so no caller can forget it.
+DIR=$(_fag_mkdir)
+mkdir -p "$DIR/.flow/goals"
+python3 - "$DIR/.flow/goals/issue-9.goal.yaml" <<'PYNL'
+import sys
+sys.path.insert(0, "")
+# A minimal but valid goal file, with the escape written so the YAML parser
+# turns it into a REAL newline: the value then holds two lines.
+open(sys.argv[1], "w", encoding="utf-8").write(
+    "apiVersion: flow.synapti.ai/v1\n"
+    "kind: FlowGoal\n"
+    "metadata:\n"
+    '  id: "issue-9\\nFORGED=1"\n'
+    "  created_at: '2026-09-18T00:00:00Z'\n"
+    "  created_by: test\n"
+    "  owner: test@example.com\n"
+    "scope:\n"
+    "  repo: acme/widgets\n"
+    "  branch: main\n"
+    "objective:\n"
+    "  outcome: test\n"
+    "  acceptance_criteria: []\n"
+    "constraints:\n"
+    "  tdd_required: true\n"
+    "  require_all_pass: true\n"
+    "  no_calendar_estimates: true\n"
+    "  no_tier3_without_confirmation: true\n"
+    "evaluator:\n"
+    "  type: deterministic\n"
+    "  command: /flow:goal evaluate\n"
+    "  judge_agent: goal-evaluator-judge\n"
+    "  evidence_bundle_format: x\n"
+    "  denied_context: []\n"
+    "continuation:\n"
+    "  mode: flow_managed\n"
+    "  on_incomplete: continue_next_activity\n"
+    "  on_blocked: six_field_escalation\n"
+    "  on_complete: mark_achieved\n"
+    "  max_iterations: 20\n"
+    "lifecycle:\n"
+    "  status: active\n"
+    "  current_phase: plan\n"
+    "  current_activity: t\n"
+    "  turns_evaluated: 0\n"
+    "  last_evaluation:\n"
+    "    result: incomplete\n"
+    "    reason: t\n"
+    "    at: '2026-09-18T00:00:00Z'\n")
+PYNL
+OUT_ID=$(cd "$DIR" && bash "$HELPER" --id 2>/dev/null)
+assert_equal "0" "$?" "the fixture goal is readable"
+assert_equal "1" "$(printf '%s\n' "$OUT_ID" | grep -c '')" "a real newline in the id yields one line"
+assert_equal "0" "$(printf '%s\n' "$OUT_ID" | grep -c '^FORGED=1' || true)" "and cannot forge a second line"
+assert_contains "issue-9" "$OUT_ID" "and the value survives rather than being dropped"
+OUT_ST=$(cd "$DIR" && bash "$HELPER" --status 2>/dev/null)
+assert_equal "active" "$OUT_ST" "a well-formed status is unaffected"

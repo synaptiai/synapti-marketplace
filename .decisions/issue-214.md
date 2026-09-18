@@ -919,3 +919,41 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-18 17:08 Write /tmp/r10_resolver_test.sh -->
 
 <!-- auto-log: 2026-09-18 17:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/explain.md -->
+
+<!-- auto-log: 2026-09-18 17:35 commit "fix(flow): guard the class mechanically, not with another sweep" -->
+
+<!-- auto-log: 2026-09-18 17:45 Write /tmp/run_merge_states.sh -->
+
+<!-- auto-log: 2026-09-18 17:47 commit "fix(flow): guard the class mechanically, not with another sweep" -->
+
+<!-- auto-log: 2026-09-18 17:47 Write /tmp/run_printf_diff.sh -->
+
+<!-- auto-log: 2026-09-18 17:49 commit "fix(flow): guard the class mechanically, not with another sweep" -->
+
+<!-- auto-log: 2026-09-18 17:53 Write /tmp/f4repro.sh -->
+
+<!-- auto-log: 2026-09-18 17:57 commit "fix(flow): guard the class mechanically, not with another sweep" -->
+
+<!-- auto-log: 2026-09-18 17:57 commit "fix(flow): guard the class mechanically, not with another sweep" -->
+
+<!-- auto-log: 2026-09-18 17:57 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_print_class_guard.md -->
+
+<!-- auto-log: 2026-09-18 17:57 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/MEMORY.md -->
+
+<!-- auto-log: 2026-09-18 17:58 Write /tmp/e11/q.sh -->
+
+<!-- auto-log: 2026-09-18 17:58 Write /tmp/e11/jqtest.sh -->
+
+<!-- auto-log: 2026-09-18 18:03 Write /tmp/cyc11/body.md -->
+
+<!-- auto-log: 2026-09-18 18:03 Write /tmp/cyc11/fakegh/gh -->
+
+<!-- auto-log: 2026-09-18 18:06 Write /tmp/cyc11/extract2.sh -->
+
+<!-- auto-log: 2026-09-18 18:07 commit "fix(flow): guard the class mechanically, not with another sweep" -->
+
+<!-- auto-log: 2026-09-18 18:10 commit "fix(flow): guard the class mechanically, not with another sweep" -->
+
+<!-- auto-log: 2026-09-18 18:11 commit "fix(flow): guard the class mechanically, not with another sweep" -->
+
+<!-- auto-log: 2026-09-18 18:11 commit "fix(flow): guard the class mechanically, not with another sweep" -->
