@@ -957,3 +957,9 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-18 18:11 commit "fix(flow): guard the class mechanically, not with another sweep" -->
 
 <!-- auto-log: 2026-09-18 18:11 commit "fix(flow): guard the class mechanically, not with another sweep" -->
+
+<!-- auto-log: 2026-09-18 18:29 commit "fix(flow): the goal helper emits one line, so no consumer has to remember" -->
+
+<!-- auto-log: 2026-09-18 18:30 Write /tmp/issue-print-class.md -->
+
+<!-- auto-log: 2026-09-18 18:46 Write /tmp/mk_evidence.sh -->

@@ -169,6 +169,9 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
-  current_phase: plan
-  current_activity: task-decomposition
+  status: achieved
+  last_evaluation:
+    result: pass
+    reason: 'Independent judge verdict: all 8 acceptance criteria pass on command_result
+      sidecars at f4f932f (290/88/122/107; full suite 4555, 0 failures).'
+    at: '2026-09-18T17:00:04Z'
