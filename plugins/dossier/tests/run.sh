@@ -47,7 +47,10 @@ done
 MISSING_HELPERS=$(
   set +e
   # shellcheck source=lib/assert.sh
-  source "$LIB" 2>/dev/null
+  # Not silenced: a library that fails to parse is the likeliest reason helpers
+  # go missing, and swallowing its syntax error would report the symptom as the
+  # cause. A clean load prints nothing.
+  source "$LIB"
   for _h in _dossier_test_begin _dossier_assert_pass _dossier_assert_fail \
             assert_equal assert_match assert_contains assert_not_contains \
             assert_exit assert_file_exists; do
