@@ -153,8 +153,8 @@ else
       0)
         GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id 2>/dev/null)
         echo "STATE=ok"
-        echo "GOAL_ID=$GOAL_ID"
-        echo "GOAL_LIFECYCLE=$GOAL_STATUS"
+        printf '%s\n' "GOAL_ID=$GOAL_ID"
+        printf '%s\n' "GOAL_LIFECYCLE=$GOAL_STATUS"
         # AC summary: one line per AC in id|status|evidence_ref|last_result format.
         "$ACTIVE_GOAL_HELPER" --ac-summary 2>/dev/null | sed 's/^/AC=/'
         ;;
@@ -167,7 +167,7 @@ else
         ;;
       *)
         echo "STATE=unavailable"
-        echo "REASON=flow-active-goal.sh exited $GOAL_EXIT"
+        printf '%s\n' "REASON=flow-active-goal.sh exited $GOAL_EXIT"
         ;;
     esac
   fi

@@ -388,3 +388,61 @@ if [ -n "$FP" ]; then
   PASS=0
 fi
 [ "$PASS" = "1" ] && _flow_assert_pass "Test 6 strip+grep covers all operators with no false positives"
+
+_flow_test_begin "no inline-! fence echoes a settings-derived value"
+# The recurring class across five review rounds: a value from the settings file
+# is interpolated into `echo`, and `echo` is not a safe way to print it. zsh —
+# the shell that actually executes these fences — expands backslash escapes in
+# echo's argument, so a value holding the two printable characters backslash and
+# n becomes a real newline at print time, carrying no control byte for any
+# upstream refusal to catch. merge.md printed a forged MERGE_SETTINGS_STATE=ok
+# that way, on the gate for an irreversible merge.
+#
+# This is the mechanical guard for the whole class. It resolves the indirection
+# callers actually use — a variable assigned from cascade-resolve.sh, then
+# aliased through $HELPER or $CASCADE — and fails if any `echo` line prints one.
+# Upstream validation is not a defence here: the defect is in the PRINT, and a
+# value can pass every byte-level check and still forge a line.
+python3 - "$COMMANDS_DIR" <<'PYRES'
+import glob, os, re, sys
+
+CMDS = sys.argv[1]
+bad = []
+for path in sorted(glob.glob(os.path.join(CMDS, "*.md"))):
+    text = open(path, encoding="utf-8").read()
+    # Restrict to inline-bang fences: those are what the harness executes.
+    fences, cur, inb = [], [], False
+    for line in text.split("\n"):
+        if re.match(r"^```!\s*$", line):
+            inb = True; cur = []; continue
+        if inb and re.match(r"^```\s*$", line):
+            inb = False; fences.append(cur); continue
+        if inb: cur.append(line)
+    for fence in fences:
+        # Hop 1: variables assigned from cascade-resolve.sh itself.
+        resolvers = set(["_HELPER"])
+        for line in fence:
+            if "cascade-resolve.sh" in line:
+                m = re.match(r"\s*(?:\[[^\]]*\]\s*&&\s*)?([A-Za-z_][A-Za-z0-9_]*)=", line)
+                if m: resolvers.add(m.group(1))
+        # Hop 2: variables assigned by calling one of those.
+        settings_vars = set()
+        for line in fence:
+            for r in resolvers:
+                if re.search(r'\$\{?%s\b' % re.escape(r), line):
+                    m = re.match(r"\s*(?:\[[^\]]*\]\s*&&\s*)?([A-Za-z_][A-Za-z0-9_]*)=", line)
+                    if m: settings_vars.add(m.group(1))
+        for n, line in enumerate(fence, 1):
+            st = line.lstrip()
+            if not (st.startswith("echo ") or st.startswith('echo "')): continue
+            for v in sorted(settings_vars):
+                if re.search(r"\$\{?%s\b" % re.escape(v), line):
+                    bad.append((os.path.basename(path), v, line.strip()[:80]))
+                    break
+if bad:
+    for f, v, l in bad:
+        print("  %s: $%s -> %s" % (f, v, l))
+    sys.exit(1)
+sys.exit(0)
+PYRES
+assert_equal "0" "$?" "every settings-derived value is printed with printf, not echo"

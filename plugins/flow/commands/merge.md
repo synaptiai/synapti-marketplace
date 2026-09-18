@@ -446,8 +446,8 @@ else
     case "$GOAL_EXIT" in
       0)
         GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id --allow-terminal --branch-strict 2>/dev/null)
-        echo "FLOW_GOAL_ID=$GOAL_ID"
-        echo "FLOW_GOAL_LIFECYCLE=$GOAL_STATUS"
+        printf '%s\n' "FLOW_GOAL_ID=$GOAL_ID"
+        printf '%s\n' "FLOW_GOAL_LIFECYCLE=$GOAL_STATUS"
         if [ "$GOAL_STATUS" = "achieved" ]; then
           echo "FLOW_GOAL_GATE_STATE=ok"
         else
@@ -456,7 +456,7 @@ else
           # PR whose own contract reports incomplete is exactly what the
           # "no incomplete shipments" boundary is designed to prevent.
           echo "FLOW_GOAL_GATE_STATE=blocked"
-          echo "FLOW_GOAL_BLOCK_REASON=FlowGoal $GOAL_ID lifecycle is '$GOAL_STATUS' — run /flow:goal evaluate $GOAL_ID to advance"
+          printf '%s\n' "FLOW_GOAL_BLOCK_REASON=FlowGoal $GOAL_ID lifecycle is '$GOAL_STATUS' — run /flow:goal evaluate $GOAL_ID to advance"
         fi
         ;;
       1)
@@ -475,7 +475,7 @@ else
         ;;
       *)
         echo "FLOW_GOAL_GATE_STATE=blocked"
-        echo "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh exited $GOAL_EXIT"
+        printf '%s\n' "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh exited $GOAL_EXIT"
         ;;
     esac
   fi

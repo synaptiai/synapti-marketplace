@@ -913,3 +913,9 @@ criteria to eight, and the issue body was updated before the goal was built from
 <!-- auto-log: 2026-09-18 16:20 Edit /tmp/wt-m10p/plugins/flow/bin/cascade-resolve.sh -->
 
 <!-- auto-log: 2026-09-18 16:39 Write /tmp/r10_tests.sh -->
+
+<!-- auto-log: 2026-09-18 17:01 commit "fix(flow): the guard has to hold where the fence actually runs, in the shell that runs it" -->
+
+<!-- auto-log: 2026-09-18 17:08 Write /tmp/r10_resolver_test.sh -->
+
+<!-- auto-log: 2026-09-18 17:12 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/explain.md -->

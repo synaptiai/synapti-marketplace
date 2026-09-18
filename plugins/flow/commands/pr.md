@@ -192,8 +192,8 @@ else
         0)
           GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id --allow-terminal --branch-strict 2>/dev/null)
           echo "STATE=ok"
-          echo "GOAL_ID=$GOAL_ID"
-          echo "GOAL_LIFECYCLE=$GOAL_STATUS"
+          printf '%s\n' "GOAL_ID=$GOAL_ID"
+          printf '%s\n' "GOAL_LIFECYCLE=$GOAL_STATUS"
           if [ "$GOAL_STATUS" = "achieved" ]; then
             echo "GATE=pass"
           else
@@ -215,7 +215,7 @@ else
         *)
           echo "STATE=unavailable"
           echo "GATE=block"
-          echo "REASON=flow-active-goal.sh exited $GOAL_EXIT"
+          printf '%s\n' "REASON=flow-active-goal.sh exited $GOAL_EXIT"
           ;;
       esac
     fi

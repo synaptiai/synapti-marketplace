@@ -32,7 +32,7 @@ JOURNAL_DIR=".decisions"
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
   printf '%s\n' "JOURNAL_FILE=$JOURNAL_DIR/issue-$ISSUE_NUM.md"
-  echo "JOURNAL_BYTES=$(wc -c < "$JOURNAL_DIR/issue-$ISSUE_NUM.md" | tr -d ' ')"
+  printf '%s\n' "JOURNAL_BYTES=$(wc -c < "$JOURNAL_DIR/issue-$ISSUE_NUM.md" | tr -d ' ')"
   echo ""
   echo "#### Journal contents"
   cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
