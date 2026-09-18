@@ -629,6 +629,25 @@ assert_equal "2" "$RC" "block-unregistered-claim blocks an interrupted connectio
 assert_not_contains "Sup3rSecret Pass" "$OUT" "the matched fragment is never printed"
 assert_contains "connection-string" "$OUT" "the pattern class is named"
 
+# bearer-token: the fourth class the hook and the scanner share a regex for,
+# synced by #232. It has no interrupt-tolerance story of its own; it is here
+# because the drift guard above matches pattern *text*, so a commented-out
+# `check "bearer-token"` line would keep the guard green while the live hook
+# stopped blocking the class entirely.
+RC=0
+OUT=$(printf '%s' '{"tool_input":{"file_path":"docs/dossier/06-public/guide.md","content":"Send it with Authorization: Bearer 8f3d9a2b7c1e4f60a5b8c3d2e1f09a7c to the gateway."}}' \
+        | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/block-unregistered-claim.sh" 2>&1) || RC=$?
+assert_equal "2" "$RC" "block-unregistered-claim blocks an unbroken bearer token bound for 06-public"
+assert_contains "bearer-token" "$OUT" "the pattern class is named"
+
+# The same, lowercased: the scanner redacted this case while section A's leak
+# counter did not count it (exit 1 instead of 2) until #232 made the hook's
+# copy case-insensitive.
+RC=0
+OUT=$(printf '%s' '{"tool_input":{"file_path":"docs/dossier/06-public/guide.md","content":"Send it with authorization: bearer 8f3d9a2b7c1e4f60a5b8c3d2e1f09a7c to the gateway."}}' \
+        | CLAUDE_PLUGIN_ROOT="$REPO/$PLUGIN" "$REPO/$HS/block-unregistered-claim.sh" 2>&1) || RC=$?
+assert_equal "2" "$RC" "block-unregistered-claim blocks a lowercase bearer token too"
+
 # The false-positive guard the interrupt-tolerance bound exists to preserve
 # (issue #210): a bare scheme mention with no embedded credential, where the
 # only "interruption" is two consecutive characters (a comma then a space)
@@ -654,11 +673,20 @@ DRIFT_PATTERNS=(
 for I in "${!DRIFT_CLASSES[@]}"; do
   CLASS="${DRIFT_CLASSES[$I]}"
   PATTERN="${DRIFT_PATTERNS[$I]}"
-  if grep -qF -- "$PATTERN" "$HS/block-unregistered-claim.sh" \
-     && grep -qF -- "$PATTERN" "$PLUGIN/bin/dossier-claim-scan.sh"; then
-    _dossier_assert_pass "hook and batch scanner use a pattern-identical $CLASS regex"
+  # The scanner writes each class's regex at two sites: the scan_class call its
+  # pre-check runs, and the CRED_PATTERNS entry redact() and cred_match_class()
+  # use. A whole-file grep cannot see a drift at one of them while the other
+  # still matches -- exactly the divergence (bearer-token case-sensitive in one
+  # copy, not the other) this guard exists to catch -- so each site is counted
+  # on its own. If a class is ever deliberately written at one site, update the
+  # expected counts rather than deleting the check.
+  DRIFT_HOOK_SITES=$(grep -cF -- "$PATTERN" "$HS/block-unregistered-claim.sh")
+  DRIFT_CALL_SITES=$(grep -F -- "$PATTERN" "$PLUGIN/bin/dossier-claim-scan.sh" | grep -c 'scan_class')
+  DRIFT_POOL_SITES=$(grep -F -- "$PATTERN" "$PLUGIN/bin/dossier-claim-scan.sh" | grep -cv 'scan_class')
+  if [ "$DRIFT_HOOK_SITES" -eq 1 ] && [ "$DRIFT_CALL_SITES" -eq 1 ] && [ "$DRIFT_POOL_SITES" -eq 1 ]; then
+    _dossier_assert_pass "hook, scanner's scan_class call and scanner's CRED_PATTERNS entry agree on the $CLASS regex"
   else
-    _dossier_assert_fail "hook and batch scanner have drifted apart on the $CLASS regex"
+    _dossier_assert_fail "hook and batch scanner have drifted apart on the $CLASS regex (hook=$DRIFT_HOOK_SITES scan_class=$DRIFT_CALL_SITES CRED_PATTERNS=$DRIFT_POOL_SITES, expected 1/1/1)"
   fi
 done
 

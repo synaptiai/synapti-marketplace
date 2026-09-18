@@ -51,14 +51,15 @@ check() { # class | regex
   fi
 }
 
-# aws-access-key, private-key-block, and connection-string are kept
-# pattern-identical to dossier-claim-scan.sh's CRED_PATTERNS entries of the
-# same name (issues #198, #210), not just tolerance-equivalent. A prior,
-# documented bug (see the CRED_PATTERNS comment in dossier-claim-scan.sh)
-# came from this exact kind of drift: this live pre-write hook and the batch
-# scanner disagreeing on the same credential's shape, so one path redacted a
-# match the other never even flagged. Do not hand-tune these three here --
-# copy the fix from dossier-claim-scan.sh's CRED_PATTERNS array verbatim.
+# aws-access-key, private-key-block, connection-string and bearer-token are
+# kept pattern-identical to dossier-claim-scan.sh's entries of the same name
+# (aws-access-key, private-key-block and connection-string in #198/#210,
+# bearer-token in #232), not just tolerance-equivalent. A prior, documented
+# bug (see the CRED_PATTERNS comment in dossier-claim-scan.sh) came from this
+# exact kind of drift: this live pre-write hook and the batch scanner
+# disagreeing on the same credential's shape, so one path redacted a match the
+# other never even flagged. Do not hand-tune these four here -- copy the fix
+# from dossier-claim-scan.sh verbatim, at both of the sites that carry it.
 check "anthropic-key"        'sk-ant-[A-Za-z0-9_-]{8,}'
 check "github-token"         '(ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_]{16,}'
 check "aws-access-key"       'AKIA[ |,]?([0-9A-Z][ |,]?){16}'
