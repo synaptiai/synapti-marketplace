@@ -304,3 +304,13 @@ PASS — 3 tasks reviewed.
 <!-- auto-log: 2026-09-19 23:39 commit "fix(flow): check every tool the guard's shell part runs, not just four" -->
 
 <!-- auto-log: 2026-09-19 23:42 Write /tmp/ev239b-synapti-sidecar.yaml -->
+
+<!-- auto-log: 2026-09-19 23:44 Write /tmp/sort239-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 23:44 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/block-force-push.sh -->
+
+<!-- auto-log: 2026-09-19 23:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/block-force-push.test.sh -->
+
+<!-- auto-log: 2026-09-19 23:47 Write /tmp/bundle239-nums-synapti.py -->
+
+<!-- auto-log: 2026-09-19 23:47 commit "fix(flow): drop sort from the cannot-execute list, and state what earns a place on it" -->
