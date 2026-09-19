@@ -26,33 +26,33 @@ Turns three independent findings tables into one adjudicated ledger, then repair
 
 ```!
 _RAW="$ARGUMENTS"
-echo "### Reconcile Arguments"
-echo "ARGS=$_RAW"
+printf '%s\n' "### Reconcile Arguments"
+printf '%s\n' "ARGS=$_RAW"
 
 __dr="${CLAUDE_PLUGIN_ROOT:-}"
-[ -x "$__dr/bin/dossier-resolve-config.sh" ] || __dr=$({ echo plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-resolve-config.sh" ] && { echo "${__p%/}"; break; }; done)
+[ -x "$__dr/bin/dossier-resolve-config.sh" ] || __dr=$({ printf '%s\n' plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-resolve-config.sh" ] && { printf '%s\n' "${__p%/}"; break; }; done)
 
-echo "### Preflight"
+printf '%s\n' "### Preflight"
 if [ ! -x "$__dr/bin/dossier-resolve-config.sh" ]; then
-  echo "RECONCILE_STATE=blocked"
-  echo "RECONCILE_ERROR=dossier plugin scripts not found — reinstall or upgrade the plugin"
+  printf '%s\n' "RECONCILE_STATE=blocked"
+  printf '%s\n' "RECONCILE_ERROR=dossier plugin scripts not found — reinstall or upgrade the plugin"
   true; exit 0
 fi
 
 OUTPUT_ROOT=$("$__dr/bin/dossier-resolve-config.sh" --default "docs/dossier" dossier.project.outputRoot 2>/dev/null)
-echo "OUTPUT_ROOT=$OUTPUT_ROOT"
-echo "MAX_ROUNDS=$("$__dr/bin/dossier-resolve-config.sh" --default 3 dossier.verification.maxRounds 2>/dev/null)"
+printf '%s\n' "OUTPUT_ROOT=$OUTPUT_ROOT"
+printf '%s\n' "MAX_ROUNDS=$("$__dr/bin/dossier-resolve-config.sh" --default 3 dossier.verification.maxRounds 2>/dev/null)"
 
-echo "### Available rounds"
+printf '%s\n' "### Available rounds"
 LATEST=$(ls -1d .dossier/runs/*/ 2>/dev/null | sort | tail -1)
-echo "LATEST_RUN=${LATEST:-none}"
+printf '%s\n' "LATEST_RUN=${LATEST:-none}"
 if [ -n "$LATEST" ]; then
   for p in A B C; do
     f="${LATEST}pass-$p.md"
     if [ -f "$f" ]; then
-      echo "PASS_${p}=present findings=$(grep -c '^| \*\*' "$f" 2>/dev/null || echo 0)"
+      printf '%s\n' "PASS_${p}=present findings=$(grep -c '^| \*\*' "$f" 2>/dev/null || printf '%s\n' 0)"
     else
-      echo "PASS_${p}=absent"
+      printf '%s\n' "PASS_${p}=absent"
     fi
   done
 fi
