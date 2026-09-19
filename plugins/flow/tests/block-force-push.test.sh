@@ -25,8 +25,8 @@
 #     continued with a backslash.
 #
 # The hook reads {"tool_input":{"command":"..."}} on stdin and exits 0 (allow)
-# or 2 (block). It consults no git state, so every case runs from a scratch
-# directory.
+# or 2 (block). It consults no git state, so the cases need no repository:
+# the runner's working directory does not affect any of them.
 #
 # Prereq: jq and awk (the hook hard-requires both). SKIPS gracefully otherwise.
 
@@ -34,7 +34,7 @@ HOOK="$REPO_ROOT/plugins/flow/hooks/scripts/block-force-push.sh"
 
 if ! command -v jq >/dev/null 2>&1 || ! command -v awk >/dev/null 2>&1; then
   _flow_test_begin "jq and awk prerequisites"
-  _flow_assert_pass "SKIP: jq and awk are both required"
+  _flow_assert_pass "SKIP: jq and awk are both required — this run proves nothing"
   return 0
 fi
 
@@ -280,9 +280,31 @@ _fp_blocks "F='--force'; git push \$F origin main"
 # so is one the line never set — refusing those would refuse real work.
 _fp_allows 'F=main; git push $F origin main'
 _fp_allows 'git push $BRANCH origin main'
+# `[` is `test` under another name, and the guard refused one and allowed the
+# other — a refusal that tells the operator to force-push by hand.
+_fp_allows '[ -f .env ] && git push origin main'
+_fp_allows 'test -f .env && git push origin main'
 # A push whose words arrive through an expansion cannot be read at all.
 _fp_blocks '$(echo git) push --force origin main'
 _fp_blocks 'git push ${F} origin main'
+
+_flow_test_begin "block-force-push — a subcommand the guard cannot read"
+# The push is the segment's subcommand, but it arrives as an expansion rather
+# than a word, so the guard cannot see what runs. A force flag beside it is not
+# something it can account for.
+_fp_blocks 'P=push; git $P --force origin main'
+_fp_blocks 'P=push; git ${P} --force origin main'
+_fp_blocks 'P=push; git $(echo $P) --force origin main'
+_fp_blocks 'P=push; git "$P" -f origin main'
+_fp_blocks 'P=push; git `echo $P` --force origin main'
+# git runs an alias as the subcommand it names, defined for one invocation by -c.
+_fp_blocks 'git -c alias.p=push p --force'
+
+_flow_test_begin "block-force-push — the +refspec spelling, inside a payload"
+# The word-based check treats a +refspec as force; the raw-text fallback has to
+# agree, or the spelling is invisible wherever only the text is readable.
+_fp_blocks "sh -c 'git push origin +main'"
+_fp_blocks "bash -c 'git push +main:main'"
 
 _flow_test_begin "block-force-push — a redirect does not break the push apart"
 # The shell parses `push>log` as `push` and a redirect; a word splitter that
@@ -301,6 +323,16 @@ _flow_test_begin "block-force-push — a body a shell reads, and an alias a shel
 _fp_blocks 'cat <<EOF | bash
 git push --force
 EOF'
+# A process substitution reads the body just as a pipe does.
+_fp_blocks 'cat <<EOF > >(bash)
+git push --force
+EOF'
+# Writing the body to a file is filing it, not running it — the guard tells the
+# operator to do exactly this for a command it cannot scan, so it stays allowed
+# even when a later command on the same line runs the file.
+_fp_allows 'cat > /tmp/x.sh <<EOF
+git push --force
+EOF'
 _fp_blocks "gh alias set --shell pp 'git push --force'; gh pp"
 
 _flow_test_begin "block-force-push — a flag that forces nothing is not a force-push"
@@ -309,6 +341,33 @@ _flow_test_begin "block-force-push — a flag that forces nothing is not a force
 # hook exists to prevent.
 _fp_allows 'git push --force-if-includes origin main'
 _fp_allows 'git push --force-with-lease --force-if-includes origin main'
+
+# ------------------------------------------- the guard's own runtime contract --
+
+_flow_test_begin "block-force-push — every failure of the guard is a refusal"
+# The harness reads exit 2 as a block and any other status as permission, so a
+# guard that fails without refusing has silently stopped guarding. These assert
+# the refusals, which the pathological group below cannot: it accepts 0 or 2.
+_fp_raw() {  # a bare payload, not a command
+  bash "$HOOK" <<<"$1" >/dev/null 2>&1
+  printf '%s' "$?"
+}
+assert_equal "2" "$(_fp_raw '{}')" "a payload with no command field is refused"
+assert_equal "2" "$(_fp_raw '{"tool_input":{}}')" "a payload with no tool_input is refused"
+assert_equal "2" "$(_fp_raw '{"tool_input":{"command":null}}')" "a null command is refused"
+assert_equal "2" "$(_fp_raw '{"tool_input":{"command":42}}')" "a non-string command is refused"
+assert_equal "2" "$(_fp_raw 'not json')" "a malformed payload is refused"
+assert_equal "2" "$(_fp_raw '')" "empty stdin is refused"
+# A present empty string is a command, and an empty command runs nothing.
+assert_equal "0" "$(_fp_raw '{"tool_input":{"command":""}}')" "an empty command is allowed"
+
+# The cap counts bytes, because awk walks bytes: a multi-byte command costs more
+# than its character count suggests. It is refused rather than truncated, since a
+# truncated scan would drop whatever the tail held.
+_over=$(_fp_exit "$(printf 'x%.0s' $(seq 1 131073))")
+assert_equal "2" "$_over" "a command over the byte cap is refused"
+_under=$(_fp_exit "$(printf 'x%.0s' $(seq 1 131070))")
+assert_equal "0" "$_under" "one under the cap is still decided"
 
 # ----------------------------------------------------------- shapes that must not crash --
 
@@ -340,13 +399,13 @@ _fp_exit_is_documented() {
 _flow_test_begin "block-force-push — a pathological command is not a crash"
 _fp_exit_is_documented "$(printf 'x%.0s' $(seq 1 20000))"
 _fp_exit_is_documented "echo '$(printf 'y%.0s' $(seq 1 20000))'"
-_fp_exit_is_documented 'echo "a'"'"'b"c'"'"'d"e'
+assert_equal "2" "$(_fp_exit 'echo "a'"'"'b"c'"'"'d"e')" "mixed quotes block rather than allowing"
 _fp_exit_is_documented 'git push \'
 _fp_exit_is_documented "cat <<"
-_fp_exit_is_documented 'git push `'
-_fp_exit_is_documented 'git push $('
+assert_equal "2" "$(_fp_exit 'git push `')" "an unterminated backtick blocks rather than allowing"
+assert_equal "2" "$(_fp_exit 'git push $(')" "an unterminated substitution blocks rather than allowing"
 _fp_exit_is_documented 'echo ${a${b${c${d}}}}'
-_fp_exit_is_documented "$(printf '\n')"
+assert_equal "2" "$(_fp_raw "$(printf '{"tool_input":{"command":"a\nb"}}')")" "a multi-line command is decided, not skipped"
 # A tab separates words, so a tab-separated push is still a push.
 _fp_blocks "$(printf 'git\tpush\t--force')"
 # Recursion through shells and eval is bounded, so a payload that nests past the
@@ -365,3 +424,12 @@ assert_contains "Note: --force-with-lease is allowed as a safe alternative." "$_
 # And nothing is printed when the command is allowed, so a caller reading stderr
 # cannot mistake silence for a refusal.
 assert_equal "" "$(_fp_stderr "git push origin main")" "no message when the push is allowed"
+# A refusal that is not a force-push says so. The three lines above tell the
+# operator to force-push by hand, which is the wrong instruction when no force
+# flag was found — it is the harm this hook exists to prevent.
+_unverifiable=$(_fp_stderr 'git push origin main $(date)')
+assert_contains "could not be verified" "$_unverifiable" "an unverifiable command is refused as unverifiable"
+assert_not_contains "Force-push detected" "$_unverifiable" "and not reported as a force-push"
+_malformed=$(_fp_stderr "git push origin main 'unbalanced")
+assert_contains "could not be verified" "$_malformed" "input that ends mid-construct is refused as unverifiable"
+assert_not_contains "Force-push detected" "$_malformed" "and not reported as a force-push"

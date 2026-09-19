@@ -8,8 +8,8 @@ criteria below reproduce that section's text.
 
 The hook under test is `plugins/flow/hooks/scripts/block-force-push.sh`; every case
 runs against the file as it stands on this branch. The suite is
-`plugins/flow/tests/run.sh block-force-push.test.sh`: **119 assertions, 75 of them
-asserting a block and 27 asserting an allow**, the rest asserting exit codes and the
+`plugins/flow/tests/run.sh block-force-push.test.sh`: **144 assertions, 84 of them
+asserting a block and 30 asserting an allow**, the rest asserting exit codes and the
 refusal message. Its baseline before any mutation is **0 cases red**.
 
 The guard blocks by default and allows only what it can positively account for. The
@@ -353,14 +353,14 @@ Baseline before each: **0 cases red.**
 
 | Mutation | Cases red |
 |---|---|
-| A — no decision at all (allow everything) | 80 |
-| B — every command word treated as able to execute | 29 |
-| C — the `risky` term dropped from the floor | 27 |
-| D — the raw-text force-flag check dropped | 6 |
+| A — no decision at all (allow everything) | 94 |
+| B — every command word treated as able to execute | 30 |
+| C — the `risky` term dropped from the floor | 32 |
+| D — the raw-text force-flag check dropped | 8 |
 | E — the quoted-substitution check dropped | 1 |
-| F — detection reverted to the previous whole-line pattern | 27 |
+| F — detection reverted to the previous whole-line pattern | 41 |
 
-**A** is the degenerate case: a guard that always allows fails 80 assertions, so the
+**A** is the degenerate case: a guard that always allows fails 94 assertions, so the
 suite is not passing by accident.
 
 **B** and **C** are the design's two central decisions — the cannot-execute list, and
@@ -375,7 +375,7 @@ to have noticed the flag turn red.
 the mutation passed the whole suite. It was found by running the mutation, not by
 reading the code, and the case was added because of it.
 
-**F** reverts to the whole-line scan this branch replaces and turns 18 red — the two
+**F** reverts to the whole-line scan this branch replaces and turns 41 red — the two
 reported shapes among them.
 
 ### Visual analysis
@@ -405,7 +405,7 @@ report is only as good as the mutant.
 
 ### Negative/adversarial cases covered
 
-The suite asserts both directions — 75 cases expecting a block and 27 expecting an allow
+The suite asserts both directions — 84 cases expecting a block and 30 expecting an allow
 — so a hook that always blocks and a hook that always allows each fail it. A 3000-input
 fuzz sample produced only exits 0 and 2, so no input makes the hook exit with a code the
 harness would read as an allow.
@@ -447,7 +447,7 @@ the process: exit code, and what it writes to each stream.
 
 | Step | Command | Result |
 |---|---|---|
-| Suite | `bash plugins/flow/tests/run.sh block-force-push.test.sh` | 119 pass, 0 fail |
+| Suite | `bash plugins/flow/tests/run.sh block-force-push.test.sh` | 144 pass, 0 fail |
 | Whole flow suite | `bash plugins/flow/tests/run.sh` | 4761 pass, 0 fail, 69 files |
 | Windows hook smoke | `bash plugins/flow/tests/windows-hooks-smoke.sh` | 56 passed, 0 failed |
 | Fuzz | 3000 generated commands | exits 0 and 2 only |

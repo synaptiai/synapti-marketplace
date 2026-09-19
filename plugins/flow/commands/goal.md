@@ -224,16 +224,19 @@ trap 'rm -f "$LIFE_TMP"' EXIT
 # The block must be nested under `lifecycle:` — the recorder refuses a bare
 # `status:` — and `last_evaluation.result` speaks its own vocabulary
 # (pass | incomplete | fail | needs_human_review | blocked), which is not the
-# lifecycle status being written here. The timestamp is quoted: YAML parses an
-# unquoted one into a datetime, and the schema requires a string.
-cat > "$LIFE_TMP" <<EOF
-lifecycle:
-  status: ${PROPOSED_TO}
-  last_evaluation:
-    result: ${VERDICT_RESULT}
-    reason: "${PROPOSED_REASON}"
-    at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-EOF
+# lifecycle status being written here.
+#
+# Built with `jq --arg`, not a heredoc: a reason carrying a double quote or a
+# newline would otherwise produce a document the recorder rejects, and a `$(...)`
+# in any interpolated value would run in this shell. YAML accepts JSON, so the
+# emitted document needs no separate quoting to be a valid goal fragment.
+jq -n \
+  --arg status "$PROPOSED_TO" \
+  --arg result "$VERDICT_RESULT" \
+  --arg reason "$PROPOSED_REASON" \
+  --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  '{lifecycle: {status: $status, last_evaluation: {result: $result, reason: $reason, at: $at}}}' \
+  > "$LIFE_TMP"
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-goal-record.sh" --update-lifecycle \
   --goal-id "$GOAL_ID" \
   --lifecycle-file "$LIFE_TMP" \

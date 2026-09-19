@@ -47,9 +47,17 @@ fi
 # scanning the head would silently drop whatever the tail contained, and a
 # dropped tail is the direction that lets a force-push through.
 MAX_BYTES=131072
-NB=$(LC_ALL=C printf '%s' "$COMMAND" | wc -c | tr -d '[:space:]')
+if ! NB=$(LC_ALL=C printf '%s' "$COMMAND" | wc -c | tr -d '[:space:]'); then
+  echo "BLOCKED: the size of this command could not be measured, so it could not be scanned." >&2 || true
+  exit 2
+fi
+# An empty or non-numeric count would make the comparison below error, and `if`
+# would swallow it — skipping the cap silently.
+case "$NB" in
+  ""|*[!0-9]*) echo "BLOCKED: the size of this command could not be measured, so it could not be scanned." >&2 || true; exit 2 ;;
+esac
 if [ "$NB" -gt "$MAX_BYTES" ]; then
-  echo "BLOCKED: this command is larger than the ${MAX_BYTES}-byte limit this guard can verify." >&2 || true
+  echo "BLOCKED: this command is ${NB} bytes, larger than the ${MAX_BYTES}-byte limit this guard can verify." >&2 || true
   echo "Write it to a script file and run the file instead." >&2 || true
   exit 2
 fi
@@ -82,23 +90,39 @@ fi
 #   * arithmetic, whose `<<` is a shift rather than a heredoc opener.
 #
 # MAIN_FIRES reproduces the whole-line scan this hook used before: a push
-# followed anywhere on the line by a force flag. It is the floor. Whatever the
-# accounting cannot explain, the floor still catches.
+# followed anywhere on the line by a force flag. It is consulted only where the
+# accounting named no flag at all, which in practice is text it read as a
+# non-push command own flag — so it is a backstop against a spelling the
+# accounting has not been taught, not a second opinion on every line.
 MAIN_FIRES=0
-STRIPPED=$(printf '%s' "$COMMAND" | sed 's/--force-with-lease//g')
+if ! STRIPPED=$(printf '%s' "$COMMAND" | sed 's/--force-with-lease//g'); then
+  echo "BLOCKED: this command could not be prepared for scanning, so it could not be scanned." >&2 || true
+  exit 2
+fi
+# `grep -c`, not `grep -q`: -q exits the moment it matches while the writer is
+# still producing, and pipefail then reports the pipeline as failed. Measured on
+# the -q form, MAIN_FIRES stayed 0 for commands over 64 KB, which disarms the
+# floor for exactly the large commands it is the last resort for.
 # The tail is the same class the accounting uses, not `\b`: `\b` matches inside
 # `--force-if-includes`, which forces nothing, and would make the floor fire on a
 # line with no force flag the accounting can name.
-if printf '%s' "$STRIPPED" | grep -qE 'git[^A-Za-z0-9]*push.*(-f|--force)([^A-Za-z0-9_-]|$)'; then
-  MAIN_FIRES=1
-fi
+# Exit 1 means no match. Any other non-zero status means grep could not read,
+# and an unread command is not one to allow — the floor is the last resort, so
+# its absence has to be a refusal rather than a silence.
+FLOOR_STATUS=0
+printf '%s' "$STRIPPED" | grep -cE 'git[^A-Za-z0-9]*push.*(-f|--force)([^A-Za-z0-9_-]|$)' >/dev/null || FLOOR_STATUS=$?
+case "$FLOOR_STATUS" in
+  0) MAIN_FIRES=1 ;;
+  1) MAIN_FIRES=0 ;;
+  *) echo "BLOCKED: this command could not be scanned for a force-push." >&2 || true; exit 2 ;;
+esac
 
 VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
   BEGIN {
     SQ = sprintf("%c", 39)
     BT = sprintf("%c", 96)          # backtick
     verdict = 0; unmodelled = 0; any_token = 0; hd = ""; hd_safe = 1
-    pushforce = 0; risky = 0; q_owner = ""; push_word = 0
+    pushforce = 0; risky = 0; q_owner = ""; push_word = 0; unverified = 0
     push_via_other = 0
     delete assign
     # Commands that cannot execute their arguments as a command. A force flag
@@ -111,7 +135,7 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
     # `env`, `timeout` and the rest of the wrappers are absent because running a
     # command is the whole of what they do. Anything not here blocks.
     safe = " echo printf grep egrep fgrep pgrep gh cat ls head tail wc rm mkdir" \
-           " rmdir cp mv touch chmod ln true false test sleep cd pwd which" \
+           " rmdir cp mv touch chmod ln true false test [ sleep cd pwd which" \
            " basename dirname date uname kill ps df du jq diff stat uniq" \
            " cut tr tee file numfmt readlink realpath "
   }
@@ -210,7 +234,7 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
     # A quoted span groups into a single word, so a flag written inside one
     # never appears as a word of its own. The raw text is examined as well,
     # which is what finds it.
-    if (seg ~ /(-f|--force)([^A-Za-z0-9_-]|$)/) has = 1
+    if (seg ~ /(-f|--force)([^A-Za-z0-9_-]|$)/ || seg ~ /[ \t]\+[^ \t]/) has = 1
     if (!has) {
       # `F=--force; git push $F` is a force-push whose flag never appears as a
       # word of its own beside the push.
@@ -234,17 +258,30 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
     if (n == 0) { risky = 1; return }
     w = base(W[1])
     if (w == "git" && ispush) { pushforce = 1; return }
+    if (w == "git") {
+      # A literal subcommand that is not `push` — `git branch -f`, `git tag -f` —
+      # carries its own force flag and forces no push, so it is accounted for.
+      # If the subcommand is not a literal at all the guard cannot see what it
+      # is, and a force flag beside it is not something it can account for.
+      for (i = 2; i <= n; i++) if (W[i] ~ /\$/) { push_word = 1; risky = 1; return }
+      # git runs an alias as the subcommand it names, and `-c alias.p=push`
+      # defines one for this invocation only.
+      if (seg ~ /alias\.[^ ]*=/) { push_word = 1; risky = 1; return }
+      any_token = 1
+      return
+    }
     # `gh alias set --shell` makes an alias gh runs through a shell, so a gh
     # command is not accounted for when it names one.
     if (w == "gh") {
-      for (i = 2; i <= n; i++) if (W[i] == "alias") { risky = 1; return }
+      # Each of these runs or forwards a command: `alias set --shell` defines
+      # one, `codespace ssh` runs one remotely, `extension exec` runs one.
+      for (i = 2; i <= n; i++) {
+        if (W[i] == "alias" || W[i] == "codespace" || W[i] == "extension") {
+          risky = 1; return
+        }
+      }
     }
     if (is_safe(w)) return
-    # A push that is an argument to a command able to run a command is how the
-    # wrappers receive a flag from elsewhere on the line — `echo --force | xargs
-    # git push`. It matters only once a flag has been seen somewhere; a plain
-    # push through a wrapper carries none, and refusing that refuses real work.
-    if (!has && ispush_word) { push_via_other = 1; return }
     risky = 1
   }
 
@@ -305,10 +342,31 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
       # not one it can allow.
       if (c == "$") {
         nx = substr(line, i + 1, 1)
-        if (nx == "(" || nx == "{") { unmodelled = 1; i += 2; continue }
+        if (nx == "(" || nx == "{") {
+          unmodelled = 1
+          # Skip the whole span. Its inner punctuation is the expansion own, not
+          # a separator: splitting at the brace of `${P}` would put the command
+          # word and its arguments in different segments.
+          op = nx; cl = (nx == "(") ? ")" : "}"
+          dep = 1; j = i + 2
+          while (j <= n && dep > 0) {
+            ch = substr(line, j, 1)
+            if (ch == op) dep++
+            else if (ch == cl) dep--
+            j++
+          }
+          i = (dep == 0) ? j : n + 1
+          continue
+        }
         if (nx == SQ) { unmodelled = 1; i += 2; continue }
       }
-      if (c == BT) { unmodelled = 1; i++; continue }
+      if (c == BT) {
+        unmodelled = 1
+        j = i + 1
+        while (j <= n && substr(line, j, 1) != BT) j++
+        i = (j <= n) ? j + 1 : n + 1
+        continue
+      }
       if (c == "(" && substr(line, i + 1, 1) == "(") { unmodelled = 1; i += 2; continue }
       if (c == "\"" || c == SQ) {
         # A string may run past this line, and its continuation lines have no
@@ -345,7 +403,9 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
         # end of it, not written to a file.
         W2N = tokenize(substr(line, segstart, i - segstart), W2)
         hd_safe = (W2N > 0 && is_safe(base(W2[1]))) ? 1 : 0
-        if (substr(line, i + 2) ~ /\|/) hd_safe = 0
+        # A pipe or a process substitution reads the body rather than filing it,
+        # so the body is a script whichever command opened it.
+        if (substr(line, i + 2) ~ /\|/ || substr(line, i + 2) ~ /[<>]\(/) hd_safe = 0
         if (d != "") hd = d
         i += 2; continue
       }
@@ -365,9 +425,10 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
 
   END {
     # Reaching the end mid-construct means the scan did not see the whole command
-    # and cannot vouch for it.
-    if (hd != "") verdict = 1
-    if (q != "") verdict = 1
+    # and cannot vouch for it. That is a refusal, but not a force-push: the
+    # operator is told what actually happened.
+    if (hd != "") { verdict = 1; unverified = 1 }
+    if (q != "") { verdict = 1; unverified = 1 }
     if (buf != "") judge(buf)
 
     # A push carrying a force flag is always a block. Otherwise the floor
@@ -376,28 +437,37 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
     # substitution it could not read, no flag it never saw, and nothing left
     # running a command the guard cannot name.
     if (pushforce) verdict = 1
-    # The floor firing with no flag the accounting can name is unexplained, and
-    # blocks. Kept separate from the rule below: a plain push has no flag either.
+    # The floor fired but the accounting found no flag to attribute, which is
+    # unexplained. Kept separate from the rule below: a plain push has no flag
+    # either, and must stay allowed.
     else if (main_fires + 0 == 1 && !any_token) verdict = 1
     # Otherwise the accounting decides, and it applies whenever a push is
     # present at all — not only when the floor pattern happened to match. The
     # floor is blind to a push whose words arrive through an expansion or a
     # redirect, which is exactly when the accounting has to carry the decision.
-    else if (push_word && (unmodelled || risky)) verdict = 1
-    else if (any_token && push_via_other) verdict = 1
-    print verdict
+    else if (push_word && (unmodelled || risky)) { verdict = 1; unverified = 1 }
+    else if (any_token && push_via_other) { verdict = 1; unverified = 1 }
+    if (verdict == 1 && !pushforce) unverified = 1
+    print (unverified && !pushforce) ? 2 : verdict
   }
 ') || { echo "BLOCKED: the command could not be scanned, so it cannot be verified." >&2 || true; exit 2; }
 
 case "$VERDICT" in
-  ""|*[!01]*) echo "BLOCKED: the command could not be scanned, so it cannot be verified." >&2 || true; exit 2 ;;
+  0) exit 0 ;;
+  1)
+    echo "BLOCKED: Force-push detected. This is a Tier 3 action that requires manual execution." >&2 || true
+    echo "If you need to force-push, ask the user to run the command directly." >&2 || true
+    echo "Note: --force-with-lease is allowed as a safe alternative." >&2 || true
+    exit 2
+    ;;
+  2)
+    echo "BLOCKED: this command could not be verified as free of a force-push, so it was not run." >&2 || true
+    echo "It carries a construct the guard cannot read — a substitution, or input that ends mid-construct." >&2 || true
+    echo "Rewrite it without the substitution, or ask the user to run it directly." >&2 || true
+    exit 2
+    ;;
+  *)
+    echo "BLOCKED: the command could not be scanned, so it cannot be verified." >&2 || true
+    exit 2
+    ;;
 esac
-
-if [ "$VERDICT" = "1" ]; then
-  echo "BLOCKED: Force-push detected. This is a Tier 3 action that requires manual execution." >&2 || true
-  echo "If you need to force-push, ask the user to run the command directly." >&2 || true
-  echo "Note: --force-with-lease is allowed as a safe alternative." >&2 || true
-  exit 2
-fi
-
-exit 0
