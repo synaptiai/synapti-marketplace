@@ -447,7 +447,7 @@ the process: exit code, and what it writes to each stream.
 | Step | Command | Result |
 |---|---|---|
 | Suite | `bash plugins/flow/tests/run.sh block-force-push.test.sh` | 103 pass, 0 fail |
-| Whole flow suite | `bash plugins/flow/tests/run.sh` | 4727 pass, 0 fail, 69 files |
+| Whole flow suite | `bash plugins/flow/tests/run.sh` | 4745 pass, 0 fail, 69 files |
 | Windows hook smoke | `bash plugins/flow/tests/windows-hooks-smoke.sh` | 56 passed, 0 failed |
 | Fuzz | 3000 generated commands | exits 0 and 2 only |
 | Pathological set | unterminated heredoc, 999 backslashes, invalid UTF-8, CRLF, 20 000-character token | no crash, no hang |
@@ -455,9 +455,8 @@ the process: exit code, and what it writes to each stream.
 | Cost, worst measured | 130 000-character chain of `eval` words | 1.1 s |
 | Cost, multi-byte | 131 072 CJK characters (393 KB) | refused in 73 ms, by the byte cap |
 
-The whole-suite line is from the run taken before the substitution fix; every other line
-is from the tree as it stands on this branch. The stub-`awk` check below is the one
-runtime path a passing suite would not otherwise exercise.
+Every line is from the tree as it stands on this branch. The stub-`awk` check below is
+the one runtime path a passing suite would not otherwise exercise.
 
 | Hostile runtime step | Result |
 |---|---|
