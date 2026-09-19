@@ -302,6 +302,26 @@ length-capped. Each is covered by a regression test in that script's own suite,
 and each test was mutation-tested by turning the folding back into a
 pass-through: every forged-line assertion turns red.
 
+The assertions, executed:
+
+```
+PASS mine-corrections — no forged line on stdout
+PASS mine-corrections — no forged line on stderr
+PASS mine-corrections — no forged line from a hostile HOME
+PASS mine-corrections — the folding helper is defined before its first caller
+PASS review-exceptions — no forged line on stdout
+PASS review-exceptions — the value is folded onto one line
+PASS review-exceptions — EXCEPTIONS_PATH is emitted exactly once
+PASS migrate-settings — no forged line from the old value
+PASS migrate-settings — the old value is folded onto one line
+PASS migrate-settings — no forged line from the migrated value
+PASS the config resolver — a newline in a settings value does not add a line
+PASS the config resolver — the forged key never begins a line of its own
+PASS the config resolver — the refusal falls back to the declared default
+PASS the config resolver — --allow-control-chars still passes a multi-line value through
+PASS the config resolver — an ordinary value is reported unchanged
+```
+
 Census of the remaining surface, since the criterion's catch-all names "any other
 `bin/*.sh` printing metadata": five flow helpers emit `KEY=value` scalars.
 Three are covered above. The other two were checked — `flow-finding-route.sh`
@@ -429,7 +449,13 @@ the line that would render it. Executed here: a fixture whose status is
 comparison to a prefix match, which turns that assertion red — and on that same
 mutated tree the forged key still never begins a line, because the producer's
 `_one_line` collapse catches it. The two defences are therefore independent and
-each is demonstrated by execution.
+each is demonstrated by execution. The assertions:
+
+```
+PASS a goal whose status carries a newline is never selected — the forged key is never emitted as a line of its own
+PASS a goal whose status carries a newline is never selected — the selector reports no active goal rather than handing the hostile status on
+PASS a goal whose status carries a newline is never selected — the id path still collapses a hostile value to one line
+```
 
 ### Visual analysis
 
@@ -598,6 +624,39 @@ mangle.
 | `a  b`, `*.ts {a,b}`, `-n -e`, `100% done`, `café — ünïcode` | both forms print identical bytes | same |
 | `a\b` | the replacement preserves all bytes; the two forms differ under an interpreting shell | the defect being removed |
 | `-n` as a bare argument | the replacement prints it; the replaced form swallows it | the one value class the two forms genuinely differ on |
+
+**Whether that divergence is reachable at a shipped site.** It needs a value
+printed as a bare argument — no literal prefix — whose first character is a
+dash. There are 15 such sites across the two plugins, and at every one the value
+is the output of a helper or inline block whose first emitted line is a
+`KEY=value` line, so the first character is a letter:
+
+| Site | Value | Its first line |
+|---|---|---|
+| `address.md:152` | `$THREADS` | `THREAD=file=…` |
+| `address.md:177`, `pr.md:156`, `review.md:441` | `$RX_OUT` | `ENCODING=…` |
+| `address.md:264` | `$FINDINGS_ROWS` | `FINDING=…` |
+| `address.md:864` | `$DISPUTED_OUT` | `DISPUTED_STATE=…` |
+| `goal.md:120` | `$GOAL_SCAN` | `STATE=…` |
+| `learn.md:141` | `$MINER_OUT` | `TRANSCRIPT_DIR=…` |
+| `learn.md:320` | `$DISMISSAL_OUT` | `DISMISSED_COUNT=…` |
+| `resume.md:116` | `$RUN_SCAN` | `RUN_UNREADABLE=…` or `STATE=…` |
+| `review.md:405` | `$FLOW_GOAL_OUT` | `STATE=…` |
+| `review.md:1378` | `$ROUTED` | `ROWS_READ=…` |
+| `status.md:261` | `$TRIG_OUT` | `TRIGGER=id=…` |
+| `reference/command-output-format.md:204,216` | `$x` | documentation example |
+
+That is a source reading of each site and each source, not an executed test —
+running all 15 would mean running every helper. It is stated so the reachability
+question is answered rather than left open: the two forms differ on a bare
+dash-leading value, and no value any converted site prints is one.
+
+The divergence itself is pinned by execution in both directions:
+
+```
+PASS replaced and replacement print forms agree byte for byte — a bare -n argument is printed, not read as a flag
+PASS replaced and replacement print forms agree byte for byte — the replaced form swallowed the same argument
+```
 
 The three whole-tree checks above are **one-time measurements**, not committed
 tests: they compare this branch against the default branch as it stood when the
