@@ -29,7 +29,7 @@ fi
 # The scan walks the command a character at a time, so its cost grows faster than
 # the input, and a command large enough to matter would stall the tool call
 # instead of being decided. Measured on this machine's awk, against the cap below:
-# a 100 KB command takes about 0.8 s and a 128 KB one about 1.2 s.
+# a 100 KB command takes 0.7-0.8 s and one at the cap 1.0-1.1 s.
 #
 # A command past the cap is refused rather than truncated. Truncating and
 # scanning the head would silently drop whatever the tail contained, and a
