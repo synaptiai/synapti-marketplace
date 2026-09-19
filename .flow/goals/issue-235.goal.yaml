@@ -41,7 +41,9 @@ objective:
       that emits a scalar for embedding emits exactly one line, verified with a fixture
       whose value contains a real newline, a carriage return, a tab and the two-character
       backslash-n sequence, so no consumer can forget.
-    verification_command: bash plugins/flow/tests/run.sh print-line-integrity.test.sh
+    verification_command: bash plugins/flow/tests/run.sh print-line-integrity.test.sh &&
+      bash plugins/flow/tests/run.sh flow-mine-corrections.test.sh && bash plugins/flow/tests/run.sh
+      review-exceptions.test.sh && bash plugins/flow/tests/run.sh flow-migrate-settings.test.sh
     status: pending
     evidence_ref: null
   - id: AC4

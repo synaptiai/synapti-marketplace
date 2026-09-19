@@ -165,6 +165,56 @@ in both trees: 349 blocks compared, 0 changed from parsing to failing or the
 reverse. Bodies are fragments, so a failure is not by itself a defect — what the
 comparison rules out is the rewrite introducing one.
 
+### Found by executing the producers the criterion names
+
+Criterion 3 asks that a helper emitting a scalar for embedding emit exactly one
+line, and names three producers. This section previously said the two besides
+`flow-active-goal.sh` "already emit one line each" — a claim made by reading
+their source. Running them found the defect still live in both, and in a third
+helper besides:
+
+```
+flow-mine-corrections.sh --format markdown --file $'probe\nFORGED=1'
+  TRANSCRIPT_DIR=probe
+  FORGED=1                          <- a forged field on stdout
+
+flow-review-exceptions.sh --path $'probe\nFORGED=1' --repo x/y --ref main
+  EXCEPTIONS_PATH=probe
+  FORGED=1
+
+flow-migrate-settings.sh, against a settings file holding a newline
+  MIGRATE_FROM=requireGoalForStart=yes
+  FORGED=1
+```
+
+The third is the closest to this issue's own premise: that value comes from a
+tracked settings file, which a pull request author chooses. The miner also
+forged from `HOME`, on both the roots list and the success path.
+
+Each now folds the value onto one line with the treatment its sibling already
+had — `flow-finding-route.sh` has carried a `safe()` for this since the class was
+first fixed, and the Python half of `flow-review-exceptions.sh` already used one,
+so the hole was only ever in the bash half. A control character becomes a space
+rather than being deleted, so the halves stay visibly separate; nothing is
+length-capped, because a truncated path would be the same fault, quieter.
+
+Caught while making that change: the folding helper was placed below the argument
+loop that first calls it, so an unknown argument reported `command not found`
+instead of the message. Bash resolves function definitions in the order it reads
+them. There is now an assertion for that too.
+
+Each script has a regression test in its own suite and each was mutation-tested
+by turning the folding back into a pass-through, which turns every forged-line
+assertion red.
+
+Census of the rest, since the criterion's catch-all names "any other `bin/*.sh`
+printing metadata": five flow helpers emit `KEY=value` scalars and three are
+covered above. `flow-finding-route.sh` builds its lists from input lines — which
+cannot contain a newline — and from ids it validates against a literal character
+class; `flow-quality-ledger.sh` emits a count; `flow-pr-linked-issue.sh` prints
+through a parameter expansion that cannot introduce a newline; and
+`flow-contract-files.sh` already routes values through its own `one_line`.
+
 ### Found by review, fixed here
 
 **The dossier config resolver had the hole this issue is about.** An independent
@@ -429,3 +479,43 @@ for the producers it names, not for every helper in the tree.
 <!-- auto-log: 2026-09-19 19:59 Write /Users/danielbentes/.claude/projects/-Users-danielbentes-synapti-marketplace/memory/project_shared_tmp_collisions.md -->
 
 <!-- auto-log: 2026-09-19 19:59 Edit /Users/danielbentes/.claude/projects/-Users-danielbentes-synapti-marketplace/memory/MEMORY.md -->
+
+<!-- auto-log: 2026-09-19 20:02 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-mine-corrections.sh -->
+
+<!-- auto-log: 2026-09-19 20:02 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-mine-corrections.sh -->
+
+<!-- auto-log: 2026-09-19 20:02 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-mine-corrections.sh -->
+
+<!-- auto-log: 2026-09-19 20:02 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-mine-corrections.sh -->
+
+<!-- auto-log: 2026-09-19 20:03 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-mine-corrections.test.sh -->
+
+<!-- auto-log: 2026-09-19 20:04 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-review-exceptions.sh -->
+
+<!-- auto-log: 2026-09-19 20:04 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-migrate-settings.sh -->
+
+<!-- auto-log: 2026-09-19 20:05 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-migrate-settings.sh -->
+
+<!-- auto-log: 2026-09-19 20:05 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-migrate-settings.test.sh -->
+
+<!-- auto-log: 2026-09-19 20:05 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-migrate-settings.test.sh -->
+
+<!-- auto-log: 2026-09-19 20:05 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/review-exceptions.test.sh -->
+
+<!-- auto-log: 2026-09-19 20:06 commit "fix(flow): fold a caller-supplied value onto one line in every producer" -->
+
+<!-- auto-log: 2026-09-19 20:06 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 20:06 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 20:06 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 20:07 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/no-interpreting-print.test.sh -->
+
+<!-- auto-log: 2026-09-19 20:08 commit "test(dossier): give the guard a shebang so shellcheck accepts it" -->
+
+<!-- auto-log: 2026-09-19 20:09 Edit /tmp/pr240-synapti-print-body.md -->
+
+<!-- auto-log: 2026-09-19 20:13 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235.md -->
+
+<!-- auto-log: 2026-09-19 20:13 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-235.goal.yaml -->
