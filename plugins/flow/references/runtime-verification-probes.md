@@ -5,8 +5,8 @@ Supporting reference for `skills/runtime-verification/SKILL.md`. The skill state
 ## Fast path
 
 ```bash
-[ -x "verify.sh" ] && echo "FAST_PATH: verify.sh found"
-[ -x "scripts/verify.sh" ] && echo "FAST_PATH: scripts/verify.sh found"
+[ -x "verify.sh" ] && printf '%s\n' "FAST_PATH: verify.sh found"
+[ -x "scripts/verify.sh" ] && printf '%s\n' "FAST_PATH: scripts/verify.sh found"
 ```
 
 If found, run it and return its results; the remaining steps are skipped.
@@ -63,8 +63,8 @@ Timeouts: each operation is bounded by `lsp.timeout` (default 5000 ms). On timeo
 lsof -i -P -n 2>/dev/null | grep LISTEN | grep -E ':(3000|4000|5000|8000|8080)' | head -5
 
 # E2E framework: config files
-[ -f "playwright.config.ts" ] || [ -f "playwright.config.js" ] && echo "Playwright"
-[ -f "cypress.config.ts" ] || [ -f "cypress.config.js" ] && echo "Cypress"
+[ -f "playwright.config.ts" ] || [ -f "playwright.config.js" ] && printf '%s\n' "Playwright"
+[ -f "cypress.config.ts" ] || [ -f "cypress.config.js" ] && printf '%s\n' "Cypress"
 ```
 
 ## Smoke tests

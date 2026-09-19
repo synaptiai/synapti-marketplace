@@ -18,7 +18,7 @@ Skill-driven issue creation. Follows the Explore > Plan > Code > Verify loop wit
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" issue-crafting
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" issue-crafting
 
 true
 ```
@@ -31,21 +31,21 @@ Gather context before formulating the issue.
 # Output: `###`-headed sections + KEY=value per
 # `references/command-output-format.md`.
 
-echo "### Repo Context"
+printf '%s\n' "### Repo Context"
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 if [ -z "$REPO" ]; then
-  echo "STATE=unavailable"
-  echo "ERROR=cannot resolve repo (gh auth or non-repo CWD?)"
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "ERROR=cannot resolve repo (gh auth or non-repo CWD?)"
 else
-  echo "STATE=ok"
-  echo "REPO=$REPO"
+  printf '%s\n' "STATE=ok"
+  printf '%s\n' "REPO=$REPO"
 fi
 
-echo ""
-echo "### Git State"
-echo "BRANCH=$(git branch --show-current 2>/dev/null)"
+printf '%s\n' ""
+printf '%s\n' "### Git State"
+printf '%s\n' "BRANCH=$(git branch --show-current 2>/dev/null)"
 UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
-echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
+printf '%s\n' "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
 [ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
 
 true

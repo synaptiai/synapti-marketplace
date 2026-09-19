@@ -21,7 +21,7 @@ This command operates with these domain skills loaded:
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" brainstorming capability-discovery specification-capture
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" brainstorming capability-discovery specification-capture
 
 true
 ```
@@ -49,30 +49,30 @@ case "$ARG1" in
   *) ISSUE_NUM="$ARG1" ;;
 esac
 
-echo "### Issue Reference"
+printf '%s\n' "### Issue Reference"
 # Quote parenthesized fallback per command-output-format.md rule 2 (values
 # with whitespace/parens must be double-quoted scalars).
-echo "ISSUE_NUM=${ISSUE_NUM:-\"(none — exploratory brainstorm)\"}"
+printf '%s\n' "ISSUE_NUM=${ISSUE_NUM:-\"(none — exploratory brainstorm)\"}"
 
-echo ""
-echo "### Issue Context"
+printf '%s\n' ""
+printf '%s\n' "### Issue Context"
 if [ -n "$ISSUE_NUM" ]; then
   gh issue view "$ISSUE_NUM" --json title,body,labels --jq '"TITLE=\"\(.title)\"\nLABELS=\([.labels[].name] | join(","))\nBODY_LENGTH=\(.body | length)"' 2>/dev/null
-  echo ""
-  echo "#### Issue body"
+  printf '%s\n' ""
+  printf '%s\n' "#### Issue body"
   gh issue view "$ISSUE_NUM" --json body --jq '.body' 2>/dev/null
 else
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 fi
 
-echo ""
-echo "### Project State"
-echo "BRANCH=$(git branch --show-current 2>/dev/null)"
-echo ""
-echo "#### Recent commits"
+printf '%s\n' ""
+printf '%s\n' "### Project State"
+printf '%s\n' "BRANCH=$(git branch --show-current 2>/dev/null)"
+printf '%s\n' ""
+printf '%s\n' "#### Recent commits"
 RECENT_COMMITS=$(git log --oneline -5 2>/dev/null)
 if [ -z "$RECENT_COMMITS" ]; then
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 else
   printf '%s\n' "$RECENT_COMMITS" | sed 's/^/COMMIT=/'
 fi
@@ -192,7 +192,7 @@ Use the AskUserQuestion tool with contextual options to ask: "I recommend Approa
 
 ```bash
 BRANCH=$(git branch --show-current)
-ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+ISSUE_NUM=$(printf '%s\n' "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
 JOURNAL_DIR=".decisions"
 [ -n "$ISSUE_NUM" ] && [ -d "$JOURNAL_DIR" ] && cat >> "$JOURNAL_DIR/issue-$ISSUE_NUM.md" << 'ENTRY'
 ## Brainstorm Decision: {topic}
@@ -207,7 +207,7 @@ ENTRY
 
    ```bash
    if [ -n "$ISSUE_NUM" ]; then
-     "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
+     "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-record.sh" \
        --issue $ISSUE_NUM \
        --type brainstorm-decision \
        --metadata topic="$TOPIC" \

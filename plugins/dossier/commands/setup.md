@@ -23,66 +23,66 @@ Read-only, run with the user's own `gh` credentials — which carry the admin sc
 
 ```!
 _RAW="$ARGUMENTS"
-echo "### Setup Arguments"
-echo "ARGS=$_RAW"
+printf '%s\n' "### Setup Arguments"
+printf '%s\n' "ARGS=$_RAW"
 
 __dr="${CLAUDE_PLUGIN_ROOT:-}"
-[ -x "$__dr/bin/dossier-managed-file.sh" ] || __dr=$({ echo plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-managed-file.sh" ] && { echo "${__p%/}"; break; }; done)
+[ -x "$__dr/bin/dossier-managed-file.sh" ] || __dr=$({ printf '%s\n' plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-managed-file.sh" ] && { printf '%s\n' "${__p%/}"; break; }; done)
 
-echo "### Plugin"
+printf '%s\n' "### Plugin"
 if [ ! -x "$__dr/bin/dossier-managed-file.sh" ]; then
-  echo "SETUP_STATE=blocked"
-  echo "SETUP_ERROR=dossier plugin scripts not found — reinstall or upgrade the plugin"
+  printf '%s\n' "SETUP_STATE=blocked"
+  printf '%s\n' "SETUP_ERROR=dossier plugin scripts not found — reinstall or upgrade the plugin"
   true; exit 0
 fi
-echo "DOSSIER_ROOT=$__dr"
-echo "PLUGIN_VERSION=$(jq -r '.version // "unknown"' "$__dr/.claude-plugin/plugin.json" 2>/dev/null)"
+printf '%s\n' "DOSSIER_ROOT=$__dr"
+printf '%s\n' "PLUGIN_VERSION=$(jq -r '.version // "unknown"' "$__dr/.claude-plugin/plugin.json" 2>/dev/null)"
 
-echo "### Repo"
+printf '%s\n' "### Repo"
 REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null) || {
-  echo "SETUP_STATE=blocked"
-  echo "SETUP_ERROR=gh not authenticated — run 'gh auth login'"
+  printf '%s\n' "SETUP_STATE=blocked"
+  printf '%s\n' "SETUP_ERROR=gh not authenticated — run 'gh auth login'"
   true; exit 0
 }
-echo "REPO=$REPO"
+printf '%s\n' "REPO=$REPO"
 DB=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null)
-echo "DEFAULT_BRANCH=$DB"
-echo "PRIVATE=$(gh repo view --json isPrivate --jq .isPrivate 2>/dev/null)"
-echo "HAS_GITHUB_DIR=$([ -d .github ] && echo true || echo false)"
-echo "HAS_GITLAB_CI=$([ -f .gitlab-ci.yml ] && echo true || echo false)"
+printf '%s\n' "DEFAULT_BRANCH=$DB"
+printf '%s\n' "PRIVATE=$(gh repo view --json isPrivate --jq .isPrivate 2>/dev/null)"
+printf '%s\n' "HAS_GITHUB_DIR=$([ -d .github ] && printf '%s\n' true || printf '%s\n' false)"
+printf '%s\n' "HAS_GITLAB_CI=$([ -f .gitlab-ci.yml ] && printf '%s\n' true || printf '%s\n' false)"
 
-echo "### The gotcha checks"
+printf '%s\n' "### The gotcha checks"
 # GITHUB_TOKEN cannot open a PR unless this is enabled. Without it the branch
 # pushes cleanly and `gh pr create` refuses — a successful push and no PR.
 CAN_PR=$(gh api "repos/$REPO/actions/permissions/workflow" --jq '.can_approve_pull_request_reviews' 2>/dev/null) || CAN_PR="unknown"
-echo "ACTIONS_CAN_CREATE_PRS=$CAN_PR"
-echo "DEFAULT_WORKFLOW_PERMISSIONS=$(gh api "repos/$REPO/actions/permissions/workflow" --jq '.default_workflow_permissions' 2>/dev/null || echo unknown)"
+printf '%s\n' "ACTIONS_CAN_CREATE_PRS=$CAN_PR"
+printf '%s\n' "DEFAULT_WORKFLOW_PERMISSIONS=$(gh api "repos/$REPO/actions/permissions/workflow" --jq '.default_workflow_permissions' 2>/dev/null || printf '%s\n' unknown)"
 
 ORG="${REPO%%/*}"
 if gh api "orgs/$ORG" >/dev/null 2>&1; then
-  echo "ORG_ACTIONS_CAN_CREATE_PRS=$(gh api "orgs/$ORG/actions/permissions/workflow" --jq '.can_approve_pull_request_reviews' 2>/dev/null || echo unknown)"
+  printf '%s\n' "ORG_ACTIONS_CAN_CREATE_PRS=$(gh api "orgs/$ORG/actions/permissions/workflow" --jq '.can_approve_pull_request_reviews' 2>/dev/null || printf '%s\n' unknown)"
 else
-  echo "ORG_ACTIONS_CAN_CREATE_PRS=n/a"
+  printf '%s\n' "ORG_ACTIONS_CAN_CREATE_PRS=n/a"
 fi
 
 # Required checks make a GITHUB_TOKEN-created docs PR permanently unmergeable.
 CHECKS=$(gh api "repos/$REPO/branches/$DB/protection" --jq '.required_status_checks.contexts | join(",")' 2>/dev/null) || CHECKS=""
-echo "REQUIRED_CHECKS=${CHECKS:-none}"
+printf '%s\n' "REQUIRED_CHECKS=${CHECKS:-none}"
 
-echo "### Existing state"
-echo "SECRETS=$(gh secret list --repo "$REPO" --json name --jq '[.[].name] | join(",")' 2>/dev/null || echo unreadable)"
-echo "EXISTING_WORKFLOW=$([ -f .github/workflows/dossier-docs-refresh.yml ] && echo true || echo false)"
+printf '%s\n' "### Existing state"
+printf '%s\n' "SECRETS=$(gh secret list --repo "$REPO" --json name --jq '[.[].name] | join(",")' 2>/dev/null || printf '%s\n' unreadable)"
+printf '%s\n' "EXISTING_WORKFLOW=$([ -f .github/workflows/dossier-docs-refresh.yml ] && printf '%s\n' true || printf '%s\n' false)"
 if [ -f .github/workflows/dossier-docs-refresh.yml ]; then
-  "$__dr/bin/dossier-managed-file.sh" --verify .github/workflows/dossier-docs-refresh.yml 2>/dev/null || echo "MANAGED=unknown"
+  "$__dr/bin/dossier-managed-file.sh" --verify .github/workflows/dossier-docs-refresh.yml 2>/dev/null || printf '%s\n' "MANAGED=unknown"
 fi
 OUTPUT_ROOT=$("$__dr/bin/dossier-resolve-config.sh" --default "docs/dossier" dossier.project.outputRoot 2>/dev/null)
-echo "OUTPUT_ROOT=$OUTPUT_ROOT"
-echo "PACKAGE_EXISTS=$([ -d "$OUTPUT_ROOT/00-control" ] && echo true || echo false)"
-echo "FLOW_INSTALLED=$([ -f .claude/settings.flow.json ] && echo true || echo false)"
-echo "MARKETPLACE_REF=$(gh api repos/synaptiai/synapti-marketplace/releases/latest --jq .tag_name 2>/dev/null || echo main)"
+printf '%s\n' "OUTPUT_ROOT=$OUTPUT_ROOT"
+printf '%s\n' "PACKAGE_EXISTS=$([ -d "$OUTPUT_ROOT/00-control" ] && printf '%s\n' true || printf '%s\n' false)"
+printf '%s\n' "FLOW_INSTALLED=$([ -f .claude/settings.flow.json ] && printf '%s\n' true || printf '%s\n' false)"
+printf '%s\n' "MARKETPLACE_REF=$(gh api repos/synaptiai/synapti-marketplace/releases/latest --jq .tag_name 2>/dev/null || printf '%s\n' main)"
 
-echo "### Merge cadence (for the cost conversation)"
-echo "MERGES_LAST_4W=$(git log --merges --since='4 weeks ago' --oneline 2>/dev/null | wc -l | tr -d ' ')"
+printf '%s\n' "### Merge cadence (for the cost conversation)"
+printf '%s\n' "MERGES_LAST_4W=$(git log --merges --since='4 weeks ago' --oneline 2>/dev/null | wc -l | tr -d ' ')"
 true
 ```
 
@@ -147,7 +147,7 @@ bin/dossier-managed-file.sh --stamp .github/workflows/dossier-docs-refresh.yml -
 Verify no placeholder survived — an unsubstituted `{{...}}` is a workflow that fails at parse time:
 
 ```bash
-grep -n '{{[A-Z_]*}}' .github/workflows/dossier-docs-refresh.yml && echo "UNSUBSTITUTED PLACEHOLDERS — do not commit" || echo "render clean"
+grep -n '{{[A-Z_]*}}' .github/workflows/dossier-docs-refresh.yml && printf '%s\n' "UNSUBSTITUTED PLACEHOLDERS — do not commit" || printf '%s\n' "render clean"
 ```
 
 With `--dry-run`, print what would be written and stop.

@@ -18,7 +18,7 @@ You are an integration verification specialist for the flow plugin. Validate end
 ```bash
 # Check for project-level verify scripts
 for f in verify.sh scripts/verify.sh scripts/e2e.sh; do
-  [ -f "$f" ] && echo "FOUND: $f" && break
+  [ -f "$f" ] && printf '%s\n' "FOUND: $f" && break
 done
 ```
 
@@ -38,13 +38,13 @@ ls -d e2e/ tests/e2e/ test/e2e/ cypress/ playwright/ spec/system/ spec/features/
 Check if a server is already running:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health 2>/dev/null || echo "NO_SERVER"
+curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health 2>/dev/null || printf '%s\n' "NO_SERVER"
 ```
 
 If no server, start one with the timeout from `settings.json` → `timeouts.devServerStartup`:
 
 ```bash
-DEV_SERVER_TIMEOUT=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh" --default 30 '.timeouts.devServerStartup // empty')
+DEV_SERVER_TIMEOUT=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default 30 '.timeouts.devServerStartup // empty')
 # Detect start command
 grep -A2 '"start"\|"dev"\|"serve"' package.json 2>/dev/null
 # Start in background with timeout
@@ -75,10 +75,10 @@ If no E2E suite, or as an additional check:
 
 ```bash
 # Health check
-curl -sf http://localhost:3000/health && echo "PASS: health" || echo "FAIL: health"
+curl -sf http://localhost:3000/health && printf '%s\n' "PASS: health" || printf '%s\n' "FAIL: health"
 
 # Main page
-curl -sf -o /dev/null -w "%{http_code}" http://localhost:3000/ | grep -q "200\|301\|302" && echo "PASS: main" || echo "FAIL: main"
+curl -sf -o /dev/null -w "%{http_code}" http://localhost:3000/ | grep -q "200\|301\|302" && printf '%s\n' "PASS: main" || printf '%s\n' "FAIL: main"
 
 # API endpoints (if discoverable from routes)
 grep -rn "get\|post\|put\|delete" config/routes.rb routes/*.ts 2>/dev/null | head -5

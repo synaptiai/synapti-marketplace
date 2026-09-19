@@ -20,7 +20,7 @@ The command markdown remains Claude's execution manual; this YAML is the inspect
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" workflow-validation
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" workflow-validation
 
 true
 ```
@@ -28,11 +28,11 @@ true
 ## Pre-flight
 
 ```bash
-ENABLED=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh" \
+ENABLED=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" \
   --default "false" '.flow.workflows.enabled')
 if [ "$ENABLED" != "true" ]; then
-  echo "flow.workflows.enabled is false — /flow:workflow is opt-in." >&2
-  echo "Enable in .claude/settings.flow.local.json: { \"flow\": { \"workflows\": { \"enabled\": true } } }"
+  printf '%s\n' "flow.workflows.enabled is false — /flow:workflow is opt-in." >&2
+  printf '%s\n' "Enable in .claude/settings.flow.local.json: { \"flow\": { \"workflows\": { \"enabled\": true } } }"
   exit 0
 fi
 ```
@@ -45,8 +45,8 @@ List all plugin-shipped workflows + any project-local overrides:
 
 ```bash
 # WORKFLOW_LIST_BLOCK_BEGIN
-echo "Plugin-shipped workflows:"
-for f in "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/workflows/"*.workflow.yaml; do
+printf '%s\n' "Plugin-shipped workflows:"
+for f in "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/workflows/"*.workflow.yaml; do
   # An unmatched glob leaves $f as the literal pattern. Without this the row
   # below would say that pattern could not be read, when in fact the plugin
   # ships no workflow at all. Matches the project-local loop further down.
@@ -89,12 +89,12 @@ PYEOF
 done
 
 if [ -d .flow/workflows ]; then
-  echo
-  echo "Project-local overrides:"
+  printf '\n'
+  printf '%s\n' "Project-local overrides:"
   for f in .flow/workflows/*.workflow.yaml; do
     [ -f "$f" ] || continue
     ID=$(basename "$f" .workflow.yaml)
-    echo "  $ID (overrides plugin default)"
+    printf '%s\n' "  $ID (overrides plugin default)"
   done
 fi
 # WORKFLOW_LIST_BLOCK_END
@@ -106,11 +106,11 @@ Dump the workflow's frontmatter + phase structure:
 
 ```bash
 ID="${ARGUMENTS}"
-WF_PATH="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/workflows/${ID}.workflow.yaml"
+WF_PATH="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/workflows/${ID}.workflow.yaml"
 [ -f ".flow/workflows/${ID}.workflow.yaml" ] && WF_PATH=".flow/workflows/${ID}.workflow.yaml"
 
 if [ ! -f "$WF_PATH" ]; then
-  echo "Workflow not found: $ID" >&2
+  printf '%s\n' "Workflow not found: $ID" >&2
   exit 1
 fi
 
@@ -145,7 +145,7 @@ Render a textual graph of the workflow's phase structure:
 
 ```bash
 ID="${ARGUMENTS}"
-WF_PATH="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/workflows/${ID}.workflow.yaml"
+WF_PATH="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/workflows/${ID}.workflow.yaml"
 [ -f ".flow/workflows/${ID}.workflow.yaml" ] && WF_PATH=".flow/workflows/${ID}.workflow.yaml"
 
 python3 - "$WF_PATH" <<'PYEOF'

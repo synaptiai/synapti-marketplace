@@ -37,6 +37,17 @@
 
 set -uo pipefail
 
+# Fold a value onto one line before printing it back, matching the Python
+# one_line() below that the row renderer already uses. Everything a caller
+# reads is read by line, so a value carrying a real newline forges a field
+# nobody wrote: `--path $'probe\nFORGED=1'` printed `EXCEPTIONS_PATH=probe`
+# followed by a forged `FORGED=1` line of its own. Defined here rather than
+# beside its first use because the argument loop above the first emission runs
+# before anything further down is read.
+one_line() {
+  printf '%s' "$1" | LC_ALL=C tr '\000-\037\177' ' '
+}
+
 REPO=""
 PR_NUM=""
 REF=""
@@ -67,7 +78,7 @@ if [ -n "$PR_NUM" ]; then
 fi
 
 echo "ENCODING=a literal | inside a value is written %7C; a value that ends … was cut at 1000 characters"
-echo "EXCEPTIONS_PATH=$EXC_PATH"
+echo "EXCEPTIONS_PATH=$(one_line "$EXC_PATH")"
 
 if [ -n "$PR_NUM" ]; then
   # The base branch is chosen by whoever opened the pull request
@@ -92,9 +103,9 @@ if [ -n "$PR_NUM" ]; then
     exit 0
   fi
   if [ "$BASE_NAME" != "$DEFAULT_NAME" ]; then
-    echo "EXCEPTIONS_BASE=$BASE_NAME"
+    echo "EXCEPTIONS_BASE=$(one_line "$BASE_NAME")"
     echo "STATE=unavailable"
-    echo "REASON=the pull request targets $BASE_NAME, not the default branch $DEFAULT_NAME; a base the author chose is not a trusted source of exceptions"
+    echo "REASON=the pull request targets $(one_line "$BASE_NAME"), not the default branch $(one_line "$DEFAULT_NAME"); a base the author chose is not a trusted source of exceptions"
     exit 0
   fi
 else

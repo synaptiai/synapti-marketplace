@@ -20,7 +20,7 @@ jq '.flow.triggers.enabled = true' .claude/settings.flow.json > /tmp/s && mv /tm
 Verify:
 
 ```bash
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh" --default "false" '.flow.triggers.enabled'
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default "false" '.flow.triggers.enabled'
 # expect: true
 ```
 
@@ -30,7 +30,7 @@ Note any PR number. For this walkthrough I'll use `PR=42`. If you don't have a r
 
 ```bash
 git checkout -b feature/synthetic-pr-test
-echo "test" > test-file.txt
+printf '%s\n' "test" > test-file.txt
 git add test-file.txt
 git commit -m "test: synthetic PR for /flow:watch quickstart"
 git push -u origin feature/synthetic-pr-test

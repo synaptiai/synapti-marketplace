@@ -17,7 +17,7 @@ When a session ends mid-workflow (interrupted, paused, blocked), `.flow/runs/<id
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" run-state-management
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" run-state-management
 
 true
 ```
@@ -25,15 +25,15 @@ true
 ## Pre-flight
 
 ```bash
-ENABLED=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh" \
+ENABLED=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" \
   --default "true" '.flow.runtime.enabled')
 if [ "$ENABLED" != "true" ]; then
-  echo "flow.runtime.enabled is false — /flow:resume requires the runtime layer." >&2
+  printf '%s\n' "flow.runtime.enabled is false — /flow:resume requires the runtime layer." >&2
   exit 0
 fi
 
 if [ ! -d .flow/runs ]; then
-  echo "No FlowRuns exist (.flow/runs/ not found). Start one via /flow:start, /flow:debug, etc."
+  printf '%s\n' "No FlowRuns exist (.flow/runs/ not found). Start one via /flow:start, /flow:debug, etc."
   exit 0
 fi
 ```
@@ -120,9 +120,9 @@ fi
 
 if [ -z "$RUN_ID" ]; then
   if [ "$RUN_SCAN_STATE" = "unavailable" ]; then
-    echo "No resumable FlowRun was identified, and the run files named above could not be read — whether they are in a terminal status is unknown."
+    printf '%s\n' "No resumable FlowRun was identified, and the run files named above could not be read — whether they are in a terminal status is unknown."
   else
-    echo "No active or blocked FlowRuns found. All runs are in terminal status."
+    printf '%s\n' "No active or blocked FlowRuns found. All runs are in terminal status."
   fi
   exit 0
 fi
@@ -136,7 +136,7 @@ RUN_DIR=".flow/runs/$RUN_ID"
 RUN_YAML="$RUN_DIR/run.yaml"
 
 if [ ! -f "$RUN_YAML" ]; then
-  echo "Run not found: $RUN_YAML" >&2
+  printf '%s\n' "Run not found: $RUN_YAML" >&2
   exit 1
 fi
 ```
@@ -182,13 +182,13 @@ UNLINKED=$(printf '%s\n' "$PORCELAIN" | awk '
   path !~ /^\.flow\// && path !~ /^\.decisions\// { print path }
 ')
 if [ "$GIT_EXIT" -ne 0 ]; then
-  echo "FLOW_RESUME_UNLINKED=unknown"
-  echo "FLOW_RESUME_UNLINKED_REASON=git status failed (exit $GIT_EXIT) — cannot assess unlinked changes"
+  printf '%s\n' "FLOW_RESUME_UNLINKED=unknown"
+  printf '%s\n' "FLOW_RESUME_UNLINKED_REASON=git status failed (exit $GIT_EXIT) — cannot assess unlinked changes"
 elif [ -n "$UNLINKED" ]; then
-  echo "FLOW_RESUME_UNLINKED=1"
+  printf '%s\n' "FLOW_RESUME_UNLINKED=1"
   printf '%s\n' "$UNLINKED" | sed 's/^/  /'
 else
-  echo "FLOW_RESUME_UNLINKED=0"
+  printf '%s\n' "FLOW_RESUME_UNLINKED=0"
 fi
 true
 ```

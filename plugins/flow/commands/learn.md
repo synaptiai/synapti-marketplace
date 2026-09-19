@@ -19,14 +19,14 @@ _None — retrospective pattern analysis over the decision journal and transcrip
 # Output: `###`-headed sections + KEY=value per
 # `references/command-output-format.md`.
 
-echo "### Resolved Paths"
+printf '%s\n' "### Resolved Paths"
 # JOURNAL_DIR and PROPOSAL_DIR resolve via the standard settings cascade.
 # settings.json may store paths with a leading `~` (literal — JSON has no
 # tilde-expansion semantics). The cascade helper returns the value verbatim
 # without expansion, so downstream tools that do not auto-expand tildes
 # (Read/Write/Edit, Python os.path) would fail. Manually expand `~` to
 # $HOME so the agent always receives an absolute path.
-HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
 PROPOSAL_DIR="$HOME/.claude/flow-proposals"
 if [ -x "$HELPER" ]; then
@@ -37,12 +37,12 @@ if [ -x "$HELPER" ]; then
   # forged `### Dismissal Artifacts` section above the real one.
   JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
   PROPOSAL_DIR=$("$HELPER" --default "$HOME/.claude/flow-proposals" '.learning.proposalDir // empty')
-  echo "STATE=ok"
+  printf '%s\n' "STATE=ok"
 else
   # Helper missing or non-executable — using compile-time defaults. Surface
   # so the agent knows resolution was best-effort and config might be ignored.
-  echo "STATE=unavailable"
-  echo "ERROR=cascade-resolve.sh missing or non-executable; using built-in defaults"
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "ERROR=cascade-resolve.sh missing or non-executable; using built-in defaults"
 fi
 # Expand leading `~` to $HOME so downstream Read/Write/Edit tools (which
 # do not tilde-expand) receive absolute paths.
@@ -51,24 +51,24 @@ PROPOSAL_DIR="${PROPOSAL_DIR/#\~/$HOME}"
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 printf '%s\n' "PROPOSAL_DIR=$PROPOSAL_DIR"
 
-echo ""
-echo "### Journal Files"
+printf '%s\n' ""
+printf '%s\n' "### Journal Files"
 JOURNAL_FILES=0
 [ -d "$JOURNAL_DIR" ] && JOURNAL_FILES=$(ls "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
-echo "JOURNAL_FILE_COUNT=$JOURNAL_FILES"
+printf '%s\n' "JOURNAL_FILE_COUNT=$JOURNAL_FILES"
 if [ "$JOURNAL_FILES" = "0" ]; then
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 else
   ls "$JOURNAL_DIR"/*.md 2>/dev/null | sed 's/^/JOURNAL_FILE=/'
 fi
 
-echo ""
-echo "### Proposal Files"
+printf '%s\n' ""
+printf '%s\n' "### Proposal Files"
 PROPOSAL_FILES=0
 [ -d "$PROPOSAL_DIR" ] && PROPOSAL_FILES=$(ls "$PROPOSAL_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
-echo "PROPOSAL_FILE_COUNT=$PROPOSAL_FILES"
+printf '%s\n' "PROPOSAL_FILE_COUNT=$PROPOSAL_FILES"
 if [ "$PROPOSAL_FILES" = "0" ]; then
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 else
   ls "$PROPOSAL_DIR"/*.md 2>/dev/null | sed 's/^/PROPOSAL_FILE=/'
 fi
@@ -77,23 +77,23 @@ fi
 # Gated behind flow.goals.enabled — when v3 is enabled, surface the goal
 # YAMLs + run-event ledgers so the Phase 2 Goal Failure Patterns can detect
 # recurring failed ACs, stuck-detection hits, and not_executed warnings.
-echo ""
-echo "### FlowRun Events"
+printf '%s\n' ""
+printf '%s\n' "### FlowRun Events"
 GOALS_ENABLED="false"
 [ -x "$HELPER" ] && GOALS_ENABLED=$("$HELPER" --default "true" '.flow.goals.enabled' 2>/dev/null)
 if [ "$GOALS_ENABLED" != "true" ]; then
-  echo "STATE=disabled"
+  printf '%s\n' "STATE=disabled"
 else
   GOAL_FILES=0
   [ -d ".flow/goals" ] && GOAL_FILES=$(ls .flow/goals/*.goal.yaml 2>/dev/null | wc -l | tr -d ' ')
   RUN_FILES=0
   [ -d ".flow/runs" ] && RUN_FILES=$(find .flow/runs -name "events.jsonl" 2>/dev/null | wc -l | tr -d ' ')
-  echo "GOAL_FILE_COUNT=$GOAL_FILES"
-  echo "RUN_EVENT_FILE_COUNT=$RUN_FILES"
+  printf '%s\n' "GOAL_FILE_COUNT=$GOAL_FILES"
+  printf '%s\n' "RUN_EVENT_FILE_COUNT=$RUN_FILES"
   if [ "$GOAL_FILES" = "0" ] && [ "$RUN_FILES" = "0" ]; then
-    echo "STATE=empty"
+    printf '%s\n' "STATE=empty"
   else
-    echo "STATE=ok"
+    printf '%s\n' "STATE=ok"
     ls .flow/goals/*.goal.yaml 2>/dev/null | sed 's/^/GOAL_FILE=/'
     find .flow/runs -name "events.jsonl" 2>/dev/null | sed 's/^/RUN_EVENTS=/'
   fi
@@ -105,8 +105,8 @@ fi
 # own logs under ~/.claude/projects/<slug>/ (override: learning.transcriptDir,
 # empty = auto) — read-only, user-scoped, never written here. The miner keeps
 # recall-oriented candidates; Phase 2 does the judging.
-echo ""
-echo "### Transcript Corrections"
+printf '%s\n' ""
+printf '%s\n' "### Transcript Corrections"
 LEARN_SOURCES='["journal","transcripts"]'
 [ -x "$HELPER" ] && LEARN_SOURCES=$("$HELPER" --compact --default '["journal","transcripts"]' '.learning.sources // empty' 2>/dev/null)
 printf '%s\n' "TRANSCRIPT_SOURCES=$LEARN_SOURCES"
@@ -121,12 +121,12 @@ TRANSCRIPT_DIR_SETTING=""
 [ -x "$HELPER" ] && TRANSCRIPT_DIR_SETTING=$("$HELPER" --default "" '.learning.transcriptDir // empty' 2>/dev/null)
 TRANSCRIPT_DIR_SETTING="${TRANSCRIPT_DIR_SETTING/#\~/$HOME}"
 if [ "$TRANSCRIPTS_ON" != "true" ]; then
-  echo "TRANSCRIPT_STATE=disabled"
-  echo "CANDIDATE_COUNT=0"
+  printf '%s\n' "TRANSCRIPT_STATE=disabled"
+  printf '%s\n' "CANDIDATE_COUNT=0"
 elif [ ! -x "$MINER" ]; then
-  echo "TRANSCRIPT_STATE=missing"
-  echo "ERROR=flow-mine-corrections.sh missing or non-executable next to cascade-resolve.sh"
-  echo "CANDIDATE_COUNT=0"
+  printf '%s\n' "TRANSCRIPT_STATE=missing"
+  printf '%s\n' "ERROR=flow-mine-corrections.sh missing or non-executable next to cascade-resolve.sh"
+  printf '%s\n' "CANDIDATE_COUNT=0"
 else
   if [ -n "$TRANSCRIPT_DIR_SETTING" ]; then
     MINER_OUT=$("$MINER" --format markdown --max-sessions 50 --transcript-dir "$TRANSCRIPT_DIR_SETTING" 2>/dev/null)
@@ -134,20 +134,20 @@ else
     MINER_OUT=$("$MINER" --format markdown --max-sessions 50 2>/dev/null)
   fi
   case "$MINER_OUT" in
-    *TRANSCRIPT_DIR_STATE=ok*) echo "TRANSCRIPT_STATE=ok" ;;
-    *) echo "TRANSCRIPT_STATE=missing" ;;
+    *TRANSCRIPT_DIR_STATE=ok*) printf '%s\n' "TRANSCRIPT_STATE=ok" ;;
+    *) printf '%s\n' "TRANSCRIPT_STATE=missing" ;;
   esac
   if [ -n "$MINER_OUT" ]; then
     printf '%s\n' "$MINER_OUT"
   else
-    echo "ERROR=flow-mine-corrections.sh produced no output"
-    echo "CANDIDATE_COUNT=0"
+    printf '%s\n' "ERROR=flow-mine-corrections.sh produced no output"
+    printf '%s\n' "CANDIDATE_COUNT=0"
   fi
 fi
 
 # Section: Dismissal Artifacts
-echo ""
-echo "### Dismissal Artifacts"
+printf '%s\n' ""
+printf '%s\n' "### Dismissal Artifacts"
 # DISMISSAL_ARTIFACTS_BLOCK_BEGIN
 # Findings the team rejected. `review.md` has written `dropped-finding`
 # artifacts since it was added, with a comment saying it does so "so /flow:learn
@@ -165,16 +165,16 @@ DISMISSAL_JOURNAL_DIR="${JOURNAL_DIR:-.decisions}"
 # Resolved the same way every other helper in this command is.
 # No apostrophes in these comments: this is an inline-! block, and an unpaired
 # one kills the whole block on the Windows executor.
-FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 # Probed for the same reason PyYAML is below: the import sits above the first
 # print, so on an install where the reader is missing this block would die
 # before emitting any STATE line — and a missing STATE line reads exactly like
 # a project that has dismissed nothing.
 if [ ! -f "$FLOW_ROOT/bin/_journal_manifest.py" ]; then
-  echo "DISMISSED_COUNT=0"
-  echo "DROPPED_COUNT=0"
-  echo "STATE=unavailable"
-  echo "REASON=the shared journal reader could not be located, so whether this project has recorded dismissals is unknown"
+  printf '%s\n' "DISMISSED_COUNT=0"
+  printf '%s\n' "DROPPED_COUNT=0"
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=the shared journal reader could not be located, so whether this project has recorded dismissals is unknown"
 else
 # Probe before the heredoc. `import yaml` sits above the try below, so a machine
 # without PyYAML dies before the first print and the section is a bare heading —
@@ -184,10 +184,10 @@ if ! command -v python3 >/dev/null 2>&1 || \
      ! PYTHONSAFEPATH=1 python3 -c 'import sys
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 import yaml' >/dev/null 2>&1; then
-  echo "DISMISSED_COUNT=0"
-  echo "DROPPED_COUNT=0"
-  echo "STATE=unavailable"
-  echo "REASON=python3 with PyYAML is required to read the journal manifests, so whether this project has recorded dismissals is unknown"
+  printf '%s\n' "DISMISSED_COUNT=0"
+  printf '%s\n' "DROPPED_COUNT=0"
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=python3 with PyYAML is required to read the journal manifests, so whether this project has recorded dismissals is unknown"
 else
 DISMISSAL_OUT=$(PYTHONSAFEPATH=1 python3 - "$FLOW_ROOT/bin" "$DISMISSAL_JOURNAL_DIR" <<'DISMISSAL_PY'
 import sys
@@ -312,10 +312,10 @@ DISMISSAL_PY
   # A reader that died mutely leaves no STATE line, which reads as a project
   # with nothing to report.
   if [ "$DISMISSAL_RC" -ne 0 ] || [ "$(printf '%s\n' "$DISMISSAL_OUT" | grep -c '^STATE=')" != "1" ]; then
-    echo "DISMISSED_COUNT=0"
-    echo "DROPPED_COUNT=0"
-    echo "STATE=unavailable"
-    echo "REASON=the dismissal reader did not complete (exit $DISMISSAL_RC), so whether this project has recorded dismissals is unknown"
+    printf '%s\n' "DISMISSED_COUNT=0"
+    printf '%s\n' "DROPPED_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=the dismissal reader did not complete (exit $DISMISSAL_RC), so whether this project has recorded dismissals is unknown"
   else
     printf '%s\n' "$DISMISSAL_OUT"
   fi
@@ -466,7 +466,7 @@ skill, and `/flow:learn` never writes `.flow/review-exceptions.md` itself.
 To promote a proposal to an active skill, use the canonical helper:
 
 ```bash
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/promote-proposal.sh" \
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/promote-proposal.sh" \
   --proposal ~/.claude/flow-proposals/YYYY-MM-DD-{topic}.md
 ```
 
@@ -482,7 +482,7 @@ The PR is **always draft** — `bin/promote-proposal.sh` is Tier 2 (journal-and-
 Use `--dry-run` to validate a proposal without filesystem effects:
 
 ```bash
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/promote-proposal.sh" \
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/promote-proposal.sh" \
   --proposal ~/.claude/flow-proposals/YYYY-MM-DD-{topic}.md \
   --dry-run
 ```

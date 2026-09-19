@@ -35,27 +35,27 @@ have no dependency on each other and triples wall-clock for no benefit.
 
 ```!
 __dr="${CLAUDE_PLUGIN_ROOT:-}"
-[ -x "$__dr/bin/dossier-resolve-config.sh" ] || __dr=$({ echo plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-resolve-config.sh" ] && { echo "${__p%/}"; break; }; done)
+[ -x "$__dr/bin/dossier-resolve-config.sh" ] || __dr=$({ printf '%s\n' plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-resolve-config.sh" ] && { printf '%s\n' "${__p%/}"; break; }; done)
 
-echo "### Preflight"
+printf '%s\n' "### Preflight"
 if [ ! -x "$__dr/bin/dossier-resolve-config.sh" ]; then
-  echo "BASELINE_STATE=blocked"
-  echo "BASELINE_ERROR=dossier plugin scripts not found — reinstall or upgrade the plugin"
+  printf '%s\n' "BASELINE_STATE=blocked"
+  printf '%s\n' "BASELINE_ERROR=dossier plugin scripts not found — reinstall or upgrade the plugin"
   true; exit 0
 fi
-echo "DOSSIER_ROOT=$__dr"
+printf '%s\n' "DOSSIER_ROOT=$__dr"
 
 OUTPUT_ROOT=$("$__dr/bin/dossier-resolve-config.sh" --default "docs/dossier" dossier.project.outputRoot 2>/dev/null)
-echo "OUTPUT_ROOT=$OUTPUT_ROOT"
-echo "DELIVERY_MODE=$("$__dr/bin/dossier-resolve-config.sh" --default full dossier.engagement.deliveryMode 2>/dev/null)"
-echo "PACKAGE_EXISTS=$([ -d "$OUTPUT_ROOT/00-control" ] && echo true || echo false)"
+printf '%s\n' "OUTPUT_ROOT=$OUTPUT_ROOT"
+printf '%s\n' "DELIVERY_MODE=$("$__dr/bin/dossier-resolve-config.sh" --default full dossier.engagement.deliveryMode 2>/dev/null)"
+printf '%s\n' "PACKAGE_EXISTS=$([ -d "$OUTPUT_ROOT/00-control" ] && printf '%s\n' true || printf '%s\n' false)"
 
-echo "### Config"
-"$__dr/bin/dossier-validate-config.sh" 2>&1 || echo "CONFIG_FINDINGS=present"
+printf '%s\n' "### Config"
+"$__dr/bin/dossier-validate-config.sh" 2>&1 || printf '%s\n' "CONFIG_FINDINGS=present"
 
-echo "### Working tree"
-echo "UNCOMMITTED=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
-echo "COMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+printf '%s\n' "### Working tree"
+printf '%s\n' "UNCOMMITTED=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+printf '%s\n' "COMMIT=$(git rev-parse HEAD 2>/dev/null || printf '%s\n' unknown)"
 true
 ```
 

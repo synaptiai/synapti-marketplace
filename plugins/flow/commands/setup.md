@@ -17,7 +17,7 @@ Initialize the flow plugin for the current repository. On re-run, detects change
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" capability-discovery
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" capability-discovery
 
 true
 ```
@@ -28,14 +28,14 @@ true
 
 ```bash
 # 1. Check for existing flow settings
-[ -f ".claude/settings.flow.json" ] && echo "EXISTING_SETTINGS=true" || echo "EXISTING_SETTINGS=false"
+[ -f ".claude/settings.flow.json" ] && printf '%s\n' "EXISTING_SETTINGS=true" || printf '%s\n' "EXISTING_SETTINGS=false"
 
 # 2. Check for gh-workflow installation
-ls plugins/gh-workflow/.claude-plugin/plugin.json .claude/settings.gh-workflow.json 2>/dev/null && echo "GH_WORKFLOW_DETECTED=true"
+ls plugins/gh-workflow/.claude-plugin/plugin.json .claude/settings.gh-workflow.json 2>/dev/null && printf '%s\n' "GH_WORKFLOW_DETECTED=true"
 
 # 3. Check CLAUDE.md
-[ -f ".claude/CLAUDE.md" ] && echo "CLAUDE_MD=.claude/CLAUDE.md"
-[ -f "CLAUDE.md" ] && echo "CLAUDE_MD=CLAUDE.md"
+[ -f ".claude/CLAUDE.md" ] && printf '%s\n' "CLAUDE_MD=.claude/CLAUDE.md"
+[ -f "CLAUDE.md" ] && printf '%s\n' "CLAUDE_MD=CLAUDE.md"
 
 # 4. Git remote
 git remote -v | head -2
@@ -59,9 +59,9 @@ Also ignore `.claude/*.lock` — `flow-migrate-settings.sh` (and other writers) 
 ```bash
 for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock'; do
   if [ -f .gitignore ]; then
-    grep -qxF "$IGNORE" .gitignore || echo "$IGNORE" >> .gitignore
+    grep -qxF "$IGNORE" .gitignore || printf '%s\n' "$IGNORE" >> .gitignore
   else
-    echo "$IGNORE" > .gitignore
+    printf '%s\n' "$IGNORE" > .gitignore
   fi
 done
 ```
@@ -98,11 +98,11 @@ When existing settings are detected, check whether the committed `.claude/settin
 
 ```!
 SETTINGS=".claude/settings.flow.json"
-MIGRATOR="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-migrate-settings.sh"
+MIGRATOR="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-migrate-settings.sh"
 if [ -f "$SETTINGS" ] && [ -x "$MIGRATOR" ]; then
   "$MIGRATOR" "$SETTINGS"   # dry-run — emits MIGRATE=... lines (MIGRATE=none when clean)
 else
-  echo "MIGRATE=skip (no committed settings or migrator unavailable)"
+  printf '%s\n' "MIGRATE=skip (no committed settings or migrator unavailable)"
 fi
 true
 ```
@@ -121,7 +121,7 @@ If the output is `MIGRATE=none` or `MIGRATE=skip`, there is nothing to upgrade �
 On **Upgrade now**, apply the rewrite. This block re-resolves the helper path inline — shell variables from the detection `!`-block above do NOT persist into a separately-executed `bash` block:
 
 ```bash
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-migrate-settings.sh" --apply ".claude/settings.flow.json"
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-migrate-settings.sh" --apply ".claude/settings.flow.json"
 ```
 
 It writes atomically and preserves all other keys. Note the change in the Phase 6 summary so the user reviews the one-line diff before committing.
@@ -134,10 +134,10 @@ Configure Language Server Protocol servers for the detected tech stack. LSP prov
 
 ```bash
 # Check if ENABLE_LSP_TOOL is set
-echo "${ENABLE_LSP_TOOL:-not_set}"
+printf '%s\n' "${ENABLE_LSP_TOOL:-not_set}"
 
 # Check for installed LSP plugins
-claude plugins list 2>/dev/null | grep -i lsp || echo "NO_LSP_PLUGINS"
+claude plugins list 2>/dev/null | grep -i lsp || printf '%s\n' "NO_LSP_PLUGINS"
 ```
 
 ### Step 3.2: Map Tech Stack to LSP Servers
@@ -161,11 +161,11 @@ For each language in the detected tech stack, check if the binary is already ins
 
 ```bash
 # Check each relevant binary (only for detected languages)
-command -v vtsls 2>/dev/null && echo "VTSLS: installed" || echo "VTSLS: missing"
-command -v pyright 2>/dev/null && echo "PYRIGHT: installed" || echo "PYRIGHT: missing"
-command -v gopls 2>/dev/null && echo "GOPLS: installed" || echo "GOPLS: missing"
-command -v rust-analyzer 2>/dev/null && echo "RUST-ANALYZER: installed" || echo "RUST-ANALYZER: missing"
-command -v ruby-lsp 2>/dev/null && echo "RUBY-LSP: installed" || echo "RUBY-LSP: missing"
+command -v vtsls 2>/dev/null && printf '%s\n' "VTSLS: installed" || printf '%s\n' "VTSLS: missing"
+command -v pyright 2>/dev/null && printf '%s\n' "PYRIGHT: installed" || printf '%s\n' "PYRIGHT: missing"
+command -v gopls 2>/dev/null && printf '%s\n' "GOPLS: installed" || printf '%s\n' "GOPLS: missing"
+command -v rust-analyzer 2>/dev/null && printf '%s\n' "RUST-ANALYZER: installed" || printf '%s\n' "RUST-ANALYZER: missing"
+command -v ruby-lsp 2>/dev/null && printf '%s\n' "RUBY-LSP: installed" || printf '%s\n' "RUBY-LSP: missing"
 ```
 
 ### Step 3.4: Present LSP Setup Plan
@@ -216,7 +216,7 @@ Then restart Claude Code for the change to take effect.
 
 ```bash
 # Check if an LSP marketplace is already registered
-claude plugins list 2>/dev/null | grep -i "claude-code-lsps" || echo "NO_LSP_MARKETPLACE"
+claude plugins list 2>/dev/null | grep -i "claude-code-lsps" || printf '%s\n' "NO_LSP_MARKETPLACE"
 ```
 
 If no LSP marketplace found, register one. Use the **AskUserQuestion tool**:
@@ -266,11 +266,11 @@ After installation, verify each server is accessible:
 
 ```bash
 # Re-check binaries
-command -v vtsls 2>/dev/null && echo "vtsls: OK"
-command -v pyright 2>/dev/null && echo "pyright: OK"
-command -v gopls 2>/dev/null && echo "gopls: OK"
-command -v rust-analyzer 2>/dev/null && echo "rust-analyzer: OK"
-command -v ruby-lsp 2>/dev/null && echo "ruby-lsp: OK"
+command -v vtsls 2>/dev/null && printf '%s\n' "vtsls: OK"
+command -v pyright 2>/dev/null && printf '%s\n' "pyright: OK"
+command -v gopls 2>/dev/null && printf '%s\n' "gopls: OK"
+command -v rust-analyzer 2>/dev/null && printf '%s\n' "rust-analyzer: OK"
+command -v ruby-lsp 2>/dev/null && printf '%s\n' "ruby-lsp: OK"
 ```
 
 If any server fails to verify, report it in the summary with the manual install command.

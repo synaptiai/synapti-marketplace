@@ -16,7 +16,7 @@ You are an error handling specialist for the flow plugin. Analyze code changes f
 ### Step 1: Get the Diff
 
 ```bash
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
 git diff "origin/$DEFAULT_BRANCH"..HEAD --stat
 git diff "origin/$DEFAULT_BRANCH"..HEAD
 ```

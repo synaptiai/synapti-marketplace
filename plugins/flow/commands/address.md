@@ -25,7 +25,7 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" llm-operator-principles feedback-resolution change-classification capability-discovery tdd-patterns holdout-validation goal-evidence-ledger run-state-management
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" llm-operator-principles feedback-resolution change-classification capability-discovery tdd-patterns holdout-validation goal-evidence-ledger run-state-management
 
 true
 ```
@@ -53,13 +53,13 @@ case "$ARG1" in
   *) PR_NUM="$ARG1" ;;
 esac
 
-echo "### PR Reference"
+printf '%s\n' "### PR Reference"
 if [ -z "$PR_NUM" ]; then
-  echo "STATE=blocked"
-  echo "ERROR=PR number required (all-digit). Usage: /flow:address <pr-number>"
+  printf '%s\n' "STATE=blocked"
+  printf '%s\n' "ERROR=PR number required (all-digit). Usage: /flow:address <pr-number>"
 else
-  echo "STATE=ok"
-  echo "PR_NUM=$PR_NUM"
+  printf '%s\n' "STATE=ok"
+  printf '%s\n' "PR_NUM=$PR_NUM"
 
   # Section: Repository — resolved once here, printed, and pinned onto every gh
   # call below. Without the pin each call resolves against whatever repository
@@ -70,109 +70,109 @@ else
   #
   # The cross-check parses `git remote get-url origin` independently rather than
   # reading `gh repo view` twice — two readings of one source can never disagree.
-  echo ""
-  echo "### Repository"
+  printf '%s\n' ""
+  printf '%s\n' "### Repository"
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null); GH_EXIT=$?
   GIT_REPO=$(git remote get-url origin 2>/dev/null | sed -E -e 's#\.git$##' -e 's#^.*[:/]([^/]+/[^/]+)$#\1#')
   if [ $GH_EXIT -ne 0 ] || [ -z "$REPO" ]; then
-    echo "REPO="
-    echo "REPO_STATE=unavailable"
-    echo "ERROR=could not resolve the repository (gh repo view failed); every field below would be unattributable"
+    printf '%s\n' "REPO="
+    printf '%s\n' "REPO_STATE=unavailable"
+    printf '%s\n' "ERROR=could not resolve the repository (gh repo view failed); every field below would be unattributable"
   else
-    echo "REPO=$REPO"
+    printf '%s\n' "REPO=$REPO"
     if [ -z "$GIT_REPO" ]; then
-      echo "REPO_CROSSCHECK=unavailable"
-      echo "REPO_CROSSCHECK_DETAIL=no origin remote to compare against"
+      printf '%s\n' "REPO_CROSSCHECK=unavailable"
+      printf '%s\n' "REPO_CROSSCHECK_DETAIL=no origin remote to compare against"
     elif [ "$(printf '%s' "$GIT_REPO" | tr 'A-Z' 'a-z')" = "$(printf '%s' "$REPO" | tr 'A-Z' 'a-z')" ]; then
-      echo "REPO_CROSSCHECK=ok"
+      printf '%s\n' "REPO_CROSSCHECK=ok"
     else
-      echo "REPO_CROSSCHECK=mismatch"
-      echo "REPO_CROSSCHECK_DETAIL=git origin is $GIT_REPO but gh resolved $REPO"
-      echo "REPO_STATE=blocked"
+      printf '%s\n' "REPO_CROSSCHECK=mismatch"
+      printf '%s\n' "REPO_CROSSCHECK_DETAIL=git origin is $GIT_REPO but gh resolved $REPO"
+      printf '%s\n' "REPO_STATE=blocked"
     fi
   fi
 
   # Section: PR Details
-  echo ""
-  echo "### PR Details"
+  printf '%s\n' ""
+  printf '%s\n' "### PR Details"
   gh pr view "$PR_NUM" --repo "$REPO" --json headRefName,baseRefName,title,body --jq '
     "TITLE=\"\(.title)\"\nHEAD_BRANCH=\(.headRefName)\nBASE_BRANCH=\(.baseRefName)\nBODY_LENGTH=\(.body | length)"
   ' 2>/dev/null
 
   # Section: Inline Review Comments
-  echo ""
-  echo "### Inline Review Comments"
+  printf '%s\n' ""
+  printf '%s\n' "### Inline Review Comments"
   # Capture gh exit separately. gh failure ⇒ "" + non-zero exit; jq on empty
   # stdin produces no output + exit 0, so `|| echo "0"` does not fire and the
   # block silently emits a bare `INLINE_COUNT=` line. Distinguish unavailable
   # (gh failed) from empty (gh ok, no records).
   INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUM/comments" 2>/dev/null); GH_EXIT=$?
   if [ $GH_EXIT -ne 0 ]; then
-    echo "INLINE_COUNT=0"
-    echo "STATE=unavailable"
+    printf '%s\n' "INLINE_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
     INLINE_JSON="[]"  # neutral fallback so the Conversation Threads section below also degrades gracefully
   else
-    INLINE_COUNT=$(echo "$INLINE_JSON" | jq 'length' 2>/dev/null)
+    INLINE_COUNT=$(printf '%s\n' "$INLINE_JSON" | jq 'length' 2>/dev/null)
     [ -z "$INLINE_COUNT" ] && INLINE_COUNT=0
-    echo "INLINE_COUNT=$INLINE_COUNT"
+    printf '%s\n' "INLINE_COUNT=$INLINE_COUNT"
     if [ "$INLINE_COUNT" = "0" ]; then
-      echo "STATE=empty"
+      printf '%s\n' "STATE=empty"
     else
       # One record per comment; full body lives in the JSON cache for the agent
       # to fetch on demand. The summary line carries the routing fields.
-      echo "$INLINE_JSON" | jq -r '.[] | "INLINE_COMMENT=id=\(.id) author=@\(.user.login) path=\(.path) line=\(.line // "?") length=\(.body | length)"' 2>/dev/null
+      printf '%s\n' "$INLINE_JSON" | jq -r '.[] | "INLINE_COMMENT=id=\(.id) author=@\(.user.login) path=\(.path) line=\(.line // "?") length=\(.body | length)"' 2>/dev/null
     fi
   fi
 
   # Section: Review Summaries
-  echo ""
-  echo "### Review Summaries"
+  printf '%s\n' ""
+  printf '%s\n' "### Review Summaries"
   REVIEWS_JSON=$(gh pr view "$PR_NUM" --repo "$REPO" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
   if [ $GH_EXIT -ne 0 ]; then
-    echo "REVIEW_COUNT=0"
-    echo "STATE=unavailable"
+    printf '%s\n' "REVIEW_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
   else
-    REVIEW_COUNT=$(echo "$REVIEWS_JSON" | jq 'length' 2>/dev/null)
+    REVIEW_COUNT=$(printf '%s\n' "$REVIEWS_JSON" | jq 'length' 2>/dev/null)
     [ -z "$REVIEW_COUNT" ] && REVIEW_COUNT=0
-    echo "REVIEW_COUNT=$REVIEW_COUNT"
+    printf '%s\n' "REVIEW_COUNT=$REVIEW_COUNT"
     if [ "$REVIEW_COUNT" = "0" ]; then
-      echo "STATE=empty"
+      printf '%s\n' "STATE=empty"
     else
-      echo "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.author.login) at=\(.submittedAt) length=\(.body | length)"' 2>/dev/null
+      printf '%s\n' "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.author.login) at=\(.submittedAt) length=\(.body | length)"' 2>/dev/null
     fi
   fi
 
   # Section: Conversation Threads (grouped by file path)
-  echo ""
-  echo "### Conversation Threads"
-  THREADS=$(echo "$INLINE_JSON" | jq -r 'group_by(.path) | .[] | "THREAD=file=\(.[0].path) count=\(length)"' 2>/dev/null)
+  printf '%s\n' ""
+  printf '%s\n' "### Conversation Threads"
+  THREADS=$(printf '%s\n' "$INLINE_JSON" | jq -r 'group_by(.path) | .[] | "THREAD=file=\(.[0].path) count=\(length)"' 2>/dev/null)
   if [ -z "$THREADS" ]; then
-    echo "STATE=empty"
+    printf '%s\n' "STATE=empty"
   else
-    echo "$THREADS"
+    printf '%s\n' "$THREADS"
   fi
 
   # Section: Review Exceptions
-  echo ""
-  echo "### Review Exceptions"
+  printf '%s\n' ""
+  printf '%s\n' "### Review Exceptions"
   # REVIEW_EXCEPTIONS_BLOCK_BEGIN
   # The Phase 4 re-review fan-out is told to hand these rows to every reviewer.
   # Without this block that instruction has no source, and the most available
   # repair for an agent is reading .flow/review-exceptions.md out of the working
   # tree — which after the checkout below is the pull request head, the
   # self-granted exemption the whole design refuses.
-  FLOW_RX_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-review-exceptions.sh"
+  FLOW_RX_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-review-exceptions.sh"
   if [ ! -x "$FLOW_RX_HELPER" ]; then
-    echo "STATE=unavailable"
-    echo "REASON=flow-review-exceptions.sh missing or non-executable, so whether the team has recorded any exception is unknown"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=flow-review-exceptions.sh missing or non-executable, so whether the team has recorded any exception is unknown"
   elif [ -z "$REPO" ]; then
-    echo "STATE=unavailable"
-    echo "REASON=the repository could not be resolved, so there is no trusted ref to read the exceptions at"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=the repository could not be resolved, so there is no trusted ref to read the exceptions at"
   else
     RX_OUT=$("$FLOW_RX_HELPER" --repo "$REPO" --pr "$PR_NUM"); RX_RC=$?
     if [ "$RX_RC" -ne 0 ] || [ "$(printf '%s\n' "$RX_OUT" | grep -c '^STATE=')" != "1" ]; then
-      echo "STATE=unavailable"
-      echo "REASON=the exceptions helper did not complete (exit $RX_RC), so whether the team has recorded any exception is unknown"
+      printf '%s\n' "STATE=unavailable"
+      printf '%s\n' "REASON=the exceptions helper did not complete (exit $RX_RC), so whether the team has recorded any exception is unknown"
     else
       printf '%s\n' "$RX_OUT"
     fi
@@ -180,8 +180,8 @@ else
   # REVIEW_EXCEPTIONS_BLOCK_END
 
   # Section: Review-Cycle Findings
-  echo ""
-  echo "### Review-Cycle Findings"
+  printf '%s\n' ""
+  printf '%s\n' "### Review-Cycle Findings"
   # REVIEW_CYCLE_FINDINGS_BLOCK_BEGIN
   # A review comment carries a GitHub comment id. A finding carries a ledger id
   # (F1, SEC-2), and the ledger id is the only thing that joins a dismissal to
@@ -206,14 +206,14 @@ else
     if [ "$CONF_JQ" -ne 0 ]; then
       # merge.md warns and falls through here rather than failing silently: a
       # typo in one tier should not quietly narrow who is trusted.
-      echo "LEDGER_WARN: cannot parse $SETTINGS_PATH (jq exit=$CONF_JQ); falling through to the next trust source" >&2
+      printf '%s\n' "LEDGER_WARN: cannot parse $SETTINGS_PATH (jq exit=$CONF_JQ); falling through to the next trust source" >&2
       continue
     fi
     if [ -n "$CONFIGURED" ] && printf '%s' "$CONFIGURED" | jq -e 'type == "array" and length > 0 and all(type == "string")' >/dev/null 2>&1; then
       TRUST_LIST="$CONFIGURED"
       break
     elif [ -n "$CONFIGURED" ]; then
-      echo "LEDGER_WARN: invalid markerTrust configuration in $SETTINGS_PATH (must be a non-empty array of strings); falling through" >&2
+      printf '%s\n' "LEDGER_WARN: invalid markerTrust configuration in $SETTINGS_PATH (must be a non-empty array of strings); falling through" >&2
     fi
   done
   FINDINGS_RAW=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null); FIND_GH=$?
@@ -244,23 +244,23 @@ else
     # A failed read and a pull request with no markers both leave this empty,
     # and STATE=empty says "this pull request has no findings" — which would let
     # a Pushback be recorded against an id nobody read.
-    echo "FINDING_COUNT=0"
-    echo "STATE=unavailable"
-    echo "REASON=the review-cycle markers could not be read (gh exit=$FIND_GH, jq exit=$FIND_JQ), so no finding id is known"
+    printf '%s\n' "FINDING_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=the review-cycle markers could not be read (gh exit=$FIND_GH, jq exit=$FIND_JQ), so no finding id is known"
   elif printf '%s\n' "$FIND_SUMMARY" | grep -q '^MARKER_ROWS=unparsed'; then
-    echo "FINDING_COUNT=0"
-    echo "STATE=unavailable"
-    echo "REASON=the latest trusted review carries a FLOW_REVIEW_CYCLE marker whose FINDINGS array did not parse, so no finding id is known"
+    printf '%s\n' "FINDING_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=the latest trusted review carries a FLOW_REVIEW_CYCLE marker whose FINDINGS array did not parse, so no finding id is known"
   elif [ "${MARKER_TRUSTED:-0}" != "1" ] && [ "${MARKERS_SEEN:-0}" != "0" ]; then
-    echo "FINDING_COUNT=0"
-    echo "STATE=unavailable"
-    echo "REASON=${MARKERS_SEEN} review-cycle marker(s) were found but none from a trusted author, so no finding id can be relied on"
+    printf '%s\n' "FINDING_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=${MARKERS_SEEN} review-cycle marker(s) were found but none from a trusted author, so no finding id can be relied on"
   elif [ -z "$FINDINGS_ROWS" ]; then
-    echo "FINDING_COUNT=0"
-    echo "STATE=empty"
+    printf '%s\n' "FINDING_COUNT=0"
+    printf '%s\n' "STATE=empty"
   else
-    echo "FINDING_COUNT=$(printf '%s\n' "$FINDINGS_ROWS" | grep -c '^FINDING=')"
-    echo "STATE=ok"
+    printf '%s\n' "FINDING_COUNT=$(printf '%s\n' "$FINDINGS_ROWS" | grep -c '^FINDING=')"
+    printf '%s\n' "STATE=ok"
     printf '%s\n' "$FINDINGS_ROWS"
   fi
   # REVIEW_CYCLE_FINDINGS_BLOCK_END
@@ -277,7 +277,7 @@ Then check out the PR branch (mutating, runs inline):
 # resolution of gh without complaining — an unset REPO reads as pinned and behaves
 # as unpinned, which is the failure this pinning exists to prevent.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+[ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 gh pr checkout "$PR_NUM" --repo "$REPO"
 ```
 
@@ -291,22 +291,22 @@ Addressing review feedback is a long-running workflow, so it gets a durable Flow
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
-CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 if [ ! -x "$CASCADE" ]; then
-  echo "FLOW_RUN_STATE=blocked"
-  echo "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
+  printf '%s\n' "FLOW_RUN_STATE=blocked"
+  printf '%s\n' "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
   true; exit 0
 fi
 RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
 if [ "$RUNTIME_ENABLED" != "true" ]; then
-  echo "FLOW_RUN_STATE=skip"
-  echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+  printf '%s\n' "FLOW_RUN_STATE=skip"
+  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
 else
   RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-address"
-  echo "FLOW_RUN_STATE=create"
-  echo "RUN_ID=$RUN_ID"
-  echo "WORKFLOW=address-pr"
-  echo "INITIAL_PHASE=preflight"
+  printf '%s\n' "FLOW_RUN_STATE=create"
+  printf '%s\n' "RUN_ID=$RUN_ID"
+  printf '%s\n' "WORKFLOW=address-pr"
+  printf '%s\n' "INITIAL_PHASE=preflight"
 fi
 # FLOW_RUN_BLOCK_END
 true
@@ -322,7 +322,7 @@ When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.f
 # resolution of gh without complaining — an unset REPO reads as pinned and behaves
 # as unpinned, which is the failure this pinning exists to prevent.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+[ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 # Digit-validate PR_NUM (matches Phase 1 block).
 _RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
 ARG1="${_RAW%% *}"
@@ -331,15 +331,15 @@ case "$ARG1" in
   *) PR_NUM="$ARG1" ;;
 esac
 
-echo "### Review Cycle"
+printf '%s\n' "### Review Cycle"
 if [ -z "$PR_NUM" ]; then
-  echo "STATE=blocked"
-  echo "ERROR=PR number required (all-digit)"
+  printf '%s\n' "STATE=blocked"
+  printf '%s\n' "ERROR=PR number required (all-digit)"
 else
-  echo "STATE=ok"
+  printf '%s\n' "STATE=ok"
   CYCLE_COUNT=$(gh pr view "$PR_NUM" --repo "$REPO" --json reviews --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length' 2>/dev/null)
-  echo "PR_NUM=$PR_NUM"
-  echo "REVIEW_CYCLE=$CYCLE_COUNT"
+  printf '%s\n' "PR_NUM=$PR_NUM"
+  printf '%s\n' "REVIEW_CYCLE=$CYCLE_COUNT"
 fi
 
 true
@@ -446,10 +446,10 @@ For each Pushback item:
 # Records one rejected finding. Every value arrives as an environment variable
 # rather than interpolated text: a finding location or a quoted rule is
 # author-controlled and must never reach a shell as code.
-FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 for _v in PR_NUM CYCLE_NUMBER FINDING_ID CATEGORY LOCATION REASON EVIDENCE; do
   eval "_val=\${$_v:-}"
-  [ -n "$_val" ] || { echo "FINDING_DISMISSED=skipped ($_v is unset)" >&2; exit 1; }
+  [ -n "$_val" ] || { printf '%s\n' "FINDING_DISMISSED=skipped ($_v is unset)" >&2; exit 1; }
 done
 # `0*` is rejected for PR_NUM and ISSUE, not just non-digits: journal-record.sh
 # coerces pr to an int and builds the journal filename from the raw ISSUE
@@ -460,8 +460,8 @@ done
 # is excluded because nothing KEYS on it. No filename is built from it and no
 # lookup matches on it, so a leading zero displays as written and joins nothing
 # to the wrong record, which is the failure the `0*` arm exists to stop.
-case "$PR_NUM" in ''|0*|*[!0-9]*) echo "FINDING_DISMISSED=skipped (PR_NUM must be a positive integer with no leading zero)" >&2; exit 1 ;; esac
-case "$CYCLE_NUMBER" in ''|*[!0-9]*) echo "FINDING_DISMISSED=skipped (CYCLE_NUMBER is not a number)" >&2; exit 1 ;; esac
+case "$PR_NUM" in ''|0*|*[!0-9]*) printf '%s\n' "FINDING_DISMISSED=skipped (PR_NUM must be a positive integer with no leading zero)" >&2; exit 1 ;; esac
+case "$CYCLE_NUMBER" in ''|*[!0-9]*) printf '%s\n' "FINDING_DISMISSED=skipped (CYCLE_NUMBER is not a number)" >&2; exit 1 ;; esac
 # The id ends up in the DISPUTED:[...] array that the Phase 5 emitter builds
 # from this artifact, and the consumers in references/finding-ledger-parser.md
 # split that array on `,` and `]`. A `]` truncates the
@@ -481,7 +481,7 @@ case "$CYCLE_NUMBER" in ''|*[!0-9]*) echo "FINDING_DISMISSED=skipped (CYCLE_NUMB
 if ! ( LC_ALL=C
        case "$FINDING_ID" in [A-Za-z]*) ;; *) exit 1 ;; esac
        case "$FINDING_ID" in *[!A-Za-z0-9_-]*) exit 1 ;; esac ); then
-  echo "FINDING_DISMISSED=refused (finding id must match [A-Za-z][A-Za-z0-9_-]*, per references/finding-ledger-parser.md)" >&2
+  printf '%s\n' "FINDING_DISMISSED=refused (finding id must match [A-Za-z][A-Za-z0-9_-]*, per references/finding-ledger-parser.md)" >&2
   exit 2
 fi
 # And bounded. The id is recorded here and later placed in the DISPUTED array of
@@ -490,7 +490,7 @@ fi
 # the way back out, so the reader refuses exactly what this refuses rather than
 # being stricter than the writer it reads for.
 if [ "${#FINDING_ID}" -gt 64 ]; then
-  echo "FINDING_DISMISSED=refused (finding id is ${#FINDING_ID} characters, more than the 64 the DISPUTED array carries)" >&2
+  printf '%s\n' "FINDING_DISMISSED=refused (finding id is ${#FINDING_ID} characters, more than the 64 the DISPUTED array carries)" >&2
   exit 2
 fi
 # The reason vocabulary is closed because /flow:learn clusters on it. A free-text
@@ -498,7 +498,7 @@ fi
 # silently ignored later.
 case "$REASON" in
   factually-incorrect|breaks-test|contradicts-claude-md|critic-evidence|critic-unrefuted-concern) ;;
-  *) echo "FINDING_DISMISSED=refused (reason '$REASON' is outside the closed set in references/decision-journal-schema.md)" >&2; exit 2 ;;
+  *) printf '%s\n' "FINDING_DISMISSED=refused (reason '$REASON' is outside the closed set in references/decision-journal-schema.md)" >&2; exit 2 ;;
 esac
 # A pull request that closes no issue has no journal to write to. Same posture
 # as the dropped-finding blocks in review.md: say so and skip, never guess.
@@ -509,15 +509,15 @@ if [ -z "${ISSUE:-}" ]; then
   # issue" — a false statement that dropped the artifact silently. Same shape
   # as the sibling block in review.md.
   DISMISS_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-  [ -n "$DISMISS_REPO" ] || { echo "FINDING_DISMISSED=unavailable (cannot resolve the repository)" >&2; exit 3; }
+  [ -n "$DISMISS_REPO" ] || { printf '%s\n' "FINDING_DISMISSED=unavailable (cannot resolve the repository)" >&2; exit 3; }
   ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$DISMISS_REPO") || {
-    echo "FINDING_DISMISSED=unavailable (cannot read the issues pull request #$PR_NUM closes; refusing to guess)" >&2
+    printf '%s\n' "FINDING_DISMISSED=unavailable (cannot read the issues pull request #$PR_NUM closes; refusing to guess)" >&2
     exit 3
   }
 fi
 case "${ISSUE:-}" in
-  '') echo "FINDING_DISMISSED=skipped (pull request #$PR_NUM closes no issue, so there is no journal)" >&2; exit 0 ;;
-  0*|*[!0-9]*) echo "FINDING_DISMISSED=skipped (issue '$ISSUE' is not a positive integer with no leading zero; the journal filename is built from it)" >&2; exit 1 ;;
+  '') printf '%s\n' "FINDING_DISMISSED=skipped (pull request #$PR_NUM closes no issue, so there is no journal)" >&2; exit 0 ;;
+  0*|*[!0-9]*) printf '%s\n' "FINDING_DISMISSED=skipped (issue '$ISSUE' is not a positive integer with no leading zero; the journal filename is built from it)" >&2; exit 1 ;;
 esac
 "$FLOW_ROOT/bin/journal-record.sh" \
   --issue "$ISSUE" \
@@ -530,10 +530,10 @@ esac
   --metadata by=address \
   --metadata reason="$REASON" \
   --metadata evidence="$EVIDENCE" || {
-    echo "FINDING_DISMISSED=failed (journal-record.sh could not write the artifact)" >&2
+    printf '%s\n' "FINDING_DISMISSED=failed (journal-record.sh could not write the artifact)" >&2
     exit 4
   }
-echo "FINDING_DISMISSED=recorded finding_id=$FINDING_ID issue=$ISSUE reason=$REASON"
+printf '%s\n' "FINDING_DISMISSED=recorded finding_id=$FINDING_ID issue=$ISSUE reason=$REASON"
 # FINDING_DISMISSED_BLOCK_END
 
 true
@@ -689,19 +689,19 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
 # Builds the DISPUTED:[...] array for the resolution marker out of the
 # finding-dismissed artifacts, so the marker is a function of the journal
 # rather than of a transcription step.
-FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 # Unset and malformed are different faults and get different messages: the
 # first means this block was run without its input, the second means the input
 # it was given is wrong. Reporting the first as the second sent a reader looking
 # for a bad value that was never there.
 case "${PR_NUM:-}" in
   '')
-    echo "DISPUTED_STATE=unavailable"
-    echo "REASON=PR_NUM is not set; run this block with PR_NUM set to the pull request number, after Phase 3"
+    printf '%s\n' "DISPUTED_STATE=unavailable"
+    printf '%s\n' "REASON=PR_NUM is not set; run this block with PR_NUM set to the pull request number, after Phase 3"
     exit 0 ;;
   0*|*[!0-9]*)
-    echo "DISPUTED_STATE=unavailable"
-    echo "REASON=PR_NUM must be a positive integer with no leading zero, so the dismissals recorded against this pull request cannot be looked up"
+    printf '%s\n' "DISPUTED_STATE=unavailable"
+    printf '%s\n' "REASON=PR_NUM must be a positive integer with no leading zero, so the dismissals recorded against this pull request cannot be looked up"
     exit 0 ;;
 esac
 # Resolve the journal the same way Phase 3 wrote to it. The helper requires
@@ -709,13 +709,13 @@ esac
 if [ -z "${ISSUE:-}" ]; then
   DISPUTED_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   if [ -z "$DISPUTED_REPO" ]; then
-    echo "DISPUTED_STATE=unavailable"
-    echo "REASON=cannot resolve the repository, so the journal holding the dismissals cannot be located"
+    printf '%s\n' "DISPUTED_STATE=unavailable"
+    printf '%s\n' "REASON=cannot resolve the repository, so the journal holding the dismissals cannot be located"
     exit 0
   fi
   ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$DISPUTED_REPO") || {
-    echo "DISPUTED_STATE=unavailable"
-    echo "REASON=cannot read the issues pull request #$PR_NUM closes, so which findings were dismissed is unknown"
+    printf '%s\n' "DISPUTED_STATE=unavailable"
+    printf '%s\n' "REASON=cannot read the issues pull request #$PR_NUM closes, so which findings were dismissed is unknown"
     exit 0
   }
 fi
@@ -732,13 +732,13 @@ fi
 # it sits in.
 case "${ISSUE:-}" in
   '')
-    echo "DISPUTED_STATE=unavailable"
-    echo "DISPUTED_REASON_CODE=no-linked-issue"
-    echo "REASON=pull request #$PR_NUM closes no issue, so there is no journal to read; if it closed one in an earlier cycle, re-run with ISSUE=<that issue number> to include the dismissals recorded against it"
+    printf '%s\n' "DISPUTED_STATE=unavailable"
+    printf '%s\n' "DISPUTED_REASON_CODE=no-linked-issue"
+    printf '%s\n' "REASON=pull request #$PR_NUM closes no issue, so there is no journal to read; if it closed one in an earlier cycle, re-run with ISSUE=<that issue number> to include the dismissals recorded against it"
     exit 0 ;;
   0*|*[!0-9]*)
-    echo "DISPUTED_STATE=unavailable"
-    echo "REASON=the linked issue is not a positive integer with no leading zero, so the journal holding the dismissals cannot be named"
+    printf '%s\n' "DISPUTED_STATE=unavailable"
+    printf '%s\n' "REASON=the linked issue is not a positive integer with no leading zero, so the journal holding the dismissals cannot be named"
     exit 0 ;;
 esac
 # The journal directory is resolved through the same cascade the writer uses.
@@ -757,8 +757,8 @@ esac
 # with jq missing.
 DISPUTED_DIR=$("$FLOW_ROOT/bin/cascade-resolve.sh" --default ".decisions" '.journal.dir // empty')
 if [ -z "$DISPUTED_DIR" ]; then
-  echo "DISPUTED_STATE=unavailable"
-  echo "REASON=the journal directory could not be resolved, so the file recording the dismissals cannot be located"
+  printf '%s\n' "DISPUTED_STATE=unavailable"
+  printf '%s\n' "REASON=the journal directory could not be resolved, so the file recording the dismissals cannot be located"
   exit 0
 fi
 DISPUTED_JOURNAL="$DISPUTED_DIR/issue-${ISSUE}.md"
@@ -768,8 +768,8 @@ DISPUTED_JOURNAL="$DISPUTED_DIR/issue-${ISSUE}.md"
 # install where it is missing the block would die before emitting any STATE
 # line, and a missing STATE line reads exactly like a clean empty array.
 if [ ! -f "$FLOW_ROOT/bin/_journal_manifest.py" ]; then
-  echo "DISPUTED_STATE=unavailable"
-  echo "REASON=the shared journal reader could not be located, so which findings were dismissed is unknown"
+  printf '%s\n' "DISPUTED_STATE=unavailable"
+  printf '%s\n' "REASON=the shared journal reader could not be located, so which findings were dismissed is unknown"
   exit 0
 fi
 # Probe before the heredoc: `import yaml` sits above the first print, so a
@@ -779,8 +779,8 @@ if ! command -v python3 >/dev/null 2>&1 || \
      ! PYTHONSAFEPATH=1 python3 -c 'import sys
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 import yaml' >/dev/null 2>&1; then
-  echo "DISPUTED_STATE=unavailable"
-  echo "REASON=python3 with PyYAML is required to read the journal manifest, so which findings were dismissed is unknown"
+  printf '%s\n' "DISPUTED_STATE=unavailable"
+  printf '%s\n' "REASON=python3 with PyYAML is required to read the journal manifest, so which findings were dismissed is unknown"
 else
 DISPUTED_OUT=$(PYTHONSAFEPATH=1 python3 - "$FLOW_ROOT/bin" "$DISPUTED_JOURNAL" "$PR_NUM" <<'DISPUTED_PY'
 import sys
@@ -858,8 +858,8 @@ DISPUTED_PY
   # A reader that died mutely leaves no STATE line, which reads as an empty
   # array rather than as a failure.
   if [ "$DISPUTED_RC" -ne 0 ] || [ "$(printf '%s\n' "$DISPUTED_OUT" | grep -c '^DISPUTED_STATE=')" != "1" ]; then
-    echo "DISPUTED_STATE=unavailable"
-    echo "REASON=the dismissal reader did not complete (exit $DISPUTED_RC), so which findings were dismissed is unknown"
+    printf '%s\n' "DISPUTED_STATE=unavailable"
+    printf '%s\n' "REASON=the dismissal reader did not complete (exit $DISPUTED_RC), so which findings were dismissed is unknown"
   else
     printf '%s\n' "$DISPUTED_OUT"
   fi
@@ -917,14 +917,14 @@ true
    # resolution without complaining — an unset REPO reads as pinned and behaves
    # as unpinned, which is the failure this pinning exists to prevent.
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-   [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+   [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
    # Both values are re-checked here. commands/review.md's emitter validates them
    # and this one did not: `gh pr comment ""` is not an error to gh, it falls back
    # to inferring the pull request from the branch, so an unset PR_NUM posts the
    # comment on whichever pull request happens to be checked out.
-   [ -n "${PR_NUM:-}" ] || { echo "ERROR: PR_NUM is not set; refusing to post a resolution marker" >&2; exit 1; }
+   [ -n "${PR_NUM:-}" ] || { printf '%s\n' "ERROR: PR_NUM is not set; refusing to post a resolution marker" >&2; exit 1; }
    case "${CYCLE_NUMBER:-}" in
-     ''|0*|*[!0-9]*) echo "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to post a resolution marker" >&2; exit 1 ;;
+     ''|0*|*[!0-9]*) printf '%s\n' "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to post a resolution marker" >&2; exit 1 ;;
    esac
    # $BODY is composed prose, and templates/resolution-comment.md invites
    # verbatim reviewer text into it. The merge gate greps the arrays out of the
@@ -933,10 +933,10 @@ true
    # such a body; this emitter did not, and the two are the same emitter wearing
    # different hats — a rule enforced in one is a rule the other routes around.
    # Both now call the same script.
-   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-check-resolution-body.sh" \
+   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-check-resolution-body.sh" \
      --cycle "$CYCLE_NUMBER" <<<"$BODY" || exit 1
    gh pr comment "$PR_NUM" --repo "$REPO" --body "$BODY"; RES_EXIT=$?
-   echo "RES_EXIT=$RES_EXIT"
+   printf '%s\n' "RES_EXIT=$RES_EXIT"
    # A silently absent resolution marker re-introduces the merge false-block this
    # emission exists to prevent, so a failed comment is an error here. The sibling
    # emitter in commands/review.md reports the same way.

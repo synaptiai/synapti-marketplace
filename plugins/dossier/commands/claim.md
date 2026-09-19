@@ -23,25 +23,25 @@ One question: can this sentence be said externally, and if so, in exactly what w
 
 ```!
 _RAW="$ARGUMENTS"
-echo "### Claim Arguments"
-echo "ARGS=$_RAW"
+printf '%s\n' "### Claim Arguments"
+printf '%s\n' "ARGS=$_RAW"
 
 __dr="${CLAUDE_PLUGIN_ROOT:-}"
-[ -x "$__dr/bin/dossier-claim-scan.sh" ] || __dr=$({ echo plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-claim-scan.sh" ] && { echo "${__p%/}"; break; }; done)
+[ -x "$__dr/bin/dossier-claim-scan.sh" ] || __dr=$({ printf '%s\n' plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-claim-scan.sh" ] && { printf '%s\n' "${__p%/}"; break; }; done)
 
-echo "### Preflight"
+printf '%s\n' "### Preflight"
 if [ ! -x "$__dr/bin/dossier-claim-scan.sh" ]; then
-  echo "CLAIM_STATE=blocked"
-  echo "CLAIM_ERROR=dossier plugin scripts not found — reinstall or upgrade the plugin"
+  printf '%s\n' "CLAIM_STATE=blocked"
+  printf '%s\n' "CLAIM_ERROR=dossier plugin scripts not found — reinstall or upgrade the plugin"
   true; exit 0
 fi
 
 OUTPUT_ROOT=$("$__dr/bin/dossier-resolve-config.sh" --default "docs/dossier" dossier.project.outputRoot 2>/dev/null)
-echo "OUTPUT_ROOT=$OUTPUT_ROOT"
-echo "DISCLOSURE_POLICY=$("$__dr/bin/dossier-resolve-config.sh" --default internal-only dossier.disclosure.policy 2>/dev/null)"
-echo "APPROVAL_REQUIRED=$("$__dr/bin/dossier-resolve-config.sh" --default required dossier.disclosure.publicClaimApproval 2>/dev/null)"
-echo "REGISTER_EXISTS=$([ -f "$OUTPUT_ROOT/00-control/claim-and-disclosure-register.md" ] && echo true || echo false)"
-echo "LEDGER_EXISTS=$([ -f "$OUTPUT_ROOT/00-control/evidence-ledger.md" ] && echo true || echo false)"
+printf '%s\n' "OUTPUT_ROOT=$OUTPUT_ROOT"
+printf '%s\n' "DISCLOSURE_POLICY=$("$__dr/bin/dossier-resolve-config.sh" --default internal-only dossier.disclosure.policy 2>/dev/null)"
+printf '%s\n' "APPROVAL_REQUIRED=$("$__dr/bin/dossier-resolve-config.sh" --default required dossier.disclosure.publicClaimApproval 2>/dev/null)"
+printf '%s\n' "REGISTER_EXISTS=$([ -f "$OUTPUT_ROOT/00-control/claim-and-disclosure-register.md" ] && printf '%s\n' true || printf '%s\n' false)"
+printf '%s\n' "LEDGER_EXISTS=$([ -f "$OUTPUT_ROOT/00-control/evidence-ledger.md" ] && printf '%s\n' true || printf '%s\n' false)"
 true
 ```
 
