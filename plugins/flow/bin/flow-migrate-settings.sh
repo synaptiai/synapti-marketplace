@@ -33,6 +33,16 @@
 
 set -uo pipefail
 
+# Fold a value onto one line before printing it back. The value below is read
+# from a TRACKED settings file, which a pull request can change, and everything
+# reading this output reads it by line: a settings value holding a real newline
+# printed `MIGRATE_FROM=requireGoalForStart=yes` followed by a forged
+# `FORGED=1` line of its own. A control character becomes a space so the halves
+# stay visibly separate rather than running together.
+one_line() {
+  printf '%s' "$1" | LC_ALL=C tr '\000-\037\177' ' '
+}
+
 APPLY=0
 SETTINGS=".claude/settings.flow.json"
 
@@ -104,8 +114,8 @@ fi
 OLD_VAL=$(printf '%s' "$ORIGINAL" | jq -r 'if (.flow.goals | type) == "object" and (.flow.goals | has("requireGoalForStart")) then (.flow.goals.requireGoalForStart | tostring) else "absent" end' 2>/dev/null)
 NEW_VAL=$(printf '%s' "$MIGRATED" | jq -r '.flow.goals.goalCreation // "absent"' 2>/dev/null)
 echo "MIGRATE=requireGoalForStart->goalCreation"
-echo "MIGRATE_FROM=requireGoalForStart=$OLD_VAL"
-printf '%s\n' "MIGRATE_TO=goalCreation=$NEW_VAL"
+echo "MIGRATE_FROM=requireGoalForStart=$(one_line "$OLD_VAL")"
+printf '%s\n' "MIGRATE_TO=goalCreation=$(one_line "$NEW_VAL")"
 
 if [ "$APPLY" != "1" ]; then
   echo "MIGRATE_MODE=dry-run (re-run with --apply to write)"

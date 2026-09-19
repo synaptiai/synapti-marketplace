@@ -295,3 +295,28 @@ printf '# decision\n' > "$PROJ/.decisions/issue-1.md"
 _run_hook "$PROJ" "$FAKE_HOME" "{\"hook_event_name\":\"SessionEnd\",\"reason\":\"exit\",\"transcript_path\":\"$CLEAN\",\"cwd\":\"$PROJ\"}"
 assert_file_exists "$FAKE_HOME/.claude/flow-learn-pending" "journal signal unchanged"
 rm -rf "$PROJ" "$FAKE_HOME"
+
+# ---------------------------------------------------------------------------
+# A value the caller supplies is printed back, both in diagnostics and in the
+# `KEY=value` counts. Everything downstream reads that output by line, so a
+# value carrying a real newline forges a field nobody wrote — the same defect
+# the command fences were rewritten to remove, in the producer they read from.
+# ---------------------------------------------------------------------------
+_flow_test_begin "mine-corrections — a path carrying a newline cannot forge a line"
+HOSTILE=$'probe\nFORGED=1'
+
+OUT=$("$MINER" --format markdown --file "$HOSTILE" 2>/dev/null)
+assert_equal "0" "$(printf '%s\n' "$OUT" | grep -c '^FORGED=1' || true)" "no forged line on stdout"
+assert_contains "TRANSCRIPT_DIR=probe FORGED=1" "$OUT" "the value is folded onto one line, visibly separated"
+
+ERR=$("$MINER" --file "$HOSTILE" 2>&1 >/dev/null)
+assert_equal "0" "$(printf '%s\n' "$ERR" | grep -c '^FORGED=1' || true)" "no forged line on stderr"
+
+# The roots list is built from HOME, which the environment supplies rather than
+# an argument, and it reaches the output on both the missing and the ok path.
+OUT=$(HOME="$HOSTILE" "$MINER" --format markdown 2>/dev/null)
+assert_equal "0" "$(printf '%s\n' "$OUT" | grep -c '^FORGED=1' || true)" "no forged line from a hostile HOME"
+
+# The helper has to be defined before the argument loop that first calls it;
+# bash resolves function definitions in the order it reads them.
+assert_equal "0" "$("$MINER" --bogus-argument 2>&1 | grep -c 'command not found' || true)" "the folding helper is defined before its first caller"

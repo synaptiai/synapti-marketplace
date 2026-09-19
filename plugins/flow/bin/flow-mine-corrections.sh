@@ -61,6 +61,21 @@ MAX_SESSIONS="50"
 FORMAT="jsonl"
 MIN_CHARS="1"
 
+# Fold a caller-supplied value onto one line before printing it back. A path a
+# caller passes can carry anything, and every line this script prints is read by
+# line by whatever consumes it: `--file $'probe\nFORGED=1'` printed
+# `TRANSCRIPT_DIR=probe` followed by a forged `FORGED=1` line of its own — the
+# defect the command fences were rewritten to remove, surviving in the producer
+# those fences read from.
+#
+# A control character becomes a space rather than being deleted, so the two
+# halves of a value that carried one stay visibly separate instead of running
+# together. No length cap: a legitimately long path is reported whole rather
+# than silently truncated, which would be a quieter version of the same fault.
+one_line() {
+  printf '%s' "$1" | LC_ALL=C tr '\000-\037\177' ' '
+}
+
 _need_value() {
   [ $# -ge 2 ] || { echo "flow-mine-corrections.sh: $1 requires a value" >&2; exit 1; }
 }
@@ -79,7 +94,7 @@ while [ $# -gt 0 ]; do
       exit 0
       ;;
     *)
-      echo "flow-mine-corrections.sh: unknown argument: $1" >&2
+      echo "flow-mine-corrections.sh: unknown argument: $(one_line "$1")" >&2
       exit 1
       ;;
   esac
@@ -117,16 +132,17 @@ fi
 # Missing inputs are a normal state (fresh machine, transcripts pruned,
 # non-standard install). Report zero candidates and exit 0 so callers in `!`
 # blocks and SessionEnd hooks never fail because of it.
+
 _report_missing() {
-  echo "flow-mine-corrections.sh: $1" >&2
+  echo "flow-mine-corrections.sh: $(one_line "$1")" >&2
   if [ "$FORMAT" = "markdown" ]; then
-    echo "TRANSCRIPT_DIR=${ONE_FILE:-$TRANSCRIPT_DIR}"
+    echo "TRANSCRIPT_DIR=$(one_line "${ONE_FILE:-$TRANSCRIPT_DIR}")"
     echo "TRANSCRIPT_DIR_STATE=missing"
     # Name every root that was probed. "Not found" and "found and empty" are
     # different facts, and reporting one path made them look identical.
       # The roots are named whether or not one matched — see the success-path
     # emit below for why.
-    [ -z "$ONE_FILE" ] && [ -n "${TRANSCRIPT_ROOTS_TRIED:-}" ] && echo "TRANSCRIPT_ROOTS_TRIED=$TRANSCRIPT_ROOTS_TRIED"
+    [ -z "$ONE_FILE" ] && [ -n "${TRANSCRIPT_ROOTS_TRIED:-}" ] && echo "TRANSCRIPT_ROOTS_TRIED=$(one_line "$TRANSCRIPT_ROOTS_TRIED")"
     echo "CANDIDATE_COUNT=0"
     echo "SESSION_COUNT=0"
     echo "SESSIONS_WITH_CANDIDATES=0"
@@ -263,6 +279,17 @@ TEXT_MAX = 600
 # ---------------------------------------------------------------------------
 
 
+def one_line(value):
+    """Fold a caller- or environment-supplied value onto one line.
+
+    Every line this script prints is read by line by whatever consumes it, and a
+    value reaching it from an argument or from HOME can carry a real newline: a
+    forged `KEY=value` line then reads as a field nobody wrote. Control
+    characters become spaces so the halves stay visibly separate.
+    """
+    return re.sub(r"[\x00-\x1f\x7f]", " ", str(value))
+
+
 def _phrase_regex(phrase):
     parts = []
     for tok in phrase.split():
@@ -310,7 +337,7 @@ since = None
 if since_raw:
     since = parse_ts(since_raw)
     if since is None:
-        print(f"flow-mine-corrections.sh: --since is not an ISO date: {since_raw}", file=sys.stderr)
+        print(f"flow-mine-corrections.sh: --since is not an ISO date: {one_line(since_raw)}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -380,7 +407,7 @@ def scan_file(path):
     try:
         fh = open(path, "r", encoding="utf-8", errors="replace")
     except OSError as e:
-        print(f"flow-mine-corrections.sh: cannot read {path}: {e}", file=sys.stderr)
+        print(f"flow-mine-corrections.sh: cannot read {one_line(path)}: {e}", file=sys.stderr)
         return
     with fh:
         for line_no, line in enumerate(fh, 1):
@@ -499,7 +526,7 @@ def cell(s, n):
     return truncate(s, n)
 
 
-print(f"TRANSCRIPT_DIR={one_file or transcript_dir}")
+print(f"TRANSCRIPT_DIR={one_line(one_file or transcript_dir)}")
 print("TRANSCRIPT_DIR_STATE=ok")
 # Which roots were searched, on the success path as well as the failure one.
 # "Searched both and found nothing" and "found it, and it is empty" are
@@ -507,7 +534,7 @@ print("TRANSCRIPT_DIR_STATE=ok")
 # reading the same here — the confusion issue #168 is about, one level down.
 _roots = sys.argv[8] if len(sys.argv) > 8 else ""
 if _roots and not one_file:
-    print(f"TRANSCRIPT_ROOTS_TRIED={_roots}")
+    print(f"TRANSCRIPT_ROOTS_TRIED={one_line(_roots)}")
 print(f"CANDIDATE_COUNT={len(candidates)}")
 print(f"SESSION_COUNT={len(files)}")
 print(f"SESSIONS_WITH_CANDIDATES={sessions_with}")

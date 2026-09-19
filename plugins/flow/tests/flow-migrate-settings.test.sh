@@ -134,3 +134,34 @@ echo '{"flow":{"goals":{"requireGoalForStart":true}}}' > "$F"
 bash "$HELPER" --apply "$F" >/dev/null 2>&1
 RESIDUE=$(ls "$D/.claude"/*.lock 2>/dev/null)
 assert_equal "" "$RESIDUE" "the .lock file is cleaned up after apply"
+
+# ---------------------------------------------------------------------------
+# Both reported values come from the settings file, which is TRACKED, so a pull
+# request chooses them. Everything reading this output reads it by line, so a
+# value carrying a real newline forges a field nobody wrote.
+# ---------------------------------------------------------------------------
+_flow_test_begin "migrate-settings — a settings value carrying a newline cannot forge a line"
+D=$(_ms_dir); F="$D/.claude/settings.flow.json"
+_jq_write() {  # <file> <from|to> <value>
+  python3 - "$1" "$2" "$3" <<'PY'
+import json, sys
+# json.dump escapes the control character, so the file holds an escape and jq
+# decodes it to a REAL newline, which is the case that matters here.
+d = {"flow": {"goals": {}}}
+if sys.argv[2] == "from":
+    d["flow"]["goals"]["requireGoalForStart"] = sys.argv[3]
+else:
+    d["flow"]["goals"]["requireGoalForStart"] = True
+    d["flow"]["goals"]["goalCreation"] = sys.argv[3]
+json.dump(d, open(sys.argv[1], "w"))
+PY
+}
+
+_jq_write "$F" "from" $'yes\nFORGED=1'
+OUT=$(bash "$HELPER" "$F" 2>/dev/null)
+assert_equal "0" "$(printf '%s\n' "$OUT" | grep -c '^FORGED=1' || true)" "no forged line from the old value"
+assert_contains "MIGRATE_FROM=requireGoalForStart=yes FORGED=1" "$OUT" "the old value is folded onto one line"
+
+_jq_write "$F" "to" $'x\nFORGED=2'
+OUT=$(bash "$HELPER" "$F" 2>/dev/null)
+assert_equal "0" "$(printf '%s\n' "$OUT" | grep -c '^FORGED=2' || true)" "no forged line from the migrated value"
