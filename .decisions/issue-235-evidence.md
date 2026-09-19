@@ -26,12 +26,12 @@ bash plugins/dossier/tests/run.sh no-interpreting-print.test.sh
 PASS no fence in any flow markdown file invokes an interpreting print — every markdown file scan reported its own counts
 PASS no fence in any flow markdown file invokes an interpreting print — scan reached 156 files, 435 blocks, 7505 lines
 PASS no fence in any flow markdown file invokes an interpreting print — no fence invokes echo
-SUMMARY pass=30 fail=0
+SUMMARY pass=36 fail=0
 
 PASS no fence in any dossier markdown file invokes an interpreting print — every markdown file scan reported its own counts
 PASS no fence in any dossier markdown file invokes an interpreting print — scan reached 75 files, 98 blocks, 1024 lines
 PASS no fence in any dossier markdown file invokes an interpreting print — no fence invokes echo
-SUMMARY pass=12 fail=0
+SUMMARY pass=16 fail=0
 ```
 
 Scope was widened past the criterion's `plugins/flow/commands/` to every markdown
@@ -141,7 +141,7 @@ PASS an echo opened by a word or a case arm is still a command — an echo in th
 PASS the scan sees every block, including the ones a narrower parser drops — trailing whitespace on the closing marker does not hide the next block
 PASS the scan sees every block, including the ones a narrower parser drops — untagged, bash-tagged and bang-tagged blocks are all read
 PASS the scan sees every block, including the ones a narrower parser drops — an unterminated block is reported rather than truncated
-SUMMARY pass=30 fail=0
+SUMMARY pass=36 fail=0
 ```
 
 Measured red before the fix, on the pre-conversion tree — a **one-time
@@ -153,13 +153,13 @@ flow:    952 offending lines
 dossier: 190 offending lines
 ```
 
-The first version of the guard recognised only punctuation as a command opener
-and read 53 real sites as arguments while reporting the tree clean — `case "$x"
-in *) echo`, `if …; then echo`, `else echo`, `if echo … | jq`. Because the same
-predicate drove the rewrite, guard and converter confirmed each other's blind
-spot. With the predicate corrected the same scan reports 952 where it had
-reported 907: 45 command sites that would have been certified clean. Each opener
-now has its own fixture above.
+The first version of the guard recognised only punctuation as a command opener —
+`case "$x" in *) echo`, `if …; then echo`, `else echo`, `if echo … | jq` were all
+invisible — while reporting the tree clean. Because the same predicate drove the
+rewrite, guard and converter confirmed each other's blind spot. With the
+predicate corrected, this plugin's own scan reports 952 where it had reported
+907: 45 sites that would have been certified clean. Each opener now has its own
+fixture above.
 
 ### Visual analysis
 
@@ -244,7 +244,7 @@ PASS carriage return, tab and a literal backslash-n also stay on one line — an
 PASS carriage return, tab and a literal backslash-n also stay on one line — an id written as "a\\nb" still prints one line
 PASS the consumer print form does not interpret what it is given — a backslash-n in a consumer line stays on one line
 PASS the consumer print form does not interpret what it is given — the forged key never begins a line
-SUMMARY pass=33 fail=0
+SUMMARY pass=37 fail=0
 ```
 
 **Scope adjustment, stated for adjudication.** The forged field is
@@ -282,7 +282,7 @@ none — criterion type behavioral has no visual surface
 ### Does NOT promise
 
 - No new producer CLI surface; no flag added or renamed.
-- No refusal of any value for containing an awkward character; the value is collapsed, not rejected.
+- For the goals producer: no refusal of any value for containing an awkward character; the value is collapsed, not rejected. The dossier config resolver does refuse one and falls back to its declared default — a different mechanism, described above rather than left out of this list.
 - No claim over every helper in the tree, only those that emit a `KEY=value` scalar.
 
 ### What was tested
@@ -354,7 +354,7 @@ PASS the merge gate sees findings through a body carrying a backslash — the in
 PASS a JSON payload with an escape in a string is still parsed — jq reads a scalar through the here-string
 PASS a JSON payload with an escape in a string is still parsed — jq decodes the escaped newline as data, not as structure
 PASS a JSON payload with an escape in a string is still parsed — the interpreting route loses the same payload
-SUMMARY pass=33 fail=0
+SUMMARY pass=37 fail=0
 ```
 
 The merge gate's extraction is taken **verbatim** from `commands/merge.md` by
@@ -456,7 +456,7 @@ PASS replaced and replacement print forms agree byte for byte — a value contai
 PASS the replacement prints a backslash value byte for byte
 PASS the backslash itself survives
 PASS under a shell whose echo interprets, the two forms differ — which is the defect this work removes
-SUMMARY pass=33 fail=0
+SUMMARY pass=37 fail=0
 ```
 
 Three further whole-tree checks were run, each comparing the branch against
