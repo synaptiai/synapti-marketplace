@@ -439,3 +439,16 @@ H=$(cat "$HELPER")
 assert_equal "0" "$(printf '%s\n' "$H" | grep -cE '(cat|<)[[:space:]]+"?\$?\{?EXC_PATH')" \
   "the helper does not read the path from disk"
 assert_match 'contents/.*ref=' "$H" "it reads over the API at a pinned ref"
+
+# ---------------------------------------------------------------------------
+# The section is the contract, and a consumer reads it by line. A path the
+# caller supplies is printed back in EXCEPTIONS_PATH, so a value carrying a real
+# newline forges a field nobody wrote.
+# ---------------------------------------------------------------------------
+_flow_test_begin "review-exceptions — a path carrying a newline cannot forge a line"
+HOSTILE=$'probe\nFORGED=1'
+OUT=$(bash "$HELPER" --repo x/y --ref main --path "$HOSTILE" 2>/dev/null)
+assert_equal "0" "$(printf '%s\n' "$OUT" | grep -c '^FORGED=1' || true)" "no forged line on stdout"
+assert_contains "EXCEPTIONS_PATH=probe FORGED=1" "$OUT" "the value is folded onto one line"
+# Every line of the section is a field, so the count is the contract too.
+assert_equal "1" "$(printf '%s\n' "$OUT" | grep -c '^EXCEPTIONS_PATH=' || true)" "EXCEPTIONS_PATH is emitted exactly once"

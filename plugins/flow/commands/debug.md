@@ -24,7 +24,7 @@ This command operates with these domain skills loaded:
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" debugging-patterns change-classification goal-contract-capture goal-evaluator goal-lifecycle run-state-management
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" debugging-patterns change-classification goal-contract-capture goal-evaluator goal-lifecycle run-state-management
 
 true
 ```
@@ -37,31 +37,31 @@ Gather all evidence before theorizing. Execute in parallel:
 # Output: `###`-headed sections + KEY=value per
 # `references/command-output-format.md`.
 
-echo "### Recent History"
+printf '%s\n' "### Recent History"
 # Capture into a var so an empty result emits an explicit STATE=empty
 # sentinel rather than a silent heading.
 RECENT_LOG=$(git log --oneline -10 2>/dev/null)
 if [ -z "$RECENT_LOG" ]; then
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 else
   printf '%s\n' "$RECENT_LOG" | sed 's/^/COMMIT=/'
 fi
 
-echo ""
-echo "### Recent Diff (last 3 commits)"
+printf '%s\n' ""
+printf '%s\n' "### Recent Diff (last 3 commits)"
 RECENT_DIFF=$(git diff HEAD~3..HEAD --stat 2>/dev/null)
 if [ -z "$RECENT_DIFF" ]; then
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 else
   # Prefix raw stat lines with DIFF_STAT= per command-output-format.md.
   printf '%s\n' "$RECENT_DIFF" | sed 's/^/DIFF_STAT=/'
 fi
 
-echo ""
-echo "### Current State"
-echo "BRANCH=$(git branch --show-current 2>/dev/null)"
+printf '%s\n' ""
+printf '%s\n' "### Current State"
+printf '%s\n' "BRANCH=$(git branch --show-current 2>/dev/null)"
 UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
-echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
+printf '%s\n' "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
 [ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
 
 true
@@ -73,27 +73,27 @@ true
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
-CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 if [ ! -x "$CASCADE" ]; then
-  echo "FLOW_RUN_STATE=blocked"
-  echo "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
+  printf '%s\n' "FLOW_RUN_STATE=blocked"
+  printf '%s\n' "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
   true; exit 0
 fi
 RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
 if [ "$RUNTIME_ENABLED" != "true" ]; then
-  echo "FLOW_RUN_STATE=skip"
-  echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+  printf '%s\n' "FLOW_RUN_STATE=skip"
+  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
 else
   RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-debug"
   # The goal id must match the FlowGoal metadata.id pattern
   # ^[a-z0-9][a-z0-9-]{0,63}$ — no uppercase, so it cannot reuse the ISO run
   # timestamp (which carries T/Z). Use a hyphen-only lowercase stamp.
   GOAL_TS="$(date -u +%Y-%m-%d-%H%M%S)"
-  echo "FLOW_RUN_STATE=create"
-  echo "RUN_ID=$RUN_ID"
-  echo "WORKFLOW=debug"
-  echo "INITIAL_PHASE=preflight"
-  echo "GOAL_LINK=debug-${GOAL_TS}"
+  printf '%s\n' "FLOW_RUN_STATE=create"
+  printf '%s\n' "RUN_ID=$RUN_ID"
+  printf '%s\n' "WORKFLOW=debug"
+  printf '%s\n' "INITIAL_PHASE=preflight"
+  printf '%s\n' "GOAL_LINK=debug-${GOAL_TS}"
 fi
 # FLOW_RUN_BLOCK_END
 true

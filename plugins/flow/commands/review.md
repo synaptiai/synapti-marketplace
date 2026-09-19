@@ -21,7 +21,7 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" llm-operator-principles code-review-methodology holdout-validation run-state-management
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" llm-operator-principles code-review-methodology holdout-validation run-state-management
 
 true
 ```
@@ -44,13 +44,13 @@ case "$ARG1" in
   *) PR_NUM="$ARG1" ;;
 esac
 
-echo "### PR Reference"
+printf '%s\n' "### PR Reference"
 if [ -z "$PR_NUM" ]; then
-  echo "STATE=blocked"
-  echo "ERROR=PR number required (all-digit). Usage: /flow:review <pr-number>"
+  printf '%s\n' "STATE=blocked"
+  printf '%s\n' "ERROR=PR number required (all-digit). Usage: /flow:review <pr-number>"
 else
-  echo "STATE=ok"
-  echo "PR_NUM=$PR_NUM"
+  printf '%s\n' "STATE=ok"
+  printf '%s\n' "PR_NUM=$PR_NUM"
 
   # Section: Repository — resolved once here, printed, and pinned onto every gh
   # call below. Without the pin each call resolves against whatever repository
@@ -62,44 +62,44 @@ else
   #
   # The cross-check parses `git remote get-url origin` independently rather than
   # reading `gh repo view` twice — two readings of one source can never disagree.
-  echo ""
-  echo "### Repository"
+  printf '%s\n' ""
+  printf '%s\n' "### Repository"
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null); GH_EXIT=$?
   GIT_REPO=$(git remote get-url origin 2>/dev/null | sed -E -e 's#\.git$##' -e 's#^.*[:/]([^/]+/[^/]+)$#\1#')
   if [ $GH_EXIT -ne 0 ] || [ -z "$REPO" ]; then
-    echo "REPO="
-    echo "REPO_STATE=unavailable"
-    echo "ERROR=could not resolve the repository (gh repo view failed); every field below would be unattributable"
+    printf '%s\n' "REPO="
+    printf '%s\n' "REPO_STATE=unavailable"
+    printf '%s\n' "ERROR=could not resolve the repository (gh repo view failed); every field below would be unattributable"
   else
-    echo "REPO=$REPO"
+    printf '%s\n' "REPO=$REPO"
     if [ -z "$GIT_REPO" ]; then
-      echo "REPO_CROSSCHECK=unavailable"
-      echo "REPO_CROSSCHECK_DETAIL=no origin remote to compare against"
+      printf '%s\n' "REPO_CROSSCHECK=unavailable"
+      printf '%s\n' "REPO_CROSSCHECK_DETAIL=no origin remote to compare against"
     elif [ "$(printf '%s' "$GIT_REPO" | tr 'A-Z' 'a-z')" = "$(printf '%s' "$REPO" | tr 'A-Z' 'a-z')" ]; then
-      echo "REPO_CROSSCHECK=ok"
+      printf '%s\n' "REPO_CROSSCHECK=ok"
     else
-      echo "REPO_CROSSCHECK=mismatch"
-      echo "REPO_CROSSCHECK_DETAIL=git origin is $GIT_REPO but gh resolved $REPO"
-      echo "REPO_STATE=blocked"
+      printf '%s\n' "REPO_CROSSCHECK=mismatch"
+      printf '%s\n' "REPO_CROSSCHECK_DETAIL=git origin is $GIT_REPO but gh resolved $REPO"
+      printf '%s\n' "REPO_STATE=blocked"
     fi
   fi
 
   # Section: PR Details
-  echo ""
-  echo "### PR Details"
+  printf '%s\n' ""
+  printf '%s\n' "### PR Details"
   gh pr view "$PR_NUM" --repo "$REPO" --json title,headRefName,baseRefName,changedFiles,additions,deletions,labels,author,reviews --jq '"TITLE=\"\(.title)\"\nHEAD_BRANCH=\(.headRefName)\nBASE_BRANCH=\(.baseRefName)\nAUTHOR=@\(.author.login)\nCHANGED_FILES=\(.changedFiles)\nADDITIONS=\(.additions)\nDELETIONS=\(.deletions)\nLABELS=\([.labels[].name] | join(","))\nREVIEW_COUNT=\(.reviews | length)"' 2>/dev/null
 
   # Section: Linked Issue, the issue GitHub lists the pull request as closing
   # (bin/flow-pr-linked-issue.sh), never a number read out of the body text.
-  echo ""
-  echo "### Linked Issue"
-  LINKED_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-pr-linked-issue.sh"
+  printf '%s\n' ""
+  printf '%s\n' "### Linked Issue"
+  LINKED_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-pr-linked-issue.sh"
   if [ -z "$REPO" ] || [ ! -x "$LINKED_HELPER" ]; then
     LINKED="unavailable"
   elif ! LINKED=$("$LINKED_HELPER" --pr "$PR_NUM" --repo "$REPO"); then
     LINKED="unavailable"
   fi
-  echo "LINKED_ISSUE=${LINKED:-none}"
+  printf '%s\n' "LINKED_ISSUE=${LINKED:-none}"
 
   # Section: FlowGoal — the specification the team wrote for this issue, read at
   # the revision under review. This fence runs when the command loads, which is
@@ -123,36 +123,36 @@ else
   # rows to come from the issue text, and the step that derives them fires on
   # that line.
   # FLOWGOAL_BLOCK_BEGIN
-  echo ""
-  echo "### FlowGoal"
-  echo "ENCODING=a literal | inside a value is written %7C; a value that ends … was shortened, and GOAL_TRUNCATED then says so"
+  printf '%s\n' ""
+  printf '%s\n' "### FlowGoal"
+  printf '%s\n' "ENCODING=a literal | inside a value is written %7C; a value that ends … was shortened, and GOAL_TRUNCATED then says so"
   case "${LINKED:-}" in
     ''|none)
-      echo "STATE=none"
-      echo "REASON=the pull request links no issue, so there is no goal path to resolve"
-      echo "RISK_MAP_SOURCE=issue-text"
+      printf '%s\n' "STATE=none"
+      printf '%s\n' "REASON=the pull request links no issue, so there is no goal path to resolve"
+      printf '%s\n' "RISK_MAP_SOURCE=issue-text"
       ;;
     unavailable)
       # The linked-issue lookup itself failed — no repository resolved, the
       # helper missing, or gh could not read the pull request. Answering that
       # with "links no issue" asserts something nobody established, and drops
       # the specification silently.
-      echo "STATE=unavailable"
-      echo "REASON=the linked issue could not be resolved, so there is no goal path to read"
-      echo "GOAL_EDITED=unavailable"
-      echo "GOAL_EDITED_REASON=the goal under review is unknown, so what this pull request does to it is unknown"
-      echo "RISK_MAP_SOURCE=issue-text"
+      printf '%s\n' "STATE=unavailable"
+      printf '%s\n' "REASON=the linked issue could not be resolved, so there is no goal path to read"
+      printf '%s\n' "GOAL_EDITED=unavailable"
+      printf '%s\n' "GOAL_EDITED_REASON=the goal under review is unknown, so what this pull request does to it is unknown"
+      printf '%s\n' "RISK_MAP_SOURCE=issue-text"
       ;;
     *[!0-9]*)
-      echo "STATE=none"
-      echo "REASON=the linked issue is not a number"
-      echo "RISK_MAP_SOURCE=issue-text"
+      printf '%s\n' "STATE=none"
+      printf '%s\n' "REASON=the linked issue is not a number"
+      printf '%s\n' "RISK_MAP_SOURCE=issue-text"
       ;;
     *)
       # LINKED is all digits by the case above, so the path below carries no
       # value that could reshape the jq filter or the request it goes into.
       FLOW_GOAL_PATH=".flow/goals/issue-$LINKED.goal.yaml"
-      echo "GOAL_PATH=$FLOW_GOAL_PATH"
+      printf '%s\n' "GOAL_PATH=$FLOW_GOAL_PATH"
       # Whether this pull request changes the goal it is reviewed against.
       # The goal is trusted because it is tracked and a weakening shows up
       # in the diff — which is only true while someone looks at the diff.
@@ -164,50 +164,50 @@ else
       FLOW_GOAL_FILE_STATE=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/files?per_page=100" \
         --jq ".[] | select(.filename==\"$FLOW_GOAL_PATH\" or .previous_filename==\"$FLOW_GOAL_PATH\") | .status" 2>/dev/null); FLOW_GOAL_GH=$?
       if [ "$FLOW_GOAL_GH" -ne 0 ]; then
-        echo "GOAL_EDITED=unavailable"
-        echo "GOAL_EDITED_REASON=the pull request file list could not be read, so whether this pull request changes its own goal is unknown"
+        printf '%s\n' "GOAL_EDITED=unavailable"
+        printf '%s\n' "GOAL_EDITED_REASON=the pull request file list could not be read, so whether this pull request changes its own goal is unknown"
       else
         case "$(printf '%s' "$FLOW_GOAL_FILE_STATE" | head -1)" in
-          '')                          echo "GOAL_EDITED=no" ;;
-          added|copied)                echo "GOAL_EDITED=created" ;;
-          removed)                     echo "GOAL_EDITED=removed" ;;
+          '')                          printf '%s\n' "GOAL_EDITED=no" ;;
+          added|copied)                printf '%s\n' "GOAL_EDITED=created" ;;
+          removed)                     printf '%s\n' "GOAL_EDITED=removed" ;;
           # A rename is a departure from one path or an arrival at another, and
           # which one this is depends on whether the goal is there now. The
           # section states that below, so report what was seen rather than
           # guessing here.
-          renamed)                     echo "GOAL_EDITED=renamed" ;;
-          *)                           echo "GOAL_EDITED=modified" ;;
+          renamed)                     printf '%s\n' "GOAL_EDITED=renamed" ;;
+          *)                           printf '%s\n' "GOAL_EDITED=modified" ;;
         esac
       fi
       FLOW_GOAL_SHA=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null)
       if [ -z "$FLOW_GOAL_SHA" ]; then
-        echo "STATE=unavailable"
-        echo "REASON=the pull request head commit could not be resolved, so there is no revision to read the goal at"
-        echo "RISK_MAP_SOURCE=issue-text"
+        printf '%s\n' "STATE=unavailable"
+        printf '%s\n' "REASON=the pull request head commit could not be resolved, so there is no revision to read the goal at"
+        printf '%s\n' "RISK_MAP_SOURCE=issue-text"
       elif ! command -v python3 >/dev/null 2>&1 || \
            ! PYTHONSAFEPATH=1 python3 -c 'import sys
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 import yaml' >/dev/null 2>&1; then
-        echo "STATE=unavailable"
-        echo "REASON=python3 with PyYAML is required to read a goal, and one of them is missing"
-        echo "RISK_MAP_SOURCE=issue-text"
+        printf '%s\n' "STATE=unavailable"
+        printf '%s\n' "REASON=python3 with PyYAML is required to read a goal, and one of them is missing"
+        printf '%s\n' "RISK_MAP_SOURCE=issue-text"
       else
-        echo "GOAL_REF=$FLOW_GOAL_SHA"
+        printf '%s\n' "GOAL_REF=$FLOW_GOAL_SHA"
         # `-i` keeps the response status, so an absent goal and an unreachable
         # API are told apart by the protocol rather than by the wording of an
         # error message, which changes with the gh version and the locale. A
         # 404 is the only absent; 403, 5xx and a dead network are unreadable.
         FLOW_GOAL_RESP=$(gh api -i "repos/$REPO/contents/$FLOW_GOAL_PATH?ref=$FLOW_GOAL_SHA" 2>/dev/null)
         if [ -z "$FLOW_GOAL_RESP" ]; then
-          echo "STATE=unavailable"
-          echo "REASON=the contents API returned nothing for the goal, so it could not be read"
-          echo "RISK_MAP_SOURCE=issue-text"
+          printf '%s\n' "STATE=unavailable"
+          printf '%s\n' "REASON=the contents API returned nothing for the goal, so it could not be read"
+          printf '%s\n' "RISK_MAP_SOURCE=issue-text"
         elif [ "${#FLOW_GOAL_RESP}" -gt 100000 ]; then
           # The response is handed to the reader in the environment, which on
           # Linux caps a single string at 128KB. A goal this large is not a goal.
-          echo "STATE=unavailable"
-          echo "REASON=the goal is too large to read"
-          echo "RISK_MAP_SOURCE=issue-text"
+          printf '%s\n' "STATE=unavailable"
+          printf '%s\n' "REASON=the goal is too large to read"
+          printf '%s\n' "RISK_MAP_SOURCE=issue-text"
         else
           # The reader is a child process: it can be killed without printing
           # anything. Its output is taken only when it exits cleanly and says
@@ -398,9 +398,9 @@ FLOW_GOAL_READ
           ); FLOW_GOAL_READ_EXIT=$?
           if [ "$FLOW_GOAL_READ_EXIT" -ne 0 ] || \
              [ "$(printf '%s\n' "$FLOW_GOAL_OUT" | grep -c '^STATE=')" != "1" ]; then
-            echo "STATE=unavailable"
-            echo "REASON=the goal reader did not complete (exit $FLOW_GOAL_READ_EXIT), so the goal was not read"
-            echo "RISK_MAP_SOURCE=issue-text"
+            printf '%s\n' "STATE=unavailable"
+            printf '%s\n' "REASON=the goal reader did not complete (exit $FLOW_GOAL_READ_EXIT), so the goal was not read"
+            printf '%s\n' "RISK_MAP_SOURCE=issue-text"
           else
             printf '%s\n' "$FLOW_GOAL_OUT"
           fi
@@ -411,8 +411,8 @@ FLOW_GOAL_READ
   # FLOWGOAL_BLOCK_END
 
   # Section: Review Exceptions
-  echo ""
-  echo "### Review Exceptions"
+  printf '%s\n' ""
+  printf '%s\n' "### Review Exceptions"
   # REVIEW_EXCEPTIONS_BLOCK_BEGIN
   # Rules the team has already rejected a finding over, so a reviewer does not
   # raise the same one again. The helper reads them at the BASE commit, never
@@ -420,23 +420,23 @@ FLOW_GOAL_READ
   # from there would let a pull request grant itself an exemption in the same
   # diff a reviewer is judging. /flow:pr prints this section from the same
   # helper, so the two cannot drift.
-  FLOW_RX_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-review-exceptions.sh"
+  FLOW_RX_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-review-exceptions.sh"
   if [ ! -x "$FLOW_RX_HELPER" ]; then
-    echo "STATE=unavailable"
-    echo "REASON=flow-review-exceptions.sh missing or non-executable, so whether the team has recorded any exception is unknown"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=flow-review-exceptions.sh missing or non-executable, so whether the team has recorded any exception is unknown"
   elif [ -z "$REPO" ]; then
     # REPO is legitimately empty when `gh repo view` failed above: the section
     # prints REPO_STATE=unavailable and this fence keeps going. The helper would
     # then exit on its usage check BEFORE printing anything, leaving a heading
     # with no STATE line — which the dispatch prose has no rule for, so the run
     # reviews as though the team had rejected nothing.
-    echo "STATE=unavailable"
-    echo "REASON=the repository could not be resolved, so there is no trusted ref to read the exceptions at"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=the repository could not be resolved, so there is no trusted ref to read the exceptions at"
   else
     RX_OUT=$("$FLOW_RX_HELPER" --repo "$REPO" --pr "$PR_NUM"); RX_RC=$?
     if [ "$RX_RC" -ne 0 ] || [ "$(printf '%s\n' "$RX_OUT" | grep -c '^STATE=')" != "1" ]; then
-      echo "STATE=unavailable"
-      echo "REASON=the exceptions helper did not complete (exit $RX_RC), so whether the team has recorded any exception is unknown"
+      printf '%s\n' "STATE=unavailable"
+      printf '%s\n' "REASON=the exceptions helper did not complete (exit $RX_RC), so whether the team has recorded any exception is unknown"
     else
       printf '%s\n' "$RX_OUT"
     fi
@@ -444,30 +444,30 @@ FLOW_GOAL_READ
   # REVIEW_EXCEPTIONS_BLOCK_END
 
   # Section: Previous Reviews (follow-up detection)
-  echo ""
-  echo "### Previous Reviews"
+  printf '%s\n' ""
+  printf '%s\n' "### Previous Reviews"
   # Capture gh exit separately. Without this, `jq 'length' | echo "0"` on a
   # failed gh call (auth, network) produces no output (jq 1.8 empty-input
   # ⇒ exit 0) so `||` does not fire, COUNT stays empty, and the section
   # silently leaks `REVIEW_COUNT=` (bare empty).
   PREV_JSON=$(gh pr view "$PR_NUM" --repo "$REPO" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
   if [ $GH_EXIT -ne 0 ]; then
-    echo "REVIEW_COUNT=0"
-    echo "STATE=unavailable"
+    printf '%s\n' "REVIEW_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
   else
-    PREV_COUNT=$(echo "$PREV_JSON" | jq 'length' 2>/dev/null)
+    PREV_COUNT=$(printf '%s\n' "$PREV_JSON" | jq 'length' 2>/dev/null)
     [ -z "$PREV_COUNT" ] && PREV_COUNT=0
-    echo "REVIEW_COUNT=$PREV_COUNT"
+    printf '%s\n' "REVIEW_COUNT=$PREV_COUNT"
     if [ "$PREV_COUNT" = "0" ]; then
-      echo "STATE=empty"
+      printf '%s\n' "STATE=empty"
     else
-      echo "$PREV_JSON" | jq -r '.[] | "REVIEW=state=\(.state) by=@\(.author.login) at=\(.submittedAt)"' 2>/dev/null
+      printf '%s\n' "$PREV_JSON" | jq -r '.[] | "REVIEW=state=\(.state) by=@\(.author.login) at=\(.submittedAt)"' 2>/dev/null
     fi
   fi
 
   # Section: Diff Files
-  echo ""
-  echo "### Diff Files"
+  printf '%s\n' ""
+  printf '%s\n' "### Diff Files"
   DIFF_FILES=$(gh pr diff "$PR_NUM" --repo "$REPO" --name-only 2>/dev/null)
   # `grep -c '.' || echo 0` produces multi-line `0\n0` on empty input — use
   # explicit empty-check.
@@ -476,9 +476,9 @@ FLOW_GOAL_READ
   else
     DIFF_FILE_COUNT=$(printf '%s\n' "$DIFF_FILES" | wc -l | tr -d ' ')
   fi
-  echo "DIFF_FILE_COUNT=$DIFF_FILE_COUNT"
+  printf '%s\n' "DIFF_FILE_COUNT=$DIFF_FILE_COUNT"
   if [ "$DIFF_FILE_COUNT" = "0" ]; then
-    echo "STATE=empty"
+    printf '%s\n' "STATE=empty"
   else
     printf '%s\n' "$DIFF_FILES" | sed 's/^/DIFF_FILE=/'
   fi
@@ -543,7 +543,7 @@ Then check out the PR branch (mutating, runs inline):
 # resolution of gh without complaining — an unset REPO reads as pinned and behaves
 # as unpinned, which is the failure this pinning exists to prevent.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+[ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 gh pr checkout "$PR_NUM" --repo "$REPO"
 ```
 
@@ -559,7 +559,7 @@ Check for previous reviews — if this is a follow-up review, focus on changes s
 # resolution of gh without complaining — an unset REPO reads as pinned and behaves
 # as unpinned, which is the failure this pinning exists to prevent.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+[ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 # Parse previous review findings + resolution outcomes. PR_NUM is digit-validated
 # (matches Phase 1 block); a non-digit token rejects rather than reaching shell.
 _RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
@@ -570,59 +570,59 @@ case "$ARG1" in
 esac
 
 # PREVIOUS_CYCLES_BLOCK_BEGIN
-echo "### Previous Review Cycles"
+printf '%s\n' "### Previous Review Cycles"
 if [ -z "$PR_NUM" ]; then
-  echo "STATE=blocked"
-  echo "ERROR=PR number required (all-digit)"
+  printf '%s\n' "STATE=blocked"
+  printf '%s\n' "ERROR=PR number required (all-digit)"
 else
-  echo "STATE=ok"
+  printf '%s\n' "STATE=ok"
 
   # Sub-section: review-cycle markers (in PR review bodies)
-  echo ""
-  echo "#### Review-cycle markers"
+  printf '%s\n' ""
+  printf '%s\n' "#### Review-cycle markers"
   REVIEW_CYCLES=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" --jq '
     [.[] | select(.body | test("FLOW_REVIEW_CYCLE")) | {
       cycle: (.body | capture("FLOW_REVIEW_CYCLE:(?<n>[0-9]+)") | .n),
       findings: (.body | capture("FINDINGS:\\[(?<f>[^\\]]+)\\]") | .f)
     }]' 2>/dev/null); REVIEW_GH_EXIT=$?
-  REVIEW_CYCLE_COUNT=$(echo "$REVIEW_CYCLES" | jq 'length' 2>/dev/null); REVIEW_JQ_EXIT=$?
+  REVIEW_CYCLE_COUNT=$(printf '%s\n' "$REVIEW_CYCLES" | jq 'length' 2>/dev/null); REVIEW_JQ_EXIT=$?
   # A call that failed and a pull request with no markers both leave the count
   # empty, and STATE=empty says "there are no previous cycles" — which decides
   # whether this review is a first pass or a follow-up. Say unavailable when
   # nobody could tell.
   if [ "$REVIEW_GH_EXIT" -ne 0 ] || [ "$REVIEW_JQ_EXIT" -ne 0 ]; then
-    echo "REVIEW_CYCLE_COUNT=0"
-    echo "STATE=unavailable"
-    echo "REASON=the review markers could not be read (gh exit=$REVIEW_GH_EXIT, jq exit=$REVIEW_JQ_EXIT), so whether earlier cycles exist is unknown"
+    printf '%s\n' "REVIEW_CYCLE_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=the review markers could not be read (gh exit=$REVIEW_GH_EXIT, jq exit=$REVIEW_JQ_EXIT), so whether earlier cycles exist is unknown"
   elif [ "$REVIEW_CYCLE_COUNT" = "0" ]; then
-    echo "REVIEW_CYCLE_COUNT=0"
-    echo "STATE=empty"
+    printf '%s\n' "REVIEW_CYCLE_COUNT=0"
+    printf '%s\n' "STATE=empty"
   else
-    echo "REVIEW_CYCLE_COUNT=$REVIEW_CYCLE_COUNT"
-    echo "$REVIEW_CYCLES" | jq -r '.[] | "REVIEW_CYCLE=cycle=\(.cycle) findings=\"\(.findings)\""' 2>/dev/null
+    printf '%s\n' "REVIEW_CYCLE_COUNT=$REVIEW_CYCLE_COUNT"
+    printf '%s\n' "$REVIEW_CYCLES" | jq -r '.[] | "REVIEW_CYCLE=cycle=\(.cycle) findings=\"\(.findings)\""' 2>/dev/null
   fi
 
   # Sub-section: resolution-cycle markers (in PR/issue comments)
-  echo ""
-  echo "#### Resolution-cycle markers"
+  printf '%s\n' ""
+  printf '%s\n' "#### Resolution-cycle markers"
   RESOLUTION_CYCLES=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '
     [.[] | select(.body | test("FLOW_RESOLUTION_CYCLE")) | {
       cycle: (.body | capture("FLOW_RESOLUTION_CYCLE:(?<n>[0-9]+)") | .n),
       resolved: (.body | capture("RESOLVED:\\[(?<r>[^\\]]*?)\\]") | .r),
       escalated: (.body | capture("ESCALATED:\\[(?<e>[^\\]]*?)\\]") | .e)
     }]' 2>/dev/null); RESOLUTION_GH_EXIT=$?
-  RESOLUTION_CYCLE_COUNT=$(echo "$RESOLUTION_CYCLES" | jq 'length' 2>/dev/null); RESOLUTION_JQ_EXIT=$?
+  RESOLUTION_CYCLE_COUNT=$(printf '%s\n' "$RESOLUTION_CYCLES" | jq 'length' 2>/dev/null); RESOLUTION_JQ_EXIT=$?
   # Same reasoning as the review markers above.
   if [ "$RESOLUTION_GH_EXIT" -ne 0 ] || [ "$RESOLUTION_JQ_EXIT" -ne 0 ]; then
-    echo "RESOLUTION_CYCLE_COUNT=0"
-    echo "STATE=unavailable"
-    echo "REASON=the resolution markers could not be read (gh exit=$RESOLUTION_GH_EXIT, jq exit=$RESOLUTION_JQ_EXIT), so whether earlier cycles exist is unknown"
+    printf '%s\n' "RESOLUTION_CYCLE_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=the resolution markers could not be read (gh exit=$RESOLUTION_GH_EXIT, jq exit=$RESOLUTION_JQ_EXIT), so whether earlier cycles exist is unknown"
   elif [ "$RESOLUTION_CYCLE_COUNT" = "0" ]; then
-    echo "RESOLUTION_CYCLE_COUNT=0"
-    echo "STATE=empty"
+    printf '%s\n' "RESOLUTION_CYCLE_COUNT=0"
+    printf '%s\n' "STATE=empty"
   else
-    echo "RESOLUTION_CYCLE_COUNT=$RESOLUTION_CYCLE_COUNT"
-    echo "$RESOLUTION_CYCLES" | jq -r '.[] | "RESOLUTION_CYCLE=cycle=\(.cycle) resolved=\"\(.resolved // "")\" escalated=\"\(.escalated // "")\""' 2>/dev/null
+    printf '%s\n' "RESOLUTION_CYCLE_COUNT=$RESOLUTION_CYCLE_COUNT"
+    printf '%s\n' "$RESOLUTION_CYCLES" | jq -r '.[] | "RESOLUTION_CYCLE=cycle=\(.cycle) resolved=\"\(.resolved // "")\" escalated=\"\(.escalated // "")\""' 2>/dev/null
   fi
 fi
 # PREVIOUS_CYCLES_BLOCK_END
@@ -638,22 +638,22 @@ A review is a long-running workflow, so it gets a durable FlowRun. Runs are gate
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
-CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 if [ ! -x "$CASCADE" ]; then
-  echo "FLOW_RUN_STATE=blocked"
-  echo "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
+  printf '%s\n' "FLOW_RUN_STATE=blocked"
+  printf '%s\n' "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
   true; exit 0
 fi
 RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
 if [ "$RUNTIME_ENABLED" != "true" ]; then
-  echo "FLOW_RUN_STATE=skip"
-  echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+  printf '%s\n' "FLOW_RUN_STATE=skip"
+  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
 else
   RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-review"
-  echo "FLOW_RUN_STATE=create"
-  echo "RUN_ID=$RUN_ID"
-  echo "WORKFLOW=review-pr"
-  echo "INITIAL_PHASE=preflight"
+  printf '%s\n' "FLOW_RUN_STATE=create"
+  printf '%s\n' "RUN_ID=$RUN_ID"
+  printf '%s\n' "WORKFLOW=review-pr"
+  printf '%s\n' "INITIAL_PHASE=preflight"
 fi
 # FLOW_RUN_BLOCK_END
 true
@@ -682,7 +682,7 @@ Implements the paired-reviewer + challenge-round protocol. The `team-coordinatio
 **Path A gate check** (mandatory before paired dispatch — runs before A.1).
 
 ```!
-echo "### Path A Gate"
+printf '%s\n' "### Path A Gate"
 # AGENTTEAMS_GATE_BEGIN
 # Resolve agentTeams from the standard Claude Code settings cascade.
 # Precedence (highest first — first non-empty value wins):
@@ -717,7 +717,7 @@ USE_PATH_A=0
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
 USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done)}"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done)}"
 # An empty root means no plugin tier. Appending to it would build the absolute
 # path /settings.json, which the diagnostics below would then print back to the
 # operator as the file to go and look at.
@@ -732,7 +732,7 @@ AGENT_TEAMS=""
 SOURCE_USED=""
 
 if ! command -v jq >/dev/null 2>&1; then
-  echo "WARN: jq not installed; Path A unavailable, using Path B (single-session)" >&2
+  printf '%s\n' "WARN: jq not installed; Path A unavailable, using Path B (single-session)" >&2
 else
   for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
     [ -n "$SETTINGS_PATH" ] || continue
@@ -759,7 +759,7 @@ else
     JQ_EXIT=$?
     if [ $JQ_EXIT -ne 0 ]; then
       JQ_ERR=$(printf '%s' "$JQ_OUT" | tr '\n' ' ' | cut -c1-200)
-      echo "WARN: failed to parse $SETTINGS_PATH (jq exit=$JQ_EXIT, error: $JQ_ERR); skipping this source" >&2
+      printf '%s\n' "WARN: failed to parse $SETTINGS_PATH (jq exit=$JQ_EXIT, error: $JQ_ERR); skipping this source" >&2
       continue
     fi
     if [ -n "$JQ_OUT" ]; then
@@ -788,23 +788,23 @@ else
     if [ $PLUGIN_ROOT_BROKEN -eq 1 ]; then
       # Always WARN about broken plugin root — even when user-tier files exist
       # without the key, the broken root is still actionable info.
-      echo "WARN: CLAUDE_PLUGIN_ROOT=$CLAUDE_PLUGIN_ROOT but $PLUGIN_SETTINGS_DISPLAY does not exist — plugin install may be corrupted. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
+      printf '%s\n' "WARN: CLAUDE_PLUGIN_ROOT=$CLAUDE_PLUGIN_ROOT but $PLUGIN_SETTINGS_DISPLAY does not exist — plugin install may be corrupted. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
     elif [ $ANY_USER_FILE_EXISTS -eq 0 ] && { [ -z "$PLUGIN_SETTINGS" ] || [ ! -f "$PLUGIN_SETTINGS" ]; }; then
-      echo "WARN: agentTeams not set in any cascade source. CLAUDE_PLUGIN_ROOT is unset and the plugin tier resolved to $PLUGIN_SETTINGS_DISPLAY — flow plugin may not be installed in this CWD. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
+      printf '%s\n' "WARN: agentTeams not set in any cascade source. CLAUDE_PLUGIN_ROOT is unset and the plugin tier resolved to $PLUGIN_SETTINGS_DISPLAY — flow plugin may not be installed in this CWD. Add \"agentTeams\": true to $USER_SETTINGS, $PROJECT_SETTINGS, or $LOCAL_SETTINGS to enable Path A; using Path B." >&2
     else
-      echo "Path A skipped: agentTeams not declared in any cascade source ($LOCAL_SETTINGS, $PROJECT_SETTINGS, $USER_SETTINGS, $PLUGIN_SETTINGS_DISPLAY). Add \"agentTeams\": true to any of them to opt in."
+      printf '%s\n' "Path A skipped: agentTeams not declared in any cascade source ($LOCAL_SETTINGS, $PROJECT_SETTINGS, $USER_SETTINGS, $PLUGIN_SETTINGS_DISPLAY). Add \"agentTeams\": true to any of them to opt in."
     fi
   else
     case "$AGENT_TEAMS" in
       true)
         if [ -z "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" ]; then
-          echo "WARN: agentTeams=true (from $SOURCE_USED) but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS env var unset; using single-reviewer fallback (Path B)" >&2
+          printf '%s\n' "WARN: agentTeams=true (from $SOURCE_USED) but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS env var unset; using single-reviewer fallback (Path B)" >&2
         else
           USE_PATH_A=1
         fi
         ;;
       false)
-        echo "Path A skipped: agentTeams=false (from $SOURCE_USED). Using Path B (single-session)."
+        printf '%s\n' "Path A skipped: agentTeams=false (from $SOURCE_USED). Using Path B (single-session)."
         ;;
       *)
         # Non-canonical value (e.g., string "true"/"True", "1", "yes", or a
@@ -822,15 +822,15 @@ else
   fi
 fi
 # AGENTTEAMS_GATE_END
-echo "USE_PATH_A=$USE_PATH_A"
+printf '%s\n' "USE_PATH_A=$USE_PATH_A"
 # Dispatch signal: enabled when both keys passed (agentTeams + env var);
 # disabled otherwise. The agent reads PATH_A_STATE for the section dispatch
 # and USE_PATH_A for the raw 0/1 flag (preserved for backward compat with
 # downstream prose referencing it).
 if [ "$USE_PATH_A" = "1" ]; then
-  echo "PATH_A_STATE=enabled"
+  printf '%s\n' "PATH_A_STATE=enabled"
 else
-  echo "PATH_A_STATE=disabled"
+  printf '%s\n' "PATH_A_STATE=disabled"
 fi
 
 # AGENTTEAM_MODEL_BEGIN
@@ -842,7 +842,7 @@ fi
 # marginal review value. An invalid value is rejected with a WARN (NOT silently
 # coerced) and falls back to sonnet.
 if [ "$USE_PATH_A" = "1" ]; then
-  AGENT_TEAM_MODEL=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh" --default sonnet '.agentTeamModel // empty' 2>/dev/null)
+  AGENT_TEAM_MODEL=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default sonnet '.agentTeamModel // empty' 2>/dev/null)
   case "$AGENT_TEAM_MODEL" in
     haiku|sonnet|opus|fable|inherit) ;;
     *)
@@ -1072,22 +1072,22 @@ Apply the consolidation table from `references/paired-review-protocol.md` (Synth
 # it is the issue GitHub lists the pull request as closing.
 for __name in CYCLE_NUMBER PR_NUM FINDING_ID FACET REASON; do
   eval "__value=\${$__name:-}"
-  [ -n "$__value" ] || { echo "ERROR: $__name is not set; refusing to record a dropped finding" >&2; exit 1; }
+  [ -n "$__value" ] || { printf '%s\n' "ERROR: $__name is not set; refusing to record a dropped finding" >&2; exit 1; }
 done
 for __name in CYCLE_NUMBER PR_NUM; do
   eval "__value=\${$__name}"
   case "$__value" in
-    0*|*[!0-9]*) echo "ERROR: $__name must be a positive integer, got '$__value'; refusing to record a dropped finding" >&2; exit 1 ;;
+    0*|*[!0-9]*) printf '%s\n' "ERROR: $__name must be a positive integer, got '$__value'; refusing to record a dropped finding" >&2; exit 1 ;;
   esac
 done
-FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 if [ -z "${ISSUE:-}" ]; then
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-  [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
-  ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$REPO") || { echo "ERROR: cannot read the issues pull request $PR_NUM closes; refusing to guess its linked issue" >&2; exit 1; }
+  [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+  ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$REPO") || { printf '%s\n' "ERROR: cannot read the issues pull request $PR_NUM closes; refusing to guess its linked issue" >&2; exit 1; }
 fi
 if [ -z "$ISSUE" ]; then
-  echo "DROPPED_FINDING=skipped (GitHub lists no issue this pull request closes, so there is no journal to record it in)"
+  printf '%s\n' "DROPPED_FINDING=skipped (GitHub lists no issue this pull request closes, so there is no journal to record it in)"
   exit 0
 fi
 "$FLOW_ROOT/bin/journal-record.sh" \
@@ -1234,14 +1234,14 @@ TaskUpdate each review task as agents complete.
    # resolution without complaining — an unset REPO reads as pinned and behaves
    # as unpinned, which is the failure this pinning exists to prevent.
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-   [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+   [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
    PR_AUTHOR=$(gh pr view "$PR_NUM" --repo "$REPO" --json author --jq '.author.login')
    CURRENT_USER=$(gh api user --jq '.login')
    # Two empty strings compare equal, which would take the self-review path and
    # fix-forward onto someone else's branch. Refuse instead.
-   [ -n "$PR_AUTHOR" ] || { echo "ERROR: cannot resolve the pull request author; refusing to choose a review mode" >&2; exit 1; }
-   [ -n "$CURRENT_USER" ] || { echo "ERROR: cannot resolve the current GitHub user; refusing to choose a review mode" >&2; exit 1; }
-   if [ "$PR_AUTHOR" = "$CURRENT_USER" ]; then echo "REVIEW_MODE=self"; else echo "REVIEW_MODE=external"; fi
+   [ -n "$PR_AUTHOR" ] || { printf '%s\n' "ERROR: cannot resolve the pull request author; refusing to choose a review mode" >&2; exit 1; }
+   [ -n "$CURRENT_USER" ] || { printf '%s\n' "ERROR: cannot resolve the current GitHub user; refusing to choose a review mode" >&2; exit 1; }
+   if [ "$PR_AUTHOR" = "$CURRENT_USER" ]; then printf '%s\n' "REVIEW_MODE=self"; else printf '%s\n' "REVIEW_MODE=external"; fi
    # REVIEW_MODE_BLOCK_END
    ```
 
@@ -1263,24 +1263,24 @@ TaskUpdate each review task as agents complete.
 # is skipped.
 for __name in CYCLE_NUMBER PR_NUM FINDING_ID FACET; do
   eval "__value=\${$__name:-}"
-  [ -n "$__value" ] || { echo "ERROR: $__name is not set; refusing to record a dropped finding" >&2; exit 1; }
+  [ -n "$__value" ] || { printf '%s\n' "ERROR: $__name is not set; refusing to record a dropped finding" >&2; exit 1; }
 done
 for __name in CYCLE_NUMBER PR_NUM; do
   eval "__value=\${$__name}"
   case "$__value" in
-    0*|*[!0-9]*) echo "ERROR: $__name must be a positive integer, got '$__value'; refusing to record a dropped finding" >&2; exit 1 ;;
+    0*|*[!0-9]*) printf '%s\n' "ERROR: $__name must be a positive integer, got '$__value'; refusing to record a dropped finding" >&2; exit 1 ;;
   esac
 done
-FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 if [ -z "${ISSUE:-}" ]; then
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-  [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+  [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
   # The body text is never parsed: a mention before the closing keyword or a
   # keyword quoted in a code span would pick the wrong journal.
-  ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$REPO") || { echo "ERROR: cannot read the issues pull request $PR_NUM closes; refusing to guess its linked issue" >&2; exit 1; }
+  ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$REPO") || { printf '%s\n' "ERROR: cannot read the issues pull request $PR_NUM closes; refusing to guess its linked issue" >&2; exit 1; }
 fi
 if [ -z "$ISSUE" ]; then
-  echo "DROPPED_FINDING=skipped (GitHub lists no issue this pull request closes; the self-review body carries the evidence)"
+  printf '%s\n' "DROPPED_FINDING=skipped (GitHub lists no issue this pull request closes; the self-review body carries the evidence)"
   exit 0
 fi
 "$FLOW_ROOT/bin/journal-record.sh" \
@@ -1355,42 +1355,42 @@ fi
 # FINDING_ROUTE_BLOCK_BEGIN
 # REVIEW_MODE (external or self, printed by step 4) and PR_NUM are carried
 # from earlier steps: each fence is its own shell.
-[ -n "${REVIEW_MODE:-}" ] || { echo "ERROR: REVIEW_MODE is not set; refusing to route findings" >&2; exit 1; }
-[ -n "${PR_NUM:-}" ] || { echo "ERROR: PR_NUM is not set; refusing to route findings" >&2; exit 1; }
+[ -n "${REVIEW_MODE:-}" ] || { printf '%s\n' "ERROR: REVIEW_MODE is not set; refusing to route findings" >&2; exit 1; }
+[ -n "${PR_NUM:-}" ] || { printf '%s\n' "ERROR: PR_NUM is not set; refusing to route findings" >&2; exit 1; }
 # FINDING_TOTAL is how many findings the synthesis produced (minus any refuted
 # in step 5). An empty rows file is only a clean review when that number is 0;
 # any other time it is a caller that lost its input, and a marker posted from
 # it would read as a review that found nothing.
 case "${FINDING_TOTAL:-}" in
-  ''|*[!0-9]*|0?*) echo "ERROR: FINDING_TOTAL must be the number of synthesized findings, got '${FINDING_TOTAL:-}'; refusing to route" >&2; exit 1 ;;
+  ''|*[!0-9]*|0?*) printf '%s\n' "ERROR: FINDING_TOTAL must be the number of synthesized findings, got '${FINDING_TOTAL:-}'; refusing to route" >&2; exit 1 ;;
 esac
 ALLOW_EMPTY=""
 [ "$FINDING_TOTAL" = 0 ] && ALLOW_EMPTY="--allow-empty"
-FINDING_ROWS_FILE=$(mktemp "${TMPDIR:-/tmp}/flow-review-findings.XXXXXX") || { echo "ERROR: cannot create the findings file" >&2; exit 1; }
+FINDING_ROWS_FILE=$(mktemp "${TMPDIR:-/tmp}/flow-review-findings.XXXXXX") || { printf '%s\n' "ERROR: cannot create the findings file" >&2; exit 1; }
 cat > "$FINDING_ROWS_FILE" <<'FLOW_FINDING_ROWS'
 {one row per consolidated finding: ID|PRIORITY|category|location|CONFIDENCE|disposition|agent}
 FLOW_FINDING_ROWS
-ROUTE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-finding-route.sh"
-[ -x "$ROUTE" ] || { echo "ERROR: flow-finding-route.sh not found; refusing to route findings" >&2; exit 1; }
-echo "FINDING_ROWS_FILE=$FINDING_ROWS_FILE"
+ROUTE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-finding-route.sh"
+[ -x "$ROUTE" ] || { printf '%s\n' "ERROR: flow-finding-route.sh not found; refusing to route findings" >&2; exit 1; }
+printf '%s\n' "FINDING_ROWS_FILE=$FINDING_ROWS_FILE"
 ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --input "$FINDING_ROWS_FILE" $ALLOW_EMPTY)
 ROUTE_EXIT=$?
 printf '%s\n' "$ROUTED"
 if [ "$ROUTE_EXIT" -eq 3 ]; then
-  echo "ERROR: LOW-confidence findings on your own pull request are unresolved; return to step 5 for: $(sed -n 's/^UNRESOLVED_LOW=//p' <<<"$ROUTED")" >&2
+  printf '%s\n' "ERROR: LOW-confidence findings on your own pull request are unresolved; return to step 5 for: $(sed -n 's/^UNRESOLVED_LOW=//p' <<<"$ROUTED")" >&2
   exit 1
 fi
-[ "$ROUTE_EXIT" -eq 0 ] || { echo "ERROR: flow-finding-route.sh exited $ROUTE_EXIT" >&2; exit 1; }
+[ "$ROUTE_EXIT" -eq 0 ] || { printf '%s\n' "ERROR: flow-finding-route.sh exited $ROUTE_EXIT" >&2; exit 1; }
 ROWS_READ=$(sed -n 's/^ROWS_READ=//p' <<<"$ROUTED")
 if [ "$ROWS_READ" != "$FINDING_TOTAL" ]; then
-  echo "ERROR: the rows file holds $ROWS_READ findings but the synthesis produced $FINDING_TOTAL; the rows are not the findings" >&2
+  printf '%s\n' "ERROR: the rows file holds $ROWS_READ findings but the synthesis produced $FINDING_TOTAL; the rows are not the findings" >&2
   exit 1
 fi
-echo "FINDINGS_HEADER=P1: $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED"), P2: $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED"), P3: $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") · Needs investigation: $(sed -n 's/^COUNT_NEEDS_INVESTIGATION=//p' <<<"$ROUTED")"
+printf '%s\n' "FINDINGS_HEADER=P1: $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED"), P2: $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED"), P3: $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") · Needs investigation: $(sed -n 's/^COUNT_NEEDS_INVESTIGATION=//p' <<<"$ROUTED")"
 # Named apart from the posting block's COUNT_TOTAL on purpose: the review-cycle
 # manifest treats COUNT_TOTAL as evidence that the review posted, and this value
 # exists before anything is posted.
-echo "ROUTED_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") ))"
+printf '%s\n' "ROUTED_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") ))"
 # FINDING_ROUTE_BLOCK_END
 ```
 
@@ -1407,17 +1407,17 @@ echo "ROUTED_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^C
 # routing block), FINDING_TOTAL (the number of rows that file should hold:
 # the synthesized findings minus any refuted in step 5) and BODY_FILE.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
-[ -n "${REVIEW_MODE:-}" ] || { echo "ERROR: REVIEW_MODE is not set; refusing to post" >&2; exit 1; }
-[ -n "${PR_NUM:-}" ] || { echo "ERROR: PR_NUM is not set; refusing to post" >&2; exit 1; }
+[ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+[ -n "${REVIEW_MODE:-}" ] || { printf '%s\n' "ERROR: REVIEW_MODE is not set; refusing to post" >&2; exit 1; }
+[ -n "${PR_NUM:-}" ] || { printf '%s\n' "ERROR: PR_NUM is not set; refusing to post" >&2; exit 1; }
 case "${CYCLE_NUMBER:-}" in
-  ''|0*|*[!0-9]*) echo "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to post" >&2; exit 1 ;;
+  ''|0*|*[!0-9]*) printf '%s\n' "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to post" >&2; exit 1 ;;
 esac
-[ -n "${FINDING_TOTAL:-}" ] || { echo "ERROR: FINDING_TOTAL is not set; refusing to post" >&2; exit 1; }
-[ -r "${FINDING_ROWS_FILE:-}" ] || { echo "ERROR: FINDING_ROWS_FILE is not readable; refusing to post" >&2; exit 1; }
-[ -r "${BODY_FILE:-}" ] || { echo "ERROR: BODY_FILE is not readable; refusing to post" >&2; exit 1; }
+[ -n "${FINDING_TOTAL:-}" ] || { printf '%s\n' "ERROR: FINDING_TOTAL is not set; refusing to post" >&2; exit 1; }
+[ -r "${FINDING_ROWS_FILE:-}" ] || { printf '%s\n' "ERROR: FINDING_ROWS_FILE is not readable; refusing to post" >&2; exit 1; }
+[ -r "${BODY_FILE:-}" ] || { printf '%s\n' "ERROR: BODY_FILE is not readable; refusing to post" >&2; exit 1; }
 if grep -q 'FLOW_REVIEW_CYCLE:' "$BODY_FILE"; then
-  echo "ERROR: the body already carries a FLOW_REVIEW_CYCLE marker; this block appends it" >&2
+  printf '%s\n' "ERROR: the body already carries a FLOW_REVIEW_CYCLE marker; this block appends it" >&2
   exit 1
 fi
 # The merge gate and /flow:status read ids from every FINDINGS:[...] in a
@@ -1425,28 +1425,28 @@ fi
 # in front of them. RESOLVED, ESCALATED and DISPUTED are read only from issue
 # comments, so a review body may mention those.
 if grep -q 'FINDINGS:\[' "$BODY_FILE"; then
-  echo "ERROR: the body quotes FINDINGS:[ which the merge gate would parse as findings; reword it (for example with a space before the bracket)" >&2
+  printf '%s\n' "ERROR: the body quotes FINDINGS:[ which the merge gate would parse as findings; reword it (for example with a space before the bracket)" >&2
   exit 1
 fi
-ROUTE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-finding-route.sh"
-[ -x "$ROUTE" ] || { echo "ERROR: flow-finding-route.sh not found; refusing to post" >&2; exit 1; }
+ROUTE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-finding-route.sh"
+[ -x "$ROUTE" ] || { printf '%s\n' "ERROR: flow-finding-route.sh not found; refusing to post" >&2; exit 1; }
 ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --input "$FINDING_ROWS_FILE" --allow-empty)
 ROUTE_EXIT=$?
 if [ "$ROUTE_EXIT" -eq 3 ]; then
-  echo "ERROR: LOW-confidence findings on your own pull request are unresolved; return to step 5 for: $(sed -n 's/^UNRESOLVED_LOW=//p' <<<"$ROUTED")" >&2
+  printf '%s\n' "ERROR: LOW-confidence findings on your own pull request are unresolved; return to step 5 for: $(sed -n 's/^UNRESOLVED_LOW=//p' <<<"$ROUTED")" >&2
   exit 1
 fi
-[ "$ROUTE_EXIT" -eq 0 ] || { echo "ERROR: flow-finding-route.sh exited $ROUTE_EXIT; nothing posted" >&2; exit 1; }
+[ "$ROUTE_EXIT" -eq 0 ] || { printf '%s\n' "ERROR: flow-finding-route.sh exited $ROUTE_EXIT; nothing posted" >&2; exit 1; }
 ROWS_READ=$(sed -n 's/^ROWS_READ=//p' <<<"$ROUTED")
 if [ "$ROWS_READ" != "$FINDING_TOTAL" ]; then
-  echo "ERROR: the rows file holds $ROWS_READ findings but FINDING_TOTAL is $FINDING_TOTAL; nothing posted" >&2
+  printf '%s\n' "ERROR: the rows file holds $ROWS_READ findings but FINDING_TOTAL is $FINDING_TOTAL; nothing posted" >&2
   exit 1
 fi
 NEEDS_PRIORITIES=$(sed -n 's/^NEEDS_INVESTIGATION_PRIORITIES=//p' <<<"$ROUTED")
 HEADER="P1: $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED"), P2: $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED"), P3: $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") · Needs investigation: $(sed -n 's/^COUNT_NEEDS_INVESTIGATION=//p' <<<"$ROUTED")"
 if [ "$REVIEW_MODE" = "external" ]; then
   if ! grep -qxF "### Findings: $HEADER" "$BODY_FILE"; then
-    echo "ERROR: the body needs this exact line: ### Findings: $HEADER" >&2
+    printf '%s\n' "ERROR: the body needs this exact line: ### Findings: $HEADER" >&2
     exit 1
   fi
   # Shape checks over the whole body, not a parse of its sections. The template
@@ -1454,7 +1454,7 @@ if [ "$REVIEW_MODE" = "external" ]; then
   # counted finding is HIGH or MEDIUM.
   LEAKED=$(grep -inF '_(LOW' "$BODY_FILE" | head -1)
   if [ -n "$LEAKED" ]; then
-    echo "ERROR: line ${LEAKED%%:*} carries a LOW confidence suffix; no line of a review body may, because a Needs investigation entry carries none. If this is prose quoting the suffix, break it up. Line: ${LEAKED#*:}" >&2
+    printf '%s\n' "ERROR: line ${LEAKED%%:*} carries a LOW confidence suffix; no line of a review body may, because a Needs investigation entry carries none. If this is prose quoting the suffix, break it up. Line: ${LEAKED#*:}" >&2
     exit 1
   fi
   # Where the findings sit, by the template's own heading line: the Needs
@@ -1468,11 +1468,11 @@ if [ "$REVIEW_MODE" = "external" ]; then
   NI_END=""
   NI_COUNT=$(grep -cxF '#### Needs investigation' "$BODY_FILE" | tr -d ' ')
   if [ -n "$NEEDS_PRIORITIES" ] && [ "$NI_COUNT" != 1 ]; then
-    echo "ERROR: the body needs exactly one '#### Needs investigation' heading to hold the LOW findings; it has $NI_COUNT" >&2
+    printf '%s\n' "ERROR: the body needs exactly one '#### Needs investigation' heading to hold the LOW findings; it has $NI_COUNT" >&2
     exit 1
   fi
   if [ "$NI_COUNT" -gt 1 ]; then
-    echo "ERROR: the body has $NI_COUNT '#### Needs investigation' headings; which one holds a finding is not readable" >&2
+    printf '%s\n' "ERROR: the body has $NI_COUNT '#### Needs investigation' headings; which one holds a finding is not readable" >&2
     exit 1
   fi
   if [ "$NI_COUNT" = 1 ]; then
@@ -1490,15 +1490,15 @@ if [ "$REVIEW_MODE" = "external" ]; then
     SEEN=$(grep -oF "**$ID · " "$BODY_FILE" | wc -l | tr -d ' ')
     ENTRY_LINE=$(grep -nE "^[[:space:]]*[-*+][[:space:]]+\*\*$ID · $PRIORITY · " "$BODY_FILE" | head -1 | cut -d: -f1)
     if [ "$SEEN" -eq 0 ] || [ -z "$ENTRY_LINE" ]; then
-      echo "ERROR: $ID is a LOW-confidence $PRIORITY finding with no Needs investigation entry opening: - **$ID · $PRIORITY · " >&2
+      printf '%s\n' "ERROR: $ID is a LOW-confidence $PRIORITY finding with no Needs investigation entry opening: - **$ID · $PRIORITY · " >&2
       exit 1
     fi
     if [ "$ENTRY_LINE" -lt "$NI_LINE" ] || [ "$ENTRY_LINE" -gt "$NI_END" ]; then
-      echo "ERROR: $ID is LOW-confidence but its entry is at line $ENTRY_LINE, outside the #### Needs investigation section (lines $NI_LINE to $NI_END)" >&2
+      printf '%s\n' "ERROR: $ID is LOW-confidence but its entry is at line $ENTRY_LINE, outside the #### Needs investigation section (lines $NI_LINE to $NI_END)" >&2
       exit 1
     fi
     if [ "$SEEN" -ne 1 ]; then
-      echo "ERROR: $ID is LOW-confidence and must appear once, as its Needs investigation entry; the body renders it $SEEN times" >&2
+      printf '%s\n' "ERROR: $ID is LOW-confidence and must appear once, as its Needs investigation entry; the body renders it $SEEN times" >&2
       exit 1
     fi
   done
@@ -1507,16 +1507,16 @@ if [ "$REVIEW_MODE" = "external" ]; then
   for ID in $(sed -n 's/^MARKER_ROWS=//p' <<<"$ROUTED" | tr ',' '\n' | cut -d'|' -f1); do
     SEEN=$(grep -oF "**$ID · " "$BODY_FILE" | wc -l | tr -d ' ')
     if [ "$SEEN" -ne 1 ]; then
-      echo "ERROR: $ID is a counted finding and must be rendered once, opening **$ID · {category} · ; the body renders it $SEEN times, at line(s) $(grep -nF "**$ID · " "$BODY_FILE" | cut -d: -f1 | tr '\n' ' ')" >&2
+      printf '%s\n' "ERROR: $ID is a counted finding and must be rendered once, opening **$ID · {category} · ; the body renders it $SEEN times, at line(s) $(grep -nF "**$ID · " "$BODY_FILE" | cut -d: -f1 | tr '\n' ' ')" >&2
       exit 1
     fi
     if grep -qE "^[[:space:]]*[-*+][[:space:]]+\*\*$ID · P[123] · " "$BODY_FILE"; then
-      echo "ERROR: $ID is a counted finding rendered in the Needs investigation entry shape, which says it does not block the merge; its marker row does" >&2
+      printf '%s\n' "ERROR: $ID is a counted finding rendered in the Needs investigation entry shape, which says it does not block the merge; its marker row does" >&2
       exit 1
     fi
     COUNTED_LINE=$(grep -nF "**$ID · " "$BODY_FILE" | head -1 | cut -d: -f1)
     if [ -n "$NI_LINE" ] && [ "$COUNTED_LINE" -gt "$NI_LINE" ] && [ "$COUNTED_LINE" -lt "$NI_END" ]; then
-      echo "ERROR: $ID is a counted finding rendered at line $COUNTED_LINE, inside the #### Needs investigation section (lines $NI_LINE to $NI_END), which says it does not block the merge; its marker row does" >&2
+      printf '%s\n' "ERROR: $ID is a counted finding rendered at line $COUNTED_LINE, inside the #### Needs investigation section (lines $NI_LINE to $NI_END), which says it does not block the merge; its marker row does" >&2
       exit 1
     fi
   done
@@ -1525,18 +1525,18 @@ case "$(sed -n 's/^DECISION=//p' <<<"$ROUTED")" in
   APPROVE) FLAG="--approve" ;;
   COMMENT) FLAG="--comment" ;;
   REQUEST_CHANGES) FLAG="--request-changes" ;;
-  *) echo "ERROR: no decision from flow-finding-route.sh; nothing posted" >&2; exit 1 ;;
+  *) printf '%s\n' "ERROR: no decision from flow-finding-route.sh; nothing posted" >&2; exit 1 ;;
 esac
-POST_FILE=$(mktemp "${TMPDIR:-/tmp}/flow-review-body.XXXXXX") || { echo "ERROR: cannot create the post body file" >&2; exit 1; }
+POST_FILE=$(mktemp "${TMPDIR:-/tmp}/flow-review-body.XXXXXX") || { printf '%s\n' "ERROR: cannot create the post body file" >&2; exit 1; }
 { cat "$BODY_FILE"; printf '\n<!-- FLOW_REVIEW_CYCLE:%s FINDINGS:[%s] -->\n' "$CYCLE_NUMBER" "$(sed -n 's/^MARKER_ROWS=//p' <<<"$ROUTED")"; } > "$POST_FILE"
 gh pr review "$PR_NUM" --repo "$REPO" "$FLAG" --body-file "$POST_FILE"
 POST_EXIT=$?
 rm -f "$POST_FILE"
-echo "POSTED_AS=$FLAG POST_EXIT=$POST_EXIT"
+printf '%s\n' "POSTED_AS=$FLAG POST_EXIT=$POST_EXIT"
 [ "$POST_EXIT" -eq 0 ] || exit 1
 # Printed only after a successful post: the review-cycle manifest keys off this
 # value, and a cycle with no marker on the pull request must not be recorded.
-echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") ))"
+printf '%s\n' "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P2=//p' <<<"$ROUTED") + $(sed -n 's/^COUNT_P3=//p' <<<"$ROUTED") ))"
 # FINDING_POST_BLOCK_END
 ```
 
@@ -1574,15 +1574,15 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
    # resolution without complaining — an unset REPO reads as pinned and behaves
    # as unpinned, which is the failure this pinning exists to prevent.
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-   [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
-   [ -n "${PR_NUM:-}" ] || { echo "ERROR: PR_NUM is not set; refusing to post a resolution marker" >&2; exit 1; }
+   [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+   [ -n "${PR_NUM:-}" ] || { printf '%s\n' "ERROR: PR_NUM is not set; refusing to post a resolution marker" >&2; exit 1; }
    # $CYCLE_NUMBER is the same cycle the FLOW_REVIEW_CYCLE marker above used.
    # RESOLVED/ESCALATED are comma-separated finding IDs (e.g. F1,F2,F3).
    # Set RES_BODY from templates/resolution-comment.md with the self-review
    # cycle metrics before running this block.
-   [ -n "${RES_BODY:-}" ] || { echo "ERROR: empty resolution body — refusing to post a marker-less comment" >&2; exit 1; }
+   [ -n "${RES_BODY:-}" ] || { printf '%s\n' "ERROR: empty resolution body — refusing to post a marker-less comment" >&2; exit 1; }
    case "${CYCLE_NUMBER:-}" in
-     ''|0*|*[!0-9]*) echo "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to post a resolution marker" >&2; exit 1 ;;
+     ''|0*|*[!0-9]*) printf '%s\n' "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to post a resolution marker" >&2; exit 1 ;;
    esac
    # "Marker-less" is the condition the message names, so test it — and test it
    # with the predicate the consumer uses, not a looser one. The merge gate
@@ -1598,10 +1598,10 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
    # refusal. It lived here only, and that emitter posted whatever it had
    # composed — a rule enforced in one of two emitters is a rule the other
    # routes around.
-   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-check-resolution-body.sh" \
+   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-check-resolution-body.sh" \
      --cycle "$CYCLE_NUMBER" <<<"$RES_BODY" || exit 1
    gh pr comment "$PR_NUM" --repo "$REPO" --body "$RES_BODY"; RES_EXIT=$?
-   echo "RES_EXIT=$RES_EXIT"
+   printf '%s\n' "RES_EXIT=$RES_EXIT"
    # A silently absent resolution marker re-introduces the merge false-block
    # this emission exists to prevent, so a failed comment is an error here.
    [ "$RES_EXIT" -eq 0 ] || exit 1
@@ -1632,28 +1632,28 @@ echo "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed -n 's/^CO
    # reports a "command not found" that names nothing the reader can act on.
    case "${REVIEW_PATH:-}" in
      A|B) ;;
-     *) echo "ERROR: REVIEW_PATH must be A or B, got '${REVIEW_PATH:-}'; refusing to record the review cycle" >&2; exit 1 ;;
+     *) printf '%s\n' "ERROR: REVIEW_PATH must be A or B, got '${REVIEW_PATH:-}'; refusing to record the review cycle" >&2; exit 1 ;;
    esac
    for __name in PR_NUM CYCLE_NUMBER; do
      eval "__value=\${$__name:-}"
      case "$__value" in
-       ''|0*|*[!0-9]*) echo "ERROR: $__name must be a positive integer, got '$__value'; refusing to record the review cycle" >&2; exit 1 ;;
+       ''|0*|*[!0-9]*) printf '%s\n' "ERROR: $__name must be a positive integer, got '$__value'; refusing to record the review cycle" >&2; exit 1 ;;
      esac
    done
    # A review with no counted finding records 0; a leading zero is not a count.
    case "${COUNT_TOTAL:-}" in
-     ''|*[!0-9]*|0?*) echo "ERROR: COUNT_TOTAL must be a count, got '${COUNT_TOTAL:-}'; refusing to record the review cycle" >&2; exit 1 ;;
+     ''|*[!0-9]*|0?*) printf '%s\n' "ERROR: COUNT_TOTAL must be a count, got '${COUNT_TOTAL:-}'; refusing to record the review cycle" >&2; exit 1 ;;
    esac
    # $REPO does not survive from the preflight block: each fence is its own
    # shell. Resolved again here, because `gh --repo ""` falls back to gh's own
    # resolution without complaining — an unset REPO reads as pinned and behaves
    # as unpinned, which is the failure this pinning exists to prevent.
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-   [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
-   FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
-   ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$REPO") || { echo "ERROR: cannot read the issues pull request $PR_NUM closes; refusing to guess its linked issue" >&2; exit 1; }
+   [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+   FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+   ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$REPO") || { printf '%s\n' "ERROR: cannot read the issues pull request $PR_NUM closes; refusing to guess its linked issue" >&2; exit 1; }
    if [ -z "$ISSUE" ]; then
-     echo "REVIEW_CYCLE_RECORD=skipped (GitHub lists no issue this pull request closes; the marker on the review is that cycle's record)"
+     printf '%s\n' "REVIEW_CYCLE_RECORD=skipped (GitHub lists no issue this pull request closes; the marker on the review is that cycle's record)"
    else
      "$FLOW_ROOT/bin/journal-record.sh" \
        --issue "$ISSUE" \

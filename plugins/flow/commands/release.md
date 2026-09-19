@@ -19,7 +19,7 @@ Tier 3 operation — **always requires human confirmation**.
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" merge-and-release run-state-management
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" merge-and-release run-state-management
 
 true
 ```
@@ -32,39 +32,39 @@ Phase 2 version calculation and Phase 4 publish steps stay inline (they depend o
 # Output: `###`-headed sections + KEY=value per
 # `references/command-output-format.md`.
 
-echo "### Current Version"
-LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
-echo "LAST_TAG=$LAST_TAG"
-echo "TAG_PREFIX=v"   # default; settings.release.tagPrefix may override at Phase 2
+printf '%s\n' "### Current Version"
+LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || printf '%s\n' "none")
+printf '%s\n' "LAST_TAG=$LAST_TAG"
+printf '%s\n' "TAG_PREFIX=v"   # default; settings.release.tagPrefix may override at Phase 2
 
-echo ""
-echo "### Merged PRs Since Last Release"
+printf '%s\n' ""
+printf '%s\n' "### Merged PRs Since Last Release"
 if [ "$LAST_TAG" != "none" ]; then
   SINCE=$(git log -1 --format=%aI "$LAST_TAG" 2>/dev/null)
   MERGED_JSON=$(gh pr list --state merged --search "merged:>=$SINCE" --json number,title,labels --limit 50 2>/dev/null); GH_EXIT=$?
-  echo "SINCE=$SINCE"
+  printf '%s\n' "SINCE=$SINCE"
 else
   MERGED_JSON=$(gh pr list --state merged --json number,title,labels --limit 20 2>/dev/null); GH_EXIT=$?
   # Quote: value contains parens, whitespace, em-dash (rule 2 of
   # references/command-output-format.md).
-  echo "SINCE=\"(first release — using 20 most recent merged PRs)\""
+  printf '%s\n' "SINCE=\"(first release — using 20 most recent merged PRs)\""
 fi
 if [ $GH_EXIT -ne 0 ]; then
-  echo "MERGED_PR_COUNT=0"
-  echo "STATE=unavailable"
+  printf '%s\n' "MERGED_PR_COUNT=0"
+  printf '%s\n' "STATE=unavailable"
 else
-  MERGED_COUNT=$(echo "$MERGED_JSON" | jq 'length' 2>/dev/null)
+  MERGED_COUNT=$(printf '%s\n' "$MERGED_JSON" | jq 'length' 2>/dev/null)
   [ -z "$MERGED_COUNT" ] && MERGED_COUNT=0
-  echo "MERGED_PR_COUNT=$MERGED_COUNT"
+  printf '%s\n' "MERGED_PR_COUNT=$MERGED_COUNT"
   if [ "$MERGED_COUNT" = "0" ]; then
-    echo "STATE=empty"
+    printf '%s\n' "STATE=empty"
   else
-    echo "$MERGED_JSON" | jq -r '.[] | "MERGED_PR=number=\(.number) labels=\"\([.labels[].name] | join(","))\" title=\"\(.title)\""' 2>/dev/null
+    printf '%s\n' "$MERGED_JSON" | jq -r '.[] | "MERGED_PR=number=\(.number) labels=\"\([.labels[].name] | join(","))\" title=\"\(.title)\""' 2>/dev/null
   fi
 fi
 
-echo ""
-echo "### Commits Since Last Release"
+printf '%s\n' ""
+printf '%s\n' "### Commits Since Last Release"
 # Capture so an empty range (right after a release) emits STATE=empty
 # rather than a silent heading.
 if [ "$LAST_TAG" != "none" ]; then
@@ -73,7 +73,7 @@ else
   COMMITS_RANGE=$(git log --oneline -20 2>/dev/null)
 fi
 if [ -z "$COMMITS_RANGE" ]; then
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 else
   printf '%s\n' "$COMMITS_RANGE" | sed 's/^/COMMIT=/'
 fi
@@ -87,22 +87,22 @@ A release is a long-running workflow, so it gets a durable FlowRun. Runs are gat
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
-CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 if [ ! -x "$CASCADE" ]; then
-  echo "FLOW_RUN_STATE=blocked"
-  echo "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
+  printf '%s\n' "FLOW_RUN_STATE=blocked"
+  printf '%s\n' "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
   true; exit 0
 fi
 RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
 if [ "$RUNTIME_ENABLED" != "true" ]; then
-  echo "FLOW_RUN_STATE=skip"
-  echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+  printf '%s\n' "FLOW_RUN_STATE=skip"
+  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
 else
   RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-release"
-  echo "FLOW_RUN_STATE=create"
-  echo "RUN_ID=$RUN_ID"
-  echo "WORKFLOW=release"
-  echo "INITIAL_PHASE=preflight"
+  printf '%s\n' "FLOW_RUN_STATE=create"
+  printf '%s\n' "RUN_ID=$RUN_ID"
+  printf '%s\n' "WORKFLOW=release"
+  printf '%s\n' "INITIAL_PHASE=preflight"
 fi
 # FLOW_RUN_BLOCK_END
 true

@@ -36,34 +36,34 @@ The separation is structural, not stylistic. An orchestrator that merged finding
 
 ```!
 _RAW="$ARGUMENTS"
-echo "### Audit Arguments"
-echo "ARGS=$_RAW"
+printf '%s\n' "### Audit Arguments"
+printf '%s\n' "ARGS=$_RAW"
 
 __dr="${CLAUDE_PLUGIN_ROOT:-}"
-[ -x "$__dr/bin/dossier-package-check.sh" ] || __dr=$({ echo plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-package-check.sh" ] && { echo "${__p%/}"; break; }; done)
+[ -x "$__dr/bin/dossier-package-check.sh" ] || __dr=$({ printf '%s\n' plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-package-check.sh" ] && { printf '%s\n' "${__p%/}"; break; }; done)
 
-echo "### Preflight"
+printf '%s\n' "### Preflight"
 if [ ! -x "$__dr/bin/dossier-package-check.sh" ]; then
-  echo "AUDIT_STATE=blocked"
-  echo "AUDIT_ERROR=dossier plugin scripts not found — reinstall or upgrade the plugin"
+  printf '%s\n' "AUDIT_STATE=blocked"
+  printf '%s\n' "AUDIT_ERROR=dossier plugin scripts not found — reinstall or upgrade the plugin"
   true; exit 0
 fi
 
 OUTPUT_ROOT=$("$__dr/bin/dossier-resolve-config.sh" --default "docs/dossier" dossier.project.outputRoot 2>/dev/null)
-echo "OUTPUT_ROOT=$OUTPUT_ROOT"
-echo "PACKAGE_EXISTS=$([ -d "$OUTPUT_ROOT/00-control" ] && echo true || echo false)"
-echo "PINNED_VERSION=$("$__dr/bin/dossier-resolve-config.sh" --default auto dossier.project.versionOrCommit 2>/dev/null)"
-echo "PASS_MODELS=$("$__dr/bin/dossier-resolve-config.sh" --compact --default '{}' dossier.verification.passModels 2>/dev/null)"
-echo "TRACE_COUNT=$("$__dr/bin/dossier-resolve-config.sh" --default 10 dossier.verification.traceCount 2>/dev/null)"
+printf '%s\n' "OUTPUT_ROOT=$OUTPUT_ROOT"
+printf '%s\n' "PACKAGE_EXISTS=$([ -d "$OUTPUT_ROOT/00-control" ] && printf '%s\n' true || printf '%s\n' false)"
+printf '%s\n' "PINNED_VERSION=$("$__dr/bin/dossier-resolve-config.sh" --default auto dossier.project.versionOrCommit 2>/dev/null)"
+printf '%s\n' "PASS_MODELS=$("$__dr/bin/dossier-resolve-config.sh" --compact --default '{}' dossier.verification.passModels 2>/dev/null)"
+printf '%s\n' "TRACE_COUNT=$("$__dr/bin/dossier-resolve-config.sh" --default 10 dossier.verification.traceCount 2>/dev/null)"
 
-echo "### Structural precheck"
+printf '%s\n' "### Structural precheck"
 "$__dr/bin/dossier-package-check.sh" --output-root "$OUTPUT_ROOT" 2>&1 | head -20 || true
 
-echo "### Prior rounds"
+printf '%s\n' "### Prior rounds"
 if [ -d .dossier/runs ]; then
-  echo "PRIOR_ROUNDS=$(ls -1d .dossier/runs/*/ 2>/dev/null | wc -l | tr -d ' ')"
+  printf '%s\n' "PRIOR_ROUNDS=$(ls -1d .dossier/runs/*/ 2>/dev/null | wc -l | tr -d ' ')"
 else
-  echo "PRIOR_ROUNDS=0"
+  printf '%s\n' "PRIOR_ROUNDS=0"
 fi
 true
 ```

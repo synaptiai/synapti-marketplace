@@ -155,7 +155,7 @@ The guard:
 ```bash
 # At the top of every flow Stop hook script:
 if [ "${CLAUDE_HOOK_GOAL_JUDGE_MODE:-}" = "true" ]; then
-  echo '{"decision":"approve","reason":"judge mode"}'
+  printf '%s\n' '{"decision":"approve","reason":"judge mode"}'
   exit 0
 fi
 ```
@@ -252,7 +252,7 @@ Explicit non-features (per v3 design goals):
 # Restart Claude Code.
 
 # Create a synthetic goal:
-echo 'apiVersion: flow.synapti.ai/v1
+printf '%s\n' 'apiVersion: flow.synapti.ai/v1
 kind: FlowGoal
 metadata:
   id: test-goal

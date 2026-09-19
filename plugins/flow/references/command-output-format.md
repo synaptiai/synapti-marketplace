@@ -199,9 +199,9 @@ Bash's `$(...)` paren-matching collides with `*)` case-arm patterns. When you ne
 TALLY=$(for x in $items; do
   case "$x" in
     valid) ;;
-    *) echo "WARN: bad $x" >&2; continue ;;
+    *) printf '%s\n' "WARN: bad $x" >&2; continue ;;
   esac
-  echo "$x"
+  printf '%s\n' "$x"
 done | sort | uniq -c)
 ```
 
@@ -211,9 +211,9 @@ _collect_tally() {
   for x in $items; do
     case "$x" in
       valid) ;;
-      *) echo "WARN: bad $x" >&2; continue ;;
+      *) printf '%s\n' "WARN: bad $x" >&2; continue ;;
     esac
-    echo "$x"
+    printf '%s\n' "$x"
   done | sort | uniq -c
 }
 TALLY=$(_collect_tally)
@@ -224,7 +224,7 @@ TALLY=$(_collect_tally)
 When a Phase 1 `!` block extracts state (e.g., `PR_NUM` from `$ARGUMENTS`) that subsequent inline `bash` blocks need, echo it explicitly:
 
 ```bash
-echo "PR_NUM=$PR_NUM"
+printf '%s\n' "PR_NUM=$PR_NUM"
 ```
 
 The agent reads the echoed value from the prompt context and substitutes it into later Bash tool calls. This is how the rendered prompt carries state between blocks — bash variables do NOT persist across separate Bash tool invocations.

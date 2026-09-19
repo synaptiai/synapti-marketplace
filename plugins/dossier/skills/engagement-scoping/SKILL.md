@@ -23,7 +23,7 @@ Every value comes from `bin/dossier-resolve-config.sh`, never from reading a set
 ```bash
 OUTPUT_ROOT=$(bin/dossier-resolve-config.sh --default "docs/dossier" dossier.project.outputRoot)
 MODE=$(bin/dossier-resolve-config.sh --default "full" dossier.engagement.deliveryMode)
-bin/dossier-validate-config.sh || echo "config findings above must be resolved before drafting"
+bin/dossier-validate-config.sh || printf '%s\n' "config findings above must be resolved before drafting"
 ```
 
 Validate before scoping. A config that fails `dossier-validate-config.sh` produces a package whose containment guarantees do not hold, and finding that out in Phase 5 wastes the whole run.

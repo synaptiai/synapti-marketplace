@@ -20,7 +20,7 @@ allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreat
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" merge-conflict-resolution capability-discovery debugging-patterns
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" merge-conflict-resolution capability-discovery debugging-patterns
 
 true
 ```
@@ -56,13 +56,13 @@ case "$ARG1" in
   *) RESOLVE_TARGET="$ARG1" ;;
 esac
 
-echo "### Resolve Mode"
+printf '%s\n' "### Resolve Mode"
 # Quote parenthesized fallback per command-output-format.md rule 2.
-echo "RESOLVE_TARGET=${RESOLVE_TARGET:-\"(none — in-progress merge mode)\"}"
+printf '%s\n' "RESOLVE_TARGET=${RESOLVE_TARGET:-\"(none — in-progress merge mode)\"}"
 if [ -f .git/MERGE_HEAD ] || [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
-  echo "CONFLICT_STATE=active"
+  printf '%s\n' "CONFLICT_STATE=active"
 else
-  echo "CONFLICT_STATE=inactive"
+  printf '%s\n' "CONFLICT_STATE=inactive"
 fi
 
 true
@@ -79,7 +79,7 @@ true
 # resolution of gh without complaining — an unset REPO reads as pinned and behaves
 # as unpinned, which is the failure this pinning exists to prevent.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+[ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 # Fetch PR details and attempt merge. Uses $RESOLVE_TARGET extracted by the
 # Phase 0 `!` block above (digit-or-safe-branch-name; trailing context stripped).
 gh pr view "$RESOLVE_TARGET" --repo "$REPO" --json headRefName,baseRefName,mergeable,title
@@ -100,7 +100,7 @@ Run these in parallel:
 # Output: `###`-headed section + labeled records per
 # `references/command-output-format.md`.
 
-echo "### Conflicted Files"
+printf '%s\n' "### Conflicted Files"
 CONFLICTED=$(git diff --name-only --diff-filter=U 2>/dev/null)
 # Note: `grep -c '.' || echo 0` produces a multi-line `0\n0` on empty input
 # (grep exits 1, the `||` ALSO fires) — use explicit empty-check instead.
@@ -109,20 +109,20 @@ if [ -z "$CONFLICTED" ]; then
 else
   CONFLICTED_COUNT=$(printf '%s\n' "$CONFLICTED" | wc -l | tr -d ' ')
 fi
-echo "CONFLICTED_COUNT=$CONFLICTED_COUNT"
+printf '%s\n' "CONFLICTED_COUNT=$CONFLICTED_COUNT"
 if [ "$CONFLICTED_COUNT" = "0" ]; then
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 else
   printf '%s\n' "$CONFLICTED" | sed 's/^/CONFLICTED_FILE=/'
 fi
 
-echo ""
-echo "#### Status filter (UU/UD/AU types)"
+printf '%s\n' ""
+printf '%s\n' "#### Status filter (UU/UD/AU types)"
 # Capture into a var so an empty match emits an explicit STATE=empty sentinel
 # rather than a silent heading.
 STATUS_LINES=$(git status --porcelain 2>/dev/null | grep "^[UAD][UAD] " || true)
 if [ -z "$STATUS_LINES" ]; then
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 else
   printf '%s\n' "$STATUS_LINES" | sed 's/^/STATUS=/'
 fi
@@ -136,7 +136,7 @@ true
 # Output: `###`-headed section + one record per file per
 # `references/command-output-format.md`.
 
-echo "### Hunks Per Conflicted File"
+printf '%s\n' "### Hunks Per Conflicted File"
 # Capture into a var so the loop runs in the parent shell (no subshell pipe).
 # Previous form `git diff … | while … done; [ "$ANY" = "0" ] && …` ran the
 # loop in a subshell so `ANY=1` never propagated and `STATE=empty` ALWAYS
@@ -150,12 +150,12 @@ if [ -n "$CONFLICTED_LIST" ]; then
       # fire on grep exit 1 (no matches) and produce a multi-line `0\n0`.
       HUNKS=$(grep -c '<<<<<<<' "$f" 2>/dev/null || true)
       [ -z "$HUNKS" ] && HUNKS=0
-      echo "HUNKS=file=$f count=$HUNKS"
+      printf '%s\n' "HUNKS=file=$f count=$HUNKS"
       ANY_EXISTING=1
     fi
   done <<< "$CONFLICTED_LIST"
 fi
-[ "$ANY_EXISTING" = "0" ] && echo "STATE=empty"
+[ "$ANY_EXISTING" = "0" ] && printf '%s\n' "STATE=empty"
 
 true
 ```

@@ -40,7 +40,7 @@ This command operates with these domain skills loaded:
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" llm-operator-principles branch-and-task-management change-classification capability-discovery debugging-patterns preflight-checks criterion-verification-map holdout-validation issue-crafting specification-capture tdd-patterns goal-contract-capture goal-lifecycle run-state-management runtime-verification visual-verification
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" llm-operator-principles branch-and-task-management change-classification capability-discovery debugging-patterns preflight-checks criterion-verification-map holdout-validation issue-crafting specification-capture tdd-patterns goal-contract-capture goal-lifecycle run-state-management runtime-verification visual-verification
 
 true
 ```
@@ -106,14 +106,14 @@ git ls-remote --exit-code origin >/dev/null 2>&1 || fail "Cannot reach remote 'o
 # the warn without aborting the block.
 [ -n "$ISSUE_NUM" ] && git branch --show-current | grep -q "issue-$ISSUE_NUM" && warn "Already on branch for issue #$ISSUE_NUM"
 
-echo "### Pre-Flight"
-echo "ISSUE_NUM=$ISSUE_NUM"
-echo "PREFLIGHT_ERRORS=$ERRORS"
-echo "PREFLIGHT_WARNINGS=$WARNINGS"
+printf '%s\n' "### Pre-Flight"
+printf '%s\n' "ISSUE_NUM=$ISSUE_NUM"
+printf '%s\n' "PREFLIGHT_ERRORS=$ERRORS"
+printf '%s\n' "PREFLIGHT_WARNINGS=$WARNINGS"
 if [ $ERRORS -gt 0 ]; then
-  echo "PREFLIGHT_STATE=BLOCKED"
+  printf '%s\n' "PREFLIGHT_STATE=BLOCKED"
 else
-  echo "PREFLIGHT_STATE=PASSED"
+  printf '%s\n' "PREFLIGHT_STATE=PASSED"
 fi
 # Emit collected reasons (one per line, may be empty)
 printf '%s' "$FAIL_REASONS"
@@ -142,47 +142,47 @@ case "$ARG1" in
   *) ISSUE_NUM="$ARG1" ;;
 esac
 
-echo "### Issue Reference"
+printf '%s\n' "### Issue Reference"
 if [ -z "$ISSUE_NUM" ]; then
-  echo "STATE=blocked"
-  echo "ERROR=issue number required (all-digit; Phase 0 PRE-FLIGHT carries the authoritative BLOCKED signal)"
+  printf '%s\n' "STATE=blocked"
+  printf '%s\n' "ERROR=issue number required (all-digit; Phase 0 PRE-FLIGHT carries the authoritative BLOCKED signal)"
 else
-  echo "STATE=ok"
-  echo "ISSUE_NUM=$ISSUE_NUM"
+  printf '%s\n' "STATE=ok"
+  printf '%s\n' "ISSUE_NUM=$ISSUE_NUM"
 
   # Section: Issue Details
-  echo ""
-  echo "### Issue Details"
+  printf '%s\n' ""
+  printf '%s\n' "### Issue Details"
   gh issue view "$ISSUE_NUM" --json title,body,labels,assignees,milestone --jq '
     "TITLE=\"\(.title)\"\nLABELS=\([.labels[].name] | join(","))\nASSIGNEES=\([.assignees[].login] | map("@" + .) | join(","))\nMILESTONE=\(.milestone.title // "(none)")\nBODY_LENGTH=\(.body | length)"
   ' 2>/dev/null
   # Issue body is variable-length; emit it under a sub-heading so the agent
   # can locate and read it as prose rather than parse it as fields.
-  echo ""
-  echo "#### Issue Body"
+  printf '%s\n' ""
+  printf '%s\n' "#### Issue Body"
   gh issue view "$ISSUE_NUM" --json body --jq '.body' 2>/dev/null
 
   # Section: Issue Comments
-  echo ""
-  echo "### Issue Comments"
+  printf '%s\n' ""
+  printf '%s\n' "### Issue Comments"
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-  COMMENT_COUNT=$(gh api "repos/$REPO/issues/$ISSUE_NUM/comments" --jq 'length' 2>/dev/null || echo "0")
-  echo "COMMENT_COUNT=$COMMENT_COUNT"
+  COMMENT_COUNT=$(gh api "repos/$REPO/issues/$ISSUE_NUM/comments" --jq 'length' 2>/dev/null || printf '%s\n' "0")
+  printf '%s\n' "COMMENT_COUNT=$COMMENT_COUNT"
   if [ "$COMMENT_COUNT" = "0" ]; then
-    echo "STATE=empty"
+    printf '%s\n' "STATE=empty"
   else
     gh api "repos/$REPO/issues/$ISSUE_NUM/comments" --jq '.[] | "COMMENT=author=@\(.user.login) at=\(.created_at) length=\(.body | length)"' 2>/dev/null
   fi
 
   # Section: Repo Context
-  echo ""
-  echo "### Repo Context"
-  DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-  echo "REPO=$REPO"
-  echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
-  echo "CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)"
+  printf '%s\n' ""
+  printf '%s\n' "### Repo Context"
+  DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
+  printf '%s\n' "REPO=$REPO"
+  printf '%s\n' "DEFAULT_BRANCH=$DEFAULT_BRANCH"
+  printf '%s\n' "CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)"
   STATUS_LINES=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
-  echo "UNCOMMITTED_COUNT=$STATUS_LINES"
+  printf '%s\n' "UNCOMMITTED_COUNT=$STATUS_LINES"
   [ "$STATUS_LINES" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
 fi
 
@@ -240,7 +240,7 @@ If any check fails, halt and re-invoke the skill with the failure noted. Do NOT 
 **Manifest emit** — record the specification artifact in the journal manifest so downstream tooling and `/flow:status` can see it without parsing the freeform `## Specification` body:
 
 ```bash
-FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")
 RISK_MAP=$("$FLOW_ROOT/bin/cascade-resolve.sh" --default true '.specFirst.riskMap')
 if [ "$RISK_MAP" = "false" ]; then
   ELEMENTS_META=(--metadata elements=non-goals,failure-modes,interface-contracts --metadata risk_map=disabled)
@@ -311,11 +311,11 @@ gh issue edit "$ISSUE_NUM" --add-assignee @me
 The master switch `flow.goals.enabled: false` forces `off` regardless of `goalCreation` (whole feature off — distinct from `goalCreation: off`, which leaves the feature on and only suppresses auto-creation).
 
 ```!
-CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 # Surface cascade-resolve unavailability instead of silently degrading the gate.
 if [ ! -x "$CASCADE" ]; then
-  echo "FLOW_GOAL_STATE=blocked"
-  echo "FLOW_GOAL_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
+  printf '%s\n' "FLOW_GOAL_STATE=blocked"
+  printf '%s\n' "FLOW_GOAL_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
   true; exit 0
 fi
 # Read-only migration: goalCreation wins; else map the legacy
@@ -359,23 +359,23 @@ PY
     fi
     case "$STATUS" in
       achieved|failed|cancelled)
-        echo "FLOW_GOAL_STATE=terminal"
-        echo "GOAL_PATH=$GOAL_PATH"
-        echo "GOAL_STATUS=$STATUS"
+        printf '%s\n' "FLOW_GOAL_STATE=terminal"
+        printf '%s\n' "GOAL_PATH=$GOAL_PATH"
+        printf '%s\n' "GOAL_STATUS=$STATUS"
         ;;
       *)
-        echo "FLOW_GOAL_STATE=exists"
-        echo "GOAL_PATH=$GOAL_PATH"
-        echo "GOAL_STATUS=$STATUS"
+        printf '%s\n' "FLOW_GOAL_STATE=exists"
+        printf '%s\n' "GOAL_PATH=$GOAL_PATH"
+        printf '%s\n' "GOAL_STATUS=$STATUS"
         ;;
     esac
   else
-    echo "FLOW_GOAL_STATE=create"
-    echo "GOAL_ID=$GOAL_ID"
-    echo "GOAL_PATH=$GOAL_PATH"
+    printf '%s\n' "FLOW_GOAL_STATE=create"
+    printf '%s\n' "GOAL_ID=$GOAL_ID"
+    printf '%s\n' "GOAL_PATH=$GOAL_PATH"
   fi
 else
-  echo "FLOW_GOAL_STATE=skip"
+  printf '%s\n' "FLOW_GOAL_STATE=skip"
 fi
 
 true
@@ -404,14 +404,14 @@ For `FLOW_GOAL_STATE=create`:
 3. **Post-write verify** — before emitting the visibility echo, confirm the contract was persisted and is in `active`:
    ```bash
    if [ ! -f "$GOAL_PATH" ]; then
-     echo "FLOW_GOAL_ERROR=goal-contract-capture returned success but $GOAL_PATH does not exist" >&2
+     printf '%s\n' "FLOW_GOAL_ERROR=goal-contract-capture returned success but $GOAL_PATH does not exist" >&2
      # halt — do not proceed to Phase 2 with inconsistent state
      exit 1
    fi
    if command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" >/dev/null 2>&1; then
      STATUS=$(python3 -c "import sys, yaml; print((yaml.safe_load(open('$GOAL_PATH')) or {}).get('lifecycle', {}).get('status', 'unknown'))" 2>/dev/null)
      if [ "$STATUS" != "active" ]; then
-       echo "FLOW_GOAL_ERROR=goal-lifecycle did not transition to active (current: $STATUS)" >&2
+       printf '%s\n' "FLOW_GOAL_ERROR=goal-lifecycle did not transition to active (current: $STATUS)" >&2
        exit 1
      fi
    fi
@@ -424,10 +424,10 @@ For `FLOW_GOAL_STATE=create`:
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
-CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 if [ ! -x "$CASCADE" ]; then
-  echo "FLOW_RUN_STATE=blocked"
-  echo "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
+  printf '%s\n' "FLOW_RUN_STATE=blocked"
+  printf '%s\n' "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
   true; exit 0
 fi
 RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
@@ -438,16 +438,16 @@ case "$ARG1" in
   *) ISSUE_NUM="$ARG1" ;;
 esac
 if [ "$RUNTIME_ENABLED" != "true" ]; then
-  echo "FLOW_RUN_STATE=skip"
-  echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+  printf '%s\n' "FLOW_RUN_STATE=skip"
+  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
 else
   SLUG="${ISSUE_NUM:-nonum}"
   RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-issue-${SLUG}"
-  echo "FLOW_RUN_STATE=create"
-  echo "RUN_ID=$RUN_ID"
-  echo "WORKFLOW=start-issue"
-  echo "INITIAL_PHASE=preflight"
-  if [ -n "$ISSUE_NUM" ]; then echo "GOAL_LINK=issue-$ISSUE_NUM"; else echo "GOAL_LINK=null"; fi
+  printf '%s\n' "FLOW_RUN_STATE=create"
+  printf '%s\n' "RUN_ID=$RUN_ID"
+  printf '%s\n' "WORKFLOW=start-issue"
+  printf '%s\n' "INITIAL_PHASE=preflight"
+  if [ -n "$ISSUE_NUM" ]; then printf '%s\n' "GOAL_LINK=issue-$ISSUE_NUM"; else printf '%s\n' "GOAL_LINK=null"; fi
 fi
 # FLOW_RUN_BLOCK_END
 true
@@ -462,7 +462,7 @@ When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.f
 # do not persist here). RUN_ID is the value emitted by the FlowRun entry block.
 _RAW="$ARGUMENTS"; ARG1="${_RAW%% *}"; case "$ARG1" in ''|*[!0-9]*) ISSUE_NUM="" ;; *) ISSUE_NUM="$ARG1" ;; esac
 if [ -n "$ISSUE_NUM" ]; then
-  "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
+  "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-record.sh" \
     --issue "$ISSUE_NUM" --type workflow-run \
     --metadata workflow=start-issue --metadata run_id="$RUN_ID" --metadata status=active
 fi
@@ -481,7 +481,7 @@ Once the goal (if any) and the FlowRun exist, emit **one** compact runtime summa
 Compute the AC counts with the shared helper (it prints `<total>/<verifiable>`). It exits non-zero with no output when no goal owns the current branch — that is the **skip path** (goal creation was skipped), and the summary then omits the Goal line entirely:
 
 ```bash
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-active-goal.sh" --verifiable-count 2>/dev/null || true
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-active-goal.sh" --verifiable-count 2>/dev/null || true
 ```
 
 **Truthfulness gate (load-bearing):** if the goal is degenerate — `<total>` is `0`, or `<verifiable>` is `0` — or the goal is unevaluated, the Goal line MUST be flagged, never shown as a clean `active`:
@@ -575,22 +575,22 @@ Record the Stranger Test result to `.decisions/issue-$ISSUE_NUM.md` under a `## 
 # STRANGER_TEST_EMIT_BLOCK_BEGIN
 case "${GATE_RESULT:-}" in
   PASS|BLOCK) ;;
-  *) echo "ERROR: GATE_RESULT must be PASS or BLOCK, got '${GATE_RESULT:-}'" >&2; exit 1 ;;
+  *) printf '%s\n' "ERROR: GATE_RESULT must be PASS or BLOCK, got '${GATE_RESULT:-}'" >&2; exit 1 ;;
 esac
 case "${TASK_COUNT:-}" in
-  ''|*[!0-9]*|0?*) echo "ERROR: TASK_COUNT must be the number of tasks reviewed, got '${TASK_COUNT:-}'" >&2; exit 1 ;;
+  ''|*[!0-9]*|0?*) printf '%s\n' "ERROR: TASK_COUNT must be the number of tasks reviewed, got '${TASK_COUNT:-}'" >&2; exit 1 ;;
 esac
 # Only when the gate blocked: the task that failed it.
 if [ "$GATE_RESULT" = BLOCK ]; then
   case "${TASK_ID:-}" in
-    ''|*[![:alnum:]_-]*) echo "ERROR: TASK_ID must name the task that failed the gate, got '${TASK_ID:-}'" >&2; exit 1 ;;
+    ''|*[![:alnum:]_-]*) printf '%s\n' "ERROR: TASK_ID must name the task that failed the gate, got '${TASK_ID:-}'" >&2; exit 1 ;;
   esac
 fi
 case "${ISSUE_NUM:-}" in
-  ''|0*|*[!0-9]*) echo "ERROR: ISSUE_NUM must be a positive integer, got '${ISSUE_NUM:-}'" >&2; exit 1 ;;
+  ''|0*|*[!0-9]*) printf '%s\n' "ERROR: ISSUE_NUM must be a positive integer, got '${ISSUE_NUM:-}'" >&2; exit 1 ;;
 esac
-FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
-[ -x "$FLOW_ROOT/bin/journal-record.sh" ] || { echo "ERROR: journal-record.sh not found; the flow plugin root did not resolve" >&2; exit 1; }
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+[ -x "$FLOW_ROOT/bin/journal-record.sh" ] || { printf '%s\n' "ERROR: journal-record.sh not found; the flow plugin root did not resolve" >&2; exit 1; }
 "$FLOW_ROOT/bin/journal-record.sh" \
   --issue "$ISSUE_NUM" \
   --type stranger-test \
@@ -755,13 +755,13 @@ Prove everything works with fix-forward:
    # VERDICT_EMIT_BLOCK_BEGIN
    case "${VERDICT_RESULT:-}" in
      PASS|FAIL|NEEDS-HUMAN-REVIEW) ;;
-     *) echo "ERROR: VERDICT_RESULT must be PASS, FAIL or NEEDS-HUMAN-REVIEW, got '${VERDICT_RESULT:-}'" >&2; exit 1 ;;
+     *) printf '%s\n' "ERROR: VERDICT_RESULT must be PASS, FAIL or NEEDS-HUMAN-REVIEW, got '${VERDICT_RESULT:-}'" >&2; exit 1 ;;
    esac
    case "${ISSUE_NUM:-}" in
-     ''|0*|*[!0-9]*) echo "ERROR: ISSUE_NUM must be a positive integer, got '${ISSUE_NUM:-}'" >&2; exit 1 ;;
+     ''|0*|*[!0-9]*) printf '%s\n' "ERROR: ISSUE_NUM must be a positive integer, got '${ISSUE_NUM:-}'" >&2; exit 1 ;;
    esac
-   FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
-   [ -x "$FLOW_ROOT/bin/journal-record.sh" ] || { echo "ERROR: journal-record.sh not found; the flow plugin root did not resolve" >&2; exit 1; }
+   FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+   [ -x "$FLOW_ROOT/bin/journal-record.sh" ] || { printf '%s\n' "ERROR: journal-record.sh not found; the flow plugin root did not resolve" >&2; exit 1; }
    "$FLOW_ROOT/bin/journal-record.sh" \
      --issue "$ISSUE_NUM" \
      --type verdict \

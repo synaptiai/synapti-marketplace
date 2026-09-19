@@ -19,23 +19,28 @@
 #   cascade-resolve.sh [--default <fallback>] [--compact] <jq-expression>
 #
 # Flags:
-#   --default <value>   value printed on stdout when no source has the key
-#   --compact           use `jq -c` (preserves JSON quoting) instead of `jq -r`
+#   --default <value>       value printed on stdout when no source has the key
+#   --compact               use `jq -c` (preserves JSON quoting) instead of `jq -r`
+#   --allow-control-chars   pass a value containing a control character or a
+#                           Unicode line separator through instead of refusing it
 #
 # Output:
 #   stdout: the resolved value (one line; the default if provided and no
 #           source resolved; otherwise empty)
-#   stderr: per-source `cascade-resolve: WARN: ...` for parse errors
+#   stderr: per-source `cascade-resolve: WARN: ...` for parse errors, and for a
+#           value refused for carrying a line break
 #
 # Exit:
 #   0 — resolved a value (or returned the default; both are normal)
-#   2 — infrastructure error (jq missing, no expression provided)
+#   2 — infrastructure error (jq missing, no expression provided), or a value
+#       refused for containing a control character or a Unicode line separator
 
 set -uo pipefail
 
 MODE="-r"
 DEFAULT_VALUE=""
 DEFAULT_SET=0
+ALLOW_CONTROL=0
 
 while [ $# -gt 0 ]; do
   case "${1:-}" in
@@ -47,6 +52,10 @@ while [ $# -gt 0 ]; do
       ;;
     --compact)
       MODE="-c"
+      shift
+      ;;
+    --allow-control-chars)
+      ALLOW_CONTROL=1
       shift
       ;;
     --)
@@ -136,6 +145,46 @@ for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_
   # to a non-null value — true for `""` and for `false`, false for a missing
   # key — and only then read it.
   if jq -e "($EXPR) != null" "$SETTINGS" >/dev/null 2>&1; then
+    if [ "$ALLOW_CONTROL" -eq 0 ]; then
+      # A control character here is either corruption or an injection. It is
+      # never part of a path, a name, or a flag, so refusing costs nothing a
+      # caller would miss, and refusing silently would be the failure this
+      # plugin is written to avoid: report it, then fall back to the default.
+      #
+      # Every consumer of this helper embeds the result in a `KEY=value` line
+      # that a later reader parses by line, so a value carrying a real newline
+      # forges a whole extra field. The flow plugin's twin of this script has
+      # refused those values since the first time the class was fixed; this
+      # copy was ported without that arm, so the dossier side kept the hole.
+      #
+      # LC_ALL=C keeps [[:cntrl:]] to the C locale's byte class (0x00-0x1F,
+      # 0x7F). That NARROWS the class: in a UTF-8 locale it also covers the C1
+      # range U+0080-U+009F, and a C1 character reaching an agent's output is
+      # an ANSI escape introducer (U+009B is CSI) as well as, for U+0085 NEL, a
+      # line break Python's str.splitlines() takes. So C1 is matched explicitly
+      # as its two-byte UTF-8 form, and the two separators outside it (U+2028,
+      # U+2029) the same way.
+      _REFUSED=0
+      if ( LC_ALL=C
+           case "$RESULT" in
+             *[[:cntrl:]]*) exit 0 ;;
+           esac
+           case "$RESULT" in
+             *$'\302'[$'\200'-$'\237']*) exit 0 ;;
+           esac
+           case "$RESULT" in
+             *$'\342\200\250'*|*$'\342\200\251'*) exit 0 ;;
+           esac
+           exit 1 ); then _REFUSED=1; fi
+      if [ "$_REFUSED" -eq 1 ]; then
+        echo "cascade-resolve: WARN: the value resolved for $EXPR from $SETTINGS contains a control character or a Unicode line separator (a newline forges a second KEY=value line for whoever reads this); refusing it" >&2
+        if [ $DEFAULT_SET -eq 1 ]; then
+          printf '%s\n' "$DEFAULT_VALUE"
+          exit 0
+        fi
+        exit 2
+      fi
+    fi
     printf '%s\n' "$RESULT"
     exit 0
   fi

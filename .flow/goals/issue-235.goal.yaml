@@ -1,0 +1,155 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-235
+  created_at: '2026-09-19T16:45:00Z'
+  created_by: /flow:start
+  owner: daniel.bentes@gmail.com
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: fix/issue-235-interpreting-print
+  issue: 235
+  journal: .decisions/issue-235.md
+objective:
+  outcome: 'Printing a value in a flow or dossier command does not change the value:
+    a fence that emits a KEY=value line emits exactly one line whatever the value
+    contains, and a value handed to a parser arrives byte-identical.'
+  acceptance_criteria:
+  - id: AC1
+    text: Every print site is safe by construction. No fence in plugins/flow/commands/
+      or plugins/dossier/commands/ passes a value through an interpreting builtin;
+      values are printed with printf '%s\n', and values handed to a parser arrive
+      through a here-string or an argument rather than a print builtin in a pipe.
+      A guard test in each plugin scans every fenced block of every command file and
+      fails naming each offender, reporting the file and block counts it actually
+      read so a scan that reached nothing cannot read as a clean scan.
+    verification_command: bash plugins/flow/tests/run.sh no-interpreting-print.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC2
+    text: The guard is demonstrated failing. Injecting an offending line of each shape
+      it claims to catch -- a settings-derived echo, an inline-heredoc-read echo,
+      a helper-output echo, and an echo of JSON piped into a parser -- turns it red,
+      naming the injected line; and a fixture whose closing fence marker carries trailing
+      whitespace, and a fixture with a fenced block immediately followed by a second
+      block, each carrying an offender, are both reported.
+    verification_command: bash plugins/flow/tests/run.sh no-interpreting-print.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC3
+    text: The class is closed at its producers where a producer exists. Every bin/*.sh
+      that emits a scalar for embedding emits exactly one line, verified with a fixture
+      whose value contains a real newline, a carriage return, a tab and the two-character
+      backslash-n sequence, so no consumer can forget.
+    verification_command: bash plugins/flow/tests/run.sh print-line-integrity.test.sh &&
+      bash plugins/flow/tests/run.sh flow-mine-corrections.test.sh && bash plugins/flow/tests/run.sh
+      review-exceptions.test.sh && bash plugins/flow/tests/run.sh flow-migrate-settings.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC4
+    text: The three named instances no longer reproduce, each by its executed repro
+      - the merge gate reports LEDGER_GATE_STATE=blocked for a body carrying a backslash
+      before the marker; a goal YAML with a newline in lifecycle.status cannot forge
+      a FLOW_GOAL_LIFECYCLE line; and a gh response containing an escaped character
+      in a string is still parsed rather than silently discarded.
+    verification_command: bash plugins/flow/tests/run.sh print-line-integrity.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC5
+    text: Normal output is unchanged. For a value with no escape and no control character,
+      every converted idiom produces byte-identical output to its previous form, checked
+      by executing both forms and comparing bytes, and by diffing a whole-fence run
+      of the tree before and after the conversion.
+    verification_command: bash plugins/flow/tests/run.sh no-interpreting-print.test.sh
+    status: pending
+    evidence_ref: null
+specification:
+  non_goals:
+  - A change to any command's decisions, thresholds, ordering, or output grammar.
+    Every KEY= name, every line's meaning, and every value's content for values without
+    escapes stays what it was.
+  - An encoding layer consumers must decode. The fix removes the interpretation rather
+    than adding an escape syntax; the one place a producer already promises a one-line
+    scalar keeps its declared collapse.
+  - Input validation. No value is refused for carrying a backslash or a control character;
+    the same bytes are printed literally instead of being rewritten.
+  - A general shell-portability pass. Arrays, [[ ]], process substitution and GNU-versus-BSD
+    flag drift are untouched.
+  failure_modes:
+  - 'Timeouts: none. Nothing here makes a network or subprocess call whose latency
+    it affects; a fence that blocks on gh blocks identically before and after.'
+  - 'Partial failures: a fence that fails partway prints the same bytes before and
+    after. The conversion never reorders statements and never moves a value computation
+    across the print that consumes it.'
+  - 'Invalid input: a value carrying a backslash, a real newline, a carriage return
+    or a tab is printed literally, neither rewritten nor refused. Exit codes and control
+    flow are unchanged.'
+  - 'Missing context: an unset variable or an absent helper prints exactly what it
+    printed before. The conversion must not add set -u sensitivity a fence did not
+    have.'
+  interface_contracts:
+  - Every fence-emitted diagnostic line keeps the form KEY=value on exactly one physical
+    line; the set of keys is unchanged.
+  - plugins/flow/tests/run.sh <file.test.sh> is the plugin test entry point; a new
+    .test.sh there is discovered automatically and reports through _flow_test_summary
+    as SUMMARY pass=N fail=N.
+  - The producers keep their existing CLI surfaces; no flag is added or renamed.
+  - A value handed to jq, grep or another parser arrives as a here-string or an argument;
+    no filter is re-quoted to compensate for a print builtin.
+  - printf '%s\n' is the print builtin used for an interpolated value, and its format
+    string is a literal, so a percent sign inside a value is inert.
+  risk_map:
+  - area: argument splitting
+    plausible_wrong_version: an unquoted expansion is mechanically rewritten to printf
+      '%s\n' $V, which prints one line per word where echo printed them space-joined
+      on one line
+    discriminating_check: 'V="a b" -> right: one line "a b"; wrong: two lines "a"
+      and "b"'
+  - area: empty and bare echo
+    plausible_wrong_version: echo "" is rewritten to a printf whose format is the
+      empty string, emitting zero bytes where a blank separator line is expected
+    discriminating_check: 'echo "" | wc -c -> right: 1; wrong: 0'
+  - area: where a piped value enters the consuming command
+    plausible_wrong_version: the value is relocated into a here-string on the
+      pipeline first command instead of being left in the pipe; when that first
+      command is a loop condition the redirect belongs to read, so the
+      here-string is re-created on every iteration and the loop reads its first
+      line forever
+    discriminating_check: 'A list of three elements piped into a while-read loop
+      -> right: three iterations then exit 0; wrong: the first element repeats
+      and the loop never returns. Measured: the relocated form hung a fence in
+      commands/status.md, so the pipe is kept and this row exists.'
+  - area: the inline plugin-root resolver
+    plausible_wrong_version: the semicolon-separated brace group loses a separator
+      or a candidate when its echo becomes a printf, so the resolver stops printing
+      plugins/flow first
+    discriminating_check: 'CLAUDE_PLUGIN_ROOT unset, run the rewritten snippet in
+      bash and zsh -> right: first candidate is plugins/flow; wrong: syntax error
+      or an empty first candidate'
+  - area: fence-boundary detection in the guard
+    plausible_wrong_version: the scanner's closing-marker match is too strict, so
+      it silently skips blocks and reports a clean tree it never read
+    discriminating_check: 'a fixture with a bash-tagged block followed by a bang-tagged
+      block, each carrying an offender, and a closing marker with trailing whitespace
+      -> right: both offenders reported; wrong: the second block is never scanned'
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+evaluator:
+  type: hybrid
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: active

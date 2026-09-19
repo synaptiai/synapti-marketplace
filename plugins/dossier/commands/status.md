@@ -28,74 +28,74 @@ case "$ARG1" in
 esac
 
 __dr="${CLAUDE_PLUGIN_ROOT:-}"
-[ -x "$__dr/bin/dossier-resolve-config.sh" ] || __dr=$({ echo plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-resolve-config.sh" ] && { echo "${__p%/}"; break; }; done)
+[ -x "$__dr/bin/dossier-resolve-config.sh" ] || __dr=$({ printf '%s\n' plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-resolve-config.sh" ] && { printf '%s\n' "${__p%/}"; break; }; done)
 
-echo "### Mode"
-echo "STATUS_MODE=$MODE"
+printf '%s\n' "### Mode"
+printf '%s\n' "STATUS_MODE=$MODE"
 
-echo "### Plugin"
+printf '%s\n' "### Plugin"
 if [ ! -x "$__dr/bin/dossier-resolve-config.sh" ] || [ ! -x "$__dr/bin/dossier-staleness-check.sh" ]; then
-  echo "STATUS_STATE=blocked"
-  echo "STATUS_ERROR=dossier plugin scripts not found — reinstall or upgrade the plugin"
+  printf '%s\n' "STATUS_STATE=blocked"
+  printf '%s\n' "STATUS_ERROR=dossier plugin scripts not found — reinstall or upgrade the plugin"
   true; exit 0
 fi
 R="$__dr/bin/dossier-resolve-config.sh"
-echo "PLUGIN_VERSION=$(jq -r '.version // "unknown"' "$__dr/.claude-plugin/plugin.json" 2>/dev/null)"
+printf '%s\n' "PLUGIN_VERSION=$(jq -r '.version // "unknown"' "$__dr/.claude-plugin/plugin.json" 2>/dev/null)"
 
-echo "### Package"
+printf '%s\n' "### Package"
 OUTPUT_ROOT=$("$R" --default "docs/dossier" dossier.project.outputRoot 2>/dev/null)
-echo "OUTPUT_ROOT=$OUTPUT_ROOT"
+printf '%s\n' "OUTPUT_ROOT=$OUTPUT_ROOT"
 if [ ! -d "$OUTPUT_ROOT/00-control" ]; then
-  echo "PACKAGE_STATE=absent"
-  echo "PACKAGE_HINT=run /dossier:init to scaffold, then /dossier:baseline to draft"
+  printf '%s\n' "PACKAGE_STATE=absent"
+  printf '%s\n' "PACKAGE_HINT=run /dossier:init to scaffold, then /dossier:baseline to draft"
   true; exit 0
 fi
-echo "PACKAGE_STATE=present"
-echo "PROJECT_NAME=$("$R" --default '(unset)' dossier.project.name 2>/dev/null)"
-echo "DELIVERY_MODE=$("$R" --default full dossier.engagement.deliveryMode 2>/dev/null)"
-echo "DISCLOSURE_POLICY=$("$R" --default internal-only dossier.disclosure.policy 2>/dev/null)"
+printf '%s\n' "PACKAGE_STATE=present"
+printf '%s\n' "PROJECT_NAME=$("$R" --default '(unset)' dossier.project.name 2>/dev/null)"
+printf '%s\n' "DELIVERY_MODE=$("$R" --default full dossier.engagement.deliveryMode 2>/dev/null)"
+printf '%s\n' "DISCLOSURE_POLICY=$("$R" --default internal-only dossier.disclosure.policy 2>/dev/null)"
 
-echo "### Coverage"
+printf '%s\n' "### Coverage"
 EXPECTED=23
 FOUND=$(find "$OUTPUT_ROOT" -mindepth 2 -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')
-echo "CANONICAL_EXPECTED=$EXPECTED"
-echo "CANONICAL_FOUND=$FOUND"
+printf '%s\n' "CANONICAL_EXPECTED=$EXPECTED"
+printf '%s\n' "CANONICAL_FOUND=$FOUND"
 for d in 00-control 01-project 02-architecture 03-assurance 04-operating 05-due-diligence 06-public 07-verification; do
-  echo "DIR_${d}=$(find "$OUTPUT_ROOT/$d" -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')"
+  printf '%s\n' "DIR_${d}=$(find "$OUTPUT_ROOT/$d" -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')"
 done
 
-echo "### Document status"
+printf '%s\n' "### Document status"
 for s in verified "partially verified" draft "N/A"; do
   n=$(grep -rl "^status: $s" "$OUTPUT_ROOT" --include='*.md' 2>/dev/null | wc -l | tr -d ' ')
-  echo "STATUS_$(printf '%s' "$s" | tr ' ' '_')=$n"
+  printf '%s\n' "STATUS_$(printf '%s' "$s" | tr ' ' '_')=$n"
 done
 
-echo "### Registers"
+printf '%s\n' "### Registers"
 C="$OUTPUT_ROOT/00-control"
-echo "EVIDENCE_ROWS=$(grep -c '^| EV-' "$C/evidence-ledger.md" 2>/dev/null || echo 0)"
+printf '%s\n' "EVIDENCE_ROWS=$(grep -c '^| EV-' "$C/evidence-ledger.md" 2>/dev/null || printf '%s\n' 0)"
 for st in V C R I U; do
-  echo "EVIDENCE_STATE_${st}=$(awk -F'|' '/^\| EV-/{gsub(/ /,"",$4); if($4=="'"$st"'") n++} END{print n+0}' "$C/evidence-ledger.md" 2>/dev/null || echo 0)"
+  printf '%s\n' "EVIDENCE_STATE_${st}=$(awk -F'|' '/^\| EV-/{gsub(/ /,"",$4); if($4=="'"$st"'") n++} END{print n+0}' "$C/evidence-ledger.md" 2>/dev/null || printf '%s\n' 0)"
 done
-echo "OPEN_QUESTIONS=$(grep -c '^| AQ-' "$C/assumptions-questions-and-contradictions.md" 2>/dev/null || echo 0)"
-echo "CONTRADICTIONS=$(grep -c '^| CT-' "$C/assumptions-questions-and-contradictions.md" 2>/dev/null || echo 0)"
-echo "NEEDS_OWNER=$(grep -c 'needs-owner' "$C/assumptions-questions-and-contradictions.md" 2>/dev/null || echo 0)"
-echo "CLAIMS_TOTAL=$(grep -c '^| CL-' "$C/claim-and-disclosure-register.md" 2>/dev/null || echo 0)"
-echo "CLAIMS_PENDING=$(grep -c '^| CL-.*| *pending *|' "$C/claim-and-disclosure-register.md" 2>/dev/null || echo 0)"
-echo "TERMS=$(grep -c '^| TM-' "$C/terminology-and-ownership.md" 2>/dev/null || echo 0)"
-echo "UNASSIGNED_OWNERS=$(grep -c 'unassigned' "$C/terminology-and-ownership.md" 2>/dev/null || echo 0)"
+printf '%s\n' "OPEN_QUESTIONS=$(grep -c '^| AQ-' "$C/assumptions-questions-and-contradictions.md" 2>/dev/null || printf '%s\n' 0)"
+printf '%s\n' "CONTRADICTIONS=$(grep -c '^| CT-' "$C/assumptions-questions-and-contradictions.md" 2>/dev/null || printf '%s\n' 0)"
+printf '%s\n' "NEEDS_OWNER=$(grep -c 'needs-owner' "$C/assumptions-questions-and-contradictions.md" 2>/dev/null || printf '%s\n' 0)"
+printf '%s\n' "CLAIMS_TOTAL=$(grep -c '^| CL-' "$C/claim-and-disclosure-register.md" 2>/dev/null || printf '%s\n' 0)"
+printf '%s\n' "CLAIMS_PENDING=$(grep -c '^| CL-.*| *pending *|' "$C/claim-and-disclosure-register.md" 2>/dev/null || printf '%s\n' 0)"
+printf '%s\n' "TERMS=$(grep -c '^| TM-' "$C/terminology-and-ownership.md" 2>/dev/null || printf '%s\n' 0)"
+printf '%s\n' "UNASSIGNED_OWNERS=$(grep -c 'unassigned' "$C/terminology-and-ownership.md" 2>/dev/null || printf '%s\n' 0)"
 
-echo "### Staleness"
+printf '%s\n' "### Staleness"
 if [ -x "$__dr/bin/dossier-staleness-check.sh" ]; then
   "$__dr/bin/dossier-staleness-check.sh" --output-root "$OUTPUT_ROOT" \
     | grep -E '^(STALENESS_THRESHOLD_DAYS|DOCUMENTS_STALE|DOCUMENTS_UNDATED|OLDEST_VERIFICATION)='
 else
-  echo "STALENESS_THRESHOLD_DAYS=unknown"
-  echo "DOCUMENTS_STALE=unknown"
-  echo "DOCUMENTS_UNDATED=unknown"
-  echo "OLDEST_VERIFICATION=unknown"
+  printf '%s\n' "STALENESS_THRESHOLD_DAYS=unknown"
+  printf '%s\n' "DOCUMENTS_STALE=unknown"
+  printf '%s\n' "DOCUMENTS_UNDATED=unknown"
+  printf '%s\n' "OLDEST_VERIFICATION=unknown"
 fi
 
-echo "### Verification"
+printf '%s\n' "### Verification"
 VR="$OUTPUT_ROOT/07-verification/documentation-verification-report.md"
 if [ -f "$VR" ]; then
   # A verification report exists, so this package has been through the
@@ -106,46 +106,46 @@ if [ -f "$VR" ]; then
   # doing exactly that for a package whose report records three rounds and a
   # gate result of FAIL, which reads as "nothing has gone wrong yet" when the
   # opposite is true. Unparsed is reported as unknown, never as zero.
-  VR_ROUNDS=$(grep -c '<!-- DOSSIER_AUDIT' "$VR" 2>/dev/null || echo 0)
+  VR_ROUNDS=$(grep -c '<!-- DOSSIER_AUDIT' "$VR" 2>/dev/null || printf '%s\n' 0)
   if [ "${VR_ROUNDS:-0}" -gt 0 ] 2>/dev/null; then
-    echo "AUDIT_ROUNDS=$VR_ROUNDS"
+    printf '%s\n' "AUDIT_ROUNDS=$VR_ROUNDS"
   else
-    echo "AUDIT_ROUNDS=unknown"
-    echo "AUDIT_ROUNDS_REASON=report present but carries no DOSSIER_AUDIT markers"
+    printf '%s\n' "AUDIT_ROUNDS=unknown"
+    printf '%s\n' "AUDIT_ROUNDS_REASON=report present but carries no DOSSIER_AUDIT markers"
   fi
-  echo "FINDINGS_OPEN=$(grep -cE '\bOpen\b' "$VR" 2>/dev/null || echo 0)"
+  printf '%s\n' "FINDINGS_OPEN=$(grep -cE '\bOpen\b' "$VR" 2>/dev/null || printf '%s\n' 0)"
   VR_VERDICT=$(grep -m1 'GATE_VERDICT=' "$VR" 2>/dev/null | cut -d= -f2)
-  echo "LAST_GATE_VERDICT=${VR_VERDICT:-unknown}"
+  printf '%s\n' "LAST_GATE_VERDICT=${VR_VERDICT:-unknown}"
 else
-  echo "AUDIT_ROUNDS=0"
-  echo "FINDINGS_OPEN=0"
-  echo "LAST_GATE_VERDICT=never-run"
+  printf '%s\n' "AUDIT_ROUNDS=0"
+  printf '%s\n' "FINDINGS_OPEN=0"
+  printf '%s\n' "LAST_GATE_VERDICT=never-run"
 fi
 
-echo "### Refresh cursor"
+printf '%s\n' "### Refresh cursor"
 ST="$OUTPUT_ROOT/.dossier-state.json"
 if [ -f "$ST" ]; then
   CURSOR=$(jq -r '.last_documented_sha // empty' "$ST" 2>/dev/null)
-  echo "CURSOR=${CURSOR:-none}"
+  printf '%s\n' "CURSOR=${CURSOR:-none}"
   if [ -n "$CURSOR" ] && git cat-file -e "${CURSOR}^{commit}" 2>/dev/null; then
-    echo "COMMITS_BEHIND=$(git rev-list --count "${CURSOR}..HEAD" 2>/dev/null || echo unknown)"
+    printf '%s\n' "COMMITS_BEHIND=$(git rev-list --count "${CURSOR}..HEAD" 2>/dev/null || printf '%s\n' unknown)"
   else
-    echo "COMMITS_BEHIND=unknown"
+    printf '%s\n' "COMMITS_BEHIND=unknown"
   fi
 else
-  echo "CURSOR=none"
+  printf '%s\n' "CURSOR=none"
 fi
 
-echo "### Automation"
+printf '%s\n' "### Automation"
 WF=.github/workflows/dossier-docs-refresh.yml
-echo "CI_ENABLED=$("$R" --default true dossier.ci.enabled 2>/dev/null)"
-echo "WORKFLOW_PRESENT=$([ -f "$WF" ] && echo true || echo false)"
+printf '%s\n' "CI_ENABLED=$("$R" --default true dossier.ci.enabled 2>/dev/null)"
+printf '%s\n' "WORKFLOW_PRESENT=$([ -f "$WF" ] && printf '%s\n' true || printf '%s\n' false)"
 if [ -f "$WF" ] && [ -x "$__dr/bin/dossier-managed-file.sh" ]; then
-  "$__dr/bin/dossier-managed-file.sh" --verify "$WF" 2>/dev/null || echo "MANAGED=unknown"
-  echo "WORKFLOW_EXPECTED_VERSION=$("$R" --default unknown dossier.ci.expectedPluginVersion 2>/dev/null)"
+  "$__dr/bin/dossier-managed-file.sh" --verify "$WF" 2>/dev/null || printf '%s\n' "MANAGED=unknown"
+  printf '%s\n' "WORKFLOW_EXPECTED_VERSION=$("$R" --default unknown dossier.ci.expectedPluginVersion 2>/dev/null)"
 fi
-echo "TRIGGER_POLICY=$("$R" --default path-filtered dossier.ci.triggerPolicy 2>/dev/null)"
-echo "ROLLING_BRANCH=$("$R" --default docs/dossier dossier.ci.rollingBranch 2>/dev/null)"
+printf '%s\n' "TRIGGER_POLICY=$("$R" --default path-filtered dossier.ci.triggerPolicy 2>/dev/null)"
+printf '%s\n' "ROLLING_BRANCH=$("$R" --default docs/dossier dossier.ci.rollingBranch 2>/dev/null)"
 true
 ```
 

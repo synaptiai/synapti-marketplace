@@ -30,27 +30,27 @@ So `bin/dossier-gate.sh` **structurally refuses to emit PASS without a valid sco
 
 ```!
 _RAW="$ARGUMENTS"
-echo "### Gate Arguments"
-echo "ARGS=$_RAW"
+printf '%s\n' "### Gate Arguments"
+printf '%s\n' "ARGS=$_RAW"
 
 __dr="${CLAUDE_PLUGIN_ROOT:-}"
-[ -x "$__dr/bin/dossier-gate.sh" ] || __dr=$({ echo plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-gate.sh" ] && { echo "${__p%/}"; break; }; done)
+[ -x "$__dr/bin/dossier-gate.sh" ] || __dr=$({ printf '%s\n' plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-gate.sh" ] && { printf '%s\n' "${__p%/}"; break; }; done)
 
-echo "### Preflight"
+printf '%s\n' "### Preflight"
 if [ ! -x "$__dr/bin/dossier-gate.sh" ]; then
-  echo "GATE_STATE=blocked"
-  echo "GATE_ERROR=dossier-gate.sh not found — reinstall or upgrade the dossier plugin"
+  printf '%s\n' "GATE_STATE=blocked"
+  printf '%s\n' "GATE_ERROR=dossier-gate.sh not found — reinstall or upgrade the dossier plugin"
   true; exit 0
 fi
 
 OUTPUT_ROOT=$("$__dr/bin/dossier-resolve-config.sh" --default "docs/dossier" dossier.project.outputRoot 2>/dev/null)
-echo "OUTPUT_ROOT=$OUTPUT_ROOT"
-echo "MIN_SCORE=$("$__dr/bin/dossier-resolve-config.sh" --default 95 dossier.gate.minScore 2>/dev/null)"
-echo "MIN_DIMENSION_PCT=$("$__dr/bin/dossier-resolve-config.sh" --default 80 dossier.gate.minDimensionPercent 2>/dev/null)"
+printf '%s\n' "OUTPUT_ROOT=$OUTPUT_ROOT"
+printf '%s\n' "MIN_SCORE=$("$__dr/bin/dossier-resolve-config.sh" --default 95 dossier.gate.minScore 2>/dev/null)"
+printf '%s\n' "MIN_DIMENSION_PCT=$("$__dr/bin/dossier-resolve-config.sh" --default 80 dossier.gate.minDimensionPercent 2>/dev/null)"
 
-echo "### Mechanical evaluation"
+printf '%s\n' "### Mechanical evaluation"
 "$__dr/bin/dossier-gate.sh" --output-root "$OUTPUT_ROOT" 2>&1
-echo "GATE_SCRIPT_EXIT=$?"
+printf '%s\n' "GATE_SCRIPT_EXIT=$?"
 true
 ```
 

@@ -57,6 +57,11 @@ while [ $# -gt 0 ]; do
       DEFAULT_VALUE="$2"; DEFAULT_SET=1; shift 2 ;;
     --compact)
       MODE_ARGS="--compact"; shift ;;
+    --allow-control-chars)
+      # Forwarded rather than swallowed: without this the flag is unreachable
+      # from the documented entry point, since this wrapper builds the argument
+      # list it hands to cascade-resolve.sh instead of passing its own through.
+      MODE_ARGS="$MODE_ARGS --allow-control-chars"; shift ;;
     --json)
       WANT_JSON=1; shift ;;
     --) shift; break ;;

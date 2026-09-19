@@ -27,37 +27,37 @@ Create the package skeleton and its configuration. Writes structure and register
 
 ```!
 _RAW="$ARGUMENTS"
-echo "### Init Arguments"
-echo "ARGS=$_RAW"
+printf '%s\n' "### Init Arguments"
+printf '%s\n' "ARGS=$_RAW"
 
 __dr="${CLAUDE_PLUGIN_ROOT:-}"
-[ -x "$__dr/bin/dossier-resolve-config.sh" ] || __dr=$({ echo plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-resolve-config.sh" ] && { echo "${__p%/}"; break; }; done)
+[ -x "$__dr/bin/dossier-resolve-config.sh" ] || __dr=$({ printf '%s\n' plugins/dossier; ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/dossier/*/ 2>/dev/null | sort -Vr; printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/dossier"; } | while read -r __p; do [ -x "${__p%/}/bin/dossier-resolve-config.sh" ] && { printf '%s\n' "${__p%/}"; break; }; done)
 
-echo "### Plugin"
+printf '%s\n' "### Plugin"
 if [ -x "$__dr/bin/dossier-resolve-config.sh" ]; then
-  echo "DOSSIER_ROOT=$__dr"
+  printf '%s\n' "DOSSIER_ROOT=$__dr"
 else
-  echo "DOSSIER_STATE=blocked"
-  echo "DOSSIER_ERROR=dossier-resolve-config.sh not found — reinstall or upgrade the dossier plugin"
+  printf '%s\n' "DOSSIER_STATE=blocked"
+  printf '%s\n' "DOSSIER_ERROR=dossier-resolve-config.sh not found — reinstall or upgrade the dossier plugin"
   true; exit 0
 fi
 
-echo "### Existing State"
+printf '%s\n' "### Existing State"
 OUTPUT_ROOT=$("$__dr/bin/dossier-resolve-config.sh" --default "docs/dossier" dossier.project.outputRoot 2>/dev/null)
-echo "OUTPUT_ROOT=$OUTPUT_ROOT"
-echo "SETTINGS_EXISTS=$([ -f .claude/settings.dossier.json ] && echo true || echo false)"
-echo "USER_SETTINGS_EXISTS=$([ -f "$HOME/.claude/settings.dossier.json" ] && echo true || echo false)"
-echo "PACKAGE_EXISTS=$([ -d "$OUTPUT_ROOT/00-control" ] && echo true || echo false)"
+printf '%s\n' "OUTPUT_ROOT=$OUTPUT_ROOT"
+printf '%s\n' "SETTINGS_EXISTS=$([ -f .claude/settings.dossier.json ] && printf '%s\n' true || printf '%s\n' false)"
+printf '%s\n' "USER_SETTINGS_EXISTS=$([ -f "$HOME/.claude/settings.dossier.json" ] && printf '%s\n' true || printf '%s\n' false)"
+printf '%s\n' "PACKAGE_EXISTS=$([ -d "$OUTPUT_ROOT/00-control" ] && printf '%s\n' true || printf '%s\n' false)"
 if [ -d "$OUTPUT_ROOT" ]; then
-  echo "EXISTING_FILES=$(find "$OUTPUT_ROOT" -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')"
+  printf '%s\n' "EXISTING_FILES=$(find "$OUTPUT_ROOT" -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')"
 else
-  echo "EXISTING_FILES=0"
+  printf '%s\n' "EXISTING_FILES=0"
 fi
 
-echo "### Repo"
-echo "REPO=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo unknown)"
-echo "COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-echo "IS_GIT=$([ -d .git ] && echo true || echo false)"
+printf '%s\n' "### Repo"
+printf '%s\n' "REPO=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || printf '%s\n' unknown)"
+printf '%s\n' "COMMIT=$(git rev-parse --short HEAD 2>/dev/null || printf '%s\n' unknown)"
+printf '%s\n' "IS_GIT=$([ -d .git ] && printf '%s\n' true || printf '%s\n' false)"
 true
 ```
 
@@ -112,9 +112,9 @@ Append to `.gitignore`, idempotently:
 ```bash
 for IGNORE in '.dossier/' '.claude/settings.dossier.local.json' '.claude/*.lock'; do
   if [ -f .gitignore ]; then
-    grep -qxF "$IGNORE" .gitignore || echo "$IGNORE" >> .gitignore
+    grep -qxF "$IGNORE" .gitignore || printf '%s\n' "$IGNORE" >> .gitignore
   else
-    echo "$IGNORE" > .gitignore
+    printf '%s\n' "$IGNORE" > .gitignore
   fi
 done
 ```

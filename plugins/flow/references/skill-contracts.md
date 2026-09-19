@@ -57,8 +57,8 @@ Producers MUST validate inputs **before** invoking a skill. The pattern:
 
 ```bash
 PAYLOAD='{"selfReviewFindings": [...], "evidenceBundle": [...], "fileList": [...]}'
-if ! "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/validate-skill-input.sh" holdout-validation "$PAYLOAD" >&2; then
-  echo "ERROR: holdout-validation input failed validation; refusing to invoke skill" >&2
+if ! "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/validate-skill-input.sh" holdout-validation "$PAYLOAD" >&2; then
+  printf '%s\n' "ERROR: holdout-validation input failed validation; refusing to invoke skill" >&2
   exit 1
 fi
 # Now safe to invoke Skill(holdout-validation) with $PAYLOAD
@@ -86,7 +86,7 @@ Run all skill IO tests:
 
 ```bash
 for t in tests/skills/*/test.sh; do
-  echo "=== $t ==="
+  printf '%s\n' "=== $t ==="
   bash "$t" || exit 1
 done
 ```

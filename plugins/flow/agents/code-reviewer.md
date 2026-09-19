@@ -16,7 +16,7 @@ You are a code review specialist for the flow plugin. Analyze code changes for q
 ### Step 1: Get the Diff
 
 ```bash
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
 git diff "origin/$DEFAULT_BRANCH"..HEAD --stat
 git diff "origin/$DEFAULT_BRANCH"..HEAD
 ```
@@ -57,7 +57,7 @@ and keep `core.quotePath=off` — without it git quotes any non-ASCII path and t
 `"api/sch\303\251ma.graphql"`:
 
 ```bash
-FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 git -c core.quotePath=off diff --name-only <base>...HEAD | "$FLOW_ROOT/bin/flow-contract-files.sh"
 ```
 
