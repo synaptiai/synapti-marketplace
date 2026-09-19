@@ -394,3 +394,11 @@ PASS — 3 tasks reviewed.
 <!-- auto-log: 2026-09-20 00:41 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/block-force-push.test.sh -->
 
 <!-- auto-log: 2026-09-20 00:45 Write /tmp/msg239-review-fixes.txt -->
+
+<!-- auto-log: 2026-09-20 00:45 commit "fix(flow): refuse what the guard cannot verify, and say why" -->
+
+<!-- auto-log: 2026-09-20 00:45 Write /tmp/pr239-final-synapti.md -->
+
+<!-- auto-log: 2026-09-20 00:46 Write /tmp/review242-synapti.md -->
+
+<!-- auto-log: 2026-09-20 00:47 Write /tmp/resolution242-synapti.md -->
