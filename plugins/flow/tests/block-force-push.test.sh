@@ -131,3 +131,30 @@ _flow_test_begin "block-force-push — a malformed command is not a crash"
 assert_equal "0" "$(_fp_exit "")" "an empty command is allowed, not an error"
 assert_equal "0" "$(_fp_exit "git push 'unbalanced")" "an unbalanced quote does not crash the hook"
 _fp_blocks "git push --force 'unbalanced"
+
+# A crash is a silent allow, so every pathological input must still land on one
+# of the two documented exits. These assert the exit code is one of them; the
+# ones that carry a real force flag are asserted to block.
+_fp_exit_is_documented() {
+  local code
+  code=$(_fp_exit "$1")
+  case "$code" in
+    0|2) _flow_assert_pass "documented exit ($code): $(printf '%s' "$1" | head -c 40)" ;;
+    *)   _flow_assert_fail "undocumented exit $code on: $(printf '%s' "$1" | head -c 40)" ;;
+  esac
+}
+
+_flow_test_begin "block-force-push — a pathological command is not a crash"
+_fp_exit_is_documented "$(printf 'x%.0s' $(seq 1 20000))"
+_fp_exit_is_documented "echo '$(printf 'y%.0s' $(seq 1 20000))'"
+_fp_exit_is_documented 'echo "a'"'"'b"c'"'"'d"e'
+_fp_exit_is_documented 'git push \'
+_fp_exit_is_documented "cat <<EOF
+git push --force"
+_fp_exit_is_documented "cat <<"
+_fp_exit_is_documented 'git push `'
+_fp_exit_is_documented 'git push $('
+_fp_exit_is_documented 'echo ${a${b${c${d}}}}'
+_fp_exit_is_documented "$(printf '\n')"
+# A tab separates words, so a tab-separated push is still a push.
+_fp_blocks "$(printf 'git\tpush\t--force')"
