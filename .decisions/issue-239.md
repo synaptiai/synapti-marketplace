@@ -29,6 +29,16 @@ artifacts:
   - AC3
   - AC4
   - AC5
+- type: evidence-captured
+  captured_at: '2026-09-19T21:42:47Z'
+  evidence_id: evidence-ac1-5-guard-suite-turn3
+  goal_id: issue-239
+  proves:
+  - AC1
+  - AC2
+  - AC3
+  - AC4
+  - AC5
 ---
 
 # Issue 239 — the force-push guard reads the whole shell line
@@ -284,3 +294,13 @@ PASS — 3 tasks reviewed.
 <!-- auto-log: 2026-09-19 23:38 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-239-evidence.md -->
 
 <!-- auto-log: 2026-09-19 23:38 Write /tmp/hostile239-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 23:38 commit "fix(flow): the force-push guard blocks by default and allows only what it can account for" -->
+
+<!-- auto-log: 2026-09-19 23:39 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/block-force-push.sh -->
+
+<!-- auto-log: 2026-09-19 23:39 Write /tmp/missing239-synapti.py -->
+
+<!-- auto-log: 2026-09-19 23:39 commit "fix(flow): check every tool the guard's shell part runs, not just four" -->
+
+<!-- auto-log: 2026-09-19 23:42 Write /tmp/ev239b-synapti-sidecar.yaml -->

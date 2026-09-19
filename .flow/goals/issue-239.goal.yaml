@@ -11,127 +11,115 @@ scope:
   issue: 239
   journal: .decisions/issue-239.md
 objective:
-  outcome: The force-push guard decides on the arguments of the push invocation itself,
-    not on whatever else shares its shell line.
+  outcome: The force-push guard decides on the arguments of the push invocation itself, not on whatever
+    else shares its shell line.
   acceptance_criteria:
   - id: AC1
-    text: A push followed on the same line by an unrelated command carrying -f or
-      --force is allowed.
+    text: A push followed on the same line by an unrelated command carrying -f or --force is allowed.
     verification_command: bash plugins/flow/tests/run.sh block-force-push.test.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T192103Z-issue-239/evidence/evidence-ac1-5-guard-suite-turn2.evidence.yaml
-    last_evaluated_at: '2026-09-19T21:14:05Z'
+    evidence_ref: .flow/runs/2026-09-19T192103Z-issue-239/evidence/evidence-ac1-5-guard-suite-turn3.evidence.yaml
+    last_evaluated_at: '2026-09-19T23:40:00Z'
     last_result: pass
   - id: AC2
-    text: A push that itself carries -f or --force is still blocked, including after
-      a separator (cmd && git push --force), inside a compound command, and with the
-      flag written as its own word.
+    text: A push that itself carries -f or --force is still blocked, including after a separator (cmd
+      && git push --force), inside a compound command, and with the flag written as its own word.
     verification_command: bash plugins/flow/tests/run.sh block-force-push.test.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T192103Z-issue-239/evidence/evidence-ac1-5-guard-suite-turn2.evidence.yaml
-    last_evaluated_at: '2026-09-19T21:14:05Z'
+    evidence_ref: .flow/runs/2026-09-19T192103Z-issue-239/evidence/evidence-ac1-5-guard-suite-turn3.evidence.yaml
+    last_evaluated_at: '2026-09-19T23:40:00Z'
     last_result: pass
   - id: AC3
-    text: --force-with-lease alone stays allowed; --force-with-lease --force stays
-      blocked.
+    text: --force-with-lease alone stays allowed; --force-with-lease --force stays blocked.
     verification_command: bash plugins/flow/tests/run.sh block-force-push.test.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T192103Z-issue-239/evidence/evidence-ac1-5-guard-suite-turn2.evidence.yaml
-    last_evaluated_at: '2026-09-19T21:14:05Z'
+    evidence_ref: .flow/runs/2026-09-19T192103Z-issue-239/evidence/evidence-ac1-5-guard-suite-turn3.evidence.yaml
+    last_evaluated_at: '2026-09-19T23:40:00Z'
     last_result: pass
   - id: AC4
-    text: A command whose text mentions the flags but which invokes neither is allowed,
-      so writing documentation or an issue about them is not blocked.
+    text: A command whose text mentions the flags but which invokes neither is allowed, so writing documentation
+      or an issue about them is not blocked.
     verification_command: bash plugins/flow/tests/run.sh block-force-push.test.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T192103Z-issue-239/evidence/evidence-ac1-5-guard-suite-turn2.evidence.yaml
-    last_evaluated_at: '2026-09-19T21:14:05Z'
+    evidence_ref: .flow/runs/2026-09-19T192103Z-issue-239/evidence/evidence-ac1-5-guard-suite-turn3.evidence.yaml
+    last_evaluated_at: '2026-09-19T23:40:00Z'
     last_result: pass
   - id: AC5
-    text: A test covers each case above, and its coverage is demonstrated by reverting
-      the detection to the current pattern and confirming each case turns red.
+    text: A test covers each case above, and its coverage is demonstrated by reverting the detection to
+      the current pattern and confirming each case turns red.
     verification_command: bash plugins/flow/tests/run.sh block-force-push.test.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T192103Z-issue-239/evidence/evidence-ac1-5-guard-suite-turn2.evidence.yaml
-    last_evaluated_at: '2026-09-19T21:14:05Z'
+    evidence_ref: .flow/runs/2026-09-19T192103Z-issue-239/evidence/evidence-ac1-5-guard-suite-turn3.evidence.yaml
+    last_evaluated_at: '2026-09-19T23:40:00Z'
     last_result: pass
 specification:
   non_goals:
-  - Not a change of policy. --force and -f on a push stay blocked; --force-with-lease
-    alone stays allowed. Only which text the guard examines changes.
-  - Not a shell. Variable expansion, command substitution and aliases are not modelled,
-    so a force flag assembled at run time is invisible to the guard, as it was before.
-  - Not a change to any other hook. block-destructive.sh keeps its own rules. block-secrets.sh
-    shares this defect class and is untouched here; narrowing a secrets guard false-positive
-    policy is a security decision filed as issue 241.
-  - Not a relaxation. Every command the guard blocks today because a push really carries
-    a force flag stays blocked. Where a wrapper could hide a push, the guard errs
-    toward blocking.
+  - Not a change of policy. --force and -f on a push stay blocked; --force-with-lease alone stays allowed.
+    Only which text the guard examines changes.
+  - Not a shell. Variable expansion, command substitution and aliases are not modelled, so a force flag
+    assembled at run time is invisible to the guard, as it was before.
+  - Not a change to any other hook. block-destructive.sh keeps its own rules. block-secrets.sh shares
+    this defect class and is untouched here; narrowing a secrets guard false-positive policy is a security
+    decision filed as issue 241.
+  - Not a relaxation. Every command the guard blocks today because a push really carries a force flag
+    stays blocked. Where a wrapper could hide a push, the guard errs toward blocking.
   failure_modes:
-  - 'Timeouts: the scan walks the command a character at a time, so its cost grows
-    faster than the input. A command longer than MAX_CHARS (131072) is refused rather
-    than truncated. Measured, a 100 KB command takes about 0.7 s and one at the cap
-    about 1.0 s.'
-  - 'Partial failures: jq or awk missing fails closed. Both are required, because
-    the parse depends on awk as well as jq and a missing awk would exit 127, which
-    the harness reads as an allow.'
-  - 'Invalid input: a crash is not a block — the harness reads a non-2 exit as an
-    allow — so every parse path must be written so it cannot error. Input that ends
-    mid-construct (an unclosed quote, an unterminated heredoc) blocks, and a payload
-    jq cannot parse blocks rather than falling through on jq exit status. A 3000-input
-    fuzz sample produced only exits 0 and 2.'
+  - 'Timeouts: the scan walks the command a character at a time, so its cost grows faster than the input.
+    A command longer than MAX_CHARS (131072) is refused rather than truncated. Measured, a 100 KB command
+    takes about 0.7 s and one at the cap about 1.0 s.'
+  - 'Partial failures: jq or awk missing fails closed. Both are required, because the parse depends on
+    awk as well as jq and a missing awk would exit 127, which the harness reads as an allow.'
+  - 'Invalid input: a crash is not a block — the harness reads a non-2 exit as an allow — so every parse
+    path must be written so it cannot error. Input that ends mid-construct (an unclosed quote, an unterminated
+    heredoc) blocks, and a payload jq cannot parse blocks rather than falling through on jq exit status.
+    A 3000-input fuzz sample produced only exits 0 and 2.'
   - 'Missing context: the hook consults no git state and no repository.'
   interface_contracts:
-  - Hook protocol reads {"tool_input":{"command":"..."}} on stdin; exit 0 allows,
-    exit 2 blocks with the message on stderr.
-  - The block message keeps its three lines verbatim; the third names --force-with-lease
-    as the safe alternative.
-  - git push --force, git push -f, cmd && git push --force and a compound-command
-    push are all blocked.
-  - git push --force-with-lease is allowed; git push --force-with-lease --force is
-    blocked.
+  - Hook protocol reads {"tool_input":{"command":"..."}} on stdin; exit 0 allows, exit 2 blocks with the
+    message on stderr.
+  - The block message keeps its three lines verbatim; the third names --force-with-lease as the safe alternative.
+  - git push --force, git push -f, cmd && git push --force and a compound-command push are all blocked.
+  - git push --force-with-lease is allowed; git push --force-with-lease --force is blocked.
   - Any -f or --force belonging to another command on the same line is allowed.
-  - A push written through quoting, a launcher, a path, a shell -c payload or eval
-    is blocked; a path or a launcher does not stop it being a push.
+  - A push written through quoting, a launcher, a path, a shell -c payload or eval is blocked; a path
+    or a launcher does not stop it being a push.
   - A command longer than MAX_CHARS, or one that ends mid-construct, is blocked.
   risk_map:
   - area: splitting the line into commands
-    plausible_wrong_version: splits on separators without respecting quotes, so a
-      separator inside a quoted string yields a segment that looks like a push
-    discriminating_check: 'grep -q ''x ; git push --force'' file -> right: allowed;
-      wrong: blocked'
+    plausible_wrong_version: splits on separators without respecting quotes, so a separator inside a quoted
+      string yields a segment that looks like a push
+    discriminating_check: 'grep -q ''x ; git push --force'' file -> right: allowed; wrong: blocked'
   - area: where a push own arguments end
-    plausible_wrong_version: reads the rest of the segment, so a flag belonging to
-      a later command in the same segment counts
-    discriminating_check: 'git push origin main followed by a trailing comment carrying
-      -f -> right: allowed; wrong: blocked'
+    plausible_wrong_version: reads the rest of the segment, so a flag belonging to a later command in
+      the same segment counts
+    discriminating_check: 'git push origin main followed by a trailing comment carrying -f -> right: allowed;
+      wrong: blocked'
   - area: the -f word boundary
     plausible_wrong_version: matches -f inside a longer word such as -force or --force-with-lease
     discriminating_check: 'git push --force-with-lease -> right: allowed; wrong: blocked'
   - area: a heredoc body
-    plausible_wrong_version: scans the whole command string including text being written
-      to a file
-    discriminating_check: 'a command that writes git push --force into a file -> right:
-      allowed; wrong: blocked'
+    plausible_wrong_version: scans the whole command string including text being written to a file
+    discriminating_check: 'a command that writes git push --force into a file -> right: allowed; wrong:
+      blocked'
   - area: a dash-f that belongs to another command
     plausible_wrong_version: treats any -f after a push on the line as the push own
     discriminating_check: 'git status && pgrep -f x -> right: allowed; wrong: blocked'
   - area: advancing past a separator
-    plausible_wrong_version: consumes two characters for a one-character separator,
-      dropping the first letter of the next command word
+    plausible_wrong_version: consumes two characters for a one-character separator, dropping the first
+      letter of the next command word
     discriminating_check: 'true;git push --force -> right: blocked; wrong: allowed'
   - area: a launcher own options
-    plausible_wrong_version: leaves the launcher option word where the command word
-      belongs, or stops at it
-    discriminating_check: 'sudo -u root git push --force and timeout 10 git push --force
-      -> right: blocked; wrong: allowed'
+    plausible_wrong_version: leaves the launcher option word where the command word belongs, or stops
+      at it
+    discriminating_check: 'sudo -u root git push --force and timeout 10 git push --force -> right: blocked;
+      wrong: allowed'
   - area: finding the command word
     plausible_wrong_version: stops at a path-qualified or quoted command word
-    discriminating_check: '/usr/bin/git push --force and bash -c "git push --force"
-      -> right: blocked; wrong: allowed'
+    discriminating_check: '/usr/bin/git push --force and bash -c "git push --force" -> right: blocked;
+      wrong: allowed'
   - area: command position
-    plausible_wrong_version: grows tolerant wrappers by scanning for git anywhere,
-      so text reads as a command
+    plausible_wrong_version: grows tolerant wrappers by scanning for git anywhere, so text reads as a
+      command
     discriminating_check: 'echo git push --force -> right: allowed; wrong: blocked'
 constraints:
   tdd_required: true
@@ -156,7 +144,6 @@ lifecycle:
   status: achieved
   last_evaluation:
     result: pass
-    reason: All five acceptance criteria pass. 85 assertions 0 failures; six mutations
-      each turn cases red; independent verdict-judge PASS with no failures and no
-      human review required.
+    reason: All five acceptance criteria pass. 85 assertions 0 failures; six mutations each turn cases
+      red; independent verdict-judge PASS with no failures and no human review required.
     at: '2026-09-19T21:16:32Z'
