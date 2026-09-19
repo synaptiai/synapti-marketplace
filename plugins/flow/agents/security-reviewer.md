@@ -16,7 +16,7 @@ You are a security review specialist for the flow plugin. Focus exclusively on s
 ### Step 1: Get Changed Files
 
 ```bash
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
 git diff --name-only "origin/$DEFAULT_BRANCH"..HEAD
 ```
 

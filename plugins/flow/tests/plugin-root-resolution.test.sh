@@ -105,7 +105,11 @@ assert_equal "$H6/.claude/plugins/cache/synapti-marketplace/flow/3.1.0" "$ROOT" 
 # must be byte-identical to the canonical form in the reference doc. Catches a
 # future edit that hand-tweaks one site out of sync.
 _flow_test_begin "all embedded resolver sites match the canonical doc form (no drift)"
-UNIQ=$(grep -rhoE '\$\(__fr=.*;echo "\$__fr"\)' \
+# Anchored on the expression's stable ends, not on the print builtin inside it:
+# a pattern pinned to one builtin stops matching the moment the canonical form
+# changes, and an empty extraction is only caught because the count below is
+# asserted to be exactly one.
+UNIQ=$(grep -rhoE '\$[(]__fr=.*"\$__fr"[)]' \
   "$REPO_ROOT/plugins/flow/commands" "$REPO_ROOT/plugins/flow/agents" \
   "$REPO_ROOT/plugins/flow/references" 2>/dev/null | sort -u)
 NFORMS=$(printf '%s\n' "$UNIQ" | grep -c .)

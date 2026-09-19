@@ -20,7 +20,7 @@ Tier 3 operation — **always requires human confirmation**. This is non-negotia
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" llm-operator-principles merge-and-release run-state-management
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" llm-operator-principles merge-and-release run-state-management
 
 true
 ```
@@ -48,13 +48,13 @@ case "$ARG1" in
   *) PR_NUM="$ARG1" ;;
 esac
 
-echo "### PR Reference"
+printf '%s\n' "### PR Reference"
 if [ -z "$PR_NUM" ]; then
-  echo "STATE=blocked"
-  echo "ERROR=PR number required (all-digit). Usage: /flow:merge <pr-number>"
+  printf '%s\n' "STATE=blocked"
+  printf '%s\n' "ERROR=PR number required (all-digit). Usage: /flow:merge <pr-number>"
 else
-  echo "STATE=ok"
-  echo "PR_NUM=$PR_NUM"
+  printf '%s\n' "STATE=ok"
+  printf '%s\n' "PR_NUM=$PR_NUM"
 
   # Section: Repository — resolved once here, printed, and pinned onto every gh
   # call below. Without the pin each call resolves against whatever repository
@@ -66,31 +66,31 @@ else
   #
   # The cross-check parses `git remote get-url origin` independently rather than
   # reading `gh repo view` twice — two readings of one source can never disagree.
-  echo ""
-  echo "### Repository"
+  printf '%s\n' ""
+  printf '%s\n' "### Repository"
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null); GH_EXIT=$?
   GIT_REPO=$(git remote get-url origin 2>/dev/null | sed -E -e 's#\.git$##' -e 's#^.*[:/]([^/]+/[^/]+)$#\1#')
   if [ $GH_EXIT -ne 0 ] || [ -z "$REPO" ]; then
-    echo "REPO="
-    echo "REPO_STATE=unavailable"
-    echo "ERROR=could not resolve the repository (gh repo view failed); every field below would be unattributable"
+    printf '%s\n' "REPO="
+    printf '%s\n' "REPO_STATE=unavailable"
+    printf '%s\n' "ERROR=could not resolve the repository (gh repo view failed); every field below would be unattributable"
   else
-    echo "REPO=$REPO"
+    printf '%s\n' "REPO=$REPO"
     if [ -z "$GIT_REPO" ]; then
-      echo "REPO_CROSSCHECK=unavailable"
-      echo "REPO_CROSSCHECK_DETAIL=no origin remote to compare against"
+      printf '%s\n' "REPO_CROSSCHECK=unavailable"
+      printf '%s\n' "REPO_CROSSCHECK_DETAIL=no origin remote to compare against"
     elif [ "$(printf '%s' "$GIT_REPO" | tr 'A-Z' 'a-z')" = "$(printf '%s' "$REPO" | tr 'A-Z' 'a-z')" ]; then
-      echo "REPO_CROSSCHECK=ok"
+      printf '%s\n' "REPO_CROSSCHECK=ok"
     else
-      echo "REPO_CROSSCHECK=mismatch"
-      echo "REPO_CROSSCHECK_DETAIL=git origin is $GIT_REPO but gh resolved $REPO"
-      echo "REPO_STATE=blocked"
+      printf '%s\n' "REPO_CROSSCHECK=mismatch"
+      printf '%s\n' "REPO_CROSSCHECK_DETAIL=git origin is $GIT_REPO but gh resolved $REPO"
+      printf '%s\n' "REPO_STATE=blocked"
     fi
   fi
 
   # Section: PR Status
-  echo ""
-  echo "### PR Status"
+  printf '%s\n' ""
+  printf '%s\n' "### PR Status"
   gh pr view "$PR_NUM" --repo "$REPO" --json reviewDecision,statusCheckRollup,mergeable,mergeStateStatus,title,headRefName --jq '
     [.statusCheckRollup[]? | select(.__typename == "CheckRun")] as $checks |
     (if (.reviewDecision // "") == "" then "(none)" else .reviewDecision end) as $review |
@@ -98,44 +98,44 @@ else
   ' 2>/dev/null
 
   # Section: Reviews — one labeled line per review
-  echo ""
-  echo "### Reviews"
+  printf '%s\n' ""
+  printf '%s\n' "### Reviews"
   # Capture gh exit separately; gh failure must surface as STATE=unavailable
   # rather than collapse to STATE=empty (the merge gate must close, not open,
   # when reviews cannot be read).
   REVIEWS_JSON=$(gh pr view "$PR_NUM" --repo "$REPO" --json reviews --jq '.reviews' 2>/dev/null); GH_EXIT=$?
   if [ $GH_EXIT -ne 0 ]; then
-    echo "REVIEW_COUNT=0"
-    echo "STATE=unavailable"
+    printf '%s\n' "REVIEW_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
   else
-    REVIEW_COUNT=$(echo "$REVIEWS_JSON" | jq 'length' 2>/dev/null)
+    REVIEW_COUNT=$(printf '%s\n' "$REVIEWS_JSON" | jq 'length' 2>/dev/null)
     [ -z "$REVIEW_COUNT" ] && REVIEW_COUNT=0
-    echo "REVIEW_COUNT=$REVIEW_COUNT"
+    printf '%s\n' "REVIEW_COUNT=$REVIEW_COUNT"
     if [ "$REVIEW_COUNT" = "0" ]; then
-      echo "STATE=empty"
+      printf '%s\n' "STATE=empty"
     else
-      echo "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.author.login) at=\(.submittedAt)"' 2>/dev/null
+      printf '%s\n' "$REVIEWS_JSON" | jq -r '.[] | "REVIEW=state=\(.state) author=@\(.author.login) at=\(.submittedAt)"' 2>/dev/null
     fi
   fi
 
   # Section: Unresolved Conversations (GraphQL — reviewThreads not in REST)
-  echo ""
-  echo "### Unresolved Conversations"
-  OWNER=$(echo "$REPO" | cut -d/ -f1)
-  NAME=$(echo "$REPO" | cut -d/ -f2)
+  printf '%s\n' ""
+  printf '%s\n' "### Unresolved Conversations"
+  OWNER=$(printf '%s\n' "$REPO" | cut -d/ -f1)
+  NAME=$(printf '%s\n' "$REPO" | cut -d/ -f2)
   UNRESOLVED_COUNT=$(gh api graphql -f query="query { repository(owner: \"$OWNER\", name: \"$NAME\") { pullRequest(number: $PR_NUM) { reviewThreads(first: 100) { nodes { isResolved } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' 2>/dev/null); GH_EXIT=$?
   # Closed-vocab contract: emit STATE=unavailable as a separate sentinel rather
   # than encoding unavailability as the value of UNRESOLVED_COUNT.
   if [ $GH_EXIT -ne 0 ] || [ -z "$UNRESOLVED_COUNT" ]; then
-    echo "UNRESOLVED_COUNT=0"
-    echo "STATE=unavailable"
+    printf '%s\n' "UNRESOLVED_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
   else
-    echo "UNRESOLVED_COUNT=$UNRESOLVED_COUNT"
+    printf '%s\n' "UNRESOLVED_COUNT=$UNRESOLVED_COUNT"
   fi
 
   # Section: Stale Approval Check
-  echo ""
-  echo "### Stale Approval Check"
+  printf '%s\n' ""
+  printf '%s\n' "### Stale Approval Check"
   gh pr view "$PR_NUM" --repo "$REPO" --json reviews,commits --jq '
     ([.reviews[] | select(.state == "APPROVED")] | sort_by(.submittedAt) | last | .submittedAt // "none") as $la |
     (.commits | last | .committedDate) as $lc |
@@ -143,8 +143,8 @@ else
   ' 2>/dev/null
 
   # Section: Finding-ledger seed (full gate runs in next ! block)
-  echo ""
-  echo "### Finding-Ledger Seed"
+  printf '%s\n' ""
+  printf '%s\n' "### Finding-Ledger Seed"
   # DIAGNOSTIC PREVIEW ONLY — the authoritative gate runs in the next ! block and
   # scans both streams with trust filtering. This seed exists so the assessment can
   # report what markers are reachable before the gate runs.
@@ -169,11 +169,11 @@ else
   # markers cannot be read.
   SEED_COMMENTS=$(gh api "repos/$REPO/issues/$PR_NUM/comments" --jq '[.[] | select(.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ |<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")) | {id, body, surface: "issue-comments"}]' 2>/dev/null); GH_EXIT_C=$?
   SEED_REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUM/reviews" --jq '[.[] | select(.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ |<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")) | {id, body, surface: "reviews"}]' 2>/dev/null); GH_EXIT_R=$?
-  echo "SEED_SCANNED=reviews,issue-comments"
+  printf '%s\n' "SEED_SCANNED=reviews,issue-comments"
   if [ $GH_EXIT_C -ne 0 ] || [ $GH_EXIT_R -ne 0 ]; then
-    echo "SEED_MARKER_COUNT=0"
-    echo "STATE=unavailable"
-    echo "SEED_UNAVAILABLE=comments_exit=$GH_EXIT_C reviews_exit=$GH_EXIT_R"
+    printf '%s\n' "SEED_MARKER_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "SEED_UNAVAILABLE=comments_exit=$GH_EXIT_C reviews_exit=$GH_EXIT_R"
   else
     # Union both streams into one array for counting + per-marker emission. Capture jq
     # exit so a malformed-JSON operand fails CLOSED (STATE=unavailable) rather than open:
@@ -183,28 +183,28 @@ else
     # operand (the normal "one stream has no markers" case) without erroring.
     SEED_JSON=$(printf '%s\n%s\n' "$SEED_COMMENTS" "$SEED_REVIEWS" | jq -s 'add // []' 2>/dev/null); SEED_JQ_EXIT=$?
     if [ $SEED_JQ_EXIT -ne 0 ]; then
-      echo "SEED_MARKER_COUNT=0"
-      echo "STATE=unavailable"
-      echo "SEED_UNAVAILABLE=union_jq_exit=$SEED_JQ_EXIT"
+      printf '%s\n' "SEED_MARKER_COUNT=0"
+      printf '%s\n' "STATE=unavailable"
+      printf '%s\n' "SEED_UNAVAILABLE=union_jq_exit=$SEED_JQ_EXIT"
     else
       # Capture the count jq exit too, for the same fail-closed reason — a length()
       # failure must not collapse to a false STATE=empty.
-      SEED_COUNT=$(echo "$SEED_JSON" | jq 'length' 2>/dev/null); SEED_COUNT_EXIT=$?
+      SEED_COUNT=$(printf '%s\n' "$SEED_JSON" | jq 'length' 2>/dev/null); SEED_COUNT_EXIT=$?
       if [ $SEED_COUNT_EXIT -ne 0 ]; then
-        echo "SEED_MARKER_COUNT=0"
-        echo "STATE=unavailable"
-        echo "SEED_UNAVAILABLE=count_jq_exit=$SEED_COUNT_EXIT"
+        printf '%s\n' "SEED_MARKER_COUNT=0"
+        printf '%s\n' "STATE=unavailable"
+        printf '%s\n' "SEED_UNAVAILABLE=count_jq_exit=$SEED_COUNT_EXIT"
       else
         [ -z "$SEED_COUNT" ] && SEED_COUNT=0
-        echo "SEED_MARKER_COUNT=$SEED_COUNT"
+        printf '%s\n' "SEED_MARKER_COUNT=$SEED_COUNT"
         if [ "$SEED_COUNT" = "0" ]; then
           # Genuinely absent on both surfaces (no NAME:<digits> marker reachable).
-          echo "STATE=empty"
+          printf '%s\n' "STATE=empty"
         else
           # The select guarantees every row has FLOW_*_CYCLE:<digits>, so scan always
           # matches; `last` takes the real marker (typically the end-of-body HTML comment)
           # when a body also carries prose references earlier.
-          echo "$SEED_JSON" | jq -r '.[] |
+          printf '%s\n' "$SEED_JSON" | jq -r '.[] |
             ([.body | scan("FLOW_(RESOLUTION|REVIEW)_CYCLE:([0-9]+)")] | last) as $last |
             "SEED=id=\(.id) surface=\(.surface) kind=\($last[0]) cycle=\($last[1])"
           ' 2>/dev/null
@@ -233,16 +233,16 @@ case "$ARG1" in
   *) PR_NUM="$ARG1" ;;
 esac
 
-echo "### Finding-Ledger Gate"
+printf '%s\n' "### Finding-Ledger Gate"
 if [ -z "$PR_NUM" ]; then
-  echo "LEDGER_GATE_STATE=blocked"
-  echo "FINDING_LEDGER_BLOCK: PR number required (all-digit)"
+  printf '%s\n' "LEDGER_GATE_STATE=blocked"
+  printf '%s\n' "FINDING_LEDGER_BLOCK: PR number required (all-digit)"
 else
 
 # Tracks whether any FINDING_LEDGER_BLOCK has been emitted. Final
 # LEDGER_GATE_STATE is decided after all gate checks have run.
 LEDGER_GATE_BLOCKED=0
-emit_block() { LEDGER_GATE_BLOCKED=1; echo "FINDING_LEDGER_BLOCK: $1"; }
+emit_block() { LEDGER_GATE_BLOCKED=1; printf '%s\n' "FINDING_LEDGER_BLOCK: $1"; }
 
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 
@@ -261,7 +261,7 @@ TRUST_LIST="$TRUST_DEFAULT"
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
 USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
-PLUGIN_SETTINGS="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/settings.json"
+PLUGIN_SETTINGS="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/settings.json"
 for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
   [ -f "$SETTINGS_PATH" ] || continue
   # Capture jq stderr/exit so a parse error in $HOME does not silently mask
@@ -271,11 +271,11 @@ for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PL
   JQ_EXIT=$?
   if [ $JQ_EXIT -ne 0 ]; then
     JQ_ERR=$(printf '%s' "$CONFIGURED" | tr '\n' ' ' | cut -c1-200)
-    echo "WARN: failed to parse $SETTINGS_PATH (jq exit=$JQ_EXIT, error: $JQ_ERR); skipping this source" >&2
+    printf '%s\n' "WARN: failed to parse $SETTINGS_PATH (jq exit=$JQ_EXIT, error: $JQ_ERR); skipping this source" >&2
     continue
   fi
   [ -z "$CONFIGURED" ] && continue
-  if echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
+  if printf '%s\n' "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
     # Warn (do not block) when an element falls outside the known GitHub
     # `author_association` vocabulary. A typo such as `"owner"` (lowercase)
     # or `"MAINTAINER"` (not a real value) passes the type check above but
@@ -283,9 +283,9 @@ for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PL
     # entry. Use the same WARN-and-continue pattern as the HIGH_RISK check
     # below — the gate already fails closed via the "untrusted-only"
     # branch when nothing matches.
-    UNKNOWN_VALUES=$(echo "$CONFIGURED" | jq -r '.[] | select(. != "OWNER" and . != "MEMBER" and . != "COLLABORATOR" and . != "CONTRIBUTOR" and . != "FIRST_TIME_CONTRIBUTOR" and . != "FIRST_TIMER" and . != "MANNEQUIN" and . != "NONE")' 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+    UNKNOWN_VALUES=$(printf '%s\n' "$CONFIGURED" | jq -r '.[] | select(. != "OWNER" and . != "MEMBER" and . != "COLLABORATOR" and . != "CONTRIBUTOR" and . != "FIRST_TIME_CONTRIBUTOR" and . != "FIRST_TIMER" and . != "MANNEQUIN" and . != "NONE")' 2>/dev/null | tr '\n' ',' | sed 's/,$//')
     if [ -n "$UNKNOWN_VALUES" ]; then
-      echo "LEDGER_WARN: markerTrust in $SETTINGS_PATH contains values [$UNKNOWN_VALUES] not in the GitHub author_association vocabulary (OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, MANNEQUIN, NONE). These elements will match no authors — check for typos." >&2
+      printf '%s\n' "LEDGER_WARN: markerTrust in $SETTINGS_PATH contains values [$UNKNOWN_VALUES] not in the GitHub author_association vocabulary (OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, MANNEQUIN, NONE). These elements will match no authors — check for typos." >&2
     fi
     TRUST_LIST="$CONFIGURED"
     TRUST_SOURCE="$SETTINGS_PATH"
@@ -297,7 +297,7 @@ for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PL
     # one tier should not block merge when a lower tier resolves correctly.
     # If no tier resolves, TRUST_LIST stays at TRUST_DEFAULT (initialized
     # above), which is the safe minimum trust list.
-    echo "LEDGER_WARN: invalid markerTrust configuration in $SETTINGS_PATH (must be non-empty JSON array of strings); falling through" >&2
+    printf '%s\n' "LEDGER_WARN: invalid markerTrust configuration in $SETTINGS_PATH (must be non-empty JSON array of strings); falling through" >&2
   fi
 done
 
@@ -307,9 +307,9 @@ done
 # primary defense; this WARN raises the signal at every merge attempt so a
 # maintainer cannot accidentally miss it during a quick diff scan.
 if [ -n "${TRUST_SOURCE:-}" ]; then
-  HIGH_RISK=$(echo "$TRUST_LIST" | jq -r '.[] | select(. == "NONE" or . == "FIRST_TIMER" or . == "FIRST_TIME_CONTRIBUTOR" or . == "MANNEQUIN")' 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+  HIGH_RISK=$(printf '%s\n' "$TRUST_LIST" | jq -r '.[] | select(. == "NONE" or . == "FIRST_TIMER" or . == "FIRST_TIME_CONTRIBUTOR" or . == "MANNEQUIN")' 2>/dev/null | tr '\n' ',' | sed 's/,$//')
   if [ -n "$HIGH_RISK" ]; then
-    echo "LEDGER_WARN: trust list (from $TRUST_SOURCE) includes high-risk values [$HIGH_RISK]. Forked-PR contributors with these author_associations could forge FLOW_RESOLUTION_CYCLE markers. Verify this is intentional before merging." >&2
+    printf '%s\n' "LEDGER_WARN: trust list (from $TRUST_SOURCE) includes high-risk values [$HIGH_RISK]. Forked-PR contributors with these author_associations could forge FLOW_RESOLUTION_CYCLE markers. Verify this is intentional before merging." >&2
   fi
 fi
 # MARKERTRUST_GATE_END
@@ -334,7 +334,7 @@ RES_UNTRUSTED=$(printf '%s' "$GH_RES_RAW" | jq -s -r --argjson trust "$TRUST_LIS
 
 # Extract ESCALATED array contents (portable POSIX grep+sed; BSD grep has no -P).
 # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
-ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
+ESCALATED=$(printf '%s\n' "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
 
 # Extract the latest FLOW_REVIEW_CYCLE — emitted in PR review bodies, not issue comments
 GH_REV_RAW=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null)
@@ -370,9 +370,9 @@ fi
 # Derive the fallback from $TRUST_DEFAULT rather than hard-coding the value:
 # if $TRUST_DEFAULT changes (e.g., adding CONTRIBUTOR), the display string
 # stays in lockstep instead of silently lying.
-TRUST_LIST_DISPLAY=$(echo "$TRUST_LIST" | jq -r 'join(",")' 2>/dev/null)
+TRUST_LIST_DISPLAY=$(printf '%s\n' "$TRUST_LIST" | jq -r 'join(",")' 2>/dev/null)
 if [ -z "$TRUST_LIST_DISPLAY" ]; then
-  TRUST_LIST_DISPLAY=$(echo "$TRUST_DEFAULT" | jq -r 'join(",")' 2>/dev/null)
+  TRUST_LIST_DISPLAY=$(printf '%s\n' "$TRUST_DEFAULT" | jq -r 'join(",")' 2>/dev/null)
 fi
 if [ -z "$RESOLUTION_BODY" ] && [ "${RES_UNTRUSTED:-0}" != "0" ]; then
   emit_block "$RES_UNTRUSTED FLOW_RESOLUTION_CYCLE marker(s) found but none from trusted authors ($TRUST_LIST_DISPLAY)"
@@ -382,10 +382,10 @@ if [ -z "$REVIEW_BODY" ] && [ "${REV_UNTRUSTED:-0}" != "0" ]; then
 fi
 
 # Extract all finding IDs from FINDINGS array (comma-separated, pipe-delimited fields, first field is the ID)
-REVIEW_FINDINGS=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//' | tr ',' '\n' | sed 's/|.*//' | tr -d ' ' | sort)
+REVIEW_FINDINGS=$(printf '%s\n' "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//' | tr ',' '\n' | sed 's/|.*//' | tr -d ' ' | sort)
 
 # Extract RESOLVED finding IDs from resolution comment
-RESOLVED_FINDINGS=$(echo "$RESOLUTION_BODY" | grep -o 'RESOLVED:\[[^]]*\]' | sed 's/^RESOLVED:\[//;s/\]$//' | tr ',' '\n' | tr -d ' ' | sort)
+RESOLVED_FINDINGS=$(printf '%s\n' "$RESOLUTION_BODY" | grep -o 'RESOLVED:\[[^]]*\]' | sed 's/^RESOLVED:\[//;s/\]$//' | tr ',' '\n' | tr -d ' ' | sort)
 
 # Check 1: ESCALATED must be empty
 if [ -n "$ESCALATED" ]; then
@@ -393,7 +393,7 @@ if [ -n "$ESCALATED" ]; then
 fi
 
 # Check 2: Every finding in REVIEW_FINDINGS must have a matching RESOLVED entry
-UNRESOLVED=$(comm -23 <(echo "$REVIEW_FINDINGS") <(echo "$RESOLVED_FINDINGS") | grep -v '^$' || true)
+UNRESOLVED=$(comm -23 <(printf '%s\n' "$REVIEW_FINDINGS") <(printf '%s\n' "$RESOLVED_FINDINGS") | grep -v '^$' || true)
 if [ -n "$UNRESOLVED" ]; then
   emit_block "Unresolved findings: $UNRESOLVED"
 fi
@@ -403,9 +403,9 @@ fi
 #   blocked → halt, render the "BLOCKED: Unresolved Findings" template
 #             (one FINDING_LEDGER_BLOCK line per reason was emitted above)
 if [ $LEDGER_GATE_BLOCKED -eq 1 ]; then
-  echo "LEDGER_GATE_STATE=blocked"
+  printf '%s\n' "LEDGER_GATE_STATE=blocked"
 else
-  echo "LEDGER_GATE_STATE=ok"
+  printf '%s\n' "LEDGER_GATE_STATE=ok"
 fi
 
 fi  # /if [ -z "$PR_NUM" ]
@@ -418,7 +418,7 @@ true
 Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**: when an active goal exists for this branch it must have reached `lifecycle.status == achieved` to merge; when **no** active goal exists the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off` — preserving the v2 `requireGoalForStart: false` UX (no merge gating).
 
 ```!
-HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 # Migration-aware: goalCreation wins; else map legacy requireGoalForStart
 # (true->always, false->off); else null so the cascade default (auto) applies.
 GOAL_MODE=$("$HELPER" --default "auto" '.flow.goals.goalCreation // (if .flow.goals.requireGoalForStart == true then "always" elif .flow.goals.requireGoalForStart == false then "off" else null end)' 2>/dev/null)
@@ -428,14 +428,14 @@ ENABLED=$("$HELPER" --default "true" '.flow.goals.enabled' 2>/dev/null)
 # enabled-by-default intent rather than fail-open to a silently disabled gate.
 [ -z "$ENABLED" ] && ENABLED="true"
 
-echo "### FlowGoal Gate"
+printf '%s\n' "### FlowGoal Gate"
 if [ "$ENABLED" != "true" ] || [ "$GOAL_MODE" = "off" ]; then
-  echo "FLOW_GOAL_GATE_STATE=disabled"
+  printf '%s\n' "FLOW_GOAL_GATE_STATE=disabled"
 else
-  ACTIVE_GOAL_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-active-goal.sh"
+  ACTIVE_GOAL_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-active-goal.sh"
   if [ ! -x "$ACTIVE_GOAL_HELPER" ]; then
-    echo "FLOW_GOAL_GATE_STATE=blocked"
-    echo "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh missing or non-executable"
+    printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
+    printf '%s\n' "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh missing or non-executable"
   else
     # --allow-terminal: surface a goal that already reached `achieved` so the
     # success branch below is reachable (without it the helper is active-only,
@@ -449,13 +449,13 @@ else
         printf '%s\n' "FLOW_GOAL_ID=$GOAL_ID"
         printf '%s\n' "FLOW_GOAL_LIFECYCLE=$GOAL_STATUS"
         if [ "$GOAL_STATUS" = "achieved" ]; then
-          echo "FLOW_GOAL_GATE_STATE=ok"
+          printf '%s\n' "FLOW_GOAL_GATE_STATE=ok"
         else
           # Active goal exists but is not achieved — fail closed.
           # The "no incomplete shipments" hard boundary applies: merging a
           # PR whose own contract reports incomplete is exactly what the
           # "no incomplete shipments" boundary is designed to prevent.
-          echo "FLOW_GOAL_GATE_STATE=blocked"
+          printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
           printf '%s\n' "FLOW_GOAL_BLOCK_REASON=FlowGoal $GOAL_ID lifecycle is '$GOAL_STATUS' — run /flow:goal evaluate $GOAL_ID to advance"
         fi
         ;;
@@ -465,16 +465,16 @@ else
         # own review state remains the durable record. This intentionally
         # replaces the prior fail-closed so default installs (goalCreation:auto)
         # do not start blocking goal-less merges.
-        echo "FLOW_GOAL_GATE_STATE=ok"
-        echo "FLOW_GOAL_GATE_NOTE=no active FlowGoal for this branch — gate not applicable"
+        printf '%s\n' "FLOW_GOAL_GATE_STATE=ok"
+        printf '%s\n' "FLOW_GOAL_GATE_NOTE=no active FlowGoal for this branch — gate not applicable"
         ;;
       3)
         # >1 active goal on the current branch (after branch-scoping).
-        echo "FLOW_GOAL_GATE_STATE=blocked"
-        echo "FLOW_GOAL_BLOCK_REASON=degenerate state — multiple active FlowGoals on the current branch"
+        printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
+        printf '%s\n' "FLOW_GOAL_BLOCK_REASON=degenerate state — multiple active FlowGoals on the current branch"
         ;;
       *)
-        echo "FLOW_GOAL_GATE_STATE=blocked"
+        printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
         printf '%s\n' "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh exited $GOAL_EXIT"
         ;;
     esac
@@ -518,10 +518,10 @@ Do NOT proceed to Phase 2. Exit here.
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
-CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 if [ ! -x "$CASCADE" ]; then
-  echo "FLOW_RUN_STATE=blocked"
-  echo "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
+  printf '%s\n' "FLOW_RUN_STATE=blocked"
+  printf '%s\n' "FLOW_RUN_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE"
   true; exit 0
 fi
 RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
@@ -532,15 +532,15 @@ case "$ARG1" in
   *) PR_NUM="$ARG1" ;;
 esac
 if [ "$RUNTIME_ENABLED" != "true" ]; then
-  echo "FLOW_RUN_STATE=skip"
-  echo "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+  printf '%s\n' "FLOW_RUN_STATE=skip"
+  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
 else
   SLUG="${PR_NUM:-nonum}"
   RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-merge-pr-${SLUG}"
-  echo "FLOW_RUN_STATE=create"
-  echo "RUN_ID=$RUN_ID"
-  echo "WORKFLOW=merge-pr"
-  echo "INITIAL_PHASE=preflight"
+  printf '%s\n' "FLOW_RUN_STATE=create"
+  printf '%s\n' "RUN_ID=$RUN_ID"
+  printf '%s\n' "WORKFLOW=merge-pr"
+  printf '%s\n' "INITIAL_PHASE=preflight"
 fi
 # FLOW_RUN_BLOCK_END
 true
@@ -556,8 +556,8 @@ The strategy and branch deletion the confirmation names, and the merge in Phase 
 
 ```!
 # MERGE_SETTINGS_BLOCK_BEGIN
-echo "### Merge Settings"
-CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+printf '%s\n' "### Merge Settings"
+CASCADE="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 if [ ! -x "$CASCADE" ]; then
   printf '%s\n' "MERGE_SETTINGS_STATE=blocked"
   printf '%s\n' "ERROR=cascade-resolve.sh missing or non-executable at $CASCADE; the merge settings cannot be read"
@@ -622,18 +622,18 @@ case "$MERGE_STRATEGY" in
   *)
     # Safe to quote because cascade-resolve.sh refuses a value carrying a
     # control character by default, so this can only ever be a single line.
-    echo "MERGE_SETTINGS_STATE=blocked"
+    printf '%s\n' "MERGE_SETTINGS_STATE=blocked"
     printf '%s\n' "ERROR=merge.strategy is '$MERGE_STRATEGY'; it must be squash, merge or rebase"
     true; exit 0 ;;
 esac
 case "$DELETE_BRANCH" in
   true|false) ;;
   *)
-    echo "MERGE_SETTINGS_STATE=blocked"
+    printf '%s\n' "MERGE_SETTINGS_STATE=blocked"
     printf '%s\n' "ERROR=merge.deleteBranch is '$DELETE_BRANCH'; it must be true or false"
     true; exit 0 ;;
 esac
-echo "MERGE_SETTINGS_STATE=ok"
+printf '%s\n' "MERGE_SETTINGS_STATE=ok"
 printf '%s\n' "MERGE_STRATEGY=$MERGE_STRATEGY"
 printf '%s\n' "DELETE_BRANCH=$DELETE_BRANCH"
 # MERGE_SETTINGS_BLOCK_END
@@ -767,22 +767,22 @@ gh pr merge {PR_NUMBER} --repo {OWNER/NAME} --{STRATEGY} {DELETE_BRANCH}
 # resolution of gh without complaining — an unset REPO reads as pinned and behaves
 # as unpinned, which is the failure this pinning exists to prevent.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+[ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 # PR_NUM does not survive either. Without it `gh pr view ""` resolves the
 # current branch and reports on a different pull request, or on none.
 _RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
 ARG1="${_RAW%% *}"
 case "$ARG1" in
-  ''|*[!0-9]*) echo "ERROR: PR number required (all-digit)" >&2; exit 1 ;;
+  ''|*[!0-9]*) printf '%s\n' "ERROR: PR number required (all-digit)" >&2; exit 1 ;;
   *) PR_NUM="$ARG1" ;;
 esac
 # Verify merge. Switching branches after a merge that did not happen would
 # leave the work checked out nowhere useful and report success anyway.
 STATE=$(gh pr view "$PR_NUM" --repo "$REPO" --json state --jq '.state' 2>/dev/null)
-[ "$STATE" = "MERGED" ] || { echo "ERROR: PR #$PR_NUM in $REPO is '${STATE:-unreadable}', not MERGED; stopping before any checkout" >&2; exit 1; }
+[ "$STATE" = "MERGED" ] || { printf '%s\n' "ERROR: PR #$PR_NUM in $REPO is '${STATE:-unreadable}', not MERGED; stopping before any checkout" >&2; exit 1; }
 
 # Switch to default branch
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
 git checkout $DEFAULT_BRANCH
 git pull origin $DEFAULT_BRANCH
 ```
@@ -798,20 +798,20 @@ git pull origin $DEFAULT_BRANCH
 # resolution of gh without complaining — an unset REPO reads as pinned and behaves
 # as unpinned, which is the failure this pinning exists to prevent.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-[ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+[ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
 # PR_NUM does not survive from earlier blocks either.
 _RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
 ARG1="${_RAW%% *}"
 case "$ARG1" in
-  ''|*[!0-9]*) echo "ERROR: PR number required (all-digit)" >&2; exit 1 ;;
+  ''|*[!0-9]*) printf '%s\n' "ERROR: PR number required (all-digit)" >&2; exit 1 ;;
   *) PR_NUM="$ARG1" ;;
 esac
 # The issue GitHub lists the pull request as closing (the lowest when there
 # are several), never the first #N in the body.
-FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
-ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$REPO") || { echo "ERROR: cannot read the issues pull request $PR_NUM closes; refusing to guess its linked issue" >&2; exit 1; }
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUM" --repo "$REPO") || { printf '%s\n' "ERROR: cannot read the issues pull request $PR_NUM closes; refusing to guess its linked issue" >&2; exit 1; }
 if [ -z "$ISSUE" ]; then
-  echo "ESCALATION_RECORD=skipped (GitHub lists no issue this pull request closes, so there is no journal to record it in)"
+  printf '%s\n' "ESCALATION_RECORD=skipped (GitHub lists no issue this pull request closes, so there is no journal to record it in)"
 else
   # Repeat once per escalation that closed during this merge run. Set
   # ESCALATION_FIELD to the one canonical field that gated it and OUTCOME to a
@@ -820,10 +820,10 @@ else
   # cannot be recorded as the field name.
   case "${ESCALATION_FIELD:-}" in
     situation|tried|options|recommendation|blocking|risk) ;;
-    *) echo "ERROR: ESCALATION_FIELD must be one of situation, tried, options, recommendation, blocking, risk; got '${ESCALATION_FIELD:-}'" >&2; exit 1 ;;
+    *) printf '%s\n' "ERROR: ESCALATION_FIELD must be one of situation, tried, options, recommendation, blocking, risk; got '${ESCALATION_FIELD:-}'" >&2; exit 1 ;;
   esac
   case "${OUTCOME:-}" in
-    ''|*'{'*|*'}'*) echo "ERROR: OUTCOME must be a one-line summary of the user's answer, got '${OUTCOME:-}'" >&2; exit 1 ;;
+    ''|*'{'*|*'}'*) printf '%s\n' "ERROR: OUTCOME must be a one-line summary of the user's answer, got '${OUTCOME:-}'" >&2; exit 1 ;;
   esac
   "$FLOW_ROOT/bin/journal-record.sh" \
     --issue "$ISSUE" \

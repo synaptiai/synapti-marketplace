@@ -17,49 +17,49 @@ _None — explanatory Q&A over journal and diff context. No skill invocations._
 # Output: `###`-headed sections + KEY=value per
 # `references/command-output-format.md`.
 
-echo "### Branch & Issue"
+printf '%s\n' "### Branch & Issue"
 BRANCH=$(git branch --show-current 2>/dev/null)
-ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-echo "BRANCH=$BRANCH"
+ISSUE_NUM=$(printf '%s\n' "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+printf '%s\n' "BRANCH=$BRANCH"
 # Quote parenthesized fallback per command-output-format.md rule 2.
-echo "ISSUE_NUM=${ISSUE_NUM:-\"(none)\"}"
+printf '%s\n' "ISSUE_NUM=${ISSUE_NUM:-\"(none)\"}"
 
-echo ""
-echo "### Decision Journal"
-HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+printf '%s\n' ""
+printf '%s\n' "### Decision Journal"
+HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
 [ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
   printf '%s\n' "JOURNAL_FILE=$JOURNAL_DIR/issue-$ISSUE_NUM.md"
   printf '%s\n' "JOURNAL_BYTES=$(wc -c < "$JOURNAL_DIR/issue-$ISSUE_NUM.md" | tr -d ' ')"
-  echo ""
-  echo "#### Journal contents"
+  printf '%s\n' ""
+  printf '%s\n' "#### Journal contents"
   cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
 else
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 fi
 
-echo ""
-echo "### Issue Details"
+printf '%s\n' ""
+printf '%s\n' "### Issue Details"
 if [ -n "$ISSUE_NUM" ]; then
   gh issue view "$ISSUE_NUM" --json title,body --jq '"TITLE=\"\(.title)\"\nBODY_LENGTH=\(.body | length)"' 2>/dev/null
-  echo ""
-  echo "#### Issue body"
+  printf '%s\n' ""
+  printf '%s\n' "#### Issue body"
   gh issue view "$ISSUE_NUM" --json body --jq '.body' 2>/dev/null
 else
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 fi
 
-echo ""
-echo "### Branch Diff Summary"
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
+printf '%s\n' ""
+printf '%s\n' "### Branch Diff Summary"
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
+printf '%s\n' "DEFAULT_BRANCH=$DEFAULT_BRANCH"
 # Capture so an empty stat (e.g., on the default branch) emits STATE=empty
 # rather than a silent heading; prefix raw stat lines with DIFF_STAT=.
 DIFF_STAT=$(git diff --stat "$DEFAULT_BRANCH"...HEAD 2>/dev/null)
 if [ -z "$DIFF_STAT" ]; then
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 else
   printf '%s\n' "$DIFF_STAT" | sed 's/^/DIFF_STAT=/'
 fi

@@ -119,7 +119,7 @@ REVIEW_BODY=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" \
 # Avoids `grep -P` / `\K` which BSD grep does not support.
 # Empty input + grep no-match still produces empty stdout (sed exits 0 on empty),
 # so no `|| echo ""` fallback is needed here.
-FINDINGS_RAW=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//')
+FINDINGS_RAW=$(printf '%s\n' "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//')
 # FINDINGS_RAW like: F1|P1|security|src/auth.ts:42|open,F2|P2|correctness|src/api.ts:88|open
 ```
 
@@ -132,9 +132,9 @@ RESOLUTION_BODY=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" \
 
 # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match the
 # `,F1,` containment check used in classification.
-RESOLVED=$(echo "$RESOLUTION_BODY"  | grep -o 'RESOLVED:\[[^]]*\]'  | sed 's/^RESOLVED:\[//;s/\]$//'  | tr -d ' ')
-ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
-DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DISPUTED:\[//;s/\]$//'  | tr -d ' ')
+RESOLVED=$(printf '%s\n' "$RESOLUTION_BODY"  | grep -o 'RESOLVED:\[[^]]*\]'  | sed 's/^RESOLVED:\[//;s/\]$//'  | tr -d ' ')
+ESCALATED=$(printf '%s\n' "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
+DISPUTED=$(printf '%s\n' "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DISPUTED:\[//;s/\]$//'  | tr -d ' ')
 ```
 
 ### 4. Aggregate counts by priority and state
@@ -153,25 +153,25 @@ DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DI
 # Sanitize attacker-controlled fields before logging (strip non-printable
 # bytes, cap length) so hostile review-body content can't inject ANSI escapes.
 safe() { printf '%s' "$1" | tr -cd '[:print:]' | cut -c1-64; }
-echo "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY CAT LOC STATUS; do
+printf '%s\n' "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY CAT LOC STATUS; do
   [ -z "$ID" ] && continue
   # Reject IDs that don't match [A-Za-z][A-Za-z0-9_-]*. Required because an id
   # is interpolated into an array the consumers split on `,` and extract with
   # `grep -o '...[^]]*\]'`: a comma splits one id into two and a `]` truncates
   # the extraction, and marks both halves as dismissed. Not a globbing concern —
   # the containment check quotes the expansion, `*",$ID,"*`.
-  case "$ID" in [A-Za-z]*) ;; *) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;; esac
-  case "$ID" in *[!A-Za-z0-9_-]*) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;; esac
+  case "$ID" in [A-Za-z]*) ;; *) printf '%s\n' "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;; esac
+  case "$ID" in *[!A-Za-z0-9_-]*) printf '%s\n' "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;; esac
   case "$PRIORITY" in
     P1|P2|P3) ;;
-    *) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' has malformed priority '$(safe "$PRIORITY")'" >&2; continue ;;
+    *) printf '%s\n' "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' has malformed priority '$(safe "$PRIORITY")'" >&2; continue ;;
   esac
   # Precedence: RESOLVED > ESCALATED > DISPUTED > in_fix_forward.
   case ",$RESOLVED," in *",$ID,"*) continue ;; esac
   case ",$ESCALATED," in *",$ID,"*) STATE=escalated ;;
        *) case ",$DISPUTED," in *",$ID,"*) STATE=disputed ;; *) STATE=in_fix_forward ;; esac ;;
   esac
-  echo "$PRIORITY $STATE"
+  printf '%s\n' "$PRIORITY $STATE"
 done
 ```
 

@@ -23,7 +23,7 @@ Iron law: **a commit that violates project conventions is defective regardless o
 Format `<type>(<scope>): <subject>`, optional body and footer separated by blank lines. Type must be one of `conventions.commitTypes` (default: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert, improve); scope optional, parenthesized, lowercase; subject imperative, no trailing period.
 
 ```bash
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
 git log --format="%s" "$DEFAULT_BRANCH"..HEAD
 ```
 
@@ -40,7 +40,7 @@ Title in conventional-commit format; body with at least a Summary section and a 
 ## Issue Linkage
 
 ```bash
-ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+ISSUE_NUM=$(printf '%s\n' "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
 [ -n "$ISSUE_NUM" ] && gh issue view "$ISSUE_NUM" --json state,assignees 2>/dev/null
 ```
 

@@ -19,11 +19,11 @@ Parse an optional display mode from the command arguments. Use the bare-`$ARGUME
 _RAW="$ARGUMENTS"
 ARG1="${_RAW%% *}"
 case "$ARG1" in
-  --full)        echo "STATUS_MODE=full" ;;
-  --json)        echo "STATUS_MODE=json" ;;
-  --evidence)    echo "STATUS_MODE=evidence" ;;
-  ""|--compact)  echo "STATUS_MODE=compact" ;;
-  *)             echo "STATUS_MODE=compact"; echo "STATUS_MODE_NOTE=unknown arg '$ARG1' — defaulting to compact dashboard" ;;
+  --full)        printf '%s\n' "STATUS_MODE=full" ;;
+  --json)        printf '%s\n' "STATUS_MODE=json" ;;
+  --evidence)    printf '%s\n' "STATUS_MODE=evidence" ;;
+  ""|--compact)  printf '%s\n' "STATUS_MODE=compact" ;;
+  *)             printf '%s\n' "STATUS_MODE=compact"; printf '%s\n' "STATUS_MODE_NOTE=unknown arg '$ARG1' — defaulting to compact dashboard" ;;
 esac
 true
 ```
@@ -39,15 +39,15 @@ true
 # See `references/command-output-format.md` for the canonical pattern.
 
 # Section: Current Branch
-echo "### Current Branch"
+printf '%s\n' "### Current Branch"
 BRANCH=$(git branch --show-current 2>/dev/null)
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-COMMITS_AHEAD=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || echo "0")
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
+COMMITS_AHEAD=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || printf '%s\n' "0")
 UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
-echo "BRANCH=$BRANCH"
-echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
-echo "COMMITS_AHEAD=$COMMITS_AHEAD"
-echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
+printf '%s\n' "BRANCH=$BRANCH"
+printf '%s\n' "DEFAULT_BRANCH=$DEFAULT_BRANCH"
+printf '%s\n' "COMMITS_AHEAD=$COMMITS_AHEAD"
+printf '%s\n' "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
 [ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
 
 # Section: My Issues (Open)
@@ -57,38 +57,38 @@ echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
 # and the section silently leaks `<KEY>_COUNT=` (bare empty). Distinguish
 # `STATE=unavailable` (gh failed) from `STATE=empty` (gh ok, no records) per
 # `references/command-output-format.md` closed-vocab contract.
-echo ""
-echo "### My Issues (Open)"
+printf '%s\n' ""
+printf '%s\n' "### My Issues (Open)"
 ASSIGNED_JSON=$(gh issue list --assignee @me --state open --limit 10 --json number,title,labels 2>/dev/null); GH_EXIT=$?
 if [ $GH_EXIT -ne 0 ]; then
-  echo "ASSIGNED_COUNT=0"
-  echo "STATE=unavailable"
+  printf '%s\n' "ASSIGNED_COUNT=0"
+  printf '%s\n' "STATE=unavailable"
 else
-  ASSIGNED_COUNT=$(echo "$ASSIGNED_JSON" | jq 'length' 2>/dev/null)
+  ASSIGNED_COUNT=$(printf '%s\n' "$ASSIGNED_JSON" | jq 'length' 2>/dev/null)
   [ -z "$ASSIGNED_COUNT" ] && ASSIGNED_COUNT=0
-  echo "ASSIGNED_COUNT=$ASSIGNED_COUNT"
+  printf '%s\n' "ASSIGNED_COUNT=$ASSIGNED_COUNT"
   if [ "$ASSIGNED_COUNT" = "0" ]; then
-    echo "STATE=empty"
+    printf '%s\n' "STATE=empty"
   else
-    echo "$ASSIGNED_JSON" | jq -r '.[] | "ISSUE=\(.number) labels=\"\([.labels[].name] | join(","))\" title=\"\(.title)\""' 2>/dev/null
+    printf '%s\n' "$ASSIGNED_JSON" | jq -r '.[] | "ISSUE=\(.number) labels=\"\([.labels[].name] | join(","))\" title=\"\(.title)\""' 2>/dev/null
   fi
 fi
 
 # Section: My PRs (authored)
-echo ""
-echo "### My PRs"
+printf '%s\n' ""
+printf '%s\n' "### My PRs"
 AUTHORED_JSON=$(gh pr list --author @me --state open --json number,title,state,reviewDecision,statusCheckRollup 2>/dev/null); GH_EXIT=$?
 if [ $GH_EXIT -ne 0 ]; then
-  echo "AUTHORED_COUNT=0"
-  echo "STATE=unavailable"
+  printf '%s\n' "AUTHORED_COUNT=0"
+  printf '%s\n' "STATE=unavailable"
 else
-  AUTHORED_COUNT=$(echo "$AUTHORED_JSON" | jq 'length' 2>/dev/null)
+  AUTHORED_COUNT=$(printf '%s\n' "$AUTHORED_JSON" | jq 'length' 2>/dev/null)
   [ -z "$AUTHORED_COUNT" ] && AUTHORED_COUNT=0
-  echo "AUTHORED_COUNT=$AUTHORED_COUNT"
+  printf '%s\n' "AUTHORED_COUNT=$AUTHORED_COUNT"
   if [ "$AUTHORED_COUNT" = "0" ]; then
-    echo "STATE=empty"
+    printf '%s\n' "STATE=empty"
   else
-    echo "$AUTHORED_JSON" | jq -r '.[] | (
+    printf '%s\n' "$AUTHORED_JSON" | jq -r '.[] | (
       [.statusCheckRollup[]? | select(.__typename == "CheckRun")] as $checks |
       (if (.reviewDecision // "") == "" then "(none)" else .reviewDecision end) as $review |
       "PR=\(.number) state=\(.state) review=\($review) checks=\($checks | map(select(.conclusion == "SUCCESS")) | length)/\($checks | length) title=\"\(.title)\""
@@ -97,76 +97,76 @@ else
 fi
 
 # Section: Awaiting My Review
-echo ""
-echo "### Awaiting My Review"
+printf '%s\n' ""
+printf '%s\n' "### Awaiting My Review"
 REVIEW_JSON=$(gh pr list --search "review-requested:@me" --state open --json number,title,author 2>/dev/null); GH_EXIT=$?
 if [ $GH_EXIT -ne 0 ]; then
-  echo "REVIEW_REQUESTED_COUNT=0"
-  echo "STATE=unavailable"
+  printf '%s\n' "REVIEW_REQUESTED_COUNT=0"
+  printf '%s\n' "STATE=unavailable"
 else
-  REVIEW_REQUESTED_COUNT=$(echo "$REVIEW_JSON" | jq 'length' 2>/dev/null)
+  REVIEW_REQUESTED_COUNT=$(printf '%s\n' "$REVIEW_JSON" | jq 'length' 2>/dev/null)
   [ -z "$REVIEW_REQUESTED_COUNT" ] && REVIEW_REQUESTED_COUNT=0
-  echo "REVIEW_REQUESTED_COUNT=$REVIEW_REQUESTED_COUNT"
+  printf '%s\n' "REVIEW_REQUESTED_COUNT=$REVIEW_REQUESTED_COUNT"
   if [ "$REVIEW_REQUESTED_COUNT" = "0" ]; then
-    echo "STATE=empty"
+    printf '%s\n' "STATE=empty"
   else
-    echo "$REVIEW_JSON" | jq -r '.[] | "PR=\(.number) author=@\(.author.login) title=\"\(.title)\""' 2>/dev/null
+    printf '%s\n' "$REVIEW_JSON" | jq -r '.[] | "PR=\(.number) author=@\(.author.login) title=\"\(.title)\""' 2>/dev/null
   fi
 fi
 
 # Section: Decision Journal + Learning state
 # `JOURNAL_DIR` is resolved via the standard settings cascade (bin/cascade-resolve.sh).
-echo ""
-echo "### Decision Journal"
-HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+printf '%s\n' ""
+printf '%s\n' "### Decision Journal"
+HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 JOURNAL_DIR=".decisions"
 [ -x "$HELPER" ] && JOURNAL_DIR=$("$HELPER" --default ".decisions" '.journal.dir // empty')
 JOURNAL_FILES=0
 [ -d "$JOURNAL_DIR" ] && JOURNAL_FILES=$(ls "$JOURNAL_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
-echo "JOURNAL_FILES=$JOURNAL_FILES"
+printf '%s\n' "JOURNAL_FILES=$JOURNAL_FILES"
 if [ -f "$HOME/.claude/flow-learn-pending" ]; then
-  echo "LEARNING_PENDING=$(cat "$HOME/.claude/flow-learn-pending")"
+  printf '%s\n' "LEARNING_PENDING=$(cat "$HOME/.claude/flow-learn-pending")"
 else
-  echo "LEARNING_PENDING=none"
+  printf '%s\n' "LEARNING_PENDING=none"
 fi
 
 # Section: FlowGoal State (v3, gated behind flow.goals.enabled)
 # When goals are enabled, surface the active FlowGoal lifecycle + per-AC
 # pass/fail so the user sees what the Stop hook is watching. v2 projects
 # (flag false/unset) emit STATE=disabled and the section renders as "(v3 not enabled)".
-echo ""
-echo "### FlowGoal State"
-HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+printf '%s\n' ""
+printf '%s\n' "### FlowGoal State"
+HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 GOALS_ENABLED="false"
 [ -x "$HELPER" ] && GOALS_ENABLED=$("$HELPER" --default "true" '.flow.goals.enabled' 2>/dev/null)
 if [ "$GOALS_ENABLED" != "true" ]; then
-  echo "STATE=disabled"
+  printf '%s\n' "STATE=disabled"
 else
-  ACTIVE_GOAL_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-active-goal.sh"
+  ACTIVE_GOAL_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-active-goal.sh"
   if [ ! -x "$ACTIVE_GOAL_HELPER" ]; then
-    echo "STATE=unavailable"
-    echo "REASON=flow-active-goal.sh missing"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=flow-active-goal.sh missing"
   else
     GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status 2>/dev/null); GOAL_EXIT=$?
     case "$GOAL_EXIT" in
       0)
         GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id 2>/dev/null)
-        echo "STATE=ok"
+        printf '%s\n' "STATE=ok"
         printf '%s\n' "GOAL_ID=$GOAL_ID"
         printf '%s\n' "GOAL_LIFECYCLE=$GOAL_STATUS"
         # AC summary: one line per AC in id|status|evidence_ref|last_result format.
         "$ACTIVE_GOAL_HELPER" --ac-summary 2>/dev/null | sed 's/^/AC=/'
         ;;
       1)
-        echo "STATE=no_active_goal"
+        printf '%s\n' "STATE=no_active_goal"
         ;;
       3)
-        echo "STATE=degenerate"
-        echo "REASON=multiple active goals detected"
+        printf '%s\n' "STATE=degenerate"
+        printf '%s\n' "REASON=multiple active goals detected"
         ;;
       *)
-        echo "STATE=unavailable"
+        printf '%s\n' "STATE=unavailable"
         printf '%s\n' "REASON=flow-active-goal.sh exited $GOAL_EXIT"
         ;;
     esac
@@ -176,11 +176,11 @@ fi
 # Section: Recent Runs (last 3 by modification time)
 # The .flow/runs/ directory holds FlowActivity ledgers per workflow invocation.
 # Surface the latest 3 so the user can see what is happening in flight.
-echo ""
-echo "### Recent Runs"
+printf '%s\n' ""
+printf '%s\n' "### Recent Runs"
 # RECENT_RUNS_BLOCK_BEGIN
 if [ ! -d ".flow/runs" ]; then
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 else
   # Most-recent-first sort by mtime:
   # the previous `... | tac 2>/dev/null || ... | tail -3` fallback silently
@@ -189,10 +189,10 @@ else
   # documented "most-recent-first" contract.
   RECENT_RUNS=$(ls -1tr .flow/runs/ 2>/dev/null | tail -3 | awk '{a[NR]=$0} END{for(i=NR;i>=1;i--) print a[i]}')
   if [ -z "$RECENT_RUNS" ]; then
-    echo "STATE=empty"
+    printf '%s\n' "STATE=empty"
   else
-    echo "STATE=ok"
-    echo "$RECENT_RUNS" | while read -r run; do
+    printf '%s\n' "STATE=ok"
+    printf '%s\n' "$RECENT_RUNS" | while read -r run; do
       [ -z "$run" ] && continue
       RUN_DIR=".flow/runs/$run"
       [ -d "$RUN_DIR" ] || continue
@@ -211,7 +211,7 @@ else
       # Surface activity count.
       ACT_COUNT=0
       [ -f "$RUN_DIR/events.jsonl" ] && ACT_COUNT=$(wc -l < "$RUN_DIR/events.jsonl" 2>/dev/null | tr -d ' ')
-      echo "RUN=id=$run verdict=$VERDICT activities=$ACT_COUNT"
+      printf '%s\n' "RUN=id=$run verdict=$VERDICT activities=$ACT_COUNT"
     done
   fi
 fi
@@ -221,26 +221,26 @@ fi
 # Surface registered triggers under .flow/triggers/*.trigger.yaml so the user
 # can see what is wired to fire automatically. v2 projects (flag false/unset)
 # emit STATE=disabled.
-echo ""
-echo "### Active Triggers"
+printf '%s\n' ""
+printf '%s\n' "### Active Triggers"
 # TRIGGERS_BLOCK_BEGIN
-TRIG_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+TRIG_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 TRIGGERS_ENABLED="false"
 [ -x "$TRIG_HELPER" ] && TRIGGERS_ENABLED=$("$TRIG_HELPER" --default "false" '.flow.triggers.enabled' 2>/dev/null)
 if [ "$TRIGGERS_ENABLED" != "true" ]; then
-  echo "STATE=disabled"
+  printf '%s\n' "STATE=disabled"
 elif [ ! -d ".flow/triggers" ]; then
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 else
   TRIGGER_FILES=$(ls -1 .flow/triggers/*.trigger.yaml 2>/dev/null)
   if [ -z "$TRIGGER_FILES" ]; then
-    echo "STATE=empty"
+    printf '%s\n' "STATE=empty"
   elif command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" >/dev/null 2>&1; then
-    echo "STATE=ok"
+    printf '%s\n' "STATE=ok"
     printf '%s\n' "$TRIGGER_FILES" | while read -r tf; do
       [ -f "$tf" ] || continue
       # [ -L ] symlink defense — matches the reader guards elsewhere.
-      [ -L "$tf" ] && { echo "TRIGGER=skipped (symlink rejected): $tf"; continue; }
+      [ -L "$tf" ] && { printf '%s\n' "TRIGGER=skipped (symlink rejected): $tf"; continue; }
       TRIG_OUT=$(python3 - "$tf" <<'PY' 2>/dev/null
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
@@ -256,14 +256,14 @@ PY
       # as "this trigger is not registered" — the same silent drop the symlink
       # arm above refuses, which is why this reports in the same shape.
       if [ "$TRIG_EXIT" -ne 0 ] || [ -z "$TRIG_OUT" ]; then
-        echo "TRIGGER=skipped (unreadable): $tf"
+        printf '%s\n' "TRIGGER=skipped (unreadable): $tf"
       else
         printf '%s\n' "$TRIG_OUT"
       fi
     done
   else
-    echo "STATE=degraded"
-    echo "REASON=python3/PyYAML unavailable — cannot parse trigger yamls"
+    printf '%s\n' "STATE=degraded"
+    printf '%s\n' "REASON=python3/PyYAML unavailable — cannot parse trigger yamls"
   fi
 fi
 # TRIGGERS_BLOCK_END
@@ -287,25 +287,25 @@ TRUST_LIST="$TRUST_DEFAULT"
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
 USER_SETTINGS="${HOME:-/nonexistent}/.claude/settings.flow.json"
-PLUGIN_SETTINGS="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/settings.json"
+PLUGIN_SETTINGS="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/settings.json"
 for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
   [ -f "$SETTINGS_PATH" ] || continue
   CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_PATH" 2>&1)
   JQ_EXIT=$?
   if [ $JQ_EXIT -ne 0 ]; then
     JQ_ERR=$(printf '%s' "$CONFIGURED" | tr '\n' ' ' | cut -c1-200)
-    echo "WARN: failed to parse $SETTINGS_PATH (jq exit=$JQ_EXIT, error: $JQ_ERR); skipping this source" >&2
+    printf '%s\n' "WARN: failed to parse $SETTINGS_PATH (jq exit=$JQ_EXIT, error: $JQ_ERR); skipping this source" >&2
     continue
   fi
   [ -z "$CONFIGURED" ] && continue
-  if echo "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
+  if printf '%s\n' "$CONFIGURED" | jq -e '. | type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null 2>&1; then
     # Warn (do not block) when an element falls outside the known GitHub
     # `author_association` vocabulary — same defense-in-depth check as
     # commands/merge.md, mirrored here so a typo surfaces during the
     # aggregator pass too (matches the /flow:status read-only contract).
-    UNKNOWN_VALUES=$(echo "$CONFIGURED" | jq -r '.[] | select(. != "OWNER" and . != "MEMBER" and . != "COLLABORATOR" and . != "CONTRIBUTOR" and . != "FIRST_TIME_CONTRIBUTOR" and . != "FIRST_TIMER" and . != "MANNEQUIN" and . != "NONE")' 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+    UNKNOWN_VALUES=$(printf '%s\n' "$CONFIGURED" | jq -r '.[] | select(. != "OWNER" and . != "MEMBER" and . != "COLLABORATOR" and . != "CONTRIBUTOR" and . != "FIRST_TIME_CONTRIBUTOR" and . != "FIRST_TIMER" and . != "MANNEQUIN" and . != "NONE")' 2>/dev/null | tr '\n' ',' | sed 's/,$//')
     if [ -n "$UNKNOWN_VALUES" ]; then
-      echo "LEDGER_WARN: markerTrust in $SETTINGS_PATH contains values [$UNKNOWN_VALUES] not in the GitHub author_association vocabulary (OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, MANNEQUIN, NONE). These elements will match no authors — check for typos." >&2
+      printf '%s\n' "LEDGER_WARN: markerTrust in $SETTINGS_PATH contains values [$UNKNOWN_VALUES] not in the GitHub author_association vocabulary (OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, MANNEQUIN, NONE). These elements will match no authors — check for typos." >&2
     fi
     TRUST_LIST="$CONFIGURED"
     break
@@ -324,15 +324,15 @@ GH_EXIT=$?
 if [ $GH_EXIT -ne 0 ] || [ -z "$LEDGER_PRS_RAW" ]; then
   LEDGER_PRS="LEDGER_UNAVAILABLE"
 else
-  LEDGER_PRS=$(echo "$LEDGER_PRS_RAW" | jq -r --arg me "$ME" \
-    '[.[] | select(.author.login == $me or (.assignees[].login? == $me))] | .[].number' 2>/dev/null || echo "LEDGER_UNAVAILABLE")
+  LEDGER_PRS=$(printf '%s\n' "$LEDGER_PRS_RAW" | jq -r --arg me "$ME" \
+    '[.[] | select(.author.login == $me or (.assignees[].login? == $me))] | .[].number' 2>/dev/null || printf '%s\n' "LEDGER_UNAVAILABLE")
 fi
 
-echo "### Findings Ledger"
+printf '%s\n' "### Findings Ledger"
 if [ "$LEDGER_PRS" = "LEDGER_UNAVAILABLE" ]; then
-  echo "LEDGER_STATE=unavailable"
+  printf '%s\n' "LEDGER_STATE=unavailable"
 elif [ -z "$LEDGER_PRS" ]; then
-  echo "LEDGER_STATE=no_open_prs"
+  printf '%s\n' "LEDGER_STATE=no_open_prs"
 else
   # Sanitize attacker-controlled fields before display/echo: cap length and
   # strip non-printable bytes so a hostile review-body cannot inject ANSI
@@ -351,22 +351,22 @@ else
     REVIEW_BODY=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null \
       | jq -s -r --argjson trust "$TRUST_LIST" \
           'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")))] | last | .body // ""')
-    FINDINGS_RAW=$(echo "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//')
+    FINDINGS_RAW=$(printf '%s\n' "$REVIEW_BODY" | grep -o 'FINDINGS:\[[^]]*\]' | sed 's/^FINDINGS:\[//;s/\]$//')
     [ -z "$FINDINGS_RAW" ] && continue
 
     RESOLUTION_BODY=$(gh api --paginate "repos/$REPO/issues/$PR_NUM/comments" 2>/dev/null \
       | jq -s -r --argjson trust "$TRUST_LIST" \
           'add | [.[] | select((.author_association as $a | $trust | index($a)) and (.body | test("<!-- FLOW_RESOLUTION_CYCLE:[0-9]+ ")))] | last | .body // ""')
     # Strip whitespace so reviewer-edited arrays like `[F1, F2]` still match.
-    RESOLVED=$(echo "$RESOLUTION_BODY"  | grep -o 'RESOLVED:\[[^]]*\]'  | sed 's/^RESOLVED:\[//;s/\]$//'  | tr -d ' ')
-    ESCALATED=$(echo "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
-    DISPUTED=$(echo "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DISPUTED:\[//;s/\]$//'  | tr -d ' ')
+    RESOLVED=$(printf '%s\n' "$RESOLUTION_BODY"  | grep -o 'RESOLVED:\[[^]]*\]'  | sed 's/^RESOLVED:\[//;s/\]$//'  | tr -d ' ')
+    ESCALATED=$(printf '%s\n' "$RESOLUTION_BODY" | grep -o 'ESCALATED:\[[^]]*\]' | sed 's/^ESCALATED:\[//;s/\]$//' | tr -d ' ')
+    DISPUTED=$(printf '%s\n' "$RESOLUTION_BODY"  | grep -o 'DISPUTED:\[[^]]*\]'  | sed 's/^DISPUTED:\[//;s/\]$//'  | tr -d ' ')
 
     # CAT and LOC are parsed but unused inside this loop — drop them with `_`
     # so future code additions cannot accidentally interpolate attacker-controlled
     # fields without first applying `safe()` sanitization. If a future change
     # needs them, replace `_ _` with named vars AND wrap each use with `safe()`.
-    echo "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY _ _ STATUS; do
+    printf '%s\n' "$FINDINGS_RAW" | tr ',' '\n' | while IFS='|' read -r ID PRIORITY _ _ STATUS; do
       [ -z "$ID" ] && continue
       # Reject IDs containing case-glob metacharacters (`*`, `?`, `[`, `]`) —
       # IDs are template-issued and should match [A-Za-z][A-Za-z0-9_-]*.
@@ -378,10 +378,10 @@ else
       # quotes, `*",$ID,"*`, so a `*` there is a literal.)
       case "$ID" in
         [A-Za-z]*) ;;
-        *) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;;
+        *) printf '%s\n' "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2; continue ;;
       esac
       case "$ID" in *[!A-Za-z0-9_-]*)
-        echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2
+        printf '%s\n' "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' rejected (non-conforming ID)" >&2
         continue ;;
       esac
       # Defensive: surface non-conforming priority rows to stderr (visible
@@ -389,7 +389,7 @@ else
       # findings without P{1-3} priority fields.
       case "$PRIORITY" in
         P1|P2|P3) ;;
-        *) echo "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' has malformed priority '$(safe "$PRIORITY")'" >&2; continue ;;
+        *) printf '%s\n' "LEDGER_WARN: PR#$PR_NUM finding '$(safe "$ID")' has malformed priority '$(safe "$PRIORITY")'" >&2; continue ;;
       esac
       # Precedence: RESOLVED > ESCALATED > DISPUTED > in_fix_forward.
       case ",$RESOLVED," in *",$ID,"*) continue ;; esac
@@ -397,23 +397,23 @@ else
         *) case ",$DISPUTED," in *",$ID,"*) STATE=disputed ;;
              *) STATE=in_fix_forward ;; esac ;;
       esac
-      echo "${PRIORITY}|${STATE}"
+      printf '%s\n' "${PRIORITY}|${STATE}"
     done
     done | sort | uniq -c
   }
   TALLY=$(_collect_tally)
 
   if [ -z "$TALLY" ]; then
-    echo "LEDGER_STATE=no_markers"
+    printf '%s\n' "LEDGER_STATE=no_markers"
   else
-    echo "LEDGER_STATE=findings"
+    printf '%s\n' "LEDGER_STATE=findings"
     # Emit one TALLY_<PRIORITY>_<STATE>=COUNT line per row. The agent sums
     # across STATE for each priority to render the Findings Ledger line per
     # the rules in `## Render Rules` below.
-    echo "$TALLY" | while read -r count rest; do
+    printf '%s\n' "$TALLY" | while read -r count rest; do
       ROW_PRIORITY="${rest%%|*}"
       ROW_STATE="${rest#*|}"
-      echo "TALLY_${ROW_PRIORITY}_${ROW_STATE}=$count"
+      printf '%s\n' "TALLY_${ROW_PRIORITY}_${ROW_STATE}=$count"
     done
   fi
 fi

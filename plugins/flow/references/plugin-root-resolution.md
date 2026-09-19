@@ -41,7 +41,7 @@ inserting a statement — cannot disturb the surrounding statement/continuation
 structure of these dense command files. Use it as the directory prefix:
 
 ```bash
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 ```
 
 For readability, the same logic in expanded form (functionally identical):
@@ -50,11 +50,11 @@ For readability, the same logic in expanded form (functionally identical):
 __fr="${CLAUDE_PLUGIN_ROOT:-}"
 if [ ! -x "$__fr/bin/cascade-resolve.sh" ]; then
   __fr=$(
-    { echo plugins/flow
+    { printf '%s\n' plugins/flow
       ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null | sort -Vr
-      echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"
+      printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"
     } | while read -r __p; do
-      [ -x "${__p%/}/bin/cascade-resolve.sh" ] && { echo "${__p%/}"; break; }
+      [ -x "${__p%/}/bin/cascade-resolve.sh" ] && { printf '%s\n' "${__p%/}"; break; }
     done)
 fi
 # "$__fr" is now the plugin root (empty if nothing resolved — guard before use).
@@ -78,8 +78,8 @@ becomes `/bin/cascade-resolve.sh` (not executable) — the block's existing
 ```bash
 CASCADE="$(...resolver...)/bin/cascade-resolve.sh"
 if [ ! -x "$CASCADE" ]; then
-  echo "FLOW_GOAL_STATE=blocked"
-  echo "FLOW_GOAL_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE — reinstall or upgrade the flow plugin"
+  printf '%s\n' "FLOW_GOAL_STATE=blocked"
+  printf '%s\n' "FLOW_GOAL_ERROR=cascade-resolve.sh missing or non-executable at $CASCADE — reinstall or upgrade the flow plugin"
   true; exit 0
 fi
 ```

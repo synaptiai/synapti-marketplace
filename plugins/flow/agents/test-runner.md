@@ -17,12 +17,12 @@ Quality assurance specialist. Discovers and executes lint, test, and type-check 
 
 ```bash
 # Parallel detection
-[ -f "package.json" ] && echo "node" && cat package.json | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f'  {k}: {v}') for k,v in d.get('scripts',{}).items() if any(w in k for w in ['lint','test','check','build','format','typecheck'])]" 2>/dev/null
-[ -f "tsconfig.json" ] && echo "typescript"
-[ -f "pyproject.toml" ] && echo "python" && grep -E "\[tool\.(ruff|pytest|mypy|black)\]" pyproject.toml 2>/dev/null
-[ -f "Gemfile" ] && echo "ruby"
-[ -f "go.mod" ] && echo "go"
-[ -f "Cargo.toml" ] && echo "rust"
+[ -f "package.json" ] && printf '%s\n' "node" && cat package.json | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f'  {k}: {v}') for k,v in d.get('scripts',{}).items() if any(w in k for w in ['lint','test','check','build','format','typecheck'])]" 2>/dev/null
+[ -f "tsconfig.json" ] && printf '%s\n' "typescript"
+[ -f "pyproject.toml" ] && printf '%s\n' "python" && grep -E "\[tool\.(ruff|pytest|mypy|black)\]" pyproject.toml 2>/dev/null
+[ -f "Gemfile" ] && printf '%s\n' "ruby"
+[ -f "go.mod" ] && printf '%s\n' "go"
+[ -f "Cargo.toml" ] && printf '%s\n' "rust"
 ```
 
 ### Step 2: Check CLAUDE.md
@@ -52,9 +52,9 @@ Run the discovered commands as separate Bash calls in a single message:
 
 ```bash
 # Each as separate parallel Bash call:
-$LINT_CMD 2>&1 || echo "::LINT_FAILED::"
-$TEST_CMD 2>&1 || echo "::TEST_FAILED::"
-$TYPECHECK_CMD 2>&1 || echo "::TYPECHECK_FAILED::"
+$LINT_CMD 2>&1 || printf '%s\n' "::LINT_FAILED::"
+$TEST_CMD 2>&1 || printf '%s\n' "::TEST_FAILED::"
+$TYPECHECK_CMD 2>&1 || printf '%s\n' "::TYPECHECK_FAILED::"
 ```
 
 ### Step 5: Report Results

@@ -20,7 +20,7 @@ Classify changes, flag anomalies, and create atomic conventional commits. Follow
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" llm-operator-principles change-classification convention-enforcement
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" llm-operator-principles change-classification convention-enforcement
 
 true
 ```
@@ -35,24 +35,24 @@ true
 # Output: `###`-headed sections + KEY=value per
 # `references/command-output-format.md`.
 
-echo "### Branch Context"
+printf '%s\n' "### Branch Context"
 BRANCH=$(git branch --show-current 2>/dev/null)
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-echo "BRANCH=$BRANCH"
-echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
+printf '%s\n' "BRANCH=$BRANCH"
+printf '%s\n' "DEFAULT_BRANCH=$DEFAULT_BRANCH"
 
-echo ""
-echo "### Uncommitted Changes"
+printf '%s\n' ""
+printf '%s\n' "### Uncommitted Changes"
 UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
-echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
+printf '%s\n' "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
 if [ "$UNCOMMITTED_COUNT" = "0" ]; then
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 else
   git status --porcelain 2>/dev/null | sed 's/^/UNCOMMITTED_LINE=/'
 fi
 
-echo ""
-echo "### Branch Files (vs default)"
+printf '%s\n' ""
+printf '%s\n' "### Branch Files (vs default)"
 BRANCH_FILES=$(git diff --name-only "$DEFAULT_BRANCH"...HEAD 2>/dev/null)
 # `grep -c '.' || echo 0` produces multi-line `0\n0` on empty input (grep
 # exits 1, the `||` ALSO fires). Use explicit empty-check.
@@ -61,29 +61,29 @@ if [ -z "$BRANCH_FILES" ]; then
 else
   BRANCH_FILE_COUNT=$(printf '%s\n' "$BRANCH_FILES" | wc -l | tr -d ' ')
 fi
-echo "BRANCH_FILE_COUNT=$BRANCH_FILE_COUNT"
+printf '%s\n' "BRANCH_FILE_COUNT=$BRANCH_FILE_COUNT"
 if [ "$BRANCH_FILE_COUNT" = "0" ]; then
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 else
   printf '%s\n' "$BRANCH_FILES" | sed 's/^/BRANCH_FILE=/'
 fi
 
-echo ""
-echo "### Issue Context"
-ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+printf '%s\n' ""
+printf '%s\n' "### Issue Context"
+ISSUE_NUM=$(printf '%s\n' "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
 # Quote parenthesized fallback per command-output-format.md rule 2.
-echo "ISSUE_NUM=${ISSUE_NUM:-\"(none)\"}"
+printf '%s\n' "ISSUE_NUM=${ISSUE_NUM:-\"(none)\"}"
 if [ -n "$ISSUE_NUM" ]; then
   gh issue view "$ISSUE_NUM" --json title,body --jq '"ISSUE_TITLE=\"\(.title)\"\nISSUE_BODY_LENGTH=\(.body | length)"' 2>/dev/null
 fi
 
-echo ""
-echo "### Recent Commits (for style)"
+printf '%s\n' ""
+printf '%s\n' "### Recent Commits (for style)"
 # Capture so an empty log (new repo) emits STATE=empty rather than silent
 # heading.
 RECENT_COMMITS=$(git log --oneline -10 2>/dev/null)
 if [ -z "$RECENT_COMMITS" ]; then
-  echo "STATE=empty"
+  printf '%s\n' "STATE=empty"
 else
   printf '%s\n' "$RECENT_COMMITS" | sed 's/^/COMMIT=/'
 fi

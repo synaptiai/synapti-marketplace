@@ -25,7 +25,7 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 # skills load whole; dispatched skills (context: fork / agent:) load their
 # `## Contract` section and run in full when this command invokes
 # Skill(<name>). Output per `references/command-output-format.md`.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-load-skills.sh" llm-operator-principles pr-lifecycle code-review-methodology capability-discovery holdout-validation run-state-management runtime-verification visual-verification
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" llm-operator-principles pr-lifecycle code-review-methodology capability-discovery holdout-validation run-state-management runtime-verification visual-verification
 
 true
 ```
@@ -42,43 +42,43 @@ true
 # `references/command-output-format.md`. STATE=blocked when on default branch
 # (cannot create a PR from main); STATE=ok otherwise.
 
-echo "### Branch Context"
+printf '%s\n' "### Branch Context"
 BRANCH=$(git branch --show-current 2>/dev/null)
-DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-echo "BRANCH=$BRANCH"
-echo "DEFAULT_BRANCH=$DEFAULT_BRANCH"
+DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
+printf '%s\n' "BRANCH=$BRANCH"
+printf '%s\n' "DEFAULT_BRANCH=$DEFAULT_BRANCH"
 
 if [ "$BRANCH" = "$DEFAULT_BRANCH" ]; then
-  echo "STATE=blocked"
-  echo "ERROR=Cannot create PR from default branch"
+  printf '%s\n' "STATE=blocked"
+  printf '%s\n' "ERROR=Cannot create PR from default branch"
 else
-  echo "STATE=ok"
+  printf '%s\n' "STATE=ok"
 
   # Section: Branch Delta vs Default
-  echo ""
-  echo "### Branch Delta"
-  echo "COMMITS_AHEAD=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || echo "0")"
+  printf '%s\n' ""
+  printf '%s\n' "### Branch Delta"
+  printf '%s\n' "COMMITS_AHEAD=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || printf '%s\n' "0")"
   # Cache the porcelain count once — previously invoked twice in adjacent
   # lines (count + gate on the UNCOMMITTED_LINE listing).
   UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
-  echo "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
+  printf '%s\n' "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
   [ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
-  echo ""
-  echo "#### Diff stat"
+  printf '%s\n' ""
+  printf '%s\n' "#### Diff stat"
   DIFF_STAT=$(git diff --stat "$DEFAULT_BRANCH"...HEAD 2>/dev/null)
   if [ -z "$DIFF_STAT" ]; then
-    echo "STATE=empty"
+    printf '%s\n' "STATE=empty"
   else
     printf '%s\n' "$DIFF_STAT" | sed 's/^/DIFF_STAT=/'
   fi
 
   # Section: Issue Context (extracted from branch name `feature/issue-N-...`)
-  echo ""
-  echo "### Issue Context"
-  ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
+  printf '%s\n' ""
+  printf '%s\n' "### Issue Context"
+  ISSUE_NUM=$(printf '%s\n' "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
   # Quote parenthesized fallback per command-output-format.md rule 2 (values
   # with whitespace/parens must be double-quoted scalars).
-  echo "ISSUE_NUM=${ISSUE_NUM:-\"(none)\"}"
+  printf '%s\n' "ISSUE_NUM=${ISSUE_NUM:-\"(none)\"}"
   if [ -n "$ISSUE_NUM" ]; then
     gh issue view "$ISSUE_NUM" --json title,body,labels --jq '
       "ISSUE_TITLE=\"\(.title)\"\nISSUE_LABELS=\([.labels[].name] | join(","))\nISSUE_BODY_LENGTH=\(.body | length)"
@@ -86,8 +86,8 @@ else
   fi
 
   # Section: Existing PR Check
-  echo ""
-  echo "### Existing PR Check"
+  printf '%s\n' ""
+  printf '%s\n' "### Existing PR Check"
   # Capture gh exit separately. The `|| echo "0"` fallback fails to fire when
   # gh succeeds but returns "" (impossible here — gh returns [] for empty
   # success) OR when jq receives empty input from a failed gh call (jq 1.8
@@ -95,36 +95,36 @@ else
   # silently leaks `EXISTING_PR_COUNT=`).
   EXISTING=$(gh pr list --head "$BRANCH" --state open --json number,url 2>/dev/null); GH_EXIT=$?
   if [ $GH_EXIT -ne 0 ]; then
-    echo "EXISTING_PR_COUNT=0"
-    echo "STATE=unavailable"
+    printf '%s\n' "EXISTING_PR_COUNT=0"
+    printf '%s\n' "STATE=unavailable"
   else
-    EXISTING_COUNT=$(echo "$EXISTING" | jq 'length' 2>/dev/null)
+    EXISTING_COUNT=$(printf '%s\n' "$EXISTING" | jq 'length' 2>/dev/null)
     [ -z "$EXISTING_COUNT" ] && EXISTING_COUNT=0
-    echo "EXISTING_PR_COUNT=$EXISTING_COUNT"
+    printf '%s\n' "EXISTING_PR_COUNT=$EXISTING_COUNT"
     if [ "$EXISTING_COUNT" = "0" ]; then
-      echo "STATE=empty"
+      printf '%s\n' "STATE=empty"
     else
-      echo "$EXISTING" | jq -r '.[] | "EXISTING_PR=number=\(.number) url=\(.url)"' 2>/dev/null
+      printf '%s\n' "$EXISTING" | jq -r '.[] | "EXISTING_PR=number=\(.number) url=\(.url)"' 2>/dev/null
     fi
   fi
 
   # Section: Decision Journal
-  echo ""
-  echo "### Decision Journal"
+  printf '%s\n' ""
+  printf '%s\n' "### Decision Journal"
   JOURNAL_DIR=".decisions"
   if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
-    echo "JOURNAL_FILE=$JOURNAL_DIR/issue-$ISSUE_NUM.md"
-    echo "JOURNAL_BYTES=$(wc -c < "$JOURNAL_DIR/issue-$ISSUE_NUM.md" | tr -d ' ')"
-    echo ""
-    echo "#### Journal contents"
+    printf '%s\n' "JOURNAL_FILE=$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+    printf '%s\n' "JOURNAL_BYTES=$(wc -c < "$JOURNAL_DIR/issue-$ISSUE_NUM.md" | tr -d ' ')"
+    printf '%s\n' ""
+    printf '%s\n' "#### Journal contents"
     cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
   else
-    echo "STATE=empty"
+    printf '%s\n' "STATE=empty"
   fi
 
   # Section: Review Exceptions
-  echo ""
-  echo "### Review Exceptions"
+  printf '%s\n' ""
+  printf '%s\n' "### Review Exceptions"
   # REVIEW_EXCEPTIONS_BLOCK_BEGIN
   # Rules the team has already rejected a finding over, handed to the self-review
   # fan-out in Phase 3 so it does not raise one of them. Read at the default
@@ -132,26 +132,26 @@ else
   # request exists, so there is no base commit to resolve, and the working tree
   # is the change under review. /flow:review prints this section from the same
   # helper, so the two cannot drift.
-  FLOW_RX_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-review-exceptions.sh"
+  FLOW_RX_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-review-exceptions.sh"
   # REPO is not set in this fence — it is resolved in a later one. `gh --repo ""`
   # falls back to the default resolution of gh without complaining, so an unset
   # value reads as pinned and behaves as unpinned.
   FLOW_RX_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   if [ ! -x "$FLOW_RX_HELPER" ]; then
-    echo "STATE=unavailable"
-    echo "REASON=flow-review-exceptions.sh missing or non-executable, so whether the team has recorded any exception is unknown"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=flow-review-exceptions.sh missing or non-executable, so whether the team has recorded any exception is unknown"
   elif [ -z "$FLOW_RX_REPO" ]; then
-    echo "STATE=unavailable"
-    echo "REASON=the repository could not be resolved, so there is no trusted ref to read the exceptions at"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=the repository could not be resolved, so there is no trusted ref to read the exceptions at"
   elif [ -z "$DEFAULT_BRANCH" ]; then
     # The `|| echo "main"` above fires on a non-zero exit, not on empty output.
-    echo "STATE=unavailable"
-    echo "REASON=the default branch could not be resolved, so there is no trusted ref to read the exceptions at"
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "REASON=the default branch could not be resolved, so there is no trusted ref to read the exceptions at"
   else
     RX_OUT=$("$FLOW_RX_HELPER" --repo "$FLOW_RX_REPO" --ref "$DEFAULT_BRANCH"); RX_RC=$?
     if [ "$RX_RC" -ne 0 ] || [ "$(printf '%s\n' "$RX_OUT" | grep -c '^STATE=')" != "1" ]; then
-      echo "STATE=unavailable"
-      echo "REASON=the exceptions helper did not complete (exit $RX_RC), so whether the team has recorded any exception is unknown"
+      printf '%s\n' "STATE=unavailable"
+      printf '%s\n' "REASON=the exceptions helper did not complete (exit $RX_RC), so whether the team has recorded any exception is unknown"
     else
       printf '%s\n' "$RX_OUT"
     fi
@@ -163,9 +163,9 @@ else
   # achievement WHEN a goal exists; a branch with no goal is not blocked. The
   # gate is disabled when flow.goals.enabled is false or goalCreation is off,
   # preserving the v2 (requireGoalForStart:false) UX.
-  echo ""
-  echo "### FlowGoal State"
-  HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/cascade-resolve.sh"
+  printf '%s\n' ""
+  printf '%s\n' "### FlowGoal State"
+  HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
   # Migration-aware: goalCreation wins; else map legacy requireGoalForStart
   # (true->always, false->off); else null so the cascade default (auto) applies.
   GOAL_MODE=$("$HELPER" --default "auto" '.flow.goals.goalCreation // (if .flow.goals.requireGoalForStart == true then "always" elif .flow.goals.requireGoalForStart == false then "off" else null end)' 2>/dev/null)
@@ -175,13 +175,13 @@ else
   # rather than fail-open to a silently disabled gate.
   [ -z "$ENABLED" ] && ENABLED="true"
   if [ "$ENABLED" != "true" ] || [ "$GOAL_MODE" = "off" ]; then
-    echo "STATE=disabled"
-    echo "REASON=flow.goals.enabled is false or goalCreation is off"
+    printf '%s\n' "STATE=disabled"
+    printf '%s\n' "REASON=flow.goals.enabled is false or goalCreation is off"
   else
-    ACTIVE_GOAL_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-active-goal.sh"
+    ACTIVE_GOAL_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-active-goal.sh"
     if [ ! -x "$ACTIVE_GOAL_HELPER" ]; then
-      echo "STATE=unavailable"
-      echo "REASON=flow-active-goal.sh missing or non-executable"
+      printf '%s\n' "STATE=unavailable"
+      printf '%s\n' "REASON=flow-active-goal.sh missing or non-executable"
     else
       # --allow-terminal: surface an already-`achieved` goal so the GATE=pass
       # branch below is reachable (the helper is active-only otherwise).
@@ -191,30 +191,30 @@ else
       case "$GOAL_EXIT" in
         0)
           GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id --allow-terminal --branch-strict 2>/dev/null)
-          echo "STATE=ok"
+          printf '%s\n' "STATE=ok"
           printf '%s\n' "GOAL_ID=$GOAL_ID"
           printf '%s\n' "GOAL_LIFECYCLE=$GOAL_STATUS"
           if [ "$GOAL_STATUS" = "achieved" ]; then
-            echo "GATE=pass"
+            printf '%s\n' "GATE=pass"
           else
-            echo "GATE=block"
+            printf '%s\n' "GATE=block"
           fi
           ;;
         1)
           # No active goal on this branch — gate not applicable: the gate keys
           # on goal existence. PR creation proceeds; a goal-less PR is not blocked.
-          echo "STATE=none"
-          echo "GATE=pass"
-          echo "REASON=no active FlowGoal for this branch — gate not applicable"
+          printf '%s\n' "STATE=none"
+          printf '%s\n' "GATE=pass"
+          printf '%s\n' "REASON=no active FlowGoal for this branch — gate not applicable"
           ;;
         3)
-          echo "STATE=degenerate"
-          echo "GATE=block"
-          echo "REASON=multiple active goals on the current branch — run /flow:goal history and clear extras"
+          printf '%s\n' "STATE=degenerate"
+          printf '%s\n' "GATE=block"
+          printf '%s\n' "REASON=multiple active goals on the current branch — run /flow:goal history and clear extras"
           ;;
         *)
-          echo "STATE=unavailable"
-          echo "GATE=block"
+          printf '%s\n' "STATE=unavailable"
+          printf '%s\n' "GATE=block"
           printf '%s\n' "REASON=flow-active-goal.sh exited $GOAL_EXIT"
           ;;
       esac
@@ -369,9 +369,9 @@ After agents return, TaskUpdate each review task with findings.
      # block's shell, so re-derive the issue from the branch and read the
      # lifecycle from the helper (same pattern as the manifest-emit block).
      ISSUE_NUM=$(git branch --show-current 2>/dev/null | grep -oE 'issue-[0-9]+' | head -1 | sed 's/issue-//')
-     GOAL_LIFECYCLE=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/flow-active-goal.sh" --status 2>/dev/null || echo "unknown")
+     GOAL_LIFECYCLE=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-active-goal.sh" --status 2>/dev/null || printf '%s\n' "unknown")
      if [ -n "$ISSUE_NUM" ]; then
-       "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/journal-record.sh" \
+       "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-record.sh" \
          --issue "$ISSUE_NUM" --type escalation-resolved \
          --metadata gate=flowgoal-pr \
          --metadata goal_status="$GOAL_LIFECYCLE" \
@@ -411,7 +411,7 @@ After agents return, TaskUpdate each review task with findings.
    The helper no-ops if any non-journal path is dirty (it never sweeps unrelated work), and
    its `chore(decisions):` subject is skipped by `log-commits.sh` Guard 1 (no re-append):
    ```bash
-   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")/bin/commit-journal-churn.sh" 2>/dev/null || true
+   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/commit-journal-churn.sh" 2>/dev/null || true
    git push -u origin $BRANCH
    ```
 10. **Create PR** (Tier 2):
@@ -430,36 +430,36 @@ After agents return, TaskUpdate each review task with findings.
     # findings refuted in step 6 as comma-separated ID:agent pairs, for example
     # F3:code-reviewer; empty when none were refuted).
     REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-    [ -n "$REPO" ] || { echo "ERROR: cannot resolve the repository; refusing to record against an unattributable pull request" >&2; exit 1; }
+    [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to record against an unattributable pull request" >&2; exit 1; }
     # `gh pr view --repo` needs the pull request named, so ask by head branch
     # rather than dropping the pin: an unpinned call resolves against whatever
     # repository gh picks for the invoking shell. BRANCH is what selects the
     # pull request, so it is validated like the rest: gh DROPS an empty --head
     # filter and answers with the first open pull request in the repository,
     # and `git branch --show-current` prints nothing on a detached HEAD.
-    [ -n "${BRANCH:-}" ] || { echo "ERROR: BRANCH is not set; refusing to pick a pull request by an empty head filter" >&2; exit 1; }
+    [ -n "${BRANCH:-}" ] || { printf '%s\n' "ERROR: BRANCH is not set; refusing to pick a pull request by an empty head filter" >&2; exit 1; }
     # `--head` matches the branch name across forks, and a fork pull request has
     # the same headRefName, so ask for isCrossRepository too and refuse it.
-    PR_LINE=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number,headRefName,isCrossRepository --jq '.[0] | "\(.number) \(.headRefName) \(.isCrossRepository)"') || { echo "ERROR: cannot read the pull request for $BRANCH" >&2; exit 1; }
+    PR_LINE=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number,headRefName,isCrossRepository --jq '.[0] | "\(.number) \(.headRefName) \(.isCrossRepository)"') || { printf '%s\n' "ERROR: cannot read the pull request for $BRANCH" >&2; exit 1; }
     PR_NUMBER=${PR_LINE%% *}
     PR_REST=${PR_LINE#* }
     PR_HEAD=${PR_REST%% *}
     PR_FORK=${PR_REST##* }
     case "$PR_NUMBER" in
-      ''|0*|*[!0-9]*) echo "ERROR: no open pull request for branch '$BRANCH'; refusing to record" >&2; exit 1 ;;
+      ''|0*|*[!0-9]*) printf '%s\n' "ERROR: no open pull request for branch '$BRANCH'; refusing to record" >&2; exit 1 ;;
     esac
     # gh answered: confirm it answered about this branch and not another.
-    [ "$PR_HEAD" = "$BRANCH" ] || { echo "ERROR: pull request $PR_NUMBER has head '$PR_HEAD', not '$BRANCH'; refusing to record" >&2; exit 1; }
-    [ "$PR_FORK" = false ] || { echo "ERROR: pull request $PR_NUMBER comes from a fork with the same branch name; refusing to record against it" >&2; exit 1; }
+    [ "$PR_HEAD" = "$BRANCH" ] || { printf '%s\n' "ERROR: pull request $PR_NUMBER has head '$PR_HEAD', not '$BRANCH'; refusing to record" >&2; exit 1; }
+    [ "$PR_FORK" = false ] || { printf '%s\n' "ERROR: pull request $PR_NUMBER comes from a fork with the same branch name; refusing to record against it" >&2; exit 1; }
     case "${TOTAL_FINDINGS:-}" in
-      ''|*[!0-9]*|0?*) echo "ERROR: TOTAL_FINDINGS must be a count, got '${TOTAL_FINDINGS:-}'; refusing to record" >&2; exit 1 ;;
+      ''|*[!0-9]*|0?*) printf '%s\n' "ERROR: TOTAL_FINDINGS must be a count, got '${TOTAL_FINDINGS:-}'; refusing to record" >&2; exit 1 ;;
     esac
-    FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ echo plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;echo "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ echo "${__p%/}";break;};done);echo "$__fr")"
+    FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
     # The issue GitHub lists this pull request as closing, never a search hit:
     # `gh issue list --search "$BRANCH"` returns whatever matches the branch
     # text, so an unrelated open issue could take the slot, and its `2>/dev/null
     # || echo ""` read every gh failure as "no issue".
-    ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUMBER" --repo "$REPO") || { echo "ERROR: cannot read the issues pull request $PR_NUMBER closes; refusing to guess" >&2; exit 1; }
+    ISSUE=$("$FLOW_ROOT/bin/flow-pr-linked-issue.sh" --pr "$PR_NUMBER" --repo "$REPO") || { printf '%s\n' "ERROR: cannot read the issues pull request $PR_NUMBER closes; refusing to guess" >&2; exit 1; }
     if [ -z "$ISSUE" ]; then
       # GitHub lists no closing issue for a pull request into a branch other
       # than the default, and the branch name is what /flow:start keyed the
@@ -467,7 +467,7 @@ After agents return, TaskUpdate each review task with findings.
       ISSUE=$(printf '%s' "${BRANCH:-}" | grep -oE 'issue-[0-9]+' | head -1 | sed 's/issue-//')
     fi
     if [ -z "$ISSUE" ]; then
-      echo "PR_MANIFEST=skipped (GitHub lists no issue this pull request closes and the branch name names none)"
+      printf '%s\n' "PR_MANIFEST=skipped (GitHub lists no issue this pull request closes and the branch name names none)"
       exit 0
     fi
     if [ -n "$ISSUE" ]; then
@@ -477,13 +477,13 @@ After agents return, TaskUpdate each review task with findings.
         --metadata cycle=1 \
         --metadata path=B \
         --metadata findings_count="$TOTAL_FINDINGS" \
-        --metadata pr="$PR_NUMBER" || { echo "ERROR: cannot record the review cycle for issue $ISSUE" >&2; exit 1; }
+        --metadata pr="$PR_NUMBER" || { printf '%s\n' "ERROR: cannot record the review cycle for issue $ISSUE" >&2; exit 1; }
       for PAIR in $(printf '%s' "${REFUTED:-}" | tr ',' ' '); do
         # REFUTED entries are ID:agent. Without the colon the id would be
         # recorded as the facet too, and /flow:learn aggregates that field.
         case "$PAIR" in
           *:*) ;;
-          *) echo "WARN: REFUTED entry '$PAIR' is not ID:agent; skipping" >&2; continue ;;
+          *) printf '%s\n' "WARN: REFUTED entry '$PAIR' is not ID:agent; skipping" >&2; continue ;;
         esac
         "$FLOW_ROOT/bin/journal-record.sh" \
           --issue "$ISSUE" \
@@ -492,7 +492,7 @@ After agents return, TaskUpdate each review task with findings.
           --metadata finding_id="${PAIR%%:*}" \
           --metadata facet="${PAIR#*:}" \
           --metadata reason=self-review-refuted \
-          --metadata pr="$PR_NUMBER" || { echo "ERROR: cannot record the dropped finding ${PAIR%%:*} for issue $ISSUE" >&2; exit 1; }
+          --metadata pr="$PR_NUMBER" || { printf '%s\n' "ERROR: cannot record the dropped finding ${PAIR%%:*} for issue $ISSUE" >&2; exit 1; }
       done
     fi
     # PR_MANIFEST_BLOCK_END
