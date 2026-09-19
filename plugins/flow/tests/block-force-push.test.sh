@@ -270,6 +270,46 @@ _fp_blocks 'echo $((1<<2))
 git push --force
 2'
 
+_flow_test_begin "block-force-push — a flag the line itself sets is still read"
+# `F=--force; git push $F` is a force-push whose flag never appears beside the
+# push. The line said what F is, so the guard can read it; the whole-line scan
+# cannot, and allows this.
+_fp_blocks 'F=--force; git push $F origin main'
+_fp_blocks "F='--force'; git push \$F origin main"
+# The value decides. A variable holding something else is an ordinary push, and
+# so is one the line never set — refusing those would refuse real work.
+_fp_allows 'F=main; git push $F origin main'
+_fp_allows 'git push $BRANCH origin main'
+# A push whose words arrive through an expansion cannot be read at all.
+_fp_blocks '$(echo git) push --force origin main'
+_fp_blocks 'git push ${F} origin main'
+
+_flow_test_begin "block-force-push — a redirect does not break the push apart"
+# The shell parses `push>log` as `push` and a redirect; a word splitter that
+# only breaks on whitespace sees one word and no push at all.
+_fp_blocks 'git push>log --force origin main'
+_fp_blocks 'git >log push --force origin main'
+
+_flow_test_begin "block-force-push — a flag passed to the push from elsewhere"
+# `echo --force | xargs git push` gives xargs the flag on stdin and the push as
+# its command. Neither segment holds both.
+_fp_blocks 'echo --force | xargs git push'
+# The same shape with no flag anywhere is ordinary work.
+_fp_allows 'xargs git push origin main'
+
+_flow_test_begin "block-force-push — a body a shell reads, and an alias a shell runs"
+_fp_blocks 'cat <<EOF | bash
+git push --force
+EOF'
+_fp_blocks "gh alias set --shell pp 'git push --force'; gh pp"
+
+_flow_test_begin "block-force-push — a flag that forces nothing is not a force-push"
+# --force-if-includes qualifies --force-with-lease; on its own it forces nothing.
+# Refusing it taught the operator to force-push by hand, which is the harm this
+# hook exists to prevent.
+_fp_allows 'git push --force-if-includes origin main'
+_fp_allows 'git push --force-with-lease --force-if-includes origin main'
+
 # ----------------------------------------------------------- shapes that must not crash --
 
 _flow_test_begin "block-force-push — a malformed command is not a crash"

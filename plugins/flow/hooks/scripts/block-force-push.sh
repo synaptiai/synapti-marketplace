@@ -86,7 +86,10 @@ fi
 # accounting cannot explain, the floor still catches.
 MAIN_FIRES=0
 STRIPPED=$(printf '%s' "$COMMAND" | sed 's/--force-with-lease//g')
-if printf '%s' "$STRIPPED" | grep -qE 'git\s+push\s+.*(-f|--force)\b'; then
+# The tail is the same class the accounting uses, not `\b`: `\b` matches inside
+# `--force-if-includes`, which forces nothing, and would make the floor fire on a
+# line with no force flag the accounting can name.
+if printf '%s' "$STRIPPED" | grep -qE 'git[^A-Za-z0-9]*push.*(-f|--force)([^A-Za-z0-9_-]|$)'; then
   MAIN_FIRES=1
 fi
 
@@ -95,7 +98,9 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
     SQ = sprintf("%c", 39)
     BT = sprintf("%c", 96)          # backtick
     verdict = 0; unmodelled = 0; any_token = 0; hd = ""; hd_safe = 1
-    pushforce = 0; risky = 0; q_owner = ""
+    pushforce = 0; risky = 0; q_owner = ""; push_word = 0
+    push_via_other = 0
+    delete assign
     # Commands that cannot execute their arguments as a command. A force flag
     # inside one of these is that command own flag, or its text — never a push.
     #
@@ -185,23 +190,61 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
   #
   # A force flag on `git` with no `push` — `git branch -f` — is none of these
   # and stays allowed, because no push is being forced.
-  function judge(seg,   W, n, i, w, has, ispush) {
+  function judge(seg,   W, n, i, w, has, ispush, v, nm, ispush_word) {
     n = tokenize(seg, W)
-    has = 0; ispush = 0
+    has = 0; ispush = 0; ispush_word = 0
     for (i = 1; i <= n; i++) {
       if (is_force(W[i])) has = 1
-      if (i >= 2 && W[i] == "push") ispush = 1
+      if (W[i] == "push") { ispush = 1; ispush_word = 1; push_word = 1 }
+      # Remember a same-line assignment, so a flag that reaches the push through
+      # the variable it just set is still readable.
+      if (W[i] ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
+        nm = W[i]; sub(/=.*$/, "", nm)
+        v = W[i]; sub(/^[^=]*=/, "", v)
+        assign[nm] = v
+      }
     }
+    # `git>log push` and `git push>log` are pushes too: a redirect glues to the
+    # word beside it, and the shell parses both as `git push`.
+    if (seg ~ /git[^A-Za-z0-9]*push/) { push_word = 1; ispush = 1; ispush_word = 1 }
     # A quoted span groups into a single word, so a flag written inside one
     # never appears as a word of its own. The raw text is examined as well,
     # which is what finds it.
     if (seg ~ /(-f|--force)([^A-Za-z0-9_-]|$)/) has = 1
-    if (!has) return
+    if (!has) {
+      # `F=--force; git push $F` is a force-push whose flag never appears as a
+      # word of its own beside the push.
+      if (ispush) {
+        for (i = 1; i <= n; i++) {
+          if (W[i] ~ /^\$[A-Za-z_][A-Za-z0-9_]*$/) {
+            nm = substr(W[i], 2)
+            if ((nm in assign) && is_force(assign[nm])) { pushforce = 1; return }
+          }
+        }
+      }
+      # A push that is an argument to a command able to run a command is how the
+      # wrappers receive a flag from elsewhere on the line — `echo --force |
+      # xargs git push`. It matters only once a flag has been seen somewhere.
+      if (ispush_word && n > 0 && base(W[1]) != "git" && !is_safe(base(W[1]))) {
+        push_via_other = 1
+      }
+      return
+    }
     any_token = 1
     if (n == 0) { risky = 1; return }
     w = base(W[1])
     if (w == "git" && ispush) { pushforce = 1; return }
+    # `gh alias set --shell` makes an alias gh runs through a shell, so a gh
+    # command is not accounted for when it names one.
+    if (w == "gh") {
+      for (i = 2; i <= n; i++) if (W[i] == "alias") { risky = 1; return }
+    }
     if (is_safe(w)) return
+    # A push that is an argument to a command able to run a command is how the
+    # wrappers receive a flag from elsewhere on the line — `echo --force | xargs
+    # git push`. It matters only once a flag has been seen somewhere; a plain
+    # push through a wrapper carries none, and refusing that refuses real work.
+    if (!has && ispush_word) { push_via_other = 1; return }
     risky = 1
   }
 
@@ -297,9 +340,12 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
         gsub(/\\/, "", d)
         while (d != "" && (substr(d, 1, 1) == SQ || substr(d, 1, 1) == "\"")) d = substr(d, 2)
         while (d != "" && (substr(d, length(d), 1) == SQ || substr(d, length(d), 1) == "\"")) d = substr(d, 1, length(d) - 1)
-        # Who opened it decides whether the body is a script or text.
+        # Who opened it decides whether the body is a script or text — and a
+        # body written into a pipeline is being read by the command on the other
+        # end of it, not written to a file.
         W2N = tokenize(substr(line, segstart, i - segstart), W2)
         hd_safe = (W2N > 0 && is_safe(base(W2[1]))) ? 1 : 0
+        if (substr(line, i + 2) ~ /\|/) hd_safe = 0
         if (d != "") hd = d
         i += 2; continue
       }
@@ -330,9 +376,15 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
     # substitution it could not read, no flag it never saw, and nothing left
     # running a command the guard cannot name.
     if (pushforce) verdict = 1
-    else if (main_fires + 0 == 1) {
-      if (unmodelled || !any_token || risky) verdict = 1
-    }
+    # The floor firing with no flag the accounting can name is unexplained, and
+    # blocks. Kept separate from the rule below: a plain push has no flag either.
+    else if (main_fires + 0 == 1 && !any_token) verdict = 1
+    # Otherwise the accounting decides, and it applies whenever a push is
+    # present at all — not only when the floor pattern happened to match. The
+    # floor is blind to a push whose words arrive through an expansion or a
+    # redirect, which is exactly when the accounting has to carry the decision.
+    else if (push_word && (unmodelled || risky)) verdict = 1
+    else if (any_token && push_via_other) verdict = 1
     print verdict
   }
 ') || { echo "BLOCKED: the command could not be scanned, so it cannot be verified." >&2 || true; exit 2; }

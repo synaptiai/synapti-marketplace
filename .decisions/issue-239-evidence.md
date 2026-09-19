@@ -8,8 +8,8 @@ criteria below reproduce that section's text.
 
 The hook under test is `plugins/flow/hooks/scripts/block-force-push.sh`; every case
 runs against the file as it stands on this branch. The suite is
-`plugins/flow/tests/run.sh block-force-push.test.sh`: **105 assertions, 66 of them
-asserting a block and 22 asserting an allow**, the rest asserting exit codes and the
+`plugins/flow/tests/run.sh block-force-push.test.sh`: **119 assertions, 75 of them
+asserting a block and 27 asserting an allow**, the rest asserting exit codes and the
 refusal message. Its baseline before any mutation is **0 cases red**.
 
 The guard blocks by default and allows only what it can positively account for. The
@@ -353,17 +353,17 @@ Baseline before each: **0 cases red.**
 
 | Mutation | Cases red |
 |---|---|
-| A — no decision at all (allow everything) | 71 |
-| B — every command word treated as able to execute | 27 |
-| C — the `risky` term dropped from the floor | 26 |
+| A — no decision at all (allow everything) | 80 |
+| B — every command word treated as able to execute | 29 |
+| C — the `risky` term dropped from the floor | 27 |
 | D — the raw-text force-flag check dropped | 6 |
 | E — the quoted-substitution check dropped | 1 |
-| F — detection reverted to the previous whole-line pattern | 18 |
+| F — detection reverted to the previous whole-line pattern | 27 |
 
-**A** is the degenerate case: a guard that always allows fails 71 assertions, so the
+**A** is the degenerate case: a guard that always allows fails 80 assertions, so the
 suite is not passing by accident.
 
-**B** and **C** are the new design's two central decisions — the cannot-execute list, and
+**B** and **C** are the design's two central decisions — the cannot-execute list, and
 the catch-all that blocks an unattributable flag when the floor has fired. Each is
 load-bearing: removing either turns over 25 cases red.
 
@@ -405,7 +405,7 @@ report is only as good as the mutant.
 
 ### Negative/adversarial cases covered
 
-The suite asserts both directions — 66 cases expecting a block and 22 expecting an allow
+The suite asserts both directions — 75 cases expecting a block and 27 expecting an allow
 — so a hook that always blocks and a hook that always allows each fail it. A 3000-input
 fuzz sample produced only exits 0 and 2, so no input makes the hook exit with a code the
 harness would read as an allow.
@@ -414,12 +414,12 @@ harness would read as an allow.
 
 | Input | Expected | Source of expected |
 |---|---|---|
-| no decision at all | at least 71 failures | each case names the behaviour it expects |
-| every command word treated as executing | at least 27 failures | the accounted-for cases name it |
-| the `risky` term dropped | at least 26 failures | the wrapper and heredoc groups name it |
+| no decision at all | at least 80 failures | each case names the behaviour it expects |
+| every command word treated as executing | at least 29 failures | the accounted-for cases name it |
+| the `risky` term dropped | at least 27 failures | the wrapper and heredoc groups name it |
 | the raw-text check dropped | at least 6 failures | the quoted-text cases name it |
 | the quoted-substitution check dropped | at least 1 failure | the quoted-backtick case names it |
-| detection reverted to the whole-line pattern | at least 18 failures | the two reported shapes name it |
+| detection reverted to the whole-line pattern | at least 27 failures | the two reported shapes name it |
 
 ### Risk map coverage
 
@@ -447,7 +447,7 @@ the process: exit code, and what it writes to each stream.
 
 | Step | Command | Result |
 |---|---|---|
-| Suite | `bash plugins/flow/tests/run.sh block-force-push.test.sh` | 105 pass, 0 fail |
+| Suite | `bash plugins/flow/tests/run.sh block-force-push.test.sh` | 119 pass, 0 fail |
 | Whole flow suite | `bash plugins/flow/tests/run.sh` | 4745 pass, 0 fail, 69 files |
 | Windows hook smoke | `bash plugins/flow/tests/windows-hooks-smoke.sh` | 56 passed, 0 failed |
 | Fuzz | 3000 generated commands | exits 0 and 2 only |
@@ -485,6 +485,17 @@ heredoc tracker. Each was a real force-push that `main` blocked. The design's fa
 structural: it tried to decide *is this a force push?*, which requires knowing whether
 the enclosing command interprets its argument as a command, and `gh issue create --body
 '…'` and `bash -lc '…'` are the same shape needing opposite answers.
+
+**A second review then found the first version of the inverted design had made the
+same mistake in a subtler place.** The accounting was gated behind the floor, so it was
+inert exactly when it was needed — on a line where the floor's pattern did not match,
+which is what an expansion or a redirect produces. `$(echo git) push --force origin
+main` really force-pushes and both this branch and `main` allowed it. The same review
+found a heredoc whose opener piped into a shell, a redirect glued to a word
+(`push>log`), and a `gh alias set --shell` that runs its argument through a shell. Each
+is now closed and each has a case. The gate is now "does a push appear at all" rather
+than "did the floor match", and a flag the line itself assigns (`F=--force; git push
+$F`) is read rather than missed.
 
 **The shipped design inverts the question.** It asks what it can *account for*, blocks
 everything else, and keeps the whole-line scan as the floor for whatever the accounting

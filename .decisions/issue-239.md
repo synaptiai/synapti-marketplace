@@ -39,6 +39,16 @@ artifacts:
   - AC3
   - AC4
   - AC5
+- type: evidence-captured
+  captured_at: '2026-09-19T22:01:34Z'
+  evidence_id: evidence-ac1-5-guard-suite-turn4
+  goal_id: issue-239
+  proves:
+  - AC1
+  - AC2
+  - AC3
+  - AC4
+  - AC5
 ---
 
 # Issue 239 — the force-push guard reads the whole shell line
@@ -86,6 +96,14 @@ _Captured by specification-capture skill on 2026-09-19. Source: extracted-from-i
 | a force flag inside a quoted span | word-splits only, so a flag grouped into one quoted word is never seen | `gh issue create --body 'git push --force'` -> right: allowed, and `git push '--force'` -> right: blocked |
 | detecting the floor | computes it against the command as read rather than as the shell would, so a construct hides the push from it | `echo $((1<<2))` then a push then `2` -> right: blocked; wrong: allowed |
 | the exit contract | lets a failed scan fall through to the shell own status, which is not 2 | a stubbed `awk` exiting 1 while the command force-pushes -> right: blocked; wrong: allowed |
+| whether the accounting runs at all | gates it behind the whole-line pattern, so it is inert on a line the pattern misses — which is what an expansion or a redirect produces | `$(echo git) push --force origin main` -> right: blocked; wrong: allowed |
+| a flag the line assigns | reads only literal flag words, so a variable holding the flag hides it | `F=--force; git push --force $F origin main` -> right: blocked; wrong: allowed, and `F=main; git push --force $F origin main` right: allowed |
+| a redirect beside the command word | splits on whitespace only, so `push>log` is one word and no push is seen | `git push>log --force origin main` -> right: blocked; wrong: allowed |
+| which command reads a heredoc body | judges by the opener first word, so a body piped into a shell reads as text | `cat <<EOF \| bash` with a push in the body -> right: blocked; wrong: allowed |
+| a flag and a push in different commands | accounts each segment alone, so a flag piped into `xargs` has no push beside it | `echo --force \| xargs git push` -> right: blocked; wrong: allowed, while `xargs git push origin main` stays allowed |
+| a command that runs its argument as a shell | treats `gh` as one that cannot, but `gh alias set --shell` makes one | `gh alias set --shell pp 'git push --force'` -> right: blocked; wrong: allowed |
+| a flag that forces nothing | matches `--force` inside `--force-if-includes` | `git push --force-if-includes origin main` -> right: allowed; wrong: blocked |
+| a harmless flag on an unlisted command | blocks it whenever a push shares the line, so a text command the list does not name is refused | accepted cost: `git push origin main && sort -f file` -> right: blocked (the safe direction); the price is a refused command |
 
 ## Stranger Test
 
@@ -314,3 +332,19 @@ PASS — 3 tasks reviewed.
 <!-- auto-log: 2026-09-19 23:47 Write /tmp/bundle239-nums-synapti.py -->
 
 <!-- auto-log: 2026-09-19 23:47 commit "fix(flow): drop sort from the cannot-execute list, and state what earns a place on it" -->
+
+<!-- auto-log: 2026-09-19 23:50 Write /tmp/sec2-239-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 23:51 Write /tmp/fix2-239-synapti.py -->
+
+<!-- auto-log: 2026-09-19 23:51 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/block-force-push.sh -->
+
+<!-- auto-log: 2026-09-19 23:53 Write /tmp/fvar239-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 23:53 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/block-force-push.test.sh -->
+
+<!-- auto-log: 2026-09-20 00:00 Write /tmp/bundle239-nums2-synapti.py -->
+
+<!-- auto-log: 2026-09-20 00:01 Write /tmp/riskmap239-synapti.py -->
+
+<!-- auto-log: 2026-09-20 00:01 Write /tmp/syncgoal239-synapti.py -->
