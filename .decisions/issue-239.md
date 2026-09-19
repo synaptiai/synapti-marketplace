@@ -19,6 +19,16 @@ artifacts:
   workflow: start-issue
   run_id: 2026-09-19T192103Z-issue-239
   status: active
+- type: evidence-captured
+  captured_at: '2026-09-19T21:14:12Z'
+  evidence_id: evidence-ac1-5-guard-suite-turn2
+  goal_id: issue-239
+  proves:
+  - AC1
+  - AC2
+  - AC3
+  - AC4
+  - AC5
 ---
 
 # Issue 239 — the force-push guard reads the whole shell line
@@ -190,3 +200,11 @@ PASS — 3 tasks reviewed.
 <!-- auto-log: 2026-09-19 22:29 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-239-evidence.md -->
 
 <!-- auto-log: 2026-09-19 22:29 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-239-evidence.md -->
+
+<!-- auto-log: 2026-09-19 22:30 Write /tmp/pr239-synapti-force-push-guard.md -->
+
+<!-- auto-log: 2026-09-19 22:30 Write /tmp/neg239-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 22:46 Write /tmp/ev239-synapti-sidecar.yaml -->
+
+<!-- auto-log: 2026-09-19 22:47 Edit /tmp/ev239-synapti-sidecar.yaml -->
