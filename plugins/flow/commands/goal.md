@@ -221,18 +221,26 @@ On **Confirm**, write the lifecycle update:
 ```bash
 LIFE_TMP=$(mktemp -t flow-lifecycle.XXXXXX.yaml)
 trap 'rm -f "$LIFE_TMP"' EXIT
+# The block must be nested under `lifecycle:` — the recorder refuses a bare
+# `status:` — and `last_evaluation.result` speaks its own vocabulary
+# (pass | incomplete | fail | needs_human_review | blocked), which is not the
+# lifecycle status being written here. The timestamp is quoted: YAML parses an
+# unquoted one into a datetime, and the schema requires a string.
 cat > "$LIFE_TMP" <<EOF
-status: ${PROPOSED_TO}
-last_evaluation:
-  result: ${VERDICT_RESULT}
-  reason: ${PROPOSED_REASON}
-  at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+lifecycle:
+  status: ${PROPOSED_TO}
+  last_evaluation:
+    result: ${VERDICT_RESULT}
+    reason: "${PROPOSED_REASON}"
+    at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 EOF
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-goal-record.sh" --update-lifecycle \
   --goal-id "$GOAL_ID" \
   --lifecycle-file "$LIFE_TMP" \
   --from-status "$CURRENT_FROM_STATUS"
 ```
+
+`${VERDICT_RESULT}` is the evaluation's own result, not the transition being made: a transition to `achieved` writes `result: pass`, and one to `failed` writes `result: fail`.
 
 On **Re-evaluate**, recursively invoke `/flow:goal evaluate $GOAL_ID` for another pass.
 
