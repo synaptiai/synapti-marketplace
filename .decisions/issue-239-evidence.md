@@ -455,7 +455,7 @@ surface is the process: exit code, and what it writes to each stream.
 | Windows hook smoke | `bash plugins/flow/tests/windows-hooks-smoke.sh` | 56 passed, 0 failed |
 | Fuzz | 3000 generated commands | exits 0 and 2 only |
 | Pathological set | unterminated heredoc, 999 backslashes, invalid UTF-8, CRLF, 20 000-character token | no crash, no hang |
-| Cost | 100 KB command / 128 KB (the cap) | 0.70 s / 1.04 s; over the cap, blocks in ~70 ms |
+| Cost | 100 KB command / 128 KB (the cap) | 0.7-0.8 s / 1.0-1.1 s across two runs; over the cap, blocks in ~70 ms |
 
 Every line above is from the tree as it stands on this branch: the whole-suite run
 is the one taken after the last change to the hook and its test.

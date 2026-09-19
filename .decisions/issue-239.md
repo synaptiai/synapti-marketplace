@@ -46,7 +46,7 @@ _Captured by specification-capture skill on 2026-09-19. Source: extracted-from-i
 
 ### Failure modes
 
-- **Timeouts** — the scan walks the command a character at a time, so its cost grows faster than the input. A command longer than `MAX_CHARS` (131072) is refused rather than truncated: truncating and scanning the head would drop whatever the tail contained, and a dropped tail is the direction that lets a force-push through. Measured on this machine's awk, a 100 KB command takes about 0.7 s and one at the cap about 1.0 s.
+- **Timeouts** — the scan walks the command a character at a time, so its cost grows faster than the input. A command longer than `MAX_CHARS` (131072) is refused rather than truncated: truncating and scanning the head would drop whatever the tail contained, and a dropped tail is the direction that lets a force-push through. Measured on this machine's awk across two runs, a 100 KB command takes 0.7-0.8 s and one at the cap 1.0-1.1 s.
 - **Partial failures** — `jq` or `awk` missing fails closed: the hook blocks rather than allowing an uninspected command. Both are required because the parse now depends on `awk` as well as `jq`; without the check a missing `awk` would exit 127, which the harness reads as an allow.
 - **Invalid input** — a crash is not a block: `set -euo pipefail` with a failing command exits non-zero, and the harness reads a non-2 exit as an allow, so any parse path that can error must be written so it cannot. Input that ends mid-construct — an unclosed quote, a heredoc with no terminator — is not vouched for and blocks. A payload `jq` cannot parse also blocks, rather than falling through on jq's own exit status. A 3000-input fuzz sample and a targeted pathological set produced only exits 0 and 2.
 - **Missing context** — the hook consults no git state and no repository, so an unusual working directory changes nothing.
@@ -208,3 +208,23 @@ PASS — 3 tasks reviewed.
 <!-- auto-log: 2026-09-19 22:46 Write /tmp/ev239-synapti-sidecar.yaml -->
 
 <!-- auto-log: 2026-09-19 22:47 Edit /tmp/ev239-synapti-sidecar.yaml -->
+
+<!-- auto-log: 2026-09-19 23:16 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/goal.md -->
+
+<!-- auto-log: 2026-09-19 23:16 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/goal.md -->
+
+<!-- auto-log: 2026-09-19 23:19 Write /tmp/flow-sec-probe/probe-underblock.sh -->
+
+<!-- auto-log: 2026-09-19 23:20 Write /tmp/flow-sec-probe/probe-timing.sh -->
+
+<!-- auto-log: 2026-09-19 23:21 Write /tmp/flow-sec-probe/probe-timing2.sh -->
+
+<!-- auto-log: 2026-09-19 23:21 Write /tmp/flow-sec-probe/probe-regress.sh -->
+
+<!-- auto-log: 2026-09-19 23:22 Write /tmp/flow-sec-probe/probe-mechanisms.sh -->
+
+<!-- auto-log: 2026-09-19 23:22 commit "improve(flow): correct the lifecycle-write template the goal command documents" -->
+
+<!-- auto-log: 2026-09-19 23:22 Write /tmp/flow-sec-probe/probe-close.sh -->
+
+<!-- auto-log: 2026-09-19 23:22 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/block-force-push.sh -->

@@ -135,9 +135,9 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk '
   #
   # The word is assembled by slicing runs out of the input rather than by
   # appending one character at a time. Appending per character makes the cost
-  # grow with the square of the length, and a command long enough to matter
-  # would then stall the tool call rather than be decided: measured before this
-  # change, a 262 KB command took 23 seconds.
+  # grow with the square of the length, so a command long enough to matter would
+  # stall the tool call rather than be decided. Slicing is what keeps the cost at
+  # the cap acceptable: a 128 KB command is decided in about a second.
   function tokenize(s, words,   n, i, c, esc, qq, out, nw, ws) {
     n = length(s); nw = 0; out = ""; esc = 0; qq = ""; ws = 1; i = 1
     while (i <= n) {
