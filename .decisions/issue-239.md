@@ -228,3 +228,13 @@ PASS — 3 tasks reviewed.
 <!-- auto-log: 2026-09-19 23:22 Write /tmp/flow-sec-probe/probe-close.sh -->
 
 <!-- auto-log: 2026-09-19 23:22 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/block-force-push.sh -->
+
+<!-- auto-log: 2026-09-19 23:22 commit "improve(flow): state the guard's cost where a reader can reproduce it" -->
+
+<!-- auto-log: 2026-09-19 23:23 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/block-force-push.sh -->
+
+<!-- auto-log: 2026-09-19 23:23 commit "improve(flow): align the guard's in-file cost figures with the measured range" -->
+
+<!-- auto-log: 2026-09-19 23:23 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_block_force_push_guard_scanner_regressions.md -->
+
+<!-- auto-log: 2026-09-19 23:23 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/MEMORY.md -->
