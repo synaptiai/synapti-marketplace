@@ -389,3 +389,43 @@ for the producers it names, not for every helper in the tree.
 <!-- auto-log: 2026-09-19 19:45 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/no-interpreting-print.test.sh -->
 
 <!-- auto-log: 2026-09-19 19:46 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/no-interpreting-print.test.sh -->
+
+<!-- auto-log: 2026-09-19 19:46 commit "test: state accurate opener counts in the guard comments" -->
+
+<!-- auto-log: 2026-09-19 19:48 Write /tmp/hook-issue.md -->
+
+<!-- auto-log: 2026-09-19 19:51 Edit /tmp/pr-body.md -->
+
+<!-- auto-log: 2026-09-19 19:52 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 19:52 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 19:52 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 19:53 commit "docs(decisions): correct the evidence bundle's quoted test totals" -->
+
+<!-- auto-log: 2026-09-19 19:56 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/print-line-integrity.test.sh -->
+
+<!-- auto-log: 2026-09-19 19:56 Write /tmp/rep_before_after.py -->
+
+<!-- auto-log: 2026-09-19 19:57 Write /tmp/rep2.py -->
+
+<!-- auto-log: 2026-09-19 19:57 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 19:57 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 19:57 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 19:57 Edit /tmp/pr-body.md -->
+
+<!-- auto-log: 2026-09-19 19:57 Edit /tmp/pr-body.md -->
+
+<!-- auto-log: 2026-09-19 19:57 Edit /tmp/pr-body.md -->
+
+<!-- auto-log: 2026-09-19 19:58 commit "test(flow): execute the goal-status forge instead of asserting it" -->
+
+<!-- auto-log: 2026-09-19 19:58 Write /tmp/pr240-synapti-print-body.md -->
+
+<!-- auto-log: 2026-09-19 19:59 Write /Users/danielbentes/.claude/projects/-Users-danielbentes-synapti-marketplace/memory/project_shared_tmp_collisions.md -->
+
+<!-- auto-log: 2026-09-19 19:59 Edit /Users/danielbentes/.claude/projects/-Users-danielbentes-synapti-marketplace/memory/MEMORY.md -->
