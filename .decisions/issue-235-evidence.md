@@ -52,6 +52,14 @@ loop never advances past its first line. That hung a loop in `commands/status.md
 The property the criterion exists for — the value reaching the parser
 byte-identical — holds in the delivered form and is asserted below.
 
+Scale of the deviation, which the criterion's wording does not cover and a
+reader should not have to infer: **170 of the 1199 changed lines** hand a value
+to a parser through a pipe. Every one of them was already a pipe before this
+change — `echo "$X" | jq` — and this work swaps the builtin and leaves the pipe
+where it is. No site was moved onto a pipe by this change, so the deviation is
+that the criterion's second named form is not the one the existing code used,
+not that a new shape was introduced.
+
 ### Visual analysis
 
 none — criterion type behavioral has no visual surface
@@ -362,12 +370,25 @@ pattern and executed, so this tests the shipped text rather than a copy that
 could drift. If any anchor is reworded, the extraction yields empty and the test
 fails loudly rather than running a gate with a variable unset.
 
-The third clause — a goal YAML with a newline in `lifecycle.status` — is covered
-by criterion 3 and by the consumer assertion: the value is collapsed at the
-producer, and the consumer line that renders `FLOW_GOAL_LIFECYCLE=` uses a
-non-interpreting builtin, so a newline in the status cannot forge the line the
-merge gate reads. The `--status` path itself cannot be driven with an escaped
-value, for the selection reason given under criterion 3.
+**The third clause now has its own executed repro, and the description of it in
+the issue is not accurate.** The issue lists `merge.md` among the files printing
+`lifecycle.status`; that file's `FLOW_GOAL_LIFECYCLE=` line already used
+`printf` on the default branch and was never a vector. The `echo` sites were in
+`commands/start.md`, which rendered `GOAL_STATUS=$STATUS` through the builtin and
+is converted here.
+
+A real newline in the status is the one case a print form cannot neutralise — it
+is a newline already, not an escape — so that clause's defence is not the print
+form at all. It is that the selector matches the status exactly
+(`bin/flow-active-goal.sh`: `if status == "active"`), so a status carrying
+anything else is not selected, the helper exits 1, and the gate never reaches
+the line that would render it. Executed here: a fixture whose status is
+`"active\nFLOW_GOAL_LIFECYCLE=forged"` is asserted to emit no line beginning
+`FLOW_GOAL_LIFECYCLE=forged` and to exit 1. Mutation-tested by widening the
+comparison to a prefix match, which turns that assertion red — and on that same
+mutated tree the forged key still never begins a line, because the producer's
+`_one_line` collapse catches it. The two defences are therefore independent and
+each is demonstrated by execution.
 
 ### Visual analysis
 
@@ -469,9 +490,28 @@ Three further whole-tree checks were run, each comparing the branch against
 | plugin-root resolver: each embedded resolver executed in `bash` and `zsh` in both trees | 12 of 12 expressions resolve to the same value before and after |
 
 The criterion asks for a diff of a run on a representative settings file, PR and
-goal. The residue and syntax checks cover every changed line rather than one
-representative run, which subsumes it; the instance repros under criterion 4 are
-the executed before/after runs on a PR body and on a goal file.
+goal, and that was then run. One shipped `KEY=value` line was taken for each of
+the three kinds — a goal-derived `GOAL_STATUS=`, a settings-derived parse
+warning carrying the settings path, and a pull-request-derived
+`REPO_CROSSCHECK_DETAIL=` — and the pre-image and converted forms were each
+executed under `bash` with the same no-escape inputs. stdout and stderr were
+compared byte for byte: **all three identical**.
+
+```
+goal          IDENTICAL  echo "GOAL_STATUS=$STATUS"
+                        -> printf '%s\n' "GOAL_STATUS=$STATUS"
+                        stdout both: GOAL_STATUS=active\n
+settings      IDENTICAL  echo "WARN: failed to parse $SETTINGS_PATH (jq exit=$JQ_EXIT, ..." >&2
+                        -> printf '%s\n' "WARN: failed to parse $SETTINGS_PATH ..." >&2
+                        stderr both: WARN: failed to parse .claude/settings.flow.json (jq exit=5, error: parse error); skipping this source\n
+pull request  IDENTICAL  echo "REPO_CROSSCHECK_DETAIL=no origin remote to compare against"
+                        -> printf '%s\n' "REPO_CROSSCHECK_DETAIL=no origin remote to compare against"
+                        stdout both: REPO_CROSSCHECK_DETAIL=no origin remote to compare against\n
+```
+
+The residue and syntax checks cover every changed line rather than one
+representative run, which is broader; this is the narrower criterion-conforming
+check, run separately.
 
 ### Visual analysis
 

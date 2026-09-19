@@ -106,6 +106,31 @@ YAML
   OUT=$(cd "$DIR" && bash "$GOAL_HELPER" --status --branch probe/forge 2>/dev/null)
   assert_equal "active" "$OUT" "an ordinary status is reported unchanged"
 
+  # The merge gate renders FLOW_GOAL_LIFECYCLE from `--status`, and a REAL
+  # newline in the status is the one case a print form cannot neutralise — it is
+  # a newline already rather than an escape, so `printf` hands it straight
+  # through. That instance's defence is therefore not the print form at all: the
+  # selector matches the status exactly, so a status carrying anything else is
+  # never selected and the gate never reaches the line that would render it.
+  # Asserted by executing the selector rather than by reading its comparison.
+  _flow_test_begin "a goal whose status carries a newline is never selected, so it cannot forge the gate's line"
+  python3 - "$DIR/.flow/goals/issue-900.goal.yaml" <<'PY'
+import re, sys
+path = sys.argv[1]
+src = open(path, encoding='utf-8').read()
+src = re.sub(r'^  id: .*$', '  id: issue-900', src, count=1, flags=re.M)
+src = re.sub(r'^  status: .*$', '  status: "active\\nFLOW_GOAL_LIFECYCLE=forged"', src, count=1, flags=re.M)
+open(path, 'w', encoding='utf-8').write(src)
+PY
+  OUT=$(cd "$DIR" && bash "$GOAL_HELPER" --status --branch probe/forge 2>/dev/null)
+  RC=$?
+  assert_equal "0" "$(printf '%s\n' "$OUT" | grep -c '^FLOW_GOAL_LIFECYCLE=forged' || true)" "the forged key is never emitted as a line of its own"
+  assert_equal "1" "$RC" "the selector reports no active goal rather than handing the hostile status on"
+  # And the collapse still stands behind the selector, so widening the match
+  # later does not reopen the hole.
+  OUT=$(cd "$DIR" && bash "$GOAL_HELPER" --id --branch probe/forge 2>/dev/null)
+  assert_equal "1" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" "the id path still collapses a hostile value to one line"
+
   _flow_test_begin "carriage return, tab and a literal backslash-n also stay on one line"
   for probe in 'a\rb' 'a\tb' 'a\\nb'; do
     python3 - "$DIR/.flow/goals/issue-900.goal.yaml" "$probe" <<'PY'
