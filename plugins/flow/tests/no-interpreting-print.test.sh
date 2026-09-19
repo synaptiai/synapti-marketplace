@@ -68,9 +68,9 @@ _nip_scan() {
     }
     # Openers that put the next word in command position. `case "$v" in *) echo`
     # and `if x; then echo` are ordinary shell; a predicate that recognised only
-    # punctuation left 53 real sites unread while still reporting the tree
-    # clean, which is the failure this guard exists to prevent rather than to
-    # reproduce.
+    # punctuation read real sites in this plugin as arguments while still
+    # reporting the tree clean, which is the failure this guard exists to
+    # prevent rather than to reproduce.
     #
     # `$` is deliberately absent. A line beginning `$ echo …` is a shell
     # transcript inside a document, not a script the harness runs, and
@@ -257,10 +257,11 @@ done
 
 _flow_test_begin "an echo opened by a word or a case arm is still a command"
 # The predicate deciding whether a token sits in command position is the whole
-# guard. An earlier version knew only punctuation, so it read 53 real sites as
-# arguments while reporting the tree clean — and because the same predicate
-# drove the rewrite, each confirmed the other's blind spot. Every opener gets
-# its own case here so a recurrence fails loudly instead of reading as clean.
+# guard. An earlier version knew only punctuation, so it read 45 real sites in
+# this plugin as arguments while reporting the tree clean — and because the same
+# predicate drove the rewrite, each confirmed the other's blind spot. Every
+# opener gets its own case here so a recurrence fails loudly rather than
+# reading as clean.
 NIP_OPENERS=(
   'case-arm|case "$V" in *) echo "K=$V" ;; esac'
   'then-branch|if true; then echo "K=$V"; fi'

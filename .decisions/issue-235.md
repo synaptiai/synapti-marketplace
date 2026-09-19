@@ -381,3 +381,11 @@ for the producers it names, not for every helper in the tree.
 <!-- auto-log: 2026-09-19 19:39 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
 
 <!-- auto-log: 2026-09-19 19:40 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 19:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/no-interpreting-print.test.sh -->
+
+<!-- auto-log: 2026-09-19 19:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/no-interpreting-print.test.sh -->
+
+<!-- auto-log: 2026-09-19 19:45 Edit /Users/danielbentes/synapti-marketplace/plugins/dossier/tests/no-interpreting-print.test.sh -->
+
+<!-- auto-log: 2026-09-19 19:46 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/no-interpreting-print.test.sh -->

@@ -50,9 +50,9 @@ _dip_scan() {
     }
     # Openers that put the next word in command position. `case "$v" in *) echo`
     # and `if x; then echo` are ordinary shell; a predicate that recognised only
-    # punctuation left 53 real sites unread while still reporting the tree
-    # clean, which is the failure this guard exists to prevent rather than to
-    # reproduce.
+    # punctuation read real sites in this plugin as arguments while still
+    # reporting the tree clean, which is the failure this guard exists to
+    # prevent rather than to reproduce.
     #
     # `$` is deliberately absent. A line beginning `$ echo …` is a shell
     # transcript inside a document, not a script the harness runs, and
