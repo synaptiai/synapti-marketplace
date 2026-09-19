@@ -1,7 +1,7 @@
 # Tests for hooks/scripts/block-force-push.sh.
 #
 # Contract under test: the hook blocks (exit 2) a `git push` that itself carries
-# `-f` or `--force`, and allows everything else. What it must never do is read a
+# a force flag, and allows everything else. What it must never do is read a
 # force flag belonging to something else on the same shell line as if it were the
 # push's own — the guard decides on the push invocation's arguments, not on
 # whatever else shares the line.
@@ -13,24 +13,50 @@
 # force-push by hand — advice that, followed, is the destructive action the hook
 # exists to prevent.
 #
+# Both directions are asserted, and the second one is the dangerous one. Every
+# group below that names a way a force-push can be *written* is a case a guard
+# that only understood the plain spelling would wave through:
+#
+#   * the separators that end a command, in their one-character spellings;
+#   * launchers that carry their own options, and a path-qualified `git`;
+#   * a shell's `-c` payload, and `eval`;
+#   * a heredoc whose delimiter a naive reader mis-takes;
+#   * quoting — single, double, joined-across-quotes, ANSI-C — and a line
+#     continued with a backslash.
+#
 # The hook reads {"tool_input":{"command":"..."}} on stdin and exits 0 (allow)
 # or 2 (block). It consults no git state, so every case runs from a scratch
 # directory.
 #
-# Prereq: jq (the hook hard-requires it). SKIPS gracefully otherwise.
+# Prereq: jq and awk (the hook hard-requires both). SKIPS gracefully otherwise.
 
 HOOK="$REPO_ROOT/plugins/flow/hooks/scripts/block-force-push.sh"
 
-if ! command -v jq >/dev/null 2>&1; then
-  _flow_test_begin "jq prerequisite"
-  _flow_assert_pass "SKIP: jq not installed"
+if ! command -v jq >/dev/null 2>&1 || ! command -v awk >/dev/null 2>&1; then
+  _flow_test_begin "jq and awk prerequisites"
+  _flow_assert_pass "SKIP: jq and awk are both required"
   return 0
 fi
 
 # _fp_exit <command> — the hook's exit code for that command.
+#
+# The payload reaches the hook through a here-string rather than a pipe: with a
+# pipe the status captured is the pipeline's, and under the runner's pipefail a
+# hook that exited 2 could be reported as 141 when the writer is killed by
+# SIGPIPE. The assertion would then fail for a reason that has nothing to do
+# with the hook's decision.
 _fp_exit() {
-  jq -n --arg c "$1" '{tool_input:{command:$c}}' | bash "$HOOK" >/dev/null 2>&1
+  local payload
+  payload=$(jq -n --arg c "$1" '{tool_input:{command:$c}}')
+  bash "$HOOK" <<<"$payload" >/dev/null 2>&1
   printf '%s' "$?"
+}
+
+# _fp_stderr <command> — what the hook printed on stderr.
+_fp_stderr() {
+  local payload
+  payload=$(jq -n --arg c "$1" '{tool_input:{command:$c}}')
+  bash "$HOOK" <<<"$payload" 2>&1 >/dev/null
 }
 
 # _fp_blocks <command> — PASS when the hook refuses it, FAIL when it allows.
@@ -78,6 +104,10 @@ _fp_blocks "GIT_DIR=x git push --force"
 _fp_blocks "git push '--force'"
 _fp_blocks "git push \"-f\""
 _fp_blocks "git push --forc''e"
+# ANSI-C quoting is a quoted span too: the shell turns it into the same word.
+_fp_blocks "git push \$'--force' origin main"
+# A `+`-prefixed refspec is git's other way of spelling a forced update.
+_fp_blocks "git push origin +main:main"
 
 # ------------------------------------- a push that does not, and never did --
 
@@ -117,10 +147,80 @@ EOF"
 _fp_allows "grep -q 'x ; git push --force' file"
 # A comment is prose about the command, not an argument to it.
 _fp_allows "git push origin main # -f"
-# And the reverse of the quoted-flag rule: a push named inside a string is one
-# word of another command's argument, not the command itself.
+# And the reverse of the quoted-flag rule: a push named inside a string, or as
+# another command's argument, is not the command itself. These pin command
+# POSITION — a guard that grew tolerant wrappers by scanning for `git` anywhere
+# would start refusing them.
 _fp_allows "echo 'git push'"
 _fp_allows "printf '%s\n' \"git push -f\""
+_fp_allows "echo git push --force"
+_fp_allows "grep -q 'git push --force' notes.md"
+# A quoted string that spans lines is still one argument to one command, so the
+# text on the continuation lines is not read as a command of its own.
+_fp_allows "gh issue create --body \"notes
+git push --force is blocked
+end\""
+
+# ----------------------------------- a force-push written some other way -----
+
+_flow_test_begin "block-force-push — a one-character separator does not hide the push"
+# Each of these ends a command in one character. A reader that advances two
+# characters per separator drops the first letter of the next command word and
+# never sees the push at all.
+_fp_blocks "true;git push --force"
+_fp_blocks "(git push --force)"
+_fp_blocks "echo \$(git push --force)"
+_fp_blocks "true|git push --force"
+_fp_blocks "true &git push --force"
+_fp_blocks "true;git push -f"
+
+_flow_test_begin "block-force-push — a launcher's own options do not hide the push"
+# The launcher is followed by words that belong to the launcher, not to the
+# command it runs; a reader that expects the push immediately after the
+# launcher word never reaches it.
+_fp_blocks "timeout 10 git push --force"
+_fp_blocks "nice -n 5 git push --force"
+_fp_blocks "stdbuf -oL git push --force"
+_fp_blocks "sudo -u root git push --force"
+_fp_blocks "sudo -g staff git push -f"
+_fp_blocks "env -i PATH=/usr/bin git push --force"
+_fp_blocks "echo x | xargs -n1 git push --force"
+_fp_blocks "xargs -n 1 git push --force"
+# A path-qualified command is the same command.
+_fp_blocks "/usr/bin/git push --force"
+_fp_blocks "sudo /usr/bin/git push --force"
+# A shell's -c payload is a command line of its own.
+_fp_blocks "sh -c \"git push --force\""
+_fp_blocks "bash -c 'git push --force'"
+# eval takes the rest of its words as the command to run, quoted or not.
+_fp_blocks "eval git push --force"
+_fp_blocks "eval \"git push --force\""
+
+_flow_test_begin "block-force-push — a heredoc that desyncs does not hide the push"
+# `<<<` is a here-string: it has no body, so it must not open one. A reader that
+# mistakes it for a heredoc treats the rest of the command as text.
+_fp_blocks "read -r x <<< hi
+git push --force"
+# The delimiter word ends at the first shell metacharacter, so `<<EOF;` opens a
+# heredoc terminated by EOF, not by `EOF;`.
+_fp_blocks "cat <<EOF; echo done
+EOF
+git push --force"
+# Quote removal applies to the delimiter, so `<<\EOF` and `<<'EOF'` both end at
+# a line reading EOF.
+_fp_blocks "cat <<\\EOF
+EOF
+git push --force"
+# The delimiter stops at the `;`, so nothing in this command terminates the
+# heredoc and the shell would refuse to run any of it. A reader that keeps the
+# `;` in the delimiter sees the last line as a terminator instead, and reports
+# this as text. Malformed input is not scanned partially — it blocks.
+_fp_blocks "cat <<X; echo hi
+git push --force
+X;"
+# A continuation line belongs to the command it continues.
+_fp_blocks "git push \\
+--force origin main"
 
 # ----------------------------------------------------------- shapes that must not crash --
 
@@ -129,7 +229,12 @@ _flow_test_begin "block-force-push — a malformed command is not a crash"
 # non-2 exit as an allow. So a parse path that can error is a path that silently
 # stops guarding — these assert the hook survives them.
 assert_equal "0" "$(_fp_exit "")" "an empty command is allowed, not an error"
-assert_equal "0" "$(_fp_exit "git push 'unbalanced")" "an unbalanced quote does not crash the hook"
+# Input that ends mid-construct is not vouched for: an unclosed quote and an
+# unterminated heredoc both leave the scan unable to see the whole command, so
+# both block rather than allow.
+assert_equal "2" "$(_fp_exit "git push 'unbalanced")" "an unclosed quote blocks rather than allowing"
+assert_equal "2" "$(_fp_exit "cat <<EOF
+git push --force")" "an unterminated heredoc blocks rather than allowing"
 _fp_blocks "git push --force 'unbalanced"
 
 # A crash is a silent allow, so every pathological input must still land on one
@@ -149,8 +254,6 @@ _fp_exit_is_documented "$(printf 'x%.0s' $(seq 1 20000))"
 _fp_exit_is_documented "echo '$(printf 'y%.0s' $(seq 1 20000))'"
 _fp_exit_is_documented 'echo "a'"'"'b"c'"'"'d"e'
 _fp_exit_is_documented 'git push \'
-_fp_exit_is_documented "cat <<EOF
-git push --force"
 _fp_exit_is_documented "cat <<"
 _fp_exit_is_documented 'git push `'
 _fp_exit_is_documented 'git push $('
@@ -158,3 +261,19 @@ _fp_exit_is_documented 'echo ${a${b${c${d}}}}'
 _fp_exit_is_documented "$(printf '\n')"
 # A tab separates words, so a tab-separated push is still a push.
 _fp_blocks "$(printf 'git\tpush\t--force')"
+# Recursion through shells and eval is bounded, so a payload that nests past the
+# bound blocks instead of running away.
+_fp_exit_is_documented "sh -c 'sh -c \"sh -c \\\"sh -c \\\\\\\"git push --force\\\\\\\"\\\"\"'"
+
+# ------------------------------------------------------ the refusal's message --
+
+_flow_test_begin "block-force-push — the refusal keeps its three lines"
+# The message is the operator's only description of what happened and what to do
+# instead, so it is pinned rather than left to change with the implementation.
+_msg=$(_fp_stderr "git push --force origin main")
+assert_contains "BLOCKED: Force-push detected. This is a Tier 3 action that requires manual execution." "$_msg" "the first line"
+assert_contains "If you need to force-push, ask the user to run the command directly." "$_msg" "the second line"
+assert_contains "Note: --force-with-lease is allowed as a safe alternative." "$_msg" "the third line"
+# And nothing is printed when the command is allowed, so a caller reading stderr
+# cannot mistake silence for a refusal.
+assert_equal "" "$(_fp_stderr "git push origin main")" "no message when the push is allowed"
