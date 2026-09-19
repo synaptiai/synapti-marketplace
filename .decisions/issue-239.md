@@ -348,3 +348,7 @@ PASS — 3 tasks reviewed.
 <!-- auto-log: 2026-09-20 00:01 Write /tmp/riskmap239-synapti.py -->
 
 <!-- auto-log: 2026-09-20 00:01 Write /tmp/syncgoal239-synapti.py -->
+
+<!-- auto-log: 2026-09-20 00:01 commit "fix(flow): run the accounting whenever a push is present, and read a flag the line sets" -->
+
+<!-- auto-log: 2026-09-20 00:07 Write /tmp/pr239-final-synapti.md -->

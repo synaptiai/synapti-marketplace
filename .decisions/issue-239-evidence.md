@@ -448,7 +448,7 @@ the process: exit code, and what it writes to each stream.
 | Step | Command | Result |
 |---|---|---|
 | Suite | `bash plugins/flow/tests/run.sh block-force-push.test.sh` | 119 pass, 0 fail |
-| Whole flow suite | `bash plugins/flow/tests/run.sh` | 4745 pass, 0 fail, 69 files |
+| Whole flow suite | `bash plugins/flow/tests/run.sh` | 4761 pass, 0 fail, 69 files |
 | Windows hook smoke | `bash plugins/flow/tests/windows-hooks-smoke.sh` | 56 passed, 0 failed |
 | Fuzz | 3000 generated commands | exits 0 and 2 only |
 | Pathological set | unterminated heredoc, 999 backslashes, invalid UTF-8, CRLF, 20 000-character token | no crash, no hang |
