@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Guards that no fenced block in a dossier command prints a value through an
 # interpreting builtin.
 #

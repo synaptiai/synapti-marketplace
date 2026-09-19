@@ -265,14 +265,53 @@ The producer path under test is the same `_one_line` collapse that `--status`
 uses. `--status` is separately asserted to return `active` unchanged, so the
 ordinary path is covered too.
 
-`flow-active-goal.sh` is the producer exercised by the command above.
-`flow-review-exceptions.sh` and `flow-mine-corrections.sh` already emit one line
-each — the former declares its encoding on an `ENCODING=` line and percent-encodes
-a literal pipe, and the latter's metadata lines are static keys — so no change
-was needed for them. Their one-line property is not asserted by an executed test;
-see Known limitations.
+`flow-active-goal.sh` is the producer exercised by the command above, and it
+already collapsed its scalars.
 
-**A third producer was found by review and is now covered.** The dossier config
+**The other two helpers the criterion names were not merely untested — executing
+them found the defect still live in both, and in a third helper besides.**
+Previously this section said they "already emit one line each" on the strength of
+reading their source. Running them:
+
+```
+flow-mine-corrections.sh --format markdown --file $'probe\nFORGED=1'
+  TRANSCRIPT_DIR=probe
+  FORGED=1                          <- a forged field on stdout
+
+flow-review-exceptions.sh --path $'probe\nFORGED=1' --repo x/y --ref main
+  EXCEPTIONS_PATH=probe
+  FORGED=1
+
+flow-migrate-settings.sh, against a settings file holding a newline
+  MIGRATE_FROM=requireGoalForStart=yes
+  FORGED=1
+```
+
+The third is the closest to this issue's premise: that value comes from a
+**tracked settings file**, which a pull request author chooses. The miner also
+forged from `HOME` on both the roots list and the success path, and its own
+folding helper was defined below the argument loop that first called it, so an
+unknown argument reported `command not found` instead of the message.
+
+Each script now carries the folding its sibling already had —
+`flow-finding-route.sh` has had a `safe()` for this since the class was first
+fixed, and the Python half of `flow-review-exceptions.sh` already used one, so
+the hole was only in the bash half. A control character becomes a space rather
+than being deleted, so the halves stay visibly separate, and nothing is
+length-capped. Each is covered by a regression test in that script's own suite,
+and each test was mutation-tested by turning the folding back into a
+pass-through: every forged-line assertion turns red.
+
+Census of the remaining surface, since the criterion's catch-all names "any other
+`bin/*.sh` printing metadata": five flow helpers emit `KEY=value` scalars.
+Three are covered above. The other two were checked — `flow-finding-route.sh`
+builds its lists from input *lines*, which cannot contain a newline, and from
+ids it validates against a literal character class; `flow-quality-ledger.sh`
+emits a count. `flow-pr-linked-issue.sh` prints through `printf` with a
+parameter expansion that cannot introduce a newline, and `flow-contract-files.sh`
+already routes values through its own `one_line`.
+
+**A further producer was found by review and is now covered.** The dossier config
 resolver, `plugins/dossier/bin/cascade-resolve.sh`, printed a resolved settings
 value with no control-character check, while its flow twin refuses those values.
 A tracked `.claude/settings.dossier.json` carrying `"deliveryMode": "a\nFORGED=1"`
@@ -290,7 +329,8 @@ none — criterion type behavioral has no visual surface
 ### Does NOT promise
 
 - No new producer CLI surface; no flag added or renamed.
-- For the goals producer: no refusal of any value for containing an awkward character; the value is collapsed, not rejected. The dossier config resolver does refuse one and falls back to its declared default — a different mechanism, described above rather than left out of this list.
+- For the flow producers: no refusal of any value for containing an awkward character; the value is folded onto one line, not rejected. The dossier config resolver does refuse one and falls back to its declared default — a different mechanism, described above rather than left out of this list.
+- The folding changes the value it prints: a control character becomes a space. That is deliberate — the alternative is printing a value that reads as two fields, and a value with a real newline cannot be printed unchanged and still occupy one line.
 - No claim over every helper in the tree, only those that emit a `KEY=value` scalar.
 
 ### What was tested
@@ -301,9 +341,10 @@ the producer, and that the consumer line embedding it stays one line.
 
 ### What was NOT tested
 
-`flow-review-exceptions.sh` and `flow-mine-corrections.sh` are not executed
-against a fixture carrying an escape; their one-line property was read from
-their source rather than run. No helper outside those named was audited.
+None remaining among the helpers the criterion names — all three are now
+executed against a fixture carrying a real newline, and each found and fixed a
+live forge. The census above covers the helpers the criterion does not name; it
+is a reading of their source, not an executed test, except where noted.
 
 ### Known limitations of this evidence
 
