@@ -29,7 +29,6 @@ bash plugins/flow/tests/run.sh block-force-push.test.sh
 ### Output
 
 ```
-blocked: git push origin main && pgrep -f 'dossier/tests/run.sh' — allowed: PASS
 allowed: git push origin main && pgrep -f 'dossier/tests/run.sh'
 allowed: git push && grep -f patterns.txt file
 allowed: pgrep -f 'something' && git push origin main
@@ -393,8 +392,8 @@ none — criterion type behavioral has no visual surface
 
 ### What was tested
 
-That the suite goes red under each of five mutations, in both directions: A turns
-allow-cases red, B through E turn block-cases red.
+That the suite goes red under each of six mutations, in both directions: A turns
+allow-cases red, B through F turn block-cases red.
 
 ### What was NOT tested
 
@@ -469,4 +468,4 @@ docs/` and `git commit -m "rotate password=X"`. All five such cases were measure
 returning exit 2, alongside three real inline secrets it correctly blocks. It is
 not fixed here: narrowing a security guard's false-positive policy is a decision
 with a different blast radius from a push-flag fix, and the guard has no test file
-of its own to hold a change to. It is filed as its own issue.
+of its own to hold a change to. It is filed as issue #241.

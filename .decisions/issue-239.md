@@ -31,7 +31,7 @@ _Captured by specification-capture skill on 2026-09-19. Source: extracted-from-i
 
 - Not a change of policy. `--force` and `-f` on a push stay blocked; `--force-with-lease` alone stays allowed. Only *which text* the guard examines changes.
 - Not a shell. Variable expansion, command substitution and aliases are not modelled, so a force flag assembled at run time — `F=--force; git push $F` — is invisible to the guard, as it was before.
-- Not a change to any other hook. `block-destructive.sh` keeps its own force-delete and force-create rules. `block-secrets.sh` shares this defect class and is untouched here: narrowing a secrets guard's false-positive policy is a security decision with a different blast radius, filed separately rather than folded into a push fix.
+- Not a change to any other hook. `block-destructive.sh` keeps its own force-delete and force-create rules. `block-secrets.sh` shares this defect class and is untouched here: narrowing a secrets guard's false-positive policy is a security decision with a different blast radius, filed as #241 rather than folded into a push fix.
 - Not a relaxation. Every command the guard blocks today because a push really carries a force flag stays blocked. Where a wrapper could hide a push, the guard errs toward blocking.
 
 ### Failure modes
@@ -184,3 +184,9 @@ PASS — 3 tasks reviewed.
 <!-- auto-log: 2026-09-19 22:26 Write /tmp/msg239-synapti-commit-final.txt -->
 
 <!-- auto-log: 2026-09-19 22:26 commit "fix(flow): the force-push guard decides on the invocation, not the whole line" -->
+
+<!-- auto-log: 2026-09-19 22:27 Write /tmp/issue-secrets-synapti.md -->
+
+<!-- auto-log: 2026-09-19 22:29 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-239-evidence.md -->
+
+<!-- auto-log: 2026-09-19 22:29 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-239-evidence.md -->
