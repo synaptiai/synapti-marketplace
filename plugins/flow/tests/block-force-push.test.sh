@@ -252,6 +252,11 @@ _fp_blocks "env -S 'git push --force'"
 _fp_blocks "bash -lc 'git push --force'"
 _fp_blocks "bash -ec 'git push --force'"
 _fp_blocks "sh -xc 'git push --force'"
+# A command is only accounted for if it cannot run a program. `sort` looks
+# harmless and is not: --compress-program runs the program it names.
+_fp_blocks "sort --compress-program='git push --force' bigfile"
+# The same command with no push on the line is ordinary work, not a wrapper.
+_fp_allows "sort --compress-program=tmpf bigfile"
 
 _flow_test_begin "block-force-push — a heredoc body is a script when a shell reads it"
 # A body is text when `cat > file <<EOF` writes it, and the script when a shell

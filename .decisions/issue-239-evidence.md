@@ -8,8 +8,8 @@ criteria below reproduce that section's text.
 
 The hook under test is `plugins/flow/hooks/scripts/block-force-push.sh`; every case
 runs against the file as it stands on this branch. The suite is
-`plugins/flow/tests/run.sh block-force-push.test.sh`: **103 assertions, 65 of them
-asserting a block and 21 asserting an allow**, the rest asserting exit codes and the
+`plugins/flow/tests/run.sh block-force-push.test.sh`: **105 assertions, 66 of them
+asserting a block and 22 asserting an allow**, the rest asserting exit codes and the
 refusal message. Its baseline before any mutation is **0 cases red**.
 
 The guard blocks by default and allows only what it can positively account for. The
@@ -353,14 +353,14 @@ Baseline before each: **0 cases red.**
 
 | Mutation | Cases red |
 |---|---|
-| A — no decision at all (allow everything) | 70 |
-| B — every command word treated as able to execute | 26 |
-| C — the `risky` term dropped from the floor | 25 |
+| A — no decision at all (allow everything) | 71 |
+| B — every command word treated as able to execute | 27 |
+| C — the `risky` term dropped from the floor | 26 |
 | D — the raw-text force-flag check dropped | 6 |
 | E — the quoted-substitution check dropped | 1 |
 | F — detection reverted to the previous whole-line pattern | 18 |
 
-**A** is the degenerate case: a guard that always allows fails 70 assertions, so the
+**A** is the degenerate case: a guard that always allows fails 71 assertions, so the
 suite is not passing by accident.
 
 **B** and **C** are the new design's two central decisions — the cannot-execute list, and
@@ -405,7 +405,7 @@ report is only as good as the mutant.
 
 ### Negative/adversarial cases covered
 
-The suite asserts both directions — 65 cases expecting a block and 21 expecting an allow
+The suite asserts both directions — 66 cases expecting a block and 22 expecting an allow
 — so a hook that always blocks and a hook that always allows each fail it. A 3000-input
 fuzz sample produced only exits 0 and 2, so no input makes the hook exit with a code the
 harness would read as an allow.
@@ -414,9 +414,9 @@ harness would read as an allow.
 
 | Input | Expected | Source of expected |
 |---|---|---|
-| no decision at all | at least 70 failures | each case names the behaviour it expects |
-| every command word treated as executing | at least 26 failures | the accounted-for cases name it |
-| the `risky` term dropped | at least 25 failures | the wrapper and heredoc groups name it |
+| no decision at all | at least 71 failures | each case names the behaviour it expects |
+| every command word treated as executing | at least 27 failures | the accounted-for cases name it |
+| the `risky` term dropped | at least 26 failures | the wrapper and heredoc groups name it |
 | the raw-text check dropped | at least 6 failures | the quoted-text cases name it |
 | the quoted-substitution check dropped | at least 1 failure | the quoted-backtick case names it |
 | detection reverted to the whole-line pattern | at least 18 failures | the two reported shapes name it |
@@ -431,7 +431,8 @@ that those assertions can fail:
 - the `-f` word boundary → `git push origin --force-with-lease`
 - a heredoc body → the write-a-file case beside `bash <<EOF`
 - `-f` as another command's flag → the six cases under criterion 1
-- which commands can execute their arguments → the wrapper group (mutation C)
+- which commands can execute their arguments → the wrapper group (mutation C),
+  including `sort --compress-program`, which runs the program it names
 - a substitution inside double quotes → the substitution group (mutation E)
 - a force flag inside a quoted span → the quoted-text cases (mutation D)
 - detecting the floor → the arithmetic `<<` case, and mutation B
@@ -446,7 +447,7 @@ the process: exit code, and what it writes to each stream.
 
 | Step | Command | Result |
 |---|---|---|
-| Suite | `bash plugins/flow/tests/run.sh block-force-push.test.sh` | 103 pass, 0 fail |
+| Suite | `bash plugins/flow/tests/run.sh block-force-push.test.sh` | 105 pass, 0 fail |
 | Whole flow suite | `bash plugins/flow/tests/run.sh` | 4745 pass, 0 fail, 69 files |
 | Windows hook smoke | `bash plugins/flow/tests/windows-hooks-smoke.sh` | 56 passed, 0 failed |
 | Fuzz | 3000 generated commands | exits 0 and 2 only |

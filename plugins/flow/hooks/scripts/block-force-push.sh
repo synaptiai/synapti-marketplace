@@ -98,12 +98,16 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
     pushforce = 0; risky = 0; q_owner = ""
     # Commands that cannot execute their arguments as a command. A force flag
     # inside one of these is that command own flag, or its text — never a push.
-    # Deliberately short and deliberate: `sed` is absent because GNU sed can run
-    # a command from a script; `awk` is absent for the same reason; `find` is
-    # absent because of -exec. Anything not here blocks.
+    #
+    # Membership is earned, not assumed: nothing belongs here that has a flag
+    # which runs a program. `sed` and `awk` are absent because both can execute
+    # one from a script; `find` is absent because of -exec; `sort` is absent
+    # because of --compress-program, which runs the program it names; `xargs`,
+    # `env`, `timeout` and the rest of the wrappers are absent because running a
+    # command is the whole of what they do. Anything not here blocks.
     safe = " echo printf grep egrep fgrep pgrep gh cat ls head tail wc rm mkdir" \
            " rmdir cp mv touch chmod ln true false test sleep cd pwd which" \
-           " basename dirname date uname kill ps df du jq diff stat sort uniq" \
+           " basename dirname date uname kill ps df du jq diff stat uniq" \
            " cut tr tee file numfmt readlink realpath "
   }
 
