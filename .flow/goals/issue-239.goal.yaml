@@ -49,18 +49,27 @@ specification:
   non_goals:
   - Not a change of policy. --force and -f on a push stay blocked; --force-with-lease
     alone stays allowed. Only which text the guard examines changes.
-  - Not a shell parser. The guard decides on the push invocation's own arguments;
-    it does not model expansion, aliases, functions or eval.
-  - Not a change to any other hook.
+  - Not a shell. Variable expansion, command substitution and aliases are not modelled,
+    so a force flag assembled at run time is invisible to the guard, as it was before.
+  - Not a change to any other hook. block-destructive.sh keeps its own rules.
+    block-secrets.sh shares this defect class and is untouched here; narrowing a secrets
+    guard false-positive policy is a security decision filed separately.
   - Not a relaxation. Every command the guard blocks today because a push really carries
-    a force flag stays blocked.
+    a force flag stays blocked. Where a wrapper could hide a push, the guard errs toward
+    blocking.
   failure_modes:
-  - 'Timeouts: none. The hook reads stdin, decides, and exits.'
-  - 'Partial failures: jq missing still fails closed, unchanged.'
-  - 'Invalid input: an unbalanced quote, a heredoc, a multi-line command or a malformed
-    line must not crash the hook. A crash is not a block — the harness reads a non-2
-    exit as an allow — so every parse path must be written so it cannot error out
-    under set -euo pipefail.'
+  - 'Timeouts: the scan walks the command a character at a time, so its cost grows
+    faster than the input. A command longer than MAX_CHARS (131072) is refused rather
+    than truncated. Measured, a 100 KB command takes about 0.7 s and one at the cap
+    about 1.0 s.'
+  - 'Partial failures: jq or awk missing fails closed. Both are required, because
+    the parse depends on awk as well as jq and a missing awk would exit 127, which
+    the harness reads as an allow.'
+  - 'Invalid input: a crash is not a block — the harness reads a non-2 exit as an
+    allow — so every parse path must be written so it cannot error. Input that ends
+    mid-construct (an unclosed quote, an unterminated heredoc) blocks, and a payload
+    jq cannot parse blocks rather than falling through on jq exit status. A 3000-input
+    fuzz sample produced only exits 0 and 2.'
   - 'Missing context: the hook consults no git state and no repository.'
   interface_contracts:
   - Hook protocol reads {"tool_input":{"command":"..."}} on stdin; exit 0 allows,
@@ -72,6 +81,9 @@ specification:
   - git push --force-with-lease is allowed; git push --force-with-lease --force is
     blocked.
   - Any -f or --force belonging to another command on the same line is allowed.
+  - A push written through quoting, a launcher, a path, a shell -c payload or eval
+    is blocked; a path or a launcher does not stop it being a push.
+  - A command longer than MAX_CHARS, or one that ends mid-construct, is blocked.
   risk_map:
   - area: splitting the line into commands
     plausible_wrong_version: splits on separators without respecting quotes, so a
@@ -94,6 +106,23 @@ specification:
   - area: a dash-f that belongs to another command
     plausible_wrong_version: treats any -f after a push on the line as the push own
     discriminating_check: 'git status && pgrep -f x -> right: allowed; wrong: blocked'
+  - area: advancing past a separator
+    plausible_wrong_version: consumes two characters for a one-character separator,
+      dropping the first letter of the next command word
+    discriminating_check: 'true;git push --force -> right: blocked; wrong: allowed'
+  - area: a launcher own options
+    plausible_wrong_version: leaves the launcher option word where the command word
+      belongs, or stops at it
+    discriminating_check: 'sudo -u root git push --force and timeout 10 git push --force
+      -> right: blocked; wrong: allowed'
+  - area: finding the command word
+    plausible_wrong_version: stops at a path-qualified or quoted command word
+    discriminating_check: '/usr/bin/git push --force and bash -c "git push --force"
+      -> right: blocked; wrong: allowed'
+  - area: command position
+    plausible_wrong_version: grows tolerant wrappers by scanning for git anywhere,
+      so text reads as a command
+    discriminating_check: 'echo git push --force -> right: allowed; wrong: blocked'
 constraints:
   tdd_required: true
   require_all_pass: true

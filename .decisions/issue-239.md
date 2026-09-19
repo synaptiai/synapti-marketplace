@@ -30,15 +30,15 @@ _Captured by specification-capture skill on 2026-09-19. Source: extracted-from-i
 ### Non-goals
 
 - Not a change of policy. `--force` and `-f` on a push stay blocked; `--force-with-lease` alone stays allowed. Only *which text* the guard examines changes.
-- Not a shell parser. The guard decides on the push invocation's own arguments; it does not model expansion, aliases, functions or `eval`.
-- Not a change to any other hook. `block-destructive.sh` keeps its own force-delete and force-create rules, and `block-secrets.sh` is untouched.
-- Not a relaxation. Every command the guard blocks today because a push really carries a force flag stays blocked.
+- Not a shell. Variable expansion, command substitution and aliases are not modelled, so a force flag assembled at run time — `F=--force; git push $F` — is invisible to the guard, as it was before.
+- Not a change to any other hook. `block-destructive.sh` keeps its own force-delete and force-create rules. `block-secrets.sh` shares this defect class and is untouched here: narrowing a secrets guard's false-positive policy is a security decision with a different blast radius, filed separately rather than folded into a push fix.
+- Not a relaxation. Every command the guard blocks today because a push really carries a force flag stays blocked. Where a wrapper could hide a push, the guard errs toward blocking.
 
 ### Failure modes
 
-- **Timeouts** — none. The hook reads stdin, decides, and exits; it makes no network or subprocess call beyond `jq` and POSIX text tools.
-- **Partial failures** — `jq` missing still fails closed, unchanged: the hook blocks rather than allowing an uninspected command.
-- **Invalid input** — an unbalanced quote, a heredoc, a multi-line command or a NUL-free but malformed line must not crash the hook. A crash is not a block: `set -euo pipefail` with a failing `grep` exits non-zero, and the harness reads a non-2 exit as an allow, so any parse path that can error must be written so it cannot.
+- **Timeouts** — the scan walks the command a character at a time, so its cost grows faster than the input. A command longer than `MAX_CHARS` (131072) is refused rather than truncated: truncating and scanning the head would drop whatever the tail contained, and a dropped tail is the direction that lets a force-push through. Measured on this machine's awk, a 100 KB command takes about 0.7 s and one at the cap about 1.0 s.
+- **Partial failures** — `jq` or `awk` missing fails closed: the hook blocks rather than allowing an uninspected command. Both are required because the parse now depends on `awk` as well as `jq`; without the check a missing `awk` would exit 127, which the harness reads as an allow.
+- **Invalid input** — a crash is not a block: `set -euo pipefail` with a failing command exits non-zero, and the harness reads a non-2 exit as an allow, so any parse path that can error must be written so it cannot. Input that ends mid-construct — an unclosed quote, a heredoc with no terminator — is not vouched for and blocks. A payload `jq` cannot parse also blocks, rather than falling through on jq's own exit status. A 3000-input fuzz sample and a targeted pathological set produced only exits 0 and 2.
 - **Missing context** — the hook consults no git state and no repository, so an unusual working directory changes nothing.
 
 ### Interface contracts
@@ -48,16 +48,22 @@ _Captured by specification-capture skill on 2026-09-19. Source: extracted-from-i
 - `git push --force`, `git push -f`, `cmd && git push --force`, `{ git push --force; }` → blocked.
 - `git push --force-with-lease` → allowed. `git push --force-with-lease --force` → blocked.
 - Any `-f` or `--force` belonging to another command on the same line → allowed.
+- A push written through quoting, a launcher, a path, a shell's `-c` payload or `eval` → blocked. A path or a launcher does not stop it being a push.
+- A command longer than `MAX_CHARS`, or one that ends mid-construct → blocked.
 
 ### Risk map
 
 | Area | Plausible wrong version | Discriminating check |
 |---|---|---|
 | splitting the line into commands | splits on `;`, `&&`, `\|` without respecting quotes, so a separator inside a quoted string yields a segment that looks like a push | `grep -q 'x ; git push --force' file` → right: allowed (no push is invoked); wrong: blocked |
-| where a push's own arguments end | reads the rest of the segment, so a flag belonging to a later command inside the same segment counts | `git push origin main && true` with a trailing comment carrying `-f` → right: allowed; wrong: blocked |
+| where a push's own arguments end | reads the rest of the segment, so a flag belonging to a later command inside the same segment counts | `git push origin main && pgrep -f x` → right: allowed (the reported case); wrong: blocked |
 | the `-f` word boundary | matches `-f` inside a longer word (`-force`, `--force-with-lease`) | `git push --force-with-lease` → right: allowed; wrong: blocked |
-| a heredoc body | scans the whole command string, including text being written to a file | a command that writes `git push --force` into a file → right: allowed; wrong: blocked |
+| a heredoc body | scans the whole command string, including text being written to a file, or desyncs from the shell and skips a line that is a command | `cat > notes.md <<'EOF'` writing `git push --force` → right: allowed; wrong: blocked. `read -r x <<< hi` then `git push --force` → right: blocked; wrong: allowed |
 | `-f` as another command's flag | treats any `-f` after `git push` on the line as the push's own | `git status && pgrep -f x` → right: allowed (the reported case); wrong: blocked |
+| advancing past a separator | consumes two characters for a one-character separator, dropping the first letter of the next command word | `true;git push --force` → right: blocked; wrong: allowed |
+| a launcher's own options | leaves the launcher's option word where the command word belongs, or stops at it | `sudo -u root git push --force`, `timeout 10 git push --force` → right: blocked; wrong: allowed |
+| finding the command word | stops at a path-qualified or quoted command word | `/usr/bin/git push --force`, `bash -c "git push --force"` → right: blocked; wrong: allowed |
+| command position | grows tolerant wrappers by scanning for `git` anywhere, so text reads as a command | `echo git push --force` → right: allowed; wrong: blocked |
 
 ## Stranger Test
 
@@ -88,3 +94,93 @@ PASS — 3 tasks reviewed.
 <!-- auto-log: 2026-09-19 21:25 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/block-force-push.test.sh -->
 
 <!-- auto-log: 2026-09-19 21:26 Write /tmp/msg239-synapti-v2.txt -->
+
+<!-- auto-log: 2026-09-19 21:30 Write /tmp/probe239-synapti-crash.sh -->
+
+<!-- auto-log: 2026-09-19 21:31 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/block-force-push.test.sh -->
+
+<!-- auto-log: 2026-09-19 21:31 commit "test(flow): pin the force-push guard's two documented exits" -->
+
+<!-- auto-log: 2026-09-19 21:32 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-239-evidence.md -->
+
+<!-- auto-log: 2026-09-19 21:33 Write /tmp/mutate239-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 21:34 Write /tmp/mutate239b-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 21:35 Write /tmp/mut239-synapti.py -->
+
+<!-- auto-log: 2026-09-19 21:35 Write /tmp/mut239-run-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 21:36 Edit /tmp/mut239-synapti.py -->
+
+<!-- auto-log: 2026-09-19 21:37 Edit /tmp/mut239-synapti.py -->
+
+<!-- auto-log: 2026-09-19 21:37 Edit /tmp/mut239-run-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 21:37 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-239-evidence.md -->
+
+<!-- auto-log: 2026-09-19 21:37 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-239-evidence.md -->
+
+<!-- auto-log: 2026-09-19 21:38 Write /tmp/xcheck239-synapti.py -->
+
+<!-- auto-log: 2026-09-19 21:38 Write /tmp/xcheck239-synapti.py -->
+
+<!-- auto-log: 2026-09-19 21:39 Write /tmp/secrets-probe-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 22:05 Write /tmp/f1-probe-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 22:06 Write /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/block-force-push.sh -->
+
+<!-- auto-log: 2026-09-19 22:06 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/block-force-push.sh -->
+
+<!-- auto-log: 2026-09-19 22:06 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/block-force-push.sh -->
+
+<!-- auto-log: 2026-09-19 22:06 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/block-force-push.sh -->
+
+<!-- auto-log: 2026-09-19 22:07 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/block-force-push.test.sh -->
+
+<!-- auto-log: 2026-09-19 22:07 Write /tmp/verify239-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 22:07 Write /tmp/perf239-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 22:08 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/block-force-push.sh -->
+
+<!-- auto-log: 2026-09-19 22:09 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/block-force-push.sh -->
+
+<!-- auto-log: 2026-09-19 22:09 Write /tmp/mut239-synapti.py -->
+
+<!-- auto-log: 2026-09-19 22:09 Write /tmp/mut239-run-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 22:10 Write /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/block-force-push.sh -->
+
+<!-- auto-log: 2026-09-19 22:10 Edit /tmp/mut239-run-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 22:10 Write /tmp/mut239-run-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 22:10 Write /tmp/e-probe-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 22:11 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/block-force-push.test.sh -->
+
+<!-- auto-log: 2026-09-19 22:11 Write /tmp/fuzz239-synapti.py -->
+
+<!-- auto-log: 2026-09-19 22:12 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-239.md -->
+
+<!-- auto-log: 2026-09-19 22:13 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-239-evidence.md -->
+
+<!-- auto-log: 2026-09-19 22:14 Write /tmp/holdout239-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 22:14 Write /tmp/dbg239-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 22:14 Write /tmp/holdout239b-synapti.sh -->
+
+<!-- auto-log: 2026-09-19 22:14 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-239-evidence.md -->
+
+<!-- auto-log: 2026-09-19 22:14 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-239.md -->
+
+<!-- auto-log: 2026-09-19 22:26 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-239.goal.yaml -->
+
+<!-- auto-log: 2026-09-19 22:26 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-239.goal.yaml -->
+
+<!-- auto-log: 2026-09-19 22:26 Write /tmp/msg239-synapti-commit-final.txt -->
+
+<!-- auto-log: 2026-09-19 22:26 commit "fix(flow): the force-push guard decides on the invocation, not the whole line" -->
