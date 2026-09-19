@@ -165,6 +165,33 @@ in both trees: 349 blocks compared, 0 changed from parsing to failing or the
 reverse. Bodies are fragments, so a failure is not by itself a defect — what the
 comparison rules out is the rewrite introducing one.
 
+### Two criteria adjudicated by the issue's author
+
+An independent verdict pass returned PASS on criteria 2, 3 and 4, and referred
+two to the issue's author as questions about the criteria rather than the code.
+Both were put as explicit choices on 2026-09-19 and both were settled in favour
+of what shipped:
+
+- **Criterion 1** names "arguments or through a here-string" as the acceptable
+  forms for a value handed to a parser. 170 sites ship a third form,
+  `printf '%s\n' "$X" | CMD`. Adjudicated: accepted. The prohibition is met —
+  nothing is echoed into a pipe — and the property the criterion exists for, the
+  value reaching the parser byte-identical, holds and is asserted. The two named
+  forms are examples, not an exhaustive list. The here-string form remains
+  rejected on evidence: relocating the value hangs a loop whose condition reads
+  from it, which is measured, not argued.
+- **Criterion 5** is written as a universal over values with no escape and no
+  control character, and a bare argument beginning with a dash breaks it: the
+  replaced builtin read `-n` as its own flag and printed nothing, the replacement
+  prints it. Adjudicated: accepted as a repair, not a change to normal output —
+  the criterion's "unchanged" protects output that was correct, and a value that
+  never reached the output was not. The divergence is also unreachable at every
+  shipped site: all 15 bare-print sites print helper output beginning with a
+  `KEY=` line.
+
+Both decisions are recorded in the evidence bundle at the point the question
+arises, so neither reads as an open question for the next reader.
+
 ### Found by executing the producers the criterion names
 
 Criterion 3 asks that a helper emitting a scalar for embedding emit exactly one
@@ -519,3 +546,19 @@ for the producers it names, not for every helper in the tree.
 <!-- auto-log: 2026-09-19 20:13 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235.md -->
 
 <!-- auto-log: 2026-09-19 20:13 Edit /Users/danielbentes/synapti-marketplace/.flow/goals/issue-235.goal.yaml -->
+
+<!-- auto-log: 2026-09-19 20:19 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 20:19 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 20:20 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 20:20 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 20:21 commit "docs(decisions): display the assertions the verdict judge found missing" -->
+
+<!-- auto-log: 2026-09-19 20:52 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 20:52 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
+
+<!-- auto-log: 2026-09-19 20:52 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235.md -->

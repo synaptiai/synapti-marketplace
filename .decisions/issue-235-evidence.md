@@ -39,7 +39,7 @@ file in both plugins, because the reference documents carry the canonical
 snippets the commands are copied from and one of them stated the form being
 replaced. The dossier plugin carries the identical defect and is fixed here.
 
-**One deviation from this criterion's wording, stated for adjudication.** The
+**One deviation from this criterion's wording, and its adjudication.** The
 criterion lists the acceptable forms for a value handed to a parser as
 "arguments or through a here-string", prohibiting "echoed into a pipe". The
 prohibition holds: nothing is echoed into a pipe. The form delivered for a piped
@@ -49,8 +49,12 @@ first and reverted: it changes where the value enters the command, and where the
 pipeline's first command is a loop condition the redirect then belongs to `read`
 rather than to the loop, so the here-string is re-created every iteration and the
 loop never advances past its first line. That hung a loop in `commands/status.md`.
-The property the criterion exists for — the value reaching the parser
-byte-identical — holds in the delivered form and is asserted below.
+
+**Adjudicated 2026-09-19 by the issue's author: the pipe form is accepted.** The
+criterion's prohibition is met and the property it exists for — the value
+reaching the parser byte-identical — holds and is asserted below. The two named
+forms are read as examples of what satisfies the criterion, not as an exhaustive
+list that a third form necessarily breaches.
 
 Scale of the deviation, which the criterion's wording does not cover and a
 reader should not have to infer: **170 of the 1199 changed lines** hand a value
@@ -624,6 +628,12 @@ mangle.
 | `a  b`, `*.ts {a,b}`, `-n -e`, `100% done`, `café — ünïcode` | both forms print identical bytes | same |
 | `a\b` | the replacement preserves all bytes; the two forms differ under an interpreting shell | the defect being removed |
 | `-n` as a bare argument | the replacement prints it; the replaced form swallows it | the one value class the two forms genuinely differ on |
+
+**Adjudicated 2026-09-19 by the issue's author: the difference is accepted as a
+repair, not a change to normal output.** The replaced builtin silently discarded
+a value it mistook for its own flag; the replacement prints it. The criterion's
+"unchanged" is read as protecting output that was correct, and a value that never
+reached the output was not.
 
 **Whether that divergence is reachable at a shipped site.** It needs a value
 printed as a bare argument — no literal prefix — whose first character is a
