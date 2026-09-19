@@ -12,9 +12,12 @@ set -euo pipefail
 #
 # `cat` is on the list because the payload read is part of the decision: an
 # unread payload yields an empty command, and an empty command is allowed.
-if ! command -v jq &>/dev/null || ! command -v awk &>/dev/null ||
-   ! command -v cat &>/dev/null || ! command -v grep &>/dev/null; then
-  echo "BLOCKED: jq, awk, grep and cat are all required to verify command safety. Install them to proceed." >&2 || true
+MISSING=""
+for t in jq awk cat grep sed wc tr; do
+  command -v "$t" &>/dev/null || MISSING="$MISSING $t"
+done
+if [ -n "$MISSING" ]; then
+  echo "BLOCKED: the guard needs these tools to verify command safety, and they are missing:$MISSING" >&2 || true
   exit 2
 fi
 
