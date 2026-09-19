@@ -91,11 +91,12 @@ offenders. `bash plugins/dossier/tests/run.sh no-interpreting-print.test.sh` —
 actually read, so a scan that matched nothing cannot be confused with a scan
 that read nothing.
 
-One deviation from the criterion's wording, stated so it is ruled on rather than
-discovered later. The criterion says a value handed to a parser is "passed as
-arguments or through a here-string, never echoed into a pipe". The prohibition is
-met — nothing is echoed into a pipe. The form used for a piped value is a third
-one: `printf '%s\n' "$X" | CMD`. The here-string form was implemented first and
+One deviation from the criterion's wording, since adjudicated in favour of what
+shipped — see "Two criteria adjudicated by the issue's author" above. The
+criterion says a value handed to a parser is "passed as arguments or through a
+here-string, never echoed into a pipe". The prohibition is met — nothing is
+echoed into a pipe. The form used for a piped value is a third one:
+`printf '%s\n' "$X" | CMD`. The here-string form was implemented first and
 reverted, because relocating the value changes where it enters the command and
 hung a loop; see "What changed" above. The purpose the criterion exists for — the
 value reaching the parser byte-identical — holds in both forms; only the
@@ -562,3 +563,7 @@ for the producers it names, not for every helper in the tree.
 <!-- auto-log: 2026-09-19 20:52 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235-evidence.md -->
 
 <!-- auto-log: 2026-09-19 20:52 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235.md -->
+
+<!-- auto-log: 2026-09-19 20:53 commit "docs(decisions): record the two adjudicated criteria" -->
+
+<!-- auto-log: 2026-09-19 20:53 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-235.md -->
