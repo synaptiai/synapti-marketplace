@@ -222,6 +222,49 @@ X;"
 _fp_blocks "git push \\
 --force origin main"
 
+# ------------------------- a force-push the guard cannot read, so it refuses ------
+
+_flow_test_begin "block-force-push — a substitution is not text"
+# What a substitution expands to is a command, so a line carrying one cannot be
+# vouched for. Each of these really force-pushes.
+_fp_blocks 'echo "$(git push --force)"'
+_fp_blocks 'echo `git push --force`'
+_fp_blocks 'x="$(git push --force)"'
+_fp_blocks 'git push "$(git push --force)"'
+_fp_blocks 'git push --force$(true)'
+# Double quotes do not make a substitution text, so all three spellings still
+# block when they sit inside one.
+_fp_blocks 'echo "`git push --force`"'
+_fp_blocks 'echo "${x:-git push --force}"'
+# ANSI-C quoting is a substitution of sorts too, and decoding it is out of
+# scope, so a line carrying one is refused rather than guessed at.
+_fp_blocks "eval \$'\\x67it push --force'"
+
+_flow_test_begin "block-force-push — a push behind a wrapper is still a push"
+# The guard does not enumerate wrappers. It names only the commands that CANNOT
+# run a command; an unlisted one blocks rather than allows, so a wrapper nobody
+# thought of is covered by default.
+_fp_blocks 'caffeinate git push --force'
+_fp_blocks 'su root git push --force'
+_fp_blocks '/usr/bin/sudo git push --force'
+_fp_blocks '/usr/bin/env git push --force'
+_fp_blocks "env -S 'git push --force'"
+_fp_blocks "bash -lc 'git push --force'"
+_fp_blocks "bash -ec 'git push --force'"
+_fp_blocks "sh -xc 'git push --force'"
+
+_flow_test_begin "block-force-push — a heredoc body is a script when a shell reads it"
+# A body is text when `cat > file <<EOF` writes it, and the script when a shell
+# is fed it. The consumer decides, not the syntax.
+_fp_blocks 'bash <<EOF
+git push --force
+EOF'
+# `<<` inside arithmetic is a shift, not a heredoc opener: reading it as one
+# desyncs the body tracker and skips the push below it.
+_fp_blocks 'echo $((1<<2))
+git push --force
+2'
+
 # ----------------------------------------------------------- shapes that must not crash --
 
 _flow_test_begin "block-force-push — a malformed command is not a crash"

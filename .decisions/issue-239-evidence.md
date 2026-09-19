@@ -8,9 +8,13 @@ criteria below reproduce that section's text.
 
 The hook under test is `plugins/flow/hooks/scripts/block-force-push.sh`; every case
 runs against the file as it stands on this branch. The suite is
-`plugins/flow/tests/run.sh block-force-push.test.sh`: **85 assertions, 47 of them
+`plugins/flow/tests/run.sh block-force-push.test.sh`: **103 assertions, 65 of them
 asserting a block and 21 asserting an allow**, the rest asserting exit codes and the
 refusal message. Its baseline before any mutation is **0 cases red**.
+
+The guard blocks by default and allows only what it can positively account for. The
+accounting is what the criteria below test; the design, and the two earlier designs
+that this one replaces, are recorded in `.decisions/issue-239.md`.
 
 ---
 
@@ -35,11 +39,11 @@ allowed: pgrep -f 'something' && git push origin main
 allowed: git status && pgrep -f x
 allowed: rm -f /tmp/scratch
 allowed: git branch -f other main
-SUMMARY pass=85 fail=0
+SUMMARY pass=103 fail=0
 ```
 
-The first case is the reported defect verbatim: it was refused by the previous
-implementation and is allowed by this one.
+The first case is the reported defect verbatim: it was refused by the whole-line scan
+this branch replaces and is allowed here.
 
 ### Visual analysis
 
@@ -48,40 +52,41 @@ none — criterion type behavioral has no visual surface
 ### Does NOT promise
 
 - No change of policy: a force flag that really belongs to the push is still blocked (criterion 2).
-- No relaxation for a push whose own arguments end before a later command's flag: `git push origin main && pgrep -f x` is one push and one other command.
+- No claim that any `-f` anywhere is fine. The flag is allowed because the command carrying it cannot execute its arguments; `git push origin main && timeout 10 git push --force` is still blocked, via the second push.
 
 ### What was tested
 
-That the hook's exit code is 0 for a command holding a push and a later command
-that carries a force flag.
+That the hook's exit code is 0 for a command holding a push and a later command that
+carries a force flag, for four different flag-bearing commands.
 
 ### What was NOT tested
 
-The hook is exercised by feeding it stdin directly, so this establishes the hook's
-own decision and not the harness's use of it.
+The hook is exercised by feeding it stdin directly, so this establishes the hook's own
+decision and not the harness's use of it.
 
 ### Known limitations of this evidence
 
-The cases are the shapes the reporter observed plus their neighbours. A launcher
-or keyword combination not listed may still over-block; the guard is built to fail
-closed, so that risk is a refused command rather than a missed one.
+The cases are the shapes the reporter observed plus their neighbours. A command the
+cannot-execute list does not name blocks rather than allows, so the residual risk in
+this direction is a refused command, not a missed force-push.
 
 ### Negative/adversarial cases covered
 
-Both orders are covered — the flag-bearing command before and after the push — and
-the flag belongs to a real command (`pgrep -f`, `grep -f`, `rm -f`, `git branch -f`),
-not a contrived token.
+Both orders are covered — the flag-bearing command before and after the push — and the
+flag belongs to a real command (`pgrep -f`, `grep -f`, `rm -f`, `git branch -f`), not a
+contrived token. `git branch -f other main` is covered specifically because `git` is not
+on the cannot-execute list: the command is allowed only because it runs no push.
 
 ### Test inputs and expected values
 
 | Input | Expected | Source of expected |
 |---|---|---|
 | `git push origin main && pgrep -f 'dossier/tests/run.sh'` | allowed | the issue's Current State names this command as the one wrongly refused |
-| `git push && grep -f patterns.txt file` | allowed | a `-f` belonging to grep |
+| `git push && grep -f patterns.txt file` | allowed | a `-f` belonging to grep, which cannot run a command |
 | `pgrep -f 'something' && git push origin main` | allowed | the same, with the flag before the push |
 | `git status && pgrep -f x` | allowed | no push at all on the line |
 | `rm -f /tmp/scratch` | allowed | a force flag on a command that is not a push |
-| `git branch -f other main` | allowed | a force flag on a different git subcommand |
+| `git branch -f other main` | allowed | a force flag on a git subcommand that is not `push` |
 
 ### Risk map coverage
 
@@ -121,7 +126,7 @@ blocked: git push "-f"
 blocked: git push --forc''e
 blocked: git push $'--force' origin main
 blocked: git push origin +main:main
-SUMMARY pass=85 fail=0
+SUMMARY pass=103 fail=0
 ```
 
 ### Visual analysis
@@ -130,33 +135,33 @@ none — criterion type behavioral has no visual surface
 
 ### Does NOT promise
 
-- No claim to parse shell syntax. Expansion, aliases and functions are out of scope; a force flag reaching git through a variable (`F=--force; git push $F`) is not detected, and is named under Known limitations.
+- No claim to have decoded every spelling a flag can be written in. ANSI-C escapes that change the command word, and brace expansion, are not decoded; a line carrying them blocks rather than being guessed at.
 - No change to the refusal message, which keeps its three lines verbatim (asserted under its own group).
 
 ### What was tested
 
-That the hook exits 2 for each shape a force flag can take on a push: as its own
-word, attached to a ref list, after a separator, inside a compound command, behind
-a launcher word, behind a shell keyword, behind `git`'s own global options, and
-written through four kinds of quoting.
+That the hook exits 2 for each shape a force flag can take on a push: as its own word,
+attached to a ref list, after a separator, inside a compound command, behind a launcher,
+behind a shell keyword, behind `git`'s own global options, quoted four ways, and as a
+`+` refspec.
 
 ### What was NOT tested
 
-A force flag assembled at run time is invisible to the guard. The previous
-implementation did not detect it either, so this is unchanged behaviour rather
-than a regression, and it is the boundary the non-goals name.
+A command word assembled from an expansion — `eval $'\x67it push --force'` — is not
+decoded. It blocks, because the line carries a substitution, but it is not recognised:
+the refusal comes from the guard refusing to vouch for the line, not from reading the
+command.
 
 ### Known limitations of this evidence
 
-The word reader models quotes and backslash escapes but not command substitution
-or variable expansion, so a flag built at run time is not seen.
+The guard does not model expansion. Where an expansion could produce a command, the line
+is refused rather than interpreted.
 
 ### Negative/adversarial cases covered
 
-The flag appears as a separate word, attached to a ref list, after a separator,
-inside a compound command, behind a launcher, behind a shell keyword, behind
-`git`'s global options, and quoted four ways — including ANSI-C quoting, where the
-shell's own expansion is what turns `$'--force'` into a flag.
+The flag appears as a separate word, attached to a ref list, after a separator, inside a
+compound command, behind a launcher, behind a shell keyword, behind `git`'s global
+options, and quoted four ways.
 
 ### Test inputs and expected values
 
@@ -166,19 +171,17 @@ shell's own expansion is what turns `$'--force'` into a flag.
 | `git status && git push --force` | blocked | "after a separator" |
 | `{ git push --force; }` | blocked | "inside a compound command" |
 | `git push origin main -f` | blocked | "the flag written as its own word" |
-| `git -C repo push --force` | blocked | a real force-push; `git` takes global options before its subcommand |
+| `git -C repo push --force` | blocked | a real force-push; the guard looks for `push` among the words, so `git`'s global options do not hide it |
 | `if git push --force; then :; fi` | blocked | "inside a compound command" |
 | `git push '--force'`, `git push "-f"`, `git push --forc''e` | blocked | a quoted flag is still a flag |
-| `git push $'--force' origin main` | blocked | ANSI-C quoting yields the same word |
-| `git push origin +main:main` | blocked | a `+refspec` is git's other spelling of a forced update |
+| `git push $'--force' origin main` | blocked | ANSI-C quoting is not decoded, so the line is refused |
+| `git push origin +main:main` | blocked | a `+` refspec is the other spelling of a forced update |
 
 ### Risk map coverage
 
-- where a push's own arguments end → `git push origin main` (allowed) beside `git push origin main -f` (blocked)
 - the `-f` word boundary → `git push origin --force-with-lease` under criterion 3
-- finding the command word → `/usr/bin/git push --force`, `bash -c "git push --force"`, `eval "git push --force"`
-- a launcher's own options → `sudo -u root git push --force`, `timeout 10 git push --force`
-- advancing past a separator → `true;git push --force` and its four siblings
+- a force flag inside a quoted span → `gh issue create --body 'git push --force'` (allowed) beside `git push '--force'` (blocked)
+- which commands can execute their arguments → `caffeinate git push --force`, `timeout 10 git push --force`
 
 ---
 
@@ -200,13 +203,12 @@ bash plugins/flow/tests/run.sh block-force-push.test.sh
 allowed: git push --force-with-lease origin main
 allowed: git push origin --force-with-lease
 blocked: git push --force-with-lease --force
-SUMMARY pass=85 fail=0
+SUMMARY pass=103 fail=0
 ```
 
-The flag is compared as a whole word rather than as a pattern prefix. The previous
-implementation deleted every `--force-with-lease` from the line first, because its
-`--force\b` pattern matched that flag's own prefix — a workaround a word comparison
-does not need.
+The flag is compared as a whole word rather than as a pattern prefix, so no workaround
+is needed to stop it matching its own prefix — the whole-line scan it replaces had to
+delete every `--force-with-lease` from the line first, for exactly that reason.
 
 ### Visual analysis
 
@@ -218,8 +220,8 @@ none — criterion type behavioral has no visual surface
 
 ### What was tested
 
-That the lease form is allowed alone, in either position a push accepts it, and
-blocked when a plain force flag also appears.
+That the lease form is allowed alone, in either position a push accepts it, and blocked
+when a plain force flag also appears.
 
 ### What was NOT tested
 
@@ -266,7 +268,7 @@ bash plugins/flow/tests/run.sh block-force-push.test.sh
 allowed: gh issue create --body 'git push --force is blocked'
 allowed: printf '%s\n' 'never run git push -f'
 allowed: echo 'git push --force'
-allowed: cat > notes.md <<'EOF' (writing git push --force into a file)
+allowed: cat > notes.md <<'EOF' (writing the flags into a file)
 allowed: grep -q 'x ; git push --force' file
 allowed: git push origin main # -f
 allowed: echo 'git push'
@@ -274,11 +276,11 @@ allowed: printf '%s\n' "git push -f"
 allowed: echo git push --force
 allowed: grep -q 'git push --force' notes.md
 allowed: gh issue create --body "notes (a quoted string spanning three lines)
-SUMMARY pass=85 fail=0
+SUMMARY pass=103 fail=0
 ```
 
-The first case is the second reported occurrence: filing this issue was itself
-refused as a force-push, because the body described the flags.
+The first case is the second reported occurrence: filing this issue was itself refused
+as a force-push, because the body described the flags.
 
 ### Visual analysis
 
@@ -286,29 +288,30 @@ none — criterion type behavioral has no visual surface
 
 ### Does NOT promise
 
-- No claim to distinguish a heredoc whose delimiter is generated rather than literal.
+- No claim to know which heredoc bodies are text and which are scripts by syntax. The consumer decides: `cat > f <<EOF` writes text, `bash <<EOF` runs a script, and the second blocks.
 
 ### What was tested
 
-That text naming the flags is allowed across five routes: quoted arguments, a
-heredoc body, a comment, a separator inside a quoted string, and a quoted string
-that spans lines.
+That text naming the flags is allowed across five routes: a quoted argument, a heredoc
+body written by a non-interpreting command, a comment, a separator inside a quoted
+string, and a quoted string spanning lines.
 
 ### What was NOT tested
 
-A heredoc whose terminator creates a desync it survives; that shape is covered
-from the other direction under criterion 5's heredoc group, where it must block.
+A heredoc whose consumer is on the cannot-execute list but whose body is nonetheless
+executed. None is known; the list is drawn to contain no such command.
 
 ### Known limitations of this evidence
 
-Heredoc handling is line-based and does not model a delimiter appearing inside a
-nested heredoc.
+The guard decides by command word, so a command it does not name is treated as one that
+might execute its input. That is the safe direction, and it is why the two reported
+shapes are covered by names rather than by parsing.
 
 ### Negative/adversarial cases covered
 
 The reverse direction is asserted too — `echo 'git push'`, `echo git push --force`,
-`printf '%s\n' "git push -f"` — which is what stops the guard from growing a
-wrapper-tolerance by scanning for `git` anywhere on the line.
+`printf '%s\n' "git push -f"` — which stops the guard from allowing a line by treating
+`git` as a name like any other.
 
 ### Test inputs and expected values
 
@@ -317,17 +320,17 @@ wrapper-tolerance by scanning for `git` anywhere on the line.
 | `gh issue create --body 'git push --force is blocked'` | allowed | the issue's second reported occurrence |
 | `printf '%s\n' 'never run git push -f'` | allowed | text, not a command |
 | `echo 'git push --force'` | allowed | text, not a command |
-| `cat > notes.md <<'EOF' … EOF` | allowed | a heredoc body is written to a file, not run |
+| `cat > notes.md <<'EOF' … EOF` | allowed | a heredoc body written by `cat` is text |
 | `grep -q 'x ; git push --force' file` | allowed | a separator inside a quoted string starts nothing |
 | `git push origin main # -f` | allowed | a comment is prose about the command |
-| `echo 'git push'`, `echo git push --force` | allowed | the command word is `echo`; `git` is its argument |
+| `echo 'git push'`, `echo git push --force` | allowed | `echo` cannot execute its arguments, so the push is text |
 | `gh issue create --body "notes … end"` | allowed | a quoted string spanning lines is one argument to one command |
 
 ### Risk map coverage
 
-- a heredoc body → the heredoc case here, and the desync cases under criterion 5
+- a heredoc body → the write-a-file case here, and `bash <<EOF` under the blocks below
 - splitting the line into commands → the quoted-separator case
-- command position → the four `echo`/`grep` cases
+- a force flag inside a quoted span → the `gh` and `grep` cases
 
 ---
 
@@ -345,42 +348,35 @@ bash plugins/flow/tests/run.sh block-force-push.test.sh   # with each mutation a
 
 ### Output
 
-Six mutations, each applied to the hook in place with the suite re-run against
-it. Baseline before each: **0 cases red.**
+Six mutations, each applied to the hook in place with the suite re-run against it.
+Baseline before each: **0 cases red.**
 
-**A — the detection reverted to the whole-line pattern the issue quotes.** 17 cases
-red, including the two reported occurrences and `echo git push --force`. Nine are
-false positives. Two are **under-blocks**, which cuts against the issue's own
-framing: the issue calls the old pattern "safe — it over-blocks rather than
-under-blocks", but `git -C repo push --force` and `git push --forc''e` both pass
-it, because it requires `push` immediately after `git` and needs a word boundary
-after `--force`. Both are real force-pushes. The assessment holds for the two
-occurrences the issue reports, not for the pattern in general.
+| Mutation | Cases red |
+|---|---|
+| A — no decision at all (allow everything) | 70 |
+| B — every command word treated as able to execute | 26 |
+| C — the `risky` term dropped from the floor | 25 |
+| D — the raw-text force-flag check dropped | 6 |
+| E — the quoted-substitution check dropped | 1 |
+| F — detection reverted to the previous whole-line pattern | 18 |
 
-**B — a separator advances two characters.** 6 cases red — the one-character
-separators (`;`, `|`, `&`, `(`, `)`) and `echo $(git push --force)`. This was a
-defect in this fix's own first attempt, found by probing the direction its tests
-did not cover; it is now pinned by its own test group.
+**A** is the degenerate case: a guard that always allows fails 70 assertions, so the
+suite is not passing by accident.
 
-**C — `git`'s global options not stepped over.** 1 case red: `git -C repo push --force`.
-`git --git-dir=.git push -f` stays green under this mutant, because that option's
-value is attached and one skip reaches `push`; only the separate-value form needs
-the two-word step.
+**B** and **C** are the new design's two central decisions — the cannot-execute list, and
+the catch-all that blocks an unattributable flag when the floor has fired. Each is
+load-bearing: removing either turns over 25 cases red.
 
-**D — a launcher's options not stepped over.** 1 case red: `timeout 10 git push --force`.
+**D** is the check that finds a force flag grouped inside a quoted argument. Without it
+the `gh issue create --body '…'` shape is not seen, and six cases that require the guard
+to have noticed the flag turn red.
 
-**E — the heredoc delimiter keeps its metacharacter and `<<<` opens a body.** 1 case
-red: a command the shell would refuse to run, where the mutant reads a later line
-as a terminator and reports the body as text. Before the case was added, this
-mutation passed the suite unchanged — which is the finding that the "pathological
-command" group asserts only the exit code, and so cannot see a heredoc desync.
+**E** turns exactly one case red, which is the honest result: before that case existed,
+the mutation passed the whole suite. It was found by running the mutation, not by
+reading the code, and the case was added because of it.
 
-**F — the command word compared whole rather than by basename.** 2 cases red:
-`/usr/bin/git push --force` and `sudo /usr/bin/git push --force`, both of which the
-mutant allows. This is the risk-map row for finding the command word; the first
-attempt at this mutation also rewrote the helper's own definition, which made awk
-bail out — and an awk that bails exits 2, so the broken mutant looked like a
-working block. Re-applied to the call sites only, it behaves as the row predicts.
+**F** reverts to the whole-line scan this branch replaces and turns 18 red — the two
+reported shapes among them.
 
 ### Visual analysis
 
@@ -389,83 +385,120 @@ none — criterion type behavioral has no visual surface
 ### Does NOT promise
 
 - No claim that the suite enumerates every shape; it covers both directions and the shapes each mutation exposes.
+- No claim that mutation E is well covered: one case is a thin margin, and it is reported as such.
 
 ### What was tested
 
-That the suite goes red under each of six mutations, in both directions: A turns
-allow-cases red, B through F turn block-cases red.
+That the suite goes red under each of six mutations, in both directions.
 
 ### What was NOT tested
 
-The mutations were applied by hand; there is no permanent mutation-testing harness
-for this hook, so the counts are not reproducible by a command in the repository.
+The mutations were applied by hand; there is no permanent mutation-testing harness for
+this hook, so the counts are not reproducible by a command in the repository.
 
 ### Known limitations of this evidence
 
-All six mutation results are one-time measurements taken on 2026-09-19 against the
-hook as it stands on this branch. The scripts that produced them are not in the
-repository.
+All six mutation results are one-time measurements taken on 2026-09-19 against the hook
+as it stands on this branch. The scripts that produced them are not in the repository,
+and two of them (E and F) initially failed to apply at all — a reminder that a mutation
+report is only as good as the mutant.
 
 ### Negative/adversarial cases covered
 
-The suite asserts both directions — 47 cases expecting a block and 21 expecting an
-allow — so a hook that always blocks and a hook that always allows each fail it.
-Mutation A confirms this empirically: the same mutant turns both an allow-case and
-a block-case red. A 3000-input fuzz sample (seeded, mixing tokens from a shell
-vocabulary with random punctuation) produced only exits 0 and 2, so no input makes
-the hook exit with a code the harness would read as an allow.
+The suite asserts both directions — 65 cases expecting a block and 21 expecting an allow
+— so a hook that always blocks and a hook that always allows each fail it. A 3000-input
+fuzz sample produced only exits 0 and 2, so no input makes the hook exit with a code the
+harness would read as an allow.
 
 ### Test inputs and expected values
 
 | Input | Expected | Source of expected |
 |---|---|---|
-| the suite with the detection reverted to the whole-line pattern | at least 17 failures | each case names the behaviour it expects |
-| the suite with a two-character separator advance | at least 6 failures | the separator group names the behaviour |
-| the suite with the global-option step removed | at least 1 failure | the `git -C repo push` case names it |
-| the suite with the launcher-option step removed | at least 1 failure | the `timeout 10 git push` case names it |
-| the suite with the heredoc delimiter keeping its metacharacter | at least 1 failure | the fail-closed heredoc case names it |
-| the suite with the command word compared whole rather than by basename | at least 2 failures | the path-qualified cases name it |
+| no decision at all | at least 70 failures | each case names the behaviour it expects |
+| every command word treated as executing | at least 26 failures | the accounted-for cases name it |
+| the `risky` term dropped | at least 25 failures | the wrapper and heredoc groups name it |
+| the raw-text check dropped | at least 6 failures | the quoted-text cases name it |
+| the quoted-substitution check dropped | at least 1 failure | the quoted-backtick case names it |
+| detection reverted to the whole-line pattern | at least 18 failures | the two reported shapes name it |
 
 ### Risk map coverage
 
-Every row of the risk map has at least one assertion, and the six mutations
-demonstrate that those assertions can fail:
+Every row of the risk map has at least one assertion, and the six mutations demonstrate
+that those assertions can fail:
 
 - splitting the line into commands → `grep -q 'x ; git push --force' file`
 - where a push's own arguments end → `git push origin main # -f`
 - the `-f` word boundary → `git push origin --force-with-lease`
-- a heredoc body → the write-a-file case, and the desync cases
+- a heredoc body → the write-a-file case beside `bash <<EOF`
 - `-f` as another command's flag → the six cases under criterion 1
-- advancing past a separator → the separator group (mutation B)
-- a launcher's own options → the launcher group (mutation D)
-- finding the command word → the path-qualified cases (mutation F), plus `sh -c` and `eval`
-- command position → `echo git push --force` and its three siblings
+- which commands can execute their arguments → the wrapper group (mutation C)
+- a substitution inside double quotes → the substitution group (mutation E)
+- a force flag inside a quoted span → the quoted-text cases (mutation D)
+- detecting the floor → the arithmetic `<<` case, and mutation B
+- the exit contract → the pathological group, and the stubbed-`awk` check below
 
 ---
 
 ## Runtime verification
 
-The hook is a shell script a hook runner invokes per tool call, so its runtime
-surface is the process: exit code, and what it writes to each stream.
+The hook is a shell script a hook runner invokes per tool call, so its runtime surface is
+the process: exit code, and what it writes to each stream.
 
 | Step | Command | Result |
 |---|---|---|
-| Suite | `bash plugins/flow/tests/run.sh block-force-push.test.sh` | 85 pass, 0 fail |
+| Suite | `bash plugins/flow/tests/run.sh block-force-push.test.sh` | 103 pass, 0 fail |
 | Whole flow suite | `bash plugins/flow/tests/run.sh` | 4727 pass, 0 fail, 69 files |
 | Windows hook smoke | `bash plugins/flow/tests/windows-hooks-smoke.sh` | 56 passed, 0 failed |
 | Fuzz | 3000 generated commands | exits 0 and 2 only |
 | Pathological set | unterminated heredoc, 999 backslashes, invalid UTF-8, CRLF, 20 000-character token | no crash, no hang |
-| Cost | 100 KB command / 128 KB (the cap) | 0.7-0.8 s / 1.0-1.1 s across two runs; over the cap, blocks in ~70 ms |
+| Cost | 100 KB / 131 KB (the cap) | 0.70 s / 1.04 s; over the cap, blocks in ~55 ms |
+| Cost, worst measured | 130 000-character chain of `eval` words | 1.1 s |
+| Cost, multi-byte | 131 072 CJK characters (393 KB) | refused in 73 ms, by the byte cap |
 
-Every line above is from the tree as it stands on this branch: the whole-suite run
-is the one taken after the last change to the hook and its test.
+The whole-suite line is from the run taken before the substitution fix; every other line
+is from the tree as it stands on this branch. The stub-`awk` check below is the one
+runtime path a passing suite would not otherwise exercise.
+
+| Hostile runtime step | Result |
+|---|---|
+| `awk` stubbed to exit 1 while the command force-pushes | blocked, exit 2 |
+| `awk` stubbed to print nothing (empty verdict) | blocked, exit 2 |
+| payload carrying no command string (`{}`, null, a number) | blocked, exit 2 |
+| `jq` absent, `awk` absent, `cat` absent, `grep` absent | blocked, exit 2 |
+
+## What was tried before this design
+
+Two earlier versions of this fix were reviewed and rejected, and both failures are worth
+recording because they are the reason the shipped design looks the way it does.
+
+**The whole-line scan** is what the issue reports: it reads any `-f` after a push as the
+push's own. It is safe in the sense the issue gives it — it over-blocks — but that is
+not true in general. Reverting to it turns up two *under*-blocks as well: it requires
+`push` immediately after `git`, so `git -C repo push --force` escapes it, and it needs a
+word boundary after `--force`, so `git push --forc''e` escapes it too.
+
+**A parser that decided on the invocation's own arguments** replaced it, and was found
+by security review to under-block in sixteen measured shapes — command substitution
+inside quotes and backticks, wrappers that were not on its launcher list, a path-qualified
+launcher, clustered `-c`, an interpreter heredoc, and arithmetic `<<` confusing the
+heredoc tracker. Each was a real force-push that `main` blocked. The design's fault was
+structural: it tried to decide *is this a force push?*, which requires knowing whether
+the enclosing command interprets its argument as a command, and `gh issue create --body
+'…'` and `bash -lc '…'` are the same shape needing opposite answers.
+
+**The shipped design inverts the question.** It asks what it can *account for*, blocks
+everything else, and keeps the whole-line scan as the floor for whatever the accounting
+does not explain. A differential probe against `main` over the review's whole finding set
+now shows no remaining case where `main` blocks a real force-push and this allows it; the
+only differences are the two shapes this issue exists to fix, and one case
+(`eval $'\x67it push --force'`) where the branch is stricter than `main`.
 
 ## Out-of-scope finding, filed separately
 
 `block-secrets.sh` shares this defect class: it scans the whole command line, so it
-refuses `gh issue create --body "the token=X was committed"`, `grep -rn "secret=X"
-docs/` and `git commit -m "rotate password=X"`. All five such cases were measured
-returning exit 2, alongside three real inline secrets it correctly blocks. It is
-not fixed here: narrowing a security guard's false-positive policy is a decision
-with a different blast radius from a push-flag fix, and the guard has no test file
-of its own to hold a change to. It is filed as issue #241.
+refuses `gh issue create --body "the token=X was committed"`, `grep -rn "secret=X" docs/`
+and `git commit -m "rotate password=X"`. All five such cases were measured returning exit
+2, alongside three real inline secrets it correctly blocks. It is not fixed here:
+narrowing a security guard's false-positive policy is a decision with a different blast
+radius from a push-flag fix, and the guard has no test file of its own to hold a change
+to. It is filed as issue #241.
