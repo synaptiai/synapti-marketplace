@@ -9,6 +9,8 @@ Shared by:
 
 Surface:
   - record_artifact()   — journal manifest append (frontmatter + body)
+  - append_body()       — journal BODY append, under the same flock
+  - replace_section()   — journal BODY section replace-or-append, under the same flock
   - write_yaml_file()   — standalone YAML write (no frontmatter; replace)
   - write_json_file()   — standalone JSON write (sort_keys=True; replace)
   - append_jsonl()      — JSONL event-ledger append (under flock)
@@ -331,6 +333,151 @@ def record_artifact(journal_path, lockfile_path, issue, artifact_type,
         )
         new_content = f"---\n{front}---\n{body}"
         _atomic_write(journal_path, new_content)
+    finally:
+        try:
+            os.close(lock_fd)
+        except OSError:
+            pass
+
+
+def append_body(target_path, lockfile_path, text, *, leading_blank=True):
+    """Append `text` to target_path under flock, via O_APPEND.
+
+    Two invariants, both load-bearing:
+
+    ORDERING — acquire the lock BEFORE opening the target. An fd opened before
+    the lock points at the pre-rename inode, so a concurrent record_artifact()
+    that wins the lock and renames over the file would leave this writer's bytes
+    in an unlinked inode: an append that succeeds and disappears with no error.
+
+    O_APPEND rather than read-modify-write. flock cannot see a non-cooperating
+    writer — an editor, a session still running an older plugin version, a bare
+    `>>` from an un-migrated consumer — so a whole-file temp+rename here would
+    publish a stale copy over whatever that writer added. It is also O(1) in
+    file size where a rewrite is O(size), and this runs on every Edit/Write.
+
+    The residual, stated rather than hidden: record_artifact() can still revert
+    an *unlocked* append that lands inside its own read→rename window. That
+    window is not removable while the manifest must live in the frontmatter at
+    the top of the file, and this function does not widen it.
+
+    The entry is handed to a single os.write on the open fd, so a concurrent
+    reader never observes a torn entry — the same one-write(2) property
+    bin/flow-quality-ledger.sh relies on at its append. A short write (only
+    reachable for a payload larger than the kernel will take in one call) is
+    completed by a loop, which is why the guarantee is per-call and not
+    per-entry for arbitrarily large input.
+    """
+    _harden_sys_path()
+    lock_fd = acquire_lock(lockfile_path)
+    try:
+        try:
+            fd = os.open(
+                target_path,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW,
+                0o644,
+            )
+        except OSError as e:
+            if e.errno in (errno.ELOOP, errno.EMLINK):
+                raise JournalAtomicError(
+                    f"refusing — {target_path} is a symlink",
+                    exit_code=2,
+                )
+            raise JournalAtomicError(
+                f"cannot open {target_path}: {e}",
+                exit_code=2,
+            )
+        try:
+            payload = "\n" + text if leading_blank else text
+            if not payload.endswith("\n"):
+                payload += "\n"
+            data = payload.encode("utf-8")
+            written = 0
+            while written < len(data):
+                n = os.write(fd, data[written:])
+                if n <= 0:
+                    raise JournalAtomicError(
+                        f"short write to {target_path}", exit_code=2
+                    )
+                written += n
+            os.fsync(fd)
+        except JournalAtomicError:
+            raise
+        except OSError as e:
+            raise JournalAtomicError(
+                f"append to {target_path} failed: {e}", exit_code=2
+            )
+        finally:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+    finally:
+        try:
+            os.close(lock_fd)
+        except OSError:
+            pass
+
+
+def _splice_section(body, heading, text):
+    """Return `body` with `heading`'s section replaced by `text`, or appended.
+
+    A section runs from its heading line to the next `## ` heading. Split out
+    from replace_section() so the splice rule is testable without a filesystem.
+    """
+    lines = body.split("\n")
+    out = []
+    found = False
+    i = 0
+    while i < len(lines):
+        if lines[i] == heading:
+            found = True
+            out.append(heading)
+            out.append("")
+            out.extend(text.split("\n"))
+            i += 1
+            while i < len(lines) and not lines[i].startswith("## "):
+                i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    if not found:
+        if out and out[-1] != "":
+            out.append("")
+        out.append(heading)
+        out.append("")
+        out.extend(text.split("\n"))
+    return "\n".join(out)
+
+
+def replace_section(journal_path, lockfile_path, heading, text):
+    """Replace `heading`'s section in the journal body, or append it.
+
+    Read-modify-write under flock (tempfile + rename), because a mid-file
+    replacement cannot be done with O_APPEND — which is exactly why this is a
+    separate entry point from append_body() rather than a flag on it.
+
+    The frontmatter is preserved byte-for-byte: parse_frontmatter() is called
+    for its refusals (unclosed fence, invalid YAML, non-mapping) and the prefix
+    is then recovered by length, so a rewritten journal never re-serializes a
+    manifest it was only supposed to leave alone.
+
+    A target that does not exist is created with just the section; the manifest
+    is added later by record_artifact(), which is the only writer that knows the
+    issue number.
+    """
+    _harden_sys_path()
+    lock_fd = acquire_lock(lockfile_path)
+    try:
+        content = _read_with_no_follow(journal_path)
+        if content:
+            _manifest, body = parse_frontmatter(content)
+            prefix = content[: len(content) - len(body)]
+        else:
+            prefix, body = "", ""
+        new_content = prefix + _splice_section(body, heading, text)
+        if new_content != content:
+            _atomic_write(journal_path, new_content)
     finally:
         try:
             os.close(lock_fd)
