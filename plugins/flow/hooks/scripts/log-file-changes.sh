@@ -60,7 +60,21 @@ _flow_autolog() {
   # file a subagent wrote to /tmp is not journal content, and neither is a path
   # in no repository at all.
   case "$FILE_PATH" in
-    /*) abs="$FILE_PATH" ;;
+    /*)
+      # An absolute path is NOT taken verbatim. `repo_root` is physical, so the
+      # symlinked form of the same location never prefix-matches: macOS /tmp is
+      # /private/tmp, and a project reached through a symlinked directory has
+      # the same shape. The breadcrumb is then dropped for the whole session
+      # while the hook still looks healthy, which is the failure this file's
+      # `pwd -P` comment describes for the other side of the comparison.
+      # Physicalize the directory — it exists for anything being edited.
+      adir=$(dirname "$FILE_PATH")
+      if [ -d "$adir" ]; then
+        abs=$(cd "$adir" 2>/dev/null && pwd -P)/$(basename "$FILE_PATH")
+      else
+        abs="$FILE_PATH"
+      fi
+      ;;
     *)  abs="${cwd%/}/$FILE_PATH" ;;
   esac
   # A relative path can traverse out of the repository: "../elsewhere/f.md"
@@ -83,8 +97,11 @@ _flow_autolog() {
   if [ -x "$helper_dir/bin/cascade-resolve.sh" ]; then
     # cascade-resolve reads .claude/settings.flow.json from its process CWD, so
     # it must run inside the repo the payload named, not this process's.
+    # Guarded even though this function's only call site is `_flow_autolog ||
+    # true`, which suspends `set -e` inside it: the body should not depend on
+    # how a future caller invokes it.
     journal_dir=$(cd "$repo_root" && "$helper_dir/bin/cascade-resolve.sh" \
-      --default ".decisions" '.journal.dir // empty' 2>/dev/null)
+      --default ".decisions" '.journal.dir // empty' 2>/dev/null) || journal_dir=""
   fi
   [ -n "$journal_dir" ] || journal_dir=".decisions"
 
@@ -97,6 +114,23 @@ _flow_autolog() {
   case "$journal_dir" in
     /*) journal_base="$journal_dir" ;;
     *)  journal_base="$repo_root/$journal_dir" ;;
+  esac
+  # Containment. A symlinked journal DIRECTORY is caught by neither the
+  # auto-log-dir check below nor O_NOFOLLOW — that protects one path component,
+  # and this is a different one. A fork can commit `.decisions -> /elsewhere`;
+  # resolving the composed path and requiring it inside the repository catches
+  # the link, a deeper redirection, and a `journal_dir` that leaves the tree, in
+  # one test. A directory that does not exist resolves empty and is left to the
+  # tracked-journal gate below.
+  case "$journal_base" in
+    "$repo_root"/*)
+      jb_phys=$(cd "$journal_base" 2>/dev/null && pwd -P)
+      case "$jb_phys" in
+        "") ;;
+        "$repo_root"/*) ;;
+        *) return 0 ;;
+      esac
+      ;;
   esac
 
   if [ -n "$issue_num" ]; then
@@ -141,7 +175,13 @@ _flow_autolog() {
   # regular file — so a staged link to a non-existent path would be written
   # through. Refuse it explicitly, as the entry target already is.
   [ -L "$autolog_dir/.gitignore" ] && return 0
-  [ -f "$autolog_dir/.gitignore" ] || printf '*\n' > "$autolog_dir/.gitignore" 2>/dev/null
+  # Grouped and guarded, matching log-commits.sh. Ungrouped, this is the last
+  # command of an `A || B` list, which `set -e` does not exempt — and the only
+  # reason it does not abort is that the sole call site is `_flow_autolog ||
+  # true`. Left unguarded, a `.gitignore` staged as a directory would leave the
+  # trail without its self-ignore rule, breaking the "cannot dirty the tree"
+  # guarantee silently.
+  { [ -f "$autolog_dir/.gitignore" ] || printf '*\n' > "$autolog_dir/.gitignore" 2>/dev/null; } || true
 
   timestamp=$(date +"%Y-%m-%d %H:%M")
   # Neutralize comment terminators before embedding. An attacker-supplied path
@@ -155,8 +195,8 @@ _flow_autolog() {
   # as ORDINARY markdown — the outcome the `-->` escaping exists to prevent,
   # reached through a character that escaping set omits. Collapse every
   # whitespace control to a space so one entry is always exactly one line.
-  path_safe=$(printf '%s' "$path_safe" | LC_ALL=C tr '\n\r\t' '   ')
-  tool_safe=$(printf '%s' "$tool_safe" | LC_ALL=C tr '\n\r\t' '   ')
+  path_safe=$(printf '%s' "$path_safe" | LC_ALL=C tr '\000-\037\177' ' ')
+  tool_safe=$(printf '%s' "$tool_safe" | LC_ALL=C tr '\000-\037\177' ' ')
 
   # A subagent's tool calls fire this same hook; agent_type is present only
   # then. It is sanitized too — it comes from an agent definition a plugin or a
@@ -166,7 +206,7 @@ _flow_autolog() {
   if [ -n "$agent_type" ]; then
     agent_safe=${agent_type//-->/-- >}
     agent_safe=${agent_safe//<!--/< !--}
-    agent_safe=$(printf '%s' "$agent_safe" | LC_ALL=C tr '\n\r\t' '   ')
+    agent_safe=$(printf '%s' "$agent_safe" | LC_ALL=C tr '\000-\037\177' ' ')
     agent_safe=" agent=$agent_safe"
   fi
 

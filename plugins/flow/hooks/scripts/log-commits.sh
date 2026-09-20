@@ -45,8 +45,12 @@ JOURNAL_DIR=".decisions"
 if [ -x "$HELPER_DIR/bin/cascade-resolve.sh" ]; then
   # cascade-resolve reads .claude/settings.flow.json from its process CWD, so
   # it must run inside the repo the payload named, not this process's.
+  # `|| JOURNAL_DIR=""` because this runs under `set -e` and is not in a tested
+  # context: without it a `cd` or resolver failure aborts the whole hook, which
+  # breaks the contract that a hook never fails the tool call it follows. The
+  # fallback below then supplies the default, same as if it had resolved empty.
   JOURNAL_DIR=$(cd "$REPO_ROOT" && "$HELPER_DIR/bin/cascade-resolve.sh" \
-    --default ".decisions" '.journal.dir // empty' 2>/dev/null)
+    --default ".decisions" '.journal.dir // empty' 2>/dev/null) || JOURNAL_DIR=""
 fi
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 # A trailing slash or a leading "./" is legal in the settings but produces a
@@ -72,6 +76,18 @@ ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+' || echo
 case "$JOURNAL_DIR" in
   /*) JOURNAL_BASE="$JOURNAL_DIR" ;;
   *)  JOURNAL_BASE="$REPO_ROOT/$JOURNAL_DIR" ;;
+esac
+# Containment — see log-file-changes.sh. A symlinked journal DIRECTORY is caught
+# by neither the auto-log-dir check nor O_NOFOLLOW, which protects one component.
+case "$JOURNAL_BASE" in
+  "$REPO_ROOT"/*)
+    JB_PHYS=$(cd "$JOURNAL_BASE" 2>/dev/null && pwd -P)
+    case "$JB_PHYS" in
+      "") ;;
+      "$REPO_ROOT"/*) ;;
+      *) exit 0 ;;
+    esac
+    ;;
 esac
 
 if [ -n "$ISSUE_NUM" ]; then
@@ -148,6 +164,14 @@ if [ -f "$TRACKED" ]; then
   # context — a prompt-injection vector against future sessions.
   LAST_MSG_SAFE=${LAST_MSG//-->/-- >}
   LAST_MSG_SAFE=${LAST_MSG_SAFE//<!--/< !--}
+  # Escaping the comment terminators is not enough to keep one entry on one
+  # line: `git log -1 --format=%s` preserves CR, VT and FF verbatim, so a
+  # subject carrying one (a fork's commit, logged when the operator's own
+  # `git commit --amend` leaves it as HEAD) breaks the one-line invariant and
+  # everything after the control character reads as a fabricated line in the
+  # file /flow:explain cats into Claude's context. The whole C0 range collapses,
+  # matching one_line() elsewhere in this plugin and the sibling hook's fields.
+  LAST_MSG_SAFE=$(printf '%s' "$LAST_MSG_SAFE" | LC_ALL=C tr '\000-\037\177' ' ')
 
   # A subagent's Bash calls fire this same hook; agent_type is present only
   # then, and is sanitized on the same grounds as the subject.
@@ -156,10 +180,10 @@ if [ -f "$TRACKED" ]; then
   if [ -n "$AGENT_TYPE" ]; then
     AGENT_SAFE=${AGENT_TYPE//-->/-- >}
     AGENT_SAFE=${AGENT_SAFE//<!--/< !--}
-    # A newline would end the breadcrumb's line and land the rest as ordinary
-    # markdown — the outcome the escaping above exists to prevent, reached
-    # through a character that escaping set omits.
-    AGENT_SAFE=$(printf '%s' "$AGENT_SAFE" | LC_ALL=C tr '\n\r\t' '   ')
+    # A control character would end the breadcrumb's line and land the rest as
+    # ordinary markdown — the outcome the escaping above exists to prevent,
+    # reached through a character that escaping set omits.
+    AGENT_SAFE=$(printf '%s' "$AGENT_SAFE" | LC_ALL=C tr '\000-\037\177' ' ')
     AGENT_SAFE=" agent=$AGENT_SAFE"
   fi
 

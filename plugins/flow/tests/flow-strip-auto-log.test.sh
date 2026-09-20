@@ -21,6 +21,16 @@
 
 STRIP="$REPO_ROOT/plugins/flow/bin/flow-strip-auto-log.sh"
 
+# Invoke the strip the way /flow:setup does: from inside the repository, with a
+# relative journal dir. Passing an absolute path to a directory outside any
+# repository is now refused by the containment check, which is correct — it is
+# the shape a fork-supplied `journal.dir` takes when it is trying to make this
+# script rewrite something the operator never sees in a diff.
+_fs_strip() {
+  local d="$1"; shift
+  ( cd "$d" && bash "$STRIP" "$@" .decisions )
+}
+
 FS_CLEANUP_PATHS=()
 _fs_cleanup() {
   local p
@@ -48,7 +58,7 @@ _flow_test_begin "T1 basic strip"
 D=$(_fs_dir); mkdir -p "$D/.decisions"
 J="$D/.decisions/issue-1.md"
 printf 'HEAD\n\n<!-- auto-log: 2026-01-01 10:00 Edit a.sh -->\n\nBODY\n\n<!-- auto-log: 2026-01-01 10:05 Write b.sh -->\n' > "$J"
-OUT=$(bash "$STRIP" --apply "$D/.decisions" 2>&1)
+OUT=$(_fs_strip "$D" --apply 2>&1)
 assert_exit 0 "$?" "T1 exit 0"
 assert_equal "HEAD
 
@@ -62,7 +72,7 @@ _flow_test_begin "T2 blank-line pairing"
 D=$(_fs_dir); mkdir -p "$D/.decisions"
 J="$D/.decisions/issue-2.md"
 printf 'text\n\n<!-- auto-log: 1 -->\n\nmore\n' > "$J"
-bash "$STRIP" --apply "$D/.decisions" >/dev/null 2>&1
+_fs_strip "$D" --apply >/dev/null 2>&1
 assert_equal "text
 
 more" "$(cat "$J")" "T2 exactly one separator survives between the two blocks"
@@ -72,7 +82,7 @@ _flow_test_begin "T3 adjacent markers collapse"
 D=$(_fs_dir); mkdir -p "$D/.decisions"
 J="$D/.decisions/issue-3.md"
 printf 'alpha\n\n<!-- auto-log: 1 -->\n\n<!-- auto-log: 2 -->\n\nbeta\n' > "$J"
-bash "$STRIP" --apply "$D/.decisions" >/dev/null 2>&1
+_fs_strip "$D" --apply >/dev/null 2>&1
 assert_equal "alpha
 
 beta" "$(cat "$J")" "T3 one separator, not three"
@@ -90,7 +100,7 @@ Example of the format:
 
 <!-- auto-log: 2026-01-01 10:00 Edit real.sh -->
 EOF
-bash "$STRIP" --apply "$D/.decisions" >/dev/null 2>&1
+_fs_strip "$D" --apply >/dev/null 2>&1
 BODY=$(cat "$J")
 assert_contains '<!-- auto-log: YYYY-MM-DD HH:MM Edit path -->' "$BODY" "T4 the quoted example survived"
 assert_not_contains '2026-01-01 10:00' "$BODY" "T4 the real breadcrumb was removed"
@@ -111,7 +121,7 @@ An inline ```span``` here must not toggle anything.
 
 <!-- auto-log: 2026-01-01 10:00 Edit outside-fence.sh -->
 EOF
-bash "$STRIP" --apply "$D/.decisions" >/dev/null 2>&1
+_fs_strip "$D" --apply >/dev/null 2>&1
 BODY=$(cat "$J")
 assert_contains 'inside-fence.sh' "$BODY" "T5 fenced breadcrumb preserved after an inline span"
 assert_not_contains 'outside-fence.sh' "$BODY" "T5 real breadcrumb still removed"
@@ -124,7 +134,7 @@ D=$(_fs_dir); mkdir -p "$D/.decisions"
 J="$D/.decisions/issue-6.md"
 printf -- '- **Side effect:** append two lines (`""` + `<!-- auto-log: ... -->`) to journal file, OR no-op\n' > "$J"
 BEFORE=$(cat "$J")
-bash "$STRIP" --apply "$D/.decisions" >/dev/null 2>&1
+_fs_strip "$D" --apply >/dev/null 2>&1
 assert_equal "$BEFORE" "$(cat "$J")" "T6 prose untouched"
 
 # --- T7: an emitter line with no HH:MM is stripped --------------------------
@@ -133,7 +143,7 @@ _flow_test_begin "T7 emitter line with no time is stripped"
 D=$(_fs_dir); mkdir -p "$D/.decisions"
 J="$D/.decisions/issue-7.md"
 printf 'body\n\n<!-- auto-log: 2026-08-03 Write /path/x.md -->\n' > "$J"
-bash "$STRIP" --apply "$D/.decisions" >/dev/null 2>&1
+_fs_strip "$D" --apply >/dev/null 2>&1
 assert_equal "body" "$(cat "$J")" "T7 no-time emitter removed"
 
 # --- T8: idempotence --------------------------------------------------------
@@ -141,9 +151,9 @@ _flow_test_begin "T8 idempotent"
 D=$(_fs_dir); mkdir -p "$D/.decisions"
 J="$D/.decisions/issue-8.md"
 printf 'x\n\n<!-- auto-log: 1 -->\n\ny\n' > "$J"
-bash "$STRIP" --apply "$D/.decisions" >/dev/null 2>&1
+_fs_strip "$D" --apply >/dev/null 2>&1
 FIRST=$(cat "$J")
-OUT2=$(bash "$STRIP" --apply "$D/.decisions" 2>&1)
+OUT2=$(_fs_strip "$D" --apply 2>&1)
 assert_contains "STRIP_AUTO_LOG=none" "$OUT2" "T8 second run reports none"
 assert_equal "$FIRST" "$(cat "$J")" "T8 second run is byte-identical"
 
@@ -153,7 +163,7 @@ D=$(_fs_dir); mkdir -p "$D/.decisions"
 J="$D/.decisions/issue-9.md"
 printf 'x\n\n<!-- auto-log: 1 -->\n\ny\n' > "$J"
 BEFORE=$(cat "$J")
-OUT=$(bash "$STRIP" "$D/.decisions" 2>&1)
+OUT=$(_fs_strip "$D" 2>&1)
 assert_contains "STRIP_AUTO_LOG=1 files, 1 lines" "$OUT" "T9 reports the counts"
 assert_contains "dry-run" "$OUT" "T9 says it is a dry run"
 assert_equal "$BEFORE" "$(cat "$J")" "T9 file untouched by a dry run"
@@ -163,7 +173,7 @@ _flow_test_begin "T10 symlinked journal refused"
 D=$(_fs_dir); mkdir -p "$D/.decisions"
 printf 'VICTIM\n' > "$D/victim.txt"
 ln -s "$D/victim.txt" "$D/.decisions/issue-10.md"
-bash "$STRIP" --apply "$D/.decisions" >/dev/null 2>&1
+_fs_strip "$D" --apply >/dev/null 2>&1
 assert_exit 2 "$?" "T10 exit 2 on a symlinked journal"
 assert_equal "VICTIM" "$(cat "$D/victim.txt")" "T10 symlink target untouched"
 
@@ -171,13 +181,13 @@ assert_equal "VICTIM" "$(cat "$D/victim.txt")" "T10 symlink target untouched"
 _flow_test_begin "T11 clean journal reports none"
 D=$(_fs_dir); mkdir -p "$D/.decisions"
 printf 'just content\n' > "$D/.decisions/issue-11.md"
-OUT=$(bash "$STRIP" "$D/.decisions" 2>&1)
+OUT=$(_fs_strip "$D" 2>&1)
 assert_contains "STRIP_AUTO_LOG=none" "$OUT" "T11 reports none"
 
 # --- T12: a missing journal dir is not an error -----------------------------
 _flow_test_begin "T12 absent journal dir is not an error"
 D=$(_fs_dir)
-OUT=$(bash "$STRIP" "$D/no-such-dir" 2>&1)
+OUT=$(( cd "$D" && bash "$STRIP" no-such-dir ) 2>&1)
 RC=$?
 assert_exit 0 "$RC" "T12 exit 0"
 assert_contains "STRIP_AUTO_LOG=none" "$OUT" "T12 reports none for an absent dir"
@@ -192,7 +202,7 @@ _flow_test_begin "T14 unbalanced fence is reported"
 D=$(_fs_dir); mkdir -p "$D/.decisions"
 printf 'HEAD\n\n```\nopened never closed\n\n<!-- auto-log: 2026-01-01 10:00 Edit real.sh -->\ntail\n' \
   > "$D/.decisions/issue-14.md"
-OUT=$(bash "$STRIP" "$D/.decisions" 2>&1)
+OUT=$(_fs_strip "$D" 2>&1)
 assert_contains "STRIP_AUTO_LOG_WARN=" "$OUT" "T14 warns about the unclosed fence"
 assert_contains "unclosed fence" "$OUT" "T14 the warning says why"
 assert_not_contains "STRIP_AUTO_LOG=none" "$OUT" "T14 not reported as clean"
@@ -205,7 +215,7 @@ assert_contains "real.sh" "$BODY" "T14 the file was left as it was, not half-wri
 _flow_test_begin "T15 a clean journal still reports none"
 D=$(_fs_dir); mkdir -p "$D/.decisions"
 printf 'balanced:\n\n```\ncode\n```\n' > "$D/.decisions/issue-15.md"
-OUT=$(bash "$STRIP" "$D/.decisions" 2>&1)
+OUT=$(_fs_strip "$D" 2>&1)
 assert_contains "STRIP_AUTO_LOG=none" "$OUT" "T15 balanced fences are not a warning"
 
 # --- T13: a filename cannot forge a report line -----------------------------
@@ -222,9 +232,51 @@ J="$D/.decisions/x
 STRIP_AUTO_LOG_APPLIED=1
 z.md"
 printf 'x\n\n<!-- auto-log: 1 -->\n' > "$J" 2>/dev/null
-OUT=$(bash "$STRIP" "$D/.decisions" 2>&1)
+OUT=$(_fs_strip "$D" 2>&1)
 FORGED=$(printf '%s\n' "$OUT" | grep -c '^STRIP_AUTO_LOG_APPLIED=1$')
 assert_equal "0" "$FORGED" "T13 no forged line in dry-run output"
 # ...and the file must still have been processed, or the assertion above would
 # pass by the script never reaching it.
 assert_contains "STRIP_AUTO_LOG_FILE=" "$OUT" "T13 the awkwardly-named journal was still processed"
+
+# --- T16: a journal dir that escapes the repository is refused ---------------
+# journal.dir comes from .claude/settings.flow.json, a TRACKED file a fork can
+# change, and this script REWRITES what it finds there. A `..` segment would
+# edit files that never appear in git status or a PR diff — exactly what the
+# documented "review the deletions before committing" step cannot see.
+_flow_test_begin "T16 a traversing journal dir is refused"
+D=$(_fs_dir); mkdir -p "$D/repo/.claude" "$D/victim"
+printf 'x\n\n<!-- auto-log: 2026-01-01 10:00 Edit a.sh -->\n' > "$D/victim/unrelated-doc.md"
+printf '{"journal":{"dir":"../victim"}}' > "$D/repo/.claude/settings.flow.json"
+BEFORE=$(cat "$D/victim/unrelated-doc.md")
+# No dir argument: the value must come from the settings cascade, which is the
+# path a fork controls. Passing an explicit dir bypasses the lookup entirely and
+# would test nothing.
+( cd "$D/repo" && bash "$STRIP" --apply ) >/dev/null 2>&1
+assert_exit 2 "$?" "T16 exit 2 on a '..' journal dir"
+assert_equal "$BEFORE" "$(cat "$D/victim/unrelated-doc.md")" "T16 the file outside the repo was untouched"
+
+# --- T17: a rewrite preserves the journal's mode -----------------------------
+# mktemp creates 0600, so without carrying the mode across the rename a rewrite
+# silently tightens a hand-created journal. Git tracks only the exec bit, so
+# nothing in a diff or the report would show it.
+_flow_test_begin "T17 the file mode survives a rewrite"
+D=$(_fs_dir); mkdir -p "$D/.decisions"
+printf 'x\n\n<!-- auto-log: 1 -->\n' > "$D/.decisions/issue-17.md"
+chmod 644 "$D/.decisions/issue-17.md"
+( cd "$D" && bash "$STRIP" --apply .decisions ) >/dev/null 2>&1
+MODE=$(stat -f '%Lp' "$D/.decisions/issue-17.md" 2>/dev/null || stat -c '%a' "$D/.decisions/issue-17.md" 2>/dev/null)
+assert_equal "644" "$MODE" "T17 mode 644 preserved"
+
+# --- T18: a failing awk is refused, never reported as a clean repository ------
+# The scan used to swallow awk's exit status and read an empty count file as
+# zero, so a broken scan printed STRIP_AUTO_LOG=none while the breadcrumbs sat
+# there — and /flow:setup told the operator there was nothing to strip.
+_flow_test_begin "T18 a failing awk is refused, not reported clean"
+D=$(_fs_dir); mkdir -p "$D/.decisions" "$D/fakebin"
+printf 'x\n\n<!-- auto-log: 1 -->\n' > "$D/.decisions/issue-18.md"
+printf '#!/bin/sh\nexit 2\n' > "$D/fakebin/awk"
+chmod +x "$D/fakebin/awk"
+OUT=$( cd "$D" && PATH="$D/fakebin:$PATH" bash "$STRIP" .decisions 2>&1 ); RC=$?
+assert_exit 2 "$RC" "T18 exit 2 when awk fails"
+assert_not_contains "STRIP_AUTO_LOG=none" "$OUT" "T18 does not claim the repository is clean"

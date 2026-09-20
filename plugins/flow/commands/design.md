@@ -225,6 +225,8 @@ ENTRY
 fi
 ```
 
+   If the helper exits non-zero, report the failure and **skip the manifest emit below** — recording the artifact would leave the journal asserting a design decision its body does not contain, which is worse than a missing record.
+
    **Manifest emit** — append the design-decision artifact to the journal manifest alongside the freeform `## Design Decision` section:
 
    ```bash

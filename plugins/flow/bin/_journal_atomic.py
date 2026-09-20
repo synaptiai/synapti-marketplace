@@ -163,6 +163,15 @@ def _atomic_write(target_path, content):
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
+        # Carry the target's mode across the rename. mkstemp creates 0600, so
+        # without this every rewrite silently tightens the permissions of a
+        # journal someone created by hand — and git tracks only the exec bit,
+        # so nothing in a diff or a report would show it. A missing target (a
+        # new file) keeps mkstemp's mode, which is the safe default.
+        try:
+            os.chmod(tmp, os.stat(target_path).st_mode & 0o7777)
+        except OSError:
+            pass
         os.rename(tmp, target_path)
         # Durably persist the rename. Best-effort: some filesystems disallow
         # fsync on a directory fd and raise EINVAL — that's benign here.

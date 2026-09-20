@@ -90,31 +90,75 @@ if [ -L "$JOURNAL_DIR" ]; then
   exit 2
 fi
 
+# Containment. The journal dir is read from .claude/settings.flow.json, a
+# TRACKED file that a fork pull request controls — the same threat
+# cascade-resolve.sh's header describes — and this script REWRITES what it finds
+# there. A `..` segment is how such a value escapes the repository, and the
+# rewrite would never appear in `git status` or the PR diff, which is exactly
+# what the documented review step ("review the deletions before committing")
+# cannot see. A relative path with no `..` cannot leave the working directory,
+# and a symlinked directory is already refused above, so only two shapes need
+# rejecting.
+case "/$JOURNAL_DIR/" in
+  */../*)
+    echo "flow-strip-auto-log.sh: refusing — journal dir '$JOURNAL_DIR' contains a '..' segment; it would rewrite files outside the repository" >&2
+    exit 2 ;;
+esac
+case "$JOURNAL_DIR" in
+  /*)
+    # An absolute journal dir inside the repository is legitimate; outside it,
+    # the rewrite is invisible to review.
+    REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || REPO_ROOT=""
+    if [ -n "$REPO_ROOT" ]; then
+      REPO_ROOT=$(cd "$REPO_ROOT" 2>/dev/null && pwd -P)
+      RESOLVED=$(cd "$JOURNAL_DIR" 2>/dev/null && pwd -P)
+      case "$RESOLVED" in
+        "$REPO_ROOT"/*) ;;
+        *)
+          echo "flow-strip-auto-log.sh: refusing — absolute journal dir '$JOURNAL_DIR' resolves to '$RESOLVED', outside the repository at '$REPO_ROOT'" >&2
+          exit 2 ;;
+      esac
+    fi ;;
+esac
+
 # The strip. `removed` counts marker lines only — the blank lines that go with
 # them are a consequence, and the number a reader cares about is how many
 # breadcrumbs were deleted.
 STRIP_AWK='
-function fence_line(s,   m) {
-  # A fence opens/closes only when the first non-space run is three or more
-  # backticks or tildes. Anchored on purpose: an INLINE ```span``` mid-line
-  # must not toggle the state, or the tracker desynchronizes and starts
-  # stripping breadcrumbs out of real fenced blocks.
-  return (s ~ /^[[:space:]]*(```|~~~)/)
+BEGIN {
+  # Initialised explicitly. An uninitialised awk variable has BOTH the numeric
+  # value 0 and the string value "", and `print removed` prints the string — so
+  # a file with no markers wrote an empty count file, not "0". The old
+  # `|| echo 0` at the call site hid that; this makes the count honest instead.
+  removed = 0
+  pending_blank = 0
+  in_fence = 0
 }
-function fence_char_of(s) {
-  return (s ~ /^[[:space:]]*`/) ? "`" : "~"
+function fence_delim(s) {
+  # Returns the fence character this line opens/closes with, or "" — the same
+  # rule as _fence_delim() in bin/_journal_atomic.py and journal-read-section.sh.
+  # Anchored: an INLINE ```span``` mid-line must not toggle anything.
+  if (s ~ /^[[:space:]]*```/) return "`"
+  if (s ~ /^[[:space:]]*~~~/) return "~"
+  return ""
 }
 {
   line = $0
+  d = fence_delim(line)
   if (in_fence) {
-    if (fence_line(line) && index(line, fence_char) > 0) { in_fence = 0 }
+    # A fence closes only on the character that OPENED it. Testing merely
+    # whether that character appears somewhere on the line closed a ~~~ block
+    # on a line like "```sample~", after which a quoted breadcrumb inside the
+    # block was deleted — the one thing this script promises not to do. The
+    # reader and the writer both test the delimiter, so this must too.
+    if (d == fence_char) { in_fence = 0 }
     flush_blank()
     print line
     next
   }
-  if (fence_line(line)) {
+  if (d != "") {
     in_fence = 1
-    fence_char = fence_char_of(line)
+    fence_char = d
     flush_blank()
     print line
     next
@@ -149,10 +193,20 @@ END {
 }
 '
 
+# awk is the transform. Its absence used to be invisible: the count file stayed
+# empty, REMOVED read as 0, and the script reported `none` for a repository full
+# of breadcrumbs — so /flow:setup told the operator there was nothing to strip.
+command -v awk >/dev/null 2>&1 || {
+  echo "flow-strip-auto-log.sh: awk is required but not installed" >&2; exit 2; }
+
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/flow-strip-auto-log.XXXXXX" 2>/dev/null) || {
   echo "flow-strip-auto-log.sh: mktemp -d failed" >&2; exit 2; }
 cleanup() { [ -n "${WORK:-}" ] && [ -d "$WORK" ] && command rm -rf -- "$WORK"; }
 trap cleanup EXIT INT TERM
+
+# The transform lives in a file so the locked apply path can hand the same
+# program to awk rather than duplicating it.
+printf '%s\n' "$STRIP_AWK" > "$WORK/strip.awk"
 
 FILES=0
 LINES=0
@@ -171,9 +225,20 @@ for JOURNAL in "$JOURNAL_DIR"/*.md; do
   UNBAL="$WORK/unbal.$$"
   : > "$CNT"
   : > "$UNBAL"
-  awk -v cnt="$CNT" -v unbal="$UNBAL" "$STRIP_AWK" "$JOURNAL" > "$OUT" 2>/dev/null
-  REMOVED=$(cat "$CNT" 2>/dev/null || echo 0)
-  [ -n "$REMOVED" ] || REMOVED=0
+  if ! awk -v cnt="$CNT" -v unbal="$UNBAL" -f "$WORK/strip.awk" "$JOURNAL" \
+       > "$OUT" 2>"$WORK/awkerr.$$"; then
+    echo "flow-strip-auto-log.sh: awk failed on $JOURNAL — $(head -1 "$WORK/awkerr.$$" 2>/dev/null)" >&2
+    exit 2
+  fi
+  REMOVED=$(cat "$CNT" 2>/dev/null)
+  # An empty count file means awk wrote nothing, which is NOT the same as
+  # "nothing to remove": the old `|| echo 0` made a failed scan report a clean
+  # repository. Refuse instead.
+  case "$REMOVED" in
+    ''|*[!0-9]*)
+      echo "flow-strip-auto-log.sh: awk produced no count for $JOURNAL — refusing to report a clean result" >&2
+      exit 2 ;;
+  esac
 
   # Checked before the early-continue: a file whose only markers sit after an
   # unbalanced fence strips nothing, and reporting `none` for it would tell the
@@ -194,25 +259,50 @@ for JOURNAL in "$JOURNAL_DIR"/*.md; do
 "
 
   if [ "$APPLY" -eq 1 ]; then
-    # Same-filesystem temp beside the target so the mv is an atomic rename, and
-    # a symlink check immediately before it — `mv` replaces the name via
-    # rename(2) rather than writing through the link, but a link swapped in
-    # since the check above would still have been read into $OUT.
-    TMP=$(mktemp "${JOURNAL}.XXXXXX" 2>/dev/null) || {
-      echo "flow-strip-auto-log.sh: mktemp failed beside $JOURNAL" >&2; exit 2; }
-    if [ -L "$JOURNAL" ]; then
-      command rm -f -- "$TMP"
-      echo "flow-strip-auto-log.sh: refusing — $JOURNAL became a symlink" >&2
-      exit 2
-    fi
-    if ! cat "$OUT" > "$TMP" 2>/dev/null; then
-      command rm -f -- "$TMP"
-      echo "flow-strip-auto-log.sh: write failed for $JOURNAL" >&2
-      exit 2
-    fi
-    if ! mv "$TMP" "$JOURNAL" 2>/dev/null; then
-      command rm -f -- "$TMP"
-      echo "flow-strip-auto-log.sh: mv failed — $JOURNAL unchanged" >&2
+    # The scan above is advisory. The write is a LOCKED read-modify-write: a
+    # journal writer landing between an unlocked read and an unlocked publish
+    # would have its entry silently reverted — the exact loss this whole change
+    # exists to stop — so the read, the transform and the publish all happen
+    # under the same <target>.lock the rest of the plugin uses. flock(1) does
+    # not exist on macOS, so the primitive is reached through the module.
+    #
+    # The reported count comes from the scan, so if a writer appends between the
+    # scan and this call the count is short by that one entry; the file itself
+    # is transformed from the locked read.
+    if ! python3 - "$SCRIPT_DIR" "$JOURNAL" "$WORK/strip.awk" <<'PYTHON'
+import os, subprocess, sys
+
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+sys.path.insert(0, sys.argv[1])
+
+from _journal_atomic import (  # noqa: E402
+    JournalAtomicError, _atomic_write, _read_with_no_follow, acquire_lock,
+)
+
+target, prog = sys.argv[2], sys.argv[3]
+lock_fd = acquire_lock(target + ".lock")
+try:
+    content = _read_with_no_follow(target)
+    r = subprocess.run(["awk", "-f", prog], input=content,
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        print("flow-strip-auto-log.sh: awk failed under the lock: %s"
+              % r.stderr.strip(), file=sys.stderr)
+        sys.exit(2)
+    if r.stdout != content:
+        _atomic_write(target, r.stdout)
+except JournalAtomicError as e:
+    print("flow-strip-auto-log.sh: %s" % e, file=sys.stderr)
+    sys.exit(2)
+finally:
+    try:
+        os.close(lock_fd)
+    except OSError:
+        pass
+PYTHON
+    then
+      printf '%s' "$REPORT"
+      echo "flow-strip-auto-log.sh: locked write failed for $JOURNAL — anything already rewritten is listed above" >&2
       exit 2
     fi
   fi

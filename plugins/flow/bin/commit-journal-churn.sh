@@ -89,7 +89,14 @@ fi
 # Stage only journal markdown. The HAS_OTHER guard above guarantees nothing
 # non-journal is dirty or pre-staged, so a plain commit cannot capture unrelated
 # work; the explicit pathspec on `add` keeps lockfiles out of the index.
-git add -- "$JOURNAL_DIR"/*.md 2>/dev/null
+# `git add` is checked. Unchecked, a failure — an index lock held by a second
+# session, which is the multi-session case this helper runs alongside — left
+# nothing staged, `git diff --cached --quiet` then succeeded, and the helper
+# exited 0 while /flow:pr pushed believing the sweep had happened.
+if ! git add -- "$JOURNAL_DIR"/*.md 2>/dev/null; then
+  echo "commit-journal-churn: git add failed (index locked by another process?) — journal churn left uncommitted" >&2
+  exit 0
+fi
 if git diff --cached --quiet 2>/dev/null; then
   exit 0   # nothing actually staged (defensive)
 fi
