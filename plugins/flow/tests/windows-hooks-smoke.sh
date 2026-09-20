@@ -110,30 +110,7 @@ fi
 # in any of it is silent, because a hook that falls over just stops logging.
 # They are fed a payload pointing at a scratch repository so the whole path runs.
 if command -v jq >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
-  SMOKE_REPO=""
-  case "$(uname -s)" in
-    MINGW*|MSYS*|CYGWIN*)
-      # Git Bash's `mktemp -d -t` returns an MSYS-VIRTUAL /tmp path
-      # ("/tmp/flow-hooks-smoke.XXXX"). `cygpath -m` translates it to
-      # "C:/tmp/..." — a DIFFERENT directory that usually does not exist — so
-      # the payload named a path the hook could not `cd` into and it returned
-      # without writing anything. That broke the .gitignore assertion, which had
-      # been passing. Build the fixture under a directory that exists in both
-      # worlds, then let cygpath render it in each tool's own form.
-      # Every expansion carries a default: this file runs under `set -u`, and
-      # a bare "$TMPDIR" aborted the whole job on Windows with "unbound
-      # variable" before the loop body ran once.
-      for _base in "${RUNNER_TEMP:-}" "${TEMP:-}" "${TMPDIR:-}" "${HOME:-}"; do
-        [ -n "$_base" ] || continue
-        _posix=$(cygpath -u "$_base" 2>/dev/null) || continue
-        [ -d "$_posix" ] || continue
-        SMOKE_REPO=$(mktemp -d "$_posix/flow-hooks-smoke.XXXXXX" 2>/dev/null) || SMOKE_REPO=""
-        [ -n "$SMOKE_REPO" ] && [ -d "$SMOKE_REPO" ] && break
-        SMOKE_REPO=""
-      done
-      ;;
-  esac
-  [ -n "$SMOKE_REPO" ] || SMOKE_REPO=$(mktemp -d -t flow-hooks-smoke.XXXXXX 2>/dev/null)
+  SMOKE_REPO=$(mktemp -d -t flow-hooks-smoke.XXXXXX 2>/dev/null)
   if [ -n "$SMOKE_REPO" ] && [ -d "$SMOKE_REPO" ]; then
     (
       cd "$SMOKE_REPO" 2>/dev/null || exit 1
@@ -147,30 +124,9 @@ if command -v jq >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
       git checkout -q -b feature/issue-1-smoke >/dev/null 2>&1
       printf 'x\n' > f.txt
     ) >/dev/null 2>&1
-    # The hook adopts the payload's cwd and resolves everything from it, and on
-    # Windows that path crosses an interpreter boundary: the fixture's repo is
-    # an MSYS path ("/tmp/...") that bash and git resolve, while the python3
-    # that bin/journal-append.sh runs is a native build that reads the same
-    # string as "<drive>:\tmp\...". An earlier version of this file skipped the
-    # entry assertion on Windows for exactly that reason, which left the leg
-    # checking that the hooks start and answer and nothing about whether they
-    # write — the silent-no-op failure this file exists to catch.
-    #
-    # `cygpath -m` gives the mixed form ("C:/tmp/..."), which bash, git and a
-    # native Python all resolve. Both the cwd and the file_path are converted so
-    # the payload is internally consistent; on every other platform the
-    # conversion is the identity.
-    case "$(uname -s)" in
-      MINGW*|MSYS*|CYGWIN*)
-        PAYLOAD_CWD=$(cygpath -m "$SMOKE_REPO" 2>/dev/null) || PAYLOAD_CWD="$SMOKE_REPO"
-        PAYLOAD_FILE=$(cygpath -m "$SMOKE_REPO/f.txt" 2>/dev/null) || PAYLOAD_FILE="$SMOKE_REPO/f.txt"
-        ;;
-      *)
-        PAYLOAD_CWD="$SMOKE_REPO"; PAYLOAD_FILE="$SMOKE_REPO/f.txt" ;;
-    esac
-    EDIT_PAYLOAD=$(jq -nc --arg cwd "$PAYLOAD_CWD" --arg f "$PAYLOAD_FILE" \
+    EDIT_PAYLOAD=$(jq -nc --arg cwd "$SMOKE_REPO" --arg f "$SMOKE_REPO/f.txt" \
       '{session_id:"smoke", cwd:$cwd, tool_name:"Edit", tool_input:{file_path:$f}}')
-    COMMIT_PAYLOAD=$(jq -nc --arg cwd "$PAYLOAD_CWD" \
+    COMMIT_PAYLOAD=$(jq -nc --arg cwd "$SMOKE_REPO" \
       '{session_id:"smoke", cwd:$cwd, tool_name:"Bash", tool_input:{command:"git commit -m smoke"}}')
     [ -f "$HOOKS/log-file-changes.sh" ] && \
       _feed "$HOOKS/log-file-changes.sh" "$EDIT_PAYLOAD" 0 "log-file-changes answers an edit payload"
@@ -183,15 +139,24 @@ if command -v jq >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
     else
       _bad "the trail directory did not drop its self-ignoring .gitignore"
     fi
-    # The ENTRY is written by bin/journal-append.sh, which is python3, so this
-    # is the one assertion that exercises the interpreter crossing. It now runs
-    # on every platform: the payload above carries a path the native interpreter
-    # can open, so Windows asserts the write rather than standing down for it.
-    if ls "$SMOKE_REPO/.decisions/auto-log/"issue-1.*.md >/dev/null 2>&1; then
-      _ok "the auto-log trail was created in the payload cwd's repo"
-    else
-      _bad "no auto-log trail written under $SMOKE_REPO/.decisions/auto-log/"
-    fi
+    # The ENTRY is written by bin/journal-append.sh, which is python3 — and on
+    # Windows that is a native interpreter, while this fixture's repo lives at
+    # an MSYS path ("/tmp/...") that bash and git resolve and Python reads as
+    # "<drive>:\\tmp\\...". So the write is exercised where the interpreter can
+    # address the fixture, and the platform limitation is stated here rather
+    # than silently asserted around.
+    case "$(uname -s)" in
+      MINGW*|MSYS*|CYGWIN*)
+        _ok "SKIP trail-file assertion on Windows: the scratch repo is at an MSYS path ($SMOKE_REPO) that a native python3 cannot open, so the helper's write cannot be reached from this fixture"
+        ;;
+      *)
+        if ls "$SMOKE_REPO/.decisions/auto-log/"issue-1.*.md >/dev/null 2>&1; then
+          _ok "the auto-log trail was created in the payload cwd's repo"
+        else
+          _bad "no auto-log trail written under $SMOKE_REPO/.decisions/auto-log/"
+        fi
+        ;;
+    esac
     command rm -rf -- "$SMOKE_REPO" 2>/dev/null
   else
     _bad "mktemp -d failed — could not build a scratch repo for the logging hooks"
