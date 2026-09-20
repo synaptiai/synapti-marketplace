@@ -334,9 +334,9 @@ Source: `plugins/flow/references/decision-journal-schema.md`.
 
 **Two entry kinds**:
 
-1. **Auto-log entries** (HTML comments, written by hooks):
+1. **Auto-log entries** (HTML comments, written by hooks) — since 3.7.0 these live in the local, gitignored trail at `{journal.dir}/auto-log/`, not in this journal:
    ```
-   <!-- auto-log: 2026-05-05 14:32 Edit /path/to/file -->
+   <!-- auto-log: 2026-05-05 14:32 Edit path/to/file -->
    <!-- auto-log: 2026-05-05 14:35 commit "feat: add --json flag to sync" -->
    ```
 2. **Structured entries** (Markdown, written by skills):
@@ -427,7 +427,7 @@ If you've used the `gh-workflow` plugin, the verbs carry over; the autonomy does
 | gh-workflow | flow equivalent | What's different |
 |-------------|-----------------|------------------|
 | `/gh-start` | `/flow:start` | Adds Phase 0 preflight + Spec Validation Gate |
-| `/gh-commit` | `/flow:commit` | Same vocabulary; classification + journal auto-log |
+| `/gh-commit` | `/flow:commit` | Same vocabulary; classification + the local auto-log trail |
 | `/gh-pr` | `/flow:pr` | 6-facet parallel agent review before PR creation |
 | `/gh-review` | `/flow:review` | Adversarial team option (`agentTeams: true`) |
 | `/gh-address` | `/flow:address` | 5-facet re-review (drops `security-reviewer`) + `FLOW_RESOLUTION_CYCLE` ledger |
