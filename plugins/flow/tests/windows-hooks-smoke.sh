@@ -168,6 +168,18 @@ if command -v jq >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
       _ok "the auto-log trail was created in the payload cwd's repo"
     else
       _bad "no auto-log trail written under $SMOKE_REPO/.decisions/auto-log/"
+      # Say WHY. A hook must never fail the tool call it follows, so it
+      # swallows the helper's failure and this file can only report "nothing
+      # was written" — the cause stayed invisible across four CI runs. Run the
+      # helper directly, and the hook with its stderr kept, so the next
+      # failure names itself instead of being inferred.
+      _out=$(printf 'probe\n' | "$PLUGIN_ROOT/bin/journal-append.sh" \
+        --file "$SMOKE_REPO/.decisions/probe.md" - 2>&1)
+      _rc=$?
+      printf 'DIAG: journal-append.sh exit=%s\nDIAG:   %s\n' \
+        "$_rc" "$(printf '%s' "$_out" | tr '\n' '|' | cut -c1-400)"
+      _out=$(printf '%s' "$EDIT_PAYLOAD" | bash "$HOOKS/log-file-changes.sh" 2>&1 >/dev/null)
+      printf 'DIAG: hook stderr=%s\n' "$(printf '%s' "$_out" | tr '\n' '|' | cut -c1-400)"
     fi
     command rm -rf -- "$SMOKE_REPO" 2>/dev/null
   else
