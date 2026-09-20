@@ -84,27 +84,3 @@ _Captured by specification-capture skill on 2026-09-20. Source: user-confirmed._
 - A separate lockfile for the body — rejected: it would serialize nothing, since the whole defect is that two writer classes must contend on ONE lock.
 
 **Test coverage**: `plugins/flow/tests/journal-append.test.sh`, 26 assertions.
-
-<!-- auto-log: 2026-09-20 02:07 Write /Users/danielbentes/synapti-marketplace/tests/journal-no-autolog/validate.sh -->
-
-<!-- auto-log: 2026-09-20 02:07 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/decision-journal-schema.md -->
-
-<!-- auto-log: 2026-09-20 02:07 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/README.md -->
-
-<!-- auto-log: 2026-09-20 02:07 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/autonomous-workflow/SKILL.md -->
-
-<!-- auto-log: 2026-09-20 02:07 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/pr.md -->
-
-<!-- auto-log: 2026-09-20 02:07 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/explain.md -->
-
-<!-- auto-log: 2026-09-20 02:07 Edit /Users/danielbentes/synapti-marketplace/docs/flow-team-session/HANDBOOK.md -->
-
-<!-- auto-log: 2026-09-20 02:07 Edit /Users/danielbentes/synapti-marketplace/docs/flow-team-session/faq-and-glossary.md -->
-
-<!-- auto-log: 2026-09-20 02:07 Edit /Users/danielbentes/synapti-marketplace/docs/flow-team-session/CHEATSHEET.md -->
-
-<!-- auto-log: 2026-09-20 02:07 Edit /Users/danielbentes/synapti-marketplace/docs/flow-team-session/CHEATSHEET.md -->
-
-<!-- auto-log: 2026-09-20 02:07 Edit /Users/danielbentes/synapti-marketplace/docs/flow-team-session/HANDBOOK.md -->
-
-<!-- auto-log: 2026-09-20 02:07 Edit /Users/danielbentes/synapti-marketplace/docs/flow-team-session/HANDBOOK.md -->
