@@ -54,15 +54,32 @@ ISSUE_NUM=$(echo "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+' || echo
 # (where the breadcrumb goes). Issue-scoped trails rotate monthly; the
 # branchless one keeps the tracked journal's own daily name, which is already
 # bounded by the day it belongs to.
+# journal.dir may be absolute — the settings schema permits it — and prefixing
+# the repo root unconditionally composed "$REPO_ROOT//abs/path", which exists
+# nowhere, so the gate below failed and the hook silently stopped logging.
+case "$JOURNAL_DIR" in
+  /*) JOURNAL_BASE="$JOURNAL_DIR" ;;
+  *)  JOURNAL_BASE="$REPO_ROOT/$JOURNAL_DIR" ;;
+esac
+
 if [ -n "$ISSUE_NUM" ]; then
-  TRACKED="$REPO_ROOT/$JOURNAL_DIR/issue-$ISSUE_NUM.md"
-  TRACKED_REL="$JOURNAL_DIR/issue-$ISSUE_NUM.md"
-  AUTOLOG="$REPO_ROOT/$JOURNAL_DIR/auto-log/issue-$ISSUE_NUM.$(date +%Y-%m).md"
+  JFILE="issue-$ISSUE_NUM.md"
+  AUTOLOG="$JOURNAL_BASE/auto-log/issue-$ISSUE_NUM.$(date +%Y-%m).md"
 else
-  TRACKED="$REPO_ROOT/$JOURNAL_DIR/session-$(date +%Y-%m-%d).md"
-  TRACKED_REL="$JOURNAL_DIR/session-$(date +%Y-%m-%d).md"
-  AUTOLOG="$REPO_ROOT/$JOURNAL_DIR/auto-log/session-$(date +%Y-%m-%d).md"
+  JFILE="session-$(date +%Y-%m-%d).md"
+  AUTOLOG="$JOURNAL_BASE/auto-log/session-$(date +%Y-%m-%d).md"
 fi
+TRACKED="$JOURNAL_BASE/$JFILE"
+
+# Guard 2 compares the commit's file list, which git reports repo-relative,
+# against the journal FILE's repo-relative path — the directory's would never
+# match a commit entry, which is how this was briefly wrong. A journal outside
+# the repository has no repo-relative form and cannot be tracked, so Guard 2
+# cannot apply to it: leave the value empty and let it not fire.
+case "$JOURNAL_BASE" in
+  "$REPO_ROOT"/*) TRACKED_REL="${JOURNAL_BASE#"$REPO_ROOT"/}/$JFILE" ;;
+  *)              TRACKED_REL="" ;;
+esac
 
 # Only log if the tracked journal exists
 if [ -f "$TRACKED" ]; then
@@ -102,7 +119,7 @@ if [ -f "$TRACKED" ]; then
   # guard silently stopped firing. Newline-joining is also what makes this mean
   # "touched the journal and nothing else"; it is deliberate, not incidental.
   CHANGED=$(git -C "$CWD" diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null || echo "")
-  if [ "$CHANGED" = "$TRACKED_REL" ]; then
+  if [ -n "$TRACKED_REL" ] && [ "$CHANGED" = "$TRACKED_REL" ]; then
     exit 0
   fi
 

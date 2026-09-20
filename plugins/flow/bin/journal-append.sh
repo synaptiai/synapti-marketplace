@@ -24,9 +24,15 @@
 #
 # Exits:
 #   0 — written
-#   1 — missing argument, both or neither target selector, unknown flag
+#   1 — missing argument, both or neither target selector, unknown flag; also
+#       an uncaught Python exception, which does not map to the 2 that a
+#       refused symlink or a lock failure produce (a journal holding an invalid
+#       UTF-8 byte reaches --replace-heading as a UnicodeDecodeError)
 #   2 — infrastructure error (symlink refused, unwritable, PyYAML missing on
 #       the --replace-heading path, lock failure)
+#
+# Callers must treat ANY non-zero as "skip": the distinction is for a human
+# reading the message, not for control flow.
 #
 # Security: the target, and the lockfile beside it, are opened with O_NOFOLLOW,
 # so a pre-staged symlink cannot redirect a write outside the journal. The

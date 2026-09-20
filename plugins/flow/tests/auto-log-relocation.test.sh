@@ -383,3 +383,40 @@ mkdir -p "$D/src"; printf 'x\n' > "$D/src/app.sh"
   CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" bash "$HOOK_EDIT" >/dev/null 2>&1 )
 assert_file_exists "$D/.decisions/auto-log/issue-99.$THIS_MONTH.md" \
   "T20 fell back to the process directory"
+
+# --- T21: an absolute journal.dir is honoured ---------------------------------
+# The settings schema permits an absolute journal.dir. Composing it as
+# "$repo_root/$journal_dir" produced "$repo_root//abs/path", which exists
+# nowhere, so the tracked-journal gate failed and the hook silently logged
+# nothing — a regression against the pre-change code, which used the path as-is.
+_flow_test_begin "T21 absolute journal.dir"
+D=$(_ar_make_repo "feature/issue-99-relocate" 99)
+ABS_JOURNAL="$D/absjournal"
+mkdir -p "$ABS_JOURNAL" "$D/.claude"
+printf '# Journal\n' > "$ABS_JOURNAL/issue-99.md"
+printf '{"journal":{"dir":"%s"}}' "$ABS_JOURNAL" > "$D/.claude/settings.flow.json"
+git -C "$D" add -A >/dev/null 2>&1
+git -C "$D" commit -q -m "chore: configure an absolute journal dir" >/dev/null 2>&1
+mkdir -p "$D/src"; printf 'x\n' > "$D/src/app.sh"
+_ar_payload "Edit" '{"file_path":"src/app.sh"}' "$D" | \
+  CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" bash "$HOOK_EDIT" >/dev/null 2>&1
+assert_exit 0 "$?" "T21 exit 0"
+assert_file_exists "$ABS_JOURNAL/auto-log/issue-99.$THIS_MONTH.md" \
+  "T21 the trail landed under the absolute journal dir"
+
+# --- T22: the reader the change wired up still names the trail ---------------
+# /flow:explain is the only reader that gained a trail load, and a command file
+# is prose the test suite otherwise never checks. Static, and deliberately so:
+# the read is executed by an agent, not by a shell the suite can run.
+_flow_test_begin "T22 explain reads the trail"
+EXPLAIN="$REPO_ROOT/plugins/flow/commands/explain.md"
+if grep -q 'auto-log/issue-\$ISSUE_NUM' "$EXPLAIN" 2>/dev/null; then
+  _flow_assert_pass "T22 explain globs the issue's monthly trail files"
+else
+  _flow_assert_fail "T22 explain no longer reads the auto-log trail"
+fi
+if grep -q 'AUTOLOG_FILES' "$EXPLAIN" 2>/dev/null; then
+  _flow_assert_pass "T22 explain reports how many trail files it read"
+else
+  _flow_assert_fail "T22 explain does not report an AUTOLOG_FILES count"
+fi

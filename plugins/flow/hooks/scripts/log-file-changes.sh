@@ -33,7 +33,7 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook
 # reaching the TaskCompleted gate.
 _flow_autolog() {
   local cwd repo_root abs rel branch issue_num helper_dir journal_dir
-  local tracked autolog autolog_dir timestamp tool_safe path_safe agent_type agent_safe entry
+  local tracked autolog autolog_dir journal_base timestamp tool_safe path_safe agent_type agent_safe entry
 
   # The payload's cwd is the live working directory and follows into a
   # worktree; $PWD is wherever the hook process happened to start. Adopting it
@@ -87,17 +87,25 @@ _flow_autolog() {
   branch=$(git -C "$cwd" branch --show-current 2>/dev/null || echo "")
   issue_num=$(printf '%s\n' "$branch" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+' || echo "")
 
+  # journal.dir may be absolute — the settings schema permits it — and prefixing
+  # the repo root unconditionally composed "$repo_root//abs/path", which exists
+  # nowhere, so the gate below failed and the hook silently stopped logging.
+  case "$journal_dir" in
+    /*) journal_base="$journal_dir" ;;
+    *)  journal_base="$repo_root/$journal_dir" ;;
+  esac
+
   if [ -n "$issue_num" ]; then
     # Issue-scoped trails rotate monthly — a long-running branch accumulates
     # hundreds of entries otherwise.
-    tracked="$repo_root/$journal_dir/issue-$issue_num.md"
-    autolog="$repo_root/$journal_dir/auto-log/issue-$issue_num.$(date +%Y-%m).md"
+    tracked="$journal_base/issue-$issue_num.md"
+    autolog="$journal_base/auto-log/issue-$issue_num.$(date +%Y-%m).md"
   else
     # The branchless trail keeps the tracked journal's own daily name. It is
     # already bounded by the day it belongs to, and rotating it monthly would
     # decouple it from the tracked file it accompanies.
-    tracked="$repo_root/$journal_dir/session-$(date +%Y-%m-%d).md"
-    autolog="$repo_root/$journal_dir/auto-log/session-$(date +%Y-%m-%d).md"
+    tracked="$journal_base/session-$(date +%Y-%m-%d).md"
+    autolog="$journal_base/auto-log/session-$(date +%Y-%m-%d).md"
   fi
 
   # Log only if the tracked journal exists, so a repo that never initialized
