@@ -110,7 +110,27 @@ fi
 # in any of it is silent, because a hook that falls over just stops logging.
 # They are fed a payload pointing at a scratch repository so the whole path runs.
 if command -v jq >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
-  SMOKE_REPO=$(mktemp -d -t flow-hooks-smoke.XXXXXX 2>/dev/null)
+  SMOKE_REPO=""
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      # Git Bash's `mktemp -d -t` returns an MSYS-VIRTUAL /tmp path
+      # ("/tmp/flow-hooks-smoke.XXXX"). `cygpath -m` translates it to
+      # "C:/tmp/..." — a DIFFERENT directory that usually does not exist — so
+      # the payload named a path the hook could not `cd` into and it returned
+      # without writing anything. That broke the .gitignore assertion, which had
+      # been passing. Build the fixture under a directory that exists in both
+      # worlds, then let cygpath render it in each tool's own form.
+      for _base in "$RUNNER_TEMP" "$TEMP" "$TMPDIR" "$HOME"; do
+        [ -n "$_base" ] || continue
+        _posix=$(cygpath -u "$_base" 2>/dev/null) || continue
+        [ -d "$_posix" ] || continue
+        SMOKE_REPO=$(mktemp -d "$_posix/flow-hooks-smoke.XXXXXX" 2>/dev/null) || SMOKE_REPO=""
+        [ -n "$SMOKE_REPO" ] && [ -d "$SMOKE_REPO" ] && break
+        SMOKE_REPO=""
+      done
+      ;;
+  esac
+  [ -n "$SMOKE_REPO" ] || SMOKE_REPO=$(mktemp -d -t flow-hooks-smoke.XXXXXX 2>/dev/null)
   if [ -n "$SMOKE_REPO" ] && [ -d "$SMOKE_REPO" ]; then
     (
       cd "$SMOKE_REPO" 2>/dev/null || exit 1

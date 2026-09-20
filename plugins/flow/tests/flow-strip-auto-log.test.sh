@@ -265,7 +265,11 @@ D=$(_fs_dir); mkdir -p "$D/.decisions"
 printf 'x\n\n<!-- auto-log: 1 -->\n' > "$D/.decisions/issue-17.md"
 chmod 644 "$D/.decisions/issue-17.md"
 ( cd "$D" && bash "$STRIP" --apply .decisions ) >/dev/null 2>&1
-MODE=$(stat -f '%Lp' "$D/.decisions/issue-17.md" 2>/dev/null || stat -c '%a' "$D/.decisions/issue-17.md" 2>/dev/null)
+# GNU first, BSD second. Reversed, this passed on macOS and failed on Linux:
+# GNU's `-f` means --file-system, not --format, so `stat -f '%Lp' FILE` is read
+# as "filesystem mode, with '%Lp' as the file" — it exits 0 having printed
+# filesystem info for the real file, and the `||` fallback never runs.
+MODE=$(stat -c '%a' "$D/.decisions/issue-17.md" 2>/dev/null || stat -f '%Lp' "$D/.decisions/issue-17.md" 2>/dev/null)
 assert_equal "644" "$MODE" "T17 mode 644 preserved"
 
 # --- T18: a failing awk is refused, never reported as a clean repository ------
