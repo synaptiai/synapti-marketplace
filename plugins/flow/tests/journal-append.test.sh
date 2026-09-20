@@ -384,3 +384,49 @@ if grep -q 'bin/journal-append.sh' "$REPO_ROOT/plugins/flow/skills/specification
 else
   _flow_assert_fail "T14 specification-capture does not call journal-append.sh"
 fi
+
+# --- Test 15: --replace-heading is fence-aware -------------------------------
+# A journal may quote the section heading inside a fenced example — the schema
+# reference documents the specification shape that way. A fence-blind splice
+# matches the QUOTED heading first, replaces it, then replaces the real section
+# too, leaving the fence unbalanced and a heading duplicated. Found by probing
+# the helper rather than by a test, which is why this test exists now.
+_flow_test_begin "T15 a quoted heading inside a fence is not spliced"
+DIR=$(_ja_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+J="$DIR/.decisions/issue-15.md"
+cat > "$J" <<'EOF'
+# Journal
+
+The schema documents the section heading:
+
+```
+## Specification
+
+### Non-goals
+```
+
+## Specification
+
+real body
+
+## Other
+
+keep
+EOF
+printf 'REPLACED\n' | \
+  _run_append "$DIR" --file ".decisions/issue-15.md" --replace-heading "## Specification" - >/dev/null 2>&1
+RC=$?
+assert_exit 0 "$RC" "T15 exit 0"
+BODY=$(cat "$J")
+assert_equal "1" "$(printf '%s\n' "$BODY" | grep -c '^### Non-goals$')" \
+  "T15 the fenced example's contents survive"
+assert_equal "2" "$(printf '%s\n' "$BODY" | grep -c '^## Specification$')" \
+  "T15 exactly two headings: the quoted one and the real one"
+assert_equal "1" "$(printf '%s\n' "$BODY" | grep -c '^REPLACED$')" \
+  "T15 only the real section was replaced"
+assert_contains "keep" "$BODY" "T15 the following section survived"
+# The fence must still be balanced — an odd count means the splice landed inside
+# the example.
+FENCES=$(printf '%s\n' "$BODY" | grep -c '^```$')
+assert_equal "2" "$FENCES" "T15 the code fence is still balanced"

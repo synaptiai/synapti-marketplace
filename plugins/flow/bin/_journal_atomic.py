@@ -419,34 +419,90 @@ def append_body(target_path, lockfile_path, text, *, leading_blank=True):
             pass
 
 
+def _fence_delim(line):
+    """Return the fence character a line opens/closes with, or ''.
+
+    Only the first non-space run counts. A journal that quotes a section heading
+    inside a fenced example is real — the schema reference documents the
+    specification shape that way — and treating that quoted heading as the
+    section would corrupt both the example and the real section, and leave the
+    fence unbalanced. Same rule as bin/flow-strip-auto-log.sh's tracker.
+    """
+    s = line.lstrip()
+    if s.startswith("```"):
+        return "`"
+    if s.startswith("~~~"):
+        return "~"
+    return ""
+
+
 def _splice_section(body, heading, text):
     """Return `body` with `heading`'s section replaced by `text`, or appended.
 
-    A section runs from its heading line to the next `## ` heading. Split out
-    from replace_section() so the splice rule is testable without a filesystem.
+    A section runs from its heading line to the next `## ` heading. Headings
+    inside a fenced code block are not headings, and neither are `## ` lines
+    inside a fence that sits within the section being skipped.
+
+    Split out from replace_section() so the splice rule is testable without a
+    filesystem.
     """
     lines = body.split("\n")
     out = []
     found = False
     i = 0
+    in_fence = False
+    fence_char = ""
     while i < len(lines):
-        if lines[i] == heading:
+        line = lines[i]
+        delim = _fence_delim(line)
+        if delim and (not in_fence or delim == fence_char):
+            in_fence = not in_fence
+            fence_char = delim if in_fence else ""
+            out.append(line)
+            i += 1
+            continue
+        if in_fence:
+            out.append(line)
+            i += 1
+            continue
+        if line == heading:
             found = True
             out.append(heading)
             out.append("")
-            out.extend(text.split("\n"))
+            # Normalize: one blank line after the section, whatever trailing
+            # newlines the caller's text carries, so the section that follows
+            # stays visually separated from this one.
+            text_lines = text.split("\n")
+            while text_lines and text_lines[-1] == "":
+                text_lines.pop()
+            out.extend(text_lines)
+            out.append("")
             i += 1
-            while i < len(lines) and not lines[i].startswith("## "):
+            # Skip the old section, fence-aware so a `## ` line inside a
+            # fenced block within the section cannot end the skip early.
+            while i < len(lines):
+                inner = lines[i]
+                inner_delim = _fence_delim(inner)
+                if inner_delim and (not in_fence or inner_delim == fence_char):
+                    in_fence = not in_fence
+                    fence_char = inner_delim if in_fence else ""
+                    i += 1
+                    continue
+                if not in_fence and inner.startswith("## "):
+                    break
                 i += 1
             continue
-        out.append(lines[i])
+        out.append(line)
         i += 1
     if not found:
         if out and out[-1] != "":
             out.append("")
         out.append(heading)
         out.append("")
-        out.extend(text.split("\n"))
+        text_lines = text.split("\n")
+        while text_lines and text_lines[-1] == "":
+            text_lines.pop()
+        out.extend(text_lines)
     return "\n".join(out)
 
 
