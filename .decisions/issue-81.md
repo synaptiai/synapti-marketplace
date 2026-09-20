@@ -39,9 +39,3 @@ A zero-context agent could execute the plan: edit one frontmatter line in a sing
 ## Atomic task
 
 Single change: edit `plugins/flow/agents/verdict-judge.md` line 5 from `tools: Read, Bash, Grep` to `tools: Read`. Verification = grep + Phase 4 verdict-judge dispatch (self-bootstrapping E2E).
-
-<!-- auto-log: 2026-05-06 00:00 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-81.md -->
-
-<!-- auto-log: 2026-05-06 00:00 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/agents/verdict-judge.md -->
-
-<!-- auto-log: 2026-05-06 00:01 commit "fix(verdict-judge): tighten tool budget to Read-only" -->

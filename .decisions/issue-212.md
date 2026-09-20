@@ -89,20 +89,6 @@ _Captured by specification-capture skill on 2026-09-15. Source: mixed._
 | contradiction test | the test can only confirm (checks the phrase's absence only) | fixture with the phrase and an `Any P1` row → fires; fixture with conditional rows and one rule → silent; fixture with no decision table → fails |
 | only-LOW decision | posts COMMENT or REQUEST_CHANGES when every finding is LOW | external PR, only F1 LOW P1 → right: `--approve` with the section; wrong: `--request-changes` |
 
-<!-- auto-log: 2026-09-15 19:59 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-212.md -->
-
-<!-- auto-log: 2026-09-15 20:05 Edit /Users/danielbentes/synapti-marketplace/.decisions/issue-212.md -->
-
-<!-- auto-log: 2026-09-15 20:25 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-implementation-planner/project_no_task_tools_in_planner.md -->
-
-<!-- auto-log: 2026-09-15 20:25 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-implementation-planner/feedback_serialize_shared_test_files.md -->
-
-<!-- auto-log: 2026-09-15 20:25 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-implementation-planner/MEMORY.md -->
-
-<!-- auto-log: 2026-09-15 20:27 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-implementation-planner/project_no_task_tools_in_planner.md -->
-
-<!-- auto-log: 2026-09-15 20:28 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-implementation-planner/MEMORY.md -->
-
 ## Plan decisions (2026-09-15)
 
 User-confirmed:
@@ -136,42 +122,6 @@ Route script contract: `flow-finding-route.sh --mode external|self --pr <N> [--i
 
 PASS — 7 tasks reviewed. Each task names its files, contract, failure modes, risk rows with a discriminating input and the source of its expected value, and the verification command from the goal. Gaps found in the planner's draft and closed before this result: `/flow:pr` had no LOW protocol (added to task 5), rows from non-schema producers had no confidence source (task 4), and bracketed locations had no marker encoding (task 1).
 
-<!-- auto-log: 2026-09-15 21:04 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-finding-route.test.sh -->
-
-<!-- auto-log: 2026-09-15 21:04 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-finding-route.test.sh -->
-
-<!-- auto-log: 2026-09-15 21:05 Write /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-finding-route.sh -->
-
-<!-- auto-log: 2026-09-15 21:17 commit "fix(flow): add flow-finding-route.sh so confidence decides what a review finding may demand" -->
-
-<!-- auto-log: 2026-09-15 21:22 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/code-review-methodology/SKILL.md -->
-
-<!-- auto-log: 2026-09-15 21:22 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/code-review-methodology/SKILL.md -->
-
-<!-- auto-log: 2026-09-15 21:34 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/finding-confidence.test.sh -->
-
-<!-- auto-log: 2026-09-15 21:36 commit "fix(flow): give code-review-methodology one confidence rule and a decision table that agrees with it" -->
-
-<!-- auto-log: 2026-09-15 21:45 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/finding-ledger-parser.md -->
-
-<!-- auto-log: 2026-09-15 21:47 commit "fix(flow): require confidence of the four reviewer agents and write 7-field markers on both paths" -->
-
-<!-- auto-log: 2026-09-15 21:54 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/finding-confidence.test.sh -->
-
-<!-- auto-log: 2026-09-15 22:02 commit "fix(flow): route and post /flow:review findings through flow-finding-route.sh" -->
-
-<!-- auto-log: 2026-09-15 22:06 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/pr.md -->
-
-<!-- auto-log: 2026-09-15 22:08 commit "fix(flow): end every own-PR LOW finding fixed, refuted or escalated, and stop empty identities choosing self-review" -->
-
-<!-- auto-log: 2026-09-15 22:13 commit "fix(flow): give the review templates a Needs investigation section apart from the counts" -->
-
-<!-- auto-log: 2026-09-15 22:32 commit "fix(flow): tidy the #212 review blocks after shellcheck and a read-through" -->
-
-<!-- auto-log: 2026-09-15 22:54 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
-
-<!-- auto-log: 2026-09-15 23:02 commit "fix(flow): close the posting-block gaps the #212 self-review found" -->
-
 ## Phase 4 self-review, round 1 (code-reviewer, reviewed at 1ac4203)
 
 P1: 0, P2: 4, P3: 8 — all fixed in 4118d39, each with a test that failed on 1ac4203.
@@ -188,10 +138,6 @@ P1: 0, P2: 4, P3: 8 — all fixed in 4118d39, each with a test that failed on 1a
 - The parser reference, finding schema and a merge.md comment still described the first draft; corrected, and marker percent-encoding is documented.
 - An assertion (`assert_contains "MEDIUM"`) could only confirm; it now asserts the absent-confidence sentence.
 
-<!-- auto-log: 2026-09-15 23:24 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
-
-<!-- auto-log: 2026-09-15 23:24 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
-
 ## Phase 4 self-review, round 2 (targeted re-review of 4118d39)
 
 P1: 0, P2: 2, P3: 7 — all fixed, each with a test that failed before the fix.
@@ -205,9 +151,6 @@ The same defect class appeared twice: posting guards that check less than a revi
 - The ledger-syntax refusal covers only `FINDINGS:[`: `RESOLVED`, `ESCALATED` and `DISPUTED` are read only from issue comments, so a self-review body may name them.
 - `/flow:pr` step 7's condition excludes escalated findings.
 - Tests: the id-outside check is tested on its own (a LOW id relabelled HIGH), `COUNT_TOTAL` is checked across P1, P3 and a LOW P2, and the merge.md comment check reads the whole file.
-
-<!-- auto-log: 2026-09-15 23:31 commit "fix(flow): parse review-body headings and closing keywords instead of assuming their shape" -->
-
 
 ## Phase 4 self-review, round 3 (targeted re-review of 2f52452)
 
@@ -244,11 +187,6 @@ never needed a section: a LOW finding is rendered as a Needs investigation entry
   issue number out of text, and fires on a fixture that plants both retired lookups. Ten mutants
   were run against the new checks and the helper — all ten were caught.
 
-<!-- auto-log: 2026-09-15 23:58 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
-
-<!-- auto-log: 2026-09-15 23:58 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
-
-
 ## Phase 4 self-review, round 4 (targeted re-review of 4a76ba1)
 
 P1: 1, P2: 2, P3: 4 — all fixed, each with a test that failed before the fix.
@@ -279,7 +217,6 @@ commit refused that body; it was a regression, not an inherited gap.
   carries all four now). The mutation set is 20 mutants over the posting checks, the helper, the
   route script and both manifest blocks; all 20 are caught, and it is scripted for the next round.
 
-
 ## Phase 4 self-review, round 5 (targeted re-review of a931ae0)
 
 P1: 1, P2: 1, P3: 1 — all fixed, each with a test that failed before the fix.
@@ -308,7 +245,6 @@ check meant to prevent it.
   matches, and the heading-text boundary. Each has a test now, and the driver is checked against the
   current code so the next round starts from a live set.
 
-
 ## Phase 4 self-review, round 6 (targeted re-review of 689fe69)
 
 P1: 0, P2: 3, P3: 3 — all fixed. The behaviour of the fix was verified correct: the reviewer drove
@@ -333,7 +269,6 @@ in the suite rendered one there), and the line numbers in the duplicate message.
 - The mutation set is 32 and all 32 are caught. It now covers every branch of the posting checks in
   both directions: each refusal fires on a body that earns it, and each check is shown to permit the
   body the template renders.
-
 
 ## Phase 4 self-review, round 7 (targeted re-review of c1c237e)
 
@@ -360,7 +295,6 @@ only test asserts an exit code on a body that trips a different guard first.
 
 The mutation set is 38 and all 38 are caught.
 
-
 ## Phase 4 self-review: convergence
 
 Behaviour converged at round 6 and round 7 confirmed it. Both rounds drove more than a dozen bodies
@@ -375,7 +309,6 @@ few more unmutated branches because the last round added checks, so the stream n
 is no longer finding defects. Three independent passes on this code remain before merge —
 holdout-validation, the five-agent fan-out in /flow:pr, and /flow:review, whose zero-finding cycle is
 the merge gate agreed for this epic. A posting-block defect found there is fixed there.
-
 
 ## /flow:pr review fan-out (five agents, at b2857ca)
 
@@ -415,7 +348,6 @@ block. Two findings were raised independently by two agents each.
 
 Suite at the fix: 3450 pass / 0 fail, root 11 of 11, shellcheck clean, 38 of 38 mutants caught.
 
-
 ## Verdict (a0db576, pull request #230)
 
 verdict-judge: PASS on all seven criteria, no failures, nothing referred for human review. AC6 rests
@@ -432,7 +364,6 @@ selected by test name rather than capped. The three formatting deviations the pa
 fixed in the bundle.
 
 FlowGoal issue-212: lifecycle achieved, last_evaluation pass.
-
 
 ## /flow:review cycle 2 (PR #230, at 95f136b)
 
@@ -472,7 +403,6 @@ call, so the block exited at an earlier guard.
 
 Suite at the fix: 3489 pass / 0 fail, root 11 of 11, shellcheck clean.
 
-
 ## /flow:review cycle 3 (PR #230, at a31cf08)
 
 P1: 0, P2: 5, P3: 7 — all fixed. Cycle 2's five findings were verified closed with tests observing
@@ -504,199 +434,3 @@ Also: the "renders more than once" message fired on zero renderings, and printed
 `\[` at the reader. Zero and many are separate messages now.
 
 Suite at the fix: 3511 pass / 0 fail, root 11 of 11.
-
-<!-- auto-log: 2026-09-16 00:17 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/flow-pr-linked-issue.test.sh -->
-
-<!-- auto-log: 2026-09-16 00:19 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests.py -->
-
-<!-- auto-log: 2026-09-16 00:22 Write /Users/danielbentes/synapti-marketplace/plugins/flow/bin/flow-pr-linked-issue.sh -->
-
-<!-- auto-log: 2026-09-16 00:23 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
-
-<!-- auto-log: 2026-09-16 00:26 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/tests/finding-confidence.test.sh -->
-
-<!-- auto-log: 2026-09-16 00:27 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants.sh -->
-
-<!-- auto-log: 2026-09-16 00:51 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/journal_round3.py -->
-
-<!-- auto-log: 2026-09-16 00:51 commit "fix(flow): check the rendered shapes instead of parsing the review body" -->
-
-<!-- auto-log: 2026-09-16 00:58 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/probe.sh -->
-
-<!-- auto-log: 2026-09-16 01:04 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
-
-<!-- auto-log: 2026-09-16 01:11 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/fixtures/finding-confidence/lookup-sweep-fire/cmd.md -->
-
-<!-- auto-log: 2026-09-16 01:14 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_round4.py -->
-
-<!-- auto-log: 2026-09-16 01:15 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants.py -->
-
-<!-- auto-log: 2026-09-16 01:24 commit "fix(flow): check where a finding is rendered, not only what it looks like" -->
-
-<!-- auto-log: 2026-09-16 01:35 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fc_tests5.py -->
-
-<!-- auto-log: 2026-09-16 01:36 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_round5.py -->
-
-<!-- auto-log: 2026-09-16 01:42 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants.py -->
-
-<!-- auto-log: 2026-09-16 01:51 commit "fix(flow): bound the Needs investigation section at both ends" -->
-
-<!-- auto-log: 2026-09-16 02:00 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/r6/mutants6.py -->
-
-<!-- auto-log: 2026-09-16 02:05 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_round6.py -->
-
-<!-- auto-log: 2026-09-16 02:06 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants6.py -->
-
-<!-- auto-log: 2026-09-16 02:16 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/journal_round6.py -->
-
-<!-- auto-log: 2026-09-16 02:16 commit "test(flow): pin both directions of every posting check" -->
-
-<!-- auto-log: 2026-09-16 02:21 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants7.py -->
-
-<!-- auto-log: 2026-09-16 02:25 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/probe7.sh -->
-
-<!-- auto-log: 2026-09-16 02:26 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants7b.py -->
-
-<!-- auto-log: 2026-09-16 02:28 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
-
-<!-- auto-log: 2026-09-16 02:28 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
-
-<!-- auto-log: 2026-09-16 02:29 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_round7.py -->
-
-<!-- auto-log: 2026-09-16 02:30 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants7.py -->
-
-<!-- auto-log: 2026-09-16 02:30 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants7.py -->
-
-<!-- auto-log: 2026-09-16 02:43 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/journal_round7.py -->
-
-<!-- auto-log: 2026-09-16 02:43 commit "test(flow): reach the posting guards a passing body never reached" -->
-
-<!-- auto-log: 2026-09-16 02:44 Write /Users/danielbentes/.claude-work/projects/-Users-danielbentes-synapti-marketplace/memory/feedback_test_the_check_not_the_defect.md -->
-
-<!-- auto-log: 2026-09-16 02:58 commit "test(flow): post a body rendered from the self-review template through the block" -->
-
-<!-- auto-log: 2026-09-16 03:04 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/build_bundle.py -->
-
-<!-- auto-log: 2026-09-16 03:16 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/fix_bundle.py -->
-
-<!-- auto-log: 2026-09-16 03:22 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/MEMORY.md -->
-
-<!-- auto-log: 2026-09-16 03:22 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/feedback_claude_attribution_blocking.md -->
-
-<!-- auto-log: 2026-09-16 03:27 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/sec/postprobe.sh -->
-
-<!-- auto-log: 2026-09-16 03:29 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_flow_ci_gates.md -->
-
-<!-- auto-log: 2026-09-16 03:29 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_shellcheck_command_blocks.md -->
-
-<!-- auto-log: 2026-09-16 03:29 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/feedback_sequential_suites.md -->
-
-<!-- auto-log: 2026-09-16 03:29 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/MEMORY.md -->
-
-<!-- auto-log: 2026-09-16 03:30 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_flow_review_body_marker_guard.md -->
-
-<!-- auto-log: 2026-09-16 03:30 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/MEMORY.md -->
-
-<!-- auto-log: 2026-09-16 03:38 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
-
-<!-- auto-log: 2026-09-16 03:38 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
-
-<!-- auto-log: 2026-09-16 03:43 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_fanout_tests.py -->
-
-<!-- auto-log: 2026-09-16 03:44 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_review_fanout.py -->
-
-<!-- auto-log: 2026-09-16 03:47 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_pr_merge.py -->
-
-<!-- auto-log: 2026-09-16 04:02 commit "fix(flow): close the defects the review fan-out found" -->
-
-<!-- auto-log: 2026-09-16 04:03 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/pr-body.md -->
-
-<!-- auto-log: 2026-09-16 04:06 commit "fix(flow): ask for the pull request by head branch when the repo is pinned" -->
-
-<!-- auto-log: 2026-09-16 04:29 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/lib.sh -->
-
-<!-- auto-log: 2026-09-16 04:30 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/feedback_pr_body_counts_and_labels.md -->
-
-<!-- auto-log: 2026-09-16 04:30 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-convention-checker/MEMORY.md -->
-
-<!-- auto-log: 2026-09-16 04:32 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/reverts.py -->
-
-<!-- auto-log: 2026-09-16 04:32 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-security-reviewer/project_journal_record_metadata_arg_injection.md -->
-
-<!-- auto-log: 2026-09-16 04:35 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
-
-<!-- auto-log: 2026-09-16 04:35 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
-
-<!-- auto-log: 2026-09-16 04:41 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_shellcheck_command_blocks.md -->
-
-<!-- auto-log: 2026-09-16 04:42 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/reference_revert_harness.md -->
-
-<!-- auto-log: 2026-09-16 04:42 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/MEMORY.md -->
-
-<!-- auto-log: 2026-09-16 04:42 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-test-runner/feedback_sequential_suites.md -->
-
-<!-- auto-log: 2026-09-16 04:42 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/results-230.txt -->
-
-<!-- auto-log: 2026-09-16 04:45 Edit /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/results-230.txt -->
-
-<!-- auto-log: 2026-09-16 04:46 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle2_tests.py -->
-
-<!-- auto-log: 2026-09-16 04:47 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle2_fixes.py -->
-
-<!-- auto-log: 2026-09-16 04:49 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/patch_mutants_c2.py -->
-
-<!-- auto-log: 2026-09-16 04:59 commit "fix(flow): validate the values that select what gets recorded" -->
-
-<!-- auto-log: 2026-09-16 05:09 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_survivor_tests.py -->
-
-<!-- auto-log: 2026-09-16 05:36 commit "test(flow): observe the guards the mutation run showed unobserved" -->
-
-<!-- auto-log: 2026-09-16 06:00 Write /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_marker_guard_drift.md -->
-
-<!-- auto-log: 2026-09-16 06:00 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/MEMORY.md -->
-
-<!-- auto-log: 2026-09-16 06:00 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/c3/findings-notes.txt -->
-
-<!-- auto-log: 2026-09-16 06:02 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
-
-<!-- auto-log: 2026-09-16 06:02 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
-
-<!-- auto-log: 2026-09-16 06:02 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
-
-<!-- auto-log: 2026-09-16 06:02 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
-
-<!-- auto-log: 2026-09-16 06:05 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle3.py -->
-
-<!-- auto-log: 2026-09-16 06:06 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle3_tests.py -->
-
-<!-- auto-log: 2026-09-16 06:13 commit "fix(flow): make each guard as strict as the consumer it protects" -->
-
-<!-- auto-log: 2026-09-16 06:13 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/mutants2.py -->
-
-<!-- auto-log: 2026-09-16 06:14 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-error-handler-inspector/project_flow_marker_guard_drift.md -->
-
-<!-- auto-log: 2026-09-16 06:17 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/edit_cycle3b.py -->
-
-<!-- auto-log: 2026-09-16 06:22 commit "fix(flow): keep every implementer of the marker select in step" -->
-
-<!-- auto-log: 2026-09-16 06:27 commit "test(flow): the seed assertion follows the gate's marker shape" -->
-
-<!-- auto-log: 2026-09-16 08:42 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/add_select_test.py -->
-
-<!-- auto-log: 2026-09-16 08:44 commit "test(flow): observe the marker select in all four implementers" -->
-
-<!-- auto-log: 2026-09-16 08:53 commit "test(flow): both seed selects must carry the gate's marker shape" -->
-
-<!-- auto-log: 2026-09-16 09:42 commit "test(flow): both seed selects must carry the gate's marker shape" -->
-
-<!-- auto-log: 2026-09-16 09:43 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/project_flow_marker_guard_vs_parser.md -->
-
-<!-- auto-log: 2026-09-16 09:43 Edit /Users/danielbentes/synapti-marketplace/.claude/agent-memory/flow-code-reviewer/MEMORY.md -->
-
-<!-- auto-log: 2026-09-16 09:47 Write /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/7278d682-9ed8-40c5-9b13-61da01c78c4a/scratchpad/ql_race.sh -->
-
-<!-- auto-log: 2026-09-16 09:50 commit "test(flow): both seed selects must carry the gate's marker shape" -->
-
-<!-- auto-log: 2026-09-16 09:50 commit "test(flow): both seed selects must carry the gate's marker shape" -->
-
-<!-- auto-log: 2026-09-16 11:01 commit "fix(flow): preserve the index mtime when seeding the digest index" -->

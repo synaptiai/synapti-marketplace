@@ -57,27 +57,3 @@ This drops the old "Requirements (main thread)" row — Requirements compliance 
 ## Boy Scout extension
 
 The grep also finds 5-facet references in `commands/pr.md:20`, `commands/review.md:18`, `references/skill-manifests.md:44`, and `docs/flow-team-session/HANDBOOK.md:433`. AC4 scopes the requirement to `plugins/flow`, so HANDBOOK.md is in-scope-by-Boy-Scout, the others are required.
-
-<!-- auto-log: 2026-05-05 23:09 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-82.md -->
-
-<!-- auto-log: 2026-05-05 23:10 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/code-review-methodology/SKILL.md -->
-
-<!-- auto-log: 2026-05-05 23:10 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/code-review-methodology/SKILL.md -->
-
-<!-- auto-log: 2026-05-05 23:10 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/code-review-methodology/SKILL.md -->
-
-<!-- auto-log: 2026-05-05 23:10 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/pr.md -->
-
-<!-- auto-log: 2026-05-05 23:10 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/commands/review.md -->
-
-<!-- auto-log: 2026-05-05 23:10 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/references/skill-manifests.md -->
-
-<!-- auto-log: 2026-05-05 23:10 Edit /Users/danielbentes/synapti-marketplace/docs/flow-team-session/HANDBOOK.md -->
-
-<!-- auto-log: 2026-05-05 23:34 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/skills/code-review-methodology/SKILL.md -->
-
-<!-- auto-log: 2026-05-05 23:34 commit "fix-forward: replace brittle (line 21) with content-addressable ref" -->
-
-<!-- auto-log: 2026-05-05 23:47 Edit /Users/danielbentes/synapti-marketplace/docs/flow-team-session/faq-and-glossary.md -->
-
-<!-- auto-log: 2026-05-05 23:47 commit "fix-forward(faq): remove issue #82 reference per content-policy directive" -->
