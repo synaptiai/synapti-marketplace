@@ -20,6 +20,11 @@ artifacts:
   workflow: start-issue
   run_id: 2026-09-19T233805Z-issue-244
   status: completed
+- type: goal-evaluation
+  captured_at: '2026-09-20T17:50:07Z'
+  verdict: achieved
+  confidence: '0.7'
+  criteria_passed: 10/10
 ---
 # Decision Journal — Issue #244
 
