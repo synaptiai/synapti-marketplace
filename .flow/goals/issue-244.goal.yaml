@@ -186,6 +186,11 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
-  activated_at: '2026-09-19T23:39:29Z'
-  activation_reason: Spec Validation Gate passed with 10 verifiable acceptance criteria.
+  status: achieved
+  last_evaluation:
+    result: pass
+    reason: All ten acceptance criteria pass. Five verification commands exit 0 at
+      954cf08; the windows-latest leg asserts the auto-log write rather than skipping
+      it; AC2's committed-content check was falsified on a clone and turns red as
+      it should.
+    at: '2026-09-20T17:48:07Z'
