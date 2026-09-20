@@ -44,11 +44,28 @@ Exit-code contract for callers:
 """
 
 import errno
-import fcntl
 import json
 import os
 import sys
 import tempfile
+
+# `fcntl` is Unix-only. Importing it unconditionally made this whole module
+# unimportable on Windows — every write through it failed at `from
+# _journal_atomic import ...`, and because a hook must never fail the tool call
+# it follows, each failure was swallowed and reported as nothing happening.
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - platform-dependent
+    fcntl = None
+    import msvcrt
+
+# `_O_NOFOLLOW` is Unix-only too. Where it is absent the flag becomes 0, so
+# the open succeeds and the symlink refusals below are simply unreachable —
+# which is a real loss of protection on Windows, not a no-op. It falls back to
+# the shell layer's `[ -L ]` check, which every caller runs before a path
+# reaches this module, and Windows requires elevation to create a symlink at
+# all. Stated here rather than left for someone to discover.
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
 try:
     import yaml  # PyYAML
@@ -100,7 +117,7 @@ def acquire_lock(lockfile_path):
     on symlink or open failure.
     """
     try:
-        fd = os.open(lockfile_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        fd = os.open(lockfile_path, os.O_RDWR | os.O_CREAT | _O_NOFOLLOW, 0o600)
     except OSError as e:
         if e.errno in (errno.ELOOP, errno.EMLINK):
             raise JournalAtomicError(
@@ -112,7 +129,18 @@ def acquire_lock(lockfile_path):
             exit_code=2,
         )
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        else:
+            # Windows has no flock. `msvcrt.locking` locks a byte range from the
+            # current position, and this lockfile belongs to one target, so one
+            # byte at offset 0 is the equivalent mutual exclusion. LK_LOCK
+            # blocks and retries for about ten seconds before raising, which is
+            # the closest analogue to LOCK_EX's unbounded wait: our critical
+            # sections are short, and a holder still there after ten seconds is
+            # stuck rather than slow.
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
     except OSError as e:
         os.close(fd)
         raise JournalAtomicError(
@@ -130,7 +158,7 @@ def _read_with_no_follow(path):
     if not os.path.lexists(path):
         return ""
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW)
     except OSError as e:
         if e.errno in (errno.ELOOP, errno.EMLINK):
             raise JournalAtomicError(
@@ -383,7 +411,7 @@ def append_body(target_path, lockfile_path, text, *, leading_blank=True):
         try:
             fd = os.open(
                 target_path,
-                os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW,
                 0o644,
             )
         except OSError as e:
@@ -635,7 +663,7 @@ def write_yaml_file(target_path, lockfile_path, data):
     try:
         if os.path.lexists(target_path):
             try:
-                check_fd = os.open(target_path, os.O_RDONLY | os.O_NOFOLLOW)
+                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW)
                 os.close(check_fd)
             except OSError as e:
                 if e.errno in (errno.ELOOP, errno.EMLINK):
@@ -679,7 +707,7 @@ def write_json_file(target_path, lockfile_path, data):
     try:
         if os.path.lexists(target_path):
             try:
-                check_fd = os.open(target_path, os.O_RDONLY | os.O_NOFOLLOW)
+                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW)
                 os.close(check_fd)
             except OSError as e:
                 if e.errno in (errno.ELOOP, errno.EMLINK):
@@ -722,7 +750,7 @@ def append_jsonl(events_path, event):
         try:
             fd = os.open(
                 events_path,
-                os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW,
                 0o644,
             )
         except OSError as e:
