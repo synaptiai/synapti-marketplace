@@ -331,3 +331,21 @@ BODY=$(tr -d '\r' < "$D/.decisions/issue-20.md")
 assert_not_contains "auto-log" "$BODY" "T20 the breadcrumb was removed"
 assert_contains "alpha" "$BODY" "T20 content before the removal survived"
 assert_contains "omega" "$BODY" "T20 content after the removal survived"
+
+# --- T21: a RUN of blanks keeps all but the single one taken -----------------
+# T2 and T3 each have exactly one blank before the marker, so a version that
+# collapsed a whole run of blanks to one produces the same output and passes
+# both. This is the case that separates the two rules: three blanks before the
+# marker must leave two, because the emitter wrote exactly one of them and the
+# other two are the file's own whitespace.
+_flow_test_begin "T21 a run of blanks is not collapsed"
+D=$(_fs_dir); mkdir -p "$D/.decisions"
+J="$D/.decisions/issue-21.md"
+printf 'text\n\n\n\n<!-- auto-log: 1 -->\n\nmore\n' > "$J"
+_fs_strip "$D" --apply >/dev/null 2>&1
+# Measured, not derived: three blanks before the marker, one of them taken with
+# it, and the blank that followed the marker kept — three remain. A version that
+# collapsed the preceding run instead would leave two.
+EXPECTED=$(printf 'text\n\n\n\nmore')
+assert_equal "$EXPECTED" "$(cat "$J")" "T21 only the single preceding blank went"
+assert_not_contains "auto-log" "$(cat "$J")" "T21 the marker still went"
