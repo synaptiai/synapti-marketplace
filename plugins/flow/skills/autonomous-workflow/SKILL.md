@@ -51,9 +51,9 @@ TaskCreate in PLAN (one per deliverable, imperative subject, acceptance criteria
 ## Decision Journal
 
 - **Init**: `{journal-dir}/issue-{N}.md` at branch creation (default `.decisions/`).
-- **Log**: hooks auto-log file changes and commits to a local, gitignored trail (`{journal.dir}/auto-log/`); skills add timestamped entries to the tracked journal itself (category, decision, rationale, risk).
+- **Log**: hooks auto-log edits and commits to a gitignored trail; skills add timestamped entries (category, decision, rationale, risk).
 - **Summarize** for the PR body: `public` entries only; `internal` (security rationale, credentials, vulnerabilities) never reaches PR bodies, comments, or logs.
-- **Anti-estimation guard**: no calendar-time estimates in entries; t-shirt sizing (S/M/L) only when asked. See `skills/llm-operator-principles/SKILL.md`.
+- **Anti-estimation guard**: no calendar-time estimates in entries; t-shirt sizing (S/M/L) only when asked.
 
 ## Bounded Verification
 
