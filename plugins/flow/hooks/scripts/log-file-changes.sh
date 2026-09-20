@@ -124,10 +124,20 @@ _flow_autolog() {
   # tracked-journal gate below.
   case "$journal_base" in
     "$repo_root"/*)
+      # Compared against BOTH forms of the repo root. `pwd -P` resolves a mount
+      # to its real location — Git Bash's `/tmp` is one — so the physical
+      # journal path does not prefix-match the form `git rev-parse` reports, and
+      # the hook returned before writing anything at all. Only the Windows leg
+      # caught it, because only there do the two forms differ; locally the
+      # payload cwd is already physical, so they agree. Accepting either form
+      # keeps the containment: a journal that resolved outside the repository
+      # matches neither pattern and is still refused.
+      repo_root_phys=$(cd "$repo_root" 2>/dev/null && pwd -P)
+      [ -n "$repo_root_phys" ] || repo_root_phys="$repo_root"
       jb_phys=$(cd "$journal_base" 2>/dev/null && pwd -P)
       case "$jb_phys" in
         "") ;;
-        "$repo_root"/*) ;;
+        "$repo_root"/*|"$repo_root_phys"/*) ;;
         *) return 0 ;;
       esac
       ;;

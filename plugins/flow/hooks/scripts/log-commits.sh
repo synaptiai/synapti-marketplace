@@ -88,10 +88,17 @@ case "$JOURNAL_BASE" in
     # never fails the tool call it follows. The sibling hook's identical block
     # is safe only because its caller is `_flow_autolog || true`; this one is
     # not, and the empty case below is the arm that must be reached.
+    # Both forms of the repo root — see log-file-changes.sh. `pwd -P` resolves
+    # a mount to its real location, which on Git Bash is not the form
+    # `git rev-parse` reports, so the physical journal path never prefix-matched
+    # and the hook exited before writing anything. Only the Windows leg could
+    # catch that, because locally the payload cwd is already physical.
+    REPO_ROOT_PHYS=$(cd "$REPO_ROOT" 2>/dev/null && pwd -P) || REPO_ROOT_PHYS=""
+    [ -n "$REPO_ROOT_PHYS" ] || REPO_ROOT_PHYS="$REPO_ROOT"
     JB_PHYS=$(cd "$JOURNAL_BASE" 2>/dev/null && pwd -P) || JB_PHYS=""
     case "$JB_PHYS" in
       "") ;;
-      "$REPO_ROOT"/*) ;;
+      "$REPO_ROOT"/*|"$REPO_ROOT_PHYS"/*) ;;
       *) exit 0 ;;
     esac
     ;;
