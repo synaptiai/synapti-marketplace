@@ -9,6 +9,8 @@ Shared by:
 
 Surface:
   - record_artifact()   — journal manifest append (frontmatter + body)
+  - append_body()       — journal BODY append, under the same flock
+  - replace_section()   — journal BODY section replace-or-append, under the same flock
   - write_yaml_file()   — standalone YAML write (no frontmatter; replace)
   - write_json_file()   — standalone JSON write (sort_keys=True; replace)
   - append_jsonl()      — JSONL event-ledger append (under flock)
@@ -42,11 +44,28 @@ Exit-code contract for callers:
 """
 
 import errno
-import fcntl
 import json
 import os
 import sys
 import tempfile
+
+# `fcntl` is Unix-only. Importing it unconditionally made this whole module
+# unimportable on Windows — every write through it failed at `from
+# _journal_atomic import ...`, and because a hook must never fail the tool call
+# it follows, each failure was swallowed and reported as nothing happening.
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - platform-dependent
+    fcntl = None
+    import msvcrt
+
+# `_O_NOFOLLOW` is Unix-only too. Where it is absent the flag becomes 0, so
+# the open succeeds and the symlink refusals below are simply unreachable —
+# which is a real loss of protection on Windows, not a no-op. It falls back to
+# the shell layer's `[ -L ]` check, which every caller runs before a path
+# reaches this module, and Windows requires elevation to create a symlink at
+# all. Stated here rather than left for someone to discover.
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
 try:
     import yaml  # PyYAML
@@ -98,7 +117,7 @@ def acquire_lock(lockfile_path):
     on symlink or open failure.
     """
     try:
-        fd = os.open(lockfile_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        fd = os.open(lockfile_path, os.O_RDWR | os.O_CREAT | _O_NOFOLLOW, 0o600)
     except OSError as e:
         if e.errno in (errno.ELOOP, errno.EMLINK):
             raise JournalAtomicError(
@@ -110,7 +129,18 @@ def acquire_lock(lockfile_path):
             exit_code=2,
         )
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        else:
+            # Windows has no flock. `msvcrt.locking` locks a byte range from the
+            # current position, and this lockfile belongs to one target, so one
+            # byte at offset 0 is the equivalent mutual exclusion. LK_LOCK
+            # blocks and retries for about ten seconds before raising, which is
+            # the closest analogue to LOCK_EX's unbounded wait: our critical
+            # sections are short, and a holder still there after ten seconds is
+            # stuck rather than slow.
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
     except OSError as e:
         os.close(fd)
         raise JournalAtomicError(
@@ -128,7 +158,7 @@ def _read_with_no_follow(path):
     if not os.path.lexists(path):
         return ""
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW)
     except OSError as e:
         if e.errno in (errno.ELOOP, errno.EMLINK):
             raise JournalAtomicError(
@@ -161,6 +191,15 @@ def _atomic_write(target_path, content):
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
+        # Carry the target's mode across the rename. mkstemp creates 0600, so
+        # without this every rewrite silently tightens the permissions of a
+        # journal someone created by hand — and git tracks only the exec bit,
+        # so nothing in a diff or a report would show it. A missing target (a
+        # new file) keeps mkstemp's mode, which is the safe default.
+        try:
+            os.chmod(tmp, os.stat(target_path).st_mode & 0o7777)
+        except OSError:
+            pass
         os.rename(tmp, target_path)
         # Durably persist the rename. Best-effort: some filesystems disallow
         # fsync on a directory fd and raise EINVAL — that's benign here.
@@ -338,6 +377,276 @@ def record_artifact(journal_path, lockfile_path, issue, artifact_type,
             pass
 
 
+def append_body(target_path, lockfile_path, text, *, leading_blank=True):
+    """Append `text` to target_path under flock, via O_APPEND.
+
+    Two invariants, both load-bearing:
+
+    ORDERING — acquire the lock BEFORE opening the target. An fd opened before
+    the lock points at the pre-rename inode, so a concurrent record_artifact()
+    that wins the lock and renames over the file would leave this writer's bytes
+    in an unlinked inode: an append that succeeds and disappears with no error.
+
+    O_APPEND rather than read-modify-write. flock cannot see a non-cooperating
+    writer — an editor, a session still running an older plugin version, a bare
+    `>>` from an un-migrated consumer — so a whole-file temp+rename here would
+    publish a stale copy over whatever that writer added. It is also O(1) in
+    file size where a rewrite is O(size), and this runs on every Edit/Write.
+
+    The residual, stated rather than hidden: record_artifact() can still revert
+    an *unlocked* append that lands inside its own read→rename window. That
+    window is not removable while the manifest must live in the frontmatter at
+    the top of the file, and this function does not widen it.
+
+    The entry is handed to a single os.write on the open fd, so a concurrent
+    reader never observes a torn entry — the same one-write(2) property
+    bin/flow-quality-ledger.sh relies on at its append. A short write (only
+    reachable for a payload larger than the kernel will take in one call) is
+    completed by a loop, which is why the guarantee is per-call and not
+    per-entry for arbitrarily large input.
+    """
+    _harden_sys_path()
+    lock_fd = acquire_lock(lockfile_path)
+    try:
+        try:
+            fd = os.open(
+                target_path,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW,
+                0o644,
+            )
+        except OSError as e:
+            if e.errno in (errno.ELOOP, errno.EMLINK):
+                raise JournalAtomicError(
+                    f"refusing — {target_path} is a symlink",
+                    exit_code=2,
+                )
+            raise JournalAtomicError(
+                f"cannot open {target_path}: {e}",
+                exit_code=2,
+            )
+        try:
+            payload = "\n" + text if leading_blank else text
+            if not payload.endswith("\n"):
+                payload += "\n"
+            data = payload.encode("utf-8")
+            written = 0
+            while written < len(data):
+                n = os.write(fd, data[written:])
+                if n <= 0:
+                    raise JournalAtomicError(
+                        f"short write to {target_path}", exit_code=2
+                    )
+                written += n
+            os.fsync(fd)
+        except JournalAtomicError:
+            raise
+        except OSError as e:
+            raise JournalAtomicError(
+                f"append to {target_path} failed: {e}", exit_code=2
+            )
+        finally:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+    finally:
+        try:
+            os.close(lock_fd)
+        except OSError:
+            pass
+
+
+def _fence_delim(line):
+    """Return `(character, run_length)` for a fence line, or None.
+
+    Only the first non-space run counts. A journal that quotes a section heading
+    inside a fenced example is real — the schema reference documents the
+    specification shape that way — and treating that quoted heading as the
+    section would corrupt both the example and the real section, and leave the
+    fence unbalanced. Same rule as bin/flow-strip-auto-log.sh's tracker.
+
+    The run LENGTH is returned, not just the character, because a fence closes
+    only on a run at least as long as its opener. Reporting the character alone
+    made an inner ``` line close a ```` block, after which a section heading — or
+    a breadcrumb — quoted between them was treated as real content.
+    """
+    s = line.lstrip()
+    if not s:
+        return None
+    ch = s[0]
+    if ch not in ("`", "~"):
+        return None
+    n = 0
+    while n < len(s) and s[n] == ch:
+        n += 1
+    if n < 3:
+        return None
+    return (ch, n)
+
+
+def _closes_fence(delim, opened):
+    """True when `delim` closes a fence opened by the `opened` delimiter.
+
+    Same character, and a run at least as long. `opened` is the tuple returned
+    when that fence was opened.
+    """
+    if delim is None or opened is None:
+        return False
+    return delim[0] == opened[0] and delim[1] >= opened[1]
+
+
+def _splice_section(body, heading, text):
+    """Return `body` with `heading`'s section replaced by `text`, or appended.
+
+    A section runs from its heading line to the next `## ` heading. Headings
+    inside a fenced code block are not headings, and neither are `## ` lines
+    inside a fence that sits within the section being skipped.
+
+    Raises JournalAtomicError when the section being skipped contains an
+    unclosed fence AND a `## ` line the fence swallowed: the skip has no way to
+    know where the section really ends, and continuing would delete that
+    heading and every section after it.
+
+    Split out from replace_section() so the splice rule is testable without a
+    filesystem.
+    """
+    lines = body.split("\n")
+    out = []
+    found = False
+    i = 0
+    in_fence = False
+    fence = None
+    while i < len(lines):
+        line = lines[i]
+        delim = _fence_delim(line)
+        if in_fence:
+            if _closes_fence(delim, fence):
+                in_fence = False
+                fence = None
+            out.append(line)
+            i += 1
+            continue
+        if delim is not None:
+            in_fence = True
+            fence = delim
+            out.append(line)
+            i += 1
+            continue
+        # Only the FIRST match is the section. A journal can carry the heading
+        # twice — a hand-edit, an append by a writer that predates this one, or
+        # a capture that appended because an unclosed fence hid the original —
+        # and replacing every one of them duplicates the new text and destroys
+        # the second copy's body.
+        if line == heading and not found:
+            found = True
+            out.append(heading)
+            out.append("")
+            # Normalize: one blank line after the section, whatever trailing
+            # newlines the caller's text carries, so the section that follows
+            # stays visually separated from this one.
+            text_lines = text.split("\n")
+            while text_lines and text_lines[-1] == "":
+                text_lines.pop()
+            out.extend(text_lines)
+            out.append("")
+            i += 1
+            # Skip the old section, fence-aware so a `## ` line inside a
+            # fenced block within the section cannot end the skip early.
+            swallowed_heading = None
+            while i < len(lines):
+                inner = lines[i]
+                inner_delim = _fence_delim(inner)
+                if in_fence:
+                    if _closes_fence(inner_delim, fence):
+                        in_fence = False
+                        fence = None
+                    elif inner.startswith("## "):
+                        # A heading we are skipping ONLY because a fence is
+                        # still open. If the fence never closes, the loop runs
+                        # to EOF and this line — and every section after it —
+                        # is deleted. Remembered so the over-deletion can be
+                        # refused below instead of performed.
+                        swallowed_heading = inner
+                    i += 1
+                    continue
+                if inner_delim is not None:
+                    in_fence = True
+                    fence = inner_delim
+                    i += 1
+                    continue
+                if inner.startswith("## "):
+                    break
+                i += 1
+            if in_fence and swallowed_heading is not None:
+                raise JournalAtomicError(
+                    "refusing — the section being replaced contains an unclosed "
+                    "code fence, and swallowing it would delete the heading "
+                    "%r and everything after it; close the fence first"
+                    % swallowed_heading,
+                    exit_code=2,
+                )
+            continue
+        out.append(line)
+        i += 1
+    if not found:
+        if out and out[-1] != "":
+            out.append("")
+        out.append(heading)
+        out.append("")
+        text_lines = text.split("\n")
+        while text_lines and text_lines[-1] == "":
+            text_lines.pop()
+        out.extend(text_lines)
+        # Terminate the file. Without this the append branch wrote no final
+        # newline, so every first capture for an issue produced a tracked file
+        # that git reports as "\ No newline at end of file" — and the replace
+        # branch, which keeps the surrounding lines, did not.
+        out.append("")
+    return "\n".join(out)
+
+
+def replace_section(journal_path, lockfile_path, heading, text):
+    """Replace `heading`'s section in the journal body, or append it.
+
+    Read-modify-write under flock (tempfile + rename), because a mid-file
+    replacement cannot be done with O_APPEND — which is exactly why this is a
+    separate entry point from append_body() rather than a flag on it.
+
+    The frontmatter is preserved byte-for-byte: parse_frontmatter() is called
+    for its refusals (unclosed fence, invalid YAML, non-mapping) and the prefix
+    is then recovered by length, so a rewritten journal never re-serializes a
+    manifest it was only supposed to leave alone.
+
+    A target that does not exist is created with just the section; the manifest
+    is added later by record_artifact(), which is the only writer that knows the
+    issue number.
+    """
+    if not heading:
+        # Documented on the Surface, so it is reachable by a direct call. An
+        # empty heading matches the first blank line, which is not a section:
+        # `_splice_section` would delete every paragraph before it.
+        raise JournalAtomicError(
+            "replace_section: heading must not be empty", exit_code=1
+        )
+    _harden_sys_path()
+    lock_fd = acquire_lock(lockfile_path)
+    try:
+        content = _read_with_no_follow(journal_path)
+        if content:
+            _manifest, body = parse_frontmatter(content)
+            prefix = content[: len(content) - len(body)]
+        else:
+            prefix, body = "", ""
+        new_content = prefix + _splice_section(body, heading, text)
+        if new_content != content:
+            _atomic_write(journal_path, new_content)
+    finally:
+        try:
+            os.close(lock_fd)
+        except OSError:
+            pass
+
+
 def write_yaml_file(target_path, lockfile_path, data):
     """Atomically write `data` (dict) as a standalone YAML file.
 
@@ -354,7 +663,7 @@ def write_yaml_file(target_path, lockfile_path, data):
     try:
         if os.path.lexists(target_path):
             try:
-                check_fd = os.open(target_path, os.O_RDONLY | os.O_NOFOLLOW)
+                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW)
                 os.close(check_fd)
             except OSError as e:
                 if e.errno in (errno.ELOOP, errno.EMLINK):
@@ -398,7 +707,7 @@ def write_json_file(target_path, lockfile_path, data):
     try:
         if os.path.lexists(target_path):
             try:
-                check_fd = os.open(target_path, os.O_RDONLY | os.O_NOFOLLOW)
+                check_fd = os.open(target_path, os.O_RDONLY | _O_NOFOLLOW)
                 os.close(check_fd)
             except OSError as e:
                 if e.errno in (errno.ELOOP, errno.EMLINK):
@@ -441,7 +750,7 @@ def append_jsonl(events_path, event):
         try:
             fd = os.open(
                 events_path,
-                os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_NOFOLLOW,
                 0o644,
             )
         except OSError as e:

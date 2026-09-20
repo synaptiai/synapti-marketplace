@@ -100,6 +100,12 @@ After the skill returns, the invoker records the artifact with `bin/journal-reco
 | `true` (default) | `--metadata elements=non-goals,failure-modes,interface-contracts,risk-map` |
 | `false` | `--metadata elements=non-goals,failure-modes,interface-contracts --metadata risk_map=disabled` |
 
+## Reading a section
+
+Read a section with `bin/journal-read-section.sh --file <journal> --heading '## Specification'`, not with an `awk` one-liner. It is fence-aware, and so is the writer that persists the section (`_splice_section` in `bin/_journal_atomic.py`): both treat a heading quoted inside a fenced code block as content, not as a heading.
+
+The two must agree, and a reader is the dangerous one to get wrong. A reader that stops at a quoted `## ` heading returns a truncated section — the skill then reports `### Risk map` missing while the file holds it, re-prompts the user for rows they already confirmed, and the writer replaces the section from that truncated view. A reader and writer that disagree about where a section ends silently destroy the difference.
+
 ## Staleness
 
 The journal is the source of truth. A journal section is reused verbatim only when all four subsections are present AND the issue has not been updated since the journal was last written (`git log -1 --format=%cd .decisions/issue-{N}.md` versus the issue's `updatedAt` from `gh issue view --json updatedAt`). Otherwise the skill fills only the missing or stale elements — it never re-prompts for elements the journal already holds.

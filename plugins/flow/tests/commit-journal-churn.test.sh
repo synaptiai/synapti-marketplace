@@ -128,3 +128,26 @@ assert_equal "$BEFORE" "$(_subject "$R")" "no commit when a nested journal .md i
 # (Default porcelain collapses the untracked subdir to `?? .decisions/sub/`.)
 assert_match "issue-1.md" "$(_porcelain "$R")" "flat journal churn left uncommitted (no partial commit)"
 assert_match "\.decisions/sub" "$(_porcelain "$R")" "nested path left uncommitted"
+
+# --- Scenario H: the auto-log trail never disqualifies the sweep -------------
+# The trail is classified as non-journal, and its arm must precede the generic
+# nested arm — both globs match ".decisions/auto-log/x.md", so ordering is what
+# decides. Written WITHOUT the self-ignoring .gitignore so the file is visible
+# to git status, which is the state of a consumer repo that has not yet added
+# the ignore rule. Without this arm the helper no-ops and /flow:pr's sweep
+# silently stops committing journal churn at all.
+_flow_test_begin "auto-log trail present → journal churn still committed"
+R=$(_new_repo)
+BEFORE=$(_subject "$R")
+printf '<!-- auto-log: edit -->\n' >> "$R/.decisions/issue-1.md"
+mkdir -p "$R/.decisions/auto-log"
+printf '<!-- auto-log: 2026-09-20 01:00 Edit x -->\n' > "$R/.decisions/auto-log/issue-1.2026-09.md"
+_run_helper "$R" >/dev/null
+assert_equal "chore(decisions): record session journal entries" "$(_subject "$R")" \
+  "journal churn committed despite an unignored auto-log file"
+assert_equal "" "$(git -C "$R" status --porcelain -- .decisions/issue-1.md)" \
+  "tracked journal is clean after the sweep"
+# The trail must never be staged by this helper.
+STAGED=$(git -C "$R" ls-files -- .decisions/auto-log 2>/dev/null)
+assert_equal "" "$STAGED" "auto-log file was not committed"
+assert_match "auto-log" "$(_porcelain "$R")" "auto-log file left untracked"

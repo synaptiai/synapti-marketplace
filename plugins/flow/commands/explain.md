@@ -36,6 +36,26 @@ if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
   printf '%s\n' ""
   printf '%s\n' "#### Journal contents"
   cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+  # The auto-log breadcrumbs live in a local trail, one file per month. They are
+  # context for "what was touched", not decisions, so they are labelled and kept
+  # separate from the journal body above rather than inlined into it. A set of
+  # files, not one: the issue-scoped trail rotates monthly.
+  #
+  # The heading names where the trail came from rather than asserting it is
+  # untracked. The journal dir is read from a TRACKED settings file, so a fork
+  # could point it at a tracked path, and this label would then be vouching for
+  # content it has not checked.
+  AUTOLOG_FILES=0
+  printf '%s\n' ""
+  printf '%s\n' "#### Auto-log trail ($JOURNAL_DIR/auto-log/)"
+  for AUTOLOG in "$JOURNAL_DIR/auto-log/issue-$ISSUE_NUM".*.md; do
+    [ -f "$AUTOLOG" ] || continue
+    AUTOLOG_FILES=$((AUTOLOG_FILES + 1))
+    printf '%s\n' ""
+    printf '%s\n' "##### $(basename "$AUTOLOG")"
+    cat "$AUTOLOG"
+  done
+  printf '%s\n' "AUTOLOG_FILES=$AUTOLOG_FILES"
 else
   printf '%s\n' "STATE=empty"
 fi

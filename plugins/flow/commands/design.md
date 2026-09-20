@@ -214,15 +214,18 @@ Use the AskUserQuestion tool with contextual options to ask: "Recommended design
 ```bash
 BRANCH=$(git branch --show-current)
 ISSUE_NUM=$(printf '%s\n' "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-JOURNAL_DIR=".decisions"
-[ -n "$ISSUE_NUM" ] && [ -d "$JOURNAL_DIR" ] && cat >> "$JOURNAL_DIR/issue-$ISSUE_NUM.md" << 'ENTRY'
+if [ -n "$ISSUE_NUM" ]; then
+  cat << 'ENTRY' | "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-append.sh" --issue "$ISSUE_NUM" -
 ## Design Decision: {title}
 **Date**: {YYYY-MM-DD} | **Category**: architecture
 **Decision**: {what was decided}
 **Rationale**: {why this approach}
 **Consequences**: {what changes, new constraints}
 ENTRY
+fi
 ```
+
+   If the helper exits non-zero, report the failure and **skip the manifest emit below** — recording the artifact would leave the journal asserting a design decision its body does not contain, which is worse than a missing record.
 
    **Manifest emit** — append the design-decision artifact to the journal manifest alongside the freeform `## Design Decision` section:
 

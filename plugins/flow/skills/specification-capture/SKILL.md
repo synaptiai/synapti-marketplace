@@ -9,7 +9,7 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: **every issue gets the four elements (non-goals, failure modes, interface contracts, risk map) in the journal before PLAN.** Invoked with issue context, journal path, and invocation reason by `/flow:start` Phase 1 (before the Spec Validation Gate), `/flow:design` Phase 1, and `/flow:brainstorm` Phase 1. Returns the `## Captured Specification` payload from [`references/specification-journal-format.md`](../../references/specification-journal-format.md) after writing and re-reading `.decisions/issue-{N}.md`. Permitted skips: elements outside the invoker's scope row; the risk map when `specFirst.riskMap` is `false` (written as `disabled — specFirst.riskMap=false`); elements the journal already holds for an unchanged issue.
+Iron law: **every issue gets the four elements (non-goals, failure modes, interface contracts, risk map) in the journal before PLAN.** Invoked with issue context, journal path, and invocation reason (Per-invoker scope below). Returns the `## Captured Specification` payload from [`references/specification-journal-format.md`](../../references/specification-journal-format.md) after writing and re-reading `.decisions/issue-{N}.md`. Permitted skips: elements outside the invoker's scope row; the risk map when `specFirst.riskMap` is `false` (written as `disabled — specFirst.riskMap=false`); elements the journal already holds for an unchanged issue.
 
 ## Inputs
 
@@ -19,7 +19,7 @@ Issue context, journal path (`.decisions/issue-{N}.md`), invocation reason (`sta
 
 ### Step 1: Read the journal first
 
-Run `awk '/^## Specification$/{f=1;print;next} /^## /{f=0} f' "$JOURNAL"` and record which of `### Non-goals`, `### Failure modes`, `### Interface contracts`, `### Risk map` exist. All four present and the issue not newer than the journal (staleness rule in the reference): return verbatim. Otherwise fill only the gaps.
+Run `bin/journal-read-section.sh --file "$JOURNAL" --heading '## Specification'` and record which of `### Non-goals`, `### Failure modes`, `### Interface contracts`, `### Risk map` exist. All four present and the issue not newer than the journal (staleness rule in the reference): return verbatim. Otherwise fill only the gaps.
 
 ### Step 2: Extract from the issue body
 
@@ -31,11 +31,13 @@ Verbatim matches are `extracted-from-issue`; never prompt for what the issue sta
 
 Draft each missing element, then surface one blocking six-field escalation per element (never bundled) via `AskUserQuestion` per [`references/escalation-format.md`](../../references/escalation-format.md). Options: (1) accept draft, (2) edit, (3) reject (update the issue first). Recommend (1).
 
-Risk map draft: 2-6 rows from the issue and the touched files. Each row: where the core logic is most likely to be subtly wrong; what the plausible wrong version does (reversed order, transposed streams, off-by-one, wrong rounding, wrong precedence, wrong empty case); one concrete input on which right and wrong differ.
+Risk map draft: 2-6 rows from the issue and the touched files. Each: where the logic is likeliest subtly wrong; what the plausible wrong version does (reversed order, off-by-one, wrong precedence, wrong empty case); one input where right and wrong differ.
 
 ### Step 4: Write the journal
 
-Write `## Specification` per the reference shape (replace if present, append otherwise). All four failure-mode categories are required; a non-applicable one is `none — {reason}`, never blank. Re-read with the Step 1 awk; if the section is absent, halt with `SPEC_CAPTURE_BLOCK: journal write verification failed`.
+Write `## Specification` per the reference shape (replace if present, append otherwise). All four failure-mode categories are required; a non-applicable one is `none — {reason}`, never blank.
+
+Persist it with `bin/journal-append.sh --file "$JOURNAL" --replace-heading '## Specification' -` (on stdin), never `Write`: an unlocked body write can be published over by the manifest writer's rename. Non-zero exit → `SPEC_CAPTURE_BLOCK: journal write failed (exit {code})`. Re-read with the Step 1 command; absent → `SPEC_CAPTURE_BLOCK: journal write verification failed`.
 
 ### Step 5: Return the captured specification
 
@@ -47,8 +49,6 @@ Return the `## Captured Specification` payload; consumers cite subsections as `N
 - `commands/design.md` Phase 1: non-goals + interface contracts; risk map recommended.
 - `commands/brainstorm.md` Phase 1: non-goals only, captured before generating approaches.
 - `commands/debug.md` Phase 3 (via `goal-contract-capture`): outcome + acceptance criterion (the reproducing test) + root-cause constraints; full specification skipped.
-
-Elements are always written, so brainstorm non-goals pre-populate a later `/flow:start`.
 
 ## Anti-patterns
 

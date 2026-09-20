@@ -103,6 +103,91 @@ else
   _bad "jq missing — cannot build a hook payload to feed"
 fi
 
+# --- the PostToolUse logging hooks answer a real payload ----------------------
+# Parsing is not enough for these two. Issue #244 gave them real runtime logic —
+# adopting the payload cwd, resolving the repository, physicalising the path,
+# creating the trail directory and calling bin/journal-append.sh — and a failure
+# in any of it is silent, because a hook that falls over just stops logging.
+# They are fed a payload pointing at a scratch repository so the whole path runs.
+if command -v jq >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
+  SMOKE_REPO=""
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      # Git Bash's `mktemp -d -t` returns an MSYS-VIRTUAL /tmp path, whose
+      # `cygpath -m` translation points at a real but different directory. The
+      # fixture has to live somewhere that exists in both worlds so the helper's
+      # path conversion lands on the file that was actually created. Every
+      # expansion carries a default: this file runs under `set -u`, and a bare
+      # "$TMPDIR" aborted the whole job before the loop body ran once.
+      for _base in "${RUNNER_TEMP:-}" "${TEMP:-}" "${TMPDIR:-}" "${HOME:-}"; do
+        [ -n "$_base" ] || continue
+        _posix=$(cygpath -u "$_base" 2>/dev/null) || continue
+        [ -d "$_posix" ] || continue
+        SMOKE_REPO=$(mktemp -d "$_posix/flow-hooks-smoke.XXXXXX" 2>/dev/null) || SMOKE_REPO=""
+        [ -n "$SMOKE_REPO" ] && [ -d "$SMOKE_REPO" ] && break
+        SMOKE_REPO=""
+      done
+      ;;
+  esac
+  [ -n "$SMOKE_REPO" ] || SMOKE_REPO=$(mktemp -d -t flow-hooks-smoke.XXXXXX 2>/dev/null)
+  if [ -n "$SMOKE_REPO" ] && [ -d "$SMOKE_REPO" ]; then
+    (
+      cd "$SMOKE_REPO" 2>/dev/null || exit 1
+      git init -q -b main >/dev/null 2>&1
+      git config user.email smoke@example.invalid
+      git config user.name smoke
+      mkdir -p .decisions
+      printf '# Journal\n' > .decisions/issue-1.md
+      git add -A >/dev/null 2>&1
+      git commit -qm "init" >/dev/null 2>&1
+      git checkout -q -b feature/issue-1-smoke >/dev/null 2>&1
+      printf 'x\n' > f.txt
+    ) >/dev/null 2>&1
+    EDIT_PAYLOAD=$(jq -nc --arg cwd "$SMOKE_REPO" --arg f "$SMOKE_REPO/f.txt" \
+      '{session_id:"smoke", cwd:$cwd, tool_name:"Edit", tool_input:{file_path:$f}}')
+    COMMIT_PAYLOAD=$(jq -nc --arg cwd "$SMOKE_REPO" \
+      '{session_id:"smoke", cwd:$cwd, tool_name:"Bash", tool_input:{command:"git commit -m smoke"}}')
+    [ -f "$HOOKS/log-file-changes.sh" ] && \
+      _feed "$HOOKS/log-file-changes.sh" "$EDIT_PAYLOAD" 0 "log-file-changes answers an edit payload"
+    [ -f "$HOOKS/log-commits.sh" ] && \
+      _feed "$HOOKS/log-commits.sh" "$COMMIT_PAYLOAD" 0 "log-commits answers a commit payload"
+    # The trail directory must exist and ignore itself. Both are written by the
+    # shell, so they hold on every platform.
+    if [ -s "$SMOKE_REPO/.decisions/auto-log/.gitignore" ]; then
+      _ok "the trail directory ignores itself"
+    else
+      _bad "the trail directory did not drop its self-ignoring .gitignore"
+    fi
+    # The ENTRY is written by bin/journal-append.sh, which is python3 — a native
+    # interpreter on Windows. The helper converts the path it hands the
+    # interpreter (`py_path`), and this fixture lives at a directory that exists
+    # in both worlds, so the write is now asserted on every platform rather than
+    # skipped on one. A skip here is what let the write fail silently on Windows
+    # while this file reported green.
+    if ls "$SMOKE_REPO/.decisions/auto-log/"issue-1.*.md >/dev/null 2>&1; then
+      _ok "the auto-log trail was created in the payload cwd's repo"
+    else
+      _bad "no auto-log trail written under $SMOKE_REPO/.decisions/auto-log/"
+      # Say WHY. A hook must never fail the tool call it follows, so it
+      # swallows the helper's failure and this file can only report "nothing
+      # was written" — the cause stayed invisible across four CI runs. Run the
+      # helper directly, and the hook with its stderr kept, so the next
+      # failure names itself instead of being inferred.
+      _out=$(printf 'probe\n' | "$PLUGIN_ROOT/bin/journal-append.sh" \
+        --file "$SMOKE_REPO/.decisions/probe.md" - 2>&1)
+      _rc=$?
+      printf 'DIAG: journal-append.sh exit=%s\nDIAG:   %s\n' \
+        "$_rc" "$(printf '%s' "$_out" | tr '\n' '|' | cut -c1-400)"
+      _out=$(printf '%s' "$EDIT_PAYLOAD" | bash "$HOOKS/log-file-changes.sh" 2>&1 >/dev/null)
+      printf 'DIAG: hook stderr=%s\n' "$(printf '%s' "$_out" | tr '\n' '|' | cut -c1-400)"
+    fi
+    command rm -rf -- "$SMOKE_REPO" 2>/dev/null
+  else
+    _bad "mktemp -d failed — could not build a scratch repo for the logging hooks"
+  fi
+fi
+printf '\n'
+
 # --- the Stop and SessionEnd hooks tolerate an empty session ------------------
 # These run at moments the user is not watching, so falling over is invisible.
 for h in flow-goal-stop.sh reply-style-check.sh session-end-state.sh session-end-learn.sh; do

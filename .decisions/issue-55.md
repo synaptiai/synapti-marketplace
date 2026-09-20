@@ -35,27 +35,3 @@ PASS — single-task plan: apply two-guard fix to `plugins/flow/hooks/scripts/lo
 
 ## Plan
 Single atomic task — see TaskList.
-
-<!-- auto-log: 2026-05-05 15:19 Write /Users/danielbentes/synapti-marketplace/.decisions/issue-55.md -->
-
-<!-- auto-log: 2026-05-05 15:19 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/log-commits.sh -->
-
-<!-- auto-log: 2026-05-05 15:19 commit "chore: bump marketplace to 4.1.1" -->
-
-<!-- auto-log: 2026-05-05 15:20 commit "fix(flow): prevent log-commits.sh PostToolUse infinite append loop" -->
-
-<!-- auto-log: 2026-05-05 15:21 commit "chore(decisions): auto-log entry for issue-55" -->
-
-<!-- auto-log: 2026-05-05 15:22 commit "chore(decisions): final auto-log entry for issue-55" -->
-
-<!-- auto-log: 2026-05-05 15:23 commit "chore(decisions): final auto-log entry for issue-55" -->
-
-<!-- auto-log: 2026-05-05 15:23 commit "chore(decisions): final auto-log entry for issue-55" -->
-
-<!-- auto-log: 2026-05-05 15:23 commit "chore(decisions): final auto-log entry for issue-55" -->
-
-<!-- auto-log: 2026-05-05 15:24 commit "chore(decisions): final auto-log entry for issue-55" -->
-
-<!-- auto-log: 2026-05-05 15:24 Edit /Users/danielbentes/synapti-marketplace/plugins/flow/hooks/scripts/log-commits.sh -->
-
-<!-- auto-log: 2026-05-05 15:24 commit "chore(decisions): final auto-log entry for issue-55" -->

@@ -56,8 +56,14 @@ mkdir -p .claude
 
 Also ignore `.claude/*.lock` — `flow-migrate-settings.sh` (and other writers) create a transient `<file>.lock` beside the settings file; the trap removes it, but a hard kill (SIGKILL) could leave one behind, and it must never be committed.
 
+Also ignore the auto-log trail, `<journal.dir>/auto-log/`. The PostToolUse hooks write a breadcrumb there after every edit and commit; it is local scratch, not journal content, and an unignored directory would leave the working tree permanently dirty. The hooks also drop a self-ignoring `.gitignore` inside that directory, so this line is belt-and-braces rather than the only defense — but a project should not depend on a hook having run to keep its own tree clean.
+
 ```bash
-for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock'; do
+JOURNAL_DIR=".decisions"
+RESOLVER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
+[ -x "$RESOLVER" ] && JOURNAL_DIR=$("$RESOLVER" --default ".decisions" '.journal.dir // empty' 2>/dev/null)
+[ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
+for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock' "$JOURNAL_DIR/auto-log/"; do
   if [ -f .gitignore ]; then
     grep -qxF "$IGNORE" .gitignore || printf '%s\n' "$IGNORE" >> .gitignore
   else
@@ -125,6 +131,45 @@ On **Upgrade now**, apply the rewrite. This block re-resolves the helper path in
 ```
 
 It writes atomically and preserves all other keys. Note the change in the Phase 6 summary so the user reviews the one-line diff before committing.
+
+### Strip legacy auto-log lines (re-run only)
+
+Before the breadcrumbs moved to the gitignored trail, the hooks appended them to the tracked journal, so a repository that has been using flow carries them in version control. This offers to remove them. Like the settings migration this is a **hygiene upgrade — nothing breaks if declined**; the journals keep working, they just keep showing the residue in diffs.
+
+Only the emitter lines are removed, and only outside fenced code blocks, so prose that mentions the format and quoted schema examples are untouched. A re-run reports `none`.
+
+```!
+STRIPPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-strip-auto-log.sh"
+if [ -x "$STRIPPER" ]; then
+  "$STRIPPER"   # dry-run — emits STRIP_AUTO_LOG=... lines
+else
+  printf '%s\n' "STRIP_AUTO_LOG=skip (stripper unavailable)"
+fi
+true
+```
+
+If the output is `STRIP_AUTO_LOG=none` or `STRIP_AUTO_LOG=skip`, there is nothing to strip — proceed silently. Otherwise it reports the pending change (`STRIP_AUTO_LOG_FILE=` per file, then `STRIP_AUTO_LOG=<n> files, <m> lines`).
+
+**A `STRIP_AUTO_LOG_WARN=` line is not part of that count and must be surfaced separately.** It names a journal left partially stripped because it ends inside an unbalanced code fence, and a run can emit it with `0 files, 0 lines` — so an operator shown only the FILE lines would be told nothing about the journal that needs a manual look. When it appears, name the journal and say it was left as-is.
+
+Surface the pending changes and use `AskUserQuestion`:
+
+> Your tracked decision journals carry {m} auto-log lines written by the hooks before they were moved to a local, gitignored trail:
+> {the STRIP_AUTO_LOG_FILE lines}
+>
+> The hooks no longer write there, so this is a one-time cleanup of residue already committed.
+>
+> Options:
+> 1. **Strip them now (Recommended)** — rewrite those journals in place (atomic; every decision entry, specification section and manifest key preserved)
+> 2. **Leave as-is** — the journals keep working; the breadcrumbs stay in version control and in every future diff of those files
+
+On **Strip them now**, apply the rewrite. As with the migration above, this block re-resolves the helper path inline — shell variables from the detection `!`-block do NOT persist into a separately-executed `bash` block:
+
+```bash
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-strip-auto-log.sh" --apply
+```
+
+This rewrites tracked files, so note it in the Phase 6 summary — the user reviews the deletions before committing, and a large diff here is expected on a first run.
 
 ## Phase 3: LSP Server Setup
 

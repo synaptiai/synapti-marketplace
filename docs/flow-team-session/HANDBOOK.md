@@ -135,7 +135,7 @@ Source: `plugins/flow/skills/autonomous-workflow/SKILL.md`.
 
 - **EXPLORE → Artifact**: a populated `.decisions/issue-N.md` with a `## Specification` heading (non-goals, failure modes, interface contracts) and the Spec Validation Gate result mapping each AC to its runnable verification command. Source: `commands/start.md` lines 122–126, 229.
 - **PLAN → Artifact**: an atomic TaskList where each task bundles implementation + test + verification command + expected evidence shape; a feature branch off the default branch; the Stranger Test result recorded in the journal under `## Stranger Test` as PASS or BLOCK. Source: `commands/start.md` lines 232–269; `criterion-verification-map/SKILL.md` lines 43–55.
-- **CODE → Artifact**: per-task commits, each containing implementation + test + the verification evidence captured at task-completion time (not deferred); `<!-- auto-log: ... -->` entries in the journal for every Edit/Write and commit; the Per-Task Verification Gate satisfied for each task. Source: `autonomous-workflow/SKILL.md` lines 23, 44–59.
+- **CODE → Artifact**: per-task commits, each containing implementation + test + the verification evidence captured at task-completion time (not deferred); `<!-- auto-log: ... -->` entries in the local gitignored trail for every Edit/Write and commit; the Per-Task Verification Gate satisfied for each task. Source: `autonomous-workflow/SKILL.md` lines 23, 44–59.
 - **VERIFY → Artifact**: an evidence bundle (one block per AC with `Does NOT promise` + the three completeness subsections), the holdout-validation output, and the verdict-judge agent's PASS/FAIL/NEEDS-HUMAN-REVIEW per criterion — fed only the evidence bundle + ACs + holdout output. Source: `criterion-verification-map/SKILL.md` lines 68–106, 137–139; `autonomous-workflow/SKILL.md` lines 24–28.
 
 **The four VERIFY layers** (`autonomous-workflow/SKILL.md` lines 24–28):
@@ -316,8 +316,8 @@ Source of truth: `plugins/flow/hooks/hooks.json`.
 | PreToolUse | Bash | `block-force-push.sh` | Exit 2 on `git push --force` (`--force-with-lease` allowed, journaled) |
 | PreToolUse | Bash | `block-destructive.sh` | Exit 2 on `rm -rf`, `git reset --hard`, etc. |
 | PreToolUse | Bash | `block-secrets.sh` | Exit 2 on inline credentials |
-| PostToolUse | Edit\|Write | `log-file-changes.sh` | Append `<!-- auto-log: ... -->` entry to journal |
-| PostToolUse | Bash | `log-commits.sh` | Append commit auto-log entry. The script is idempotent — it skips lines already carrying the `auto-log` marker, so a journal commit cannot trigger another append. |
+| PostToolUse | Edit\|Write | `log-file-changes.sh` | Append `<!-- auto-log: ... -->` entry to the local, gitignored trail (`{journal.dir}/auto-log/`) — not to the tracked journal |
+| PostToolUse | Bash | `log-commits.sh` | Append a commit breadcrumb to the same local trail. Two guards bound the append loop: the commit subject starting with `chore(decisions):`, and a commit that touched only the tracked journal. |
 | TaskCompleted | (any) | `verify-task-completion.sh` | Per-Task Verification Gate enforcement |
 | TeammateIdle | (any) | `nudge-idle-teammate.sh` | Experimental — used with agent teams |
 | SessionEnd | (any) | `session-end-learn.sh` | Experimental — feeds the learning loop |
@@ -334,9 +334,9 @@ Source: `plugins/flow/references/decision-journal-schema.md`.
 
 **Two entry kinds**:
 
-1. **Auto-log entries** (HTML comments, written by hooks):
+1. **Auto-log entries** (HTML comments, written by hooks) — since 3.7.0 these live in the local, gitignored trail at `{journal.dir}/auto-log/`, not in this journal:
    ```
-   <!-- auto-log: 2026-05-05 14:32 Edit /path/to/file -->
+   <!-- auto-log: 2026-05-05 14:32 Edit path/to/file -->
    <!-- auto-log: 2026-05-05 14:35 commit "feat: add --json flag to sync" -->
    ```
 2. **Structured entries** (Markdown, written by skills):
@@ -412,7 +412,7 @@ The full schema is in `plugins/flow/schema.json`. Defaults are in `plugins/flow/
 | "Why did the plan get blocked?" | `.decisions/issue-N.md` for the most recent entry. Search for "Stranger Test" or "Spec Validation Gate." |
 | "The verdict is FAIL but the code works" | `criterion-verification-map/SKILL.md` — check completeness subsections in the evidence bundle. Missing one = automatic FAIL. |
 | "Hooks aren't firing" | `plugins/flow/hooks/hooks.json` — confirm matcher and trigger. Check `~/.claude/logs/` for hook stderr. |
-| "Auto-log is duplicating commits" | The script is idempotent only when the marker is intact. If the journal file's `<!-- auto-log: ... -->` lines were edited out, append loops can resurface — restore the markers or run `claude plugins update flow` to refresh the script. |
+| "Auto-log is duplicating commits" | Run `claude plugins update flow` to refresh the script. The two guards test the commit subject and the commit's file list; nothing depends on the journal's existing contents. |
 | "/flow:learn isn't proposing skills" | `~/.claude/flow-proposals/` for proposals; ensure `learning.enabled: true` and `journal.dir` is populated. |
 | "Agent teams not spawning" | Both `agentTeams: true` AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var must be set. |
 | "Tier 3 prompt isn't appearing" | Check `tiers.merge` and `tiers.release` in your settings cascade. Promoted to `confirm` is the default. |
@@ -427,7 +427,7 @@ If you've used the `gh-workflow` plugin, the verbs carry over; the autonomy does
 | gh-workflow | flow equivalent | What's different |
 |-------------|-----------------|------------------|
 | `/gh-start` | `/flow:start` | Adds Phase 0 preflight + Spec Validation Gate |
-| `/gh-commit` | `/flow:commit` | Same vocabulary; classification + journal auto-log |
+| `/gh-commit` | `/flow:commit` | Same vocabulary; classification + the local auto-log trail |
 | `/gh-pr` | `/flow:pr` | 6-facet parallel agent review before PR creation |
 | `/gh-review` | `/flow:review` | Adversarial team option (`agentTeams: true`) |
 | `/gh-address` | `/flow:address` | 5-facet re-review (drops `security-reviewer`) + `FLOW_RESOLUTION_CYCLE` ledger |

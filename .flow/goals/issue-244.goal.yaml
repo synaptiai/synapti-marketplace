@@ -1,0 +1,196 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-244
+  created_at: '2026-09-19T23:40:00Z'
+  created_by: /flow:start
+  owner: daniel.bentes@gmail.com
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-244-auto-log-out-of-journal
+  issue: 244
+  journal: .decisions/issue-244.md
+objective:
+  outcome: The decision journal contains decisions rather than machine breadcrumbs,
+    and any two writers of a journal file both survive regardless of timing.
+  acceptance_criteria:
+  - id: AC1
+    text: After a session that edits files and makes commits, the working tree is
+      clean — no journal file reports as modified.
+    verification_command: bash plugins/flow/tests/run.sh auto-log-relocation.test.sh
+    status: pass
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac1r5.evidence.yaml
+    last_evaluated_at: '2026-09-20T17:01:29Z'
+    last_result: pass
+  - id: AC2
+    text: No tracked journal file contains a machine breadcrumb.
+    verification_command: bash tests/journal-no-autolog/validate.sh
+    status: pass
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac2r5.evidence.yaml
+    last_evaluated_at: '2026-09-20T17:01:29Z'
+    last_result: pass
+  - id: AC3
+    text: A breadcrumb written at the same time as a deliberate journal entry — both
+      are present afterwards, and repeated parallel runs never lose either.
+    verification_command: bash plugins/flow/tests/run.sh journal-append.test.sh
+    status: pass
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac3r5.evidence.yaml
+    last_evaluated_at: '2026-09-20T17:01:29Z'
+    last_result: pass
+  - id: AC4
+    text: The step that re-reads a journal section to confirm its own write succeeded
+      does not halt while other writers are active.
+    verification_command: bash plugins/flow/tests/run.sh journal-append.test.sh
+    status: pass
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac3r5.evidence.yaml
+    last_evaluated_at: '2026-09-20T17:01:29Z'
+    last_result: pass
+  - id: AC5
+    text: A breadcrumb for a path outside the repository is not recorded.
+    verification_command: bash plugins/flow/tests/run.sh auto-log-relocation.test.sh
+    status: pass
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac1r5.evidence.yaml
+    last_evaluated_at: '2026-09-20T17:01:29Z'
+    last_result: pass
+  - id: AC6
+    text: Work performed in a linked worktree records into that worktree and leaves
+      the main checkout's journal untouched.
+    verification_command: bash plugins/flow/tests/run.sh auto-log-relocation.test.sh
+    status: pass
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac1r5.evidence.yaml
+    last_evaluated_at: '2026-09-20T17:01:29Z'
+    last_result: pass
+  - id: AC7
+    text: A breadcrumb produced by a subagent identifies which subagent produced it.
+    verification_command: bash plugins/flow/tests/run.sh auto-log-relocation.test.sh
+    status: pass
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac7.evidence.yaml
+    last_evaluated_at: '2026-09-20T17:01:29Z'
+    last_result: pass
+  - id: AC8
+    text: A repository can remove the breadcrumbs already in its tracked journals
+      by running its setup command, which reports what it would change before changing
+      anything, changes nothing on a re-run, and does not follow a symlink when rewriting
+      a journal.
+    verification_command: bash plugins/flow/tests/run.sh flow-strip-auto-log.test.sh
+    status: pass
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac8r5.evidence.yaml
+    last_evaluated_at: '2026-09-20T17:01:29Z'
+    last_result: pass
+  - id: AC9
+    text: A fenced code example that mentions a breadcrumb is never altered by that
+      cleanup, and text that could terminate a breadcrumb's comment early is escaped
+      when a breadcrumb is written.
+    verification_command: bash plugins/flow/tests/run.sh flow-strip-auto-log.test.sh
+    status: pass
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac8r5.evidence.yaml
+    last_evaluated_at: '2026-09-20T17:01:29Z'
+    last_result: pass
+  - id: AC10
+    text: The plugin's hooks run on macOS with the system bash 3.2 and on Windows.
+    verification_command: bash plugins/flow/tests/windows-hooks-smoke.sh
+    status: pass
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac10r5.evidence.yaml
+    last_evaluated_at: '2026-09-20T17:01:29Z'
+    last_result: pass
+specification:
+  non_goals:
+  - Not changing the journal's YAML frontmatter manifest schema or the shape of artifacts
+    entries.
+  - Not changing how the journal file is selected for deliberate entries — the branch-to-issue-N
+    mapping stays.
+  - Not removing the audit trail. It moves to a gitignored location; it is not deleted.
+  - Not making the yaml import lazy. journal-record.sh and windows-hooks-smoke.sh
+    depend on the current preflight contract, so that is a separate change.
+  - Not rewriting historical journal prose. issue-55.md keeps its three mentions of
+    the token.
+  - Not migrating the dated workshop material. Only the reference-shaped files in
+    docs/flow-team-session are corrected.
+  failure_modes:
+  - 'Missing context: jq absent exits 0 without logging; an unresolved plugin root
+    falls back to the script''s own location; a payload with no cwd falls back to
+    $PWD; a cwd that no longer exists exits 0.'
+  - 'Invalid input: a path outside the repository, or in no repository, is skipped
+    silently; an empty or absent file_path exits 0; a symlinked journal path is refused
+    with nothing written.'
+  - 'Partial failures: any append-helper failure is swallowed so a hook never fails
+    the tool call it runs after; the strip script rewrites atomically or not at all,
+    and reports rather than half-writes a file ending inside an unbalanced fence.'
+  - 'Timeouts: none — no network call and no unbounded wait; the only blocking primitive
+    is flock, bounded by the current holder''s own I/O.'
+  interface_contracts:
+  - Hook stdin payload carries tool_name, tool_input.file_path or notebook_path, cwd,
+    session_id, and agent_id/agent_type only when firing inside a subagent.
+  - 'Auto-log file: auto-log/issue-<N>.<YYYY-MM>.md for an issue branch, else auto-log/session-<YYYY-MM-DD>.md.'
+  - 'Entry line: <!-- auto-log: YYYY-MM-DD HH:MM <Tool> <repo-relative-path>[ agent=<type>]
+    --> for edits and <!-- auto-log: YYYY-MM-DD HH:MM commit "<subject>"[ agent=<type>]
+    --> for commits. Main-thread entries stay byte-identical to today''s shape.'
+  - 'journal-append.sh: --issue <N> or --file <path> selects the target, --replace-heading
+    <H> switches to section replacement, - reads from stdin; exit 0 appended, 1 bad
+    arguments, 2 infrastructure.'
+  - Lockfile is <target>.lock — the same path the manifest writer uses, so body appends
+    and manifest writes serialize.
+  - 'flow-strip-auto-log.sh: dry-run by default reporting STRIP_AUTO_LOG=none or STRIP_AUTO_LOG=<files>
+    files, <lines> lines; --apply writes; exit 0 success, 2 infrastructure.'
+  risk_map:
+  - area: cwd normalization
+    plausible_wrong_version: compares the payload cwd to the repo root without resolving
+      symlinks, so on macOS /var/... never prefix-matches /private/var/... and every
+      in-repo file looks out-of-tree
+    discriminating_check: 'repo under mktemp -d on macOS, edit a repo file -> right:
+      one entry written; wrong: nothing written'
+  - area: in-repo boundary comparison
+    plausible_wrong_version: prefix-matches without the trailing separator, so a sibling
+      directory sharing a name prefix counts as inside
+    discriminating_check: 'repo at /tmp/x/repo, edit /tmp/x/repo-backup/f.md -> right:
+      skipped; wrong: logged as in-repo'
+  - area: lock ordering
+    plausible_wrong_version: opens the target with O_APPEND before acquiring the lock,
+      so a concurrent rename leaves the fd on an unlinked inode and the append vanishes
+      without error
+    discriminating_check: 'append concurrently with a manifest write, delaying between
+      open and lock -> right: both survive; wrong: the append is lost'
+  - area: blank-line pairing in the strip
+    plausible_wrong_version: removes the breadcrumb but keeps the blank line it introduced,
+      or consumes a blank that separated real content
+    discriminating_check: 'body text\\n\\n<!-- auto-log: 1 -->\\n\\nmore -> right:
+      text\\n\\nmore; wrong: a doubled blank or a swallowed separator'
+  - area: fence state tracking
+    plausible_wrong_version: toggles fence state on any line containing three backticks,
+      including an inline code span, desynchronizing so a later breadcrumb inside
+      a real fence is stripped
+    discriminating_check: 'inline triple-backtick span, then a fenced block containing
+      a breadcrumb -> right: preserved; wrong: stripped'
+  - area: branchless fallback naming
+    plausible_wrong_version: applies the monthly rotation to the session file too,
+      so the local trail no longer corresponds to the tracked journal's daily name
+    discriminating_check: 'run on a branch with no issue number -> right: session-<YYYY-MM-DD>.md;
+      wrong: session-<YYYY-MM>.md'
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+evaluator:
+  type: hybrid
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: achieved
+  last_evaluation:
+    result: pass
+    reason: All ten acceptance criteria pass. Five verification commands exit 0 at
+      954cf08; the windows-latest leg asserts the auto-log write rather than skipping
+      it; AC2's committed-content check was falsified on a clone and turns red as
+      it should.
+    at: '2026-09-20T17:48:07Z'

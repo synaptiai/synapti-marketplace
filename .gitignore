@@ -31,6 +31,12 @@ docs/flow-team-session/*.pdf
 # flock is released), session audit trail, and scheduler lock — all ephemeral
 # per-developer runtime state, never committed.
 .decisions/*.lock
+# Auto-log breadcrumbs (the PostToolUse hooks' record of every edit and commit)
+# are local scratch, not journal content: tracked journals carry deliberate
+# entries and their manifest, and these carry the machine trail. Kept out of git
+# so they cannot enter a commit, a PR diff, or another worktree's copy, and so
+# two worktrees cannot conflict on them. See issue #244.
+.decisions/auto-log/
 .flow/goals/*.lock
 .trail/
 .claude/scheduled_tasks.lock

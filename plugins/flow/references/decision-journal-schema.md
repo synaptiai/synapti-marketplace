@@ -13,12 +13,28 @@ Journal files are stored in the journal directory (default: `.decisions/`, confi
 
 ## Auto-Log Entry Format
 
-Written by PostToolUse hooks (`log-file-changes.sh`, `log-commits.sh`).
+Written by the PostToolUse hooks (`log-file-changes.sh`, `log-commits.sh`).
+
+**These entries are not part of the tracked journal.** They go to
+`{journal.dir}/auto-log/`, which is gitignored: an audit trail of every edit and
+commit, kept locally because it is machine output rather than a decision. The
+tracked `.decisions/issue-{N}.md` carries deliberate entries and its manifest
+only. Before this was separated, the breadcrumbs entered commits, PR diffs and
+every worktree's copy of the journal, and two worktrees writing them conflicted
+on the journal itself.
+
+| File | Contents |
+|------|----------|
+| `auto-log/issue-{N}.{YYYY-MM}.md` | one month of an issue's breadcrumbs (rotated monthly) |
+| `auto-log/session-{YYYY-MM-DD}.md` | a branch with no issue number; daily, matching the tracked journal's own name |
+
+A path outside the repository is not recorded — a scratch file written to `/tmp`
+is not journal content.
 
 ### File Change Entry
 
 ```
-<!-- auto-log: YYYY-MM-DD HH:MM Edit|Write /path/to/file -->
+<!-- auto-log: YYYY-MM-DD HH:MM Edit|Write path/relative/to/repo/root -->
 ```
 
 ### Commit Entry
@@ -26,6 +42,10 @@ Written by PostToolUse hooks (`log-file-changes.sh`, `log-commits.sh`).
 ```
 <!-- auto-log: YYYY-MM-DD HH:MM commit "commit message subject" -->
 ```
+
+When the hook fires inside a subagent, an `agent=<type>` field is appended
+before the closing marker, so a reader can tell a reviewer's edit from the main
+thread's.
 
 Auto-log entries are HTML comments to avoid cluttering rendered markdown.
 

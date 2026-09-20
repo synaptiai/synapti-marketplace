@@ -63,7 +63,7 @@ Promote tiers (autonomous → journal → confirm). Never demote.
 ```
 PreToolUse  Bash    block-force-push   block-destructive   block-secrets
 PostToolUse Edit    log-file-changes
-PostToolUse Bash    log-commits        (idempotent — skips lines already auto-logged)
+PostToolUse Bash    log-commits        (bounded by two commit guards, not a line check)
 TaskCompleted       verify-task-completion
 TeammateIdle        nudge-idle-teammate           (experimental)
 SessionEnd          session-end-learn             (experimental)
@@ -157,6 +157,6 @@ Opt-out template: `plugins/flow/README.md` lines 41–54.
 | Verdict FAIL feels wrong | Check evidence-bundle completeness subsections |
 | Hooks not firing | `~/.claude/logs/` |
 | Force push blocked | Use `--force-with-lease` (allowed + journaled) |
-| Auto-log loop | Restore `<!-- auto-log: ... -->` markers; `claude plugins update flow` |
+| Auto-log loop | Update the plugin (`claude plugins update flow`). No marker restoration — since 3.7.0 the breadcrumbs live in a local trail, so a journal commit cannot trigger one. |
 
 When in doubt: `/flow:status` first.
