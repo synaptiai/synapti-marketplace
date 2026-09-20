@@ -404,19 +404,39 @@ assert_exit 0 "$?" "T21 exit 0"
 assert_file_exists "$ABS_JOURNAL/auto-log/issue-99.$THIS_MONTH.md" \
   "T21 the trail landed under the absolute journal dir"
 
+# --- T22: risk row 1 — a LOGICAL (non-physical) cwd is normalized -------------
+# This is the only test that exercises the hook's own `pwd -P`. Every other test
+# passes a cwd that _ar_mktemp_dir already resolved, so removing the hook's
+# normalization left the whole file green (verified: 41/41). On macOS mktemp -d
+# hands back /var/... while git reports /private/var/..., and compared
+# unnormalized every in-repo file looks out-of-tree and the hook logs nothing.
+_flow_test_begin "T22 a logical cwd is normalized"
+D=$(_ar_make_repo "feature/issue-99-relocate" 99)
+RAW=$(printf '%s' "$D" | sed 's#^/private/#/#')
+if [ "$RAW" = "$D" ]; then
+  _flow_assert_pass "T22 SKIP: no logical/physical path split on this platform"
+else
+  mkdir -p "$D/src"; printf 'x\n' > "$D/src/app.sh"
+  _ar_payload "Edit" '{"file_path":"src/app.sh"}' "$RAW" | \
+    CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" bash "$HOOK_EDIT" >/dev/null 2>&1
+  assert_exit 0 "$?" "T22 exit 0"
+  assert_file_exists "$D/.decisions/auto-log/issue-99.$THIS_MONTH.md" \
+    "T22 the entry was written from a logical cwd ($RAW)"
+fi
+
 # --- T22: the reader the change wired up still names the trail ---------------
 # /flow:explain is the only reader that gained a trail load, and a command file
 # is prose the test suite otherwise never checks. Static, and deliberately so:
 # the read is executed by an agent, not by a shell the suite can run.
-_flow_test_begin "T22 explain reads the trail"
+_flow_test_begin "T23 explain reads the trail"
 EXPLAIN="$REPO_ROOT/plugins/flow/commands/explain.md"
 if grep -q 'auto-log/issue-\$ISSUE_NUM' "$EXPLAIN" 2>/dev/null; then
-  _flow_assert_pass "T22 explain globs the issue's monthly trail files"
+  _flow_assert_pass "T23 explain globs the issue's monthly trail files"
 else
-  _flow_assert_fail "T22 explain no longer reads the auto-log trail"
+  _flow_assert_fail "T23 explain no longer reads the auto-log trail"
 fi
 if grep -q 'AUTOLOG_FILES' "$EXPLAIN" 2>/dev/null; then
-  _flow_assert_pass "T22 explain reports how many trail files it read"
+  _flow_assert_pass "T23 explain reports how many trail files it read"
 else
-  _flow_assert_fail "T22 explain does not report an AUTOLOG_FILES count"
+  _flow_assert_fail "T23 explain does not report an AUTOLOG_FILES count"
 fi
