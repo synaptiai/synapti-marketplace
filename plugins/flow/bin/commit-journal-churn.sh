@@ -1,17 +1,25 @@
 #!/usr/bin/env bash
 # [flow] Commit trailing decision-journal churn as housekeeping.
 #
-# The decision journal (`.decisions/`, tracked) is appended to by the auto-log
-# PostToolUse hooks after every edit/commit. Those appends are never staged by
-# the hooks, so after normal work the journal shows dirty — and shows dirty at
-# PR/merge time. This helper commits that churn as a `chore(decisions):` commit
-# so the working tree is clean for PR creation.
+# The tracked decision journal (`.decisions/issue-N.md`) is appended to by the
+# deliberate writers — the decision sections design.md and brainstorm.md emit,
+# the specification section specification-capture writes — which stage their
+# edits as ordinary work and can leave the journal dirty at PR time. This helper
+# commits that churn as a `chore(decisions):` commit so the working tree is
+# clean for PR creation.
+#
+# It is NOT for the auto-log trail. Since issue #244 the PostToolUse hooks write
+# `<journal.dir>/auto-log/`, which is gitignored and ignored by git status
+# entirely, so it can neither dirty the tree nor be swept by this helper. The
+# `*.md` staging glob below is single-level and cannot reach it, and the
+# classification treats that directory as non-journal for the case where a
+# consumer has not ignored it yet.
 #
 # Safety: it commits ONLY when every pending change is inside the journal dir.
 # If any non-journal path is dirty or staged, it no-ops (it must never sweep
 # unrelated work into a housekeeping commit). The `chore(decisions):` prefix is
 # matched by hooks/scripts/log-commits.sh Guard 1, so this commit does not
-# trigger another auto-log append (no recursion).
+# trigger another log entry (no recursion).
 #
 # Usage:  commit-journal-churn.sh
 # Exits:  0 always (best-effort housekeeping; never blocks the caller).
@@ -51,6 +59,13 @@ while IFS= read -r line; do
   # below, so renames fall through to HAS_OTHER and we safely no-op.
   p=$(printf '%s' "$line" | cut -c4-)
   case "$p" in
+    # The auto-log trail: local scratch, never staged, and never a reason to
+    # no-op. This arm MUST precede the generic nested arm below — shell `case`
+    # `*` spans `/`, so otherwise the trail would be classified as a non-journal
+    # change and disable the sweep entirely in any consumer repo that has not
+    # added the ignore rule yet. Belt-and-braces for the common case, where the
+    # trail directory ignores itself and git status never lists it.
+    "$JOURNAL_DIR"/auto-log/*) : ;;
     # Nested path under the journal dir: the journal is flat by contract, and
     # the staging glob below is single-level — so anything nested would be
     # classified-but-not-staged (a silent partial commit). Treat it as a
