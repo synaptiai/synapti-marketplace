@@ -110,7 +110,26 @@ fi
 # in any of it is silent, because a hook that falls over just stops logging.
 # They are fed a payload pointing at a scratch repository so the whole path runs.
 if command -v jq >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
-  SMOKE_REPO=$(mktemp -d -t flow-hooks-smoke.XXXXXX 2>/dev/null)
+  SMOKE_REPO=""
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      # Git Bash's `mktemp -d -t` returns an MSYS-VIRTUAL /tmp path, whose
+      # `cygpath -m` translation points at a real but different directory. The
+      # fixture has to live somewhere that exists in both worlds so the helper's
+      # path conversion lands on the file that was actually created. Every
+      # expansion carries a default: this file runs under `set -u`, and a bare
+      # "$TMPDIR" aborted the whole job before the loop body ran once.
+      for _base in "${RUNNER_TEMP:-}" "${TEMP:-}" "${TMPDIR:-}" "${HOME:-}"; do
+        [ -n "$_base" ] || continue
+        _posix=$(cygpath -u "$_base" 2>/dev/null) || continue
+        [ -d "$_posix" ] || continue
+        SMOKE_REPO=$(mktemp -d "$_posix/flow-hooks-smoke.XXXXXX" 2>/dev/null) || SMOKE_REPO=""
+        [ -n "$SMOKE_REPO" ] && [ -d "$SMOKE_REPO" ] && break
+        SMOKE_REPO=""
+      done
+      ;;
+  esac
+  [ -n "$SMOKE_REPO" ] || SMOKE_REPO=$(mktemp -d -t flow-hooks-smoke.XXXXXX 2>/dev/null)
   if [ -n "$SMOKE_REPO" ] && [ -d "$SMOKE_REPO" ]; then
     (
       cd "$SMOKE_REPO" 2>/dev/null || exit 1
@@ -139,24 +158,17 @@ if command -v jq >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
     else
       _bad "the trail directory did not drop its self-ignoring .gitignore"
     fi
-    # The ENTRY is written by bin/journal-append.sh, which is python3 — and on
-    # Windows that is a native interpreter, while this fixture's repo lives at
-    # an MSYS path ("/tmp/...") that bash and git resolve and Python reads as
-    # "<drive>:\\tmp\\...". So the write is exercised where the interpreter can
-    # address the fixture, and the platform limitation is stated here rather
-    # than silently asserted around.
-    case "$(uname -s)" in
-      MINGW*|MSYS*|CYGWIN*)
-        _ok "SKIP trail-file assertion on Windows: the scratch repo is at an MSYS path ($SMOKE_REPO) that a native python3 cannot open, so the helper's write cannot be reached from this fixture"
-        ;;
-      *)
-        if ls "$SMOKE_REPO/.decisions/auto-log/"issue-1.*.md >/dev/null 2>&1; then
-          _ok "the auto-log trail was created in the payload cwd's repo"
-        else
-          _bad "no auto-log trail written under $SMOKE_REPO/.decisions/auto-log/"
-        fi
-        ;;
-    esac
+    # The ENTRY is written by bin/journal-append.sh, which is python3 — a native
+    # interpreter on Windows. The helper converts the path it hands the
+    # interpreter (`py_path`), and this fixture lives at a directory that exists
+    # in both worlds, so the write is now asserted on every platform rather than
+    # skipped on one. A skip here is what let the write fail silently on Windows
+    # while this file reported green.
+    if ls "$SMOKE_REPO/.decisions/auto-log/"issue-1.*.md >/dev/null 2>&1; then
+      _ok "the auto-log trail was created in the payload cwd's repo"
+    else
+      _bad "no auto-log trail written under $SMOKE_REPO/.decisions/auto-log/"
+    fi
     command rm -rf -- "$SMOKE_REPO" 2>/dev/null
   else
     _bad "mktemp -d failed — could not build a scratch repo for the logging hooks"

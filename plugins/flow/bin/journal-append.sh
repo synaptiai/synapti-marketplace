@@ -141,7 +141,26 @@ TARGET_DIR=$(dirname "$TARGET")
 # manifest write and a body append on one journal contend on one lock.
 LOCKFILE="$TARGET.lock"
 
-python3 - "$SCRIPT_DIR" "$TARGET" "$LOCKFILE" "$REPLACE_HEADING" "$TEXT" <<'PYTHON'
+# The interpreter boundary. On Windows `python3` is a native build: it reads a
+# POSIX path ("/d/a/_temp/proj/…") as a different location, so both the module
+# import and the write failed there — silently, because every caller swallows a
+# helper failure. `cygpath -m` renders a path in the one form bash, git and a
+# native Python all resolve. On POSIX this is the identity, and the whole
+# conversion is unreachable.
+py_path() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "$1" 2>/dev/null || printf '%s' "$1"
+      else
+        printf '%s' "$1"
+      fi ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+python3 - "$(py_path "$SCRIPT_DIR")" "$(py_path "$TARGET")" "$(py_path "$LOCKFILE")" \
+  "$REPLACE_HEADING" "$TEXT" <<'PYTHON'
 import sys
 
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
