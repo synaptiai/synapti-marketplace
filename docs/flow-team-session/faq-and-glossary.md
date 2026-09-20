@@ -139,7 +139,7 @@ The plugin gets better when the team tells it where it failed.
 ### Decision journal
 
 - **`.decisions/`** — default journal directory. Configurable via `journal.dir`.
-- **Auto-log entry** — HTML comment written by hooks: `<!-- auto-log: timestamp action target -->`.
+- **Auto-log entry** — HTML comment written by hooks: `<!-- auto-log: timestamp action target -->`. Kept in a local, gitignored trail under `{journal.dir}/auto-log/`, not in the tracked journal; a subagent's entries carry `agent=<type>`.
 - **Structured entry** — Markdown written by skills with category / decision / rationale / alternatives / evidence.
 - **Sensitivity** — `public` (default; included in PR body) or `internal` (redacted).
 - **Categories** — Architecture, Implementation, Convention, Quality, Risk.

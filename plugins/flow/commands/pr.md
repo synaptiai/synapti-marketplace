@@ -407,7 +407,10 @@ After agents return, TaskUpdate each review task with findings.
    Note: screenshots are local files; for remote visibility, mention "verified locally"
 9. **Push** (Tier 2: journal-and-proceed). First sweep any trailing decision-journal
    churn into a `chore(decisions):` commit so the working tree is clean for the PR — the
-   auto-log hooks append to the tracked journal during normal work and never commit it.
+   deliberate writers (the decision sections `design.md` and `brainstorm.md` emit, the
+   specification section `specification-capture` writes) append to the tracked journal as
+   ordinary work and never commit it. The auto-log breadcrumbs are not involved: they go
+   to a gitignored trail and cannot dirty the tree.
    The helper no-ops if any non-journal path is dirty (it never sweeps unrelated work), and
    its `chore(decisions):` subject is skipped by `log-commits.sh` Guard 1 (no re-append):
    ```bash
