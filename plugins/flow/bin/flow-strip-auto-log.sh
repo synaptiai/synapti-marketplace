@@ -47,6 +47,13 @@
 # doubled blank lines behind. Nothing else is normalized: a run of two or more
 # blanks elsewhere, and any leading or trailing blank, are left exactly as they
 # were — this script was asked to remove breadcrumbs, not to restyle the file.
+#
+# One exception, stated so it is not a surprise in a diff: a rewritten file ends
+# with a newline even if it did not before, because the transform emits whole
+# lines. A journal whose last line lacked one will show `\ No newline at end of
+# file` disappearing. A CRLF journal is rewritten as CRLF — the locked reader
+# decodes universal newlines, so the ending is restored before the write rather
+# than silently converting the whole file to LF.
 
 set -uo pipefail
 
@@ -133,32 +140,49 @@ BEGIN {
   removed = 0
   pending_blank = 0
   in_fence = 0
+  fence_open = ""
 }
-function fence_delim(s) {
-  # Returns the fence character this line opens/closes with, or "" — the same
-  # rule as _fence_delim() in bin/_journal_atomic.py and journal-read-section.sh.
+function fence_delim(s,   t, c, n) {
+  # Returns "<char><length>" for a fence line, or "" — the same rule as
+  # _fence_delim() in bin/_journal_atomic.py and journal-read-section.sh.
   # Anchored: an INLINE ```span``` mid-line must not toggle anything.
-  if (s ~ /^[[:space:]]*```/) return "`"
-  if (s ~ /^[[:space:]]*~~~/) return "~"
-  return ""
+  #
+  # The run LENGTH is part of the answer. A fence closes only on a run at least
+  # as long as its opener, so an inner ``` line does not close a ```` block —
+  # and without that, a quoted breadcrumb between them was deleted, which is the
+  # one thing this script promises never to do.
+  t = s
+  sub(/^[[:space:]]+/, "", t)
+  if (t == "") return ""
+  c = substr(t, 1, 1)
+  if (c != "`" && c != "~") return ""
+  n = 0
+  while (substr(t, n + 1, 1) == c) n++
+  if (n < 3) return ""
+  return c n
+}
+function closes_fence(d, opened) {
+  # Same character, run at least as long. Both are "" or "<char><length>".
+  if (d == "" || opened == "") return 0
+  return (substr(d, 1, 1) == substr(opened, 1, 1)) && ((substr(d, 2) + 0) >= (substr(opened, 2) + 0))
 }
 {
   line = $0
   d = fence_delim(line)
   if (in_fence) {
-    # A fence closes only on the character that OPENED it. Testing merely
-    # whether that character appears somewhere on the line closed a ~~~ block
-    # on a line like "```sample~", after which a quoted breadcrumb inside the
-    # block was deleted — the one thing this script promises not to do. The
-    # reader and the writer both test the delimiter, so this must too.
-    if (d == fence_char) { in_fence = 0 }
+    # A fence closes only on the character that OPENED it, in a run at least as
+    # long. Testing merely whether that character appears somewhere on the line
+    # closed a ~~~ block on a line like "```sample~", after which a quoted
+    # breadcrumb inside the block was deleted — the one thing this script
+    # promises not to do. The reader and the writer apply this same rule.
+    if (closes_fence(d, fence_open)) { in_fence = 0 }
     flush_blank()
     print line
     next
   }
   if (d != "") {
     in_fence = 1
-    fence_char = d
+    fence_open = d
     flush_blank()
     print line
     next
@@ -227,7 +251,10 @@ for JOURNAL in "$JOURNAL_DIR"/*.md; do
   : > "$UNBAL"
   if ! awk -v cnt="$CNT" -v unbal="$UNBAL" -f "$WORK/strip.awk" "$JOURNAL" \
        > "$OUT" 2>"$WORK/awkerr.$$"; then
-    echo "flow-strip-auto-log.sh: awk failed on $JOURNAL — $(head -1 "$WORK/awkerr.$$" 2>/dev/null)" >&2
+    # one_line() on $JOURNAL for the same reason every report value gets it: the
+    # name comes from a TRACKED directory a fork can change, and a newline in it
+    # forges a second line for whoever reads this output.
+    echo "flow-strip-auto-log.sh: awk failed on $(one_line "$JOURNAL") — $(head -1 "$WORK/awkerr.$$" 2>/dev/null)" >&2
     exit 2
   fi
   REMOVED=$(cat "$CNT" 2>/dev/null)
@@ -236,7 +263,7 @@ for JOURNAL in "$JOURNAL_DIR"/*.md; do
   # repository. Refuse instead.
   case "$REMOVED" in
     ''|*[!0-9]*)
-      echo "flow-strip-auto-log.sh: awk produced no count for $JOURNAL — refusing to report a clean result" >&2
+      echo "flow-strip-auto-log.sh: awk produced no count for $(one_line "$JOURNAL") — refusing to report a clean result" >&2
       exit 2 ;;
   esac
 
@@ -280,6 +307,15 @@ from _journal_atomic import (  # noqa: E402
 )
 
 target, prog = sys.argv[2], sys.argv[3]
+
+
+def _raw_bytes(path):
+    """The file's bytes, refusing a symlink the same way the text read does."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as fh:
+        return fh.read()
+
+
 lock_fd = acquire_lock(target + ".lock")
 try:
     content = _read_with_no_follow(target)
@@ -290,7 +326,16 @@ try:
               % r.stderr.strip(), file=sys.stderr)
         sys.exit(2)
     if r.stdout != content:
-        _atomic_write(target, r.stdout)
+        # _read_with_no_follow decodes with universal newlines, so a CRLF file
+        # arrives here as LF. Writing that back converts every line ending in
+        # the journal, turning a one-breadcrumb removal into a whole-file diff
+        # — for a Windows checkout with core.autocrlf, the entire file. The
+        # transform emits whole lines, so restoring the original ending is
+        # exact, not a guess.
+        out = r.stdout
+        if b"\r\n" in _raw_bytes(target):
+            out = out.replace("\n", "\r\n")
+        _atomic_write(target, out)
 except JournalAtomicError as e:
     print("flow-strip-auto-log.sh: %s" % e, file=sys.stderr)
     sys.exit(2)
@@ -302,7 +347,7 @@ finally:
 PYTHON
     then
       printf '%s' "$REPORT"
-      echo "flow-strip-auto-log.sh: locked write failed for $JOURNAL — anything already rewritten is listed above" >&2
+      echo "flow-strip-auto-log.sh: locked write failed for $(one_line "$JOURNAL") — anything already rewritten is listed above" >&2
       exit 2
     fi
   fi

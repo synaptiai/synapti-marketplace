@@ -460,3 +460,44 @@ assert_not_contains "<!--evil" "$BODY" "T24 no raw comment opener from the agent
 assert_contains "-- >" "$BODY" "T24 the terminator was neutralized, not dropped"
 assert_equal "1" "$(grep -c '^<!-- auto-log: ' "$AUTOLOG" 2>/dev/null)" \
   "T24 still exactly one entry line"
+
+# --- T25: AC1's commit half — a commit leaves the working tree clean ---------
+# AC1 is "after a session that edits files AND makes commits, the working tree is
+# clean". T18 covers the edit half but commits BEFORE running the hook, so the
+# commit hook — the one that fires after every `git commit` in a session — was
+# never exercised under a cleanliness assertion. Pre-change this hook appended to
+# the TRACKED journal, so the tree was dirty by construction after every commit;
+# that is the failure this asserts against.
+#
+# The entry assertion is not decoration: without it, deleting the hook entirely
+# would also leave the tree clean, and a cleanliness check that passes when
+# nothing ran is the vacuous shape this suite has already been caught by twice.
+_flow_test_begin "T25 a commit leaves the working tree clean"
+D=$(_ar_make_repo "feature/issue-99-relocate" 99)
+printf 'x\n' > "$D/f.txt"
+git -C "$D" add -A >/dev/null 2>&1
+git -C "$D" commit -q -m "feat: a real change" >/dev/null 2>&1
+_ar_payload "Bash" '{"command":"git commit -m x"}' "$D" | \
+  CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" bash "$HOOK_COMMIT" >/dev/null 2>&1
+assert_exit 0 "$?" "T25 exit 0"
+assert_file_exists "$D/.decisions/auto-log/issue-99.$THIS_MONTH.md" \
+  "T25 the commit breadcrumb was actually written"
+assert_equal "" "$(git -C "$D" status --porcelain -uall 2>/dev/null)" \
+  "T25 git status is clean after a commit"
+
+# --- T26: the out-of-repo early return does not skip the quality ledger ------
+# _flow_autolog() is a FUNCTION whose every guard is `return 0`, never `exit 0`,
+# precisely so the ledger block after its call site still runs. An `exit 0` in
+# any one of those guards would silently stop the ledger recording for that
+# whole class of tool call, and nothing else in this suite would notice — the
+# ledger is not what any other test here asserts. The path used is the one that
+# returns earliest, so it is the most exposed to that mistake.
+_flow_test_begin "T26 an out-of-repo path still writes a ledger entry"
+D=$(_ar_make_repo "feature/issue-99-relocate" 99)
+STATE=$(_ar_mktemp_dir)
+LEDGER="$STATE/sessions/s1/quality-ledger.jsonl"
+_ar_payload "Edit" '{"file_path":"/tmp/definitely-outside.md"}' "$D" | \
+  FLOW_STATE_DIR="$STATE" CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" \
+  bash "$HOOK_EDIT" >/dev/null 2>&1
+assert_file_exists "$LEDGER" "T26 the ledger still received an entry"
+assert_contains "definitely-outside" "$(cat "$LEDGER" 2>/dev/null)" "T26 the entry names the path"

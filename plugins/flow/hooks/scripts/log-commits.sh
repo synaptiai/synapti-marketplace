@@ -81,7 +81,14 @@ esac
 # by neither the auto-log-dir check nor O_NOFOLLOW, which protects one component.
 case "$JOURNAL_BASE" in
   "$REPO_ROOT"/*)
-    JB_PHYS=$(cd "$JOURNAL_BASE" 2>/dev/null && pwd -P)
+    # `|| JB_PHYS=""` because this is top level under `set -e`: a `cd` into a
+    # directory that does not exist — the ordinary "flow installed, project
+    # never initialized" state — returned non-zero from the assignment and
+    # aborted the whole hook with exit 1, breaking the contract that a hook
+    # never fails the tool call it follows. The sibling hook's identical block
+    # is safe only because its caller is `_flow_autolog || true`; this one is
+    # not, and the empty case below is the arm that must be reached.
+    JB_PHYS=$(cd "$JOURNAL_BASE" 2>/dev/null && pwd -P) || JB_PHYS=""
     case "$JB_PHYS" in
       "") ;;
       "$REPO_ROOT"/*) ;;

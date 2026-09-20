@@ -175,7 +175,10 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
 done
 FINAL=$(cat "$DIR/.decisions/issue-9.md" 2>/dev/null)
 for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
-  case "$FINAL" in *"body-$i"*) ;; *) LOST=$((LOST + 1)) ;; esac
+  # Whole-line match. The substring form hid a lost entry: "body-1" is a
+  # substring of "body-10", so dropping body-1 entirely left LOST=0 and the
+  # suite green (verified by mutation).
+  printf '%s\n' "$FINAL" | grep -qx "body-$i" || LOST=$((LOST + 1))
 done
 assert_equal "0" "$LOST" "T9 every appended body survived"
 # Each manifest artifact must be present too — a lost append is one failure
@@ -222,8 +225,9 @@ FINAL=$(cat "$DIR/.decisions/issue-11.md" 2>/dev/null)
 BARE_LOST=0
 LOCKED_LOST=0
 for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-  case "$FINAL" in *"bare-$i"*) ;; *) BARE_LOST=$((BARE_LOST + 1)) ;; esac
-  case "$FINAL" in *"locked-$i"*) ;; *) LOCKED_LOST=$((LOCKED_LOST + 1)) ;; esac
+  # Whole-line match — see T9.
+  printf '%s\n' "$FINAL" | grep -qx "bare-$i" || BARE_LOST=$((BARE_LOST + 1))
+  printf '%s\n' "$FINAL" | grep -qx "locked-$i" || LOCKED_LOST=$((LOCKED_LOST + 1))
 done
 assert_equal "0" "$BARE_LOST" "T10 unlocked bare appends all survived"
 assert_equal "0" "$LOCKED_LOST" "T10 locked appends all survived"
@@ -485,3 +489,169 @@ assert_equal "1" "$(grep -c '^keep-me$' "$J")" \
   "T16 the section AFTER the replaced one survived"
 assert_equal "1" "$(grep -c '^## Other$' "$J")" \
   "T16 the following heading survived"
+
+# --- Test 17: --replace-heading preserves the frontmatter byte-for-byte -------
+# The docstring claims the manifest prefix is preserved because the writer only
+# touches the body. Nothing tested it: treating the whole file as body left the
+# suite green. specification-capture uses this path on journals that carry a
+# manifest, so a lost prefix would drop the whole artifact record.
+_flow_test_begin "T17 frontmatter survives a section write"
+DIR=$(_ja_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+J="$DIR/.decisions/issue-17.md"
+cat > "$J" <<'EOF'
+---
+issue: 17
+created: '2026-01-01T00:00:00Z'
+artifacts:
+- type: specification
+  captured_at: '2026-01-01T00:00:00Z'
+---
+# Journal
+
+## Specification
+
+old
+EOF
+FRONT_BEFORE=$(awk 'NR==1,/^---$/ && NR>1' "$J" | head -n -1)
+_run_append "$DIR" --file ".decisions/issue-17.md" --replace-heading "## Specification" --text "new" >/dev/null 2>&1
+assert_exit 0 "$?" "T17 exit 0"
+FRONT_AFTER=$(awk 'NR==1,/^---$/ && NR>1' "$J" | head -n -1)
+assert_equal "$FRONT_BEFORE" "$FRONT_AFTER" "T17 the frontmatter block is byte-identical"
+assert_equal "1" "$(grep -c '^- type: specification$' "$J")" "T17 the artifact entry survived"
+assert_contains "new" "$(cat "$J")" "T17 the body was replaced"
+
+# --- Test 18: only the FIRST matching heading is the section -----------------
+# A journal can carry the heading twice — a hand-edit, or an append by a writer
+# that predates this one. Replacing every match duplicates the new text and
+# destroys the second copy and its body.
+_flow_test_begin "T18 only the first heading is replaced"
+DIR=$(_ja_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+J="$DIR/.decisions/issue-18.md"
+cat > "$J" <<'EOF'
+# Journal
+
+## Specification
+
+first-body
+
+## Other
+
+keep
+
+## Specification
+
+second-body
+EOF
+_run_append "$DIR" --file ".decisions/issue-18.md" --replace-heading "## Specification" --text "NEW" >/dev/null 2>&1
+assert_exit 0 "$?" "T18 exit 0"
+assert_equal "1" "$(grep -c '^NEW$' "$J")" "T18 the new body appears exactly once"
+assert_contains "second-body" "$(cat "$J")" "T18 the second section's body survived"
+assert_contains "keep" "$(cat "$J")" "T18 the middle section survived"
+
+# --- Test 19: the argument combinations that must be refused -----------------
+_flow_test_begin "T19 mutual exclusion"
+DIR=$(_ja_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+printf 'seed\n' > "$DIR/.decisions/issue-19.md"
+_run_append "$DIR" --issue 19 --file ".decisions/issue-19.md" --text "x" >/dev/null 2>&1
+assert_exit 1 "$?" "T19 --issue and --file together"
+_run_append "$DIR" --file ".decisions/issue-19.md" --text "a" - >/dev/null 2>&1
+assert_exit 1 "$?" "T19 --text and - together"
+before=$(cat "$DIR/.decisions/issue-19.md")
+assert_equal "seed" "$before" "T19 neither refusal wrote anything"
+
+# --- Test 20: a 4-backtick block is not closed by an inner 3-backtick line ---
+# The writer and the reader must agree on where a section ends, and both now
+# track the fence's run LENGTH: a closing run must be at least as long as the
+# opener. Keying on the character alone closed the outer block at the inner
+# ``` line, so the `## Specification` QUOTED inside the example became the
+# section, and replacing it destroyed the quoted example and left the real
+# section untouched.
+_flow_test_begin "T20 nested fences"
+DIR=$(_ja_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+J="$DIR/.decisions/issue-20.md"
+cat > "$J" <<'EOF'
+# Journal
+
+````
+```
+## Specification
+quoted-body
+```
+````
+
+## Specification
+
+real-body
+EOF
+_run_append "$DIR" --file ".decisions/issue-20.md" --replace-heading "## Specification" --text "NEW" >/dev/null 2>&1
+assert_exit 0 "$?" "T20 exit 0"
+assert_contains "quoted-body" "$(cat "$J")" "T20 the quoted section inside the fence survives"
+assert_not_contains "real-body" "$(cat "$J")" "T20 the real section's old body is gone"
+assert_contains "NEW" "$(cat "$J")" "T20 the real section was replaced"
+
+# --- Test 21: an unclosed fence in the replaced section is refused -----------
+# The skip loop ends a section at the next `## ` line, but not while a fence is
+# open. An unclosed fence therefore ran the loop to EOF, deleting that heading
+# and every section after it — silently, on a journal a person reads. Refusing
+# is the safe direction: the file is left exactly as it was.
+_flow_test_begin "T21 unclosed fence in the replaced section"
+DIR=$(_ja_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+J="$DIR/.decisions/issue-21.md"
+printf '## Specification\n\nbody\n\n```\nunclosed\n\n## Other\n\nprecious\n' > "$J"
+BEFORE=$(cat "$J")
+_run_append "$DIR" --file ".decisions/issue-21.md" --replace-heading "## Specification" --text "NEW" >/dev/null 2>&1
+assert_exit 2 "$?" "T21 exit 2 rather than deleting the tail"
+assert_equal "$BEFORE" "$(cat "$J")" "T21 the journal is byte-identical afterwards"
+
+# Control. An unclosed fence with no heading after it cannot over-delete: the
+# section really does run to EOF. Without this, refusing EVERY unclosed fence
+# would satisfy the assertion above while breaking legitimate replacements.
+J2="$DIR/.decisions/issue-21b.md"
+printf '## Specification\n\nseed\n\n```\nunclosed tail\n' > "$J2"
+_run_append "$DIR" --file ".decisions/issue-21b.md" --replace-heading "## Specification" --text "NEW" >/dev/null 2>&1
+assert_exit 0 "$?" "T21b a tail fence with no heading after it still replaces"
+assert_contains "NEW" "$(cat "$J2")" "T21b the replacement landed"
+
+# --- Test 22: the heading match is exact, not a prefix -----------------------
+# Both the writer and the reader test `line == heading`. A prefix test would
+# make `--replace-heading "## Specification"` land on `## Specification
+# Extended` when that section comes first — replacing a different section than
+# the caller named, and leaving the named one intact. `## Spec` is the same
+# hazard from the other direction.
+_flow_test_begin "T22 the heading match is exact"
+DIR=$(_ja_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+J="$DIR/.decisions/issue-22.md"
+# The longer heading is placed FIRST deliberately. With the exact heading
+# first, a prefix test would still land on the right section and every
+# assertion below would pass — the ordering is what makes this discriminating.
+cat > "$J" <<'EOF'
+## Specification Extended
+
+a-different-section
+
+## Specification
+
+the-real-one
+
+## Spec
+
+a-third-section
+EOF
+_run_append "$DIR" --file ".decisions/issue-22.md" --replace-heading "## Specification" --text "NEW" >/dev/null 2>&1
+assert_exit 0 "$?" "T22 exit 0"
+BODY=$(cat "$J")
+assert_contains "NEW" "$BODY" "T22 the named section was replaced"
+assert_not_contains "the-real-one" "$BODY" "T22 the named section's old body is gone"
+assert_contains "a-different-section" "$BODY" "T22 the longer heading's section is untouched"
+assert_contains "a-third-section" "$BODY" "T22 the shorter heading's section is untouched"
+
+# The reader must agree: it returns the named section only.
+SECTION=$(bash "$REPO_ROOT/plugins/flow/bin/journal-read-section.sh" \
+  --file "$J" --heading "## Specification" 2>/dev/null)
+assert_not_contains "a-different-section" "$SECTION" "T22 the reader stops at the exact heading"

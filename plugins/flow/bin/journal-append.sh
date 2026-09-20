@@ -61,11 +61,28 @@ TEXT_GIVEN=0
 FROM_STDIN=0
 
 while [ $# -gt 0 ]; do
+  # Each value-taking flag checks its argument count first. A dangling flag —
+  # `--replace-heading` as the last argv entry — otherwise fails inside `shift 2`
+  # and aborts with exit 1 and NO diagnostic at all, which reads as a crash
+  # rather than a usage error.
   case "$1" in
-    --issue)           ISSUE="${2:-}"; shift 2 ;;
-    --file)            TARGET_FILE="${2:-}"; shift 2 ;;
-    --replace-heading) REPLACE_HEADING="${2:-}"; shift 2 ;;
-    --text)            TEXT="${2:-}"; TEXT_GIVEN=1; shift 2 ;;
+    --issue)
+      [ $# -ge 2 ] || { echo "journal-append.sh: --issue needs a value" >&2; exit 1; }
+      ISSUE="$2"; shift 2 ;;
+    --file)
+      [ $# -ge 2 ] || { echo "journal-append.sh: --file needs a value" >&2; exit 1; }
+      TARGET_FILE="$2"; shift 2 ;;
+    --replace-heading)
+      [ $# -ge 2 ] || { echo "journal-append.sh: --replace-heading needs a value" >&2; exit 1; }
+      # An empty heading is not "no heading" — it is a caller bug, and an unset
+      # shell variable produces exactly this. Passed through, the module takes
+      # the first blank line as the section and deletes every paragraph before
+      # it. Refused here rather than allowed to silently mean append.
+      [ -n "$2" ] || { echo "journal-append.sh: --replace-heading must not be empty" >&2; exit 1; }
+      REPLACE_HEADING="$2"; shift 2 ;;
+    --text)
+      [ $# -ge 2 ] || { echo "journal-append.sh: --text needs a value" >&2; exit 1; }
+      TEXT="$2"; TEXT_GIVEN=1; shift 2 ;;
     -)                 FROM_STDIN=1; shift ;;
     -h|--help)         sed -n '2,56p' "$0" | sed 's/^# \?//'; exit 0 ;;
     *) echo "journal-append.sh: unknown argument: $(one_line "$1")" >&2; exit 1 ;;

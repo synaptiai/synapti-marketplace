@@ -148,7 +148,11 @@ fi
 true
 ```
 
-If the output is `STRIP_AUTO_LOG=none` or `STRIP_AUTO_LOG=skip`, there is nothing to strip — proceed silently. Otherwise it reports the pending change (`STRIP_AUTO_LOG_FILE=` per file, then `STRIP_AUTO_LOG=<n> files, <m> lines`). Surface them and use `AskUserQuestion`:
+If the output is `STRIP_AUTO_LOG=none` or `STRIP_AUTO_LOG=skip`, there is nothing to strip — proceed silently. Otherwise it reports the pending change (`STRIP_AUTO_LOG_FILE=` per file, then `STRIP_AUTO_LOG=<n> files, <m> lines`).
+
+**A `STRIP_AUTO_LOG_WARN=` line is not part of that count and must be surfaced separately.** It names a journal left partially stripped because it ends inside an unbalanced code fence, and a run can emit it with `0 files, 0 lines` — so an operator shown only the FILE lines would be told nothing about the journal that needs a manual look. When it appears, name the journal and say it was left as-is.
+
+Surface the pending changes and use `AskUserQuestion`:
 
 > Your tracked decision journals carry {m} auto-log lines written by the hooks before they were moved to a local, gitignored trail:
 > {the STRIP_AUTO_LOG_FILE lines}

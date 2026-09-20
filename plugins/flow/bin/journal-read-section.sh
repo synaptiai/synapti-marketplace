@@ -29,8 +29,17 @@ HEADING=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --file)    FILE="${2:-}"; shift 2 ;;
-    --heading) HEADING="${2:-}"; shift 2 ;;
+    # The count is checked before consuming. `shift 2` with one argument left
+    # returns non-zero but leaves $1 in place, and this file has no `set -e`, so
+    # `while [ $# -gt 0 ]` never advanced and a dangling flag spun at 100% CPU
+    # forever (verified: still running after 3s). One line each turns a hang
+    # into the documented exit 1.
+    --file)
+      [ $# -ge 2 ] || { echo "journal-read-section.sh: --file needs a value" >&2; exit 1; }
+      FILE="$2"; shift 2 ;;
+    --heading)
+      [ $# -ge 2 ] || { echo "journal-read-section.sh: --heading needs a value" >&2; exit 1; }
+      HEADING="$2"; shift 2 ;;
     -h|--help) sed -n '2,27p' "$0" | sed 's/^# \?//'; exit 0 ;;
     *) echo "journal-read-section.sh: unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -45,22 +54,46 @@ done
 # tildes, so an inline ```span``` mid-line does not toggle anything, and a fence
 # closes only on the character that opened it.
 awk -v heading="$HEADING" '
-function fence_line(s) { return (s ~ /^[[:space:]]*(```|~~~)/) }
-function fence_char_of(s) { return (s ~ /^[[:space:]]*`/) ? "`" : "~" }
+function fence_delim(s,   t, c, n) {
+  # "<char><length>" for a fence line, or "". Anchored, so an INLINE ```span```
+  # mid-line toggles nothing.
+  t = s
+  sub(/^[[:space:]]+/, "", t)
+  if (t == "") return ""
+  c = substr(t, 1, 1)
+  if (c != "`" && c != "~") return ""
+  n = 0
+  while (substr(t, n + 1, 1) == c) n++
+  if (n < 3) return ""
+  return c n
+}
+function closes_fence(d, opened) {
+  # Same character, run at least as long. This replaced an `index(line, char)`
+  # test, which closed the fence whenever the character appeared ANYWHERE on
+  # the line — so "```sample~" ended a ~~~ block, and the reader and the writer
+  # disagreed about where the section ended.
+  if (d == "" || opened == "") return 0
+  return (substr(d, 1, 1) == substr(opened, 1, 1)) && ((substr(d, 2) + 0) >= (substr(opened, 2) + 0))
+}
 {
   line = $0
+  d = fence_delim(line)
   if (in_fence) {
-    if (fence_line(line) && index(line, fence_char) > 0) in_fence = 0
+    if (closes_fence(d, fence_open)) in_fence = 0
     if (printing) print line
     next
   }
-  if (fence_line(line)) {
+  if (d != "") {
     in_fence = 1
-    fence_char = fence_char_of(line)
+    fence_open = d
     if (printing) print line
     next
   }
-  if (line == heading) { printing = 1; print line; next }
+  # The FIRST match is the section, matching the writer: _splice_section
+  # replaces only the first, so a reader that returned both copies would report
+  # a section the writer will not touch. A duplicate heading reaches the
+  # `^## ` rule below with `printing` set, and stops there.
+  if (!found && line == heading) { found = 1; printing = 1; print line; next }
   if (printing && line ~ /^## /) { printing = 0; next }
   if (printing) print line
 }

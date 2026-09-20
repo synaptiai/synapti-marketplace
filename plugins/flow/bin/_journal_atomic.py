@@ -429,20 +429,42 @@ def append_body(target_path, lockfile_path, text, *, leading_blank=True):
 
 
 def _fence_delim(line):
-    """Return the fence character a line opens/closes with, or ''.
+    """Return `(character, run_length)` for a fence line, or None.
 
     Only the first non-space run counts. A journal that quotes a section heading
     inside a fenced example is real — the schema reference documents the
     specification shape that way — and treating that quoted heading as the
     section would corrupt both the example and the real section, and leave the
     fence unbalanced. Same rule as bin/flow-strip-auto-log.sh's tracker.
+
+    The run LENGTH is returned, not just the character, because a fence closes
+    only on a run at least as long as its opener. Reporting the character alone
+    made an inner ``` line close a ```` block, after which a section heading — or
+    a breadcrumb — quoted between them was treated as real content.
     """
     s = line.lstrip()
-    if s.startswith("```"):
-        return "`"
-    if s.startswith("~~~"):
-        return "~"
-    return ""
+    if not s:
+        return None
+    ch = s[0]
+    if ch not in ("`", "~"):
+        return None
+    n = 0
+    while n < len(s) and s[n] == ch:
+        n += 1
+    if n < 3:
+        return None
+    return (ch, n)
+
+
+def _closes_fence(delim, opened):
+    """True when `delim` closes a fence opened by the `opened` delimiter.
+
+    Same character, and a run at least as long. `opened` is the tuple returned
+    when that fence was opened.
+    """
+    if delim is None or opened is None:
+        return False
+    return delim[0] == opened[0] and delim[1] >= opened[1]
 
 
 def _splice_section(body, heading, text):
@@ -452,6 +474,11 @@ def _splice_section(body, heading, text):
     inside a fenced code block are not headings, and neither are `## ` lines
     inside a fence that sits within the section being skipped.
 
+    Raises JournalAtomicError when the section being skipped contains an
+    unclosed fence AND a `## ` line the fence swallowed: the skip has no way to
+    know where the section really ends, and continuing would delete that
+    heading and every section after it.
+
     Split out from replace_section() so the splice rule is testable without a
     filesystem.
     """
@@ -460,17 +487,20 @@ def _splice_section(body, heading, text):
     found = False
     i = 0
     in_fence = False
-    fence_char = ""
+    fence = None
     while i < len(lines):
         line = lines[i]
         delim = _fence_delim(line)
-        if delim and (not in_fence or delim == fence_char):
-            in_fence = not in_fence
-            fence_char = delim if in_fence else ""
+        if in_fence:
+            if _closes_fence(delim, fence):
+                in_fence = False
+                fence = None
             out.append(line)
             i += 1
             continue
-        if in_fence:
+        if delim is not None:
+            in_fence = True
+            fence = delim
             out.append(line)
             i += 1
             continue
@@ -494,17 +524,39 @@ def _splice_section(body, heading, text):
             i += 1
             # Skip the old section, fence-aware so a `## ` line inside a
             # fenced block within the section cannot end the skip early.
+            swallowed_heading = None
             while i < len(lines):
                 inner = lines[i]
                 inner_delim = _fence_delim(inner)
-                if inner_delim and (not in_fence or inner_delim == fence_char):
-                    in_fence = not in_fence
-                    fence_char = inner_delim if in_fence else ""
+                if in_fence:
+                    if _closes_fence(inner_delim, fence):
+                        in_fence = False
+                        fence = None
+                    elif inner.startswith("## "):
+                        # A heading we are skipping ONLY because a fence is
+                        # still open. If the fence never closes, the loop runs
+                        # to EOF and this line — and every section after it —
+                        # is deleted. Remembered so the over-deletion can be
+                        # refused below instead of performed.
+                        swallowed_heading = inner
                     i += 1
                     continue
-                if not in_fence and inner.startswith("## "):
+                if inner_delim is not None:
+                    in_fence = True
+                    fence = inner_delim
+                    i += 1
+                    continue
+                if inner.startswith("## "):
                     break
                 i += 1
+            if in_fence and swallowed_heading is not None:
+                raise JournalAtomicError(
+                    "refusing — the section being replaced contains an unclosed "
+                    "code fence, and swallowing it would delete the heading "
+                    "%r and everything after it; close the fence first"
+                    % swallowed_heading,
+                    exit_code=2,
+                )
             continue
         out.append(line)
         i += 1
@@ -541,6 +593,13 @@ def replace_section(journal_path, lockfile_path, heading, text):
     is added later by record_artifact(), which is the only writer that knows the
     issue number.
     """
+    if not heading:
+        # Documented on the Surface, so it is reachable by a direct call. An
+        # empty heading matches the first blank line, which is not a section:
+        # `_splice_section` would delete every paragraph before it.
+        raise JournalAtomicError(
+            "replace_section: heading must not be empty", exit_code=1
+        )
     _harden_sys_path()
     lock_fd = acquire_lock(lockfile_path)
     try:

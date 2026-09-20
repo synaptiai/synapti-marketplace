@@ -280,3 +280,54 @@ chmod +x "$D/fakebin/awk"
 OUT=$( cd "$D" && PATH="$D/fakebin:$PATH" bash "$STRIP" .decisions 2>&1 ); RC=$?
 assert_exit 2 "$RC" "T18 exit 2 when awk fails"
 assert_not_contains "STRIP_AUTO_LOG=none" "$OUT" "T18 does not claim the repository is clean"
+
+# --- T19: a 4-backtick block is not closed by an inner 3-backtick line -------
+# A fence closes only on a run AT LEAST AS LONG as its opener. Keying on the
+# character alone closed the outer block at its first inner ``` line, after
+# which the breadcrumb quoted between them sat outside any fence, matched, and
+# was deleted — the one outcome this script promises never to happen.
+#
+# Both directions are asserted. If the fence stopped closing altogether, the
+# REAL breadcrumb below the block would survive; if it closed too early, the
+# QUOTED one would be deleted. Either wrong version fails one of these two.
+_flow_test_begin "T19 nested fences: a quoted breadcrumb survives"
+D=$(_fs_dir); mkdir -p "$D/.decisions"
+cat > "$D/.decisions/issue-19.md" <<'EOF'
+# Journal
+
+````
+```
+<!-- auto-log: 2026-01-01 00:00 Write quoted.md -->
+```
+````
+
+body
+
+<!-- auto-log: 2026-01-01 00:01 Edit real.md -->
+EOF
+( cd "$D" && bash "$STRIP" --apply .decisions ) >/dev/null 2>&1
+BODY=$(cat "$D/.decisions/issue-19.md" 2>/dev/null)
+assert_contains "Write quoted.md" "$BODY" "T19 the quoted breadcrumb inside the fence survives"
+assert_not_contains "Edit real.md" "$BODY" "T19 the real breadcrumb outside the fence was removed"
+
+# --- T20: a CRLF journal is rewritten as CRLF ---------------------------------
+# The locked reader decodes with universal newlines, so a CRLF file reaches the
+# transform as LF. Writing that back converts every line ending in the journal,
+# turning a one-breadcrumb removal into a whole-file diff — and on a Windows
+# checkout with core.autocrlf, that is the whole file for every journal. The
+# unremoved line is asserted too: if the CRLF restore dropped content, the
+# separators would collapse and this would pass on a truncated file.
+_flow_test_begin "T20 a CRLF journal keeps its line endings"
+D=$(_fs_dir); mkdir -p "$D/.decisions"
+printf 'alpha\r\n\r\n<!-- auto-log: 1 -->\r\n\r\nomega\r\n' > "$D/.decisions/issue-20.md"
+( cd "$D" && bash "$STRIP" --apply .decisions ) >/dev/null 2>&1
+# Expressed as "every line ends CRLF" rather than a literal count, so the
+# assertion does not depend on how many lines the transform leaves behind —
+# only on whether any of them ends with a bare LF.
+LF_COUNT=$(wc -l < "$D/.decisions/issue-20.md" | tr -d ' ')
+CR_COUNT=$(tr -cd '\r' < "$D/.decisions/issue-20.md" | wc -c | tr -d ' ')
+assert_equal "$LF_COUNT" "$CR_COUNT" "T20 every line ends CRLF, none bare LF"
+BODY=$(tr -d '\r' < "$D/.decisions/issue-20.md")
+assert_not_contains "auto-log" "$BODY" "T20 the breadcrumb was removed"
+assert_contains "alpha" "$BODY" "T20 content before the removal survived"
+assert_contains "omega" "$BODY" "T20 content after the removal survived"
