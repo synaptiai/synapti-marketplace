@@ -356,9 +356,9 @@ git -C "$D" commit -q -m "feat: add app" >/dev/null 2>&1
 [ -f "$D/.gitignore" ] && printf '# no auto-log rule on purpose\n' >> "$D/.gitignore"
 _ar_payload "Edit" '{"file_path":"src/app.sh"}' "$D" | \
   CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" bash "$HOOK_EDIT" >/dev/null 2>&1
-assert_file_exists "$D/.decisions/auto-log/.gitignore" "T15 trail dir ignores itself"
+assert_file_exists "$D/.decisions/auto-log/.gitignore" "T18 trail dir ignores itself"
 DIRTY=$(git -C "$D" status --porcelain -uall 2>/dev/null)
-assert_equal "" "$DIRTY" "T15 git status is clean after a breadcrumb"
+assert_equal "" "$DIRTY" "T18 git status is clean after a breadcrumb"
 
 # --- T16: a payload with no cwd falls back to the process directory ----------
 # Run with the process cwd inside the scratch repo, so the fallback is provable
