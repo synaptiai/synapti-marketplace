@@ -103,6 +103,54 @@ else
   _bad "jq missing — cannot build a hook payload to feed"
 fi
 
+# --- the PostToolUse logging hooks answer a real payload ----------------------
+# Parsing is not enough for these two. Issue #244 gave them real runtime logic —
+# adopting the payload cwd, resolving the repository, physicalising the path,
+# creating the trail directory and calling bin/journal-append.sh — and a failure
+# in any of it is silent, because a hook that falls over just stops logging.
+# They are fed a payload pointing at a scratch repository so the whole path runs.
+if command -v jq >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
+  SMOKE_REPO=$(mktemp -d -t flow-hooks-smoke.XXXXXX 2>/dev/null)
+  if [ -n "$SMOKE_REPO" ] && [ -d "$SMOKE_REPO" ]; then
+    (
+      cd "$SMOKE_REPO" 2>/dev/null || exit 1
+      git init -q -b main >/dev/null 2>&1
+      git config user.email smoke@example.invalid
+      git config user.name smoke
+      mkdir -p .decisions
+      printf '# Journal\n' > .decisions/issue-1.md
+      git add -A >/dev/null 2>&1
+      git commit -qm "init" >/dev/null 2>&1
+      git checkout -q -b feature/issue-1-smoke >/dev/null 2>&1
+      printf 'x\n' > f.txt
+    ) >/dev/null 2>&1
+    EDIT_PAYLOAD=$(jq -nc --arg cwd "$SMOKE_REPO" --arg f "$SMOKE_REPO/f.txt" \
+      '{session_id:"smoke", cwd:$cwd, tool_name:"Edit", tool_input:{file_path:$f}}')
+    COMMIT_PAYLOAD=$(jq -nc --arg cwd "$SMOKE_REPO" \
+      '{session_id:"smoke", cwd:$cwd, tool_name:"Bash", tool_input:{command:"git commit -m smoke"}}')
+    [ -f "$HOOKS/log-file-changes.sh" ] && \
+      _feed "$HOOKS/log-file-changes.sh" "$EDIT_PAYLOAD" 0 "log-file-changes answers an edit payload"
+    [ -f "$HOOKS/log-commits.sh" ] && \
+      _feed "$HOOKS/log-commits.sh" "$COMMIT_PAYLOAD" 0 "log-commits answers a commit payload"
+    # The trail must have been created in the scratch repo, and the tracked
+    # journal must be untouched — the relocation, asserted on the runtime path.
+    if ls "$SMOKE_REPO/.decisions/auto-log/"issue-1.*.md >/dev/null 2>&1; then
+      _ok "the auto-log trail was created in the payload cwd's repo"
+    else
+      _bad "no auto-log trail written under $SMOKE_REPO/.decisions/auto-log/"
+    fi
+    if [ -s "$SMOKE_REPO/.decisions/auto-log/.gitignore" ]; then
+      _ok "the trail directory ignores itself"
+    else
+      _bad "the trail directory did not drop its self-ignoring .gitignore"
+    fi
+    command rm -rf -- "$SMOKE_REPO" 2>/dev/null
+  else
+    _bad "mktemp -d failed — could not build a scratch repo for the logging hooks"
+  fi
+fi
+printf '\n'
+
 # --- the Stop and SessionEnd hooks tolerate an empty session ------------------
 # These run at moments the user is not watching, so falling over is invisible.
 for h in flow-goal-stop.sh reply-style-check.sh session-end-state.sh session-end-learn.sh; do

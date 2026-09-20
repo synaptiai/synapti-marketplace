@@ -1,5 +1,100 @@
 # Changelog
 
+## 3.7.0 (2026-09-20)
+
+The PostToolUse hooks appended a breadcrumb to `.decisions/issue-N.md` after
+every edit and every commit. That file is tracked, so the breadcrumbs were
+committed, appeared in every pull request diff, and appeared in every worktree's
+copy — where merging two of them conflicted on the journal itself. There were
+2,393 of them in this repository alone, and a helper existed only to sweep them
+into housekeeping commits before a pull request could be opened.
+
+They now go to a local, gitignored trail. The tracked journal keeps deliberate
+entries and its manifest, which is what it was always for.
+
+Underneath that was a correctness defect of the same family. The journal had two
+writer classes and only one of them took the lock: the manifest writer held a
+flock across a whole-file read → tempfile → rename, while the hooks and several
+command bodies appended without one. The rename therefore published a snapshot
+taken before those appends, and the bytes written in that window were silently
+reverted. Every writer now takes the same lock.
+
+**What you will notice:** your working tree stays clean after a session. The
+journal stops appearing as modified in `git status`, and `/flow:pr` no longer
+needs to sweep it.
+
+### Fixed: the auto-log breadcrumbs no longer enter version control
+
+`log-file-changes.sh` and `log-commits.sh` write to `{journal.dir}/auto-log/`,
+which is gitignored. Issue-scoped trails rotate monthly
+(`issue-{N}.{YYYY-MM}.md`); a branch with no issue number keeps a daily
+`session-{YYYY-MM-DD}.md`, matching the tracked journal's own name. The trail
+directory drops a `.gitignore` containing `*`, so a repository that never re-runs
+`/flow:setup` is still clean.
+
+The hooks now resolve the repository, the branch and the journal directory from
+the payload's `cwd` — the live working directory, which follows into a worktree —
+instead of the hook process's. That also fixes a guard in `log-commits.sh` that
+compared a repository-relative commit listing against a working-directory-
+relative journal path, so away from the repo root it never matched and the guard
+silently stopped firing.
+
+A path outside the repository is no longer recorded. Before, a reviewer's scratch
+file under `/tmp` landed in whichever journal the hook happened to resolve —
+another issue's work appearing in a file a reader takes for decisions.
+
+Both security fixes in the hooks survive: the symlink refusal, and the escaping
+that stops a crafted commit subject from closing the HTML comment early. The
+`agent=<type>` field now carries the same escaping.
+
+### Changed: every journal writer shares one lock
+
+`bin/_journal_atomic.py` gains `append_body()` and `replace_section()`, and
+`bin/journal-append.sh` is their shell surface. They take the `<target>.lock` the
+manifest writer already used, which is what makes a body append and a manifest
+write serialize rather than race.
+
+`commands/design.md` and `commands/brainstorm.md` routed their `cat >>` appends
+through it; `skills/specification-capture` replaced its `Write`-tool rewrite with
+`--replace-heading`. That last one is where the defect was visible: the skill
+writes the `## Specification` section, re-reads it to confirm, and halted with
+`SPEC_CAPTURE_BLOCK: journal write verification failed` when a concurrent rename
+had reverted it.
+
+The body append uses `O_APPEND` under the lock rather than a read-modify-write,
+so a writer that cannot see the lock — an editor, a session on an older version —
+is appended to rather than overwritten. That is a reasoned choice, not a tested
+one; the test file says so where it would otherwise be implied.
+
+### Added: `/flow:setup` offers to strip the committed breadcrumbs
+
+`bin/flow-strip-auto-log.sh` removes them: dry-run by default, `--apply` to
+write, atomic per file, and it never touches a breadcrumb inside a fenced code
+block or prose that merely mentions the format. `/flow:setup` offers it on
+re-run beside the settings migration, with the same confirmation and the same
+optional-hygiene framing — declining changes nothing.
+
+### Added: subagent entries name the subagent
+
+A hook that fires inside a subagent now appends `agent=<type>`, so a reviewer's
+edit is distinguishable from the main thread's. Main-thread entries are byte-
+identical to the previous format.
+
+### Changed: `/flow:explain` reads the local trail too
+
+It loads the tracked journal as before, then the local trail labelled as such and
+kept separate, globbing the monthly set. `status` and the session-end learning
+hook are unaffected: both use non-recursive globs the new subdirectory does not
+match. One consequence worth knowing: that learning signal fires on journal
+activity, so a session that only produced breadcrumbs no longer raises it.
+
+### Note: a Python process per edit
+
+The hooks now call `journal-append.sh` so the append is locked, where before they
+appended with a shell redirect. That is one `python3` spawn per Edit/Write. The
+cost is bounded on the other side — a single `write(2)` rather than a whole-file
+rewrite, and no separate dependency probe on the append path.
+
 ## 3.6.0 (2026-09-18)
 
 A review finding used to carry a confidence word for the reader and nothing
