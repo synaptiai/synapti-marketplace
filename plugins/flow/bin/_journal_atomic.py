@@ -465,7 +465,12 @@ def _splice_section(body, heading, text):
             out.append(line)
             i += 1
             continue
-        if line == heading:
+        # Only the FIRST match is the section. A journal can carry the heading
+        # twice — a hand-edit, an append by a writer that predates this one, or
+        # a capture that appended because an unclosed fence hid the original —
+        # and replacing every one of them duplicates the new text and destroys
+        # the second copy's body.
+        if line == heading and not found:
             found = True
             out.append(heading)
             out.append("")
@@ -503,6 +508,11 @@ def _splice_section(body, heading, text):
         while text_lines and text_lines[-1] == "":
             text_lines.pop()
         out.extend(text_lines)
+        # Terminate the file. Without this the append branch wrote no final
+        # newline, so every first capture for an issue produced a tracked file
+        # that git reports as "\ No newline at end of file" — and the replace
+        # branch, which keeps the surrounding lines, did not.
+        out.append("")
     return "\n".join(out)
 
 

@@ -430,3 +430,58 @@ assert_contains "keep" "$BODY" "T15 the following section survived"
 # the example.
 FENCES=$(printf '%s\n' "$BODY" | grep -c '^```$')
 assert_equal "2" "$FENCES" "T15 the code fence is still balanced"
+
+# --- Test 16: the section reader and the writer agree about fences -----------
+# The writer became fence-aware; the reader the spec-capture skill used was a
+# plain awk one-liner, so the two disagreed about where the section ended. A
+# `## ` line quoted inside a fence ended the reader's section early: it reported
+# `### Risk map` missing while the file held it, the skill re-prompted for a
+# risk map the journal already had, and the writer then rewrote the section from
+# the reader's truncated view.
+_flow_test_begin "T16 reader and writer agree on where a section ends"
+DIR=$(_ja_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+J="$DIR/.decisions/issue-16.md"
+cat > "$J" <<'EOF'
+# Journal
+
+## Specification
+
+### Non-goals
+value
+
+```yaml
+## a comment inside the example
+```
+
+### Risk map
+
+| a | b | c |
+
+## Other
+
+keep-me
+EOF
+READER="$REPO_ROOT/plugins/flow/bin/journal-read-section.sh"
+SECTION=$(bash "$READER" --file "$J" --heading "## Specification" 2>/dev/null)
+assert_equal "1" "$(printf '%s\n' "$SECTION" | grep -c '^### Risk map$')" \
+  "T16 the reader sees the subsection past the quoted heading"
+assert_equal "1" "$(printf '%s\n' "$SECTION" | grep -c '^### Non-goals$')" \
+  "T16 the reader sees the earlier subsection"
+# The writer must agree: replacing the section keeps everything the reader saw.
+printf '### Non-goals\nreplaced\n' | \
+  _run_append "$DIR" --file ".decisions/issue-16.md" --replace-heading "## Specification" - >/dev/null 2>&1
+SECTION2=$(bash "$READER" --file "$J" --heading "## Specification" 2>/dev/null)
+assert_equal "1" "$(printf '%s\n' "$SECTION2" | grep -c '^replaced$')" \
+  "T16 the writer's replacement is what the reader reads back"
+# The writer replaces heading-to-next-heading, so the whole old body goes,
+# fenced example included. That is the agreement being asserted: the reader
+# returned exactly the region the writer then replaced.
+assert_equal "0" "$(printf '%s\n' "$SECTION2" | grep -c "value")" \
+  "T16 the old body is gone"
+assert_equal "0" "$(printf '%s\n' "$SECTION2" | grep -c '^### Risk map$')" \
+  "T16 the old section's subsections went with it"
+assert_equal "1" "$(grep -c '^keep-me$' "$J")" \
+  "T16 the section AFTER the replaced one survived"
+assert_equal "1" "$(grep -c '^## Other$' "$J")" \
+  "T16 the following heading survived"

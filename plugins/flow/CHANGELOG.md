@@ -6,8 +6,9 @@ The PostToolUse hooks appended a breadcrumb to `.decisions/issue-N.md` after
 every edit and every commit. That file is tracked, so the breadcrumbs were
 committed, appeared in every pull request diff, and appeared in every worktree's
 copy — where merging two of them conflicted on the journal itself. There were
-2,393 of them in this repository alone, and a helper existed only to sweep them
-into housekeeping commits before a pull request could be opened.
+2,331 of them in this repository's tracked journals alone, and a helper
+existed only to sweep them into housekeeping commits before a pull request
+could be opened.
 
 They now go to a local, gitignored trail. The tracked journal keeps deliberate
 entries and its manifest, which is what it was always for.

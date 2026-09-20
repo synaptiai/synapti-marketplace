@@ -214,9 +214,17 @@ assert_contains "STRIP_AUTO_LOG=none" "$OUT" "T15 balanced fences are not a warn
 # reads the output line by line.
 _flow_test_begin "T13 filename cannot forge a report line"
 D=$(_fs_dir); mkdir -p "$D/.decisions"
-J="$D/.decisions/evil
-STRIP_AUTO_LOG_APPLIED=1.md"
+# The forged segment has to be a COMPLETE line for this to discriminate. An
+# earlier fixture ended the name with ".md", so the neutered script emitted
+# "STRIP_AUTO_LOG_APPLIED=1.md removed=1" — which the anchored grep never
+# matched — and the test passed with the defence removed (verified 27/27).
+J="$D/.decisions/x
+STRIP_AUTO_LOG_APPLIED=1
+z.md"
 printf 'x\n\n<!-- auto-log: 1 -->\n' > "$J" 2>/dev/null
 OUT=$(bash "$STRIP" "$D/.decisions" 2>&1)
 FORGED=$(printf '%s\n' "$OUT" | grep -c '^STRIP_AUTO_LOG_APPLIED=1$')
 assert_equal "0" "$FORGED" "T13 no forged line in dry-run output"
+# ...and the file must still have been processed, or the assertion above would
+# pass by the script never reaching it.
+assert_contains "STRIP_AUTO_LOG_FILE=" "$OUT" "T13 the awkwardly-named journal was still processed"

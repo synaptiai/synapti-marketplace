@@ -14,7 +14,11 @@ set -euo pipefail
 command -v jq &>/dev/null || exit 0
 
 INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
+# `|| VAR=""` because these run under `set -e`: an unparseable payload made jq
+# exit 5 and took the hook with it, printing a parse error — which breaks this
+# hook's own contract that it never fails the tool call it runs after. Every
+# jq call added later in this file already carried the guard.
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null) || COMMAND=""
 
 # Only process git commit commands
 echo "$COMMAND" | grep -qE 'git\s+commit' || exit 0
@@ -44,6 +48,14 @@ if [ -x "$HELPER_DIR/bin/cascade-resolve.sh" ]; then
   JOURNAL_DIR=$(cd "$REPO_ROOT" && "$HELPER_DIR/bin/cascade-resolve.sh" \
     --default ".decisions" '.journal.dir // empty' 2>/dev/null)
 fi
+[ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
+# A trailing slash or a leading "./" is legal in the settings but produces a
+# doubled or dotted separator in the composed path. Guard 2 compares that path
+# against the form git reports, so ".decisions/" silently stopped the guard
+# firing while ".decisions" worked — the same silent-guard class this hook's
+# Guard 2 was already fixed for, on a second axis.
+JOURNAL_DIR=${JOURNAL_DIR%/}
+case "$JOURNAL_DIR" in ./*) JOURNAL_DIR=${JOURNAL_DIR#./} ;; esac
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 
 # Get the branch and issue number from the payload's repo
@@ -76,8 +88,8 @@ TRACKED="$JOURNAL_BASE/$JFILE"
 # match a commit entry, which is how this was briefly wrong. A journal outside
 # the repository has no repo-relative form and cannot be tracked, so Guard 2
 # cannot apply to it: leave the value empty and let it not fire.
-case "$JOURNAL_BASE" in
-  "$REPO_ROOT"/*) TRACKED_REL="${JOURNAL_BASE#"$REPO_ROOT"/}/$JFILE" ;;
+case "$TRACKED" in
+  "$REPO_ROOT"/*) TRACKED_REL=${TRACKED#"$REPO_ROOT"/} ;;
   *)              TRACKED_REL="" ;;
 esac
 
@@ -102,7 +114,13 @@ if [ -f "$TRACKED" ]; then
   # so the guarantee cannot depend on the operator having added an ignore rule.
   # `*` matches this file too, which is intended: nothing here belongs in git.
   mkdir -p "$AUTOLOG_DIR" 2>/dev/null || exit 0
-  [ -f "$AUTOLOG_DIR/.gitignore" ] || printf '*\n' > "$AUTOLOG_DIR/.gitignore" 2>/dev/null
+  # Grouped and `|| true`-guarded: this was the last command of an `A || B`
+  # list with no guard, so under `set -e` a failed write exited the hook — and
+  # a `.gitignore` staged as a directory, or as a symlink to a path that does
+  # not exist, reaches that. A plain `>` also follows a link, so the symlink is
+  # refused first rather than written through.
+  [ -L "$AUTOLOG_DIR/.gitignore" ] && exit 0
+  { [ -f "$AUTOLOG_DIR/.gitignore" ] || printf '*\n' > "$AUTOLOG_DIR/.gitignore" 2>/dev/null; } || true
 
   TIMESTAMP=$(date +"%Y-%m-%d %H:%M")
   LAST_MSG=$(git -C "$CWD" log -1 --format="%s" 2>/dev/null || echo "unknown")

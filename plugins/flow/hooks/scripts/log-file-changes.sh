@@ -21,8 +21,12 @@ set -euo pipefail
 command -v jq &>/dev/null || exit 0
 
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty')
+# `|| VAR=""` because these run under `set -e`: an unparseable payload made jq
+# exit 5 and took the hook with it, printing a parse error — which breaks this
+# hook's own contract that it never fails the tool call it runs after. Every
+# jq call added later in this file already carried the guard.
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null) || TOOL_NAME=""
+FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null) || FILE_PATH=""
 
 # Skip if no file path
 [ -z "$FILE_PATH" ] && exit 0
@@ -133,6 +137,10 @@ _flow_autolog() {
   # so the guarantee cannot depend on the operator having added an ignore rule.
   # `*` matches this file too, which is intended: nothing here belongs in git.
   mkdir -p "$autolog_dir" 2>/dev/null || return 0
+  # A plain `>` follows a symlink, and the `-f` test only blocks an existing
+  # regular file — so a staged link to a non-existent path would be written
+  # through. Refuse it explicitly, as the entry target already is.
+  [ -L "$autolog_dir/.gitignore" ] && return 0
   [ -f "$autolog_dir/.gitignore" ] || printf '*\n' > "$autolog_dir/.gitignore" 2>/dev/null
 
   timestamp=$(date +"%Y-%m-%d %H:%M")

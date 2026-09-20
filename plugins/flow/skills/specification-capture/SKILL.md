@@ -19,7 +19,7 @@ Issue context, journal path (`.decisions/issue-{N}.md`), invocation reason (`sta
 
 ### Step 1: Read the journal first
 
-Run `awk '/^## Specification$/{f=1;print;next} /^## /{f=0} f' "$JOURNAL"` and record which of `### Non-goals`, `### Failure modes`, `### Interface contracts`, `### Risk map` exist. All four present and the issue not newer than the journal (staleness rule in the reference): return verbatim. Otherwise fill only the gaps.
+Run `bin/journal-read-section.sh --file "$JOURNAL" --heading '## Specification'` and record which of `### Non-goals`, `### Failure modes`, `### Interface contracts`, `### Risk map` exist. All four present and the issue not newer than the journal (staleness rule in the reference): return verbatim. Otherwise fill only the gaps.
 
 ### Step 2: Extract from the issue body
 
@@ -37,7 +37,7 @@ Risk map draft: 2-6 rows from the issue and the touched files. Each: where the l
 
 Write `## Specification` per the reference shape (replace if present, append otherwise). All four failure-mode categories are required; a non-applicable one is `none — {reason}`, never blank.
 
-Persist it with `bin/journal-append.sh --file "$JOURNAL" --replace-heading '## Specification' -` (on stdin), never `Write`: an unlocked body write can be published over by the manifest writer's rename. Non-zero exit → `SPEC_CAPTURE_BLOCK: journal write failed (exit {code})`. Re-read with the Step 1 awk; absent → `SPEC_CAPTURE_BLOCK: journal write verification failed`.
+Persist it with `bin/journal-append.sh --file "$JOURNAL" --replace-heading '## Specification' -` (on stdin), never `Write`: an unlocked body write can be published over by the manifest writer's rename. Non-zero exit → `SPEC_CAPTURE_BLOCK: journal write failed (exit {code})`. Re-read with the Step 1 command; absent → `SPEC_CAPTURE_BLOCK: journal write verification failed`.
 
 ### Step 5: Return the captured specification
 

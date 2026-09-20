@@ -44,7 +44,9 @@
 # Removal takes the marker AND the single blank line it was preceded by. The
 # emitter wrote "\n<!-- ... -->\n", so a run of entries collapses to the single
 # separator that separated the real content around it, rather than leaving
-# doubled blank lines behind.
+# doubled blank lines behind. Nothing else is normalized: a run of two or more
+# blanks elsewhere, and any leading or trailing blank, are left exactly as they
+# were — this script was asked to remove breadcrumbs, not to restyle the file.
 
 set -uo pipefail
 
@@ -108,7 +110,6 @@ function fence_char_of(s) {
     if (fence_line(line) && index(line, fence_char) > 0) { in_fence = 0 }
     flush_blank()
     print line
-    printed = 1
     next
   }
   if (fence_line(line)) {
@@ -116,19 +117,30 @@ function fence_char_of(s) {
     fence_char = fence_char_of(line)
     flush_blank()
     print line
-    printed = 1
     next
   }
-  if (line ~ /^<!-- auto-log: /) { removed++; pending_blank = 0; next }
-  if (line == "") { pending_blank = 1; next }
+  if (line ~ /^<!-- auto-log: /) {
+    # Take exactly ONE blank with the marker — the one the emitter wrote before
+    # it — and leave any others where they were. A flag rather than a count
+    # here collapsed a run of blanks to a single one, which rewrote whitespace
+    # the operator never asked to change.
+    if (pending_blank > 0) pending_blank--
+    flush_blank()
+    removed++
+    next
+  }
+  if (line == "") { pending_blank++; next }
   flush_blank()
   print line
-  printed = 1
 }
-function flush_blank() {
-  if (pending_blank) { if (printed) print ""; pending_blank = 0 }
+# A count, and emitted even before any content: leading and trailing blanks are
+# part of the file, not something this script was asked to normalize.
+function flush_blank(   k) {
+  for (k = 0; k < pending_blank; k++) print ""
+  pending_blank = 0
 }
 END {
+  flush_blank()
   if (cnt != "") print removed > cnt
   # Report whether the file ENDED inside an unbalanced fence. Markers after the
   # imbalance are preserved, which is the safe direction — but a silent partial
