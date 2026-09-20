@@ -59,6 +59,15 @@ _flow_autolog() {
     /*) abs="$FILE_PATH" ;;
     *)  abs="${cwd%/}/$FILE_PATH" ;;
   esac
+  # A relative path can traverse out of the repository: "../elsewhere/f.md"
+  # composes to "$cwd/../elsewhere/f.md", which the prefix match below accepts
+  # because nothing here normalizes. Reject any parent segment rather than
+  # resolve it — such a path is either leaving the repo, or (rarely) staying
+  # inside at the cost of one unrecorded breadcrumb, which is the safe way to be
+  # wrong.
+  case "/$abs/" in
+    */../*) return 0 ;;
+  esac
   case "$abs" in
     "$repo_root"/*) rel=${abs#"$repo_root"/} ;;
     *) return 0 ;;
@@ -101,12 +110,20 @@ _flow_autolog() {
   # defense — this is the cheap check that runs first.
   [ -L "$autolog" ] && return 0
 
+  autolog_dir=$(dirname "$autolog")
+  # Refuse a symlinked trail DIRECTORY as well as a symlinked file. The
+  # O_NOFOLLOW inside journal-append.sh protects the final path component only,
+  # so a pre-staged `.decisions/auto-log -> /tmp/elsewhere` would otherwise have
+  # mkdir, the self-ignoring .gitignore and the entry itself all written through
+  # it — the same class as the symlinked-file case the guard above covers, and
+  # the same check bin/flow-strip-auto-log.sh already makes.
+  [ -L "$autolog_dir" ] && return 0
+
   # The trail directory ignores itself. A consumer repo that never ran
   # /flow:setup has no `.decisions/auto-log/` line in its .gitignore, and an
   # untracked directory is exactly the dirty tree this change exists to remove —
   # so the guarantee cannot depend on the operator having added an ignore rule.
   # `*` matches this file too, which is intended: nothing here belongs in git.
-  autolog_dir=$(dirname "$autolog")
   mkdir -p "$autolog_dir" 2>/dev/null || return 0
   [ -f "$autolog_dir/.gitignore" ] || printf '*\n' > "$autolog_dir/.gitignore" 2>/dev/null
 
@@ -118,6 +135,12 @@ _flow_autolog() {
   tool_safe=${tool_safe//<!--/< !--}
   path_safe=${rel//-->/-- >}
   path_safe=${path_safe//<!--/< !--}
+  # A newline in the path ends the breadcrumb's line and lands whatever follows
+  # as ORDINARY markdown — the outcome the `-->` escaping exists to prevent,
+  # reached through a character that escaping set omits. Collapse every
+  # whitespace control to a space so one entry is always exactly one line.
+  path_safe=$(printf '%s' "$path_safe" | LC_ALL=C tr '\n\r\t' '   ')
+  tool_safe=$(printf '%s' "$tool_safe" | LC_ALL=C tr '\n\r\t' '   ')
 
   # A subagent's tool calls fire this same hook; agent_type is present only
   # then. It is sanitized too — it comes from an agent definition a plugin or a
@@ -127,6 +150,7 @@ _flow_autolog() {
   if [ -n "$agent_type" ]; then
     agent_safe=${agent_type//-->/-- >}
     agent_safe=${agent_safe//<!--/< !--}
+    agent_safe=$(printf '%s' "$agent_safe" | LC_ALL=C tr '\n\r\t' '   ')
     agent_safe=" agent=$agent_safe"
   fi
 

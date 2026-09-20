@@ -72,12 +72,18 @@ if [ -f "$TRACKED" ]; then
   # (O_NOFOLLOW) as well; this is the cheap check that runs first.
   [ -L "$AUTOLOG" ] && exit 0
 
+  AUTOLOG_DIR=$(dirname "$AUTOLOG")
+  # Refuse a symlinked trail DIRECTORY as well as a symlinked file — see
+  # log-file-changes.sh. O_NOFOLLOW in journal-append.sh covers the final
+  # component only, so mkdir and the self-ignoring .gitignore would otherwise be
+  # written through a pre-staged directory symlink.
+  [ -L "$AUTOLOG_DIR" ] && exit 0
+
   # The trail directory ignores itself. A consumer repo that never ran
   # /flow:setup has no `.decisions/auto-log/` line in its .gitignore, and an
   # untracked directory is exactly the dirty tree this change exists to remove —
   # so the guarantee cannot depend on the operator having added an ignore rule.
   # `*` matches this file too, which is intended: nothing here belongs in git.
-  AUTOLOG_DIR=$(dirname "$AUTOLOG")
   mkdir -p "$AUTOLOG_DIR" 2>/dev/null || exit 0
   [ -f "$AUTOLOG_DIR/.gitignore" ] || printf '*\n' > "$AUTOLOG_DIR/.gitignore" 2>/dev/null
 
@@ -115,6 +121,10 @@ if [ -f "$TRACKED" ]; then
   if [ -n "$AGENT_TYPE" ]; then
     AGENT_SAFE=${AGENT_TYPE//-->/-- >}
     AGENT_SAFE=${AGENT_SAFE//<!--/< !--}
+    # A newline would end the breadcrumb's line and land the rest as ordinary
+    # markdown — the outcome the escaping above exists to prevent, reached
+    # through a character that escaping set omits.
+    AGENT_SAFE=$(printf '%s' "$AGENT_SAFE" | LC_ALL=C tr '\n\r\t' '   ')
     AGENT_SAFE=" agent=$AGENT_SAFE"
   fi
 

@@ -15,8 +15,9 @@
 #
 # The fixtures reuse the two shapes that exist in this repository's own
 # journals, so the tests describe real input rather than invented input:
-# `.decisions/issue-149.md:68` is an emitter line with no HH:MM, and
+# historical issue-149.md carried an emitter line with no HH:MM, and
 # `.decisions/issue-55.md:31` is prose mentioning the token inside backticks.
+# (The strip removed the issue-149 line; the shape is what the fixture copies.)
 
 STRIP="$REPO_ROOT/plugins/flow/bin/flow-strip-auto-log.sh"
 
@@ -127,7 +128,7 @@ bash "$STRIP" --apply "$D/.decisions" >/dev/null 2>&1
 assert_equal "$BEFORE" "$(cat "$J")" "T6 prose untouched"
 
 # --- T7: an emitter line with no HH:MM is stripped --------------------------
-# The issue-149.md:68 shape. A timestamp regex would leave it behind.
+# The historical no-HH:MM shape. A timestamp regex would leave it behind.
 _flow_test_begin "T7 emitter line with no time is stripped"
 D=$(_fs_dir); mkdir -p "$D/.decisions"
 J="$D/.decisions/issue-7.md"
@@ -180,6 +181,32 @@ OUT=$(bash "$STRIP" "$D/no-such-dir" 2>&1)
 RC=$?
 assert_exit 0 "$RC" "T12 exit 0"
 assert_contains "STRIP_AUTO_LOG=none" "$OUT" "T12 reports none for an absent dir"
+
+# --- T14: an unbalanced fence is reported, never silently clean ---------------
+# A file ending inside an open fence has its later markers preserved (the safe
+# direction), which can leave it looking like there was nothing to strip. A
+# silent partial strip reads identically to a clean repository, and
+# /flow:setup's instruction is to proceed silently on `none` — so this must not
+# report `none`.
+_flow_test_begin "T14 unbalanced fence is reported"
+D=$(_fs_dir); mkdir -p "$D/.decisions"
+printf 'HEAD\n\n```\nopened never closed\n\n<!-- auto-log: 2026-01-01 10:00 Edit real.sh -->\ntail\n' \
+  > "$D/.decisions/issue-14.md"
+OUT=$(bash "$STRIP" "$D/.decisions" 2>&1)
+assert_contains "STRIP_AUTO_LOG_WARN=" "$OUT" "T14 warns about the unclosed fence"
+assert_contains "unclosed fence" "$OUT" "T14 the warning says why"
+assert_not_contains "STRIP_AUTO_LOG=none" "$OUT" "T14 not reported as clean"
+assert_contains "STRIP_AUTO_LOG_WARNED=1" "$OUT" "T14 counts the partial strip"
+BODY=$(cat "$D/.decisions/issue-14.md")
+assert_contains "real.sh" "$BODY" "T14 the file was left as it was, not half-written"
+
+# --- T15: a file with no imbalance still reports none ------------------------
+# The guard for T14 must not make every clean run noisy.
+_flow_test_begin "T15 a clean journal still reports none"
+D=$(_fs_dir); mkdir -p "$D/.decisions"
+printf 'balanced:\n\n```\ncode\n```\n' > "$D/.decisions/issue-15.md"
+OUT=$(bash "$STRIP" "$D/.decisions" 2>&1)
+assert_contains "STRIP_AUTO_LOG=none" "$OUT" "T15 balanced fences are not a warning"
 
 # --- T13: a filename cannot forge a report line -----------------------------
 # one_line() is the same defense bin/flow-migrate-settings.sh applies: these

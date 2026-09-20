@@ -266,22 +266,86 @@ else
   _flow_assert_pass "T13 journal-only commit not logged"
 fi
 
-# --- T14: one entry is one write — no stray lone blank line ------------------
-_flow_test_begin "T14 a single entry is one write"
+# --- T14: the hook routes through the LOCKED helper --------------------------
+# The assertion that makes the routing observable. Without it, reverting the
+# hook to the pre-change unlocked two-`echo >>` writes leaves this whole file
+# green — verified: 30/30 — and the integration with the helper is asserted
+# nowhere. The lock file is created only by acquire_lock() in the helper, so
+# its presence is a direct consequence of the routing.
+_flow_test_begin "T14 the entry is written through the locked helper"
 D=$(_ar_make_repo "feature/issue-99-relocate" 99)
 mkdir -p "$D/src"; printf 'x\n' > "$D/src/app.sh"
 _ar_payload "Edit" '{"file_path":"src/app.sh"}' "$D" | \
   CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" bash "$HOOK_EDIT" >/dev/null 2>&1
 AUTOLOG="$D/.decisions/auto-log/issue-99.$THIS_MONTH.md"
-TRAILING_BLANKS=$(grep -c '^$' "$AUTOLOG" 2>/dev/null)
-assert_equal "1" "$TRAILING_BLANKS" "T14 exactly one separating blank line per entry"
+assert_file_exists "$AUTOLOG.lock" "T14 the helper's lockfile exists (two bare echoes create none)"
+BLANKS=$(grep -c '^$' "$AUTOLOG" 2>/dev/null)
+assert_equal "1" "$BLANKS" "T14 one separating blank line per entry"
+
+# --- T15: a newline in the recorded path cannot inject a line ----------------
+# AC9's escaping covered only `-->` and `<!--`, so a path carrying a newline
+# ended the breadcrumb's line and landed the remainder as ORDINARY markdown —
+# the outcome the escaping exists to prevent, reached through a character the
+# escape set omits.
+_flow_test_begin "T15 a newline in the path is neutralized"
+D=$(_ar_make_repo "feature/issue-99-relocate" 99)
+mkdir -p "$D/src"
+_ar_payload "Write" '{"file_path":"src/ok.md\n\nINJECTED"}' "$D" | \
+  CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" bash "$HOOK_EDIT" >/dev/null 2>&1
+AUTOLOG="$D/.decisions/auto-log/issue-99.$THIS_MONTH.md"
+if [ -f "$AUTOLOG" ]; then
+  # The injected text lands at the START of its own line (the closing ` -->`
+  # trails it), so the match is anchored at the line start, not the line end.
+  INJECTED=$(grep -c '^INJECTED' "$AUTOLOG" 2>/dev/null)
+  assert_equal "0" "$INJECTED" "T15 no injected line in the trail"
+  assert_equal "1" "$(grep -c '^<!-- auto-log: ' "$AUTOLOG")" "T15 still exactly one entry line"
+else
+  _flow_assert_pass "T15 a newline-bearing path was skipped entirely (also safe)"
+fi
+
+# --- T16: a relative path cannot traverse out of the repository --------------
+# AC5, the case the absolute-path and sibling-prefix tests both miss: "../x"
+# composes to "$cwd/../x", which a prefix match accepts because nothing
+# normalizes it.
+_flow_test_begin "T16 relative traversal out of the repo is skipped"
+D=$(_ar_make_repo "feature/issue-99-relocate" 99)
+mkdir -p "$D/src"
+_ar_payload "Write" '{"file_path":"../outside-$$-file.txt"}' "$D" | \
+  CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" bash "$HOOK_EDIT" >/dev/null 2>&1
+assert_exit 0 "$?" "T16 exit 0"
+if [ -f "$D/.decisions/auto-log/issue-99.$THIS_MONTH.md" ]; then
+  BODY=$(cat "$D/.decisions/auto-log/issue-99.$THIS_MONTH.md")
+  assert_not_contains "../outside" "$BODY" "T16 the traversing path was not recorded"
+else
+  _flow_assert_pass "T16 nothing recorded for a traversing path"
+fi
+
+# --- T17: a symlinked trail DIRECTORY is not followed ------------------------
+# O_NOFOLLOW in journal-append.sh covers the final path component only, so
+# mkdir and the self-ignoring .gitignore would otherwise be written through a
+# pre-staged directory symlink.
+_flow_test_begin "T17 a symlinked auto-log directory is refused"
+D=$(_ar_make_repo "feature/issue-99-relocate" 99)
+OUTSIDE="$D-elsewhere"
+mkdir -p "$OUTSIDE"
+AR_CLEANUP_PATHS+=("$OUTSIDE")
+ln -s "$OUTSIDE" "$D/.decisions/auto-log"
+mkdir -p "$D/src"; printf 'x\n' > "$D/src/app.sh"
+_ar_payload "Edit" '{"file_path":"src/app.sh"}' "$D" | \
+  CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" bash "$HOOK_EDIT" >/dev/null 2>&1
+assert_exit 0 "$?" "T17 exit 0"
+if [ -e "$OUTSIDE/.gitignore" ] || ls "$OUTSIDE"/issue-99.*.md >/dev/null 2>&1; then
+  _flow_assert_fail "T17 wrote through the directory symlink: $(ls -A "$OUTSIDE" | tr '\n' ' ')"
+else
+  _flow_assert_pass "T17 nothing was written through the directory symlink"
+fi
 
 # --- T15: AC1 in a consumer repo that never ran /flow:setup ------------------
 # The repo's own .gitignore is not the mechanism that matters — a consumer
 # installs the plugin and gets the hook, but may never run setup. If the trail
 # directory were merely untracked rather than ignored, the tree would be dirty
 # anyway and AC1 would hold only in this repository.
-_flow_test_begin "T15 consumer repo stays clean with no setup"
+_flow_test_begin "T18 consumer repo stays clean with no setup"
 D=$(_ar_make_repo "feature/issue-99-relocate" 99)
 # The scenario AC1 describes is a session that edits files AND commits, so the
 # edited file is committed before the hook runs — otherwise the untracked file
@@ -299,17 +363,23 @@ assert_equal "" "$DIRTY" "T15 git status is clean after a breadcrumb"
 # --- T16: a payload with no cwd falls back to the process directory ----------
 # Run with the process cwd inside the scratch repo, so the fallback is provable
 # without writing into this repository.
-_flow_test_begin "T16 missing cwd falls back to \$PWD"
+_flow_test_begin "T19 missing cwd falls back to the process directory"
 D=$(_ar_make_repo "feature/issue-99-relocate" 99)
 mkdir -p "$D/src"; printf 'x\n' > "$D/src/app.sh"
 ( cd "$D" && printf '{"tool_name":"Edit","tool_input":{"file_path":"src/app.sh"}}' | \
   CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" bash "$HOOK_EDIT" >/dev/null 2>&1 )
 assert_file_exists "$D/.decisions/auto-log/issue-99.$THIS_MONTH.md" "T16 fell back to \$PWD"
 
-# --- T17: a payload cwd that no longer exists is not fatal -------------------
-_flow_test_begin "T17 deleted cwd exits cleanly"
+# --- T20: a payload cwd that no longer exists falls back to $PWD -------------
+# Run from inside a scratch repo so the fallback has somewhere hermetic to land.
+# An earlier version of this test ran from the runner's cwd and wrote a
+# breadcrumb into whichever checkout the suite happened to be run from, and its
+# `assert_exit 0` could not fail: the hook's last statement is `exit 0`.
+_flow_test_begin "T20 deleted cwd falls back to the process directory"
 D=$(_ar_make_repo "feature/issue-99-relocate" 99)
 GONE="$D-then-deleted"
-_ar_payload "Edit" '{"file_path":"src/app.sh"}' "$GONE" | \
-  CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" bash "$HOOK_EDIT" >/dev/null 2>&1
-assert_exit 0 "$?" "T17 exit 0 for a cwd that does not exist"
+mkdir -p "$D/src"; printf 'x\n' > "$D/src/app.sh"
+( cd "$D" && printf '{"tool_name":"Edit","tool_input":{"file_path":"src/app.sh"},"cwd":"%s"}' "$GONE" | \
+  CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" bash "$HOOK_EDIT" >/dev/null 2>&1 )
+assert_file_exists "$D/.decisions/auto-log/issue-99.$THIS_MONTH.md" \
+  "T20 fell back to the process directory"

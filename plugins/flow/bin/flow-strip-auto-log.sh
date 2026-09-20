@@ -35,7 +35,7 @@
 #
 # What counts as a breadcrumb: a line beginning `<!-- auto-log: ` — the
 # emitter's own prefix, deliberately NOT a timestamp regex, because one
-# historical emitter line (`issue-149.md:68`) carries no HH:MM. Lines inside a
+# historical emitter line carried no HH:MM at all. Lines inside a
 # fenced code block are never touched: a journal may legitimately quote the
 # entry format (the schema reference documents it that way), and stripping a
 # quoted example would corrupt a document. Migration is idempotent: a second
@@ -128,7 +128,13 @@ function fence_char_of(s) {
 function flush_blank() {
   if (pending_blank) { if (printed) print ""; pending_blank = 0 }
 }
-END { if (cnt != "") print removed > cnt }
+END {
+  if (cnt != "") print removed > cnt
+  # Report whether the file ENDED inside an unbalanced fence. Markers after the
+  # imbalance are preserved, which is the safe direction — but a silent partial
+  # strip reads identically to "no churn here", so it has to be said out loud.
+  if (unbal != "") print (in_fence ? "1" : "0") > unbal
+}
 '
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/flow-strip-auto-log.XXXXXX" 2>/dev/null) || {
@@ -138,6 +144,7 @@ trap cleanup EXIT INT TERM
 
 FILES=0
 LINES=0
+WARNED=0
 REPORT=""
 
 for JOURNAL in "$JOURNAL_DIR"/*.md; do
@@ -149,10 +156,21 @@ for JOURNAL in "$JOURNAL_DIR"/*.md; do
 
   OUT="$WORK/out.$$"
   CNT="$WORK/cnt.$$"
+  UNBAL="$WORK/unbal.$$"
   : > "$CNT"
-  awk -v cnt="$CNT" "$STRIP_AWK" "$JOURNAL" > "$OUT" 2>/dev/null
+  : > "$UNBAL"
+  awk -v cnt="$CNT" -v unbal="$UNBAL" "$STRIP_AWK" "$JOURNAL" > "$OUT" 2>/dev/null
   REMOVED=$(cat "$CNT" 2>/dev/null || echo 0)
   [ -n "$REMOVED" ] || REMOVED=0
+
+  # Checked before the early-continue: a file whose only markers sit after an
+  # unbalanced fence strips nothing, and reporting `none` for it would tell the
+  # operator the repository is clean while the residue is visible in the diff.
+  if [ "$(cat "$UNBAL" 2>/dev/null)" = "1" ]; then
+    WARNED=$((WARNED + 1))
+    REPORT="${REPORT}STRIP_AUTO_LOG_WARN=$(one_line "$JOURNAL") unclosed fence — left partially stripped
+"
+  fi
 
   if [ "$REMOVED" -eq 0 ]; then
     continue
@@ -188,18 +206,22 @@ for JOURNAL in "$JOURNAL_DIR"/*.md; do
   fi
 done
 
-if [ "$FILES" -eq 0 ]; then
+# `none` means nothing to do. A journal left partially stripped because of an
+# unbalanced fence is NOT nothing to do — it is work that could not be completed
+# — so it must not be reported as clean.
+if [ "$FILES" -eq 0 ] && [ "$WARNED" -eq 0 ]; then
   echo "STRIP_AUTO_LOG=none"
   exit 0
 fi
 
 if [ "$APPLY" -eq 1 ]; then
   printf '%s' "$REPORT"
-  echo "STRIP_AUTO_LOG_APPLIED=1 files=$FILES removed=$LINES"
+  echo "STRIP_AUTO_LOG_APPLIED=1 files=$FILES removed=$LINES warned=$WARNED"
   exit 0
 fi
 
 printf '%s' "$REPORT"
 echo "STRIP_AUTO_LOG=$FILES files, $LINES lines"
+echo "STRIP_AUTO_LOG_WARNED=$WARNED journals left partially stripped"
 echo "STRIP_AUTO_LOG_MODE=dry-run (re-run with --apply to write)"
 exit 0

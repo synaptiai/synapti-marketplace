@@ -71,7 +71,7 @@ _Captured by specification-capture skill on 2026-09-20. Source: user-confirmed._
 **Rationale**: The defect was two writer classes on one file with one lock between them. `record_artifact()` reads the whole file, and the unlocked appenders extended it while it did; its rename then published the pre-append snapshot. Sharing the lockfile is what removes the class, not just the two hooks that happened to be loudest.
 
 **Evidence — what the tests actually discriminate.** Mutations applied and reverted:
-- removing the shared lock from `append_body` → T9 fails, reproducing the original defect;
+- removing the shared lock from `append_body` → T8 (lockfile existence) and T12 (lock ordering) fail. **T9 is not the discriminator it was written to be**: an independent pass ran it eight times against that mutation and it passed every time, and a later replay here measured T8/T12 failing while T9 stayed green. It reached the window once and I recorded that as its behaviour; one observation was not enough to name it the test for this. T12 is the deterministic one; T9 is a flaky extra.
 - replacing the locked read-modify-write with a truncating open (`O_TRUNC`) → T10 fails on all four assertions;
 - opening the target *before* acquiring the lock → **T12** fails.
 
@@ -83,4 +83,4 @@ _Captured by specification-capture skill on 2026-09-20. Source: user-confirmed._
 - A read-modify-write body append under the lock — correct against cooperating writers, but it publishes a stale snapshot over any writer that cannot see `flock` (an editor, a session on an older plugin version, a bare `>>` from an un-migrated consumer).
 - A separate lockfile for the body — rejected: it would serialize nothing, since the whole defect is that two writer classes must contend on ONE lock.
 
-**Test coverage**: `plugins/flow/tests/journal-append.test.sh`, 26 assertions.
+**Test coverage**: `plugins/flow/tests/journal-append.test.sh` (42 assertions at the time of writing) and `plugins/flow/tests/auto-log-relocation.test.sh` (37).
