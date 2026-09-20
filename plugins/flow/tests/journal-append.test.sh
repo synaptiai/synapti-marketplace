@@ -655,3 +655,37 @@ assert_contains "a-third-section" "$BODY" "T22 the shorter heading's section is 
 SECTION=$(bash "$REPO_ROOT/plugins/flow/bin/journal-read-section.sh" \
   --file "$J" --heading "## Specification" 2>/dev/null)
 assert_not_contains "a-different-section" "$SECTION" "T22 the reader stops at the exact heading"
+
+# --- Test 23: the READER's own fence rule ------------------------------------
+# journal-read-section.sh carries its own fence tracker, and no test exercised
+# its run-length rule: deleting it left this whole file green (measured, 74/74)
+# while the reader ended a section early. The fence has to sit INSIDE the
+# section being read — a fence in a later section is never reached.
+_flow_test_begin "T23 the reader keeps a nested fence open"
+DIR=$(_ja_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+J="$DIR/.decisions/issue-23.md"
+cat > "$J" <<'EOF'
+## Specification
+
+before-fence
+
+````
+```
+## QuotedInsideFence
+inside-fence-body
+```
+````
+
+after-fence
+
+## Tail
+
+tail-body
+EOF
+SECTION=$(bash "$REPO_ROOT/plugins/flow/bin/journal-read-section.sh" \
+  --file "$J" --heading "## Specification" 2>/dev/null)
+assert_contains "before-fence" "$SECTION" "T23 the section's own body is returned"
+assert_contains "after-fence" "$SECTION" "T23 a quoted heading inside the fence did not end the section"
+assert_contains "inside-fence-body" "$SECTION" "T23 the fenced example came through whole"
+assert_not_contains "tail-body" "$SECTION" "T23 the reader still stops at the real heading"
