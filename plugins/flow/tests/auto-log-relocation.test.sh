@@ -440,3 +440,23 @@ if grep -q 'AUTOLOG_FILES' "$EXPLAIN" 2>/dev/null; then
 else
   _flow_assert_fail "T23 explain does not report an AUTOLOG_FILES count"
 fi
+
+# --- T24: the EDIT hook's own escaping is asserted ---------------------------
+# AC9 names both writers, and only the commit hook's subject escaping was
+# pinned: deleting the `-->` / `<!--` neutralization from log-file-changes.sh
+# left both suites green (measured). The path and the subagent tag are the two
+# fields it applies to, so both are exercised here.
+_flow_test_begin "T24 the edit hook neutralizes comment terminators"
+D=$(_ar_make_repo "feature/issue-99-relocate" 99)
+mkdir -p "$D/src"
+ODD="$D/src/odd-->name.md"
+printf 'x\n' > "$ODD"
+_ar_payload "Write" "{\"file_path\":\"$ODD\"}" "$D" "flow:<!--evil-->" | \
+  CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" bash "$HOOK_EDIT" >/dev/null 2>&1
+AUTOLOG="$D/.decisions/auto-log/issue-99.$THIS_MONTH.md"
+BODY=$(cat "$AUTOLOG" 2>/dev/null)
+assert_not_contains "odd-->name" "$BODY" "T24 no raw terminator from the path"
+assert_not_contains "<!--evil" "$BODY" "T24 no raw comment opener from the agent tag"
+assert_contains "-- >" "$BODY" "T24 the terminator was neutralized, not dropped"
+assert_equal "1" "$(grep -c '^<!-- auto-log: ' "$AUTOLOG" 2>/dev/null)" \
+  "T24 still exactly one entry line"

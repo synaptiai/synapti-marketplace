@@ -19,14 +19,14 @@ objective:
       clean — no journal file reports as modified.
     verification_command: bash plugins/flow/tests/run.sh auto-log-relocation.test.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-AC1.evidence.yaml
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac1.evidence.yaml
     last_evaluated_at: '2026-09-20T00:43:08Z'
     last_result: pass
   - id: AC2
     text: No tracked journal file contains a machine breadcrumb.
     verification_command: bash tests/journal-no-autolog/validate.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-AC2.evidence.yaml
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac2.evidence.yaml
     last_evaluated_at: '2026-09-20T00:43:08Z'
     last_result: pass
   - id: AC3
@@ -34,7 +34,7 @@ objective:
       are present afterwards, and repeated parallel runs never lose either.
     verification_command: bash plugins/flow/tests/run.sh journal-append.test.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-AC3.evidence.yaml
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac3.evidence.yaml
     last_evaluated_at: '2026-09-20T00:43:08Z'
     last_result: pass
   - id: AC4
@@ -42,14 +42,14 @@ objective:
       does not halt while other writers are active.
     verification_command: bash plugins/flow/tests/run.sh journal-append.test.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-AC3.evidence.yaml
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac3.evidence.yaml
     last_evaluated_at: '2026-09-20T00:43:08Z'
     last_result: pass
   - id: AC5
     text: A breadcrumb for a path outside the repository is not recorded.
     verification_command: bash plugins/flow/tests/run.sh auto-log-relocation.test.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-AC1.evidence.yaml
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac1.evidence.yaml
     last_evaluated_at: '2026-09-20T00:43:08Z'
     last_result: pass
   - id: AC6
@@ -57,14 +57,14 @@ objective:
       the main checkout's journal untouched.
     verification_command: bash plugins/flow/tests/run.sh auto-log-relocation.test.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-AC1.evidence.yaml
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac1.evidence.yaml
     last_evaluated_at: '2026-09-20T00:43:08Z'
     last_result: pass
   - id: AC7
     text: A breadcrumb produced by a subagent identifies which subagent produced it.
     verification_command: bash plugins/flow/tests/run.sh auto-log-relocation.test.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-AC1.evidence.yaml
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac1.evidence.yaml
     last_evaluated_at: '2026-09-20T00:43:08Z'
     last_result: pass
   - id: AC8
@@ -74,7 +74,7 @@ objective:
       a journal.
     verification_command: bash plugins/flow/tests/run.sh flow-strip-auto-log.test.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-AC8.evidence.yaml
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac8.evidence.yaml
     last_evaluated_at: '2026-09-20T00:43:08Z'
     last_result: pass
   - id: AC9
@@ -83,14 +83,14 @@ objective:
       when a breadcrumb is written.
     verification_command: bash plugins/flow/tests/run.sh flow-strip-auto-log.test.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-AC8.evidence.yaml
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac8.evidence.yaml
     last_evaluated_at: '2026-09-20T00:43:08Z'
     last_result: pass
   - id: AC10
     text: The plugin's hooks run on macOS with the system bash 3.2 and on Windows.
     verification_command: bash plugins/flow/tests/windows-hooks-smoke.sh
     status: pass
-    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-AC10.evidence.yaml
+    evidence_ref: .flow/runs/2026-09-19T233805Z-issue-244/evidence/evidence-ac10.evidence.yaml
     last_evaluated_at: '2026-09-20T00:43:08Z'
     last_result: pass
 specification:

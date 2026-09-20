@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 # Regression test for SEC-3 and SEC-7 against the hooks' CURRENT write target.
 #
-# SEC-3: log-commits.sh and log-file-changes.sh must refuse to append when the
-# file they write is a symlink. Without that guard the append follows the link
-# and lands this hook's output — which carries a partially attacker-controlled
-# commit subject and file path — in any user-writable file.
+# SEC-3: log-commits.sh and log-file-changes.sh must not append through a
+# symlink. Without that, the append follows the link and lands this hook's
+# output — which carries a partially attacker-controlled commit subject and file
+# path — in any user-writable file.
+#
+# What this file asserts is the OUTCOME (nothing reaches the link target), and
+# the outcome is enforced at two layers: the hooks' own `[ -L ]` check, and
+# O_NOFOLLOW inside bin/journal-append.sh. Measured apart, deleting the
+# hook-level guard alone leaves these 8 assertions green — the helper still
+# refuses — so this file does not discriminate that layer, and it is not trying
+# to. The discriminating test for the O_NOFOLLOW layer is
+# plugins/flow/tests/journal-append.test.sh T5, which drives the helper directly
+# and asserts exit 2. Keep both layers: the hook check is the cheap one that runs
+# first, and the syscall check is the one that cannot be raced.
 #
 # The target moved in issue #244. The breadcrumb no longer goes to the tracked
 # `.decisions/issue-N.md`; it goes to `.decisions/auto-log/issue-N.<YYYY-MM>.md`,
