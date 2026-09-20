@@ -120,7 +120,10 @@ if command -v jq >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
       # without writing anything. That broke the .gitignore assertion, which had
       # been passing. Build the fixture under a directory that exists in both
       # worlds, then let cygpath render it in each tool's own form.
-      for _base in "$RUNNER_TEMP" "$TEMP" "$TMPDIR" "$HOME"; do
+      # Every expansion carries a default: this file runs under `set -u`, and
+      # a bare "$TMPDIR" aborted the whole job on Windows with "unbound
+      # variable" before the loop body ran once.
+      for _base in "${RUNNER_TEMP:-}" "${TEMP:-}" "${TMPDIR:-}" "${HOME:-}"; do
         [ -n "$_base" ] || continue
         _posix=$(cygpath -u "$_base" 2>/dev/null) || continue
         [ -d "$_posix" ] || continue
