@@ -35,7 +35,26 @@ Risk map draft: 2-6 rows from the issue and the touched files. Each row: where t
 
 ### Step 4: Write the journal
 
-Write `## Specification` per the reference shape (replace if present, append otherwise). All four failure-mode categories are required; a non-applicable one is `none — {reason}`, never blank. Re-read with the Step 1 awk; if the section is absent, halt with `SPEC_CAPTURE_BLOCK: journal write verification failed`.
+Write `## Specification` per the reference shape (replace if present, append otherwise). All four failure-mode categories are required; a non-applicable one is `none — {reason}`, never blank.
+
+The write goes through `bin/journal-append.sh`, **not** the `Write` tool. The journal has two writer classes and they must share one lock: the manifest writer holds a flock across a whole-file read → tempfile → rename, so a body write that took no lock could be published over by that rename — which is precisely how this step's own verification came to fail intermittently. `--replace-heading` gives the "replace if present, append otherwise" semantics under that same lock.
+
+```bash
+cat << 'SPEC' | "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-append.sh" --file "$JOURNAL" --replace-heading '## Specification' -
+### Non-goals
+...
+### Failure modes
+...
+### Interface contracts
+...
+### Risk map
+...
+SPEC
+```
+
+If the helper exits non-zero, halt with `SPEC_CAPTURE_BLOCK: journal write failed (exit {code})` — do not fall back to the `Write` tool, which is what reintroduces the unlocked writer.
+
+Re-read with the Step 1 awk; if the section is absent, halt with `SPEC_CAPTURE_BLOCK: journal write verification failed`.
 
 ### Step 5: Return the captured specification
 

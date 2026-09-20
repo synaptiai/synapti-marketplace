@@ -193,14 +193,15 @@ Use the AskUserQuestion tool with contextual options to ask: "I recommend Approa
 ```bash
 BRANCH=$(git branch --show-current)
 ISSUE_NUM=$(printf '%s\n' "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-JOURNAL_DIR=".decisions"
-[ -n "$ISSUE_NUM" ] && [ -d "$JOURNAL_DIR" ] && cat >> "$JOURNAL_DIR/issue-$ISSUE_NUM.md" << 'ENTRY'
+if [ -n "$ISSUE_NUM" ]; then
+  cat << 'ENTRY' | "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-append.sh" --issue "$ISSUE_NUM" -
 ## Brainstorm Decision: {topic}
 **Date**: {YYYY-MM-DD} | **Category**: approach-selection
 **Options considered**: {list of approaches}
 **Decision**: {chosen approach}
 **Rationale**: {why this over alternatives}
 ENTRY
+fi
 ```
 
    **Manifest emit** — append the brainstorm-decision artifact to the journal manifest alongside the freeform `## Brainstorm Decision` section:

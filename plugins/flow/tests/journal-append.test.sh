@@ -247,3 +247,140 @@ done
 wait 2>/dev/null
 TORN=$(grep -c 'ENTRY-.*-END' "$DIR/.decisions/issue-12.md" 2>/dev/null)
 assert_equal "10" "$TORN" "T11 all ten entries intact, none torn"
+
+# --- Test 12: the lock-ordering invariant (risk map row 3) -------------------
+# Deterministic, unlike T9/T10. A blocker holds <target>.lock, reads the file,
+# publishes a stale copy over it, and releases — while the appender is already
+# running. Two distinct wrong implementations lose the entry here:
+#
+#   * no shared lock      — the appender writes immediately, then the blocker's
+#                           rename replaces the file with its stale snapshot;
+#   * lock AFTER open     — the appender's fd points at the pre-rename inode,
+#                           so its write lands in an unlinked file.
+#
+# Only "lock, then open" survives. This is why the ordering is an invariant and
+# not a style preference. T9/T10 could not reach this: a bash background write
+# finishes in microseconds while the helper takes tens of milliseconds to spawn,
+# so the append almost always lands before the blocker's read.
+_flow_test_begin "T12 lock ordering: lock before open"
+DIR=$(_ja_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+TARGET="$DIR/.decisions/issue-13.md"
+printf 'SEED\n' > "$TARGET"
+READY="$DIR/blocker.ready"
+
+python3 - "$TARGET.lock" "$TARGET" "$READY" <<'PY' &
+import fcntl, os, sys, time
+lockfile, target, ready = sys.argv[1], sys.argv[2], sys.argv[3]
+fd = os.open(lockfile, os.O_RDWR | os.O_CREAT, 0o600)
+fcntl.flock(fd, fcntl.LOCK_EX)
+with open(target, "r", encoding="utf-8") as fh:
+    stale = fh.read()          # the snapshot the appender must not be lost to
+open(ready, "w").write("1")
+time.sleep(1.0)                # a window no timing-based bash race can hit
+tmp = target + ".blocker.tmp"
+with open(tmp, "w", encoding="utf-8") as fh:
+    fh.write(stale)
+os.rename(tmp, target)         # publish the stale copy over the file
+fcntl.flock(fd, fcntl.LOCK_UN)
+os.close(fd)
+PY
+BLOCKER=$!
+
+# Wait for the blocker to hold the lock before starting the appender.
+i=0
+while [ ! -f "$READY" ] && [ "$i" -lt 200 ]; do
+  i=$((i + 1))
+  sleep 0.05
+done
+if [ ! -f "$READY" ]; then
+  _flow_assert_fail "T12 blocker never signalled readiness"
+else
+  _run_append "$DIR" --file ".decisions/issue-13.md" --text "SURVIVOR" >/dev/null 2>&1
+  wait "$BLOCKER" 2>/dev/null
+  if grep -q "SURVIVOR" "$TARGET" 2>/dev/null; then
+    _flow_assert_pass "T12 the append survived a concurrent stale-copy publish"
+  else
+    _flow_assert_fail "T12 the append was lost — the target was opened before the lock was taken, or taken at all"
+  fi
+fi
+
+# --- Test 13: AC4 — a section write survives concurrent manifest writes -------
+# This is the failure specification-capture reports as SPEC_CAPTURE_BLOCK: it
+# writes the section, re-reads it with the Step 1 awk, and finds it gone
+# because a manifest writer's rename published over it. The section is written
+# here through replace_section() under the shared lock, so it must survive.
+# Uses the same controlled blocker as T12. Backgrounded manifest writers do NOT
+# reach this window — eight of them against an unlocked replace_section left
+# this test green on three consecutive runs — because they finish before or
+# after the section write rather than inside it.
+_flow_test_begin "T13 section survives a concurrent stale-copy publish"
+DIR=$(_ja_mktemp_dir)
+mkdir -p "$DIR/.decisions"
+J="$DIR/.decisions/issue-14.md"
+cat > "$J" <<'EOF'
+# Journal
+
+## Specification
+
+OLD
+
+## Other
+
+keep-me
+EOF
+READY13="$DIR/blocker13.ready"
+python3 - "$J.lock" "$J" "$READY13" <<'PY' &
+import fcntl, os, sys, time
+lockfile, target, ready = sys.argv[1], sys.argv[2], sys.argv[3]
+fd = os.open(lockfile, os.O_RDWR | os.O_CREAT, 0o600)
+fcntl.flock(fd, fcntl.LOCK_EX)
+with open(target, "r", encoding="utf-8") as fh:
+    stale = fh.read()
+open(ready, "w").write("1")
+time.sleep(1.0)
+tmp = target + ".blocker.tmp"
+with open(tmp, "w", encoding="utf-8") as fh:
+    fh.write(stale)
+os.rename(tmp, target)
+fcntl.flock(fd, fcntl.LOCK_UN)
+os.close(fd)
+PY
+BLOCKER13=$!
+i=0
+while [ ! -f "$READY13" ] && [ "$i" -lt 200 ]; do i=$((i + 1)); sleep 0.05; done
+if [ ! -f "$READY13" ]; then
+  _flow_assert_fail "T13 blocker never signalled readiness"
+else
+  printf '### Non-goals\n- the new body\n' | \
+    _run_append "$DIR" --file ".decisions/issue-14.md" --replace-heading "## Specification" - >/dev/null 2>&1
+  wait "$BLOCKER13" 2>/dev/null
+  SECTION=$(awk '/^## Specification$/{f=1;print;next} /^## /{f=0} f' "$J" 2>/dev/null)
+  assert_contains "the new body" "$SECTION" "T13 the section is still readable by the Step 1 awk"
+  assert_not_contains "OLD" "$SECTION" "T13 the old body was replaced, not duplicated"
+  assert_equal "1" "$(grep -c '^## Specification$' "$J")" "T13 exactly one Specification heading"
+  assert_contains "keep-me" "$(cat "$J")" "T13 the following section survived"
+fi
+
+# --- Test 14: the call sites actually route through the helper ---------------
+# Static, and deliberately so: without it, AC4's implementation could regress
+# to an unlocked `cat >>` with every runtime test above still green, because
+# those tests exercise the helper rather than the commands that call it.
+_flow_test_begin "T14 journal body writers use the locked helper"
+for f in commands/design.md commands/brainstorm.md; do
+  if grep -q 'cat >> "$JOURNAL_DIR/issue-' "$REPO_ROOT/plugins/flow/$f" 2>/dev/null; then
+    _flow_assert_fail "T14 $f still appends to the journal without the lock"
+  else
+    _flow_assert_pass "T14 $f has no unlocked journal append"
+  fi
+  if grep -q 'bin/journal-append.sh' "$REPO_ROOT/plugins/flow/$f" 2>/dev/null; then
+    _flow_assert_pass "T14 $f routes through journal-append.sh"
+  else
+    _flow_assert_fail "T14 $f does not call journal-append.sh"
+  fi
+done
+if grep -q 'bin/journal-append.sh' "$REPO_ROOT/plugins/flow/skills/specification-capture/SKILL.md" 2>/dev/null; then
+  _flow_assert_pass "T14 specification-capture routes through journal-append.sh"
+else
+  _flow_assert_fail "T14 specification-capture does not call journal-append.sh"
+fi
