@@ -53,7 +53,7 @@ Reviewers should pick from this controlled list when possible. Free-form categor
 | Category | Owner | Examples |
 |---|---|---|
 | `security` | security-reviewer | OWASP Top 10, secrets in diff, auth bypass, IDOR, missing CSRF |
-| `dependency` | security-reviewer | A package this change adds or bumps: a critical or high advisory with a fix available, a license the project's declared license cannot include, an install hook, a name within edit distance 2 of an existing dependency, or a package nothing imports. The location is the manifest `file:line` the package is declared on, which `bin/flow-dep-diff.sh` prints. |
+| `dependency` | security-reviewer | A package this change adds or bumps: a critical or high advisory with a fix available, a license the project's declared license cannot include, an install hook, a name within edit distance 2 of an existing dependency, or a package nothing imports. The location is where `bin/flow-dep-diff.sh` printed it: the manifest `file:line` for a line-oriented manifest, and the file alone for a TOML one, whose parser returns values without the lines they came from. |
 | `correctness` | code-reviewer | Logic errors, off-by-one, null deref, wrong condition |
 | `edge-case` | code-reviewer / error-handler-inspector | Empty input not handled, boundary value, race condition |
 | `error-handling` | error-handler-inspector | Empty catch block, swallowed exception, missing fallback, generic error message |

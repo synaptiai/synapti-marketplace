@@ -192,7 +192,12 @@ whether this project may take on that license is not a decision this agent
 makes. Every other row is a finding you fix or argue in the pull request.
 
 Findings use the canonical schema with the `DEP-` prefix, `category=dependency`
-and `location` set to the manifest `file:line` the helper printed.
+and `location` set to whatever the helper printed: `file:line` for a line-oriented
+manifest, and the file alone for a TOML one. A TOML entry genuinely has no line —
+the parser returns values, not the lines they came from — and
+`references/finding-schema.md` allows a file-level location for exactly this.
+**Do not invent a line number.** A location a reader cannot trust is worse than a
+coarse one, because they will follow it.
 
 ### Step 5: Report
 

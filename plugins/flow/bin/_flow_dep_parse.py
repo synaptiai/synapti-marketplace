@@ -256,6 +256,42 @@ def _source_of(value):
     return None
 
 
+# Tables whose KEYS are group names, by specification rather than by guess.
+# PEP 621 extras, PEP 735 groups and pdm's dev groups are defined this way; no
+# inspection of their values can tell you more than the spec already does.
+_GROUP_TABLES = frozenset((
+    "dependency-groups",
+    "tool.pdm.dev-dependencies",
+))
+
+# Tables whose KEYS are package names, by specification. poetry writes a
+# version, an inline table, or an array of tables (multiple constraints) as
+# the value, so its shape overlaps with a group table's and cannot separate
+# the two.
+_NAME_TABLE_PREFIXES = ("tool.poetry",)
+
+
+def _table_kind(full_path, value):
+    """Return 'groups' or 'names' for a dependency table.
+
+    Shape is consulted only for a table no specification covers. Deciding by
+    shape where the spec is explicit is what produced two defects in a row: a
+    poetry group of multiple-constraints arrays read as groups and vanished,
+    and then a PEP 735 group holding an include-group table read as names,
+    inventing a package called after the group and losing its real contents.
+    Each fix was a better guess; the guess itself was the defect.
+    """
+    if full_path in _GROUP_TABLES or full_path.endswith(".optional-dependencies"):
+        return "groups"
+    if full_path.startswith(_NAME_TABLE_PREFIXES):
+        return "names"
+    if value and all(
+            isinstance(v, list) and all(isinstance(x, str) for x in v)
+            for v in value.values()):
+        return "groups"
+    return "names"
+
+
 def _harvest_dependencies(node, result, text, path=()):
     """Walk a parsed TOML document collecting every dependency table.
 
@@ -316,18 +352,15 @@ def _harvest_dependencies(node, result, text, path=()):
                     _add_pep508(result, item, text)
                 continue
             if isinstance(value, dict):
-                # Either group -> [items] or name -> constraint.
-                # Groups only when every value is a list OF STRINGS. A list
-                # of tables is poetry's multiple-constraints form — a dev
-                # group commonly uses it — and reading that as a group made
-                # every dependency in the table vanish while the run still
-                # reported ok.
-                if value and all(
-                        isinstance(v, list) and all(isinstance(x, str) for x in v)
-                        for v in value.values()):
+                if _table_kind(".".join(here), value) == "groups":
                     for group in value.values():
-                        for item in group:
-                            _add_pep508(result, item, text)
+                        if isinstance(group, list):
+                            # A group may hold tables as well as strings —
+                            # PEP 735's {include-group = "..."} is one — and
+                            # _add_pep508 ignores anything that is not a
+                            # requirement string.
+                            for item in group:
+                                _add_pep508(result, item, text)
                     continue
                 for name, spec in value.items():
                     if not isinstance(name, str):
@@ -340,13 +373,10 @@ def _harvest_dependencies(node, result, text, path=()):
                         for item in spec:
                             _add_pep508(result, item, text)
                         continue
-                    result.add(low_name, _version_of(spec),
-                               None)
+                    result.add(low_name, _version_of(spec), None)
                     src = _source_of(spec)
                     if src:
-                        result.replaces.append(
-                            (low_name, src, None, None)
-                        )
+                        result.replaces.append((low_name, src, None, None))
                 continue
 
         if isinstance(value, dict):
@@ -608,8 +638,17 @@ def parse_yarn_lock(text):
                 m = _YARN_HEADER.match(spec + ":")
                 if m:
                     alias = None
-                    _, _, rhs = spec.partition("@")
-                    rhs = rhs.strip().strip('"')
+                    # Take the remainder after the name the header regex
+                    # already extracted. Splitting on the first `@` instead
+                    # splits a scoped key on its own scope marker, so
+                    # `@scope/react@npm:evil-scoped@1.0.0` never looked like
+                    # an alias at all and the package that installs went
+                    # unnamed — while the unscoped form worked, which is how
+                    # the fixture missed it.
+                    _name = m.group(1)
+                    _idx = spec.find(_name)
+                    rhs = spec[_idx + len(_name) + 1:] if _idx != -1 else ""
+                    rhs = rhs.strip().strip('"').rstrip(":")
                     if rhs.startswith("npm:"):
                         am = _NPM_ALIAS.match(rhs)
                         if am:
