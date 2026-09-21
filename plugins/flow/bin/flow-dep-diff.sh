@@ -28,6 +28,8 @@
 #     only in a manifest the range leaves alone is therefore not reported)
 #   DEP_BASELINE_TRUNCATED=<n> name(s) not printed
 #   DEP_INSTALL_HOOK=<name> manifest=<path>:<line>
+#   DEP_REPLACED=<module> -> <target>@<version> manifest=<path>:<line>
+#     a go.mod replace: the named module no longer comes from upstream
 #   DEP_NEAR_NAME=<added> ~ <baseline> distance=<n>
 #   MANIFEST_UNPARSED=<path> reason=<why>
 #
@@ -247,6 +249,7 @@ changed = []
 removed = []
 hooks = []
 unparsed = []
+replaced = []
 baseline_names = set()
 examined = 0
 
@@ -315,6 +318,16 @@ for path, parser in manifests:
         baseline_names.add(safe_name(name))
 
     if head_res:
+        base_replaces = set(
+            (m, t, v) for m, t, v, _l in (base_res.replaces if base_res else [])
+        )
+        for module, target, version, line in head_res.replaces:
+            if (module, target, version) in base_replaces:
+                continue
+            m_safe = safe_name(module)
+            t_safe = safe_scalar(target)
+            if m_safe and t_safe:
+                replaced.append((m_safe, t_safe, version, path, line))
         for name, line in head_res.hooks:
             safe = safe_name(name)
             if safe:
@@ -333,19 +346,27 @@ for path, parser in manifests:
         # holding several versions of the package at once — normal in Rust
         # and pnpm — and collapsing that into a single bump would report one
         # version and hide the rest.
-        if len(bvers) == 1 and len(hvers) == 1:
-            old_v = list(bvers)[0]
-            new_v = list(hvers)[0]
-            changed.append((safe, old_v, new_v, path, list(hvers.values())[0]))
+        gone = sorted(set(bvers) - set(hvers), key=str)
+        fresh = sorted(set(hvers) - set(bvers), key=str)
+        # One version out and one in is a bump, whether the package has one
+        # version or five. Without this, a package declared in two sections at
+        # different versions — typescript in dependencies and devDependencies
+        # is routine — turns an ordinary bump into a false DEP_ADDED plus a
+        # false DEP_REMOVED, and each false add costs a full per-package
+        # judgment downstream.
+        if len(gone) == 1 and len(fresh) == 1:
+            changed.append((safe, gone[0], fresh[0], path, hvers[fresh[0]]))
             continue
-        for version in sorted(set(hvers) - set(bvers), key=str):
+        for version in fresh:
             added.append((safe, version, path, hvers[version]))
-        for version in sorted(set(bvers) - set(hvers), key=str):
-            removed.append((safe, path, bvers[version]))
+        for version in gone:
+            removed.append((safe, version, path, bvers[version]))
 
     for name, bvers in base_deps.items():
         if name not in head_deps:
-            removed.append((safe_name(name), path, list(bvers.values())[0]))
+            safe = safe_name(name)
+            for version in sorted(bvers, key=str):
+                removed.append((safe, version, path, bvers[version]))
 
 
 def field(value):
@@ -389,8 +410,9 @@ for name, old, new, path, line in sorted(changed, key=lambda t: (t[0], str(t[1])
         "DEP_CHANGED=%s %s->%s %s"
         % (name, field(old), field(new), loc(path, line))
     )
-for name, path, line in sorted(removed, key=lambda t: (t[0], t[1], str(t[2]))):
-    emit("DEP_REMOVED=%s %s" % (name, loc(path, line)))
+for name, version, path, line in sorted(
+        removed, key=lambda t: (t[0], str(t[1]), t[2])):
+    emit("DEP_REMOVED=%s@%s %s" % (name, field(version), loc(path, line)))
 # The baseline goes into a reviewer's prompt. A lockfile bump can carry
 # thousands of names, which would crowd out the findings they are there to
 # support, so the list is capped and says when it was.
@@ -405,6 +427,12 @@ if len(_sorted_baseline) > MAX_BASELINE:
     )
 for name, path, line in sorted(hooks, key=lambda t: (t[0], t[1], str(t[2]))):
     emit("DEP_INSTALL_HOOK=%s %s" % (name, loc(path, line)))
+for module, target, version, path, line in sorted(
+        replaced, key=lambda t: (t[0], t[1], str(t[2]), t[3])):
+    emit(
+        "DEP_REPLACED=%s -> %s@%s %s"
+        % (module, field(target), field(version), loc(path, line))
+    )
 
 # Near-name runs added names against the BASE baseline only. An added name is
 # never compared with another added name: two packages arriving together are

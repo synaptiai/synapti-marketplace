@@ -33,10 +33,15 @@ _FORBIDDEN = re.compile(
     "\u0000-\u0008\u000a-\u001f"   # C0 controls except tab
     "\u007f-\u009f"                  # DEL and the C1 block
     "\u2028\u2029"                   # LINE and PARAGRAPH SEPARATOR
-    '|"'                             # the record separator, and the
-                                      # quote `field()` wraps values in
+    "\u200b-\u200f\u202a-\u202e"    # zero-width and bidi overrides: a name
+    "\u2066-\u2069\ufeff"           # carrying these can visually reorder the
+                                      # record, or defeat the near-name check
+                                      # while looking identical to a reader
+    "|" '"'                           # the record separator, and the quote
+                                      # `field()` wraps values in
     "]"
 )
+
 
 MAX_SCALAR = 200
 
@@ -74,13 +79,18 @@ class ParseResult(object):
            install script. Only a lockfile can answer this offline.
     """
 
-    def __init__(self, deps=None, hooks=None):
+    def __init__(self, deps=None, hooks=None, replaces=None):
         # {name: {version_or_None: line_or_None}}. A lockfile legitimately
         # holds several versions of one package — windows-sys and the pnpm
         # store do it routinely — and a plain name->version map reports only
         # whichever came last in the file, hiding the others entirely.
         self.deps = deps or {}
         self.hooks = hooks or []
+        # [(module, target, version, line)] — a go.mod replace. Kept apart
+        # from deps because the interesting fact is WHICH module stopped
+        # coming from upstream, and a target reported as an added package
+        # says nothing about that.
+        self.replaces = replaces or []
 
     def add(self, name, version, line):
         self.deps.setdefault(name, {}).setdefault(version, line)
@@ -140,17 +150,110 @@ def parse_requirements(text):
         m = _REQ_LINE.match(line)
         if not m:
             continue
-        r.add(m.group(1).lower(), m.group(3), lineno)
+        r.add(m.group(1).lower(),
+              _normalise_constraint((m.group(2) or '') + (m.group(3) or '')),
+              lineno)
     return r
 
 
+def _strip_toml_comment(line):
+    """Remove a `#` comment, ignoring one inside a string literal."""
+    out = []
+    quote = None
+    for ch in line:
+        if quote:
+            out.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in "\"'":
+            quote = ch
+            out.append(ch)
+        elif ch == "#":
+            break
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _bracket_delta(line):
+    """Net `[`/`{` nesting change, counting only outside string literals.
+
+    Counting inside strings is what made a PEP 508 extras marker close an
+    array: `"requests[security]>=2.31.0"` carries a `]` that belongs to the
+    dependency's own text, not to the array holding it.
+    """
+    depth = 0
+    quote = None
+    for ch in line:
+        if quote:
+            if ch == quote:
+                quote = None
+            continue
+        if ch in "\"'":
+            quote = ch
+        elif ch in "[{":
+            depth += 1
+        elif ch in "]}":
+            depth -= 1
+    return depth
+
+
+def _toml_statements(text):
+    """Yield (lineno, statement) with multi-line values joined into one.
+
+    A value may legally span lines — a Cargo `features = [` list, a poetry
+    multiple-constraints array — and reading those lines individually makes
+    each continuation look like a malformed key. Treating that as unreadable
+    turned valid, common manifests into a blocking `unavailable` on every
+    pull request.
+    """
+    buf = []
+    start = None
+    depth = 0
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        line = _strip_toml_comment(raw)
+        if not line.strip() and depth <= 0:
+            continue
+        if start is None:
+            start = lineno
+        buf.append(line)
+        depth += _bracket_delta(line)
+        if depth <= 0:
+            yield start, "\n".join(buf)
+            buf = []
+            start = None
+            depth = 0
+    if buf:
+        yield start, "\n".join(buf)
+
+
+# Both quote styles. A single-quoted TOML item is as ordinary as a
+# double-quoted one, and scanning only for `"` dropped it silently.
+_TOML_ITEM = re.compile(r'"([^"]*)"|\'([^\']*)\'')
+
+
+def _toml_items(payload):
+    for m in _TOML_ITEM.finditer(payload):
+        yield m.group(1) if m.group(1) is not None else m.group(2)
+
+
 _TOML_SECTION = re.compile(r"^\s*\[+([^\]]+)\]+\s*$")
-_TOML_KEY = re.compile(r'^\s*((?:"[^"]+"|\'[^\']+\'|[A-Za-z0-9][A-Za-z0-9._-]*))\s*=\s*(.+?)\s*$')
+# DOTALL: a statement handed here may span lines — the scanner joins a
+# multi-line value into one — and without it the value simply does not match,
+# which the caller then reads as a malformed key.
+_TOML_KEY = re.compile(
+    r'^\s*((?:"[^"]+"|\'[^\']+\'|[A-Za-z0-9][A-Za-z0-9._-]*))\s*=\s*(.+?)\s*$',
+    re.DOTALL,
+)
 _TOML_STR = re.compile(r'^"([^"]*)"$|^\'([^\']*)\'$')
 _INLINE_VERSION = re.compile(r'version\s*=\s*"([^"]*)"')
+# The comparison operator is part of the constraint, not decoration: storing
+# only the number makes `requests==2.31.0` and `requests>=2.31.0` identical,
+# so loosening a pin — a standard supply-chain move — produces no change.
 _PEP508 = re.compile(
     r'^\s*"?([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*'
-    r'(?:[=<>!~]=?\s*([^",;\]]+))?'
+    r'((?:[=<>!~]=?\s*[^",;\]]+)?)'
 )
 
 # Keys that appear INSIDE a dependency sub-table and are attributes of the
@@ -201,80 +304,133 @@ def _is_dep_section(section):
     return last.endswith("dependencies")
 
 
-def parse_pyproject(text):
-    """Read PEP 621 [project] deps, its optional-dependencies extras, and poetry.
+# Sections whose KEYS are group names and whose VALUES are arrays of PEP 508
+# strings. All of these are ways a Python project declares dependencies; a
+# typosquat added to any of them is a dependency this must report.
+_GROUPED_PEP508_SECTIONS = (
+    "project.optional-dependencies",   # PEP 621 extras
+    "dependency-groups",               # PEP 735
+    "tool.pdm.dev-dependencies",
+)
+# Sections with NAMED array keys rather than arbitrary group names.
+_NAMED_PEP508_KEYS = {
+    "project": ("dependencies",),
+    "tool.uv": ("dev-dependencies", "constraint-dependencies",
+                "override-dependencies"),
+}
+_HATCH_KEYS = ("dependencies", "extra-dependencies")
 
-    A project that declares nothing here is a real answer. A dependency
-    section whose shape this cannot read is NOT: it raises, because a silently
-    skipped section reports the manifest as read with a package missing from
-    it, which is the one outcome this helper exists to prevent.
+
+def _add_pep508_items(result, payload, lineno):
+    found = False
+    for item in _toml_items(payload):
+        if not item or item.startswith("include-group"):
+            continue
+        m = _PEP508.match(item)
+        if m:
+            result.add(m.group(1).lower(), _normalise_constraint(m.group(2)), lineno)
+            found = True
+    return found
+
+
+def _normalise_constraint(raw):
+    """Keep the comparison operator, except on an exact pin.
+
+    `requests==2.31.0` becoming `requests>=2.31.0` is a real dependency change
+    — loosening a pin is a standard supply-chain move — and storing only the
+    number made the two identical, so no DEP_CHANGED was emitted. An exact pin
+    keeps its bare version so the ordinary case still reads as a version.
+    """
+    if raw is None:
+        return None
+    raw = raw.strip()
+    if raw.startswith("=="):
+        return raw[2:].strip() or None
+    return raw or None
+
+
+def parse_pyproject(text):
+    """Every way a pyproject.toml declares a dependency.
+
+    PEP 621 `[project] dependencies` and its extras (both the section form and
+    the inline-table form), PEP 735 `[dependency-groups]`, poetry, pdm, uv and
+    hatch. A section this recognises as a dependency section but cannot read
+    raises, rather than being skipped: skipping it reports the manifest as
+    read with a package missing from it, which is the one outcome this helper
+    exists to prevent.
     """
     r = ParseResult()
     section = None
-    array_key = None
-    for lineno, raw in enumerate(text.splitlines(), 1):
-        line = raw.split("#", 1)[0].rstrip()
-        if not line.strip():
-            continue
-        m = _TOML_SECTION.match(line)
+    for lineno, stmt in _toml_statements(text):
+        m = _TOML_SECTION.match(stmt.strip()) if "\n" not in stmt else None
         if m:
             section = m.group(1).strip()
-            array_key = None
             sub = _dep_subtable_name(section)
             if sub:
-                # The sub-table's own `version` key is picked up below.
                 r.add(sub.lower(), None, lineno)
-                array_key = "__subtable__:" + sub.lower()
             continue
         if section is None:
             continue
 
-        # [project] dependencies = [...] and
-        # [project.optional-dependencies] <extra> = [...]
-        in_project_deps = section == "project"
-        in_extras = section.endswith("optional-dependencies") or (
-            section.startswith("project.optional-dependencies"))
-        if in_project_deps or in_extras:
-            km = _TOML_KEY.match(line)
-            if km and "[" in km.group(2):
-                key = _unquote_key(km.group(1))
-                if in_extras or key in ("dependencies",):
-                    array_key = key
-                    for item in re.findall(r'"([^"]+)"', km.group(2)):
-                        pm = _PEP508.match(item)
-                        if pm:
-                            r.add(pm.group(1).lower(), pm.group(2), lineno)
-                    if "]" in km.group(2).split("[", 1)[1]:
-                        array_key = None
-                    continue
-            if array_key and not array_key.startswith("__subtable__:"):
-                for item in re.findall(r'"([^"]+)"', line):
-                    pm = _PEP508.match(item)
-                    if pm:
-                        r.add(pm.group(1).lower(), pm.group(2), lineno)
-                if "]" in line:
-                    array_key = None
-                continue
-
-        if array_key and array_key.startswith("__subtable__:"):
-            km = _TOML_KEY.match(line)
+        sub = _dep_subtable_name(section)
+        if sub:
+            km = _TOML_KEY.match(stmt)
             if km and _unquote_key(km.group(1)).lower() == "version":
-                name = array_key.split(":", 1)[1]
-                versions = r.deps.get(name, {})
-                versions.pop(None, None)
+                name = sub.lower()
+                r.deps.get(name, {}).pop(None, None)
                 r.add(name, _toml_scalar(km.group(2)), lineno)
             continue
 
+        km = _TOML_KEY.match(stmt)
+
+        if section in _GROUPED_PEP508_SECTIONS:
+            if km:
+                _add_pep508_items(r, km.group(2), lineno)
+            continue
+
+        if section.startswith("tool.hatch.envs.") or section == "tool.hatch.envs":
+            if km and _unquote_key(km.group(1)).lower() in _HATCH_KEYS:
+                _add_pep508_items(r, km.group(2), lineno)
+            continue
+
+        named = _NAMED_PEP508_KEYS.get(section)
+        if named:
+            if km:
+                key = _unquote_key(km.group(1)).lower()
+                if key in named:
+                    _add_pep508_items(r, km.group(2), lineno)
+                elif key == "optional-dependencies":
+                    # The inline-table form: optional-dependencies = {dev = [...]}
+                    _add_pep508_items(r, km.group(2), lineno)
+            continue
+
         if _is_dep_section(section) and section.startswith("tool.poetry"):
-            km = _TOML_KEY.match(line)
             if not km:
                 raise ParseError(
-                    "unreadable line %d in dependency section [%s]" % (lineno, section)
+                    "unreadable statement at line %d in [%s]" % (lineno, section)
                 )
             key = _unquote_key(km.group(1)).lower()
             if key == "python":
                 continue
-            r.add(key, _toml_scalar(km.group(2)), lineno)
+            value = km.group(2)
+            if value.lstrip().startswith("["):
+                # Multiple constraints: foo = [{version = "<=1.9", ...}, ...].
+                versions = re.findall(r'version\s*=\s*"([^"]*)"', value)
+                if versions:
+                    for v in versions:
+                        r.add(key, v, lineno)
+                else:
+                    r.add(key, None, lineno)
+                continue
+            r.add(key, _toml_scalar(value), lineno)
+            continue
+
+        if _is_dep_section(section):
+            # Recognised as a dependency section but not one of the shapes
+            # above. Reporting the manifest read would hide whatever it holds.
+            raise ParseError(
+                "unrecognised dependency section [%s] at line %d" % (section, lineno)
+            )
     return r
 
 
@@ -315,11 +471,8 @@ def parse_cargo_toml(text):
     r = ParseResult()
     section = None
     subtable = None
-    for lineno, raw in enumerate(text.splitlines(), 1):
-        line = raw.split("#", 1)[0].rstrip()
-        if not line.strip():
-            continue
-        m = _TOML_SECTION.match(line)
+    for lineno, stmt in _toml_statements(text):
+        m = _TOML_SECTION.match(stmt.strip()) if "\n" not in stmt else None
         if m:
             section = m.group(1).strip()
             subtable = _dep_subtable_name(section)
@@ -329,31 +482,30 @@ def parse_cargo_toml(text):
         if not section:
             continue
         if subtable:
-            km = _TOML_KEY.match(line)
+            km = _TOML_KEY.match(stmt)
             if km and _unquote_key(km.group(1)).lower() == "version":
-                versions = r.deps.get(subtable.lower(), {})
-                versions.pop(None, None)
-                r.add(subtable.lower(), _toml_scalar(km.group(2)), lineno)
+                name = subtable.lower()
+                r.deps.get(name, {}).pop(None, None)
+                r.add(name, _toml_scalar(km.group(2)), lineno)
             continue
         if not _is_dep_section(section):
             continue
-        km = _TOML_KEY.match(line)
+        km = _TOML_KEY.match(stmt)
         if not km:
             raise ParseError(
-                "unreadable line %d in dependency section [%s]" % (lineno, section)
+                "unreadable statement at line %d in [%s]" % (lineno, section)
             )
         key = _unquote_key(km.group(1))
         # Workspace inheritance is written `serde.workspace = true`. Keyed
-        # whole, the package reads as `serde.workspace`, which matches nothing
-        # in the baseline and is reported as a package nobody has heard of.
+        # whole, the package reads as `serde.workspace`, matching nothing in
+        # the baseline and reported as a package nobody has heard of.
         if "." in key:
             headk, _, tail = key.rpartition(".")
             if tail.lower() in _DEP_ATTRS:
-                existing = r.deps.get(headk.lower(), {})
                 if tail.lower() == "version":
-                    existing.pop(None, None)
+                    r.deps.get(headk.lower(), {}).pop(None, None)
                     r.add(headk.lower(), _toml_scalar(km.group(2)), lineno)
-                elif not existing:
+                elif not r.deps.get(headk.lower()):
                     r.add(headk.lower(), None, lineno)
                 continue
         r.add(key.lower(), _toml_scalar(km.group(2)), lineno)
@@ -403,10 +555,7 @@ def parse_go_mod(text):
         if kind == "replace":
             m = _GO_REPLACE.match(line)
             if m:
-                target, version = m.group(2), m.group(3)
-                # A filesystem replace target has no version; report it with
-                # none rather than dropping the redirect entirely.
-                r.add(target, version, lineno)
+                r.replaces.append((m.group(1), m.group(2), m.group(3), lineno))
             continue
         m = _GO_REQUIRE.match(line)
         if m:

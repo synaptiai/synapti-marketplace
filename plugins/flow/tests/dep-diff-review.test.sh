@@ -239,8 +239,34 @@ version = "0.52.0"
 name = "windows-sys"
 version = "0.59.0"
 ')
-assert_contains "DEP_ADDED=windows-sys@0.59.0" "$OUT" "the added version is reported"
-assert_contains "DEP_REMOVED=windows-sys" "$OUT" "and the dropped one is too"
+# One version out and one in is a bump, whichever versions they are, so
+# nothing is lost: the record names both. What must not happen is the drop
+# vanishing because only the last version in file order was kept.
+assert_contains "DEP_CHANGED=windows-sys 0.48.0->0.59.0" "$OUT" \
+  "both the dropped and the added version are named"
+assert_not_contains "0.52.0" "$OUT" "the version present on both sides is not churned"
+
+_flow_test_begin "two versions dropped against one added are listed, not collapsed"
+# The bump rule applies to one-out-one-in only. More than that is a genuine
+# multi-version change and each version is named with its own record — which
+# is also why DEP_REMOVED carries a version: two bare removals of the same
+# name are indistinguishable.
+OUT=$(_dr_case "cargo-lock-multi3" "Cargo.lock" \
+'[[package]]
+name = "windows-sys"
+version = "0.52.0"
+
+[[package]]
+name = "windows-sys"
+version = "0.59.0"
+' \
+'[[package]]
+name = "windows-sys"
+version = "0.60.0"
+')
+assert_contains "DEP_ADDED=windows-sys@0.60.0" "$OUT" "the added version is named"
+assert_contains "DEP_REMOVED=windows-sys@0.52.0" "$OUT" "the first drop carries its version"
+assert_contains "DEP_REMOVED=windows-sys@0.59.0" "$OUT" "and so does the second"
 
 _flow_test_begin "a single-version bump is still one DEP_CHANGED, not add plus remove"
 OUT=$(_dr_case "cargo-lock-single" "Cargo.lock" \
