@@ -1,24 +1,24 @@
 """Manifest and lockfile parsing for bin/flow-dep-diff.sh.
 
-Every parser here is line-oriented and offline. Two constraints force that
-shape, and neither is negotiable:
+TOML formats — pyproject.toml, Cargo.toml, poetry.lock, Cargo.lock — are read
+with a real TOML parser (`tomllib`, or `tomli` below 3.11). A hand-rolled line
+scanner was tried first and cost three review cycles: each fix revealed the
+next construct it did not know, and the last of those made a pyproject.toml
+carrying an ordinary tri-quoted readme report an EMPTY dependency list while
+the run still said ok.
 
-  - The output contract is `manifest=<path>:<line>`, and a JSON, YAML or TOML
-    parser returns values without the line they came from. Parsing for values
-    and then hunting for the line is how a location drifts one row off the
-    thing it names.
-  - Avoiding tomllib also removes a Python floor. The plugin pins no Python
-    version, and `tomllib` is 3.11+.
+Line-oriented formats — requirements.txt, go.mod, go.sum, Gemfile,
+Gemfile.lock, yarn.lock, pnpm-lock.yaml — keep their own parsers, because
+there the line IS the unit and the line number is a fact rather than a
+reconstruction. TOML entries carry no line number at all: a parser returns
+values, not the lines they came from, and the text search that tried to
+recover them pointed at the wrong package for most entries in a lockfile.
+`references/finding-schema.md` permits a file-level location, and a location
+that is merely coarse is better than one that is confidently wrong.
 
-Every parser returns a ParseResult. A parser that cannot read its input says
-so — it never returns an empty dependency list, because "this file declares
-nothing" and "I could not read this file" are different answers and the whole
-point of this helper is that the caller can tell them apart.
-
-Names and versions come from a manifest inside the pull request under review,
-so they are author-controlled. `safe_scalar` refuses anything carrying a
-control character or a newline before it can reach the output, where it would
-otherwise forge extra records.
+Names and versions come from a manifest inside the change under review, so
+they are author-controlled. `safe_scalar` and `safe_name` refuse anything that
+could forge a field before it can reach the output.
 """
 
 import json
@@ -91,6 +91,10 @@ class ParseResult(object):
         # coming from upstream, and a target reported as an added package
         # says nothing about that.
         self.replaces = replaces or []
+        # Redirect candidates from a table named `sources`, kept aside until
+        # the whole document is read so each can be checked against the
+        # dependencies actually declared.
+        self.pending_sources = []
 
     def add(self, name, version, line):
         self.deps.setdefault(name, {}).setdefault(version, line)
@@ -159,31 +163,6 @@ def _load_toml(text):
         raise ParseError("not valid TOML (%s)" % type(e).__name__)
 
 
-def _line_of_toml_key(text, name):
-    """Best-effort line for a key or a quoted array item. None when unsure."""
-    if not name:
-        return None
-    bare = name.lower()
-    for lineno, raw in enumerate(text.splitlines(), 1):
-        stripped = raw.strip()
-        low = stripped.lower()
-        if low.startswith(bare):
-            rest = stripped[len(bare):].lstrip()
-            if rest.startswith("=") or rest.startswith("."):
-                return lineno
-        for q in ('"%s"' % bare, "'%s'" % bare):
-            if q in low:
-                return lineno
-        # An array item: "name==1.0", "name[extra]>=2".
-        for mark in ('"', "'"):
-            idx = low.find(mark + bare)
-            if idx != -1:
-                nxt = low[idx + 1 + len(bare):idx + 2 + len(bare)]
-                if nxt in ("", '"', "'", "=", ">", "<", "!", "~", "[", " ", ";", ","):
-                    return lineno
-    return None
-
-
 # A dependency name is never any of these; they are how a tool spells
 # something other than a package inside a dependency table.
 _NOT_A_PACKAGE = frozenset(("python", "include-group"))
@@ -211,20 +190,43 @@ def _constraint(raw):
 
 # `name`, `name[extra]`, `name>=1.0,<2.0`, `name ; marker`
 _PEP508 = re.compile(
-    r'^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*([^;@]*)'
+    r'^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*([^;]*)'
 )
+
+
+_DIRECT_REF_SCHEMES = ("http://", "https://", "file://", "git+", "ssh://", "hg+", "svn+", "bzr+")
+
+
+def _split_direct_reference(item):
+    """Split `name @ url` into (name, url); otherwise (item, None).
+
+    A direct reference is the standard PEP 621 and requirements.txt way to
+    point a dependency somewhere other than the index — the Python equivalent
+    of a go.mod replace. Dropping the url at the `@` reported an ordinary
+    unpinned package from PyPI, with nothing to say the wheel comes from
+    somewhere else.
+    """
+    left, sep, right = item.partition("@")
+    if sep:
+        right = right.strip()
+        if right.lower().startswith(_DIRECT_REF_SCHEMES):
+            return left.strip(), right
+    return item, None
 
 
 def _add_pep508(result, item, text):
     if not isinstance(item, str) or not item.strip():
         return
+    item, url = _split_direct_reference(item)
     m = _PEP508.match(item)
     if not m:
         return
     name = m.group(1).lower()
     if name in _NOT_A_PACKAGE:
         return
-    result.add(name, _constraint(m.group(2)), _line_of_toml_key(text, name))
+    result.add(name, _constraint(m.group(2)), None)
+    if url:
+        result.replaces.append((name, url, None, None))
 
 
 def _version_of(value):
@@ -272,14 +274,40 @@ def _harvest_dependencies(node, result, text, path=()):
         here = path + (low,)
 
         if low == "sources" and isinstance(value, dict):
-            # tool.uv.sources and its kin: a package redirected away from the
-            # index. The same class as a go.mod replace.
+            # tool.uv.sources and its kin redirect a package away from the
+            # index. `sources` is a common word, though, so an entry only
+            # counts when the project actually depends on that name — a source
+            # override for something nothing depends on redirects nothing.
+            # Resolved after the walk, when every dependency is known.
             for name, spec in value.items():
                 src = _source_of(spec)
                 if isinstance(name, str) and src:
-                    result.replaces.append(
-                        (name.lower(), src, None, _line_of_toml_key(text, name))
-                    )
+                    result.pending_sources.append((name.lower(), src))
+            continue
+
+        # A build backend runs its own code at install time, so what it
+        # requires is the highest-consequence dependency in the file. The key
+        # is `requires`, so the *dependencies suffix never matched it.
+        if low == "requires" and path[-1:] == ("build-system",) and isinstance(value, list):
+            for item in value:
+                _add_pep508(result, item, text)
+            continue
+
+        # Cargo redirects every crate in the tree away from the registry.
+        # [patch.<registry>] and the deprecated [replace] are the Rust
+        # equivalent of a go.mod replace, and were invisible.
+        if not path and low in ("patch", "replace") and isinstance(value, dict):
+            for outer_key, outer_val in value.items():
+                pairs = (outer_val.items() if low == "patch" and isinstance(outer_val, dict)
+                         else [(outer_key, outer_val)])
+                for name, spec in pairs:
+                    if not isinstance(name, str):
+                        continue
+                    src = _source_of(spec)
+                    if src:
+                        # [replace] keys carry a ":version" suffix.
+                        result.replaces.append(
+                            (name.split(":")[0].lower(), src, None, None))
             continue
 
         if low.endswith("dependencies") or low == "dependency-groups":
@@ -289,7 +317,14 @@ def _harvest_dependencies(node, result, text, path=()):
                 continue
             if isinstance(value, dict):
                 # Either group -> [items] or name -> constraint.
-                if value and all(isinstance(v, list) for v in value.values()):
+                # Groups only when every value is a list OF STRINGS. A list
+                # of tables is poetry's multiple-constraints form — a dev
+                # group commonly uses it — and reading that as a group made
+                # every dependency in the table vanish while the run still
+                # reported ok.
+                if value and all(
+                        isinstance(v, list) and all(isinstance(x, str) for x in v)
+                        for v in value.values()):
                     for group in value.values():
                         for item in group:
                             _add_pep508(result, item, text)
@@ -306,11 +341,11 @@ def _harvest_dependencies(node, result, text, path=()):
                             _add_pep508(result, item, text)
                         continue
                     result.add(low_name, _version_of(spec),
-                               _line_of_toml_key(text, name))
+                               None)
                     src = _source_of(spec)
                     if src:
                         result.replaces.append(
-                            (low_name, src, None, _line_of_toml_key(text, name))
+                            (low_name, src, None, None)
                         )
                 continue
 
@@ -323,6 +358,10 @@ def parse_toml_manifest(text):
     data = _load_toml(text)
     r = ParseResult()
     _harvest_dependencies(data, r, text)
+    for name, src in r.pending_sources:
+        if name in r.deps:
+            r.replaces.append((name, src, None, None))
+    r.pending_sources = []
     return r
 
 
@@ -349,7 +388,7 @@ def parse_toml_lock(text):
             version = entry.get("version")
             r.add(name.lower(),
                   _constraint(version) if isinstance(version, str) else None,
-                  _line_of_toml_key(text, name))
+                  None)
     return r
 
 
@@ -373,6 +412,9 @@ def parse_requirements(text):
         # fragment, so this reports nothing rather than inventing one.
         if _URL_REQ.match(line):
             continue
+        # A direct reference here is the same redirect as in pyproject.toml;
+        # the two Python formats must not disagree about what it means.
+        line, url = _split_direct_reference(line)
         m = _REQ_LINE.match(line)
         if not m:
             continue
@@ -380,6 +422,8 @@ def parse_requirements(text):
         if name in _NOT_A_PACKAGE:
             continue
         r.add(name, _constraint(m.group(2)), lineno)
+        if url:
+            r.replaces.append((name, url, None, lineno))
     return r
 
 
@@ -560,14 +604,28 @@ def parse_yarn_lock(text):
             pending = []
             pending_line = lineno
             for spec in raw.rstrip(":").split(","):
-                m = _YARN_HEADER.match(spec.strip() + ":")
+                spec = spec.strip()
+                m = _YARN_HEADER.match(spec + ":")
                 if m:
-                    pending.append(m.group(1))
+                    alias = None
+                    _, _, rhs = spec.partition("@")
+                    rhs = rhs.strip().strip('"')
+                    if rhs.startswith("npm:"):
+                        am = _NPM_ALIAS.match(rhs)
+                        if am:
+                            alias = am.group(1)
+                    pending.append((m.group(1), alias))
             continue
         m = _YARN_VERSION.match(raw)
         if m and pending:
-            for name in pending:
+            for name, alias in pending:
                 r.add(name, m.group(1), pending_line)
+                # `react@npm:evil-react@^1.0.0` installs evil-react. Reported
+                # only under the key, the near-name check runs against a name
+                # the project already trusts. package.json already defends
+                # this; yarn was the one parser that did not.
+                if alias:
+                    r.add(alias, m.group(1), pending_line)
             pending = []
     return r
 

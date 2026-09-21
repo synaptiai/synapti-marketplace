@@ -109,16 +109,19 @@ fi
 | `DEP_STATE` | Means | What you do |
 |---|---|---|
 | `none` | No dependency manifest was in the diff | Nothing. Emit no `DEP-` findings and no Dependency Audit table. |
-| `ok` | The manifests were read | Judge each `DEP_ADDED=` and `DEP_CHANGED=` package below. |
-| `unavailable` | At least one manifest could not be read | Judge the packages that were reported, and **say in the review that the dependency read was incomplete**, naming each `MANIFEST_UNPARSED=` path. A review that stays silent here reports a dependency check it did not perform. |
+| `ok` | The manifests were read | Judge each `DEP_ADDED=`, `DEP_CHANGED=` and `DEP_REPLACED=` package below. |
+| `unavailable` | At least one manifest could not be read | Judge the packages that were reported, including any `DEP_REPLACED=`, and **say in the review that the dependency read was incomplete**, naming each `MANIFEST_UNPARSED=` path. A review that stays silent here reports a dependency check it did not perform. |
 
 #### Per-package checks
 
 For each `DEP_ADDED=`, `DEP_CHANGED=` and `DEP_REPLACED=` line, record all five.
 
-A `DEP_REPLACED=<module> -> <target>` line is a dependency redirected away from
-the registry it normally comes from — a `go.mod` replace, or a `tool.uv.sources`
-or poetry `git =` entry. **Judge the target exactly as you would an added
+A `DEP_REPLACED=<module> -> <target>@<version>` line is a dependency redirected
+away from
+the registry it normally comes from — a `go.mod` replace, a Cargo `[patch]` or
+`[replace]` entry, a `tool.uv.sources` or poetry `git =` entry, or a PEP 508
+direct reference (`requests @ https://...`). A `<version>` of `(unpinned)` is
+normal: most redirect forms name a place, not a version. **Judge the target exactly as you would an added
 package**, because that is what it is: code this change starts fetching that it
 did not before, from somewhere the index does not vouch for. Name the module in
 the finding, not only the target, so a reader can see which dependency stopped

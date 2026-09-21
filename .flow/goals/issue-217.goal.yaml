@@ -71,8 +71,13 @@ specification:
   interface_contracts:
   - flow-dep-diff.sh --base <ref> --head <ref> | <base>..<head>
   - STATE=ok|none|unavailable, REASON=, MANIFESTS_EXAMINED=<n>, DIFF_BASE=<sha>
-  - DEP_ADDED / DEP_CHANGED / DEP_REMOVED / DEP_BASELINE / DEP_NEAR_NAME / DEP_INSTALL_HOOK
-    / MANIFEST_UNPARSED
+  - 'DEP_ADDED / DEP_CHANGED / DEP_REMOVED / DEP_BASELINE / DEP_BASELINE_TRUNCATED /
+    DEP_NEAR_NAME / DEP_INSTALL_HOOK / DEP_REPLACED / MANIFEST_UNPARSED'
+  - 'DEP_REPLACED covers the redirect class in every ecosystem: a go.mod replace, a
+    Cargo patch or replace table, a tool.uv.sources or poetry git entry, and a PEP 508
+    direct reference. The target is judged as an added package.'
+  - 'A TOML entry carries no line number; the location is the file, which
+    finding-schema.md permits. A line-oriented manifest carries its real line.'
   - DEP- findings use finding-schema.md with category=dependency and manifest file:line.
   risk_map:
   - area: Absent vs unreadable

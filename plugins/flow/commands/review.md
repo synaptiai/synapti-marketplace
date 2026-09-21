@@ -891,8 +891,10 @@ Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
 Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL):
   "You are reviewing PR #$ARGUMENTS as the VERIFIER variant. Assume the diff is
    correct as a baseline. Look only for missed security edge cases, undocumented
-   contract assumptions, or invariants that aren't enforced. Return P1/P2/P3
-   findings with file:line citations and category."
+   contract assumptions, or invariants that aren't enforced.
+   Run Step 4's dependency judgment and emit `DEP-` findings with
+   `category=dependency`, located at the manifest `file:line`.
+   Return P1/P2/P3 findings with file:line citations and category."
 
 Agent(code-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
   "PR #$ARGUMENTS as SKEPTIC. Assume broken; flag logic/quality/edge-case
