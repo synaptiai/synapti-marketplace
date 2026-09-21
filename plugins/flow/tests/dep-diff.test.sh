@@ -466,6 +466,131 @@ OUT=$(_dd_run "$R" HEAD~1 HEAD)
 assert_not_contains "DEP_NEAR_NAME=" "$OUT" "a distant name is not flagged"
 
 # =============================================================================
+# The comparison point is the merge base, not the tip of the base branch
+# =============================================================================
+
+_flow_test_begin "a package the base branch added after the fork is not a removal"
+# With a two-dot diff, everything main did while the change was open reads as a
+# reversal. A reviewer would be shown DEP_REMOVED for a package the change
+# never touched — and the near-name baseline would contain it too.
+R=$(_dd_repo)
+printf 'flask==2.0.0\n' > "$R/requirements.txt"; _dd_commit "$R" "base"
+git -C "$R" checkout --quiet -b feat
+printf 'flask==2.0.0\nredis==5.0.1\n' > "$R/requirements.txt"; _dd_commit "$R" "feat adds redis"
+git -C "$R" checkout --quiet -
+printf 'flask==2.0.0\nnumpy==1.26.0\n' > "$R/requirements.txt"; _dd_commit "$R" "base adds numpy"
+BASE_BRANCH=$(git -C "$R" rev-parse --abbrev-ref HEAD)
+git -C "$R" checkout --quiet feat
+OUT=$( cd "$R" && "$DEP_DIFF" --base "$BASE_BRANCH" --head HEAD 2>&1 )
+assert_contains "DEP_ADDED=redis@5.0.1" "$OUT" "what the change did add is reported"
+assert_not_contains "DEP_REMOVED=numpy" "$OUT" \
+  "what the base branch added is NOT reported as this change removing it"
+assert_not_contains "DEP_BASELINE=numpy" "$OUT" \
+  "nor does it enter the near-name baseline"
+assert_contains "DIFF_BASE=" "$OUT" "the commit actually compared is named"
+
+_flow_test_begin "a manifest only the base branch added is not counted as examined"
+# The file listing must come from the merge base too, not only the content
+# read. Listed against the base tip, a manifest main added after the fork
+# appears in this change's diff as a deletion — and MANIFESTS_EXAMINED then
+# counts a file the change never touched, which is the number a reviewer reads
+# as "how much of your dependency surface did this look at".
+R=$(_dd_repo)
+printf 'flask==2.0.0\n' > "$R/requirements.txt"; _dd_commit "$R" "base"
+git -C "$R" checkout --quiet -b feat
+printf 'flask==2.0.0\nredis==5.0.1\n' > "$R/requirements.txt"; _dd_commit "$R" "feat adds redis"
+git -C "$R" checkout --quiet -
+printf '{"dependencies":{"lodash":"4.17.0"}}\n' > "$R/package.json"; _dd_commit "$R" "base adds package.json"
+BASE_BRANCH=$(git -C "$R" rev-parse --abbrev-ref HEAD)
+git -C "$R" checkout --quiet feat
+OUT=$( cd "$R" && "$DEP_DIFF" --base "$BASE_BRANCH" --head HEAD 2>&1 )
+assert_contains "MANIFESTS_EXAMINED=1" "$OUT" \
+  "only the manifest this change actually touched is counted"
+assert_not_contains "MANIFESTS_EXAMINED=2" "$OUT" \
+  "the base branch's own new manifest is not in this change's surface"
+assert_contains "DEP_ADDED=redis@5.0.1" "$OUT" "and the real addition is still reported"
+
+# =============================================================================
+# A value with whitespace cannot split the record into extra fields
+# =============================================================================
+
+_flow_test_begin "a version range carrying a space is quoted, not left bare"
+# npm writes ">=1.0.0 <2.0.0" and a Gemfile writes "~> 7.0". Bare, the space
+# ends the version field and `manifest=` is no longer the next one.
+R=$(_dd_repo)
+printf '{"dependencies":{}}\n' > "$R/package.json"; _dd_commit "$R" "base"
+printf '{\n  "dependencies": {\n    "ranged": ">=1.0.0 <2.0.0"\n  }\n}\n' > "$R/package.json"
+_dd_commit "$R" "head"
+OUT=$(_dd_run "$R" HEAD~1 HEAD)
+assert_contains 'DEP_ADDED=ranged@">=1.0.0 <2.0.0" manifest=package.json:3' "$OUT" \
+  "the range is one quoted field and manifest= still follows it"
+
+_flow_test_begin "a manifest that declares a package on no findable line is file-level"
+# A minified single-line package.json has no line to cite. finding-schema.md
+# allows a file-level location; inventing :1 would point a reader at the brace.
+R=$(_dd_repo)
+printf '{"dependencies":{}}\n' > "$R/package.json"; _dd_commit "$R" "base"
+printf '{"dependencies":{"minified":"1.0.0"}}\n' > "$R/package.json"; _dd_commit "$R" "head"
+OUT=$(_dd_run "$R" HEAD~1 HEAD)
+assert_contains "DEP_ADDED=minified@1.0.0 manifest=package.json" "$OUT" "the file is cited"
+assert_not_contains "manifest=package.json:1" "$OUT" "without a line it did not find"
+
+_flow_test_begin "a Gemfile pessimistic constraint is quoted too"
+R=$(_dd_repo)
+printf "source 'https://rubygems.org'\n" > "$R/Gemfile"; _dd_commit "$R" "base"
+printf "source 'https://rubygems.org'\ngem 'rails', '~> 7.0'\n" > "$R/Gemfile"; _dd_commit "$R" "head"
+OUT=$(_dd_run "$R" HEAD~1 HEAD)
+assert_contains 'DEP_ADDED=rails@"~> 7.0" manifest=Gemfile:2' "$OUT" \
+  "the constraint is quoted"
+
+# =============================================================================
+# Requirement shapes that are not a package name
+# =============================================================================
+
+_flow_test_begin "a VCS or URL requirement is not read as a package called git"
+R=$(_dd_repo)
+printf 'flask==2.0.0\n' > "$R/requirements.txt"; _dd_commit "$R" "base"
+printf 'flask==2.0.0\ngit+https://example.invalid/x.git#egg=thing\nhttps://example.invalid/w.whl\n' \
+  > "$R/requirements.txt"; _dd_commit "$R" "head"
+OUT=$(_dd_run "$R" HEAD~1 HEAD)
+assert_not_contains "DEP_ADDED=git@" "$OUT" "the scheme is not a package"
+assert_not_contains "DEP_ADDED=https@" "$OUT" "nor is a bare URL"
+assert_contains "STATE=ok" "$OUT" "and the manifest still reads"
+
+_flow_test_begin "a Gemfile.lock requirement line is not read as a resolved gem"
+# Under specs: a resolved gem is indented four spaces and its own requirements
+# six. Matching both would report a transitive requirement as a direct gem.
+R=$(_dd_repo)
+printf 'GEM\n  specs:\n    rails (7.0.0)\n' > "$R/Gemfile.lock"; _dd_commit "$R" "base"
+printf 'GEM\n  specs:\n    rails (7.1.0)\n      activesupport (= 7.1.0)\n' > "$R/Gemfile.lock"
+_dd_commit "$R" "head"
+OUT=$(_dd_run "$R" HEAD~1 HEAD)
+assert_contains "DEP_CHANGED=rails" "$OUT" "the resolved gem is reported"
+assert_not_contains "DEP_ADDED=activesupport" "$OUT" \
+  "its six-space requirement line is not a gem the change added"
+
+# =============================================================================
+# The baseline is bounded
+# =============================================================================
+
+_flow_test_begin "a very large baseline is capped and says it was cut"
+# The baseline goes into a reviewer's prompt; a lockfile bump must not crowd
+# out the findings it exists to support.
+R=$(_dd_repo)
+python3 - "$R/requirements.txt" <<'PYEOF2'
+import sys
+with open(sys.argv[1], "w") as f:
+    for i in range(600):
+        f.write("pkg%03d==1.0.0\n" % i)
+PYEOF2
+_dd_commit "$R" "base"
+printf 'newthing==1.0.0\n' >> "$R/requirements.txt"; _dd_commit "$R" "head"
+OUT=$(_dd_run "$R" HEAD~1 HEAD)
+assert_contains "DEP_BASELINE_TRUNCATED=" "$OUT" "the cut is announced"
+COUNT=$(printf '%s\n' "$OUT" | grep -c '^DEP_BASELINE=')
+assert_equal "500" "$COUNT" "exactly the cap is printed"
+
+# =============================================================================
 # Install hooks — readable offline only from a lockfile
 # =============================================================================
 
@@ -587,6 +712,21 @@ assert_match 'FLOW_DEP_BIN="\$\(py_path' "$HELPER_SRC" \
 # =============================================================================
 # This repository's own history — the acceptance criterion's named case
 # =============================================================================
+
+_flow_test_begin "the history these tests read is actually present"
+# A depth-1 clone has no history, and the helper would then answer
+# STATE=unavailable for a reason that has nothing to do with the code. Say so
+# here rather than letting the next two tests fail as "unavailable is not ok".
+# The workflow sets fetch-depth: 0 for exactly this.
+DD_HISTORY=1
+for SHA in 92fd253 4519858; do
+  if git -C "$REPO_ROOT" cat-file -e "$SHA^{commit}" 2>/dev/null; then
+    _flow_assert_pass "commit $SHA is present"
+  else
+    DD_HISTORY=0
+    _flow_assert_fail "commit $SHA is missing — the clone is shallow (needs fetch-depth: 0)"
+  fi
+done
 
 _flow_test_begin "the helper reads this repository's own requirements.txt history"
 # 4519858 is the commit that introduced plugins/flow/requirements.txt. Its

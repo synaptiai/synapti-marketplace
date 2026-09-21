@@ -32,6 +32,10 @@ feat(flow): security-reviewer judges new and bumped dependencies, and those find
   to a human because it is not the agent's decision.
 - Resolving transitive dependencies. Only packages named in a manifest or lockfile the diff touches
   are judged. A transitively-introduced package is out of scope.
+- A baseline beyond the manifests the change touches. `DEP_BASELINE=` is parsed from the
+  manifests in the diff, so a near-name to a package declared only in a manifest this change
+  leaves alone is not reported. Widening it to the whole tree is a larger read on every run;
+  the boundary is stated in the helper's header instead of left to be discovered.
 - A seventh fan-out agent. The judgment is a conditional step inside `security-reviewer`, which
   already runs the audits, so it costs nothing on a pull request that touches no manifest.
 
@@ -56,11 +60,24 @@ feat(flow): security-reviewer judges new and bumped dependencies, and those find
   `references/command-output-format.md`:
   - `STATE=ok|none|unavailable`, `REASON=<why>` (on `unavailable` and `none`)
   - `MANIFESTS_EXAMINED=<n>` — manifests in the diff the helper attempted to read
+  - `DIFF_BASE=<sha>` — the commit actually compared: the merge base of the two refs, not the
+    tip of the base branch. Compared against the tip, everything the base branch did while the
+    change was open reads as a reversal.
   - `DEP_ADDED=<name>@<version> manifest=<path>:<line>`
-  - `DEP_CHANGED=<name> <old>→<new> manifest=<path>:<line>`
+  - `DEP_CHANGED=<name> <old>-><new> manifest=<path>:<line>`
   - `DEP_REMOVED=<name> manifest=<path>:<line>`
-  - `DEP_BASELINE=<name>` — one per package present in the manifest at the BASE commit, so the
-    near-name check has a baseline the pull request does not control
+  - `DEP_BASELINE=<name>` — one per package present at the merge base, so the near-name check
+    has a baseline the pull request does not control. Capped at 500 names, with
+    `DEP_BASELINE_TRUNCATED=<n> name(s) not printed` when it was cut.
+  - `DEP_NEAR_NAME=<added> ~ <baseline> distance=<n>` — an added package within edit distance 2
+    of a baseline name. Added names are never compared with each other.
+  - `DEP_INSTALL_HOOK=<name> manifest=<path>:<line>` — a lockfile entry that says an install
+    script runs.
+  - A value carrying whitespace is quoted, per rule 2 of `command-output-format.md`: npm writes
+    ranges like `>=1.0.0 <2.0.0` and a Gemfile writes `~> 7.0`, and bare, the space would end the
+    field.
+  - A package the helper cannot locate on a line (a minified single-line `package.json`) is cited
+    at file level, with no `:N`, which `finding-schema.md` permits. A line is never invented.
   - `MANIFEST_UNPARSED=<path> reason=<why>` — one per manifest in the diff that could not be read
   - Ecosystems: npm (`package.json`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`), Python
     (`requirements*.txt`, `pyproject.toml`, `poetry.lock`), Go (`go.mod`, `go.sum`), Rust
@@ -91,9 +108,11 @@ feat(flow): security-reviewer judges new and bumped dependencies, and those find
 |---|---|---|
 | Absent vs unreadable | A manifest the parser cannot read prints `STATE=none`, telling the reviewer no dependency changed when the pull request added one | A fixture whose diff touches a Gemfile the parser cannot read prints `STATE=unavailable`, a `REASON=`, and `MANIFEST_UNPARSED=Gemfile`; it never prints `STATE=none` |
 | Examined vs absent | "A manifest changed but no dependency did" and "no manifest changed" collapse to the same output | `92fd253..4519858` prints `MANIFESTS_EXAMINED=1` with two `DEP_ADDED=` lines; a comment-only manifest edit prints `MANIFESTS_EXAMINED=1` with zero `DEP_` lines; `4519858..HEAD` prints `MANIFESTS_EXAMINED=0` |
-| Undetermined vs unlicensed | A failed license lookup raises the P1 "no license" escalation, so an offline run blocks every pull request | A fixture with an unresolvable package yields a P2/MEDIUM `license undetermined` row and no P1 escalation row |
+| Undetermined vs unlicensed | A failed license lookup raises the P1 "no license" escalation, so an offline run blocks every pull request | `agents/security-reviewer.md` states `undetermined` at P2 and the license conflict at P1 with the six-field escalation, and a test asserts both rows and that the two are not the same row. The judgment itself is the agent's, so the check is on the instruction it is given. |
 | Import-name aliasing | `pyyaml` is reported as never imported because the code writes `import yaml`, so every Python pull request carries a false P3 | The `pyyaml` case is asserted to carry confidence LOW, which `bin/flow-finding-route.sh` keeps out of the review decision |
-| Baseline trust | The near-name baseline is read from the pull request head, so a pull request can introduce both the typosquat and the name it mimics | The baseline is read with `git show <base>:<path>`; a fixture whose head adds a package to the manifest does not see it in `DEP_BASELINE=` |
+| Baseline trust | The near-name baseline is read from the pull request head, so a pull request can introduce both the typosquat and the name it mimics | The baseline is read at the merge base; a fixture whose head adds a package does not see it in `DEP_BASELINE=`, and a fixture adding two mutually-near names together raises no `DEP_NEAR_NAME=` |
+| Base drift | The comparison uses the tip of the base branch, so a package the base branch added while the change was open is reported as this change removing it | A fixture that forks, adds a package on each side, and runs: no `DEP_REMOVED=` for the base branch's package, it does not appear in `DEP_BASELINE=`, and a manifest only the base branch added does not raise `MANIFESTS_EXAMINED` |
+| Windows silence | The helper hands `python3` a POSIX path, the module import fails, and it exits 0 having done nothing — the shape issue #246 catalogues in ten helpers | The module directory goes through `cygpath -m` at one named boundary, and a fixture running the script with no module beside it prints `STATE=unavailable` and exits 2 |
 | Value forgery | A package name or version carrying a newline or `|` splits the output into forged extra records | A fixture manifest whose version field holds a newline and a `|` is refused, and the refusal names the manifest rather than printing the value |
 
 ## Decisions (AskUserQuestion, 2026-09-21)
@@ -110,3 +129,7 @@ feat(flow): security-reviewer judges new and bumped dependencies, and those find
   commit. Rejected: leaving the comparison to the agent, where nothing can test that it ran.
 - Issue body: AC3 was rewritten to name `agents/security-reviewer.md`, the only file carrying the
   claim it asked to remove. Verified live before the branch was created.
+
+<!-- auto-log: 2026-09-21 14:26 commit "fix(flow): flow-dep-diff.sh resolves its module path for a native python3" -->
+
+<!-- auto-log: 2026-09-21 14:28 commit "fix(flow): flow-dep-diff.sh resolves its module path for a native python3" -->

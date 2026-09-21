@@ -22,7 +22,11 @@
 #   DEP_ADDED=<name>@<version> manifest=<path>:<line>
 #   DEP_CHANGED=<name> <old>-><new> manifest=<path>:<line>
 #   DEP_REMOVED=<name> manifest=<path>:<line>
-#   DEP_BASELINE=<name>                       (each package present at the base)
+#   DIFF_BASE=<sha>                           (the merge base actually compared)
+#   DEP_BASELINE=<name>                       (each package at the merge base,
+#     from the manifests THIS RANGE TOUCHES — a near-name to a package declared
+#     only in a manifest the range leaves alone is therefore not reported)
+#   DEP_BASELINE_TRUNCATED=<n> name(s) not printed
 #   DEP_INSTALL_HOOK=<name> manifest=<path>:<line>
 #   DEP_NEAR_NAME=<added> ~ <baseline> distance=<n>
 #   MANIFEST_UNPARSED=<path> reason=<why>
@@ -181,10 +185,24 @@ for ref in (BASE, HEAD):
     if not ok:
         flush("unavailable", "ref %s does not resolve to a commit" % safe_scalar(ref))
 
+# Compare against the merge base, not the tip of the base branch. With a
+# two-dot diff, everything the base branch did after the fork reads as a
+# reversal: a package main added while this change was open prints
+# DEP_REMOVED, and lands in the near-name baseline as though the change had
+# seen it. Neither is true of the change under review.
+ok, merge_base = git(["merge-base", BASE, HEAD])
+if not ok or not merge_base.strip():
+    flush(
+        "unavailable",
+        "no merge base between %s and %s" % (safe_scalar(BASE), safe_scalar(HEAD)),
+    )
+DIFF_BASE = merge_base.strip()
+emit("DIFF_BASE=%s" % safe_scalar(DIFF_BASE))
+
 # -c core.quotePath=off keeps a non-ASCII path printable as itself rather than
 # as C-style escapes, which would not match the path `git show` then wants.
 ok, listing = git(
-    ["-c", "core.quotePath=off", "diff", "--name-only", BASE, HEAD]
+    ["-c", "core.quotePath=off", "diff", "--name-only", DIFF_BASE, HEAD]
 )
 if not ok:
     flush("unavailable", "git diff failed: %s" % (safe_scalar(listing) or "unknown"))
@@ -224,7 +242,7 @@ examined = 0
 
 for path, parser in manifests:
     examined += 1
-    base_text = read_at(BASE, path)
+    base_text = read_at(DIFF_BASE, path)
     head_text = read_at(HEAD, path)
 
     base_res = None
@@ -287,6 +305,20 @@ for path, parser in manifests:
                 removed.append((safe_name, path, line))
 
 
+def field(value):
+    """Render a scalar as one output field.
+
+    A value carrying whitespace would otherwise split the record into extra
+    fields — npm writes ranges like ">=1.0.0 <2.0.0" and a Gemfile writes
+    "~> 7.0" — so it is quoted, per rule 2 of references/command-output-format.md.
+    """
+    if value is None:
+        return "(unpinned)"
+    if any(c.isspace() for c in value):
+        return '"%s"' % value
+    return value
+
+
 def loc(path, line):
     safe_path = safe_scalar(path)
     if not safe_path:
@@ -297,16 +329,26 @@ def loc(path, line):
 
 
 for name, version, path, line in sorted(added):
-    emit("DEP_ADDED=%s@%s %s" % (name, version or "(unpinned)", loc(path, line)))
+    emit("DEP_ADDED=%s@%s %s" % (name, field(version), loc(path, line)))
 for name, old, new, path, line in sorted(changed):
     emit(
         "DEP_CHANGED=%s %s->%s %s"
-        % (name, old or "(unpinned)", new or "(unpinned)", loc(path, line))
+        % (name, field(old), field(new), loc(path, line))
     )
 for name, path, line in sorted(removed):
     emit("DEP_REMOVED=%s %s" % (name, loc(path, line)))
-for name in sorted(baseline_names):
+# The baseline goes into a reviewer's prompt. A lockfile bump can carry
+# thousands of names, which would crowd out the findings they are there to
+# support, so the list is capped and says when it was.
+MAX_BASELINE = 500
+_sorted_baseline = sorted(baseline_names)
+for name in _sorted_baseline[:MAX_BASELINE]:
     emit("DEP_BASELINE=%s" % name)
+if len(_sorted_baseline) > MAX_BASELINE:
+    emit(
+        "DEP_BASELINE_TRUNCATED=%d name(s) not printed"
+        % (len(_sorted_baseline) - MAX_BASELINE)
+    )
 for name, path, line in sorted(hooks):
     emit("DEP_INSTALL_HOOK=%s %s" % (name, loc(path, line)))
 

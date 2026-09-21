@@ -93,6 +93,12 @@ def parse_requirements(text):
         # -r / -e / --flag lines point elsewhere; they declare no version here.
         if line.startswith("-"):
             continue
+        # A VCS or URL requirement (`git+https://...#egg=foo`, a bare wheel URL)
+        # would otherwise match the name pattern as the package `git` or
+        # `https`. The real name lives in the fragment, which is optional, so
+        # this reports nothing rather than inventing one.
+        if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*(\+[A-Za-z][A-Za-z0-9+.-]*)?://", line):
+            continue
         m = _REQ_LINE.match(line)
         if not m:
             continue
@@ -462,8 +468,11 @@ def parse_gemfile(text):
     return ParseResult(deps)
 
 
+# Exactly four spaces. Under `specs:` a resolved gem is indented four and its
+# own requirements six; matching 4-6 would read `activesupport (= 7.0.0)` as a
+# top-level gem and, via setdefault, let whichever alphabetises first win.
 _GEMFILE_LOCK_SPEC = re.compile(
-    r"^\s{4,6}([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\(([^)]*)\))?\s*$"
+    r"^ {4}(?! )([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\(([^)]*)\))?\s*$"
 )
 
 

@@ -44,6 +44,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # The default is a depth-1 clone, which has no history. Tests that
+          # read what a past commit did to a manifest — dep-diff.test.sh runs
+          # the dependency helper over this repository's own
+          # plugins/flow/requirements.txt history — cannot resolve those
+          # commits on a shallow runner, and fail for a reason that has
+          # nothing to do with the code under test.
+          fetch-depth: 0
 
       - name: Install Python prerequisites
         # journal-record.test.sh and promote-proposal.test.sh exercise the
@@ -106,6 +114,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # The default is a depth-1 clone, which has no history. Tests that
+          # read what a past commit did to a manifest — dep-diff.test.sh runs
+          # the dependency helper over this repository's own
+          # plugins/flow/requirements.txt history — cannot resolve those
+          # commits on a shallow runner, and fail for a reason that has
+          # nothing to do with the code under test.
+          fetch-depth: 0
 
       - name: Install Python prerequisites
         # tests/journal-orchestration/test.sh exercises the PyYAML-backed
