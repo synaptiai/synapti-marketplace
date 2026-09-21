@@ -67,6 +67,30 @@ lsof -i -P -n 2>/dev/null | grep LISTEN | grep -E ':(3000|4000|5000|8000|8080)' 
 [ -f "cypress.config.ts" ] || [ -f "cypress.config.js" ] && printf '%s\n' "Cypress"
 ```
 
+## Dependency license reads
+
+Used by `agents/security-reviewer.md` Step 4, once per package a change adds or
+bumps. Each command asks the package's own manager what license it declares.
+
+| Ecosystem | Command |
+|---|---|
+| npm | `npm view <pkg> license` |
+| Python | `pip show <pkg>` (the `License:` line) |
+| Rust | `cargo metadata --format-version 1 --no-deps` |
+| Go | `go list -m -json <module>` |
+
+`npm view` and `go list -m` reach the network, and `pip show` reports only
+packages already installed in the environment it runs in. So a lookup can fail
+for reasons that say nothing about the package. A failed lookup is reported as
+`license undetermined` at P2, never as the P1 "declares no license" escalation:
+those are different facts, and an offline run would otherwise raise a blocking
+escalation on every pull request.
+
+`skills/capability-discovery/SKILL.md` probes for `license-checker`,
+`pip-licenses`, `cargo-license` and `go-licenses`. When one is installed it
+gives a fuller answer than the commands above; when none is, the probe says so
+rather than passing over it in silence.
+
 ## Smoke tests
 
 With a dev server running:

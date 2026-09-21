@@ -24,3 +24,14 @@ pyyaml==6.0.2
 # importable, and fall back to a narrower structural check when it is not. CI
 # installs it so the strict path is the one under test.
 jsonschema==4.23.0
+
+# tomli — REQUIRED on Python < 3.11, unused on 3.11+. bin/_flow_dep_parse.py
+# reads pyproject.toml, Cargo.toml, poetry.lock and Cargo.lock with a real
+# TOML parser: `tomllib` where the standard library has it, this where it does
+# not. The hand-rolled scanner it replaced cost three review cycles, each fix
+# revealing the next construct it did not know — tri-quoted strings, escapes,
+# inline-table keys — and the last of those made a pyproject.toml carrying an
+# ordinary readme report an empty dependency list rather than an error.
+# Without either parser the helper reports STATE=unavailable and says why; it
+# never reports a manifest as read.
+tomli==2.0.2; python_version < "3.11"

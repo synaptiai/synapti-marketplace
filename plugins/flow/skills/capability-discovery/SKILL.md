@@ -29,6 +29,20 @@ Steps 1-5 are independent — run them simultaneously with parallel tool calls.
 **Early exit — markdown-only**: no tech-stack file AND no quality commands in CLAUDE.md → report Quality Commands "No code-related quality commands applicable", Tech Stack "Markdown-only project", skip Step 6.
 
 6. **Verification capabilities**: `ls verify.sh scripts/verify* playwright.config.* cypress.config.* 2>/dev/null`.
+
+   Also probe the four dependency-license tools, which `agents/security-reviewer.md` Step 4 uses when a change adds or bumps a package:
+
+   ```bash
+   for t in license-checker pip-licenses cargo-license go-licenses; do
+     if command -v "$t" >/dev/null 2>&1; then
+       printf '%s\n' "LICENSE_TOOL=$t status=available"
+     else
+       printf '%s\n' "LICENSE_TOOL=$t status=not-installed"
+     fi
+   done
+   ```
+
+   A tool that is absent is reported `not-installed`; none of the four is passed over silently, because a reviewer that never learns a license tool was missing reads a thinner dependency judgment as a complete one. The per-ecosystem fallback commands are in `references/runtime-verification-probes.md` § Dependency license reads.
 7. **LSP capabilities**: pre-check `lsp.enabled` (default `true`; if `false`, report every feature `Disabled`). Probe `documentSymbol`, `hover`, `goToDefinition`, `findReferences`, `goToImplementation` against one representative source file for the detected stack, each bounded by `lsp.timeout` (default 5000 ms); infer `diagnostics` Available when `documentSymbol` succeeds. Procedure and result rules: `references/lsp-capability-probes.md`.
 
 ## Output Format

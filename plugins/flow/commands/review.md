@@ -883,14 +883,20 @@ Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
    broken until proven otherwise. Flag every security behavior you cannot prove
    correct from the code as written: OWASP Top 10, secrets, auth/authz, input
    validation, dependency vulnerabilities. Return P1/P2/P3 findings with
-   file:line citations and category. Do NOT include challenge information —
+   file:line citations and category.
+   Run Step 4's dependency judgment and emit `DEP-` findings with
+   `category=dependency`, located where the helper put it: the manifest `file:line` when it printed a
+   line, and the file alone when it did not. Do NOT include challenge information —
    another reviewer will challenge your findings later."
 
 Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL):
   "You are reviewing PR #$ARGUMENTS as the VERIFIER variant. Assume the diff is
    correct as a baseline. Look only for missed security edge cases, undocumented
-   contract assumptions, or invariants that aren't enforced. Return P1/P2/P3
-   findings with file:line citations and category."
+   contract assumptions, or invariants that aren't enforced.
+   Run Step 4's dependency judgment and emit `DEP-` findings with
+   `category=dependency`, located where the helper put it: the manifest `file:line` when it printed a
+   line, and the file alone when it did not.
+   Return P1/P2/P3 findings with file:line citations and category."
 
 Agent(code-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
   "PR #$ARGUMENTS as SKEPTIC. Assume broken; flag logic/quality/edge-case
@@ -1171,7 +1177,10 @@ Agent(error-handler-inspector):
 
 Agent(security-reviewer):
   "Review PR #$ARGUMENTS diff for OWASP Top 10, secrets, auth/authz,
-   input validation, dependency vulnerabilities. Return P1/P2/P3 with file:line
+   input validation, dependency vulnerabilities. Run Step 4's dependency
+   judgment and emit `DEP-` findings with `category=dependency`,
+   located where the helper put it: the manifest `file:line` when it printed a
+   line, and the file alone when it did not. Return P1/P2/P3 with file:line
    and a confidence (HIGH, MEDIUM or LOW) per finding per references/finding-schema.md."
 
 Skill(holdout-validation):
