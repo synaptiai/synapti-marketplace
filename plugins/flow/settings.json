@@ -16,7 +16,20 @@
     "teammateTimeout": 300
   },
   "conventions": {
-    "commitTypes": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build", "revert", "improve"],
+    "commitTypes": [
+      "feat",
+      "fix",
+      "docs",
+      "style",
+      "refactor",
+      "test",
+      "chore",
+      "perf",
+      "ci",
+      "build",
+      "revert",
+      "improve"
+    ],
     "branchPatterns": {
       "feature": "feature/issue-{N}-{desc}",
       "fix": "fix/issue-{N}-{desc}",
@@ -27,7 +40,11 @@
     "strategy": "squash",
     "deleteBranch": true,
     "markerTrust": {
-      "allowedAssociations": ["OWNER", "MEMBER", "COLLABORATOR"]
+      "allowedAssociations": [
+        "OWNER",
+        "MEMBER",
+        "COLLABORATOR"
+      ]
     }
   },
   "conflictResolution": {
@@ -40,7 +57,10 @@
   "learning": {
     "enabled": true,
     "proposalDir": "~/.claude/flow-proposals",
-    "sources": ["journal", "transcripts"],
+    "sources": [
+      "journal",
+      "transcripts"
+    ],
     "transcriptDir": ""
   },
   "journal": {
@@ -48,7 +68,10 @@
   },
   "specFirst": {
     "requireAcceptanceCriteria": true,
-    "allowSpecFreeLabels": ["documentation", "chore"],
+    "allowSpecFreeLabels": [
+      "documentation",
+      "chore"
+    ],
     "riskMap": true
   },
   "verdict": {
@@ -84,12 +107,26 @@
     "enabled": true,
     "screenshotDir": ".screenshots",
     "viewports": [
-      { "name": "desktop", "width": 1280, "height": 720 },
-      { "name": "tablet", "width": 768, "height": 1024 },
-      { "name": "mobile", "width": 375, "height": 812 }
+      {
+        "name": "desktop",
+        "width": 1280,
+        "height": 720
+      },
+      {
+        "name": "tablet",
+        "width": 768,
+        "height": 1024
+      },
+      {
+        "name": "mobile",
+        "width": 375,
+        "height": 812
+      }
     ],
     "maxIterations": 3,
-    "requireVisualVerification": false
+    "requireVisualVerification": false,
+    "flows": "on",
+    "maxFlowSteps": 8
   },
   "flow": {
     "runtime": {
@@ -113,7 +150,11 @@
     },
     "triggers": {
       "enabled": true,
-      "allowedTypes": ["manual", "hook", "loop_prompt"],
+      "allowedTypes": [
+        "manual",
+        "hook",
+        "loop_prompt"
+      ],
       "allowAutonomousMerge": false,
       "allowTriggerCreationFromTriggeredRun": false,
       "defaultConcurrency": "skip_if_running",

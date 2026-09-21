@@ -112,6 +112,14 @@ Observed: {sentences}
 
 `### Visual analysis` is the judge's only view of the screen. On a `ui` criterion it carries one block per viewport configured in `visualVerification.viewports` (`Viewport:`, `Screenshot:`, `Result:`, `Observed:`), copied verbatim from the `visual-verification` skill's result. The `Screenshot:` line is a path for the human reader; the judge never opens it. The `Observed:` sentences are the evidence.
 
+When the criterion's text carries an interaction verb (click, submit, type, select, toggle, open, navigate, drag) and `visualVerification.flows` is `on`, the section ALSO carries one block per step of each driven scenario. A step block is the same shape with one line added between `Screenshot:` and `Result:`:
+
+```
+Step: <n>/<m> <action>
+```
+
+Step blocks are additional to the viewport blocks, not a substitute: the viewport blocks prove the page renders across every configured viewport, and the step blocks prove the interaction the criterion describes behaves. A criterion carrying an interaction verb whose section has no `Step:` block is an auto-FAIL (`incomplete evidence — missing interaction steps on a ui criterion`), because a screenshot of the page before the interaction is not evidence that the interaction works.
+
 ## Mandatory subsections
 
 The verdict-judge's auto-FAIL rules check for these subsections by exact heading text. Producers MUST emit them with this casing and punctuation:
@@ -121,7 +129,7 @@ The verdict-judge's auto-FAIL rules check for these subsections by exact heading
 | `### Type` | yes (informational) | Used to apply type-conditional rules; a missing `### Type` is treated as `behavioral` (the strictest case) |
 | `### Verification command` | yes (informational) | Used to identify what the evidence comes from; not an auto-FAIL trigger |
 | `### Output` | yes (informational) | Used as the actual evidence; not an auto-FAIL trigger |
-| `### Visual analysis` | **YES (auto-FAIL if missing or blank on a `ui` criterion; `none — criterion type {type} has no visual surface` accepted on every other type)** | Verdict-judge Step 1 rule: "missing-visual-analysis"; Step 2 rule "visual analysis does not show required state" reads its viewport blocks |
+| `### Visual analysis` | **YES (auto-FAIL if missing or blank on a `ui` criterion; `none — criterion type {type} has no visual surface` accepted on every other type; on a `ui` criterion whose text carries an interaction verb, auto-FAIL when it carries no `Step:` block)** | Verdict-judge Step 1 rules: "missing-visual-analysis" and "missing interaction steps"; Step 2 rule (d) reads its viewport blocks and rule (e) its `Step:` blocks |
 | `### Does NOT promise` | **YES (auto-FAIL if missing)** | Verdict-judge Step 1 rule: "missing-non-goals" |
 | `### What was tested` | yes (informational) | Used during per-criterion evaluation |
 | `### What was NOT tested` | **YES (auto-FAIL if missing)** | Verdict-judge Step 1 rule: "missing-completeness-subsection" |

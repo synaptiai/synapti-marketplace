@@ -92,8 +92,14 @@ Visual verification is owned by the `visual-verification` skill (`skills/visual-
 Skill(visual-verification):
   Inputs:
   - Branch diff: {file list from git diff --name-only "origin/$DEFAULT_BRANCH"...HEAD}
-  - Acceptance criteria: {criteria list from issue body, if applicable}
+  - Acceptance criteria: {the FULL TEXT of each criterion from the issue body, not a
+    summary — the skill decides which ones carry an interaction verb by reading their
+    words, and a paraphrase loses that}
+  - Risk-map rows: {each row whose Area names a UI state, verbatim, or "none"}
   - Dev server URL: {URL from Step 3, or "unavailable" if Step 3 failed}
+
+  Without the criteria text and the risk-map rows the skill can only verify page loads,
+  and a criterion describing an interaction gets a screenshot of the page before it.
 ```
 
 The skill returns:
