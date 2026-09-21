@@ -883,7 +883,9 @@ Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
    broken until proven otherwise. Flag every security behavior you cannot prove
    correct from the code as written: OWASP Top 10, secrets, auth/authz, input
    validation, dependency vulnerabilities. Return P1/P2/P3 findings with
-   file:line citations and category. Do NOT include challenge information —
+   file:line citations and category.
+   Run Step 4's dependency judgment and emit `DEP-` findings with
+   `category=dependency`, located at the manifest `file:line`. Do NOT include challenge information —
    another reviewer will challenge your findings later."
 
 Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL):
@@ -1171,7 +1173,9 @@ Agent(error-handler-inspector):
 
 Agent(security-reviewer):
   "Review PR #$ARGUMENTS diff for OWASP Top 10, secrets, auth/authz,
-   input validation, dependency vulnerabilities. Return P1/P2/P3 with file:line
+   input validation, dependency vulnerabilities. Run Step 4's dependency
+   judgment and emit `DEP-` findings with `category=dependency`, located at
+   the manifest `file:line`. Return P1/P2/P3 with file:line
    and a confidence (HIGH, MEDIUM or LOW) per finding per references/finding-schema.md."
 
 Skill(holdout-validation):

@@ -293,6 +293,8 @@ Agent(test-runner):
 Agent(security-reviewer):
   "Review the branch diff against $DEFAULT_BRANCH for OWASP Top 10,
    secrets, auth/authz, input validation, dependency vulnerabilities.
+   Run Step 4's dependency judgment and emit `DEP-` findings with
+   `category=dependency`, located at the manifest `file:line`.
    Return P1/P2/P3 findings with file:line and a confidence (HIGH, MEDIUM or LOW) per finding
    per references/finding-schema.md."
 
