@@ -147,6 +147,27 @@ _dd_eco() {
   assert_contains "$exp_r" "$OUT" "$label: removed"
 }
 
+# _dd_untouched <label> <file> <content> <non-dep-edit>
+# The fourth per-ecosystem state: the manifest is in the diff, but nothing
+# about its dependencies changed. The edit must be a real one a person would
+# make — a JSON manifest admits no comments, so "change a comment" is not a
+# case that exists for package.json, package-lock.json or Cargo.lock, and an
+# untouched fixture built only on comments never reaches them.
+_dd_untouched() {
+  local label="$1" file="$2" base="$3" head="$4"
+  local R OUT
+  R=$(_dd_repo)
+  mkdir -p "$(dirname "$R/$file")"
+  printf '%s' "$base" > "$R/$file"; _dd_commit "$R" "base"
+  printf '%s' "$head" > "$R/$file"; _dd_commit "$R" "non-dependency edit"
+  OUT=$(_dd_run "$R" HEAD~1 HEAD)
+  assert_contains "MANIFESTS_EXAMINED=1" "$OUT" "$label untouched: the manifest was examined"
+  assert_not_contains "STATE=none" "$OUT" "$label untouched: not reported as never looked at"
+  assert_not_contains "DEP_ADDED=" "$OUT" "$label untouched: nothing added"
+  assert_not_contains "DEP_CHANGED=" "$OUT" "$label untouched: nothing changed"
+  assert_not_contains "DEP_REMOVED=" "$OUT" "$label untouched: nothing removed"
+}
+
 _flow_test_begin "npm package.json: added, changed, removed"
 _dd_eco "package.json" "package.json" \
 '{
@@ -379,6 +400,173 @@ _dd_eco "Gemfile.lock" "Gemfile.lock" \
     sidekiq (7.2.0)
 ' \
 "DEP_ADDED=sidekiq@7.2.0" "DEP_CHANGED=rails 7.0.0->7.1.0" "DEP_REMOVED=puma"
+
+# -----------------------------------------------------------------------------
+# The fourth state, per ecosystem: the manifest changed, the dependencies did not
+# -----------------------------------------------------------------------------
+
+_flow_test_begin "an untouched dependency set is examined, per manifest format"
+
+_dd_untouched "package.json" "package.json" \
+'{
+  "name": "demo",
+  "dependencies": { "left-pad": "1.0.0" }
+}
+' \
+'{
+  "name": "demo-renamed",
+  "dependencies": { "left-pad": "1.0.0" }
+}
+'
+
+_dd_untouched "package-lock.json" "package-lock.json" \
+'{
+  "name": "demo",
+  "lockfileVersion": 3,
+  "packages": { "node_modules/left-pad": { "version": "1.0.0" } }
+}
+' \
+'{
+  "name": "demo-renamed",
+  "lockfileVersion": 3,
+  "packages": { "node_modules/left-pad": { "version": "1.0.0" } }
+}
+'
+
+_dd_untouched "yarn.lock" "yarn.lock" \
+'# yarn lockfile v1
+left-pad@^1.0.0:
+  version "1.0.0"
+' \
+'# yarn lockfile v1
+# regenerated
+left-pad@^1.0.0:
+  version "1.0.0"
+'
+
+_dd_untouched "pnpm-lock.yaml" "pnpm-lock.yaml" \
+'lockfileVersion: 5.4
+packages:
+  /left-pad/1.0.0:
+    dev: false
+' \
+'lockfileVersion: 5.4
+packages:
+  /left-pad/1.0.0:
+    dev: true
+'
+
+_dd_untouched "requirements.txt" "requirements.txt" \
+'# pinned
+flask==2.0.0
+' \
+'# pinned, see the release notes
+flask==2.0.0
+'
+
+_dd_untouched "pyproject.toml" "pyproject.toml" \
+'[project]
+name = "demo"
+dependencies = [
+  "flask==2.0.0",
+]
+' \
+'[project]
+name = "demo"
+description = "a demo"
+dependencies = [
+  "flask==2.0.0",
+]
+'
+
+_dd_untouched "poetry.lock" "poetry.lock" \
+'[[package]]
+name = "flask"
+version = "2.0.0"
+description = "web framework"
+' \
+'[[package]]
+name = "flask"
+version = "2.0.0"
+description = "a web framework"
+'
+
+_dd_untouched "go.mod" "go.mod" \
+'module example.com/demo
+
+go 1.21
+
+require github.com/pkg/errors v0.9.0
+' \
+'module example.com/demo-renamed
+
+go 1.21
+
+require github.com/pkg/errors v0.9.0
+'
+
+_dd_untouched "go.sum" "go.sum" \
+'github.com/pkg/errors v0.9.0 h1:aaa=
+' \
+'github.com/pkg/errors v0.9.0 h1:aaa=
+github.com/pkg/errors v0.9.0/go.mod h1:bbb=
+'
+
+_dd_untouched "Cargo.toml" "Cargo.toml" \
+'[package]
+name = "demo"
+
+[dependencies]
+serde = "1.0.180"
+' \
+'[package]
+name = "demo"
+edition = "2021"
+
+[dependencies]
+serde = "1.0.180"
+'
+
+_dd_untouched "Cargo.lock" "Cargo.lock" \
+'version = 3
+
+[[package]]
+name = "serde"
+version = "1.0.180"
+' \
+'version = 4
+
+[[package]]
+name = "serde"
+version = "1.0.180"
+'
+
+_dd_untouched "Gemfile" "Gemfile" \
+"source 'https://rubygems.org'
+gem 'rails', '7.0.0'
+" \
+"source 'https://rubygems.org'
+# pinned until the next upgrade window
+gem 'rails', '7.0.0'
+"
+
+_dd_untouched "Gemfile.lock" "Gemfile.lock" \
+'GEM
+  remote: https://rubygems.org/
+  specs:
+    rails (7.0.0)
+
+BUNDLED WITH
+   2.4.0
+' \
+'GEM
+  remote: https://rubygems.org/
+  specs:
+    rails (7.0.0)
+
+BUNDLED WITH
+   2.5.1
+'
 
 _flow_test_begin "a manifest in a subdirectory is examined"
 # Matching is on the basename; this repository's own manifest lives at

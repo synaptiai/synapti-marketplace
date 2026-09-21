@@ -142,3 +142,13 @@ feat(flow): security-reviewer judges new and bumped dependencies, and those find
 <!-- auto-log: 2026-09-21 14:26 commit "fix(flow): flow-dep-diff.sh resolves its module path for a native python3" -->
 
 <!-- auto-log: 2026-09-21 14:28 commit "fix(flow): flow-dep-diff.sh resolves its module path for a native python3" -->
+
+<!-- auto-log: 2026-09-21 14:44 commit "chore(flow): capture the #217 goal contract and specification" -->
+
+<!-- auto-log: 2026-09-21 14:45 commit "chore(flow): capture the #217 goal contract and specification" -->
+
+<!-- auto-log: 2026-09-21 14:45 commit "chore(flow): capture the #217 goal contract and specification" -->
+
+<!-- auto-log: 2026-09-21 14:46 commit "chore(flow): capture the #217 goal contract and specification" -->
+
+<!-- auto-log: 2026-09-21 14:46 commit "chore(flow): capture the #217 goal contract and specification" -->
