@@ -36,7 +36,10 @@
 # because withholding them helps nobody, but the answer is incomplete and says so.
 #
 # Exits 0 in every reported state: the section is the contract, not the exit
-# code. Exits 1 on a usage error, 2 when git itself could not be read.
+# code. Exits 1 on a usage error, and 2 when the helper itself could not run
+# — git unreadable, or the parser module unimportable — in which case it
+# still prints STATE=unavailable so a caller reading only stdout is not left
+# to infer silence.
 
 set -uo pipefail
 
@@ -91,8 +94,26 @@ fi
 
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Git Bash hands this script a POSIX path (/d/a/proj/...) while `python3` on
+# Windows is a native build that reads it as a different location, so the
+# import of the parser module beside this script fails before any work starts.
+# `cygpath -m` renders a path in the one form bash, git and a native Python all
+# resolve. On POSIX this is the identity and the conversion is unreachable.
+# Shape copied from bin/journal-append.sh; issue #246 consolidates the copies.
+py_path() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "$1" 2>/dev/null || printf '%s' "$1"
+      else
+        printf '%s' "$1"
+      fi ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 PYTHONSAFEPATH=1 FLOW_DEP_BASE="$BASE" FLOW_DEP_HEAD="$HEAD_REF" \
-  FLOW_DEP_BIN="$BIN_DIR" python3 - <<'PYEOF'
+  FLOW_DEP_BIN="$(py_path "$BIN_DIR")" python3 - <<'PYEOF'
 import os
 import subprocess
 import sys
@@ -100,12 +121,25 @@ import sys
 sys.path[:] = [p for p in sys.path if p not in ("", ".")]
 sys.path.insert(0, os.environ["FLOW_DEP_BIN"])
 
-from _flow_dep_parse import (  # noqa: E402
-    ParseError,
-    classify,
-    edit_distance,
-    safe_scalar,
-)
+try:
+    from _flow_dep_parse import (  # noqa: E402
+        ParseError,
+        classify,
+        edit_distance,
+        safe_scalar,
+    )
+except ImportError as e:
+    # Loud, not silent. A caller that sees STATE=unavailable knows the
+    # dependency read did not happen; one that saw STATE=none would be told
+    # the change touches no dependency, which is a different claim.
+    sys.stderr.write(
+        "flow-dep-diff.sh: cannot import _flow_dep_parse from %s: %s\n"
+        % (os.environ.get("FLOW_DEP_BIN", "?"), e)
+    )
+    print("STATE=unavailable")
+    print("REASON=the manifest parser module could not be imported")
+    print("MANIFESTS_EXAMINED=0")
+    sys.exit(2)
 
 BASE = os.environ["FLOW_DEP_BASE"]
 HEAD = os.environ["FLOW_DEP_HEAD"]

@@ -87,8 +87,11 @@ if [ ! -x "$FLOW_ROOT/bin/flow-dep-diff.sh" ]; then
   printf '%s\n' "DEP_STATE=unavailable"
   printf '%s\n' "DEP_REASON=flow-dep-diff.sh was not found under the resolved plugin root"
 else
+  # The helper exits 2 when it could not run at all, and still prints
+  # STATE=unavailable when it does. Discarding stdout on a non-zero exit would
+  # throw away the reason and leave only "produced no output".
   DEP_OUT=$("$FLOW_ROOT/bin/flow-dep-diff.sh" \
-    --base "origin/$DEFAULT_BRANCH" --head HEAD 2>&1) || DEP_OUT=""
+    --base "origin/$DEFAULT_BRANCH" --head HEAD 2>/dev/null)
   if [ -z "$DEP_OUT" ]; then
     printf '%s\n' "DEP_STATE=unavailable"
     printf '%s\n' "DEP_REASON=flow-dep-diff.sh produced no output"

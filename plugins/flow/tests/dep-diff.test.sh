@@ -559,6 +559,31 @@ printf 'x\n' > "$R/README.md"; _dd_commit "$R" "base"
 ( cd "$R" && "$DEP_DIFF" --base HEAD "HEAD~1..HEAD" >/dev/null 2>&1 )
 assert_exit 1 "$?" "a half-specified range has no silent winner"
 
+_flow_test_begin "an unimportable parser module is unavailable and exits non-zero"
+# Issue #246: a bin/ helper that hands python3 a path it cannot resolve fails
+# its import and exits 0 having done nothing. This helper must not join that
+# class — a dependency read that did not happen is not a clean one.
+R=$(_dd_repo)
+printf 'flask==2.0.0\n' > "$R/requirements.txt"; _dd_commit "$R" "base"
+printf 'flask==2.0.0\nredis==5.0.1\n' > "$R/requirements.txt"; _dd_commit "$R" "head"
+cp "$DEP_DIFF" "$DD_SCRATCH/orphan-dep-diff.sh"   # no _flow_dep_parse.py beside it
+chmod +x "$DD_SCRATCH/orphan-dep-diff.sh"
+OUT=$( cd "$R" && "$DD_SCRATCH/orphan-dep-diff.sh" --base HEAD~1 --head HEAD 2>/dev/null )
+RC=$?
+assert_contains "STATE=unavailable" "$OUT" "it reports that it could not run"
+assert_not_contains "STATE=none" "$OUT" "never as no dependency change"
+assert_not_contains "DEP_ADDED=" "$OUT" "and reports no packages it did not read"
+assert_exit 2 "$RC" "and exits non-zero rather than 0 having done nothing"
+
+_flow_test_begin "the helper converts its module path for a native python3"
+# The conversion is the identity on POSIX, so the check is that the boundary
+# exists at all: on Windows a raw POSIX path is what breaks the import.
+HELPER_SRC=$(cat "$DEP_DIFF")
+assert_contains "cygpath -m" "$HELPER_SRC" "the documented conversion is used"
+assert_contains "py_path" "$HELPER_SRC" "at a single named boundary"
+assert_match 'FLOW_DEP_BIN="\$\(py_path' "$HELPER_SRC" \
+  "and the module directory goes through it"
+
 # =============================================================================
 # This repository's own history — the acceptance criterion's named case
 # =============================================================================
