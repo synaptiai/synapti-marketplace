@@ -46,7 +46,7 @@ TaskUpdate(responsiveTaskId, status: "completed", result: "BLOCKED")
 # Loop ran:
 TaskUpdate(visualVerificationTaskId, status: "in_progress")
 # ... for each page: screenshot → analyze → write the Observed: block → record findings ...
-TaskUpdate(visualVerificationTaskId, status: "completed", result: "PASS/FAIL — {pages} checked, P1:{n} P2:{n} P3:{n}\n{one Viewport/Screenshot/Result/Observed block per page and viewport, then every Step: block from each driven flow, or the Flows: none — {reason} line}")
+TaskUpdate(visualVerificationTaskId, status: "completed", result: "PASS/FAIL — {pages} checked, P1:{n} P2:{n} P3:{n}\n{per criterion: its Viewport/Screenshot/Result/Observed blocks, then its Step: blocks, or its Flows: none — {reason} line when no flow ran for it}")
 
 TaskUpdate(responsiveTaskId, status: "in_progress")
 # ... for each viewport: resize → screenshot → analyze → write the Observed: block ...
@@ -177,9 +177,11 @@ Points worth taking from the example:
 - **`Video:` is present only when `browser_start_video` was available.** It cites a path and
   nothing reads it but a human. Its absence changes no result and raises no finding.
 
-A criterion carrying an interaction verb whose section has no `Step:` block at all is an auto-FAIL
-at the judge — `incomplete evidence — missing interaction steps on a ui criterion` — because a
-picture of the form before it was submitted says nothing about what submitting it does.
+A criterion describing an action a user performs whose section has neither a `Step:` block nor a
+`Flows: none — {reason}` line is an auto-FAIL at the judge —
+`incomplete evidence — missing interaction steps on a ui criterion` — because a picture of the
+form before it was submitted says nothing about what submitting it does. The `Flows:` line
+satisfies it: see § When a flow does not run.
 
 ## Result vocabulary
 

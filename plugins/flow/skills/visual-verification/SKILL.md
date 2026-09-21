@@ -41,7 +41,7 @@ UI change still yields `SKIP_WARN`.
 
 Only an **interactive** tool can run a flow: a picture-only tool cannot click, and treating it as
 if it could reports a flow that performed none. Playwright MCP and Chrome DevTools MCP are
-interactive; the `npx playwright screenshot` CLI and the `compound-engineering` browser skills are
+interactive; the `npx playwright screenshot` CLI and `compound-engineering` browser skills are
 **not**.
 
 Playwright MCP exposes `browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`,
@@ -76,8 +76,8 @@ state. Neither: write `Flows: none — no interaction`. Each scenario is at most
 Drive with `browser_click` and `browser_type`; after every step screenshot and write a block
 carrying the `Step: {n}/{m} {action}` line shown below.
 
-`Observed:` describes the page AFTER that step. Desktop by default, every configured viewport when
-the criterion mentions responsive or mobile. Step blocks are additional to viewport blocks, never
+`Observed:` describes the page AFTER that step. Desktop by default, every viewport when the
+criterion mentions responsive or mobile; name any left undriven in a `Flows:` line. Step blocks are additional to viewport blocks, never
 a replacement. A step whose `expect` is not met is a `category=visual` finding. When
 `browser_start_video` is available, cite the path; its absence is **not** a skip, warning or
 finding.

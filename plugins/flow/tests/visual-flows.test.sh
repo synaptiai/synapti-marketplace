@@ -114,7 +114,7 @@ _flow_test_begin "the cascade says which entries can interact"
 SKILL_FLAT=$(printf '%s\n' "$SKILL_TXT" | tr '\n' ' ' | tr -s ' ')
 assert_contains "Playwright MCP and Chrome DevTools MCP are interactive" "$SKILL_FLAT" \
   "the skill names which tools can interact"
-assert_contains "CLI and the \`compound-engineering\` browser skills are **not**" "$SKILL_FLAT" \
+assert_contains "browser skills are **not**" "$SKILL_FLAT" \
   "and which cannot"
 VIS_TXT=$(cat "$VIS_OUT")
 assert_match "Interactive" "$VIS_TXT" "the reference roster carries an interactive column"
@@ -331,10 +331,19 @@ assert_match "never sees|receive no settings|cannot determine that yourself" "$J
   "with the reason it cannot decide this itself"
 
 _flow_test_begin "each reason for not running a flow has a spelling"
+# Check the spellings in the reference AND in the producer skill and the
+# judge. The judge recognises a legitimate reason by its spelling alone, so
+# producer and consumer drifting apart silently breaks the marker.
 VIS_FLAT=$(printf '%s\n' "$(cat "$VIS_OUT")" | tr '\n' ' ' | tr -s ' ')
+JUDGE_REASONS=$(printf '%s\n' "$(cat "$JUDGE")" | tr '\n' ' ' | tr -s ' ')
 for R in "visualVerification.flows=off" "no interactive tool" "no interaction"; do
-  assert_contains "Flows: none — $R" "$VIS_FLAT" "the reference spells: $R"
+  assert_contains "$R" "$VIS_FLAT" "the reference spells: $R"
+  assert_contains "$R" "$JUDGE_REASONS" "and the judge accepts exactly: $R"
 done
+assert_contains "Flows: none — no interaction" "$SKILL_FLAT" \
+  "the producer skill uses the same spelling it will be judged by"
+assert_match "producer non-conforming" "$JUDGE_REASONS" \
+  "and anything outside the set does not suppress the auto-FAIL"
 
 _flow_test_begin "the producer is told to copy the step blocks"
 # The blocks the skill makes never reached the bundle: the copy instruction
@@ -369,18 +378,34 @@ assert_match "Interaction Steps Present" "$JUDGE_FLAT" "and the judge enumerates
 _flow_test_begin "both dispatch paths hand the skill what it needs"
 # integration-verifier was updated; the /flow:start path was not, and the skill
 # runs in its own context so the criteria text is exactly what it lacks.
-for F in "$INTEG" "$PLUGIN_DIR/commands/start.md"; do
-  FLAT=$(printf '%s\n' "$(cat "$F")" | tr '\n' ' ' | tr -s ' ')
-  assert_match "full text|FULL TEXT" "$FLAT" "$(basename "$F") passes the criteria verbatim"
-  assert_match "[Rr]isk-map row" "$FLAT" "$(basename "$F") passes the risk-map rows"
-done
+# Slice the dispatch itself. A file-wide match was satisfied by start.md's
+# pre-existing plan-time "Risk areas: {risk-map rows ...}" line, which has
+# nothing to do with the Phase 4 dispatch — so deleting the clause from the
+# dispatch left the suite green.
+INTEG_DISPATCH=$(printf '%s\n' "$(cat "$INTEG")" | tr '\n' ' ' | tr -s ' ')
+assert_match "full text|FULL TEXT" "$INTEG_DISPATCH" "integration-verifier passes the criteria verbatim"
+assert_match "[Rr]isk-map row" "$INTEG_DISPATCH" "integration-verifier passes the risk-map rows"
+START_DISPATCH=$(grep -A4 'invoke `Skill(visual-verification)` in parallel' \
+  "$PLUGIN_DIR/commands/start.md" | tr '\n' ' ' | tr -s ' ')
+assert_match "full text|FULL TEXT" "$START_DISPATCH" \
+  "the /flow:start dispatch itself passes the criteria verbatim"
+assert_match "[Rr]isk-map row" "$START_DISPATCH" \
+  "and the risk-map rows, in that same dispatch"
 
-_flow_test_begin "every consumer of the Visual analysis contract knows about steps"
-# The section shape changed; four files describing it were outside the diff.
+_flow_test_begin "every consumer knows about BOTH halves of the contract"
+# The feature has two halves: the step blocks, and the marker that explains
+# their absence. Asserting only the first left five mutants on the second
+# surviving green — every consumer could forget the marker and the suite
+# would not notice, which is precisely the regression cycle 1 fixed.
 for F in "$PLUGIN_DIR/commands/start.md" \
          "$PLUGIN_DIR/skills/criterion-verification-map/SKILL.md" \
-         "$PLUGIN_DIR/references/gate-configuration.md"; do
-  assert_contains "Step:" "$(cat "$F")" "$(basename "$F") mentions the step blocks"
+         "$PLUGIN_DIR/references/gate-configuration.md" \
+         "$PLUGIN_DIR/references/verdict-output-format.md" \
+         "$PLUGIN_DIR/references/evidence-bundle-format.md" \
+         "$PLUGIN_DIR/agents/verdict-judge.md"; do
+  C=$(cat "$F")
+  assert_contains "Step:" "$C" "$(basename "$F") mentions the step blocks"
+  assert_contains "Flows:" "$C" "$(basename "$F") mentions the marker that explains their absence"
 done
 
 _flow_test_begin "the Step placeholder is spelled one way"
