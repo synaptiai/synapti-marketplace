@@ -255,11 +255,12 @@ requests==2.31.0
 _flow_test_begin "python requirements-dev.txt matches the requirements pattern"
 _dd_eco "requirements-dev.txt" "requirements-dev.txt" \
 'pytest==7.0.0
+mypy==1.5.0
 ' \
 'pytest==8.0.0
 black==24.1.0
 ' \
-"DEP_ADDED=black@24.1.0" "DEP_CHANGED=pytest 7.0.0->8.0.0" "MANIFESTS_EXAMINED=1"
+"DEP_ADDED=black@24.1.0" "DEP_CHANGED=pytest 7.0.0->8.0.0" "DEP_REMOVED=mypy"
 
 _flow_test_begin "python pyproject.toml PEP 621: added, changed, removed"
 _dd_eco "pyproject.toml" "pyproject.toml" \
@@ -819,8 +820,10 @@ PYEOF
 _dd_commit "$R" "head"
 OUT=$(_dd_run "$R" HEAD~1 HEAD)
 assert_not_contains "DEP_ADDED=sudo@9.9.9" "$OUT" "the forged record does not appear"
-assert_contains "DEP_ADDED=evil@(unpinned)" "$OUT" \
-  "the package is still reported, with the refused version named as unpinned"
+assert_contains "DEP_ADDED=evil@(refused)" "$OUT" \
+  "the package is still reported, and the refused value is marked as refused"
+assert_not_contains "DEP_ADDED=evil@(unpinned)" "$OUT" \
+  "not as (unpinned), which is what a manifest declaring no version prints"
 
 _flow_test_begin "a name carrying a newline cannot open a second record"
 R=$(_dd_repo)
@@ -954,11 +957,37 @@ bash -n "$DD_SCRATCH/step4.sh" 2>/dev/null
 assert_exit 0 "$?" "the Step 4 fence parses as bash"
 
 _flow_test_begin "the Step 4 fence actually runs and reaches the helper"
-# A name-grep proves the string is present, not that the script is called.
-OUT=$( cd "$REPO_ROOT" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
+# A name-grep proves the string is present, not that the script is called —
+# and an earlier version of this test accepted DEP_STATE=unavailable, which is
+# exactly what the fence prints when it cannot FIND the helper. The assertion
+# passed for the failure it was written to rule out.
+#
+# So: a scratch repository with a real origin, a manifest, and a branch that
+# adds a package. Only a genuine helper invocation can produce that package's
+# name, and only the helper prints MANIFESTS_EXAMINED.
+DD_ORIGIN=$(mktemp -d -t flow-dd-origin.XXXXXX); DD_CLEANUP+=("$DD_ORIGIN")
+DD_WORK=$(mktemp -d -t flow-dd-work.XXXXXX); DD_CLEANUP+=("$DD_WORK")
+git init --quiet --bare "$DD_ORIGIN/repo.git" 2>/dev/null
+git clone --quiet "$DD_ORIGIN/repo.git" "$DD_WORK/repo" 2>/dev/null
+git -C "$DD_WORK/repo" config user.email "test@example.invalid"
+git -C "$DD_WORK/repo" config user.name "flow test"
+git -C "$DD_WORK/repo" config commit.gpgsign false
+printf 'flask==2.0.0\n' > "$DD_WORK/repo/requirements.txt"
+git -C "$DD_WORK/repo" add -A >/dev/null 2>&1
+git -C "$DD_WORK/repo" commit --quiet -m "base" >/dev/null 2>&1
+git -C "$DD_WORK/repo" branch -M main >/dev/null 2>&1
+git -C "$DD_WORK/repo" push --quiet -u origin main >/dev/null 2>&1
+printf 'flask==2.0.0\nredis==5.0.1\n' > "$DD_WORK/repo/requirements.txt"
+git -C "$DD_WORK/repo" add -A >/dev/null 2>&1
+git -C "$DD_WORK/repo" commit --quiet -m "add redis" >/dev/null 2>&1
+OUT=$( cd "$DD_WORK/repo" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
        DEFAULT_BRANCH=main bash "$DD_SCRATCH/step4.sh" 2>&1 )
-assert_match "DEP_STATE=(ok|none|unavailable)" "$OUT" \
-  "running the fence prints a dependency state"
+assert_contains "DEP_STATE=ok" "$OUT" "the fence reached the helper and it read the manifest"
+assert_contains "DEP_ADDED=redis@5.0.1" "$OUT" \
+  "and printed the package the branch added — only a real invocation can"
+assert_contains "MANIFESTS_EXAMINED=1" "$OUT" "with the count only the helper emits"
+assert_not_contains "was not found under the resolved plugin root" "$OUT" \
+  "the helper was not merely missing"
 
 _flow_test_begin "dependency findings enter the canonical schema"
 assert_contains "category=dependency" "$SEC" "the category is named"

@@ -97,6 +97,15 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# An empty BIN_DIR would become sys.path.insert(0, ""), which is the current
+# directory — during a review, the repository under review. The sys.path
+# filter below exists to keep that out; this keeps it from being handed back.
+if [ -z "$BIN_DIR" ] || [ ! -d "$BIN_DIR" ]; then
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=cannot resolve the directory holding this script"
+  printf '%s\n' "MANIFESTS_EXAMINED=0"
+  exit 2
+fi
 
 # Git Bash hands this script a POSIX path (/d/a/proj/...) while `python3` on
 # Windows is a native build that reads it as a different location, so the
@@ -130,6 +139,7 @@ try:
         ParseError,
         classify,
         edit_distance,
+        safe_name,
         safe_scalar,
     )
 except ImportError as e:
@@ -273,50 +283,94 @@ for path, parser in manifests:
     base_deps = base_res.deps if base_res else {}
     head_deps = head_res.deps if head_res else {}
 
+    def usable(name, side):
+        """A name that cannot be printed as a field makes the file unreadable.
+
+        Dropping it instead would leave the run claiming STATE=ok with a
+        package missing from the report — and a base-side name dropped
+        quietly also loses the removal and the baseline entry.
+        """
+        safe = safe_name(name)
+        if safe is None:
+            unparsed.append(
+                (path, "a dependency name in the %s is not a printable field" % side)
+            )
+            return None
+        return safe
+
+    bad = False
     for name in base_deps:
-        safe = safe_scalar(name)
-        if safe:
-            baseline_names.add(safe)
+        if usable(name, "base") is None:
+            bad = True
+            break
+    if not bad:
+        for name in head_deps:
+            if usable(name, "head") is None:
+                bad = True
+                break
+    if bad:
+        continue
+
+    for name in base_deps:
+        baseline_names.add(safe_name(name))
 
     if head_res:
         for name, line in head_res.hooks:
-            safe = safe_scalar(name)
+            safe = safe_name(name)
             if safe:
                 hooks.append((safe, path, line))
 
-    for name, (version, line) in head_deps.items():
-        safe_name = safe_scalar(name)
-        if not safe_name:
-            unparsed.append((path, "a dependency name is not a printable scalar"))
-            continue
+    for name, hvers in head_deps.items():
+        safe = safe_name(name)
         if name not in base_deps:
-            added.append((safe_name, safe_scalar(version), path, line))
-        else:
-            old = base_deps[name][0]
-            if old != version:
-                changed.append(
-                    (safe_name, safe_scalar(old), safe_scalar(version), path, line)
-                )
+            for version, line in sorted(hvers.items(), key=lambda kv: str(kv[0])):
+                added.append((safe, version, path, line))
+            continue
+        bvers = base_deps[name]
+        if set(bvers) == set(hvers):
+            continue
+        # One version on each side is a bump. Anything else is a lockfile
+        # holding several versions of the package at once — normal in Rust
+        # and pnpm — and collapsing that into a single bump would report one
+        # version and hide the rest.
+        if len(bvers) == 1 and len(hvers) == 1:
+            old_v = list(bvers)[0]
+            new_v = list(hvers)[0]
+            changed.append((safe, old_v, new_v, path, list(hvers.values())[0]))
+            continue
+        for version in sorted(set(hvers) - set(bvers), key=str):
+            added.append((safe, version, path, hvers[version]))
+        for version in sorted(set(bvers) - set(hvers), key=str):
+            removed.append((safe, path, bvers[version]))
 
-    for name, (version, line) in base_deps.items():
+    for name, bvers in base_deps.items():
         if name not in head_deps:
-            safe_name = safe_scalar(name)
-            if safe_name:
-                removed.append((safe_name, path, line))
+            removed.append((safe_name(name), path, list(bvers.values())[0]))
 
 
 def field(value):
-    """Render a scalar as one output field.
+    """Render one output field, sanitising as it goes.
 
-    A value carrying whitespace would otherwise split the record into extra
-    fields — npm writes ranges like ">=1.0.0 <2.0.0" and a Gemfile writes
-    "~> 7.0" — so it is quoted, per rule 2 of references/command-output-format.md.
+    This is the single boundary every value crosses on its way out, so a
+    caller cannot forget to sanitise one. Three outcomes, and they are
+    deliberately distinguishable:
+
+      (unpinned)  the manifest declared no version
+      (refused)   it declared one this will not print — a value carrying a
+                  record separator, a quote or a control character. Printing
+                  the same marker for both would let a forged value read as
+                  an ordinary unpinned dependency.
+      "quoted"    the value carries whitespace, which would otherwise end the
+                  field early (npm ">=1.0.0 <2.0.0", Gemfile "~> 7.0").
     """
     if value is None:
         return "(unpinned)"
-    if any(c.isspace() for c in value):
-        return '"%s"' % value
-    return value
+    safe = safe_scalar(value)
+    if safe is None:
+        return "(refused)"
+    if any(c.isspace() for c in safe):
+        return '"%s"' % safe
+    return safe
 
 
 def loc(path, line):
@@ -324,18 +378,18 @@ def loc(path, line):
     if not safe_path:
         return "manifest=(unprintable)"
     if line is None:
-        return "manifest=%s" % safe_path
-    return "manifest=%s:%d" % (safe_path, line)
+        return "manifest=%s" % field(safe_path)
+    return "manifest=%s" % field("%s:%s" % (safe_path, line))
 
 
-for name, version, path, line in sorted(added):
+for name, version, path, line in sorted(added, key=lambda t: (t[0], str(t[1]), t[2])):
     emit("DEP_ADDED=%s@%s %s" % (name, field(version), loc(path, line)))
-for name, old, new, path, line in sorted(changed):
+for name, old, new, path, line in sorted(changed, key=lambda t: (t[0], str(t[1]), str(t[2]), t[3])):
     emit(
         "DEP_CHANGED=%s %s->%s %s"
         % (name, field(old), field(new), loc(path, line))
     )
-for name, path, line in sorted(removed):
+for name, path, line in sorted(removed, key=lambda t: (t[0], t[1], str(t[2]))):
     emit("DEP_REMOVED=%s %s" % (name, loc(path, line)))
 # The baseline goes into a reviewer's prompt. A lockfile bump can carry
 # thousands of names, which would crowd out the findings they are there to
@@ -349,7 +403,7 @@ if len(_sorted_baseline) > MAX_BASELINE:
         "DEP_BASELINE_TRUNCATED=%d name(s) not printed"
         % (len(_sorted_baseline) - MAX_BASELINE)
     )
-for name, path, line in sorted(hooks):
+for name, path, line in sorted(hooks, key=lambda t: (t[0], t[1], str(t[2]))):
     emit("DEP_INSTALL_HOOK=%s %s" % (name, loc(path, line)))
 
 # Near-name runs added names against the BASE baseline only. An added name is

@@ -152,3 +152,13 @@ feat(flow): security-reviewer judges new and bumped dependencies, and those find
 <!-- auto-log: 2026-09-21 14:46 commit "chore(flow): capture the #217 goal contract and specification" -->
 
 <!-- auto-log: 2026-09-21 14:46 commit "chore(flow): capture the #217 goal contract and specification" -->
+
+<!-- auto-log: 2026-09-21 14:51 commit "test(flow): every manifest format gets an untouched-dependencies fixture" -->
+
+<!-- auto-log: 2026-09-21 14:51 commit "test(flow): every manifest format gets an untouched-dependencies fixture" -->
+
+<!-- auto-log: 2026-09-21 14:51 commit "test(flow): every manifest format gets an untouched-dependencies fixture" -->
+
+<!-- auto-log: 2026-09-21 14:57 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/dep-diff-review.test.sh -->
+
+<!-- auto-log: 2026-09-21 14:57 commit "test(flow): every manifest format gets an untouched-dependencies fixture" -->
