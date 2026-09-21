@@ -19,6 +19,11 @@ artifacts:
   workflow: start-issue
   run_id: 2026-09-21T124500Z-issue-217
   status: active
+- type: goal-evaluation
+  captured_at: '2026-09-21T19:52:44Z'
+  goal_id: issue-217
+  result: pass
+  pr: 247
 ---
 # Decision Journal — Issue #217
 
