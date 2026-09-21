@@ -910,7 +910,7 @@ _flow_test_begin "the history these tests read is actually present"
 # here rather than letting the next two tests fail as "unavailable is not ok".
 # The workflow sets fetch-depth: 0 for exactly this.
 DD_HISTORY=1
-for SHA in 92fd253 4519858; do
+for SHA in 92fd253 4519858 6cda10e d6f730d; do
   if git -C "$REPO_ROOT" cat-file -e "$SHA^{commit}" 2>/dev/null; then
     _flow_assert_pass "commit $SHA is present"
   else
@@ -934,7 +934,13 @@ assert_not_contains "DEP_ADDED=pip" "$OUT" "an install instruction in a comment 
 assert_not_contains "DEP_ADDED=python3" "$OUT" "nor is the interpreter it names"
 
 _flow_test_begin "a range touching no manifest in this repository reports none"
-OUT=$( cd "$REPO_ROOT" && "$DEP_DIFF" 4519858..HEAD 2>&1 )
+# Two FIXED commits, not `..HEAD`. Against HEAD this asserted something about
+# whatever the current branch happens to touch, so it passed until this very
+# branch pinned tomli in requirements.txt — and then failed on CI while still
+# passing locally, because the edit was uncommitted when the suite last ran.
+# A fixture whose meaning depends on the branch under test is not a fixture.
+# 6cda10e..d6f730d changes 34 files and not one of them is a manifest.
+OUT=$( cd "$REPO_ROOT" && "$DEP_DIFF" 6cda10e..d6f730d 2>&1 )
 assert_contains "MANIFESTS_EXAMINED=0" "$OUT" "nothing was examined"
 assert_contains "STATE=none" "$OUT" "and the state says none"
 
