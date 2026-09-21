@@ -11,9 +11,9 @@ The coverage scan comes FIRST, then the per-criterion verdicts, then the overall
 
 ### Coverage Scan
 
-| # | Criterion | Evidence Entry Present? | "Does NOT promise" Present? | Visual Analysis Present? | Completeness Subsections Present? | Holdout Validation Status |
-|---|-----------|-------------------------|-----------------------------|--------------------------|-----------------------------------|---------------------------|
-| 1 | {criterion text} | Yes / NO | Yes / NO | Yes / NO / N/A | Yes / NO ({which of the five are missing}) | PASS / CONFLICT / N/A |
+| # | Criterion | Evidence Entry Present? | "Does NOT promise" Present? | Visual Analysis Present? | Interaction Steps Present? | Completeness Subsections Present? | Holdout Validation Status |
+|---|-----------|-------------------------|-----------------------------|--------------------------|--------------------------|-----------------------------------|---------------------------|
+| 1 | {criterion text} | Yes / NO | Yes / NO | Yes / NO / N/A | Yes / NO / N/A | Yes / NO ({which of the five are missing}) | PASS / CONFLICT / N/A |
 
 Orphan evidence entries (evidence with no matching criterion): {list or "none"}
 
@@ -43,7 +43,7 @@ Orphan evidence entries (evidence with no matching criterion): {list or "none"}
 | Evidence Entry Present? | `Yes` / `NO` | A `## Criterion {N}: ...` section exists whose text matches this criterion |
 | "Does NOT promise" Present? | `Yes` / `NO` | `### Does NOT promise` is present and non-blank (`none` counts as present) |
 | Visual Analysis Present? | `Yes` / `NO` / `N/A` | On a `ui` criterion, `### Visual analysis` carries one `Viewport:`/`Screenshot:`/`Result:`/`Observed:` block per configured viewport (`Yes`) or is missing, blank, `none`, or lacks `Observed:` sentences (`NO`); on every other type it reads `none — criterion type {type} has no visual surface` (`N/A`) |
-| Interaction Steps Present? | `Yes` / `NO` / `N/A` | On a `ui` criterion whose text carries an interaction verb, `### Visual analysis` carries at least one block with a `Step: <n>/<m> <action>` line (`Yes`) or none (`NO`); `N/A` on a `ui` criterion with no interaction verb and on every other type |
+| Interaction Steps Present? | `Yes` / `NO` / `N/A` | On a `ui` criterion whose text carries an interaction verb, `### Visual analysis` carries at least one block with a `Step: {n}/{m} {action}` line (`Yes`) or none (`NO`); `N/A` on a `ui` criterion with no interaction verb and on every other type |
 | Completeness Subsections Present? | `Yes` / `NO ({missing})` | All five of `### What was NOT tested`, `### Known limitations of this evidence`, `### Negative/adversarial cases covered`, `### Test inputs and expected values`, `### Risk map coverage` are present and non-blank; when `NO`, name the absent ones |
 | Holdout Validation Status | `PASS` / `CONFLICT` / `N/A` | Whether the holdout-validation output reports a P1/P2 for this criterion (`CONFLICT`), reports nothing (`PASS`), or had no scenario for this criterion type (`N/A`) |
 

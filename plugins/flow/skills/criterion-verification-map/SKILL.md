@@ -49,7 +49,7 @@ For each atomic task:
 3. Capture output verbatim
 4. `TaskUpdate(taskId, status: "completed", result: "EVIDENCE_COLLECTED")`
 
-Then assemble one `## Criterion {N}` section each. `### Type` and `### Does NOT promise` are the plan-time fields; `### What was NOT tested`, `### Known limitations of this evidence`, `### Negative/adversarial cases covered` are authored honestly now (`none — {reason}` is positive; blank is an auto-FAIL). `### Visual analysis` is copied per viewport from the `visual-verification` result tasks (`Viewport:`/`Screenshot:`/`Result:`/`Observed:` blocks), never re-derived; non-`ui` types write `none — criterion type {type} has no visual surface`.
+Then assemble one `## Criterion {N}` section each. `### Type` and `### Does NOT promise` are the plan-time fields; `### What was NOT tested`, `### Known limitations of this evidence`, `### Negative/adversarial cases covered` are authored honestly now (`none — {reason}` is positive; blank is an auto-FAIL). `### Visual analysis` copies every `Viewport:` and `Step:` block from the `visual-verification` result, never re-derived; non-`ui` types write `none — criterion type {type} has no visual surface`.
 
 Two subsections come from test source, never memory:
 

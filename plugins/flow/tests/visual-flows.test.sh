@@ -62,11 +62,17 @@ done
 # Which criteria get a flow, and how a step is written
 # =============================================================================
 
-_flow_test_begin "every interaction verb the issue names is listed"
-# The verb list is the trigger condition. Leaving it to judgement would make
-# the feature's activation unassertable, which is the property #218 adds.
-for VERB in click submit type select toggle open navigate drag; do
-  assert_match "$VERB" "$SKILL_TXT" "the skill lists the verb: $VERB"
+_flow_test_begin "the cue-verb list is stated, identically, everywhere it appears"
+# A per-verb file-wide match is not a test: deleting the whole list still left
+# click, type and navigate matching browser_click/browser_type/browser_navigate
+# and select matching "selector". Assert the list as one string, in each file
+# that repeats it, so the three copies cannot drift apart either.
+VERBS="click, submit, type, select, toggle, open, navigate, drag"
+SKILL_FLAT=$(printf '%s\n' "$SKILL_TXT" | tr '\n' ' ' | tr -s ' ')
+assert_contains "$VERBS" "$SKILL_FLAT" "the skill states the list"
+for F in "$JUDGE" "$BUNDLE_FMT" "$VIS_OUT"; do
+  FLAT=$(printf '%s\n' "$(cat "$F")" | tr '\n' ' ' | tr -s ' ')
+  assert_contains "$VERBS" "$FLAT" "$(basename "$F") states the same list"
 done
 
 _flow_test_begin "the step grammar is stated, with all four step kinds"
@@ -81,7 +87,7 @@ assert_match "never from a selector|not from a selector|never.*guessed" "$SKILL_
 
 _flow_test_begin "the Step line shape is fixed"
 assert_contains 'Step: {n}/{m} {action}' "$SKILL_TXT" "the skill shows the Step line"
-assert_contains "Step: <n>/<m> <action>" "$(cat "$BUNDLE_FMT")" \
+assert_contains "Step: {n}/{m} {action}" "$(cat "$BUNDLE_FMT")" \
   "and the bundle format states the same shape"
 
 _flow_test_begin "a scenario is bounded and says where it stopped"
@@ -119,7 +125,8 @@ assert_not_contains "| Yes |" "$CLI_ROW" "and is not marked interactive"
 _flow_test_begin "no interactive tool is a skip or a block, never a silent pass"
 assert_contains "SKIP_WARN" "$SKILL_TXT" "absence is SKIP_WARN by default"
 assert_contains "BLOCKED" "$SKILL_TXT" "and BLOCKED when verification is required"
-assert_match "[Nn]ever install Playwright silently" "$SKILL_TXT" "nothing is installed silently"
+assert_match "[Nn]ever install silently|[Nn]ever install Playwright silently" "$SKILL_TXT" \
+  "nothing is installed silently"
 
 # =============================================================================
 # Settings and schema
@@ -258,9 +265,22 @@ assert_match "not.*a skip, a warning or a finding|absence is \*\*not\*\*" "$SKIL
 _flow_test_begin "no result value depends on video"
 # The result vocabulary is the gate. If video leaked into it, a missing
 # capability would start failing runs.
-VOCAB=$(printf '%s\n' "$SKILL_TXT" | sed -n '/## Result Vocabulary/,/## Output Format/p')
-assert_not_contains "video" "$VOCAB" "the result vocabulary does not mention video"
-assert_not_contains "Video" "$VOCAB" "in either case"
+# The vocabulary moved to the reference during the restructure. Slicing the
+# skill left an EMPTY string, and an assert_not_contains on "" passes for any
+# implementation — this is the test guarding the unverifiable-capability risk,
+# so it asserts the slice is non-empty before asserting what is absent from it.
+VOCAB=$(printf '%s\n' "$(cat "$VIS_OUT")" | sed -n '/^## Result vocabulary$/,/^## /p')
+assert_contains "SKIP_WARN" "$VOCAB" "the vocabulary section was found and is non-empty"
+assert_contains "BLOCKED" "$VOCAB" "and carries every value"
+# The section may SAY that no value depends on video — that is the guarantee.
+# What must not happen is a result VALUE whose meaning involves it, so check
+# the table rows rather than the prose.
+VOCAB_ROWS=$(printf '%s\n' "$VOCAB" | grep '^| `')
+assert_contains "SKIP_WARN" "$VOCAB_ROWS" "the rows were found"
+assert_not_contains "video" "$VOCAB_ROWS" "no result value's meaning involves video"
+assert_not_contains "Video" "$VOCAB_ROWS" "in either case"
+assert_match "no value depends on whether video" "$VOCAB" \
+  "and the section says so explicitly"
 
 # =============================================================================
 # The skill is given what it needs to derive a scenario at all
@@ -282,3 +302,92 @@ COUNT=$(printf '%s\n' "$VIS_TXT" | grep -c '^Step: ')
   || _flow_assert_fail "only $COUNT step block(s); the example should show each step"
 assert_match "AFTER this step|AFTER the step|after that step" "$VIS_TXT" \
   "and Observed: describes the page after the step"
+
+# =============================================================================
+# Review cycle 1 — the auto-FAIL must not fire on a flow that never ran
+# =============================================================================
+
+_flow_test_begin "the producer says why no flow ran, and the judge accepts that"
+# The defect: with flows off, or no interactive browser tool, a criterion
+# describing a user action had no Step: block — and the judge auto-FAILed it.
+# The judge receives only the criteria, the bundle and the holdout output; it
+# never sees settings.json, so it cannot tell a correctly skipped flow from an
+# omitted one. Without the marker, every interaction criterion fails on every
+# repository with flows off or no Playwright MCP.
+JUDGE_FLAT=$(printf '%s\n' "$(cat "$JUDGE")" | tr '\n' ' ' | tr -s ' ')
+BUNDLE_FLAT=$(printf '%s\n' "$(cat "$BUNDLE_FMT")" | tr '\n' ' ' | tr -s ' ')
+# The skill has TWO marker sites — flows off / no interactive tool, and no
+# interaction in the criterion. A single contains-check stayed green when one
+# was deleted, so count them.
+MARKERS=$(printf '%s\n' "$SKILL_TXT" | grep -c 'Flows: none')
+[ "$MARKERS" -ge 2 ] && _flow_assert_pass "the skill writes the marker on both paths ($MARKERS)" \
+  || _flow_assert_fail "the skill names the marker $MARKERS time(s); both paths need it"
+assert_match "off, or no interactive.*write .Flows: none" "$SKILL_FLAT" \
+  "including when flows are off or no interactive tool was found"
+assert_contains "Flows: none" "$BUNDLE_FLAT" "the bundle format defines it"
+assert_contains "no \`Flows: none — {reason}\` line" "$JUDGE_FLAT" \
+  "and the judge's auto-FAIL requires its absence"
+assert_match "never sees|receive no settings|cannot determine that yourself" "$JUDGE_FLAT" \
+  "with the reason it cannot decide this itself"
+
+_flow_test_begin "each reason for not running a flow has a spelling"
+VIS_FLAT=$(printf '%s\n' "$(cat "$VIS_OUT")" | tr '\n' ' ' | tr -s ' ')
+for R in "visualVerification.flows=off" "no interactive tool" "no interaction"; do
+  assert_contains "Flows: none — $R" "$VIS_FLAT" "the reference spells: $R"
+done
+
+_flow_test_begin "the producer is told to copy the step blocks"
+# The blocks the skill makes never reached the bundle: the copy instruction
+# named viewport blocks only, so the judge auto-FAILed the very criterion the
+# feature exists to verify — on the happy path, with everything working.
+assert_match "Copy every .Step:. block" "$BUNDLE_FLAT" \
+  "the bundle format's copy step includes them"
+START_FLAT=$(printf '%s\n' "$(cat "$PLUGIN_DIR/commands/start.md")" | tr '\n' ' ' | tr -s ' ')
+assert_contains "Step:" "$START_FLAT" "and so does the bundle assembly in start.md"
+
+_flow_test_begin "a failing step fails the criterion however the flow was triggered"
+# A flow can be triggered by a risk-map row rather than the criterion's
+# wording. Gating the failure clause on a cue verb meant a step reporting FAIL
+# in a risk-map-triggered flow was read by no rule at all, and the criterion
+# passed on its page-load blocks.
+assert_match "Whenever step blocks are present" "$JUDGE_FLAT" \
+  "the failure clause is not conditioned on the trigger"
+assert_match "a failing step is a failing step" "$JUDGE_FLAT" "and says so"
+
+_flow_test_begin "an Observed: that does not describe the step fails, as for a viewport"
+assert_match "does not describe the page after that step . FAIL" "$JUDGE_FLAT" \
+  "rule (e) states the same consequence rule (d) does"
+
+_flow_test_begin "the coverage scan template carries the new column"
+# The column was defined in the semantics table but absent from the template
+# the judge emits, and the old assertion grepped the whole file so it matched
+# the definition and never noticed the template.
+HEADER=$(grep '^| # | Criterion |' "$VERDICT_FMT" | head -1)
+assert_contains "Interaction Steps Present?" "$HEADER" "the emitted header row has it"
+assert_match "Interaction Steps Present" "$JUDGE_FLAT" "and the judge enumerates it"
+
+_flow_test_begin "both dispatch paths hand the skill what it needs"
+# integration-verifier was updated; the /flow:start path was not, and the skill
+# runs in its own context so the criteria text is exactly what it lacks.
+for F in "$INTEG" "$PLUGIN_DIR/commands/start.md"; do
+  FLAT=$(printf '%s\n' "$(cat "$F")" | tr '\n' ' ' | tr -s ' ')
+  assert_match "full text|FULL TEXT" "$FLAT" "$(basename "$F") passes the criteria verbatim"
+  assert_match "[Rr]isk-map row" "$FLAT" "$(basename "$F") passes the risk-map rows"
+done
+
+_flow_test_begin "every consumer of the Visual analysis contract knows about steps"
+# The section shape changed; four files describing it were outside the diff.
+for F in "$PLUGIN_DIR/commands/start.md" \
+         "$PLUGIN_DIR/skills/criterion-verification-map/SKILL.md" \
+         "$PLUGIN_DIR/references/gate-configuration.md"; do
+  assert_contains "Step:" "$(cat "$F")" "$(basename "$F") mentions the step blocks"
+done
+
+_flow_test_begin "the Step placeholder is spelled one way"
+# Needle assembled, like the non-existent tool name above: this file lives
+# under plugins/flow, so spelling the forbidden form would fail the assertion
+# on the test that makes it.
+OLD_SPELLING="Step: <n>""/<m> <action>"
+HITS=$(grep -rl "$OLD_SPELLING" "$PLUGIN_DIR" 2>/dev/null | wc -l | tr -d ' ')
+assert_equal "0" "$HITS" "no file uses the angle-bracket spelling"
+assert_contains "Step: {n}/{m} {action}" "$SKILL_FLAT" "the brace spelling is the one in use"

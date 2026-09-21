@@ -64,9 +64,10 @@ feat(flow): visual-verification drives the changed user flow, not only the page 
   `visualVerification.maxFlowSteps` (integer, default 8). `schema.json` constrains both.
 - `agents/verdict-judge.md`: rule (d) is **unchanged** — every configured viewport still needs a
   `Result: PASS` page-load block. A new rule covers steps: a `ui` criterion whose text carries an
-  interaction verb and whose bundle has no `Step:` block is
-  `incomplete evidence — missing visual analysis on a ui criterion`, and any step reporting
-  `Result: FAIL` fails the criterion.
+  interaction verb and whose bundle has neither a `Step:` block nor a `Flows: none — {reason}`
+  line is `incomplete evidence — missing interaction steps on a ui criterion` — a distinct
+  rationale from the viewport one, because the two failures need different fixes. Any step
+  reporting `Result: FAIL` fails the criterion whatever triggered the flow.
 - Findings keep `category=visual`. A step whose `expect` is not met is P1 when the criterion under
   test is the one that failed, P2 otherwise.
 - `browser_console_logs` is not a tool Playwright MCP exposes. Verified against the server's own

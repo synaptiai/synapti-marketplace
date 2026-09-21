@@ -1,6 +1,6 @@
 # Visual Verification Output and Task Tracking
 
-Supporting reference for `skills/visual-verification/SKILL.md`. The skill states the rules (detection, browser-tool cascade, loop bounds, result vocabulary); this file holds the full output template, the per-viewport `Observed:` block the evidence bundle copies, the task-tracking wording, the viewport table, and the rationale for the external-plugin cascade entries.
+Supporting reference for `skills/visual-verification/SKILL.md`. The skill states the rules (detection, browser-tool cascade, loop bounds, interaction flows); this file holds the full output template, the per-viewport `Observed:` block the evidence bundle copies, the task-tracking wording, the viewport table, the result vocabulary, the cascade roster, the severity classification, the flow procedure and a worked interaction flow.
 
 ## Viewports
 
@@ -46,7 +46,7 @@ TaskUpdate(responsiveTaskId, status: "completed", result: "BLOCKED")
 # Loop ran:
 TaskUpdate(visualVerificationTaskId, status: "in_progress")
 # ... for each page: screenshot → analyze → write the Observed: block → record findings ...
-TaskUpdate(visualVerificationTaskId, status: "completed", result: "PASS/FAIL — {pages} checked, P1:{n} P2:{n} P3:{n}\n{one Viewport/Screenshot/Result/Observed block per page and viewport}")
+TaskUpdate(visualVerificationTaskId, status: "completed", result: "PASS/FAIL — {pages} checked, P1:{n} P2:{n} P3:{n}\n{one Viewport/Screenshot/Result/Observed block per page and viewport, then every Step: block from each driven flow, or the Flows: none — {reason} line}")
 
 TaskUpdate(responsiveTaskId, status: "in_progress")
 # ... for each viewport: resize → screenshot → analyze → write the Observed: block ...
@@ -240,3 +240,33 @@ This is the procedure.
 For a page-load block: a blank page or a render-blocking console error is **P1**; a layout break
 or missing content is **P2**; minor styling is **P3**. For a step block: a step whose `expect` is
 not met is **P1** when it belongs to the criterion under test and **P2** otherwise.
+
+## Deciding whether a criterion gets a flow
+
+The skill lists eight cue verbs — click, submit, type, select, toggle, open, navigate, drag — and
+they are a **cue, not a word match**. The test is whether the criterion describes an action a user
+performs. Two readers must reach the same answer: the skill deciding to run a flow, and the judge
+deciding whether a missing `Step:` block is an auto-FAIL.
+
+Qualifies: *"Clicking Save shows a toast"*, *"Submitting with an empty email shows an inline
+error"*, *"Selecting a row expands its detail panel"*. Note the first has no bare cue verb — a
+word-exact reader would run no flow on the most natural phrasing of an interaction.
+
+Does not qualify: *"The settings page should open in under 2 seconds"* (page load, not an action),
+*"The badge shows the type of the alert"* (`type` as a noun), *"The dark-mode toggle is visible in
+the header"* (`toggle` as a noun, and the criterion is about visibility).
+
+## When a flow does not run
+
+The producer never leaves `### Visual analysis` silent about it. Write one line:
+
+| Line | When |
+|---|---|
+| `Flows: none — visualVerification.flows=off` | the setting is `"off"` |
+| `Flows: none — no interactive tool` | the cascade found only picture-only tools |
+| `Flows: none — no interaction` | the criterion describes no user action and no risk-map row names a UI state |
+
+This exists because the verdict-judge receives only the acceptance criteria, the bundle and the
+holdout output — never `settings.json`. Without the line it cannot tell a flow that was correctly
+skipped from one that was simply omitted, so a criterion with a cue verb would auto-FAIL on every
+repository that has flows off or no Playwright MCP.
