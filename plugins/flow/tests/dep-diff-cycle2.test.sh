@@ -215,10 +215,12 @@ dependencies = ["flask"]
 optional-dependencies = {dev = ["pytest>=8", "reqeusts==0.1.0"]}
 '
 
-_flow_test_begin "a dependency section whose shape is unknown is unavailable, not ok"
-# The honest boundary: if a section is recognised as declaring dependencies
-# and cannot be read, say so. Falling off the end of the function reports the
-# manifest as read with whatever it holds missing.
+_flow_test_begin "an unknown tool's dependency section is read, not skipped"
+# Recognising a dependency table by its SHAPE rather than by a list of known
+# tool names is what makes a tool nobody anticipated readable. Three cycles
+# were lost adding pdm, then uv, then rye, then pixi one at a time — each
+# absence reported as ok with the packages missing, or as a blanket
+# unavailable that would have blocked every pull request in that repository.
 OUT=$(_dc_case "pyproject.toml" \
 '[project]
 dependencies = ["flask"]
@@ -227,10 +229,40 @@ dependencies = ["flask"]
 dependencies = ["flask"]
 
 [tool.somethingnew.dependencies]
-mystery = {unreadable = "shape"}
+mystery = "1.0"
 ')
-assert_contains "STATE=unavailable" "$OUT" "an unrecognised dependency section is reported"
-assert_not_contains "STATE=ok" "$OUT" "never as a clean read"
+assert_contains "DEP_ADDED=mystery@1.0" "$OUT" \
+  "a dependency under an unheard-of tool is still a dependency"
+assert_contains "STATE=ok" "$OUT" "and a readable manifest is not refused"
+
+_flow_test_begin "a pixi dependency table is read rather than refused"
+# [tool.pixi.dependencies] lives in a real pyproject.toml. An earlier cycle
+# raised on it, which would have made every pull request in a pixi project
+# report unavailable.
+OUT=$(_dc_case "pyproject.toml" \
+'[tool.pixi.dependencies]
+python = "3.11"
+' \
+'[tool.pixi.dependencies]
+python = "3.11"
+reqeusts = "0.1.0"
+')
+assert_contains "DEP_ADDED=reqeusts@0.1.0" "$OUT" "the added package is reported"
+assert_not_contains "STATE=unavailable" "$OUT" "a valid manifest is not a blocked gate"
+
+_flow_test_begin "a manifest that is not valid TOML is still refused"
+# The honest boundary moved but did not disappear: an unreadable FILE is
+# still unavailable. What changed is that an unfamiliar SHAPE inside a
+# readable file no longer counts as unreadable.
+OUT=$(_dc_case "pyproject.toml" \
+'[project]
+dependencies = ["flask"]
+' \
+'[project
+dependencies = ["flask"
+')
+assert_contains "STATE=unavailable" "$OUT" "invalid TOML is reported unreadable"
+assert_contains "MANIFEST_UNPARSED=pyproject.toml" "$OUT" "and the file is named"
 
 # =============================================================================
 # F4 — regression: a package in two sections turned a bump into add + remove

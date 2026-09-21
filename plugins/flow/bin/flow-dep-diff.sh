@@ -21,7 +21,12 @@
 #   MANIFESTS_EXAMINED=<n>
 #   DEP_ADDED=<name>@<version> manifest=<path>:<line>
 #   DEP_CHANGED=<name> <old>-><new> manifest=<path>:<line>
-#   DEP_REMOVED=<name> manifest=<path>:<line>
+#     one version out and one in is reported as a bump even when the
+#     package keeps other versions: a lockfile holding several, and a
+#     package declared in two manifest sections, are the same shape
+#     here and cannot be told apart from the versions alone
+#   DEP_REMOVED=<name>@<version> manifest=<path>:<line>
+#     the version is carried so two removals of one package differ
 #   DIFF_BASE=<sha>                           (the merge base actually compared)
 #   DEP_BASELINE=<name>                       (each package at the merge base,
 #     from the manifests THIS RANGE TOUCHES — a near-name to a package declared
@@ -438,7 +443,13 @@ for module, target, version, path, line in sorted(
 # never compared with another added name: two packages arriving together are
 # not evidence that one is mimicking the other.
 near = set()
-for name, _version, _path, _line in added:
+# A replacement target is judged as an added package — it is code the change
+# starts fetching that it did not before — so it is compared for a near-name
+# too. Cycle 2 moved redirects out of `added` and this comparison silently
+# stopped covering them.
+_near_candidates = [n for n, _v, _p, _l in added]
+_near_candidates += [t for _m, t, _v, _p, _l in replaced]
+for name in _near_candidates:
     for existing in baseline_names:
         if existing == name:
             continue

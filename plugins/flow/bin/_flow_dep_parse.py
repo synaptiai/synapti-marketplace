@@ -122,13 +122,243 @@ def safe_scalar(value):
 
 
 # ---------------------------------------------------------------------------
-# Python
+# TOML
+#
+# Parsed with a real TOML parser, not a hand-rolled scanner. Three review
+# cycles were spent patching a line-oriented one, and each fix revealed the
+# next construct it did not know: tri-quoted strings, backslash escapes,
+# inline-table keys, multi-clause constraints. A parser has none of those gaps
+# to find, and the last one was severe — a pyproject.toml carrying an ordinary
+# tri-quoted readme made its whole dependency list invisible while the run
+# still reported ok.
+#
+# The cost is line numbers: a TOML parser returns values, not the lines they
+# came from. They are recovered by a separate best-effort text search, and
+# when that fails the location is the file, which references/finding-schema.md
+# permits. A wrong line is worse than no line; a wrong dependency list is
+# worse than both.
 
-_REQ_LINE = re.compile(
-    r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*"
-    r"(?:(==|>=|<=|~=|!=|>|<)\s*([^;#\s]+))?"
+try:
+    import tomllib as _toml
+except ImportError:  # pragma: no cover - Python < 3.11
+    try:
+        import tomli as _toml
+    except ImportError:
+        _toml = None
+
+
+def _load_toml(text):
+    if _toml is None:
+        raise ParseError(
+            "no TOML parser available (Python < 3.11 needs tomli; see "
+            "plugins/flow/requirements.txt)"
+        )
+    try:
+        return _toml.loads(text)
+    except Exception as e:
+        raise ParseError("not valid TOML (%s)" % type(e).__name__)
+
+
+def _line_of_toml_key(text, name):
+    """Best-effort line for a key or a quoted array item. None when unsure."""
+    if not name:
+        return None
+    bare = name.lower()
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        stripped = raw.strip()
+        low = stripped.lower()
+        if low.startswith(bare):
+            rest = stripped[len(bare):].lstrip()
+            if rest.startswith("=") or rest.startswith("."):
+                return lineno
+        for q in ('"%s"' % bare, "'%s'" % bare):
+            if q in low:
+                return lineno
+        # An array item: "name==1.0", "name[extra]>=2".
+        for mark in ('"', "'"):
+            idx = low.find(mark + bare)
+            if idx != -1:
+                nxt = low[idx + 1 + len(bare):idx + 2 + len(bare)]
+                if nxt in ("", '"', "'", "=", ">", "<", "!", "~", "[", " ", ";", ","):
+                    return lineno
+    return None
+
+
+# A dependency name is never any of these; they are how a tool spells
+# something other than a package inside a dependency table.
+_NOT_A_PACKAGE = frozenset(("python", "include-group"))
+
+
+def _constraint(raw):
+    """Normalise a version constraint to one comparable, printable value.
+
+    Whitespace is removed rather than preserved: `requests>=2.0` and
+    `requests >= 2.0` are the same requirement, and treating them as different
+    versions turns a formatter run into a dependency change. An exact pin
+    keeps its bare version so the ordinary case still reads as a version;
+    every other constraint keeps its operator, because `==2.31.0` becoming
+    `>=2.31.0` is a real change and storing only the number hid it.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        return None
+    raw = re.sub(r"\s+", "", raw)
+    if raw.startswith("=="):
+        raw = raw[2:]
+    return raw or None
+
+
+# `name`, `name[extra]`, `name>=1.0,<2.0`, `name ; marker`
+_PEP508 = re.compile(
+    r'^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*([^;@]*)'
 )
 
+
+def _add_pep508(result, item, text):
+    if not isinstance(item, str) or not item.strip():
+        return
+    m = _PEP508.match(item)
+    if not m:
+        return
+    name = m.group(1).lower()
+    if name in _NOT_A_PACKAGE:
+        return
+    result.add(name, _constraint(m.group(2)), _line_of_toml_key(text, name))
+
+
+def _version_of(value):
+    """A dependency's version, however the table spells it."""
+    if isinstance(value, str):
+        return _constraint(value)
+    if isinstance(value, dict):
+        v = value.get("version")
+        return _constraint(v) if isinstance(v, str) else None
+    if isinstance(value, list):
+        # poetry multiple constraints: [{version = "<=1.9", ...}, ...]
+        for entry in value:
+            if isinstance(entry, dict) and isinstance(entry.get("version"), str):
+                return _constraint(entry["version"])
+    return None
+
+
+_SOURCE_KEYS = ("git", "url", "path")
+
+
+def _source_of(value):
+    """Where a dependency is fetched from, when it is not the index."""
+    if isinstance(value, dict):
+        for key in _SOURCE_KEYS:
+            if isinstance(value.get(key), str):
+                return value[key]
+    return None
+
+
+def _harvest_dependencies(node, result, text, path=()):
+    """Walk a parsed TOML document collecting every dependency table.
+
+    Recognising tables by shape rather than by a list of known tool names is
+    what makes an unknown tool readable. Three cycles were lost adding
+    `tool.pdm`, then `tool.uv`, then `tool.rye`, then `tool.pixi` one at a
+    time — each absence reported as `ok` with the packages missing, or as a
+    blanket `unavailable`.
+    """
+    if not isinstance(node, dict):
+        return
+    for key, value in node.items():
+        if not isinstance(key, str):
+            continue
+        low = key.lower()
+        here = path + (low,)
+
+        if low == "sources" and isinstance(value, dict):
+            # tool.uv.sources and its kin: a package redirected away from the
+            # index. The same class as a go.mod replace.
+            for name, spec in value.items():
+                src = _source_of(spec)
+                if isinstance(name, str) and src:
+                    result.replaces.append(
+                        (name.lower(), src, None, _line_of_toml_key(text, name))
+                    )
+            continue
+
+        if low.endswith("dependencies") or low == "dependency-groups":
+            if isinstance(value, list):
+                for item in value:
+                    _add_pep508(result, item, text)
+                continue
+            if isinstance(value, dict):
+                # Either group -> [items] or name -> constraint.
+                if value and all(isinstance(v, list) for v in value.values()):
+                    for group in value.values():
+                        for item in group:
+                            _add_pep508(result, item, text)
+                    continue
+                for name, spec in value.items():
+                    if not isinstance(name, str):
+                        continue
+                    low_name = name.lower()
+                    if low_name in _NOT_A_PACKAGE:
+                        continue
+                    if isinstance(spec, list) and all(
+                            isinstance(x, str) for x in spec):
+                        for item in spec:
+                            _add_pep508(result, item, text)
+                        continue
+                    result.add(low_name, _version_of(spec),
+                               _line_of_toml_key(text, name))
+                    src = _source_of(spec)
+                    if src:
+                        result.replaces.append(
+                            (low_name, src, None, _line_of_toml_key(text, name))
+                        )
+                continue
+
+        if isinstance(value, dict):
+            _harvest_dependencies(value, result, text, here)
+
+
+def parse_toml_manifest(text):
+    """pyproject.toml and Cargo.toml — every dependency table either declares."""
+    data = _load_toml(text)
+    r = ParseResult()
+    _harvest_dependencies(data, r, text)
+    return r
+
+
+def parse_pyproject(text):
+    return parse_toml_manifest(text)
+
+
+def parse_cargo_toml(text):
+    return parse_toml_manifest(text)
+
+
+def parse_toml_lock(text):
+    """poetry.lock and Cargo.lock: an array of [[package]] tables."""
+    data = _load_toml(text)
+    r = ParseResult()
+    packages = data.get("package")
+    if isinstance(packages, list):
+        for entry in packages:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if not isinstance(name, str):
+                continue
+            version = entry.get("version")
+            r.add(name.lower(),
+                  _constraint(version) if isinstance(version, str) else None,
+                  _line_of_toml_key(text, name))
+    return r
+
+
+# ---------------------------------------------------------------------------
+# Python requirements files (not TOML)
+
+_REQ_LINE = re.compile(
+    r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*([^;#]*)"
+)
 _URL_REQ = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*(\+[A-Za-z][A-Za-z0-9+.-]*)?://")
 
 
@@ -136,379 +366,20 @@ def parse_requirements(text):
     r = ParseResult()
     for lineno, raw in enumerate(text.splitlines(), 1):
         line = raw.split("#", 1)[0].strip()
-        if not line:
+        if not line or line.startswith("-"):
             continue
-        # -r / -e / --flag lines point elsewhere; they declare no version here.
-        if line.startswith("-"):
-            continue
-        # A VCS or URL requirement (`git+https://...#egg=foo`, a bare wheel
-        # URL) would otherwise match the name pattern as the package `git` or
-        # `https`. The real name lives in an optional fragment, so this
-        # reports nothing rather than inventing one.
+        # A VCS or URL requirement would otherwise match the name pattern as
+        # the package "git" or "https". The real name lives in an optional
+        # fragment, so this reports nothing rather than inventing one.
         if _URL_REQ.match(line):
             continue
         m = _REQ_LINE.match(line)
         if not m:
             continue
-        r.add(m.group(1).lower(),
-              _normalise_constraint((m.group(2) or '') + (m.group(3) or '')),
-              lineno)
-    return r
-
-
-def _strip_toml_comment(line):
-    """Remove a `#` comment, ignoring one inside a string literal."""
-    out = []
-    quote = None
-    for ch in line:
-        if quote:
-            out.append(ch)
-            if ch == quote:
-                quote = None
+        name = m.group(1).lower()
+        if name in _NOT_A_PACKAGE:
             continue
-        if ch in "\"'":
-            quote = ch
-            out.append(ch)
-        elif ch == "#":
-            break
-        else:
-            out.append(ch)
-    return "".join(out)
-
-
-def _bracket_delta(line):
-    """Net `[`/`{` nesting change, counting only outside string literals.
-
-    Counting inside strings is what made a PEP 508 extras marker close an
-    array: `"requests[security]>=2.31.0"` carries a `]` that belongs to the
-    dependency's own text, not to the array holding it.
-    """
-    depth = 0
-    quote = None
-    for ch in line:
-        if quote:
-            if ch == quote:
-                quote = None
-            continue
-        if ch in "\"'":
-            quote = ch
-        elif ch in "[{":
-            depth += 1
-        elif ch in "]}":
-            depth -= 1
-    return depth
-
-
-def _toml_statements(text):
-    """Yield (lineno, statement) with multi-line values joined into one.
-
-    A value may legally span lines — a Cargo `features = [` list, a poetry
-    multiple-constraints array — and reading those lines individually makes
-    each continuation look like a malformed key. Treating that as unreadable
-    turned valid, common manifests into a blocking `unavailable` on every
-    pull request.
-    """
-    buf = []
-    start = None
-    depth = 0
-    for lineno, raw in enumerate(text.splitlines(), 1):
-        line = _strip_toml_comment(raw)
-        if not line.strip() and depth <= 0:
-            continue
-        if start is None:
-            start = lineno
-        buf.append(line)
-        depth += _bracket_delta(line)
-        if depth <= 0:
-            yield start, "\n".join(buf)
-            buf = []
-            start = None
-            depth = 0
-    if buf:
-        yield start, "\n".join(buf)
-
-
-# Both quote styles. A single-quoted TOML item is as ordinary as a
-# double-quoted one, and scanning only for `"` dropped it silently.
-_TOML_ITEM = re.compile(r'"([^"]*)"|\'([^\']*)\'')
-
-
-def _toml_items(payload):
-    for m in _TOML_ITEM.finditer(payload):
-        yield m.group(1) if m.group(1) is not None else m.group(2)
-
-
-_TOML_SECTION = re.compile(r"^\s*\[+([^\]]+)\]+\s*$")
-# DOTALL: a statement handed here may span lines — the scanner joins a
-# multi-line value into one — and without it the value simply does not match,
-# which the caller then reads as a malformed key.
-_TOML_KEY = re.compile(
-    r'^\s*((?:"[^"]+"|\'[^\']+\'|[A-Za-z0-9][A-Za-z0-9._-]*))\s*=\s*(.+?)\s*$',
-    re.DOTALL,
-)
-_TOML_STR = re.compile(r'^"([^"]*)"$|^\'([^\']*)\'$')
-_INLINE_VERSION = re.compile(r'version\s*=\s*"([^"]*)"')
-# The comparison operator is part of the constraint, not decoration: storing
-# only the number makes `requests==2.31.0` and `requests>=2.31.0` identical,
-# so loosening a pin — a standard supply-chain move — produces no change.
-_PEP508 = re.compile(
-    r'^\s*"?([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*'
-    r'((?:[=<>!~]=?\s*[^",;\]]+)?)'
-)
-
-# Keys that appear INSIDE a dependency sub-table and are attributes of the
-# dependency, not dependency names themselves.
-_DEP_ATTRS = frozenset((
-    "version", "features", "path", "git", "branch", "tag", "rev", "optional",
-    "default-features", "default_features", "workspace", "package", "registry",
-    "extras", "python", "markers", "source", "url", "subdirectory", "allow-prereleases",
-))
-
-
-def _toml_scalar(raw):
-    m = _TOML_STR.match(raw)
-    if m:
-        return m.group(1) if m.group(1) is not None else m.group(2)
-    m = _INLINE_VERSION.search(raw)
-    if m:
-        return m.group(1)
-    return None
-
-
-def _unquote_key(key):
-    m = _TOML_STR.match(key)
-    if m:
-        return m.group(1) if m.group(1) is not None else m.group(2)
-    return key
-
-
-def _dep_subtable_name(section):
-    """If `section` is a dependency SUB-table, return the package it names.
-
-    `[dependencies.serde]`, `[tool.poetry.dependencies.requests]` and
-    `[target.'cfg(unix)'.dependencies.nix]` each declare one package in a table
-    of their own. Read as an ordinary section, their `version = "..."` and
-    `features = [...]` keys look like two packages called version and features,
-    and the package itself is never reported at all.
-    """
-    parts = section.split(".")
-    for i in range(len(parts) - 1, 0, -1):
-        if parts[i - 1].endswith("dependencies"):
-            name = ".".join(parts[i:])
-            return _unquote_key(name) if name else None
-    return None
-
-
-def _is_dep_section(section):
-    last = section.split(".")[-1]
-    return last.endswith("dependencies")
-
-
-# Sections whose KEYS are group names and whose VALUES are arrays of PEP 508
-# strings. All of these are ways a Python project declares dependencies; a
-# typosquat added to any of them is a dependency this must report.
-_GROUPED_PEP508_SECTIONS = (
-    "project.optional-dependencies",   # PEP 621 extras
-    "dependency-groups",               # PEP 735
-    "tool.pdm.dev-dependencies",
-)
-# Sections with NAMED array keys rather than arbitrary group names.
-_NAMED_PEP508_KEYS = {
-    "project": ("dependencies",),
-    "tool.uv": ("dev-dependencies", "constraint-dependencies",
-                "override-dependencies"),
-}
-_HATCH_KEYS = ("dependencies", "extra-dependencies")
-
-
-def _add_pep508_items(result, payload, lineno):
-    found = False
-    for item in _toml_items(payload):
-        if not item or item.startswith("include-group"):
-            continue
-        m = _PEP508.match(item)
-        if m:
-            result.add(m.group(1).lower(), _normalise_constraint(m.group(2)), lineno)
-            found = True
-    return found
-
-
-def _normalise_constraint(raw):
-    """Keep the comparison operator, except on an exact pin.
-
-    `requests==2.31.0` becoming `requests>=2.31.0` is a real dependency change
-    — loosening a pin is a standard supply-chain move — and storing only the
-    number made the two identical, so no DEP_CHANGED was emitted. An exact pin
-    keeps its bare version so the ordinary case still reads as a version.
-    """
-    if raw is None:
-        return None
-    raw = raw.strip()
-    if raw.startswith("=="):
-        return raw[2:].strip() or None
-    return raw or None
-
-
-def parse_pyproject(text):
-    """Every way a pyproject.toml declares a dependency.
-
-    PEP 621 `[project] dependencies` and its extras (both the section form and
-    the inline-table form), PEP 735 `[dependency-groups]`, poetry, pdm, uv and
-    hatch. A section this recognises as a dependency section but cannot read
-    raises, rather than being skipped: skipping it reports the manifest as
-    read with a package missing from it, which is the one outcome this helper
-    exists to prevent.
-    """
-    r = ParseResult()
-    section = None
-    for lineno, stmt in _toml_statements(text):
-        m = _TOML_SECTION.match(stmt.strip()) if "\n" not in stmt else None
-        if m:
-            section = m.group(1).strip()
-            sub = _dep_subtable_name(section)
-            if sub:
-                r.add(sub.lower(), None, lineno)
-            continue
-        if section is None:
-            continue
-
-        sub = _dep_subtable_name(section)
-        if sub:
-            km = _TOML_KEY.match(stmt)
-            if km and _unquote_key(km.group(1)).lower() == "version":
-                name = sub.lower()
-                r.deps.get(name, {}).pop(None, None)
-                r.add(name, _toml_scalar(km.group(2)), lineno)
-            continue
-
-        km = _TOML_KEY.match(stmt)
-
-        if section in _GROUPED_PEP508_SECTIONS:
-            if km:
-                _add_pep508_items(r, km.group(2), lineno)
-            continue
-
-        if section.startswith("tool.hatch.envs.") or section == "tool.hatch.envs":
-            if km and _unquote_key(km.group(1)).lower() in _HATCH_KEYS:
-                _add_pep508_items(r, km.group(2), lineno)
-            continue
-
-        named = _NAMED_PEP508_KEYS.get(section)
-        if named:
-            if km:
-                key = _unquote_key(km.group(1)).lower()
-                if key in named:
-                    _add_pep508_items(r, km.group(2), lineno)
-                elif key == "optional-dependencies":
-                    # The inline-table form: optional-dependencies = {dev = [...]}
-                    _add_pep508_items(r, km.group(2), lineno)
-            continue
-
-        if _is_dep_section(section) and section.startswith("tool.poetry"):
-            if not km:
-                raise ParseError(
-                    "unreadable statement at line %d in [%s]" % (lineno, section)
-                )
-            key = _unquote_key(km.group(1)).lower()
-            if key == "python":
-                continue
-            value = km.group(2)
-            if value.lstrip().startswith("["):
-                # Multiple constraints: foo = [{version = "<=1.9", ...}, ...].
-                versions = re.findall(r'version\s*=\s*"([^"]*)"', value)
-                if versions:
-                    for v in versions:
-                        r.add(key, v, lineno)
-                else:
-                    r.add(key, None, lineno)
-                continue
-            r.add(key, _toml_scalar(value), lineno)
-            continue
-
-        if _is_dep_section(section):
-            # Recognised as a dependency section but not one of the shapes
-            # above. Reporting the manifest read would hide whatever it holds.
-            raise ParseError(
-                "unrecognised dependency section [%s] at line %d" % (section, lineno)
-            )
-    return r
-
-
-def parse_toml_lock(text):
-    """poetry.lock and Cargo.lock: [[package]] blocks with name and version."""
-    r = ParseResult()
-    name = version = name_line = None
-    in_pkg = False
-
-    def flush():
-        if in_pkg and name:
-            r.add(name.lower(), version, name_line)
-
-    for lineno, raw in enumerate(text.splitlines(), 1):
-        line = raw.split("#", 1)[0].rstrip()
-        m = _TOML_SECTION.match(line)
-        if m:
-            flush()
-            in_pkg = m.group(1).strip() == "package"
-            name = version = name_line = None
-            continue
-        if not in_pkg:
-            continue
-        km = _TOML_KEY.match(line)
-        if not km:
-            continue
-        key = _unquote_key(km.group(1)).lower()
-        if key == "name":
-            name = _toml_scalar(km.group(2))
-            name_line = lineno
-        elif key == "version" and version is None:
-            version = _toml_scalar(km.group(2))
-    flush()
-    return r
-
-
-def parse_cargo_toml(text):
-    r = ParseResult()
-    section = None
-    subtable = None
-    for lineno, stmt in _toml_statements(text):
-        m = _TOML_SECTION.match(stmt.strip()) if "\n" not in stmt else None
-        if m:
-            section = m.group(1).strip()
-            subtable = _dep_subtable_name(section)
-            if subtable:
-                r.add(subtable.lower(), None, lineno)
-            continue
-        if not section:
-            continue
-        if subtable:
-            km = _TOML_KEY.match(stmt)
-            if km and _unquote_key(km.group(1)).lower() == "version":
-                name = subtable.lower()
-                r.deps.get(name, {}).pop(None, None)
-                r.add(name, _toml_scalar(km.group(2)), lineno)
-            continue
-        if not _is_dep_section(section):
-            continue
-        km = _TOML_KEY.match(stmt)
-        if not km:
-            raise ParseError(
-                "unreadable statement at line %d in [%s]" % (lineno, section)
-            )
-        key = _unquote_key(km.group(1))
-        # Workspace inheritance is written `serde.workspace = true`. Keyed
-        # whole, the package reads as `serde.workspace`, matching nothing in
-        # the baseline and reported as a package nobody has heard of.
-        if "." in key:
-            headk, _, tail = key.rpartition(".")
-            if tail.lower() in _DEP_ATTRS:
-                if tail.lower() == "version":
-                    r.deps.get(headk.lower(), {}).pop(None, None)
-                    r.add(headk.lower(), _toml_scalar(km.group(2)), lineno)
-                elif not r.deps.get(headk.lower()):
-                    r.add(headk.lower(), None, lineno)
-                continue
-        r.add(key.lower(), _toml_scalar(km.group(2)), lineno)
+        r.add(name, _constraint(m.group(2)), lineno)
     return r
 
 

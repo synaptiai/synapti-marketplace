@@ -114,7 +114,18 @@ fi
 
 #### Per-package checks
 
-For each `DEP_ADDED=` and `DEP_CHANGED=` line, record all five:
+For each `DEP_ADDED=`, `DEP_CHANGED=` and `DEP_REPLACED=` line, record all five.
+
+A `DEP_REPLACED=<module> -> <target>` line is a dependency redirected away from
+the registry it normally comes from — a `go.mod` replace, or a `tool.uv.sources`
+or poetry `git =` entry. **Judge the target exactly as you would an added
+package**, because that is what it is: code this change starts fetching that it
+did not before, from somewhere the index does not vouch for. Name the module in
+the finding, not only the target, so a reader can see which dependency stopped
+coming from upstream. A target that is a local filesystem path is a lower
+concern than one that is a fork of the module it replaces; say which it is.
+
+The five checks:
 
 1. **Advisory** — run the audit tools for the ecosystems the diff touched:
 
@@ -170,6 +181,8 @@ For each `DEP_ADDED=` and `DEP_CHANGED=` line, record all five:
 | Install hooks (`preinstall`/`postinstall`, `build.rs`) | P2 | HIGH |
 | Added name within edit distance 2 of an existing dependency | P2 | MEDIUM |
 | Added but no file in the diff imports it | P3 | LOW |
+| A dependency redirected to a fork of itself (`DEP_REPLACED` to another module) | P2 | HIGH |
+| A dependency redirected to a local path (`DEP_REPLACED` to a filesystem target) | P3 | HIGH |
 
 A license conflict is P1 **and** carries the six-field escalation, because
 whether this project may take on that license is not a decision this agent

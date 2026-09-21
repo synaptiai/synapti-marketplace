@@ -178,3 +178,9 @@ feat(flow): security-reviewer judges new and bumped dependencies, and those find
 <!-- auto-log: 2026-09-21 15:29 commit "fix(flow): the dependency read no longer reports ok while missing a package" -->
 
 <!-- auto-log: 2026-09-21 15:30 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/dep-diff-cycle2.test.sh -->
+
+<!-- auto-log: 2026-09-21 15:43 commit "fix(flow): read a manifest as a document, not as a sequence of lines" -->
+
+<!-- auto-log: 2026-09-21 15:43 commit "fix(flow): read a manifest as a document, not as a sequence of lines" -->
+
+<!-- auto-log: 2026-09-21 17:29 Write /Users/danielbentes/synapti-marketplace/plugins/flow/tests/dep-diff-cycle3.test.sh -->
