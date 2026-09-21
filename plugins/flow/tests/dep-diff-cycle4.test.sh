@@ -429,7 +429,11 @@ _flow_test_begin "the docs no longer promise a line number every finding carries
 # location was always `file:line`, so it would invent one.
 for F in agents/security-reviewer.md commands/pr.md commands/review.md references/finding-schema.md; do
   C=$(cat "$PLUGIN_DIR/$F")
-  assert_not_contains "located at the manifest \`file:line\`." "$C" \
+  # The needle must be the shortest thing that marks the old claim. Matching
+  # the whole sentence let a broken replacement pass: the duplicated "located
+  # at" pushed the rest onto the next line, so the long needle stopped
+  # matching and the assertion went green on garbled prose.
+  assert_not_contains "located at" "$C" \
     "$F does not promise a line unconditionally"
 done
 assert_contains "Do not invent a line number" "$(cat "$PLUGIN_DIR/agents/security-reviewer.md")" \
