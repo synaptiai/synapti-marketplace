@@ -106,3 +106,28 @@ feat(flow): visual-verification drives the changed user flow, not only the page 
 - **Shape of the whole issue**: implement and mechanically test the contract; state plainly in
   the pull request that the interaction path has never driven a real browser, because this
   repository has no UI to drive. Declared up front rather than discovered at review.
+
+## Review cycles
+
+- **Cycle 1 (14 findings, 3 P1).** Two meant the feature auto-FAILed the criterion it verifies:
+  the bundle producer was never told to copy the `Step:` blocks, and a flow that correctly did not
+  run was indistinguishable from one that was omitted, because the judge receives no settings.
+  The `Flows: none — {reason}` marker came from that second one.
+- **Cycle 2 (10 findings, 1 P1).** The marker was stated at some consumers and not others; five of
+  eight mutants survived because the suite pinned the `Step:` half of the feature everywhere and
+  the marker half nowhere.
+- **Cycle 3 (7 findings, 1 P1) — scope cut, decided with the user 2026-09-22.** Cycle 2's own
+  fixes contradicted each other: one restricted the marker's reason to exactly three strings, and
+  another told the producer to emit a `Flows:` line naming undriven viewports, which is none of
+  the three. The producer had to emit a non-conforming line or state a reason that was false
+  (`Flows: none` while a desktop flow had run).
+
+  That viewport rule **reintroduced a narrower version of an option rejected in the original
+  interview** — "requiring flows on every viewport (three times the browser work)" — added as a
+  review fix without returning to the decision. The resolution was three deletions rather than a
+  fourth reason string: the producer instruction, the judge's demand, and the sentence permitting
+  a criterion to carry both step blocks and a marker. The intent survives in rule (e): a criterion
+  naming a viewport and evidenced by a desktop-only flow is judged on the `Viewport:` line of the
+  blocks it carries, which is evidence the bundle actually holds.
+
+  A `Flows:` line now means no flow ran at all, and the two are exclusive on one criterion.

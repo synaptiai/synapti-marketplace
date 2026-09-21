@@ -77,7 +77,7 @@ Drive with `browser_click` and `browser_type`; after every step screenshot and w
 carrying the `Step: {n}/{m} {action}` line shown below.
 
 `Observed:` describes the page AFTER that step. Desktop by default, every viewport when the
-criterion mentions responsive or mobile; name any left undriven in a `Flows:` line. Step blocks are additional to viewport blocks, never
+criterion mentions responsive or mobile. Step blocks are additional to viewport blocks, never
 a replacement. A step whose `expect` is not met is a `category=visual` finding. When
 `browser_start_video` is available, cite the path; its absence is **not** a skip, warning or
 finding.

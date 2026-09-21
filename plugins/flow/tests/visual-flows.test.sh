@@ -342,8 +342,15 @@ for R in "visualVerification.flows=off" "no interactive tool" "no interaction"; 
 done
 assert_contains "Flows: none — no interaction" "$SKILL_FLAT" \
   "the producer skill uses the same spelling it will be judged by"
-assert_match "producer non-conforming" "$JUDGE_REASONS" \
-  "and anything outside the set does not suppress the auto-FAIL"
+# Slice the Step 1 bullet. A file-wide match was satisfied by an unrelated
+# pre-existing "producer non-conforming" sentence, so deleting the new
+# enforcement left the suite green — the unbounded-reason defect was pinned
+# by nothing.
+STEP1_RULE=$(printf '%s\n' "$(cat "$JUDGE")" | grep 'one of exactly three')
+assert_contains "producer non-conforming" "$STEP1_RULE" \
+  "the reason set is enforced in the rule that uses it"
+assert_contains "does NOT suppress this auto-FAIL" "$STEP1_RULE" \
+  "and a non-conforming reason does not suppress the auto-FAIL"
 
 _flow_test_begin "the producer is told to copy the step blocks"
 # The blocks the skill makes never reached the bundle: the copy instruction
@@ -374,6 +381,20 @@ _flow_test_begin "the coverage scan template carries the new column"
 HEADER=$(grep '^| # | Criterion |' "$VERDICT_FMT" | head -1)
 assert_contains "Interaction Steps Present?" "$HEADER" "the emitted header row has it"
 assert_match "Interaction Steps Present" "$JUDGE_FLAT" "and the judge enumerates it"
+# The value that records "skipped, with a stated reason" was pinned nowhere —
+# replacing it with a bare N/A everywhere left the suite green, and a bare
+# N/A loses the very fact the value exists to carry.
+# Assert the SEMANTICS, not just the value: the value also appears in the
+# column's type list, so deleting the clause that gives it meaning left a
+# bare-`N/A` mutant alive.
+VOF_FLAT=$(printf '%s\n' "$(cat "$VERDICT_FMT")" | tr '\n' ' ' | tr -s ' ')
+assert_contains 'N/A (no flow: {reason})' "$VOF_FLAT" "the value exists"
+assert_match "quoting that reason so the scan records why" "$VOF_FLAT" \
+  "and the scan records WHY the interaction was not exercised"
+assert_contains 'N/A (no flow: {reason})' "$(cat "$JUDGE")" \
+  "and the judge enumerates the same value"
+assert_match "Yes. whenever any .Step:. block is present" "$JUDGE_FLAT" \
+  "and a step block takes precedence over the marker"
 
 _flow_test_begin "both dispatch paths hand the skill what it needs"
 # integration-verifier was updated; the /flow:start path was not, and the skill
@@ -405,7 +426,8 @@ for F in "$PLUGIN_DIR/commands/start.md" \
          "$PLUGIN_DIR/agents/verdict-judge.md"; do
   C=$(cat "$F")
   assert_contains "Step:" "$C" "$(basename "$F") mentions the step blocks"
-  assert_contains "Flows:" "$C" "$(basename "$F") mentions the marker that explains their absence"
+  assert_contains "Flows: none —" "$C" \
+    "$(basename \"$F\") uses the marker spelling the judge matches on"
 done
 
 _flow_test_begin "the Step placeholder is spelled one way"
@@ -416,3 +438,61 @@ OLD_SPELLING="Step: <n>""/<m> <action>"
 HITS=$(grep -rl "$OLD_SPELLING" "$PLUGIN_DIR" 2>/dev/null | wc -l | tr -d ' ')
 assert_equal "0" "$HITS" "no file uses the angle-bracket spelling"
 assert_contains "Step: {n}/{m} {action}" "$SKILL_FLAT" "the brace spelling is the one in use"
+
+# =============================================================================
+# Review cycle 3 — the reason set and the producer must not contradict
+# =============================================================================
+
+_flow_test_begin "every shape the producer is told to emit is one the judge accepts"
+# The defect: one fix restricted the marker's reason to exactly three strings,
+# another told the producer to emit a `Flows:` line naming undriven viewports —
+# which is none of the three. The shape one rule demanded was the shape the
+# other rejected, so the producer had to emit a non-conforming line or state a
+# reason that was false (`Flows: none` while a desktop flow had run).
+#
+# The rule now: a `Flows:` line means NO flow ran, and carries one of three
+# reasons. Nothing may instruct the producer to write it for a partial run.
+SKILL_TXT=$(cat "$SKILL")
+JUDGE_TXT=$(cat "$JUDGE")
+BUNDLE_TXT=$(cat "$BUNDLE_FMT")
+for F in "$SKILL" "$JUDGE" "$BUNDLE_FMT" "$VIS_OUT"; do
+  assert_not_contains "viewports left undriven" "$(cat "$F")" \
+    "$(basename "$F") does not ask for a reason outside the permitted set"
+  assert_not_contains "left undriven in a" "$(cat "$F")" \
+    "$(basename "$F") does not spell one either"
+done
+
+_flow_test_begin "a Flows line and step blocks are exclusive"
+# The both-case had no defined Coverage Scan value and no legal spelling: a
+# criterion with a desktop flow cannot truthfully say `Flows: none`.
+BUNDLE_FLAT=$(printf '%s\n' "$BUNDLE_TXT" | tr '\n' ' ' | tr -s ' ')
+assert_contains "The two are exclusive on one criterion" "$BUNDLE_FLAT" \
+  "the bundle format states the contract"
+assert_match "stopped at the step bound carries the blocks it completed, not a" "$BUNDLE_FLAT" \
+  "and says a partial run carries its blocks rather than the marker"
+assert_not_contains "Both may appear on one criterion" "$BUNDLE_FLAT" \
+  "the combination is no longer permitted"
+
+_flow_test_begin "a viewport-specific criterion is still judged on where it ran"
+# The rule survives the cut; only the unspellable escape hatch is gone. The
+# judge reads the Viewport: line of the step blocks that exist, rather than
+# demanding a marker for the ones that do not.
+JUDGE_FLAT=$(printf '%s\n' "$JUDGE_TXT" | tr '\n' ' ' | tr -s ' ')
+assert_match "driven only on desktop has not been verified where it claims to apply" "$JUDGE_FLAT" \
+  "the intent is kept"
+assert_match "judge that on the .Viewport:. line" "$JUDGE_FLAT" \
+  "and is judged from evidence the bundle actually carries"
+
+_flow_test_begin "the decision recorded in the journal is the one implemented"
+# Requiring a flow on every viewport was considered and rejected up front; a
+# review fix reintroduced a narrower version of it without going back to that
+# decision. The journal is the record, so it has to agree with the code.
+# Flattened: the sentence wraps, and a literal match on wrapped prose fails
+# silently — the same shape that let a garbled sentence pass on #217.
+JOURNAL=$(printf '%s\n' "$(cat "$REPO_ROOT/.decisions/issue-218.md")" | tr '\n' ' ' | tr -s ' ')
+assert_contains "Rejected: requiring flows on every viewport" "$JOURNAL" \
+  "the journal records the rejection"
+assert_contains "reintroduced a narrower version" "$JOURNAL" \
+  "and records that a review fix reintroduced it, and was cut"
+assert_not_contains "there must be a \`Step:\` block for each" "$JUDGE_TXT" \
+  "and the judge does not require one per viewport"
