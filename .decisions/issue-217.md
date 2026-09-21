@@ -10,6 +10,15 @@ artifacts:
   - failure-modes
   - interface-contracts
   - risk-map
+- type: goal-created
+  captured_at: '2026-09-21T12:37:46Z'
+  goal_id: issue-217
+  source: github_issue:217
+- type: workflow-run
+  captured_at: '2026-09-21T12:38:03Z'
+  workflow: start-issue
+  run_id: 2026-09-21T124500Z-issue-217
+  status: active
 ---
 # Decision Journal — Issue #217
 

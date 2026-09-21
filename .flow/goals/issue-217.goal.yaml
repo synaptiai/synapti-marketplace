@@ -1,0 +1,133 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-217
+  created_at: '2026-09-21T12:40:00Z'
+  created_by: /flow:start
+  owner: daniel.bentes@synapti.ai
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-217-dependency-judgment
+  issue: 217
+  journal: .decisions/issue-217.md
+objective:
+  outcome: A pull request that adds or bumps a dependency gets one judgment per package,
+    grounded in what the package manager can tell us offline, and a package that fails
+    that judgment is a finding the merge gate can see.
+  acceptance_criteria:
+  - id: AC1
+    text: bin/flow-dep-diff.sh exists with fixture tests for each ecosystem (added,
+      version-changed, removed, untouched manifest), an input-removal case (no manifests
+      in the diff -> MANIFESTS_EXAMINED=0), and a run over this repository's own plugins/flow/requirements.txt
+      history.
+    verification_command: bash plugins/flow/tests/run.sh dep-diff.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC2
+    text: agents/security-reviewer.md Step 4 invokes the helper, states the per-package
+      checks, emits DEP- findings with the priority table, and keeps the audit table;
+      a test asserts the helper is actually called (the fence is extracted, parsed
+      and run), the DEP- prefix, category=dependency, and the P1 escalation rule for
+      license conflicts.
+    verification_command: bash plugins/flow/tests/run.sh dep-diff.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC3
+    text: references/finding-schema.md adds dependency to the category vocabulary
+      and DEP- to the ID prefixes. The claim that dependency results stay out of the
+      FLOW_REVIEW_CYCLE marker is removed from agents/security-reviewer.md, the only
+      file carrying it; commands/review.md and commands/pr.md gain the DEP- routing.
+    verification_command: bash plugins/flow/tests/run.sh dep-diff.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC4
+    text: skills/capability-discovery/SKILL.md Verification Capabilities lists the
+      four license tools as probed, and references/runtime-verification-probes.md
+      names the per-ecosystem license read command.
+    verification_command: bash plugins/flow/tests/run.sh dep-diff.test.sh
+    status: pending
+    evidence_ref: null
+  - id: AC5
+    text: plugins/flow/tests/run.sh passes with no failures.
+    verification_command: bash plugins/flow/tests/run.sh
+    status: pending
+    evidence_ref: null
+specification:
+  non_goals:
+  - 'A network-dependent judgment: the helper is deterministic and offline.'
+  - 'A vulnerability database: the advisory signal stays with the existing audit tools.'
+  - 'Removing the Dependency Audit table: it stays as telemetry.'
+  - 'A dependency policy file: no allowlist, denylist or configurable license matrix.'
+  - Resolving transitive dependencies.
+  - A baseline beyond the manifests the change touches.
+  - 'A seventh fan-out agent: the judgment is a conditional step in security-reviewer.'
+  failure_modes:
+  - A license lookup that fails is 'undetermined' at P2, never the P1 no-license escalation.
+  - A manifest that cannot be read is STATE=unavailable naming the file, never STATE=none.
+  - A manifest value carrying a control character or record separator is refused,
+    not printed.
+  - A base ref that does not resolve, or two refs with no merge base, is unavailable.
+  - A parser module that cannot be imported prints STATE=unavailable and exits 2.
+  interface_contracts:
+  - flow-dep-diff.sh --base <ref> --head <ref> | <base>..<head>
+  - STATE=ok|none|unavailable, REASON=, MANIFESTS_EXAMINED=<n>, DIFF_BASE=<sha>
+  - DEP_ADDED / DEP_CHANGED / DEP_REMOVED / DEP_BASELINE / DEP_NEAR_NAME / DEP_INSTALL_HOOK
+    / MANIFEST_UNPARSED
+  - DEP- findings use finding-schema.md with category=dependency and manifest file:line.
+  risk_map:
+  - area: Absent vs unreadable
+    plausible_wrong_version: An unreadable manifest prints STATE=none
+    discriminating_check: Invalid-JSON and dynamic-Gemfile fixtures print unavailable
+      + MANIFEST_UNPARSED
+  - area: Examined vs absent
+    plausible_wrong_version: '''looked, clean'' and ''never looked'' collapse'
+    discriminating_check: Comment-only edit prints EXAMINED=1 with no DEP_ lines;
+      no manifest prints EXAMINED=0
+  - area: Base drift
+    plausible_wrong_version: Comparing against the base tip reports the base branch's
+      additions as removals
+    discriminating_check: Diverged-fork fixture prints no DEP_REMOVED and keeps EXAMINED
+      at 1
+  - area: Baseline trust
+    plausible_wrong_version: The near-name baseline comes from the head
+    discriminating_check: An added package is absent from DEP_BASELINE; two co-added
+      near names raise nothing
+  - area: Undetermined vs unlicensed
+    plausible_wrong_version: A failed lookup raises the P1 no-license escalation offline
+    discriminating_check: security-reviewer states undetermined at P2 and the conflict
+      at P1; a test asserts both
+  - area: Import-name aliasing
+    plausible_wrong_version: pyyaml is reported unimported because the code writes
+      import yaml
+    discriminating_check: The unimported finding is LOW confidence and the agent is
+      shown the pyyaml case
+  - area: Value forgery
+    plausible_wrong_version: A version carrying a pipe or newline forges an extra
+      record
+    discriminating_check: Fixtures with both are refused; no forged DEP_ADDED appears
+  - area: Windows silence
+    plausible_wrong_version: A POSIX path breaks the module import and the helper
+      exits 0 having done nothing
+    discriminating_check: Running with no module beside the script prints unavailable
+      and exits 2
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+evaluator:
+  type: hybrid
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: active
