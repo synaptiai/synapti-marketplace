@@ -28,6 +28,12 @@ artifacts:
   workflow: start-issue
   run_id: 2026-09-22T141500Z-issue-219
   status: active
+- type: review-cycle
+  captured_at: '2026-09-22T16:54:37Z'
+  cycle: 1
+  path: B
+  findings_count: 36
+  pr: 250
 ---
 # Decision Journal — Issue #219
 
