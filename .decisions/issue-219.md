@@ -58,6 +58,12 @@ artifacts:
   path: B
   findings_count: 6
   pr: 250
+- type: review-cycle
+  captured_at: '2026-09-22T21:30:00Z'
+  cycle: 6
+  path: B
+  findings_count: 8
+  pr: 250
 ---
 # Decision Journal — Issue #219
 
@@ -339,7 +345,8 @@ opposite security semantics sat in thirteen files - it only grepped for the firs
 and leaves the working directory alone, so a failed `git rev-parse` turned "not a repository" into
 "every candidate under the working directory is in one". Run from a directory that is not a
 repository, the fence refused an install sitting above it. A root that resolves but cannot be
-entered now fails closed instead. Both forms share one expression, so this was fixed once.
+entered was meant to fail closed; the sentinel as written skipped nothing, which cycle 6 found
+and fixed. Both forms share one expression, so this was fixed once.
 
 **Two of the tests written for it could not fail for their own reason.** The outside-a-repository
 fixtures put the install in a sibling directory, where the faulty form finds it anyway. Only when
@@ -353,3 +360,34 @@ checkout line, and judges all 22 resolver sites by where they run.
 
 Behaviour change worth stating: flow's self-review always runs the installed copy of its own
 tooling, never the branch's.
+
+## Review cycle 6 - the root was fixed, the settings it reads were not
+
+16 raised, 8 survived refutation, two of them P1.
+
+**Cycle 5 fixed which `cascade-resolve.sh` runs and not which `settings.json` it reads.** The plugin
+tier was a path relative to the working directory, which during a review is the checked-out pull
+request. Verified: a planted `plugins/flow/settings.json` made the convention checker report forged
+commit types and turned the FlowRun off. `flow-clone-scan.sh` already defended against this at its
+own call site, so this was again a copy taken from the undefended sibling. The tier comes from the
+script's own directory now, which covers every caller rather than every call site. That also
+repaired a silent loss the relative path caused everywhere else: in any consumer repository the
+plugin tier did not exist at all, so the shipped defaults were never applied. Two tests had encoded
+that accident as "no source has the key".
+
+**The fail-closed sentinel did the opposite of what it claimed, and the journal repeated the claim.**
+The skip pattern needed two leading slashes and matched no path `pwd -P` produces. The clause skipped
+nothing, so the branch's own copy stayed a live candidate on exactly the case the clause defends. No
+fixture drove it, which is why writing the claim was enough to believe it.
+
+**Three of the thirteen post-checkout sites were in `!` fences,** which are expanded before the
+command body runs and so are author context whatever their line number. In a bare checkout of flow
+with no marketplace install the post-checkout form there resolves to nothing and blocks the run.
+The rule reads execution order now rather than line order.
+
+**Four of the tests written in cycle 5 could not fail for their own reason.** The site count was a
+floor of 15 against 92 sites; the candidate list the post-checkout form re-implements was exercised
+with one cache version and no fallback, so picking the oldest install or dropping the `break`
+changed nothing; and the fixtures evaluated the substitution unquoted, which word-splits a
+multi-line result and runs the extra lines as commands - masking exactly the multi-candidate return
+a missing `break` produces. Real callers quote it, and the fixtures do now.
