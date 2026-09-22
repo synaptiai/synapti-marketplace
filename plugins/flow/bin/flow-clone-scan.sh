@@ -31,7 +31,9 @@
 #   INSTALL=<command>                              (unavailable: no detector)
 #   SCAN_BASE=<sha>                                (the merge base compared)
 #   FILES_SCANNED=<n>                              (files handed to the detector)
-#   FILES_ANALYZED=<n>                             (files the detector parsed)
+#   FILES_ANALYZED=<n>                             (files the detector parsed, across
+#     BOTH the head scan and the baseline scan of the merge base, so it is normally
+#     larger than FILES_SCANNED and is not a subset of it)
 #   MIN_LINES=<n> MIN_TOKENS=<n>
 #   CLONE=added <file>:<a>-<b> existing <file>:<c>-<d> lines=<N> tokens=<T>
 #   CLONE_WITHIN_DIFF=<file>:<a>-<b> <file>:<c>-<d> lines=<N> tokens=<T>
@@ -50,9 +52,13 @@
 # nothing and a scan that found nothing produce the same silence, and only one
 # of them is a clean bill of health.
 #
-# Exits 0 for ok and none, 1 on a usage error, and 2 when the scan could not be
-# performed — in which case STATE=unavailable is still printed, so a caller
-# reading only stdout is not left to infer it.
+# A scan turned off by `duplication.enabled` is STATE=unavailable, not none:
+# nobody looked, and the difference is the whole point of the three states. It
+# exits 0, because a deliberate setting is not a failure.
+#
+# Exits 0 for ok, none, and a scan disabled by settings; 1 on a usage error; and
+# 2 when the scan could not be performed — in which case STATE=unavailable is
+# still printed, so a caller reading only stdout is not left to infer it.
 
 set -uo pipefail
 
@@ -71,49 +77,43 @@ unavailable() {
   exit 2
 }
 
-BASE=""
-HEAD_REF=""
+# The shared range helpers. A helper that cannot load them does NOT fall back to
+# an inline copy — two copies of a reference check is exactly what this removed
+# — and it does not exit silently either: a caller reading only stdout would be
+# left to infer the difference between a clean scan and a helper that never ran.
+FLOW_LIB_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)/lib"
+# shellcheck source=lib/range-args.sh
+if ! . "$FLOW_LIB_DIR/range-args.sh" 2>/dev/null; then
+  unavailable "the shared range helpers could not be loaded from $FLOW_LIB_DIR"
+fi
+
 OPT_MIN_LINES=""
 OPT_MIN_TOKENS=""
 OPT_EXCLUDES=""
 OPT_FORMAT=""
 PRINT_SCAN_SET=0
+
+# The shared part of the command line — the range and --help — is parsed by the
+# library; what it does not recognise comes back in FLOW_RANGE_REST for the
+# options only this helper has.
+flow_range_parse_args "$@"
+BASE="$FLOW_RANGE_BASE"
+HEAD_REF="$FLOW_RANGE_HEAD"
+
+set -- ${FLOW_RANGE_REST[@]+"${FLOW_RANGE_REST[@]}"}
 while [ $# -gt 0 ]; do
   case "$1" in
-    --base) [ $# -ge 2 ] || { usage; exit 1; }; BASE="$2"; shift 2 ;;
-    --head) [ $# -ge 2 ] || { usage; exit 1; }; HEAD_REF="$2"; shift 2 ;;
     --min-lines) [ $# -ge 2 ] || { usage; exit 1; }; OPT_MIN_LINES="$2"; shift 2 ;;
     --min-tokens) [ $# -ge 2 ] || { usage; exit 1; }; OPT_MIN_TOKENS="$2"; shift 2 ;;
     --exclude-paths) [ $# -ge 2 ] || { usage; exit 1; }; OPT_EXCLUDES="$2"; shift 2 ;;
     --format) [ $# -ge 2 ] || { usage; exit 1; }; OPT_FORMAT="$2"; shift 2 ;;
     --print-scan-set) PRINT_SCAN_SET=1; shift ;;
-    --help|-h) usage; exit 0 ;;
-    -*) printf '%s\n' "$PROG: unknown option" >&2; usage; exit 1 ;;
-    *)
-      # Positional `<base>..<head>`, accepted only when neither flag was given,
-      # so a caller cannot specify the range two ways and get a silent winner.
-      case "$1" in
-        *..*)
-          [ -z "$BASE" ] && [ -z "$HEAD_REF" ] || { usage; exit 1; }
-          BASE="${1%%..*}"
-          HEAD_REF="${1##*..}"
-          ;;
-        *) printf '%s\n' "$PROG: expected <base>..<head>" >&2; usage; exit 1 ;;
-      esac
-      shift ;;
+    *) printf '%s\n' "$PROG: unknown option '$1'" >&2; usage; exit 1 ;;
   esac
 done
 
 [ -n "$BASE" ] && [ -n "$HEAD_REF" ] || { usage; exit 1; }
-
-# Refs reach `git` as argv entries, never a shell string, so a ref cannot run a
-# command. This refuses the shapes git itself reads as options or as pathspec
-# separators, which would change what the command means.
-for _ref in "$BASE" "$HEAD_REF"; do
-  case "$_ref" in
-    -*|*' '*|'') printf '%s\n' "$PROG: invalid ref" >&2; exit 1 ;;
-  esac
-done
+flow_range_validate "$BASE" "$HEAD_REF" || { printf '%s\n' "$PROG: invalid ref" >&2; exit 1; }
 
 # Numeric options are validated here rather than passed through: a non-numeric
 # value reaching jscpd is a silently different threshold, which is the failure
@@ -152,7 +152,10 @@ MIN_TOKENS="${OPT_MIN_TOKENS:-$(_resolve '.duplication.minTokens' '20')}"
 if [ -n "$OPT_EXCLUDES" ]; then
   EXCLUDES="$OPT_EXCLUDES"
 else
-  EXCLUDES=$(_resolve '.duplication.excludePaths | join(",")' "$DEFAULT_EXCLUDES")
+  # `// []` matters: a source that does not carry the key would otherwise make
+  # jq fail on the join, and cascade-resolve would report that whole file
+  # unparseable and warn about it on every run.
+  EXCLUDES=$(_resolve '(.duplication.excludePaths // []) | join(",")' "$DEFAULT_EXCLUDES")
   [ -n "$EXCLUDES" ] || EXCLUDES="$DEFAULT_EXCLUDES"
 fi
 
@@ -160,8 +163,12 @@ case "$MIN_LINES" in ''|*[!0-9]*) MIN_LINES=5 ;; esac
 case "$MIN_TOKENS" in ''|*[!0-9]*) MIN_TOKENS=20 ;; esac
 
 if [ "$ENABLED" = "false" ]; then
-  printf '%s\n' "STATE=none"
-  printf '%s\n' "REASON=duplication.enabled is false"
+  # Not `none`. A team that turned the layer off has not learned that there is
+  # no duplication — nobody looked — and a caller reading STATE alone would
+  # report a clean duplication review it never performed. Exit 0, because a
+  # deliberate setting is not a failure and must not read as one.
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=duplication.enabled is false, so no scan was performed"
   printf '%s\n' "FILES_SCANNED=0"
   exit 0
 fi

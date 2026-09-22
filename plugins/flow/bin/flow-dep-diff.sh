@@ -56,45 +56,40 @@ set -uo pipefail
 
 PROG="flow-dep-diff.sh"
 
+# The shared range helpers. A helper that cannot load them must not fall back to
+# an inline copy: two copies of a reference check is what this file removed.
+FLOW_LIB_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)/lib"
+# shellcheck source=lib/range-args.sh
+if ! . "$FLOW_LIB_DIR/range-args.sh" 2>/dev/null; then
+  # Exits 2, but still prints the section: a caller reading only stdout must not
+  # have to infer the difference between "no dependency changed" and "the helper
+  # never ran".
+  printf '%s\n' "$PROG: cannot load $FLOW_LIB_DIR/range-args.sh" >&2
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=the shared range helpers could not be loaded from $FLOW_LIB_DIR"
+  printf '%s\n' "MANIFESTS_EXAMINED=0"
+  exit 2
+fi
+
 usage() {
   printf '%s\n' "usage: $PROG --base <ref> --head <ref>" >&2
   printf '%s\n' "       $PROG <base>..<head>" >&2
 }
 
-BASE=""
-HEAD_REF=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --base) [ $# -ge 2 ] || { usage; exit 1; }; BASE="$2"; shift 2 ;;
-    --head) [ $# -ge 2 ] || { usage; exit 1; }; HEAD_REF="$2"; shift 2 ;;
-    --help|-h) usage; exit 0 ;;
-    -*) printf '%s\n' "$PROG: unknown option" >&2; usage; exit 1 ;;
-    *)
-      # Positional `<base>..<head>`. Only accepted when neither flag was given,
-      # so a caller cannot half-specify the range two ways and get a silent
-      # winner.
-      case "$1" in
-        *..*)
-          [ -z "$BASE" ] && [ -z "$HEAD_REF" ] || { usage; exit 1; }
-          BASE="${1%%..*}"
-          HEAD_REF="${1##*..}"
-          ;;
-        *) printf '%s\n' "$PROG: expected <base>..<head>" >&2; usage; exit 1 ;;
-      esac
-      shift ;;
-  esac
-done
+# The shared part of the command line is parsed by the library. This helper has
+# no options of its own, so anything left over is an unknown option.
+flow_range_parse_args "$@"
+BASE="$FLOW_RANGE_BASE"
+HEAD_REF="$FLOW_RANGE_HEAD"
+
+if [ ${#FLOW_RANGE_REST[@]} -gt 0 ]; then
+  printf '%s\n' "$PROG: unknown option '${FLOW_RANGE_REST[0]}'" >&2
+  usage
+  exit 1
+fi
 
 [ -n "$BASE" ] && [ -n "$HEAD_REF" ] || { usage; exit 1; }
-
-# Refs reach `git` as argv entries, never a shell string, so a ref cannot run a
-# command. This check refuses the shapes git itself treats as options or as
-# pathspec separators, which would otherwise change what the command means.
-for _ref in "$BASE" "$HEAD_REF"; do
-  case "$_ref" in
-    -*|*' '*|'') printf '%s\n' "$PROG: invalid ref" >&2; exit 1 ;;
-  esac
-done
+flow_range_validate "$BASE" "$HEAD_REF" || { printf '%s\n' "$PROG: invalid ref" >&2; exit 1; }
 
 if ! command -v python3 >/dev/null 2>&1; then
   printf '%s\n' "STATE=unavailable"

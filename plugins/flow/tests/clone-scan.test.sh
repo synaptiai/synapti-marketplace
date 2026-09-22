@@ -358,6 +358,95 @@ _flow_test_begin "scan set: an untracked copy is not scanned"
 assert_match '^STATE=none$' "$CS_OUT" "a file git does not track is not a finding"
 assert_not_contains "untracked_copy" "$CS_OUT" "and is never named"
 
+# --- the report parser, pinned against a crafted report ------------------------
+# Three properties of the parser cannot be produced on demand by the real
+# detector, so they are driven by a stub that writes a report of our choosing:
+#   1. a pair the detector calls new whose two sides are BOTH outside the diff
+#      must be dropped — measured on the #218 branch, 8 of 10 flagged pairs
+#      were of exactly this shape;
+#   2. a pair with both sides inside the diff is CLONE_WITHIN_DIFF;
+#   3. the exclude globs actually reach the detector, which the real-jscpd
+#      fixtures cannot show, because the scan set is filtered here as well and
+#      either mechanism alone silences them.
+RC=$(_cs_repo craftedreport)
+printf 'def load_config(path):\n%s\n' "$CS_BODY" > "$RC/src/existing.py"
+printf 'def untouched_one(path):\n%s\n' "$CS_BODY" > "$RC/src/untouched_a.py"
+printf 'def untouched_two(path):\n%s\n' "$CS_BODY" > "$RC/src/untouched_b.py"
+_cs_commit "$RC" base
+( cd "$RC" && git checkout -q -b feat )
+printf 'def read_settings(path):\n%s\n' "$CS_BODY" > "$RC/src/added.py"
+printf 'def first_new(path):\n%s\n' "$CS_BODY" > "$RC/src/one_new.py"
+printf 'def second_new(path):\n%s\n' "$CS_BODY" > "$RC/src/two_new.py"
+_cs_commit "$RC" add
+
+mkdir -p "$CS_DIR/craftbin"
+cat > "$CS_DIR/craftbin/jscpd" <<'CRAFTSTUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$CS_ARGV_LOG"
+OUTDIR=""
+PREV=""
+for A in "$@"; do
+  [ "$PREV" = "--output" ] && OUTDIR="$A"
+  PREV="$A"
+done
+[ -n "$OUTDIR" ] || exit 1
+mkdir -p "$OUTDIR"
+CRAFT_OUT="$OUTDIR/jscpd-report.json" python3 -c '
+import json, os, sys
+root = os.getcwd()
+def f(name, a, b):
+    return {"name": os.path.join(root, name), "start": a, "end": b}
+report = {
+  "duplicates": [
+    {"firstFile": f("src/existing.py", 1, 6), "secondFile": f("src/added.py", 1, 6),
+     "isNew": True, "lines": 6, "tokens": 35, "format": "python", "kind": "exact"},
+    {"firstFile": f("src/one_new.py", 1, 6), "secondFile": f("src/two_new.py", 1, 6),
+     "isNew": True, "lines": 6, "tokens": 35, "format": "python", "kind": "exact"},
+    {"firstFile": f("src/untouched_a.py", 1, 6), "secondFile": f("src/untouched_b.py", 1, 6),
+     "isNew": True, "lines": 6, "tokens": 35, "format": "python", "kind": "exact"},
+  ],
+  "statistics": {"total": {"sources": 6, "clones": 3}},
+}
+open(os.environ["CRAFT_OUT"], "w").write(json.dumps(report))
+'
+exit 0
+CRAFTSTUB
+chmod +x "$CS_DIR/craftbin/jscpd"
+
+CS_OUT=$( cd "$RC" && CS_ARGV_LOG="$CS_DIR/argv.log" \
+  PATH="$CS_DIR/craftbin:$CS_BARE_PATH" "$HELPER" --base base --head HEAD \
+  --min-lines 5 --min-tokens 20 2>&1 )
+CS_CODE=$?
+
+_flow_test_begin "crafted report: a new pair touching no changed file is dropped"
+assert_exit 0 "$CS_CODE" "exit 0"
+assert_not_contains "untouched_a" "$CS_OUT" "the untouched pair is not reported"
+assert_not_contains "untouched_b" "$CS_OUT" "neither side of it is named"
+
+_flow_test_begin "crafted report: the other two pairs ARE reported"
+# Without these the assertions above would pass on a parser that reports
+# nothing at all.
+assert_match 'CLONE=added src/added\.py:1-6 existing src/existing\.py:1-6' "$CS_OUT" \
+  "the added-side pair survives, cited on the added side"
+assert_match 'CLONE_WITHIN_DIFF=src/one_new\.py:1-6 src/two_new\.py:1-6' "$CS_OUT" \
+  "the both-sides-added pair is within-diff"
+CS_N_ADDED=$(printf '%s\n' "$CS_OUT" | grep -c '^CLONE=added ')
+CS_N_WITHIN=$(printf '%s\n' "$CS_OUT" | grep -c '^CLONE_WITHIN_DIFF=')
+assert_equal "1" "$CS_N_ADDED" "exactly one added-side pair"
+assert_equal "1" "$CS_N_WITHIN" "exactly one within-diff pair"
+
+_flow_test_begin "crafted report: the exclude globs reach the detector"
+# The scan set is filtered here too, so a fixture alone cannot tell whether the
+# globs were passed on. The detector's own argv can.
+CS_N_IGNORE=$(grep -c -- '--ignore' "$CS_DIR/argv.log")
+if [ "$CS_N_IGNORE" -gt 0 ] 2>/dev/null; then
+  _flow_assert_pass "the detector was given $CS_N_IGNORE --ignore flag(s)"
+else
+  _flow_assert_fail "no --ignore reached the detector: the base-tree scan would not honour excludePaths"
+fi
+CS_N_MINTOK=$(grep -c -- '--min-tokens' "$CS_DIR/argv.log")
+assert_equal "1" "$CS_N_MINTOK" "the token floor is pinned on the invocation, not inherited"
+
 # --- run from a subdirectory ---------------------------------------------------
 # `git ls-files` is limited to the working directory. A scan started anywhere
 # but the root would enumerate a subtree and report that count as the whole
@@ -369,6 +458,85 @@ _flow_test_begin "subdirectory: the scan set is the repository, not the working 
 assert_exit 0 "$CS_CODE" "exit 0 from a subdirectory"
 assert_match '^STATE=ok$' "$CS_OUT" "the pair is still found"
 assert_match 'CLONE=added src/added\.py' "$CS_OUT" "and paths stay repository-relative"
+
+# --- the shared range library is a hard requirement -----------------------------
+# A helper that cannot load it must not carry on with an inline copy, and must
+# not exit in silence either: a caller reading stdout has to be able to tell a
+# helper that never ran from a scan that found nothing.
+mkdir -p "$CS_DIR/orphan"
+cp "$HELPER" "$CS_DIR/orphan/flow-clone-scan.sh"
+chmod +x "$CS_DIR/orphan/flow-clone-scan.sh"
+CS_OUT=$( cd "$R" && "$CS_DIR/orphan/flow-clone-scan.sh" --base base --head HEAD 2>/dev/null )
+CS_CODE=$?
+_flow_test_begin "missing library: reported on stdout, not merely on stderr"
+assert_match '^STATE=unavailable$' "$CS_OUT" "the absent library is unavailable"
+assert_not_contains "STATE=none" "$CS_OUT" "never a clean scan"
+assert_match '^REASON=' "$CS_OUT" "with a reason"
+assert_exit 2 "$CS_CODE" "exit 2"
+
+# And the same copy works once the library is beside it — otherwise the case
+# above would pass for any reason at all, including a typo in the copy.
+mkdir -p "$CS_DIR/orphan/lib"
+cp "$REPO_ROOT/plugins/flow/bin/lib/range-args.sh" "$CS_DIR/orphan/lib/range-args.sh"
+CS_OUT=$( cd "$R" && "$CS_DIR/orphan/flow-clone-scan.sh" --base base --head HEAD --min-lines 5 --min-tokens 20 2>&1 )
+CS_CODE=$?
+_flow_test_begin "missing library: the copy runs once the library is beside it"
+assert_exit 0 "$CS_CODE" "exit 0"
+assert_match '^STATE=ok$' "$CS_OUT" "and finds the pair it should"
+
+# --- an exclude glob containing a space stays one pattern -----------------------
+# The rest of the command line is handed back from the library as an array and
+# re-expanded. Word splitting there would turn one glob into two, silently
+# widening or narrowing the scan set with nothing in the output to show it.
+CS_A=$( cd "$REPO_ROOT" && "$HELPER" --base HEAD --head HEAD --print-scan-set \
+  --exclude-paths 'plugins/flow/bin/**' 2>&1 | sed -n 's/^FILES_SCANNED=//p' )
+CS_B=$( cd "$REPO_ROOT" && "$HELPER" --base HEAD --head HEAD --print-scan-set \
+  --exclude-paths 'no such dir/**,plugins/flow/bin/**' 2>&1 | sed -n 's/^FILES_SCANNED=//p' )
+CS_C=$( cd "$REPO_ROOT" && "$HELPER" --base HEAD --head HEAD --print-scan-set \
+  --exclude-paths 'no such dir/**' 2>&1 | sed -n 's/^FILES_SCANNED=//p' )
+_flow_test_begin "quoting: a glob containing a space is one pattern, not two"
+assert_equal "$CS_A" "$CS_B" "prepending a spaced, non-matching glob changes nothing"
+# ...and the comparison is not vacuous: the excluded glob really does exclude.
+if [ -n "$CS_C" ] && [ -n "$CS_A" ] && [ "$CS_C" -gt "$CS_A" ] 2>/dev/null; then
+  _flow_assert_pass "excluding bin/ removed $((CS_C - CS_A)) files, so the counts discriminate"
+else
+  _flow_assert_fail "excluding bin/ changed nothing ($CS_C vs $CS_A): the comparison proves nothing"
+fi
+
+# --- turned off is not the same as found nothing --------------------------------
+# A team that disables the layer has not learned that there is no duplication.
+# Reporting `none` here would be a clean duplication review nobody performed.
+RD=$(_cs_repo disabled)
+printf 'def load_config(path):\n%s\n' "$CS_BODY" > "$RD/src/existing.py"
+_cs_commit "$RD" base
+( cd "$RD" && git checkout -q -b feat )
+printf 'def read_settings(path):\n%s\n' "$CS_BODY" > "$RD/src/added.py"
+_cs_commit "$RD" add
+mkdir -p "$RD/.claude"
+printf '%s\n' '{"duplication": {"enabled": false}}' > "$RD/.claude/settings.flow.json"
+_cs_scan "$RD" --base base --head HEAD --min-lines 5 --min-tokens 20
+_flow_test_begin "disabled: reported as unavailable, not as a clean scan"
+assert_match '^STATE=unavailable$' "$CS_OUT" "a disabled layer is unavailable"
+assert_not_contains "STATE=none" "$CS_OUT" "never as no duplication found"
+assert_exit 0 "$CS_CODE" "and exits 0 — a deliberate setting is not a failure"
+assert_match '^REASON=.*enabled' "$CS_OUT" "the reason names the setting"
+
+# The control: the same fixture DOES report a pair once the setting is removed,
+# so the case above cannot pass on a scanner that reports nothing regardless.
+rm -f "$RD/.claude/settings.flow.json"
+_cs_scan "$RD" --base base --head HEAD --min-lines 5 --min-tokens 20
+_flow_test_begin "disabled: the setting is what silenced it"
+assert_match '^STATE=ok$' "$CS_OUT" "the same fixture fires with the setting gone"
+
+# --- resolving settings must not warn about valid files -------------------------
+# A jq filter that errors on a source lacking the key makes cascade-resolve
+# report that whole file unparseable. The value still resolves from a lower
+# tier, so the only symptom is a warning on every run about a file that is
+# perfectly valid — the kind of noise that gets ignored and then hides a real one.
+CS_ERR=$( cd "$REPO_ROOT" && "$HELPER" --base HEAD --head HEAD --print-scan-set 2>&1 >/dev/null )
+_flow_test_begin "settings: resolving the exclude list warns about nothing"
+assert_not_contains "failed to parse" "$CS_ERR" "no settings source is reported unparseable"
+assert_equal "" "$CS_ERR" "nothing at all on stderr for a clean run"
 
 # --- real, full-size input ---------------------------------------------------
 # One run over this repository's own tree, with FILES_SCANNED reconciled
