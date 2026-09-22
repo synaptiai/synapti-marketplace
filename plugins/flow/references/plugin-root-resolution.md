@@ -94,13 +94,25 @@ instead put the post-checkout form in three `!` fences, and in a bare checkout
 of flow with no marketplace install that resolves to nothing and blocks the
 run, which is the case the author-context form exists to serve.
 
-The post-checkout form skips any candidate whose physical path lies inside the
-repository at the working directory, and tries the next one rather than giving
-up — flow's own repository is such a checkout, so refusing outright made every
-self-review of flow report unavailable while an installed copy sat unused.
+The post-checkout form drops the working-directory-relative `plugins/flow`
+candidate outright. That candidate is the working tree by construction, so after
+a checkout it can only ever be the branch's own copy; keeping it and skipping it
+conditionally left the defence resting on `git rev-parse --show-toplevel`
+succeeding, and it does not always. On the Linux CI runner a work tree that does
+not exist makes rev-parse fail rather than report the path, `$__t` is then empty,
+nothing is skipped, and the branch's copy wins — while macOS printed the path and
+the same check passed. Removing the candidate makes the branch's tree unreachable
+whatever git says.
+
+The remaining candidates are all absolute — `$CLAUDE_PLUGIN_ROOT`, the cache
+installs, the marketplaces checkout — and any of those can still be made to point
+inside the repository under review, so the form also skips a candidate whose
+physical path lies inside it and tries the next one rather than giving up: flow's
+own repository is such a checkout, so refusing outright made every self-review of
+flow report unavailable while an installed copy sat unused.
 
 ```bash
-"$(__t=$(git rev-parse --show-toplevel 2>/dev/null);[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__t=/; };{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}" plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("${__t%/}"/*) continue;; esac;printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+"$(__t=$(git rev-parse --show-toplevel 2>/dev/null);[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__t=/; };{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("${__t%/}"/*) continue;; esac;printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
 ```
 
 Three details are load-bearing:

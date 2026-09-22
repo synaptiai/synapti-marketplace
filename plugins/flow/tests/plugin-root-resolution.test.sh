@@ -192,25 +192,55 @@ MKT_PICK=$( cd "$MULTI" && env -u CLAUDE_PLUGIN_ROOT HOME="$ONLYMKT" \
 assert_equal "$ONLYMKT_P/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow" "$MKT_PICK" \
   "with no cache install the last-resort candidate is used"
 
-# The fail-closed branch: the repository root resolves but cannot be entered.
-# Driven through the same code path by making `cd "$__t"` fail, which `__t=/`
-# then has to turn into "skip every absolute candidate". Before the trailing
-# slash was stripped inside the pattern, `/` expanded to `//*` and matched no
-# real path, so this branch skipped nothing and the branch's own copy stayed a
-# live candidate on exactly the case the clause defends.
-_flow_test_begin "a repository root that cannot be entered selects nothing"
-# Driven through the same code path by pointing the work tree at a path that
-# does not exist: `git rev-parse --show-toplevel` reports it, and the `cd` to
-# it then fails. chmod 000 on the root does not work for this - it breaks
-# rev-parse too, so the resolver takes the not-a-repository branch instead and
-# the fixture proves nothing.
+# The working tree is unreachable by construction, not by a check that has to
+# succeed. The form carries no working-directory-relative candidate at all: the
+# conditional skip rested on `git rev-parse --show-toplevel` reporting the root,
+# and it does not always - on the Linux runner a work tree that does not exist
+# makes rev-parse FAIL rather than report, $__t is empty, nothing is skipped and
+# the branch's own copy wins. macOS printed the path and the same check passed
+# there, which is how this shipped green locally and red on CI.
+_flow_test_begin "the post-checkout form carries no working-directory-relative candidate"
+assert_not_contains "' plugins/flow;" "$SKIP_FORM" "no bare plugins/flow candidate in the list"
+assert_contains "' plugins/flow;" "$RESOLVER" \
+  "while the author-context form still has one, which is the difference between them"
+
+# Whatever git says about the root, nothing inside the working tree may be
+# selected. Driven with a work tree that does not exist, which makes rev-parse
+# report an unenterable path on one platform and fail outright on the other:
+# the assertion is the property, not either platform's output.
+_flow_test_begin "a root git cannot report still never yields the working tree"
 UNREADABLE="$BASE/unreadable"; mkdir -p "$UNREADABLE"
 ( cd "$UNREADABLE" && git init -q . >/dev/null 2>&1 )
 _stub_root "$UNREADABLE/plugins/flow"
+UNREADABLE_P=$(cd "$UNREADABLE" && pwd -P)
 UNREADABLE_PICK=$( cd "$UNREADABLE" && env -u CLAUDE_PLUGIN_ROOT HOME="$MULTIHOME" \
   GIT_DIR="$UNREADABLE/.git" GIT_WORK_TREE="$BASE/no-such-tree" \
   bash -c "printf '%s' \"$SKIP_FORM\"" )
-assert_equal "" "$UNREADABLE_PICK" "nothing is selected when the root cannot be entered"
+case "${UNREADABLE_PICK:-}/" in
+  "$UNREADABLE_P"/*) _flow_assert_fail "selected the working tree's own copy: $UNREADABLE_PICK" ;;
+  *) _flow_assert_pass "selected ${UNREADABLE_PICK:-nothing}, which is outside the working tree" ;;
+esac
+
+# The same property with git removed entirely, which is the condition the Linux
+# runner reached by another route: $__t empty, so the skip does nothing.
+_flow_test_begin "with no git at all the working tree is still unreachable"
+NOGIT="$BASE/nogitbin"; mkdir -p "$NOGIT"
+NOGIT_PICK=$( cd "$UNREADABLE" && env -u CLAUDE_PLUGIN_ROOT HOME="$MULTIHOME" \
+  PATH="$NOGIT:/usr/bin:/bin" bash -c "printf '%s' \"$SKIP_FORM\"" )
+case "${NOGIT_PICK:-}/" in
+  "$UNREADABLE_P"/*) _flow_assert_fail "selected the working tree's own copy: $NOGIT_PICK" ;;
+  *) _flow_assert_pass "selected ${NOGIT_PICK:-nothing}, which is outside the working tree" ;;
+esac
+
+# And the absolute candidates are still skipped when they point inside a
+# repository git CAN report, which is the case the skip exists for.
+_flow_test_begin "an absolute candidate inside the repository under review is skipped"
+INSIDE="$BASE/insidehome"; mkdir -p "$INSIDE"
+( cd "$INSIDE" && git init -q . >/dev/null 2>&1 )
+_stub_root "$INSIDE/.claude/plugins/cache/synapti-marketplace/flow/9.9.9"
+INSIDE_PICK=$( cd "$INSIDE" && env -u CLAUDE_PLUGIN_ROOT HOME="$INSIDE" \
+  bash -c "printf '%s' \"$SKIP_FORM\"" )
+assert_equal "" "$INSIDE_PICK" "a cache install sitting inside the repository under review is not used"
 
 # Outside a git repository the post-checkout form must skip nothing. `cd ""`
 # returns 0 on bash 3.2 and leaves the working directory alone, so running the

@@ -129,7 +129,7 @@ call, so it answers the same way every time.
 # repository is such a checkout, so refusing outright made every self-review of
 # flow report unavailable while an installed copy outside the tree went unused.
 # That reference is the single source of this text; do not edit it here.
-FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__t=/; };{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}" plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("${__t%/}"/*) continue;; esac;printf '%s\n' "$__r";break;done)"
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__t=/; };{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("${__t%/}"/*) continue;; esac;printf '%s\n' "$__r";break;done)"
 if [ -z "$FLOW_ROOT" ]; then
   printf '%s\n' "STATE=unavailable"
   printf '%s\n' "REASON=no plugin root was found outside the repository under review, so the only tooling available would be the branch's own"

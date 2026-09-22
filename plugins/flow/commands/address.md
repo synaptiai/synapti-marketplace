@@ -446,7 +446,7 @@ For each Pushback item:
 # Records one rejected finding. Every value arrives as an environment variable
 # rather than interpolated text: a finding location or a quoted rule is
 # author-controlled and must never reach a shell as code.
-FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__t=/; };{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}" plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("${__t%/}"/*) continue;; esac;printf '%s\n' "$__r";break;done)"
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__t=/; };{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("${__t%/}"/*) continue;; esac;printf '%s\n' "$__r";break;done)"
 for _v in PR_NUM CYCLE_NUMBER FINDING_ID CATEGORY LOCATION REASON EVIDENCE; do
   eval "_val=\${$_v:-}"
   [ -n "$_val" ] || { printf '%s\n' "FINDING_DISMISSED=skipped ($_v is unset)" >&2; exit 1; }
@@ -691,7 +691,7 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
 # Builds the DISPUTED:[...] array for the resolution marker out of the
 # finding-dismissed artifacts, so the marker is a function of the journal
 # rather than of a transcription step.
-FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__t=/; };{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}" plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("${__t%/}"/*) continue;; esac;printf '%s\n' "$__r";break;done)"
+FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__t=/; };{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("${__t%/}"/*) continue;; esac;printf '%s\n' "$__r";break;done)"
 # Unset and malformed are different faults and get different messages: the
 # first means this block was run without its input, the second means the input
 # it was given is wrong. Reporting the first as the second sent a reader looking
@@ -935,7 +935,7 @@ true
    # such a body; this emitter did not, and the two are the same emitter wearing
    # different hats — a rule enforced in one is a rule the other routes around.
    # Both now call the same script.
-   "$(__t=$(git rev-parse --show-toplevel 2>/dev/null);[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__t=/; };{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}" plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("${__t%/}"/*) continue;; esac;printf '%s\n' "$__r";break;done)/bin/flow-check-resolution-body.sh" \
+   "$(__t=$(git rev-parse --show-toplevel 2>/dev/null);[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__t=/; };{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("${__t%/}"/*) continue;; esac;printf '%s\n' "$__r";break;done)/bin/flow-check-resolution-body.sh" \
      --cycle "$CYCLE_NUMBER" <<<"$BODY" || exit 1
    gh pr comment "$PR_NUM" --repo "$REPO" --body "$BODY"; RES_EXIT=$?
    printf '%s\n' "RES_EXIT=$RES_EXIT"
