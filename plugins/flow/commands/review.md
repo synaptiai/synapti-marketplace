@@ -1266,7 +1266,7 @@ Agent(finding-critic):
   - `DISAGREE_CONCERN` → cite the `file:line` that confirms the bug, or drop the finding.
   - **A reply without a citation drops the finding.** Prose, restatement and confidence are not citations. An `AGREE` needs no re-pass.
 
-- **Stamp the survivors.** A finding that survives carries `grounding: agreed` (the critic AGREE'd) or `grounding: cited` (the reviewer answered with a `file:line`), and confidence HIGH — it has been read against the code twice. `grounding` is recorded here and in the journal; it does not enter the `FLOW_REVIEW_CYCLE` marker row, which keeps its seven fields.
+- **Stamp the survivors.** A finding that survives carries `grounding: cited` (the reviewer answered a DISAGREE with a `file:line`) or `grounding: agreed` (the critic AGREE'd). Only `grounding: cited` is stamped confidence HIGH: it was read against the code twice and the second read produced a citation. A `grounding: agreed` finding keeps the confidence synthesis assigned, because AGREE is the critic's default and means "the finding is right, **or** I could not refute it" — stamping an unrefuted LOW pattern-match HIGH would promote it into a merge blocker on the strength of silence. `grounding` is recorded here and in the journal; it does not enter the `FLOW_REVIEW_CYCLE` marker row, which keeps its seven fields.
 
 - **Journal the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`.
 <!-- GROUNDING_PASS_SHARED_END -->

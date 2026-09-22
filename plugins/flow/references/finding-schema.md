@@ -52,10 +52,13 @@ This is the same field order as the table columns above (id, priority, category,
 |---|---|---|
 | `grounding` | enum | `agreed` (the `finding-critic` answered `AGREE`) \| `cited` (the critic disagreed and the originating reviewer answered with a `file:line` that holds) |
 
-A finding carrying either value has been read against the code twice and its confidence is
-HIGH. A finding the critic never reached, or answered off-grammar, carries no `grounding` at
-all and keeps the confidence synthesis gave it — absence means "not audited", never "failed
-the audit". Findings the reviewer could not defend with a citation are not stamped: they are
+A `cited` finding is stamped confidence HIGH: the critic disagreed, and the reviewer answered
+with a citation that holds. An `agreed` finding keeps the confidence synthesis gave it,
+because `AGREE` is the critic's default verdict and means "the finding is right, **or** I
+could not refute it" — an unrefuted LOW pattern-match must not become a merge blocker on the
+strength of silence. A finding the critic never reached, or answered off-grammar, carries no
+`grounding` at all and also keeps the confidence synthesis gave it — absence means "not
+audited", never "failed the audit". Findings the reviewer could not defend with a citation are not stamped: they are
 dropped, and journaled as `dropped-finding` with `reason=critic-evidence` or
 `reason=critic-unrefuted-concern` (`references/decision-journal-schema.md`).
 

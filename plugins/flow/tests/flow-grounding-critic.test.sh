@@ -322,6 +322,21 @@ else
   diff <(printf '%s\n' "$SHARED_REVIEW") <(printf '%s\n' "$SHARED_PR") >&2
 fi
 
+_flow_test_begin "only a cited survivor is stamped HIGH"
+# AGREE is the critic's default and covers "I cannot refute it" as well as "I
+# read the code and it is right" (agents/finding-critic.md). Stamping an
+# unrefuted LOW pattern-match HIGH would promote it into a merge blocker.
+for _GC_FILE in "$REVIEW_MD" "$PR_MD"; do
+  _GC_BLOCK=$(_gc_shared "$_GC_FILE")
+  _GC_STAMP=$(printf '%s\n' "$_GC_BLOCK" | grep 'Stamp the survivors')
+  assert_contains 'Only `grounding: cited` is stamped confidence HIGH' "$_GC_STAMP" \
+    "$(basename "$_GC_FILE"): HIGH is reserved for a survivor with a citation"
+  assert_contains 'keeps the confidence synthesis assigned' "$_GC_STAMP" \
+    "$(basename "$_GC_FILE"): an unrefuted AGREE keeps its synthesis confidence"
+  assert_not_contains 'and confidence HIGH' "$_GC_STAMP" \
+    "$(basename "$_GC_FILE"): survival alone no longer stamps HIGH"
+done
+
 _flow_test_begin "each command keeps its own preamble outside the shared region"
 # The preamble is where the two files legitimately differ: review.md has two
 # dispatch paths and pr.md has one. If the preambles were identical too, one of
