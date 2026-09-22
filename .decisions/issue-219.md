@@ -64,6 +64,12 @@ artifacts:
   path: B
   findings_count: 8
   pr: 250
+- type: review-cycle
+  captured_at: '2026-09-23T00:30:00Z'
+  cycle: 7
+  path: B
+  findings_count: 8
+  pr: 250
 ---
 # Decision Journal — Issue #219
 
@@ -391,3 +397,32 @@ with one cache version and no fallback, so picking the oldest install or droppin
 changed nothing; and the fixtures evaluated the substitution unquoted, which word-splits a
 multi-line result and runs the extra lines as commands - masking exactly the multi-candidate return
 a missing `break` produces. Real callers quote it, and the fixtures do now.
+
+## Review cycle 7 - the fences meet a pull request's tree on the second run
+
+17 raised, 8 survived refutation, three of them P1. Run in a detached worktree, because
+cycle 7's first attempt shared a checkout with this session and its mutation testing reverted
+uncommitted work mid-edit.
+
+**A `!` fence is author context the first time, and not after that.** It runs before its own
+command's `gh pr checkout`, which is what cycle 6 concluded. But a session that has already run
+`/flow:review` or `/flow:address`, or a user who ran `gh pr checkout` himself, leaves a pull
+request's tree in place, and those eight fences then execute helpers out of it - including
+`flow-load-skills.sh`, which loads the skills that govern the review. Both commands use a third
+form now: the author-context one with the working-directory-relative candidate moved last, so an
+installed copy is preferred and a bare checkout still works when nothing else exists.
+
+**Six more checks that could not fail for their own reason**, on top of cycle 6's four. The
+fail-closed sentinel was the worst: reverting it left 621 assertions across four suites green,
+because the fixtures asserted the pick was outside the working tree and a broken sentinel returns a
+cache install, which is also outside it. Then: the dispatch regex required the closing paren to
+follow the agent name, so the eight `Agent(name, model=...)` dispatches in `review.md` were
+invisible; `S5` asserted `.decisions`, which is exactly what the shipped settings carry, so it could
+not tell the `--default` path from the plugin tier answering; the symlink walk's relative arm was
+driven by a link at the same depth as the working directory, where the wrong join lands on the right
+place by coincidence; and the cycle-14 cleanup list was appended to inside a command substitution,
+so the trap saw an empty array and every run leaked six directories.
+
+The pattern across cycles 5, 6 and 7 is one thing: a claim written down is not a check. Each of
+these had a comment, a commit message or a journal entry asserting the property, and no input on
+which the right and the wrong code differ.
