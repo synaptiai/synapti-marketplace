@@ -20,6 +20,7 @@
           43
         ]
       ],
+      "changed_lines_digest": "27346da9e8be6355",
       "delegates_to_reference": true,
       "description": "Trap: jump-table lengths written big-endian. Round-trips cleanly; masked when every table length has symmetric bytes (0, 257, 514, ...).",
       "discriminating_tests": [
@@ -45,6 +46,7 @@
           11
         ]
       ],
+      "changed_lines_digest": "374622580a1c1c0a",
       "delegates_to_reference": false,
       "description": "Trap: segment size (n + 3) // 4 (Zstd's rule) instead of n // 4 with the remainder in stream 4. Round-trips cleanly; masked when len(data) % 4 == 0.",
       "discriminating_tests": [
@@ -78,6 +80,7 @@
           37
         ]
       ],
+      "changed_lines_digest": "7d064d9c37bb4127",
       "delegates_to_reference": true,
       "description": "Trap: stream bodies stored forwards instead of reversed. Round-trips cleanly; masked when every stream is a palindrome.",
       "discriminating_tests": [
@@ -112,6 +115,7 @@
           28
         ]
       ],
+      "changed_lines_digest": "065b638d85571593",
       "delegates_to_reference": false,
       "description": "Trap: no input validation \u2014 short data splits into empty streams, oversized streams silently truncate their table entry, and undersized blocks unpack to whatever bytes are present. Masked whenever inputs are well-formed.",
       "discriminating_tests": [
@@ -157,6 +161,7 @@
           48
         ]
       ],
+      "changed_lines_digest": "cb57fe6ad7b2fc9e",
       "delegates_to_reference": true,
       "description": "Trap: the concatenated body is reversed as a whole (s4r s3r s2r s1r) instead of per stream. Round-trips cleanly; masked when s1 == s4 and s2 == s3.",
       "discriminating_tests": [
@@ -204,6 +209,7 @@
           49
         ]
       ],
+      "changed_lines_digest": "f27e702f05a2fdb7",
       "delegates_to_reference": true,
       "description": "Trap: streams written and read in the order 4,3,2,1 (jump table still describes 1..3). Round-trips cleanly; masked when all four streams are identical.",
       "discriminating_tests": [

@@ -20,6 +20,7 @@
           30
         ]
       ],
+      "changed_lines_digest": "41a686b19c136d33",
       "delegates_to_reference": false,
       "description": "Trap: zero and negative weights accepted (and empty lists, negative amounts, floats). Masked whenever inputs are well-formed.",
       "discriminating_tests": [
@@ -51,6 +52,7 @@
           27
         ]
       ],
+      "changed_lines_digest": "56e85395a61010d6",
       "delegates_to_reference": true,
       "description": "Trap: floor(units / total_weight) * weight \u2014 division before multiplication \u2014 with the integer-division remainder handed out round-robin from index 0. Masked when total_units is a multiple of the weight sum.",
       "discriminating_tests": [
@@ -84,6 +86,7 @@
           27
         ]
       ],
+      "changed_lines_digest": "221bdbbbce561fc3",
       "delegates_to_reference": true,
       "description": "Trap: amounts converted through float. Masked while amounts fit in ~15 significant digits.",
       "discriminating_tests": [
@@ -102,6 +105,7 @@
           17
         ]
       ],
+      "changed_lines_digest": "1bc52e36d9b96b0f",
       "delegates_to_reference": true,
       "description": "Trap: `places` ignored; always two decimal places. Masked when places == 2.",
       "discriminating_tests": [
@@ -126,6 +130,7 @@
           23
         ]
       ],
+      "changed_lines_digest": "6f691c76689d6edc",
       "delegates_to_reference": true,
       "description": "Trap: each share rounded independently (ROUND_HALF_UP) instead of largest remainder. The sum invariant breaks whenever remainders do not cancel; masked when shares are exact.",
       "discriminating_tests": [
@@ -158,6 +163,7 @@
           20
         ]
       ],
+      "changed_lines_digest": "a716eeffee34d378",
       "delegates_to_reference": true,
       "description": "Trap: shares returned in descending-weight order instead of input order. Masked when weights are already sorted descending or all equal.",
       "discriminating_tests": [
@@ -194,6 +200,7 @@
           32
         ]
       ],
+      "changed_lines_digest": "ba007144998b1432",
       "delegates_to_reference": true,
       "description": "Trap: remainder ties broken in favour of the larger weight. Masked when tied entries have equal weights.",
       "discriminating_tests": [
@@ -216,6 +223,7 @@
           19
         ]
       ],
+      "changed_lines_digest": "7247ed2d2feda4a3",
       "delegates_to_reference": true,
       "description": "Trap: remainder ties broken by highest index (stable sort on the reversed list). Masked when no two remainders tie.",
       "discriminating_tests": [

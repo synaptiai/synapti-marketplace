@@ -8,6 +8,7 @@
           145
         ]
       ],
+      "changed_lines_digest": "5eda24bbea65abd5",
       "delegates_to_reference": false,
       "description": "Trap: the complement keeps the subtrahend's closedness instead of flipping it, so [1,5] \u2212 [2,3] gives [1,2] + [3,5]. Masked when the subtrahend's ends are open.",
       "discriminating_tests": [
@@ -31,6 +32,7 @@
           80
         ]
       ],
+      "changed_lines_digest": "4178aa73d6da80ee",
       "delegates_to_reference": false,
       "description": "Trap: when two merged intervals share a lower bound, the one reaching farther supplies both flags instead of the lower flags being OR-ed, so [1,2] + (1,5) gives (1,5) rather than [1,5). Seen (combined with a lower-bound-only sort) in the calibration baseline runs. Masked when merged intervals never share a lower bound.",
       "discriminating_tests": [
@@ -49,6 +51,7 @@
           12
         ]
       ],
+      "changed_lines_digest": "f364b2332ea5c357",
       "delegates_to_reference": true,
       "description": "Trap: bounds are converted to float internally, so Fraction and Decimal values come back changed. Masked while tests use ints.",
       "discriminating_tests": [
@@ -63,6 +66,7 @@
           47
         ]
       ],
+      "changed_lines_digest": "09aec2b79c181775",
       "delegates_to_reference": false,
       "description": "Trap: lo == hi counts as non-empty when either end is closed, so (2,2] and [2,2) survive normalize and a difference by a half-open \"point\" removes a point. Masked unless degenerate half-open intervals appear.",
       "discriminating_tests": [
@@ -81,6 +85,7 @@
           113
         ]
       ],
+      "changed_lines_digest": "77aa6816302c1416",
       "delegates_to_reference": false,
       "description": "Trap: at an equal endpoint the intersection is closed when either input is closed (or instead of and). Masked when endpoints differ.",
       "discriminating_tests": [
@@ -96,6 +101,7 @@
           119
         ]
       ],
+      "changed_lines_digest": "41ae71e81371017e",
       "delegates_to_reference": false,
       "description": "Trap: intersection is the raw pairwise product of the inputs, neither the inputs nor the result normalized, so [1,5] \u2229 ([1,2] + [2,5]) comes back as two intervals. Masked when both inputs are already canonical.",
       "discriminating_tests": [
@@ -110,6 +116,7 @@
           65
         ]
       ],
+      "changed_lines_digest": "e7a6152d79f5bbcf",
       "delegates_to_reference": false,
       "description": "Trap: intervals that touch (hi1 == lo2) always merge, even when both ends at the meeting point are open, so [1,3) + (3,5] becomes [1,5]. Masked when a closed end meets the point.",
       "discriminating_tests": [
@@ -126,6 +133,7 @@
           65
         ]
       ],
+      "changed_lines_digest": "62d66c0adfba2251",
       "delegates_to_reference": false,
       "description": "Trap: only strictly overlapping intervals (hi1 > lo2) merge; [1,3] + [3,5] stays two intervals. Masked when inputs overlap by more than a point.",
       "discriminating_tests": [
@@ -156,6 +164,7 @@
           16
         ]
       ],
+      "changed_lines_digest": "239a07fd30d95525",
       "delegates_to_reference": true,
       "description": "Trap: closed unbounded ends and non-bool flags are accepted (flags coerced with bool()). Masked by well-formed input.",
       "discriminating_tests": [
@@ -171,6 +180,7 @@
           44
         ]
       ],
+      "changed_lines_digest": "5ff4dc7feb185165",
       "delegates_to_reference": false,
       "description": "Trap: lo == hi is always empty, so the closed point [3,3] disappears from normalize, intersection ([1,3] \u2229 [3,5]) and difference results. Masked unless a point interval appears.",
       "discriminating_tests": [
@@ -195,6 +205,7 @@
           13
         ]
       ],
+      "changed_lines_digest": "c958eae191ecef60",
       "delegates_to_reference": true,
       "description": "Trap: the 2-tuple shorthand is read as the half-open [lo, hi) like Python's range. Masked when tests use 4-tuples only.",
       "discriminating_tests": [
@@ -228,6 +239,7 @@
           62
         ]
       ],
+      "changed_lines_digest": "1aa84101b537b6da",
       "delegates_to_reference": false,
       "description": "Trap: the sweep sorts by lower bound only (input order on ties), so a closed point [3,3] listed after (3,5] is visited after it and the gap between [1,3) and (3,5] is never closed. Seen in the calibration baseline runs. Masked when equal lower bounds arrive closed-first.",
       "discriminating_tests": [
@@ -242,6 +254,7 @@
           62
         ]
       ],
+      "changed_lines_digest": "b02b377eba80150f",
       "delegates_to_reference": false,
       "description": "Trap: no sort; only neighbours in input order are merged and the output keeps input order. Masked when inputs arrive sorted.",
       "discriminating_tests": [

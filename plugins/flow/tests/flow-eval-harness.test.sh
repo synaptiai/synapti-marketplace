@@ -1796,3 +1796,25 @@ print("; ".join(out))
 EOF
 )
 assert_equal "" "$DUPS" "no shipped variant materializes a duplicated import"
+
+_flow_test_begin "recorded changed_lines that no longer describe the diff are not used"
+# An edited variant scored against hunks recorded before the edit is scored
+# against a diff that no longer exists: a finding on the real defect reads as
+# false, and a finding on an untouched line reads as the hit.
+STALE_ROOT="$TMP/staleevals"
+STALE_CASE="$STALE_ROOT/stalecase"
+mkdir -p "$STALE_CASE"
+cp -R "$REVCASE/." "$STALE_CASE/"
+python3 "$HELPER" check-cases --evals-dir "$STALE_ROOT" --mode review --case stalecase >/dev/null 2>&1
+OUT=$(python3 "$HELPER" score-review --case "$STALE_CASE" --trap off_by_one \
+        --findings '[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"x"}]')
+assert_contains '"changed_lines_source": "traps.json"' "$OUT" "a variant that has not moved uses the recorded hunks"
+# Move the defect from line 8 to line 6 without re-running the check.
+sed 's/total += value/total += value + 0/' "$STALE_CASE/hidden/reference_impl.py" \
+  | sed 's/if total > limit:/if total >= limit:/' > "$STALE_CASE/hidden/traps/off_by_one.py"
+OUT=$(python3 "$HELPER" score-review --case "$STALE_CASE" --trap off_by_one \
+        --findings '[{"id":"F1","priority":"P1","file":"counter.py","line":6,"problem":"x"}]')
+assert_contains '"changed_lines_source": "computed:traps.json-stale"' "$OUT" \
+  "an edited variant is rescored against a fresh diff, and the record says why"
+assert_contains '"hit": true' "$OUT" "the finding on the line that actually moved hits"
+rm -r "$STALE_ROOT"

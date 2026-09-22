@@ -83,6 +83,7 @@ comprehensions) are not classified at all.
 """
 import ast
 import difflib
+import hashlib
 import json
 import math
 import os
@@ -2191,20 +2192,53 @@ def variant_paths(case_dir, trap):
             entry)
 
 
+def sources_digest(ref_text, variant_text):
+    """A digest of the exact two texts changed_hunks diffs.
+
+    Recorded next to changed_lines so scoring can tell whether what was
+    recorded still describes the diff. Without it, a variant edited after the
+    check was last run is scored against hunks that no longer exist: a finding
+    on the real defect reads as false and a finding on an untouched line reads
+    as the hit."""
+    digest = hashlib.sha256()
+    digest.update(ref_text.encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(variant_text.encode("utf-8"))
+    return digest.hexdigest()[:16]
+
+
+def trap_sources_digest(case_dir, trap):
+    return sources_digest(reference_module_text(case_dir), materialized_variant_text(case_dir, trap))
+
+
 def hunks_for_trap(case_dir, trap):
     """(hunks, source) for one trap: the changed_lines recorded by
-    `check-cases --mode review`, or freshly computed when none is recorded."""
-    ref_path, _var_path, _module, entry = variant_paths(case_dir, trap)
+    `check-cases --mode review` when its digest still matches the reference and
+    the variant, otherwise freshly computed.
+
+    source is "traps.json", "computed" when nothing was recorded, or
+    "computed:traps.json-stale" when what was recorded no longer describes the
+    diff."""
+    _ref_path, _var_path, _module, entry = variant_paths(case_dir, trap)
     recorded = entry.get("changed_lines")
+    ref_text = reference_module_text(case_dir)
+    variant_text = materialized_variant_text(case_dir, trap)
     if isinstance(recorded, list) and recorded:
         hunks = []
         for item in recorded:
             if isinstance(item, list) and len(item) == 2 and all(isinstance(v, int) for v in item):
                 hunks.append([item[0], item[1]])
         if hunks:
-            return hunks, "traps.json"
-    hunks, _differs = changed_hunks(reference_module_text(case_dir), materialized_variant_text(case_dir, trap))
-    return hunks, "computed"
+            digest = sources_digest(ref_text, variant_text)
+            if entry.get("changed_lines_digest") == digest:
+                return hunks, "traps.json"
+            stale = True
+        else:
+            stale = False
+    else:
+        stale = False
+    hunks, _differs = changed_hunks(ref_text, variant_text)
+    return hunks, "computed:traps.json-stale" if stale else "computed"
 
 
 def extract_findings(text):
@@ -2417,6 +2451,9 @@ def check_cases_review(evals_dir, only=None, write=True, verify_behaviour=True):
             # reference_impl.py at all.
             delegates = "reference_impl" in materialized
             trap["changed_lines"] = hunks
+            # Pins what the hunks were computed from, so scoring can tell a
+            # record that still describes the diff from one that does not.
+            trap["changed_lines_digest"] = sources_digest(ref_text, materialized)
             trap["delegates_to_reference"] = delegates
             entry["traps"][name] = {
                 "changed_lines": hunks,
