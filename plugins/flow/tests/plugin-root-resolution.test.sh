@@ -154,7 +154,7 @@ SKIPHOME_P=$(cd "$SKIPHOME" && pwd -P)
 AUTHOR_PICK=$( cd "$SKIPREPO" && env -u CLAUDE_PLUGIN_ROOT HOME="$SKIPHOME" \
   bash -c "eval \"printf '%s' $RESOLVER\"" )
 SKIP_PICK=$( cd "$SKIPREPO" && env -u CLAUDE_PLUGIN_ROOT HOME="$SKIPHOME" \
-  bash -c "eval \"printf '%s' $SKIP_FORM\"" )
+  bash -c "printf '%s' \"$SKIP_FORM\"" )
 assert_equal "plugins/flow" "$AUTHOR_PICK" "the author-context form takes the in-repo checkout, which is what lets flow run from one"
 assert_equal "$SKIPHOME_P/.claude/plugins/cache/synapti-marketplace/flow/9.9.9" "$SKIP_PICK" \
   "the post-checkout form skips it and takes the installed copy"
@@ -163,6 +163,11 @@ assert_equal "$SKIPHOME_P/.claude/plugins/cache/synapti-marketplace/flow/9.9.9" 
 # skip. With one cache version and no marketplaces entry stocked, a mutant that
 # picks the oldest install, drops the `break`, or deletes the last-resort
 # candidate produces identical output, so none of them was pinned.
+# The substitution is QUOTED here, the way every real caller writes it
+# ("$(...)/bin/cascade-resolve.sh"). Evaluating it unquoted word-splits a
+# multi-line result and runs the extra lines as commands, so a resolver that
+# returned three candidates still printed one and a missing `break` survived
+# every assertion.
 _flow_test_begin "the post-checkout form picks the highest installed version"
 MULTI="$BASE/multi"; mkdir -p "$MULTI"
 ( cd "$MULTI" && git init -q . >/dev/null 2>&1 )
@@ -172,7 +177,7 @@ _stub_root "$MULTIHOME/.claude/plugins/cache/synapti-marketplace/flow/3.1.0"
 _stub_root "$MULTIHOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"
 MULTIHOME_P=$(cd "$MULTIHOME" && pwd -P)
 MULTI_PICK=$( cd "$MULTI" && env -u CLAUDE_PLUGIN_ROOT HOME="$MULTIHOME" \
-  bash -c "eval \"printf '%s' $SKIP_FORM\"" )
+  bash -c "printf '%s' \"$SKIP_FORM\"" )
 # assert_equal on the WHOLE value, not a substring: a missing `break` makes the
 # resolver return every candidate, and a contains-check would still pass.
 assert_equal "$MULTIHOME_P/.claude/plugins/cache/synapti-marketplace/flow/3.1.0" "$MULTI_PICK" \
@@ -183,7 +188,7 @@ ONLYMKT="$BASE/onlymkt"
 _stub_root "$ONLYMKT/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"
 ONLYMKT_P=$(cd "$ONLYMKT" && pwd -P)
 MKT_PICK=$( cd "$MULTI" && env -u CLAUDE_PLUGIN_ROOT HOME="$ONLYMKT" \
-  bash -c "eval \"printf '%s' $SKIP_FORM\"" )
+  bash -c "printf '%s' \"$SKIP_FORM\"" )
 assert_equal "$ONLYMKT_P/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow" "$MKT_PICK" \
   "with no cache install the last-resort candidate is used"
 
@@ -204,7 +209,7 @@ UNREADABLE="$BASE/unreadable"; mkdir -p "$UNREADABLE"
 _stub_root "$UNREADABLE/plugins/flow"
 UNREADABLE_PICK=$( cd "$UNREADABLE" && env -u CLAUDE_PLUGIN_ROOT HOME="$MULTIHOME" \
   GIT_DIR="$UNREADABLE/.git" GIT_WORK_TREE="$BASE/no-such-tree" \
-  bash -c "eval \"printf '%s' $SKIP_FORM\"" )
+  bash -c "printf '%s' \"$SKIP_FORM\"" )
 assert_equal "" "$UNREADABLE_PICK" "nothing is selected when the root cannot be entered"
 
 # Outside a git repository the post-checkout form must skip nothing. `cd ""`
@@ -217,6 +222,6 @@ _flow_test_begin "outside a repository the post-checkout form skips nothing"
 # anyway and the assertion passes either way. $BASE contains skiphome/ and is
 # not a git repository.
 NOREPO_PICK=$( cd "$BASE" && env -u CLAUDE_PLUGIN_ROOT HOME="$SKIPHOME" \
-  bash -c "eval \"printf '%s' $SKIP_FORM\"" )
+  bash -c "printf '%s' \"$SKIP_FORM\"" )
 assert_equal "$SKIPHOME_P/.claude/plugins/cache/synapti-marketplace/flow/9.9.9" "$NOREPO_PICK" \
   "the install is found, not refused for sitting under the working directory"
