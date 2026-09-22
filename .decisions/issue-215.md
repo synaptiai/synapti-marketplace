@@ -105,6 +105,24 @@ appended), plus `import reference_impl as _ref` when the variant delegates to th
 The resulting branch diff touches only the seeded defect, which is what a hit has to be
 measured against.
 
+Two refinements the implementation added. Most variants do not redefine a top-level name at
+all: they subclass one of the reference's classes and override one method, then rebind the
+public functions through an instance of the subclass. Substituting such a class wholesale
+replaced the reference's 45-line class with a 5-line subclass — the same whole-file diff by
+another route. So an overridden method is written into the reference's class where that
+method is defined, and the statements that only existed to install the subclass are dropped;
+the reference's own wiring already reaches the patched method. Dropping them is verified
+rather than assumed: `--check-cases --mode review` runs the hidden suite against the
+materialized module and requires the same tests to fail as the stored variant. All 34
+shipped variants pass that check, and the diff is now 1 to 15 lines, 6% of the module.
+
+Second, the module docstring is stripped from both branches. Every reference opens by naming
+the hidden suite and the trap variants under `hidden/traps/`, which tells the reviewer it is
+being tested. It is stripped from the reference and the materialized variant alike, so the
+diff is unchanged. One tell remains that the harness cannot remove: 15 of the 34 variants
+call back into `reference_impl`, so the module under review still names it. Those are
+recorded in `traps.json` as `delegates_to_reference` rather than quietly included.
+
 ### Risk map
 
 | Area | Plausible wrong version | Discriminating check |

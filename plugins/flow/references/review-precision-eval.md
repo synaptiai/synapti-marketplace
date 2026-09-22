@@ -29,13 +29,33 @@ times (default 3).
 Per case and trap, the runner builds a git repository outside the plugin tree:
 
     reference_impl.py   the case's hidden/reference_impl.py, on both branches
-    <module>.py         on main: the same reference implementation
-                        on review-candidate: the case's hidden/traps/<trap>.py
+    <module>.py         on main: the reference implementation
+                        on review-candidate: the materialized trap variant
 
-`reference_impl.py` is on both branches because every shipped trap variant
-imports it, so leaving it out would give the reviewer a branch that does not
-import. It is unchanged between the branches, so the branch diff is the module
-file alone.
+A trap variant as it is stored is a few lines that import the reference and
+redefine one name, or subclass one of its classes and override one method.
+Committed as the module it would replace the whole file, and every finding that
+named the file would land inside a hunk — precision and recall of 1.0 for a
+reviewer that read nothing. So the variant is **materialized** first: its
+redefinitions are written into the reference's own source, an overridden method
+is written into the reference's class where that method is defined, and the
+wiring that only existed to install the subclass is dropped. Across the 34
+shipped variants this leaves between 1 and 15 changed lines, 3 or 4 for half of
+them, and 6% of the module inside a hunk.
+
+Two safeguards:
+
+- `--check-cases --mode review` runs the hidden suite against the materialized
+  module and requires it to fail exactly the tests the stored variant fails.
+  Folding the defect in must not change what the defect does.
+- The module docstring is stripped from both branches. Every case's reference
+  opens by naming the hidden suite and the trap variants, which would tell the
+  reviewer it is being tested and where to look. It is removed from the
+  reference and the variant alike, so the branch diff is unchanged.
+
+`reference_impl.py` is on both branches because some variants delegate to it.
+It is unchanged between the branches, so the branch diff is the module file
+alone.
 
 The session is asked to review `main...review-candidate` by dispatching the same
 five reviewer agents `/flow:pr` Phase 3 dispatches, and to end with its
@@ -138,18 +158,17 @@ it. The plan's run count is printed by `--dry-run` before anything is spent.
 
 ## What the shipped cases can and cannot measure
 
-Every trap variant under `evals/<case>/hidden/traps/` is a short module that
-imports `reference_impl` and overrides one method. Put on a branch, it replaces
-the whole module rather than editing a line of it: across the 34 shipped
-variants, 55% of the variant's lines fall inside a changed hunk, and the rest
-are blank lines and imports that happen to match the reference. On these cases
-"cites a changed line" is close to "cites the module", so precision here is a
-weaker measurement than the scoring rule allows for.
+The issue this eval comes from says the reference-to-variant diff is the seeded
+defect. As the variants are stored it is not — it is a whole-file replacement —
+which is why the runner materializes them. After materialization the diff is
+the defect, and 6% of the module is inside a hunk.
 
-Cases whose variants are full copies of the reference with the defect edited in
-place would measure what the rule describes. The scoring code is written for
-that shape and is pinned on a fixture of it in
-`tests/flow-eval-harness.test.sh`; the shipped cases are not that shape yet.
+One tell survives for 15 of the 34 variants: they call back into the reference
+(`import reference_impl as _ref`), so the module under review says it is part of
+an eval. `--check-cases --mode review` records which ones in `traps.json` as
+`delegates_to_reference`, and `--case` can exclude them. Rewriting those
+variants to stand alone is case content, not harness work, and has not been
+done.
 
 ## Limitations
 
