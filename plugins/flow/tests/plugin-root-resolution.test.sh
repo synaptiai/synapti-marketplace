@@ -200,8 +200,12 @@ assert_equal "$ONLYMKT_P/.claude/plugins/marketplaces/synapti-marketplace/plugin
 # the branch's own copy wins. macOS printed the path and the same check passed
 # there, which is how this shipped green locally and red on CI.
 _flow_test_begin "the post-checkout form carries no working-directory-relative candidate"
-assert_not_contains "' plugins/flow;" "$SKIP_FORM" "no bare plugins/flow candidate in the list"
-assert_contains "' plugins/flow;" "$RESOLVER" \
+# The candidate as it is actually written in each form: the author form lists
+# it after a single-quoted printf format, the post-checkout form after the
+# CLAUDE_PLUGIN_ROOT expansion. Matching the wrong quoting made this assertion
+# pass with the candidate present.
+assert_not_contains " plugins/flow;" "$SKIP_FORM" "no bare plugins/flow candidate in the list"
+assert_contains " plugins/flow;" "$RESOLVER" \
   "while the author-context form still has one, which is the difference between them"
 
 # Whatever git says about the root, nothing inside the working tree may be
@@ -224,9 +228,14 @@ esac
 # The same property with git removed entirely, which is the condition the Linux
 # runner reached by another route: $__t empty, so the skip does nothing.
 _flow_test_begin "with no git at all the working tree is still unreachable"
+# A git that cannot answer, rather than an empty PATH: the resolver still needs
+# ls and sort, and both runners ship git in /usr/bin, so dropping a directory
+# from PATH left the real git reachable and the fixture proved nothing.
 NOGIT="$BASE/nogitbin"; mkdir -p "$NOGIT"
+printf '#!/bin/sh\nexit 1\n' > "$NOGIT/git"
+chmod +x "$NOGIT/git"
 NOGIT_PICK=$( cd "$UNREADABLE" && env -u CLAUDE_PLUGIN_ROOT HOME="$MULTIHOME" \
-  PATH="$NOGIT:/usr/bin:/bin" bash -c "printf '%s' \"$SKIP_FORM\"" )
+  PATH="$NOGIT:$PATH" bash -c "printf '%s' \"$SKIP_FORM\"" )
 case "${NOGIT_PICK:-}/" in
   "$UNREADABLE_P"/*) _flow_assert_fail "selected the working tree's own copy: $NOGIT_PICK" ;;
   *) _flow_assert_pass "selected ${NOGIT_PICK:-nothing}, which is outside the working tree" ;;
