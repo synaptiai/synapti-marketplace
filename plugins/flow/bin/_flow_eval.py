@@ -2566,6 +2566,10 @@ def cmd_finalize_review_run(args):
         "stream_events": events,
         "tool_counts": tool_counts,
         "skills_invoked": skills,
+        # A review run is granted read-only tools; an attempt to use Write or
+        # Edit is the run rewriting the module instead of reviewing it, and
+        # references/review-precision-eval.md says it is recorded here.
+        "permission_denials": (result_event.get("permission_denials") or []) if result_event else [],
         "review": review,
     }
     write_json(os.path.join(run_dir, "result.json"), result)

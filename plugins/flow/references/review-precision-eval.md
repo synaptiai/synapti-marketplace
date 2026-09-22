@@ -28,9 +28,15 @@ times (default 3).
 
 Per case and trap, the runner builds a git repository outside the plugin tree:
 
-    reference_impl.py   the case's hidden/reference_impl.py, on both branches
+    reference_impl.py   only when this variant still calls into it, on both
+                        branches, carrying the same docstring-stripped text
+                        the module is built from
     <module>.py         on main: the reference implementation
                         on review-candidate: the materialized trap variant
+
+`flow-eval-run.sh --mode review --case <name> --trap <name> --build-review-repo
+<dir>` builds one of these and stops, which is how to see what a review run is
+actually handed without spending anything.
 
 A trap variant as it is stored is a few lines that import the reference and
 redefine one name, or subclass one of its classes and override one method.
@@ -40,8 +46,8 @@ reviewer that read nothing. So the variant is **materialized** first: its
 redefinitions are written into the reference's own source, an overridden method
 is written into the reference's class where that method is defined, and the
 wiring that only existed to install the subclass is dropped. Across the 34
-shipped variants this leaves between 1 and 15 changed lines, 3 or 4 for half of
-them, and 6% of the module inside a hunk.
+shipped variants this leaves between 1 and 15 changed lines, four or fewer for
+20 of them, and 5% of the module inside a hunk.
 
 Two safeguards:
 
@@ -53,9 +59,12 @@ Two safeguards:
   reviewer it is being tested and where to look. It is removed from the
   reference and the variant alike, so the branch diff is unchanged.
 
-`reference_impl.py` is on both branches because some variants delegate to it.
-It is unchanged between the branches, so the branch diff is the module file
-alone.
+`reference_impl.py` is committed only for the 15 variants that still call into
+it, and then on both branches unchanged, so the branch diff is the module file
+alone either way. The other 19 do not get it: a pristine correct copy of the
+module under review locates the defect by diff alone. The copy is written
+through `reference-module`, so it carries the same stripped text as the module
+rather than the shipped docstring naming the hidden suite.
 
 The session is asked to review `main...review-candidate` by dispatching the same
 five reviewer agents `/flow:pr` Phase 3 dispatches, and to end with its
@@ -67,7 +76,10 @@ consolidated findings as one fenced JSON block:
 There is no GitHub remote, so `/flow:review`'s `gh pr` steps are not exercised.
 Review runs are granted `Bash,Read,Glob,Grep,Skill,Agent` and the task tools;
 `Write` and `Edit` are withheld, and any attempt to use them is recorded in the
-run's `permission_denials`.
+run's `permission_denials`. That grant is what `--permission-mode acceptEdits`,
+the default, passes. `--permission-mode bypassPermissions` passes no tool grant
+at all, so `Write` and `Edit` are available and nothing is denied; a run that
+must not be able to edit the module has to use the default.
 
 ## Scoring
 
@@ -77,11 +89,15 @@ scores one run offline and is what the runner calls when a run finishes.
 A **changed hunk** is a variant-side line range of the reference-to-variant
 diff. `--check-cases --mode review` computes them and records them per variant
 in `hidden/traps.json` as `changed_lines`, a list of inclusive `[first, last]`
-pairs. Scoring uses the recorded ranges when they are there and computes them
-when they are not, so a run scored later is scored against the hunks the check
-pinned. A change that only deletes lines is anchored to the variant lines that
-flank the removal, because a deleted line has no line number a reviewer could
-cite.
+pairs, beside `changed_lines_digest`, a digest of the reference and variant
+sources they were computed from. Scoring uses the recorded ranges when that
+digest still matches, so a run scored later is scored against the hunks the
+check pinned; when the variant has moved since, or nothing was recorded, the
+hunks are recomputed and the score says so in `changed_lines_source`
+(`traps.json`, `computed`, or `computed:traps.json-stale`).
+
+A change that only deletes lines is anchored to the variant lines that flank
+the removal, because a deleted line has no line number a reviewer could cite.
 
 - A run is a **hit** when at least one P1 or P2 finding cites the case's module
   and a line inside a changed hunk.
@@ -161,14 +177,22 @@ it. The plan's run count is printed by `--dry-run` before anything is spent.
 The issue this eval comes from says the reference-to-variant diff is the seeded
 defect. As the variants are stored it is not — it is a whole-file replacement —
 which is why the runner materializes them. After materialization the diff is
-the defect, and 6% of the module is inside a hunk.
+the defect, and 5% of the module is inside a hunk.
 
 One tell survives for 15 of the 34 variants: they call back into the reference
 (`import reference_impl as _ref`), so the module under review says it is part of
-an eval. `--check-cases --mode review` records which ones in `traps.json` as
-`delegates_to_reference`, and `--case` can exclude them. Rewriting those
-variants to stand alone is case content, not harness work, and has not been
-done.
+an eval and `reference_impl.py` has to be committed beside it. The other 19 get
+no such file — a correct copy of the module under review would locate the
+defect by diff alone — and the one the 15 do get carries the same stripped text
+as the module, not the shipped docstring naming the hidden suite.
+
+`--check-cases --mode review` records which variants delegate, in `traps.json`
+and in its report, as `delegates_to_reference`. There is no filter that
+excludes them: `--case` selects whole cases, and every case has both kinds, so
+a run either includes the delegating variants or discards clean ones with them.
+Read the flag when reading the results, and treat those 15 runs as the weaker
+evidence. Rewriting the variants to stand alone is case content, not harness
+work, and has not been done.
 
 ## Limitations
 

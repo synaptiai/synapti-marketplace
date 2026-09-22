@@ -1818,3 +1818,26 @@ assert_contains '"changed_lines_source": "computed:traps.json-stale"' "$OUT" \
   "an edited variant is rescored against a fresh diff, and the record says why"
 assert_contains '"hit": true' "$OUT" "the finding on the line that actually moved hits"
 rm -r "$STALE_ROOT"
+
+_flow_test_begin "finalize-review-run records the run's permission denials"
+# references/review-precision-eval.md tells the operator that Write and Edit
+# are withheld from a review run and that attempts to use them are recorded in
+# permission_denials. The correctness mode's finalize already carries the key.
+FRR_DIR="$TMP/finalize-review"
+mkdir -p "$FRR_DIR"
+cat > "$FRR_DIR/stream.jsonl" <<'EOF'
+{"type":"system","subtype":"init","session_id":"rv1"}
+{"type":"result","subtype":"success","is_error":false,"num_turns":4,"total_cost_usd":0.5,"session_id":"rv1","result":"Findings:\n```json\n[{\"id\":\"F1\",\"priority\":\"P1\",\"file\":\"counter.py\",\"line\":8,\"problem\":\"off by one\",\"confidence\":\"HIGH\"}]\n```","permission_denials":[{"tool_name":"Write","tool_input":{"file_path":"counter.py"}}],"modelUsage":{"claude-test-model":{"costUSD":0.5}}}
+EOF
+python3 "$HELPER" finalize-review-run --run-dir "$FRR_DIR" --case-dir "$REVCASE" \
+  --arm review-b --case revcase --trap off_by_one --run 1 --exit-code 0 --duration 12 >/dev/null
+FRR_DENIALS=$(python3 -c '
+import json, sys
+print(json.dumps(json.load(open(sys.argv[1])).get("permission_denials"), sort_keys=True))' "$FRR_DIR/result.json")
+assert_equal '[{"tool_input": {"file_path": "counter.py"}, "tool_name": "Write"}]' "$FRR_DENIALS" \
+  "the denial the session hit is in result.json"
+FRR_HIT=$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["review"]["hit"])' "$FRR_DIR/result.json")
+assert_equal "True" "$FRR_HIT" "the canned findings block was still scored"
+rm -r "$FRR_DIR"
