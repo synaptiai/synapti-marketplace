@@ -567,6 +567,7 @@ _flow_test_begin "real tree: FILES_SCANNED reconciles with git ls-files"
 CS_REAL=$( cd "$REPO_ROOT" && "$HELPER" --base HEAD --head HEAD --print-scan-set 2>&1 )
 CS_REAL_CODE=$?
 CS_SCANNED=$(printf '%s\n' "$CS_REAL" | sed -n 's/^FILES_SCANNED=//p')
+CS_REPORTED_TRACKED=$(printf '%s\n' "$CS_REAL" | sed -n 's/^FILES_TRACKED=//p')
 CS_TRACKED=$( cd "$REPO_ROOT" && git ls-files | wc -l | tr -d ' ' )
 if [ -z "$CS_SCANNED" ]; then
   _flow_assert_fail "the helper printed no FILES_SCANNED over the real tree (exit $CS_REAL_CODE)"
@@ -576,9 +577,21 @@ else
   else
     _flow_assert_fail "FILES_SCANNED=0 over a repository with $CS_TRACKED tracked files"
   fi
+  # The helper's own view of what git tracks must equal an independent count.
+  # Without this, "within the tracked set" holds for any walk that happens to be
+  # smaller, including one that never reached git at all.
+  assert_equal "$CS_TRACKED" "$CS_REPORTED_TRACKED" \
+    "the helper's tracked count matches git ls-files exactly"
   if [ "$CS_SCANNED" -le "$CS_TRACKED" ] 2>/dev/null; then
     _flow_assert_pass "scan set ($CS_SCANNED) is within the tracked set ($CS_TRACKED)"
   else
     _flow_assert_fail "scanned $CS_SCANNED files but only $CS_TRACKED are tracked — the walk escaped git"
+  fi
+  # And the excludes did something: equal counts would mean the default exclude
+  # list never reached the filter, which is the mutant that survived once.
+  if [ "$CS_SCANNED" -lt "$CS_TRACKED" ] 2>/dev/null; then
+    _flow_assert_pass "the default excludes removed $((CS_TRACKED - CS_SCANNED)) tracked files"
+  else
+    _flow_assert_fail "scan set equals the tracked set — the default excludes did nothing"
   fi
 fi
