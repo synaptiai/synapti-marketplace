@@ -40,6 +40,12 @@ artifacts:
   path: B
   findings_count: 18
   pr: 250
+- type: review-cycle
+  captured_at: '2026-09-22T18:20:00Z'
+  cycle: 3
+  path: B
+  findings_count: 3
+  pr: 250
 ---
 # Decision Journal — Issue #219
 
@@ -242,3 +248,30 @@ the exclude list carried as newline-separated, so a glob containing a comma stay
 Four test defects were fixed too: an assertion matching a pre-existing unrelated line, a fence walk
 counting fences rather than the variables it examined, two silence cases with no control showing the
 same fixture fires, and a fence-assignment check that would have flagged a `read` or `for` target.
+
+## Review cycle 3 - three findings, all from fixes applied to part of their own class
+
+No new P1. Every finding was reproduced before being fixed.
+
+**The guard against the reviewed repository supplying its own tooling stopped flow reviewing
+itself.** Cycle 2 made both reviewer fences refuse a plugin root that resolved inside the repository
+under review. Flow's own repository is such a checkout, so the guard tripped on every self-review of
+flow: the fence took its first candidate, the working-directory-relative `plugins/flow`, refused it,
+and stopped - while three installed copies outside the tree sat unused. Step 2b blast radius and
+Step 4 Layer A duplication both reported unavailable as a result, including on this pull request.
+The resolver now skips an in-repository candidate and tries the next one, and reports unavailable
+only when every candidate is in-repository. Writing the check as `case ... in ("$top"/*)` matters:
+inside a command substitution, bash reads an unparenthesised case pattern's closing parenthesis as
+the end of the substitution.
+
+**`FILES_SCANNED` printed twice, ahead of the state that qualifies it.** `unavailable()` was given
+the count so that `STATE` always leads, and the sweep that removed the per-call-site pre-prints
+matched on the key name rather than on the shape, missing three sites. The contract test checked
+that every line's key is in the vocabulary, which a duplicate key and a wrong order both satisfy.
+The new assertions check the shape of the output instead, so a fourth site added later is covered.
+
+**"Did the flag win?" was decided twice, in two languages, and the copies disagreed.** Shell tested
+for a non-empty `--exclude-paths` value; python tested the stripped value. A flag of one space
+therefore reported `EXCLUDES_SOURCE=flag` while the built-in list was what applied. The attribution
+now comes from the branch that picks the list. On a change whose subject is duplicated logic, the
+shape was the point.
