@@ -427,6 +427,22 @@
           "type": "boolean",
           "default": false,
           "description": "When true, visual verification cannot be silently skipped for UI changes. SKIP results require user confirmation before the completion gate passes."
+        },
+        "flows": {
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ],
+          "default": "on",
+          "description": "Drive the changed user flow, not only the page load. A UI criterion whose text carries an interaction verb gets one to three scenarios performed with browser_click and browser_type. A string rather than a boolean so a third mode can be added without changing the type of an existing setting."
+        },
+        "maxFlowSteps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 8,
+          "description": "Steps a single scenario may perform before it stops and reports the steps it completed. Bounds an interaction that does not settle."
         }
       }
     },

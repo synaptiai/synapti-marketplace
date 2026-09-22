@@ -89,7 +89,9 @@
       { "name": "mobile", "width": 375, "height": 812 }
     ],
     "maxIterations": 3,
-    "requireVisualVerification": false
+    "requireVisualVerification": false,
+    "flows": "on",
+    "maxFlowSteps": 8
   },
   "flow": {
     "runtime": {

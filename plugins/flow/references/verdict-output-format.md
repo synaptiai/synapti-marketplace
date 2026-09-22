@@ -11,9 +11,9 @@ The coverage scan comes FIRST, then the per-criterion verdicts, then the overall
 
 ### Coverage Scan
 
-| # | Criterion | Evidence Entry Present? | "Does NOT promise" Present? | Visual Analysis Present? | Completeness Subsections Present? | Holdout Validation Status |
-|---|-----------|-------------------------|-----------------------------|--------------------------|-----------------------------------|---------------------------|
-| 1 | {criterion text} | Yes / NO | Yes / NO | Yes / NO / N/A | Yes / NO ({which of the five are missing}) | PASS / CONFLICT / N/A |
+| # | Criterion | Evidence Entry Present? | "Does NOT promise" Present? | Visual Analysis Present? | Interaction Steps Present? | Completeness Subsections Present? | Holdout Validation Status |
+|---|-----------|-------------------------|-----------------------------|--------------------------|--------------------------|-----------------------------------|---------------------------|
+| 1 | {criterion text} | Yes / NO | Yes / NO | Yes / NO / N/A | Yes / NO / N/A | Yes / NO ({which of the five are missing}) | PASS / CONFLICT / N/A |
 
 Orphan evidence entries (evidence with no matching criterion): {list or "none"}
 
@@ -43,6 +43,7 @@ Orphan evidence entries (evidence with no matching criterion): {list or "none"}
 | Evidence Entry Present? | `Yes` / `NO` | A `## Criterion {N}: ...` section exists whose text matches this criterion |
 | "Does NOT promise" Present? | `Yes` / `NO` | `### Does NOT promise` is present and non-blank (`none` counts as present) |
 | Visual Analysis Present? | `Yes` / `NO` / `N/A` | On a `ui` criterion, `### Visual analysis` carries one `Viewport:`/`Screenshot:`/`Result:`/`Observed:` block per configured viewport (`Yes`) or is missing, blank, `none`, or lacks `Observed:` sentences (`NO`); on every other type it reads `none — criterion type {type} has no visual surface` (`N/A`) |
+| Interaction Steps Present? | `Yes` / `NO` / `N/A (no flow: {reason})` / `N/A` | On a `ui` criterion describing an action a user performs: `Yes` when `### Visual analysis` carries at least one `Step: {n}/{m} {action}` block; `N/A (no flow: {reason})` when it carries a `Flows: none — {reason}` line instead, quoting that reason so the scan records why the interaction was not exercised; `NO` when it carries neither. `N/A` on a `ui` criterion describing no action and on every other type |
 | Completeness Subsections Present? | `Yes` / `NO ({missing})` | All five of `### What was NOT tested`, `### Known limitations of this evidence`, `### Negative/adversarial cases covered`, `### Test inputs and expected values`, `### Risk map coverage` are present and non-blank; when `NO`, name the absent ones |
 | Holdout Validation Status | `PASS` / `CONFLICT` / `N/A` | Whether the holdout-validation output reports a P1/P2 for this criterion (`CONFLICT`), reports nothing (`PASS`), or had no scenario for this criterion type (`N/A`) |
 
@@ -64,11 +65,13 @@ The Rationale column uses these fixed phrases so `commands/start.md` and `/flow:
 | `incomplete evidence — missing non-goals field ('Does NOT promise')` | Step 1: `### Does NOT promise` absent or blank |
 | `incomplete evidence — missing {subsections}` | Step 1: one or more of the five completeness subsections absent or blank |
 | `incomplete evidence — missing visual analysis on a ui criterion` | Step 1: `### Type` is `ui` and `### Visual analysis` is absent, blank, `none`, or has a viewport block without `Observed:` sentences |
+| `incomplete evidence — missing interaction steps on a ui criterion` | Step 1: `### Type` is `ui`, the criterion describes an action a user performs, and `### Visual analysis` carries neither a `Step:` block nor a `Flows: none — {reason}` line |
 | `no test inputs recorded for a testable criterion` | Step 1: `### Test inputs and expected values` is `none` on a criterion whose type is not `ui` or `config` |
 | `holdout-validation conflict — {finding summary}` | Step 1: P1/P2 conflict |
 | `self-referential oracle` | Step 2 rule (a): expected values come from the implementation's own output or from a source the judge cannot tie to spec, reference, or hand computation |
 | `degenerate inputs` | Step 2 rule (b): inputs cannot distinguish the criterion's order/position/value sensitivity |
 | `risk map uncovered` | Step 2 rule (c): `### Risk map coverage` is `none` (not the disabled marker) on a behavioral/error/data/api criterion, or a mapped test's input does not distinguish the row's plausible wrong version |
 | `visual analysis does not show required state` | Step 2 rule (d): on a `ui` criterion a configured viewport block is missing, reports `Result: FAIL`, or its `Observed:` text does not mention the element the criterion requires |
+| `visual analysis does not show required state` | Step 2 rule (e): wherever `Step:` blocks are present, however the flow was triggered, one reports `Result: FAIL` or its `Observed:` text does not describe the page after that step |
 | `evidence not in bundle` | Any step: the criterion needs something the bundle does not contain (a file, a screenshot image, test source); the judge has no file tools and never asks for one |
 | `producer non-conforming — {what deviates}` | Any step: the bundle does not follow `references/evidence-bundle-format.md`; recorded alongside the verdict so the producer bug is visible |

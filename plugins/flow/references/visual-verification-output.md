@@ -1,6 +1,6 @@
 # Visual Verification Output and Task Tracking
 
-Supporting reference for `skills/visual-verification/SKILL.md`. The skill states the rules (detection, browser-tool cascade, loop bounds, result vocabulary); this file holds the full output template, the per-viewport `Observed:` block the evidence bundle copies, the task-tracking wording, the viewport table, and the rationale for the external-plugin cascade entries.
+Supporting reference for `skills/visual-verification/SKILL.md`. The skill states the rules (detection, browser-tool cascade, loop bounds, interaction flows); this file holds the full output template, the per-viewport `Observed:` block the evidence bundle copies, the task-tracking wording, the viewport table, the result vocabulary, the cascade roster, the severity classification, the flow procedure and a worked interaction flow.
 
 ## Viewports
 
@@ -46,7 +46,7 @@ TaskUpdate(responsiveTaskId, status: "completed", result: "BLOCKED")
 # Loop ran:
 TaskUpdate(visualVerificationTaskId, status: "in_progress")
 # ... for each page: screenshot → analyze → write the Observed: block → record findings ...
-TaskUpdate(visualVerificationTaskId, status: "completed", result: "PASS/FAIL — {pages} checked, P1:{n} P2:{n} P3:{n}\n{one Viewport/Screenshot/Result/Observed block per page and viewport}")
+TaskUpdate(visualVerificationTaskId, status: "completed", result: "PASS/FAIL — {pages} checked, P1:{n} P2:{n} P3:{n}\n{per criterion: its Viewport/Screenshot/Result/Observed blocks, then its Step: blocks, or its Flows: none — {reason} line when no flow ran for it}")
 
 TaskUpdate(responsiveTaskId, status: "in_progress")
 # ... for each viewport: resize → screenshot → analyze → write the Observed: block ...
@@ -126,3 +126,149 @@ Cascade positions 4 and 5 (`compound-engineering:test-browser`, `compound-engine
 - With it installed: positions 4–5 become fallbacks when 1–3 are unavailable.
 - Why not vendor: a copied implementation would diverge silently from the upstream plugin's browser-tool surface, and flow would inherit maintenance for code it did not author. Documenting the dependency lets users in tooling-constrained environments install it as a remediation step instead of discovering the gap at verification time.
 
+
+## A completed interaction flow
+
+What the `visual-verification` skill produces for a criterion whose text carries an interaction
+verb, when `visualVerification.flows` is `on` and the cascade found an interactive tool.
+
+Criterion: *"Submitting the sign-up form with an empty email shows an inline error."* The verb is
+`submit`, so the criterion gets a scenario. Targets come from `browser_snapshot`; none is guessed
+from the criterion's wording.
+
+Scenario `signup-empty-email`, three steps, run on the desktop viewport (the criterion mentions
+neither responsive nor mobile):
+
+```
+Viewport: desktop 1280x720
+Screenshot: .screenshots/signup-empty-email-desktop-1.png
+Step: 1/3 navigate /signup
+Result: PASS
+Observed: The sign-up form is shown with fields for name, email and password, and a "Sign up"
+button. The email field is empty. No console errors.
+
+Viewport: desktop 1280x720
+Screenshot: .screenshots/signup-empty-email-desktop-2.png
+Step: 2/3 type "Name" "Ada Lovelace"
+Result: PASS
+Observed: The name field reads "Ada Lovelace". The email field is still empty and no error text is
+shown yet. No console errors.
+
+Viewport: desktop 1280x720
+Screenshot: .screenshots/signup-empty-email-desktop-3.png
+Step: 3/3 click "Sign up"
+Result: PASS
+Observed: The form is still shown and was not submitted. An inline error reading "Email is
+required" appears directly below the email field, and the field is outlined in red. No console
+errors.
+Video: .screenshots/signup-empty-email-desktop.webm
+```
+
+Points worth taking from the example:
+
+- **Every step gets a block**, not just the last one. The judge reads the sentences and cannot see
+  the screen, so a flow that reported only its final state would leave it unable to tell an inline
+  error that appeared on submit from one that was on the page all along.
+- **`Observed:` describes the page AFTER the step.** Step 2's block says the error is *not yet*
+  shown; step 3's says it is. That contrast is the evidence.
+- **The step blocks do not replace the page-load blocks.** The same `### Visual analysis` section
+  still carries a `Viewport:` block for desktop, tablet and mobile proving the page renders. Rule
+  (d) reads those; rule (e) reads these.
+- **`Video:` is present only when `browser_start_video` was available.** It cites a path and
+  nothing reads it but a human. Its absence changes no result and raises no finding.
+
+A criterion describing an action a user performs whose section has neither a `Step:` block nor a
+`Flows: none — {reason}` line is an auto-FAIL at the judge —
+`incomplete evidence — missing interaction steps on a ui criterion` — because a picture of the
+form before it was submitted says nothing about what submitting it does. The `Flows:` line
+satisfies it: see § When a flow does not run.
+
+## Result vocabulary
+
+The value the skill reports, and what each means. Only `FAIL` and `BLOCKED` fail the completion
+gate; no value depends on whether video recording was available.
+
+| Result | Meaning | Passes gate? |
+|---|---|---|
+| `PASS` | Ran and passed | Yes |
+| `FAIL` | Ran and found P1 issues | No |
+| `SKIP` | No UI changes, or the dev server was unavailable | Yes |
+| `SKIP_WARN` | UI changed, no browser tool, `requireVisualVerification` false | Yes, with warning |
+| `SKIP_USER_APPROVED` | The user skipped it via escalation | Yes |
+| `MANUAL` | The user verifies by hand | Yes |
+| `BLOCKED` | `requireVisualVerification` true and no browser tool | No; escalate |
+
+## Browser tool cascade, in order
+
+Only an interactive tool can run an interaction flow. The others take pictures.
+
+| # | Tool | Interactive |
+|---|---|---|
+| 1 | Playwright MCP | Yes |
+| 2 | Chrome DevTools MCP | Yes |
+| 3 | CLI `npx playwright screenshot` | No |
+| 4 | `Skill(compound-engineering:test-browser)` | No |
+| 5 | `Skill(compound-engineering:agent-browser)` | No |
+
+## Running an interaction flow
+
+The skill states the rule — which criteria qualify, the step grammar, the `Step:` block shape.
+This is the procedure.
+
+1. **Snapshot before targeting.** `browser_snapshot` returns the accessibility tree. Every
+   `click` and `type` target is a node from it. A selector invented from the criterion's wording
+   passes or fails for reasons unrelated to the change, which is worse than not running.
+2. **One step at a time.** Perform the step with `browser_click` or `browser_type`, take a
+   screenshot, then write the block. Do not batch steps and screenshot once at the end: the judge
+   reads sentences and cannot see the screen, so a flow reporting only its final state cannot
+   distinguish an error that appeared *because* of the interaction from one that was always there.
+3. **The step bound.** A scenario performs at most `visualVerification.maxFlowSteps` steps
+   (default 8). On reaching the bound the scenario STOPS and reports the steps it completed, with
+   their blocks. It does not silently truncate, and it does not keep going: a flow that needs more
+   than the bound is a signal about the scenario, not a reason to raise the limit mid-run.
+4. **A target that is not there.** If the snapshot offers no matching node, the step reports that
+   the target was not found. That is a finding about the page, not a reason to skip the flow —
+   the element the criterion names being absent is exactly what the check is for.
+5. **Console after the last step.** Read `browser_console_messages` once per scenario, after its
+   final step, and fold what it reports into that step's `Observed:` sentences.
+6. **Video, when available.** `browser_start_video` and `browser_stop_video` live in Playwright
+   MCP's DevTools set rather than its core set, so they may not be reachable in every
+   configuration. When they are, record the scenario to
+   `$SCREENSHOT_DIR/{scenario}-{viewport}.webm` and add a `Video:` line citing the path. Nothing
+   reads it but a human. Its absence changes no result and raises no finding.
+
+## Severity classification
+
+For a page-load block: a blank page or a render-blocking console error is **P1**; a layout break
+or missing content is **P2**; minor styling is **P3**. For a step block: a step whose `expect` is
+not met is **P1** when it belongs to the criterion under test and **P2** otherwise.
+
+## Deciding whether a criterion gets a flow
+
+The skill lists eight cue verbs — click, submit, type, select, toggle, open, navigate, drag — and
+they are a **cue, not a word match**. The test is whether the criterion describes an action a user
+performs. Two readers must reach the same answer: the skill deciding to run a flow, and the judge
+deciding whether a missing `Step:` block is an auto-FAIL.
+
+Qualifies: *"Clicking Save shows a toast"*, *"Submitting with an empty email shows an inline
+error"*, *"Selecting a row expands its detail panel"*. Note the first has no bare cue verb — a
+word-exact reader would run no flow on the most natural phrasing of an interaction.
+
+Does not qualify: *"The settings page should open in under 2 seconds"* (page load, not an action),
+*"The badge shows the type of the alert"* (`type` as a noun), *"The dark-mode toggle is visible in
+the header"* (`toggle` as a noun, and the criterion is about visibility).
+
+## When a flow does not run
+
+The producer never leaves `### Visual analysis` silent about it. Write one line:
+
+| Line | When |
+|---|---|
+| `Flows: none — visualVerification.flows=off` | the setting is `"off"` |
+| `Flows: none — no interactive tool` | the cascade found only picture-only tools |
+| `Flows: none — no interaction` | the criterion describes no user action and no risk-map row names a UI state |
+
+This exists because the verdict-judge receives only the acceptance criteria, the bundle and the
+holdout output — never `settings.json`. Without the line it cannot tell a flow that was correctly
+skipped from one that was simply omitted, so a criterion with a cue verb would auto-FAIL on every
+repository that has flows off or no Playwright MCP.

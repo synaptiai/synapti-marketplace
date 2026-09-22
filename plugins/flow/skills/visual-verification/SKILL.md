@@ -19,76 +19,83 @@ paths:
 
 ## Contract
 
-Iron law: **UI changes are visually verified or explicitly skipped with a structured result — a passing build and test suite do not prove the page renders.** Invoked alongside `runtime-verification` by `/flow:start` Phase 4 step 2 (retried at step 8) and `/flow:pr` Phase 4 via `Agent(integration-verifier)` when the diff has UI files or acceptance criteria mention UI. Returns the Visual Verification table, Visual Evidence table, one `Viewport`/`Screenshot`/`Result`/`Observed:` block per viewport for the bundle's `### Visual analysis`, and P1/P2/P3 findings (`category=visual`), labeled PASS/FAIL/SKIP/SKIP_WARN/SKIP_USER_APPROVED/MANUAL/BLOCKED. Permitted skips: `SKIP` when no UI signal fires or the dev server is unavailable; `SKIP_WARN`, `SKIP_USER_APPROVED`, `MANUAL` only via the cascade.
+Iron law: **UI changes are visually verified or explicitly skipped with a structured result — a
+passing build does not prove the page renders, and a screenshot does not prove an interaction
+works.** Invoked with `runtime-verification` by `/flow:start` Phase 4 (retried at step 8) and
+`/flow:pr` Phase 4 via `Agent(integration-verifier)` when the diff has UI files or criteria
+mention UI. Returns the Visual Verification and Visual Evidence tables, one
+`Viewport`/`Screenshot`/`Result`/`Observed:` block per viewport for `### Visual analysis`, a
+`Step:`-carrying block per step on an interaction criterion, and P1/P2/P3 findings
+(`category=visual`), labeled PASS/FAIL/SKIP/SKIP_WARN/SKIP_USER_APPROVED/MANUAL/BLOCKED.
+Permitted skips: `SKIP` when no UI signal fires or the dev server is unavailable; `SKIP_WARN`,
+`SKIP_USER_APPROVED`, `MANUAL` only via the cascade.
 
 ## UI Relevance
 
-Either activates:
+Activates when changed files match `\.(tsx|jsx|vue|html|css|scss|svelte)$`, or criteria contain
+UI, page, display, render, visual, layout, responsive, component or style. Neither: `SKIP — no UI-relevant changes
+detected.` `requireVisualVerification` (default `false`) controls escalation only; an unattempted
+UI change still yields `SKIP_WARN`.
 
-1. `git diff --name-only "origin/${DEFAULT_BRANCH:-main}"...HEAD | grep -iE '\.(tsx|jsx|vue|html|css|scss|svelte)$'`
-2. Acceptance criteria containing: UI, page, display, render, visual, layout, responsive, component, style.
+## Browser Tool Cascade
 
-Neither: `SKIP — no UI-relevant changes detected.`
+Only an **interactive** tool can run a flow: a picture-only tool cannot click, and treating it as
+if it could reports a flow that performed none. Playwright MCP and Chrome DevTools MCP are
+interactive; the `npx playwright screenshot` CLI and `compound-engineering` browser skills are
+**not**.
 
-`visualVerification.requireVisualVerification` (default `false`) controls escalation only; an unattempted UI change always yields at least `SKIP_WARN`.
+Playwright MCP exposes `browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`,
+`browser_take_screenshot`, `browser_console_messages`. Take names from the server's docs, not
+memory: a call to a tool that does not exist finds nothing and says nothing, so the check never
+runs and nothing reports it.
 
-## Browser Tool Cascade (first available)
-
-1. **Playwright MCP** (`browser_navigate`, `browser_take_screenshot`, `browser_console_logs`)
-2. **Chrome DevTools MCP**
-3. **CLI**: `npx playwright screenshot http://localhost:$PORT/ $SCREENSHOT_DIR/page.png` (installing chromium first if needed)
-4. `Skill(compound-engineering:test-browser)` (if installed)
-5. `Skill(compound-engineering:agent-browser)`
-6. Nothing: `SKIP_WARN` with install guidance ("Install Playwright MCP or use /flow:setup") when `requireVisualVerification` is false; `BLOCKED` when true, escalated per `references/escalation-format.md`.
-
-Never install Playwright silently.
+No tool: `SKIP_WARN`, or `BLOCKED` when `requireVisualVerification` is true (escalate per
+`references/escalation-format.md`). Never install silently.
 
 ## Screenshot-Analyze-Verify Loop
 
-Needs the dev server URL from `runtime-verification`; if it failed to start, return `SKIP` ("dev server unavailable"); that failure is primary. Bounded by `visualVerification.maxIterations` (default 3); iterate only after fixes. `$SCREENSHOT_DIR` = `visualVerification.screenshotDir` (default `.screenshots`).
+Needs the dev server URL from `runtime-verification`; if it failed to start, return `SKIP` ("dev
+server unavailable") — that failure is primary. Bounded by `maxIterations` (default 3). Per page
+and viewport in `visualVerification.viewports`: screenshot, analyze, write the block, read
+`browser_console_messages`. Findings per `references/finding-schema.md`, prefix `VIS-` or `INT-`,
+located at URL path and viewport.
 
-For each page (root + key routes) and viewport in `visualVerification.viewports` (defaults desktop 1280×720, tablet 768×1024, mobile 375×812):
+## Interaction Flows
 
-1. Navigate; screenshot to `$SCREENSHOT_DIR/{page}-{viewport}-{timestamp}.png`.
-2. Analyze the screenshot (Read tool); write its `Observed:` block (shape below).
-3. Classify: blank page or render-blocking console error P1; layout break or missing content P2; minor styling P3.
-4. With MCP tools, grep `browser_console_logs` for JS errors, React warnings, CSP violations.
-5. Put the block in the task result; the bundle producer copies it into `### Visual analysis`.
+Governed by `visualVerification.flows` (`"on"` | `"off"`, default `"on"`); off, or no interactive
+tool, write `Flows: none — {reason}` into `### Visual analysis` instead of step blocks.
 
-Findings use the `Finding | Suggested Fix` table (`references/finding-schema.md`), prefix `VIS-` standalone or `INT-` from `integration-verifier`, location = URL path plus viewport.
+A UI criterion gets one to three scenarios when it describes an action a user performs — cue
+verbs: click, submit, type, select, toggle, open, navigate, drag — or a risk-map row names a UI
+state. Neither: write `Flows: none — no interaction`. Each scenario is at most
+`visualVerification.maxFlowSteps` (default 8) steps:
 
-Track three tasks (Visual verification, Browser tool discovery, Responsive check), closed with the result strings in [`visual-verification-output.md`](../../references/visual-verification-output.md); `TaskList` confirms all resolved.
+`navigate <route>` · `click <element>` · `type <element> <text>` · `expect <element or text>`
 
-## Result Vocabulary
+**Targets come from `browser_snapshot`**, never a selector guessed from the criterion's text.
+Drive with `browser_click` and `browser_type`; after every step screenshot and write a block
+carrying the `Step: {n}/{m} {action}` line shown below.
 
-| Result | Meaning | Passes gate? |
-|---|---|---|
-| `PASS` | Ran and passed | Yes |
-| `FAIL` | Ran and found P1 issues | No |
-| `SKIP` | No UI changes, or dev server unavailable | Yes |
-| `SKIP_WARN` | UI changed, no tools, `requireVisualVerification` false | Yes, with warning |
-| `SKIP_USER_APPROVED` | User skipped via escalation | Yes |
-| `MANUAL` | User verifies manually | Yes |
-| `BLOCKED` | `requireVisualVerification` true, no tools | No; escalate |
+`Observed:` describes the page AFTER that step. Desktop by default, every viewport when the
+criterion mentions responsive or mobile. Step blocks are additional to viewport blocks, never
+a replacement. A step whose `expect` is not met is a `category=visual` finding. When
+`browser_start_video` is available, cite the path; its absence is **not** a skip, warning or
+finding.
 
 ## Output Format
 
-```markdown
-### Visual Verification
+One block per page and viewport in `### Visual analysis`, plus one per step:
 
-| Check | Status | Details |
-|---|---|---|
-| Browser tools | {tool name or NONE} | Cascade result |
-| Visual check | PASS/FAIL/SKIP/SKIP_WARN/SKIP_USER_APPROVED/MANUAL/BLOCKED | {pages checked, findings} |
-| Responsive | PASS/FAIL/SKIP/SKIP_WARN/MANUAL | {viewports tested} |
-| Console errors | PASS/FAIL/SKIP | {error count} |
-
-### Visual analysis
-
+```
 Viewport: {name} {width}x{height}
 Screenshot: {path}
+Step: {n}/{m} {action}          (interaction steps only)
 Result: PASS|FAIL
-Observed: {two to four plain sentences: element present, text, state, layout, console errors}
+Observed: {two to four plain sentences}
 ```
 
-One block per page and viewport; `Result: FAIL` when it has a P1/P2 finding. The verdict-judge has no file tools and reads only `Observed:`, so name the element the criterion asks for. Then `### Visual Evidence` and `### Visual Findings` tables (template in the reference).
+The judge has no file tools and reads only `Observed:`, so name the element the criterion asks
+for. `Result: FAIL` when a block has a P1/P2 finding; only `FAIL` and `BLOCKED` fail the gate.
+
+Result meanings, cascade roster, severity classification, the flow procedure, a worked example and
+task tracking: [`visual-verification-output.md`](../../references/visual-verification-output.md).
