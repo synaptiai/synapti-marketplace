@@ -358,6 +358,7 @@ for d in ("plugins/flow/commands", "plugins/flow/agents"):
         if fn.endswith(".md"):
             body = open(os.path.join(full, fn), encoding="utf-8").read()
             independent += body.count(AUTHOR) + body.count(SKIP)
+print("DISPATCHED=%s" % ",".join(sorted(dispatched)))
 print("SITES=%d" % sites)
 print("INDEPENDENT=%d" % independent)
 print("AGENTS_DISPATCHED=%d" % len(dispatched))
@@ -367,7 +368,17 @@ FRPY
 DC_FR_REPORT=$(DC_ROOT="$REPO_ROOT" python3 "$DC_FR_DIR/rule.py")
 DC_FR_SITES=$(printf '%s\n' "$DC_FR_REPORT" | sed -n 's/^SITES=//p')
 DC_FR_INDEP=$(printf '%s\n' "$DC_FR_REPORT" | sed -n 's/^INDEPENDENT=//p')
+DC_FR_DISPATCHED=$(printf '%s\n' "$DC_FR_REPORT" | sed -n 's/^DISPATCHED=//p')
 DC_FR_PROBLEMS=$(printf '%s\n' "$DC_FR_REPORT" | grep -c '^PROBLEM=' || true)
+
+# The dispatch parser decides whether an agent file is judged as post-checkout
+# or as author context, so a dispatch it cannot see is an agent nothing checks.
+# review.md writes most of its dispatches as Agent(name, model=$AGENT_TEAM_MODEL),
+# and a regex requiring the closing paren next matched none of them.
+_flow_test_begin "plugin roots: a dispatch written with arguments is still a dispatch"
+assert_contains "code-reviewer-skeptic" "$DC_FR_DISPATCHED" \
+  "a name that appears only as Agent(name, model=...) is in the dispatched set"
+assert_contains "code-reviewer," "$DC_FR_DISPATCHED," "and the bare form is still read"
 
 _flow_test_begin "plugin roots: the walk reached every site, not merely enough of them"
 # A floor is not a reach check: with "at least 15" against 92 sites, seventy-odd
