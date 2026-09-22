@@ -31,9 +31,10 @@
 #   INSTALL=<command>                              (unavailable: no detector)
 #   SCAN_BASE=<sha>                                (the merge base compared)
 #   FILES_SCANNED=<n>                              (files handed to the detector)
-#   FILES_ANALYZED=<n>                             (files the detector parsed, across
-#     BOTH the head scan and the baseline scan of the merge base, so it is normally
-#     larger than FILES_SCANNED and is not a subset of it)
+#   DETECTOR_SOURCES=<n>                           (files the detector itself parsed,
+#     counted across BOTH the head scan and the baseline scan of the merge base. It
+#     is therefore normally LARGER than FILES_SCANNED and is not a subset of it —
+#     which is why it is not called FILES_ANALYZED)
 #   MIN_LINES=<n> MIN_TOKENS=<n>
 #   CLONE=added <file>:<a>-<b> existing <file>:<c>-<d> lines=<N> tokens=<T>
 #   CLONE_WITHIN_DIFF=<file>:<a>-<b> <file>:<c>-<d> lines=<N> tokens=<T>
@@ -176,16 +177,19 @@ if [ "$ENABLED" = "false" ]; then
   exit 0
 fi
 
-# No detector, and none is fetched. `npx`-style resolution would download and
-# run a package mid-review, which is an install by another name.
-if ! command -v jscpd >/dev/null 2>&1; then
-  unavailable "jscpd is not installed, so no clone scan was performed" \
-    "npm install -g $JSCPD_PIN"
-fi
-
 SCAN_BASE=$(git merge-base "$BASE" "$HEAD_REF" 2>/dev/null)
 [ -n "$SCAN_BASE" ] || SCAN_BASE=$(git rev-parse --verify "$BASE" 2>/dev/null)
 [ -n "$SCAN_BASE" ] || unavailable "neither a merge base nor the base ref itself could be resolved"
+
+# No detector, and none is fetched. `npx`-style resolution would download and
+# run a package mid-review, which is an install by another name.
+#
+# Checked here rather than earlier so `--print-scan-set`, which only enumerates
+# and never runs the detector, still answers on a machine without it.
+if [ "$PRINT_SCAN_SET" != "1" ] && ! command -v jscpd >/dev/null 2>&1; then
+  unavailable "jscpd is not installed, so no clone scan was performed" \
+    "npm install -g $JSCPD_PIN"
+fi
 
 REPORT_DIR=$(mktemp -d -t flow-clone-scan.XXXXXX 2>/dev/null)
 [ -n "$REPORT_DIR" ] && [ -d "$REPORT_DIR" ] || unavailable "mktemp -d failed, so the detector had nowhere to write its report"
@@ -353,7 +357,7 @@ except (OSError, ValueError) as exc:
 analyzed = int(report.get("statistics", {}).get("total", {}).get("sources", 0) or 0)
 if analyzed == 0:
     out("FILES_SCANNED=%d" % len(scan_set))
-    out("FILES_ANALYZED=0")
+    out("DETECTOR_SOURCES=0")
     unavailable(
         "the detector parsed none of the %d files handed to it, so nothing was "
         "examined" % len(scan_set)
@@ -419,7 +423,7 @@ if not out_lines:
     out("REASON=the scan completed and this change introduced no duplicated block")
 out("SCAN_BASE=" + BASE)
 out("FILES_SCANNED=%d" % len(scan_set))
-out("FILES_ANALYZED=%d" % analyzed)
+out("DETECTOR_SOURCES=%d" % analyzed)
 out("MIN_LINES=%d" % MIN_LINES)
 out("MIN_TOKENS=%d" % MIN_TOKENS)
 for line in out_lines:

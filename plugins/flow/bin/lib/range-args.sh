@@ -58,7 +58,8 @@ flow_range_validate() {
 #   the caller's usage() on --help.
 #
 #   A caller whose own options take values sets FLOW_RANGE_VALUE_OPTS to the
-#   space-separated list of them. Their values are then passed through
+#   space-separated list of them, so an option name may not itself contain
+#   whitespace. Their values are then passed through
 #   untouched, which matters because a value like `../foo/**` contains `..` and
 #   would otherwise be read as a range.
 #

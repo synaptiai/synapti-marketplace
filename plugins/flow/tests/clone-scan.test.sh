@@ -152,11 +152,11 @@ assert_match '^STATE=none$' "$CS_OUT" "STATE=none at 50 tokens — the block is 
 assert_not_contains "CLONE=added" "$CS_OUT" "no pair reported at the default floor"
 # ...and the silence is a result, not an empty run. Without this the assertion
 # above would also pass on a scan that read nothing at all.
-CS_ANALYZED=$(printf '%s\n' "$CS_OUT" | sed -n 's/^FILES_ANALYZED=//p')
+CS_ANALYZED=$(printf '%s\n' "$CS_OUT" | sed -n 's/^DETECTOR_SOURCES=//p')
 if [ -n "$CS_ANALYZED" ] && [ "$CS_ANALYZED" -gt 0 ] 2>/dev/null; then
   _flow_assert_pass "the detector examined $CS_ANALYZED file(s) and still reported nothing"
 else
-  _flow_assert_fail "FILES_ANALYZED=${CS_ANALYZED:-missing}: the clean result came from an empty run"
+  _flow_assert_fail "DETECTOR_SOURCES=${CS_ANALYZED:-missing}: the clean result came from an empty run"
 fi
 
 # --- must-stay-silent: four lines --------------------------------------------
@@ -172,11 +172,11 @@ _cs_scan "$R4" --base base --head HEAD --min-lines 5 --min-tokens 20
 _flow_test_begin "must-stay-silent: a four-line copy is below the line minimum"
 assert_match '^STATE=none$' "$CS_OUT" "STATE=none for a four-line copy"
 assert_exit 0 "$CS_CODE" "a clean scan still exits 0"
-CS_ANALYZED=$(printf '%s\n' "$CS_OUT" | sed -n 's/^FILES_ANALYZED=//p')
+CS_ANALYZED=$(printf '%s\n' "$CS_OUT" | sed -n 's/^DETECTOR_SOURCES=//p')
 if [ -n "$CS_ANALYZED" ] && [ "$CS_ANALYZED" -gt 0 ] 2>/dev/null; then
   _flow_assert_pass "examined $CS_ANALYZED file(s)"
 else
-  _flow_assert_fail "FILES_ANALYZED=${CS_ANALYZED:-missing}: nothing was examined"
+  _flow_assert_fail "DETECTOR_SOURCES=${CS_ANALYZED:-missing}: nothing was examined"
 fi
 
 # --- must-stay-silent: excluded path -----------------------------------------
@@ -558,6 +558,28 @@ CS_CODE=$?
 _flow_test_begin "a positional range is still a range"
 assert_exit 0 "$CS_CODE" "the positional form still works"
 assert_match '^FILES_SCANNED=[0-9]+$' "$CS_OUT" "and reports the scan set"
+
+# --- enumerating the scan set does not need the detector ------------------------
+# `--print-scan-set` only reads git. Requiring the detector for it would leave
+# someone asking "why is my scan set this size?" on a machine without jscpd
+# with an answer about jscpd instead of an answer to their question.
+if ! PATH="$CS_BARE_PATH" command -v jscpd >/dev/null 2>&1; then
+  CS_OUT=$( cd "$REPO_ROOT" && PATH="$CS_BARE_PATH" "$HELPER" --base HEAD --head HEAD --print-scan-set 2>&1 )
+  CS_CODE=$?
+  _flow_test_begin "scan set: enumeration answers without a detector installed"
+  assert_exit 0 "$CS_CODE" "exit 0"
+  assert_match '^FILES_SCANNED=[0-9]+$' "$CS_OUT" "the scan set is reported"
+  assert_not_contains "jscpd is not installed" "$CS_OUT" "and the answer is not about the detector"
+
+  # The control: a real scan on the same PATH still refuses, so the case above
+  # is not simply the detector check having been removed.
+  CS_OUT=$( cd "$R" && PATH="$CS_BARE_PATH" "$HELPER" --base base --head HEAD 2>&1 )
+  _flow_test_begin "scan set: a real scan still requires the detector"
+  assert_match '^STATE=unavailable$' "$CS_OUT" "the scan itself still reports unavailable"
+else
+  _flow_test_begin "scan set without a detector"
+  _flow_assert_pass "SKIP: jscpd is present under $CS_BARE_PATH, so the branch cannot be isolated"
+fi
 
 # --- real, full-size input ---------------------------------------------------
 # One run over this repository's own tree, with FILES_SCANNED reconciled

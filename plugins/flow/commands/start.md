@@ -647,8 +647,9 @@ For each task (in dependency order):
        duplicates, then re-run. Do NOT call TaskUpdate(completed) while one stands
      - `CLONE_WITHIN_DIFF=` is the same defect between two blocks this change added; same rule
      - `STATE=none` completes the task. `STATE=unavailable` also completes it — the gate blocks on a
-       clone that was found, never on the absence of a finder — after reporting the reason and the
-       `INSTALL=` command once for the run, not once per task
+       clone that was found, never on the absence of a finder. The scan is asked once per task and
+       answers the same way each time, so report its `REASON=` and `INSTALL=` the first time you see
+       them and do not repeat them on the tasks that follow
   9. Incremental commit (Tier 1: autonomous)
   10. ONLY after ALL of the following are true may TaskUpdate(completed) be called:
       - All tests pass (existing + new)
