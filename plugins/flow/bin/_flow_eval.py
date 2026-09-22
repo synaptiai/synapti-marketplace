@@ -89,6 +89,12 @@ import subprocess
 import sys
 import tempfile
 
+# PYTHONSAFEPATH is exported by the runner, but this helper is also called
+# directly from tests and by hand. An empty or "." entry on sys.path makes the
+# import of a standard-library name depend on the current directory, and the
+# current directory here is an agent's scratch project.
+sys.path[:] = [entry for entry in sys.path if entry not in ("", ".")]
+
 PLUGIN_ARMS = ("enforce-risk", "enforce-norisk", "suggest-risk", "suggest-norisk", "off-risk", "off-norisk")
 ALL_ARMS = ("baseline",) + PLUGIN_ARMS
 

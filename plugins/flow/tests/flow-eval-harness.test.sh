@@ -1593,3 +1593,101 @@ UNCHANGED=$((TOTAL_LINES - ADDED))
 NEEDLE_HIDDEN=$(printf '%s/%s' "hidden" "test_hidden.py")
 assert_not_contains "$NEEDLE_HIDDEN" "$(cat "$REPO/ratelimit.py")" "the module under review does not tell the reviewer it is an eval"
 rm -r "$REPO"
+
+_flow_test_begin "materializing must not lose the defect"
+# Must-fire mutant for the behaviour check: a case whose variant installs its
+# override through a rebinding the reference does not use. Folding the class in
+# and dropping the rebinding leaves the public function on the reference's own
+# code, so the defect disappears. The check exists for exactly this, and
+# without a case that triggers it "behaviour matches" is true because nothing
+# could have made it false.
+DRIFT="$REVROOT/driftcase"
+mkdir -p "$DRIFT/hidden/traps"
+cp "$REVCASE/prompt.md" "$DRIFT/prompt.md"
+cat > "$DRIFT/hidden/reference_impl.py" <<'EOF'
+class Counter:
+    def total(self, values):
+        return sum(values)
+
+
+def allow(counts, limit):
+    return sum(counts) <= limit
+EOF
+cat > "$DRIFT/hidden/traps/lost_override.py" <<'EOF'
+"""Trap: the total is one too high."""
+from reference_impl import *  # noqa: F401,F403
+import reference_impl as _ref
+
+
+class _Plus(_ref.Counter):
+    def total(self, values):
+        return sum(values) + 1
+
+
+_C = _Plus()
+
+
+def allow(counts, limit):
+    return _C.total(counts) <= limit
+EOF
+cat > "$DRIFT/hidden/test_hidden.py" <<'EOF'
+import unittest
+
+from counter import allow
+
+
+class T(unittest.TestCase):
+    def test_boundary(self):
+        self.assertTrue(allow([2, 3], 5))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
+EOF
+cat > "$DRIFT/hidden/traps.json" <<'EOF'
+{
+  "module": "counter",
+  "traps": {
+    "lost_override": {
+      "description": "Fixture trap: the override is installed by rebinding.",
+      "discriminating_tests": ["test_boundary"],
+      "variant": "hidden/traps/lost_override.py"
+    }
+  }
+}
+EOF
+OUT=$(python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --case driftcase --no-write 2>&1)
+RC=$?
+assert_equal "1" "$RC" "a materialization that loses the defect fails the check"
+BEHAVIOUR_NEEDLE=$(printf '%s %s %s' "does not behave as" "the" "variant")
+assert_contains "$BEHAVIOUR_NEEDLE" "$OUT" "the failure says the materialized module changed"
+assert_contains '"behaviour_checked": 1' "$OUT" "the comparison was actually run"
+rm -r "$DRIFT"
+
+_flow_test_begin "a materialized variant carries no import it does not use"
+# Every variant opens with `import reference_impl as _ref`. Left in a module
+# that no longer refers to it, it is an unused import sitting inside the
+# changed hunk — a reviewer who flagged it would be scored as having found the
+# seeded defect.
+REF_NEEDLE=$(printf '%s_%s' "reference" "impl")
+MATERIALIZED=$(python3 "$HELPER" materialize-variant --case "$EVALS/sliding-window-limiter" --trap counts_denied)
+assert_not_contains "$REF_NEEDLE" "$MATERIALIZED" "a variant that does not delegate keeps no import of the reference"
+DELEGATING=$(python3 "$HELPER" materialize-variant --case "$EVALS/money-allocator" --trap round_half_up)
+assert_contains "$REF_NEEDLE" "$DELEGATING" "a variant that does delegate keeps the import it needs"
+COUNT=$(printf '%s\n' "$MATERIALIZED" | wc -l | tr -d ' ')
+[ "${COUNT:-0}" -gt 20 ] && _flow_assert_pass "the materialized module is a whole module ($COUNT lines)" \
+  || _flow_assert_fail "expected a whole module, got ${COUNT:-0} lines"
+
+_flow_test_begin "the review prompt asks for the arm's grounding pass, not just the fan-out"
+# The two arms differ only in review.groundingCritic. A prompt that never
+# mentions the setting makes both arms run the same steps, and the eval would
+# measure noise.
+PROMPT=$(python3 "$HELPER" review-prompt "$EVALS/interval-algebra")
+SETTING_NEEDLE=$(printf '%s.%s' "review" "groundingCritic")
+CRITIC_NEEDLE=$(printf '%s-%s' "finding" "critic")
+assert_contains "$SETTING_NEEDLE" "$PROMPT" "the prompt names the setting under test"
+assert_contains "$CRITIC_NEEDLE" "$PROMPT" "the prompt names the agent the setting turns on"
+assert_contains "intervals.py" "$PROMPT" "the prompt names the case's module"
+assert_contains "review-candidate" "$PROMPT" "the prompt names the branch under review"
+PLACEHOLDER=$(printf '{{%s}}' "MODULE")
+assert_not_contains "$PLACEHOLDER" "$PROMPT" "every placeholder was substituted"

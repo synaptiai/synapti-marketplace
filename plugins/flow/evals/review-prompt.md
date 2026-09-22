@@ -14,6 +14,15 @@ Useful commands:
     git diff {{BASE_BRANCH}}...{{HEAD_BRANCH}}
     git show {{BASE_BRANCH}}:{{MODULE_FILE}}
 
+Then resolve the setting `review.groundingCritic` the way flow resolves any setting, with
+`bin/cascade-resolve.sh` from the plugin directory. When it resolves to `on`, run the
+grounding pass over the consolidated P1/P2 findings before you write them down, exactly as
+`commands/review.md` describes it for Path B: the `finding-critic` agent answers each
+finding with `AGREE`, `DISAGREE_EVIDENCE` or `DISAGREE_CONCERN`, the originating reviewer
+answers a disagreement with a `file:line` citation or drops its own finding, and a reply
+without a citation drops it. When it resolves to `off`, skip the pass and report the
+consolidated findings as they stand. Say which of the two you did.
+
 End your final message with your consolidated findings as a single fenced JSON block, and
 nothing after it:
 
