@@ -115,3 +115,57 @@ UNIQ=$(grep -rhoE '\$[(]__fr=.*"\$__fr"[)]' \
 NFORMS=$(printf '%s\n' "$UNIQ" | grep -c .)
 assert_equal "1" "$NFORMS" "exactly one unique resolver form across all embedded sites"
 assert_equal "$RESOLVER" "$UNIQ" "embedded resolver is byte-identical to the reference-doc canonical form"
+
+# The reference doc defines a SECOND canonical form for sites that run after a
+# `gh pr checkout`, where the working tree belongs to the pull request. The
+# assertions above see only the author-context form, so this file reported
+# "exactly one unique resolver form" while thirteen sites carried a second form
+# with opposite security semantics and nothing noticed.
+SKIP_LINE=$(grep -m1 '^"\$(__t=' "$DOC")
+SKIP_FORM=${SKIP_LINE#\"}
+SKIP_FORM=${SKIP_FORM%/bin/cascade-resolve.sh\"}
+
+_flow_test_begin "post-checkout resolver form is extractable from the reference doc"
+if [ -n "$SKIP_FORM" ] && [ "$SKIP_FORM" != "$SKIP_LINE" ]; then
+  _flow_assert_pass "extracted the post-checkout \$(...) root expression"
+else
+  _flow_assert_fail "could not extract the post-checkout form from $DOC"
+fi
+
+_flow_test_begin "all post-checkout sites match the canonical doc form (no drift)"
+UNIQ_SKIP=$(grep -rhoE '\$[(]__t=.*done[)]' \
+  "$REPO_ROOT/plugins/flow/commands" "$REPO_ROOT/plugins/flow/agents" \
+  "$REPO_ROOT/plugins/flow/references" 2>/dev/null | sort -u)
+NFORMS_SKIP=$(printf '%s\n' "$UNIQ_SKIP" | grep -c .)
+assert_equal "1" "$NFORMS_SKIP" "exactly one unique post-checkout form across all embedded sites"
+assert_equal "$SKIP_FORM" "$UNIQ_SKIP" "embedded post-checkout resolver is byte-identical to the reference-doc form"
+
+# The two forms must differ in exactly the way the doc says: the author form
+# takes the in-repository candidate, the post-checkout form skips it.
+_flow_test_begin "the two forms differ on the in-repository candidate"
+SKIPREPO="$BASE/skiprepo"; mkdir -p "$SKIPREPO"; _stub_root "$SKIPREPO/plugins/flow"
+( cd "$SKIPREPO" && git init -q . >/dev/null 2>&1 )
+SKIPHOME="$BASE/skiphome"; _stub_root "$SKIPHOME/.claude/plugins/cache/synapti-marketplace/flow/9.9.9"
+# The post-checkout form compares physical paths and returns one, so the
+# expectation is the physical path too — on macOS the temp root is reached
+# through a symlink, and comparing the logical spelling would fail for a reason
+# that has nothing to do with the resolver.
+SKIPHOME_P=$(cd "$SKIPHOME" && pwd -P)
+AUTHOR_PICK=$( cd "$SKIPREPO" && env -u CLAUDE_PLUGIN_ROOT HOME="$SKIPHOME" \
+  bash -c "eval \"printf '%s' $RESOLVER\"" )
+SKIP_PICK=$( cd "$SKIPREPO" && env -u CLAUDE_PLUGIN_ROOT HOME="$SKIPHOME" \
+  bash -c "eval \"printf '%s' $SKIP_FORM\"" )
+assert_equal "plugins/flow" "$AUTHOR_PICK" "the author-context form takes the in-repo checkout, which is what lets flow run from one"
+assert_equal "$SKIPHOME_P/.claude/plugins/cache/synapti-marketplace/flow/9.9.9" "$SKIP_PICK" \
+  "the post-checkout form skips it and takes the installed copy"
+
+# Outside a git repository the post-checkout form must skip nothing. `cd ""`
+# returns 0 on bash 3.2 and leaves the working directory alone, so running the
+# cd unconditionally made every candidate below the working directory look
+# in-repository and refused an install sitting above it.
+_flow_test_begin "outside a repository the post-checkout form skips nothing"
+NOREPO="$BASE/norepo"; mkdir -p "$NOREPO"
+NOREPO_PICK=$( cd "$NOREPO" && env -u CLAUDE_PLUGIN_ROOT HOME="$SKIPHOME" \
+  bash -c "eval \"printf '%s' $SKIP_FORM\"" )
+assert_equal "$SKIPHOME_P/.claude/plugins/cache/synapti-marketplace/flow/9.9.9" "$NOREPO_PICK" \
+  "the install is found, not refused for sitting under the working directory"

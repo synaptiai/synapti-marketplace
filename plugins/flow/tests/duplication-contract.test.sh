@@ -209,14 +209,18 @@ print("enabled=%s minLines=%s minTokens=%s n=%d decisions=%s flow=%s" % (
 fi
 
 # --- the reviewer's plugin root comes from outside the repository under review ---
-# The resolver's first candidate is the working-directory-relative
-# `plugins/flow`, so a branch shipping that directory would supply the scripts
-# that judge it - verified: such a branch's own flow-dep-diff.sh ran and printed
-# a forged clean dependency verdict. Refusing outright was worse than it looked:
-# flow's own repository is exactly such a checkout, so every self-review
-# reported unavailable while an installed copy outside the tree went unused.
-# The fence must SKIP the in-repository candidate and take the next one, and
-# report unavailable only when every candidate is in-repository.
+# The author-context resolver's second candidate is the working-directory
+# relative `plugins/flow`, so after `gh pr checkout` the branch under review
+# supplies the scripts that judge it - verified: such a branch's own
+# flow-dep-diff.sh ran and printed a forged clean dependency verdict.
+#
+# This walk is written as the RULE, not as a list of files. Naming the files by
+# hand is how the previous version passed while convention-checker.md and twelve
+# command fences carried the old form: the walk could not fail for anything it
+# had not been told about. The rule is the one
+# references/plugin-root-resolution.md states - every resolver that runs after a
+# `gh pr checkout`, and every resolver in an agent those commands dispatch, uses
+# the post-checkout form.
 DC_FR_DIR=$(mktemp -d -t flow-dup-fr.XXXXXX)
 # The fence reports a physical path, and on macOS the temp root is reached
 # through a symlink; comparing against the logical path would fail for a reason
@@ -224,39 +228,129 @@ DC_FR_DIR=$(mktemp -d -t flow-dup-fr.XXXXXX)
 DC_FR_DIR=$(cd "$DC_FR_DIR" && pwd -P)
 DC_FR_BLOCKS="$DC_FR_DIR/blocks"
 mkdir -p "$DC_FR_BLOCKS"
-DC_FR_FILES="$REPO_ROOT/plugins/flow/agents/code-reviewer.md $REPO_ROOT/plugins/flow/agents/security-reviewer.md"
 
-# Counted twice, from two different anchors. A walk that trusts the number its
-# own extractor reports cannot tell "this fence is sound" from "this fence left
-# the walk": two mutants moved the count from 2 to 1 with every assertion still
-# green, and one of them accepted the in-repository copy.
-DC_FR_EXPECTED=0
-for DC_FR_F in $DC_FR_FILES; do
-  DC_FR_EXPECTED=$((DC_FR_EXPECTED + $(grep -c '^FLOW_ROOT=\$($' "$DC_FR_F")))
-done
-DC_FR_N=$(DC_FILES="$DC_FR_FILES" DC_OUT="$DC_FR_BLOCKS" python3 -c '
+# The single source of both forms.
+DC_FR_DOC="$REPO_ROOT/plugins/flow/references/plugin-root-resolution.md"
+
+_flow_test_begin "plugin roots: both forms are defined in the reference doc"
+DC_FR_SKIP=$(grep -m1 '^"\$(__t=' "$DC_FR_DOC")
+DC_FR_AUTHOR=$(grep -m1 '^"\$(__fr=' "$DC_FR_DOC")
+assert_not_contains "MISSING" "${DC_FR_SKIP:-MISSING}" "the post-checkout form is documented"
+assert_not_contains "MISSING" "${DC_FR_AUTHOR:-MISSING}" "and so is the author-context form"
+
+# Every site, found by the rule rather than by a list. A resolver may be written
+# indented - commands/start.md already does - so neither the search nor the
+# counting anchors at column 0.
+# The script goes to a file first: bash 3.2 cannot parse a here-document
+# inside $( ), and this suite runs on a bash 3.2 runner.
+cat > "$DC_FR_DIR/rule.py" <<'FRPY'
+import os, re, sys
+
+root = os.environ["DC_ROOT"]
+AUTHOR = "$(__fr="
+SKIP = "$(__t="
+CHECKOUT = "gh pr checkout"
+
+# Which agents the two review commands dispatch: read it, do not assume it.
+dispatched = set()
+for name in ("review.md", "address.md"):
+    src = open(os.path.join(root, "plugins/flow/commands", name), encoding="utf-8").read()
+    dispatched |= set(re.findall(r"Agent\(([a-z0-9-]+)\)", src))
+
+problems = []
+sites = 0
+
+def scan(path, must_skip_from):
+    """must_skip_from: line number after which every resolver must be the skip
+    form, or 0 for the whole file, or None when the file is author context."""
+    global sites
+    rel = os.path.relpath(path, root)
+    for n, line in enumerate(open(path, encoding="utf-8"), 1):
+        if AUTHOR not in line and SKIP not in line:
+            continue
+        sites += 1
+        is_skip = SKIP in line
+        if must_skip_from is None:
+            if is_skip:
+                problems.append("%s:%d uses the post-checkout form in author context" % (rel, n))
+        elif n > must_skip_from:
+            if not is_skip:
+                problems.append("%s:%d runs after the checkout but uses the author-context form" % (rel, n))
+        else:
+            if is_skip:
+                problems.append("%s:%d runs before the checkout but uses the post-checkout form" % (rel, n))
+
+for name in ("review.md", "address.md"):
+    path = os.path.join(root, "plugins/flow/commands", name)
+    lines = open(path, encoding="utf-8").read().splitlines()
+    checkout = [i + 1 for i, l in enumerate(lines) if l.strip().startswith(CHECKOUT)]
+    if not checkout:
+        problems.append("%s: no `gh pr checkout` found, so the rule cannot be applied" % name)
+        continue
+    scan(path, max(checkout))
+
+agents_dir = os.path.join(root, "plugins/flow/agents")
+for fn in sorted(os.listdir(agents_dir)):
+    if not fn.endswith(".md"):
+        continue
+    path = os.path.join(agents_dir, fn)
+    body = open(path, encoding="utf-8").read()
+    if AUTHOR not in body and SKIP not in body:
+        continue
+    if fn[:-3] in dispatched:
+        scan(path, 0)          # every resolver in it runs post-checkout
+    else:
+        scan(path, None)       # author context
+
+print("SITES=%d" % sites)
+print("AGENTS_DISPATCHED=%d" % len(dispatched))
+for p in problems:
+    print("PROBLEM=%s" % p)
+FRPY
+DC_FR_REPORT=$(DC_ROOT="$REPO_ROOT" python3 "$DC_FR_DIR/rule.py")
+DC_FR_SITES=$(printf '%s\n' "$DC_FR_REPORT" | sed -n 's/^SITES=//p')
+DC_FR_PROBLEMS=$(printf '%s\n' "$DC_FR_REPORT" | grep -c '^PROBLEM=' || true)
+
+_flow_test_begin "plugin roots: the walk reached the sites it is meant to judge"
+if [ "${DC_FR_SITES:-0}" -ge 15 ] 2>/dev/null; then
+  _flow_assert_pass "$DC_FR_SITES resolver site(s) examined across the review commands and the agents they dispatch"
+else
+  _flow_assert_fail "only ${DC_FR_SITES:-0} resolver site(s) reached — a walk over too few passes on almost anything"
+fi
+
+_flow_test_begin "plugin roots: every post-checkout site uses the post-checkout form"
+if [ "$DC_FR_PROBLEMS" = "0" ]; then
+  _flow_assert_pass "no site carries the wrong form for where it runs"
+else
+  _flow_assert_fail "$(printf '%s\n' "$DC_FR_REPORT" | sed -n 's/^PROBLEM=/  /p')"
+fi
+
+# The three agent fences that turn an empty result into a STATE line.
+DC_FR_N=$(DC_ROOT="$REPO_ROOT" DC_OUT="$DC_FR_BLOCKS" python3 -c '
 import os, re
 n = 0
-for path in os.environ["DC_FILES"].split():
-    src = open(path, encoding="utf-8").read()
-    for block in re.findall(r"^# FLOW_ROOT_BEGIN\n.*?^# FLOW_ROOT_END$", src, re.S | re.M):
+d = os.path.join(os.environ["DC_ROOT"], "plugins/flow/agents")
+for fn in sorted(os.listdir(d)):
+    if not fn.endswith(".md"):
+        continue
+    src = open(os.path.join(d, fn), encoding="utf-8").read()
+    for block in re.findall(r"^[ \t]*# FLOW_ROOT_BEGIN\n.*?^[ \t]*# FLOW_ROOT_END$", src, re.S | re.M):
         n += 1
         open(os.path.join(os.environ["DC_OUT"], "block%d.sh" % n), "w", encoding="utf-8").write(block + "\n")
 print(n)
 ')
+DC_FR_EXPECTED=$(grep -rc '# FLOW_ROOT_BEGIN' "$REPO_ROOT"/plugins/flow/agents/*.md | sed 's/.*://' | awk '{t+=$1} END{print t+0}')
 
-_flow_test_begin "reviewer agents: every plugin-root fence was extracted"
+_flow_test_begin "plugin roots: every STATE-emitting fence was extracted"
 assert_equal "$DC_FR_EXPECTED" "${DC_FR_N:-0}" \
-  "the walk examines every FLOW_ROOT assignment in both reviewer agents, counted independently"
+  "the extractor finds every sentinel, counted independently"
 if [ "${DC_FR_EXPECTED:-0}" -ge 3 ] 2>/dev/null; then
   _flow_assert_pass "$DC_FR_EXPECTED fence(s) found — a walk over zero would pass on anything"
 else
-  _flow_assert_fail "expected at least three plugin-root fences across the two reviewer agents, found $DC_FR_EXPECTED"
+  _flow_assert_fail "expected at least three STATE-emitting fences, found $DC_FR_EXPECTED"
 fi
 
-# One resolver, three copies: a fix applied to two of them is the defect this
-# whole cycle kept finding.
-_flow_test_begin "reviewer agents: the three plugin-root fences are the same text"
+_flow_test_begin "plugin roots: the STATE-emitting fences are one text"
 DC_FR_UNIQUE=$(for f in "$DC_FR_BLOCKS"/block*.sh; do md5 -q "$f" 2>/dev/null || md5sum "$f" | cut -d' ' -f1; done | sort -u | wc -l | tr -d ' ')
 assert_equal "1" "$DC_FR_UNIQUE" "every extracted fence is byte-identical to the others"
 
@@ -282,10 +376,9 @@ mkdir -p "$DC_FR_REPO/plugins/flow/bin"
 printf '#!/bin/sh\nexit 0\n' > "$DC_FR_REPO/plugins/flow/bin/cascade-resolve.sh"
 chmod +x "$DC_FR_REPO/plugins/flow/bin/cascade-resolve.sh"
 ( cd "$DC_FR_REPO" && git init -q -b base . >/dev/null 2>&1 )
+mkdir -p "$DC_FR_DIR/notarepo"
 
 _dc_fence_root() {
-  # _dc_fence_root <block> <env assignment...> — runs the fence in the
-  # repository under review and echoes what it resolved, or its state line.
   local block="$1"; shift
   ( cd "$DC_FR_REPO" && env "$@" bash -c ". '$block'; printf 'FLOW_ROOT=%s\n' \"\$FLOW_ROOT\"" 2>&1 )
 }
@@ -301,9 +394,6 @@ while [ "$DC_FR_I" -le "${DC_FR_N:-0}" ]; do
   assert_not_contains "STATE=unavailable" "$DC_FR_OUT" \
     "and the in-repository candidate is skipped, not treated as the end of the search"
 
-  # CLAUDE_PLUGIN_ROOT is a candidate like any other: honoured when it points
-  # outside, skipped when it points inside. Neither half was exercised, so the
-  # candidate could be deleted outright with every test still green.
   _flow_test_begin "plugin-root fence $DC_FR_I: CLAUDE_PLUGIN_ROOT is honoured when it points outside"
   DC_FR_OUT=$(_dc_fence_root "$DC_FR_B" "CLAUDE_PLUGIN_ROOT=$DC_FR_ELSEWHERE" "HOME=$DC_FR_HOME")
   assert_contains "FLOW_ROOT=$DC_FR_ELSEWHERE" "$DC_FR_OUT" \
@@ -316,14 +406,19 @@ while [ "$DC_FR_I" -le "${DC_FR_N:-0}" ]; do
   assert_not_contains "FLOW_ROOT=$DC_FR_REPO" "$DC_FR_OUT" \
     "the repository's own copy is never selected, however it was named"
 
-  # Must-stay-silent's opposite: with nothing outside the repository there is
-  # genuinely nothing safe to run, and that has to be said rather than fall
-  # back to the branch's own copy.
+  # Outside a git repository nothing is in-repository, so nothing may be
+  # skipped. `cd ""` returns 0 on bash 3.2 and leaves the working directory
+  # alone, which turned "not a repository" into "everything under here is one"
+  # and refused an install sitting above the working directory.
+  _flow_test_begin "plugin-root fence $DC_FR_I: outside a repository nothing is skipped"
+  DC_FR_OUT=$( cd "$DC_FR_DIR/notarepo" && env -u CLAUDE_PLUGIN_ROOT HOME="$DC_FR_HOME" \
+    bash -c ". '$DC_FR_B'; printf 'FLOW_ROOT=%s\n' \"\$FLOW_ROOT\"" 2>&1 )
+  assert_contains "FLOW_ROOT=$DC_FR_CACHE" "$DC_FR_OUT" "the install is found, not refused"
+  assert_not_contains "STATE=unavailable" "$DC_FR_OUT" "and no state line is emitted"
+
   _flow_test_begin "plugin-root fence $DC_FR_I: no outside install is unavailable, not the branch's own"
   DC_FR_OUT=$(_dc_fence_root "$DC_FR_B" -u CLAUDE_PLUGIN_ROOT "HOME=$DC_FR_DIR/emptyhome")
   assert_contains "STATE=unavailable" "$DC_FR_OUT" "every candidate was in-repository, so nobody could look"
-  # The fence ends there, so nothing downstream ever sees a root: no FLOW_ROOT
-  # line is printed at all, and least of all the repository's own copy.
   assert_not_contains "FLOW_ROOT=" "$DC_FR_OUT" "no root is handed on"
 
   DC_FR_I=$((DC_FR_I + 1))

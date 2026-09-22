@@ -68,6 +68,50 @@ Resolution order (first match with an executable `bin/cascade-resolve.sh` wins):
    (`~/.claude/plugins/cache/synapti-marketplace/flow/<version>/`), newest via `sort -Vr`.
 4. `~/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow` — marketplaces checkout.
 
+## The post-checkout form (copy verbatim)
+
+Candidate 2 above — the working-directory-relative `plugins/flow` — is what lets
+flow run from a bare checkout of its own repository. After `gh pr checkout` it is
+something else: the working tree belongs to the pull request, including a fork's,
+so a branch that ships `plugins/flow/bin/cascade-resolve.sh` supplies the helper
+that answers the settings query judging it. Verified: such a branch's own
+`cascade-resolve.sh`, `flow-clone-scan.sh` and `flow-dep-diff.sh` all executed,
+and the last printed a forged clean dependency verdict.
+
+**Placement rule.** Every resolver that runs after a `gh pr checkout`, and every
+resolver in an agent dispatched by `/flow:review` or `/flow:address`, uses the
+form below. Everything else keeps the form above: a developer running
+`/flow:start` in the flow repository is working on their own tree, and the
+in-repo candidate winning there is the point.
+
+The post-checkout form skips any candidate whose physical path lies inside the
+repository at the working directory, and tries the next one rather than giving
+up — flow's own repository is such a checkout, so refusing outright made every
+self-review of flow report unavailable while an installed copy sat unused.
+
+```bash
+"$(__t=$(git rev-parse --show-toplevel 2>/dev/null);[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__t=/; };{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}" plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("$__t"/*) continue;; esac;printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+```
+
+Three details are load-bearing:
+
+- The leading `(` in `case "$__r/" in ("$__t"/*)`. Inside `$( )`, bash reads an
+  unparenthesised case pattern's `)` as the end of the substitution and fails to
+  parse.
+- `[ -z "$__t" ]||{ ...; }` around the `cd`. On bash 3.2, `cd ""` returns 0 and
+  leaves the working directory alone, so running the `cd` unconditionally turned
+  "not a git repository" into "every candidate under the working directory is
+  in-repository" — and a resolver run from `$HOME` then refused the install
+  sitting under it.
+- `__t=/` when the repository root resolves but cannot be entered. Every absolute
+  candidate is then in-repository and nothing is selected: an unreadable root
+  fails closed rather than falling back to the branch's copy.
+
+An agent whose output is a three-state contract wraps the same expression and
+turns the empty result into its own `STATE=unavailable` line, between the
+`# FLOW_ROOT_BEGIN` and `# FLOW_ROOT_END` sentinels that
+`tests/duplication-contract.test.sh` walks.
+
 ## Loud-fail contract
 
 A command block MUST NOT silently degrade when the root cannot be found. When
