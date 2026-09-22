@@ -965,6 +965,73 @@ _flow_test_begin "and says when the list came from the caller"
 assert_match '^EXCLUDES_SOURCE=flag$' "$CS_OUT" "a caller-supplied list is attributed to the flag"
 assert_match '^EXCLUDES_APPLIED=1$' "$CS_OUT" "with its one pattern counted"
 
+# A flag that is empty once stripped did not supply a list, so it must not be
+# attributed one. The attribution used to be decided twice, in shell and in
+# python, and the two disagreed here: the shell reported the flag while the
+# built-in list was what actually applied.
+_cs_scan "$R" --base base --head HEAD --min-lines 5 --min-tokens 20
+CS_NOFLAG_APPLIED=$(printf '%s\n' "$CS_OUT" | sed -n 's/^EXCLUDES_APPLIED=//p')
+_cs_scan "$R" --base base --head HEAD --min-lines 5 --min-tokens 20 --exclude-paths ' '
+_flow_test_begin "must-stay-silent: a flag that is blank once stripped is not the source"
+assert_not_contains "EXCLUDES_SOURCE=flag" "$CS_OUT" "the blank flag supplied nothing"
+assert_match '^EXCLUDES_SOURCE=built-in defaults' "$CS_OUT" "so the built-in list is named"
+assert_equal "$CS_NOFLAG_APPLIED" \
+  "$(printf '%s\n' "$CS_OUT" | sed -n 's/^EXCLUDES_APPLIED=//p')" \
+  "and the same number of patterns applied as with no flag at all"
+
+# --- STATE leads every unavailable path, and no key is printed twice -------------
+# unavailable() prints FILES_SCANNED so that STATE always comes first. The
+# sweep that removed the per-call-site pre-prints matched on the key name and
+# missed three sites, so the key printed twice with data ahead of the state
+# that qualifies it. These assertions check the shape of the output rather than
+# the call sites, so a site added later is covered too.
+_cs_scan "$R" --base base --head HEAD --min-lines 5 --min-tokens 20 --exclude-paths '**'
+_flow_test_begin "unavailable with nothing to scan: STATE first, one FILES_SCANNED"
+assert_equal "STATE=unavailable" "$(printf '%s\n' "$CS_OUT" | head -1)" "STATE is the first line"
+assert_equal "1" "$(printf '%s\n' "$CS_OUT" | grep -c '^FILES_SCANNED=')" "FILES_SCANNED appears once"
+assert_exit 2 "$CS_CODE" "exit 2"
+
+# A detector that runs, succeeds and writes nothing. The real jscpd cannot be
+# made to do this on demand, so a stub stands in for it; what is under test is
+# the helper's reaction, not the detector.
+mkdir -p "$CS_DIR/stubdetector"
+printf '#!/bin/sh\nexit 0\n' > "$CS_DIR/stubdetector/jscpd"
+chmod +x "$CS_DIR/stubdetector/jscpd"
+CS_OUT=$( cd "$R" && PATH="$CS_DIR/stubdetector:$PATH" "$HELPER" --base base --head HEAD \
+  --min-lines 5 --min-tokens 20 2>&1 )
+CS_CODE=$?
+_flow_test_begin "unavailable with no report written: STATE first, one FILES_SCANNED"
+assert_equal "STATE=unavailable" "$(printf '%s\n' "$CS_OUT" | head -1)" "STATE is the first line"
+assert_equal "1" "$(printf '%s\n' "$CS_OUT" | grep -c '^FILES_SCANNED=')" "FILES_SCANNED appears once"
+assert_contains "wrote no report" "$CS_OUT" "and the reason names the missing report"
+assert_exit 2 "$CS_CODE" "exit 2"
+
+# A detector that succeeds and reports having parsed nothing. The real jscpd
+# exits 1 under --fail-on-empty before reaching this branch, so a stub writes
+# the empty report; what is under test is the helper's reaction to it.
+mkdir -p "$CS_DIR/stubempty"
+cat > "$CS_DIR/stubempty/jscpd" <<'EMPTYSTUB'
+#!/bin/sh
+out=""
+while [ $# -gt 0 ]; do
+  case "$1" in --output) out="$2"; shift 2 ;; *) shift ;; esac
+done
+[ -n "$out" ] || exit 1
+mkdir -p "$out"
+printf '%s\n' '{"statistics":{"total":{"sources":0}},"duplicates":[]}' > "$out/jscpd-report.json"
+exit 0
+EMPTYSTUB
+chmod +x "$CS_DIR/stubempty/jscpd"
+CS_OUT=$( cd "$R" && PATH="$CS_DIR/stubempty:$PATH" "$HELPER" --base base --head HEAD \
+  --min-lines 5 --min-tokens 20 2>&1 )
+CS_CODE=$?
+_flow_test_begin "unavailable with nothing parsed: STATE first, the zero count after it"
+assert_equal "STATE=unavailable" "$(printf '%s\n' "$CS_OUT" | head -1)" "STATE is the first line"
+assert_match '^DETECTOR_SOURCES=0$' "$CS_OUT" "the zero count still reaches the caller"
+assert_equal "1" "$(printf '%s\n' "$CS_OUT" | grep -c '^DETECTOR_SOURCES=')" "exactly once"
+assert_contains "parsed none of the" "$CS_OUT" "and the reason says nothing was examined"
+assert_exit 2 "$CS_CODE" "exit 2"
+
 # --- the script's own directory follows the symlink chain ------------------------
 # Taken from the link's directory, a lib/ planted beside a symlink is sourced
 # instead of the real one.

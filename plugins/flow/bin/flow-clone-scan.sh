@@ -244,14 +244,10 @@ esac
 # Which list actually applied. "The run reports what it did" only holds if the
 # report says what was excluded and where that came from: a branch narrowing
 # the scan through its own settings otherwise produced a clean result with
-# nothing in the output attributing the narrowing.
-if [ -n "$OPT_EXCLUDES" ]; then
-  EXCLUDES_SOURCE="flag"
-elif [ "$EXCLUDES_JSON" = "$DEFAULT_EXCLUDES_JSON" ]; then
-  EXCLUDES_SOURCE="built-in defaults (or settings identical to them)"
-else
-  EXCLUDES_SOURCE="settings cascade"
-fi
+# nothing in the output attributing the narrowing. The attribution is decided
+# once, in _excludes() below, by the same branch that picks the list. Deciding
+# it here as well let the two copies disagree: `--exclude-paths " "` is empty
+# once stripped, so the settings list applied while this reported the flag.
 
 # A settings value below the schema's minimum is clamped to the default rather
 # than used: zero would silence the scan while reporting it ran.
@@ -292,7 +288,7 @@ trap 'rm -rf "$REPORT_DIR"' EXIT
 PYTHONSAFEPATH=1 \
 FCS_BASE="$SCAN_BASE" FCS_HEAD="$HEAD_REF" FCS_MIN_LINES="$MIN_LINES" \
 FCS_MIN_TOKENS="$MIN_TOKENS" FCS_EXCLUDES_JSON="$EXCLUDES_JSON" \
-FCS_EXCLUDES_FLAG="$OPT_EXCLUDES" FCS_EXCLUDES_SOURCE="$EXCLUDES_SOURCE" \
+FCS_EXCLUDES_FLAG="$OPT_EXCLUDES" FCS_EXCLUDES_DEFAULT_JSON="$DEFAULT_EXCLUDES_JSON" \
 FCS_FORMAT="$OPT_FORMAT" \
 FCS_REPORT_DIR="$REPORT_DIR" FCS_PRINT_SCAN_SET="$PRINT_SCAN_SET" \
 FCS_SETTINGS_SOURCE="$SETTINGS_SOURCE" \
@@ -316,7 +312,7 @@ def out(line):
 SCAN_SET_SIZE = None
 
 
-def unavailable(reason, code=2):
+def unavailable(reason, code=2, extras=()):
     # STATE first, always. references/command-output-format.md leads its section
     # with it, and a consumer reading line by line should not meet data before
     # the state that qualifies it.
@@ -324,6 +320,8 @@ def unavailable(reason, code=2):
     out("REASON=" + reason)
     if SCAN_SET_SIZE is not None:
         out("FILES_SCANNED=%d" % SCAN_SET_SIZE)
+    for _extra in extras:
+        out(_extra)
     sys.exit(code)
 
 
@@ -356,6 +354,9 @@ MIN_LINES = int(os.environ["FCS_MIN_LINES"])
 MIN_TOKENS = int(os.environ["FCS_MIN_TOKENS"])
 REPORT_DIR = os.environ["FCS_REPORT_DIR"]
 FMT = os.environ.get("FCS_FORMAT", "").strip()
+EXCLUDES_SOURCE = "unknown"
+
+
 def _excludes():
     """The flag wins over settings; settings arrive as JSON.
 
@@ -364,14 +365,23 @@ def _excludes():
     control character, so a newline-joined list was rejected and silently
     replaced by the built-in default with nothing said about it.
     """
+    global EXCLUDES_SOURCE
     flag = os.environ.get("FCS_EXCLUDES_FLAG", "").strip()
     if flag:
         # The command line cannot carry a JSON array conveniently, so the flag
         # stays comma-separated; the usage header says a glob containing a
         # comma has to come from settings.
+        EXCLUDES_SOURCE = "flag"
         return [p.strip() for p in flag.split(",") if p.strip()]
+    raw = os.environ.get("FCS_EXCLUDES_JSON") or "[]"
+    default_raw = os.environ.get("FCS_EXCLUDES_DEFAULT_JSON") or ""
+    EXCLUDES_SOURCE = (
+        "built-in defaults (or settings identical to them)"
+        if raw.strip() == default_raw.strip()
+        else "settings cascade"
+    )
     try:
-        parsed = json.loads(os.environ.get("FCS_EXCLUDES_JSON") or "[]")
+        parsed = json.loads(raw)
     except ValueError:
         return []
     if not isinstance(parsed, list):
@@ -487,7 +497,6 @@ if os.environ.get("FCS_PRINT_SCAN_SET") == "1":
 out_lines = []
 
 if not scan_set:
-    out("FILES_SCANNED=0")
     unavailable(
         "every tracked file was excluded, so the detector was handed nothing to read"
     )
@@ -547,7 +556,6 @@ def _detector_tail():
 
 report_path = os.path.join(REPORT_DIR, "jscpd-report.json")
 if not os.path.exists(report_path):
-    out("FILES_SCANNED=%d" % len(scan_set))
     detail = (proc.stderr or proc.stdout or "").strip().splitlines()
     unavailable(
         "jscpd wrote no report (exit %d)%s"
@@ -576,11 +584,12 @@ except (OSError, ValueError) as exc:
 try:
     analyzed = int(report.get("statistics", {}).get("total", {}).get("sources", 0) or 0)
     if analyzed == 0:
-        out("DETECTOR_SOURCES=0")
+        # DETECTOR_SOURCES travels as an extra so that STATE still comes first.
         unavailable(
             "the detector parsed none of the %d files handed to it, so nothing was "
             "examined: either no file is of a format it recognises, or every one "
-            "is below the %d-token floor" % (len(scan_set), MIN_TOKENS)
+            "is below the %d-token floor" % (len(scan_set), MIN_TOKENS),
+            extras=("DETECTOR_SOURCES=0",),
         )
 
     # Which side of a pair is the one this change added. The detector does not know
@@ -698,7 +707,7 @@ out("STATE=ok" if out_lines else "STATE=none")
 if not out_lines:
     out("REASON=the scan completed and this change introduced no duplicated block")
 out("SETTINGS_SOURCE=" + os.environ.get("FCS_SETTINGS_SOURCE", "unknown"))
-out("EXCLUDES_SOURCE=" + os.environ.get("FCS_EXCLUDES_SOURCE", "unknown"))
+out("EXCLUDES_SOURCE=" + EXCLUDES_SOURCE)
 out("EXCLUDES_APPLIED=%d" % len(EXCLUDES))
 out("SCAN_BASE=" + BASE)
 out("FILES_SCANNED=%d" % len(scan_set))

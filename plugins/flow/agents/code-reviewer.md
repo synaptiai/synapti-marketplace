@@ -66,24 +66,40 @@ and keep `core.quotePath=off` — without it git quotes any non-ASCII path and t
 `"api/sch\303\251ma.graphql"`:
 
 ```bash
-FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 # The resolver's first candidate is the working-directory-relative
 # `plugins/flow`, and during a review the working directory is the repository
 # under review. A branch shipping that directory would otherwise supply the
 # very scripts that judge it - verified: such a branch's own scanner ran and
-# printed a forged clean result. references/plugin-root-resolution.md records
-# that CLAUDE_PLUGIN_ROOT is empirically unset for an agent's Bash step, so
-# this is the normal case here, not an edge one.
-__top=$(git rev-parse --show-toplevel 2>/dev/null)
-__real=$(cd "$FLOW_ROOT" 2>/dev/null && pwd -P)
-if [ -n "$__top" ] && [ -n "$__real" ]; then
-  case "$__real/" in
-    "$(cd "$__top" && pwd -P)"/*)
-      printf '%s\n' "STATE=unavailable"
-      printf '%s\n' "REASON=the plugin root resolved inside the repository under review ($__real), which would let the branch supply the tooling that judges it"
-      exit 0
-      ;;
-  esac
+# printed a forged clean result. An in-repository candidate is therefore
+# SKIPPED and the next one tried, rather than ending the resolution: flow's own
+# repository is such a checkout, so refusing outright made every self-review of
+# flow report unavailable while an installed copy outside the tree went unused.
+# references/plugin-root-resolution.md records that CLAUDE_PLUGIN_ROOT is
+# empirically unset for an agent's Bash step, so this is the normal case here.
+FLOW_ROOT=$(
+  __top=$(git rev-parse --show-toplevel 2>/dev/null)
+  __top=$(cd "$__top" 2>/dev/null && pwd -P)
+  { printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}" plugins/flow
+    ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null | sort -Vr
+    printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"
+  } | while read -r __p; do
+    __p=${__p%/}
+    [ -n "$__p" ] && [ -x "$__p/bin/cascade-resolve.sh" ] || continue
+    __real=$(cd "$__p" 2>/dev/null && pwd -P) || continue
+    [ -n "$__real" ] || continue
+    if [ -n "$__top" ]; then
+      # The leading ( is required: inside $( ), bash reads an unparenthesised
+      # case pattern's ) as the end of the substitution and fails to parse.
+      case "$__real/" in ("$__top"/*) continue ;; esac
+    fi
+    printf '%s\n' "$__real"
+    break
+  done
+)
+if [ -z "$FLOW_ROOT" ]; then
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=no plugin root was found outside the repository under review, so the only tooling available would be the branch's own"
+  exit 0
 fi
 git -c core.quotePath=off diff --name-only <base>...HEAD | "$FLOW_ROOT/bin/flow-contract-files.sh"
 ```
@@ -162,24 +178,40 @@ For each changed file, analyze:
 *Layer A — verbatim.* Run the clone scan over the range under review. It reports what this change introduced, not what the repository already holds:
 
 ```bash
-FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 # The resolver's first candidate is the working-directory-relative
 # `plugins/flow`, and during a review the working directory is the repository
 # under review. A branch shipping that directory would otherwise supply the
 # very scripts that judge it - verified: such a branch's own scanner ran and
-# printed a forged clean result. references/plugin-root-resolution.md records
-# that CLAUDE_PLUGIN_ROOT is empirically unset for an agent's Bash step, so
-# this is the normal case here, not an edge one.
-__top=$(git rev-parse --show-toplevel 2>/dev/null)
-__real=$(cd "$FLOW_ROOT" 2>/dev/null && pwd -P)
-if [ -n "$__top" ] && [ -n "$__real" ]; then
-  case "$__real/" in
-    "$(cd "$__top" && pwd -P)"/*)
-      printf '%s\n' "STATE=unavailable"
-      printf '%s\n' "REASON=the plugin root resolved inside the repository under review ($__real), which would let the branch supply the tooling that judges it"
-      exit 0
-      ;;
-  esac
+# printed a forged clean result. An in-repository candidate is therefore
+# SKIPPED and the next one tried, rather than ending the resolution: flow's own
+# repository is such a checkout, so refusing outright made every self-review of
+# flow report unavailable while an installed copy outside the tree went unused.
+# references/plugin-root-resolution.md records that CLAUDE_PLUGIN_ROOT is
+# empirically unset for an agent's Bash step, so this is the normal case here.
+FLOW_ROOT=$(
+  __top=$(git rev-parse --show-toplevel 2>/dev/null)
+  __top=$(cd "$__top" 2>/dev/null && pwd -P)
+  { printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}" plugins/flow
+    ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null | sort -Vr
+    printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"
+  } | while read -r __p; do
+    __p=${__p%/}
+    [ -n "$__p" ] && [ -x "$__p/bin/cascade-resolve.sh" ] || continue
+    __real=$(cd "$__p" 2>/dev/null && pwd -P) || continue
+    [ -n "$__real" ] || continue
+    if [ -n "$__top" ]; then
+      # The leading ( is required: inside $( ), bash reads an unparenthesised
+      # case pattern's ) as the end of the substitution and fails to parse.
+      case "$__real/" in ("$__top"/*) continue ;; esac
+    fi
+    printf '%s\n' "$__real"
+    break
+  done
+)
+if [ -z "$FLOW_ROOT" ]; then
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=no plugin root was found outside the repository under review, so the only tooling available would be the branch's own"
+  exit 0
 fi
 # Resolved here, not inherited: each fence is its own shell, so $DEFAULT_BRANCH
 # from Step 1 is unset in this one and the base would be the literal "origin/".
