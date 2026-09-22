@@ -52,6 +52,12 @@ artifacts:
   path: B
   findings_count: 6
   pr: 250
+- type: review-cycle
+  captured_at: '2026-09-22T20:10:00Z'
+  cycle: 5
+  path: B
+  findings_count: 6
+  pr: 250
 ---
 # Decision Journal — Issue #219
 
@@ -312,3 +318,38 @@ the stub was written to match the assertion rather than the tool.
 `--exclude-paths ','` took the flag branch and then split to no patterns at all, dropping all nine
 built-in excludes and handing `node_modules`, `vendor` and `dist` to the detector. The flag is split
 before it is judged.
+
+## Review cycle 5 - the class was drawn by name, so the sweep kept missing it
+
+11 raised, 6 survived refutation. Every earlier cycle swept for siblings by NAME - other files
+containing `FLOW_ROOT=`, other lines printing `FILES_SCANNED`. Cycle 5 drew the class by RULE -
+any resolver that runs after a `gh pr checkout` - and found thirteen more sites: every resolver in
+`review.md` and `address.md` below their own checkout, and `convention-checker.md`, which both
+commands dispatch. Verified in a scratch repository: a branch shipping
+`plugins/flow/bin/cascade-resolve.sh` had it executed by the orchestrator itself, before any agent
+was dispatched.
+
+`references/plugin-root-resolution.md` now defines two forms and the rule that places them. The
+author-context form keeps the in-repository candidate, which is what lets flow run from a bare
+checkout of its own repository; the post-checkout form skips it. Both are pinned by the drift
+guard, which had been reporting "exactly one unique resolver form" while a second form with
+opposite security semantics sat in thirteen files - it only grepped for the first.
+
+**The block cycle 4 introduced was itself wrong, in both directions.** `cd ""` returns 0 on bash 3.2
+and leaves the working directory alone, so a failed `git rev-parse` turned "not a repository" into
+"every candidate under the working directory is in one". Run from a directory that is not a
+repository, the fence refused an install sitting above it. A root that resolves but cannot be
+entered now fails closed instead. Both forms share one expression, so this was fixed once.
+
+**Two of the tests written for it could not fail for their own reason.** The outside-a-repository
+fixtures put the install in a sibling directory, where the faulty form finds it anyway. Only when
+the working directory is an ancestor of the install does the fault change the outcome. Caught by
+mutating the guard and watching the wrong assertions fail.
+
+The duplication-contract walk is the rule now rather than a list of files. Naming them by hand is
+why it could not fail for `convention-checker.md`: it examined two files against a floor of three
+fences, and passed. It reads which agents the review commands dispatch, finds each command's
+checkout line, and judges all 22 resolver sites by where they run.
+
+Behaviour change worth stating: flow's self-review always runs the installed copy of its own
+tooling, never the branch's.
