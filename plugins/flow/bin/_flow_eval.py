@@ -40,7 +40,18 @@ Standard library only. Every subcommand prints JSON to stdout unless noted.
                                               claude.json modelUsage) and stamp `model`
                                               into each result.json; idempotent
   check-cases --evals-dir DIR [--case NAME]   reference passes, every trap variant fails
-                                              its listed tests; exit 1 on any violation
+              [--mode correctness|review]     its listed tests; exit 1 on any violation.
+              [--no-write]                    --mode review instead requires every variant to
+                                              differ from hidden/reference_impl.py and records
+                                              its changed hunks into traps.json as changed_lines
+  score-review --case DIR --trap NAME         score one review run's findings (a file or an
+              --findings FILE|JSON            inline JSON array) against the reference->variant
+                                              diff: hit, false findings, incomplete + reason
+  review-prompt <case-dir>                    the review prompt for one scratch repository
+  list-traps <case-dir>                       trap names, one per line
+  finalize-review-run --run-dir R             parse stream.jsonl, score the findings block,
+              --case-dir C --arm A --case N   write findings.txt, review-score.json, result.json
+              --trap T --run N --exit-code X
 
 Incomplete runs: a unittest run is complete only when it prints `Ran N tests`
 for exactly the N tests observed and a final `OK`/`FAILED` line. When it does
@@ -64,6 +75,7 @@ ignored (mostly keys and messages) and computed inputs (`bytes(range(10))`,
 comprehensions) are not classified at all.
 """
 import ast
+import difflib
 import json
 import math
 import os
@@ -1183,9 +1195,10 @@ def infer_model(run_dir, record):
 def iter_run_dirs(out_dir):
     """Yield (run_dir, layout) for every result.json under out_dir/runs.
 
-    New layout: runs/<model>/<arm>/<case>/<n>; old: runs/<arm>/<case>/<n>.
-    The depth decides: a result.json four levels below runs/ is the new
-    layout, three levels is the old one.
+    New layout: runs/<model>/<arm>/<case>/<n>; old: runs/<arm>/<case>/<n>;
+    review mode adds the trap: runs/<model>/<arm>/<case>/<trap>/<n>. The depth
+    decides: five levels below runs/ is review, four is the new correctness
+    layout, three is the old one.
     """
     root = os.path.join(out_dir, "runs")
     if not os.path.isdir(root):
@@ -1195,7 +1208,9 @@ def iter_run_dirs(out_dir):
         if "result.json" not in names:
             continue
         rel = os.path.relpath(dirpath, root).split(os.sep)
-        if len(rel) == 4:
+        if len(rel) == 5:
+            yield dirpath, "review"
+        elif len(rel) == 4:
             yield dirpath, "model"
         elif len(rel) == 3:
             yield dirpath, "legacy"
@@ -1335,7 +1350,9 @@ def aggregate_model(runs):
 
 
 def aggregate(out_dir):
-    runs = load_results(out_dir)
+    # Review-mode runs carry mode="review" and are scored by aggregate_review;
+    # they have no hidden suite, so they would crash the correctness tables.
+    runs = [r for r in load_results(out_dir) if r.get("mode") != "review"]
     models = sorted({r["_model"] for r in runs})
     per_model = {m: aggregate_model([r for r in runs if r["_model"] == m]) for m in models}
     summary = {
@@ -1662,9 +1679,23 @@ def incomplete_cell(entry):
 
 
 def cmd_aggregate(args):
-    opts = parse_opts(args, ["--out"])
+    opts = parse_opts(args, ["--out", "--mode"])
     if not opts.get("--out"):
-        die("aggregate --out DIR")
+        die("aggregate --out DIR [--mode correctness|review]")
+    mode = opts.get("--mode")
+    if mode is None:
+        # Auto-detect so `--aggregate-only` on a review directory does not need
+        # the flag; an empty directory falls back to the correctness tables.
+        records = load_results(opts["--out"])
+        mode = "review" if records and all(r.get("mode") == "review" for r in records) else "correctness"
+    if mode not in ("correctness", "review"):
+        die("aggregate --mode must be correctness or review, got '%s'" % mode)
+    if mode == "review":
+        summary = aggregate_review(opts["--out"])
+        print(json.dumps({"mode": "review", "runs": summary["runs"], "models": summary["models"],
+                          "verdict": summary["decision"]["verdict"],
+                          "total_cost_usd": summary["total_cost_usd"]}))
+        return
     summary = aggregate(opts["--out"])
     print(json.dumps({"runs": summary["runs"], "models": summary["models"], "verdicts": summary["decision"]["verdicts"],
                       "total_cost_usd": summary["total_cost_usd"]}))
@@ -1761,13 +1792,617 @@ def check_cases(evals_dir, only=None):
 
 
 def cmd_check_cases(args):
-    opts = parse_opts(args, ["--evals-dir", "--case"])
+    opts = parse_opts(args, ["--evals-dir", "--case", "--mode"], flags=["--no-write"])
     if not opts.get("--evals-dir"):
-        die("check-cases --evals-dir DIR [--case NAME]")
-    report, problems = check_cases(opts["--evals-dir"], opts.get("--case"))
-    print(json.dumps({"cases": report, "problems": problems}, indent=2, sort_keys=True))
+        die("check-cases --evals-dir DIR [--case NAME] [--mode correctness|review] [--no-write]")
+    mode = opts.get("--mode") or "correctness"
+    if mode not in ("correctness", "review"):
+        die("check-cases --mode must be correctness or review, got '%s'" % mode)
+    if mode == "review":
+        report, problems, examined = check_cases_review(
+            opts["--evals-dir"], opts.get("--case"), write=not opts.get("--no-write"))
+        print(json.dumps({"mode": "review", "cases": report, "problems": problems,
+                          "variants_examined": examined}, indent=2, sort_keys=True))
+    else:
+        report, problems = check_cases(opts["--evals-dir"], opts.get("--case"))
+        print(json.dumps({"cases": report, "problems": problems}, indent=2, sort_keys=True))
     if problems or not report:
         sys.exit(1)
+
+
+# ------------------------------------------------------------ review mode
+
+REVIEW_ARMS = ("review-b", "review-b-critic")
+# Priorities that enter review scoring at all. P3 findings are never sent to
+# the grounding critic and are not scored here either, so a reviewer is
+# neither rewarded nor punished for raising one.
+SCORED_PRIORITIES = ("P1", "P2")
+FENCE_RE = re.compile(r"```[ \t]*(?:json|JSON)?[ \t]*\n(.*?)```", re.S)
+
+
+def split_lines(text):
+    return text.splitlines()
+
+
+def changed_hunks(ref_text, variant_text):
+    """Variant-side line ranges the reference→variant diff touches.
+
+    Returns a sorted list of inclusive 1-based [start, end] pairs, and a bool
+    saying whether the two texts differ at all. Ranges are the lines a reviewer
+    reading the branch diff sees as added or changed, because those are the
+    lines a finding can cite.
+
+    A pure deletion has no variant-side line of its own, so it is anchored to
+    the variant lines that flank the removal — without the anchor a trap that
+    only removes code could never be hit, which would score the reviewer for
+    the shape of the edit rather than for finding the defect.
+    """
+    ref = split_lines(ref_text)
+    var = split_lines(variant_text)
+    ranges = []
+    differs = False
+    matcher = difflib.SequenceMatcher(a=ref, b=var, autojunk=False)
+    for tag, _i1, _i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        differs = True
+        if tag in ("replace", "insert"):
+            if j2 > j1:
+                ranges.append([j1 + 1, j2])
+        elif tag == "delete" and var:
+            start = max(1, j1)
+            end = min(len(var), j1 + 1)
+            if end >= start:
+                ranges.append([start, end])
+    ranges.sort()
+    merged = []
+    for start, end in ranges:
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return merged, differs
+
+
+def variant_paths(case_dir, trap):
+    traps = load_traps(case_dir)
+    entry = traps["traps"].get(trap)
+    if entry is None:
+        die("no trap '%s' in %s (have: %s)" % (trap, case_dir, ", ".join(sorted(traps["traps"]))))
+    return (os.path.join(case_dir, "hidden", "reference_impl.py"),
+            os.path.join(case_dir, entry["variant"]),
+            traps["module"],
+            entry)
+
+
+def hunks_for_trap(case_dir, trap):
+    """(hunks, source) for one trap: the changed_lines recorded by
+    `check-cases --mode review`, or freshly computed when none is recorded."""
+    ref_path, var_path, _module, entry = variant_paths(case_dir, trap)
+    recorded = entry.get("changed_lines")
+    if isinstance(recorded, list) and recorded:
+        hunks = []
+        for item in recorded:
+            if isinstance(item, list) and len(item) == 2 and all(isinstance(v, int) for v in item):
+                hunks.append([item[0], item[1]])
+        if hunks:
+            return hunks, "traps.json"
+    hunks, _differs = changed_hunks(read_text(ref_path), read_text(var_path))
+    return hunks, "computed"
+
+
+def extract_findings(text):
+    """(findings list, reason) from a session's final text.
+
+    The run is asked to end with its findings as a fenced JSON block. The LAST
+    fenced block is read, because a session that shows an example block first
+    and its answer last must be scored on its answer. A bare JSON array with no
+    fence is accepted too. reason is None on success, otherwise the incomplete
+    reason the run is recorded under.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return None, "no-findings-block"
+    blocks = FENCE_RE.findall(text)
+    if blocks:
+        try:
+            parsed = json.loads(blocks[-1])
+        except ValueError:
+            return None, "malformed-json"
+        if not isinstance(parsed, list):
+            return None, "findings-not-a-list"
+        return parsed, None
+    stripped = text.strip()
+    if stripped.startswith("["):
+        try:
+            parsed = json.loads(stripped)
+        except ValueError:
+            return None, "malformed-json"
+        if not isinstance(parsed, list):
+            return None, "findings-not-a-list"
+        return parsed, None
+    return None, "no-findings-block"
+
+
+def finding_line(value):
+    """A finding's line number as an int, or None when it is not one."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        match = re.match(r"^\s*(\d+)", value)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def in_any_hunk(line, hunks):
+    return any(start <= line <= end for start, end in hunks)
+
+
+def score_review(case_dir, trap, findings_text):
+    """Score one review run against one trap variant.
+
+    A run is a `hit` when at least one P1/P2 finding cites the case's module and
+    a line inside a hunk of the reference→variant diff. Every other P1/P2
+    finding is a `false_finding` — including a second finding on the same hunk,
+    because the run was asked for the defect, not for a list of remarks about
+    the changed lines. A run with no findings is a miss with no false findings.
+    A run whose findings block is missing or unparseable is incomplete: it is
+    scored as a miss and carries the reason, so it can be told apart from a run
+    that reviewed the diff and found nothing.
+    """
+    _ref_path, _var_path, module, _entry = variant_paths(case_dir, trap)
+    hunks, hunks_source = hunks_for_trap(case_dir, trap)
+    record = {
+        "case": os.path.basename(os.path.abspath(case_dir)),
+        "trap": trap,
+        "module": module,
+        "changed_lines": hunks,
+        "changed_lines_source": hunks_source,
+        "hit": False,
+        "hits": 0,
+        "in_hunk_findings": 0,
+        "false_findings": 0,
+        "scored_findings": 0,
+        "findings_total": 0,
+        "ignored_findings": 0,
+        "incomplete": False,
+        "reason": None,
+        "confidences": {},
+    }
+    findings, reason = extract_findings(findings_text)
+    if findings is None:
+        record["incomplete"] = True
+        record["reason"] = reason
+        return record
+    record["findings_total"] = len(findings)
+    wanted = module + ".py"
+    for finding in findings:
+        if not isinstance(finding, dict):
+            record["ignored_findings"] += 1
+            continue
+        priority = str(finding.get("priority", "")).strip().upper()
+        if priority not in SCORED_PRIORITIES:
+            record["ignored_findings"] += 1
+            continue
+        record["scored_findings"] += 1
+        confidence = str(finding.get("confidence", "")).strip().upper() or "UNSTATED"
+        line = finding_line(finding.get("line"))
+        cited = os.path.basename(str(finding.get("file", "")).strip())
+        inside = cited in (wanted, module) and line is not None and in_any_hunk(line, hunks)
+        if inside:
+            record["in_hunk_findings"] += 1
+        else:
+            record["false_findings"] += 1
+        bucket = record["confidences"].setdefault(confidence, {"in_hunk": 0, "false": 0})
+        bucket["in_hunk" if inside else "false"] += 1
+    record["hit"] = record["in_hunk_findings"] > 0
+    record["hits"] = 1 if record["hit"] else 0
+    return record
+
+
+def cmd_score_review(args):
+    opts = parse_opts(args, ["--case", "--trap", "--findings"])
+    for key in ("--case", "--trap", "--findings"):
+        if not opts.get(key):
+            die("score-review --case <dir> --trap <name> --findings <file|json>")
+    source = opts["--findings"]
+    text = read_text(source) if os.path.isfile(source) else source
+    print(json.dumps(score_review(opts["--case"], opts["--trap"], text), indent=2, sort_keys=True))
+
+
+def check_cases_review(evals_dir, only=None, write=True):
+    """Every trap variant must differ from the reference on at least one line,
+    and its changed hunks are recorded into hidden/traps.json as changed_lines.
+
+    A variant identical to the reference makes a hit impossible, so the run
+    would score 0% recall for a defect that is not there. That is a broken
+    case, not a result, and it fails the check.
+    """
+    problems = []
+    report = {}
+    examined = 0
+    for case in sorted(os.listdir(evals_dir)):
+        case_dir = os.path.join(evals_dir, case)
+        if not os.path.isfile(os.path.join(case_dir, "prompt.md")) or (only and case != only):
+            continue
+        traps_path = os.path.join(case_dir, "hidden", "traps.json")
+        traps = load_traps(case_dir)
+        ref_path = os.path.join(case_dir, "hidden", "reference_impl.py")
+        if not os.path.isfile(ref_path):
+            problems.append("%s: no hidden/reference_impl.py to diff against" % case)
+            continue
+        ref_text = read_text(ref_path)
+        entry = {"module": traps["module"], "traps": {}}
+        if not traps["traps"]:
+            problems.append("%s: no trap variants to diff" % case)
+        for name in sorted(traps["traps"]):
+            trap = traps["traps"][name]
+            var_path = os.path.join(case_dir, trap["variant"])
+            if not os.path.isfile(var_path):
+                problems.append("%s/%s: missing variant %s" % (case, name, trap["variant"]))
+                continue
+            examined += 1
+            hunks, differs = changed_hunks(ref_text, read_text(var_path))
+            if not differs:
+                problems.append("%s/%s: variant is identical to the reference, so no finding can hit it" % (case, name))
+            elif not hunks:
+                problems.append("%s/%s: variant differs but has no line a finding could cite" % (case, name))
+            trap["changed_lines"] = hunks
+            entry["traps"][name] = {"changed_lines": hunks, "changed_line_count": sum(e - s + 1 for s, e in hunks)}
+        if write:
+            write_json(traps_path, traps)
+        report[case] = entry
+    if examined == 0:
+        problems.append("no trap variants were examined under %s — the check reached nothing" % evals_dir)
+    return report, problems, examined
+
+
+def review_case_prompt(case_dir, module, base_branch="main", head_branch="review-candidate"):
+    """The review prompt for one scratch repository."""
+    template = os.path.join(os.path.dirname(os.path.abspath(case_dir)), "review-prompt.md")
+    text = read_text(template)
+    return (text.replace("{{MODULE}}", module)
+                .replace("{{MODULE_FILE}}", module + ".py")
+                .replace("{{BASE_BRANCH}}", base_branch)
+                .replace("{{HEAD_BRANCH}}", head_branch))
+
+
+def cmd_review_prompt(args):
+    opts = parse_opts(args, ["--base-branch", "--head-branch"])
+    if len(opts["_"]) != 1:
+        die("review-prompt <case-dir> [--base-branch B] [--head-branch H]")
+    case_dir = opts["_"][0]
+    module = load_traps(case_dir)["module"]
+    sys.stdout.write(review_case_prompt(case_dir, module,
+                                        opts.get("--base-branch") or "main",
+                                        opts.get("--head-branch") or "review-candidate"))
+
+
+def cmd_list_traps(args):
+    """Trap names for one case, one per line — the runner's loop variable.
+
+    bash 3.2 has no associative arrays, so the per-case trap list is read from
+    here rather than built in the shell."""
+    opts = parse_opts(args, [])
+    if len(opts["_"]) != 1:
+        die("list-traps <case-dir>")
+    for name in sorted(load_traps(opts["_"][0])["traps"]):
+        print(name)
+
+
+def cmd_finalize_review_run(args):
+    opts = parse_opts(args, ["--run-dir", "--case-dir", "--arm", "--case", "--trap", "--run",
+                             "--exit-code", "--duration", "--model-requested", "--effort-requested"],
+                      flags=["--timed-out"])
+    for key in ("--run-dir", "--case-dir", "--arm", "--case", "--trap", "--run"):
+        if not opts.get(key):
+            die("finalize-review-run missing %s" % key)
+    run_dir = opts["--run-dir"]
+    os.makedirs(run_dir, exist_ok=True)
+    result_event, tool_counts, skills, events = parse_stream(os.path.join(run_dir, "stream.jsonl"))
+    if result_event is not None:
+        write_json(os.path.join(run_dir, "claude.json"), result_event)
+    model, models_used = models_from_result_event(result_event)
+    tokens = tokens_from_result_event(result_event)
+    exit_code = int(opts.get("--exit-code") or 0)
+    timed_out = bool(opts.get("--timed-out"))
+    final_text = str(result_event.get("result") or "") if result_event else ""
+    with open(os.path.join(run_dir, "findings.txt"), "w", encoding="utf-8") as fh:
+        fh.write(final_text)
+    review = score_review(opts["--case-dir"], opts["--trap"], final_text)
+    if timed_out and not review["incomplete"]:
+        review["incomplete"] = True
+        review["reason"] = "timeout"
+    write_json(os.path.join(run_dir, "review-score.json"), review)
+    is_error = bool(result_event.get("is_error")) if result_event else True
+    error = None
+    if timed_out:
+        error = "timeout"
+    elif result_event is None:
+        error = "no result event (exit %d)" % exit_code
+    elif is_error:
+        error = str(result_event.get("result") or result_event.get("subtype") or "is_error")[:300]
+    elif exit_code != 0:
+        error = "claude exit %d" % exit_code
+    result = {
+        "mode": "review",
+        "arm": opts["--arm"],
+        "case": opts["--case"],
+        "trap": opts["--trap"],
+        "run": int(opts["--run"]),
+        "model": model,
+        "models_used": models_used,
+        "model_requested": opts.get("--model-requested") or None,
+        "effort_requested": opts.get("--effort-requested") or None,
+        "cost_usd": num(result_event, "total_cost_usd") if result_event else None,
+        "tokens": tokens,
+        "num_turns": num(result_event, "num_turns") if result_event else None,
+        "session_id": result_event.get("session_id") if result_event else None,
+        "is_error": is_error,
+        "error": error,
+        "exit_code": exit_code,
+        "timed_out": timed_out,
+        "duration_s": float(opts["--duration"]) if opts.get("--duration") else None,
+        "stream_events": events,
+        "tool_counts": tool_counts,
+        "skills_invoked": skills,
+        "review": review,
+    }
+    write_json(os.path.join(run_dir, "result.json"), result)
+    print(json.dumps({"hit": review["hit"], "false_findings": review["false_findings"],
+                      "incomplete": review["incomplete"], "reason": review["reason"],
+                      "cost_usd": result["cost_usd"], "model": model, "error": error}))
+
+
+# --------------------------------------------------- review-mode aggregation
+
+def review_record(record):
+    value = record.get("review")
+    return value if isinstance(value, dict) else {}
+
+
+def f1(precision, recall):
+    if precision is None or recall is None or (precision + recall) == 0:
+        return 0.0 if (precision is not None and recall is not None) else None
+    return 2 * precision * recall / (precision + recall)
+
+
+def run_f1(record):
+    """F1 of a single run, used only for the run-to-run spread.
+
+    One run is one hit-or-miss, so its recall is 1 or 0 and its precision is
+    hits/(hits+false findings)."""
+    review = review_record(record)
+    if review.get("incomplete"):
+        return 0.0
+    hits = 1 if review.get("hit") else 0
+    false = review.get("false_findings") or 0
+    recall = float(hits)
+    precision = (hits / float(hits + false)) if (hits + false) else 0.0
+    return f1(precision, recall) or 0.0
+
+
+def summarize_review_runs(rs):
+    scored = [r for r in rs if not review_record(r).get("incomplete")]
+    hits = sum(1 for r in scored if review_record(r).get("hit"))
+    false = sum(review_record(r).get("false_findings") or 0 for r in scored)
+    recall = (hits / float(len(scored))) if scored else None
+    precision = (hits / float(hits + false)) if (hits + false) else (0.0 if scored else None)
+    confidences = {}
+    for r in scored:
+        for name, bucket in (review_record(r).get("confidences") or {}).items():
+            entry = confidences.setdefault(str(name), {"in_hunk": 0, "false": 0})
+            entry["in_hunk"] += bucket.get("in_hunk") or 0
+            entry["false"] += bucket.get("false") or 0
+    return {
+        "runs": len(rs),
+        "scored_runs": len(scored),
+        "incomplete_runs": len(rs) - len(scored),
+        "incomplete_reasons": sorted({str(review_record(r).get("reason") or "unknown")
+                                      for r in rs if review_record(r).get("incomplete")}),
+        "hits": hits,
+        "false_findings": false,
+        "recall": recall,
+        "precision": precision,
+        "f1": f1(precision, recall),
+        "findings_per_run": mean([review_record(r).get("scored_findings") for r in scored]),
+        "cost_usd_mean": mean([r.get("cost_usd") for r in rs]),
+        "cost_usd_total": sum(r.get("cost_usd") or 0 for r in rs),
+        "num_turns_mean": mean([r.get("num_turns") for r in rs]),
+        "output_tokens_mean": mean([run_tokens(r).get("output") for r in rs]),
+        "output_tokens_scored_runs": sum(1 for r in rs if run_tokens(r).get("output") is not None),
+        "cache_hit_rate_mean": mean([run_tokens(r).get("cache_hit_rate") for r in rs]),
+        "cache_hit_rate_scored_runs": sum(1 for r in rs if run_tokens(r).get("cache_hit_rate") is not None),
+        "token_fallback_runs": sum(1 for r in rs if all_tokens(r).get("source") == "usage"),
+        "token_entries_skipped": sum(all_tokens(r).get("entries_skipped") or 0 for r in rs),
+        "effort_requested": sorted({str(r.get("effort_requested") or "unpinned") for r in rs}),
+        "errors": sum(1 for r in rs if r.get("error")),
+        "confidences": confidences,
+    }
+
+
+def aggregate_review_model(runs):
+    cells = {}
+    for r in runs:
+        cells.setdefault((r["arm"], r["case"], r.get("trap") or "-"), []).append(r)
+    arms = sorted({a for a, _, _ in cells}, key=lambda a: REVIEW_ARMS.index(a) if a in REVIEW_ARMS else 99)
+    cases = sorted({c for _, c, _ in cells})
+    cell_summary = {}
+    spreads = []
+    for (arm, case, trap), rs in cells.items():
+        entry = summarize_review_runs(rs)
+        entry.update({"arm": arm, "case": case, "trap": trap})
+        per_run = [run_f1(r) for r in rs]
+        entry["f1_spread"] = (max(per_run) - min(per_run)) if per_run else None
+        spreads.append(entry["f1_spread"])
+        cell_summary["%s/%s/%s" % (arm, case, trap)] = entry
+    arm_summary = {}
+    for arm in arms:
+        rs = [r for r in runs if r["arm"] == arm]
+        entry = summarize_review_runs(rs)
+        entry["cases"] = sorted({r["case"] for r in rs})
+        arm_summary[arm] = entry
+    spread = mean(spreads)
+    return {
+        "runs": len(runs),
+        "arms": arms,
+        "cases": cases,
+        "total_cost_usd": sum(r.get("cost_usd") or 0 for r in runs),
+        "run_to_run_spread": spread,
+        "per_arm": arm_summary,
+        "per_cell": cell_summary,
+    }
+
+
+def decide_review(per_model):
+    """The adoption rule from references/review-precision-eval.md.
+
+    `review.groundingCritic` becomes the default only when the critic arm's F1
+    beats the plain arm's by more than that model's run-to-run spread on every
+    model, and at least two models ran. Anything else is recorded as a
+    no-change outcome, which is a result and not a failure.
+    """
+    models = sorted(per_model)
+    deltas = {}
+    sentences = []
+    improved = []
+    for model in models:
+        m = per_model[model]
+        base = (m["per_arm"].get("review-b") or {}).get("f1")
+        critic = (m["per_arm"].get("review-b-critic") or {}).get("f1")
+        spread = m.get("run_to_run_spread")
+        if base is None or critic is None or spread is None:
+            deltas[model] = None
+            sentences.append("[%s] one of the two arms has no scored run, so the rule cannot be applied." % model)
+            continue
+        delta = critic - base
+        deltas[model] = delta
+        beats = delta > spread
+        improved.append(beats)
+        sentences.append(
+            "[%s] F1 is %s with the critic against %s without it, a change of %+.3f against a run-to-run spread of %.3f, "
+            "which %s the spread." % (model, fmt(critic, 3), fmt(base, 3), delta, spread,
+                                      "clears" if beats else "does not clear"))
+    if len(models) < 2:
+        verdict = "insufficient-models"
+        sentences.append("The rule needs at least two models; %d ran." % len(models))
+    elif improved and all(improved) and len(improved) == len(models):
+        verdict = "adopt-critic"
+        sentences.append("Every model improves by more than its spread, so the rule says review.groundingCritic defaults to on.")
+    else:
+        verdict = "keep-off"
+        sentences.append("Not every model improves by more than its spread, so the rule says review.groundingCritic stays off.")
+    return {"verdict": verdict, "deltas": deltas, "reading": " ".join(sentences)}
+
+
+def aggregate_review(out_dir):
+    runs = [r for r in load_results(out_dir) if r.get("mode") == "review"]
+    models = sorted({r["_model"] for r in runs})
+    per_model = {m: aggregate_review_model([r for r in runs if r["_model"] == m]) for m in models}
+    decision = decide_review(per_model)
+    summary = {
+        "mode": "review",
+        "runs": len(runs),
+        "models": models,
+        "arms": sorted({a for m in per_model.values() for a in m["arms"]},
+                       key=lambda a: REVIEW_ARMS.index(a) if a in REVIEW_ARMS else 99),
+        "cases": sorted({c for m in per_model.values() for c in m["cases"]}),
+        "total_cost_usd": sum(r.get("cost_usd") or 0 for r in runs),
+        "per_model": per_model,
+        "decision": decision,
+    }
+    write_json(os.path.join(out_dir, "summary.json"), summary)
+    with open(os.path.join(out_dir, "summary.md"), "w", encoding="utf-8") as fh:
+        fh.write(render_review_summary_md(summary))
+    return summary
+
+
+ADOPTION_RULE = ("Adoption rule: `review.groundingCritic` becomes the default only when the critic arm's F1 beats the "
+                 "plain arm's by more than that model's run-to-run spread on every model that ran, with at least two "
+                 "models. No improvement is a valid recorded outcome, not a failed run.")
+SPREAD_NOTE = ("Spread is the mean, over every model × arm × case × trap cell, of the largest minus the smallest "
+               "per-run F1 in that cell. A single run's recall is 1 when it hit the seeded defect and 0 otherwise, and "
+               "its precision is its hits over its hits plus its false findings.")
+REVIEW_METRIC_NOTE = ("Precision is the share of scored P1/P2 findings that landed on a changed line of the seeded "
+                      "defect; recall is the share of runs that found the defect at all. Higher is better for both, "
+                      "and for F1. Findings per run counts only P1/P2 findings. Incomplete runs — no findings block, "
+                      "unparseable JSON, or a timeout — are excluded from precision, recall and F1 and counted on "
+                      "their own, so a broken run never reads as a clean miss.")
+
+
+def render_review_summary_md(s):
+    lines = ["# Flow review-precision eval — summary", ""]
+    efforts = sorted({e for m in s["per_model"].values() for a in m["per_arm"].values()
+                      for e in (a.get("effort_requested") or [])})
+    lines.append("Runs: %d across %d model(s), %d arm(s) and %d case(s). Total cost: $%.2f. Models: %s. Effort: %s."
+                 % (s["runs"], len(s["models"]), len(s["arms"]), len(s["cases"]), s["total_cost_usd"],
+                    ", ".join("`%s`" % md_cell(m) for m in s["models"]) or "none",
+                    ", ".join("`%s`" % md_cell(e) for e in efforts) or "none"))
+    lines.append("")
+    lines.append("## Reading")
+    lines.append("")
+    lines.append(s["decision"]["reading"] or "No runs found.")
+    lines.append("")
+    lines.append(ADOPTION_RULE)
+    lines.append("")
+    lines.append("Verdict: `%s`" % s["decision"]["verdict"])
+    lines.append("")
+    lines.append("## Per model × arm")
+    lines.append("")
+    lines.append("| Model | Arm | Effort | Runs | Scored | Precision | Recall | F1 | Findings per run | Cost (mean) | Cache hits | Output tokens | Spread | Errors | Incomplete |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    for model in s["models"]:
+        m = s["per_model"][model]
+        for arm in m["arms"]:
+            a = m["per_arm"][arm]
+            lines.append("| %s | %s | %s | %d | %d | %s | %s | %s | %s | $%s | %s | %s | %s | %d | %s |" % (
+                md_cell(model), md_cell(arm), effort_cell(a), a["runs"], a["scored_runs"],
+                fmt(a["precision"], pct=True), fmt(a["recall"], pct=True), fmt(a["f1"], 3),
+                fmt(a["findings_per_run"], 1), fmt(a["cost_usd_mean"]),
+                token_cell(a, "cache_hit_rate_mean", "cache_hit_rate_scored_runs", pct=True),
+                token_cell(a, "output_tokens_mean", "output_tokens_scored_runs"),
+                fmt(m["run_to_run_spread"], 3), a["errors"], review_incomplete_cell(a)))
+    lines.append("")
+    lines.append(REVIEW_METRIC_NOTE)
+    lines.append("")
+    lines.append(SPREAD_NOTE)
+    lines.append("")
+    lines.append("## Per model × arm × case × trap")
+    lines.append("")
+    lines.append("| Model | Arm | Case | Trap | Runs | Scored | Hits | False findings | Precision | Recall | F1 | Cost | Incomplete |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    for model in s["models"]:
+        m = s["per_model"][model]
+        for key in sorted(m["per_cell"]):
+            c = m["per_cell"][key]
+            lines.append("| %s | %s | %s | %s | %d | %d | %d | %d | %s | %s | %s | $%s | %s |" % (
+                md_cell(model), md_cell(c["arm"]), md_cell(c["case"]), md_cell(c["trap"]), c["runs"], c["scored_runs"],
+                c["hits"], c["false_findings"], fmt(c["precision"], pct=True), fmt(c["recall"], pct=True),
+                fmt(c["f1"], 3), fmt(c["cost_usd_mean"]), review_incomplete_cell(c)))
+    lines.append("")
+    lines.append("## Confidence against outcome")
+    lines.append("")
+    lines.append("| Model | Arm | Confidence | On a changed line | Elsewhere |")
+    lines.append("|---|---|---|---|---|")
+    for model in s["models"]:
+        m = s["per_model"][model]
+        for arm in m["arms"]:
+            for name in sorted(m["per_arm"][arm].get("confidences") or {}):
+                bucket = m["per_arm"][arm]["confidences"][name]
+                lines.append("| %s | %s | %s | %d | %d |" % (md_cell(model), md_cell(arm), md_cell(name),
+                                                             bucket["in_hunk"], bucket["false"]))
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def review_incomplete_cell(entry):
+    if not entry.get("incomplete_runs"):
+        return "0"
+    return "%d (%s)" % (entry["incomplete_runs"], ", ".join(entry.get("incomplete_reasons") or []))
 
 
 # ------------------------------------------------------------------- driver
@@ -1806,6 +2441,10 @@ COMMANDS = {
     "aggregate": cmd_aggregate,
     "migrate-layout": cmd_migrate_layout,
     "check-cases": cmd_check_cases,
+    "score-review": cmd_score_review,
+    "review-prompt": cmd_review_prompt,
+    "list-traps": cmd_list_traps,
+    "finalize-review-run": cmd_finalize_review_run,
 }
 
 

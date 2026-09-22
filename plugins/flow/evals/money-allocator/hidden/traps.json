@@ -2,8 +2,33 @@
   "module": "allocate",
   "traps": {
     "accepts_nonpositive_weights": {
+      "changed_lines": [
+        [
+          1,
+          3
+        ],
+        [
+          7,
+          8
+        ],
+        [
+          9,
+          13
+        ],
+        [
+          19,
+          20
+        ],
+        [
+          21,
+          21
+        ],
+        [
+          22,
+          23
+        ]
+      ],
       "description": "Trap: zero and negative weights accepted (and empty lists, negative amounts, floats). Masked whenever inputs are well-formed.",
-      "variant": "hidden/traps/accepts_nonpositive_weights.py",
       "discriminating_tests": [
         "test_amount_with_excess_precision_rejected",
         "test_empty_weights_rejected",
@@ -11,37 +36,109 @@
         "test_negative_amount_rejected",
         "test_negative_weight_rejected",
         "test_zero_weight_rejected"
-      ]
+      ],
+      "variant": "hidden/traps/accepts_nonpositive_weights.py"
     },
     "divide_first": {
+      "changed_lines": [
+        [
+          1,
+          5
+        ],
+        [
+          9,
+          10
+        ],
+        [
+          11,
+          14
+        ],
+        [
+          16,
+          18
+        ],
+        [
+          20,
+          21
+        ]
+      ],
       "description": "Trap: floor(units / total_weight) * weight \u2014 division before multiplication \u2014 with the integer-division remainder handed out round-robin from index 0. Masked when total_units is a multiple of the weight sum.",
-      "variant": "hidden/traps/divide_first.py",
       "discriminating_tests": [
         "test_asymmetric_weights_known_answer",
         "test_multiply_before_divide",
         "test_output_order_follows_weights_order",
         "test_results_are_decimals_quantized_to_places"
-      ]
+      ],
+      "variant": "hidden/traps/divide_first.py"
     },
     "float_arithmetic": {
+      "changed_lines": [
+        [
+          1,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          8,
+          10
+        ],
+        [
+          12,
+          13
+        ],
+        [
+          15,
+          15
+        ],
+        [
+          17,
+          18
+        ]
+      ],
       "description": "Trap: amounts converted through float. Masked while amounts fit in ~15 significant digits.",
-      "variant": "hidden/traps/float_arithmetic.py",
       "discriminating_tests": [
         "test_large_amount_is_exact"
-      ]
+      ],
+      "variant": "hidden/traps/float_arithmetic.py"
     },
     "hardcoded_places": {
+      "changed_lines": [
+        [
+          1,
+          3
+        ],
+        [
+          7,
+          7
+        ]
+      ],
       "description": "Trap: `places` ignored; always two decimal places. Masked when places == 2.",
-      "variant": "hidden/traps/hardcoded_places.py",
       "discriminating_tests": [
         "test_amount_with_excess_precision_rejected",
         "test_places_three",
         "test_places_zero_whole_units"
-      ]
+      ],
+      "variant": "hidden/traps/hardcoded_places.py"
     },
     "round_half_up": {
+      "changed_lines": [
+        [
+          1,
+          5
+        ],
+        [
+          9,
+          12
+        ],
+        [
+          14,
+          14
+        ]
+      ],
       "description": "Trap: each share rounded independently (ROUND_HALF_UP) instead of largest remainder. The sum invariant breaks whenever remainders do not cancel; masked when shares are exact.",
-      "variant": "hidden/traps/round_half_up.py",
       "discriminating_tests": [
         "test_equal_weights_extra_cent_goes_to_first",
         "test_half_remainders_are_not_all_rounded_up",
@@ -54,11 +151,25 @@
         "test_tie_between_different_weights_goes_to_lowest_index",
         "test_tie_goes_to_lowest_index",
         "test_two_leftover_units_go_to_first_two_on_full_tie"
-      ]
+      ],
+      "variant": "hidden/traps/round_half_up.py"
     },
     "sorted_output": {
+      "changed_lines": [
+        [
+          1,
+          4
+        ],
+        [
+          7,
+          8
+        ],
+        [
+          9,
+          11
+        ]
+      ],
       "description": "Trap: shares returned in descending-weight order instead of input order. Masked when weights are already sorted descending or all equal.",
-      "variant": "hidden/traps/sorted_output.py",
       "discriminating_tests": [
         "test_asymmetric_weights_known_answer",
         "test_decimal_weights",
@@ -67,18 +178,58 @@
         "test_results_are_decimals_quantized_to_places",
         "test_symmetric_weights_asymmetric_result",
         "test_tie_between_different_weights_goes_to_lowest_index"
-      ]
+      ],
+      "variant": "hidden/traps/sorted_output.py"
     },
     "ties_by_weight": {
+      "changed_lines": [
+        [
+          1,
+          4
+        ],
+        [
+          8,
+          9
+        ],
+        [
+          10,
+          13
+        ],
+        [
+          15,
+          15
+        ],
+        [
+          22,
+          22
+        ],
+        [
+          24,
+          25
+        ]
+      ],
       "description": "Trap: remainder ties broken in favour of the larger weight. Masked when tied entries have equal weights.",
-      "variant": "hidden/traps/ties_by_weight.py",
       "discriminating_tests": [
         "test_tie_between_different_weights_goes_to_lowest_index"
-      ]
+      ],
+      "variant": "hidden/traps/ties_by_weight.py"
     },
     "ties_last_first": {
+      "changed_lines": [
+        [
+          1,
+          4
+        ],
+        [
+          7,
+          8
+        ],
+        [
+          9,
+          10
+        ]
+      ],
       "description": "Trap: remainder ties broken by highest index (stable sort on the reversed list). Masked when no two remainders tie.",
-      "variant": "hidden/traps/ties_last_first.py",
       "discriminating_tests": [
         "test_equal_weights_extra_cent_goes_to_first",
         "test_half_remainders_are_not_all_rounded_up",
@@ -90,7 +241,8 @@
         "test_tie_between_different_weights_goes_to_lowest_index",
         "test_tie_goes_to_lowest_index",
         "test_two_leftover_units_go_to_first_two_on_full_tie"
-      ]
+      ],
+      "variant": "hidden/traps/ties_last_first.py"
     }
   }
 }
