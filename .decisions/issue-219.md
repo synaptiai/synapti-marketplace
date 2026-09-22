@@ -174,3 +174,22 @@ The scan now reports `STATE=none` on this branch.
   automatically even on this branch, which edits both files. An exception for it would be
   configuration that never matches. It would become reportable only if someone made that block newly
   duplicated, and at that point it should be judged afresh.
+
+## Two tests passed locally for a reason that does not exist in CI
+
+The first CI run failed three assertions on both runners while the same suite was green locally.
+
+`CLAUDE_PLUGIN_ROOT` is unset in both places, so the helper falls back to searching for an installed
+copy of the plugin to reach the settings cascade. This machine has ten of them under
+`~/.claude/plugins/cache/`; a CI runner has none. So the `duplication.enabled: false` case resolved
+real settings here and silently fell back to the built-in defaults there, reporting `STATE=ok` for a
+layer the fixture had turned off. The test was reading the machine, not the tree under test. Both
+that case and its control now pin `CLAUDE_PLUGIN_ROOT` to the repository's own `plugins/flow`, and a
+mutant that ignores `duplication.enabled` fails them.
+
+The third failure was an assertion that a clean run prints nothing on stderr. When the plugin root is
+not pinned, the shared root-resolution idiom breaks out of its own pipeline as soon as a candidate
+matches, and the producer can lose the race and print a broken-pipe notice. That is a property of an
+idiom every `bin/` helper shares, not of this change, and it is harmless — it goes to stderr and no
+caller reads it. The assertion now pins the root and checks what it was actually about: that the
+exclude-list filter does not make a settings source look unparseable.

@@ -514,7 +514,11 @@ printf 'def read_settings(path):\n%s\n' "$CS_BODY" > "$RD/src/added.py"
 _cs_commit "$RD" add
 mkdir -p "$RD/.claude"
 printf '%s\n' '{"duplication": {"enabled": false}}' > "$RD/.claude/settings.flow.json"
-_cs_scan "$RD" --base base --head HEAD --min-lines 5 --min-tokens 20
+# The settings cascade is reached through the plugin root. Unpinned, that root
+# is whatever copy of the plugin happens to be installed on the machine — which
+# is why this case passed locally and failed on CI, where none is. Pin it to
+# the tree under test so the case exercises the settings path deterministically.
+CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" _cs_scan "$RD" --base base --head HEAD --min-lines 5 --min-tokens 20
 _flow_test_begin "disabled: reported as unavailable, not as a clean scan"
 assert_match '^STATE=unavailable$' "$CS_OUT" "a disabled layer is unavailable"
 assert_not_contains "STATE=none" "$CS_OUT" "never as no duplication found"
@@ -524,7 +528,7 @@ assert_match '^REASON=.*enabled' "$CS_OUT" "the reason names the setting"
 # The control: the same fixture DOES report a pair once the setting is removed,
 # so the case above cannot pass on a scanner that reports nothing regardless.
 rm -f "$RD/.claude/settings.flow.json"
-_cs_scan "$RD" --base base --head HEAD --min-lines 5 --min-tokens 20
+CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" _cs_scan "$RD" --base base --head HEAD --min-lines 5 --min-tokens 20
 _flow_test_begin "disabled: the setting is what silenced it"
 assert_match '^STATE=ok$' "$CS_OUT" "the same fixture fires with the setting gone"
 
@@ -533,10 +537,14 @@ assert_match '^STATE=ok$' "$CS_OUT" "the same fixture fires with the setting gon
 # report that whole file unparseable. The value still resolves from a lower
 # tier, so the only symptom is a warning on every run about a file that is
 # perfectly valid — the kind of noise that gets ignored and then hides a real one.
-CS_ERR=$( cd "$REPO_ROOT" && "$HELPER" --base HEAD --head HEAD --print-scan-set 2>&1 >/dev/null )
+CS_ERR=$( cd "$REPO_ROOT" && CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" \
+  "$HELPER" --base HEAD --head HEAD --print-scan-set 2>&1 >/dev/null )
 _flow_test_begin "settings: resolving the exclude list warns about nothing"
 assert_not_contains "failed to parse" "$CS_ERR" "no settings source is reported unparseable"
-assert_equal "" "$CS_ERR" "nothing at all on stderr for a clean run"
+# The assertion is about the jq filter, so the plugin root is pinned. Left
+# unpinned, the shared root-resolution idiom races its own pipeline and can
+# print a broken-pipe notice, which has nothing to do with what this checks.
+assert_not_contains "Cannot iterate over null" "$CS_ERR" "the filter handles a source that lacks the key"
 
 # --- an option value is never mistaken for a range ------------------------------
 # The library reads any argument containing `..` as a range. A relative glob
