@@ -282,7 +282,12 @@ assert_equal "false" "$RESULT" "bare expression returns 'false' (was always 'tru
 
 # Compare against // empty which still swallows false (legacy callers)
 _flow_test_begin "cascade-resolve.sh + // empty still falls through on false (backward-compat for non-boolean callers)"
-RESULT_EMPTY=$(cd "$DIR" && "$REPO_ROOT/plugins/flow/bin/cascade-resolve.sh" --default "default-fallback" '.flow.workflows.enabled // empty')
+# CLAUDE_PLUGIN_ROOT is pinned to an empty directory so the plugin tier really
+# is absent. It used to be a path relative to the working directory, absent by
+# accident in a temp dir; it is the plugin's own settings.json now, which does
+# carry .flow.workflows.enabled.
+C14_EMPTY_PLUGIN=$(_c14_mktmp)
+RESULT_EMPTY=$(cd "$DIR" && CLAUDE_PLUGIN_ROOT="$C14_EMPTY_PLUGIN" "$REPO_ROOT/plugins/flow/bin/cascade-resolve.sh" --default "default-fallback" '.flow.workflows.enabled // empty')
 assert_equal "default-fallback" "$RESULT_EMPTY" "// empty falls through to default (legacy behavior preserved)"
 
 # Absent key returns default for both expression styles
@@ -290,5 +295,5 @@ _flow_test_begin "absent key with bare expression falls through to default"
 DIR2=$(_c14_mktmp)
 mkdir -p "$DIR2/.claude"
 echo '{"other": "value"}' > "$DIR2/.claude/settings.flow.json"
-RESULT_ABSENT=$(cd "$DIR2" && "$REPO_ROOT/plugins/flow/bin/cascade-resolve.sh" --default "default-fallback" '.flow.workflows.enabled')
+RESULT_ABSENT=$(cd "$DIR2" && CLAUDE_PLUGIN_ROOT="$C14_EMPTY_PLUGIN" "$REPO_ROOT/plugins/flow/bin/cascade-resolve.sh" --default "default-fallback" '.flow.workflows.enabled')
 assert_equal "default-fallback" "$RESULT_ABSENT" "bare expression with absent key returns default"

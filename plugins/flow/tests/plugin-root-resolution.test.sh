@@ -159,6 +159,54 @@ assert_equal "plugins/flow" "$AUTHOR_PICK" "the author-context form takes the in
 assert_equal "$SKIPHOME_P/.claude/plugins/cache/synapti-marketplace/flow/9.9.9" "$SKIP_PICK" \
   "the post-checkout form skips it and takes the installed copy"
 
+# The post-checkout form re-implements the WHOLE candidate list, not only the
+# skip. With one cache version and no marketplaces entry stocked, a mutant that
+# picks the oldest install, drops the `break`, or deletes the last-resort
+# candidate produces identical output, so none of them was pinned.
+_flow_test_begin "the post-checkout form picks the highest installed version"
+MULTI="$BASE/multi"; mkdir -p "$MULTI"
+( cd "$MULTI" && git init -q . >/dev/null 2>&1 )
+MULTIHOME="$BASE/multihome"
+_stub_root "$MULTIHOME/.claude/plugins/cache/synapti-marketplace/flow/2.4.0"
+_stub_root "$MULTIHOME/.claude/plugins/cache/synapti-marketplace/flow/3.1.0"
+_stub_root "$MULTIHOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"
+MULTIHOME_P=$(cd "$MULTIHOME" && pwd -P)
+MULTI_PICK=$( cd "$MULTI" && env -u CLAUDE_PLUGIN_ROOT HOME="$MULTIHOME" \
+  bash -c "eval \"printf '%s' $SKIP_FORM\"" )
+# assert_equal on the WHOLE value, not a substring: a missing `break` makes the
+# resolver return every candidate, and a contains-check would still pass.
+assert_equal "$MULTIHOME_P/.claude/plugins/cache/synapti-marketplace/flow/3.1.0" "$MULTI_PICK" \
+  "the newest cache install wins, and exactly one line is returned"
+
+_flow_test_begin "the post-checkout form falls back to the marketplaces checkout"
+ONLYMKT="$BASE/onlymkt"
+_stub_root "$ONLYMKT/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"
+ONLYMKT_P=$(cd "$ONLYMKT" && pwd -P)
+MKT_PICK=$( cd "$MULTI" && env -u CLAUDE_PLUGIN_ROOT HOME="$ONLYMKT" \
+  bash -c "eval \"printf '%s' $SKIP_FORM\"" )
+assert_equal "$ONLYMKT_P/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow" "$MKT_PICK" \
+  "with no cache install the last-resort candidate is used"
+
+# The fail-closed branch: the repository root resolves but cannot be entered.
+# Driven through the same code path by making `cd "$__t"` fail, which `__t=/`
+# then has to turn into "skip every absolute candidate". Before the trailing
+# slash was stripped inside the pattern, `/` expanded to `//*` and matched no
+# real path, so this branch skipped nothing and the branch's own copy stayed a
+# live candidate on exactly the case the clause defends.
+_flow_test_begin "a repository root that cannot be entered selects nothing"
+# Driven through the same code path by pointing the work tree at a path that
+# does not exist: `git rev-parse --show-toplevel` reports it, and the `cd` to
+# it then fails. chmod 000 on the root does not work for this - it breaks
+# rev-parse too, so the resolver takes the not-a-repository branch instead and
+# the fixture proves nothing.
+UNREADABLE="$BASE/unreadable"; mkdir -p "$UNREADABLE"
+( cd "$UNREADABLE" && git init -q . >/dev/null 2>&1 )
+_stub_root "$UNREADABLE/plugins/flow"
+UNREADABLE_PICK=$( cd "$UNREADABLE" && env -u CLAUDE_PLUGIN_ROOT HOME="$MULTIHOME" \
+  GIT_DIR="$UNREADABLE/.git" GIT_WORK_TREE="$BASE/no-such-tree" \
+  bash -c "eval \"printf '%s' $SKIP_FORM\"" )
+assert_equal "" "$UNREADABLE_PICK" "nothing is selected when the root cannot be entered"
+
 # Outside a git repository the post-checkout form must skip nothing. `cd ""`
 # returns 0 on bash 3.2 and leaves the working directory alone, so running the
 # cd unconditionally made every candidate below the working directory look

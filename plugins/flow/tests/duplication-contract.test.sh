@@ -222,6 +222,9 @@ fi
 # `gh pr checkout`, and every resolver in an agent those commands dispatch, uses
 # the post-checkout form.
 DC_FR_DIR=$(mktemp -d -t flow-dup-fr.XXXXXX)
+# Removed on exit: without this every run left an initialised git repository
+# and three stub plugin trees behind, and 83 of them had accumulated.
+trap 'rm -rf "$DC_FR_DIR"' EXIT
 # The fence reports a physical path, and on macOS the temp root is reached
 # through a symlink; comparing against the logical path would fail for a reason
 # that has nothing to do with the fence.
@@ -260,34 +263,74 @@ for name in ("review.md", "address.md"):
 problems = []
 sites = 0
 
-def scan(path, must_skip_from):
-    """must_skip_from: line number after which every resolver must be the skip
-    form, or 0 for the whole file, or None when the file is author context."""
+def scan(path, must_skip_from, checkout_bang=False):
+    """must_skip_from: line number of an inline checkout, after which a resolver
+    in an inline fence runs against the pull request's tree; 0 for a file that
+    is post-checkout throughout (an agent the review commands dispatch); None
+    when the file is author context. checkout_bang: the checkout itself is in a
+    `!` fence, so `!` fences after it are post-checkout too."""
     global sites
     rel = os.path.relpath(path, root)
+    fence = None
     for n, line in enumerate(open(path, encoding="utf-8"), 1):
+        if line.startswith("```"):
+            fence = None if fence else line.strip()
+            continue
         if AUTHOR not in line and SKIP not in line:
             continue
         sites += 1
         is_skip = SKIP in line
         if must_skip_from is None:
-            if is_skip:
-                problems.append("%s:%d uses the post-checkout form in author context" % (rel, n))
-        elif n > must_skip_from:
-            if not is_skip:
-                problems.append("%s:%d runs after the checkout but uses the author-context form" % (rel, n))
+            post = False
+        elif must_skip_from == 0:
+            post = True
+        elif fence == "```!":
+            # Expanded before the command body, so an inline checkout has not
+            # happened yet however far down the file this sits.
+            post = checkout_bang and n > must_skip_from
         else:
-            if is_skip:
-                problems.append("%s:%d runs before the checkout but uses the post-checkout form" % (rel, n))
+            post = n > must_skip_from
+        if post and not is_skip:
+            problems.append("%s:%d runs against the pull request's tree but uses the author-context form" % (rel, n))
+        elif not post and is_skip:
+            problems.append("%s:%d runs in author context but uses the post-checkout form" % (rel, n))
 
-for name in ("review.md", "address.md"):
-    path = os.path.join(root, "plugins/flow/commands", name)
-    lines = open(path, encoding="utf-8").read().splitlines()
-    checkout = [i + 1 for i, l in enumerate(lines) if l.strip().startswith(CHECKOUT)]
-    if not checkout:
-        problems.append("%s: no `gh pr checkout` found, so the rule cannot be applied" % name)
+# Which commands check out a pull request: read it, do not assume it. A command
+# that gains a checkout later is covered without editing this list, which is
+# what "written as the rule" has to mean for the command half too.
+commands_dir = os.path.join(root, "plugins/flow/commands")
+for name in sorted(os.listdir(commands_dir)):
+    if not name.endswith(".md"):
         continue
-    scan(path, max(checkout))
+    path = os.path.join(commands_dir, name)
+    body = open(path, encoding="utf-8").read()
+    if AUTHOR not in body and SKIP not in body:
+        continue
+    if not any(l.strip().startswith(CHECKOUT) for l in body.splitlines()):
+        scan(path, None)       # no checkout: author context throughout
+        continue
+    # The checkout's own fence decides what "after" means. A `!` fence is
+    # expanded before the command body runs, so an inline checkout leaves every
+    # `!` fence in author context whatever its line number.
+    fence = None
+    checkout_inline = 0
+    checkout_bang = False
+    for i, l in enumerate(body.splitlines(), 1):
+        if l.startswith("```"):
+            fence = None if fence else l.strip()
+            continue
+        # The command itself, not a sentence about it: review.md mentions
+        # `gh pr checkout` in prose and in comments, and counting those put the
+        # checkout after every resolver in the file.
+        if fence and l.strip().startswith(CHECKOUT):
+            if fence == "```!":
+                checkout_bang = True
+            else:
+                checkout_inline = max(checkout_inline, i)
+    if not checkout_inline and not checkout_bang:
+        problems.append("%s: `gh pr checkout` is outside any fence, so the rule cannot be applied" % name)
+        continue
+    scan(path, checkout_inline, checkout_bang)
 
 agents_dir = os.path.join(root, "plugins/flow/agents")
 for fn in sorted(os.listdir(agents_dir)):
@@ -302,20 +345,36 @@ for fn in sorted(os.listdir(agents_dir)):
     else:
         scan(path, None)       # author context
 
+# Counted a second time, by a different route, so a site that stops being
+# reached by the walk shows up as a mismatch rather than as a smaller number
+# still clearing a floor.
+independent = 0
+for d in ("plugins/flow/commands", "plugins/flow/agents"):
+    full = os.path.join(root, d)
+    for fn in sorted(os.listdir(full)):
+        if fn.endswith(".md"):
+            body = open(os.path.join(full, fn), encoding="utf-8").read()
+            independent += body.count(AUTHOR) + body.count(SKIP)
 print("SITES=%d" % sites)
+print("INDEPENDENT=%d" % independent)
 print("AGENTS_DISPATCHED=%d" % len(dispatched))
 for p in problems:
     print("PROBLEM=%s" % p)
 FRPY
 DC_FR_REPORT=$(DC_ROOT="$REPO_ROOT" python3 "$DC_FR_DIR/rule.py")
 DC_FR_SITES=$(printf '%s\n' "$DC_FR_REPORT" | sed -n 's/^SITES=//p')
+DC_FR_INDEP=$(printf '%s\n' "$DC_FR_REPORT" | sed -n 's/^INDEPENDENT=//p')
 DC_FR_PROBLEMS=$(printf '%s\n' "$DC_FR_REPORT" | grep -c '^PROBLEM=' || true)
 
-_flow_test_begin "plugin roots: the walk reached the sites it is meant to judge"
+_flow_test_begin "plugin roots: the walk reached every site, not merely enough of them"
+# A floor is not a reach check: with "at least 15" against 92 sites, seventy-odd
+# could be deleted and every assertion here would still pass.
+assert_equal "$DC_FR_INDEP" "${DC_FR_SITES:-0}" \
+  "every resolver in commands/ and agents/ was classified, counted independently"
 if [ "${DC_FR_SITES:-0}" -ge 15 ] 2>/dev/null; then
-  _flow_assert_pass "$DC_FR_SITES resolver site(s) examined across the review commands and the agents they dispatch"
+  _flow_assert_pass "$DC_FR_SITES resolver site(s) examined — a walk over zero would pass on anything"
 else
-  _flow_assert_fail "only ${DC_FR_SITES:-0} resolver site(s) reached — a walk over too few passes on almost anything"
+  _flow_assert_fail "only ${DC_FR_SITES:-0} resolver site(s) reached"
 fi
 
 _flow_test_begin "plugin roots: every post-checkout site uses the post-checkout form"

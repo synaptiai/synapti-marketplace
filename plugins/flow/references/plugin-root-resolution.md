@@ -84,13 +84,23 @@ form below. Everything else keeps the form above: a developer running
 `/flow:start` in the flow repository is working on their own tree, and the
 in-repo candidate winning there is the point.
 
+"After" means execution order, not line order. A ```` ```! ```` fence is
+expanded before the command body runs, so every `!` fence in a command runs
+before every inline ```` ```bash ```` fence, whatever their line numbers. Both
+`/flow:review` and `/flow:address` put their `gh pr checkout` in an inline
+fence and say so in as many words, which makes every `!` fence in them author
+context — the working tree is still the user's own. Classifying by line number
+instead put the post-checkout form in three `!` fences, and in a bare checkout
+of flow with no marketplace install that resolves to nothing and blocks the
+run, which is the case the author-context form exists to serve.
+
 The post-checkout form skips any candidate whose physical path lies inside the
 repository at the working directory, and tries the next one rather than giving
 up — flow's own repository is such a checkout, so refusing outright made every
 self-review of flow report unavailable while an installed copy sat unused.
 
 ```bash
-"$(__t=$(git rev-parse --show-toplevel 2>/dev/null);[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__t=/; };{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}" plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("$__t"/*) continue;; esac;printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+"$(__t=$(git rev-parse --show-toplevel 2>/dev/null);[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__t=/; };{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}" plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("${__t%/}"/*) continue;; esac;printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
 ```
 
 Three details are load-bearing:
@@ -103,9 +113,13 @@ Three details are load-bearing:
   "not a git repository" into "every candidate under the working directory is
   in-repository" — and a resolver run from `$HOME` then refused the install
   sitting under it.
-- `__t=/` when the repository root resolves but cannot be entered. Every absolute
-  candidate is then in-repository and nothing is selected: an unreadable root
-  fails closed rather than falling back to the branch's copy.
+- `__t=/` when the repository root resolves but cannot be entered, together with
+  the `%/` that strips its trailing slash inside the pattern. Without the strip
+  the pattern reads `//*`, which needs two leading slashes and so matches no
+  path `pwd -P` ever produces: the sentinel skipped nothing, and the branch's
+  own copy stayed a live candidate on exactly the case this clause is here to
+  defend. With the strip, `/` skips every absolute candidate, so a root that
+  resolves but cannot be entered selects nothing at all.
 
 An agent whose output is a three-state contract wraps the same expression and
 turns the empty result into its own `STATE=unavailable` line, between the
