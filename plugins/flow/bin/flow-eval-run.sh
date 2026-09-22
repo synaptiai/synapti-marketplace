@@ -14,6 +14,7 @@
 #                    [--max-total-usd X] [--timeout-seconds S] [--out <dir>]
 #                    [--permission-mode acceptEdits|bypassPermissions]
 #                    [--dry-run] [--keep-temp] [--aggregate-only] [--check-cases]
+#                    [--build-review-repo <dir> --case <name> --trap <name>]
 #
 # Modes:
 #   correctness  (default) the seeded-bug implementation eval described above
@@ -153,6 +154,8 @@ DRY_RUN=0
 KEEP_TEMP=0
 AGGREGATE_ONLY=0
 CHECK_CASES=0
+BUILD_REPO_DIR=""
+TRAP_NAME=""
 
 usage() {
   # Print the whole header comment, however long it grows — a fixed line
@@ -183,6 +186,8 @@ while [ $# -gt 0 ]; do
     --keep-temp) KEEP_TEMP=1; shift ;;
     --aggregate-only) AGGREGATE_ONLY=1; shift ;;
     --check-cases) CHECK_CASES=1; shift ;;
+    --trap) need_value "$@"; TRAP_NAME="$2"; shift 2 ;;
+    --build-review-repo) need_value "$@"; BUILD_REPO_DIR="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "flow-eval-run: unknown option: $1" >&2; usage >&2; exit 1 ;;
   esac
@@ -342,18 +347,33 @@ HEAD_BRANCH="review-candidate"
 build_review_repo() {
   # build_review_repo <dir> <case> <trap> — a git repository whose default
   # branch holds the reference implementation as the module and whose feature
-  # branch holds the materialized trap variant as the same module.
-  # reference_impl.py is present on both branches (some variants delegate to
-  # it), so the branch diff is the module file alone.
-  local dir="$1" case="$2" trap="$3" module
+  # branch holds the materialized trap variant as the same module, so the
+  # branch diff is the module file alone.
+  #
+  # reference_impl.py is committed on both branches ONLY when this variant
+  # still calls into it. Giving it to a variant that does not need it hands the
+  # reviewer a pristine correct copy of the module under review, which locates
+  # the defect by diff alone. When it is needed it is written through
+  # `reference-module`, the same stripped text the module gets: the shipped
+  # file opens by naming the hidden suite and the trap variants, which tells
+  # the reviewer it is being tested and where to look.
+  local dir="$1" case="$2" trap="$3" module delegates
   module="$(case_module "$case")"
   local case_dir="$EVALS_DIR/$case"
   mkdir -p "$dir" || return 1
-  cp "$case_dir/hidden/reference_impl.py" "$dir/reference_impl.py" || return 1
+  delegates="$(python3 "$HELPER" variant-delegates --case "$case_dir" --trap "$trap")" || return 1
+  if [ "$delegates" = "yes" ]; then
+    python3 "$HELPER" reference-module --case "$case_dir" --out "$dir/reference_impl.py" || return 1
+  else
+    rm -f "$dir/reference_impl.py" || return 1
+  fi
   python3 "$HELPER" reference-module --case "$case_dir" --out "$dir/$module.py" || return 1
   (
     cd "$dir" || exit 1
-    git init -q -b "$BASE_BRANCH" . || exit 1
+    # `git init -b` needs git >= 2.28; correctness mode uses plain `git init`,
+    # and the default branch is named here instead so both modes share a floor.
+    git init -q . || exit 1
+    git checkout -q -b "$BASE_BRANCH" 2>/dev/null || git branch -q -m "$BASE_BRANCH" || exit 1
     git add -A || exit 1
     git -c user.name=flow-eval -c user.email=flow-eval@localhost commit -q -m "$module: initial implementation" || exit 1
     git checkout -q -b "$HEAD_BRANCH" || exit 1
@@ -363,6 +383,19 @@ build_review_repo() {
   ) || return 1
   return 0
 }
+
+# --build-review-repo builds one review-mode scratch repository and stops, so
+# what the reviewer is actually handed can be inspected — and tested — without
+# a claude call.
+if [ -n "$BUILD_REPO_DIR" ]; then
+  if [ "$MODE" != "review" ] || [ "$CASE_FILTER" = "all" ] || [ -z "$TRAP_NAME" ]; then
+    echo "flow-eval-run: --build-review-repo needs --mode review --case <name> --trap <name>" >&2
+    exit 1
+  fi
+  build_review_repo "$BUILD_REPO_DIR" "$CASE_FILTER" "$TRAP_NAME" || exit 1
+  echo "flow-eval-run: built $CASE_FILTER/$TRAP_NAME in $BUILD_REPO_DIR"
+  exit 0
+fi
 
 running_total() {
   python3 - "$OUT_DIR" <<'EOF'
@@ -676,7 +709,12 @@ for model in "${MODELS[@]}"; do
           fi
           n=1
           while [ "$n" -le "$case_runs" ]; do
-            run_one_review "$model" "$arm" "$case" "$trap_name" "$n" || break 4
+            # A budget stop ends the whole plan; any other failure — a scratch
+            # repository that would not build, a claude error — abandons this
+            # trap's remaining runs only, so one broken case does not discard
+            # every case after it.
+            run_one_review "$model" "$arm" "$case" "$trap_name" "$n" \
+              || { [ "$BUDGET_STOP" = "1" ] && break 4; break; }
             n=$((n + 1))
           done
         done

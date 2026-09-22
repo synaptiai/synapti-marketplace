@@ -53,6 +53,9 @@ Standard library only. Every subcommand prints JSON to stdout unless noted.
               [--out FILE]                    redefinitions folded in, which is what a review
                                               run's feature branch commits
   reference-module --case DIR [--out FILE]    the reference as the default branch commits it
+  variant-delegates --case DIR --trap NAME    yes/no: does the materialized variant still call
+                                              into reference_impl, so the scratch repository
+                                              must carry reference_impl.py beside the module
   finalize-review-run --run-dir R             parse stream.jsonl, score the findings block,
               --case-dir C --arm A --case N   write findings.txt, review-score.json, result.json
               --trap T --run N --exit-code X
@@ -2143,6 +2146,22 @@ def cmd_reference_module(args):
         sys.stdout.write(text)
 
 
+def variant_delegates_to_reference(case_dir, trap):
+    """Does the trap variant, as the feature branch commits it, still call into
+    reference_impl? Those variants need reference_impl.py beside the module;
+    the rest must not be given it, because a pristine correct copy of the
+    module locates the defect by diff alone."""
+    return "reference_impl" in materialized_variant_text(case_dir, trap)
+
+
+def cmd_variant_delegates(args):
+    opts = parse_opts(args, ["--case", "--trap"])
+    for key in ("--case", "--trap"):
+        if not opts.get(key):
+            die("variant-delegates --case <dir> --trap <name>")
+    sys.stdout.write("yes\n" if variant_delegates_to_reference(opts["--case"], opts["--trap"]) else "no\n")
+
+
 def cmd_materialize_variant(args):
     opts = parse_opts(args, ["--case", "--trap", "--out"])
     for key in ("--case", "--trap"):
@@ -2385,14 +2404,19 @@ def check_cases_review(evals_dir, only=None, write=True, verify_behaviour=True):
                 problems.append("%s/%s: variant is identical to the reference, so no finding can hit it" % (case, name))
             elif not hunks:
                 problems.append("%s/%s: variant differs but has no line a finding could cite" % (case, name))
+            # The variant still calls into reference_impl, so the module under
+            # review says it is one. Recorded rather than fixed: the fix is new
+            # case content, not a change to the harness. It is written into
+            # traps.json as well as the report, because the runner reads it
+            # there to decide whether the scratch repository carries
+            # reference_impl.py at all.
+            delegates = "reference_impl" in materialized
             trap["changed_lines"] = hunks
+            trap["delegates_to_reference"] = delegates
             entry["traps"][name] = {
                 "changed_lines": hunks,
                 "changed_line_count": sum(e - s + 1 for s, e in hunks),
-                # The variant still calls into reference_impl, so the module
-                # under review says it is one. Recorded rather than fixed: the
-                # fix is new case content, not a change to the harness.
-                "delegates_to_reference": "reference_impl" in materialized,
+                "delegates_to_reference": delegates,
             }
             if verify_behaviour and not has_hidden_suite(case_dir):
                 entry["traps"][name]["behaviour_matches_variant"] = None
@@ -2810,6 +2834,7 @@ COMMANDS = {
     "list-traps": cmd_list_traps,
     "materialize-variant": cmd_materialize_variant,
     "reference-module": cmd_reference_module,
+    "variant-delegates": cmd_variant_delegates,
     "finalize-review-run": cmd_finalize_review_run,
 }
 

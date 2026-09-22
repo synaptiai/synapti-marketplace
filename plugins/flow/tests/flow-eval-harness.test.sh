@@ -1722,3 +1722,50 @@ assert_contains "intervals.py" "$PROMPT" "the prompt names the case's module"
 assert_contains "review-candidate" "$PROMPT" "the prompt names the branch under review"
 PLACEHOLDER=$(printf '{{%s}}' "MODULE")
 assert_not_contains "$PLACEHOLDER" "$PROMPT" "every placeholder was substituted"
+
+_flow_test_begin "the scratch repo the runner builds does not tell the reviewer it is an eval"
+# Drives build_review_repo itself through --build-review-repo. The test above
+# rebuilds an equivalent repository by hand, which is why it could not see that
+# the runner was copying hidden/reference_impl.py in verbatim: its docstring
+# names the hidden suite and the trap variants under hidden/traps/.
+BRR_HIDDEN=$(printf '%s/%s' "hidden" "traps")
+BRR_SUITE=$(printf '%s_%s' "test" "hidden")
+
+# A variant that calls back into the reference needs reference_impl.py beside
+# the module — but stripped, the same text the module under review gets.
+BRR_YES="$TMP/brr-delegating"
+assert_equal "yes" "$(python3 "$HELPER" variant-delegates --case "$EVALS/money-allocator" --trap divide_first)" \
+  "divide_first is a delegating variant"
+bash "$RUNNER" --mode review --case money-allocator --trap divide_first --build-review-repo "$BRR_YES" >/dev/null 2>&1
+assert_file_exists "$BRR_YES/reference_impl.py" "a delegating variant gets the module it imports"
+BRR_REF=$(cat "$BRR_YES/reference_impl.py")
+assert_not_contains "$BRR_HIDDEN" "$BRR_REF" "the copied reference does not name the trap directory"
+assert_not_contains "$BRR_SUITE" "$BRR_REF" "the copied reference does not name the hidden suite"
+assert_equal "$(python3 "$HELPER" reference-module --case "$EVALS/money-allocator")" "$BRR_REF" \
+  "it is the same stripped text the module under review is built from"
+assert_equal "allocate.py" "$(cd "$BRR_YES" && git diff --name-only main...review-candidate)" \
+  "the branch diff is still the module file alone"
+
+# A variant that stands alone must not be handed a pristine correct copy of the
+# module under review: diffing it against the module locates the defect with no
+# review at all.
+BRR_NO="$TMP/brr-standalone"
+assert_equal "no" "$(python3 "$HELPER" variant-delegates --case "$EVALS/money-allocator" --trap accepts_nonpositive_weights)" \
+  "accepts_nonpositive_weights stands alone"
+bash "$RUNNER" --mode review --case money-allocator --trap accepts_nonpositive_weights \
+  --build-review-repo "$BRR_NO" >/dev/null 2>&1
+assert_equal "no" "$([ -e "$BRR_NO/reference_impl.py" ] && echo yes || echo no)" \
+  "a standalone variant is given no correct copy of the module"
+assert_equal "allocate.py" "$(cd "$BRR_NO" && git ls-files)" \
+  "the repository holds the module under review and nothing else"
+rm -r "$BRR_YES" "$BRR_NO"
+
+_flow_test_begin "check-cases --mode review records delegates_to_reference in traps.json"
+# references/review-precision-eval.md tells the operator to read it there.
+python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review >/dev/null 2>&1
+DELEG_KEY=$(printf '%s_to_%s' "delegates" "reference")
+assert_contains "$DELEG_KEY" "$(cat "$REVCASE/hidden/traps.json")" "the written traps.json carries the flag"
+assert_equal "False" "$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["traps"]["off_by_one"]["delegates_to_reference"])' "$REVCASE/hidden/traps.json")" \
+  "the fixture trap does not delegate"
