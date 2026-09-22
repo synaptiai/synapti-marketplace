@@ -1501,6 +1501,12 @@ assert_contains "review-b-critic" "$SUMMARY" "the critic arm has a row"
 assert_contains "Adoption rule:" "$SUMMARY" "the reading rule is written into the summary"
 assert_contains "Verdict: \`" "$SUMMARY" "the summary ends the reading with a verdict line"
 assert_contains "Higher is better" "$SUMMARY" "each metric says which direction is better"
+# The confidence table's columns are "On a changed line" / "Elsewhere", which
+# is where a finding landed. A heading that says "outcome" reads as whether
+# the finding was right, and the buckets stopped meaning that.
+assert_contains "## Confidence against where the finding landed" "$SUMMARY" \
+  "the confidence heading names what its columns show"
+assert_not_contains "Confidence against outcome" "$SUMMARY" "and not the meaning it lost"
 
 _flow_test_begin "the adoption rule needs two models, not one"
 VERDICT=$(python3 -c '
@@ -1803,17 +1809,20 @@ _flow_test_begin "the scratch repo is built without git init -b"
 # `git init -b` needs git >= 2.28. Correctness mode uses plain `git init` and
 # names the branch afterwards; review mode was changed to match, and nothing
 # pinned it — this machine's git accepts both spellings, so a regression would
-# be invisible here and would only appear on an older runner.
+# be invisible here and would only appear on an older runner. git 2.28 added
+# `-b` and `--initial-branch=` together, so the stub rejects both spellings:
+# pinning only `-b` leaves the long one passed straight through to real git.
 GITSTUB="$TMP/gitstub"; mkdir -p "$GITSTUB"
 REAL_GIT=$(command -v git)
 cat > "$GITSTUB/git" <<GITEOF
 #!/usr/bin/env bash
 if [ "\$1" = "init" ]; then
   for a in "\$@"; do
-    if [ "\$a" = "-b" ]; then
-      echo "git: unknown switch -b (this stub stands in for git before 2.28)" >&2
-      exit 129
-    fi
+    case "\$a" in
+      -b|--initial-branch*)
+        echo "git: unknown switch \$a (this stub stands in for git before 2.28)" >&2
+        exit 129 ;;
+    esac
   done
 fi
 exec "$REAL_GIT" "\$@"
@@ -1898,6 +1907,76 @@ BUDGET_ERR=$(PATH="$BUDGET_MOCK:$PATH" bash "$RUNNER" --mode review --case money
   --arm review-b --runs 1 --models one,two --max-total-usd 0 --out "$TMP/budgetout" 2>&1 >/dev/null)
 BUDGET_LINES=$(printf '%s\n' "$BUDGET_ERR" | grep -c 'would exceed --max-total-usd')
 assert_equal "1" "$BUDGET_LINES" "the plan stops once, not once per model"
+
+_flow_test_begin "a budget stop ends a correctness plan across every model too"
+# The same rule, the other mode: correctness mode breaks one loop shallower,
+# and only review mode's depth was pinned. `break 3` re-trips the check under
+# the second model and prints the stop line twice.
+BUDGET_C_ERR=$(PATH="$BUDGET_MOCK:$PATH" bash "$RUNNER" --arm off-risk \
+  --case money-allocator,interval-algebra --runs 1 --models one,two --max-total-usd 0 \
+  --out "$TMP/budgetout-correctness" 2>&1 >/dev/null)
+BUDGET_C_LINES=$(printf '%s\n' "$BUDGET_C_ERR" | grep -c 'would exceed --max-total-usd')
+assert_equal "1" "$BUDGET_C_LINES" "the correctness plan also stops once, not once per model"
+
+_flow_test_begin "a run the harness could not set up is an error, not a silent green"
+# Every early return in run_one/run_one_review left RUN_ERRORS untouched, so a
+# plan whose every run died before claude started printed errors=0 and exited
+# 0: success reported for a plan that ran nothing. The non-budget break depth
+# belongs to the same scenario — `break 3` abandoned every remaining case and
+# arm on the first transient failure.
+SETUP_STUB="$TMP/setupstub"; mkdir -p "$SETUP_STUB"
+SETUP_REAL_GIT=$(command -v git)
+cat > "$SETUP_STUB/git" <<GITFAILEOF
+#!/usr/bin/env bash
+if [ "\$1" = "init" ]; then
+  echo "git: init refused (this stub stands in for a machine that cannot make a repo)" >&2
+  exit 1
+fi
+exec "$SETUP_REAL_GIT" "\$@"
+GITFAILEOF
+printf '#!/usr/bin/env bash\nshift\nexec "$@"\n' > "$SETUP_STUB/timeout"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$SETUP_STUB/claude"
+chmod +x "$SETUP_STUB/git" "$SETUP_STUB/timeout" "$SETUP_STUB/claude"
+SETUP_OUT=$(PATH="$SETUP_STUB:$PATH" bash "$RUNNER" --arm off-risk,off-norisk \
+  --case money-allocator,interval-algebra --runs 1 --models one \
+  --out "$TMP/setupout" 2>&1); SETUP_RC=$?
+assert_exit 4 "$SETUP_RC" "a plan whose runs all failed to start exits 4, not 0"
+assert_contains "errors=4" "$SETUP_OUT" "and every failed run is counted"
+assert_equal "4" "$(printf '%s\n' "$SETUP_OUT" | grep -c 'git init failed')" \
+  "one failure abandons that case and arm's runs, not the rest of the plan"
+
+_flow_test_begin "a temp directory the harness could not make is an error in both modes"
+# The mktemp branches are the other two early returns, one per mode, and
+# neither mode's is reachable through the git stub above.
+MKT_STUB="$TMP/mktempstub"; mkdir -p "$MKT_STUB"
+MKT_REAL=$(command -v mktemp)
+cat > "$MKT_STUB/mktemp" <<MKTEOF
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in
+    flow-eval.XXXXXX|flow-eval-review.XXXXXX)
+      echo "mktemp: refused (this stub stands in for a machine with no writable temp)" >&2
+      exit 1 ;;
+  esac
+done
+exec "$MKT_REAL" "\$@"
+MKTEOF
+chmod +x "$MKT_STUB/mktemp"
+cp "$SETUP_STUB/timeout" "$SETUP_STUB/claude" "$MKT_STUB/"
+MKT_OUT=$(PATH="$MKT_STUB:$PATH" bash "$RUNNER" --arm off-risk \
+  --case money-allocator --runs 1 --models one --out "$TMP/mktempout" 2>&1); MKT_RC=$?
+assert_exit 4 "$MKT_RC" "correctness mode exits 4 when the temp copy cannot be made"
+assert_contains "errors=1" "$MKT_OUT" "and counts it"
+MKT_REV_OUT=$(PATH="$MKT_STUB:$PATH" bash "$RUNNER" --mode review --arm review-b \
+  --case money-allocator --runs 1 --models one \
+  --out "$TMP/mktempout-review" 2>&1); MKT_REV_RC=$?
+assert_exit 4 "$MKT_REV_RC" "review mode exits 4 for the same failure"
+# Review mode plans one run per trap, so pin errors against the plan's own
+# size rather than a trap count that grows when a case gains a variant.
+MKT_REV_TALLY=$(printf '%s\n' "$MKT_REV_OUT" | sed -n 's/.*planned=\([0-9]*\) .*errors=\([0-9]*\) .*/\1 \2/p')
+assert_equal "$(printf '%s' "$MKT_REV_TALLY" | cut -d" " -f1)" \
+  "$(printf '%s' "$MKT_REV_TALLY" | cut -d" " -f2)" "and every planned run is counted as an error"
+assert_not_contains "errors=0" "$MKT_REV_OUT" "never errors=0"
 
 _flow_test_begin "the scratch repo builds on a machine with no model runner"
 # --build-review-repo exists so the repository handed to the reviewer can be

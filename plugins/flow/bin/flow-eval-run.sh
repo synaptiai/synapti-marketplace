@@ -565,7 +565,7 @@ run_one() {
 
   mkdir -p "$run_dir"
   local tmp
-  tmp=$(mktemp -d -t flow-eval.XXXXXX) || { echo "flow-eval-run: mktemp failed" >&2; return 1; }
+  tmp=$(mktemp -d -t flow-eval.XXXXXX) || { echo "flow-eval-run: mktemp failed" >&2; RUN_ERRORS=$((RUN_ERRORS + 1)); return 1; }
   cp -R "$case_dir/scaffold/." "$tmp/"
   mkdir -p "$tmp/.claude" "$tmp/.flow-state"
   if [ "$arm" != "baseline" ]; then
@@ -573,7 +573,7 @@ run_one() {
     cp "$tmp/.claude/settings.flow.json" "$run_dir/settings.json"
   fi
   ( cd "$tmp" && git init -q && git add -A && git -c user.name=flow-eval -c user.email=flow-eval@localhost commit -q -m "scaffold" ) \
-    || { echo "flow-eval-run: git init failed in $tmp" >&2; rm -rf "$tmp"; return 1; }
+    || { echo "flow-eval-run: git init failed in $tmp" >&2; rm -rf "$tmp"; RUN_ERRORS=$((RUN_ERRORS + 1)); return 1; }
   python3 "$HELPER" case-prompt "$case_dir" --arm "$arm" > "$run_dir/prompt.txt"
   # %q, not a space-join: command.txt is the operator's record of what ran, and
   # a space-joined line re-executes as a different command when pasted back.
@@ -662,7 +662,7 @@ run_one_review() {
 
   mkdir -p "$run_dir"
   local tmp
-  tmp=$(mktemp -d -t flow-eval-review.XXXXXX) || { printf 'flow-eval-run: mktemp failed\n' >&2; return 1; }
+  tmp=$(mktemp -d -t flow-eval-review.XXXXXX) || { printf 'flow-eval-run: mktemp failed\n' >&2; RUN_ERRORS=$((RUN_ERRORS + 1)); return 1; }
   mkdir -p "$tmp/.claude" "$tmp/.flow-state"
   arm_settings "$arm" > "$tmp/.claude/settings.flow.json"
   cp "$tmp/.claude/settings.flow.json" "$run_dir/settings.json"
@@ -746,9 +746,12 @@ for model in "${MODELS[@]}"; do
         n=1
         while [ "$n" -le "$case_runs" ]; do
           # Same rule as review mode, one loop shallower: a budget stop ends
-          # the plan across every model, anything else ends this case.
+          # the plan across every model — break 4 is what reaches the model
+          # loop here. Anything else — an mktemp failure, a scratch copy whose
+          # git init failed — abandons this case and arm's remaining runs only,
+          # and the failure is counted in RUN_ERRORS so the plan exits 4.
           run_one "$model" "$arm" "$case" "$n" \
-            || { [ "$BUDGET_STOP" = "1" ] && break 4; break 3; }
+            || { [ "$BUDGET_STOP" = "1" ] && break 4; break; }
           n=$((n + 1))
         done
       fi
