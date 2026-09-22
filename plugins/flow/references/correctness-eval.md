@@ -12,6 +12,10 @@ that a short instruction about risky areas and independent checks scored best.
 Flow ships `tddMode: enforce` by default and a `specFirst.riskMap` element; this
 eval measures both.
 
+The same runner measures the review side in `--mode review`: the reviewer
+fan-out is scored on whether it finds a seeded defect it was never told about.
+See [review-precision-eval.md](review-precision-eval.md).
+
 ## What is measured
 
 Seven arms, four cases, N runs each (default 3), on one or more models:

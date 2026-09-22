@@ -342,22 +342,22 @@ HEAD_BRANCH="review-candidate"
 build_review_repo() {
   # build_review_repo <dir> <case> <trap> — a git repository whose default
   # branch holds the reference implementation as the module and whose feature
-  # branch holds the trap variant as the same module. reference_impl.py is
-  # present on both branches (every variant imports it), so the branch diff is
-  # the module file alone.
+  # branch holds the materialized trap variant as the same module.
+  # reference_impl.py is present on both branches (some variants delegate to
+  # it), so the branch diff is the module file alone.
   local dir="$1" case="$2" trap="$3" module
   module="$(case_module "$case")"
   local case_dir="$EVALS_DIR/$case"
   mkdir -p "$dir" || return 1
   cp "$case_dir/hidden/reference_impl.py" "$dir/reference_impl.py" || return 1
-  cp "$case_dir/hidden/reference_impl.py" "$dir/$module.py" || return 1
+  python3 "$HELPER" reference-module --case "$case_dir" --out "$dir/$module.py" || return 1
   (
     cd "$dir" || exit 1
     git init -q -b "$BASE_BRANCH" . || exit 1
     git add -A || exit 1
     git -c user.name=flow-eval -c user.email=flow-eval@localhost commit -q -m "$module: initial implementation" || exit 1
     git checkout -q -b "$HEAD_BRANCH" || exit 1
-    cp "$case_dir/hidden/traps/$trap.py" "$module.py" || exit 1
+    python3 "$HELPER" materialize-variant --case "$case_dir" --trap "$trap" --out "$module.py" || exit 1
     git add -A || exit 1
     git -c user.name=flow-eval -c user.email=flow-eval@localhost commit -q -m "$module: rework the implementation" || exit 1
   ) || return 1
@@ -586,9 +586,9 @@ run_one_review() {
   if [ "$DRY_RUN" = "1" ]; then
     printf 'RUN   %s  model=%s  effort=%s  timeout=%ss  settings=%s\n' \
       "$label/$arm/$case/$trap/$n" "${run_model:-<cli default>}" "${EFFORT:-<cli default>}" "$run_timeout" "$(arm_settings "$arm")"
-    printf '      repo <scratch>: git init -b %s; %s.py <- evals/%s/hidden/reference_impl.py; reference_impl.py <- the same file\n' \
+    printf '      repo <scratch>: git init -b %s; %s.py <- evals/%s/hidden/reference_impl.py (module docstring stripped); reference_impl.py <- the same file\n' \
       "$BASE_BRANCH" "$module" "$case"
-    printf '      repo <scratch>: git checkout -b %s; %s.py <- evals/%s/hidden/traps/%s.py (reference_impl.py is on both branches, so the branch diff is %s.py alone)\n' \
+    printf '      repo <scratch>: git checkout -b %s; %s.py <- evals/%s/hidden/traps/%s.py materialized into the reference source (reference_impl.py is on both branches, so the branch diff is %s.py alone)\n' \
       "$HEAD_BRANCH" "$module" "$case" "$trap" "$module"
     local unset_list=""
     for v in "${STRIP_ENV[@]}"; do unset_list="$unset_list -u $v"; done

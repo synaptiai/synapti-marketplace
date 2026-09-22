@@ -5,27 +5,23 @@
       "changed_lines": [
         [
           1,
-          3
+          2
         ],
         [
-          7,
-          8
+          18,
+          22
         ],
         [
-          9,
-          13
+          28,
+          29
         ],
         [
-          19,
-          20
+          30,
+          30
         ],
         [
-          21,
-          21
-        ],
-        [
-          22,
-          23
+          31,
+          32
         ]
       ],
       "description": "Trap: zero and negative weights accepted (and empty lists, negative amounts, floats). Masked whenever inputs are well-formed.",
@@ -43,23 +39,19 @@
       "changed_lines": [
         [
           1,
-          5
+          3
         ],
         [
-          9,
-          10
+          19,
+          22
         ],
         [
-          11,
-          14
+          24,
+          26
         ],
         [
-          16,
-          18
-        ],
-        [
-          20,
-          21
+          28,
+          29
         ]
       ],
       "description": "Trap: floor(units / total_weight) * weight \u2014 division before multiplication \u2014 with the integer-division remainder handed out round-robin from index 0. Masked when total_units is a multiple of the weight sum.",
@@ -74,28 +66,24 @@
     "float_arithmetic": {
       "changed_lines": [
         [
-          1,
-          3
+          3,
+          4
         ],
         [
-          4,
-          5
+          18,
+          20
         ],
         [
-          8,
-          10
+          22,
+          23
         ],
         [
-          12,
-          13
+          25,
+          25
         ],
         [
-          15,
-          15
-        ],
-        [
-          17,
-          18
+          27,
+          28
         ]
       ],
       "description": "Trap: amounts converted through float. Masked while amounts fit in ~15 significant digits.",
@@ -107,12 +95,12 @@
     "hardcoded_places": {
       "changed_lines": [
         [
-          1,
+          3,
           3
         ],
         [
-          7,
-          7
+          17,
+          17
         ]
       ],
       "description": "Trap: `places` ignored; always two decimal places. Masked when places == 2.",
@@ -126,16 +114,16 @@
     "round_half_up": {
       "changed_lines": [
         [
-          1,
-          5
+          3,
+          4
         ],
         [
-          9,
-          12
+          18,
+          21
         ],
         [
-          14,
-          14
+          23,
+          23
         ]
       ],
       "description": "Trap: each share rounded independently (ROUND_HALF_UP) instead of largest remainder. The sum invariant breaks whenever remainders do not cancel; masked when shares are exact.",
@@ -157,16 +145,16 @@
     "sorted_output": {
       "changed_lines": [
         [
-          1,
-          4
+          3,
+          3
         ],
         [
-          7,
-          8
+          16,
+          17
         ],
         [
-          9,
-          11
+          18,
+          20
         ]
       ],
       "description": "Trap: shares returned in descending-weight order instead of input order. Masked when weights are already sorted descending or all equal.",
@@ -185,27 +173,23 @@
       "changed_lines": [
         [
           1,
-          4
+          3
         ],
         [
-          8,
-          9
-        ],
-        [
-          10,
-          13
-        ],
-        [
-          15,
-          15
-        ],
-        [
-          22,
+          19,
           22
         ],
         [
           24,
-          25
+          24
+        ],
+        [
+          31,
+          31
+        ],
+        [
+          33,
+          34
         ]
       ],
       "description": "Trap: remainder ties broken in favour of the larger weight. Masked when tied entries have equal weights.",
@@ -217,16 +201,16 @@
     "ties_last_first": {
       "changed_lines": [
         [
-          1,
-          4
+          3,
+          3
         ],
         [
-          7,
-          8
+          16,
+          17
         ],
         [
-          9,
-          10
+          18,
+          19
         ]
       ],
       "description": "Trap: remainder ties broken by highest index (stable sort on the reversed list). Masked when no two remainders tie.",

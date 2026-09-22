@@ -1170,6 +1170,29 @@ cat > "$REVCASE/hidden/traps.json" <<'EOF'
 }
 EOF
 
+# A hidden suite the fixture's trap breaks, so the case check can verify that
+# folding the variant into the reference did not change what the defect does.
+cat > "$REVCASE/hidden/test_hidden.py" <<'EOF'
+import unittest
+
+from counter import allow
+
+
+class T(unittest.TestCase):
+    def test_under_the_limit(self):
+        self.assertTrue(allow([1, 2], 5))
+
+    def test_boundary(self):
+        self.assertTrue(allow([2, 3], 5))
+
+    def test_over_the_limit(self):
+        self.assertFalse(allow([4, 4], 5))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
+EOF
+
 score_review() {
   # score_review <trap> <findings text> -> the score record as JSON
   printf '%s' "$2" > "$TMP/findings.txt"
@@ -1287,6 +1310,8 @@ OUT=$(python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --no-wr
 RC=$?
 assert_equal "0" "$RC" "a case whose variant differs passes"
 assert_contains '"variants_examined": 1' "$OUT" "the check reports a non-zero count of what it examined"
+assert_contains '"behaviour_checked": 1' "$OUT" "the materialized variant was run against the hidden suite"
+assert_contains '"behaviour_matches_variant": true' "$OUT" "it fails the same tests as the shipped variant"
 assert_contains '"problems": []' "$OUT" "no problems on a healthy case"
 
 _flow_test_begin "check-cases --mode review: must fire on a variant identical to the reference"
@@ -1479,19 +1504,26 @@ assert_equal "$KEEPOFF" "$VERDICT" "one model failing to clear its spread keeps 
 assert_equal "0.600" "$(arm_metric m1 review-b f1)" "the other model's numbers are untouched"
 
 _flow_test_begin "a gain smaller than the spread does not adopt"
-# Same two models, but one replication of m1's critic arm is degraded so the
-# arm's spread grows past the gain. Nothing else changes.
+# Same two models, but m1's third critic replication is noisier: it still hits
+# three of four traps and adds one false finding on each. Hand computed:
+#   replication 3: recall 0.750, precision 3/(3+4) = 0.4286, F1 = 0.545
+#   replications 1 and 2 are unchanged at F1 0.857, so the arm's spread is
+#   0.857 - 0.545 = 0.312 and the model's spread is the mean over its two
+#   arms, (0.000 + 0.312) / 2 = 0.156
+#   the critic arm overall: recall 0.750, precision 9/13 = 0.692, F1 = 0.720
+#   the gain is 0.720 - 0.600 = 0.120, which is smaller than 0.156
 write_matrix m2
-write_review_run m1 review-b-critic t1 3 false 2 0.90
-write_review_run m1 review-b-critic t2 3 false 2 0.90
-write_review_run m1 review-b-critic t4 3 false 2 0.90
+write_review_run m1 review-b-critic t1 3 true 1 0.90
+write_review_run m1 review-b-critic t2 3 true 1 0.90
+write_review_run m1 review-b-critic t3 3 false 1 0.90
+write_review_run m1 review-b-critic t4 3 true 1 0.90
 python3 "$HELPER" aggregate --out "$REVOUT" --mode review >/dev/null
 VERDICT=$(python3 -c '
 import json, sys
 print(json.load(open(sys.argv[1]))["decision"]["verdict"])' "$REVOUT/summary.json")
 assert_equal "$KEEPOFF" "$VERDICT" "an unstable gain does not clear its own spread"
-SPREAD=$(arm_metric m1 review-b-critic f1_spread)
-assert_match '^0\.[1-9]' "$SPREAD" "the degraded replication shows up as spread ($SPREAD)"
+assert_equal "0.720" "$(arm_metric m1 review-b-critic f1)" "the critic arm is still ahead on F1"
+assert_equal "0.312" "$(arm_metric m1 review-b-critic f1_spread)" "the noisy replication shows up as spread"
 
 _flow_test_begin "an incomplete run is excluded from precision and counted on its own"
 write_matrix m1
@@ -1538,23 +1570,26 @@ _flow_test_begin "--mode review builds the two branches it prints"
 # The layout line is a claim about a repository; this builds one and reads it
 # back with git, so a wrong claim cannot pass as a printed string.
 REPO="$TMP/scratchrepo"
-python3 - "$EVALS/sliding-window-limiter" "$REPO" <<'EOF'
-import json, os, shutil, subprocess, sys
-case_dir, repo = sys.argv[1], sys.argv[2]
-module = json.load(open(os.path.join(case_dir, "hidden", "traps.json")))["module"]
-os.makedirs(repo)
-ref = os.path.join(case_dir, "hidden", "reference_impl.py")
-shutil.copy(ref, os.path.join(repo, "reference_impl.py"))
-shutil.copy(ref, os.path.join(repo, module + ".py"))
-run = lambda *a: subprocess.run(a, cwd=repo, capture_output=True, text=True)
-run("git", "init", "-q", "-b", "main", ".")
-run("git", "add", "-A")
-run("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base")
-run("git", "checkout", "-q", "-b", "review-candidate")
-shutil.copy(os.path.join(case_dir, "hidden", "traps", "counts_denied.py"), os.path.join(repo, module + ".py"))
-run("git", "add", "-A")
-run("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "head")
-EOF
+mkdir -p "$REPO"
+cp "$EVALS/sliding-window-limiter/hidden/reference_impl.py" "$REPO/reference_impl.py"
+python3 "$HELPER" reference-module --case "$EVALS/sliding-window-limiter" --out "$REPO/ratelimit.py"
+( cd "$REPO" && git init -q -b main . && git add -A \
+  && git -c user.name=t -c user.email=t@t commit -q -m base \
+  && git checkout -q -b review-candidate ) >/dev/null 2>&1
+python3 "$HELPER" materialize-variant --case "$EVALS/sliding-window-limiter" --trap counts_denied \
+  --out "$REPO/ratelimit.py"
+( cd "$REPO" && git add -A && git -c user.name=t -c user.email=t@t commit -q -m head ) >/dev/null 2>&1
 CHANGED=$(cd "$REPO" && git diff --name-only main...review-candidate)
 assert_equal "ratelimit.py" "$CHANGED" "the branch diff is the module file alone"
+ADDED=$(cd "$REPO" && git diff --numstat main...review-candidate | cut -f1)
+TOTAL_LINES=$(wc -l < "$REPO/ratelimit.py" | tr -d ' ')
+UNCHANGED=$((TOTAL_LINES - ADDED))
+# A materialized variant is the reference with the defect written into it, so
+# most of the module must survive into the head branch. A whole-file
+# replacement would leave no unchanged line and every finding would hit.
+[ "${ADDED:-0}" -gt 0 ] && [ "$UNCHANGED" -gt "$ADDED" ] \
+  && _flow_assert_pass "the diff is localized: $ADDED changed line(s) against $UNCHANGED unchanged" \
+  || _flow_assert_fail "expected most of the module to survive, got $ADDED changed and $UNCHANGED unchanged"
+NEEDLE_HIDDEN=$(printf '%s/%s' "hidden" "test_hidden.py")
+assert_not_contains "$NEEDLE_HIDDEN" "$(cat "$REPO/ratelimit.py")" "the module under review does not tell the reviewer it is an eval"
 rm -r "$REPO"

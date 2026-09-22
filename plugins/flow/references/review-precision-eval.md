@@ -1,0 +1,163 @@
+# Review-precision eval: does the grounding critic make the review fan-out better?
+
+Reference document for `plugins/flow/bin/flow-eval-run.sh --mode review`. The
+correctness eval (`references/correctness-eval.md`) measures what an implementer
+ships. This one measures what a reviewer finds: it puts the default review
+fan-out in front of a diff whose defect is already known and scores the findings
+that come back.
+
+It exists because `review.groundingCritic` (issue #215) ships off by default and
+rests on one result from one model family. The repository's rule is that a gate
+is measured before it is trusted, and the setting's default changes only on the
+numbers this eval produces.
+
+## What is measured
+
+| Arm | `review.groundingCritic` | Plugin loaded |
+|---|---|---|
+| `review-b` | `off` | yes |
+| `review-b-critic` | `on` | yes |
+
+Both arms load the plugin. There is no no-plugin arm here: the thing under test
+is the critic pass, not the plugin.
+
+One cell of the matrix is a model, an arm, a case and a trap. Each cell runs N
+times (default 3).
+
+## The scratch repository
+
+Per case and trap, the runner builds a git repository outside the plugin tree:
+
+    reference_impl.py   the case's hidden/reference_impl.py, on both branches
+    <module>.py         on main: the same reference implementation
+                        on review-candidate: the case's hidden/traps/<trap>.py
+
+`reference_impl.py` is on both branches because every shipped trap variant
+imports it, so leaving it out would give the reviewer a branch that does not
+import. It is unchanged between the branches, so the branch diff is the module
+file alone.
+
+The session is asked to review `main...review-candidate` by dispatching the same
+five reviewer agents `/flow:pr` Phase 3 dispatches, and to end with its
+consolidated findings as one fenced JSON block:
+
+    [{"id": "F1", "priority": "P1", "category": "correctness",
+      "file": "<module>.py", "line": 12, "problem": "…", "confidence": "HIGH"}]
+
+There is no GitHub remote, so `/flow:review`'s `gh pr` steps are not exercised.
+Review runs are granted `Bash,Read,Glob,Grep,Skill,Agent` and the task tools;
+`Write` and `Edit` are withheld, and any attempt to use them is recorded in the
+run's `permission_denials`.
+
+## Scoring
+
+`python3 bin/_flow_eval.py score-review --case <dir> --trap <name> --findings <file|json>`
+scores one run offline and is what the runner calls when a run finishes.
+
+A **changed hunk** is a variant-side line range of the reference-to-variant
+diff. `--check-cases --mode review` computes them and records them per variant
+in `hidden/traps.json` as `changed_lines`, a list of inclusive `[first, last]`
+pairs. Scoring uses the recorded ranges when they are there and computes them
+when they are not, so a run scored later is scored against the hunks the check
+pinned. A change that only deletes lines is anchored to the variant lines that
+flank the removal, because a deleted line has no line number a reviewer could
+cite.
+
+- A run is a **hit** when at least one P1 or P2 finding cites the case's module
+  and a line inside a changed hunk.
+- Every other P1/P2 finding is a **false finding** — a finding on another file,
+  on a line outside every hunk, with no usable line number, and also a second
+  finding that lands on a hunk the run already hit. The run was asked for the
+  defect, not for a list of remarks about the changed lines.
+- P3 findings are neither. They never reach the critic and they do not enter
+  precision.
+- No findings at all is a miss with no false findings: the run answered, and the
+  answer was wrong.
+- A run whose findings block is missing, is not JSON, or is not a list, and a
+  run that timed out, is **incomplete**: it is scored as a miss, it carries a
+  `reason`, and it is left out of precision, recall and F1 and counted on its
+  own. A broken run must never read as a clean miss.
+
+Each finding's confidence is kept, so the summary can show whether LOW-confidence
+findings are the ones that land outside the hunks.
+
+Per model and arm:
+
+- **recall** — hits over scored runs. Higher is better.
+- **precision** — hits over hits plus false findings. Higher is better.
+- **F1** — the harmonic mean of the two. Higher is better.
+- **findings per run** — P1/P2 findings per scored run.
+- cost, turns, output tokens and cache hits, as in the correctness summary.
+
+## Spread
+
+Run 1 of every case and trap is one replication of the matrix, run 2 is the
+next, and so on. Each replication gets its own F1; an arm's spread is the
+largest of those minus the smallest, and a model's spread is the mean over its
+arms. A single run is not a replication: a matrix run once has no spread, and
+the adoption rule cannot be applied to it.
+
+A per-run F1 is not used for this. One run either hit the defect or did not, so
+its recall is 1 or 0 and its F1 swings between extremes whatever the arm does.
+
+## Adoption rule
+
+`review.groundingCritic` becomes the default only when the critic arm's F1 beats
+the plain arm's by more than that model's run-to-run spread, on every model that
+ran, with at least two models. Everything else is recorded as a no-change
+outcome — `keep-off` when the models ran and the gain did not clear the spread,
+`insufficient-models` when fewer than two ran. No improvement is a result, not a
+failed run.
+
+`summary.md` carries the rule, the per-model reading that applies it, and the
+verdict line.
+
+## How to run
+
+```bash
+# check every case offline: each variant must differ from its reference, and
+# the changed hunks are recorded into traps.json
+plugins/flow/bin/flow-eval-run.sh --mode review --check-cases
+
+# print the plan — per case and trap, the scratch-repo layout and the exact
+# command — without calling any model
+plugins/flow/bin/flow-eval-run.sh --mode review --dry-run
+
+# score one saved findings block against one trap
+python3 plugins/flow/bin/_flow_eval.py score-review \
+  --case plugins/flow/evals/interval-algebra --trap point_dropped \
+  --findings findings.json
+
+# re-aggregate a results directory
+plugins/flow/bin/flow-eval-run.sh --mode review --aggregate-only --out <dir>
+```
+
+A full matrix is large: two arms times 34 trap variants times N runs times the
+number of models. `--case` and `--runs` narrow it, and `--max-total-usd` stops
+it. The plan's run count is printed by `--dry-run` before anything is spent.
+
+## What the shipped cases can and cannot measure
+
+Every trap variant under `evals/<case>/hidden/traps/` is a short module that
+imports `reference_impl` and overrides one method. Put on a branch, it replaces
+the whole module rather than editing a line of it: across the 34 shipped
+variants, 55% of the variant's lines fall inside a changed hunk, and the rest
+are blank lines and imports that happen to match the reference. On these cases
+"cites a changed line" is close to "cites the module", so precision here is a
+weaker measurement than the scoring rule allows for.
+
+Cases whose variants are full copies of the reference with the defect edited in
+place would measure what the rule describes. The scoring code is written for
+that shape and is pinned on a fixture of it in
+`tests/flow-eval-harness.test.sh`; the shipped cases are not that shape yet.
+
+## Limitations
+
+- One repository's reviewer agents, one prompt, four cases of small pure-Python
+  modules. Nothing here says how the fan-out behaves on a large diff across
+  several files.
+- The seeded defect is the only defect. A finding that is correct about
+  something else the variant does is scored as a false finding, which understates
+  precision for a thorough reviewer.
+- The line a reviewer cites is matched by basename, so a finding that names the
+  right file in another directory would count.

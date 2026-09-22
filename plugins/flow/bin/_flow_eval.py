@@ -49,6 +49,10 @@ Standard library only. Every subcommand prints JSON to stdout unless noted.
                                               diff: hit, false findings, incomplete + reason
   review-prompt <case-dir>                    the review prompt for one scratch repository
   list-traps <case-dir>                       trap names, one per line
+  materialize-variant --case DIR --trap NAME  the reference's source with the variant's
+              [--out FILE]                    redefinitions folded in, which is what a review
+                                              run's feature branch commits
+  reference-module --case DIR [--out FILE]    the reference as the default branch commits it
   finalize-review-run --run-dir R             parse stream.jsonl, score the findings block,
               --case-dir C --arm A --case N   write findings.txt, review-score.json, result.json
               --trap T --run N --exit-code X
@@ -1792,17 +1796,21 @@ def check_cases(evals_dir, only=None):
 
 
 def cmd_check_cases(args):
-    opts = parse_opts(args, ["--evals-dir", "--case", "--mode"], flags=["--no-write"])
+    opts = parse_opts(args, ["--evals-dir", "--case", "--mode"],
+                      flags=["--no-write", "--no-verify-behaviour"])
     if not opts.get("--evals-dir"):
-        die("check-cases --evals-dir DIR [--case NAME] [--mode correctness|review] [--no-write]")
+        die("check-cases --evals-dir DIR [--case NAME] [--mode correctness|review] "
+            "[--no-write] [--no-verify-behaviour]")
     mode = opts.get("--mode") or "correctness"
     if mode not in ("correctness", "review"):
         die("check-cases --mode must be correctness or review, got '%s'" % mode)
     if mode == "review":
-        report, problems, examined = check_cases_review(
-            opts["--evals-dir"], opts.get("--case"), write=not opts.get("--no-write"))
+        report, problems, examined, behaviour_checked = check_cases_review(
+            opts["--evals-dir"], opts.get("--case"), write=not opts.get("--no-write"),
+            verify_behaviour=not opts.get("--no-verify-behaviour"))
         print(json.dumps({"mode": "review", "cases": report, "problems": problems,
-                          "variants_examined": examined}, indent=2, sort_keys=True))
+                          "variants_examined": examined,
+                          "behaviour_checked": behaviour_checked}, indent=2, sort_keys=True))
     else:
         report, problems = check_cases(opts["--evals-dir"], opts.get("--case"))
         print(json.dumps({"cases": report, "problems": problems}, indent=2, sort_keys=True))
@@ -1864,6 +1872,284 @@ def changed_hunks(ref_text, variant_text):
     return merged, differs
 
 
+
+def toplevel_name(stmt):
+    """The single top-level name a statement binds, or None.
+
+    Only the shapes a variant can substitute for a reference statement count:
+    a function, a class, or an assignment to one plain name. A tuple assignment
+    binds several names at once and has no single statement in the reference it
+    could replace, so it is appended instead.
+    """
+    if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return stmt.name
+    if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
+        return stmt.targets[0].id
+    if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+        return stmt.target.id
+    return None
+
+
+def stmt_span(stmt):
+    """(first line, last line), 1-based inclusive, decorators included."""
+    start = stmt.lineno
+    for decorator in getattr(stmt, "decorator_list", []) or []:
+        start = min(start, decorator.lineno)
+    return start, getattr(stmt, "end_lineno", stmt.lineno)
+
+
+def stmt_source(lines, stmt):
+    start, end = stmt_span(stmt)
+    return "".join(lines[start - 1:end])
+
+
+def is_docstring(stmt):
+    return (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str))
+
+
+def is_star_import_of_reference(stmt):
+    return (isinstance(stmt, ast.ImportFrom) and stmt.module == "reference_impl"
+            and any(alias.name == "*" for alias in stmt.names))
+
+
+def import_is_used(import_source, body_text):
+    """Whether any name an import statement binds appears in the module body."""
+    try:
+        stmt = ast.parse(import_source.strip()).body[0]
+    except (SyntaxError, IndexError):
+        return True
+    for alias in getattr(stmt, "names", []):
+        bound = (alias.asname or alias.name).split(".")[0]
+        if re.search(r"\b%s\b" % re.escape(bound), body_text):
+            return True
+    return False
+
+
+def subclassed_reference_class(stmt, ref_classes):
+    """The reference class this variant class subclasses, or None.
+
+    Accepts `class V(X)` and `class V(_ref.X)`, one base only: two bases mean
+    the variant composes something the reference does not have, and folding
+    that into one class would change what runs.
+    """
+    if not isinstance(stmt, ast.ClassDef) or len(stmt.bases) != 1 or stmt.keywords:
+        return None
+    base = stmt.bases[0]
+    if isinstance(base, ast.Attribute) and isinstance(base.value, ast.Name):
+        name = base.attr
+    elif isinstance(base, ast.Name):
+        name = base.id
+    else:
+        return None
+    return name if name in ref_classes else None
+
+
+def names_used(stmt):
+    return {node.id for node in ast.walk(stmt) if isinstance(node, ast.Name)}
+
+
+def bound_names(stmt):
+    names = set()
+    for target in getattr(stmt, "targets", []) or []:
+        for node in ast.walk(target):
+            if isinstance(node, ast.Name):
+                names.add(node.id)
+    name = toplevel_name(stmt)
+    if name:
+        names.add(name)
+    return names
+
+
+def patch_class_body(ref_lines, class_stmt, patches):
+    """The reference class's source with the variant's methods written into it."""
+    start, end = stmt_span(class_stmt)
+    out = []
+    cursor = start - 1
+    remaining = dict(patches)
+    for member in class_stmt.body:
+        mstart, mend = stmt_span(member)
+        out.extend(ref_lines[cursor:mstart - 1])
+        if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)) and member.name in remaining:
+            out.append(remaining.pop(member.name))
+        else:
+            out.extend(ref_lines[mstart - 1:mend])
+        cursor = mend
+    out.extend(ref_lines[cursor:end])
+    text = "".join(out)
+    for _name, source in sorted(remaining.items()):
+        if not text.endswith("\n"):
+            text += "\n"
+        text += "\n" + source
+    return text
+
+
+def materialize_variant(ref_text, variant_text):
+    """The reference's source with the variant's changes written into it.
+
+    A trap variant as shipped is a few lines that import the reference and
+    redefine one name. Committed as the module it would replace the whole file,
+    and every finding that named the file would land inside a hunk — recall and
+    precision of 1.0 for a reviewer that read nothing. So the variant is folded
+    back into the reference's own source: a statement that redefines a name the
+    reference defines is substituted where that name is defined, and anything
+    else is appended in the order the variant wrote it, which keeps the later
+    binding that makes the variant behave as the variant.
+
+    The variant's module docstring is dropped. It says which trap this is, and
+    the reviewer must not be told.
+    """
+    ref_lines = ref_text.splitlines(True)
+    var_lines = variant_text.splitlines(True)
+    ref_tree = ast.parse(ref_text)
+    var_tree = ast.parse(variant_text)
+
+    replacements = {}
+    method_patches = {}
+    appended = []
+    appended_imports = []
+    alias_names = set()
+    ref_names = {toplevel_name(st) for st in ref_tree.body}
+    ref_names.discard(None)
+    ref_classes = {st.name for st in ref_tree.body if isinstance(st, ast.ClassDef)}
+    for index, stmt in enumerate(var_tree.body):
+        if index == 0 and is_docstring(stmt):
+            continue
+        if is_star_import_of_reference(stmt):
+            continue
+        name = toplevel_name(stmt)
+        source = stmt_source(var_lines, stmt)
+        base = subclassed_reference_class(stmt, ref_classes)
+        if base is not None:
+            # A variant that subclasses a reference class and overrides one
+            # method is a patch to that method, not a new class. Committed as a
+            # subclass it would delete the original class from the diff and
+            # hand the reviewer a file that obviously is not the project's.
+            patches = method_patches.setdefault(base, {})
+            for member in stmt.body:
+                if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    patches[member.name] = stmt_source(var_lines, member)
+            alias_names.add(stmt.name)
+            continue
+        if names_used(stmt) & alias_names:
+            # Whatever this statement rebinds, it rebinds through the subclass
+            # that no longer exists; the reference's own wiring already reaches
+            # the patched method. Dropping it is verified, not assumed: the case
+            # check reruns the hidden suite against the materialized module and
+            # requires the same tests to fail.
+            alias_names.update(bound_names(stmt))
+            continue
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            appended_imports.append(source)
+        elif name is not None and name in ref_names and name not in replacements:
+            replacements[name] = source
+        else:
+            appended.append(source)
+
+    # The variant's own imports go where the reference keeps its imports. Left
+    # at the bottom they would read as a defect of their own, and a reviewer
+    # who flagged them would be scored as having found the seeded bug.
+    import_anchor = 0
+    for position, stmt in enumerate(ref_tree.body):
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            import_anchor = position + 1
+        elif position == 0 and is_docstring(stmt):
+            import_anchor = 1
+
+    def render(imports):
+        out = []
+        cursor = 0
+        pending = list(imports)
+        used = dict(replacements)
+        for position, stmt in enumerate(ref_tree.body):
+            start, end = stmt_span(stmt)
+            if position == import_anchor and pending:
+                out.extend(pending)
+                pending = []
+            out.extend(ref_lines[cursor:start - 1])
+            name = toplevel_name(stmt)
+            if name is not None and name in used:
+                out.append(used.pop(name))
+            elif isinstance(stmt, ast.ClassDef) and stmt.name in method_patches:
+                out.append(patch_class_body(ref_lines, stmt, method_patches[stmt.name]))
+            else:
+                out.extend(ref_lines[start - 1:end])
+            cursor = end
+        out.extend(ref_lines[cursor:])
+        text = "".join(out)
+        if pending:
+            text = "".join(pending) + text
+        if appended:
+            if not text.endswith("\n"):
+                text += "\n"
+            text += "\n\n" + "\n\n\n".join(part.rstrip("\n") for part in appended) + "\n"
+        return text
+
+    # An import the materialized module never uses would show up in the diff as
+    # a defect of its own, and a reviewer who flagged it would be credited with
+    # finding the seeded bug. Keep only the imports something still refers to.
+    body = render([])
+    kept = [source for source in appended_imports if import_is_used(source, body)]
+    return render(kept)
+
+
+def strip_module_docstring(text):
+    """The source without its module docstring.
+
+    Both eval references open by naming the hidden suite and the trap variants
+    under hidden/traps/. Committed as the module under review that sentence
+    tells the reviewer it is being tested and where the bug is, so it is
+    removed from the file the review sees. It is removed from the reference and
+    the variant alike, so the branch diff is unchanged.
+    """
+    tree = ast.parse(text)
+    if not tree.body or not is_docstring(tree.body[0]):
+        return text
+    lines = text.splitlines(True)
+    _start, end = stmt_span(tree.body[0])
+    rest = lines[end:]
+    while rest and not rest[0].strip():
+        rest.pop(0)
+    return "".join(rest)
+
+
+def reference_module_text(case_dir):
+    """The reference implementation as the default branch commits it."""
+    ref_path = os.path.join(case_dir, "hidden", "reference_impl.py")
+    return strip_module_docstring(read_text(ref_path))
+
+
+def materialized_variant_text(case_dir, trap):
+    """The trap variant as the feature branch commits it."""
+    ref_path, var_path, _module, _entry = variant_paths(case_dir, trap)
+    return strip_module_docstring(materialize_variant(read_text(ref_path), read_text(var_path)))
+
+
+def cmd_reference_module(args):
+    opts = parse_opts(args, ["--case", "--out"])
+    if not opts.get("--case"):
+        die("reference-module --case <dir> [--out FILE]")
+    text = reference_module_text(opts["--case"])
+    if opts.get("--out"):
+        with open(opts["--out"], "w", encoding="utf-8") as fh:
+            fh.write(text)
+    else:
+        sys.stdout.write(text)
+
+
+def cmd_materialize_variant(args):
+    opts = parse_opts(args, ["--case", "--trap", "--out"])
+    for key in ("--case", "--trap"):
+        if not opts.get(key):
+            die("materialize-variant --case <dir> --trap <name> [--out FILE]")
+    text = materialized_variant_text(opts["--case"], opts["--trap"])
+    if opts.get("--out"):
+        with open(opts["--out"], "w", encoding="utf-8") as fh:
+            fh.write(text)
+    else:
+        sys.stdout.write(text)
+
+
 def variant_paths(case_dir, trap):
     traps = load_traps(case_dir)
     entry = traps["traps"].get(trap)
@@ -1878,7 +2164,7 @@ def variant_paths(case_dir, trap):
 def hunks_for_trap(case_dir, trap):
     """(hunks, source) for one trap: the changed_lines recorded by
     `check-cases --mode review`, or freshly computed when none is recorded."""
-    ref_path, var_path, _module, entry = variant_paths(case_dir, trap)
+    ref_path, _var_path, _module, entry = variant_paths(case_dir, trap)
     recorded = entry.get("changed_lines")
     if isinstance(recorded, list) and recorded:
         hunks = []
@@ -1887,7 +2173,7 @@ def hunks_for_trap(case_dir, trap):
                 hunks.append([item[0], item[1]])
         if hunks:
             return hunks, "traps.json"
-    hunks, _differs = changed_hunks(read_text(ref_path), read_text(var_path))
+    hunks, _differs = changed_hunks(reference_module_text(case_dir), materialized_variant_text(case_dir, trap))
     return hunks, "computed"
 
 
@@ -2014,7 +2300,34 @@ def cmd_score_review(args):
     print(json.dumps(score_review(opts["--case"], opts["--trap"], text), indent=2, sort_keys=True))
 
 
-def check_cases_review(evals_dir, only=None, write=True):
+def has_hidden_suite(case_dir):
+    return os.path.isfile(os.path.join(case_dir, "hidden", "test_hidden.py"))
+
+
+def same_failures(case_dir, variant_path, materialized_text):
+    """Does the materialized module fail exactly the tests the shipped variant fails?
+
+    Substituting the variant into the reference must not change what the defect
+    does. When it does, the case is measuring something other than the seeded
+    bug, and that is a broken case rather than a result.
+    """
+    scratch = tempfile.mkdtemp(prefix="flow-eval-materialize.")
+    try:
+        path = os.path.join(scratch, "materialized.py")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(materialized_text)
+        raw_parsed, _ = run_hidden(case_dir, None, variant_path)
+        new_parsed, _ = run_hidden(case_dir, None, path)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    before = sorted(raw_parsed["failed_ids"])
+    after = sorted(new_parsed["failed_ids"])
+    if before == after:
+        return True, "%d failing test(s)" % len(after)
+    return False, "variant fails %s, materialized fails %s" % (before, after)
+
+
+def check_cases_review(evals_dir, only=None, write=True, verify_behaviour=True):
     """Every trap variant must differ from the reference on at least one line,
     and its changed hunks are recorded into hidden/traps.json as changed_lines.
 
@@ -2025,6 +2338,7 @@ def check_cases_review(evals_dir, only=None, write=True):
     problems = []
     report = {}
     examined = 0
+    behaviour_checked = 0
     for case in sorted(os.listdir(evals_dir)):
         case_dir = os.path.join(evals_dir, case)
         if not os.path.isfile(os.path.join(case_dir, "prompt.md")) or (only and case != only):
@@ -2035,7 +2349,7 @@ def check_cases_review(evals_dir, only=None, write=True):
         if not os.path.isfile(ref_path):
             problems.append("%s: no hidden/reference_impl.py to diff against" % case)
             continue
-        ref_text = read_text(ref_path)
+        ref_text = strip_module_docstring(read_text(ref_path))
         entry = {"module": traps["module"], "traps": {}}
         if not traps["traps"]:
             problems.append("%s: no trap variants to diff" % case)
@@ -2046,19 +2360,41 @@ def check_cases_review(evals_dir, only=None, write=True):
                 problems.append("%s/%s: missing variant %s" % (case, name, trap["variant"]))
                 continue
             examined += 1
-            hunks, differs = changed_hunks(ref_text, read_text(var_path))
+            try:
+                materialized = strip_module_docstring(
+                    materialize_variant(read_text(ref_path), read_text(var_path)))
+            except SyntaxError as exc:
+                problems.append("%s/%s: variant cannot be materialized into the reference: %s" % (case, name, exc))
+                continue
+            hunks, differs = changed_hunks(ref_text, materialized)
             if not differs:
                 problems.append("%s/%s: variant is identical to the reference, so no finding can hit it" % (case, name))
             elif not hunks:
                 problems.append("%s/%s: variant differs but has no line a finding could cite" % (case, name))
             trap["changed_lines"] = hunks
-            entry["traps"][name] = {"changed_lines": hunks, "changed_line_count": sum(e - s + 1 for s, e in hunks)}
+            entry["traps"][name] = {
+                "changed_lines": hunks,
+                "changed_line_count": sum(e - s + 1 for s, e in hunks),
+                # The variant still calls into reference_impl, so the module
+                # under review says it is one. Recorded rather than fixed: the
+                # fix is new case content, not a change to the harness.
+                "delegates_to_reference": "reference_impl" in materialized,
+            }
+            if verify_behaviour and not has_hidden_suite(case_dir):
+                entry["traps"][name]["behaviour_matches_variant"] = None
+                entry["traps"][name]["behaviour_unverified"] = "no hidden/test_hidden.py"
+            elif verify_behaviour:
+                same, detail = same_failures(case_dir, var_path, materialized)
+                entry["traps"][name]["behaviour_matches_variant"] = same
+                behaviour_checked += 1
+                if not same:
+                    problems.append("%s/%s: the materialized variant does not behave as the variant (%s)" % (case, name, detail))
         if write:
             write_json(traps_path, traps)
         report[case] = entry
     if examined == 0:
         problems.append("no trap variants were examined under %s — the check reached nothing" % evals_dir)
-    return report, problems, examined
+    return report, problems, examined, behaviour_checked
 
 
 def review_case_prompt(case_dir, module, base_branch="main", head_branch="review-candidate"):
@@ -2455,6 +2791,8 @@ COMMANDS = {
     "score-review": cmd_score_review,
     "review-prompt": cmd_review_prompt,
     "list-traps": cmd_list_traps,
+    "materialize-variant": cmd_materialize_variant,
+    "reference-module": cmd_reference_module,
     "finalize-review-run": cmd_finalize_review_run,
 }
 

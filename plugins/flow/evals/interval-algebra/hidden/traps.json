@@ -4,20 +4,8 @@
     "difference_keeps_closedness": {
       "changed_lines": [
         [
-          1,
-          5
-        ],
-        [
-          8,
-          8
-        ],
-        [
-          10,
-          10
-        ],
-        [
-          13,
-          14
+          145,
+          145
         ]
       ],
       "description": "Trap: the complement keeps the subtrahend's closedness instead of flipping it, so [1,5] \u2212 [2,3] gives [1,2] + [3,5]. Masked when the subtrahend's ends are open.",
@@ -34,28 +22,12 @@
     "equal_lower_takes_farther_flag": {
       "changed_lines": [
         [
-          1,
-          7
+          76,
+          77
         ],
         [
-          10,
-          10
-        ],
-        [
-          19,
-          20
-        ],
-        [
-          22,
-          23
-        ],
-        [
-          27,
-          28
-        ],
-        [
-          29,
-          30
+          79,
+          80
         ]
       ],
       "description": "Trap: when two merged intervals share a lower bound, the one reaching farther supplies both flags instead of the lower flags being OR-ed, so [1,2] + (1,5) gives (1,5) rather than [1,5). Seen (combined with a lower-bound-only sort) in the calibration baseline runs. Masked when merged intervals never share a lower bound.",
@@ -68,19 +40,11 @@
       "changed_lines": [
         [
           1,
-          4
+          2
         ],
         [
-          7,
-          7
-        ],
-        [
-          9,
-          10
-        ],
-        [
-          13,
-          14
+          11,
+          12
         ]
       ],
       "description": "Trap: bounds are converted to float internally, so Fraction and Decimal values come back changed. Masked while tests use ints.",
@@ -92,24 +56,8 @@
     "halfopen_point_kept": {
       "changed_lines": [
         [
-          1,
-          5
-        ],
-        [
-          8,
-          8
-        ],
-        [
-          13,
-          13
-        ],
-        [
-          15,
-          16
-        ],
-        [
-          17,
-          18
+          47,
+          47
         ]
       ],
       "description": "Trap: lo == hi counts as non-empty when either end is closed, so (2,2] and [2,2) survive normalize and a difference by a half-open \"point\" removes a point. Masked unless degenerate half-open intervals appear.",
@@ -125,20 +73,8 @@
     "intersection_closed_or": {
       "changed_lines": [
         [
-          1,
-          4
-        ],
-        [
-          7,
-          7
-        ],
-        [
-          9,
-          9
-        ],
-        [
-          12,
-          13
+          113,
+          113
         ]
       ],
       "description": "Trap: at an equal endpoint the intersection is closed when either input is closed (or instead of and). Masked when endpoints differ.",
@@ -151,20 +87,8 @@
     "intersection_not_normalized": {
       "changed_lines": [
         [
-          1,
-          5
-        ],
-        [
-          8,
-          8
-        ],
-        [
-          10,
-          10
-        ],
-        [
-          13,
-          14
+          119,
+          119
         ]
       ],
       "description": "Trap: intersection is the raw pairwise product of the inputs, neither the inputs nor the result normalized, so [1,5] \u2229 ([1,2] + [2,5]) comes back as two intervals. Masked when both inputs are already canonical.",
@@ -176,20 +100,8 @@
     "merge_any_touching": {
       "changed_lines": [
         [
-          1,
-          5
-        ],
-        [
-          8,
-          9
-        ],
-        [
-          11,
-          12
-        ],
-        [
-          13,
-          14
+          65,
+          65
         ]
       ],
       "description": "Trap: intervals that touch (hi1 == lo2) always merge, even when both ends at the meeting point are open, so [1,3) + (3,5] becomes [1,5]. Masked when a closed end meets the point.",
@@ -203,20 +115,8 @@
     "merge_only_overlapping": {
       "changed_lines": [
         [
-          1,
-          4
-        ],
-        [
-          7,
-          8
-        ],
-        [
-          10,
-          11
-        ],
-        [
-          12,
-          13
+          65,
+          65
         ]
       ],
       "description": "Trap: only strictly overlapping intervals (hi1 > lo2) merge; [1,3] + [3,5] stays two intervals. Masked when inputs overlap by more than a point.",
@@ -237,23 +137,15 @@
       "changed_lines": [
         [
           1,
-          4
+          2
         ],
         [
-          7,
-          9
+          11,
+          13
         ],
         [
-          10,
-          11
-        ],
-        [
-          12,
-          14
-        ],
-        [
-          17,
-          18
+          16,
+          16
         ]
       ],
       "description": "Trap: closed unbounded ends and non-bool flags are accepted (flags coerced with bool()). Masked by well-formed input.",
@@ -266,20 +158,8 @@
     "point_dropped": {
       "changed_lines": [
         [
-          1,
-          5
-        ],
-        [
-          8,
-          8
-        ],
-        [
-          10,
-          10
-        ],
-        [
-          13,
-          14
+          44,
+          44
         ]
       ],
       "description": "Trap: lo == hi is always empty, so the closed point [3,3] disappears from normalize, intersection ([1,3] \u2229 [3,5]) and difference results. Masked unless a point interval appears.",
@@ -298,19 +178,11 @@
       "changed_lines": [
         [
           1,
-          4
+          2
         ],
         [
-          7,
-          7
-        ],
-        [
-          9,
-          11
-        ],
-        [
-          14,
-          15
+          11,
+          13
         ]
       ],
       "description": "Trap: the 2-tuple shorthand is read as the half-open [lo, hi) like Python's range. Masked when tests use 4-tuples only.",
@@ -341,20 +213,8 @@
     "sort_by_lower_only": {
       "changed_lines": [
         [
-          1,
-          6
-        ],
-        [
-          9,
-          9
-        ],
-        [
-          11,
-          11
-        ],
-        [
-          14,
-          15
+          62,
+          62
         ]
       ],
       "description": "Trap: the sweep sorts by lower bound only (input order on ties), so a closed point [3,3] listed after (3,5] is visited after it and the gap between [1,3) and (3,5] is never closed. Seen in the calibration baseline runs. Masked when equal lower bounds arrive closed-first.",
@@ -366,20 +226,8 @@
     "unsorted_output": {
       "changed_lines": [
         [
-          1,
-          4
-        ],
-        [
-          7,
-          7
-        ],
-        [
-          9,
-          9
-        ],
-        [
-          12,
-          13
+          62,
+          62
         ]
       ],
       "description": "Trap: no sort; only neighbours in input order are merged and the output keeps input order. Masked when inputs arrive sorted.",
