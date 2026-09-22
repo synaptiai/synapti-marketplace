@@ -411,7 +411,10 @@ while [ "$DC_FR_I" -le "${DC_FR_N:-0}" ]; do
   # alone, which turned "not a repository" into "everything under here is one"
   # and refused an install sitting above the working directory.
   _flow_test_begin "plugin-root fence $DC_FR_I: outside a repository nothing is skipped"
-  DC_FR_OUT=$( cd "$DC_FR_DIR/notarepo" && env -u CLAUDE_PLUGIN_ROOT HOME="$DC_FR_HOME" \
+  # The working directory must be an ANCESTOR of the install for this to
+  # discriminate: from a sibling directory the faulty form finds it anyway.
+  # $DC_FR_DIR contains home/ and is not a git repository.
+  DC_FR_OUT=$( cd "$DC_FR_DIR" && env -u CLAUDE_PLUGIN_ROOT HOME="$DC_FR_HOME" \
     bash -c ". '$DC_FR_B'; printf 'FLOW_ROOT=%s\n' \"\$FLOW_ROOT\"" 2>&1 )
   assert_contains "FLOW_ROOT=$DC_FR_CACHE" "$DC_FR_OUT" "the install is found, not refused"
   assert_not_contains "STATE=unavailable" "$DC_FR_OUT" "and no state line is emitted"

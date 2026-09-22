@@ -164,8 +164,11 @@ assert_equal "$SKIPHOME_P/.claude/plugins/cache/synapti-marketplace/flow/9.9.9" 
 # cd unconditionally made every candidate below the working directory look
 # in-repository and refused an install sitting above it.
 _flow_test_begin "outside a repository the post-checkout form skips nothing"
-NOREPO="$BASE/norepo"; mkdir -p "$NOREPO"
-NOREPO_PICK=$( cd "$NOREPO" && env -u CLAUDE_PLUGIN_ROOT HOME="$SKIPHOME" \
+# The working directory must be an ANCESTOR of the install for this to
+# discriminate: with the install in a sibling directory the faulty form finds it
+# anyway and the assertion passes either way. $BASE contains skiphome/ and is
+# not a git repository.
+NOREPO_PICK=$( cd "$BASE" && env -u CLAUDE_PLUGIN_ROOT HOME="$SKIPHOME" \
   bash -c "eval \"printf '%s' $SKIP_FORM\"" )
 assert_equal "$SKIPHOME_P/.claude/plugins/cache/synapti-marketplace/flow/9.9.9" "$NOREPO_PICK" \
   "the install is found, not refused for sitting under the working directory"
