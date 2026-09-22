@@ -366,6 +366,12 @@ build_review_repo() {
   module="$(case_module "$case")"
   local case_dir="$EVALS_DIR/$case"
   mkdir -p "$dir" || return 1
+  # Building on top of an existing repository fails halfway through with a bare
+  # "a branch named main already exists" and leaves the tree inconsistent.
+  if [ -e "$dir/.git" ]; then
+    printf 'flow-eval-run: %s already holds a git repository; refusing to build over it\n' "$dir" >&2
+    return 1
+  fi
   delegates="$(python3 "$HELPER" variant-delegates --case "$case_dir" --trap "$trap")" || return 1
   if [ "$delegates" = "yes" ]; then
     python3 "$HELPER" reference-module --case "$case_dir" --out "$dir/reference_impl.py" || return 1
@@ -379,11 +385,16 @@ build_review_repo() {
     # and the default branch is named here instead so both modes share a floor.
     git init -q . || exit 1
     git checkout -q -b "$BASE_BRANCH" 2>/dev/null || git branch -q -m "$BASE_BRANCH" || exit 1
-    git add -A || exit 1
+    # Only the files this function wrote. `git add -A` also committed the
+    # arm's .claude/settings.flow.json, which run_one_review writes into this
+    # same directory before calling here: the repository handed to the
+    # reviewer then carried the harness's own configuration in its history.
+    git add -- "$module.py" || exit 1
+    if [ "$delegates" = "yes" ]; then git add -- reference_impl.py || exit 1; fi
     git -c user.name=flow-eval -c user.email=flow-eval@localhost commit -q -m "$module: initial implementation" || exit 1
     git checkout -q -b "$HEAD_BRANCH" || exit 1
     python3 "$HELPER" materialize-variant --case "$case_dir" --trap "$trap" --out "$module.py" || exit 1
-    git add -A || exit 1
+    git add -- "$module.py" || exit 1
     git -c user.name=flow-eval -c user.email=flow-eval@localhost commit -q -m "$module: rework the implementation" || exit 1
   ) || return 1
   return 0
@@ -393,8 +404,9 @@ build_review_repo() {
 # what the reviewer is actually handed can be inspected — and tested — without
 # a claude call.
 if [ -n "$BUILD_REPO_DIR" ]; then
-  if [ "$MODE" != "review" ] || [ "$CASE_FILTER" = "all" ] || [ -z "$TRAP_NAME" ]; then
-    echo "flow-eval-run: --build-review-repo needs --mode review --case <name> --trap <name>" >&2
+  if [ "$MODE" != "review" ] || [ "$CASE_FILTER" = "all" ] || [ -z "$TRAP_NAME" ] \
+     || [ "${CASE_FILTER#*,}" != "$CASE_FILTER" ]; then
+    echo "flow-eval-run: --build-review-repo needs --mode review --case <one name> --trap <name>" >&2
     exit 1
   fi
   build_review_repo "$BUILD_REPO_DIR" "$CASE_FILTER" "$TRAP_NAME" || exit 1
@@ -624,9 +636,13 @@ run_one_review() {
   if [ "$DRY_RUN" = "1" ]; then
     printf 'RUN   %s  model=%s  effort=%s  timeout=%ss  settings=%s\n' \
       "$label/$arm/$case/$trap/$n" "${run_model:-<cli default>}" "${EFFORT:-<cli default>}" "$run_timeout" "$(arm_settings "$arm")"
-    printf '      repo <scratch>: git init -b %s; %s.py <- evals/%s/hidden/reference_impl.py (module docstring stripped); reference_impl.py <- the same file\n' \
-      "$BASE_BRANCH" "$module" "$case"
-    printf '      repo <scratch>: git checkout -b %s; %s.py <- evals/%s/hidden/traps/%s.py materialized into the reference source (reference_impl.py is on both branches, so the branch diff is %s.py alone)\n' \
+    local plan_ref=""
+    if [ "$(python3 "$HELPER" variant-delegates --case "$EVALS_DIR/$case" --trap "$trap" 2>/dev/null)" = "yes" ]; then
+      plan_ref="; reference_impl.py <- the same stripped text, because this variant still calls into it"
+    fi
+    printf '      repo <scratch>: git init; git checkout -b %s; %s.py <- evals/%s/hidden/reference_impl.py (module docstring stripped)%s\n' \
+      "$BASE_BRANCH" "$module" "$case" "$plan_ref"
+    printf '      repo <scratch>: git checkout -b %s; %s.py <- evals/%s/hidden/traps/%s.py materialized into the reference source (the branch diff is %s.py alone)\n' \
       "$HEAD_BRANCH" "$module" "$case" "$trap" "$module"
     local unset_list=""
     for v in "${STRIP_ENV[@]}"; do unset_list="$unset_list -u $v"; done
@@ -714,19 +730,25 @@ for model in "${MODELS[@]}"; do
           fi
           n=1
           while [ "$n" -le "$case_runs" ]; do
-            # A budget stop ends the whole plan; any other failure — a scratch
-            # repository that would not build, a claude error — abandons this
-            # trap's remaining runs only, so one broken case does not discard
-            # every case after it.
+            # A budget stop ends the whole plan, across every model: the
+            # cap is on the total, so continuing under another model would
+            # spend past it. break 5 is what reaches the model loop — break 4
+            # left it running. Anything else — a scratch repository that would
+            # not build, an mktemp failure — abandons this trap's remaining
+            # runs only. A claude error is not a failure here at all:
+            # run_one_review records it and returns 0, so the run loop goes on.
             run_one_review "$model" "$arm" "$case" "$trap_name" "$n" \
-              || { [ "$BUDGET_STOP" = "1" ] && break 4; break; }
+              || { [ "$BUDGET_STOP" = "1" ] && break 5; break; }
             n=$((n + 1))
           done
         done
       else
         n=1
         while [ "$n" -le "$case_runs" ]; do
-          run_one "$model" "$arm" "$case" "$n" || break 3
+          # Same rule as review mode, one loop shallower: a budget stop ends
+          # the plan across every model, anything else ends this case.
+          run_one "$model" "$arm" "$case" "$n" \
+            || { [ "$BUDGET_STOP" = "1" ] && break 4; break 3; }
           n=$((n + 1))
         done
       fi

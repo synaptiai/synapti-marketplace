@@ -2216,9 +2216,10 @@ def hunks_for_trap(case_dir, trap):
     `check-cases --mode review` when its digest still matches the reference and
     the variant, otherwise freshly computed.
 
-    source is "traps.json", "computed" when nothing was recorded, or
+    source is "traps.json"; "computed" when nothing was recorded;
     "computed:traps.json-stale" when what was recorded no longer describes the
-    diff."""
+    diff; and "computed:traps.json-unpinned" when hunks were recorded without a
+    digest, where nothing can be said about whether they still hold."""
     _ref_path, _var_path, _module, entry = variant_paths(case_dir, trap)
     recorded = entry.get("changed_lines")
     ref_text = reference_module_text(case_dir)
@@ -2229,16 +2230,18 @@ def hunks_for_trap(case_dir, trap):
             if isinstance(item, list) and len(item) == 2 and all(isinstance(v, int) for v in item):
                 hunks.append([item[0], item[1]])
         if hunks:
-            digest = sources_digest(ref_text, variant_text)
-            if entry.get("changed_lines_digest") == digest:
+            recorded_digest = entry.get("changed_lines_digest")
+            if recorded_digest == sources_digest(ref_text, variant_text):
                 return hunks, "traps.json"
-            stale = True
+            # A record with no digest was never pinned to anything, which is
+            # not the same claim as a record that no longer describes the diff.
+            why = "stale" if recorded_digest else "unpinned"
         else:
-            stale = False
+            why = None
     else:
-        stale = False
+        why = None
     hunks, _differs = changed_hunks(ref_text, variant_text)
-    return hunks, "computed:traps.json-stale" if stale else "computed"
+    return hunks, "computed:traps.json-%s" % why if why else "computed"
 
 
 def extract_findings(text):
@@ -2356,8 +2359,13 @@ def score_review(case_dir, trap, findings_text):
             record["hit"] = True
         else:
             record["false_findings"] += 1
+        # Location, not outcome. The report renders these as "On a changed
+        # line" / "Elsewhere", which is a calibration question: does the run
+        # know when it is guessing. Bucketing by the hit rule instead put a
+        # second finding that IS on a changed line under "Elsewhere". These
+        # therefore do not sum to hits + false_findings, and should not.
         bucket = record["confidences"].setdefault(confidence, {"in_hunk": 0, "false": 0})
-        bucket["in_hunk" if is_hit else "false"] += 1
+        bucket["in_hunk" if inside else "false"] += 1
     record["hits"] = 1 if record["hit"] else 0
     return record
 
@@ -2446,9 +2454,10 @@ def check_cases_review(evals_dir, only=None, write=True, verify_behaviour=True):
             # The variant still calls into reference_impl, so the module under
             # review says it is one. Recorded rather than fixed: the fix is new
             # case content, not a change to the harness. It is written into
-            # traps.json as well as the report, because the runner reads it
-            # there to decide whether the scratch repository carries
-            # reference_impl.py at all.
+            # traps.json as well as the report because
+            # references/review-precision-eval.md tells the operator to read it
+            # there; the runner does not read it, it recomputes the same
+            # question from the materialized text through `variant-delegates`.
             delegates = "reference_impl" in materialized
             trap["changed_lines"] = hunks
             # Pins what the hunks were computed from, so scoring can tell a

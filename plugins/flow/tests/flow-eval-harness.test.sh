@@ -1737,6 +1737,10 @@ BRR_YES="$TMP/brr-delegating"
 assert_equal "yes" "$(python3 "$HELPER" variant-delegates --case "$EVALS/money-allocator" --trap divide_first)" \
   "divide_first is a delegating variant"
 bash "$RUNNER" --mode review --case money-allocator --trap divide_first --build-review-repo "$BRR_YES" >/dev/null 2>&1
+# The exit status first. Every assertion below is satisfied by a directory that
+# was never built - cat of a missing file is empty, and [ -e ] on a missing
+# path is false - so without this the block reports PASS on a failed build.
+assert_exit 0 "$?" "the delegating build succeeded"
 assert_file_exists "$BRR_YES/reference_impl.py" "a delegating variant gets the module it imports"
 BRR_REF=$(cat "$BRR_YES/reference_impl.py")
 assert_not_contains "$BRR_HIDDEN" "$BRR_REF" "the copied reference does not name the trap directory"
@@ -1754,11 +1758,146 @@ assert_equal "no" "$(python3 "$HELPER" variant-delegates --case "$EVALS/money-al
   "accepts_nonpositive_weights stands alone"
 bash "$RUNNER" --mode review --case money-allocator --trap accepts_nonpositive_weights \
   --build-review-repo "$BRR_NO" >/dev/null 2>&1
+assert_exit 0 "$?" "the standalone build succeeded"
+assert_file_exists "$BRR_NO/allocate.py" "and produced the module under review"
 assert_equal "no" "$([ -e "$BRR_NO/reference_impl.py" ] && echo yes || echo no)" \
   "a standalone variant is given no correct copy of the module"
 assert_equal "allocate.py" "$(cd "$BRR_NO" && git ls-files)" \
   "the repository holds the module under review and nothing else"
+
+# run_one_review writes the arm's settings into this same directory BEFORE
+# building, so a `git add -A` committed the harness's own configuration into
+# the history the reviewer is handed. Build the way production builds.
+BRR_ARM="$TMP/brr-arm"
+mkdir -p "$BRR_ARM/.claude" "$BRR_ARM/.flow-state"
+printf '%s\n' '{"review":{"groundingCritic":"on"}}' > "$BRR_ARM/.claude/settings.flow.json"
+bash "$RUNNER" --mode review --case money-allocator --trap accepts_nonpositive_weights \
+  --build-review-repo "$BRR_ARM" >/dev/null 2>&1
+assert_exit 0 "$?" "the build succeeds beside the arm's settings"
+assert_equal "allocate.py" "$(cd "$BRR_ARM" && git ls-files)" \
+  "and the arm's settings are not committed into the reviewer's history"
+rm -r "$BRR_ARM"
+
+# F8 — rebuilding over an existing repository used to die halfway through with
+# a bare git error, leaving a file tracked but deleted.
+BRR_TWICE="$TMP/brr-twice"
+bash "$RUNNER" --mode review --case money-allocator --trap divide_first \
+  --build-review-repo "$BRR_TWICE" >/dev/null 2>&1
+BRR_TWICE_ERR=$(bash "$RUNNER" --mode review --case money-allocator --trap accepts_nonpositive_weights \
+  --build-review-repo "$BRR_TWICE" 2>&1); BRR_TWICE_RC=$?
+assert_equal "no" "$([ "$BRR_TWICE_RC" = "0" ] && echo yes || echo no)" "a second build into the same directory is refused"
+assert_contains "already holds a git repository" "$BRR_TWICE_ERR" "and says why, naming the directory"
+assert_contains "$BRR_TWICE" "$BRR_TWICE_ERR" "the message names the directory"
+rm -r "$BRR_TWICE"
+
+# F9 — a comma-separated --case reached the case loader as one directory name
+# and produced a traceback instead of a message.
+BRR_MULTI_ERR=$(bash "$RUNNER" --mode review --case money-allocator,interval-algebra \
+  --trap divide_first --build-review-repo "$TMP/brr-multi" 2>&1); BRR_MULTI_RC=$?
+assert_exit 1 "$BRR_MULTI_RC" "more than one case is refused"
+assert_contains "one name" "$BRR_MULTI_ERR" "the message says one case"
+assert_not_contains "Traceback" "$BRR_MULTI_ERR" "and it is a message, not a traceback"
 rm -r "$BRR_YES" "$BRR_NO"
+
+_flow_test_begin "the scratch repo is built without git init -b"
+# `git init -b` needs git >= 2.28. Correctness mode uses plain `git init` and
+# names the branch afterwards; review mode was changed to match, and nothing
+# pinned it — this machine's git accepts both spellings, so a regression would
+# be invisible here and would only appear on an older runner.
+GITSTUB="$TMP/gitstub"; mkdir -p "$GITSTUB"
+REAL_GIT=$(command -v git)
+cat > "$GITSTUB/git" <<GITEOF
+#!/usr/bin/env bash
+if [ "\$1" = "init" ]; then
+  for a in "\$@"; do
+    if [ "\$a" = "-b" ]; then
+      echo "git: unknown switch -b (this stub stands in for git before 2.28)" >&2
+      exit 129
+    fi
+  done
+fi
+exec "$REAL_GIT" "\$@"
+GITEOF
+chmod +x "$GITSTUB/git"
+GITSTUB_DIR="$TMP/brr-oldgit"
+PATH="$GITSTUB:$PATH" bash "$RUNNER" --mode review --case money-allocator --trap divide_first \
+  --build-review-repo "$GITSTUB_DIR" >/dev/null 2>&1
+assert_exit 0 "$?" "the build succeeds on a git that has no init -b"
+assert_equal "main" "$(cd "$GITSTUB_DIR" && git branch --list main --format='%(refname:short)')" \
+  "and the default branch is still named main"
+assert_equal "allocate.py" "$(cd "$GITSTUB_DIR" && git diff --name-only main...review-candidate)" \
+  "and the two branches differ by the module alone"
+rm -r "$GITSTUB_DIR"
+
+_flow_test_begin "the confidence table counts location, not the hit rule"
+# The report renders these buckets as "On a changed line" / "Elsewhere", which
+# asks whether a run knows when it is guessing. Bucketing them by the hit rule
+# instead filed a second finding that IS on a changed line under "Elsewhere".
+CONF_OUT=$(python3 - "$EVALS/money-allocator" "$HELPER" <<'CONFPY'
+import json, subprocess, sys
+case, helper = sys.argv[1], sys.argv[2]
+rec = json.loads(subprocess.run([sys.executable, helper, "score-review", "--case", case,
+    "--trap", "accepts_nonpositive_weights", "--findings", "[]"], capture_output=True, text=True).stdout)
+lines = [n for a, b in rec["changed_lines"] for n in range(a, b + 1)][:2]
+findings = [{"id": "F%d" % i, "priority": "P1", "category": "correctness",
+             "file": rec["module"] + ".py", "line": n, "problem": "p", "confidence": "HIGH"}
+            for i, n in enumerate(lines)]
+print(subprocess.run([sys.executable, helper, "score-review", "--case", case,
+    "--trap", "accepts_nonpositive_weights", "--findings", json.dumps(findings)],
+    capture_output=True, text=True).stdout)
+CONFPY
+)
+assert_contains '"in_hunk": 2' "$CONF_OUT" "both findings on changed lines are counted there"
+assert_contains '"false": 0' "$CONF_OUT" "and neither is filed under Elsewhere"
+assert_contains '"false_findings": 1' "$CONF_OUT" "while the second is still false for precision"
+
+_flow_test_begin "the dry-run plan describes the repository the runner actually builds"
+# The plan is the only artifact an operator reads before spending budget, and
+# it kept describing a verbatim copy on both branches for every trap.
+PLAN=$(bash "$RUNNER" --mode review --dry-run --case money-allocator --arm review-b --runs 1 2>&1)
+PLAN_STANDALONE=$(printf '%s\n' "$PLAN" | grep -A2 'accepts_nonpositive_weights/1' | head -3)
+assert_not_contains "git init -b" "$PLAN" "the plan does not name a git invocation the builder stopped using"
+assert_not_contains "the same file" "$PLAN" "nor a verbatim copy of the hidden reference"
+# The SOURCE path names hidden/reference_impl.py on every trap, which is true.
+# What must differ is whether a copy is placed in the scratch repository.
+assert_not_contains "reference_impl.py <- " "$PLAN_STANDALONE" \
+  "a standalone trap's plan does not promise a copy it is never given"
+PLAN_DELEGATING=$(printf '%s\n' "$PLAN" | grep -A2 'divide_first/1' | head -3)
+assert_contains "reference_impl.py <- the same stripped text" "$PLAN_DELEGATING" \
+  "a delegating trap's plan says it gets one, and that it is the stripped text"
+
+_flow_test_begin "hunks recorded without a digest are unpinned, not stale"
+# "Stale" asserts the record no longer describes the diff. A record written
+# before the digest existed was never pinned to anything, which is a different
+# claim and a different thing for an operator to do about it.
+UNPIN="$TMP/unpinned"
+mkdir -p "$UNPIN"
+cp -R "$EVALS/money-allocator" "$UNPIN/money-allocator"
+python3 - "$UNPIN/money-allocator/hidden/traps.json" <<'UNPINPY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d["traps"]["accepts_nonpositive_weights"].pop("changed_lines_digest", None)
+json.dump(d, open(p, "w"), indent=2)
+UNPINPY
+UNPIN_OUT=$(python3 "$HELPER" score-review --case "$UNPIN/money-allocator" \
+  --trap accepts_nonpositive_weights --findings '[]')
+assert_contains "computed:traps.json-unpinned" "$UNPIN_OUT" "a record with no digest is reported as unpinned"
+assert_not_contains "traps.json-stale" "$UNPIN_OUT" "and not as one that stopped describing the diff"
+rm -r "$UNPIN"
+
+_flow_test_begin "a budget stop ends the plan across every model"
+# break 4 reached the case loop, not the model loop, so a second --models entry
+# re-tripped the same check and printed the same stop line again. The cap is on
+# the total, so a second model would spend past it.
+BUDGET_MOCK="$TMP/budgetmock"; mkdir -p "$BUDGET_MOCK"
+printf '#!/usr/bin/env bash\nshift\nexec "$@"\n' > "$BUDGET_MOCK/timeout"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$BUDGET_MOCK/claude"
+chmod +x "$BUDGET_MOCK/timeout" "$BUDGET_MOCK/claude"
+BUDGET_ERR=$(PATH="$BUDGET_MOCK:$PATH" bash "$RUNNER" --mode review --case money-allocator \
+  --arm review-b --runs 1 --models one,two --max-total-usd 0 --out "$TMP/budgetout" 2>&1 >/dev/null)
+BUDGET_LINES=$(printf '%s\n' "$BUDGET_ERR" | grep -c 'would exceed --max-total-usd')
+assert_equal "1" "$BUDGET_LINES" "the plan stops once, not once per model"
 
 _flow_test_begin "the scratch repo builds on a machine with no model runner"
 # --build-review-repo exists so the repository handed to the reviewer can be
