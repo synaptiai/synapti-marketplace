@@ -112,7 +112,7 @@ own repository is such a checkout, so refusing outright made every self-review o
 flow report unavailable while an installed copy sat unused.
 
 ```bash
-"$(__t=$(git rev-parse --show-toplevel 2>/dev/null);[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__t=/; };{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("${__t%/}"/*) continue;; esac;printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
+"$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||case "$__r/" in ("$__t"/*) continue;; esac;printf '%s\n' "$__r";break;done)/bin/cascade-resolve.sh"
 ```
 
 Three details are load-bearing:
@@ -125,13 +125,15 @@ Three details are load-bearing:
   "not a git repository" into "every candidate under the working directory is
   in-repository" — and a resolver run from `$HOME` then refused the install
   sitting under it.
-- `__t=/` when the repository root resolves but cannot be entered, together with
-  the `%/` that strips its trailing slash inside the pattern. Without the strip
-  the pattern reads `//*`, which needs two leading slashes and so matches no
-  path `pwd -P` ever produces: the sentinel skipped nothing, and the branch's
-  own copy stayed a live candidate on exactly the case this clause is here to
-  defend. With the strip, `/` skips every absolute candidate, so a root that
-  resolves but cannot be entered selects nothing at all.
+- `__x=1` when the repository root resolves but cannot be entered, and the
+  `[ "$__x" = 1 ]||{ ... }` that then produces no candidates at all. This was
+  first written as `__t=/`, relying on the skip pattern to match every absolute
+  path — twice wrongly. Unstripped it read `//*`, which needs two leading
+  slashes and matched nothing. Stripped to `""/*` it matched everything on bash
+  3.2 and nothing on the bash the Linux runner ships, so the same source was
+  fail-closed on one platform and fail-open on the other. A flag has no such
+  reading: when it is set the candidate list is never generated, so nothing can
+  be selected.
 
 An agent whose output is a three-state contract wraps the same expression and
 turns the empty result into its own `STATE=unavailable` line, between the
