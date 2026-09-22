@@ -10,52 +10,52 @@ agent: Explore
 
 ## Contract
 
-Iron law: first verify it works, then verify it is good; never review quality on code that does not meet the acceptance criteria. Loaded as a Required Skill by `/flow:review` (all phases) and `/flow:pr` (self-review and fan-out), and by the `code-reviewer` and `security-reviewer` agents. Returns a synthesized P1/P2/P3 finding set per `references/finding-schema.md`, a requirements-compliance map, and a decision (APPROVE, COMMENT, REQUEST_CHANGES). Permitted skips: Stage 2 is skipped when Stage 1 finds more than 3 unmet criteria (REQUEST_CHANGES immediately); on the 3rd+ review cycle only new P1s are raised.
+Iron law: verify it works before verifying it is good; never review quality on code that misses the acceptance criteria. Required by `/flow:review`, `/flow:pr`, `code-reviewer`, `security-reviewer`. Returns a P1/P2/P3 finding set (`references/finding-schema.md`), a requirements map, and APPROVE, COMMENT or REQUEST_CHANGES. Skips: Stage 2 when Stage 1 finds >3 unmet criteria; on the 3rd+ cycle, only new P1s.
 
 ## Two-stage review
 
-**Stage 1, spec compliance.** Map each acceptance criterion to implementation evidence with one status: **Met** (implemented and testable), **Interpreted** (criterion ambiguous; one reading implemented), **Partially Met**, or **Not Addressed**. If Stage 1 fails, stop.
+**Stage 1, spec compliance.** Give each acceptance criterion one status: **Met** (implemented and testable), **Interpreted** (ambiguous; one reading implemented), **Partially Met**, **Not Addressed**. If Stage 1 fails, stop.
 
-**Stage 2, code quality**, in priority order: security, correctness, performance, maintainability. Do not flag maintainability while security or correctness findings exist.
+**Stage 2, code quality**, in priority order: security, correctness, performance, maintainability. Never flag maintainability while security or correctness findings stand.
 
 ## 6-facet review
 
-Stage 1 runs first on the main thread; facets fan out in parallel:
+Stage 1 on the main thread; facets fan out in parallel:
 
 | Facet | Focus | Agent / Skill |
 |---|---|---|
-| **Security** | OWASP top 10, secrets, auth/authz, input validation | security-reviewer |
-| **Quality** | Logic correctness, edge cases | code-reviewer |
-| **Conventions** | Commit format, branch naming, PR structure | convention-checker |
-| **Tests** | Coverage, quality commands pass, test adequacy | test-runner |
-| **Error handling** | Unhandled errors, silent failures, error paths | error-handler-inspector |
-| **Claim verification** | Self-review claims vs file state | holdout-validation (skill) |
+| **Security** | OWASP top 10, secrets, authz, input validation | security-reviewer |
+| **Quality** | Logic, edge cases | code-reviewer |
+| **Conventions** | Commit, branch, PR format | convention-checker |
+| **Tests** | Coverage, quality commands, adequacy | test-runner |
+| **Error handling** | Unhandled errors, silent failures | error-handler-inspector |
+| **Claim verification** | Self-review claims vs files | holdout-validation |
 
-**Tests facet rule:** derive the expected behavior from the issue/spec BEFORE reading the tests, then check each expected value and input against it; an expectation copied from the implementation's output confirms nothing. See `references/test-review-checklist.md`.
+**Tests facet rule:** derive the expected behavior from the spec BEFORE reading the tests, then check each expected value and input against it; an expectation copied from the implementation confirms nothing (`references/test-review-checklist.md`).
 
 ## Synthesis
 
 1. Deduplicate by `file:line`, keeping the highest priority
-2. Order P1, P2, P3, grouped by file
-3. Count per priority; counts must match the `Finding | Suggested Fix` table rows (`references/finding-schema.md`)
+2. Order P1, P2, P3 by file
+3. Count per priority; counts must match the `Finding | Suggested Fix` rows (`references/finding-schema.md`)
 
 ## Confidence and signal
 
-HIGH (ran code, a test or LSP) and MEDIUM (read the code path) findings decide at their priority. LOW (pattern match) findings, any priority, go to Needs investigation, outside the decision and the `FLOW_REVIEW_CYCLE` marker; own-PR handling: `commands/review.md` Phase 4 step 5. Absent or invalid confidence is MEDIUM. `bin/flow-finding-route.sh` applies this and the table below. Style is P3 at most; a finding with no `file:line` and no harm scenario is noise.
+HIGH (ran code, a test or LSP) and MEDIUM (read the code path) decide at their priority. LOW (pattern match), any priority, goes to Needs investigation, outside the decision and the `FLOW_REVIEW_CYCLE` marker; own-PR handling: `commands/review.md` Phase 4 step 5. Absent or invalid confidence is MEDIUM. `bin/flow-finding-route.sh` applies it. Style is P3 at most; a finding with no `file:line` and no harm scenario is noise.
 
 ## Boy Scout recognition
 
-APPROVE `improve:` commits passing the proximity test (file already modified, self-evidently correct, <10 lines, no API change); P2 "scope creep" only when it fails.
+APPROVE `improve:` commits passing the proximity test (already-modified file, self-evidently correct, <10 lines, no API change); else P2 "scope creep".
 
 ## Review cycle awareness
 
-Count prior `FLOW_REVIEW_CYCLE` markers for the cycle number; review only the delta, verify each claimed resolution against `git diff`, and on the 3rd+ cycle raise only new P1s. See `references/review-cycle-parsing.md`.
+The cycle number counts prior `FLOW_REVIEW_CYCLE` markers. Review the delta only, verify each claimed resolution against `git diff`, and on the 3rd+ cycle raise only new P1s (`references/review-cycle-parsing.md`).
 
 ## Stop conditions
 
-- Stage 1 finds >3 unmet criteria: REQUEST_CHANGES immediately, skip Stage 2
-- PR modifies files unrelated to the issue: out-of-context, ask for a split (`improve:` commits in modified files are in context)
-- Diff >500 lines with no test changes: P1 "untested large change"
+- >3 unmet criteria in Stage 1: REQUEST_CHANGES, skip Stage 2
+- Files unrelated to the issue: out-of-context, ask for a split (`improve:` commits in modified files stay in context)
+- Diff >500 lines, no test changes: P1 "untested large change"
 
 ## Review decision
 
@@ -65,9 +65,18 @@ Count prior `FLOW_REVIEW_CYCLE` markers for the cycle number; review only the de
 | Any HIGH or MEDIUM P2 | REQUEST_CHANGES |
 | HIGH or MEDIUM P3 only | COMMENT; the author fixes every P3 in-PR, never "approve with nits" |
 | None, or LOW only | APPROVE |
-| Your own pull request | COMMENT at any priority — GitHub takes neither verdict from an author |
+| Your own pull request | COMMENT at any priority — GitHub takes no verdict from an author |
 
-Finding triage is never an escalation trigger (`skills/llm-operator-principles/SKILL.md`).
+Finding triage never triggers escalation (`skills/llm-operator-principles/SKILL.md`).
+
+## Grounding pass (off by default)
+
+`review.groundingCritic: on` inserts one step into a **Path B** fan-out, between
+synthesis and display: `Agent(finding-critic)` answers each P1/P2 finding in a three-verdict
+grammar, and on a disagreement the reviewer that raised it cites code or drops it.
+**Path A is unchanged** and keeps its own challenge round; the grammar and both
+placements are in `references/paired-review-protocol.md`. Default off until
+`references/review-precision-eval.md`.
 
 ## Adversarial protocol
 

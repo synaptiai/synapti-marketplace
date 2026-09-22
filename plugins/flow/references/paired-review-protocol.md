@@ -115,6 +115,33 @@ And the extended `FLOW_REVIEW_CYCLE` marker (7 fields per row; example exercises
 
 A `kept` finding is LOW after consolidation, so it reaches the marker only after the author's own review confirms it (F3 above, re-recorded HIGH); on someone else's pull request it is listed under Needs investigation instead (`commands/review.md` Phase 4 steps 6-7). DROPPED findings do NOT appear in the marker; they are logged in the decision journal under `## Dropped after challenge` for traceability.
 
+## Where the grounding pass sits, and why it is not this protocol
+
+`review.groundingCritic: on` adds a grounding pass to **Path B**, the default single-session
+fan-out: after synthesis, the `finding-critic` agent tries to refute each consolidated P1/P2
+finding from the code, and the originating reviewer answers each disagreement with a
+`file:line` or drops its own finding. **Path A, the protocol on this page, is unchanged** —
+the grounding pass never runs inside it, its A.3 challenge round keeps the AGREE / DISAGREE /
+REFINE vocabulary and the "do not re-read the diff" instruction, and its consolidation table
+still produces `disposition`, not `grounding`.
+
+The two are different mechanisms with different inputs:
+
+| | Path A challenge (A.3) | Path B grounding pass |
+|---|---|---|
+| Who answers | the other reviewer of the same facet, from memory | a separate agent with Read, Grep, Glob and LSP |
+| Reads the diff again | no, by design (anchoring) | yes — the citation is the whole verdict |
+| Vocabulary | `AGREE` / `DISAGREE: <reason>` / `REFINE: priority=…` | `AGREE` / `DISAGREE_EVIDENCE: <file:line> …` / `DISAGREE_CONCERN: …` |
+| May change priority or category | yes (`REFINE`) | no |
+| Effect of a disagreement | consolidation drops the finding to LOW, `kept` | the reviewer cites code or drops the finding |
+| Output field | `disposition` | `grounding` |
+
+Path A's `DISAGREE` is the unconstrained form that measured F1 0.457 against 0.495 for no
+critic at all (arXiv:2608.18167), which is the reason the grounding pass does not reuse it.
+Aligning A.3 with the constrained grammar is a change that waits for numbers from the
+review-precision eval (`references/review-precision-eval.md`), not one made on the strength of
+the same paper that motivated the eval.
+
 ## Cognitive Bias Awareness
 
 - **Anchoring**: A reviewer who reads another's findings before producing their own anchors on them. Phase 1 is strictly independent for this reason; the challenge round in Phase 3 explicitly forbids diff re-read so the reviewer cannot synthesize fresh "agreements" from re-reading.
