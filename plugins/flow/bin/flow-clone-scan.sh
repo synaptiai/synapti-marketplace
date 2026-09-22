@@ -95,7 +95,10 @@ PRINT_SCAN_SET=0
 
 # The shared part of the command line — the range and --help — is parsed by the
 # library; what it does not recognise comes back in FLOW_RANGE_REST for the
-# options only this helper has.
+# options only this helper has. The value-taking ones are declared so that a
+# value containing `..` is not read as a range.
+# shellcheck disable=SC2034  # read by flow_range_parse_args in lib/range-args.sh
+FLOW_RANGE_VALUE_OPTS="--min-lines --min-tokens --exclude-paths --format"
 flow_range_parse_args "$@"
 BASE="$FLOW_RANGE_BASE"
 HEAD_REF="$FLOW_RANGE_HEAD"

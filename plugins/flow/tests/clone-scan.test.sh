@@ -538,6 +538,27 @@ _flow_test_begin "settings: resolving the exclude list warns about nothing"
 assert_not_contains "failed to parse" "$CS_ERR" "no settings source is reported unparseable"
 assert_equal "" "$CS_ERR" "nothing at all on stderr for a clean run"
 
+# --- an option value is never mistaken for a range ------------------------------
+# The library reads any argument containing `..` as a range. A relative glob
+# does too, so without the value-option declaration `--exclude-paths ../foo/**`
+# is parsed as base `.` and head `/foo/**`, and the helper refuses its own
+# command line. A caller cannot tell that from a typo in their glob.
+CS_OUT=$( cd "$REPO_ROOT" && "$HELPER" --base HEAD --head HEAD --print-scan-set \
+  --exclude-paths '../foo/**' 2>&1 )
+CS_CODE=$?
+_flow_test_begin "option values containing .. are not read as a range"
+assert_not_contains "usage:" "$CS_OUT" "the command line is accepted"
+assert_exit 0 "$CS_CODE" "and the run proceeds"
+assert_match '^FILES_SCANNED=[0-9]+$' "$CS_OUT" "the scan set is reported"
+
+# The control: a genuine positional range is still recognised, so the fix did
+# not simply stop the library reading ranges at all.
+CS_OUT=$( cd "$REPO_ROOT" && "$HELPER" HEAD..HEAD --print-scan-set 2>&1 )
+CS_CODE=$?
+_flow_test_begin "a positional range is still a range"
+assert_exit 0 "$CS_CODE" "the positional form still works"
+assert_match '^FILES_SCANNED=[0-9]+$' "$CS_OUT" "and reports the scan set"
+
 # --- real, full-size input ---------------------------------------------------
 # One run over this repository's own tree, with FILES_SCANNED reconciled
 # against an independent enumeration. A count that matched nothing would look

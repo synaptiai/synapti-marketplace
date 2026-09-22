@@ -57,6 +57,11 @@ flow_range_validate() {
 #   caller to define PROG and usage(); exits 1 on a malformed range, and 0 via
 #   the caller's usage() on --help.
 #
+#   A caller whose own options take values sets FLOW_RANGE_VALUE_OPTS to the
+#   space-separated list of them. Their values are then passed through
+#   untouched, which matters because a value like `../foo/**` contains `..` and
+#   would otherwise be read as a range.
+#
 #   Both refs must be present and safe before the caller proceeds; that is the
 #   caller's check, because only it knows what to print when they are not.
 flow_range_parse_args() {
@@ -80,6 +85,22 @@ flow_range_parse_args() {
         FLOW_RANGE_HEAD="${1##*..}"
         shift ;;
       *)
+        # An option of the caller's. If it takes a value, its value is passed
+        # through WITHOUT being looked at: a value like `../foo/**` contains
+        # `..` and would otherwise be taken for a range.
+        _flow_takes_value=0
+        for _flow_vo in ${FLOW_RANGE_VALUE_OPTS:-}; do
+          if [ "$1" = "$_flow_vo" ]; then
+            _flow_takes_value=1
+            break
+          fi
+        done
+        if [ "$_flow_takes_value" = 1 ] && [ $# -ge 2 ]; then
+          FLOW_RANGE_REST[${#FLOW_RANGE_REST[@]}]="$1"
+          FLOW_RANGE_REST[${#FLOW_RANGE_REST[@]}]="$2"
+          shift 2
+          continue
+        fi
         FLOW_RANGE_REST[${#FLOW_RANGE_REST[@]}]="$1"
         shift ;;
     esac
