@@ -320,6 +320,59 @@ After agents return, TaskUpdate each review task with findings.
 ## Phase 4: VERIFY
 
 1. **Synthesize findings**: Deduplicate by file:line, prioritize P1 > P2 > P3
+
+**Grounding pass** (immediately after step 1's synthesis, before anything is displayed, fixed or posted). Phase 3 dispatches the Path B fan-out and nothing else, so this pass applies to every `/flow:pr` review; **Path A is unchanged by it** — its A.3 challenge round keeps its own AGREE / DISAGREE / REFINE vocabulary and produces `disposition`, and the grounding pass never runs inside it. Runs only when `review.groundingCritic` is `on`; default `off`, because the pass costs one critic call plus at most five re-pass calls on top of the six this fan-out already spends, and whether it earns them is what the review-precision eval measures (`references/review-precision-eval.md`).
+
+<!-- GROUNDING_PASS_SHARED_BEGIN -->
+```!
+# GROUNDING_CRITIC_BEGIN
+# Resolve review.groundingCritic through the standard cascade
+# (local > project > user > plugin default). Default off. A value outside the
+# allowlist is rejected with a WARN and falls back to off — never coerced:
+# reading "true" as "on" would turn a typo into a behaviour change and into
+# spend on a pass the repository has not decided to run.
+GROUNDING_CRITIC=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "$HOME"/.claude/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "$HOME/.claude/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default off '.review.groundingCritic // empty' 2>/dev/null)
+case "$GROUNDING_CRITIC" in
+  off|on) ;;
+  *)
+    printf '%s\n' "WARN: review.groundingCritic='$GROUNDING_CRITIC' is not one of off|on; rejecting and using off. Set a valid value in .claude/settings.flow.local.json, .claude/settings.flow.json, \$HOME/.claude/settings.flow.json, or the plugin settings.json." >&2
+    GROUNDING_CRITIC=off
+    ;;
+esac
+printf '%s\n' "GROUNDING_CRITIC=$GROUNDING_CRITIC"
+# GROUNDING_CRITIC_END
+
+true
+```
+
+When `GROUNDING_CRITIC=off`, skip the rest of this block; the consolidated findings go on unchanged. When `GROUNDING_CRITIC=on`:
+
+- **Freeze the finding set.** No fix-forward, no edits, no re-dispatch until the exchange below finishes. Fixing while the critic reads makes its citations point at lines that no longer exist.
+
+- **Dispatch the critic once**, with the consolidated P1 and P2 findings only — `id`, `priority`, `category`, `location`, `problem` — and the diff scope. **P3 findings never enter the critic**: they do not block, and grounding them buys nothing.
+
+```
+Agent(finding-critic):
+  "Audit these consolidated findings against the code. One line per finding, in the
+   three-verdict grammar in your instructions: `<id> AGREE`,
+   `<id> DISAGREE_EVIDENCE: <file:line> <what the code shows>`, or
+   `<id> DISAGREE_CONCERN: <objection>`. Nothing else.
+   Diff scope: {branch, changed files}
+   Findings: {id | priority | category | location | problem, P1 and P2 only}"
+```
+
+- **Read the verdicts, strictly.** A line that is not one of the three shapes **is not a verdict** — including a bare `DISAGREE:` with a reason — and neither is a line about an id that was never sent, or one proposing a priority, a category or a fix. A finding with no verdict is **treated as a finding the critic never saw**: it survives untouched at the confidence synthesis gave it. A critic that fails to spawn, times out or returns nothing therefore leaves every finding exactly as it was. The measurement behind the strictness is in `agents/finding-critic.md`: a critic free to disagree without evidence scored *worse* than no critic at all.
+
+- **Reviewer re-pass — cite code or drop.** One batched call per facet that received a DISAGREE, sent to the agent that raised those findings. The rule is the same for both disagree forms:
+  - `DISAGREE_EVIDENCE` → drop the finding, or revise it with a `file:line` that answers the citation.
+  - `DISAGREE_CONCERN` → cite the `file:line` that confirms the bug, or drop the finding.
+  - **A reply without a citation drops the finding.** Prose, restatement and confidence are not citations. An `AGREE` needs no re-pass.
+
+- **Stamp the survivors.** A finding that survives carries `grounding: agreed` (the critic AGREE'd) or `grounding: cited` (the reviewer answered with a `file:line`), and confidence HIGH — it has been read against the code twice. `grounding` is recorded here and in the journal; it does not enter the `FLOW_REVIEW_CYCLE` marker row, which keeps its seven fields.
+
+- **Journal the drops.** Each dropped finding is a `dropped-finding` artifact with `reason=critic-evidence` (the reviewer accepted a `DISAGREE_EVIDENCE` citation) or `reason=critic-unrefuted-concern` (the reviewer could not cite code against a `DISAGREE_CONCERN`), recording `cycle`, `finding_id`, `facet` and `pr` per `references/decision-journal-schema.md`.
+<!-- GROUNDING_PASS_SHARED_END -->
+
 2. **Integration verification** — dispatch Agent(integration-verifier):
    ```
    Agent(integration-verifier):
