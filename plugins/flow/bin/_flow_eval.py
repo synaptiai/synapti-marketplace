@@ -2287,11 +2287,19 @@ def score_review(case_dir, trap, findings_text):
         inside = cited in (wanted, module) and line is not None and in_any_hunk(line, hunks)
         if inside:
             record["in_hunk_findings"] += 1
+        # The first in-hunk finding is the run's hit. Every finding after it is
+        # false, in-hunk or not: the run was asked for the defect, not for a
+        # list of remarks about the changed lines. Without this, a run that
+        # raises one P1 per changed line — which it can read straight off the
+        # branch diff it is handed — scores perfect precision in both arms and
+        # the eval measures nothing.
+        is_hit = inside and not record["hit"]
+        if is_hit:
+            record["hit"] = True
         else:
             record["false_findings"] += 1
         bucket = record["confidences"].setdefault(confidence, {"in_hunk": 0, "false": 0})
-        bucket["in_hunk" if inside else "false"] += 1
-    record["hit"] = record["in_hunk_findings"] > 0
+        bucket["in_hunk" if is_hit else "false"] += 1
     record["hits"] = 1 if record["hit"] else 0
     return record
 
@@ -2680,8 +2688,11 @@ SPREAD_NOTE = ("Spread is how much F1 moves between repeats of the same matrix. 
                "replication, run 2 is the next, and so on; each replication gets its own F1, and an arm's spread is the "
                "largest of those minus the smallest. A model's spread is the mean over its arms. A single run is not a "
                "replication, so a matrix run once has no spread and the adoption rule cannot be applied to it.")
-REVIEW_METRIC_NOTE = ("Precision is the share of scored P1/P2 findings that landed on a changed line of the seeded "
-                      "defect; recall is the share of runs that found the defect at all. Higher is better for both, "
+REVIEW_METRIC_NOTE = ("Precision is the share of scored P1/P2 findings that were a run's hit — the first finding to "
+                      "land on a changed line of the seeded defect. Every other scored finding is false, including a "
+                      "further finding on a hunk the run already hit, so a run contributes at most one hit however "
+                      "many findings it raises. Recall is the share of runs that found the defect at all. Higher is "
+                      "better for both, "
                       "and for F1. Findings per run counts only P1/P2 findings. Incomplete runs — no findings block, "
                       "unparseable JSON, or a timeout — are excluded from precision, recall and F1 and counted on "
                       "their own, so a broken run never reads as a clean miss.")

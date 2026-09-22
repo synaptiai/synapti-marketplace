@@ -1267,6 +1267,37 @@ OUT=$(score_review off_by_one '```json
 assert_contains '"hit": true' "$OUT" "the run still hit"
 assert_contains '"in_hunk_findings": 2' "$OUT" "both findings landed on the hunk"
 assert_contains '"hits": 1' "$OUT" "a run counts as one hit however many findings land"
+assert_contains '"false_findings": 1' "$OUT" "the surplus in-hunk finding costs precision"
+assert_contains '"scored_findings": 2' "$OUT" "both findings were scored"
+
+_flow_test_begin "score-review: one P1 per changed line does not score as a perfect review"
+# The degenerate strategy the eval must be able to see through: the session is
+# handed the branch diff, so emitting one P1 per changed line hits by
+# construction. Precision has to fall for it, or it scores 1.0 in both arms and
+# the eval measures nothing. Run against a real case, whose defect spans many
+# lines — the fixture trap changes one line, where "all but the hit" is zero.
+BLANKET_CASE="$EVALS/money-allocator"
+BLANKET_TRAP="accepts_nonpositive_weights"
+BLANKET=$(python3 - "$BLANKET_CASE" "$BLANKET_TRAP" "$HELPER" <<'EOF'
+import json, subprocess, sys
+case, trap, helper = sys.argv[1], sys.argv[2], sys.argv[3]
+record = json.loads(subprocess.run(
+    [sys.executable, helper, "score-review", "--case", case, "--trap", trap, "--findings", "[]"],
+    capture_output=True, text=True).stdout)
+lines = [n for first, last in record["changed_lines"] for n in range(first, last + 1)]
+print(json.dumps([{"id": "F%d" % i, "priority": "P1", "category": "correctness",
+                   "file": record["module"] + ".py", "line": n, "problem": "changed line",
+                   "confidence": "HIGH"} for i, n in enumerate(lines)]))
+EOF
+)
+printf '%s' "$BLANKET" > "$TMP/blanket.json"
+OUT=$(python3 "$HELPER" score-review --case "$BLANKET_CASE" --trap "$BLANKET_TRAP" --findings "$TMP/blanket.json")
+BLANKET_N=$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["scored_findings"])')
+BLANKET_FALSE=$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["false_findings"])')
+assert_contains '"hit": true' "$OUT" "a finding on every changed line does hit"
+assert_equal "$([ "$BLANKET_N" -gt 1 ] && echo many || echo one)" "many" \
+  "the blanket covers more than one changed line"
+assert_equal "$BLANKET_FALSE" "$((BLANKET_N - 1))" "every finding but the hit is false"
 
 _flow_test_begin "score-review: a P3 finding is neither a hit nor a false finding"
 OUT=$(score_review off_by_one '```json
