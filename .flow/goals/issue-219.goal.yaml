@@ -21,8 +21,8 @@ objective:
       forms, and commands/start.md Stranger Test lists "Missing reuse check"; a test asserts both strings
       and that references/skill-contracts.md or the planner's return shape shows the field.
     verification_command: bash plugins/flow/tests/run.sh duplication-contract.test.sh
-    status: pending
-    evidence_ref: null
+    status: pass
+    evidence_ref: duplication-contract.test.sh — 29 assertions pass
   - id: AC2
     text: 'bin/flow-clone-scan.sh exists and drives jscpd, with tests following skills/learned/a-check-that-can-only-confirm:
       a must-fire fixture built against the pinned duplication.minTokens (jscpd''s default 50-token floor
@@ -31,8 +31,8 @@ objective:
       fixture (no scannable file gives a non-zero exit via --fail-on-empty), and one run over this repository''s
       own tree whose FILES_SCANNED is reconciled against git ls-files.'
     verification_command: bash plugins/flow/tests/run.sh clone-scan.test.sh
-    status: pending
-    evidence_ref: null
+    status: pass
+    evidence_ref: clone-scan.test.sh — 82 assertions pass, eight mutants killed
   - id: AC3
     text: bin/flow-clone-scan.sh requires jscpd and never falls back to a hand-rolled detector; an absent
       jscpd prints STATE=unavailable with the reason and the install command, once per run, and does not
@@ -40,28 +40,29 @@ objective:
       tests skip-PASS loudly when it is absent locally, and a test covers both branches with a stub jscpd
       on PATH.
     verification_command: bash plugins/flow/tests/run.sh clone-scan.test.sh
-    status: pending
-    evidence_ref: null
+    status: pass
+    evidence_ref: clone-scan.test.sh — four unavailable branches against a real STATE=none run
   - id: AC4
     text: 'commands/start.md Phase 3 step 8, commands/review.md Path B, commands/pr.md Phase 3 and commands/address.md
       Phase 4 step 2 invoke the scan and state the completion rule; agents/code-reviewer.md Step 4 carries
       the Reuse check with the "candidates examined: N" requirement; a test asserts each.'
     verification_command: bash plugins/flow/tests/run.sh duplication-contract.test.sh
-    status: pending
-    evidence_ref: null
+    status: pass
+    evidence_ref: duplication-contract.test.sh — four call sites, the reviewer's two layers, the fence
+      parsed and its variables checked
   - id: AC5
     text: references/finding-schema.md adds duplication to the category vocabulary and DUP- to the prefixes;
       settings.json and schema.json carry the four duplication.* keys (enabled, minLines, minTokens, excludePaths);
       a settings-schema test placed where the other schema.json assertions live rejects minLines as the
       string "5" and accepts the integer 5.
     verification_command: bash plugins/flow/tests/run.sh duplication-contract.test.sh
-    status: pending
-    evidence_ref: null
+    status: pass
+    evidence_ref: duplication-contract.test.sh — schema validation with an input-removal mutant
   - id: AC6
     text: plugins/flow/tests/run.sh passes.
     verification_command: bash plugins/flow/tests/run.sh
-    status: pending
-    evidence_ref: null
+    status: pass
+    evidence_ref: plugins/flow/tests/run.sh — TOTAL pass=5625 fail=0; tests/run-all.sh — 12/12 entry points
 specification:
   non_goals:
   - 'A seventh reviewer agent: Layer B runs inside the existing code-reviewer call.'
@@ -146,4 +147,4 @@ continuation:
   max_iterations: 20
 lifecycle:
   status: active
-  turns_evaluated: 0
+  turns_evaluated: 1
