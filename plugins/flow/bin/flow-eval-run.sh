@@ -700,8 +700,9 @@ if [ "$DRY_RUN" = "1" ]; then
     done
     TRAP_NOTE=" × $TRAP_TOTAL trap(s) over those cases"
   fi
-  printf 'PLAN  %s run(s) in %s mode: %s model(s) × %s arm(s) × %s case(s)%s; %s already complete\n' \
-    "$PLANNED" "$MODE" "${#MODELS[@]}" "$(echo "$ARMS" | wc -w | tr -d ' ')" "$(echo "$CASES" | wc -w | tr -d ' ')" "$TRAP_NOTE" "$SKIPPED"
+  printf 'PLAN  %s run(s): %s model(s) × %s arm(s) × %s case(s)%s; %s already complete\n' \
+    "$PLANNED" "${#MODELS[@]}" "$(echo "$ARMS" | wc -w | tr -d ' ')" "$(echo "$CASES" | wc -w | tr -d ' ')" "$TRAP_NOTE" "$SKIPPED"
+  printf 'PLAN  mode=%s\n' "$MODE"
   rmdir "$OUT_DIR" 2>/dev/null
   exit 0
 fi

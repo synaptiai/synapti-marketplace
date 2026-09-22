@@ -2171,21 +2171,6 @@ def f1(precision, recall):
     return 2 * precision * recall / (precision + recall)
 
 
-def run_f1(record):
-    """F1 of a single run, used only for the run-to-run spread.
-
-    One run is one hit-or-miss, so its recall is 1 or 0 and its precision is
-    hits/(hits+false findings)."""
-    review = review_record(record)
-    if review.get("incomplete"):
-        return 0.0
-    hits = 1 if review.get("hit") else 0
-    false = review.get("false_findings") or 0
-    recall = float(hits)
-    precision = (hits / float(hits + false)) if (hits + false) else 0.0
-    return f1(precision, recall) or 0.0
-
-
 def summarize_review_runs(rs):
     scored = [r for r in rs if not review_record(r).get("incomplete")]
     hits = sum(1 for r in scored if review_record(r).get("hit"))
@@ -2225,6 +2210,25 @@ def summarize_review_runs(rs):
     }
 
 
+def replication_f1s(rs):
+    """F1 per replication of the matrix, for one model and arm.
+
+    Run n of every case and trap is one independent replication: a full pass
+    over the same defects. A single run's F1 is 1 or 0 on recall and so says
+    nothing about stability, which is why the spread is taken between whole
+    replications rather than between runs.
+    """
+    by_index = {}
+    for r in rs:
+        by_index.setdefault(r.get("run"), []).append(r)
+    values = []
+    for index in sorted(by_index, key=lambda v: (v is None, v)):
+        value = summarize_review_runs(by_index[index])["f1"]
+        if value is not None:
+            values.append(value)
+    return values
+
+
 def aggregate_review_model(runs):
     cells = {}
     for r in runs:
@@ -2232,19 +2236,20 @@ def aggregate_review_model(runs):
     arms = sorted({a for a, _, _ in cells}, key=lambda a: REVIEW_ARMS.index(a) if a in REVIEW_ARMS else 99)
     cases = sorted({c for _, c, _ in cells})
     cell_summary = {}
-    spreads = []
     for (arm, case, trap), rs in cells.items():
         entry = summarize_review_runs(rs)
         entry.update({"arm": arm, "case": case, "trap": trap})
-        per_run = [run_f1(r) for r in rs]
-        entry["f1_spread"] = (max(per_run) - min(per_run)) if per_run else None
-        spreads.append(entry["f1_spread"])
         cell_summary["%s/%s/%s" % (arm, case, trap)] = entry
     arm_summary = {}
+    spreads = []
     for arm in arms:
         rs = [r for r in runs if r["arm"] == arm]
         entry = summarize_review_runs(rs)
         entry["cases"] = sorted({r["case"] for r in rs})
+        values = replication_f1s(rs)
+        entry["replication_f1"] = values
+        entry["f1_spread"] = (max(values) - min(values)) if len(values) >= 2 else None
+        spreads.append(entry["f1_spread"])
         arm_summary[arm] = entry
     spread = mean(spreads)
     return {
@@ -2275,9 +2280,14 @@ def decide_review(per_model):
         base = (m["per_arm"].get("review-b") or {}).get("f1")
         critic = (m["per_arm"].get("review-b-critic") or {}).get("f1")
         spread = m.get("run_to_run_spread")
-        if base is None or critic is None or spread is None:
+        if base is None or critic is None:
             deltas[model] = None
             sentences.append("[%s] one of the two arms has no scored run, so the rule cannot be applied." % model)
+            continue
+        if spread is None:
+            deltas[model] = None
+            sentences.append("[%s] the matrix ran only once, so there is no run-to-run spread to beat; "
+                             "the rule needs at least two runs per case and trap." % model)
             continue
         delta = critic - base
         deltas[model] = delta
@@ -2324,9 +2334,10 @@ def aggregate_review(out_dir):
 ADOPTION_RULE = ("Adoption rule: `review.groundingCritic` becomes the default only when the critic arm's F1 beats the "
                  "plain arm's by more than that model's run-to-run spread on every model that ran, with at least two "
                  "models. No improvement is a valid recorded outcome, not a failed run.")
-SPREAD_NOTE = ("Spread is the mean, over every model × arm × case × trap cell, of the largest minus the smallest "
-               "per-run F1 in that cell. A single run's recall is 1 when it hit the seeded defect and 0 otherwise, and "
-               "its precision is its hits over its hits plus its false findings.")
+SPREAD_NOTE = ("Spread is how much F1 moves between repeats of the same matrix. Run 1 of every case and trap is one "
+               "replication, run 2 is the next, and so on; each replication gets its own F1, and an arm's spread is the "
+               "largest of those minus the smallest. A model's spread is the mean over its arms. A single run is not a "
+               "replication, so a matrix run once has no spread and the adoption rule cannot be applied to it.")
 REVIEW_METRIC_NOTE = ("Precision is the share of scored P1/P2 findings that landed on a changed line of the seeded "
                       "defect; recall is the share of runs that found the defect at all. Higher is better for both, "
                       "and for F1. Findings per run counts only P1/P2 findings. Incomplete runs — no findings block, "
@@ -2365,7 +2376,7 @@ def render_review_summary_md(s):
                 fmt(a["findings_per_run"], 1), fmt(a["cost_usd_mean"]),
                 token_cell(a, "cache_hit_rate_mean", "cache_hit_rate_scored_runs", pct=True),
                 token_cell(a, "output_tokens_mean", "output_tokens_scored_runs"),
-                fmt(m["run_to_run_spread"], 3), a["errors"], review_incomplete_cell(a)))
+                fmt(a.get("f1_spread"), 3), a["errors"], review_incomplete_cell(a)))
     lines.append("")
     lines.append(REVIEW_METRIC_NOTE)
     lines.append("")

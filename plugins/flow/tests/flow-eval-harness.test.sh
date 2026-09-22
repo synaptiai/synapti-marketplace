@@ -1108,3 +1108,453 @@ assert_contains "runs/<model>/<arm>/<case>/<n>" "$DOC" "documents the model-keye
 for case in $NEW_CASES; do
   assert_contains "\`$case\`" "$DOC" "case table lists $case"
 done
+
+# ===========================================================================
+# Review-precision eval (issue #216): score-review, --mode review --check-cases
+# and the --mode review --dry-run plan. Offline only.
+#
+# The shipped cases cannot carry this test: every trap variant under
+# evals/<case>/hidden/traps/ is a short shim that imports reference_impl and
+# overrides one method, so the reference->variant diff replaces the whole
+# module and "inside a changed hunk" is nearly the whole file. The scoring
+# rule is therefore pinned on a fixture case whose variants are full copies of
+# the reference with one localized edit, which is the shape the rule is about.
+# ===========================================================================
+
+REVROOT="$TMP/revevals"
+REVCASE="$REVROOT/revcase"
+mkdir -p "$REVCASE/hidden/traps"
+
+cat > "$REVCASE/prompt.md" <<'EOF'
+---
+name: revcase
+runs: 1
+---
+Fixture case.
+EOF
+
+# 12 lines. Line numbers matter to every expectation below, so they are counted
+# here once: 1 def, 2 docstring, 3 blank, 4 total=0, 5 for, 6 total +=, 7 blank,
+# 8 if total > limit, 9 return False, 10 blank, 11 return True, 12 trailing.
+cat > "$REVCASE/hidden/reference_impl.py" <<'EOF'
+def allow(counts, limit):
+    """Return whether the running total stays within the limit."""
+
+    total = 0
+    for value in counts:
+        total += value
+
+    if total > limit:
+        return False
+
+    return True
+EOF
+
+# One localized edit on line 8: >= instead of >. Everything else is identical,
+# so the changed hunk is line 8 alone.
+sed 's/if total > limit:/if total >= limit:/' "$REVCASE/hidden/reference_impl.py" \
+  > "$REVCASE/hidden/traps/off_by_one.py"
+# Identical to the reference: no finding could ever hit it.
+cp "$REVCASE/hidden/reference_impl.py" "$REVCASE/hidden/traps/identical.py"
+
+cat > "$REVCASE/hidden/traps.json" <<'EOF'
+{
+  "module": "counter",
+  "traps": {
+    "off_by_one": {
+      "description": "Fixture trap: the limit is treated as exclusive.",
+      "discriminating_tests": ["test_boundary"],
+      "variant": "hidden/traps/off_by_one.py"
+    }
+  }
+}
+EOF
+
+score_review() {
+  # score_review <trap> <findings text> -> the score record as JSON
+  printf '%s' "$2" > "$TMP/findings.txt"
+  python3 "$HELPER" score-review --case "$REVCASE" --trap "$1" --findings "$TMP/findings.txt"
+}
+
+_flow_test_begin "changed_lines: a one-line edit yields exactly that line"
+OUT=$(python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --no-write 2>&1)
+assert_contains '"changed_lines"' "$OUT" "the check records changed hunks"
+HUNKS=$(python3 -c '
+import json, subprocess, sys
+out = subprocess.run([sys.executable, sys.argv[1], "check-cases", "--evals-dir", sys.argv[2],
+                      "--mode", "review", "--no-write"], capture_output=True, text=True)
+d = json.loads(out.stdout)
+print(json.dumps(d["cases"]["revcase"]["traps"]["off_by_one"]["changed_lines"]))
+' "$HELPER" "$REVROOT")
+assert_equal '[[8, 8]]' "$HUNKS" "the edited line is the only changed hunk (hand-counted from the fixture)"
+
+# --- the five cases acceptance criterion 2 names ----------------------------
+_flow_test_begin "score-review: a P1 finding inside the changed hunk is a hit"
+OUT=$(score_review off_by_one '```json
+[{"id":"F1","priority":"P1","category":"correctness","file":"counter.py","line":8,"problem":"off by one","confidence":"HIGH"}]
+```')
+assert_contains '"hit": true' "$OUT" "the run hit the seeded defect"
+assert_contains '"false_findings": 0' "$OUT" "no false findings"
+assert_contains '"scored_findings": 1' "$OUT" "one P1/P2 finding was scored"
+assert_contains '"incomplete": false' "$OUT" "the run is complete"
+
+_flow_test_begin "score-review: a P1 finding on an unchanged line is a false finding"
+OUT=$(score_review off_by_one '```json
+[{"id":"F1","priority":"P1","category":"style","file":"counter.py","line":4,"problem":"initialisation","confidence":"LOW"}]
+```')
+assert_contains '"hit": false' "$OUT" "an unchanged line is not the defect"
+assert_contains '"false_findings": 1' "$OUT" "the finding is counted against precision"
+assert_contains '"incomplete": false' "$OUT" "a wrong finding is still a complete run"
+
+_flow_test_begin "score-review: a finding on the right file outside every hunk is false"
+OUT=$(score_review off_by_one '```json
+[{"id":"F1","priority":"P2","category":"maintainability","file":"counter.py","line":11,"problem":"return True","confidence":"MEDIUM"}]
+```')
+assert_contains '"hit": false' "$OUT" "the right file is not enough"
+assert_contains '"false_findings": 1' "$OUT" "it is counted as a false finding"
+
+_flow_test_begin "score-review: no findings is a miss, not an incomplete run"
+OUT=$(score_review off_by_one '```json
+[]
+```')
+assert_contains '"hit": false' "$OUT" "an empty list misses the defect"
+assert_contains '"false_findings": 0' "$OUT" "nothing was raised, so nothing is false"
+assert_contains '"incomplete": false' "$OUT" "the run answered, so it is complete"
+assert_contains '"reason": null' "$OUT" "a miss carries no incomplete reason"
+
+_flow_test_begin "score-review: malformed JSON is an incomplete run scored as a miss"
+REASON_MALFORMED=$(printf '%s-%s' "malformed" "json")
+OUT=$(score_review off_by_one '```json
+[{"id":"F1", "priority": P1,,}
+```')
+assert_contains '"hit": false' "$OUT" "an unparseable block cannot hit"
+assert_contains '"incomplete": true' "$OUT" "the run is recorded as incomplete"
+assert_contains "\"reason\": \"$REASON_MALFORMED\"" "$OUT" "the incomplete reason names the parse failure"
+assert_contains '"false_findings": 0' "$OUT" "an incomplete run contributes no false findings"
+
+# --- the rules the five cases do not pin ------------------------------------
+_flow_test_begin "score-review: a second finding on the same hunk is a false finding"
+# "at least one P1/P2 finding ... every other P1/P2 finding is a false_finding":
+# a run that hits once and adds a remark on the same hunk is scored one hit and
+# one false finding, not two hits.
+OUT=$(score_review off_by_one '```json
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one","confidence":"HIGH"},
+ {"id":"F2","priority":"P2","file":"counter.py","line":8,"problem":"also rename it","confidence":"LOW"}]
+```')
+assert_contains '"hit": true' "$OUT" "the run still hit"
+assert_contains '"in_hunk_findings": 2' "$OUT" "both findings landed on the hunk"
+assert_contains '"hits": 1' "$OUT" "a run counts as one hit however many findings land"
+
+_flow_test_begin "score-review: a P3 finding is neither a hit nor a false finding"
+OUT=$(score_review off_by_one '```json
+[{"id":"F1","priority":"P3","file":"counter.py","line":4,"problem":"naming","confidence":"LOW"}]
+```')
+assert_contains '"scored_findings": 0' "$OUT" "P3 never enters the score"
+assert_contains '"ignored_findings": 1' "$OUT" "it is recorded as ignored, not dropped silently"
+assert_contains '"false_findings": 0' "$OUT" "P3 does not cost precision"
+
+_flow_test_begin "score-review: a finding on another file is a false finding"
+OUT=$(score_review off_by_one '```json
+[{"id":"F1","priority":"P1","file":"reference_impl.py","line":8,"problem":"same line, other file","confidence":"HIGH"}]
+```')
+assert_contains '"hit": false' "$OUT" "the line number alone does not decide"
+assert_contains '"false_findings": 1' "$OUT" "citing the wrong file costs precision"
+
+_flow_test_begin "score-review: a final message with no fenced block is incomplete"
+REASON_NOBLOCK=$(printf '%s-%s-%s' "no" "findings" "block")
+OUT=$(score_review off_by_one 'I reviewed the diff and found an off-by-one on line 8.')
+assert_contains '"incomplete": true' "$OUT" "prose without a block is not a scored answer"
+assert_contains "\"reason\": \"$REASON_NOBLOCK\"" "$OUT" "the reason says the block is missing"
+
+_flow_test_begin "score-review: the last fenced block is the answer"
+OUT=$(score_review off_by_one 'Here is the shape I will use:
+
+```json
+[{"id":"X","priority":"P1","file":"counter.py","line":4,"problem":"example only"}]
+```
+
+And here are my findings:
+
+```json
+[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"off by one"}]
+```')
+assert_contains '"hit": true' "$OUT" "the answer block decides, not an earlier example"
+assert_contains '"scored_findings": 1' "$OUT" "the example block is not scored as well"
+
+# --- check-cases --mode review, with its three mutants ----------------------
+_flow_test_begin "check-cases --mode review: a healthy fixture case passes and counts what it examined"
+OUT=$(python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --no-write 2>&1)
+RC=$?
+assert_equal "0" "$RC" "a case whose variant differs passes"
+assert_contains '"variants_examined": 1' "$OUT" "the check reports a non-zero count of what it examined"
+assert_contains '"problems": []' "$OUT" "no problems on a healthy case"
+
+_flow_test_begin "check-cases --mode review: must fire on a variant identical to the reference"
+# Mutant 1 (must-fire): the seeded defect is not there, so no finding could hit
+# it and a 0% recall would be an artefact of the case, not a result.
+python3 - "$REVCASE/hidden/traps.json" <<'EOF'
+import json, sys
+with open(sys.argv[1]) as fh:
+    d = json.load(fh)
+d["traps"]["identical"] = {"description": "Fixture mutant: no edit at all.",
+                           "discriminating_tests": ["test_boundary"],
+                           "variant": "hidden/traps/identical.py"}
+with open(sys.argv[1], "w") as fh:
+    json.dump(d, fh, indent=2, sort_keys=True)
+EOF
+OUT=$(python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --no-write 2>&1)
+RC=$?
+assert_equal "1" "$RC" "the check fails when a variant carries no defect"
+assert_contains "identical to the reference" "$OUT" "the failure names the empty diff"
+assert_contains '"variants_examined": 2' "$OUT" "both variants were examined"
+
+_flow_test_begin "check-cases --mode review: must stay silent on a variant that differs by one line"
+# Mutant 2 (must-stay-silent): a correct input built to resemble the incorrect
+# one — the same file, same length, same text, one character changed. A check
+# that fired here would reject every real case.
+sed 's/total += value/total += int(value)/' "$REVCASE/hidden/reference_impl.py" \
+  > "$REVCASE/hidden/traps/identical.py"
+OUT=$(python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --no-write 2>&1)
+RC=$?
+assert_equal "0" "$RC" "one changed line is enough for the check to pass"
+assert_contains '"problems": []' "$OUT" "a one-line edit raises no problem"
+assert_contains '"variants_examined": 2' "$OUT" "both variants were still examined"
+
+_flow_test_begin "check-cases --mode review: must fail when there is nothing to examine"
+# Mutant 3 (input removal): a case with no trap variants at all. Reaching
+# nothing and finding nothing wrong produce the same empty problems list, so
+# the count is what tells them apart.
+EMPTY="$REVROOT/emptycase"
+mkdir -p "$EMPTY/hidden/traps"
+cp "$REVCASE/prompt.md" "$EMPTY/prompt.md"
+cp "$REVCASE/hidden/reference_impl.py" "$EMPTY/hidden/reference_impl.py"
+printf '{"module": "counter", "traps": {}}\n' > "$EMPTY/hidden/traps.json"
+OUT=$(python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --case emptycase --no-write 2>&1)
+RC=$?
+assert_equal "1" "$RC" "a case with no variants fails rather than passing empty"
+assert_contains '"variants_examined": 0' "$OUT" "the count says the check reached nothing"
+assert_contains "reached nothing" "$OUT" "the problem says so in words"
+rm -r "$EMPTY"
+
+_flow_test_begin "check-cases --mode review: the shipped cases all have a hittable defect"
+# The run against the real, full-size input the skill asks for: 34 variants
+# across the four shipped cases.
+OUT=$(python3 "$HELPER" check-cases --evals-dir "$EVALS" --mode review --no-write 2>&1)
+RC=$?
+assert_equal "0" "$RC" "every shipped variant differs from its reference"
+assert_contains '"problems": []' "$OUT" "no shipped case is unhittable"
+EXAMINED=$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["variants_examined"])' <(printf '%s' "$OUT"))
+assert_match '^[0-9]+$' "$EXAMINED" "the shipped run reports how many variants it examined"
+[ "${EXAMINED:-0}" -gt 20 ] && _flow_assert_pass "examined $EXAMINED shipped variants (more than 20)" \
+  || _flow_assert_fail "expected more than 20 shipped variants, examined ${EXAMINED:-0}"
+
+_flow_test_begin "check-cases --mode review writes changed_lines into traps.json"
+WRITTEN="$REVROOT/writecase"
+mkdir -p "$WRITTEN"
+cp -R "$REVCASE/." "$WRITTEN/"
+python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --case writecase >/dev/null 2>&1
+STORED=$(python3 -c '
+import json, sys
+print(json.dumps(json.load(open(sys.argv[1]))["traps"]["off_by_one"]["changed_lines"]))' "$WRITTEN/hidden/traps.json")
+assert_equal '[[8, 8]]' "$STORED" "the recorded hunk is the hand-counted one"
+rm -r "$WRITTEN"
+
+_flow_test_begin "score-review reads the recorded changed_lines"
+# Scoring must not silently recompute what the case recorded: a run scored
+# months later has to be scored against the hunks the check pinned.
+OUT=$(python3 "$HELPER" score-review --case "$REVCASE" --trap off_by_one \
+        --findings '[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"x"}]')
+assert_contains '"changed_lines_source": "computed"' "$OUT" "with nothing recorded the hunks are computed"
+python3 "$HELPER" check-cases --evals-dir "$REVROOT" --mode review --case revcase >/dev/null 2>&1
+OUT=$(python3 "$HELPER" score-review --case "$REVCASE" --trap off_by_one \
+        --findings '[{"id":"F1","priority":"P1","file":"counter.py","line":8,"problem":"x"}]')
+assert_contains '"changed_lines_source": "traps.json"' "$OUT" "once recorded, the recorded hunks are used"
+assert_contains '"hit": true' "$OUT" "and the score is the same"
+
+# --- review-mode aggregation ------------------------------------------------
+_flow_test_begin "aggregate --mode review: hand-computed precision, recall and F1"
+# Fixture matrix: one model, two arms, four traps, three runs each. Every
+# replication (run 1 of each trap, run 2 of each trap, run 3 of each trap)
+# carries the same pattern, so the run-to-run spread is 0 and the arms differ
+# only in their false findings.
+#   review-b, per replication: t1 hit+0 false, t2 hit+1, t3 miss+1, t4 hit+1
+#     recall    3 hits / 4 runs            = 0.750
+#     precision 3 hits / (3 hits + 3 false) = 0.500
+#     F1        2 * 0.75 * 0.5 / 1.25       = 0.600
+#   review-b-critic, per replication: t1 hit, t2 hit, t3 miss, t4 hit, no false
+#     recall    0.750, precision 1.000, F1 = 2 * 0.75 / 1.75 = 0.857
+REVOUT="$TMP/revout"
+write_review_run() {
+  # write_review_run <model> <arm> <trap> <n> <hit true|false> <false findings> <cost>
+  local dir="$REVOUT/runs/$1/$2/revcase/$3/$4"
+  mkdir -p "$dir"
+  python3 - "$dir/result.json" "$1" "$2" "$3" "$4" "$5" "$6" "$7" <<'EOF'
+import json, sys
+path, model, arm, trap, run, hit, false, cost = sys.argv[1:9]
+json.dump({"mode": "review", "arm": arm, "case": "revcase", "trap": trap, "run": int(run),
+           "model": model, "cost_usd": float(cost), "num_turns": 5, "error": None,
+           "tokens": {"output": 100, "source": "modelUsage", "cache_hit_rate": 0.5},
+           "review": {"hit": hit == "true", "false_findings": int(false),
+                      "scored_findings": (1 if hit == "true" else 0) + int(false),
+                      "incomplete": False, "reason": None,
+                      "confidences": {"HIGH": {"in_hunk": 1 if hit == "true" else 0, "false": 0},
+                                      "LOW": {"in_hunk": 0, "false": int(false)}}}},
+          open(path, "w"), indent=2, sort_keys=True)
+EOF
+}
+write_matrix() {
+  # write_matrix <model> — the whole fixture matrix for one model
+  local n=1
+  while [ "$n" -le 3 ]; do
+    write_review_run "$1" review-b t1 "$n" true 0 0.50
+    write_review_run "$1" review-b t2 "$n" true 1 0.50
+    write_review_run "$1" review-b t3 "$n" false 1 0.50
+    write_review_run "$1" review-b t4 "$n" true 1 0.50
+    write_review_run "$1" review-b-critic t1 "$n" true 0 0.90
+    write_review_run "$1" review-b-critic t2 "$n" true 0 0.90
+    write_review_run "$1" review-b-critic t3 "$n" false 0 0.90
+    write_review_run "$1" review-b-critic t4 "$n" true 0 0.90
+    n=$((n + 1))
+  done
+}
+arm_metric() {
+  # arm_metric <model> <arm> <key> — one aggregated number, to three decimals
+  python3 -c '
+import json, sys
+a = json.load(open(sys.argv[1]))["per_model"][sys.argv[2]]["per_arm"][sys.argv[3]]
+value = a[sys.argv[4]]
+print("-" if value is None else "%.3f" % value)' "$REVOUT/summary.json" "$1" "$2" "$3"
+}
+write_matrix m1
+OUT=$(python3 "$HELPER" aggregate --out "$REVOUT" --mode review)
+assert_contains '"runs": 24' "$OUT" "all 24 canned runs were read"
+assert_equal "0.500" "$(arm_metric m1 review-b precision)" "review-b precision is 9 hits over 18 scored findings"
+assert_equal "0.750" "$(arm_metric m1 review-b recall)" "review-b recall is 9 hits over 12 runs"
+assert_equal "0.600" "$(arm_metric m1 review-b f1)" "review-b F1 from the hand computation"
+assert_equal "0.857" "$(arm_metric m1 review-b-critic f1)" "review-b-critic F1 from the hand computation"
+assert_equal "0.000" "$(arm_metric m1 review-b f1_spread)" "identical replications leave no spread"
+
+_flow_test_begin "summary.md for a review run carries the table, the rule and a verdict"
+SUMMARY=$(cat "$REVOUT/summary.md")
+for HEADING in "Precision" "Recall" "F1" "Findings per run" "Cost (mean)" "Output tokens" "Spread"; do
+  assert_contains "| $HEADING |" "$SUMMARY" "the arm table has a $HEADING column"
+done
+assert_contains "review-b-critic" "$SUMMARY" "the critic arm has a row"
+assert_contains "Adoption rule:" "$SUMMARY" "the reading rule is written into the summary"
+assert_contains "Verdict: \`" "$SUMMARY" "the summary ends the reading with a verdict line"
+assert_contains "Higher is better" "$SUMMARY" "each metric says which direction is better"
+
+_flow_test_begin "the adoption rule needs two models, not one"
+VERDICT=$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["decision"]["verdict"])' "$REVOUT/summary.json")
+INSUFFICIENT=$(printf '%s-%s' "insufficient" "models")
+assert_equal "$INSUFFICIENT" "$VERDICT" "one model cannot adopt the critic however large the gain"
+
+_flow_test_begin "the adoption rule adopts only when every model clears its spread"
+write_matrix m2
+python3 "$HELPER" aggregate --out "$REVOUT" --mode review >/dev/null
+VERDICT=$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["decision"]["verdict"])' "$REVOUT/summary.json")
+ADOPT=$(printf '%s-%s' "adopt" "critic")
+assert_equal "$ADOPT" "$VERDICT" "two models both clearing their spread adopt the critic"
+# Now make the critic arm worse on m2 only: the rule must stop adopting even
+# though m1 is unchanged.
+n=1
+while [ "$n" -le 3 ]; do
+  write_review_run m2 review-b-critic t1 "$n" false 3 0.90
+  write_review_run m2 review-b-critic t2 "$n" false 3 0.90
+  write_review_run m2 review-b-critic t4 "$n" false 3 0.90
+  n=$((n + 1))
+done
+python3 "$HELPER" aggregate --out "$REVOUT" --mode review >/dev/null
+VERDICT=$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["decision"]["verdict"])' "$REVOUT/summary.json")
+KEEPOFF=$(printf '%s-%s' "keep" "off")
+assert_equal "$KEEPOFF" "$VERDICT" "one model failing to clear its spread keeps the setting off"
+assert_equal "0.600" "$(arm_metric m1 review-b f1)" "the other model's numbers are untouched"
+
+_flow_test_begin "a gain smaller than the spread does not adopt"
+# Same two models, but one replication of m1's critic arm is degraded so the
+# arm's spread grows past the gain. Nothing else changes.
+write_matrix m2
+write_review_run m1 review-b-critic t1 3 false 2 0.90
+write_review_run m1 review-b-critic t2 3 false 2 0.90
+write_review_run m1 review-b-critic t4 3 false 2 0.90
+python3 "$HELPER" aggregate --out "$REVOUT" --mode review >/dev/null
+VERDICT=$(python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["decision"]["verdict"])' "$REVOUT/summary.json")
+assert_equal "$KEEPOFF" "$VERDICT" "an unstable gain does not clear its own spread"
+SPREAD=$(arm_metric m1 review-b-critic f1_spread)
+assert_match '^0\.[1-9]' "$SPREAD" "the degraded replication shows up as spread ($SPREAD)"
+
+_flow_test_begin "an incomplete run is excluded from precision and counted on its own"
+write_matrix m1
+BADDIR="$REVOUT/runs/m1/review-b/revcase/t1/4"
+mkdir -p "$BADDIR"
+python3 - "$BADDIR/result.json" <<'EOF'
+import json, sys
+json.dump({"mode": "review", "arm": "review-b", "case": "revcase", "trap": "t1", "run": 4,
+           "model": "m1", "cost_usd": 0.5, "num_turns": 5, "error": None,
+           "review": {"hit": False, "false_findings": 0, "scored_findings": 0,
+                      "incomplete": True, "reason": "malformed" + "-json", "confidences": {}}},
+          open(sys.argv[1], "w"), indent=2, sort_keys=True)
+EOF
+python3 "$HELPER" aggregate --out "$REVOUT" --mode review >/dev/null
+SCORED=$(python3 -c '
+import json, sys
+a = json.load(open(sys.argv[1]))["per_model"]["m1"]["per_arm"]["review-b"]
+print("%d/%d/%.3f" % (a["runs"], a["scored_runs"], a["f1"]))' "$REVOUT/summary.json")
+assert_equal "13/12/0.600" "$SCORED" "the extra run is counted but not scored, and F1 is unchanged"
+
+# --- the review-mode plan ---------------------------------------------------
+_flow_test_begin "--mode review --dry-run plans one run per model, arm, case, trap and run"
+PLAN=$("$RUNNER" --mode review --dry-run --case sliding-window-limiter --runs 2 --models a,b \
+        --out "$TMP/plan-review" 2>&1)
+TRAPS=$(python3 "$HELPER" list-traps "$EVALS/sliding-window-limiter" | wc -l | tr -d ' ')
+[ "$TRAPS" -gt 0 ] && _flow_assert_pass "the case has $TRAPS trap variants (non-zero)" \
+  || _flow_assert_fail "the case reported 0 trap variants"
+EXPECTED=$((2 * 2 * TRAPS * 2))
+assert_contains "PLAN  $EXPECTED run(s): 2 model(s) × 2 arm(s) × 1 case(s) × $TRAPS trap(s)" "$PLAN" "2 models × 2 arms × $TRAPS traps × 2 runs"
+assert_contains "PLAN  mode=review" "$PLAN" "the plan says which mode it is"
+assert_contains "review-b-critic" "$PLAN" "the critic arm is planned"
+assert_contains '{"review":{"groundingCritic":"on"}}' "$PLAN" "the critic arm turns the setting on"
+assert_contains '{"review":{"groundingCritic":"off"}}' "$PLAN" "the plain arm turns it off"
+
+_flow_test_begin "--mode review --dry-run prints the scratch-repo layout and the command"
+assert_contains "hidden/reference_impl.py" "$PLAN" "the layout names the default branch's source"
+assert_contains "hidden/traps/counts_denied.py" "$PLAN" "the layout names the feature branch's source"
+assert_contains "git checkout -b review-candidate" "$PLAN" "the feature branch is named"
+assert_contains "ratelimit.py" "$PLAN" "the module both branches hold is named"
+assert_match 'timeout [0-9]+ claude -p --output-format stream-json' "$PLAN" "the exact command is printed"
+assert_not_contains "Write,Edit" "$PLAN" "a review run gets no edit tools"
+
+_flow_test_begin "--mode review builds the two branches it prints"
+# The layout line is a claim about a repository; this builds one and reads it
+# back with git, so a wrong claim cannot pass as a printed string.
+REPO="$TMP/scratchrepo"
+python3 - "$EVALS/sliding-window-limiter" "$REPO" <<'EOF'
+import json, os, shutil, subprocess, sys
+case_dir, repo = sys.argv[1], sys.argv[2]
+module = json.load(open(os.path.join(case_dir, "hidden", "traps.json")))["module"]
+os.makedirs(repo)
+ref = os.path.join(case_dir, "hidden", "reference_impl.py")
+shutil.copy(ref, os.path.join(repo, "reference_impl.py"))
+shutil.copy(ref, os.path.join(repo, module + ".py"))
+run = lambda *a: subprocess.run(a, cwd=repo, capture_output=True, text=True)
+run("git", "init", "-q", "-b", "main", ".")
+run("git", "add", "-A")
+run("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base")
+run("git", "checkout", "-q", "-b", "review-candidate")
+shutil.copy(os.path.join(case_dir, "hidden", "traps", "counts_denied.py"), os.path.join(repo, module + ".py"))
+run("git", "add", "-A")
+run("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "head")
+EOF
+CHANGED=$(cd "$REPO" && git diff --name-only main...review-candidate)
+assert_equal "ratelimit.py" "$CHANGED" "the branch diff is the module file alone"
+rm -r "$REPO"
